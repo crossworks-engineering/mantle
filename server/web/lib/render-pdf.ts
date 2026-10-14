@@ -1,5 +1,6 @@
 import puppeteer from 'puppeteer-core';
 import { env } from '@mantle/config';
+import { defineDomainError } from '@mantle/std';
 import { openRenderPage } from './render-sandbox';
 
 export { printOrigin } from './render-sandbox';
@@ -40,8 +41,18 @@ export class PdfRendererUnavailableError extends Error {
         `BROWSER_WS_ENDPOINT set.`,
     );
     this.name = 'PdfRendererUnavailableError';
+    // For the operator: the export route logged it where it answered 503.
+    console.error('[export] pdf renderer unavailable:', this.message);
   }
 }
+
+// The one error answer (A10 part 2, @mantle/std domain-errors.ts): what
+// the export route answered by hand.
+defineDomainError(PdfRendererUnavailableError, {
+  reason:
+    'the PDF sidecar is not set up or not reachable; the message says what the operator starts',
+  status: 503,
+});
 
 /**
  * Probe the browser sidecar for the system-health dashboard — the analog of

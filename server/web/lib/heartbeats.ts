@@ -16,6 +16,7 @@
  */
 
 import type { HeartbeatDTO } from '@mantle/client-types';
+import { defineDomainError } from '@mantle/std';
 import { and, asc, desc, eq } from 'drizzle-orm';
 import {
   adminReadsOnSystemPool,
@@ -168,6 +169,13 @@ export function heartbeatMaker(ownerId: string, loginId: string | null | undefin
 
 /** A Fire now refusal the route answers (403). */
 export class FireRefused extends Error {}
+
+// The one error answer (A10 part 2, @mantle/std domain-errors.ts): what
+// the route answered by hand.
+defineDomainError(FireRefused, {
+  reason: 'only the maker of a heartbeat fires it now; the message says who may',
+  status: 403,
+});
 
 /** Why a login other than a heartbeat's maker may not fire it. */
 export const FIRE_MAKER_ONLY =

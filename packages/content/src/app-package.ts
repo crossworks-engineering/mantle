@@ -34,6 +34,7 @@ import {
   type AppManifest,
   type AppSource,
 } from '@mantle/db';
+import { defineDomainError } from '@mantle/std';
 import type { AppDetail, AppTint } from '@mantle/client-types';
 import {
   AppSourceLimitError,
@@ -98,6 +99,14 @@ export class AppPackageError extends Error {
     this.name = 'AppPackageError';
   }
 }
+
+// The one error answer (A10 part 2, @mantle/std domain-errors.ts): what
+// the routes answered by hand.
+defineDomainError(AppPackageError, {
+  reason: 'the file sent is not a usable app package; the message says why',
+  status: 400,
+  body: (e) => ({ error: e.message, reason: 'bad-package' }),
+});
 
 /** The largest package an import reads: a full database and the code. */
 export function appPackageMaxBytes(): number {

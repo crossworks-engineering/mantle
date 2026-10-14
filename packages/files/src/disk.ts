@@ -13,7 +13,8 @@ import { Transform, type Readable } from 'node:stream';
 import { once } from 'node:events';
 import { pipeline } from 'node:stream/promises';
 import { diskPathForFile, diskPathForLtree, filesRoot, isFilesPath } from './paths';
-import { ConflictError } from '@mantle/std';
+import { ConflictError, defineDomainError } from '@mantle/std';
+import { extOf, MEDIA_EXTS } from './slug';
 
 /** Ensure the root + an arbitrary descendant directory exist. mkdir -p. */
 export async function ensureDir(ltreePath: string): Promise<string> {
@@ -600,6 +601,22 @@ export class UploadTooLargeError extends Error {
     this.name = 'UploadTooLargeError';
   }
 }
+
+// The one error answer (A10 part 2, @mantle/std domain-errors.ts): what the
+// upload route answered by hand. A rejected video gets a pointer to the path
+// that DOES work: media is meant to enter by link (video_ingest), not by
+// upload.
+defineDomainError(UploadTooLargeError, {
+  reason: 'the upload is over its cap; the message says the cap',
+  status: 413,
+  body: (e) => {
+    const mediaHint =
+      e.filename && MEDIA_EXTS.has(extOf(e.filename))
+        ? ' For video, ask the assistant to ingest the link instead.'
+        : '';
+    return { error: `${e.message}.${mediaHint}`, maxUploadBytes: e.maxBytes };
+  },
+});
 
 export type SpooledUpload = { tempPath: string; sha256: string; size: number };
 

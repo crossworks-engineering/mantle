@@ -33,7 +33,7 @@ import {
   storeRows,
 } from '@mantle/db';
 import { env } from '@mantle/config';
-import { errorMessage, sleep } from '@mantle/std';
+import { defineDomainError, errorMessage, sleep } from '@mantle/std';
 import { stripLiterals } from '@mantle/tabledb';
 import { linkHistoryTree } from './history-files';
 import {
@@ -74,6 +74,14 @@ export class AppDbMissingError extends Error {
     this.name = 'AppDbMissingError';
   }
 }
+
+// The one error answer (A10 part 2, @mantle/std domain-errors.ts): what
+// the routes answered by hand.
+defineDomainError(AppDbMissingError, {
+  reason: 'the app had data and its database file is gone; the message says how to restore it',
+  status: 409,
+  body: (e) => ({ error: e.message, reason: 'db-missing' }),
+});
 export type { AppViewer, AppViewerSubject } from './app-viewer';
 
 /** Root dir for per-app SQLite files. A dedicated volume in prod (see compose);

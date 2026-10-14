@@ -19,6 +19,7 @@ import {
   setManifest,
   type AppHistoryActor,
 } from './apps';
+import { defineDomainError } from '@mantle/std';
 import { tableDbRoot } from '@mantle/tabledb';
 import { appDbRoot, restoreAppDatabaseFile } from './app-broker';
 import { sweepCrashLeftovers } from './history-files';
@@ -48,6 +49,14 @@ export class AppTrashRefusedError extends Error {
     this.name = 'AppTrashRefusedError';
   }
 }
+
+// The one error answer (A10 part 2, @mantle/std domain-errors.ts): what
+// the routes answered by hand.
+defineDomainError(AppTrashRefusedError, {
+  reason:
+    'the app is not deleted, or its last snapshot cannot bring it back; the message says which',
+  status: 409,
+});
 
 type DeletedRow = {
   node_id: string;

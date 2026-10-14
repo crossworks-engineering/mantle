@@ -1,4 +1,5 @@
 import { loadCell } from './cells';
+import { InputError } from '@mantle/std';
 import type { AggregateKind, CellValue, ColumnType, Filter, Row, SortSpec } from './doc-types';
 import { storageType } from './doc-types';
 import { openTableFile, type SqliteDb } from './sqlite';
@@ -28,7 +29,7 @@ function tabMeta(db: SqliteDb, tabId?: string): { physicalTable: string; cols: C
       ? db.prepare(`SELECT tab_id, physical_table FROM _tabs ORDER BY position LIMIT 1`).get()
       : db.prepare(`SELECT tab_id, physical_table FROM _tabs WHERE tab_id = ?`).get(tabId);
   if (!tab) {
-    throw new Error(
+    throw new InputError(
       tabId === undefined
         ? 'tabledb window: workbook has no tabs'
         : `tabledb window: no tab '${tabId}' in this workbook`,

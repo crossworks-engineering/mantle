@@ -7,6 +7,7 @@
  * write is refused rather than reshaped.
  */
 import { existsSync } from 'node:fs';
+import { InputError } from '@mantle/std';
 import { fileStats, resolveStoragePath, type WorkbookStats } from '@mantle/tabledb';
 import type { TableDoc, WorkbookDoc } from '@mantle/content-core/table-model';
 import { draftAbsOf } from '../table-storage';
@@ -22,7 +23,7 @@ export function isWorkbook(data: TableDoc | WorkbookDoc): data is WorkbookDoc {
  *  WorkbookDoc; per-tab editors use draft ops with a tabId. */
 export function guardSingleTabWrite(tabCount: number): void {
   if (tabCount > 1) {
-    throw new Error(
+    throw new InputError(
       'this table is a multi-tab workbook — a whole-grid save would drop the other tabs; edit via draft ops (tabId) or send the full workbook',
     );
   }

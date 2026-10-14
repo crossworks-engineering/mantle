@@ -108,6 +108,20 @@ defineDomainError(FormulaSpecError, {
   body: (e) => ({ error: e.message, errors: e.errors }),
 });
 
+/** No formula of that id for this owner (readFormulaSpec). */
+export class FormulaNotFoundError extends Error {
+  constructor(id: string) {
+    super(`formula '${id}' not found`);
+    this.name = 'FormulaNotFoundError';
+  }
+}
+
+// What the evaluate route answered by hand: 404 and the message.
+defineDomainError(FormulaNotFoundError, {
+  reason: 'the formula the caller named is not there',
+  status: 404,
+});
+
 /**
  * Structural check rather than `instanceof`, because callers live in other
  * packages. If the bundler ever resolves two copies of this module, an
@@ -267,7 +281,7 @@ export async function getFormula(ownerId: string, id: string): Promise<FormulaRo
  */
 export async function readFormulaSpec(ownerId: string, id: string): Promise<FormulaSpec> {
   const row = await getFormula(ownerId, id);
-  if (!row) throw new Error(`formula '${id}' not found`);
+  if (!row) throw new FormulaNotFoundError(id);
   return validate(row.spec);
 }
 

@@ -11,6 +11,7 @@
  */
 
 import type { HeartbeatScheduleSpec } from '@mantle/db';
+import { InputError } from '@mantle/std';
 
 /** Pseudo-random jitter in ±minutes, deterministic per (heartbeatId, fireCount)
  *  so retries reproduce the same offset. Math.random would do for now, but
@@ -65,7 +66,7 @@ export function computeNextFireAt(input: ComputeNextFireInput): Date | null {
       break;
     }
     case 'cron': {
-      throw new Error(
+      throw new InputError(
         "cron schedule isn't implemented in v1. Use 'interval' or 'once', " +
           'or add cron-parser as a dep and wire it here.',
       );
@@ -80,39 +81,40 @@ export function computeNextFireAt(input: ComputeNextFireInput): Date | null {
   return candidate;
 }
 
-/** Validate a schedule payload at create/update time. Throws with a
- *  human-readable message on invalid shape. UI calls this before INSERT. */
+/** Validate a schedule payload at create/update time. Throws InputError
+ *  (400 and the message, A10 part 2) with a human-readable message on an
+ *  invalid shape. UI calls this before INSERT. */
 export function validateSchedule(s: HeartbeatScheduleSpec): void {
   switch (s.kind) {
     case 'once': {
       if (!s.at || Number.isNaN(Date.parse(s.at))) {
-        throw new Error("'once' schedule needs an ISO-8601 `at` field.");
+        throw new InputError("'once' schedule needs an ISO-8601 `at` field.");
       }
       return;
     }
     case 'interval': {
       if (!Number.isFinite(s.every_minutes) || s.every_minutes < 1) {
-        throw new Error("'interval' schedule needs `every_minutes` >= 1.");
+        throw new InputError("'interval' schedule needs `every_minutes` >= 1.");
       }
       if (s.jitter_minutes != null) {
         if (!Number.isFinite(s.jitter_minutes) || s.jitter_minutes < 0) {
-          throw new Error('`jitter_minutes` must be >= 0.');
+          throw new InputError('`jitter_minutes` must be >= 0.');
         }
         if (s.jitter_minutes > s.every_minutes / 2) {
-          throw new Error('`jitter_minutes` should be <= half of every_minutes.');
+          throw new InputError('`jitter_minutes` should be <= half of every_minutes.');
         }
       }
       return;
     }
     case 'cron': {
-      throw new Error("cron schedule kind isn't supported in v1.");
+      throw new InputError("cron schedule kind isn't supported in v1.");
     }
     case 'manual': {
       return;
     }
     default: {
       const _exhaustive: never = s;
-      throw new Error(`unknown schedule kind: ${JSON.stringify(_exhaustive)}`);
+      throw new InputError(`unknown schedule kind: ${JSON.stringify(_exhaustive)}`);
     }
   }
 }

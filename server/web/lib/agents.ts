@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { AgentDTO } from '@mantle/client-types';
+import { InputError } from '@mantle/std';
 import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import {
   db,
@@ -436,7 +437,12 @@ export async function getAssignedAgentSummary(
 /** Thrown by `cloneAgentForUser` for a bad request (unknown or un-chattable
  *  source), so the routes can answer 400 rather than treating every failure as
  *  a 500. */
-export class CloneAgentError extends Error {}
+export class CloneAgentError extends InputError {
+  constructor(message: string) {
+    super(message);
+    this.name = 'CloneAgentError';
+  }
+}
 
 /**
  * Clone `sourceAgentId` into a personal assistant for `actorId`.

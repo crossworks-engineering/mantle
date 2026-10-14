@@ -26,6 +26,7 @@
 import { copyFileSync, existsSync, linkSync, mkdirSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { and, eq, sql, type SQL } from 'drizzle-orm';
+import { defineDomainError } from '@mantle/std';
 import {
   db,
   inFlipTransaction,
@@ -73,6 +74,14 @@ export class TableRevConflict extends Error {
     this.name = 'TableRevConflict';
   }
 }
+
+// The one error answer (A10 part 2, @mantle/std domain-errors.ts): a draft
+// another write kept changing past the retries; reload and apply again.
+defineDomainError(TableRevConflict, {
+  reason: 'another write changed the draft while this one retried; the caller reloads',
+  status: 409,
+  body: (e) => ({ error: e.message, current_rev: e.currentRev }),
+});
 
 /** A new revision's path, relative to TABLE_DB_DIR, beside the table's
  *  others (`<owner>/<node>.r-<token>.sqlite`, a draft `.draft.sqlite`). */

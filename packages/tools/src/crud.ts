@@ -12,6 +12,7 @@
 import { and, asc, eq } from 'drizzle-orm';
 import { db, tools, type Tool, type ToolHandler } from '@mantle/db';
 import type { ToolDTO } from '@mantle/client-types';
+import { InputError } from '@mantle/std';
 import {
   VOIDED_MARK_SIG,
   canonical,
@@ -72,15 +73,15 @@ export type CreateToolInput = {
 
 export async function createTool(ownerId: string, input: CreateToolInput): Promise<ToolSummary> {
   if (input.handler.kind === 'builtin') {
-    throw new Error('cannot register builtin tools via API — they are seeded by the agent');
+    throw new InputError('cannot register builtin tools via API — they are seeded by the agent');
   }
   if (input.handler.kind === 'mcp') {
-    throw new Error(
+    throw new InputError(
       "cannot register 'mcp' tools by hand — they are materialised by an MCP connector's sync (create the connector via POST /api/mcp-connectors)",
     );
   }
   if (input.handler.kind === 'http' && input.handler.openapi) {
-    throw new Error(
+    throw new InputError(
       "cannot register a tool carrying openapi connector provenance by hand — such rows are materialised by an OpenAPI connector's sync (create the connector via POST /api/openapi-connectors)",
     );
   }
@@ -121,17 +122,17 @@ export async function updateTool(
   const existing = await getToolById(ownerId, id);
   if (!existing) return null;
   if (existing.handler.kind === 'builtin' && patch.handler && patch.handler.kind !== 'builtin') {
-    throw new Error('cannot change a builtin tool to another kind');
+    throw new InputError('cannot change a builtin tool to another kind');
   }
   // Connector-mirrored rows: enabled/requiresConfirm may toggle, everything
   // else is the sync's to write — and no other row may be turned INTO one.
   if (existing.handler.kind === 'mcp' && patch.handler !== undefined) {
-    throw new Error(
+    throw new InputError(
       "connector tools mirror the remote server — edit the connector's binding and re-run its sync instead of patching the handler (enabled/requires_confirm can still toggle)",
     );
   }
   if (existing.handler.kind !== 'mcp' && patch.handler?.kind === 'mcp') {
-    throw new Error(
+    throw new InputError(
       "cannot change a tool into an 'mcp' handler — connector tools are materialised by their connector's sync",
     );
   }
@@ -143,7 +144,7 @@ export async function updateTool(
   const existingOpenapi = existing.handler.kind === 'http' ? existing.handler.openapi : undefined;
   if (existingOpenapi) {
     if (patch.handler !== undefined && patch.handler.kind !== 'http') {
-      throw new Error(
+      throw new InputError(
         "cannot change an openapi connector tool to another handler kind — edit its http definition, or manage the row via its connector's sync",
       );
     }
@@ -161,7 +162,7 @@ export async function updateTool(
       };
     }
   } else if (patch.handler?.kind === 'http' && patch.handler.openapi) {
-    throw new Error(
+    throw new InputError(
       "cannot attach openapi connector provenance to a tool — such rows are materialised by an OpenAPI connector's sync",
     );
   }
@@ -180,7 +181,7 @@ export async function updateTool(
       patch.inputSchema !== undefined ||
       patch.handler !== undefined
     ) {
-      throw new Error(
+      throw new InputError(
         'cannot edit name/description/schema/handler of a builtin tool — edit packages/tools/src/builtins.ts and restart',
       );
     }
@@ -241,17 +242,17 @@ export async function deleteTool(ownerId: string, id: string): Promise<boolean> 
   const existing = await getToolById(ownerId, id);
   if (!existing) return false;
   if (existing.handler.kind === 'builtin') {
-    throw new Error(
+    throw new InputError(
       'cannot delete a builtin tool — remove from packages/tools/src/builtins.ts and restart',
     );
   }
   if (existing.handler.kind === 'mcp') {
-    throw new Error(
+    throw new InputError(
       `cannot delete a connector-mirrored tool — it would leave its connector group dangling; delete the whole connector (DELETE /api/mcp-connectors/${existing.handler.group.replace(/^mcp-/, '')}) or let its sync manage the row`,
     );
   }
   if (existing.handler.kind === 'http' && existing.handler.openapi) {
-    throw new Error(
+    throw new InputError(
       `cannot delete an openapi connector tool — disable it, drop the operation from the connector's selection, or delete the whole connector (DELETE /api/openapi-connectors/${existing.handler.openapi.group.replace(/^openapi-/, '')})`,
     );
   }

@@ -30,6 +30,7 @@ import {
   nodes,
   type AppSnapshotCode,
 } from '@mantle/db';
+import { defineDomainError } from '@mantle/std';
 import type { AppRestoreMode, AppSnapshot } from '@mantle/client-types';
 import {
   AppRestoreDraftError,
@@ -82,14 +83,32 @@ export class AppSnapshotBudgetError extends Error {
   }
 }
 
+// The one error answer (A10 part 2, @mantle/std domain-errors.ts): what
+// the routes answered by hand.
+defineDomainError(AppSnapshotBudgetError, {
+  reason: 'the snapshots would pass their budget; the message says what to delete',
+  status: 409,
+  body: (e) => ({ error: e.message, reason: 'budget' }),
+});
+
 /** The snapshot cannot do what was asked: no data to restore, a version
  *  that cannot be deleted, and the like. The message says why. */
 export class AppSnapshotRefusedError extends Error {
-  constructor(message: string) {
+  /** `no-data` from a restore (the route's 409 says it), else none. */
+  constructor(
+    message: string,
+    readonly reason?: 'no-data',
+  ) {
     super(message);
     this.name = 'AppSnapshotRefusedError';
   }
 }
+
+defineDomainError(AppSnapshotRefusedError, {
+  reason: 'the snapshot cannot do what was asked; the message says why',
+  status: 409,
+  body: (e) => (e.reason ? { error: e.message, reason: e.reason } : { error: e.message }),
+});
 
 type DbTx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 /** Where a read runs: the pool, or the transaction that holds the app's
@@ -763,10 +782,11 @@ export async function restoreAppSnapshot(
   if (wantsData && !snap.hasData) {
     throw new AppSnapshotRefusedError(
       `v${snap.seq} holds no data (it is ${snap.kind === 'version' ? 'a version: the code a publish made live' : 'a snapshot of an app that had no database yet'}); restore its code, or pick a snapshot with data`,
+      'no-data',
     );
   }
   if (wantsCode && !snap.code) {
-    throw new AppSnapshotRefusedError(`v${snap.seq} holds no code to restore`);
+    throw new AppSnapshotRefusedError(`v${snap.seq} holds no code to restore`, 'no-data');
   }
 
   // Refuse before the undo snapshot: nothing changes (checked again under
@@ -801,6 +821,7 @@ export async function restoreAppSnapshot(
     if (!still) {
       throw new AppSnapshotRefusedError(
         'this app moved (it was accepted into the brain), so nothing was restored',
+        'no-data',
       );
     }
     if (wantsCode && !opts.discardDraft) {
@@ -809,7 +830,7 @@ export async function restoreAppSnapshot(
     }
     if (wantsData) {
       const file = await appSnapshotFile(ownerId, appId, snapshotId);
-      if (!file) throw new AppSnapshotRefusedError(`v${snap.seq} holds no data`);
+      if (!file) throw new AppSnapshotRefusedError(`v${snap.seq} holds no data`, 'no-data');
       await restoreAppDatabaseFile(ownerId, appId, file.path, snap.schemaVersion ?? 0, {
         ...(opts.drainMs !== undefined ? { drainMs: opts.drainMs } : {}),
       });

@@ -28,6 +28,7 @@ import {
   type TableDetail,
   type TableTabInfo,
 } from '@mantle/content-core/table-model';
+import { defineDomainError } from '@mantle/std';
 import type { WorkbookStats } from '@mantle/tabledb';
 import { loadDocsFromFile } from '../table-storage';
 import { asKindRootRepair } from '../kind-root';
@@ -45,6 +46,14 @@ export class AppBoundTableError extends Error {
     this.name = 'AppBoundTableError';
   }
 }
+
+// The one error answer (A10 part 2, @mantle/std domain-errors.ts): 409, as
+// the restore route answered it (the table is read-only here, the app is
+// its master).
+defineDomainError(AppBoundTableError, {
+  reason: 'the table mirrors an app and is read-only here; the message says where to edit',
+  status: 409,
+});
 
 /** The export link for a table, or null. Authoritative (the `nodes.data.appLink`
  *  mark is a denormalized copy for DTOs; the guard trusts only this row). */

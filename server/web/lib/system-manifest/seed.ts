@@ -20,6 +20,7 @@
  */
 
 import { and, eq, inArray } from 'drizzle-orm';
+import { InputError } from '@mantle/std';
 import {
   db,
   agents,
@@ -89,7 +90,7 @@ async function resolveOpenRouterKeyId(ownerId: string): Promise<string> {
     .from(apiKeys)
     .where(and(eq(apiKeys.userId, ownerId), eq(apiKeys.service, 'openrouter')));
   if (rows.length === 0) {
-    throw new Error("No 'openrouter' API key found. Add one at /settings/keys first.");
+    throw new InputError("No 'openrouter' API key found. Add one at /settings/keys first.");
   }
   return (rows.find((r) => r.label === 'default') ?? rows[0]!).id;
 }
@@ -705,7 +706,7 @@ async function adoptPersonaStructure(ownerId: string): Promise<void> {
   const persona = resolveEffectivePersona(
     rows.map((r) => ({ slug: r.slug, enabled: r.enabled, role: r.role, priority: r.priority })),
   );
-  if (!persona) throw new Error('No persona agent to adopt onto.');
+  if (!persona) throw new InputError('No persona agent to adopt onto.');
   const row = rows.find((r) => r.slug === persona.slug)!;
   const mc = (row.memoryConfig ?? {}) as AgentMemoryConfig & { delegate_to?: string[] };
   const current = Array.isArray(mc.delegate_to) ? mc.delegate_to : [];
@@ -726,11 +727,11 @@ async function adoptPersonaStructure(ownerId: string): Promise<void> {
 /** Create the missing worker, or re-model an existing one to its manifest route. */
 async function adoptWorker(ownerId: string, kind: AiWorkerKind): Promise<void> {
   const w = MANIFEST_WORKERS.find((x) => x.kind === kind);
-  if (!w) throw new Error(`Unknown manifest worker '${kind}'.`);
+  if (!w) throw new InputError(`Unknown manifest worker '${kind}'.`);
   const keys = await keyIdByService(ownerId);
   const route = resolveWorkerRoute(w, new Set(Object.keys(keys)));
   if (!route) {
-    throw new Error(
+    throw new InputError(
       `Can't adopt the '${kind}' worker — no API key for ${w.provider}. Add one at /settings/keys.`,
     );
   }
@@ -770,19 +771,19 @@ export async function adoptManifestItem(
   switch (kind) {
     case 'skill': {
       const def = MANIFEST_SKILLS.find((s) => s.slug === slug);
-      if (!def) throw new Error(`Unknown manifest skill '${slug}'.`);
+      if (!def) throw new InputError(`Unknown manifest skill '${slug}'.`);
       await upsertSkill(ownerId, def, 'overwrite');
       return;
     }
     case 'tool-group': {
       const def = MANIFEST_TOOL_GROUPS.find((g) => g.slug === slug);
-      if (!def) throw new Error(`Unknown manifest tool group '${slug}'.`);
+      if (!def) throw new InputError(`Unknown manifest tool group '${slug}'.`);
       await upsertToolGroup(ownerId, def, 'overwrite');
       return;
     }
     case 'agent': {
       const def = MANIFEST_AGENTS.find((a) => a.slug === slug && !a.isPersona);
-      if (!def) throw new Error(`Unknown manifest specialist '${slug}'.`);
+      if (!def) throw new InputError(`Unknown manifest specialist '${slug}'.`);
       await adoptSpecialist(ownerId, def);
       return;
     }

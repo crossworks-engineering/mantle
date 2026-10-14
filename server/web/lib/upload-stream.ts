@@ -17,6 +17,7 @@ import {
   UploadTooLargeError,
   type SpooledUpload,
 } from '@mantle/files';
+import { errorMessage, InputError } from '@mantle/std';
 
 export type ParsedUpload = {
   fields: Record<string, string>;
@@ -44,7 +45,9 @@ export async function readMultipartUpload(
   },
 ): Promise<ParsedUpload> {
   if (declaredTooLarge(req.headers, opts.maxBytes)) throw new UploadTooLargeError(opts.maxBytes);
-  if (!req.body) throw new Error('empty body');
+  // A body the parser cannot read is the caller's (InputError, 400 with the
+  // parser's text: A10 part 2); a spool that failed is a fault.
+  if (!req.body) throw new InputError('empty body');
   const contentType = req.headers.get('content-type') ?? '';
 
   return new Promise<ParsedUpload>((resolve, reject) => {
@@ -101,7 +104,7 @@ export async function readMultipartUpload(
         });
       filePromise.catch(fail);
     });
-    bb.on('error', fail);
+    bb.on('error', (err: unknown) => fail(new InputError(errorMessage(err))));
     source.on('error', fail);
     bb.on('close', () => {
       void (async () => {

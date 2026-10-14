@@ -10,6 +10,7 @@
  * `MantlePeer` is not.
  */
 import { and, desc, eq, inArray, sql } from 'drizzle-orm';
+import { InputError } from '@mantle/std';
 import {
   bestEffortWrite,
   db,
@@ -100,7 +101,7 @@ async function ensureRootNow(ownerId: string): Promise<void> {
 
 function normaliseBaseUrl(raw: string): string {
   const trimmed = raw.trim().replace(/\/+$/, ''); // drop trailing slashes
-  if (!/^https?:\/\//i.test(trimmed)) throw new Error('base_url must be an http(s) URL');
+  if (!/^https?:\/\//i.test(trimmed)) throw new InputError('base_url must be an http(s) URL');
   return trimmed;
 }
 
@@ -245,7 +246,7 @@ export async function setOutboundToken(
   outboundToken: string,
 ): Promise<boolean> {
   const token = outboundToken.trim();
-  if (!token) throw new Error('outboundToken required');
+  if (!token) throw new InputError('outboundToken required');
   const { ciphertext, keyVersion } = seal(token, id);
   const [row] = await db
     .update(mantlePeers)

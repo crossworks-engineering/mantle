@@ -24,6 +24,7 @@ import {
   shares,
   SNAPSHOT_COPY_NO_SHARE,
 } from '@mantle/db';
+import { defineDomainError } from '@mantle/std';
 import { kindsWhere, type ContactShareKind } from '@mantle/client-types/kinds';
 import type {
   AccessContactShare,
@@ -42,6 +43,14 @@ export class ContactShareRefusedError extends Error {
     this.name = 'ContactShareRefusedError';
   }
 }
+
+// The one error answer (A10 part 2, @mantle/std domain-errors.ts): what
+// the routes answered by hand.
+defineDomainError(ContactShareRefusedError, {
+  reason: 'the share cannot be made as asked; the message and the reason say why',
+  status: 400,
+  body: (e) => ({ error: e.message, reason: e.reason }),
+});
 
 /** Kinds a contact share may name: the kind registry's `contactShare`
  *  (@mantle/client-types/kinds), never a folder. Its own field since A1, not

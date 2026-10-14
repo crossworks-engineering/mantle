@@ -6,6 +6,7 @@
  * and @mantle/files `extractPdfTextWithPassword`.
  */
 import { and, desc, eq } from 'drizzle-orm';
+import { InputError } from '@mantle/std';
 import { db, pdfPasswords, type PdfPassword } from '@mantle/db';
 import { open, seal } from '@mantle/crypto';
 
@@ -40,7 +41,7 @@ export async function createPdfPassword(
   input: { label?: string; password: string },
 ): Promise<PdfPasswordRow> {
   const password = input.password.trim();
-  if (!password) throw new Error('password required');
+  if (!password) throw new InputError('password required');
   // Allocate id up-front so the seal AAD (= row id) is known before encrypt.
   const id = crypto.randomUUID();
   const { ciphertext, keyVersion } = seal(password, id);

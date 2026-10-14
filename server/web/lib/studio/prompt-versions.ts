@@ -12,6 +12,7 @@
  */
 
 import { and, asc, desc, eq, sql } from 'drizzle-orm';
+import { InputError } from '@mantle/std';
 import { db, agents, skills, aiWorkers, promptVersions, type PromptVersion } from '@mantle/db';
 import { restampHeartbeatMakers } from '@mantle/tools';
 import { PROSE_REGISTRY, type ProseEntityType } from './registry';
@@ -24,7 +25,7 @@ function assertField(entityType: string, field: string): asserts entityType is P
   const ok = PROSE_REGISTRY.some(
     (p) => p.entityType === entityType && p.field === field && p.shape === 'text',
   );
-  if (!ok) throw new Error(`not a versionable prose field: ${entityType}.${field}`);
+  if (!ok) throw new InputError(`not a versionable prose field: ${entityType}.${field}`);
 }
 
 /** Read the current live value of a prose field, owner-scoped. Returns null when
@@ -205,7 +206,7 @@ export async function saveProse(args: {
   assertField(entityType, field);
   const newBody = args.body;
   const current = await readLiveProse(ownerId, entityType, entityId, field);
-  if (current === null) throw new Error('entity not found or not owned');
+  if (current === null) throw new InputError('entity not found or not owned');
 
   const existing = await nextVersionRows(ownerId, entityType, entityId, field);
 
@@ -276,7 +277,7 @@ export async function revertProse(args: {
   assertField(entityType, field);
   const versions = await listProseVersions(ownerId, entityType, entityId, field);
   const target = versions.find((v) => v.version === toVersion);
-  if (!target) throw new Error(`version ${toVersion} not found`);
+  if (!target) throw new InputError(`version ${toVersion} not found`);
   return saveProse({
     ownerId,
     entityType,

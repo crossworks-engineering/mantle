@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { InputError } from '@mantle/std';
 
 import { loadCell, storeCell, sqlTypeFor } from './cells';
 import type { AggregateKind, CellValue, Column, ColumnType, View } from './doc-types';
@@ -98,7 +99,7 @@ function firstTab(db: SqliteDb): TabRow {
   const tab = db
     .prepare(`SELECT tab_id, name, physical_table, view_name FROM _tabs ORDER BY position LIMIT 1`)
     .get() as TabRow | undefined;
-  if (!tab) throw new Error('tabledb ops: workbook has no tabs');
+  if (!tab) throw new InputError('tabledb ops: workbook has no tabs');
   return tab;
 }
 
@@ -109,7 +110,7 @@ function resolveTab(db: SqliteDb, tabId?: string): TabRow {
   const tab = db
     .prepare(`SELECT tab_id, name, physical_table, view_name FROM _tabs WHERE tab_id = ?`)
     .get(tabId) as TabRow | undefined;
-  if (!tab) throw new Error(`tabledb ops: no tab '${tabId}' in this workbook`);
+  if (!tab) throw new InputError(`tabledb ops: no tab '${tabId}' in this workbook`);
   return tab;
 }
 
@@ -172,18 +173,18 @@ function validateRef(
   const tabId = String(r.tabId ?? '');
   const columnId = String(r.columnId ?? '');
   if (!tabId || !columnId)
-    throw new Error('tabledb ops: a reference column needs ref {tabId, columnId}');
+    throw new InputError('tabledb ops: a reference column needs ref {tabId, columnId}');
   if (columnId === selfColId)
-    throw new Error('tabledb ops: a reference column cannot reference itself');
+    throw new InputError('tabledb ops: a reference column cannot reference itself');
   const hit = db
     .prepare(`SELECT type FROM _columns WHERE tab_id = ? AND col_id = ?`)
     .get(tabId, columnId) as { type?: string } | undefined;
   if (!hit)
-    throw new Error(
+    throw new InputError(
       `tabledb ops: reference target ${tabId}/${columnId} does not exist in this workbook`,
     );
   if (hit.type === 'formula')
-    throw new Error('tabledb ops: a reference column cannot target a formula column');
+    throw new InputError('tabledb ops: a reference column cannot target a formula column');
   return { tabId, columnId };
 }
 
@@ -353,7 +354,7 @@ function applyOne(db: SqliteDb, tab: TabRow, op: NonTabOp, coerce: CoerceFn): st
     }
     case 'column_add': {
       const colId = op.column.id ?? randomUUID();
-      if (byId.has(colId)) throw new Error(`tabledb ops: column ${colId} already exists`);
+      if (byId.has(colId)) throw new InputError(`tabledb ops: column ${colId} already exists`);
       const physicals = new Set(cols.map((c) => c.physical));
       let physical = physicalName('c', colId);
       let n = 2;
@@ -591,7 +592,7 @@ function applyTabOp(db: SqliteDb, op: Extract<TableOp, { op: `tab_${string}` }>)
     case 'tab_add': {
       const tabId = op.tabId ?? randomUUID();
       if (db.prepare(`SELECT 1 FROM _tabs WHERE tab_id = ?`).get(tabId)) {
-        throw new Error(`tabledb ops: tab ${tabId} already exists`);
+        throw new InputError(`tabledb ops: tab ${tabId} already exists`);
       }
       const physicalTable = physicalName('t', tabId);
       const viewName = uniqueViewName(db, viewNameForTab(op.name));
@@ -628,7 +629,7 @@ function applyTabOp(db: SqliteDb, op: Extract<TableOp, { op: `tab_${string}` }>)
       const order = tabOrder(db).filter((id) => id !== tab.tab_id);
       const at = op.afterTabId == null ? 0 : order.indexOf(op.afterTabId) + 1;
       if (op.afterTabId != null && at === 0)
-        throw new Error(`tabledb ops: no tab '${op.afterTabId}' to reorder after`);
+        throw new InputError(`tabledb ops: no tab '${op.afterTabId}' to reorder after`);
       order.splice(at, 0, tab.tab_id);
       writeTabOrder(db, order);
       return null;
@@ -636,7 +637,7 @@ function applyTabOp(db: SqliteDb, op: Extract<TableOp, { op: `tab_${string}` }>)
     case 'tab_delete': {
       const tab = resolveTab(db, op.tabId);
       if (tabOrder(db).length <= 1)
-        throw new Error('tabledb ops: a workbook needs at least one tab');
+        throw new InputError('tabledb ops: a workbook needs at least one tab');
       // FTS shadow (published files only) + triggers, then view, then data.
       dropFtsShadow(db, tab);
       db.exec(`DROP VIEW IF EXISTS ${quoteIdent(tab.view_name)}`);

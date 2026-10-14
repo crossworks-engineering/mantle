@@ -40,6 +40,7 @@ import {
   draftAllowed,
   draftColumn,
 } from '@mantle/db';
+import { defineDomainError } from '@mantle/std';
 import { notifyAppNavChanged } from './app-nav';
 import { codeHash, insertNodeSnapshot } from './node-snapshot-rows';
 import type { AppRow, AppDetail, AppTint } from '@mantle/client-types';
@@ -74,6 +75,14 @@ export class AppSourceLimitError extends Error {
     this.name = 'AppSourceLimitError';
   }
 }
+
+// The one error answer (A10 part 2, @mantle/std domain-errors.ts): what
+// the draft route answered by hand.
+defineDomainError(AppSourceLimitError, {
+  reason:
+    'the source tree passes a ceiling the caller can see (files, size, path); the message says which',
+  status: 400,
+});
 
 /** Throw AppSourceLimitError if a source tree exceeds the file-count, per-file
  *  size, or path-length ceilings. Covers a single-file write too (build `next`
@@ -717,6 +726,12 @@ export class AppDraftConflictError extends Error {
   }
 }
 
+defineDomainError(AppDraftConflictError, {
+  reason: 'the draft changed since the caller read it; the message says to reload',
+  status: 409,
+  body: (e) => ({ error: e.message, reason: 'conflict' }),
+});
+
 /**
  * Replace the entire draft source tree (autosave). Returns false if missing,
  * else the draft's new `draftUpdatedAt`. With `baseDraftUpdatedAt` (the
@@ -915,6 +930,11 @@ export class NoGreenBuildError extends Error {
   }
 }
 
+defineDomainError(NoGreenBuildError, {
+  reason: 'the draft has no successful build to publish; the message says to build first',
+  status: 409,
+});
+
 /**
  * Publish: promote `draft_source` → `source`, `draft_build` → `published_build`,
  * recompute `source_text`, clear the draft, bump version, fire the extractor.
@@ -1043,6 +1063,12 @@ export class AppRestoreDraftError extends Error {
     this.name = 'AppRestoreDraftError';
   }
 }
+
+defineDomainError(AppRestoreDraftError, {
+  reason: 'a restore would replace unpublished work; the message says how to confirm',
+  status: 409,
+  body: (e) => ({ error: e.message, reason: 'draft' }),
+});
 
 /** A snapshot's code, as restore takes it. */
 type RestorableCode = {

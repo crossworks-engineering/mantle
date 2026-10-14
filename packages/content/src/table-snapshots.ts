@@ -32,6 +32,7 @@ import { and, desc, eq, sql } from 'drizzle-orm';
 import { db, inFlipTransaction, nodeSnapshots, nodes, StoreRefusedError, tables } from '@mantle/db';
 import { currentSpaceScope, isSystemScope } from '@mantle/db/viewer';
 import { resolveStoragePath, tableDbRoot } from '@mantle/tabledb';
+import { defineDomainError } from '@mantle/std';
 import type { TableSnapshot } from '@mantle/client-types';
 import { copySqliteFile, SnapshotNotRecorded, stageThenFlipSnapshot } from './snapshot-broker';
 import { envMbBytes, insertNodeSnapshot, pruneHistoryRows } from './node-snapshot-rows';
@@ -62,6 +63,13 @@ export class TableSnapshotRefusedError extends Error {
   }
 }
 
+// The one error answer (A10 part 2, @mantle/std domain-errors.ts): what
+// the routes answered by hand.
+defineDomainError(TableSnapshotRefusedError, {
+  reason: 'the snapshot cannot do what was asked; the message says why',
+  status: 409,
+});
+
 /** The table has an unpublished draft, and a restore would replace it. */
 export class TableRestoreDraftError extends Error {
   constructor() {
@@ -71,6 +79,12 @@ export class TableRestoreDraftError extends Error {
     this.name = 'TableRestoreDraftError';
   }
 }
+
+defineDomainError(TableRestoreDraftError, {
+  reason: 'a restore would replace unpublished work; the message says how to confirm',
+  status: 409,
+  body: (e) => ({ error: e.message, reason: 'draft' }),
+});
 
 function snapshotRelPath(ownerId: string, tableId: string, snapshotId: string): string {
   return path.join('_snapshots', ownerId, tableId, `${snapshotId}.sqlite`);

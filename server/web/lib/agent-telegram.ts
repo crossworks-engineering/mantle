@@ -10,6 +10,7 @@
  * channel (token + binding) via `upsertTelegramChannel`.
  */
 import { and, desc, eq } from 'drizzle-orm';
+import { defineDomainError } from '@mantle/std';
 import {
   agents,
   asSystem,
@@ -56,6 +57,14 @@ export class TelegramTokenError extends Error {
     super(message);
   }
 }
+
+// The one error answer (A10 part 2, @mantle/std domain-errors.ts): what
+// the telegram routes answered by hand.
+defineDomainError(TelegramTokenError, {
+  reason: 'a problem the owner fixes in the form (a bad token, a name taken, a chat not found)',
+  status: (e) => (e.code === 'not_found' ? 404 : 400),
+  body: (e) => ({ error: e.message, ...(e.code ? { code: e.code } : {}) }),
+});
 
 async function getMe(token: string): Promise<{ id: number; username: string }> {
   let res: Response;

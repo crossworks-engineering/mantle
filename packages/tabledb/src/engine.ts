@@ -18,7 +18,7 @@ import { createFtsShadow, ftsColumns, ftsTableName } from './fts';
 import { dedupe, physicalName, quoteIdent, viewLabel, viewNameForTab } from './names';
 import { openTableFile, sqlQuote, type SqliteDb } from './sqlite';
 import { env } from '@mantle/config';
-import { defineDomainError } from '@mantle/std';
+import { defineDomainError, InputError } from '@mantle/std';
 
 /**
  * Workbook-file engine (Tables v2 P1). The file IS the workbook: one Table
@@ -131,7 +131,7 @@ export function asWorkbookTabs(
 ): (WorkbookTabDoc & { id: string })[] {
   const tabs: WorkbookTabDoc[] =
     'tabs' in doc ? doc.tabs : [{ ...doc, id: 't1', name: fallbackTabName }];
-  if (tabs.length === 0) throw new Error('tabledb: a workbook needs at least one tab');
+  if (tabs.length === 0) throw new InputError('tabledb: a workbook needs at least one tab');
   const seen = new Set<string>();
   return tabs.map((t, i) => {
     let id = t.id ?? `t${i + 1}`;
@@ -463,7 +463,7 @@ function resolveTabRow(db: SqliteDb, tabId?: string): TabRow | undefined {
   const tab = db
     .prepare(`SELECT tab_id, name, physical_table FROM _tabs WHERE tab_id = ?`)
     .get(tabId) as TabRow | undefined;
-  if (!tab) throw new Error(`tabledb: no tab '${tabId}' in this workbook`);
+  if (!tab) throw new InputError(`tabledb: no tab '${tabId}' in this workbook`);
   return tab;
 }
 

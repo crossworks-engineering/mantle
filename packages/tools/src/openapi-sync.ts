@@ -42,7 +42,7 @@ import {
   type SpecInventory,
 } from './openapi-spec';
 import { knownOpenapiApi } from './openapi-catalog';
-import { errorMessage } from '@mantle/std';
+import { errorMessage, InputError } from '@mantle/std';
 
 /** Every OpenAPI connector group slug starts with this. NOT `api-`: that is
  *  the usage-skill naming convention (`apiSkillSlugForGroup`), and reusing it
@@ -511,7 +511,7 @@ export async function createOpenapiConnector(
 ): Promise<CreateOpenapiConnectorResult> {
   const connectorSlug = input.slug.trim().toLowerCase();
   if (!CONNECTOR_SLUG_RE.test(connectorSlug)) {
-    throw new Error(
+    throw new InputError(
       `connector slug '${input.slug}' must be lowercase letters/digits/dash/underscore (max 60) — e.g. 'petstore'`,
     );
   }
@@ -522,7 +522,7 @@ export async function createOpenapiConnector(
     specUrl: input.specUrl,
     ...(input.selection ? { selection: input.selection } : {}),
   });
-  if (!parsedBinding.ok) throw new Error(parsedBinding.error);
+  if (!parsedBinding.ok) throw new InputError(parsedBinding.error);
 
   const meta = parseIntegrationMeta({
     service: input.service?.trim() || connectorSlug,
@@ -531,7 +531,7 @@ export async function createOpenapiConnector(
     ...(input.authTemplate ? { authTemplate: input.authTemplate } : {}),
     openapi: parsedBinding.value,
   });
-  if (!meta.ok) throw new Error(meta.error);
+  if (!meta.ok) throw new InputError(meta.error);
 
   const [existing] = await db
     .select({ id: toolGroups.id })
@@ -539,7 +539,7 @@ export async function createOpenapiConnector(
     .where(and(eq(toolGroups.ownerId, ownerId), eq(toolGroups.slug, groupSlug)))
     .limit(1);
   if (existing) {
-    throw new Error(
+    throw new InputError(
       `connector group '${groupSlug}' already exists — update its binding or re-run sync instead of creating it again`,
     );
   }

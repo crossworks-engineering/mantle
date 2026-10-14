@@ -55,6 +55,7 @@ import {
 } from '@mantle/content-core/profile-projections';
 
 import { and, eq, sql } from 'drizzle-orm';
+import { InputError } from '@mantle/std';
 import { APP_OPENS_MAX } from '@mantle/client-types/app-nav';
 import {
   asSystem,
@@ -264,17 +265,17 @@ export async function updateProfilePreferences(
   patch: Partial<ProfilePreferences>,
 ): Promise<ProfilePreferences> {
   if (patch.timezone != null && !isValidTimezone(patch.timezone)) {
-    throw new Error(
+    throw new InputError(
       `'${patch.timezone}' is not a recognised IANA timezone. Try e.g. 'Africa/Johannesburg' or 'UTC'.`,
     );
   }
   if (patch.locale != null && !isValidLocale(patch.locale)) {
-    throw new Error(
+    throw new InputError(
       `'${patch.locale}' is not a recognised BCP-47 locale. Try e.g. 'en-GB' or 'en-US'.`,
     );
   }
   if (patch.reminderChannel != null && !isReminderChannel(patch.reminderChannel)) {
-    throw new Error(
+    throw new InputError(
       `'${patch.reminderChannel}' is not a valid reminder channel ('telegram' | 'mobile').`,
     );
   }
@@ -285,7 +286,7 @@ export async function updateProfilePreferences(
     patch.teamHubAppId !== '' &&
     projectTeamHubAppId(patch.teamHubAppId) === undefined
   ) {
-    throw new Error(`'${patch.teamHubAppId}' is not a valid app id (expected a UUID).`);
+    throw new InputError(`'${patch.teamHubAppId}' is not a valid app id (expected a UUID).`);
   }
   // The client sign-in sender (C2b): an email account id, or '' for none.
   if (
@@ -293,13 +294,13 @@ export async function updateProfilePreferences(
     patch.clientSigninSenderId !== '' &&
     projectTeamHubAppId(patch.clientSigninSenderId) === undefined
   ) {
-    throw new Error(
+    throw new InputError(
       `'${patch.clientSigninSenderId}' is not a valid email account id (expected a UUID).`,
     );
   }
   if (patch.teamHubTags != null) {
     if (!Array.isArray(patch.teamHubTags) || patch.teamHubTags.some((t) => typeof t !== 'string')) {
-      throw new Error(`teamHubTags must be an array of tag strings.`);
+      throw new InputError(`teamHubTags must be an array of tag strings.`);
     }
     // Store the canonical form; [] is the deliberate "clear curation" write
     // (projects to undefined on read).

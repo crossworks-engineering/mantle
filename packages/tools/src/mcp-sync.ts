@@ -33,7 +33,7 @@ import {
   type McpOAuthClientInput,
 } from './mcp-oauth';
 import { knownMcpServer } from './mcp-catalog';
-import { errorMessage } from '@mantle/std';
+import { ConflictError, errorMessage, InputError } from '@mantle/std';
 
 /** Every connector group slug starts with this — guarantees no collision with
  *  a manifest group (none are `mcp-*`) and makes connector groups greppable. */
@@ -350,7 +350,7 @@ export async function createMcpConnector(
 ): Promise<CreateMcpConnectorResult> {
   const connectorSlug = input.slug.trim().toLowerCase();
   if (!CONNECTOR_SLUG_RE.test(connectorSlug)) {
-    throw new Error(
+    throw new InputError(
       `connector slug '${input.slug}' must be lowercase letters/digits/dash/underscore (max 60) — e.g. 'firecrawl'`,
     );
   }
@@ -363,7 +363,7 @@ export async function createMcpConnector(
     authScheme: input.authScheme,
     ...(oauth ? { oauth: { enabled: true, status: 'pending' } } : {}),
   });
-  if (!parsed.ok) throw new Error(parsed.error);
+  if (!parsed.ok) throw new InputError(parsed.error);
 
   const [existing] = await db
     .select({ id: toolGroups.id })
@@ -371,7 +371,7 @@ export async function createMcpConnector(
     .where(and(eq(toolGroups.ownerId, ownerId), eq(toolGroups.slug, groupSlug)))
     .limit(1);
   if (existing) {
-    throw new Error(
+    throw new ConflictError(
       `connector group '${groupSlug}' already exists — update its binding or re-run sync instead of creating it again`,
     );
   }
@@ -380,12 +380,12 @@ export async function createMcpConnector(
   // never leaves a half-configured connector behind.
   const store = dbMcpOAuthStore(ownerId, groupSlug);
   if (input.oauthClient?.source === 'microsoft' && !(await store.microsoftApp())) {
-    throw new Error(
+    throw new InputError(
       'this connector would borrow the Microsoft app, but Settings → Microsoft has none configured — add the app there (client id, secret, tenant) first',
     );
   }
   if (input.oauthClient?.source === 'manual' && !input.oauthClient.clientId.trim()) {
-    throw new Error('a manual OAuth app needs its client id');
+    throw new InputError('a manual OAuth app needs its client id');
   }
 
   const catalog = knownMcpServer(connectorSlug);
