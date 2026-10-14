@@ -1,8 +1,5 @@
 import { Hono } from 'hono';
-import { BUSY_MESSAGE, BusyError, isBusy } from '@mantle/db';
-import { BodyTooLargeError, bodyTooLargeResponse } from '../lib/body-limit';
-import { RedirectError } from './http-compat/redirect-error';
-import { scopeRefusalResponse } from './scope-refusal';
+import { answerAppError } from './app-error';
 import { gate } from './middleware/gate';
 import { registerPages, registerRoutes } from './route-loader';
 import { mountRedirects, mountStatic, trailingSlashRedirect } from './static';
@@ -55,34 +52,7 @@ export async function createApp(): Promise<Hono> {
     return c.text('Not found', 404);
   });
 
-  app.onError((err, c) => {
-    if (err instanceof RedirectError) {
-      return c.redirect(err.location, err.status);
-    }
-    const path = new URL(c.req.url).pathname;
-    // A refusal, never a crash, read by the one mapper (arch A3c): the
-    // database refused a write of an item the caller may not change (W6a
-    // fix round 1, A3a), a client scope met public-level work or the
-    // reverse (client logins, audit A5), or the gate refused the call.
-    const refusal = scopeRefusalResponse(err, path);
-    if (refusal) return refusal;
-    // A JSON body over its route's ceiling, found while reading (I4).
-    if (err instanceof BodyTooLargeError) return bodyTooLargeResponse(err.maxBytes);
-    // Another write held the same rows (a deadlock broken, a lock timeout):
-    // "busy, try again" for a person, never the SQL (folder audit review F7).
-    if (isBusy(err)) {
-      return Response.json(
-        { error: err instanceof BusyError ? err.message : BUSY_MESSAGE },
-        { status: 409 },
-      );
-    }
-    console.error(`[server] unhandled error on ${c.req.method} ${path}:`, err);
-    if (path === '/api' || path.startsWith('/api/')) {
-      // Body matches Next's opaque route-handler failure: no error details leak.
-      return Response.json({ error: 'internal error' }, { status: 500 });
-    }
-    return c.text('Internal server error', 500);
-  });
+  app.onError(answerAppError);
 
   return app;
 }
