@@ -270,8 +270,21 @@ describe('a contact share (0214)', () => {
           surface: { kind: 'contact', contactId: CONTACT, shareId: 'share-2' },
           // Through the one gate as the share's broker (A5 step 3b): via
           // the contact, a database error's text masked, judged at contact
-          // rules (its app-tool ref first, A5 step 6a).
-          caller: { entry: 'app', via: 'contact', masks: true, appRules: 'contact' },
+          // rules (its app-tool ref first, A5 step 6a), carrying the
+          // broker's own verdict (fix round 1, M2).
+          caller: {
+            entry: 'app',
+            via: 'contact',
+            masks: true,
+            appRules: 'contact',
+            appVerdict: {
+              ok: true,
+              tool: {
+                slug: 'site_query',
+                handler: { kind: 'mcp', group: 'mcp-site', toolName: 'query' },
+              },
+            },
+          },
         },
       },
     ]);
