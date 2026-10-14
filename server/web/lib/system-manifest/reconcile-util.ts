@@ -3,7 +3,8 @@
  * (the vitest setup loads pure-logic modules only, not @/-aliased / DB code).
  */
 import { createHash } from 'node:crypto';
-import { TEAM_RESPONDER_SLUG } from '@mantle/runtime/assistant';
+// The leaf module of the runtime's slugs: no assistant runtime loads here.
+import { TEAM_RESPONDER_SLUG } from '@mantle/runtime/slugs';
 
 /**
  * The shipped prompt an agent should move to on upgrade, or null to leave its

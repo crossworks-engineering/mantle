@@ -9,6 +9,8 @@
     ".": "./src/index.ts",
     "./agent": "./src/agent/index.ts",
     "./heartbeats": "./src/heartbeats/index.ts",
+    "./heartbeats/specs": "./src/heartbeats/specs.ts",
+    "./slugs": "./src/slugs.ts",
     "./assistant": "./src/assistant/index.ts"
   },
   "scripts": {

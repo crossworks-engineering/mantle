@@ -42,7 +42,7 @@ import {
   type HttpHandler,
 } from '@mantle/tools';
 import type { AiWorkerKind, AiWorkerParams, AgentMemoryConfig } from '@mantle/db';
-import { HEARTBEAT_TOOLS } from '@mantle/runtime/heartbeats';
+import { HEARTBEAT_TOOL_SPECS } from '@mantle/runtime/heartbeats/specs';
 import {
   DEFAULT_WORKER_SLUG,
   WORKER_MODEL_INHERIT,
@@ -1996,9 +1996,11 @@ export const DELEGATE_SLUGS: readonly string[] = MANIFEST_AGENTS.filter((a) => a
  * BUILTIN_TOOLS array (heartbeat controls register only in the agent process via
  * @mantle/runtime/heartbeats). The validator treats these as known so a future manifest
  * entry referencing them doesn't false-fail; none are referenced today. Read
- * off the heartbeat definitions (A5 step 6d), never named here.
+ * off the heartbeat definitions (A5 step 6d), never named here: their data
+ * module (heartbeats/specs.ts, fix round 1), so this data module loads no
+ * heartbeat runtime.
  */
-export const KNOWN_EXTERNAL_TOOL_SLUGS: readonly string[] = HEARTBEAT_TOOLS.map((d) => d.slug);
+export const KNOWN_EXTERNAL_TOOL_SLUGS: readonly string[] = HEARTBEAT_TOOL_SPECS.map((d) => d.slug);
 
 /** The set of tool slugs the manifest is allowed to reference: builtins, the
  *  runtime-only externals, and the seeded HTTP tools (so a group may bundle

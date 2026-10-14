@@ -79,6 +79,25 @@ describe('registerHeartbeatTools — dispatch registration', () => {
     }
   });
 
+  it('the definitions are their data module plus a handler each, in its order (A5 step 6d fix round 1)', async () => {
+    const { HEARTBEAT_TOOL_SPECS } = await import('./specs');
+    expect(HEARTBEAT_TOOLS.map((d) => d.slug)).toEqual(HEARTBEAT_TOOL_SPECS.map((d) => d.slug));
+    for (const [i, def] of HEARTBEAT_TOOLS.entries()) {
+      const { handler, ...data } = def;
+      expect(typeof handler).toBe('function');
+      expect(data).toEqual(HEARTBEAT_TOOL_SPECS[i]);
+    }
+  });
+
+  it("the data modules that name the runtime's tools and slugs import nothing at run time", async () => {
+    const { readFileSync } = await import('node:fs');
+    for (const file of ['./specs.ts', '../slugs.ts']) {
+      const text = readFileSync(new URL(file, import.meta.url), 'utf8');
+      const runtimeImports = [...text.matchAll(/^import (?!type )[^;]*;/gm)];
+      expect(runtimeImports, file).toEqual([]);
+    }
+  });
+
   it('keeps HEARTBEAT_RESPONDER_TOOLS a strict subset of HEARTBEAT_TOOLS', () => {
     const all = new Set(HEARTBEAT_TOOLS.map((t) => t.slug));
     for (const slug of HEARTBEAT_RESPONDER_TOOLS) expect(all.has(slug)).toBe(true);

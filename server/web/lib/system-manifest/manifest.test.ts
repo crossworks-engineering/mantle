@@ -684,3 +684,16 @@ describe('adminOnly tool groups (workspaces W4b)', () => {
     }
   });
 });
+
+describe('the manifest stays data (A5 step 6d fix round 1)', () => {
+  it('its data modules read the runtime only through its leaf data modules', async () => {
+    const { readFileSync } = await import('node:fs');
+    for (const file of ['./manifest.ts', './reconcile-util.ts']) {
+      const text = readFileSync(new URL(file, import.meta.url), 'utf8');
+      const runtime = [...text.matchAll(/from '(@mantle\/runtime[^']*)'/g)].map((m) => m[1]);
+      for (const spec of runtime) {
+        expect(['@mantle/runtime/slugs', '@mantle/runtime/heartbeats/specs'], file).toContain(spec);
+      }
+    }
+  });
+});

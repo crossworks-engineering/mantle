@@ -85,16 +85,9 @@ import { withAgentViewer } from '../agent/agent-viewer';
  *  since team_messages, which declared it, was dropped (0274, W8d). */
 type TeamChannel = 'web' | 'api' | 'msteams';
 
-/** The agent the manifest ships for the team surface. Since workspaces W5c a
- *  member chats with whichever assistant a workspace of theirs holds (this
- *  one on the Team workspace of a brain switched before 0286, unless an
- *  admin chose another); the slug still names it for the MCP login surface
- *  and the turn-input tools. */
-export const TEAM_RESPONDER_SLUG = 'team-responder';
-
-/** The agent that served a CLIENT login's chat (client logins C4). Client
- *  chat went in workspaces W5c; the slug stays for the MCP login surface. */
-export const CLIENT_RESPONDER_SLUG = 'client-responder';
+// The responder slugs live in a leaf module (slugs.ts), so a data module
+// reads them without this runtime; named here as before.
+export { CLIENT_RESPONDER_SLUG, TEAM_RESPONDER_SLUG } from '../slugs';
 
 export type RunTeamTurnOptions = {
   /** Display name for the member-identity context line + request provenance. */
