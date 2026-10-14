@@ -4674,7 +4674,7 @@
   ]
  },
  "admin/key/ro/null/[]/unscoped": {
-  "sha256": "d570a006d463345e1136f7797925cdb5662642919210253f05c288441e6a7961",
+  "sha256": "6fdf06203a8c1c6dae46b05fd0dcb388a510b3a40b3b52d73497948b738edddf",
   "names": [
    "tree_list",
    "search",
@@ -4759,11 +4759,12 @@
    "api_docs_get",
    "tool_catalog",
    "tool_group_list",
-   "agent_list"
+   "agent_list",
+   "mcp_crm_contacts_list"
   ]
  },
  "admin/key/ro/null/[]/false:": {
-  "sha256": "3767bada9343e42f9ec56828ae812ef0bd7dd71d4820ef2cc9cae82563fe96fd",
+  "sha256": "837d0cbd96de15c02d6e14405fa490c5b2c4f5129f1a4bac2bc69a491fa49c05",
   "names": [
    "tree_list",
    "search",
@@ -4829,11 +4830,12 @@
    "folder_get_by_path",
    "location_nearby",
    "location_distance",
-   "tool_catalog"
+   "tool_catalog",
+   "mcp_crm_contacts_list"
   ]
  },
  "admin/key/ro/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "d570a006d463345e1136f7797925cdb5662642919210253f05c288441e6a7961",
+  "sha256": "6fdf06203a8c1c6dae46b05fd0dcb388a510b3a40b3b52d73497948b738edddf",
   "names": [
    "tree_list",
    "search",
@@ -4918,11 +4920,12 @@
    "api_docs_get",
    "tool_catalog",
    "tool_group_list",
-   "agent_list"
+   "agent_list",
+   "mcp_crm_contacts_list"
   ]
  },
  "admin/key/ro/null/[]/true:settings": {
-  "sha256": "caffda16ac02f870b3942ac0aac0c8d557db48c30a9974e6dcc83df2ff5d5a2b",
+  "sha256": "cb1710a6a4488c457413b46e721842a6415b646335d5252d322ebde6d80f90b1",
   "names": [
    "tree_list",
    "search",
@@ -4998,11 +5001,12 @@
    "location_nearby",
    "location_distance",
    "run_state",
-   "tool_catalog"
+   "tool_catalog",
+   "mcp_crm_contacts_list"
   ]
  },
  "admin/key/ro/null/[]/true:": {
-  "sha256": "f9f570ff0dff764fd4d3f23de999ad58014d9646e386bce963987d7f4a148b4b",
+  "sha256": "609c5e18af0da265328ca813e0dc8d910799e98f03981e6d9d0655c9b65223e3",
   "names": [
    "tree_list",
    "search",
@@ -5077,7 +5081,8 @@
    "location_nearby",
    "location_distance",
    "run_state",
-   "tool_catalog"
+   "tool_catalog",
+   "mcp_crm_contacts_list"
   ]
  },
  "admin/key/ro/[\"pages\",\"search\"]/[]/unscoped": {
@@ -5216,7 +5221,7 @@
   "names": []
  },
  "admin/peer/ro/null/[]/unscoped": {
-  "sha256": "d570a006d463345e1136f7797925cdb5662642919210253f05c288441e6a7961",
+  "sha256": "6fdf06203a8c1c6dae46b05fd0dcb388a510b3a40b3b52d73497948b738edddf",
   "names": [
    "tree_list",
    "search",
@@ -5301,11 +5306,12 @@
    "api_docs_get",
    "tool_catalog",
    "tool_group_list",
-   "agent_list"
+   "agent_list",
+   "mcp_crm_contacts_list"
   ]
  },
  "admin/peer/ro/null/[]/false:": {
-  "sha256": "3767bada9343e42f9ec56828ae812ef0bd7dd71d4820ef2cc9cae82563fe96fd",
+  "sha256": "837d0cbd96de15c02d6e14405fa490c5b2c4f5129f1a4bac2bc69a491fa49c05",
   "names": [
    "tree_list",
    "search",
@@ -5371,11 +5377,12 @@
    "folder_get_by_path",
    "location_nearby",
    "location_distance",
-   "tool_catalog"
+   "tool_catalog",
+   "mcp_crm_contacts_list"
   ]
  },
  "admin/peer/ro/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "d570a006d463345e1136f7797925cdb5662642919210253f05c288441e6a7961",
+  "sha256": "6fdf06203a8c1c6dae46b05fd0dcb388a510b3a40b3b52d73497948b738edddf",
   "names": [
    "tree_list",
    "search",
@@ -5460,11 +5467,12 @@
    "api_docs_get",
    "tool_catalog",
    "tool_group_list",
-   "agent_list"
+   "agent_list",
+   "mcp_crm_contacts_list"
   ]
  },
  "admin/peer/ro/null/[]/true:settings": {
-  "sha256": "caffda16ac02f870b3942ac0aac0c8d557db48c30a9974e6dcc83df2ff5d5a2b",
+  "sha256": "cb1710a6a4488c457413b46e721842a6415b646335d5252d322ebde6d80f90b1",
   "names": [
    "tree_list",
    "search",
@@ -5540,11 +5548,12 @@
    "location_nearby",
    "location_distance",
    "run_state",
-   "tool_catalog"
+   "tool_catalog",
+   "mcp_crm_contacts_list"
   ]
  },
  "admin/peer/ro/null/[]/true:": {
-  "sha256": "f9f570ff0dff764fd4d3f23de999ad58014d9646e386bce963987d7f4a148b4b",
+  "sha256": "609c5e18af0da265328ca813e0dc8d910799e98f03981e6d9d0655c9b65223e3",
   "names": [
    "tree_list",
    "search",
@@ -5619,11 +5628,12 @@
    "location_nearby",
    "location_distance",
    "run_state",
-   "tool_catalog"
+   "tool_catalog",
+   "mcp_crm_contacts_list"
   ]
  },
  "admin/peer/ro/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/unscoped": {
-  "sha256": "d570a006d463345e1136f7797925cdb5662642919210253f05c288441e6a7961",
+  "sha256": "6fdf06203a8c1c6dae46b05fd0dcb388a510b3a40b3b52d73497948b738edddf",
   "names": [
    "tree_list",
    "search",
@@ -5708,11 +5718,12 @@
    "api_docs_get",
    "tool_catalog",
    "tool_group_list",
-   "agent_list"
+   "agent_list",
+   "mcp_crm_contacts_list"
   ]
  },
  "admin/peer/ro/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/false:": {
-  "sha256": "3767bada9343e42f9ec56828ae812ef0bd7dd71d4820ef2cc9cae82563fe96fd",
+  "sha256": "837d0cbd96de15c02d6e14405fa490c5b2c4f5129f1a4bac2bc69a491fa49c05",
   "names": [
    "tree_list",
    "search",
@@ -5778,11 +5789,12 @@
    "folder_get_by_path",
    "location_nearby",
    "location_distance",
-   "tool_catalog"
+   "tool_catalog",
+   "mcp_crm_contacts_list"
   ]
  },
  "admin/peer/ro/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "d570a006d463345e1136f7797925cdb5662642919210253f05c288441e6a7961",
+  "sha256": "6fdf06203a8c1c6dae46b05fd0dcb388a510b3a40b3b52d73497948b738edddf",
   "names": [
    "tree_list",
    "search",
@@ -5867,11 +5879,12 @@
    "api_docs_get",
    "tool_catalog",
    "tool_group_list",
-   "agent_list"
+   "agent_list",
+   "mcp_crm_contacts_list"
   ]
  },
  "admin/peer/ro/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:settings": {
-  "sha256": "caffda16ac02f870b3942ac0aac0c8d557db48c30a9974e6dcc83df2ff5d5a2b",
+  "sha256": "cb1710a6a4488c457413b46e721842a6415b646335d5252d322ebde6d80f90b1",
   "names": [
    "tree_list",
    "search",
@@ -5947,11 +5960,12 @@
    "location_nearby",
    "location_distance",
    "run_state",
-   "tool_catalog"
+   "tool_catalog",
+   "mcp_crm_contacts_list"
   ]
  },
  "admin/peer/ro/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:": {
-  "sha256": "f9f570ff0dff764fd4d3f23de999ad58014d9646e386bce963987d7f4a148b4b",
+  "sha256": "609c5e18af0da265328ca813e0dc8d910799e98f03981e6d9d0655c9b65223e3",
   "names": [
    "tree_list",
    "search",
@@ -6026,7 +6040,8 @@
    "location_nearby",
    "location_distance",
    "run_state",
-   "tool_catalog"
+   "tool_catalog",
+   "mcp_crm_contacts_list"
   ]
  },
  "member/oauth/rw/null/[]/unscoped": {
@@ -10704,7 +10719,7 @@
   ]
  },
  "member/key/ro/null/[]/unscoped": {
-  "sha256": "d570a006d463345e1136f7797925cdb5662642919210253f05c288441e6a7961",
+  "sha256": "6fdf06203a8c1c6dae46b05fd0dcb388a510b3a40b3b52d73497948b738edddf",
   "names": [
    "tree_list",
    "search",
@@ -10789,11 +10804,12 @@
    "api_docs_get",
    "tool_catalog",
    "tool_group_list",
-   "agent_list"
+   "agent_list",
+   "mcp_crm_contacts_list"
   ]
  },
  "member/key/ro/null/[]/false:": {
-  "sha256": "3767bada9343e42f9ec56828ae812ef0bd7dd71d4820ef2cc9cae82563fe96fd",
+  "sha256": "837d0cbd96de15c02d6e14405fa490c5b2c4f5129f1a4bac2bc69a491fa49c05",
   "names": [
    "tree_list",
    "search",
@@ -10859,11 +10875,12 @@
    "folder_get_by_path",
    "location_nearby",
    "location_distance",
-   "tool_catalog"
+   "tool_catalog",
+   "mcp_crm_contacts_list"
   ]
  },
  "member/key/ro/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "d570a006d463345e1136f7797925cdb5662642919210253f05c288441e6a7961",
+  "sha256": "6fdf06203a8c1c6dae46b05fd0dcb388a510b3a40b3b52d73497948b738edddf",
   "names": [
    "tree_list",
    "search",
@@ -10948,11 +10965,12 @@
    "api_docs_get",
    "tool_catalog",
    "tool_group_list",
-   "agent_list"
+   "agent_list",
+   "mcp_crm_contacts_list"
   ]
  },
  "member/key/ro/null/[]/true:settings": {
-  "sha256": "caffda16ac02f870b3942ac0aac0c8d557db48c30a9974e6dcc83df2ff5d5a2b",
+  "sha256": "cb1710a6a4488c457413b46e721842a6415b646335d5252d322ebde6d80f90b1",
   "names": [
    "tree_list",
    "search",
@@ -11028,11 +11046,12 @@
    "location_nearby",
    "location_distance",
    "run_state",
-   "tool_catalog"
+   "tool_catalog",
+   "mcp_crm_contacts_list"
   ]
  },
  "member/key/ro/null/[]/true:": {
-  "sha256": "f9f570ff0dff764fd4d3f23de999ad58014d9646e386bce963987d7f4a148b4b",
+  "sha256": "609c5e18af0da265328ca813e0dc8d910799e98f03981e6d9d0655c9b65223e3",
   "names": [
    "tree_list",
    "search",
@@ -11107,7 +11126,8 @@
    "location_nearby",
    "location_distance",
    "run_state",
-   "tool_catalog"
+   "tool_catalog",
+   "mcp_crm_contacts_list"
   ]
  },
  "member/key/ro/[\"pages\",\"search\"]/[]/unscoped": {
@@ -11246,7 +11266,7 @@
   "names": []
  },
  "member/peer/ro/null/[]/unscoped": {
-  "sha256": "d570a006d463345e1136f7797925cdb5662642919210253f05c288441e6a7961",
+  "sha256": "6fdf06203a8c1c6dae46b05fd0dcb388a510b3a40b3b52d73497948b738edddf",
   "names": [
    "tree_list",
    "search",
@@ -11331,11 +11351,12 @@
    "api_docs_get",
    "tool_catalog",
    "tool_group_list",
-   "agent_list"
+   "agent_list",
+   "mcp_crm_contacts_list"
   ]
  },
  "member/peer/ro/null/[]/false:": {
-  "sha256": "3767bada9343e42f9ec56828ae812ef0bd7dd71d4820ef2cc9cae82563fe96fd",
+  "sha256": "837d0cbd96de15c02d6e14405fa490c5b2c4f5129f1a4bac2bc69a491fa49c05",
   "names": [
    "tree_list",
    "search",
@@ -11401,11 +11422,12 @@
    "folder_get_by_path",
    "location_nearby",
    "location_distance",
-   "tool_catalog"
+   "tool_catalog",
+   "mcp_crm_contacts_list"
   ]
  },
  "member/peer/ro/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "d570a006d463345e1136f7797925cdb5662642919210253f05c288441e6a7961",
+  "sha256": "6fdf06203a8c1c6dae46b05fd0dcb388a510b3a40b3b52d73497948b738edddf",
   "names": [
    "tree_list",
    "search",
@@ -11490,11 +11512,12 @@
    "api_docs_get",
    "tool_catalog",
    "tool_group_list",
-   "agent_list"
+   "agent_list",
+   "mcp_crm_contacts_list"
   ]
  },
  "member/peer/ro/null/[]/true:settings": {
-  "sha256": "caffda16ac02f870b3942ac0aac0c8d557db48c30a9974e6dcc83df2ff5d5a2b",
+  "sha256": "cb1710a6a4488c457413b46e721842a6415b646335d5252d322ebde6d80f90b1",
   "names": [
    "tree_list",
    "search",
@@ -11570,11 +11593,12 @@
    "location_nearby",
    "location_distance",
    "run_state",
-   "tool_catalog"
+   "tool_catalog",
+   "mcp_crm_contacts_list"
   ]
  },
  "member/peer/ro/null/[]/true:": {
-  "sha256": "f9f570ff0dff764fd4d3f23de999ad58014d9646e386bce963987d7f4a148b4b",
+  "sha256": "609c5e18af0da265328ca813e0dc8d910799e98f03981e6d9d0655c9b65223e3",
   "names": [
    "tree_list",
    "search",
@@ -11649,11 +11673,12 @@
    "location_nearby",
    "location_distance",
    "run_state",
-   "tool_catalog"
+   "tool_catalog",
+   "mcp_crm_contacts_list"
   ]
  },
  "member/peer/ro/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/unscoped": {
-  "sha256": "d570a006d463345e1136f7797925cdb5662642919210253f05c288441e6a7961",
+  "sha256": "6fdf06203a8c1c6dae46b05fd0dcb388a510b3a40b3b52d73497948b738edddf",
   "names": [
    "tree_list",
    "search",
@@ -11738,11 +11763,12 @@
    "api_docs_get",
    "tool_catalog",
    "tool_group_list",
-   "agent_list"
+   "agent_list",
+   "mcp_crm_contacts_list"
   ]
  },
  "member/peer/ro/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/false:": {
-  "sha256": "3767bada9343e42f9ec56828ae812ef0bd7dd71d4820ef2cc9cae82563fe96fd",
+  "sha256": "837d0cbd96de15c02d6e14405fa490c5b2c4f5129f1a4bac2bc69a491fa49c05",
   "names": [
    "tree_list",
    "search",
@@ -11808,11 +11834,12 @@
    "folder_get_by_path",
    "location_nearby",
    "location_distance",
-   "tool_catalog"
+   "tool_catalog",
+   "mcp_crm_contacts_list"
   ]
  },
  "member/peer/ro/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "d570a006d463345e1136f7797925cdb5662642919210253f05c288441e6a7961",
+  "sha256": "6fdf06203a8c1c6dae46b05fd0dcb388a510b3a40b3b52d73497948b738edddf",
   "names": [
    "tree_list",
    "search",
@@ -11897,11 +11924,12 @@
    "api_docs_get",
    "tool_catalog",
    "tool_group_list",
-   "agent_list"
+   "agent_list",
+   "mcp_crm_contacts_list"
   ]
  },
  "member/peer/ro/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:settings": {
-  "sha256": "caffda16ac02f870b3942ac0aac0c8d557db48c30a9974e6dcc83df2ff5d5a2b",
+  "sha256": "cb1710a6a4488c457413b46e721842a6415b646335d5252d322ebde6d80f90b1",
   "names": [
    "tree_list",
    "search",
@@ -11977,11 +12005,12 @@
    "location_nearby",
    "location_distance",
    "run_state",
-   "tool_catalog"
+   "tool_catalog",
+   "mcp_crm_contacts_list"
   ]
  },
  "member/peer/ro/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:": {
-  "sha256": "f9f570ff0dff764fd4d3f23de999ad58014d9646e386bce963987d7f4a148b4b",
+  "sha256": "609c5e18af0da265328ca813e0dc8d910799e98f03981e6d9d0655c9b65223e3",
   "names": [
    "tree_list",
    "search",
@@ -12056,7 +12085,8 @@
    "location_nearby",
    "location_distance",
    "run_state",
-   "tool_catalog"
+   "tool_catalog",
+   "mcp_crm_contacts_list"
   ]
  }
 }

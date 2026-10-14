@@ -204,8 +204,8 @@ export function connectorMarkState(
  * (loginConnectorRule: the one rule that checks it). Every connector path
  * reads the mark through this: the login's MCP listing and call, an app
  * run's verdict and dispatch. For a key or a peer (the gate's peer
- * narrower, A5 step 2) it is declared not risky, and its `mark` makes it a
- * write whatever the mark says, until step 5 (owner decision Q1 b).
+ * narrower, A5 step 2) it is declared not risky, and its effect decides a
+ * read-only key or peer as any caller's (A5 step 5, owner decision Q1 b).
  */
 export function connectorToolPolicy(
   tool: Pick<

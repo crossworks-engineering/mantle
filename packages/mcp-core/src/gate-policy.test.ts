@@ -158,6 +158,7 @@ describe('what the surface registers is what the gate lists (A5 step 4)', () => 
   });
 
   it('for the connector tools of the login: marked, or the connection writes', () => {
+    const changed: string[] = [];
     const handler: ToolHandler = { kind: 'mcp', group: 'crm', toolName: 'contacts_list' };
     const base = {
       slug: 'mcp_crm_contacts_list',
@@ -190,12 +191,31 @@ describe('what the surface registers is what the gate lists (A5 step 4)', () => 
           (readOnly || p.caller.write) &&
           (p.caller.areas ?? null) === null &&
           (p.caller.via === 'oauth' || p.caller.write);
+        // A5 step 5 (owner decision Q1 b): a read-only key or peer lists a
+        // connector tool an Admin marked read-only, as a read-only OAuth
+        // login does; the key area rule stays.
+        const now = (readOnly || p.caller.write) && (p.caller.areas ?? null) === null;
         const ref: PolicyRef = { kind: 'runtime-tool', name: row.slug, row };
         const lists = gateLists(caller, ref);
-        expect(lists, `${label(p)} ${readOnly ? 'marked' : 'unmarked'}`).toBe(before);
+        const cell = `${label(p)} ${readOnly ? 'marked' : 'unmarked'}`;
+        expect(lists, cell).toBe(now);
         expect(registeredFor(withRow).includes(row.slug)).toBe(lists);
+        if (now !== before) changed.push(cell);
       }
     }
+    // Only the cells of a key or a peer with Write off and a marked
+    // connector tool changed, each from hidden to listed.
+    expect(changed.length).toBeGreaterThan(0);
+    for (const p of preparedMatrix()) {
+      if (p.kind !== 'owner') continue;
+      const cell = `${label(p)} marked`;
+      const expected =
+        (p.caller.via === 'key' || p.caller.via === 'peer') &&
+        !p.caller.write &&
+        (p.caller.areas ?? null) === null;
+      expect(changed.includes(cell), cell).toBe(expected);
+    }
+    expect(changed.every((c) => c.endsWith(' marked'))).toBe(true);
   });
 });
 

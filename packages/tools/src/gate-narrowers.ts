@@ -100,11 +100,13 @@ const keyNarrower: Narrower = (caller, policy) => {
  * `fields.peerRisky`: a runtime row type no key or peer reaches today) is
  * refused for a key or a peer, whatever the owner named.
  *
- * A connector's tool (its policy carries the admin's read-only `mark`)
- * counts as a write here whatever its mark, as the owner MCP surface has
- * always counted it for a key or a peer. TODO(A5 step 5, owner decision
- * Q1 b): read the connector's effect, so a read-only key or peer calls a
- * connector tool an Admin marked read-only.
+ * A connector's tool (its policy carries the admin's read-only `mark`) is
+ * judged by its effect like any tool (A5 step 5, owner decision Q1 b): one
+ * an Admin marked read-only reads, so a read-only key or peer lists and
+ * calls it, as a read-only OAuth login does. A stale mark is a write
+ * (connectorToolPolicy), so it stays hidden. The connector's own checks
+ * (the marked inputs, loginConnectorRefused) and the key areas (a
+ * connector has none: only an all-areas key reaches it) still apply.
  */
 const peerNarrower: Narrower = (caller, policy, ref) => {
   if (!narrowedCaller(caller) || !toolRef(ref)) return null;
@@ -118,9 +120,7 @@ const peerNarrower: Narrower = (caller, policy, ref) => {
   const risky = declared || (connectorPolicy(policy) && !hasPolicySource('mcp-tool'));
   const riskyAllowed = (caller.facts?.riskyAllowed ?? []) as readonly string[];
   if (risky && !riskyAllowed.includes(ref.name)) return RISKY_TOOL_ERROR;
-  const connectorAsWrite = connectorPolicy(policy);
-  const reads = policy.effect === 'read' && !connectorAsWrite;
-  return caller.write === false && !reads ? READ_ONLY_CALLER_ERROR : null;
+  return caller.write === false && policy.effect !== 'read' ? READ_ONLY_CALLER_ERROR : null;
 };
 
 /**

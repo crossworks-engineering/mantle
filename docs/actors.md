@@ -2064,3 +2064,20 @@ masked caller):
   tool the v1 routes run (`table_rows_add`, `table_row_update`) nests
   today, so no answer changes
   (`packages/tools/src/dispatch-api-v1-nested.test.ts`).
+
+**Q1 (owner b): a read-only key or peer reads a marked connector tool.**
+The gate's peer narrower (`packages/tools/src/gate-narrowers.ts`) judges a
+connector row by its policy's effect, as any tool: one an Admin marked
+read-only reads, so a read-only API key or linked brain lists and calls
+it, as a read-only OAuth login always has. Before, a connector row counted
+as a write for a key or a peer whatever its mark. A stale mark is a write
+(`connectorToolPolicy`), so it stays hidden. The marked inputs check, the
+connector's own check (`loginConnectorRefused`, in the pre-run slot) and
+the key areas still apply: a connector is in no key area, so only an
+all-areas key reaches it. Only the matrix cells of a key or a peer with
+Write off, every area and a marked connector changed
+(`packages/mcp-core/src/gate-policy.test.ts`,
+`tool-policy-sweep.test.ts`; `__snapshots__/tools-list.matrix.json` adds
+`mcp_crm_contacts_list` to the 30 such cells, and `mcp-calls.json`'s
+"member key ro, every area" lists it and its call runs, with its
+`mcp.connector.read` audit row).

@@ -185,6 +185,12 @@ describe("the gate's peer narrower reads the declared mark (A5 step 2)", () => {
   it('equals ownerPeerAllows, for every tool and connector and every key and peer caller', () => {
     const names = registered();
     const connectors = [connector('contacts_update', false), connector('contacts_list', true)];
+    // A5 step 5 (owner decision Q1 b): a connector tool an Admin marked
+    // read-only is a read for a read-only key or peer too, where the
+    // listing's by-name rule counted every connector tool a write. The
+    // only cells that differ from ownerPeerAllows.
+    const markedRead = new Set([connectors[1]!.slug]);
+    let changed = 0;
     const cases: { name: string; policy: GatePolicy; ref: Record<string, unknown> }[] = [
       ...names.map((name) => {
         const ref = { kind: 'mcp-tool', name };
@@ -215,7 +221,10 @@ describe("the gate's peer narrower reads the declared mark (A5 step 2)", () => {
           for (const c of cases) {
             const refused = GATE_NARROWERS.peer(caller, c.policy, c.ref as never);
             const label = `${via}/${write}/${riskyAllowed.length} ${c.name}`;
-            expect(refused === null, label).toBe(ownerPeerAllows(c.name, { write, riskyAllowed }));
+            const before = ownerPeerAllows(c.name, { write, riskyAllowed });
+            const now = before || (!write && markedRead.has(c.name));
+            expect(refused === null, label).toBe(now);
+            if (now !== before) changed += 1;
             // The refusal names the reason the listing's rule has.
             if (refused !== null) {
               const risky = isPeerRiskyTool(c.name) && !riskyAllowed.includes(c.name);
@@ -227,6 +236,28 @@ describe("the gate's peer narrower reads the declared mark (A5 step 2)", () => {
       }
     }
     expect(cells).toBeGreaterThan(3000);
+    // key and peer, Write off, each risky set: the marked connector only.
+    expect(changed).toBe(2 * riskySets.length);
+  });
+
+  it('a stale read-only mark stays hidden from a read-only key or peer (A5 step 5, Q1)', () => {
+    const marked = connector('contacts_list', true);
+    // The tool changed after the mark: its signature no longer matches.
+    const stale = { ...marked, description: 'The crm contacts_list, changed.' } as Tool;
+    expect(connectorToolPolicy(stale).fields.mark).toBe('stale');
+    for (const via of ['key', 'peer'] as const) {
+      const caller: GateCaller = {
+        actor: loginActor('00000000-0000-4000-8000-0000000000aa', 'ro'),
+        via,
+        write: false,
+        admin: null,
+        facts: { keyAreas: null, riskyAllowed: [] },
+      };
+      const ref = (row: Tool) => ({ kind: 'runtime-tool', name: row.slug, row }) as never;
+      const policy = (row: Tool) => connectorToolPolicy(row) as GatePolicy;
+      expect(GATE_NARROWERS.peer(caller, policy(marked), ref(marked)), via).toBeNull();
+      expect(GATE_NARROWERS.peer(caller, policy(stale), ref(stale)), via).not.toBeNull();
+    }
   });
 
   it('a tool whose policy declares no peer mark is refused for a key or a peer, even named', () => {
