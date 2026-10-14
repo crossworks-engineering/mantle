@@ -1251,7 +1251,13 @@ none yet run dispatch's own checks as before (`dispatchUngated`): the app
 tool brokers and the dev console (step 3b) and the owner MCP surface's
 connector rows (step 4). `packages/tools/src/dispatch-entries.test.ts`
 sweeps every call site: each passes a caller but those, listed with the
-step that moves them.
+step that moves them. It sweeps the direct calls of a builtin's handler
+too (`def.handler(...)`, getBuiltinHandler), which skip dispatch and the
+gate: dispatch's own and the app tools' author-ceiling wrapper only, and
+two entries until step 4, the /api/v1 builtin routes
+(`server/web/lib/api-v1-builtin.ts`) and the owner MCP surface's builtins
+(`packages/mcp-core/src/register/context.ts`). A new direct call fails
+there (low round, LOW-3).
 
 - **The ref.** A builtin is `{ kind: 'tool', name: <handler ref>, slug }`:
   its declared policy (`toGatePolicy`) with the Admin step `adminToolGate`
@@ -1263,11 +1269,15 @@ step that moves them.
   `{ kind: 'runtime-tool', row }`; step 3 refuses one with no policy, in
   `NO_RUNTIME_POLICY_ERROR`'s words.
 - **The caller.** Built per call from the state the entry set already: the
-  actor bound now (none is a bug: `system(tool:no-actor)`, logged once),
-  the Admin view the policy's Admin step reads (`scopeHoldsAdmin` and the
-  asked area in a workspace scope; the login's own areas in the rollback
-  switch's gate scope; unscoped outside any), read only when the policy
-  names a step and once per turn scope for a turn, and the create-home rule
+  actor bound now (none is a bug, logged once: the call runs with no actor,
+  as before, so the actor check refuses its item writes; `GateCaller.actor`
+  is null and enterCall binds none: low round, LOW-2), the Admin view the
+  policy's Admin step reads (`scopeHoldsAdmin` and the asked area in a
+  workspace scope; the login's own areas in the rollback switch's gate
+  scope; unscoped outside any), read only when the policy names a step and
+  on every call, as adminToolGate read it, so an area turned off mid-turn
+  refuses the turn's next call (only `scopeHoldsAdmin` keeps its answer per
+  scope, as before: low round, LOW-1), and the create-home rule
   of an assistant scope that names its login (the turn rule) for a builtin
   only: a runtime row names no home (`createHome: null`), so a recipe's
   steps each name their own. It sets no scope: the turn, the run and the
@@ -1294,10 +1304,32 @@ step that moves them.
   `app_databases` runs only on a login's own MCP connection (A5 step 4
   must name or move it); every other write is to a table that is no item
   table (`sandbox_mcp_tools`'s last-used touch on `sandboxes`, the app
-  access log, a peer's last contact, the embedding cache, a worker's usage,
-  an API key's last use, a tool result's chunks) and runs as before; the
-  page block ids and the Recall prompt embeddings were named read-path
-  writes already. So `sandbox_mcp_tools` stays a read and its touch stays
+  access log, a peer's last contact, embed's cache (`embedding_cache`),
+  failover stamp (`embedding_config`) and outage alert
+  (`provider_alerts`), a worker's usage, an API key's last use, a tool
+  result's chunked flag and chunks) and runs as before; the page block ids
+  and the Recall prompt embeddings were named read-path writes already.
+  The test classifies every read builtin of the policy table, so one added
+  without a look at its writes fails there (low round, LOW-4). The peer
+  reads' last-contact stamp (`markPeerContacted`) is best-effort since the
+  low round, as `verifyInboundToken`'s last-seen stamp: a refused write is
+  skipped, never a failed peer call. `read_result`'s chunking still fails
+  the call when it fails (non-item tables, so a read-only actor is not the
+  cause).
+- **Inside a read tool the actor is narrower.** login(owner) (a heartbeat
+  with no answering login) runs a read as login(ro), so the two readers of
+  the owner mode answer differently there: `scopeLacksAdmin`
+  (`packages/db/src/scope-readable.ts`), outside an active scope, says the
+  caller lacks Admin, and `scopeActor` (`packages/db/src/viewer.ts`), for a
+  scope that names no login, binds assistant(none) instead of the owner.
+  An assistant or a peer actor is not narrowed (`readOnlyActor` and
+  `systemUnder`'s `narrowsSystemWork` leave them: an assistant does its own
+  system work), so `asSystem` inside a read tool under one writes. Today
+  that reaches no Admin-area read: a workspace assistant's scope holds no
+  Admin, so the Admin step refuses every Admin-area read (each
+  `AREA_SYSTEM_TOOLS` read among them) before it runs, and no gated entry
+  of step 3a binds a peer. `packages/tools/src/gate-callers.test.ts` pins
+  both (low round, LOW-5). So `sandbox_mcp_tools` stays a read and its touch stays
   as it is (prerequisite 0a: marking it a write would hide it from a
   read-only connection; naming the touch would pin a write nothing
   refuses).
@@ -1323,8 +1355,27 @@ write mode `ro`. `server/web/lib/auth/turn-gate-parity.test.ts` runs
 dispatch itself: its Admin refusals equal `adminToolGate`'s for every
 builtin and scope, and its create homes `turnCreateHome`'s, call by call.
 
-**Known edge.** A pending call approved from inside an assistant turn (the
-Admin assistant's `pending_approve`) whose queued login is another login:
-before step 3a the call named the approving turn's home; now step 6 names
-none (the call runs as the queued login, not the turn's), and the
-database's default home applies.
+**Known edge, accepted (owner Q2).** A pending call approved from inside an
+assistant turn (the Admin assistant's `pending_approve`) whose queued login
+is another login: before step 3a the call named the approving turn's home;
+now step 6 names none (the call runs as the queued login, not the turn's).
+The outer `pending_approve` call's home, when it named one, stays in force
+and decides; with none, the database's default home applies, and
+`mantle_default_home` names only the asked workspace (`mantle.create_ws`),
+the private one (`mantle.private_ws`), the folder the item is made in, or
+the Admin workspace: never a non-Admin workspace the call did not ask for.
+`packages/tools/src/gate-callers.test.ts` pins both.
+
+**Step 4 must-dos** (from the step 3a audit and its low round):
+
+- The app data reads `app_data_schema` and `app_data_query` provision
+  `app_databases` (an item table) under a read-only `asSystem`: once the
+  owner MCP surface runs through the gate they fail. Name them as
+  read-path writes, or move the provisioning out of the read.
+- The guard behind `read-tool-writes.test.ts`, which is a source
+  classification: run each read builtin read only, with the edit check
+  on, against a database.
+- Move the direct handler entries onto dispatch: the /api/v1 builtin
+  routes and the owner MCP surface's builtins (`DIRECT_HANDLER_YET` in
+  `dispatch-entries.test.ts`), and the owner MCP surface's connector rows
+  (`NO_CALLER_YET`).
