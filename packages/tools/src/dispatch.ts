@@ -111,8 +111,15 @@ export async function dispatchTool(
     const call = { ...ctx, caller: nested };
     const run = () => withToolCaller(nested, () => dispatchGated(caller, tool, input, call, depth));
     // An MCP connection never reads a database error's text (W3): the one
-    // masking (tool-error-mask.ts). A turn masks in the tool loop.
-    return mcpVia(caller) ? maskToolDatabaseErrors(`mcp ${tool.slug}`, run) : run();
+    // masking (tool-error-mask.ts). A turn masks in the tool loop. Nor does
+    // a call nested in a /api/v1 route call (A5 step 5 fix round 1, L3):
+    // a process call, but its text is what the outer handler hands the
+    // route, which answers it as its 400 body.
+    if (mcpVia(caller)) return maskToolDatabaseErrors(`mcp ${tool.slug}`, run);
+    if (caller.entry === 'api-v1-nested') {
+      return maskToolDatabaseErrors(`api-v1 nested ${tool.slug}`, run);
+    }
+    return run();
   }
   // The entries that name no caller yet (A5 step 3b moves them): an app
   // tool broker answers the result to a browser as it is, so a database

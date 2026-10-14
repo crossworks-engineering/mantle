@@ -8,6 +8,7 @@
  */
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { Tool } from '@mantle/db';
+import { DATABASE_ERROR_PUBLIC } from '@mantle/std';
 import { dispatchTool } from './dispatch';
 import { apiV1Caller, nestedToolCaller, runCaller, type ToolCaller } from './gate-callers';
 import { registerBuiltin } from './registry';
@@ -45,10 +46,33 @@ const outer: BuiltinToolDef = {
   },
 };
 
+/** A nested call whose handler meets a drizzle error (SQL and params). */
+const innerDb: BuiltinToolDef = {
+  ...inner,
+  slug: 'v1_nested_inner_db',
+  name: 'v1_nested_inner_db',
+  handler: async () => {
+    throw Object.assign(new Error('Failed query: select "secret" from "nodes"\nparams: 4f1c'), {
+      cause: Object.assign(new Error('deadlock detected'), { code: '40P01', severity: 'ERROR' }),
+    });
+  },
+};
+
+const outerDb: BuiltinToolDef = {
+  ...outer,
+  slug: 'v1_nested_outer_db',
+  name: 'v1_nested_outer_db',
+  // A handler that answers a nested refusal as its own: the route reads it
+  // as the 400 body.
+  handler: async (_input, ctx) => dispatchTool(row('v1_nested_inner_db'), {}, ctx),
+};
+
 beforeAll(() => {
   ensureGateReady();
   registerBuiltin(inner);
   registerBuiltin(outer);
+  registerBuiltin(innerDb);
+  registerBuiltin(outerDb);
   vi.spyOn(console, 'error').mockImplementation(() => undefined);
   vi.spyOn(console, 'warn').mockImplementation(() => undefined);
 });
@@ -86,5 +110,14 @@ describe('a call nested in a /api/v1 route call', () => {
         { ownerId: 'o', surface: { kind: 'owner', via: 'api' }, caller: apiV1Caller() },
       ),
     ).rejects.toThrow('inner broke');
+  });
+
+  it("a nested call's database error is the one mapper's words, never its SQL (fix round 1, L3)", async () => {
+    const res = await dispatchTool(
+      row('v1_nested_outer_db'),
+      {},
+      { ownerId: 'o', surface: { kind: 'owner', via: 'api' }, caller: apiV1Caller() },
+    );
+    expect(res).toEqual({ ok: false, error: DATABASE_ERROR_PUBLIC });
   });
 });

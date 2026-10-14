@@ -2220,3 +2220,8 @@ scope, then holds.
   check (`connectorCheck`, `packages/mcp-core/src/login-surface.ts`, the
   call's pre-run slot) now applies it for any connection whose `write` is
   off (`packages/mcp-core/src/connector-check.test.ts`).
+- **L3: a call nested in a /api/v1 route call masks a database error.**
+  `api-v1-nested` is a `process` call, so the MCP masking never applied,
+  and the outer handler hands its text to the route as the 400 body.
+  `dispatchTool` now runs such a call under `maskToolDatabaseErrors`
+  (`packages/tools/src/dispatch-api-v1-nested.test.ts`).
