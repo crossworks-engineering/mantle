@@ -34,7 +34,7 @@
  * counted here).
  *
  * 43 -> 16 (A4 step 3b part 5, batch 5, the member and chat rows): 27
- * handlers in 23 route files became reads, 10 getMemberOr401 calls (the
+ * handlers in 24 route files became reads, 10 getMemberOr401 calls (the
  * member list) and 17 getChatLoginOr401 calls (the chat and Telegram chat
  * lists). The 16 left are the hand batch (docs/actors.md).
  */
