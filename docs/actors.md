@@ -1042,6 +1042,14 @@ still does.
    against it by `packages/tools/src/member-app-parity.test.ts`).
 5. **The Admin step**: the Admin workspace, an Admin area, or a kind of the
    Admin workspace only.
+   **The pre-run slot** (A5 step 3a), between steps 5 and 6, in
+   enterCall only (never gateCheck: it reads the call's arguments): the
+   checks of `PRE_RUN_CHECKS` in their fixed order, `item-precheck` then
+   `key-shared-content`, registered from
+   `packages/tools/src/gate-prerun.ts` (missing ones fail closed, as the
+   narrowers). A refusal is the kind `item`, in the check's own words, and
+   comes before the create home: a refused call never makes a private
+   workspace.
 6. **The create-home intent** (`createHomeIntent`,
    `packages/db/src/create-home.ts`), for the login's own actor and only
    when nothing around named a home. The entry's `CreateHomeRule` says the
@@ -1063,7 +1071,9 @@ tool list shows what it lets through. `@mantle/db` exports only `enterCall`,
 the boot check `assertGateReady` (and the types): no surface runs a step
 on its own.
 
-The sources registered today: `runtime-tool`, `sandbox-mcp-tool` and
+The sources registered today: `tool` (a builtin called through dispatch,
+by its handler ref: `packages/tools/src/tool-gate-policy.ts`, A5 step 3a),
+`runtime-tool`, `sandbox-mcp-tool` and
 `peer-tool` (`packages/tools/src/runtime-policy.ts`), `app-tool`
 (`packages/tools/src/member-app-tools.ts`), and `mcp-tool`
 (`packages/mcp-core/src/gate-policy.ts`: each tool's declared policy since
@@ -1222,3 +1232,99 @@ on its row or keep the old fail closed answer there, with a test in
 `PolicySlugMap` in `tool-policy.ts`) extend Set and Map, so
 `Set.prototype.add.call` reaches their storage until the table next
 changes; the same fix as LOW-2 fits them in step 4.
+
+## Dispatch through the gate (A5 step 3a)
+
+Plan section 23.3, step 3a, no behaviour change. `dispatchTool`
+(`packages/tools/src/dispatch.ts`) runs a call through `enterCall` when its
+entry names its caller (`ToolHandlerContext.caller`,
+`packages/tools/src/gate-callers.ts`): the assistant turn (`turnCaller`,
+`packages/runtime/src/agent/tool-loop/execute-call.ts`: the web and
+Telegram turns, heartbeats, invoke_agent's child, the run workflows'
+turns), a run item (`runCaller`, `server/web/lib/runs/execute-item.ts`)
+and a pending approval (`pendingCaller`, `packages/tools/src/pending.ts`).
+A nested call (a recipe's step, the Toolsmith's `recipe_tool_test` and
+`api_tool_test`) passes its caller on, and one with none in its context
+reuses the caller of the dispatch it runs in (`currentToolCaller`).
+`ownerWebCaller` is for the dev console (step 3b). The entries that name
+none yet run dispatch's own checks as before (`dispatchUngated`): the app
+tool brokers and the dev console (step 3b) and the owner MCP surface's
+connector rows (step 4). `packages/tools/src/dispatch-entries.test.ts`
+sweeps every call site: each passes a caller but those, listed with the
+step that moves them.
+
+- **The ref.** A builtin is `{ kind: 'tool', name: <handler ref>, slug }`:
+  its declared policy (`toGatePolicy`) with the Admin step `adminToolGate`
+  asked (`packages/tools/src/tool-gate-policy.ts`: an area by slug or ref,
+  else adminOnly by `isAdminOnlyTool`, else none), so gate step 5 refuses
+  what dispatch refused, in its words. A create of an Admin-only kind is
+  not refused there (the `mcp-tool` source's `admin-kind`): on a turn the
+  database refuses that row, as before. A runtime row is
+  `{ kind: 'runtime-tool', row }`; step 3 refuses one with no policy, in
+  `NO_RUNTIME_POLICY_ERROR`'s words.
+- **The caller.** Built per call from the state the entry set already: the
+  actor bound now (none is a bug: `system(tool:no-actor)`, logged once),
+  the Admin view the policy's Admin step reads (`scopeHoldsAdmin` and the
+  asked area in a workspace scope; the login's own areas in the rollback
+  switch's gate scope; unscoped outside any), read only when the policy
+  names a step and once per turn scope for a turn, and the create-home rule
+  of an assistant scope that names its login (the turn rule) for a builtin
+  only: a runtime row names no home (`createHome: null`), so a recipe's
+  steps each name their own. It sets no scope: the turn, the run and the
+  request entered theirs (no double scope entry).
+- **The steps that moved.** `adminToolGate` is step 5, the runtime policy
+  check step 3, `turnCreateHome` step 6 with the turn rule. The
+  preconditions and `toolItemWriteRefusal` are the `item-precheck` check,
+  before the create home: a refused call makes no private workspace (owner
+  decision, section 22). An `AREA_SYSTEM_TOOLS` tool still runs whole on
+  the system pool after its area check (`runGated`), in a workspace scope.
+- **The MCP-only steps, dormant until step 4.** Keyed on `caller.via`:
+  confirm stripping and the `key-shared-content` check for a key or a peer
+  (`packages/tools/src/key-shared-content.ts`, the one copy the MCP bridge
+  reads too; `othersCanRead` moved to `packages/tools/src/shared-item.ts`,
+  and `@mantle/mcp-core/shared-item` re-exports it), and the one masking of
+  a database error's text for an MCP via (`maskToolDatabaseErrors`,
+  `packages/tools/src/tool-error-mask.ts`), which the tool loop's masking
+  calls too.
+- **A read runs read only.** `callActor` gives a read tool login(ro), and
+  system work it starts stays read only (`systemUnder`). The database
+  refuses only a change of an item table (0280), so
+  `packages/tools/src/read-tool-writes.test.ts` pins every write the sweep
+  found in a read tool: the app data reads' provisioning of
+  `app_databases` runs only on a login's own MCP connection (A5 step 4
+  must name or move it); every other write is to a table that is no item
+  table (`sandbox_mcp_tools`'s last-used touch on `sandboxes`, the app
+  access log, a peer's last contact, the embedding cache, a worker's usage,
+  an API key's last use, a tool result's chunks) and runs as before; the
+  page block ids and the Recall prompt embeddings were named read-path
+  writes already. So `sandbox_mcp_tools` stays a read and its touch stays
+  as it is (prerequisite 0a: marking it a write would hide it from a
+  read-only connection; naming the touch would pin a write nothing
+  refuses).
+- **LOW-4 kept.** In a process without the owner MCP surface (no
+  `mcp-tool` source: server/api), a connector's tool is risky for a key or
+  a peer unless the owner named it, as before A5 step 2 (`hasPolicySource`,
+  read by the `peer` narrower; `packages/tools/src/gate-boot.test.ts`).
+- **Carried LOWs.** LOW-A: a hand-written MCP definition declares no
+  `optIn`; LOW-B: the family sweep holds an opt-in to `peerRisky`.
+
+Proof: `packages/tools/src/dispatch-parity.test.ts`, committed on main
+before the change: every builtin and every runtime row type, for an owner
+turn, a member turn, an Admin turn without an area, a turn on the rollback
+switch, a run item, a pending approval, work outside any scope and a recipe
+step, with no input, its item targets, a failing precondition and a
+throwing handler; one hash per tool of the answer (the `{ok:false,error}`
+text), whether the handler ran, its create home, whether it ran whole on
+the system pool, the trace meta and the create-home intents. The pending
+rows and the run item rows are written from that answer. The change left
+`packages/tools/src/__snapshots__/dispatch-parity.json` as it was; a third
+case there holds every builtin's call to the gate's caller and a read to
+write mode `ro`. `server/web/lib/auth/turn-gate-parity.test.ts` runs
+dispatch itself: its Admin refusals equal `adminToolGate`'s for every
+builtin and scope, and its create homes `turnCreateHome`'s, call by call.
+
+**Known edge.** A pending call approved from inside an assistant turn (the
+Admin assistant's `pending_approve`) whose queued login is another login:
+before step 3a the call named the approving turn's home; now step 6 names
+none (the call runs as the queued login, not the turn's), and the
+database's default home applies.
