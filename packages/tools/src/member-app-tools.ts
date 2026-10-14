@@ -174,10 +174,12 @@ export async function memberAppToolVerdict(
  * (`builtin`: readOnly, spends), for what the call is (read or write).
  *
  * A call the verdict refused before any row was read (not declared, a
- * refused slug, no such tool) is a write here (the strictest), refused by
- * the narrower in the verdict's words. TODO(A5): the brokers answer the
- * verdict's status (403, or 404 for no such tool); the gate's narrowed
- * refusal answers 403.
+ * refused slug) is a write here (the strictest), refused by the narrower in
+ * the verdict's words. The brokers ask it for every refusal but a missing
+ * tool (A5 step 3b, appToolRefusal in app-tool-level.ts): that one answers
+ * 404 before the gate (no row, no ref); every other is the gate's narrowed
+ * 403. Any broker's verdict (an admin's run, a contact's) carries its answer
+ * the same way.
  */
 export function appToolGatePolicy(ref: PolicyRef): GatePolicy | null {
   const verdict = ref.verdict as MemberAppToolVerdict | undefined;

@@ -312,11 +312,13 @@ export {
 } from './external-access';
 export {
   appToolLevel,
+  appToolRefusal,
   appToolScope,
   appToolVerdict,
   appToolWarnings,
   movedAppToolWarnings,
   APP_NO_TOOLS,
+  type AppCallRules,
   type AppToolLevel,
   type AppToolRunner,
   type AppToolVerdict,

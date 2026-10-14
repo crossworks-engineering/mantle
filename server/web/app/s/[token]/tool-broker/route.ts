@@ -26,7 +26,12 @@ import { SHARE_BODY_CEILING_BYTES, readJsonCapped } from '@/lib/body-limit';
 import { withViewer } from '@mantle/db';
 import { liveServedIds } from '@/lib/shares';
 import { getAppRuntime, recordAppAccess, recordShareAccess } from '@mantle/content';
-import { contactAppToolVerdict, dispatchTool, outsideCallLogDetail } from '@mantle/tools';
+import {
+  appToolRefusal,
+  contactAppToolVerdict,
+  dispatchTool,
+  outsideCallLogDetail,
+} from '@mantle/tools';
 
 const Body = z.object({
   slug: z.string().min(1).max(120),
@@ -95,7 +100,10 @@ export async function POST(req: Request, ctx: { params: Promise<{ token: string 
     detail: verdict.ok ? { slug } : { slug, refused: 'tools' },
   });
   if (!verdict.ok) {
-    return NextResponse.json({ ok: false, error: verdict.reason }, { status: verdict.status });
+    // A missing tool 404; every other refusal the gate's 403, in the
+    // verdict's words (A5 step 3b).
+    const refused = await appToolRefusal('contact', slug, verdict);
+    return NextResponse.json({ ok: false, error: refused.error }, { status: refused.status });
   }
   // A link reads no workspace, only what it serves (plan 8.1, R6), never a
   // snapshot copy (W6b fix round 3, L-1).

@@ -129,10 +129,17 @@ const peerNarrower: Narrower = (caller, policy, ref) => {
  * `app-tool`, member-app-tools.ts appToolGatePolicy), and only when the
  * policy carries the live rule's answer and that answer allows it
  * (`fields.memberApp` null). A refusal says the rule's own words; any other
- * ref, or a policy with no answer, is refused. Every other caller passes.
- * Pinned against memberAppToolVerdict itself (member-app-parity.test.ts).
+ * ref, or a policy with no answer, is refused. Pinned against
+ * memberAppToolVerdict itself (member-app-parity.test.ts).
+ *
+ * An app tool whose verdict refused it is refused in the verdict's words at
+ * every rules (A5 step 3b): the brokers' refusals (an admin's run, a
+ * contact's, a member's) are the gate's narrowed 403 (appToolRefusal,
+ * app-tool-level.ts). Every other caller passes.
  */
 const memberAppNarrower: Narrower = (caller, policy, ref) => {
+  const verdictRefused = ref.kind === 'app-tool' ? policy.fields?.memberApp : null;
+  if (typeof verdictRefused === 'string') return verdictRefused;
   if (caller.facts?.appRules !== 'team') return null;
   if (ref.kind !== 'app-tool') return TEAM_APP_NO_TOOL_ERROR;
   const answer = policy.fields?.memberApp;

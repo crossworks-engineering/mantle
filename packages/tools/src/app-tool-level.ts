@@ -28,7 +28,16 @@
  * `admin` is the owner broker's rule as it always was (declared, exists);
  * `team` is memberAppToolVerdict; `none` refuses every tool.
  */
-import type { AppAuthorLevel, AppRunFor, Tool, ViewerFor, ViewerLevel } from '@mantle/db';
+import {
+  currentActor,
+  gateCallRefusal,
+  type AppAuthorLevel,
+  type AppRunFor,
+  type GateCaller,
+  type Tool,
+  type ViewerFor,
+  type ViewerLevel,
+} from '@mantle/db';
 import { getAppRuntime, type AppToolRules } from '@mantle/content';
 import { resolveTool } from './resolve';
 import { memberAppToolVerdict } from './member-app-tools';
@@ -94,6 +103,40 @@ export async function appToolVerdict(
     case 'none':
       return { ok: false, status: 403, reason: APP_NO_TOOLS };
   }
+}
+
+/** The rules a broker judged an app's call at: a run's level, or a
+ *  contact share's (contactAppToolVerdict). */
+export type AppCallRules = AppToolLevel | 'contact';
+
+/**
+ * What a broker answers for an app's call its verdict refused (A5 step 3b):
+ * a missing tool 404 before the gate (no row, no ref); every other refusal
+ * is the one gate's (@mantle/db gateCallRefusal: the call's steps, nothing
+ * run) on the call's `app-tool` ref, which carries the verdict: the
+ * member-app narrower refuses it in the verdict's words, a 403
+ * (member-app-tools.ts appToolGatePolicy, gate-narrowers.ts). The caller is
+ * the broker's: the actor bound at its entry (currentActor()), via `app` or
+ * `contact`, and the rules it judged at. The same status and body as the
+ * verdict's, for every refusal (app-broker-parity.test.ts in server/web).
+ */
+export async function appToolRefusal(
+  rules: AppCallRules,
+  slug: string,
+  verdict: { ok: false; status: 403 | 404; reason: string },
+): Promise<{ status: number; error: string }> {
+  if (verdict.status === 404) return { status: 404, error: verdict.reason };
+  const caller: GateCaller = {
+    actor: currentActor(),
+    via: rules === 'contact' ? 'contact' : 'app',
+    admin: null,
+    facts: { appRules: rules },
+  };
+  const refusal = await gateCallRefusal(caller, { kind: 'app-tool', name: slug, verdict });
+  // The verdict refused, so the gate does (the narrower reads its answer):
+  // were it ever to let it through, the verdict's own answer still refuses.
+  if (!refusal) return { status: verdict.status, error: verdict.reason };
+  return { status: refusal.http?.status ?? verdict.status, error: refusal.toolText };
 }
 
 /**

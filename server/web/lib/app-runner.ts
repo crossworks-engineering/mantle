@@ -37,6 +37,7 @@ import { appDbExec, appDbQuery } from '@mantle/content/app-broker';
 import { scheduleAppTableExportSync } from '@mantle/content/app-table-exports';
 import {
   appToolLevel,
+  appToolRefusal,
   appToolScope,
   appToolVerdict,
   dispatchTool,
@@ -270,7 +271,10 @@ export async function memberToolBroker(
     });
   if (!verdict.ok) {
     logError(verdict.reason, verdict.status);
-    return NextResponse.json({ ok: false, error: verdict.reason }, { status: verdict.status });
+    // A missing tool 404; every other refusal the gate's 403, in the
+    // verdict's words (A5 step 3b).
+    const refused = await appToolRefusal(level, slug, verdict);
+    return NextResponse.json({ ok: false, error: refused.error }, { status: refused.status });
   }
   // The run reads through the app (its holders met with the member's
   // workspaces), never the member's other workspaces (plan R2, H1).

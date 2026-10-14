@@ -41,6 +41,7 @@ import {
 import { getAppRuntime, recordAppAccess, recordAppError } from '@mantle/content';
 import {
   appToolLevel,
+  appToolRefusal,
   appToolScope,
   appToolVerdict,
   dispatchTool,
@@ -98,7 +99,10 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     });
   if (!verdict.ok) {
     logError(verdict.reason, verdict.status);
-    return NextResponse.json({ ok: false, error: verdict.reason }, { status: verdict.status });
+    // A missing tool 404; every other refusal the gate's 403, in the
+    // verdict's words (A5 step 3b).
+    const refused = await appToolRefusal(level, parsed.data.slug, verdict);
+    return NextResponse.json({ ok: false, error: refused.error }, { status: refused.status });
   }
   // Below admin rules (a client-level app, or a member-built one), an
   // outside call is logged like a member's: its kind, and a write's input
