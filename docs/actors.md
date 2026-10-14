@@ -2135,7 +2135,12 @@ recipe that runs one marks its whole result untrusted.
 mark; the MCP surface fences no result. Of `dispatch-parity.json` only
 those six tools changed, each in its recipe step's cases (the result now
 carries `untrusted: true`); `tool-policy-snapshot.untrusted.json` holds the
-new set.
+new set. Fix round 1 (owner decision 2a) marks `peer_query`,
+`peer_search_chunks` and `peer_node_get` too: what a linked brain's people
+wrote is fenced as data, as `peer_call`'s and `peer_tools`' results already
+were (their handlers flag each result). Not egress: their one send, the
+search text or an id, goes only to a brain the owner linked. Of
+`dispatch-parity.json` only those three tools changed.
 
 **Egress coverage (plan section 25).** `outside.egress` is declared on
 `web_search_pro` (the query goes to the search provider, as

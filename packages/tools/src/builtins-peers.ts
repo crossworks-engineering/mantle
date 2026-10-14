@@ -48,6 +48,9 @@ const peer_query: BuiltinToolDef = {
     effect: 'read',
     spends: 'none',
     scope: { area: 'connectors', systemWhole: true },
+    // What a linked brain's people wrote: fenced as data, as peer_call's
+    // and peer_tools' results (A5 step 5 fix round 1, owner decision 2a).
+    outside: { untrusted: true },
     peerRisky: true,
   },
   name: 'Query a federated peer',
@@ -93,6 +96,9 @@ const peer_search_chunks: BuiltinToolDef = {
     effect: 'read',
     spends: 'none',
     scope: { area: 'connectors', systemWhole: true },
+    // What a linked brain's people wrote: fenced as data, as peer_call's
+    // and peer_tools' results (A5 step 5 fix round 1, owner decision 2a).
+    outside: { untrusted: true },
     peerRisky: true,
   },
   name: 'Search passages on a federated peer',
@@ -133,6 +139,9 @@ const peer_node_get: BuiltinToolDef = {
     effect: 'read',
     spends: 'none',
     scope: { area: 'connectors', systemWhole: true },
+    // What a linked brain's people wrote: fenced as data, as peer_call's
+    // and peer_tools' results (A5 step 5 fix round 1, owner decision 2a).
+    outside: { untrusted: true },
     peerRisky: true,
   },
   name: 'Get a node from a federated peer',
