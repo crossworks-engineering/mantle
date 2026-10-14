@@ -1,5 +1,5 @@
 import { NextResponse } from '@/server/http-compat';
-import { getLoginOr401 } from '@/lib/auth';
+import { publicLoginCaller, unauthorizedRefusal } from '@/lib/auth';
 import { rateLimit } from '@/lib/rate-limit';
 import { publicBaseUrl } from '@mantle/content';
 import { issuePairCode, pairPayloadUrl, PAIR_CODE_TTL_SEC } from '@/lib/pair-code';
@@ -21,9 +21,10 @@ import { issuePairCode, pairPayloadUrl, PAIR_CODE_TTL_SEC } from '@/lib/pair-cod
  */
 export async function POST() {
   // With the generic api.write row an Admin user's write writes (and any
-  // login's with a key: the gate refuses a key here).
-  const login = await getLoginOr401({ audit: true });
-  if (login instanceof NextResponse) return login;
+  // login's with a key: the gate refuses a key here). A public row: the
+  // login the pipeline answers at this read (A4 hand batch B).
+  const login = await publicLoginCaller({ audit: true });
+  if (!login) return unauthorizedRefusal();
 
   const limit = rateLimit(`auth:pair-issue:${login.loginId}`, { max: 10, windowMs: 60_000 });
   if (!limit.ok) {

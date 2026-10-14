@@ -1,7 +1,7 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { cappedOne } from '@/lib/list-workspaces';
-import { getOwnerOr401, ownerCaller } from '@/lib/auth';
+import { ownerCaller, ownerCallerAtRead } from '@/lib/auth';
 import { hiddenFromKey } from '@/lib/api-v1';
 import { deletePage, getPage, updatePage } from '@/lib/pages';
 import { firstIssue } from '@/lib/zod-issue';
@@ -33,9 +33,14 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
   return NextResponse.json({ page: await cappedOne(row) });
 }
 
+/**
+ * The owner is read at the read (ownerCallerAtRead, A4 hand batch B):
+ * PATCH /api/v1/pages/:id runs this handler after it holds an API key to
+ * its rules (route file of /api/v1/pages/:id), so the owner's answer, its
+ * item check and its audit row, comes after those, as the guard did.
+ */
 export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = await ownerCallerAtRead();
   const { id } = await ctx.params;
   // An item made from an email attachment is not found for a key without
   // Search, its writes too (access matrix T4, audit B1).

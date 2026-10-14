@@ -1,5 +1,5 @@
 import { NextResponse } from '@/server/http-compat';
-import { SESSION_COOKIE_NAME, endLoginSessions, getLoginOr401 } from '@/lib/auth';
+import { SESSION_COOKIE_NAME, endLoginSessions, publicLoginCaller } from '@/lib/auth';
 import { secureCookies } from '@/lib/auth-constants';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
 import { refuseCrossSiteAuthPost } from '@/lib/auth/preflight';
@@ -26,9 +26,11 @@ export async function POST(req: Request) {
   // Attribute the logout while the cookie is still readable; no valid session
   // (already logged out, expired) → nothing to record.
   // Every login signs out this way; "everywhere" also ends its other
-  // sessions, asset tokens and API keys.
-  const login = await getLoginOr401();
-  if (!(login instanceof NextResponse)) {
+  // sessions, asset tokens and API keys. A public row: the login the
+  // pipeline answers at this read, after the origin check and the body (A4
+  // hand batch B), as the guard was called here.
+  const login = await publicLoginCaller();
+  if (login) {
     if (everywhere) await endLoginSessions(login.loginId, { endKeys: true });
     auditFireAndForget({
       actorId: login.loginId,

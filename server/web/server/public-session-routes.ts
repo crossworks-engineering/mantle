@@ -225,9 +225,11 @@ export const RENDER_PAGES: PublicSessionRoute[] = [
 }));
 
 /** A call in a route's source that reads the caller's session or login. A
- *  public route whose source matches must be in PUBLIC_SESSION_ROUTES. */
+ *  public route whose source matches must be in PUBLIC_SESSION_ROUTES. The
+ *  readers of the login a public row reads (A4 hand batch B:
+ *  publicLoginCaller, cookieUpgradeCaller) are among them. */
 export const SESSION_READER_RE =
-  /\b(getLoginOr401|getOwnerOr401\w*|getSessionUser\w*|getMemberOr401|resolveLogin|requireOwner\w*|handleOwnerSso|getOwnerForAsset|getMemberForAsset|renderCaller|verifyMobileToken|mobileTokenJti|handleTokenLogin)\b/;
+  /\b(getLoginOr401|getOwnerOr401\w*|getSessionUser\w*|getMemberOr401|resolveLogin|requireOwner\w*|handleOwnerSso|getOwnerForAsset|getMemberForAsset|renderCaller|verifyMobileToken|mobileTokenJti|handleTokenLogin|publicLoginCaller|cookieUpgradeCaller)\b/;
 
 let driven = 0;
 

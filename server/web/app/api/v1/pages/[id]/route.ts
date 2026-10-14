@@ -8,6 +8,10 @@
  *  - it may not change the `doc` of a page others can read (M2 audit N3):
  *    what the doc embeds would become readable to them with no confirm,
  *    and a key cannot confirm. MCP holds the same rule (register/context).
+ *
+ * The page route's PATCH reads its owner at the read (ownerCallerAtRead,
+ * A4 hand batch B): the gate binds the answer and runs it when the page
+ * route reads it, after these rules, as the page route's guard ran.
  */
 import { NextResponse } from '@/server/http-compat';
 import { resolveSingleOwnerId } from '@mantle/db';

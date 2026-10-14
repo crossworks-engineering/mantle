@@ -27,7 +27,7 @@
  */
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { NextResponse } from '@/server/http-compat';
-import { getLoginOr401, verifyPassword, type SessionUser } from '@/lib/auth';
+import { publicLoginCaller, verifyPassword, type AnyLogin, type SessionUser } from '@/lib/auth';
 import { rateLimitLogin, rateLimitLoginRefund } from '@/lib/rate-limit';
 import { requestOrigin } from '@/lib/auth-constants';
 import { getClient, isRemoteMcpEnabled, mintAuthCode, DEFAULT_SCOPE } from '@/lib/mcp-oauth';
@@ -100,10 +100,11 @@ type Consenter = {
 
 /** Who is signed in: a login that may connect, a member that may not
  *  (refused with a page, not sent to /login: it is signed in, and a bounce
- *  would loop), or nobody. */
-async function signedIn(): Promise<Consenter | 'member' | null> {
-  const login = await getLoginOr401();
-  if (login instanceof Response) return null;
+ *  would loop), or nobody. `login`: the login the pipeline answers at the
+ *  handler's read (publicLoginCaller, A4 hand batch B: a public row, read
+ *  after the switch and the client's validation, where the guard was). */
+async function signedIn(login: AnyLogin | null): Promise<Consenter | 'member' | null> {
+  if (!login) return null;
   switch (login.kind) {
     case 'admin':
       return adminConsenter(login.user, login.sessionEpoch);
@@ -175,7 +176,7 @@ export async function GET(req: Request) {
   const validated = await validate(p);
   if (validated instanceof Response) return validated;
 
-  const user = await signedIn();
+  const user = await signedIn(await publicLoginCaller());
   if (user === 'member') return htmlError(MEMBER_REFUSED, 403);
   if (!user) {
     // Bounce through login, then return to this exact authorize request.
@@ -212,7 +213,7 @@ export async function POST(req: Request) {
   const validated = await validate(p);
   if (validated instanceof Response) return validated;
 
-  const user = await signedIn();
+  const user = await signedIn(await publicLoginCaller());
   if (user === 'member') return htmlError(MEMBER_REFUSED, 403);
   if (!user) return htmlError('your session expired — start the connection again', 401);
 

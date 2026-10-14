@@ -12,19 +12,15 @@ import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
  *     mints sessions — a leak here is a free session);
  *   - a cross-origin Origin that isn't ours is 403 (login-CSRF hardening),
  *     checked BEFORE the credential so a foreign page can't probe it.
- * The credential gate itself is mocked — this is the route contract, not the
- * auth resolver. Which roles it takes (admin and member yes, client no) is
- * driven for real by the role sweeps (server/public-session-routes.ts).
+ * The login the pipeline answers (cookieUpgradeCaller(), what
+ * getCookieUpgradeLoginOr401 answers, null where it refused) is stood in —
+ * this is the route contract, not the auth resolver. Which roles it takes
+ * (admin and member yes, client no) is driven for real by the role sweeps
+ * (server/public-session-routes.ts).
  */
 
-const getCookieUpgradeLoginOr401 = vi.fn();
-vi.mock('./auth', async () => {
-  const actual = await vi.importActual<typeof import('./auth')>('./auth');
-  return {
-    ...actual,
-    getCookieUpgradeLoginOr401: () => getCookieUpgradeLoginOr401(),
-  };
-});
+/** The route's read of the login the pipeline answers, stood in. */
+const upgradeLogin = vi.fn();
 
 const audited = vi.fn();
 vi.mock('./audit', async () => {
@@ -67,6 +63,7 @@ async function post(headers: Record<string, string> = {}) {
         ...headers,
       },
     }),
+    () => upgradeLogin(),
   );
 }
 
@@ -76,7 +73,7 @@ beforeEach(() => {
 
 describe('POST /api/auth/sso', () => {
   it('authenticated caller → 204 with a fresh session cookie', async () => {
-    getCookieUpgradeLoginOr401.mockResolvedValue(addedLoginSession());
+    upgradeLogin.mockResolvedValue(addedLoginSession());
 
     const res = await post();
 
@@ -88,7 +85,7 @@ describe('POST /api/auth/sso', () => {
   });
 
   it('mints for the ACTOR, not the anchor — the audit trail is the whole point', async () => {
-    getCookieUpgradeLoginOr401.mockResolvedValue(addedLoginSession());
+    upgradeLogin.mockResolvedValue(addedLoginSession());
 
     const res = await post();
 
@@ -108,7 +105,7 @@ describe('POST /api/auth/sso', () => {
   });
 
   it('mints a SHORT cookie, not the password login’s year', async () => {
-    getCookieUpgradeLoginOr401.mockResolvedValue(addedLoginSession());
+    upgradeLogin.mockResolvedValue(addedLoginSession());
 
     const res = await post();
 
@@ -123,7 +120,7 @@ describe('POST /api/auth/sso', () => {
   });
 
   it('logs a member cookie mint as auth.sso; an admin is on the trail at the gate', async () => {
-    getCookieUpgradeLoginOr401.mockResolvedValue(addedLoginSession('member'));
+    upgradeLogin.mockResolvedValue(addedLoginSession('member'));
     expect((await post()).status).toBe(204);
     expect(audited).toHaveBeenCalledOnce();
     expect(audited.mock.calls[0]![0]).toMatchObject({
@@ -133,16 +130,13 @@ describe('POST /api/auth/sso', () => {
     });
 
     audited.mockClear();
-    getCookieUpgradeLoginOr401.mockResolvedValue(addedLoginSession('admin'));
+    upgradeLogin.mockResolvedValue(addedLoginSession('admin'));
     expect((await post()).status).toBe(204);
     expect(audited).not.toHaveBeenCalled();
   });
 
   it('unauthenticated caller is refused and gets NO cookie', async () => {
-    const { NextResponse } = await import('../server/http-compat');
-    getCookieUpgradeLoginOr401.mockResolvedValue(
-      NextResponse.json({ error: 'unauthorized' }, { status: 401 }),
-    );
+    upgradeLogin.mockResolvedValue(null);
 
     const res = await post();
 
@@ -151,7 +145,7 @@ describe('POST /api/auth/sso', () => {
   });
 
   it('a foreign Origin is 403 — before the credential is even consulted', async () => {
-    getCookieUpgradeLoginOr401.mockResolvedValue(addedLoginSession());
+    upgradeLogin.mockResolvedValue(addedLoginSession());
 
     const res = await post({ origin: 'https://evil.example' });
 
@@ -159,11 +153,11 @@ describe('POST /api/auth/sso', () => {
     expect(res.headers.get('set-cookie') ?? '').not.toContain('mantle_session=');
     // Order matters: a foreign page must not be able to use this to probe
     // whether the browser holds a valid session.
-    expect(getCookieUpgradeLoginOr401).not.toHaveBeenCalled();
+    expect(upgradeLogin).not.toHaveBeenCalled();
   });
 
   it('our own origin is allowed', async () => {
-    getCookieUpgradeLoginOr401.mockResolvedValue(addedLoginSession());
+    upgradeLogin.mockResolvedValue(addedLoginSession());
 
     const res = await post({ origin: 'http://server.test' });
 
@@ -172,7 +166,7 @@ describe('POST /api/auth/sso', () => {
 
   it('the configured client origin is allowed (split topology)', async () => {
     vi.stubEnv('MANTLE_CLIENT_ORIGIN', 'https://app.server.test');
-    getCookieUpgradeLoginOr401.mockResolvedValue(addedLoginSession());
+    upgradeLogin.mockResolvedValue(addedLoginSession());
 
     const res = await post({ origin: 'https://app.server.test' });
 

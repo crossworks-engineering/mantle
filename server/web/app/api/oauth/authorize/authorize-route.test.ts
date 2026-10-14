@@ -35,7 +35,9 @@ const PASSWORD = 'the right password';
 
 vi.mock('@/lib/auth', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
-  getLoginOr401: vi.fn(async () => h.login),
+  // The login the pipeline answers at the read (A4 hand batch B): no
+  // login (the guard's refusal) is null.
+  publicLoginCaller: vi.fn(async () => (h.login instanceof Response ? null : h.login)),
   verifyPassword: vi.fn(async (_id: string, password: string) => password === PASSWORD),
 }));
 

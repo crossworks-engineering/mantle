@@ -2,7 +2,7 @@ import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import {
   endLoginSessions,
-  getLoginOr401,
+  publicLoginCaller,
   setSessionCookie,
   updatePassword,
   verifyPassword,
@@ -27,9 +27,11 @@ const ChangePasswordBody = z
 export async function POST(req: Request) {
   const refused = refuseCrossSiteAuthPost(req);
   if (refused) return refused;
-  // Every login changes its own password.
-  const login = await getLoginOr401();
-  if (login instanceof NextResponse) {
+  // Every login changes its own password. A public row: the login the
+  // pipeline answers at this read, after the cross-site refusal (A4 hand
+  // batch B), as the guard was called here.
+  const login = await publicLoginCaller();
+  if (!login) {
     return NextResponse.json({ error: 'Not signed in.' }, { status: 401 });
   }
   // The LOGIN's own credential — always the login, never the anchor

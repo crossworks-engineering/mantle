@@ -27,7 +27,8 @@
  * consent page is a top-level navigation, which carries cookies only, so a
  * bearer-only member reached it as nobody and was bounced to /login. The
  * member's cookie reaches what its bearer already reaches, and no more. A
- * client is refused (see getCookieUpgradeLoginOr401).
+ * client is refused (see getCookieUpgradeLoginOr401, which the gate answers
+ * for the route at its read: cookieUpgradeCaller()).
  *
  * Unlike the retired team route this takes NO `next` and never redirects: it is called
  * by `fetch` from our own shell, not by a top-level form navigation, so there
@@ -35,7 +36,12 @@
  * Authorization header rather than a form body.
  */
 import { NextResponse } from '../server/http-compat';
-import { buildSessionCookie, getCookieUpgradeLoginOr401, SESSION_COOKIE_NAME } from './auth';
+import {
+  buildSessionCookie,
+  SESSION_COOKIE_NAME,
+  unauthorizedRefusal,
+  type CookieUpgradeLogin,
+} from './auth';
 import { isTrustedOrigin, rateLimited } from './auth/preflight';
 import { secureCookies } from './auth-constants';
 import { auditFireAndForget, requestMetaFrom } from './audit';
@@ -44,7 +50,17 @@ import { clientIpKey, rateLimit } from './rate-limit';
 /** See the mint below for why this is days, not the password login's year. */
 export const OWNER_SSO_COOKIE_TTL_SECONDS = 7 * 24 * 60 * 60;
 
-export async function handleOwnerSso(req: Request): Promise<NextResponse> {
+/**
+ * `upgradeLogin`: the route's read of the login the pipeline answers
+ * (cookieUpgradeCaller(), A4 hand batch B: what getCookieUpgradeLoginOr401
+ * answers, null where it refused), run here, after the throttle and the
+ * origin check, where the guard was called: a throttled or foreign caller
+ * pays no lookup, stamps no device and writes no audit row.
+ */
+export async function handleOwnerSso(
+  req: Request,
+  upgradeLogin: () => Promise<CookieUpgradeLogin | null>,
+): Promise<NextResponse> {
   const denied = rateLimited(
     rateLimit(`owner-sso:ip:${clientIpKey(req)}`, { max: 30, windowMs: 60_000 }),
   );
@@ -56,8 +72,8 @@ export async function handleOwnerSso(req: Request): Promise<NextResponse> {
 
   // The Authorization bearer only: a cookie never renews itself here, or a
   // revoked device's cookie would live forever (access matrix T2).
-  const login = await getCookieUpgradeLoginOr401();
-  if (login instanceof Response) return login as NextResponse;
+  const login = await upgradeLogin();
+  if (!login) return unauthorizedRefusal();
 
   // Mint for the LOGIN, not the anchor: an admin's data is keyed to the
   // anchor, but a session identifies the login that opened it — keying the
