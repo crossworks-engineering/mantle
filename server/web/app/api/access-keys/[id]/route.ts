@@ -13,15 +13,15 @@ import { NextResponse } from '@/server/http-compat';
 import { and, eq, isNull } from 'drizzle-orm';
 import { z } from 'zod';
 import { accessKeys, db } from '@mantle/db';
-import { forgetRequestLogins, getLoginOr401 } from '@/lib/auth';
+import { forgetRequestLogins, loginCaller, type AnyLogin } from '@/lib/auth';
 import { auditFireAndForget, requestMeta } from '@/lib/audit';
-import { ruleInQuery } from '@/lib/auth/rule-in-query';
+import { inRuleInQuery } from '@/lib/auth/rule-in-query';
 
 const Params = z.object({ id: z.string().uuid() });
 
-async function handleDELETE(_req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const login = await getLoginOr401();
-  if (login instanceof Response) return login;
+type Ctx = { params: Promise<{ id: string }> };
+
+async function handleDELETE(login: AnyLogin, ctx: Ctx) {
   const params = Params.safeParse(await ctx.params);
   if (!params.success) return NextResponse.json({ error: 'Invalid id.' }, { status: 400 });
   const [row] = await db
@@ -63,4 +63,9 @@ async function handleDELETE(_req: Request, ctx: { params: Promise<{ id: string }
   return NextResponse.json({ ok: true }, { headers: { 'Cache-Control': 'no-store' } });
 }
 
-export const DELETE = ruleInQuery(handleDELETE);
+/** The login the pipeline answered, read before the exit: the body runs on
+ *  the system pool by name (A4 hand batch A). */
+export async function DELETE(_req: Request, ctx: Ctx) {
+  const login = loginCaller();
+  return inRuleInQuery(() => handleDELETE(login, ctx));
+}

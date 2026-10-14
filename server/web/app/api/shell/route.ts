@@ -3,7 +3,7 @@ import { NextResponse } from '@/server/http-compat';
 import { countPending } from '@mantle/tools';
 import { loadPreferencesFor, logoVersion } from '@mantle/content';
 import type { Shell } from '@mantle/client-types';
-import { getLoginOr401, mintAssetToken } from '@/lib/auth';
+import { loginCaller, mintAssetToken, type AnyLogin } from '@/lib/auth';
 import { SHORT_ASSET_TOKEN_TTL_SECONDS } from '@/lib/auth/tokens';
 import { isOnboarded } from '@/lib/onboarding';
 import { shellPart } from '@/lib/shell-part';
@@ -11,7 +11,7 @@ import { READER_TREE_KINDS, TREE_LIVE_KINDS } from '@mantle/content/tree';
 import { shellFeatures } from '@/lib/features';
 import { loginWorkspaces } from '@/lib/login-workspaces';
 import { workspaceCaller } from '@/lib/workspaces';
-import { ruleInQuery } from '@/lib/auth/rule-in-query';
+import { inRuleInQuery } from '@/lib/auth/rule-in-query';
 
 type Prefs = Awaited<ReturnType<typeof loadPreferencesFor>>;
 
@@ -35,9 +35,7 @@ type Prefs = Awaited<ReturnType<typeof loadPreferencesFor>>;
  * setup wizard. `isOnboarded` is idempotent (it self-stamps an established
  * install), so it's safe in a GET.
  */
-async function handleGET() {
-  const login = await getLoginOr401();
-  if (login instanceof Response) return login;
+async function handleGET(login: AnyLogin) {
   const caller = workspaceCaller(login);
   const admin = login.kind === 'admin' ? login.user : null;
   const anchorId = caller.anchorId;
@@ -150,4 +148,9 @@ async function handleGET() {
   return NextResponse.json(body);
 }
 
-export const GET = ruleInQuery(handleGET);
+/** The login the pipeline answered (any login), read before the exit: the
+ *  body runs on the system pool by name (A4 hand batch A). */
+export async function GET() {
+  const login = loginCaller();
+  return inRuleInQuery(() => handleGET(login));
+}

@@ -34,7 +34,7 @@
  */
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
-import { getLoginOr401, verifyPassword } from '@/lib/auth';
+import { loginCaller, verifyPassword, type AnyLogin } from '@/lib/auth';
 import {
   ACCESS_KEY_ACCESS,
   ACCESS_KEY_AREAS,
@@ -52,7 +52,7 @@ import { rateLimitLogin, rateLimitLoginRefund } from '@/lib/rate-limit';
 import { auditFireAndForget, requestMeta } from '@/lib/audit';
 import { firstIssue } from '@/lib/zod-issue';
 import type { AccessKeyCreated, AccessKeyList } from '@mantle/client-types';
-import { ruleInQuery } from '@/lib/auth/rule-in-query';
+import { inRuleInQuery } from '@/lib/auth/rule-in-query';
 
 const NO_STORE = { 'Cache-Control': 'no-store' };
 /** Keys a login may make an hour (final audit F6): a make-and-revoke loop
@@ -77,11 +77,9 @@ const Body = z
   // rather than quietly ignored.
   .strict();
 
-type Login = Exclude<Awaited<ReturnType<typeof getLoginOr401>>, Response>;
-
 /** Whether the login holds the Admin workspace with its keys area now (W8a:
  *  what a key may be decides on this, never on the role). */
-async function holdsKeysArea(login: Login): Promise<boolean> {
+async function holdsKeysArea(login: AnyLogin): Promise<boolean> {
   return requireArea(
     {
       kind: login.kind,
@@ -93,9 +91,7 @@ async function holdsKeysArea(login: Login): Promise<boolean> {
   );
 }
 
-async function handleGET() {
-  const login = await getLoginOr401();
-  if (login instanceof Response) return login;
+async function handleGET(login: AnyLogin) {
   const keys = await listAccessKeys(login.kind === 'admin' ? null : login.loginId);
   const maxDays = maxKeyDays(await holdsKeysArea(login));
   return NextResponse.json(
@@ -112,9 +108,7 @@ async function handleGET() {
   );
 }
 
-async function handlePOST(req: Request) {
-  const login = await getLoginOr401();
-  if (login instanceof Response) return login;
+async function handlePOST(login: AnyLogin, req: Request) {
   const parsed = Body.safeParse(await req.json().catch(() => null));
   if (!parsed.success) {
     return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
@@ -234,5 +228,14 @@ async function handlePOST(req: Request) {
   );
 }
 
-export const GET = ruleInQuery(handleGET);
-export const POST = ruleInQuery(handlePOST);
+// The login the pipeline answered (any login), read before the exit: the
+// body runs on the system pool by name (A4 hand batch A).
+export async function GET() {
+  const login = loginCaller();
+  return inRuleInQuery(() => handleGET(login));
+}
+
+export async function POST(req: Request) {
+  const login = loginCaller();
+  return inRuleInQuery(() => handlePOST(login, req));
+}

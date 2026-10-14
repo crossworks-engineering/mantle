@@ -459,6 +459,30 @@ const OWNER_DECISION_ROWS: ReadonlySet<string> = new Set([
 ]);
 const ownerDecision = new Map<string, string>();
 /**
+ * The owner's decision of 2026-10-14, 1a (docs/actors.md, A4 hand batch
+ * A): the any-login handlers of the four ruleInQuery files read the login
+ * the pipeline answered before they leave the request scope by name
+ * (asSystem 'rule-in-query'). Before, the whole handler ran inside the
+ * exit, the guard included, so the actor the sweep notes after the guard
+ * was system:rule-in-query; the gate answers outside it, so a refusal is
+ * noted as system:http:no-login and a login let through as the login.
+ * Nothing on the wire changes, and the body still runs inside the exit.
+ * Their cells in the recorded files changed there, and only there; each is
+ * recorded as driven in a file of its own
+ * (`__snapshots__/a4-guard-sweep-rule-in-query.txt`).
+ */
+const RULE_IN_QUERY_ROWS: ReadonlySet<string> = new Set([
+  'GET /api/shell',
+  'HEAD /api/shell',
+  'GET /api/v1/whoami',
+  'HEAD /api/v1/whoami',
+  'GET /api/access-keys',
+  'HEAD /api/access-keys',
+  'POST /api/access-keys',
+  'DELETE /api/access-keys/:id',
+]);
+const ruleInQueryCells = new Map<string, string>();
+/**
  * The guard writes (A4 step 3b part 5 fix round 1): every cell of a write
  * (auditsAsWrite) a guard or the pipeline answered, keyed by the sweep, the
  * cell and the guard names its entries stand for (a moved entry under the
@@ -483,9 +507,9 @@ function noteGuardWrite(sweep: string, cell: string): void {
 }
 function noteMoved(sweep: string, cell: string, answer: string): string {
   noteGuardWrite(sweep, cell);
-  if (OWNER_DECISION_ROWS.has(cell.split(' ').slice(0, 2).join(' '))) {
-    ownerDecision.set(`${sweep} ${cell}`, answer);
-  }
+  const row = cell.split(' ').slice(0, 2).join(' ');
+  if (OWNER_DECISION_ROWS.has(row)) ownerDecision.set(`${sweep} ${cell}`, answer);
+  if (RULE_IN_QUERY_ROWS.has(row)) ruleInQueryCells.set(`${sweep} ${cell}`, legacy(answer));
   if (answer.includes('[pipeline:')) {
     moved.set(`${sweep} ${cell}`, answer);
     const [method = '', pattern = ''] = cell.split(' ');
@@ -850,6 +874,43 @@ describe.skipIf(!hasManifest)('A4 step 3a: every guard answers as on main', () =
         '',
       ].join('\n'),
     ).toMatchFileSnapshot('./__snapshots__/a4-guard-sweep-owner-decision.txt');
+  });
+
+  it('records the cells of the any-login rows that leave the scope by name (the owner decision 1a, A4 hand batch A)', async () => {
+    // GET /api/shell, GET /api/v1/whoami, GET, POST /api/access-keys and
+    // DELETE /api/access-keys/:id (and the HEADs) read the login before the
+    // exit since the owner's decision 1a: the actor noted after the login's
+    // answer is the gate's (system:http:no-login for a refusal, the login
+    // for a login let through), no longer system:rule-in-query. The
+    // recorded files hold these cells as driven now; this file names them,
+    // one line each, as the recorded files spell them.
+    expect(ruleInQueryCells.size).toBeGreaterThan(0);
+    const answers = new Map<string, string>();
+    const lines = [...ruleInQueryCells].map(([cell, answer]) => {
+      let id = answers.get(answer);
+      if (!id) {
+        id = `q${answers.size + 1}`;
+        answers.set(answer, id);
+      }
+      return `${cell}=${id}`;
+    });
+    await expect(
+      [
+        '# the owner decision of 2026-10-14, 1a: the any-login handlers of the four',
+        '# ruleInQuery files read the login before they leave the request scope by name',
+        "# (asSystem 'rule-in-query'). The actor noted after the login's answer was",
+        '# system:rule-in-query (the guard ran inside the exit); the gate answers outside',
+        '# it: a refusal is noted as system:http:no-login, a login let through as the',
+        '# login. Status, headers, body and the request outcome are unchanged. Every',
+        '# other cell is as recorded on main.',
+        '# answers',
+        ...[...answers].map(([answer, id]) => `${id} ${answer}`),
+        '',
+        `# cells: ${ruleInQueryCells.size}`,
+        ...lines,
+        '',
+      ].join('\n'),
+    ).toMatchFileSnapshot('./__snapshots__/a4-guard-sweep-rule-in-query.txt');
   });
 
   it('records what each moved write did on the side (A4 step 3b part 4)', async () => {

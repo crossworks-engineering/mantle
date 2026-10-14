@@ -46,12 +46,18 @@ vi.mock('@/lib/auth', async () => {
     contactId: null,
   };
   const base = { source: 'web', sessionEpoch: 0 };
+  const login = () =>
+    h.role === 'member'
+      ? { kind: 'member', loginId: LOGIN, email: member.email, member, ...base }
+      : { kind: 'admin', loginId: ACTOR, email: admin.actor.email, user: admin, ...base };
   return {
-    getLoginOr401: async () => {
-      if (h.gate === 'refuse') return refused();
-      if (h.role === 'member')
-        return { kind: 'member', loginId: LOGIN, email: member.email, member, ...base };
-      return { kind: 'admin', loginId: ACTOR, email: admin.actor.email, user: admin, ...base };
+    getLoginOr401: async () => (h.gate === 'refuse' ? refused() : login()),
+    // The reader GET /api/shell calls (A4 hand batch A): the gate refused
+    // before the handler, so with no login it throws, as the real reader
+    // does where the pipeline answered none.
+    loginCaller: () => {
+      if (h.gate === 'refuse') throw new Error('loginCaller(): the pipeline answered no login');
+      return login();
     },
     getOwnerOr401: async () =>
       h.gate === 'refuse' ? refused() : h.role === 'admin' ? admin : wrongRole(),
@@ -192,10 +198,10 @@ describe('shell chrome reads never fail the shell', () => {
       expect(body).toMatchObject({ onboarded: true, pendingApprovals: 0, siteName: null });
     });
 
-    it('still refuses without a login: the gate is never caught', async () => {
+    it('never catches a missing login (the gate refuses before the handler)', async () => {
       h.gate = 'refuse';
       h.fail.add('pending count');
-      expect((await shell()).status).toBe(401);
+      await expect(shell()).rejects.toThrow(/answered no login/);
     });
   });
 
@@ -246,9 +252,9 @@ describe('shell chrome reads never fail the shell', () => {
       },
     );
 
-    it('still refuses without a login', async () => {
+    it('never catches a missing login', async () => {
       h.gate = 'refuse';
-      expect((await shell()).status).toBe(401);
+      await expect(shell()).rejects.toThrow(/answered no login/);
     });
   });
 
