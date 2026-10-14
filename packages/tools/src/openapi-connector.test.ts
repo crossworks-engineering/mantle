@@ -16,7 +16,10 @@ import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
-vi.mock('./ssrf-guard', () => ({ assertFetchableUrl: async () => {} }));
+vi.mock('./ssrf-guard', () => ({
+  assertFetchableUrl: async () => {},
+  isSandboxProxyUrl: () => false,
+}));
 vi.mock('@mantle/api-keys', () => ({
   getApiKey: async (_owner: string, service: string, label: string) =>
     service === 'petstore' && label === 'default' ? 'live-key-9' : null,

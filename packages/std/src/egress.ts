@@ -25,15 +25,21 @@
  * 100.100.100.200, Oracle's 192.0.0.192, AWS's fd00:ec2::254), "this
  * network", multicast and reserved space.
  *
- * Residual (unchanged from the guard this replaces): a TOCTOU between the
- * DNS check and the platform's own connect (DNS rebinding). Pinning the
- * resolved IP needs a custom connector and breaks TLS SNI; resolve and check
- * stops the realistic injection cases (a literal metadata IP, localhost, a
- * name pointing into private space). Noted, not closed.
+ * DNS rebinding is closed by pinning: the name is resolved and checked
+ * before each hop (for a clear refusal), and the connection itself goes
+ * through an undici Agent whose `connect.lookup` resolves again, checks
+ * every answer and hands the socket only checked addresses. A name that
+ * answers a public address to the check and a private one to the connect
+ * is refused at the connect. TLS SNI and the certificate check keep the
+ * hostname, since only the address lookup is replaced. A name that does
+ * not resolve is refused in every mode.
  */
 
 import { lookup } from 'node:dns/promises';
 import net from 'node:net';
+
+type Undici = typeof import('undici');
+type UndiciAgent = import('undici').Agent;
 
 export type EgressOptions = {
   /** Abort the whole exchange (every hop and the body read) after this many
@@ -56,10 +62,12 @@ export type EgressOptions = {
    *  refuse any redirect outright, as the platform's `redirect: 'error'`. */
   redirect?: 'follow' | 'error';
   /** A deliberate carve the caller owns (the sandbox service proxy in
-   *  @mantle/tools): a URL it accepts skips the address check. */
+   *  @mantle/tools): a URL it accepts skips the address check and the
+   *  connect-time pin. */
   exempt?: (u: URL) => boolean;
-  /** Replaces the address check (the caller's own guard; tests drive
-   *  loopback servers with a permissive one). */
+  /** Replaces the check before each hop (the caller's own guard; tests
+   *  drive loopback servers with a permissive one). The connect-time pin
+   *  still applies to every name: pass `exempt` too for a carve. */
   guard?: (url: string) => Promise<void>;
 };
 
@@ -234,11 +242,34 @@ export function isBlockedIp(ip: string, opts: { allowLan?: boolean } = {}): bool
   return true;
 }
 
+/** Resolve `host` and check every answer: the addresses this caller may
+ *  connect to, or EgressRefusedError (a name that does not resolve is
+ *  refused too, fail closed). */
+async function resolveChecked(
+  host: string,
+  allowLan: boolean,
+): Promise<Array<{ address: string; family: number }>> {
+  let addrs: Array<{ address: string; family: number }>;
+  try {
+    addrs = await lookup(host, { all: true });
+  } catch {
+    throw new EgressRefusedError(`cannot resolve host: ${host}`);
+  }
+  if (addrs.length === 0) throw new EgressRefusedError(`cannot resolve host: ${host}`);
+  for (const a of addrs) {
+    if (isBlockedIp(a.address, { allowLan })) {
+      throw new EgressRefusedError(
+        `refusing to fetch ${host} \u2014 it resolves to a private/internal address`,
+      );
+    }
+  }
+  return addrs;
+}
+
 /**
  * Throw (EgressRefusedError) unless `rawUrl` is an http(s) URL whose host
  * resolves only to addresses this caller may reach. Runs before every hop.
- * A name that does not resolve is refused, except for a LAN caller: there
- * the platform's own connect reports it, as it did before the fold.
+ * A name that does not resolve is refused, whatever the caller's config.
  */
 export async function assertEgressUrl(
   rawUrl: string,
@@ -263,24 +294,75 @@ export async function assertEgressUrl(
     }
     return;
   }
-  let addrs: Array<{ address: string }>;
+  await resolveChecked(host, opts.allowLan === true);
+}
+
+type LookupCallback = (
+  err: Error | null,
+  address: string | Array<{ address: string; family: number }>,
+  family?: number,
+) => void;
+
+/** A `net.connect` lookup that answers only checked addresses (the pin). */
+function checkedLookup(allowLan: boolean) {
+  return (
+    hostname: string,
+    options: { all?: boolean; family?: number | string } | number | undefined,
+    cb: LookupCallback,
+  ): void => {
+    const o = typeof options === 'object' && options !== null ? options : {};
+    const fam = typeof options === 'number' ? options : o.family;
+    const want = fam === 4 || fam === 'IPv4' ? 4 : fam === 6 || fam === 'IPv6' ? 6 : 0;
+    resolveChecked(hostname, allowLan).then(
+      (addrs) => {
+        const usable = want ? addrs.filter((a) => a.family === want) : addrs;
+        if (usable.length === 0) {
+          cb(new EgressRefusedError(`cannot resolve host: ${hostname}`), '');
+          return;
+        }
+        if (o.all) cb(null, usable);
+        else cb(null, usable[0]!.address, usable[0]!.family);
+      },
+      (err: Error) => cb(err, ''),
+    );
+  };
+}
+
+let undiciModule: Undici | null | undefined;
+const pinnedAgents = new Map<boolean, UndiciAgent>();
+
+/** The `undici` package (as provider-fetch.ts loads it: lazily, through
+ *  createRequire, so no bundler follows a static import), or null. */
+function loadUndici(): Undici | null {
+  if (undiciModule !== undefined) return undiciModule;
   try {
-    addrs = await lookup(host, { all: true });
+    const load = process.getBuiltinModule('node:module').createRequire(import.meta.url);
+    undiciModule = load('undici') as Undici;
   } catch {
-    if (opts.allowLan) return;
-    throw new EgressRefusedError(`cannot resolve host: ${host}`);
+    undiciModule = null;
   }
-  if (addrs.length === 0) {
-    if (opts.allowLan) return;
-    throw new EgressRefusedError(`cannot resolve host: ${host}`);
+  return undiciModule;
+}
+
+/** The pinned Agent for this mode: its connections go only to addresses
+ *  `checkedLookup` let through. One per mode, so connections pool. */
+function pinnedDispatcher(allowLan: boolean): UndiciAgent {
+  const have = pinnedAgents.get(allowLan);
+  if (have) return have;
+  const undici = loadUndici();
+  if (!undici) {
+    throw new EgressRefusedError('egress: undici is unavailable, refusing an unpinned fetch');
   }
-  for (const a of addrs) {
-    if (isBlockedIp(a.address, opts)) {
-      throw new EgressRefusedError(
-        `refusing to fetch ${host} \u2014 it resolves to a private/internal address`,
-      );
-    }
-  }
+  const agent = new undici.Agent({ connect: { lookup: checkedLookup(allowLan) } });
+  pinnedAgents.set(allowLan, agent);
+  return agent;
+}
+
+/** A refusal raised inside the connect comes back as fetch's TypeError
+ *  ("fetch failed") with it as the cause: hand the refusal back. */
+function unwrapRefusal(err: unknown): unknown {
+  const cause = (err as { cause?: unknown } | null)?.cause;
+  return cause instanceof EgressRefusedError ? cause : err;
 }
 
 function headerRecord(init: HeadersInit | undefined): Record<string, string> {
@@ -356,6 +438,27 @@ export async function egressFetch(
   const guard =
     opts.guard ??
     ((u: string) => assertEgressUrl(u, { allowLan: opts.allowLan, exempt: opts.exempt }));
+  // The pin: every connection to a name resolves through `checkedLookup`
+  // (an IP literal connects without a lookup, and the check above has
+  // judged it). Skipped only for a URL the caller exempts.
+  const allowLan = opts.allowLan === true;
+  const send = async (target: RequestInfo | URL, reqInit: RequestInit): Promise<Response> => {
+    let u: URL | null = null;
+    try {
+      u = new URL(urlOf(target));
+    } catch {
+      // the guard already refused an invalid URL
+    }
+    const pinned = !(u && opts.exempt?.(u));
+    try {
+      return await fetch(
+        target,
+        pinned ? ({ ...reqInit, dispatcher: pinnedDispatcher(allowLan) } as RequestInit) : reqInit,
+      );
+    } catch (err) {
+      throw unwrapRefusal(err);
+    }
+  };
 
   let signal = init.signal ?? undefined;
   if (opts.timeoutMs !== undefined) {
@@ -374,7 +477,7 @@ export async function egressFetch(
     // One hop, the platform refuses a redirect: the input passes through
     // as given (a Request keeps its own method, headers and body).
     await guard(urlOf(input));
-    const res = await fetch(input, { ...init, redirect: 'error', signal });
+    const res = await send(input, { ...init, redirect: 'error', signal });
     return opts.maxBytes === undefined
       ? res
       : capBody(res, opts.maxBytes, opts.overflow ?? 'error', res.url || urlOf(input));
@@ -390,7 +493,7 @@ export async function egressFetch(
 
   for (let hop = 0; ; hop++) {
     await guard(currentUrl);
-    const res = await fetch(currentUrl, {
+    const res = await send(currentUrl, {
       ...init,
       method,
       headers,

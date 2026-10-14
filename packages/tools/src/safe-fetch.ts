@@ -19,7 +19,7 @@
  */
 
 import { egressFetch } from '@mantle/std/egress';
-import { assertFetchableUrl } from './ssrf-guard';
+import { assertFetchableUrl, isSandboxProxyUrl } from './ssrf-guard';
 
 /** The one egress fetch (@mantle/std/egress, A10 part 1) with this path's
  *  secrets: every hop guarded, secret-bearing headers dropped across
@@ -34,5 +34,5 @@ export async function safeFetch(
   // servers; every production caller takes the default real egress guard.
   guard: (u: string) => Promise<void> = assertFetchableUrl,
 ): Promise<Response> {
-  return egressFetch(url, init, { secrets: secretValues, guard });
+  return egressFetch(url, init, { secrets: secretValues, guard, exempt: isSandboxProxyUrl });
 }

@@ -5,7 +5,7 @@
  */
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 vi.mock('node:dns/promises', async () => (await import('./egress-test-net')).testNetDnsModule);
 
@@ -217,12 +217,12 @@ describe('assertEgressUrl', () => {
     await expect(assertEgressUrl('https://public.test/')).resolves.toBeUndefined();
   });
 
-  it('refuses an unresolvable name, unless the caller is on the LAN', async () => {
+  it('refuses an unresolvable name, whatever the caller config (fail closed)', async () => {
     install();
     await expect(assertEgressUrl('https://nowhere.test/')).rejects.toThrow(/cannot resolve/);
-    await expect(
-      assertEgressUrl('https://nowhere.test/', { allowLan: true }),
-    ).resolves.toBeUndefined();
+    await expect(assertEgressUrl('https://nowhere.test/', { allowLan: true })).rejects.toThrow(
+      /cannot resolve/,
+    );
   });
 
   it('skips the check for a URL the caller exempts', async () => {
@@ -327,5 +327,110 @@ describe('egressFetch', () => {
       /too many redirects \(>2\)/,
     );
     expect(net.log).toHaveLength(3);
+  });
+});
+
+/** A resolver that answers from `answers` in turn (the last one repeats):
+ *  the check and the connect each ask once per hop. */
+function rebindingNet(host: string, answers: string[]): { asked: () => number } {
+  let n = 0;
+  const lookup = async (h: string) => {
+    if (h !== host)
+      throw Object.assign(new Error(`getaddrinfo ENOTFOUND ${h}`), { code: 'ENOTFOUND' });
+    const ip = answers[Math.min(n++, answers.length - 1)]!;
+    return [{ address: ip, family: ip.includes(':') ? 6 : 4 }];
+  };
+  useTestNet({ fetch, lookup, log: [], hugeBytesPulled: () => 0 });
+  return { asked: () => n };
+}
+
+describe('DNS rebinding: the connection is pinned to a checked address', () => {
+  let srv: http.Server;
+  let port = 0;
+  let seen: string[] = [];
+
+  beforeAll(async () => {
+    srv = http.createServer((q, s) => {
+      seen.push(`${q.socket.localAddress} ${q.headers.host}`);
+      s.end('INTERNAL-ONLY');
+    });
+    await new Promise<void>((r) => srv.listen(0, '127.0.0.1', r));
+    port = (srv.address() as AddressInfo).port;
+  });
+  afterAll(() => {
+    srv.close();
+  });
+  afterEach(() => {
+    seen = [];
+  });
+
+  it('refuses a name that answers public to the check and loopback to the connect', async () => {
+    const r = rebindingNet('rebind.test', ['93.184.216.34', '127.0.0.1']);
+    const err = await egressFetch(`http://rebind.test:${port}/`, {}, { timeoutMs: 3000 }).catch(
+      (e: unknown) => e,
+    );
+    expect(err).toBeInstanceOf(EgressRefusedError);
+    expect((err as Error).message).toMatch(/private\/internal/);
+    expect(r.asked()).toBe(2); // the check, then the connect
+    expect(seen).toEqual([]);
+  });
+
+  it('a LAN caller is refused when the connect answer turns to the metadata range', async () => {
+    rebindingNet('rebind-lan.test', ['127.0.0.1', '169.254.169.254']);
+    await expect(
+      egressFetch(`http://rebind-lan.test:${port}/`, {}, { allowLan: true, timeoutMs: 3000 }),
+    ).rejects.toBeInstanceOf(EgressRefusedError);
+    expect(seen).toEqual([]);
+  });
+
+  it('connects to the address the pinned lookup checked, and keeps the hostname', async () => {
+    // pinned.test exists only in this resolver: a connect that did its own
+    // DNS would fail to resolve it.
+    rebindingNet('pinned.test', ['127.0.0.1']);
+    const res = await egressFetch(
+      `http://pinned.test:${port}/`,
+      {},
+      { allowLan: true, timeoutMs: 3000 },
+    );
+    expect(await res.text()).toBe('INTERNAL-ONLY');
+    expect(seen).toEqual([`127.0.0.1 pinned.test:${port}`]);
+  });
+
+  it('refuses a name that stops resolving at the connect, even for a LAN caller', async () => {
+    let n = 0;
+    useTestNet({
+      fetch,
+      lookup: async (h: string) => {
+        if (n++ === 0) return [{ address: '127.0.0.1', family: 4 }];
+        throw Object.assign(new Error(`getaddrinfo ENOTFOUND ${h}`), { code: 'ENOTFOUND' });
+      },
+      log: [],
+      hugeBytesPulled: () => 0,
+    });
+    await expect(
+      egressFetch(`http://gone.test:${port}/`, {}, { allowLan: true, timeoutMs: 3000 }),
+    ).rejects.toThrow(/cannot resolve host: gone\.test/);
+    expect(seen).toEqual([]);
+  });
+
+  it('pins with a caller guard too (the guard replaces only the check)', async () => {
+    rebindingNet('guarded.test', ['127.0.0.1']);
+    await expect(
+      egressFetch(`http://guarded.test:${port}/`, {}, { guard: async () => {}, timeoutMs: 3000 }),
+    ).rejects.toBeInstanceOf(EgressRefusedError);
+    expect(seen).toEqual([]);
+  });
+
+  it('does not pin a URL the caller exempts', async () => {
+    const inits: RequestInit[] = [];
+    vi.stubGlobal('fetch', async (_u: unknown, init: RequestInit) => {
+      inits.push(init);
+      return new Response('ok');
+    });
+    const exempt = (u: URL) => u.hostname === 'carve.test';
+    await egressFetch('http://carve.test/', {}, { exempt });
+    rebindingNet('other.test', ['93.184.216.34']);
+    await egressFetch('http://other.test/');
+    expect(inits.map((i) => 'dispatcher' in i)).toEqual([false, true]);
   });
 });

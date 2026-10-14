@@ -5,11 +5,10 @@
  * `http://169.254.169.254/...`, an internal service, or a tailnet peer — and
  * re-checks the target after every redirect hop.
  *
- * Residual: there's a TOCTOU between our DNS check and fetch's own connect
- * (DNS rebinding). Pinning the resolved IP would need a custom connector and
- * breaks TLS SNI; on a single-owner self-hosted box the resolve-and-check guard
- * raises the bar enough to stop the realistic injection cases (literal metadata
- * IP, localhost, hostnames pointing at private space). Noted, not closed.
+ * DNS rebinding: the connection itself is pinned to checked addresses
+ * (@mantle/std/egress resolves again at connect and refuses a private
+ * answer), so a name that answers public to the check and private to the
+ * connect is refused.
  */
 
 import { assertEgressUrl, egressFetch, isBlockedIp as egressBlocked } from '@mantle/std/egress';
@@ -38,7 +37,7 @@ export function isBlockedIp(ip: string): boolean {
  * Guarded by ssrf-guard.test.ts; if you widen this, you are re-deciding a
  * security boundary — stop and take it to the owner first.
  */
-function isSandboxProxyUrl(u: URL): boolean {
+export function isSandboxProxyUrl(u: URL): boolean {
   const base = env('SANDBOXD_URL');
   if (!base) return false;
   try {
@@ -68,5 +67,10 @@ export async function guardedFetch(
   maxRedirects = 5,
   opts: { maxBytes?: number; overflow?: 'error' | 'truncate' } = {},
 ): Promise<Response> {
-  return egressFetch(url, init, { maxRedirects, guard: assertFetchableUrl, ...opts });
+  return egressFetch(url, init, {
+    maxRedirects,
+    guard: assertFetchableUrl,
+    exempt: isSandboxProxyUrl,
+    ...opts,
+  });
 }

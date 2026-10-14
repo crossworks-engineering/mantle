@@ -45,15 +45,25 @@ stay free of node builtins). On top of the platform fetch:
   refuses link-local (the metadata address lives there), the cloud metadata
   addresses that sit inside the private ranges (Alibaba `100.100.100.200`,
   Oracle `192.0.0.192`, AWS IPv6 `fd00:ec2::254`), "this network",
-  multicast and reserved space. A name that does not resolve is left to the
-  platform's connect, as before.
+  multicast and reserved space.
+- **The connection is pinned to a checked address** (DNS rebinding). The
+  check before a hop resolves the name for a clear refusal; the connection
+  then goes through an undici `Agent` whose `connect.lookup` resolves again,
+  checks every answer and hands the socket only checked addresses. A name
+  that answers a public address to the check and a private one to the
+  connect is refused at the connect. TLS SNI and the certificate check keep
+  the hostname (only the address lookup is replaced). A name that does not
+  resolve is refused in every mode, `allowLan` included. A caller's own
+  `guard` replaces only the check before a hop; the pin still applies. Only
+  an `exempt` URL (the sandbox proxy carve) skips both.
 
 The sandbox service proxy carve (`isSandboxProxyUrl`) stays in
 `packages/tools/src/ssrf-guard.ts`: it is that package's decision, passed
-in as `exempt` through `assertFetchableUrl`.
+in as `exempt` (through `assertFetchableUrl` for the check, and beside it
+for the pin).
 
-Residual, unchanged: a TOCTOU between the DNS check and the platform's own
-connect (DNS rebinding). Noted in the module, not closed.
+The pin closes the TOCTOU the old guard noted between its DNS check and
+the platform's own connect.
 
 ### The callers
 

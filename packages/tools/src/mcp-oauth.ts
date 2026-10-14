@@ -59,7 +59,7 @@ import { deleteApiKey, getApiKey, listApiKeys, setApiKey } from '@mantle/api-key
 import { microsoftAuthority, resolveOAuthConfig } from '@mantle/microsoft';
 import { errorMessage } from '@mantle/std';
 import { egressFetch } from '@mantle/std/egress';
-import { assertFetchableUrl } from './ssrf-guard';
+import { assertFetchableUrl, isSandboxProxyUrl } from './ssrf-guard';
 
 /** Vault labels under service = the connector's group slug. */
 export const MCP_OAUTH_SECRET_LABELS = ['oauth-client', 'oauth-tokens', 'oauth-verifier'] as const;
@@ -138,7 +138,7 @@ export async function clearMcpOAuthSecrets(store: McpOAuthStore): Promise<void> 
  *  every URL is checked, and redirects are refused — token requests carry
  *  credentials that must not travel to a third host. */
 export const mcpOAuthFetch: typeof fetch = (input, init) =>
-  egressFetch(input, init, { redirect: 'error', guard: assertFetchableUrl });
+  egressFetch(input, init, { redirect: 'error', guard: assertFetchableUrl, exempt: isSandboxProxyUrl });
 
 /**
  * The OAuth fetch, remembering the FIRST error an endpoint answers with. On

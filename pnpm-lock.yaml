@@ -768,6 +768,10 @@ importers:
         version: 19.3.0(@types/react@19.3.0)
 
   packages/std:
+    dependencies:
+      undici:
+        specifier: ^8.11.2
+        version: 8.11.2
     devDependencies:
       '@types/node':
         specifier: ^26.6.4

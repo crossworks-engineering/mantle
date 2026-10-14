@@ -47,7 +47,7 @@ import { recordIngest, step } from '@mantle/tracing';
 import type { BuiltinToolDef, ToolHandlerResult } from './types';
 import { isOwnerSurface, OWNER_ONLY_ERROR } from './surface';
 import { EgressRefusedError, egressFetch } from '@mantle/std/egress';
-import { assertFetchableUrl } from './ssrf-guard';
+import { assertFetchableUrl, isSandboxProxyUrl } from './ssrf-guard';
 import { notFound } from './errors';
 import { resolveDefaultWorker } from './builtins-workers';
 import { str } from './coerce';
@@ -124,7 +124,7 @@ export async function vetVideoUrl(url: string): Promise<string | null> {
     const res = await egressFetch(
       url,
       { method: 'GET' },
-      { guard: assertFetchableUrl, timeoutMs: REDIRECT_WALK_TIMEOUT_MS },
+      { guard: assertFetchableUrl, exempt: isSandboxProxyUrl, timeoutMs: REDIRECT_WALK_TIMEOUT_MS },
     );
     await res.body?.cancel().catch(() => {});
   } catch (err) {

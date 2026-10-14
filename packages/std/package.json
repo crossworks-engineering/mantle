@@ -11,6 +11,9 @@
     "./egress": "./src/egress.ts",
     "./egress-test-net": "./src/egress-test-net.ts"
   },
+  "dependencies": {
+    "undici": "^8.11.2"
+  },
   "scripts": {
     "typecheck": "tsc --noEmit"
   },

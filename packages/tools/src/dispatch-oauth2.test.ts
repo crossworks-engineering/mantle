@@ -41,7 +41,10 @@ vi.mock('@mantle/api-keys', () => ({
     vault.get(`${service}/${label}`) ?? null,
 }));
 // Loopback servers stand in for the provider; the real guard would block them.
-vi.mock('./ssrf-guard', () => ({ assertFetchableUrl: async () => {} }));
+vi.mock('./ssrf-guard', () => ({
+  assertFetchableUrl: async () => {},
+  isSandboxProxyUrl: () => false,
+}));
 
 import type { Tool } from '@mantle/db';
 import { clearClientCredentialsCache } from './oauth2-client-credentials';

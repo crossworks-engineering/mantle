@@ -10,7 +10,10 @@ import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
-vi.mock('./ssrf-guard', () => ({ assertFetchableUrl: async () => {} }));
+vi.mock('./ssrf-guard', () => ({
+  assertFetchableUrl: async () => {},
+  isSandboxProxyUrl: () => false,
+}));
 
 import { Server } from '@modelcontextprotocol/server';
 import { NodeStreamableHTTPServerTransport } from '@modelcontextprotocol/node';

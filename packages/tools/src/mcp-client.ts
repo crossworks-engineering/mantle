@@ -22,7 +22,7 @@ import {
 import type { ToolGroupMcpBinding } from '@mantle/db';
 import { getApiKey } from '@mantle/api-keys';
 import { egressFetch } from '@mantle/std/egress';
-import { assertFetchableUrl } from './ssrf-guard';
+import { assertFetchableUrl, isSandboxProxyUrl } from './ssrf-guard';
 import { scrubSecrets } from './http-template';
 import { dbMcpOAuthStore, loadMcpOAuthTokens, runtimeMcpOAuthProvider } from './mcp-oauth';
 import { errorMessage } from '@mantle/std';
@@ -99,7 +99,11 @@ export const mcpConnectorFetch: typeof fetch = async (input, init) => {
   const isSseGet = method === 'GET' && accept.includes('text/event-stream');
   // The one egress fetch (A10 part 1): the address check on the request's
   // URL, and any redirect refused (redirect 'error').
-  const egress = { redirect: 'error', guard: assertFetchableUrl } as const;
+  const egress = {
+    redirect: 'error',
+    guard: assertFetchableUrl,
+    exempt: isSandboxProxyUrl,
+  } as const;
   if (!isSseGet) return egressFetch(input, init, egress);
 
   // Headers-only timeout: abort while waiting for headers, never after — the
