@@ -181,7 +181,7 @@ export const FIRE_MAKER_ONLY =
  * maker, as the tick does. A maker other than the brain owner fires in its
  * own scope, as the heartbeat_fire tool does (the fire's tool resolution and
  * turn answer that login, with its rights); the brain owner fires in its
- * own scope too (the engine's loginCaller). Under the rollback switch and on
+ * own scope too (the engine's fireInLoginScope). Under the rollback switch and on
  * a brain not on workspaces the engine's scope rules apply, the fire still
  * answering its maker.
  */

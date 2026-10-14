@@ -71,7 +71,7 @@ function isRole(v: string): v is McpLoginRole {
 
 /** A member's caller from its login row, or null. Its writes are whatever
  *  its scope may write (W7b: no per-login switch). */
-function loginCaller(
+function memberMcpCaller(
   row: LoginRow,
   anchorId: string,
   via: 'oauth' | 'key',
@@ -114,7 +114,7 @@ export async function resolveMcpCaller(req: Request): Promise<McpCaller | null> 
     };
   }
   const row = await loadLogin(grant.actorId);
-  return row ? loginCaller(row, grant.ownerId, 'oauth', grant.clientId, grant.readOnly) : null;
+  return row ? memberMcpCaller(row, grant.ownerId, 'oauth', grant.clientId, grant.readOnly) : null;
 }
 
 /**
@@ -176,7 +176,7 @@ async function callerFromAccessKey(req: Request, token: string): Promise<McpCall
     };
   } else {
     const row = await loadLogin(key.loginId);
-    const login = row ? loginCaller(row, anchorId, 'key') : null;
+    const login = row ? memberMcpCaller(row, anchorId, 'key') : null;
     caller = login
       ? { ...login, via: 'key', write: keyWrite, riskyAllowed: key.riskyTools ?? [] }
       : null;

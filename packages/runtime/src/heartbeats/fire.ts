@@ -130,7 +130,7 @@ export async function forceFire(hb: Heartbeat, opts: FireOpts = {}): Promise<Fir
  *  heartbeat_fire), null for the brain owner (the anchor login). Both
  *  callers let only the heartbeat's maker fire it (W7 integration fix 4), so
  *  a forced fire answers the maker, as the tick does; with no `inCaller` it runs
- *  in that login's own scope (loginCaller). Left out (the tick), the fire
+ *  in that login's own scope (fireInLoginScope). Left out (the tick), the fire
  *  answers the heartbeat's maker (heartbeats.created_by, null the anchor).
  *  The fire row records it (heartbeat_fires.answered_by): only that login
  *  reads the fire's reply, state and trace. */
@@ -150,7 +150,7 @@ function answerer(hb: Heartbeat, login: string | null | undefined): string | nul
  *  this, but we wrap defensively in case a future caller skips the
  *  filter: exclusion still holds. A heartbeat another Admin login set up
  *  (heartbeats.created_by, W7a fix round 3) fires as that login
- *  (loginCaller), never as the brain owner. */
+ *  (fireInLoginScope), never as the brain owner. */
 export async function tickFire(hb: Heartbeat): Promise<FireResult> {
   return runWithInflightLock(hb.id, () => fireInner(hb, { skipGates: false }));
 }
@@ -174,7 +174,7 @@ const MAKER_GONE =
  * change. The rollback switch and a brain not on workspaces are
  * withAgentScope's (the system pool, or the level, as before).
  */
-function loginCaller(
+function fireInLoginScope(
   hb: Heartbeat,
   agent: ScopedAgent,
   kind: 'admin' | 'workspace' | 'none',
@@ -186,7 +186,7 @@ function loginCaller(
 }
 
 /**
- * Arch A2a: who a fire runs as, decided as loginCaller decides the scope. An
+ * Arch A2a: who a fire runs as, decided as fireInLoginScope decides the scope. An
  * assistant of a workspace other than Admin fires as itself; otherwise the
  * login the fire answers (its maker), as that login is now; none, the brain
  * owner as login(owner). A forced fire keeps its caller's actor. With the
@@ -358,13 +358,13 @@ async function fireAs(hb: Heartbeat, opts: FireOpts & { skipGates: boolean }): P
     return autoPause(hb, answeredBy, `agent '${agent.slug}': ${errorMessage(err)}`);
   }
   // No caller: the login the fire answers runs it in its own scope
-  // (loginCaller). An assistant of a workspace other than Admin fires by its
+  // (fireInLoginScope). An assistant of a workspace other than Admin fires by its
   // own rules whoever fired it (W7 integration fix 2, M5): in a turn scope
   // of its workspace that answers no login, never in the firer's scope
   // (which its scope cannot change into) nor in the scope a tool's system
   // pool work left behind.
   if (kind === 'workspace') inCaller = (fn) => withoutLeftScope(fn);
-  else if (!opts.inCaller) inCaller = loginCaller(hb, agent, kind, answeredBy) ?? inCaller;
+  else if (!opts.inCaller) inCaller = fireInLoginScope(hb, agent, kind, answeredBy) ?? inCaller;
 
   if (!agent.apiKeyId) {
     return autoPause(hb, answeredBy, `agent '${agent.slug}' has no api_key configured`);
