@@ -27,6 +27,21 @@ describe('handlerReads', () => {
     expect(handlerReads(src, 'a/route.ts')).toEqual(['GET', 'POST']);
   });
 
+  it('follows a handler another route file exports, re-exported or wrapped', () => {
+    const base: Record<string, readonly string[]> = { '../../notes/route': ['GET'] };
+    const follow = (spec: string) => base[spec] ?? null;
+    const src = `
+      import { GET as notes } from '../../notes/route';
+      export { GET } from '../../notes/route';
+      export { POST } from '../../notes/route';
+      export async function PATCH(req: Request) { return notes(req); }
+      export { DELETE } from '@/lib/elsewhere';
+    `;
+    expect(handlerReads(src, 'a/route.ts', follow)).toEqual(['GET', 'PATCH']);
+    // Without knowing the other file, nothing it exports is taken as read.
+    expect(handlerReads(src, 'a/route.ts')).toEqual([]);
+  });
+
   it('reads none where no handler reads it', () => {
     expect(handlerReads(`export const GET = gone('owner');`, 'a/route.ts')).toEqual([]);
   });

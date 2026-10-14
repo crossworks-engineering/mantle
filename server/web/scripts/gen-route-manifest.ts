@@ -13,8 +13,8 @@
  * registers them in manifest order (Hono's RegExpRouter keeps registration
  * order for overlapping patterns).
  */
-import { readdirSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
-import { dirname, join, relative } from 'node:path';
+import { existsSync, readdirSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { handlerReads } from './route-callers';
 
@@ -68,6 +68,29 @@ function exportedMethods(src: string): string[] {
   return [...found];
 }
 
+/** The methods whose handler reads the caller the pipeline answers, per
+ *  route file (route-callers.ts), following the handlers a file imports
+ *  or re-exports from another route file (the /api/v1 aliases). */
+const readsMemo = new Map<string, string[]>();
+function readsOf(absFile: string, seen: Set<string> = new Set()): string[] {
+  const memo = readsMemo.get(absFile);
+  if (memo) return memo;
+  if (seen.has(absFile)) throw new Error(`[gen-route-manifest] import cycle at ${absFile}`);
+  seen.add(absFile);
+  const rel = relative(webRoot, absFile).split('\\').join('/');
+  const reads = handlerReads(readFileSync(absFile, 'utf8'), rel, (spec) => {
+    // A relative route file only: what a handler from elsewhere reads is
+    // not known here (it would throw when called: fail closed).
+    if (!spec.startsWith('.')) return null;
+    const base = resolve(dirname(absFile), spec);
+    const target = ['.ts', '.tsx'].map((x) => base + x).find((f) => existsSync(f));
+    if (!target || !/\/route\.tsx?$/.test(target)) return null;
+    return readsOf(target, seen);
+  });
+  readsMemo.set(absFile, reads);
+  return reads;
+}
+
 function toEntry(absFile: string): Entry {
   const rel = relative(appDir, dirname(absFile)).split('\\').join('/');
   const rawSegs = rel === '' ? [] : rel.split('/');
@@ -95,7 +118,7 @@ function toEntry(absFile: string): Entry {
     file: relative(webRoot, absFile).split('\\').join('/'),
     pattern: '/' + segments.join('/'),
     methods: exportedMethods(src),
-    reads: handlerReads(src, relative(webRoot, absFile).split('\\').join('/')),
+    reads: readsOf(absFile),
     catchAll,
     catchAllOptional,
     segments,
