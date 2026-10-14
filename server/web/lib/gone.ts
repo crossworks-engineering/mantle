@@ -31,10 +31,11 @@ export { GONE_KINDS, type GoneGuard } from './gone-kinds';
  *  pipeline answered no caller of that kind (outside a routed request, a
  *  row not read as a gone row), so a stub never answers 410 to a caller
  *  nobody checked. */
-const READERS = Object.freeze({ ownerCaller, memberCaller, loginCaller } satisfies Record<
-  (typeof GONE_KINDS)[GoneGuard]['reader'],
-  () => unknown
->);
+const READERS: Readonly<Record<(typeof GONE_KINDS)[GoneGuard]['reader'], () => unknown>> = {
+  ownerCaller: () => ownerCaller(),
+  memberCaller: () => memberCaller(),
+  loginCaller: () => loginCaller(),
+};
 
 export const GONE_MESSAGE = 'This feature was removed. Update the app.';
 

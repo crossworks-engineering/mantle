@@ -72,10 +72,8 @@ export const AS_SYSTEM_PINS = {
   'server/web/lib/auth/session.ts': { count: 1, why: ['rule-in-query'] },
   'server/web/lib/chat-archive-http.ts': { count: 1, why: ['rule-in-query'] },
   'server/web/lib/debug.ts': { count: 1, why: ['login-telegram'] },
-  'server/web/lib/grants.ts': { count: 1, why: ['rule-in-query'] },
   'server/web/lib/landing.ts': { count: 1, why: ['owner-preferences'] },
   'server/web/lib/snapshot-copies.ts': { count: 1, why: ['snapshot-copies'] },
-  'server/web/lib/workspaces.ts': { count: 1, why: ['rule-in-query'] },
 };
 
 export const rule = pinnedRule({
