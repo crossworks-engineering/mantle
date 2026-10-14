@@ -483,6 +483,11 @@ export function buildRouteRow(
      *  its GET's (buildRoutePolicy says so from the manifest; a HEAD the
      *  GET handler answers otherwise, as Hono answers it). */
     ownHead?: boolean;
+    /** A test's stand-in routes, whose handlers call the guards
+     *  themselves (the parity tests of the gate): a row that reads no
+     *  caller is let through. Never the app's manifest: only a test file
+     *  passes it (arch-lints.test.ts pins it). */
+    standIn?: boolean;
   } = {},
 ): RouteRow {
   const m = method.toUpperCase();
@@ -576,6 +581,17 @@ export function buildRouteRow(
       `ROUTE_POLICY: ${key} reads the ${caller} caller, but the ${caller} guard does not serve its row`,
     );
   }
+  // A4 exit (hand batch B fix round 1, M1): every row that is not public
+  // and not a page reads the caller the gate answers. A handler that reads
+  // nothing would run behind the gate's signature check alone, with no
+  // login's answer: a new method of a route file that reads none is refused
+  // here, at boot, whatever else its file reads. A public row judges its own
+  // credential, a page (link, render) too.
+  if (!caller && !isPublic && pageClass === null && opts.standIn !== true) {
+    throw new Error(
+      `ROUTE_POLICY: ${key} reads no caller: a row that is not public reads the caller the gate answers (A4 exit)`,
+    );
+  }
   // A catch-all route also matches its bare prefix, where the loader may
   // answer 404 before the handler (route-loader.ts): the gate's answer
   // would come first there. Such a route keeps its guard (the hand batch).
@@ -644,7 +660,7 @@ export function servedMethods(entry: RouteManifestEntry): string[] {
  *  server/pages, all of that class): `METHOD pattern` to its row. */
 export function buildRoutePolicy(
   manifest: readonly RouteManifestEntry[],
-  opts: { page?: PageClass } = {},
+  opts: { page?: PageClass; standIn?: boolean } = {},
 ): ReadonlyMap<string, RouteRow> {
   const keys = new Set(manifest.flatMap((e) => servedMethods(e).map((m) => `${m} ${e.pattern}`)));
   const served = (key: string) => keys.has(key);

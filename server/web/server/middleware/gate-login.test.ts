@@ -291,7 +291,7 @@ describe.skipIf(!hasManifest)('the gate resolves the login once (A4 step 3a)', (
     ].map((r) => ({ catchAll: null, catchAllOptional: false, ...r }));
     app = new Hono();
     app.use('*', gate());
-    registerRoutes(app, routes);
+    registerRoutes(app, routes, { standIn: true });
   });
 
   afterAll(() => {

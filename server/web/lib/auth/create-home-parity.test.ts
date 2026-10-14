@@ -65,7 +65,10 @@ describe.skipIf(!hasManifest)('step 6 with the HTTP rule equals createHomeFor', 
             const url = `http://brain.test${path}${ws === null ? '' : `?ws=${ws}`}`;
             // The guard and the gate read the same ROUTE_POLICY row (A4 step
             // 1); the gate's policy is the route source's own.
-            const row = buildRouteRow(method, e.pattern);
+            const row = buildRouteRow(method, e.pattern, () => false, {
+              reads: e.reads?.[method] ?? null,
+              gone: e.gone?.includes(method) === true,
+            });
             const today = requestCreateHomeArgs(LOGIN, row, url, ownWork);
             const policy: GatePolicy = routeGatePolicy(row);
             expect(policy.effect).toBe('write');

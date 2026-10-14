@@ -116,13 +116,17 @@ export function servedRoute(c: Context): ServedRoute | null {
 
 /** Register the manifest's routes, each with its ROUTE_POLICY rows (built
  *  here from the manifest; a route no list classes throws, so it never
- *  ships). `policy` is for the loader's own tests, whose routes are not the
- *  app's. */
+ *  ships, and so does a row that is not public and reads no caller). A
+ *  map: the rows of the loader's own tests, whose routes are not the app's;
+ *  `{ standIn: true }`: the rows of a test's stand-in routes, whose
+ *  handlers call the guards themselves (buildRouteRow `standIn`; only a
+ *  test passes it, arch-lints.test.ts). */
 export function registerRoutes(
   app: Hono,
   manifest: RouteEntry[],
-  policy: ReadonlyMap<string, RouteRow> = buildRoutePolicy(manifest),
+  rows: ReadonlyMap<string, RouteRow> | Readonly<{ standIn: boolean }> = buildRoutePolicy(manifest),
 ): void {
+  const policy = 'standIn' in rows ? buildRoutePolicy(manifest, rows) : rows;
   for (const entry of manifest) {
     const rowsFor = (methods: string[]): ReadonlyMap<string, RouteRow> =>
       new Map(

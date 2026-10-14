@@ -144,7 +144,7 @@ describe.skipIf(!hasManifest)('the gate middleware runs a routed request with it
     ].map((r) => ({ catchAll: null, catchAllOptional: false, ...r }));
     app = new Hono();
     app.use('*', gate());
-    registerRoutes(app, routes);
+    registerRoutes(app, routes, { standIn: true });
   });
 
   afterAll(() => {
@@ -234,7 +234,7 @@ describe.skipIf(!hasManifest)('the gate middleware runs a routed request with it
       path,
       method: 'GET',
       accessKey: GRANT as never,
-      route: buildRouteRow('GET', '/api/v1/pages'),
+      route: buildRouteRow('GET', '/api/v1/pages', () => false, { reads: 'owner' }),
     };
     // A key the gate let in on an encoded spelling (it does not) is no
     // login here: the 401. (Not the detached-dev login, which comes first.)

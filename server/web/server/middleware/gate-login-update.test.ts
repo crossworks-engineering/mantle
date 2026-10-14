@@ -181,7 +181,7 @@ describe.skipIf(!hasManifest)('a guard read inside a login change (A4 step 3a, L
     ].map((r) => ({ catchAll: null, catchAllOptional: false, ...r }));
     app = new Hono();
     app.use('*', gate());
-    registerRoutes(app, routes);
+    registerRoutes(app, routes, { standIn: true });
   });
 
   afterAll(() => {

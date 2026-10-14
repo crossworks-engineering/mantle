@@ -444,6 +444,42 @@ describe.skipIf(!hasManifest)('ROUTE_POLICY: same answers as the lists', () => {
     expect(table.get('GET /api/shell')?.gone).toBe(false);
   });
 
+  it('a row that is not public and reads no caller is refused at boot (A4 hand batch B fix round 1, M1)', () => {
+    // A synthetic row: an owner row whose handler reads nothing.
+    expect(() => buildRouteRow('POST', '/api/notes')).toThrow(
+      /POST \/api\/notes reads no caller: a row that is not public reads the caller/,
+    );
+    // A new method of a route file that reads on another method: its own
+    // row reads nothing, and is refused whatever the file reads.
+    expect(() =>
+      buildRoutePolicy([
+        { pattern: '/api/notes', methods: ['GET', 'POST'], reads: { GET: 'owner' } },
+      ]),
+    ).toThrow(/POST \/api\/notes reads no caller/);
+    // Each login list's rows alike.
+    for (const [method, pattern] of [
+      ['GET', '/api/shell'],
+      ['GET', '/api/member/mcp'],
+      ['GET', '/api/assistant/thread'],
+      ['GET', '/api/updates/check'],
+    ] as const) {
+      expect(() => buildRouteRow(method, pattern), `${method} ${pattern}`).toThrow(
+        /reads no caller/,
+      );
+    }
+    // A public row judges its own credential, and so does a page.
+    expect(buildRouteRow('GET', '/api/version').caller).toBeNull();
+    expect(buildRouteRow('POST', '/api/auth/login').caller).toBeNull();
+    expect(buildRouteRow('GET', '/s/:token', () => false, { page: 'link' }).caller).toBeNull();
+    expect(
+      buildRouteRow('GET', '/print/pages/:id', () => false, { page: 'render' }).caller,
+    ).toBeNull();
+    // A test's stand-in rows, whose handlers call the guards themselves.
+    expect(buildRouteRow('POST', '/api/notes', () => false, { standIn: true }).caller).toBeNull();
+    // The app's table: no such row.
+    expect([...table.values()].filter((r) => !r.caller && !r.public && !r.page)).toEqual([]);
+  });
+
   it('a switched route (A4 hand batch A fix round 1): the switch its route file declares, on its rows', () => {
     // Found by the route FILE, not by a pattern kept here: a route moved to
     // another URL keeps its file's declaration, and this test still finds
@@ -487,19 +523,23 @@ describe.skipIf(!hasManifest)('ROUTE_POLICY: same answers as the lists', () => {
 
   it('a switch is refused at boot where it guards no served row, or names no switch', () => {
     const entry = { pattern: '/api/dev-tools/queue-approval', methods: ['POST'] };
-    expect(buildRoutePolicy([{ ...entry, switches: { POST: 'not-production' } }]).size).toBe(1);
+    expect(
+      buildRoutePolicy([{ ...entry, switches: { POST: 'not-production' } }], { standIn: true })
+        .size,
+    ).toBe(1);
     // A method the route does not export (a HEAD the GET answers included).
-    expect(() => buildRoutePolicy([{ ...entry, switches: { GET: 'not-production' } }])).toThrow(
-      /declares a switch for GET, which it does not serve/,
-    );
-    const stream = { pattern: '/api/assistant/turn/:turnId/stream', methods: ['GET'] };
-    expect(() => buildRoutePolicy([{ ...stream, switches: { HEAD: 'turn-streaming' } }])).toThrow(
-      /declares a switch for HEAD, which it does not serve/,
-    );
     expect(() =>
-      buildRoutePolicy([
-        { ...entry, switches: { POST: 'nightly' as unknown as 'not-production' } },
-      ]),
+      buildRoutePolicy([{ ...entry, switches: { GET: 'not-production' } }], { standIn: true }),
+    ).toThrow(/declares a switch for GET, which it does not serve/);
+    const stream = { pattern: '/api/assistant/turn/:turnId/stream', methods: ['GET'] };
+    expect(() =>
+      buildRoutePolicy([{ ...stream, switches: { HEAD: 'turn-streaming' } }], { standIn: true }),
+    ).toThrow(/declares a switch for HEAD, which it does not serve/);
+    expect(() =>
+      buildRoutePolicy(
+        [{ ...entry, switches: { POST: 'nightly' as unknown as 'not-production' } }],
+        { standIn: true },
+      ),
     ).toThrow(/served under nightly, which is no switch/);
   });
 
@@ -535,10 +575,13 @@ describe.skipIf(!hasManifest)('ROUTE_POLICY: same answers as the lists', () => {
     }
     const threads = '/api/assistant/threads';
     const stream = '/api/assistant/turn/:turnId/stream';
-    const byGet = buildRoutePolicy([
-      { pattern: threads, methods: ['GET'], reads: { GET: 'chat' } },
-      { pattern: stream, methods: ['GET'], switches: { GET: 'turn-streaming' } },
-    ]);
+    const byGet = buildRoutePolicy(
+      [
+        { pattern: threads, methods: ['GET'], reads: { GET: 'chat' } },
+        { pattern: stream, methods: ['GET'], switches: { GET: 'turn-streaming' } },
+      ],
+      { standIn: true },
+    );
     expect(byGet.get(`HEAD ${threads}`)).toMatchObject({
       logins: 'chat',
       open: 'login',
@@ -548,10 +591,13 @@ describe.skipIf(!hasManifest)('ROUTE_POLICY: same answers as the lists', () => {
     // A route that exports its own HEAD: the HEAD row is that handler's,
     // as the lists name it (none name a HEAD), with no switch, no read and
     // no logins of its GET's.
-    const own = buildRoutePolicy([
-      { pattern: threads, methods: ['GET', 'HEAD'], reads: { GET: 'chat' } },
-      { pattern: stream, methods: ['GET', 'HEAD'], switches: { GET: 'turn-streaming' } },
-    ]);
+    const own = buildRoutePolicy(
+      [
+        { pattern: threads, methods: ['GET', 'HEAD'], reads: { GET: 'chat' } },
+        { pattern: stream, methods: ['GET', 'HEAD'], switches: { GET: 'turn-streaming' } },
+      ],
+      { standIn: true },
+    );
     expect(own.get(`GET ${threads}`)).toMatchObject({ logins: 'chat', open: 'login' });
     expect(own.get(`HEAD ${threads}`)).toMatchObject({
       logins: null,
@@ -561,21 +607,26 @@ describe.skipIf(!hasManifest)('ROUTE_POLICY: same answers as the lists', () => {
     expect(own.get(`GET ${stream}`)?.switch).toBe('turn-streaming');
     expect(own.get(`HEAD ${stream}`)?.switch).toBeNull();
     // Its own HEAD declares its own switch.
-    const switched = buildRoutePolicy([
-      {
-        pattern: stream,
-        methods: ['GET', 'HEAD'],
-        switches: { GET: 'turn-streaming', HEAD: 'turn-streaming' },
-      },
-    ]);
+    const switched = buildRoutePolicy(
+      [
+        {
+          pattern: stream,
+          methods: ['GET', 'HEAD'],
+          switches: { GET: 'turn-streaming', HEAD: 'turn-streaming' },
+        },
+      ],
+      { standIn: true },
+    );
     expect(switched.get(`HEAD ${stream}`)?.switch).toBe('turn-streaming');
     // An own HEAD on a row only a login list classes has no class of its
     // own: refused at boot, until a list names it.
     expect(() =>
-      buildRoutePolicy([{ pattern: '/api/access-keys', methods: ['GET', 'HEAD'] }]),
+      buildRoutePolicy([{ pattern: '/api/access-keys', methods: ['GET', 'HEAD'] }], {
+        standIn: true,
+      }),
     ).toThrow(/HEAD \/api\/access-keys has no class/);
     expect(
-      buildRoutePolicy([{ pattern: '/api/access-keys', methods: ['GET'] }]).get(
+      buildRoutePolicy([{ pattern: '/api/access-keys', methods: ['GET'] }], { standIn: true }).get(
         'HEAD /api/access-keys',
       ),
     ).toMatchObject({ logins: 'any', open: 'login' });

@@ -2003,6 +2003,19 @@ through the gate in an actor slot of their own). Test files that stand in
 `getOwnerOr401` in a module mock (from before their handlers read the
 caller) stand in nothing now; they are left as they are.
 
+**A4 hand batch B, fix round 1.** No answer changed.
+
+- **A row that reads no caller is refused at boot.** `buildRouteRow`
+  throws on a row that is not public, not a page and reads no caller
+  (route-policy.ts): a new method of a route file that reads on another
+  method, but not on its own, would otherwise run behind the gate's
+  signature check alone. A test's stand-in routes, whose handlers call the
+  guards themselves to compare with the reader, pass `standIn`
+  (`registerRoutes(app, routes, { standIn: true })`); arch-lints.test.ts
+  holds the word to the two files that define it, and pins the rows row by
+  row (980 of 1043 carry a caller, and no row that is not public and not a
+  page is without one), beside the file-level count above.
+
 **The eight steps** of `enterCall`, in order (the pre-run slot between
 steps 5 and 6):
 

@@ -251,7 +251,7 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
     pipeline.onError(onError);
     guarded = new Hono();
     guarded.use('*', gate());
-    registerRoutes(guarded, entries(guards, false));
+    registerRoutes(guarded, entries(guards, false), { standIn: true });
     guarded.onError(onError);
   });
 
@@ -617,16 +617,20 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
     const apps = [true, false].map((read) => {
       const app = new Hono();
       app.use('*', gate());
-      registerRoutes(app, [
-        {
-          pattern: '/api/profile',
-          methods: ['GET', 'PUT'],
-          catchAll: null,
-          catchAllOptional: false,
-          ...(read ? { reads: ownerReads(['GET', 'PUT']) } : {}),
-          load: async () => ({ GET: async () => Response.json(session.ownerCaller()) }),
-        },
-      ]);
+      registerRoutes(
+        app,
+        [
+          {
+            pattern: '/api/profile',
+            methods: ['GET', 'PUT'],
+            catchAll: null,
+            catchAllOptional: false,
+            ...(read ? { reads: ownerReads(['GET', 'PUT']) } : {}),
+            load: async () => ({ GET: async () => Response.json(session.ownerCaller()) }),
+          },
+        ],
+        read ? undefined : { standIn: true },
+      );
       app.onError(() => Response.json({ error: 'internal error' }, { status: 500 }));
       return app;
     });
@@ -782,6 +786,7 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
             ...(reads ? { reads: ownerReads(e.methods) } : {}),
             load: async () => Object.fromEntries(e.methods.map((m) => [m, handle])),
           })),
+          reads ? undefined : { standIn: true },
         );
         app.onError(onError);
         return app;
@@ -858,6 +863,7 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
             load: async () => Object.fromEntries(e.methods.map((m) => [m, handle])),
           };
         }),
+        reads ? undefined : { standIn: true },
       );
       app.onError(onError);
       return app;
@@ -986,6 +992,7 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
             : {}),
           load: async () => Object.fromEntries(e.methods.map((m) => [m, handle])),
         })),
+        reads ? undefined : { standIn: true },
       );
       app.onError(() => Response.json({ error: 'internal error' }, { status: 500 }));
       return app;
@@ -1077,6 +1084,7 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
           ...(kind === 'reads' ? { reads: ownerReads(e.methods) } : {}),
           load: async () => Object.fromEntries(e.methods.map((m) => [m, handle])),
         })),
+        kind === 'reads' ? undefined : { standIn: true },
       );
       app.onError(() => Response.json({ error: 'internal error' }, { status: 500 }));
       return app;
@@ -1385,6 +1393,7 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
             load: async () => ({ GET: handle }),
           };
         }),
+        reads ? undefined : { standIn: true },
       );
       app.onError(() => Response.json({ error: 'internal error' }, { status: 500 }));
       return app;
@@ -1566,6 +1575,7 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
             load: async () => ({ [r.method]: handle }),
           };
         }),
+        reads ? undefined : { standIn: true },
       );
       app.onError(answerAppError);
       return app;
@@ -1674,19 +1684,25 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
     expect(() => session.ownerCaller()).toThrow(/answered no owner/);
     // A row whose handler reads it, but the manifest does not say so: the
     // gate does not answer, and the read fails rather than run unchecked.
+    // (The app's rows refuse that at boot, buildRouteRow M1; a stand-in
+    // row is let through to pin the read's own refusal.)
     const { gate } = await import('./gate');
     const { registerRoutes } = await import('../route-loader');
     const app = new Hono();
     app.use('*', gate());
-    registerRoutes(app, [
-      {
-        pattern: '/api/profile',
-        methods: ['GET'],
-        catchAll: null,
-        catchAllOptional: false,
-        load: async () => ({ GET: async () => Response.json(session.ownerCaller()) }),
-      },
-    ]);
+    registerRoutes(
+      app,
+      [
+        {
+          pattern: '/api/profile',
+          methods: ['GET'],
+          catchAll: null,
+          catchAllOptional: false,
+          load: async () => ({ GET: async () => Response.json(session.ownerCaller()) }),
+        },
+      ],
+      { standIn: true },
+    );
     app.onError(() => new Response('failed', { status: 500 }));
     const res = await app.request('/api/profile', { headers: creds[1]!.headers() });
     expect(res.status).toBe(500);

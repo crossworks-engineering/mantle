@@ -127,7 +127,7 @@ describe.skipIf(!hasManifest)('the item write check reads the decoded item id', 
     ].map((r) => ({ catchAll: null, catchAllOptional: false, ...r }));
     app = new Hono();
     app.use('*', gate());
-    registerRoutes(app, routes);
+    registerRoutes(app, routes, { standIn: true });
   });
 
   afterAll(() => {

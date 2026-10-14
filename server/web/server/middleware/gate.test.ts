@@ -60,14 +60,18 @@ function makeApp() {
     catchAllOptional: false,
     load: async () => mod,
   });
-  registerRoutes(app, [
-    route('/api/files/files/:id', {
-      GET: () => Response.json({ bytes: true }),
-      POST: () => Response.json({ written: true }),
-    }),
-    route('/s/:token/bundle', { GET: () => Response.json({ broker: true }) }),
-    route('/api/draws/:id/svg', { GET: () => new Response('svg') }),
-  ]);
+  registerRoutes(
+    app,
+    [
+      route('/api/files/files/:id', {
+        GET: () => Response.json({ bytes: true }),
+        POST: () => Response.json({ written: true }),
+      }),
+      route('/s/:token/bundle', { GET: () => Response.json({ broker: true }) }),
+      route('/api/draws/:id/svg', { GET: () => new Response('svg') }),
+    ],
+    { standIn: true },
+  );
   registerPages(
     app,
     [

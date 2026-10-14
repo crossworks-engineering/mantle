@@ -163,6 +163,31 @@ describe('the architecture ratchets (pinned counts)', () => {
     });
     expect(notPublic).toEqual([]);
   });
+
+  it('every row that is not public and not a page reads a caller, row by row (A4 exit, fix round 1 M1)', async () => {
+    // The file-level count above reads route files by path; this reads the
+    // rows themselves, as the gate does: buildRouteRow refuses a row that
+    // is not public and reads no caller at boot, so a new method that reads
+    // nothing in a route file that reads elsewhere is refused too.
+    const { routeManifest } = await import('../server/web/server/route-manifest.gen');
+    const { buildRoutePolicy } = await import('../server/web/lib/auth/route-policy');
+    const rows = [...buildRoutePolicy(routeManifest).values()];
+    const unread = rows.filter((r) => !r.caller && !r.public && !r.page).map((r) => r.key);
+    expect(unread).toEqual([]);
+    // The pins: rows with a caller, of all the rows.
+    expect(rows.filter((r) => r.caller).length).toBe(980);
+    expect(rows.length).toBe(1043);
+  });
+
+  it("buildRouteRow's stand-in escape is named only where it is defined; tests pass it (fix round 1 M1)", () => {
+    const named = countedFiles(ROOT).filter((f: string) =>
+      /\bstandIn\b/.test(stripComments(readRepoFile(ROOT, f) ?? '')),
+    );
+    expect(named).toEqual([
+      'server/web/lib/auth/route-policy.ts',
+      'server/web/server/route-loader.ts',
+    ]);
+  });
 });
 
 describe('the counters', () => {
