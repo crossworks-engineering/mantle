@@ -1600,21 +1600,75 @@ calling no guard stays 60.
 gate could do each once:
 
 - **The rule-in-query exit.** The any-login handlers leave the request
-  scope the guard entered by name (`asSystem(..., 'rule-in-query')`): five
-  route files through `ruleInQuery` (`server/web/lib/auth/rule-in-query.ts`)
-  and the 17 workspace and grants files through `wsRoute` and
-  `grantsRoute`. Their guard runs inside that exit, so its refusal is
-  logged as `system:rule-in-query`; at the gate it would be logged as
-  `system:http:no-login` (the sweep's recorded files would change, though
-  nothing on the wire does). A row flag the gate reads (the handler runs
-  in the rule-in-query exit after the answer) would fold the wrapper and
-  let those rows read `loginCaller()`; the logged actor of a refusal is
-  the one change to record.
+  scope the guard entered by name (`asSystem(..., 'rule-in-query')`), in
+  two shapes. Five route files go through `ruleInQuery`
+  (`server/web/lib/auth/rule-in-query.ts`; four any-login, and the public
+  `GET /api/auth/whoami`): the whole handler, guard
+  included, runs inside the exit, so the guard's refusal is logged as
+  `system:rule-in-query`; read at the gate it would be logged as
+  `system:http:no-login` (the sweep's recorded files would change there,
+  though nothing on the wire does). The 17 workspace and grants files go
+  through `wsRoute` (`server/web/lib/workspaces.ts`) and `grantsRoute`
+  (`server/web/lib/grants.ts`), which call `workspaceCaller()` BEFORE
+  `asSystem`: their guard runs in the request slot, as the gate's answer
+  would, and their refusal is logged as it would be at the gate. What
+  holds those 17 back is not the exit: their guard lives in a lib helper
+  (no route file calls it, so the codemod cannot see it), and the audit
+  row is written by hand after it.
 - **The any-login audit.** `getLoginOr401` writes no audit row; its
   callers write it by hand after it (`auditLoginMutation`:
   `workspaceCaller()`, `POST /api/auth/pair`), where the member and chat
   guards write theirs inside. The any-login answer step can write it, once,
   when those rows convert.
+
+**The hand batch, the recommended plan** (fix round 1):
+
+1. **First, the baseline** (in place since fix round 1): the guard sweep
+   records every write cell a guard still answers, its audit rows and the
+   create home noted, keyed by the guard's name
+   (`server/web/server/__snapshots__/a4-guard-sweep-guard-writes.txt`),
+   with the row `workspaceCaller()` and `POST /api/auth/pair` write by hand
+   after the guard (the sweep lets that call run before it stops the
+   handler). A row that moves keeps its cells there under the guard its
+   reader replaced, and the test holds each to the guard path's record, by
+   cell, before it compares the file: a lost or a doubled row fails.
+   `gate-caller.test.ts` serves `POST /api/workspaces` and `POST
+   /api/grants/move` through `loginCaller()` and through
+   `workspaceCaller()`, comparing the answer, the audit rows and the stamp.
+2. **Fold the audit** into the `login` answer step: it writes
+   `auditLoginMutation`'s row, and the same commit deletes the hand call
+   from `workspaceCaller()` and from `POST /api/auth/pair`. The baseline
+   above shows the fold writes each row once, where the guard path did.
+3. **No gate flag.** Do not add a row flag that runs the handler on the
+   system pool after the answer: a gate that leaves the scope it entered
+   for a whole class of rows is a second, wider exit. Restructure instead:
+   the five any-login handlers of the four `ruleInQuery` files (`GET
+   /api/auth/whoami`, the fifth file, is a public row and goes with the
+   public rows) become
+   `const login = loginCaller(); return asSystem(() => handle(login), 'rule-in-query');`
+   (the read before the exit, the exit as narrow as it is now), and the
+   `wsRoute` and `grantsRoute` handlers read `loginCaller()` first and pass
+   it in (`workspaceCaller()` becomes a projection of it, with no guard).
+4. **The one recorded change**: the refusal actor of those four
+   `ruleInQuery` files (`GET /api/shell`, `GET /api/v1/whoami`, `GET` and `POST
+   /api/access-keys`, `DELETE /api/access-keys/:id`), `system:rule-in-query`
+   to `system:http:no-login`, now that the refusal is the gate's. Record it
+   as an explicit sweep change (a file of its own naming those cells, as
+   the owner decision's is), so the two recorded files change there and
+   nowhere else. The 17 wrapper files change no recorded cell.
+
+**Carried** (fix round 1, open):
+
+- **HEAD rows have no logins** (LOW 5; `server/web/lib/auth/route-policy.ts`,
+  the open question M3): no list names HEAD, so a chat row's HEAD runs the
+  GET handler on the system pool (`login-self`) for a member, with no row
+  security holding it to the login; only the handler's own query does.
+  Needs an owner decision before A4 exit: should a HEAD row take its GET's
+  logins (and so its scope)?
+- **Two private functions were named `loginCaller`** (`server/web/lib/mcp-auth.ts`,
+  the member MCP caller; `packages/runtime/src/heartbeats/fire.ts`, the
+  fire's scope wrapper), the reader's name: renamed in fix round 1
+  (`memberMcpCaller`, `fireInLoginScope`), private to their files.
 
 **Step 3b, what is left** (the hand batch; the sweep held equal after
 each, its moved entries recorded). The 16 guard calls the count sees, and
@@ -1624,7 +1678,8 @@ the guards it does not:
   `GET /api/v1/whoami`, `GET` and `POST /api/access-keys`, `DELETE
   /api/access-keys/:id` (`ruleInQuery`), and `server/web/lib/workspaces.ts`
   `workspaceCaller()` (the workspace and grants rows, `POST
-  /api/workspaces/:id/archive` among them): the gateway lens above;
+  /api/workspaces/:id/archive` among them): the gateway lens and the
+  recommended plan above;
 - `POST /api/assistant/turn` (`getChatLoginOr401` after a response helper
   it declares first);
 - the public rows that read the login (`getLoginOr401`): `GET
