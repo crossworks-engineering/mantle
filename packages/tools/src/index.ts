@@ -186,6 +186,7 @@ export {
   resolveTools,
   dispatchTool,
   connectorMarkRefusal,
+  APP_CALLER_SURFACE_ERROR,
   NO_TOOL_CALLER_ERROR,
   ADMIN_ONLY_ERROR,
   ADMIN_ONLY_TOOL_SLUGS,

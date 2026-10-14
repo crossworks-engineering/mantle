@@ -9,12 +9,14 @@
  * Admin workspace alone holds), which reads it as before, as the dev console
  * (ownerWebCaller) does. Each surface below is the one a broker passes
  * (appToolScope, the share broker's contact surface). A call that names no
- * caller is refused (there is no ungated path since step 3b).
+ * caller is refused (there is no ungated path since step 3b), and so is an
+ * app broker's call whose caller unmasks off the owner's web (fix round 1,
+ * LOW-1: the caller's `masks` and the call's surface never disagree).
  */
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { Tool } from '@mantle/db';
 import { DATABASE_ERROR_PUBLIC } from '@mantle/std';
-import { NO_TOOL_CALLER_ERROR, dispatchTool } from './dispatch';
+import { APP_CALLER_SURFACE_ERROR, NO_TOOL_CALLER_ERROR, dispatchTool } from './dispatch';
 import { appBrokerCaller, ownerWebCaller } from './gate-callers';
 import { ensureGateReady } from './gate-narrowers';
 import { registerBuiltin } from './registry';
@@ -100,5 +102,48 @@ describe('an app broker call never answers a database error’s text off the own
       { ownerId: 'o', surface: { kind: 'web', loginId: 'l1' } },
     );
     expect(res).toEqual({ ok: false, error: NO_TOOL_CALLER_ERROR });
+  });
+
+  it("an app caller made for the owner's web never runs on another surface (fix round 1, LOW-1)", async () => {
+    const web = appBrokerCaller({ kind: 'web' });
+    expect(web.masks).toBe(false);
+    const others: Array<ToolHandlerContext['surface']> = [...SURFACES.map(([, s]) => s), undefined];
+    for (const surface of others) {
+      const res = await dispatchTool(
+        row('broker_probe_db'),
+        {},
+        {
+          ownerId: 'o',
+          ...(surface ? { surface } : {}),
+          caller: web,
+        },
+      );
+      expect(res, surface?.kind ?? 'no surface').toEqual({
+        ok: false,
+        error: APP_CALLER_SURFACE_ERROR,
+      });
+    }
+    // The same caller on the surface it was made for runs (and unmasks).
+    const ran = await dispatchTool(
+      row('broker_probe_db'),
+      {},
+      {
+        ownerId: 'o',
+        surface: { kind: 'web', loginId: 'l1' },
+        caller: web,
+      },
+    );
+    expect((ran as { error: string }).error).toContain('Failed query');
+    // A masking app caller on the owner's web is no disagreement: it masks.
+    const masked = await dispatchTool(
+      row('broker_probe_db'),
+      {},
+      {
+        ownerId: 'o',
+        surface: { kind: 'web', loginId: 'l1' },
+        caller: appBrokerCaller({ kind: 'team' }),
+      },
+    );
+    expect((masked as { error: string }).error).toBe(DATABASE_ERROR_PUBLIC);
   });
 });

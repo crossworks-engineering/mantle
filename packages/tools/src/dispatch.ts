@@ -87,6 +87,14 @@ export { ADMIN_ONLY_ERROR, ADMIN_ONLY_TOOL_SLUGS } from './admin-gate';
 export const NO_TOOL_CALLER_ERROR =
   'This tool call names no caller, so it does not run (a bug at its entry: report it to an admin).';
 
+/** The answer to an app broker's call whose caller and surface disagree
+ *  (A5 step 3b fix round 1, LOW-1): appBrokerCaller derives `masks` from
+ *  the surface the broker passes, so a caller that unmasks (the owner's
+ *  own web) on any other surface is a bug at the broker. The call is
+ *  refused, never run unmasked. */
+export const APP_CALLER_SURFACE_ERROR =
+  "This app tool call's caller does not match its surface, so it does not run (a bug at the app broker: report it to an admin).";
+
 let warnedNoCaller = false;
 
 /**
@@ -114,6 +122,15 @@ export async function dispatchTool(
       console.error(`[tools] a tool call named no caller (${tool.slug}): refused`);
     }
     return { ok: false, error: NO_TOOL_CALLER_ERROR };
+  }
+  // An app broker's caller unmasks a database error only on the owner's
+  // own web (appBrokerCaller reads the surface it is given), and dispatch
+  // runs on ctx.surface: the two may never disagree (fix round 1, LOW-1).
+  if (caller.entry === 'app' && caller.masks === false && ctx.surface?.kind !== 'web') {
+    console.error(
+      `[tools] an app broker call unmasked off the owner's web (${tool.slug}, surface ${ctx.surface?.kind ?? 'none'}): refused`,
+    );
+    return { ok: false, error: APP_CALLER_SURFACE_ERROR };
   }
   // What a call nested in this one reuses (a recipe's steps, a tool a
   // handler dispatches): the same caller, less an MCP call's own parts.
