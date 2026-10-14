@@ -119,8 +119,9 @@ export function publicErrorMessage(err: unknown, where: string): string {
  * (mapAccessError, access-error.ts; arch A3c). An item the caller may not
  * read (the edit check's detail no_read) is "not found" (owner decision
  * D2); a folder that holds items the caller cannot move (detail
- * hidden_rows) says so in plain words; any other database error is
- * DATABASE_ERROR_PUBLIC, never its text.
+ * hidden_rows) says so in plain words; a read-only or item-workspace
+ * refusal says the HTTP answer's reason (A5 step 5, owner decision Q3 b);
+ * any other database error is DATABASE_ERROR_PUBLIC, never its text.
  */
 export function databaseErrorPublic(err: unknown): string {
   return mapAccessError(err)?.toolText ?? DATABASE_ERROR_PUBLIC;

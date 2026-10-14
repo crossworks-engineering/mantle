@@ -320,6 +320,12 @@ const GATE_CODES: Record<AccessKind, string> = {
   item: 'forbidden',
 };
 
+/** The words of the database's refusals that name a reason (the HTTP
+ *  body's message, and since A5 step 5 a tool's text too). */
+const READ_ONLY_APP_MESSAGE = 'This app is Informational: its data is read only.';
+const RO_ACTOR_MESSAGE = 'This caller only reads: it cannot change anything.';
+const ITEM_WORKSPACE_MESSAGE = 'You cannot change this item in your workspaces.';
+
 /** The database's refusal, read (see mapAccessError). */
 function databaseRefusal(err: unknown): AccessRefusal | null {
   const pg = findDatabaseError(err);
@@ -363,28 +369,23 @@ function databaseRefusal(err: unknown): AccessRefusal | null {
   }
   if (!scoped) return null;
   // An Informational app's data, or a caller that only reads: 403,
-  // reason read-only.
+  // reason read-only. A tool says the same words (A5 step 5, owner
+  // decision Q3 b: the mapper's clear reason, as the HTTP answer).
   if (detail === 'read_only' || detail === 'ro_actor') {
+    const message = detail === 'read_only' ? READ_ONLY_APP_MESSAGE : RO_ACTOR_MESSAGE;
     return {
       kind: 'database',
       code: detail,
       http: {
         status: 403,
-        body: {
-          error: 'forbidden',
-          reason: 'read-only',
-          code: detail,
-          message:
-            detail === 'read_only'
-              ? 'This app is Informational: its data is read only.'
-              : 'This caller only reads: it cannot change anything.',
-        },
+        body: { error: 'forbidden', reason: 'read-only', code: detail, message },
       },
-      toolText: DATABASE_ERROR_PUBLIC,
+      toolText: message,
     };
   }
   // no_edit, or no detail (the workspace checks before A3a): 403, reason
-  // item-workspace, as before (jackdaw's "Add yourself" keys on it).
+  // item-workspace, as before (jackdaw's "Add yourself" keys on it). A tool
+  // says the same words (A5 step 5, Q3 b).
   return {
     kind: 'database',
     code: 'forbidden',
@@ -394,10 +395,10 @@ function databaseRefusal(err: unknown): AccessRefusal | null {
         error: 'forbidden',
         reason: 'item-workspace',
         code: 'forbidden',
-        message: 'You cannot change this item in your workspaces.',
+        message: ITEM_WORKSPACE_MESSAGE,
       },
     },
-    toolText: DATABASE_ERROR_PUBLIC,
+    toolText: ITEM_WORKSPACE_MESSAGE,
   };
 }
 
@@ -413,8 +414,10 @@ function databaseRefusal(err: unknown): AccessRefusal | null {
  *    found"), an Informational app's data or a read-only caller (403
  *    read-only), and any other workspace check (403 item-workspace). The
  *    HTTP answer needs the workspace check's own message (a 42501 that is a
- *    missing grant stays a 500); the tool text reads the detail alone, and
- *    says the generic DATABASE_ERROR_PUBLIC for what it does not name.
+ *    missing grant stays a 500). The tool text is the HTTP body's message
+ *    for a read-only and an item-workspace refusal (A5 step 5, owner
+ *    decision Q3 b), "not found" for an item the caller does not read, and
+ *    the generic DATABASE_ERROR_PUBLIC for what the mapper does not name.
  */
 export function mapAccessError(err: unknown): AccessRefusal | null {
   let e: unknown = err;

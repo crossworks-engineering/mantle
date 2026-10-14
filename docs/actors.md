@@ -2096,3 +2096,17 @@ tool can never get External access: `externalAccessIneligible`). Of
 `runtime:shell` changed, and of its cases only the member turn's (it ran;
 now the Admin refusal); `runtime-policy.test.ts` and the parity test's
 non-vacuous case pin both.
+
+**Q3 (owner b): a refused tool says the mapper's clear reason.** In the
+one mapper (`databaseRefusal`, `packages/std/src/access-error.ts`) the tool
+text of a read-only refusal (`read_only`, `ro_actor`) and of an
+item-workspace refusal (`no_edit`, and a workspace check with no detail,
+which the HTTP answer reads the same) is the HTTP body's message, where it
+was `DATABASE_ERROR_PUBLIC`: "This app is Informational: its data is read
+only.", "This caller only reads: it cannot change anything.", "You cannot
+change this item in your workspaces.". `no_read` stays "not found",
+`hidden_rows` its own words, any other database error the generic text.
+Every surface that reads the tool text follows: a masked turn, an MCP
+reply (`maskToolDatabaseErrors`, `thrownToolDatabaseError`) and a row
+tool's caught error (LOW-C). The HTTP bodies do not change
+(`packages/std/src/access-error.test.ts` pins both, byte for byte).

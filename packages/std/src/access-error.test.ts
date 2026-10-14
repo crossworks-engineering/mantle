@@ -55,11 +55,51 @@ const DATABASE_CASES: unknown[] = [
   new Error('boom'),
 ];
 
+/** The tool text since A5 step 5 (owner decision Q3 b): a read-only or an
+ *  item-workspace refusal says the HTTP answer's words; every other case
+ *  says what it said before A3c. */
+const Q3_TOOL_TEXT: ReadonlyMap<string, string> = new Map([
+  ["not allowed to write this app's data", 'This app is Informational: its data is read only.'],
+  [
+    'not allowed to change anything: this caller only reads',
+    'This caller only reads: it cannot change anything.',
+  ],
+  ['not allowed to edit this item', 'You cannot change this item in your workspaces.'],
+  ['not allowed to move this item', 'You cannot change this item in your workspaces.'],
+  [
+    'new row violates row-level security policy for table "nodes"',
+    'You cannot change this item in your workspaces.',
+  ],
+]);
+
 describe('mapAccessError: the tool text', () => {
-  it('is what databaseErrorPublic said before A3c, for every database error', () => {
+  it('is what databaseErrorPublic said before A3c, but the reasons Q3 names (A5 step 5)', () => {
+    let changed = 0;
     for (const err of DATABASE_CASES) {
-      expect(databaseErrorPublic(err), (err as Error).message).toBe(toolTextBefore(err));
+      const message = (err as Error).message;
+      const now = Q3_TOOL_TEXT.get(message);
+      if (now !== undefined) {
+        expect(toolTextBefore(err), message).toBe(DATABASE_ERROR_PUBLIC);
+        changed += 1;
+      }
+      expect(databaseErrorPublic(err), message).toBe(now ?? toolTextBefore(err));
     }
+    expect(changed).toBe(Q3_TOOL_TEXT.size);
+  });
+
+  it('a read-only or item-workspace refusal says the HTTP message; no_read stays not found', () => {
+    for (const err of DATABASE_CASES) {
+      const r = mapAccessError(err);
+      if (!r || r.kind !== 'database' || !r.http) continue;
+      const message = (r.http.body as { message?: string; error?: string }).message;
+      if (r.http.status === 403) expect(r.toolText, (err as Error).message).toBe(message);
+    }
+    expect(databaseErrorPublic(pgError('not allowed to change this item', 'no_read'))).toBe(
+      'not found',
+    );
+    expect(
+      databaseErrorPublic(pgError('This folder holds items you cannot move.', 'hidden_rows')),
+    ).toBe(HIDDEN_ROWS_PUBLIC);
   });
 
   it('a gate refusal says its own words', () => {
@@ -109,6 +149,28 @@ describe('mapAccessError: the HTTP answer', () => {
       expect(r.http?.body, (err as Error).message).toMatchObject({ reason, code });
       expect(r.code).toBe(code);
     }
+  });
+
+  it('the bodies, byte for byte (unchanged by A5 step 5, Q3)', () => {
+    const body = (err: unknown) => JSON.stringify(mapAccessError(err)?.http?.body);
+    expect(body(pgError('not allowed to change this item', 'no_read'))).toBe(
+      '{"error":"not found","reason":"not-found","code":"not_found","message":"Not found."}',
+    );
+    expect(body(pgError("not allowed to write this app's data", 'read_only'))).toBe(
+      '{"error":"forbidden","reason":"read-only","code":"read_only","message":"This app is Informational: its data is read only."}',
+    );
+    expect(
+      body(pgError('not allowed to change anything: this caller only reads', 'ro_actor')),
+    ).toBe(
+      '{"error":"forbidden","reason":"read-only","code":"ro_actor","message":"This caller only reads: it cannot change anything."}',
+    );
+    const itemWorkspace =
+      '{"error":"forbidden","reason":"item-workspace","code":"forbidden","message":"You cannot change this item in your workspaces."}';
+    expect(body(pgError('not allowed to edit this item', 'no_edit'))).toBe(itemWorkspace);
+    expect(body(pgError('not allowed to move this item'))).toBe(itemWorkspace);
+    expect(body(pgError('This folder holds items you cannot move.', 'hidden_rows'))).toBe(
+      '{"error":"This folder holds items you cannot move.","reason":"hidden-items","code":"hidden_items"}',
+    );
   });
 
   it('finds a gate refusal below a wrapper, and by its brand', () => {

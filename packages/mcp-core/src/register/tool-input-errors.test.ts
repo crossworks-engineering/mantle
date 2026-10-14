@@ -135,10 +135,14 @@ describe('the one mapper on every tool exit (arch A3a fix round 3, N4)', () => {
       cause,
     });
 
-  it('the one mapper (databaseErrorPublic): no_read is not found (D2), a folder holding hidden items says so, the rest is masked', () => {
+  it('the one mapper (databaseErrorPublic): no_read is not found (D2), a folder holding hidden items says so, no_edit its reason, the rest is masked', () => {
     expect(databaseErrorPublic(wrapped(refused('no_read')))).toBe('not found');
     expect(databaseErrorPublic(wrapped(hidden()))).toBe('This folder holds items you cannot move.');
-    expect(databaseErrorPublic(refused('no_edit'))).toBe(DATABASE_ERROR_PUBLIC);
+    // A5 step 5 (owner decision Q3 b): the HTTP answer's words.
+    expect(databaseErrorPublic(refused('no_edit'))).toBe(
+      'You cannot change this item in your workspaces.',
+    );
+    expect(databaseErrorPublic(new Error('boom'))).toBe(DATABASE_ERROR_PUBLIC);
   });
 
   it('a thrown refusal (the one registration) answers the mapped words', async () => {
