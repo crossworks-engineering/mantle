@@ -145,6 +145,34 @@ nothing could tell a refusal the caller should hear from a fault.
   | `FormulaSpecError` (content formulas)          | 400                                                                 | `{ error, errors }`                       | the spec has problems; the list says which             |
   | `TableTooLargeError` (tabledb)                 | 400                                                                 | its message                               | more rows than a whole read or an import may take      |
 
+  The later tranches added a row for each typed error a route had mapped by
+  hand, with the body that route gave it (`server/web/server/domain-error-rows.test.ts`
+  holds each to its old answer byte for byte):
+
+  | Class                                                          | Status                         | Body beyond `error`                     |
+  | -------------------------------------------------------------- | ------------------------------ | --------------------------------------- |
+  | `AppSourceLimitError` (content apps)                           | 400                            |                                         |
+  | `AppDraftConflictError` (content apps)                         | 409                            | `reason: 'conflict'`                    |
+  | `NoGreenBuildError` (content apps)                             | 409                            |                                         |
+  | `AppRestoreDraftError` (content apps)                          | 409                            | `reason: 'draft'`                       |
+  | `AppDbMissingError` (content app-broker)                       | 409                            | `reason: 'db-missing'`                  |
+  | `AppSnapshotBudgetError` (content app-snapshots)               | 409                            | `reason: 'budget'`                      |
+  | `AppSnapshotRefusedError` (content app-snapshots)              | 409                            | `reason: 'no-data'` from a restore      |
+  | `AppTrashRefusedError` (content app-trash)                     | 409                            |                                         |
+  | `AppPackageError` (content app-package)                        | 400                            | `reason: 'bad-package'`                 |
+  | `TableSnapshotRefusedError` (content table-snapshots)          | 409                            |                                         |
+  | `TableRestoreDraftError` (content table-snapshots)             | 409                            | `reason: 'draft'`                       |
+  | `AppBoundTableError` (content tables)                          | 409                            |                                         |
+  | `TableRevConflict` (content table-broker)                      | 409                            | `current_rev`                           |
+  | `ContactShareRefusedError` (content contact-shares)            | 400                            | `reason` (the refusal's own)            |
+  | `FormulaNotFoundError` (content formulas)                      | 404                            |                                         |
+  | `UploadTooLargeError` (files)                                  | 413                            | `maxUploadBytes`; a video gets the hint |
+  | `TelegramTokenError` (`server/web/lib/agent-telegram.ts`)      | 404 a chat not found, else 400 | `code` when set                         |
+  | `FireRefused` (`server/web/lib/heartbeats.ts`)                 | 403                            |                                         |
+  | `PdfRendererUnavailableError` (`server/web/lib/render-pdf.ts`) | 503                            | (logged where thrown)                   |
+
+  `CloneAgentError` (`server/web/lib/agents.ts`) is an `InputError`.
+
 - **One answer** (`server/web/server/app-error.ts`, `answerAppError`): a
   redirect, a refusal taken at the read, a refusal by the one mapper
   (`mapAccessError`), a body over its ceiling, then the table, then busy
@@ -174,6 +202,42 @@ nothing could tell a refusal the caller should hear from a fault.
   `pages`, `pages/[id]/move`, `tables/[id]/commit`. A catch that maps a
   case of its own without the error's text stays (a unique violation's
   fixed 409, an upload over its cap).
+- **The later tranches moved** (44 more route files; 58 of the 86 in all,
+  plus the re-throw and `treeErrorResponse` files): every route file whose
+  catch put a caught error's text in a reply, except the 28 named below.
+  - The typed catches (a class mapped to its status by hand, rethrowing the
+    rest) are gone, each class answered by its row above: the app draft,
+    publish, duplicate, export, snapshots, restore, trash restore and
+    package import; the table history and restore; the contact shares; the
+    PDF export; Fire now; the Telegram link and chat routes; the assistant
+    clone of `users/[id]/agent`; the upload's 413 (`files/files`, whose
+    multipart parse errors are now an `InputError` in
+    `server/web/lib/upload-stream.ts`, 400 with the parser's text).
+  - The slug-taken catches keep their fixed 409 and throw the rest:
+    `agents`, `ai-workers`, `heartbeats`, `keys`, `model-pools`,
+    `settings/worker-groups`, `skills`, `tool-groups`, `tools`.
+  - The catch-alls are gone: `tools/[id]`, `heartbeats/[id]`,
+    `pdf-passwords`, `peers`, `pending/[id]`, `runners/[id]`, `profile`,
+    `studio/prose`, `studio/reset`, `config/adopt`, `config/adopt-all`,
+    `formulas/[id]/evaluate`, the `tables/[id]` `draft`, `draft-ops`,
+    `export` and `rows`, and the OpenAPI connector create. Two files keep
+    a catch of their own but lost this one: the import's write
+    (`tables/[id]/import`) and the MCP connector create (`mcp-connectors`).
+  - The checks their callers hear became `InputError` (same text): the
+    tool edit and delete refusals (`packages/tools/src/crud.ts`), the
+    schedule checks (`packages/runtime/src/heartbeats/schedule.ts`), the PDF
+    password and the peer's base URL and token, the preference checks
+    (timezone, locale, reminder channel, app and account ids), the prose
+    field, entity and version checks (`server/web/lib/studio/prompt-versions.ts`),
+    the manifest adopt refusals (an unknown slug, no key, no persona), the
+    table op checks (`packages/tabledb/src/ops.ts`, a tab that is not there
+    in `engine.ts` and `window.ts`), the whole-grid save over a workbook,
+    the commit with no draft, and the connector create checks (a connector
+    already there is a `ConflictError` for MCP, 409 as the route matched
+    it, and an `InputError` for OpenAPI, 400 as before).
+  - The commit with no draft (`tables/[id]/commit`): the first tranche
+    turned its plain `Error` into the opaque 500; it is an `InputError` now,
+    400 with its text, as on main.
 - **The Microsoft callback**
   (`server/web/app/api/microsoft/oauth/callback/route.ts`): a failed token
   exchange or account write redirects to `/settings/microsoft?error=` with
@@ -196,37 +260,75 @@ workspace refusal, `BusyError`, the four `TreeError` codes and
 as recorded, or a named change
 (`server/web/server/__snapshots__/a10-error-sweep-changes.txt`):
 
-| Kind            | Cells | What                                                                                                                                                                                                                                                                                                                                                |
-| --------------- | ----- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| opaque-500      | 26    | a plain or a database error, whose text the route put in a 400, answers the opaque 500: POST and PATCH of `contacts`, `events`, `journal` (and `journal/:id/resolve`), PATCH `formulas/:id`, PATCH and POST `files/files/:id` and `files/folders/:id`, POST `tables/:id/commit` (each for both faults)                                              |
-| domain-by-table | 418   | a domain error answers as the table says where a hand catch gave it another status: the folder errors and the visibility list where a route put their text in a 400 or mapped none (the opaque 500), busy 409 where 14 cells said it in a 400, and the workspace refusal 403 on `POST /api/tables/:id/commit` (it said the refusal's text in a 400) |
+| Kind                          | Cells | What                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| ----------------------------- | ----- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| opaque-500                    | 56    | a plain or a database error, whose text the route put in its reply, answers the opaque 500 (each for both faults). First tranche: POST and PATCH of `contacts`, `events`, `journal` (and `journal/:id/resolve`), PATCH `formulas/:id`, PATCH and POST `files/files/:id` and `files/folders/:id`, POST `tables/:id/commit`. Later: POST `agents`, `ai-workers`, `keys`, `skills`, `tool-groups`, `settings/worker-groups`, `config/adopt`, `config/adopt-all`, `formulas/:id/evaluate` (a 404 before), `tables/:id/draft-ops`; PUT `tables/:id/draft`; PATCH `heartbeats/:id`, `pending/:id`, `tools/:id`; DELETE `tools/:id` |
+| opaque-500 (an earlier fault) | 18    | `POST /api/pdf-passwords` and `POST /api/runners/:id` failed on a setting the sweep leaves unset (the vault's master key, the runner's database) before the forced fault, and said that text (a 400 and a 500); the opaque 500 now, for every fault                                                                                                                                                                                                                                                                                                                                                                          |
+| domain-by-table               | 516   | a domain error answers as the table says where a hand catch gave it another status: the folder errors and the visibility list where a route put their text in a 400 or mapped none (the opaque 500), busy 409 where cells said it in a 400, and the workspace refusal 403 on `POST /api/tables/:id/commit` (it said the refusal's text in a 400)                                                                                                                                                                                                                                                                             |
 
 Most domain-by-table cells are forced: a route that never meets a
-`TreeError` answers one by the table now, where it answered the opaque 500. The 9 body sweep cells that change in fold 2 are the same move seen
-from there (`opaque-500 (fold 2)`: the sweep's database stand-in throws a
-plain error, whose text was the reply). Every other cell of both sweeps is
-byte for byte, and the A4 sweeps are unchanged.
+`TreeError` answers one by the table now, where it answered the opaque 500. The body sweep sees the same move from its side: 28 cells
+`opaque-500 (fold 2)` (the database stand-in's plain error, or the unset
+master key, whose text was the reply), and 1 cell `input-400 (fold 2)`:
+`POST /api/config/adopt` with the sweep's valid body answers its refusal
+"No persona agent to adopt onto." as a 400 where it said it as a 500.
+Every other cell of both sweeps is byte for byte, and the A4 sweeps are
+unchanged.
+
+Named changes the sweeps do not force (a domain error a route answered
+by its catch-all, now by its row): `formulas/:id/evaluate` answers a
+stored spec that no longer validates 400 with its list (`FormulaSpecError`)
+where it said 404; `config/adopt` and `config/adopt-all` answer their
+refusals 400 where they said 500; `tables/:id/draft-ops`, `draft` and the
+import answer an app table 409 (`AppBoundTableError`, as the restore did)
+where they said 400, and the import's own errors without the
+`import failed: ` prefix; `tables/:id/draft-ops` answers a revision that
+kept changing past the retries 409 with `current_rev` (`TableRevConflict`)
+where it said 400; `tables/:id/rows` answers a tab that is not there 400
+where it said 500; the Telegram routes and the assistant clone answer a
+fault the opaque 500 where they said a fixed sentence ("Could not link the
+bot.", "Could not update the chat.", "Could not create the assistant.").
+A route that did not map a class at all now answers it by its row where it
+answered the opaque 500 (an `AppDbMissingError` on a restore, say).
 
 ### The pins
 
 - Scoreboard: `routeErrorTextFiles`, route files putting a caught error's
   text in a reply outside the named list, pinned at 0;
-  `routeErrorTextAllowed`, the named files, 86 on main, pinned at 72.
+  `routeErrorTextAllowed`, the named files, 86 on main, 72 after the first
+  tranche, pinned at 28.
 - ESLint (`eslint-rules/route-plumbing.mjs`, `no-error-text-replies`): such
   a catch is an error in a route file outside `ERROR_TEXT_ALLOW`.
   `eslint-rules/arch-lints.test.ts` holds the list to the files that still
-  do it, so it only shrinks.
+  do it, so it only shrinks, and `eslint-rules/route-plumbing.test.ts`
+  holds every reason to `PUBLIC:` or `NOT_YET:`.
 
-### Left open (fold 2 continues)
+### What stays named
 
-The 72 named files, each `not yet moved` in `ERROR_TEXT_ALLOW`. The same
-recipe for each: find the domain checks its callers hear (a plain `Error`
-with a message for a person) and give them `InputError` or
-`ConflictError` (or a class of their own with a row); delete the catch;
-run both sweeps, name the changes; take the file off the list and lower
-the pin. Some may be deliberately public (an AI worker's test routes show
-the owner the provider's own error, the dev console shows the upstream's):
-those keep their text with a reason of their own in the list. The tool
-surface reads the table through `publicErrorMessage`; the tools'
+28 route files keep the error's text in a reply, each with its reason in
+`ERROR_TEXT_ALLOW`:
+
+- `PUBLIC` (23): the text is the answer of a service the owner set up and
+  came to test or fix. The model tests (`agents/[id]/test/chat`, the seven
+  `ai-workers/[id]/test/*`, `studio/sandbox`, `embedding/test`); the
+  connectors' own servers (`mcp-connectors/[slug]/sync`,
+  `mcp-connectors/[slug]/oauth/start`, `openapi-connectors/[slug]/sync`,
+  `openapi-connectors/preview`, and the `oauthError` of
+  `mcp-connectors` after a create); the dev console (`dev-tools/mcp`,
+  `dev-tools/proxy`); the MCP health check (`mcp-status`); the push relay
+  (`push/reset`); the speech provider's 422 (`assistant/transcribe`);
+  Prettier's syntax error (`apps/[id]/format`); the spreadsheet parser
+  (`tables/[id]/import`, its `parse failed: ` only).
+- `NOT_YET` (5 + 1): the route answers a dialog in a shape of its own,
+  and the move needs the client (jackdaw) first. `/api/docs/collections`,
+  `/api/docs/collections/[id]`, `/api/docs/collections/all`, `embedding` and
+  `embedding/rebuild` answer `{ ok: false, message }` with status 200 to a
+  settings dialog; `assistant/turn` puts a failed turn's text (mostly the
+  provider's answer) in the chat. The recipe, once the client reads the
+  one error answer: give the domain checks `InputError` (or a class with a
+  row), delete the catch, run both sweeps and name the changes, take the
+  file off the list and lower the pin.
+
+The tool surface reads the table through `publicErrorMessage`; the tools'
 `visibilityRefusal` (`packages/tools`) still words the visibility list for
 a model itself.
