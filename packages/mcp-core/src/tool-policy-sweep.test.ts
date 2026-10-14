@@ -31,14 +31,18 @@ import {
   listBuiltins,
   toGatePolicy,
   type BuiltinToolDef,
+  type ToolPolicy,
 } from '@mantle/tools';
 import { registerHeartbeatTools } from '@mantle/runtime';
 import { ADMIN_KIND_CREATE_TOOL_SLUGS } from './create-home';
 import { mcpToolPolicy } from './gate-policy';
 import { LIST_TOOLS } from './key-email-guard';
 import { KEY_SHARED_CONTENT_TOOLS } from './mcp-policy';
+import { MCP_TOOL_DEFS } from './mcp-defs';
+import { AREA_PREFIXES, familyKeyArea } from './key-scope';
 import { registerMantleTools } from './build-server';
 import {
+  PEER_RISKY_TOOL_PREFIXES,
   PEER_RISKY_TOOL_SLUGS,
   isMcpToolReadOnly,
   isPeerRiskyTool,
@@ -90,14 +94,20 @@ describe('a policy on every builtin (A5 step 1)', () => {
     }
   });
 
-  it("toGatePolicy equals today's gate policy, for every builtin", () => {
+  // Renamed in step 2 fix round 1 (LOW-3): since step 2 the gate's
+  // `mcp-tool` source IS toGatePolicy of the declared policy, so this no
+  // longer compares two policies, only the wiring: every builtin has an
+  // entry, read from its own policy (a twin's from its definition, the
+  // same). The values from before step 2 are pinned by the step 2 snapshot
+  // (surface-decisions.json, tools-list.matrix.json).
+  it("the gate's mcp-tool source reads each builtin's and definition's declared policy", () => {
     const drift: string[] = [];
-    for (const d of DEFS) {
-      const today = mcpToolPolicy({ kind: 'mcp-tool', name: d.slug });
-      expect(today, d.slug).not.toBeNull();
-      const declared = gateView(toGatePolicy(d.policy));
-      if (JSON.stringify(declared) !== JSON.stringify(gateView(today!))) drift.push(d.slug);
-      expect(declared, d.slug).toEqual(gateView(today!));
+    for (const { slug, policy } of [...DEFS, ...MCP_TOOL_DEFS]) {
+      const read = mcpToolPolicy({ kind: 'mcp-tool', name: slug });
+      expect(read, slug).not.toBeNull();
+      if (JSON.stringify(gateView(read!)) !== JSON.stringify(gateView(toGatePolicy(policy)))) {
+        drift.push(slug);
+      }
     }
     expect(drift).toEqual([]);
   });
@@ -239,5 +249,118 @@ describe("the gate's peer narrower reads the declared mark (A5 step 2)", () => {
       admin: null,
     };
     expect(GATE_NARROWERS.peer(oauth, policy, ref)).toBeNull();
+  });
+});
+
+/**
+ * The family safety net (step 2 fix round 1, MEDIUM-1). Before step 2 a
+ * tool was risky for a key or a peer by its family whatever it declared (a
+ * new web_*, telegram_*, sandbox_* or peer_* builtin, an app_* write, one
+ * that starts model work or waits for the owner's confirm), and a *_from_*
+ * tool had no key area whatever it declared (M2 audit F2). Since step 2 the
+ * policy decides, so a tool that forgets `peerRisky` would be open to keys
+ * and peers with Write on. This sweep holds every builtin and every
+ * hand-written MCP definition to its family: the families are the kept
+ * PEER_RISKY_TOOL_PREFIXES and AREA_PREFIXES (owner decision: kept until
+ * A5 step 4), read here, not copied.
+ */
+describe('every declared tool keeps its family (step 2 fix round 1, MEDIUM-1)', () => {
+  type Declared = { slug: string; policy: ToolPolicy; requiresConfirm?: boolean };
+
+  /** Why `t` is risky by the rules isPeerRiskyTool had before step 2
+   *  (login-surface.ts at v0.300.27), the name list aside; null if none. */
+  function familyRisk(t: Declared): string | null {
+    const prefix = PEER_RISKY_TOOL_PREFIXES.find((p) => t.slug.startsWith(p));
+    if (prefix) return `family ${prefix}`;
+    // A mini app's tool that writes (its data's tools are the app_data_ area,
+    // held to the grant's Write): login-surface.ts familyPeerRisky.
+    if (
+      t.slug.startsWith('app_') &&
+      !t.slug.startsWith('app_data_') &&
+      t.policy.effect !== 'read'
+    ) {
+      return 'an app_ write';
+    }
+    if (t.policy.startsModelWork === true) return 'starts model work';
+    if (t.requiresConfirm === true) return "waits for the owner's confirm";
+    return null;
+  }
+
+  /** The area `t` must declare by its family (familyKeyArea reads
+   *  AREA_PREFIXES and the _from_ rule): null for a conversion, the family's
+   *  area otherwise; an app_data_ tool is its own area. Undefined: no
+   *  family, any declared area. */
+  function familyArea(t: Declared): string | null | undefined {
+    if (t.slug.startsWith('app_data_')) return 'app_data';
+    const area = familyKeyArea(t.slug);
+    if (area !== null) return area;
+    if (t.slug.includes('_from_')) return null;
+    return undefined;
+  }
+
+  /** Every way `tools` leave their families. */
+  function familyDrift(tools: readonly Declared[]): string[] {
+    const out: string[] = [];
+    for (const t of tools) {
+      const risk = familyRisk(t);
+      if (risk && t.policy.peerRisky !== true) out.push(`${t.slug}: ${risk}, not peerRisky`);
+      const area = familyArea(t);
+      const declared = t.policy.keyArea ?? null;
+      if (area !== undefined && declared !== area) {
+        out.push(`${t.slug}: key area ${String(declared)}, its family's is ${String(area)}`);
+      }
+    }
+    return out;
+  }
+
+  const TOOLS: Declared[] = [...DEFS, ...MCP_TOOL_DEFS];
+
+  it('reads the kept families', () => {
+    expect([...PEER_RISKY_TOOL_PREFIXES].sort()).toEqual([
+      'peer_',
+      'sandbox_',
+      'telegram_',
+      'web_',
+    ]);
+    expect(AREA_PREFIXES.map(([p]) => p)).toContain('page_');
+    expect(familyKeyArea('page_from_journal')).toBeNull();
+    // Each family has declared tools here, so the sweep is not vacuous.
+    for (const prefix of [...PEER_RISKY_TOOL_PREFIXES, ...AREA_PREFIXES.map(([p]) => p)]) {
+      if (prefix === 'my_app_') continue; // a member's app tools: no builtin today
+      expect(
+        TOOLS.some((t) => t.slug.startsWith(prefix)),
+        prefix,
+      ).toBe(true);
+    }
+    expect(TOOLS.filter((t) => t.slug.includes('_from_')).length).toBeGreaterThan(5);
+  });
+
+  it('every builtin and MCP definition of a risky family is peerRisky; every family tool has its area', () => {
+    expect(TOOLS.length).toBeGreaterThan(290);
+    expect(familyDrift(TOOLS)).toEqual([]);
+  });
+
+  it("fails when one tool's peerRisky flips, or a conversion declares an area", () => {
+    const flip = (slug: string, change: (p: ToolPolicy) => ToolPolicy): Declared[] =>
+      TOOLS.map((t) => (t.slug === slug ? { ...t, policy: change(t.policy) } : t));
+    const withoutRisk = (p: ToolPolicy): ToolPolicy => {
+      const { peerRisky: _gone, ...rest } = p;
+      return rest;
+    };
+    for (const slug of ['web_fetch', 'telegram_send', 'app_publish', 'ask_responder']) {
+      expect(
+        TOOLS.some((t) => t.slug === slug),
+        slug,
+      ).toBe(true);
+      expect(familyDrift(flip(slug, withoutRisk)), slug).toEqual([
+        expect.stringMatching(new RegExp(`^${slug}: .*not peerRisky$`)),
+      ]);
+    }
+    expect(familyDrift(flip('page_from_journal', (p) => ({ ...p, keyArea: 'pages' })))).toEqual([
+      "page_from_journal: key area pages, its family's is null",
+    ]);
+    expect(familyDrift(flip('page_create', (p) => ({ ...p, keyArea: 'search' })))).toEqual([
+      "page_create: key area search, its family's is pages",
+    ]);
   });
 });

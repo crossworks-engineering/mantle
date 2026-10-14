@@ -33,8 +33,10 @@ export type KeyArea = (typeof KEY_AREAS)[number];
 /** Whole tool families by slug prefix: the area of a NAME no policy table
  *  holds (familyKeyArea). Every builtin and hand-written MCP tool declares
  *  its own area on its policy; what is left is a connector's tool (mcp_*,
- *  in no family) or a name that is no tool. */
-const AREA_PREFIXES: ReadonlyArray<readonly [string, KeyArea]> = [
+ *  in no family) or a name that is no tool. Kept until A5 step 4 (owner
+ *  decision, step 2 fix round 1): tool-policy-sweep.test.ts reads it to
+ *  hold every declared tool of a family to the family's area. */
+export const AREA_PREFIXES: ReadonlyArray<readonly [string, KeyArea]> = [
   ['page_', 'pages'],
   ['note_', 'notes'],
   ['task_', 'tasks'],
