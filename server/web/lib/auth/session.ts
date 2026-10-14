@@ -973,13 +973,42 @@ export async function answerRouteCaller(row: RouteRow): Promise<NextResponse | n
  * goes through runRoute). Fail closed: never a login nobody checked.
  */
 export function ownerCaller(): SessionUser {
+  return ownerAnswer('ownerCaller').user;
+}
+
+/**
+ * What getOwnerOr401WithSource answers (the owner and how the request
+ * authenticated), read from the pipeline's answer as ownerCaller() reads
+ * it: no lookup, no effect, and the same throw where the pipeline answered
+ * no owner. A handler reads it in place of the guard:
+ *
+ *     const { user, source } = ownerCallerWithSource();
+ */
+export function ownerCallerWithSource(): { user: SessionUser; source: AuthSource } {
+  const answer = ownerAnswer('ownerCallerWithSource');
+  return { user: answer.user, source: answer.source };
+}
+
+/**
+ * What getOwnerOr401WithLogin answers (the owner, how the request
+ * authenticated, and the login's kind, `member` set for a member), read
+ * from the pipeline's answer as ownerCaller() reads it: no lookup, no
+ * effect, and the same throw where the pipeline answered no owner.
+ */
+export function ownerCallerWithLogin(): OwnerRouteLogin {
+  return { ...ownerAnswer('ownerCallerWithLogin') };
+}
+
+/** The owner guard's answer the pipeline gave (answerRouteCaller), which
+ *  the readers project; throws where it gave none (fail closed). */
+function ownerAnswer(reader: string): OwnerRouteLogin {
   const answer = boundLogins(currentCaller())?.ownerAnswer;
   if (!answer) {
     throw new Error(
-      'ownerCaller(): the pipeline answered no owner for this request (the row has no caller)',
+      `${reader}(): the pipeline answered no owner for this request (the row has no caller)`,
     );
   }
-  return answer.user;
+  return answer;
 }
 
 /** Whether `loginId` holds `area`: the Admin view the gate resolved for

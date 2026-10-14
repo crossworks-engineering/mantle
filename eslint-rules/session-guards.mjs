@@ -36,5 +36,11 @@ export const SESSION_GUARDS = Object.freeze([
 ]);
 
 /** The readers of the caller the pipeline answers: a handler calls one in
- *  place of a guard. */
-export const CALLER_READERS = Object.freeze(['ownerCaller']);
+ *  place of a guard (ownerCaller for getOwnerOr401, ownerCallerWithSource
+ *  for getOwnerOr401WithSource, ownerCallerWithLogin for
+ *  getOwnerOr401WithLogin; each projects the one answer the gate gave). */
+export const CALLER_READERS = Object.freeze([
+  'ownerCaller',
+  'ownerCallerWithSource',
+  'ownerCallerWithLogin',
+]);

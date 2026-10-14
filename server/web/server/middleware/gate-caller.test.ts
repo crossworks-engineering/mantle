@@ -327,6 +327,62 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
     }
   });
 
+  it('ownerCallerWithSource and ownerCallerWithLogin read what their guards answer', async () => {
+    const { gate } = await import('./gate');
+    const { registerRoutes } = await import('../route-loader');
+    const session = await import('../../lib/auth/session');
+    const onError = () => Response.json({ error: 'internal error' }, { status: 500 });
+    const pairs: Array<[name: string, read: () => unknown, guard: () => Promise<unknown>]> = [
+      ['WithSource', session.ownerCallerWithSource, session.getOwnerOr401WithSource],
+      ['WithLogin', session.ownerCallerWithLogin, session.getOwnerOr401WithLogin],
+    ];
+    for (const [name, read, guard] of pairs) {
+      const build = (reads: boolean) => {
+        const handle = async () => {
+          counts.handled += 1;
+          if (reads) return Response.json(seen(read()));
+          const got = await guard();
+          return got instanceof Response ? got : Response.json(seen(got));
+        };
+        const app = new Hono();
+        app.use('*', gate());
+        registerRoutes(
+          app,
+          [
+            { pattern: '/api/profile', methods: ['GET', 'PUT'] },
+            { pattern: '/api/notes', methods: ['GET'] },
+          ].map((e) => ({
+            ...e,
+            catchAll: null,
+            catchAllOptional: false,
+            ...(reads ? { reads: e.methods } : {}),
+            load: async () => Object.fromEntries(e.methods.map((m) => [m, handle])),
+          })),
+        );
+        app.onError(onError);
+        return app;
+      };
+      const [a, b] = [build(true), build(false)];
+      for (const [method, path] of [
+        ['GET', '/api/profile'],
+        ['PUT', '/api/profile'],
+        ['GET', '/api/notes'],
+      ] as const) {
+        for (const cred of creds) {
+          const x = await drive(a, method, path, cred.headers());
+          const y = await drive(b, method, path, cred.headers());
+          expect({ ...x, handled: 0 }, `${name} ${method} ${path} ${cred.name}`).toEqual({
+            ...y,
+            handled: 0,
+          });
+        }
+      }
+    }
+    // Outside a routed request they throw, as ownerCaller() does.
+    expect(() => session.ownerCallerWithSource()).toThrow(/answered no owner/);
+    expect(() => session.ownerCallerWithLogin()).toThrow(/answered no owner/);
+  });
+
   it('a device token is stamped once, by the pipeline', async () => {
     const res = await drive(pipeline, 'GET', '/api/profile', creds[5]!.headers());
     expect(res.status).toBe(200);

@@ -275,12 +275,16 @@ vi.mock('../lib/auth/session', async (importOriginal) => {
     sweepState.log.push(`${name} ok ${summarize(ownerCaller())} ${after()}`);
     return value;
   };
-  // The handler's read of it: the handler goes no further, as after a
-  // guard that let a login through.
-  wrapped.ownerCaller = () => {
-    ownerCaller();
-    throw new SweepStop();
-  };
+  // The handler's read of it (any reader of the one list): the handler
+  // goes no further, as after a guard that let a login through.
+  const { CALLER_READERS: READERS } = await import('../../../eslint-rules/session-guards.mjs');
+  for (const name of READERS) {
+    const read = real[name] as () => unknown;
+    wrapped[name] = () => {
+      read();
+      throw new SweepStop();
+    };
+  }
   for (const name of GUARDS) {
     const fn = real[name] as (...a: unknown[]) => Promise<unknown>;
     wrapped[name] = async (...args: unknown[]) => {
@@ -325,8 +329,11 @@ function concretePath(pattern: string): string {
 type Cred = { name: string; headers: Record<string, string>; query?: string; getOnly?: boolean };
 
 /** The guard each pipeline entry stands for in the two recorded files: the
- *  guard every handler a batch converted called (step 3b batch 1: the self
- *  rows, getOwnerOr401 each). */
+ *  guard every handler a batch converted called (step 3b batch 1, the self
+ *  rows, and batch 2, the content reads: getOwnerOr401 each). A batch that
+ *  converts a getOwnerOr401WithSource or getOwnerOr401WithLogin call
+ *  (ownerCallerWithSource(), ownerCallerWithLogin()) names its rows' entries
+ *  by the guard each replaced, and logs the projection its reader reads. */
 const LEGACY_NAMES: Readonly<Record<string, string>> = { 'pipeline:owner': 'getOwnerOr401' };
 
 /** An answer as the recorded files spell it: a moved entry under the name
