@@ -81,7 +81,7 @@ the platform's own connect.
 | peer MCP transport | `packages/tools/src/builtins-peer-mcp.ts` | `allowLan` |
 | federation client (`peer_query`, `peer_node_get`, `peer_search_chunks`) | `packages/content/src/peers-client.ts` | `allowLan`, the token as a secret, 15 s, 32 MB |
 | calendar ICS feed | `packages/calendar/src/providers/ics.ts` | 30 s, 12 MB |
-| `video_ingest` link | `packages/tools/src/builtins-video.ts` | a redirect walk before the sidecar, 10 s, no body read |
+| `video_ingest` link | `packages/tools/src/builtins-video.ts` | a redirect walk before the sidecar, 10 s, no body read; a timeout or too many redirects refuses the link |
 
 Not moved, and why:
 
@@ -141,7 +141,8 @@ loopback answers as before.
 | calendar ICS feed | redirect to 169.254.169.254 | fetched the metadata, failed to parse | refused before the hop |
 | calendar ICS feed | oversized body | "feed too large" after reading 33 MB | "feed too large" at 12 MB |
 | `video_ingest` link | redirect to 169.254.169.254 | handed to the sidecar | refused |
-| `video_ingest` link | public host, cross-host redirect, oversized, slow | handed to the sidecar | the link is reached once (no body read), then handed to the sidecar; a slow host adds up to 10 s |
+| `video_ingest` link | public host, cross-host redirect, oversized | handed to the sidecar | the link is reached once (no body read), then handed to the sidecar |
+| `video_ingest` link | slow server | handed to the sidecar | refused after 10 s (fix round 1: the walk fails closed, as on too many redirects) |
 | federation client | redirect to 169.254.169.254 | fetched the metadata, read as "no nodes" | refused |
 | federation client | oversized body | read 33 MB, the parse failure read as "no nodes" | refused at 32 MB |
 | peer MCP transport | redirect to 169.254.169.254 | fetched the metadata | refused |

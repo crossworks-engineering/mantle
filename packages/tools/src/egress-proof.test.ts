@@ -149,7 +149,8 @@ const NAMED: NamedChanges = {
   },
   // The redirect walk before the sidecar: it reaches the link itself (no
   // body read), and a redirect into private or metadata space is refused.
-  // Anything else still goes to the sidecar, after at most 10 s.
+  // A link that does not answer within 10 s is refused (fix round 1: the
+  // walk fails closed, its redirects were never checked).
   'video_ingest link check': {
     'public host': { reached: ['public.test'] },
     'redirect to 169.254.169.254': { answer: META_REFUSED, reached: ['meta-redirect.test'] },
@@ -158,7 +159,11 @@ const NAMED: NamedChanges = {
       authorizationAtOtherHost: 'not sent',
     },
     'oversized body': { reached: ['huge.test'], oversizedRead: 'stopped at 0 MB' },
-    'slow server': { answer: 'handed to the media sidecar (after 10 s)', reached: ['slow.test'] },
+    'slow server': {
+      answer:
+        'error: the link did not answer within 10 s, so its redirects could not be checked (after 10 s)',
+      reached: ['slow.test'],
+    },
   },
 };
 

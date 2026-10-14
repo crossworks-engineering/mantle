@@ -296,7 +296,7 @@
    "oversizedRead": "stopped at 0 MB"
   },
   "slow server": {
-   "answer": "handed to the media sidecar (after 10 s)",
+   "answer": "error: the link did not answer within 10 s, so its redirects could not be checked (after 10 s)",
    "reached": [
     "slow.test"
    ]

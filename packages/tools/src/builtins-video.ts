@@ -100,8 +100,8 @@ type TranscriptSource = `captions:${'manual' | 'auto'}` | `stt:${string}`;
 
 // ─── the tool ──────────────────────────────────────────────────────
 
-/** How long the redirect walk may take before the link goes to the sidecar
- *  unwalked (as before A10 part 1). */
+/** How long the redirect walk may take: a link that does not answer in
+ *  time is refused, since its redirects were never checked. */
 const REDIRECT_WALK_TIMEOUT_MS = 10_000;
 
 /**
@@ -110,9 +110,13 @@ const REDIRECT_WALK_TIMEOUT_MS = 10_000;
  * through the one egress fetch (A10 part 1), every hop checked and no body
  * read: the sidecar re-checks only the first host and yt-dlp follows
  * redirects itself, so a public link that redirects into private or
- * metadata space is refused here. Anything else the walk meets (a timeout,
- * a refused connection, too many redirects) is the sidecar's to report, as
- * before. Exported for the egress proof table (egress-proof.test.ts).
+ * metadata space is refused here. The walk fails closed: a link that does
+ * not answer within the deadline, or redirects more than the walk follows,
+ * is refused too, since the hops the sidecar would follow were never
+ * checked (A10 part 1 fix round 1). Anything else the walk meets (a refused
+ * connection, a TLS error) is the sidecar's to report, as before: the link
+ * never reached a hop the walk did not check. Exported for the egress proof
+ * table (egress-proof.test.ts).
  */
 export async function vetVideoUrl(url: string): Promise<string | null> {
   try {
@@ -129,6 +133,12 @@ export async function vetVideoUrl(url: string): Promise<string | null> {
     await res.body?.cancel().catch(() => {});
   } catch (err) {
     if (err instanceof EgressRefusedError) return errorMessage(err);
+    if ((err as { name?: string } | null)?.name === 'AbortError') {
+      return `the link did not answer within ${REDIRECT_WALK_TIMEOUT_MS / 1000} s, so its redirects could not be checked`;
+    }
+    if (/too many redirects/.test(errorMessage(err))) {
+      return `${errorMessage(err)}: the link's redirects could not all be checked`;
+    }
   }
   return null;
 }
