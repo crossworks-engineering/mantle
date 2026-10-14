@@ -5,25 +5,38 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const h = vi.hoisted(() => ({ rows: [] as Array<Record<string, unknown>> }));
+const h = vi.hoisted(() => ({
+  rows: [] as Array<Record<string, unknown>>,
+  /** Holds each insert until it settles (auditsSettled). */
+  hold: null as Promise<void> | null,
+}));
 
 vi.mock('@mantle/db', () => ({
   auditLog: {},
   systemDb: {
     insert: () => ({
       values: async (v: Record<string, unknown>) => {
+        if (h.hold) await h.hold;
+        if (v.action === 'fails') throw new Error('database down');
         h.rows.push(v);
       },
     }),
   },
 }));
 
-import { logAudit, redactAuditPath, requestMetaFrom } from './audit';
+import {
+  auditFireAndForget,
+  auditsSettled,
+  logAudit,
+  redactAuditPath,
+  requestMetaFrom,
+} from './audit';
 
 const ID = '0f1e2d3c-4b5a-4968-8776-655443322110';
 
 beforeEach(() => {
   h.rows = [];
+  h.hold = null;
 });
 
 describe('redactAuditPath', () => {
@@ -77,5 +90,31 @@ describe('requestMetaFrom (client logins audit B16)', () => {
     expect(requestMetaFrom(r).ip).toBe(clientIp(r));
     expect(requestMetaFrom(req({})).ip).toBeNull();
     expect(requestMetaFrom(req({ 'x-real-ip': '198.51.100.3' })).ip).toBe('198.51.100.3');
+  });
+});
+
+describe('auditsSettled (A4 step 3b part 5 fix round 1)', () => {
+  it('waits for every row in flight, a failed one too; the write stays fire and forget', async () => {
+    let release!: () => void;
+    h.hold = new Promise((resolve) => (release = resolve));
+    const quiet = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      const row = { actorId: 'a1', actorEmail: 'a@example.invalid', method: 'POST', path: '/x' };
+      expect(auditFireAndForget({ ...row, action: 'api.write' })).toBeUndefined();
+      auditFireAndForget({ ...row, action: 'fails' as 'api.write' });
+      let settled = false;
+      const waiting = auditsSettled().then(() => (settled = true));
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(settled).toBe(false);
+      expect(h.rows).toHaveLength(0);
+      release();
+      await waiting;
+      expect(h.rows).toHaveLength(1);
+      expect(quiet).toHaveBeenCalledTimes(1);
+      // Nothing in flight: it resolves at once.
+      await auditsSettled();
+    } finally {
+      quiet.mockRestore();
+    }
   });
 });

@@ -149,11 +149,27 @@ export async function logAudit(entry: AuditEntry): Promise<void> {
   });
 }
 
+/** The rows auditFireAndForget has in flight, each until it settles
+ *  (recorded or logged as failed). Only auditsSettled() reads it. */
+const inFlight = new Set<Promise<void>>();
+
 /** Audit must never break the request it describes: log-and-continue. */
 export function auditFireAndForget(entry: AuditEntry): void {
-  void logAudit(entry).catch((err) => {
+  const write = logAudit(entry).catch((err) => {
     console.error(`[audit] failed to record ${entry.action}:`, err);
   });
+  inFlight.add(write);
+  void write.finally(() => inFlight.delete(write));
+}
+
+/**
+ * Tests: resolves once every audit row auditFireAndForget started has
+ * settled, those started while it waits too, so a test can end its pool
+ * after its detached writes land rather than after a guessed sleep. Nothing
+ * in the product awaits it: a row stays fire and forget.
+ */
+export async function auditsSettled(): Promise<void> {
+  while (inFlight.size > 0) await Promise.allSettled([...inFlight]);
 }
 
 /** Client ip + user-agent from the ambient request headers (Server Component /

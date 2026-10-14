@@ -222,8 +222,8 @@ describe.skipIf(!URL)('W7e: member routes in the request scope, the phone contra
     // pool while that insert opens a connection rejects postgres.js's type
     // fetch with CONNECTION_CLOSED, an unhandled rejection that fails the run
     // though every test passed (CI on v0.300.13 and on A4 step 3b part 5).
-    // Let the detached writes land first.
-    await new Promise((resolve) => setTimeout(resolve, 500));
+    // Let the detached writes land first: every one in flight, settled.
+    await (await import('../lib/audit')).auditsSettled();
     await m?.closeDb();
     await scratch?.drop();
     if (dir) await rm(dir, { recursive: true, force: true });
