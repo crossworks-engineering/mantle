@@ -119,6 +119,82 @@ describe('handlerReads', () => {
     expect(() => reads(src)).toThrow(/GET runs code before it reads the caller/);
   });
 
+  it('refuses a reading handler whose parameters run code (a default value)', () => {
+    const cases = [
+      `${IMPORT}
+       export async function GET(req: Request, ctx: unknown, x = audit()) { const o = ownerCaller(); return Response.json({ o, x }); }`,
+      `${IMPORT}
+       export async function GET(req: Request, { params = sideFx() }: any) { const o = ownerCaller(); return Response.json({ o, params }); }`,
+      `${IMPORT}
+       export const GET = async (req: Request, { a: [b = sideFx()] }: any) => ownerCaller();`,
+      `${IMPORT}
+       export async function GET(req: Request, { [key()]: v }: any) { const o = ownerCaller(); return Response.json({ o, v }); }`,
+      `import { GET as notes } from '../../notes/route';
+       export async function GET(req: Request, ctx = audit()) { return notes(req, ctx); }`,
+    ];
+    for (const src of cases) expect(() => reads(src)).toThrow(/GET runs code before it reads/);
+    // A plain destructuring runs no code of its own; a hand case may.
+    expect(
+      reads(`${IMPORT}
+        export async function GET(req: Request, { params }: { params: unknown }) { const o = ownerCaller(); return Response.json({ o, params }); }`),
+    ).toEqual(['GET']);
+    expect(
+      reads(`${IMPORT}
+        // route-callers: hand case (audit() checked by hand)
+        export async function GET(req: Request, ctx: unknown, x = audit()) { const o = ownerCaller(); return Response.json({ o, x }); }`),
+    ).toEqual(['GET']);
+  });
+
+  it('reads a handler that runs a reading handler of its own file (POST: return GET(req))', () => {
+    expect(
+      reads(`${IMPORT}
+        export async function GET(req: Request) { const o = ownerCaller(); return Response.json(o); }
+        export async function POST(req: Request) { return GET(req); }
+        export const PUT = (req: Request) => POST(req);
+        export async function DELETE() { return new Response(null, { status: 204 }); }`),
+    ).toEqual(['GET', 'POST', 'PUT']);
+    // Through another file's handler, wrapped here first.
+    expect(
+      reads(`import { GET as notes } from '../../notes/route';
+        export async function GET(req: Request) { return notes(req); }
+        export async function POST(req: Request) { return await GET(req); }`),
+    ).toEqual(['GET', 'POST']);
+    // A handler of the file that does not read is called freely.
+    expect(
+      reads(`${IMPORT}
+        export async function GET() { return Response.json({}); }
+        export async function POST() { if (x()) return GET(); return GET(); }`),
+    ).toEqual([]);
+  });
+
+  it('refuses a local reading handler run with code first, passed on, or in a helper', () => {
+    const head = `${IMPORT}
+      export async function GET(req: Request) { const o = ownerCaller(); return Response.json(o); }`;
+    expect(() =>
+      reads(`${head}
+        export async function POST(req: Request) { const body = await req.json(); return GET(req); }`),
+    ).toThrow(/POST runs code before it reads/);
+    expect(() =>
+      reads(`${head}
+        export async function POST(req: Request) { return GET(new Request(req.url)); }`),
+    ).toThrow(/POST runs code before it reads/);
+    expect(() =>
+      reads(`${head}
+        const withX = (h: any) => h;
+        export const POST = withX(GET);`),
+    ).toThrow(/passes GET \(a handler of this file that reads the caller\) other than calling it/);
+    expect(() =>
+      reads(`${head}
+        function run(r: Request) { return GET(r); }
+        export async function POST(req: Request) { return run(req); }`),
+    ).toThrow(/GET\(\) outside an exported handler/);
+    expect(() =>
+      reads(`import { ownerCaller, getOwnerOr401 } from '@/lib/auth';
+        export async function GET(req: Request) { const o = ownerCaller(); return Response.json(o); }
+        export async function POST(req: Request) { return GET(req); await getOwnerOr401(); }`),
+    ).toThrow(/POST reads the pipeline's caller and also calls getOwnerOr401/);
+  });
+
   // ── L1: bindings, not names (the audit's mutation cases) ──────────────────
 
   const refused: Record<string, [src: string, error: RegExp]> = {

@@ -26,13 +26,16 @@
  *    ...)`, `C.GET`), is declared with let or var, or is a default export;
  *  - a handler that runs code before it reads (the gate answers before the
  *    handler, so whatever the handler answered before its guard would come
- *    after the gate's refusal), and a handler that wraps another route
- *    file's reading handler with code before the call (the /api/v1 files:
- *    a key's 404 before the page's guard), unless the handler is marked
+ *    after the gate's refusal), a parameter's default value included, and
+ *    a handler that wraps a reading handler (another route file's, or one
+ *    of its own file: POST's `return GET(req)`, which reads as GET does)
+ *    with code before the call (the /api/v1 files: a key's 404 before the
+ *    page's guard), unless the handler is marked
  *    `// route-callers: hand case` once its order was checked by hand;
- *  - a reading handler of another route file passed around other than
- *    called or re-exported; that file imported whole or re-exported with
- *    `*`;
+ *  - a reading handler, of another route file or of this one, passed
+ *    around other than called or re-exported, or called outside an
+ *    exported handler; a route file that reads imported whole or
+ *    re-exported with `*`;
  *  - in a file that reads: a handler that reads and also calls a session
  *    guard; a guard imported under another name; a guard called outside
  *    an exported handler (a helper, a wrapper) or named other than in a
@@ -247,6 +250,9 @@ export function handlerReads(src: string, file: string, follow?: FollowReads): s
   const wrapCalls: ts.CallExpression[] = [];
   const guardCalls: Array<{ call: ts.CallExpression; name: string }> = [];
   const guardRefs: Array<{ node: ts.Node; name: string }> = [];
+  /** Each use of a top-level function or constant of the file by name
+   *  (`return GET(req)` in POST): a handler of the file that reads. */
+  const localRefs: Array<{ node: ts.Identifier; name: string }> = [];
   /** The call `node` is the callee of (`f()` or `x.f()`), else null. */
   const calleeOf = (node: ts.Node): ts.CallExpression | null => {
     const p = node.parent;
@@ -285,6 +291,9 @@ export function handlerReads(src: string, file: string, follow?: FollowReads): s
         if (call) guardCalls.push({ call, name: guard });
         else guardRefs.push({ node: n, name: guard });
       }
+      if (local.has(n.text) && !isMember && !declares && !exportedAs.has(n) && !namesDecl(n)) {
+        localRefs.push({ node: n, name: n.text });
+      }
       if (readingImports.has(n.text) && !isMember && !declares && !exportedAs.has(n)) {
         const call = calleeOf(n);
         if (!call) {
@@ -306,6 +315,47 @@ export function handlerReads(src: string, file: string, follow?: FollowReads): s
   };
   visit(sf);
 
+  // ── A handler of the file that runs another (POST: `return GET(req)`) ──
+  // reads what the one it runs reads, as a handler of another route file
+  // does: to a fixed point, from the handlers that read or wrap.
+  const scopeOf = (h: Handler) => h.fn ?? h.decl;
+  const readingLocal = new Set<Handler>();
+  const localCall = (r: { node: ts.Identifier }) => {
+    const p = r.node.parent;
+    return ts.isCallExpression(p) && p.expression === r.node ? p : null;
+  };
+  for (let grew = true; grew;) {
+    grew = false;
+    for (const h of methods.values()) {
+      if (readingLocal.has(h)) continue;
+      const scope = scopeOf(h);
+      const runsReader = localRefs.some((r) => {
+        const target = local.get(r.name)!;
+        return target !== h && readingLocal.has(target) && within(r.node, scope) && !!localCall(r);
+      });
+      if (
+        runsReader ||
+        readCalls.some((c) => within(c, scope)) ||
+        wrapCalls.some((c) => within(c, scope))
+      ) {
+        readingLocal.add(h);
+        grew = true;
+      }
+    }
+  }
+  for (const r of localRefs) {
+    const target = local.get(r.name)!;
+    if (!readingLocal.has(target)) continue;
+    const call = localCall(r);
+    if (!call) {
+      fail(
+        r.node,
+        `passes ${r.name} (a handler of this file that reads the caller) other than calling it`,
+      );
+    }
+    if (!within(call!, scopeOf(target))) wrapCalls.push(call!);
+  }
+
   // ── Each method ──────────────────────────────────────────────────────────
   const out: string[] = [];
   for (const [method, { spec, name }] of elsewhere) {
@@ -314,7 +364,7 @@ export function handlerReads(src: string, file: string, follow?: FollowReads): s
   const answered = new Set<ts.CallExpression>();
   const handlerNodes: ts.Node[] = [];
   for (const [method, h] of methods) {
-    const scope = h.fn ?? h.decl;
+    const scope = scopeOf(h);
     handlerNodes.push(scope);
     const readsIn = readCalls.filter((c) => within(c, scope));
     const wrapsIn = wrapCalls.filter((c) => within(c, scope));
@@ -382,6 +432,41 @@ export function handlerReads(src: string, file: string, follow?: FollowReads): s
   return [...new Set(out)].sort();
 }
 
+/** Whether `n` is the name a declaration gives (not a use of a name). */
+function namesDecl(n: ts.Identifier): boolean {
+  const p = n.parent;
+  return (
+    ((ts.isFunctionDeclaration(p) ||
+      ts.isFunctionExpression(p) ||
+      ts.isVariableDeclaration(p) ||
+      ts.isParameter(p) ||
+      ts.isClassDeclaration(p) ||
+      ts.isPropertyAssignment(p) ||
+      ts.isPropertyDeclaration(p) ||
+      ts.isMethodDeclaration(p) ||
+      ts.isPropertySignature(p)) &&
+      p.name === n) ||
+    (ts.isBindingElement(p) && (p.name === n || p.propertyName === n))
+  );
+}
+
+/** Whether a handler's parameters run code of their own: a default value
+ *  (`GET(req, ctx, x = audit())`, `GET(req, { params = sideFx() })`) or a
+ *  computed key, at any depth of a destructuring. It runs before the first
+ *  statement, so before the read. */
+function paramsRunCode(fn: Fn): boolean {
+  const runs = (name: ts.BindingName): boolean =>
+    !ts.isIdentifier(name) &&
+    name.elements.some(
+      (el) =>
+        !ts.isOmittedExpression(el) &&
+        (!!el.initializer ||
+          (!!el.propertyName && ts.isComputedPropertyName(el.propertyName)) ||
+          runs(el.name)),
+    );
+  return fn.parameters.some((p) => !!p.initializer || runs(p.name));
+}
+
 /** Whether the statement that declares a handler is marked as a hand
  *  case (a comment right above it). */
 function isHandCase(statement: ts.Node, sf: ts.SourceFile): boolean {
@@ -392,13 +477,14 @@ function isHandCase(statement: ts.Node, sf: ts.SourceFile): boolean {
 /**
  * Whether `fn` reads the caller before anything else: its first statement
  * is the read (`ownerCaller();`, `const x = ownerCaller();`), or, for a
- * handler that runs another file's reading handler, `return h(args)` (or
- * `return await h(args)`, or the arrow's body) with arguments that run no
- * code of their own.
+ * handler that runs a reading handler (another file's, or one of its own
+ * file: POST's `return GET(req)`), `return h(args)` (or `return await
+ * h(args)`, or the arrow's body) with arguments that run no code of their
+ * own; and its parameters run none (no default value).
  */
 function readsFirst(fn: Fn, readsIn: ts.CallExpression[], wrapsIn: ts.CallExpression[]): boolean {
   const body = fn.body;
-  if (!body) return false;
+  if (!body || paramsRunCode(fn)) return false;
   const isRead = (e: ts.Expression | undefined) => {
     const b = e && bare(e);
     return !!b && ts.isCallExpression(b) && readsIn.includes(b);
