@@ -6,6 +6,11 @@
  */
 import { GET as fileRoute } from '../../../../files/files/[id]/route';
 
+// route-callers: hand case. The bytes handler reads the asset reader the
+// gate answered (readerAssetCaller); the code before its call only sets
+// the query it is handed, which runs nothing and answers nothing. The gate
+// answers the asset reader from the request as handed here, `?raw=1` and no
+// `?at=` (route-policy.ts ASSET_QUERY_AS_HANDED), as the guard read it.
 export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const url = new URL(req.url);
   url.search = '?raw=1';

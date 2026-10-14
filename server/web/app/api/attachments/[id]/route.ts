@@ -4,7 +4,7 @@ import { ReadableStream as NodeReadableStream } from 'node:stream/web';
 import { and, eq } from 'drizzle-orm';
 import { db, emailAccounts, emailAttachments, emails } from '@mantle/db';
 import { getContent } from '@mantle/storage';
-import { getOwnerForAsset } from '@/lib/auth';
+import { ownerAssetCaller } from '@/lib/auth';
 import { safeDownloadHeaders } from '@mantle/client-types/lib/safe-download';
 
 /**
@@ -15,10 +15,11 @@ import { safeDownloadHeaders } from '@mantle/client-types/lib/safe-download';
  * a self-hosted S3 store on a docker-network address.
  */
 export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
-  // getOwnerForAsset: this download URL is an <a href>/<img> src that can't
-  // carry a bearer, so a detached client authenticates via the `?at=` token.
-  const user = await getOwnerForAsset(_req);
-  if (user instanceof Response) return user;
+  // The asset owner (ownerAssetCaller: the gate's answer of
+  // getOwnerForAsset, A4 hand batch B): this download URL is an <a href>/<img>
+  // src that can't carry a bearer, so a detached client authenticates via the
+  // `?at=` token.
+  const user = ownerAssetCaller();
   const { id } = await ctx.params;
 
   const [row] = await db

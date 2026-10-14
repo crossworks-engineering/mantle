@@ -1,7 +1,7 @@
 import { Readable } from 'node:stream';
 import type { ReadableStream as NodeReadableStream } from 'node:stream/web';
 import { NextResponse } from '@/server/http-compat';
-import { ownerCaller, getOwnerForAsset } from '@/lib/auth';
+import { ownerAssetCaller, ownerCaller } from '@/lib/auth';
 import { loadPreferencesFor, savePreferencesFor, projectAvatarPhotoType } from '@mantle/content';
 import { getContent } from '@mantle/storage';
 import { putContent } from '@mantle/storage/write';
@@ -31,7 +31,8 @@ import { sniffType, LOGO_MAX_BYTES } from '@/lib/logo-validation';
  * columns, not to this route.
  *
  * GET — PRIVATE serve, unlike the public logo route: cookie session or the
- * short-lived `?at=` asset token (getOwnerForAsset; the token carries the
+ * short-lived `?at=` asset token (ownerAssetCaller, the gate's answer of
+ * getOwnerForAsset; the token carries the
  * actor claim so a detached second login sees its own face). The key is
  * sha-addressed so `immutable` caching is safe with the `?v=<sha8>` clients
  * append — but `private`, so no shared cache ever holds a face. The CSP
@@ -91,9 +92,8 @@ export async function DELETE() {
   return NextResponse.json({ ok: true });
 }
 
-export async function GET(req: Request) {
-  const user = await getOwnerForAsset(req);
-  if (user instanceof Response) return user;
+export async function GET() {
+  const user = ownerAssetCaller();
   const notFound = new Headers({ 'cache-control': 'no-store' });
   try {
     const prefs = await loadPreferencesFor(user.actor.id);

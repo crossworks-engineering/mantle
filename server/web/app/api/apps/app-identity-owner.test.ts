@@ -18,6 +18,8 @@ const h = vi.hoisted(() => ({
   /** Whether the frame ticket's actor is still an active Admin user. */
   adminActive: true,
   actorsChecked: [] as string[],
+  /** The frame ticket the gate answered (framed, below). */
+  frameTicket: null as unknown,
 }));
 
 vi.mock('@/lib/auth', async (importOriginal) => ({
@@ -52,7 +54,21 @@ vi.mock('@/lib/auth', async (importOriginal) => ({
     member: null,
   })),
   adminLoginActive: vi.fn(async (id: string) => (h.actorsChecked.push(id), h.adminActive)),
+  // The frame documents' caller (A4 hand batch B): framed, below.
+  frameTicketCaller: vi.fn(() => h.frameTicket),
 }));
+/** A frame route called as the gate serves it (A4 hand batch B): its caller
+ *  is the `?t=` ticket the gate verified (frameTicketCaller), stood in here
+ *  from the request the test sends. */
+function framed<C>(handler: (req: Request, ctx: C) => Promise<Response>) {
+  return async (req: Request, ctx: C): Promise<Response> => {
+    const t = new URL(req.url).searchParams.get('t');
+    const { verifyAppFrameTicket } = await import('@/lib/auth/tokens');
+    h.frameTicket = t ? verifyAppFrameTicket(t) : null;
+    return handler(req, ctx);
+  };
+}
+
 vi.mock('@mantle/content', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@mantle/content')>()),
   getAppRuntime: vi.fn(async () => ({
@@ -115,7 +131,7 @@ describe('owner db broker', () => {
 describe('owner frame: host.me()', () => {
   it('the ticket names the admin login, and the frame bakes it in', async () => {
     const ticketRoute = (await import('./[id]/frame-ticket/route')).POST;
-    const frame = (await import('./[id]/frame/route')).GET;
+    const frame = framed((await import('./[id]/frame/route')).GET);
     const { verifyAppFrameTicket } = await import('@/lib/auth');
     const res = await ticketRoute(new Request('https://brain.example.invalid/x'), params());
     const { ticket } = (await res.json()) as { ticket: string };
@@ -151,7 +167,7 @@ describe('a caller with no login on the owner runner routes (W8a: no client bran
   });
 
   it('the owner frame refuses an owner ticket whose login is not an active Admin user', async () => {
-    const frame = (await import('./[id]/frame/route')).GET;
+    const frame = framed((await import('./[id]/frame/route')).GET);
     const { buildAppFrameTicket } = await import('@/lib/auth');
     const req = (t: string) =>
       new Request(`https://brain.example.invalid/api/apps/${APP}/frame?t=${encodeURIComponent(t)}`);

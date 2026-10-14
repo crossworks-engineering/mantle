@@ -20,7 +20,8 @@ const h = vi.hoisted(() => ({
 
 vi.mock('@/lib/auth', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
-  getOwnerForAsset: vi.fn(async () => ({
+  // The asset owner the pipeline answers (A4 hand batch B).
+  ownerAssetCaller: vi.fn(() => ({
     id: ANCHOR,
     email: 'b@example.invalid',
     actor: { id: ADMIN, email: 'b@example.invalid', displayName: 'B', isOwner: false },

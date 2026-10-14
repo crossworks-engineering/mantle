@@ -27,7 +27,8 @@ const memberCaller = {
 
 vi.mock('@/lib/auth', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
-  getReaderForAsset: vi.fn(async () => ({
+  // The asset reader the pipeline answers (A4 hand batch B).
+  readerAssetCaller: vi.fn(() => ({
     user: { id: OWNER, actor: { id: OWNER } },
     member: h.member ? memberCaller : null,
   })),

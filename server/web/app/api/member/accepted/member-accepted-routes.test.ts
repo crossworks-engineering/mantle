@@ -10,7 +10,6 @@ import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const ANCHOR = '33333333-3333-4333-8333-333333333333';
 const LOGIN = '22222222-2222-4222-8222-222222222222';
-const FILE = '44444444-4444-4444-8444-444444444444';
 
 const h = vi.hoisted(() => ({
   teamHit: false,
@@ -37,7 +36,8 @@ vi.mock('@/lib/auth', async (importOriginal) => ({
   // The reader a stub reads (lib/gone.ts, A4 hand batch A): the gate
   // answered the member guard.
   memberCaller: vi.fn(() => member),
-  getMemberForAsset: vi.fn(async () => member),
+  // The member byte stubs' reader (A4 hand batch B).
+  memberAssetCaller: vi.fn(() => member),
 }));
 
 vi.mock('@mantle/db', async (importOriginal) => {
@@ -127,7 +127,7 @@ describe('the member byte routes are gone (W8d)', () => {
   it('GET /api/member/files/:id answers 410 to a member and opens nothing', async () => {
     h.teamHit = true;
     const { GET } = await import('../files/[id]/route');
-    const res = await GET(new Request(`http://x/api/member/files/${FILE}`));
+    const res = await GET();
     expect(res.status).toBe(410);
     expect(await res.json()).toMatchObject({ code: 'gone' });
     expect(h.reads).toEqual([]);
@@ -137,7 +137,7 @@ describe('the member byte routes are gone (W8d)', () => {
   it('GET /api/member/draws/:id/svg answers 410 to a member and reads nothing', async () => {
     h.drawHit = true;
     const { GET } = await import('../draws/[id]/svg/route');
-    const res = await GET(new Request(`http://x/api/member/draws/${FILE}/svg`));
+    const res = await GET();
     expect(res.status).toBe(410);
     expect(h.reads).toEqual([]);
     expect(h.svgFilters).toEqual([]);

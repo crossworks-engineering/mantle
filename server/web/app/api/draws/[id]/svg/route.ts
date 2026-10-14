@@ -1,5 +1,5 @@
 import { NextResponse } from '@/server/http-compat';
-import { getReaderForAsset } from '@/lib/auth';
+import { readerAssetCaller } from '@/lib/auth';
 import { getDrawSvg, scopedDrawSvg } from '@mantle/content';
 import { isUuid } from '@mantle/std';
 import { getDrawSvgOrRender } from '@/lib/draw-snapshot';
@@ -12,8 +12,8 @@ import { getDrawSvgOrRender } from '@/lib/draw-snapshot';
  *              preview turns the string into a blob URL.
  *   ?raw=1     the bytes, as `image/svg+xml` — what a page that EMBEDS this
  *              drawing points its <img> at. A detached client authenticates
- *              with the short-lived `?at=` asset token (hence
- *              getOwnerForAsset), the same way export downloads do.
+ *              with the short-lived `?at=` asset token (the asset
+ *              answer the gate gives), the same way export downloads do.
  *
  * Either way the snapshot is rendered AS AN IMAGE, never injected as markup.
  * The sandbox CSP below covers the case where someone opens the raw URL
@@ -24,14 +24,14 @@ import { getDrawSvgOrRender } from '@/lib/draw-snapshot';
  * cache: a drawing whose snapshot is missing or stale is re-rendered by the
  * browser sidecar on first view.
  *
- * Every login since W7e (getReaderForAsset): a member reads a drawing its
+ * Every login since W7e (readerAssetCaller: the gate's answer of
+ * getReaderForAsset, A4 hand batch B): a member reads a drawing its
  * workspaces hold, the cache only, with only the images it may read; a
  * drawing it does not read is a 404 (raw) or `{ svg: null }` (JSON), the
  * same answer as an id no row has.
  */
 export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const reader = await getReaderForAsset(req);
-  if (reader instanceof Response) return reader;
+  const reader = readerAssetCaller();
   const user = reader.user;
   const { id } = await ctx.params;
   if (!isUuid(id)) return new Response('Invalid id', { status: 400 });

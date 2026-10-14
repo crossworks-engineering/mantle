@@ -15,17 +15,19 @@
  * member (W7e fix round 1, M1): a ticket that names a client, a member, a
  * disabled login or nobody is refused, so no non-Admin login reaches the
  * draft through it. A client's own ticket (`cep`) is refused as before.
+ *
+ * The ticket is the caller the gate answers (frameTicketCaller, A4 hand
+ * batch B): the `?t=` verified, or null. What it may open is checked here.
  */
 import { NextResponse } from '@/server/http-compat';
-import { adminLoginActive, verifyAppFrameTicket } from '@/lib/auth';
+import { adminLoginActive, frameTicketCaller } from '@/lib/auth';
 import { getAppRuntime } from '@mantle/content';
 import { renderAppFrame } from '@/lib/app-frame';
 import { isMemberFrameTicket, memberFrame } from '@/lib/app-runner';
 
 export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }) {
+  const ticket = frameTicketCaller();
   const { id } = await ctx.params;
-  const t = new URL(req.url).searchParams.get('t');
-  const ticket = t ? verifyAppFrameTicket(t) : null;
   if (ticket && isMemberFrameTicket(ticket, id)) return memberFrame(req, id, ticket);
   // Any other login ticket (a client's), a share-scoped ticket or a review
   // test ticket must not open the owner frame: this route serves the

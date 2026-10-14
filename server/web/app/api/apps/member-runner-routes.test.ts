@@ -54,6 +54,8 @@ const h = vi.hoisted(() => ({
   viewers: [] as unknown[],
   // The actsFor of the withViewer the code runs inside now (null: system).
   current: null as unknown,
+  // The frame ticket the gate answered (framed, below).
+  frameTicket: null as unknown,
 }));
 
 // No database: the workspace scope withViewer enters is read on Postgres
@@ -105,10 +107,26 @@ vi.mock('@/lib/auth', async (importOriginal) => {
     getMemberOr401: vi.fn(async () => member()),
     // The member route's reader (A4 step 3b part 5): the same stand-in.
     memberCaller: vi.fn(() => member()),
-    getMemberForAsset: vi.fn(async () => member()),
+    // The member byte stubs' reader (A4 hand batch B): the gate answered
+    // the member asset guard.
+    memberAssetCaller: vi.fn(() => member()),
     memberLoginActive: vi.fn(async () => h.loginActive),
+    // The frame documents' caller (A4 hand batch B): framed, below.
+    frameTicketCaller: vi.fn(() => h.frameTicket),
   };
 });
+/** A frame route called as the gate serves it (A4 hand batch B): its caller
+ *  is the `?t=` ticket the gate verified (frameTicketCaller), stood in here
+ *  from the request the test sends. */
+function framed<C>(handler: (req: Request, ctx: C) => Promise<Response>) {
+  return async (req: Request, ctx: C): Promise<Response> => {
+    const t = new URL(req.url).searchParams.get('t');
+    const { verifyAppFrameTicket } = await import('@/lib/auth/tokens');
+    h.frameTicket = t ? verifyAppFrameTicket(t) : null;
+    return handler(req, ctx);
+  };
+}
+
 vi.mock('@mantle/content', async (importOriginal) => {
   const read = <T>(fn: string, value: T) => {
     h.reads.push({ fn, ranAs: h.current ?? 'system' });
@@ -271,7 +289,7 @@ beforeAll(async () => {
   toolBroker = (await import('./[id]/tool-broker/route')).POST;
   dbBroker = (await import('./[id]/db-broker/route')).POST;
   ticketRoute = (await import('./[id]/frame-ticket/route')).POST;
-  frame = (await import('./[id]/frame/route')).GET;
+  frame = framed((await import('./[id]/frame/route')).GET);
   ownerFrame = frame;
   homeRoute = (await import('../member/home/route')).GET;
   verdictMock = vi.mocked((await import('@mantle/tools')).appToolVerdict) as never;
@@ -615,8 +633,8 @@ describe('the removed member routes (W8d)', () => {
       await (await import('../member/apps/[id]/tool-broker/route')).POST(),
       await (await import('../member/apps/[id]/db-broker/route')).POST(),
       await (await import('../member/apps/[id]/frame-ticket/route')).POST(),
-      await (await import('../member/files/[id]/route')).GET(new Request('http://x/f')),
-      await (await import('../member/draws/[id]/svg/route')).GET(new Request('http://x/d')),
+      await (await import('../member/files/[id]/route')).GET(),
+      await (await import('../member/draws/[id]/svg/route')).GET(),
     ];
     for (const res of gone) {
       expect(res.status).toBe(410);
@@ -629,7 +647,7 @@ describe('the removed member routes (W8d)', () => {
   });
 
   it('the member frame keeps its ticket guard, then answers 410 and renders nothing', async () => {
-    const memberFrame = (await import('../member/apps/[id]/frame/route')).GET;
+    const memberFrame = framed((await import('../member/apps/[id]/frame/route')).GET);
     const req = (t: string) =>
       new Request(`http://x/api/member/apps/${APP}/frame?t=${encodeURIComponent(t)}`);
     expect((await memberFrame(new Request('http://x/f'), params())).status).toBe(401);

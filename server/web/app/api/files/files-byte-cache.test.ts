@@ -31,11 +31,12 @@ const memberCaller = {
 
 vi.mock('@/lib/auth', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
-  getReaderForAsset: vi.fn(async () => ({
+  // The asset reader the pipeline answers (A4 hand batch B).
+  readerAssetCaller: vi.fn(() => ({
     user: { id: OWNER },
     member: h.member ? memberCaller : null,
   })),
-  getMemberForAsset: vi.fn(async () => memberCaller),
+  memberAssetCaller: vi.fn(() => memberCaller),
 }));
 vi.mock('@/lib/member-space', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),

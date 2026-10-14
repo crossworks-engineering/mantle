@@ -1,6 +1,6 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
-import { buildRenderToken, getOwnerForAsset } from '@/lib/auth';
+import { buildRenderToken, ownerAssetCaller } from '@/lib/auth';
 import { resolveExport, getPage, getDraw, referencedDrawIds } from '@mantle/content';
 import { getDrawSvgOrRender, getDrawPngOrRender } from '@/lib/draw-snapshot';
 import { readFileById } from '@/lib/files';
@@ -27,11 +27,11 @@ const Format = z.enum(['md', 'docx', 'pdf', 'csv', 'xlsx', 'svg']);
  * is the save path).
  */
 export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }) {
-  // getOwnerForAsset (not getOwnerOr401): these downloads are plain <a href>
+  // The asset owner (ownerAssetCaller: the gate's answer of
+  // getOwnerForAsset, A4 hand batch B): these downloads are plain <a href>
   // anchors that can't carry a bearer, so a detached client authenticates via
   // the `?at=` asset token (see ExportMenu → assetUrl). Session still wins.
-  const user = await getOwnerForAsset(req);
-  if (user instanceof Response) return user;
+  const user = ownerAssetCaller();
   const parsed = IdParams.safeParse(await ctx.params);
   if (!parsed.success) {
     return NextResponse.json({ error: 'invalid id' }, { status: 400 });

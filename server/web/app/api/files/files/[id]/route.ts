@@ -1,7 +1,7 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { cappedOne } from '@/lib/list-workspaces';
-import { getReaderForAsset, ownerCaller } from '@/lib/auth';
+import { ownerCaller, readerAssetCaller } from '@/lib/auth';
 import { memberBytesGate } from '@/lib/member-space';
 import {
   deleteFileById,
@@ -42,13 +42,14 @@ const PatchBody = z.union([
 ]);
 
 export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
-  // getReaderForAsset (not getOwnerOr401): the `?raw=1` bytes are loaded as an
-  // <img>/<iframe>/download src that can't carry a bearer, so a detached client
-  // authenticates via the `?at=` asset token. Session (cookie/bearer) still wins.
-  // Every login since W7e: a member reads the detail AND the bytes of a file
-  // in its own scope (MEMBER_OPEN_READS); a file it does not read is a 404.
-  const reader = await getReaderForAsset(_req);
-  if (reader instanceof Response) return reader;
+  // The asset reader (readerAssetCaller: the gate's answer of
+  // getReaderForAsset, A4 hand batch B), not the owner: the `?raw=1` bytes are
+  // loaded as an <img>/<iframe>/download src that can't carry a bearer, so a
+  // detached client authenticates via the `?at=` asset token. Session
+  // (cookie/bearer) still wins. Every login since W7e: a member reads the
+  // detail AND the bytes of a file in its own scope (MEMBER_OPEN_READS); a
+  // file it does not read is a 404.
+  const reader = readerAssetCaller();
   const user = reader.user;
   // A member's bytes are rate limited per login, as on the member routes.
   const bytesAsked = new URL(_req.url).searchParams;

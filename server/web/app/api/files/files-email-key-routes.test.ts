@@ -26,9 +26,11 @@ vi.mock('@/lib/auth', async (importOriginal) => ({
   getOwnerOr401: vi.fn(async () => ({ id: OWNER })),
   // The reader a converted handler calls (A4 step 3b): the same stand-in.
   ownerCaller: vi.fn(() => ({ id: OWNER })),
-  getOwnerForAsset: vi.fn(async () => ({ id: OWNER })),
+  // The asset callers the pipeline answers (A4 hand batch B).
+  ownerAssetCaller: vi.fn(() => ({ id: OWNER })),
   // The byte route serves every login since W7e: here an Admin user.
-  getReaderForAsset: vi.fn(async () => ({ user: { id: OWNER }, member: null })),
+  readerAssetCaller: vi.fn(() => ({ user: { id: OWNER }, member: null })),
+  ownerCallerAtRead: vi.fn(async () => ({ id: OWNER })),
 }));
 
 const row = (id: string) => ({ id, filename: `${id.slice(0, 4)}.pdf`, updatedAt: '2026-10-01' });

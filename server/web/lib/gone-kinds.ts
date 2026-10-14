@@ -3,7 +3,8 @@
  * hand batch A): who the removed route served, each to the caller kind the
  * gate answers for it (route-policy.ts RouteCaller) and the reader the stub
  * reads that answer with (eslint-rules/session-guards.mjs READER_ANSWERS).
- * The client portal's 'any' is the any-login guard's.
+ * The client portal's 'any' is the any-login guard's; 'member-asset' the
+ * member asset guard's, a removed member byte route's (A4 hand batch B).
  *
  * The one table: lib/gone.ts reads with it, the route manifest generator
  * marks a stub's row with it (scripts/route-callers.ts) and the guard sweep
@@ -16,6 +17,8 @@ export const GONE_KINDS = Object.freeze({
   owner: Object.freeze({ caller: 'owner', reader: 'ownerCaller' }),
   member: Object.freeze({ caller: 'member', reader: 'memberCaller' }),
   any: Object.freeze({ caller: 'login', reader: 'loginCaller' }),
+  // A removed member byte route (A4 hand batch B): getMemberForAsset.
+  'member-asset': Object.freeze({ caller: 'memberAsset', reader: 'memberAssetCaller' }),
 } as const satisfies Record<string, { caller: RouteCaller; reader: string }>);
 
 /** Who the removed route served. */
