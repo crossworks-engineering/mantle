@@ -11,7 +11,7 @@
  */
 import { getOutboundToken, listPeers, markPeerContacted, type PeerRow } from './peers';
 import { errorMessage } from '@mantle/std';
-import { EgressTooLargeError, egressFetch } from '@mantle/std/egress';
+import { EgressTooLargeError, PLATFORM_MAX_REDIRECTS, egressFetch } from '@mantle/std/egress';
 
 const FETCH_TIMEOUT_MS = 15_000;
 /** The largest federation reply read: a granted node's whole content fits
@@ -68,7 +68,14 @@ async function callPeer(
         },
         body: init.body !== undefined ? JSON.stringify(init.body) : undefined,
       },
-      { allowLan: true, secrets: [token], timeoutMs: FETCH_TIMEOUT_MS, maxBytes: PEER_MAX_BYTES },
+      {
+        allowLan: true,
+        secrets: [token],
+        timeoutMs: FETCH_TIMEOUT_MS,
+        maxBytes: PEER_MAX_BYTES,
+        // The platform's own limit, which this call followed before the fold.
+        maxRedirects: PLATFORM_MAX_REDIRECTS,
+      },
     );
     const json = await res.json().catch((err: unknown) => {
       if (err instanceof EgressTooLargeError) throw err;

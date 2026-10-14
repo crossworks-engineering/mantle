@@ -16,7 +16,7 @@ import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/cli
 import { markPeerContacted, peerCallTarget } from '@mantle/content';
 import { readFileById } from '@mantle/files';
 import { errorMessage } from '@mantle/std';
-import { egressFetch } from '@mantle/std/egress';
+import { PLATFORM_MAX_REDIRECTS, egressFetch } from '@mantle/std/egress';
 import type { BuiltinToolDef, ToolHandlerResult } from './types';
 import { boolOpt, str, strOpt } from './coerce';
 import { FILE_ID_PRE } from './builtins-common';
@@ -33,10 +33,11 @@ const COPY_MAX_BYTES = 48 * 1024 * 1024;
  *  part 1) with `allowLan`, because the owner may link a brain on a private
  *  or tailnet address. Every hop is checked, so a redirect to link-local
  *  space (the cloud metadata address) is refused, and Authorization is
- *  dropped on a hop to another origin. Exported for the egress proof table
+ *  dropped on a hop to another origin. Up to 20 redirects, the platform's
+ *  limit it followed before the fold. Exported for the egress proof table
  *  (egress-proof.test.ts). */
 export const peerMcpFetch: typeof fetch = (input, init) =>
-  egressFetch(input, init, { allowLan: true });
+  egressFetch(input, init, { allowLan: true, maxRedirects: PLATFORM_MAX_REDIRECTS });
 
 type PeerSession = { client: Client; peerName: string; close: () => Promise<void> };
 

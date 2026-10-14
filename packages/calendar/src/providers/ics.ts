@@ -15,7 +15,7 @@
  */
 import * as ICALns from 'ical.js';
 import { open } from '@mantle/crypto';
-import { EgressTooLargeError, egressFetch } from '@mantle/std/egress';
+import { EgressTooLargeError, PLATFORM_MAX_REDIRECTS, egressFetch } from '@mantle/std/egress';
 import type { CalendarAccount } from '@mantle/db';
 import type { CalEvent, CalendarProvider, CalendarPull } from '../types';
 
@@ -48,7 +48,9 @@ async function fetchFeed(url: string): Promise<string> {
   const res = await egressFetch(
     httpUrl,
     {},
-    { timeoutMs: FETCH_TIMEOUT_MS, maxBytes: MAX_FEED_BYTES },
+    // maxRedirects 20: the platform's own limit, which the feed fetch
+    // followed before the fold.
+    { timeoutMs: FETCH_TIMEOUT_MS, maxBytes: MAX_FEED_BYTES, maxRedirects: PLATFORM_MAX_REDIRECTS },
   );
   if (!res.ok) {
     await res.body?.cancel().catch(() => {});

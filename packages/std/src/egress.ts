@@ -83,6 +83,11 @@ export class EgressTooLargeError extends Error {
 
 const DEFAULT_MAX_REDIRECTS = 5;
 
+/** The platform fetch's own redirect limit (the fetch spec's 20): for a
+ *  caller that followed redirects with `redirect: 'follow'` before the fold
+ *  and keeps the same reach. */
+export const PLATFORM_MAX_REDIRECTS = 20;
+
 /** Dropped by name on a hop to another origin, matching the platform. */
 const CROSS_ORIGIN_STRIP = new Set(['authorization', 'cookie', 'proxy-authorization']);
 

@@ -78,9 +78,9 @@ the platform's own connect.
 | OpenAPI spec fetch | `packages/tools/src/openapi-sync.ts` | `safeFetch` (its own 5 MB reader, unchanged) |
 | MCP connector | `packages/tools/src/mcp-client.ts` | `redirect: 'error'`, the SSE headers timeout kept |
 | MCP connector OAuth endpoints | `packages/tools/src/mcp-oauth.ts` | `redirect: 'error'` |
-| peer MCP transport | `packages/tools/src/builtins-peer-mcp.ts` | `allowLan` |
-| federation client (`peer_query`, `peer_node_get`, `peer_search_chunks`) | `packages/content/src/peers-client.ts` | `allowLan`, the token as a secret, 15 s, 32 MB |
-| calendar ICS feed | `packages/calendar/src/providers/ics.ts` | 30 s, 12 MB |
+| peer MCP transport | `packages/tools/src/builtins-peer-mcp.ts` | `allowLan`, 20 redirects |
+| federation client (`peer_query`, `peer_node_get`, `peer_search_chunks`) | `packages/content/src/peers-client.ts` | `allowLan`, the token as a secret, 15 s, 32 MB, 20 redirects |
+| calendar ICS feed | `packages/calendar/src/providers/ics.ts` | 30 s, 12 MB, 20 redirects |
 | `video_ingest` link | `packages/tools/src/builtins-video.ts` | a redirect walk before the sidecar, 10 s, no body read; a timeout or too many redirects refuses the link |
 
 Not moved, and why:
@@ -101,6 +101,11 @@ Not moved, and why:
 - **Local model and embedder base URLs** (`packages/voice`,
   `packages/embeddings`): owner config pointing at a LAN or tailnet host on
   purpose, outside the swept packages.
+
+The default is 5 redirects. The three callers that used the platform's
+`redirect: 'follow'` before the fold (the ICS feed, the federation client,
+the peer MCP transport) keep its limit of 20 (`PLATFORM_MAX_REDIRECTS`), so
+a feed or peer behind a long redirect chain answers as before.
 
 ### The proof
 
