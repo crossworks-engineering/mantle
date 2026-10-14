@@ -680,9 +680,15 @@ async function resolveLogin(): Promise<Resolved | null> {
 
 // ── The request's logins, found once (arch A4 step 3a) ──────────────────────
 
-/** Keep `p` until it fails: a failed find is asked again next time. */
-function keepUntilFailed<T>(p: Promise<T>, drop: () => void): Promise<T> {
-  p.catch(drop);
+/**
+ * Keep `p` until it fails: a failed find is asked again next time. `drop`
+ * gets the failed promise and clears its slot only while the slot still
+ * holds that one (A4 step 3a re-audit L-c): a find the request forgot
+ * (forget) and replaced with a fresh one may fail after the fresh one is
+ * stored, and must not clear it.
+ */
+function keepUntilFailed<T>(p: Promise<T>, drop: (failed: Promise<T>) => void): Promise<T> {
+  p.catch(() => drop(p));
   return p;
 }
 
@@ -747,16 +753,22 @@ export class RequestLogins {
     }
     return (this.#login ??= keepUntilFailed(
       findLogin(() => this.bearer()),
-      () => (this.#login = null),
+      (failed) => {
+        if (this.#login === failed) this.#login = null;
+      },
     ));
   }
 
   bearer(): Promise<FoundBearer> {
-    return (this.#bearer ??= keepUntilFailed(findBearer(), () => (this.#bearer = null)));
+    return (this.#bearer ??= keepUntilFailed(findBearer(), (failed) => {
+      if (this.#bearer === failed) this.#bearer = null;
+    }));
   }
 
   render(): Promise<{ user: SessionUser; nodeId: string } | null> {
-    return (this.#render ??= keepUntilFailed(findRender(), () => (this.#render = null)));
+    return (this.#render ??= keepUntilFailed(findRender(), (failed) => {
+      if (this.#render === failed) this.#render = null;
+    }));
   }
 
   ownerAsset(url: string): Promise<SessionUser | 'refused' | null> {
@@ -770,7 +782,9 @@ export class RequestLogins {
   static #kept<T>(map: Map<string, Promise<T>>, url: string, find: (url: string) => Promise<T>) {
     let p = map.get(url);
     if (!p) {
-      p = keepUntilFailed(find(url), () => map.delete(url));
+      p = keepUntilFailed(find(url), (failed) => {
+        if (map.get(url) === failed) map.delete(url);
+      });
       map.set(url, p);
     }
     return p;
@@ -799,8 +813,10 @@ function requestLogins(): RequestLogins {
  * or work it started and did not await, finds the login afresh and sees the
  * change, as each guard call did when it looked the login up itself. Any
  * login, not only the request's own: finding again is what a guard did
- * before, and costs one read on these rare paths. No-op outside a routed
- * request.
+ * before, and costs one read on these rare paths. A revoked key is the
+ * exception, as on main: findKeyLogin reads the gate's grant and never
+ * checks the key again, so the login a key resolved to is found again for
+ * the rest of the request. No-op outside a routed request.
  */
 export function forgetRequestLogins(): void {
   boundLogins(currentCaller())?.forget();
