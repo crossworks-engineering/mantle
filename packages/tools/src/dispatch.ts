@@ -13,6 +13,7 @@ import { and, eq } from 'drizzle-orm';
 import {
   asSystem,
   db,
+  enterCall,
   lowerLevel,
   toolGroups,
   withCreateHome,
@@ -59,6 +60,9 @@ import { isOwnerSurface, OWNER_ONLY_ERROR } from './surface';
 import { adminToolGate, runGated } from './admin-gate';
 import { toolItemWriteRefusal } from './item-write-gate';
 import { turnCreateHome } from './turn-create-home';
+import { builtinToolGatePolicy, builtinToolRef } from './tool-gate-policy';
+import { currentToolCaller, gateCallerFor, withToolCaller, type ToolCaller } from './gate-callers';
+import { maskToolDatabaseErrors } from './tool-error-mask';
 import { mcpPairing, secretRefsRunRefusal, vaultPairRunRefusal } from './secret-ref-gate';
 
 // Same-package callers that must not import this module (it imports the
@@ -73,12 +77,164 @@ const HTTP_TIMEOUT_MS_DEFAULT = 15_000;
 // Admin MCP surface gates its calls with them too).
 export { ADMIN_ONLY_ERROR, ADMIN_ONLY_TOOL_SLUGS } from './admin-gate';
 
+/**
+ * Run one tool call. An entry that names its caller (ctx.caller: an
+ * assistant turn, a run item, a pending approval; gate-callers.ts), and a
+ * call nested in one (a recipe's step, a tool a handler dispatches), runs
+ * through the one gate (@mantle/db enterCall, workspaces arch A5 step 3a):
+ * the tool's declared policy, the narrowers, the Admin step, the pre-run
+ * checks, the create home, then the handler. The entries that do not name
+ * one yet (the app tool brokers and the dev console: A5 step 3b; the owner
+ * MCP surface's connector rows: step 4) run the checks below in dispatch,
+ * as before (dispatch-entries.test.ts pins which).
+ */
 export async function dispatchTool(
   tool: Tool,
   input: Record<string, unknown>,
   ctx: ToolHandlerContext,
   /** Internal: recipe-in-recipe nesting depth. Callers leave this 0. */
   depth = 0,
+): Promise<ToolHandlerResult> {
+  const caller = ctx.caller ?? currentToolCaller();
+  if (caller) {
+    const call = { ...ctx, caller };
+    const run = () => withToolCaller(caller, () => dispatchGated(caller, tool, input, call, depth));
+    // An MCP connection never reads a database error's text (W3): the one
+    // masking (tool-error-mask.ts). Dormant until the owner MCP surface
+    // dispatches through here (A5 step 4); a turn masks in the tool loop.
+    return MCP_VIAS.has(caller.via) ? maskToolDatabaseErrors(`mcp ${tool.slug}`, run) : run();
+  }
+  return dispatchUngated(tool, input, ctx, depth);
+}
+
+/** The callers that come in over MCP (the login's own OAuth, a key, a
+ *  peer): the MCP-only steps run for them only. */
+const MCP_VIAS: ReadonlySet<string> = new Set(['oauth', 'key', 'peer']);
+
+/** Whether `caller` is a key or a peer: it never confirms for the owner. */
+function keyOrPeer(caller: ToolCaller): boolean {
+  return caller.via === 'key' || caller.via === 'peer';
+}
+
+/**
+ * One call through the gate (A5 step 3a; see dispatchTool). What it answers
+ * is what dispatch answered before, word for word (dispatch-parity.test.ts):
+ * a refusal of the gate is its tool text, and the item pre-check's own
+ * words; a handler that throws is its message.
+ */
+async function dispatchGated(
+  caller: ToolCaller,
+  tool: Tool,
+  input: Record<string, unknown>,
+  ctx: ToolHandlerContext,
+  depth: number,
+): Promise<ToolHandlerResult> {
+  const h = tool.handler as ToolHandler;
+  // A key or a peer acting as the owner never confirms for the owner: a
+  // level change it would cause is refused instead of confirmed by its own
+  // flag (the owner MCP surface's rule; dormant until A5 step 4).
+  let args = input;
+  if (keyOrPeer(caller) && 'confirm' in input) {
+    args = { ...input };
+    delete args.confirm;
+  }
+  if (h.kind === 'builtin') {
+    const fn = getBuiltinHandler(h.ref);
+    if (!fn) {
+      return {
+        ok: false,
+        error: `builtin handler '${h.ref}' not registered in this process`,
+      };
+    }
+    // A builtin row named with another builtin's slug runs nothing (A5).
+    const clash = builtinRowSlugError(tool.slug, h.ref);
+    if (clash) return { ok: false, error: clash };
+    // Owner-only tools refuse anyone but the owner before any other work
+    // (client logins C4): a team or MISSING surface is not the owner.
+    if (getBuiltin(h.ref)?.ownerOnly && !isOwnerSurface(ctx.surface)) {
+      return { ok: false, error: OWNER_ONLY_ERROR };
+    }
+    const ref = builtinToolRef(h.ref, tool.slug);
+    const policy = builtinToolGatePolicy(ref);
+    try {
+      const res = await enterCall(
+        await gateCallerFor(caller, policy, true),
+        ref,
+        async (): Promise<ToolHandlerResult> => {
+          try {
+            const run = () => fn(args, ctx);
+            // An AREA_SYSTEM_TOOLS tool runs whole on the system pool after
+            // its area check, in a workspace scope (W7a fix round 1, H1).
+            const whole = policy?.fields?.systemWhole === true && !!currentWorkspaceScope();
+            return await runGated({ system: whole }, run);
+          } catch (err) {
+            return { ok: false, error: errorMessage(err) };
+          }
+        },
+        {
+          args,
+          context: { ownerId: ctx.ownerId, ...(ctx.surface ? { surface: ctx.surface } : {}) },
+        },
+      );
+      return res.ok ? res.value : { ok: false, error: res.refusal.toolText };
+    } catch (err) {
+      return { ok: false, error: errorMessage(err) };
+    }
+  }
+  // No runtime tool runs without a policy (arch A3c, plan section 8): one
+  // function per row type gives it (runtime-policy.ts), and the gate's step
+  // 3 refuses a row with none, in the words dispatch said before.
+  const ref = Object.freeze({ kind: 'runtime-tool', name: tool.slug, row: tool });
+  let thrown: { err: unknown } | null = null;
+  const res = await enterCall(
+    await gateCallerFor(caller, runtimeToolPolicy(tool), false),
+    ref,
+    async (): Promise<ToolHandlerResult | null> => {
+      try {
+        return await dispatchRuntime(h, tool, args, ctx, depth);
+      } catch (err) {
+        // Thrown on, past the gate's mapper, as before step 3a.
+        thrown = { err };
+        return null;
+      }
+    },
+  );
+  if (thrown) throw (thrown as { err: unknown }).err;
+  if (!res.ok) {
+    const unclassified = res.refusal.kind === 'unclassified';
+    return { ok: false, error: unclassified ? NO_RUNTIME_POLICY_ERROR : res.refusal.toolText };
+  }
+  return res.value ?? { ok: false, error: `unknown handler kind` };
+}
+
+/** A runtime row's handler, by its kind (its policy was checked). */
+function dispatchRuntime(
+  h: ToolHandler,
+  tool: Tool,
+  input: Record<string, unknown>,
+  ctx: ToolHandlerContext,
+  depth: number,
+): Promise<ToolHandlerResult> {
+  if (h.kind === 'http') {
+    return dispatchHttp(h, applyInputDefaults(tool.inputSchema, input), ctx, tool);
+  }
+  if (h.kind === 'shell') return dispatchShell(h, input, ctx);
+  if (h.kind === 'recipe') return dispatchRecipe(h, input, ctx, depth);
+  if (h.kind === 'mcp') return dispatchMcp(h, input, ctx, tool);
+  return Promise.resolve({ ok: false, error: `unknown handler kind` });
+}
+
+/**
+ * dispatchTool for an entry that names no caller yet (the app tool brokers
+ * and the dev console until A5 step 3b, the owner MCP surface's connector
+ * rows until step 4): the checks run here, in the order the gate runs
+ * them. Deleted when the last of those entries names its caller.
+ */
+async function dispatchUngated(
+  tool: Tool,
+  input: Record<string, unknown>,
+  ctx: ToolHandlerContext,
+  depth: number,
 ): Promise<ToolHandlerResult> {
   const h = tool.handler as ToolHandler;
   if (h.kind === 'builtin') {
@@ -135,19 +291,7 @@ export async function dispatchTool(
   // No runtime tool runs without a policy (arch A3c, plan section 8): one
   // function per row type gives it (runtime-policy.ts).
   if (!runtimeToolPolicy(tool)) return { ok: false, error: NO_RUNTIME_POLICY_ERROR };
-  if (h.kind === 'http') {
-    return dispatchHttp(h, applyInputDefaults(tool.inputSchema, input), ctx, tool);
-  }
-  if (h.kind === 'shell') {
-    return dispatchShell(h, input, ctx);
-  }
-  if (h.kind === 'recipe') {
-    return dispatchRecipe(h, input, ctx, depth);
-  }
-  if (h.kind === 'mcp') {
-    return dispatchMcp(h, input, ctx, tool);
-  }
-  return { ok: false, error: `unknown handler kind` };
+  return dispatchRuntime(h, tool, input, ctx, depth);
 }
 
 /** Text cap on an MCP result before the normal inline/spill machinery —
@@ -411,6 +555,8 @@ async function dispatchRecipe(
     agent: ctx.agent,
     ...(ctx.surface ? { surface: ctx.surface } : {}),
   };
+  // The recipe's caller calls each step too (A5 step 3a; undefined for an
+  // entry that names none yet: its steps run as it ran).
   const trace: { tool: string; ms: number }[] = [];
   // Provenance: once ANY step pulls third-party content (an http tool, or a
   // web builtin like web_search — which the safety envelope permits), the
@@ -446,7 +592,7 @@ async function dispatchRecipe(
     }
 
     const t0 = performance.now();
-    const res = await dispatchTool(row, stepInput, subCtx, depth + 1);
+    const res = await dispatchTool(row, stepInput, { ...subCtx, caller: ctx.caller }, depth + 1);
     trace.push({ tool: step.tool, ms: Math.round(performance.now() - t0) });
     if (!res.ok) {
       return { ok: false, error: `recipe step ${i} ('${step.tool}') failed: ${res.error}` };

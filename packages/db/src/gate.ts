@@ -185,8 +185,26 @@ export const NARROWERS = [
 ] as const;
 export type NarrowerName = (typeof NARROWERS)[number];
 
+/** A pre-run check (A5 step 3a): after the Admin step and before the
+ *  create home, so a refused call never makes a private workspace. Its own
+ *  words, or null. Async: it may read the item a call names. */
+export type PreRunCheck = (
+  caller: GateCaller,
+  policy: GatePolicy,
+  ref: PolicyRef,
+  call: CallInput,
+) => Promise<string | null>;
+
+/** The pre-run checks, in their fixed order: the item pre-check (a tool's
+ *  preconditions and the items its write names), then a key's or a peer's
+ *  change to content others read. Only enterCall runs them, never
+ *  gateCheck: they read the call's arguments, which a listing has none of. */
+export const PRE_RUN_CHECKS = ['item-precheck', 'key-shared-content'] as const;
+export type PreRunCheckName = (typeof PRE_RUN_CHECKS)[number];
+
 const sources = new Map<string, PolicySource>();
 const narrowers = new Map<NarrowerName, Narrower>();
+const preRunChecks = new Map<PreRunCheckName, PreRunCheck>();
 
 /** Register the policy source of one kind of ref (A4: 'route'; A5:
  *  'tool'; @mantle/tools: 'runtime-tool'). The same source again is a no-op
@@ -217,10 +235,29 @@ export function registerNarrower(name: NarrowerName, narrower: Narrower): void {
   narrowers.set(name, narrower);
 }
 
-/** Tests only: forget the registered sources and narrowers. */
+/** Register one pre-run check at its place in PRE_RUN_CHECKS, as
+ *  registerNarrower does: the same check again is a no-op, another under a
+ *  taken name throws. */
+export function registerPreRunCheck(name: PreRunCheckName, check: PreRunCheck): void {
+  if (!PRE_RUN_CHECKS.includes(name)) throw new Error(`registerPreRunCheck: unknown check ${name}`);
+  const had = preRunChecks.get(name);
+  if (had === check) return;
+  if (had) throw new Error(`registerPreRunCheck: '${name}' has a check already`);
+  preRunChecks.set(name, check);
+}
+
+/** Whether a policy source is registered for `kind` (A5 step 3a, LOW-4: a
+ *  narrower asks whether the owner MCP surface, which registers
+ *  `mcp-tool`, is loaded in this process). */
+export function hasPolicySource(kind: string): boolean {
+  return sources.has(kind);
+}
+
+/** Tests only: forget the registered sources, narrowers and checks. */
 export function resetGateRegistry(): void {
   sources.clear();
   narrowers.clear();
+  preRunChecks.clear();
 }
 
 /** Thrown while a narrower of NARROWERS is not registered: the process did
@@ -229,7 +266,7 @@ export function resetGateRegistry(): void {
 export class GateNotReadyError extends Error {
   constructor(missing: readonly string[]) {
     super(
-      `the gate is not ready: no narrower registered for ${missing.join(', ')} ` +
+      `the gate is not ready: no narrower or pre-run check registered for ${missing.join(', ')} ` +
         '(load @mantle/tools, whose gate-narrowers registers each, at boot)',
     );
     this.name = 'GateNotReadyError';
@@ -240,7 +277,10 @@ export class GateNotReadyError extends Error {
  *  Each process main asks it at boot (@mantle/tools ensureGateReady), so a
  *  missing narrower shows there, not at the first call. */
 export function assertGateReady(): void {
-  const missing = NARROWERS.filter((n) => n !== 'read-only' && !narrowers.has(n));
+  const missing: string[] = [
+    ...NARROWERS.filter((n) => n !== 'read-only' && !narrowers.has(n)),
+    ...PRE_RUN_CHECKS.filter((n) => !preRunChecks.has(n)),
+  ];
   if (missing.length > 0) throw new GateNotReadyError(missing);
 }
 
@@ -316,6 +356,23 @@ export function adminStep(caller: GateCaller, policy: GatePolicy): void {
   }
   if (!view?.holdsAdmin) throw new AccessError('admin');
   if (!view.areas.has(need.area)) throw new AccessError('area', undefined, { area: need.area });
+}
+
+/** The pre-run slot (A5 step 3a), between steps 5 and 6: each check of
+ *  PRE_RUN_CHECKS in order; the first refusal refuses the call (`item`, in
+ *  the check's own words). */
+export async function preRunStep(
+  caller: GateCaller,
+  policy: GatePolicy,
+  ref: PolicyRef,
+  call: CallInput,
+): Promise<void> {
+  for (const name of PRE_RUN_CHECKS) {
+    const check = preRunChecks.get(name);
+    if (!check) throw new GateNotReadyError([name]);
+    const refused = await check(caller, policy, ref, call);
+    if (refused !== null) throw new AccessError('item', refused);
+  }
 }
 
 /**
@@ -574,8 +631,15 @@ function frozenCaller(c: GateCaller): GateCaller {
   });
 }
 
-/** What one call adds: the workspace it asks its creates to land in. */
-export type CallInput = { ask?: CreateAsk | null };
+/** What one call adds: the workspace it asks its creates to land in, and
+ *  for the pre-run checks its arguments (a check may trim an id it checked,
+ *  so the handler gets the very id) and what the surface knows of it
+ *  (opaque here: the owner, the tool surface). */
+export type CallInput = {
+  ask?: CreateAsk | null;
+  args?: Record<string, unknown>;
+  context?: Readonly<Record<string, unknown>>;
+};
 
 /** What enterCall gives back: the value, or the refusal as the one mapper
  *  read it (each surface answers `refusal.http` or `refusal.toolText`). */
@@ -621,6 +685,9 @@ export async function enterCall<T>(
           // 4. Narrow by surface. 5. The Admin step.
           narrowStep(bound, policy, ref);
           adminStep(bound, policy);
+          // The pre-run checks, before the create home: a refused call
+          // never makes a private workspace.
+          await preRunStep(bound, policy, ref, input);
           // 6. The create-home intent.
           const home = await createHomeStep(bound, policy, input.ask ?? null);
           // 7. Run.

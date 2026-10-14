@@ -18,7 +18,9 @@ import {
   READ_ONLY_CALLER_ERROR,
   assertGateReady,
   gateCheck,
+  hasPolicySource,
   loginActor,
+  registerPolicySource,
   type GateCaller,
 } from '@mantle/db';
 import {
@@ -114,7 +116,28 @@ describe('the peer narrower reads the declared mark, in any process (A5 step 2)'
     row,
   });
 
-  it("a connector's tool is declared not risky, and a write for a key or a peer", () => {
+  it("without the MCP surface a connector's tool is risky unless named, then a write (LOW-4)", () => {
+    // A5 step 2 fix round 1, LOW-4 (kept in step 3a, when a tool ref first
+    // reaches the gate in a process without mcp-core): the row declares it
+    // not risky by the MCP surface's family rule, but where that surface is
+    // not loaded the answer before step 2 holds, fail closed.
+    expect(hasPolicySource('mcp-tool')).toBe(false);
+    const ref = refOf(connector);
+    const named = { riskyAllowed: [connector.slug] };
+    for (const via of ['key', 'peer'] as const) {
+      expect(gateCheck(key({ via }), ref)?.message).toBe(RISKY_TOOL_ERROR);
+      // Write off: the gate's own read-only narrower answers first.
+      expect(gateCheck(key({ via, write: false }), ref)?.message).toBe(READ_ONLY_CALLER_ERROR);
+      expect(gateCheck(key({ via, facts: named }), ref)).toBeNull();
+      expect(gateCheck(key({ via, facts: named, write: false }), ref)?.message).toBe(
+        READ_ONLY_CALLER_ERROR,
+      );
+    }
+  });
+
+  it("with the MCP surface loaded a connector's tool is not risky, and a write", () => {
+    // The surface's own source stands in here (mcp-core registers it).
+    registerPolicySource('mcp-tool', () => null);
     const ref = refOf(connector);
     expect(gateCheck(key(), ref)).toBeNull();
     expect(gateCheck(key({ via: 'peer' }), ref)).toBeNull();

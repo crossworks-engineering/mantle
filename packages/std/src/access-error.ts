@@ -41,7 +41,11 @@ export type AccessKind =
   /** Step 6: the create home names a workspace the caller may not create in. */
   | 'workspace'
   /** Step 6: the create home's ?ws= is not a workspace id. */
-  | 'invalid';
+  | 'invalid'
+  /** The pre-run slot (A5 step 3a, between steps 5 and 6): a tool's item
+   *  pre-check (its preconditions, the items its write names) or a key's
+   *  change to content others read refused the call, in its own words. */
+  | 'item';
 
 /** The refusal of a tool that belongs to the Admin workspace. */
 export const ADMIN_ONLY_ERROR =
@@ -106,6 +110,8 @@ function defaultMessage(kind: AccessKind, area: string | null): string {
       return 'You are not in that workspace.';
     case 'invalid':
       return 'ws must be a workspace id.';
+    case 'item':
+      return 'This call may not change the item it names.';
   }
 }
 
@@ -280,6 +286,8 @@ function gateHttp(err: AccessError): AccessHttp {
       };
     case 'invalid':
       return { status: 400, body: { error: 'invalid', message: err.message } };
+    case 'item':
+      return { status: 403, body: { error: 'forbidden', reason: 'item', message: err.message } };
   }
 }
 
@@ -293,6 +301,7 @@ const GATE_CODES: Record<AccessKind, string> = {
   area: 'area',
   workspace: 'forbidden',
   invalid: 'invalid',
+  item: 'forbidden',
 };
 
 /** The database's refusal, read (see mapAccessError). */

@@ -35,6 +35,7 @@ import {
   buildDeferredToolset,
   toolSourceOf,
   unwrapUseTool,
+  maskToolDatabaseErrors,
   TOOL_SEARCH_SLUG,
   USE_TOOL_SLUG,
   type DeferredToolset,
@@ -80,8 +81,7 @@ import {
 } from './tool-loop/tool-images';
 import { loadToolGroupsForCatalog } from './skills';
 import { env } from '@mantle/config';
-import { publicToolError, UUID_RE } from '@mantle/std';
-import { watchDatabaseErrors } from '@mantle/std/db-watch';
+import { UUID_RE } from '@mantle/std';
 import { isUnscoped } from '@mantle/db/viewer';
 import { ownerSurfaceLogin, surfaceLoginId, withAgentScope } from './agent-viewer';
 
@@ -985,19 +985,11 @@ async function runToolLoopInScope(args: ToolLoopArgs): Promise<ToolLoopResult> {
       // A member's or a client's turn (or any scoped one) never hands the
       // model a database error's text (W3 re-audit 6): the reply says the
       // read failed, the log keeps the detail.
-      let outcome: Awaited<ReturnType<typeof executeToolCall>>;
-      if (isUnscoped() && ownerSurface(args.surface)) {
-        outcome = await execute();
-      } else {
-        const watched = await watchDatabaseErrors(execute);
-        outcome = watched.value;
-        if (!outcome.ok && typeof outcome.error === 'string') {
-          outcome = {
-            ...outcome,
-            error: publicToolError(outcome.error, watched.texts, `tool ${slug}`, watched.errors),
-          };
-        }
-      }
+      // The one masking (@mantle/tools tool-error-mask.ts, A5 step 3a).
+      let outcome =
+        isUnscoped() && ownerSurface(args.surface)
+          ? await execute()
+          : await maskToolDatabaseErrors(`tool ${slug}`, execute);
       // Deferred loading: a model may call a catalog tool by name without
       // loading it first, and then guess its arguments. When such a call fails
       // on its arguments, hand back the real schema once per tool per turn so

@@ -52,6 +52,17 @@ vi.mock('@mantle/tools', async () => ({
   sanitizeToolError: (
     await vi.importActual<typeof import('../../../tools/src/errors')>('../../../tools/src/errors')
   ).sanitizeToolError,
+  // The one masking and the turn's gate caller (A5 step 3a), real.
+  maskToolDatabaseErrors: (
+    await vi.importActual<typeof import('../../../tools/src/tool-error-mask')>(
+      '../../../tools/src/tool-error-mask',
+    )
+  ).maskToolDatabaseErrors,
+  turnCaller: (
+    await vi.importActual<typeof import('../../../tools/src/gate-callers')>(
+      '../../../tools/src/gate-callers',
+    )
+  ).turnCaller,
   // The real list is a view of the tool policy table (A5), which needs every
   // builtin and the real @mantle/db: the mock holds the snapshot's own
   // literal (packages/runtime/src/tool-policy-snapshot.test.ts pins the real

@@ -9,7 +9,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { BuiltinToolDef, OwnerSurfaceVia, ToolHandlerContext } from '@mantle/tools';
 
 const shared = vi.hoisted(() => ({ othersCanRead: vi.fn(async () => true) }));
-vi.mock('../shared-item', () => shared);
+// The one copy of the rule reads @mantle/tools shared-item.ts (A5 step 3a).
+vi.mock('../../../tools/src/shared-item', () => shared);
 
 import { makeRegisterContext } from './context';
 

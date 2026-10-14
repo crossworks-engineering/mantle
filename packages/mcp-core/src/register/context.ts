@@ -13,17 +13,19 @@
  */
 
 import type { McpServer } from '@modelcontextprotocol/server';
-import { checkToolPreconditions, toolItemWriteRefusal } from '@mantle/tools';
+import {
+  checkToolPreconditions,
+  keySharedContentRefusal,
+  toolItemWriteRefusal,
+} from '@mantle/tools';
 import type { BuiltinToolDef, LoginMcpChannel, OwnerSurfaceVia, ToolSurface } from '@mantle/tools';
 import { env } from '@mantle/config';
 import { publicToolError } from '@mantle/std';
 import { watchDatabaseErrors } from '@mantle/std/db-watch';
 import { zodShapeFromJsonSchema } from './zod-schema';
 import { addTool } from './tool-input';
-import { contentToolTarget } from '../key-scope';
 import { mcpDefinition } from '../mcp-defs';
 import { KEY_SHARED_CONTENT_TOOLS } from '../mcp-policy';
-import { othersCanRead } from '../shared-item';
 import { withModelImages } from './model-images';
 import type { MantleMcpTransport } from '../build-server';
 
@@ -157,31 +159,20 @@ export function makeRegisterContext(
     // And a key or a peer never changes the content of an item others can
     // read: what it embeds would become readable to them with no confirm
     // (M2 audit N3; the peer path is access matrix M3).
+    // The handler gets the very id that was checked (trimmed): a padded id
+    // must not pass the check as "not found" and then reach the item (final
+    // audit F1). A field that is not a UUID is refused outright. The one
+    // rule (@mantle/tools key-shared-content.ts) the gate's pre-run slot
+    // runs too (A5 step 3a).
     if ((via === 'api' || via === 'federation') && KEY_SHARED_CONTENT_TOOLS.has(def.slug)) {
-      const target = contentToolTarget(input);
-      // The handler gets the very id that was checked (trimmed): a padded id
-      // must not pass the check as "not found" and then reach the item
-      // (final audit F1). A field that is not a UUID is refused outright.
-      if (target?.id) input[target.field] = target.id;
-      if (target && !target.id) {
+      const refusedShared = await keySharedContentRefusal(
+        ownerId,
+        input,
+        via === 'api' ? 'key' : 'peer',
+      );
+      if (refusedShared) {
         return {
-          content: [
-            {
-              type: 'text' as const,
-              text: `Error: ${target.field} must be an item id (a UUID), as page_list or search_nodes give it.`,
-            },
-          ],
-          isError: true,
-        };
-      }
-      if (target?.id && (await othersCanRead(ownerId, target.id))) {
-        return {
-          content: [
-            {
-              type: 'text' as const,
-              text: `Error: this item is shared, so ${via === 'api' ? 'an API key' : 'a peer'} cannot change its content (what it embeds would become readable to others). Change it in the app.`,
-            },
-          ],
+          content: [{ type: 'text' as const, text: `Error: ${refusedShared}` }],
           isError: true,
         };
       }

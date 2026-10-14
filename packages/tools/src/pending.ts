@@ -26,6 +26,7 @@ import {
 // module, and dispatch.ts imports the registry, which imports every builtin —
 // closing the cycle back onto builtins-pending.ts. See dispatch-bridge.ts.
 import { dispatchViaBridge as dispatchTool } from './dispatch-bridge';
+import { pendingCaller } from './gate-callers';
 import { notifyPendingChanged } from './pending-notify';
 import { startTrace, step } from '@mantle/tracing';
 import { errorMessage } from '@mantle/std';
@@ -454,6 +455,8 @@ export async function approvePendingCall(
           const res = await asCallLogin(() =>
             dispatchTool(tool, (claimed.args ?? {}) as Record<string, unknown>, {
               ownerId,
+              // Through the one gate, as the approved call (A5 step 3a).
+              caller: pendingCaller(),
               // An Admin user approves a pending call, so it runs on the owner
               // surface, naming the approver when the path names one.
               surface: {

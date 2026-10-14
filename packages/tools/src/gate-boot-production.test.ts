@@ -21,7 +21,7 @@ import { ensureGateReady } from './gate-narrowers';
 describe('a gate that is not ready stops the boot', () => {
   it('ensureGateReady throws the not-ready error instead of starting the process', () => {
     expect(() => ensureGateReady()).toThrow(
-      /the gate is not ready: no narrower registered for key/,
+      /the gate is not ready: no narrower or pre-run check registered for key/,
     );
   });
 });

@@ -31,19 +31,25 @@ import { createHomeIntent } from './create-home';
 import {
   GateNotReadyError,
   NARROWERS,
+  PRE_RUN_CHECKS,
   READ_ONLY_CALLER_ERROR,
+  assertGateReady,
   currentCaller,
   enterCall,
   gateCheck,
   gateLists,
+  hasPolicySource,
   registerNarrower,
   registerPolicySource,
+  registerPreRunCheck,
   resetGateRegistry,
   type GateCaller,
   type GatePolicy,
   type Narrower,
   type NarrowerName,
   type PolicyRef,
+  type PreRunCheck,
+  type PreRunCheckName,
 } from './gate';
 import { currentCreateHome, type WorkspaceScope } from './viewer';
 
@@ -80,13 +86,18 @@ const ok = async () => {
 
 const TEST_SOURCE = (r: PolicyRef) => POLICIES[r.name] ?? null;
 const NOOP: Narrower = () => null;
+const NOOP_CHECK: PreRunCheck = async () => null;
 
-/** A fresh registry: the test source, and every narrower (a no-op unless
- *  the test gives its own). */
-function setup(over: Partial<Record<NarrowerName, Narrower>> = {}): void {
+/** A fresh registry: the test source, every narrower and every pre-run
+ *  check (a no-op unless the test gives its own). */
+function setup(
+  over: Partial<Record<NarrowerName, Narrower>> = {},
+  checks: Partial<Record<PreRunCheckName, PreRunCheck>> = {},
+): void {
   resetGateRegistry();
   registerPolicySource('test', TEST_SOURCE);
   for (const n of NARROWERS) if (n !== 'read-only') registerNarrower(n, over[n] ?? NOOP);
+  for (const c of PRE_RUN_CHECKS) registerPreRunCheck(c, checks[c] ?? NOOP_CHECK);
 }
 
 beforeEach(() => {
@@ -413,19 +424,27 @@ describe('the order of the steps', () => {
     return r;
   };
 
-  it('resolve, policy, scope, narrow, Admin, home, run', async () => {
-    setup({
-      key: () => {
-        h.log.push('narrow');
-        return null;
+  it('resolve, policy, scope, narrow, Admin, pre-run, home, run', async () => {
+    setup(
+      {
+        key: () => {
+          h.log.push('narrow');
+          return null;
+        },
       },
-    });
+      {
+        'item-precheck': async () => {
+          h.log.push('prerun');
+          return null;
+        },
+      },
+    );
     registerPolicySource('ordered', (r: PolicyRef) => {
       h.log.push('policy');
       return POLICIES[r.name] ?? null;
     });
     expect((await run(true)).ok).toBe(true);
-    expect(h.log).toEqual(['resolve', 'policy', 'scope:writes', 'narrow', 'home', 'run']);
+    expect(h.log).toEqual(['resolve', 'policy', 'scope:writes', 'narrow', 'prerun', 'home', 'run']);
     const refused = await run(false);
     expect(refused.ok).toBe(false);
     if (!refused.ok) expect(refused.refusal.kind).toBe('admin-kind');
@@ -476,6 +495,7 @@ describe('fail closed: every narrower registered (fix round 1, M1)', () => {
     resetGateRegistry();
     registerPolicySource('test', TEST_SOURCE);
     for (const n of ['key', 'peer', 'spending', 'turn-caps'] as const) registerNarrower(n, NOOP);
+    for (const c of PRE_RUN_CHECKS) registerPreRunCheck(c, NOOP_CHECK);
     expect(() => gateCheck(login(), ref('read'))).toThrow(GateNotReadyError);
     expect(() => gateCheck(login(), ref('read'))).toThrow(/member-app/);
     const resolve = vi.fn(async () => login());
@@ -700,5 +720,97 @@ describe('step 6 rules (fix round 1, M2)', () => {
     );
     expect(createHomeIntent).not.toHaveBeenCalled();
     expect(home).toEqual({ createWs: W1, privateWs: null });
+  });
+});
+
+describe('the pre-run slot (A5 step 3a)', () => {
+  it('runs after the Admin step and before the create home: a refusal makes no home', async () => {
+    const seen: unknown[] = [];
+    setup(
+      {},
+      {
+        'item-precheck': async (c, p, r, call) => {
+          seen.push([c.via, p.effect, r.name, call.args]);
+          return call.args?.refuse === true ? 'This item is not yours to change.' : null;
+        },
+      },
+    );
+    const r = await enterCall(login(), ref('create'), ok, { args: { refuse: true } });
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.refusal.kind).toBe('item');
+      expect(r.refusal.toolText).toBe('This item is not yours to change.');
+      expect(r.refusal.http?.status).toBe(403);
+    }
+    expect(seen).toEqual([['oauth', 'write', 'create', { refuse: true }]]);
+    expect(createHomeIntent).not.toHaveBeenCalled();
+    expect(h.log).toEqual([]);
+    // Let through: the home, then the run.
+    expect((await enterCall(login(), ref('create'), ok, { args: {} })).ok).toBe(true);
+    expect(h.log).toEqual(['home', 'run']);
+  });
+
+  it('is never run by a listing (gateCheck has no arguments)', () => {
+    const check = vi.fn(async () => 'refused');
+    setup({}, { 'item-precheck': check, 'key-shared-content': check });
+    expect(gateCheck(login(), ref('write'))).toBeNull();
+    expect(check).not.toHaveBeenCalled();
+  });
+
+  it('runs its checks in the fixed order, whatever order they registered in', async () => {
+    resetGateRegistry();
+    registerPolicySource('test', TEST_SOURCE);
+    for (const n of NARROWERS) if (n !== 'read-only') registerNarrower(n, NOOP);
+    const order: string[] = [];
+    registerPreRunCheck('key-shared-content', async () => {
+      order.push('key-shared-content');
+      return 'shared';
+    });
+    registerPreRunCheck('item-precheck', async (_c, _p, _r, call) => {
+      order.push('item-precheck');
+      // A check may trim what it checked: the run gets the very value.
+      if (call.args) call.args.id = 'trimmed';
+      return null;
+    });
+    const args: Record<string, unknown> = { id: ' padded ' };
+    const r = await enterCall(login(), ref('write'), ok, { args });
+    expect(order).toEqual(['item-precheck', 'key-shared-content']);
+    expect(r.ok).toBe(false);
+    expect(args.id).toBe('trimmed');
+    expect(PRE_RUN_CHECKS).toEqual(['item-precheck', 'key-shared-content']);
+  });
+
+  it('fails closed: a missing check stops the boot check and the call', async () => {
+    resetGateRegistry();
+    registerPolicySource('test', TEST_SOURCE);
+    for (const n of NARROWERS) if (n !== 'read-only') registerNarrower(n, NOOP);
+    registerPreRunCheck('item-precheck', NOOP_CHECK);
+    expect(() => assertGateReady()).toThrow(/key-shared-content/);
+    await expect(enterCall(login(), ref('read'), ok)).rejects.toThrow(GateNotReadyError);
+    expect(h.log).toEqual([]);
+    expect(() => registerPreRunCheck('item-precheck', NOOP_CHECK)).not.toThrow();
+    expect(() => registerPreRunCheck('item-precheck', async () => null)).toThrow(
+      /has a check already/,
+    );
+    expect(() => registerPreRunCheck('nope' as never, NOOP_CHECK)).toThrow();
+  });
+});
+
+describe('an entry that names its own home (createHome null)', () => {
+  it('step 6 names none, for a write too', async () => {
+    const r = await enterCall(login({ createHome: null }), ref('create'), async () => {
+      h.log.push('run');
+      return currentCreateHome();
+    });
+    expect(r.ok && r.value).toBeNull();
+    expect(createHomeIntent).not.toHaveBeenCalled();
+    expect(h.log).toEqual(['run']);
+  });
+});
+
+describe('hasPolicySource (A5 step 3a, LOW-4)', () => {
+  it('says whether a kind has a source', () => {
+    expect(hasPolicySource('test')).toBe(true);
+    expect(hasPolicySource('mcp-tool')).toBe(false);
   });
 });

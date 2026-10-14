@@ -244,6 +244,20 @@ export {
   registerGateNarrowers,
 } from './gate-narrowers';
 export {
+  currentToolCaller,
+  ownerWebCaller,
+  pendingCaller,
+  runCaller,
+  turnCaller,
+  type ToolCaller,
+  type ToolCallerEntry,
+} from './gate-callers';
+export { builtinToolGatePolicy, builtinToolRef } from './tool-gate-policy';
+export { registerPreRunChecks } from './gate-prerun';
+export { contentToolTarget, keySharedContentRefusal, type KeyOrPeer } from './key-shared-content';
+export { othersCanRead } from './shared-item';
+export { maskToolDatabaseErrors } from './tool-error-mask';
+export {
   NO_RUNTIME_POLICY_ERROR,
   apiToolPolicy,
   appToolPolicy,

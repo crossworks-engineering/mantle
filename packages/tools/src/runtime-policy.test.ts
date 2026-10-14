@@ -10,6 +10,7 @@ import {
   gateCheck,
   loginActor,
   registerNarrower,
+  registerPreRunCheck,
   systemActor,
   type GateCaller,
   type GatePolicy,
@@ -228,6 +229,9 @@ describe('through the gate', () => {
     registerNarrower('member-app', () => null);
     registerNarrower('spending', () => null);
     registerNarrower('turn-caps', () => null);
+    // The pre-run checks (A5 step 3a): run by a call, never by a listing.
+    registerPreRunCheck('item-precheck', async () => null);
+    registerPreRunCheck('key-shared-content', async () => null);
   });
 
   it('the sources are registered: a runtime row, a sandbox tool, a peer tool', () => {

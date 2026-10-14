@@ -14,6 +14,7 @@ import {
   notifyPendingCreated,
   isBuiltinReadOnly,
   sanitizeToolError,
+  turnCaller,
   UNTRUSTED_CONTENT_TOOL_SLUGS,
   PRIVATE_OUTPUT_TOOL_SLUGS,
   type ValidateArgsResult,
@@ -185,6 +186,9 @@ export async function executeToolCall(p: {
       }
       const result = await dispatchTool(tool, input, {
         ownerId: args.ownerId,
+        // The turn calls through the one gate (A5 step 3a): it runs in the
+        // turn's scope already (withAgentScope), so the caller sets none.
+        caller: turnCaller(),
         step: {
           setMeta: (m) => handle.setMeta(m),
           setOutput: (o) => handle.setOutput(o),

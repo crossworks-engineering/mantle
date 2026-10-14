@@ -17,12 +17,18 @@
 import {
   READ_ONLY_CALLER_ERROR,
   assertGateReady,
+  hasPolicySource,
   registerNarrower,
   type GateCaller,
   type Narrower,
   type NarrowerName,
   type PolicyRef,
 } from '@mantle/db';
+import { registerPreRunChecks } from './gate-prerun';
+// The `tool` source (a builtin called through dispatch, A5 step 3a) and the
+// runtime rows' sources, registered with the narrowers in every process.
+import './tool-gate-policy';
+import './runtime-policy';
 
 /** The refusal of a tool outside a key's areas. */
 export const KEY_AREA_ERROR = 'This API key is limited to areas this tool is not in.';
@@ -45,10 +51,16 @@ function narrowedCaller(caller: GateCaller): boolean {
   return caller.via === 'key' || caller.via === 'peer';
 }
 
-/** Whether `ref` names a tool (an MCP tool or a runtime tool row), as
- *  the peer rule reads it. */
+/** Whether `ref` names a tool (an MCP tool, a builtin called through
+ *  dispatch, or a runtime tool row), as the peer rule reads it. */
 function toolRef(ref: PolicyRef): boolean {
-  return ref.kind === 'mcp-tool' || ref.kind === 'runtime-tool';
+  return ref.kind === 'mcp-tool' || ref.kind === 'tool' || ref.kind === 'runtime-tool';
+}
+
+/** Whether `policy` is a connector tool's (connectorToolPolicy: it carries
+ *  the admin's read-only `mark`). */
+function connectorPolicy(policy: { fields?: Readonly<Record<string, unknown>> }): boolean {
+  return policy.fields?.mark !== undefined;
 }
 
 /** Whether the caller is an MCP connection (the login's own OAuth, a key
@@ -96,11 +108,17 @@ const keyNarrower: Narrower = (caller, policy) => {
  */
 const peerNarrower: Narrower = (caller, policy, ref) => {
   if (!narrowedCaller(caller) || !toolRef(ref)) return null;
-  const risky = policy.fields?.peerRisky;
-  if (typeof risky !== 'boolean') return RISKY_TOOL_ERROR;
+  const declared = policy.fields?.peerRisky;
+  if (typeof declared !== 'boolean') return RISKY_TOOL_ERROR;
+  // A connector's tool is not risky by the owner MCP surface's family rule
+  // (login-surface.ts isPeerRiskyTool), which it declares on its row. In a
+  // process without that surface (no `mcp-tool` source: server/api), the
+  // answer before A5 step 2 holds: risky unless the owner named it (fail
+  // closed; A5 step 2 fix round 1, LOW-4).
+  const risky = declared || (connectorPolicy(policy) && !hasPolicySource('mcp-tool'));
   const riskyAllowed = (caller.facts?.riskyAllowed ?? []) as readonly string[];
   if (risky && !riskyAllowed.includes(ref.name)) return RISKY_TOOL_ERROR;
-  const connectorAsWrite = policy.fields?.mark !== undefined;
+  const connectorAsWrite = connectorPolicy(policy);
   const reads = policy.effect === 'read' && !connectorAsWrite;
   return caller.write === false && !reads ? READ_ONLY_CALLER_ERROR : null;
 };
@@ -148,11 +166,13 @@ export const GATE_NARROWERS: Readonly<Record<Exclude<NarrowerName, 'read-only'>,
     'turn-caps': turnCapsNarrower,
   });
 
-/** Register every narrower (the same functions again are a no-op). */
+/** Register every narrower and the pre-run checks (gate-prerun.ts; the
+ *  same functions again are a no-op). */
 export function registerGateNarrowers(): void {
   for (const [name, narrower] of Object.entries(GATE_NARROWERS)) {
     registerNarrower(name as NarrowerName, narrower);
   }
+  registerPreRunChecks();
 }
 
 /** Boot: register every narrower and assert the gate is ready. Each process

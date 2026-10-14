@@ -158,8 +158,10 @@ export {
   enterCall,
   gateCheck,
   gateLists,
+  hasPolicySource,
   registerNarrower,
   registerPolicySource,
+  registerPreRunCheck,
   AccessError,
   mapAccessError,
   readOnlySetView,
@@ -176,6 +178,8 @@ export {
   type PolicyRef,
   type PolicyScope,
   type PolicySource,
+  type PreRunCheck,
+  type PreRunCheckName,
 } from './gate';
 export {
   createHomeIntent,

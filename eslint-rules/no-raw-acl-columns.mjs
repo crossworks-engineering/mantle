@@ -25,7 +25,6 @@ export const RAW_ACL_PINS = {
   'packages/content/src/tree/visibility.ts': 9,
   'packages/files/src/ops/files.ts': 4,
   'packages/mcp-core/src/create-home.ts': 1,
-  'packages/mcp-core/src/shared-item.ts': 1,
   'packages/runtime/src/agent/conversation.ts': 1,
   'packages/search/src/index.ts': 1,
   'packages/search/src/scope.ts': 4,
@@ -34,6 +33,8 @@ export const RAW_ACL_PINS = {
   'packages/tools/src/client-sourced-rules.ts': 2,
   'packages/tools/src/client-sourced.ts': 1,
   'packages/tools/src/external-access.ts': 2,
+  // othersCanRead, moved from mcp-core in A5 step 3a (one copy).
+  'packages/tools/src/shared-item.ts': 1,
   'server/web/lib/auth/session.ts': 3,
   'server/web/lib/grants.ts': 25,
   'server/web/lib/list-workspaces.ts': 3,

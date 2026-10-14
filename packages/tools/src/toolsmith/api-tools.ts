@@ -653,11 +653,13 @@ export const api_tool_test: BuiltinToolDef = {
     if (keysRefused) return { ok: false, error: keysRefused };
     const args = rec(input.input) ?? {};
     const t0 = performance.now();
-    // The test call runs for whoever asked for the test: it inherits the surface.
+    // The test call runs for whoever asked for the test: it inherits the
+    // surface, and the caller (A5 step 3a: through the gate as the test ran).
     const result = await dispatchTool(row, args, {
       ownerId: ctx.ownerId,
       step: ctx.step,
       ...(ctx.surface ? { surface: ctx.surface } : {}),
+      caller: ctx.caller,
     });
     const duration_ms = Math.round(performance.now() - t0);
     if (!result.ok) {

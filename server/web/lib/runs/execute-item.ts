@@ -28,6 +28,7 @@ import { claimItem, completeItem, requeueForRetry, type PostCommitAction } from 
 import {
   BANNED_ITEM_TOOLS,
   dispatchTool,
+  runCaller,
   loadAgentGrant,
   NO_AGENT_RUN_SLUG,
   resolveTool,
@@ -245,6 +246,8 @@ async function runResolved(
           const res = await asRunLogin(() =>
             dispatchTool(tool, input, {
               ownerId: run.ownerId,
+              // Through the one gate, as a run item (A5 step 3a).
+              caller: runCaller(),
               step: {
                 setMeta: (m) => handle.setMeta(m),
                 setOutput: (o) => handle.setOutput(o),
