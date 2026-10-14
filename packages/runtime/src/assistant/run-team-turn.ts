@@ -59,7 +59,6 @@ import {
   loadProfilePreferences,
   isTeamPrivateReadsEnabled,
   teamHiddenNodeTypes,
-  TEAM_PRIVATE_READ_SLUGS,
   defaultWorkspaceAssistant,
   workspaceAssistantFor,
   type ThreadMessage,
@@ -448,7 +447,7 @@ async function runTeamTurnSteps(
           volatileExtras: [memberLine],
           withThinking: false,
           allowDelegation: false,
-          excludeToolSlugs: privateReads ? [] : TEAM_PRIVATE_READ_SLUGS,
+          excludePrivateCorpus: !privateReads,
         }),
       );
       const { volatileContext } = assembled;

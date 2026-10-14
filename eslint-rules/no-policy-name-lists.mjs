@@ -18,7 +18,7 @@
  *  the deferred selection's core is no access list (arch-counts.mjs
  *  toolPolicySwept). One pin is left: TEAM_PRIVATE_READ_SLUGS, kept in the
  *  published content-core contract for one jackdaw pair release (its
- *  consumers here read the policy's `outside.privateCorpus`). */
+ *  consumers here read the policy's `privateCorpus`). */
 export const TOOL_LIST_PINS = {
   'packages/content-core/src/profile-projections.ts': { lists: 1, entries: 4 },
 };

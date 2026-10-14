@@ -20,7 +20,6 @@ import {
   loadProfilePreferences,
   noteInboundChannel,
   teamHiddenNodeTypes,
-  TEAM_PRIVATE_READ_SLUGS,
 } from '@mantle/content';
 import { getChatAdapter } from '@mantle/voice';
 import { getAgentTtsWorker } from '@mantle/db';
@@ -140,7 +139,7 @@ export async function runTelegramTurn(args: {
           includeIdentity: false,
           withThinking: false,
           allowDelegation: false,
-          excludeToolSlugs: privateReads ? [] : TEAM_PRIVATE_READ_SLUGS,
+          excludePrivateCorpus: !privateReads,
           volatileExtras: [
             `Workspace user: ${row.fromName ?? 'unknown name'} (user ${loginId}), on Telegram. You are serving this person, not the brain's owner.`,
           ],

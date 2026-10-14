@@ -34,6 +34,7 @@ import {
   type DelegationHint,
 } from '@mantle/decisions';
 import {
+  builtinPolicy,
   composeSystemPromptWithSkills,
   effectiveToolSlugs,
   isBuiltinReadOnly,
@@ -134,10 +135,15 @@ export type AssembleResponderTurnOptions = {
    *  cannot delegate; the hint is skipped when `delegateTo` is empty. */
   inboundText?: string;
   previousUserText?: string | null;
-  /** Slugs removed AFTER group resolution — the team private-reads gate.
-   *  Enforced here at tool resolution so a manifest change that re-adds the
-   *  slugs to a group can't bypass the switch. */
+  /** Slugs removed AFTER group resolution (an MCP simulation's
+   *  exclude_tools). */
   excludeToolSlugs?: readonly string[];
+  /** Drop the tools that read the owner's private corpus (their policy's
+   *  `privateCorpus`: mail, the Journal) AFTER group resolution: the team
+   *  private-reads gate (A5 step 6a: read off the policy, where it was the
+   *  TEAM_PRIVATE_READ_SLUGS list). Enforced here at tool resolution so a
+   *  manifest change that re-adds them to a group can't bypass the switch. */
+  excludePrivateCorpus?: boolean;
   /** Read-only turn: keep ONLY tools the registry marks safe (mutate nothing,
    *  send nothing outward). Applied LAST, after every other add — including
    *  the heartbeat affordance — so nothing can slip a write tool back in.
@@ -364,6 +370,9 @@ async function assembleResponderTurnAtLevel(
   if (opts.excludeToolSlugs?.length) {
     const gated = new Set(opts.excludeToolSlugs);
     allowedToolSlugs = allowedToolSlugs.filter((s) => !gated.has(s));
+  }
+  if (opts.excludePrivateCorpus) {
+    allowedToolSlugs = allowedToolSlugs.filter((s) => builtinPolicy(s)?.privateCorpus !== true);
   }
   if (opts.heartbeatSurface) {
     const hasHeartbeats = await hasActiveHeartbeatsOnSurface(ownerId, opts.heartbeatSurface).catch(

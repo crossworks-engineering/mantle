@@ -197,6 +197,11 @@ vi.mock('@mantle/telegram', () => ({
 
 // ── LLM/tool-loop + conversation-stream seams (@mantle/runtime/agent) ─────
 vi.mock('@mantle/runtime/agent', () => ({
+  // The private corpus reads by their policy (A5 step 6a: no list).
+  builtinPolicy: (slug: string) =>
+    ['email_list', 'email_get', 'journal_list', 'journal_get'].includes(slug)
+      ? { privateCorpus: true }
+      : null,
   buildChatMessages: (args: any) => {
     h.buildArgs.push(args);
     return [
@@ -324,7 +329,6 @@ vi.mock('@mantle/content', () => ({
   recentTeamMessages: vi.fn(async () => []),
   isTeamPrivateReadsEnabled: () => false,
   // The private reads a workspace turn hides (W7d fix round 1, M1).
-  TEAM_PRIVATE_READ_SLUGS: ['email_list', 'journal_get'],
   teamHiddenNodeTypes: () => ['credential', 'email', 'journal'],
 }));
 vi.mock('@mantle/content/table-storage', () => ({ sweepLegacyTables: vi.fn(async () => {}) }));

@@ -38,6 +38,7 @@ import {
   type BuiltinToolDef,
   type ToolPolicy,
 } from '@mantle/tools';
+import { TEAM_PRIVATE_READ_SLUGS } from '@mantle/content';
 import { registerHeartbeatTools } from './heartbeats/tools';
 import UNTRUSTED_SNAPSHOT from './tool-policy-snapshot.untrusted.json' with { type: 'json' };
 
@@ -479,6 +480,20 @@ describe('every @mantle/tools access list equals its literal (A5 step 1)', () =>
       expect(new Set(now).size).toBe(now.length);
     });
   }
+
+  it('TEAM_PRIVATE_READ_SLUGS, the published contract list, names the private corpus reads', () => {
+    // Kept in @mantle/content-core for one jackdaw pair release (A5 step
+    // 6a); the brain's turns read each tool's policy (`privateCorpus`).
+    expect(where((p) => p.privateCorpus === true).sort()).toEqual(
+      [...TEAM_PRIVATE_READ_SLUGS].sort(),
+    );
+    expect([...TEAM_PRIVATE_READ_SLUGS].sort()).toEqual([
+      'email_get',
+      'email_list',
+      'journal_get',
+      'journal_list',
+    ]);
+  });
 
   it('TOOL_ADMIN_AREAS', () => {
     expect(

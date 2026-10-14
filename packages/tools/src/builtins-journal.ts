@@ -69,7 +69,15 @@ function compact(n: JournalRow) {
 
 const journal_list: BuiltinToolDef = {
   slug: 'journal_list',
-  policy: { effect: 'read', spends: 'none', scope: 'any', keyArea: 'journal' },
+  // The owner's private corpus: a workspace user's turn only with
+  // teamPrivateReads.
+  policy: {
+    effect: 'read',
+    spends: 'none',
+    scope: 'any',
+    keyArea: 'journal',
+    privateCorpus: true,
+  },
   name: 'List journal entries',
   description:
     "Browse the Journal — the user's durable self-knowledge (kinds identity/context/preference/goal) and the agents' working notes (lesson/expectation/gap), newest first. Use to recall what the user has said about themselves or what agents have learned. `kind`/`author`/`status`/`query` narrow the list; `kind='gap', status='open'` lists the unanswered questions. For a topic search across everything, `search_nodes` is broader.",
@@ -126,7 +134,15 @@ const journal_list: BuiltinToolDef = {
 
 const journal_get: BuiltinToolDef = {
   slug: 'journal_get',
-  policy: { effect: 'read', spends: 'none', scope: 'any', keyArea: 'journal' },
+  // The owner's private corpus: a workspace user's turn only with
+  // teamPrivateReads.
+  policy: {
+    effect: 'read',
+    spends: 'none',
+    scope: 'any',
+    keyArea: 'journal',
+    privateCorpus: true,
+  },
   name: 'Read a journal entry',
   description: 'Fetch one journal entry by its node id. Returns the full entry.',
   inputSchema: {

@@ -473,12 +473,14 @@ const email_page: BuiltinToolDef = {
 
 const email_list: BuiltinToolDef = {
   slug: 'email_list',
-  // Mail from outside the brain: fenced as data (A5 step 5).
+  // Mail from outside the brain: fenced as data (A5 step 5). The owner's
+  // private corpus: a workspace user's turn only with teamPrivateReads.
   policy: {
     effect: 'read',
     spends: 'none',
     scope: { area: 'connectors' },
     outside: { untrusted: true },
+    privateCorpus: true,
   },
   name: 'List recent emails',
   description:
@@ -582,12 +584,14 @@ export function htmlToPlainText(html: string): string {
 
 const email_get: BuiltinToolDef = {
   slug: 'email_get',
-  // Mail from outside the brain: fenced as data (A5 step 5).
+  // Mail from outside the brain: fenced as data (A5 step 5). The owner's
+  // private corpus: a workspace user's turn only with teamPrivateReads.
   policy: {
     effect: 'read',
     spends: 'none',
     scope: { area: 'connectors' },
     outside: { untrusted: true },
+    privateCorpus: true,
   },
   name: 'Get one email by id',
   description:

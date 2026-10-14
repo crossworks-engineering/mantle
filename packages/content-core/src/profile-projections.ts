@@ -75,7 +75,10 @@ export function isPersistThoughtsEnabled(
 /** Builtin read tools that reach the owner's PRIVATE corpus (email + journal).
  *  The Team Chat responder holds these via the `team-read` group, but they only
  *  actually reach the model when the owner has opted in (`teamPrivateReads`).
- *  Stripped from a team turn's tool set otherwise — see run-team-turn.ts. */
+ *  The brain reads each tool's policy (`privateCorpus`, @mantle/tools; A5 step
+ *  6a) to strip them from a workspace user's turn; this list stays exported
+ *  for the published contract (the client) for one jackdaw pair release, and
+ *  packages/runtime/src/tool-policy-snapshot.test.ts pins it to the policies. */
 export const TEAM_PRIVATE_READ_SLUGS: readonly string[] = [
   'email_list',
   'email_get',

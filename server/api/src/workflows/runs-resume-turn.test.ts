@@ -139,7 +139,6 @@ vi.mock('@mantle/runtime/assistant', () => ({
 vi.mock('@mantle/api-keys', () => ({ getApiKeyById: async () => h.apiKey }));
 vi.mock('@mantle/content', () => ({
   loadProfilePreferences: async () => ({ timezone: 'UTC' }),
-  TEAM_PRIVATE_READ_SLUGS: ['email_list'],
   teamHiddenNodeTypes: (privateReads: boolean) =>
     privateReads ? ['secret_type'] : ['secret_type', 'email'],
 }));
@@ -523,7 +522,7 @@ describe('runs resume turn: the run login (W7c fix round 1, L7)', () => {
       includeIdentity: false,
       withThinking: false,
       allowDelegation: false,
-      excludeToolSlugs: ['email_list'],
+      excludePrivateCorpus: true,
     });
     expect(h.sendMessage).toHaveBeenCalledTimes(1);
   });

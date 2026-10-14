@@ -78,11 +78,7 @@ import {
   runResponderLoop,
 } from '@mantle/runtime/assistant';
 import { getApiKeyById } from '@mantle/api-keys';
-import {
-  loadProfilePreferences,
-  teamHiddenNodeTypes,
-  TEAM_PRIVATE_READ_SLUGS,
-} from '@mantle/content';
+import { loadProfilePreferences, teamHiddenNodeTypes } from '@mantle/content';
 import { runDurableStep, startTrace, withDurableSteps } from '@mantle/tracing';
 import { getChatAdapter, stripAudioTags } from '@mantle/voice';
 import { registerActorWorkflow, systemEntry } from './actor-workflow';
@@ -256,9 +252,7 @@ export async function runsResumeTurnImpl(
         // delegation and no private reads, as runTeamTurn.
         withThinking: !workspaceTurn,
         allowDelegation: !workspaceTurn,
-        ...(workspaceTurn
-          ? { includeIdentity: false, excludeToolSlugs: TEAM_PRIVATE_READ_SLUGS }
-          : {}),
+        ...(workspaceTurn ? { includeIdentity: false, excludePrivateCorpus: true } : {}),
       });
 
       // The at-most-once token, claimed LAST — after every precondition that

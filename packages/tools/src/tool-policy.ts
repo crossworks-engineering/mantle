@@ -130,6 +130,14 @@ export type ToolPolicy = Readonly<{
   /** A team app may call it (default, by its other rules) or never
    *  (member-app-tools.ts memberAppRefusedName). */
   memberApp?: 'ok' | 'refused';
+  /** It reads the owner's PRIVATE corpus (mail, the Journal): a turn that
+   *  serves a workspace user (a team turn, a workspace run or Telegram
+   *  turn) is offered it only when the owner opted in (teamPrivateReads),
+   *  and a workspace run never (assemble-turn.ts excludePrivateCorpus; A5
+   *  step 6a). @mantle/content-core TEAM_PRIVATE_READ_SLUGS, the published
+   *  contract's list for the client, names the same tools (a test pins
+   *  it). */
+  privateCorpus?: true;
 }>;
 
 /** The gate's policy of a builtin (plan 23.2): its effect, Admin step,
