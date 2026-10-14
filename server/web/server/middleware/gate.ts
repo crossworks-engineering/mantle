@@ -30,7 +30,13 @@ import {
   type GateCaller,
   type WorkspaceScope,
 } from '@mantle/db';
-import { answerRouteCaller, resolveHttpLogin, type HttpLogin } from '../../lib/auth/session';
+import {
+  RouteLoginError,
+  answerRouteCaller,
+  enterRouteLogin,
+  resolveHttpLogin,
+  type HttpLogin,
+} from '../../lib/auth/session';
 import { ensureGateReady } from '@mantle/tools/gate-narrowers';
 
 /**
@@ -181,7 +187,11 @@ function bearerToken(req: Request): string | null {
  * names no create home (createHome null): the guard does, on its rules.
  * On a row whose handler reads the caller the pipeline answers (row.caller,
  * A4 step 3b) the gate runs the owner guard's answer itself, before the
- * handler (answerRouteCaller), with what it does on the side.
+ * handler (answerRouteCaller), with what it does on the side; and on such a
+ * row that manages an Admin area the gate's step 5 is the area check (A4
+ * step 3b part 4): the caller carries the Admin view the login lookup
+ * resolved, and the login's effects are applied in the request slot first
+ * (enterRouteLogin), as the guard applied them before its check.
  */
 function httpCaller(
   row: RouteRow,
@@ -191,6 +201,15 @@ function httpCaller(
   accessKey?: AccessKeyGrant,
 ): GateCaller {
   const startsAs = systemActor(row.actor ?? row.startsAs);
+  // The Admin step the gate enforces: an Admin login's view of the row's
+  // area (resolveHttpLogin), on a row whose handler reads the pipeline's
+  // caller. Anywhere else unscoped (null): the guard decides (adminRouteGate,
+  // reading the same view), as before; and so for a member, a credential
+  // with no login, or a lookup that failed, whose answer is the pipeline's
+  // (403 member-login, the 401, the failure thrown in the handler's place).
+  const admin = row.caller === 'owner' ? login.admin : null;
+  const slot = <T>(fn: () => Promise<T>) =>
+    runInRequestSlot(admin ? () => enterRouteLogin(fn) : fn, { memo, startsAs });
   return {
     actor: login.loginId && login.mode ? loginActor(login.loginId, login.mode) : startsAs,
     via,
@@ -203,14 +222,7 @@ function httpCaller(
     // No `facts.keyAreas`: the gate's key narrower does not run on HTTP
     // (gateAccessKey and the login lookup judge the areas, keyOnRow).
     ...(accessKey ? { write: accessKey.access === 'read_write' } : {}),
-    // Unscoped for step 5: the guard decides (adminRouteGate, reading the
-    // Admin view the gate resolved, login.admin in the facts). Not the
-    // gate's refusal yet: nine area rows (13 cells: GET, POST and HEAD
-    // /api/updates/check, GET and HEAD /api/updates/status, and the
-    // Telegram chat rows: the bot block, unpair, moderated chats, my chats,
-    // pair) have handlers that never ask the area (docs/actors.md, A4 step
-    // 3a).
-    admin: null,
+    admin,
     createHome: null,
     facts: login.facts,
     // The request slot (workspaces W6a), opened for the handler with the
@@ -220,7 +232,7 @@ function httpCaller(
     // it had a row.
     enterScope: row.page
       ? (_writes, fn) => runInActorSlot(startsAs, fn)
-      : (_writes, fn) => runInRequestSlot(fn, { memo, startsAs }),
+      : (_writes, fn) => slot(fn),
   };
 }
 
@@ -349,7 +361,7 @@ function gateHandler(): MiddlewareHandler {
         // its read seeding the memo the request slot is opened with.
         const memo = new Map<string, Promise<WorkspaceScope>>();
         const login = await withRequestScopeMemo(memo, () => resolveHttpLogin(row));
-        const out = await enterCall(
+        const call = enterCall(
           httpCaller(row, via, login, memo, accessKey),
           routeRef(row),
           async () => {
@@ -377,6 +389,21 @@ function gateHandler(): MiddlewareHandler {
             return null;
           },
         );
+        let out: Awaited<typeof call>;
+        try {
+          out = await call;
+        } catch (error) {
+          if (!(error instanceof RouteLoginError)) throw error;
+          // The login's effects failed before the Admin step
+          // (enterRouteLogin): the error is thrown in the handler's place,
+          // where the owner guard threw it before the gate checked the
+          // area, so onError answers it with the CORS headers. No handler
+          // runs.
+          ctx.callerError = { error: error.error };
+          await next();
+          if (ctx.callerError) throw ctx.callerError.error;
+          return null;
+        }
         if (out.ok) return out.value;
         if (!out.refusal.http) throw out.error;
         return Response.json(out.refusal.http.body, { status: out.refusal.http.status });

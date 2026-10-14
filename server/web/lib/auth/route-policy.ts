@@ -445,11 +445,12 @@ export function spellsPattern(pattern: string, path: string): boolean {
 // ── The gate's route source and the stored row ──────────────────────────────
 
 /** A row's declared policy (the gate's step 3). The Admin step names the
- *  row's area, but the gate does not refuse with it yet: the HTTP caller
- *  is unscoped (`admin: null`), and the session guard decides from the
- *  Admin view the gate resolved (adminRouteGate), as before (A4 step 3a;
- *  step 3b makes it the gate's refusal). A public row that writes names
- *  the actor it runs as. */
+ *  row's area. The gate refuses with it on a row whose handler reads the
+ *  pipeline's caller (A4 step 3b part 4: the HTTP caller carries an Admin
+ *  login's view of the area); elsewhere the HTTP caller is unscoped
+ *  (`admin: null`) and the session guard decides from the Admin view the
+ *  gate resolved (adminRouteGate), as before. A public row that writes
+ *  names the actor it runs as. */
 export function routeGatePolicy(row: RouteRow): GatePolicy {
   return Object.freeze({
     effect: row.effect,

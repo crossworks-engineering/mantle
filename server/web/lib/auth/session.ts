@@ -675,7 +675,13 @@ async function applyLogin(found: FoundLogin): Promise<Resolved | null> {
  *  the request's login (the gate found it once, A4 step 3a), its effects
  *  applied. */
 async function resolveLogin(): Promise<Resolved | null> {
-  return applyLogin(await requestLogins().login());
+  const logins = requestLogins();
+  const found = await logins.login();
+  // The gate applied this login's effects before its Admin step
+  // (enterRouteLogin, A4 step 3b part 4): the first read takes them as
+  // applied, so the device token is stamped once, as before.
+  if (logins.takeApplied(found)) return found.resolved;
+  return applyLogin(found);
 }
 
 // ── The request's logins, found once (arch A4 step 3a) ──────────────────────
@@ -719,6 +725,9 @@ export class RequestLogins {
   /** The owner guard's answer the pipeline gave before the handler
    *  (answerRouteCaller, A4 step 3b), which ownerCaller() reads. */
   #owned: OwnerRouteLogin | null = null;
+  /** The found login whose effects the gate applied before its Admin step
+   *  (enterRouteLogin, A4 step 3b part 4), until a read takes them. */
+  #applied: FoundLogin | null = null;
 
   /** Whether the request changed a login since the gate resolved it
    *  (forget): the gate's Admin view of the row's area is then not read. */
@@ -737,6 +746,7 @@ export class RequestLogins {
     this.#owner.clear();
     this.#member.clear();
     this.#failure = null;
+    this.#applied = null;
     this.#changed = true;
   }
 
@@ -746,6 +756,21 @@ export class RequestLogins {
    *  call did before step 3a. A read after that one asks again. */
   keepFailure(failed: Promise<FoundLogin>): void {
     this.#failure = failed;
+  }
+
+  /** The gate applied `found`'s effects (enterRouteLogin): the first read
+   *  of it takes them as applied (takeApplied). */
+  markApplied(found: FoundLogin): void {
+    this.#applied = found;
+  }
+
+  /** Whether the gate applied `found`'s effects and no read took them
+   *  yet; the first read takes them, a later one applies them again, as
+   *  each guard read did. */
+  takeApplied(found: FoundLogin): boolean {
+    if (this.#applied === null || this.#applied !== found) return false;
+    this.#applied = null;
+    return true;
   }
 
   /** Keep the owner guard's answer the pipeline gave (answerRouteCaller).
@@ -865,8 +890,9 @@ export type HttpLogin = Readonly<{
   /** The mode its actor is named in (a read key: ro). */
   mode: 'rw' | 'ro' | null;
   /** What the login holds of the row's Admin area (the Admin step's
-   *  answer, read by adminRouteGate), for an Admin login on a row that
-   *  manages an area; else null (the guard asks requireArea itself). */
+   *  answer: the gate's step 5 on a row whose handler reads the pipeline's
+   *  caller, else read by adminRouteGate), for an Admin login on a row
+   *  that manages an area; else null (the guard asks requireArea itself). */
   admin: AdminView | null;
   /** The facts the caller carries: the logins and the Admin view, under
    *  their keys. */
@@ -909,9 +935,10 @@ export async function resolveHttpLogin(row: RouteRow): Promise<HttpLogin> {
   let admin: AdminView | null = null;
   // The Admin step's answer for an Admin login on a row that manages an
   // area: requireArea's, as adminRouteGate asked it. The view holds the
-  // row's area or nothing; adminRouteGate refuses a login without it
-  // ('area', whether or not it is in the Admin workspace: the guard's
-  // rule). Not yet the gate's refusal: see docs/actors.md, A4 step 3a.
+  // row's area or nothing; a login without it is refused ('area', whether
+  // or not it is in the Admin workspace: the guard's rule): by the gate's
+  // step 5 on a row whose handler reads the pipeline's caller (A4 step 3b
+  // part 4, httpCaller), by adminRouteGate on the others.
   if (row.area && res.kind === 'admin') {
     try {
       const holds = await loginHoldsArea(loginId, row.area);
@@ -931,6 +958,43 @@ export async function resolveHttpLogin(row: RouteRow): Promise<HttpLogin> {
 }
 
 // ── The caller the pipeline answers (arch A4 step 3b) ───────────────────────
+
+/**
+ * The login's effects failed before the gate's Admin step (enterRouteLogin:
+ * the database, stamping a device token). Thrown out of enterCall for the
+ * gate middleware, which answers the error it carries in the handler's
+ * place, where the owner guard threw it before (onError, with the gate's
+ * CORS headers).
+ */
+export class RouteLoginError extends Error {
+  constructor(readonly error: unknown) {
+    super('the request login could not be applied');
+    this.name = 'RouteLoginError';
+  }
+}
+
+/**
+ * The gate's step before its Admin step (A4 step 3b part 4), on a row
+ * whose handler reads the pipeline's caller and whose Admin step the gate
+ * enforces (an Admin login on an area row: the HTTP caller's `admin`): the
+ * login's effects applied in the request slot, before step 5 refuses or
+ * lets it through, as the owner guard applied them before its area check:
+ * a device token's stamp, the login named as the request's actor. The
+ * answer the pipeline gives next (answerRouteCaller) takes them as applied,
+ * so nothing is done twice. Runs `fn` (the gate's steps 4 to 7) after.
+ */
+export async function enterRouteLogin<T>(fn: () => Promise<T>): Promise<T> {
+  const logins = boundLogins(currentCaller());
+  if (!logins) throw new Error('enterRouteLogin: the request has no logins bound');
+  try {
+    const found = await logins.login();
+    await applyLogin(found);
+    logins.markApplied(found);
+  } catch (error) {
+    throw new RouteLoginError(error);
+  }
+  return fn();
+}
 
 /**
  * The gate's step for a row whose handler reads the caller the pipeline
@@ -1305,6 +1369,9 @@ async function adminRouteGate(loginId: string): Promise<NextResponse | null> {
   // class is step 3 (no policy), an area the login lacks step 5.
   if (!cls) return accessRefusal(new AccessError('unclassified'));
   if (cls.kind === 'area') {
+    // On a row whose handler reads the pipeline's caller the gate's step 5
+    // refused a login without the area already (A4 step 3b part 4); this
+    // is the guard's own check, for the rows that still call it.
     if (!(await holdsArea(loginId, cls.area))) {
       return accessRefusal(new AccessError('area', undefined, { area: cls.area }));
     }

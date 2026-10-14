@@ -311,6 +311,31 @@ vi.mock('../lib/auth/session', async (importOriginal) => {
     sweepState.home = home ? JSON.stringify(home) : null;
     return value;
   };
+  // The gate's Admin step on a row whose handler reads the pipeline's
+  // caller and manages an area (A4 step 3b part 4): the login's effects are
+  // applied before step 5 (enterRouteLogin), and step 5 refuses a login
+  // without the area, before the pipeline's answer. Its refusal is that
+  // answer's entry, logged in the request slot (the actor after it), named
+  // by the row's reader as the answer would be: the guard refused there.
+  const { mapAccessError } = await import('@mantle/std');
+  const enterRouteLogin = real.enterRouteLogin as (fn: () => Promise<unknown>) => Promise<unknown>;
+  wrapped.enterRouteLogin = (fn: () => Promise<unknown>) =>
+    enterRouteLogin(async () => {
+      try {
+        return await fn();
+      } catch (err) {
+        const http = mapAccessError(err)?.http;
+        const row = (await import('../lib/auth/route-policy')).currentRoute();
+        if (http && row && !sweepState.log.some((l) => l.startsWith('pipeline:'))) {
+          const reader = readerOfRow(row.key);
+          const name = `pipeline:${row.caller}${reader.slice('ownerCaller'.length)}`;
+          sweepState.log.push(
+            `${name} R${http.status} ${JSON.stringify(http.body).slice(0, 300)} ${after()}`,
+          );
+        }
+        throw err;
+      }
+    });
   // The handler's read of it (any reader of the one list): the handler
   // goes no further, as after a guard that let a login through.
   const { CALLER_READERS: READERS } = await import('../../../eslint-rules/session-guards.mjs');

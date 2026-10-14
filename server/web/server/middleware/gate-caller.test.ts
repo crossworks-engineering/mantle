@@ -30,6 +30,8 @@ const LIMITED = '44444444-4444-4444-8444-444444444444';
 
 const counts = vi.hoisted(() => ({
   touches: 0,
+  /** An error the device token's stamp throws (the database). */
+  touchThrows: null as Error | null,
   handled: 0,
   audits: [] as string[],
   /** An error the audit row throws (the owner answer failing). */
@@ -66,6 +68,7 @@ vi.mock('../../lib/auth/login-row', () => {
     loadPersonalSpaceId: async () => null,
     loadBearerToken: async (jti: string) => counts.bearers.get(jti) ?? null,
     touchBearerToken: async () => {
+      if (counts.touchThrows) throw counts.touchThrows;
       counts.touches += 1;
     },
   };
@@ -171,6 +174,9 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
       { name: 'admin-bearer', headers: bearer(ADMIN) },
       { name: 'member-bearer', headers: bearer(MEMBER) },
       { name: 'revoked-bearer', headers: bearer(ADMIN, true) },
+      // An Admin user without the area, by device token (A4 step 3b part
+      // 4: the gate's Admin step refuses it after the stamp).
+      { name: 'limited-bearer', headers: bearer(LIMITED) },
     ];
     const { gate } = await import('./gate');
     const { registerRoutes } = await import('../route-loader');
@@ -765,6 +771,98 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
     const res = await drive(pipeline, 'GET', '/api/profile', creds[5]!.headers());
     expect(res.status).toBe(200);
     expect(res.touches).toBe(1);
+    // On an area row too, where the gate applies the login before its Admin
+    // step and the pipeline's answer takes it as applied; and once on the
+    // refusal of an Admin user without the area, as the guard stamped it.
+    const area = await drive(pipeline, 'GET', '/api/users', creds[5]!.headers());
+    expect(area.status).toBe(200);
+    expect(area.touches).toBe(1);
+    const refused = await drive(pipeline, 'GET', '/api/users', creds[8]!.headers());
+    expect(refused.status).toBe(403);
+    expect(JSON.parse(refused.body)).toMatchObject({ reason: 'area', area: 'users' });
+    expect(refused.touches).toBe(1);
+    expect(refused.handled).toBe(0);
+  });
+
+  it('an area row: the gate carries the Admin view, step 5 refuses without the area (part 4)', async () => {
+    const { gate } = await import('./gate');
+    const { registerRoutes } = await import('../route-loader');
+    const session = await import('../../lib/auth/session');
+    const { currentCaller } = await import('@mantle/db');
+    const app = new Hono();
+    app.use('*', gate());
+    registerRoutes(app, [
+      {
+        pattern: '/api/users',
+        methods: ['GET'],
+        catchAll: null,
+        catchAllOptional: false,
+        reads: ['GET'],
+        load: async () => ({
+          GET: async () => {
+            session.ownerCaller();
+            const admin = currentCaller()?.admin;
+            return Response.json({
+              admin: admin ? { holdsAdmin: admin.holdsAdmin, areas: [...admin.areas] } : admin,
+              actor: actorSetting(currentActor()!),
+            });
+          },
+        }),
+      },
+    ]);
+    // An Admin user with the area: step 5 read the view and let it through.
+    const ok = await app.request('/api/users', { headers: creds[1]!.headers() });
+    expect(ok.status).toBe(200);
+    expect(await ok.json()).toEqual({
+      admin: { holdsAdmin: true, areas: ['users'] },
+      actor: 'system:http:admin-area',
+    });
+    // Without it: the gate's refusal, in the guard's words; the handler
+    // never ran. A member and no login: the pipeline's answer, as before.
+    const no = await app.request('/api/users', { headers: creds[2]!.headers() });
+    expect(no.status).toBe(403);
+    expect(await no.json()).toEqual({
+      error: 'forbidden',
+      reason: 'area',
+      area: 'users',
+      message: 'You cannot manage this part of the brain.',
+    });
+    const member = await app.request('/api/users', { headers: creds[3]!.headers() });
+    expect(member.status).toBe(403);
+    expect(await member.json()).toMatchObject({ reason: 'member-login' });
+    expect((await app.request('/api/users')).status).toBe(401);
+  });
+
+  it('a stamp that fails before the Admin step is answered as the guard answered it, with CORS', async () => {
+    process.env.MANTLE_API_CORS_ORIGINS = 'https://client.example';
+    const busy = Object.assign(new Error('could not obtain lock'), { code: '55P03' });
+    try {
+      for (const error of [busy, new Error('database down')]) {
+        for (const cred of [creds[5]!, creds[8]!]) {
+          const answers = [];
+          for (const app of [pipeline, guarded]) {
+            counts.touchThrows = error;
+            counts.handled = 0;
+            const res = await app.request('/api/users', {
+              headers: { ...cred.headers(), origin: 'https://client.example' },
+            });
+            answers.push({
+              status: res.status,
+              body: await res.text(),
+              cors: [...res.headers.entries()].filter(([k]) => k.startsWith('access-control-')),
+              vary: res.headers.get('vary'),
+            });
+          }
+          const [a, b] = answers;
+          expect(a, `${error.message} ${cred.name}`).toEqual(b);
+          expect(a!.status).toBe(error === busy ? 409 : 500);
+          expect(a!.cors).toContainEqual(['access-control-allow-origin', 'https://client.example']);
+        }
+      }
+    } finally {
+      counts.touchThrows = null;
+      delete process.env.MANTLE_API_CORS_ORIGINS;
+    }
   });
 
   it('ownerCaller() where the pipeline answered no owner throws: fail closed', async () => {
