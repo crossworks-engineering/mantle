@@ -53,9 +53,11 @@ export type ToolItemTarget = Readonly<{ param: string; need: ItemNeed }>;
 export type ToolItemResolver = (
   input: Record<string, unknown>,
   ownerId: string,
-  /** The caller's surface, for a rule that depends on who calls. */
-  ctx?: Pick<ToolHandlerContext, 'surface'>,
-) => Promise<{ ids: string[]; need: ItemNeed }[]>;
+  /** The caller's surface, for a rule that depends on who calls; `queue`:
+   *  asked before a call is queued for approval (A5 step 6a), where a
+   *  reference that names nothing the scope reads is refused. */
+  ctx?: Pick<ToolHandlerContext, 'surface'> & { queue?: boolean },
+) => Promise<{ ids: string[]; need: ItemNeed; unresolved?: string }[]>;
 
 /** What a tool reaches outside the database. */
 export type ToolOutside = Readonly<{
@@ -105,6 +107,11 @@ export type ToolPolicy = Readonly<{
    *  builtin in step 1: the gate gets none today. */
   makesItems?: boolean;
   outside?: ToolOutside;
+  /** A create that lands in a folder named by its path (an ltree path, e.g.
+   *  `parent_path`): the argument. Before a call is queued for approval the
+   *  folder must resolve in the queuing turn's scope (A5 step 6a, carried
+   *  round-2 LOW-1: the approver's scope runs the create). */
+  createsIn?: string;
   /** Transitional (plan 8, 23.3 step 6b): the items its write names and
    *  what it needs of each, checked before it runs (builtinItems).
    *  Deleted per tool once the database's own edit check is on everywhere. */

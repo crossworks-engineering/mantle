@@ -109,7 +109,13 @@ export async function turnCallRefusal(
   const h = tool.handler as ToolHandler | null;
   const call = {
     args: input,
-    context: { ownerId: ctx.ownerId, ...(ctx.surface ? { surface: ctx.surface } : {}) },
+    // `queue`: a reference by slug or path must resolve in this scope (A5
+    // step 6a, carried round-2 LOW-1; gate-prerun.ts).
+    context: {
+      ownerId: ctx.ownerId,
+      ...(ctx.surface ? { surface: ctx.surface } : {}),
+      queue: true,
+    },
   };
   const facts = { ownerSurface: isOwnerSurface(ctx.surface), ownerId: ctx.ownerId };
   try {

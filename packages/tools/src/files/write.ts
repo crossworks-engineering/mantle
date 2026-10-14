@@ -25,7 +25,14 @@ import { edit } from '../item-write-gate';
 
 export const file_create: BuiltinToolDef = {
   slug: 'file_create',
-  policy: { effect: 'write', spends: 'none', scope: 'any', creates: 'file', keyArea: 'files' },
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: 'any',
+    creates: 'file',
+    keyArea: 'files',
+    createsIn: 'parent_path',
+  },
   name: 'Create / overwrite a file',
   description:
     'Create or overwrite a **named text file** in a specific folder (e.g. `notes.md`, `config.json`, `recipe.txt`). Use when the user asks for a file with a particular name/extension in a particular place. Filename is lowercased and sanitised automatically. ' +

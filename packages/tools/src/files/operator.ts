@@ -27,7 +27,14 @@ import { manage } from '../item-write-gate';
 
 export const folder_create: BuiltinToolDef = {
   slug: 'folder_create',
-  policy: { effect: 'write', spends: 'none', scope: 'any', creates: 'branch', keyArea: 'files' },
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: 'any',
+    creates: 'branch',
+    keyArea: 'files',
+    createsIn: 'parent_path',
+  },
   mcpOnly: true,
   name: 'Create a folder',
   description:
@@ -121,7 +128,14 @@ export const folder_delete: BuiltinToolDef = {
 
 export const file_upload: BuiltinToolDef = {
   slug: 'file_upload',
-  policy: { effect: 'write', spends: 'none', scope: 'any', creates: 'file', keyArea: 'files' },
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: 'any',
+    creates: 'file',
+    keyArea: 'files',
+    createsIn: 'parent_path',
+  },
   mcpOnly: true,
   name: 'Create or overwrite a file',
   description:

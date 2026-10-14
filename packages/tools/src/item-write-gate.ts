@@ -15,12 +15,14 @@
  * A create names no item (its folder's create check is the database's).
  * Outside a workspace scope nothing is checked: the surface rules decide.
  */
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import {
   apps,
   currentGateScope,
   db,
   itemWriteRefusalOf,
+  nodes,
+  scopeHoldsAdmin,
   withTurnScope,
   recallMaps,
   recallRevisions,
@@ -73,9 +75,16 @@ export const closeLinkTargets: Resolver = async (input, _ownerId, ctx) => {
   return id ? [{ ids: [id], need: 'edit' }] : [];
 };
 
+/** The refusal of a reference (a Recall map by its slug, a create's
+ *  target folder by its path) that names nothing the queuing scope reads
+ *  (A5 step 6a, carried round-2 LOW-1), in the item check's words. */
+export function refNotInScopeError(what: string, lookup: string): string {
+  return `${what} is not in your workspaces: it is in a workspace you are not in (add yourself to it first), or there is no such one (find it with ${lookup}).`;
+}
+
 /** A recall map, by slug, former slug or id, as the recall tools take it. */
 export function recallMap(need: ItemNeed): Resolver {
-  return async (input, ownerId) => {
+  return async (input, ownerId, ctx) => {
     const ref = typeof input.map === 'string' ? input.map.trim() : '';
     if (!ref) return [];
     // Resolved in the scope: a map it does not read is the tool's own "not
@@ -83,8 +92,55 @@ export function recallMap(need: ItemNeed): Resolver {
     // recall tools' module defines builtins, which import this one.
     const { mapRef } = await import('./builtins-recall-write');
     const map = await mapRef(ownerId, ref);
-    return map ? [{ ids: [map.id], need }] : [];
+    if (map) return [{ ids: [map.id], need }];
+    // Before a call is queued for approval (A5 step 6a, carried round-2
+    // LOW-1): the approver's scope may read the map this scope does not, so
+    // a reference that names nothing here is refused now, never queued.
+    if (ctx?.queue) {
+      return [
+        { ids: [], need, unresolved: refNotInScopeError(`Recall map '${ref}'`, 'recall_index') },
+      ];
+    }
+    return [];
   };
+}
+
+/**
+ * Before a call is queued for approval (A5 step 6a, carried round-2 LOW-1):
+ * a create whose target folder is named by its path (the policy's
+ * `createsIn`) and does not resolve in the queuing scope is refused, in the
+ * item check's words. The approved call runs in the approver's scope, which
+ * may read (and create in) a folder this scope does not. A path that names
+ * no folder at all is refused too: queued, it would be made wherever the
+ * approver's scope puts it. A kind's root (`files`: one label, structure,
+ * not content, read whatever the scope holds as upsertFile reads it) and a
+ * scope that holds the Admin workspace (it queues for an approver of the
+ * same workspace) are not asked. Outside a workspace scope nothing is
+ * checked.
+ */
+export async function createFolderRefusal(
+  param: string | undefined,
+  input: Record<string, unknown>,
+  ownerId: string,
+): Promise<string | null> {
+  if (!param) return null;
+  const path = typeof input[param] === 'string' ? input[param].trim() : '';
+  if (!path || !path.includes('.')) return null;
+  if (!currentWorkspaceScope()) {
+    const g = currentGateScope();
+    if (!g) return null;
+    return withTurnScope(g, () => createFolderRefusal(param, input, ownerId));
+  }
+  if (await scopeHoldsAdmin()) return null;
+  // Read in the scope: its row rules decide what it sees.
+  const [seen] = await db
+    .select({ id: nodes.id })
+    .from(nodes)
+    .where(
+      and(eq(nodes.ownerId, ownerId), eq(nodes.type, 'branch'), sql`${nodes.path}::text = ${path}`),
+    )
+    .limit(1);
+  return seen ? null : refNotInScopeError(`Folder ${path}`, 'folder_list / tree_list');
 }
 
 /**
@@ -184,7 +240,7 @@ export async function toolItemWriteRefusal(
   items: ToolItems,
   input: Record<string, unknown>,
   ownerId: string,
-  ctx?: Pick<ToolHandlerContext, 'surface'>,
+  ctx?: Pick<ToolHandlerContext, 'surface'> & { queue?: boolean },
 ): Promise<string | null> {
   return (await toolItemWriteRefusalOf(items, input, ownerId, ctx))?.message ?? null;
 }
@@ -195,7 +251,7 @@ export async function toolItemWriteRefusalOf(
   items: ToolItems,
   input: Record<string, unknown>,
   ownerId: string,
-  ctx?: Pick<ToolHandlerContext, 'surface'>,
+  ctx?: Pick<ToolHandlerContext, 'surface'> & { queue?: boolean },
 ): Promise<ItemWriteRefusal | null> {
   if (!currentWorkspaceScope()) {
     // Under the rollback switch the login's own scope answers the check
@@ -205,11 +261,14 @@ export async function toolItemWriteRefusalOf(
     return withTurnScope(g, () => toolItemWriteRefusalOf(items, input, ownerId, ctx));
   }
   if (!items) return null;
-  const sets =
+  const sets: { ids: string[]; need: ItemNeed; unresolved?: string }[] =
     typeof items === 'function'
       ? await items(input, ownerId, ctx)
       : items.map((t) => ({ ids: idsOf(input[t.param]), need: t.need }));
   for (const set of sets) {
+    // A reference that names nothing the scope reads, asked before a call
+    // is queued (`unresolved`, A5 step 6a): the item check's not-in-scope.
+    if (set.unresolved) return { message: set.unresolved, detail: 'no_read' };
     const refused = await itemWriteRefusalOf(set.ids, set.need);
     if (refused) return refused;
   }

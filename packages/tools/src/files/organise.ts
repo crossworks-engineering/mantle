@@ -66,7 +66,14 @@ export const file_move: BuiltinToolDef = {
 
 export const file_copy: BuiltinToolDef = {
   slug: 'file_copy',
-  policy: { effect: 'write', spends: 'none', scope: 'any', creates: 'file', keyArea: 'files' },
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: 'any',
+    creates: 'file',
+    keyArea: 'files',
+    createsIn: 'dest_path',
+  },
   name: 'Copy a file',
   description:
     "Copy ONE file into another folder — a genuinely NEW file with its own id and its own indexing under the destination folder's mode; nothing links it to the original. Pass `new_filename` to copy under a different name (the way past a name clash). To relocate rather than duplicate, use `file_move`.",
@@ -160,7 +167,14 @@ export const folder_move: BuiltinToolDef = {
 
 export const folder_copy: BuiltinToolDef = {
   slug: 'folder_copy',
-  policy: { effect: 'write', spends: 'none', scope: 'any', creates: 'branch', keyArea: 'files' },
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: 'any',
+    creates: 'branch',
+    keyArea: 'files',
+    createsIn: 'dest_parent_path',
+  },
   name: 'Copy a folder',
   description:
     'Copy a folder — subtree included — under another parent. Every copy is a NEW file that re-indexes under the destination, so this costs extraction in proportion to the file count and refuses above 200 files (copy subfolders individually, or flag the destination name-only first to make the copy index-free). To relocate without duplicating, use `folder_move`.',

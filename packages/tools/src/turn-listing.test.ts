@@ -65,6 +65,13 @@ vi.mock('./external-access', async (importOriginal) => ({
   connectorResources: async (_owner: string, _group: string, ws: readonly string[]) =>
     ws.map((workspaceId) => ({ workspaceId, write: true })),
 }));
+// A Recall map by its slug (A5 step 6a, carried round-2 LOW-1): only
+// `known` names a map the scope reads.
+vi.mock('./builtins-recall-write', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./builtins-recall-write')>()),
+  mapRef: async (_ownerId: string, ref: string) =>
+    ref === 'known' ? { id: 'map-node', version: 1, slug: 'known' } : null,
+}));
 vi.mock('./preconditions', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./preconditions')>()),
   checkToolPreconditions: async () => null,
@@ -252,6 +259,19 @@ describe('a call that needs approval meets the gate before it is queued (A5 step
     expect(await refusalIn(owner, ownerView(), builtinRow('telegram_send'))).toBeNull();
     expect(await refusalIn(owner, ownerView(), shell)).toBeNull();
     expect(await refusalIn(member, memberView(), builtinRow('note_create'))).toBeNull();
+  });
+
+  it('a Recall map named by a slug the scope does not read is refused before it is queued (round-2 LOW-1)', async () => {
+    const refused = await refusalIn(
+      member,
+      memberView(),
+      builtinRow('recall_card_put'),
+      undefined,
+      {
+        map: 'secret',
+      },
+    );
+    expect(refused).toMatch(/^Recall map 'secret' is not in your workspaces/);
   });
 
   it('the refusal agrees with the listing for every tool, in both scopes and on both surfaces', async () => {

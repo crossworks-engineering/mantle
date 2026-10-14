@@ -29,7 +29,7 @@ import {
 import { mcpVia } from './gate-callers';
 import { editCheckRefusalError, errorMessage } from '@mantle/std';
 import { checkToolPreconditions } from './preconditions';
-import { builtinItems, toolItemWriteRefusalOf } from './item-write-gate';
+import { builtinItems, createFolderRefusal, toolItemWriteRefusalOf } from './item-write-gate';
 import { keySharedContentRefusal } from './key-shared-content';
 import { tableBuiltin } from './tool-policy';
 import type { ToolHandlerContext } from './types';
@@ -45,6 +45,10 @@ export type PreRunContext = Readonly<{
    *  edit check refuses is the database's, as before it ran through
    *  dispatch, never the pre-check's words as a 400. */
   entry?: 'api-v1';
+  /** Asked before a call is queued for approval (turnCallRefusal, A5 step
+   *  6a, carried round-2 LOW-1): a reference by slug or path that names
+   *  nothing the queuing scope reads is refused, never queued. */
+  queue?: boolean;
 }>;
 
 function contextOf(context: Readonly<Record<string, unknown>> | undefined): PreRunContext | null {
@@ -84,7 +88,16 @@ export const itemPrecheck: PreRunCheck = async (caller, _policy, ref, call) => {
     const items = builtinItems(builtin.slug, builtin.handler);
     refused = await toolItemWriteRefusalOf(items, input, ctx.ownerId, {
       ...(ctx.surface ? { surface: ctx.surface } : {}),
+      ...(ctx.queue ? { queue: true } : {}),
     });
+    if (!refused && ctx.queue) {
+      const folder = await createFolderRefusal(
+        tableBuiltin(builtin.handler)?.policy.createsIn,
+        input,
+        ctx.ownerId,
+      );
+      if (folder) return folder;
+    }
   } catch (err) {
     // An MCP call's surface answers a thrown error itself, as it always
     // has (A5 step 4), and so does a /api/v1 route (its app.onError, as
