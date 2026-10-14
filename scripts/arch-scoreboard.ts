@@ -45,6 +45,8 @@ const LABELS: Record<string, string> = {
   brainOnWorkspacesFiles: 'files calling brainOnWorkspacesNow',
   adminReadsFiles: 'files naming MANTLE_ADMIN_READS',
   readPathWrites: 'named writes inside read paths',
+  routeBodyReadFiles: 'route files reading the request body directly (A10 part 2)',
+  routeBodyReadAllowed: 'route files named to read the body another way (A10 part 2)',
   store_tabledb_files: 'files reaching the tables write API (A3b)',
   store_objectstore_files: 'files reaching the object store write API (A3b)',
   store_appdb_files: 'files reaching the app database write API or APP_DB_DIR (A3b)',

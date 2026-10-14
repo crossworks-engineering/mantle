@@ -13,7 +13,9 @@
  *    pipeline answers (ownerCaller(), A4 step 3b);
  *  - TS kind lists (a list literal holding 5 or more node_type values);
  *  - switch-over code (brainOnWorkspacesNow calls, MANTLE_ADMIN_READS);
- *  - store write API importers (the disk stores of plan section 6).
+ *  - store write API importers (the disk stores of plan section 6);
+ *  - route files that read their request body directly (A10 part 2, fold
+ *    1), outside and inside the named list (route-plumbing.mjs).
  *
  * Comment lines never count. Product files only: packages/, server/,
  * scripts/; no tests, migrations, archive or build folders (a route segment
@@ -23,6 +25,7 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { CALLER_READERS, SESSION_GUARDS } from './session-guards.mjs';
+import { BODY_READ_ALLOW, directBodyReads } from './route-plumbing.mjs';
 
 /** Whether the counts read `path` (repo-relative). */
 export function isCounted(path) {
@@ -528,6 +531,8 @@ export function measure(root) {
   let bowFiles = 0;
   let adminReadsFiles = 0;
   const bareFetch = {};
+  const bodyReadFiles = [];
+  const bodyReadAllowed = [];
   for (const f of files) {
     const text = readRepoFile(root, f);
     if (text === null) continue;
@@ -548,6 +553,9 @@ export function measure(root) {
     for (const s of storesReached(text)) stores[s].push(f);
     if (isRouteFile(f)) {
       routeFiles += 1;
+      if (directBodyReads(stripComments(text))) {
+        (BODY_READ_ALLOW[f] ? bodyReadAllowed : bodyReadFiles).push(f);
+      }
       if (f.startsWith('server/web/app/api/')) apiRouteFiles += 1;
       const gone = isGoneStub(text);
       if (gone) goneStubs += 1;
@@ -606,8 +614,21 @@ export function measure(root) {
       adminReadsFiles,
       readPathWrites: readPathWrites(root).length,
       bareFetchSites: sum(bareFetch),
+      routeBodyReadFiles: bodyReadFiles.length,
+      routeBodyReadAllowed: bodyReadAllowed.length,
       ...Object.fromEntries(Object.entries(stores).map(([k, v]) => [`store_${k}_files`, v.length])),
     },
-    perFile: { asSystem, rawAcl, toolLists, routeLists, kinds, stores, liveUnguardedFiles, bareFetch },
+    perFile: {
+      asSystem,
+      rawAcl,
+      toolLists,
+      routeLists,
+      kinds,
+      stores,
+      liveUnguardedFiles,
+      bareFetch,
+      bodyReadFiles,
+      bodyReadAllowed,
+    },
   };
 }

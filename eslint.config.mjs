@@ -24,6 +24,7 @@ import mantleNoModelInTxPlugin from './eslint-rules/no-model-in-transaction.mjs'
 import mantleOwnerCallerPlugin from './eslint-rules/owner-caller-imports.mjs';
 import mantleNoGuardCallsPlugin from './eslint-rules/no-guard-calls.mjs';
 import mantleEgressPlugin from './eslint-rules/no-bare-fetch.mjs';
+import mantleRoutePlumbingPlugin from './eslint-rules/route-plumbing.mjs';
 
 export default tseslint.config(
   {
@@ -265,6 +266,15 @@ export default tseslint.config(
     ignores: ['**/*.test.{ts,tsx}', '**/*.spec.{ts,tsx}', '**/scripts/**'],
     plugins: { 'mantle-egress': mantleEgressPlugin },
     rules: { 'mantle-egress/no-bare-fetch': 'error' },
+  },
+  {
+    // A route reads its body through the one reader (A10 part 2):
+    // readBody(req, Schema) or readJson(req), never req.json() and the
+    // like. The files that read it another way are named in the rule.
+    files: ['server/web/app/**/route.ts'],
+    ignores: ['**/*.test.{ts,tsx,mts,cts,js,jsx,mjs,cjs}'],
+    plugins: { 'mantle-plumbing': mantleRoutePlumbingPlugin },
+    rules: { 'mantle-plumbing/no-direct-body-reads': 'error' },
   },
   {
     // Tests + one-shot scripts: relax rules that only make sense for shipped code.

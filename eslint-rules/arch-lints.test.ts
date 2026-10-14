@@ -147,6 +147,15 @@ describe('the architecture ratchets (pinned counts)', () => {
     expect(got.numbers.guardCallFiles).toBe(0);
   });
 
+  it('no-direct-body-reads (A10 part 2): every route reads its body through the one reader', async () => {
+    // readBody / readJson (server/web/lib/read-body.ts); the files that
+    // read it another way are named with their reason, and each still does.
+    const { BODY_READ_ALLOW } = await import('./route-plumbing.mjs');
+    expect(got.perFile.bodyReadFiles).toEqual([]);
+    expect(got.numbers.routeBodyReadFiles).toBe(0);
+    expect([...got.perFile.bodyReadAllowed].sort()).toEqual(Object.keys(BODY_READ_ALLOW).sort());
+  });
+
   it('every live route that reads no caller is a public row (A4 exit)', async () => {
     // An /api/v1 alias reads where the handler it takes reads (the count
     // follows it); what is left judges its own credential and reads no
