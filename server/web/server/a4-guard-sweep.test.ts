@@ -38,8 +38,20 @@
  * byte for byte. The moved entries, as logged, are recorded in a
  * third file (`__snapshots__/a4-guard-sweep-moved.txt`), one line per cell
  * whose entry moved, so each move is on the record and reviewed.
+ *
+ * What a write did on the side (its audit rows, the create home) is in no
+ * recorded file. A moved write's is recorded as the pipeline drove it
+ * (`a4-guard-sweep-moved-writes.txt`, part 4), and since part 5 fix round 1
+ * the guard path's too: every cell of a write a guard still answers, keyed
+ * by the guard's name (`a4-guard-sweep-guard-writes.txt`), with the
+ * any-login audit row its caller writes by hand after the guard
+ * (workspaceCaller(), POST /api/auth/pair: the sweep stops those handlers
+ * once that row is written). That file is the baseline: when a row moves,
+ * its cells stay in it under the guard its reader replaced, and the test
+ * holds each to the guard path's record before it compares the file, so a
+ * lost or a doubled audit row fails by cell.
  */
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -70,6 +82,14 @@ const sweepState = vi.hoisted(() => ({
    *  only, in a file of its own (the recorded files never see them). */
   audits: [] as string[],
   home: null as string | null,
+  /** The create home the request noted, by whichever path noted it (the
+   *  guard's or the pipeline's): the guard writes' record (A4 step 3b part
+   *  5 fix round 1), read alike on both paths. */
+  noted: null as string | null,
+  /** A guard let a login through to a caller that writes the any-login
+   *  audit row by hand after it (auditLoginMutation): the handler stops
+   *  there, once the row is written. */
+  awaitingAudit: false,
 }));
 
 const loginRow = (
@@ -238,6 +258,10 @@ vi.mock('@mantle/db', async (importOriginal) => {
     withViewer: ((actsFor, fn) =>
       sweepState.reads ? fn() : real.withViewer(actsFor, fn)) as typeof real.withViewer,
     loginScopeFor: async (loginId: string) => ({ kind: 'user', loginId, ws: [], modWs: [] }),
+    noteRequestCreateHome: ((home) => {
+      sweepState.noted = JSON.stringify(home);
+      real.noteRequestCreateHome(home);
+    }) as typeof real.noteRequestCreateHome,
     brainOnWorkspacesNow: async () => true,
     createHomeIntent: async () => ({ createWs: null, privateWs: null }),
   };
@@ -348,9 +372,21 @@ vi.mock('../lib/auth/session', async (importOriginal) => {
       throw new SweepStop();
     };
   }
+  // The any-login audit its caller writes by hand (workspaceCaller(), POST
+  // /api/auth/pair): written, then the handler goes no further.
+  const auditLoginMutation = real.auditLoginMutation as (login: unknown) => Promise<void>;
+  wrapped.auditLoginMutation = async (login: unknown) => {
+    await auditLoginMutation(login);
+    if (!sweepState.awaitingAudit) return;
+    sweepState.awaitingAudit = false;
+    throw new SweepStop();
+  };
+  const { callerAuditsAfter } = await import('./a4-guard-sweep.readers');
   for (const name of GUARDS) {
     const fn = real[name] as (...a: unknown[]) => Promise<unknown>;
     wrapped[name] = async (...args: unknown[]) => {
+      // Who called, taken before the first await.
+      const stack = new Error().stack ?? '';
       let value: unknown;
       try {
         value = await fn(...args);
@@ -368,6 +404,10 @@ vi.mock('../lib/auth/session', async (importOriginal) => {
       }
       sweepState.log.push(`${name} ok ${summarize(value)} ${after()}`);
       if (value === null) return value;
+      if (callerAuditsAfter(stack)) {
+        sweepState.awaitingAudit = true;
+        return value;
+      }
       throw new SweepStop();
     };
   }
@@ -376,7 +416,7 @@ vi.mock('../lib/auth/session', async (importOriginal) => {
 
 import { SESSION_COOKIE_NAME, RENDER_COOKIE_NAME } from '../lib/auth-constants';
 import { KEY_TOKENS } from './a4-guard-sweep.keys';
-import { READER_ANSWERS } from '../../../eslint-rules/session-guards.mjs';
+import { READER_ANSWERS, SESSION_GUARDS } from '../../../eslint-rules/session-guards.mjs';
 import { auditsAsWrite, isReadRequest } from '../lib/auth/route-scope';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -437,7 +477,31 @@ const OWNER_DECISION_ROWS: ReadonlySet<string> = new Set([
   'POST /api/updates/check',
 ]);
 const ownerDecision = new Map<string, string>();
+/**
+ * The guard writes (A4 step 3b part 5 fix round 1): every cell of a write
+ * (auditsAsWrite) a guard or the pipeline answered, keyed by the sweep, the
+ * cell and the guard names its entries stand for (a moved entry under the
+ * guard it replaced, as in the recorded files), to what the request wrote
+ * on the side: its audit rows (a hand-written any-login row included:
+ * workspaceCaller(), POST /api/auth/pair) and the create home the request
+ * noted. `moved`: its entry is the pipeline's.
+ */
+const guardWrites = new Map<string, { side: string; moved: boolean }>();
+const GUARD_NAMES: ReadonlySet<string> = new Set(SESSION_GUARDS);
+function noteGuardWrite(sweep: string, cell: string): void {
+  const names = sweepState.log
+    .map((l) => l.split(' ')[0]!)
+    .filter((n) => GUARD_NAMES.has(n) || LEGACY_NAMES[n]);
+  if (names.length === 0) return;
+  const [method = '', pattern = ''] = cell.split(' ');
+  if (!auditsAsWrite(method, isReadRequest(method, pattern) ? 'read' : 'write')) return;
+  guardWrites.set(`${sweep} ${cell} ${names.map((n) => LEGACY_NAMES[n] ?? n).join(',')}`, {
+    side: `audits=${JSON.stringify(sweepState.audits)} home=${sweepState.noted ?? '-'}`,
+    moved: names.some((n) => n.startsWith('pipeline:')),
+  });
+}
 function noteMoved(sweep: string, cell: string, answer: string): string {
+  noteGuardWrite(sweep, cell);
   if (OWNER_DECISION_ROWS.has(cell.split(' ').slice(0, 2).join(' '))) {
     ownerDecision.set(`${sweep} ${cell}`, answer);
   }
@@ -592,6 +656,8 @@ describe.skipIf(!hasManifest)('A4 step 3a: every guard answers as on main', () =
     sweepState.log.length = 0;
     sweepState.audits.length = 0;
     sweepState.home = null;
+    sweepState.noted = null;
+    sweepState.awaitingAudit = false;
     const url = cred.query ? `${path}${path.includes('?') ? '&' : '?'}${cred.query}` : path;
     const res = await app.request(url, {
       method,
@@ -614,6 +680,11 @@ describe.skipIf(!hasManifest)('A4 step 3a: every guard answers as on main', () =
       if (type.includes('json') && (sweepState.log.length > 0 || res.status >= 400)) {
         parts.push(text.slice(0, 300));
       }
+    }
+    if (sweepState.awaitingAudit) {
+      throw new Error(
+        `${method} ${path} ${cred.name}: the handler ran past its guard without the audit row`,
+      );
     }
     for (const line of sweepState.log) parts.push(`[${line}]`);
     return parts.join(' ');
@@ -831,5 +902,60 @@ describe.skipIf(!hasManifest)('A4 step 3a: every guard answers as on main', () =
         '',
       ].join('\n'),
     ).toMatchFileSnapshot('./__snapshots__/a4-guard-sweep-moved-writes.txt');
+  });
+
+  it('holds what each guard write did on the side when its row moves (A4 step 3b part 5 fix round 1)', async () => {
+    // The guard path's baseline: every cell of a write a guard still
+    // answers, its audit rows and the create home noted, keyed by the guard
+    // names (a4-guard-sweep-guard-writes.txt). A row that moves keeps its
+    // cells here under the guard its reader replaced, now as the pipeline
+    // drove them, and each must match the guard path's record: a lost or a
+    // doubled audit row (the any-login row folded into the answer step) or
+    // another create home fails here, by cell, before the file is
+    // compared. The cells that moved before this file was recorded are in
+    // the moved writes file only.
+    const file = join(here, '__snapshots__/a4-guard-sweep-guard-writes.txt');
+    const baseline = new Map<string, string>();
+    if (existsSync(file)) {
+      const sides = new Map<string, string>();
+      let section = '';
+      for (const line of readFileSync(file, 'utf8').split('\n')) {
+        if (line.startsWith('#')) section = line;
+        else if (!line) continue;
+        else if (section.startsWith('# what a guard write did')) {
+          const at = line.indexOf(' ');
+          sides.set(line.slice(0, at), line.slice(at + 1));
+        } else {
+          const at = line.lastIndexOf('=');
+          baseline.set(line.slice(0, at), sides.get(line.slice(at + 1))!);
+        }
+      }
+    }
+    const kept = [...guardWrites].filter(([cell, w]) => !w.moved || baseline.has(cell));
+    expect(kept.length).toBeGreaterThan(0);
+    const now = new Map(kept.map(([cell, w]) => [cell, w.side]));
+    const changed = [...baseline]
+      .filter(([cell, side]) => now.get(cell) !== side)
+      .map(([cell, side]) => `${cell}: guard path ${side}; now ${now.get(cell) ?? 'no such cell'}`);
+    expect(changed).toEqual([]);
+    const answers = new Map<string, string>();
+    const lines = kept.map(([cell, w]) => {
+      let id = answers.get(w.side);
+      if (!id) {
+        id = `g${answers.size + 1}`;
+        answers.set(w.side, id);
+      }
+      return `${cell}=${id}`;
+    });
+    await expect(
+      [
+        '# what a guard write did on the side: its audit rows, the create home noted',
+        ...[...answers].map(([side, id]) => `${id} ${side}`),
+        '',
+        `# cells of a write a guard answered (by its name; a moved one under the guard it replaced): ${kept.length}`,
+        ...lines,
+        '',
+      ].join('\n'),
+    ).toMatchFileSnapshot('./__snapshots__/a4-guard-sweep-guard-writes.txt');
   });
 });
