@@ -33,11 +33,14 @@ stay free of node builtins). On top of the platform fetch:
 - **Secret headers across origins.** On a hop to another origin it drops
   Authorization, Cookie and Proxy-Authorization by name (as the platform
   does) and any header whose value carries one of the caller's `secrets`
-  (the platform keeps custom headers such as `x-api-key`). A 307 or 308
-  replays the body, so a 307 or 308 to another origin is refused when the
-  caller has `secrets` and the request has a body (an OAuth2 client_secret
-  in a form body, an API tool's body); the body is not searched, since it
-  may be a stream.
+  (the platform keeps custom headers such as `x-api-key`). Only 301, 302,
+  303, 307 and 308 are followed, as the platform does; any other 3xx comes
+  back as the response. A hop keeps the body unless it is a 303 or a 301 or
+  302 on POST (the platform's downgrade to GET), so a PUT on a 301 or a
+  PATCH on a 302 replays it just as a 307 or 308 does. Any hop to another
+  origin that keeps the body is refused when the caller has `secrets` (an
+  OAuth2 client_secret in a form body, an API tool's body); the body is not
+  searched, since it may be a stream.
 - **A deadline** (`timeoutMs`) over the whole exchange, body included. It
   aborts the way the callers' own timers did, so the error reads the same.
 - **A streamed byte cap** (`maxBytes`): reading stops at the cap, either as

@@ -91,6 +91,10 @@ export const PLATFORM_MAX_REDIRECTS = 20;
 /** Dropped by name on a hop to another origin, matching the platform. */
 const CROSS_ORIGIN_STRIP = new Set(['authorization', 'cookie', 'proxy-authorization']);
 
+/** The redirect statuses the platform follows (fetch spec); any other 3xx,
+ *  Location or not, is the response. */
+const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
+
 /** Statuses whose response carries no body (a Response cannot be built with
  *  one). */
 const NULL_BODY = new Set([101, 103, 204, 205, 304]);
@@ -431,10 +435,13 @@ function capBody(
 /**
  * fetch a URL that came from outside, with the address check on every hop,
  * secret headers dropped across origins, an optional deadline and an
- * optional streamed byte cap. Method and body downgrade on a redirect as
- * the platform does: 303 always goes to GET, a 301 or 302 on POST goes to
- * GET; 307 and 308 keep both, except that a 307 or 308 to another origin
- * is refused when the caller has `secrets` and the request has a body.
+ * optional streamed byte cap. Only 301, 302, 303, 307 and 308 are followed,
+ * as the platform does; any other 3xx comes back as the response. Method and
+ * body downgrade on a redirect as the platform does: a 303 goes to GET
+ * (HEAD stays HEAD), a 301 or 302 on POST goes to GET; every other hop keeps
+ * both. A hop to another origin that would keep the body is refused when the
+ * caller has `secrets` (a PUT on a 301 or a PATCH on a 302 replays it just
+ * as a 307 or 308 does).
  */
 export async function egressFetch(
   input: RequestInfo | URL,
@@ -509,7 +516,7 @@ export async function egressFetch(
       ...(body instanceof ReadableStream ? { duplex: 'half' } : {}),
     } as RequestInit);
     const location = res.headers.get('location');
-    if (res.status < 300 || res.status >= 400 || !location) {
+    if (!REDIRECT_STATUSES.has(res.status) || !location) {
       return opts.maxBytes === undefined
         ? res
         : capBody(res, opts.maxBytes, opts.overflow ?? 'error', currentUrl);
@@ -519,16 +526,15 @@ export async function egressFetch(
 
     const next = new URL(location, currentUrl);
     const crossOrigin = next.origin !== new URL(currentUrl).origin;
-    if (
-      crossOrigin &&
-      (res.status === 307 || res.status === 308) &&
-      body != null &&
-      carriers.length > 0
-    ) {
-      // A 307 or 308 replays the body, and a caller with secrets may carry
-      // one there (an OAuth2 client_secret in a form body, an API tool's
-      // body). The body may be a stream, so it is not searched: any body
-      // from a caller with secrets stays on its origin.
+    // The platform's downgrade (fetch spec, HTTP-redirect fetch step 12).
+    const downgrade =
+      (res.status === 303 && method !== 'GET' && method !== 'HEAD') ||
+      ((res.status === 301 || res.status === 302) && method === 'POST');
+    if (crossOrigin && !downgrade && body != null && carriers.length > 0) {
+      // A hop that keeps the body replays it, and a caller with secrets may
+      // carry one there (an OAuth2 client_secret in a form body, an API
+      // tool's body). The body may be a stream, so it is not searched: any
+      // body from a caller with secrets stays on its origin.
       throw new EgressRefusedError(
         `refusing to resend the request body to another origin on a ${res.status} redirect`,
       );
@@ -541,7 +547,7 @@ export async function egressFetch(
         ),
       );
     }
-    if (res.status === 303 || ((res.status === 301 || res.status === 302) && method === 'POST')) {
+    if (downgrade) {
       method = 'GET';
       body = undefined;
       headers = Object.fromEntries(Object.entries(headers).filter(([k]) => !/^content-/i.test(k)));

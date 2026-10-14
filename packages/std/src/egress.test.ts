@@ -477,3 +477,112 @@ describe('DNS rebinding: the connection is pinned to a checked address', () => {
     expect(inits.map((i) => 'dispatcher' in i)).toEqual([false, true]);
   });
 });
+
+describe('redirects on a real loopback pair: which statuses follow, which bodies replay', () => {
+  // Two origins (two ports on 127.0.0.1): `from` answers /<status> with
+  // that status and a Location on `to`; `to` records what arrived.
+  let from: http.Server;
+  let to: http.Server;
+  let toBase = '';
+  let fromBase = '';
+  let arrived: Array<{ method: string; body: string }> = [];
+
+  beforeAll(async () => {
+    to = http.createServer((q, s) => {
+      let body = '';
+      q.on('data', (c: Buffer) => (body += c.toString()));
+      q.on('end', () => {
+        arrived.push({ method: q.method ?? '', body });
+        s.end('landed');
+      });
+    });
+    await new Promise<void>((r) => to.listen(0, '127.0.0.1', r));
+    toBase = `http://127.0.0.1:${(to.address() as AddressInfo).port}`;
+    from = http.createServer((q, s) => {
+      q.resume();
+      q.on('end', () => {
+        const status = Number(q.url!.slice(1));
+        s.writeHead(status, { location: `${toBase}/collect` });
+        s.end();
+      });
+    });
+    await new Promise<void>((r) => from.listen(0, '127.0.0.1', r));
+    fromBase = `http://127.0.0.1:${(from.address() as AddressInfo).port}`;
+  });
+  afterAll(() => {
+    from.close();
+    to.close();
+  });
+  afterEach(() => {
+    arrived = [];
+  });
+
+  const go = (status: number, method: string, secrets?: string[]) =>
+    egressFetch(
+      `${fromBase}/${status}`,
+      { method, ...(method === 'GET' || method === 'HEAD' ? {} : { body: 'token=SEKRET' }) },
+      { allowLan: true, timeoutMs: 3000, ...(secrets ? { secrets } : {}) },
+    );
+
+  it('returns any 3xx the platform does not follow as the response, Location or not', async () => {
+    for (const status of [300, 304, 305, 306, 309, 399]) {
+      for (const method of ['GET', 'POST']) {
+        const res = await go(status, method, ['SEKRET']);
+        expect(res.status, `${status} ${method}`).toBe(status);
+        await res.body?.cancel();
+      }
+    }
+    expect(arrived).toEqual([]);
+  });
+
+  it('refuses any cross-origin hop that keeps the body when the caller has secrets', async () => {
+    const kept: Array<[number, string]> = [
+      [301, 'PUT'],
+      [301, 'PATCH'],
+      [301, 'DELETE'],
+      [302, 'PUT'],
+      [302, 'PATCH'],
+      [307, 'POST'],
+      [307, 'PUT'],
+      [308, 'POST'],
+      [308, 'PATCH'],
+    ];
+    for (const [status, method] of kept) {
+      await expect(go(status, method, ['SEKRET']), `${status} ${method}`).rejects.toThrow(
+        new RegExp(`resend the request body to another origin on a ${status}`),
+      );
+    }
+    expect(arrived).toEqual([]);
+  });
+
+  it('follows a hop that drops the body, as the platform does', async () => {
+    const dropped: Array<[number, string]> = [
+      [301, 'POST'],
+      [302, 'POST'],
+      [303, 'POST'],
+      [303, 'PUT'],
+      [303, 'PATCH'],
+    ];
+    for (const [status, method] of dropped) {
+      const res = await go(status, method, ['SEKRET']);
+      expect(await res.text(), `${status} ${method}`).toBe('landed');
+    }
+    expect(arrived).toEqual(dropped.map(() => ({ method: 'GET', body: '' })));
+  });
+
+  it('replays the body across origins for a caller without secrets, as the platform does', async () => {
+    for (const [status, method] of [
+      [301, 'PUT'],
+      [302, 'PATCH'],
+      [307, 'POST'],
+    ] as const) {
+      const res = await go(status, method);
+      expect(await res.text()).toBe('landed');
+    }
+    expect(arrived).toEqual([
+      { method: 'PUT', body: 'token=SEKRET' },
+      { method: 'PATCH', body: 'token=SEKRET' },
+      { method: 'POST', body: 'token=SEKRET' },
+    ]);
+  });
+});
