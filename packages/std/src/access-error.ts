@@ -326,6 +326,36 @@ const READ_ONLY_APP_MESSAGE = 'This app is Informational: its data is read only.
 const RO_ACTOR_MESSAGE = 'This caller only reads: it cannot change anything.';
 const ITEM_WORKSPACE_MESSAGE = 'You cannot change this item in your workspaces.';
 
+/** What a tool says for a CREATE the workspace checks refused (A5 step 5
+ *  fix round 1, L6), by the database's message: the HTTP answer stays the
+ *  item-workspace 403 (its body, byte for byte), but "You cannot change
+ *  this item" misleads a tool that made nothing. The create home's two
+ *  refusals (mantle_default_home, 0267), the write role's create check
+ *  (0278, 0279, 0281) and its row rule, which an insert and a move out of
+ *  what the scope reads both meet. */
+const CREATE_REFUSAL_TOOL_TEXT: ReadonlyArray<readonly [RegExp, string]> = [
+  [/^this kind of item lives in the Admin workspace only/, ADMIN_KIND_CREATE_ERROR],
+  [
+    /^no workspace to create this item in/,
+    'There is no workspace you may create this item in: none of your workspaces may hold it here.',
+  ],
+  [
+    /^not allowed to create an item in that workspace/,
+    'You cannot create items in that workspace. Create it in one of your own workspaces instead.',
+  ],
+  [
+    /^new row violates row-level security policy/,
+    'This would put the item outside what your workspaces may change, so it was not saved.',
+  ],
+];
+
+/** The tool text of an item-workspace refusal: a create's own words, else
+ *  ITEM_WORKSPACE_MESSAGE. */
+function itemWorkspaceToolText(message: string): string {
+  for (const [re, text] of CREATE_REFUSAL_TOOL_TEXT) if (re.test(message)) return text;
+  return ITEM_WORKSPACE_MESSAGE;
+}
+
 /** The database's refusal, read (see mapAccessError). */
 function databaseRefusal(err: unknown): AccessRefusal | null {
   const pg = findDatabaseError(err);
@@ -398,7 +428,7 @@ function databaseRefusal(err: unknown): AccessRefusal | null {
         message: ITEM_WORKSPACE_MESSAGE,
       },
     },
-    toolText: ITEM_WORKSPACE_MESSAGE,
+    toolText: itemWorkspaceToolText(typeof pg.message === 'string' ? pg.message : ''),
   };
 }
 

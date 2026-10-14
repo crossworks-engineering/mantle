@@ -66,11 +66,30 @@ const Q3_TOOL_TEXT: ReadonlyMap<string, string> = new Map([
   ],
   ['not allowed to edit this item', 'You cannot change this item in your workspaces.'],
   ['not allowed to move this item', 'You cannot change this item in your workspaces.'],
+  // A create's own words since fix round 1 (L6).
   [
     'new row violates row-level security policy for table "nodes"',
-    'You cannot change this item in your workspaces.',
+    'This would put the item outside what your workspaces may change, so it was not saved.',
   ],
 ]);
+
+/** The create refusals (L6): their tool text, by the database's message. */
+const CREATE_TOOL_TEXT: ReadonlyArray<readonly [string, string]> = [
+  ['this kind of item lives in the Admin workspace only', ADMIN_KIND_CREATE_ERROR],
+  [
+    'no workspace to create this item in',
+    'There is no workspace you may create this item in: none of your workspaces may hold it here.',
+  ],
+  [
+    'not allowed to create an item in that workspace',
+    'You cannot create items in that workspace. Create it in one of your own workspaces instead.',
+  ],
+  [
+    'new row violates row-level security policy for table "nodes"',
+    'This would put the item outside what your workspaces may change, so it was not saved.',
+  ],
+];
+const CREATE_MESSAGES = new Set(CREATE_TOOL_TEXT.map(([m]) => m));
 
 describe('mapAccessError: the tool text', () => {
   it('is what databaseErrorPublic said before A3c, but the reasons Q3 names (A5 step 5)', () => {
@@ -92,7 +111,9 @@ describe('mapAccessError: the tool text', () => {
       const r = mapAccessError(err);
       if (!r || r.kind !== 'database' || !r.http) continue;
       const message = (r.http.body as { message?: string; error?: string }).message;
-      if (r.http.status === 403) expect(r.toolText, (err as Error).message).toBe(message);
+      if (r.http.status === 403 && !CREATE_MESSAGES.has((err as Error).message)) {
+        expect(r.toolText, (err as Error).message).toBe(message);
+      }
     }
     expect(databaseErrorPublic(pgError('not allowed to change this item', 'no_read'))).toBe(
       'not found',
@@ -100,6 +121,30 @@ describe('mapAccessError: the tool text', () => {
     expect(
       databaseErrorPublic(pgError('This folder holds items you cannot move.', 'hidden_rows')),
     ).toBe(HIDDEN_ROWS_PUBLIC);
+  });
+
+  it("a create the workspace checks refused says a create's words; its HTTP body stays item-workspace (fix round 1, L6)", () => {
+    const itemWorkspace =
+      '{"error":"forbidden","reason":"item-workspace","code":"forbidden","message":"You cannot change this item in your workspaces."}';
+    for (const [message, text] of CREATE_TOOL_TEXT) {
+      for (const err of [
+        pgError(message),
+        pgError(message, 'no_edit'),
+        Object.assign(new Error('Failed query: insert into nodes ...'), {
+          cause: pgError(message),
+        }),
+      ]) {
+        const r = mapAccessError(err)!;
+        expect(r.toolText, message).toBe(text);
+        expect(databaseErrorPublic(err), message).toBe(text);
+        expect(r.http?.status, message).toBe(403);
+        expect(JSON.stringify(r.http?.body), message).toBe(itemWorkspace);
+      }
+    }
+    // A change that is no create keeps the item-workspace words.
+    expect(mapAccessError(pgError('not allowed to edit this item', 'no_edit'))?.toolText).toBe(
+      'You cannot change this item in your workspaces.',
+    );
   });
 
   it('a gate refusal says its own words', () => {

@@ -2225,3 +2225,13 @@ scope, then holds.
   and the outer handler hands its text to the route as the 400 body.
   `dispatchTool` now runs such a call under `maskToolDatabaseErrors`
   (`packages/tools/src/dispatch-api-v1-nested.test.ts`).
+- **L6: a refused create says a create's words in a tool.** The mapper's
+  item-workspace branch also reads the create refusals (the create home's
+  "this kind of item lives in the Admin workspace only" and "no workspace
+  to create this item in", the write role's "not allowed to create an item
+  in that workspace", and the row rule's "new row violates row-level
+  security policy", which an insert and a move out of what the scope reads
+  both meet). Their tool text is now a create's own words
+  (`ADMIN_KIND_CREATE_ERROR` for the first); the HTTP answer stays the
+  item-workspace 403, its body byte for byte
+  (`packages/std/src/access-error.test.ts`).
