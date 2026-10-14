@@ -99,6 +99,27 @@ vi.mock('../../lib/audit', async (importOriginal) => ({
   },
 }));
 
+// The API keys (the guard sweep's): verified by their token, every budget
+// open.
+vi.mock('../../lib/access-keys', async (importOriginal) => {
+  const real = await importOriginal<typeof import('../../lib/access-keys')>();
+  const { KEY_GRANTS } = await import('../a4-guard-sweep.keys');
+  const open = { ok: true as const, remaining: 1, retryAfterSec: 0 };
+  return {
+    ...real,
+    verifyAccessKey: async (token: string) => {
+      const grant = KEY_GRANTS[token];
+      return grant ? { ok: true as const, grant } : { ok: false as const, reason: 'unknown' };
+    },
+    rateLimitAccessKey: () => open,
+    rateLimitKeySearch: () => open,
+    failedKeyBudget: () => open,
+    countFailedKey: () => undefined,
+    touchAccessKey: () => undefined,
+    auditKeyRefusal: () => undefined,
+  };
+});
+
 const here = dirname(fileURLToPath(import.meta.url));
 const hasManifest = existsSync(join(here, '../route-manifest.gen.ts'));
 
@@ -176,6 +197,18 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
         // POST whose guard checks the item as a write.
         { pattern: '/api/notes/:id', methods: ['PATCH', 'DELETE'] },
         { pattern: '/api/formulas/:id/evaluate', methods: ['POST'] },
+        // More of batch 3's writes (A4 step 3b part 4, the part 3 audit):
+        // the v1 alias of a create (an API key's write), an item write that
+        // needs manage, an item named through a share, a Recall revision and
+        // a deleted app's snapshot, and an app's data write (its item read:
+        // the app; D6's Informational switch is the database's, after the
+        // gate).
+        { pattern: '/api/v1/notes', methods: ['POST'] },
+        { pattern: '/api/pages/:id/move', methods: ['POST'] },
+        { pattern: '/api/shares/:id', methods: ['DELETE'] },
+        { pattern: '/api/recall/revisions/:id/restore', methods: ['POST'] },
+        { pattern: '/api/apps/deleted/:id', methods: ['DELETE'] },
+        { pattern: '/api/apps/:id/db-broker', methods: ['POST'] },
       ].map((e) => ({
         ...e,
         catchAll: null,
@@ -329,6 +362,152 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
     expect(met).toMatch(/^403 .*"reason":"workspace"/m);
     expect(met).toMatch(/^400 /m);
     expect(met).toMatch(/^200 $/m);
+  });
+
+  it('more writes (part 3 audit): keys, manage, shares, revisions, deleted apps, app data', async () => {
+    const { KEY_TOKENS } = await import('../a4-guard-sweep.keys');
+    const key = (token: string) => () => ({ authorization: `Bearer ${token}` });
+    // An API key's write on the v1 alias of a create: a key with every
+    // area, read-only, one without the notes area, a member's.
+    const keyCreds = [
+      { name: 'write-key', headers: key(KEY_TOKENS.write) },
+      { name: 'read-key', headers: key(KEY_TOKENS.read) },
+      { name: 'area-key', headers: key(KEY_TOKENS.writeArea) },
+      { name: 'member-key', headers: key(KEY_TOKENS.member) },
+    ];
+    const ID = '11111111-1111-4111-8111-111111111111';
+    const WS = '66666666-6666-4666-8666-666666666666';
+    const may = (edit: boolean, manage = edit, copy = false) => [{ edit, manage, copy }];
+    // What the item-write check finds for an item the id names itself:
+    // the statements' answers in order.
+    const node: Record<string, unknown[][]> = {
+      'may-edit': [may(true)],
+      'edit-not-manage': [may(true, false)],
+      'may-not': [may(false)],
+      'read-only-copy': [may(true, true, true)],
+      'not-in-scope': [[], [{ one: 1 }]],
+      'no-such-item': [[], []],
+    };
+    // Through a share (an app's link needs manage) or a Recall revision:
+    // the lookup first, then the item's answers; a lookup that names no
+    // item.
+    const through = (first: unknown[]) =>
+      Object.fromEntries(Object.entries(node).map(([k, v]) => [k, [first, ...v]]));
+    const share = {
+      ...through([{ id: ID, type: 'page' }]),
+      ...Object.fromEntries(
+        Object.entries(through([{ id: ID, type: 'app' }])).map(([k, v]) => [`app-${k}`, v]),
+      ),
+      'no-item': [[{ id: null, type: null }]],
+    };
+    const revision = { ...through([{ id: ID }]), 'no-item': [[{ id: null }]] };
+    // A deleted app's last snapshot: no home stored, a home its Moderator
+    // manages or not, deleted by someone other than the owner, none.
+    const deleted: Record<string, unknown[][]> = {
+      'no-home': [[{ home: null, held: false }]],
+      'home-manage': [[{ home: WS, held: false }], [{ manage: true }]],
+      'home-not-manage': [[{ home: WS, held: false }], [{ manage: false }]],
+      held: [[{ home: WS, held: true }]],
+      'no-snapshot': [[]],
+    };
+    const odd = (id: string) => [
+      encodeURIComponent(id).replace(/1/g, '%31'),
+      'not-an-item',
+      '%E0%A4%A',
+    ];
+    const cells: Array<[string, string, string, Record<string, unknown[][]>]> = [];
+    const each = (
+      method: string,
+      path: (id: string) => string,
+      cases: Record<string, unknown[][]>,
+    ) => {
+      cells.push([method, path(ID), 'item', cases]);
+      // The encoded id is checked as the id it decodes to; the others are
+      // the not-found answer, for every login.
+      for (const id of odd(ID)) cells.push([method, path(id), 'odd', cases]);
+    };
+    each('POST', (id) => `/api/pages/${id}/move`, node);
+    each('DELETE', (id) => `/api/notes/${id}`, node);
+    each('DELETE', (id) => `/api/shares/${id}`, share);
+    each('POST', (id) => `/api/recall/revisions/${id}/restore`, revision);
+    each('DELETE', (id) => `/api/apps/deleted/${id}`, deleted);
+    each('POST', (id) => `/api/apps/${id}/db-broker`, node);
+    const seenAnswers = new Set<string>();
+    const compare = async (
+      cell: string,
+      method: string,
+      path: string,
+      cred: { name: string; headers: () => Record<string, string> },
+      setup: () => void,
+    ) => {
+      const answers = [];
+      for (const app of [pipeline, guarded]) {
+        setup();
+        answers.push(await drive(app, method, path, cred.headers()));
+      }
+      const [a, b] = answers;
+      const label = `${cell} ${method} ${path} ${cred.name}`;
+      // A refusal never reaches the pipeline's handler; the guard's handler
+      // ran unless the key gate refused first (both alike then).
+      if (a!.status >= 400) expect(a!.handled, label).toBe(0);
+      expect({ ...a, handled: 0 }, label).toEqual({ ...b, handled: 0 });
+      seenAnswers.add(`${a!.status} ${a!.status >= 400 ? a!.body : ''}`);
+    };
+    try {
+      for (const [method, path, kind, cases] of cells) {
+        for (const [name, exec] of Object.entries(kind === 'odd' ? { odd: [] } : cases)) {
+          for (const cred of creds) {
+            await compare(name, method, path, cred, () => {
+              counts.exec = exec.map((r) => [...(r as unknown[])]);
+            });
+          }
+        }
+      }
+      // The key's create, and a ?ws= the create-home intent lands or
+      // refuses, by key and by cookie.
+      const homes: Record<string, Record<string, unknown>> = {
+        none: { createWs: null, privateWs: null },
+        lands: { createWs: WS, privateWs: null },
+        'refused-workspace': { refused: 'workspace', message: 'You are not in that workspace.' },
+      };
+      for (const [home, answer] of Object.entries(homes)) {
+        for (const path of ['/api/v1/notes', `/api/v1/notes?ws=${WS}`]) {
+          for (const cred of [...keyCreds, ...creds]) {
+            await compare(home, 'POST', path, cred, () => {
+              counts.home = answer;
+            });
+          }
+        }
+      }
+    } finally {
+      counts.exec = [];
+      counts.home = { createWs: null, privateWs: null };
+    }
+    const met = [...seenAnswers].join('\n');
+    // Every answer of these write paths was met, the same through both.
+    expect(met).toContain('You cannot change this item in your workspaces.');
+    expect(met).toContain('Add yourself to it first.');
+    expect(met).toContain('read-only copy');
+    expect(met).toContain('only the owner deletes it for good');
+    expect(met).toMatch(/^404 \{"ok":false,"error":"not found"\}$/m);
+    expect(met).toMatch(/^403 .*"reason":"workspace"/m);
+    expect(met).toMatch(/^403 .*"member-login"/m);
+    expect(met).toMatch(/^401 /m);
+    expect(met).toMatch(/^200 $/m);
+    // The key's write reached the handler, its audit row naming the key's
+    // login, the create home the guard named.
+    counts.home = { createWs: WS, privateWs: null };
+    try {
+      const a = await drive(pipeline, 'POST', `/api/v1/notes?ws=${WS}`, keyCreds[0]!.headers());
+      expect(a.status).toBe(200);
+      expect(JSON.parse(a.body)).toMatchObject({
+        owner: { actor: { id: ADMIN } },
+        home: counts.home,
+      });
+      expect(a.audits).toEqual([`api.write POST /api/v1/notes ${ADMIN}`]);
+    } finally {
+      counts.home = { createWs: null, privateWs: null };
+    }
   });
 
   it('a create lands where the guard put it, and the audit row names the login', async () => {
