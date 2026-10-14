@@ -1874,6 +1874,135 @@ the count is 0, A4 exit):
   /api/v1/files/:id/download with its base;
 - then delete `getOwnerOr401`.
 
+**HTTP, A4 step 3b hand batch part B (A4 step 3b exit).** No answer
+changed. The last guards a handler called, and the ones the count did not
+see. After it no route handler calls a session guard: the gate answers
+every caller a route reads, and `getOwnerOr401` is gone.
+
+**What moved.**
+
+- **The byte routes** (eager, answered before the handler as every kind
+  of part 5 is): `GET /api/attachments/:id`, `GET /api/export/:id` and `GET
+/api/profile/photo` read `ownerAssetCaller()` (what `getOwnerForAsset`
+  answers: the session, an `?at=` asset token, the render cookie); `GET
+/api/draws/:id/svg` and `GET /api/files/files/:id` (with its /api/v1
+  alias and `GET /api/v1/files/:id/download`) read `readerAssetCaller()`
+  (`getReaderForAsset`: an Admin user, or a member on a read open to it);
+  the two retired member byte routes (`/api/member/files/:id`,
+  `/api/member/draws/:id/svg`) are `gone('member-asset')` stubs whose gone
+  row the gate answers with `getMemberForAsset` (`goneForMemberAsset`
+  went). The caller kinds are `ownerAsset`, `readerAsset` and
+  `memberAsset` (a gone row only).
+- **The frame documents** (`GET /api/apps/:id/frame`, `GET
+/api/member/apps/:id/frame`), which read no guard: they read
+  `frameTicketCaller()`, the `?t=` frame ticket the gate verified, or null
+  (kind `frame`, only on `FRAME_ROWS`, route-policy.ts; no login is looked
+  up for them, as before). It refuses nothing: what the ticket may open
+  (this app, a live Admin user or member) is still checked by the handler,
+  in the order it was.
+- **The public rows that read the login** (answered at the read, below):
+  `GET /api/auth/whoami`, `POST /api/auth/logout`, `POST
+/api/auth/change-password`, `POST /api/auth/pair` (with the `audit` row)
+  and `GET /api/auth/pair/:id`, `GET` and `POST /api/oauth/authorize` read
+  `publicLoginCaller()` (what `getLoginOr401` answers; kind `publicLogin`);
+  `POST /api/auth/sso` reads `cookieUpgradeCaller()`
+  (`getCookieUpgradeLoginOr401`, kind `cookieUpgrade`), passed to
+  `handleOwnerSso` (lib/owner-sso.ts) as the read it runs after its
+  throttle and origin check. `ruleInQuery` went: whoami runs its body in
+  `inRuleInQuery`, the one exit site, and reads the login inside it, where
+  its guard ran.
+- **`PATCH /api/pages/:id` and its /api/v1 wrapper**: the page route's
+  PATCH reads `await ownerCallerAtRead()` (kind `ownerAtRead`), so the v1
+  wrapper's key rules (the hidden email page, `key-publish`,
+  `key-shared-item`) still come before the owner's answer, its item check
+  and its audit row.
+- **`GET /api/v1/files/:id/download` with its base**: the base reads the
+  asset reader (above); the wrapper sets the query it hands the base and is
+  a marked hand case (`// route-callers: hand case`: it runs nothing and
+  answers nothing before the call).
+
+**The optional login of a public row.** A public row judges its own
+credential: its handler runs checks of its own before it reads the login
+(the cross-site refusal and the body of logout and change password, the
+SSO throttle and origin check, the remote MCP switch and the client's
+validation of the OAuth consent), and those must not pay a lookup, stamp a
+device token or write an audit row. So the gate binds the answer and the
+handler's first read runs it, once, where the guard was called (an answer
+taken at the read: `AtRead`, session.ts; `ANSWERED_AT_READ`,
+route-policy.ts); every later read is the same answer. It never refuses:
+no login reads as null, and the handler answers it as it did (the 401 of
+`unauthorizedRefusal()`, the one mapper's, its own words, or carrying on).
+A public row may read only a public kind, and a public kind is read only on
+a public row (`callerServes`, route-policy.ts). The same timing serves
+`ownerAtRead`, whose refusal is thrown (`RouteRefusal`) and answered by the
+app's onError as the guard's was returned (server/app-error.ts), with the
+gate's CORS headers: the handler cannot answer in its place. The generator
+asks no read-first order of a kind taken at the read
+(`KINDS_AT_READ`, route-callers.ts).
+
+**The asset rows.** The asset guards read the request, not only the
+credential: its `?at=` token, its path and method (the render cookie). The
+gate runs them before the handler on the request as the handler is handed
+it: the request as sent, except `GET /api/v1/files/:id/download`, whose
+route file hands the bytes handler `?raw=1` alone, so a `?at=` sent there
+was never read and still is not (`ASSET_QUERY_AS_HANDED`, route-policy.ts;
+gate-caller.test.ts drives a member's session with an Admin user's token on
+both rows). Their refusal is the gate's, before the handler, as on every
+eager row. The two credentials only these rows take, the asset token and
+the render cookie, are in the sweep and in the parity cells. A share
+link's visitor reads bytes through the /s routes, which judge the token
+themselves and read no caller (link-render-sweep, unchanged).
+
+**The proof.** The guard sweep: the two recorded files, the owner
+decision's file, the two decision files of part A and the guard writes
+baseline are byte for byte (every moved write cell held to the guard
+path's audit rows and create home, by cell). An answer taken at the read
+is logged at the read, under its reader's entry, as the guard's was; the
+frame ticket logs nothing, as nothing was logged there. The moved snapshot
+holds 12313 cells (11863 after part A: 248 cells of the 18 byte rows, 202
+of the 10 public and page rows; no old cell changed) and the moved writes
+file 5065 cells (4951). `gate-caller.test.ts` serves the byte routes, the
+frame document and the rows taken at the read twice, through the reader
+and through the guard, for every credential (the anchor, an Admin user,
+one with no area, a member, a gone login, by cookie and by device token, a
+revoked token, no login, a write key, a member key, an Admin user's and a
+member's `?at=` token alone and beside a session, the render cookie, an
+Admin user's, a member's and a bogus frame ticket), comparing the status,
+headers, body, audit rows and the stamp; and a handler that answers before
+its read stamps no device and writes no audit row through both.
+
+**A4 exit.** `getOwnerOr401` and `getOwnerOr401WithSource` went, and the
+two page guards no one called any more (`requireOwner`,
+`requireOwnerWithSource`); `RETIRED_GUARDS` (session-guards.mjs) keeps the
+two names the sweep's recorded files spell. The guards that stay are the
+gate's (answerRouteCaller runs them) and the render pages' own
+(`requireOwnerForRender`, server/pages/print.ts: pages, not routes of the
+manifest). `no-guard-calls` is a hard ban now, an ESLint rule on every
+script file under server/web (tests and session.ts aside, the render pages
+named): a session guard imported, read off an object or destructured is an
+error.
+
+Pins: guard calls 7 to 0 and files with a guard call 7 to 0 (held at 0 by
+arch-lints.test.ts and the rule); reads of the caller 492 to 508, in 352 to
+364 files; live routes calling no guard 43 to 20. The count follows an
+alias now (an /api/v1 file that takes a handler from a route file reading
+the caller reads where it does, as the generator follows it), and the 20
+left are each a public row that reads no login (sign-in, token, signup and
+invite routes, the OAuth token and registration, federation, MCP, the
+appearance and version routes): arch-lints.test.ts holds each to a public
+path.
+
+Rows carrying a caller: 980 of 1043 (945 after part A): 742 owner, 90
+login, 26 chat, 85 member, 2 session, 6 ownerAsset, 8 readerAsset, 4
+memberAsset, 4 frame, 10 publicLogin, 1 cookieUpgrade, 2 ownerAtRead. The
+63 without one are each a public row.
+
+**Left on a guard:** nothing in a route handler. The render pages keep
+`requireOwnerForRender` (they redirect to sign-in, and A4 step 2 runs them
+through the gate in an actor slot of their own). Test files that stand in
+`getOwnerOr401` in a module mock (from before their handlers read the
+caller) stand in nothing now; they are left as they are.
+
 **The eight steps** of `enterCall`, in order (the pre-run slot between
 steps 5 and 6):
 

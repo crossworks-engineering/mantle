@@ -13,12 +13,15 @@ What is here:
   the Hono app in `server/web/server/app.ts` through the generated route manifest.
   Auth: the gate (`server/web/server/middleware/gate.ts`) answers 401 to any `/api/**`
   request without a credential unless the path is in `PUBLIC_PATHS`
-  (`lib/auth-constants.ts`); every handler then re-authenticates with
-  `getOwnerOr401()` (owner), `getMemberOr401()` (member login) or
-  `resolveActiveShareByToken()` (an open share link, `/s/<token>`). Since
-  A4 step 3b an owner route reads the caller the gate answered instead,
-  `const owner = ownerCaller()`, and calls no guard; the guard calls are
-  pinned as a ceiling (`docs/actors.md`, A4 step 3b). Which rows the gate
+  (`lib/auth-constants.ts`). A handler calls no session guard (a hard
+  lint ban since A4 exit, `eslint-rules/no-guard-calls.mjs`): it reads the
+  caller the gate answered for its row, `const owner = ownerCaller()` (or
+  `memberCaller()`, `loginCaller()`, `chatLoginCaller()`, the asset and
+  frame readers; a public row reads its login at the read with
+  `await publicLoginCaller()`), the one list being
+  `eslint-rules/session-guards.mjs`; an open share link (`/s/<token>`)
+  judges its token with `resolveActiveShareByToken()` (`docs/actors.md`,
+  A4 step 3b and the hand batches). Which rows the gate
   answers is read from the route files when the manifest is generated
   (`pnpm -C server/web route-manifest`; `predev`, `build`, `typecheck` and
   vitest run it). `pnpm dev` (`tsx watch`) does not: after converting a

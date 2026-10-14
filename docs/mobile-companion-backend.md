@@ -51,13 +51,13 @@ url, expiresAt, ttlSeconds}` and shows `url` (`<brain>/pair#v=1&code=…`,
   never reads the fragment.
 - **Client contract:** a revoked/expired token still passes the stateless Edge
   gate (revocation is enforced in the Node layer). The JSON API routes below gate
-  with **`getOwnerOr401()`**, which returns a clean **401 `{error:'unauthorized'}`**
+  with the owner guard, which returns a clean **401 `{error:'unauthorized'}`**
   in that case, not a redirect. (HTML _page_ routes still use `requireOwner()` →
   **307 → /login**.) The app treats **401 OR 3xx→/login** as "session invalid".
-- **`getOwnerOr401()`** (`lib/auth.ts`) is the gate for programmatic JSON routes:
-  it returns `SessionUser | NextResponse`, so the handler does
-  `const owner = await getOwnerOr401(); if (owner instanceof NextResponse) return owner;`.
-  Used by dashboard-summary, conversations, read, and avatar.
+- The owner guard (`getOwnerOr401WithLogin`, `lib/auth/session.ts`) is the gate for
+  programmatic JSON routes. Since A4 exit the gate runs it for the route's row before
+  the handler and answers its refusal; the handler reads the owner it let through,
+  `const owner = ownerCaller();` (`docs/actors.md`).
 
 ## Dashboard summary
 

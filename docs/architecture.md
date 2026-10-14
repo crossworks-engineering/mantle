@@ -316,7 +316,8 @@ What changed:
   `/login` on 401, and (for SSE) carry the bearer + reconnect with backoff, so the
   same components work same-origin in the browser **and** detached in Electron / a
   remote-API dev session.
-- **Bearer-auth + CORS across `/api`.** Every route gates on `getOwnerOr401()` and
+- **Bearer-auth + CORS across `/api`.** Every route is gated (since A4 exit by the
+  gate itself, which answers the row's caller before the handler: `docs/actors.md`) and
   returns a clean **401** (not a login redirect) when unauthenticated, with opt-in
   CORS for a separate origin. The mobile bearer token (`k:'m'`) and a desktop token
   (`k:'a'`) ride the `Authorization` header; the cookie path now _rejects_ kinded
