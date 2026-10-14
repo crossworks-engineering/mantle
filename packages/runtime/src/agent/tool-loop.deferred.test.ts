@@ -39,7 +39,8 @@ vi.mock('@mantle/tools', async () => {
         '../../../tools/src/gate-callers',
       )
     ).turnCaller,
-    UNTRUSTED_CONTENT_TOOL_SLUGS: new Set<string>(),
+    builtinPolicy: () => null,
+    policyUntrusted: () => false,
     PRIVATE_OUTPUT_TOOL_SLUGS: new Set<string>(),
     getDynamicSchema: () => undefined,
     dispatchTool: vi.fn(async (tool: { slug: string }, input: Record<string, unknown>) => {

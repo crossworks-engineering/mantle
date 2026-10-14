@@ -1,18 +1,19 @@
 /**
  * ToolPolicy (workspaces arch plan v2, sections 8 and 23.2; A5): what a
  * built-in tool is, for every check that asks, declared ONCE on its
- * definition (BuiltinToolDef.policy). It replaces the lists keyed by tool
- * name: each @mantle/tools access list is now a VIEW of the policy table
- * (policySlugSet, policySlugMap, policySlugList below), equal to the list it
- * replaced (packages/runtime/src/tool-policy-snapshot.test.ts holds every
- * list's literal value from before the policies existed).
+ * definition (BuiltinToolDef.policy). It replaced the lists keyed by tool
+ * name: A5 step 1 made each @mantle/tools access list a view of the policy
+ * table, and A5 step 6a deleted the views: every consumer reads the tool's
+ * policy (packages/runtime/src/tool-policy-snapshot.test.ts still holds
+ * every list's literal value from before the policies existed, and derives
+ * each from the policies it now reads).
  *
  * The policy table is the builtin registry (registry.ts fills it with every
  * builtin, and registerBuiltin adds a process's own, the heartbeat tools).
  * It lives in this module, which imports no builtin, so a module a builtin
- * imports (admin-gate.ts, item-write-gate.ts) can hold a view without an
- * import cycle. A view is read live: a builtin registered later is in it.
- * A view read before the registry has loaded throws (fail closed), never
+ * imports (admin-gate.ts, item-write-gate.ts) can read a policy without an
+ * import cycle. It is read live: a builtin registered later is in it. A
+ * lookup before the registry has loaded throws (fail closed), never
  * answers from an empty table.
  *
  * The gate (@mantle/db gate.ts) reads a tool's policy as a GatePolicy:
@@ -20,7 +21,7 @@
  * source (A5 step 2). The surface's own hand-written tools are definitions
  * with a policy too (@mantle/mcp-core mcp-defs.ts); their policies are the
  * leaf mcp-surface-policies.ts, loaded here as the surface table in every
- * process, for the views that name them.
+ * process (namedToolPolicy reads it).
  */
 import type { ItemKind } from '@mantle/client-types/kinds';
 import type { GatePolicy, ItemNeed, ScopeArea } from '@mantle/db';
@@ -31,15 +32,16 @@ import { MCP_SURFACE_POLICIES } from './mcp-surface-policies';
 export type ToolScope =
   /** Anyone the narrowers let through. */
   | 'any'
-  /** A scope that holds the Admin workspace (ADMIN_ONLY_TOOL_SLUGS, or an
-   *  ownerOnly tool not in OWNER_ONLY_IN_SCOPE). */
+  /** A scope that holds the Admin workspace (an ownerOnly tool with this
+   *  scope too; an ownerOnly tool of any other scope runs in any user's
+   *  scope). */
   | 'admin'
   /** It makes a kind of the Admin workspace only: a scope that holds Admin. */
   | 'admin-kind'
-  /** A scope that holds Admin with this Admin area on (TOOL_ADMIN_AREAS).
+  /** A scope that holds Admin with this Admin area on (policyArea).
    *  `systemWhole`: it then runs whole on the system pool
-   *  (AREA_SYSTEM_TOOLS). `adminOnly`: it is adminOnly as well
-   *  (isAdminOnlyTool says so; the area step asks Admin anyway). */
+   *  (policySystemWhole). `adminOnly`: it is adminOnly as well
+   *  (policyAdminOnly says so; the area step asks Admin anyway). */
   | Readonly<{ area: ScopeArea; systemWhole?: true; adminOnly?: true }>;
 
 /** One item a write names: the argument holding its id (a list for an
@@ -59,14 +61,15 @@ export type ToolItemResolver = (
 export type ToolOutside = Readonly<{
   /** How it reaches out. */
   via?: 'link' | 'send' | 'publish' | 'web' | 'http' | 'shell' | 'sandbox' | 'peer';
-  /** Every result it returns is fenced as data before a model reads it, by
-   *  its name (UNTRUSTED_CONTENT_TOOL_SLUGS: the web fetch and search, a
-   *  mini app's error log and rows). Not every tool that returns
+  /** Every result it returns is fenced as data before a model reads it
+   *  (policyUntrusted: the web fetch and search, a mini app's error log
+   *  and rows, mail, Telegram's inbound, a linked brain's reads). Not
+   *  every tool that returns
    *  third-party content: others are fenced per result, by the
    *  ToolHandlerResult `untrusted` flag (untrusted.ts). */
   untrusted?: true;
-  /** It is in the heartbeat egress set (heartbeats/fire.ts
-   *  HEARTBEAT_EGRESS_SLUGS): an unattended heartbeat fire parks it for
+  /** It reaches out (heartbeats/fire.ts reads it): an unattended
+   *  heartbeat fire parks it for
    *  approval when the egress gate is on. Since A5 step 5: the mail, web,
    *  Telegram and linked-brain sends (docs/actors.md says which and why the
    *  peer reads are not). Marking another one changes what a heartbeat fire
@@ -94,7 +97,7 @@ export type ToolPolicy = Readonly<{
    *  it, spends-drift.test.ts pins it). Never with spends `none`. */
   startsModelWork?: true;
   scope: ToolScope;
-  /** It creates an item of this workspace kind (CREATE_TOOL_SLUGS: MCP's
+  /** It creates an item of this workspace kind (MCP's
    *  workspace argument, gate step 6). A create of an Admin-only kind is
    *  scope `admin-kind` instead. */
   creates?: ItemKind;
@@ -103,29 +106,29 @@ export type ToolPolicy = Readonly<{
   makesItems?: boolean;
   outside?: ToolOutside;
   /** Transitional (plan 8, 23.3 step 6b): the items its write names and
-   *  what it needs of each, checked before it runs (ITEM_WRITE_TARGETS).
+   *  what it needs of each, checked before it runs (builtinItems).
    *  Deleted per tool once the database's own edit check is on everywhere. */
   items?: readonly ToolItemTarget[] | ToolItemResolver;
   /** A key or a linked brain bound to the owner calls it only when the
-   *  owner named it (isPeerRiskyTool). */
+   *  owner named it (the gate's peer narrower). */
   peerRisky?: true;
   /** The API key area it belongs to (toolKeyArea); unset: none, open only to
    *  an all-areas key. */
   keyArea?: string;
   /** A list a key outside the Search area reads without email attachments
-   *  (key-email-guard.ts LIST_TOOLS). */
+   *  (key-email-guard.ts). */
   keyEmail?: true;
   /** It changes the content of a page or a note that others may read: a
-   *  key or a peer may not (key-scope.ts KEY_SHARED_CONTENT_TOOLS). */
+   *  key or a peer may not (the gate's key-shared-content check). */
   keySharedContent?: true;
-  /** A recipe step may call it (default) or not (RECIPE_FORBIDDEN_SLUGS);
-   *  a run item may call it (default) or not (BANNED_ITEM_TOOLS). */
+  /** A recipe step may call it (default) or not (policyRecipeForbidden);
+   *  a run item may call it (default) or not (policyRunItemBanned). */
   recipe?: Readonly<{ step?: 'ok' | 'forbidden'; runItem?: 'ok' | 'banned' }>;
   /** Whether a call hands content to clients or the public: a tainted turn
    *  queues it (client-sourced.ts). Default never. */
   lowering?: 'never' | 'always' | ((input: Record<string, unknown>) => boolean);
   /** A team app may call it (default, by its other rules) or never
-   *  (MEMBER_APP_REFUSED_SLUGS). */
+   *  (member-app-tools.ts memberAppRefusedName). */
   memberApp?: 'ok' | 'refused';
 }>;
 
@@ -152,8 +155,8 @@ export function toGatePolicy(tp: ToolPolicy): GatePolicy {
   });
 }
 
-/** Whether a policy's tool is adminOnly (isAdminOnlyTool's answer for its
- *  own slug): scope `admin`, or an area scope marked `adminOnly`. */
+/** Whether a policy's tool is adminOnly: scope `admin`, or an area scope
+ *  marked `adminOnly`. */
 export function policyAdminOnly(tp: ToolPolicy): boolean {
   return tp.scope === 'admin' || (typeof tp.scope === 'object' && tp.scope.adminOnly === true);
 }
@@ -168,10 +171,8 @@ export function policyLowers(tp: ToolPolicy, input: Record<string, unknown>): bo
 
 const TABLE = new Map<string, BuiltinToolDef>();
 let loaded = false;
-/** Bumped on every change, so a view refills only when the table moved. */
-let version = 0;
 
-/** Thrown when a view is read before the registry filled the table. */
+/** Thrown when the table is read before the registry filled it. */
 export class PolicyTableNotLoadedError extends Error {
   constructor() {
     super(
@@ -211,13 +212,11 @@ export function withPolicyFlags<T extends BuiltinToolDef>(def: T): T {
 export function loadPolicyTable(defs: readonly BuiltinToolDef[]): void {
   for (const def of defs) TABLE.set(def.slug, withPolicyFlags(def));
   loaded = true;
-  version += 1;
 }
 
 /** Registry only: add (or replace) one builtin. */
 export function putPolicyTable(def: BuiltinToolDef): void {
   TABLE.set(def.slug, withPolicyFlags(def));
-  version += 1;
 }
 
 /** The builtin registered under `slug`, or null. Throws before the
@@ -250,9 +249,9 @@ export type SurfaceToolDef = Readonly<{
 }>;
 
 /** The MCP surface's own tools, by name and policy (mcp-surface-policies.ts),
- *  loaded in every process (A5 step 2 fix round 1, LOW-1): a view that
- *  names them (ADMIN_ONLY_TOOL_SLUGS: the responder tools that write into
- *  the owner's conversation) says the same with or without mcp-core. */
+ *  loaded in every process (A5 step 2 fix round 1, LOW-1): a check that
+ *  names them (the Admin step of the responder tools that write into the
+ *  owner's conversation) says the same with or without mcp-core. */
 const SURFACE: ReadonlyMap<string, SurfaceToolDef> = new Map(
   Object.entries(MCP_SURFACE_POLICIES).map(([slug, policy]) => [
     slug,
@@ -260,219 +259,52 @@ const SURFACE: ReadonlyMap<string, SurfaceToolDef> = new Map(
   ]),
 );
 
-// ── Views ───────────────────────────────────────────────────────────────────
-
-const READ_ONLY_VIEW = 'a tool policy view is read only: change the policy on the definition';
-
-/** Which surface definitions a view holds besides the builtins: those
- *  `pick` holds for (a name a builtin has is the builtin's). */
-export type SurfaceViewOpts = Readonly<{
-  surface?: (p: ToolPolicy, def: SurfaceToolDef) => boolean;
-  /** Names that are no tool's (said where the view is). */
-  also?: readonly string[];
-}>;
-
-/** A view's options, fixed: `also` copied. */
-function frozenOpts(opts: SurfaceViewOpts): SurfaceViewOpts {
-  return Object.freeze({ ...opts, ...(opts.also ? { also: Object.freeze([...opts.also]) } : {}) });
+/** The policy of the tool `name` names, and whether it is ownerOnly: the
+ *  builtin's, else the MCP surface's own definition's (a name a builtin has
+ *  is the builtin's), else null (a runtime row's name, or no tool). Throws
+ *  before the registry has loaded. */
+export function namedToolPolicy(
+  name: string,
+): Readonly<{ policy: ToolPolicy; ownerOnly: boolean }> | null {
+  const def = tableBuiltin(name);
+  if (def) return { policy: def.policy, ownerOnly: def.ownerOnly === true };
+  const own = SURFACE.get(name);
+  return own ? { policy: own.policy, ownerOnly: own.ownerOnly === true } : null;
 }
 
-/** `also`, the slugs whose policy `pick` holds, then the surface's own
- *  (opts). */
-function slugsWhere(pick: (p: ToolPolicy, def: BuiltinToolDef) => boolean, opts: SurfaceViewOpts) {
-  const out: string[] = [...(opts.also ?? [])];
-  for (const def of TABLE.values()) if (pick(def.policy, def)) out.push(def.slug);
-  if (opts.surface) {
-    for (const def of SURFACE.values()) {
-      if (!TABLE.has(def.slug) && opts.surface(def.policy, def)) out.push(def.slug);
-    }
-  }
-  return out;
+// ── What a policy says ──────────────────────────────────────────────────────
+// Every check reads these off the tool's policy (A5 step 6a: no list of
+// names is kept beside the policies).
+
+/** The Admin area a policy's scope names, or null. */
+export function policyArea(tp: ToolPolicy): ScopeArea | null {
+  return typeof tp.scope === 'object' ? tp.scope.area : null;
 }
 
-class PolicySlugSet extends Set<string> {
-  #at = -1;
-  constructor(
-    private readonly pick: (p: ToolPolicy, def: BuiltinToolDef) => boolean,
-    private readonly opts: SurfaceViewOpts,
-  ) {
-    super();
-  }
-  #fresh(): void {
-    assertLoaded();
-    if (this.#at === version) return;
-    Set.prototype.clear.call(this);
-    for (const s of slugsWhere(this.pick, this.opts)) Set.prototype.add.call(this, s);
-    this.#at = version;
-  }
-  override has(v: string): boolean {
-    this.#fresh();
-    return super.has(v);
-  }
-  override get size(): number {
-    this.#fresh();
-    return super.size;
-  }
-  override forEach(cb: (v: string, k: string, s: Set<string>) => void, self?: unknown): void {
-    this.#fresh();
-    super.forEach(cb, self);
-  }
-  override values(): SetIterator<string> {
-    this.#fresh();
-    return super.values();
-  }
-  override keys(): SetIterator<string> {
-    this.#fresh();
-    return super.keys();
-  }
-  override entries(): SetIterator<[string, string]> {
-    this.#fresh();
-    return super.entries();
-  }
-  override [Symbol.iterator](): SetIterator<string> {
-    return this.values();
-  }
-  override add(): this {
-    throw new TypeError(READ_ONLY_VIEW);
-  }
-  override delete(): boolean {
-    throw new TypeError(READ_ONLY_VIEW);
-  }
-  override clear(): void {
-    throw new TypeError(READ_ONLY_VIEW);
-  }
+/** Whether a policy's tool runs whole on the system pool after its area
+ *  check (its area scope is marked `systemWhole`). */
+export function policySystemWhole(tp: ToolPolicy): boolean {
+  return typeof tp.scope === 'object' && tp.scope.systemWhole === true;
 }
 
-class PolicySlugMap<V> extends Map<string, V> {
-  #at = -1;
-  constructor(
-    private readonly value: (p: ToolPolicy, def: BuiltinToolDef) => V | undefined,
-    private readonly opts: SurfaceMapOpts<V>,
-  ) {
-    super();
-  }
-  #fresh(): void {
-    assertLoaded();
-    if (this.#at === version) return;
-    Map.prototype.clear.call(this);
-    for (const def of TABLE.values()) {
-      const v = this.value(def.policy, def);
-      if (v !== undefined) Map.prototype.set.call(this, def.slug, v);
-    }
-    const surface = this.opts.surface;
-    if (surface) {
-      for (const def of SURFACE.values()) {
-        const v = TABLE.has(def.slug) ? undefined : surface(def.policy, def);
-        if (v !== undefined) Map.prototype.set.call(this, def.slug, v);
-      }
-    }
-    this.#at = version;
-  }
-  override has(k: string): boolean {
-    this.#fresh();
-    return super.has(k);
-  }
-  override get(k: string): V | undefined {
-    this.#fresh();
-    return super.get(k);
-  }
-  override get size(): number {
-    this.#fresh();
-    return super.size;
-  }
-  override forEach(cb: (v: V, k: string, m: Map<string, V>) => void, self?: unknown): void {
-    this.#fresh();
-    super.forEach(cb, self);
-  }
-  override values(): MapIterator<V> {
-    this.#fresh();
-    return super.values();
-  }
-  override keys(): MapIterator<string> {
-    this.#fresh();
-    return super.keys();
-  }
-  override entries(): MapIterator<[string, V]> {
-    this.#fresh();
-    return super.entries();
-  }
-  override [Symbol.iterator](): MapIterator<[string, V]> {
-    return this.entries();
-  }
-  override set(): this {
-    throw new TypeError(READ_ONLY_VIEW);
-  }
-  override delete(): boolean {
-    throw new TypeError(READ_ONLY_VIEW);
-  }
-  override clear(): void {
-    throw new TypeError(READ_ONLY_VIEW);
-  }
+/** Whether a call of a policy's tool may hand content to clients or the
+ *  public for some input (a tainted turn asks policyLowers per call). */
+export function policyMayLower(tp: ToolPolicy): boolean {
+  return tp.lowering !== undefined && tp.lowering !== 'never';
 }
 
-/** The slugs of the builtins whose policy `pick` holds, as a read-only Set
- *  read live from the table, plus the surface's own definitions
- *  `opts.surface` holds for and the names of `opts.also` (each view that
- *  reads them says why). */
-export function policySlugSet(
-  pick: (p: ToolPolicy, def: BuiltinToolDef) => boolean,
-  opts: SurfaceViewOpts = {},
-): ReadonlySet<string> {
-  return new PolicySlugSet(pick, frozenOpts(opts));
+/** Whether a recipe step may not call a policy's tool. */
+export function policyRecipeForbidden(tp: ToolPolicy): boolean {
+  return tp.recipe?.step === 'forbidden';
 }
 
-/** What a map view reads of the surface's own definitions (SurfaceViewOpts). */
-export type SurfaceMapOpts<V> = Readonly<{
-  surface?: (p: ToolPolicy, def: SurfaceToolDef) => V | undefined;
-}>;
-
-/** slug -> `value` of each builtin's policy (undefined: not in the map), as
- *  a read-only Map read live from the table, plus the surface's own
- *  definitions `opts.surface` gives a value. */
-export function policySlugMap<V>(
-  value: (p: ToolPolicy, def: BuiltinToolDef) => V | undefined,
-  opts: SurfaceMapOpts<V> = {},
-): ReadonlyMap<string, V> {
-  return new PolicySlugMap(value, Object.freeze({ ...opts }));
+/** Whether a run item may not call a policy's tool. */
+export function policyRunItemBanned(tp: ToolPolicy): boolean {
+  return tp.recipe?.runItem === 'banned';
 }
 
-/** policySlugSet as a read-only list (for a view whose type is a list). */
-export function policySlugList(
-  pick: (p: ToolPolicy, def: BuiltinToolDef) => boolean,
-  opts: SurfaceViewOpts = {},
-): readonly string[] {
-  const target: string[] = [];
-  const fixed = frozenOpts(opts);
-  let at = -1;
-  const fresh = () => {
-    assertLoaded();
-    if (at === version) return;
-    target.length = 0;
-    target.push(...slugsWhere(pick, fixed));
-    at = version;
-  };
-  const refuse = () => {
-    throw new TypeError(READ_ONLY_VIEW);
-  };
-  return new Proxy(target, {
-    get(t, k, r) {
-      fresh();
-      return Reflect.get(t, k, r);
-    },
-    has(t, k) {
-      fresh();
-      return Reflect.has(t, k);
-    },
-    ownKeys(t) {
-      fresh();
-      return Reflect.ownKeys(t);
-    },
-    getOwnPropertyDescriptor(t, k) {
-      fresh();
-      return Reflect.getOwnPropertyDescriptor(t, k);
-    },
-    set: refuse,
-    defineProperty: refuse,
-    deleteProperty: refuse,
-  });
+/** Whether every result of a policy's tool is fenced as data before a
+ *  model reads it (`outside.untrusted`). */
+export function policyUntrusted(tp: ToolPolicy | null | undefined): boolean {
+  return tp?.outside?.untrusted === true;
 }

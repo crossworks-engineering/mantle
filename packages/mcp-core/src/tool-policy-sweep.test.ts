@@ -34,21 +34,21 @@ import {
   type ToolPolicy,
 } from '@mantle/tools';
 import { registerHeartbeatTools } from '@mantle/runtime';
-import { ADMIN_KIND_CREATE_TOOL_SLUGS } from './create-home';
 import { mcpToolPolicy } from './gate-policy';
-import { LIST_TOOLS } from './key-email-guard';
-import { KEY_SHARED_CONTENT_TOOLS } from './mcp-policy';
 import { MCP_TOOL_DEFS } from './mcp-defs';
 import { AREA_PREFIXES, familyKeyArea } from './key-scope';
 import { registerMantleTools } from './build-server';
+import { PEER_RISKY_TOOL_PREFIXES } from './login-surface';
 import {
-  PEER_RISKY_TOOL_PREFIXES,
-  PEER_RISKY_TOOL_SLUGS,
+  ADMIN_KIND_CREATE_TOOL_SLUGS,
   isMcpToolReadOnly,
   isPeerRiskyTool,
+  KEY_SHARED_CONTENT_TOOLS,
+  LIST_TOOLS,
   ownerPeerAllows,
+  PEER_RISKY_TOOL_SLUGS,
   spendsOwnerKeys,
-} from './login-surface';
+} from './policy-views.test-helper';
 
 registerHeartbeatTools();
 const DEFS: BuiltinToolDef[] = listBuiltins();

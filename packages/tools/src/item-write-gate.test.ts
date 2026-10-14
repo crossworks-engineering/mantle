@@ -2,7 +2,7 @@
  * W7a fix round 1: the lists the Admin gate and the item edit check run on
  * stay true to the builtins they name.
  *
- *  - H1: a tool that runs WHOLE on the system pool (AREA_SYSTEM_TOOLS) is an
+ *  - H1: a tool that runs WHOLE on the system pool (`systemWhole`) is an
  *    Admin-area tool that names no item: no node precondition, no item
  *    write target, no item id argument. Every other area tool runs in the
  *    caller's scope.
@@ -20,15 +20,25 @@ vi.mock('./admin-gate', async (importOriginal) => ({
   callerScope: vi.fn(() => (area.scope ? { kind: 'user', loginId: 'l', ws: [], modWs: [] } : null)),
 }));
 
-import {
-  AREA_SYSTEM_TOOLS,
-  ADMIN_ONLY_TOOL_SLUGS,
-  adminGateLists,
-  TOOL_ADMIN_AREAS,
-  toolAdminArea,
-} from './admin-gate';
-import { ITEM_WRITE_TARGETS } from './item-write-gate';
+import { gateLists, type GateCaller } from '@mantle/db';
+// The gate's narrowers and the `tool` source (gateLists reads them).
+import './gate-narrowers';
+import { builtinItems } from './item-write-gate';
 import { getBuiltin, listBuiltins } from './registry';
+import { builtinToolGatePolicy, builtinToolRef } from './tool-gate-policy';
+import { policyAdminOnly, policyArea, policySystemWhole } from './tool-policy';
+
+// Read from each builtin's policy (A5 step 6a deleted the list views).
+/** The builtins that run whole on the system pool. */
+const systemWhole = () => listBuiltins().filter((d) => policySystemWhole(d.policy));
+/** A builtin's Admin area, or null. */
+const areaOf = (slug: string) => {
+  const def = getBuiltin(slug);
+  return def ? policyArea(def.policy) : null;
+};
+/** The builtins whose write names items, with their targets. */
+const itemWrites = () =>
+  listBuiltins().flatMap((d) => (d.policy.items ? [[d.slug, d.policy.items] as const] : []));
 
 /** Writes whose node precondition names an item they only READ (a source
  *  they copy, convert, import, show or send), or a folder they create in
@@ -93,11 +103,10 @@ const NOT_AN_ITEM_WRITE: ReadonlyMap<string, string> = new Map([
 
 describe('the Admin gate lists (W7a fix round 1)', () => {
   it('every whole-system area tool is an area tool that names no item', () => {
-    for (const slug of AREA_SYSTEM_TOOLS) {
-      expect(TOOL_ADMIN_AREAS.has(slug), slug).toBe(true);
-      expect(ITEM_WRITE_TARGETS.has(slug), slug).toBe(false);
-      const def = getBuiltin(slug);
-      if (!def) continue; // registered by its own package (the heartbeat tools)
+    for (const def of systemWhole()) {
+      const slug = def.slug;
+      expect(areaOf(slug), slug).not.toBeNull();
+      expect(builtinItems(slug), slug).toBeUndefined();
       // A contact is an Admin-only kind: a scope that passed the area check
       // holds Admin and reads every contact, so its precondition reads
       // nothing more on the system pool.
@@ -140,27 +149,30 @@ describe('the Admin gate lists (W7a fix round 1)', () => {
       'secret_create',
       'brain_capacity',
     ]) {
-      expect(toolAdminArea(slug), slug).not.toBeNull();
-      expect(AREA_SYSTEM_TOOLS.has(slug), slug).toBe(false);
+      expect(areaOf(slug), slug).not.toBeNull();
+      expect(policySystemWhole(getBuiltin(slug)!.policy), slug).toBe(false);
     }
   });
 
   it('run_terminal is adminOnly and needs the settings area (M3)', () => {
-    expect(ADMIN_ONLY_TOOL_SLUGS.has('run_terminal')).toBe(true);
-    expect(toolAdminArea('run_terminal')).toBe('settings');
+    expect(policyAdminOnly(getBuiltin('run_terminal')!.policy)).toBe(true);
+    expect(areaOf('run_terminal')).toBe('settings');
     // For a member's scope too (W7b fix round 1, H1): never listed without
-    // Admin, nor without the settings area.
-    expect(
-      adminGateLists('run_terminal', { holdsAdmin: false, areas: new Set(['settings']) }),
-    ).toBe(false);
-    expect(adminGateLists('run_terminal', { holdsAdmin: true, areas: new Set() })).toBe(false);
-    expect(adminGateLists('run_terminal', { holdsAdmin: true, areas: new Set(['settings']) })).toBe(
-      true,
-    );
+    // Admin, nor without the settings area (the gate's Admin step).
+    const ref = builtinToolRef('run_terminal', 'run_terminal');
+    expect(builtinToolGatePolicy(ref)?.scope).toEqual({ area: 'settings' });
+    const lists = (holdsAdmin: boolean, areas: string[]) =>
+      gateLists(
+        { actor: null, via: 'turn', admin: { holdsAdmin, areas: new Set(areas) } } as GateCaller,
+        ref,
+      );
+    expect(lists(false, ['settings'])).toBe(false);
+    expect(lists(true, [])).toBe(false);
+    expect(lists(true, ['settings'])).toBe(true);
   });
 
   it('every item write target names a real builtin and one of its arguments', () => {
-    for (const [slug, targets] of ITEM_WRITE_TARGETS) {
+    for (const [slug, targets] of itemWrites()) {
       const def = getBuiltin(slug);
       expect(def, slug).not.toBeNull();
       if (typeof targets === 'function') continue;
@@ -176,7 +188,7 @@ describe('the Admin gate lists (W7a fix round 1)', () => {
       .filter((d) => !d.readOnly)
       .filter((d) => (d.preconditions ?? []).some((p) => p.kind === 'node_exists'))
       .map((d) => d.slug)
-      .filter((slug) => !ITEM_WRITE_TARGETS.has(slug) && !READS_ITS_ITEM.has(slug));
+      .filter((slug) => !builtinItems(slug) && !READS_ITS_ITEM.has(slug));
     expect(missing).toEqual([]);
   });
 
@@ -188,7 +200,7 @@ describe('the Admin gate lists (W7a fix round 1)', () => {
       ['page_from_note', { note_id: 'n1', supersede_source: true }, ['n1']],
     ];
     for (const [slug, input, ids] of cases) {
-      const resolve = ITEM_WRITE_TARGETS.get(slug) as (
+      const resolve = builtinItems(slug) as unknown as (
         i: Record<string, unknown>,
         o: string,
       ) => Promise<{ ids: string[]; need: string }[]>;
@@ -199,7 +211,7 @@ describe('the Admin gate lists (W7a fix round 1)', () => {
 
   it('every write with an id argument is on the item write list or says why not', () => {
     const missing = listBuiltins()
-      .filter((d) => !d.readOnly && !ITEM_WRITE_TARGETS.has(d.slug))
+      .filter((d) => !d.readOnly && !d.policy.items)
       .filter((d) =>
         Object.keys(
           ((d.inputSchema as { properties?: Record<string, unknown> }).properties ?? {}) as object,
@@ -215,10 +227,10 @@ describe('the Admin gate lists (W7a fix round 1)', () => {
 
   it('a link needs edit to open or close; the users area closes any link (A0)', async () => {
     for (const slug of ['page_share', 'node_share']) {
-      expect(ITEM_WRITE_TARGETS.get(slug), slug).toEqual([{ param: 'id', need: 'edit' }]);
+      expect(builtinItems(slug), slug).toEqual([{ param: 'id', need: 'edit' }]);
     }
     for (const slug of ['page_unshare', 'node_unshare']) {
-      const resolve = ITEM_WRITE_TARGETS.get(slug) as (
+      const resolve = builtinItems(slug) as unknown as (
         i: Record<string, unknown>,
         o: string,
         c?: { surface: Record<string, unknown> },
@@ -248,7 +260,7 @@ describe('the Admin gate lists (W7a fix round 1)', () => {
 
   it('a copy of an app with its data needs an edit; the code alone a read (M3)', async () => {
     for (const slug of ['app_duplicate', 'app_export']) {
-      const resolve = ITEM_WRITE_TARGETS.get(slug) as (
+      const resolve = builtinItems(slug) as unknown as (
         i: Record<string, unknown>,
         o: string,
       ) => Promise<{ ids: string[]; need: string }[]>;

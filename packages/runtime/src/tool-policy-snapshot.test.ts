@@ -1,12 +1,11 @@
 /**
  * The A5 step 1 snapshot (workspaces arch plan v2, section 23.3): the
- * literal value of every @mantle/tools access list that becomes a view of
+ * literal value of every @mantle/tools access list that became a view of
  * the tool policy table, copied BEFORE the codemod that puts a policy on
  * every builtin. Each list, as the code reads it, must equal its literal
- * here; the literals never change with the codemod, only how the list is
- * read (CURRENT, below: two lists their modules did not export were read
- * from the source before the codemod; one is an exported view now, the
- * other each app tool's own policy).
+ * here; the literals never change, only how the list is read (CURRENT,
+ * below). Since A5 step 6a no view is left: each consumer reads the tool's
+ * policy, and CURRENT derives each list from the policies the same way.
  *
  * In @mantle/runtime: the lowest package that sees every builtin (this
  * package's heartbeat tools are builtins too, registered at boot) and
@@ -22,47 +21,76 @@ vi.mock('../../tools/src/builtins-recall-write', async (importOriginal) => ({
 }));
 
 import {
-  ADMIN_ONLY_TOOL_SLUGS,
-  APP_DATA_READ_TOOL_SLUGS,
-  APP_DATA_WRITE_TOOL_SLUGS,
-  AREA_SYSTEM_TOOLS,
-  BANNED_ITEM_TOOLS,
-  CREATE_TOOL_SLUGS,
-  ITEM_WRITE_TARGETS,
-  LOWERING_TOOL_SLUGS,
-  MEMBER_APP_REFUSED_SLUGS,
-  OWNER_ONLY_IN_SCOPE,
-  TOOL_ADMIN_AREAS,
-  UNTRUSTED_CONTENT_TOOL_SLUGS,
+  LOGIN_APP_DATA_TOOLS,
+  MCP_SURFACE_POLICIES,
+  builtinItems,
+  builtinPolicy,
   listBuiltins,
+  memberAppRefusedName,
+  policyAdminOnly,
+  policyArea,
   policyLowers,
+  policyMayLower,
+  policyRecipeForbidden,
+  policyRunItemBanned,
+  policySystemWhole,
+  policyUntrusted,
+  type BuiltinToolDef,
+  type ToolPolicy,
 } from '@mantle/tools';
-import { isLoweringCall } from '@mantle/tools/client-sourced';
-import { RECIPE_FORBIDDEN_SLUGS } from '../../tools/src/recipe';
-import { HEARTBEAT_EGRESS_SLUGS } from './heartbeats/fire';
 import { registerHeartbeatTools } from './heartbeats/tools';
 import UNTRUSTED_SNAPSHOT from './tool-policy-snapshot.untrusted.json' with { type: 'json' };
 
-/** How each list is read today. */
+/** The builtins whose policy `pick` holds (read now: the heartbeat tools
+ *  register below). */
+const where = (pick: (p: ToolPolicy, def: BuiltinToolDef) => boolean) =>
+  listBuiltins()
+    .filter((d) => pick(d.policy, d))
+    .map((d) => d.slug);
+
+/** The retired team tools no team app calls, refused by name with no
+ *  policy (member-app-tools.ts TEAM_TOOLS_REFUSED). */
+const RETIRED_TEAM_TOOLS = ['my_items_list', 'my_item_open', 'team_request_create'];
+
+/**
+ * How each list is read today: A5 step 6a deleted the views, so each is the
+ * set the consumers' policy reads answer, derived here from the policies
+ * the same way the view derived it (the literals below never change).
+ */
 const CURRENT: Record<string, () => Iterable<string>> = {
-  ADMIN_ONLY_TOOL_SLUGS: () => ADMIN_ONLY_TOOL_SLUGS,
-  OWNER_ONLY_IN_SCOPE: () => OWNER_ONLY_IN_SCOPE,
-  AREA_SYSTEM_TOOLS: () => AREA_SYSTEM_TOOLS,
-  CREATE_TOOL_SLUGS: () => CREATE_TOOL_SLUGS,
-  LOWERING_TOOL_SLUGS: () => LOWERING_TOOL_SLUGS,
-  RECIPE_FORBIDDEN_SLUGS: () => RECIPE_FORBIDDEN_SLUGS,
-  MEMBER_APP_REFUSED_SLUGS: () => MEMBER_APP_REFUSED_SLUGS,
-  BANNED_ITEM_TOOLS: () => BANNED_ITEM_TOOLS,
-  UNTRUSTED_CONTENT_TOOL_SLUGS: () => UNTRUSTED_CONTENT_TOOL_SLUGS,
+  ADMIN_ONLY_TOOL_SLUGS: () => [
+    ...where((p, d) => d.ownerOnly !== true && policyAdminOnly(p)),
+    // The MCP surface's own definitions that are no builtin (the responder
+    // writes into the owner's conversation), loaded in every process.
+    ...Object.entries(MCP_SURFACE_POLICIES)
+      .filter(([slug, p]) => !builtinPolicy(slug) && policyAdminOnly(p as ToolPolicy))
+      .map(([slug]) => slug),
+  ],
+  OWNER_ONLY_IN_SCOPE: () => where((p, d) => d.ownerOnly === true && !policyAdminOnly(p)),
+  AREA_SYSTEM_TOOLS: () => where(policySystemWhole),
+  CREATE_TOOL_SLUGS: () => where((p) => p.creates !== undefined),
+  LOWERING_TOOL_SLUGS: () => where(policyMayLower),
+  RECIPE_FORBIDDEN_SLUGS: () => where(policyRecipeForbidden),
+  MEMBER_APP_REFUSED_SLUGS: () => [
+    ...where((p) => p.memberApp === 'refused'),
+    ...RETIRED_TEAM_TOOLS.filter(memberAppRefusedName),
+  ],
+  BANNED_ITEM_TOOLS: () => where(policyRunItemBanned),
+  UNTRUSTED_CONTENT_TOOL_SLUGS: () => where(policyUntrusted),
   // Read once, at definition time, from each app tool's own policy
   // (builtins-apps.ts withAuthorCeiling): no list is left.
-  CODE_TOOLS: () =>
-    listBuiltins()
-      .filter((d) => d.policy.outside?.appCode === true)
-      .map((d) => d.slug),
-  APP_DATA_READ_TOOL_SLUGS: () => APP_DATA_READ_TOOL_SLUGS,
-  APP_DATA_WRITE_TOOL_SLUGS: () => APP_DATA_WRITE_TOOL_SLUGS,
-  HEARTBEAT_EGRESS_SLUGS: () => HEARTBEAT_EGRESS_SLUGS,
+  CODE_TOOLS: () => where((p) => p.outside?.appCode === true),
+  APP_DATA_READ_TOOL_SLUGS: () =>
+    LOGIN_APP_DATA_TOOLS.filter((d) => d.policy.effect === 'read').map((d) => d.slug),
+  APP_DATA_WRITE_TOOL_SLUGS: () =>
+    LOGIN_APP_DATA_TOOLS.filter((d) => d.policy.effect === 'write').map((d) => d.slug),
+  HEARTBEAT_EGRESS_SLUGS: () => where((p) => p.outside?.egress === true),
+};
+
+/** Whether a call lowers to client or public: the tool's policy. */
+const isLoweringCall = (slug: string, input: Record<string, unknown>) => {
+  const policy = builtinPolicy(slug);
+  return policy !== null && policyLowers(policy, input);
 };
 
 /** The slug lists, each sorted (the order of a Set or a list was never
@@ -454,22 +482,28 @@ describe('every @mantle/tools access list equals its literal (A5 step 1)', () =>
 
   it('TOOL_ADMIN_AREAS', () => {
     expect(
-      Object.fromEntries([...TOOL_ADMIN_AREAS].sort(([a], [b]) => a.localeCompare(b))),
+      Object.fromEntries(
+        listBuiltins().flatMap((d) => {
+          const area = policyArea(d.policy);
+          return area ? [[d.slug, area] as const] : [];
+        }),
+      ),
     ).toEqual(AREAS);
   });
 
   it("ITEM_WRITE_TARGETS: the slugs and each one's targets", () => {
     const now = Object.fromEntries(
-      [...ITEM_WRITE_TARGETS]
-        .sort(([a], [b]) => a.localeCompare(b))
-        .map(([k, v]) => [k, typeof v === 'function' ? 'resolver' : v]),
+      listBuiltins().flatMap((d) => {
+        const v = d.policy.items;
+        return v ? [[d.slug, typeof v === 'function' ? 'resolver' : v] as const] : [];
+      }),
     );
     expect(now).toEqual(ITEMS);
   });
 
   /** A resolver's targets for `input` (no database: see each probe). */
   const resolve = (slug: string, input: Record<string, unknown>) => {
-    const r = ITEM_WRITE_TARGETS.get(slug);
+    const r = builtinItems(slug);
     if (typeof r !== 'function') throw new Error(`${slug} has no resolver`);
     return r(input, 'owner-1');
   };
@@ -574,7 +608,7 @@ describe('every @mantle/tools access list equals its literal (A5 step 1)', () =>
     expect(isLoweringCall('no_such_tool', {})).toBe(false);
   });
 
-  it("isLoweringCall answers as each builtin's policy.lowering says", () => {
+  it("a lowering call is what each builtin's policy.lowering says", () => {
     const probes = [
       {},
       { level: 'client' },

@@ -19,7 +19,7 @@
  */
 import { emailAttachmentFolders, emailAttachmentIds, reachesEmailAttachment } from '@mantle/files';
 import type { ToolCallGuard, ToolCallResult } from './gated-tools';
-import { mcpPolicySet, toolKeyArea } from './mcp-policy';
+import { mcpToolPolicyOf, toolKeyArea } from './mcp-policy';
 
 const ID_FIELDS = [
   'file_id',
@@ -35,9 +35,12 @@ const ID_FIELDS = [
 ] as const;
 const ID_LIST_FIELDS = ['file_ids', 'table_ids'] as const;
 const PATH_FIELDS = ['parent_path', 'parent', 'path', 'dest_path', 'dest_parent_path'] as const;
-/** The lists that drop the attachment rows rather than refuse: a view of
- *  the policy tables (A5 step 2), the tools whose policy says `keyEmail`. */
-export const LIST_TOOLS: ReadonlySet<string> = mcpPolicySet((p) => p.keyEmail === true);
+/** Whether `slug` is a list that drops the attachment rows rather than
+ *  refuse: its policy says `keyEmail` (A5 step 6a deleted the LIST_TOOLS
+ *  view). */
+function dropsAttachmentRows(slug: string): boolean {
+  return mcpToolPolicyOf(slug)?.keyEmail === true;
+}
 const GUARDED_AREAS: ReadonlySet<string> = new Set(['files', 'tables', 'pages', 'notes']);
 
 export const KEY_EMAIL_REFUSAL =
@@ -59,7 +62,7 @@ export function keyEmailGuard(ownerId: string): ToolCallGuard {
   return {
     before: async (slug, args) => {
       const area = toolKeyArea(slug);
-      if (!area || !GUARDED_AREAS.has(area) || LIST_TOOLS.has(slug)) return null;
+      if (!area || !GUARDED_AREAS.has(area) || dropsAttachmentRows(slug)) return null;
       const ids: string[] = [];
       for (const field of ID_FIELDS) {
         const v = args[field];
@@ -81,7 +84,7 @@ export function keyEmailGuard(ownerId: string): ToolCallGuard {
       return null;
     },
     after: async (slug, _args, result) => {
-      if (!LIST_TOOLS.has(slug)) return result;
+      if (!dropsAttachmentRows(slug)) return result;
       const rows = rowsOf(result);
       if (!rows) return result;
       // A folder row is hidden by its path (an attachments folder). A file

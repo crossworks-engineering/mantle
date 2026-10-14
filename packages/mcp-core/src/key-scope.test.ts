@@ -9,12 +9,8 @@ import { describe, expect, it } from 'vitest';
 import { BUILTIN_TOOLS } from '@mantle/tools';
 import { KEY_AREAS } from './key-scope';
 import { keyAreasAllowTool, toolKeyArea } from './mcp-policy';
-import {
-  isMcpToolReadOnly,
-  isPeerRiskyTool,
-  registerPreparedTools,
-  type McpCaller,
-} from './login-surface';
+import { registerPreparedTools, type McpCaller } from './login-surface';
+import { isMcpToolReadOnly, isPeerRiskyTool } from './policy-views.test-helper';
 
 function registeredFor(caller: Partial<McpCaller>): string[] {
   const out: string[] = [];

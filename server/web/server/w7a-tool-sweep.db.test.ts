@@ -541,7 +541,7 @@ describe.skipIf(!URL)('W7a: the Admin assistant and the Admin MCP run in a scope
   it('write tools on another user’s Read-only or private item are refused; nothing changes', async () => {
     const before = await otherItemsState();
     const writes = t.listBuiltins().filter((d) => {
-      const targets = t.itemWriteTargetsOf(d.slug);
+      const targets = t.builtinItems(d.slug);
       return Array.isArray(targets) && otherTypeFor(d.slug) !== null;
     });
     /** A write that only needs to read its item (process_extraction, an
@@ -549,16 +549,14 @@ describe.skipIf(!URL)('W7a: the Admin assistant and the Admin MCP run in a scope
     const needsRead = new Set(
       writes
         .filter((d) =>
-          (t.itemWriteTargetsOf(d.slug) as readonly { need: string }[]).every(
-            (x) => x.need === 'read',
-          ),
+          (t.builtinItems(d.slug) as readonly { need: string }[]).every((x) => x.need === 'read'),
         )
         .map((d) => d.slug),
     );
     expect(writes.length).toBeGreaterThan(40);
     const argsAt = (def: { slug: string; inputSchema?: unknown }, id: string): Json => {
       const input = argsFor((def.inputSchema ?? {}) as Schema, def.slug);
-      const targets = t.itemWriteTargetsOf(def.slug) as readonly { param: string }[];
+      const targets = t.builtinItems(def.slug) as readonly { param: string }[];
       for (const { param } of targets) input[param] = param.endsWith('_ids') ? [id] : id;
       return input;
     };
@@ -646,8 +644,7 @@ describe.skipIf(!URL)('W7a: the Admin assistant and the Admin MCP run in a scope
   it('outside Admin: every adminOnly, ownerOnly or Admin-area tool is refused', async () => {
     const defs = t.listBuiltins();
     const gated = defs.filter(
-      (d) =>
-        t.isAdminOnlyTool(d.slug, { ownerOnly: d.ownerOnly }) || t.toolAdminArea(d.slug) !== null,
+      (d) => t.policyAdminOnly(d.policy) || t.policyArea(d.policy) !== null,
     );
     expect(gated.length).toBeGreaterThan(20);
     // The Team assistant's turn, answering a member, on an owner surface

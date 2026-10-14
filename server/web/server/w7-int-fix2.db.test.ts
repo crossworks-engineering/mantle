@@ -355,7 +355,7 @@ describe.skipIf(!URL)('W7 integration fix 2', () => {
       on conflict do nothing`);
     const refusal = async (slug: string, input: Record<string, unknown>) =>
       m.withTurnScope(await m.loginScopeFor(member), () =>
-        t.toolItemWriteRefusal(slug, input, owner),
+        t.toolItemWriteRefusal(t.builtinItems(slug), input, owner),
       );
     for (const slug of ['app_export', 'app_duplicate']) {
       expect(await refusal(slug, { id: app }), slug).not.toBeNull();
@@ -429,7 +429,7 @@ describe.skipIf(!URL)('W7 integration fix 2', () => {
       await x(sql`insert into item_grants (node_id, workspace_id, write, is_home)
                   values (${page}, ${adminWs}, false, true) on conflict do nothing`);
       const write = await runMcpCall(maker, 'page_update', () =>
-        t.toolItemWriteRefusal('page_update', { id: page }, owner),
+        t.toolItemWriteRefusal(t.builtinItems('page_update'), { id: page }, owner),
       );
       expect(typeof write === 'string' ? write : JSON.stringify(write)).toMatch(/\S/);
       expect(write).not.toBeNull();

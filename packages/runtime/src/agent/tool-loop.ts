@@ -127,8 +127,8 @@ export function resolveMaxTokens(
   return thinkingBudget > 0 ? thinkingBudget * 2 : undefined;
 }
 
-// Third-party content fencing: the web builtins are fenced by slug
-// (UNTRUSTED_CONTENT_TOOL_SLUGS, shared with dispatch), and the dispatch
+// Third-party content fencing: the web builtins are fenced by their policy
+// (`outside.untrusted`, policyUntrusted, read by dispatch too), and the dispatch
 // layer flags provenance the loop can't see — http-kind tools (user-authored
 // API tools hit arbitrary endpoints) and recipes whose chain ran an http/web
 // step — via `untrusted` on the result. Either signal fences the payload as

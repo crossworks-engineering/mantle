@@ -28,31 +28,35 @@ import { InMemoryTransport, McpServer } from '@modelcontextprotocol/server';
 import { Client } from '@modelcontextprotocol/client';
 import type { GatePolicy, ScopeArea, Tool, ToolHandler } from '@mantle/db';
 import {
-  ADMIN_ONLY_TOOL_SLUGS,
   BUILTIN_TOOLS,
   externalAccessToolSig,
   getBuiltin,
-  isAdminOnlyTool,
   type AdminGateView,
 } from '@mantle/tools';
-import { TOOLSMITH_WRITE_SLUGS, registerMantleTools } from './build-server';
-import { ADMIN_KIND_CREATE_TOOL_SLUGS } from './create-home';
+import { registerMantleTools } from './build-server';
 import { mcpToolPolicy } from './gate-policy';
-import { LIST_TOOLS } from './key-email-guard';
-import { KEY_SHARED_CONTENT_TOOLS, toolKeyArea } from './mcp-policy';
+import { toolKeyArea } from './mcp-policy';
 import {
-  MCP_HANDWRITTEN_READ_ONLY,
-  OWNER_KEY_SPENDING_TOOLS,
   PEER_RISKY_TOOL_PREFIXES,
-  PEER_RISKY_TOOL_SLUGS,
   callerAreasAllow,
-  isMcpToolReadOnly,
-  isPeerRiskyTool,
   registerPreparedTools,
-  spendsOwnerKeys,
   type McpCaller,
   type PreparedCallerTools,
 } from './login-surface';
+import {
+  ADMIN_KIND_CREATE_TOOL_SLUGS,
+  ADMIN_ONLY_TOOL_SLUGS,
+  isAdminOnlyTool,
+  isMcpToolReadOnly,
+  isPeerRiskyTool,
+  KEY_SHARED_CONTENT_TOOLS,
+  LIST_TOOLS,
+  MCP_HANDWRITTEN_READ_ONLY,
+  OWNER_KEY_SPENDING_TOOLS,
+  PEER_RISKY_TOOL_SLUGS,
+  spendsOwnerKeys,
+  TOOLSMITH_WRITE_SLUGS,
+} from './policy-views.test-helper';
 
 const LOGIN = '00000000-0000-4000-8000-0000000000aa';
 const BUILTIN = new Set(BUILTIN_TOOLS.map((d) => d.slug));

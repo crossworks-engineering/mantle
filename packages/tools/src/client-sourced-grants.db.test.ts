@@ -32,7 +32,7 @@ describe.skipIf(!URL)('client-sourced holds read the grants', () => {
       ownerId: owner,
       tool: builtin(slug),
       input,
-      isReadOnlyBuiltin: () => false,
+      policyOf: () => null,
     });
   const grant = (node: string, wsId: string) =>
     m.withHeads([node], 'update', async (tx) => {

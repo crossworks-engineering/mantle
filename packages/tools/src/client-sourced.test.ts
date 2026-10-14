@@ -40,20 +40,26 @@ vi.mock('@mantle/db', async (importOriginal) => {
 import {
   conversationTaintKey,
   ID_BATCH,
-  isLoweringCall,
   namesClientSourced,
   newTurnTaint,
   taintFromText,
   uuidsIn,
   type TurnTaint,
 } from './client-sourced';
-// The access lists are views of the tool policy table, which the registry
-// fills (A5): load it.
+// The policies are the registry's: load it.
 import './registry';
+import { builtinPolicy, policyLowers } from './tool-policy';
+
+/** Whether a call lowers to client or public: the tool's policy's
+ *  `lowering` (A5 step 6a: no isLoweringCall). */
+function isLoweringCall(slug: string, input: Record<string, unknown>): boolean {
+  const policy = builtinPolicy(slug);
+  return policy !== null && policyLowers(policy, input);
+}
 
 const ID = '99999999-9999-4999-8999-999999999999';
 
-describe('isLoweringCall', () => {
+describe('a lowering call (the policy)', () => {
   it('access_set to client or public; not to team or admin', () => {
     expect(isLoweringCall('access_set', { level: 'public' })).toBe(true);
     expect(isLoweringCall('access_set', { level: 'client' })).toBe(true);

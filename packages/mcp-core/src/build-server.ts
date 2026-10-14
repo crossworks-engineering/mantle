@@ -95,25 +95,25 @@ import { registerFileTools } from './register/files';
 import { registerPageTools } from './register/pages';
 import { registerTableTools } from './register/tables';
 import { registerResponderTools } from './register/responder';
-import { policySlugSet } from '@mantle/tools';
+import { listBuiltins } from '@mantle/tools';
 import { defaultMcpGate } from './gate-policy';
 import type { McpGate } from './gated-tools';
 
 /** Mutating Toolsmith tools, gated behind MANTLE_MCP_TOOLSMITH_WRITE (default
- *  ON). A view of the builtins whose definition opts in by `toolsmithWrite`
- *  (A5 step 2: registration reads each definition's `optIn`; A5 step 3a,
- *  LOW-A: only a builtin declares one, so the builtin's definition is the
- *  one copy that decides). The env is read at module scope (process-stable)
- *  so the gate is evaluated once, not per build: for the HTTP transport a
- *  server is built per request. */
-export const TOOLSMITH_WRITE_SLUGS: ReadonlySet<string> = policySlugSet(
-  (_p, def) => def.optIn === 'toolsmithWrite',
-);
+ *  ON): the builtins whose definition opts in by `toolsmithWrite` (A5 step
+ *  2: registration reads each definition's `optIn`; A5 step 3a, LOW-A: only
+ *  a builtin declares one, so the builtin's definition is the one copy that
+ *  decides; A5 step 6a deleted the TOOLSMITH_WRITE_SLUGS view). The env is
+ *  read at module scope (process-stable) so the gate is evaluated once, not
+ *  per build: for the HTTP transport a server is built per request. */
 const toolsmithWriteEnabled = !/^(0|false|off|no)$/i.test(env('MANTLE_MCP_TOOLSMITH_WRITE') ?? '');
 if (!toolsmithWriteEnabled) {
   console.error(
     '[mantle-mcp] MANTLE_MCP_TOOLSMITH_WRITE is off — exposing Toolsmith read-only ' +
-      `(skipping ${[...TOOLSMITH_WRITE_SLUGS].join(', ')}).`,
+      `(skipping ${listBuiltins()
+        .filter((d) => d.optIn === 'toolsmithWrite')
+        .map((d) => d.slug)
+        .join(', ')}).`,
   );
 }
 
@@ -433,7 +433,7 @@ export function registerMantleTools(
    * read-only while keeping tool authoring + granting to the in-app agent.
    */
   // ─── Toolsmith ───────────────────────────────────────────────────────────────
-  // Writes gated behind MANTLE_MCP_TOOLSMITH_WRITE (see TOOLSMITH_WRITE_SLUGS):
+  // Writes gated behind MANTLE_MCP_TOOLSMITH_WRITE (see toolsmithWriteEnabled):
   // each opts in by its definition's `toolsmithWrite`.
   registerBuiltinTools(TOOLSMITH_TOOLS);
 }

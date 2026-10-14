@@ -33,7 +33,8 @@ import {
 import './runtime-policy';
 // Fills the builtin policy table.
 import './registry';
-import { ADMIN_ONLY_TOOL_SLUGS, isAdminOnlyTool } from './admin-gate';
+import { builtinToolGatePolicy, builtinToolRef } from './tool-gate-policy';
+import { namedToolPolicy, policyAdminOnly } from './tool-policy';
 import { MCP_SURFACE_POLICIES } from './mcp-surface-policies';
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '../../..');
@@ -73,12 +74,18 @@ describe('@mantle/tools alone makes the gate ready', () => {
     // leaf mcp-surface-policies.ts, loaded by tool-policy.ts in every
     // process, so server/api refuses them outside Admin as it did before A5.
     expect(Object.keys(MCP_SURFACE_POLICIES)).toHaveLength(16);
+    // Read from the policy (A5 step 6a: no ADMIN_ONLY_TOOL_SLUGS view): a
+    // builtin row named after one is Admin only at the gate's step 5.
+    const adminOnly = (slug: string) => {
+      const t = namedToolPolicy(slug);
+      return !!t && policyAdminOnly(t.policy);
+    };
     for (const slug of ['responder_turn_input', 'responder_turn_record']) {
-      expect(ADMIN_ONLY_TOOL_SLUGS.has(slug), slug).toBe(true);
-      expect(isAdminOnlyTool(slug), slug).toBe(true);
+      expect(adminOnly(slug), slug).toBe(true);
+      expect(builtinToolGatePolicy(builtinToolRef('note_get', slug))?.scope, slug).toBe('admin');
     }
     for (const slug of ['ask_responder', 'ask_as_responder', 'search']) {
-      expect(ADMIN_ONLY_TOOL_SLUGS.has(slug), slug).toBe(false);
+      expect(adminOnly(slug), slug).toBe(false);
     }
   });
 });

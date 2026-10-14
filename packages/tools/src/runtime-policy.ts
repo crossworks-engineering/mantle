@@ -110,16 +110,17 @@ export function shellToolPolicy(row: Row): RuntimeToolPolicy {
 /** Why a member's app run may not call a built-in tool, or null (rules 2
  *  to 4 of member-app-tools.ts, on the resolved row: its slug or its
  *  builtin ref refused, it spends, it is not read-only, it needs a
- *  confirm; `refused`: the slugs no team app calls). The one reading of
+ *  confirm; `refused`: whether no team app calls a name, member-app-tools.ts
+ *  memberAppRefusedName, the policy's `memberApp`). The one reading of
  *  them: memberAppToolVerdict and appToolPolicy both ask it. */
 export function memberAppRefusal(
   slug: string,
   ref: string,
   builtin: { readOnly: boolean; spends: boolean },
   requiresConfirm: boolean,
-  refused: readonly string[],
+  refused: (name: string) => boolean,
 ): string | null {
-  if (refused.includes(slug) || refused.includes(ref)) {
+  if (refused(slug) || refused(ref)) {
     return `The tool '${slug}' is not available in team apps.`;
   }
   if (builtin.spends) {
@@ -144,7 +145,7 @@ export function memberAppRefusal(
 export function appToolPolicy(
   row: Row,
   builtin: { readOnly: boolean; spends: boolean } | null,
-  refused: readonly string[],
+  refused: (name: string) => boolean,
 ): RuntimeToolPolicy | null {
   const h = row.handler as ToolHandler;
   if (h.kind !== 'builtin') return runtimeToolPolicy(row);

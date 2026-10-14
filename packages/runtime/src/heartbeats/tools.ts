@@ -527,7 +527,7 @@ const heartbeat_fire: BuiltinToolDef = {
     }
 
     // In a workspace scope (W7a fix round 2, N1) the tool runs in its
-    // caller's scope (it is not an AREA_SYSTEM_TOOLS tool): the heartbeat row
+    // caller's scope (its policy is not `systemWhole`): the heartbeat row
     // is read on the system pool after the assistants area check, and so is
     // the fire's own bookkeeping (its agent, skill, key, trace and fire log),
     // while the fire's tool resolution and turn run back in the caller's

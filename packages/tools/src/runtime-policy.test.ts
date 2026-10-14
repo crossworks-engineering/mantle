@@ -20,7 +20,7 @@ import {
 } from '@mantle/db';
 import { ADMIN_ONLY_ERROR } from '@mantle/std';
 import { externalAccessToolSig } from './external-access';
-import { MEMBER_APP_REFUSED_SLUGS } from './member-app-tools';
+import { memberAppRefusedName } from './member-app-tools';
 import {
   NO_RUNTIME_POLICY_ERROR,
   apiToolPolicy,
@@ -165,10 +165,12 @@ describe('one function per runtime row type', () => {
 describe('a tool an app calls: the member-app rule, as memberAppToolVerdict said it', () => {
   const b = (slug: string, ref = slug) => row({ kind: 'builtin', ref }, { slug });
   const rule = (t: Tool, readOnly: boolean, spends: boolean) =>
-    appToolPolicy(t, { readOnly, spends }, MEMBER_APP_REFUSED_SLUGS)?.fields?.memberApp;
+    appToolPolicy(t, { readOnly, spends }, memberAppRefusedName)?.fields?.memberApp;
 
   it('a read-only built-in that spends nothing runs', () => {
-    expect(appToolPolicy(b('page_get'), { readOnly: true, spends: false }, [])).toMatchObject({
+    expect(
+      appToolPolicy(b('page_get'), { readOnly: true, spends: false }, () => false),
+    ).toMatchObject({
       rowType: 'app',
       effect: 'read',
       spends: 'none',
@@ -199,8 +201,8 @@ describe('a tool an app calls: the member-app rule, as memberAppToolVerdict said
   });
 
   it('an outside tool: its own row type', () => {
-    expect(appToolPolicy(row(MCP), null, [])?.rowType).toBe('connector');
-    expect(appToolPolicy(row(HTTP), null, [])?.rowType).toBe('api');
+    expect(appToolPolicy(row(MCP), null, () => false)?.rowType).toBe('connector');
+    expect(appToolPolicy(row(HTTP), null, () => false)?.rowType).toBe('api');
   });
 });
 

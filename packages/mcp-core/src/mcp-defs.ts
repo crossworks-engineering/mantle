@@ -11,7 +11,7 @@
  * Each definition takes its policy by its name from @mantle/tools
  * mcp-surface-policies.ts (fix round 1, LOW-1): that leaf is the surface
  * table every process loads, so the Admin gate knows the two responder
- * tools that write into the owner's conversation (ADMIN_ONLY_TOOL_SLUGS)
+ * tools that write into the owner's conversation (adminOnly)
  * with or without this package loaded. A name here with no policy there
  * does not type-check; mcp-defs.test.ts pins that the two hold the same
  * names.
@@ -234,7 +234,11 @@ const FOLDER_DESCRIBE = mcpTool({
       }
       // The folder found by its path is checked as an id is (W7a fix round
       // 1, M2): the scope may edit it.
-      const refused = await toolItemWriteRefusal('folder_describe', { folder_id: id }, ownerId);
+      const refused = await toolItemWriteRefusal(
+        MCP_SURFACE_POLICIES.folder_describe.items,
+        { folder_id: id },
+        ownerId,
+      );
       if (refused) return { content: [{ type: 'text', text: `Error: ${refused}` }], isError: true };
       const updated = await updateFolderDescription({
         ownerId: ownerId,
@@ -275,7 +279,11 @@ const FOLDER_RENAME = mcpTool({
       }
       // The folder found by its path is checked as an id is (W7a fix round
       // 1, M2): the scope may edit it.
-      const refused = await toolItemWriteRefusal('folder_rename', { folder_id: id }, ownerId);
+      const refused = await toolItemWriteRefusal(
+        MCP_SURFACE_POLICIES.folder_rename.items,
+        { folder_id: id },
+        ownerId,
+      );
       if (refused) return { content: [{ type: 'text', text: `Error: ${refused}` }], isError: true };
       try {
         const updated = await renameFolderById({
@@ -349,7 +357,11 @@ const FILE_RENAME = mcpTool({
   handler: (ctx) => {
     const { ownerId, jsonReply } = ctx;
     return async ({ file_id, new_stem }) => {
-      const refused = await toolItemWriteRefusal('file_rename', { file_id }, ownerId);
+      const refused = await toolItemWriteRefusal(
+        MCP_SURFACE_POLICIES.file_rename.items,
+        { file_id },
+        ownerId,
+      );
       if (refused) return { content: [{ type: 'text', text: `Error: ${refused}` }], isError: true };
       try {
         const row = await renameFileById({ ownerId: ownerId, fileId: file_id, newStem: new_stem });

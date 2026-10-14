@@ -1902,7 +1902,7 @@ function withAuthorCeiling(def: BuiltinToolDef): BuiltinToolDef {
     handler: async (input, ctx) => {
       const target = str(input.id).trim().toLowerCase();
       if (UUID_RE.test(target) && (await outsideAdmin())) {
-        const refused = await toolItemWriteRefusal(def.slug, input, ctx.ownerId);
+        const refused = await toolItemWriteRefusal(def.policy.items, input, ctx.ownerId);
         if (refused) return { ok: false, error: refused };
         await lowerToTeamRules(ctx.ownerId, target);
       }

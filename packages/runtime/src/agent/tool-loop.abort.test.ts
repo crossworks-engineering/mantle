@@ -60,13 +60,18 @@ vi.mock('@mantle/tools', async () => ({
       '../../../tools/src/gate-callers',
     )
   ).turnCaller,
-  // The real list is a view of the tool policy table (A5), which needs every
-  // builtin and the real @mantle/db: the mock holds the snapshot's own
-  // literal (packages/runtime/src/tool-policy-snapshot.test.ts pins the real
-  // list to it), so the two cannot drift.
-  UNTRUSTED_CONTENT_TOOL_SLUGS: new Set(
-    (await import('../tool-policy-snapshot.untrusted.json', { with: { type: 'json' } })).default,
+  // The real policies need every builtin and the real @mantle/db: the mock
+  // answers a builtin's untrusted mark from the snapshot's own literal
+  // (packages/runtime/src/tool-policy-snapshot.test.ts pins the policies to
+  // it), so the two cannot drift.
+  builtinPolicy: ((untrusted: Set<string>) => (slug: string) =>
+    untrusted.has(slug) ? { outside: { untrusted: true } } : null)(
+    new Set(
+      (await import('../tool-policy-snapshot.untrusted.json', { with: { type: 'json' } })).default,
+    ),
   ),
+  policyUntrusted: (p: { outside?: { untrusted?: boolean } } | null | undefined) =>
+    p?.outside?.untrusted === true,
   PRIVATE_OUTPUT_TOOL_SLUGS: (
     await vi.importActual<typeof import('../../../tools/src/private-output')>(
       '../../../tools/src/private-output',

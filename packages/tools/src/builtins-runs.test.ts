@@ -2,7 +2,14 @@ import { describe, expect, it } from 'vitest';
 // Via the package index, NOT './builtins-runs' directly: the module cycle
 // builtins-runs → dispatch → registry → builtins → builtins-runs only
 // evaluates cleanly when the registry loads first (the index order).
-import { BANNED_ITEM_TOOLS, parsePlan, RUN_TOOLS } from './index';
+import { builtinPolicy, parsePlan, policyRunItemBanned, RUN_TOOLS } from './index';
+
+/** Whether a run item may not call `slug`: its builtin's policy (A5 step
+ *  6a: no BANNED_ITEM_TOOLS view). */
+const banned = (slug: string) => {
+  const p = builtinPolicy(slug);
+  return p !== null && policyRunItemBanned(p);
+};
 
 /**
  * The item ban list must cover every run_* tool (audit 2026-07-21: run_audit
@@ -14,14 +21,12 @@ import { BANNED_ITEM_TOOLS, parsePlan, RUN_TOOLS } from './index';
 describe('runner-queue item ban list', () => {
   it('bans every run_* tool as a queue item', () => {
     for (const tool of RUN_TOOLS) {
-      expect(BANNED_ITEM_TOOLS.has(tool.slug), `'${tool.slug}' must be in BANNED_ITEM_TOOLS`).toBe(
-        true,
-      );
+      expect(banned(tool.slug), `'${tool.slug}' must be banned as a run item`).toBe(true);
     }
   });
 
   it('bans delegation as a queue item', () => {
-    expect(BANNED_ITEM_TOOLS.has('invoke_agent')).toBe(true);
+    expect(banned('invoke_agent')).toBe(true);
   });
 });
 

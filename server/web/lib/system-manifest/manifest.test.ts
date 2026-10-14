@@ -18,7 +18,7 @@ import {
   type ManifestAgent,
 } from './manifest';
 import {
-  BANNED_ITEM_TOOLS,
+  builtinPolicy,
   BUILTIN_TOOLS,
   buildHttpRequest,
   collectParamNames,
@@ -163,11 +163,13 @@ describe('system manifest integrity', () => {
   it("every tool in the 'runs' group is banned as a queue item (no run recursion)", () => {
     // Audit 2026-07-21: run_audit shipped granted-but-unbanned, letting a
     // queue item rubber-stamp the audit gate headlessly. Any tool granted via
-    // the runs group must also be in BANNED_ITEM_TOOLS.
+    // the runs group must also be banned as a run item (its policy).
     const runsGroup = MANIFEST_TOOL_GROUPS.find((g) => g.slug === 'runs');
     expect(runsGroup, "manifest has a 'runs' tool group").toBeDefined();
     for (const slug of runsGroup!.toolSlugs) {
-      expect(BANNED_ITEM_TOOLS.has(slug), `'${slug}' must be in BANNED_ITEM_TOOLS`).toBe(true);
+      expect(builtinPolicy(slug)?.recipe?.runItem, `'${slug}' must be banned as a run item`).toBe(
+        'banned',
+      );
     }
   });
 

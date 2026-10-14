@@ -61,13 +61,14 @@ vi.mock('@mantle/tools', async (importOriginal) => {
 });
 
 import type { Tool } from '@mantle/db';
-import { NO_WORKSPACE_CREATE_ERROR, MCP_CREATE_TOOL_SLUGS } from './create-home';
+import { NO_WORKSPACE_CREATE_ERROR } from './create-home';
 import {
   preparedKeysOff,
   registerPreparedTools,
   type McpCaller,
   type PreparedCallerTools,
 } from './login-surface';
+import { MCP_CREATE_TOOL_SLUGS } from './policy-views.test-helper';
 
 type Cb = (
   args: unknown,

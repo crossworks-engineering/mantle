@@ -11,7 +11,7 @@ import { and, eq } from 'drizzle-orm';
 import { authUsers, db, mantlePeers } from '@mantle/db';
 
 /** A tool name the owner allows on a peer bound to the owner (a risky one:
- *  see PEER_RISKY_TOOL_SLUGS in @mantle/mcp-core). An unknown name allows
+ *  its policy says `peerRisky`, read by the gate's peer narrower). An unknown name allows
  *  nothing: the surface only checks names it registers. */
 const RiskyName = z.string().regex(/^[a-z][a-z0-9_]{1,63}$/);
 

@@ -6,7 +6,7 @@
  * Export and import run in the caller's scope (W7a fix round 1, H1): the
  * file they read or write is an item. Their sandbox row is a system table,
  * read through areaSystem. ls and publish read no item and run whole on
- * the system pool (AREA_SYSTEM_TOOLS).
+ * the system pool (their policy's `systemWhole`).
  *
  * In a workspace scope each works only on a sandbox its caller made, or, for
  * the brain owner, on any (W7a fix round 2, sandboxRefusal).

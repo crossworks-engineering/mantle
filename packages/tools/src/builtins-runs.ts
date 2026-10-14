@@ -46,21 +46,18 @@ import { resolveTools } from './resolve';
 import { loadAgentGrant } from './agent-grants';
 import { notFound } from './errors';
 import { ownerSurfaceLoginId } from './surface';
-import { policySlugSet } from './tool-policy';
+import { builtinPolicy, policyRunItemBanned } from './tool-policy';
 
-/** Tools that may never run as queue items: the run tools themselves (no
- *  recursion — `run_audit` especially, or a queue item could rubber-stamp the
- *  audit gate headlessly) and delegation (a headless item has no parent-agent
- *  context — fail at PLAN time with a clear error, not at execution).
- *
- *  SINGLE SOURCE: `execute-item.ts` imports this set for the execution-time
- *  re-check (defense in depth), and `builtins-runs.test.ts` asserts every
- *  RUN_TOOLS slug is in it: add a run_* tool and the test fails until its
- *  policy bans it too. A view of the tool policy table (tool-policy.ts, A5):
- *  `recipe.runItem` banned. */
-export const BANNED_ITEM_TOOLS: ReadonlySet<string> = policySlugSet(
-  (p) => p.recipe?.runItem === 'banned',
-);
+/* A tool may never run as a queue item when its builtin's policy says
+ * `recipe.runItem: 'banned'` (policyRunItemBanned; A5 step 6a deleted the
+ * BANNED_ITEM_TOOLS view): the run tools themselves (no recursion:
+ * `run_audit` especially, or a queue item could rubber-stamp the audit gate
+ * headlessly) and delegation (a headless item has no parent-agent context:
+ * fail at PLAN time with a clear error, not at execution). The plan check
+ * below and `execute-item.ts`'s execution-time re-check (defense in depth)
+ * both read the policy, and `builtins-runs.test.ts` asserts every RUN_TOOLS
+ * slug's policy bans it: add a run_* tool and the test fails until its
+ * policy bans it too. */
 
 const MAX_PLAN_DEPTH = 4;
 const MAX_PLAN_NODES = 50;
@@ -345,7 +342,8 @@ export function parsePlan(raw: unknown): ParsedPlan {
           return { error: `plan${path}: tool_call needs 'tool' (a tool slug string)` };
         }
         const slug = o.tool.trim();
-        if (BANNED_ITEM_TOOLS.has(slug)) {
+        const named = builtinPolicy(slug);
+        if (named && policyRunItemBanned(named)) {
           return {
             error:
               `plan${path}: '${slug}' cannot run as a queue item (no run recursion / ` +

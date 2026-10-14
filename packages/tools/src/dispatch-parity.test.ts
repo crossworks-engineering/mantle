@@ -171,7 +171,7 @@ vi.mock('./registry', async (importOriginal) => {
 import type { Tool } from '@mantle/db';
 import { loginActor, runAsActor, withCreateHome } from '@mantle/db';
 import * as tools from './index';
-import { BUILTIN_TOOLS, ITEM_WRITE_TARGETS, dispatchTool } from './index';
+import { BUILTIN_TOOLS, builtinItems, dispatchTool } from './index';
 import type { ToolHandlerContext } from './types';
 
 const OWNER = '99999999-9999-4999-8999-999999999999';
@@ -337,7 +337,7 @@ async function call(
  *  refused item and on a readable one, a failing precondition, a throw. */
 function inputsFor(slug: string): Record<string, unknown>[] {
   const out: Record<string, unknown>[] = [{}];
-  const targets = ITEM_WRITE_TARGETS.get(slug);
+  const targets = builtinItems(slug);
   if (Array.isArray(targets)) {
     for (const id of [REFUSED_ID, ITEM_ID]) {
       out.push(Object.fromEntries(targets.map((t) => [t.param, id])));

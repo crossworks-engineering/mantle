@@ -29,14 +29,16 @@
 import { and, arrayOverlaps, eq, inArray, or, sql } from 'drizzle-orm';
 import { agents, appTableExports, db, nodes, toolGroups } from '@mantle/db';
 import { asSystem } from '@mantle/db/viewer';
-import { clientWsSql, isLoweringCall } from './client-sourced';
+import { clientWsSql } from './client-sourced';
+import { policyLowers, type ToolPolicy } from './tool-policy';
 
 type Input = Record<string, unknown>;
 
 export type WriteRule =
   /** Writes nothing a client or the public reads. */
   | { kind: 'free'; why: string }
-  /** access_set, the share tools, email_page: `isLoweringCall` decides. */
+  /** access_set, the share tools, email_page: the tool's policy decides
+   *  (`lowering`, policyLowers; A5 step 6a deleted isLoweringCall). */
   | { kind: 'lowering' }
   /** The target cannot be read from the input: every call waits (or only
    *  those `when` picks). */
@@ -398,15 +400,16 @@ function stringsOf(vals: unknown[]): string[] | null {
 
 /**
  * What a MARKED turn may do with this call: run it, or send it to pending
- * with the reason. Called only once the turn is marked. `isReadOnlyBuiltin`
- * is the registry's own flag, passed in so this module stays free of the
- * registry. A failed check sends the call to pending.
+ * with the reason. Called only once the turn is marked. `policyOf` is the
+ * registry's own policy lookup (builtinPolicy), passed in so this module
+ * stays free of the registry: a builtin's effect and its `lowering` are read
+ * from it. A failed check sends the call to pending.
  */
 export async function clientSourcedGate(p: {
   ownerId: string;
   tool: GateTool;
   input: Input;
-  isReadOnlyBuiltin: (slug: string) => boolean;
+  policyOf: (slug: string) => ToolPolicy | null;
 }): Promise<GateVerdict> {
   try {
     return await decide(p);
@@ -419,8 +422,9 @@ async function decide(p: {
   ownerId: string;
   tool: GateTool;
   input: Input;
-  isReadOnlyBuiltin: (slug: string) => boolean;
+  policyOf: (slug: string) => ToolPolicy | null;
 }): Promise<GateVerdict> {
+  const readOnly = (slug: string) => p.policyOf(slug)?.effect === 'read';
   const ref = builtinRef(p.tool);
   if (ref === null) {
     // A recipe of reads only reads; an HTTP GET reads. Anything else a user
@@ -431,23 +435,23 @@ async function decide(p: {
       steps?: { tool?: unknown }[];
     } | null;
     if (h?.kind === 'recipe') {
-      const reads = (h.steps ?? []).every(
-        (s) => typeof s.tool === 'string' && p.isReadOnlyBuiltin(s.tool),
-      );
+      const reads = (h.steps ?? []).every((s) => typeof s.tool === 'string' && readOnly(s.tool));
       return reads ? RUN : wait('a recipe with a step that writes');
     }
     if (h?.kind === 'http' && (h.method ?? 'GET').toUpperCase() === 'GET') return RUN;
     return wait('a tool that can write where its input does not say');
   }
   const rule = writeRuleFor(ref);
-  if (!rule) return p.isReadOnlyBuiltin(ref) ? RUN : wait('a write tool the guard does not know');
+  if (!rule) return readOnly(ref) ? RUN : wait('a write tool the guard does not know');
   switch (rule.kind) {
     case 'free':
       return RUN;
-    case 'lowering':
-      return isLoweringCall(ref, p.input)
+    case 'lowering': {
+      const policy = p.policyOf(ref);
+      return policy && policyLowers(policy, p.input)
         ? wait('it would make brain content visible to clients or the public')
         : RUN;
+    }
     case 'always':
       return !rule.when || rule.when(p.input) ? wait(rule.why) : RUN;
     case 'write':

@@ -7,7 +7,6 @@
  * Admin-only create, and every builtin whose slug says it makes something.
  */
 import { describe, expect, it } from 'vitest';
-import { CREATE_TOOL_SLUGS } from './create-tools';
 import { getBuiltin, listBuiltins } from './registry';
 
 /** Slugs that make an item by name. */
@@ -23,7 +22,12 @@ const ALSO_MAKES = ['export_node', 'sandbox_export', 'generate_image', 'sheet_bu
 
 describe('a tool that makes an item is not readOnly', () => {
   it('covers every listed create and every builtin named as one', () => {
-    const slugs = new Set<string>([...CREATE_TOOL_SLUGS, ...ALSO_MAKES]);
+    // Every builtin whose policy creates a kind (A5 step 6a: no
+    // CREATE_TOOL_SLUGS view).
+    const creates = listBuiltins()
+      .filter((d) => d.policy.creates !== undefined)
+      .map((d) => d.slug);
+    const slugs = new Set<string>([...creates, ...ALSO_MAKES]);
     for (const def of listBuiltins()) {
       if (MAKES.test(def.slug) && !MAKES_NOTHING.has(def.slug)) slugs.add(def.slug);
     }

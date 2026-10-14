@@ -8,7 +8,6 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
-  ADMIN_ONLY_TOOL_SLUGS,
   MCP_SURFACE_POLICIES,
   getBuiltin,
   type McpSurfaceSlug,
@@ -16,8 +15,7 @@ import {
 } from '@mantle/tools';
 import { registerMantleTools } from './build-server';
 import { MCP_TOOL_DEFS, mcpDefinition } from './mcp-defs';
-import { mcpDefinitionSet } from './mcp-policy';
-import { MCP_HANDWRITTEN_READ_ONLY } from './login-surface';
+import { ADMIN_ONLY_TOOL_SLUGS } from './policy-views.test-helper';
 
 /** Per twin, an MCP argument name and the builtin's for the same thing,
  *  where they differ. None does today for an argument a policy names (the
@@ -132,23 +130,14 @@ describe('the MCP definitions (A5 step 2)', () => {
     }
   });
 
-  it("a view of the definitions is read only, Set.prototype's add too (fix round 1, LOW-2)", () => {
-    const reads = MCP_TOOL_DEFS.filter((d) => d.policy.effect === 'read').map((d) => d.slug);
-    for (const view of [
-      MCP_HANDWRITTEN_READ_ONLY,
-      mcpDefinitionSet((d) => d.policy.effect === 'read'),
-    ]) {
-      expect(view).not.toBeInstanceOf(Set);
-      expect(() => Set.prototype.add.call(view as Set<string>, 'page_delete')).toThrow(TypeError);
-      expect(() => Set.prototype.delete.call(view as Set<string>, 'search')).toThrow(TypeError);
-      expect(() => Set.prototype.clear.call(view as Set<string>)).toThrow(TypeError);
-      expect(() => (view as Set<string>).add('page_delete')).toThrow(TypeError);
-      expect(Object.isFrozen(view)).toBe(true);
-      // Still read like a Set, and nothing changed.
-      expect([...view].sort()).toEqual([...reads].sort());
-      expect(view.size).toBe(reads.length);
-      expect(view.has('search')).toBe(true);
-      expect(view.has('page_delete')).toBe(false);
+  it('keeps no view of the definitions (A5 step 6a: each consumer reads the policy)', async () => {
+    const policy = (await import('./mcp-policy')) as Record<string, unknown>;
+    const surface = (await import('./login-surface')) as Record<string, unknown>;
+    for (const gone of ['mcpDefinitionSet', 'mcpPolicySet', 'KEY_SHARED_CONTENT_TOOLS']) {
+      expect(policy[gone], gone).toBeUndefined();
+    }
+    for (const gone of ['MCP_HANDWRITTEN_READ_ONLY', 'PEER_RISKY_TOOL_SLUGS', 'isPeerRiskyTool']) {
+      expect(surface[gone], gone).toBeUndefined();
     }
   });
 });

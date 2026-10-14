@@ -55,13 +55,13 @@ vi.mock('../../tools/src/preconditions', async (importOriginal) => ({
 import { registerMantleTools } from './build-server';
 import { keyAreasAllowTool } from './mcp-policy';
 import {
-  ownerPeerAllows,
   preparedLists,
   registerPreparedTools,
   type McpCaller,
   type PreparedCallerTools,
 } from './login-surface';
 import { NOT_ON_WORKSPACES_ERROR } from './mcp-scope';
+import { ownerPeerAllows } from './policy-views.test-helper';
 
 const prepared = (caller: McpCaller): PreparedCallerTools => ({
   kind: 'owner',

@@ -58,7 +58,7 @@ import {
 } from '@mantle/db';
 import { BUILTIN_TOOLS } from './builtins';
 import { TEAM_APP_NO_TOOL_ERROR } from './gate-narrowers';
-import { MEMBER_APP_REFUSED_SLUGS, memberAppToolVerdict } from './member-app-tools';
+import { memberAppRefusedName, memberAppToolVerdict } from './member-app-tools';
 import { isBuiltinReadOnly, isBuiltinSpending } from './registry';
 
 const OWNER = '00000000-0000-4000-8000-000000000002';
@@ -86,7 +86,7 @@ const builtin = (slug: string, ref = slug, over: Partial<Tool> = {}) =>
   row(slug, { kind: 'builtin', ref }, over);
 
 const usable = BUILTIN_TOOLS.filter(
-  (t) => !MEMBER_APP_REFUSED_SLUGS.includes(t.slug) && t.requiresConfirm !== true,
+  (t) => !memberAppRefusedName(t.slug) && t.requiresConfirm !== true,
 );
 const READ = usable.find((t) => t.readOnly === true && t.spends !== true)!.slug;
 const WRITE = usable.find((t) => t.readOnly !== true && t.spends !== true)!.slug;

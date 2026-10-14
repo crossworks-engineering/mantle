@@ -17,7 +17,8 @@ vi.mock('@mantle/db', async (importOriginal) => ({
   },
 }));
 
-import { listBuiltins, isBuiltinReadOnly } from './registry';
+import { listBuiltins } from './registry';
+import { builtinPolicy } from './tool-policy';
 import {
   clientSourcedGate,
   toolCreatesNodes,
@@ -30,7 +31,7 @@ const TOOLS = listBuiltins();
 const ID = '0d0d0d0d-0d0d-4d0d-8d0d-0d0d0d0d0d0d';
 const builtin = (slug: string): GateTool => ({ slug, handler: { kind: 'builtin', ref: slug } });
 const verdict = (slug: string, input: Record<string, unknown>, tool = builtin(slug)) =>
-  clientSourcedGate({ ownerId: 'o', tool, input, isReadOnlyBuiltin: isBuiltinReadOnly });
+  clientSourcedGate({ ownerId: 'o', tool, input, policyOf: builtinPolicy });
 
 describe('every built-in write tool is classified (the sweep)', () => {
   it('no builtin that is not readOnly is missing from WRITE_RULES', () => {
@@ -97,7 +98,7 @@ describe('verdicts that need no lookup', () => {
       ownerId: 'o',
       tool: builtin('brand_new_write'),
       input: {},
-      isReadOnlyBuiltin: () => false,
+      policyOf: () => null,
     });
     expect(unknown.gate).toBe(true);
   });

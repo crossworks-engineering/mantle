@@ -13,13 +13,13 @@
  * Safety envelope (enforced at BOTH author time and run time): a recipe step
  * may only call http / builtin / recipe tools that are NOT confirm-gated,
  * NOT shell, and NOT one of the privilege/meta builtins in
- * RECIPE_FORBIDDEN_SLUGS. That keeps a recipe to composing the brain's own
+ * a builtin whose policy forbids it (`recipe.step`). That keeps a recipe to composing the brain's own
  * data/content tools — it can't bypass a confirm gate, shell out, mint or
  * grant tools, delegate, or touch secrets.
  */
 
 import type { RecipeStep } from '@mantle/db';
-import { policySlugSet } from './tool-policy';
+import { builtinPolicy, policyRecipeForbidden } from './tool-policy';
 
 export type { RecipeStep };
 
@@ -27,21 +27,6 @@ export type { RecipeStep };
 export const MAX_RECIPE_STEPS = 24;
 /** Max recipe-in-recipe nesting depth (run-time recursion guard). */
 export const MAX_RECIPE_DEPTH = 4;
-
-/**
- * Builtins a recipe step may NOT call. These are the privilege / meta / escape
- * surfaces — composing them would let an agent-authored recipe escalate past
- * the "agents author safe compositions only" boundary. Shell-kind tools and
- * any confirm-gated tool are refused separately (by kind / flag), so this set
- * is only the dangerous *builtins* (which are kind:'builtin', not 'shell'):
- * shell-equivalents and host escapes (run_terminal, the sandbox tools),
- * secrets and privilege, delegation into other agents, the tool-authoring
- * and grant kit, web_fetch, and recipe authoring itself. A view of the tool
- * policy table (tool-policy.ts, A5): `recipe.step` forbidden.
- */
-export const RECIPE_FORBIDDEN_SLUGS: ReadonlySet<string> = policySlugSet(
-  (p) => p.recipe?.step === 'forbidden',
-);
 
 /** Handler kinds that an agent may bundle into a group + grant. http (Toolsmith
  *  classic) and recipe (Tier 1). Shell + builtin stay operator/manifest-owned. */
@@ -199,7 +184,19 @@ export type RecipeStepVerdict = 'ok' | 'missing' | 'forbidden' | 'shell' | 'conf
 /** Decide whether a recipe step is allowed to call a given tool. The single
  *  source of truth for the safety envelope, shared by the authoring builtin
  *  (reject up-front, all violations at once) and the executor (defense-in-depth,
- *  in case a tool was edited after the recipe was authored). */
+ *  in case a tool was edited after the recipe was authored).
+ *
+ * A recipe step may NOT call a builtin whose policy says
+ * `recipe.step: 'forbidden'` (policyRecipeForbidden; A5 step 6a deleted the
+ * RECIPE_FORBIDDEN_SLUGS view). These are the privilege / meta / escape
+ * surfaces: composing them would let an agent-authored recipe escalate past
+ * the "agents author safe compositions only" boundary. Shell-kind tools and
+ * any confirm-gated tool are refused separately (by kind / flag), so the
+ * mark is only on the dangerous *builtins* (which are kind:'builtin', not
+ * 'shell'): shell-equivalents and host escapes (run_terminal, the sandbox
+ * tools), secrets and privilege, delegation into other agents, the
+ * tool-authoring and grant kit, web_fetch, and recipe authoring itself.
+ */
 export function classifyRecipeStepTool(opts: {
   slug: string;
   exists: boolean;
@@ -207,7 +204,8 @@ export function classifyRecipeStepTool(opts: {
   requiresConfirm?: boolean;
 }): RecipeStepVerdict {
   if (!opts.exists) return 'missing';
-  if (RECIPE_FORBIDDEN_SLUGS.has(opts.slug)) return 'forbidden';
+  const builtin = builtinPolicy(opts.slug);
+  if (builtin && policyRecipeForbidden(builtin)) return 'forbidden';
   if (opts.kind === 'shell') return 'shell';
   // Connector tools stay inside their connector's group. A recipe wrapping
   // one would be agent-bundleable into ANY group — a quiet route for external

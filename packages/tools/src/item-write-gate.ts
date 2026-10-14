@@ -29,7 +29,12 @@ import {
 } from '@mantle/db';
 import { currentWorkspaceScope } from '@mantle/db/viewer';
 import { callerHasArea, callerScope } from './admin-gate';
-import { policySlugMap, type ToolItemResolver, type ToolItemTarget } from './tool-policy';
+import {
+  builtinPolicy,
+  type ToolItemResolver,
+  type ToolItemTarget,
+  type ToolPolicy,
+} from './tool-policy';
 import { keyOrPeerVia } from './surface';
 import type { ToolHandlerContext } from './types';
 
@@ -143,24 +148,21 @@ export const recallRevisionTargets: Resolver = async (input, ownerId) => {
   return row?.node ? [{ ids: [row.node], need: 'edit' }] : [];
 };
 
-/**
- * The write tools that name an item, by slug (and by a builtin's ref): a
- * view of each builtin's `policy.items` (tool-policy.ts). A link (A0):
- * opening or closing it needs edit of the item; an app's needs manage, which
- * assertMayLink asks once it knows the type (link-serve.ts); an Admin user
- * with the users area may close any link (closeLinkTargets). An app copy
- * (appCopy) and the my_app_* tools check their own app.
- */
-export const ITEM_WRITE_TARGETS: ReadonlyMap<string, readonly Target[] | Resolver> = policySlugMap(
-  (p) => p.items,
-);
+/** What a tool's write names (its policy's `items`): a target per argument,
+ *  or a resolver. */
+export type ToolItems = ToolPolicy['items'];
 
-/** The targets a tool's `slug` (or its builtin `ref`) lists, if any. */
-export function itemWriteTargetsOf(
-  slug: string,
-  ref?: string,
-): readonly Target[] | Resolver | null {
-  return ITEM_WRITE_TARGETS.get(slug) ?? (ref ? (ITEM_WRITE_TARGETS.get(ref) ?? null) : null);
+/**
+ * The items the write tool a row names writes to, read from the policies:
+ * the builtin the row's `slug` names, else its handler `ref`'s (a row may
+ * rename a builtin). A5 step 6a deleted the ITEM_WRITE_TARGETS view. A
+ * link (A0): opening or closing it needs edit of the item; an app's needs
+ * manage, which assertMayLink asks once it knows the type (link-serve.ts);
+ * an Admin user with the users area may close any link (closeLinkTargets).
+ * An app copy (appCopy) and the my_app_* tools check their own app.
+ */
+export function builtinItems(slug: string, ref?: string): ToolItems {
+  return builtinPolicy(slug)?.items ?? (ref ? builtinPolicy(ref)?.items : undefined);
 }
 
 /** The ids an argument holds: one id, or a list of them. */
@@ -173,26 +175,26 @@ function idsOf(v: unknown): string[] {
 /**
  * Why the current workspace scope may not make this call's write, or null
  * (no workspace scope, a tool that names no item, or a write it may make).
- * Run after the tool's preconditions, so an id the scope cannot read gets
- * the precondition's teaching error first where the tool declares one.
+ * `items` is the tool's own policy's (builtinItems for a builtin row, a
+ * definition's policy for an MCP tool). Run after the tool's
+ * preconditions, so an id the scope cannot read gets the precondition's
+ * teaching error first where the tool declares one.
  */
 export async function toolItemWriteRefusal(
-  slug: string,
+  items: ToolItems,
   input: Record<string, unknown>,
   ownerId: string,
-  ref?: string,
   ctx?: Pick<ToolHandlerContext, 'surface'>,
 ): Promise<string | null> {
-  return (await toolItemWriteRefusalOf(slug, input, ownerId, ref, ctx))?.message ?? null;
+  return (await toolItemWriteRefusalOf(items, input, ownerId, ctx))?.message ?? null;
 }
 
 /** toolItemWriteRefusal, with the edit check's detail of the refusal (A5
  *  step 4 fix round 2: a /api/v1 route answers it as the database's). */
 export async function toolItemWriteRefusalOf(
-  slug: string,
+  items: ToolItems,
   input: Record<string, unknown>,
   ownerId: string,
-  ref?: string,
   ctx?: Pick<ToolHandlerContext, 'surface'>,
 ): Promise<ItemWriteRefusal | null> {
   if (!currentWorkspaceScope()) {
@@ -200,14 +202,13 @@ export async function toolItemWriteRefusalOf(
     // (W7 integration fix 2, M6): the switch restores only the read path.
     const g = currentGateScope();
     if (!g) return null;
-    return withTurnScope(g, () => toolItemWriteRefusalOf(slug, input, ownerId, ref, ctx));
+    return withTurnScope(g, () => toolItemWriteRefusalOf(items, input, ownerId, ctx));
   }
-  const targets = itemWriteTargetsOf(slug, ref);
-  if (!targets) return null;
+  if (!items) return null;
   const sets =
-    typeof targets === 'function'
-      ? await targets(input, ownerId, ctx)
-      : targets.map((t) => ({ ids: idsOf(input[t.param]), need: t.need }));
+    typeof items === 'function'
+      ? await items(input, ownerId, ctx)
+      : items.map((t) => ({ ids: idsOf(input[t.param]), need: t.need }));
   for (const set of sets) {
     const refused = await itemWriteRefusalOf(set.ids, set.need);
     if (refused) return refused;

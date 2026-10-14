@@ -52,7 +52,7 @@ import {
   runToolLoop,
   type ChatMessage,
 } from '../agent';
-import { policySlugSet } from '@mantle/tools';
+import { builtinPolicy } from '@mantle/tools';
 import { chatRouteKeyRefusal } from '../agent/chat-failover';
 import {
   loadProfilePreferences,
@@ -81,16 +81,6 @@ const HEARTBEAT_CONTROL_TOOLS = [
   'heartbeat_list',
   'heartbeat_fire',
 ];
-
-/** Tools that reach OUT of the brain: email + web. When the operator
- *  enables `heartbeatEgressGate`, these are force-confirmed for an
- *  unattended fire so they park for approval instead of running inline.
- *  The heartbeat's own surface reply is delivered separately (not a tool)
- *  and is unaffected. A view of the tool policy table (@mantle/tools
- *  tool-policy.ts, A5): `outside.egress`. */
-export const HEARTBEAT_EGRESS_SLUGS: ReadonlySet<string> = policySlugSet(
-  (p) => p.outside?.egress === true,
-);
 
 export type FireResult = {
   /** See HeartbeatFireDisposition in @mantle/db for the canonical
@@ -431,9 +421,16 @@ async function fireAs(hb: Heartbeat, opts: FireOpts & { skipGates: boolean }): P
   // notifyPendingCreated, reached via the tool-loop's requires_confirm
   // path), so the operator can clear it from a phone. No effect when the
   // preference is off: the common case.
+  // Tools that reach OUT of the brain (mail, the web, Telegram, a linked
+  // brain's writes): their builtin's policy says `outside.egress` (A5 step
+  // 6a deleted the HEARTBEAT_EGRESS_SLUGS view). When the operator enables
+  // `heartbeatEgressGate`, these are force-confirmed for an unattended fire
+  // so they park for approval instead of running inline. The heartbeat's
+  // own surface reply is delivered separately (not a tool) and is
+  // unaffected.
   const tools = prefs.heartbeatEgressGate
     ? resolvedTools.map((t) =>
-        HEARTBEAT_EGRESS_SLUGS.has(t.slug) ? { ...t, requiresConfirm: true } : t,
+        builtinPolicy(t.slug)?.outside?.egress === true ? { ...t, requiresConfirm: true } : t,
       )
     : resolvedTools;
 

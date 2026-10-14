@@ -7,8 +7,9 @@
  *
  * A tool is allowed only when ALL hold:
  *   1. the app declares it (manifest.toolSlugs);
- *   2. neither its slug nor its builtin handler is on MEMBER_APP_REFUSED_SLUGS
- *      (checked on both: a tool row can carry any slug over a builtin ref);
+ *   2. neither its slug nor its builtin handler is refused to a team app
+ *      (memberAppRefusedName: the policy's `memberApp`, checked on both: a
+ *      tool row can carry any slug over a builtin ref);
  *   3. it exists and is enabled, has a BUILTIN handler (no http, shell,
  *      recipe or mcp: those reach URLs, the shell or composed tools under the
  *      brain) and does not require confirmation (nobody is there to confirm);
@@ -49,7 +50,7 @@ import {
 import { resolveTool } from './resolve';
 import { outsideToolVerdict, type OutsideToolCheck } from './external-access';
 import { appToolPolicy } from './runtime-policy';
-import { policySlugList } from './tool-policy';
+import { builtinPolicy } from './tool-policy';
 
 /** Retired builtins with no definition here (the system manifest's
  *  RETIRED_BUILTIN_TOOL_SLUGS: my_items_list, my_item_open,
@@ -79,13 +80,13 @@ const TEAM_TOOLS_REFUSED: readonly string[] = [
  *   turn's message, and an app could file them in a loop.
  * - read_result opens a spilled result of an agent turn by handle.
  *
- * A view of the tool policy table (tool-policy.ts, A5): the builtins whose
- * policy says `memberApp: 'refused'`, plus TEAM_TOOLS_REFUSED.
+ * Read from each builtin's policy (`memberApp: 'refused'`), plus
+ * TEAM_TOOLS_REFUSED, the retired names with no policy (A5 step 6a deleted
+ * the MEMBER_APP_REFUSED_SLUGS view).
  */
-export const MEMBER_APP_REFUSED_SLUGS: readonly string[] = policySlugList(
-  (p) => p.memberApp === 'refused',
-  { also: TEAM_TOOLS_REFUSED },
-);
+export function memberAppRefusedName(name: string): boolean {
+  return TEAM_TOOLS_REFUSED.includes(name) || builtinPolicy(name)?.memberApp === 'refused';
+}
 
 /** `write`: an outside call that writes (a connector tool without the
  *  read-only mark, team apps Phase 2); the broker logs its input. */
@@ -125,7 +126,7 @@ export async function memberAppToolVerdict(
       reason: `This app isn't allowed to use the tool '${slug}'. It must be declared in the app's tools.`,
     };
   }
-  if (MEMBER_APP_REFUSED_SLUGS.includes(slug)) {
+  if (memberAppRefusedName(slug)) {
     return { ok: false, status: 403, reason: `The tool '${slug}' is not available in team apps.` };
   }
   const tool = await resolveTool(ownerId, slug);
@@ -149,7 +150,7 @@ export async function memberAppToolVerdict(
       readOnly: isBuiltinReadOnly(tool.handler.ref),
       spends: isBuiltinSpending(tool.handler.ref),
     },
-    MEMBER_APP_REFUSED_SLUGS,
+    memberAppRefusedName,
   );
   const refused = policy?.fields?.memberApp;
   if (typeof refused === 'string') return { ok: false, status: 403, reason: refused };
@@ -194,7 +195,7 @@ export function appToolGatePolicy(ref: PolicyRef): GatePolicy | null {
     });
   }
   const builtin = ref.builtin as { readOnly: boolean; spends: boolean } | undefined;
-  const own = appToolPolicy(row, builtin ?? null, MEMBER_APP_REFUSED_SLUGS);
+  const own = appToolPolicy(row, builtin ?? null, memberAppRefusedName);
   if (!own) return null;
   // Only the verdict answers the member-app rule (rules 1 to 5 and the
   // outside rules); the row's own reading of rules 2 to 4 is dropped.

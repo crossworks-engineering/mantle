@@ -78,13 +78,39 @@ vi.mock('@mantle/tools', async () => ({
       '../../../tools/src/gate-callers',
     )
   ).turnCaller,
-  // The real list is a view of the tool policy table (A5), which needs every
-  // builtin and the real @mantle/db: the mock holds the snapshot's own
-  // literal (packages/runtime/src/tool-policy-snapshot.test.ts pins the real
-  // list to it), so the two cannot drift.
-  UNTRUSTED_CONTENT_TOOL_SLUGS: new Set(
-    (await import('../tool-policy-snapshot.untrusted.json', { with: { type: 'json' } })).default,
+  // The real policies need every builtin and the real @mantle/db: the mock
+  // answers a builtin's untrusted mark from the snapshot's own literal
+  // (packages/runtime/src/tool-policy-snapshot.test.ts pins the policies to
+  // it), so the two cannot drift; the effect of the two reads the
+  // client-sourced gate meets here (as isBuiltinReadOnly below), and the
+  // lowering of the four lowering tools, their policies' own rules (the
+  // snapshot pins which tools lower and how).
+  builtinPolicy: ((untrusted: Set<string>, lowering: Record<string, unknown>) => (slug: string) => {
+    const read = ['task_get', 'page_get'].includes(slug);
+    if (!read && !untrusted.has(slug) && !(slug in lowering)) return null;
+    return {
+      ...(read ? { effect: 'read' } : {}),
+      ...(untrusted.has(slug) ? { outside: { untrusted: true } } : {}),
+      ...(slug in lowering ? { lowering: lowering[slug] } : {}),
+    };
+  })(
+    new Set(
+      (await import('../tool-policy-snapshot.untrusted.json', { with: { type: 'json' } })).default,
+    ),
+    await (async () => {
+      const cs = await vi.importActual<typeof import('../../../tools/src/client-sourced')>(
+        '../../../tools/src/client-sourced',
+      );
+      return {
+        access_set: cs.lowersAccessSet,
+        email_page: cs.lowersEmailPage,
+        node_share: 'always',
+        page_share: 'always',
+      };
+    })(),
   ),
+  policyUntrusted: (p: { outside?: { untrusted?: boolean } } | null | undefined) =>
+    p?.outside?.untrusted === true,
   PRIVATE_OUTPUT_TOOL_SLUGS: (
     await vi.importActual<typeof import('../../../tools/src/private-output')>(
       '../../../tools/src/private-output',
@@ -140,7 +166,7 @@ vi.mock('@mantle/db', () => ({
 }));
 
 // The client-sourced scan (client logins C4): a stand-in that marks the turn
-// when the scanned text names CLIENT_TASK. isLoweringCall, newTurnTaint and
+// when the scanned text names CLIENT_TASK. The policies' lowering, newTurnTaint and
 // the gate by target (client-sourced-rules.ts) stay real; marking a created
 // node is recorded. The real queries: packages/runtime/src/agent/
 // client-sourced-gate.db.test.ts.

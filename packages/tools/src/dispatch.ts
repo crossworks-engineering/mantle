@@ -51,7 +51,7 @@ import {
 import { sanitizedEnv } from './sanitized-env';
 import { mcpCallRemoteTool } from './mcp-client';
 import { isMcpManagedSecretService } from './mcp-oauth';
-import { UNTRUSTED_CONTENT_TOOL_SLUGS } from './untrusted';
+import { builtinPolicy, policyUntrusted } from './tool-policy';
 import type { ToolHandlerContext, ToolHandlerResult } from './types';
 import { registerToolDispatcher } from './dispatch-bridge';
 import { isOwnerSurface, OWNER_ONLY_ERROR } from './surface';
@@ -76,9 +76,9 @@ import { errorMessage } from '@mantle/std';
 
 const HTTP_TIMEOUT_MS_DEFAULT = 15_000;
 
-// The adminOnly list and the Admin gate live in admin-gate.ts (W7a: the
-// Admin MCP surface gates its calls with them too).
-export { ADMIN_ONLY_ERROR, ADMIN_ONLY_TOOL_SLUGS } from './admin-gate';
+// The Admin gate's words live in admin-gate.ts (W7a: the Admin MCP surface
+// says them too).
+export { ADMIN_ONLY_ERROR } from './admin-gate';
 
 /** The answer to a call that names no caller (A5 step 3b): every entry
  *  names one (dispatch-entries.test.ts sweeps them), so none is a bug at
@@ -219,8 +219,8 @@ async function dispatchGated(
         async (): Promise<ToolHandlerResult | null> => {
           try {
             const run = () => fn(args, ctx);
-            // An AREA_SYSTEM_TOOLS tool runs whole on the system pool after
-            // its area check, in a workspace scope (W7a fix round 1, H1).
+            // A `systemWhole` tool runs whole on the system pool after its
+            // area check, in a workspace scope (W7a fix round 1, H1).
             const whole = policy?.fields?.systemWhole === true && !!currentWorkspaceScope();
             return await runGated({ system: whole }, run);
           } catch (err) {
@@ -607,7 +607,7 @@ async function dispatchRecipe(
     if (!res.ok) {
       return { ok: false, error: `recipe step ${i} ('${step.tool}') failed: ${res.error}` };
     }
-    if (res.untrusted || UNTRUSTED_CONTENT_TOOL_SLUGS.has(step.tool)) untrusted = true;
+    if (res.untrusted || policyUntrusted(builtinPolicy(step.tool))) untrusted = true;
     scope.steps[String(i)] = res.output;
     if (step.as) scope.steps[step.as] = res.output;
   }

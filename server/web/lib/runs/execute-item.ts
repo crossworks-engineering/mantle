@@ -26,8 +26,9 @@ import {
 } from '@mantle/db';
 import { claimItem, completeItem, requeueForRetry, type PostCommitAction } from '@mantle/runs';
 import {
-  BANNED_ITEM_TOOLS,
+  builtinPolicy,
   dispatchTool,
+  policyRunItemBanned,
   runCaller,
   loadAgentGrant,
   NO_AGENT_RUN_SLUG,
@@ -134,7 +135,8 @@ async function executeToolCall(item: RunItemRow): Promise<ExecuteItemOutcome> {
   if (!slug) {
     return fail({ type: 'bad_payload', message: 'tool_call payload has no tool slug' });
   }
-  if (BANNED_ITEM_TOOLS.has(slug)) {
+  const named = builtinPolicy(slug);
+  if (named && policyRunItemBanned(named)) {
     return fail({ type: 'banned_tool', message: `'${slug}' may not run as a queue item` });
   }
   // run_items has no owner column — owner scoping comes from the run row,

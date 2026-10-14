@@ -576,8 +576,8 @@ describe.skipIf(!URL)('W7a: the Admin assistant and the Admin MCP read in their 
         { adminLogin: true },
       )) as { content?: { text?: string }[] };
       expect(gated.content?.map((p) => p.text).join('')).toMatch(/manages the brain's settings/);
-      expect(t.toolAdminArea('run_terminal')).toBe('settings');
-      expect(t.ADMIN_ONLY_TOOL_SLUGS.has('run_terminal')).toBe(true);
+      expect(t.policyArea(t.builtinPolicy('run_terminal')!)).toBe('settings');
+      expect(t.policyAdminOnly(t.builtinPolicy('run_terminal')!)).toBe(true);
     } finally {
       delete process.env.MANTLE_MCP_TERMINAL;
       await x(sql`update workspace_users

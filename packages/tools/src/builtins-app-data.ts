@@ -556,12 +556,3 @@ export const LOGIN_APP_DATA_TOOLS: BuiltinToolDef[] = [
   app_data_query,
   app_data_write,
 ];
-
-/** The read tools: a login with MCP on gets these (their policy's effect). */
-export const APP_DATA_READ_TOOL_SLUGS: readonly string[] = Object.freeze(
-  LOGIN_APP_DATA_TOOLS.filter((d) => d.policy.effect === 'read').map((d) => d.slug),
-);
-/** The write tool: only with the login's Write switch on. */
-export const APP_DATA_WRITE_TOOL_SLUGS: readonly string[] = Object.freeze(
-  LOGIN_APP_DATA_TOOLS.filter((d) => d.policy.effect === 'write').map((d) => d.slug),
-);

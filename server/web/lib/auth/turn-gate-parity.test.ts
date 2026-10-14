@@ -89,8 +89,14 @@ vi.mock('../../../../packages/db/src/create-home', () => ({
 }));
 
 import {
+  currentGateScope,
+  currentWorkspaceScope,
   gateCheck,
   loginActor,
+  loginHasArea,
+  scopeHasArea,
+  scopeHoldsAdmin,
+  withTurnScope,
   runAsActor,
   withCreateHome,
   type GateCaller,
@@ -98,22 +104,59 @@ import {
 } from '@mantle/db';
 import {
   BUILTIN_TOOLS,
-  ITEM_WRITE_TARGETS,
-  adminToolGate,
   dispatchTool,
+  policyAdminOnly,
+  policyArea,
+  policySystemWhole,
   turnCaller as entryTurnCaller,
   type ToolHandlerContext,
 } from '@mantle/tools';
-import { ADMIN_KIND_CREATE_ERROR } from '@mantle/std';
+import { ADMIN_KIND_CREATE_ERROR, ADMIN_ONLY_ERROR, adminAreaError } from '@mantle/std';
 import type { Tool } from '@mantle/db';
 import { createHomeStep } from '../../../../packages/db/src/gate';
 import { turnCreateHome } from '../../../../packages/tools/src/turn-create-home';
-import { ADMIN_KIND_CREATE_TOOL_SLUGS } from '@mantle/mcp-core';
+// The owner MCP surface registers the gate's `mcp-tool` source.
+import '@mantle/mcp-core';
 
 const LOGIN = '55555555-5555-4555-8555-555555555555';
 const W1 = '11111111-1111-4111-8111-111111111111';
 const W2 = '22222222-2222-4222-8222-222222222222';
 const AREAS = ['settings', 'users', 'assistants', 'connectors', 'keys'];
+
+/** The creates of an Admin-only kind (their policy's scope `admin-kind`). */
+const ADMIN_KIND_CREATE_TOOL_SLUGS = new Set(
+  BUILTIN_TOOLS.filter((d) => d.policy.scope === 'admin-kind').map((d) => d.slug),
+);
+
+/**
+ * What dispatch asked before A5 step 3a (adminToolGate, which A5 step 6a
+ * deleted with its lists), the oracle here: the same steps over the scope,
+ * reading the builtin's policy (adminOnly, its area, whole on the system
+ * pool) where the function read the lists the policies replaced.
+ */
+async function adminToolGate(
+  slug: string,
+  opts: { ref?: string; ownerOnly?: boolean } = {},
+): Promise<{ refused: string } | { system: boolean }> {
+  const policy = BUILTIN_TOOLS.find((d) => d.slug === (opts.ref ?? slug))!.policy;
+  const adminOnly = policyAdminOnly(policy);
+  const area = policyArea(policy);
+  if (!currentWorkspaceScope()) {
+    const g = currentGateScope();
+    if (!g) return { system: false };
+    if ((adminOnly || area) && !(await withTurnScope(g, () => scopeHoldsAdmin()))) {
+      return { refused: ADMIN_ONLY_ERROR };
+    }
+    if (area && !(g.loginId && (await loginHasArea(g.loginId, area)))) {
+      return { refused: adminAreaError(area) };
+    }
+    return { system: false };
+  }
+  if ((adminOnly || area) && !(await scopeHoldsAdmin())) return { refused: ADMIN_ONLY_ERROR };
+  if (!area) return { system: false };
+  if (!(await scopeHasArea(area))) return { refused: adminAreaError(area) };
+  return { system: policySystemWhole(policy) };
+}
 
 /** The gate's caller for a turn scope (what A5 builds at dispatch). */
 function turnCaller(scope: WorkspaceScope, admin: GateCaller['admin'] = null): GateCaller {
@@ -172,7 +215,7 @@ describe('the Admin step equals adminToolGate on the turn path', () => {
 
   it('every tool the item pre-check reads has a gate policy (A5 hangs the check on it)', () => {
     const caller = turnCaller({ kind: 'assistant', loginId: LOGIN, ws: [W1], modWs: [W1] }, null);
-    for (const slug of ITEM_WRITE_TARGETS.keys()) {
+    for (const slug of BUILTIN_TOOLS.filter((d) => d.policy.items).map((d) => d.slug)) {
       expect(gateCheck(caller, { kind: 'mcp-tool', name: slug })?.kind, slug).not.toBe(
         'unclassified',
       );

@@ -12,11 +12,11 @@ import {
   redactArgsForLogging,
   processToolResultForModel,
   notifyPendingCreated,
-  isBuiltinReadOnly,
   sanitizeToolError,
   turnCaller,
   turnCallRefusal,
-  UNTRUSTED_CONTENT_TOOL_SLUGS,
+  builtinPolicy,
+  policyUntrusted,
   PRIVATE_OUTPUT_TOOL_SLUGS,
   type ValidateArgsResult,
   type ToolHandlerResult,
@@ -123,7 +123,7 @@ export async function executeToolCall(p: {
               ownerId: args.ownerId,
               tool,
               input,
-              isReadOnlyBuiltin: isBuiltinReadOnly,
+              policyOf: builtinPolicy,
             })
           : { gate: false };
       if (tool.requiresConfirm || verdict.gate) {
@@ -297,7 +297,7 @@ export async function toolResultPayload(p: {
   // the boundary travels both paths: inline results carry it directly,
   // and spilled results are stored fenced — so read_result page/grep/
   // query return fenced content too, never a clean instruction.
-  if (UNTRUSTED_CONTENT_TOOL_SLUGS.has(slug) || outcome.untrusted === true) {
+  if (policyUntrusted(builtinPolicy(slug)) || outcome.untrusted === true) {
     serialized = fenceRetrieved(serialized);
   }
   if (Buffer.byteLength(serialized, 'utf8') <= handling.inlineMaxBytes) return serialized;

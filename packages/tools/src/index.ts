@@ -15,15 +15,17 @@ export { checkToolPreconditions, type NodeTypeLookup } from './preconditions';
 export {
   PolicyTableNotLoadedError,
   builtinPolicy,
+  namedToolPolicy,
   policyAdminOnly,
+  policyArea,
   policyLowers,
-  policySlugList,
-  policySlugMap,
-  policySlugSet,
+  policyMayLower,
+  policyRecipeForbidden,
+  policyRunItemBanned,
+  policySystemWhole,
+  policyUntrusted,
   toGatePolicy,
-  type SurfaceMapOpts,
   type SurfaceToolDef,
-  type SurfaceViewOpts,
   type ToolItemResolver,
   type ToolItemTarget,
   type ToolOutside,
@@ -58,8 +60,6 @@ export {
 } from './validate-args';
 
 export { notFound, sanitizeToolError, type NotFoundResult } from './errors';
-export { UNTRUSTED_CONTENT_TOOL_SLUGS } from './untrusted';
-export { CREATE_TOOL_SLUGS } from './create-tools';
 export { buildAndStageApp, type AppBuildOutcome } from './app-build-stage';
 export { importAppPackage, type AppPackageImportResult } from './app-package-import';
 export { PRIVATE_OUTPUT_TOOL_SLUGS } from './private-output';
@@ -162,15 +162,11 @@ export { FORMULA_TOOLS, FORMULA_TOOL_SLUGS, FORMULA_AUTO_GRANT_SLUGS } from './b
 export { CALCULATE_TOOLS, CALCULATE_TOOL_SLUGS } from './builtins-calculate';
 export { LOCATION_TOOLS, LOCATION_TOOL_SLUGS } from './builtins-locations';
 export { PROFILE_TOOLS, PROFILE_TOOL_SLUGS } from './builtins-profile';
-export { RUN_TOOLS, BANNED_ITEM_TOOLS, parsePlan } from './builtins-runs';
+export { RUN_TOOLS, parsePlan } from './builtins-runs';
 export { loadAgentGrant, NO_AGENT_RUN_SLUG, type AgentGrant } from './agent-grants';
 export { REPLAY_TOOLS } from './builtins-replay';
 export { IMAGE_TOOLS } from './builtins-images';
-export {
-  LOGIN_APP_DATA_TOOLS,
-  APP_DATA_READ_TOOL_SLUGS,
-  APP_DATA_WRITE_TOOL_SLUGS,
-} from './builtins-app-data';
+export { LOGIN_APP_DATA_TOOLS } from './builtins-app-data';
 export { RESEARCH_TOOLS, resolveOpenRouterKey } from './builtins-research';
 export { CURATION_TOOLS } from './builtins-curation';
 export { CRAWL_TOOLS } from './builtins-crawl';
@@ -189,25 +185,16 @@ export {
   APP_CALLER_SURFACE_ERROR,
   NO_TOOL_CALLER_ERROR,
   ADMIN_ONLY_ERROR,
-  ADMIN_ONLY_TOOL_SLUGS,
 } from './dispatch';
 export {
-  AREA_SYSTEM_TOOLS,
-  TOOL_ADMIN_AREAS,
-  OWNER_ONLY_IN_SCOPE,
   adminAreaError,
-  adminGateLists,
-  adminToolGate,
   areaSystem,
   callerHasArea,
   isAdminGateRefusal,
-  isAdminOnlyTool,
   runGated,
-  toolAdminArea,
-  type AdminGate,
   type AdminGateView,
 } from './admin-gate';
-export { ITEM_WRITE_TARGETS, itemWriteTargetsOf, toolItemWriteRefusal } from './item-write-gate';
+export { builtinItems, toolItemWriteRefusal, type ToolItems } from './item-write-gate';
 export {
   SECRET_REFS_MAKER_NO_KEYS,
   SECRET_REFS_NEED_KEYS,
@@ -234,7 +221,7 @@ export {
 } from './heartbeat-maker';
 export {
   memberAppToolVerdict,
-  MEMBER_APP_REFUSED_SLUGS,
+  memberAppRefusedName,
   type MemberAppToolVerdict,
 } from './member-app-tools';
 export {
@@ -505,9 +492,7 @@ export { reconcileMeta, ruleReconcilerFor } from './rule-reconciler';
 export {
   newTurnTaint,
   taintFromText,
-  isLoweringCall,
   uuidsIn,
   namesClientSourced,
-  LOWERING_TOOL_SLUGS,
   type TurnTaint,
 } from './client-sourced';

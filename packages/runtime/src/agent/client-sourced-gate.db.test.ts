@@ -254,7 +254,7 @@ describe.skipIf(!URL)('the lowering guard, end to end', () => {
         ownerId,
         tool: { slug, handler: { kind: 'builtin', ref: slug } },
         input,
-        isReadOnlyBuiltin: tools.isBuiltinReadOnly,
+        policyOf: tools.builtinPolicy,
       });
     expect((await gate('app_db_seed', { id: ids.app, table: 'rows', rows: [] })).gate).toBe(true);
     expect(await gate('app_db_seed', { id: ids.appTeamOnly, table: 'rows', rows: [] })).toEqual({

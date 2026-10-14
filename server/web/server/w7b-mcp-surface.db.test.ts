@@ -398,11 +398,13 @@ describe.skipIf(!URL)('W7b: one MCP surface for every login', () => {
       expect(listed).toContain('workspaces_list');
       const gated = listed.filter((slug) => {
         const def = t.getBuiltin(slug);
+        // Read from the policies (A5 step 6a: no list view).
+        const p = ls.mcpToolPolicyOf(slug);
         return (
-          t.isAdminOnlyTool(slug, { ownerOnly: def?.ownerOnly }) ||
-          t.toolAdminArea(slug) !== null ||
-          ls.spendsOwnerKeys(slug) ||
-          ls.ADMIN_KIND_CREATE_TOOL_SLUGS.has(slug)
+          (p !== null && t.policyAdminOnly(p)) ||
+          (def !== null && t.policyArea(def.policy) !== null) ||
+          p?.spends === 'ownerKey' ||
+          p?.scope === 'admin-kind'
         );
       });
       expect(gated).toEqual([]);
@@ -440,7 +442,7 @@ describe.skipIf(!URL)('W7b: one MCP surface for every login', () => {
         }
         ran += 1;
         if (BAD.test(out) && !ITEM_WS.test(out)) bad.push(`${tool.slug}: ${out.slice(0, 200)}`);
-        if (ls.MCP_CREATE_TOOL_SLUGS.has(tool.slug)) {
+        if (t.builtinPolicy(tool.slug)?.creates !== undefined) {
           let landedIn: { id?: string } | undefined;
           try {
             landedIn = (JSON.parse(out) as { landedIn?: { id?: string } }).landedIn;
@@ -523,7 +525,9 @@ describe.skipIf(!URL)('W7b: one MCP surface for every login', () => {
     expect(peerCaller).toMatchObject({ role: 'member', loginId: mem, via: 'peer', write: false });
     const peerListed = await sweep(peerCaller!);
     // Write off: read-only tools only.
-    for (const slug of peerListed) expect(ls.isMcpToolReadOnly(slug), slug).toBe(true);
+    for (const slug of peerListed) {
+      expect(ls.mcpToolPolicyOf(slug)?.effect, slug).toBe('read');
+    }
   }, 1_800_000);
 
   it('an Admin user who is not the owner: an Admin area only through the area check', async () => {
@@ -777,10 +781,12 @@ describe.skipIf(!URL)('W7b: one MCP surface for every login', () => {
     // Every spending builtin (search_chunks keeps its free ranking) and every
     // other tool on the owner's keys (W7 integration fix 2: route_map too).
     const { BUILTIN_TOOLS } = await import('@mantle/tools');
-    const { OWNER_KEY_SPENDING_TOOLS } = await import('@mantle/mcp-core');
+    const { MCP_TOOL_DEFS, mcpToolPolicyOf } = await import('@mantle/mcp-core');
+    // The tools whose policy spends `ownerKey` (A5 step 6a: no list view).
+    const ownerKey = [...BUILTIN_TOOLS.map((d) => d.slug), ...MCP_TOOL_DEFS.map((d) => d.slug)];
     const spending = [
       ...BUILTIN_TOOLS.filter((d) => d.spends && d.slug !== 'search_chunks').map((d) => d.slug),
-      ...OWNER_KEY_SPENDING_TOOLS,
+      ...new Set(ownerKey.filter((n) => mcpToolPolicyOf(n)?.spends === 'ownerKey')),
     ];
     expect(spending).toContain('route_map');
     for (const via of ['oauth', 'key', 'peer'] as const) {

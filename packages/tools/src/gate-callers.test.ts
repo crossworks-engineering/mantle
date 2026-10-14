@@ -91,11 +91,11 @@ import type { Tool } from '@mantle/db';
 import { loginActor, runAsActor, runWithoutActor, withCreateHome } from '@mantle/db';
 import {
   ADMIN_ONLY_ERROR,
-  AREA_SYSTEM_TOOLS,
   BUILTIN_TOOLS,
   adminAreaError,
   dispatchTool,
   pendingCaller,
+  policySystemWhole,
   turnCaller,
 } from './index';
 import { gateCallerFor } from './gate-callers';
@@ -210,10 +210,9 @@ describe('an assistant actor in a read tool (LOW-5)', () => {
     const admin = byEffect('read').filter((d) => d.policy.scope !== 'any');
     expect(admin.length).toBeGreaterThan(5);
     // Every read that runs whole on the system pool is among them.
-    for (const slug of AREA_SYSTEM_TOOLS) {
-      const def = BUILTIN_TOOLS.find((d) => d.slug === slug);
-      if (def?.policy.effect === 'read' && !def.ownerOnly) {
-        expect(admin.includes(def), slug).toBe(true);
+    for (const def of BUILTIN_TOOLS.filter((d) => policySystemWhole(d.policy))) {
+      if (def.policy.effect === 'read' && !def.ownerOnly) {
+        expect(admin.includes(def), def.slug).toBe(true);
       }
     }
     for (const def of admin) {

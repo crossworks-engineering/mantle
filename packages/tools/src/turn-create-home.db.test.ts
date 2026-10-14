@@ -296,7 +296,7 @@ describe.skipIf(!URL)('assistant turn creates follow the home rule (A0)', () => 
     expect(await count()).toBe(0);
     // A write tool that is not on the create list still makes it, since it
     // is not readOnly.
-    expect(tools.CREATE_TOOL_SLUGS.has('note_update')).toBe(false);
+    expect(tools.builtinPolicy('note_update')?.creates).toBeUndefined();
     const res = await turn(() =>
       tools.dispatchTool(builtin('note_update'), { id: note, title: `${tag} renamed` }, ctx),
     );

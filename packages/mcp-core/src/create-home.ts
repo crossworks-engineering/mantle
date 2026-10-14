@@ -18,27 +18,18 @@
  */
 import { and, eq, gte, inArray, or, sql } from 'drizzle-orm';
 import { db, nodes, workspaces } from '@mantle/db';
-import { CREATE_TOOL_SLUGS } from '@mantle/tools';
-import { mcpPolicySet } from './mcp-policy';
 
-/**
- * The create tools that make an item of a workspace kind: they take
- * `workspace` and name where the item landed. One list for MCP and
- * assistant turns (A0 fix round 2): @mantle/tools CREATE_TOOL_SLUGS.
+/*
+ * The create tools that make an item of a workspace kind take `workspace`
+ * and name where the item landed: their policy says `creates` (one rule for
+ * MCP and assistant turns, A0 fix round 2). The create tools whose kind
+ * lives in the Admin workspace only (a contact, a journal entry, a saved
+ * place: mantle_kind_class 'admin_only') declare scope `admin-kind`: a user
+ * outside Admin is refused them (W7b fix round 1, H2): not listed (gate
+ * step 5), and the database's create home refuses the row (every call of
+ * such a user runs under its private workspace). A5 step 6a deleted the
+ * MCP_CREATE_TOOL_SLUGS and ADMIN_KIND_CREATE_TOOL_SLUGS views.
  */
-export const MCP_CREATE_TOOL_SLUGS: ReadonlySet<string> = CREATE_TOOL_SLUGS;
-
-/**
- * The create tools whose kind lives in the Admin workspace only (a contact,
- * a journal entry, a saved place: mantle_kind_class 'admin_only'). A user
- * outside Admin is refused them (W7b fix round 1, H2): not listed (gate step
- * 5, the policy's `admin-kind`), and the database's create home refuses the
- * row (every call of such a user runs under its private workspace). A view
- * of the policy tables (A5 step 2): the tools whose scope is `admin-kind`.
- */
-export const ADMIN_KIND_CREATE_TOOL_SLUGS: ReadonlySet<string> = mcpPolicySet(
-  (p) => p.scope === 'admin-kind',
-);
 
 /** The refusal of an Admin-only kind's create outside Admin: the one
  *  mapper's words (@mantle/std access-error.ts, arch A3c), gate step 5. */

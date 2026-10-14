@@ -89,9 +89,9 @@ const keyNarrower: Narrower = (caller, policy) => {
 
 /**
  * A key's or a peer's risky tools and Write switch, on a tool, from what its
- * policy declares (A5 step 2): the rule the MCP listing runs
- * (ownerPeerAllows), now read from the policy, never from a list keyed by
- * name. A risky tool (`fields.peerRisky`) the owner did not name on the key
+ * policy declares (A5 step 2): the rule the MCP listing ran by name
+ * (ownerPeerAllows, deleted in A5 step 6a), read from the policy, never
+ * from a list keyed by name. A risky tool (`fields.peerRisky`) the owner did not name on the key
  * or the peer is refused; with Write off, a tool that is not a read is.
  * Pinned against the listing by gate-policy.test.ts, and for every tool and
  * every key and peer caller by tool-policy-sweep.test.ts.
@@ -113,7 +113,7 @@ const peerNarrower: Narrower = (caller, policy, ref) => {
   const declared = policy.fields?.peerRisky;
   if (typeof declared !== 'boolean') return RISKY_TOOL_ERROR;
   // A connector's tool is not risky by the owner MCP surface's family rule
-  // (login-surface.ts isPeerRiskyTool), which it declares on its row. In a
+  // (no family holds an mcp_* name), which it declares on its row. In a
   // process without that surface (no `mcp-tool` source: server/api), the
   // answer before A5 step 2 holds: risky unless the owner named it (fail
   // closed; A5 step 2 fix round 1, LOW-4).

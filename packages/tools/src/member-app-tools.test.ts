@@ -13,24 +13,29 @@ vi.mock('./resolve', () => ({
 
 import { resolveTool } from './resolve';
 import { BUILTIN_TOOLS } from './builtins';
-import { MEMBER_APP_REFUSED_SLUGS, memberAppToolVerdict } from './member-app-tools';
+import { memberAppRefusedName, memberAppToolVerdict } from './member-app-tools';
 // The access lists are views of the tool policy table, which the registry
 // fills (A5): load it.
 import './registry';
 
+/** The names no team app calls: the retired team tools and the builtins
+ *  whose policy refuses a team app (A5 step 6a: no MEMBER_APP_REFUSED_SLUGS
+ *  view; memberAppRefusedName reads the policy). */
+const REFUSED = [
+  'my_item_open',
+  'my_items_list',
+  'read_result',
+  'search_chunks',
+  'summarize_text',
+  'extract_from_image',
+  'team_request_create',
+];
+
 describe('memberAppToolVerdict refused list', () => {
   it('holds the private-item readers, the LLM spenders and the chat-only tools', () => {
-    expect([...MEMBER_APP_REFUSED_SLUGS].sort()).toEqual(
-      [
-        'my_item_open',
-        'my_items_list',
-        'read_result',
-        'search_chunks',
-        'summarize_text',
-        'extract_from_image',
-        'team_request_create',
-      ].sort(),
-    );
+    for (const slug of REFUSED) expect(memberAppRefusedName(slug), slug).toBe(true);
+    const others = BUILTIN_TOOLS.filter((t) => !REFUSED.includes(t.slug));
+    for (const t of others) expect(memberAppRefusedName(t.slug), t.slug).toBe(false);
   });
 
   it('refuses every builtin flagged `spends`, by the flag, before the group lookup (audit F17)', async () => {
@@ -46,7 +51,7 @@ describe('memberAppToolVerdict refused list', () => {
         handler: { kind: 'builtin', ref: def.slug },
       } as never);
       const v = await memberAppToolVerdict('brain', ['custom-alias'], 'custom-alias');
-      if (MEMBER_APP_REFUSED_SLUGS.includes(def.slug)) {
+      if (REFUSED.includes(def.slug)) {
         expect(v, def.slug).toMatchObject({ ok: false, status: 403 });
       } else {
         expect(v, def.slug).toMatchObject({
@@ -59,7 +64,7 @@ describe('memberAppToolVerdict refused list', () => {
   });
 
   it('refuses every refused slug even when the app declares it', async () => {
-    for (const slug of MEMBER_APP_REFUSED_SLUGS) {
+    for (const slug of REFUSED) {
       expect(await memberAppToolVerdict('brain', [slug], slug), slug).toMatchObject({
         ok: false,
         status: 403,

@@ -8,13 +8,14 @@
  * so an SDK upgrade cannot change what the assistant sees without a red test.
  */
 
-import { MCP_CREATE_TOOL_SLUGS, WORKSPACE_ARG } from './create-home';
+import { WORKSPACE_ARG } from './create-home';
 import { describe, expect, it } from 'vitest';
 import { InMemoryTransport, McpServer } from '@modelcontextprotocol/server';
 import { Client } from '@modelcontextprotocol/client';
 import { BUILTIN_TOOLS } from '@mantle/tools';
 
 import { registerMantleTools } from './build-server';
+import { MCP_CREATE_TOOL_SLUGS } from './policy-views.test-helper';
 
 async function listedTools() {
   const server = new McpServer({ name: 'mantle', version: '0.0.1' });

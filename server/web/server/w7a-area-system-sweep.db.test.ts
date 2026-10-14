@@ -1,5 +1,5 @@
 /**
- * W7a fix round 2: every tool of AREA_SYSTEM_TOOLS (the Admin-area tools
+ * W7a fix round 2: every `systemWhole` tool (the Admin-area tools
  * that run WHOLE on the system pool after the area check) reads and writes
  * system tables only. Each runs here in an Admin turn, with the system pool
  * closed to the item tables: any statement it sends to the system pool that
@@ -75,7 +75,7 @@ function mcpReply(msg: { id?: unknown; method?: string; params?: { protocolVersi
   return Response.json({ jsonrpc: '2.0', id: msg.id, result });
 }
 
-describe.skipIf(!URL)('AREA_SYSTEM_TOOLS touch no item on the system pool', () => {
+describe.skipIf(!URL)('the systemWhole tools touch no item on the system pool', () => {
   type Ts = typeof import('@mantle/db/test-support');
   let scratch: Awaited<ReturnType<Ts['createMigratedScratchDatabase']>> | undefined;
   let m: typeof import('@mantle/db');
@@ -303,7 +303,8 @@ describe.skipIf(!URL)('AREA_SYSTEM_TOOLS touch no item on the system pool', () =
 
   it('every listed tool runs without an item statement on the system pool', async () => {
     const broke: Record<string, string[]> = {};
-    for (const slug of t.AREA_SYSTEM_TOOLS) {
+    const whole = t.listBuiltins().filter((d) => t.policySystemWhole(d.policy));
+    for (const slug of whole.map((d) => d.slug)) {
       const hits: string[] = [];
       armed = hits;
       let res: { ok: boolean; error?: string };

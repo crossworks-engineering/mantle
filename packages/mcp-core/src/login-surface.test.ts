@@ -7,24 +7,28 @@
  * below; the DB-backed sweep is server/web/server/w7b-mcp-surface.db.test.ts.
  */
 import { describe, expect, it } from 'vitest';
-import { BUILTIN_TOOLS, OWNER_ONLY_IN_SCOPE } from '@mantle/tools';
+import { BUILTIN_TOOLS } from '@mantle/tools';
 import type { Tool, ToolHandler } from '@mantle/db';
 import { externalAccessToolSig } from '@mantle/tools';
 import { registerMantleTools } from './build-server';
-import { ADMIN_KIND_CREATE_TOOL_SLUGS, MCP_CREATE_TOOL_SLUGS } from './create-home';
 import {
-  MCP_HANDWRITTEN_READ_ONLY,
   MCP_NO_WORKSPACE_INSTRUCTIONS,
-  OWNER_KEY_SPENDING_TOOLS,
-  spendsOwnerKeys,
-  isMcpToolReadOnly,
-  isPeerRiskyTool,
   mcpInstructionsFor,
   preparedLists,
   registerPreparedTools,
   type McpCaller,
   type PreparedCallerTools,
 } from './login-surface';
+import {
+  ADMIN_KIND_CREATE_TOOL_SLUGS,
+  isMcpToolReadOnly,
+  isPeerRiskyTool,
+  MCP_CREATE_TOOL_SLUGS,
+  MCP_HANDWRITTEN_READ_ONLY,
+  OWNER_KEY_SPENDING_TOOLS,
+  OWNER_ONLY_IN_SCOPE,
+  spendsOwnerKeys,
+} from './policy-views.test-helper';
 
 /** What the surface registers: the anchor's own (no connection), or a
  *  peer's, listed through the one gate (A5 step 4). */

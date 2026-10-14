@@ -13,8 +13,8 @@ import {
   collectRecipeParams,
   parseRecipeSteps,
   recipeVerdictReason,
-  RECIPE_FORBIDDEN_SLUGS,
 } from '../recipe';
+import { builtinPolicy, policyRecipeForbidden } from '../tool-policy';
 import { type BuiltinToolDef, type ToolHandlerResult } from '../types';
 import { str } from '../coerce';
 import { errorMessage } from '@mantle/std';
@@ -154,7 +154,8 @@ export const recipe_tool_create: BuiltinToolDef = {
         error: 'slug must be lowercase letters/digits/dash/underscore (max 120)',
       };
     }
-    if (RECIPE_FORBIDDEN_SLUGS.has(slug)) {
+    const named = builtinPolicy(slug);
+    if (named && policyRecipeForbidden(named)) {
       return { ok: false, error: `slug '${slug}' is reserved` };
     }
     const reserved = reservedSlugError(slug);

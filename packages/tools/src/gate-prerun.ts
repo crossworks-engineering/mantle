@@ -29,7 +29,7 @@ import {
 import { mcpVia } from './gate-callers';
 import { editCheckRefusalError, errorMessage } from '@mantle/std';
 import { checkToolPreconditions } from './preconditions';
-import { toolItemWriteRefusalOf } from './item-write-gate';
+import { builtinItems, toolItemWriteRefusalOf } from './item-write-gate';
 import { keySharedContentRefusal } from './key-shared-content';
 import { tableBuiltin } from './tool-policy';
 import type { ToolHandlerContext } from './types';
@@ -81,7 +81,8 @@ export const itemPrecheck: PreRunCheck = async (caller, _policy, ref, call) => {
       const failure = await checkToolPreconditions(pre, input, ctx.ownerId);
       if (failure && !failure.ok) return failure.error;
     }
-    refused = await toolItemWriteRefusalOf(builtin.slug, input, ctx.ownerId, builtin.handler, {
+    const items = builtinItems(builtin.slug, builtin.handler);
+    refused = await toolItemWriteRefusalOf(items, input, ctx.ownerId, {
       ...(ctx.surface ? { surface: ctx.surface } : {}),
     });
   } catch (err) {
