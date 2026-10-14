@@ -2431,7 +2431,8 @@ scope, then holds.
   but the owner's own web (the dev console, an app the Admin workspace
   alone holds), so a member's or a contact's broker call says the one
   mapper's words for a database error and keeps any other error's text
-  (`packages/tools/src/dispatch-ungated-mask.test.ts`).
+  (`dispatch-ungated-mask.test.ts` then; since step 3b the broker's caller
+  masks, `packages/tools/src/dispatch-broker-mask.test.ts`).
 - **L2: a read-only connection keeps a marked connector tool to its marked
   inputs.** Dispatch applies a read-only mark's inputs check
   (`connectorMarkRefusal`) below the owner and in a workspace scope, not on
@@ -2494,3 +2495,99 @@ scope, then holds.
   call waited). Re-checking it there needs the row to carry the scope
   whole (its workspace and login are stamped, 0250, but not the scope's
   moderator set or its Admin view), which is a migration.
+
+## App calls and the dev console through the gate (A5 step 3b)
+
+Plan section 23.3, step 3b, no behaviour change. Every tool call now runs
+through `enterCall`: the app tool brokers and the dev console were the
+last entries that named no caller, and `dispatchUngated` is gone.
+
+The ungated callers before this step (the sweep of
+`packages/tools/src/dispatch-entries.test.ts`, then `NO_CALLER_YET`):
+
+- the shared link broker, `server/web/app/s/[token]/tool-broker/route.ts`
+  (a contact share's call of an outside tool with External access, on a
+  contact surface in the link's scope);
+- the member app broker, `server/web/lib/app-runner.ts` (`memberToolBroker`:
+  a member's run on the owner route, team rules, a team surface in the
+  app's scope);
+- the owner app broker, `server/web/app/api/apps/[id]/tool-broker/route.ts`
+  (an Admin user's run: admin rules on the owner's web surface for an app
+  the Admin workspace alone holds, team rules in the app's scope for any
+  other or a member-built one);
+- the dev console, `server/web/app/api/dev-tools/execute-tool/route.ts`.
+
+The member test broker (`server/web/app/api/apps/members/[id]/test/tool-broker/route.ts`),
+the member route (`server/web/app/api/member/apps/[id]/tool-broker/route.ts`)
+and the client route are 410 stubs: they dispatch nothing.
+
+- **The run.** A broker passes `appBrokerCaller(surface)`
+  (`packages/tools/src/gate-callers.ts`): entry `app`, via `contact` on a
+  contact surface, else `app`. The dev console passes `ownerWebCaller()`
+  (via `cookie`). Dispatch builds each call's gate caller as for any other
+  entry (`gateCallerFor`): the actor bound at the broker's entry
+  (`currentActor()`: the request's login, the member's login in the app's
+  scope, the contact share), the Admin view of the scope it runs in, no
+  create home outside an assistant turn. So the tool's declared policy, the
+  Admin step, the owner-only check, the item pre-check and the runtime
+  policy check run in the gate's order, as dispatch ran them before.
+- **The refusals.** The brokers keep their verdicts
+  (`memberAppToolVerdict` through `appToolVerdict`, `contactAppToolVerdict`)
+  and their logging. A missing tool still answers 404 before the gate (no
+  row, no ref). Every other refusal is the gate's: `appToolRefusal`
+  (`packages/tools/src/app-tool-level.ts`) asks `gateCallRefusal` for the
+  call's `app-tool` ref, which carries the verdict, and the member-app
+  narrower refuses it in the verdict's words, a 403, at every rules a broker
+  judges at (an admin's run and a contact's too, where before it acted at
+  team rules only; `packages/tools/src/gate-narrowers.ts`). Same status,
+  same body (`packages/tools/src/app-tool-refusal.test.ts`).
+- **The masking.** The M3 rule of step 5 fix round 1 is the broker's
+  caller's now, not a special case of an ungated path: `appBrokerCaller`
+  sets `masks` for every surface but the owner's web, so a member's or a
+  contact's call says the one mapper's words for a database error, and an
+  app the Admin workspace alone holds and the dev console read it as
+  before. A call nested in a /api/v1 route call masks by the same field
+  (`API_V1_NESTED`). No masking is weaker than before for any surface
+  (`packages/tools/src/dispatch-broker-mask.test.ts` and the parity cases).
+- **No caller, no call.** `dispatchTool` refuses a call that names no
+  caller and runs in no dispatch that does (`NO_TOOL_CALLER_ERROR`), as the
+  gate refuses a caller it cannot resolve; the sweep keeps every entry
+  naming one (`NO_CALLER_YET` is empty and stays so). The unit and .db
+  tests that called dispatch with none name the caller they stand for: a
+  turn's (the turn-scope, W7a and create-home sweeps), a run item's (the
+  owner-only gate, the http, OAuth2 and policy checks) or a broker's (the
+  connector and member-app viewer tests).
+
+Proof: `server/web/lib/app-broker-parity.test.ts`, committed before the
+change (`server/web/lib/__snapshots__/app-broker-parity.json`): the shared
+link broker, a member's run, an admin's run of an Admin-only app and of a
+team-held app, and the dev console, each for a read, a write, an item write
+on an item the caller may and may not change, a missing tool, an owner-only
+tool, two Admin-area tools (one whole on the system pool), a shell tool, a
+connector's write and marked read, an http tool with External access, an
+undeclared tool, a handler that throws and a database error in a read and
+in an http tool: the status, the body, the audit rows (the app's Activity,
+the share's trail, the app's error log), and what each call touched (the
+handler, its input, who it ran as, its scope, its create home, each remote
+call). After the change every cell is as it was but one class, named: the
+write mode of a call whose policy is a read, `rw` to `ro` (31 cells, every
+entry): the gate runs a read read only (step 3, `callActor`; plan 4.1), as
+it has for turns, run items and pending approvals since step 3a. Who the
+call runs as is unchanged. The read builtins' side writes are the ones
+`packages/tools/src/read-tool-writes.test.ts` classifies (none to an item
+table but the named app database provisioning), so no answer changes. A
+third case pins that every run is bound to the gate with its entry's via.
+
+**Gateway lens.** Folded: the brokers' refusal answer (one function, the
+gate's words). Listed, not folded here: the three brokers each parse the
+same body (`slug`, `input`), rate-limit and log an allowed or refused call
+in their own words; the owner broker and the member broker each wrap the
+run in `appToolScope`'s scope (`withViewer` below admin rules), which a
+broker caller could enter itself (`GateCaller.enterScope`) so the gate
+enters it once; and the verdict is asked before the gate and handed to it
+on the ref, where the `app-tool` policy source could ask the live rule
+itself (it does not, so a policy lookup reads no database).
+
+**What is left.** The A5 step 6 carry (L1, L4, L5, M2 at approval, above)
+is unchanged. The `.db` sweeps now run their calls through the gate as the
+callers they stand for, so a read there runs read only; CI runs them.

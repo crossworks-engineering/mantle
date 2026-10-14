@@ -10,12 +10,13 @@ import type { ToolPolicy } from './tool-policy';
 export type ToolHandlerContext = {
   /** The owner running this tool. Every handler scopes its work to one owner. */
   ownerId: string;
-  /** Who calls the tool, by its entry (workspaces arch A5 step 3a;
-   *  gate-callers.ts): an assistant turn, a run item, a pending approval.
-   *  dispatchTool runs a call that names one through the one gate
+  /** Who calls the tool, by its entry (workspaces arch A5 steps 3a, 3b
+   *  and 4; gate-callers.ts): an assistant turn, a run item, a pending
+   *  approval, the owner MCP surface, a /api/v1 route, an app tool broker,
+   *  the dev console. dispatchTool runs every call through the one gate
    *  (@mantle/db enterCall), and a nested call (a recipe's step, a tool a
-   *  handler dispatches) passes it on. Absent: an entry that names none
-   *  yet (the app tool brokers, the dev console, the owner MCP surface). */
+   *  handler dispatches) passes it on. Absent: the caller of the dispatch
+   *  the code runs in, if any; a call with none is refused (A5 step 3b). */
   caller?: ToolCaller;
   /** Optional trace step handle — the runtime opens a step around the call;
    *  handlers can enrich its meta/output and attribute LLM cost via this.
