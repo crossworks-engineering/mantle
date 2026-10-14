@@ -16,6 +16,14 @@
  *
  * No database: the login rows, the device tokens and the keys come from
  * stand-ins, as in the member and role sweeps.
+ *
+ * A second sweep (A4 step 3a audit L2), recorded on v0.300.28 too, in a
+ * file of its own so the first stays byte for byte: more credentials (a
+ * disabled login's cookie, a cookie from before an epoch bump, a deleted
+ * login's cookie, a rotated device token presented again, an expired
+ * device token, an unknown and a revoked key), and the cells of the first
+ * sweep where a guard threw for want of a database, driven again with the
+ * stand-ins that answer the guard's item and scope queries (READS).
  */
 import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -29,6 +37,10 @@ const LIMITED_ID = '44444444-4444-4444-8444-444444444444';
 const MEMBER_ID = '22222222-2222-4222-8222-222222222222';
 const SPACE_ID = '66666666-6666-4666-8666-666666666666';
 const NODE_ID = '11111111-1111-4111-8111-111111111111';
+/** A disabled login, one whose epoch moved on, and one that is gone. */
+const DISABLED_ID = '77777777-7777-4777-8777-777777777777';
+const BUMPED_ID = '88888888-8888-4888-8888-888888888888';
+const GONE_ID = '99999999-9999-4999-8999-999999999999';
 
 const sweepState = vi.hoisted(() => ({
   bearers: new Map<
@@ -37,17 +49,24 @@ const sweepState = vi.hoisted(() => ({
   >(),
   /** The guard calls of the request being driven. */
   log: [] as string[],
+  /** The database's reads stood in (the second sweep only). */
+  reads: false,
 }));
 
-const loginRow = (id: string, role: string, isOwner = false) => ({
+const loginRow = (
+  id: string,
+  role: string,
+  isOwner = false,
+  more: { disabledAt?: Date; sessionEpoch?: number } = {},
+) => ({
   id,
   email: `${role}-${id.slice(0, 4)}@example.invalid`,
   isOwner,
   displayName: `${role} ${id.slice(0, 4)}`,
   role,
   contactId: null,
-  disabledAt: null,
-  sessionEpoch: 0,
+  disabledAt: more.disabledAt ?? null,
+  sessionEpoch: more.sessionEpoch ?? 0,
 });
 
 vi.mock('../lib/brain-identity', () => ({
@@ -66,7 +85,11 @@ vi.mock('../lib/auth/login-row', () => ({
           ? loginRow(LIMITED_ID, 'admin')
           : id === MEMBER_ID
             ? loginRow(MEMBER_ID, 'member')
-            : null,
+            : id === DISABLED_ID
+              ? loginRow(DISABLED_ID, 'admin', false, { disabledAt: new Date(0) })
+              : id === BUMPED_ID
+                ? loginRow(BUMPED_ID, 'admin', false, { sessionEpoch: 1 })
+                : null,
   loadAnchorId: async () => ANCHOR_ID,
   loadPersonalSpaceId: async () => SPACE_ID,
   loadBearerToken: async (jti: string) => sweepState.bearers.get(jti) ?? null,
@@ -117,13 +140,18 @@ vi.mock('@mantle/content', async (importOriginal) => ({
 // differs between two runs of the sweep).
 vi.mock('../lib/access-keys', async (importOriginal) => {
   const real = await importOriginal<typeof import('../lib/access-keys')>();
-  const { KEY_GRANTS } = await import('./a4-guard-sweep.keys');
+  const { KEY_GRANTS, KEY_REFUSALS } = await import('./a4-guard-sweep.keys');
   const open = { ok: true as const, remaining: 1, retryAfterSec: 0 };
   return {
     ...real,
     verifyAccessKey: async (token: string) => {
       const grant = KEY_GRANTS[token];
-      return grant ? { ok: true as const, grant } : { ok: false as const, reason: 'unknown' };
+      const refused = KEY_REFUSALS[token];
+      return grant
+        ? { ok: true as const, grant }
+        : refused
+          ? { ok: false as const, ...refused }
+          : { ok: false as const, reason: 'unknown' };
     },
     rateLimitAccessKey: () => open,
     rateLimitKeySearch: () => open,
@@ -134,12 +162,50 @@ vi.mock('../lib/access-keys', async (importOriginal) => {
   };
 });
 
-vi.mock('@mantle/db', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@mantle/db')>()),
-  loginScopeFor: async (loginId: string) => ({ kind: 'user', loginId, ws: [], modWs: [] }),
-  brainOnWorkspacesNow: async () => true,
-  createHomeIntent: async () => ({ createWs: null, privateWs: null }),
-}));
+vi.mock('@mantle/db', async (importOriginal) => {
+  const real = await importOriginal<typeof import('@mantle/db')>();
+  // READS (the second sweep only): the database's reads a guard asks are
+  // answered. A query (db.select and its chain) finds no row; a statement
+  // (db.execute: the item a write names, through a share or a revision,
+  // and what the login may do to it) finds one item the login may edit and
+  // manage; withViewer runs its function. Writes are not stood in. Off,
+  // everything is the real module's: the first sweep is unchanged.
+  const none: unknown = new Proxy(() => undefined, {
+    get: (_t, k) =>
+      k === 'then'
+        ? (ok: (v: unknown) => unknown, ko: (e: unknown) => unknown) =>
+            Promise.resolve([]).then(ok, ko)
+        : () => none,
+  });
+  const db = new Proxy(real.db, {
+    get: (t, k) => {
+      if (sweepState.reads && k === 'select') return () => none;
+      if (sweepState.reads && k === 'execute') {
+        return async () => [
+          {
+            id: NODE_ID,
+            type: 'page',
+            edit: true,
+            manage: true,
+            copy: false,
+            home: null,
+            held: false,
+          },
+        ];
+      }
+      return Reflect.get(t, k);
+    },
+  });
+  return {
+    ...real,
+    db,
+    withViewer: ((actsFor, fn) =>
+      sweepState.reads ? fn() : real.withViewer(actsFor, fn)) as typeof real.withViewer,
+    loginScopeFor: async (loginId: string) => ({ kind: 'user', loginId, ws: [], modWs: [] }),
+    brainOnWorkspacesNow: async () => true,
+    createHomeIntent: async () => ({ createWs: null, privateWs: null }),
+  };
+});
 vi.mock('../lib/workspaces', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../lib/workspaces')>()),
   requireArea: async (caller: { loginId: string }) => caller.loginId !== LIMITED_ID,
@@ -250,6 +316,7 @@ describe.skipIf(!hasManifest)('A4 step 3a: every guard answers as on main', () =
   let app: import('hono').Hono;
   let rows: Array<{ pattern: string; methods: string[] }>;
   let creds: Cred[];
+  let moreCreds: Cred[];
 
   beforeAll(async () => {
     process.env.SESSION_SECRET = 'a4-guard-sweep-secret-that-is-at-least-32-chars';
@@ -261,15 +328,19 @@ describe.skipIf(!hasManifest)('A4 step 3a: every guard answers as on main', () =
       cookie: `${SESSION_COOKIE_NAME}=${tokens.buildSessionCookie(id, { ttlSeconds: ttl }).value}`,
     });
     let n = 0;
-    const bearer = (id: string, revoked = false) => {
+    const bearer = (
+      id: string,
+      revoked = false,
+      row: { rotatedTo?: string; expiresAt?: Date } = {},
+    ) => {
       n += 1;
       const jti = `0000000${n}-0000-4000-8000-00000000000${n}`;
       const t = tokens.buildMobileToken(id, jti, ttl, 0);
       sweepState.bearers.set(jti, {
         userId: id,
         revokedAt: revoked ? new Date() : null,
-        expiresAt: t.expiresAt,
-        rotatedTo: null,
+        expiresAt: row.expiresAt ?? t.expiresAt,
+        rotatedTo: row.rotatedTo ?? null,
       });
       return { authorization: `Bearer ${t.value}` };
     };
@@ -317,6 +388,20 @@ describe.skipIf(!hasManifest)('A4 step 3a: every guard answers as on main', () =
         query: `t=${encodeURIComponent(tokens.buildAppFrameTicket({ ownerId: ANCHOR_ID, appId: NODE_ID, actorId: ADMIN_ID }))}`,
         getOnly: true,
       },
+    ];
+    // The more-credentials sweep's (made after the first sweep's, so its
+    // device tokens keep their ids).
+    moreCreds = [
+      { name: 'disabled-cookie', headers: cookie(DISABLED_ID) },
+      { name: 'bumped-cookie', headers: cookie(BUMPED_ID) },
+      { name: 'gone-cookie', headers: cookie(GONE_ID) },
+      {
+        name: 'rotated-bearer',
+        headers: bearer(ADMIN_ID, true, { rotatedTo: '00000009-0000-4000-8000-000000000009' }),
+      },
+      { name: 'expired-bearer', headers: bearer(MEMBER_ID, false, { expiresAt: new Date(0) }) },
+      { name: 'key-unknown', headers: key(KEY_TOKENS.unknown) },
+      { name: 'key-revoked', headers: key(KEY_TOKENS.revoked) },
     ];
     const { createApp } = await import('./app');
     app = await createApp();
@@ -410,5 +495,90 @@ describe.skipIf(!hasManifest)('A4 step 3a: every guard answers as on main', () =
     await expect(
       ['# answers', ...table, '', '# routes', ...lines, ''].join('\n'),
     ).toMatchFileSnapshot('./__snapshots__/a4-guard-sweep.txt');
+  }, 1_200_000);
+
+  /** Every route and method (OPTIONS aside), as the first sweep walks them. */
+  function* cellsOf(
+    list: Cred[],
+  ): Generator<{ line: string; method: string; path: string; cred: Cred }> {
+    for (const row of rows) {
+      const path = concretePath(row.pattern);
+      const methods = row.methods.includes('GET') ? [...row.methods, 'HEAD'] : row.methods;
+      for (const method of methods) {
+        if (method === 'OPTIONS') continue;
+        for (const cred of list) {
+          if (cred.getOnly && method !== 'GET') continue;
+          yield { line: `${method} ${row.pattern}`, method, path, cred };
+        }
+      }
+    }
+  }
+
+  it('answers more credentials, and the cells that wanted a database, as recorded on main', async () => {
+    const quiet = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const answers = new Map<string, string>();
+    const idOf = (answer: string) => {
+      let id = answers.get(answer);
+      if (!id) {
+        id = `a${answers.size + 1}`;
+        answers.set(answer, id);
+      }
+      return id;
+    };
+    const more = new Map<string, string[]>();
+    const again = new Map<string, string[]>();
+    const NO_DB = 'DATABASE_URL must be set';
+    let noDbBefore = 0;
+    let noDbAfter = 0;
+    // The clock stands still, hours past the first sweep's rate-limit
+    // windows: every limit this sweep meets starts empty and answers the
+    // same Retry-After, whichever sweep ran first.
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(Date.now() + 3 * 60 * 60 * 1000);
+    try {
+      sweepState.reads = true;
+      for (const { line, method, path, cred } of cellsOf(moreCreds)) {
+        const answer = await drive(method, path, cred);
+        if (answer.includes(NO_DB)) noDbAfter += 1;
+        more.set(line, [...(more.get(line) ?? []), `${cred.name}=${idOf(answer)}`]);
+      }
+      // The first sweep's cells where a guard threw for want of a
+      // database, driven again with the reads stood in.
+      for (const { line, method, path, cred } of cellsOf(creds)) {
+        sweepState.reads = false;
+        const before = await drive(method, path, cred);
+        if (!before.includes(NO_DB)) continue;
+        noDbBefore += 1;
+        sweepState.reads = true;
+        const answer = await drive(method, path, cred);
+        if (answer.includes(NO_DB)) noDbAfter += 1;
+        again.set(line, [...(again.get(line) ?? []), `${cred.name}=${idOf(answer)}`]);
+      }
+    } finally {
+      vi.useRealTimers();
+      sweepState.reads = false;
+      quiet.mockRestore();
+      warn.mockRestore();
+    }
+    const table = [...answers].map(([answer, id]) => `${id} ${answer}`);
+    const lines = (m: Map<string, string[]>) =>
+      [...m].map(([l, cells]) => `${l}: ${cells.join(' ')}`);
+    expect(more.size).toBeGreaterThan(500);
+    await expect(
+      [
+        '# answers',
+        ...table,
+        '',
+        `# cells that wanted a database: ${noDbBefore} in the first sweep; ${noDbAfter} still do with the reads stood in`,
+        '',
+        '# more credentials',
+        ...lines(more),
+        '',
+        '# the first sweep, its cells that wanted a database, with the reads stood in',
+        ...lines(again),
+        '',
+      ].join('\n'),
+    ).toMatchFileSnapshot('./__snapshots__/a4-guard-sweep-more.txt');
   }, 1_200_000);
 });

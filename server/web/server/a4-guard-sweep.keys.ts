@@ -26,7 +26,17 @@ export const KEY_TOKENS = {
   readArea: 'mtlk_sweepreadarea_000000000000000000000000',
   writeArea: 'mtlk_sweepwritearea_00000000000000000000000',
   member: 'mtlk_sweepmember_00000000000000000000000000',
+  /** No key has this token (the more-credentials sweep). */
+  unknown: 'mtlk_sweepunknown_0000000000000000000000000',
+  /** A key that was revoked (the more-credentials sweep). */
+  revoked: 'mtlk_sweeprevoked_0000000000000000000000000',
 } as const;
+
+/** The key tokens that verify to a refusal, and its reason (as
+ *  verifyAccessKey answers a revoked key). */
+export const KEY_REFUSALS: Record<string, { reason: 'revoked'; keyId: string }> = {
+  [KEY_TOKENS.revoked]: { reason: 'revoked', keyId: '00000006-0000-4000-8000-0000000000a6' },
+};
 
 const grant = (
   n: number,
