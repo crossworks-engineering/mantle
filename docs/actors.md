@@ -1163,8 +1163,9 @@ Pins: guard calls 439 to 382, still a ceiling; files with a guard call 311
 to 286; reads of the caller 29 to 86, in 23 to 80 files; live routes
 calling no guard stays 65.
 
-**Step 3b, what is left** (the batches by row class; the sweep held equal
-after each, its moved entries recorded):
+**Step 3b, what was left after part 2** (the batches by row class; the
+sweep held equal after each, its moved entries recorded; part 3 below
+says what is left now):
 
 3. Content writes: the owner rows of class content that write, and the
    read POST `formulas/:id/evaluate`. The item a write names and the create
@@ -1197,6 +1198,137 @@ after each, its moved entries recorded):
    consent); the two turn routes with a flag check first; the two v1
    wrappers above; the 13 area cells. Then `getOwnerOr401` goes and the
    count is 0 (A4 exit).
+
+**HTTP, A4 step 3b part 3 (no answer changed).** The part 2 audit's low
+findings, and the codemod's third batch.
+
+- **The generator** (`server/web/scripts/route-callers.ts`) resolves a
+  name to its binding with the TypeScript binder (a program of the one
+  file, nothing resolved), not by its text: a parameter, a local or a catch
+  variable that shadows a handler of the file (`POST(req, GET) { return
+  GET(); }`) or a reading handler it imports is its own binding, and is
+  neither a run of that handler nor a wrap of it. A name in a type (`type T
+  = typeof GET`) runs nothing and is no use of a name; `typeof GET` in a
+  value still is.
+- **The loader**: a catch-all entry whose row carries the caller (only a
+  hand-built policy can make one: `buildRoutePolicy` refuses it) and whose
+  owner answer threw at the gate answers its bare prefix with the loader's
+  404 and the gate's CORS headers, as the guarded route does; below the
+  prefix the answer is thrown in the handler's place
+  (`server/web/server/middleware/gate-caller.test.ts`).
+
+Batch 3, the content writes: the write handlers (POST, PUT, PATCH, DELETE)
+of the content rows open to Admin users or to logins through the owner
+list, and the read POST `POST /api/formulas/:id/evaluate`, each with the
+standard two lines of an owner guard as its first statement and no
+parameter with a default value: 101 handlers in 81 route files. 98 called
+`getOwnerOr401` and read `ownerCaller()`; the three that called
+`getOwnerOr401WithLogin` (`POST /api/apps/:id/db-broker`,
+`/tool-broker` and `/frame-ticket`, the runners W7e opened to members)
+read `ownerCallerWithLogin()`. Before each was converted its file on main
+was checked: nothing runs before the guard (no rate limit, flag check,
+body parse, early 404 or 400, zod parse). With the 8 /api/v1 rows that
+re-export them (the generator follows), 109 rows gain `caller: 'owner'`
+(294 rows carry it). The gate's owner answer is the guard's own function
+(`getOwnerOr401WithLogin`), so a write's side effects are the guard's,
+once, at the gate: the item a write names checked (`itemWriteGate`, the
+encoded-id 404 of the security fix included), the create home named
+(`createHomeFor`), the audit row, the actor named and the scope entered.
+Tests that stand in the owner guard and call a converted write directly
+stand in its reader the same way; the app identity test's 401 runs through
+the pipeline (`runRoute`), where the refusal now is.
+
+Left from batch 3's rows: `PATCH /api/pages/:id` (its v1 wrapper,
+`PATCH /api/v1/pages/:id`, answers a key's 404 and 403 before it calls the
+base; the two go to the hand batch together) and the nine handlers of the
+`/api/apps/members` 410 stubs (`gone()`, not plain functions). The member
+list's content rows (`logins: 'member'`, `getMemberOr401`) are batch 5's.
+
+The proof is the guard sweep: both recorded files are byte for byte. A
+moved entry is now named by the reader its handler reads, and logs the
+projection that reader reads: `pipeline:owner` (`ownerCaller()`),
+`pipeline:ownerWithSource` and `pipeline:ownerWithLogin`; the recorded
+files compare each under the guard it replaced (`getOwnerOr401`,
+`getOwnerOr401WithSource`, `getOwnerOr401WithLogin`). The reader comes
+from the route file's own code (the one reader of the one list the file
+calls, an /api/v1 alias followed to its base route:
+`server/web/server/a4-guard-sweep.readers.ts`); a file that calls two
+readers throws. The moved snapshot holds 4037 cells (2326 after part 2;
+2186 of the first sweep, 1470 of the more-credentials sweep, and 381 of
+the first sweep's cells that wanted a database, driven again with the
+reads stood in) and 56 answers (28 after part 2). The 28 new ones:
+
+- an Admin user's content write let through (the anchor, an Admin user and
+  one with no area by cookie, an Admin user by device token, stamped
+  once), running as its login with the system reason `admin-write` noted;
+  the same four for `pipeline:ownerWithLogin`, logging the login's kind
+  (`admin`, `member: null`) and source;
+- a member's open write let through (by cookie and by device token),
+  running as the member in its scope, writing (`user:true`); the same two
+  for `pipeline:ownerWithLogin`, logging the member;
+- the owner answer throwing for want of a database in the first sweep (the
+  item-write check or the create home asks it: the six credentials that
+  resolve a login), a 500, the actor named before it threw, no scope; the
+  same six for `pipeline:ownerWithLogin`;
+- `pipeline:ownerWithLogin`'s 401 for a credential that resolves to no
+  login;
+- the item-write refusal in the driven-again cells, 403 `item-workspace`
+  ("You cannot change this item in your workspaces."), for an Admin user
+  and one with no area by cookie and an Admin user by device token, on
+  `DELETE /api/apps/deleted/:id` and `POST /api/apps/deleted/:id/restore`
+  (a deleted app with no home stored: only the brain's owner may), running
+  as the login, no scope.
+
+A member on an Admin-only write gets the gate's 403 `member-login` and a
+credential with no login its 401, answers part 1 already recorded. Each
+has the status, headers, body, owner, actor and scope the guard gave. The
+write path the sweep's stand-ins do not reach is pinned by
+`gate-caller.test.ts`, which serves `PATCH` and `DELETE /api/notes/:id`,
+`POST /api/notes` and `POST /api/formulas/:id/evaluate` through the
+pipeline and through the guard and compares, for eight credentials, the
+status, body, owner, actor, scope, create home, audit row and device
+token stamp: an item the login may edit; may not (403 "You cannot change
+this item"); a read-only copy (403 `readOnly`); one not in the login's
+scope (an Admin user: 403 "Add yourself to it first"; a member: the 404);
+no such item; an encoded item id (checked as the id it decodes to); a
+segment that decodes to no item id or not at all (the 404, every login);
+and a create whose `?ws=` the create-home intent refuses (403 `workspace`,
+400 `invalid`) or lands (the create home the handler sees).
+
+Pins: guard calls 382 to 285, still a ceiling (97 counted: the 98th
+`getOwnerOr401` is in `server/web/app/api/apps/[id]/build/route.ts`, under a
+`build/` folder the counts skip; `getOwnerOr401WithLogin` is not counted);
+files with a guard call 286 to 210; reads of the caller 86 to 186, in 80
+to 128 files; live routes calling no guard 65 to 62 (the three runner
+files called only `getOwnerOr401WithLogin`, which the counts do not see,
+and now read).
+
+**Step 3b, what is left** (the batches by row class; the sweep held equal
+after each, its moved entries recorded):
+
+4. Area rows, with the gate refusing: the owner guard's area refusal
+   moves to the gate with its answer (`POST /api/users/:id/password` reads
+   `ownerCallerWithSource()`). The owner decided the question above on
+   2026-10-14: `GET` and `HEAD /api/updates/status` and `POST
+   /api/updates/check` require the settings area, as their rows say;
+   `GET /api/updates/check` stays open to any Admin user. The Telegram
+   chat rows wait for batch 5's must-do.
+5. Member, any-login, chat and Telegram routes: answer steps and readers
+   of their own (`getMemberOr401`, `getLoginOr401`, `getChatLoginOr401`),
+   with the two must-dos above: the Telegram chat rows get a class that
+   says what they are before the gate refuses by area, and the connector
+   OAuth callbacks are classed as writes, with the actor they write as,
+   before the gate refuses by effect.
+6. Hand cases: `oauth/authorize`, `auth/logout`, `auth/change-password`;
+   the asset guards (`getOwnerForAsset`, `getReaderForAsset`,
+   `getMemberForAsset`: among them the draw svg, the file bytes and the
+   export of batch 2's rows); `getCookieUpgradeLoginOr401`; `lib/gone.ts`
+   (the `/api/apps/members` and `/api/admin/space` 410 stubs);
+   `lib/workspaces.ts`; the public rows that read the login (whoami,
+   logout, sso, pair, OAuth consent); the two turn routes with a flag
+   check first; `GET /api/apps/:id/frame`; `PATCH /api/pages/:id` with its
+   v1 wrapper and `GET /api/v1/files/:id/download` with its base. Then
+   `getOwnerOr401` goes and the count is 0 (A4 exit).
 
 **The eight steps** of `enterCall`, in order (the pre-run slot between
 steps 5 and 6):
