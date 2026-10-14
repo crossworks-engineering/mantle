@@ -34,15 +34,25 @@ describe.skipIf(!URL)('POST /api/pages/:id/move, on Postgres', () => {
   let plans = '';
   let shared = '';
 
-  const post = (id: string, body: unknown) =>
-    route.POST(
-      new Request(`http://brain.test/api/pages/${id}/move`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(body),
-      }),
-      { params: Promise.resolve({ id }) },
-    );
+  // The handler's answer as the app gives it: a thrown error is answered by
+  // app.onError (answerAppError; A10 part 2, fold 2: the route throws, the
+  // one table answers TreeVisibilityError 409 with the list).
+  const post = async (id: string, body: unknown): Promise<Response> => {
+    const url = `http://brain.test/api/pages/${id}/move`;
+    try {
+      return await route.POST(
+        new Request(url, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(body),
+        }),
+        { params: Promise.resolve({ id }) },
+      );
+    } catch (err) {
+      const { answerAppError } = await import('@/server/app-error');
+      return answerAppError(err as Error, { req: { url, method: 'POST' } } as never);
+    }
+  };
   const pathOf = async (id: string) =>
     (
       (await m.systemDb.execute(

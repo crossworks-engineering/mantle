@@ -63,7 +63,7 @@ import {
 import { getContent } from '@mantle/storage';
 import { fileRowFromNode, rowNow, type FileRow } from './shared';
 import { isSystemScope } from '@mantle/db/viewer';
-import { ConflictError } from '@mantle/std';
+import { ConflictError, InputError } from '@mantle/std';
 
 const TEXT_BYTE_CAP = 1_000_000; // 1 MB cap for content-in-DB caching.
 
@@ -168,11 +168,11 @@ export async function upsertFile(args: {
   loginId?: string | null;
 }): Promise<FileRow> {
   if (!isFilesPath(args.parentPath)) {
-    throw new Error(`upsertFile: parent '${args.parentPath}' is outside the files root`);
+    throw new InputError(`upsertFile: parent '${args.parentPath}' is outside the files root`);
   }
   const filename = sanitizeFilename(args.filename);
   if (!filename) {
-    throw new Error(`upsertFile: invalid filename '${args.filename}'`);
+    throw new InputError(`upsertFile: invalid filename '${args.filename}'`);
   }
   const ext = extOf(filename);
   const mime = mimeForExt(ext);
@@ -197,7 +197,7 @@ export async function upsertFile(args: {
     ? await parentQuery()
     : await asSystem(parentQuery, 'kind-root');
   if (!parent) {
-    throw new Error(`upsertFile: parent folder '${args.parentPath}' not found`);
+    throw new InputError(`upsertFile: parent folder '${args.parentPath}' not found`);
   }
 
   if (!args.bytes && !args.spooled) {
@@ -1276,7 +1276,9 @@ export async function bulkDeleteFiles(args: { ownerId: string; fileIds: string[]
 
 /** A file name a caller may not write over: a file it cannot read, or one
  *  it may read but not change (W6b fix round 1, H3). */
-export class FileNameTakenError extends Error {
+/** A ConflictError (A10 part 2): 409 and its message by the one domain
+ *  error table, as the upload route answered `already exists` by hand. */
+export class FileNameTakenError extends ConflictError {
   constructor(filename: string) {
     super(`writeFile: '${filename}' already exists in this folder`);
     this.name = 'FileNameTakenError';
