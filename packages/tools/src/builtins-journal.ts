@@ -401,11 +401,9 @@ export const JOURNAL_TOOLS: BuiltinToolDef[] = [
 export const JOURNAL_TOOL_SLUGS: readonly string[] = JOURNAL_TOOLS.map((t) => t.slug);
 
 /** Subset auto-granted to conversational agents (responder/assistant) at boot.
- *  Read + add/update/resolve — NOT delete (destructive ops are explicit grants). */
-export const JOURNAL_AUTO_GRANT_SLUGS: readonly string[] = [
-  'journal_list',
-  'journal_get',
-  'journal_create',
-  'journal_update',
-  'journal_resolve_gap',
-];
+ *  Read + add/update/resolve — NOT delete (destructive ops are explicit grants):
+ *  every journal tool but its delete, read off the definitions (A5 step 6a:
+ *  no list of names). */
+export const JOURNAL_AUTO_GRANT_SLUGS: readonly string[] = JOURNAL_TOOLS.filter(
+  (t) => t !== journal_delete,
+).map((t) => t.slug);

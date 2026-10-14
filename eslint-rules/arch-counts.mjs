@@ -265,9 +265,17 @@ export function toolPolicyLists(text, slugs) {
 
 /** Whether tool policy lists are looked for in `path`: not the system
  *  manifest, whose lists are the tool groups a brain ships with (grants,
- *  not policy). */
+ *  not policy), nor the deferred tool selection's core
+ *  (packages/tools/src/selection/deferred.ts CORE_TOOL_SLUGS: which granted
+ *  tools a turn sends in full, in a fixed order the prompt cache needs; it
+ *  never adds, removes or narrows a grant, so it decides no access: A5 step
+ *  6a). */
 export function toolPolicySwept(path) {
-  return isCounted(path) && !path.startsWith('server/web/lib/system-manifest/');
+  return (
+    isCounted(path) &&
+    !path.startsWith('server/web/lib/system-manifest/') &&
+    path !== 'packages/tools/src/selection/deferred.ts'
+  );
 }
 
 const ROUTE_ENTRY = /^(?:(?:GET|POST|PUT|PATCH|DELETE|HEAD) \/|\/api(?:\/|$))/;

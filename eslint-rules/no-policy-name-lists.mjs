@@ -12,13 +12,15 @@
  *  A5 step 1: the @mantle/tools access lists are views of the tool policy
  *  table, and a list of definition objects is not counted (RUN_TOOLS).
  *  A5 step 2: the @mantle/mcp-core lists are views of the builtin policy
- *  table and the MCP definitions (mcp-defs.ts), none left there. */
+ *  table and the MCP definitions (mcp-defs.ts), none left there.
+ *  A5 step 6a: the views are deleted (each consumer reads the tool's
+ *  policy), the three auto-grant lists are read off their definitions, and
+ *  the deferred selection's core is no access list (arch-counts.mjs
+ *  toolPolicySwept). One pin is left: TEAM_PRIVATE_READ_SLUGS, kept in the
+ *  published content-core contract for one jackdaw pair release (its
+ *  consumers here read the policy's `outside.privateCorpus`). */
 export const TOOL_LIST_PINS = {
   'packages/content-core/src/profile-projections.ts': { lists: 1, entries: 4 },
-  'packages/tools/src/builtins-contacts.ts': { lists: 1, entries: 5 },
-  'packages/tools/src/builtins-formulas.ts': { lists: 1, entries: 5 },
-  'packages/tools/src/builtins-journal.ts': { lists: 1, entries: 5 },
-  'packages/tools/src/selection/deferred.ts': { lists: 1, entries: 20 },
 };
 
 /** @type {Record<string, number>} route lists per file, A0 baseline.

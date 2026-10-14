@@ -390,11 +390,9 @@ export const CONTACT_TOOLS: BuiltinToolDef[] = [
 
 /** Subset auto-granted to conversational agents (responder/assistant) at boot.
  *  Reads + adds, NOT delete — destructive ops should be explicit grants in
- *  /settings/tools, not silently auto-added to every agent's allowlist. */
-export const CONTACT_AUTO_GRANT_SLUGS: readonly string[] = [
-  'contact_find',
-  'contact_list',
-  'contact_get',
-  'contact_create',
-  'contact_update',
-];
+ *  /settings/tools, not silently auto-added to every agent's allowlist.
+ *  Every contact tool but its delete, read off the definitions (A5 step 6a:
+ *  no list of names). */
+export const CONTACT_AUTO_GRANT_SLUGS: readonly string[] = CONTACT_TOOLS.filter(
+  (t) => t !== contact_delete,
+).map((t) => t.slug);

@@ -357,11 +357,9 @@ export const FORMULA_TOOLS: BuiltinToolDef[] = [
 
 export const FORMULA_TOOL_SLUGS: readonly string[] = FORMULA_TOOLS.map((t) => t.slug);
 
-/** Read + evaluate + author, but NOT delete (destructive ops are explicit). */
-export const FORMULA_AUTO_GRANT_SLUGS: readonly string[] = [
-  'formula_list',
-  'formula_get',
-  'formula_evaluate',
-  'formula_create',
-  'formula_update',
-];
+/** Read + evaluate + author, but NOT delete (destructive ops are explicit):
+ *  every formula tool but its delete, read off the definitions (A5 step 6a:
+ *  no list of names). */
+export const FORMULA_AUTO_GRANT_SLUGS: readonly string[] = FORMULA_TOOLS.filter(
+  (t) => t !== formula_delete,
+).map((t) => t.slug);
