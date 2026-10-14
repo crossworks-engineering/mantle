@@ -105,42 +105,85 @@ type TranscriptSource = `captions:${'manual' | 'auto'}` | `stt:${string}`;
 const REDIRECT_WALK_TIMEOUT_MS = 10_000;
 
 /**
- * Vet a video link before the media sidecar sees it: null when it may go,
- * else the refusal. The link is checked, then its redirects are walked
- * through the one egress fetch (A10 part 1), every hop checked and no body
- * read: the sidecar re-checks only the first host and yt-dlp follows
- * redirects itself, so a public link that redirects into private or
- * metadata space is refused here. The walk fails closed: a link that does
- * not answer within the deadline, or redirects more than the walk follows,
- * is refused too, since the hops the sidecar would follow were never
- * checked (A10 part 1 fix round 1). Anything else the walk meets (a refused
- * connection, a TLS error) is the sidecar's to report, as before: the link
- * never reached a hop the walk did not check. Exported for the egress proof
- * table (egress-proof.test.ts).
+ * Walk a video link before the media sidecar sees it: the link to hand the
+ * sidecar, or the refusal. The link is checked, then its redirects are
+ * walked through the one egress fetch (A10 part 1), every hop checked and
+ * no body read: the sidecar re-checks only the first host and yt-dlp
+ * follows redirects itself, so a public link that redirects into private or
+ * metadata space is refused here.
+ *
+ * The walk fails closed (fix rounds 1 and 2): a link that does not answer
+ * within the deadline, redirects more than the walk follows, redirects to a
+ * Location that is no URL, or fails in any way after its first hop is
+ * refused, since a hop the sidecar would follow was never checked. Only a
+ * failure on the link itself (a refused connection, a TLS error on the
+ * first hop) is the sidecar's to report, as before: no redirect was met.
+ *
+ * The link handed on is the URL parser's canonical form of the one given,
+ * not the raw text: `http://a.example\@169.254.169.254/` is host
+ * `a.example` here and could be host 169.254.169.254 to a parser that reads
+ * the backslash differently (yt-dlp is Python), so the sidecar gets
+ * `http://a.example/@169.254.169.254/`, which every parser reads alike. It
+ * is not the walk's final URL: yt-dlp has no option to refuse redirects
+ * (and fetches further URLs its extractor finds: API endpoints, manifests,
+ * media hosts), so handing it the final hop would close nothing, and a site
+ * that redirects a bare client to a consent or login page would break
+ * extraction. The sidecar holding nothing worth stealing stays the backstop
+ * for what yt-dlp fetches beyond the walk (docs/egress.md).
  */
-export async function vetVideoUrl(url: string): Promise<string | null> {
+export async function walkVideoUrl(
+  url: string,
+): Promise<{ ok: true; url: string } | { ok: false; error: string }> {
   try {
     await assertFetchableUrl(url);
   } catch (err) {
-    return errorMessage(err);
+    return { ok: false, error: errorMessage(err) };
   }
+  const canonical = new URL(url).href;
+  let hops = 0;
   try {
     const res = await egressFetch(
-      url,
+      canonical,
       { method: 'GET' },
-      { guard: assertFetchableUrl, exempt: isSandboxProxyUrl, timeoutMs: REDIRECT_WALK_TIMEOUT_MS },
+      {
+        guard: async (u) => {
+          hops++;
+          await assertFetchableUrl(u);
+        },
+        exempt: isSandboxProxyUrl,
+        timeoutMs: REDIRECT_WALK_TIMEOUT_MS,
+      },
     );
     await res.body?.cancel().catch(() => {});
   } catch (err) {
-    if (err instanceof EgressRefusedError) return errorMessage(err);
+    if (err instanceof EgressRefusedError) return { ok: false, error: errorMessage(err) };
     if ((err as { name?: string } | null)?.name === 'AbortError') {
-      return `the link did not answer within ${REDIRECT_WALK_TIMEOUT_MS / 1000} s, so its redirects could not be checked`;
+      return {
+        ok: false,
+        error: `the link did not answer within ${REDIRECT_WALK_TIMEOUT_MS / 1000} s, so its redirects could not be checked`,
+      };
     }
     if (/too many redirects/.test(errorMessage(err))) {
-      return `${errorMessage(err)}: the link's redirects could not all be checked`;
+      return {
+        ok: false,
+        error: `${errorMessage(err)}: the link's redirects could not all be checked`,
+      };
+    }
+    if (hops > 1) {
+      return {
+        ok: false,
+        error: `the link's redirect could not be followed (${errorMessage(err)}), so its redirects could not all be checked`,
+      };
     }
   }
-  return null;
+  return { ok: true, url: canonical };
+}
+
+/** The walk's verdict alone: null when the link may go, else the refusal.
+ *  Exported for the egress proof table (egress-proof.test.ts). */
+export async function vetVideoUrl(url: string): Promise<string | null> {
+  const walked = await walkVideoUrl(url);
+  return walked.ok ? null : walked.error;
 }
 
 const video_ingest: BuiltinToolDef = {
@@ -206,12 +249,12 @@ const video_ingest: BuiltinToolDef = {
           'Media ingestion is not enabled on this box (the `media` service is switched off). An admin can switch Media on in Settings > Services (see docs/video-ingest.md).',
       };
     }
-    const url = str(input.url).trim();
+    const rawUrl = str(input.url).trim();
     const fileNodeId = str(input.file_node_id).trim();
-    if (url && fileNodeId) {
+    if (rawUrl && fileNodeId) {
       return { ok: false, error: 'pass EITHER url OR file_node_id, not both' };
     }
-    if (!url && !fileNodeId) {
+    if (!rawUrl && !fileNodeId) {
       return {
         ok: false,
         error:
@@ -229,10 +272,12 @@ const video_ingest: BuiltinToolDef = {
       notes.push('keep_video ignored on this surface — re-run from the web app to store the video');
     }
 
-    if (url) {
+    if (rawUrl) {
       // ── URL path ────────────────────────────────────────────────
-      const refused = await vetVideoUrl(url);
-      if (refused) return { ok: false, error: refused };
+      const walked = await walkVideoUrl(rawUrl);
+      if (!walked.ok) return { ok: false, error: walked.error };
+      // From here on, the canonical form the walk checked (walkVideoUrl).
+      const url = walked.url;
 
       const probe = await step({ name: 'video_probe', kind: 'http', input: { url } }, async (h) => {
         const r = await mediaProbe(url);

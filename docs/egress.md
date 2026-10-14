@@ -90,7 +90,7 @@ the platform's own connect.
 | peer MCP transport | `packages/tools/src/builtins-peer-mcp.ts` | `allowLan`, 20 redirects, a reply capped at 32 MB (the standing GET event stream: 4 MB per event, no total cap) |
 | federation client (`peer_query`, `peer_node_get`, `peer_search_chunks`) | `packages/content/src/peers-client.ts` | `allowLan`, the token as a secret, 15 s, 32 MB, 20 redirects |
 | calendar ICS feed | `packages/calendar/src/providers/ics.ts` | 30 s, 12 MB, 20 redirects |
-| `video_ingest` link | `packages/tools/src/builtins-video.ts` | a redirect walk before the sidecar, 10 s, no body read; a timeout or too many redirects refuses the link |
+| `video_ingest` link | `packages/tools/src/builtins-video.ts` | a redirect walk before the sidecar, 10 s, no body read; a timeout, too many redirects, a Location that is no URL or any failure after the first hop refuses the link; the sidecar gets the link's canonical form |
 
 Not moved, and why:
 
@@ -101,9 +101,17 @@ Not moved, and why:
 - **The media sidecar's own fetch.** yt-dlp follows redirects inside the
   sidecar (`infra/media-sidecar/app.py` re-checks the first host only). The
   app now walks the redirects first, so a link that redirects into private
-  or metadata space is refused before the sidecar sees it; a site that
-  answers the box and yt-dlp differently is the residual the sidecar's
-  isolation still bounds.
+  or metadata space is refused before the sidecar sees it, and the walk
+  fails closed on any failure after its first hop (fix round 2). The
+  sidecar gets the URL parser's canonical form of the link, so a link a
+  Python parser would read with another host (`http://a.example\@169.254.169.254/`)
+  reaches it as `http://a.example/@169.254.169.254/`. It does not get the
+  walk's final URL: yt-dlp has no option to refuse redirects and fetches
+  further URLs its extractor finds (API endpoints, manifests, media hosts),
+  so the final hop would close nothing, and a site that sends a bare client
+  to a consent or login page would break extraction. A site that answers
+  the box and yt-dlp differently, and what yt-dlp fetches beyond the walk,
+  are the residual the sidecar's isolation still bounds.
 - **Provider adapters with fixed hosts** (Mapbox, the OpenRouter Data API,
   sandboxd in `@mantle/tools`; the model and embedding providers, Tika, the
   media sidecar, Microsoft Graph, Telegram elsewhere).

@@ -602,7 +602,14 @@ export async function egressFetch(
     if (hop >= maxRedirects) throw new Error(`too many redirects (>${maxRedirects})`);
     await res.body?.cancel().catch(() => {});
 
-    const next = new URL(location, currentUrl);
+    let next: URL;
+    try {
+      next = new URL(location, currentUrl);
+    } catch {
+      // The platform makes this a network error; refused here, so a caller
+      // that tells refusals apart fails closed on it.
+      throw new EgressRefusedError(`refusing a redirect to an invalid URL (${res.status})`);
+    }
     const crossOrigin = next.origin !== new URL(currentUrl).origin;
     // The platform's downgrade (fetch spec, HTTP-redirect fetch step 12).
     const downgrade =
