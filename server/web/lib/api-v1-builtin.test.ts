@@ -111,7 +111,7 @@ const patch = () =>
   });
 
 async function answer(
-  send: () => Promise<Response>,
+  send: () => Response | Promise<Response>,
   fail: unknown,
   refuse: string | null = null,
   preFail: unknown = null,
