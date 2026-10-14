@@ -428,7 +428,8 @@ function capBody(
  * secret headers dropped across origins, an optional deadline and an
  * optional streamed byte cap. Method and body downgrade on a redirect as
  * the platform does: 303 always goes to GET, a 301 or 302 on POST goes to
- * GET; 307 and 308 keep both.
+ * GET; 307 and 308 keep both, except that a 307 or 308 to another origin
+ * is refused when the caller has `secrets` and the request has a body.
  */
 export async function egressFetch(
   input: RequestInfo | URL,
@@ -512,7 +513,22 @@ export async function egressFetch(
     await res.body?.cancel().catch(() => {});
 
     const next = new URL(location, currentUrl);
-    if (next.origin !== new URL(currentUrl).origin) {
+    const crossOrigin = next.origin !== new URL(currentUrl).origin;
+    if (
+      crossOrigin &&
+      (res.status === 307 || res.status === 308) &&
+      body != null &&
+      carriers.length > 0
+    ) {
+      // A 307 or 308 replays the body, and a caller with secrets may carry
+      // one there (an OAuth2 client_secret in a form body, an API tool's
+      // body). The body may be a stream, so it is not searched: any body
+      // from a caller with secrets stays on its origin.
+      throw new EgressRefusedError(
+        `refusing to resend the request body to another origin on a ${res.status} redirect`,
+      );
+    }
+    if (crossOrigin) {
       headers = Object.fromEntries(
         Object.entries(headers).filter(
           ([k, v]) =>

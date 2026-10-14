@@ -33,7 +33,11 @@ stay free of node builtins). On top of the platform fetch:
 - **Secret headers across origins.** On a hop to another origin it drops
   Authorization, Cookie and Proxy-Authorization by name (as the platform
   does) and any header whose value carries one of the caller's `secrets`
-  (the platform keeps custom headers such as `x-api-key`).
+  (the platform keeps custom headers such as `x-api-key`). A 307 or 308
+  replays the body, so a 307 or 308 to another origin is refused when the
+  caller has `secrets` and the request has a body (an OAuth2 client_secret
+  in a form body, an API tool's body); the body is not searched, since it
+  may be a stream.
 - **A deadline** (`timeoutMs`) over the whole exchange, body included. It
   aborts the way the callers' own timers did, so the error reads the same.
 - **A streamed byte cap** (`maxBytes`): reading stops at the cap, either as

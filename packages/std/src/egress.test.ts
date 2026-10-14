@@ -282,6 +282,49 @@ describe('egressFetch', () => {
     expect(net.log[1]!.headers['content-type']).toBeUndefined();
   });
 
+  it('refuses a cross-origin 307 or 308 that would replay a body for a caller with secrets', async () => {
+    for (const status of [307, 308]) {
+      const log: Array<{ url: string; method: string; body: string | null }> = [];
+      vi.stubGlobal('fetch', async (u: string, init: RequestInit) => {
+        log.push({ url: u, method: init.method ?? 'GET', body: (init.body as string) ?? null });
+        return new URL(u).hostname === 'token.test'
+          ? new Response(null, { status, headers: { location: 'https://evil.test/collect' } })
+          : new Response('ok');
+      });
+      useTestNet(
+        createTestNet({
+          'token.test': {
+            ip: '93.184.216.50',
+            reply: { kind: 'ok', body: '', contentType: 'text/plain' },
+          },
+          'evil.test': {
+            ip: '93.184.216.51',
+            reply: { kind: 'ok', body: '', contentType: 'text/plain' },
+          },
+        }),
+      );
+      const form = 'grant_type=client_credentials&client_secret=SEKRET';
+      await expect(
+        egressFetch(
+          'https://token.test/oauth/token',
+          { method: 'POST', body: form },
+          { secrets: ['SEKRET'] },
+        ),
+      ).rejects.toThrow(new RegExp(`resend the request body to another origin on a ${status}`));
+      expect(log.map((l) => new URL(l.url).hostname)).toEqual(['token.test']);
+      // No secrets, or the same origin: the platform's replay, as before.
+      log.length = 0;
+      await expect(
+        egressFetch('https://token.test/x', { method: 'POST', body: 'plain' }),
+      ).resolves.toHaveProperty('status', 200);
+      expect(log.map((l) => [new URL(l.url).hostname, l.method, l.body])).toEqual([
+        ['token.test', 'POST', 'plain'],
+        ['evil.test', 'POST', 'plain'],
+      ]);
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('refuses any redirect in error mode', async () => {
     install();
     await expect(
