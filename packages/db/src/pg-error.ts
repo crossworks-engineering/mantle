@@ -12,7 +12,7 @@
  *
  * These helpers walk the error and up to three causes below it.
  */
-import { findDatabaseError } from '@mantle/std';
+import { ConflictError, findDatabaseError } from '@mantle/std';
 
 /** How deep isBusy looks for a BusyError on the cause chain. */
 const MAX_DEPTH = 4;
@@ -91,6 +91,22 @@ export function permissionGapOf(err: unknown): string | null {
 /** 23505 unique_violation: the write hit a unique index or constraint. */
 export function isUniqueViolation(err: unknown): boolean {
   return pgErrorCode(err) === '23505';
+}
+
+/**
+ * `fn`, with a unique violation (a slug or a name already taken) as a
+ * ConflictError saying `message`: 409 `{ error: message }` by its row in the
+ * one domain error table (A10 part 2 fix round 1, L7). The one place a route
+ * says "already exists" for a write that raced or skipped a pre-check, where
+ * 13 routes each caught it by hand.
+ */
+export async function conflictOnUnique<T>(message: string, fn: () => Promise<T>): Promise<T> {
+  try {
+    return await fn();
+  } catch (err) {
+    if (isUniqueViolation(err)) throw new ConflictError(message, { cause: err });
+    throw err;
+  }
 }
 
 /** 23514 check_violation: the write broke a CHECK constraint. */

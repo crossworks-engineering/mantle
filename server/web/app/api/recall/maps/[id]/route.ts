@@ -7,7 +7,7 @@ import {
   updateRecallMap,
 } from '@mantle/content';
 import { ownerCaller } from '@/lib/auth';
-import { getRecallMapDetail, recallActorOf, recallWriteFailure } from '@/lib/recall';
+import { getRecallMapDetail, recallActorOf } from '@/lib/recall';
 import { UUID_RE } from '@mantle/std';
 import { readBody } from '@/lib/read-body';
 
@@ -37,12 +37,8 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   const { id } = await ctx.params;
   if (!UUID_RE.test(id)) return NextResponse.json({ error: 'not found' }, { status: 404 });
   const body = await readBody(req, Patch);
-  try {
-    const res = await updateRecallMap(user.id, id, body, await recallActorOf(user));
-    return NextResponse.json(res);
-  } catch (err) {
-    return recallWriteFailure(err);
-  }
+  const res = await updateRecallMap(user.id, id, body, await recallActorOf(user));
+  return NextResponse.json(res);
 }
 
 /** Retire a map. The item goes and the cascades take its cards, its map row
@@ -51,10 +47,6 @@ export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string 
   const user = ownerCaller();
   const { id } = await ctx.params;
   if (!UUID_RE.test(id)) return NextResponse.json({ error: 'not found' }, { status: 404 });
-  try {
-    await deleteRecallMap(user.id, id, await recallActorOf(user));
-    return NextResponse.json({ ok: true });
-  } catch (err) {
-    return recallWriteFailure(err);
-  }
+  await deleteRecallMap(user.id, id, await recallActorOf(user));
+  return NextResponse.json({ ok: true });
 }

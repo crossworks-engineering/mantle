@@ -4,7 +4,7 @@ import { createHeartbeat, listHeartbeats } from '@/lib/heartbeats';
 import { toolMakerFor } from '@/lib/tools';
 import { CreateHeartbeatBody, toCreateInput } from '@/lib/heartbeat-schema';
 import { firstIssue } from '@/lib/zod-issue';
-import { isUniqueViolation } from '@mantle/db';
+import { conflictOnUnique } from '@mantle/db';
 import { readJson } from '@/lib/read-body';
 
 /** List the owner's heartbeats (summaries). A heartbeat's state shows only
@@ -26,18 +26,14 @@ export async function POST(req: Request) {
       { status: 400 },
     );
   }
-  try {
-    const heartbeat = await createHeartbeat(user.id, toCreateInput(parsed.data), user.actor.id);
-    return NextResponse.json({ heartbeat });
-  } catch (err) {
-    // A slug taken is the fixed 409; anything else answers by the one table
-    // (A10 part 2): a domain error its status, a fault the opaque 500.
-    if (isUniqueViolation(err)) {
-      return NextResponse.json(
-        { error: `A heartbeat with slug "${parsed.data.slug}" already exists.` },
-        { status: 409 },
-      );
-    }
-    throw err;
-  }
+  // A slug or name taken answers 409 with this route's own text
+  // (conflictOnUnique, a ConflictError); anything else answers by the one
+  // table (A10 part 2): a domain error its status, a fault the opaque 500.
+  return conflictOnUnique(
+    `A heartbeat with slug "${parsed.data.slug}" already exists.`,
+    async () => {
+      const heartbeat = await createHeartbeat(user.id, toCreateInput(parsed.data), user.actor.id);
+      return NextResponse.json({ heartbeat });
+    },
+  );
 }

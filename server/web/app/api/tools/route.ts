@@ -8,7 +8,7 @@ import {
   handlerCarriesSecretRefs,
   inheritedToolMaker,
 } from '@mantle/tools';
-import { isUniqueViolation, db, toolGroups, and, eq } from '@mantle/db';
+import { conflictOnUnique, db, toolGroups, and, eq } from '@mantle/db';
 import { createTool, keysAreaRefusal, listToolsForOwner, toolMakerFor } from '@/lib/tools';
 import { ToolHandlerSchema } from '@/lib/tool-handler-schema';
 import { firstIssue } from '@/lib/zod-issue';
@@ -82,7 +82,10 @@ export async function POST(req: Request) {
     const refused = await keysAreaRefusal(user);
     if (refused) return NextResponse.json({ error: refused }, { status: 403 });
   }
-  try {
+  // A slug or name taken answers 409 with this route's own text
+  // (conflictOnUnique, a ConflictError); anything else answers by the one
+  // table (A10 part 2): a domain error its status, a fault the opaque 500.
+  return conflictOnUnique(`A tool with slug "${parsed.data.slug}" already exists.`, async () => {
     const row = await createTool(user.id, {
       ...toolInput,
       createdBy: inheritedToolMaker(toolMakerFor(user), groupMaker, toolInput.handler),
@@ -105,15 +108,5 @@ export async function POST(req: Request) {
       ...(groupSlug ? { groupSlug } : {}),
       ...(inherited ? { inherited } : {}),
     });
-  } catch (err) {
-    // A slug taken is the fixed 409; anything else answers by the one table
-    // (A10 part 2): a domain error its status, a fault the opaque 500.
-    if (isUniqueViolation(err)) {
-      return NextResponse.json(
-        { error: `A tool with slug "${parsed.data.slug}" already exists.` },
-        { status: 409 },
-      );
-    }
-    throw err;
-  }
+  });
 }

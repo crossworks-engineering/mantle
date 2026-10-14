@@ -4,7 +4,7 @@ import { ownerCaller } from '@/lib/auth';
 import { createSkill, listSkills } from '@/lib/skills';
 import { toolMakerFor } from '@/lib/tools';
 import { firstIssue } from '@/lib/zod-issue';
-import { isUniqueViolation } from '@mantle/db';
+import { conflictOnUnique } from '@mantle/db';
 import { readJson } from '@/lib/read-body';
 
 export async function GET() {
@@ -36,18 +36,11 @@ export async function POST(req: Request) {
   if (!parsed.success) {
     return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
   }
-  try {
+  // A slug or name taken answers 409 with this route's own text
+  // (conflictOnUnique, a ConflictError); anything else answers by the one
+  // table (A10 part 2): a domain error its status, a fault the opaque 500.
+  return conflictOnUnique(`A skill with slug "${parsed.data.slug}" already exists.`, async () => {
     const row = await createSkill(user.id, parsed.data, toolMakerFor(user));
     return NextResponse.json({ skill: row });
-  } catch (err) {
-    // A slug taken is the fixed 409; anything else answers by the one table
-    // (A10 part 2): a domain error its status, a fault the opaque 500.
-    if (isUniqueViolation(err)) {
-      return NextResponse.json(
-        { error: `A skill with slug "${parsed.data.slug}" already exists.` },
-        { status: 409 },
-      );
-    }
-    throw err;
-  }
+  });
 }

@@ -1,7 +1,7 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { and, asc, eq } from 'drizzle-orm';
-import { isUniqueViolation, db, curatedModels } from '@mantle/db';
+import { conflictOnUnique, db, curatedModels } from '@mantle/db';
 import { ownerCaller } from '@/lib/auth';
 import { MODEL_POOLS, MODEL_POOL_IDS, poolModelIssue } from '@/lib/model-pools';
 import { firstIssue } from '@/lib/zod-issue';
@@ -75,7 +75,10 @@ export async function POST(req: Request) {
     .from(curatedModels)
     .where(and(eq(curatedModels.ownerId, user.id), eq(curatedModels.pool, b.pool)));
   const nextPos = inPool.reduce((m, r) => Math.max(m, r.position + 1), 0);
-  try {
+  // A slug or name taken answers 409 with this route's own text
+  // (conflictOnUnique, a ConflictError); anything else answers by the one
+  // table (A10 part 2): a domain error its status, a fault the opaque 500.
+  return conflictOnUnique(`'${b.name}' is already in the ${b.pool} pool.`, async () => {
     const [row] = await db
       .insert(curatedModels)
       .values({
@@ -91,15 +94,5 @@ export async function POST(req: Request) {
       })
       .returning();
     return NextResponse.json({ entry: row });
-  } catch (err) {
-    // A model already in the pool is the fixed 409; anything else answers by the one table
-    // (A10 part 2): a domain error its status, a fault the opaque 500.
-    if (isUniqueViolation(err)) {
-      return NextResponse.json(
-        { error: `'${b.name}' is already in the ${b.pool} pool.` },
-        { status: 409 },
-      );
-    }
-    throw err;
-  }
+  });
 }

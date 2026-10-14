@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { RECALL_LINE_MAX, RECALL_TITLE_MAX, createRecallMap } from '@mantle/content';
 import { ownerCaller } from '@/lib/auth';
 import { parseWsFilter } from '@/lib/list-workspaces';
-import { countRecallMaps, listRecallMaps, recallActorOf, recallWriteFailure } from '@/lib/recall';
+import { countRecallMaps, listRecallMaps, recallActorOf } from '@/lib/recall';
 import { readBody } from '@/lib/read-body';
 
 const PAGE_SIZE = 20;
@@ -40,10 +40,6 @@ const NewMap = z.object({
 export async function POST(req: Request) {
   const user = ownerCaller();
   const body = await readBody(req, NewMap);
-  try {
-    const made = await createRecallMap(user.id, body, await recallActorOf(user));
-    return NextResponse.json(made, { status: 201 });
-  } catch (err) {
-    return recallWriteFailure(err);
-  }
+  const made = await createRecallMap(user.id, body, await recallActorOf(user));
+  return NextResponse.json(made, { status: 201 });
 }

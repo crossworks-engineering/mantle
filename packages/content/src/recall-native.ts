@@ -42,7 +42,7 @@ import {
   withNodeInsertHeads,
   type Db,
 } from '@mantle/db';
-import { UUID_RE } from '@mantle/std';
+import { UUID_RE, defineDomainError } from '@mantle/std';
 import {
   RECALL_BODY_CHAR_BUDGET,
   RECALL_MAX_MAP_NODES,
@@ -90,6 +90,43 @@ export class RecallWriteError extends Error {
     this.code = code;
   }
 }
+
+/** The refusals of an owner's act to an editor: 403, the caller may read the
+ *  map but this act is not theirs. */
+const RECALL_OWNER_ACT_CODES: ReadonlySet<string> = new Set([
+  'publish_is_owners',
+  'confirm_is_owners',
+  'restore_is_owners',
+  'slug_is_owners',
+  'reorder_is_owners',
+  'delete_is_owners',
+]);
+
+/** The refusals that mean the THING addressed is missing. A bad reference
+ *  inside a body (an option to a missing map, a folder that does not exist)
+ *  is a 400: the request was wrong, not the address. */
+const RECALL_NOT_FOUND_CODES: ReadonlySet<string> = new Set([
+  'map_not_found',
+  'card_not_found',
+  'revision_not_found',
+]);
+
+// What the recall routes answered by hand (recallWriteFailure, A10 part 2
+// fix round 1, L7): a missing address 404, an owner's act asked by an
+// editor 403, a stale version 409, any other refused write 400, with
+// `{ error, code }`. The message is written to be actionable.
+defineDomainError(RecallWriteError, {
+  reason: 'a refused recall write; the message says how to recover',
+  status: (e) =>
+    RECALL_NOT_FOUND_CODES.has(e.code)
+      ? 404
+      : RECALL_OWNER_ACT_CODES.has(e.code)
+        ? 403
+        : e.code === 'version_stale'
+          ? 409
+          : 400,
+  body: (e) => ({ error: e.message, code: e.code }),
+});
 
 export type RecallOptionInput = {
   label: string;

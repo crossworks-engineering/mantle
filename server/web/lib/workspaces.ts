@@ -77,6 +77,7 @@ import { applyLoginChange, loadLoginTarget } from '@/lib/login-update';
 import { rateLimit } from '@/lib/rate-limit';
 import { lookOfRow, WS_LOOK_COLUMNS, type LookRow } from '@/lib/workspace-look';
 import { readJson } from '@/lib/read-body';
+import { defineDomainError } from '@mantle/std';
 
 // ── Errors and the caller ────────────────────────────────────────────────────
 
@@ -90,6 +91,14 @@ export class WsError extends Error {
     this.name = 'WsError';
   }
 }
+
+// What the workspace routes answered by hand (wsRoute, A10 part 2 fix round
+// 1, L7): its status and `{ error, code }`.
+defineDomainError(WsError, {
+  reason: 'a workspace request the caller can fix or may not make; the code says which',
+  status: (e) => e.status,
+  body: (e) => ({ error: e.message, code: e.code }),
+});
 
 const NOT_FOUND = () => new WsError(404, 'not_found', 'Workspace not found.');
 
@@ -116,26 +125,20 @@ export function workspaceCaller(login: AnyLogin): WsCaller {
 }
 
 /** Run a workspace route for the login the handler read (loginCaller()):
- *  answer the result as JSON or a WsError as `{ error, code }`. Anything
- *  else throws (opaque 500). */
+ *  answer the result as JSON. A WsError answers `{ error, code }` by its
+ *  row in the one table (A10 part 2 fix round 1, L7); anything else is the
+ *  opaque 500. */
 export async function wsRoute(
   login: AnyLogin,
   fn: (caller: WsCaller) => Promise<unknown>,
   okStatus = 200,
 ): Promise<Response> {
   const caller = workspaceCaller(login);
-  try {
-    // The rule is in this library's own SQL on the system pool: it leaves
-    // the request scope the gate entered by name (W6a), at the one exit
-    // site (lib/auth/rule-in-query.ts).
-    const out = await inRuleInQuery(() => fn(caller));
-    return NextResponse.json(out, { status: okStatus });
-  } catch (err) {
-    if (err instanceof WsError) {
-      return NextResponse.json({ error: err.message, code: err.code }, { status: err.status });
-    }
-    throw err;
-  }
+  // The rule is in this library's own SQL on the system pool: it leaves
+  // the request scope the gate entered by name (W6a), at the one exit
+  // site (lib/auth/rule-in-query.ts).
+  const out = await inRuleInQuery(() => fn(caller));
+  return NextResponse.json(out, { status: okStatus });
 }
 
 /** A body parsed by a zod schema, or a 400. */

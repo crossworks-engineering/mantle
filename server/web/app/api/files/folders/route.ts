@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { ownerCaller } from '@/lib/auth';
 import { createFolder, ensureFilesRootBranch, listAllFolders, listFolders } from '@/lib/files';
 import { firstIssue } from '@/lib/zod-issue';
-import { isUniqueViolation } from '@mantle/db';
+import { conflictOnUnique } from '@mantle/db';
 import { readJson } from '@/lib/read-body';
 
 const ListQuery = z.object({
@@ -42,7 +42,10 @@ export async function POST(req: Request) {
   if (!parsed.success) {
     return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
   }
-  try {
+  // A slug or name taken answers 409 with this route's own text
+  // (conflictOnUnique, a ConflictError); anything else answers by the one
+  // table (A10 part 2): a domain error its status, a fault the opaque 500.
+  return conflictOnUnique(`A folder with that slug already exists under this parent.`, async () => {
     const folder = await createFolder({
       ownerId: user.id,
       parentPath: parsed.data.parentPath,
@@ -50,13 +53,5 @@ export async function POST(req: Request) {
       description: parsed.data.description,
     });
     return NextResponse.json({ folder });
-  } catch (err) {
-    if (isUniqueViolation(err)) {
-      return NextResponse.json(
-        { error: `A folder with that slug already exists under this parent.` },
-        { status: 409 },
-      );
-    }
-    throw err;
-  }
+  });
 }

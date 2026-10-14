@@ -1,15 +1,11 @@
 /**
  * The HTTP side of "New chat" and "Continue from this" (chat archive,
- * docs/conversation.md §6c): one place that runs archiveAgentChat and maps its
- * errors to responses, so the routes stay thin and agree.
+ * docs/conversation.md §6c): one place that runs archiveAgentChat, so the
+ * routes stay thin and agree; its errors answer by the one table.
  */
 import { NextResponse } from '@/server/http-compat';
 import { asSystem } from '@mantle/db';
-import {
-  ChatArchiveBusyError,
-  ChatThreadNotFoundError,
-  archiveAgentChat,
-} from '@mantle/runtime/agent';
+import { archiveAgentChat } from '@mantle/runtime/agent';
 import type { ChatArchiveResponse } from '@mantle/client-types';
 import { chatThreadRow } from './chat-threads';
 
@@ -21,22 +17,15 @@ export async function archiveResponse(o: {
   archivedBy: string;
   continueFrom?: string | null;
 }): Promise<Response> {
-  try {
-    // The login's own thread, named here: the archive and its summary note
-    // are written on the system pool (the workspace role writes neither).
-    const r = await asSystem(() => archiveAgentChat(o), 'rule-in-query');
-    const body: ChatArchiveResponse = {
-      archived: r.archived ? await chatThreadRow(o.ownerId, r.archived) : null,
-      open: r.open ? await chatThreadRow(o.ownerId, r.open) : null,
-    };
-    return NextResponse.json(body, { headers: { 'Cache-Control': 'no-store' } });
-  } catch (err) {
-    if (err instanceof ChatArchiveBusyError) {
-      return NextResponse.json({ error: err.message }, { status: 409 });
-    }
-    if (err instanceof ChatThreadNotFoundError) {
-      return NextResponse.json({ error: err.message }, { status: 404 });
-    }
-    throw err;
-  }
+  // The login's own thread, named here: the archive and its summary note
+  // are written on the system pool (the workspace role writes neither). A
+  // reply still running (ChatArchiveBusyError, 409) and a thread not found
+  // (ChatThreadNotFoundError, 404) answer by their rows in the one table
+  // (A10 part 2 fix round 1, L7).
+  const r = await asSystem(() => archiveAgentChat(o), 'rule-in-query');
+  const body: ChatArchiveResponse = {
+    archived: r.archived ? await chatThreadRow(o.ownerId, r.archived) : null,
+    open: r.open ? await chatThreadRow(o.ownerId, r.open) : null,
+  };
+  return NextResponse.json(body, { headers: { 'Cache-Control': 'no-store' } });
 }

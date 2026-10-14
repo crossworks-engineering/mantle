@@ -11,7 +11,6 @@
  * agent made that the owner has not published yet, and maps with no cards.
  */
 import { and, asc, eq, ilike, inArray, isNotNull, or, sql } from 'drizzle-orm';
-import { NextResponse } from '@/server/http-compat';
 import {
   db,
   itemReadByWorkspace,
@@ -21,7 +20,6 @@ import {
   recallNodes,
 } from '@mantle/db';
 import {
-  RecallWriteError,
   getRecallCard,
   listRecallRevisions,
   recallFolderCrumbs,
@@ -183,44 +181,6 @@ export async function recallActorOf(user: {
     id: user.actor.id,
     name: user.actor.displayName ?? null,
   };
-}
-
-/** The refusals of an owner's act to an editor: 403, the caller may read the
- *  map but this act is not theirs. */
-const RECALL_OWNER_ACT_CODES = new Set([
-  'publish_is_owners',
-  'confirm_is_owners',
-  'restore_is_owners',
-  'slug_is_owners',
-  'reorder_is_owners',
-  'delete_is_owners',
-]);
-
-/** The refusals that mean the THING addressed is missing. A bad reference
- *  inside a body (an option to a missing map, a folder that does not exist)
- *  is a 400: the request was wrong, not the address. */
-const RECALL_NOT_FOUND_CODES = new Set(['map_not_found', 'card_not_found', 'revision_not_found']);
-
-/**
- * A refused write is a 400 with the module's own message, which is written to
- * be actionable ("split it: keep the overview here…"); a missing address is a
- * 404, an owner's act asked by an editor a 403, a stale version a 409.
- * Anything that is not a RecallWriteError is a bug, not a refusal, and is
- * rethrown so `app.onError` answers an opaque 500 rather than this layer
- * inventing a reason.
- */
-export function recallWriteFailure(err: unknown): Response {
-  if (err instanceof RecallWriteError) {
-    const status = RECALL_NOT_FOUND_CODES.has(err.code)
-      ? 404
-      : RECALL_OWNER_ACT_CODES.has(err.code)
-        ? 403
-        : err.code === 'version_stale'
-          ? 409
-          : 400;
-    return NextResponse.json({ error: err.message, code: err.code }, { status });
-  }
-  throw err;
 }
 
 /** One card with its body, for the editor. */

@@ -1,7 +1,7 @@
 import { NextResponse } from '@/server/http-compat';
 import { restoreRecallRevision } from '@mantle/content';
 import { ownerCaller } from '@/lib/auth';
-import { recallActorOf, recallWriteFailure } from '@/lib/recall';
+import { recallActorOf } from '@/lib/recall';
 import { UUID_RE } from '@mantle/std';
 
 /**
@@ -16,10 +16,6 @@ export async function POST(_req: Request, ctx: { params: Promise<{ id: string }>
   const user = ownerCaller();
   const { id } = await ctx.params;
   if (!UUID_RE.test(id)) return NextResponse.json({ error: 'not found' }, { status: 404 });
-  try {
-    const res = await restoreRecallRevision(user.id, id, await recallActorOf(user));
-    return NextResponse.json(res);
-  } catch (err) {
-    return recallWriteFailure(err);
-  }
+  const res = await restoreRecallRevision(user.id, id, await recallActorOf(user));
+  return NextResponse.json(res);
 }

@@ -6,7 +6,7 @@ import { afterVaultKeyReplaced } from '@/lib/mcp-connectors';
 import { KNOWN_KEY_SERVICES } from '@mantle/api-keys';
 import { isMcpManagedSecretService } from '@mantle/tools';
 import { firstIssue } from '@/lib/zod-issue';
-import { isUniqueViolation } from '@mantle/db';
+import { conflictOnUnique } from '@mantle/db';
 import { readJson } from '@/lib/read-body';
 
 export async function GET() {
@@ -46,34 +46,27 @@ export async function POST(req: Request) {
     const message = firstIssue(parsed.error, 'Invalid input.');
     return NextResponse.json({ error: message }, { status: 400 });
   }
-  try {
-    const row = await setApiKey(
-      user.id,
-      parsed.data.service,
-      parsed.data.label,
-      parsed.data.plaintext,
-    );
-    // A save over an existing key replaces it, as a rotate does (access
-    // matrix T7): a connector's marks were for the old key.
-    await afterVaultKeyReplaced(user.id, row.service, row.label);
-    return NextResponse.json({
-      id: row.id,
-      service: row.service,
-      label: row.label,
-      createdAt: row.createdAt,
-    });
-  } catch (err) {
-    // A key already there is the fixed 409; anything else answers by the one
-    // table (A10 part 2): a domain error its status, a fault the opaque 500.
-    // 23505 = unique_violation
-    if (isUniqueViolation(err)) {
-      return NextResponse.json(
-        {
-          error: `A key already exists for ${parsed.data.service}/${parsed.data.label}. Rotate it instead.`,
-        },
-        { status: 409 },
+  // A slug or name taken answers 409 with this route's own text
+  // (conflictOnUnique, a ConflictError); anything else answers by the one
+  // table (A10 part 2): a domain error its status, a fault the opaque 500.
+  return conflictOnUnique(
+    `A key already exists for ${parsed.data.service}/${parsed.data.label}. Rotate it instead.`,
+    async () => {
+      const row = await setApiKey(
+        user.id,
+        parsed.data.service,
+        parsed.data.label,
+        parsed.data.plaintext,
       );
-    }
-    throw err;
-  }
+      // A save over an existing key replaces it, as a rotate does (access
+      // matrix T7): a connector's marks were for the old key.
+      await afterVaultKeyReplaced(user.id, row.service, row.label);
+      return NextResponse.json({
+        id: row.id,
+        service: row.service,
+        label: row.label,
+        createdAt: row.createdAt,
+      });
+    },
+  );
 }

@@ -114,8 +114,8 @@ defineDomainError(InputError, {
  * 409 and the message, which says what to do.
  */
 export class ConflictError extends Error {
-  constructor(message: string) {
-    super(message);
+  constructor(message: string, options?: { cause?: unknown }) {
+    super(message, options);
     this.name = 'ConflictError';
   }
 }

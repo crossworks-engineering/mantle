@@ -28,9 +28,6 @@ import {
   checkLookupCoverage,
   checkDimensions,
   signatureOf,
-  LinkRefusedError,
-  ShareInputError,
-  TeamLinkRetiredError,
   type AggregateKind,
   type Column,
   type Row,
@@ -44,7 +41,6 @@ import { markdownToDoc } from '@mantle/content-core/markdown';
 import { isUuid } from '@mantle/std';
 import { servedFilteredDoc, servedFilteredNote } from '@mantle/content/pages';
 import { fileById, folderById } from '@/lib/files';
-import { NextResponse } from '@/server/http-compat';
 
 export {
   createShare,
@@ -67,24 +63,6 @@ export function buildShareUrl(origin: string, token: string): string {
 
 /** The most ids one served list takes (POST and PATCH /api/shares). */
 export const SERVE_MAX = 5000;
-
-/** A link refusal as `{ error, code }` (the share routes): 404 `not_found`,
- *  403 `forbidden`, 400 `not_shareable`; a team mode keeps its old
- *  `{ error, reason }`. Anything else throws (opaque 500). */
-export function linkRefusal(err: unknown): Response {
-  if (err instanceof LinkRefusedError) {
-    return NextResponse.json({ error: err.message, code: err.code }, { status: err.status });
-  }
-  if (err instanceof ShareInputError) {
-    return err.reason === 'not-found'
-      ? NextResponse.json({ error: 'Item not found.', code: 'not_found' }, { status: 404 })
-      : NextResponse.json({ error: err.message, code: 'not_shareable' }, { status: 400 });
-  }
-  if (err instanceof TeamLinkRetiredError) {
-    return NextResponse.json({ error: err.message, reason: err.reason }, { status: 400 });
-  }
-  throw err;
-}
 
 export type ShareView =
   | {

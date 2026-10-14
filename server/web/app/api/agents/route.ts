@@ -8,7 +8,7 @@ import { AvatarSchema } from '@/lib/avatar-schema';
 import { AgentMemoryConfigSchema } from '@/lib/agent-memory-config-schema';
 import { agentForReader, createAgent, listAgents } from '@/lib/agents';
 import { firstIssue } from '@/lib/zod-issue';
-import { isUniqueViolation } from '@mantle/db';
+import { conflictOnUnique } from '@mantle/db';
 import { AGENT_THINKING_EFFORTS } from '@mantle/content-core/thinking-tiers';
 import { readJson } from '@/lib/read-body';
 
@@ -99,7 +99,10 @@ export async function POST(req: Request) {
   // fix round 4, lib/model-route-pair.ts).
   const keysRefused = await modelRoutesRefusal(user, null, parsed.data, AGENT_ROUTES);
   if (keysRefused) return NextResponse.json({ error: keysRefused }, { status: 403 });
-  try {
+  // A slug or name taken answers 409 with this route's own text
+  // (conflictOnUnique, a ConflictError); anything else answers by the one
+  // table (A10 part 2): a domain error its status, a fault the opaque 500.
+  return conflictOnUnique(`An agent with slug "${parsed.data.slug}" already exists.`, async () => {
     const row = await createAgent(user.id, {
       ...parsed.data,
       ...modelRoutesStamp(user, null, parsed.data, AGENT_ROUTES),
@@ -108,15 +111,5 @@ export async function POST(req: Request) {
     // round 4, @mantle/tools heartbeat-maker.ts).
     await restampHeartbeatMakers(user.id, toolMakerFor(user), { agentSlug: row.slug });
     return NextResponse.json({ agent: agentForReader(user, row) });
-  } catch (err) {
-    // A slug taken is the fixed 409; anything else answers by the one table
-    // (A10 part 2): a domain error its status, a fault the opaque 500.
-    if (isUniqueViolation(err)) {
-      return NextResponse.json(
-        { error: `An agent with slug "${parsed.data.slug}" already exists.` },
-        { status: 409 },
-      );
-    }
-    throw err;
-  }
+  });
 }

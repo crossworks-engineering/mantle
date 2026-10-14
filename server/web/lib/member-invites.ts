@@ -1,5 +1,4 @@
 import { NextResponse } from '@/server/http-compat';
-import { MemberInviteError } from '@mantle/content';
 import { clientIpKey, rateLimit, rateLimitPeek } from '@/lib/rate-limit';
 
 /**
@@ -61,19 +60,4 @@ export function inviteFailed(kind: keyof typeof INVITE_LIMITS): void {
     max: INVITE_LIMITS[kind].globalFailures,
     windowMs: WINDOW_MS,
   });
-}
-
-/** The admin create's refusals, as statuses. */
-export function inviteErrorResponse(err: unknown): Response {
-  if (err instanceof MemberInviteError) {
-    const status =
-      err.reason === 'contact-has-login' ||
-      err.reason === 'email-has-login' ||
-      err.reason === 'email-was-client' ||
-      err.reason === 'contact-was-client'
-        ? 409
-        : 400;
-    return NextResponse.json({ error: err.message, reason: err.reason }, { status });
-  }
-  throw err;
 }

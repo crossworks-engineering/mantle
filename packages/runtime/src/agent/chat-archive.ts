@@ -38,7 +38,7 @@ import { NOTES_ASSISTANT_PATH, ensureNotesAssistantFolder } from '@mantle/conten
 import { digestEmbedText, embedBatch } from '@mantle/embeddings';
 import { startTrace, step } from '@mantle/tracing';
 import { chatWithFailover, resolveChatKey, resolveChatRoutes } from './chat-failover';
-import { backgroundFence } from '@mantle/std';
+import { backgroundFence, defineDomainError } from '@mantle/std';
 import { buildChatMessages, flattenChatMessagesForAdapter } from './messages';
 import { recordChatUsage } from './llm-usage';
 
@@ -57,6 +57,17 @@ export class ChatThreadNotFoundError extends Error {
     this.name = 'ChatThreadNotFoundError';
   }
 }
+
+// What the archive routes answered by hand (archiveResponse, A10 part 2 fix
+// round 1, L7): 409 and 404 with the message.
+defineDomainError(ChatArchiveBusyError, {
+  reason: 'a reply is still running in this chat; try again when it has finished',
+  status: 409,
+});
+defineDomainError(ChatThreadNotFoundError, {
+  reason: 'the thread to continue from is not an archived thread of this agent',
+  status: 404,
+});
 
 export type ChatArchiveResult = {
   /** The thread just closed; null when the open chat had no turns. */

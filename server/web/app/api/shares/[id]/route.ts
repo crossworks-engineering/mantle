@@ -9,14 +9,7 @@ import {
   setContactShareCanWrite,
   TeamLinkRetiredError,
 } from '@mantle/content';
-import {
-  applyShareMode,
-  getLiveShare,
-  linkRefusal,
-  revokeShare,
-  SERVE_MAX,
-  setShareServed,
-} from '@/lib/shares';
+import { applyShareMode, getLiveShare, revokeShare, SERVE_MAX, setShareServed } from '@/lib/shares';
 import { requireArea, type WsCaller } from '@/lib/workspaces';
 import { readJson } from '@/lib/read-body';
 
@@ -42,7 +35,8 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
       anchorId: user.id,
       user,
     };
-    if (!(await requireArea(caller, 'users'))) return linkRefusal(err);
+    // A refusal answers by its row in the one table (LinkRefusedError).
+    if (!(await requireArea(caller, 'users'))) throw err;
   }
   return NextResponse.json({ ok: await revokeShare(user.id, id) });
 }
@@ -78,23 +72,19 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     if (!share || share.contactId) {
       return NextResponse.json({ error: 'Link not found.', code: 'not_found' }, { status: 404 });
     }
-    try {
-      const item = await assertMayLink(user.id, user.actor.id, share.nodeId);
-      const list = await checkServeList(
-        user.id,
-        user.actor.id,
-        item,
-        parsed.data.serve,
-        share.served,
-      );
-      const updated = await setShareServed(user.id, id, list);
-      if (!updated) {
-        return NextResponse.json({ error: 'Link not found.', code: 'not_found' }, { status: 404 });
-      }
-      return NextResponse.json({ ok: true, served: updated.served });
-    } catch (err) {
-      return linkRefusal(err);
+    const item = await assertMayLink(user.id, user.actor.id, share.nodeId);
+    const list = await checkServeList(
+      user.id,
+      user.actor.id,
+      item,
+      parsed.data.serve,
+      share.served,
+    );
+    const updated = await setShareServed(user.id, id, list);
+    if (!updated) {
+      return NextResponse.json({ error: 'Link not found.', code: 'not_found' }, { status: 404 });
     }
+    return NextResponse.json({ ok: true, served: updated.served });
   }
   // { canWrite }: a live contact share of an app (contact shares, 0214).
   if ('canWrite' in parsed.data) {

@@ -8,7 +8,7 @@ import {
   listWorkerGroups,
 } from '@/lib/worker-groups';
 import { firstIssue } from '@/lib/zod-issue';
-import { isUniqueViolation } from '@mantle/db';
+import { conflictOnUnique } from '@mantle/db';
 import { readJson } from '@/lib/read-body';
 
 /** GET /api/settings/worker-groups — the owner's worker groups + the enabled
@@ -41,18 +41,14 @@ export async function POST(req: Request) {
   if (!parsed.success) {
     return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
   }
-  try {
-    const row = await createWorkerGroup(user.id, parsed.data);
-    return NextResponse.json({ group: row });
-  } catch (err) {
-    // A slug taken is the fixed 409; anything else answers by the one table
-    // (A10 part 2): a domain error its status, a fault the opaque 500.
-    if (isUniqueViolation(err)) {
-      return NextResponse.json(
-        { error: `A worker group with slug "${parsed.data.slug}" already exists.` },
-        { status: 409 },
-      );
-    }
-    throw err;
-  }
+  // A slug or name taken answers 409 with this route's own text
+  // (conflictOnUnique, a ConflictError); anything else answers by the one
+  // table (A10 part 2): a domain error its status, a fault the opaque 500.
+  return conflictOnUnique(
+    `A worker group with slug "${parsed.data.slug}" already exists.`,
+    async () => {
+      const row = await createWorkerGroup(user.id, parsed.data);
+      return NextResponse.json({ group: row });
+    },
+  );
 }

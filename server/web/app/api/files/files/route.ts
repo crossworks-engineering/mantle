@@ -18,7 +18,7 @@ import { recordIngest } from '@mantle/tracing';
 import { promises as fs } from 'node:fs';
 import { readMultipartUpload, type ParsedUpload } from '@/lib/upload-stream';
 import { firstIssue } from '@/lib/zod-issue';
-import { isUniqueViolation } from '@mantle/db';
+import { conflictOnUnique } from '@mantle/db';
 import { guardNewFileIn } from '@mantle/content/tree';
 import { JSON_BODY_CEILING_BYTES } from '@/lib/body-limit';
 import { readJson } from '@/lib/read-body';
@@ -115,7 +115,10 @@ export async function POST(req: Request) {
   // answers the write's errors, not the body's.
   const raw = multipart ? null : await readJson(req, { maxBytes: JSON_BODY_CEILING_BYTES });
 
-  try {
+  // A slug or name taken answers 409 with this route's own text
+  // (conflictOnUnique, a ConflictError); anything else answers by the one
+  // table (A10 part 2): a domain error its status, a fault the opaque 500.
+  return conflictOnUnique('a file with that name already exists in this folder', async () => {
     if (multipart) {
       // Streamed: the body spools to disk as it arrives (see lib/upload-stream),
       // so the cap here is a disk/UX number, not a memory one: the old
@@ -219,15 +222,7 @@ export async function POST(req: Request) {
       snippet: parsed.data.content,
     });
     return NextResponse.json({ file: row });
-  } catch (err) {
-    if (isUniqueViolation(err)) {
-      return NextResponse.json(
-        { error: 'a file with that name already exists in this folder' },
-        { status: 409 },
-      );
-    }
-    throw err;
-  }
+  });
 }
 
 /**

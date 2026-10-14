@@ -280,6 +280,7 @@ export {
   isHeadsCheckError,
   isCheckViolation,
   isUniqueViolation,
+  conflictOnUnique,
   isScopeWriteRefusal,
   editRefusalDetail,
   isHiddenRowsRefusal,

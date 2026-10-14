@@ -9,7 +9,7 @@ import {
   putRecallCard,
 } from '@mantle/content';
 import { ownerCaller } from '@/lib/auth';
-import { getRecallCardDetail, recallActorOf, recallWriteFailure } from '@/lib/recall';
+import { getRecallCardDetail, recallActorOf } from '@/lib/recall';
 import { UUID_RE } from '@mantle/std';
 import { readBody } from '@/lib/read-body';
 
@@ -57,12 +57,8 @@ export async function PUT(req: Request, ctx: { params: Promise<{ id: string; car
   if (!UUID_RE.test(id)) return NextResponse.json({ error: 'not found' }, { status: 404 });
   const body = await readBody(req, Card);
   const { version, ...input } = body;
-  try {
-    const res = await putRecallCard(user.id, id, card, input, await recallActorOf(user), version);
-    return NextResponse.json(res);
-  } catch (err) {
-    return recallWriteFailure(err);
-  }
+  const res = await putRecallCard(user.id, id, card, input, await recallActorOf(user), version);
+  return NextResponse.json(res);
 }
 
 /** Remove the card. Options pointing at it go in the same write and come back
@@ -81,10 +77,6 @@ export async function DELETE(req: Request, ctx: { params: Promise<{ id: string; 
       { status: 400 },
     );
   }
-  try {
-    const res = await deleteRecallCard(user.id, id, card, await recallActorOf(user), version);
-    return NextResponse.json(res);
-  } catch (err) {
-    return recallWriteFailure(err);
-  }
+  const res = await deleteRecallCard(user.id, id, card, await recallActorOf(user), version);
+  return NextResponse.json(res);
 }

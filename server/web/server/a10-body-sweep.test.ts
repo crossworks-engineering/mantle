@@ -279,6 +279,24 @@ function changeKind(cell: string, main: string, now: string): string | null {
   ) {
     return 'opaque-500 (fold 2: a plain error, its text was the reply)';
   }
+  // Fix round 1 (L5): a failed item of a batch (the formula seed's `failed`
+  // list) says a fixed text for a fault where it said the error's own (the
+  // database stand-in's), the answer before the list as on main. (The longer
+  // text runs past the 400 characters a cell keeps, so the list itself is
+  // matched by its first item.)
+  const failedAt = (x: string) => x.indexOf('"failed":[{');
+  if (
+    main.startsWith('200 ') &&
+    failedAt(main) > 0 &&
+    failedAt(now) === failedAt(main) &&
+    now.slice(0, failedAt(now)) === main.slice(0, failedAt(main)) &&
+    /"failed":\[\{"[a-z]+":"[^"]*","error":"DATABASE_URL must be set"\}/.test(main) &&
+    /"failed":\[\{"[a-z]+":"[^"]*","error":"Could not [^"]*\. The details are in the server log\."\}/.test(
+      now,
+    )
+  ) {
+    return 'item-fault (fix round 1: a failed item says a fixed text for a fault)';
+  }
   // A refusal the caller fixes, said as a 500 by a hand catch: 400 now.
   if (moved && main.startsWith('500 ') && now === `400${main.slice(3)}`) {
     return 'input-400 (fold 2: a refusal the caller fixes, said as a 500 on main)';

@@ -18,6 +18,7 @@
  * owner gate of the caller decides alone, as before workspaces.
  */
 import { and, eq, inArray, sql } from 'drizzle-orm';
+import { defineDomainError } from '@mantle/std';
 import { db, nodeEmbeds, nodes, pages, SNAPSHOT_COPY_NO_SHARE } from '@mantle/db';
 import { clientOwnUrl, docRefIds, noteRefIds } from './client-redact';
 import { clientRedactOrigins } from './client-origins';
@@ -35,6 +36,14 @@ export class LinkRefusedError extends Error {
     this.name = 'LinkRefusedError';
   }
 }
+
+// What the share routes answered by hand (linkRefusal, A10 part 2 fix
+// round 1, L7): its status and `{ error, code }`.
+defineDomainError(LinkRefusedError, {
+  reason: 'the caller may not read the item (404) or may read but not link or serve it (403)',
+  status: (e) => e.status,
+  body: (e) => ({ error: e.message, code: e.code }),
+});
 
 const NOT_FOUND = () => new LinkRefusedError(404, 'not_found', 'Item not found.');
 

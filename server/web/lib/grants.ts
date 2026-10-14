@@ -64,10 +64,10 @@ import {
 import { appDbTableDetails } from '@mantle/content/app-broker';
 import { refoldPageTexts } from '@mantle/content/pages';
 import { moveTreeItems, notifyTreeChanged } from '@mantle/content/tree';
-import { publicErrorMessage } from '@mantle/std';
+import { defineDomainError, publicErrorMessage } from '@mantle/std';
 import { inRuleInQuery } from '@/lib/auth/rule-in-query';
 import type { AnyLogin } from '@/lib/auth';
-import { areasFor, workspaceCaller, WsError, type WsCaller } from '@/lib/workspaces';
+import { areasFor, workspaceCaller, type WsCaller } from '@/lib/workspaces';
 
 // ── Errors and the route wrapper ─────────────────────────────────────────────
 
@@ -82,6 +82,14 @@ export class GrantError extends Error {
   }
 }
 
+// What the grant routes answered by hand (grantsRoute, A10 part 2 fix round
+// 1, L7): its status and `{ error, code }`.
+defineDomainError(GrantError, {
+  reason: 'a grant change the caller can fix or may not make; the code says which',
+  status: (e) => e.status,
+  body: (e) => ({ error: e.message, code: e.code }),
+});
+
 const ITEM_NOT_FOUND = () => new GrantError(404, 'not_found', 'Item not found.');
 const WS_NOT_FOUND = () => new GrantError(404, 'not_found', 'Workspace not found.');
 
@@ -91,26 +99,20 @@ const WS_NOT_FOUND = () => new GrantError(404, 'not_found', 'Workspace not found
 export const FOLDER_GRANT_LIMIT = { max: 50_000 };
 
 /** Run a grants route for the login the handler read (loginCaller()):
- *  answer the result as JSON or a refusal as `{ error, code }`. Anything
- *  else throws (opaque 500). */
+ *  answer the result as JSON. A GrantError or a WsError answers
+ *  `{ error, code }` by its row in the one table (A10 part 2 fix round 1,
+ *  L7); anything else is the opaque 500. */
 export async function grantsRoute(
   login: AnyLogin,
   fn: (caller: WsCaller) => Promise<unknown>,
   okStatus = 200,
 ): Promise<Response> {
   const caller = workspaceCaller(login);
-  try {
-    // The rule is in this library's own SQL on the system pool: it leaves
-    // the request scope the gate entered by name (W6a), at the one exit
-    // site (lib/auth/rule-in-query.ts).
-    const out = await inRuleInQuery(() => fn(caller));
-    return NextResponse.json(out, { status: okStatus });
-  } catch (err) {
-    if (err instanceof GrantError || err instanceof WsError) {
-      return NextResponse.json({ error: err.message, code: err.code }, { status: err.status });
-    }
-    throw err;
-  }
+  // The rule is in this library's own SQL on the system pool: it leaves
+  // the request scope the gate entered by name (W6a), at the one exit
+  // site (lib/auth/rule-in-query.ts).
+  const out = await inRuleInQuery(() => fn(caller));
+  return NextResponse.json(out, { status: okStatus });
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;

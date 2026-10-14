@@ -30,6 +30,7 @@ import {
   teamAccessLog,
 } from '@mantle/db';
 import type { MemberInviteRow, MemberInviteState } from '@mantle/client-types';
+import { defineDomainError } from '@mantle/std';
 import { getContact } from './contacts';
 import {
   FORMER_CLIENT_CONTACT_MESSAGE,
@@ -68,6 +69,21 @@ export class MemberInviteError extends Error {
     this.name = 'MemberInviteError';
   }
 }
+
+// What the admin create answered by hand (inviteErrorResponse, A10 part 2
+// fix round 1, L7): a login already there (or a client's) 409, any other
+// 400, with `{ error, reason }`.
+const INVITE_CONFLICTS: ReadonlySet<MemberInviteErrorReason> = new Set([
+  'contact-has-login',
+  'email-has-login',
+  'email-was-client',
+  'contact-was-client',
+]);
+defineDomainError(MemberInviteError, {
+  reason: 'the admin asked for an invite the brain cannot make; the reason says which',
+  status: (e) => (INVITE_CONFLICTS.has(e.reason) ? 409 : 400),
+  body: (e) => ({ error: e.message, reason: e.reason }),
+});
 
 /** Mixed-case alphanumerics minus the look-alikes (0/O/o, 1/l/I) so a code
  *  read over the phone or retyped from paper survives the trip. 54 chars.

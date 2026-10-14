@@ -26,6 +26,7 @@ import {
 import type { ShareMode } from '@mantle/client-types';
 import { kindSpecOf, kindsWhere, type PublicLinkKind } from '@mantle/client-types/kinds';
 import { env } from '@mantle/config';
+import { defineDomainError } from '@mantle/std';
 
 export type { ShareMode };
 
@@ -93,6 +94,14 @@ export class TeamLinkRetiredError extends Error {
   }
 }
 
+// What the share routes answered by hand (linkRefusal, A10 part 2 fix
+// round 1, L7): 400 and its old `{ error, reason }`.
+defineDomainError(TeamLinkRetiredError, {
+  reason: 'the caller asked for a team-mode link; team links are retired',
+  status: 400,
+  body: (e) => ({ error: e.message, reason: e.reason }),
+});
+
 /** Refuse any link mode but public (an untyped caller may still pass 'team'). */
 function assertLinkMode(mode: string | undefined): void {
   if (mode !== undefined && mode !== 'public') throw new TeamLinkRetiredError();
@@ -110,6 +119,19 @@ export class ShareInputError extends Error {
     this.name = 'ShareInputError';
   }
 }
+
+// What the share routes answered by hand (linkRefusal, A10 part 2 fix
+// round 1, L7): a missing item 404 `not_found` with the fixed text, any
+// other 400 `not_shareable` with the message (it names nothing hidden).
+defineDomainError(ShareInputError, {
+  reason:
+    'the item cannot carry a link (missing, a kind that is not shareable); the message says which',
+  status: (e) => (e.reason === 'not-found' ? 404 : 400),
+  body: (e) =>
+    e.reason === 'not-found'
+      ? { error: 'Item not found.', code: 'not_found' }
+      : { error: e.message, code: 'not_shareable' },
+});
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 

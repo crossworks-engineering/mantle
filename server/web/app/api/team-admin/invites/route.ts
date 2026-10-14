@@ -16,7 +16,6 @@ import { z } from 'zod';
 import { createMemberInvite, inviteLinkPath, listMemberInvites } from '@mantle/content';
 import type { MemberInviteCreated, MemberInviteList } from '@mantle/client-types';
 import { ownerCaller } from '@/lib/auth';
-import { inviteErrorResponse } from '@/lib/member-invites';
 import { readJson } from '@/lib/read-body';
 
 export async function GET() {
@@ -37,14 +36,10 @@ export async function POST(req: Request) {
   if (!parsed.success) {
     return NextResponse.json({ error: 'Choose a contact or enter an email.' }, { status: 400 });
   }
-  try {
-    const { invite, code } = await createMemberInvite(user.id, {
-      ...parsed.data,
-      createdBy: user.actor.id,
-    });
-    const body: MemberInviteCreated = { invite, code, linkPath: inviteLinkPath(code) };
-    return NextResponse.json(body, { status: 201 });
-  } catch (err) {
-    return inviteErrorResponse(err);
-  }
+  const { invite, code } = await createMemberInvite(user.id, {
+    ...parsed.data,
+    createdBy: user.actor.id,
+  });
+  const body: MemberInviteCreated = { invite, code, linkPath: inviteLinkPath(code) };
+  return NextResponse.json(body, { status: 201 });
 }

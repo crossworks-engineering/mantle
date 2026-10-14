@@ -2,7 +2,7 @@ import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { assertMayLink, checkServeList } from '@mantle/content';
 import { ownerCaller } from '@/lib/auth';
-import { createShare, getActiveShareForNode, linkRefusal, SERVE_MAX } from '@/lib/shares';
+import { createShare, getActiveShareForNode, SERVE_MAX } from '@/lib/shares';
 import { readBody } from '@/lib/read-body';
 
 /** GET /api/shares?nodeId=… → the node's active link (or null), with its
@@ -53,24 +53,20 @@ export async function POST(req: Request) {
   const user = ownerCaller();
   const body = await readBody(req, CreateBody);
   const { nodeId, serve } = body;
-  try {
-    const item = await assertMayLink(user.id, user.actor.id, nodeId);
-    const current = await getActiveShareForNode(user.id, nodeId);
-    const list =
-      serve === undefined
-        ? undefined
-        : await checkServeList(user.id, user.actor.id, item, serve, current?.served ?? []);
-    const share = await createShare(user.id, nodeId, { serve: list });
-    return NextResponse.json({
-      share: {
-        id: share.id,
-        token: share.token,
-        path: `/s/${share.token}`,
-        mode: share.mode,
-        served: share.served,
-      },
-    });
-  } catch (err) {
-    return linkRefusal(err);
-  }
+  const item = await assertMayLink(user.id, user.actor.id, nodeId);
+  const current = await getActiveShareForNode(user.id, nodeId);
+  const list =
+    serve === undefined
+      ? undefined
+      : await checkServeList(user.id, user.actor.id, item, serve, current?.served ?? []);
+  const share = await createShare(user.id, nodeId, { serve: list });
+  return NextResponse.json({
+    share: {
+      id: share.id,
+      token: share.token,
+      path: `/s/${share.token}`,
+      mode: share.mode,
+      served: share.served,
+    },
+  });
 }
