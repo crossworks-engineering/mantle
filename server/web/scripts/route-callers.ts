@@ -53,6 +53,7 @@
  * Batch by batch (docs/actors.md, A4 step 3b) the guard calls go; when they
  * are gone every row is answered and this goes with them.
  */
+import { posix } from 'node:path';
 import ts from 'typescript';
 import {
   CALLER_READERS,
@@ -90,6 +91,17 @@ export const READER_MODULES: readonly string[] = ['@/lib/auth', '@/lib/auth/sess
  * held here to the reader each kind reads (READER_ANSWERS).
  */
 export const GONE_MODULE = '@/lib/gone';
+
+/** Whether `spec`, imported by the route file `file` (its path from
+ *  server/web), names the gone module (lib/gone.ts) in any spelling: the
+ *  alias with an extension or an index, or a relative path to it. */
+function isGoneModule(spec: string, file: string): boolean {
+  const plain = (p: string) => p.replace(/\.(?:[cm]?[jt]sx?)$/, '').replace(/\/index$/, '');
+  if (spec.startsWith('.')) {
+    return /(?:^|\/)lib\/gone$/.test(plain(posix.normalize(posix.join(posix.dirname(file), spec))));
+  }
+  return plain(spec) === GONE_MODULE;
+}
 export const GONE_CALLERS: Readonly<Record<GoneGuard, RouteCaller>> = Object.freeze(
   Object.fromEntries(
     Object.entries(GONE_KINDS).map(([kind, { caller, reader }]) => {
@@ -413,6 +425,72 @@ export function analyzeRouteFile(src: string, file: string, follow?: FollowReads
     ts.forEachChild(n, visit);
   };
   visit(sf);
+
+  // ── The gone module, in the one form read here ──────────────────────────
+  // `import { gone } from '@/lib/gone'`, called only as a method's export
+  // (`export const GET = gone('owner')`, or a const a method is exported
+  // as). Any other form (a relative or other spelling of the module, the
+  // module imported whole or by default, gone under another name,
+  // re-exported, or called or named anywhere else) is refused: a stub the
+  // generator did not read would be served with no gone row, its reader
+  // answered by no one (it throws: a 500 where the 410 was).
+  for (const st of sf.statements) {
+    const spec =
+      (ts.isImportDeclaration(st) || ts.isExportDeclaration(st)) &&
+      st.moduleSpecifier &&
+      ts.isStringLiteral(st.moduleSpecifier)
+        ? st.moduleSpecifier.text
+        : null;
+    if (spec === null || !isGoneModule(spec, file)) continue;
+    if (spec !== GONE_MODULE) {
+      fail(st, `imports the gone module as ${spec}: import it from '${GONE_MODULE}'`);
+    }
+    if (ts.isExportDeclaration(st)) fail(st, `re-exports from ${GONE_MODULE}: import what it uses`);
+    const clause = (st as ts.ImportDeclaration).importClause;
+    if (clause?.name) fail(clause, `imports ${GONE_MODULE} by default: import gone by name`);
+    const bindings = clause?.namedBindings;
+    if (bindings && ts.isNamespaceImport(bindings)) {
+      fail(bindings, `imports ${GONE_MODULE} whole: import gone by its own name`);
+    }
+    if (bindings && ts.isNamedImports(bindings)) {
+      for (const el of bindings.elements) {
+        if ((el.propertyName ?? el.name).text === 'gone' && el.name.text !== 'gone') {
+          fail(el, `imports gone as ${el.name.text}: import gone by its own name`);
+        }
+      }
+    }
+  }
+  const goneImport = imported.get('gone');
+  if (goneImport && goneImport.spec === GONE_MODULE && goneImport.name === 'gone') {
+    // The declarations a method is exported as: its stub's call, if any,
+    // is the one place gone may be called.
+    const stubCalls = new Set<ts.Node>();
+    for (const h of methods.values()) {
+      const init = ts.isVariableDeclaration(h.decl) ? h.decl.initializer : undefined;
+      if (init) stubCalls.add(bare(init));
+    }
+    const uses = (n: ts.Node): void => {
+      if (ts.isTypeNode(n) && !ts.isExpressionWithTypeArguments(n)) return;
+      if (
+        ts.isIdentifier(n) &&
+        n.text === 'gone' &&
+        !ts.isImportSpecifier(n.parent) &&
+        !(ts.isPropertyAccessExpression(n.parent) && n.parent.name === n) &&
+        !namesDecl(n) &&
+        refersTo(n, goneImport.node)
+      ) {
+        const call = n.parent;
+        if (!ts.isCallExpression(call) || call.expression !== n || !stubCalls.has(call)) {
+          fail(
+            n,
+            `uses gone other than as a method's export (export const GET = gone('owner')): the generator reads no other form`,
+          );
+        }
+      }
+      ts.forEachChild(n, uses);
+    };
+    uses(sf);
+  }
 
   // ── A handler of the file that runs another (POST: `return GET(req)`) ──
   // reads what the one it runs reads, as a handler of another route file

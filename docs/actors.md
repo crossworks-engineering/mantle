@@ -1759,7 +1759,12 @@ GET = gone('owner', ...)` as a handler that reads the caller of the
   writes no audit row there, as the stub's call wrote none. The stub reads
   the answer of its kind and throws where there is none (lib/gone.ts is
   the one lib file the reader import rule lets read: the generator reads
-  its stubs). 212 rows are gone rows (the 144 and 68 HEADs).
+  its stubs). 212 rows are gone rows (the 144 and 68 HEADs). Since fix
+  round 1 the generator refuses a route file that imports or uses `gone`
+  in any form it does not read (a relative or other spelling of the
+  module, the module whole or by default, `gone` renamed or re-exported,
+  or called anywhere but a method's export): such a stub would be served
+  with no gone row and its read would throw.
 - **The flag-first routes**: POST /api/assistant/turn/:turnId/cancel and
   GET /api/assistant/turn/:turnId/stream (MANTLE_TURN_STREAMING) and POST
   /api/dev-tools/queue-approval (never in production) answered their 404

@@ -602,6 +602,76 @@ describe('the gone stubs (A4 hand batch A)', () => {
     }
   });
 
+  it('refuses a route file that imports or uses gone in a form it does not read (fix round 1, L6)', () => {
+    const bad: Array<[string, string, RegExp]> = [
+      // A relative path to lib/gone, or the alias spelled otherwise.
+      [
+        'app/api/x/route.ts',
+        `import { gone } from '../../../lib/gone'; export const GET = gone('owner');`,
+        /import it from '@\/lib\/gone'/,
+      ],
+      [
+        'app/api/x/route.ts',
+        `import { gone } from '@/lib/gone.ts'; export const GET = gone('owner');`,
+        /import it from '@\/lib\/gone'/,
+      ],
+      [
+        'app/api/x/route.ts',
+        `import { goneResponse } from '../../../lib/gone'; export function GET() { return goneResponse(); }`,
+        /import it from '@\/lib\/gone'/,
+      ],
+      // Under another name, whole, by default, re-exported.
+      [
+        'a/route.ts',
+        `import { gone as retired } from '@/lib/gone'; export async function GET() { return new Response(); }`,
+        /import gone by its own name/,
+      ],
+      [
+        'a/route.ts',
+        `import * as g from '@/lib/gone'; export const GET = g.gone('owner');`,
+        /imports @\/lib\/gone whole/,
+      ],
+      ['a/route.ts', `import g from '@/lib/gone'; export const GET = g('owner');`, /by default/],
+      ['a/route.ts', `export { gone } from '@/lib/gone'; export const GET = 1;`, /re-exports/],
+      // Called or named anywhere but a method's export.
+      [
+        'a/route.ts',
+        `import { gone } from '@/lib/gone'; export async function GET() { return gone('owner')(); }`,
+        /other than as a method's export/,
+      ],
+      [
+        'a/route.ts',
+        `import { gone } from '@/lib/gone'; const make = gone; export const GET = make('owner');`,
+        /other than as a method's export/,
+      ],
+      [
+        'a/route.ts',
+        `import { gone } from '@/lib/gone'; const stub = gone('owner'); export async function GET() { return stub(); }`,
+        /other than as a method's export/,
+      ],
+    ];
+    for (const [file, src, msg] of bad) {
+      expect(() => handlerCallers(src, file), src).toThrow(msg);
+      expect(() => handlerGone(src, file), src).toThrow(msg);
+    }
+    // The forms it reads stay read; a local named gone is another binding.
+    expect(
+      handlerGone(
+        `import { gone, GONE_MESSAGE } from '@/lib/gone';
+         export const GET = gone('owner', GONE_MESSAGE);
+         export async function POST() { const gone = 1; return Response.json(gone); }`,
+        'a/route.ts',
+      ),
+    ).toEqual(['GET']);
+    // Another module named gone is not lib/gone.
+    expect(
+      handlerCallers(
+        `import { gone } from '@/lib/other/gone'; export const GET = gone('owner');`,
+        'a/route.ts',
+      ),
+    ).toEqual({});
+  });
+
   it('reads a stub in every form the generator takes: any string literal, parentheses, an alias', () => {
     const src = `
       import { gone } from '@/lib/gone';
