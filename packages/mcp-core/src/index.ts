@@ -45,6 +45,13 @@ export {
   mcpGateCaller,
   mcpToolPolicy,
 } from './gate-policy';
+export { MCP_TOOL_DEFS, mcpDefinition, type McpToolDef, type McpToolGroup } from './mcp-defs';
+export {
+  KEY_SHARED_CONTENT_TOOLS,
+  keyAreasAllowTool,
+  mcpToolPolicyOf,
+  toolKeyArea,
+} from './mcp-policy';
 /** Boot readiness of the one gate, for the stdio MCP server (it loads
  *  @mantle/tools through this package). */
 export { ensureGateReady } from '@mantle/tools';

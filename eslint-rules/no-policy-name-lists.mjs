@@ -10,15 +10,11 @@
  */
 /** @type {Record<string, { lists: number, entries: number }>} A0 baseline;
  *  A5 step 1: the @mantle/tools access lists are views of the tool policy
- *  table, and a list of definition objects is not counted (RUN_TOOLS). */
+ *  table, and a list of definition objects is not counted (RUN_TOOLS).
+ *  A5 step 2: the @mantle/mcp-core lists are views of the builtin policy
+ *  table and the MCP definitions (mcp-defs.ts), none left there. */
 export const TOOL_LIST_PINS = {
   'packages/content-core/src/profile-projections.ts': { lists: 1, entries: 4 },
-  'packages/mcp-core/src/build-server.ts': { lists: 1, entries: 9 },
-  'packages/mcp-core/src/create-home.ts': { lists: 1, entries: 3 },
-  'packages/mcp-core/src/key-email-guard.ts': { lists: 1, entries: 5 },
-  'packages/mcp-core/src/key-scope.ts': { lists: 2, entries: 19 },
-  'packages/mcp-core/src/login-surface.ts': { lists: 3, entries: 32 },
-  'packages/mcp-core/src/register/tables.ts': { lists: 1, entries: 3 },
   'packages/tools/src/builtins-contacts.ts': { lists: 1, entries: 5 },
   'packages/tools/src/builtins-formulas.ts': { lists: 1, entries: 5 },
   'packages/tools/src/builtins-journal.ts': { lists: 1, entries: 5 },

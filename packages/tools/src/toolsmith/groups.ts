@@ -94,6 +94,7 @@ function oauth2Summary(o: ToolGroupIntegration['oauth2']) {
 
 export const tool_group_ensure: BuiltinToolDef = {
   slug: 'tool_group_ensure',
+  optIn: 'toolsmithWrite',
   policy: {
     effect: 'write',
     spends: 'none',
@@ -486,6 +487,7 @@ export const agent_list: BuiltinToolDef = {
 
 export const agent_grant_tool_group: BuiltinToolDef = {
   slug: 'agent_grant_tool_group',
+  optIn: 'toolsmithWrite',
   policy: {
     effect: 'write',
     spends: 'none',
@@ -637,6 +639,7 @@ const THINKING_EFFORT_INPUTS = ['inherit', ...AGENT_THINKING_EFFORTS] as const;
 
 export const agent_set_thinking_effort: BuiltinToolDef = {
   slug: 'agent_set_thinking_effort',
+  optIn: 'toolsmithWrite',
   policy: {
     effect: 'write',
     spends: 'none',

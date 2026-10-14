@@ -63,17 +63,18 @@ describe('@mantle/tools alone makes the gate ready', () => {
   });
 });
 
-describe('the peer narrower without the owner MCP surface rule: fail closed', () => {
-  // @mantle/mcp-core (which registers the rule by a tool's name) is not
-  // loaded here, as in server/api; gate-policy.test.ts pins the rule where
-  // it is loaded against the listing today.
+describe('the peer narrower reads the declared mark, in any process (A5 step 2)', () => {
+  // @mantle/mcp-core is not loaded here, as in server/api: the narrower
+  // reads only the policy (a connector's from its row, runtime-policy.ts).
+  // gate-policy.test.ts pins it, where the MCP surface is loaded, against the
+  // listing today.
   const key = (over: Partial<GateCaller> = {}): GateCaller => ({
     actor: loginActor('00000000-0000-4000-8000-000000000009', 'rw'),
     via: 'key',
     admin: null,
     ...over,
   });
-  const row = {
+  const connector = {
     slug: 'mcp_crm_lookup',
     handler: { kind: 'mcp', group: 'crm', toolName: 'lookup' },
     requiresConfirm: false,
@@ -81,21 +82,44 @@ describe('the peer narrower without the owner MCP surface rule: fail closed', ()
     description: '',
     inputSchema: {},
   };
-  const ref = { kind: 'runtime-tool', name: row.slug, row };
+  const api = {
+    slug: 'crm_http_lookup',
+    handler: { kind: 'http', method: 'GET', url: 'https://example.test/' },
+    requiresConfirm: false,
+    externalAccess: null,
+    description: '',
+    inputSchema: {},
+  };
+  const refOf = (row: typeof connector | typeof api) => ({
+    kind: 'runtime-tool',
+    name: row.slug,
+    row,
+  });
 
-  it('a key or a peer calls a tool only when the owner named it, and only with Write on', () => {
-    expect(gateCheck(key(), ref)?.message).toBe(RISKY_TOOL_ERROR);
-    expect(gateCheck(key({ via: 'peer' }), ref)?.message).toBe(RISKY_TOOL_ERROR);
-    const named = { riskyAllowed: [row.slug] };
-    expect(gateCheck(key({ facts: named }), ref)).toBeNull();
-    expect(gateCheck(key({ facts: named, write: false }), ref)?.message).toBe(
+  it("a connector's tool is declared not risky, and a write for a key or a peer", () => {
+    const ref = refOf(connector);
+    expect(gateCheck(key(), ref)).toBeNull();
+    expect(gateCheck(key({ via: 'peer' }), ref)).toBeNull();
+    expect(gateCheck(key({ write: false }), ref)?.message).toBe(READ_ONLY_CALLER_ERROR);
+    expect(gateCheck(key({ via: 'peer', write: false }), ref)?.message).toBe(
       READ_ONLY_CALLER_ERROR,
     );
   });
 
+  it('a tool whose policy declares no peer mark is refused for a key or a peer, even named', () => {
+    const ref = refOf(api);
+    const named = { riskyAllowed: [api.slug] };
+    for (const via of ['key', 'peer'] as const) {
+      expect(gateCheck(key({ via }), ref)?.message).toBe(RISKY_TOOL_ERROR);
+      expect(gateCheck(key({ via, facts: named }), ref)?.message).toBe(RISKY_TOOL_ERROR);
+    }
+  });
+
   it("the login's own OAuth and the other callers are not narrowed like a key", () => {
-    expect(gateCheck(key({ via: 'oauth' }), ref)).toBeNull();
-    expect(gateCheck(key({ via: 'turn' }), ref)).toBeNull();
+    for (const row of [connector, api]) {
+      expect(gateCheck(key({ via: 'oauth' }), refOf(row))).toBeNull();
+      expect(gateCheck(key({ via: 'turn' }), refOf(row))).toBeNull();
+    }
   });
 });
 

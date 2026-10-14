@@ -130,6 +130,7 @@ export const api_tool_get: BuiltinToolDef = {
 
 export const api_tool_create: BuiltinToolDef = {
   slug: 'api_tool_create',
+  optIn: 'toolsmithWrite',
   policy: {
     effect: 'write',
     spends: 'none',
@@ -291,6 +292,7 @@ function externalAccessOffActor(ctx: ToolHandlerContext): ExternalAccessOffActor
 
 export const api_tool_update: BuiltinToolDef = {
   slug: 'api_tool_update',
+  optIn: 'toolsmithWrite',
   policy: {
     effect: 'write',
     spends: 'none',
@@ -578,6 +580,7 @@ export const api_tool_update: BuiltinToolDef = {
 
 export const api_tool_delete: BuiltinToolDef = {
   slug: 'api_tool_delete',
+  optIn: 'toolsmithWrite',
   policy: {
     effect: 'write',
     spends: 'none',

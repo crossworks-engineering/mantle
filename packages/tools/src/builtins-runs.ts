@@ -641,6 +641,7 @@ export const RUN_TOOLS: BuiltinToolDef[] = [
       effect: 'write',
       spends: 'none',
       scope: 'admin',
+      // A run queues tool calls and workers that execute later as the owner, outside a key's or peer's narrowing (audit H1).
       peerRisky: true,
       recipe: { runItem: 'banned' },
     },
@@ -761,6 +762,7 @@ export const RUN_TOOLS: BuiltinToolDef[] = [
       effect: 'write',
       spends: 'none',
       scope: 'admin',
+      // A run queues tool calls and workers that execute later as the owner, outside a key's or peer's narrowing (audit H1).
       peerRisky: true,
       recipe: { runItem: 'banned' },
     },

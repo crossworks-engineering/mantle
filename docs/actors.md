@@ -960,8 +960,8 @@ on its own.
 The sources registered today: `runtime-tool`, `sandbox-mcp-tool` and
 `peer-tool` (`packages/tools/src/runtime-policy.ts`), `app-tool`
 (`packages/tools/src/member-app-tools.ts`), and `mcp-tool`
-(`packages/mcp-core/src/gate-policy.ts`, derived from today's lists; A5
-declares the policy on each tool). Every narrower registers from
+(`packages/mcp-core/src/gate-policy.ts`: each tool's declared policy since
+A5 step 2). Every narrower registers from
 `packages/tools/src/gate-narrowers.ts`. `route`
 (`server/web/lib/auth/route-policy.ts`, A4 step 1) reads the ROUTE_POLICY
 row the ref carries.
@@ -990,8 +990,8 @@ lists of `admin-gate.ts`, `CREATE_TOOL_SLUGS`, `ITEM_WRITE_TARGETS`,
 `HEARTBEAT_EGRESS_SLUGS` (`packages/runtime/src/heartbeats/fire.ts`); the
 app tools' author ceiling reads each tool's own policy. Two views keep
 names that are not builtins, named where the view is: the two
-hand-written responder MCP tools (until step 2) and three team tool names
-of the system manifest. A view is read live, so a builtin registered at
+hand-written responder MCP tools (until step 2: now the MCP surface's own
+definitions) and three team tool names of the system manifest. A view is read live, so a builtin registered at
 boot (the heartbeat tools) is in it, and it throws
 (`PolicyTableNotLoadedError`) when read before the registry loaded, never
 answering from an empty table.
@@ -1004,3 +1004,57 @@ gate gets today, and that the owner MCP surface's own lists agree with
 the policy (step 2 derives them). A builtin row named with another
 builtin's slug does not run (`builtinRowSlugError`, in dispatch): some
 checks still match a row's slug as well as its builtin ref.
+
+## The MCP tools are definitions (A5 step 2)
+
+Plan section 23.3, step 2, no behaviour change. The sixteen tools the
+owner MCP surface writes itself (`tree_list`, `search`, the five file and
+folder verbs, the page and table reads, the four responder tools) are
+definitions in one table, `packages/mcp-core/src/mcp-defs.ts`: each with
+a required `ToolPolicy`, a group (its place in the surface's order) and
+its body, moved as it was. `register/*.ts` register a group from the
+table, and the builtin bridge skips a builtin a definition names, so the
+page and table skip lists are gone. Eleven share a builtin's name and
+carry that builtin's policy (`packages/mcp-core/src/mcp-defs.test.ts`);
+the table loads into `@mantle/tools` as the surface table
+(`loadSurfaceTools`), where `ADMIN_ONLY_TOOL_SLUGS` reads the two
+responder writes from it in every process that serves MCP. Registration
+opt-ins are a definition field, `optIn: 'toolsmithWrite' | 'terminal'`,
+on the Toolsmith writes and `run_terminal`.
+
+The owner MCP surface's lists are views of the builtin policy table and
+the definitions (`packages/mcp-core/src/mcp-policy.ts`, `mcpPolicySet`),
+under their names: `ADMIN_KIND_CREATE_TOOL_SLUGS`, `LIST_TOOLS`,
+`KEY_SHARED_CONTENT_TOOLS`, `MCP_HANDWRITTEN_READ_ONLY`,
+`TOOLSMITH_WRITE_SLUGS`, and the policy's whole answer for
+`PEER_RISKY_TOOL_SLUGS` (`peerRisky`) and `OWNER_KEY_SPENDING_TOOLS`
+(`spends: 'ownerKey'`), each of which used to name some tools while rules
+named the rest. `isPeerRiskyTool`, `isMcpToolReadOnly`, `spendsOwnerKeys`
+and `toolKeyArea` read the policy (`mcpToolPolicyOf`); a name no table
+holds (a connector's tool, `mcp_*`, or no tool) is answered by its family,
+as before (`familyKeyArea` in `packages/mcp-core/src/key-scope.ts`, which
+stays a leaf, and the risky families). The audit of a key's MCP write
+reads the policy's effect (`server/web/lib/mcp-auth.ts`).
+
+The gate's `mcp-tool` policy is the declared one (`toGatePolicy`), with no
+`handWritten` mark on the ref. The peer side channel is gone
+(`registerPeerToolRule`, `PEER_TOOL_RULE`): the `peer` narrower reads the
+policy's `fields.peerRisky` and effect. A tool whose policy declares no
+peer mark is refused for a key or a peer, whatever the owner named (fail
+closed). A connector's policy declares itself not risky, and its `mark`
+keeps it a write for a key or a peer until step 5 (owner decision Q1 b).
+
+The bound caller's Sets are read-only views over a private Set (A3c audit
+LOW-3): `Set.prototype.add.call` cannot reach them
+(`packages/db/src/gate.test.ts`).
+
+Proof: `packages/mcp-core/src/mcp-surface-snapshot.test.ts`, committed
+before the change: tools/list over the real SDK (names, order,
+descriptions, schemas with the `workspace` argument) for stdio and HTTP in
+full and for every connection of the gate-policy matrix by hash, every
+decision the surface's lists made per registered name and per probe name,
+and the exported list values; the change left every file under
+`packages/mcp-core/src/__snapshots__/` as it was.
+`packages/mcp-core/src/tool-policy-sweep.test.ts` pins the new `peer`
+narrower against `ownerPeerAllows` for every registered tool, two
+connector rows and every key and peer caller.

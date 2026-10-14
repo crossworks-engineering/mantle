@@ -6,11 +6,10 @@
  * them fails closed for a narrower it never loaded.
  *
  * Each narrower reads the caller, the declared policy and the ref: what a
- * tool is comes from its policy (@mantle/mcp-core gate-policy.ts derives
- * the owner MCP tools' from today's lists, runtime-policy.ts the runtime
- * rows', member-app-tools.ts an app tool's from the live member-app rule),
- * and the peer rule from the owner MCP surface's own lists, which that
- * surface registers (registerPeerToolRule). No rule is copied here.
+ * tool is comes from its policy (the builtins' and the MCP definitions'
+ * ToolPolicy, through @mantle/mcp-core gate-policy.ts; runtime-policy.ts
+ * the runtime rows'; member-app-tools.ts an app tool's from the live
+ * member-app rule). No rule is copied here, and none is keyed by a name.
  *
  * Each process main calls ensureGateReady() at boot, so a missing narrower
  * shows there, not at the first call.
@@ -76,48 +75,34 @@ const keyNarrower: Narrower = (caller, policy) => {
   return area !== null && areas.includes(area) ? null : KEY_AREA_ERROR;
 };
 
-/** What the owner MCP surface knows of a tool by its name, for a key or a
- *  peer: whether it is risky (ownerPeerAllows' list) and whether it only
- *  reads (isMcpToolReadOnly; a connector tool counts as a write whatever
- *  its mark, as today). */
-export type PeerToolRule = Readonly<{
-  risky: (slug: string) => boolean;
-  readOnly: (slug: string) => boolean;
-}>;
-
-let peerToolRule: PeerToolRule | null = null;
-
-/** Register the owner MCP surface's tool rule (@mantle/mcp-core
- *  gate-policy.ts, from its own lists: nothing is copied here). The same
- *  rule again is a no-op; another throws, on purpose: two rules would make
- *  which one decides an accident of import order. */
-export function registerPeerToolRule(rule: PeerToolRule): void {
-  if (peerToolRule === rule) return;
-  if (peerToolRule) throw new Error('registerPeerToolRule: a rule is registered already');
-  peerToolRule = rule;
-}
-
 /**
- * A key's or a peer's risky tools and Write switch, on a tool: the rule the
- * MCP listing runs today (ownerPeerAllows), by the tool's name, from the
- * rule the owner MCP surface registers. A risky tool the owner did not name
- * on the key or the peer is refused; with Write off, a tool that is not
- * read-only is. Pinned against the listing by gate-policy.test.ts.
+ * A key's or a peer's risky tools and Write switch, on a tool, from what its
+ * policy declares (A5 step 2): the rule the MCP listing runs
+ * (ownerPeerAllows), now read from the policy, never from a list keyed by
+ * name. A risky tool (`fields.peerRisky`) the owner did not name on the key
+ * or the peer is refused; with Write off, a tool that is not a read is.
+ * Pinned against the listing by gate-policy.test.ts, and for every tool and
+ * every key and peer caller by tool-policy-sweep.test.ts.
  *
- * Fail closed: in a process that has not loaded the surface's rule (no key
- * or peer reaches one today: they come in over MCP, served where
- * @mantle/mcp-core is loaded), every tool is risky and a write, so a key or
- * a peer calls only what the owner named, and only with Write on.
- * TODO(A5): the tool policies declare their peer marks, and the MCP entry
- * asserts them at boot.
+ * Fail closed: a tool whose policy declares no peer mark (no boolean
+ * `fields.peerRisky`: a runtime row type no key or peer reaches today) is
+ * refused for a key or a peer, whatever the owner named.
+ *
+ * A connector's tool (its policy carries the admin's read-only `mark`)
+ * counts as a write here whatever its mark, as the owner MCP surface has
+ * always counted it for a key or a peer. TODO(A5 step 5, owner decision
+ * Q1 b): read the connector's effect, so a read-only key or peer calls a
+ * connector tool an Admin marked read-only.
  */
-const peerNarrower: Narrower = (caller, _policy, ref) => {
+const peerNarrower: Narrower = (caller, policy, ref) => {
   if (!narrowedCaller(caller) || !toolRef(ref)) return null;
+  const risky = policy.fields?.peerRisky;
+  if (typeof risky !== 'boolean') return RISKY_TOOL_ERROR;
   const riskyAllowed = (caller.facts?.riskyAllowed ?? []) as readonly string[];
-  const risky = peerToolRule ? peerToolRule.risky(ref.name) : true;
   if (risky && !riskyAllowed.includes(ref.name)) return RISKY_TOOL_ERROR;
-  const readOnly = peerToolRule ? peerToolRule.readOnly(ref.name) : false;
-  return caller.write === false && !readOnly ? READ_ONLY_CALLER_ERROR : null;
+  const connectorAsWrite = policy.fields?.mark !== undefined;
+  const reads = policy.effect === 'read' && !connectorAsWrite;
+  return caller.write === false && !reads ? READ_ONLY_CALLER_ERROR : null;
 };
 
 /**

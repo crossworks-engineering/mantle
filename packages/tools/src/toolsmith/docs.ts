@@ -52,6 +52,7 @@ async function groupForIntegrationWrite(
 
 export const api_docs_set: BuiltinToolDef = {
   slug: 'api_docs_set',
+  optIn: 'toolsmithWrite',
   policy: { effect: 'write', spends: 'none', scope: { area: 'connectors' }, peerRisky: true },
   name: "Store an integration's API docs",
   description:
@@ -251,6 +252,7 @@ const SOFT_SKILL_WORDS = 320;
  */
 export const api_skill_set: BuiltinToolDef = {
   slug: 'api_skill_set',
+  optIn: 'toolsmithWrite',
   policy: {
     effect: 'write',
     spends: 'none',

@@ -83,6 +83,7 @@ const RECIPE_DOC =
 
 export const recipe_tool_create: BuiltinToolDef = {
   slug: 'recipe_tool_create',
+  optIn: 'toolsmithWrite',
   policy: {
     effect: 'write',
     spends: 'none',

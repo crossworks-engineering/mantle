@@ -25,7 +25,7 @@
 import { eq } from 'drizzle-orm';
 import { authUsers, db, resolveSingleOwnerId } from '@mantle/db';
 import { PEER_TOKEN_PREFIX, verifyInboundToken } from '@mantle/content';
-import { isMcpToolReadOnly, type McpCaller, type McpLoginRole } from '@mantle/mcp-core';
+import { mcpToolPolicyOf, type McpCaller, type McpLoginRole } from '@mantle/mcp-core';
 import { bearerFrom } from './auth/request';
 import {
   auditKeyRefusal,
@@ -226,7 +226,10 @@ export async function auditMcpKeyCall(
     if (!m || typeof m !== 'object') continue;
     const msg = m as { method?: unknown; params?: { name?: unknown } };
     const tool = typeof msg.params?.name === 'string' ? msg.params.name : null;
-    if (msg.method !== 'tools/call' || !tool || isMcpToolReadOnly(tool) || !allows(tool)) continue;
+    // A read (its policy's effect, A5 step 2) leaves no write audit; a name
+    // with no policy (a connector's tool) is audited as a write.
+    if (msg.method !== 'tools/call' || !tool || mcpToolPolicyOf(tool)?.effect === 'read') continue;
+    if (!allows(tool)) continue;
     auditFireAndForget({
       actorId: caller.loginId,
       actorEmail: who.email,

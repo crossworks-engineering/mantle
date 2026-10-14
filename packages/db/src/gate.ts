@@ -443,24 +443,89 @@ export function currentCaller(): GateCaller | null {
   return callerStore.getStore() ?? null;
 }
 
-/** A Set that refuses every change. */
-function frozenSet<T>(values: Iterable<T>): ReadonlySet<T> {
-  const set = new Set(values);
-  const refuse = () => {
-    throw new TypeError('the bound caller is frozen');
-  };
-  Object.defineProperties(set, {
-    add: { value: refuse },
-    delete: { value: refuse },
-    clear: { value: refuse },
-  });
-  return Object.freeze(set);
+/**
+ * A read-only view over a private Set (A3c audit LOW-3): the bound caller's
+ * Sets. Not a Set itself, so nothing reaches the values to change them:
+ * `Set.prototype.add.call(view, x)` throws (the view is no Set), where an
+ * own `add` that refuses on a frozen Set left the prototype's open.
+ */
+class ReadOnlySetView<T> {
+  readonly #set: Set<T>;
+  constructor(values: Iterable<T>) {
+    this.#set = new Set(values);
+    Object.freeze(this);
+  }
+  get size(): number {
+    return this.#set.size;
+  }
+  has(value: T): boolean {
+    return this.#set.has(value);
+  }
+  forEach(cb: (value: T, key: T, set: ReadonlySet<T>) => void, self?: unknown): void {
+    for (const v of this.#set) cb.call(self, v, v, this as unknown as ReadonlySet<T>);
+  }
+  entries(): SetIterator<[T, T]> {
+    return this.#set.entries();
+  }
+  keys(): SetIterator<T> {
+    return this.#set.keys();
+  }
+  values(): SetIterator<T> {
+    return this.#set.values();
+  }
+  [Symbol.iterator](): SetIterator<T> {
+    return this.#set.values();
+  }
+  // The ES2025 Set methods that make a new Set (the lib of some packages
+  // types ReadonlySet with them): run on the private Set, never on the view.
+  union(other: unknown): unknown {
+    return (this.#set as unknown as SetAlgebra).union(other);
+  }
+  intersection(other: unknown): unknown {
+    return (this.#set as unknown as SetAlgebra).intersection(other);
+  }
+  difference(other: unknown): unknown {
+    return (this.#set as unknown as SetAlgebra).difference(other);
+  }
+  symmetricDifference(other: unknown): unknown {
+    return (this.#set as unknown as SetAlgebra).symmetricDifference(other);
+  }
+  isSubsetOf(other: unknown): unknown {
+    return (this.#set as unknown as SetAlgebra).isSubsetOf(other);
+  }
+  isSupersetOf(other: unknown): unknown {
+    return (this.#set as unknown as SetAlgebra).isSupersetOf(other);
+  }
+  isDisjointFrom(other: unknown): unknown {
+    return (this.#set as unknown as SetAlgebra).isDisjointFrom(other);
+  }
+  get [Symbol.toStringTag](): string {
+    return 'ReadOnlySetView';
+  }
 }
 
-/** A value of the caller's facts, frozen: an array or a Set copied. */
+/** The ES2025 Set methods, as the view forwards them. */
+type SetAlgebra = Record<
+  | 'union'
+  | 'intersection'
+  | 'difference'
+  | 'symmetricDifference'
+  | 'isSubsetOf'
+  | 'isSupersetOf'
+  | 'isDisjointFrom',
+  (other: unknown) => unknown
+>;
+
+/** The bound caller's copy of a Set: a read-only view (LOW-3). */
+function frozenSet<T>(values: Iterable<T>): ReadonlySet<T> {
+  return new ReadOnlySetView(values) as unknown as ReadonlySet<T>;
+}
+
+/** A value of the caller's facts, frozen: an array or a Set copied (a
+ *  view already read only is copied too: no one holds its private Set). */
 function frozenValue(v: unknown): unknown {
   if (Array.isArray(v)) return Object.freeze([...v]);
-  if (v instanceof Set) return frozenSet(v);
+  if (v instanceof Set || v instanceof ReadOnlySetView) return frozenSet(v as Iterable<unknown>);
   return v;
 }
 

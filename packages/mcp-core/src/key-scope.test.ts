@@ -7,7 +7,8 @@
  */
 import { describe, expect, it } from 'vitest';
 import { BUILTIN_TOOLS } from '@mantle/tools';
-import { KEY_AREAS, keyAreasAllowTool, toolKeyArea } from './key-scope';
+import { KEY_AREAS } from './key-scope';
+import { keyAreasAllowTool, toolKeyArea } from './mcp-policy';
 import {
   isMcpToolReadOnly,
   isPeerRiskyTool,

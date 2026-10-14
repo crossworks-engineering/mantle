@@ -203,7 +203,9 @@ export function connectorMarkState(
  * Write tick in a workspace where the caller is a Moderator
  * (loginConnectorRule: the one rule that checks it). Every connector path
  * reads the mark through this: the login's MCP listing and call, an app
- * run's verdict and dispatch.
+ * run's verdict and dispatch. For a key or a peer (the gate's peer
+ * narrower, A5 step 2) it is declared not risky, and its `mark` makes it a
+ * write whatever the mark says, until step 5 (owner decision Q1 b).
  */
 export function connectorToolPolicy(
   tool: Pick<
@@ -227,6 +229,7 @@ export function connectorToolPolicy(
         writeTick: write,
       }),
       requiresConfirm: tool.requiresConfirm === true,
+      peerRisky: false,
     }),
   });
 }
@@ -238,6 +241,7 @@ export type ConnectorToolPolicy = RuntimeToolPolicy & {
     mark: 'read' | 'write' | 'stale';
     resource: Readonly<{ type: 'connector'; ref: string; writeTick: boolean }>;
     requiresConfirm: boolean;
+    peerRisky: false;
   }>;
 };
 

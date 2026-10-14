@@ -15,7 +15,7 @@ import { z } from 'zod';
 import { databaseErrorPublic, isDatabaseError } from '@mantle/std';
 import type { McpServer, StandardSchemaWithJSON, ToolCallback } from '@modelcontextprotocol/server';
 
-type ShapeSchema<S extends z.ZodRawShape> = StandardSchemaWithJSON<
+export type ShapeSchema<S extends z.ZodRawShape> = StandardSchemaWithJSON<
   z.input<z.ZodObject<S>>,
   z.output<z.ZodObject<S>>
 >;

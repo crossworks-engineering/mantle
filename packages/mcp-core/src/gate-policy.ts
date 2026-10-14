@@ -5,19 +5,17 @@
  * narrowers (a key's areas, a key's or peer's risky tools and Write switch,
  * spending on the owner's keys) live in @mantle/tools (gate-narrowers.ts),
  * so every process that dispatches registers them (fix round 2, M-A); they
- * read what this policy declares, and the peer narrower this surface's
- * rule by a tool's name (PEER_TOOL_RULE, registered here).
+ * read what this policy declares, and nothing else (A5 step 2: the peer
+ * narrower reads the policy's `peerRisky` and effect, no rule by name).
  *
- * The policy is DERIVED from today's lists (the registry's flags, the Admin
- * gate's tables, the risky and spending lists, the key areas): nothing is
- * copied. A5 declares the policy on each definition and deletes the lists;
- * until then gate-policy.test.ts pins that the gate lists exactly what
- * preparedAllows lists, for every tool and every kind of caller, and that
- * the call runs exactly when the listing shows it.
+ * The policy is DECLARED (A5 step 2): a builtin's ToolPolicy, or a
+ * hand-written MCP tool's (mcp-defs.ts), read by toGatePolicy. Nothing is
+ * derived from a list. gate-policy.test.ts pins that the gate lists exactly
+ * what preparedAllows lists, for every tool and every kind of caller, and
+ * that the call runs exactly when the listing shows it.
  *
- * A3c does not move the MCP surface onto the gate: registration, the
- * listing filter and the scope and create-home wrappers stay as they are
- * until A5.
+ * Registration, the listing filter and the scope and create-home wrappers
+ * move onto the gate in A5 step 4.
  */
 import {
   loginActor,
@@ -26,53 +24,18 @@ import {
   type GatePolicy,
   type PolicyRef,
 } from '@mantle/db';
-import {
-  CREATE_TOOL_SLUGS,
-  getBuiltin,
-  isAdminOnlyTool,
-  isBuiltinSpending,
-  registerPeerToolRule,
-  toolAdminArea,
-  type PeerToolRule,
-} from '@mantle/tools';
-import { ADMIN_KIND_CREATE_TOOL_SLUGS } from './create-home';
-import { toolKeyArea } from './key-scope';
-import {
-  isMcpToolReadOnly,
-  isPeerRiskyTool,
-  spendsOwnerKeys,
-  type PreparedCallerTools,
-} from './login-surface';
+import { toGatePolicy } from '@mantle/tools';
+import { mcpToolPolicyOf } from './mcp-policy';
+import type { PreparedCallerTools } from './login-surface';
 
 /**
- * The policy of one owner MCP tool (ref kind `mcp-tool`): a built-in by its
- * slug; a hand-written MCP tool only when the registration says it is one
- * (`ref.handWritten`, A5 makes them definitions). Any other name has no
- * entry.
+ * The policy of one owner MCP tool (ref kind `mcp-tool`): its hand-written
+ * definition's (mcp-defs.ts), else the builtin's, as the gate reads it. Any
+ * other name has no entry.
  */
 export function mcpToolPolicy(ref: PolicyRef): GatePolicy | null {
-  const slug = ref.name;
-  const def = getBuiltin(slug);
-  if (!def && ref.handWritten !== true) return null;
-  const area = toolAdminArea(slug);
-  const scope = area
-    ? Object.freeze({ area })
-    : isAdminOnlyTool(slug, { ownerOnly: def?.ownerOnly })
-      ? ('admin' as const)
-      : ADMIN_KIND_CREATE_TOOL_SLUGS.has(slug)
-        ? ('admin-kind' as const)
-        : ('any' as const);
-  return Object.freeze({
-    effect: isMcpToolReadOnly(slug) ? ('read' as const) : ('write' as const),
-    scope,
-    spends: spendsOwnerKeys(slug)
-      ? ('ownerKey' as const)
-      : isBuiltinSpending(slug)
-        ? ('model' as const)
-        : ('none' as const),
-    ...(CREATE_TOOL_SLUGS.has(slug) ? { creates: true } : {}),
-    fields: Object.freeze({ keyArea: toolKeyArea(slug), peerRisky: isPeerRiskyTool(slug) }),
-  });
+  const policy = mcpToolPolicyOf(ref.name);
+  return policy ? toGatePolicy(policy) : null;
 }
 
 /** The gate's caller for a prepared MCP connection (login-surface.ts), or
@@ -99,13 +62,4 @@ export function mcpGateCaller(prepared: PreparedCallerTools): GateCaller | null 
  *  (gate-narrowers.ts), registered by every process that dispatches. */
 export { KEY_AREA_ERROR, OWNER_KEYS_ERROR, RISKY_TOOL_ERROR } from '@mantle/tools';
 
-/** The peer narrower's rule by a tool's name (@mantle/tools
- *  gate-narrowers.ts): this surface's own two lists, the ones
- *  ownerPeerAllows reads. */
-export const PEER_TOOL_RULE: PeerToolRule = Object.freeze({
-  risky: isPeerRiskyTool,
-  readOnly: isMcpToolReadOnly,
-});
-
 registerPolicySource('mcp-tool', mcpToolPolicy);
-registerPeerToolRule(PEER_TOOL_RULE);

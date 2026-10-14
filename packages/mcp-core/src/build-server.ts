@@ -97,25 +97,16 @@ import { registerTableTools } from './register/tables';
 import { registerResponderTools } from './register/responder';
 import { ownerScopedServer } from './owner-scope';
 import { createHomeServer } from './create-home';
+import { mcpPolicySet } from './mcp-policy';
 
 /** Mutating Toolsmith tools — gated behind MANTLE_MCP_TOOLSMITH_WRITE (default
- *  ON). Module-scope (env is process-stable) so the gate is evaluated once, not
+ *  ON). A view of the builtins whose definition opts in by `toolsmithWrite`
+ *  (A5 step 2: registration reads each definition's `optIn`). The env is
+ *  read at module scope (process-stable) so the gate is evaluated once, not
  *  per build — for the HTTP transport a server is built per request. */
-export const TOOLSMITH_WRITE_SLUGS: ReadonlySet<string> = new Set([
-  'api_tool_create',
-  'api_tool_update',
-  'api_tool_delete',
-  'recipe_tool_create',
-  'tool_group_ensure',
-  'agent_grant_tool_group',
-  // Raises (or lowers) an agent's per-turn spend.
-  'agent_set_thinking_effort',
-  // Integration-group writes: api_docs_set writes a file node + the group's docs
-  // pointer, api_skill_set writes a skills row every granted agent then reads.
-  // (api_docs_get is a read — always exposed.)
-  'api_docs_set',
-  'api_skill_set',
-]);
+export const TOOLSMITH_WRITE_SLUGS: ReadonlySet<string> = mcpPolicySet(
+  (_p, def) => def.optIn === 'toolsmithWrite',
+);
 const toolsmithWriteEnabled = !/^(0|false|off|no)$/i.test(env('MANTLE_MCP_TOOLSMITH_WRITE') ?? '');
 if (!toolsmithWriteEnabled) {
   console.error(
@@ -257,8 +248,10 @@ export function registerMantleTools(
     noCreateHome: opts.noCreateHome === true,
   });
   const target = opts.allow ? filteredServer(homed, opts.allow, opts.guard) : homed;
-  const ctx = makeRegisterContext(target, ownerId, transport, opts.via, opts.loginId, opts.mcp);
-  const { exposeTerminal, registerBuiltinTools } = ctx;
+  const ctx = makeRegisterContext(target, ownerId, transport, opts.via, opts.loginId, opts.mcp, {
+    toolsmithWrite: toolsmithWriteEnabled,
+  });
+  const { registerBuiltinTools } = ctx;
 
   registerSearchTools(ctx);
   registerFileTools(ctx);
@@ -423,12 +416,13 @@ export function registerMantleTools(
   // handler each. Deliberately still hand-written (read-shape divergence, or a schema MCP
   // clients already depend on): tree_list, file_get/file_read/file_rename (id
   // vs file_id), folder_describe/folder_rename (accept a path as well as an
-  // id). `search_nodes` is skipped here because MCP registers it under its
-  // shipped name `search` in register/search.ts — a REGISTRATION alias since
+  // id): definitions in mcp-defs.ts, and registerBuiltinTools skips a builtin
+  // a definition names. `search_nodes` is skipped here because MCP registers it
+  // under its shipped name `search` (mcp-defs.ts) — a REGISTRATION alias since
   // v0.232.171, not a second implementation: it runs this same def through
   // callBuiltin.
   registerBuiltinTools(SEARCH_TOOLS, {
-    skip: (def) => def.slug === 'search_nodes' || def.slug === 'tree_list',
+    skip: (def) => def.slug === 'search_nodes',
   });
   registerBuiltinTools(ENTITY_TOOLS);
   registerBuiltinTools(FILE_TOOLS, { only: new Set(['folder_list', 'file_list']) });
@@ -494,8 +488,9 @@ export function registerMantleTools(
   // stdio it grants nothing that spawning the process did not already grant;
   // over HTTP it turns a stolen bearer into a root shell on the box, so it needs
   // MANTLE_MCP_TERMINAL=1. `sandbox_exec` above is the contained alternative and
-  // is always available.
-  if (exposeTerminal) registerBuiltinTools(TERMINAL_TOOLS);
+  // is always available. Its definition opts in by `terminal`: registered
+  // only when the context exposes the terminal.
+  registerBuiltinTools(TERMINAL_TOOLS);
 
   /* ───────────────────────── Toolsmith over MCP ──────────────────────────
    *
@@ -521,10 +516,9 @@ export function registerMantleTools(
    * read-only while keeping tool authoring + granting to the in-app agent.
    */
   // ─── Toolsmith ───────────────────────────────────────────────────────────────
-  // Writes gated behind MANTLE_MCP_TOOLSMITH_WRITE (see TOOLSMITH_WRITE_SLUGS).
-  registerBuiltinTools(TOOLSMITH_TOOLS, {
-    skip: (def) => !toolsmithWriteEnabled && TOOLSMITH_WRITE_SLUGS.has(def.slug),
-  });
+  // Writes gated behind MANTLE_MCP_TOOLSMITH_WRITE (see TOOLSMITH_WRITE_SLUGS):
+  // each opts in by its definition's `toolsmithWrite`.
+  registerBuiltinTools(TOOLSMITH_TOOLS);
 }
 
 /** What every connecting MCP client auto-loads alongside the tool list — the

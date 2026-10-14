@@ -314,6 +314,7 @@ const email_page: BuiltinToolDef = {
     effect: 'write',
     spends: 'none',
     scope: { area: 'connectors' },
+    // Mail out under the owner's address.
     peerRisky: true,
     lowering: lowersEmailPage,
   },

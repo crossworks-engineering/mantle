@@ -14,13 +14,20 @@ export { checkToolPreconditions, type NodeTypeLookup } from './preconditions';
 
 export {
   PolicyTableNotLoadedError,
+  SurfaceTableNotLoadedError,
   builtinPolicy,
+  loadSurfaceTools,
   policyAdminOnly,
   policyLowers,
   policySlugList,
   policySlugMap,
   policySlugSet,
+  surfaceTool,
+  surfaceToolsLoaded,
   toGatePolicy,
+  type SurfaceMapOpts,
+  type SurfaceToolDef,
+  type SurfaceViewOpts,
   type ToolItemResolver,
   type ToolItemTarget,
   type ToolOutside,
@@ -237,8 +244,6 @@ export {
   TEAM_APP_NO_TOOL_ERROR,
   ensureGateReady,
   registerGateNarrowers,
-  registerPeerToolRule,
-  type PeerToolRule,
 } from './gate-narrowers';
 export {
   NO_RUNTIME_POLICY_ERROR,

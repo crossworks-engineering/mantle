@@ -1,12 +1,13 @@
 /**
  * The areas an inbound API key can be limited to (migration 0232, plan page
- * 1e62e204), and which area each MCP tool belongs to. A leaf module (no
- * imports): the HTTP gate reads the area list from here too, so the two
- * surfaces share one list.
+ * 1e62e204). A leaf module (no imports): the HTTP gate reads the area list
+ * from here too, so the two surfaces share one list.
  *
- * A tool with no area (Recall, agents, peers, settings, the operator
- * tools) is open only to a key with every area (`areas` null). So is
- * every /api/v1 route with no area, except whoami.
+ * Which area a tool belongs to is its policy's `keyArea` (A5 step 2:
+ * mcp-policy.ts toolKeyArea reads it, for a builtin and a hand-written MCP
+ * tool alike). A tool with no area (Recall, agents, peers, settings, the
+ * operator tools) is open only to a key with every area (`areas` null). So
+ * is every /api/v1 route with no area, except whoami.
  *
  * Areas only narrow (workspaces plan 7.5, contract change 35): a key acts
  * as its login and reads that login's workspaces; its areas and its access
@@ -29,7 +30,10 @@ export const KEY_AREAS = [
 ] as const;
 export type KeyArea = (typeof KEY_AREAS)[number];
 
-/** Whole tool families by slug prefix. */
+/** Whole tool families by slug prefix: the area of a NAME no policy table
+ *  holds (familyKeyArea). Every builtin and hand-written MCP tool declares
+ *  its own area on its policy; what is left is a connector's tool (mcp_*,
+ *  in no family) or a name that is no tool. */
 const AREA_PREFIXES: ReadonlyArray<readonly [string, KeyArea]> = [
   ['page_', 'pages'],
   ['note_', 'notes'],
@@ -46,53 +50,15 @@ const AREA_PREFIXES: ReadonlyArray<readonly [string, KeyArea]> = [
   ['entity_', 'search'],
 ];
 
-/** Single tools: reads across the brain, and app data. */
-const AREA_TOOLS: ReadonlyMap<string, KeyArea> = new Map<string, KeyArea>([
-  ['search', 'search'],
-  ['search_chunks', 'search'],
-  ['graph_path', 'search'],
-  // Before the `app_` prefix rule: app data is its own area.
-  ['app_data_list', 'app_data'],
-  ['app_data_schema', 'app_data'],
-  ['app_data_query', 'app_data'],
-  ['app_data_write', 'app_data'],
-]);
-
-/** The area a tool belongs to, or null (open only to an all-areas key).
- *  A conversion tool (`page_from_journal`, `note_from_file`, any slug with
- *  `_from_`) reads one kind and writes another, so it belongs to NO area
- *  (M2 audit F2): in the target's area it would let a pages key read the
- *  journal through `page_from_journal`. */
-export function toolKeyArea(slug: string): KeyArea | null {
+/** The area of a name no policy table holds, by its family, or null. A
+ *  conversion name (`_from_`) reads one kind and writes another, so it
+ *  belongs to NO area (M2 audit F2), as every conversion tool's policy
+ *  says. */
+export function familyKeyArea(slug: string): KeyArea | null {
   if (slug.includes('_from_')) return null;
-  const exact = AREA_TOOLS.get(slug);
-  if (exact) return exact;
   for (const [prefix, area] of AREA_PREFIXES) if (slug.startsWith(prefix)) return area;
   return null;
 }
-
-/**
- * Tools that change the CONTENT of an existing page or note (M2 audit N3).
- * Content can embed other items (a file, a drawing, another page), and an
- * item embedded in a page others can read becomes readable to them too
- * (migration 0208), with no confirm. A key cannot confirm, so on an item
- * others can read these tools refuse a key (register/context.ts).
- */
-export const KEY_SHARED_CONTENT_TOOLS: ReadonlySet<string> = new Set([
-  'page_update',
-  'page_update_draft',
-  'page_commit',
-  'page_block_update',
-  'page_block_insert_after',
-  'page_block_insert_before',
-  'page_block_append',
-  'page_blocks_apply',
-  'page_mention',
-  'page_split',
-  'page_extract_section',
-  'page_replace_from_file',
-  'note_update',
-]);
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -111,13 +77,6 @@ export function contentToolTarget(
   const raw = input[field];
   const id = typeof raw === 'string' ? raw.trim() : '';
   return { field, id: UUID_RE.test(id) ? id : null };
-}
-
-/** Whether a key limited to `areas` (null = all) may have this tool. */
-export function keyAreasAllowTool(slug: string, areas: readonly string[] | null): boolean {
-  if (areas === null) return true;
-  const area = toolKeyArea(slug);
-  return area !== null && areas.includes(area);
 }
 
 /** Whether a key limited to `areas` (null = all) reaches email. Only the

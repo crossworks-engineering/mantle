@@ -124,8 +124,12 @@ describe('step 2: bind the caller', () => {
     await enterCall(caller, ref('read'), async () => {
       seen = currentCaller();
     });
-    // A frozen copy of the caller (fix round 2, L-c), not the object itself.
-    expect(seen).toEqual(caller);
+    // A frozen copy of the caller (fix round 2, L-c), not the object itself;
+    // its Sets read-only views (LOW-3), holding the same values.
+    const bound = seen as unknown as GateCaller;
+    expect({ ...bound, admin: { ...bound.admin, areas: new Set(bound.admin?.areas) } }).toEqual(
+      caller,
+    );
     expect(seen).not.toBe(caller);
     expect(currentCaller()).toBeNull();
   });
@@ -547,12 +551,54 @@ describe('the bound caller is a copy (fix round 2, L-c)', () => {
     expect(Object.isFrozen(bound.scope?.ws)).toBe(true);
     expect(Object.isFrozen(bound.facts)).toBe(true);
     expect(Object.isFrozen(bound.facts?.keyAreas)).toBe(true);
-    // The Admin areas refuse every change.
+    // The Admin areas refuse every change: a read-only view, no Set.
     const bAreas = bound.admin?.areas as Set<string>;
-    expect(() => bAreas.add('x')).toThrow(/frozen/);
-    expect(() => bAreas.delete('keys')).toThrow(/frozen/);
-    expect(() => bAreas.clear()).toThrow(/frozen/);
+    expect(() => bAreas.add('x')).toThrow(TypeError);
+    expect(() => bAreas.delete('keys')).toThrow(TypeError);
+    expect(() => bAreas.clear()).toThrow(TypeError);
     expect(bAreas.has('keys')).toBe(true);
+  });
+});
+
+describe("the bound caller's Sets are read-only views (A3c audit LOW-3)", () => {
+  it("Set.prototype's own add, delete and clear cannot reach them", async () => {
+    const caller = login({
+      admin: { holdsAdmin: true, areas: new Set(['keys']) },
+      facts: { tags: new Set(['a']) },
+    });
+    let inside: GateCaller | null = null;
+    await enterCall(caller, ref('read'), async () => {
+      inside = currentCaller();
+    });
+    const bound = inside as unknown as GateCaller;
+    const views = [bound.admin!.areas, bound.facts!.tags as ReadonlySet<string>];
+    for (const view of views) {
+      expect(view).not.toBeInstanceOf(Set);
+      expect(() => Set.prototype.add.call(view as Set<string>, 'x')).toThrow(TypeError);
+      expect(() => Set.prototype.delete.call(view as Set<string>, 'keys')).toThrow(TypeError);
+      expect(() => Set.prototype.clear.call(view as Set<string>)).toThrow(TypeError);
+      expect(Object.isFrozen(view)).toBe(true);
+    }
+    // Still read like a Set, and nothing changed.
+    expect([...bound.admin!.areas]).toEqual(['keys']);
+    expect(bound.admin!.areas.has('keys')).toBe(true);
+    expect(bound.admin!.areas.size).toBe(1);
+    const seen: string[] = [];
+    bound.admin!.areas.forEach((v) => seen.push(v));
+    expect(seen).toEqual(['keys']);
+    expect([...(bound.facts!.tags as ReadonlySet<string>)]).toEqual(['a']);
+    // The ES2025 Set methods make a new Set; the view keeps its own.
+    const algebra = bound.admin!.areas as unknown as { union(o: Set<string>): Set<string> };
+    const both = algebra.union(new Set(['x']));
+    both.add('y');
+    expect([...both]).toEqual(['keys', 'x', 'y']);
+    expect([...bound.admin!.areas]).toEqual(['keys']);
+    // A nested call re-binds the bound caller: the view is copied again.
+    let nested: GateCaller | null = null;
+    await enterCall(bound, ref('read'), async () => {
+      nested = currentCaller();
+    });
+    expect([...(nested as unknown as GateCaller).admin!.areas]).toEqual(['keys']);
   });
 });
 

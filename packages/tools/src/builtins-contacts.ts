@@ -188,6 +188,7 @@ const contact_create: BuiltinToolDef = {
     effect: 'write',
     spends: 'none',
     scope: 'admin-kind',
+    // The allowlist that gates mail out (a new contact also starts a paid inbound backfill).
     peerRisky: true,
     keyArea: 'contacts',
   },
@@ -260,6 +261,7 @@ const contact_update: BuiltinToolDef = {
     spends: 'none',
     scope: 'any',
     items: [edit('id')],
+    // The allowlist that gates mail out.
     peerRisky: true,
     keyArea: 'contacts',
   },

@@ -19,7 +19,7 @@
  */
 import { emailAttachmentFolders, emailAttachmentIds, reachesEmailAttachment } from '@mantle/files';
 import type { ToolCallGuard, ToolCallResult } from './build-server';
-import { toolKeyArea } from './key-scope';
+import { mcpPolicySet, toolKeyArea } from './mcp-policy';
 
 const ID_FIELDS = [
   'file_id',
@@ -35,13 +35,9 @@ const ID_FIELDS = [
 ] as const;
 const ID_LIST_FIELDS = ['file_ids', 'table_ids'] as const;
 const PATH_FIELDS = ['parent_path', 'parent', 'path', 'dest_path', 'dest_parent_path'] as const;
-export const LIST_TOOLS: ReadonlySet<string> = new Set([
-  'file_list',
-  'folder_list',
-  'table_list',
-  'page_list',
-  'note_list',
-]);
+/** The lists that drop the attachment rows rather than refuse: a view of
+ *  the policy tables (A5 step 2), the tools whose policy says `keyEmail`. */
+export const LIST_TOOLS: ReadonlySet<string> = mcpPolicySet((p) => p.keyEmail === true);
 const GUARDED_AREAS: ReadonlySet<string> = new Set(['files', 'tables', 'pages', 'notes']);
 
 export const KEY_EMAIL_REFUSAL =

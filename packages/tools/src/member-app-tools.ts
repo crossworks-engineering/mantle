@@ -84,7 +84,7 @@ const TEAM_TOOLS_REFUSED: readonly string[] = [
  */
 export const MEMBER_APP_REFUSED_SLUGS: readonly string[] = policySlugList(
   (p) => p.memberApp === 'refused',
-  TEAM_TOOLS_REFUSED,
+  { also: TEAM_TOOLS_REFUSED },
 );
 
 /** `write`: an outside call that writes (a connector tool without the

@@ -61,7 +61,7 @@ vi.mock('@mantle/tools', async (importOriginal) => {
 });
 
 import { registerMantleTools } from './build-server';
-import { keyAreasAllowTool } from './key-scope';
+import { keyAreasAllowTool } from './mcp-policy';
 import { keyEmailGuard } from './key-email-guard';
 import {
   ownerPeerAllows,

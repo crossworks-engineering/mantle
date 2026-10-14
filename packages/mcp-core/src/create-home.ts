@@ -29,6 +29,7 @@ import {
 } from '@mantle/db';
 import { ADMIN_KIND_CREATE_ERROR } from '@mantle/std';
 import { CREATE_TOOL_SLUGS } from '@mantle/tools';
+import { mcpPolicySet } from './mcp-policy';
 
 /**
  * The create tools that make an item of a workspace kind: they take
@@ -42,13 +43,12 @@ export const MCP_CREATE_TOOL_SLUGS: ReadonlySet<string> = CREATE_TOOL_SLUGS;
  * a journal entry, a saved place: mantle_kind_class 'admin_only'). A user
  * outside Admin is refused them (W7b fix round 1, H2): not listed, refused
  * here before the tool runs, and the database's create home refuses the row
- * (every call of such a user runs under its private workspace).
+ * (every call of such a user runs under its private workspace). A view of
+ * the policy tables (A5 step 2): the tools whose scope is `admin-kind`.
  */
-export const ADMIN_KIND_CREATE_TOOL_SLUGS: ReadonlySet<string> = new Set([
-  'contact_create',
-  'journal_create',
-  'location_save',
-]);
+export const ADMIN_KIND_CREATE_TOOL_SLUGS: ReadonlySet<string> = mcpPolicySet(
+  (p) => p.scope === 'admin-kind',
+);
 
 /** The refusal of an Admin-only kind's create outside Admin: the one
  *  mapper's words (@mantle/std access-error.ts, arch A3c). */

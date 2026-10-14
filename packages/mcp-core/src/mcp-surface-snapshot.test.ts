@@ -14,10 +14,15 @@
  *    functions answer (read-only, risky, spending, key area, the key's
  *    shared-content and email lists, the Admin-only kind and tool lists)
  *    and the gate's reading of its MCP policy.
+ *  - the surface's exported lists, sorted. Two are the policy's whole
+ *    answer since step 2 (PEER_RISKY_TOOL_SLUGS, OWNER_KEY_SPENDING_TOOLS):
+ *    each still holds what it held and says, for every registered tool,
+ *    what the rule said.
  *
  * No database: registration and listing touch none.
  */
 import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { InMemoryTransport, McpServer } from '@modelcontextprotocol/server';
 import { Client } from '@modelcontextprotocol/client';
@@ -34,7 +39,7 @@ import { TOOLSMITH_WRITE_SLUGS, registerMantleTools } from './build-server';
 import { ADMIN_KIND_CREATE_TOOL_SLUGS } from './create-home';
 import { mcpToolPolicy } from './gate-policy';
 import { LIST_TOOLS } from './key-email-guard';
-import { KEY_SHARED_CONTENT_TOOLS, toolKeyArea } from './key-scope';
+import { KEY_SHARED_CONTENT_TOOLS, toolKeyArea } from './mcp-policy';
 import {
   MCP_HANDWRITTEN_READ_ONLY,
   OWNER_KEY_SPENDING_TOOLS,
@@ -213,15 +218,7 @@ describe("the surface's decisions, per name (A5 step 2)", () => {
         keyEmailList: LIST_TOOLS.has(slug),
         adminKindCreate: ADMIN_KIND_CREATE_TOOL_SLUGS.has(slug),
         adminOnly: isAdminOnlyTool(slug, { ownerOnly: getBuiltin(slug)?.ownerOnly }),
-        gate: known
-          ? gateView(
-              mcpToolPolicy({
-                kind: 'mcp-tool',
-                name: slug,
-                ...(BUILTIN.has(slug) ? {} : { handWritten: true }),
-              }),
-            )
-          : null,
+        gate: known ? gateView(mcpToolPolicy({ kind: 'mcp-tool', name: slug })) : null,
       };
     }
     await expect(`${JSON.stringify(out, null, 1)}\n`).toMatchFileSnapshot(
@@ -231,7 +228,16 @@ describe("the surface's decisions, per name (A5 step 2)", () => {
 });
 
 describe("the surface's exported lists (A5 step 2)", () => {
-  it('each, sorted (the order of a list was never what it decides)', async () => {
+  /** The lists as they were (surface-lists.json, written before step 2). */
+  const before = JSON.parse(
+    readFileSync(new URL('./__snapshots__/surface-lists.json', import.meta.url), 'utf8'),
+  ) as Record<string, string[]>;
+  /** Each name's decisions as they were (surface-decisions.json). */
+  const decisions = JSON.parse(
+    readFileSync(new URL('./__snapshots__/surface-decisions.json', import.meta.url), 'utf8'),
+  ) as Record<string, { peerRisky: boolean; spendsOwnerKeys: boolean; gate: unknown }>;
+
+  it('each, sorted (the order of a list was never what it decides)', () => {
     const lists: Record<string, Iterable<string>> = {
       ADMIN_KIND_CREATE_TOOL_SLUGS,
       ADMIN_ONLY_TOOL_SLUGS,
@@ -243,11 +249,24 @@ describe("the surface's exported lists (A5 step 2)", () => {
       PEER_RISKY_TOOL_SLUGS,
       TOOLSMITH_WRITE_SLUGS,
     };
-    const out = Object.fromEntries(
-      Object.entries(lists).map(([name, list]) => [name, [...list].sort()]),
-    );
-    await expect(`${JSON.stringify(out, null, 1)}\n`).toMatchFileSnapshot(
-      './__snapshots__/surface-lists.json',
-    );
+    expect(Object.keys(lists).sort()).toEqual(Object.keys(before).sort());
+    for (const [name, list] of Object.entries(lists)) {
+      const now = [...list].sort();
+      if (name === 'PEER_RISKY_TOOL_SLUGS' || name === 'OWNER_KEY_SPENDING_TOOLS') {
+        // Step 2 made these two the policy's whole answer (every tool whose
+        // policy says peerRisky, or spends ownerKey), where each list named
+        // some tools and rules named the rest: each holds what it held, and
+        // for every tool the surface registers it says what the rule said.
+        const field = name === 'PEER_RISKY_TOOL_SLUGS' ? 'peerRisky' : 'spendsOwnerKeys';
+        for (const slug of before[name]!) expect(now, `${name} ${slug}`).toContain(slug);
+        const tools = Object.keys(decisions).filter((n) => decisions[n]!.gate !== null);
+        expect(
+          now.filter((n) => tools.includes(n)),
+          name,
+        ).toEqual(tools.filter((n) => decisions[n]![field]));
+      } else {
+        expect(now, name).toEqual(before[name]);
+      }
+    }
   });
 });

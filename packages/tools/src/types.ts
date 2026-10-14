@@ -365,6 +365,12 @@ export type BuiltinToolDef = {
    *  surface never reaches it. The handler keeps its own check too, because
    *  the MCP server calls `def.handler` directly. */
   ownerOnly?: true;
+  /** Registered on the owner MCP surface only when the box opts in (not
+   *  access policy: what the surface offers, build-server.ts). `toolsmithWrite`:
+   *  the Toolsmith writes, unless MANTLE_MCP_TOOLSMITH_WRITE is off;
+   *  `terminal`: the brain's own shell, over stdio, or over HTTP with
+   *  MANTLE_MCP_TERMINAL on. */
+  optIn?: 'toolsmithWrite' | 'terminal';
   /** Handler implementation. */
   handler: BuiltinToolHandler;
   /** Input fields that contain sensitive data and MUST be replaced with

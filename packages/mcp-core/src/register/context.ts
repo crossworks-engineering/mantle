@@ -20,7 +20,9 @@ import { publicToolError } from '@mantle/std';
 import { watchDatabaseErrors } from '@mantle/std/db-watch';
 import { zodShapeFromJsonSchema } from './zod-schema';
 import { addTool } from './tool-input';
-import { KEY_SHARED_CONTENT_TOOLS, contentToolTarget } from '../key-scope';
+import { contentToolTarget } from '../key-scope';
+import { mcpDefinition } from '../mcp-defs';
+import { KEY_SHARED_CONTENT_TOOLS } from '../mcp-policy';
 import { othersCanRead } from '../shared-item';
 import { withModelImages } from './model-images';
 import type { MantleMcpTransport } from '../build-server';
@@ -42,6 +44,10 @@ export function makeRegisterContext(
   /** The login's own connection (W7b): how it connected and its Write
    *  switch, for the app_data_* tools. Absent on stdio. */
   mcp?: LoginMcpChannel,
+  /** The registration opt-ins the box holds besides the terminal (a
+   *  definition's `optIn`): the Toolsmith writes (build-server.ts reads
+   *  MANTLE_MCP_TOOLSMITH_WRITE once). Default on, as the env's default. */
+  optIns: { toolsmithWrite: boolean } = { toolsmithWrite: true },
 ) {
   const surface: ToolSurface = via === 'mcp' ? MCP_OWNER_SURFACE : { kind: 'owner', via };
   // The handlers get the connection's login with it: who deletes an app
@@ -206,6 +212,13 @@ export function makeRegisterContext(
     return withModelImages(jsonReply(result.output), result.modelImages);
   }
 
+  /** Whether a definition's registration opt-in holds on this box. */
+  function optedIn(def: { optIn?: BuiltinToolDef['optIn'] }): boolean {
+    if (def.optIn === 'terminal') return exposeTerminal;
+    if (def.optIn === 'toolsmithWrite') return optIns.toolsmithWrite;
+    return true;
+  }
+
   function registerBuiltinTools(
     defs: readonly BuiltinToolDef[],
     opts?: { skip?: (def: BuiltinToolDef) => boolean; only?: ReadonlySet<string> },
@@ -213,6 +226,10 @@ export function makeRegisterContext(
     for (const def of defs) {
       if (opts?.only && !opts.only.has(def.slug)) continue;
       if (opts?.skip?.(def)) continue;
+      // A builtin the surface defines itself under its name (a hand-written
+      // MCP tool, mcp-defs.ts: its own schema and reply) is that definition's.
+      if (mcpDefinition(def.slug)) continue;
+      if (!optedIn(def)) continue;
       addTool(server, def.slug, def.description, zodShapeFromJsonSchema(def.inputSchema), (args) =>
         callBuiltin(def, args),
       );
@@ -228,6 +245,7 @@ export function makeRegisterContext(
     loginId,
     transport,
     exposeTerminal,
+    toolsmithWrite: optIns.toolsmithWrite,
     stripVectors,
     jsonReply,
     registerBuiltinTools,

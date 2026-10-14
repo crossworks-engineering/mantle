@@ -44,8 +44,6 @@ import {
   connectorToolPolicy,
   dispatchTool,
   getBuiltin,
-  isBuiltinReadOnly,
-  isBuiltinSpending,
   listLoginConnectorTools,
   loginConnectorRefused,
   type AdminGateView,
@@ -53,18 +51,14 @@ import {
 } from '@mantle/tools';
 import { publicErrorMessage, publicToolError } from '@mantle/std';
 import { watchDatabaseErrors } from '@mantle/std/db-watch';
-import {
-  MANTLE_MCP_INSTRUCTIONS,
-  TOOLSMITH_WRITE_SLUGS,
-  loginToolServer,
-  registerMantleTools,
-} from './build-server';
+import { MANTLE_MCP_INSTRUCTIONS, loginToolServer, registerMantleTools } from './build-server';
 import { zodShapeFromJsonSchema } from './register/zod-schema';
 import { addTool } from './register/tool-input';
 import { withModelImages } from './register/model-images';
-import { keyAreasAllowTool, keyAreasReachEmail } from './key-scope';
+import { keyAreasReachEmail } from './key-scope';
 import { keyEmailGuard } from './key-email-guard';
 import { ADMIN_KIND_CREATE_TOOL_SLUGS } from './create-home';
+import { keyAreasAllowTool, mcpDefinitionSet, mcpPolicySet, mcpToolPolicyOf } from './mcp-policy';
 
 export type McpLoginRole = 'admin' | 'member';
 
@@ -112,44 +106,21 @@ export function callerAreasAllow(slug: string, caller: Pick<McpCaller, 'areas'>)
  * Owner tools a PEER or an API key bound to the owner never gets unless the
  * owner named them on it: anything that sends outside the box or spends,
  * runs a shell or a container, publishes, or hands out privilege (Jason,
- * 2026-10-03). Every `spends` builtin is in it too (`isPeerRiskyTool`).
- * The owner's own OAuth connector is not filtered by this.
+ * 2026-10-03), every tool that starts paid model work, waits for the
+ * owner's confirm in the app (deletes, restores: the owner surface does not
+ * hold that gate) or changes a mini app's code or grants (a published app
+ * runs the change at once). The owner's own OAuth connector is not filtered
+ * by this.
+ *
+ * A view of the policy tables (A5 step 2): every tool whose policy says
+ * `peerRisky`, the builtins' and the hand-written MCP tools' (the whole
+ * answer, where the list it replaced named some and rules named the rest).
  */
-export const PEER_RISKY_TOOL_SLUGS: ReadonlySet<string> = new Set([
-  'email_send',
-  'run_terminal',
-  'app_publish',
-  'node_share',
-  'page_share',
-  'secret_create',
-  'invoke_agent',
-  'ask_responder',
-  'ask_as_responder',
-  'responder_turn_input',
-  // Writes into the owner's conversation as one of their agents.
-  'responder_turn_record',
-  'access_set',
-  'pending_approve',
-  'pending_reject',
-  'api_tool_test',
-  'recipe_tool_test',
-  // Mail out under the owner's address, and the allowlist that gates it
-  // (a new contact also starts a paid inbound backfill).
-  'email_page',
-  'contact_create',
-  'contact_update',
-  // A run queues tool calls and workers that execute later as the owner,
-  // outside this filter (audit H1).
-  'run_plan',
-  'run_append',
-  // Model routing for every agent.
-  'model_pool_set',
-  'model_pool_remove',
-  'video_ingest',
-  ...TOOLSMITH_WRITE_SLUGS,
-]);
+export const PEER_RISKY_TOOL_SLUGS: ReadonlySet<string> = mcpPolicySet((p) => p.peerRisky === true);
 /** Prefixes of whole risky families: Telegram, the CLI sandboxes, the web,
- *  and other peers (egress to a third brain on this brain's credentials). */
+ *  and other peers (egress to a third brain on this brain's credentials).
+ *  Every tool of these families declares `peerRisky` on its policy; the
+ *  family answers only a name no policy table holds (familyPeerRisky). */
 export const PEER_RISKY_TOOL_PREFIXES: readonly string[] = [
   'telegram_',
   'sandbox_',
@@ -157,44 +128,36 @@ export const PEER_RISKY_TOOL_PREFIXES: readonly string[] = [
   'peer_',
 ];
 
-/**
- * Risky for a peer bound to the owner: listed by name or family, or it
- * spends, or it waits for the owner's confirm in the app (deletes, restores:
- * the owner surface does not hold that gate), or it changes a mini app's
- * code or grants (a published app runs the change at once).
- */
-export function isPeerRiskyTool(slug: string): boolean {
-  const def = getBuiltin(slug);
+/** Risky for a name no policy table holds (a connector's tool, mcp_*, is
+ *  in no family; a name that is no tool), by its family, as before A5:
+ *  a risky family, or a mini app's (not its data's) tool. */
+function familyPeerRisky(slug: string): boolean {
   return (
-    PEER_RISKY_TOOL_SLUGS.has(slug) ||
     PEER_RISKY_TOOL_PREFIXES.some((p) => slug.startsWith(p)) ||
-    isBuiltinSpending(slug) ||
-    def?.requiresConfirm === true ||
-    // App data rows are data, not the app's code (app_data_write is the
-    // connection's own app data tool, held to the grant's Write).
-    (slug.startsWith('app_') && !slug.startsWith('app_data_') && !isBuiltinReadOnly(slug))
+    (slug.startsWith('app_') && !slug.startsWith('app_data_'))
   );
 }
 
-/** The hand-written MCP tools (register/*.ts) that only read. Every other
- *  hand-written tool counts as a write (default deny), like the registry's
- *  `readOnly`. mcp-core's surface test pins this against the live list. */
-export const MCP_HANDWRITTEN_READ_ONLY: ReadonlySet<string> = new Set([
-  'search',
-  'tree_list',
-  'file_get',
-  'file_read',
-  'page_get',
-  'page_list',
-  'table_get',
-  'table_list',
-  'table_rows_list',
-]);
+/** Risky for a peer or a key bound to the owner: the tool's policy says
+ *  `peerRisky` (PEER_RISKY_TOOL_SLUGS); a name no table holds, by its
+ *  family. */
+export function isPeerRiskyTool(slug: string): boolean {
+  const policy = mcpToolPolicyOf(slug);
+  if (policy) return policy.peerRisky === true;
+  return familyPeerRisky(slug);
+}
 
-/** Whether an owner MCP tool only reads: a registry `readOnly` builtin or a
- *  read-only hand-written tool. Unknown = no. */
+/** The hand-written MCP tools (mcp-defs.ts) that only read: a view of their
+ *  definitions whose policy's effect is `read`. Every other hand-written
+ *  tool is a write (default deny), like a builtin. */
+export const MCP_HANDWRITTEN_READ_ONLY: ReadonlySet<string> = mcpDefinitionSet(
+  (def) => def.policy.effect === 'read',
+);
+
+/** Whether an owner MCP tool only reads: its policy's effect (a builtin's,
+ *  or a hand-written definition's). Unknown = no. */
 export function isMcpToolReadOnly(slug: string): boolean {
-  return MCP_HANDWRITTEN_READ_ONLY.has(slug) || isBuiltinReadOnly(slug);
+  return mcpToolPolicyOf(slug)?.effect === 'read';
 }
 
 /** The owner tools a peer or a key bound to the owner may call: the owner's
@@ -313,38 +276,34 @@ export async function prepareCallerTools(caller: McpCaller): Promise<PreparedCal
 }
 
 /**
- * The tools that spend on the brain owner's provider keys besides the
- * registry's `spends` builtins: a crawl (Firecrawl credits), a re-run of the
- * extractor (model work per node), a turn of another agent or of a
- * responder (W7b fix round 1, M4), and a route map (the owner's Mapbox
- * key, W7 integration fix 2, M4).
+ * The tools that spend on the brain owner's provider keys: a view of the
+ * policy tables (A5 step 2), every tool whose policy spends `ownerKey`: the
+ * spending builtins (all but search_chunks), a crawl (Firecrawl credits), a
+ * re-run of the extractor (model work per node), a turn of another agent
+ * or of a responder (W7b fix round 1, M4), and a route map (the owner's
+ * Mapbox key, W7 integration fix 2, M4).
+ *
+ * Spending builtins that stay listed for every login spend `model`, not
+ * `ownerKey`: search_chunks' query embedding is the one search_nodes makes
+ * too, and its one paid step (the passage_scoring decider, up to 8
+ * requests per search) is skipped on a connection outside an Admin scope
+ * (`ownerKeysOff`, W7b fix round 2, M-a): such a login gets the plain
+ * ranking.
  */
-export const OWNER_KEY_SPENDING_TOOLS: ReadonlySet<string> = new Set([
-  'web_crawl',
-  'route_map',
-  'process_extraction',
-  'invoke_agent',
-  'ask_responder',
-  'ask_as_responder',
-]);
-
-/** Spending builtins that stay listed for every login: search_chunks' query
- *  embedding is the one search_nodes makes too, and its one paid step (the
- *  passage_scoring decider, up to 8 requests per search) is skipped on a
- *  connection outside an Admin scope (`ownerKeysOff`, W7b fix round 2,
- *  M-a): such a login gets the plain ranking. */
-const SPENDING_KEPT: ReadonlySet<string> = new Set(['search_chunks']);
+export const OWNER_KEY_SPENDING_TOOLS: ReadonlySet<string> = mcpPolicySet(
+  (p) => p.spends === 'ownerKey',
+);
 
 /**
  * Whether a tool spends on the brain owner's keys (W7b fix round 1, M4: a
- * CEO default, reversible). Outside an Admin scope such a tool is not
- * listed on MCP, so a direct MCP, key or peer call of a user who is not a
- * user of the Admin workspace cannot reach it. A workspace assistant's turn
- * keeps its own rules (the member turn ledger limits), untouched here.
+ * CEO default, reversible): its policy spends `ownerKey`. Outside an Admin
+ * scope such a tool is not listed on MCP, so a direct MCP, key or peer call
+ * of a user who is not a user of the Admin workspace cannot reach it. A
+ * workspace assistant's turn keeps its own rules (the member turn ledger
+ * limits), untouched here.
  */
 export function spendsOwnerKeys(slug: string): boolean {
-  if (SPENDING_KEPT.has(slug)) return false;
-  return isBuiltinSpending(slug) || OWNER_KEY_SPENDING_TOOLS.has(slug);
+  return mcpToolPolicyOf(slug)?.spends === 'ownerKey';
 }
 
 /** Whether the prepared surface is outside an Admin scope: nothing on it

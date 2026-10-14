@@ -45,6 +45,7 @@ function resolveCwd(override?: unknown): string {
 
 const run_terminal: BuiltinToolDef = {
   slug: 'run_terminal',
+  optIn: 'terminal',
   policy: {
     effect: 'write',
     spends: 'none',

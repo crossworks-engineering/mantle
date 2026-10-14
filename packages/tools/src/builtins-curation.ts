@@ -500,6 +500,7 @@ const model_pool_set: BuiltinToolDef = {
     effect: 'write',
     spends: 'none',
     scope: { area: 'settings', systemWhole: true, adminOnly: true },
+    // Model routing for every agent.
     peerRisky: true,
   },
   ownerOnly: true,
@@ -631,6 +632,7 @@ const model_pool_remove: BuiltinToolDef = {
     effect: 'write',
     spends: 'none',
     scope: { area: 'settings', systemWhole: true, adminOnly: true },
+    // Model routing for every agent.
     peerRisky: true,
   },
   ownerOnly: true,

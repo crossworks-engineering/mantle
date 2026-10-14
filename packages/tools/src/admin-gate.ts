@@ -41,11 +41,6 @@ import {
 import { ADMIN_ONLY_ERROR, adminAreaError } from '@mantle/std';
 import { policyAdminOnly, policySlugMap, policySlugSet } from './tool-policy';
 
-/** Writing into the owner's assistant conversation (register/responder.ts):
- *  hand-written MCP tools, not builtins, until A5 step 2 makes them
- *  definitions with a policy. */
-const RESPONDER_ADMIN_ONLY: readonly string[] = ['responder_turn_input', 'responder_turn_record'];
-
 /**
  * Tools that read the owner's own history or the run machinery (workspaces
  * R3, W4b): adminOnly whatever group grants them. In a workspace turn scope
@@ -58,7 +53,9 @@ const RESPONDER_ADMIN_ONLY: readonly string[] = ['responder_turn_input', 'respon
  * A view of the tool policy table (tool-policy.ts, A5): the builtins whose
  * policy is adminOnly (scope `admin`, or an area marked adminOnly) and that
  * are not ownerOnly (those are adminOnly by OWNER_ONLY_IN_SCOPE), plus the
- * two hand-written MCP tools of RESPONDER_ADMIN_ONLY. Since W7b every login
+ * MCP surface's own definitions that are adminOnly (@mantle/mcp-core
+ * mcp-defs.ts, A5 step 2: the two responder tools that write into the
+ * owner's conversation), in a process that serves MCP. Since W7b every login
  * has the owner MCP surface (workspaces plan 7.4): the owner's own approvals
  * queue, profile clock, assistant conversation and retrieval eval stay
  * Admin; so does a shell on the server (run_terminal, the settings area
@@ -66,7 +63,7 @@ const RESPONDER_ADMIN_ONLY: readonly string[] = ['responder_turn_input', 'respon
  */
 export const ADMIN_ONLY_TOOL_SLUGS: ReadonlySet<string> = policySlugSet(
   (p, def) => def.ownerOnly !== true && policyAdminOnly(p),
-  RESPONDER_ADMIN_ONLY,
+  { surface: (p, def) => def.ownerOnly !== true && policyAdminOnly(p) },
 );
 
 /**

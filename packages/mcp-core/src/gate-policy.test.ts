@@ -75,21 +75,22 @@ const label = (p: PreparedCallerTools) =>
     : 'refused';
 
 describe('the MCP tool policy', () => {
-  it('every built-in has one; a hand-written tool only when its registration says so; else none', () => {
+  it('every registered tool has one, declared (a builtin, or a hand-written definition); else none', () => {
     for (const d of BUILTIN_TOOLS)
       expect(mcpToolPolicy({ kind: 'mcp-tool', name: d.slug }), d.slug).not.toBeNull();
     const handWritten = registered().filter((n) => !BUILTIN.has(n));
     expect(handWritten).toContain('search');
     for (const name of handWritten) {
-      expect(mcpToolPolicy({ kind: 'mcp-tool', name }), name).toBeNull();
-      expect(mcpToolPolicy({ kind: 'mcp-tool', name, handWritten: true }), name).not.toBeNull();
+      expect(mcpToolPolicy({ kind: 'mcp-tool', name }), name).not.toBeNull();
     }
-    expect(mcpToolPolicy({ kind: 'mcp-tool', name: 'search', handWritten: true })).toMatchObject({
+    expect(mcpToolPolicy({ kind: 'mcp-tool', name: 'search' })).toMatchObject({
       effect: 'read',
       scope: 'any',
       fields: { keyArea: 'search', peerRisky: false },
     });
     expect(mcpToolPolicy({ kind: 'mcp-tool', name: 'no_such_tool' })).toBeNull();
+    // A connector's tool is a runtime row, never an mcp-tool entry.
+    expect(mcpToolPolicy({ kind: 'mcp-tool', name: 'mcp_crm_contacts_list' })).toBeNull();
   });
 
   it('a refused connection has no gate caller', () => {
@@ -105,11 +106,7 @@ describe('the MCP tool policy', () => {
 
 describe('listing through the gate equals the listing today (preparedAllows)', () => {
   const names = registered();
-  const refOf = (slug: string): PolicyRef => ({
-    kind: 'mcp-tool',
-    name: slug,
-    ...(BUILTIN.has(slug) ? {} : { handWritten: true }),
-  });
+  const refOf = (slug: string): PolicyRef => ({ kind: 'mcp-tool', name: slug });
 
   it('for every registered tool and every connection', () => {
     expect(names.length).toBeGreaterThan(200);
@@ -169,11 +166,7 @@ describe('calling through the gate equals listing', () => {
     for (const p of preparedMatrix()) {
       const caller = mcpGateCaller(p)!;
       for (const slug of names) {
-        const ref: PolicyRef = {
-          kind: 'mcp-tool',
-          name: slug,
-          ...(BUILTIN.has(slug) ? {} : { handWritten: true }),
-        };
+        const ref: PolicyRef = { kind: 'mcp-tool', name: slug };
         const listed = gateCheck(caller, ref);
         const called = await enterCall(caller, ref, async () => 'ran');
         if (listed === null) {

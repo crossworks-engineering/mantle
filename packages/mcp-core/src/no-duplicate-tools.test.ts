@@ -1,6 +1,7 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { BUILTIN_TOOLS } from '@mantle/tools';
+import { MCP_TOOL_DEFS } from './mcp-defs';
 
 /**
  * A slug must have ONE implementation.
@@ -23,8 +24,9 @@ import { BUILTIN_TOOLS } from '@mantle/tools';
  * The page and table READS are a deliberate contract choice, not an oversight:
  * the builtins return plaintext plus block ids while these return the raw
  * ProseMirror / row shape that shipped MCP clients already parse. Changing that
- * is a product decision about the MCP read contract — see the skip lists in
- * build-server.ts, which name the same slugs.
+ * is a product decision about the MCP read contract. Since A5 step 2 each is
+ * a definition (mcp-defs.ts), and the bridge skips a builtin a definition
+ * names: this list is the table's, pinned here so it can only shrink.
  *
  * The rest have no dedicated exported group in @mantle/tools yet (they all live
  * in the builtins.ts catch-all), so bridging them is a follow-up that starts by
@@ -50,26 +52,31 @@ const KNOWN_UNBRIDGED = [
 ].sort();
 
 /**
- * Slugs registered by a literal `addTool(server, '…')` call anywhere on the MCP
- * surface: build-server.ts itself plus every register/*.ts module.
+ * The hand-written slugs: every definition of the table (mcp-defs.ts), and
+ * any literal `addTool(server, '…')` call anywhere in the package, so a
+ * tool hand-written outside the table cannot slip past this test.
  *
- * The directory is SWEPT rather than listed, so a new register module cannot
- * carry a hand-written twin past this test by not being named here. That
- * matters more since registerMantleTools was cut up: the hand-written blocks
- * no longer all sit in one file, and a file-by-name check would have gone
- * quietly green while finding nothing.
+ * The directory is SWEPT rather than listed, so a new module cannot carry a
+ * hand-written twin past this test by not being named here.
  */
+function literalAddToolSlugs(): string[] {
+  const out: string[] = [];
+  const sweep = (dir: URL) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      if (entry.isDirectory() && entry.name !== '__snapshots__') {
+        sweep(new URL(`${entry.name}/`, dir));
+      } else if (entry.name.endsWith('.ts') && !entry.name.endsWith('.test.ts')) {
+        const src = readFileSync(new URL(entry.name, dir), 'utf8');
+        for (const m of src.matchAll(/addTool\(\s*\w+,\s*'([a-z0-9_]+)'/g)) out.push(m[1]!);
+      }
+    }
+  };
+  sweep(new URL('./', import.meta.url));
+  return out;
+}
+
 function handWrittenSlugs(): string[] {
-  const dir = new URL('./register/', import.meta.url);
-  const sources = [
-    readFileSync(new URL('./build-server.ts', import.meta.url), 'utf8'),
-    ...readdirSync(dir)
-      .filter((f) => f.endsWith('.ts') && !f.endsWith('.test.ts'))
-      .map((f) => readFileSync(new URL(f, dir), 'utf8')),
-  ];
-  return sources.flatMap((src) => [
-    ...[...src.matchAll(/addTool\(\s*server,\s*'([a-z0-9_]+)'/g)].map((m) => m[1]!),
-  ]);
+  return [...MCP_TOOL_DEFS.map((d) => d.slug), ...literalAddToolSlugs()];
 }
 
 describe('no slug is implemented twice', () => {
@@ -91,6 +98,10 @@ describe('no slug is implemented twice', () => {
       expect(handWritten.has(slug), `${slug} is no longer hand-written`).toBe(true);
       expect(builtin.has(slug), `${slug} is no longer a builtin`).toBe(true);
     }
+  });
+
+  it('every hand-written tool is a definition of the table (A5 step 2)', () => {
+    expect(literalAddToolSlugs()).toEqual([]);
   });
 
   it('registers each slug only once', () => {
