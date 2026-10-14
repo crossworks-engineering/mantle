@@ -136,9 +136,23 @@ export async function clearMcpOAuthSecrets(store: McpOAuthStore): Promise<void> 
 /** SSRF-guarded fetch for the OAuth endpoints (discovery / register / token):
  *  the authorization server may be a different host than the MCP endpoint, so
  *  every URL is checked, and redirects are refused — token requests carry
- *  credentials that must not travel to a third host. */
+ *  credentials that must not travel to a third host. The read is capped at
+ *  1 MB and the exchange at 30 s. */
 export const mcpOAuthFetch: typeof fetch = (input, init) =>
-  egressFetch(input, init, { redirect: 'error', guard: assertFetchableUrl, exempt: isSandboxProxyUrl });
+  egressFetch(input, init, {
+    redirect: 'error',
+    guard: assertFetchableUrl,
+    exempt: isSandboxProxyUrl,
+    // Discovery documents, a registration and a token: small JSON the SDK
+    // parses whole with res.json(), so the read is capped.
+    maxBytes: MCP_OAUTH_MAX_BYTES,
+    timeoutMs: MCP_OAUTH_TIMEOUT_MS,
+  });
+
+/** The most an OAuth endpoint's reply may carry. */
+export const MCP_OAUTH_MAX_BYTES = 1024 * 1024;
+/** How long one OAuth endpoint exchange may take, body included. */
+export const MCP_OAUTH_TIMEOUT_MS = 30_000;
 
 /**
  * The OAuth fetch, remembering the FIRST error an endpoint answers with. On

@@ -85,6 +85,11 @@ export function setMcpOAuthStoreFactoryForTests(f: typeof dbMcpOAuthStore): void
  *  is exactly right. */
 const SSE_GET_HEADERS_TIMEOUT_MS = 5_000;
 
+/** The most a connector's reply body may carry (a JSON answer or the SSE
+ *  stream answering one POST). The standing GET event stream is long-lived
+ *  and stays uncapped: its size grows with the session, not one answer. */
+export const MCP_REPLY_MAX_BYTES = 32 * 1024 * 1024;
+
 /** SSRF-guarded fetch: every request URL is re-checked (the transport may
  *  follow the server's session redirects/resumption URLs) and redirects are
  *  refused outright — an external MCP endpoint has no business redirecting,
@@ -104,7 +109,7 @@ export const mcpConnectorFetch: typeof fetch = async (input, init) => {
     guard: assertFetchableUrl,
     exempt: isSandboxProxyUrl,
   } as const;
-  if (!isSseGet) return egressFetch(input, init, egress);
+  if (!isSseGet) return egressFetch(input, init, { ...egress, maxBytes: MCP_REPLY_MAX_BYTES });
 
   // Headers-only timeout: abort while waiting for headers, never after — the
   // timer is cleared the moment the response resolves, so a healthy SSE

@@ -146,6 +146,34 @@ const NAMED: NamedChanges = {
   // (allowLan) but a redirect into link-local space is refused.
   'peer MCP transport': {
     'redirect to 169.254.169.254': { answer: META_REFUSED, reached: ['meta-redirect.test'] },
+    'oversized body': {
+      answer: 'error: response body is over the 33554432-byte cap',
+      oversizedRead: 'stopped at 32 MB',
+    },
+  },
+  // Fix round 1: deadlines and byte caps where there were none. A
+  // connector's reply is capped at 32 MB (the standing GET event stream
+  // stays uncapped); the OAuth endpoints, parsed whole with res.json(), at
+  // 1 MB and 30 s; the spec fetch has a 30 s deadline; a peer MCP reply is
+  // capped at 32 MB, as the federation client's.
+  'MCP connector': {
+    'oversized body': {
+      answer: 'error: response body is over the 33554432-byte cap',
+      oversizedRead: 'stopped at 32 MB',
+    },
+  },
+  'MCP connector OAuth endpoints': {
+    'oversized body': {
+      answer: 'error: response body is over the 1048576-byte cap',
+      oversizedRead: 'stopped at 1 MB',
+    },
+    'slow server': { answer: 'error: This operation was aborted (after 30 s)' },
+  },
+  'OpenAPI spec fetch': {
+    'slow server': {
+      answer:
+        'error: fetching the spec timed out after 30 s — check the spec URL answers (after 30 s)',
+    },
   },
   // The redirect walk before the sidecar: it reaches the link itself (no
   // body read), and a redirect into private or metadata space is refused.

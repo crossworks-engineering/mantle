@@ -232,10 +232,31 @@ export function openapiGroupDescription(args: {
 
 /* ───────────────────────────── spec fetch ───────────────────────────── */
 
+/** How long the spec fetch may take, body included. */
+const OPENAPI_SPEC_TIMEOUT_MS = 30_000;
+
+function specTimedOut(): Error {
+  return new Error(
+    `fetching the spec timed out after ${OPENAPI_SPEC_TIMEOUT_MS / 1000} s — check the spec URL answers`,
+  );
+}
+
 /** Fetch the raw spec text through the SSRF-guarded fetch with a hard byte
  *  cap, and hash it for change visibility. */
 export async function fetchSpecText(specUrl: string): Promise<{ text: string; hash: string }> {
-  const res = await safeFetch(specUrl, { method: 'GET' }, []);
+  try {
+    return await readSpecText(specUrl);
+  } catch (err) {
+    throw (err as { name?: string } | null)?.name === 'AbortError' ? specTimedOut() : err;
+  }
+}
+
+async function readSpecText(specUrl: string): Promise<{ text: string; hash: string }> {
+  // A deadline over the whole fetch, body included (A10 part 1 fix round
+  // 1): a spec host that never answers no longer holds the sync open.
+  const res = await safeFetch(specUrl, { method: 'GET' }, [], undefined, {
+    timeoutMs: OPENAPI_SPEC_TIMEOUT_MS,
+  });
   if (!res.ok) {
     throw new Error(
       `fetching the spec failed with HTTP ${res.status} — check the spec URL serves the raw OpenAPI document (not a docs page) and needs no authentication`,

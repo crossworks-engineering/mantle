@@ -122,7 +122,7 @@
    "oversizedRead": "stopped at 5 MB"
   },
   "slow server": {
-   "answer": "still waiting after 600 s",
+   "answer": "error: fetching the spec timed out after 30 s — check the spec URL answers (after 30 s)",
    "reached": [
     "slow.test"
    ]
@@ -157,11 +157,11 @@
    "authorizationAtOtherHost": "other host not reached"
   },
   "oversized body": {
-   "answer": "status 200, 34603008 bytes",
+   "answer": "error: response body is over the 33554432-byte cap",
    "reached": [
     "huge.test"
    ],
-   "oversizedRead": "whole body"
+   "oversizedRead": "stopped at 32 MB"
   },
   "slow server": {
    "answer": "still waiting after 600 s",
@@ -199,14 +199,14 @@
    "authorizationAtOtherHost": "other host not reached"
   },
   "oversized body": {
-   "answer": "status 200, 34603008 bytes",
+   "answer": "error: response body is over the 1048576-byte cap",
    "reached": [
     "huge.test"
    ],
-   "oversizedRead": "whole body"
+   "oversizedRead": "stopped at 1 MB"
   },
   "slow server": {
-   "answer": "still waiting after 600 s",
+   "answer": "error: This operation was aborted (after 30 s)",
    "reached": [
     "slow.test"
    ]
@@ -246,11 +246,11 @@
    "authorizationAtOtherHost": "not sent"
   },
   "oversized body": {
-   "answer": "status 200, 34603008 bytes",
+   "answer": "error: response body is over the 33554432-byte cap",
    "reached": [
     "huge.test"
    ],
-   "oversizedRead": "whole body"
+   "oversizedRead": "stopped at 32 MB"
   },
   "slow server": {
    "answer": "still waiting after 600 s",

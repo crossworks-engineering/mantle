@@ -75,10 +75,10 @@ the platform's own connect.
 | --- | --- | --- |
 | `web_fetch` | `packages/tools/src/toolsmith/web-fetch.ts` | `guardedFetch`, 5 MB streamed cap, `truncate` |
 | http API tools, OAuth2 token endpoint, dev console proxy | `packages/tools/src/safe-fetch.ts` | `safeFetch` over `egressFetch` with the resolved secrets |
-| OpenAPI spec fetch | `packages/tools/src/openapi-sync.ts` | `safeFetch` (its own 5 MB reader, unchanged) |
-| MCP connector | `packages/tools/src/mcp-client.ts` | `redirect: 'error'`, the SSE headers timeout kept |
-| MCP connector OAuth endpoints | `packages/tools/src/mcp-oauth.ts` | `redirect: 'error'` |
-| peer MCP transport | `packages/tools/src/builtins-peer-mcp.ts` | `allowLan`, 20 redirects |
+| OpenAPI spec fetch | `packages/tools/src/openapi-sync.ts` | `safeFetch` with a 30 s deadline (its own 5 MB reader, unchanged) |
+| MCP connector | `packages/tools/src/mcp-client.ts` | `redirect: 'error'`, the SSE headers timeout kept, a reply capped at 32 MB (the standing GET event stream uncapped) |
+| MCP connector OAuth endpoints | `packages/tools/src/mcp-oauth.ts` | `redirect: 'error'`, 30 s, 1 MB |
+| peer MCP transport | `packages/tools/src/builtins-peer-mcp.ts` | `allowLan`, 20 redirects, a reply capped at 32 MB (the standing GET event stream uncapped) |
 | federation client (`peer_query`, `peer_node_get`, `peer_search_chunks`) | `packages/content/src/peers-client.ts` | `allowLan`, the token as a secret, 15 s, 32 MB, 20 redirects |
 | calendar ICS feed | `packages/calendar/src/providers/ics.ts` | 30 s, 12 MB, 20 redirects |
 | `video_ingest` link | `packages/tools/src/builtins-video.ts` | a redirect walk before the sidecar, 10 s, no body read; a timeout or too many redirects refuses the link |
@@ -152,6 +152,11 @@ loopback answers as before.
 | federation client | oversized body | read 33 MB, the parse failure read as "no nodes" | refused at 32 MB |
 | peer MCP transport | redirect to 169.254.169.254 | fetched the metadata | refused |
 | `web_fetch` | oversized body | the same first 5 MB returned after reading 33 MB | the same first 5 MB, reading stops there |
+| MCP connector | oversized body | read 33 MB | refused at 32 MB (fix round 1) |
+| MCP connector OAuth endpoints | oversized body | read 33 MB | refused at 1 MB (fix round 1) |
+| MCP connector OAuth endpoints | slow server | still waiting after ten minutes | aborted after 30 s (fix round 1) |
+| OpenAPI spec fetch | slow server | still waiting after ten minutes | "fetching the spec timed out after 30 s" (fix round 1) |
+| peer MCP transport | oversized body | read 33 MB | refused at 32 MB (fix round 1) |
 
 The survey named the feed and the crawl and video redirects. The crawl
 needs none (Firecrawl fetches). The federation client, the peer MCP
