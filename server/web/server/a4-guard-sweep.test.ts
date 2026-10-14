@@ -65,6 +65,11 @@ const sweepState = vi.hoisted(() => ({
   log: [] as string[],
   /** The database's reads stood in (the second sweep only). */
   reads: false,
+  /** The audit rows the request wrote, and the create home the pipeline's
+   *  answer named (A4 step 3b part 4): recorded for a moved write entry
+   *  only, in a file of its own (the recorded files never see them). */
+  audits: [] as string[],
+  home: null as string | null,
 }));
 
 const loginRow = (
@@ -109,6 +114,23 @@ vi.mock('../lib/auth/login-row', () => ({
   loadBearerToken: async (jti: string) => sweepState.bearers.get(jti) ?? null,
   touchBearerToken: async (jti: string) => {
     sweepState.log.push(`touch ${jti.slice(0, 8)}`);
+  },
+}));
+
+// The audit row a write makes (fire and forget): kept for the moved
+// writes' record, never written.
+vi.mock('../lib/audit', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  auditFireAndForget: (e: {
+    action: string;
+    method?: string;
+    path?: string;
+    actorId: string;
+    detail?: { keyId?: string };
+  }) => {
+    sweepState.audits.push(
+      `${e.action} ${e.method ?? ''} ${e.path ?? ''} ${e.actorId}${e.detail?.keyId ? ` key:${e.detail.keyId.slice(0, 8)}` : ''}`,
+    );
   },
 }));
 
@@ -285,6 +307,8 @@ vi.mock('../lib/auth/session', async (importOriginal) => {
       return value;
     }
     sweepState.log.push(`${name} ok ${summarize(project())} ${after()}`);
+    const home = db.currentCreateHome();
+    sweepState.home = home ? JSON.stringify(home) : null;
     return value;
   };
   // The handler's read of it (any reader of the one list): the handler
@@ -363,8 +387,20 @@ function legacy(answer: string): string {
 /** The cells whose guard entry moved to the pipeline, as driven: sweep and
  *  cell to its answer. */
 const moved = new Map<string, string>();
+/** The moved cells of a write (a method other than GET and HEAD), to what
+ *  the request wrote on the side: its audit rows, and the create home the
+ *  pipeline's answer named (A4 step 3b part 4). */
+const movedWrites = new Map<string, string>();
 function noteMoved(sweep: string, cell: string, answer: string): string {
-  if (answer.includes('[pipeline:')) moved.set(`${sweep} ${cell}`, answer);
+  if (answer.includes('[pipeline:')) {
+    moved.set(`${sweep} ${cell}`, answer);
+    if (!/^(GET|HEAD) /.test(cell)) {
+      movedWrites.set(
+        `${sweep} ${cell}`,
+        `audits=${JSON.stringify(sweepState.audits)} home=${sweepState.home ?? '-'}`,
+      );
+    }
+  }
   return legacy(answer);
 }
 
@@ -504,6 +540,8 @@ describe.skipIf(!hasManifest)('A4 step 3a: every guard answers as on main', () =
 
   async function drive(method: string, path: string, cred: Cred): Promise<string> {
     sweepState.log.length = 0;
+    sweepState.audits.length = 0;
+    sweepState.home = null;
     const url = cred.query ? `${path}${path.includes('?') ? '&' : '?'}${cred.query}` : path;
     const res = await app.request(url, {
       method,
@@ -683,5 +721,32 @@ describe.skipIf(!hasManifest)('A4 step 3a: every guard answers as on main', () =
         '',
       ].join('\n'),
     ).toMatchFileSnapshot('./__snapshots__/a4-guard-sweep-moved.txt');
+  });
+
+  it('records what each moved write did on the side (A4 step 3b part 4)', async () => {
+    // A moved cell of a write: the audit rows the request wrote and the
+    // create home the pipeline's answer named, so a write's side effects
+    // are pinned per cell, at the gate where they now run. Its own file:
+    // the recorded files and the moved file stay as they were.
+    expect(movedWrites.size).toBeGreaterThan(0);
+    const answers = new Map<string, string>();
+    const lines = [...movedWrites].map(([cell, side]) => {
+      let id = answers.get(side);
+      if (!id) {
+        id = `w${answers.size + 1}`;
+        answers.set(side, id);
+      }
+      return `${cell}=${id}`;
+    });
+    await expect(
+      [
+        '# what a moved write did on the side: its audit rows, the create home named',
+        ...[...answers].map(([side, id]) => `${id} ${side}`),
+        '',
+        `# moved cells of a write: ${movedWrites.size}`,
+        ...lines,
+        '',
+      ].join('\n'),
+    ).toMatchFileSnapshot('./__snapshots__/a4-guard-sweep-moved-writes.txt');
   });
 });
