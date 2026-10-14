@@ -28,6 +28,7 @@ import { db, nodes } from '@mantle/db';
 import {
   MCP_SURFACE_POLICIES,
   SEARCH_TOOLS,
+  thrownToolDatabaseError,
   toolItemWriteRefusal,
   type BuiltinToolDef,
   type McpSurfaceSlug,
@@ -287,7 +288,9 @@ const FOLDER_RENAME = mcpTool({
         }
         return jsonReply(updated);
       } catch (err) {
-        const msg = errorMessage(err);
+        // A database error is never its text (W3; A5 step 4 fix round 1):
+        // the one mapper's words, as a thrown one is answered.
+        const msg = thrownToolDatabaseError('mcp folder_rename', err) ?? errorMessage(err);
         return { content: [{ type: 'text', text: `folder_rename failed: ${msg}` }], isError: true };
       }
     };
@@ -355,7 +358,9 @@ const FILE_RENAME = mcpTool({
         }
         return jsonReply(row);
       } catch (err) {
-        const msg = errorMessage(err);
+        // A database error is never its text (W3; A5 step 4 fix round 1):
+        // the one mapper's words, as a thrown one is answered.
+        const msg = thrownToolDatabaseError('mcp file_rename', err) ?? errorMessage(err);
         return { content: [{ type: 'text', text: `file_rename failed: ${msg}` }], isError: true };
       }
     };
