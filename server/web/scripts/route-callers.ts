@@ -136,7 +136,7 @@ export function handlerReads(src: string, file: string, follow?: FollowReads): s
   // local to the module and the name it has there; the methods it exports,
   // each to its handler; a handler from another module, to that module.
   const local = new Map<string, Handler>();
-  const imported = new Map<string, { spec: string; name: string }>();
+  const imported = new Map<string, { spec: string; name: string; node: ts.Node }>();
   const readerImported = new Set<string>();
   const guardLocals = new Map<string, string>();
   const aliasedGuards: Array<{ node: ts.Node; name: string; local: string }> = [];
@@ -170,7 +170,7 @@ export function handlerReads(src: string, file: string, follow?: FollowReads): s
     } else if (ts.isImportDeclaration(st) && ts.isStringLiteral(st.moduleSpecifier)) {
       const spec = st.moduleSpecifier.text;
       const clause = st.importClause;
-      if (clause?.name) imported.set(clause.name.text, { spec, name: 'default' });
+      if (clause?.name) imported.set(clause.name.text, { spec, name: 'default', node: clause });
       const bindings = clause?.namedBindings;
       if (bindings && ts.isNamespaceImport(bindings)) {
         wholeImports.push({ node: bindings, spec });
@@ -191,7 +191,7 @@ export function handlerReads(src: string, file: string, follow?: FollowReads): s
             guardLocals.set(as, name);
             if (as !== name) aliasedGuards.push({ node: el, name, local: as });
           }
-          imported.set(as, { spec, name });
+          imported.set(as, { spec, name, node: el });
         }
       }
     } else if (ts.isExportDeclaration(st)) {
@@ -253,6 +253,12 @@ export function handlerReads(src: string, file: string, follow?: FollowReads): s
   /** Each use of a top-level function or constant of the file by name
    *  (`return GET(req)` in POST): a handler of the file that reads. */
   const localRefs: Array<{ node: ts.Identifier; name: string }> = [];
+  /** Whether the name `n` refers to `decl` (a top-level declaration or an
+   *  import of the file), by binding: a parameter or a local of the same
+   *  name (`POST(req, GET) { return GET(); }`) is another binding. */
+  const bindingOf = symbolsOf(sf);
+  const refersTo = (n: ts.Identifier, decl: ts.Node) =>
+    bindingOf(n)?.declarations?.includes(decl as ts.Declaration) ?? false;
   /** The call `node` is the callee of (`f()` or `x.f()`), else null. */
   const calleeOf = (node: ts.Node): ts.CallExpression | null => {
     const p = node.parent;
@@ -264,6 +270,9 @@ export function handlerReads(src: string, file: string, follow?: FollowReads): s
     return null;
   };
   const visit = (n: ts.Node) => {
+    // A type (`type T = typeof GET`, `x as ReturnType<typeof ownerCaller>`)
+    // runs nothing and calls nothing: no name in it is a use.
+    if (ts.isTypeNode(n) && !ts.isExpressionWithTypeArguments(n)) return;
     if (ts.isIdentifier(n)) {
       const p = n.parent;
       const declares = ts.isImportSpecifier(p) || ts.isExportSpecifier(p);
@@ -291,10 +300,23 @@ export function handlerReads(src: string, file: string, follow?: FollowReads): s
         if (call) guardCalls.push({ call, name: guard });
         else guardRefs.push({ node: n, name: guard });
       }
-      if (local.has(n.text) && !isMember && !declares && !exportedAs.has(n) && !namesDecl(n)) {
+      if (
+        local.has(n.text) &&
+        !isMember &&
+        !declares &&
+        !exportedAs.has(n) &&
+        !namesDecl(n) &&
+        refersTo(n, local.get(n.text)!.decl)
+      ) {
         localRefs.push({ node: n, name: n.text });
       }
-      if (readingImports.has(n.text) && !isMember && !declares && !exportedAs.has(n)) {
+      if (
+        readingImports.has(n.text) &&
+        !isMember &&
+        !declares &&
+        !exportedAs.has(n) &&
+        refersTo(n, imported.get(n.text)!.node)
+      ) {
         const call = calleeOf(n);
         if (!call) {
           const { spec } = imported.get(n.text)!;
@@ -430,6 +452,43 @@ export function handlerReads(src: string, file: string, follow?: FollowReads): s
     }
   }
   return [...new Set(out)].sort();
+}
+
+/**
+ * The binding a name of `sf` refers to, from the TypeScript binder (a
+ * program of the one file, nothing resolved): it walks the scopes, so a
+ * parameter, a local or a catch variable that shadows a top-level name is
+ * its own binding. A shorthand property (`{ GET }`) refers to the value it
+ * names.
+ */
+function symbolsOf(sf: ts.SourceFile): (n: ts.Identifier) => ts.Symbol | undefined {
+  let checker: ts.TypeChecker | null = null;
+  return (n) => {
+    if (!checker) {
+      const host: ts.CompilerHost = {
+        getSourceFile: (name) => (name === sf.fileName ? sf : undefined),
+        writeFile: () => {},
+        getDefaultLibFileName: () => 'lib.d.ts',
+        useCaseSensitiveFileNames: () => true,
+        getCanonicalFileName: (f) => f,
+        getCurrentDirectory: () => '',
+        getNewLine: () => '\n',
+        fileExists: (f) => f === sf.fileName,
+        readFile: () => undefined,
+      };
+      checker = ts
+        .createProgram({
+          rootNames: [sf.fileName],
+          options: { noLib: true, noResolve: true, types: [] },
+          host,
+        })
+        .getTypeChecker();
+    }
+    const p = n.parent;
+    return ts.isShorthandPropertyAssignment(p) && p.name === n
+      ? checker.getShorthandAssignmentValueSymbol(p)
+      : checker.getSymbolAtLocation(n);
+  };
 }
 
 /** Whether `n` is the name a declaration gives (not a use of a name). */

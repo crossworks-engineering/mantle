@@ -195,6 +195,60 @@ describe('handlerReads', () => {
     ).toThrow(/POST reads the pipeline's caller and also calls getOwnerOr401/);
   });
 
+  it('resolves a name to its binding: a parameter or local that shadows a handler is not it', () => {
+    const head = `${IMPORT}
+      export async function GET(req: Request) { const o = ownerCaller(); return Response.json(o); }`;
+    // A parameter named GET: POST runs what it was passed, not the handler.
+    expect(
+      reads(`${head}
+        export async function POST(req: Request, GET: () => Response) { return GET(); }`),
+    ).toEqual(['GET']);
+    // A local, a catch variable, an inner function: each its own binding.
+    expect(
+      reads(`${head}
+        export async function POST(req: Request) { const GET = () => new Response(); return GET(); }
+        export async function PUT(req: Request) { try { return x(); } catch (GET) { return f(GET); } }
+        export async function DELETE() { function GET() { return new Response(); } return run(GET); }`),
+    ).toEqual(['GET']);
+    // The same for a reading handler imported from another route file.
+    expect(
+      reads(`import { GET as notes } from '../../notes/route';
+        export async function GET(req: Request) { return notes(req); }
+        export async function POST(req: Request, notes: (r: Request) => Response) { const r = new Request(req.url); return notes(r); }`),
+    ).toEqual(['GET']);
+    // The handler itself, beside a shadowed name, is still followed.
+    expect(
+      reads(`${head}
+        export async function POST(req: Request) { return GET(req); }
+        export async function PUT(req: Request, GET: unknown) { return Response.json(GET); }`),
+    ).toEqual(['GET', 'POST']);
+    // And still refused where it is passed on.
+    expect(() =>
+      reads(`${head}
+        export async function POST(req: Request) { return Response.json({ GET }); }`),
+    ).toThrow(/passes GET \(a handler of this file that reads the caller\) other than calling it/);
+  });
+
+  it('takes no name in a type as a use (type T = typeof GET)', () => {
+    const head = `${IMPORT}
+      export async function GET(req: Request) { const o = ownerCaller(); return Response.json(o); }`;
+    expect(
+      reads(`${head}
+        type T = typeof GET;
+        export async function POST(req: Request) { const h: typeof GET | null = null; return Response.json({ h } as unknown as ReturnType<T>); }`),
+    ).toEqual(['GET']);
+    expect(
+      reads(`import { GET as notes } from '../../notes/route';
+        export async function GET(req: Request) { return notes(req); }
+        export type Notes = typeof notes;`),
+    ).toEqual(['GET']);
+    // typeof in a value is a use: refused as before.
+    expect(() =>
+      reads(`${head}
+        export async function POST() { return Response.json(typeof GET); }`),
+    ).toThrow(/passes GET/);
+  });
+
   // ── L1: bindings, not names (the audit's mutation cases) ──────────────────
 
   const refused: Record<string, [src: string, error: RegExp]> = {
