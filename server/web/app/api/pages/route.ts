@@ -15,7 +15,6 @@ import {
 } from '@/lib/pages';
 import { recordIngest } from '@mantle/tracing';
 import { firstIssue } from '@/lib/zod-issue';
-import { treeErrorResponse } from '@/lib/tree-route';
 import { chipped, parseWsFilter } from '@/lib/list-workspaces';
 import { readJson } from '@/lib/read-body';
 
@@ -164,8 +163,7 @@ export async function POST(req: Request) {
     if (err instanceof ParentPageNotFoundError) {
       return NextResponse.json({ error: 'parent page not found' }, { status: 400 });
     }
-    // Who can see the page would change: 409 with the list (or busy).
-    return treeErrorResponse(err);
+    throw err;
   }
   const snippet = docToText(row.doc);
   void recordIngest({

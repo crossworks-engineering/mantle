@@ -15,11 +15,8 @@ import { copyFileById, emailAttachmentIds, moveFileById } from '@mantle/files';
 import { thumbnailFor } from '@mantle/files';
 import { recordIngest } from '@mantle/tracing';
 import { safeDownloadHeaders } from '@mantle/client-types/lib/safe-download';
-import { errorMessage } from '@mantle/std';
 import { firstIssue } from '@/lib/zod-issue';
-import { TreeVisibilityError, guardFileCopyTo, guardFileTo } from '@mantle/content/tree';
-import { treeErrorResponse } from '@/lib/tree-route';
-import { isBusy, isScopeWriteRefusal } from '@mantle/db';
+import { guardFileCopyTo, guardFileTo } from '@mantle/content/tree';
 import { callerMayReadEmail } from '@/lib/api-v1';
 import { readJson } from '@/lib/read-body';
 
@@ -146,87 +143,76 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
     return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
   }
 
-  try {
-    if ('move' in parsed.data) {
-      await guardFileTo(user.id, idParsed.data.id, parsed.data.move, {
-        confirm: parsed.data.confirm === true,
-        seen: parsed.data.seen,
-      });
-      const file = await moveFileById({
-        ownerId: user.id,
-        fileId: idParsed.data.id,
-        destPath: parsed.data.move,
-      });
-      return NextResponse.json({ file });
-    }
-    if ('indexing' in parsed.data) {
-      await setIndexingMode({
-        ownerId: user.id,
-        nodeId: idParsed.data.id,
-        mode: parsed.data.indexing,
-      });
-      const file = await fileById({ ownerId: user.id, fileId: idParsed.data.id });
-      if (!file) return NextResponse.json({ error: 'not found' }, { status: 404 });
-      return NextResponse.json({ file });
-    }
-    if ('rename' in parsed.data) {
-      const file = await renameFileById({
-        ownerId: user.id,
-        fileId: idParsed.data.id,
-        newStem: parsed.data.rename,
-      });
-      if (!file) return NextResponse.json({ error: 'not found' }, { status: 404 });
-      return NextResponse.json({ file });
-    }
-    // Content edit: load the existing row to get the filename + parent, then
-    // overwrite via upsertFile (which clears the extracted summary so the
-    // next extractor run re-processes the changed body).
-    const existing = await fileById({ ownerId: user.id, fileId: idParsed.data.id });
-    if (!existing) return NextResponse.json({ error: 'not found' }, { status: 404 });
-    if (!existing.isText) {
-      return NextResponse.json(
-        { error: 'only text files (.md / .txt / .json / .yaml / .yml) can be edited in place' },
-        { status: 400 },
-      );
-    }
-    const buf = Buffer.from(parsed.data.content, 'utf8');
-    const file = await upsertFile({
-      ownerId: user.id,
-      parentPath: existing.parentPath,
-      filename: existing.filename,
-      bytes: buf,
-      overwrite: true,
+  if ('move' in parsed.data) {
+    await guardFileTo(user.id, idParsed.data.id, parsed.data.move, {
+      confirm: parsed.data.confirm === true,
+      seen: parsed.data.seen,
     });
-    // Record the edit as a fresh ingest event — the file's content
-    // changed, the extractor will re-run, and the biography view
-    // should reflect "this thing was edited at HH:MM" alongside the
-    // original upload.
-    void recordIngest({
-      source: 'file_edit',
+    const file = await moveFileById({
       ownerId: user.id,
-      nodeId: file.id,
-      summary: `File edited: ${file.filename}`,
-      payload: {
-        parentPath: existing.parentPath,
-        filename: file.filename,
-        mimeType: file.mimeType,
-        sizeBytes: file.sizeBytes,
-        previousSizeBytes: existing.sizeBytes,
-        via: 'web_inline_edit',
-      },
-      snippet: parsed.data.content,
+      fileId: idParsed.data.id,
+      destPath: parsed.data.move,
     });
     return NextResponse.json({ file });
-  } catch (err) {
-    // A scope refusal is the app's 403 (W6a fix round 2), never a 400 (W7e).
-    if (isScopeWriteRefusal(err)) throw err;
-    if (err instanceof TreeVisibilityError || isBusy(err)) return treeErrorResponse(err);
-    const msg = errorMessage(err);
-    if (msg.includes('already exists')) {
-      return NextResponse.json({ error: msg }, { status: 409 });
-    }
-    return NextResponse.json({ error: msg }, { status: 400 });
   }
+  if ('indexing' in parsed.data) {
+    await setIndexingMode({
+      ownerId: user.id,
+      nodeId: idParsed.data.id,
+      mode: parsed.data.indexing,
+    });
+    const file = await fileById({ ownerId: user.id, fileId: idParsed.data.id });
+    if (!file) return NextResponse.json({ error: 'not found' }, { status: 404 });
+    return NextResponse.json({ file });
+  }
+  if ('rename' in parsed.data) {
+    const file = await renameFileById({
+      ownerId: user.id,
+      fileId: idParsed.data.id,
+      newStem: parsed.data.rename,
+    });
+    if (!file) return NextResponse.json({ error: 'not found' }, { status: 404 });
+    return NextResponse.json({ file });
+  }
+  // Content edit: load the existing row to get the filename + parent, then
+  // overwrite via upsertFile (which clears the extracted summary so the
+  // next extractor run re-processes the changed body).
+  const existing = await fileById({ ownerId: user.id, fileId: idParsed.data.id });
+  if (!existing) return NextResponse.json({ error: 'not found' }, { status: 404 });
+  if (!existing.isText) {
+    return NextResponse.json(
+      { error: 'only text files (.md / .txt / .json / .yaml / .yml) can be edited in place' },
+      { status: 400 },
+    );
+  }
+  const buf = Buffer.from(parsed.data.content, 'utf8');
+  const file = await upsertFile({
+    ownerId: user.id,
+    parentPath: existing.parentPath,
+    filename: existing.filename,
+    bytes: buf,
+    overwrite: true,
+  });
+  // Record the edit as a fresh ingest event — the file's content
+  // changed, the extractor will re-run, and the biography view
+  // should reflect "this thing was edited at HH:MM" alongside the
+  // original upload.
+  void recordIngest({
+    source: 'file_edit',
+    ownerId: user.id,
+    nodeId: file.id,
+    summary: `File edited: ${file.filename}`,
+    payload: {
+      parentPath: existing.parentPath,
+      filename: file.filename,
+      mimeType: file.mimeType,
+      sizeBytes: file.sizeBytes,
+      previousSizeBytes: existing.sizeBytes,
+      via: 'web_inline_edit',
+    },
+    snippet: parsed.data.content,
+  });
+  return NextResponse.json({ file });
 }
 
 /** Copy this file into another folder — a new node with its own bytes and
@@ -248,27 +234,17 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   if (!body.success) {
     return NextResponse.json({ error: firstIssue(body.error) }, { status: 400 });
   }
-  try {
-    await guardFileCopyTo(user.id, idParsed.data.id, body.data.copy_to, {
-      confirm: body.data.confirm === true,
-      seen: body.data.seen,
-    });
-    const file = await copyFileById({
-      ownerId: user.id,
-      fileId: idParsed.data.id,
-      destPath: body.data.copy_to,
-      newFilename: body.data.new_filename,
-    });
-    return NextResponse.json({ file }, { status: 201 });
-  } catch (err) {
-    // A scope refusal is the app's 403 (W6a fix round 2), never a 400.
-    if (isScopeWriteRefusal(err)) throw err;
-    if (err instanceof TreeVisibilityError || isBusy(err)) return treeErrorResponse(err);
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : 'copy failed' },
-      { status: 400 },
-    );
-  }
+  await guardFileCopyTo(user.id, idParsed.data.id, body.data.copy_to, {
+    confirm: body.data.confirm === true,
+    seen: body.data.seen,
+  });
+  const file = await copyFileById({
+    ownerId: user.id,
+    fileId: idParsed.data.id,
+    destPath: body.data.copy_to,
+    newFilename: body.data.new_filename,
+  });
+  return NextResponse.json({ file }, { status: 201 });
 }
 
 export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string }> }) {

@@ -1,3 +1,1337 @@
 # A10 part 2 fold 2: the cells that answer otherwise than before the move, each
 # with its named kind (changeKind, a10-error-sweep.test.ts), its answer before and
 # now. Every other cell of a10-error-sweep.txt answers byte for byte as recorded.
+# domain-by-table: 418 cells
+# opaque-500: 26 cells
+GET /api/agents tree-not-found [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    404 application/json {"error":"sweep: folder not found"}
+GET /api/agents tree-conflict [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"sweep: a folder of that name exists"}
+GET /api/agents tree-invalid [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    400 application/json {"error":"sweep: not a valid name"}
+GET /api/agents tree-gone [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    410 application/json {"error":"sweep: folder shares have ended","code":"gone"}
+GET /api/agents tree-visibility [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"visibility","changes":[{"workspaceId":"11111111-1111-4111-8111-111111111111","gained":1,"lost":0}],"total":1}
+GET /api/agents/:id/telegram tree-not-found [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    404 application/json {"error":"sweep: folder not found"}
+GET /api/agents/:id/telegram tree-conflict [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"sweep: a folder of that name exists"}
+GET /api/agents/:id/telegram tree-invalid [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    400 application/json {"error":"sweep: not a valid name"}
+GET /api/agents/:id/telegram tree-gone [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    410 application/json {"error":"sweep: folder shares have ended","code":"gone"}
+GET /api/agents/:id/telegram tree-visibility [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"visibility","changes":[{"workspaceId":"11111111-1111-4111-8111-111111111111","gained":1,"lost":0}],"total":1}
+POST /api/agents/:id/telegram tree-not-found [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    404 application/json {"error":"sweep: folder not found"}
+POST /api/agents/:id/telegram tree-conflict [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"sweep: a folder of that name exists"}
+POST /api/agents/:id/telegram tree-invalid [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    400 application/json {"error":"sweep: not a valid name"}
+POST /api/agents/:id/telegram tree-gone [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    410 application/json {"error":"sweep: folder shares have ended","code":"gone"}
+POST /api/agents/:id/telegram tree-visibility [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"visibility","changes":[{"workspaceId":"11111111-1111-4111-8111-111111111111","gained":1,"lost":0}],"total":1}
+DELETE /api/agents/:id/telegram tree-not-found [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    404 application/json {"error":"sweep: folder not found"}
+DELETE /api/agents/:id/telegram tree-conflict [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"sweep: a folder of that name exists"}
+DELETE /api/agents/:id/telegram tree-invalid [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    400 application/json {"error":"sweep: not a valid name"}
+DELETE /api/agents/:id/telegram tree-gone [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    410 application/json {"error":"sweep: folder shares have ended","code":"gone"}
+DELETE /api/agents/:id/telegram tree-visibility [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"visibility","changes":[{"workspaceId":"11111111-1111-4111-8111-111111111111","gained":1,"lost":0}],"total":1}
+POST /api/agents/:id/telegram/chats tree-not-found [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    404 application/json {"error":"sweep: folder not found"}
+POST /api/agents/:id/telegram/chats tree-conflict [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"sweep: a folder of that name exists"}
+POST /api/agents/:id/telegram/chats tree-invalid [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    400 application/json {"error":"sweep: not a valid name"}
+POST /api/agents/:id/telegram/chats tree-gone [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    410 application/json {"error":"sweep: folder shares have ended","code":"gone"}
+POST /api/agents/:id/telegram/chats tree-visibility [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"visibility","changes":[{"workspaceId":"11111111-1111-4111-8111-111111111111","gained":1,"lost":0}],"total":1}
+GET /api/ai-workers tree-not-found [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    404 application/json {"error":"sweep: folder not found"}
+GET /api/ai-workers tree-conflict [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"sweep: a folder of that name exists"}
+GET /api/ai-workers tree-invalid [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    400 application/json {"error":"sweep: not a valid name"}
+GET /api/ai-workers tree-gone [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    410 application/json {"error":"sweep: folder shares have ended","code":"gone"}
+GET /api/ai-workers tree-visibility [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"visibility","changes":[{"workspaceId":"11111111-1111-4111-8111-111111111111","gained":1,"lost":0}],"total":1}
+PUT /api/apps/:id/draft tree-not-found [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    404 application/json {"error":"sweep: folder not found"}
+PUT /api/apps/:id/draft tree-conflict [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"sweep: a folder of that name exists"}
+PUT /api/apps/:id/draft tree-invalid [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    400 application/json {"error":"sweep: not a valid name"}
+PUT /api/apps/:id/draft tree-gone [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    410 application/json {"error":"sweep: folder shares have ended","code":"gone"}
+PUT /api/apps/:id/draft tree-visibility [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"visibility","changes":[{"workspaceId":"11111111-1111-4111-8111-111111111111","gained":1,"lost":0}],"total":1}
+DELETE /api/apps/:id/draft tree-not-found [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    404 application/json {"error":"sweep: folder not found"}
+DELETE /api/apps/:id/draft tree-conflict [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"sweep: a folder of that name exists"}
+DELETE /api/apps/:id/draft tree-invalid [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    400 application/json {"error":"sweep: not a valid name"}
+DELETE /api/apps/:id/draft tree-gone [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    410 application/json {"error":"sweep: folder shares have ended","code":"gone"}
+DELETE /api/apps/:id/draft tree-visibility [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"visibility","changes":[{"workspaceId":"11111111-1111-4111-8111-111111111111","gained":1,"lost":0}],"total":1}
+POST /api/apps/:id/duplicate tree-not-found [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    404 application/json {"error":"sweep: folder not found"}
+POST /api/apps/:id/duplicate tree-conflict [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"sweep: a folder of that name exists"}
+POST /api/apps/:id/duplicate tree-invalid [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    400 application/json {"error":"sweep: not a valid name"}
+POST /api/apps/:id/duplicate tree-gone [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    410 application/json {"error":"sweep: folder shares have ended","code":"gone"}
+POST /api/apps/:id/duplicate tree-visibility [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"visibility","changes":[{"workspaceId":"11111111-1111-4111-8111-111111111111","gained":1,"lost":0}],"total":1}
+GET /api/apps/:id/export tree-not-found [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    404 application/json {"error":"sweep: folder not found"}
+GET /api/apps/:id/export tree-conflict [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"sweep: a folder of that name exists"}
+GET /api/apps/:id/export tree-invalid [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    400 application/json {"error":"sweep: not a valid name"}
+GET /api/apps/:id/export tree-gone [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    410 application/json {"error":"sweep: folder shares have ended","code":"gone"}
+GET /api/apps/:id/export tree-visibility [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"visibility","changes":[{"workspaceId":"11111111-1111-4111-8111-111111111111","gained":1,"lost":0}],"total":1}
+POST /api/apps/:id/publish tree-not-found [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    404 application/json {"error":"sweep: folder not found"}
+POST /api/apps/:id/publish tree-conflict [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"sweep: a folder of that name exists"}
+POST /api/apps/:id/publish tree-invalid [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    400 application/json {"error":"sweep: not a valid name"}
+POST /api/apps/:id/publish tree-gone [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    410 application/json {"error":"sweep: folder shares have ended","code":"gone"}
+POST /api/apps/:id/publish tree-visibility [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"visibility","changes":[{"workspaceId":"11111111-1111-4111-8111-111111111111","gained":1,"lost":0}],"total":1}
+GET /api/apps/:id/snapshots tree-not-found [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    404 application/json {"error":"sweep: folder not found"}
+GET /api/apps/:id/snapshots tree-conflict [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"sweep: a folder of that name exists"}
+GET /api/apps/:id/snapshots tree-invalid [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    400 application/json {"error":"sweep: not a valid name"}
+GET /api/apps/:id/snapshots tree-gone [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    410 application/json {"error":"sweep: folder shares have ended","code":"gone"}
+GET /api/apps/:id/snapshots tree-visibility [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"visibility","changes":[{"workspaceId":"11111111-1111-4111-8111-111111111111","gained":1,"lost":0}],"total":1}
+POST /api/apps/:id/snapshots tree-not-found [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    404 application/json {"error":"sweep: folder not found"}
+POST /api/apps/:id/snapshots tree-conflict [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"sweep: a folder of that name exists"}
+POST /api/apps/:id/snapshots tree-invalid [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    400 application/json {"error":"sweep: not a valid name"}
+POST /api/apps/:id/snapshots tree-gone [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    410 application/json {"error":"sweep: folder shares have ended","code":"gone"}
+POST /api/apps/:id/snapshots tree-visibility [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"visibility","changes":[{"workspaceId":"11111111-1111-4111-8111-111111111111","gained":1,"lost":0}],"total":1}
+GET /api/apps/:id/snapshots/:sid tree-not-found [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    404 application/json {"error":"sweep: folder not found"}
+GET /api/apps/:id/snapshots/:sid tree-conflict [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"sweep: a folder of that name exists"}
+GET /api/apps/:id/snapshots/:sid tree-invalid [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    400 application/json {"error":"sweep: not a valid name"}
+GET /api/apps/:id/snapshots/:sid tree-gone [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    410 application/json {"error":"sweep: folder shares have ended","code":"gone"}
+GET /api/apps/:id/snapshots/:sid tree-visibility [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"visibility","changes":[{"workspaceId":"11111111-1111-4111-8111-111111111111","gained":1,"lost":0}],"total":1}
+PATCH /api/apps/:id/snapshots/:sid tree-not-found [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    404 application/json {"error":"sweep: folder not found"}
+PATCH /api/apps/:id/snapshots/:sid tree-conflict [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"sweep: a folder of that name exists"}
+PATCH /api/apps/:id/snapshots/:sid tree-invalid [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    400 application/json {"error":"sweep: not a valid name"}
+PATCH /api/apps/:id/snapshots/:sid tree-gone [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    410 application/json {"error":"sweep: folder shares have ended","code":"gone"}
+PATCH /api/apps/:id/snapshots/:sid tree-visibility [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"visibility","changes":[{"workspaceId":"11111111-1111-4111-8111-111111111111","gained":1,"lost":0}],"total":1}
+DELETE /api/apps/:id/snapshots/:sid tree-not-found [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    404 application/json {"error":"sweep: folder not found"}
+DELETE /api/apps/:id/snapshots/:sid tree-conflict [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"sweep: a folder of that name exists"}
+DELETE /api/apps/:id/snapshots/:sid tree-invalid [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    400 application/json {"error":"sweep: not a valid name"}
+DELETE /api/apps/:id/snapshots/:sid tree-gone [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    410 application/json {"error":"sweep: folder shares have ended","code":"gone"}
+DELETE /api/apps/:id/snapshots/:sid tree-visibility [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"visibility","changes":[{"workspaceId":"11111111-1111-4111-8111-111111111111","gained":1,"lost":0}],"total":1}
+POST /api/apps/:id/snapshots/:sid/restore tree-not-found [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    404 application/json {"error":"sweep: folder not found"}
+POST /api/apps/:id/snapshots/:sid/restore tree-conflict [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"sweep: a folder of that name exists"}
+POST /api/apps/:id/snapshots/:sid/restore tree-invalid [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    400 application/json {"error":"sweep: not a valid name"}
+POST /api/apps/:id/snapshots/:sid/restore tree-gone [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    410 application/json {"error":"sweep: folder shares have ended","code":"gone"}
+POST /api/apps/:id/snapshots/:sid/restore tree-visibility [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"visibility","changes":[{"workspaceId":"11111111-1111-4111-8111-111111111111","gained":1,"lost":0}],"total":1}
+POST /api/apps/deleted/:id/restore tree-not-found [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    404 application/json {"error":"sweep: folder not found"}
+POST /api/apps/deleted/:id/restore tree-conflict [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"sweep: a folder of that name exists"}
+POST /api/apps/deleted/:id/restore tree-invalid [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    400 application/json {"error":"sweep: not a valid name"}
+POST /api/apps/deleted/:id/restore tree-gone [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    410 application/json {"error":"sweep: folder shares have ended","code":"gone"}
+POST /api/apps/deleted/:id/restore tree-visibility [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"visibility","changes":[{"workspaceId":"11111111-1111-4111-8111-111111111111","gained":1,"lost":0}],"total":1}
+GET /api/contacts tree-not-found [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    404 application/json {"error":"sweep: folder not found"}
+GET /api/contacts tree-conflict [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"sweep: a folder of that name exists"}
+GET /api/contacts tree-invalid [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    400 application/json {"error":"sweep: not a valid name"}
+GET /api/contacts tree-gone [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    410 application/json {"error":"sweep: folder shares have ended","code":"gone"}
+GET /api/contacts tree-visibility [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"visibility","changes":[{"workspaceId":"11111111-1111-4111-8111-111111111111","gained":1,"lost":0}],"total":1}
+POST /api/contacts plain [opaque-500]
+  before 400 application/json {"error":"sweep: a plain error with private detail"}
+  now    500 application/json {"error":"internal error"}
+POST /api/contacts db [opaque-500]
+  before 400 application/json {"error":"Failed query: select \"secret\" from \"nodes\" where \"id\" = $1\nparams: sweep"}
+  now    500 application/json {"error":"internal error"}
+POST /api/contacts busy [domain-by-table]
+  before 400 application/json {"error":"Another change to this item is under way; try again in a moment."}
+  now    409 application/json {"error":"Another change to this item is under way; try again in a moment."}
+POST /api/contacts tree-not-found [domain-by-table]
+  before 400 application/json {"error":"sweep: folder not found"}
+  now    404 application/json {"error":"sweep: folder not found"}
+POST /api/contacts tree-conflict [domain-by-table]
+  before 400 application/json {"error":"sweep: a folder of that name exists"}
+  now    409 application/json {"error":"sweep: a folder of that name exists"}
+POST /api/contacts tree-gone [domain-by-table]
+  before 400 application/json {"error":"sweep: folder shares have ended"}
+  now    410 application/json {"error":"sweep: folder shares have ended","code":"gone"}
+POST /api/contacts tree-visibility [domain-by-table]
+  before 400 application/json {"error":"this would change who can see 1 item; repeat with confirm: true to go ahead"}
+  now    409 application/json {"error":"visibility","changes":[{"workspaceId":"11111111-1111-4111-8111-111111111111","gained":1,"lost":0}],"total":1}
+GET /api/contacts/:id tree-not-found [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    404 application/json {"error":"sweep: folder not found"}
+GET /api/contacts/:id tree-conflict [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"sweep: a folder of that name exists"}
+GET /api/contacts/:id tree-invalid [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    400 application/json {"error":"sweep: not a valid name"}
+GET /api/contacts/:id tree-gone [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    410 application/json {"error":"sweep: folder shares have ended","code":"gone"}
+GET /api/contacts/:id tree-visibility [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"visibility","changes":[{"workspaceId":"11111111-1111-4111-8111-111111111111","gained":1,"lost":0}],"total":1}
+PATCH /api/contacts/:id plain [opaque-500]
+  before 400 application/json {"error":"sweep: a plain error with private detail"}
+  now    500 application/json {"error":"internal error"}
+PATCH /api/contacts/:id db [opaque-500]
+  before 400 application/json {"error":"Failed query: select \"secret\" from \"nodes\" where \"id\" = $1\nparams: sweep"}
+  now    500 application/json {"error":"internal error"}
+PATCH /api/contacts/:id busy [domain-by-table]
+  before 400 application/json {"error":"Another change to this item is under way; try again in a moment."}
+  now    409 application/json {"error":"Another change to this item is under way; try again in a moment."}
+PATCH /api/contacts/:id tree-not-found [domain-by-table]
+  before 400 application/json {"error":"sweep: folder not found"}
+  now    404 application/json {"error":"sweep: folder not found"}
+PATCH /api/contacts/:id tree-conflict [domain-by-table]
+  before 400 application/json {"error":"sweep: a folder of that name exists"}
+  now    409 application/json {"error":"sweep: a folder of that name exists"}
+PATCH /api/contacts/:id tree-gone [domain-by-table]
+  before 400 application/json {"error":"sweep: folder shares have ended"}
+  now    410 application/json {"error":"sweep: folder shares have ended","code":"gone"}
+PATCH /api/contacts/:id tree-visibility [domain-by-table]
+  before 400 application/json {"error":"this would change who can see 1 item; repeat with confirm: true to go ahead"}
+  now    409 application/json {"error":"visibility","changes":[{"workspaceId":"11111111-1111-4111-8111-111111111111","gained":1,"lost":0}],"total":1}
+DELETE /api/contacts/:id tree-not-found [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    404 application/json {"error":"sweep: folder not found"}
+DELETE /api/contacts/:id tree-conflict [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"sweep: a folder of that name exists"}
+DELETE /api/contacts/:id tree-invalid [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    400 application/json {"error":"sweep: not a valid name"}
+DELETE /api/contacts/:id tree-gone [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    410 application/json {"error":"sweep: folder shares have ended","code":"gone"}
+DELETE /api/contacts/:id tree-visibility [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"visibility","changes":[{"workspaceId":"11111111-1111-4111-8111-111111111111","gained":1,"lost":0}],"total":1}
+GET /api/docs/collections tree-not-found [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    404 application/json {"error":"sweep: folder not found"}
+GET /api/docs/collections tree-conflict [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"sweep: a folder of that name exists"}
+GET /api/docs/collections tree-invalid [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    400 application/json {"error":"sweep: not a valid name"}
+GET /api/docs/collections tree-gone [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    410 application/json {"error":"sweep: folder shares have ended","code":"gone"}
+GET /api/docs/collections tree-visibility [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"visibility","changes":[{"workspaceId":"11111111-1111-4111-8111-111111111111","gained":1,"lost":0}],"total":1}
+GET /api/embedding tree-not-found [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    404 application/json {"error":"sweep: folder not found"}
+GET /api/embedding tree-conflict [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"sweep: a folder of that name exists"}
+GET /api/embedding tree-invalid [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    400 application/json {"error":"sweep: not a valid name"}
+GET /api/embedding tree-gone [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    410 application/json {"error":"sweep: folder shares have ended","code":"gone"}
+GET /api/embedding tree-visibility [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"visibility","changes":[{"workspaceId":"11111111-1111-4111-8111-111111111111","gained":1,"lost":0}],"total":1}
+POST /api/embedding/test tree-not-found [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    404 application/json {"error":"sweep: folder not found"}
+POST /api/embedding/test tree-conflict [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"sweep: a folder of that name exists"}
+POST /api/embedding/test tree-invalid [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    400 application/json {"error":"sweep: not a valid name"}
+POST /api/embedding/test tree-gone [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    410 application/json {"error":"sweep: folder shares have ended","code":"gone"}
+POST /api/embedding/test tree-visibility [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"visibility","changes":[{"workspaceId":"11111111-1111-4111-8111-111111111111","gained":1,"lost":0}],"total":1}
+GET /api/events tree-not-found [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    404 application/json {"error":"sweep: folder not found"}
+GET /api/events tree-conflict [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"sweep: a folder of that name exists"}
+GET /api/events tree-invalid [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    400 application/json {"error":"sweep: not a valid name"}
+GET /api/events tree-gone [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    410 application/json {"error":"sweep: folder shares have ended","code":"gone"}
+GET /api/events tree-visibility [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"visibility","changes":[{"workspaceId":"11111111-1111-4111-8111-111111111111","gained":1,"lost":0}],"total":1}
+POST /api/events plain [opaque-500]
+  before 400 application/json {"error":"sweep: a plain error with private detail"}
+  now    500 application/json {"error":"internal error"}
+POST /api/events db [opaque-500]
+  before 400 application/json {"error":"Failed query: select \"secret\" from \"nodes\" where \"id\" = $1\nparams: sweep"}
+  now    500 application/json {"error":"internal error"}
+POST /api/events busy [domain-by-table]
+  before 400 application/json {"error":"Another change to this item is under way; try again in a moment."}
+  now    409 application/json {"error":"Another change to this item is under way; try again in a moment."}
+POST /api/events tree-not-found [domain-by-table]
+  before 400 application/json {"error":"sweep: folder not found"}
+  now    404 application/json {"error":"sweep: folder not found"}
+POST /api/events tree-conflict [domain-by-table]
+  before 400 application/json {"error":"sweep: a folder of that name exists"}
+  now    409 application/json {"error":"sweep: a folder of that name exists"}
+POST /api/events tree-gone [domain-by-table]
+  before 400 application/json {"error":"sweep: folder shares have ended"}
+  now    410 application/json {"error":"sweep: folder shares have ended","code":"gone"}
+POST /api/events tree-visibility [domain-by-table]
+  before 400 application/json {"error":"this would change who can see 1 item; repeat with confirm: true to go ahead"}
+  now    409 application/json {"error":"visibility","changes":[{"workspaceId":"11111111-1111-4111-8111-111111111111","gained":1,"lost":0}],"total":1}
+GET /api/events/:id tree-not-found [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    404 application/json {"error":"sweep: folder not found"}
+GET /api/events/:id tree-conflict [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"sweep: a folder of that name exists"}
+GET /api/events/:id tree-invalid [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    400 application/json {"error":"sweep: not a valid name"}
+GET /api/events/:id tree-gone [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    410 application/json {"error":"sweep: folder shares have ended","code":"gone"}
+GET /api/events/:id tree-visibility [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"visibility","changes":[{"workspaceId":"11111111-1111-4111-8111-111111111111","gained":1,"lost":0}],"total":1}
+PATCH /api/events/:id plain [opaque-500]
+  before 400 application/json {"error":"sweep: a plain error with private detail"}
+  now    500 application/json {"error":"internal error"}
+PATCH /api/events/:id db [opaque-500]
+  before 400 application/json {"error":"Failed query: select \"secret\" from \"nodes\" where \"id\" = $1\nparams: sweep"}
+  now    500 application/json {"error":"internal error"}
+PATCH /api/events/:id busy [domain-by-table]
+  before 400 application/json {"error":"Another change to this item is under way; try again in a moment."}
+  now    409 application/json {"error":"Another change to this item is under way; try again in a moment."}
+PATCH /api/events/:id tree-not-found [domain-by-table]
+  before 400 application/json {"error":"sweep: folder not found"}
+  now    404 application/json {"error":"sweep: folder not found"}
+PATCH /api/events/:id tree-conflict [domain-by-table]
+  before 400 application/json {"error":"sweep: a folder of that name exists"}
+  now    409 application/json {"error":"sweep: a folder of that name exists"}
+PATCH /api/events/:id tree-gone [domain-by-table]
+  before 400 application/json {"error":"sweep: folder shares have ended"}
+  now    410 application/json {"error":"sweep: folder shares have ended","code":"gone"}
+PATCH /api/events/:id tree-visibility [domain-by-table]
+  before 400 application/json {"error":"this would change who can see 1 item; repeat with confirm: true to go ahead"}
+  now    409 application/json {"error":"visibility","changes":[{"workspaceId":"11111111-1111-4111-8111-111111111111","gained":1,"lost":0}],"total":1}
+DELETE /api/events/:id tree-not-found [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    404 application/json {"error":"sweep: folder not found"}
+DELETE /api/events/:id tree-conflict [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"sweep: a folder of that name exists"}
+DELETE /api/events/:id tree-invalid [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    400 application/json {"error":"sweep: not a valid name"}
+DELETE /api/events/:id tree-gone [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    410 application/json {"error":"sweep: folder shares have ended","code":"gone"}
+DELETE /api/events/:id tree-visibility [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"visibility","changes":[{"workspaceId":"11111111-1111-4111-8111-111111111111","gained":1,"lost":0}],"total":1}
+GET /api/export/:id tree-not-found [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    404 application/json {"error":"sweep: folder not found"}
+GET /api/export/:id tree-conflict [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"sweep: a folder of that name exists"}
+GET /api/export/:id tree-invalid [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    400 application/json {"error":"sweep: not a valid name"}
+GET /api/export/:id tree-gone [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    410 application/json {"error":"sweep: folder shares have ended","code":"gone"}
+GET /api/export/:id tree-visibility [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"visibility","changes":[{"workspaceId":"11111111-1111-4111-8111-111111111111","gained":1,"lost":0}],"total":1}
+GET /api/files/files tree-not-found [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    404 application/json {"error":"sweep: folder not found"}
+GET /api/files/files tree-conflict [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"sweep: a folder of that name exists"}
+GET /api/files/files tree-invalid [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    400 application/json {"error":"sweep: not a valid name"}
+GET /api/files/files tree-gone [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    410 application/json {"error":"sweep: folder shares have ended","code":"gone"}
+GET /api/files/files tree-visibility [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"visibility","changes":[{"workspaceId":"11111111-1111-4111-8111-111111111111","gained":1,"lost":0}],"total":1}
+POST /api/files/files tree-not-found [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    404 application/json {"error":"sweep: folder not found"}
+POST /api/files/files tree-conflict [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"sweep: a folder of that name exists"}
+POST /api/files/files tree-invalid [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    400 application/json {"error":"sweep: not a valid name"}
+POST /api/files/files tree-gone [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    410 application/json {"error":"sweep: folder shares have ended","code":"gone"}
+POST /api/files/files tree-visibility [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"visibility","changes":[{"workspaceId":"11111111-1111-4111-8111-111111111111","gained":1,"lost":0}],"total":1}
+DELETE /api/files/files tree-not-found [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    404 application/json {"error":"sweep: folder not found"}
+DELETE /api/files/files tree-conflict [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"sweep: a folder of that name exists"}
+DELETE /api/files/files tree-invalid [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    400 application/json {"error":"sweep: not a valid name"}
+DELETE /api/files/files tree-gone [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    410 application/json {"error":"sweep: folder shares have ended","code":"gone"}
+DELETE /api/files/files tree-visibility [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"visibility","changes":[{"workspaceId":"11111111-1111-4111-8111-111111111111","gained":1,"lost":0}],"total":1}
+GET /api/files/files/:id tree-not-found [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    404 application/json {"error":"sweep: folder not found"}
+GET /api/files/files/:id tree-conflict [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"sweep: a folder of that name exists"}
+GET /api/files/files/:id tree-invalid [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    400 application/json {"error":"sweep: not a valid name"}
+GET /api/files/files/:id tree-gone [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    410 application/json {"error":"sweep: folder shares have ended","code":"gone"}
+GET /api/files/files/:id tree-visibility [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"visibility","changes":[{"workspaceId":"11111111-1111-4111-8111-111111111111","gained":1,"lost":0}],"total":1}
+POST /api/files/files/:id plain [opaque-500]
+  before 400 application/json {"error":"sweep: a plain error with private detail"}
+  now    500 application/json {"error":"internal error"}
+POST /api/files/files/:id db [opaque-500]
+  before 400 application/json {"error":"Failed query: select \"secret\" from \"nodes\" where \"id\" = $1\nparams: sweep"}
+  now    500 application/json {"error":"internal error"}
+POST /api/files/files/:id busy [domain-by-table]
+  before 409 application/json {"error":"Another change to these folders is under way; try again in a moment."}
+  now    409 application/json {"error":"Another change to this item is under way; try again in a moment."}
+POST /api/files/files/:id tree-not-found [domain-by-table]
+  before 400 application/json {"error":"sweep: folder not found"}
+  now    404 application/json {"error":"sweep: folder not found"}
+POST /api/files/files/:id tree-conflict [domain-by-table]
+  before 400 application/json {"error":"sweep: a folder of that name exists"}
+  now    409 application/json {"error":"sweep: a folder of that name exists"}
+POST /api/files/files/:id tree-gone [domain-by-table]
+  before 400 application/json {"error":"sweep: folder shares have ended"}
+  now    410 application/json {"error":"sweep: folder shares have ended","code":"gone"}
+PATCH /api/files/files/:id plain [opaque-500]
+  before 400 application/json {"error":"sweep: a plain error with private detail"}
+  now    500 application/json {"error":"internal error"}
+PATCH /api/files/files/:id db [opaque-500]
+  before 400 application/json {"error":"Failed query: select \"secret\" from \"nodes\" where \"id\" = $1\nparams: sweep"}
+  now    500 application/json {"error":"internal error"}
+PATCH /api/files/files/:id busy [domain-by-table]
+  before 409 application/json {"error":"Another change to these folders is under way; try again in a moment."}
+  now    409 application/json {"error":"Another change to this item is under way; try again in a moment."}
+PATCH /api/files/files/:id tree-not-found [domain-by-table]
+  before 400 application/json {"error":"sweep: folder not found"}
+  now    404 application/json {"error":"sweep: folder not found"}
+PATCH /api/files/files/:id tree-conflict [domain-by-table]
+  before 400 application/json {"error":"sweep: a folder of that name exists"}
+  now    409 application/json {"error":"sweep: a folder of that name exists"}
+PATCH /api/files/files/:id tree-gone [domain-by-table]
+  before 400 application/json {"error":"sweep: folder shares have ended"}
+  now    410 application/json {"error":"sweep: folder shares have ended","code":"gone"}
+DELETE /api/files/files/:id tree-not-found [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    404 application/json {"error":"sweep: folder not found"}
+DELETE /api/files/files/:id tree-conflict [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"sweep: a folder of that name exists"}
+DELETE /api/files/files/:id tree-invalid [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    400 application/json {"error":"sweep: not a valid name"}
+DELETE /api/files/files/:id tree-gone [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    410 application/json {"error":"sweep: folder shares have ended","code":"gone"}
+DELETE /api/files/files/:id tree-visibility [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"visibility","changes":[{"workspaceId":"11111111-1111-4111-8111-111111111111","gained":1,"lost":0}],"total":1}
+GET /api/files/folders tree-not-found [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    404 application/json {"error":"sweep: folder not found"}
+GET /api/files/folders tree-conflict [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"sweep: a folder of that name exists"}
+GET /api/files/folders tree-invalid [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    400 application/json {"error":"sweep: not a valid name"}
+GET /api/files/folders tree-gone [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    410 application/json {"error":"sweep: folder shares have ended","code":"gone"}
+GET /api/files/folders tree-visibility [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"visibility","changes":[{"workspaceId":"11111111-1111-4111-8111-111111111111","gained":1,"lost":0}],"total":1}
+POST /api/files/folders tree-not-found [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    404 application/json {"error":"sweep: folder not found"}
+POST /api/files/folders tree-conflict [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"sweep: a folder of that name exists"}
+POST /api/files/folders tree-invalid [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    400 application/json {"error":"sweep: not a valid name"}
+POST /api/files/folders tree-gone [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    410 application/json {"error":"sweep: folder shares have ended","code":"gone"}
+POST /api/files/folders tree-visibility [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"visibility","changes":[{"workspaceId":"11111111-1111-4111-8111-111111111111","gained":1,"lost":0}],"total":1}
+GET /api/files/folders/:id tree-not-found [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    404 application/json {"error":"sweep: folder not found"}
+GET /api/files/folders/:id tree-conflict [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"sweep: a folder of that name exists"}
+GET /api/files/folders/:id tree-invalid [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    400 application/json {"error":"sweep: not a valid name"}
+GET /api/files/folders/:id tree-gone [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    410 application/json {"error":"sweep: folder shares have ended","code":"gone"}
+GET /api/files/folders/:id tree-visibility [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"visibility","changes":[{"workspaceId":"11111111-1111-4111-8111-111111111111","gained":1,"lost":0}],"total":1}
+POST /api/files/folders/:id plain [opaque-500]
+  before 400 application/json {"error":"sweep: a plain error with private detail"}
+  now    500 application/json {"error":"internal error"}
+POST /api/files/folders/:id db [opaque-500]
+  before 400 application/json {"error":"Failed query: select \"secret\" from \"nodes\" where \"id\" = $1\nparams: sweep"}
+  now    500 application/json {"error":"internal error"}
+POST /api/files/folders/:id busy [domain-by-table]
+  before 409 application/json {"error":"Another change to these folders is under way; try again in a moment."}
+  now    409 application/json {"error":"Another change to this item is under way; try again in a moment."}
+POST /api/files/folders/:id tree-not-found [domain-by-table]
+  before 400 application/json {"error":"sweep: folder not found"}
+  now    404 application/json {"error":"sweep: folder not found"}
+POST /api/files/folders/:id tree-conflict [domain-by-table]
+  before 400 application/json {"error":"sweep: a folder of that name exists"}
+  now    409 application/json {"error":"sweep: a folder of that name exists"}
+POST /api/files/folders/:id tree-gone [domain-by-table]
+  before 400 application/json {"error":"sweep: folder shares have ended"}
+  now    410 application/json {"error":"sweep: folder shares have ended","code":"gone"}
+PATCH /api/files/folders/:id plain [opaque-500]
+  before 400 application/json {"error":"sweep: a plain error with private detail"}
+  now    500 application/json {"error":"internal error"}
+PATCH /api/files/folders/:id db [opaque-500]
+  before 400 application/json {"error":"Failed query: select \"secret\" from \"nodes\" where \"id\" = $1\nparams: sweep"}
+  now    500 application/json {"error":"internal error"}
+PATCH /api/files/folders/:id busy [domain-by-table]
+  before 409 application/json {"error":"Another change to these folders is under way; try again in a moment."}
+  now    409 application/json {"error":"Another change to this item is under way; try again in a moment."}
+PATCH /api/files/folders/:id tree-not-found [domain-by-table]
+  before 400 application/json {"error":"sweep: folder not found"}
+  now    404 application/json {"error":"sweep: folder not found"}
+PATCH /api/files/folders/:id tree-conflict [domain-by-table]
+  before 400 application/json {"error":"sweep: a folder of that name exists"}
+  now    409 application/json {"error":"sweep: a folder of that name exists"}
+PATCH /api/files/folders/:id tree-gone [domain-by-table]
+  before 400 application/json {"error":"sweep: folder shares have ended"}
+  now    410 application/json {"error":"sweep: folder shares have ended","code":"gone"}
+DELETE /api/files/folders/:id tree-not-found [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    404 application/json {"error":"sweep: folder not found"}
+DELETE /api/files/folders/:id tree-conflict [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"sweep: a folder of that name exists"}
+DELETE /api/files/folders/:id tree-invalid [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    400 application/json {"error":"sweep: not a valid name"}
+DELETE /api/files/folders/:id tree-gone [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    410 application/json {"error":"sweep: folder shares have ended","code":"gone"}
+DELETE /api/files/folders/:id tree-visibility [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"visibility","changes":[{"workspaceId":"11111111-1111-4111-8111-111111111111","gained":1,"lost":0}],"total":1}
+GET /api/formulas tree-not-found [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    404 application/json {"error":"sweep: folder not found"}
+GET /api/formulas tree-conflict [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"sweep: a folder of that name exists"}
+GET /api/formulas tree-invalid [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    400 application/json {"error":"sweep: not a valid name"}
+GET /api/formulas tree-gone [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    410 application/json {"error":"sweep: folder shares have ended","code":"gone"}
+GET /api/formulas tree-visibility [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"visibility","changes":[{"workspaceId":"11111111-1111-4111-8111-111111111111","gained":1,"lost":0}],"total":1}
+GET /api/formulas/:id tree-not-found [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    404 application/json {"error":"sweep: folder not found"}
+GET /api/formulas/:id tree-conflict [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"sweep: a folder of that name exists"}
+GET /api/formulas/:id tree-invalid [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    400 application/json {"error":"sweep: not a valid name"}
+GET /api/formulas/:id tree-gone [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    410 application/json {"error":"sweep: folder shares have ended","code":"gone"}
+GET /api/formulas/:id tree-visibility [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"visibility","changes":[{"workspaceId":"11111111-1111-4111-8111-111111111111","gained":1,"lost":0}],"total":1}
+PATCH /api/formulas/:id plain [opaque-500]
+  before 400 application/json {"error":"sweep: a plain error with private detail"}
+  now    500 application/json {"error":"internal error"}
+PATCH /api/formulas/:id db [opaque-500]
+  before 400 application/json {"error":"Failed query: select \"secret\" from \"nodes\" where \"id\" = $1\nparams: sweep"}
+  now    500 application/json {"error":"internal error"}
+PATCH /api/formulas/:id busy [domain-by-table]
+  before 400 application/json {"error":"Another change to this item is under way; try again in a moment."}
+  now    409 application/json {"error":"Another change to this item is under way; try again in a moment."}
+PATCH /api/formulas/:id tree-not-found [domain-by-table]
+  before 400 application/json {"error":"sweep: folder not found"}
+  now    404 application/json {"error":"sweep: folder not found"}
+PATCH /api/formulas/:id tree-conflict [domain-by-table]
+  before 400 application/json {"error":"sweep: a folder of that name exists"}
+  now    409 application/json {"error":"sweep: a folder of that name exists"}
+PATCH /api/formulas/:id tree-gone [domain-by-table]
+  before 400 application/json {"error":"sweep: folder shares have ended"}
+  now    410 application/json {"error":"sweep: folder shares have ended","code":"gone"}
+PATCH /api/formulas/:id tree-visibility [domain-by-table]
+  before 400 application/json {"error":"this would change who can see 1 item; repeat with confirm: true to go ahead"}
+  now    409 application/json {"error":"visibility","changes":[{"workspaceId":"11111111-1111-4111-8111-111111111111","gained":1,"lost":0}],"total":1}
+DELETE /api/formulas/:id tree-not-found [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    404 application/json {"error":"sweep: folder not found"}
+DELETE /api/formulas/:id tree-conflict [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"sweep: a folder of that name exists"}
+DELETE /api/formulas/:id tree-invalid [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    400 application/json {"error":"sweep: not a valid name"}
+DELETE /api/formulas/:id tree-gone [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    410 application/json {"error":"sweep: folder shares have ended","code":"gone"}
+DELETE /api/formulas/:id tree-visibility [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"visibility","changes":[{"workspaceId":"11111111-1111-4111-8111-111111111111","gained":1,"lost":0}],"total":1}
+GET /api/heartbeats tree-not-found [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    404 application/json {"error":"sweep: folder not found"}
+GET /api/heartbeats tree-conflict [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"sweep: a folder of that name exists"}
+GET /api/heartbeats tree-invalid [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    400 application/json {"error":"sweep: not a valid name"}
+GET /api/heartbeats tree-gone [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    410 application/json {"error":"sweep: folder shares have ended","code":"gone"}
+GET /api/heartbeats tree-visibility [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"visibility","changes":[{"workspaceId":"11111111-1111-4111-8111-111111111111","gained":1,"lost":0}],"total":1}
+GET /api/heartbeats/:id tree-not-found [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    404 application/json {"error":"sweep: folder not found"}
+GET /api/heartbeats/:id tree-conflict [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"sweep: a folder of that name exists"}
+GET /api/heartbeats/:id tree-invalid [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    400 application/json {"error":"sweep: not a valid name"}
+GET /api/heartbeats/:id tree-gone [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    410 application/json {"error":"sweep: folder shares have ended","code":"gone"}
+GET /api/heartbeats/:id tree-visibility [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"visibility","changes":[{"workspaceId":"11111111-1111-4111-8111-111111111111","gained":1,"lost":0}],"total":1}
+DELETE /api/heartbeats/:id tree-not-found [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    404 application/json {"error":"sweep: folder not found"}
+DELETE /api/heartbeats/:id tree-conflict [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"sweep: a folder of that name exists"}
+DELETE /api/heartbeats/:id tree-invalid [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    400 application/json {"error":"sweep: not a valid name"}
+DELETE /api/heartbeats/:id tree-gone [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    410 application/json {"error":"sweep: folder shares have ended","code":"gone"}
+DELETE /api/heartbeats/:id tree-visibility [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"visibility","changes":[{"workspaceId":"11111111-1111-4111-8111-111111111111","gained":1,"lost":0}],"total":1}
+POST /api/heartbeats/:id/fire tree-not-found [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    404 application/json {"error":"sweep: folder not found"}
+POST /api/heartbeats/:id/fire tree-conflict [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"sweep: a folder of that name exists"}
+POST /api/heartbeats/:id/fire tree-invalid [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    400 application/json {"error":"sweep: not a valid name"}
+POST /api/heartbeats/:id/fire tree-gone [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    410 application/json {"error":"sweep: folder shares have ended","code":"gone"}
+POST /api/heartbeats/:id/fire tree-visibility [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"visibility","changes":[{"workspaceId":"11111111-1111-4111-8111-111111111111","gained":1,"lost":0}],"total":1}
+GET /api/journal tree-not-found [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    404 application/json {"error":"sweep: folder not found"}
+GET /api/journal tree-conflict [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"sweep: a folder of that name exists"}
+GET /api/journal tree-invalid [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    400 application/json {"error":"sweep: not a valid name"}
+GET /api/journal tree-gone [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    410 application/json {"error":"sweep: folder shares have ended","code":"gone"}
+GET /api/journal tree-visibility [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"visibility","changes":[{"workspaceId":"11111111-1111-4111-8111-111111111111","gained":1,"lost":0}],"total":1}
+POST /api/journal plain [opaque-500]
+  before 400 application/json {"error":"sweep: a plain error with private detail"}
+  now    500 application/json {"error":"internal error"}
+POST /api/journal db [opaque-500]
+  before 400 application/json {"error":"Failed query: select \"secret\" from \"nodes\" where \"id\" = $1\nparams: sweep"}
+  now    500 application/json {"error":"internal error"}
+POST /api/journal busy [domain-by-table]
+  before 400 application/json {"error":"Another change to this item is under way; try again in a moment."}
+  now    409 application/json {"error":"Another change to this item is under way; try again in a moment."}
+POST /api/journal tree-not-found [domain-by-table]
+  before 400 application/json {"error":"sweep: folder not found"}
+  now    404 application/json {"error":"sweep: folder not found"}
+POST /api/journal tree-conflict [domain-by-table]
+  before 400 application/json {"error":"sweep: a folder of that name exists"}
+  now    409 application/json {"error":"sweep: a folder of that name exists"}
+POST /api/journal tree-gone [domain-by-table]
+  before 400 application/json {"error":"sweep: folder shares have ended"}
+  now    410 application/json {"error":"sweep: folder shares have ended","code":"gone"}
+POST /api/journal tree-visibility [domain-by-table]
+  before 400 application/json {"error":"this would change who can see 1 item; repeat with confirm: true to go ahead"}
+  now    409 application/json {"error":"visibility","changes":[{"workspaceId":"11111111-1111-4111-8111-111111111111","gained":1,"lost":0}],"total":1}
+GET /api/journal/:id tree-not-found [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    404 application/json {"error":"sweep: folder not found"}
+GET /api/journal/:id tree-conflict [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"sweep: a folder of that name exists"}
+GET /api/journal/:id tree-invalid [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    400 application/json {"error":"sweep: not a valid name"}
+GET /api/journal/:id tree-gone [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    410 application/json {"error":"sweep: folder shares have ended","code":"gone"}
+GET /api/journal/:id tree-visibility [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"visibility","changes":[{"workspaceId":"11111111-1111-4111-8111-111111111111","gained":1,"lost":0}],"total":1}
+PATCH /api/journal/:id plain [opaque-500]
+  before 400 application/json {"error":"sweep: a plain error with private detail"}
+  now    500 application/json {"error":"internal error"}
+PATCH /api/journal/:id db [opaque-500]
+  before 400 application/json {"error":"Failed query: select \"secret\" from \"nodes\" where \"id\" = $1\nparams: sweep"}
+  now    500 application/json {"error":"internal error"}
+PATCH /api/journal/:id busy [domain-by-table]
+  before 400 application/json {"error":"Another change to this item is under way; try again in a moment."}
+  now    409 application/json {"error":"Another change to this item is under way; try again in a moment."}
+PATCH /api/journal/:id tree-not-found [domain-by-table]
+  before 400 application/json {"error":"sweep: folder not found"}
+  now    404 application/json {"error":"sweep: folder not found"}
+PATCH /api/journal/:id tree-conflict [domain-by-table]
+  before 400 application/json {"error":"sweep: a folder of that name exists"}
+  now    409 application/json {"error":"sweep: a folder of that name exists"}
+PATCH /api/journal/:id tree-gone [domain-by-table]
+  before 400 application/json {"error":"sweep: folder shares have ended"}
+  now    410 application/json {"error":"sweep: folder shares have ended","code":"gone"}
+PATCH /api/journal/:id tree-visibility [domain-by-table]
+  before 400 application/json {"error":"this would change who can see 1 item; repeat with confirm: true to go ahead"}
+  now    409 application/json {"error":"visibility","changes":[{"workspaceId":"11111111-1111-4111-8111-111111111111","gained":1,"lost":0}],"total":1}
+DELETE /api/journal/:id tree-not-found [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    404 application/json {"error":"sweep: folder not found"}
+DELETE /api/journal/:id tree-conflict [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"sweep: a folder of that name exists"}
+DELETE /api/journal/:id tree-invalid [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    400 application/json {"error":"sweep: not a valid name"}
+DELETE /api/journal/:id tree-gone [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    410 application/json {"error":"sweep: folder shares have ended","code":"gone"}
+DELETE /api/journal/:id tree-visibility [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"visibility","changes":[{"workspaceId":"11111111-1111-4111-8111-111111111111","gained":1,"lost":0}],"total":1}
+POST /api/journal/:id/resolve plain [opaque-500]
+  before 400 application/json {"error":"sweep: a plain error with private detail"}
+  now    500 application/json {"error":"internal error"}
+POST /api/journal/:id/resolve db [opaque-500]
+  before 400 application/json {"error":"Failed query: select \"secret\" from \"nodes\" where \"id\" = $1\nparams: sweep"}
+  now    500 application/json {"error":"internal error"}
+POST /api/journal/:id/resolve busy [domain-by-table]
+  before 400 application/json {"error":"Another change to this item is under way; try again in a moment."}
+  now    409 application/json {"error":"Another change to this item is under way; try again in a moment."}
+POST /api/journal/:id/resolve tree-not-found [domain-by-table]
+  before 400 application/json {"error":"sweep: folder not found"}
+  now    404 application/json {"error":"sweep: folder not found"}
+POST /api/journal/:id/resolve tree-conflict [domain-by-table]
+  before 400 application/json {"error":"sweep: a folder of that name exists"}
+  now    409 application/json {"error":"sweep: a folder of that name exists"}
+POST /api/journal/:id/resolve tree-gone [domain-by-table]
+  before 400 application/json {"error":"sweep: folder shares have ended"}
+  now    410 application/json {"error":"sweep: folder shares have ended","code":"gone"}
+POST /api/journal/:id/resolve tree-visibility [domain-by-table]
+  before 400 application/json {"error":"this would change who can see 1 item; repeat with confirm: true to go ahead"}
+  now    409 application/json {"error":"visibility","changes":[{"workspaceId":"11111111-1111-4111-8111-111111111111","gained":1,"lost":0}],"total":1}
+GET /api/keys tree-not-found [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    404 application/json {"error":"sweep: folder not found"}
+GET /api/keys tree-conflict [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"sweep: a folder of that name exists"}
+GET /api/keys tree-invalid [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    400 application/json {"error":"sweep: not a valid name"}
+GET /api/keys tree-gone [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    410 application/json {"error":"sweep: folder shares have ended","code":"gone"}
+GET /api/keys tree-visibility [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"visibility","changes":[{"workspaceId":"11111111-1111-4111-8111-111111111111","gained":1,"lost":0}],"total":1}
+GET /api/mcp-connectors tree-not-found [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    404 application/json {"error":"sweep: folder not found"}
+GET /api/mcp-connectors tree-conflict [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"sweep: a folder of that name exists"}
+GET /api/mcp-connectors tree-invalid [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    400 application/json {"error":"sweep: not a valid name"}
+GET /api/mcp-connectors tree-gone [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    410 application/json {"error":"sweep: folder shares have ended","code":"gone"}
+GET /api/mcp-connectors tree-visibility [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"visibility","changes":[{"workspaceId":"11111111-1111-4111-8111-111111111111","gained":1,"lost":0}],"total":1}
+GET /api/model-pools tree-not-found [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    404 application/json {"error":"sweep: folder not found"}
+GET /api/model-pools tree-conflict [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"sweep: a folder of that name exists"}
+GET /api/model-pools tree-invalid [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    400 application/json {"error":"sweep: not a valid name"}
+GET /api/model-pools tree-gone [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    410 application/json {"error":"sweep: folder shares have ended","code":"gone"}
+GET /api/model-pools tree-visibility [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"visibility","changes":[{"workspaceId":"11111111-1111-4111-8111-111111111111","gained":1,"lost":0}],"total":1}
+GET /api/openapi-connectors tree-not-found [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    404 application/json {"error":"sweep: folder not found"}
+GET /api/openapi-connectors tree-conflict [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"sweep: a folder of that name exists"}
+GET /api/openapi-connectors tree-invalid [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    400 application/json {"error":"sweep: not a valid name"}
+GET /api/openapi-connectors tree-gone [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    410 application/json {"error":"sweep: folder shares have ended","code":"gone"}
+GET /api/openapi-connectors tree-visibility [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"visibility","changes":[{"workspaceId":"11111111-1111-4111-8111-111111111111","gained":1,"lost":0}],"total":1}
+GET /api/pages tree-not-found [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    404 application/json {"error":"sweep: folder not found"}
+GET /api/pages tree-conflict [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"sweep: a folder of that name exists"}
+GET /api/pages tree-invalid [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    400 application/json {"error":"sweep: not a valid name"}
+GET /api/pages tree-gone [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    410 application/json {"error":"sweep: folder shares have ended","code":"gone"}
+GET /api/pages tree-visibility [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"visibility","changes":[{"workspaceId":"11111111-1111-4111-8111-111111111111","gained":1,"lost":0}],"total":1}
+POST /api/pages busy [domain-by-table]
+  before 409 application/json {"error":"Another change to these folders is under way; try again in a moment."}
+  now    409 application/json {"error":"Another change to this item is under way; try again in a moment."}
+GET /api/pdf-passwords tree-not-found [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    404 application/json {"error":"sweep: folder not found"}
+GET /api/pdf-passwords tree-conflict [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"sweep: a folder of that name exists"}
+GET /api/pdf-passwords tree-invalid [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    400 application/json {"error":"sweep: not a valid name"}
+GET /api/pdf-passwords tree-gone [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    410 application/json {"error":"sweep: folder shares have ended","code":"gone"}
+GET /api/pdf-passwords tree-visibility [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"visibility","changes":[{"workspaceId":"11111111-1111-4111-8111-111111111111","gained":1,"lost":0}],"total":1}
+GET /api/peers tree-not-found [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    404 application/json {"error":"sweep: folder not found"}
+GET /api/peers tree-conflict [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"sweep: a folder of that name exists"}
+GET /api/peers tree-invalid [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    400 application/json {"error":"sweep: not a valid name"}
+GET /api/peers tree-gone [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    410 application/json {"error":"sweep: folder shares have ended","code":"gone"}
+GET /api/peers tree-visibility [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"visibility","changes":[{"workspaceId":"11111111-1111-4111-8111-111111111111","gained":1,"lost":0}],"total":1}
+GET /api/pending/:id tree-not-found [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    404 application/json {"error":"sweep: folder not found"}
+GET /api/pending/:id tree-conflict [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"sweep: a folder of that name exists"}
+GET /api/pending/:id tree-invalid [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    400 application/json {"error":"sweep: not a valid name"}
+GET /api/pending/:id tree-gone [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    410 application/json {"error":"sweep: folder shares have ended","code":"gone"}
+GET /api/pending/:id tree-visibility [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"visibility","changes":[{"workspaceId":"11111111-1111-4111-8111-111111111111","gained":1,"lost":0}],"total":1}
+GET /api/profile tree-not-found [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    404 application/json {"error":"sweep: folder not found"}
+GET /api/profile tree-conflict [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"sweep: a folder of that name exists"}
+GET /api/profile tree-invalid [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    400 application/json {"error":"sweep: not a valid name"}
+GET /api/profile tree-gone [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    410 application/json {"error":"sweep: folder shares have ended","code":"gone"}
+GET /api/profile tree-visibility [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"visibility","changes":[{"workspaceId":"11111111-1111-4111-8111-111111111111","gained":1,"lost":0}],"total":1}
+POST /api/push/reset tree-not-found [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    404 application/json {"error":"sweep: folder not found"}
+POST /api/push/reset tree-conflict [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"sweep: a folder of that name exists"}
+POST /api/push/reset tree-invalid [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    400 application/json {"error":"sweep: not a valid name"}
+POST /api/push/reset tree-gone [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    410 application/json {"error":"sweep: folder shares have ended","code":"gone"}
+POST /api/push/reset tree-visibility [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"visibility","changes":[{"workspaceId":"11111111-1111-4111-8111-111111111111","gained":1,"lost":0}],"total":1}
+GET /api/settings/worker-groups tree-not-found [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    404 application/json {"error":"sweep: folder not found"}
+GET /api/settings/worker-groups tree-conflict [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"sweep: a folder of that name exists"}
+GET /api/settings/worker-groups tree-invalid [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    400 application/json {"error":"sweep: not a valid name"}
+GET /api/settings/worker-groups tree-gone [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    410 application/json {"error":"sweep: folder shares have ended","code":"gone"}
+GET /api/settings/worker-groups tree-visibility [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"visibility","changes":[{"workspaceId":"11111111-1111-4111-8111-111111111111","gained":1,"lost":0}],"total":1}
+POST /api/shares/contacts tree-not-found [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    404 application/json {"error":"sweep: folder not found"}
+POST /api/shares/contacts tree-conflict [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"sweep: a folder of that name exists"}
+POST /api/shares/contacts tree-invalid [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    400 application/json {"error":"sweep: not a valid name"}
+POST /api/shares/contacts tree-gone [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    410 application/json {"error":"sweep: folder shares have ended","code":"gone"}
+POST /api/shares/contacts tree-visibility [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"visibility","changes":[{"workspaceId":"11111111-1111-4111-8111-111111111111","gained":1,"lost":0}],"total":1}
+GET /api/skills tree-not-found [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    404 application/json {"error":"sweep: folder not found"}
+GET /api/skills tree-conflict [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"sweep: a folder of that name exists"}
+GET /api/skills tree-invalid [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    400 application/json {"error":"sweep: not a valid name"}
+GET /api/skills tree-gone [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    410 application/json {"error":"sweep: folder shares have ended","code":"gone"}
+GET /api/skills tree-visibility [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"visibility","changes":[{"workspaceId":"11111111-1111-4111-8111-111111111111","gained":1,"lost":0}],"total":1}
+POST /api/tables/:id/commit plain [opaque-500]
+  before 400 application/json {"error":"sweep: a plain error with private detail"}
+  now    500 application/json {"error":"internal error"}
+POST /api/tables/:id/commit db [opaque-500]
+  before 400 application/json {"error":"Failed query: select \"secret\" from \"nodes\" where \"id\" = $1\nparams: sweep"}
+  now    500 application/json {"error":"internal error"}
+POST /api/tables/:id/commit scope [domain-by-table]
+  before 400 application/json {"error":"not allowed to change this item"}
+  now    403 application/json {"error":"forbidden","reason":"item-workspace","code":"forbidden","message":"You cannot change this item in your workspaces."}
+POST /api/tables/:id/commit busy [domain-by-table]
+  before 400 application/json {"error":"Another change to this item is under way; try again in a moment."}
+  now    409 application/json {"error":"Another change to this item is under way; try again in a moment."}
+POST /api/tables/:id/commit tree-not-found [domain-by-table]
+  before 400 application/json {"error":"sweep: folder not found"}
+  now    404 application/json {"error":"sweep: folder not found"}
+POST /api/tables/:id/commit tree-conflict [domain-by-table]
+  before 400 application/json {"error":"sweep: a folder of that name exists"}
+  now    409 application/json {"error":"sweep: a folder of that name exists"}
+POST /api/tables/:id/commit tree-gone [domain-by-table]
+  before 400 application/json {"error":"sweep: folder shares have ended"}
+  now    410 application/json {"error":"sweep: folder shares have ended","code":"gone"}
+POST /api/tables/:id/commit tree-visibility [domain-by-table]
+  before 400 application/json {"error":"this would change who can see 1 item; repeat with confirm: true to go ahead"}
+  now    409 application/json {"error":"visibility","changes":[{"workspaceId":"11111111-1111-4111-8111-111111111111","gained":1,"lost":0}],"total":1}
+GET /api/tables/:id/export tree-not-found [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    404 application/json {"error":"sweep: folder not found"}
+GET /api/tables/:id/export tree-conflict [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"sweep: a folder of that name exists"}
+GET /api/tables/:id/export tree-invalid [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    400 application/json {"error":"sweep: not a valid name"}
+GET /api/tables/:id/export tree-gone [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    410 application/json {"error":"sweep: folder shares have ended","code":"gone"}
+GET /api/tables/:id/export tree-visibility [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"visibility","changes":[{"workspaceId":"11111111-1111-4111-8111-111111111111","gained":1,"lost":0}],"total":1}
+GET /api/tables/:id/history tree-not-found [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    404 application/json {"error":"sweep: folder not found"}
+GET /api/tables/:id/history tree-conflict [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"sweep: a folder of that name exists"}
+GET /api/tables/:id/history tree-invalid [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    400 application/json {"error":"sweep: not a valid name"}
+GET /api/tables/:id/history tree-gone [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    410 application/json {"error":"sweep: folder shares have ended","code":"gone"}
+GET /api/tables/:id/history tree-visibility [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"visibility","changes":[{"workspaceId":"11111111-1111-4111-8111-111111111111","gained":1,"lost":0}],"total":1}
+POST /api/tables/:id/history tree-not-found [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    404 application/json {"error":"sweep: folder not found"}
+POST /api/tables/:id/history tree-conflict [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"sweep: a folder of that name exists"}
+POST /api/tables/:id/history tree-invalid [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    400 application/json {"error":"sweep: not a valid name"}
+POST /api/tables/:id/history tree-gone [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    410 application/json {"error":"sweep: folder shares have ended","code":"gone"}
+POST /api/tables/:id/history tree-visibility [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"visibility","changes":[{"workspaceId":"11111111-1111-4111-8111-111111111111","gained":1,"lost":0}],"total":1}
+POST /api/tables/:id/history/:sid/restore tree-not-found [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    404 application/json {"error":"sweep: folder not found"}
+POST /api/tables/:id/history/:sid/restore tree-conflict [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"sweep: a folder of that name exists"}
+POST /api/tables/:id/history/:sid/restore tree-invalid [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    400 application/json {"error":"sweep: not a valid name"}
+POST /api/tables/:id/history/:sid/restore tree-gone [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    410 application/json {"error":"sweep: folder shares have ended","code":"gone"}
+POST /api/tables/:id/history/:sid/restore tree-visibility [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"visibility","changes":[{"workspaceId":"11111111-1111-4111-8111-111111111111","gained":1,"lost":0}],"total":1}
+POST /api/tables/:id/import tree-not-found [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    404 application/json {"error":"sweep: folder not found"}
+POST /api/tables/:id/import tree-conflict [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"sweep: a folder of that name exists"}
+POST /api/tables/:id/import tree-invalid [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    400 application/json {"error":"sweep: not a valid name"}
+POST /api/tables/:id/import tree-gone [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    410 application/json {"error":"sweep: folder shares have ended","code":"gone"}
+POST /api/tables/:id/import tree-visibility [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"visibility","changes":[{"workspaceId":"11111111-1111-4111-8111-111111111111","gained":1,"lost":0}],"total":1}
+GET /api/tables/:id/rows tree-not-found [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    404 application/json {"error":"sweep: folder not found"}
+GET /api/tables/:id/rows tree-conflict [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"sweep: a folder of that name exists"}
+GET /api/tables/:id/rows tree-invalid [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    400 application/json {"error":"sweep: not a valid name"}
+GET /api/tables/:id/rows tree-gone [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    410 application/json {"error":"sweep: folder shares have ended","code":"gone"}
+GET /api/tables/:id/rows tree-visibility [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"visibility","changes":[{"workspaceId":"11111111-1111-4111-8111-111111111111","gained":1,"lost":0}],"total":1}
+GET /api/tool-groups tree-not-found [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    404 application/json {"error":"sweep: folder not found"}
+GET /api/tool-groups tree-conflict [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"sweep: a folder of that name exists"}
+GET /api/tool-groups tree-invalid [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    400 application/json {"error":"sweep: not a valid name"}
+GET /api/tool-groups tree-gone [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    410 application/json {"error":"sweep: folder shares have ended","code":"gone"}
+GET /api/tool-groups tree-visibility [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"visibility","changes":[{"workspaceId":"11111111-1111-4111-8111-111111111111","gained":1,"lost":0}],"total":1}
+GET /api/tools tree-not-found [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    404 application/json {"error":"sweep: folder not found"}
+GET /api/tools tree-conflict [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"sweep: a folder of that name exists"}
+GET /api/tools tree-invalid [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    400 application/json {"error":"sweep: not a valid name"}
+GET /api/tools tree-gone [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    410 application/json {"error":"sweep: folder shares have ended","code":"gone"}
+GET /api/tools tree-visibility [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"visibility","changes":[{"workspaceId":"11111111-1111-4111-8111-111111111111","gained":1,"lost":0}],"total":1}
+GET /api/tools/:id tree-not-found [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    404 application/json {"error":"sweep: folder not found"}
+GET /api/tools/:id tree-conflict [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"sweep: a folder of that name exists"}
+GET /api/tools/:id tree-invalid [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    400 application/json {"error":"sweep: not a valid name"}
+GET /api/tools/:id tree-gone [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    410 application/json {"error":"sweep: folder shares have ended","code":"gone"}
+GET /api/tools/:id tree-visibility [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"visibility","changes":[{"workspaceId":"11111111-1111-4111-8111-111111111111","gained":1,"lost":0}],"total":1}
+PUT /api/users/:id/agent tree-not-found [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    404 application/json {"error":"sweep: folder not found"}
+PUT /api/users/:id/agent tree-conflict [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"sweep: a folder of that name exists"}
+PUT /api/users/:id/agent tree-invalid [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    400 application/json {"error":"sweep: not a valid name"}
+PUT /api/users/:id/agent tree-gone [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    410 application/json {"error":"sweep: folder shares have ended","code":"gone"}
+PUT /api/users/:id/agent tree-visibility [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"visibility","changes":[{"workspaceId":"11111111-1111-4111-8111-111111111111","gained":1,"lost":0}],"total":1}
+DELETE /api/users/:id/agent tree-not-found [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    404 application/json {"error":"sweep: folder not found"}
+DELETE /api/users/:id/agent tree-conflict [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"sweep: a folder of that name exists"}
+DELETE /api/users/:id/agent tree-invalid [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    400 application/json {"error":"sweep: not a valid name"}
+DELETE /api/users/:id/agent tree-gone [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    410 application/json {"error":"sweep: folder shares have ended","code":"gone"}
+DELETE /api/users/:id/agent tree-visibility [domain-by-table]
+  before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"visibility","changes":[{"workspaceId":"11111111-1111-4111-8111-111111111111","gained":1,"lost":0}],"total":1}

@@ -20,11 +20,9 @@ import {
 import { recordIngest } from '@mantle/tracing';
 import { promises as fs } from 'node:fs';
 import { readMultipartUpload, type ParsedUpload } from '@/lib/upload-stream';
-import { errorMessage } from '@mantle/std';
 import { firstIssue } from '@/lib/zod-issue';
-import { isBusy, isScopeWriteRefusal, isUniqueViolation } from '@mantle/db';
-import { TreeVisibilityError, guardNewFileIn } from '@mantle/content/tree';
-import { treeErrorResponse } from '@/lib/tree-route';
+import { isUniqueViolation } from '@mantle/db';
+import { guardNewFileIn } from '@mantle/content/tree';
 import { JSON_BODY_CEILING_BYTES } from '@/lib/body-limit';
 import { readJson } from '@/lib/read-body';
 
@@ -242,20 +240,13 @@ export async function POST(req: Request) {
     });
     return NextResponse.json({ file: row });
   } catch (err) {
-    if (err instanceof TreeVisibilityError || isBusy(err)) return treeErrorResponse(err);
-    // A workspace check refused the write (W6a): app.onError answers 403.
-    if (isScopeWriteRefusal(err)) throw err;
-    const msg = errorMessage(err);
     if (isUniqueViolation(err)) {
       return NextResponse.json(
         { error: 'a file with that name already exists in this folder' },
         { status: 409 },
       );
     }
-    if (msg.includes('already exists')) {
-      return NextResponse.json({ error: msg }, { status: 409 });
-    }
-    return NextResponse.json({ error: msg }, { status: 400 });
+    throw err;
   }
 }
 

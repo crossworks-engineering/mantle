@@ -1,5 +1,4 @@
 import { NextResponse } from '@/server/http-compat';
-import { isScopeWriteRefusal } from '@mantle/db';
 import { z } from 'zod';
 import { ownerCaller } from '@/lib/auth';
 import { deleteContact, getContact, updateContact } from '@/lib/contacts';
@@ -36,29 +35,20 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   if (!parsed.success) {
     return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
   }
-  try {
-    const result = await updateContact(user.id, id, {
-      firstName: parsed.data.first_name,
-      lastName: parsed.data.last_name,
-      company: parsed.data.company,
-      emails: parsed.data.emails,
-      email: parsed.data.email,
-      countryCode: parsed.data.country_code,
-      cell: parsed.data.cell,
-      description: parsed.data.description,
-      tags: parsed.data.tags,
-    });
-    if (!result) return NextResponse.json({ error: 'not found' }, { status: 404 });
-    await enqueueBackfills(user.id, result.addedEmails);
-    return NextResponse.json({ contact: result.contact });
-  } catch (err) {
-    // A scope refusal is the app's 403 (W6a fix round 2), never a 400 (W7e).
-    if (isScopeWriteRefusal(err)) throw err;
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : 'update failed' },
-      { status: 400 },
-    );
-  }
+  const result = await updateContact(user.id, id, {
+    firstName: parsed.data.first_name,
+    lastName: parsed.data.last_name,
+    company: parsed.data.company,
+    emails: parsed.data.emails,
+    email: parsed.data.email,
+    countryCode: parsed.data.country_code,
+    cell: parsed.data.cell,
+    description: parsed.data.description,
+    tags: parsed.data.tags,
+  });
+  if (!result) return NextResponse.json({ error: 'not found' }, { status: 404 });
+  await enqueueBackfills(user.id, result.addedEmails);
+  return NextResponse.json({ contact: result.contact });
 }
 
 export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string }> }) {

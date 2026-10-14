@@ -1,5 +1,4 @@
 import { NextResponse } from '@/server/http-compat';
-import { isScopeWriteRefusal } from '@mantle/db';
 import { z } from 'zod';
 import { ownerCaller } from '@/lib/auth';
 import { deleteJournal, getJournal, updateJournal } from '@/lib/journal';
@@ -31,17 +30,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   if (!parsed.success) {
     return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
   }
-  let row;
-  try {
-    row = await updateJournal(user.id, id, parsed.data);
-  } catch (err) {
-    // A scope refusal is the app's 403 (W6a fix round 2), never a 400 (W7e).
-    if (isScopeWriteRefusal(err)) throw err;
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : 'invalid input' },
-      { status: 400 },
-    );
-  }
+  const row = await updateJournal(user.id, id, parsed.data);
   if (!row) return NextResponse.json({ error: 'not found' }, { status: 404 });
   return NextResponse.json({ journal: row });
 }

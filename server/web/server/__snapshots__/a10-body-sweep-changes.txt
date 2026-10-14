@@ -4,6 +4,7 @@
 # bad-json-400 (malformed): 200 cells
 # chunked-413: 207 cells
 # bad-json-400 (malformed, accepted as {} on main): 9 cells
+# opaque-500 (fold 2: a plain error, its text was the reply): 9 cells
 # bad-json-400 (empty): 2 cells
 POST /api/access-keys owner malformed [bad-json-400 (malformed)]
   main 400 application/json {"error":"Invalid input: expected object, received null"}
@@ -272,9 +273,18 @@ POST /api/config/adopt owner malformed [bad-json-400 (malformed)]
 POST /api/config/adopt owner chunked [chunked-413]
   main 400 application/json {"error":"kind: Invalid option: expected one of \"persona\"|\"agent\"|\"skill\"|\"tool-group\"|\"worker\""}
   now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/contacts owner valid [opaque-500 (fold 2: a plain error, its text was the reply)]
+  main 400 application/json {"error":"DATABASE_URL must be set"}
+  now  500 application/json {"error":"internal error"}
 POST /api/contacts owner malformed [bad-json-400 (malformed)]
   main 400 application/json {"error":"DATABASE_URL must be set"}
   now  400 application/json {"error":"invalid JSON"}
+POST /api/contacts owner empty [opaque-500 (fold 2: a plain error, its text was the reply)]
+  main 400 application/json {"error":"DATABASE_URL must be set"}
+  now  500 application/json {"error":"internal error"}
+POST /api/contacts owner nul [opaque-500 (fold 2: a plain error, its text was the reply)]
+  main 400 application/json {"error":"DATABASE_URL must be set"}
+  now  500 application/json {"error":"internal error"}
 POST /api/contacts owner chunked [chunked-413]
   main 400 application/json {"error":"DATABASE_URL must be set"}
   now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
@@ -434,6 +444,9 @@ POST /api/entities/merge owner malformed [bad-json-400 (malformed)]
 POST /api/entities/merge owner chunked [chunked-413]
   main 400 application/json {"error":"canonicalId + dupId (uuid) required"}
   now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/events owner valid [opaque-500 (fold 2: a plain error, its text was the reply)]
+  main 400 application/json {"error":"DATABASE_URL must be set"}
+  now  500 application/json {"error":"internal error"}
 POST /api/events owner malformed [bad-json-400 (malformed)]
   main 400 application/json {"error":"title: Invalid input: expected string, received undefined"}
   now  400 application/json {"error":"invalid JSON"}
@@ -566,9 +579,15 @@ PATCH /api/heartbeats/:id owner malformed [bad-json-400 (malformed)]
 PATCH /api/heartbeats/:id owner chunked [chunked-413]
   main 400 application/json {"error":"DATABASE_URL must be set"}
   now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/journal owner valid [opaque-500 (fold 2: a plain error, its text was the reply)]
+  main 400 application/json {"error":"DATABASE_URL must be set"}
+  now  500 application/json {"error":"internal error"}
 POST /api/journal owner malformed [bad-json-400 (malformed)]
   main 400 application/json {"error":"body: Invalid input: expected string, received undefined"}
   now  400 application/json {"error":"invalid JSON"}
+POST /api/journal owner nul [opaque-500 (fold 2: a plain error, its text was the reply)]
+  main 400 application/json {"error":"DATABASE_URL must be set"}
+  now  500 application/json {"error":"internal error"}
 POST /api/journal owner chunked [chunked-413]
   main 400 application/json {"error":"body: Invalid input: expected string, received undefined"}
   now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
@@ -1124,15 +1143,24 @@ POST /api/users/:id/password owner malformed [bad-json-400 (malformed)]
 POST /api/users/:id/password owner chunked [chunked-413]
   main 400 application/json {"error":"Password must be at least 8 characters."}
   now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/v1/events owner valid [opaque-500 (fold 2: a plain error, its text was the reply)]
+  main 400 application/json {"error":"DATABASE_URL must be set"}
+  now  500 application/json {"error":"internal error"}
 POST /api/v1/events owner malformed [bad-json-400 (malformed)]
   main 400 application/json {"error":"title: Invalid input: expected string, received undefined"}
   now  400 application/json {"error":"invalid JSON"}
 POST /api/v1/events owner chunked [chunked-413]
   main 400 application/json {"error":"title: Invalid input: expected string, received undefined"}
   now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/v1/journal owner valid [opaque-500 (fold 2: a plain error, its text was the reply)]
+  main 400 application/json {"error":"DATABASE_URL must be set"}
+  now  500 application/json {"error":"internal error"}
 POST /api/v1/journal owner malformed [bad-json-400 (malformed)]
   main 400 application/json {"error":"body: Invalid input: expected string, received undefined"}
   now  400 application/json {"error":"invalid JSON"}
+POST /api/v1/journal owner nul [opaque-500 (fold 2: a plain error, its text was the reply)]
+  main 400 application/json {"error":"DATABASE_URL must be set"}
+  now  500 application/json {"error":"internal error"}
 POST /api/v1/journal owner chunked [chunked-413]
   main 400 application/json {"error":"body: Invalid input: expected string, received undefined"}
   now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}

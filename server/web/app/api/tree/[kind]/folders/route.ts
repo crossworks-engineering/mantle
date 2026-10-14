@@ -4,7 +4,7 @@ import { ownerCaller } from '@/lib/auth';
 import { TREE_FOLDER_NAME_MAX } from '@mantle/client-types/tree';
 import { createTreeFolder, notifyTreeChanged } from '@mantle/content/tree';
 import { LookColorBody, LookIconBody } from '@/lib/look-body';
-import { ensureTreeRoot, treeErrorResponse, treeKindOr404 } from '@/lib/tree-route';
+import { ensureTreeRoot, treeKindOr404 } from '@/lib/tree-route';
 import { readBody } from '@/lib/read-body';
 
 const Body = z.object({
@@ -25,11 +25,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ kind: string }
   if (kind instanceof Response) return kind;
   const body = await readBody(req, Body);
   await ensureTreeRoot(user.id, kind);
-  try {
-    const folder = await createTreeFolder(user.id, kind, body);
-    await notifyTreeChanged(user.id, kind);
-    return NextResponse.json({ folder }, { status: 201 });
-  } catch (err) {
-    return treeErrorResponse(err);
-  }
+  const folder = await createTreeFolder(user.id, kind, body);
+  await notifyTreeChanged(user.id, kind);
+  return NextResponse.json({ folder }, { status: 201 });
 }

@@ -1,13 +1,11 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { ownerCaller } from '@/lib/auth';
-import { isScopeWriteRefusal } from '@mantle/db';
 import {
   checkLookupCoverage,
   deleteFormula,
   getFormula,
   updateFormula,
-  isFormulaSpecError,
   parseFormulaSpec,
   checkDimensions,
   signatureOf,
@@ -50,27 +48,14 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   if (!parsed.success) {
     return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
   }
-  try {
-    const row = await updateFormula(user.id, id, parsed.data);
-    if (!row) return NextResponse.json({ error: 'not found' }, { status: 404 });
-    // Safe unguarded: updateFormula validated the spec on the way in.
-    return NextResponse.json({
-      formula: row,
-      coverageGaps: checkLookupCoverage(row.spec),
-      dimensionIssues: checkDimensions(row.spec),
-    });
-  } catch (err) {
-    // A refusal by the database's scope checks is not bad input: re-thrown
-    // for the app's error mapping, as POST does (A1 fix round, L4).
-    if (isScopeWriteRefusal(err)) throw err;
-    if (isFormulaSpecError(err)) {
-      return NextResponse.json({ error: err.message, errors: err.errors }, { status: 400 });
-    }
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : 'invalid input' },
-      { status: 400 },
-    );
-  }
+  const row = await updateFormula(user.id, id, parsed.data);
+  if (!row) return NextResponse.json({ error: 'not found' }, { status: 404 });
+  // Safe unguarded: updateFormula validated the spec on the way in.
+  return NextResponse.json({
+    formula: row,
+    coverageGaps: checkLookupCoverage(row.spec),
+    dimensionIssues: checkDimensions(row.spec),
+  });
 }
 
 export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string }> }) {

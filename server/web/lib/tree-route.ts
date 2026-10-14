@@ -19,11 +19,8 @@ import {
   reconcileAppMarks,
   reconcileAppNav,
   reconcileNotesAutoFiled,
-  TreeError,
-  TreeVisibilityError,
 } from '@mantle/content/tree';
 import { ensureFilesRootBranch } from '@/lib/files';
-import { BUSY_MESSAGE, isBusy } from '@mantle/db';
 import { allPrivateRows } from '@/lib/admin-private-rows';
 import type { SessionUser } from '@/lib/auth';
 
@@ -79,28 +76,6 @@ async function ensureTreeRootOnce(
     if (actorId) done = (await reconcileAppMarks(ownerId, actorId)) !== null && done;
   }
   return done;
-}
-
-/** A TreeError as its HTTP answer; anything else is rethrown (a 500). */
-export function treeErrorResponse(err: unknown): NextResponse {
-  // Which workspaces read items would change: the list, so the caller can
-  // ask and repeat with confirm (TreeVisibilityRefusal).
-  if (err instanceof TreeVisibilityError) {
-    return NextResponse.json(
-      { error: 'visibility', changes: err.diff.changes, total: err.diff.total },
-      { status: 409 },
-    );
-  }
-  if (err instanceof TreeError) {
-    if (err.code === 'gone') {
-      return NextResponse.json({ error: err.message, code: 'gone' }, { status: 410 });
-    }
-    const status = err.code === 'not-found' ? 404 : err.code === 'conflict' ? 409 : 400;
-    return NextResponse.json({ error: err.message }, { status });
-  }
-  // Another write held the rows (review F7): a plain "busy", never SQL.
-  if (isBusy(err)) return NextResponse.json({ error: BUSY_MESSAGE }, { status: 409 });
-  throw err;
 }
 
 /** The kinds whose admin can keep private items (a space of their own). */

@@ -1,5 +1,4 @@
 import { NextResponse } from '@/server/http-compat';
-import { isScopeWriteRefusal } from '@mantle/db';
 import { z } from 'zod';
 import { ownerCaller } from '@/lib/auth';
 import { countContacts, createContact, listContacts } from '@/lib/contacts';
@@ -50,41 +49,32 @@ export async function POST(req: Request) {
   if (!parsed.success) {
     return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
   }
-  try {
-    const { contact, addedEmails } = await createContact(user.id, {
-      firstName: parsed.data.first_name,
-      lastName: parsed.data.last_name,
-      company: parsed.data.company,
-      emails: parsed.data.emails,
-      email: parsed.data.email,
-      countryCode: parsed.data.country_code,
-      cell: parsed.data.cell,
-      description: parsed.data.description,
-      tags: parsed.data.tags ?? [],
-    });
-    // Pull each newly-added sender's/domain's recent history into the brain.
-    await enqueueBackfills(user.id, addedEmails);
-    void recordIngest({
-      source: 'contact_create',
-      ownerId: user.id,
-      nodeId: contact.id,
-      summary: `Contact added: ${contact.title.slice(0, 80)}`,
-      payload: {
-        title: contact.title,
-        emails: contact.emails,
-        cell_e164: contact.cellE164,
-        tags: contact.tags,
-        via: 'web_api',
-      },
-      snippet: contact.description,
-    });
-    return NextResponse.json({ contact }, { status: 201 });
-  } catch (err) {
-    // A scope refusal is the app's 403 (W6a fix round 2), never a 400.
-    if (isScopeWriteRefusal(err)) throw err;
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : 'create failed' },
-      { status: 400 },
-    );
-  }
+  const { contact, addedEmails } = await createContact(user.id, {
+    firstName: parsed.data.first_name,
+    lastName: parsed.data.last_name,
+    company: parsed.data.company,
+    emails: parsed.data.emails,
+    email: parsed.data.email,
+    countryCode: parsed.data.country_code,
+    cell: parsed.data.cell,
+    description: parsed.data.description,
+    tags: parsed.data.tags ?? [],
+  });
+  // Pull each newly-added sender's/domain's recent history into the brain.
+  await enqueueBackfills(user.id, addedEmails);
+  void recordIngest({
+    source: 'contact_create',
+    ownerId: user.id,
+    nodeId: contact.id,
+    summary: `Contact added: ${contact.title.slice(0, 80)}`,
+    payload: {
+      title: contact.title,
+      emails: contact.emails,
+      cell_e164: contact.cellE164,
+      tags: contact.tags,
+      via: 'web_api',
+    },
+    snippet: contact.description,
+  });
+  return NextResponse.json({ contact }, { status: 201 });
 }

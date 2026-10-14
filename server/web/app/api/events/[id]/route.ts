@@ -1,5 +1,4 @@
 import { NextResponse } from '@/server/http-compat';
-import { isScopeWriteRefusal } from '@mantle/db';
 import { z } from 'zod';
 import { ownerCaller } from '@/lib/auth';
 import { deleteEvent, getEvent, updateEvent } from '@/lib/events';
@@ -40,15 +39,9 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   if (!parsed.success) {
     return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
   }
-  try {
-    const row = await updateEvent(user.id, id, parsed.data);
-    if (!row) return NextResponse.json({ error: 'not found' }, { status: 404 });
-    return NextResponse.json({ event: row });
-  } catch (err) {
-    // A scope refusal is the app's 403 (W6a fix round 2), never a 400 (W7e).
-    if (isScopeWriteRefusal(err)) throw err;
-    return NextResponse.json({ error: (err as Error).message }, { status: 400 });
-  }
+  const row = await updateEvent(user.id, id, parsed.data);
+  if (!row) return NextResponse.json({ error: 'not found' }, { status: 404 });
+  return NextResponse.json({ event: row });
 }
 
 export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string }> }) {

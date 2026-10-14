@@ -232,12 +232,24 @@ const BAD_JSON = '400 application/json {"error":"invalid JSON"}';
  *    with another answer, or refused it with a text of its own;
  *    `accepted as {} on main`: where `{}` passed and the route went on as
  *    if no field was sent;
+ *  - opaque-500 (fold 2): the database stand-in's plain error, whose text
+ *    a route's hand catch put in its reply, answers the one opaque 500
+ *    (docs/request-plumbing.md, fold 2);
  *  - bad-json-400 (empty): an empty body on a route that refuses one
  *    (readJson `refuseEmpty`) answers the one 400, where the route refused
  *    it with a text of its own.
  */
 function changeKind(cell: string, main: string, now: string): string | null {
   const variant = cell.slice(cell.lastIndexOf(' ') + 1);
+  // Fold 2 (one error answer): the sweep's database stand-in throws a plain
+  // Error ("DATABASE_URL must be set"); a route whose catch put its text in
+  // the reply answers the one opaque 500 now.
+  if (
+    /^\d{3} application\/json \{"error":"DATABASE_URL must be set"\}$/.test(main) &&
+    now === '500 application/json {"error":"internal error"}'
+  ) {
+    return 'opaque-500 (fold 2: a plain error, its text was the reply)';
+  }
   if (
     variant === 'chunked' &&
     now.startsWith('413 application/json {"error":"This request is too large')

@@ -2,9 +2,8 @@ import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { ownerCaller } from '@/lib/auth';
 import { createFolder, ensureFilesRootBranch, listAllFolders, listFolders } from '@/lib/files';
-import { errorMessage } from '@mantle/std';
 import { firstIssue } from '@/lib/zod-issue';
-import { isScopeWriteRefusal, isUniqueViolation } from '@mantle/db';
+import { isUniqueViolation } from '@mantle/db';
 import { readJson } from '@/lib/read-body';
 
 const ListQuery = z.object({
@@ -52,15 +51,12 @@ export async function POST(req: Request) {
     });
     return NextResponse.json({ folder });
   } catch (err) {
-    // A workspace check refused the write (W6a): app.onError answers 403.
-    if (isScopeWriteRefusal(err)) throw err;
-    const msg = errorMessage(err);
     if (isUniqueViolation(err)) {
       return NextResponse.json(
         { error: `A folder with that slug already exists under this parent.` },
         { status: 409 },
       );
     }
-    return NextResponse.json({ error: msg }, { status: 400 });
+    throw err;
   }
 }

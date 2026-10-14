@@ -475,6 +475,19 @@ describe.skipIf(!hasManifest)('A10 part 2 fold 2: every moved route answers a fa
 /** The one opaque answer to an error no table names (answerAppError). */
 const OPAQUE = '500 application/json {"error":"internal error"}';
 
+/** The table's answer to each domain fault (@mantle/std domain-errors.ts,
+ *  the mapper for the workspace refusal, answerAppError for busy): the
+ *  start of the status and a piece of the body. */
+const TABLE_ANSWER: Readonly<Partial<Record<string, [string, string]>>> = {
+  'tree-not-found': ['404 ', '"error":"sweep: folder not found"'],
+  'tree-conflict': ['409 ', '"error":"sweep: a folder of that name exists"'],
+  'tree-invalid': ['400 ', '"error":"sweep: not a valid name"'],
+  'tree-gone': ['410 ', '"code":"gone"'],
+  'tree-visibility': ['409 ', '"error":"visibility"'],
+  busy: ['409 ', '"error":"Another change to this item is under way'],
+  scope: ['403 ', '"reason":"item-workspace"'],
+};
+
 /**
  * The named changes of fold 2, by cell (`METHOD pattern fault`), its answer
  * before and now (null: none names it, and the test fails):
@@ -483,10 +496,16 @@ const OPAQUE = '500 application/json {"error":"internal error"}';
  *    put in its reply (mostly as a 400), answers the one opaque 500 (the
  *    text goes to the server log);
  *  - redirect-no-text: the same on a route that answers with a redirect:
- *    the redirect no longer carries the error's text.
+ *    the redirect no longer carries the error's text;
+ *  - domain-by-table: a domain error (a TreeError, TreeVisibilityError,
+ *    the workspace refusal, busy) answers as the one table says, where the
+ *    route's hand catch gave it another status (its text as a 400, or the
+ *    opaque 500 of a route that mapped none).
  */
 function changeKind(cell: string, before: string, now: string): string | null {
   const fault = cell.slice(cell.lastIndexOf(' ') + 1);
+  const table = TABLE_ANSWER[fault];
+  if (table) return now.startsWith(table[0]) && now.includes(table[1]) ? 'domain-by-table' : null;
   if (fault !== 'plain' && fault !== 'db') return null;
   if (now === OPAQUE) return 'opaque-500';
   if (/ location=/.test(before) && / location=/.test(now) && !/sweep|secret|Failed/.test(now)) {

@@ -29,18 +29,10 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   if (!parsed.success) {
     return NextResponse.json({ error: 'invalid input' }, { status: 400 });
   }
-  let table;
-  try {
-    table = await commitTable(user.id, id, parsed.data.data as TableDoc | undefined, {
-      actor: 'owner',
-      note: parsed.data.note ?? null,
-    });
-  } catch (err) {
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : 'commit failed' },
-      { status: 400 },
-    );
-  }
+  const table = await commitTable(user.id, id, parsed.data.data as TableDoc | undefined, {
+    actor: 'owner',
+    note: parsed.data.note ?? null,
+  });
   if (!table) return NextResponse.json({ error: 'not found' }, { status: 404 });
 
   const snippet = tableToText(table.data, { title: table.title });

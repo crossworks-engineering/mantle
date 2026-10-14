@@ -5,7 +5,6 @@ import { db, nodes } from '@mantle/db';
 import { ownerCaller } from '@/lib/auth';
 import { getPage } from '@/lib/pages';
 import { moveTreeItems, notifyTreeChanged } from '@mantle/content/tree';
-import { treeErrorResponse } from '@/lib/tree-route';
 import { readBody } from '@/lib/read-body';
 
 /**
@@ -72,18 +71,14 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     folderId = via;
   }
 
-  try {
-    const result = await moveTreeItems(user.id, 'pages', [id], folderId, {
-      confirm: body.confirm,
-      seen: body.seen,
-    });
-    if (result.failed.length) {
-      return NextResponse.json({ error: result.failed[0]!.error }, { status: 409 });
-    }
-    if (result.moved) await notifyTreeChanged(user.id, 'pages');
-    const row = await getPage(user.id, id);
-    return NextResponse.json({ page: row });
-  } catch (err) {
-    return treeErrorResponse(err);
+  const result = await moveTreeItems(user.id, 'pages', [id], folderId, {
+    confirm: body.confirm,
+    seen: body.seen,
+  });
+  if (result.failed.length) {
+    return NextResponse.json({ error: result.failed[0]!.error }, { status: 409 });
   }
+  if (result.moved) await notifyTreeChanged(user.id, 'pages');
+  const row = await getPage(user.id, id);
+  return NextResponse.json({ page: row });
 }

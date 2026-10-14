@@ -12,9 +12,7 @@ import {
 import { copyFolderById, moveFolderById } from '@mantle/files';
 import { APP_ICON_MAX, APP_TINTS } from '@mantle/client-types/app-nav';
 import { firstIssue } from '@/lib/zod-issue';
-import { TreeVisibilityError, guardFolderCopyTo, guardFolderTo } from '@mantle/content/tree';
-import { treeErrorResponse } from '@/lib/tree-route';
-import { isBusy, isScopeWriteRefusal } from '@mantle/db';
+import { guardFolderCopyTo, guardFolderTo } from '@mantle/content/tree';
 import { readJson } from '@/lib/read-body';
 
 const IdParams = z.object({ id: z.string().uuid() });
@@ -66,63 +64,53 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   if (!parsed.success) {
     return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
   }
-  try {
-    if ('move' in parsed.data) {
-      await guardFolderTo(user.id, idParsed.data.id, parsed.data.move, {
-        confirm: parsed.data.confirm === true,
-        seen: parsed.data.seen,
-      });
-      const { folder, requeued } = await moveFolderById({
-        ownerId: user.id,
-        folderId: idParsed.data.id,
-        destParentPath: parsed.data.move,
-      });
-      return NextResponse.json({ folder, requeued });
-    }
-    if ('indexing' in parsed.data) {
-      const { requeued } = await setIndexingMode({
-        ownerId: user.id,
-        nodeId: idParsed.data.id,
-        mode: parsed.data.indexing,
-      });
-      const folder = await folderById({ ownerId: user.id, folderId: idParsed.data.id });
-      if (!folder) return NextResponse.json({ error: 'not found' }, { status: 404 });
-      return NextResponse.json({ folder, requeued });
-    }
-    if ('look' in parsed.data) {
-      const folder = await updateFolderLook({
-        ownerId: user.id,
-        folderId: idParsed.data.id,
-        ...parsed.data.look,
-      });
-      if (!folder) return NextResponse.json({ error: 'not found' }, { status: 404 });
-      return NextResponse.json({ folder });
-    }
-    if ('rename' in parsed.data) {
-      const folder = await renameFolderById({
-        ownerId: user.id,
-        folderId: idParsed.data.id,
-        newSlug: parsed.data.rename,
-      });
-      if (!folder) return NextResponse.json({ error: 'not found' }, { status: 404 });
-      return NextResponse.json({ folder });
-    }
-    const folder = await updateFolderDescription({
+  if ('move' in parsed.data) {
+    await guardFolderTo(user.id, idParsed.data.id, parsed.data.move, {
+      confirm: parsed.data.confirm === true,
+      seen: parsed.data.seen,
+    });
+    const { folder, requeued } = await moveFolderById({
       ownerId: user.id,
       folderId: idParsed.data.id,
-      description: parsed.data.description,
+      destParentPath: parsed.data.move,
+    });
+    return NextResponse.json({ folder, requeued });
+  }
+  if ('indexing' in parsed.data) {
+    const { requeued } = await setIndexingMode({
+      ownerId: user.id,
+      nodeId: idParsed.data.id,
+      mode: parsed.data.indexing,
+    });
+    const folder = await folderById({ ownerId: user.id, folderId: idParsed.data.id });
+    if (!folder) return NextResponse.json({ error: 'not found' }, { status: 404 });
+    return NextResponse.json({ folder, requeued });
+  }
+  if ('look' in parsed.data) {
+    const folder = await updateFolderLook({
+      ownerId: user.id,
+      folderId: idParsed.data.id,
+      ...parsed.data.look,
     });
     if (!folder) return NextResponse.json({ error: 'not found' }, { status: 404 });
     return NextResponse.json({ folder });
-  } catch (err) {
-    // A scope refusal is the app's 403 (W6a fix round 2), never a 400 (W7e).
-    if (isScopeWriteRefusal(err)) throw err;
-    if (err instanceof TreeVisibilityError || isBusy(err)) return treeErrorResponse(err);
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : 'rename failed' },
-      { status: 400 },
-    );
   }
+  if ('rename' in parsed.data) {
+    const folder = await renameFolderById({
+      ownerId: user.id,
+      folderId: idParsed.data.id,
+      newSlug: parsed.data.rename,
+    });
+    if (!folder) return NextResponse.json({ error: 'not found' }, { status: 404 });
+    return NextResponse.json({ folder });
+  }
+  const folder = await updateFolderDescription({
+    ownerId: user.id,
+    folderId: idParsed.data.id,
+    description: parsed.data.description,
+  });
+  if (!folder) return NextResponse.json({ error: 'not found' }, { status: 404 });
+  return NextResponse.json({ folder });
 }
 
 /** Copy this folder (subtree included) under another parent. Capped —
@@ -142,26 +130,16 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   if (!body.success) {
     return NextResponse.json({ error: firstIssue(body.error) }, { status: 400 });
   }
-  try {
-    await guardFolderCopyTo(user.id, idParsed.data.id, body.data.copy_to, {
-      confirm: body.data.confirm === true,
-      seen: body.data.seen,
-    });
-    const result = await copyFolderById({
-      ownerId: user.id,
-      folderId: idParsed.data.id,
-      destParentPath: body.data.copy_to,
-    });
-    return NextResponse.json(result, { status: 201 });
-  } catch (err) {
-    // A scope refusal is the app's 403 (W6a fix round 2), never a 400.
-    if (isScopeWriteRefusal(err)) throw err;
-    if (err instanceof TreeVisibilityError || isBusy(err)) return treeErrorResponse(err);
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : 'copy failed' },
-      { status: 400 },
-    );
-  }
+  await guardFolderCopyTo(user.id, idParsed.data.id, body.data.copy_to, {
+    confirm: body.data.confirm === true,
+    seen: body.data.seen,
+  });
+  const result = await copyFolderById({
+    ownerId: user.id,
+    folderId: idParsed.data.id,
+    destParentPath: body.data.copy_to,
+  });
+  return NextResponse.json(result, { status: 201 });
 }
 
 export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string }> }) {

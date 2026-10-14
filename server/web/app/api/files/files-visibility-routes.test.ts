@@ -75,6 +75,23 @@ const json = (method: string, body: unknown) =>
   });
 const ctxOf = (id: string) => ({ params: Promise.resolve({ id }) });
 
+/** A handler's answer as the app gives it: a thrown error answered by
+ *  app.onError (answerAppError; A10 part 2, fold 2: the routes throw, the
+ *  one table answers TreeVisibilityError 409 with the list). */
+async function answered(res: Promise<Response>): Promise<Response> {
+  try {
+    return await res;
+  } catch (err) {
+    const { answerAppError } = await import('@/server/app-error');
+    return answerAppError(
+      err as Error,
+      {
+        req: { url: 'http://brain.example/api/files', method: 'POST' },
+      } as never,
+    );
+  }
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   h.refuse = false;
@@ -84,7 +101,7 @@ describe('Files routes and the visibility confirm', () => {
   it('a file move into a shared folder answers 409 with the list and moves nothing', async () => {
     h.refuse = true;
     const { PATCH } = await import('./files/[id]/route');
-    const res = await PATCH(json('PATCH', { move: 'files.portal' }), ctxOf(FILE));
+    const res = await answered(PATCH(json('PATCH', { move: 'files.portal' }), ctxOf(FILE)));
     expect(res.status).toBe(409);
     expect(await res.json()).toMatchObject({ error: 'visibility', total: 1 });
     expect(moveFileById).not.toHaveBeenCalled();
@@ -92,9 +109,8 @@ describe('Files routes and the visibility confirm', () => {
 
   it('confirm and seen reach the guard, and the move goes ahead', async () => {
     const { PATCH } = await import('./files/[id]/route');
-    const res = await PATCH(
-      json('PATCH', { move: 'files.portal', confirm: true, seen: 1 }),
-      ctxOf(FILE),
+    const res = await answered(
+      PATCH(json('PATCH', { move: 'files.portal', confirm: true, seen: 1 }), ctxOf(FILE)),
     );
     expect(res.status).toBe(200);
     expect(guardFileTo).toHaveBeenCalledWith(OWNER, FILE, 'files.portal', {
@@ -107,13 +123,13 @@ describe('Files routes and the visibility confirm', () => {
   it('a file copy and a folder move ask the same way', async () => {
     h.refuse = true;
     const file = await import('./files/[id]/route');
-    expect((await file.POST(json('POST', { copy_to: 'files.portal' }), ctxOf(FILE))).status).toBe(
-      409,
-    );
+    expect(
+      (await answered(file.POST(json('POST', { copy_to: 'files.portal' }), ctxOf(FILE)))).status,
+    ).toBe(409);
     expect(copyFileById).not.toHaveBeenCalled();
     const folder = await import('./folders/[id]/route');
     expect(
-      (await folder.PATCH(json('PATCH', { move: 'files.portal' }), ctxOf(FOLDER))).status,
+      (await answered(folder.PATCH(json('PATCH', { move: 'files.portal' }), ctxOf(FOLDER)))).status,
     ).toBe(409);
     expect(guardFolderTo).toHaveBeenCalled();
     expect(moveFolderById).not.toHaveBeenCalled();
@@ -123,10 +139,10 @@ describe('Files routes and the visibility confirm', () => {
     h.refuse = true;
     const { POST } = await import('./files/route');
     const body = { parentPath: 'files.portal', filename: 'a.md', content: 'x' };
-    expect((await POST(json('POST', body))).status).toBe(409);
+    expect((await answered(POST(json('POST', body)))).status).toBe(409);
     expect(upsertFile).not.toHaveBeenCalled();
     h.refuse = false;
-    expect((await POST(json('POST', { ...body, confirm: true }))).status).toBe(200);
+    expect((await answered(POST(json('POST', { ...body, confirm: true })))).status).toBe(200);
     expect(guardNewFileIn).toHaveBeenLastCalledWith(OWNER, 'files.portal', 'a.md', {
       confirm: true,
     });

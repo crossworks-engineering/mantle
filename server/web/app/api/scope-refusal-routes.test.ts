@@ -2,7 +2,9 @@
  * W6a fix round 2 (L-a): a create the workspace checks refuse (42501 with
  * their own message, isScopeWriteRefusal) leaves the route's catch as it
  * came, so app.onError answers 403 item-workspace (w6a-fix-sweep.db.test.ts
- * proves the answer through the app); any other error keeps the route's 400.
+ * proves the answer through the app). Since A10 part 2 (fold 2) any other
+ * error leaves it too: app.onError answers it (the one table, or the
+ * opaque 500).
  * Since W7e the item routes too: a file rename, a folder rename, a contact,
  * an event, a journal entry and a gap answer. The session and the writers
  * are stood in.
@@ -204,18 +206,22 @@ describe('a workspace refusal leaves the create and item routes for app.onError 
     await expect(run()).rejects.toBe(refusal);
   });
 
-  it.each(cases)('$name: another error keeps its 400', async ({ run }) => {
-    h.fail = new Error('something else went wrong');
-    const res = await run();
-    expect(res.status).toBe(400);
+  // A10 part 2, fold 2: the route's hand catch is gone. Any other error
+  // leaves the route as it came too: app.onError answers a domain error
+  // by the one table (an InputError's 400 and its text) and anything else
+  // with the opaque 500, never the error's text.
+  it.each(cases)('$name: another error leaves the route for app.onError', async ({ run }) => {
+    const other = new Error('something else went wrong');
+    h.fail = other;
+    await expect(run()).rejects.toBe(other);
   });
 
   it.each(cases)(
-    '$name: a missing grant (42501, another message) is not a refusal',
+    '$name: a missing grant (42501, another message) leaves the route too',
     async ({ run }) => {
-      h.fail = pgError('permission denied for table nodes', '42501');
-      const res = await run();
-      expect(res.status).toBe(400);
+      const gap = pgError('permission denied for table nodes', '42501');
+      h.fail = gap;
+      await expect(run()).rejects.toBe(gap);
     },
   );
 });

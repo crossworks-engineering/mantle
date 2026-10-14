@@ -1,5 +1,4 @@
 import { NextResponse } from '@/server/http-compat';
-import { isScopeWriteRefusal } from '@mantle/db';
 import { z } from 'zod';
 import { ownerCaller } from '@/lib/auth';
 import { resolveGapEntry } from '@/lib/journal';
@@ -26,21 +25,11 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   if (!parsed.data.answer.trim()) {
     return NextResponse.json({ error: 'answer is required' }, { status: 400 });
   }
-  let result;
-  try {
-    result = await resolveGapEntry(user.id, id, {
-      answer: parsed.data.answer,
-      answerKind: parsed.data.answerKind,
-      author: 'user',
-    });
-  } catch (err) {
-    // A scope refusal is the app's 403 (W6a fix round 2), never a 400 (W7e).
-    if (isScopeWriteRefusal(err)) throw err;
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : 'invalid input' },
-      { status: 400 },
-    );
-  }
+  const result = await resolveGapEntry(user.id, id, {
+    answer: parsed.data.answer,
+    answerKind: parsed.data.answerKind,
+    author: 'user',
+  });
   if (!result) return NextResponse.json({ error: 'not found' }, { status: 404 });
   return NextResponse.json({ gap: result.gap, answer: result.answer });
 }

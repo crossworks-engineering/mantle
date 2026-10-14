@@ -2,15 +2,8 @@ import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { ownerCaller } from '@/lib/auth';
 import { parseWsFilter } from '@/lib/list-workspaces';
-import {
-  countFormulas,
-  createFormula,
-  listFormulas,
-  listFormulaStandards,
-  isFormulaSpecError,
-} from '@/lib/formulas';
+import { countFormulas, createFormula, listFormulas, listFormulaStandards } from '@/lib/formulas';
 import { firstIssue } from '@/lib/zod-issue';
-import { isScopeWriteRefusal } from '@mantle/db';
 import { readJson } from '@/lib/read-body';
 
 const PAGE_SIZE = 50;
@@ -57,20 +50,6 @@ export async function POST(req: Request) {
   if (!parsed.success) {
     return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
   }
-  try {
-    const row = await createFormula(user.id, parsed.data);
-    return NextResponse.json(row, { status: 201 });
-  } catch (err) {
-    // Spec validation reports every problem at once; surface the whole list so
-    // the editor can show them together rather than one-at-a-time.
-    if (isFormulaSpecError(err)) {
-      return NextResponse.json({ error: err.message, errors: err.errors }, { status: 400 });
-    }
-    // A workspace check refused the write (W6a): app.onError answers 403.
-    if (isScopeWriteRefusal(err)) throw err;
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : 'invalid input' },
-      { status: 400 },
-    );
-  }
+  const row = await createFormula(user.id, parsed.data);
+  return NextResponse.json(row, { status: 201 });
 }
