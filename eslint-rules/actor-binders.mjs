@@ -43,8 +43,9 @@ export const ACTOR_BINDER_PINS = {
   'packages/files/src/ops/shared.ts': 1,
   'packages/runtime/src/heartbeats/fire.ts': 2,
   // The app data reads' provisioning, a named read-path write (A5 step 4,
-  // repair:app-db): app_data_schema and app_data_query.
-  'packages/tools/src/builtins-app-data.ts': 2,
+  // repair:app-db): one wrapper (provisionAppDb) that app_data_schema and
+  // app_data_query hand the app broker (fix round 1, LOW-4).
+  'packages/tools/src/builtins-app-data.ts': 1,
   'packages/tools/src/pending.ts': 1,
   'server/api/src/agent/extract-queue.ts': 2,
   'server/api/src/agent/runtime.ts': 4,
