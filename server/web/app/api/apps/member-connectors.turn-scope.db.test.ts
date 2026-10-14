@@ -86,12 +86,30 @@ vi.mock('@mantle/content', async (importOriginal) => ({
     manifest: { toolSlugs: h.toolSlugs },
   })),
 }));
-// The remote call itself: every gate before it is real.
-vi.mock('@mantle/tools', async (importOriginal) => ({
+// The remote call itself: every gate before it is real. The brokers' gates
+// run before dispatch; an MCP call's run inside it (A5 step 4: dispatch's
+// gated path with the connection's caller), so that call runs the real
+// dispatch, and only its remote call is answered here.
+vi.mock('@mantle/tools', async (importOriginal) => {
+  const real = await importOriginal<Record<string, unknown>>();
+  type Dispatch = (tool: { slug: string }, input: unknown, ctx: unknown) => Promise<unknown>;
+  const realDispatch = real.dispatchTool as Dispatch;
+  return {
+    ...real,
+    dispatchTool: vi.fn(async (tool: { slug: string }, input: unknown, ctx: unknown) => {
+      if ((ctx as { caller?: { entry?: string } } | undefined)?.caller?.entry === 'mcp') {
+        return realDispatch(tool, input, ctx);
+      }
+      h.dispatched.push(tool.slug);
+      return { ok: true, output: 'ran' };
+    }),
+  };
+});
+vi.mock('../../../../../packages/tools/src/mcp-client', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
-  dispatchTool: vi.fn(async (tool: { slug: string }) => {
-    h.dispatched.push(tool.slug);
-    return { ok: true, output: 'ran' };
+  mcpCallRemoteTool: vi.fn(async (_o: string, _g: string, _m: unknown, toolName: string) => {
+    h.dispatched.push(toolName);
+    return { text: '"ran"', isError: false, secrets: new Map<string, string>() };
   }),
 }));
 
