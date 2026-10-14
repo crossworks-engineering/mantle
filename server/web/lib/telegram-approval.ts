@@ -47,9 +47,12 @@ export const telegramApprovalHandlers: PollHandlers = {
       }
       return { ok: true, text: `Approved & ran ${row.toolSlug}.` };
     } catch (err) {
+      // A refusal of the approval rule (pending-approval.ts: the asker of an
+      // elevated call, or an approver without write rights on its
+      // connector) reads whole; Telegram shows up to 200 characters.
       return {
         ok: false,
-        text: err instanceof Error ? err.message.slice(0, 150) : 'Failed to apply.',
+        text: err instanceof Error ? err.message.slice(0, 200) : 'Failed to apply.',
       };
     }
   },

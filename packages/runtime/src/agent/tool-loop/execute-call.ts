@@ -137,7 +137,8 @@ export async function executeToolCall(p: {
         // caller dispatch would use (turnCaller).
         // Owner decision 1a (A5 step 6d): a connector write this scope may
         // not make itself (no Write tick, or not a Moderator) queues all the
-        // same, its row saying the approver runs it with Admin rights
+        // same, its row saying an Admin user must approve it, whose rights
+        // run it (the approval rule: pending-approval.ts)
         // (`queue.elevated`); a call that would run directly never gets here.
         const queue: { elevated: ElevatedApproval | null } = { elevated: null };
         const refused = await turnCallRefusal(
@@ -154,6 +155,13 @@ export async function executeToolCall(p: {
           return { ok: false as const, error: refused };
         }
         const traceId = currentTrace()?.id ?? null;
+        // The turn read text a client wrote (plan N18): the row, its card
+        // and /pending say so, whatever made the call wait (A5 step 6d fix
+        // round 1), so an approver can spot a request a client's text led to.
+        const clientSourced =
+          p.taint?.clientSourced === true
+            ? { via: (p.taint.via ?? 'text a client wrote').slice(0, 200) }
+            : null;
         // Note: pendingToolCalls.args stores the UN-REDACTED input —
         // post-repair (the central validator's safe coercions applied),
         // never the redacted logging copy — because the approve path
@@ -172,6 +180,7 @@ export async function executeToolCall(p: {
             args: input,
             traceId,
             ...(queue.elevated ? { elevated: queue.elevated } : {}),
+            ...(clientSourced ? { clientSourced } : {}),
           })
           .returning({ id: pendingToolCalls.id });
         const pendingId = pending?.id ?? null;
@@ -187,6 +196,7 @@ export async function executeToolCall(p: {
             args: input,
             via: args.agentSlug ? `agent ${args.agentSlug}` : undefined,
             ...(queue.elevated ? { elevated: queue.elevated } : {}),
+            ...(clientSourced ? { clientSourced } : {}),
           });
         }
         handle.setSkipped('requires_confirm');
@@ -209,8 +219,9 @@ export async function executeToolCall(p: {
                   `needs the owner's approval. `
                 : `The tool '${slug}' requires operator approval. `) +
               (queue.elevated
-                ? `This turn cannot make this connector write itself: once approved, ` +
-                  `an Admin user's rights run it. `
+                ? `This turn cannot make this connector write itself, so the person ` +
+                  `asking cannot approve it: an Admin user must (the owner, or someone ` +
+                  `with write rights on this connector), and it runs with their rights. `
                 : '') +
               `A pending entry was queued at /pending. Tell the user what's queued ` +
               `and that it'll run once approved. Do not call the same tool again ` +

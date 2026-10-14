@@ -92,10 +92,11 @@ export function connectorScopeRefusal(
 }
 
 /** What an approval of a connector write the asking scope may not make
- *  itself says (owner decision 1a, A5 step 6d): it runs with the rights of
- *  whoever approves it, an Admin user's. */
+ *  itself says (owner decision 1a, A5 step 6d; the approval rule since fix
+ *  round 1, pending-approval.ts): who may approve it, and that its asker
+ *  may not. */
 export const CONNECTOR_ELEVATED_REASON =
-  'The person asking cannot make this connector write themselves (the connector’s Write is off in their workspace, or they are not a Moderator there): approved, it runs with Admin rights.';
+  'The person asking cannot make this connector write themselves (its Write is off in their workspace, or they are not a Moderator there), so they cannot approve it either: an Admin user must, the owner or someone with write rights on this connector, and it runs with their rights.';
 
 /** What a call queued for approval carries when it would run with more
  *  rights than its scope has (pending_tool_calls.elevated, 0287). */

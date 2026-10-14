@@ -66,4 +66,22 @@ describe('sendApprovalCard', () => {
     expect(keyboard?.inline_keyboard?.[0]).toHaveLength(2);
     expect(msg.text).toContain('email_send');
   });
+
+  it('says who must approve an elevated call, and warns when the turn read client text (A5 step 6d fix round 1)', async () => {
+    await sendApprovalCard(ACCOUNT, 'chat-1', {
+      pendingId: 'row-3',
+      toolSlug: 'crm_update',
+      elevated: 'An Admin user must approve it; the person asking cannot.',
+      clientSourced: 'task_get',
+    });
+    const text = sent[0]!.text;
+    expect(text).toContain('An Admin user must approve it; the person asking cannot.');
+    expect(text).toContain('read text a client wrote (task_get)');
+    expect(text).toContain('approve only if you asked for this yourself');
+  });
+
+  it('an ordinary card carries neither line', async () => {
+    await sendApprovalCard(ACCOUNT, 'chat-1', { pendingId: 'row-4', toolSlug: 'note_create' });
+    expect(sent[0]!.text).not.toMatch(/client wrote|Admin user/);
+  });
 });

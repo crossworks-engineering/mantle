@@ -33,18 +33,25 @@ const h = vi.hoisted(() => ({
   applyBudgetDecision: null as unknown as Mock<(...a: unknown[]) => Promise<unknown>>,
   enqueueRunActionsSafe: null as unknown as Mock<(...a: unknown[]) => Promise<unknown>>,
   dispatchTool: null as unknown as Mock<(...a: unknown[]) => Promise<unknown>>,
+  elevated: null as unknown as Mock<(...a: unknown[]) => Promise<unknown>>,
+  actors: [] as unknown[],
+  elevatedRow: null as Record<string, unknown> | null,
+  elevatedClaims: 0,
 }));
 
 vi.mock('drizzle-orm', () => {
   const tag = () => ({ __expr: true });
-  return { and: tag, eq: tag, desc: tag, asc: tag, inArray: tag, sql: tag };
+  return {
+    and: tag,
+    eq: tag,
+    desc: tag,
+    asc: tag,
+    inArray: tag,
+    sql: tag,
+    isNull: tag,
+    isNotNull: tag,
+  };
 });
-
-vi.mock('@mantle/db', () => ({
-  db: new Proxy({}, { get: (_t, p: string) => (h.db as Record<string, unknown>)[p] }) as unknown,
-  pendingToolCalls: { __table: 'pending_tool_calls' },
-  tools: { __table: 'tools' },
-}));
 
 vi.mock('@mantle/runs', () => ({
   applyHumanAnswer: (...a: unknown[]) => h.applyHumanAnswer(...a),
@@ -60,6 +67,38 @@ vi.mock('./dispatch-bridge', () => ({
   dispatchViaBridge: (...a: unknown[]) => h.dispatchTool(...a),
 }));
 vi.mock('./pending-notify', () => ({ notifyPendingChanged: vi.fn(async () => {}) }));
+// The approval rule (pending-approval.ts: its own tests): who decides is the
+// login the path names, else the owner; an elevated call is judged by the
+// stub `h.elevated` (it throws a refusal, or gives the run).
+vi.mock('./pending-approval', () => {
+  class ApprovalRefusedError extends Error {}
+  return {
+    ApprovalRefusedError,
+    deciderOf: (ownerId: string, named?: string | null) => named ?? ownerId,
+    isBrainOwner: (ownerId: string, login: string | null) => login === ownerId,
+    elevatedApproval: (...a: unknown[]) => h.elevated(...a),
+  };
+});
+vi.mock('@mantle/db', async () => ({
+  db: new Proxy({}, { get: (_t, p: string) => (h.db as Record<string, unknown>)[p] }) as unknown,
+  pendingToolCalls: { __table: 'pending_tool_calls' },
+  tools: { __table: 'tools' },
+  loginActorNow: async (loginId: string, _entry: string, mode = 'rw') => ({
+    kind: 'login',
+    mode,
+    loginId,
+  }),
+  runAsActor: async (actor: unknown, fn: () => Promise<unknown>) => {
+    h.actors.push(actor);
+    return fn();
+  },
+  // The elevated call on the system pool (pending-elevated.ts).
+  elevatedPendingCall: async () => h.elevatedRow,
+  claimElevatedPendingCall: async () => {
+    h.elevatedClaims += 1;
+    return h.elevatedRow ? { ...h.elevatedRow, status: 'approved' } : null;
+  },
+}));
 vi.mock('@mantle/tracing', () => ({
   startTrace: async (_i: unknown, fn: () => Promise<unknown>) => fn(),
   step: async (_i: unknown, fn: (handle: unknown) => Promise<unknown>) =>
@@ -170,6 +209,12 @@ beforeEach(() => {
   });
   h.enqueueRunActionsSafe = vi.fn(async () => {});
   h.dispatchTool = vi.fn(async () => ({ ok: true, output: {} }));
+  h.elevated = vi.fn(async () => {
+    throw new Error('not an elevated call');
+  });
+  h.actors = [];
+  h.elevatedRow = null;
+  h.elevatedClaims = 0;
 });
 
 /** Writes recorded against the pending table, newest last. */
@@ -378,5 +423,69 @@ describe('a tool call approved (W6b fix round 3, L-2)', () => {
     fake.queue('tools', [{ slug: 'app_delete', ownerId: OWNER, enabled: true }]);
     await approvePendingCall(OWNER, ROW_ID);
     expect(surfaceOf()).toEqual({ kind: 'owner', via: 'pending' });
+  });
+});
+
+describe('an elevated call: the approval rule decides before the claim (A5 step 6d fix round 1)', () => {
+  const elevRow = (extra: Record<string, unknown> = {}) => ({
+    ...askRow(),
+    status: 'pending',
+    toolSlug: 'crm_update',
+    args: { id: 'c-1' },
+    loginId: 'login-asker',
+    workspaceId: 'ws-team',
+    elevated: { elevated: true, reason: 'r' },
+    ...extra,
+  });
+  const queueElevated = () => {
+    // The plain claim matches nothing (the row is elevated); the system
+    // pool's read finds it, its claim takes it.
+    fake.queue('pending_tool_calls', []);
+    h.elevatedRow = elevRow();
+    fake.queue('tools', [{ slug: 'crm_update', ownerId: OWNER, enabled: true }]);
+  };
+
+  it('a refused approver: the refusal is thrown and the call is never claimed', async () => {
+    queueElevated();
+    const { ApprovalRefusedError } = await import('./pending-approval');
+    h.elevated = vi.fn(async () => {
+      throw new ApprovalRefusedError('you asked for it');
+    });
+    await expect(
+      approvePendingCall(OWNER, ROW_ID, { approverLoginId: 'login-asker' }),
+    ).rejects.toThrow('you asked for it');
+    // Only the plain claim was tried (it matched nothing); no dispatch.
+    expect(h.elevatedClaims).toBe(0);
+    expect(h.dispatchTool).not.toHaveBeenCalled();
+    expect(h.elevated.mock.calls[0]![3]).toBe('login-asker');
+  });
+
+  it("a passed approver: the call runs with the approver's rights, through the caller the rule gave", async () => {
+    queueElevated();
+    const caller = { entry: 'pending', via: 'process', approval: { approver: 'login-mod' } };
+    h.elevated = vi.fn(async () => ({ caller, runAs: 'login-mod', owner: false }));
+    await approvePendingCall(OWNER, ROW_ID, { approverLoginId: 'login-mod' });
+    expect(h.elevatedClaims).toBe(1);
+    expect(h.dispatchTool).toHaveBeenCalledTimes(1);
+    expect((h.dispatchTool.mock.calls[0]![2] as { caller: unknown }).caller).toBe(caller);
+    expect(h.actors).toEqual([{ kind: 'login', mode: 'rw', loginId: 'login-mod' }]);
+  });
+
+  it("the owner: the call runs with the owner's rights", async () => {
+    queueElevated();
+    const caller = { entry: 'pending', via: 'process', approval: { approver: OWNER } };
+    h.elevated = vi.fn(async () => ({ caller, runAs: OWNER, owner: true }));
+    await approvePendingCall(OWNER, ROW_ID);
+    expect(h.actors).toEqual([{ kind: 'login', mode: 'owner', loginId: OWNER }]);
+  });
+
+  it('any other call keeps its rule: run as its asker, naming the approver for its audit row', async () => {
+    fake.queue('pending_tool_calls', [{ ...elevRow({ status: 'approved' }), elevated: null }]);
+    fake.queue('tools', [{ slug: 'crm_update', ownerId: OWNER, enabled: true }]);
+    await approvePendingCall(OWNER, ROW_ID, { approverLoginId: 'login-a' });
+    expect(h.elevated).not.toHaveBeenCalled();
+    expect(h.actors).toEqual([{ kind: 'login', mode: 'rw', loginId: 'login-asker' }]);
+    const caller = (h.dispatchTool.mock.calls[0]![2] as { caller: Record<string, unknown> }).caller;
+    expect(caller).toMatchObject({ entry: 'pending', approval: { approver: 'login-a' } });
   });
 });

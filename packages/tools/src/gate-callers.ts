@@ -68,7 +68,7 @@ import {
   type WorkspaceScope,
 } from '@mantle/db';
 import { currentWorkspaceScope } from '@mantle/db/viewer';
-import { connectorScopeFacts } from './connector-scope';
+import { connectorScopeFacts, elevatedConnectorFacts } from './connector-scope';
 
 /** The dispatch entries. */
 export type ToolCallerEntry =
@@ -101,6 +101,26 @@ export type ToolCaller = Readonly<{
    *  where a broker forgot its own pre-check. None: dispatch refuses (fail
    *  closed). */
   appVerdict?: AppBrokerVerdict;
+  /** An approved pending call (entry `pending`, A5 step 6d fix round 1):
+   *  who approved it, and for a call queued with more rights than its
+   *  asker's scope (pending_tool_calls.elevated, owner decision 1a) the
+   *  scope the connector rule reads instead of the one the approval runs
+   *  in: the approver's, on the workspace the call was asked in (`lifted`:
+   *  the owner's, whose write rule passes). Set only by approvePendingCall
+   *  (pending-approval.ts), the one place the approval rule lives. */
+  approval?: PendingApproval;
+}>;
+
+/** What an approved pending call carries (ToolCaller.approval). */
+export type PendingApproval = Readonly<{
+  /** The approving login, as the approval resolved it (null: a scope that
+   *  names no login). Named in the call's audit row. */
+  approver: string | null;
+  /** An elevated call: the scope its connector rule reads. */
+  connectorScope?: WorkspaceScope;
+  /** An elevated call the owner approved: the connector write rule is
+   *  lifted (elevatedConnectorFacts); the rest of the rule stands. */
+  lifted?: boolean;
 }>;
 
 /** The verdict an app broker judged a call by (app-tool-level.ts
@@ -125,9 +145,11 @@ export function runCaller(): ToolCaller {
   return RUN;
 }
 
-/** An approved pending call's caller. */
-export function pendingCaller(): ToolCaller {
-  return PENDING;
+/** An approved pending call's caller: the bare entry, or with what its
+ *  approval resolved (approvePendingCall). */
+export function pendingCaller(approval?: PendingApproval): ToolCaller {
+  if (!approval) return PENDING;
+  return Object.freeze({ ...PENDING, approval: Object.freeze({ ...approval }) });
 }
 
 /** The owner's own web call of a tool. */
@@ -319,11 +341,15 @@ export async function gateCallerFor(
   const turnScope = ws?.kind === 'assistant' && ws.loginId ? ws : null;
   // A connector row in a workspace scope: what the connector narrower
   // reads (connector-scope.ts), loaded here, where a call and a listing
-  // both build their caller.
-  const connector =
-    ws && call.row && call.ownerId && policy?.fields?.mark !== undefined
-      ? await connectorScopeFacts(call.ownerId, call.row, ws)
+  // both build their caller. An elevated approved call reads the scope its
+  // approval named (A5 step 6d fix round 1), whatever scope the approving
+  // surface runs in (a Telegram tap runs in none).
+  const connScope = caller.approval?.connectorScope ?? ws;
+  const loaded =
+    connScope && call.row && call.ownerId && policy?.fields?.mark !== undefined
+      ? await connectorScopeFacts(call.ownerId, call.row, connScope)
       : null;
+  const connector = loaded && caller.approval?.lifted ? elevatedConnectorFacts(loaded) : loaded;
   const facts = {
     ...(call.ownerSurface !== undefined ? { ownerSurface: call.ownerSurface } : {}),
     ...(connector ? { connector } : {}),

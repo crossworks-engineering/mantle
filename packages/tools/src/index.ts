@@ -381,6 +381,12 @@ export {
   type PendingSummary,
   type ListPendingOptions,
 } from './pending';
+export {
+  ApprovalRefusedError,
+  ELEVATED_APPROVER_ERROR,
+  ELEVATED_NO_APPROVER_ERROR,
+  ELEVATED_SELF_APPROVAL_ERROR,
+} from './pending-approval';
 
 export {
   notifyPendingCreated,

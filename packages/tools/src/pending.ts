@@ -12,8 +12,9 @@ import {
   type PendingToolCall,
   tools as toolsTable,
   loginActorNow,
+  claimElevatedPendingCall,
+  elevatedPendingCall,
 } from '@mantle/db';
-import { currentWorkspaceScope, scopeLeftForSystem } from '@mantle/db/viewer';
 import {
   applyBudgetDecision,
   applyHumanAnswer,
@@ -27,6 +28,7 @@ import {
 // closing the cycle back onto builtins-pending.ts. See dispatch-bridge.ts.
 import { dispatchViaBridge as dispatchTool } from './dispatch-bridge';
 import { pendingCaller } from './gate-callers';
+import { deciderOf, elevatedApproval, isBrainOwner, type ElevatedRun } from './pending-approval';
 import { notifyPendingChanged } from './pending-notify';
 import { startTrace, step } from '@mantle/tracing';
 import { errorMessage } from '@mantle/std';
@@ -45,9 +47,16 @@ export type PendingSummary = {
   executedAt: string | null;
   /** The call runs with more rights than the turn that queued it (owner
    *  decision 1a, A5 step 6d, 0287): a connector write the asking scope
-   *  may not make itself, which an Admin user's approval runs. Set by the
-   *  server at queue time; null for every other call. */
+   *  may not make itself. Its asker may not approve it; the owner or a
+   *  login with write rights on the connector may, and it runs with their
+   *  rights (pending-approval.ts). Set by the server at queue time; null
+   *  for every other call. */
   elevated: { elevated: true; reason: string } | null;
+  /** The turn that queued it had read text a client wrote (0287, A5 step
+   *  6d fix round 1): what marked it, so an approver can tell a request
+   *  they made from one a client's text led to. Null for a turn that read
+   *  none. */
+  clientSourced: { via: string } | null;
 };
 
 function toSummary(row: PendingToolCall): PendingSummary {
@@ -64,6 +73,7 @@ function toSummary(row: PendingToolCall): PendingSummary {
     decidedAt: row.decidedAt?.toISOString() ?? null,
     executedAt: row.executedAt?.toISOString() ?? null,
     elevated: row.elevated ?? null,
+    clientSourced: row.clientSourced ?? null,
   };
 }
 
@@ -295,14 +305,14 @@ async function settleBudget(
  * the calls queued for that login (pending_tool_calls.login_id; a scope
  * with no login only those queued for none). The brain owner and a call
  * with no scope and no decider (the owner's Telegram card, system work):
- * no narrowing.
+ * no narrowing. Who decides: deciderOf (pending-approval.ts). An elevated
+ * call is not decided by this rule but by elevatedApproval (A5 step 6d fix
+ * round 1).
  */
 function deciderFilter(ownerId: string, decider?: string | null): SQL | undefined {
-  const scope = currentWorkspaceScope() ?? scopeLeftForSystem();
-  const login = scope ? scope.loginId : (decider ?? undefined);
-  if (login === undefined) return undefined;
+  const login = deciderOf(ownerId, decider);
   if (login === null) return isNull(pendingToolCalls.loginId);
-  if (login.toLowerCase() === ownerId.toLowerCase()) return undefined;
+  if (isBrainOwner(ownerId, login)) return undefined;
   return eq(pendingToolCalls.loginId, login);
 }
 
@@ -375,8 +385,12 @@ export async function approvePendingCall(
     approverLoginId?: string;
   },
 ): Promise<PendingSummary | null> {
-  // Atomic claim — only act if still pending.
-  const [claimed] = await db
+  // Who approves (deciderOf): the scope's login, else the one the path
+  // names, else the owner. Named in the call's audit row on every path.
+  const approver = deciderOf(ownerId, opts?.approverLoginId);
+  // Atomic claim: only act if still pending. Every call but an elevated
+  // one: by whose calls the approver decides (deciderFilter), as before.
+  let [claimed] = await db
     .update(pendingToolCalls)
     .set({ status: 'approved', decidedAt: new Date(), updatedAt: new Date() })
     .where(
@@ -384,10 +398,40 @@ export async function approvePendingCall(
         eq(pendingToolCalls.id, id),
         eq(pendingToolCalls.ownerId, ownerId),
         eq(pendingToolCalls.status, 'pending'),
+        isNull(pendingToolCalls.elevated),
         deciderFilter(ownerId, opts?.approverLoginId),
       ),
     )
     .returning();
+  // A call queued with more rights than its asker's scope (owner decision
+  // 1a, 0287) meets the approval rule first (elevatedApproval), before it
+  // is claimed, so a refused approver (its asker, or a login without write
+  // rights on its connector) leaves it pending for one who may: it throws
+  // ApprovalRefusedError, which every path answers as a refusal.
+  let elevated: ElevatedRun | null = null;
+  if (!claimed) {
+    // On the system pool (pending-elevated.ts): the rule decides who reads
+    // it, never the deciding scope's row rule, which shows a login only its
+    // own calls and so hides an elevated call from every approver.
+    const queued = await elevatedPendingCall(ownerId, id);
+    if (!queued) return null;
+    elevated = await elevatedApproval(
+      ownerId,
+      queued,
+      await enabledTool(ownerId, queued.toolSlug),
+      approver,
+      // The context dispatch gives the gate below (its surface).
+      {
+        ownerId,
+        surface: {
+          kind: 'owner',
+          via: 'pending',
+          ...(opts?.approverLoginId ? { loginId: opts.approverLoginId } : {}),
+        },
+      },
+    );
+    claimed = (await claimElevatedPendingCall(ownerId, id)) ?? undefined;
+  }
   if (!claimed) return null;
   // Status has flipped to 'approved' — repaint the badge now, before the
   // (possibly slow) dispatch below.
@@ -406,17 +450,7 @@ export async function approvePendingCall(
 
   // Resolve the tool by slug (not the snapshot at queue time — the
   // operator might have edited the handler in the meantime).
-  const [tool] = await db
-    .select()
-    .from(toolsTable)
-    .where(
-      and(
-        eq(toolsTable.ownerId, ownerId),
-        eq(toolsTable.slug, claimed.toolSlug),
-        eq(toolsTable.enabled, true),
-      ),
-    )
-    .limit(1);
+  const tool = await enabledTool(ownerId, claimed.toolSlug);
   if (!tool) {
     const [errRow] = await db
       .update(pendingToolCalls)
@@ -431,10 +465,14 @@ export async function approvePendingCall(
   }
 
   // Arch A2a: the call runs as the login whose turn asked for it, as that
-  // login is now; a row with no login keeps the caller's actor.
-  const callActor = claimed.loginId
-    ? await loginActorNow(claimed.loginId, 'pending:approve')
-    : null;
+  // login is now; a row with no login keeps the caller's actor. An elevated
+  // call runs with its approver's rights (A5 step 6d fix round 1): the
+  // owner's, or the login whose own scope passed the connector rule.
+  const callActor = elevated
+    ? await loginActorNow(elevated.runAs, 'pending:approve', elevated.owner ? 'owner' : 'rw')
+    : claimed.loginId
+      ? await loginActorNow(claimed.loginId, 'pending:approve')
+      : null;
   const asCallLogin = <T>(fn: () => Promise<T>) => (callActor ? runAsActor(callActor, fn) : fn());
 
   // Execute under a fresh `manual` trace so the operator can audit the
@@ -461,8 +499,10 @@ export async function approvePendingCall(
           const res = await asCallLogin(() =>
             dispatchTool(tool, (claimed.args ?? {}) as Record<string, unknown>, {
               ownerId,
-              // Through the one gate, as the approved call (A5 step 3a).
-              caller: pendingCaller(),
+              // Through the one gate, as the approved call (A5 step 3a),
+              // naming its approver (its audit row's `approver`); an
+              // elevated call with the scope its connector rule reads.
+              caller: elevated?.caller ?? pendingCaller({ approver }),
               // An Admin user approves a pending call, so it runs on the owner
               // surface, naming the approver when the path names one.
               surface: {
@@ -503,4 +543,16 @@ export async function approvePendingCall(
     .where(eq(pendingToolCalls.id, claimed.id))
     .returning();
   return updated ? toSummary(updated) : null;
+}
+
+/** The enabled tool row named `slug`, or null. */
+async function enabledTool(ownerId: string, slug: string) {
+  const [tool] = await db
+    .select()
+    .from(toolsTable)
+    .where(
+      and(eq(toolsTable.ownerId, ownerId), eq(toolsTable.slug, slug), eq(toolsTable.enabled, true)),
+    )
+    .limit(1);
+  return tool ?? null;
 }

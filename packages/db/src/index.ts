@@ -151,6 +151,11 @@ export {
 } from './viewer';
 export { ensureViewerRoles } from './viewer-roles';
 export {
+  claimElevatedPendingCall,
+  elevatedCallWorkspace,
+  elevatedPendingCall,
+} from './pending-elevated';
+export {
   registerCallAudit,
   startCallAudit,
   stopCallAudit,

@@ -9,8 +9,9 @@
  *               The push-notify worker also LISTENs and (for `mobile`
  *               operators) sends a device push deep-linking to /pending.
  *   - Telegram → (since workspaces W7d: only to a chat paired to the call's
- *               own login, the anchor's for system calls, and only while
- *               that login holds the settings area)
+ *               own login, the anchor's for system calls and for a call
+ *               its asker may not approve (elevated), and only while that
+ *               login holds the settings area)
  *               a one-tap Approve/Reject card pushed to the operator's
  *               paired chat, so an approval can be acted on from a phone
  *               while away from the app.
@@ -88,15 +89,18 @@ function previewArgs(args: Record<string, unknown>): string | undefined {
 /**
  * Who decides a queued call, for its card (workspaces W7d): the login it
  * was queued for (pending_tool_calls.login_id), else the anchor (a call of
- * system work, or the anchor's own). Null when the call is gone.
+ * system work, or the anchor's own). An elevated call goes to the anchor
+ * (A5 step 6d fix round 1): its asker may not approve it
+ * (pending-approval.ts). Null when the call is gone.
  */
 async function approvalLogin(ownerId: string, pendingId: string): Promise<string | null> {
   const [row] = await db
-    .select({ loginId: pendingToolCalls.loginId })
+    .select({ loginId: pendingToolCalls.loginId, elevated: pendingToolCalls.elevated })
     .from(pendingToolCalls)
     .where(and(eq(pendingToolCalls.id, pendingId), eq(pendingToolCalls.ownerId, ownerId)))
     .limit(1);
   if (!row) return null;
+  if (row.elevated) return ownerId;
   return row.loginId ?? ownerId;
 }
 
@@ -145,9 +149,13 @@ export async function notifyPendingCreated(input: {
   toolSlug: string;
   args: Record<string, unknown>;
   via?: string;
-  /** The call runs with Admin rights once approved (pending_tool_calls
-   *  .elevated, owner decision 1a, A5 step 6d). */
+  /** The call needs an Admin user's approval, its asker's rights not
+   *  reaching it (pending_tool_calls.elevated, owner decision 1a, A5 step
+   *  6d): its card goes to the owner, never to its asker. */
   elevated?: { elevated: true; reason: string };
+  /** The turn that queued it read text a client wrote (0287): the card
+   *  says so. */
+  clientSourced?: { via: string };
 }): Promise<void> {
   // In-app badge first — cheapest, always relevant. (This also wakes the
   // push-notify worker, which sends a device push when the operator's
@@ -188,6 +196,7 @@ export async function notifyPendingCreated(input: {
       argsPreview: previewArgs(input.args),
       via: input.via,
       ...(input.elevated ? { elevated: input.elevated.reason } : {}),
+      ...(input.clientSourced ? { clientSourced: input.clientSourced.via } : {}),
       ...(question ? { question } : {}),
     });
   } catch (err) {

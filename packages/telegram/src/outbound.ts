@@ -73,9 +73,13 @@ export async function sendApprovalCard(
     via?: string;
     /** A runner question (`ask_human`): NOTIFY ONLY — see below. */
     question?: string;
-    /** The call runs with Admin rights once approved (owner decision 1a,
-     *  A5 step 6d: pending_tool_calls.elevated): why, in a line. */
+    /** The call needs an Admin user's approval, its asker's rights not
+     *  reaching it (owner decision 1a, A5 step 6d:
+     *  pending_tool_calls.elevated): why, and who may approve, in a line. */
     elevated?: string;
+    /** The turn that asked read text a client wrote (0287): what marked
+     *  it. The card warns, so a request a client's text led to is spotted. */
+    clientSourced?: string;
   },
 ): Promise<number> {
   const bot = await botFor(account);
@@ -105,6 +109,9 @@ export async function sendApprovalCard(
     `Tool: \`${card.toolSlug}\``,
     card.via ? `From: ${card.via}` : null,
     card.elevated ?? null,
+    card.clientSourced
+      ? `⚠️ The turn that asked read text a client wrote (${card.clientSourced}): approve only if you asked for this yourself.`
+      : null,
     card.argsPreview ? `\n${card.argsPreview}` : null,
   ].filter(Boolean) as string[];
   const keyboard = new InlineKeyboard()

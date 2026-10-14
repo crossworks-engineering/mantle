@@ -25,6 +25,7 @@ import {
   type ListPendingOptions,
 } from './pending';
 import { CS } from './client-sourced-rule';
+import { ApprovalRefusedError } from './pending-approval';
 
 const PENDING_STATUSES = ['pending', 'approved', 'rejected', 'expired'] as const;
 
@@ -139,11 +140,19 @@ export const pending_approve: BuiltinToolDef = {
     // login) still runs in that login's scope: the scope names it, so the
     // approved call never runs as the bare owner (A0 fix round 3, L-a).
     const approver = ownerSurfaceLoginId(ctx.surface) ?? currentWorkspaceScope()?.loginId ?? null;
-    const row = await approvePendingCall(
-      ctx.ownerId,
-      id,
-      (approver ? { ...decision, approverLoginId: approver } : decision) as never,
-    );
+    let row;
+    try {
+      row = await approvePendingCall(
+        ctx.ownerId,
+        id,
+        (approver ? { ...decision, approverLoginId: approver } : decision) as never,
+      );
+    } catch (err) {
+      // The approval rule refused this approver (pending-approval.ts): the
+      // call stays pending for an Admin user who may approve it.
+      if (err instanceof ApprovalRefusedError) return { ok: false, error: err.message };
+      throw err;
+    }
     if (!row) return { ok: false, error: 'not found or already decided' };
     return { ok: true, output: row };
   },

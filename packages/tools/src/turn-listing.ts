@@ -42,7 +42,7 @@ import type { ToolHandlerContext } from './types';
 import { builtinToolGatePolicy, builtinToolRef } from './tool-gate-policy';
 
 /** The ref and policy dispatch calls `tool` by, or null (no policy). */
-function gateRefOf(tool: Tool): { ref: PolicyRef; policy: GatePolicy } | null {
+export function gateRefOf(tool: Tool): { ref: PolicyRef; policy: GatePolicy } | null {
   const h = tool.handler as ToolHandler | null;
   if (h?.kind === 'builtin') {
     const ref = builtinToolRef(h.ref, tool.slug);

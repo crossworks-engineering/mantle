@@ -1167,7 +1167,7 @@ describe('runToolLoop: a queued call that runs with Admin rights (owner decision
     );
     const toolMsg = result.messages.find((m) => m.role === 'tool');
     expect(toolMsg!.content).toContain('queued_for_approval');
-    expect(toolMsg!.content).toContain("an Admin user's rights run it");
+    expect(toolMsg!.content).toContain('the person asking cannot approve it: an Admin user must');
   });
 
   it('a call queued with its own rights carries no elevated field', async () => {
@@ -1194,6 +1194,8 @@ describe('runToolLoop: a queued call that runs with Admin rights (owner decision
     });
     expect(insertedPendingArgs).toHaveLength(1);
     expect(insertedPendingArgs[0]).not.toHaveProperty('elevated');
+    // An untainted turn: no client-sourced note either.
+    expect(insertedPendingArgs[0]).not.toHaveProperty('clientSourced');
     const toolMsg = result.messages.find((m) => m.role === 'tool');
     expect(toolMsg!.content).not.toContain('Admin user');
   });
@@ -1243,6 +1245,17 @@ describe('runToolLoop: the client-sourced lowering guard (client logins C4, plan
     const ack = result.messages.filter((m) => m.role === 'tool')[1]!;
     expect(ack.content).toContain('queued_for_approval');
     expect(ack.content).toContain('read text a client wrote');
+    // The row and its card say the turn read client text, and what marked
+    // it, so the approver can spot a request a client's text led to (A5
+    // step 6d fix round 1).
+    expect(insertedPendingArgs[0]).toMatchObject({ clientSourced: { via: expect.any(String) } });
+    const { notifyPendingCreated } = await import('@mantle/tools');
+    expect(notifyPendingCreated).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        toolSlug: 'access_set',
+        clientSourced: { via: expect.any(String) },
+      }),
+    );
   });
 
   it('a tainted turn: client level waits too; team level and non-lowering tools run', async () => {
