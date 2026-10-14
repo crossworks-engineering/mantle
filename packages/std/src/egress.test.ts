@@ -3,6 +3,8 @@
  * secret headers across origins, the deadline and the streamed byte cap.
  * DNS and the platform fetch are the fake network of egress-test-net.
  */
+import http from 'node:http';
+import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('node:dns/promises', async () => (await import('./egress-test-net')).testNetDnsModule);
@@ -49,6 +51,14 @@ describe('isBlockedIp', () => {
       'fd12::1',
       'fe80::1',
       '::ffff:127.0.0.1',
+      '::ffff:7f00:1',
+      '::ffff:a9fe:a9fe',
+      '::7f00:1',
+      '64:ff9b::a9fe:a9fe',
+      '2002:a9fe:a9fe::1',
+      'fec0::1',
+      'ff02::1',
+      '::ffff:0:7f00:1',
     ]) {
       expect(isBlockedIp(ip), ip).toBe(true);
     }
@@ -76,6 +86,101 @@ describe('isBlockedIp', () => {
   it('fails closed on input that is no IP', () => {
     expect(isBlockedIp('nope')).toBe(true);
     expect(isBlockedIp('nope', { allowLan: true })).toBe(true);
+  });
+});
+
+/** IPv6 literals that carry, tunnel to or stand for an address the v4
+ *  rules refuse, written as a URL host. The URL parser rewrites the dotted
+ *  form (`[::ffff:127.0.0.1]` becomes `[::ffff:7f00:1]`), which is what the
+ *  check sees. */
+const V6_REFUSED_ALWAYS = [
+  'http://[::ffff:169.254.169.254]/latest/meta-data/', // IPv4-mapped metadata
+  'http://[::ffff:a9fe:a9fe]/', // the same, hex
+  'http://[::169.254.169.254]/', // IPv4-compatible
+  'http://[::ffff:0:a9fe:a9fe]/', // IPv4-translated
+  'http://[64:ff9b::169.254.169.254]/', // NAT64
+  'http://[64:ff9b:1::a9fe:a9fe]/', // local-use NAT64
+  'http://[2002:a9fe:a9fe::1]/', // 6to4
+  'http://[2001:0:4136:e378:8000:63bf:3fff:fdd2]/', // Teredo
+  'http://[fec0::1]/', // site-local
+  'http://[ff02::1]/', // multicast
+  'http://[::ffff:0.0.0.0]/', // mapped "this network"
+];
+/** Refused by default, let through for a LAN caller (their v4 is LAN). */
+const V6_REFUSED_UNLESS_LAN = [
+  'http://[::ffff:127.0.0.1]/',
+  'http://[::ffff:7f00:1]/',
+  'http://[::127.0.0.1]/',
+  'http://[::ffff:0:7f00:1]/',
+  'http://[64:ff9b::10.0.0.5]/',
+  'http://[2002:c0a8:101::1]/', // 6to4 of 192.168.1.1
+  'http://[::ffff:100.64.0.1]/',
+];
+
+describe('IPv6 forms of a refused IPv4 address', () => {
+  it('refuses every form through assertEgressUrl, with and without allowLan', async () => {
+    for (const u of V6_REFUSED_ALWAYS) {
+      await expect(assertEgressUrl(u), u).rejects.toBeInstanceOf(EgressRefusedError);
+      await expect(assertEgressUrl(u, { allowLan: true }), u).rejects.toBeInstanceOf(
+        EgressRefusedError,
+      );
+    }
+    for (const u of V6_REFUSED_UNLESS_LAN) {
+      await expect(assertEgressUrl(u), u).rejects.toBeInstanceOf(EgressRefusedError);
+      await expect(assertEgressUrl(u, { allowLan: true }), u).resolves.toBeUndefined();
+    }
+  });
+
+  it('lets the public forms through', async () => {
+    for (const u of [
+      'http://[::ffff:8.8.8.8]/',
+      'http://[64:ff9b::808:808]/',
+      'http://[2002:808:808::1]/',
+      'http://[2606:4700:4700::1111]/',
+    ]) {
+      await expect(assertEgressUrl(u), u).resolves.toBeUndefined();
+    }
+  });
+
+  it('refuses them through egressFetch before any request', async () => {
+    const net = install();
+    for (const u of [...V6_REFUSED_ALWAYS, ...V6_REFUSED_UNLESS_LAN]) {
+      await expect(egressFetch(u), u).rejects.toBeInstanceOf(EgressRefusedError);
+    }
+    for (const u of V6_REFUSED_ALWAYS) {
+      await expect(egressFetch(u, {}, { allowLan: true }), u).rejects.toBeInstanceOf(
+        EgressRefusedError,
+      );
+    }
+    expect(net.log).toEqual([]);
+  });
+
+  it('refuses a redirect to a mapped metadata address', async () => {
+    const net = createTestNet({
+      'mapped-redirect.test': {
+        ip: '93.184.216.41',
+        reply: { kind: 'redirect', to: 'http://[::ffff:169.254.169.254]/latest/meta-data/' },
+      },
+    });
+    useTestNet(net);
+    vi.stubGlobal('fetch', net.fetch);
+    await expect(
+      egressFetch('https://mapped-redirect.test/', {}, { allowLan: true }),
+    ).rejects.toBeInstanceOf(EgressRefusedError);
+    expect(net.log.map((l) => l.host)).toEqual(['mapped-redirect.test']);
+  });
+
+  it('a real loopback server is not reachable through the mapped form', async () => {
+    const srv = http.createServer((_q, s) => s.end('INTERNAL-ONLY'));
+    await new Promise<void>((r) => srv.listen(0, '127.0.0.1', r));
+    const port = (srv.address() as AddressInfo).port;
+    try {
+      await expect(
+        egressFetch(`http://[::ffff:127.0.0.1]:${port}/`, {}, { timeoutMs: 3000 }),
+      ).rejects.toBeInstanceOf(EgressRefusedError);
+    } finally {
+      srv.close();
+    }
   });
 });
 

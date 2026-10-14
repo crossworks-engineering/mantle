@@ -130,18 +130,90 @@ function isBlockedIpv4(ip: string, allowLan: boolean): boolean {
   return !allowLan && isLanIpv4(n);
 }
 
+/** An IPv6 literal as 16 bytes, or null. Takes any textual form (`::`
+ *  compression, an embedded dotted quad, a zone id), since a DNS answer and
+ *  the URL parser's canonical form differ: the parser turns
+ *  `[::ffff:127.0.0.1]` into `[::ffff:7f00:1]`. */
+function ipv6ToBytes(ip: string): Uint8Array | null {
+  let s = ip.split('%')[0]!.toLowerCase();
+  const tail: number[] = [];
+  const dotted = /^(.*:)(\d{1,3}(?:\.\d{1,3}){3})$/.exec(s);
+  if (dotted) {
+    const v4 = ipv4ToInt(dotted[2]!);
+    if (v4 === null) return null;
+    tail.push((v4 >>> 24) & 0xff, (v4 >>> 16) & 0xff, (v4 >>> 8) & 0xff, v4 & 0xff);
+    s = dotted[1]!.endsWith('::') ? dotted[1]! : dotted[1]!.slice(0, -1);
+  }
+  const groupsLeft = 8 - tail.length / 2;
+  const halves = s.split('::');
+  if (halves.length > 2) return null;
+  const parse = (part: string): number[] | null => {
+    if (part === '') return [];
+    const out: number[] = [];
+    for (const g of part.split(':')) {
+      if (!/^[0-9a-f]{1,4}$/.test(g)) return null;
+      out.push(parseInt(g, 16));
+    }
+    return out;
+  };
+  const head = parse(halves[0]!);
+  const rest = halves.length === 2 ? parse(halves[1]!) : [];
+  if (!head || !rest) return null;
+  let groups: number[];
+  if (halves.length === 2) {
+    const fill = groupsLeft - head.length - rest.length;
+    if (fill < 1) return null;
+    groups = [...head, ...new Array<number>(fill).fill(0), ...rest];
+  } else {
+    if (head.length !== groupsLeft) return null;
+    groups = head;
+  }
+  const bytes = new Uint8Array(16);
+  groups.forEach((g, i) => {
+    bytes[i * 2] = g >> 8;
+    bytes[i * 2 + 1] = g & 0xff;
+  });
+  bytes.set(tail, 16 - tail.length);
+  return bytes;
+}
+
+function v4At(b: Uint8Array, at: number): string {
+  return `${b[at]}.${b[at + 1]}.${b[at + 2]}.${b[at + 3]}`;
+}
+
+function zeroes(b: Uint8Array, from: number, to: number): boolean {
+  for (let i = from; i < to; i++) if (b[i] !== 0) return false;
+  return true;
+}
+
 function isBlockedIpv6(ip: string, allowLan: boolean): boolean {
-  const lower = ip.toLowerCase().split('%')[0]!; // drop any zone id
-  if (lower === '::') return true; // unspecified
-  if (lower === '::1') return !allowLan; // loopback
-  // IPv4-mapped (::ffff:a.b.c.d): check the embedded v4.
-  const mapped = /^::ffff:(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$/.exec(lower);
-  if (mapped) return isBlockedIpv4(mapped[1]!, allowLan);
-  const first = lower.startsWith('::') ? 0 : parseInt(lower.split(':')[0] || '0', 16);
-  if (Number.isNaN(first)) return true;
-  if ((first & 0xffc0) === 0xfe80) return true; // fe80::/10 link-local
-  const firstByte = first >> 8;
-  if (firstByte === 0xfc || firstByte === 0xfd) return !allowLan; // fc00::/7 unique-local
+  const b = ipv6ToBytes(ip);
+  if (!b) return true;
+  if (zeroes(b, 0, 16)) return true; // :: unspecified
+  if (zeroes(b, 0, 15) && b[15] === 1) return !allowLan; // ::1 loopback
+  // Forms that carry an IPv4 address: the v4 rules decide. ::ffff:0:0/96
+  // (IPv4-mapped), ::/96 (IPv4-compatible, deprecated), ::ffff:0:0:0/96
+  // (IPv4-translated), 64:ff9b::/96 (NAT64 well-known prefix) and
+  // 2002::/16 (6to4, the v4 in bytes 2..5).
+  if (zeroes(b, 0, 10) && b[10] === 0xff && b[11] === 0xff)
+    return isBlockedIpv4(v4At(b, 12), allowLan);
+  if (zeroes(b, 0, 12)) return isBlockedIpv4(v4At(b, 12), allowLan);
+  if (zeroes(b, 0, 8) && b[8] === 0xff && b[9] === 0xff && b[10] === 0 && b[11] === 0) {
+    return isBlockedIpv4(v4At(b, 12), allowLan);
+  }
+  if (b[0] === 0x00 && b[1] === 0x64 && b[2] === 0xff && b[3] === 0x9b && zeroes(b, 4, 12)) {
+    return isBlockedIpv4(v4At(b, 12), allowLan);
+  }
+  if (b[0] === 0x20 && b[1] === 0x02) return isBlockedIpv4(v4At(b, 2), allowLan);
+  // Refused whatever the caller's config.
+  if (b[0] === 0x00 && b[1] === 0x64 && b[2] === 0xff && b[3] === 0x9b) return true; // 64:ff9b:1::/48 local NAT64 (and the rest of 64:ff9b::/32)
+  if (b[0] === 0x20 && b[1] === 0x01 && b[2] === 0 && b[3] === 0) return true; // 2001::/32 Teredo (tunnels to a v4 peer)
+  if (b[0] === 0x20 && b[1] === 0x01 && b[2] === 0x0d && b[3] === 0xb8) return true; // 2001:db8::/32 documentation
+  if (b[0] === 0x01 && b[1] === 0x00 && zeroes(b, 2, 8)) return true; // 100::/64 discard-only
+  if (b[0] === 0xfe && (b[1]! & 0xc0) === 0x80) return true; // fe80::/10 link-local
+  if (b[0] === 0xfe && (b[1]! & 0xc0) === 0xc0) return true; // fec0::/10 site-local (deprecated)
+  if (b[0] === 0xff) return true; // ff00::/8 multicast
+  if ((b[0]! & 0xfe) === 0xfc) return !allowLan; // fc00::/7 unique-local
   return false;
 }
 

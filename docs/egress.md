@@ -23,6 +23,13 @@ stay free of node builtins). On top of the platform fetch:
   each target is resolved and refused when it lands on a private, loopback,
   link-local, CGNAT, cloud metadata or reserved address (`assertEgressUrl`,
   `isBlockedIp`). `redirect: 'error'` refuses any redirect instead.
+  An IPv6 address is read as 16 bytes, whatever its text form (the URL
+  parser writes `[::ffff:127.0.0.1]` as `[::ffff:7f00:1]`): the forms that
+  carry an IPv4 address (IPv4-mapped `::ffff:0:0/96`, IPv4-compatible
+  `::/96`, IPv4-translated `::ffff:0:0:0/96`, NAT64 `64:ff9b::/96`, 6to4
+  `2002::/16`) are judged by the IPv4 rules; Teredo `2001::/32`, local-use
+  NAT64, site-local `fec0::/10`, multicast `ff00::/8`, documentation and
+  discard space are refused for every caller.
 - **Secret headers across origins.** On a hop to another origin it drops
   Authorization, Cookie and Proxy-Authorization by name (as the platform
   does) and any header whose value carries one of the caller's `secrets`
