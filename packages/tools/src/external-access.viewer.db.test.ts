@@ -970,7 +970,10 @@ function brokerCallDispatch(
       real.dispatchTool(
         tool,
         input,
-        { caller: callers.appBrokerCaller(ctx.surface ?? { kind: 'none' }), ...ctx },
+        {
+          caller: callers.appBrokerCaller(ctx.surface ?? { kind: 'none' }, { ok: true, tool }),
+          ...ctx,
+        },
         depth,
       ),
   };

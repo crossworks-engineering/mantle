@@ -6,12 +6,15 @@
  * run it lets through by the rule it refuses with. Then the call runs on its
  * own ref, as before (server/web/lib/app-broker-parity.test.ts holds every
  * broker's answers byte for byte). No other entry, and no call nested in an
- * app call, takes the app-tool ref.
+ * app call, takes the app-tool ref. Since fix round 1 (M2) the ref carries
+ * the broker's own verdict (appBrokerCaller's), so a refused one is refused
+ * by the gate, and a caller with none, or one for another tool, is refused.
  */
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const h = vi.hoisted(() => ({
   seen: [] as { kind: string; appRules: unknown; verdict: unknown }[],
+  ran: 0,
 }));
 
 vi.mock('@mantle/db', async (importOriginal) => {
@@ -31,10 +34,11 @@ vi.mock('@mantle/db', async (importOriginal) => {
 });
 
 import type { Tool } from '@mantle/db';
-import { dispatchTool } from './dispatch';
+import { APP_VERDICT_MISSING_ERROR, dispatchTool } from './dispatch';
 import { appBrokerCaller, ownerWebCaller, turnCaller } from './gate-callers';
 import { ensureGateReady } from './gate-narrowers';
 import { registerBuiltin } from './registry';
+import type { ToolCaller } from './gate-callers';
 import type { ToolHandlerContext } from './types';
 
 const row = (slug: string) =>
@@ -48,12 +52,16 @@ beforeAll(() => {
     description: 'probe',
     inputSchema: { type: 'object', properties: {} },
     policy: { effect: 'read', spends: 'none', scope: 'any' },
-    handler: async () => ({ ok: true, output: 'ran' }),
+    handler: async () => {
+      h.ran += 1;
+      return { ok: true, output: 'ran' };
+    },
   });
 });
 
 beforeEach(() => {
   h.seen = [];
+  h.ran = 0;
 });
 
 const SURFACES: Array<[string, NonNullable<ToolHandlerContext['surface']>, string]> = [
@@ -68,7 +76,11 @@ describe("an app broker's allowed call is judged on its app-tool ref (carried LO
       const res = await dispatchTool(
         row('app_run_probe'),
         {},
-        { ownerId: 'o', surface, caller: appBrokerCaller(surface) },
+        {
+          ownerId: 'o',
+          surface,
+          caller: appBrokerCaller(surface, { ok: true, tool: row('app_run_probe') }),
+        },
       );
       expect(res).toEqual({ ok: true, output: 'ran' });
       expect(h.seen).toEqual([
@@ -93,4 +105,38 @@ describe("an app broker's allowed call is judged on its app-tool ref (carried LO
       expect(h.seen.map((s) => s.kind)).toEqual(['tool']);
     }
   });
+
+  // Fix round 1, M2: the ref carries the broker's own verdict, never one
+  // made up in dispatch, so the gate's pass refuses what a broker refused
+  // even where the broker forgot its own pre-check (appToolRefusal).
+  for (const [name, surface] of SURFACES) {
+    it(`${name}: a refused verdict is refused by the gate, the tool never runs`, async () => {
+      const reason = "This app isn't allowed to use the tool 'app_run_probe'.";
+      const res = await dispatchTool(
+        row('app_run_probe'),
+        {},
+        {
+          ownerId: 'o',
+          surface,
+          caller: appBrokerCaller(surface, { ok: false, status: 403, reason }),
+        },
+      );
+      expect(res).toEqual({ ok: false, error: reason });
+      expect(h.ran).toBe(0);
+      expect(h.seen).toEqual([{ kind: 'app-tool', appRules: expect.anything(), verdict: false }]);
+    });
+
+    it(`${name}: no verdict, or one for another tool, is refused (fail closed)`, async () => {
+      const bare = { ...appBrokerCaller(surface, { ok: true, tool: row('x') }) };
+      delete (bare as { appVerdict?: unknown }).appVerdict;
+      for (const caller of [
+        Object.freeze(bare) as ToolCaller,
+        appBrokerCaller(surface, { ok: true, tool: row('another_tool') }),
+      ]) {
+        const res = await dispatchTool(row('app_run_probe'), {}, { ownerId: 'o', surface, caller });
+        expect(res).toEqual({ ok: false, error: APP_VERDICT_MISSING_ERROR });
+      }
+      expect(h.ran).toBe(0);
+    });
+  }
 });

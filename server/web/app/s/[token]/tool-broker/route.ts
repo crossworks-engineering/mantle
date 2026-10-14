@@ -114,7 +114,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ token: string 
     dispatchTool(verdict.tool, input, {
       ownerId: share.ownerId,
       surface: { kind: 'contact', contactId, shareId: share.id },
-      caller: appBrokerCaller({ kind: 'contact' }),
+      caller: appBrokerCaller({ kind: 'contact' }, verdict),
     }),
   );
   return NextResponse.json(result);

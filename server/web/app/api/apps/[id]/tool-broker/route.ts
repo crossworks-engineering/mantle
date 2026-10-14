@@ -174,7 +174,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     dispatchTool(verdict.tool, parsed.data.input, {
       ownerId: user.id,
       surface: scope.surface,
-      caller: appBrokerCaller(scope.surface),
+      caller: appBrokerCaller(scope.surface, verdict),
     });
   const result = await (scope.viewer === 'admin' ? run() : withViewer(scope.actsFor, run));
   if (!result.ok) logError(result.error, 200);

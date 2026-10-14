@@ -38,6 +38,8 @@ function probe(slug: string, throws: Error): BuiltinToolDef {
   };
 }
 
+/** The broker's verdict that allowed `slug` (fix round 1, M2). */
+const allowed = (slug: string) => ({ ok: true as const, tool: row(slug) });
 const row = (slug: string) =>
   ({ slug, handler: { kind: 'builtin', ref: slug } }) as unknown as Tool;
 
@@ -68,7 +70,7 @@ describe('an app broker call never answers a database error’s text off the own
       const res = await dispatchTool(
         row('broker_probe_db'),
         {},
-        { ownerId: 'o', surface, caller: appBrokerCaller(surface) },
+        { ownerId: 'o', surface, caller: appBrokerCaller(surface, allowed('broker_probe_db')) },
       );
       expect(res.ok).toBe(false);
       const error = (res as { error: string }).error;
@@ -81,7 +83,7 @@ describe('an app broker call never answers a database error’s text off the own
       const res = await dispatchTool(
         row('broker_probe_plain'),
         {},
-        { ownerId: 'o', surface, caller: appBrokerCaller(surface) },
+        { ownerId: 'o', surface, caller: appBrokerCaller(surface, allowed('broker_probe_plain')) },
       );
       expect(res).toEqual({ ok: false, error: 'the sheet has no tab named X' });
     });
@@ -89,7 +91,7 @@ describe('an app broker call never answers a database error’s text off the own
 
   it("the owner's web (an Admin-only app, the dev console) reads the text as before", async () => {
     const surface = { kind: 'web' as const, loginId: 'l1' };
-    for (const caller of [appBrokerCaller(surface), ownerWebCaller()]) {
+    for (const caller of [appBrokerCaller(surface, allowed('broker_probe_db')), ownerWebCaller()]) {
       const res = await dispatchTool(row('broker_probe_db'), {}, { ownerId: 'o', surface, caller });
       expect((res as { error: string }).error, caller.entry).toContain('Failed query');
     }
@@ -105,7 +107,7 @@ describe('an app broker call never answers a database error’s text off the own
   });
 
   it("an app caller made for the owner's web never runs on another surface (fix round 1, LOW-1)", async () => {
-    const web = appBrokerCaller({ kind: 'web' });
+    const web = appBrokerCaller({ kind: 'web' }, allowed('broker_probe_db'));
     expect(web.masks).toBe(false);
     const others: Array<ToolHandlerContext['surface']> = [...SURFACES.map(([, s]) => s), undefined];
     for (const surface of others) {
@@ -141,7 +143,7 @@ describe('an app broker call never answers a database error’s text off the own
       {
         ownerId: 'o',
         surface: { kind: 'web', loginId: 'l1' },
-        caller: appBrokerCaller({ kind: 'team' }),
+        caller: appBrokerCaller({ kind: 'team' }, allowed('broker_probe_db')),
       },
     );
     expect((masked as { error: string }).error).toBe(DATABASE_ERROR_PUBLIC);

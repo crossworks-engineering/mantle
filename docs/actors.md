@@ -3202,3 +3202,14 @@ from the scope under a folder it reads looks new, and the approver sees the
 path. `packages/tools/src/queue-time-refs.test.ts`, and end to end through
 `turnCallRefusal`, the gate's item pre-check and the folder check:
 `packages/tools/src/queue-folder-e2e.test.ts`.
+
+**M2, an app broker's run carries the broker's real verdict.**
+`appBrokerCaller(surface, verdict)` takes the verdict the broker judged the
+call by, and dispatch puts that verdict on the call's `app-tool` ref, where
+it used to make up `{ ok: true }`. A refused verdict is refused by the gate
+in its own words even where a broker forgot its own pre-check; a caller
+with no verdict, or an allowed one for another tool, is refused
+(`APP_VERDICT_MISSING_ERROR`). The three brokers pass the verdict they
+already had; their answers are unchanged
+(`server/web/lib/__snapshots__/app-broker-parity.json`).
+`packages/tools/src/dispatch-app-run.test.ts`.

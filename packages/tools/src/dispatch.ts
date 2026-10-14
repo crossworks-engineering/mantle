@@ -72,6 +72,7 @@ import {
   mcpVia,
   nestedToolCaller,
   withToolCaller,
+  type AppBrokerVerdict,
   type ToolCaller,
 } from './gate-callers';
 import { maskToolDatabaseErrors } from './tool-error-mask';
@@ -164,16 +165,18 @@ export async function dispatchTool(
 }
 
 /**
- * An app broker's allowed call (A5 step 6a, carried LOW-2), judged by the
- * one gate on its `app-tool` ref, which carries the verdict that allowed it
- * (`ok`: the broker refused every other call before dispatch, through
- * appToolRefusal on the same ref) and the rules it was judged at
- * (`facts.appRules`): the member-app narrower judges the run it lets
- * through by the rule it refuses with. Then the call runs through the gate
- * on its own ref (the tool's policy, the Admin step, the item pre-check),
- * as before. Nothing changes for an allowed call: its verdict allowed it,
- * and the outer caller names no scope, no Admin step and no create home. A
- * throw goes on to the broker, past the outer gate's mapper, as before.
+ * An app broker's call (A5 step 6a, carried LOW-2), judged by the one gate
+ * on its `app-tool` ref, which carries the broker's own verdict (the
+ * caller's `appVerdict`, fix round 1, M2: never one made up here; none
+ * refuses) and the rules it was judged at (`facts.appRules`): the
+ * member-app narrower refuses a call its verdict refused, in the verdict's
+ * words, even where a broker forgot its own pre-check (appToolRefusal on
+ * the same ref), and judges the run it lets through by the rule it refuses
+ * with. Then the call runs through the gate on its own ref (the tool's
+ * policy, the Admin step, the item pre-check), as before. Nothing changes
+ * for an allowed call: its verdict allowed it, and the outer caller names no
+ * scope, no Admin step and no create home. A throw goes on to the broker,
+ * past the outer gate's mapper, as before.
  */
 async function appToolRun(
   caller: ToolCaller,
@@ -188,7 +191,7 @@ async function appToolRun(
   const ref = Object.freeze({
     kind: 'app-tool',
     name: tool.slug,
-    verdict: Object.freeze({ ok: true as const, tool }),
+    verdict: brokerVerdictFor(caller, tool),
     row: tool,
     ...(builtin ? { builtin: Object.freeze(builtin) } : {}),
   });
@@ -211,6 +214,20 @@ async function appToolRun(
   if (thrown) throw (thrown as { err: unknown }).err;
   if (!res.ok) return { ok: false, error: res.refusal.toolText };
   return res.value ?? { ok: false, error: 'the tool gave no result' };
+}
+
+/** Why an app broker's call carries no usable verdict (A5 step 6a fix
+ *  round 1, M2): none at all, or one for another tool. Refused, never run. */
+export const APP_VERDICT_MISSING_ERROR =
+  "This app call carries no verdict for the tool it runs, so it doesn't run.";
+
+/** The verdict an app broker's call is judged by on its `app-tool` ref:
+ *  the broker's own (`appVerdict`), whatever it said; none, or an allowed
+ *  verdict for another tool, refuses (fail closed). */
+function brokerVerdictFor(caller: ToolCaller, tool: Tool): AppBrokerVerdict {
+  const v = caller.appVerdict;
+  if (v && (!v.ok || v.tool.slug === tool.slug)) return v;
+  return Object.freeze({ ok: false, status: 403, reason: APP_VERDICT_MISSING_ERROR });
 }
 
 /** The masking's log label of a caller's call (as before step 3b). */

@@ -291,7 +291,7 @@ export async function memberToolBroker(
     dispatchTool(verdict.tool, input, {
       ownerId: member.anchorId,
       surface: scope.surface,
-      caller: appBrokerCaller(scope.surface),
+      caller: appBrokerCaller(scope.surface, verdict),
     });
   const result = await asSystem(
     () => (scope.viewer === 'admin' ? run() : withViewer(scope.actsFor, run)),

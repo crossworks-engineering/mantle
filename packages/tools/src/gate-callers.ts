@@ -95,7 +95,20 @@ export type ToolCaller = Readonly<{
    *  share's). Dispatch runs the allowed call on its `app-tool` ref with
    *  them (A5 step 6a, carried LOW-2), as appToolRefusal asks a refused one. */
   appRules?: 'admin' | 'team' | 'contact';
+  /** An app broker's call (entry `app`): the verdict the broker judged it
+   *  by (A5 step 6a fix round 1, M2), carried whole onto the call's
+   *  `app-tool` ref, so the gate refuses a call its verdict refused even
+   *  where a broker forgot its own pre-check. None: dispatch refuses (fail
+   *  closed). */
+  appVerdict?: AppBrokerVerdict;
 }>;
+
+/** The verdict an app broker judged a call by (app-tool-level.ts
+ *  AppToolVerdict, the share broker's contactAppToolVerdict): the tool it
+ *  allowed, or the refusal. */
+export type AppBrokerVerdict = Readonly<
+  { ok: true; tool: Tool } | { ok: false; status: 403 | 404; reason: string }
+>;
 
 const TURN: ToolCaller = Object.freeze({ entry: 'turn', via: 'turn' });
 const RUN: ToolCaller = Object.freeze({ entry: 'run', via: 'process' });
@@ -146,14 +159,15 @@ type AppBrokerSurface = Readonly<{ kind: string }>;
 /**
  * An app's tool call through a broker (A5 step 3b): via `contact` on a
  * contact share's surface, else `app`, with the rules its verdict judged it
- * at (`appRules`). The broker answers the result to a
+ * at (`appRules`) and the verdict itself (`appVerdict`, fix round 1, M2). The broker answers the result to a
  * browser as it is, so a database error's text is masked for every surface
  * but the owner's own web (an app the Admin workspace alone holds), which
  * reads it as before (A5 step 5 fix round 1, M3: the rule the ungated path
  * ran, now the entry's).
  */
-export function appBrokerCaller(surface: AppBrokerSurface): ToolCaller {
+export function appBrokerCaller(surface: AppBrokerSurface, verdict: AppBrokerVerdict): ToolCaller {
   return Object.freeze({
+    appVerdict: verdict,
     entry: 'app',
     via: surface.kind === 'contact' ? 'contact' : 'app',
     masks: surface.kind !== 'web',

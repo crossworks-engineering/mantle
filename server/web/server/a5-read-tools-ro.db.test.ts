@@ -265,7 +265,7 @@ describe.skipIf(!URL)('every read builtin runs read only through the brokers (A5
         t.dispatchTool(tool, input, {
           ownerId: owner,
           surface: scope.surface,
-          caller: t.appBrokerCaller(scope.surface),
+          caller: t.appBrokerCaller(scope.surface, { ok: true, tool }),
         });
       return scope.viewer === 'admin' ? run() : m.withViewer(scope.actsFor, run);
     });
