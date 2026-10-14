@@ -37,5 +37,14 @@
  * handlers in 24 route files became reads, 10 getMemberOr401 calls (the
  * member list) and 17 getChatLoginOr401 calls (the chat and Telegram chat
  * lists). The 16 left are the hand batch (docs/actors.md).
+ *
+ * 16 -> 7 (A4 hand batch A): the five any-login handlers of the four
+ * ruleInQuery files (getLoginOr401: GET /api/shell, GET /api/v1/whoami,
+ * GET and POST /api/access-keys, DELETE /api/access-keys/:id), the two turn
+ * routes with a flag check first and POST /api/dev-tools/queue-approval
+ * (getOwnerOr401), and POST /api/assistant/turn (getChatLoginOr401) read
+ * the caller. The 7 left are part B: the public rows that read the login
+ * (whoami, logout, change password, pair and its poll, the OAuth consent)
+ * and PATCH /api/pages/:id.
  */
-export const GUARD_CALL_PIN = 16;
+export const GUARD_CALL_PIN = 7;
