@@ -186,9 +186,10 @@ function bearerToken(req: Request): string | null {
  * reads it, as before: a route that reads no guard runs as it did. Step 6
  * names no create home (createHome null): the guard does, on its rules.
  * On a row whose handler reads the caller the pipeline answers (row.caller,
- * A4 step 3b) the gate runs the owner guard's answer itself, before the
- * handler (answerRouteCaller), with what it does on the side; and on such a
- * row that manages an Admin area the gate's step 5 is the area check (A4
+ * A4 step 3b) the gate runs the answer of the guard of the row's caller
+ * kind itself, before the handler (answerRouteCaller), with what it does on
+ * the side; and on such an owner row that manages an Admin area (no other
+ * kind's row names one) the gate's step 5 is the area check (A4
  * step 3b part 4): the caller carries the Admin view the login lookup
  * resolved, and the login's effects are applied in the request slot first
  * (enterRouteLogin), as the guard applied them before its check.
@@ -366,7 +367,8 @@ function gateHandler(): MiddlewareHandler {
           routeRef(row),
           async () => {
             // A row whose handler reads the caller the pipeline answers
-            // (row.caller, A4 step 3b): the owner guard's answer, given
+            // (row.caller, A4 step 3b): the answer of the guard of the
+            // row's caller kind (owner, member, any-login, chat), given
             // here once in the request slot, its effects with it; a
             // refusal is the gate's answer and the handler does not run.
             let refused: Response | null = null;

@@ -1,10 +1,11 @@
 /** Which handlers read the caller the pipeline answers (arch A4 step 3b). */
 import { describe, expect, it } from 'vitest';
-import { handlerReads } from './route-callers';
+import { handlerCallers, handlerReads, type HandlerCallers } from './route-callers';
 
 const IMPORT = `import { ownerCaller } from '@/lib/auth';`;
 /** The base route a v1 file wraps: its GET reads the caller. */
-const follow = (spec: string) => (spec === '../../notes/route' ? ['GET'] : null);
+const follow = (spec: string) =>
+  spec === '../../notes/route' ? ({ GET: 'owner' } as const) : null;
 const reads = (src: string) => handlerReads(src, 'x/route.ts', follow);
 
 describe('handlerReads', () => {
@@ -37,7 +38,7 @@ describe('handlerReads', () => {
   });
 
   it('follows a handler another route file exports, re-exported or wrapped', () => {
-    const base: Record<string, readonly string[]> = { '../../notes/route': ['GET'] };
+    const base: Record<string, HandlerCallers> = { '../../notes/route': { GET: 'owner' } };
     const follow = (spec: string) => base[spec] ?? null;
     const src = `
       import { GET as notes } from '../../notes/route';
@@ -418,5 +419,108 @@ describe('handlerReads', () => {
         export const POST = (req: Request) => notes(req);
         export { notes as PATCH };`),
     ).toEqual(['GET', 'PATCH', 'POST']);
+  });
+});
+
+describe('handlerCallers (A4 step 3b part 5): the caller kind each method reads', () => {
+  it('names each reading handler with the kind its reader reads', () => {
+    const src = `
+      import { memberCaller, loginCaller, chatLoginCaller, ownerCallerWithLogin } from '@/lib/auth';
+      export async function GET() { const m = memberCaller(); return Response.json(m); }
+      export async function POST() { const l = loginCaller(); return Response.json(l); }
+      export async function PUT() { const c = chatLoginCaller(); return Response.json(c); }
+      export async function PATCH() { const o = ownerCallerWithLogin(); return Response.json(o); }
+    `;
+    expect(handlerCallers(src, 'a/route.ts')).toEqual({
+      GET: 'member',
+      PATCH: 'owner',
+      POST: 'login',
+      PUT: 'chat',
+    });
+  });
+
+  it('follows the kind through a handler of the file and of another route file', () => {
+    const base: Record<string, HandlerCallers> = { '../../chat/route': { GET: 'chat' } };
+    const src = `
+      import { memberCaller } from '@/lib/auth';
+      import { GET as chat } from '../../chat/route';
+      export async function GET(req: Request) { const m = memberCaller(); return Response.json(m); }
+      export async function HEAD(req: Request) { return GET(req); }
+      export const PUT = (req: Request) => chat(req);
+      export { GET as DELETE } from '../../chat/route';
+    `;
+    expect(handlerCallers(src, 'a/route.ts', (s) => base[s] ?? null)).toEqual({
+      DELETE: 'chat',
+      GET: 'member',
+      HEAD: 'member',
+      PUT: 'chat',
+    });
+  });
+
+  it('refuses a handler that reads the callers of two kinds', () => {
+    const src = `
+      import { memberCaller, chatLoginCaller } from '@/lib/auth';
+      export async function GET() {
+        const m = memberCaller();
+        const c = chatLoginCaller();
+        return Response.json({ m, c });
+      }
+    `;
+    expect(() => handlerCallers(src, 'a/route.ts')).toThrow(/reads the callers of chat and member/);
+    // Through a handler of the file it runs, too.
+    const wraps = `
+      import { memberCaller, loginCaller } from '@/lib/auth';
+      export async function GET() { const m = memberCaller(); return Response.json(m); }
+      export async function POST(req: Request) {
+        loginCaller();
+        return GET();
+      }
+    `;
+    expect(() => handlerCallers(wraps, 'a/route.ts')).toThrow(
+      /reads the callers of login and member/,
+    );
+  });
+
+  it('holds the new readers to the same rules as the owner reader', () => {
+    // Code before the read.
+    expect(() =>
+      handlerCallers(
+        `import { memberCaller } from '@/lib/auth';
+         export async function GET(req: Request) { await limit(req); const m = memberCaller(); return Response.json(m); }`,
+        'a/route.ts',
+      ),
+    ).toThrow(/GET runs code before it reads the caller/);
+    // The read and the guard it replaced in one handler.
+    expect(() =>
+      handlerCallers(
+        `import { chatLoginCaller, getChatLoginOr401 } from '@/lib/auth';
+         export async function POST() { chatLoginCaller(); const l = await getChatLoginOr401(); return Response.json(l); }`,
+        'a/route.ts',
+      ),
+    ).toThrow(/also calls getChatLoginOr401/);
+    // Renamed, or read off an object.
+    expect(() =>
+      handlerCallers(
+        `import { loginCaller as who } from '@/lib/auth';
+         export async function GET() { return Response.json(who()); }`,
+        'a/route.ts',
+      ),
+    ).toThrow(/imports loginCaller as who/);
+    expect(() =>
+      handlerCallers(
+        `import * as auth from '@/lib/auth';
+         export async function GET() { return Response.json(auth.memberCaller()); }`,
+        'a/route.ts',
+      ),
+    ).toThrow(/reads memberCaller off an object/);
+    // A guard in a helper beside a read.
+    expect(() =>
+      handlerCallers(
+        `import { memberCaller, getMemberOr401 } from '@/lib/auth';
+         async function again() { return getMemberOr401(); }
+         export async function GET() { const m = memberCaller(); return Response.json(m); }`,
+        'a/route.ts',
+      ),
+    ).toThrow(/calls getMemberOr401 outside an exported handler/);
   });
 });

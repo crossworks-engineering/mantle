@@ -16,7 +16,7 @@
 import { existsSync, readdirSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { handlerReads } from './route-callers';
+import { handlerCallers, type HandlerCallers } from './route-callers';
 
 const webRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
 const appDir = join(webRoot, 'app');
@@ -29,9 +29,9 @@ type Entry = {
   /** Hono pattern, e.g. /api/tables/:id/export */
   pattern: string;
   methods: string[];
-  /** The methods whose handler reads the caller the pipeline answers
-   *  (ownerCaller(), arch A4 step 3b; route-callers.ts). */
-  reads: string[];
+  /** Each method whose handler reads the caller the pipeline answers, to
+   *  the caller kind its reader reads (arch A4 step 3b; route-callers.ts). */
+  reads: HandlerCallers;
   /** Name of the catch-all param when the pattern ends in /*, else null. */
   catchAll: string | null;
   /** Whether a catch-all also matches the bare prefix ([[...x]] optional form). */
@@ -68,17 +68,18 @@ function exportedMethods(src: string): string[] {
   return [...found];
 }
 
-/** The methods whose handler reads the caller the pipeline answers, per
- *  route file (route-callers.ts), following the handlers a file imports
- *  or re-exports from another route file (the /api/v1 aliases). */
-const readsMemo = new Map<string, string[]>();
-function readsOf(absFile: string, seen: Set<string> = new Set()): string[] {
+/** Each method whose handler reads the caller the pipeline answers, to its
+ *  caller kind, per route file (route-callers.ts), following the handlers
+ *  a file imports or re-exports from another route file (the /api/v1
+ *  aliases). */
+const readsMemo = new Map<string, HandlerCallers>();
+function readsOf(absFile: string, seen: Set<string> = new Set()): HandlerCallers {
   const memo = readsMemo.get(absFile);
   if (memo) return memo;
   if (seen.has(absFile)) throw new Error(`[gen-route-manifest] import cycle at ${absFile}`);
   seen.add(absFile);
   const rel = relative(webRoot, absFile).split('\\').join('/');
-  const reads = handlerReads(readFileSync(absFile, 'utf8'), rel, (spec) => {
+  const reads = handlerCallers(readFileSync(absFile, 'utf8'), rel, (spec) => {
     // A relative route file only: what a handler from elsewhere reads is
     // not known here (it would throw when called: fail closed).
     if (!spec.startsWith('.')) return null;
@@ -162,7 +163,7 @@ const lines = entries.map(
   (e) =>
     `  { pattern: ${JSON.stringify(e.pattern)}, methods: ${JSON.stringify(e.methods)}, ` +
     `catchAll: ${JSON.stringify(e.catchAll)}, catchAllOptional: ${e.catchAllOptional}, ` +
-    (e.reads.length > 0 ? `reads: ${JSON.stringify(e.reads)}, ` : '') +
+    (Object.keys(e.reads).length > 0 ? `reads: ${JSON.stringify(e.reads)}, ` : '') +
     // Extensionless specifier: tsc (bundler resolution) rejects explicit .ts
     // imports without allowImportingTsExtensions; tsx resolves both fine.
     `load: () => import(${JSON.stringify('../' + e.file.replace(/\.tsx?$/, ''))}) },`,
@@ -176,8 +177,9 @@ export type ManifestEntry = {
   methods: string[];
   catchAll: string | null;
   catchAllOptional: boolean;
-  /** The methods whose handler reads the caller the pipeline answers. */
-  reads?: string[];
+  /** Each method whose handler reads the caller the pipeline answers, to
+   *  the caller kind its reader reads. */
+  reads?: Record<string, 'owner' | 'member' | 'login' | 'chat'>;
   load: () => Promise<RouteModule>;
 };
 

@@ -21,6 +21,7 @@ import { Hono } from 'hono';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { actorSetting, currentActor, currentCreateHome, currentRequestOutcome } from '@mantle/db';
 import type { RouteEntry } from '../route-loader';
+import type { RouteCaller } from '../../lib/auth/route-policy';
 
 const ADMIN = '55555555-5555-4555-8555-555555555555';
 const ANCHOR = '33333333-3333-4333-8333-333333333333';
@@ -123,6 +124,10 @@ vi.mock('../../lib/access-keys', async (importOriginal) => {
   };
 });
 
+/** A manifest entry's `reads` where each method reads the owner caller. */
+const ownerReads = (methods: readonly string[]) =>
+  Object.fromEntries(methods.map((m) => [m, 'owner' as const]));
+
 const here = dirname(fileURLToPath(import.meta.url));
 const hasManifest = existsSync(join(here, '../route-manifest.gen.ts'));
 
@@ -221,7 +226,7 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
         ...e,
         catchAll: null,
         catchAllOptional: false,
-        ...(read ? { reads: e.methods } : {}),
+        ...(read ? { reads: ownerReads(e.methods) } : {}),
         load: async () => Object.fromEntries(e.methods.map((m) => [m, handle])),
       }));
     // The app's error path (server/app.ts onError): busy is a 409, the
@@ -609,7 +614,7 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
           methods: ['GET', 'PUT'],
           catchAll: null,
           catchAllOptional: false,
-          ...(read ? { reads: ['GET', 'PUT'] } : {}),
+          ...(read ? { reads: ownerReads(['GET', 'PUT']) } : {}),
           load: async () => ({ GET: async () => Response.json(session.ownerCaller()) }),
         },
       ]);
@@ -650,7 +655,9 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
     const { buildRoutePolicy } = await import('../../lib/auth/route-policy');
     const session = await import('../../lib/auth/session');
     const pattern = '/api/profile/*';
-    const base = buildRoutePolicy([{ pattern: '/api/profile', methods: ['PUT'], reads: ['PUT'] }]);
+    const base = buildRoutePolicy([
+      { pattern: '/api/profile', methods: ['PUT'], reads: ownerReads(['PUT']) },
+    ]);
     const apps = [true, false].map((read) => {
       const row = base.get('PUT /api/profile')!;
       const policy = new Map([
@@ -670,7 +677,7 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
             methods: ['PUT'],
             catchAll: 'rest',
             catchAllOptional: false,
-            ...(read ? { reads: ['PUT'] } : {}),
+            ...(read ? { reads: ownerReads(['PUT']) } : {}),
             load: async () => ({
               PUT: async () => {
                 counts.handled++;
@@ -755,7 +762,7 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
             ...e,
             catchAll: null,
             catchAllOptional: false,
-            ...(reads ? { reads: e.methods } : {}),
+            ...(reads ? { reads: ownerReads(e.methods) } : {}),
             load: async () => Object.fromEntries(e.methods.map((m) => [m, handle])),
           })),
         );
@@ -813,7 +820,7 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
         methods: ['GET'],
         catchAll: null,
         catchAllOptional: false,
-        reads: ['GET'],
+        reads: ownerReads(['GET']),
         load: async () => ({
           GET: async () => {
             session.ownerCaller();
@@ -952,20 +959,49 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
     expect(res.status).toBe(500);
   });
 
-  it('a row the owner guard does not serve cannot read the owner caller', async () => {
+  it("a row a kind's guard does not serve cannot read that kind's caller", async () => {
     const { buildRoutePolicy } = await import('../../lib/auth/route-policy');
     // An any-login route (its own guard), a member route, a public route.
     for (const pattern of ['/api/shell', '/api/member/mcp', '/api/auth/whoami']) {
-      expect(() => buildRoutePolicy([{ pattern, methods: ['GET'], reads: ['GET'] }])).toThrow(
-        /the owner guard does not serve its row/,
-      );
+      expect(() =>
+        buildRoutePolicy([{ pattern, methods: ['GET'], reads: ownerReads(['GET']) }]),
+      ).toThrow(/the owner guard does not serve its row/);
     }
     // A catch-all route keeps its guard.
     expect(() =>
-      buildRoutePolicy([{ pattern: '/api/docs/:collection/*', methods: ['GET'], reads: ['GET'] }]),
+      buildRoutePolicy([
+        { pattern: '/api/docs/:collection/*', methods: ['GET'], reads: ownerReads(['GET']) },
+      ]),
     ).toThrow(/is a catch-all/);
+    // Each other kind only on the rows of its own list (A4 step 3b part 5):
+    // the member guard's, the any-login guard's, the chat guard's (the chat
+    // and the Telegram chat lists).
+    const reads = (pattern: string, method: string, caller: RouteCaller) =>
+      buildRoutePolicy([{ pattern, methods: [method], reads: { [method]: caller } }]).get(
+        `${method} ${pattern}`,
+      )?.caller;
+    expect(reads('/api/member/mcp', 'GET', 'member')).toBe('member');
+    expect(reads('/api/shell', 'GET', 'login')).toBe('login');
+    expect(reads('/api/assistant/thread', 'GET', 'chat')).toBe('chat');
+    expect(reads('/api/telegram/pair', 'POST', 'chat')).toBe('chat');
+    for (const [pattern, method, caller] of [
+      ['/api/profile', 'GET', 'member'],
+      ['/api/shell', 'GET', 'member'],
+      ['/api/member/mcp', 'GET', 'chat'],
+      ['/api/assistant/thread', 'GET', 'login'],
+      ['/api/telegram/chats/:id', 'PATCH', 'chat'],
+      ['/api/notes', 'GET', 'login'],
+      ['/api/auth/whoami', 'GET', 'login'],
+      ['/api/auth/pair', 'POST', 'login'],
+    ] as const) {
+      expect(() => reads(pattern, method, caller), `${method} ${pattern} ${caller}`).toThrow(
+        new RegExp(`the ${caller} guard does not serve its row`),
+      );
+    }
     // A HEAD row reads what its GET reads.
-    const rows = buildRoutePolicy([{ pattern: '/api/profile', methods: ['GET'], reads: ['GET'] }]);
+    const rows = buildRoutePolicy([
+      { pattern: '/api/profile', methods: ['GET'], reads: ownerReads(['GET']) },
+    ]);
     expect(rows.get('GET /api/profile')?.caller).toBe('owner');
     expect(rows.get('HEAD /api/profile')?.caller).toBe('owner');
   });

@@ -35,12 +35,43 @@ export const SESSION_GUARDS = Object.freeze([
   'getCookieUpgradeLoginOr401',
 ]);
 
-/** The readers of the caller the pipeline answers: a handler calls one in
- *  place of a guard (ownerCaller for getOwnerOr401, ownerCallerWithSource
- *  for getOwnerOr401WithSource, ownerCallerWithLogin for
- *  getOwnerOr401WithLogin; each projects the one answer the gate gave). */
-export const CALLER_READERS = Object.freeze([
-  'ownerCaller',
-  'ownerCallerWithSource',
-  'ownerCallerWithLogin',
-]);
+/**
+ * The readers of the caller the pipeline answers, each to what it reads: a
+ * handler calls one in place of a guard, and each projects the one answer
+ * the gate gave (session.ts answerRouteCaller).
+ *
+ *  - `caller`: the row's caller kind the reader needs (route-policy.ts
+ *    RouteCaller): the gate runs that kind's guard for the row. The owner
+ *    guard serves the owner rows (self, content, area); the member guard
+ *    the member list; the any-login guard the any-login list; the chat
+ *    guard the chat and Telegram lists (A4 step 3b part 5).
+ *  - `guard`: the guard the reader replaced, whose answer it projects.
+ *  - `entry`: the name the guard sweep logs the pipeline's answer under.
+ */
+export const READER_ANSWERS = Object.freeze({
+  ownerCaller: Object.freeze({ caller: 'owner', guard: 'getOwnerOr401', entry: 'pipeline:owner' }),
+  ownerCallerWithSource: Object.freeze({
+    caller: 'owner',
+    guard: 'getOwnerOr401WithSource',
+    entry: 'pipeline:ownerWithSource',
+  }),
+  ownerCallerWithLogin: Object.freeze({
+    caller: 'owner',
+    guard: 'getOwnerOr401WithLogin',
+    entry: 'pipeline:ownerWithLogin',
+  }),
+  memberCaller: Object.freeze({
+    caller: 'member',
+    guard: 'getMemberOr401',
+    entry: 'pipeline:member',
+  }),
+  loginCaller: Object.freeze({ caller: 'login', guard: 'getLoginOr401', entry: 'pipeline:login' }),
+  chatLoginCaller: Object.freeze({
+    caller: 'chat',
+    guard: 'getChatLoginOr401',
+    entry: 'pipeline:chat',
+  }),
+});
+
+/** The readers' names (READER_ANSWERS). */
+export const CALLER_READERS = Object.freeze(Object.keys(READER_ANSWERS));

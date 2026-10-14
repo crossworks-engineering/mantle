@@ -6,6 +6,7 @@ import {
   linkCors,
   servedMethods,
   type PageClass,
+  type RouteCaller,
   type RouteRow,
 } from '../lib/auth/route-policy';
 import { getRequestContext } from './request-context';
@@ -46,9 +47,11 @@ export type RouteEntry = {
   methods: string[];
   catchAll: string | null;
   catchAllOptional: boolean;
-  /** The methods whose handler reads the caller the pipeline answers
-   *  (ownerCaller(), arch A4 step 3b): their rows' `caller`. */
-  reads?: readonly string[];
+  /** Each method whose handler reads the caller the pipeline answers, to
+   *  the caller kind its reader reads (ownerCaller(), memberCaller(),
+   *  loginCaller(), chatLoginCaller(); arch A4 step 3b): their rows'
+   *  `caller`. */
+  reads?: Readonly<Record<string, RouteCaller>>;
   load: () => Promise<RouteModule>;
 };
 

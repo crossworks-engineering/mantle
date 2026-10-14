@@ -1,14 +1,19 @@
 /**
  * Which handlers of a route file read the caller the HTTP pipeline answers
- * (arch A4 step 3b): the gate's step that runs the owner guard's answer
- * once, from the request's ROUTE_POLICY row, before the handler, and
- * refuses with it (lib/auth/session.ts answerRouteCaller). A handler reads
- * it with ownerCaller() instead of calling a session guard.
+ * (arch A4 step 3b), and which kind: the gate's step that runs a guard's
+ * answer once, from the request's ROUTE_POLICY row, before the handler,
+ * and refuses with it (lib/auth/session.ts answerRouteCaller). A handler
+ * reads it with a reader instead of calling a session guard: ownerCaller()
+ * (and its two projections) for the owner guard, memberCaller() for the
+ * member guard, loginCaller() for the any-login guard, chatLoginCaller()
+ * for the chat guard (A4 step 3b part 5; the one list,
+ * eslint-rules/session-guards.mjs READER_ANSWERS).
  *
  * The route manifest generator (gen-route-manifest.ts) asks this of every
- * route file, and the manifest carries the answer (`reads`, the methods);
- * the route's ROUTE_POLICY rows say so (`caller`), and the gate answers
- * only those rows. A handler that reads with no answer on its row would
+ * route file, and the manifest carries the answer (`reads`, each method to
+ * its caller kind); the route's ROUTE_POLICY rows say so (`caller`), and
+ * the gate answers only those rows, with that kind's guard. A handler that
+ * reads the callers of two kinds is refused. A handler that reads with no answer on its row would
  * throw; a row answered for a handler that also runs a guard would run the
  * guard's effects twice. So the answer is read from the code itself, with
  * the TypeScript parser, never kept by hand. It goes by bindings, not by
@@ -49,11 +54,20 @@
  * are gone every row is answered and this goes with them.
  */
 import ts from 'typescript';
-import { CALLER_READERS, SESSION_GUARDS } from '../../../eslint-rules/session-guards.mjs';
+import {
+  CALLER_READERS,
+  READER_ANSWERS,
+  SESSION_GUARDS,
+} from '../../../eslint-rules/session-guards.mjs';
+import type { RouteCaller } from '../lib/auth/route-policy';
 
 /** The readers and the session guards: the one list
  *  (eslint-rules/session-guards.mjs). */
 export { CALLER_READERS, SESSION_GUARDS };
+
+/** Each method whose handler reads the caller the pipeline answers, to the
+ *  caller kind its reader reads. */
+export type HandlerCallers = Readonly<Record<string, RouteCaller>>;
 
 /** The modules a reader is imported from (lib/auth.ts re-exports
  *  lib/auth/session.ts). */
@@ -106,12 +120,13 @@ function plainArg(e: ts.Expression): boolean {
 /**
  * The reads of another module's exports (a handler a route file imports
  * or re-exports, as the /api/v1 files do: `export { GET } from
- * '../../notes/route'`): `follow(specifier)` answers the methods that
- * module's handlers read, or null where it does not know the module (not
- * a route file): its handlers are taken as not reading. A handler that
- * reads with no answer on its row throws when called (fail closed).
+ * '../../notes/route'`): `follow(specifier)` answers that module's
+ * handlers that read, each to its caller kind, or null where it does not
+ * know the module (not a route file): its handlers are taken as not
+ * reading. A handler that reads with no answer on its row throws when
+ * called (fail closed).
  */
-export type FollowReads = (specifier: string) => readonly string[] | null;
+export type FollowReads = (specifier: string) => HandlerCallers | null;
 
 /** A method's handler: its function (null: not a plain function), the
  *  node it was declared by, and the statement that carries its marks. */
@@ -119,17 +134,27 @@ type Handler = { fn: Fn | null; decl: ts.Node; statement: ts.Node; mutable: bool
 
 /**
  * The methods of `src` (a route file's text) whose handler reads the
- * pipeline's answer. Throws, naming `file`, on a file it cannot answer for
- * (see above).
+ * pipeline's answer, sorted (handlerCallers' methods).
  */
 export function handlerReads(src: string, file: string, follow?: FollowReads): string[] {
+  return Object.keys(handlerCallers(src, file, follow)).sort();
+}
+
+/**
+ * Each method of `src` (a route file's text) whose handler reads the
+ * pipeline's answer, to the caller kind it reads. Throws, naming `file`,
+ * on a file it cannot answer for (see above).
+ */
+export function handlerCallers(src: string, file: string, follow?: FollowReads): HandlerCallers {
   const kind = file.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS;
   const sf = ts.createSourceFile(file, src, ts.ScriptTarget.Latest, true, kind);
   const fail = (node: ts.Node, msg: string): never => {
     const { line } = sf.getLineAndCharacterOfPosition(node.getStart(sf));
     throw new Error(`${file}:${line + 1}: ${msg}`);
   };
-  const reads = (spec: string, name: string) => follow?.(spec)?.includes(name) ?? false;
+  /** The caller kind a handler of another module reads, if it reads. */
+  const kindOf = (spec: string, name: string): RouteCaller | undefined =>
+    follow?.(spec)?.[name] ?? undefined;
 
   // ── The file's bindings ──────────────────────────────────────────────────
   // Its top-level functions and constants, by name; what it imports, each
@@ -215,7 +240,7 @@ export function handlerReads(src: string, file: string, follow?: FollowReads): s
   // A route file whose handlers read, imported whole or re-exported with
   // `*`: which of its handlers this file runs is not plain.
   for (const { node, spec } of wholeImports) {
-    if ((follow?.(spec)?.length ?? 0) > 0) {
+    if (Object.keys(follow?.(spec) ?? {}).length > 0) {
       fail(node, `takes all of ${spec}, whose handlers read the caller: name the handlers`);
     }
   }
@@ -242,12 +267,14 @@ export function handlerReads(src: string, file: string, follow?: FollowReads): s
   // A handler taken from another route file that reads: it may be
   // re-exported, exported as a method, or called first in a handler.
   const readingImports = new Set(
-    [...imported].filter(([, f]) => reads(f.spec, f.name)).map(([l]) => l),
+    [...imported].filter(([, f]) => kindOf(f.spec, f.name)).map(([l]) => l),
   );
 
   // ── Every name the answer turns on, where it stands ──────────────────────
   const readCalls: ts.CallExpression[] = [];
   const wrapCalls: ts.CallExpression[] = [];
+  /** The caller kind each read and each wrap reads. */
+  const kindAt = new Map<ts.CallExpression, RouteCaller>();
   const guardCalls: Array<{ call: ts.CallExpression; name: string }> = [];
   const guardRefs: Array<{ node: ts.Node; name: string }> = [];
   /** Each use of a top-level function or constant of the file by name
@@ -288,6 +315,7 @@ export function handlerReads(src: string, file: string, follow?: FollowReads): s
           fail(n, `calls ${n.text}() with no import of it from ${READER_MODULES[0]}`);
         }
         readCalls.push(call!);
+        kindAt.set(call!, (READER_ANSWERS[n.text] as { caller: RouteCaller }).caller);
       }
       const isMember = ts.isPropertyAccessExpression(p) && p.name === n;
       const guard = isMember
@@ -326,6 +354,8 @@ export function handlerReads(src: string, file: string, follow?: FollowReads): s
           );
         }
         wrapCalls.push(call!);
+        const { spec, name } = imported.get(n.text)!;
+        kindAt.set(call!, kindOf(spec, name)!);
       }
     } else if (ts.isElementAccessExpression(n) && ts.isStringLiteralLike(n.argumentExpression)) {
       const key = n.argumentExpression.text;
@@ -340,8 +370,9 @@ export function handlerReads(src: string, file: string, follow?: FollowReads): s
   // ── A handler of the file that runs another (POST: `return GET(req)`) ──
   // reads what the one it runs reads, as a handler of another route file
   // does: to a fixed point, from the handlers that read or wrap.
+  // Each reading handler, to the caller kinds it reads.
   const scopeOf = (h: Handler) => h.fn ?? h.decl;
-  const readingLocal = new Set<Handler>();
+  const readingLocal = new Map<Handler, Set<RouteCaller>>();
   const localCall = (r: { node: ts.Identifier }) => {
     const p = r.node.parent;
     return ts.isCallExpression(p) && p.expression === r.node ? p : null;
@@ -349,25 +380,29 @@ export function handlerReads(src: string, file: string, follow?: FollowReads): s
   for (let grew = true; grew;) {
     grew = false;
     for (const h of methods.values()) {
-      if (readingLocal.has(h)) continue;
       const scope = scopeOf(h);
-      const runsReader = localRefs.some((r) => {
+      const kinds = new Set<RouteCaller>();
+      for (const r of localRefs) {
         const target = local.get(r.name)!;
-        return target !== h && readingLocal.has(target) && within(r.node, scope) && !!localCall(r);
-      });
-      if (
-        runsReader ||
-        readCalls.some((c) => within(c, scope)) ||
-        wrapCalls.some((c) => within(c, scope))
-      ) {
-        readingLocal.add(h);
+        const of = readingLocal.get(target);
+        if (target !== h && of && within(r.node, scope) && localCall(r)) {
+          for (const k of of) kinds.add(k);
+        }
+      }
+      for (const c of [...readCalls, ...wrapCalls]) {
+        if (within(c, scope)) kinds.add(kindAt.get(c)!);
+      }
+      const had = readingLocal.get(h);
+      if (kinds.size > (had?.size ?? 0)) {
+        readingLocal.set(h, kinds);
         grew = true;
       }
     }
   }
   for (const r of localRefs) {
     const target = local.get(r.name)!;
-    if (!readingLocal.has(target)) continue;
+    const of = readingLocal.get(target);
+    if (!of) continue;
     const call = localCall(r);
     if (!call) {
       fail(
@@ -375,13 +410,18 @@ export function handlerReads(src: string, file: string, follow?: FollowReads): s
         `passes ${r.name} (a handler of this file that reads the caller) other than calling it`,
       );
     }
-    if (!within(call!, scopeOf(target))) wrapCalls.push(call!);
+    if (!within(call!, scopeOf(target))) {
+      wrapCalls.push(call!);
+      // A handler reading two kinds is refused below, where it is a method.
+      kindAt.set(call!, [...of][0]!);
+    }
   }
 
   // ── Each method ──────────────────────────────────────────────────────────
-  const out: string[] = [];
+  const out: Record<string, RouteCaller> = {};
   for (const [method, { spec, name }] of elsewhere) {
-    if (reads(spec, name)) out.push(method);
+    const kind = kindOf(spec, name);
+    if (kind) out[method] = kind;
   }
   const answered = new Set<ts.CallExpression>();
   const handlerNodes: ts.Node[] = [];
@@ -420,7 +460,15 @@ export function handlerReads(src: string, file: string, follow?: FollowReads): s
     }
     for (const c of readsIn) answered.add(c);
     for (const c of wrapsIn) answered.add(c);
-    out.push(method);
+    const kinds = [...(readingLocal.get(h) ?? [])];
+    if (kinds.length !== 1) {
+      fail(
+        at,
+        `${method} reads the callers of ${kinds.length === 0 ? 'no kind' : kinds.sort().join(' and ')}: ` +
+          `the gate answers one kind for a row, so a handler reads one kind's reader`,
+      );
+    }
+    out[method] = kinds[0]!;
   }
   // A reader, or a reading handler of another file, anywhere else in the
   // file: no method can be said to read it.
@@ -451,7 +499,7 @@ export function handlerReads(src: string, file: string, follow?: FollowReads): s
       }
     }
   }
-  return [...new Set(out)].sort();
+  return Object.fromEntries(Object.entries(out).sort(([a], [b]) => (a < b ? -1 : 1)));
 }
 
 /**

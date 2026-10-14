@@ -75,6 +75,7 @@ import {
   memberOpenRead,
   memberOpenWrite,
   routeItemTarget,
+  type RouteCaller,
   type RouteRow,
 } from './route-policy';
 import { auditsAsWrite } from './route-scope';
@@ -723,9 +724,10 @@ export class RequestLogins {
   #changed = false;
   /** The gate's failed find, kept for the first guard read (keepFailure). */
   #failure: Promise<FoundLogin> | null = null;
-  /** The owner guard's answer the pipeline gave before the handler
-   *  (answerRouteCaller, A4 step 3b), which ownerCaller() reads. */
-  #owned: OwnerRouteLogin | null = null;
+  /** The guard's answer the pipeline gave before the handler
+   *  (answerRouteCaller, A4 step 3b), which the row's reader reads
+   *  (ownerCaller(), memberCaller(), loginCaller(), chatLoginCaller()). */
+  #answered: PipelineAnswer | null = null;
   /** The found login whose effects the gate applied before its Admin step
    *  (enterRouteLogin, A4 step 3b part 4), until a read takes them. */
   #applied: FoundLogin | null = null;
@@ -774,16 +776,16 @@ export class RequestLogins {
     return true;
   }
 
-  /** Keep the owner guard's answer the pipeline gave (answerRouteCaller).
-   *  It is the request's answer, given once before the handler: forget
-   *  does not drop it (a handler reads it at its start). */
-  keepOwnerAnswer(answer: OwnerRouteLogin): void {
-    this.#owned = answer;
+  /** Keep the guard's answer the pipeline gave (answerRouteCaller). It is
+   *  the request's answer, given once before the handler: forget does not
+   *  drop it (a handler reads it at its start). */
+  keepAnswer(answer: PipelineAnswer): void {
+    this.#answered = answer;
   }
 
-  /** The owner guard's answer the pipeline gave, or null. */
-  get ownerAnswer(): OwnerRouteLogin | null {
-    return this.#owned;
+  /** The guard's answer the pipeline gave, or null. */
+  get answer(): PipelineAnswer | null {
+    return this.#answered;
   }
 
   login(): Promise<FoundLogin> {
@@ -1005,29 +1007,68 @@ export async function enterRouteLogin<T>(fn: () => Promise<T>): Promise<T> {
 }
 
 /**
+ * The guard's answer the pipeline gave for a row, by the row's caller kind
+ * (RouteRow.caller): what that kind's guard answers when it lets a login
+ * through. Kept on the request's logins for the row's reader.
+ */
+type PipelineAnswer =
+  | Readonly<{ caller: 'owner'; owner: OwnerRouteLogin }>
+  | Readonly<{ caller: 'member'; member: MemberCaller }>
+  | Readonly<{ caller: 'login'; login: AnyLogin }>
+  | Readonly<{ caller: 'chat'; chat: ChatLogin }>;
+
+/**
  * The gate's step for a row whose handler reads the caller the pipeline
  * answers (`row.caller`, from the route file's code: the manifest's
- * `reads`): it runs the owner guard's answer once, before the handler, in
- * the request slot enterCall opened, and so does what the guard did on the
- * side, from the row: the login's actor named (and a device token's stamp),
- * the scope entered or the system reason noted (self, area, an Admin
- * write, the rollback switch), the item a write names checked, the create
- * home named, the audit row of a write. A refusal is the gate's answer (the
+ * `reads`): it runs the guard of the row's caller kind once, before the
+ * handler, in the request slot enterCall opened, and so does what the
+ * guard did on the side, from the row. The owner guard
+ * (getOwnerOr401WithLogin): the login's actor named (and a device token's
+ * stamp), the scope entered or the system reason noted (self, area, an
+ * Admin write, the rollback switch), the item a write names checked, the
+ * create home named, the audit row of a write. The member guard
+ * (getMemberOr401, A4 step 3b part 5): the member named, its scope entered
+ * or its own rule noted, a key's write audited. The any-login guard
+ * (getLoginOr401) and the chat guard (getChatLoginOr401): the login named,
+ * its scope entered or the system reason noted (anyLoginScope), the audit
+ * row each role's own gate writes. A refusal is the gate's answer (the
  * handler does not run); otherwise the answer is kept on the request's
- * logins for ownerCaller(). The same function the guard runs
- * (getOwnerOr401WithLogin), so the two cannot answer differently; a route
- * whose handler still calls a guard has no `caller` and is answered by it.
+ * logins for the row's reader. The same function the guard runs, so the
+ * two cannot answer differently; a route whose handler still calls a guard
+ * has no `caller` and is answered by it.
  */
 export async function answerRouteCaller(row: RouteRow): Promise<NextResponse | null> {
-  if (row.caller !== 'owner') return null;
+  if (!row.caller) return null;
   const logins = boundLogins(currentCaller());
   // The gate binds the request's logins on every routed request
   // (resolveHttpLogin): without them nothing could read the answer.
   if (!logins) throw new Error(`answerRouteCaller: ${row.key} has no logins bound`);
-  const got = await getOwnerOr401WithLogin();
+  const got = await guardAnswer(row.caller);
   if (got instanceof NextResponse) return got;
-  logins.keepOwnerAnswer(got);
+  logins.keepAnswer(got);
   return null;
+}
+
+/** The answer of the guard of a caller kind (the guard itself, run once). */
+async function guardAnswer(caller: RouteCaller): Promise<PipelineAnswer | NextResponse> {
+  switch (caller) {
+    case 'owner': {
+      const owner = await getOwnerOr401WithLogin();
+      return owner instanceof NextResponse ? owner : { caller, owner };
+    }
+    case 'member': {
+      const member = await getMemberOr401();
+      return member instanceof NextResponse ? member : { caller, member };
+    }
+    case 'login': {
+      const login = await getLoginOr401();
+      return login instanceof NextResponse ? login : { caller, login };
+    }
+    case 'chat': {
+      const chat = await getChatLoginOr401();
+      return chat instanceof NextResponse ? chat : { caller, chat };
+    }
+  }
 }
 
 /**
@@ -1040,12 +1081,13 @@ export async function answerRouteCaller(row: RouteRow): Promise<NextResponse | n
  *
  * There is no refusal to return: the gate refused before the handler ran.
  * It throws where the pipeline answered no owner: a row with no `caller`
- * (its handler must call a guard), a call nested in the request with a
- * caller of its own, outside a routed request (a test calling a handler
- * goes through runRoute). Fail closed: never a login nobody checked.
+ * (its handler must call a guard), or another kind's; a call nested in the
+ * request with a caller of its own; outside a routed request (a test
+ * calling a handler goes through runRoute). Fail closed: never a login
+ * nobody checked.
  */
 export function ownerCaller(): SessionUser {
-  return ownerAnswer('ownerCaller').user;
+  return pipelineAnswer('ownerCaller', 'owner').owner.user;
 }
 
 /**
@@ -1057,8 +1099,8 @@ export function ownerCaller(): SessionUser {
  *     const { user, source } = ownerCallerWithSource();
  */
 export function ownerCallerWithSource(): { user: SessionUser; source: AuthSource } {
-  const answer = ownerAnswer('ownerCallerWithSource');
-  return { user: answer.user, source: answer.source };
+  const { owner } = pipelineAnswer('ownerCallerWithSource', 'owner');
+  return { user: owner.user, source: owner.source };
 }
 
 /**
@@ -1068,19 +1110,68 @@ export function ownerCallerWithSource(): { user: SessionUser; source: AuthSource
  * effect, and the same throw where the pipeline answered no owner.
  */
 export function ownerCallerWithLogin(): OwnerRouteLogin {
-  return { ...ownerAnswer('ownerCallerWithLogin') };
+  return { ...pipelineAnswer('ownerCallerWithLogin', 'owner').owner };
 }
 
-/** The owner guard's answer the pipeline gave (answerRouteCaller), which
- *  the readers project; throws where it gave none (fail closed). */
-function ownerAnswer(reader: string): OwnerRouteLogin {
-  const answer = boundLogins(currentCaller())?.ownerAnswer;
-  if (!answer) {
+/**
+ * The member the pipeline answered for this request (A4 step 3b part 5):
+ * what getMemberOr401 answers, on a member route (the member list), read
+ * from the pipeline's answer as ownerCaller() reads the owner: no lookup,
+ * no effect, and a throw where the pipeline answered no member. A handler
+ * reads it in place of the guard:
+ *
+ *     const member = memberCaller();
+ */
+export function memberCaller(): MemberCaller {
+  return { ...pipelineAnswer('memberCaller', 'member').member };
+}
+
+/**
+ * The login the pipeline answered for this request (A4 step 3b part 5):
+ * what getLoginOr401 answers, on an any-login route (the any-login list),
+ * read from the pipeline's answer as ownerCaller() reads the owner: no
+ * lookup, no effect, and a throw where the pipeline answered no login.
+ */
+export function loginCaller(): AnyLogin {
+  return { ...pipelineAnswer('loginCaller', 'login').login };
+}
+
+/**
+ * The chat login the pipeline answered for this request (A4 step 3b part
+ * 5): what getChatLoginOr401 answers, on a chat or Telegram chat route,
+ * read from the pipeline's answer as ownerCaller() reads the owner: no
+ * lookup, no effect, and a throw where the pipeline answered no chat
+ * login. A handler reads it in place of the guard:
+ *
+ *     const login = chatLoginCaller();
+ */
+export function chatLoginCaller(): ChatLogin {
+  return { ...pipelineAnswer('chatLoginCaller', 'chat').chat };
+}
+
+/** What the pipeline answers for each caller kind, in a reader's refusal. */
+const ANSWERED: Readonly<Record<RouteCaller, string>> = {
+  owner: 'owner',
+  member: 'member',
+  login: 'login',
+  chat: 'chat login',
+};
+
+/** The guard's answer the pipeline gave (answerRouteCaller) for a row of
+ *  caller kind `caller`, which the readers project; throws where it gave
+ *  none, or another kind's (fail closed). */
+function pipelineAnswer<K extends RouteCaller>(
+  reader: string,
+  caller: K,
+): Extract<PipelineAnswer, { caller: K }> {
+  const answer = boundLogins(currentCaller())?.answer;
+  if (answer?.caller !== caller) {
     throw new Error(
-      `${reader}(): the pipeline answered no owner for this request (the row has no caller)`,
+      `${reader}(): the pipeline answered no ${ANSWERED[caller]} for this request ` +
+        `(the row's caller is ${answer?.caller ?? 'none'})`,
     );
   }
-  return answer;
+  return answer as Extract<PipelineAnswer, { caller: K }>;
 }
 
 /** Whether `loginId` holds `area`: the Admin view the gate resolved for
@@ -1740,9 +1831,7 @@ export async function sessionCookieExpiryMs(): Promise<number | null> {
  * own gate follows: an admin's write always, a member's write when it was made with an API key. Reads are not logged, and
  * a path that logs its own richer event is skipped (auditMutation).
  */
-export async function auditLoginMutation(
-  login: Exclude<Awaited<ReturnType<typeof getLoginOr401>>, NextResponse>,
-): Promise<void> {
+export async function auditLoginMutation(login: AnyLogin): Promise<void> {
   switch (login.kind) {
     case 'admin':
       return auditMutation(login.user);
@@ -1757,6 +1846,10 @@ export async function auditLoginMutation(
     }
   }
 }
+
+/** What getLoginOr401 answers when it lets a login through: the login, any
+ *  role (loginCaller() reads it). */
+export type AnyLogin = Exclude<Awaited<ReturnType<typeof getLoginOr401>>, NextResponse>;
 
 /** The calling login's own row, whatever its role: for the few routes about
  *  the login itself (change its password, sign out, who am I). Never for

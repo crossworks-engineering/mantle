@@ -286,10 +286,13 @@ vi.mock('../lib/auth/session', async (importOriginal) => {
   type Row = { key: string; caller: string | null };
   const answer = real.answerRouteCaller as (row: Row) => Promise<unknown>;
   const { readerOfRow } = await import('./a4-guard-sweep.readers');
+  // The entry's name, by the reader (A4 step 3b part 5: the member,
+  // any-login and chat readers too; the one list, session-guards.mjs).
+  const { READER_ANSWERS: ENTRIES } = await import('../../../eslint-rules/session-guards.mjs');
   wrapped.answerRouteCaller = async (row: Row) => {
     if (!row.caller) return answer(row);
     const reader = readerOfRow(row.key);
-    const name = `pipeline:${row.caller}${reader.slice('ownerCaller'.length)}`;
+    const name = ENTRIES[reader]!.entry;
     const project = real[reader] as () => unknown;
     let value: unknown;
     try {
@@ -327,8 +330,7 @@ vi.mock('../lib/auth/session', async (importOriginal) => {
         const http = mapAccessError(err)?.http;
         const row = (await import('../lib/auth/route-policy')).currentRoute();
         if (http && row && !sweepState.log.some((l) => l.startsWith('pipeline:'))) {
-          const reader = readerOfRow(row.key);
-          const name = `pipeline:${row.caller}${reader.slice('ownerCaller'.length)}`;
+          const name = ENTRIES[readerOfRow(row.key)]!.entry;
           sweepState.log.push(
             `${name} R${http.status} ${JSON.stringify(http.body).slice(0, 300)} ${after()}`,
           );
@@ -374,6 +376,7 @@ vi.mock('../lib/auth/session', async (importOriginal) => {
 
 import { SESSION_COOKIE_NAME, RENDER_COOKIE_NAME } from '../lib/auth-constants';
 import { KEY_TOKENS } from './a4-guard-sweep.keys';
+import { READER_ANSWERS } from '../../../eslint-rules/session-guards.mjs';
 import { auditsAsWrite, isReadRequest } from '../lib/auth/route-scope';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -392,15 +395,16 @@ type Cred = { name: string; headers: Record<string, string>; query?: string; get
 
 /** The guard each pipeline entry stands for in the two recorded files: the
  *  guard the converted handler called, named by the reader that replaced
- *  it (ownerCaller(): getOwnerOr401, batches 1 to 3;
- *  ownerCallerWithSource(): getOwnerOr401WithSource;
- *  ownerCallerWithLogin(): getOwnerOr401WithLogin, batch 3's app brokers
- *  and frame ticket). Each entry logs the projection its reader reads. */
-const LEGACY_NAMES: Readonly<Record<string, string>> = {
-  'pipeline:owner': 'getOwnerOr401',
-  'pipeline:ownerWithSource': 'getOwnerOr401WithSource',
-  'pipeline:ownerWithLogin': 'getOwnerOr401WithLogin',
-};
+ *  it (the one list, session-guards.mjs READER_ANSWERS: ownerCaller():
+ *  getOwnerOr401, batches 1 to 4; ownerCallerWithSource():
+ *  getOwnerOr401WithSource; ownerCallerWithLogin():
+ *  getOwnerOr401WithLogin, batch 3's app brokers and frame ticket;
+ *  memberCaller(): getMemberOr401, loginCaller(): getLoginOr401 and
+ *  chatLoginCaller(): getChatLoginOr401, batch 5). Each entry logs the
+ *  projection its reader reads. */
+const LEGACY_NAMES: Readonly<Record<string, string>> = Object.fromEntries(
+  Object.values(READER_ANSWERS).map((r) => [r.entry, r.guard]),
+);
 
 /** An answer as the recorded files spell it: a moved entry under the name
  *  of the guard it replaced. Everything else is the answer as driven. */
