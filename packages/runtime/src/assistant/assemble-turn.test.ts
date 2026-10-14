@@ -16,10 +16,21 @@ const h = vi.hoisted(() => ({
   openHeartbeatsError: null as Error | null,
   hasHeartbeats: false,
   resolvedToolSlugs: [] as string[][],
+  /** What the gate does not list for the turn (turnListedTools). */
+  gateHides: new Set<string>(),
   visionOk: true,
   maxImageBytes: 1000,
   catalogWarms: 0,
   thinkingBudget: 2048,
+}));
+
+// The gate's turn listing (A5 step 5, pick B): proven against the real
+// gate in packages/tools/src/turn-listing.test.ts; here it drops what the
+// test says the gate hides, so the assembler is seen to ask it.
+vi.mock('@mantle/tools', () => ({
+  turnListedTools: vi.fn(async (rows: Array<{ slug: string }>) =>
+    rows.filter((r) => !h.gateHides.has(r.slug)),
+  ),
 }));
 
 vi.mock('@mantle/decisions', () => ({
@@ -145,6 +156,7 @@ const BASE = {
 } as const;
 
 beforeEach(() => {
+  h.gateHides = new Set();
   h.identity = '';
   h.identityError = null;
   h.openHeartbeats = [];
@@ -286,6 +298,16 @@ describe('assembleResponderTurn — tools', () => {
       'heartbeat_complete',
       'heartbeat_snooze',
     ]);
+  });
+
+  it('lists only what the gate lets the turn call, after every other narrowing (A5 step 5, pick B)', async () => {
+    h.gateHides = new Set(['memory-core-tool-b']);
+    const a = await assembleResponderTurn({
+      ...BASE,
+      agent: agent({ toolGroupSlugs: ['memory-core'] }),
+    });
+    expect(h.resolvedToolSlugs.at(-1)).toEqual(['memory-core-tool-a', 'memory-core-tool-b']);
+    expect(a.allowedTools.map((t) => t.slug)).toEqual(['memory-core-tool-a']);
   });
 
   it('no heartbeat surface (team) → no heartbeat queries, no affordance', async () => {

@@ -53,6 +53,7 @@ import {
   type ProfilePreferences,
   type ThinkingEffort as ContentThinkingEffort,
 } from '@mantle/content';
+import { turnListedTools } from '@mantle/tools';
 import type { ThinkingEffort } from '@mantle/voice';
 
 /**
@@ -383,7 +384,10 @@ async function assembleResponderTurnAtLevel(
   if (opts.readOnly) {
     allowedToolSlugs = allowedToolSlugs.filter((s) => isBuiltinReadOnly(s));
   }
-  const allowedTools = await resolveAgentTools(ownerId, allowedToolSlugs);
+  // Only what the one gate lets this turn call, in the scope it runs in
+  // (A5 step 5, owner pick B): a tool its grants give but the gate refuses
+  // here is not offered to the model (turn-listing.ts).
+  const allowedTools = await turnListedTools(await resolveAgentTools(ownerId, allowedToolSlugs));
 
   // Honor the agent's per-turn iteration override for the TOP-LEVEL responder
   // turn (not just delegated children). A heavy gather-then-author task needs

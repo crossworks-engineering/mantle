@@ -45,6 +45,11 @@ vi.mock('@mantle/db', async (importOriginal) => {
   };
 });
 
+// The gate's turn listing: proven in packages/tools/src/turn-listing.test.ts.
+vi.mock('@mantle/tools', () => ({
+  turnListedTools: vi.fn(async (rows: unknown[]) => rows),
+}));
+
 vi.mock('@mantle/decisions', () => ({
   loadDelegates: vi.fn(async () => []),
   suggestDelegate: vi.fn(async () => null),

@@ -2155,3 +2155,21 @@ goes) does not arise; marking them would park every unattended
 heartbeat's peer read. `tool-policy-snapshot.test.ts` holds the new set;
 `dispatch-parity.json` does not change (the mark is read only by a
 heartbeat fire).
+
+**Pick B (owner b): the assistant model sees only what the gate lets
+through.** `assembleResponderTurn`
+(`packages/runtime/src/assistant/assemble-turn.ts`) filters the tools a
+turn's grants resolve to with `turnListedTools`
+(`packages/tools/src/turn-listing.ts`): each by the ref dispatch calls it
+by, `gateLists` for the turn's own caller in the scope the turn runs in.
+A tool the gate would refuse there (an Admin-only or Admin-area tool, a
+create of an Admin-only kind or a shell tool in a workspace that does not
+hold Admin, a row with no policy) is not offered to the model, where
+before the model saw it and its call was refused. An owner turn (an Admin
+scope with every area) lists what it listed before; a turn outside any
+scope keeps the surface's own rules (`packages/tools/src/turn-listing.test.ts`).
+The list of an agent in a non-Admin scope changes once, so its prompt
+cache prefix resets once per agent, then holds. Every runner of the
+assembly follows (web, team, Telegram, the run workflows' turns,
+`ask_responder` and `ask_as_responder`, which now name the tools the
+responder would be offered in the caller's scope).
