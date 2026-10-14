@@ -232,23 +232,56 @@ const BAD_JSON = '400 application/json {"error":"invalid JSON"}';
  *    with another answer, or refused it with a text of its own;
  *    `accepted as {} on main`: where `{}` passed and the route went on as
  *    if no field was sent;
- *  - opaque-500 (fold 2): the database stand-in's plain error, whose text
- *    a route's hand catch put in its reply, answers the one opaque 500
- *    (docs/request-plumbing.md, fold 2);
+ *  - opaque-500 (fold 2): a plain error (the database stand-in's, or a
+ *    setting the sweep leaves unset, such as the vault's master key), whose
+ *    text a route's hand catch put in its reply, answers the one opaque 500
+ *    (docs/request-plumbing.md, fold 2), on a route fold 2 moves;
+ *  - input-400 (fold 2): a refusal the caller fixes (an InputError now),
+ *    which a hand catch said as a 500, answers 400 with the same body, on a
+ *    route fold 2 moves;
  *  - bad-json-400 (empty): an empty body on a route that refuses one
  *    (readJson `refuseEmpty`) answers the one 400, where the route refused
  *    it with a text of its own.
  */
+/** The manifest pattern of a route file (app/api/x/[id]/route.ts). */
+function patternOf(file: string): string {
+  return file
+    .replace(/^server\/web\/app/, '')
+    .replace(/\/route\.ts$/, '')
+    .replace(/\[\[?\.\.\.[^\]]+\]\]?/g, '*')
+    .replace(/\[([^\]]+)\]/g, ':$1');
+}
+
+/** The routes fold 2 moves (the error sweep's list of files). */
+const FOLD2_PATTERNS: ReadonlySet<string> = new Set(
+  (
+    JSON.parse(
+      readFileSync(
+        join(dirname(fileURLToPath(import.meta.url)), '__snapshots__/a10-error-sweep.files.json'),
+        'utf8',
+      ),
+    ) as string[]
+  ).map(patternOf),
+);
+
+const OPAQUE = '500 application/json {"error":"internal error"}';
+
 function changeKind(cell: string, main: string, now: string): string | null {
   const variant = cell.slice(cell.lastIndexOf(' ') + 1);
-  // Fold 2 (one error answer): the sweep's database stand-in throws a plain
-  // Error ("DATABASE_URL must be set"); a route whose catch put its text in
-  // the reply answers the one opaque 500 now.
+  const moved = FOLD2_PATTERNS.has(cell.split(' ')[1] ?? '');
+  // Fold 2 (one error answer): a plain error (the sweep's database stand-in
+  // throws "DATABASE_URL must be set"; the vault has no master key) whose
+  // text a route's catch put in the reply answers the one opaque 500 now.
   if (
-    /^\d{3} application\/json \{"error":"DATABASE_URL must be set"\}$/.test(main) &&
-    now === '500 application/json {"error":"internal error"}'
+    now === OPAQUE &&
+    (/^\d{3} application\/json \{"error":"DATABASE_URL must be set"\}$/.test(main) ||
+      (moved && /^[45]\d\d application\/json \{"error":"[^"]*"\}$/.test(main)))
   ) {
     return 'opaque-500 (fold 2: a plain error, its text was the reply)';
+  }
+  // A refusal the caller fixes, said as a 500 by a hand catch: 400 now.
+  if (moved && main.startsWith('500 ') && now === `400${main.slice(3)}`) {
+    return 'input-400 (fold 2: a refusal the caller fixes, said as a 500 on main)';
   }
   if (
     variant === 'chunked' &&

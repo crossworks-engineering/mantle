@@ -3,7 +3,6 @@ import { z } from 'zod';
 import { approvePendingCall, getPendingCall, rejectPendingCall } from '@mantle/tools';
 import { ASK_HUMAN_FORM_LIMITS as L } from '@mantle/client-types';
 import { ownerCaller } from '@/lib/auth';
-import { errorMessage } from '@mantle/std';
 import { readJson } from '@/lib/read-body';
 
 const IdParams = z.object({ id: z.string().uuid() });
@@ -54,25 +53,22 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
       { status: 400 },
     );
   }
-  try {
-    const { answer, answers } = parsed.data;
-    const row =
-      parsed.data.decision === 'approve'
-        ? await approvePendingCall(user.id, idParsed.data.id, {
-            ...(answer ? { answer } : {}),
-            ...(answers?.length ? { answers } : {}),
-            // Who approves: the signed-in login (W6b fix round 3, L-2).
-            approverLoginId: user.actor.id,
-          })
-        : await rejectPendingCall(user.id, idParsed.data.id, user.actor.id);
-    if (!row) {
-      return NextResponse.json(
-        { error: 'pending call not found or already decided' },
-        { status: 404 },
-      );
-    }
-    return NextResponse.json({ pending: row });
-  } catch (err) {
-    return NextResponse.json({ error: errorMessage(err) }, { status: 500 });
+  // A fault is the opaque 500 (A10 part 2), logged; never its text.
+  const { answer, answers } = parsed.data;
+  const row =
+    parsed.data.decision === 'approve'
+      ? await approvePendingCall(user.id, idParsed.data.id, {
+          ...(answer ? { answer } : {}),
+          ...(answers?.length ? { answers } : {}),
+          // Who approves: the signed-in login (W6b fix round 3, L-2).
+          approverLoginId: user.actor.id,
+        })
+      : await rejectPendingCall(user.id, idParsed.data.id, user.actor.id);
+  if (!row) {
+    return NextResponse.json(
+      { error: 'pending call not found or already decided' },
+      { status: 404 },
+    );
   }
+  return NextResponse.json({ pending: row });
 }

@@ -41,12 +41,8 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
         'cache-control': 'no-store',
       },
     });
-  } catch (err) {
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : 'export failed' },
-      { status: 500 },
-    );
   } finally {
+    // A failed snapshot is a fault: the opaque 500, logged (A10 part 2).
     await rm(snap, { force: true }).catch(() => {});
   }
 }

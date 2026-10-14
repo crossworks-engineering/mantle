@@ -4,7 +4,6 @@ import { and, asc, eq } from 'drizzle-orm';
 import { isUniqueViolation, db, curatedModels } from '@mantle/db';
 import { ownerCaller } from '@/lib/auth';
 import { MODEL_POOLS, MODEL_POOL_IDS, poolModelIssue } from '@/lib/model-pools';
-import { errorMessage } from '@mantle/std';
 import { firstIssue } from '@/lib/zod-issue';
 import { readJson } from '@/lib/read-body';
 
@@ -93,13 +92,14 @@ export async function POST(req: Request) {
       .returning();
     return NextResponse.json({ entry: row });
   } catch (err) {
-    const msg = errorMessage(err);
+    // A model already in the pool is the fixed 409; anything else answers by the one table
+    // (A10 part 2): a domain error its status, a fault the opaque 500.
     if (isUniqueViolation(err)) {
       return NextResponse.json(
         { error: `'${b.name}' is already in the ${b.pool} pool.` },
         { status: 409 },
       );
     }
-    return NextResponse.json({ error: msg }, { status: 500 });
+    throw err;
   }
 }

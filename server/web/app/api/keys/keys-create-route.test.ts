@@ -64,10 +64,12 @@ describe('POST /api/keys', () => {
     expect(((await res.json()) as { error: string }).error).toMatch(/Rotate it instead/);
   });
 
-  it('still answers 500 for any other database error', async () => {
-    h.setError = drizzleError('23503');
+  it('throws any other database error, for the app to answer the opaque 500', async () => {
+    // A10 part 2: the route no longer puts the error's text in a 500 of its
+    // own; app.onError (answerAppError) answers it, logged.
+    const err = drizzleError('23503');
+    h.setError = err;
     const { POST } = await import('./route');
-    const res = await POST(post());
-    expect(res.status).toBe(500);
+    await expect(POST(post())).rejects.toBe(err);
   });
 });

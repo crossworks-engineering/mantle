@@ -11,7 +11,6 @@ import { Readable } from 'node:stream';
 import type { ReadableStream as NodeReadableStream } from 'node:stream/web';
 import { NextResponse } from '@/server/http-compat';
 import { ownerCaller } from '@/lib/auth';
-import { AppDbMissingError } from '@mantle/content/app-broker';
 import {
   appPackageFileName,
   appPackageTempPath,
@@ -27,10 +26,9 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
   try {
     written = await writeAppPackage(user.id, id, file, { withData });
   } catch (err) {
+    // The work file goes; a lost database file (AppDbMissingError) answers
+    // 409, reason 'db-missing', by the one table (A10 part 2).
     await rm(file, { force: true });
-    if (err instanceof AppDbMissingError) {
-      return NextResponse.json({ error: err.message, reason: 'db-missing' }, { status: 409 });
-    }
     throw err;
   }
   if (!written) {

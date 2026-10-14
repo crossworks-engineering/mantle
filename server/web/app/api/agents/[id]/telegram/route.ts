@@ -7,7 +7,6 @@ import {
   disconnectAgentTelegram,
   getAgentTelegram,
   listAgentTelegramChats,
-  TelegramTokenError,
 } from '@/lib/agent-telegram';
 import { readJson } from '@/lib/read-body';
 
@@ -38,19 +37,10 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   if (error) return error;
   const parsed = ConnectBody.safeParse(await readJson(req));
   if (!parsed.success) return NextResponse.json({ error: 'Paste a bot token.' }, { status: 400 });
-  try {
-    const binding = await connectAgentTelegram(user.id, agent.id, parsed.data.token);
-    return NextResponse.json({ binding });
-  } catch (err) {
-    if (err instanceof TelegramTokenError) {
-      return NextResponse.json(
-        { error: err.message, ...(err.code ? { code: err.code } : {}) },
-        { status: 400 },
-      );
-    }
-    console.error('[telegram connect]', err);
-    return NextResponse.json({ error: 'Could not link the bot.' }, { status: 500 });
-  }
+  // A problem the owner fixes (TelegramTokenError) answers 400 by the one
+  // table (A10 part 2); anything else is the opaque 500, logged.
+  const binding = await connectAgentTelegram(user.id, agent.id, parsed.data.token);
+  return NextResponse.json({ binding });
 }
 
 export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string }> }) {

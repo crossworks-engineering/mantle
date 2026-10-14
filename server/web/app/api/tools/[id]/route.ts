@@ -4,7 +4,6 @@ import { ownerCaller } from '@/lib/auth';
 import { handlerCarriesSecretRefs } from '@mantle/tools';
 import { deleteTool, getToolById, keysAreaRefusal, toolMakerFor, updateTool } from '@/lib/tools';
 import { ToolHandlerSchema } from '@/lib/tool-handler-schema';
-import { errorMessage } from '@mantle/std';
 import { firstIssue } from '@/lib/zod-issue';
 import { readJson } from '@/lib/read-body';
 
@@ -47,27 +46,22 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
     const refused = await keysAreaRefusal(user);
     if (refused) return NextResponse.json({ error: refused }, { status: 403 });
   }
-  try {
-    const row = await updateTool(user.id, idParsed.data.id, {
-      ...parsed.data,
-      ...(handler ? { createdBy: toolMakerFor(user) } : {}),
-    });
-    if (!row) return NextResponse.json({ error: 'not found' }, { status: 404 });
-    return NextResponse.json({ tool: row });
-  } catch (err) {
-    return NextResponse.json({ error: errorMessage(err) }, { status: 400 });
-  }
+  // A refused edit (InputError, packages/tools crud.ts) answers 400 by the one
+  // table (A10 part 2); a fault the opaque 500.
+  const row = await updateTool(user.id, idParsed.data.id, {
+    ...parsed.data,
+    ...(handler ? { createdBy: toolMakerFor(user) } : {}),
+  });
+  if (!row) return NextResponse.json({ error: 'not found' }, { status: 404 });
+  return NextResponse.json({ tool: row });
 }
 
 export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string }> }) {
   const user = ownerCaller();
   const idParsed = IdParams.safeParse(await ctx.params);
   if (!idParsed.success) return NextResponse.json({ error: 'invalid id' }, { status: 400 });
-  try {
-    const ok = await deleteTool(user.id, idParsed.data.id);
-    if (!ok) return NextResponse.json({ error: 'not found' }, { status: 404 });
-    return NextResponse.json({ ok: true });
-  } catch (err) {
-    return NextResponse.json({ error: errorMessage(err) }, { status: 400 });
-  }
+  // A refused delete (InputError) answers 400 by the one table (A10 part 2).
+  const ok = await deleteTool(user.id, idParsed.data.id);
+  if (!ok) return NextResponse.json({ error: 'not found' }, { status: 404 });
+  return NextResponse.json({ ok: true });
 }

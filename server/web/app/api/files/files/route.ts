@@ -8,11 +8,8 @@ import { ensureFilesRootBranch, listFiles, listRecentFiles, upsertFile } from '@
 import {
   emailAttachmentIds,
   reachesEmailAttachment,
-  MEDIA_EXTS,
-  UploadTooLargeError,
   diskPathForFile,
   discardSpooled,
-  extOf,
   maxStreamedUploadBytes,
   sweepSpool,
   FILES_ROOT_LABEL,
@@ -126,27 +123,10 @@ export async function POST(req: Request) {
       // could even say "too large".
       void sweepSpool();
       const maxBytes = maxStreamedUploadBytes();
-      let parsed: ParsedUpload;
-      try {
-        parsed = await readMultipartUpload(req, { maxBytes });
-      } catch (err) {
-        if (err instanceof UploadTooLargeError) {
-          // A rejected video deserves a pointer to the path that DOES work:
-          // media is meant to enter by link (video_ingest), not by upload.
-          const mediaHint =
-            err.filename && MEDIA_EXTS.has(extOf(err.filename))
-              ? ' For video, ask the assistant to ingest the link instead.'
-              : '';
-          return NextResponse.json(
-            { error: `${err.message}.${mediaHint}`, maxUploadBytes: maxBytes },
-            { status: 413 },
-          );
-        }
-        return NextResponse.json(
-          { error: err instanceof Error ? err.message : 'malformed upload' },
-          { status: 400 },
-        );
-      }
+      // Over the cap (UploadTooLargeError): 413 with the cap, by the one
+      // table (A10 part 2); a malformed body is an InputError (400, the
+      // parser's text); a spool that failed is a fault.
+      const parsed: ParsedUpload = await readMultipartUpload(req, { maxBytes });
       const parentPath = parsed.fields.parentPath ?? '';
       const upload = parsed.file;
       if (!parentPath || !upload) {

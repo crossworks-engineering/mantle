@@ -2,7 +2,6 @@ import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { ownerCaller } from '@/lib/auth';
 import { cancelRun, forkRun, getRunDetail, resumeRun, restartRun } from '@/lib/runners';
-import { errorMessage } from '@mantle/std';
 import { firstIssue } from '@/lib/zod-issue';
 import { readJson } from '@/lib/read-body';
 
@@ -44,22 +43,17 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   }
   const body = parsed.data;
 
-  try {
-    switch (body.action) {
-      case 'cancel':
-        await cancelRun(id);
-        return NextResponse.json({ ok: true });
-      case 'resume':
-        await resumeRun(id);
-        return NextResponse.json({ ok: true });
-      case 'restart':
-        return NextResponse.json({ ok: true, newWorkflowID: await restartRun(id) });
-      case 'fork':
-        return NextResponse.json({ ok: true, newWorkflowID: await forkRun(id, body.startStep) });
-    }
-  } catch (err) {
-    const msg = errorMessage(err);
-    console.error(`[api/runners] ${body.action} failed for ${id}:`, msg);
-    return NextResponse.json({ error: msg }, { status: 500 });
+  // A failed action is a fault: the opaque 500, logged (A10 part 2).
+  switch (body.action) {
+    case 'cancel':
+      await cancelRun(id);
+      return NextResponse.json({ ok: true });
+    case 'resume':
+      await resumeRun(id);
+      return NextResponse.json({ ok: true });
+    case 'restart':
+      return NextResponse.json({ ok: true, newWorkflowID: await restartRun(id) });
+    case 'fork':
+      return NextResponse.json({ ok: true, newWorkflowID: await forkRun(id, body.startStep) });
   }
 }

@@ -12,12 +12,10 @@ export async function GET(req: Request) {
   const entityType = searchParams.get('entityType') ?? '';
   const entityId = searchParams.get('entityId') ?? '';
   const field = searchParams.get('field') ?? '';
-  try {
-    const versions = await listProseVersions(user.id, entityType, entityId, field);
-    return NextResponse.json({ versions });
-  } catch (err) {
-    return NextResponse.json({ error: (err as Error).message }, { status: 400 });
-  }
+  // A field that is not versionable (InputError) answers 400 by the one table
+  // (A10 part 2); a fault the opaque 500.
+  const versions = await listProseVersions(user.id, entityType, entityId, field);
+  return NextResponse.json({ versions });
 }
 
 // POST /api/studio/prose
@@ -37,30 +35,28 @@ export async function POST(req: Request) {
   if (!entityType || !entityId || !field) {
     return NextResponse.json({ error: 'entityType, entityId, field required' }, { status: 400 });
   }
-  try {
-    const versions =
-      typeof payload.revertTo === 'number'
-        ? await revertProse({
-            ownerId: user.id,
-            entityType,
-            entityId,
-            field,
-            toVersion: payload.revertTo,
-            author: user.id,
-            login: toolMakerFor(user),
-          })
-        : await saveProse({
-            ownerId: user.id,
-            entityType,
-            entityId,
-            field,
-            body: String(payload.body ?? ''),
-            note: payload.note ?? null,
-            author: user.id,
-            login: toolMakerFor(user),
-          });
-    return NextResponse.json({ versions });
-  } catch (err) {
-    return NextResponse.json({ error: (err as Error).message }, { status: 400 });
-  }
+  // A field, an entity or a version not there (InputError) answers 400 by the
+  // one table (A10 part 2); a fault the opaque 500.
+  const versions =
+    typeof payload.revertTo === 'number'
+      ? await revertProse({
+          ownerId: user.id,
+          entityType,
+          entityId,
+          field,
+          toVersion: payload.revertTo,
+          author: user.id,
+          login: toolMakerFor(user),
+        })
+      : await saveProse({
+          ownerId: user.id,
+          entityType,
+          entityId,
+          field,
+          body: String(payload.body ?? ''),
+          note: payload.note ?? null,
+          author: user.id,
+          login: toolMakerFor(user),
+        });
+  return NextResponse.json({ versions });
 }

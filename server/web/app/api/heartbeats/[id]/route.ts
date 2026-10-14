@@ -3,7 +3,6 @@ import { ownerCaller } from '@/lib/auth';
 import { deleteHeartbeat, getHeartbeat, updateHeartbeat } from '@/lib/heartbeats';
 import { toolMakerFor } from '@/lib/tools';
 import { UpdateHeartbeatBody, toUpdateInput } from '@/lib/heartbeat-schema';
-import { errorMessage } from '@mantle/std';
 import { firstIssue } from '@/lib/zod-issue';
 import { readJson } from '@/lib/read-body';
 
@@ -28,13 +27,11 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       { status: 400 },
     );
   }
-  try {
-    const heartbeat = await updateHeartbeat(user.id, id, toUpdateInput(parsed.data), user.actor.id);
-    if (!heartbeat) return NextResponse.json({ error: 'Heartbeat not found.' }, { status: 404 });
-    return NextResponse.json({ heartbeat });
-  } catch (err) {
-    return NextResponse.json({ error: errorMessage(err) }, { status: 400 });
-  }
+  // A schedule that is not valid (InputError) answers 400 by the one table
+  // (A10 part 2); a fault the opaque 500.
+  const heartbeat = await updateHeartbeat(user.id, id, toUpdateInput(parsed.data), user.actor.id);
+  if (!heartbeat) return NextResponse.json({ error: 'Heartbeat not found.' }, { status: 404 });
+  return NextResponse.json({ heartbeat });
 }
 
 /** Delete a heartbeat (its fire history cascades). */

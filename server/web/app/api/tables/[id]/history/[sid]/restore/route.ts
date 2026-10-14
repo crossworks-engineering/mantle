@@ -8,13 +8,8 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { ownerCaller } from '@/lib/auth';
-import { AppBoundTableError } from '@mantle/content';
 import { commitTable } from '@/lib/tables';
-import {
-  TableRestoreDraftError,
-  TableSnapshotRefusedError,
-  restoreTableSnapshot,
-} from '@mantle/content/table-snapshots';
+import { restoreTableSnapshot } from '@mantle/content/table-snapshots';
 import { readBody } from '@/lib/read-body';
 
 const Body = z.object({
@@ -26,25 +21,18 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string; si
   const user = ownerCaller();
   const { id, sid } = await ctx.params;
   const body = await readBody(req, Body);
-  try {
-    const res = await restoreTableSnapshot(user.id, id, sid, {
-      discardDraft: body.discardDraft === true,
+  // A draft in the way (TableRestoreDraftError, reason 'draft'), a refused
+  // entry (TableSnapshotRefusedError) and an app table (AppBoundTableError)
+  // answer 409 by the one table (A10 part 2).
+  const res = await restoreTableSnapshot(user.id, id, sid, {
+    discardDraft: body.discardDraft === true,
+  });
+  if (!res) return NextResponse.json({ error: 'not found' }, { status: 404 });
+  if (body.commit) {
+    await commitTable(user.id, id, undefined, {
+      actor: 'owner',
+      note: `replaced by restoring v${res.restored.seq}`,
     });
-    if (!res) return NextResponse.json({ error: 'not found' }, { status: 404 });
-    if (body.commit) {
-      await commitTable(user.id, id, undefined, {
-        actor: 'owner',
-        note: `replaced by restoring v${res.restored.seq}`,
-      });
-    }
-    return NextResponse.json({ restored: res.restored, committed: body.commit === true });
-  } catch (err) {
-    if (err instanceof TableRestoreDraftError) {
-      return NextResponse.json({ error: err.message, reason: 'draft' }, { status: 409 });
-    }
-    if (err instanceof TableSnapshotRefusedError || err instanceof AppBoundTableError) {
-      return NextResponse.json({ error: err.message }, { status: 409 });
-    }
-    throw err;
   }
+  return NextResponse.json({ restored: res.restored, committed: body.commit === true });
 }

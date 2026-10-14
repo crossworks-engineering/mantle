@@ -8,11 +8,7 @@ import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { ownerCaller } from '@/lib/auth';
 import { getAppRuntime } from '@mantle/content';
-import {
-  AppSnapshotBudgetError,
-  createAppSnapshot,
-  listAppSnapshots,
-} from '@mantle/content/app-snapshots';
+import { createAppSnapshot, listAppSnapshots } from '@mantle/content/app-snapshots';
 import { readBody } from '@/lib/read-body';
 
 export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }) {
@@ -34,17 +30,12 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   const user = ownerCaller();
   const { id } = await ctx.params;
   const body = await readBody(req, CreateBody);
-  try {
-    const snapshot = await createAppSnapshot(user.id, id, {
-      note: body.note ?? null,
-      actor: 'owner',
-    });
-    if (!snapshot) return NextResponse.json({ error: 'app not found' }, { status: 404 });
-    return NextResponse.json({ snapshot }, { status: 201 });
-  } catch (err) {
-    if (err instanceof AppSnapshotBudgetError) {
-      return NextResponse.json({ error: err.message, reason: 'budget' }, { status: 409 });
-    }
-    throw err;
-  }
+  // Over the budget (AppSnapshotBudgetError): 409, reason 'budget', by the
+  // one table (A10 part 2).
+  const snapshot = await createAppSnapshot(user.id, id, {
+    note: body.note ?? null,
+    actor: 'owner',
+  });
+  if (!snapshot) return NextResponse.json({ error: 'app not found' }, { status: 404 });
+  return NextResponse.json({ snapshot }, { status: 201 });
 }

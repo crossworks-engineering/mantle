@@ -1,8 +1,9 @@
 # A10 part 2 fold 2: the cells that answer otherwise than before the move, each
 # with its named kind (changeKind, a10-error-sweep.test.ts), its answer before and
 # now. Every other cell of a10-error-sweep.txt answers byte for byte as recorded.
-# domain-by-table: 418 cells
-# opaque-500: 26 cells
+# domain-by-table: 516 cells
+# opaque-500: 56 cells
+# opaque-500 (an earlier fault): 18 cells
 GET /api/agents tree-not-found [domain-by-table]
   before 500 application/json {"error":"internal error"}
   now    404 application/json {"error":"sweep: folder not found"}
@@ -17,6 +18,33 @@ GET /api/agents tree-gone [domain-by-table]
   now    410 application/json {"error":"sweep: folder shares have ended","code":"gone"}
 GET /api/agents tree-visibility [domain-by-table]
   before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"visibility","changes":[{"workspaceId":"11111111-1111-4111-8111-111111111111","gained":1,"lost":0}],"total":1}
+POST /api/agents plain [opaque-500]
+  before 500 application/json {"error":"sweep: a plain error with private detail"}
+  now    500 application/json {"error":"internal error"}
+POST /api/agents db [opaque-500]
+  before 500 application/json {"error":"Failed query: select \"secret\" from \"nodes\" where \"id\" = $1\nparams: sweep"}
+  now    500 application/json {"error":"internal error"}
+POST /api/agents scope [domain-by-table]
+  before 500 application/json {"error":"not allowed to change this item"}
+  now    403 application/json {"error":"forbidden","reason":"item-workspace","code":"forbidden","message":"You cannot change this item in your workspaces."}
+POST /api/agents busy [domain-by-table]
+  before 500 application/json {"error":"Another change to this item is under way; try again in a moment."}
+  now    409 application/json {"error":"Another change to this item is under way; try again in a moment."}
+POST /api/agents tree-not-found [domain-by-table]
+  before 500 application/json {"error":"sweep: folder not found"}
+  now    404 application/json {"error":"sweep: folder not found"}
+POST /api/agents tree-conflict [domain-by-table]
+  before 500 application/json {"error":"sweep: a folder of that name exists"}
+  now    409 application/json {"error":"sweep: a folder of that name exists"}
+POST /api/agents tree-invalid [domain-by-table]
+  before 500 application/json {"error":"sweep: not a valid name"}
+  now    400 application/json {"error":"sweep: not a valid name"}
+POST /api/agents tree-gone [domain-by-table]
+  before 500 application/json {"error":"sweep: folder shares have ended"}
+  now    410 application/json {"error":"sweep: folder shares have ended","code":"gone"}
+POST /api/agents tree-visibility [domain-by-table]
+  before 500 application/json {"error":"this would change who can see 1 item; repeat with confirm: true to go ahead"}
   now    409 application/json {"error":"visibility","changes":[{"workspaceId":"11111111-1111-4111-8111-111111111111","gained":1,"lost":0}],"total":1}
 GET /api/agents/:id/telegram tree-not-found [domain-by-table]
   before 500 application/json {"error":"internal error"}
@@ -92,6 +120,30 @@ GET /api/ai-workers tree-gone [domain-by-table]
   now    410 application/json {"error":"sweep: folder shares have ended","code":"gone"}
 GET /api/ai-workers tree-visibility [domain-by-table]
   before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"visibility","changes":[{"workspaceId":"11111111-1111-4111-8111-111111111111","gained":1,"lost":0}],"total":1}
+POST /api/ai-workers plain [opaque-500]
+  before 400 application/json {"error":"sweep: a plain error with private detail"}
+  now    500 application/json {"error":"internal error"}
+POST /api/ai-workers db [opaque-500]
+  before 400 application/json {"error":"Failed query: select \"secret\" from \"nodes\" where \"id\" = $1\nparams: sweep"}
+  now    500 application/json {"error":"internal error"}
+POST /api/ai-workers scope [domain-by-table]
+  before 400 application/json {"error":"not allowed to change this item"}
+  now    403 application/json {"error":"forbidden","reason":"item-workspace","code":"forbidden","message":"You cannot change this item in your workspaces."}
+POST /api/ai-workers busy [domain-by-table]
+  before 400 application/json {"error":"Another change to this item is under way; try again in a moment."}
+  now    409 application/json {"error":"Another change to this item is under way; try again in a moment."}
+POST /api/ai-workers tree-not-found [domain-by-table]
+  before 400 application/json {"error":"sweep: folder not found"}
+  now    404 application/json {"error":"sweep: folder not found"}
+POST /api/ai-workers tree-conflict [domain-by-table]
+  before 400 application/json {"error":"sweep: a folder of that name exists"}
+  now    409 application/json {"error":"sweep: a folder of that name exists"}
+POST /api/ai-workers tree-gone [domain-by-table]
+  before 400 application/json {"error":"sweep: folder shares have ended"}
+  now    410 application/json {"error":"sweep: folder shares have ended","code":"gone"}
+POST /api/ai-workers tree-visibility [domain-by-table]
+  before 400 application/json {"error":"this would change who can see 1 item; repeat with confirm: true to go ahead"}
   now    409 application/json {"error":"visibility","changes":[{"workspaceId":"11111111-1111-4111-8111-111111111111","gained":1,"lost":0}],"total":1}
 PUT /api/apps/:id/draft tree-not-found [domain-by-table]
   before 500 application/json {"error":"internal error"}
@@ -272,6 +324,60 @@ POST /api/apps/deleted/:id/restore tree-gone [domain-by-table]
   now    410 application/json {"error":"sweep: folder shares have ended","code":"gone"}
 POST /api/apps/deleted/:id/restore tree-visibility [domain-by-table]
   before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"visibility","changes":[{"workspaceId":"11111111-1111-4111-8111-111111111111","gained":1,"lost":0}],"total":1}
+POST /api/config/adopt plain [opaque-500]
+  before 500 application/json {"error":"sweep: a plain error with private detail"}
+  now    500 application/json {"error":"internal error"}
+POST /api/config/adopt db [opaque-500]
+  before 500 application/json {"error":"Failed query: select \"secret\" from \"nodes\" where \"id\" = $1\nparams: sweep"}
+  now    500 application/json {"error":"internal error"}
+POST /api/config/adopt scope [domain-by-table]
+  before 500 application/json {"error":"not allowed to change this item"}
+  now    403 application/json {"error":"forbidden","reason":"item-workspace","code":"forbidden","message":"You cannot change this item in your workspaces."}
+POST /api/config/adopt busy [domain-by-table]
+  before 500 application/json {"error":"Another change to this item is under way; try again in a moment."}
+  now    409 application/json {"error":"Another change to this item is under way; try again in a moment."}
+POST /api/config/adopt tree-not-found [domain-by-table]
+  before 500 application/json {"error":"sweep: folder not found"}
+  now    404 application/json {"error":"sweep: folder not found"}
+POST /api/config/adopt tree-conflict [domain-by-table]
+  before 500 application/json {"error":"sweep: a folder of that name exists"}
+  now    409 application/json {"error":"sweep: a folder of that name exists"}
+POST /api/config/adopt tree-invalid [domain-by-table]
+  before 500 application/json {"error":"sweep: not a valid name"}
+  now    400 application/json {"error":"sweep: not a valid name"}
+POST /api/config/adopt tree-gone [domain-by-table]
+  before 500 application/json {"error":"sweep: folder shares have ended"}
+  now    410 application/json {"error":"sweep: folder shares have ended","code":"gone"}
+POST /api/config/adopt tree-visibility [domain-by-table]
+  before 500 application/json {"error":"this would change who can see 1 item; repeat with confirm: true to go ahead"}
+  now    409 application/json {"error":"visibility","changes":[{"workspaceId":"11111111-1111-4111-8111-111111111111","gained":1,"lost":0}],"total":1}
+POST /api/config/adopt-all plain [opaque-500]
+  before 500 application/json {"error":"sweep: a plain error with private detail"}
+  now    500 application/json {"error":"internal error"}
+POST /api/config/adopt-all db [opaque-500]
+  before 500 application/json {"error":"Failed query: select \"secret\" from \"nodes\" where \"id\" = $1\nparams: sweep"}
+  now    500 application/json {"error":"internal error"}
+POST /api/config/adopt-all scope [domain-by-table]
+  before 500 application/json {"error":"not allowed to change this item"}
+  now    403 application/json {"error":"forbidden","reason":"item-workspace","code":"forbidden","message":"You cannot change this item in your workspaces."}
+POST /api/config/adopt-all busy [domain-by-table]
+  before 500 application/json {"error":"Another change to this item is under way; try again in a moment."}
+  now    409 application/json {"error":"Another change to this item is under way; try again in a moment."}
+POST /api/config/adopt-all tree-not-found [domain-by-table]
+  before 500 application/json {"error":"sweep: folder not found"}
+  now    404 application/json {"error":"sweep: folder not found"}
+POST /api/config/adopt-all tree-conflict [domain-by-table]
+  before 500 application/json {"error":"sweep: a folder of that name exists"}
+  now    409 application/json {"error":"sweep: a folder of that name exists"}
+POST /api/config/adopt-all tree-invalid [domain-by-table]
+  before 500 application/json {"error":"sweep: not a valid name"}
+  now    400 application/json {"error":"sweep: not a valid name"}
+POST /api/config/adopt-all tree-gone [domain-by-table]
+  before 500 application/json {"error":"sweep: folder shares have ended"}
+  now    410 application/json {"error":"sweep: folder shares have ended","code":"gone"}
+POST /api/config/adopt-all tree-visibility [domain-by-table]
+  before 500 application/json {"error":"this would change who can see 1 item; repeat with confirm: true to go ahead"}
   now    409 application/json {"error":"visibility","changes":[{"workspaceId":"11111111-1111-4111-8111-111111111111","gained":1,"lost":0}],"total":1}
 GET /api/contacts tree-not-found [domain-by-table]
   before 500 application/json {"error":"internal error"}
@@ -780,6 +886,30 @@ DELETE /api/formulas/:id tree-gone [domain-by-table]
 DELETE /api/formulas/:id tree-visibility [domain-by-table]
   before 500 application/json {"error":"internal error"}
   now    409 application/json {"error":"visibility","changes":[{"workspaceId":"11111111-1111-4111-8111-111111111111","gained":1,"lost":0}],"total":1}
+POST /api/formulas/:id/evaluate plain [opaque-500]
+  before 404 application/json {"error":"sweep: a plain error with private detail"}
+  now    500 application/json {"error":"internal error"}
+POST /api/formulas/:id/evaluate db [opaque-500]
+  before 404 application/json {"error":"Failed query: select \"secret\" from \"nodes\" where \"id\" = $1\nparams: sweep"}
+  now    500 application/json {"error":"internal error"}
+POST /api/formulas/:id/evaluate scope [domain-by-table]
+  before 404 application/json {"error":"not allowed to change this item"}
+  now    403 application/json {"error":"forbidden","reason":"item-workspace","code":"forbidden","message":"You cannot change this item in your workspaces."}
+POST /api/formulas/:id/evaluate busy [domain-by-table]
+  before 404 application/json {"error":"Another change to this item is under way; try again in a moment."}
+  now    409 application/json {"error":"Another change to this item is under way; try again in a moment."}
+POST /api/formulas/:id/evaluate tree-conflict [domain-by-table]
+  before 404 application/json {"error":"sweep: a folder of that name exists"}
+  now    409 application/json {"error":"sweep: a folder of that name exists"}
+POST /api/formulas/:id/evaluate tree-invalid [domain-by-table]
+  before 404 application/json {"error":"sweep: not a valid name"}
+  now    400 application/json {"error":"sweep: not a valid name"}
+POST /api/formulas/:id/evaluate tree-gone [domain-by-table]
+  before 404 application/json {"error":"sweep: folder shares have ended"}
+  now    410 application/json {"error":"sweep: folder shares have ended","code":"gone"}
+POST /api/formulas/:id/evaluate tree-visibility [domain-by-table]
+  before 404 application/json {"error":"this would change who can see 1 item; repeat with confirm: true to go ahead"}
+  now    409 application/json {"error":"visibility","changes":[{"workspaceId":"11111111-1111-4111-8111-111111111111","gained":1,"lost":0}],"total":1}
 GET /api/heartbeats tree-not-found [domain-by-table]
   before 500 application/json {"error":"internal error"}
   now    404 application/json {"error":"sweep: folder not found"}
@@ -809,6 +939,30 @@ GET /api/heartbeats/:id tree-gone [domain-by-table]
   now    410 application/json {"error":"sweep: folder shares have ended","code":"gone"}
 GET /api/heartbeats/:id tree-visibility [domain-by-table]
   before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"visibility","changes":[{"workspaceId":"11111111-1111-4111-8111-111111111111","gained":1,"lost":0}],"total":1}
+PATCH /api/heartbeats/:id plain [opaque-500]
+  before 400 application/json {"error":"sweep: a plain error with private detail"}
+  now    500 application/json {"error":"internal error"}
+PATCH /api/heartbeats/:id db [opaque-500]
+  before 400 application/json {"error":"Failed query: select \"secret\" from \"nodes\" where \"id\" = $1\nparams: sweep"}
+  now    500 application/json {"error":"internal error"}
+PATCH /api/heartbeats/:id scope [domain-by-table]
+  before 400 application/json {"error":"not allowed to change this item"}
+  now    403 application/json {"error":"forbidden","reason":"item-workspace","code":"forbidden","message":"You cannot change this item in your workspaces."}
+PATCH /api/heartbeats/:id busy [domain-by-table]
+  before 400 application/json {"error":"Another change to this item is under way; try again in a moment."}
+  now    409 application/json {"error":"Another change to this item is under way; try again in a moment."}
+PATCH /api/heartbeats/:id tree-not-found [domain-by-table]
+  before 400 application/json {"error":"sweep: folder not found"}
+  now    404 application/json {"error":"sweep: folder not found"}
+PATCH /api/heartbeats/:id tree-conflict [domain-by-table]
+  before 400 application/json {"error":"sweep: a folder of that name exists"}
+  now    409 application/json {"error":"sweep: a folder of that name exists"}
+PATCH /api/heartbeats/:id tree-gone [domain-by-table]
+  before 400 application/json {"error":"sweep: folder shares have ended"}
+  now    410 application/json {"error":"sweep: folder shares have ended","code":"gone"}
+PATCH /api/heartbeats/:id tree-visibility [domain-by-table]
+  before 400 application/json {"error":"this would change who can see 1 item; repeat with confirm: true to go ahead"}
   now    409 application/json {"error":"visibility","changes":[{"workspaceId":"11111111-1111-4111-8111-111111111111","gained":1,"lost":0}],"total":1}
 DELETE /api/heartbeats/:id tree-not-found [domain-by-table]
   before 500 application/json {"error":"internal error"}
@@ -963,6 +1117,33 @@ GET /api/keys tree-gone [domain-by-table]
 GET /api/keys tree-visibility [domain-by-table]
   before 500 application/json {"error":"internal error"}
   now    409 application/json {"error":"visibility","changes":[{"workspaceId":"11111111-1111-4111-8111-111111111111","gained":1,"lost":0}],"total":1}
+POST /api/keys plain [opaque-500]
+  before 500 application/json {"error":"sweep: a plain error with private detail"}
+  now    500 application/json {"error":"internal error"}
+POST /api/keys db [opaque-500]
+  before 500 application/json {"error":"Failed query: select \"secret\" from \"nodes\" where \"id\" = $1\nparams: sweep"}
+  now    500 application/json {"error":"internal error"}
+POST /api/keys scope [domain-by-table]
+  before 500 application/json {"error":"not allowed to change this item"}
+  now    403 application/json {"error":"forbidden","reason":"item-workspace","code":"forbidden","message":"You cannot change this item in your workspaces."}
+POST /api/keys busy [domain-by-table]
+  before 500 application/json {"error":"Another change to this item is under way; try again in a moment."}
+  now    409 application/json {"error":"Another change to this item is under way; try again in a moment."}
+POST /api/keys tree-not-found [domain-by-table]
+  before 500 application/json {"error":"sweep: folder not found"}
+  now    404 application/json {"error":"sweep: folder not found"}
+POST /api/keys tree-conflict [domain-by-table]
+  before 500 application/json {"error":"sweep: a folder of that name exists"}
+  now    409 application/json {"error":"sweep: a folder of that name exists"}
+POST /api/keys tree-invalid [domain-by-table]
+  before 500 application/json {"error":"sweep: not a valid name"}
+  now    400 application/json {"error":"sweep: not a valid name"}
+POST /api/keys tree-gone [domain-by-table]
+  before 500 application/json {"error":"sweep: folder shares have ended"}
+  now    410 application/json {"error":"sweep: folder shares have ended","code":"gone"}
+POST /api/keys tree-visibility [domain-by-table]
+  before 500 application/json {"error":"this would change who can see 1 item; repeat with confirm: true to go ahead"}
+  now    409 application/json {"error":"visibility","changes":[{"workspaceId":"11111111-1111-4111-8111-111111111111","gained":1,"lost":0}],"total":1}
 GET /api/mcp-connectors tree-not-found [domain-by-table]
   before 500 application/json {"error":"internal error"}
   now    404 application/json {"error":"sweep: folder not found"}
@@ -1041,6 +1222,33 @@ GET /api/pdf-passwords tree-gone [domain-by-table]
 GET /api/pdf-passwords tree-visibility [domain-by-table]
   before 500 application/json {"error":"internal error"}
   now    409 application/json {"error":"visibility","changes":[{"workspaceId":"11111111-1111-4111-8111-111111111111","gained":1,"lost":0}],"total":1}
+POST /api/pdf-passwords plain [opaque-500 (an earlier fault)]
+  before 400 application/json {"error":"MANTLE_MASTER_KEY is not set"}
+  now    500 application/json {"error":"internal error"}
+POST /api/pdf-passwords db [opaque-500 (an earlier fault)]
+  before 400 application/json {"error":"MANTLE_MASTER_KEY is not set"}
+  now    500 application/json {"error":"internal error"}
+POST /api/pdf-passwords scope [opaque-500 (an earlier fault)]
+  before 400 application/json {"error":"MANTLE_MASTER_KEY is not set"}
+  now    500 application/json {"error":"internal error"}
+POST /api/pdf-passwords busy [opaque-500 (an earlier fault)]
+  before 400 application/json {"error":"MANTLE_MASTER_KEY is not set"}
+  now    500 application/json {"error":"internal error"}
+POST /api/pdf-passwords tree-not-found [opaque-500 (an earlier fault)]
+  before 400 application/json {"error":"MANTLE_MASTER_KEY is not set"}
+  now    500 application/json {"error":"internal error"}
+POST /api/pdf-passwords tree-conflict [opaque-500 (an earlier fault)]
+  before 400 application/json {"error":"MANTLE_MASTER_KEY is not set"}
+  now    500 application/json {"error":"internal error"}
+POST /api/pdf-passwords tree-invalid [opaque-500 (an earlier fault)]
+  before 400 application/json {"error":"MANTLE_MASTER_KEY is not set"}
+  now    500 application/json {"error":"internal error"}
+POST /api/pdf-passwords tree-gone [opaque-500 (an earlier fault)]
+  before 400 application/json {"error":"MANTLE_MASTER_KEY is not set"}
+  now    500 application/json {"error":"internal error"}
+POST /api/pdf-passwords tree-visibility [opaque-500 (an earlier fault)]
+  before 400 application/json {"error":"MANTLE_MASTER_KEY is not set"}
+  now    500 application/json {"error":"internal error"}
 GET /api/peers tree-not-found [domain-by-table]
   before 500 application/json {"error":"internal error"}
   now    404 application/json {"error":"sweep: folder not found"}
@@ -1070,6 +1278,33 @@ GET /api/pending/:id tree-gone [domain-by-table]
   now    410 application/json {"error":"sweep: folder shares have ended","code":"gone"}
 GET /api/pending/:id tree-visibility [domain-by-table]
   before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"visibility","changes":[{"workspaceId":"11111111-1111-4111-8111-111111111111","gained":1,"lost":0}],"total":1}
+PATCH /api/pending/:id plain [opaque-500]
+  before 500 application/json {"error":"sweep: a plain error with private detail"}
+  now    500 application/json {"error":"internal error"}
+PATCH /api/pending/:id db [opaque-500]
+  before 500 application/json {"error":"Failed query: select \"secret\" from \"nodes\" where \"id\" = $1\nparams: sweep"}
+  now    500 application/json {"error":"internal error"}
+PATCH /api/pending/:id scope [domain-by-table]
+  before 500 application/json {"error":"not allowed to change this item"}
+  now    403 application/json {"error":"forbidden","reason":"item-workspace","code":"forbidden","message":"You cannot change this item in your workspaces."}
+PATCH /api/pending/:id busy [domain-by-table]
+  before 500 application/json {"error":"Another change to this item is under way; try again in a moment."}
+  now    409 application/json {"error":"Another change to this item is under way; try again in a moment."}
+PATCH /api/pending/:id tree-not-found [domain-by-table]
+  before 500 application/json {"error":"sweep: folder not found"}
+  now    404 application/json {"error":"sweep: folder not found"}
+PATCH /api/pending/:id tree-conflict [domain-by-table]
+  before 500 application/json {"error":"sweep: a folder of that name exists"}
+  now    409 application/json {"error":"sweep: a folder of that name exists"}
+PATCH /api/pending/:id tree-invalid [domain-by-table]
+  before 500 application/json {"error":"sweep: not a valid name"}
+  now    400 application/json {"error":"sweep: not a valid name"}
+PATCH /api/pending/:id tree-gone [domain-by-table]
+  before 500 application/json {"error":"sweep: folder shares have ended"}
+  now    410 application/json {"error":"sweep: folder shares have ended","code":"gone"}
+PATCH /api/pending/:id tree-visibility [domain-by-table]
+  before 500 application/json {"error":"this would change who can see 1 item; repeat with confirm: true to go ahead"}
   now    409 application/json {"error":"visibility","changes":[{"workspaceId":"11111111-1111-4111-8111-111111111111","gained":1,"lost":0}],"total":1}
 GET /api/profile tree-not-found [domain-by-table]
   before 500 application/json {"error":"internal error"}
@@ -1101,6 +1336,33 @@ POST /api/push/reset tree-gone [domain-by-table]
 POST /api/push/reset tree-visibility [domain-by-table]
   before 500 application/json {"error":"internal error"}
   now    409 application/json {"error":"visibility","changes":[{"workspaceId":"11111111-1111-4111-8111-111111111111","gained":1,"lost":0}],"total":1}
+POST /api/runners/:id plain [opaque-500 (an earlier fault)]
+  before 500 application/json {"error":"DATABASE_URL (or DBOS_SYSTEM_DATABASE_URL) must be set to reach the runner"}
+  now    500 application/json {"error":"internal error"}
+POST /api/runners/:id db [opaque-500 (an earlier fault)]
+  before 500 application/json {"error":"DATABASE_URL (or DBOS_SYSTEM_DATABASE_URL) must be set to reach the runner"}
+  now    500 application/json {"error":"internal error"}
+POST /api/runners/:id scope [opaque-500 (an earlier fault)]
+  before 500 application/json {"error":"DATABASE_URL (or DBOS_SYSTEM_DATABASE_URL) must be set to reach the runner"}
+  now    500 application/json {"error":"internal error"}
+POST /api/runners/:id busy [opaque-500 (an earlier fault)]
+  before 500 application/json {"error":"DATABASE_URL (or DBOS_SYSTEM_DATABASE_URL) must be set to reach the runner"}
+  now    500 application/json {"error":"internal error"}
+POST /api/runners/:id tree-not-found [opaque-500 (an earlier fault)]
+  before 500 application/json {"error":"DATABASE_URL (or DBOS_SYSTEM_DATABASE_URL) must be set to reach the runner"}
+  now    500 application/json {"error":"internal error"}
+POST /api/runners/:id tree-conflict [opaque-500 (an earlier fault)]
+  before 500 application/json {"error":"DATABASE_URL (or DBOS_SYSTEM_DATABASE_URL) must be set to reach the runner"}
+  now    500 application/json {"error":"internal error"}
+POST /api/runners/:id tree-invalid [opaque-500 (an earlier fault)]
+  before 500 application/json {"error":"DATABASE_URL (or DBOS_SYSTEM_DATABASE_URL) must be set to reach the runner"}
+  now    500 application/json {"error":"internal error"}
+POST /api/runners/:id tree-gone [opaque-500 (an earlier fault)]
+  before 500 application/json {"error":"DATABASE_URL (or DBOS_SYSTEM_DATABASE_URL) must be set to reach the runner"}
+  now    500 application/json {"error":"internal error"}
+POST /api/runners/:id tree-visibility [opaque-500 (an earlier fault)]
+  before 500 application/json {"error":"DATABASE_URL (or DBOS_SYSTEM_DATABASE_URL) must be set to reach the runner"}
+  now    500 application/json {"error":"internal error"}
 GET /api/settings/worker-groups tree-not-found [domain-by-table]
   before 500 application/json {"error":"internal error"}
   now    404 application/json {"error":"sweep: folder not found"}
@@ -1115,6 +1377,33 @@ GET /api/settings/worker-groups tree-gone [domain-by-table]
   now    410 application/json {"error":"sweep: folder shares have ended","code":"gone"}
 GET /api/settings/worker-groups tree-visibility [domain-by-table]
   before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"visibility","changes":[{"workspaceId":"11111111-1111-4111-8111-111111111111","gained":1,"lost":0}],"total":1}
+POST /api/settings/worker-groups plain [opaque-500]
+  before 500 application/json {"error":"sweep: a plain error with private detail"}
+  now    500 application/json {"error":"internal error"}
+POST /api/settings/worker-groups db [opaque-500]
+  before 500 application/json {"error":"Failed query: select \"secret\" from \"nodes\" where \"id\" = $1\nparams: sweep"}
+  now    500 application/json {"error":"internal error"}
+POST /api/settings/worker-groups scope [domain-by-table]
+  before 500 application/json {"error":"not allowed to change this item"}
+  now    403 application/json {"error":"forbidden","reason":"item-workspace","code":"forbidden","message":"You cannot change this item in your workspaces."}
+POST /api/settings/worker-groups busy [domain-by-table]
+  before 500 application/json {"error":"Another change to this item is under way; try again in a moment."}
+  now    409 application/json {"error":"Another change to this item is under way; try again in a moment."}
+POST /api/settings/worker-groups tree-not-found [domain-by-table]
+  before 500 application/json {"error":"sweep: folder not found"}
+  now    404 application/json {"error":"sweep: folder not found"}
+POST /api/settings/worker-groups tree-conflict [domain-by-table]
+  before 500 application/json {"error":"sweep: a folder of that name exists"}
+  now    409 application/json {"error":"sweep: a folder of that name exists"}
+POST /api/settings/worker-groups tree-invalid [domain-by-table]
+  before 500 application/json {"error":"sweep: not a valid name"}
+  now    400 application/json {"error":"sweep: not a valid name"}
+POST /api/settings/worker-groups tree-gone [domain-by-table]
+  before 500 application/json {"error":"sweep: folder shares have ended"}
+  now    410 application/json {"error":"sweep: folder shares have ended","code":"gone"}
+POST /api/settings/worker-groups tree-visibility [domain-by-table]
+  before 500 application/json {"error":"this would change who can see 1 item; repeat with confirm: true to go ahead"}
   now    409 application/json {"error":"visibility","changes":[{"workspaceId":"11111111-1111-4111-8111-111111111111","gained":1,"lost":0}],"total":1}
 POST /api/shares/contacts tree-not-found [domain-by-table]
   before 500 application/json {"error":"internal error"}
@@ -1146,6 +1435,33 @@ GET /api/skills tree-gone [domain-by-table]
 GET /api/skills tree-visibility [domain-by-table]
   before 500 application/json {"error":"internal error"}
   now    409 application/json {"error":"visibility","changes":[{"workspaceId":"11111111-1111-4111-8111-111111111111","gained":1,"lost":0}],"total":1}
+POST /api/skills plain [opaque-500]
+  before 500 application/json {"error":"sweep: a plain error with private detail"}
+  now    500 application/json {"error":"internal error"}
+POST /api/skills db [opaque-500]
+  before 500 application/json {"error":"Failed query: select \"secret\" from \"nodes\" where \"id\" = $1\nparams: sweep"}
+  now    500 application/json {"error":"internal error"}
+POST /api/skills scope [domain-by-table]
+  before 500 application/json {"error":"not allowed to change this item"}
+  now    403 application/json {"error":"forbidden","reason":"item-workspace","code":"forbidden","message":"You cannot change this item in your workspaces."}
+POST /api/skills busy [domain-by-table]
+  before 500 application/json {"error":"Another change to this item is under way; try again in a moment."}
+  now    409 application/json {"error":"Another change to this item is under way; try again in a moment."}
+POST /api/skills tree-not-found [domain-by-table]
+  before 500 application/json {"error":"sweep: folder not found"}
+  now    404 application/json {"error":"sweep: folder not found"}
+POST /api/skills tree-conflict [domain-by-table]
+  before 500 application/json {"error":"sweep: a folder of that name exists"}
+  now    409 application/json {"error":"sweep: a folder of that name exists"}
+POST /api/skills tree-invalid [domain-by-table]
+  before 500 application/json {"error":"sweep: not a valid name"}
+  now    400 application/json {"error":"sweep: not a valid name"}
+POST /api/skills tree-gone [domain-by-table]
+  before 500 application/json {"error":"sweep: folder shares have ended"}
+  now    410 application/json {"error":"sweep: folder shares have ended","code":"gone"}
+POST /api/skills tree-visibility [domain-by-table]
+  before 500 application/json {"error":"this would change who can see 1 item; repeat with confirm: true to go ahead"}
+  now    409 application/json {"error":"visibility","changes":[{"workspaceId":"11111111-1111-4111-8111-111111111111","gained":1,"lost":0}],"total":1}
 POST /api/tables/:id/commit plain [opaque-500]
   before 400 application/json {"error":"sweep: a plain error with private detail"}
   now    500 application/json {"error":"internal error"}
@@ -1168,6 +1484,54 @@ POST /api/tables/:id/commit tree-gone [domain-by-table]
   before 400 application/json {"error":"sweep: folder shares have ended"}
   now    410 application/json {"error":"sweep: folder shares have ended","code":"gone"}
 POST /api/tables/:id/commit tree-visibility [domain-by-table]
+  before 400 application/json {"error":"this would change who can see 1 item; repeat with confirm: true to go ahead"}
+  now    409 application/json {"error":"visibility","changes":[{"workspaceId":"11111111-1111-4111-8111-111111111111","gained":1,"lost":0}],"total":1}
+PUT /api/tables/:id/draft plain [opaque-500]
+  before 400 application/json {"error":"sweep: a plain error with private detail"}
+  now    500 application/json {"error":"internal error"}
+PUT /api/tables/:id/draft db [opaque-500]
+  before 400 application/json {"error":"Failed query: select \"secret\" from \"nodes\" where \"id\" = $1\nparams: sweep"}
+  now    500 application/json {"error":"internal error"}
+PUT /api/tables/:id/draft scope [domain-by-table]
+  before 400 application/json {"error":"not allowed to change this item"}
+  now    403 application/json {"error":"forbidden","reason":"item-workspace","code":"forbidden","message":"You cannot change this item in your workspaces."}
+PUT /api/tables/:id/draft busy [domain-by-table]
+  before 400 application/json {"error":"Another change to this item is under way; try again in a moment."}
+  now    409 application/json {"error":"Another change to this item is under way; try again in a moment."}
+PUT /api/tables/:id/draft tree-not-found [domain-by-table]
+  before 400 application/json {"error":"sweep: folder not found"}
+  now    404 application/json {"error":"sweep: folder not found"}
+PUT /api/tables/:id/draft tree-conflict [domain-by-table]
+  before 400 application/json {"error":"sweep: a folder of that name exists"}
+  now    409 application/json {"error":"sweep: a folder of that name exists"}
+PUT /api/tables/:id/draft tree-gone [domain-by-table]
+  before 400 application/json {"error":"sweep: folder shares have ended"}
+  now    410 application/json {"error":"sweep: folder shares have ended","code":"gone"}
+PUT /api/tables/:id/draft tree-visibility [domain-by-table]
+  before 400 application/json {"error":"this would change who can see 1 item; repeat with confirm: true to go ahead"}
+  now    409 application/json {"error":"visibility","changes":[{"workspaceId":"11111111-1111-4111-8111-111111111111","gained":1,"lost":0}],"total":1}
+POST /api/tables/:id/draft-ops plain [opaque-500]
+  before 400 application/json {"error":"sweep: a plain error with private detail"}
+  now    500 application/json {"error":"internal error"}
+POST /api/tables/:id/draft-ops db [opaque-500]
+  before 400 application/json {"error":"Failed query: select \"secret\" from \"nodes\" where \"id\" = $1\nparams: sweep"}
+  now    500 application/json {"error":"internal error"}
+POST /api/tables/:id/draft-ops scope [domain-by-table]
+  before 400 application/json {"error":"not allowed to change this item"}
+  now    403 application/json {"error":"forbidden","reason":"item-workspace","code":"forbidden","message":"You cannot change this item in your workspaces."}
+POST /api/tables/:id/draft-ops busy [domain-by-table]
+  before 400 application/json {"error":"Another change to this item is under way; try again in a moment."}
+  now    409 application/json {"error":"Another change to this item is under way; try again in a moment."}
+POST /api/tables/:id/draft-ops tree-not-found [domain-by-table]
+  before 400 application/json {"error":"sweep: folder not found"}
+  now    404 application/json {"error":"sweep: folder not found"}
+POST /api/tables/:id/draft-ops tree-conflict [domain-by-table]
+  before 400 application/json {"error":"sweep: a folder of that name exists"}
+  now    409 application/json {"error":"sweep: a folder of that name exists"}
+POST /api/tables/:id/draft-ops tree-gone [domain-by-table]
+  before 400 application/json {"error":"sweep: folder shares have ended"}
+  now    410 application/json {"error":"sweep: folder shares have ended","code":"gone"}
+POST /api/tables/:id/draft-ops tree-visibility [domain-by-table]
   before 400 application/json {"error":"this would change who can see 1 item; repeat with confirm: true to go ahead"}
   now    409 application/json {"error":"visibility","changes":[{"workspaceId":"11111111-1111-4111-8111-111111111111","gained":1,"lost":0}],"total":1}
 GET /api/tables/:id/export tree-not-found [domain-by-table]
@@ -1275,6 +1639,33 @@ GET /api/tool-groups tree-gone [domain-by-table]
 GET /api/tool-groups tree-visibility [domain-by-table]
   before 500 application/json {"error":"internal error"}
   now    409 application/json {"error":"visibility","changes":[{"workspaceId":"11111111-1111-4111-8111-111111111111","gained":1,"lost":0}],"total":1}
+POST /api/tool-groups plain [opaque-500]
+  before 500 application/json {"error":"sweep: a plain error with private detail"}
+  now    500 application/json {"error":"internal error"}
+POST /api/tool-groups db [opaque-500]
+  before 500 application/json {"error":"Failed query: select \"secret\" from \"nodes\" where \"id\" = $1\nparams: sweep"}
+  now    500 application/json {"error":"internal error"}
+POST /api/tool-groups scope [domain-by-table]
+  before 500 application/json {"error":"not allowed to change this item"}
+  now    403 application/json {"error":"forbidden","reason":"item-workspace","code":"forbidden","message":"You cannot change this item in your workspaces."}
+POST /api/tool-groups busy [domain-by-table]
+  before 500 application/json {"error":"Another change to this item is under way; try again in a moment."}
+  now    409 application/json {"error":"Another change to this item is under way; try again in a moment."}
+POST /api/tool-groups tree-not-found [domain-by-table]
+  before 500 application/json {"error":"sweep: folder not found"}
+  now    404 application/json {"error":"sweep: folder not found"}
+POST /api/tool-groups tree-conflict [domain-by-table]
+  before 500 application/json {"error":"sweep: a folder of that name exists"}
+  now    409 application/json {"error":"sweep: a folder of that name exists"}
+POST /api/tool-groups tree-invalid [domain-by-table]
+  before 500 application/json {"error":"sweep: not a valid name"}
+  now    400 application/json {"error":"sweep: not a valid name"}
+POST /api/tool-groups tree-gone [domain-by-table]
+  before 500 application/json {"error":"sweep: folder shares have ended"}
+  now    410 application/json {"error":"sweep: folder shares have ended","code":"gone"}
+POST /api/tool-groups tree-visibility [domain-by-table]
+  before 500 application/json {"error":"this would change who can see 1 item; repeat with confirm: true to go ahead"}
+  now    409 application/json {"error":"visibility","changes":[{"workspaceId":"11111111-1111-4111-8111-111111111111","gained":1,"lost":0}],"total":1}
 GET /api/tools tree-not-found [domain-by-table]
   before 500 application/json {"error":"internal error"}
   now    404 application/json {"error":"sweep: folder not found"}
@@ -1304,6 +1695,54 @@ GET /api/tools/:id tree-gone [domain-by-table]
   now    410 application/json {"error":"sweep: folder shares have ended","code":"gone"}
 GET /api/tools/:id tree-visibility [domain-by-table]
   before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"visibility","changes":[{"workspaceId":"11111111-1111-4111-8111-111111111111","gained":1,"lost":0}],"total":1}
+PATCH /api/tools/:id plain [opaque-500]
+  before 400 application/json {"error":"sweep: a plain error with private detail"}
+  now    500 application/json {"error":"internal error"}
+PATCH /api/tools/:id db [opaque-500]
+  before 400 application/json {"error":"Failed query: select \"secret\" from \"nodes\" where \"id\" = $1\nparams: sweep"}
+  now    500 application/json {"error":"internal error"}
+PATCH /api/tools/:id scope [domain-by-table]
+  before 400 application/json {"error":"not allowed to change this item"}
+  now    403 application/json {"error":"forbidden","reason":"item-workspace","code":"forbidden","message":"You cannot change this item in your workspaces."}
+PATCH /api/tools/:id busy [domain-by-table]
+  before 400 application/json {"error":"Another change to this item is under way; try again in a moment."}
+  now    409 application/json {"error":"Another change to this item is under way; try again in a moment."}
+PATCH /api/tools/:id tree-not-found [domain-by-table]
+  before 400 application/json {"error":"sweep: folder not found"}
+  now    404 application/json {"error":"sweep: folder not found"}
+PATCH /api/tools/:id tree-conflict [domain-by-table]
+  before 400 application/json {"error":"sweep: a folder of that name exists"}
+  now    409 application/json {"error":"sweep: a folder of that name exists"}
+PATCH /api/tools/:id tree-gone [domain-by-table]
+  before 400 application/json {"error":"sweep: folder shares have ended"}
+  now    410 application/json {"error":"sweep: folder shares have ended","code":"gone"}
+PATCH /api/tools/:id tree-visibility [domain-by-table]
+  before 400 application/json {"error":"this would change who can see 1 item; repeat with confirm: true to go ahead"}
+  now    409 application/json {"error":"visibility","changes":[{"workspaceId":"11111111-1111-4111-8111-111111111111","gained":1,"lost":0}],"total":1}
+DELETE /api/tools/:id plain [opaque-500]
+  before 400 application/json {"error":"sweep: a plain error with private detail"}
+  now    500 application/json {"error":"internal error"}
+DELETE /api/tools/:id db [opaque-500]
+  before 400 application/json {"error":"Failed query: select \"secret\" from \"nodes\" where \"id\" = $1\nparams: sweep"}
+  now    500 application/json {"error":"internal error"}
+DELETE /api/tools/:id scope [domain-by-table]
+  before 400 application/json {"error":"not allowed to change this item"}
+  now    403 application/json {"error":"forbidden","reason":"item-workspace","code":"forbidden","message":"You cannot change this item in your workspaces."}
+DELETE /api/tools/:id busy [domain-by-table]
+  before 400 application/json {"error":"Another change to this item is under way; try again in a moment."}
+  now    409 application/json {"error":"Another change to this item is under way; try again in a moment."}
+DELETE /api/tools/:id tree-not-found [domain-by-table]
+  before 400 application/json {"error":"sweep: folder not found"}
+  now    404 application/json {"error":"sweep: folder not found"}
+DELETE /api/tools/:id tree-conflict [domain-by-table]
+  before 400 application/json {"error":"sweep: a folder of that name exists"}
+  now    409 application/json {"error":"sweep: a folder of that name exists"}
+DELETE /api/tools/:id tree-gone [domain-by-table]
+  before 400 application/json {"error":"sweep: folder shares have ended"}
+  now    410 application/json {"error":"sweep: folder shares have ended","code":"gone"}
+DELETE /api/tools/:id tree-visibility [domain-by-table]
+  before 400 application/json {"error":"this would change who can see 1 item; repeat with confirm: true to go ahead"}
   now    409 application/json {"error":"visibility","changes":[{"workspaceId":"11111111-1111-4111-8111-111111111111","gained":1,"lost":0}],"total":1}
 PUT /api/users/:id/agent tree-not-found [domain-by-table]
   before 500 application/json {"error":"internal error"}

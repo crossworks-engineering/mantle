@@ -45,86 +45,63 @@ export const BODY_READ_ALLOW = Object.freeze({
  * a domain error by the one table (@mantle/std domain-errors.ts: its
  * status and public text, the same a tool says), a refusal by the one
  * mapper, anything else with the opaque 500 and a log line. 86 route files
- * did on main; fold 2 moved the first tranche (the named examples, the
- * isScopeWriteRefusal re-throws, the treeErrorResponse catches). The files
- * still doing it are named here: none may be added, and the list only
- * shrinks (eslint-rules/arch-lints.test.ts holds it to the files that
- * still do). A message that is deliberately public gets its own reason.
+ * did on main; fold 2 moved 58 of them (the first tranche, then the typed
+ * catches, the slug-taken catches and the catch-alls). The files that still
+ * do are named here, each with its reason: none may be added, and the list
+ * only shrinks (eslint-rules/arch-lints.test.ts holds it to the files that
+ * still do).
+ *
+ * Two kinds of reason. PUBLIC: the text is deliberately the reply, because
+ * it is the answer of a service the owner set up and came to test or fix
+ * (a model provider, a connector's server, the relay, a parser of the
+ * owner's own file). NOT_YET: the route answers a dialog in a shape of its
+ * own, and the move needs the client (jackdaw) to read the one error
+ * answer first (docs/request-plumbing.md, "Left open").
  */
-const NOT_YET = 'not yet moved: fold 2 continues (docs/request-plumbing.md)';
+const MODEL_TEST =
+  "PUBLIC: a test of the worker's or agent's model; the provider's own error (a quota, a model id, a key) is what the owner came to see";
+const UPSTREAM =
+  "PUBLIC: the answer of the connector's own server (a sync, a discovery, a spec fetch), which the owner set up and fixes from this text; also kept on the connector as lastError";
+const OK_FALSE =
+  'NOT_YET: answers the settings dialog {ok:false, message} with status 200; the move needs the dialog (jackdaw) to read the one error answer first';
 export const ERROR_TEXT_ALLOW = Object.freeze({
-  'server/web/app/api/agents/[id]/telegram/chats/route.ts': NOT_YET,
-  'server/web/app/api/agents/[id]/telegram/route.ts': NOT_YET,
-  'server/web/app/api/agents/[id]/test/chat/route.ts': NOT_YET,
-  'server/web/app/api/agents/route.ts': NOT_YET,
-  'server/web/app/api/ai-workers/[id]/test/chat/route.ts': NOT_YET,
-  'server/web/app/api/ai-workers/[id]/test/decision/route.ts': NOT_YET,
-  'server/web/app/api/ai-workers/[id]/test/document/route.ts': NOT_YET,
-  'server/web/app/api/ai-workers/[id]/test/image/route.ts': NOT_YET,
-  'server/web/app/api/ai-workers/[id]/test/stt/route.ts': NOT_YET,
-  'server/web/app/api/ai-workers/[id]/test/tts/route.ts': NOT_YET,
-  'server/web/app/api/ai-workers/[id]/test/vision/route.ts': NOT_YET,
-  'server/web/app/api/ai-workers/route.ts': NOT_YET,
-  'server/web/app/api/apps/[id]/draft/route.ts': NOT_YET,
-  'server/web/app/api/apps/[id]/duplicate/route.ts': NOT_YET,
-  'server/web/app/api/apps/[id]/export/route.ts': NOT_YET,
-  'server/web/app/api/apps/[id]/format/route.ts': NOT_YET,
-  'server/web/app/api/apps/[id]/publish/route.ts': NOT_YET,
-  'server/web/app/api/apps/[id]/snapshots/[sid]/restore/route.ts': NOT_YET,
-  'server/web/app/api/apps/[id]/snapshots/[sid]/route.ts': NOT_YET,
-  'server/web/app/api/apps/[id]/snapshots/route.ts': NOT_YET,
-  'server/web/app/api/apps/deleted/[id]/restore/route.ts': NOT_YET,
-  'server/web/app/api/apps/import-package/route.ts': NOT_YET,
-  'server/web/app/api/assistant/transcribe/route.ts': NOT_YET,
-  'server/web/app/api/assistant/turn/route.ts': NOT_YET,
-  'server/web/app/api/config/adopt-all/route.ts': NOT_YET,
-  'server/web/app/api/config/adopt/route.ts': NOT_YET,
-  'server/web/app/api/dev-tools/mcp/route.ts': NOT_YET,
-  'server/web/app/api/dev-tools/proxy/route.ts': NOT_YET,
-  'server/web/app/api/docs/collections/[id]/route.ts': NOT_YET,
-  'server/web/app/api/docs/collections/all/route.ts': NOT_YET,
-  'server/web/app/api/docs/collections/route.ts': NOT_YET,
-  'server/web/app/api/embedding/rebuild/route.ts': NOT_YET,
-  'server/web/app/api/embedding/route.ts': NOT_YET,
-  'server/web/app/api/embedding/test/route.ts': NOT_YET,
-  'server/web/app/api/export/[id]/route.ts': NOT_YET,
-  'server/web/app/api/files/files/route.ts': NOT_YET,
-  'server/web/app/api/formulas/[id]/evaluate/route.ts': NOT_YET,
-  'server/web/app/api/heartbeats/[id]/fire/route.ts': NOT_YET,
-  'server/web/app/api/heartbeats/[id]/route.ts': NOT_YET,
-  'server/web/app/api/heartbeats/route.ts': NOT_YET,
-  'server/web/app/api/keys/route.ts': NOT_YET,
-  'server/web/app/api/mcp-connectors/[slug]/oauth/start/route.ts': NOT_YET,
-  'server/web/app/api/mcp-connectors/[slug]/sync/route.ts': NOT_YET,
-  'server/web/app/api/mcp-connectors/route.ts': NOT_YET,
-  'server/web/app/api/mcp-status/route.ts': NOT_YET,
-  'server/web/app/api/model-pools/route.ts': NOT_YET,
-  'server/web/app/api/openapi-connectors/[slug]/sync/route.ts': NOT_YET,
-  'server/web/app/api/openapi-connectors/preview/route.ts': NOT_YET,
-  'server/web/app/api/openapi-connectors/route.ts': NOT_YET,
-  'server/web/app/api/pdf-passwords/route.ts': NOT_YET,
-  'server/web/app/api/peers/route.ts': NOT_YET,
-  'server/web/app/api/pending/[id]/route.ts': NOT_YET,
-  'server/web/app/api/profile/route.ts': NOT_YET,
-  'server/web/app/api/push/reset/route.ts': NOT_YET,
-  'server/web/app/api/runners/[id]/route.ts': NOT_YET,
-  'server/web/app/api/settings/worker-groups/route.ts': NOT_YET,
-  'server/web/app/api/shares/contacts/route.ts': NOT_YET,
-  'server/web/app/api/skills/route.ts': NOT_YET,
-  'server/web/app/api/studio/prose/route.ts': NOT_YET,
-  'server/web/app/api/studio/reset/route.ts': NOT_YET,
-  'server/web/app/api/studio/sandbox/route.ts': NOT_YET,
-  'server/web/app/api/tables/[id]/draft-ops/route.ts': NOT_YET,
-  'server/web/app/api/tables/[id]/draft/route.ts': NOT_YET,
-  'server/web/app/api/tables/[id]/export/route.ts': NOT_YET,
-  'server/web/app/api/tables/[id]/history/[sid]/restore/route.ts': NOT_YET,
-  'server/web/app/api/tables/[id]/history/route.ts': NOT_YET,
-  'server/web/app/api/tables/[id]/import/route.ts': NOT_YET,
-  'server/web/app/api/tables/[id]/rows/route.ts': NOT_YET,
-  'server/web/app/api/tool-groups/route.ts': NOT_YET,
-  'server/web/app/api/tools/[id]/route.ts': NOT_YET,
-  'server/web/app/api/tools/route.ts': NOT_YET,
-  'server/web/app/api/users/[id]/agent/route.ts': NOT_YET,
+  'server/web/app/api/agents/[id]/test/chat/route.ts': MODEL_TEST,
+  'server/web/app/api/ai-workers/[id]/test/chat/route.ts': MODEL_TEST,
+  'server/web/app/api/ai-workers/[id]/test/decision/route.ts': MODEL_TEST,
+  'server/web/app/api/ai-workers/[id]/test/document/route.ts': MODEL_TEST,
+  'server/web/app/api/ai-workers/[id]/test/image/route.ts': MODEL_TEST,
+  'server/web/app/api/ai-workers/[id]/test/stt/route.ts': MODEL_TEST,
+  'server/web/app/api/ai-workers/[id]/test/tts/route.ts': MODEL_TEST,
+  'server/web/app/api/ai-workers/[id]/test/vision/route.ts': MODEL_TEST,
+  'server/web/app/api/studio/sandbox/route.ts': MODEL_TEST,
+  'server/web/app/api/embedding/test/route.ts': MODEL_TEST,
+  'server/web/app/api/apps/[id]/format/route.ts':
+    "PUBLIC: Prettier's syntax error in the owner's own file says where to fix it",
+  'server/web/app/api/tables/[id]/import/route.ts':
+    "PUBLIC: the spreadsheet parser's text about the owner's own file (parse failed: ...) says what to fix; the import's own errors answer by the table",
+  'server/web/app/api/assistant/transcribe/route.ts':
+    "PUBLIC: the speech provider's answer (audio too short, a quota) as a 422, so the client says it without a list of its own",
+  'server/web/app/api/dev-tools/mcp/route.ts':
+    "PUBLIC: the dev console shows the MCP server's own answer",
+  'server/web/app/api/dev-tools/proxy/route.ts':
+    "PUBLIC: the dev console's request proxy shows the upstream's network error as the response it got",
+  'server/web/app/api/mcp-connectors/route.ts':
+    "PUBLIC: oauthError, the authorization server's answer when its flow could not start after the create; the create's own refusals answer by the table",
+  'server/web/app/api/mcp-connectors/[slug]/sync/route.ts': UPSTREAM,
+  'server/web/app/api/mcp-connectors/[slug]/oauth/start/route.ts': UPSTREAM,
+  'server/web/app/api/openapi-connectors/[slug]/sync/route.ts': UPSTREAM,
+  'server/web/app/api/openapi-connectors/preview/route.ts': UPSTREAM,
+  'server/web/app/api/mcp-status/route.ts':
+    "PUBLIC: the health check reports why the box's own public MCP URL could not be reached (the proxy, TLS, DNS)",
+  'server/web/app/api/push/reset/route.ts':
+    "PUBLIC: the push relay's answer when the instance token could not be rolled (relay_unreachable)",
+  'server/web/app/api/assistant/turn/route.ts':
+    "NOT_YET: a failed chat turn's text is the chat's error line (the provider's answer); the move needs the chat (jackdaw) to word a failed turn itself",
+  'server/web/app/api/docs/collections/route.ts': OK_FALSE,
+  'server/web/app/api/docs/collections/[id]/route.ts': OK_FALSE,
+  'server/web/app/api/docs/collections/all/route.ts': OK_FALSE,
+  'server/web/app/api/embedding/route.ts': OK_FALSE,
+  'server/web/app/api/embedding/rebuild/route.ts': OK_FALSE,
 });
 
 const READERS = new Set(['json', 'text', 'formData', 'arrayBuffer', 'blob']);

@@ -5,7 +5,6 @@ import { listApiKeys, setApiKey } from '@/lib/api-keys';
 import { afterVaultKeyReplaced } from '@/lib/mcp-connectors';
 import { KNOWN_KEY_SERVICES } from '@mantle/api-keys';
 import { isMcpManagedSecretService } from '@mantle/tools';
-import { errorMessage } from '@mantle/std';
 import { firstIssue } from '@/lib/zod-issue';
 import { isUniqueViolation } from '@mantle/db';
 import { readJson } from '@/lib/read-body';
@@ -64,7 +63,8 @@ export async function POST(req: Request) {
       createdAt: row.createdAt,
     });
   } catch (err) {
-    const msg = errorMessage(err);
+    // A key already there is the fixed 409; anything else answers by the one
+    // table (A10 part 2): a domain error its status, a fault the opaque 500.
     // 23505 = unique_violation
     if (isUniqueViolation(err)) {
       return NextResponse.json(
@@ -74,6 +74,6 @@ export async function POST(req: Request) {
         { status: 409 },
       );
     }
-    return NextResponse.json({ error: msg }, { status: 500 });
+    throw err;
   }
 }

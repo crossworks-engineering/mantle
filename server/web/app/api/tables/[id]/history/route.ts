@@ -9,7 +9,6 @@ import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { ownerCaller } from '@/lib/auth';
 import {
-  TableSnapshotRefusedError,
   createTableSnapshot,
   listTableSnapshots,
   tableTitle,
@@ -35,17 +34,12 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   const user = ownerCaller();
   const { id } = await ctx.params;
   const body = await readBody(req, CreateBody);
-  try {
-    const snapshot = await createTableSnapshot(user.id, id, {
-      note: body.note ?? null,
-      actor: 'owner',
-    });
-    if (!snapshot) return NextResponse.json({ error: 'table not found' }, { status: 404 });
-    return NextResponse.json({ snapshot }, { status: 201 });
-  } catch (err) {
-    if (err instanceof TableSnapshotRefusedError) {
-      return NextResponse.json({ error: err.message }, { status: 409 });
-    }
-    throw err;
-  }
+  // A refused snapshot (TableSnapshotRefusedError) answers 409 by the one
+  // table (A10 part 2).
+  const snapshot = await createTableSnapshot(user.id, id, {
+    note: body.note ?? null,
+    actor: 'owner',
+  });
+  if (!snapshot) return NextResponse.json({ error: 'table not found' }, { status: 404 });
+  return NextResponse.json({ snapshot }, { status: 201 });
 }

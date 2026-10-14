@@ -2,7 +2,7 @@ import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { ownerCaller } from '@/lib/auth';
 import { getAgent } from '@/lib/agents';
-import { setAgentTelegramChat, TelegramTokenError } from '@/lib/agent-telegram';
+import { setAgentTelegramChat } from '@/lib/agent-telegram';
 import { readJson } from '@/lib/read-body';
 
 const IdParams = z.object({ id: z.string().uuid() });
@@ -43,23 +43,14 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     );
   }
 
-  try {
-    await setAgentTelegramChat({
-      ownerId: user.id,
-      actorLoginId: user.actor.id,
-      agentId: agent.id,
-      chatId: parsed.data.chatId,
-      action: parsed.data.status === 'denied' ? 'block' : 'unpair',
-    });
-    return NextResponse.json({ ok: true });
-  } catch (err) {
-    if (err instanceof TelegramTokenError) {
-      return NextResponse.json(
-        { error: err.message, ...(err.code ? { code: err.code } : {}) },
-        { status: err.code === 'not_found' ? 404 : 400 },
-      );
-    }
-    console.error('[telegram chat status]', err);
-    return NextResponse.json({ error: 'Could not update the chat.' }, { status: 500 });
-  }
+  // TelegramTokenError answers by the one table (A10 part 2): 404 for a
+  // chat not found, else 400; anything else is the opaque 500, logged.
+  await setAgentTelegramChat({
+    ownerId: user.id,
+    actorLoginId: user.actor.id,
+    agentId: agent.id,
+    chatId: parsed.data.chatId,
+    action: parsed.data.status === 'denied' ? 'block' : 'unpair',
+  });
+  return NextResponse.json({ ok: true });
 }

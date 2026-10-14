@@ -5,7 +5,7 @@ import { resolveExport, getPage, getDraw, referencedDrawIds } from '@mantle/cont
 import { getDrawSvgOrRender, getDrawPngOrRender } from '@/lib/draw-snapshot';
 import { readFileById } from '@/lib/files';
 import { safeDownloadHeaders } from '@mantle/client-types/lib/safe-download';
-import { renderUrlToPdf, printOrigin, PdfRendererUnavailableError } from '@/lib/render-pdf';
+import { renderUrlToPdf, printOrigin } from '@/lib/render-pdf';
 import { slugify } from '@mantle/client-types/slugify';
 
 const IdParams = z.object({ id: z.string().uuid() });
@@ -54,21 +54,15 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
     const drawSvg = await getDrawSvgOrRender(user.id, id, { actorId });
     if (drawSvg !== null) {
       const token = buildRenderToken({ ownerId: user.id, actorId, nodeId: id });
-      try {
-        const bytes = await renderUrlToPdf(`${printOrigin()}/print/draws/${id}`, token);
-        const title = (await getDraw(user.id, id))?.title ?? 'drawing';
-        return download(
-          bytes,
-          'application/pdf',
-          `${slugify(title, { maxLength: 80, fallback: 'drawing' })}.pdf`,
-        );
-      } catch (e) {
-        if (e instanceof PdfRendererUnavailableError) {
-          console.error('[export] pdf renderer unavailable:', e.message);
-          return NextResponse.json({ error: e.message }, { status: 503 });
-        }
-        throw e;
-      }
+      // No sidecar (PdfRendererUnavailableError): 503 by the one table (A10
+      // part 2), logged where it is thrown.
+      const bytes = await renderUrlToPdf(`${printOrigin()}/print/draws/${id}`, token);
+      const title = (await getDraw(user.id, id))?.title ?? 'drawing';
+      return download(
+        bytes,
+        'application/pdf',
+        `${slugify(title, { maxLength: 80, fallback: 'drawing' })}.pdf`,
+      );
     }
     const page = await getPage(user.id, id);
     if (!page) {
@@ -100,20 +94,12 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
     // loads and is never a session, and the sidecar sends it to the print
     // origin only (lib/render-sandbox.ts, audit F01).
     const token = buildRenderToken({ ownerId: user.id, actorId, nodeId: id });
-    try {
-      const bytes = await renderUrlToPdf(`${printOrigin()}/print/pages/${id}`, token);
-      return download(
-        bytes,
-        'application/pdf',
-        `${slugify(page.title, { maxLength: 80, fallback: 'export' })}.pdf`,
-      );
-    } catch (e) {
-      if (e instanceof PdfRendererUnavailableError) {
-        console.error('[export] pdf renderer unavailable:', e.message);
-        return NextResponse.json({ error: e.message }, { status: 503 });
-      }
-      throw e;
-    }
+    const bytes = await renderUrlToPdf(`${printOrigin()}/print/pages/${id}`, token);
+    return download(
+      bytes,
+      'application/pdf',
+      `${slugify(page.title, { maxLength: 80, fallback: 'export' })}.pdf`,
+    );
   }
 
   // A draw's SVG comes straight out of the snapshot cache, so fill it first

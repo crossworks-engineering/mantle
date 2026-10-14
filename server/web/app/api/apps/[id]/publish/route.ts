@@ -16,7 +16,7 @@
  */
 import { NextResponse } from '@/server/http-compat';
 import { ownerCaller } from '@/lib/auth';
-import { getApp, publishApp, NoGreenBuildError } from '@mantle/content';
+import { getApp, publishApp } from '@mantle/content';
 import { buildAndStageApp } from '@mantle/tools';
 
 export async function POST(_req: Request, ctx: { params: Promise<{ id: string }> }) {
@@ -38,14 +38,8 @@ export async function POST(_req: Request, ctx: { params: Promise<{ id: string }>
     );
   }
 
-  try {
-    const app = await publishApp(user.id, id);
-    if (!app) return NextResponse.json({ error: 'app not found' }, { status: 404 });
-    return NextResponse.json({ app });
-  } catch (err) {
-    if (err instanceof NoGreenBuildError) {
-      return NextResponse.json({ error: err.message }, { status: 409 });
-    }
-    throw err;
-  }
+  // NoGreenBuildError answers 409 by the one table (A10 part 2).
+  const app = await publishApp(user.id, id);
+  if (!app) return NextResponse.json({ error: 'app not found' }, { status: 404 });
+  return NextResponse.json({ app });
 }

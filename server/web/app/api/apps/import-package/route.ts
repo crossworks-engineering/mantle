@@ -19,11 +19,7 @@ import type { ReadableStream as NodeWebStream } from 'node:stream/web';
 import { NextResponse } from '@/server/http-compat';
 import { ownerCaller } from '@/lib/auth';
 import { BodyTooLargeError } from '@/lib/body-limit';
-import {
-  AppPackageError,
-  appPackageMaxBytes,
-  takeAppImportSlot,
-} from '@mantle/content/app-package';
+import { appPackageMaxBytes, takeAppImportSlot } from '@mantle/content/app-package';
 import { spoolUpload, UploadTooLargeError } from '@mantle/files';
 import { importAppPackage } from '@mantle/tools';
 
@@ -64,12 +60,9 @@ export async function POST(req: Request) {
       { ok: true, ...result, reviewUrl: `/apps/${result.appId}` },
       { status: 201 },
     );
-  } catch (err) {
-    if (err instanceof AppPackageError) {
-      return NextResponse.json({ error: err.message, reason: 'bad-package' }, { status: 400 });
-    }
-    throw err; // a body over the cap: app.onError answers 413
   } finally {
+    // A bad package (AppPackageError) answers 400, reason 'bad-package', by
+    // the one table (A10 part 2); a body over the cap 413 (app.onError).
     if (spooled) await rm(spooled, { force: true });
     release();
   }

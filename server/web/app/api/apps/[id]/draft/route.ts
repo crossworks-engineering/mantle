@@ -15,8 +15,6 @@ import { ownerCaller } from '@/lib/auth';
 import {
   saveDraftSource,
   discardAppDraft,
-  AppDraftConflictError,
-  AppSourceLimitError,
   MAX_APP_FILES,
   MAX_APP_FILE_BYTES,
   MAX_APP_PATH_LEN,
@@ -40,24 +38,16 @@ export async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }
     return NextResponse.json({ error: `too many files (max ${MAX_APP_FILES})` }, { status: 400 });
   }
   const { baseDraftUpdatedAt, ...source } = parsed.data;
-  try {
-    const saved = await saveDraftSource(
-      user.id,
-      id,
-      source,
-      baseDraftUpdatedAt !== undefined ? { baseDraftUpdatedAt } : {},
-    );
-    if (!saved) return NextResponse.json({ error: 'app not found' }, { status: 404 });
-    return NextResponse.json({ ok: true, draftUpdatedAt: saved.draftUpdatedAt });
-  } catch (err) {
-    if (err instanceof AppSourceLimitError) {
-      return NextResponse.json({ error: err.message }, { status: 400 });
-    }
-    if (err instanceof AppDraftConflictError) {
-      return NextResponse.json({ error: err.message, reason: 'conflict' }, { status: 409 });
-    }
-    throw err;
-  }
+  // AppSourceLimitError (400) and AppDraftConflictError (409, reason
+  // 'conflict') answer by the one table (A10 part 2).
+  const saved = await saveDraftSource(
+    user.id,
+    id,
+    source,
+    baseDraftUpdatedAt !== undefined ? { baseDraftUpdatedAt } : {},
+  );
+  if (!saved) return NextResponse.json({ error: 'app not found' }, { status: 404 });
+  return NextResponse.json({ ok: true, draftUpdatedAt: saved.draftUpdatedAt });
 }
 
 export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string }> }) {

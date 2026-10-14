@@ -9,7 +9,6 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { ownerCaller } from '@/lib/auth';
-import { AppDbMissingError } from '@mantle/content/app-broker';
 import { duplicateApp } from '@mantle/content/app-package';
 import { readBody } from '@/lib/read-body';
 
@@ -22,14 +21,9 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   const user = ownerCaller();
   const { id } = await ctx.params;
   const body = await readBody(req, Body);
-  try {
-    const app = await duplicateApp(user.id, id, { ...body, actor: 'owner' });
-    if (!app) return NextResponse.json({ error: 'app not found' }, { status: 404 });
-    return NextResponse.json({ app }, { status: 201 });
-  } catch (err) {
-    if (err instanceof AppDbMissingError) {
-      return NextResponse.json({ error: err.message, reason: 'db-missing' }, { status: 409 });
-    }
-    throw err;
-  }
+  // A lost database file (AppDbMissingError): 409, reason 'db-missing', by
+  // the one table (A10 part 2).
+  const app = await duplicateApp(user.id, id, { ...body, actor: 'owner' });
+  if (!app) return NextResponse.json({ error: 'app not found' }, { status: 404 });
+  return NextResponse.json({ app }, { status: 201 });
 }

@@ -7,7 +7,6 @@ import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { ownerCaller } from '@/lib/auth';
 import {
-  AppSnapshotRefusedError,
   deleteAppSnapshot,
   getAppSnapshot,
   setAppSnapshotNote,
@@ -39,14 +38,9 @@ export async function PATCH(req: Request, ctx: Ctx) {
 export async function DELETE(_req: Request, ctx: Ctx) {
   const user = ownerCaller();
   const { id, sid } = await ctx.params;
-  try {
-    const ok = await deleteAppSnapshot(user.id, id, sid);
-    if (!ok) return NextResponse.json({ error: 'not found' }, { status: 404 });
-    return NextResponse.json({ ok: true });
-  } catch (err) {
-    if (err instanceof AppSnapshotRefusedError) {
-      return NextResponse.json({ error: err.message }, { status: 409 });
-    }
-    throw err;
-  }
+  // A version refuses (AppSnapshotRefusedError): 409 by the one table (A10
+  // part 2).
+  const ok = await deleteAppSnapshot(user.id, id, sid);
+  if (!ok) return NextResponse.json({ error: 'not found' }, { status: 404 });
+  return NextResponse.json({ ok: true });
 }

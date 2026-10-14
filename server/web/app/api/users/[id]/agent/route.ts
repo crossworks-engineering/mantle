@@ -8,7 +8,6 @@ import {
   getAssignedAgentSummary,
   releaseAssignedAgent,
   renameAssignedAgent,
-  CloneAgentError,
 } from '@/lib/agents';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
 import { readJson } from '@/lib/read-body';
@@ -99,24 +98,16 @@ export async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }
   // capture it first so the audit row explains the orphan left in
   // /settings/agents.
   const existing = await getAssignedAgentSummary(user.id, targetId);
-  let agent;
-  try {
-    agent = await cloneAgentForUser(user.id, {
-      actorId: targetId,
-      actorEmail: target.email,
-      name,
-      sourceAgentId,
-    });
-  } catch (err) {
-    // A rejected source is the caller's mistake (400) and worth saying out loud;
-    // anything else is ours (500). The clone is one transaction, so either way
-    // the login keeps whatever assistant it already had.
-    if (err instanceof CloneAgentError) {
-      return NextResponse.json({ error: err.message }, { status: 400 });
-    }
-    console.error('[users] assistant clone failed', err);
-    return NextResponse.json({ error: 'Could not create the assistant.' }, { status: 500 });
-  }
+  // A rejected source (CloneAgentError, an InputError) is the caller's
+  // mistake: 400 and its message, by the one table (A10 part 2); anything
+  // else is ours, the opaque 500 (logged). The clone is one transaction, so
+  // either way the login keeps whatever assistant it already had.
+  const agent = await cloneAgentForUser(user.id, {
+    actorId: targetId,
+    actorEmail: target.email,
+    name,
+    sourceAgentId,
+  });
 
   auditFireAndForget({
     actorId: user.actor.id,

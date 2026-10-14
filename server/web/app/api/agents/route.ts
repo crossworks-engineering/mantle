@@ -7,7 +7,6 @@ import { restampHeartbeatMakers } from '@mantle/tools';
 import { AvatarSchema } from '@/lib/avatar-schema';
 import { AgentMemoryConfigSchema } from '@/lib/agent-memory-config-schema';
 import { agentForReader, createAgent, listAgents } from '@/lib/agents';
-import { errorMessage } from '@mantle/std';
 import { firstIssue } from '@/lib/zod-issue';
 import { isUniqueViolation } from '@mantle/db';
 import { AGENT_THINKING_EFFORTS } from '@mantle/content-core/thinking-tiers';
@@ -110,13 +109,14 @@ export async function POST(req: Request) {
     await restampHeartbeatMakers(user.id, toolMakerFor(user), { agentSlug: row.slug });
     return NextResponse.json({ agent: agentForReader(user, row) });
   } catch (err) {
-    const msg = errorMessage(err);
+    // A slug taken is the fixed 409; anything else answers by the one table
+    // (A10 part 2): a domain error its status, a fault the opaque 500.
     if (isUniqueViolation(err)) {
       return NextResponse.json(
         { error: `An agent with slug "${parsed.data.slug}" already exists.` },
         { status: 409 },
       );
     }
-    return NextResponse.json({ error: msg }, { status: 500 });
+    throw err;
   }
 }

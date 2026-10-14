@@ -10,8 +10,7 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { ownerCaller } from '@/lib/auth';
-import { AppRestoreDraftError } from '@mantle/content';
-import { AppSnapshotRefusedError, restoreAppSnapshot } from '@mantle/content/app-snapshots';
+import { restoreAppSnapshot } from '@mantle/content/app-snapshots';
 import { readBody } from '@/lib/read-body';
 
 const Body = z.object({
@@ -23,27 +22,19 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string; si
   const user = ownerCaller();
   const { id, sid } = await ctx.params;
   const body = await readBody(req, Body);
-  try {
-    const result = await restoreAppSnapshot(user.id, id, sid, {
-      mode: body.mode,
-      discardDraft: body.discardDraft === true,
-      actor: 'owner',
-    });
-    if (!result) return NextResponse.json({ error: 'not found' }, { status: 404 });
-    return NextResponse.json({
-      restored: result.restored,
-      undo: result.undo,
-      code: result.code,
-      mode: result.mode,
-      declaredTools: result.declaredTools,
-    });
-  } catch (err) {
-    if (err instanceof AppRestoreDraftError) {
-      return NextResponse.json({ error: err.message, reason: 'draft' }, { status: 409 });
-    }
-    if (err instanceof AppSnapshotRefusedError) {
-      return NextResponse.json({ error: err.message, reason: 'no-data' }, { status: 409 });
-    }
-    throw err;
-  }
+  // AppRestoreDraftError (reason 'draft') and AppSnapshotRefusedError
+  // (reason 'no-data') answer 409 by the one table (A10 part 2).
+  const result = await restoreAppSnapshot(user.id, id, sid, {
+    mode: body.mode,
+    discardDraft: body.discardDraft === true,
+    actor: 'owner',
+  });
+  if (!result) return NextResponse.json({ error: 'not found' }, { status: 404 });
+  return NextResponse.json({
+    restored: result.restored,
+    undo: result.undo,
+    code: result.code,
+    mode: result.mode,
+    declaredTools: result.declaredTools,
+  });
 }

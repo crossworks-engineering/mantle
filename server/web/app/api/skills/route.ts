@@ -3,7 +3,6 @@ import { z } from 'zod';
 import { ownerCaller } from '@/lib/auth';
 import { createSkill, listSkills } from '@/lib/skills';
 import { toolMakerFor } from '@/lib/tools';
-import { errorMessage } from '@mantle/std';
 import { firstIssue } from '@/lib/zod-issue';
 import { isUniqueViolation } from '@mantle/db';
 import { readJson } from '@/lib/read-body';
@@ -41,13 +40,14 @@ export async function POST(req: Request) {
     const row = await createSkill(user.id, parsed.data, toolMakerFor(user));
     return NextResponse.json({ skill: row });
   } catch (err) {
-    const msg = errorMessage(err);
+    // A slug taken is the fixed 409; anything else answers by the one table
+    // (A10 part 2): a domain error its status, a fault the opaque 500.
     if (isUniqueViolation(err)) {
       return NextResponse.json(
         { error: `A skill with slug "${parsed.data.slug}" already exists.` },
         { status: 409 },
       );
     }
-    return NextResponse.json({ error: msg }, { status: 500 });
+    throw err;
   }
 }

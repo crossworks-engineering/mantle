@@ -37,22 +37,20 @@ export async function POST(req: Request) {
   }
   const bound = actsAs ? await resolvePeerActsAs(user.id, actsAs) : null;
   if (bound && 'error' in bound) return NextResponse.json({ error: bound.error }, { status: 400 });
-  try {
-    // `inboundToken` is the plaintext to hand the peer — surfaced ONCE here.
-    const created = await createPeer(user.id, { ...input, createdBy: user.actor.id });
-    let peer = created.peer;
-    if (bound) {
-      peer =
-        (
-          await setPeerAccess(user.id, peer.id, {
-            actsAs: bound,
-            ...(writeEnabled !== undefined ? { writeEnabled } : {}),
-            ...(allowedRiskyTools !== undefined ? { allowedRiskyTools } : {}),
-          })
-        )?.peer ?? peer;
-    }
-    return NextResponse.json({ peer, inboundToken: created.inboundToken }, { status: 201 });
-  } catch (err) {
-    return NextResponse.json({ error: (err as Error).message }, { status: 400 });
+  // A base URL that is not http(s) (InputError) answers 400 by the one table
+  // (A10 part 2); a fault the opaque 500.
+  // `inboundToken` is the plaintext to hand the peer — surfaced ONCE here.
+  const created = await createPeer(user.id, { ...input, createdBy: user.actor.id });
+  let peer = created.peer;
+  if (bound) {
+    peer =
+      (
+        await setPeerAccess(user.id, peer.id, {
+          actsAs: bound,
+          ...(writeEnabled !== undefined ? { writeEnabled } : {}),
+          ...(allowedRiskyTools !== undefined ? { allowedRiskyTools } : {}),
+        })
+      )?.peer ?? peer;
   }
+  return NextResponse.json({ peer, inboundToken: created.inboundToken }, { status: 201 });
 }

@@ -62,49 +62,44 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
   // it asks for (a member with Read, an Admin user with Read only).
   const file =
     wantDraft && row.draftOk === true && draftAbs && existsSync(draftAbs) ? draftAbs : publishedAbs;
-  try {
-    // Distinct values of one column — the option list a reference column's
-    // editor offers (?distinct=<columnId>, optional ?prefix= typeahead).
-    const distinct = url.searchParams.get('distinct');
-    if (distinct) {
-      const values = distinctColumnValues(file, {
-        columnId: distinct,
-        ...(tabId ? { tabId } : {}),
-        ...(url.searchParams.get('prefix') ? { prefix: url.searchParams.get('prefix')! } : {}),
-        limit,
-      });
-      return NextResponse.json({ values, source: file === draftAbs ? 'draft' : 'published' });
-    }
-    // Offset paging (the grid's "load more" appends from a known position);
-    // keyset (`after_pos`/`after_rid`) stays the cheaper cursor for crawls.
-    if (offsetParam !== null) {
-      const offset = Math.max(0, Number(offsetParam) || 0);
-      const page = queryRowsWindow(file, { offset, limit, ...(tabId ? { tabId } : {}) });
-      if (!page) return NextResponse.json({ error: 'window read failed' }, { status: 500 });
-      return NextResponse.json({
-        rows: page.rows,
-        total: page.total,
-        offset,
-        source: file === draftAbs ? 'draft' : 'published',
-      });
-    }
-    const page = listRowsWindow(file, {
-      limit,
+  // A tab that is not there (InputError) answers 400 by the one table (A10
+  // part 2); a read that failed is a fault, the opaque 500.
+  // Distinct values of one column — the option list a reference column's
+  // editor offers (?distinct=<columnId>, optional ?prefix= typeahead).
+  const distinct = url.searchParams.get('distinct');
+  if (distinct) {
+    const values = distinctColumnValues(file, {
+      columnId: distinct,
       ...(tabId ? { tabId } : {}),
-      ...(afterPos !== null && afterRid !== null
-        ? { after: { pos: Number(afterPos), rid: afterRid } }
-        : {}),
+      ...(url.searchParams.get('prefix') ? { prefix: url.searchParams.get('prefix')! } : {}),
+      limit,
     });
+    return NextResponse.json({ values, source: file === draftAbs ? 'draft' : 'published' });
+  }
+  // Offset paging (the grid's "load more" appends from a known position);
+  // keyset (`after_pos`/`after_rid`) stays the cheaper cursor for crawls.
+  if (offsetParam !== null) {
+    const offset = Math.max(0, Number(offsetParam) || 0);
+    const page = queryRowsWindow(file, { offset, limit, ...(tabId ? { tabId } : {}) });
+    if (!page) return NextResponse.json({ error: 'window read failed' }, { status: 500 });
     return NextResponse.json({
       rows: page.rows,
       total: page.total,
-      cursor: page.cursor,
+      offset,
       source: file === draftAbs ? 'draft' : 'published',
     });
-  } catch (err) {
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : 'window read failed' },
-      { status: 500 },
-    );
   }
+  const page = listRowsWindow(file, {
+    limit,
+    ...(tabId ? { tabId } : {}),
+    ...(afterPos !== null && afterRid !== null
+      ? { after: { pos: Number(afterPos), rid: afterRid } }
+      : {}),
+  });
+  return NextResponse.json({
+    rows: page.rows,
+    total: page.total,
+    cursor: page.cursor,
+    source: file === draftAbs ? 'draft' : 'published',
+  });
 }

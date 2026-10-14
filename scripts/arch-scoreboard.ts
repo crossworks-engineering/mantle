@@ -48,7 +48,8 @@ const LABELS: Record<string, string> = {
   routeBodyReadFiles: 'route files reading the request body directly (A10 part 2)',
   routeBodyReadAllowed: 'route files named to read the body another way (A10 part 2)',
   routeErrorTextFiles: "route files putting a caught error's text in a reply (A10 part 2)",
-  routeErrorTextAllowed: 'route files named to, until fold 2 moves them (A10 part 2)',
+  routeErrorTextAllowed:
+    'route files named to, each with its reason: public by design, or waiting on the client (A10 part 2)',
   store_tabledb_files: 'files reaching the tables write API (A3b)',
   store_objectstore_files: 'files reaching the object store write API (A3b)',
   store_appdb_files: 'files reaching the app database write API or APP_DB_DIR (A3b)',

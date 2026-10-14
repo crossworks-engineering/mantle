@@ -445,6 +445,9 @@ describe.skipIf(!hasManifest)('A10 part 2 fold 2: every moved route answers a fa
     }
     const before = readBaseline();
     expect([...now.keys()].sort()).toEqual([...before.keys()].sort());
+    const steady = steadyRoutes(before);
+    const changeKind = (cell: string, was: string, is: string) =>
+      changeKindOf(cell, was, is, steady.has(routeOf(cell)));
     const changed = [...now].filter(([cell, answer]) => before.get(cell) !== answer);
     const unnamed = changed
       .filter(([cell, answer]) => changeKind(cell, before.get(cell)!, answer) === null)
@@ -471,6 +474,25 @@ describe.skipIf(!hasManifest)('A10 part 2 fold 2: every moved route answers a fa
     ).toMatchFileSnapshot('./__snapshots__/a10-error-sweep-changes.txt');
   }, 1_800_000);
 });
+
+/** `METHOD pattern` of a cell (`METHOD pattern fault`). */
+function routeOf(cell: string): string {
+  return cell.slice(0, cell.lastIndexOf(' '));
+}
+
+/** The routes whose recorded answer is the same for every fault: the
+ *  handler failed (or refused) before it met the forced one, on a setting
+ *  the sweep leaves unset (the vault's master key, the runner's database)
+ *  or a check of its own. */
+function steadyRoutes(before: ReadonlyMap<string, string>): Set<string> {
+  const answers = new Map<string, Set<string>>();
+  for (const [cell, answer] of before) {
+    const r = routeOf(cell);
+    if (!answers.has(r)) answers.set(r, new Set());
+    answers.get(r)!.add(answer);
+  }
+  return new Set([...answers].filter(([, a]) => a.size === 1).map(([r]) => r));
+}
 
 /** The one opaque answer to an error no table names (answerAppError). */
 const OPAQUE = '500 application/json {"error":"internal error"}';
@@ -500,12 +522,26 @@ const TABLE_ANSWER: Readonly<Partial<Record<string, [string, string]>>> = {
  *  - domain-by-table: a domain error (a TreeError, TreeVisibilityError,
  *    the workspace refusal, busy) answers as the one table says, where the
  *    route's hand catch gave it another status (its text as a 400, or the
- *    opaque 500 of a route that mapped none).
+ *    opaque 500 of a route that mapped none);
+ *  - opaque-500 (an earlier fault): on a route that answered every fault
+ *    alike (steadyRoutes: it failed before it met the forced one, on a
+ *    setting the sweep leaves unset), the plain error whose text was the
+ *    reply answers the opaque 500;
+ *  - input-400 (an earlier refusal): on such a route, a refusal the caller
+ *    fixes (an InputError now) that a hand catch said as a 500 answers 400
+ *    with the same body.
  */
-function changeKind(cell: string, before: string, now: string): string | null {
+function changeKindOf(cell: string, before: string, now: string, steady: boolean): string | null {
   const fault = cell.slice(cell.lastIndexOf(' ') + 1);
   const table = TABLE_ANSWER[fault];
-  if (table) return now.startsWith(table[0]) && now.includes(table[1]) ? 'domain-by-table' : null;
+  if (table && now.startsWith(table[0]) && now.includes(table[1])) return 'domain-by-table';
+  if (steady && now === OPAQUE && /^[45]\d\d application\/json \{"error":"[^"]*"\}$/.test(before)) {
+    return 'opaque-500 (an earlier fault)';
+  }
+  if (steady && before.startsWith('500 ') && now === `400${before.slice(3)}`) {
+    return 'input-400 (an earlier refusal)';
+  }
+  if (table) return null;
   if (fault !== 'plain' && fault !== 'db') return null;
   if (now === OPAQUE) return 'opaque-500';
   if (/ location=/.test(before) && / location=/.test(now) && !/sweep|secret|Failed/.test(now)) {

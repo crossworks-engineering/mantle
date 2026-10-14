@@ -13,7 +13,7 @@
  */
 import { z } from 'zod';
 import { NextResponse } from '@/server/http-compat';
-import { ContactShareRefusedError, createContactShares } from '@mantle/content';
+import { createContactShares } from '@mantle/content';
 import type { CreateContactSharesResponse } from '@mantle/client-types';
 import { ownerCaller } from '@/lib/auth';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
@@ -28,31 +28,26 @@ const Body = z.object({
 export async function POST(req: Request) {
   const user = ownerCaller();
   const body = await readBody(req, Body);
-  try {
-    const shares = await createContactShares(
-      user.id,
-      body.nodeId,
-      body.contactIds,
-      body.canWrite === true,
-    );
-    auditFireAndForget({
-      actorId: user.actor.id,
-      actorEmail: user.actor.email,
-      action: 'contact.share_created',
-      method: 'POST',
-      path: '/api/shares/contacts',
-      detail: {
-        nodeId: body.nodeId,
-        contactIds: shares.map((s) => s.contactId),
-        canWrite: body.canWrite === true,
-      },
-      ...requestMetaFrom(req),
-    });
-    return NextResponse.json({ shares } satisfies CreateContactSharesResponse);
-  } catch (err) {
-    if (err instanceof ContactShareRefusedError) {
-      return NextResponse.json({ error: err.message, reason: err.reason }, { status: 400 });
-    }
-    throw err;
-  }
+  // A refused share (ContactShareRefusedError) answers 400 with its reason
+  // by the one table (A10 part 2).
+  const shares = await createContactShares(
+    user.id,
+    body.nodeId,
+    body.contactIds,
+    body.canWrite === true,
+  );
+  auditFireAndForget({
+    actorId: user.actor.id,
+    actorEmail: user.actor.email,
+    action: 'contact.share_created',
+    method: 'POST',
+    path: '/api/shares/contacts',
+    detail: {
+      nodeId: body.nodeId,
+      contactIds: shares.map((s) => s.contactId),
+      canWrite: body.canWrite === true,
+    },
+    ...requestMetaFrom(req),
+  });
+  return NextResponse.json({ shares } satisfies CreateContactSharesResponse);
 }

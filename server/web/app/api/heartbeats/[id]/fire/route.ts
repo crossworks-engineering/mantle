@@ -1,8 +1,7 @@
 import { NextResponse } from '@/server/http-compat';
 import { ownerCaller } from '@/lib/auth';
-import { FireRefused, fireOptsFor, getHeartbeatRow } from '@/lib/heartbeats';
+import { fireOptsFor, getHeartbeatRow } from '@/lib/heartbeats';
 import { forceFire } from '@mantle/runtime/heartbeats';
-import { errorMessage } from '@mantle/std';
 
 /**
  * Fire a heartbeat immediately, bypassing its gates (idle / quiet / cooldown) —
@@ -19,13 +18,8 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
   const { id } = await params;
   const row = await getHeartbeatRow(user.id, id);
   if (!row) return NextResponse.json({ error: 'Heartbeat not found.' }, { status: 404 });
-  try {
-    await forceFire(row, await fireOptsFor(user.id, user.actor.id, row));
-    return NextResponse.json({ ok: true });
-  } catch (err) {
-    if (err instanceof FireRefused) {
-      return NextResponse.json({ error: err.message }, { status: 403 });
-    }
-    return NextResponse.json({ error: errorMessage(err) }, { status: 400 });
-  }
+  // Another login (FireRefused) answers 403 by the one table (A10 part 2);
+  // a failed fire is recorded on the fire row, anything thrown is a fault.
+  await forceFire(row, await fireOptsFor(user.id, user.actor.id, row));
+  return NextResponse.json({ ok: true });
 }

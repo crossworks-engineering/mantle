@@ -10,7 +10,6 @@ import {
   openRouterModelIssue,
   toAiWorkerDTO,
 } from '@/lib/ai-workers';
-import { errorMessage } from '@mantle/std';
 import { isUniqueViolation } from '@mantle/db';
 import { readBody } from '@/lib/read-body';
 
@@ -96,13 +95,14 @@ export async function POST(req: Request) {
     if (worker.kind === 'embedding') clearEmbeddingModelCache(user.id);
     return NextResponse.json({ worker: toAiWorkerDTO(worker) });
   } catch (err) {
-    const msg = errorMessage(err);
+    // A slug taken is the fixed 409; anything else answers by the one table
+    // (A10 part 2): a domain error its status, a fault the opaque 500.
     if (isUniqueViolation(err)) {
       return NextResponse.json(
         { error: 'A worker with that slug already exists.' },
         { status: 409 },
       );
     }
-    return NextResponse.json({ error: msg }, { status: 400 });
+    throw err;
   }
 }

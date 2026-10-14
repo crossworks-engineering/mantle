@@ -30,29 +30,25 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
       { status: 400 },
     );
   }
-  try {
-    const result = await applyTableOps(user.id, id, parsed.data.ops as unknown as TableOp[], {
-      ...(parsed.data.if_rev !== undefined ? { ifRev: parsed.data.if_rev } : {}),
-    });
-    if (!result) return NextResponse.json({ error: 'not found' }, { status: 404 });
-    if (!result.ok) {
-      return NextResponse.json(
-        {
-          error: 'draft changed since you loaded it — refetch and re-apply',
-          current_rev: result.currentRev,
-        },
-        { status: 409 },
-      );
-    }
-    return NextResponse.json({
-      ok: true,
-      draft_rev: result.draftRev,
-      created_ids: result.createdIds,
-    });
-  } catch (err) {
+  // A refused op (InputError: no such tab, a column already there) answers
+  // 400, an app table 409, by the one table (A10 part 2); a fault the opaque
+  // 500.
+  const result = await applyTableOps(user.id, id, parsed.data.ops as unknown as TableOp[], {
+    ...(parsed.data.if_rev !== undefined ? { ifRev: parsed.data.if_rev } : {}),
+  });
+  if (!result) return NextResponse.json({ error: 'not found' }, { status: 404 });
+  if (!result.ok) {
     return NextResponse.json(
-      { error: err instanceof Error ? err.message : 'op batch failed' },
-      { status: 400 },
+      {
+        error: 'draft changed since you loaded it — refetch and re-apply',
+        current_rev: result.currentRev,
+      },
+      { status: 409 },
     );
   }
+  return NextResponse.json({
+    ok: true,
+    draft_rev: result.draftRev,
+    created_ids: result.createdIds,
+  });
 }

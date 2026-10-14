@@ -49,12 +49,9 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   // replacement — the clipped-grid truncation guard doesn't apply and the
   // ceiling is the import cap, not the 10k grid window (audit: re-importing
   // into a >10k table 500'd with windowed-read advice).
-  let result;
-  try {
-    result = await saveTableDraft(user.id, id, { tabs }, { replace: true });
-  } catch (err) {
-    return NextResponse.json({ error: `import failed: ${errorMessage(err)}` }, { status: 400 });
-  }
+  // Over the import cap (TableTooLargeError) answers 400, an app table 409,
+  // by the one table (A10 part 2); a fault the opaque 500.
+  const result = await saveTableDraft(user.id, id, { tabs }, { replace: true });
   if (!result) return NextResponse.json({ error: 'not found' }, { status: 404 });
 
   return NextResponse.json({

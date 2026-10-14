@@ -17,10 +17,8 @@ const CreateBody = z.object({
 export async function POST(req: Request) {
   const user = ownerCaller();
   const body = await readBody(req, CreateBody);
-  try {
-    const row = await createPdfPassword(user.id, body);
-    return NextResponse.json({ password: row }, { status: 201 });
-  } catch (err) {
-    return NextResponse.json({ error: (err as Error).message }, { status: 400 });
-  }
+  // No password (InputError) answers 400 by the one table (A10 part 2); a
+  // fault the opaque 500.
+  const row = await createPdfPassword(user.id, body);
+  return NextResponse.json({ password: row }, { status: 201 });
 }

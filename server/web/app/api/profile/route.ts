@@ -33,7 +33,6 @@ import {
   HOUSE_STYLE_MAX,
 } from '@mantle/content';
 import { listReminderCapableAgents } from '@/lib/agents';
-import { errorMessage } from '@mantle/std';
 import { PURPOSE_MAX_CHARS, purposeTooLongError } from '@mantle/client-types/purpose-limits';
 import { readJson } from '@/lib/read-body';
 
@@ -182,44 +181,42 @@ export async function PUT(req: Request) {
       );
     }
   }
-  try {
-    // The ACTOR's id: personal keys land on this login's own row, brain keys
-    // (siteName, houseStyle, purpose…) are routed to the anchor by the split
-    // in savePreferencesFor — this is what makes avatars per-login.
-    const preferences = await savePreferencesFor(user.actor.id, {
-      ...(tz ? { timezone: tz } : {}),
-      ...(loc ? { locale: loc } : {}),
-      ...(avatarStyle !== undefined ? { avatarStyle: avatarStyle.trim() } : {}),
-      // Applied only when SENT, like avatarParts: an omitted key must leave
-      // the stored seed alone (a stale tab saving its timezone used to wipe
-      // the seed another tab had just rolled). '' — sent — is still the
-      // explicit clear (back to initials).
-      ...(avatarSeed !== undefined ? { avatarSeed: avatarSeed.trim() } : {}),
-      ...(avatarParts !== undefined ? { avatarParts } : {}),
-      reminderAgentSlug: (reminderAgentSlug ?? '').trim(),
-      ...(isReminderChannel((reminderChannel ?? '').trim())
-        ? { reminderChannel: (reminderChannel ?? '').trim() as 'telegram' | 'mobile' }
-        : {}),
-      // purpose is sent on every save (empty = cleared); archetype only sticks
-      // when it's a known key.
-      ...(purpose !== undefined ? { purpose: purposeTrimmed } : {}),
-      ...(isPurposeArchetype(archetype) ? { purposeArchetype: archetype } : {}),
-      // Sent on every save; empty stores '' which projects to unset (= "mantle").
-      ...(siteName !== undefined ? { siteName: siteName.trim().slice(0, SITE_NAME_MAX) } : {}),
-      // Same pattern: empty clears the header-centre peer label.
-      ...(peerName !== undefined ? { peerName: peerName.trim().slice(0, PEER_NAME_MAX) } : {}),
-      // Same pattern again: empty stores '' which projects to unset, so the
-      // House style block disappears from every prompt rather than lingering.
-      ...(houseStyle !== undefined
-        ? { houseStyle: houseStyle.trim().slice(0, HOUSE_STYLE_MAX) }
-        : {}),
-      ...(streamThoughts !== undefined ? { streamThoughts } : {}),
-      ...(thoughtTrailMode !== undefined ? { thoughtTrailMode } : {}),
-      ...(persistThoughts !== undefined ? { persistThoughts } : {}),
-      ...(thinkingBudget !== undefined ? { thinkingBudget } : {}),
-    });
-    return NextResponse.json({ preferences });
-  } catch (err) {
-    return NextResponse.json({ error: errorMessage(err) }, { status: 400 });
-  }
+  // A value the preferences refuse (InputError: a timezone, a locale) answers
+  // 400 by the one table (A10 part 2); a fault the opaque 500.
+  // The ACTOR's id: personal keys land on this login's own row, brain keys
+  // (siteName, houseStyle, purpose…) are routed to the anchor by the split
+  // in savePreferencesFor — this is what makes avatars per-login.
+  const preferences = await savePreferencesFor(user.actor.id, {
+    ...(tz ? { timezone: tz } : {}),
+    ...(loc ? { locale: loc } : {}),
+    ...(avatarStyle !== undefined ? { avatarStyle: avatarStyle.trim() } : {}),
+    // Applied only when SENT, like avatarParts: an omitted key must leave
+    // the stored seed alone (a stale tab saving its timezone used to wipe
+    // the seed another tab had just rolled). '' — sent — is still the
+    // explicit clear (back to initials).
+    ...(avatarSeed !== undefined ? { avatarSeed: avatarSeed.trim() } : {}),
+    ...(avatarParts !== undefined ? { avatarParts } : {}),
+    reminderAgentSlug: (reminderAgentSlug ?? '').trim(),
+    ...(isReminderChannel((reminderChannel ?? '').trim())
+      ? { reminderChannel: (reminderChannel ?? '').trim() as 'telegram' | 'mobile' }
+      : {}),
+    // purpose is sent on every save (empty = cleared); archetype only sticks
+    // when it's a known key.
+    ...(purpose !== undefined ? { purpose: purposeTrimmed } : {}),
+    ...(isPurposeArchetype(archetype) ? { purposeArchetype: archetype } : {}),
+    // Sent on every save; empty stores '' which projects to unset (= "mantle").
+    ...(siteName !== undefined ? { siteName: siteName.trim().slice(0, SITE_NAME_MAX) } : {}),
+    // Same pattern: empty clears the header-centre peer label.
+    ...(peerName !== undefined ? { peerName: peerName.trim().slice(0, PEER_NAME_MAX) } : {}),
+    // Same pattern again: empty stores '' which projects to unset, so the
+    // House style block disappears from every prompt rather than lingering.
+    ...(houseStyle !== undefined
+      ? { houseStyle: houseStyle.trim().slice(0, HOUSE_STYLE_MAX) }
+      : {}),
+    ...(streamThoughts !== undefined ? { streamThoughts } : {}),
+    ...(thoughtTrailMode !== undefined ? { thoughtTrailMode } : {}),
+    ...(persistThoughts !== undefined ? { persistThoughts } : {}),
+    ...(thinkingBudget !== undefined ? { thinkingBudget } : {}),
+  });
+  return NextResponse.json({ preferences });
 }

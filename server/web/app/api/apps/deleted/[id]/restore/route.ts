@@ -6,19 +6,13 @@
  */
 import { NextResponse } from '@/server/http-compat';
 import { ownerCaller } from '@/lib/auth';
-import { AppTrashRefusedError, restoreDeletedApp } from '@mantle/content/app-trash';
+import { restoreDeletedApp } from '@mantle/content/app-trash';
 
 export async function POST(_req: Request, ctx: { params: Promise<{ id: string }> }) {
   const user = ownerCaller();
   const { id } = await ctx.params;
-  try {
-    const app = await restoreDeletedApp(user.id, id, { actor: 'owner' });
-    if (!app) return NextResponse.json({ error: 'not found' }, { status: 404 });
-    return NextResponse.json({ app });
-  } catch (err) {
-    if (err instanceof AppTrashRefusedError) {
-      return NextResponse.json({ error: err.message }, { status: 409 });
-    }
-    throw err;
-  }
+  // AppTrashRefusedError answers 409 by the one table (A10 part 2).
+  const app = await restoreDeletedApp(user.id, id, { actor: 'owner' });
+  if (!app) return NextResponse.json({ error: 'not found' }, { status: 404 });
+  return NextResponse.json({ app });
 }

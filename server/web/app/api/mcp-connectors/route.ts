@@ -71,20 +71,15 @@ export async function POST(req: Request) {
     const refused = await vaultPairLoginRefusal(configuredBy);
     if (refused) return NextResponse.json({ error: refused }, { status: 403 });
   }
-  let result: Awaited<ReturnType<typeof createMcpConnector>>;
-  try {
-    result = await createMcpConnector(user.id, {
-      ...rest,
-      configuredBy,
-      oauth,
-      ...(oauthClient ? { oauthClient } : {}),
-      ...(scope ? { oauthScope: scope } : {}),
-    });
-  } catch (err) {
-    const msg = errorMessage(err);
-    const status = msg.includes('already exists') ? 409 : 400;
-    return NextResponse.json({ error: msg }, { status });
-  }
+  // A binding the connector refuses (InputError) answers 400, a connector
+  // already there (ConflictError) 409, by the one table (A10 part 2).
+  const result = await createMcpConnector(user.id, {
+    ...rest,
+    configuredBy,
+    oauth,
+    ...(oauthClient ? { oauthClient } : {}),
+    ...(scope ? { oauthScope: scope } : {}),
+  });
   try {
     if (oauth) {
       // Kick off the authorization flow immediately: discovery (+ dynamic

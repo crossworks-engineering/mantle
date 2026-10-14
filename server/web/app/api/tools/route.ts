@@ -11,7 +11,6 @@ import {
 import { isUniqueViolation, db, toolGroups, and, eq } from '@mantle/db';
 import { createTool, keysAreaRefusal, listToolsForOwner, toolMakerFor } from '@/lib/tools';
 import { ToolHandlerSchema } from '@/lib/tool-handler-schema';
-import { errorMessage } from '@mantle/std';
 import { firstIssue } from '@/lib/zod-issue';
 import { readJson } from '@/lib/read-body';
 
@@ -107,13 +106,14 @@ export async function POST(req: Request) {
       ...(inherited ? { inherited } : {}),
     });
   } catch (err) {
-    const msg = errorMessage(err);
+    // A slug taken is the fixed 409; anything else answers by the one table
+    // (A10 part 2): a domain error its status, a fault the opaque 500.
     if (isUniqueViolation(err)) {
       return NextResponse.json(
         { error: `A tool with slug "${parsed.data.slug}" already exists.` },
         { status: 409 },
       );
     }
-    return NextResponse.json({ error: msg }, { status: 400 });
+    throw err;
   }
 }

@@ -3,8 +3,9 @@
 # Every other cell of a10-body-sweep.txt answers byte for byte as recorded.
 # bad-json-400 (malformed): 200 cells
 # chunked-413: 207 cells
+# opaque-500 (fold 2: a plain error, its text was the reply): 28 cells
 # bad-json-400 (malformed, accepted as {} on main): 9 cells
-# opaque-500 (fold 2: a plain error, its text was the reply): 9 cells
+# input-400 (fold 2: a refusal the caller fixes, said as a 500 on main): 1 cells
 # bad-json-400 (empty): 2 cells
 POST /api/access-keys owner malformed [bad-json-400 (malformed)]
   main 400 application/json {"error":"Invalid input: expected object, received null"}
@@ -18,6 +19,9 @@ POST /api/access-keys member malformed [bad-json-400 (malformed)]
 POST /api/access-keys member chunked [chunked-413]
   main 400 application/json {"error":"Invalid input: expected object, received null"}
   now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/agents owner valid [opaque-500 (fold 2: a plain error, its text was the reply)]
+  main 500 application/json {"error":"DATABASE_URL must be set"}
+  now  500 application/json {"error":"internal error"}
 POST /api/agents owner malformed [bad-json-400 (malformed)]
   main 400 application/json {"error":"slug: Invalid input: expected string, received undefined"}
   now  400 application/json {"error":"invalid JSON"}
@@ -42,6 +46,9 @@ POST /api/agents/:id/test/chat owner malformed [bad-json-400 (malformed)]
 POST /api/agents/:id/test/chat owner chunked [chunked-413]
   main 400 application/json {"error":"agent not found"}
   now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/ai-workers owner valid [opaque-500 (fold 2: a plain error, its text was the reply)]
+  main 400 application/json {"error":"DATABASE_URL must be set"}
+  now  500 application/json {"error":"internal error"}
 POST /api/ai-workers owner malformed [bad-json-400 (malformed)]
   main 400 application/json {"error":"kind: Invalid option: expected one of \"reflector\"|\"extractor\"|\"summarizer\"|\"tts\"|\"stt\"|\"vision\"|\"document\"|\"image_gen\"|\"embedding\"|\"search\"|\"search_advanced\"|\"narrator\"|\"suggester\"|\"decider\""}
   now  400 application/json {"error":"invalid JSON"}
@@ -267,12 +274,33 @@ PATCH /api/calendar/:id owner malformed [bad-json-400 (malformed)]
 PATCH /api/calendar/:id owner chunked [chunked-413]
   main 400 application/json {"error":"invalid input"}
   now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/config/adopt owner valid [input-400 (fold 2: a refusal the caller fixes, said as a 500 on main)]
+  main 500 application/json {"error":"No persona agent to adopt onto."}
+  now  400 application/json {"error":"No persona agent to adopt onto."}
 POST /api/config/adopt owner malformed [bad-json-400 (malformed)]
   main 400 application/json {"error":"kind: Invalid option: expected one of \"persona\"|\"agent\"|\"skill\"|\"tool-group\"|\"worker\""}
   now  400 application/json {"error":"invalid JSON"}
 POST /api/config/adopt owner chunked [chunked-413]
   main 400 application/json {"error":"kind: Invalid option: expected one of \"persona\"|\"agent\"|\"skill\"|\"tool-group\"|\"worker\""}
   now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/config/adopt-all owner valid [opaque-500 (fold 2: a plain error, its text was the reply)]
+  main 500 application/json {"error":"DATABASE_URL must be set"}
+  now  500 application/json {"error":"internal error"}
+POST /api/config/adopt-all owner malformed [opaque-500 (fold 2: a plain error, its text was the reply)]
+  main 500 application/json {"error":"DATABASE_URL must be set"}
+  now  500 application/json {"error":"internal error"}
+POST /api/config/adopt-all owner empty [opaque-500 (fold 2: a plain error, its text was the reply)]
+  main 500 application/json {"error":"DATABASE_URL must be set"}
+  now  500 application/json {"error":"internal error"}
+POST /api/config/adopt-all owner nul [opaque-500 (fold 2: a plain error, its text was the reply)]
+  main 500 application/json {"error":"DATABASE_URL must be set"}
+  now  500 application/json {"error":"internal error"}
+POST /api/config/adopt-all owner array [opaque-500 (fold 2: a plain error, its text was the reply)]
+  main 500 application/json {"error":"DATABASE_URL must be set"}
+  now  500 application/json {"error":"internal error"}
+POST /api/config/adopt-all owner chunked [opaque-500 (fold 2: a plain error, its text was the reply)]
+  main 500 application/json {"error":"DATABASE_URL must be set"}
+  now  500 application/json {"error":"internal error"}
 POST /api/contacts owner valid [opaque-500 (fold 2: a plain error, its text was the reply)]
   main 400 application/json {"error":"DATABASE_URL must be set"}
   now  500 application/json {"error":"internal error"}
@@ -573,9 +601,18 @@ POST /api/heartbeats owner malformed [bad-json-400 (malformed)]
 POST /api/heartbeats owner chunked [chunked-413]
   main 400 application/json {"error":"slug: Invalid input: expected string, received undefined"}
   now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+PATCH /api/heartbeats/:id owner valid [opaque-500 (fold 2: a plain error, its text was the reply)]
+  main 400 application/json {"error":"DATABASE_URL must be set"}
+  now  500 application/json {"error":"internal error"}
 PATCH /api/heartbeats/:id owner malformed [bad-json-400 (malformed)]
   main 400 application/json {"error":"DATABASE_URL must be set"}
   now  400 application/json {"error":"invalid JSON"}
+PATCH /api/heartbeats/:id owner empty [opaque-500 (fold 2: a plain error, its text was the reply)]
+  main 400 application/json {"error":"DATABASE_URL must be set"}
+  now  500 application/json {"error":"internal error"}
+PATCH /api/heartbeats/:id owner nul [opaque-500 (fold 2: a plain error, its text was the reply)]
+  main 400 application/json {"error":"DATABASE_URL must be set"}
+  now  500 application/json {"error":"internal error"}
 PATCH /api/heartbeats/:id owner chunked [chunked-413]
   main 400 application/json {"error":"DATABASE_URL must be set"}
   now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
@@ -603,6 +640,9 @@ POST /api/journal/:id/resolve owner malformed [bad-json-400 (malformed)]
 POST /api/journal/:id/resolve owner chunked [chunked-413]
   main 400 application/json {"error":"answer: Invalid input: expected string, received undefined"}
   now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/keys owner valid [opaque-500 (fold 2: a plain error, its text was the reply)]
+  main 500 application/json {"error":"MANTLE_MASTER_KEY is not set"}
+  now  500 application/json {"error":"internal error"}
 POST /api/keys owner malformed [bad-json-400 (malformed)]
   main 400 application/json {"error":"service: Invalid input: expected string, received undefined"}
   now  400 application/json {"error":"invalid JSON"}
@@ -771,9 +811,15 @@ POST /api/pages/:id/move owner malformed [bad-json-400 (malformed)]
 POST /api/pages/:id/move owner chunked [chunked-413]
   main 400 application/json {"error":"folderId required"}
   now  413 application/json {"error":"This request is too large (at most 128 MB).","reason":"body-too-large"}
+POST /api/pdf-passwords owner valid [opaque-500 (fold 2: a plain error, its text was the reply)]
+  main 400 application/json {"error":"MANTLE_MASTER_KEY is not set"}
+  now  500 application/json {"error":"internal error"}
 POST /api/pdf-passwords owner malformed [bad-json-400 (malformed)]
   main 400 application/json {"error":"password: Invalid input: expected string, received undefined"}
   now  400 application/json {"error":"invalid JSON"}
+POST /api/pdf-passwords owner nul [opaque-500 (fold 2: a plain error, its text was the reply)]
+  main 400 application/json {"error":"MANTLE_MASTER_KEY is not set"}
+  now  500 application/json {"error":"internal error"}
 POST /api/pdf-passwords owner chunked [chunked-413]
   main 400 application/json {"error":"password: Invalid input: expected string, received undefined"}
   now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
@@ -795,6 +841,9 @@ POST /api/peers/:id/shares owner malformed [bad-json-400 (malformed)]
 POST /api/peers/:id/shares owner chunked [chunked-413]
   main 400 application/json {"error":"nodeId (uuid) or nodeType (shareable category) required"}
   now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+PATCH /api/pending/:id owner valid [opaque-500 (fold 2: a plain error, its text was the reply)]
+  main 500 application/json {"error":"DATABASE_URL must be set"}
+  now  500 application/json {"error":"internal error"}
 PATCH /api/pending/:id owner malformed [bad-json-400 (malformed)]
   main 400 application/json {"error":"decision: Invalid option: expected one of \"approve\"|\"reject\" (expected { decision: approve|reject, answer?, answers? })"}
   now  400 application/json {"error":"invalid JSON"}
@@ -909,6 +958,9 @@ POST /api/recall/maps/:id/cards/reorder owner malformed [bad-json-400 (malformed
 POST /api/recall/maps/:id/cards/reorder owner chunked [chunked-413]
   main 400 application/json {"error":"slugs: Invalid input: expected array, received undefined"}
   now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/runners/:id owner valid [opaque-500 (fold 2: a plain error, its text was the reply)]
+  main 500 application/json {"error":"DATABASE_URL (or DBOS_SYSTEM_DATABASE_URL) must be set to reach the runner"}
+  now  500 application/json {"error":"internal error"}
 POST /api/runners/:id owner malformed [bad-json-400 (malformed)]
   main 400 application/json {"error":"action: Invalid discriminator value. Expected 'cancel' | 'resume' | 'restart' | 'fork'"}
   now  400 application/json {"error":"invalid JSON"}
@@ -933,6 +985,9 @@ PATCH /api/secrets/:id owner malformed [bad-json-400 (malformed)]
 PATCH /api/secrets/:id owner chunked [chunked-413]
   main 404 application/json {"error":"not found"}
   now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/settings/worker-groups owner valid [opaque-500 (fold 2: a plain error, its text was the reply)]
+  main 500 application/json {"error":"DATABASE_URL must be set"}
+  now  500 application/json {"error":"internal error"}
 POST /api/settings/worker-groups owner malformed [bad-json-400 (malformed)]
   main 400 application/json {"error":"slug: Invalid input: expected string, received undefined"}
   now  400 application/json {"error":"invalid JSON"}
@@ -963,6 +1018,9 @@ POST /api/shares/contacts owner malformed [bad-json-400 (malformed)]
 POST /api/shares/contacts owner chunked [chunked-413]
   main 400 application/json {"error":"nodeId: Invalid input: expected string, received undefined"}
   now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/skills owner valid [opaque-500 (fold 2: a plain error, its text was the reply)]
+  main 500 application/json {"error":"DATABASE_URL must be set"}
+  now  500 application/json {"error":"internal error"}
 POST /api/skills owner malformed [bad-json-400 (malformed)]
   main 400 application/json {"error":"slug: Invalid input: expected string, received undefined"}
   now  400 application/json {"error":"invalid JSON"}
@@ -1071,6 +1129,9 @@ POST /api/telegram/pair member malformed [bad-json-400 (malformed)]
 POST /api/telegram/pair member chunked [chunked-413]
   main 400 application/json {"error":"code must be six hex digits, and a confirm needs the previewToken the preview gave."}
   now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/tool-groups owner valid [opaque-500 (fold 2: a plain error, its text was the reply)]
+  main 500 application/json {"error":"DATABASE_URL must be set"}
+  now  500 application/json {"error":"internal error"}
 POST /api/tool-groups owner malformed [bad-json-400 (malformed)]
   main 400 application/json {"error":"slug: Invalid input: expected string, received undefined"}
   now  400 application/json {"error":"invalid JSON"}

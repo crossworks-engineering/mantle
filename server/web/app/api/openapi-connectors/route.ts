@@ -4,7 +4,6 @@ import { ownerCaller } from '@/lib/auth';
 import { createOpenapiConnector, integrationPairing, vaultPairLoginRefusal } from '@mantle/tools';
 import { listOpenapiConnectors } from '@/lib/openapi-connectors';
 import { toolMakerFor } from '@/lib/tools';
-import { errorMessage } from '@mantle/std';
 import { firstIssue } from '@/lib/zod-issue';
 import { readJson } from '@/lib/read-body';
 
@@ -66,10 +65,9 @@ export async function POST(req: Request) {
     const refused = await vaultPairLoginRefusal(configuredBy);
     if (refused) return NextResponse.json({ error: refused }, { status: 403 });
   }
-  try {
-    const result = await createOpenapiConnector(user.id, { ...parsed.data, configuredBy });
-    return NextResponse.json(result, { status: 201 });
-  } catch (err) {
-    return NextResponse.json({ error: errorMessage(err) }, { status: 400 });
-  }
+  // A binding the connector refuses (InputError) answers 400 by the one table
+  // (A10 part 2); a failed first sync is the result's syncError; a fault the
+  // opaque 500.
+  const result = await createOpenapiConnector(user.id, { ...parsed.data, configuredBy });
+  return NextResponse.json(result, { status: 201 });
 }

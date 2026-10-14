@@ -109,8 +109,11 @@ describe('no-error-text-replies', () => {
       ),
     ).toBe(0);
     expect(errorTextReplies('try { a(); } catch (err) { throw err; }')).toBe(0);
+    // Every named file says why: public by design, or waiting on the client.
     expect(
-      Object.values(ERROR_TEXT_ALLOW).every((r) => typeof r === 'string' && r.length > 0),
+      Object.values(ERROR_TEXT_ALLOW).every(
+        (r) => typeof r === 'string' && /^(PUBLIC|NOT_YET): \S/.test(r),
+      ),
     ).toBe(true);
   });
 

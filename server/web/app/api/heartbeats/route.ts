@@ -3,7 +3,6 @@ import { ownerCaller } from '@/lib/auth';
 import { createHeartbeat, listHeartbeats } from '@/lib/heartbeats';
 import { toolMakerFor } from '@/lib/tools';
 import { CreateHeartbeatBody, toCreateInput } from '@/lib/heartbeat-schema';
-import { errorMessage } from '@mantle/std';
 import { firstIssue } from '@/lib/zod-issue';
 import { isUniqueViolation } from '@mantle/db';
 import { readJson } from '@/lib/read-body';
@@ -31,13 +30,14 @@ export async function POST(req: Request) {
     const heartbeat = await createHeartbeat(user.id, toCreateInput(parsed.data), user.actor.id);
     return NextResponse.json({ heartbeat });
   } catch (err) {
-    const msg = errorMessage(err);
+    // A slug taken is the fixed 409; anything else answers by the one table
+    // (A10 part 2): a domain error its status, a fault the opaque 500.
     if (isUniqueViolation(err)) {
       return NextResponse.json(
         { error: `A heartbeat with slug "${parsed.data.slug}" already exists.` },
         { status: 409 },
       );
     }
-    return NextResponse.json({ error: msg }, { status: 400 });
+    throw err;
   }
 }

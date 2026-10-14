@@ -14,20 +14,15 @@ const KIND_ORDER: AdoptKind[] = ['tool-group', 'skill', 'agent', 'persona', 'wor
  */
 export async function POST() {
   const user = ownerCaller();
-  try {
-    const report = await computeConfigDiff(user.id);
-    const items = report.entities
-      .filter((e) => e.adoptable)
-      .filter((e) => !(e.kind === 'worker' && e.status === 'modified'))
-      .sort(
-        (a, b) => KIND_ORDER.indexOf(a.kind as AdoptKind) - KIND_ORDER.indexOf(b.kind as AdoptKind),
-      );
-    for (const e of items) await adoptManifestItem(user.id, e.kind as AdoptKind, e.slug);
-    return NextResponse.json({ ok: true, count: items.length });
-  } catch (e) {
-    return NextResponse.json(
-      { error: e instanceof Error ? e.message : 'Adopt-all failed.' },
-      { status: 500 },
+  // A missing key (InputError) answers 400 by the one table (A10 part 2); a
+  // fault the opaque 500.
+  const report = await computeConfigDiff(user.id);
+  const items = report.entities
+    .filter((e) => e.adoptable)
+    .filter((e) => !(e.kind === 'worker' && e.status === 'modified'))
+    .sort(
+      (a, b) => KIND_ORDER.indexOf(a.kind as AdoptKind) - KIND_ORDER.indexOf(b.kind as AdoptKind),
     );
-  }
+  for (const e of items) await adoptManifestItem(user.id, e.kind as AdoptKind, e.slug);
+  return NextResponse.json({ ok: true, count: items.length });
 }
