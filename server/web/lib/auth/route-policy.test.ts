@@ -526,6 +526,60 @@ describe.skipIf(!hasManifest)('ROUTE_POLICY: same answers as the lists', () => {
     const head = table.get('HEAD /api/access-keys')!;
     expect(head).toMatchObject({ class: 'self', logins: 'any', open: 'login' });
   });
+
+  it("a HEAD row takes its GET's logins and switch only where the GET handler answers it (fix round 1, L3)", () => {
+    // No route of the app exports its own HEAD today: every HEAD row is
+    // its GET's.
+    for (const e of manifest) {
+      expect(e.methods, e.pattern).not.toContain('HEAD');
+    }
+    const threads = '/api/assistant/threads';
+    const stream = '/api/assistant/turn/:turnId/stream';
+    const byGet = buildRoutePolicy([
+      { pattern: threads, methods: ['GET'], reads: { GET: 'chat' } },
+      { pattern: stream, methods: ['GET'], switches: { GET: 'turn-streaming' } },
+    ]);
+    expect(byGet.get(`HEAD ${threads}`)).toMatchObject({
+      logins: 'chat',
+      open: 'login',
+      caller: 'chat',
+    });
+    expect(byGet.get(`HEAD ${stream}`)?.switch).toBe('turn-streaming');
+    // A route that exports its own HEAD: the HEAD row is that handler's,
+    // as the lists name it (none name a HEAD), with no switch, no read and
+    // no logins of its GET's.
+    const own = buildRoutePolicy([
+      { pattern: threads, methods: ['GET', 'HEAD'], reads: { GET: 'chat' } },
+      { pattern: stream, methods: ['GET', 'HEAD'], switches: { GET: 'turn-streaming' } },
+    ]);
+    expect(own.get(`GET ${threads}`)).toMatchObject({ logins: 'chat', open: 'login' });
+    expect(own.get(`HEAD ${threads}`)).toMatchObject({
+      logins: null,
+      open: 'admin',
+      caller: null,
+    });
+    expect(own.get(`GET ${stream}`)?.switch).toBe('turn-streaming');
+    expect(own.get(`HEAD ${stream}`)?.switch).toBeNull();
+    // Its own HEAD declares its own switch.
+    const switched = buildRoutePolicy([
+      {
+        pattern: stream,
+        methods: ['GET', 'HEAD'],
+        switches: { GET: 'turn-streaming', HEAD: 'turn-streaming' },
+      },
+    ]);
+    expect(switched.get(`HEAD ${stream}`)?.switch).toBe('turn-streaming');
+    // An own HEAD on a row only a login list classes has no class of its
+    // own: refused at boot, until a list names it.
+    expect(() =>
+      buildRoutePolicy([{ pattern: '/api/access-keys', methods: ['GET', 'HEAD'] }]),
+    ).toThrow(/HEAD \/api\/access-keys has no class/);
+    expect(
+      buildRoutePolicy([{ pattern: '/api/access-keys', methods: ['GET'] }]).get(
+        'HEAD /api/access-keys',
+      ),
+    ).toMatchObject({ logins: 'any', open: 'login' });
+  });
 });
 
 describe.skipIf(!hasManifest)('the gate middleware finds the row once and enters the call', () => {

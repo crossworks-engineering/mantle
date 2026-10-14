@@ -283,8 +283,9 @@ export const ADMIN_OPEN_ROWS: ReadonlySet<string> = new Set(['GET /api/updates/c
  * an Admin area, like the assistant chat rows: classed in the connectors
  * area, the gate's area check would refuse an Admin user without that area
  * while letting a member in. And the named carve-outs open to every Admin
- * user (ADMIN_OPEN_ROWS). `classLogins` is the login list of the row's
- * class (GET's for a HEAD).
+ * user (ADMIN_OPEN_ROWS). `method` is the method whose handler answers
+ * (GET's for a HEAD the GET handler answers); `classLogins` the login list
+ * of the row's class (that method's).
  */
 function rowScope(
   method: string,
@@ -292,7 +293,7 @@ function rowScope(
   classLogins: RouteLogins | null,
 ): RouteClass | null {
   if (classLogins === 'telegram') return SELF_SCOPE;
-  if (ADMIN_OPEN_ROWS.has(`${method === 'HEAD' ? 'GET' : method} ${pattern}`)) return SELF_SCOPE;
+  if (ADMIN_OPEN_ROWS.has(`${method} ${pattern}`)) return SELF_SCOPE;
   return routeClass(pattern);
 }
 
@@ -351,6 +352,10 @@ export function buildRouteRow(
     /** The switch the route file declares for the method (a HEAD the GET
      *  handler answers: its GET's). */
     switch?: RouteSwitch | null;
+    /** The route exports its own HEAD: a HEAD row is that handler's, not
+     *  its GET's (buildRoutePolicy says so from the manifest; a HEAD the
+     *  GET handler answers otherwise, as Hono answers it). */
+    ownHead?: boolean;
   } = {},
 ): RouteRow {
   const m = method.toUpperCase();
@@ -363,10 +368,14 @@ export function buildRouteRow(
   // a login outside Admin that may GET a row may HEAD it, under the same
   // rule (the any-login, chat and Telegram lists: its own scope, not the
   // system pool). The owner routes' HEAD always had it (memberMayRead
-  // reads HEAD as GET); the lists name GET only.
-  const logins = loginsOf(m === 'HEAD' ? 'GET' : m, pattern);
+  // reads HEAD as GET); the lists name GET only. Only where the GET
+  // handler answers it: a route that exports its own HEAD (`ownHead`) has
+  // its own handler, and its HEAD row is that method's, as listed (fix
+  // round 1, L3).
+  const answeredAs = m === 'HEAD' && !opts.ownHead ? 'GET' : m;
+  const logins = loginsOf(answeredAs, pattern);
   const classLogins = logins;
-  const scope = rowScope(m, pattern, classLogins);
+  const scope = rowScope(answeredAs, pattern, classLogins);
   const effect = isReadRequest(m, pattern) ? 'read' : 'write';
   if (memberMayRead(m, pattern) && effect !== 'read') {
     throw new Error(`ROUTE_POLICY: ${key} is a member read that writes`);
@@ -429,7 +438,7 @@ export function buildRouteRow(
       isPublic ||
       (caller === 'owner' && scope === null) ||
       (caller === 'session'
-        ? !ADMIN_OPEN_ROWS.has(`${m === 'HEAD' ? 'GET' : m} ${pattern}`)
+        ? !ADMIN_OPEN_ROWS.has(`${answeredAs} ${pattern}`)
         : !gone && !CALLER_LOGINS[caller].includes(classLogins)))
   ) {
     throw new Error(
@@ -531,6 +540,7 @@ export function buildRoutePolicy(
         reads: read,
         gone: gone.has(as),
         switch: switches[as] ?? null,
+        ownHead: as === 'HEAD',
       });
       table.set(row.key, row);
     }

@@ -1737,7 +1737,10 @@ banner.
   Telegram GET row ran on the system pool (login-self) for every login; it
   runs under the login's own rule now, as its GET does. The member list's
   HEADs have its logins too; the member guard reads the row's scope, so
-  none of their answers changed.
+  none of their answers changed. Only where the GET handler answers the
+  HEAD (fix round 1, L3): a route that exports its own HEAD has a HEAD row
+  of its own, as the lists name it, with no logins, read or switch of its
+  GET's (buildRoutePolicy passes `ownHead`; no route exports one today).
 - **The gone stubs**: the 144 `gone()` handlers in 125 route files (62
   owner, 47 member, 35 any) call no guard. The gateway lens chose one
   mechanism over a reader in each stub: the generator reads `export const
