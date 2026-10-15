@@ -27,11 +27,13 @@ import { asSystemSites, isCounted, repoPathOf, pinnedRule } from './arch-counts.
  * through external-access.ts (connectorGroupRow). docs/actors.md, "A6",
  * lists every door and its callers.
  *
- * A6 round 2: 41 sites in 38 files, 30 reasons. lib/grants.ts and
- * lib/workspaces.ts read in the caller's scope and no longer leave it
- * through rule-in-query.ts; each has its own door for what still needs the
- * system pool. The honest number is the exits (every site that is no door,
- * plus every door call: asSystemExits, scripts/arch-scoreboard.pins.json).
+ * A6 round 2: 39 sites in 36 files, 29 reasons (41, 38, 30 before main
+ * dropped the provider-key exits). lib/grants.ts and lib/workspaces.ts read
+ * in the caller's scope and no longer leave it through rule-in-query.ts;
+ * each has its own door for what still needs the system pool. These pins
+ * say where the code CAN leave the scope; the honest number is the exits,
+ * every use of a function holding a site (A6 fix round 1, L1:
+ * as-system-exits.mjs, asSystemExits in scripts/arch-scoreboard.pins.json).
  */
 export const AS_SYSTEM_PINS = {
   'packages/content/src/admin-space-taken.ts': { count: 1, why: ['space-taken-authors'] },

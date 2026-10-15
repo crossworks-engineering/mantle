@@ -4,7 +4,9 @@
  * folder (their tests) and by scripts/arch-scoreboard.ts. Plain text
  * heuristics over product files, deterministic, no type checker:
  *
- *  - asSystem call sites per file, with the reasons they pass;
+ *  - asSystem call sites per file, with the reasons they pass, and the
+ *    exits: the uses of the functions holding them (as-system-exits.mjs,
+ *    which parses with the TypeScript parser); direct systemDb uses;
  *  - raw ACL column reads (read_ws, write_ws, home_ws) outside packages/db;
  *  - tool policy lists keyed by name (a list literal holding 3 or more
  *    builtin tool slugs) and their entries;
@@ -66,6 +68,7 @@ import {
   exportSyncCalls,
 } from './app-broker.mjs';
 import { REINDEX_ALLOW, handReindex } from './no-hand-reindex.mjs';
+import { asSystemExits, systemDbUses } from './as-system-exits.mjs';
 
 /** Whether the counts read `path` (repo-relative). */
 export function isCounted(path) {
@@ -250,38 +253,6 @@ export function asSystemSites(text) {
     if (last && /^[a-z][a-z0-9:_-]*$/.test(last)) reasons.add(last);
   }
   return { count, reasons: [...reasons].sort() };
-}
-
-/** A door (arch A6): a function whose whole body is one asSystem call with
- *  its reason, so several places of a file (or, exported, of several files)
- *  leave the scope by one pinned site. */
-const AS_SYSTEM_DOOR =
-  /(export\s+)?function\s+(\w+)\s*<(\w+)>\s*\(\s*(\w+)\s*:\s*\(\)\s*=>\s*Promise<\3>\s*\)\s*:\s*Promise<\3>\s*\{\s*return\s+asSystem\s*\(\s*\4\s*,\s*'([a-z][a-z0-9:_-]*)'\s*\)\s*;?\s*\}/g;
-
-/** The doors `text` defines: name, whether exported, and its reason. */
-export function asSystemDoors(text) {
-  const code = stripComments(text);
-  const out = [];
-  let m;
-  AS_SYSTEM_DOOR.lastIndex = 0;
-  while ((m = AS_SYSTEM_DOOR.exec(code))) {
-    out.push({ name: m[2], exported: !!m[1], reason: m[5] });
-  }
-  return out;
-}
-
-/** How many times `text` calls the door `name` (its definition is no call). */
-export function doorCalls(text, name) {
-  const code = stripComments(text);
-  const re = new RegExp(`\\b${name}\\s*\\(`, 'g');
-  let n = 0;
-  let m;
-  while ((m = re.exec(code))) {
-    const before = code.slice(Math.max(0, m.index - 20), m.index);
-    if (/function\s+$/.test(before)) continue;
-    n += 1;
-  }
-  return n;
 }
 
 // ── raw ACL columns ─────────────────────────────────────────────────────────
@@ -776,29 +747,17 @@ export function measure(root) {
   const spend = Object.fromEntries(
     Object.keys(SPEND_PATTERNS).map((k) => [k, { outside: {}, allowed: {} }]),
   );
-  // The asSystem doors (A6) and the calls of each, file by file: a door
-  // keeps one pinned site, so the places that go through it are counted
-  // here and pinned as a total (asSystemDoorCalls).
-  const doors = {};
-  const exportedDoors = new Set();
-  for (const f of files) {
-    const text = readRepoFile(root, f);
-    if (text === null || !/\basSystem\b/.test(text)) continue;
-    for (const d of asSystemDoors(text)) {
-      (doors[f] ??= []).push(d.name);
-      if (d.exported) exportedDoors.add(d.name);
-    }
-  }
-  const doorCallsByFile = {};
+  // The texts, once: the asSystem exits read every file (as-system-exits.mjs).
+  const texts = [];
+  const systemDb = {};
   for (const f of files) {
     const text = readRepoFile(root, f);
     if (text === null) continue;
+    texts.push({ path: f, text });
     const sys = asSystemSites(text);
     if (sys.count) asSystem[f] = sys;
-    const names = new Set([...(doors[f] ?? []), ...exportedDoors]);
-    let calls = 0;
-    for (const name of names) if (text.includes(name)) calls += doorCalls(text, name);
-    if (calls) doorCallsByFile[f] = calls;
+    const sd = systemDbUses(f, text);
+    if (sd) systemDb[f] = sd;
     if (rawAclSwept(f)) {
       const n = rawAclLines(text);
       if (n) rawAcl[f] = n;
@@ -891,21 +850,17 @@ export function measure(root) {
   }
   const sum = (o, k) => Object.values(o).reduce((a, v) => a + (k ? v[k] : v), 0);
   const reasons = new Set(Object.values(asSystem).flatMap((v) => v.reasons));
-  // The real system-pool exits (arch A6 round 2), file by file: every
-  // asSystem site that is not a door's own, plus every call of a door. A
-  // door keeps one pinned site, so its calls are where the code leaves the
-  // scope; this one number is what the plan's "at most 40" is about.
-  const exitsByFile = {};
-  for (const f of new Set([...Object.keys(asSystem), ...Object.keys(doorCallsByFile)])) {
-    const n = (asSystem[f]?.count ?? 0) - (doors[f]?.length ?? 0) + (doorCallsByFile[f] ?? 0);
-    if (n) exitsByFile[f] = n;
-  }
+  // The real system-pool exits (arch A6 fix round 1, L1), file by file:
+  // every use of a function holding an asSystem call (as-system-exits.mjs).
+  // This one number is what the plan's "at most 40" is about.
+  const exits = asSystemExits(texts);
+  const exitsByFile = exits.byFile;
   return {
     numbers: {
       asSystemSites: sum(asSystem, 'count'),
-      asSystemDoorCalls: sum(doorCallsByFile),
-      asSystemDoors: sum(doors, 'length'),
       asSystemExits: sum(exitsByFile),
+      systemDbUses: sum(systemDb),
+      systemDbFiles: Object.keys(systemDb).length,
       asSystemFiles: Object.keys(asSystem).length,
       asSystemReasons: reasons.size,
       rawAclFiles: Object.keys(rawAcl).length,
@@ -967,8 +922,10 @@ export function measure(root) {
     },
     perFile: {
       asSystem,
-      asSystemDoorCalls: doorCallsByFile,
       asSystemExits: exitsByFile,
+      asSystemHolders: exits.holders,
+      asSystemExitProblems: exits.problems,
+      systemDb,
       rawAcl,
       toolLists,
       routeLists,

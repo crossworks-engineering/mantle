@@ -24,7 +24,9 @@ const PINS = join(ROOT, 'scripts/arch-scoreboard.pins.json');
 /** What each number means, in the order printed. */
 const LABELS: Record<string, string> = {
   asSystemExits:
-    'system-pool exits: asSystem sites that are no door, plus every call of a door (arch A6)',
+    'system-pool exits: every use of a function holding an asSystem call (arch A6 fix round 1)',
+  systemDbUses: 'direct systemDb uses (the admin pool, whatever the scope)',
+  systemDbFiles: 'files using systemDb directly',
   asSystemFiles: 'files with asSystem',
   asSystemReasons: 'asSystem reasons',
   rawAclFiles: 'files outside packages/db reading read_ws, write_ws or home_ws',

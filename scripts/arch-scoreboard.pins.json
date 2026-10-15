@@ -1,7 +1,9 @@
 {
-  "asSystemExits": 96,
+  "asSystemExits": 191,
   "asSystemFiles": 36,
   "asSystemReasons": 29,
+  "systemDbUses": 70,
+  "systemDbFiles": 20,
   "rawAclFiles": 0,
   "rawAclLines": 0,
   "toolPolicyLists": 1,
@@ -65,7 +67,7 @@
   "store_objectstore_files": 4,
   "store_appdb_files": 5,
   "_notes": {
-    "asSystemExits": "new in A6 round 2 (96 after main dropped the two provider-key exits; 98 before), replacing asSystemSites (39) and asSystemDoorCalls (70): the real system-pool exits, every asSystem site that is no door plus every call of a door (eslint-rules/arch-counts.mjs, exitsByFile). Round 1's number was 94 (24 direct sites, 70 door calls). Round 2 moved the reads of lib/grants.ts and lib/workspaces.ts into the caller's scope: grants.ts went from 1 exit (the whole route through inRuleInQuery) to 1 (the page refold, pageRefoldSystem), workspaces.ts from 1 (the whole route) to 5 (a login's own workspace change, workspaceWriteSystem, one per change: make, rename, archive, add a user, remove or leave). 98 is above the plan's 40: docs/actors.md, A6, lists every exit left with its reason.",
+    "asSystemExits": "Raised 96 to 191 in A6 fix round 1 (L1): the count is now every use of a function holding an asSystem call (eslint-rules/as-system-exits.mjs, the TypeScript parser), not every site that is no door plus the calls of one exact door shape. Nothing new leaves the scope; the old count missed uses: a conditional wrapper (heartbeatRow, 2 sites, 6 uses), and every function holding a site that is not of the door shape, counted once although many places call it: loadProfilePreferences 57 (owner-preferences), upsertFile 19 (kind-root), searchNodes 6, turnHeartbeats 2, withOriginScope 2, markExportClientSourced 3, contactSharingByContact 3, fileNameTaken 3 and others. An exported holder's uses in other files count (a named or destructured import, a namespace call); a renamed import is refused. Before: 96 after main dropped the two provider-key exits (98 in round 2, 94 in round 1). 191 is far above the plan's 40: docs/actors.md, A6, lists every holder with its uses.",
     "routePolicyLists": "raised 16 to 17 in A10 #8: ROUTE_GATES (server/web/lib/route-limits.ts) gives each row its named rate limits and its cross-site refusal, read into the row by buildRouteRow (two ROUTE_POLICY fields), where 38 limits were taken by hand in route files (32 calls in 26 files) and helpers. Raised 15 to 16 in A4 hand batch B fix round 1 (M2): PUBLIC_LOGIN_ROWS (route-policy.ts) names the public rows that read a login, so buildRouteRow refuses a public login kind on any other public row (the /s link routes, the remote MCP, federation, sign-in). It is ROUTE_POLICY's own check of the rows, as FRAME_ROWS is, not a policy beside them.",
     "brainOnWorkspacesCalls": "raised 11 to 12 (files 6 to 7) in A1: listDueReminders (packages/content/src/events.ts) must read in the owner scope on a workspaces brain even when that scope is empty, and keep the old rule only off workspaces. A7 removes the call with the switch-over code.",
     "readPathWrites": "raised 7 to 9 in A3a: a public link's view counter (content shares.ts) and the Recall prompt embeddings a reader's recall_match heals (content recall.ts) were writes inside read paths the A2a inventory did not name; the read-only refusal would refuse both, so each is named and pinned now. Raised 9 to 10 in A5 step 4: app_data_schema and app_data_query provision the app's database registry row, its schema and its viewer salt (app_databases, an item table) on a login's own MCP, which runs a read read-only since step 4; the provisioning is named (repair:app-db) rather than moved, so the reads answer as before.",
@@ -73,6 +75,8 @@
     "store_tabledb_files": "A3b: the tables write API moved to @mantle/tabledb/write, which only the tables broker imports (29 importers of the whole package before).",
     "store_objectstore_files": "A3b: the object store write API moved to @mantle/storage/write (17 importers of the whole package before, readers included). A3b part 2: 5 to 4, email attachments and drive files through the files broker (file-broker.ts).",
     "asSystemFiles": "raised 36 to 38 in A6 round 2: lib/grants.ts (the page refold, 'page-refold') and lib/workspaces.ts (a login's own workspace change, 'workspace-write') leave the scope by their own doors now, where their whole routes left it through lib/auth/rule-in-query.ts before. See asSystemExits.",
-    "asSystemReasons": "raised 28 to 30 in A6 round 2: 'workspace-write' and 'page-refold' (packages/db/src/viewer.ts says what each allows), each narrower than the 'rule-in-query' exit the two libraries took whole before."
+    "asSystemReasons": "raised 28 to 30 in A6 round 2: 'workspace-write' and 'page-refold' (packages/db/src/viewer.ts says what each allows), each narrower than the 'rule-in-query' exit the two libraries took whole before.",
+    "systemDbUses": "new in A6 fix round 1 (L1), pinned apart from the asSystem exits: direct uses of systemDb (the admin pool whatever the scope), every use but its declaration, imports and exports (as-system-exits.mjs systemDbUses), 70 in 20 files, the same per file as main (v0.300.55). eslint-rules/system-db-allowlist.mjs names the files that may import it.",
+    "systemDbFiles": "new in A6 fix round 1 (L1): the files of systemDbUses."
   }
 }

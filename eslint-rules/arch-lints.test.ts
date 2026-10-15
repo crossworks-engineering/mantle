@@ -1,10 +1,10 @@
 import { join } from 'node:path';
 import { RuleTester } from 'eslint';
+// @ts-expect-error: plain-JS module, no types shipped.
+import { asSystemExits, holderProblems, systemDbUses } from './as-system-exits.mjs';
 import { describe, expect, it } from 'vitest';
 import {
-  asSystemDoors,
   asSystemSites,
-  doorCalls,
   builtinSlugs,
   countedFiles,
   guardCalls,
@@ -77,6 +77,8 @@ const got = measure(ROOT) as {
   numbers: Record<string, number>;
   perFile: {
     asSystem: Record<string, { count: number; reasons: string[] }>;
+    asSystemExits: Record<string, number>;
+    asSystemExitProblems: string[];
     rawAcl: Record<string, number>;
     toolLists: Record<string, { lists: number; entries: number }>;
     routeLists: Record<string, number>;
@@ -313,40 +315,107 @@ describe('the counters', () => {
     expect(rawAclLines('// read_ws\nconst a = n.read_ws;\n/**\n * homeWs\n */')).toBe(1);
   });
 
-  it('asSystem doors (A6): a function whose body is one asSystem call, and its calls', () => {
-    const text = [
+  it('asSystem exits (A6 fix round 1, L1): every use of a function holding asSystem', () => {
+    const door = [
       'function telegramLoginSystem<T>(fn: () => Promise<T>): Promise<T> {',
       "  return asSystem(fn, 'login-telegram');",
       '}',
-      'export function inRuleInQuery<R>(body: () => Promise<R>): Promise<R> {',
-      "  return asSystem(body, 'rule-in-query');",
-      '}',
-      '// telegramLoginSystem(() => x) in a comment is no call',
+      '// telegramLoginSystem(() => x) in a comment is no use',
       'const a = await telegramLoginSystem(() => read());',
       'const b = await telegramLoginSystem(async () => write());',
-      // Not a door: more than the one call in its body.
-      "function wider<T>(fn: () => Promise<T>): Promise<T> { log(); return asSystem(fn, 'x'); }",
     ].join('\n');
-    expect(asSystemDoors(text)).toEqual([
-      { name: 'telegramLoginSystem', exported: false, reason: 'login-telegram' },
-      { name: 'inRuleInQuery', exported: true, reason: 'rule-in-query' },
+    // A conditional wrapper: two sites, one exit per use.
+    const wrapper = [
+      'async function heartbeatRow<T>(fn: () => Promise<T>): Promise<T> {',
+      "  return admin ? asSystem(fn, 'admin-area') : asSystem(fn, 'heartbeat-own-row');",
+      '}',
+      'await heartbeatRow(() => x());',
+      'await heartbeatRow(() => y());',
+      'await heartbeatRow(() => z());',
+      'list.map(heartbeatRow);',
+    ].join('\n');
+    // Arrow and async forms, exported: their uses in other files count.
+    const lib = [
+      "export const inRuleInQuery = async <R,>(body: () => Promise<R>) => asSystem(body, 'rule-in-query');",
+      "export const unused = async () => { await asSystem(() => q(), 'x'); };",
+      'inRuleInQuery(() => local());',
+    ].join('\n');
+    const user = [
+      "import { inRuleInQuery } from '@/lib/auth/rule-in-query';",
+      'await inRuleInQuery(() => a());',
+      'await inRuleInQuery(() => b());',
+    ].join('\n');
+    const ns = [
+      "import * as rq from '@/lib/auth/rule-in-query';",
+      'await rq.inRuleInQuery(() => a());',
+    ].join('\n');
+    // A file that does not import the name: its own `inRuleInQuery` is no use.
+    const other = 'function inRuleInQuery() {}\ninRuleInQuery();';
+    const tool =
+      "export const tool = { handler: async () => asSystem(() => q(), 'login-telegram') };";
+    const top = "await asSystem(() => q(), 'audit-log');";
+    const r = asSystemExits([
+      { path: 'a.ts', text: door },
+      { path: 'w.ts', text: wrapper },
+      { path: 'lib.ts', text: lib },
+      { path: 'u.ts', text: user },
+      { path: 'n.ts', text: ns },
+      { path: 'o.ts', text: other },
+      { path: 't.ts', text: tool },
+      { path: 's.ts', text: top },
     ]);
-    expect(doorCalls(text, 'telegramLoginSystem')).toBe(2);
-    expect(doorCalls(text, 'inRuleInQuery')).toBe(0);
-    // The doors' own sites are the pinned asSystem sites.
-    expect(asSystemSites(text).count).toBe(3);
+    expect(r.byFile).toEqual({
+      'a.ts': 2,
+      'w.ts': 4,
+      'lib.ts': 2,
+      'u.ts': 2,
+      'n.ts': 1,
+      't.ts': 1,
+      's.ts': 1,
+    });
+    expect(r.problems).toEqual([]);
+    const held = Object.fromEntries(r.holders.map((h) => [`${h.path} ${h.name}`, h.reasons]));
+    expect(held['w.ts heartbeatRow']).toEqual(['admin-area', 'heartbeat-own-row']);
+    // A renamed import would hide its uses: refused.
+    expect(
+      asSystemExits([
+        { path: 'lib.ts', text: lib },
+        { path: 'r.ts', text: "import { inRuleInQuery as go } from 'x';\ngo(() => 1);" },
+      ]).problems,
+    ).toEqual(['r.ts renames the asSystem holder inRuleInQuery (as go): use its name']);
+    expect(
+      holderProblems([
+        { name: 'f', exported: true, path: 'a.ts' },
+        { name: 'f', exported: true, path: 'b.ts' },
+      ]),
+    ).toEqual(['exported asSystem holder f in a.ts, b.ts: rename one']);
   });
 
-  it('asSystem exits (A6 round 2): one honest count, every door call included', () => {
-    // The real exits: the sites that are no door, plus each call of a door
-    // (a door keeps one pinned site, its calls are where the code leaves).
+  it('asSystem exits: one honest count, pinned, no unreadable holder', () => {
     // Pinned in scripts/arch-scoreboard.pins.json (asSystemExits), so no
-    // exit is added unseen, through a door or not. The plan v2 exit, at
-    // most 40, is not met yet: docs/actors.md, A6, lists every exit left
-    // with its reason.
+    // exit is added unseen, by a new site or a new use of an old one. The
+    // plan v2 exit, at most 40, is not met yet: docs/actors.md, A6, lists
+    // the holders and their uses.
     const n = got.numbers;
-    expect(n.asSystemExits).toBe(n.asSystemSites - n.asSystemDoors + n.asSystemDoorCalls);
-    expect(n.asSystemDoorCalls).toBeGreaterThan(0);
+    expect(n.asSystemExits).toBeGreaterThanOrEqual(n.asSystemSites);
+    expect(got.perFile.asSystemExitProblems).toEqual([]);
+    expect(Object.values(got.perFile.asSystemExits).reduce((a, b) => a + b, 0)).toBe(
+      n.asSystemExits,
+    );
+  });
+
+  it('direct systemDb uses: every use but the declaration, imports and exports', () => {
+    const text = [
+      "import { systemDb } from '@mantle/db';",
+      'export const systemDb2 = 1;',
+      'await systemDb.select().from(t);',
+      'void systemDb.execute(q);',
+      "const s = 'systemDb in a string';",
+      '// systemDb in a comment',
+      'export { systemDb };',
+    ].join('\n');
+    expect(systemDbUses('x.ts', text)).toBe(2);
+    expect(got.numbers.systemDbUses).toBeGreaterThan(0);
   });
 
   it('count asSystem calls with their reasons, not the definition or imports', () => {
