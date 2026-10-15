@@ -1,0 +1,250 @@
+# A10 #8: every route rate limit, recorded on main (v0.300.44) BEFORE the move.
+# Written once (A10_RATE_SWEEP_RECORD=1); a10-rate-sweep.test.ts reads it back
+# and holds every probe to it, or to a named change.
+# probes: 246
+POST /api/auth/login none auth:login count (ip 10/60s) => first 429 at 11; #10 401; over 429 application/json retry-after=60 cache-control=- {"error":"Too many login attempts. Try again in a minute."}
+POST /api/auth/login none auth:login window => 59s: 429 application/json retry-after=1 cache-control=- {"error":"Too many login attempts. Try again in a minute."}; 60s: 401
+POST /api/auth/login none auth:login scope => other address 401
+POST /api/auth/login none auth:login order: cross-site => first 429 at 0; answer 403; then 401
+POST /api/auth/signup none auth:signup count (ip 5/60s) => first 429 at 6; #5 500; over 429 application/json retry-after=60 cache-control=- {"error":"Too many attempts. Try again in a minute."}
+POST /api/auth/signup none auth:signup window => 59s: 429 application/json retry-after=1 cache-control=- {"error":"Too many attempts. Try again in a minute."}; 60s: 500
+POST /api/auth/signup none auth:signup scope => other address 500
+POST /api/auth/signup none auth:signup order: cross-site => first 429 at 0; answer 403; then 500
+POST /api/auth/pair/claim none auth:pair-claim count (ip 10/60s) => first 429 at 11; #10 401; over 429 application/json retry-after=60 cache-control=- {"error":"Too many attempts. Try again in a minute."}
+POST /api/auth/pair/claim none auth:pair-claim window => 59s: 429 application/json retry-after=1 cache-control=- {"error":"Too many attempts. Try again in a minute."}; 60s: 401
+POST /api/auth/pair/claim none auth:pair-claim scope => other address 401
+POST /api/auth/token/refresh none auth:token-refresh count (ip 30/60s) => first 429 at 31; #30 401; over 429 application/json retry-after=60 cache-control=- {"error":"Too many refresh attempts. Try again in a minute."}
+POST /api/auth/token/refresh none auth:token-refresh window => 59s: 429 application/json retry-after=1 cache-control=- {"error":"Too many refresh attempts. Try again in a minute."}; 60s: 401
+POST /api/auth/token/refresh none auth:token-refresh scope => other address 401
+POST /api/auth/token none auth:token-login count (ip 10/60s) => first 429 at 11; #10 401; over 429 application/json retry-after=60 cache-control=- {"error":"Too many login attempts. Try again in a minute."}
+POST /api/auth/token none auth:token-login window => 59s: 429 application/json retry-after=1 cache-control=- {"error":"Too many login attempts. Try again in a minute."}; 60s: 401
+POST /api/auth/token none auth:token-login scope => other address 401
+POST /api/auth/token none auth:token-login shared with POST /api/auth/mobile-login => 429
+POST /api/auth/token none auth:token-login shared with POST /api/auth/device-login => 429
+POST /api/auth/mobile-login none auth:token-login count (ip 10/60s) => first 429 at 11; #10 401; over 429 application/json retry-after=60 cache-control=- {"error":"Too many login attempts. Try again in a minute."}
+POST /api/auth/mobile-login none auth:token-login window => 59s: 429 application/json retry-after=1 cache-control=- {"error":"Too many login attempts. Try again in a minute."}; 60s: 401
+POST /api/auth/mobile-login none auth:token-login scope => other address 401
+POST /api/auth/mobile-login none auth:token-login shared with POST /api/auth/token => 429
+POST /api/auth/mobile-login none auth:token-login shared with POST /api/auth/device-login => 429
+POST /api/auth/device-login none auth:token-login count (ip 10/60s) => first 429 at 11; #10 401; over 429 application/json retry-after=60 cache-control=- {"error":"Too many login attempts. Try again in a minute."}
+POST /api/auth/device-login none auth:token-login window => 59s: 429 application/json retry-after=1 cache-control=- {"error":"Too many login attempts. Try again in a minute."}; 60s: 401
+POST /api/auth/device-login none auth:token-login scope => other address 401
+POST /api/auth/device-login none auth:token-login shared with POST /api/auth/token => 429
+POST /api/auth/device-login none auth:token-login shared with POST /api/auth/mobile-login => 429
+POST /api/auth/sso none owner-sso:ip count (ip 30/60s) => first 429 at 31; #30 401; over 429 application/json retry-after=60 cache-control=- {"ok":false,"error":"too many attempts — try again shortly"}
+POST /api/auth/sso none owner-sso:ip window => 59s: 429 application/json retry-after=1 cache-control=- {"ok":false,"error":"too many attempts — try again shortly"}; 60s: 401
+POST /api/auth/sso none owner-sso:ip scope => other address 401
+GET /api/auth/invite/:code none auth:invite-preview count (ip 30/60s) => first 429 at 31; #30 404; over 429 application/json retry-after=60 cache-control=- {"error":"Too many attempts. Try again in a minute."}
+GET /api/auth/invite/:code none auth:invite-preview window => 59s: 429 application/json retry-after=1 cache-control=- {"error":"Too many attempts. Try again in a minute."}; 60s: 404
+GET /api/auth/invite/:code none auth:invite-preview scope => other address 404
+GET /api/auth/invite/:code none auth:invite-preview:failed budget (brain 600/60s) => first 429 at 601
+HEAD /api/auth/invite/:code none auth:invite-preview count (ip 30/60s) => first 429 at 31; #30 404; over 429 application/json retry-after=60 cache-control=- 
+HEAD /api/auth/invite/:code none auth:invite-preview window => 59s: 429 application/json retry-after=1 cache-control=- ; 60s: 404
+HEAD /api/auth/invite/:code none auth:invite-preview scope => other address 404
+HEAD /api/auth/invite/:code none auth:invite-preview:failed budget (brain 600/60s) => first 429 at 601
+POST /api/auth/invite/accept none auth:invite-accept count (ip 10/60s) => first 429 at 11; #10 401; over 429 application/json retry-after=60 cache-control=- {"error":"Too many attempts. Try again in a minute."}
+POST /api/auth/invite/accept none auth:invite-accept window => 59s: 429 application/json retry-after=1 cache-control=- {"error":"Too many attempts. Try again in a minute."}; 60s: 401
+POST /api/auth/invite/accept none auth:invite-accept scope => other address 401
+POST /api/auth/invite/accept none auth:invite-accept order: cross-site => first 429 at 0; answer 403; then 401
+POST /api/auth/invite/accept none auth:invite-accept:failed budget (brain 120/60s) => first 429 at 121
+POST /api/auth/pair owner auth:pair-issue count (login 10/60s) => first 429 at 11; #10 200; over 429 application/json retry-after=60 cache-control=- {"error":"Too many codes. Try again in a minute."}
+POST /api/auth/pair owner auth:pair-issue window => 59s: 429 application/json retry-after=1 cache-control=- {"error":"Too many codes. Try again in a minute."}; 60s: 200
+POST /api/auth/pair owner auth:pair-issue scope => other address 429; other login 200; other login, other address 200
+POST /api/auth/pair owner auth:pair-issue order: no login => first 429 at 0; answer 401; then 200
+POST /api/auth/change-password owner auth:change-password count (login 5/3600s) => first 429 at 6; #5 400; over 429 application/json retry-after=3600 cache-control=- {"error":"Too many password change attempts. Try again later."}
+POST /api/auth/change-password owner auth:change-password window => 3599s: 429 application/json retry-after=1 cache-control=- {"error":"Too many password change attempts. Try again later."}; 3600s: 400
+POST /api/auth/change-password owner auth:change-password scope => other address 429; other login 400; other login, other address 400
+POST /api/auth/change-password owner auth:change-password order: cross-site => first 429 at 0; answer 403; then 400
+POST /api/auth/change-password owner auth:change-password order: no login => first 429 at 0; answer 401; then 400
+GET /api/mcp none mcp count (ip 300/60s) => first 429 at 301; #300 401; over 429 application/json retry-after=60 cache-control=- {"error":"rate_limited"}
+GET /api/mcp none mcp window => 59s: 429 application/json retry-after=1 cache-control=- {"error":"rate_limited"}; 60s: 401
+GET /api/mcp none mcp scope => other address 401
+POST /api/mcp none mcp count (ip 300/60s) => first 429 at 301; #300 401; over 429 application/json retry-after=60 cache-control=- {"error":"rate_limited"}
+POST /api/mcp none mcp window => 59s: 429 application/json retry-after=1 cache-control=- {"error":"rate_limited"}; 60s: 401
+POST /api/mcp none mcp scope => other address 401
+DELETE /api/mcp none mcp count (ip 300/60s) => first 429 at 301; #300 401; over 429 application/json retry-after=60 cache-control=- {"error":"rate_limited"}
+DELETE /api/mcp none mcp window => 59s: 429 application/json retry-after=1 cache-control=- {"error":"rate_limited"}; 60s: 401
+DELETE /api/mcp none mcp scope => other address 401
+HEAD /api/mcp none mcp count (ip 300/60s) => first 429 at 301; #300 401; over 429 application/json retry-after=60 cache-control=- 
+HEAD /api/mcp none mcp window => 59s: 429 application/json retry-after=1 cache-control=- ; 60s: 401
+HEAD /api/mcp none mcp scope => other address 401
+POST /api/oauth/register none oauth:register count (ip 10/60s) => first 429 at 11; #10 400; over 429 application/json retry-after=- cache-control=no-store {"error":"rate_limited"}
+POST /api/oauth/register none oauth:register window => 59s: 429 application/json retry-after=- cache-control=no-store {"error":"rate_limited"}; 60s: 400
+POST /api/oauth/register none oauth:register scope => other address 400
+POST /api/oauth/token none oauth:token count (ip 30/60s) => first 429 at 31; #30 400; over 429 application/json retry-after=- cache-control=no-store {"error":"rate_limited"}
+POST /api/oauth/token none oauth:token window => 59s: 429 application/json retry-after=- cache-control=no-store {"error":"rate_limited"}; 60s: 400
+POST /api/oauth/token none oauth:token scope => other address 400
+POST /api/telegram/pair owner telegram-pair count (login 10/60s) => first 429 at 11; #10 400; over 429 application/json retry-after=60 cache-control=- {"error":"too many tries, wait a moment.","code":"too_many_attempts"}
+POST /api/telegram/pair owner telegram-pair window => 59s: 429 application/json retry-after=1 cache-control=- {"error":"too many tries, wait a moment.","code":"too_many_attempts"}; 60s: 400
+POST /api/telegram/pair owner telegram-pair scope => other address 429; other login 400; other login, other address 400
+POST /api/telegram/pair owner telegram-pair order: no login => first 429 at 0; answer 401; then 400
+POST /api/assistant/transcribe member chat-transcribe count (login 6/60s members) => first 429 at 7; #6 400; over 429 application/json retry-after=60 cache-control=- {"error":"too many voice clips, give me a moment"}
+POST /api/assistant/transcribe member chat-transcribe window => 59s: 429 application/json retry-after=1 cache-control=- {"error":"too many voice clips, give me a moment"}; 60s: 400
+POST /api/assistant/transcribe member chat-transcribe scope => other address 429; other login 400; other login, other address 400
+POST /api/assistant/transcribe member chat-transcribe order: no login => first 429 at 0; answer 401; then 400
+POST /api/assistant/transcribe member chat-transcribe order: an Admin user => first 429 at 0; then 400
+POST /api/users/:id/password owner users:password-reset count (login 10/3600s) => first 429 at 11; #10 400; over 429 application/json retry-after=3600 cache-control=- {"error":"Too many password resets. Try again later."}
+POST /api/users/:id/password owner users:password-reset window => 3599s: 429 application/json retry-after=1 cache-control=- {"error":"Too many password resets. Try again later."}; 3600s: 400
+POST /api/users/:id/password owner users:password-reset scope => other address 429; other login 400; other login, other address 400
+POST /api/users/:id/password owner users:password-reset order: no login => first 429 at 0; answer 401; then 400
+POST /api/push/connect owner push-enrol count (login 10/60s) => first 429 at 11; #10 400; over 429 application/json retry-after=60 cache-control=- {"error":"too_many_requests"}
+POST /api/push/connect owner push-enrol window => 59s: 429 application/json retry-after=1 cache-control=- {"error":"too_many_requests"}; 60s: 400
+POST /api/push/connect owner push-enrol scope => other address 429; other login 400; other login, other address 400
+POST /api/push/connect owner push-enrol shared with POST /api/push/subscriptions => 429
+POST /api/push/connect owner push-enrol order: no login => first 429 at 0; answer 401; then 400
+POST /api/push/subscriptions owner push-enrol count (login 10/60s) => first 429 at 11; #10 400; over 429 application/json retry-after=60 cache-control=- {"error":"too_many_requests"}
+POST /api/push/subscriptions owner push-enrol window => 59s: 429 application/json retry-after=1 cache-control=- {"error":"too_many_requests"}; 60s: 400
+POST /api/push/subscriptions owner push-enrol scope => other address 429; other login 400; other login, other address 400
+POST /api/push/subscriptions owner push-enrol shared with POST /api/push/connect => 429
+POST /api/push/subscriptions owner push-enrol order: no login => first 429 at 0; answer 401; then 400
+POST /api/member/push/connect member push-enrol count (login 10/60s) => first 429 at 11; #10 400; over 429 application/json retry-after=60 cache-control=- {"error":"too_many_requests"}
+POST /api/member/push/connect member push-enrol window => 59s: 429 application/json retry-after=1 cache-control=- {"error":"too_many_requests"}; 60s: 400
+POST /api/member/push/connect member push-enrol scope => other address 429; other login 400; other login, other address 400
+POST /api/member/push/connect member push-enrol shared with POST /api/member/push/subscriptions => 429
+POST /api/member/push/connect member push-enrol order: no login => first 429 at 0; answer 401; then 400
+POST /api/member/push/subscriptions member push-enrol count (login 10/60s) => first 429 at 11; #10 400; over 429 application/json retry-after=60 cache-control=- {"error":"too_many_requests"}
+POST /api/member/push/subscriptions member push-enrol window => 59s: 429 application/json retry-after=1 cache-control=- {"error":"too_many_requests"}; 60s: 400
+POST /api/member/push/subscriptions member push-enrol scope => other address 429; other login 400; other login, other address 400
+POST /api/member/push/subscriptions member push-enrol shared with POST /api/member/push/connect => 429
+POST /api/member/push/subscriptions member push-enrol order: no login => first 429 at 0; answer 401; then 400
+POST /api/apps/:id/frame-ticket member member-frame-ticket count (login 30/60s members) => first 429 at 31; #30 404; over 429 application/json retry-after=60 cache-control=- {"ok":false,"error":"too many requests"}
+POST /api/apps/:id/frame-ticket member member-frame-ticket window => 59s: 429 application/json retry-after=1 cache-control=- {"ok":false,"error":"too many requests"}; 60s: 404
+POST /api/apps/:id/frame-ticket member member-frame-ticket scope => other address 429; other login 404; other login, other address 404
+POST /api/apps/:id/frame-ticket member member-frame-ticket order: no login => first 429 at 0; answer 401; then 404
+POST /api/apps/:id/frame-ticket member member-frame-ticket order: an Admin user => first 429 at 0; then 404
+POST /api/apps/:id/db-broker member member-db-broker count (login 300/60s members) => first 429 at 301; #300 400; over 429 application/json retry-after=60 cache-control=- {"ok":false,"error":"too many requests"}
+POST /api/apps/:id/db-broker member member-db-broker window => 59s: 429 application/json retry-after=1 cache-control=- {"ok":false,"error":"too many requests"}; 60s: 400
+POST /api/apps/:id/db-broker member member-db-broker scope => other address 429; other login 400; other login, other address 400
+POST /api/apps/:id/db-broker member member-db-broker order: no login => first 429 at 0; answer 401; then 400
+POST /api/apps/:id/db-broker member member-db-broker order: an Admin user => first 429 at 0; then 400
+POST /api/apps/:id/tool-broker member member-tool-broker count (login 60/60s members) => first 429 at 61; #60 400; over 429 application/json retry-after=60 cache-control=- {"ok":false,"error":"too many requests"}
+POST /api/apps/:id/tool-broker member member-tool-broker window => 59s: 429 application/json retry-after=1 cache-control=- {"ok":false,"error":"too many requests"}; 60s: 400
+POST /api/apps/:id/tool-broker member member-tool-broker scope => other address 429; other login 400; other login, other address 400
+POST /api/apps/:id/tool-broker member member-tool-broker order: no login => first 429 at 0; answer 401; then 400
+POST /api/apps/:id/tool-broker member member-tool-broker order: an Admin user => first 429 at 0; then 400
+GET /api/files/files/:id?raw=1 member member-bytes count (login 240/60s members) => first 429 at 241; #240 404; over 429 application/json retry-after=60 cache-control=- {"error":"Too many requests. Try again shortly.","reason":"rate-limit"}
+GET /api/files/files/:id?raw=1 member member-bytes window => 59s: 429 application/json retry-after=1 cache-control=- {"error":"Too many requests. Try again shortly.","reason":"rate-limit"}; 60s: 404
+GET /api/files/files/:id?raw=1 member member-bytes scope => other address 429; other login 404; other login, other address 404
+GET /api/files/files/:id?raw=1 member member-bytes order: no login => first 429 at 0; answer 401; then 404
+GET /api/files/files/:id?raw=1 member member-bytes order: an Admin user => first 429 at 0; then 404
+GET /api/files/files/:id?raw=1 member member-bytes order: no limit for '' => first 429 at 0; then 404
+HEAD /api/files/files/:id?raw=1 member member-bytes count (login 240/60s members) => first 429 at 241; #240 404; over 429 application/json retry-after=60 cache-control=- 
+HEAD /api/files/files/:id?raw=1 member member-bytes window => 59s: 429 application/json retry-after=1 cache-control=- ; 60s: 404
+HEAD /api/files/files/:id?raw=1 member member-bytes scope => other address 429; other login 404; other login, other address 404
+HEAD /api/files/files/:id?raw=1 member member-bytes order: no login => first 429 at 0; answer 401; then 404
+HEAD /api/files/files/:id?raw=1 member member-bytes order: an Admin user => first 429 at 0; then 404
+HEAD /api/files/files/:id?raw=1 member member-bytes order: no limit for '' => first 429 at 0; then 404
+GET /api/files/files/:id?thumb=1 member member-thumbs count (login 60/60s members) => first 429 at 61; #60 404; over 429 application/json retry-after=60 cache-control=- {"error":"Too many requests. Try again shortly.","reason":"rate-limit"}
+GET /api/files/files/:id?thumb=1 member member-thumbs window => 59s: 429 application/json retry-after=1 cache-control=- {"error":"Too many requests. Try again shortly.","reason":"rate-limit"}; 60s: 404
+GET /api/files/files/:id?thumb=1 member member-thumbs scope => other address 429; other login 404; other login, other address 404
+GET /api/files/files/:id?thumb=1 member member-thumbs order: no login => first 429 at 0; answer 401; then 404
+GET /api/files/files/:id?thumb=1 member member-thumbs order: an Admin user => first 429 at 0; then 404
+HEAD /api/files/files/:id?thumb=1 member member-thumbs count (login 60/60s members) => first 429 at 61; #60 404; over 429 application/json retry-after=60 cache-control=- 
+HEAD /api/files/files/:id?thumb=1 member member-thumbs window => 59s: 429 application/json retry-after=1 cache-control=- ; 60s: 404
+HEAD /api/files/files/:id?thumb=1 member member-thumbs scope => other address 429; other login 404; other login, other address 404
+HEAD /api/files/files/:id?thumb=1 member member-thumbs order: no login => first 429 at 0; answer 401; then 404
+HEAD /api/files/files/:id?thumb=1 member member-thumbs order: an Admin user => first 429 at 0; then 404
+GET /api/v1/files/:id?raw=1 member member-bytes count (login 240/60s members) => first 429 at 0; #240 403; over -
+GET /api/v1/files/:id?raw=1 member member-bytes window => 59s: 403 application/json retry-after=- cache-control=- {"error":"forbidden","reason":"member-login","message":"Not available to member logins."}; 60s: 403
+GET /api/v1/files/:id?raw=1 member member-bytes scope => other address 403; other login 403; other login, other address 403
+GET /api/v1/files/:id?raw=1 member member-bytes order: no login => first 429 at 0; answer 401; then 403
+GET /api/v1/files/:id?raw=1 member member-bytes order: an Admin user => first 429 at 0; then 403
+GET /api/v1/files/:id?raw=1 member member-bytes order: no limit for '' => first 429 at 0; then 403
+HEAD /api/v1/files/:id?raw=1 member member-bytes count (login 240/60s members) => first 429 at 0; #240 403; over -
+HEAD /api/v1/files/:id?raw=1 member member-bytes window => 59s: 403 application/json retry-after=- cache-control=- ; 60s: 403
+HEAD /api/v1/files/:id?raw=1 member member-bytes scope => other address 403; other login 403; other login, other address 403
+HEAD /api/v1/files/:id?raw=1 member member-bytes order: no login => first 429 at 0; answer 401; then 403
+HEAD /api/v1/files/:id?raw=1 member member-bytes order: an Admin user => first 429 at 0; then 403
+HEAD /api/v1/files/:id?raw=1 member member-bytes order: no limit for '' => first 429 at 0; then 403
+GET /api/v1/files/:id?thumb=1 member member-thumbs count (login 60/60s members) => first 429 at 0; #60 403; over -
+GET /api/v1/files/:id?thumb=1 member member-thumbs window => 59s: 403 application/json retry-after=- cache-control=- {"error":"forbidden","reason":"member-login","message":"Not available to member logins."}; 60s: 403
+GET /api/v1/files/:id?thumb=1 member member-thumbs scope => other address 403; other login 403; other login, other address 403
+GET /api/v1/files/:id?thumb=1 member member-thumbs order: no login => first 429 at 0; answer 401; then 403
+GET /api/v1/files/:id?thumb=1 member member-thumbs order: an Admin user => first 429 at 0; then 403
+HEAD /api/v1/files/:id?thumb=1 member member-thumbs count (login 60/60s members) => first 429 at 0; #60 403; over -
+HEAD /api/v1/files/:id?thumb=1 member member-thumbs window => 59s: 403 application/json retry-after=- cache-control=- ; 60s: 403
+HEAD /api/v1/files/:id?thumb=1 member member-thumbs scope => other address 403; other login 403; other login, other address 403
+HEAD /api/v1/files/:id?thumb=1 member member-thumbs order: no login => first 429 at 0; answer 401; then 403
+HEAD /api/v1/files/:id?thumb=1 member member-thumbs order: an Admin user => first 429 at 0; then 403
+GET /api/v1/files/:id/download member member-bytes count (login 240/60s members) => first 429 at 0; #240 403; over -
+GET /api/v1/files/:id/download member member-bytes window => 59s: 403 application/json retry-after=- cache-control=- {"error":"forbidden","reason":"member-login","message":"Not available to member logins."}; 60s: 403
+GET /api/v1/files/:id/download member member-bytes scope => other address 403; other login 403; other login, other address 403
+GET /api/v1/files/:id/download member member-bytes order: no login => first 429 at 0; answer 401; then 403
+GET /api/v1/files/:id/download member member-bytes order: an Admin user => first 429 at 0; then 403
+HEAD /api/v1/files/:id/download member member-bytes count (login 240/60s members) => first 429 at 0; #240 403; over -
+HEAD /api/v1/files/:id/download member member-bytes window => 59s: 403 application/json retry-after=- cache-control=- ; 60s: 403
+HEAD /api/v1/files/:id/download member member-bytes scope => other address 403; other login 403; other login, other address 403
+HEAD /api/v1/files/:id/download member member-bytes order: no login => first 429 at 0; answer 401; then 403
+HEAD /api/v1/files/:id/download member member-bytes order: an Admin user => first 429 at 0; then 403
+GET /api/workspaces/user-search?q=sweep owner ws-user-search count (login 60/60s) => first 429 at 61; #60 200; over 429 application/json retry-after=- cache-control=- {"error":"Too many searches. Wait a minute and try again.","code":"rate_limited"}
+GET /api/workspaces/user-search?q=sweep owner ws-user-search window => 59s: 429 application/json retry-after=- cache-control=- {"error":"Too many searches. Wait a minute and try again.","code":"rate_limited"}; 60s: 200
+GET /api/workspaces/user-search?q=sweep owner ws-user-search scope => other address 429; other login 200; other login, other address 200
+GET /api/workspaces/user-search?q=sweep owner ws-user-search order: no login => first 429 at 0; answer 401; then 200
+GET /api/workspaces/user-search?q=sweep owner ws-user-search order: refused by the route '?q=sweep&offset=x' => first 429 at 0; answer 400; then 200
+HEAD /api/workspaces/user-search?q=sweep owner ws-user-search count (login 60/60s) => first 429 at 61; #60 200; over 429 application/json retry-after=- cache-control=- 
+HEAD /api/workspaces/user-search?q=sweep owner ws-user-search window => 59s: 429 application/json retry-after=- cache-control=- ; 60s: 200
+HEAD /api/workspaces/user-search?q=sweep owner ws-user-search scope => other address 429; other login 200; other login, other address 200
+HEAD /api/workspaces/user-search?q=sweep owner ws-user-search order: no login => first 429 at 0; answer 401; then 200
+HEAD /api/workspaces/user-search?q=sweep owner ws-user-search order: refused by the route '?q=sweep&offset=x' => first 429 at 0; answer 400; then 200
+GET /s/:token/aggregate none share-aggregate count (ip 120/60s) => first 429 at 121; #120 404; over 429 application/json retry-after=60 cache-control=no-store {"error":"too many requests"}
+GET /s/:token/aggregate none share-aggregate window => 59s: 429 application/json retry-after=1 cache-control=no-store {"error":"too many requests"}; 60s: 404
+GET /s/:token/aggregate none share-aggregate scope => other address 404
+HEAD /s/:token/aggregate none share-aggregate count (ip 120/60s) => first 429 at 121; #120 404; over 429 application/json retry-after=60 cache-control=no-store 
+HEAD /s/:token/aggregate none share-aggregate window => 59s: 429 application/json retry-after=1 cache-control=no-store ; 60s: 404
+HEAD /s/:token/aggregate none share-aggregate scope => other address 404
+GET /s/:token/bundle none share-bundle count (ip 30/60s) => first 429 at 31; #30 404; over 429 text/plain retry-after=60 cache-control=- too many requests
+GET /s/:token/bundle none share-bundle window => 59s: 429 text/plain retry-after=1 cache-control=- too many requests; 60s: 404
+GET /s/:token/bundle none share-bundle scope => other address 404
+HEAD /s/:token/bundle none share-bundle count (ip 30/60s) => first 429 at 31; #30 404; over 429 text/plain retry-after=60 cache-control=- 
+HEAD /s/:token/bundle none share-bundle window => 59s: 429 text/plain retry-after=1 cache-control=- ; 60s: 404
+HEAD /s/:token/bundle none share-bundle scope => other address 404
+POST /s/:token/code none contact-code:ip count (ip 10/60s) => first 429 at 11; #10 500; over 429 application/json retry-after=3600 cache-control=- {"ok":false,"error":"too many attempts — try again shortly"}
+POST /s/:token/code none contact-code:ip window => 59s: 429 application/json retry-after=3541 cache-control=- {"ok":false,"error":"too many attempts — try again shortly"}; 60s: 500
+POST /s/:token/code none contact-code:ip scope => other address 500
+POST /s/:token/code none contact-code:ip order: cross-site => first 429 at 0; answer 403; then 500
+POST /s/:token/code none contact-code:ip-hour count (ip 30/3600s) => first 429 at 31; #30 500; over 429 application/json retry-after=3390 cache-control=- {"ok":false,"error":"too many attempts — try again shortly"}
+POST /s/:token/code none contact-code:ip-hour window => 3599s: 429 application/json retry-after=60 cache-control=- {"ok":false,"error":"too many attempts — try again shortly"}; 3600s: 500
+POST /s/:token/code none contact-code:ip-hour scope => other address 500
+POST /s/:token/code none contact-code:ip-hour order: cross-site => first 429 at 0; answer 403; then 500
+POST /s/:token/db-broker none share-db-broker count (ip 300/60s) => first 429 at 301; #300 404; over 429 application/json retry-after=60 cache-control=- {"ok":false,"error":"too many requests"}
+POST /s/:token/db-broker none share-db-broker window => 59s: 429 application/json retry-after=1 cache-control=- {"ok":false,"error":"too many requests"}; 60s: 404
+POST /s/:token/db-broker none share-db-broker scope => other address 404
+GET /s/:token/draw none share-draw count (ip 240/60s) => first 429 at 241; #240 404; over 429 text/plain retry-after=60 cache-control=no-store Too many requests
+GET /s/:token/draw none share-draw window => 59s: 429 text/plain retry-after=1 cache-control=no-store Too many requests; 60s: 404
+GET /s/:token/draw none share-draw scope => other address 404
+HEAD /s/:token/draw none share-draw count (ip 240/60s) => first 429 at 241; #240 404; over 429 text/plain retry-after=60 cache-control=no-store 
+HEAD /s/:token/draw none share-draw window => 59s: 429 text/plain retry-after=1 cache-control=no-store ; 60s: 404
+HEAD /s/:token/draw none share-draw scope => other address 404
+GET /s/:token/draw/:drawId none share-draw-embed count (ip 240/60s) => first 429 at 241; #240 404; over 429 text/plain retry-after=60 cache-control=no-store Too many requests
+GET /s/:token/draw/:drawId none share-draw-embed window => 59s: 429 text/plain retry-after=1 cache-control=no-store Too many requests; 60s: 404
+GET /s/:token/draw/:drawId none share-draw-embed scope => other address 404
+HEAD /s/:token/draw/:drawId none share-draw-embed count (ip 240/60s) => first 429 at 241; #240 404; over 429 text/plain retry-after=60 cache-control=no-store 
+HEAD /s/:token/draw/:drawId none share-draw-embed window => 59s: 429 text/plain retry-after=1 cache-control=no-store ; 60s: 404
+HEAD /s/:token/draw/:drawId none share-draw-embed scope => other address 404
+POST /s/:token/evaluate none share-evaluate count (ip 60/60s) => first 429 at 61; #60 404; over 429 application/json retry-after=60 cache-control=no-store {"error":"too many requests"}
+POST /s/:token/evaluate none share-evaluate window => 59s: 429 application/json retry-after=1 cache-control=no-store {"error":"too many requests"}; 60s: 404
+POST /s/:token/evaluate none share-evaluate scope => other address 404
+POST /s/:token/frame-ticket none share-frame-ticket count (ip 30/60s) => first 429 at 31; #30 404; over 429 text/plain retry-after=60 cache-control=- too many requests
+POST /s/:token/frame-ticket none share-frame-ticket window => 59s: 429 text/plain retry-after=1 cache-control=- too many requests; 60s: 404
+POST /s/:token/frame-ticket none share-frame-ticket scope => other address 404
+GET /s/:token/rows none share-rows count (ip 120/60s) => first 429 at 121; #120 404; over 429 application/json retry-after=60 cache-control=no-store {"error":"too many requests"}
+GET /s/:token/rows none share-rows window => 59s: 429 application/json retry-after=1 cache-control=no-store {"error":"too many requests"}; 60s: 404
+GET /s/:token/rows none share-rows scope => other address 404
+HEAD /s/:token/rows none share-rows count (ip 120/60s) => first 429 at 121; #120 404; over 429 application/json retry-after=60 cache-control=no-store 
+HEAD /s/:token/rows none share-rows window => 59s: 429 application/json retry-after=1 cache-control=no-store ; 60s: 404
+HEAD /s/:token/rows none share-rows scope => other address 404
+POST /s/:token/tool-broker none share-tool-broker count (ip 60/60s) => first 429 at 61; #60 404; over 429 application/json retry-after=60 cache-control=- {"ok":false,"error":"too many requests"}
+POST /s/:token/tool-broker none share-tool-broker window => 59s: 429 application/json retry-after=1 cache-control=- {"ok":false,"error":"too many requests"}; 60s: 404
+POST /s/:token/tool-broker none share-tool-broker scope => other address 404
+GET /s/:token/view none share-view count (ip 120/60s) => first 429 at 121; #120 404; over 429 application/json retry-after=60 cache-control=no-store {"error":"too many requests"}
+GET /s/:token/view none share-view window => 59s: 429 application/json retry-after=1 cache-control=no-store {"error":"too many requests"}; 60s: 404
+GET /s/:token/view none share-view scope => other address 404
+HEAD /s/:token/view none share-view count (ip 120/60s) => first 429 at 121; #120 404; over 429 application/json retry-after=60 cache-control=no-store 
+HEAD /s/:token/view none share-view window => 59s: 429 application/json retry-after=1 cache-control=no-store ; 60s: 404
+HEAD /s/:token/view none share-view scope => other address 404
+GET /s/:token/a/:fileId none share-asset count (ip 240/60s) => first 429 at 241; #240 404; over 429 text/plain retry-after=60 cache-control=no-store Too many requests
+GET /s/:token/a/:fileId none share-asset window => 59s: 429 text/plain retry-after=1 cache-control=no-store Too many requests; 60s: 404
+GET /s/:token/a/:fileId none share-asset scope => other address 404
+HEAD /s/:token/a/:fileId none share-asset count (ip 240/60s) => first 429 at 241; #240 404; over 429 text/plain retry-after=60 cache-control=no-store 
+HEAD /s/:token/a/:fileId none share-asset window => 59s: 429 text/plain retry-after=1 cache-control=no-store ; 60s: 404
+HEAD /s/:token/a/:fileId none share-asset scope => other address 404

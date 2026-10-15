@@ -1,0 +1,499 @@
+/**
+ * The rate sweep (A10 #8: rate limits on the ROUTE_POLICY row;
+ * docs/request-plumbing.md, "Rate limits"). Every route that took a rate
+ * limit per request on main (a10-rate-sweep.inventory.ts) driven through the
+ * full pipeline (the gate, the row, the caller's answer, the handler), as
+ * the credential the limit counts, with the clock held still:
+ *
+ *  - count:   max + 1 requests: the first request refused (429), the answer
+ *             just under the cap and the refusal itself (status, content
+ *             type, Retry-After, Cache-Control, body);
+ *  - window:  a full bucket, a second before its window ends and at its end;
+ *  - scope:   a full bucket, then another address, another login of the
+ *             same kind, and the same login from another address;
+ *  - shared:  a full bucket, then each row that shares it;
+ *  - order:   what the handler checked BEFORE the limit on main still comes
+ *             first and spends nothing: a cross-site browser request, no
+ *             login, an Admin user where only members count, a query that
+ *             takes no limit, a request the user search refused itself;
+ *  - budget:  the brain-wide invite failure caps, from a new address each
+ *             time.
+ *
+ * No database (the login rows are stood in, as in the body sweep), no
+ * network, no child process. Each probe starts a day after the one before,
+ * so every bucket it meets is empty.
+ *
+ * Recorded on main (v0.300.44) BEFORE the move, in
+ * __snapshots__/a10-rate-sweep.txt (A10_RATE_SWEEP_RECORD=1 writes it; a
+ * normal run only reads it). After the move every probe must answer as
+ * recorded, or be a named change (changeKind below), listed probe by probe
+ * in __snapshots__/a10-rate-sweep-changes.txt.
+ */
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { SWEEP_CELLS, type SweepCell, type SweepLimit } from './a10-rate-sweep.inventory';
+
+const ANCHOR_ID = '33333333-3333-4333-8333-333333333333';
+const ADMIN2_ID = '44444444-4444-4444-8444-444444444444';
+const MEMBER_ID = '22222222-2222-4222-8222-222222222222';
+const MEMBER2_ID = '55555555-5555-4555-8555-555555555555';
+const SPACE_ID = '66666666-6666-4666-8666-666666666666';
+const SAMPLE_ID = '11111111-1111-4111-8111-111111111111';
+
+const loginRow = (id: string, role: string, isOwner = false) => ({
+  id,
+  email: `${role}-${id.slice(0, 4)}@example.invalid`,
+  isOwner,
+  displayName: `${role} ${id.slice(0, 4)}`,
+  role,
+  contactId: null,
+  disabledAt: null,
+  sessionEpoch: 0,
+});
+
+vi.mock('../lib/brain-identity', () => ({
+  brainIdOrNull: async () => '0b7c6a1e-2f4d-4c1a-9e8b-5d3f2a1c0e9f',
+  getBrainId: async () => '0b7c6a1e-2f4d-4c1a-9e8b-5d3f2a1c0e9f',
+  brainIdField: async () => ({ brainId: '0b7c6a1e-2f4d-4c1a-9e8b-5d3f2a1c0e9f' }),
+}));
+
+vi.mock('../lib/auth/login-row', () => ({
+  loadLoginRow: async (id: string) =>
+    id === ANCHOR_ID
+      ? loginRow(ANCHOR_ID, 'admin', true)
+      : id === ADMIN2_ID
+        ? loginRow(ADMIN2_ID, 'admin')
+        : id === MEMBER_ID || id === MEMBER2_ID
+          ? loginRow(id, 'member')
+          : null,
+  loadAnchorId: async () => ANCHOR_ID,
+  loadPersonalSpaceId: async () => SPACE_ID,
+  loadBearerToken: async () => null,
+  touchBearerToken: async () => undefined,
+}));
+
+vi.mock('../lib/audit', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  auditFireAndForget: () => undefined,
+}));
+
+vi.mock('../lib/mcp-auth', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  mcpLoginEnabled: async () => false,
+  mcpTargetLogin: async () => null,
+  resolveMcpCaller: async () => null,
+}));
+
+vi.mock('../lib/mcp-oauth', async (importOriginal) => {
+  const { SWEEP_OAUTH_CLIENT } = await import('./public-session-routes');
+  return {
+    ...(await importOriginal<Record<string, unknown>>()),
+    isRemoteMcpEnabled: async () => true,
+    getClient: async (id: string) =>
+      id === SWEEP_OAUTH_CLIENT.id
+        ? { id, clientName: 'Sweep client', redirectUris: [SWEEP_OAUTH_CLIENT.redirectUri] }
+        : null,
+  };
+});
+
+vi.mock('../lib/pair-code', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  issuePairCode: async () => ({
+    id: '00000000-0000-4000-8000-0000000000c0',
+    code: 'sweep-code-sweep-code-sweep',
+    expiresAt: new Date('2026-10-01T00:01:30.000Z'),
+  }),
+  claimPairCode: async () => null,
+  pairCodeStatus: async () => ({ status: 'pending', deviceLabel: null }),
+}));
+
+vi.mock('../lib/shares', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  resolveActiveShareByToken: async () => null,
+  resolveActiveShareRowByToken: async () => null,
+}));
+vi.mock('@mantle/content', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  isRetiredTeamLinkToken: async () => false,
+  isRetiredClientLinkToken: async () => false,
+  // An unknown invite code: every preview and accept is a failed code.
+  previewMemberInvite: async () => null,
+}));
+
+vi.mock('node:child_process', async (importOriginal) => {
+  const real = await importOriginal<Record<string, unknown>>();
+  const refuse = () => {
+    throw new Error('sweep: no child process');
+  };
+  return { ...real, spawn: refuse, exec: refuse, execFile: refuse, fork: refuse };
+});
+
+vi.mock('@mantle/db', async (importOriginal) => {
+  const real = await importOriginal<typeof import('@mantle/db')>();
+  // The body sweep's stand-in: a query finds no row; a statement finds one
+  // item the login may edit and manage; withViewer runs its function.
+  const none: unknown = new Proxy(() => undefined, {
+    get: (_t, k) =>
+      k === 'then'
+        ? (ok: (v: unknown) => unknown, ko: (e: unknown) => unknown) =>
+            Promise.resolve([]).then(ok, ko)
+        : () => none,
+  });
+  const db = new Proxy(real.db, {
+    get: (t, k) => {
+      if (k === 'select') return () => none;
+      if (k === 'execute') {
+        return async () => [
+          {
+            id: '11111111-1111-4111-8111-111111111111',
+            type: 'page',
+            edit: true,
+            manage: true,
+            copy: false,
+            home: null,
+            held: false,
+            // The user search's Moderator check (lib/workspaces.ts).
+            ok: true,
+          },
+        ];
+      }
+      return Reflect.get(t, k);
+    },
+  });
+  return {
+    ...real,
+    db,
+    withViewer: ((_actsFor, fn) => fn()) as typeof real.withViewer,
+    loginScopeFor: async (loginId: string) => ({ kind: 'user', loginId, ws: [], modWs: [] }),
+    brainOnWorkspacesNow: async () => true,
+    createHomeIntent: async () => ({ createWs: null, privateWs: null }),
+  };
+});
+vi.mock('../lib/workspaces', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../lib/workspaces')>()),
+  requireArea: async () => true,
+}));
+
+import { SESSION_COOKIE_NAME } from '../lib/auth-constants';
+
+const here = dirname(fileURLToPath(import.meta.url));
+const hasManifest = existsSync(join(here, 'route-manifest.gen.ts'));
+if (!hasManifest && process.env.CI) {
+  throw new Error('server/web/server/route-manifest.gen.ts is missing: the sweep cannot run');
+}
+const RECORD = process.env.A10_RATE_SWEEP_RECORD === '1';
+const BASELINE = join(here, '__snapshots__/a10-rate-sweep.txt');
+const NOW = new Date('2026-10-01T00:00:00.000Z');
+const DAY = 24 * 60 * 60 * 1000;
+const ADDRESS = '198.51.100.7';
+const OTHER_ADDRESS = '198.51.100.8';
+/** A browser on another site (refuseCrossSiteAuthPost refuses it). */
+const CROSS_SITE = 'https://elsewhere.example.invalid';
+
+function concretePath(pattern: string): string {
+  return pattern.replace(/:[A-Za-z0-9_]+\??/g, SAMPLE_ID).replace(/\*$/, 'a/b');
+}
+
+/** The other login of a credential's kind (the scope probe). */
+const OTHER_CRED: Record<SweepCell['cred'], string | null> = {
+  none: null,
+  owner: 'owner2',
+  member: 'member2',
+};
+
+/** The cells' order for a limit of a row with more than one: the takes in
+ *  the row's order, then the failure budgets. */
+const isTake = (l: SweepLimit) => !l.peek;
+
+describe.skipIf(!hasManifest)('A10 #8: every route limit answers as recorded on main', () => {
+  const saved = {
+    secret: process.env.SESSION_SECRET,
+    db: process.env.DATABASE_URL,
+    cors: process.env.MANTLE_API_CORS_ORIGINS,
+    detached: process.env.MANTLE_DETACHED_DEV,
+    scale: process.env.MANTLE_RATE_LIMIT_SCALE,
+  };
+  const realFetch = globalThis.fetch;
+  let app: import('hono').Hono;
+  const creds: Record<string, Record<string, string>> = {};
+  let day = 0;
+  /** A fresh day: every bucket the probe meets is empty. */
+  const freshDay = () => {
+    const t = new Date(NOW.getTime() + day++ * DAY);
+    vi.setSystemTime(t);
+    return t.getTime();
+  };
+
+  beforeAll(async () => {
+    process.env.SESSION_SECRET = 'a10-rate-sweep-secret-that-is-at-least-32-chars';
+    delete process.env.DATABASE_URL;
+    delete process.env.MANTLE_API_CORS_ORIGINS;
+    delete process.env.MANTLE_DETACHED_DEV;
+    delete process.env.MANTLE_RATE_LIMIT_SCALE;
+    globalThis.fetch = (async () => {
+      throw new Error('sweep: no network');
+    }) as typeof fetch;
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(NOW);
+    const tokens = await import('../lib/auth/tokens');
+    const cookie = (id: string) => ({
+      cookie: `${SESSION_COOKIE_NAME}=${tokens.buildSessionCookie(id, { ttlSeconds: 20 * 365 * 86_400 }).value}`,
+    });
+    creds.owner = cookie(ANCHOR_ID);
+    creds.owner2 = cookie(ADMIN2_ID);
+    creds.member = cookie(MEMBER_ID);
+    creds.member2 = cookie(MEMBER2_ID);
+    creds.none = {};
+    const { createApp } = await import('./app');
+    app = await createApp();
+  }, 120_000);
+
+  afterAll(() => {
+    globalThis.fetch = realFetch;
+    vi.useRealTimers();
+    for (const [k, v] of [
+      ['SESSION_SECRET', saved.secret],
+      ['DATABASE_URL', saved.db],
+      ['MANTLE_API_CORS_ORIGINS', saved.cors],
+      ['MANTLE_DETACHED_DEV', saved.detached],
+      ['MANTLE_RATE_LIMIT_SCALE', saved.scale],
+    ] as const) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
+  });
+
+  type Ask = { cred?: string; address?: string; origin?: string; query?: string };
+
+  async function send(cell: SweepCell, ask: Ask = {}, row = cell.row): Promise<Response> {
+    const [method, pattern] = row.split(' ') as [string, string];
+    const query = ask.query ?? cell.query ?? '';
+    const body = method === 'GET' || method === 'HEAD' ? undefined : (cell.body ?? undefined);
+    return app.request(`${concretePath(pattern)}${query}`, {
+      method,
+      headers: {
+        ...creds[ask.cred ?? cell.cred],
+        'x-forwarded-for': ask.address ?? ADDRESS,
+        ...(body !== undefined ? { 'content-type': 'application/json' } : {}),
+        ...(ask.origin ? { origin: ask.origin } : {}),
+      },
+      ...(body !== undefined ? { body } : {}),
+    });
+  }
+
+  /** A whole answer: status, content type, the rate headers and the body. */
+  async function answer(res: Response): Promise<string> {
+    const type = res.headers.get('content-type') ?? '';
+    const parts = [
+      String(res.status),
+      type.split(';')[0] || '-',
+      `retry-after=${res.headers.get('retry-after') ?? '-'}`,
+      `cache-control=${res.headers.get('cache-control') ?? '-'}`,
+    ];
+    if (type.includes('text/event-stream')) {
+      await res.body?.cancel().catch(() => undefined);
+      parts.push('stream');
+    } else {
+      const text = await res.text();
+      parts.push(text.length > 300 ? `${text.slice(0, 300)}…(${text.length})` : text);
+    }
+    return parts.join(' ');
+  }
+
+  async function status(res: Response): Promise<number> {
+    await res.body?.cancel().catch(() => undefined);
+    return res.status;
+  }
+
+  /** Send `n` requests; the place of the first 429 (1-based), or 0. */
+  async function firstRefused(cell: SweepCell, n: number, ask: (i: number) => Ask = () => ({})) {
+    for (let i = 1; i <= n; i++) {
+      if ((await status(await send(cell, ask(i)))) === 429) return i;
+    }
+    return 0;
+  }
+
+  /** Requests spaced so the row's other limits never fill first: a limit
+   *  whose cap is under this one's is met at most once per its window. */
+  function spacing(cell: SweepCell, limit: SweepLimit): number {
+    const others = cell.limits.filter((l) => l !== limit && isTake(l) && l.max <= limit.max);
+    if (!others.length) return 0;
+    return Math.max(...others.map((l) => Math.ceil(l.windowMs / l.max) + 1000));
+  }
+
+  /** Fill `limit`'s bucket to its cap and one over; the answers. */
+  async function fill(cell: SweepCell, limit: SweepLimit, start: number) {
+    const gap = spacing(cell, limit);
+    let under = '-';
+    let first = 0;
+    let over = '-';
+    for (let i = 1; i <= limit.max + 1; i++) {
+      vi.setSystemTime(start + (i - 1) * gap);
+      const res = await send(cell);
+      if (res.status === 429) {
+        if (!first) first = i;
+        over = await answer(res);
+        if (i < limit.max + 1) continue;
+        break;
+      }
+      const s = await status(res);
+      if (i === limit.max) under = String(s);
+    }
+    return { under, first, over, end: start + limit.max * gap };
+  }
+
+  async function probe(cell: SweepCell, limit: SweepLimit): Promise<[string, string][]> {
+    const out: [string, string][] = [];
+    const name = `${cell.row}${cell.query ?? ''} ${cell.cred} ${limit.bucket}`;
+    const per = `${limit.scope} ${limit.max}/${limit.windowMs / 1000}s${limit.members ? ' members' : ''}`;
+    if (limit.peek) {
+      // The brain-wide failure cap: a new address every request, so no
+      // address fills its own bucket; every request is a failed code.
+      freshDay();
+      const k = await firstRefused(cell, limit.max + 2, (i) => ({
+        address: `203.0.113.${i % 250}`,
+        ...(i >= 250 ? { address: `192.0.2.${i % 250}` } : {}),
+      }));
+      out.push([`${name} budget (${per})`, `first 429 at ${k}`]);
+      return out;
+    }
+    // count
+    let start = freshDay();
+    const filled = await fill(cell, limit, start);
+    out.push([
+      `${name} count (${per})`,
+      `first 429 at ${filled.first}; #${limit.max} ${filled.under}; over ${filled.over}`,
+    ]);
+    // window: a second before the window ends, and at its end
+    vi.setSystemTime(start + limit.windowMs - 1000);
+    const before = await answer(await send(cell));
+    vi.setSystemTime(start + limit.windowMs);
+    const after = await status(await send(cell));
+    out.push([
+      `${name} window`,
+      `${limit.windowMs / 1000 - 1}s: ${before}; ${limit.windowMs / 1000}s: ${after}`,
+    ]);
+    // scope
+    start = freshDay();
+    await fill(cell, limit, start);
+    const scope: string[] = [];
+    scope.push(`other address ${await status(await send(cell, { address: OTHER_ADDRESS }))}`);
+    const other = OTHER_CRED[cell.cred];
+    if (other) {
+      scope.push(`other login ${await status(await send(cell, { cred: other }))}`);
+      scope.push(
+        `other login, other address ${await status(await send(cell, { cred: other, address: OTHER_ADDRESS }))}`,
+      );
+    }
+    out.push([`${name} scope`, scope.join('; ')]);
+    // shared
+    for (const sibling of cell.sharesWith ?? []) {
+      start = freshDay();
+      await fill(cell, limit, start);
+      out.push([
+        `${name} shared with ${sibling}`,
+        String(await status(await send(cell, {}, sibling))),
+      ]);
+    }
+    // order
+    const fresh = async () => status(await send(cell));
+    if (cell.crossSite) {
+      freshDay();
+      const k = await firstRefused(cell, limit.max + 1, () => ({ origin: CROSS_SITE }));
+      const seen = await status(await send(cell, { origin: CROSS_SITE }));
+      out.push([
+        `${name} order: cross-site`,
+        `first 429 at ${k}; answer ${seen}; then ${await fresh()}`,
+      ]);
+    }
+    if (limit.scope === 'login') {
+      freshDay();
+      const k = await firstRefused(cell, limit.max + 1, () => ({ cred: 'none' }));
+      const seen = await status(await send(cell, { cred: 'none' }));
+      out.push([
+        `${name} order: no login`,
+        `first 429 at ${k}; answer ${seen}; then ${await fresh()}`,
+      ]);
+    }
+    if (limit.members) {
+      freshDay();
+      const k = await firstRefused(cell, limit.max + 1, () => ({ cred: 'owner' }));
+      out.push([`${name} order: an Admin user`, `first 429 at ${k}; then ${await fresh()}`]);
+    }
+    if (cell.freeQuery !== undefined) {
+      freshDay();
+      const k = await firstRefused(cell, limit.max + 1, () => ({ query: cell.freeQuery }));
+      out.push([
+        `${name} order: no limit for '${cell.freeQuery}'`,
+        `first 429 at ${k}; then ${await fresh()}`,
+      ]);
+    }
+    if (cell.earlyRefusal !== undefined) {
+      freshDay();
+      const k = await firstRefused(cell, limit.max + 1, () => ({ query: cell.earlyRefusal }));
+      const seen = await status(await send(cell, { query: cell.earlyRefusal }));
+      out.push([
+        `${name} order: refused by the route '${cell.earlyRefusal}'`,
+        `first 429 at ${k}; answer ${seen}; then ${await fresh()}`,
+      ]);
+    }
+    return out;
+  }
+
+  async function driveAll(): Promise<Map<string, string>> {
+    const out = new Map<string, string>();
+    const quiet = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    try {
+      for (const cell of SWEEP_CELLS) {
+        for (const limit of [
+          ...cell.limits.filter(isTake),
+          ...cell.limits.filter((l) => !isTake(l)),
+        ]) {
+          for (const [k, v] of await probe(cell, limit)) out.set(k, v);
+        }
+      }
+    } finally {
+      quiet.mockRestore();
+      warn.mockRestore();
+      log.mockRestore();
+    }
+    return out;
+  }
+
+  function readBaseline(): Map<string, string> {
+    const out = new Map<string, string>();
+    for (const line of readFileSync(BASELINE, 'utf8').split('\n')) {
+      if (!line || line.startsWith('#')) continue;
+      const at = line.indexOf(' => ');
+      out.set(line.slice(0, at), line.slice(at + 4));
+    }
+    return out;
+  }
+
+  it('answers every route limit as recorded on main', async () => {
+    const now = await driveAll();
+    const lines = [...now].map(([probe, a]) => `${probe} => ${a}`);
+    if (RECORD) {
+      writeFileSync(
+        BASELINE,
+        [
+          '# A10 #8: every route rate limit, recorded on main (v0.300.44) BEFORE the move.',
+          '# Written once (A10_RATE_SWEEP_RECORD=1); a10-rate-sweep.test.ts reads it back',
+          '# and holds every probe to it, or to a named change.',
+          `# probes: ${now.size}`,
+          ...lines,
+          '',
+        ].join('\n'),
+      );
+      return;
+    }
+    const before = readBaseline();
+    expect([...now.keys()].sort()).toEqual([...before.keys()].sort());
+    const changed = [...now].filter(([p, a]) => before.get(p) !== a);
+    expect(changed.map(([p, a]) => `${p}: main ${before.get(p)}; now ${a}`)).toEqual([]);
+  }, 1_800_000);
+});
