@@ -4,11 +4,11 @@ Let a team member, another admin or another Mantle use your brain from an MCP cl
 
 The connector URL is the same one the owner uses, and every login gets the same tools. Each call runs in the workspaces of the login that connected: it reads what those workspaces hold, and changes only what that login may change there. A login has no MCP permission of its own to switch on or off.
 
-| Who connects  | How they prove it                                         | What they get                                               |
-| ------------- | --------------------------------------------------------- | ----------------------------------------------------------- |
-| An admin      | Signs in at the connector URL, or sends their own API key | The tools, in their workspaces, held to their Admin areas   |
-| A member      | Signs in at the connector URL, or sends their own API key | The tools, in their workspaces                              |
-| A peer Mantle | Its peer token, with **Acts as** set                      | The tools of the login it acts as, held to the peer's Write |
+| Who connects      | How they prove it                                         | What they get                                               |
+| ----------------- | --------------------------------------------------------- | ----------------------------------------------------------- |
+| An admin          | Signs in at the connector URL, or sends their own API key | The tools, in their workspaces, held to their Admin areas   |
+| A member          | Signs in at the connector URL, or sends their own API key | The tools, in their workspaces                              |
+| A peer Mantle     | Its peer token, with **Acts as** set                      | The tools of the login it acts as, held to the peer's Write |
 
 ## Before you start
 
