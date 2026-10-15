@@ -9,8 +9,7 @@
  * seat. A seat gone refuses the call in MODERATOR_SEAT_CHANGED's words; the
  * next turn reads the seats afresh.
  */
-import { and, eq, inArray } from 'drizzle-orm';
-import { asSystem, db, workspaceUsers } from '@mantle/db';
+import { moderatorSeatsNow } from '@mantle/db';
 import { currentWorkspaceScope } from '@mantle/db/viewer';
 
 /** What a write call says when its turn's Moderator seat is gone. */
@@ -25,21 +24,8 @@ export async function moderatorSeatLost(): Promise<boolean> {
   if (!scope || scope.kind !== 'assistant' || !scope.loginId || scope.modWs.length === 0) {
     return false;
   }
-  const loginId = scope.loginId;
-  const modWs = [...scope.modWs];
-  const held = await asSystem(
-    () =>
-      db
-        .select({ ws: workspaceUsers.workspaceId })
-        .from(workspaceUsers)
-        .where(
-          and(
-            eq(workspaceUsers.loginId, loginId),
-            inArray(workspaceUsers.workspaceId, modWs),
-            eq(workspaceUsers.moderator, true),
-          ),
-        ),
-    'agent-workspace',
+  const held = new Set(
+    (await moderatorSeatsNow(scope.loginId, scope.modWs)).map((ws) => ws.toLowerCase()),
   );
-  return held.length < modWs.length;
+  return scope.modWs.some((ws) => !held.has(ws.toLowerCase()));
 }

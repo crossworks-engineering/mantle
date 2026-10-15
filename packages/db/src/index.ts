@@ -67,6 +67,7 @@ export {
   lockMoreHeads,
   withDeadlockRetry,
   loginScopeFor,
+  moderatorSeatsNow,
   loginScopeColumns,
   seedLoginScope,
   brainOnWorkspacesNow,

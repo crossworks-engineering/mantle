@@ -2888,6 +2888,25 @@ export async function loginScopeFor(loginId: string): Promise<WorkspaceScope> {
 }
 
 /**
+ * Which of `wsIds` `loginId` holds a Moderator seat in now, read on the
+ * admin pool (the A8 fix round 1, L5): a turn's write asks again the seats
+ * its scope carries (@mantle/tools moderator-seat.ts). One indexed read of
+ * workspace_users; it names seats, it grants nothing.
+ */
+export async function moderatorSeatsNow(
+  loginId: string,
+  wsIds: readonly string[],
+): Promise<string[]> {
+  if (!UUID_RE.test(loginId) || wsIds.length === 0) return [];
+  if (!wsIds.every((w) => UUID_RE.test(w))) return [];
+  const rows = (await getAdminDb().execute(sqlTag`
+    select workspace_id::text as ws from workspace_users
+     where login_id = ${loginId}::uuid and moderator
+       and workspace_id = any(${`{${wsIds.join(',')}}`}::uuid[])`)) as unknown as { ws: string }[];
+  return rows.map((r) => r.ws);
+}
+
+/**
  * The fallback of a login's create home (docs/workspaces.md, "Where a new
  * item lands"; W6b): for a login outside the Admin workspace (`ownWork`;
  * 'auto' asks the database) its private workspace, made now when
