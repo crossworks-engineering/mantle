@@ -455,6 +455,8 @@ describe.skipIf(!DB_URL)('A8 surface cells: every way in gives the oracle’s an
     /** Whether the way in can do it; a string: it cannot, counted under
      *  that reason (no cell drops out uncounted). */
     supports: (kind: string, action: GuideAction) => boolean | string;
+    /** Cells run besides the pairwise pick: a case a finding names. */
+    always?: { role: GuideRole; kind: string; placement: GuidePlacement; action: GuideAction }[];
     run: (
       role: GuideRole | null,
       kind: string,
@@ -506,6 +508,15 @@ describe.skipIf(!DB_URL)('A8 surface cells: every way in gives the oracle’s an
     'readGrant',
     'outsider',
   ];
+  /** F8's case, run on the web and over MCP whatever the pick: each Admin
+   *  user's delete of an app homed in Admin (the owner's allowed, the other
+   *  Admin user's not: plan s32, F3). */
+  const ADMIN_APP_DELETES = (['owner', 'admin'] as const).map((role) => ({
+    role,
+    kind: 'app',
+    placement: 'admin' as const,
+    action: 'delete' as const,
+  }));
   const MEMBERS: GuideRole[] = ['homeModerator', 'writeGrant', 'readGrant', 'outsider'];
   /** A contact share of the item (Can write: `write`), made for the cell. */
   const contactShare = async (id: string, write: boolean): Promise<string> => {
@@ -585,6 +596,7 @@ describe.skipIf(!DB_URL)('A8 surface cells: every way in gives the oracle’s an
         supports: (kind, action) =>
           (['read', 'delete'].includes(action) && WEB_READ_KINDS.has(kind)) ||
           ['grantAdd', 'grantRemove', 'writeSwitch', 'move'].includes(action),
+        always: ADMIN_APP_DELETES,
         run: async (role, kind, action, id) => {
           const r = role!;
           const R = fx.ws.R;
@@ -635,21 +647,24 @@ describe.skipIf(!DB_URL)('A8 surface cells: every way in gives the oracle’s an
         run: (role, kind, _action, id) =>
           http(role!, 'GET', `${V1_READ[kind]}/${id}`, undefined, keyRw[role!]),
       },
-      toolEntry('mcp-oauth', 'login', ALL, (role, slug, input) =>
-        mcpCall(
-          {
-            role: isAdminUser(role!) ? 'admin' : 'member',
-            anchorId: fx.owner,
-            loginId: fx.logins[role!],
-            via: 'oauth',
-            write: true,
-            oauthClientId: 'a8',
-          },
-          loginActor(role!),
-          slug,
-          input,
+      {
+        ...toolEntry('mcp-oauth', 'login', ALL, (role, slug, input) =>
+          mcpCall(
+            {
+              role: isAdminUser(role!) ? 'admin' : 'member',
+              anchorId: fx.owner,
+              loginId: fx.logins[role!],
+              via: 'oauth',
+              write: true,
+              oauthClientId: 'a8',
+            },
+            loginActor(role!),
+            slug,
+            input,
+          ),
         ),
-      ),
+        always: ADMIN_APP_DELETES,
+      },
       toolEntry('mcp-key', 'login-ro', ALL, async (role, slug, input) =>
         mcpCall(await bearer(keyRo[role!]!), loginActor(role!), slug, input),
       ),
@@ -936,7 +951,12 @@ describe.skipIf(!DB_URL)('A8 surface cells: every way in gives the oracle’s an
           }
         }
       }
-      plan.push({ e, cells: g.pairwise(candidates, e.surface), candidates: candidates.length, na });
+      const cells = g.pairwise(candidates, e.surface);
+      for (const a of e.always ?? []) {
+        const c: Cell = { actor: e.actor, ...a };
+        if (!cells.some((x) => g.cellName(x) === g.cellName(c))) cells.push(c);
+      }
+      plan.push({ e, cells, candidates: candidates.length, na });
     }
 
     const lines: string[] = [];
@@ -1018,4 +1038,15 @@ describe.skipIf(!DB_URL)('A8 surface cells: every way in gives the oracle’s an
 
 /** The surface cells not applicable, by reason, over every way in (L1:
  *  none drops out uncounted). */
-const NOT_APPLICABLE: Readonly<Record<string, number>> = {};
+const NOT_APPLICABLE: Readonly<Record<string, number>> = {
+  'a snapshot copy carries no link or share': 15,
+  'a snapshot copy holds no grant but its home': 60,
+  'an Admin-homed item holds no grant but its home': 132,
+  "no snapshot copy of a app is made (only an accepted item's kinds)": 148,
+  "no snapshot copy of a branch is made (only an accepted item's kinds)": 79,
+  "no snapshot copy of a event is made (only an accepted item's kinds)": 202,
+  "no snapshot copy of a formula is made (only an accepted item's kinds)": 204,
+  "no snapshot copy of a recall is made (only an accepted item's kinds)": 91,
+  "no snapshot copy of a task is made (only an accepted item's kinds)": 208,
+  'no tool row: note_delete is MCP only': 144,
+};
