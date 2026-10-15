@@ -20,6 +20,7 @@ import {
   applyRuntimeGrants,
   ensureRuntimeRoles,
   ownTables,
+  runtimeLockDetails,
   type RuntimeRolesOutcome,
 } from './runtime-role';
 import { ensureViewerRoles } from './viewer-roles';
@@ -77,7 +78,10 @@ export async function beforeMigrations(
  * a restore, at the migrate that follows it). The access matrix and the
  * runtime role's rights fail the run when they fail; an ownership change a
  * busy table refused (or any other it could not make) and the LEAKPROOF
- * flag are warnings (the next run tries again).
+ * flag are warnings (the next run tries again). Then the integrity row
+ * runtime_role_lock, read again: what this run could not put back (a
+ * mantle_owner_role() from before 0290, say) is a warning in the log, not
+ * only a row on /debug/integrity.
  */
 export async function afterMigrations(
   sql: Sql,
@@ -102,6 +106,9 @@ export async function afterMigrations(
       log.warn(`  WARNING ${f.rel} still has its old owner (next run retries): ${f.error}`);
     }
     await applyRuntimeGrants(sql);
+    for (const detail of await runtimeLockDetails(sql)) {
+      log.warn(`  WARNING the runtime role lock is not whole (runtime_role_lock): ${detail}`);
+    }
   }
 
   // Keyword search under row security: the flag 0249 sets, again after a
