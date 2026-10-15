@@ -211,22 +211,18 @@ function isApiCell(cell: string): boolean {
 type Cell = { row: string; method: string; pattern: string; cred: string };
 
 describe.skipIf(!hasManifest)('A10 #15: every /api answer carries Cache-Control', () => {
-  const saved = {
-    secret: process.env.SESSION_SECRET,
-    db: process.env.DATABASE_URL,
-    cors: process.env.MANTLE_API_CORS_ORIGINS,
-    detached: process.env.MANTLE_DETACHED_DEV,
-  };
   const realFetch = globalThis.fetch;
   let app: import('hono').Hono;
   const cells: Cell[] = [];
   const creds: Record<string, Record<string, string>> = {};
 
   beforeAll(async () => {
-    process.env.SESSION_SECRET = 'a10-cache-sweep-secret-that-is-at-least-32-chars';
-    delete process.env.DATABASE_URL;
-    process.env.MANTLE_API_CORS_ORIGINS = 'https://client.example.invalid';
-    delete process.env.MANTLE_DETACHED_DEV;
+    // vi.stubEnv records each value it replaces; afterAll's vi.unstubAllEnvs
+    // puts every one back (or unsets it, if it was unset).
+    vi.stubEnv('SESSION_SECRET', 'a10-cache-sweep-secret-that-is-at-least-32-chars');
+    vi.stubEnv('DATABASE_URL', undefined);
+    vi.stubEnv('MANTLE_API_CORS_ORIGINS', 'https://client.example.invalid');
+    vi.stubEnv('MANTLE_DETACHED_DEV', undefined);
     globalThis.fetch = (async () => {
       throw new Error('sweep: no network');
     }) as typeof fetch;
@@ -267,15 +263,7 @@ describe.skipIf(!hasManifest)('A10 #15: every /api answer carries Cache-Control'
   afterAll(() => {
     globalThis.fetch = realFetch;
     vi.useRealTimers();
-    for (const [k, v] of [
-      ['SESSION_SECRET', saved.secret],
-      ['DATABASE_URL', saved.db],
-      ['MANTLE_API_CORS_ORIGINS', saved.cors],
-      ['MANTLE_DETACHED_DEV', saved.detached],
-    ] as const) {
-      if (v === undefined) delete process.env[k];
-      else process.env[k] = v;
-    }
+    vi.unstubAllEnvs();
   });
 
   async function send(
