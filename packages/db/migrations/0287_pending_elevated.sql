@@ -3,8 +3,9 @@
 -- a member turn may be offered a connector write it cannot make itself (the
 -- connector's Write is off in its workspace, or it is not a Moderator there)
 -- only when the call waits for approval anyway (a requires_confirm tool, or
--- a client-sourced turn), and the approver runs it with Admin rights. The
--- server sets the column at queue time (packages/runtime tool-loop
+-- a client-sourced turn), and it runs with its approver's own rights: the
+-- owner's, or those of a login whose own scope passes the connector rule,
+-- never its asker's (@mantle/tools pending-approval.ts). The server sets the column at queue time (packages/runtime tool-loop
 -- execute-call.ts, from turnCallRefusal's `queue`): {"elevated": true,
 -- "reason": "..."}; NULL for every other call. The approval card shows it.
 --

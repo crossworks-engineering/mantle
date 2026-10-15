@@ -385,8 +385,15 @@ export {
   ApprovalRefusedError,
   ELEVATED_APPROVER_ERROR,
   ELEVATED_NO_APPROVER_ERROR,
+  ELEVATED_NO_ASKER_ERROR,
+  ELEVATED_NO_TOOL_ERROR,
   ELEVATED_SELF_APPROVAL_ERROR,
 } from './pending-approval';
+export {
+  pendingOriginNow,
+  PENDING_RECHECK_ERROR,
+  PENDING_SCOPE_LOST_ERROR,
+} from './pending-origin';
 
 export {
   notifyPendingCreated,

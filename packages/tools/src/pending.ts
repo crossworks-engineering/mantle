@@ -14,6 +14,7 @@ import {
   loginActorNow,
   claimElevatedPendingCall,
   elevatedPendingCall,
+  rejectElevatedPendingCall,
 } from '@mantle/db';
 import {
   applyBudgetDecision,
@@ -28,7 +29,16 @@ import {
 // closing the cycle back onto builtins-pending.ts. See dispatch-bridge.ts.
 import { dispatchViaBridge as dispatchTool } from './dispatch-bridge';
 import { pendingCaller } from './gate-callers';
-import { deciderOf, elevatedApproval, isBrainOwner, type ElevatedRun } from './pending-approval';
+import {
+  deciderOf,
+  elevatedApproval,
+  elevatedRejection,
+  isBrainOwner,
+  originApproval,
+  type ElevatedRun,
+  type OriginApproval,
+} from './pending-approval';
+import { withOriginScope } from './pending-origin';
 import { notifyPendingChanged } from './pending-notify';
 import { startTrace, step } from '@mantle/tracing';
 import { errorMessage } from '@mantle/std';
@@ -323,6 +333,13 @@ function deciderFilter(ownerId: string, decider?: string | null): SQL | undefine
  * dangling after a rejection would wedge its group forever). For runner
  * `run_budget` pauses: cancels the run (the "or cancel" arm).
  * Returns the updated summary or null if not found / already decided.
+ *
+ * Who may reject (A5 step 6c, 6d's L3): whoever decides it by
+ * deciderFilter (the owner every call, any other login the calls queued
+ * for it: an elevated call's asker withdraws its own), and for an elevated
+ * call also whoever may approve it (elevatedRejection: a login whose own
+ * scope passes the connector rule where it was asked). A rejection runs
+ * nothing, so no re-check is asked.
  */
 export async function rejectPendingCall(
   ownerId: string,
@@ -330,7 +347,7 @@ export async function rejectPendingCall(
   /** The login rejecting it, when a route names one (deciderFilter). */
   deciderLoginId?: string,
 ): Promise<PendingSummary | null> {
-  const [row] = await db
+  let [row] = await db
     .update(pendingToolCalls)
     .set({
       status: 'rejected',
@@ -346,6 +363,24 @@ export async function rejectPendingCall(
       ),
     )
     .returning();
+  if (!row) {
+    // An elevated call another login may approve (6d L3): it may reject it
+    // too, read and flipped on the system pool as its approval is.
+    const queued = await elevatedPendingCall(ownerId, id);
+    const decider = deciderOf(ownerId, deciderLoginId);
+    if (
+      queued &&
+      (await elevatedRejection(
+        ownerId,
+        queued,
+        await enabledTool(ownerId, queued.toolSlug),
+        decider,
+        approvalContext(ownerId, deciderLoginId),
+      ))
+    ) {
+      row = (await rejectElevatedPendingCall(ownerId, id)) ?? undefined;
+    }
+  }
   // Repaint the badge / any open card the moment the status flips.
   if (row) void notifyPendingChanged(ownerId);
   if (row && row.toolSlug === 'ask_human') {
@@ -388,20 +423,30 @@ export async function approvePendingCall(
   // Who approves (deciderOf): the scope's login, else the one the path
   // names, else the owner. Named in the call's audit row on every path.
   const approver = deciderOf(ownerId, opts?.approverLoginId);
+  const decides = and(
+    eq(pendingToolCalls.id, id),
+    eq(pendingToolCalls.ownerId, ownerId),
+    eq(pendingToolCalls.status, 'pending'),
+    isNull(pendingToolCalls.elevated),
+    deciderFilter(ownerId, opts?.approverLoginId),
+  );
+  // The approval re-check (A5 step 6c), before the claim: a call stamped
+  // with the scope it was asked in (0288) is judged again there, met with
+  // its asker's rights now (originApproval); a refusal throws
+  // ApprovalRefusedError and leaves it pending. A row with no stamp keeps
+  // the legacy rule (the asker's current rights, in this path's scope).
+  let origin: OriginApproval | null = null;
+  const [waiting] = await db.select().from(pendingToolCalls).where(decides).limit(1);
+  if (waiting?.origin && !runnerRow(waiting.toolSlug)) {
+    const tool = await enabledTool(ownerId, waiting.toolSlug);
+    if (tool) origin = await originApproval(ownerId, waiting, tool, approver);
+  }
   // Atomic claim: only act if still pending. Every call but an elevated
   // one: by whose calls the approver decides (deciderFilter), as before.
   let [claimed] = await db
     .update(pendingToolCalls)
     .set({ status: 'approved', decidedAt: new Date(), updatedAt: new Date() })
-    .where(
-      and(
-        eq(pendingToolCalls.id, id),
-        eq(pendingToolCalls.ownerId, ownerId),
-        eq(pendingToolCalls.status, 'pending'),
-        isNull(pendingToolCalls.elevated),
-        deciderFilter(ownerId, opts?.approverLoginId),
-      ),
-    )
+    .where(decides)
     .returning();
   // A call queued with more rights than its asker's scope (owner decision
   // 1a, 0287) meets the approval rule first (elevatedApproval), before it
@@ -421,14 +466,7 @@ export async function approvePendingCall(
       await enabledTool(ownerId, queued.toolSlug),
       approver,
       // The context dispatch gives the gate below (its surface).
-      {
-        ownerId,
-        surface: {
-          kind: 'owner',
-          via: 'pending',
-          ...(opts?.approverLoginId ? { loginId: opts.approverLoginId } : {}),
-        },
-      },
+      approvalContext(ownerId, opts?.approverLoginId),
     );
     claimed = (await claimElevatedPendingCall(ownerId, id)) ?? undefined;
   }
@@ -467,13 +505,19 @@ export async function approvePendingCall(
   // Arch A2a: the call runs as the login whose turn asked for it, as that
   // login is now; a row with no login keeps the caller's actor. An elevated
   // call runs with its approver's rights (A5 step 6d fix round 1): the
-  // owner's, or the login whose own scope passed the connector rule.
-  const callActor = elevated
-    ? await loginActorNow(elevated.runAs, 'pending:approve', elevated.owner ? 'owner' : 'rw')
-    : claimed.loginId
-      ? await loginActorNow(claimed.loginId, 'pending:approve')
-      : null;
-  const asCallLogin = <T>(fn: () => Promise<T>) => (callActor ? runAsActor(callActor, fn) : fn());
+  // owner's, or the login whose own scope passed the connector rule. A
+  // re-checked call (A5 step 6c) runs as it was judged: its actor, in the
+  // scope it was asked in met with its asker's rights now.
+  const callActor = origin
+    ? origin.actor
+    : elevated
+      ? await loginActorNow(elevated.runAs, 'pending:approve', elevated.owner ? 'owner' : 'rw')
+      : claimed.loginId
+        ? await loginActorNow(claimed.loginId, 'pending:approve')
+        : null;
+  const asActor = <T>(fn: () => Promise<T>) => (callActor ? runAsActor(callActor, fn) : fn());
+  const asCallLogin = <T>(fn: () => Promise<T>) =>
+    origin ? withOriginScope(origin.run, () => asActor(fn)) : asActor(fn);
 
   // Execute under a fresh `manual` trace so the operator can audit the
   // run in /traces. The originating turn's trace is long closed by now.
@@ -501,8 +545,10 @@ export async function approvePendingCall(
               ownerId,
               // Through the one gate, as the approved call (A5 step 3a),
               // naming its approver (its audit row's `approver`); an
-              // elevated call with the scope its connector rule reads.
-              caller: elevated?.caller ?? pendingCaller({ approver }),
+              // elevated call with the scope its connector rule reads; a
+              // re-checked call with the Admin view it may not exceed and
+              // what its asker lost since (A5 step 6c).
+              caller: origin?.caller ?? elevated?.caller ?? pendingCaller({ approver }),
               // An Admin user approves a pending call, so it runs on the owner
               // surface, naming the approver when the path names one.
               surface: {
@@ -543,6 +589,25 @@ export async function approvePendingCall(
     .where(eq(pendingToolCalls.id, claimed.id))
     .returning();
   return updated ? toSummary(updated) : null;
+}
+
+/** A runner row (an `ask_human` question, a `run_budget` pause): settled
+ *  by the runs engine, never dispatched as a tool. */
+function runnerRow(slug: string): boolean {
+  return slug === 'ask_human' || slug === RUN_BUDGET_TOOL_SLUG;
+}
+
+/** The context an approval's gate check reads (the surface dispatch gives
+ *  the approved call). */
+function approvalContext(ownerId: string, approverLoginId?: string) {
+  return {
+    ownerId,
+    surface: {
+      kind: 'owner',
+      via: 'pending',
+      ...(approverLoginId ? { loginId: approverLoginId } : {}),
+    },
+  };
 }
 
 /** The enabled tool row named `slug`, or null. */

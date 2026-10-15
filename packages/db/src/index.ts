@@ -154,6 +154,8 @@ export {
   claimElevatedPendingCall,
   elevatedCallWorkspace,
   elevatedPendingCall,
+  liveWorkspaceIds,
+  rejectElevatedPendingCall,
 } from './pending-elevated';
 export {
   registerCallAudit,

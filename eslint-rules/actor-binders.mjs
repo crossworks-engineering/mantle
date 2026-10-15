@@ -50,6 +50,9 @@ export const ACTOR_BINDER_PINS = {
   // app_data_query hand the app broker (fix round 1, LOW-4).
   'packages/tools/src/builtins-app-data.ts': 1,
   'packages/tools/src/pending.ts': 1,
+  // The approval re-check (A5 step 6c): the approved call's actor, bound
+  // inside the scope it was asked in for the queue-time check again.
+  'packages/tools/src/pending-approval.ts': 1,
   'server/api/src/agent/extract-queue.ts': 2,
   'server/api/src/agent/runtime.ts': 4,
   'server/api/src/agent/ticker.ts': 1,

@@ -20,15 +20,35 @@
  * (gateCallRefusal) with the caller dispatch then runs the call as, so a
  * refused approver leaves the call pending for one who may.
  *
- * Every other call keeps its rule (deciderFilter): a login other than the
- * owner decides only the calls queued for it, and the call runs as its
- * asker.
+ * In this order (A5 step 6c, 6d's lows): the owner first, so the owner may
+ * always approve (even a call it asked itself, L4); then a row that names
+ * no asker is the owner's alone (L2), and so is a call whose tool is gone
+ * or has no policy, which no gate step can judge (L1).
+ *
+ * Whoever may approve an elevated call may also reject it
+ * (elevatedRejection, L3); its asker may withdraw it (deciderFilter).
+ *
+ * Every other call keeps its rule of who decides (deciderFilter): a login
+ * other than the owner decides only the calls queued for it, and the call
+ * runs as its asker. Since A5 step 6c a call stamped with the scope it was
+ * asked in (pending_tool_calls.origin, 0288) is judged again before it is
+ * claimed (originApproval): the queue-time check, in that scope met with
+ * its asker's rights now, and it runs there. A row with no stamp (queued
+ * before 0288, or by no turn) keeps the legacy rule: its asker's current
+ * rights in the scope of the path that approves.
  */
 import {
+  currentActor,
   elevatedCallWorkspace,
   gateCallRefusal,
+  loginActorNow,
   loginScopeFor,
+  runAsActor,
+  scopeHasArea,
+  scopeHoldsAdmin,
+  type Actor,
   type PendingToolCall,
+  type ScopeArea,
   type Tool,
   type WorkspaceScope,
 } from '@mantle/db';
@@ -36,7 +56,13 @@ import { currentWorkspaceScope, scopeLeftForSystem } from '@mantle/db/viewer';
 import { defineDomainError } from '@mantle/std';
 import { CONNECTOR_WRITE_ERROR } from './connector-scope';
 import { gateCallerFor, pendingCaller, type ToolCaller } from './gate-callers';
-import { gateRefOf } from './turn-listing';
+import {
+  originRunFor,
+  PENDING_RECHECK_ERROR,
+  withOriginScope,
+  type OriginRun,
+} from './pending-origin';
+import { approvalCallRefusal, gateRefOf } from './turn-listing';
 
 /** The refusal of an elevated call's own asker. */
 export const ELEVATED_SELF_APPROVAL_ERROR =
@@ -50,6 +76,16 @@ export const ELEVATED_APPROVER_ERROR =
 export const ELEVATED_NO_APPROVER_ERROR =
   'This call needs an Admin user to approve it, and this approval names no one: approve it signed in as the owner or as someone with write rights on this connector.';
 
+/** The refusal of a non-owner's approval of an elevated call that names no
+ *  asker (6d L2): no rule can tell the approver is not the one who asked. */
+export const ELEVATED_NO_ASKER_ERROR =
+  'This call names no one who asked for it, so only the owner may approve it.';
+
+/** The refusal of a non-owner's approval of an elevated call whose tool is
+ *  gone, disabled or has no policy (6d L1): no gate step can judge it. */
+export const ELEVATED_NO_TOOL_ERROR =
+  'This call’s tool is gone, disabled or has no policy, so only the owner may decide it.';
+
 /** An approval the rule refuses: the call stays pending. A domain error
  *  (the one table, @mantle/std DOMAIN_ERRORS): the web answers 403 with its
  *  text through app.onError, MCP and Telegram say the message. */
@@ -62,7 +98,7 @@ export class ApprovalRefusedError extends Error {
 
 defineDomainError(ApprovalRefusedError, {
   reason:
-    'the approver may not approve this call (its asker, or no write rights on its connector); the message says who may',
+    'the approver may not approve this call (its asker, or no write rights on its connector), or the call no longer passes where it was asked (A5 step 6c); the message says why',
   status: 403,
 });
 
@@ -108,10 +144,22 @@ export async function elevatedApproval(
   context: Readonly<Record<string, unknown>>,
 ): Promise<ElevatedRun> {
   if (decider === null) throw new ApprovalRefusedError(ELEVATED_NO_APPROVER_ERROR);
-  if (row.loginId && row.loginId.toLowerCase() === decider) {
-    throw new ApprovalRefusedError(ELEVATED_SELF_APPROVAL_ERROR);
-  }
+  // The owner first (6d L4): the owner may always approve, even a call it
+  // asked itself (an owner's own turn is no Moderator of a workspace whose
+  // connector Write is off). Anyone else: never its asker, and never a row
+  // that names none (6d L2: no rule can tell it is not the one who asked).
   const owner = isBrainOwner(ownerId, decider);
+  if (!owner) {
+    if (!row.loginId) throw new ApprovalRefusedError(ELEVATED_NO_ASKER_ERROR);
+    if (row.loginId.toLowerCase() === decider) {
+      throw new ApprovalRefusedError(ELEVATED_SELF_APPROVAL_ERROR);
+    }
+  }
+  const asked = tool ? gateRefOf(tool) : null;
+  // A tool gone, disabled or with no policy (6d L1): no gate step judges
+  // it, so only the owner decides it (the approval then records that the
+  // tool is gone, running nothing).
+  if (!owner && !asked) throw new ApprovalRefusedError(ELEVATED_NO_TOOL_ERROR);
   const target = (await elevatedCallWorkspace(ownerId, row))?.toLowerCase() ?? null;
   // The workspace the call was asked in, as the approver holds it: the
   // owner's write rule is lifted; anyone else is a Moderator there or not.
@@ -127,7 +175,6 @@ export async function elevatedApproval(
     modWs,
   };
   const caller = pendingCaller({ approver: decider, connectorScope, lifted: owner });
-  const asked = tool ? gateRefOf(tool) : null;
   if (tool && asked) {
     const gate = await gateCallerFor(caller, asked.policy, false, {
       ownerSurface: true,
@@ -142,4 +189,98 @@ export async function elevatedApproval(
     }
   }
   return { caller, runAs: decider, owner };
+}
+
+/**
+ * Whether `decider` may reject the elevated call `row` (6d L3): whoever may
+ * approve it may reject it. The owner always may (a call it could not run
+ * still goes); anyone else when elevatedApproval lets it approve. Its asker
+ * withdraws its own call by the ordinary rule (deciderFilter), before this
+ * is asked.
+ */
+export async function elevatedRejection(
+  ownerId: string,
+  row: Pick<PendingToolCall, 'loginId' | 'workspaceId'>,
+  tool: Tool | null,
+  decider: string | null,
+  context: Readonly<Record<string, unknown>>,
+): Promise<boolean> {
+  if (isBrainOwner(ownerId, decider)) return true;
+  try {
+    await elevatedApproval(ownerId, row, tool, decider, context);
+    return true;
+  } catch (err) {
+    if (err instanceof ApprovalRefusedError) return false;
+    throw err;
+  }
+}
+
+/** What an approved call stamped with its asked scope runs with (A5 step
+ *  6c): the scope (OriginRun), the caller dispatch runs it as, and the
+ *  actor it is bound to there. */
+export type OriginApproval = Readonly<{
+  run: OriginRun;
+  caller: ToolCaller;
+  actor: Actor | null;
+}>;
+
+/** What the asker had of Admin when it asked and has no more, read in the
+ *  re-checked scope: `admin`, `areas`. */
+async function adminNarrowed(run: OriginRun): Promise<string[]> {
+  const cap = run.adminCap;
+  if (!run.scope || !cap?.holds) return [];
+  if (run.enter === 'gate') return [];
+  if (!(await scopeHoldsAdmin())) return ['admin'];
+  for (const area of cap.areas) {
+    if (!(await scopeHasArea(area as ScopeArea))) return ['areas'];
+  }
+  return [];
+}
+
+/**
+ * The approval re-check of a call stamped with the scope it was asked in
+ * (A5 step 6c; pending_tool_calls.origin, 0288), on every path that
+ * approves, before the row is claimed: the scope the stamp names met with
+ * its asker's rights now (originRunFor: a workspace the asker left, a
+ * Moderator seat it lost, are gone; a right it gained since is not the
+ * call's), and in it the queue-time check again (approvalCallRefusal: the
+ * gate's steps 3 to 5, the narrowers, the item pre-check), with the caller
+ * dispatch then runs the call as. A refusal throws ApprovalRefusedError and
+ * leaves the call pending, untouched: the asker's rights may come back, and
+ * an approver may reject it. Who decides is unchanged (deciderFilter): the
+ * re-check judges the call, not the approver.
+ *
+ * The actor is the one the call ran as before (the asker as it is now, a
+ * row with no asker the approving path's), bound inside the scope.
+ */
+export async function originApproval(
+  ownerId: string,
+  row: Pick<PendingToolCall, 'loginId' | 'origin' | 'args'>,
+  tool: Tool,
+  approver: string | null,
+): Promise<OriginApproval | null> {
+  const origin = row.origin;
+  if (!origin) return null;
+  const run = await originRunFor(ownerId, origin, (m) => new ApprovalRefusedError(m));
+  const actor = row.loginId
+    ? await loginActorNow(row.loginId, 'pending:approve')
+    : (currentActor() ?? null);
+  const asActor = <T>(fn: () => Promise<T>) => (actor ? runAsActor(actor, fn) : fn());
+  const judged = await withOriginScope(run, () =>
+    asActor(async () => {
+      const narrowed = [...run.narrowed, ...(await adminNarrowed(run))];
+      const caller = pendingCaller({ approver, adminCap: run.adminCap, narrowed });
+      const refused = await approvalCallRefusal(
+        caller,
+        tool,
+        (row.args ?? {}) as Record<string, unknown>,
+        { ownerId, surface: run.surface },
+      );
+      return { caller, refused };
+    }),
+  );
+  if (judged.refused !== null) {
+    throw new ApprovalRefusedError(`${PENDING_RECHECK_ERROR}${judged.refused}`);
+  }
+  return { run, caller: judged.caller, actor };
 }

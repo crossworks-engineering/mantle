@@ -121,6 +121,13 @@ export type PendingApproval = Readonly<{
   /** An elevated call the owner approved: the connector write rule is
    *  lifted (elevatedConnectorFacts); the rest of the rule stands. */
   lifted?: boolean;
+  /** A call re-checked in the scope it was asked in (A5 step 6c,
+   *  pending-origin.ts): the Admin view it had then, which the view read
+   *  now may not exceed (a right gained since is not the call's). */
+  adminCap?: Readonly<{ holds: boolean; areas: readonly string[] }> | null;
+  /** What its asker had when it asked and has no more (workspaces,
+   *  moderator, admin, areas): named in the call's audit row. */
+  narrowed?: readonly string[];
 }>;
 
 /** The verdict an app broker judged a call by (app-tool-level.ts
@@ -290,6 +297,20 @@ async function readAdminView(
   return null;
 }
 
+/** `view` no wider than `cap` (A5 step 6c): an approved call's Admin view
+ *  is what its scope holds now met with what it held when it was asked.
+ *  No cap (null or absent): the view as read. */
+export function capAdminView(
+  view: AdminView | null,
+  cap: PendingApproval['adminCap'],
+): AdminView | null {
+  if (!view || !cap) return view;
+  const holdsAdmin = view.holdsAdmin && cap.holds;
+  const areas = new Set<string>();
+  if (holdsAdmin) for (const a of view.areas) if (cap.areas.includes(a)) areas.add(a);
+  return { holdsAdmin, areas };
+}
+
 let warnedNoActor = false;
 
 /** What a call (or a listing) tells the gate caller beyond its entry, for
@@ -336,7 +357,7 @@ export async function gateCallerFor(
   let admin: AdminView | null | undefined;
   if (need !== 'any') {
     const area = typeof need === 'object' ? (need.area as ScopeArea) : null;
-    admin = await readAdminView(ws, gate, area);
+    admin = capAdminView(await readAdminView(ws, gate, area), caller.approval?.adminCap);
   }
   const turnScope = ws?.kind === 'assistant' && ws.loginId ? ws : null;
   // A connector row in a workspace scope: what the connector narrower

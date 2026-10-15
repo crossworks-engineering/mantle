@@ -9,6 +9,7 @@ import { db, agents, pendingToolCalls, toolGroups } from '@mantle/db';
 import { appUrl } from '@mantle/content';
 import { listToolsForOwner } from '../crud';
 import { notifyPendingCreated } from '../pending-notify';
+import { pendingOriginNow } from '../pending-origin';
 import { parseIntegrationMeta, type ToolGroupIntegration } from '../integration';
 import { AGENT_GRANTABLE_KINDS } from '../recipe';
 import { type BuiltinToolDef, type ToolHandlerResult } from '../types';
@@ -286,6 +287,8 @@ export const tool_group_ensure: BuiltinToolDef = {
             agentId: requester?.id ?? null,
             toolSlug: 'tool_group_ensure',
             args: input,
+            // The scope the asking turn runs in (A5 step 6c, 0288).
+            origin: await pendingOriginNow(ctx.surface),
           })
           .returning({ id: pendingToolCalls.id });
         if (pending?.id) {
@@ -602,6 +605,8 @@ export const agent_grant_tool_group: BuiltinToolDef = {
           agentId: requester?.id ?? null,
           toolSlug: 'agent_grant_tool_group',
           args: grantArgs,
+          // The scope the asking turn runs in (A5 step 6c, 0288).
+          origin: await pendingOriginNow(ctx.surface),
         })
         .returning({ id: pendingToolCalls.id });
       if (pending?.id) {
@@ -718,6 +723,8 @@ export const agent_set_thinking_effort: BuiltinToolDef = {
           agentId: requester?.id ?? null,
           toolSlug: 'agent_set_thinking_effort',
           args,
+          // The scope the asking turn runs in (A5 step 6c, 0288).
+          origin: await pendingOriginNow(ctx.surface),
         })
         .returning({ id: pendingToolCalls.id });
       if (pending?.id) {

@@ -133,7 +133,13 @@ function describe(call: AuditedCall): AuditRowParts | null {
 function notes(): Record<string, unknown> | null {
   const caller = currentToolCaller();
   if (caller?.entry !== 'pending' || !caller.approval) return null;
-  return { approver: caller.approval.approver };
+  const narrowed = caller.approval.narrowed ?? [];
+  // A call the re-check judged in the scope it was asked in (A5 step 6c):
+  // what its asker had then and no more, when anything.
+  return {
+    approver: caller.approval.approver,
+    ...(narrowed.length > 0 ? { narrowed: [...narrowed] } : {}),
+  };
 }
 
 /** Whether a call's own run is a write the row records: not a recipe row

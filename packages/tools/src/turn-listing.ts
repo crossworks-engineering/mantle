@@ -35,7 +35,7 @@ import {
   type ElevatedApproval,
   CONNECTOR_ELEVATED_REASON,
 } from './connector-scope';
-import { gateCallerFor, turnCaller } from './gate-callers';
+import { gateCallerFor, turnCaller, type ToolCaller } from './gate-callers';
 import { NO_RUNTIME_POLICY_ERROR, runtimeToolPolicy } from './runtime-policy';
 import { isOwnerSurface } from './surface';
 import type { ToolHandlerContext } from './types';
@@ -166,6 +166,39 @@ export async function turnCallRefusal(
   ctx: Pick<ToolHandlerContext, 'ownerId' | 'surface'>,
   queue?: { elevated: ElevatedApproval | null },
 ): Promise<string | null> {
+  return callRefusal(turnCaller(), tool, input, ctx, queue);
+}
+
+/**
+ * The queue-time check again, at approval (A5 step 6c, the approval
+ * re-check): the same gate steps turnCallRefusal ran when the call was
+ * queued (steps 3 to 5, the narrowers, the pre-run checks with the item
+ * pre-check and the queue's reference rule), for the call's arguments and
+ * the surface it was asked on, with `caller`: the approved call's own
+ * (pendingCaller, its Admin view capped by what it held when asked), run
+ * in the scope it was asked in met with its asker's rights now
+ * (pending-origin.ts withOriginScope). Nothing is lifted: an elevated call
+ * keeps its own rule (pending-approval.ts elevatedApproval). The refusal in
+ * the gate's words, or null.
+ */
+export async function approvalCallRefusal(
+  caller: ToolCaller,
+  tool: Tool,
+  input: Record<string, unknown>,
+  ctx: Pick<ToolHandlerContext, 'ownerId' | 'surface'>,
+): Promise<string | null> {
+  return callRefusal(caller, tool, input, ctx);
+}
+
+/** turnCallRefusal's steps for `caller`; with `queue`, a connector write
+ *  the scope may not make itself is lifted (owner decision 1a). */
+async function callRefusal(
+  caller: ToolCaller,
+  tool: Tool,
+  input: Record<string, unknown>,
+  ctx: Pick<ToolHandlerContext, 'ownerId' | 'surface'>,
+  queue?: { elevated: ElevatedApproval | null },
+): Promise<string | null> {
   const h = tool.handler as ToolHandler | null;
   const call = {
     args: input,
@@ -182,15 +215,15 @@ export async function turnCallRefusal(
     if (h?.kind === 'builtin') {
       // A builtin with no policy meets the gate's step 3, as at dispatch.
       const ref = builtinToolRef(h.ref, tool.slug);
-      const caller = await gateCallerFor(turnCaller(), builtinToolGatePolicy(ref), true, facts);
-      return (await gateCallRefusal(caller, ref, call))?.toolText ?? null;
+      const gate = await gateCallerFor(caller, builtinToolGatePolicy(ref), true, facts);
+      return (await gateCallRefusal(gate, ref, call))?.toolText ?? null;
     }
     const asked = gateRefOf(tool);
     if (!asked) return NO_RUNTIME_POLICY_ERROR;
-    const caller = await gateCallerFor(turnCaller(), asked.policy, false, { ...facts, row: tool });
-    const refusal = await gateCallRefusal(caller, asked.ref, call);
+    const gate = await gateCallerFor(caller, asked.policy, false, { ...facts, row: tool });
+    const refusal = await gateCallRefusal(gate, asked.ref, call);
     if (refusal === null) return null;
-    const up = queue ? elevatedCaller(caller) : null;
+    const up = queue ? elevatedCaller(gate) : null;
     if (queue && up && (await gateCallRefusal(up, asked.ref, call)) === null) {
       queue.elevated = ELEVATED;
       return null;

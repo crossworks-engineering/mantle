@@ -963,6 +963,13 @@ export function currentSystemTx(): { tx: unknown; hooks: TxHooks; nest: SystemTx
  *  - `client-sourced-mark`: the client-sourced mark on a Table an app's
  *    export writes once a client wrote the app (app-table-exports.ts): an
  *    insert into client_sourced_nodes, nothing read back (A2a fix round).
+ *  - `pending-approval`: an approved pending call leaves the scope of the
+ *    path that approves it (a request's, an MCP connection's) only to enter
+ *    the scope the call was asked in, met with its asker's rights now
+ *    (@mantle/tools pending-approval.ts, arch A5 step 6c): it is judged
+ *    again and runs there, never in the approver's scope. Nothing is read
+ *    on the system pool on the way: the asked scope is entered at once (or,
+ *    for a call asked in no scope, the call runs as it was asked).
  *
  * A request scope (W6a) is held to the same list: inside it, `asSystem`
  * names a reason and `systemDb` is for SYSTEM_DB_MODULES only.
@@ -992,6 +999,7 @@ export const AS_SYSTEM_TURN_REASONS = [
   'heartbeat-context',
   'audit-log',
   'client-sourced-mark',
+  'pending-approval',
 ] as const;
 
 /**

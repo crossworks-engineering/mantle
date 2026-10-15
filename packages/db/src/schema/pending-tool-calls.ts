@@ -11,6 +11,36 @@ export const pendingToolStatus = pgEnum('pending_tool_status', [
 ]);
 
 /**
+ * The scope a pending call was asked in (workspaces arch A5 step 6c, 0288),
+ * set by the server at queue time (@mantle/tools pending-origin.ts): the
+ * approval judges it again, and runs it, in this scope met with the asker's
+ * rights then (pending-approval.ts originApproval). Version 1.
+ */
+export type PendingOrigin = {
+  v: 1;
+  /** The asking turn's scope (its login, its workspaces, its Moderator
+   *  workspaces), or null: the turn ran in none (system work, a brain not
+   *  on workspaces). */
+  scope: {
+    kind: 'user' | 'assistant';
+    loginId: string | null;
+    ws: string[];
+    modWs: string[];
+  } | null;
+  /** How the turn held it: a turn scope (`turn`), or the rollback switch's
+   *  gate scope on the system pool (`gate`, MANTLE_ADMIN_READS=system). */
+  enter: 'turn' | 'gate' | null;
+  /** The turn scope wrote as an Admin turn does (its request mode). */
+  writes: boolean;
+  /** The Admin view the turn had: whether its scope held Admin, and the
+   *  Admin areas it could do. Null with no scope (the surface's rules). */
+  admin: { holds: boolean; areas: string[] } | null;
+  /** The surface the turn ran on: its kind, an owner path's via, the login
+   *  it names (no chat or account ids). Null: none. */
+  surface: { kind: string; via?: string; loginId?: string } | null;
+};
+
+/**
  * Operator-approved tool calls. When a tool with requires_confirm=true
  * is requested mid-turn, the loop persists a row here instead of
  * dispatching; the operator approves/rejects via the /pending UI or
@@ -52,6 +82,10 @@ export const pendingToolCalls = pgTable(
      *  A5 step 6d fix round 1): what marked it, for the approver; NULL for
      *  a turn that read none. */
     clientSourced: jsonb('client_sourced').$type<{ via: string } | null>(),
+    /** Workspaces arch A5 step 6c (0288): the scope the call was asked in
+     *  (PendingOrigin), set by the server at queue time; NULL for a row
+     *  queued before 0288 or by no turn (the legacy rule: docs/actors.md). */
+    origin: jsonb('origin').$type<PendingOrigin | null>(),
   },
   (t) => [
     index('pending_tool_calls_owner_status_idx').on(t.ownerId, t.status),

@@ -12,6 +12,7 @@ import {
   redactArgsForLogging,
   processToolResultForModel,
   notifyPendingCreated,
+  pendingOriginNow,
   sanitizeToolError,
   turnCaller,
   turnCallRefusal,
@@ -181,6 +182,9 @@ export async function executeToolCall(p: {
             traceId,
             ...(queue.elevated ? { elevated: queue.elevated } : {}),
             ...(clientSourced ? { clientSourced } : {}),
+            // The scope this turn asked in (A5 step 6c, 0288): its approval
+            // judges the call again, and runs it, there (pending-origin.ts).
+            origin: await pendingOriginNow(args.surface),
           })
           .returning({ id: pendingToolCalls.id });
         const pendingId = pending?.id ?? null;

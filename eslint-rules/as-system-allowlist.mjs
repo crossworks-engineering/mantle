@@ -54,6 +54,9 @@ export const AS_SYSTEM_PINS = {
     why: ['connector-binding', 'workspace-resources'],
   },
   'packages/tools/src/pending-notify.ts': { count: 2, why: ['login-telegram'] },
+  // The approval re-check (A5 step 6c): leaves the approving path's scope
+  // only to enter the scope the call was asked in.
+  'packages/tools/src/pending-origin.ts': { count: 1, why: ['pending-approval'] },
   'server/web/app/api/assistant/thread/route.ts': { count: 2, why: ['rule-in-query'] },
   'server/web/app/api/assistant/threads/[id]/continue/route.ts': {
     count: 1,

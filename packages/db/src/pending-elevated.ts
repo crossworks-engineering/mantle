@@ -8,8 +8,12 @@
  * its own) would hide it from every approver on a scoped surface (a login's
  * own MCP). Pending calls are infrastructure (as execute-call.ts inserts
  * them), read here by id and only while elevated and pending; nothing else.
+ *
+ * Since A5 step 6c it also rejects one for a login the rule lets decide it,
+ * and names the live workspaces a re-checked call asked in by a turn that
+ * answered no login still reads (liveWorkspaceIds).
  */
-import { and, eq, isNotNull, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull, sql } from 'drizzle-orm';
 import { systemDb } from './client';
 import { pendingToolCalls, workspaces, type PendingToolCall } from './schema/index';
 
@@ -65,4 +69,42 @@ export async function elevatedCallWorkspace(
     )
     .limit(1);
   return admin?.id ?? null;
+}
+
+/** Reject the elevated call `id` for a login the approval rule lets decide
+ *  it (A5 step 6c, 6d's L3: whoever may approve it may also reject it). The
+ *  rejected row, or null (decided meanwhile). */
+export async function rejectElevatedPendingCall(
+  ownerId: string,
+  id: string,
+): Promise<PendingToolCall | null> {
+  const now = new Date();
+  const [row] = await systemDb
+    .update(pendingToolCalls)
+    .set({ status: 'rejected', decidedAt: now, updatedAt: now })
+    .where(waiting(ownerId, id))
+    .returning();
+  return row ?? null;
+}
+
+/** Which of `ids` are live workspaces of brain `ownerId` now (A5 step 6c):
+ *  what a pending call asked by a turn that answered no login (a workspace
+ *  assistant's heartbeat) still reads at approval. Only names: it grants
+ *  nothing. */
+export async function liveWorkspaceIds(
+  ownerId: string,
+  ids: readonly string[],
+): Promise<string[]> {
+  if (ids.length === 0) return [];
+  const rows = await systemDb
+    .select({ id: workspaces.id })
+    .from(workspaces)
+    .where(
+      and(
+        eq(workspaces.ownerId, ownerId),
+        inArray(workspaces.id, [...ids]),
+        sql`${workspaces.archivedAt} is null`,
+      ),
+    );
+  return rows.map((r) => r.id.toLowerCase());
 }

@@ -7,6 +7,7 @@
 import { and, eq } from 'drizzle-orm';
 import { agents, db, pendingToolCalls } from '@mantle/db';
 import { notifyPendingCreated } from './pending-notify';
+import { pendingOriginNow } from './pending-origin';
 import type { ToolHandlerContext, ToolHandlerResult } from './types';
 
 export async function queueAgentCallForApproval(
@@ -22,7 +23,14 @@ export async function queueAgentCallForApproval(
     .limit(1);
   const [pending] = await db
     .insert(pendingToolCalls)
-    .values({ ownerId: ctx.ownerId, agentId: requester?.id ?? null, toolSlug, args })
+    .values({
+      ownerId: ctx.ownerId,
+      agentId: requester?.id ?? null,
+      toolSlug,
+      args,
+      // The scope the asking turn runs in (A5 step 6c, 0288).
+      origin: await pendingOriginNow(ctx.surface),
+    })
     .returning({ id: pendingToolCalls.id });
   if (pending?.id) {
     void notifyPendingCreated({
