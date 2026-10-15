@@ -13,13 +13,13 @@ Code: `packages/db/src/runtime-role.ts` (the roles, the rights, the URL),
 
 ## The roles
 
-| Role                                                         | Logs in                              | What it is                                                                                                                            |
-| ------------------------------------------------------------ | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------- |
-| `postgres` (the compose superuser)                           | yes                                  | the migrator: `DATABASE_URL`. migrate, pg_dump backups, pg-boss, the DBOS runner database, the workspaces switch, hand psql           |
-| `mantle_owner`                                               | no                                   | owns every table and sequence of `public` and `auth`, and `mantle_acl_internal()`. migrate hands them over after the migrations       |
-| `mantle_runtime`                                             | yes, when `MANTLE_DB_RUNTIME_ROLE=1` | the app's system pool and its LISTEN connections. Not a superuser, owns nothing, `BYPASSRLS`, data rights only                        |
-| `mantle_system`                                              | no                                   | holds no right and owns nothing. May `SET ROLE` to the write role and the gap writer: what the system pool had by being the superuser |
-| `mantle_view_user`, `mantle_write_user`, `mantle_gap_writer` | as before                            | the scoped pools, unchanged. They lose `EXECUTE` on the setter functions (below)                                                      |
+| Role                                                         | Logs in                              | What it is                                                                                                                                           |
+| ------------------------------------------------------------ | ------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `postgres` (the compose superuser)                           | yes                                  | the migrator: `DATABASE_URL`. migrate, pg_dump backups, pg-boss, the DBOS runner database, the workspaces switch, hand psql                          |
+| `mantle_owner`                                               | no                                   | owns every table and sequence of `public` and `auth`, and `mantle_acl_internal()`. migrate hands them over after the migrations. `BYPASSRLS` (below) |
+| `mantle_runtime`                                             | yes, when `MANTLE_DB_RUNTIME_ROLE=1` | the app's system pool and its LISTEN connections. Not a superuser, owns nothing, `BYPASSRLS`, `NOINHERIT`, data rights only                          |
+| `mantle_system`                                              | no                                   | holds no right and owns nothing. May `SET ROLE` to the write role and the gap writer: what the system pool had by being the superuser                |
+| `mantle_view_user`, `mantle_write_user`, `mantle_gap_writer` | as before                            | the scoped pools, unchanged. They lose `EXECUTE` on the setter functions (below)                                                                     |
 
 `mantle_runtime` holds:
 
@@ -59,7 +59,16 @@ Code: `packages/db/src/runtime-role.ts` (the roles, the rights, the URL),
 - membership in `mantle_owner` without `INHERIT` and without `SET` (a
   member that holds none of its rights and cannot become it), membership in
   `mantle_system` with `SET` only, and nothing else: a hand grant, or one of
-  these with other options, is taken back at the next migrate.
+  these with other options, is taken back at the next migrate. The role is
+  `NOINHERIT`, so a hand `GRANT` without options gives it no rights even
+  before that migrate.
+
+No other role is a member of `mantle_owner`, `mantle_system` or
+`mantle_runtime`: migrate takes back every membership held in the three but
+the two above. A member of `mantle_runtime` is a member of `mantle_owner`
+through it, whatever the options (`GRANT mantle_runtime TO mantle_view_user
+WITH INHERIT FALSE, SET FALSE` was enough), and `mantle_owner_role()` says
+yes to every member.
 
 `CREATE` on schema `public` is taken from `PUBLIC`, so the runtime role makes
 nothing there (it cannot replace a function it could otherwise shadow).
@@ -76,7 +85,10 @@ Two tests in SQL were written against a superuser system pool.
   inherit the owner to pass, and so could (audit M1). A marker dropped or
   changed anyway (by hand, as the superuser) is made again by the next
   migrate (`ensureAclMarker`), and until then the integrity row
-  `runtime_role_lock` names it.
+  `runtime_role_lock` names it. A `mantle_owner_role()` that is not the
+  `MEMBER` version (0290 skipped) refuses the runtime role at every write
+  guard: the integrity row names that too, and migrate warns about it on
+  every run until 0290 is in.
 - The checked rerun (client.ts) does `SET LOCAL ROLE` to the write role and
   the gap writer, which needs a membership with `SET`. It goes through
   `mantle_system`, never directly: 0277 and 0278 count only a direct
@@ -88,8 +100,13 @@ Why `mantle_owner` reaches more than its tables: Postgres runs a foreign key's
 check and its cascade (and the triggers a cascade fires) as the owner of the
 table queried. As the superuser's tables these ran as the superuser, so
 `mantle_owner` gets `USAGE` on both schemas, every right on their tables and
-`EXECUTE` on every function. As the marker's owner it passes
-`mantle_owner_role()` there too. Nobody logs in as it.
+`EXECUTE` on every function, and `BYPASSRLS`: a trigger a cascade fires
+(`notify_runs_changed`, `notify_conversation_changed`) reads past the row
+rules, as the superuser did, also on a table migrate left with its old owner
+(a busy one, below), where the owner of the tables is not the table's owner.
+As the marker's owner it passes `mantle_owner_role()` there too. Nobody logs
+in as it, and nobody holds its rights: the runtime role is its member without
+`INHERIT` and without `SET`, and `BYPASSRLS` is never inherited.
 
 The password of `mantle_runtime` is derived from `MANTLE_MASTER_KEY`
 (HKDF, its own label), as the viewer roles' are. There is no secret to create
@@ -147,9 +164,13 @@ pool logs in as mantle_runtime (arch A9 runtime role)`, or a warning that it
   runtime-role.ts): a row when `mantle_runtime` is no longer the lock it was
   made as (a superuser, a CREATEROLE or CREATEDB, owning a table or a
   function, CREATE on public, holding the rights of `mantle_owner` or
-  `mantle_system`, able to become `mantle_owner`), or when
-  `mantle_acl_internal()` is missing or not `mantle_owner`'s. migrate puts it
-  back on its next run.
+  `mantle_system`, able to become `mantle_owner`), when
+  `mantle_acl_internal()` is missing or not `mantle_owner`'s, when
+  `mantle_owner_role()` is not the `MEMBER` version of 0290, or when a role
+  other than `mantle_runtime` (and a superuser) is a member of
+  `mantle_owner`, directly or through another role. migrate puts it back on
+  its next run, and logs what it could not put back
+  (`WARNING the runtime role lock is not whole`).
 
 ## Rolling a box (W9)
 
@@ -174,7 +195,7 @@ its `.env`, and switches back by taking it out.
    docker exec mantle_pg psql -U postgres -d postgres -Atc \
      "select rolname, rolcanlogin, rolsuper, rolbypassrls from pg_roles
        where rolname in ('mantle_owner', 'mantle_runtime', 'mantle_system') order by 1"
-   # mantle_owner|f|f|f    mantle_runtime|f|f|t    mantle_system|f|f|f
+   # mantle_owner|f|f|t    mantle_runtime|f|f|t    mantle_system|f|f|f
    # (mantle_runtime has no login until the box switches, step 2)
    docker exec mantle_pg psql -U postgres -d postgres -Atc \
      "select pg_get_userbyid(c.relowner), count(*) from pg_class c
@@ -189,7 +210,10 @@ its `.env`, and switches back by taking it out.
    it lets every lock go and takes each table on its own (200 ms, three
    tries). A table still busy then keeps its old owner and migrate goes on:
    its log names it (`WARNING n table(s) busy`), and the next migrate tries
-   again. It is untidy, not a hole.
+   again. It is untidy, not a hole: the runtime role owns nothing either way,
+   and `mantle_owner`, which runs the cascades and the triggers they fire,
+   holds every right on that table and `BYPASSRLS`, so it reads there what it
+   reads on its own tables.
 
 2. **The compose change.** In the box `.env`: `MANTLE_DB_RUNTIME_ROLE=1`.
    There is no secret to create (the password is derived from
@@ -295,6 +319,8 @@ ROLE mantle_system`), the workspaces switch denied, the allowlist pinned
   `RUNTIME_SYSTEM_FUNCTIONS`), no definer function it may run reaching DDL
   through any call its body names, the heads key, the viewer roles and the
   setters, the ownership, a broken marker made again, the integrity row,
-  and idempotence.
+  idempotence, every membership held in the three roles taken back, a
+  `mantle_owner_role()` from before 0290 named, and a table left with its
+  old owner still read past the row rules as `mantle_owner`.
 - `pnpm test:runtime-role`: the database suites with the app's pools on the
   runtime role (`vitest.runtime-role.config.ts`).
