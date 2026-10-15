@@ -181,7 +181,10 @@ export const CHANGES = {
   },
   MCP_SEARCH_TYPE_ENUM: {
     order: true,
-    why: 'the same 17 kinds in registry order: the tool schema prints them so',
+    why:
+      'the same 17 kinds in registry order (`page` after `telegram_message`): ' +
+      'the MCP tools/list snapshots (packages/mcp-core/src/__snapshots__) moved ' +
+      'by that one line, and every connection hash with it',
   },
 } as const satisfies Partial<
   Record<keyof typeof RECORDED, { add?: readonly string[]; order?: true; why: string }>

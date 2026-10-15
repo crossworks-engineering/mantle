@@ -915,6 +915,10 @@ commit; CHANGES names each cell that moved):
   set is unchanged (no kind is extracted that was not before).
 - **Order only:** the search tools' `type` enums list the same 17 kinds in
   registry order (the tool schema text changes, the accepted values do not).
+  In the MCP `search` tool that is `page` moving after `telegram_message`:
+  the tools/list snapshots (`packages/mcp-core/src/__snapshots__/tools-list.stdio.json`
+  and its siblings) were re-recorded for that one line and the connection
+  hashes that follow from it.
 
 **Differences kept, now a field each:** the corpus map lists `app` (not
 extracted) and leaves out mail, journal, events and contacts; the context
