@@ -926,8 +926,10 @@ export function currentSystemTx(): { tx: unknown; hooks: TxHooks; nest: SystemTx
  *  - `workspace-write`: a login's own change of a workspace (make one,
  *    rename it, archive it, add or remove a user, leave): the workspace
  *    tables and their events are the system pool's to write (the write role
- *    holds no right on them). The change's rules run first, in the scope,
- *    and again inside the change's transaction (lib/workspaces.ts, arch A6).
+ *    holds no right on them). The rules are checked inside the change's
+ *    transaction, on the system pool, as before arch A6; only archiving
+ *    and adding a user also check them first in the scope, and removing a
+ *    user reads the workspace there first (lib/workspaces.ts, arch A6).
  *  - `page-refold`: after a grant change, the derived text of every page
  *    the change reaches is folded again, pages the caller may not read or
  *    edit included (lib/grants.ts, arch A6): nothing goes back to the

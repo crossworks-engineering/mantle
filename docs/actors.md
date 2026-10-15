@@ -4524,10 +4524,17 @@ member-apps.ts and tree/visibility.ts move into scope". After round 2:
   workspace (make one, rename it, archive it, add a user, remove a user or
   leave) writes the workspace tables, which the write role holds no right
   on: it goes through one door, `workspaceWriteSystem` (reason
-  `workspace-write`), its rules first in the scope and again in the
-  transaction. The changes only an Admin user may make (the Moderator tick,
-  resources, who is an Admin user) are refused in the scope before their
-  transaction; an Admin user's write runs on the system pool already. The
+  `workspace-write`). Its rules are checked inside the change's
+  transaction, on the system pool, as on main (fix round 1, L3: an earlier
+  text here said "first in the scope"; that holds only for some):
+  archiving and adding a user also check them in the scope before the door,
+  removing a user reads the workspace there first, making one checks the
+  name there, and a rename or any other `patchWorkspace` change (its
+  Admin-only contact and assistant included) checks everything inside the
+  door only. The Moderator tick (`setModerator`) and resources are refused
+  in the scope before their transaction, and again in it; who is an Admin
+  user goes through `adminRoleChange`. An Admin user's write runs on the
+  system pool already. The
   shell's switcher (`shellWorkspaces`) still runs under the shell and
   whoami routes' own exits (below).
 - **`packages/content/src/link-serve.ts`**: runs where its caller runs (the
@@ -4573,6 +4580,42 @@ The panel also names workspaces through 0279's definers: an Admin user's
 target (`mantle_ws_live`, `mantle_ws_names`) and a move preview's gains
 (through the folder) and losses (through the item).
 
+**The scope's login on the system pool (fix round 1, M1).** A per-login
+item (`nodes.login_id`: a chat summary note, a Telegram attachment) is its
+own login's only, so the definers' item gate reads the scope's login. An
+Admin user's write, and a member's write with the check off, run on the
+system pool with the request's write scope set (`systemPoolTx`,
+`packages/db/src/client.ts`), where `mantle.login_id` was unset: the gate
+hid the login's own per-login item there, and a grant change on it
+answered 404 `not_granted` (`grantRows` inside `change`, and the embeds
+write). `mantle_scope_has_area` read the same unset login, so an Admin
+user's write never held the users area.
+
+Two ways were open: set a login the scope's checks read on the system
+pool, or make the definers skip their gate unless the session is a viewer
+or the write role. The first is taken. The second would answer an Admin
+user's write and a member's write with the check off as the unscoped
+system pool (every "Removed here" row, the counts of a change the caller
+may not make), loosening exactly the paths round 2 moved under the
+definers, and would tie the definers to role names A9 changes.
+`mantle.login_id` itself is not set there: its readers include the 0250
+and 0269 stamps (they would mark trace, run, chat and digest rows made in
+the transaction as the login's) and 0279's audit rows, besides the row
+rules. So `systemPoolTx` sets `mantle.scope_login`, which only
+`mantle_scope_login_id()` (0291) reads: `mantle.login_id` when set (every
+viewer and write role scope), else `mantle.scope_login`. The definers' item
+gate, `mantle_ws_seen`'s own-login check and `mantle_scope_has_area`
+(redefined in 0291, the same rule) read it; no stamp, row rule or audit
+does. One more reader follows: `mantle_check_row`'s `link_close` (0280),
+through `mantle_scope_has_area('users')`, so an Admin user with the users
+area may close a link in its system-pool write as in its own scope.
+
+The sweep holds a per-login fixture: each login's own per-login note
+(homed where it works, granted one workspace) and page, through the panel,
+two previews, three writes (Write on, remove, add) and the embeds write,
+recorded on main through main's one exit and compared in warn, on and off
+(`__snapshots__/a6-grant-sweep-per-login.txt`).
+
 **F7 (the A8 matrix).** (a) The panel ran on the system pool with no scope
 set, so the database's grant checks checked nothing: closed, every panel
 write now runs with the caller's scope set. (b) In a member's write scope a
@@ -4593,49 +4636,78 @@ link rules are also checked in each login's scope against the system
 pool's answer (every rule the same; the rights of the items the login
 reads). No cell is looser; none is stricter.
 
-**The exits, honestly counted.** `asSystemExits` (pinned in
-`scripts/arch-scoreboard.pins.json`, measured by `exitsByFile` in
-`eslint-rules/arch-counts.mjs`) is every `asSystem` site that is no door,
-plus every call of a door. It replaces the two pins `asSystemSites` and
-`asSystemDoorCalls`.
+**The exits, honestly counted (fix round 1, L1).** `asSystemExits`
+(pinned in `scripts/arch-scoreboard.pins.json`) is every use of a function
+holding an `asSystem` call: `eslint-rules/as-system-exits.mjs` parses each
+file with the TypeScript parser, finds the innermost named function around
+each call (a declaration, an arrow or function expression bound to a name,
+async or generic alike, a method, a property function) and counts every
+use of it: a call or any other use of its name in its file, and, exported,
+every use in a file that imports the name (named, destructured, or a
+namespace's `x.name`). A renamed import of a holder is refused, and an
+exported holder's name must be unique, so no use is lost. A holder nothing
+uses (a route handler, a tool handler) counts its sites. Round 2 counted
+one exact door shape's calls and every other site once: a conditional
+wrapper, and every function not of that shape, hid its uses.
 
-- Round 1: **94** (24 sites, 70 door calls).
-- Round 2: **98** (24 sites that are no door, 74 calls of 17 doors).
-  grants.ts 1 to 1 (the whole route through `inRuleInQuery` to the page
-  refold, `pageRefoldSystem`); workspaces.ts 1 to 5 (the whole route to the
-  five workspace changes, `workspaceWriteSystem`). `inRuleInQuery` has 17
-  calls left. Sites 41 in 38 files, 30 reasons (`as-system-allowlist.mjs`).
+- Round 1: 94. Round 2: 98 (96 once main dropped the two `provider-key`
+  exits). Fix round 1: **191**, nothing new leaving the scope; the uses the
+  old count missed.
+- Pinned apart: **`systemDbUses` 70 in 20 files** (`systemDbFiles`), the
+  direct uses of `systemDb` (every use but its declaration, imports and
+  exports), the same per file as main.
 
-98 is above the plan's 40. The exits left, by reason (`packages/db/src/
-viewer.ts` says what each reason allows):
+191 is far above the plan's 40. Every holder, with its uses (an exit
+each):
 
-| reason                 | exits | where                                                                                                                                                                                                                                                                                                | why the system pool                                                                      |
-| ---------------------- | ----- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| `login-telegram`       | 17    | chat-login.ts 4, pairing.ts 3, builtins-telegram.ts 3, agent-telegram.ts 3, pending-notify.ts 2, builtins-replay.ts 1, debug.ts 1                                                                                                                                                                    | the Telegram tables are granted to no role                                               |
-| `rule-in-query`        | 17    | the assistant routes and libraries 11, access keys 3, both whoami routes 2, the shell 1, session.ts 1                                                                                                                                                                                                | any-login routes whose rule is in their own SQL (a login's own threads, keys, its shell) |
-| `app-data`             | 9     | builtins-app-data.ts 6, app-runner.ts 3                                                                                                                                                                                                                                                              | an app's database registry and SQLite, shared by every holder                            |
-| `agent-workspace`      | 6     | agent-viewer.ts                                                                                                                                                                                                                                                                                      | which workspace an assistant answers in, before its scope exists                         |
-| `client-sourced-check` | 6     | client-sourced.ts 5, client-sourced-rules.ts 1                                                                                                                                                                                                                                                       | the client-sourced marks, granted to no role                                             |
-| `workspace-resources`  | 5     | external-access.ts                                                                                                                                                                                                                                                                                   | a workspace's resource settings, which the role never reads                              |
-| `workspace-write`      | 5     | lib/workspaces.ts                                                                                                                                                                                                                                                                                    | a login's own workspace change: the write role holds no right on the workspace tables    |
-| `connector-binding`    | 3     | external-access.ts                                                                                                                                                                                                                                                                                   | a connector's tool group row and OAuth reference                                         |
-| `app-trash`            | 3     | builtins-apps.ts                                                                                                                                                                                                                                                                                     | a deleted app's snapshots, hidden once its row is gone                                   |
-| `admin-area`           | 3     | admin-gate.ts 2, heartbeats/tools.ts 1                                                                                                                                                                                                                                                               | Admin area work, checked first                                                           |
-| `login-notice`         | 2     | login-notices.ts                                                                                                                                                                                                                                                                                     | the push worker's notice for one login                                                   |
-| `kind-root`            | 2     | files.ts 1, files/shared.ts 1                                                                                                                                                                                                                                                                        | a kind's root folder, whatever the scope holds                                           |
-| `provider-key`         | 2     | builtins-crawl.ts, builtins-research.ts                                                                                                                                                                                                                                                              | the brain's provider keys                                                                |
-| `owner-preferences`    | 2     | profile-preferences.ts, landing.ts                                                                                                                                                                                                                                                                   | the anchor's preferences                                                                 |
-| one each               | 16    | `name-taken`, `heartbeat-own-row`, `space-taken-authors`, `login-names`, `client-sourced-mark`, `contact-sharing`, `export-link`, `audit-log`, `runs-scope-check`, `heartbeat-context`, `keyword-candidates`, `lexeme-stats`, `connector-call`, `pending-approval`, `snapshot-copies`, `page-refold` | each says why in viewer.ts                                                               |
+| reason                            | exits | holders (uses)                                                                                                                                                                                                                                                            |
+| --------------------------------- | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `owner-preferences`               | 59    | `loadProfilePreferences` (57: every reader of the anchor's preferences), `workspaceHome` (2)                                                                                                                                                                              |
+| `kind-root`                       | 21    | `upsertFile` (19: every file write), `readRoot` (2)                                                                                                                                                                                                                       |
+| `login-telegram`                  | 17    | `telegramLoginSystem` in chat-login.ts (4), pairing.ts (3), builtins-telegram.ts (3), agent-telegram.ts (3), pending-notify.ts (2); the replay tool's `handler` (1); `telegramChatVisibility` (1)                                                                         |
+| `rule-in-query`                   | 17    | `inRuleInQuery` (17)                                                                                                                                                                                                                                                      |
+| `app-data`                        | 9     | `appDataSystem` in builtins-app-data.ts (6), app-runner.ts (3)                                                                                                                                                                                                            |
+| `agent-workspace`                 | 6     | `agentWorkspaceSystem` (6)                                                                                                                                                                                                                                                |
+| `admin-area`, `heartbeat-own-row` | 6     | `heartbeatRow` (6: two sites, one reason taken per use)                                                                                                                                                                                                                   |
+| `keyword-candidates`              | 6     | `searchNodes` (6)                                                                                                                                                                                                                                                         |
+| `client-sourced-check`            | 6     | `clientSourcedSystem` (6)                                                                                                                                                                                                                                                 |
+| `workspace-resources`             | 5     | `workspaceResourcesSystem` (5)                                                                                                                                                                                                                                            |
+| `workspace-write`                 | 5     | `workspaceWriteSystem` (5)                                                                                                                                                                                                                                                |
+| 3 each                            | 15    | `markExportClientSourced` (`client-sourced-mark`), `contactSharingByContact` (`contact-sharing`), `fileNameTaken` (`name-taken`), `appTrashSystem` (`app-trash`), `connectorBindingSystem` (`connector-binding`)                                                          |
+| 2 each                            | 12    | `loginNoticeSystem` (`login-notice`), `assertTableNotAppBound` (`export-link`), `turnHeartbeats` (`heartbeat-context`), `adminAreaSystem` (`admin-area`), `withOriginScope` (`pending-approval`), `makeSnapshotCopies` (`snapshot-copies`)                                |
+| 1 each                            | 7     | `takenFromOf` (`space-taken-authors`, no caller), `actorNames` (`login-names`), `logConnectorCall` (`audit-log`), `assertRunsCarryScope` (`runs-scope-check`), `lexemeFrequencies` (`lexeme-stats`), `dispatchMcp` (`connector-call`), `pageRefoldSystem` (`page-refold`) |
 
 **What is left.**
 
-- The exits above (98 against the plan's 40). The largest groups are their
-  own steps: the Telegram tables for a role (17), the rule-in-query routes
-  (17: the shell, whoami and access keys could read in the scope with
-  definers as the panel does now; the chat routes are W7c's), the app data
-  broker (9). Moving the five workspace changes off the system pool needs
-  write definers for the workspace tables (the rules move into SQL), a step
-  of its own.
+- The exits above (191 against the plan's 40). Two holders are a third of
+  them: `loadProfilePreferences` (57) and `upsertFile` (19) leave the scope
+  for one row each (the anchor's preferences, a kind's root folder); a
+  definer each, or the row read once per request, takes them to a handful.
+  The other large groups are their own steps: the Telegram tables for a
+  role (17), the rule-in-query routes (17: the shell, whoami and access
+  keys could read in the scope with definers as the panel does now; the
+  chat routes are W7c's), the app data broker (9). Moving the five
+  workspace changes off the system pool needs write definers for the
+  workspace tables (the rules move into SQL), a step of its own.
 - `shellWorkspaces` (lib/workspaces.ts) reads the login's own private
   workspace from a table the role does not read; it runs under the shell
   and whoami routes' exits until those move.
+- **Left for A6b (fix round 1, L2): rules stated twice**, once in SQL and
+  once in TypeScript, which A6b folds into one SQL function each (gaining
+  and losing a workspace on placement too):
+  - the preview's who-may-ask (`previewGrant`, lib/grants.ts) and
+    `mantle_grant_counts`' own rule (0291);
+  - `searchUsers` (lib/workspaces.ts) and `mantle_ws_login_search` (0291);
+  - `areasFor` (lib/workspaces.ts) and `mantle_scope_has_area` (0256,
+    0291);
+  - the link serving scope, `loginWsSql` (packages/content/src/
+    link-serve.ts), and `loadCtx` (lib/grants.ts) with `loginScopeFor`
+    (lib/auth/session.ts);
+  - the holders checks of `planWorkspaceMove` and `placeInFolder`
+    (lib/grants.ts, `holders.includes`);
+  - `packages/content/src/tree/visibility.ts:252`, `any(f.holders)`.
+- **The migration order (fix round 1, H1).** 0290 is A9's (the runtime
+  role) and must land before this branch's 0291: the journal test fails on
+  any skipped number but 0211 (no tolerance for 0290), so this branch
+  cannot merge first, and the runner refuses a never-applied migration
+  below the highest applied one from 0290 on (`packages/db/README.md`).

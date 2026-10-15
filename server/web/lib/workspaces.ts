@@ -149,9 +149,12 @@ export async function wsRoute(
 /** The one exit of the workspace library (arch A6): a change of a
  *  workspace (its row, its users, its events) writes on the system pool by
  *  its reason ('workspace-write'), the write role holding no right on those
- *  tables. The change's rules run first in the caller's scope, and again
- *  inside the transaction. An Admin user's write request runs on the system
- *  pool already (session.ts anyLoginScope); the door changes nothing there. */
+ *  tables. Every change checks its rules inside the transaction, on the
+ *  system pool, as before A6 (patchWorkspace only there). archiveWorkspace
+ *  and addUser also check them first in the caller's scope; removeUser
+ *  reads the workspace there first; createWorkspace checks the name there.
+ *  An Admin user's write request runs on the system pool already
+ *  (session.ts anyLoginScope); the door changes nothing there. */
 function workspaceWriteSystem<T>(body: () => Promise<T>): Promise<T> {
   return asSystem(body, 'workspace-write');
 }
