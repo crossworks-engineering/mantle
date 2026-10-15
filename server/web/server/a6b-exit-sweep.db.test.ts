@@ -131,6 +131,7 @@ describe.skipIf(!URL)('the A6b exit sweep', () => {
       /\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}(:?\d{2})?)?/g,
       '<time>',
     );
+    s = s.replace(/\b\d{4}-\d{2}-\d{2}\b/g, '<date>');
     s = s.replace(/mtlk_[A-Za-z0-9_-]+/g, '<key>');
     s = s.replace(/"(sha256|etag|version|appVersion)":"[^"]*"/g, '"$1":"<x>"');
     return JSON.parse(s);
@@ -192,13 +193,24 @@ describe.skipIf(!URL)('the A6b exit sweep', () => {
   ];
 
   /** A request through the real app as `who` (null: no session). */
-  const http = async (who: LoginKey | null, method: string, path: string, body?: unknown) => {
-    const headers: Record<string, string> = { 'content-type': 'application/json' };
-    if (who) headers.cookie = cookieOf(L[who]);
+  /** A request through the real app as `who` (a login's session cookie, a
+   *  key's bearer, or null: no credential). `form`: a multipart body. */
+  const http = async (
+    who: LoginKey | { bearer: string } | null,
+    method: string,
+    path: string,
+    body?: unknown,
+    form?: FormData,
+  ) => {
+    const headers: Record<string, string> = form ? {} : { 'content-type': 'application/json' };
+    if (who && typeof who === 'object') headers.authorization = `Bearer ${who.bearer}`;
+    else if (who) headers.cookie = cookieOf(L[who]);
     const res = await app.request(path, {
       method,
       headers,
-      ...(method === 'GET' || method === 'HEAD' ? {} : { body: JSON.stringify(body ?? {}) }),
+      ...(method === 'GET' || method === 'HEAD'
+        ? {}
+        : { body: form ?? JSON.stringify(body ?? {}) }),
     });
     const text = await res.text().catch(() => '');
     let parsed: unknown = text;
@@ -208,6 +220,13 @@ describe.skipIf(!URL)('the A6b exit sweep', () => {
       parsed = text.length > 200 ? `${text.slice(0, 200)}…` : text;
     }
     return { status: res.status, body: parsed };
+  };
+  /** A body with its short-lived parts blanked (an asset token). */
+  const blank = (v: { status: number; body: unknown }) => {
+    const b = v.body as Json | null;
+    if (b && typeof b === 'object' && 'assetToken' in b) b.assetToken = '<token>';
+    if (b && typeof b === 'object' && 'secret' in b) b.secret = '<secret>';
+    return v;
   };
 
   // ── sections ───────────────────────────────────────────────────────────
@@ -308,6 +327,10 @@ describe.skipIf(!URL)('the A6b exit sweep', () => {
                   values (${AG[k]}, ${L.owner}, ${`a6b-${k}`}, ${`${k} assistant`}, 'test/model', 'p', ${wid},
                           '{"chunk_limit":0,"content_hit_limit":0,"corpus_map_limit":0}'::jsonb)`);
     }
+
+    // P's and Q's assistants are their workspaces' (a resource each).
+    await x(sql`insert into workspace_resources (workspace_id, type, ref_id) values
+      (${W.P}, 'assistant', ${AG.P}), (${W.Q}, 'assistant', ${AG.Q})`);
 
     const tokens = await import('../lib/auth/tokens');
     cookieOf = (login) => `mantle_session=${tokens.buildSessionCookie(login).value}`;
@@ -450,6 +473,218 @@ describe.skipIf(!URL)('the A6b exit sweep', () => {
                         from nodes n where n.owner_id = ${L.owner} and n.type = 'file'
                          and n.data->>'filename' = ${filename}`),
         );
+      }
+    });
+  });
+  // ── rule-in-query: the any-login routes that left the scope whole ──────
+  it('rule-in-query', async () => {
+    const bcrypt = (await import('bcryptjs')).default;
+    const hash = bcrypt.hashSync('a6b-password', 4);
+    await x(sql`update auth.users set password_hash = ${hash} where email like 'a6b-%'`);
+    // The assistants assigned: Admin's to adminAll, P's to adminNoUsers (an
+    // assistant of a workspace that login is not in).
+    await x(sql`update agents set assigned_user_id = ${L.adminAll}, assigned_at = now(), role = 'assistant'
+                 where id = ${AG.admin}`);
+    await x(sql`update agents set assigned_user_id = ${L.adminNoUsers}, assigned_at = now(), role = 'assistant'
+                 where id = ${AG.P}`);
+    await x(sql`update agents set role = 'assistant' where id = ${AG.Q}`);
+    // Chat history: each login's own turns with the assistants it reaches,
+    // and a member's reply with pictures (one it may read, one it may not).
+    const FILE_Q = id(501);
+    const FILE_ADMIN = id(502);
+    names.set(FILE_Q, 'file:Q');
+    names.set(FILE_ADMIN, 'file:Admin');
+    for (const [fid, title] of [
+      [FILE_Q, 'q.png'],
+      [FILE_ADMIN, 'admin.png'],
+    ] as const) {
+      await x(sql`insert into nodes (id, owner_id, type, title, path, data)
+                  values (${fid}, ${L.owner}, 'file', ${title}, 'files',
+                          ${JSON.stringify({ filename: title, mimeType: 'image/png' })}::jsonb)`);
+    }
+    await m.withHeads([FILE_Q], 'update', async (tx) => {
+      await tx.execute(sql`delete from item_grants where node_id = ${FILE_Q}`);
+      await tx.execute(
+        sql`insert into item_grants (node_id, workspace_id, is_home) values (${FILE_Q}, ${W.Q}, true)`,
+      );
+    });
+    const msg = (login: LoginKey, agent: keyof typeof AG, ws: string, dir: string, text: string) =>
+      x(sql`insert into assistant_messages (owner_id, agent_id, login_id, workspace_id, direction, text, channel, status)
+            values (${L.owner}, ${AG[agent]}, ${L[login]}, ${ws}, ${dir}, ${text}, 'web', 'complete')`);
+    await msg('owner', 'admin', adminWs, 'inbound', 'owner asks');
+    await msg('owner', 'admin', adminWs, 'outbound', 'owner answered');
+    await msg('adminAll', 'admin', adminWs, 'inbound', 'adminAll asks');
+    await msg('adminAll', 'admin', adminWs, 'outbound', 'adminAll answered');
+    await msg('modP', 'P', W.P, 'inbound', 'modP asks');
+    await msg(
+      'modP',
+      'P',
+      W.P,
+      'outbound',
+      `see ![q](media:${FILE_Q}) and ![a](media:${FILE_ADMIN})`,
+    );
+    await msg('userQ', 'Q', W.Q, 'outbound', `look ![q](media:${FILE_Q})`);
+    await section('rule-in-query', async (cell) => {
+      for (const who of LOGINS) {
+        cell(`GET /api/auth/whoami ${who}`, await http(who, 'GET', '/api/auth/whoami'));
+        cell(`GET /api/v1/whoami ${who}`, await http(who, 'GET', '/api/v1/whoami'));
+        cell(`GET /api/shell ${who}`, blank(await http(who, 'GET', '/api/shell')));
+        cell(`HEAD /api/shell ${who}`, await http(who, 'HEAD', '/api/shell'));
+      }
+      // Pending approvals: the badge counts every login's.
+      await x(sql`insert into pending_tool_calls (owner_id, tool_slug, args, status, login_id, workspace_id)
+                  values (${L.owner}, 'note_create', '{}'::jsonb, 'pending', ${L.adminAll}, ${adminWs}),
+                         (${L.owner}, 'note_create', '{}'::jsonb, 'pending', ${L.modP}, ${W.P}),
+                         (${L.owner}, 'note_create', '{}'::jsonb, 'pending', null, null)`).catch(
+        (e: Error) => cell('pending insert failed', e.message),
+      );
+      for (const who of LOGINS) {
+        cell(`GET /api/shell pending ${who}`, blank(await http(who, 'GET', '/api/shell')));
+      }
+      // Access keys: make, list, use, revoke.
+      const keys = new Map<string, { id: string; secret: string }>();
+      for (const who of LOGINS) {
+        cell(
+          `POST /api/access-keys wrong password ${who}`,
+          await http(who, 'POST', '/api/access-keys', {
+            name: `k-${who}`,
+            access: 'read',
+            areas: null,
+            expiresInDays: 30,
+            password: 'not-it',
+          }),
+        );
+        const made = await http(who, 'POST', '/api/access-keys', {
+          name: `k-${who}`,
+          access: 'read',
+          areas: null,
+          expiresInDays: 30,
+          password: 'a6b-password',
+        });
+        const b = made.body as Json;
+        if (made.status === 201) {
+          keys.set(who, { id: b.id, secret: b.secret });
+          names.set(String(b.id).toLowerCase(), `key:${who}`);
+        }
+        cell(`POST /api/access-keys ${who}`, blank(made));
+      }
+      for (const who of LOGINS) {
+        cell(`GET /api/access-keys ${who}`, await http(who, 'GET', '/api/access-keys'));
+        const k = keys.get(who);
+        if (k) {
+          cell(
+            `GET /api/v1/whoami key ${who}`,
+            await http({ bearer: k.secret }, 'GET', '/api/v1/whoami'),
+          );
+        }
+      }
+      // Revoke: a member another's key (refused), an Admin user a member's,
+      // each its own.
+      const del = (who: LoginKey, of: LoginKey) => {
+        const k = keys.get(of);
+        return k ? http(who, 'DELETE', `/api/access-keys/${k.id}`) : Promise.resolve(null);
+      };
+      cell('DELETE key of=owner by=modP', await del('modP', 'owner'));
+      cell('DELETE key of=userQ by=modP', await del('modP', 'userQ'));
+      cell('DELETE key of=modP by=adminNoUsers', await del('adminNoUsers', 'modP'));
+      cell('DELETE key of=userQ by=userQ', await del('userQ', 'userQ'));
+      cell('DELETE key of=userQ by=userQ again', await del('userQ', 'userQ'));
+      cell('DELETE key of=outsider by=outsider', await del('outsider', 'outsider'));
+      cell('DELETE key of=adminAll by=adminAll', await del('adminAll', 'adminAll'));
+      cell(
+        'DELETE key unknown by=modP',
+        await http('modP', 'DELETE', `/api/access-keys/${id(999)}`),
+      );
+      for (const who of LOGINS) {
+        cell(`GET /api/access-keys after ${who}`, await http(who, 'GET', '/api/access-keys'));
+      }
+      // The chat bundle: the assigned assistant, the level badge, pictures.
+      for (const who of LOGINS) {
+        for (const ag of ['admin', 'P', 'Q'] as const) {
+          cell(
+            `GET /api/assistant/thread ${who} agent=${ag}`,
+            await http(who, 'GET', `/api/assistant/thread?agent=a6b-${ag}`),
+          );
+        }
+        cell(`GET /api/assistant/thread ${who}`, await http(who, 'GET', '/api/assistant/thread'));
+      }
+      // The inbox: read cursors, before and after marking read.
+      for (const who of LOGINS) {
+        cell(
+          `GET /api/assistant/conversations ${who}`,
+          await http(who, 'GET', '/api/assistant/conversations'),
+        );
+        for (const ag of ['admin', 'P', 'Q'] as const) {
+          cell(
+            `POST /api/assistant/read ${who} agent=${ag}`,
+            await http(who, 'POST', '/api/assistant/read', {
+              agentSlug: `a6b-${ag}`,
+              at: '2030-01-01T00:00:00.000Z',
+            }),
+          );
+        }
+        cell(
+          `GET /api/assistant/conversations after ${who}`,
+          await http(who, 'GET', '/api/assistant/conversations'),
+        );
+      }
+      cell(
+        'read cursors',
+        (
+          await x<{ agent: string; login: string; at: string }>(
+            sql`select agent_id::text as agent, login_id::text as login, last_read_at::text as at
+                  from assistant_read_cursors where owner_id = ${L.owner}`,
+          )
+        )
+          .map((r) => JSON.stringify(norm(r)))
+          .sort(),
+      );
+      // Transcribe: no STT worker, then one whose provider has no adapter.
+      const clip = () => {
+        const f = new FormData();
+        f.append(
+          'audio',
+          new Blob([Buffer.from('not really audio')], { type: 'audio/webm' }),
+          'a.webm',
+        );
+        return f;
+      };
+      for (const who of LOGINS) {
+        cell(
+          `POST /api/assistant/transcribe no worker ${who}`,
+          await http(who, 'POST', '/api/assistant/transcribe', undefined, clip()),
+        );
+      }
+      const ak = await import('@mantle/api-keys');
+      const key = await m.asSystem(
+        () => ak.setApiKey(L.owner, 'openai', 'a6b stt', 'sk-a6b-not-a-key'),
+        'test',
+      );
+      await x(sql`insert into ai_workers (owner_id, slug, name, kind, provider, model, api_key_id, is_default, enabled)
+                  values (${L.owner}, 'a6b-stt', 'stt', 'stt', 'a6b-none', 'm', ${key.id}, true, true)`);
+      for (const who of LOGINS) {
+        cell(
+          `POST /api/assistant/transcribe worker ${who}`,
+          await http(who, 'POST', '/api/assistant/transcribe', undefined, clip()),
+        );
+      }
+      // An app's admin-only switches (loginIsAdmin).
+      for (const who of LOGINS) {
+        const made = await http(who, 'POST', '/api/apps', { name: `app ${who}` });
+        const appId = (made.body as Json)?.app?.id ?? (made.body as Json)?.id ?? null;
+        if (appId) names.set(String(appId).toLowerCase(), `app:${who}`);
+        cell(`POST /api/apps ${who}`, made);
+        if (appId) {
+          cell(
+            `PATCH /api/apps/:id mcpAccess ${who}`,
+            await http(who, 'PATCH', `/api/apps/${appId}`, { mcpAccess: true }),
+          );
+          cell(
+            `app row ${who}`,
+            await x(sql`select a.author_level, a.author_login_id::text as author, a.mcp_access
+                          from apps a where a.node_id = ${appId}`).catch((e: Error) => e.message),
+          );
+        }
       }
     });
   });
