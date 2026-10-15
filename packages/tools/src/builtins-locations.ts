@@ -336,9 +336,7 @@ const route_map: BuiltinToolDef = {
         // AbortError (A10 #10 fix round 2).
         err instanceof Error && (err.name === 'TimeoutError' || err.name === 'AbortError')
           ? 'static map request timed out'
-          : err instanceof Error
-            ? err.message
-            : String(err);
+          : errorMessage(err);
       return { ok: false, error: msg };
     }
   },

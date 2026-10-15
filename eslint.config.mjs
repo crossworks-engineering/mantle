@@ -29,6 +29,7 @@ import mantleKindsPlugin from './eslint-rules/no-hand-kind-lists.mjs';
 import mantleAppBrokerPlugin from './eslint-rules/app-broker.mjs';
 import mantleProviderHttpPlugin from './eslint-rules/provider-http.mjs';
 import mantleEnvFlagsPlugin from './eslint-rules/env-flags.mjs';
+import mantleStdHelpersPlugin from './eslint-rules/std-helpers.mjs';
 import mantleSpendPlugin from './eslint-rules/spend-recording.mjs';
 import mantleRolesPlugin from './eslint-rules/no-hand-role-lists.mjs';
 import mantleReindexPlugin from './eslint-rules/no-hand-reindex.mjs';
@@ -291,6 +292,28 @@ export default tseslint.config(
       'mantle-http/withTimeoutCopy': 'error',
       'mantle-http/retryAfterRead': 'error',
       'mantle-http/backoffLoop': 'error',
+    },
+  },
+  {
+    // Small helpers and process plumbing from one place (A10 #15,
+    // docs/std-helpers.md): UUID_RE and errorMessage from @mantle/std, one
+    // dedupeTags, onShutdown for signals, the advisory lock helper, TtlCache,
+    // CACHE_CONTROL. The files that keep a copy are named in the rule file,
+    // each with its reason.
+    files: [
+      'packages/**/*.{ts,tsx,mts,mjs,js}',
+      'server/{web,api,mcp,sandboxd}/**/*.{ts,tsx,mts,mjs,js}',
+    ],
+    ignores: ['**/*.test.{ts,tsx}', '**/*.spec.{ts,tsx}'],
+    plugins: { 'mantle-std': mantleStdHelpersPlugin },
+    rules: {
+      'mantle-std/uuidCopy': 'error',
+      'mantle-std/errorIdiom': 'error',
+      'mantle-std/dedupeTagsCopy': 'error',
+      'mantle-std/signalHandler': 'error',
+      'mantle-std/advisoryLock': 'error',
+      'mantle-std/ttlAgeCheck': 'error',
+      'mantle-std/cacheControlLiteral': 'error',
     },
   },
   {

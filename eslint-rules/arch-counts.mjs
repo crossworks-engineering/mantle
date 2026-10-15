@@ -42,7 +42,13 @@
  *    outside markContentChanged and the files no-hand-reindex.mjs names;
  *  - spend recording (A10 #5): hand spend recording and provider calls that
  *    bypass the recording point, outside and inside the named lists
- *    (spend-recording.mjs).
+ *    (spend-recording.mjs);
+ *  - small helpers copied back (A10 #15): UUID regex copies, the hand
+ *    error-to-message idiom, dedupeTags copies, signal handlers, advisory
+ *    locks, hand TTL age checks and literal Cache-Control values, outside
+ *    and inside the named lists; console calls outside scripts, the hand
+ *    `archived_at is null` and the files that set Cache-Control, pinned
+ *    down only (std-helpers.mjs).
  *
  * Comment lines never count. Product files only: packages/, server/,
  * scripts/; no tests, migrations, archive or build folders (a route segment
@@ -63,6 +69,13 @@ import {
 import { PROVIDER_HTTP_PATTERNS } from './provider-http.mjs';
 import { ENV_PATTERNS, allowedBy } from './env-flags.mjs';
 import { SPEND_PATTERNS } from './spend-recording.mjs';
+import {
+  STD_HELPER_PATTERNS,
+  archivedAtIsNull,
+  consoleCalls,
+  isScript,
+  setsCacheControl,
+} from './std-helpers.mjs';
 import {
   EXPORT_SYNC_ALLOW,
   EXPORT_SYNC_HOME,
@@ -777,6 +790,12 @@ export function measure(root) {
   const spend = Object.fromEntries(
     Object.keys(SPEND_PATTERNS).map((k) => [k, { outside: {}, allowed: {} }]),
   );
+  const stdHelpers = Object.fromEntries(
+    Object.keys(STD_HELPER_PATTERNS).map((k) => [k, { outside: {}, allowed: {} }]),
+  );
+  const consoleByFile = {};
+  const archivedByFile = {};
+  const cacheControlFiles = [];
   // The texts, once: the asSystem exits read every file (as-system-exits.mjs).
   const texts = [];
   const systemDb = {};
@@ -882,6 +901,19 @@ export function measure(root) {
       const n = count(plain);
       if (n) spend[k][Object.hasOwn(allowed, f) ? 'allowed' : 'outside'][f] = n;
     }
+    for (const [k, { count, allowed }] of Object.entries(STD_HELPER_PATTERNS)) {
+      const n = count(plain);
+      if (n) stdHelpers[k][Object.hasOwn(allowed, f) ? 'allowed' : 'outside'][f] = n;
+    }
+    if (!isScript(f)) {
+      const c = consoleCalls(plain);
+      if (c) consoleByFile[f] = c;
+    }
+    const a = archivedAtIsNull(plain);
+    if (a) archivedByFile[f] = a;
+    if (f !== 'server/web/lib/cache-control.ts' && setsCacheControl(plain)) {
+      cacheControlFiles.push(f);
+    }
   }
   const sum = (o, k) => Object.values(o).reduce((a, v) => a + (k ? v[k] : v), 0);
   const reasons = new Set(Object.values(asSystem).flatMap((v) => v.reasons));
@@ -953,6 +985,15 @@ export function measure(root) {
         ]),
       ),
       ...Object.fromEntries(Object.entries(stores).map(([k, v]) => [`store_${k}_files`, v.length])),
+      ...Object.fromEntries(
+        Object.entries(stdHelpers).flatMap(([k, v]) => [
+          [`std_${k}`, sum(v.outside)],
+          [`std_${k}_allowed`, sum(v.allowed)],
+        ]),
+      ),
+      consoleCalls: sum(consoleByFile),
+      archivedAtIsNull: sum(archivedByFile),
+      cacheControlFiles: cacheControlFiles.length,
     },
     perFile: {
       asSystem,
@@ -984,6 +1025,10 @@ export function measure(root) {
       reindex,
       reindexAllowed,
       spend,
+      stdHelpers,
+      consoleByFile,
+      archivedByFile,
+      cacheControlFiles,
     },
   };
 }

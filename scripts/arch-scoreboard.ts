@@ -93,6 +93,26 @@ const LABELS: Record<string, string> = {
   spend_handSpend_allowed: 'spend recording sites in the named files (A10 #5)',
   spend_providerBypass: 'provider calls bypassing the recording point (A10 #5)',
   spend_providerBypass_allowed: 'provider call sites named outside the registry wrapper (A10 #5)',
+  std_uuidCopy: 'UUID regex copies outside @mantle/std and the named list (A10 #15)',
+  std_uuidCopy_allowed: 'UUID regex copies named (std, the published packages, sandboxd) (A10 #15)',
+  std_errorIdiom: 'hand error-to-message ternaries outside the named list (A10 #15)',
+  std_errorIdiom_allowed:
+    'hand error-to-message ternaries named (a fallback of their own, no std) (A10 #15)',
+  std_dedupeTagsCopy: 'dedupeTags copies outside @mantle/content tags.ts (A10 #15)',
+  std_dedupeTagsCopy_allowed: 'dedupeTags definitions named (the one) (A10 #15)',
+  std_signalHandler: 'signal handlers outside onShutdown (A10 #15)',
+  std_signalHandler_allowed: 'signal handlers named (onShutdown itself) (A10 #15)',
+  std_advisoryLock: 'advisory locks in SQL outside the lock helper and the named list (A10 #15)',
+  std_advisoryLock_allowed: 'advisory locks in SQL named (the helper, share, tests) (A10 #15)',
+  std_ttlAgeCheck: 'hand TTL cache age checks outside TtlCache and the named list (A10 #15)',
+  std_ttlAgeCheck_allowed: 'hand TTL cache age checks named (A10 #15)',
+  std_cacheControlLiteral: 'literal Cache-Control values outside CACHE_CONTROL (A10 #15)',
+  std_cacheControlLiteral_allowed: 'literal Cache-Control values named (A10 #15)',
+  consoleCalls:
+    'console calls outside scripts (down only; log(scope) as files are touched) (A10 #15)',
+  archivedAtIsNull: "hand 'archived_at is null' (down only; liveWorkspaceSql) (A10 #15)",
+  cacheControlFiles:
+    'files that set Cache-Control (down only; /api is no-store by default) (A10 #15)',
 };
 
 /** Numbers that may go up without failing: the route counts grow with
