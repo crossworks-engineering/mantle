@@ -40,6 +40,7 @@ import {
   withWriterHeads,
   draftAllowed,
   draftColumn,
+  liveWorkspace,
 } from '@mantle/db';
 import { defineDomainError } from '@mantle/std';
 import { notifyAppNavChanged } from './app-nav';
@@ -145,11 +146,7 @@ async function landingAppIds(ownerId: string): Promise<Set<string>> {
     .select({ id: workspaces.landingAppId })
     .from(workspaces)
     .where(
-      and(
-        eq(workspaces.ownerId, ownerId),
-        isNull(workspaces.archivedAt),
-        isNotNull(workspaces.landingAppId),
-      ),
+      and(eq(workspaces.ownerId, ownerId), liveWorkspace(), isNotNull(workspaces.landingAppId)),
     );
   return new Set(rows.flatMap((r) => (r.id ? [r.id] : [])));
 }

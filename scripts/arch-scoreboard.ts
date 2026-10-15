@@ -110,7 +110,8 @@ const LABELS: Record<string, string> = {
   std_cacheControlLiteral_allowed: 'literal Cache-Control values named (A10 #15)',
   consoleCalls:
     'console calls outside scripts (down only; log(scope) as files are touched) (A10 #15)',
-  archivedAtIsNull: "hand 'archived_at is null' (down only; liveWorkspaceSql) (A10 #15)",
+  archivedAtIsNull:
+    "hand live workspace ('archived_at is null', isNull(workspaces.archivedAt)) outside workspace-live.ts (down only) (A10 #15)",
   cacheControlFiles:
     'files that set Cache-Control (down only; /api is no-store by default) (A10 #15)',
 };

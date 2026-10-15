@@ -26,10 +26,11 @@
  * names where an item landed (landedIn) is the MCP surface's
  * (@mantle/mcp-core create-home.ts).
  */
-import { and, eq, inArray, isNull } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import { createHomeFallback, db, loginScopeFor } from './client';
 import { workspaces, workspaceUsers } from './schema/index';
 import { currentWorkspaceScope, type CreateHome } from './viewer';
+import { liveWorkspace } from './workspace-live';
 import { UUID_RE } from '@mantle/std';
 
 /** The workspace a call asks its creates to land in. */
@@ -104,7 +105,7 @@ async function namable(
     const rows = await db
       .select({ id: workspaces.id, name: workspaces.name })
       .from(workspaces)
-      .where(and(inArray(workspaces.id, [...scope.ws]), isNull(workspaces.archivedAt)));
+      .where(and(inArray(workspaces.id, [...scope.ws]), liveWorkspace()));
     return rows.map((r) => ({ ...r, moderator: mod.has(r.id) }));
   }
   return db
@@ -115,7 +116,7 @@ async function namable(
     })
     .from(workspaceUsers)
     .innerJoin(workspaces, eq(workspaces.id, workspaceUsers.workspaceId))
-    .where(and(eq(workspaceUsers.loginId, loginId), isNull(workspaces.archivedAt)));
+    .where(and(eq(workspaceUsers.loginId, loginId), liveWorkspace()));
 }
 
 /** An MCP create's `workspace` (an id or a name): one the caller

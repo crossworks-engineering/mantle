@@ -259,9 +259,13 @@ export function consoleCalls(code) {
   return (code.match(/\bconsole\.(?:log|info|warn|error|debug)\(/g) ?? []).length;
 }
 
-/** Hand `archived_at is null` in `code`. */
+/** A live workspace spelled by hand in `code`: `archived_at is null` in SQL
+ *  (quoted or not, any case) and `isNull(workspaces.archivedAt)` in a
+ *  drizzle where clause (liveWorkspace, liveWorkspaceSql, liveWorkspaceText). */
 export function archivedAtIsNull(code) {
-  return (code.match(/\barchived_at\s+is\s+null\b/gi) ?? []).length;
+  const inSql = code.match(/(?:\b|")archived_at"?\s+is\s+null\b/gi) ?? [];
+  const inDrizzle = code.match(/\bisNull\(\s*(?:\w+\.)?workspaces\.archivedAt\s*\)/g) ?? [];
+  return inSql.length + inDrizzle.length;
 }
 
 /** Whether `code` names the Cache-Control header at all. */

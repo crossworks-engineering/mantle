@@ -80,7 +80,8 @@ export const noHandReindex = {
           n.embedding ? `${n.embedding} vector reset` : '',
           n.summary ? `${n.summary} summary clear` : '',
         ].filter(Boolean);
-        if (what.length) context.report({ node, messageId: 'hand', data: { what: what.join(', ') } });
+        if (what.length)
+          context.report({ node, messageId: 'hand', data: { what: what.join(', ') } });
       },
     };
   },

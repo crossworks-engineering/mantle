@@ -391,7 +391,7 @@ export {
 } from 'drizzle-orm';
 export { carrySpaceRows, spaceFilesPath, SPACE_FILES_ROOT } from './space-carry';
 export { takeShareReadLock, takeShareWriteLock } from './share-lock';
-export { liveWorkspaceSql } from './workspace-live';
+export { liveWorkspace, liveWorkspaceSql, liveWorkspaceText } from './workspace-live';
 export {
   advisoryKeySql,
   advisoryXactLock,

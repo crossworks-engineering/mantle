@@ -24,7 +24,7 @@
  * Only granted columns are read (never `apps.draft_*`), so these work on the
  * viewer roles.
  */
-import { and, asc, eq, isNull, sql, type SQL } from 'drizzle-orm';
+import { and, asc, eq, sql, type SQL } from 'drizzle-orm';
 import {
   apps,
   currentWorkspaceScope,
@@ -38,6 +38,7 @@ import {
   workspaces,
   type AppManifest,
   type BuildRef,
+  liveWorkspace,
 } from '@mantle/db';
 import { projectAppIcon, projectAppTint } from '@mantle/content-core/app-nav';
 import type { AppTint, MemberAppCard, MemberHomeApp } from '@mantle/client-types';
@@ -273,9 +274,7 @@ export async function workspaceLandingAppId(anchorId: string, ws: string): Promi
   const [row] = await db
     .select({ appId: workspaces.landingAppId })
     .from(workspaces)
-    .where(
-      and(eq(workspaces.id, ws), eq(workspaces.ownerId, anchorId), isNull(workspaces.archivedAt)),
-    )
+    .where(and(eq(workspaces.id, ws), eq(workspaces.ownerId, anchorId), liveWorkspace()))
     .limit(1);
   return row?.appId ?? null;
 }
@@ -294,7 +293,7 @@ export async function firstSharedWorkspaceId(anchorId: string): Promise<string |
     .where(
       and(
         eq(workspaces.ownerId, anchorId),
-        isNull(workspaces.archivedAt),
+        liveWorkspace(),
         sharedWorkspacesSql(sql`array[${workspaces.id}]`),
       ),
     )

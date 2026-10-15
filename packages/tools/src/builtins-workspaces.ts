@@ -9,8 +9,8 @@
  * the stdio surface under MANTLE_ADMIN_READS=system) it is the login's own
  * user rows.
  */
-import { and, asc, eq, inArray, isNull } from 'drizzle-orm';
-import { db, workspaces, workspaceUsers } from '@mantle/db';
+import { and, asc, eq, inArray } from 'drizzle-orm';
+import { db, workspaces, workspaceUsers, liveWorkspace } from '@mantle/db';
 import { currentWorkspaceScope } from '@mantle/db/viewer';
 import { errorMessage } from '@mantle/std';
 import type { BuiltinToolDef } from './types';
@@ -51,7 +51,7 @@ export const workspaces_list: BuiltinToolDef = {
                 admin: workspaces.isAdmin,
               })
               .from(workspaces)
-              .where(and(inArray(workspaces.id, [...scope.ws]), isNull(workspaces.archivedAt)))
+              .where(and(inArray(workspaces.id, [...scope.ws]), liveWorkspace()))
               .orderBy(asc(workspaces.name))
           : [];
         rows = found.map((w) => ({ ...w, moderator: mod.has(w.id) }));
@@ -71,7 +71,7 @@ export const workspaces_list: BuiltinToolDef = {
             and(
               eq(workspaceUsers.loginId, loginId),
               eq(workspaces.ownerId, ctx.ownerId),
-              isNull(workspaces.archivedAt),
+              liveWorkspace(),
             ),
           )
           .orderBy(asc(workspaces.name));

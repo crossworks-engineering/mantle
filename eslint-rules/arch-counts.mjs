@@ -909,7 +909,8 @@ export function measure(root) {
       const c = consoleCalls(plain);
       if (c) consoleByFile[f] = c;
     }
-    const a = archivedAtIsNull(plain);
+    // The helper is the one spelling; every other is a hand copy.
+    const a = f === 'packages/db/src/workspace-live.ts' ? 0 : archivedAtIsNull(plain);
     if (a) archivedByFile[f] = a;
     if (f !== 'server/web/lib/cache-control.ts' && setsCacheControl(plain)) {
       cacheControlFiles.push(f);

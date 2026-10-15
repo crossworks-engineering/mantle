@@ -25,6 +25,7 @@
  */
 import { sql } from 'drizzle-orm';
 import { db } from './client';
+import { liveWorkspaceText } from './workspace-live';
 
 /** The grant drift count alone (`n`; also the integrity row). */
 export const GRANT_DRIFT_SQL = `
@@ -54,7 +55,7 @@ moderated AS (
              JOIN auth.users x ON x."id" = u."login_id" AND x."disabled_at" IS NULL
             WHERE u."workspace_id" = w."id" AND u."moderator") AS ok
     FROM "public"."workspaces" w, b
-   WHERE w."owner_id" = b.brain AND w."archived_at" IS NULL
+   WHERE w."owner_id" = b.brain AND ${liveWorkspaceText('w')}
      AND NOT EXISTS (SELECT 1 FROM "public"."former_user_workspaces" f WHERE f."workspace_id" = w."id")
      AND NOT EXISTS (SELECT 1 FROM "public"."private_workspaces" p WHERE p."workspace_id" = w."id")
 ),

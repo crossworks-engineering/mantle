@@ -12,8 +12,15 @@
  *
  * Read on the system pool, before any turn scope is entered.
  */
-import { and, eq, isNull, sql } from 'drizzle-orm';
-import { agents, db, workspaceResources, workspaceUsers, workspaces } from '@mantle/db';
+import { and, eq, sql } from 'drizzle-orm';
+import {
+  agents,
+  db,
+  workspaceResources,
+  workspaceUsers,
+  workspaces,
+  liveWorkspace,
+} from '@mantle/db';
 
 /** An assistant a workspace holds, the workspace, and whether it is Admin. */
 export type WorkspaceAssistant = {
@@ -56,7 +63,7 @@ export async function workspaceAssistants(
     .where(
       and(
         eq(workspaces.ownerId, ownerId),
-        isNull(workspaces.archivedAt),
+        liveWorkspace(),
         eq(agents.ownerId, ownerId),
         eq(agents.enabled, true),
         // The assistant answers in the workspace that holds it.

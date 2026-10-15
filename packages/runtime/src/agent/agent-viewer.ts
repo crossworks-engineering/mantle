@@ -71,6 +71,7 @@ import {
   withViewer,
   workspaces,
   workspaceUsers,
+  liveWorkspace,
 } from '@mantle/db';
 import {
   adminReadsOnSystemPool,
@@ -195,7 +196,7 @@ async function adminUserOf(
         and(
           eq(workspaceUsers.loginId, loginId),
           eq(workspaces.isAdmin, true),
-          isNull(workspaces.archivedAt),
+          liveWorkspace(),
           ...(ownerId ? [eq(workspaces.ownerId, ownerId)] : []),
         ),
       )
@@ -539,13 +540,7 @@ async function adminWorkspaceOf(ownerId: string): Promise<string | null> {
     db
       .select({ id: workspaces.id })
       .from(workspaces)
-      .where(
-        and(
-          eq(workspaces.ownerId, ownerId),
-          eq(workspaces.isAdmin, true),
-          isNull(workspaces.archivedAt),
-        ),
-      )
+      .where(and(eq(workspaces.ownerId, ownerId), eq(workspaces.isAdmin, true), liveWorkspace()))
       .limit(1),
   );
   return row?.id ?? null;
