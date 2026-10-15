@@ -311,10 +311,19 @@ describe.skipIf(!DB_URL)('A8 surface cells: every way in gives the oracle’s an
       const c = new Client({ name: fx.tag, version: '0' });
       await Promise.all([server.connect(a), c.connect(b)]);
       try {
-        const r = (await m.runAsActor(as, () =>
-          c.callTool({ name: slug, arguments: input }),
-        )) as Reply;
-        return { ok: !(r.isError ?? false), text: text(r) };
+        try {
+          const r = (await m.runAsActor(as, () =>
+            c.callTool({ name: slug, arguments: input }),
+          )) as Reply;
+          return { ok: !(r.isError ?? false), text: text(r) };
+        } catch (err) {
+          // A tool the caller may not call is not listed, and a direct call
+          // is refused ("MCP, API keys and linked brains"): the protocol's
+          // own refusal, not a crash.
+          const msg = (err as Error).message;
+          if (/Tool \S+ not found/.test(msg)) return { ok: false, text: `not listed: ${msg}` };
+          throw err;
+        }
       } finally {
         await c.close();
       }
@@ -362,6 +371,9 @@ describe.skipIf(!DB_URL)('A8 surface cells: every way in gives the oracle’s an
     ) => Promise<Outcome>;
   };
 
+  /** The tool rows the brain resolves (read at the cells' start). */
+  const resolvable = new Set<string>();
+  const MCP_SURFACES = new Set<GuideSurface>(['mcp-oauth', 'mcp-key', 'peer', 'mcp-stdio']);
   const toolEntry = (
     surface: GuideSurface,
     actor: GuideActor,
@@ -375,7 +387,12 @@ describe.skipIf(!DB_URL)('A8 surface cells: every way in gives the oracle’s an
     surface,
     actor,
     roles,
-    supports: (kind, action) => toolCall(kind, action, 'x') !== null,
+    supports: (kind, action) => {
+      const tc = toolCall(kind, action, 'x');
+      // An assistant, a run and a recipe call the brain's tool rows; the
+      // MCP surface lists its own definitions.
+      return tc !== null && (MCP_SURFACES.has(surface) || resolvable.has(tc.slug));
+    },
     run: (role, kind, action, id) => {
       const tc = toolCall(kind, action, id)!;
       return call(role, tc.slug, tc.input);
@@ -391,7 +408,9 @@ describe.skipIf(!DB_URL)('A8 surface cells: every way in gives the oracle’s an
     'outsider',
   ];
   const MEMBERS: GuideRole[] = ['homeModerator', 'writeGrant', 'readGrant', 'outsider'];
-  const WEB_READ_KINDS = new Set<string>(kinds.filter((k) => k !== 'branch' && contentRoute(k) !== null));
+  const WEB_READ_KINDS = new Set<string>(
+    kinds.filter((k) => k !== 'branch' && contentRoute(k) !== null),
+  );
 
   const entries = (): Entry[] => [
     {
@@ -427,12 +446,17 @@ describe.skipIf(!DB_URL)('A8 surface cells: every way in gives the oracle’s an
             }
             return http(r, 'PATCH', `/api/grants/${id}/${R}`, { write: true, confirm: true });
           }
-          case 'move':
-            return http(r, 'POST', '/api/grants/move', {
+          case 'move': {
+            // A batch: 200 with each item moved or failed (moveItems).
+            const res = await http(r, 'POST', '/api/grants/move', {
               nodeIds: [id],
               toWorkspaceId: fx.ws.T,
               confirm: true,
             });
+            if (!res.ok) return res;
+            const body = JSON.parse(res.text) as { moved?: number };
+            return { ...res, ok: (body.moved ?? 0) > 0 };
+          }
           default:
             throw new Error(`web ${action}`);
         }
@@ -575,6 +599,9 @@ describe.skipIf(!DB_URL)('A8 surface cells: every way in gives the oracle’s an
     const known = new Set(
       Object.keys((await import('@mantle/db/matrix/a8-known-failures')).KNOWN_FAILURES),
     );
+    for (const slug of ['node_read', ...Object.values(TOOL_EDIT), ...Object.values(TOOL_DELETE)]) {
+      if (await m.asSystem(() => t.resolveTool(fx.owner, slug), 'test')) resolvable.add(slug);
+    }
     const failures = new Map<string, string>();
     const counts: string[] = [];
     let total = 0;
