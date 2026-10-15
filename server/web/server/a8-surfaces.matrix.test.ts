@@ -23,24 +23,30 @@
  *                scope (withAgentScope, the role's own workspace)
  *   team-turn    the same, on the team surface (the logins outside Admin)
  *   telegram     the same, on the Telegram surface (the chat's login)
- *   run          a run item: the run caller in withRunScope
+ *   run          a run item through the product's own executor
+ *                (executeRunItem, server/web/lib/runs/execute-item.ts): a
+ *                run of the role's login and turn workspace, one tool_call
+ *                item, run as the runs worker runs it
  *   recipe       a recipe tool whose one step is the action, in a turn
  *   heartbeat    the assistant of W with no user (assistant actor, its
- *                scope with no login), the turn caller
+ *                scope with no login), the turn caller, on the surface
+ *                heartbeats/fire.ts gives a workspace assistant's fire
  *   admin-heartbeat  the Admin assistant with no user, which acts for the
  *                owner (login(owner), the Admin turn scope with no login
- *                asked), the turn caller
+ *                asked), the turn caller, on the Admin assistant's surface
  *   pending      a call queued in a turn, approved by the owner
  *   share-link   an open public link's view (/s/<token>/view)
  *   contact-share  a contact share through the /s broker, with the
  *                contact's cookie: its view, and its app's data
  *                (/s/<token>/db-broker exec; the app's SQLite stood in, as
  *                contact-share-gate.db.test.ts does), with Can write on
- *                (contact-rw) and off (contact-ro)
+ *                (contact-rw) and off (contact-ro); and two denies with
+ *                Can write on: an Informational app's data, and the
+ *                db-broker of a share that is no app (contact-share-deny)
  *
  * Every cell runs in each actor check mode (off, the fleet's default; warn;
  * on): the box's mode (mantle_set_actor_check) and the process's
- * (MANTLE_ACTOR_CHECK) set together, off to on.
+ * (MANTLE_ACTOR_CHECK) set together, in that order (see CHECK_MODES below).
  *
  * A cell passes only on the right row effect (the probe of the SQL grid):
  * allowed is ok and the change made; refused is no change and a refusal
@@ -165,6 +171,34 @@ const V1_READ: Readonly<Record<string, string>> = {
   file: '/api/v1/files',
 };
 
+/** The surface a heartbeat's turn names (packages/runtime/src/heartbeats/
+ *  fire.ts, the runToolLoop call in fireAs): a workspace assistant's fire
+ *  is "not the owner's channel: a team surface with no login (read only,
+ *  private reads off)"; the Admin assistant's is the owner's web surface
+ *  (Telegram only when the heartbeat names a chat paired to the login it
+ *  answers, which the fixture's do not). fire.ts builds it inline (no
+ *  builder to import), so the source pin below fails if it changes. */
+const HEARTBEAT_SURFACE = {
+  workspace: { kind: 'team', privateReads: false },
+  admin: { kind: 'web' },
+} as const;
+
+describe('A8 surface cells: the surfaces they send are the product’s', () => {
+  it('a heartbeat fire names the surfaces HEARTBEAT_SURFACE sends', async () => {
+    const { readFile } = await import('node:fs/promises');
+    const src = (
+      await readFile(
+        path.join(import.meta.dirname, '../../../packages/runtime/src/heartbeats/fire.ts'),
+        'utf8',
+      )
+    ).replace(/\s+/g, ' ');
+    expect(src).toContain(
+      "surface: scoped && !adminAssistant ? { kind: 'team', privateReads: false } :",
+    );
+    expect(src).toContain(": { kind: 'web' }, }),");
+  });
+});
+
 describe.skipIf(!DB_URL)('A8 surface cells: every way in gives the oracle’s answer', () => {
   type Ts = typeof import('@mantle/db/test-support');
   type Grid = typeof import('@mantle/db/matrix/a8-grid');
@@ -180,6 +214,9 @@ describe.skipIf(!DB_URL)('A8 surface cells: every way in gives the oracle’s an
   let g: Grid;
   let o: Oracle;
   let runRoute: typeof import('./run-route').runRoute;
+  let runs: typeof import('@mantle/runs');
+  let runItem: typeof import('../lib/runs/execute-item');
+  let actorMode: typeof import('../../../packages/db/src/actor');
   let fx: import('@mantle/db/matrix/a8-grid').A8Fixture;
   let dir = '';
   /** Each workspace's assistant. */
@@ -224,6 +261,9 @@ describe.skipIf(!DB_URL)('A8 surface cells: every way in gives the oracle’s an
     g = await import('@mantle/db/matrix/a8-grid');
     o = await import('@mantle/db/matrix/guide-oracle');
     runRoute = (await import('./run-route')).runRoute;
+    runs = await import('@mantle/runs');
+    runItem = await import('../lib/runs/execute-item');
+    actorMode = await import('../../../packages/db/src/actor');
     raw = postgres(scratch.url, { max: 2, prepare: false, onnotice: () => {} });
     kinds = g.A8_KINDS;
     fx = await g.buildA8Fixture(raw);
@@ -450,6 +490,8 @@ describe.skipIf(!DB_URL)('A8 surface cells: every way in gives the oracle’s an
 
   type Entry = {
     surface: GuideSurface;
+    /** The name its cells and counts go by, when not the surface's. */
+    label?: string;
     actor: GuideActor;
     roles: (GuideRole | null)[];
     /** Whether the way in can do it; a string: it cannot, counted under
@@ -459,7 +501,12 @@ describe.skipIf(!DB_URL)('A8 surface cells: every way in gives the oracle’s an
      *  knows no tools): the reason, else null. */
     narrow?: (kind: string, action: GuideAction) => string | null;
     /** Cells run besides the pairwise pick: a case a finding names. */
-    always?: { role: GuideRole; kind: string; placement: GuidePlacement; action: GuideAction }[];
+    always?: {
+      role: GuideRole | null;
+      kind: string;
+      placement: GuidePlacement;
+      action: GuideAction;
+    }[];
     run: (
       role: GuideRole | null,
       kind: string,
@@ -498,19 +545,30 @@ describe.skipIf(!DB_URL)('A8 surface cells: every way in gives the oracle’s an
       if (!MCP_SURFACES.has(surface) && mcpOnly.has(tc.slug)) {
         return `no tool row: ${tc.slug} is MCP only`;
       }
-      // A recipe calls no tool that waits for approval (for anyone).
-      if (surface === 'recipe' && confirmGated.has(tc.slug)) {
-        return `no recipe step: ${tc.slug} waits for approval`;
-      }
       return true;
     },
-    // "Linked brains": a peer calls a risky tool only when its list allows
-    // it; the fixture's peers allow none.
+    // A deny the oracle cannot see (it knows no tools), each run as a cell.
     narrow: (kind, action) => {
       const tc = toolCall(kind, action, 'x');
-      return surface === 'peer' && tc && peerRisky.has(tc.slug)
-        ? `a peer may not call ${tc.slug}: a risky tool its list does not allow`
-        : null;
+      if (!tc) return null;
+      // "Linked brains": a peer calls a risky tool only when its list
+      // allows it; the fixture's peers allow none.
+      if (surface === 'peer' && peerRisky.has(tc.slug)) {
+        return `a peer may not call ${tc.slug}: a risky tool its list does not allow`;
+      }
+      // Approval, not access, for everyone (the owner too). A recipe step
+      // calls no tool that waits for approval (packages/tools/src/dispatch.ts,
+      // classifyRecipeStepTool: 'confirm'); a run item never runs one
+      // headless (server/web/lib/runs/execute-item.ts, `tool.requiresConfirm`
+      // before dispatch: "Confirm-gated tools never run headless"), the
+      // phase waits on an ask_human step instead.
+      if (surface === 'recipe' && confirmGated.has(tc.slug)) {
+        return `a recipe step may not call ${tc.slug}: it waits for approval`;
+      }
+      if (surface === 'run' && confirmGated.has(tc.slug)) {
+        return `a run item may not run ${tc.slug}: it waits for approval`;
+      }
+      return null;
     },
     run: (role, kind, action, id) => {
       const tc = toolCall(kind, action, id)!;
@@ -592,6 +650,59 @@ describe.skipIf(!DB_URL)('A8 surface cells: every way in gives the oracle’s an
                 { op: 'exec', sql: 'insert into a8 (v) values (?)', params: [1] },
                 { headers },
               );
+        return {
+          ok: res.status < 300,
+          status: res.status,
+          text: (await res.text()).slice(0, 4000),
+        };
+      }),
+  });
+
+  /** Two writes a contact share with Can write may not make, which the
+   *  pairwise pick cannot reach: the oracle knows no Informational switch,
+   *  and the contact-share entry sends app data to an app only. The app's
+   *  data while the app is Informational ("Informational wins over a
+   *  share's Can write", the /s db-broker, access matrix L23), and the
+   *  db-broker of a contact share of `nonApp` (Can write is an app's only:
+   *  createContactShares refuses it on another kind, so the share is the
+   *  contact's read share, and the broker serves an app only). */
+  const contactDenyEntry = (nonApp: string): Entry => ({
+    surface: 'contact-share',
+    label: 'contact-share-deny',
+    actor: 'contact-rw',
+    roles: [null],
+    supports: () => false,
+    always: [
+      { role: null, kind: 'app', placement: 'root', action: 'appData' },
+      { role: null, kind: nonApp, placement: 'root', action: 'appData' },
+    ],
+    narrow: (kind) =>
+      kind === 'app'
+        ? 'an Informational app’s data is read only, Can write or not'
+        : `a share of a ${kind} has no app data: the /s broker serves an app only`,
+    run: (_role, kind, _action, id) =>
+      guard(async () => {
+        if (kind === 'app') {
+          await raw.begin(async (tx) => {
+            await tx.unsafe(g.FIXTURE_ACTOR);
+            await tx`update apps set manifest = '{}'::jsonb, published_build = ${PUBLISHED}::jsonb,
+                            data_read_only = true
+                      where node_id = ${id}`;
+          });
+        }
+        const token = await contactShare(id, kind === 'app');
+        const res = await runRoute(
+          null,
+          'POST',
+          `/s/${token}/db-broker`,
+          { op: 'exec', sql: 'insert into a8 (v) values (?)', params: [1] },
+          {
+            headers: {
+              cookie: contactCookie,
+              'x-forwarded-for': `10.8.${Math.floor(Math.random() * 250)}.1`,
+            },
+          },
+        );
         return {
           ok: res.status < 300,
           status: res.status,
@@ -721,18 +832,52 @@ describe.skipIf(!DB_URL)('A8 surface cells: every way in gives the oracle’s an
       ),
       toolEntry('run', 'turn', ALL, (role, slug, input) =>
         guard(async () => {
+          // The product's run path, whole: a run of the role's login (no
+          // agent: the login's own MCP client planned it), stamped with the
+          // role's turn workspace, its one tool_call item made ready and run
+          // by executeRunItem as the runs worker runs it
+          // (server/web/workers/runs.ts, under the worker's system actor).
+          // The executor refuses a tool that waits for approval before
+          // dispatch, runs the rest as the run's login as it is now, in
+          // withRunScope, on the surface {kind:'owner', via:'run', loginId}.
           const r = role!;
-          const res = await m.runAsActor(loginActor(r), () =>
-            rt.withRunScope(
-              { workspaceId: turnWs(r), loginId: fx.logins[r], ownerId: fx.owner },
-              async () =>
-                t.dispatchTool(await toolRow(slug), input, {
-                  ownerId: fx.owner,
-                  caller: t.runCaller(),
-                }),
-            ),
+          const ws = turnWs(r);
+          const { runId } = await m.runAsSystem('worker:runs', () =>
+            runs.createRun(m.db, {
+              ownerId: fx.owner,
+              title: `${fx.tag} run`,
+              loginId: fx.logins[r],
+              plan: {
+                kind: 'seq',
+                children: [{ kind: 'tool_call', payload: { tool: slug, args: input } }],
+              } as never,
+            }),
           );
-          return fromTool(res);
+          const [item] = await raw.begin(async (tx) => {
+            await tx.unsafe(g.FIXTURE_ACTOR);
+            await tx`update runs set workspace_id = ${ws} where id = ${runId}`;
+            return tx<{ id: string }[]>`
+              update run_items set state = 'ready', workspace_id = ${ws}
+               where run_id = ${runId} and kind = 'tool_call' returning id::text as id`;
+          });
+          await m.runAsSystem('worker:runs', () => runItem.executeRunItem(item!.id));
+          const [row] = await raw<
+            {
+              state: string;
+              result: {
+                output?: unknown;
+                failure?: { type?: string; message?: string };
+              } | null;
+            }[]
+          >`select state, result from run_items where id = ${item!.id}`;
+          if (row?.state === 'done') {
+            return { ok: true, text: JSON.stringify(row.result?.output ?? '') };
+          }
+          const f = row?.result?.failure;
+          return {
+            ok: false,
+            text: `${row?.state ?? 'gone'} ${f?.type ?? ''}: ${f?.message ?? ''}`,
+          };
         }),
       ),
       toolEntry(
@@ -752,7 +897,7 @@ describe.skipIf(!DB_URL)('A8 surface cells: every way in gives the oracle’s an
             rt.withAgentScope({ id: agentOf[ws], ownerId: fx.owner, workspaceId: ws }, async () =>
               t.dispatchTool(await toolRow(slug), input, {
                 ownerId: fx.owner,
-                surface: { kind: 'web', loginId: null } as never,
+                surface: HEARTBEAT_SURFACE.workspace as never,
                 caller: t.turnCaller(),
               }),
             ),
@@ -772,7 +917,7 @@ describe.skipIf(!DB_URL)('A8 surface cells: every way in gives the oracle’s an
             rt.withAgentScope({ id: agentOf[ws], ownerId: fx.owner, workspaceId: ws }, async () =>
               t.dispatchTool(await toolRow(slug), input, {
                 ownerId: fx.owner,
-                surface: { kind: 'web', loginId: null } as never,
+                surface: HEARTBEAT_SURFACE.admin as never,
                 caller: t.turnCaller(),
               }),
             ),
@@ -889,6 +1034,7 @@ describe.skipIf(!DB_URL)('A8 surface cells: every way in gives the oracle’s an
       },
       contactEntry('contact-rw', shareable),
       contactEntry('contact-ro', shareable),
+      contactDenyEntry(kinds.find((k) => k !== 'app' && shareable.has(k))!),
     ];
   };
 
@@ -990,11 +1136,30 @@ describe.skipIf(!DB_URL)('A8 surface cells: every way in gives the oracle’s an
     const fixed: string[] = [];
     let total = 0;
     let failed = 0;
+    // The modes run in rising order, and must. The process's mode is the
+    // greater of MANTLE_ACTOR_CHECK and the box's mode it last read
+    // (packages/db/src/actor.ts actorCheckMode), which client.ts reads when
+    // the pool opens and then once a minute; a session's own setting is
+    // raised the same way (mantle_actor_check_mode: greatest(box, session)).
+    // Off, warn, on: each step raises both, so a stale box read is never
+    // above the mode a cell claims. Run on to off and the cached box mode
+    // would hold the process at on for up to a minute. So the order is
+    // asserted, and the process's read of the box is set to the box's new
+    // mode at once (noteBoxActorCheckMode, what client.ts's own read calls),
+    // and each mode checks the process's and the box's answer.
+    const rank = { off: 0, warn: 1, on: 2 } as const;
+    expect(
+      CHECK_MODES.every((x, i) => i === 0 || rank[x] > rank[CHECK_MODES[i - 1]!]),
+      'CHECK_MODES must rise: off, warn, on',
+    ).toBe(true);
     for (const mode of CHECK_MODES) {
-      // The box's mode and the process's, together (the process can only
-      // raise the box's; off to on keeps them equal).
+      // The box's mode and the process's, together.
       await raw`select mantle_set_actor_check(${mode})`;
       process.env.MANTLE_ACTOR_CHECK = mode;
+      actorMode.noteBoxActorCheckMode(mode);
+      expect(m.actorCheckMode(), `the process's check mode, check ${mode}`).toBe(mode);
+      const [box] = await raw<{ m: string }[]>`select mantle_actor_check_mode() as m`;
+      expect(box?.m, `the box's check mode, check ${mode}`).toBe(mode);
       const modeStarted = Date.now();
       const failures = new Map<string, string>();
       const counts: string[] = [];
@@ -1025,7 +1190,7 @@ describe.skipIf(!DB_URL)('A8 surface cells: every way in gives the oracle’s an
           const out = await e.run(c.role, c.kind, c.action, item.id);
           const misses = m.takeActorMisses();
           const after = await probe();
-          const name = `${e.surface} ${g.cellName(c)}`;
+          const name = `${e.label ?? e.surface} ${g.cellName(c)}`;
           const why =
             judge(c, want, out, before, after, item) ??
             (misses.length ? `actor miss: ${JSON.stringify(misses).slice(0, 160)}` : null);
@@ -1034,7 +1199,7 @@ describe.skipIf(!DB_URL)('A8 surface cells: every way in gives the oracle’s an
         }
         total += cells.length;
         counts.push(
-          `  ${e.surface}${e.surface === 'contact-share' ? ` (${e.actor})` : ''}: ${cells.length} cells (${allow} allow) of ${candidates} candidates, ` +
+          `  ${e.label ?? e.surface}${e.surface === 'contact-share' ? ` (${e.actor})` : ''}: ${cells.length} cells (${allow} allow) of ${candidates} candidates, ` +
             `${pass} pass, ${cells.length - pass} fail, ${na} not applicable`,
         );
       }
@@ -1073,7 +1238,6 @@ const NOT_APPLICABLE: Readonly<Record<string, number>> = {
   'a snapshot copy carries no link or share': 15,
   'a snapshot copy holds no grant but its home': 60,
   'an Admin-homed item holds no grant but its home': 132,
-  'no recipe step: app_delete waits for approval': 24,
   "no snapshot copy of a app is made (only an accepted item's kinds)": 142,
   "no snapshot copy of a branch is made (only an accepted item's kinds)": 79,
   "no snapshot copy of a event is made (only an accepted item's kinds)": 202,

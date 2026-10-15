@@ -68,21 +68,22 @@ const F5 = 'F5 the home Moderator deletes an app (owner and Admin users only, pl
  *  item is read by W and R, and has an open link). */
 const F6 = 'F6 a peer may not edit a shared item (a rule the guide does not name)';
 
-/** F10. app_delete refuses an Admin user's run item ("owner-side tool:
- *  not available here": a run's caller is no owner surface to
- *  ownerOnlyRefusal), the owner's own run too. The owner's decision of
- *  2026-10-15 (plan s32, F3 revised): the owner and Admin users delete an
- *  app. A recipe step cannot call it for anyone (it waits for approval),
- *  which the cells count apart, not as a refusal. */
-const F10 = 'F10 app_delete refuses an Admin user’s run item (owner decision 2026-10-15)';
-
 /** F9. A contact share's write is named system work on the system pool
  *  (docs/actors.md: "its app's data, when the share allows it"), so the
  *  database holds a statement it sends to nothing but a snapshot copy's
  *  read-only rule: an edit, a draft, a delete, a move, a grant change, a
  *  link and a create of any item are made. Only the /s broker holds it, by
- *  sending none but its app's data (the contact-share surface cells pass).
- *  The guide: a contact share writes only its app's data. */
+ *  sending none but its app's data (the contact-share surface cells pass,
+ *  and its deny cells: an Informational app, a share that is no app).
+ *  The guide: a contact share writes only its app's data. A defence in
+ *  depth gap, not reachable by a contact today (the round 2 re-audit), with
+ *  one caveat: the debounced export sync
+ *  (packages/content/src/app-table-exports.ts scheduleAppTableExportSync, a
+ *  setTimeout) inherits the request's contact:rw actor, so its writes run
+ *  as the contact. The fix point: a statement trigger next to
+ *  mantle_edit_check_ro (migration 0280, section 5) refusing a statement on
+ *  an item table but app_databases WHEN mantle.actor = 'contact:rw', and the
+ *  dirty stamp and the export sync bound to a named system actor. */
 const F9 = 'F9 a contact share’s write on the system pool: not held to its app’s data';
 
 /** The actor check modes the surface cells run in (docs/update-prod.md:
@@ -206,7 +207,6 @@ export const KNOWN_FAILURES: Readonly<Record<string, KnownFailure>> = {
   'web-turn turn/writeGrant edit task @folder': known(F2, RAW_UPDATE),
   'peer login/owner edit note @admin': known(F6, 'a peer cannot change its content'),
   'peer login/writeGrant edit note @folder': known(F6, 'a peer cannot change its content'),
-  'run turn/admin delete app @admin': known(F10, 'owner-side tool: not available here'),
   'mcp-oauth login/homeModerator delete app @folder': known(F5, APP_DELETED),
   'web login/homeModerator delete app @folder': known(F5, APP_DELETED),
 };
