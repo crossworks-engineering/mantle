@@ -22,7 +22,6 @@ import type {
   TreeFolderPage,
   TreeItem,
   TreeKind,
-  TreeFilter,
   TreeSearchResult,
   TreeSort,
   TreeTagList,
@@ -507,6 +506,16 @@ export async function searchItemRows(
   return { page: more ? rows.slice(0, limit) : rows, more };
 }
 
+/** What a tree search covers (task f26a516e), decided once by the route's
+ *  gateway (parseReadCover, server/web/lib/list-workspaces.ts) and taken
+ *  here as is:
+ *  - `ws`: narrows the items to what that workspace reads; null, none.
+ *  - `current`: the switcher's workspace; under `across` its items come
+ *    first.
+ *  - `across`: the search covers every workspace the caller reads (never
+ *    with an empty term: the gateway says so, not this read). */
+export type TreeSearchCover = { ws: string | null; current: string | null; across: boolean };
+
 /**
  * Search a kind by name: matching folders first (at most one page, with their
  * crumbs), then items by name, paged. Both carry the crumbs of where they
@@ -515,24 +524,31 @@ export async function searchItemRows(
  * (workspace, tag) narrows the items and drops the folders: it is a question
  * about items.
  *
- * `across` with a term (task f26a516e): the workspace narrows nothing. The
- * search covers what the caller's scope reads (the row rules, as on every
- * read here), the items `ws` reads come first, and the folders that match
- * come too (unless a tag narrows). `across` is echoed back.
+ * `cover` (TreeSearchCover; task f26a516e) says whether a workspace narrows
+ * or orders. Across, the search covers what the caller's scope reads (the
+ * row rules, as on every read here), the items `current` reads come first,
+ * and the folders that match come too (unless a tag narrows). `across` is
+ * echoed back.
  */
 export async function searchTree(
   ownerId: string,
   kind: TreeKind,
   q: string,
-  opts: { cursor?: string | null; limit?: number } & TreeFilter = {},
+  opts: {
+    cursor?: string | null;
+    limit?: number;
+    tag?: string;
+    cover?: TreeSearchCover;
+  } = {},
 ): Promise<TreeSearchResult> {
   const spec = TREE_KIND_SPECS[kind];
   const limit = treePageLimit(opts.limit);
   const term = q.trim();
   const pattern = likePattern(term);
   const cursor = decodeTreeCursor(opts.cursor, 'name');
-  const across = opts.across === true && term !== '';
-  const narrow = across ? undefined : opts.ws;
+  const across = opts.cover?.across === true;
+  const narrow = opts.cover?.ws ?? undefined;
+  const first = across ? (opts.cover?.current ?? undefined) : undefined;
   const filtered = narrow !== undefined || opts.tag !== undefined;
   const folders =
     cursor || !term || filtered
@@ -553,7 +569,7 @@ export async function searchTree(
     opts.cursor,
     limit,
     sql`${readBy(narrow, 'n')} ${tag}`,
-    across ? opts.ws : undefined,
+    first,
   );
   const crumbs = await treeCrumbsFor(ownerId, [
     ...folders.map((f) => treeParentPath(f.path)),

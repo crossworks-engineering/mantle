@@ -22,6 +22,7 @@ export {
   treeCrumbsFor,
   treeFolderById,
   treePageLimit,
+  type TreeSearchCover,
 } from './read';
 export {
   TREE_MARKS_LIST_MAX,

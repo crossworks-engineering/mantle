@@ -25,6 +25,8 @@ export async function GET(req: Request) {
   const parsed = parseSearchQuery(new URL(req.url).searchParams);
   if ('error' in parsed) return NextResponse.json({ error: parsed.error }, { status: 400 });
   const { q, mode, type, branch, tags, limit } = parsed;
+  // 'across': the cover never narrows here (`ws` is null); `current` only
+  // orders the hits and names where they open.
   const cover = await parseReadCover(req, user.id, user.actor.id, 'across');
   if (cover instanceof Response) return cover;
   const current = cover.current;

@@ -342,7 +342,7 @@ describe.skipIf(!URL)('search across workspaces (task f26a516e)', () => {
     const tree = await import('@mantle/content/tree');
     const { searchNodes } = await import('@mantle/search');
     const found = await m.withViewer({ link: { served: [] } }, () =>
-      tree.searchTree(owner, 'pages', tag, { ws: team, across: true }),
+      tree.searchTree(owner, 'pages', tag, { cover: { ws: null, current: team, across: true } }),
     );
     expect(found.items).toEqual([]);
     expect(found.folders).toEqual([]);
@@ -356,7 +356,9 @@ describe.skipIf(!URL)('search across workspaces (task f26a516e)', () => {
     expect(hits.filter((h) => h.id in titles())).toEqual([]);
     // The control: the system pool reads them all, so the empty answers
     // above are the scope's doing.
-    const sys = await tree.searchTree(owner, 'pages', tag, { ws: team, across: true });
+    const sys = await tree.searchTree(owner, 'pages', tag, {
+      cover: { ws: null, current: team, across: true },
+    });
     expect(ours(sys.items as unknown as Json[]).length).toBe(9);
   }, 60_000);
 });

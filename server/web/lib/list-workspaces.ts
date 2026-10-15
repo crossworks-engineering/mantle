@@ -23,6 +23,7 @@
 import { db, nodeAliasHomeIs, nodeAliasReadBy, sql } from '@mantle/db';
 import { currentWorkspaceScope } from '@mantle/db/viewer';
 import type { HitWorkspace, ItemCaps, ListChips, ListWorkspace } from '@mantle/client-types';
+import type { TreeSearchCover } from '@mantle/content/tree';
 import { NextResponse } from '@/server/http-compat';
 import { WS_LOOK_PAIRS, workspaceLook } from '@/lib/workspace-look';
 
@@ -190,7 +191,8 @@ export async function parseWsFilter(
 }
 
 /**
- * What one read covers (task f26a516e).
+ * What one read covers (task f26a516e): TreeSearchCover, the shape the
+ * tree search takes as is.
  *  - `ws`: narrows the read to the items that workspace reads (a list);
  *    null narrows nothing.
  *  - `current`: the switcher's workspace, checked as `?ws=` always was
@@ -198,29 +200,34 @@ export async function parseWsFilter(
  *  - `across`: the read covers every workspace the caller reads; `current`
  *    then only orders it (its own hits first).
  */
-export type ReadCover = { ws: string | null; current: string | null; across: boolean };
+export type ReadCover = TreeSearchCover;
 
 /**
  * How a route reads `?ws=`:
  *  - 'list': it narrows (every list, the landing page);
- *  - 'search': it narrows unless the request asks `across=1` (a tree
- *    search: the client asks across only with a term);
+ *  - 'search': it narrows unless the request asks `across=1` with a term
+ *    (a tree search; an empty term is the A to Z view, which narrows);
  *  - 'across': it never narrows (GET /api/search, which has always looked
  *    in every workspace the caller reads).
  */
 export type ReadCoverMode = 'list' | 'search' | 'across';
 
-/** The one place a route turns `?ws=` (and `across`) into what its read
- *  covers. The row rules of the caller's scope still decide what it reads. */
+/** The one place a route turns `?ws=` (and `across`, with the search term
+ *  `q` in 'search' mode) into what its read covers; the reads take the
+ *  answer as is and decide nothing again. The row rules of the caller's
+ *  scope still decide what it reads. */
 export async function parseReadCover(
   req: Request,
   ownerId: string,
   loginId: string,
   mode: ReadCoverMode,
+  q = '',
 ): Promise<ReadCover | Response> {
   const params = new URL(req.url).searchParams;
   const asked = params.get('across');
-  const across = mode === 'across' || (mode === 'search' && (asked === '1' || asked === 'true'));
+  const across =
+    mode === 'across' ||
+    (mode === 'search' && (asked === '1' || asked === 'true') && q.trim() !== '');
   const raw = params.get('ws');
   if (raw === null) return { ws: null, current: null, across };
   const notFound = () =>

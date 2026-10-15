@@ -30,15 +30,16 @@ export async function GET(req: Request, ctx: { params: Promise<{ kind: string }>
   if (kind instanceof Response) return kind;
   const parsed = Query.safeParse(Object.fromEntries(new URL(req.url).searchParams));
   if (!parsed.success) return NextResponse.json({ error: 'invalid query' }, { status: 400 });
-  const cover = await parseReadCover(req, user.id, user.actor.id, 'search');
+  // The cover is the one decision (narrow or order, and the empty-term
+  // rule); the search takes it as is.
+  const cover = await parseReadCover(req, user.id, user.actor.id, 'search', parsed.data.q);
   if (cover instanceof Response) return cover;
   const ws = cover.current;
   const found = await searchTree(user.id, kind, parsed.data.q, {
     cursor: parsed.data.cursor,
     limit: parsed.data.limit,
-    ws: ws ?? undefined,
-    across: cover.across,
     tag: parsed.data.tag,
+    cover,
   });
   const [chips, hits] = await Promise.all([
     workspaceChips(user.id, user.actor.id, [
