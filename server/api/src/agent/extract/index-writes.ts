@@ -10,8 +10,9 @@ import {
   db,
   nodes,
   nodeMixedSummaries,
-  INDEX_WORK_KEY,
+  dropIndexWork,
   notifyNodeIndexed,
+  readIndexWork,
   withDeadlockRetry,
   withHeads,
   tables,
@@ -183,8 +184,9 @@ export async function writeContentIndex(
       const updated = await db
         .update(nodes)
         .set({
-          // The work a reset stamped (A10 #7, data.index_work) is done.
-          data: sql`(${nodes.data} - ${INDEX_WORK_KEY}::text) || ${JSON.stringify(indexPatch)}::jsonb`,
+          // The work a reset stamped (A10 #7, data.index_work) is done: the
+          // stamp the job saw, never a newer one.
+          data: sql`${dropIndexWork(nodes.data, readIndexWork(node.data))} || ${JSON.stringify(indexPatch)}::jsonb`,
           ...(embedding ? { embedding } : {}),
           // A summary from folded text: the W2 mark clears (0247).
           derivedMixed: false,

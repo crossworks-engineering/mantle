@@ -17,6 +17,7 @@ import {
   db,
   nodes,
   tables,
+  hasSummary,
   markContentChanged,
   oneRow,
   removeSqliteFile,
@@ -340,14 +341,16 @@ type StagedCommit = {
  *  section 6). Cell-only edits on a table that has a summary are `cells`
  *  (the vector again, the summary and entities kept: the extractor reuses
  *  the summary and skips its model pass); a schema change, a first commit,
- *  or a table never summarised is `schema` (the whole pass), as main did. */
-function committedChange(
+ *  or a table with no summary is `schema` (the whole pass), as main did. An
+ *  empty summary is no summary (hasSummary, the extractor's own test): on
+ *  main its commit ran the model too, and as `cells` it left the table
+ *  with no vector (A10 #7 fix round 2, M3). */
+export function committedChange(
   oldShapeHash: string | null,
   newShapeHash: string,
   nodeData: unknown,
 ): 'cells' | 'schema' {
-  const summary = ((nodeData ?? {}) as Record<string, unknown>).summary;
-  return oldShapeHash != null && oldShapeHash === newShapeHash && typeof summary === 'string'
+  return oldShapeHash != null && oldShapeHash === newShapeHash && hasSummary(nodeData)
     ? 'cells'
     : 'schema';
 }

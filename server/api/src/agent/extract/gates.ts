@@ -25,7 +25,9 @@
  *  - A re-embed only (A10 #7: a write stamped `data.index_work = 'embed'`,
  *    a new title) runs after metadata-only (a name-only file re-runs its
  *    spine) and BEFORE the cost guard and the key pre-flight: it needs no
- *    model, with a summary to keep or without one (embedWork).
+ *    model, with a summary to keep or without one (embedWork). A table
+ *    keeping its summary is admitted there too: the model step reuses the
+ *    summary, so it needs no key.
  *  - Already-extracted is last, and requires the completion marker as well as
  *    summary+embedding: those are written first, so checking them alone made
  *    every retry skip a pass that had failed partway.
@@ -40,10 +42,15 @@ import {
   db,
   nodes,
   contentChunks,
-  INDEX_WORK_KEY,
+  dropIndexWork,
+  hasSummary,
+  hasSummarySql,
+  indexWorkIs,
   isExtractExempt,
   llmWorkAllowed,
   notifyNodeIndexed,
+  readIndexWork,
+  stampHadVector,
   withDeadlockRetry,
   withHeads,
   type ExtractorParams,
@@ -56,7 +63,7 @@ import { resolveChatKey } from '@mantle/runtime/agent';
 import { resolveExtractor } from './model';
 import { maybeAutoTableSpreadsheet } from './auto-table';
 import { maybeExtractEmbeddedImages } from './images';
-import { recordTerminalSkip } from './terminal';
+import { recordTerminalSkip, type SkipInit } from './terminal';
 import { readNodeBodyLocal } from './load-body';
 import { writeRetrievalChunks } from './index-writes';
 
@@ -81,7 +88,7 @@ async function indexLocalOnly(
       .update(nodes)
       .set({
         embedding: vec,
-        data: sql`(coalesce(${nodes.data}, '{}'::jsonb) - 'extract_skipped' - 'extract_parked' - ${INDEX_WORK_KEY}::text) || ${JSON.stringify({ ...extra, indexing_applied: 'local', extract_completed_at: new Date().toISOString() })}::jsonb`,
+        data: sql`(${dropIndexWork(nodes.data, readIndexWork(node.data))} - 'extract_skipped' - 'extract_parked') || ${JSON.stringify({ ...extra, indexing_applied: 'local', extract_completed_at: new Date().toISOString() })}::jsonb`,
       })
       .where(eq(nodes.id, node.id));
   });
@@ -96,23 +103,26 @@ async function indexLocalOnly(
  *  - 'summary': it keeps a summary (with the completion marker or, for an
  *    item extracted before the marker existed, without): the vector from the
  *    title and that summary;
- *  - 'local': no summary, and the extractor has seen the item before (a
- *    terminal skip, such as a page too short to summarise, or a pass that
- *    completed without one): the vector from the title and the text read
- *    locally, on the embedder;
+ *  - 'table_summary': a table keeping its summary: admitted at once, before
+ *    the cost guard and the key pre-flight, and the model step reuses the
+ *    summary (no model call, no key) and rebuilds its profile passages (fix
+ *    round 2, L5);
+ *  - 'local': no summary (an empty one is none, hasSummary), and the item
+ *    was indexed before: a terminal skip (a page too short to summarise), a
+ *    pass that completed without one, or a vector the reset cleared (an item
+ *    from before the completion marker, fix round 2, L4): the vector from the
+ *    title and the text read locally, on the embedder;
  *  - null: not an embed (no stamp, a vector already, or an 'extract' stamp a
- *    rename never downgrades); a table keeping its summary (the model step
- *    reuses it, no model call, and rebuilds its profile passages); or an
- *    item the extractor has never seen (its first pass runs, as it would
- *    have without the rename).
+ *    rename never downgrades), or an item never indexed (its first pass runs,
+ *    as it would have without the rename).
  */
-export function embedWork(node: typeof nodes.$inferSelect): 'summary' | 'local' | null {
+export function embedWork(
+  node: typeof nodes.$inferSelect,
+): 'summary' | 'table_summary' | 'local' | null {
   const data = (node.data ?? {}) as Record<string, unknown>;
-  if (node.embedding || data[INDEX_WORK_KEY] !== 'embed') return null;
-  if (typeof data.summary === 'string' && data.summary.trim().length > 0) {
-    return node.type === 'table' ? null : 'summary';
-  }
-  if (data.extract_skipped || data.extract_completed_at) return 'local';
+  if (node.embedding || readIndexWork(data) !== 'embed') return null;
+  if (hasSummary(data)) return node.type === 'table' ? 'table_summary' : 'summary';
+  if (data.extract_skipped || data.extract_completed_at || stampHadVector(data)) return 'local';
   return null;
 }
 
@@ -134,13 +144,13 @@ async function writeEmbedVector(
     await tx.execute(sql`select set_config('mantle.keep_updated_at', 'on', true)`);
     return tx
       .update(nodes)
-      .set({ embedding: vec, data: sql`${nodes.data} - ${INDEX_WORK_KEY}::text` })
+      .set({ embedding: vec, data: dropIndexWork(nodes.data, 'embed') })
       .where(
         and(
           eq(nodes.id, node.id),
           isNull(nodes.embedding),
           eq(nodes.title, node.title),
-          sql`${nodes.data}->>${INDEX_WORK_KEY}::text = 'embed'`,
+          indexWorkIs('embed'),
           also,
         ),
       )
@@ -151,7 +161,8 @@ async function writeEmbedVector(
 }
 
 /** The vector from the title and the kept summary (the text update_index
- *  embeds), written while the row still holds that title and summary. */
+ *  embeds), written while the row still holds that title and that summary
+ *  (hasSummary held for it, so the guard implies hasSummarySql). */
 async function reembedFromSummary(
   node: typeof nodes.$inferSelect,
   ownerId: string,
@@ -163,7 +174,9 @@ async function reembedFromSummary(
 
 /** The vector of an item with no summary, from its title and the text read
  *  locally (a file: its name spine, its bytes are not parsed again), written
- *  while it still has no summary. */
+ *  while it still has no summary: an empty one is none, as the gate reads it
+ *  (hasSummarySql; fix round 2, M3: the guard read `summary: ''` as a
+ *  summary, so nothing was written and the stamp stayed). */
 async function embedTitleLocally(
   node: typeof nodes.$inferSelect,
   ownerId: string,
@@ -174,7 +187,7 @@ async function embedTitleLocally(
     if (body && body !== node.title.trim()) text = `${node.title}\n\n${body.slice(0, 2000)}`;
   }
   const vec = await embed(ownerId, text);
-  return writeEmbedVector(node, vec, sql`not (coalesce(${nodes.data}, '{}'::jsonb) ? 'summary')`);
+  return writeEmbedVector(node, vec, sql`not ${hasSummarySql()}`);
 }
 
 /**
@@ -349,19 +362,22 @@ export async function admitForExtraction(
     (node.data as Record<string, unknown> | null)?.refolded !== true
   ) {
     const indexed = await indexLocalOnly(node, ownerId, { refolded: true });
-    await recordTerminalSkip({
-      kind: 'extractor_run',
-      ownerId,
-      subjectId: nodeId,
-      subjectKind: 'node',
-      disposition: 'derived_mixed_unrefolded',
-      details: {
-        node_type: node.type,
-        worker_slug: worker.slug,
-        ...indexed,
-        hint: 'Marked by the clean-derived migration and not re-folded yet: indexed locally from its own text (no model) and stamped refolded; the next edit summarises it (workspaces plan 5.3).',
+    await recordTerminalSkip(
+      {
+        kind: 'extractor_run',
+        ownerId,
+        subjectId: nodeId,
+        subjectKind: 'node',
+        disposition: 'derived_mixed_unrefolded',
+        details: {
+          node_type: node.type,
+          worker_slug: worker.slug,
+          ...indexed,
+          hint: 'Marked by the clean-derived migration and not re-folded yet: indexed locally from its own text (no model) and stamped refolded; the next edit summarises it (workspaces plan 5.3).',
+        },
       },
-    });
+      node,
+    );
     return { proceed: false };
   }
   if (HARD_SKIP_TYPES.has(node.type)) {
@@ -393,7 +409,7 @@ export async function admitForExtraction(
       digestData.kind === 'conversation_digest');
   if (isConversationDigest) {
     const embedded = await embedAuthoredSummary(node, ownerId);
-    await (embedded === null ? recordSkippedTrace : recordTerminalSkip)({
+    const skip: SkipInit = {
       kind: 'extractor_run',
       ownerId,
       subjectId: node.id,
@@ -405,7 +421,8 @@ export async function admitForExtraction(
         embedded: embedded === true,
         hint: 'Conversation digests are authored summaries — the extractor must not re-summarise them; a missing vector is rebuilt from the topic and the summary.',
       },
-    });
+    };
+    await (embedded === null ? recordSkippedTrace(skip) : recordTerminalSkip(skip, node));
     return { proceed: false };
   }
 
@@ -416,7 +433,7 @@ export async function admitForExtraction(
   // brain's own replies.
   if (node.type === 'note' && digestData.kind === 'chat_archive') {
     const embedded = await embedAuthoredSummary(node, ownerId);
-    await (embedded === null ? recordSkippedTrace : recordTerminalSkip)({
+    const skip: SkipInit = {
       kind: 'extractor_run',
       ownerId,
       subjectId: node.id,
@@ -428,7 +445,8 @@ export async function admitForExtraction(
         embedded: embedded === true,
         hint: 'Chat archive summaries are authored at archive time and are never a fact source; a missing vector is rebuilt from the topic and the summary.',
       },
-    });
+    };
+    await (embedded === null ? recordSkippedTrace(skip) : recordTerminalSkip(skip, node));
     return { proceed: false };
   }
 
@@ -455,7 +473,7 @@ export async function admitForExtraction(
     }
     // Under 2 chars there is nothing to embed, now or later: terminal. A
     // failed embed is not (the drain retries it once the embedder is back).
-    await (tgText.length < 2 ? recordTerminalSkip : recordSkippedTrace)({
+    const skip: SkipInit = {
       kind: 'extractor_run',
       ownerId,
       subjectId: node.id,
@@ -467,7 +485,8 @@ export async function admitForExtraction(
         embedded,
         hint: 'Telegram turns get an embedding for search but no summary/fact extraction.',
       },
-    });
+    };
+    await (tgText.length < 2 ? recordTerminalSkip(skip, node) : recordSkippedTrace(skip));
     return { proceed: false };
   }
 
@@ -508,19 +527,22 @@ export async function admitForExtraction(
   const retrievalOnly = brainDepth === 'retrieval';
   // `*` is a wildcard meaning "any non-HARD_SKIP type" — already enforced above.
   if (!extractTypes.includes('*') && !extractTypes.includes(node.type)) {
-    await recordTerminalSkip({
-      kind: 'extractor_run',
-      ownerId,
-      subjectId: node.id,
-      subjectKind: 'node',
-      disposition: 'type_not_in_allowlist',
-      details: {
-        node_type: node.type,
-        allowed_types: extractTypes,
-        worker_slug: worker.slug,
-        hint: `Add '${node.type}' (or '*') to the worker's target_types param to extract it.`,
+    await recordTerminalSkip(
+      {
+        kind: 'extractor_run',
+        ownerId,
+        subjectId: node.id,
+        subjectKind: 'node',
+        disposition: 'type_not_in_allowlist',
+        details: {
+          node_type: node.type,
+          allowed_types: extractTypes,
+          worker_slug: worker.slug,
+          hint: `Add '${node.type}' (or '*') to the worker's target_types param to extract it.`,
+        },
       },
-    });
+      node,
+    );
     return { proceed: false };
   }
 
@@ -581,7 +603,7 @@ export async function admitForExtraction(
           await tx
             .update(nodes)
             .set({
-              data: sql`(${nodes.data} - 'text' - 'content' - 'extract_skipped' - 'extract_parked' - ${INDEX_WORK_KEY}::text) || ${JSON.stringify(
+              data: sql`(${dropIndexWork(nodes.data, readIndexWork(node.data))} - 'text' - 'content' - 'extract_skipped' - 'extract_parked') || ${JSON.stringify(
                 {
                   summary: spine,
                   summary_model: 'metadata-only',
@@ -627,12 +649,22 @@ export async function admitForExtraction(
 
   // A re-embed (A10 #7, markContentChanged stamped 'embed': a new title, a
   // table's cell commit). Never a model call: the vector from the title and
-  // the kept summary, or, with no summary on an item the extractor has seen
-  // before, from the title and the text read locally (embedWork). Before the
-  // cost guard and the key pre-flight, which it needs neither of. A table
-  // keeping its summary is left to the model step, which reuses it there and
-  // rebuilds its profile passages.
+  // the kept summary, or, with no summary on an item indexed before, from the
+  // title and the text read locally (embedWork). Before the cost guard and
+  // the key pre-flight, which it needs neither of. A table keeping its
+  // summary is admitted here too: the model step reuses the summary (no model
+  // call, so no key) and rebuilds its profile passages.
   const work = embedWork(node);
+  if (work === 'table_summary') {
+    return {
+      proceed: true,
+      node,
+      worker,
+      params,
+      retrievalOnly,
+      existingData: (node.data ?? {}) as Record<string, unknown>,
+    };
+  }
   if (work) {
     const embedded =
       work === 'summary'

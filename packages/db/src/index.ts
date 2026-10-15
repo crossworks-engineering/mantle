@@ -265,13 +265,23 @@ export {
 } from './context-ref-resolve';
 export { notifyNodeIngested, notifyNodeIndexed } from './notify';
 export {
-  INDEX_WORK_KEY,
   SUMMARY_KEYS,
   changedFields,
   markContentChanged,
   resignalNode,
   type ContentTx,
 } from './content-changed';
+export {
+  INDEX_WORK_KEY,
+  INDEX_WORK_HAD_VECTOR_KEY,
+  INDEX_WORK_KEYS,
+  dropIndexWork,
+  hasSummary,
+  hasSummarySql,
+  indexWorkIs,
+  readIndexWork,
+  stampHadVector,
+} from './index-work';
 export {
   FORUM_ARCHIVE_SOURCE,
   TEAM_REQUEST_SOURCE,

@@ -37,7 +37,7 @@ import { resolveChatRoutes } from '@mantle/runtime/agent';
 import { getChatAdapter } from '@mantle/voice';
 import { isDocumentTitleMention } from '@mantle/content';
 import { TEXT_STORE_MAX_CHARS, truncateForPrompt } from './extract/text';
-import { runExtractorModel } from './extract/model';
+import { reusesTableSummary, runExtractorModel } from './extract/model';
 import { admitForExtraction } from './extract/gates';
 import { loadExtractableBody } from './extract/load-body';
 import {
@@ -86,9 +86,11 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
   // worker said. Now the worker.provider field actually steers the
   // dispatch. If no adapter is wired for the provider, surface a
   // clear skipped trace rather than crashing — operators see what's
-  // missing in /traces.
+  // missing in /traces. A table reusing its summary calls no model, so it
+  // needs no adapter (A10 #7 fix round 2, L5: nor a key).
   const adapter = getChatAdapter(worker.provider);
-  if (!adapter) {
+  const reuse = reusesTableSummary(node, existingData);
+  if (!adapter && !reuse) {
     console.error(
       `[extractor] no chat adapter registered for provider '${worker.provider}' — skipping`,
     );
@@ -110,7 +112,7 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
 
   const routes = resolveChatRoutes(worker);
   console.log(
-    `[extractor] node ${node.id.slice(0, 8)} (${node.type}, ${node.title.slice(0, 40)}) via ${adapter.adapterName}:${worker.model}` +
+    `[extractor] node ${node.id.slice(0, 8)} (${node.type}, ${node.title.slice(0, 40)}) via ${reuse ? 'the kept summary' : `${adapter?.adapterName}:${worker.model}`}` +
       (routes.backup ? ` (backup ${routes.backup.provider}:${routes.backup.model})` : ''),
   );
 

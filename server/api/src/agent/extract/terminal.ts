@@ -11,29 +11,40 @@
  */
 
 import { eq, sql } from 'drizzle-orm';
-import { db, nodes, extractSkippedStamp, INDEX_WORK_KEY } from '@mantle/db';
+import { db, nodes, extractSkippedStamp, dropIndexWork, readIndexWork } from '@mantle/db';
 import { recordSkippedTrace } from '@mantle/tracing';
 
-type SkipInit = Parameters<typeof recordSkippedTrace>[0] & { subjectId: string };
+/** A skip trace's fields, with the node it is about. */
+export type SkipInit = Parameters<typeof recordSkippedTrace>[0] & { subjectId: string };
 
-/** Record the skip trace, then stamp the node terminal. */
-export async function recordTerminalSkip(init: SkipInit): Promise<void> {
+/** Record the skip trace, then stamp the node terminal. `node` is the row as
+ *  the job loaded it: its work stamp is the one the verdict answers. */
+export async function recordTerminalSkip(
+  init: SkipInit,
+  node: { readonly data: unknown },
+): Promise<void> {
   await recordSkippedTrace(init);
-  await stampExtractSkipped(init.subjectId, init.disposition);
+  await stampExtractSkipped(init.subjectId, init.disposition, readIndexWork(node.data));
 }
 
 /** Merge `data.extract_skipped = { reason, at: now() }` onto the node, and
  *  drop the work a reset stamped (A10 #7, `data.index_work`): the verdict is
- *  the answer to it, so a later rename re-embeds without a model call. Leaves
+ *  the answer to it, so a later rename re-embeds without a model call. Only
+ *  the stamp the job saw (`seen`) is dropped: a content change that landed
+ *  while the job ran keeps its 'extract' stamp for its own job, so a rename
+ *  before that job runs still summarises the new content (fix round 2, L6;
+ *  dropIndexWork says what a value check cannot tell apart). Leaves
  *  `updated_at` alone: the stamp must not look like a content change. Best
  *  effort: a failed stamp only means the drain re-queues the node once more. */
-export async function stampExtractSkipped(nodeId: string, reason: string): Promise<void> {
+export async function stampExtractSkipped(
+  nodeId: string,
+  reason: string,
+  seen: ReturnType<typeof readIndexWork>,
+): Promise<void> {
   try {
     await db
       .update(nodes)
-      .set({
-        data: sql`(coalesce(${nodes.data}, '{}'::jsonb) - ${INDEX_WORK_KEY}::text) || ${extractSkippedStamp(reason)}`,
-      })
+      .set({ data: sql`${dropIndexWork(nodes.data, seen)} || ${extractSkippedStamp(reason)}` })
       .where(eq(nodes.id, nodeId));
   } catch (err) {
     console.error(

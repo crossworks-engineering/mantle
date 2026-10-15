@@ -25,7 +25,7 @@ import { isHollowFilenameBody } from '../extractor-parse';
 import { cleanText } from './text';
 import { loadFileBytes, tryUnlockPdf } from './file-bytes';
 import { composeImageBody, ocrIngestPdfNode, visionIngestImageNode } from './images';
-import { recordTerminalSkip } from './terminal';
+import { recordTerminalSkip, type SkipInit } from './terminal';
 
 /** The body of a node with no model call (no vision, no OCR worker): the typed
  *  dispatch below. The cost guard's local-only index reads this. */
@@ -338,21 +338,24 @@ export async function loadExtractableBody(
   // export is the whole point.
   const exportHint = node.type === 'file' ? exportHintForExt(fileExt) : undefined;
   if (exportHint) {
-    await recordTerminalSkip({
-      kind: 'extractor_run',
-      ownerId,
-      subjectId: node.id,
-      subjectKind: 'node',
-      disposition: 'needs_export',
-      details: {
-        worker_slug: worker.slug,
-        node_type: node.type,
-        title: node.title,
-        filename: existingData.filename,
-        extension: fileExt,
-        hint: exportHint,
+    await recordTerminalSkip(
+      {
+        kind: 'extractor_run',
+        ownerId,
+        subjectId: node.id,
+        subjectKind: 'node',
+        disposition: 'needs_export',
+        details: {
+          worker_slug: worker.slug,
+          node_type: node.type,
+          title: node.title,
+          filename: existingData.filename,
+          extension: fileExt,
+          hint: exportHint,
+        },
       },
-    });
+      node,
+    );
     return { ok: false };
   }
 
@@ -374,22 +377,25 @@ export async function loadExtractableBody(
     fileMime.startsWith('audio/') ||
     fileMime.startsWith('video/');
   if (node.type === 'file' && !existingData.text && !existingData.content && isMediaFile) {
-    await recordTerminalSkip({
-      kind: 'extractor_run',
-      ownerId,
-      subjectId: node.id,
-      subjectKind: 'node',
-      disposition: 'unsupported_media',
-      details: {
-        worker_slug: worker.slug,
-        node_type: node.type,
-        title: node.title,
-        filename: existingData.filename,
-        extension: fileExt,
-        mime: fileMime,
-        hint: "Audio/video files are stored and playable but not indexed yet. To get a searchable transcript, ask the assistant to ingest the video's link (video_ingest). The file stays findable by name.",
+    await recordTerminalSkip(
+      {
+        kind: 'extractor_run',
+        ownerId,
+        subjectId: node.id,
+        subjectKind: 'node',
+        disposition: 'unsupported_media',
+        details: {
+          worker_slug: worker.slug,
+          node_type: node.type,
+          title: node.title,
+          filename: existingData.filename,
+          extension: fileExt,
+          mime: fileMime,
+          hint: "Audio/video files are stored and playable but not indexed yet. To get a searchable transcript, ask the assistant to ingest the video's link (video_ingest). The file stays findable by name.",
+        },
       },
-    });
+      node,
+    );
     return { ok: false };
   }
 
@@ -418,7 +424,7 @@ export async function loadExtractableBody(
       // Terminal only when the worker really read the image and found
       // nothing: a worker that did not run (none wired, a provider error) is
       // left for the drain to retry once it is back.
-      await (vision.ran ? recordTerminalSkip : recordSkippedTrace)({
+      const skip: SkipInit = {
         kind: 'extractor_run',
         ownerId,
         subjectId: node.id,
@@ -436,7 +442,8 @@ export async function loadExtractableBody(
           vision_failure: vision.failure,
           hint: `Image produced no describable text — ${vision.failure ?? 'the model returned empty output for this image'}. Nothing to index; the node is marked processed so the sweep stops re-queuing it.`,
         },
-      });
+      };
+      await (vision.ran ? recordTerminalSkip(skip, node) : recordSkippedTrace(skip));
       return { ok: false };
     }
     // An extracted document image carries a provenance header; folding it in
@@ -484,20 +491,23 @@ export async function loadExtractableBody(
       } else {
         // No stored password opened it. Honest, distinct skip (not the
         // misleading no_text_layer) so the operator knows it's LOCKED, not blank.
-        await recordTerminalSkip({
-          kind: 'extractor_run',
-          ownerId,
-          subjectId: node.id,
-          subjectKind: 'node',
-          disposition: 'encrypted_pdf',
-          details: {
-            worker_slug: worker.slug,
-            node_type: node.type,
-            title: node.title,
-            filename: existingData.filename,
-            hint: 'PDF is password-protected and no stored password opened it. Add the password at /settings/pdf-passwords, then re-extract.',
+        await recordTerminalSkip(
+          {
+            kind: 'extractor_run',
+            ownerId,
+            subjectId: node.id,
+            subjectKind: 'node',
+            disposition: 'encrypted_pdf',
+            details: {
+              worker_slug: worker.slug,
+              node_type: node.type,
+              title: node.title,
+              filename: existingData.filename,
+              hint: 'PDF is password-protected and no stored password opened it. Add the password at /settings/pdf-passwords, then re-extract.',
+            },
           },
-        });
+          node,
+        );
         return { ok: false };
       }
     } else if (ocr.bytesMissing) {
@@ -505,21 +515,24 @@ export async function loadExtractableBody(
       // e.g. an email attachment indexed by metadata whose body was never
       // fetched). Distinct from a bad scan: the fix is to RE-FETCH the file,
       // not to OCR it. Honest disposition so the operator can tell the two apart.
-      await recordTerminalSkip({
-        kind: 'extractor_run',
-        ownerId,
-        subjectId: node.id,
-        subjectKind: 'node',
-        disposition: 'bytes_unavailable',
-        details: {
-          worker_slug: worker.slug,
-          node_type: node.type,
-          title: node.title,
-          filename: existingData.filename,
-          sha256: typeof existingData.sha256 === 'string' ? existingData.sha256 : undefined,
-          hint: "The file's bytes aren't in object storage (metadata-only node — e.g. an email attachment whose body was never fetched). Re-fetch the source to extract it; OCR can't help.",
+      await recordTerminalSkip(
+        {
+          kind: 'extractor_run',
+          ownerId,
+          subjectId: node.id,
+          subjectKind: 'node',
+          disposition: 'bytes_unavailable',
+          details: {
+            worker_slug: worker.slug,
+            node_type: node.type,
+            title: node.title,
+            filename: existingData.filename,
+            sha256: typeof existingData.sha256 === 'string' ? existingData.sha256 : undefined,
+            hint: "The file's bytes aren't in object storage (metadata-only node — e.g. an email attachment whose body was never fetched). Re-fetch the source to extract it; OCR can't help.",
+          },
         },
-      });
+        node,
+      );
       return { ok: false };
     } else if (ocr.rasterizeError) {
       // The rasterizer THREW. Nothing is wrong with the document as far as we
@@ -552,7 +565,7 @@ export async function loadExtractableBody(
       // honest skip instead of a filename-only false success.
       // Terminal only when a worker really read the pages (a blank scan); no
       // worker, or one that failed, is left for the drain to retry.
-      await (ocr.ran ? recordTerminalSkip : recordSkippedTrace)({
+      const skip: SkipInit = {
         kind: 'extractor_run',
         ownerId,
         subjectId: node.id,
@@ -565,7 +578,8 @@ export async function loadExtractableBody(
           filename: existingData.filename,
           hint: 'PDF has no extractable text layer and OCR produced nothing — configure a default vision worker at /settings/ai-workers, or re-upload as an image. A blank/illegible scan can also land here. (A PDF that failed to RENDER is recorded as pdf_unreadable instead.)',
         },
-      });
+      };
+      await (ocr.ran ? recordTerminalSkip(skip, node) : recordSkippedTrace(skip));
       return { ok: false };
     }
   } else if (preferNativePdf) {
@@ -592,48 +606,54 @@ export async function loadExtractableBody(
       title: node.title,
     })
   ) {
-    await recordTerminalSkip({
-      kind: 'extractor_run',
-      ownerId,
-      subjectId: node.id,
-      subjectKind: 'node',
-      disposition: 'no_parser',
-      details: {
-        worker_slug: worker.slug,
-        node_type: node.type,
-        title: node.title,
-        filename: existingData.filename,
-        extension: fileExt,
-        // CAD routes land here only on a SNIFF MISS (the bytes are not that
-        // format — a renamed DWFx, a mislabelled file); "no parser reads
-        // .dwg" would be false, and a sidecar failure never reaches this
-        // guard (it throws upstream as a real, retryable extract error).
-        hint:
-          fileExt === 'dwg' || fileExt === 'dxf' || fileExt === 'dwf'
-            ? `The file is named .${fileExt} but does not contain readable ${fileExt.toUpperCase()} data (a renamed or mislabelled format?). Nothing to index beyond the filename — re-export it from the CAD tool and re-upload.`
-            : `No parser reads .${fileExt || 'unknown'} files, so there is nothing to index beyond the filename. Convert the file to a supported format (pdf, docx, xlsx, text) and re-upload to make its content searchable.`,
+    await recordTerminalSkip(
+      {
+        kind: 'extractor_run',
+        ownerId,
+        subjectId: node.id,
+        subjectKind: 'node',
+        disposition: 'no_parser',
+        details: {
+          worker_slug: worker.slug,
+          node_type: node.type,
+          title: node.title,
+          filename: existingData.filename,
+          extension: fileExt,
+          // CAD routes land here only on a SNIFF MISS (the bytes are not that
+          // format — a renamed DWFx, a mislabelled file); "no parser reads
+          // .dwg" would be false, and a sidecar failure never reaches this
+          // guard (it throws upstream as a real, retryable extract error).
+          hint:
+            fileExt === 'dwg' || fileExt === 'dxf' || fileExt === 'dwf'
+              ? `The file is named .${fileExt} but does not contain readable ${fileExt.toUpperCase()} data (a renamed or mislabelled format?). Nothing to index beyond the filename — re-export it from the CAD tool and re-upload.`
+              : `No parser reads .${fileExt || 'unknown'} files, so there is nothing to index beyond the filename. Convert the file to a supported format (pdf, docx, xlsx, text) and re-upload to make its content searchable.`,
+        },
       },
-    });
+      node,
+    );
     return { ok: false };
   }
 
   if (!rawBody || rawBody.trim().length < 20) {
     // Not enough content to extract meaningfully.
-    await recordTerminalSkip({
-      kind: 'extractor_run',
-      ownerId,
-      subjectId: node.id,
-      subjectKind: 'node',
-      disposition: 'body_too_short',
-      details: {
-        worker_slug: worker.slug,
-        node_type: node.type,
-        title: node.title,
-        body_chars: rawBody?.length ?? 0,
-        threshold_chars: 20,
-        hint: 'The extractor wants ≥20 chars of body content. Title-only nodes are skipped.',
+    await recordTerminalSkip(
+      {
+        kind: 'extractor_run',
+        ownerId,
+        subjectId: node.id,
+        subjectKind: 'node',
+        disposition: 'body_too_short',
+        details: {
+          worker_slug: worker.slug,
+          node_type: node.type,
+          title: node.title,
+          body_chars: rawBody?.length ?? 0,
+          threshold_chars: 20,
+          hint: 'The extractor wants ≥20 chars of body content. Title-only nodes are skipped.',
+        },
       },
-    });
+      node,
+    );
     return { ok: false };
   }
   return { ok: true, rawBody };

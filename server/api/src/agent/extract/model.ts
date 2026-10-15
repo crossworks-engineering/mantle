@@ -5,7 +5,13 @@
  * unchanged; the sequencer in ../extractor.ts calls into here.
  */
 
-import { getDefaultWorker, nodes, type AiWorker, type ExtractorParams } from '@mantle/db';
+import {
+  getDefaultWorker,
+  hasSummary,
+  nodes,
+  type AiWorker,
+  type ExtractorParams,
+} from '@mantle/db';
 import { step } from '@mantle/tracing';
 import { backgroundFence, withFenceNote } from '@mantle/std';
 import {
@@ -131,6 +137,20 @@ export function buildExtractorInput(
 }
 
 /**
+ * Whether the model step reuses a table's summary instead of calling the
+ * model: a table that keeps a summary (hasSummary: an empty one is none, so
+ * an empty summary runs the model, as on main). The gate admits such a table
+ * with an 'embed' stamp before the key pre-flight (A10 #7 fix round 2, L5),
+ * so this path needs no key and no chat adapter.
+ */
+export function reusesTableSummary(
+  node: { readonly type: string },
+  existingData: Record<string, unknown>,
+): boolean {
+  return node.type === 'table' && hasSummary(existingData);
+}
+
+/**
  * Run the extractor LLM over the node body and return the parsed output
  * (summary + facts + entities + relations). Two paths: a shape-unchanged table
  * REUSES its committed summary (no LLM spend), everything else calls the model.
@@ -156,12 +176,9 @@ export async function runExtractorModel(
   // when the shape changed. A table arriving here WITH a summary is
   // therefore a cell-edit re-index: reuse the summary, skip the LLM, and
   // refresh only the deterministic layers (profile chunks + embedding).
-  const reusedTableSummary =
-    node.type === 'table' &&
-    typeof existingData.summary === 'string' &&
-    existingData.summary.trim().length > 0
-      ? existingData.summary
-      : null;
+  const reusedTableSummary = reusesTableSummary(node, existingData)
+    ? String(existingData.summary)
+    : null;
 
   const parsed = reusedTableSummary
     ? await step(

@@ -78,6 +78,24 @@ export const NODE_EXTRACTOR_KEYS: readonly string[] = [
 export const NODE_PRESENTATION_KEYS: readonly string[] = ['rank'];
 
 /**
+ * Keys of nodes.data a user's own write sets, through one gateway only (A10
+ * #7, the work stamp): not derived, since a non-system write sets them, so
+ * the edit check lets them through. Each names the module that alone spells
+ * the key (edit-check.test.ts holds every other product file to it), and
+ * how it is set.
+ */
+export const GATEWAY_KEY_WRITERS: Readonly<Record<string, { module: string; how: string }>> = {
+  index_work: {
+    module: 'packages/db/src/index-work.ts',
+    how: 'set via markContentChanged only (stampIndexWork, which @mantle/db does not export); read and dropped through the same module',
+  },
+  index_work_had_vector: {
+    module: 'packages/db/src/index-work.ts',
+    how: 'set with an embed stamp via markContentChanged only; dropped with the stamp',
+  },
+};
+
+/**
  * Keys the extractor's files write that are NOT derived, each with why: a
  * user's own value the extractor copies or keeps (edit-check.test.ts reads
  * the extractor's key writes against both lists).
