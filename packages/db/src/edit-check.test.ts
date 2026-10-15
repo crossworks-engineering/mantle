@@ -4,7 +4,7 @@
  * writes the keys, and the triggers the access matrix makes.
  */
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, relative } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   ACCESS_MATRIX,
@@ -19,6 +19,7 @@ import {
 import {
   DERIVED_KEY_WRITERS,
   EXTRACTOR_USER_KEYS,
+  GATEWAY_KEY_WRITERS,
   NODE_EXTRACTOR_KEYS,
   NODE_DERIVED_KEYS,
   NODE_PRESENTATION_KEYS,
@@ -136,6 +137,49 @@ describe('the derived keys of nodes.data (A3a, plan 5.2: an inventory, pinned)',
 
   it('no key is both derived and a presentation key', () => {
     for (const k of NODE_PRESENTATION_KEYS) expect(NODE_DERIVED_KEYS).not.toContain(k);
+  });
+});
+
+/** The product source files under `dirs` (no tests, no build output). */
+function productFiles(dirs: readonly string[]): string[] {
+  const out: string[] = [];
+  const walk = (abs: string) => {
+    for (const e of readdirSync(abs, { withFileTypes: true })) {
+      if (['node_modules', '.next', 'dist', '.turbo'].includes(e.name)) continue;
+      const p = join(abs, e.name);
+      if (e.isDirectory()) walk(p);
+      else if (/\.(ts|tsx|mts|mjs)$/.test(e.name) && !/\.test\.|\.d\.ts$/.test(e.name))
+        out.push(relative(ROOT, p));
+    }
+  };
+  for (const d of dirs) walk(join(ROOT, d));
+  return out;
+}
+
+describe('the work stamp keys (A10 #7 fix round 2): set via markContentChanged only', () => {
+  const files = productFiles(['packages', 'server', 'scripts']);
+  const spelled = (key: string) => new RegExp(`['"\`]${key}['"\`]`);
+
+  it('are no derived key: the user’s own write sets them', () => {
+    for (const k of Object.keys(GATEWAY_KEY_WRITERS)) expect(NODE_DERIVED_KEYS).not.toContain(k);
+  });
+
+  it('are spelled in their gateway module and in no other product file', () => {
+    expect(files.length).toBeGreaterThan(500);
+    for (const [key, { module }] of Object.entries(GATEWAY_KEY_WRITERS)) {
+      const hits = files.filter((f) => spelled(key).test(read(f)));
+      expect(hits, key).toEqual([module]);
+    }
+  });
+
+  it('are set only by markContentChanged: stampIndexWork is called in content-changed.ts alone and not exported', () => {
+    const callers = files.filter((f) => /\bstampIndexWork\s*\(/.test(read(f)));
+    expect(callers.sort()).toEqual([
+      'packages/db/src/content-changed.ts',
+      'packages/db/src/index-work.ts',
+    ]);
+    expect(read('packages/db/src/index-work.ts')).toMatch(/export function stampIndexWork\(/);
+    expect(read('packages/db/src/index.ts')).not.toContain('stampIndexWork');
   });
 });
 

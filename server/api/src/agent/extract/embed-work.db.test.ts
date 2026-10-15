@@ -20,6 +20,20 @@
  *  - L1: a job for an older title never writes its vector over a newer
  *    rename's reset; the newer job writes its own.
  *
+ * Fix round 2:
+ *
+ *  - M3: an EMPTY summary is no summary: an item with `summary: ''` and the
+ *    marker (a model reply that was not JSON), renamed, gets its vector
+ *    locally and the stamp is dropped (0 calls); a table commit that keeps
+ *    the shape on a table with an empty summary runs the whole pass, as on
+ *    main (1 call);
+ *  - L4: an item that had a vector before the rename, with no summary, no
+ *    marker and no skip stamp, re-embeds locally (0 calls; main did nothing);
+ *  - L5: a table keeping its summary, renamed while the worker's key is
+ *    missing, still gets its vector (0 calls, no key needed);
+ *  - L6: a terminal skip drops only the stamp its job saw: a content
+ *    change's 'extract' stamp that landed meanwhile survives.
+ *
  * The embedder is a stub that gives each distinct text its own vector, so
  * the test can tell which text a stored vector came from. A migrated scratch
  * database, dropped after.
@@ -40,6 +54,8 @@ const h = vi.hoisted(() => ({
   modelCalls: 0,
   /** Runs inside the next embed call, once (the L1 race). */
   duringEmbed: null as null | (() => Promise<void>),
+  /** The worker's key resolves (false: a misconfigured cloud key, L5). */
+  keyOk: true,
 }));
 
 /** One vector per distinct text: a one-hot at the text's first-seen index. */
@@ -100,7 +116,13 @@ vi.mock('./model', async (importOriginal) => {
 });
 vi.mock('@mantle/runtime/agent', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@mantle/runtime/agent')>();
-  return { ...actual, resolveChatKey: async () => ({ ok: true }) };
+  return {
+    ...actual,
+    resolveChatKey: async () =>
+      h.keyOk
+        ? { ok: true }
+        : { ok: false, disposition: 'missing_api_key', detail: 'no key (test)' },
+  };
 });
 // Every brain item passes the LLM-work cost guard (llm-guard.ts) once a
 // workspace with an assistant reads it; this scratch brain has no assistant.
@@ -120,6 +142,7 @@ describe.skipIf(!URL)('an embed stamp is never a model call (A10 #7 fix round 1)
   let m: typeof import('@mantle/db');
   let c: typeof import('@mantle/content');
   let extractNode: typeof import('../extractor').extractNode;
+  let stampExtractSkipped: typeof import('./terminal').stampExtractSkipped;
   let dir = '';
   const owner = randomUUID();
 
@@ -154,11 +177,12 @@ describe.skipIf(!URL)('an embed stamp is never a model call (A10 #7 fix round 1)
        order by started_at desc, created_at desc limit 1`);
     return t?.d ?? null;
   };
-  /** Make `id` look extracted: a summary, a vector, and (unless legacy) the marker. */
+  /** Make `id` look extracted: a summary, a vector, and (unless legacy) the
+   *  marker; the work stamp done. */
   const indexed = async (id: string, opts: { marker: boolean }) => {
     const v = `[${vectorOf(`indexed ${id}`).join(',')}]`;
     await x(sql`update nodes set embedding = ${v}::vector,
-        data = coalesce(data, '{}'::jsonb) || jsonb_build_object(
+        data = (coalesce(data, '{}'::jsonb) - 'index_work' - 'index_work_had_vector') || jsonb_build_object(
           'summary', 'Pump overhaul notes.', 'summary_model', 'm', 'summary_at', now()::text)
           || case when ${opts.marker} then jsonb_build_object('extract_completed_at', now()::text)
                   else '{}'::jsonb end
@@ -175,6 +199,7 @@ describe.skipIf(!URL)('an embed stamp is never a model call (A10 #7 fix round 1)
     m = await import('@mantle/db');
     c = await import('@mantle/content');
     ({ extractNode } = await import('../extractor'));
+    ({ stampExtractSkipped } = await import('./terminal'));
     await x(sql`insert into auth.users (id, email, password_hash, is_owner, role) values
       (${owner}, ${`a10ew-${owner.slice(0, 8)}@example.invalid`}, 'x', true, 'admin')`);
     await x(sql`insert into spaces (id, kind, login_id) values (${owner}, 'brain', ${owner})
@@ -191,6 +216,7 @@ describe.skipIf(!URL)('an embed stamp is never a model call (A10 #7 fix round 1)
   beforeEach(() => {
     h.modelCalls = 0;
     h.duringEmbed = null;
+    h.keyOk = true;
   });
 
   const LONG = 'Pump overhaul plan for the north site';
@@ -349,6 +375,146 @@ describe.skipIf(!URL)('an embed stamp is never a model call (A10 #7 fix round 1)
     r = await row(note.id);
     expect(h.modelCalls).toBe(0);
     expect(textOf(r.vec)).toBe('Second title\n\nPump overhaul notes.');
+    expect(r.work).toBeNull();
+  });
+
+  /** Give `id` a vector and `data`, as a pass long ago left it (its work
+   *  stamp done). */
+  const seeded = async (id: string, data: Record<string, unknown>) => {
+    const v = `[${vectorOf(`seeded ${id}`).join(',')}]`;
+    await x(sql`update nodes set embedding = ${v}::vector,
+        data = (coalesce(data, '{}'::jsonb) - 'index_work' - 'index_work_had_vector')
+          || ${JSON.stringify(data)}::jsonb
+      where id = ${id}`);
+  };
+
+  it('M3: an item with an empty summary and the marker, renamed: embedded locally, stamp dropped, 0 model calls', async () => {
+    const note = await c.createNote(owner, { title: 'Pump note', content: 'Pump check due.' });
+    await seeded(note.id, { summary: '', extract_completed_at: '2026-01-01T00:00:00Z' });
+    await c.updateNote(owner, note.id, { title: 'Valve note' });
+    expect((await row(note.id)).work).toBe('embed');
+    await extractNode(note.id, owner);
+
+    const r = await row(note.id);
+    expect(h.modelCalls).toBe(0);
+    expect(await lastDisposition(note.id)).toBe('embed_only');
+    expect(textOf(r.vec)).toBe('Valve note\n\nPump check due.');
+    expect(r.summary).toBe('');
+    // The stamp is gone, so the boot drain has nothing to re-run.
+    expect(r.work).toBeNull();
+  });
+
+  it('M3: a cell-only table commit on a table with an empty summary runs the whole pass, as on main (1 model call)', async () => {
+    const t = await c.createTable(owner, { title: 'Readings' });
+    const col = t.data.columns[0]!.id;
+    await c.commitTable(owner, t.id, {
+      ...t.data,
+      rows: [{ id: randomUUID(), cells: { [col]: 'a' } }],
+    });
+    await seeded(t.id, { summary: '', extract_completed_at: '2026-01-01T00:00:00Z' });
+    await c.commitTable(owner, t.id, {
+      ...t.data,
+      rows: [{ id: randomUUID(), cells: { [col]: 'b' } }],
+    });
+    expect((await row(t.id)).work).toBe('extract');
+    expect((await row(t.id)).vec).toBeNull();
+    await extractNode(t.id, owner);
+
+    const r = await row(t.id);
+    expect(h.modelCalls).toBe(1);
+    expect(r.summary).toBe('A summary the model wrote.');
+    expect(r.vec).not.toBeNull();
+    expect(r.work).toBeNull();
+  });
+
+  it('a cell-only table commit on a summarised table reuses the summary (0 model calls)', async () => {
+    const t = await c.createTable(owner, { title: 'Levels' });
+    const col = t.data.columns[0]!.id;
+    await c.commitTable(owner, t.id, {
+      ...t.data,
+      rows: [{ id: randomUUID(), cells: { [col]: 'a' } }],
+    });
+    await indexed(t.id, { marker: true });
+    await c.commitTable(owner, t.id, {
+      ...t.data,
+      rows: [{ id: randomUUID(), cells: { [col]: 'b' } }],
+    });
+    expect((await row(t.id)).work).toBe('embed');
+    await extractNode(t.id, owner);
+
+    const r = await row(t.id);
+    expect(h.modelCalls).toBe(0);
+    expect(r.summary).toBe('Pump overhaul notes.');
+    expect(r.vec).not.toBeNull();
+    expect(r.work).toBeNull();
+  });
+
+  it('L4: an item that had a vector, with an empty summary, no marker and no skip, renamed: local, 0 model calls', async () => {
+    const note = await c.createNote(owner, { title: 'Old note', content: 'Seal kit ordered.' });
+    await seeded(note.id, { summary: '' });
+    await c.updateNote(owner, note.id, { title: 'Seal note' });
+    // A second rename before the extractor ran still knows the row had a vector.
+    await c.updateNote(owner, note.id, { title: 'Seal kit note' });
+    const [stamp] = await x<{ had: boolean | null }>(
+      sql`select (data->>'index_work_had_vector')::boolean as had from nodes where id = ${note.id}`,
+    );
+    expect(stamp?.had).toBe(true);
+    await extractNode(note.id, owner);
+
+    const r = await row(note.id);
+    expect(h.modelCalls).toBe(0);
+    expect(await lastDisposition(note.id)).toBe('embed_only');
+    expect(textOf(r.vec)).toBe('Seal kit note\n\nSeal kit ordered.');
+    expect(r.work).toBeNull();
+    const [after] = await x<{ had: string | null }>(
+      sql`select data->>'index_work_had_vector' as had from nodes where id = ${note.id}`,
+    );
+    expect(after?.had).toBeNull();
+  });
+
+  it('L4 control: an item never indexed, renamed before its first pass, still runs that pass (1 model call)', async () => {
+    const note = await c.createNote(owner, {
+      title: 'Fresh note',
+      content: 'The north pump needs a new seal before winter starts.',
+    });
+    await x(sql`update nodes set embedding = null where id = ${note.id}`);
+    await c.updateNote(owner, note.id, { title: 'Fresh pump note' });
+    const [stamp] = await x<{ had: string | null }>(
+      sql`select data->>'index_work_had_vector' as had from nodes where id = ${note.id}`,
+    );
+    expect(stamp?.had).toBeNull();
+    await extractNode(note.id, owner);
+    expect(h.modelCalls).toBe(1);
+  });
+
+  it('L5: a table keeping its summary, renamed while the worker key is missing: vector rebuilt, 0 model calls', async () => {
+    h.keyOk = false;
+    const table = await c.createTable(owner, { title: 'Flows' });
+    await indexed(table.id, { marker: true });
+    await c.updateTable(owner, table.id, { title: 'Flows by month' });
+    await extractNode(table.id, owner);
+
+    const r = await row(table.id);
+    expect(h.modelCalls).toBe(0);
+    expect(r.vec).not.toBeNull();
+    expect(textOf(r.vec)).toBe('Flows by month\n\nPump overhaul notes.');
+    expect(r.summary).toBe('Pump overhaul notes.');
+    expect(r.work).toBeNull();
+  });
+
+  it('L6: a terminal skip drops only the stamp its job saw; a newer extract stamp survives', async () => {
+    const page = await c.createPage(owner, { title: 'Race page' });
+    // The job loaded the row with no stamp; a content change landed meanwhile.
+    await x(
+      sql`update nodes set data = data || '{"index_work":"extract"}'::jsonb where id = ${page.id}`,
+    );
+    await stampExtractSkipped(page.id, 'body_too_short', null);
+    let r = await row(page.id);
+    expect(r.skipped).toBe('body_too_short');
+    expect(r.work).toBe('extract');
+    // The job that saw the extract stamp answers it: dropped.
+    await stampExtractSkipped(page.id, 'body_too_short', 'extract');
+    r = await row(page.id);
     expect(r.work).toBeNull();
   });
 });

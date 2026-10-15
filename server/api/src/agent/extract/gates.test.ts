@@ -35,6 +35,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const h = vi.hoisted(() => ({
   selectQueue: [] as unknown[][],
   updates: [] as unknown[],
+  wheres: [] as unknown[],
   resolveExtractor: vi.fn(),
   resolveChatKey: vi.fn(),
   resolveEffectiveIndexing: vi.fn(),
@@ -61,11 +62,12 @@ vi.mock('@mantle/db', async (importOriginal) => {
       h.updates.push(patch);
       // Awaitable as is, or with .returning() (the re-embed's guarded write).
       return {
-        where: vi.fn(() =>
-          Object.assign(Promise.resolve(undefined), {
+        where: vi.fn((cond: unknown) => {
+          h.wheres.push(cond);
+          return Object.assign(Promise.resolve(undefined), {
             returning: vi.fn(async () => [{ id: 'n1' }]),
-          }),
-        ),
+          });
+        }),
       };
     }),
   };
@@ -154,6 +156,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   h.selectQueue.length = 0;
   h.updates.length = 0;
+  h.wheres.length = 0;
   h.resolveExtractor.mockResolvedValue(WORKER);
   h.resolveChatKey.mockResolvedValue({ ok: true });
   h.resolveEffectiveIndexing.mockResolvedValue({ effective: 'full', source: 'default' });
@@ -421,10 +424,55 @@ describe('admitForExtraction: a re-embed only (A10 #7)', () => {
     expect(h.readNodeBodyLocal).not.toHaveBeenCalled();
   });
 
-  it('leaves a table keeping its summary to the model step, which reuses it there', async () => {
+  it('admits a table keeping its summary before the cost guard and the key pre-flight (L5)', async () => {
+    // The model step reuses the summary: no model call, so no key. A
+    // misconfigured cloud worker key must not leave the renamed table with
+    // no vector.
+    h.resolveChatKey.mockResolvedValue({ ok: false, disposition: 'missing_api_key', detail: 'x' });
     h.selectQueue.push([node({ type: 'table', data: kept, embedding: null })]);
-    expect((await admitForExtraction('n1', 'o1')).proceed).toBe(true);
+    const res = await admitForExtraction('n1', 'o1');
+    expect(res.proceed).toBe(true);
     expect(h.embed).not.toHaveBeenCalled();
+    expect(h.resolveChatKey).not.toHaveBeenCalled();
+    expect(h.llmWorkAllowed).not.toHaveBeenCalled();
+    expect(h.recordSkippedTrace).not.toHaveBeenCalled();
+  });
+
+  it('M3: an EMPTY summary is no summary: a rename embeds locally and the guard reads it the same way', async () => {
+    // A model reply that was not JSON writes summary '' with the marker
+    // (extractor-parse.ts). The local path's guard used to read the key's
+    // presence as a summary, so nothing was written and the stamp stayed.
+    const empty = { summary: '  ', extract_completed_at: '2026-01-01', index_work: 'embed' };
+    h.selectQueue.push([node({ type: 'page', title: 'Pump plan', data: empty, embedding: null })]);
+    expect((await admitForExtraction('n1', 'o1')).proceed).toBe(false);
+    expect(disposition()).toBe('embed_only');
+    expect(h.embed).toHaveBeenCalledWith('o1', 'Pump plan\n\nthe body');
+    expect(h.resolveChatKey).not.toHaveBeenCalled();
+    expect(h.llmWorkAllowed).not.toHaveBeenCalled();
+    expect(h.updates).toContainEqual(expect.objectContaining({ embedding: [0.1, 0.2] }));
+    // The write's guard is the shared predicate (btrim of the summary), not
+    // the key's presence.
+    expect(sqlValues(h.wheres.at(-1)).join(' ')).toContain('btrim(');
+    expect(sqlValues(h.wheres.at(-1)).join(' ')).not.toContain("? 'summary'");
+  });
+
+  it('M3: a table with an empty summary, renamed, embeds locally too (no model step)', async () => {
+    const empty = { summary: '', extract_completed_at: '2026-01-01', index_work: 'embed' };
+    h.selectQueue.push([node({ type: 'table', title: 'Readings', data: empty, embedding: null })]);
+    expect((await admitForExtraction('n1', 'o1')).proceed).toBe(false);
+    expect(disposition()).toBe('embed_only');
+    expect(h.resolveChatKey).not.toHaveBeenCalled();
+  });
+
+  it('L4: an item that had a vector before the reset, with no summary, no marker and no skip: local, never a first pass', async () => {
+    // A pre-marker item with an empty summary: on main a rename did nothing
+    // (the sweep needs an empty vector). It must not run a model pass now.
+    const hadVector = { summary: '', index_work: 'embed', index_work_had_vector: true };
+    h.selectQueue.push([node({ title: 'Valve note', data: hadVector, embedding: null })]);
+    expect((await admitForExtraction('n1', 'o1')).proceed).toBe(false);
+    expect(disposition()).toBe('embed_only');
+    expect(h.embed).toHaveBeenCalledWith('o1', 'Valve note\n\nthe body');
+    expect(h.resolveChatKey).not.toHaveBeenCalled();
   });
 
   it('embeds a table with no summary the extractor skipped, locally', async () => {
