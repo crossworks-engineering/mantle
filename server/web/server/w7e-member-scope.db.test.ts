@@ -463,6 +463,12 @@ describe.skipIf(!URL)('W7e: member routes in the request scope, the phone contra
         await x<{ tz: string | null }>(sql`
           select preferences->>'timezone' as tz from profiles where user_id = ${id}`)
       )[0]?.tz ?? null;
+    // The anchor's row exists (A6b: a member's landing read no longer makes
+    // it as a side effect, so it may be missing here; a missing row would
+    // be made by the wizard step's write below, with the default zone).
+    await x(sql`insert into profiles (user_id, preferences)
+                values (${owner}, '{"timezone":"Europe/Lisbon"}'::jsonb)
+                on conflict (user_id) do nothing`);
     const before = await tz(owner);
     const r = await call('/api/onboarding', admin2, 'POST', {
       action: 'profile',
