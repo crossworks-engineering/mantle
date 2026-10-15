@@ -72,7 +72,7 @@ import {
 } from './assemble-turn';
 import { emptyLoopResult, runResponderLoop, type ResponderLoopResult } from './responder-loop';
 import { stoppedWithoutOutput } from './stopped-turn';
-import { errorMessage } from '@mantle/std';
+import { publicProviderErrorMessage } from '@mantle/std';
 
 // Register the cross-package bridge for the `invoke_agent` builtin.
 // First module load wires it up. Idempotent — last call wins.
@@ -589,7 +589,10 @@ export async function runAssistantTurn(
       // record + a reload + the non-blocking client all reflect it, emit the
       // terminal error event, then re-throw — the workflow lands in ERROR and the
       // blocking route's getResult() still rejects (unchanged failure surface).
-      const msg = errorMessage(err);
+      // What the person reads (the stored row, the stream's error event):
+      // never a database's, a provider's or the runtime's own text (fix
+      // round 1 M1), as the team turn says it; the detail is logged.
+      const msg = publicProviderErrorMessage(err, 'assistant-turn');
       await runDurableStep('fail_outbound', () =>
         updateAssistantMessageOutcome({
           ownerId,

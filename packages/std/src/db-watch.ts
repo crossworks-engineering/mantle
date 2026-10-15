@@ -1,5 +1,11 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
-import { databaseErrorPublic, isDatabaseError, setDatabaseErrorWatch } from './index';
+import {
+  databaseErrorPublic,
+  isDatabaseError,
+  isRuntimeFault,
+  RUNTIME_ERROR_PUBLIC,
+  setDatabaseErrorWatch,
+} from './index';
 
 /**
  * Node-only half of the database error watch (workspaces W3): kept out of
@@ -26,6 +32,11 @@ export async function watchDatabaseErrors<T>(
     // by: it goes on as a generic one, logged in full.
     const text = err instanceof Error ? err.message : String(err);
     const at = texts.texts.findIndex((t) => text.includes(t));
+    if (!isDatabaseError(err) && at >= 0 && isRuntimeFault(texts.errors[at])) {
+      // Likewise a runtime fault's text (the A8 finding F2): a fixed text.
+      console.error('[watchDatabaseErrors] runtime fault in a thrown message:', err);
+      throw new Error(RUNTIME_ERROR_PUBLIC, { cause: err });
+    }
     if (!isDatabaseError(err) && (/Failed query:/.test(text) || at >= 0)) {
       console.error('[watchDatabaseErrors] database error in a thrown message:', err);
       throw new Error(databaseErrorPublic(at >= 0 ? texts.errors[at] : err), { cause: err });

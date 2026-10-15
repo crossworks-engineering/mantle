@@ -67,7 +67,7 @@ import { buildHeartbeatPrompt, HEARTBEAT_DATA_BOUNDARY } from './prompt';
 import { runWithInflightLock } from './inflight';
 // A cycle (tools.ts imports forceFire from here): read at call time only.
 import { heartbeatControlSlugs } from './tools';
-import { errorMessage } from '@mantle/std';
+import { errorMessage, publicProviderErrorMessage } from '@mantle/std';
 import {
   AgentWorkspaceError,
   agentTurnScoped,
@@ -339,7 +339,7 @@ async function fireAs(hb: Heartbeat, opts: FireOpts & { skipGates: boolean }): P
     kind = await agentWorkspaceKind(agent);
     adminAssistant = kind === 'admin';
   } catch (err) {
-    return autoPause(hb, answeredBy, `agent '${agent.slug}': ${errorMessage(err)}`);
+    return autoPause(hb, answeredBy, `agent '${agent.slug}': ${firePublicText(err)}`);
   }
   // No caller: the login the fire answers runs it in its own scope
   // (fireInLoginScope). An assistant of a workspace other than Admin fires by its
@@ -404,7 +404,7 @@ async function fireAs(hb: Heartbeat, opts: FireOpts & { skipGates: boolean }): P
   } catch (err) {
     if (!(err instanceof AgentWorkspaceError)) throw err;
     if (answersMaker && answeredBy) return autoPause(hb, answeredBy, MAKER_GONE);
-    return autoPause(hb, answeredBy, `agent '${agent.slug}': ${errorMessage(err)}`);
+    return autoPause(hb, answeredBy, `agent '${agent.slug}': ${firePublicText(err)}`);
   }
   // Egress gate (opt-in): on an unattended fire, route email/web tools
   // through the approval queue rather than letting them run inline. The
@@ -684,7 +684,7 @@ async function fireAs(hb: Heartbeat, opts: FireOpts & { skipGates: boolean }): P
 
     return { disposition, replyText: reply };
   } catch (err) {
-    const msg = errorMessage(err);
+    const msg = firePublicText(err);
     await recordFire(hb, answeredBy, {
       disposition: 'error',
       stateBefore: hb.state,
@@ -706,6 +706,16 @@ async function fireAs(hb: Heartbeat, opts: FireOpts & { skipGates: boolean }): P
       .where(eq(heartbeats.id, hb.id));
     return { disposition: 'error', error: msg };
   }
+}
+
+/**
+ * The text a fire row or a pause reason keeps for an error (fix round 1
+ * M1): a person reads it on the heartbeat's page, so never a database's, a
+ * provider's or the runtime's own words (publicProviderErrorMessage); the
+ * detail goes to the server log.
+ */
+function firePublicText(err: unknown): string {
+  return publicProviderErrorMessage(err, 'heartbeat:fire');
 }
 
 async function autoPause(

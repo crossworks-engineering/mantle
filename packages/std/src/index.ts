@@ -32,7 +32,7 @@ export function setDatabaseErrorWatch(
 export function errorMessage(err: unknown): string {
   const text = err instanceof Error ? err.message : String(err);
   const watch = dbErrorWatch();
-  if (watch && text && isDatabaseError(err)) {
+  if (watch && text && (isDatabaseError(err) || isRuntimeFault(err))) {
     watch.texts.push(text);
     watch.errors.push(err);
   }
@@ -52,36 +52,52 @@ function databaseShaped(e: unknown): boolean {
 const FAILED_QUERY_RE = /Failed query:/;
 
 /** What a caller outside the server reads for a runtime fault
- *  (isRuntimeFaultText): a fixed text, the detail in the server log. */
+ *  (RuntimeFaultError): a fixed text, the detail in the server log. */
 export const RUNTIME_ERROR_PUBLIC =
   'the server could not run this request (the details are in the server log)';
 
 /**
- * The texts of the database and runtime plumbing that never reach a model or
- * a person (the A8 finding F2): the scope and transaction guards of
- * @mantle/db (withSystemTx, the scope runners, a lost turn scope), a
- * Postgres SQLSTATE or a rule's own words (row security, a constraint, a
- * permission on a table), drizzle, and a stack trace. Matched on the text, so
- * a wrapper that repeats one (a recipe step's "failed: ...") is caught too.
+ * An error our own runtime raises for its plumbing (the A8 finding F2, fix
+ * round 1 M2): a scope or transaction guard of @mantle/db (withSystemTx, the
+ * scope runners, a lost turn scope, the actor check), the gate not being
+ * ready. Its words never reach a model or a person: RUNTIME_ERROR_PUBLIC
+ * goes out, the detail stays in the server log. Known by its class (the
+ * `runtimeFault` mark, so a copy of this package in another bundle still
+ * reads it), never by its text: a third party's output (a shell tool's
+ * stderr, an MCP connector's or a peer's answer, an API tool's body) that
+ * says the same words passes through, so the model can fix its call.
  */
-const RUNTIME_FAULT_RES: readonly RegExp[] = [
-  // The guards' own prefix ("withSystemTx: ...", "runInTurnScope: ...",
-  // "withViewer: ...", "enterRequestScope: ..."), by its shape.
-  /\b(?:with|runIn|enter)[A-Z][A-Za-z]*(?:Tx|Scope|Viewer):/,
-  /\bexecuteWrite:/,
-  /A scoped query ran outside its turn scope/,
-  /\bSQLSTATE\b/,
-  /DrizzleQueryError|drizzle-orm/,
-  /permission denied for (?:table|relation|schema|function|sequence|view)\b/i,
-  /violates (?:row-level security|not-null|foreign key|check|unique|exclusion) /i,
-  /duplicate key value violates/i,
-  /\n\s+at \S.*:\d+:\d+\)?/,
-];
+export class RuntimeFaultError extends Error {
+  readonly runtimeFault = true as const;
+  constructor(message: string, options?: { cause?: unknown }) {
+    super(message, options);
+    this.name = 'RuntimeFaultError';
+  }
+}
 
-/** Whether `text` carries the database or runtime plumbing's own words
- *  (RUNTIME_FAULT_RES, or drizzle's "Failed query"). */
-export function isRuntimeFaultText(text: string): boolean {
-  return FAILED_QUERY_RE.test(text) || RUNTIME_FAULT_RES.some((re) => re.test(text));
+function runtimeFaultShaped(e: unknown): boolean {
+  return !!e && typeof e === 'object' && (e as { runtimeFault?: unknown }).runtimeFault === true;
+}
+
+/**
+ * Whether `err` is a runtime fault (RuntimeFaultError, by its mark), or an
+ * error wrapping one whose message repeats the fault's text (a recipe
+ * step's "failed: ..."). A wrapper whose message is its own is not one, as
+ * for isDatabaseError.
+ */
+export function isRuntimeFault(err: unknown): boolean {
+  const outer: string[] = [];
+  for (let e: unknown = err, depth = 0; e && typeof e === 'object' && depth < 5; depth++) {
+    if (runtimeFaultShaped(e)) {
+      if (outer.length === 0) return true;
+      const inner = (e as { message?: unknown }).message;
+      return typeof inner === 'string' && inner !== '' && outer.some((m) => m.includes(inner));
+    }
+    const m = (e as { message?: unknown }).message;
+    outer.push(typeof m === 'string' ? m : '');
+    e = (e as { cause?: unknown }).cause;
+  }
+  return false;
 }
 
 /**
@@ -163,10 +179,10 @@ export function publicErrorMessage(err: unknown, where: string): string {
   const domain = domainErrorAnswer(err);
   if (domain) return domain.toolText;
   if (!isDatabaseError(err)) {
-    const text = err instanceof Error ? err.message : String(err);
-    // The plumbing's own words (a scope guard, a stack) are a fault: a
-    // fixed text out, the detail in the log (the A8 finding F2).
-    if (!isRuntimeFaultText(text)) return text;
+    // Our runtime's own fault (a scope guard's, by its class): a fixed text
+    // out, the detail in the log (the A8 finding F2). Anything else keeps
+    // its message.
+    if (!isRuntimeFault(err)) return err instanceof Error ? err.message : String(err);
     console.error(`[${where}] runtime fault:`, err);
     return RUNTIME_ERROR_PUBLIC;
   }
@@ -235,9 +251,10 @@ export function databaseErrorPublic(err: unknown): string {
 /**
  * A tool's error text for a caller outside the server: generic when it
  * carries a database error's text (one collected by watchDatabaseErrors, or
- * drizzle's "Failed query"), RUNTIME_ERROR_PUBLIC when it carries the
- * runtime plumbing's own words (isRuntimeFaultText), else unchanged. Logged
- * in full under `where`.
+ * drizzle's "Failed query"), RUNTIME_ERROR_PUBLIC when it carries a
+ * runtime fault's text (a RuntimeFaultError errorMessage gave during the
+ * call, collected the same way), else unchanged: a third party's words
+ * pass through. Logged in full under `where`.
  */
 export function publicToolError(
   text: string,
@@ -246,9 +263,9 @@ export function publicToolError(
   errors: readonly unknown[] = [],
 ): string {
   const at = texts.findIndex((t) => text.includes(t));
-  if (!FAILED_QUERY_RE.test(text) && at < 0) {
-    if (!isRuntimeFaultText(text)) return text;
-    // A scope guard's or a stack's words (the A8 finding F2): a fault.
+  if (!FAILED_QUERY_RE.test(text) && at < 0) return text;
+  if (at >= 0 && !isDatabaseError(errors[at]) && isRuntimeFault(errors[at])) {
+    // A runtime fault's text the reply repeats (the A8 finding F2).
     console.error(`[${where}] runtime fault in a tool reply:`, text);
     return RUNTIME_ERROR_PUBLIC;
   }

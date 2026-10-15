@@ -76,7 +76,7 @@ import {
 } from './actor';
 import { reserveLease, withLease, type Lease } from './reserved';
 import { withMigratorConnection } from './migrator-connection';
-import { errorMessage } from '@mantle/std';
+import { errorMessage, RuntimeFaultError } from '@mantle/std';
 import { BusyError, permissionGapOf } from './pg-error';
 import {
   GAP_WRITER_ROLE,
@@ -1226,7 +1226,7 @@ function newWriteTx(
 /** A statement or a join of a write transaction (or a savepoint of it)
  *  that had already ended or failed: refused before it reaches the driver
  *  (fix round 3, A). */
-export class JoinedWriteEndedError extends Error {
+export class JoinedWriteEndedError extends RuntimeFaultError {
   constructor() {
     super(
       'login write gateway: a statement of a write transaction that had ended (a detached call, or one left running when the transaction failed)',
@@ -1814,7 +1814,7 @@ function writeTxDb(): PostgresJsDatabase<typeof schema> {
       },
       begin(...args: unknown[]) {
         const o = writeTxOpen.getStore();
-        if (!o) return Promise.reject(new Error('writeTxDb: no write route'));
+        if (!o) return Promise.reject(new RuntimeFaultError('writeTxDb: no write route'));
         if (o.how === 'join') return joinedBegin(o.open, args);
         return o.how === 'checked'
           ? checkedBegin(o.route, args, o.saves)
@@ -1875,7 +1875,7 @@ async function joinedSystemTx<T>(
  * a query built inside a turn scope ran after the turn ended, or from a
  * callback that does not carry it. Refused, never run unscoped.
  */
-export class ScopeLostError extends Error {
+export class ScopeLostError extends RuntimeFaultError {
   readonly code = 'scope-lost';
   constructor() {
     super('A scoped query ran outside its turn scope; refused (it never runs unscoped).');
@@ -1992,7 +1992,7 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 /** A nested system transaction that cannot reuse the open one (arch A2b,
  *  plan 20.2): another actor or create home, a second nested call while one
  *  runs, or a call after the open transaction ended. */
-export class NestedSystemTxError extends Error {
+export class NestedSystemTxError extends RuntimeFaultError {
   readonly code = 'nested-system-tx';
   constructor(what: 'actor' | 'create home' | 'parallel' | 'ended') {
     super(
@@ -2110,7 +2110,9 @@ export async function withSystemTx<T>(
   // (a lazy backfill, a root folder made on first open).
   const inRequest = currentRequestMode() !== null;
   if ((!isSystemScope() && !inRequest) || currentScopeTx()) {
-    throw new Error('withSystemTx: only outside a viewer scope and any other transaction');
+    throw new RuntimeFaultError(
+      'withSystemTx: only outside a viewer scope and any other transaction',
+    );
   }
   // Tests and development: a request scope's system transaction is one of
   // its writes (W6a fix round 2, L-c), pinned by the route sweep with the
@@ -2266,7 +2268,7 @@ function uuidArrayLiteral(ids: readonly string[], what: string): string {
  */
 export async function withScope<T>(scope: WorkspaceScope, fn: () => Promise<T>): Promise<T> {
   if (currentWorkspaceScope() || currentScopeTx() || currentSpaceScope()) {
-    throw new Error('withScope: already inside a scope');
+    throw new RuntimeFaultError('withScope: already inside a scope');
   }
   // The one scope check (scopeProblem), in withScope's own words; unlike a
   // turn, a request scope may read no workspace (an empty list reads nothing).
@@ -2669,7 +2671,7 @@ export async function withSpaceRows<T>(
   fn: (tx: PostgresJsDatabase<typeof schema>) => Promise<T>,
 ): Promise<T> {
   if (!currentSpaceScope()) {
-    throw new Error('withSpaceRows: only inside a personal-space scope (withSpace)');
+    throw new RuntimeFaultError('withSpaceRows: only inside a personal-space scope (withSpace)');
   }
   return fn(getDb());
 }
@@ -3145,7 +3147,7 @@ function sqlTextOf(query: unknown): string {
 }
 
 /** A statement that only reads, sent to executeWrite. */
-export class NotAWriteError extends Error {
+export class NotAWriteError extends RuntimeFaultError {
   constructor() {
     super('executeWrite: the statement does not write; read through db in the caller’s scope.');
     this.name = 'NotAWriteError';

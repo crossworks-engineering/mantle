@@ -41,7 +41,13 @@
  * registration and dispatch in A5.
  */
 import { AsyncLocalStorage } from 'node:async_hooks';
-import { AccessError, isAccessError, mapAccessError, type AccessRefusal } from '@mantle/std';
+import {
+  AccessError,
+  isAccessError,
+  mapAccessError,
+  RuntimeFaultError,
+  type AccessRefusal,
+} from '@mantle/std';
 import { runAsActor, systemActor, SYSTEM_REASON_RE, type Actor } from './actor';
 import { turnScopeProblem, withTurnScope } from './client';
 import { auditsKind, inCallAuditFrame, resetCallAudit } from './call-audit';
@@ -299,7 +305,7 @@ export function resetGateRegistry(): void {
 /** Thrown while a narrower of NARROWERS is not registered: the process did
  *  not load the package that registers it. Not a refusal: the gate does not
  *  run at all (fail closed), and the surface answers its own error. */
-export class GateNotReadyError extends Error {
+export class GateNotReadyError extends RuntimeFaultError {
   constructor(missing: readonly string[]) {
     super(
       `the gate is not ready: no narrower or pre-run check registered for ${missing.join(', ')} ` +
@@ -748,7 +754,7 @@ export async function gateCallRefusal(
 /** Thrown by gateCallRefusal at a caller that names its own pre-run check
  *  (A5 step 6a, carried round-2 LOW-2): such a check may write (a connector
  *  row's audit row), and a judgement that runs nothing must not. */
-export class PreRunSideEffectError extends Error {
+export class PreRunSideEffectError extends RuntimeFaultError {
   constructor() {
     super(
       'gateCallRefusal judges a call without running it, so it takes no caller that names its own pre-run check (it may write an audit row): run the call through enterCall instead',

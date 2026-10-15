@@ -125,39 +125,63 @@ describe('database errors for callers outside the server', () => {
   });
 });
 
-describe('the runtime plumbing’s own words never go out (A8 F2)', () => {
-  it('a scope guard, a stack or a database rule’s words are a fault: a fixed text, logged', async () => {
-    const { isRuntimeFaultText, publicErrorMessage, publicToolError, RUNTIME_ERROR_PUBLIC } =
-      await import('./index');
-    const faults = [
-      'withSystemTx: only outside a viewer scope and any other transaction',
-      "recipe step 0 ('task_delete') failed: withSystemTx: only outside a viewer scope",
-      'nothing moved: withTurnScope: already inside another scope',
-      'A scoped query ran outside its turn scope; refused (it never runs unscoped).',
-      'SQLSTATE 42501',
-      'permission denied for table nodes',
-      'new row violates row-level security policy for table "nodes"',
-      'duplicate key value violates unique constraint "x"',
-      'oops\n    at fn (/srv/packages/db/src/client.ts:12:3)',
-      'DrizzleQueryError: x',
-    ];
+describe('the runtime plumbing’s own words never go out (A8 F2, fix round 1 M2)', () => {
+  it('a runtime fault, by its class: a fixed text, logged; a wrapper repeating it too', async () => {
+    const {
+      isRuntimeFault,
+      publicErrorMessage,
+      publicToolError,
+      RUNTIME_ERROR_PUBLIC,
+      RuntimeFaultError,
+    } = await import('./index');
+    const { watchDatabaseErrors } = await import('./db-watch');
     const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
-    for (const text of faults) {
-      expect(isRuntimeFaultText(text), text).toBe(true);
-      expect(publicToolError(text, [], 't'), text).toBe(RUNTIME_ERROR_PUBLIC);
-      expect(publicErrorMessage(new Error(text), 't'), text).toBe(RUNTIME_ERROR_PUBLIC);
+    try {
+      const guard = new RuntimeFaultError('withSystemTx: only outside a viewer scope');
+      class Lost extends RuntimeFaultError {}
+      const wrapped = new Error(`recipe step 0 failed: ${guard.message}`, { cause: guard });
+      for (const err of [guard, new Lost('A scoped query ran outside its turn scope'), wrapped]) {
+        expect(isRuntimeFault(err)).toBe(true);
+        expect(publicErrorMessage(err, 't')).toBe(RUNTIME_ERROR_PUBLIC);
+      }
+      // A wrapper with words of its own keeps them.
+      const own = new Error('busy, try again', { cause: guard });
+      expect(isRuntimeFault(own)).toBe(false);
+      expect(publicErrorMessage(own, 't')).toBe('busy, try again');
+      // A reply that repeats a fault errorMessage gave during the call.
+      const watched = await watchDatabaseErrors(async () => ({
+        error: `nothing moved: ${errorMessage(guard)}`,
+      }));
+      expect(publicToolError(watched.value.error, watched.texts, 't', watched.errors)).toBe(
+        RUNTIME_ERROR_PUBLIC,
+      );
+      // A thrown wrapper that repeats one goes on as the fixed text.
+      await expect(
+        watchDatabaseErrors(async () => {
+          throw new Error(`failed: ${errorMessage(guard)}`);
+        }),
+      ).rejects.toThrow(RUNTIME_ERROR_PUBLIC);
+      expect(spy).toHaveBeenCalled();
+    } finally {
+      spy.mockRestore();
     }
-    expect(spy).toHaveBeenCalled();
-    spy.mockRestore();
-    // A tool's own words keep their text, a title with "drizzle" in it too.
+  });
+
+  it('the same words from a third party pass through: the model can fix its call', async () => {
+    const { isRuntimeFault, publicErrorMessage, publicToolError } = await import('./index');
     for (const text of [
+      // A shell tool's stderr with a stack, an outside Postgres behind an
+      // MCP connector or an API tool, a guard-shaped word in a remote body.
+      'shell exited with 1: boom\nstderr:\nError: x\n    at fn (/home/u/app.js:12:3)',
+      'null value in column "name" of relation "items" violates not-null constraint',
+      'permission denied for table invoices',
+      'SQLSTATE 23505 duplicate key value violates unique constraint "x"',
+      'withSystemTx: said by a remote server',
       'task 1 not found: find the right id with task_list',
-      'You cannot change this item in your workspaces (x): ask for Write on it',
-      'Note "drizzle recipes" is already there',
     ]) {
-      expect(isRuntimeFaultText(text), text).toBe(false);
-      expect(publicToolError(text, [], 't')).toBe(text);
-      expect(publicErrorMessage(new Error(text), 't')).toBe(text);
+      expect(isRuntimeFault(new Error(text)), text).toBe(false);
+      expect(publicToolError(text, [], 't'), text).toBe(text);
+      expect(publicErrorMessage(new Error(text), 't'), text).toBe(text);
     }
   });
 });

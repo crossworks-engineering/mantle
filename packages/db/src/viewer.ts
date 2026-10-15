@@ -40,6 +40,7 @@ import {
 } from './actor';
 import { hkdfSync } from 'node:crypto';
 import { env } from '@mantle/config';
+import { RuntimeFaultError } from '@mantle/std';
 import { ACCESS_LEVELS, type AccessLevel } from '@mantle/client-types/dto/access';
 import { WORKSPACE_AREAS, type WorkspaceArea } from '@mantle/client-types/dto/workspaces';
 
@@ -428,10 +429,10 @@ export function enterRequestScope(ws: WorkspaceScope, mode: RequestScopeMode): b
   if (!slot) return false;
   if (slot.scope?.ws) {
     if (sameWorkspaceScope(slot.scope.ws, ws)) return true;
-    throw new Error('enterRequestScope: this request already runs in another scope');
+    throw new RuntimeFaultError('enterRequestScope: this request already runs in another scope');
   }
   if (store.getStore() && store.getStore() !== SYSTEM_EXIT) {
-    throw new Error('enterRequestScope: only outside any other scope');
+    throw new RuntimeFaultError('enterRequestScope: only outside any other scope');
   }
   slot.scope = Object.freeze({
     ws,
@@ -722,7 +723,9 @@ export function runInViewerScope<T>(ws: WorkspaceScope, fn: () => Promise<T>): P
     if (open.request && narrowsWorkspaceScope(open.ws, ws)) {
       return inScope({ ws, perQuery: true }, async () => await fn());
     }
-    return Promise.reject(new Error('withViewer: already inside another workspace scope'));
+    return Promise.reject(
+      new RuntimeFaultError('withViewer: already inside another workspace scope'),
+    );
   }
   // Awaited INSIDE the scope: a callback that returns a query builder (a
   // thenable, run when awaited) runs it here, not in the caller's scope
@@ -738,7 +741,7 @@ export function runInWorkspaceTx<T>(
   fn: () => Promise<T>,
 ): Promise<T> {
   if (active()) {
-    return Promise.reject(new Error('runInWorkspaceTx: only outside any other scope'));
+    return Promise.reject(new RuntimeFaultError('runInWorkspaceTx: only outside any other scope'));
   }
   return inScope({ ws: scope.ws, tx: scope.tx, hooks: scope.hooks }, fn);
 }
@@ -768,7 +771,7 @@ export function runInTurnScope<T>(
     if (open.request && open.ws && narrowsWorkspaceScope(open.ws, ws)) {
       return inScope(scope, fn);
     }
-    return Promise.reject(new Error('withTurnScope: already inside another scope'));
+    return Promise.reject(new RuntimeFaultError('withTurnScope: already inside another scope'));
   }
   return inScope(scope, fn);
 }
@@ -868,7 +871,7 @@ export function runInSystemTx<T>(
   // client.ts nestedSystemTx).
   const open = active();
   if (open && !open.request && !(open.system && open.tx && open.nest)) {
-    return Promise.reject(new Error('runInSystemTx: only outside a viewer scope'));
+    return Promise.reject(new RuntimeFaultError('runInSystemTx: only outside a viewer scope'));
   }
   return store.run({ system: true, tx: scope.tx, hooks: scope.hooks, nest: scope.nest }, fn);
 }
@@ -1044,7 +1047,7 @@ export type AsSystemReason =
 
 /** asSystem was called inside a turn scope without an allowlisted reason,
  *  or systemDb used there by a module off SYSTEM_DB_MODULES (`message`). */
-export class TurnScopeExitError extends Error {
+export class TurnScopeExitError extends RuntimeFaultError {
   readonly code = 'turn-scope-exit';
   constructor(reason: string | undefined, message?: string) {
     super(

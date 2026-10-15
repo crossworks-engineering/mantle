@@ -18,6 +18,8 @@ import {
   databaseErrorPublic,
   isDatabaseError,
   isProviderHttpFailure,
+  isRuntimeFault,
+  RUNTIME_ERROR_PUBLIC,
   publicProviderErrorMessage,
   publicToolError,
 } from '@mantle/std';
@@ -46,12 +48,18 @@ export async function maskToolDatabaseErrors(
  * database error in the one mapper's words (databaseErrorPublic; logged in
  * full under `where`); a model provider's HTTP failure (a query embed's, an
  * SDK's) in its fixed sentence, never the provider's body (A10 #10 fix round
- * 2, logged likewise); or null: any other error goes on to the SDK, which
- * answers its message, as the surface always has.
+ * 2, logged likewise); a runtime fault of our own (RuntimeFaultError, the
+ * A8 finding F2 fix round 1 M2) as RUNTIME_ERROR_PUBLIC; or null: any other
+ * error goes on to the SDK, which answers its message, as the surface
+ * always has.
  */
 export function thrownToolDatabaseError(where: string, err: unknown): string | null {
   if (isProviderHttpFailure(err)) return publicProviderErrorMessage(err, where);
-  if (!isDatabaseError(err)) return null;
+  if (!isDatabaseError(err)) {
+    if (!isRuntimeFault(err)) return null;
+    console.error(`[${where}] runtime fault:`, err);
+    return RUNTIME_ERROR_PUBLIC;
+  }
   console.error(`[${where}] database error:`, err);
   return databaseErrorPublic(err);
 }

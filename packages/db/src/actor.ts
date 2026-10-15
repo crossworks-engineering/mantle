@@ -23,6 +23,7 @@
  */
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { env } from '@mantle/config';
+import { RuntimeFaultError } from '@mantle/std';
 import { systemDbCallerOf } from './viewer';
 
 export type WriteMode = 'rw' | 'ro';
@@ -312,7 +313,7 @@ export function noteActorMiss(miss: ActorMiss): void {
 
 /** A statement with no actor bound, refused because the check is on (A2b,
  *  plan 4.2 "Fail closed"). */
-export class ActorMissingError extends Error {
+export class ActorMissingError extends RuntimeFaultError {
   readonly code = 'actor-missing';
   constructor(what: string) {
     super(`${what}: no actor is bound and the actor check is on; refused (docs/actors.md)`);
