@@ -778,16 +778,17 @@ describe.skipIf(!URL)('the A6 grant sweep', () => {
     const plCells: string[] = [];
     const pc = (key: string, v: unknown) => plCells.push(`${key} => ${JSON.stringify(norm(v))}`);
     let n = 0;
-    /** A fresh item of `who`'s own (nodes.login_id), homed and granted as
-     *  its plan says. */
-    const own = async (who: LoginKey, type: 'note' | 'page' = 'note') => {
+    /** A fresh item of `who`'s own (nodes.login_id), homed as its plan
+     *  says and granted `to` (default: the plan's g; null: none). */
+    const own = async (who: LoginKey, type: 'note' | 'page' = 'note', to?: string | null) => {
       const nid = id(5000 + ++n);
       names.set(nid, `pl${n}`);
       await x(sql`insert into nodes (id, owner_id, type, title, path, login_id)
                   values (${nid}, ${L.owner}, ${type}::node_type, ${`per-login ${n}`},
                           ${type === 'page' ? 'pages' : 'notes'}::ltree, ${L[who]})`);
       await homeIn(nid, plan[who].home);
-      await grant(nid, plan[who].g);
+      const g2 = to === undefined ? plan[who].g : to;
+      if (g2) await grant(nid, g2);
       return nid;
     };
     const as = <T>(who: LoginKey, write: boolean, fn: () => Promise<T>): Promise<T> =>
@@ -815,9 +816,10 @@ describe.skipIf(!URL)('the A6 grant sweep', () => {
         const res = await answer(() => as(who, true, () => op(nid)));
         pc(`perLogin.write ${who} ${label}`, { res, rows: await grantRows(nid) });
       }
-      // The embeds write: the login's own page embedding its own note.
-      const pageId = await own(who, 'page');
-      const embedded = await own(who);
+      // The embeds write: the login's own page, shared with h, embedding
+      // its own note, which h does not hold yet.
+      const pageId = await own(who, 'page', p.h);
+      const embedded = await own(who, 'note', null);
       await x(sql`insert into node_embeds (from_id, to_id) values (${pageId}, ${embedded})`);
       const res = await answer(() =>
         as(who, true, () => g.grantEmbeds(c, pageId, { wsIds: [p.h], confirm: true })),
