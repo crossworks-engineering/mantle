@@ -542,8 +542,11 @@ describe.skipIf(!DB_URL)('A8 surface cells: every way in gives the oracle’s an
     run: (_role, kind, action, id) =>
       guard(async () => {
         if (kind === 'app') {
-          await raw`update apps set manifest = '{}'::jsonb, published_build = ${PUBLISHED}::jsonb
-                     where node_id = ${id}`;
+          await raw.begin(async (tx) => {
+            await tx.unsafe(g.FIXTURE_ACTOR);
+            await tx`update apps set manifest = '{}'::jsonb, published_build = ${PUBLISHED}::jsonb
+                      where node_id = ${id}`;
+          });
         }
         const token = await contactShare(id, actor === 'contact-rw' && kind === 'app');
         const headers = {
@@ -834,7 +837,8 @@ describe.skipIf(!DB_URL)('A8 surface cells: every way in gives the oracle’s an
         run: (_role, _kind, _action, id) =>
           guard(async () => {
             const [s] = await raw<{ token: string }[]>`
-            select token from shares where node_id = ${id} and revoked_at is null limit 1`;
+            select token from shares
+             where node_id = ${id} and revoked_at is null and contact_id is null limit 1`;
             if (!s) return { ok: false, text: 'no open link' };
             const res = await runRoute(null, 'GET', `/s/${s.token}/view`, undefined, {
               headers: { 'x-forwarded-for': `10.9.${Math.floor(Math.random() * 250)}.1` },
@@ -979,7 +983,7 @@ describe.skipIf(!DB_URL)('A8 surface cells: every way in gives the oracle’s an
         }
         total += cells.length;
         counts.push(
-          `  ${e.surface}: ${cells.length} cells (${allow} allow) of ${candidates} candidates, ` +
+          `  ${e.surface}${e.surface === 'contact-share' ? ` (${e.actor})` : ''}: ${cells.length} cells (${allow} allow) of ${candidates} candidates, ` +
             `${pass} pass, ${cells.length - pass} fail, ${na} not applicable`,
         );
       }

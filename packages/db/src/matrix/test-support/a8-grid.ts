@@ -145,7 +145,7 @@ const arr = (ids: readonly string[]) => `{${ids.join(',')}}`;
 
 /** The fixture's own writes are named system work (docs/actors.md), so a
  *  surface cell may make a fresh item with the actor check on. */
-const FIXTURE_ACTOR = setActorSql(['system:a8-fixture', 'rw', 'off']);
+export const FIXTURE_ACTOR = setActorSql(['system:a8-fixture', 'rw', 'off']);
 
 /** The probe a cell reads its row effect with: a definer, so it sees the
  *  row whoever the cell ran as. Made in the scratch database only. */
@@ -165,7 +165,8 @@ export async function installProbe(sql: Sql): Promise<void> {
           'cards', (select string_agg(r.body_md, '|' order by r.slug)
                       from recall_nodes r where r.map_id = n.id),
           'links', (select string_agg(s.token, '|' order by s.token)
-                      from shares s where s.node_id = n.id and s.revoked_at is null),
+                      from shares s where s.node_id = n.id and s.revoked_at is null
+                                      and s.contact_id is null),
           'appdata', (select ad.size_bytes from app_databases ad where ad.app_node_id = n.id),
           'appwritten', (select ad.client_written_at is not null
                            from app_databases ad where ad.app_node_id = n.id)
