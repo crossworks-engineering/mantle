@@ -1111,4 +1111,324 @@ describe.skipIf(!URL)('the A6b exit sweep', () => {
       spy.mockRestore();
     }
   });
+
+  // ── client-sourced: the check (namesClientSourced, clientSourcedAmong,
+  //    the corpus map), the conversation's mark, the marks a turn and an
+  //    export write, and the write rule of a marked turn ──────────────────
+  it('client-sourced', async () => {
+    const cs = await import('../../../packages/tools/src/client-sourced');
+    const rules = await import('../../../packages/tools/src/client-sourced-rules');
+    const ts = await import('@mantle/db/test-support');
+    const exportsMod = await import('@mantle/content/app-table-exports');
+    const OTHER = id(801);
+    const FC = id(802);
+    const CW = id(803);
+    names.set(OTHER, 'brain:other');
+    names.set(FC, 'login:formerClient');
+    names.set(CW, 'ws:Clients');
+    await x(sql`insert into auth.users (id, email, password_hash, role) values
+                (${OTHER}, 'a6b-other@example.invalid', 'x', 'admin')`);
+    await x(sql`insert into spaces (id, kind, login_id) values (${OTHER}, 'brain', ${OTHER})`);
+    // A former client (0272 leaves a disabled member row and its archive
+    // row), a user of the Clients workspace.
+    await x(sql`insert into auth.users (id, email, password_hash, role, disabled_at)
+                values (${FC}, 'a6b-fc@example.invalid', 'x', 'member', now())`);
+    await x(sql`insert into archive_client_logins (login_id, email, created_at, session_epoch)
+                select id, email, created_at, session_epoch from auth.users where id = ${FC}`);
+    await x(sql`insert into workspaces (id, owner_id, name) values (${CW}, ${L.owner}, 'Clients')`);
+    await x(
+      sql`insert into workspace_users (workspace_id, login_id, moderator) values (${CW}, ${FC}, false)`,
+    );
+    const N = {
+      clientTask: id(811),
+      plainTask: id(812),
+      otherClientTask: id(813),
+      clientItem: id(814),
+      copied: id(815),
+      clientsPage: id(816),
+      linkedPage: id(817),
+      servedPage: id(818),
+      pPage: id(819),
+      sharedFolder: id(820),
+      clientsApp: id(821),
+      clientsAppTable: id(822),
+      writtenApp: id(823),
+      writtenAppTable: id(824),
+      teamApp: id(825),
+      teamAppTable: id(826),
+      exposedTableApp: id(827),
+      old: id(828),
+      writtenGone: id(829),
+      teamGone: id(830),
+    };
+    for (const [k, v] of Object.entries(N)) names.set(v, `cs:${k}`);
+    const data = (source: string | null) => JSON.stringify(source ? { source } : {});
+    await x(sql`insert into nodes (id, owner_id, type, title, path, data) values
+      (${N.clientTask}, ${L.owner}, 'task', 'client request', 'tasks', ${data('client-request')}::jsonb),
+      (${N.plainTask}, ${L.owner}, 'task', 'plain', 'tasks', ${data(null)}::jsonb),
+      (${N.otherClientTask}, ${OTHER}, 'task', 'other brain', 'tasks', ${data('client-request')}::jsonb),
+      (${N.clientItem}, ${L.owner}, 'page', 'from a client', 'pages', '{}'::jsonb),
+      (${N.copied}, ${L.owner}, 'page', 'a marked copy', 'pages', '{}'::jsonb),
+      (${N.clientsPage}, ${L.owner}, 'page', 'clients read it', 'pages', '{}'::jsonb),
+      (${N.linkedPage}, ${L.owner}, 'page', 'an open link', 'pages', '{}'::jsonb),
+      (${N.servedPage}, ${L.owner}, 'page', 'served by a link', 'pages', '{}'::jsonb),
+      (${N.pPage}, ${L.owner}, 'page', 'P only', 'pages', '{}'::jsonb),
+      (${N.clientsApp}, ${L.owner}, 'app', 'clients app', 'apps', '{}'::jsonb),
+      (${N.clientsAppTable}, ${L.owner}, 'table', 'clients export', 'tables', '{}'::jsonb),
+      (${N.writtenApp}, ${L.owner}, 'app', 'written app', 'apps', '{}'::jsonb),
+      (${N.writtenAppTable}, ${L.owner}, 'table', 'written export', 'tables', '{}'::jsonb),
+      (${N.teamApp}, ${L.owner}, 'app', 'team app', 'apps', '{}'::jsonb),
+      (${N.teamAppTable}, ${L.owner}, 'table', 'team export', 'tables', '{}'::jsonb),
+      (${N.exposedTableApp}, ${L.owner}, 'app', 'exports a clients table', 'apps', '{}'::jsonb),
+      (${N.old}, ${L.owner}, 'note', 'old', 'notes', '{}'::jsonb),
+      (${N.writtenGone}, ${L.owner}, 'table', 'written gone', 'tables', '{}'::jsonb),
+      (${N.teamGone}, ${L.owner}, 'table', 'team gone', 'tables', '{}'::jsonb)`);
+    await x(sql`update nodes set created_at = now() - interval '1 day' where id = ${N.old}`);
+    await x(sql`insert into nodes (id, owner_id, type, title, path) values
+      (${N.sharedFolder}, ${L.owner}, 'branch', 'shared', 'pages.a6b_shared')`);
+    // Who holds what: Clients holds its page, the shared folder and its
+    // app; P the rest.
+    const holders: Array<[string, string]> = [
+      [N.clientsPage, CW],
+      [N.sharedFolder, CW],
+      [N.clientsApp, CW],
+      [N.clientsAppTable, adminWs],
+      [N.writtenApp, W.P],
+      [N.writtenAppTable, W.P],
+      [N.teamApp, W.P],
+      [N.teamAppTable, W.P],
+      [N.exposedTableApp, W.P],
+      [N.linkedPage, W.P],
+      [N.servedPage, W.P],
+      [N.pPage, W.P],
+      [N.clientItem, W.P],
+      [N.copied, W.P],
+      [N.writtenGone, W.P],
+      [N.teamGone, W.P],
+    ];
+    for (const [n, w] of holders) {
+      await m.withHeads([n], 'update', async (tx) => {
+        await tx.execute(sql`delete from item_grants where node_id = ${n}`);
+        await tx.execute(
+          sql`insert into item_grants (node_id, workspace_id, is_home) values (${n}, ${w}, true)`,
+        );
+      });
+    }
+    // An item a client wrote (stamped directly: no login is a client now).
+    await ts.asMigrator(scratch!.url, async (tx) => {
+      await tx`set local session_replication_role = replica`;
+      await tx`insert into space_items (node_id, author_login_id, review_state, author_role)
+        values (${N.clientItem}, ${FC}, 'accepted', 'client')`;
+    });
+    await x(sql`insert into client_sourced_nodes (node_id, owner_id, via)
+                values (${N.copied}, ${L.owner}, 'a6b')`);
+    // An open link on one page, serving another.
+    await x(sql`insert into shares (token, owner_id, node_id, node_type, settings) values
+      ('a6b-cs-link', ${L.owner}, ${N.linkedPage}, 'page',
+       ${JSON.stringify({ served: [N.servedPage] })}::jsonb)`);
+    // The exports: the Clients app's, a written app's, a team app's, and an
+    // app exporting the Clients-held page's twin (a table Clients reads).
+    await x(sql`insert into app_databases (owner_id, app_node_id, storage_path, client_written_at)
+                values (${L.owner}, ${N.writtenApp}, 'a6b/written.sqlite', now())`);
+    await x(sql`insert into app_table_exports (owner_id, app_node_id, sqlite_table, table_node_id) values
+      (${L.owner}, ${N.clientsApp}, 'rows', ${N.clientsAppTable}),
+      (${L.owner}, ${N.writtenApp}, 'rows', ${N.writtenAppTable}),
+      (${L.owner}, ${N.teamApp}, 'rows', ${N.teamAppTable}),
+      (${L.owner}, ${N.exposedTableApp}, 'rows', ${N.clientsPage})`);
+    // An assistant clients talk to (the Clients workspace's), with a group.
+    const CA = id(831);
+    names.set(CA, 'agent:clients');
+    await x(sql`insert into tool_groups (owner_id, slug, name, description, enabled, tool_slugs)
+                values (${L.owner}, 'a6b-cs-group', 'cs group', 'd', true, '{a6b_cs_tool}'),
+                       (${L.owner}, 'a6b-cs-plain', 'plain group', 'd', true, '{a6b_plain_tool}')`);
+    await x(sql`insert into agents (id, owner_id, slug, name, model, system_prompt, workspace_id, tool_group_slugs)
+                values (${CA}, ${L.owner}, 'a6b-cs-clients', 'clients assistant', 'test/model', 'p', ${CW},
+                        '{a6b-cs-group}')`);
+    // A conversation marked now and one marked 25 hours ago.
+    await x(sql`insert into conversation_taints (owner_id, conversation_key, via, tainted_at) values
+      (${L.owner}, 'a6b:marked', 'task_get', now()),
+      (${L.owner}, 'a6b:stale', 'task_get', now() - interval '25 hours')`);
+
+    const IDS = Object.entries({
+      clientTask: N.clientTask,
+      plainTask: N.plainTask,
+      otherClientTask: N.otherClientTask,
+      formerClient: FC,
+      clientItem: N.clientItem,
+      copied: N.copied,
+      clientsAppTable: N.clientsAppTable,
+      writtenAppTable: N.writtenAppTable,
+      teamAppTable: N.teamAppTable,
+      pPage: N.pPage,
+      unknown: id(899),
+    });
+    const RULE = {
+      kind: 'write',
+      nodes: ['n'],
+      apps: ['a'],
+      paths: ['p'],
+      agents: ['ag'],
+      groups: ['g'],
+      tools: ['t'],
+    } as const;
+    const VERDICTS: Array<[string, Record<string, unknown>]> = [
+      ['clientsPage', { n: N.clientsPage }],
+      ['clientsPage upper', { n: N.clientsPage.toUpperCase() }],
+      ['linkedPage', { n: N.linkedPage }],
+      ['servedPage', { n: N.servedPage }],
+      ['pPage twice', { n: [N.pPage, N.pPage] }],
+      ['unknown', { n: id(899) }],
+      ['otherBrainTask', { n: N.otherClientTask }],
+      ['clientsApp', { a: N.clientsApp }],
+      ['teamApp', { a: N.teamApp }],
+      ['exposedTableApp', { a: N.exposedTableApp }],
+      ['shared folder below', { p: 'pages.a6b_shared.sub' }],
+      ['shared folder itself', { p: 'pages.a6b_shared' }],
+      ['plain path', { p: 'pages.elsewhere' }],
+      ['bad path', { p: 'not a path!' }],
+      ['clients agent', { ag: 'a6b-cs-clients' }],
+      ['P agent', { ag: 'a6b-P' }],
+      ['clients group', { g: 'a6b-cs-group' }],
+      ['plain group', { g: 'a6b-cs-plain' }],
+      ['clients tool', { t: 'a6b_cs_tool' }],
+      ['plain tool', { t: 'a6b_plain_tool' }],
+      ['pPage and clients agent', { n: N.pPage, ag: 'a6b-cs-clients' }],
+    ];
+    let fresh = 900;
+    await section('client-sourced', async (cell) => {
+      for (const [ctx, run] of CONTEXTS) {
+        const a = (k: string, fn: () => Promise<unknown>) =>
+          answer(() => run(fn)).then((v) => cell(`${k} ${ctx}`, v));
+        for (const [k, v] of IDS) {
+          await a(`namesClientSourced ${k}`, () => cs.namesClientSourced(L.owner, [v]));
+        }
+        await a('namesClientSourced other brain', () =>
+          cs.namesClientSourced(OTHER, [N.otherClientTask]),
+        );
+        await a('clientSourcedAmong all', async () =>
+          [
+            ...(await cs.clientSourcedAmong(
+              L.owner,
+              IDS.map(([, v]) => v),
+            )),
+          ].sort(),
+        );
+        await a('withoutClientSourced all', async () =>
+          (
+            await cs.withoutClientSourced(
+              L.owner,
+              IDS.map(([, v]) => ({ id: v })),
+            )
+          ).map((r) => r.id),
+        );
+        for (const key of ['a6b:marked', 'a6b:stale', 'a6b:none']) {
+          await a(`loadConversationTaint ${key}`, () => cs.loadConversationTaint(L.owner, key));
+        }
+        await a('loadConversationTaint other brain', () =>
+          cs.loadConversationTaint(OTHER, 'a6b:marked'),
+        );
+        // The conversation's mark kept by a read (taintFromText), then read
+        // back on the system pool and cleared.
+        const key = `a6b:keep:${ctx}`;
+        await a('taintFromText keeps', async () => {
+          const taint = { clientSourced: false, conversation: { ownerId: L.owner, key } };
+          await cs.taintFromText(taint, L.owner, `see ${N.clientTask}`, 'task_get');
+          return taint;
+        });
+        cell(
+          `taintFromText kept ${ctx}`,
+          await x(sql`select via from conversation_taints where conversation_key = ${key}`),
+        );
+        await x(sql`delete from conversation_taints where conversation_key = ${key}`);
+        // A node a marked turn just made (and an old one in the output).
+        const made = id(fresh++);
+        names.set(made, 'cs:made');
+        await x(sql`insert into nodes (id, owner_id, type, title, path)
+                    values (${made}, ${L.owner}, 'note', 'made', 'notes')`);
+        await a('markCreatedClientSourced', () =>
+          cs.markCreatedClientSourced(L.owner, `${made} ${N.old}`, 1000, 'task_get'),
+        );
+        cell(
+          `markCreatedClientSourced marked ${ctx}`,
+          await x(sql`select node_id::text as id, via from client_sourced_nodes
+                       where node_id in (${made}, ${N.old}) order by 1`),
+        );
+        await x(sql`delete from client_sourced_nodes where node_id in (${made}, ${N.old})`);
+        await x(sql`delete from nodes where id = ${made}`);
+        for (const [k, input] of VERDICTS) {
+          await a(`writeVerdict ${k}`, () =>
+            rules.writeVerdict(L.owner, RULE, input).catch(() => 'threw'),
+          );
+        }
+        // The export link's mark (removeAppTableExport): a written app's
+        // Table keeps the mark, a team app's does not.
+        for (const [k, app, tbl] of [
+          ['written', N.writtenApp, N.writtenGone],
+          ['team', N.teamApp, N.teamGone],
+        ] as const) {
+          await x(sql`insert into app_table_exports (owner_id, app_node_id, sqlite_table, table_node_id)
+                      values (${L.owner}, ${app}, 'gone', ${tbl})`);
+          await a(`removeAppTableExport ${k}`, () =>
+            exportsMod.removeAppTableExport(L.owner, app, 'gone'),
+          );
+          cell(
+            `removeAppTableExport ${k} marked ${ctx}`,
+            await x(sql`select via from client_sourced_nodes where node_id = ${tbl}`),
+          );
+          await x(sql`delete from client_sourced_nodes where node_id = ${tbl}`);
+          await x(
+            sql`delete from app_table_exports where app_node_id = ${app} and sqlite_table = 'gone'`,
+          );
+        }
+      }
+    });
+  });
+
+  // ── heartbeat-context: a turn's own open heartbeats (the responder's
+  //    awareness block and its tool list) ─────────────────────────────────
+  it('heartbeat-context', async () => {
+    const tick = await import('../../../packages/runtime/src/heartbeats/tick');
+    const HB: Array<
+      [string, string | null, string, Record<string, unknown>, Record<string, unknown>]
+    > = [
+      ['anchor-null', null, 'active', { expecting_reply: true }, { kind: 'web' }],
+      ['anchor-id', L.owner, 'active', {}, { kind: 'telegram', chat_id: 'c1' }],
+      ['modP', L.modP, 'active', { expecting_reply: true }, { kind: 'web' }],
+      ['modP-tg', L.modP, 'active', { expecting_reply: true }, { kind: 'telegram', chat_id: 'c2' }],
+      ['userQ', L.userQ, 'active', {}, { kind: 'web' }],
+      [
+        'adminAll',
+        L.adminAll,
+        'active',
+        { expecting_reply: true },
+        { kind: 'telegram', chat_id: 'c1' },
+      ],
+      ['paused', null, 'paused', { expecting_reply: true }, { kind: 'web' }],
+    ];
+    for (const [slug, by, status, state, surface] of HB) {
+      await x(sql`insert into heartbeats (owner_id, slug, name, agent_slug, skill_slug, schedule_kind,
+                                          schedule, surface, state, status, created_by)
+                  values (${L.owner}, ${`a6b-hb-${slug}`}, ${`hb ${slug}`}, 'a6b-admin', 'skill', 'once',
+                          '{}'::jsonb, ${JSON.stringify(surface)}::jsonb, ${JSON.stringify(state)}::jsonb,
+                          ${status}::heartbeat_status, ${by})`);
+    }
+    await section('heartbeat-context', async (cell) => {
+      for (const [ctx, run] of CONTEXTS) {
+        const a = (k: string, fn: () => Promise<unknown>) =>
+          answer(() => run(fn)).then((v) => cell(`${k} ${ctx}`, v));
+        for (const [sk, surface] of [
+          ['web', { kind: 'web' }],
+          ['tg c1', { kind: 'telegram', chatId: 'c1' }],
+          ['tg c2', { kind: 'telegram', chatId: 'c2' }],
+        ] as const) {
+          await a(`openHeartbeatsForSurface ${sk}`, async () =>
+            (await tick.openHeartbeatsForSurface(L.owner, surface)).map((h) => h.slug).sort(),
+          );
+          await a(`hasActiveHeartbeatsOnSurface ${sk}`, () =>
+            tick.hasActiveHeartbeatsOnSurface(L.owner, surface),
+          );
+        }
+      }
+    });
+  });
 });
