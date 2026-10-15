@@ -141,8 +141,18 @@ describe.skipIf(!hasManifest)('ROUTE_POLICY: same answers as the lists', () => {
         scope?.kind === 'area' ? (scope as { area: string }).area : null,
       );
       check(key, 'effect', row.effect, isReadRequest(m, p) ? 'read' : 'write');
-      check(key, 'memberMayRead', memberOpenRead(row), memberMayRead(m, p));
-      check(key, 'memberMayWrite', memberOpenWrite(row), memberMayWrite(m, p));
+      // A v1 row answers a login outside Admin as its base route (D3, the
+      // A8 finding F1): the route it re-exports, or the table's `base`.
+      const v1Base =
+        row.aliasOf ??
+        API_V1_ROUTES.find((r) => r.method === (m === 'HEAD' ? 'GET' : m) && r.pattern === p)
+          ?.base ??
+        null;
+      const [bm, bp] = v1Base
+        ? [v1Base.slice(0, v1Base.indexOf(' ')), v1Base.slice(v1Base.indexOf(' ') + 1)]
+        : [m, p];
+      check(key, 'memberMayRead', memberOpenRead(row), memberMayRead(bm, bp));
+      check(key, 'memberMayWrite', memberOpenWrite(row), memberMayWrite(bm, bp));
       // A HEAD row has its GET's logins (the owner's decision 2a): the
       // lists name GET only.
       const listed = m === 'HEAD' ? 'GET' : m;

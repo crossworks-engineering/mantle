@@ -53,9 +53,6 @@ import {
   type TurnTaint,
 } from '@mantle/tools/client-sourced';
 import { toolCreatesNodes } from '@mantle/tools/client-sourced-rules';
-// The gate's one rule for the owner's surfaces, from its own subpath so the
-// loop's tests that fake @mantle/tools still read it (fix round 1, LOW-3).
-import { isOwnerSurface } from '@mantle/tools/surface';
 import { outcomeIsThirdParty } from '@mantle/tools/third-party';
 import { type Tool, type AgentParams } from '@mantle/db';
 import type { ToolArtifact, ToolModelImage } from '@mantle/tools';
@@ -89,7 +86,6 @@ import {
 import { loadToolGroupsForCatalog } from './skills';
 import { env } from '@mantle/config';
 import { UUID_RE } from '@mantle/std';
-import { isUnscoped } from '@mantle/db/viewer';
 import { ownerSurfaceLogin, surfaceLoginId, withAgentScope } from './agent-viewer';
 
 export const DEFAULT_MAX_ITERATIONS = 6;
@@ -1027,14 +1023,11 @@ async function runToolLoopInScope(args: ToolLoopArgs): Promise<ToolLoopResult> {
           pendingIds,
           taint,
         });
-      // A member's or a client's turn (or any scoped one) never hands the
-      // model a database error's text (W3 re-audit 6): the reply says the
-      // read failed, the log keeps the detail.
+      // No turn hands the model a database error's or the runtime's own
+      // text (W3 re-audit 6; the A8 finding F2: every surface, the owner's
+      // too): the reply says the call failed, the log keeps the detail.
       // The one masking (@mantle/tools tool-error-mask.ts, A5 step 3a).
-      let outcome =
-        isUnscoped() && isOwnerSurface(args.surface)
-          ? await execute()
-          : await maskToolDatabaseErrors(`tool ${slug}`, execute);
+      let outcome = await maskToolDatabaseErrors(`tool ${slug}`, execute);
       // Deferred loading: a model may call a catalog tool by name without
       // loading it first, and then guess its arguments. When such a call fails
       // on its arguments, hand back the real schema once per tool per turn so

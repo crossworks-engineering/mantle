@@ -53,7 +53,7 @@ import {
   type PendingToolCall,
   type WorkspaceScope,
 } from '@mantle/db';
-import { currentWorkspaceScope } from '@mantle/db/viewer';
+import { currentWorkspaceScope, turnScopeWrites } from '@mantle/db/viewer';
 import type { ToolHandlerContext } from './types';
 
 /** What the approval reads off the stamp: the scope to judge and run the
@@ -225,10 +225,10 @@ export async function originRunFor(
     // An approved call of a login is that login's write request in the
     // asked scope: it writes as a login's mutating request does there (the
     // login write gateway, the scope on its transactions, the database's
-    // checks against it), whatever the turn's own mode (a workspace turn
-    // other than Admin's writes none itself). A turn that answered no login
-    // keeps its own mode.
-    writes: origin.writes || stamped.loginId !== null,
+    // checks against it), as the asking turn's own writes do (the one rule,
+    // turnScopeWrites). A turn that answered no login keeps its own mode:
+    // it wrote only when it acted for the owner (the Admin assistant).
+    writes: turnScopeWrites({ loginId: stamped.loginId }, origin.writes),
     adminCap: origin.admin
       ? Object.freeze({ holds: origin.admin.holds, areas: Object.freeze([...origin.admin.areas]) })
       : null,
@@ -257,6 +257,8 @@ export function withOriginScope<T>(run: OriginRun, fn: () => Promise<T>): Promis
         () => withGateScope(scope, fn),
       );
     }
+    // `writes` is turnScopeWrites's answer (originRunFor): the asking
+    // turn's own rule.
     return withTurnScope(scope, fn, run.writes ? { writes: true } : {});
   };
   return asSystem(() => withoutLeftScope(inner), 'pending-approval');

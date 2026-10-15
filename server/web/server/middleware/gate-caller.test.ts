@@ -1460,17 +1460,18 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
     }
     // The v1 download never honoured a `?at=` (its route file hands the
     // bytes handler `?raw=1` alone): a member's session with an Admin
-    // user's token is the member there (refused: no member reads that
-    // row), and the Admin user on the bytes route itself, through both
-    // paths alike (the cells above).
+    // user's token is the member there, who reads the file as its base
+    // route lets it (D3, the A8 finding F1: in its own scope, never as the
+    // token's Admin user), and the Admin user on the bytes route itself,
+    // through both paths alike (the cells above).
     const v1 = await drive(
       pipelineApp,
       'GET',
       `/api/v1/files/${ID}/download?${at(ADMIN)}`,
       creds[3]!.headers(),
     );
-    expect(v1.status).toBe(403);
-    expect(v1.body).toContain('member-login');
+    expect(v1.status).toBe(200);
+    expect((JSON.parse(v1.body) as { owner: { member: unknown } }).owner.member).not.toBeNull();
     const bytes = await drive(
       pipelineApp,
       'GET',

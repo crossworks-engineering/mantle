@@ -157,8 +157,11 @@ export async function dispatchTool(
   // the one masking (tool-error-mask.ts). An MCP connection by its via; an
   // app tool broker below the owner's own web (A5 step 5 fix round 1, M3)
   // and a call nested in a /api/v1 route call (L3) by their caller's
-  // `masks`. A turn masks in the tool loop.
-  if (mcpVia(caller) || caller.masks === true) {
+  // `masks`. A turn, a run item and an approved pending call on every
+  // surface, the owner's too (the A8 finding F2: a refused write's database
+  // or runtime text never reaches the model or the person; the tool loop
+  // masks again around the whole call).
+  if (mcpVia(caller) || caller.masks === true || MODEL_ENTRIES.has(caller.entry)) {
     return maskToolDatabaseErrors(`${maskLabel(caller)} ${tool.slug}`, run);
   }
   return run();
@@ -230,9 +233,14 @@ function brokerVerdictFor(caller: ToolCaller, tool: Tool): AppBrokerVerdict {
   return Object.freeze({ ok: false, status: 403, reason: APP_VERDICT_MISSING_ERROR });
 }
 
+/** The entries whose call's text goes to a model (and from it to a
+ *  person): an assistant turn, a run item, an approved pending call. */
+const MODEL_ENTRIES: ReadonlySet<ToolCaller['entry']> = new Set(['turn', 'run', 'pending']);
+
 /** The masking's log label of a caller's call (as before step 3b). */
 function maskLabel(caller: ToolCaller): string {
   if (mcpVia(caller)) return 'mcp';
+  if (MODEL_ENTRIES.has(caller.entry)) return caller.entry;
   return caller.entry === 'api-v1-nested' ? 'api-v1 nested' : `${caller.entry} broker`;
 }
 

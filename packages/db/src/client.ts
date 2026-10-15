@@ -2308,7 +2308,9 @@ export async function withScope<T>(scope: WorkspaceScope, fn: () => Promise<T>):
  * refused (ScopeLostError), never sent on the system pool. Nested in the
  * same scope it just runs `fn`;
  * inside any other scope it is refused. `modWs` must be a subset of `ws`.
- * Writes are not made here: they go through the system pool's own paths.
+ * Without `writes` it only reads (a write meets the workspace role and is
+ * refused); with it, a write goes through the login write gateway in this
+ * scope (turnScopeWrites decides it for a turn).
  */
 export async function withTurnScope<T>(
   scope: WorkspaceScope,

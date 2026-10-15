@@ -141,7 +141,7 @@ vi.mock('../lib/mcp-oauth', async (importOriginal) => {
 import { PUBLIC_PATHS, SESSION_COOKIE_NAME } from '../lib/auth-constants';
 import { MEMBER_ROUTES, isMemberRoute } from '../lib/auth/member-routes';
 import { isAnyLoginRoute } from '../lib/auth/any-login-routes';
-import { memberMayRead, memberMayWrite } from '../lib/auth/route-scope';
+import { buildRoutePolicy, memberOpenRead, memberOpenWrite } from '../lib/auth/route-policy';
 import { PUBLIC_SESSION_ROUTES, RENDER_PAGES, drivePublic } from './public-session-routes';
 
 // W6a: the session guard reads the login's workspaces (loginScopeFor) and,
@@ -195,6 +195,13 @@ describe.skipIf(!hasManifest)('member sweep: a member login is refused everywher
   };
   let app: import('hono').Hono;
   let manifest: Array<{ pattern: string; methods: string[] }>;
+  let policy: ReturnType<typeof buildRoutePolicy>;
+  /** A row open to a login outside Admin (the owner lists, and a v1 row
+   *  whose base route is one: D3). */
+  const memberOpen = (method: string, pattern: string) => {
+    const row = policy.get(`${method} ${pattern}`);
+    return !!row && (memberOpenRead(row) || memberOpenWrite(row));
+  };
   let cookie: string;
   /** A device token for `id` (no epoch, as a password sign-in mints it). */
   let bearerFor: (id: string, opts?: { revoked?: boolean }) => Record<string, string>;
@@ -218,6 +225,7 @@ describe.skipIf(!hasManifest)('member sweep: a member login is refused everywher
     const { createApp } = await import('./app');
     app = await createApp();
     manifest = (await import('./route-manifest.gen')).routeManifest;
+    policy = buildRoutePolicy((await import('./route-manifest.gen')).routeManifest);
   }, 60_000);
 
   afterAll(() => {
@@ -264,9 +272,10 @@ describe.skipIf(!hasManifest)('member sweep: a member login is refused everywher
             isAnyLoginRoute(method, entry.pattern) ||
             // Open to every login in its scope since W6a (reads) and W6b
             // (writes): proved against a database in w6a-route-sweep.db.test.ts
-            // and w6b-member-writes.db.test.ts.
-            memberMayRead(method, entry.pattern) ||
-            memberMayWrite(method, entry.pattern)
+            // and w6b-member-writes.db.test.ts. A v1 row is open where its
+            // base route is (D3, the A8 finding F1): its ROUTE_POLICY row
+            // says so (a8-findings.db.test.ts proves it on a database).
+            memberOpen(method, entry.pattern)
           ) {
             continue;
           }

@@ -16,10 +16,15 @@
  * promise: a breaking change needs /api/v2, and v1 stays for at least six
  * months after v2 ships.
  *
- * Cookies and device tokens work here too. The v1 routes past whoami are
- * admin routes: a member or client login (or a key that acts as one) gets
- * 403 `member-login` / `client-login` from them, as on the routes they
- * alias. Those logins use /api/mcp.
+ * Cookies and device tokens work here too. A v1 route answers a login as
+ * its base route does (plan v2 D3; the A8 finding F1, owner decision a): a
+ * login outside Admin, or a key that acts as one, reads and writes through
+ * a v1 route exactly where the base route (the route the v1 file
+ * re-exports, or `base` for a v1 file with a handler of its own) admits it,
+ * in its own scope, and gets 403 `member-login` where the base route
+ * refuses it. A v1 route with a handler of its own and no base (the table
+ * row writes, which run a builtin on the owner's surface) stays for Admin
+ * users only.
  */
 import { emailAttachmentIds } from '@mantle/files';
 import { keyAreasReachEmail } from '@mantle/mcp-core/key-scope';
@@ -82,6 +87,13 @@ export type ApiV1Route = {
    *  D3). Absent: the file re-exports that route's handler, where there is
    *  one (route-policy.test.ts reads the files). */
   own?: true;
+  /** A v1 file with a handler of its own (`own`, or the download, which
+   *  hands the bytes handler its query): the base route (`METHOD pattern`)
+   *  whose rules it follows for a login (D3, the A8 finding F1): it admits a
+   *  login outside Admin where that route does. None: Admin users only. A
+   *  re-exporting file's base is the route it re-exports (ROUTE_POLICY
+   *  aliasOf). */
+  base?: string;
 };
 
 const r = (
@@ -90,6 +102,7 @@ const r = (
   area: AccessKeyArea | null,
   access: ApiV1Route['access'],
   own?: 'own' | 'self',
+  base?: string,
 ): ApiV1Route => ({
   method,
   pattern,
@@ -97,6 +110,7 @@ const r = (
   access,
   ...(own === 'own' ? { own: true as const } : {}),
   ...(own === 'self' ? { self: true as const } : {}),
+  ...(base ? { base } : {}),
 });
 
 export const API_V1_ROUTES: readonly ApiV1Route[] = [
@@ -108,7 +122,7 @@ export const API_V1_ROUTES: readonly ApiV1Route[] = [
   r('GET', '/api/v1/pages', 'pages', 'read'),
   r('POST', '/api/v1/pages', 'pages', 'write'),
   r('GET', '/api/v1/pages/:id', 'pages', 'read'),
-  r('PATCH', '/api/v1/pages/:id', 'pages', 'write', 'own'),
+  r('PATCH', '/api/v1/pages/:id', 'pages', 'write', 'own', 'PATCH /api/pages/:id'),
   // Notes.
   r('GET', '/api/v1/notes', 'notes', 'read'),
   r('POST', '/api/v1/notes', 'notes', 'write'),
@@ -129,7 +143,7 @@ export const API_V1_ROUTES: readonly ApiV1Route[] = [
   r('GET', '/api/v1/files', 'files', 'read'),
   r('POST', '/api/v1/files', 'files', 'write'),
   r('GET', '/api/v1/files/:id', 'files', 'read'),
-  r('GET', '/api/v1/files/:id/download', 'files', 'read'),
+  r('GET', '/api/v1/files/:id/download', 'files', 'read', undefined, 'GET /api/files/files/:id'),
   // Calendar events.
   r('GET', '/api/v1/events', 'calendar', 'read'),
   r('POST', '/api/v1/events', 'calendar', 'write'),

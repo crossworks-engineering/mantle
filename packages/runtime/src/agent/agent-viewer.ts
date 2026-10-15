@@ -9,10 +9,16 @@
  *  - an assistant of a workspace other than Admin (the Team assistant) runs
  *    its turn in a TURN scope of that one workspace on the workspace role:
  *    every query in its own short transaction, none held across an LLM call,
- *    and a lost scope refused (withTurnScope). Its writes stay on the system
- *    pool's own paths. modWs is the workspace when the login it answers is a
- *    Moderator there, else empty; no login (a heartbeat) reads only; a login
- *    with no user row in that workspace is refused;
+ *    and a lost scope refused (withTurnScope). It writes with the rights of
+ *    the login it answers, in that workspace only (plan v2 4.2, the A8
+ *    finding F2): each write is a short transaction of the login write
+ *    gateway with the turn's scope set on it, as the login's mutating
+ *    request writes, and the database's checks decide (a Moderator of the
+ *    home, or a grant with Write on). modWs is the workspace when the login
+ *    it answers is a Moderator there, else empty (a Moderator seat in any
+ *    other workspace never counts here); no login (a heartbeat) reads only
+ *    (turnScopeWrites, shared with an approved pending call); a login with
+ *    no user row in that workspace is refused;
  *  - the Admin assistant (W7a) runs its turn in a turn scope of the Admin
  *    workspace too, like every other assistant: it reads what Admin holds,
  *    never another user's private workspace. It writes as an Admin user's
@@ -73,6 +79,7 @@ import {
   currentTurnStamp,
   currentWorkspaceScope,
   scopeLeftForSystem,
+  turnScopeWrites,
   withTurnStamp,
 } from '@mantle/db/viewer';
 
@@ -316,10 +323,9 @@ export async function withAgentScope<T>(
         stamped(null),
       );
     }
+    const scope = { kind: 'assistant' as const, loginId: asked, ws: [admin.wsId], modWs };
     return withTurnStamp({ workspaceId: admin.wsId, loginId: asked }, () =>
-      withTurnScope({ kind: 'assistant', loginId: asked, ws: [admin.wsId], modWs }, fn, {
-        writes: true,
-      }),
+      withTurnScope(scope, fn, { writes: turnScopeWrites(scope, false) }),
     );
   }
   // Under MANTLE_ADMIN_READS=system the Admin assistant's own scope is a gate
@@ -400,10 +406,10 @@ export async function withAgentScope<T>(
         withGateScope({ kind: 'assistant', loginId: actsFor, ws: [wsId], modWs }, fn),
       );
     }
+    // It acts for the owner when it answers no login (turnScopeWrites).
+    const scope = { kind: 'assistant' as const, loginId: actsFor, ws: [wsId], modWs };
     return withTurnStamp(stamp, () =>
-      withTurnScope({ kind: 'assistant', loginId: actsFor, ws: [wsId], modWs }, fn, {
-        writes: true,
-      }),
+      withTurnScope(scope, fn, { writes: turnScopeWrites(scope, true) }),
     );
   }
   const loginId = opts.loginId ?? scopeLogin;
@@ -416,7 +422,12 @@ export async function withAgentScope<T>(
     );
   }
   const modWs = user?.moderator ? [wsId] : [];
-  return withTurnScope({ kind: 'assistant', loginId, ws: [wsId], modWs }, fn);
+  // It writes for its user with that user's rights, in its own workspace
+  // only (plan v2 4.2, the A8 finding F2): the scope is this one workspace,
+  // and the user's Moderator seat there, never a seat elsewhere. With no
+  // user it only reads (turnScopeWrites).
+  const scope = { kind: 'assistant' as const, loginId, ws: [wsId], modWs };
+  return withTurnScope(scope, fn, { writes: turnScopeWrites(scope, false) });
 }
 
 /**

@@ -69,7 +69,7 @@ a67 403 content-type=application/json {"error":"forbidden","reason":"item-worksp
 a68 403 content-type=application/json {"error":"forbidden","reason":"item-workspace","message":"You cannot change this item in your workspaces."} [getOwnerOr401 R403 {"error":"forbidden","reason":"item-workspace","message":"You cannot change this item in your workspaces."} actor=login:rw:44444444-4444-4444-8444-444444444444 out=-]
 a69 403 content-type=application/json {"error":"forbidden","reason":"item-workspace","message":"You cannot change this item in your workspaces."} [touch 00000001] [getOwnerOr401 R403 {"error":"forbidden","reason":"item-workspace","message":"You cannot change this item in your workspaces."} actor=login:rw:55555555-5555-4555-8555-555555555555 out=-]
 
-# cells that wanted a database: 391 in the first sweep; 0 still do with the reads stood in
+# cells that wanted a database: 399 in the first sweep; 0 still do with the reads stood in
 
 # more credentials
 GET /.well-known/oauth-authorization-server: disabled-cookie=a1 bumped-cookie=a1 gone-cookie=a1 rotated-bearer=a1 expired-bearer=a1 key-unknown=a1 key-revoked=a1
@@ -1192,8 +1192,8 @@ PATCH /api/tree/:kind/folders/:id: owner-cookie=a55 admin-cookie=a56 limited-coo
 DELETE /api/tree/:kind/folders/:id: owner-cookie=a55 admin-cookie=a56 limited-cookie=a57 member-cookie=a58 admin-bearer=a59 member-bearer=a60
 POST /api/tree/items/:id/opened: owner-cookie=a55 admin-cookie=a56 limited-cookie=a57 member-cookie=a58 admin-bearer=a59 member-bearer=a60
 PUT /api/tree/items/:id/pin: owner-cookie=a55 admin-cookie=a56 limited-cookie=a57 member-cookie=a58 admin-bearer=a59 member-bearer=a60
-PATCH /api/v1/pages/:id: owner-cookie=a55 admin-cookie=a56 limited-cookie=a57 admin-bearer=a59
-POST /api/v1/tables/:id/commit: owner-cookie=a55 admin-cookie=a56 limited-cookie=a57 admin-bearer=a59 key-write=a56
+PATCH /api/v1/pages/:id: owner-cookie=a55 admin-cookie=a56 limited-cookie=a57 member-cookie=a58 admin-bearer=a59 member-bearer=a60
+POST /api/v1/tables/:id/commit: owner-cookie=a55 admin-cookie=a56 limited-cookie=a57 member-cookie=a58 admin-bearer=a59 member-bearer=a60 key-write=a56 key-member=a58
 POST /api/v1/tables/:id/rows: owner-cookie=a55 admin-cookie=a56 limited-cookie=a57 admin-bearer=a59 key-write=a56
 PATCH /api/v1/tables/:id/rows/:rowId: owner-cookie=a55 admin-cookie=a56 limited-cookie=a57 admin-bearer=a59 key-write=a56
-PATCH /api/v1/tasks/:id: owner-cookie=a55 admin-cookie=a56 limited-cookie=a57 admin-bearer=a59 key-write=a56
+PATCH /api/v1/tasks/:id: owner-cookie=a55 admin-cookie=a56 limited-cookie=a57 member-cookie=a58 admin-bearer=a59 member-bearer=a60 key-write=a56 key-member=a58

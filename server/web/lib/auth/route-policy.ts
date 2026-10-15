@@ -433,6 +433,22 @@ function aliasOf(method: string, pattern: string, served: (key: string) => boole
   return served(key) ? key : null;
 }
 
+/** The base route (`METHOD pattern`) a v1 row answers a login as (D3):
+ *  the route its file re-exports (aliasOf), else the table's `base` for a
+ *  file with a handler of its own; null off /api/v1 or with neither. */
+function v1BaseOf(method: string, pattern: string, served: (key: string) => boolean) {
+  if (!pattern.startsWith('/api/v1/')) return null;
+  return aliasOf(method, pattern, served) ?? v1Route(method, pattern)?.base ?? null;
+}
+
+/** The login list a v1 row takes from its base (D3): 'owner' where the base
+ *  is one of the owner routes open to a login outside Admin
+ *  (memberMayRead, memberMayWrite), else none (Admin users only). */
+function v1BaseLogins(base: string): RouteLogins | null {
+  const at = base.indexOf(' ');
+  return loginsOf(base.slice(0, at), base.slice(at + 1)) === 'owner' ? 'owner' : null;
+}
+
 /**
  * The caller kinds whose answer names the login a login limit counts
  * (session.ts answeredLimitLogin): the guards answered before the handler,
@@ -632,7 +648,11 @@ export function buildRouteRow(
   // its own handler, and its HEAD row is that method's, as listed (fix
   // round 1, L3).
   const answeredAs = m === 'HEAD' && !opts.ownHead ? 'GET' : m;
-  const logins = loginsOf(answeredAs, pattern);
+  // A v1 row admits a login as its base route does (D3; the A8 finding F1,
+  // owner decision a): the base's login list, of the owner lists only (a
+  // member's open reads and writes). No base: Admin users only.
+  const v1Base = v1BaseOf(answeredAs, pattern, served);
+  const logins = v1Base ? v1BaseLogins(v1Base) : loginsOf(answeredAs, pattern);
   const classLogins = logins;
   const scope = rowScope(answeredAs, pattern, classLogins);
   const effect = isReadRequest(m, pattern) ? 'read' : 'write';

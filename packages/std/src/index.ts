@@ -51,6 +51,36 @@ function databaseShaped(e: unknown): boolean {
 /** Drizzle's query error message, which carries the SQL and its parameters. */
 const FAILED_QUERY_RE = /Failed query:/;
 
+/** What a caller outside the server reads for a runtime fault
+ *  (isRuntimeFaultText): a fixed text, the detail in the server log. */
+export const RUNTIME_ERROR_PUBLIC =
+  'the server could not run this request (the details are in the server log)';
+
+/**
+ * The texts of the database and runtime plumbing that never reach a model or
+ * a person (the A8 finding F2): the scope and transaction guards of
+ * @mantle/db (withSystemTx, the scope runners, a lost turn scope), a
+ * Postgres SQLSTATE or a rule's own words (row security, a constraint, a
+ * permission on a table), drizzle, and a stack trace. Matched on the text, so
+ * a wrapper that repeats one (a recipe step's "failed: ...") is caught too.
+ */
+const RUNTIME_FAULT_RES: readonly RegExp[] = [
+  /\b(?:withSystemTx|runInSystemTx|runInWorkspaceTx|runInViewerScope|runInTurnScope|withTurnScope|withViewer|withScope|enterRequestScope|executeWrite):/,
+  /A scoped query ran outside its turn scope/,
+  /\bSQLSTATE\b/,
+  /DrizzleQueryError|drizzle-orm/,
+  /permission denied for (?:table|relation|schema|function|sequence|view)\b/i,
+  /violates (?:row-level security|not-null|foreign key|check|unique|exclusion) /i,
+  /duplicate key value violates/i,
+  /\n\s+at \S.*:\d+:\d+\)?/,
+];
+
+/** Whether `text` carries the database or runtime plumbing's own words
+ *  (RUNTIME_FAULT_RES, or drizzle's "Failed query"). */
+export function isRuntimeFaultText(text: string): boolean {
+  return FAILED_QUERY_RE.test(text) || RUNTIME_FAULT_RES.some((re) => re.test(text));
+}
+
 /**
  * Whether `err`'s message could carry database text: a Postgres error (a
  * five-character SQLSTATE `code` and a `severity`, as postgres.js reports
@@ -129,7 +159,14 @@ export {
 export function publicErrorMessage(err: unknown, where: string): string {
   const domain = domainErrorAnswer(err);
   if (domain) return domain.toolText;
-  if (!isDatabaseError(err)) return err instanceof Error ? err.message : String(err);
+  if (!isDatabaseError(err)) {
+    const text = err instanceof Error ? err.message : String(err);
+    // The plumbing's own words (a scope guard, a stack) are a fault: a
+    // fixed text out, the detail in the log (the A8 finding F2).
+    if (!isRuntimeFaultText(text)) return text;
+    console.error(`[${where}] runtime fault:`, err);
+    return RUNTIME_ERROR_PUBLIC;
+  }
   console.error(`[${where}] database error:`, err);
   return databaseErrorPublic(err);
 }
@@ -195,7 +232,9 @@ export function databaseErrorPublic(err: unknown): string {
 /**
  * A tool's error text for a caller outside the server: generic when it
  * carries a database error's text (one collected by watchDatabaseErrors, or
- * drizzle's "Failed query"), else unchanged. Logged in full under `where`.
+ * drizzle's "Failed query"), RUNTIME_ERROR_PUBLIC when it carries the
+ * runtime plumbing's own words (isRuntimeFaultText), else unchanged. Logged
+ * in full under `where`.
  */
 export function publicToolError(
   text: string,
@@ -204,7 +243,12 @@ export function publicToolError(
   errors: readonly unknown[] = [],
 ): string {
   const at = texts.findIndex((t) => text.includes(t));
-  if (!FAILED_QUERY_RE.test(text) && at < 0) return text;
+  if (!FAILED_QUERY_RE.test(text) && at < 0) {
+    if (!isRuntimeFaultText(text)) return text;
+    // A scope guard's or a stack's words (the A8 finding F2): a fault.
+    console.error(`[${where}] runtime fault in a tool reply:`, text);
+    return RUNTIME_ERROR_PUBLIC;
+  }
   console.error(`[${where}] database error in a tool reply:`, text);
   // The error the reply carries, read by the one mapper (databaseErrorPublic).
   return at >= 0 ? databaseErrorPublic(errors[at]) : DATABASE_ERROR_PUBLIC;

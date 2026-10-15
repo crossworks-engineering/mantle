@@ -773,6 +773,24 @@ export function runInTurnScope<T>(
   return inScope(scope, fn);
 }
 
+/**
+ * Whether a turn scope writes (plan v2 4.2; the A8 finding F2, owner
+ * decision a): a turn that answers a login writes with that login's rights,
+ * in the scope, as the login's mutating request does there (the login write
+ * gateway, the scope on each short write transaction, the database's
+ * checks against it); a turn that answers no login writes only when it acts
+ * for the owner (the Admin assistant with no user). Any other turn with no
+ * login only reads ("With no user an assistant only reads"). The one rule
+ * of an assistant's own turn (agent-viewer.ts withAgentScope) and of an
+ * approved pending call (pending-origin.ts originRunFor).
+ */
+export function turnScopeWrites(
+  scope: Pick<WorkspaceScope, 'loginId'>,
+  actsForOwner: boolean,
+): boolean {
+  return scope.loginId !== null || actsForOwner;
+}
+
 /** Whether `inner` reads and edits no more than `outer`: its workspaces
  *  and Moderator workspaces are subsets, and a user scope, or an assistant
  *  turn inside one, stays its login's (W7a fix round 1, M1: an assistant
