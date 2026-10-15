@@ -3715,6 +3715,97 @@ Approve for the asker, and show `client_sourced` as a warning.
   web), not in that list.
 - **Egress as a gate concept** (owner decision 2b): not in this step.
 
+## The owner's decisions on the A8 findings (plan v2, section 32)
+
+The A8 matrix found three cells where a way in answered other than the
+guide (F1 to F3). The owner decided each; this section names what changed,
+cell by cell. `server/web/server/a8-findings.db.test.ts` proves it on a
+database and prints every cell's answer, so a run on the code before
+records the answers it changes.
+
+**F1 (a): a key of a login outside Admin on `/api/v1`.** A v1 route answers
+a login as its base route does (D3): the route its file re-exports
+(ROUTE_POLICY `aliasOf`), or the key table's `base` for a v1 file with a
+handler of its own (`PATCH /api/v1/pages/:id` is `PATCH /api/pages/:id`,
+the download is `GET /api/files/files/:id`). `buildRouteRow`
+(`server/web/lib/auth/route-policy.ts`) takes the v1 row's login list from
+its base, the owner lists only (`v1BaseLogins`): a member reads and writes
+through a v1 row exactly where the base row admits it, in its own scope,
+with the base's item write gate. No base (the table row writes, which run a
+builtin on the owner's surface): Admin users only, as before. The owner's
+and every Admin user's key is unchanged.
+
+- Changed cells: a member key (and a member session or device token) on
+  `GET` and `HEAD` of `/api/v1/{search, nodes/:id, notes, notes/:id, tasks,
+  tasks/:id, pages, pages/:id, tables, tables/:id, tables/:id/rows, files,
+  files/:id, files/:id/download, events}` and `POST /api/v1/{notes, tasks,
+  pages, events, files, tables/:id/commit}`, `PATCH /api/v1/{tasks/:id,
+  pages/:id}`: 403 `member-login` before, the base route's answer now (its
+  read, its 403 `item-workspace` for an item the login may not change).
+  Reason: the guide's "a key acts as the login that made it".
+- Unchanged: `/api/v1/contacts`, `/api/v1/journal` (their base routes are
+  Admin only), `POST /api/v1/tables/:id/rows` and `PATCH
+  /api/v1/tables/:id/rows/:rowId` (no base), 403 `member-login`.
+- Left as it was (a D3 difference): a v1 create does not read `?ws=`
+  (`creates` stays the v1 row's own), for every key; the base route reads
+  it. Changing it would change the owner's keys.
+- The A4 sweeps record it: only member credentials on v1 rows changed
+  (`a4-guard-sweep*.txt`), and the member sweep and the field check read a
+  v1 row's member admission from its ROUTE_POLICY row.
+
+**F2 (a): a workspace assistant's turn writes.** An assistant of a
+workspace other than Admin writes with the rights of the user it answers,
+in its own workspace (plan 4.2). One rule, `turnScopeWrites`
+(`packages/db/src/viewer.ts`): a turn that answers a login writes; one that
+answers none writes only when it acts for the owner (the Admin assistant).
+`withAgentScope` (`packages/runtime/src/agent/agent-viewer.ts`) enters every
+assistant turn with it, and an approved pending call (`originRunFor`,
+`packages/tools/src/pending-origin.ts`) asks the same rule, so the direct
+turn and the approval share one write scope builder. A turn with writes on
+runs each write as a short transaction of the login write gateway with the
+turn's scope set on it (`loginWriteRoute`; `withSystemTx` on the write role
+or the system pool with the scope's settings), as a login's mutating
+request does. No transaction is held across a model call. The scope is the
+assistant's workspace and the user's Moderator seat there only: a seat in
+any other workspace never counts (the A8 cells the guide is silent on stay
+deny).
+
+- Changed cells (each refused before, with a raw text): the edit and delete
+  of an item a Moderator of the assistant's workspace may change, the edit
+  of an item granted to it with Write on (any user of it), a create, and a
+  move into a folder of the workspace (on an owner-side surface: the web,
+  Telegram, a recipe in a turn), on the web turn, the team turn, Telegram,
+  a run item and a recipe step. Reason: the guide's "it writes only for a
+  user who could do it by hand".
+- Unchanged: an item with Write off, an item not granted to the
+  workspace, a delete or move that needs a seat outside it, and every
+  write of a plain user of the workspace on an item homed there: refused,
+  now in the mapper's words. A turn with no user (a heartbeat) only reads.
+  `tree_item_move` stays an owner-side tool (refused on the team turn and a
+  run item, which names no surface).
+- The A8 surface cells of F2 (`a8-known-failures.ts`) pass.
+
+**The raw text.** No turn hands a model, or the person, the database's or
+the runtime's own text. Dispatch masks every assistant turn, run item and
+approved pending call (`MODEL_ENTRIES`, `packages/tools/src/dispatch.ts`),
+the owner's turn too, and the tool loop masks every call again (it skipped
+the owner's unscoped turn before). Besides a database error (the one
+mapper's words), `publicToolError` and `publicErrorMessage`
+(`packages/std/src/index.ts`) read a scope guard's words (`withSystemTx:`,
+the scope runners, a lost turn scope), a SQLSTATE, a rule's own words, a
+drizzle error and a stack trace as a fault: `RUNTIME_ERROR_PUBLIC` out, the
+detail in the server log (`isRuntimeFaultText`). The dev console (the
+owner's own web, `ownerWebCaller`) still reads the text, as before.
+
+**F3 (b): app delete stays owner-side in a chat.** `app_delete` is an
+owner-side tool: the team chat refuses it for every user, a Moderator of
+the app's home too. The guide says so (docs/workspaces.md, "Apps",
+**Delete**). A Moderator still deletes an app in the app, over MCP and in a
+web chat, where it waits in Recently deleted until the owner deletes it
+for good. The A8 oracle follows the guide when the A8 branch lands (its
+`team-turn turn/homeModerator delete app @folder` cell is the owner's rule,
+not a failure).
+
 ## The approval re-check (A5 step 6c)
 
 Plan step 6c (M2 at approval): a call queued for approval is judged again

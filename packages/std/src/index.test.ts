@@ -125,6 +125,43 @@ describe('database errors for callers outside the server', () => {
   });
 });
 
+describe('the runtime plumbing’s own words never go out (A8 F2)', () => {
+  it('a scope guard, a stack or a database rule’s words are a fault: a fixed text, logged', async () => {
+    const { isRuntimeFaultText, publicErrorMessage, publicToolError, RUNTIME_ERROR_PUBLIC } =
+      await import('./index');
+    const faults = [
+      'withSystemTx: only outside a viewer scope and any other transaction',
+      "recipe step 0 ('task_delete') failed: withSystemTx: only outside a viewer scope",
+      'nothing moved: withTurnScope: already inside another scope',
+      'A scoped query ran outside its turn scope; refused (it never runs unscoped).',
+      'SQLSTATE 42501',
+      'permission denied for table nodes',
+      'new row violates row-level security policy for table "nodes"',
+      'duplicate key value violates unique constraint "x"',
+      'oops\n    at fn (/srv/packages/db/src/client.ts:12:3)',
+      'DrizzleQueryError: x',
+    ];
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    for (const text of faults) {
+      expect(isRuntimeFaultText(text), text).toBe(true);
+      expect(publicToolError(text, [], 't'), text).toBe(RUNTIME_ERROR_PUBLIC);
+      expect(publicErrorMessage(new Error(text), 't'), text).toBe(RUNTIME_ERROR_PUBLIC);
+    }
+    expect(spy).toHaveBeenCalled();
+    spy.mockRestore();
+    // A tool's own words keep their text, a title with "drizzle" in it too.
+    for (const text of [
+      'task 1 not found: find the right id with task_list',
+      'You cannot change this item in your workspaces (x): ask for Write on it',
+      'Note "drizzle recipes" is already there',
+    ]) {
+      expect(isRuntimeFaultText(text), text).toBe(false);
+      expect(publicToolError(text, [], 't')).toBe(text);
+      expect(publicErrorMessage(new Error(text), 't')).toBe(text);
+    }
+  });
+});
+
 describe('browser safety', () => {
   it('index.ts imports no node builtin (the share runtime bundles it for the browser)', async () => {
     const { readFileSync } = await import('node:fs');

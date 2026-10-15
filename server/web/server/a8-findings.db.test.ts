@@ -93,11 +93,11 @@ describe.skipIf(!DB_URL)('A8 findings: the owner’s decisions F1 and F2', () =>
     return id;
   };
 
-  /** What a probe reads of an item: its title and home, or gone. */
+  /** What a probe reads of an item: its title, home and place, or gone. */
   const probe = async (id: string) => {
-    const [row] = await raw<{ title: string; home: string | null; parent: string | null }[]>`
-      select title, home_ws::text as home, parent_id::text as parent from nodes where id = ${id}`;
-    return row ? `${row.title}|${row.home}|${row.parent}` : 'gone';
+    const [row] = await raw<{ title: string; home: string | null; path: string }[]>`
+      select title, home_ws::text as home, path::text as path from nodes where id = ${id}`;
+    return row ? `${row.title}|${row.home}|${row.path}` : 'gone';
   };
 
   const note = (cell: string, out: Outcome) => {
