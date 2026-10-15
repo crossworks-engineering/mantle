@@ -644,7 +644,10 @@ UPDATE`, `FOR SHARE` and kin, which need UPDATE) naming any gap table, or
   row on the subject's item whose home the scope manages; a removal is
   logged before its row goes) are exercised only by the direct-SQL cells
   (`a2b2b-write-gateway.db.test.ts`, `write-role.db.test.ts`) until the
-  grants panel moves to the role.
+  grants panel moves to the role. (A6 round 2: it has. The panel runs in the
+  caller's scope, a member's grant writes on the role, an Admin user's on
+  the system pool with its scope set, so these checks run on every panel
+  write; and a refusal is a refusal in every check mode, see A6.)
 
 **Known asymmetries (2026-10-13), each until its phase:**
 
@@ -4397,8 +4400,8 @@ database, and code outside `packages/db` never names the raw ACL columns
 **One definition.** The array forms came in A3a (migration 0280):
 `mantle_may_edit_in(ws, mod_ws, home, write_ws)` and
 `mantle_may_manage_in(mod_ws, home)`; `mantle_may_edit` and
-`mantle_may_manage` call them with the scope's settings. A6 adds no
-migration. `packages/db/src/item-acl.ts` is the one place outside the
+`mantle_may_manage` call them with the scope's settings. Round 1 added no
+migration; round 2 adds 0291 (below). `packages/db/src/item-acl.ts` is the one place outside the
 migrations that writes them into a query:
 
 | helper                                                | what it asks                                                                              |
@@ -4431,7 +4434,7 @@ may read, edit or manage is always one of the rules.
   serve candidates): read, edit and manage were three hand `exists` over
   the login's user rows; now the array forms over the login's workspaces
   and Moderator ones, read in the same query.
-- `packages/content/src/member-brain-apps.ts`: a deleted app's home was
+- packages/content/src/member-brain-apps.ts (deleted in round 2): a deleted app's home was
   compared by hand with the login's Moderator list; now the manage rule
   (`mayManageHomeInSql`) in the login's scope.
 - The rest moved their SQL text into the helpers with the same meaning:
@@ -4447,15 +4450,12 @@ The lint `no-raw-acl-columns` is pinned at 0 (it was 25 files, 86 lines at
 A0; comments are exempt): a new read anywhere outside `packages/db` is a
 lint error, and `eslint-rules/arch-lints.test.ts` holds the pins empty.
 
-**asSystem: 88 sites in 45 files to 39 in 36 (28 reasons).** A6 moved no
-exit into a scope. Where a file left the scope by one reason at several
-places, the places now call that file's one door: a function whose body is
-the one `asSystem` call with its reason. The exits are the same; each is
-reviewed at its door. A door keeps one pinned site, so its calls are
-counted too (`asSystemDoorCalls`, 70, pinned in
-`scripts/arch-scoreboard.pins.json`; the counter is `asSystemDoors` and
-`doorCalls` in `eslint-rules/arch-counts.mjs`): a new call through a door
-raises the number, and the check fails.
+**asSystem in round 1: 88 sites in 45 files to 39 in 36 (28 reasons).**
+Round 1 moved no exit into a scope. Where a file left the scope by one
+reason at several places, the places call that file's one door: a function
+whose body is the one `asSystem` call with its reason. A door keeps one
+pinned site, so round 1 counted its calls apart (70). Both numbers were
+one count told twice; round 2 pins the one honest number (below).
 
 | door                             | reason                 | defined in                                   | calls                                                                                                                    |
 | -------------------------------- | ---------------------- | -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
@@ -4502,17 +4502,140 @@ exactly as main, so no rule, row or refusal moved
 (`__snapshots__/a6-grant-sweep-changes.txt`). No cell is looser, and no case
 was found where the hand logic and the database's rule disagreed.
 
+### Round 2: the reads move into scope
+
+The plan's text: "the reads of grants.ts, workspaces.ts, link-serve.ts,
+member-apps.ts and tree/visibility.ts move into scope". After round 2:
+
+- **`server/web/lib/grants.ts`** (the Grant Access panel): runs where the
+  gate puts the request. A login's read, and a member's write, in the
+  login's own scope (the workspace role; a write's transaction on the write
+  role, or with the check off on the system pool with the scope set). An
+  Admin user's write stays on the system pool, as every Admin user's write
+  does, now with the login's scope set on its transactions
+  (`session.ts` `anyLoginScope`, as `adminRouteGate` does for an owner
+  write). `grantsRoute` no longer leaves the scope; the page refold after a
+  change is the library's one exit (`pageRefoldSystem`, reason
+  `page-refold`: the derived text of every page the change reaches, pages
+  the caller may not read or edit included; nothing goes back to the
+  caller).
+- **`server/web/lib/workspaces.ts`** (the workspace screens): its reads run
+  in the scope (`wsRoute` no longer leaves it). A login's own change of a
+  workspace (make one, rename it, archive it, add a user, remove a user or
+  leave) writes the workspace tables, which the write role holds no right
+  on: it goes through one door, `workspaceWriteSystem` (reason
+  `workspace-write`), its rules first in the scope and again in the
+  transaction. The changes only an Admin user may make (the Moderator tick,
+  resources, who is an Admin user) are refused in the scope before their
+  transaction; an Admin user's write runs on the system pool already. The
+  shell's switcher (`shellWorkspaces`) still runs under the shell and
+  whoami routes' own exits (below).
+- **`packages/content/src/link-serve.ts`**: runs where its caller runs (the
+  panel, now in the scope; the share tool, in a turn's scope; the share
+  routes, an Admin user's write on the system pool). Two reads did not hold
+  in a scope and do now: whether the brain is on workspaces read the Admin
+  workspace's row, which a member's scope does not hold (so a member's
+  rights read as "every right"), now `mantle_ws_admin_id` (0279); and what
+  an item embeds read `node_embeds`, which the workspace role does not read
+  (permission denied), now `mantle_item_embeds` (0291).
+- **`packages/content/src/member-apps.ts`** and
+  **`packages/content/src/tree/visibility.ts`**: already read in the
+  caller's scope (no exit; the sweep records them in each login's scope).
+- **`packages/content/src/contact-shares.ts`** (`contactSharesForNode`, the
+  panel's contact shares): whether a contact's sharing is on comes from
+  `contactSharingByContact`, the one reader of the codes table (its exit
+  `contact-sharing`), instead of a join the workspace role cannot run.
+- **member-brain-apps.ts** (packages/content/src) is deleted (no caller
+  outside tests since W7b), with its export from `index-apps.ts`, its test
+  case in `w6b-member-writes.db.test.ts`, and its use in
+  `w6b-fix1.db.test.ts` (that test now deletes the app as the member with
+  the brain's `deleteApp`, as the library did).
+
+**The definers of migration 0291.** Each has a fixed `search_path`, no
+right for PUBLIC, EXECUTE for the workspace role (so the write role) and
+the demo reader. Each holds itself to the caller's scope when one is set
+(the item one the scope reads, the workspace one of the scope's, the
+"every workspace" answer only for the users area); with no scope set (the
+system pool) it answers as the system pool read.
+
+| definer                                        | returns                                                                                                                                                             | for                                                                                                                                     |
+| ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `mantle_item_grants(node)`                     | an item's grant rows with the workspace's name, archived, whether the item's folder passes it on (`derivable`) and the folder                                       | an item the scope reads; every row not "Removed here", those only for a manager of the item or the users area                           |
+| `mantle_grant_counts(node, add, remove, mine)` | a change's counts: every item (a folder's subtree), what would gain `add` (and the apps), lose `remove`, the items the caller cannot open, an app's exported tables | the change's own rule: add, manage and a Moderator of `add`; remove, manage or a Moderator; the size, manage or a Moderator of a holder |
+| `mantle_item_embeds(node)`                     | what the item embeds (with the kind), and what the drawings it embeds embed (`hop`)                                                                                 | an item the scope reads                                                                                                                 |
+| `mantle_ws_seen(login)`                        | the workspaces the login sees, as the screens list them: counts, its own seat, the assistant and its history, the landing app (its title to a user only)            | the scope's own login; its live workspaces, every one for the users area                                                                |
+| `mantle_ws_people(ws)`                         | a workspace's users: name, email, the tick, who added them                                                                                                          | a user of the workspace, or the users area                                                                                              |
+| `mantle_ws_resource_rows(ws)`                  | a workspace's resources with their names                                                                                                                            | a user of the workspace, or the users area                                                                                              |
+| `mantle_ws_item_counts(ws)`                    | a workspace's homes, grants and "Removed here" rows (the archive preview)                                                                                           | a Moderator of it, or the users area                                                                                                    |
+| `mantle_ws_login_search(term, lim, off)`       | logins by name or email                                                                                                                                             | the users area: any term and page; a Moderator: 3 characters, 10 at most, the first page                                                |
+
+The panel also names workspaces through 0279's definers: an Admin user's
+target (`mantle_ws_live`, `mantle_ws_names`) and a move preview's gains
+(through the folder) and losses (through the item).
+
+**F7 (the A8 matrix).** (a) The panel ran on the system pool with no scope
+set, so the database's grant checks checked nothing: closed, every panel
+write now runs with the caller's scope set. (b) In a member's write scope a
+grant change the rule refuses was refused with the check off and on but
+only reported in warn: `mantle_grant_refuses` (0291) refuses whenever a
+scope is set, in every mode (the miss is still reported); the sweep's
+`F7 b` cell proves it in warn, on and off (and fails with 0279's version).
+(c) The panel could not run in a member's scope (the Admin workspace's row
+hidden, `node_embeds` unreadable): it does now, by the definers above.
+
+**The sweep after round 2.** The sweep runs the panel and the workspace
+list as their routes run them (a request slot: a read and a member's write
+in the login's scope, an Admin user's write on the system pool with its
+scope set), in warn, on and off (`vitest.actor-on.config.ts` holds it now).
+Every recorded cell answers as main recorded it: 868 cells (966 less the 98 `apps.memberApp`, `apps.loginApps` and `apps.deleted` cells of the deleted member brain-app library, left out by `REMOVED_CELLS`; the record stays as main wrote it).
+No named change is left: round 1's field rename went with the library. The
+link rules are also checked in each login's scope against the system
+pool's answer (every rule the same; the rights of the items the login
+reads). No cell is looser; none is stricter.
+
+**The exits, honestly counted.** `asSystemExits` (pinned in
+`scripts/arch-scoreboard.pins.json`, measured by `exitsByFile` in
+`eslint-rules/arch-counts.mjs`) is every `asSystem` site that is no door,
+plus every call of a door. It replaces the two pins `asSystemSites` and
+`asSystemDoorCalls`.
+
+- Round 1: **94** (24 sites, 70 door calls).
+- Round 2: **98** (24 sites that are no door, 74 calls of 17 doors).
+  grants.ts 1 to 1 (the whole route through `inRuleInQuery` to the page
+  refold, `pageRefoldSystem`); workspaces.ts 1 to 5 (the whole route to the
+  five workspace changes, `workspaceWriteSystem`). `inRuleInQuery` has 17
+  calls left. Sites 41 in 38 files, 30 reasons (`as-system-allowlist.mjs`).
+
+98 is above the plan's 40. The exits left, by reason (`packages/db/src/
+viewer.ts` says what each reason allows):
+
+| reason                 | exits | where                                                                                                                                                                                                                                                                                                | why the system pool                                                                      |
+| ---------------------- | ----- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| `login-telegram`       | 17    | chat-login.ts 4, pairing.ts 3, builtins-telegram.ts 3, agent-telegram.ts 3, pending-notify.ts 2, builtins-replay.ts 1, debug.ts 1                                                                                                                                                                    | the Telegram tables are granted to no role                                               |
+| `rule-in-query`        | 17    | the assistant routes and libraries 11, access keys 3, both whoami routes 2, the shell 1, session.ts 1                                                                                                                                                                                                | any-login routes whose rule is in their own SQL (a login's own threads, keys, its shell) |
+| `app-data`             | 9     | builtins-app-data.ts 6, app-runner.ts 3                                                                                                                                                                                                                                                              | an app's database registry and SQLite, shared by every holder                            |
+| `agent-workspace`      | 6     | agent-viewer.ts                                                                                                                                                                                                                                                                                      | which workspace an assistant answers in, before its scope exists                         |
+| `client-sourced-check` | 6     | client-sourced.ts 5, client-sourced-rules.ts 1                                                                                                                                                                                                                                                       | the client-sourced marks, granted to no role                                             |
+| `workspace-resources`  | 5     | external-access.ts                                                                                                                                                                                                                                                                                   | a workspace's resource settings, which the role never reads                              |
+| `workspace-write`      | 5     | lib/workspaces.ts                                                                                                                                                                                                                                                                                    | a login's own workspace change: the write role holds no right on the workspace tables    |
+| `connector-binding`    | 3     | external-access.ts                                                                                                                                                                                                                                                                                   | a connector's tool group row and OAuth reference                                         |
+| `app-trash`            | 3     | builtins-apps.ts                                                                                                                                                                                                                                                                                     | a deleted app's snapshots, hidden once its row is gone                                   |
+| `admin-area`           | 3     | admin-gate.ts 2, heartbeats/tools.ts 1                                                                                                                                                                                                                                                               | Admin area work, checked first                                                           |
+| `login-notice`         | 2     | login-notices.ts                                                                                                                                                                                                                                                                                     | the push worker's notice for one login                                                   |
+| `kind-root`            | 2     | files.ts 1, files/shared.ts 1                                                                                                                                                                                                                                                                        | a kind's root folder, whatever the scope holds                                           |
+| `provider-key`         | 2     | builtins-crawl.ts, builtins-research.ts                                                                                                                                                                                                                                                              | the brain's provider keys                                                                |
+| `owner-preferences`    | 2     | profile-preferences.ts, landing.ts                                                                                                                                                                                                                                                                   | the anchor's preferences                                                                 |
+| one each               | 16    | `name-taken`, `heartbeat-own-row`, `space-taken-authors`, `login-names`, `client-sourced-mark`, `contact-sharing`, `export-link`, `audit-log`, `runs-scope-check`, `heartbeat-context`, `keyword-candidates`, `lexeme-stats`, `connector-call`, `pending-approval`, `snapshot-copies`, `page-refold` | each says why in viewer.ts                                                               |
+
 **What is left.**
 
-- The plan's "the reads move into scope" for `grants.ts` and
-  `workspaces.ts`: their decisions now come from the database's rule, but
-  they still run on the system pool through `inRuleInQuery`. The panel
-  answers about workspaces outside the caller's scope by design (an Admin
-  user names every workspace, a manager sees a row of a workspace it is
-  not in, a folder's hidden count), so a move into the request scope needs
-  definers for those answers and changes what the role reads: a step of
-  its own, with the owner.
-- No `asSystem` exit was moved into a scope. Which of the 39 doors and
-  sites a scope could answer without changing an answer is the next
-  ratchet (`asSystemDoorCalls` is pinned so none grows meanwhile).
-- `member-brain-apps.ts` has no caller outside tests since W7b.
+- The exits above (98 against the plan's 40). The largest groups are their
+  own steps: the Telegram tables for a role (17), the rule-in-query routes
+  (17: the shell, whoami and access keys could read in the scope with
+  definers as the panel does now; the chat routes are W7c's), the app data
+  broker (9). Moving the five workspace changes off the system pool needs
+  write definers for the workspace tables (the rules move into SQL), a step
+  of its own.
+- `shellWorkspaces` (lib/workspaces.ts) reads the login's own private
+  workspace from a table the role does not read; it runs under the shell
+  and whoami routes' exits until those move.
