@@ -701,4 +701,157 @@ describe.skipIf(!URL)('the A6b exit sweep', () => {
       }
     });
   });
+  // ── narrow reads: connectors, contact sharing, file names, export links,
+  //    access log names, runs, keyword statistics, the app trash ─────────
+  it('narrow-reads', async () => {
+    const ea = await import('../../../packages/tools/src/external-access');
+    const tables = await import('../../../packages/content/src/tables/shared');
+    const runs = await import('@mantle/runs');
+    const searchMod = await import('../../../packages/search/src/keyword-query');
+    const tools = await import('@mantle/tools');
+    // A connector held by P (Write on) and Q (Write off), and one held by
+    // no workspace; a tool on each.
+    await x(sql`insert into tool_groups (owner_id, slug, name, description, enabled, integration)
+                values (${L.owner}, 'a6b-conn', 'A6b connector', 'd', true, '{"mcp":{"url":"http://127.0.0.1:9/mcp"}}'::jsonb),
+                       (${L.owner}, 'a6b-lone', 'A6b lone', 'd', true, '{"mcp":{"url":"http://127.0.0.1:9/mcp"}}'::jsonb),
+                       (${L.owner}, 'a6b-off', 'A6b off', 'd', false, null)`);
+    await x(sql`insert into workspace_resources (workspace_id, type, ref_id, write) values
+                (${W.P}, 'connector', 'a6b-conn', true), (${W.Q}, 'connector', 'a6b-conn', false)`);
+    // Contacts with sharing on (one locked), one without.
+    const C = [id(601), id(602), id(603)];
+    C.forEach((c, i) => names.set(c, `contact:${i}`));
+    for (const [i, c] of C.entries()) {
+      await x(sql`insert into nodes (id, owner_id, type, title, path)
+                  values (${c}, ${L.owner}, 'contact', ${`contact ${i}`}, 'contacts')`);
+    }
+    await x(sql`insert into contact_share_codes (contact_id, owner_id, code_hash, created_at, last_used_at, locked_until)
+                values (${C[0]!}, ${L.owner}, 'h0', '2026-01-01', '2026-01-02', null),
+                       (${C[1]!}, ${L.owner}, 'h1', '2026-01-03', null, '2999-01-01')`);
+    // Files: one in the root, one homed in P, in a P folder.
+    await files.ensureFilesRootBranch(L.owner);
+    const FN = [id(611), id(612)];
+    names.set(FN[0]!, 'file:nr-root');
+    names.set(FN[1]!, 'file:nr-p');
+    await x(sql`insert into nodes (id, owner_id, type, title, slug, path, data)
+                values (${FN[0]!}, ${L.owner}, 'file', 'Taken.txt', 'taken.txt', 'files',
+                        '{"filename":"Taken.txt"}'::jsonb),
+                       (${FN[1]!}, ${L.owner}, 'file', 'p.txt', 'p.txt', 'files',
+                        '{"filename":"p.txt","space_file":true}'::jsonb)`);
+    await m.withHeads([FN[1]!], 'update', async (tx) => {
+      await tx.execute(sql`delete from item_grants where node_id = ${FN[1]!}`);
+      await tx.execute(
+        sql`insert into item_grants (node_id, workspace_id, is_home) values (${FN[1]!}, ${W.P}, true)`,
+      );
+    });
+    // An app with an exported table (homed in P), its access log, and a
+    // table no app is bound to.
+    const APP = id(621);
+    const TBL = id(622);
+    const TBL2 = id(623);
+    names.set(APP, 'app:nr');
+    names.set(TBL, 'table:bound');
+    names.set(TBL2, 'table:free');
+    await x(sql`insert into nodes (id, owner_id, type, title, path) values
+                (${APP}, ${L.owner}, 'app', 'Bound app', 'apps'),
+                (${TBL}, ${L.owner}, 'table', 'Bound table', 'tables'),
+                (${TBL2}, ${L.owner}, 'table', 'Free table', 'tables')`);
+    for (const n of [APP, TBL, TBL2]) {
+      await m.withHeads([n], 'update', async (tx) => {
+        await tx.execute(sql`delete from item_grants where node_id = ${n}`);
+        await tx.execute(
+          sql`insert into item_grants (node_id, workspace_id, is_home) values (${n}, ${W.P}, true)`,
+        );
+      });
+    }
+    await x(sql`insert into app_table_exports (owner_id, app_node_id, table_node_id, sqlite_table)
+                values (${L.owner}, ${APP}, ${TBL}, 'items')`);
+    await x(sql`insert into app_access_log (owner_id, app_node_id, actor_id, kind) values
+                (${L.owner}, ${APP}, ${L.modP}, 'open'), (${L.owner}, ${APP}, ${L.userQ}, 'open'),
+                (${L.owner}, ${APP}, ${L.owner}, 'open')`);
+    // Runs: one stamped P, one Admin, one with none.
+    const R = [id(631), id(632), id(633)];
+    R.forEach((r, i) => names.set(r, `run:${i}`));
+    await x(sql`insert into runs (id, owner_id, title, workspace_id) values
+                (${R[0]!}, ${L.owner}, 'p run', ${W.P}), (${R[1]!}, ${L.owner}, 'admin run', ${adminWs}),
+                (${R[2]!}, ${L.owner}, 'no ws run', null)`);
+    // Deleted apps: homed in P, in Q, in no workspace (an old snapshot).
+    const GONE = [id(641), id(642), id(643)];
+    GONE.forEach((g, i) => names.set(g, `gone:${i}`));
+    for (const [i, g] of GONE.entries()) {
+      const meta =
+        i === 2 ? { title: `gone ${i}` } : { title: `gone ${i}`, homeWs: i === 0 ? W.P : W.Q };
+      await x(sql`insert into node_snapshots (owner_id, node_id, node_kind, seq, trigger, actor, code)
+                  values (${L.owner}, ${g}, 'app', 1, 'pre_delete', 'owner', ${JSON.stringify({ meta })}::jsonb)`);
+    }
+    await section('narrow-reads', async (cell) => {
+      for (const [ctx, run] of CONTEXTS) {
+        const a = (k: string, fn: () => Promise<unknown>) =>
+          answer(() => run(fn)).then((v) => cell(`${k} ${ctx}`, v));
+        await a('connectorGroupOf conn', () =>
+          ea.connectorGroupOf(L.owner, {
+            handler: { kind: 'mcp', group: 'a6b-conn', toolName: 't' },
+          } as never),
+        );
+        await a('connectorGroupOf off', () =>
+          ea.connectorGroupOf(L.owner, {
+            handler: { kind: 'mcp', group: 'a6b-off', toolName: 't' },
+          } as never),
+        );
+        await a('connectorResources conn P,Q,Admin', () =>
+          ea.connectorResources(L.owner, 'a6b-conn', [W.P, W.Q, adminWs]),
+        );
+        await a('connectorOpensBeyondAdmin conn', () =>
+          ea.connectorOpensBeyondAdmin(L.owner, 'a6b-conn'),
+        );
+        await a('connectorOpensBeyondAdmin lone', () =>
+          ea.connectorOpensBeyondAdmin(L.owner, 'a6b-lone'),
+        );
+        await a('appConnectorRefused read', () =>
+          ea.appConnectorRefused(L.owner, APP, 'a6b-conn', false),
+        );
+        await a('appConnectorRefused write', () =>
+          ea.appConnectorRefused(L.owner, APP, 'a6b-conn', true),
+        );
+        for (const who of LOGINS) {
+          await a(`loginConnectorRule ${who}`, async () => {
+            const rule = await ea.loginConnectorRule(L.owner, L[who]);
+            return [rule('a6b-conn', false), rule('a6b-conn', true), rule('a6b-lone', false)];
+          });
+        }
+        await a('contactSharingByContact', async () => [
+          ...(await content.contactSharingByContact(L.owner, C, new Date('2026-06-01'))),
+        ]);
+        await a('fileNameTaken taken.txt', () =>
+          files.fileNameTaken(L.owner, 'files', 'taken.txt'),
+        );
+        await a('fileNameTaken P.TXT', () => files.fileNameTaken(L.owner, 'files', 'P.TXT'));
+        await a('fileNameTaken none', () => files.fileNameTaken(L.owner, 'files', 'none.txt'));
+        await a('assertTableNotAppBound bound', () => tables.assertTableNotAppBound(TBL));
+        await a('assertTableNotAppBound free', () => tables.assertTableNotAppBound(TBL2));
+        await a('listAppAccess', async () =>
+          (await content.listAppAccess(L.owner, APP)).map((r) => [r.actorId, r.contactName]).sort(),
+        );
+        for (const [rk, rid] of [
+          ['P', R[0]!],
+          ['Admin', R[1]!],
+          ['none', R[2]!],
+        ] as const) {
+          await a(`assertRunsCarryScope ${rk}`, () =>
+            runs.assertRunsCarryScope([{ type: 'resume', runId: rid, groupId: id(999) } as never]),
+          );
+        }
+        await a('resolveKeywordQuery nodes', () =>
+          searchMod.resolveKeywordQuery('taken bound gone zzzunseen', 'nodes'),
+        );
+        await a('resolveKeywordQuery chunks', () =>
+          searchMod.resolveKeywordQuery('taken bound gone zzzunseen', 'content_chunks'),
+        );
+        await a('app_deleted_list', () =>
+          tools
+            .getBuiltin('app_deleted_list')!
+            .handler({}, { ownerId: L.owner, surface: { kind: 'web', loginId: L.owner } } as never),
+        );
+      }
+    });
+  });
 });
