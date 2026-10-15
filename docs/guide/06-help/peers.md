@@ -22,7 +22,9 @@ including ones you add later. Below that you can share single items.
 
 **MCP access** is separate: with **Acts as** set, the peer can use its token on
 your MCP endpoint with that login's rights. **Write** stays off unless you turn
-it on.
+it on. Even with Write on, a peer (like an API key) may not change the content
+of a page or a note others read: one granted to a workspace other than Admin,
+or with a public link or a contact share. Change those in the app.
 
 ## Assistant
 

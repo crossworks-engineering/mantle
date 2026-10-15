@@ -338,6 +338,11 @@ A key acts as the login that made it, as that login is now. Its access
   app answers the key's login: a login outside Admin reads and changes
   there what it may in its workspaces (the item routes), and the routes
   for Admin only (contacts, the journal, table row writes) refuse it.
+- **Shared content.** A key may not change the content of a page or a
+  note others read: one granted to a workspace other than Admin, or with
+  a public link or a contact share. What it embeds would become readable
+  to them, and a key cannot confirm that. Its login changes it in the
+  app. A linked brain acting as a login is held the same way.
 - **API only.** A member key made before every login had MCP was made for
   `/api/v1`. The move to one MCP surface marked it `api_only`: it keeps
   working on `/api/v1`, with the same rights as any key of its login there,
@@ -347,7 +352,10 @@ A key acts as the login that made it, as that login is now. Its access
 **Linked brains** (peers, [federation.md](./federation.md)). A peer with
 **Acts as** gets the MCP surface as that login, as the login is now. Its
 own **Write** switch (default off) and its list of allowed risky tools
-narrow it further. Changing **Acts as** turns Write off again.
+narrow it further. Changing **Acts as** turns Write off again. Like a
+key, a peer with Write on may not change the content of a page or a note
+others read (one granted to a workspace other than Admin, or with a
+public link or a contact share): the login changes it in the app.
 
 **Vault keys and destinations.** Pairing a vault key with a host it is
 sent to needs the keys area (or the owner). This covers tools that use

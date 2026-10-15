@@ -33,6 +33,7 @@
  *                 item can be have one;
  *               admin: an item at its kind's root homed in Admin, no other
  *                 grant (what an Admin user keeps to the brain's managers).
+ *               Every item but a snapshot copy has an open public link.
  *   Actions     the 13 of the plan (section 12 A8; v1's list): read, list,
  *               search, edit content, edit draft, delete, move (H to T), add
  *               a grant (to T), remove a grant (R's), the Write switch (on
@@ -376,6 +377,25 @@ export const GUIDE_RULES = {
  *  allows it"). */
 export const CONTACT_WRITES_APP_DATA_ONLY = 'a contact share writes only its app’s data';
 
+/** The why of a key's or a linked brain's change to a page or a note others
+ *  read ("MCP, API keys and linked brains": "A key may not change the
+ *  content of a page or a note others read: one granted to a workspace
+ *  other than Admin, or with a public link or a contact share", and "Like a
+ *  key, a peer with Write on may not ..."). */
+export const KEY_SHARED_CONTENT = 'a key or a peer may not change a page or a note others read';
+
+/** The ways in where a key or a linked brain acts as its login: a key on
+ *  /api/v1 and on MCP, and a peer with Acts as. */
+const KEY_OR_PEER_SURFACES: readonly GuideSurface[] = ['api-v1', 'mcp-key', 'peer'];
+
+/** Whether others read the fixture's item in `placement`: granted to a
+ *  workspace other than Admin, or with a public link. Every item but a
+ *  snapshot copy has an open link (the fixture), and a copy is homed in
+ *  its author's private workspace. */
+function othersRead(placement: GuidePlacement): boolean {
+  return placement !== 'snapshot' || grantsOf(placement).read.some((w) => w !== 'admin');
+}
+
 /** The why of a cell where the guide is silent and the oracle pins the
  *  narrower answer (a turn's write and a Moderator seat outside its
  *  workspace): the owner's to decide. */
@@ -491,14 +511,33 @@ export function expectedAccess(
   // two readings part, the cell is pinned to the narrower answer, a deny, so
   // a loosening fails until the owner decides; the report names it.
   if (narrowTo) {
-    const byHand = expectedAccess({ ...context, actor: 'login' }, role, kind, action);
+    // By hand: the login itself, in the app (no key's or peer's rule).
+    const byHand = expectedAccess(
+      { ...context, actor: 'login', surface: 'web' },
+      role,
+      kind,
+      action,
+    );
     const narrowed = narrowedAnswer(placement, kind, action, standing);
     if ('allow' in byHand && 'allow' in narrowed && byHand.allow !== narrowed.allow) {
       return deny(GUIDE_SILENT_PINNED);
     }
     return narrowed;
   }
-  return narrowedAnswer(placement, kind, action, standing);
+  const answer = narrowedAnswer(placement, kind, action, standing);
+  // A key or a peer acting as its login changes no page or note others
+  // read ("MCP, API keys and linked brains"); its login does, in the app.
+  if (
+    'allow' in answer &&
+    answer.allow &&
+    KEY_OR_PEER_SURFACES.includes(surface) &&
+    (action === 'edit' || action === 'editDraft') &&
+    (kind === 'page' || kind === 'note') &&
+    othersRead(placement)
+  ) {
+    return deny(KEY_SHARED_CONTENT);
+  }
+  return answer;
 }
 
 const READ_ACTIONS: readonly GuideAction[] = ['read', 'list', 'search'];

@@ -27,9 +27,14 @@ const PINNED: Readonly<Record<(typeof ORACLES)[number], { inputs: number; sha256
     inputs: 1_472,
     sha256: 'ee4fd0febe04698dcb17b4fdcefccfb356382de6d1d8d51725ebc4c7235fa764',
   },
+  // F6 (the guide names the rule now): 54 inputs moved, each allow to deny
+  // "a key or a peer may not change a page or a note others read": the
+  // api-v1, mcp-key and peer ways in, actor login, a note's or a page's edit
+  // and a page's draft edit, at root and in the folder (homeModerator,
+  // writeGrant) and homed in Admin (owner, admin). No other answer moved.
   a8: {
     inputs: 314_496,
-    sha256: 'b3839094a3544be9f5bb2749218d1b45f153f40cedfb864c44db6a08c85652fe',
+    sha256: 'e9f19dbc359ace7c1a9a7dbaa57d860cfa1f89c98d7b95ae04c57588674b36f0',
   },
 };
 

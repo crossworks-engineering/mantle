@@ -4,11 +4,11 @@ Let a team member, another admin or another Mantle use your brain from an MCP cl
 
 The connector URL is the same one the owner uses, and every login gets the same tools. Each call runs in the workspaces of the login that connected: it reads what those workspaces hold, and changes only what that login may change there. A login has no MCP permission of its own to switch on or off.
 
-| Who connects      | How they prove it                                         | What they get                                               |
-| ----------------- | --------------------------------------------------------- | ----------------------------------------------------------- |
-| An admin          | Signs in at the connector URL, or sends their own API key | The tools, in their workspaces, held to their Admin areas   |
-| A member          | Signs in at the connector URL, or sends their own API key | The tools, in their workspaces                              |
-| A peer Mantle     | Its peer token, with **Acts as** set                      | The tools of the login it acts as, held to the peer's Write |
+| Who connects  | How they prove it                                         | What they get                                               |
+| ------------- | --------------------------------------------------------- | ----------------------------------------------------------- |
+| An admin      | Signs in at the connector URL, or sends their own API key | The tools, in their workspaces, held to their Admin areas   |
+| A member      | Signs in at the connector URL, or sends their own API key | The tools, in their workspaces                              |
+| A peer Mantle | Its peer token, with **Acts as** set                      | The tools of the login it acts as, held to the peer's Write |
 
 ## Before you start
 
@@ -72,6 +72,8 @@ Admins no longer make tokens for other logins. Tokens made before (`mtlmcpk_...`
 4. List any extra tools under **Risky tools allowed**, for example `web_search`. Tools that spend, send or publish stay blocked until you name them, and a tool the login itself may not use stays blocked anyway.
 
 Changing **Acts as** turns **Write** off again.
+
+A peer with **Write** on may not change the content of a page or a note others read (one granted to a workspace other than Admin, or with a public link or a contact share), as an API key may not. The login changes it in the app.
 
 ## What ends access
 

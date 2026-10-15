@@ -23,15 +23,6 @@ import { GUIDE_WORKSPACE_KINDS, expectedAccess } from './guide-oracle';
  *  same writes on the write role are refused (the `login` cells pass). */
 const F4 = 'F4 an Admin write request on the system pool: edits not held to its scope';
 
-/** F6. A peer acting as its login, Write on, may not change an item others
- *  read (packages/tools/src/key-shared-content.ts: "this item is shared, so
- *  a peer cannot change its content"; access matrix T3). The guide's
- *  "Linked brains": a peer with Acts as "gets the MCP surface as that login,
- *  as the login is now", narrowed by its Write switch and its risky tools
- *  only. A rule the product has and the guide does not name (every fixture
- *  item is read by W and R, and has an open link). */
-const F6 = 'F6 a peer may not edit a shared item (a rule the guide does not name)';
-
 /** The actor check modes the surface cells run in (docs/update-prod.md:
  *  off, the fleet's default; warn; on). */
 export type CheckMode = 'off' | 'warn' | 'on';
@@ -78,9 +69,7 @@ function adminSystemPoolEdits(): Record<string, KnownFailure> {
 export const KNOWN_FAILURES: Readonly<Record<string, KnownFailure>> = {
   // The grid (SQL).
   ...adminSystemPoolEdits(),
-  // The surface cells (all three check modes unless named).
-  'peer login/owner edit note @admin': known(F6, 'a peer cannot change its content'),
-  'peer login/writeGrant edit note @folder': known(F6, 'a peer cannot change its content'),
+  // The surface cells (all three check modes unless named): none today.
 };
 
 /**

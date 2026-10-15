@@ -26,15 +26,15 @@ Each login makes keys for itself. A key acts as its login as the login is now: i
 
 ## Areas
 
-| Area | What it opens |
-| --- | --- |
-| Search | Search across EVERY kind of item, email and journal included, and the entity tools on MCP. Give it only to a key that may read everything |
-| Pages, Notes, Tasks, Tables, Files | That kind of item |
-| Calendar | Events |
-| Contacts | Contacts |
-| Journal | Journal entries |
-| Apps | Mini apps (MCP) |
-| App data | The data of the mini apps opened to MCP (`app_data_list`, `app_data_schema`, `app_data_query`, `app_data_write`) |
+| Area                               | What it opens                                                                                                                             |
+| ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| Search                             | Search across EVERY kind of item, email and journal included, and the entity tools on MCP. Give it only to a key that may read everything |
+| Pages, Notes, Tasks, Tables, Files | That kind of item                                                                                                                         |
+| Calendar                           | Events                                                                                                                                    |
+| Contacts                           | Contacts                                                                                                                                  |
+| Journal                            | Journal entries                                                                                                                           |
+| Apps                               | Mini apps (MCP)                                                                                                                           |
+| App data                           | The data of the mini apps opened to MCP (`app_data_list`, `app_data_schema`, `app_data_query`, `app_data_write`)                          |
 
 Email reaches a key only through Search. The attachments of synced mail are files, but a key without Search does not see them in Files: they are left out of the lists, one by id answers `404`, and an upload into their folder is refused (on MCP the Files tools refuse them).
 
@@ -61,6 +61,7 @@ claude mcp add --transport http mantle https://example.com/api/mcp \
 - Every key gets the same tools as everyone, in its login's workspaces, held to its access and areas. There is no per-login **MCP** or **Write** switch: a key writes when its access is **Read and write**, and then only what its login may change there.
 - Tools that manage the brain need a login in the Admin workspace with the matching area. Tools that spend on the owner's provider keys are not offered to a login outside the Admin workspace.
 - Tools that send, spend or publish stay blocked until you name them under **Risky MCP tools allowed** when you make the key. Only a login in the Admin workspace with the keys area can name them.
+- A key may not change the content of a page or a note others read: one granted to a workspace other than Admin, or with a public link or a contact share. What it embeds would become readable to them, and a key cannot confirm that. Change it in the app. This holds on `/api/v1` too, and for a peer Mantle acting as a login.
 - **API only**: a member's key made before every login had MCP was made for `/api/v1`, so the move to one MCP for every login marked it API only (`api_only`). It keeps working on `/api/v1`, and `/api/mcp` refuses it. Make a new key for MCP. A key made since is never API only.
 
 ## What ends a key
@@ -69,7 +70,7 @@ claude mcp add --transport http mantle https://example.com/api/mcp \
 - It reaches its expiry.
 - The login changes its password, or uses **Sign out everywhere**.
 - An admin ends the login's sessions, disables it, or changes its role.
-A plain sign-out does not end a key. When the login leaves a workspace, its keys lose that workspace's items at once.
+  A plain sign-out does not end a key. When the login leaves a workspace, its keys lose that workspace's items at once.
 
 Each time a key is made on your login, you get a notice that names the key. If it was not you, revoke the key and change your password.
 

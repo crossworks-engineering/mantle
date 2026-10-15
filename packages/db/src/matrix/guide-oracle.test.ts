@@ -9,6 +9,7 @@ import {
   GUIDE_ACTIONS,
   GUIDE_ROLES,
   GUIDE_SILENT_PINNED,
+  KEY_SHARED_CONTENT,
   expectedAccess,
   type GuideActor,
   type GuidePlacement,
@@ -154,6 +155,32 @@ describe('the A8 oracle', () => {
     expect(expectedAccess(at('admin'), 'admin', 'app', 'delete')).toEqual(allow);
     expect(expectedAccess(at('admin', 'turn'), 'admin', 'app', 'delete')).toEqual(allow);
     expect(expectedAccess(at('admin'), 'owner', 'note', 'grantRemove')).toHaveProperty('na');
+  });
+
+  it('"A key may not change the content of a page or a note others read"; a peer acting as its login neither', () => {
+    const via = (surface: 'peer' | 'api-v1' | 'web', placement: GuidePlacement) => ({
+      surface,
+      placement,
+      actor: 'login' as const,
+    });
+    const held = { allow: false, why: KEY_SHARED_CONTENT };
+    for (const surface of ['peer', 'api-v1'] as const) {
+      // Granted beyond Admin (H, W, R), or with an open link (the Admin-homed item).
+      expect(expectedAccess(via(surface, 'root'), 'writeGrant', 'note', 'edit')).toEqual(held);
+      expect(expectedAccess(via(surface, 'folder'), 'homeModerator', 'page', 'editDraft')).toEqual(
+        held,
+      );
+      expect(expectedAccess(via(surface, 'admin'), 'owner', 'note', 'edit')).toEqual(held);
+      // Only a page's or a note's content: a table, a link, a delete as the login.
+      expect(expectedAccess(via(surface, 'root'), 'writeGrant', 'table', 'edit')).toEqual(allow);
+      expect(expectedAccess(via(surface, 'root'), 'writeGrant', 'page', 'link')).toEqual(allow);
+      expect(expectedAccess(via(surface, 'root'), 'homeModerator', 'note', 'delete')).toEqual(
+        allow,
+      );
+    }
+    // The login itself, in the app, changes it.
+    expect(expectedAccess(via('web', 'root'), 'writeGrant', 'note', 'edit')).toEqual(allow);
+    expect(expectedAccess(via('web', 'admin'), 'owner', 'note', 'edit')).toEqual(allow);
   });
 
   it("a contact share with Can write writes its app's data, and nothing else", () => {

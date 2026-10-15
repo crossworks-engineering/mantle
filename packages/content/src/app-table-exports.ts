@@ -319,9 +319,7 @@ function markExportsDirty(ownerId: string, appNodeId: string): void {
           dirtySince: sql`coalesce(${appTableExports.dirtySince}, now())`,
           lastWriteAt: sql`now()`,
         })
-        .where(
-          and(eq(appTableExports.ownerId, ownerId), eq(appTableExports.appNodeId, appNodeId)),
-        ),
+        .where(and(eq(appTableExports.ownerId, ownerId), eq(appTableExports.appNodeId, appNodeId))),
     ).catch((err: unknown) =>
       console.error('[app-table-exports] could not mark exports dirty', appNodeId, err),
     );

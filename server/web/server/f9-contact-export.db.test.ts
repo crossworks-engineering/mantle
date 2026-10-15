@@ -198,9 +198,9 @@ describe.skipIf(!URL)('F9: a contact share writes its app’s data, and its expo
     expect(
       await attempt(sql`update app_table_exports set last_write_at = now() where id = ${linkId}`),
     ).toBe(refused);
-    expect(
-      await attempt(sql`update shares set revoked_at = now() where node_id = ${appId}`),
-    ).toBe(refused);
+    expect(await attempt(sql`update shares set revoked_at = now() where node_id = ${appId}`)).toBe(
+      refused,
+    );
     expect(
       await attempt(
         sql`update app_databases set size_bytes = size_bytes where app_node_id = ${appId}`,

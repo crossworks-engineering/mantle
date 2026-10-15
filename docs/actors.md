@@ -4380,11 +4380,17 @@ branch and leave the list when it lands; F3 is the guide's rule now.
   (`DELETE /api/apps/:id`), over MCP and in a Telegram turn, is allowed:
   a delete is an archive. Its 4 grid cells and 4 surface cells (in each
   mode) pass and left the list.
-- **F6.** A peer acting as its login, Write on, may not change an item
-  others read ("this item is shared, so a peer cannot change its content",
+- **F6** (fixed in the guide, feat/f9-contact). A peer acting as its
+  login, Write on, may not change an item others read ("this item is
+  shared, so a peer cannot change its content",
   `packages/tools/src/key-shared-content.ts`, access matrix T3), the owner's
-  own Admin-homed note with an open link included. The guide's "Linked
-  brains" names no such rule. 2 surface cells.
+  own Admin-homed note with an open link included. The guide named no such
+  rule. It does now, for keys and peers ("MCP, API keys and linked brains":
+  a key, or a peer acting as its login, may not change the content of a
+  page or a note others read: granted to a workspace other than Admin, or
+  with a public link or a contact share), and the oracle reads it
+  (`KEY_SHARED_CONTENT`: 54 answers moved, allow to deny, on the api-v1,
+  mcp-key and peer ways in). Its 2 surface cells pass and left the list.
 - **F7** (fixed, feat/a6-grants; the grants panel test, pinned there, not
   a cell of the list). A6 runs the panel's writes in the caller's scope,
   `mantle_grant_refuses` (0291) refuses whenever a scope is set, in every
@@ -4413,9 +4419,10 @@ branch and leave the list when it lands; F3 is the guide's rule now.
   app: allowed by the owner's decision of 2026-10-15 (F3), so no
   longer a failure; the cells of each Admin user's delete of an app homed in
   Admin run on the web and over MCP and pass.
-- **F9.** A contact share's write is named system work on the system pool,
-  so the database holds a statement it sends to nothing but a snapshot
-  copy's read-only rule: an edit, a draft, a delete, a move, a grant change,
+- **F9** (fixed, feat/f9-contact, migration 0294). A contact share's write
+  is named system work on the system pool, so the database held a
+  statement it sent to nothing but a snapshot copy's read-only rule: an
+  edit, a draft, a delete, a move, a grant change,
   a link and a create of any item are made. Only the `/s` broker holds it,
   by sending nothing but its app's data (the contact-share surface cells
   pass: Can write off refuses the app's data, on writes it, and the deny
@@ -4429,7 +4436,13 @@ branch and leave the list when it lands; F3 is the guide's rule now.
   trigger next to `mantle_edit_check_ro` (migration 0280, section 5) that
   refuses a statement on an item table but `app_databases` when
   `mantle.actor` is `contact:rw`, and the dirty stamp and the export sync
-  bound to a named system actor. Not fixed here (A8 is test code).
+  bound to a named system actor. The fix is that: `mantle_edit_check_contact`
+  (0294, through the edit check: on refuses, warn reports, off is disabled)
+  on every item table but `app_databases` and `node_acl_head`, and the
+  dirty stamp and the debounced sync run as `system(app-export)` whoever
+  wrote. Its 248 grid cells pass and left the list; a contact share's write
+  and its export sync, end to end with both checks on, is
+  `server/web/server/f9-contact-export.db.test.ts`.
 - **F10** (withdrawn in fix round 3). `app_delete` refused an Admin user's
   run item only because the cells skipped the product's run path: they
   called `dispatchTool` with no surface. A real run item meets
@@ -4447,15 +4460,14 @@ branch and leave the list when it lands; F3 is the guide's rule now.
   pending owner", so a loosening fails until the owner decides: 66 grid
   cells;
 - snapshot copies: docs/workspaces.md does not describe them; the oracle
-  reads docs/update-prod.md;
-- F6's rule for a key or a peer and a shared item.
+  reads docs/update-prod.md.
 
 **Cells that check little** (they pass, and say less than their count):
 
 - contact-rw's app data write and every system cell run on the system pool
   with only the actor set: no scope, so the database's scope checks do not
-  run; they pin that the write lands, not who may make it (F9 shows the
-  same pool holds a contact's other writes to nothing);
+  run; they pin that the write lands, not who may make it (a contact's
+  other writes are held by 0294's trigger alone, F9);
 - the link, peer (no Acts as) and contact-ro write cells run with write
   mode read-only: the read-only mode alone refuses them, so they do not
   test the actor's own rule apart from it;
