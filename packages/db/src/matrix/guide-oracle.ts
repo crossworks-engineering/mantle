@@ -64,17 +64,25 @@ export type GuideRole =
   /** In none of the item's workspaces (a Moderator of O). */
   | 'outsider';
 
-export const GUIDE_ROLES: readonly GuideRole[] = [
-  'owner',
-  'admin',
-  'homeModerator',
-  'writeGrant',
-  'readGrant',
-  'outsider',
-];
+/** Every role, checked whole by the type (a role the union gains and the
+ *  list misses fails to compile, so no answer of it goes unhashed). */
+export const GUIDE_ROLES = Object.keys({
+  owner: 1,
+  admin: 1,
+  homeModerator: 1,
+  writeGrant: 1,
+  readGrant: 1,
+  outsider: 1,
+} satisfies Record<GuideRole, 1>) as readonly GuideRole[];
 
 export type GuidePlacement = 'folder' | 'root' | 'snapshot' | 'admin';
-export const GUIDE_PLACEMENTS: readonly GuidePlacement[] = ['folder', 'root', 'snapshot', 'admin'];
+/** Every placement, checked whole by the type. */
+export const GUIDE_PLACEMENTS = Object.keys({
+  folder: 1,
+  root: 1,
+  snapshot: 1,
+  admin: 1,
+} satisfies Record<GuidePlacement, 1>) as readonly GuidePlacement[];
 
 export type GuideAction =
   | 'read'
@@ -91,21 +99,22 @@ export type GuideAction =
   | 'create'
   | 'appData';
 
-export const GUIDE_ACTIONS: readonly GuideAction[] = [
-  'read',
-  'list',
-  'search',
-  'edit',
-  'editDraft',
-  'delete',
-  'move',
-  'grantAdd',
-  'grantRemove',
-  'writeSwitch',
-  'link',
-  'create',
-  'appData',
-];
+/** Every action, checked whole by the type. */
+export const GUIDE_ACTIONS = Object.keys({
+  read: 1,
+  list: 1,
+  search: 1,
+  edit: 1,
+  editDraft: 1,
+  delete: 1,
+  move: 1,
+  grantAdd: 1,
+  grantRemove: 1,
+  writeSwitch: 1,
+  link: 1,
+  create: 1,
+  appData: 1,
+} satisfies Record<GuideAction, 1>) as readonly GuideAction[];
 
 export type GuideActor =
   | 'login'
@@ -118,17 +127,25 @@ export type GuideActor =
   | 'peer'
   | 'system';
 
+/** Every actor kind, each in its class, checked whole by the type: one
+ *  that asks for a login, or one that answers none. */
+const GUIDE_ACTOR_CLASS = {
+  login: 'login',
+  'login-ro': 'login',
+  turn: 'login',
+  assistant: 'other',
+  link: 'other',
+  'contact-ro': 'other',
+  'contact-rw': 'other',
+  peer: 'other',
+  system: 'other',
+} satisfies Record<GuideActor, 'login' | 'other'>;
+const actorsOf = (cls: 'login' | 'other') =>
+  (Object.keys(GUIDE_ACTOR_CLASS) as GuideActor[]).filter((a) => GUIDE_ACTOR_CLASS[a] === cls);
 /** The actor kinds that ask for a login (the grid runs them for each role). */
-export const GUIDE_LOGIN_ACTORS: readonly GuideActor[] = ['login', 'login-ro', 'turn'];
+export const GUIDE_LOGIN_ACTORS: readonly GuideActor[] = actorsOf('login');
 /** The actor kinds that answer no login (the grid runs them once). */
-export const GUIDE_OTHER_ACTORS: readonly GuideActor[] = [
-  'assistant',
-  'link',
-  'contact-ro',
-  'contact-rw',
-  'peer',
-  'system',
-];
+export const GUIDE_OTHER_ACTORS: readonly GuideActor[] = actorsOf('other');
 
 /** The ways in (plan 4.3). 'sql' is the grid; the rest are surface cells. */
 export type GuideSurface =
