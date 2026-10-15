@@ -815,10 +815,13 @@ one row; none is a 404) and points it there, one sweep removes what no row
 points at. The tables, app databases and app builds are brokered; the docs
 store writes no disk; file bytes and snapshot files are part 2.
 
-## Request plumbing (A10 part 2, A10 #8)
+## Request plumbing (A10 part 2, A10 #8, A10 #9)
 
 How a route reads its body (one reader, capped at the route's ceiling by
-the loader), how an error becomes its answer, and its rate limits:
+the loader), how an error becomes its answer, its rate limits, and the one
+app tool broker (`server/web/lib/app-tool-broker.ts`, whose configs are the
+owner route, a member's run and the link route; the app DB write path that
+schedules the export sync):
 [request-plumbing.md](request-plumbing.md), with the sweep that proves each
 move and the pins that hold it.
 
@@ -3087,6 +3090,10 @@ The ungated callers before this step (the sweep of
   the Admin workspace alone holds, team rules in the app's scope for any
   other or a member-built one);
 - the dev console, `server/web/app/api/dev-tools/execute-tool/route.ts`.
+
+Since A10 #9 the three are configs of one broker,
+`server/web/lib/app-tool-broker.ts` (`runAppToolBroker`), which makes the
+call for each; see [request-plumbing.md](request-plumbing.md#app-tool-broker-a10-9).
 
 The member test broker (`server/web/app/api/apps/members/[id]/test/tool-broker/route.ts`),
 the member route (`server/web/app/api/member/apps/[id]/tool-broker/route.ts`)

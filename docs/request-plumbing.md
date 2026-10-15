@@ -1,4 +1,4 @@
-# Request plumbing: one body reader, one error answer, rate limits on the row
+# Request plumbing: one body reader, one error answer, rate limits on the row, one app tool broker
 
 A10 part 2 (the gateway survey's folds 1 and 2; the survey is a dev-brain
 page), and A10 #8 (the survey's finding 8, rate limits). Jobs every route of
@@ -6,6 +6,7 @@ the HTTP tier did for itself, each folded behind one gateway, proved by
 recording every answer before the move and holding every answer to it
 after, and pinned so the scattered form cannot come back. Part of the actor
 work: [actors.md](actors.md) links here. Rate limits: [below](#rate-limits-a10-8).
+The app tool broker (A10 #9, finding 9): [below](#app-tool-broker-a10-9).
 
 ## Fold 1: one body reader
 
@@ -796,3 +797,109 @@ byte for byte.
   to the files that still take a budget.
 - `server/web/lib/route-limits.test.ts`: every key of `ROUTE_GATES` is a
   served row, every named limit some row's, and the list above.
+
+## App tool broker (A10 #9)
+
+### Before
+
+A running app's `host.tools.call()` reached three brokers, each a copy of
+the same plumbing around the one verdict (`packages/tools/src/app-tool-level.ts`):
+the owner route (`server/web/app/api/apps/[id]/tool-broker/route.ts`), a
+member's run through it (`memberToolBroker` in `server/web/lib/app-runner.ts`)
+and a contact link (`server/web/app/s/[token]/tool-broker/route.ts`). The
+body schema was written three times; the owner logged an Activity row only
+for an allowed call below admin rules (never a refusal, nothing at admin
+rules), the member and the link logged every call; the link logged no error
+row. A10 part 2 had already given the body reads the route ceilings and
+A10 #8 the rate limits the rows, so the reads and limits were no longer
+different. Separately, five writers of an app's own database (the three db
+brokers, `app_data_write`, `app_db_seed`) each called
+`scheduleAppTableExportSync` by hand after the write.
+
+### After
+
+`runAppToolBroker(req, config)` (`server/web/lib/app-tool-broker.ts`) does
+the whole call: one body schema (slug, input, the host's confirmation
+ticket), the app lookup, the verdict, the owner's confirmation at admin
+rules (409 `reason: 'confirm'`, apps audit S1), the dispatch through the
+one gate as the app's broker (`appBrokerCaller`) in the run's scope, the
+logs and the answer (the tool's result as it is). Each route is a config:
+
+| Field | owner | member | contact |
+| --- | --- | --- | --- |
+| `via` | `'owner'` | `'member'` | `'contact'` |
+| `ownerId` | the anchor | the anchor | the share's owner |
+| who | `runner`: the admin login | `runner`: the member login | `share`: the share and its contact |
+| `maxBytes` | none (the `/api/apps` ceiling) | `JSON_BODY_CEILING_BYTES` | none (the `/s` ceiling) |
+| `app` | `getAppRuntime` | `memberAppOr404` (its own 404) | `getAppRuntime`, published build only |
+| rules | `appToolLevel('admin', holders, author)` | team rules | `contactAppToolVerdict` |
+| scope | web as system work at admin rules, else the app's scope | the app's scope, inside `system` (`asSystem` `'app-data'`) | `served`: the link's served items |
+
+The link route still answers its own refusals first (the code gate, a
+share that is not an app's, an open link), then hands over. Rate limits
+stay on the rows (`memberToolBroker`, `shareToolBroker` in
+`server/web/lib/route-limits.ts`); the broker takes none.
+
+What every call leaves now, whoever runs it: one Activity row per call
+that reached a verdict (`recordAppAccess` kind `tool`: the slug, an outside
+call's kind and a write's input, or `refused` and why), an error row for
+every refusal and every failed tool (`recordAppError`), and for a contact
+the share's trail (`recordShareAccess`), in the order main wrote them.
+
+The export sync is the app DB write path's (`packages/content/src/app-db-write.ts`):
+`appDbWrite` runs the statement (`appDbExec`), marks a contact's write as
+written from outside, and schedules the sync; `appDbSeed` does the same for
+`app_db_seed`. The sync runs in the caller's scope, as each writer ran it
+(a member's and an MCP login's write already run as system work around the
+whole call).
+
+### Named changes
+
+| Cell | Before | After |
+| --- | --- | --- |
+| owner, admin rules: an allowed call (read, write, a failing tool, an 8 MB body) | no Activity row | Activity row (`via: 'owner'`) |
+| owner, any rules: a refused call (not declared, a missing tool) | error row only | Activity row (`refused`) and the error row |
+| owner: a confirmation that expired or does not match | error row only | Activity row (`refused`) and the error row |
+| contact link: a refused call, a missing tool, a failing tool | Activity row and trail only | the error row too (`via: 'contact'`, the share and the contact) |
+
+Nothing else changed: every status, body, verdict, refusal, surface, gate
+caller and scope is as main answered, and every db broker schedules the
+same syncs. A confirmation that is asked (409) still lands no row, as on
+main: nothing ran and nothing was refused.
+
+### The proof
+
+`server/web/server/a10-app-broker-sweep.test.ts` drives the three brokers
+(the owner at admin and at team rules) through the route loader's cap and
+`app.onError`'s answer with the same calls: an allowed read and write, a
+tool the app does not declare, a body the schema refuses, one that is not
+JSON, an empty one, a missing tool, a failing tool, a body over 8 MB and a
+missing app, and the owner's confirmation; and the three db brokers with a
+query, a write and a failing write. Recorded on main (v0.300.49) in
+`server/web/server/__snapshots__/a10-app-broker-sweep.txt` before the move;
+after it every cell answers as recorded or is one of the named changes
+above, whose new answer is
+`server/web/server/__snapshots__/a10-app-broker-sweep-changes.txt`.
+`server/web/lib/app-broker-parity.test.ts` (A5 step 3b, the real rules
+across 17 tools) changed only by the added rows, each after the rows main
+wrote.
+
+### The pins
+
+- Scoreboard (`scripts/arch-scoreboard.pins.json`): `handExportSyncCalls`,
+  `scheduleAppTableExportSync` calls outside the write path and the named
+  files, 5 on main, pinned at 0; `handExportSyncAllowed`, the named files
+  (the boot resume in `packages/content/src/app-table-exports.ts`, a
+  snapshot restore in `packages/content/src/app-snapshots.ts`, which
+  replaces the file), pinned at 2; `appToolBrokerLogicFiles`, files in
+  `server/` holding a verdict step (`appToolVerdict`,
+  `contactAppToolVerdict`, `appToolRefusal`, `appBrokerCaller`,
+  `appToolScope`, `appToolLevel`) outside the broker, or a tool-broker
+  route that reads its body or dispatches, 3 on main, pinned at 0.
+  `asSystemSites` went 90 to 87.
+- ESLint (`eslint-rules/app-broker.mjs`): `no-hand-export-sync` and
+  `no-app-broker-logic`, errors in product code; `eslint-rules/arch-lints.test.ts`
+  holds both counts at 0 and the named list to the files that still call.
+- `packages/tools/src/dispatch-entries.test.ts` and
+  `packages/tools/src/owner-call-sites.test.ts` name the broker as the one
+  app entry and pin the surface it passes (`run.surface`).
