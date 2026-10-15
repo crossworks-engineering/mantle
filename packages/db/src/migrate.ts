@@ -43,11 +43,9 @@
 import { readMigrationFiles } from 'drizzle-orm/migrator';
 import postgres from 'postgres';
 import { env, feature } from '@mantle/config';
-import { ensureViewerRoles } from './viewer-roles';
-import { applyViewerGrants } from './access-matrix';
 import { headsBypassesIn } from './heads-bypass';
 import { CONCURRENT_INDEXES, ensureConcurrentIndexes } from './concurrent-indexes';
-import { ensureTsMatchLeakproof } from './leakproof';
+import { afterMigrations, beforeMigrations } from './migrator-steps';
 
 async function main() {
   const url = env('DATABASE_URL');
@@ -58,11 +56,11 @@ async function main() {
   try {
     const migrations = readMigrationFiles({ migrationsFolder: './migrations' });
 
-    // The viewer LOGIN roles first: migrations grant to them and name them in
-    // row level policies, and roles are cluster objects a restore does not
-    // bring back. Idempotent; also re-derives the passwords from the key.
-    // Refuses to reset roles another brain on this cluster owns.
-    await ensureViewerRoles(
+    // The viewer LOGIN roles and the runtime roles (arch A9) first:
+    // migrations grant to them and name them in row level policies, and
+    // roles are cluster objects a restore does not bring back. Idempotent;
+    // also re-derives the passwords from the key (migrator-steps.ts).
+    const runtime = await beforeMigrations(
       sql,
       env('MANTLE_MASTER_KEY') ?? null,
       feature('viewerRolesPerDatabase'),
@@ -110,24 +108,11 @@ async function main() {
 
     console.log(applied === 0 ? 'Already up to date.' : `Done — applied ${applied} migration(s).`);
 
-    // The viewer roles' grants come from the access matrix, re-applied every
-    // run so the live grants always equal the checked-in list. Before the
-    // speed-only steps below: nothing of theirs may stand in its way.
-    await applyViewerGrants(sql);
-
-    // Keyword search under row security: the flag 0249 sets, again after a
-    // restore (leakproof.ts). Speed only: a failure is a warning.
-    try {
-      const lp = await ensureTsMatchLeakproof(sql);
-      if (lp === 'set')
-        console.log('  ts_match_vq marked LEAKPROOF (keyword index under row security)');
-      if (lp === 'not-superuser')
-        console.log(
-          '  ts_match_vq not LEAKPROOF and not a superuser: keyword arms scan under row security',
-        );
-    } catch (err) {
-      console.warn('  WARNING ts_match_vq LEAKPROOF not set (keyword arms scan):', err);
-    }
+    // The access matrix's grants, the tables handed to mantle_owner, the
+    // runtime role's rights and ts_match_vq LEAKPROOF (migrator-steps.ts).
+    // Before the speed-only steps below: nothing of theirs may stand in
+    // their way.
+    await afterMigrations(sql, runtime);
 
     // Indexes built CONCURRENTLY, outside any transaction (workspaces W3).
     // Last, bounded, and never fatal: an index here is speed only, so a

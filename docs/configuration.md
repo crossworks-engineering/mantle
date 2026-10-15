@@ -115,6 +115,7 @@ as `env()` does) and the three profile readers in
 | `s3ForcePathStyle` | `S3_FORCE_PATH_STYLE` | on | path-style object store URLs |
 | `runs` | `MANTLE_RUNS` | off | runner queues: run_plan / run_append and the runs worker (run_state, run_cancel stay live) |
 | `viewerRolesPerDatabase` | `MANTLE_VIEWER_ROLES_PER_DATABASE` | off | viewer roles named per database (several brains on one Postgres) |
+| `dbRuntimeRole` | `MANTLE_DB_RUNTIME_ROLE` | off | the app pools log in as mantle_runtime, not as the migrator (arch A9, docs/runtime-role.md) |
 | `bootReconcileOff` | `MANTLE_DISABLE_BOOT_RECONCILE` | off | skip the system manifest reconcile at production boot |
 | `detachedDev` | `MANTLE_DETACHED_DEV` | off (never in production) | DB-less detached dev: page navigations render without a session |
 | `crashTest` | `MANTLE_CRASH_TEST` | off | the crash-test harness in server/api |

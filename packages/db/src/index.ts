@@ -72,6 +72,8 @@ export {
   brainOnWorkspacesNow,
   isWriteSql,
   executeWrite,
+  executeAsMigrator,
+  systemPoolRole,
   afterOuterRollback,
   afterOuterCommit,
   brokerLockTx,
@@ -220,6 +222,19 @@ export {
   type ConcurrentIndexOutcome,
 } from './concurrent-indexes';
 export { ensureTsMatchLeakproof, tsMatchLeakproof, TS_MATCH_SIGNATURE } from './leakproof';
+export {
+  OWNER_ROLE,
+  RUNTIME_ROLE,
+  SYSTEM_ROLE,
+  RUNTIME_DENIED_FUNCTIONS,
+  DB_ROLE_SQL,
+  dbRoleMode,
+  dbRoleNote,
+  runtimeRoleOn,
+  systemDatabaseUrl,
+  type DbRoleMode,
+  type DbRoleRow,
+} from './runtime-role';
 export {
   EMAIL_ATTACHMENTS_LABEL,
   EMAIL_ATTACHMENT_MARK,

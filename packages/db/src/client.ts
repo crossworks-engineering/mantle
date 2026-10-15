@@ -2,11 +2,19 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import { sql as sqlTag } from 'drizzle-orm';
 import { getTableName, is } from 'drizzle-orm';
 import { drizzle, type PostgresJsDatabase } from 'drizzle-orm/postgres-js';
-import { PgTable, getTableConfig, type AnyPgColumn } from 'drizzle-orm/pg-core';
+import { PgDialect, PgTable, getTableConfig, type AnyPgColumn } from 'drizzle-orm/pg-core';
+import type { SQL } from 'drizzle-orm';
 import postgres from 'postgres';
 import * as schema from './schema/index';
 import { holderWorkspacesSql } from './grant-reads';
-import { env, feature } from '@mantle/config';
+import { env, feature, isProduction } from '@mantle/config';
+import {
+  DB_ROLE_SQL,
+  dbRoleNote,
+  runtimeRoleOn,
+  systemDatabaseUrl,
+  type DbRoleRow,
+} from './runtime-role';
 import {
   currentScopeTx,
   currentSpaceScope,
@@ -118,8 +126,8 @@ const VIEWER_POOL_MAX = 3;
  */
 function getAdminDb(): PostgresJsDatabase<typeof schema> {
   if (globalThis.__mantleDb) return globalThis.__mantleDb;
-  const url = env('DATABASE_URL');
-  if (!url) throw new Error('DATABASE_URL must be set');
+  // DATABASE_URL, or the runtime role on it (arch A9, runtime-role.ts).
+  const url = systemDatabaseUrl();
   // onnotice: an item table's write trigger reports a statement with no
   // actor as a NOTICE (0275); every other notice prints as postgres.js's
   // default does.
@@ -133,7 +141,40 @@ function getAdminDb(): PostgresJsDatabase<typeof schema> {
   setActorMissLogger(logActorMiss);
   // Out of the caller's context: the timer must not keep its actor.
   runWithoutActor(() => refreshActorCheckMode(sql));
+  runWithoutActor(() => reportDbRole(sql));
   return client;
+}
+
+/** Who the system pool logs in as (arch A9, DB_ROLE_SQL), asked on the
+ *  system pool itself whatever scope the caller is in: system health
+ *  reports it. Null when the pool cannot answer. */
+export async function systemPoolRole(): Promise<DbRoleRow | null> {
+  try {
+    const rows = await runWithoutActor(() =>
+      rawAdminSql().unsafe(`${ACTOR_SQL_TAG} ${DB_ROLE_SQL}`),
+    );
+    return (rows[0] as DbRoleRow | undefined) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/** Who the system pool logs in as, once per process at its start (arch A9):
+ *  a warning on a box whose app runs as the superuser (MANTLE_DB_RUNTIME_ROLE
+ *  off), or as any role but the runtime role. Production only (a test
+ *  process opens many pools); never in a statement's path. */
+function reportDbRole(base: PgSql): void {
+  if (!isProduction()) return;
+  base
+    .unsafe(`${ACTOR_SQL_TAG} ${DB_ROLE_SQL}`)
+    .then((rows) => {
+      const row = rows[0] as DbRoleRow | undefined;
+      if (!row) return;
+      const note = dbRoleNote(row, runtimeRoleOn());
+      if (note) console.warn(note);
+      else console.log(`[db] the system pool logs in as ${row.user} (arch A9 runtime role)`);
+    })
+    .catch(() => {});
 }
 
 // ── The actor on the system pool (workspaces arch A2a) ──────────────────────
@@ -3141,6 +3182,38 @@ export const systemDb = new Proxy({} as PostgresJsDatabase<typeof schema>, {
     return Reflect.get(getAdminDb() as object, prop);
   },
 });
+
+/**
+ * Work the runtime role may not do (arch A9): the workspaces switch runs
+ * DDL (mantle_ws_migrate_locked, at the first owner and at boot). With
+ * MANTLE_DB_RUNTIME_ROLE on it runs on the migrator's URL (DATABASE_URL,
+ * the role that runs the migrations) in one transaction of its own, with
+ * the actor bound now, on a connection opened for it and closed after.
+ * Off, it runs on `db` as before. Only the switch calls it: every other
+ * statement of the app runs as the runtime role (runtime-role.ts).
+ */
+export async function executeAsMigrator<T extends Record<string, unknown>>(
+  query: SQL,
+): Promise<T[]> {
+  if (!runtimeRoleOn()) {
+    return [...((await db.execute(query)) as unknown as T[])];
+  }
+  checkActorBound('executeAsMigrator');
+  const url = env('DATABASE_URL');
+  if (!url) throw new Error('DATABASE_URL must be set');
+  const { sql: text, params } = new PgDialect().sqlToQuery(query);
+  const conn = postgres(url, { max: 1, prepare: false, onnotice: onPgNotice });
+  try {
+    const rows = await conn.begin(async (tx) => {
+      const actor = actorParams();
+      if (actor) await tx.unsafe(`${ACTOR_SQL_TAG} ${setActorSql(actor)}`);
+      return [...(await tx.unsafe(text, params as never[]))];
+    });
+    return rows as unknown as T[];
+  } finally {
+    await conn.end({ timeout: 5 });
+  }
+}
 
 /**
  * End the pooled connections so a short-lived process can exit.
