@@ -162,6 +162,36 @@ export function providerFailureShape(err: unknown): { status?: number; body?: st
 }
 
 /**
+ * The provider and status of a refused key (an HTTP 401 or 403 the
+ * classifier names `auth`), or null (model picker fix round 1, L2). Its
+ * message carries up to 400 chars of the provider's body, and a refused
+ * key's body can echo part of that key, so a log line names only these two
+ * fields. A 403 that is not about the key (a moderation refusal, no
+ * credits) is not one: its body stays in the log for the owner.
+ */
+export function providerAuthRefusal(err: unknown): { provider?: string; status: number } | null {
+  let status: number | undefined;
+  const cls = classifyProviderError(err);
+  if (cls) {
+    if (cls.code === 'auth') status = cls.status;
+  } else {
+    const shape = providerFailureShape(err);
+    const byStatus =
+      shape?.status === undefined
+        ? null
+        : classifyProviderError({
+            status: shape.status,
+            message: String((err as { message?: unknown } | null)?.message ?? ''),
+            body: shape.body ?? '',
+          });
+    if (byStatus?.code === 'auth') status = byStatus.status;
+  }
+  if (status !== 401 && status !== 403) return null;
+  const named = errorChain(err).find((e): e is ProviderHttpError => e instanceof ProviderHttpError);
+  return named ? { provider: named.provider, status } : { status };
+}
+
+/**
  * The fixed sentence a member or the model hears for a provider failure, or
  * null when `err` is none (A10 #10 fix round 2): the classifier's class; else,
  * for one provider shaped ({@link providerFailureShape}), the class its

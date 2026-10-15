@@ -153,6 +153,49 @@ describe('a provider failure the classifier does not name (A10 #10 fix round 2)'
   });
 });
 
+describe('a refused key is logged by provider and status only (model picker fix round 1, L2)', () => {
+  const SECRET = 'sk-ant-api03-0123456789abcdef org=acme-private';
+  let logged: unknown[][] = [];
+  beforeEach(() => {
+    logged = [];
+    vi.spyOn(console, 'error').mockImplementation((...a: unknown[]) => {
+      logged.push(a);
+    });
+  });
+  afterEach(() => vi.restoreAllMocks());
+
+  it.each([401, 403])('a ProviderHttpError %i never logs its body', (status) => {
+    const e = new ProviderHttpError({
+      provider: 'anthropic',
+      status,
+      body: SECRET,
+      what: 'models',
+    });
+    expect(publicProviderErrorMessage(e, 'model-explorer anthropic')).toBe(
+      `The provider refused the API key. (anthropic, HTTP ${status})`,
+    );
+    expect(logged).toEqual([
+      [`[model-explorer anthropic] failed: anthropic refused the key (HTTP ${status})`],
+    ]);
+  });
+
+  it("an SDK's own 401 never logs its body either", () => {
+    const e = Object.assign(new Error(`API error occurred: ${SECRET}`), {
+      statusCode: 401,
+      body: SECRET,
+    });
+    publicProviderErrorMessage(e, 'search');
+    expect(JSON.stringify(logged)).not.toContain('acme-private');
+    expect(logged).toEqual([['[search] failed: provider refused the key (HTTP 401)']]);
+  });
+
+  it('any other status keeps the full error in the log', () => {
+    const e = new ProviderHttpError({ provider: 'anthropic', status: 500, body: SECRET });
+    publicProviderErrorMessage(e, 't');
+    expect(logged[0]![1]).toBe(e);
+  });
+});
+
 describe('toolThrowText: a builtin that throws (A10 #10 fix round 2)', () => {
   const text = (e: unknown, where = 't') => toolThrowText(e, where) ?? errorMessage(e);
   const SECRET = 'sk-or-v1-0123456789abcdef org=acme-private';

@@ -16,7 +16,7 @@
  */
 import { DATABASE_ERROR_PUBLIC, mapAccessError } from './access-error';
 import { domainErrorAnswer } from './domain-errors';
-import { isProviderHttpFailure, providerFailureText } from './provider-error';
+import { isProviderHttpFailure, providerAuthRefusal, providerFailureText } from './provider-error';
 
 let dbErrorWatch: () => { texts: string[]; errors: unknown[] } | undefined = () => undefined;
 
@@ -145,7 +145,8 @@ export function publicErrorMessage(err: unknown, where: string): string {
  * classifier does not name (an OpenRouter 400 not about the model, a 403
  * moderation refusal, a 413, a body that did not parse; fix round 2) says
  * PROVIDER_ERROR_PUBLIC with its status when known, never its message.
- * Either way the detail is logged under `where`, server side. Anything else
+ * Either way the detail is logged under `where`, server side, except for an
+ * auth refusal (401, 403): its provider and status only. Anything else
  * (our own error, no provider shape) is publicErrorMessage.
  */
 export function publicProviderErrorMessage(err: unknown, where: string): string {
@@ -153,7 +154,14 @@ export function publicProviderErrorMessage(err: unknown, where: string): string 
   const domain = domainErrorAnswer(err);
   const text = domain ? domain.toolText : providerFailureText(err);
   if (text === null) return publicErrorMessage(err, where);
-  console.error(`[${where}] failed:`, err);
+  // An auth refusal logs its provider and status only: its body can echo
+  // part of the refused key (model picker fix round 1, L2).
+  const refusal = providerAuthRefusal(err);
+  if (refusal) {
+    console.error(
+      `[${where}] failed: ${refusal.provider ?? 'provider'} refused the key (HTTP ${refusal.status})`,
+    );
+  } else console.error(`[${where}] failed:`, err);
   return text;
 }
 
