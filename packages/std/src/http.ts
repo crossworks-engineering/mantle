@@ -104,7 +104,8 @@ export function backoffMs(step: number, shape: BackoffShape): number {
 
 /** What went wrong on one attempt: a thrown error, or a returned value the
  *  caller names a failure (an HTTP 429 response it wants to wait out). */
-export type RetryFailure<T> = { error: unknown; value?: undefined } | { error?: undefined; value: T };
+export type RetryFailure<T> =
+  { error: unknown; value?: undefined } | { error?: undefined; value: T };
 
 export type RetryOptions<T> = {
   /** Retries after the first try: the attempt budget is `retries + 1`. */
@@ -112,7 +113,8 @@ export type RetryOptions<T> = {
   /** A returned value that is a failure to retry (default: none is). */
   isFailure?: (value: T) => boolean;
   /** Retry this failure? `retry` is the 1-based number of the retry about to
-   *  be made. Default: every failure. */
+   *  be made. Default: a failing VALUE (`isFailure`) retries, a thrown error
+   *  never does, so a caller retries only what it names. */
   retryOn?: (failure: RetryFailure<T>, retry: number) => boolean;
   /** The wait before retry `retry` (1-based); null gives up there (a wait
    *  that would pass a deadline). */
@@ -157,7 +159,8 @@ export async function withRetry<T>(
       throw failure.error;
     };
     if (retry > opts.retries) return stop();
-    if (opts.retryOn && !opts.retryOn(failure, retry)) return stop();
+    const retryable = opts.retryOn ? opts.retryOn(failure, retry) : 'value' in failure;
+    if (!retryable) return stop();
     const delay = opts.delayMs(retry, failure);
     if (delay === null) return stop();
     await opts.onRetry?.({ retry, retries: opts.retries, delayMs: delay, failure });

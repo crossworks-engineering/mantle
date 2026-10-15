@@ -6,7 +6,7 @@
  * stays free of DB concerns and is trivially testable.
  */
 import { getValidAccessToken } from './token-store';
-import { sleep } from '@mantle/std';
+import { backoffMs, parseRetryAfterMs, withRetry } from '@mantle/std';
 
 const GRAPH_BASE = 'https://graph.microsoft.com/v1.0';
 /** Every call that carries the token goes to this origin only. */
@@ -43,27 +43,31 @@ export async function graphFetchRaw(
   if (origin !== GRAPH_ORIGIN) {
     throw graphError(400, `refusing a Graph call off ${GRAPH_ORIGIN}: ${url}`.slice(0, 500));
   }
-  for (let attempt = 0; ; attempt++) {
-    const res = await fetch(url, {
-      ...init,
-      headers: { Authorization: `Bearer ${accessToken}`, ...(init?.headers ?? {}) },
-    });
-    if (res.status === 429 && attempt < MAX_429_RETRIES) {
-      const retryAfter = Number(res.headers.get('retry-after'));
-      const waitMs =
-        Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1000 : 2 ** attempt * 1000;
-      await sleep(waitMs);
-      continue;
-    }
-    if (!res.ok) {
-      const body = await res.text().catch(() => '');
-      throw graphError(
-        res.status,
-        `Graph ${init?.method ?? 'GET'} ${url} → ${res.status}: ${body}`.slice(0, 500),
-      );
-    }
-    return res;
+  // A 429 waits the Retry-After seconds when Graph gives a positive number,
+  // else 1, 2, 4, 8 s; MAX_429_RETRIES times, then the 429 throws below.
+  const res = await withRetry(
+    () =>
+      fetch(url, {
+        ...init,
+        headers: { Authorization: `Bearer ${accessToken}`, ...(init?.headers ?? {}) },
+      }),
+    {
+      retries: MAX_429_RETRIES,
+      isFailure: (r) => r.status === 429,
+      delayMs: (retry, f) => {
+        const retryAfter = parseRetryAfterMs(f.value?.headers);
+        return retryAfter && retryAfter > 0 ? retryAfter : backoffMs(retry - 1, { baseMs: 1_000 });
+      },
+    },
+  );
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    throw graphError(
+      res.status,
+      `Graph ${init?.method ?? 'GET'} ${url} → ${res.status}: ${body}`.slice(0, 500),
+    );
   }
+  return res;
 }
 
 /** Owner-scoped JSON GET. Resolves a fresh token for the account, then calls

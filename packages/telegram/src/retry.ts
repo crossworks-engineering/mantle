@@ -7,30 +7,31 @@
  * server-stated wait (capped), a few times, then surface the error.
  */
 import { GrammyError, type Bot } from 'grammy';
-import { sleep } from '@mantle/std';
+import { parseRetryAfterMs, withRetry } from '@mantle/std';
 
 const MAX_RETRIES = 3;
 const RETRY_AFTER_CAP_MS = 30_000;
 
 export function telegramRetryAfterMs(err: unknown): number | null {
   if (!(err instanceof GrammyError) || err.error_code !== 429) return null;
-  const secs = Number((err.parameters as { retry_after?: unknown } | undefined)?.retry_after);
-  const ms = Number.isFinite(secs) && secs > 0 ? secs * 1000 : 1_000;
+  const raw = (err.parameters as { retry_after?: unknown } | undefined)?.retry_after;
+  const parsed =
+    typeof raw === 'number' || typeof raw === 'string' ? parseRetryAfterMs(raw) : undefined;
+  const ms = parsed !== undefined && parsed > 0 ? parsed : 1_000;
   return Math.min(ms, RETRY_AFTER_CAP_MS);
 }
 
-/** Run a Bot API call, waiting out 429s up to {@link MAX_RETRIES} times. */
-export async function withTelegramRetry<T>(call: () => Promise<T>): Promise<T> {
-  for (let attempt = 0; ; attempt++) {
-    try {
-      return await call();
-    } catch (err) {
-      const wait = telegramRetryAfterMs(err);
-      if (wait == null || attempt >= MAX_RETRIES) throw err;
-      console.warn(`[telegram] 429 — retry ${attempt + 1}/${MAX_RETRIES} in ${wait}ms`);
-      await sleep(wait);
-    }
-  }
+/** Run a Bot API call, waiting out 429s up to {@link MAX_RETRIES} times
+ *  (@mantle/std withRetry since A10 #10). */
+export function withTelegramRetry<T>(call: () => Promise<T>): Promise<T> {
+  return withRetry(call, {
+    retries: MAX_RETRIES,
+    retryOn: (f) => telegramRetryAfterMs(f.error) !== null,
+    delayMs: (_retry, f) => telegramRetryAfterMs(f.error),
+    onRetry: ({ retry, delayMs }) => {
+      console.warn(`[telegram] 429, retry ${retry}/${MAX_RETRIES} in ${delayMs}ms`);
+    },
+  });
 }
 
 /**

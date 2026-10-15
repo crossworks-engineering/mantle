@@ -48,6 +48,7 @@ import {
   type ProviderErrorClass,
   type ProviderSubject,
 } from '@mantle/embeddings';
+import { backoffMs } from '@mantle/std';
 
 export const FIRST_PROBE_MS = 5 * 60_000;
 export const MAX_PROBE_MS = 60 * 60_000;
@@ -61,7 +62,7 @@ export const ADMIN_RECOVERY_GAP_MS = 2 * 60_000;
 /** Delay before the next probe after `failedProbes` failed ones:
  *  5, 10, 20, 40, 60, 60, ... minutes. */
 export function probeDelayMs(failedProbes: number): number {
-  return Math.min(FIRST_PROBE_MS * 2 ** Math.max(0, failedProbes), MAX_PROBE_MS);
+  return backoffMs(Math.max(0, failedProbes), { baseMs: FIRST_PROBE_MS, maxMs: MAX_PROBE_MS });
 }
 
 export interface OpenAlert {

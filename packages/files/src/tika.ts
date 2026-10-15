@@ -1,4 +1,5 @@
 import { env } from '@mantle/config';
+import { NET_TIMEOUTS, parseRetryAfterMs, timeoutSignal, withRetry } from '@mantle/std';
 /**
  * Apache Tika client — the third-tier document parser.
  *
@@ -26,9 +27,10 @@ import { env } from '@mantle/config';
  *  TIKA_URL env (set to `http://tika:9998`). */
 const DEFAULT_TIKA_URL = 'http://127.0.0.1:9998';
 
-/** Per-request timeout. Tika's cold start can take a few seconds, and large
- *  documents (long PPTX decks, complex spreadsheets) parse-take a while. */
-const DEFAULT_TIMEOUT_MS = 60_000;
+/** Per-request timeout (NET_TIMEOUTS.tika, 60 s). Tika's cold start can take a
+ *  few seconds, and large documents (long PPTX decks, complex spreadsheets)
+ *  parse-take a while. */
+const DEFAULT_TIMEOUT_MS = NET_TIMEOUTS.tika;
 
 /** Soft cap on the body we'll accept from a partial-success Tika response
  *  (status 422 with content). Tika's zip-bomb defense throws SAX exceptions
@@ -69,29 +71,31 @@ async function putUntilServed(
   signal: AbortSignal,
   deadline: number,
 ): Promise<Response> {
-  for (;;) {
-    // TS 5.9 made Uint8Array generic in `ArrayBufferLike`, which doesn't
-    // structurally match the DOM lib's `BodyInit` (it expects
-    // `Uint8Array<ArrayBuffer>` specifically). The runtime accepts Buffer
-    // directly (Node's undici fetch handles it natively), so the safest
-    // fix is the type-only escape hatch through `unknown`. No copy, no
-    // wrapping in Blob.
-    const res = await fetch(url, {
-      method: 'PUT',
-      body: bytes as unknown as BodyInit,
-      headers,
-      signal,
-    });
-    if (res.status !== 429) return res;
-    await res.body?.cancel();
-    const retryAfterS = Number(res.headers.get('retry-after'));
-    const waitMs = Math.min(
-      Number.isFinite(retryAfterS) && retryAfterS > 0 ? retryAfterS * 1000 : 1_000,
-      MAX_BACKOFF_MS,
-    );
-    if (Date.now() + waitMs >= deadline) return res;
-    await new Promise((resolve) => setTimeout(resolve, waitMs));
-  }
+  // TS 5.9 made Uint8Array generic in `ArrayBufferLike`, which doesn't
+  // structurally match the DOM lib's `BodyInit` (it expects
+  // `Uint8Array<ArrayBuffer>` specifically). The runtime accepts Buffer
+  // directly (Node's undici fetch handles it natively), so the safest
+  // fix is the type-only escape hatch through `unknown`. No copy, no
+  // wrapping in Blob.
+  const put = () =>
+    fetch(url, { method: 'PUT', body: bytes as unknown as BodyInit, headers, signal });
+  // A 429 waits the Retry-After seconds (1 s without one, at most
+  // MAX_BACKOFF_MS) and asks again, for as long as the wait ends before the
+  // deadline; past it, the 429 goes back to the caller.
+  return withRetry(put, {
+    retries: Infinity,
+    isFailure: (res) => res.status === 429,
+    delayMs: (_retry, f) => {
+      const retryAfter = parseRetryAfterMs(f.value?.headers);
+      const waitMs = Math.min(retryAfter && retryAfter > 0 ? retryAfter : 1_000, MAX_BACKOFF_MS);
+      if (Date.now() + waitMs < deadline) return waitMs;
+      void f.value?.body?.cancel();
+      return null;
+    },
+    onRetry: async ({ failure }) => {
+      await failure.value?.body?.cancel();
+    },
+  });
 }
 
 /** Did a Tika 4 raw endpoint answer? Those always carry a `text/*` type. A
@@ -145,8 +149,7 @@ export async function parseTikaBytes(
   const accept = opts?.accept ?? 'text/plain';
   const timeoutMs = opts?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const deadline = Date.now() + timeoutMs;
-  const ac = new AbortController();
-  const timer = setTimeout(() => ac.abort(), timeoutMs);
+  const signal = timeoutSignal(timeoutMs);
   try {
     const contentHeaders: Record<string, string> = {};
     if (opts?.mimeType) contentHeaders['Content-Type'] = opts.mimeType;
@@ -154,7 +157,7 @@ export async function parseTikaBytes(
       `${tikaUrl()}${TIKA4_PATH[accept]}`,
       bytes,
       contentHeaders,
-      ac.signal,
+      signal,
       deadline,
     );
     if ((res.ok || res.status === 422) && !isTika4RawAnswer(res)) {
@@ -163,7 +166,7 @@ export async function parseTikaBytes(
         `${tikaUrl()}/tika`,
         bytes,
         { ...contentHeaders, Accept: accept },
-        ac.signal,
+        signal,
         deadline,
       );
     }
@@ -181,8 +184,6 @@ export async function parseTikaBytes(
     // Connection refused, ENOTFOUND, AbortError (timeout), any other surprise
     // — every Tika failure is "couldn't parse." Caller falls back.
     return '';
-  } finally {
-    clearTimeout(timer);
   }
 }
 
@@ -221,15 +222,14 @@ export async function unpackTikaImages(
 ): Promise<import('./embedded-images').EmbeddedImage[]> {
   const url = `${tikaUrl()}/unpack/all`;
   const timeoutMs = opts?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-  const ac = new AbortController();
-  const timer = setTimeout(() => ac.abort(), timeoutMs);
+  const signal = timeoutSignal(timeoutMs);
   try {
     const { mimeForExt } = await import('./slug');
     const res = await putUntilServed(
       url,
       bytes,
       { 'Content-Type': mimeForExt(ext) },
-      ac.signal,
+      signal,
       Date.now() + timeoutMs,
     );
     if (!res.ok) return [];
@@ -258,8 +258,6 @@ export async function unpackTikaImages(
     return out;
   } catch {
     return [];
-  } finally {
-    clearTimeout(timer);
   }
 }
 
@@ -316,17 +314,14 @@ async function unpackedImageEntries(
  * Tika is down rather than silently degrading. Hits Tika's `/version`
  * endpoint with a short timeout; returns true iff a 2xx came back.
  */
-export async function tikaIsUp(timeoutMs = 2_000): Promise<boolean> {
+export async function tikaIsUp(timeoutMs: number = NET_TIMEOUTS.tikaProbe): Promise<boolean> {
   const url = `${tikaUrl()}/version`;
-  const ac = new AbortController();
-  const timer = setTimeout(() => ac.abort(), timeoutMs);
+  const signal = timeoutSignal(timeoutMs);
   try {
-    const res = await fetch(url, { method: 'GET', signal: ac.signal });
+    const res = await fetch(url, { method: 'GET', signal });
     return res.ok;
   } catch {
     return false;
-  } finally {
-    clearTimeout(timer);
   }
 }
 
@@ -337,18 +332,17 @@ export async function tikaIsUp(timeoutMs = 2_000): Promise<boolean> {
  * null on any failure (down, timeout, non-2xx, empty body) — same
  * never-throws contract as the rest of this module.
  */
-export async function tikaVersion(timeoutMs = 2_000): Promise<string | null> {
+export async function tikaVersion(
+  timeoutMs: number = NET_TIMEOUTS.tikaProbe,
+): Promise<string | null> {
   const url = `${tikaUrl()}/version`;
-  const ac = new AbortController();
-  const timer = setTimeout(() => ac.abort(), timeoutMs);
+  const signal = timeoutSignal(timeoutMs);
   try {
-    const res = await fetch(url, { method: 'GET', signal: ac.signal });
+    const res = await fetch(url, { method: 'GET', signal });
     if (!res.ok) return null;
     const text = (await res.text()).trim();
     return text.length > 0 ? text : null;
   } catch {
     return null;
-  } finally {
-    clearTimeout(timer);
   }
 }
