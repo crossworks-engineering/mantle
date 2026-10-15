@@ -47,13 +47,14 @@ import { NextResponse } from '@/server/http-compat';
 import {
   asSystem,
   db,
-  sql,
-  isUniqueViolation,
   isCheckViolation,
+  isUniqueViolation,
+  liveWorkspaceSql,
+  lockMoreHeads,
   pgConstraint,
+  sql,
   withDeadlockRetry,
   withHeads,
-  lockMoreHeads,
 } from '@mantle/db';
 import type { AppTint } from '@mantle/client-types/app-nav';
 import type {
@@ -352,7 +353,7 @@ async function seeWorkspace(
 /** GET /api/workspaces. */
 export async function listWorkspaces(caller: WsCaller): Promise<{ workspaces: Workspace[] }> {
   const areas = await areasFor(caller);
-  const where = areas.includes('users') ? sql`true` : sql`w.me_member and w.archived_at is null`;
+  const where = areas.includes('users') ? sql`true` : sql`w.me_member and ${liveWorkspaceSql('w')}`;
   const list = await rows<WsRow>(db, wsSelect(caller, where));
   return { workspaces: list.map(toWorkspace) };
 }
@@ -376,7 +377,7 @@ export async function shellWorkspaces(caller: WsCaller): Promise<ShellWorkspaces
                           where p.workspace_id = w.id and p.login_id = ${caller.loginId}) as private
             from workspaces w
             join workspace_users u on u.workspace_id = w.id and u.login_id = ${caller.loginId}
-           where w.owner_id = ${caller.anchorId} and w.archived_at is null
+           where w.owner_id = ${caller.anchorId} and ${liveWorkspaceSql('w')}
            order by w.is_admin desc, lower(w.name)`,
     ),
   ]);
@@ -1256,7 +1257,7 @@ export async function searchUsers(
       db,
       sql`select exists (
             select 1 from workspace_users u join workspaces w on w.id = u.workspace_id
-             where w.owner_id = ${caller.anchorId} and w.archived_at is null
+             where w.owner_id = ${caller.anchorId} and ${liveWorkspaceSql('w')}
                and u.login_id = ${caller.loginId} and u.moderator) as ok`,
     );
     if (!m?.ok) {

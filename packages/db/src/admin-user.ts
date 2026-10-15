@@ -9,13 +9,14 @@
  */
 import { sql, type SQL } from 'drizzle-orm';
 import type { WorkspaceArea as Area } from '@mantle/client-types/dto/workspaces';
+import { liveWorkspaceSql } from './workspace-live';
 
 /** `login` (a uuid expression) is an Admin user holding `area`. */
 export function adminUserSql(login: SQL, area: Area = 'users'): SQL<boolean> {
   return sql<boolean>`exists (
     select 1 from "public"."workspace_users" au
       join "public"."workspaces" aw on aw.id = au.workspace_id and aw.is_admin
-                                   and aw.archived_at is null
+                                   and ${liveWorkspaceSql('aw')}
                                    and aw.owner_id = "public"."mantle_brain_id"()
       join auth.users al on al.id = au.login_id and al.disabled_at is null
      where au.login_id = ${login}

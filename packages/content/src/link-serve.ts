@@ -30,6 +30,7 @@ import { defineDomainError } from '@mantle/std';
 import { LINK_SERVE_KINDS } from '@mantle/client-types/kind-lists';
 import {
   db,
+  liveWorkspaceSql,
   mayEditInSql,
   mayManageInSql,
   mayReadInSql,
@@ -87,7 +88,7 @@ export type LinkRights = {
 function loginWsSql(ownerId: string, loginId: string, moderated: boolean) {
   return sql`(select coalesce(array_agg(u.workspace_id), '{}'::uuid[])
                 from workspace_users u join workspaces w on w.id = u.workspace_id
-               where u.login_id = ${loginId} and w.owner_id = ${ownerId} and w.archived_at is null
+               where u.login_id = ${loginId} and w.owner_id = ${ownerId} and ${liveWorkspaceSql('w')}
                  ${moderated ? sql`and u.moderator` : sql``})`;
 }
 

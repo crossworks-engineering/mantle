@@ -23,6 +23,7 @@
 import {
   db,
   heldBySql,
+  liveWorkspaceSql,
   mayEditSql,
   mayManageSql,
   nodeAliasHomeIs,
@@ -105,7 +106,7 @@ export async function cappedOne<T extends { id: string }>(row: T): Promise<T & I
 function mine(ownerId: string, loginId: string) {
   return sql`select w.id, w.is_admin from workspaces w
                join workspace_users u on u.workspace_id = w.id and u.login_id = ${loginId}
-              where w.owner_id = ${ownerId} and w.archived_at is null`;
+              where w.owner_id = ${ownerId} and ${liveWorkspaceSql('w')}`;
 }
 
 /**
@@ -127,7 +128,7 @@ export async function workspaceChips(
              select jsonb_agg(jsonb_build_object('id', w.id, 'name', w.name, ${WS_LOOK_PAIRS})
                               order by lower(w.name), w.id)
                from workspaces w
-              where ${heldBySql('n', sql`w.id`)} and w.owner_id = ${ownerId} and w.archived_at is null
+              where ${heldBySql('n', sql`w.id`)} and w.owner_id = ${ownerId} and ${liveWorkspaceSql('w')}
                 and (exists (select 1 from me where me.is_admin)
                      or w.id in (select me.id from me))), '[]'::jsonb) as workspaces,
            exists (

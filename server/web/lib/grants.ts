@@ -33,15 +33,16 @@ import { NextResponse } from '@/server/http-compat';
 import {
   asSystem,
   db,
-  sql,
   isCheckViolation,
   itemHoldersSql,
   itemHomeSql,
+  liveWorkspaceSql,
   lockMoreHeads,
   mayEditInSql,
   mayManageInSql,
   mayReadInSql,
   missesAnySql,
+  sql,
   withDeadlockRetry,
   withHeads,
   withSubtreeHeads,
@@ -198,7 +199,7 @@ async function loadCtx(caller: WsCaller, q: Exec = db): Promise<Ctx> {
     sql`select w.id, w.name, w.is_admin, u.moderator
           from workspaces w
           join workspace_users u on u.workspace_id = w.id and u.login_id = ${caller.loginId}
-         where w.owner_id = ${caller.anchorId} and w.archived_at is null`,
+         where w.owner_id = ${caller.anchorId} and ${liveWorkspaceSql('w')}`,
   );
   const mine = new Map<string, Mine>(
     list.map((w) => [

@@ -9,6 +9,7 @@
 import { sql, type SQL } from 'drizzle-orm';
 import {
   db,
+  liveWorkspaceSql,
   nodeAliasReadBy,
   nodeAliasReadByAnyOf,
   nodeAliasReadByWorkspace,
@@ -447,7 +448,7 @@ export async function itemsElsewhereIn(
        and ${nodeAliasScopeReads('n')}
        and not ${nodeAliasReadByWorkspace(ws, 'n')}
        and w.id = any(${`{${ids.join(',')}}`}::uuid[])
-       and w.owner_id = ${ownerId} and w.archived_at is null
+       and w.owner_id = ${ownerId} and ${liveWorkspaceSql('w')}
      group by w.id, w.name
      order by count(*) desc, lower(w.name), w.id`)) as unknown as ElsewhereCount[];
   return rows.map((r) => ({ id: r.id, name: r.name, count: Number(r.count) }));

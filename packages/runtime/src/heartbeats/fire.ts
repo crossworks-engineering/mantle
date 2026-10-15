@@ -21,22 +21,23 @@
 
 import { and, eq, sql } from 'drizzle-orm';
 import {
-  db,
-  withoutLeftScope,
-  agents,
+  type Actor,
   actorCheckMode,
+  type AgentParams,
+  agents,
   currentActor,
+  db,
+  type Heartbeat,
+  heartbeatFires,
+  heartbeats,
+  liveWorkspaceSql,
   loginActor,
+  loginActorNow,
   runAsActor,
   runAsSystem,
-  systemActor,
-  type Actor,
   skills,
-  heartbeats,
-  heartbeatFires,
-  type Heartbeat,
-  type AgentParams,
-  loginActorNow,
+  systemActor,
+  withoutLeftScope,
 } from '@mantle/db';
 import { getApiKeyById } from '@mantle/api-keys';
 import { currentTrace, recordSkippedTrace, startTrace, step } from '@mantle/tracing';
@@ -203,7 +204,7 @@ async function fireActor(hb: Heartbeat, login: string | null | undefined): Promi
     const kind = await runAsSystem(reason, async () => {
       const [row] = (await db.execute(sql`/* mantle:actor */
         select a.id::text as id, a.workspace_id is not null as has_ws,
-               coalesce(w.is_admin and w.archived_at is null, false) as admin
+               coalesce(w.is_admin and ${liveWorkspaceSql('w')}, false) as admin
           from agents a left join workspaces w on w.id = a.workspace_id
          where a.owner_id = ${hb.ownerId}::uuid and a.slug = ${hb.agentSlug}
          limit 1`)) as unknown as { id: string; has_ws: boolean; admin: boolean }[];

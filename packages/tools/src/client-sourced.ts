@@ -42,9 +42,10 @@ import {
   clientSourcedNodes,
   conversationTaints,
   db,
+  liveWorkspaceSql,
+  mayReadInSql,
   nodes,
   spaceItems,
-  mayReadInSql,
 } from '@mantle/db';
 import { asSystem } from '@mantle/db/viewer';
 
@@ -106,7 +107,7 @@ export function clientWsSql(ownerId: string) {
   return sql`coalesce((
     select array_agg(distinct w.id) from workspaces w
       join workspace_users u on u.workspace_id = w.id
-     where w.owner_id = ${ownerId} and w.archived_at is null
+     where w.owner_id = ${ownerId} and ${liveWorkspaceSql('w')}
        and u.login_id in (select a.login_id from archive_client_logins a)), '{}'::uuid[])`;
 }
 

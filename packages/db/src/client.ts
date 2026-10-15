@@ -86,6 +86,7 @@ import {
   isWriteRoleGapTable,
   writeRoleGapTable,
 } from './access-matrix';
+import { liveWorkspaceSql } from './workspace-live';
 
 declare global {
   var __mantleSql: ReturnType<typeof postgres> | undefined;
@@ -2476,7 +2477,7 @@ export async function loginHoldsAdmin(loginId: string): Promise<boolean> {
                select 1 from workspaces w
                  join workspace_users u on u.workspace_id = w.id and u.login_id = ${loginId}::uuid
                  join auth.users l on l.id = u.login_id and l.disabled_at is null
-                where w.owner_id = mantle_brain_id() and w.is_admin and w.archived_at is null) as a`,
+                where w.owner_id = mantle_brain_id() and w.is_admin and ${liveWorkspaceSql('w')}) as a`,
     )) as unknown as { a: boolean }[];
     return rows[0]?.a === true;
   } catch {
@@ -2501,7 +2502,7 @@ export async function loginHasArea(loginId: string, area: ScopeArea): Promise<bo
                select 1 from workspaces w
                  join workspace_users u on u.workspace_id = w.id and u.login_id = ${loginId}::uuid
                  join auth.users l on l.id = u.login_id and l.disabled_at is null
-                where w.owner_id = mantle_brain_id() and w.is_admin and w.archived_at is null
+                where w.owner_id = mantle_brain_id() and w.is_admin and ${liveWorkspaceSql('w')}
                   and coalesce(u.limits -> 'areas' ->> ${area}, '') <> 'false') as a`,
     )) as unknown as { a: boolean }[];
     return rows[0]?.a === true;
@@ -2848,12 +2849,12 @@ export function loginScopeColumns(loginId: string, disabledAt: AnyPgColumn) {
     scopeWs: sqlTag<string[]>`case when ${disabledAt} is null then coalesce((
         select array_agg(u.workspace_id::text order by u.workspace_id)
           from workspace_users u
-          join workspaces w on w.id = u.workspace_id and w.archived_at is null
+          join workspaces w on w.id = u.workspace_id and ${liveWorkspaceSql('w')}
          where u.login_id = ${loginId}::uuid), '{}') else '{}' end`,
     scopeModWs: sqlTag<string[]>`case when ${disabledAt} is null then coalesce((
         select array_agg(u.workspace_id::text order by u.workspace_id)
           from workspace_users u
-          join workspaces w on w.id = u.workspace_id and w.archived_at is null
+          join workspaces w on w.id = u.workspace_id and ${liveWorkspaceSql('w')}
          where u.login_id = ${loginId}::uuid and u.moderator), '{}') else '{}' end`,
   };
 }
@@ -2933,7 +2934,7 @@ export async function createHomeFallback(
       ? !(
           (await admin.execute(sqlTag`
             select 1 from workspace_users u
-              join workspaces w on w.id = u.workspace_id and w.is_admin and w.archived_at is null
+              join workspaces w on w.id = u.workspace_id and w.is_admin and ${liveWorkspaceSql('w')}
              where u.login_id = ${loginId}::uuid limit 1`)) as unknown as unknown[]
         ).length
       : o.ownWork;
@@ -2941,7 +2942,7 @@ export async function createHomeFallback(
   if (!o.makePrivate) {
     const own = (await admin.execute(sqlTag`
       select p.workspace_id::text as ws from private_workspaces p
-        join workspaces w on w.id = p.workspace_id and w.archived_at is null
+        join workspaces w on w.id = p.workspace_id and ${liveWorkspaceSql('w')}
        where p.login_id = ${loginId}::uuid`)) as unknown as { ws: string }[];
     return { privateWs: ownPrivate(loginId, own[0]?.ws ?? null) };
   }
@@ -3046,7 +3047,7 @@ export async function viewerScopeFor(actsFor: ViewerFor): Promise<WorkspaceScope
                     coalesce(array_agg(u.workspace_id::text order by u.workspace_id)
                              filter (where u.moderator), '{}') as mod
                from workspace_users u
-               join workspaces w on w.id = u.workspace_id and w.archived_at is null
+               join workspaces w on w.id = u.workspace_id and ${liveWorkspaceSql('w')}
                join auth.users l on l.id = u.login_id and l.disabled_at is null
               where u.login_id = ${actsFor.login}`,
     )) as unknown as { ws: string[]; mod: string[] }[];
@@ -3078,7 +3079,7 @@ export async function viewerScopeFor(actsFor: ViewerFor): Promise<WorkspaceScope
     if (!UUID_RE.test(actsFor.agent)) throw new Error('withViewer: agent must be a uuid');
     const rows = (await admin.execute(
       sqlTag`select a.workspace_id::text as ws from agents a
-               join workspaces w on w.id = a.workspace_id and w.archived_at is null
+               join workspaces w on w.id = a.workspace_id and ${liveWorkspaceSql('w')}
               where a.id = ${actsFor.agent}`,
     )) as unknown as { ws: string }[];
     return Object.freeze({

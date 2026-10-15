@@ -26,7 +26,14 @@
  * operator's process, system(script:<file>) (docs/actors.md).
  */
 import { sql } from 'drizzle-orm';
-import { adminUserSql, db, holderReadsSql, nodes, sharedWorkspacesSql } from '@mantle/db';
+import {
+  adminUserSql,
+  db,
+  holderReadsSql,
+  liveWorkspaceSql,
+  nodes,
+  sharedWorkspacesSql,
+} from '@mantle/db';
 import { UUID_RE } from '@mantle/std';
 
 /** What `by` says on each workspace_events row the clear writes. */
@@ -67,7 +74,7 @@ export async function teamCheckCounts(): Promise<TeamCheckCounts> {
           and not ${adminUserSql(sql`u.login_id`)})::int as former_team_member_moderators,
       (select count(*) from workspace_users u
          join workspaces w on w.id = u.workspace_id and w.owner_id = mantle_brain_id()
-                          and w.archived_at is null
+                          and ${liveWorkspaceSql('w')}
         where u.moderator and ${sharedWorkspacesSql(sql`array[w.id]`)}
           and not ${adminUserSql(sql`u.login_id`)})::int as shared_member_moderators,
       (select count(*) from apps a

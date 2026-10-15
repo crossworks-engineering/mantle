@@ -23,7 +23,7 @@
  * and each rule is held in the query itself.
  */
 import { and, desc, eq, sql } from 'drizzle-orm';
-import { asSystem, db, loginHasArea, telegramChats } from '@mantle/db';
+import { asSystem, db, liveWorkspaceSql, loginHasArea, telegramChats } from '@mantle/db';
 import { UUID_RE } from '@mantle/std';
 
 /**
@@ -86,7 +86,7 @@ export async function chatLoginRefusal(args: {
                  from workspaces w
                  join workspace_users u on u.workspace_id = w.id and u.login_id = ${loginId}::uuid
                  join auth.users l on l.id = u.login_id and l.disabled_at is null
-                where w.archived_at is null
+                where ${liveWorkspaceSql('w')}
                   and w.id = coalesce(ca.workspace_id, (select id from admin_ws))
              )
           ) as user_of_all
@@ -127,7 +127,7 @@ export async function loginModeratesBot(args: {
                 join channels ch on ch.id = t.channel_id
                 join agents a on a.id = ch.agent_id and a.owner_id = ${ownerId}::uuid
                 join workspaces w on w.id = coalesce(a.workspace_id, (select id from admin_ws))
-                                 and w.archived_at is null
+                                 and ${liveWorkspaceSql('w')}
                 join workspace_users u on u.workspace_id = w.id
                                       and u.login_id = ${loginId}::uuid and u.moderator
                 join auth.users l on l.id = u.login_id and l.disabled_at is null

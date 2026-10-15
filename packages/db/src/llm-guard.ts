@@ -13,13 +13,14 @@
  */
 import { sql } from 'drizzle-orm';
 import { systemDb } from './client';
+import { liveWorkspaceSql } from './workspace-live';
 
 export async function llmWorkAllowed(nodeId: string): Promise<boolean> {
   const rows = (await systemDb.execute(sql`
     SELECT cardinality(n.read_ws) = 0 AS legacy,
            EXISTS (SELECT 1 FROM workspace_resources r
                      JOIN workspaces w ON w.id = r.workspace_id
-                    WHERE r.type = 'assistant' AND w.archived_at IS NULL
+                    WHERE r.type = 'assistant' AND ${liveWorkspaceSql('w')}
                       AND r.workspace_id = ANY (n.read_ws)) AS assistant
       FROM nodes n
      WHERE n.id = ${nodeId}`)) as unknown as { legacy: boolean; assistant: boolean }[];
