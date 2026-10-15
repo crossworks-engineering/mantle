@@ -741,9 +741,9 @@ describe.skipIf(!DB_URL)('A8 surface cells: every way in gives the oracle’s an
    *  actor). The executor refuses a tool that waits for approval before
    *  dispatch, runs the rest as the run's login as it is now, in
    *  withRunScope, on the surface {kind:'owner', via:'run', loginId}.
-   *  `demote`: the login leaves Admin (its role made member, as the
-   *  product's role change does) after the run is made, before its item
-   *  runs, and comes back after. The outcome: done is ok; failed as
+   *  `demote`: the login leaves Admin (its role made member and its seat
+   *  there removed, as the product's removal does) after the run is made,
+   *  before its item runs, and comes back after. The outcome: done is ok; failed as
    *  tool_error a refusal; failed as requires_confirm a refusal on a cell
    *  narrowed for it (approvalWait); anything else (still ready or
    *  unclaimed, no item, internal_error, tool_missing, bad_payload,
@@ -783,7 +783,13 @@ describe.skipIf(!DB_URL)('A8 surface cells: every way in gives the oracle’s an
         : [];
       try {
         if (demote) {
-          await raw`update auth.users set role = 'member' where id = ${login}`;
+          // As the product's removal from Admin does (lib/workspaces.ts: the
+          // role change and the seat's row, in one transaction).
+          await raw.begin(async (tx) => {
+            await tx`update auth.users set role = 'member' where id = ${login}`;
+            await tx`delete from workspace_users
+                      where login_id = ${login} and workspace_id = ${fx.ws.admin}`;
+          });
           const [left] = await raw<{ n: number }[]>`
             select count(*)::int as n from workspace_users
              where login_id = ${login} and workspace_id = ${fx.ws.admin}`;
@@ -1365,7 +1371,15 @@ describe.skipIf(!DB_URL)('A8 surface cells: every way in gives the oracle’s an
 /** The narrowed surface cells (a deny the oracle cannot see), by way in
  *  and reason: each runs, and its count is pinned so none slips in or out
  *  unseen. */
-const NARROWED: Readonly<Record<string, number>> = {};
+const NARROWED: Readonly<Record<string, number>> = {
+  'peer: a peer may not call app_delete: a risky tool its list does not allow': 6,
+  'run: run_plan is Admin only': 56,
+  'run: a run item may not run app_delete: it waits for approval': 5,
+  'run-demoted: its login left Admin before the item ran: fail closed': 1,
+  'recipe: a recipe step may not call app_delete: it waits for approval': 3,
+  'contact-share-deny: an Informational app’s data is read only, Can write or not': 1,
+  'contact-share-deny: a share of a file has no app data: the /s broker serves an app only': 1,
+};
 
 /** The surface cells not applicable, by reason, over every way in (L1:
  *  none drops out uncounted). */

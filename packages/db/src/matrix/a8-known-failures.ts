@@ -26,9 +26,11 @@ const F1 = 'F1 /api/v1 refuses member keys (guide: a key acts as its login)';
 
 /** F2. A raw runtime or database text in a turn's reply. A workspace
  *  assistant's turn (any workspace but Admin) cannot write an item its user
- *  may change by hand: the web turn, the team turn, Telegram, a run item and
- *  a recipe step. The turn scope of such an assistant has no write path
- *  (agent-viewer.ts: only the Admin turn enters with writes), so the write
+ *  may change by hand: the web turn, the team turn, Telegram and a recipe
+ *  step (a run item too, but a run of a login outside Admin is never made:
+ *  run_plan is Admin only, so those run cells are narrowed denies). The
+ *  turn scope of such an assistant has no write path (agent-viewer.ts: only
+ *  the Admin turn enters with writes), so the write
  *  reaches the workspace role and fails. The guide: "It writes only for a
  *  user who could do it by hand: a Moderator of the home, or a grant with
  *  Write on". Expected: the edit or delete made; actual: refused with a raw
@@ -185,10 +187,6 @@ export const KNOWN_FAILURES: Readonly<Record<string, KnownFailure>> = {
   'heartbeat assistant/- edit task @root': known(F2, RAW_UPDATE),
   'recipe turn/homeModerator edit formula @folder': known(F2, RAW_UPDATE),
   'recipe turn/writeGrant edit event @folder': known(F2, RAW_UPDATE),
-  'run turn/homeModerator delete event @folder': known(F2, RAW_SYSTEM_TX),
-  'run turn/homeModerator delete formula @root': known(F2, RAW_SYSTEM_TX),
-  'run turn/homeModerator edit formula @root': known(F2, RAW_UPDATE),
-  'run turn/writeGrant edit note @root': known(F2, RAW_UPDATE),
   'team-turn turn/homeModerator delete event @root': known(F2, RAW_SYSTEM_TX),
   'team-turn turn/homeModerator edit event @folder': known(F2, RAW_UPDATE),
   'team-turn turn/writeGrant edit formula @root': known(F2, RAW_UPDATE),

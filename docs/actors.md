@@ -4156,10 +4156,13 @@ web (HTTP through `createApp`: item reads and deletes, the grants panel),
 read-only key through the bearer lookup, a peer acting as the login with
 Write on, stdio MCP as the owner, the web turn, the team turn, Telegram, a
 run item (through the product's own executor, `executeRunItem` in
-`server/web/lib/runs/execute-item.ts`: a run of the login, stamped with its
-turn workspace, one tool_call item run as the runs worker runs it, so the
-item meets the executor's checks, its actor and its surface), a recipe
-step, a heartbeat (W's assistant with no user), the Admin assistant with no
+`server/web/lib/runs/execute-item.ts`: a run of the login as `createRun`
+makes it, its workspace left to the stamp trigger (0250: the planning
+agent's, none here, so NULL, Admin's), one tool_call item run as the runs
+worker runs it, so the item meets the executor's checks, its actor and its
+surface; and one always-run cell, an Admin user's run whose login leaves
+Admin, its role and its seat, before the item runs: refused, fail closed),
+a recipe step, a heartbeat (W's assistant with no user), the Admin assistant with no
 user (it acts for the owner: login(owner) in the Admin turn scope, the
 owner's turn to the oracle), a pending call queued in a turn and approved,
 an open public link's view, and a contact share through the `/s` broker
@@ -4167,14 +4170,15 @@ with the contact's cookie (its view, and its app's data through
 `/s/<token>/db-broker`, with Can write on and off; the app's SQLite is
 stood in, as `contact-share-gate.db.test.ts` does, and the brain's side of
 the write, the client-written stamp, is read back). The two heartbeats
-send the surface `heartbeats/fire.ts` gives their turn: a workspace
-assistant's fire a team surface with no login and private reads off, the
-Admin assistant's the owner's web surface. fire.ts builds it inline, with
-no builder to import, so a test pins its source text to the surfaces the
-cells send. Two deny cells with Can write on stand beside the pick
-(`contact-share-deny`): an Informational app's data ("Informational wins
-over a share's Can write") and the db-broker of a contact share of a kind
-that is no app (the broker serves an app only). Every cell runs in each
+send the surface `heartbeats/fire.ts` gives their turn, asked of the same
+function fire.ts calls (`heartbeatSurface`, `heartbeats/surface.ts`): a
+workspace assistant's fire a team surface with no login and private reads
+off, the Admin assistant's the owner's web surface. Two deny cells stand
+beside the pick (`contact-share-deny`), each refused in its own words: an
+Informational app's data with Can write on (contact-rw: 403 "This app is
+read-only.", "Informational wins over a share's Can write") and the
+db-broker of a contact share of a kind that is no app (contact-ro, since
+Can write needs an app: 404 "not found", the broker serves an app only). Every cell runs in each
 actor check mode, off (the fleet's default), warn and on, the box's mode
 and the process's set together, in that order: the process's mode is the
 greater of `MANTLE_ACTOR_CHECK` and the box's mode it last read (read once
@@ -4201,10 +4205,21 @@ turn, a run, a recipe and a heartbeat are counted under their own reason.
 A deny the oracle cannot see, since it knows no tools, narrows a cell and
 the cell runs: a peer's risky tool (`peerRisky`: "Linked brains" lets a
 peer call one only when its list allows it, and the fixture's peers allow
-none), and a tool that waits for approval (`app_delete`) in a recipe step
+none), a tool that waits for approval (`app_delete`) in a recipe step
 (`classifyRecipeStepTool`: a recipe calls none) or a run item (the
 executor refuses it before dispatch, "Confirm-gated tools never run
-headless"). Those two are approval, not access, for everyone, the owner
+headless"), and every run cell of a login outside Admin ("run_plan is
+Admin only": `run_plan` is adminOnly, and the executor refuses a planning
+agent outside Admin, `below_admin`, so such a login's only run is one with
+no workspace, Admin's, and `withRunScope` refuses it: "not a user of the
+Admin workspace"). A narrowed run or recipe cell must be refused in its
+own words (the approval wait, or the Admin seat), and the narrowed cells
+are counted and pinned per way in and reason. A run item's outcome is
+read from its row: done is allowed; failed as `tool_error` is a refusal,
+and as `requires_confirm` only on a cell narrowed for it; anything else
+(still ready or unclaimed, no item, `internal_error`, `tool_missing`,
+`bad_payload`, `agent_missing`, `banned_tool`) is a crash, and
+`internal_error` is in `GENERIC`. Those two are approval, not access, for everyone, the owner
 too: the call waits for a human, in a turn (the pending cells) or on an
 ask_human step of the run. The pending cells set a tool to wait for
 approval for their call and leave it as it was. The not-applicable counts
@@ -4219,19 +4234,20 @@ asks whether the database still refuses an add to T and a move to T, by
 the route as the product runs it and in the member's own mutating request
 scope, with the check off, warn and on. See F7.
 
-**Counts** (fix round 3, on v0.300.56): the grid 14,608 cells, 9,404 run
+**Counts**: the grid (fix round 3, unchanged in round 4) 14,608 cells, 9,404 run
 (2,089 allow, 7,315 deny, of which 66 are the pinned guide-silent denies),
 9,044 pass, 360 known failures, 5,204 not applicable. Against fix round 1
 (10,956 cells, 6,972 run, 3,984 not applicable) the difference is only
 what was added: the Admin-homed placement (3,652 cells: 2,220 run, 1,432
 not applicable) and the contact share's 212 writes, not applicable before
-and denies now. The surface cells 1,122 per check mode, 3,366 in all; 41
-known failures in each mode (fix round 2: 1,120, 3,360 and 42). The two
-added are the contact-share deny cells; F10 left the list. The recipe's 24
-cells of a tool that waits for approval are candidates now, not counted
-apart (18 more candidates, 6 more not applicable as a snapshot copy of an
-app). A run's line names its narrowed
-cells too: 5 on the run (`app_delete`), 3 on the recipe, 6 on the peer. The grants panel: 3 cases (one per check
+and denies now. The surface cells (fix round 4, on v0.300.58) 1,123 per check
+mode, 3,369 in all; 37 known failures in each mode (fix round 3: 1,122,
+3,366 and 41). The one added is the demoted run; the four run cells of F2
+left the list (a run of a login outside Admin has no workspace of its own
+now, and is refused cleanly). The narrowed cells, pinned: 56 runs of a
+login outside Admin, 5 runs and 3 recipe steps of `app_delete` (the
+approval wait), 6 peer calls of `app_delete` (a risky tool), the demoted
+run, and the two contact-share deny cells. The grants panel: 3 cases (one per check
 mode), pinned as found.
 
 **Not applicable** cells are counted and named in the run's summary: a kind
@@ -4254,13 +4270,14 @@ branch and leave the list when it lands; F3 is the guide's rule now.
   Admin (`server/web/lib/api-v1.ts`), where the guide says a key acts as its
   login and only narrows it. 13 surface cells, in each mode. Decided: fix.
 - **F2.** A workspace assistant's turn other than Admin's cannot write an
-  item its user may change by hand: the web turn, the team turn, Telegram,
-  a run item and a recipe step. Its turn scope holds no write mode; the
+  item its user may change by hand: the web turn, the team turn, Telegram
+  and a recipe step (a run item of such a login is never made: run_plan is
+  Admin only, so its run cells are narrowed denies since fix round 4). Its turn scope holds no write mode; the
   reply carries a raw runtime or database text ("Failed query: update
   nodes ...", "withSystemTx: only outside a viewer scope ...", "Failed
   query: insert into node_snapshots ..."). The same raw text answers a write
   the turn may not make (a home Moderator's app delete in a turn, the edits
-  W's assistant with no user tries): the right answer in the wrong words. 24
+  W's assistant with no user tries): the right answer in the wrong words. 20
   surface cells. An approved pending call from
   the same turn writes (the pending cells pass). Decided: fix (writes with
   the user's rights, raw text hidden).
