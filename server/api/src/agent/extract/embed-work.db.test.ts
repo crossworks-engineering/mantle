@@ -590,7 +590,10 @@ describe.skipIf(!URL)('an embed stamp is never a model call (A10 #7 fix round 1)
   });
 
   it('round 3 M1: an extract stamp on a row that looks extracted runs one pass, then skips (no loop)', async () => {
-    const note = await c.createNote(owner, { title: 'Stuck note', content: 'Gasket swap due.' });
+    const note = await c.createNote(owner, {
+      title: 'Stuck note',
+      content: 'The east pump gasket swap is due before the spring shutdown.',
+    });
     await indexed(note.id, { marker: true });
     await x(sql`update nodes set data = data || '{"index_work":"extract"}'::jsonb
       where id = ${note.id}`);
