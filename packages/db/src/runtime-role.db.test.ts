@@ -429,6 +429,36 @@ describe.skipIf(!URL)('the runtime role is not the owner (arch A9)', () => {
     expect((await ownTables(admin)).owned).toEqual([]);
   });
 
+  it('a busy table never holds up the ownership change: it is left for the next run', async () => {
+    await admin.unsafe(`ALTER TABLE public.actor_check_misses OWNER TO postgres`);
+    await admin.unsafe(`ALTER TABLE public.heads_check_misses OWNER TO postgres`);
+    // Another session reads one of them for the whole run (the old app,
+    // still serving while compose's migrate runs).
+    const reader = postgres(scratch.url, { max: 1, onnotice: () => {} });
+    let release!: () => void;
+    const held = new Promise<void>((r) => (release = r));
+    let locked!: () => void;
+    const isLocked = new Promise<void>((r) => (locked = r));
+    const tx = reader.begin(async (t) => {
+      await t`lock table public.actor_check_misses in access share mode`;
+      locked();
+      await held;
+    });
+    try {
+      await isLocked;
+      const started = Date.now();
+      const out = await ownTables(admin);
+      expect(Date.now() - started).toBeLessThan(5_000);
+      expect(out.owned).toEqual(['heads_check_misses']);
+      expect(out.failed.map((f) => [f.rel, f.busy])).toEqual([['actor_check_misses', true]]);
+    } finally {
+      release();
+      await tx;
+      await reader.end();
+    }
+    expect((await ownTables(admin)).owned).toEqual(['actor_check_misses']);
+  });
+
   it('migrate makes a missing or changed marker again, and the write guards work', async () => {
     const guard = async () => {
       const [r] = (await asRuntime('select mantle_owner_role() as ok')) as { ok: boolean }[];

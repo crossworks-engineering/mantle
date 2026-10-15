@@ -220,7 +220,11 @@ describe.skipIf(!URL)('A3a: folders with items the mover cannot read', () => {
     // the subfolder, so both deletes are refused as "not empty" (the merge
     // delete 409, the plain route 400), never our hidden-items refusal, and
     // nothing moves.
-    const [box] = await x<{ m: string }>(sql`select mantle_actor_check_box_mode() as m`);
+    // As the superuser: the runtime role (arch A9) may not run the box mode
+    // reader (the app never calls it).
+    const [box] = await (
+      await import('@mantle/db/test-support')
+    ).superuserExec<{ m: string }>(scratch!.url, 'select mantle_actor_check_box_mode() as m');
     expect(box!.m).toBe('off');
     const was = process.env.MANTLE_ACTOR_CHECK;
     process.env.MANTLE_ACTOR_CHECK = 'off';
