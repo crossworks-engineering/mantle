@@ -133,7 +133,8 @@ describe.skipIf(!URL)('the runtime role is not the owner (arch A9)', () => {
   });
 
   it('cannot change mantle.actor_check, nor the edit check', async () => {
-    const [{ name }] = await admin<{ name: string }[]>`select current_database() as name`;
+    const [db] = await admin<{ name: string }[]>`select current_database() as name`;
+    const name = db!.name;
     for (const stmt of [
       `ALTER DATABASE "${name}" SET mantle.actor_check = 'off'`,
       `ALTER DATABASE "${name}" RESET mantle.actor_check`,
