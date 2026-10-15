@@ -26,7 +26,7 @@ import type {
 } from './types';
 import type { DiscoveryResult } from '../discover';
 import { OPENROUTER_BASE_URL, OPENROUTER_VISION_MODELS } from '../catalogs/openrouter';
-import { errorMessage, PROVIDER_TIMEOUTS } from '@mantle/std';
+import { errorMessage, PROVIDER_TIMEOUTS, ProviderHttpError } from '@mantle/std';
 import { providerFetch } from './provider-fetch';
 
 const DEFAULT_MODEL = 'anthropic/claude-sonnet-5';
@@ -80,7 +80,12 @@ async function post(
   );
   if (!res.ok) {
     const errBody = await res.text().catch(() => '');
-    throw new Error(`openrouter-vision ${res.status}: ${errBody.slice(0, 400)}`);
+    throw new ProviderHttpError({
+      provider: 'openrouter',
+      status: res.status,
+      body: errBody,
+      message: `openrouter-vision ${res.status}: ${errBody.slice(0, 400)}`,
+    });
   }
   const parsed = (await res.json()) as OrChatResponse;
   const text = replyText(parsed.choices?.[0]?.message?.content).trim();

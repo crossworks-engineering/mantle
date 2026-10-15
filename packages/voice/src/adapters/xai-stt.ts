@@ -31,7 +31,7 @@ import type { TranscribeOptions, TranscribeResult } from '../types';
 import { filenameForMime } from '../transcribe';
 import { XAI_BASE_URL } from '../catalogs/xai';
 import { providerFetch } from './provider-fetch';
-import { PROVIDER_TIMEOUTS } from '@mantle/std';
+import { PROVIDER_TIMEOUTS, ProviderHttpError } from '@mantle/std';
 
 export const xaiSttAdapter: SttDispatcher = {
   providerId: 'xai',
@@ -72,7 +72,12 @@ export const xaiSttAdapter: SttDispatcher = {
     );
     if (!res.ok) {
       const body = await res.text().catch(() => '');
-      throw new Error(`xai-stt ${res.status}: ${body.slice(0, 400)}`);
+      throw new ProviderHttpError({
+        provider: 'xai',
+        status: res.status,
+        body,
+        message: `xai-stt ${res.status}: ${body.slice(0, 400)}`,
+      });
     }
     // The response DOES carry the detected language and the duration
     // (`{text, language, duration, words[], channels[]}`). A comment here

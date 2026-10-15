@@ -39,7 +39,7 @@ import type { TranscribeOptions, TranscribeResult } from '../types';
 import type { SttModelInfo } from '../catalog';
 import type { DiscoveryResult } from '../discover';
 import { GOOGLE_BASE_URL, GOOGLE_STT_MODELS } from '../catalogs/google';
-import { errorMessage, PROVIDER_TIMEOUTS } from '@mantle/std';
+import { errorMessage, PROVIDER_TIMEOUTS, ProviderHttpError } from '@mantle/std';
 import { providerFetch } from './provider-fetch';
 
 const DEFAULT_MODEL = 'gemini-2.5-flash';
@@ -147,7 +147,12 @@ export const googleSttAdapter: SttDispatcher = {
     );
     if (!res.ok) {
       const errBody = await res.text().catch(() => '');
-      throw new Error(`google-stt ${res.status}: ${errBody.slice(0, 400)}`);
+      throw new ProviderHttpError({
+        provider: 'google',
+        status: res.status,
+        body: errBody,
+        message: `google-stt ${res.status}: ${errBody.slice(0, 400)}`,
+      });
     }
     const parsed = (await res.json()) as GeminiResponse;
     // A MAX_TOKENS finish means the transcript stops mid-audio. Shipping the

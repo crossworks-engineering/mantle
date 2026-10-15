@@ -38,7 +38,7 @@ import {
   mimeForElevenLabsFormat,
 } from '../catalogs/elevenlabs';
 import { stripAudioTags } from '../audio-tags';
-import { errorMessage, PROVIDER_TIMEOUTS } from '@mantle/std';
+import { errorMessage, PROVIDER_TIMEOUTS, ProviderHttpError } from '@mantle/std';
 import { providerFetch } from './provider-fetch';
 
 type ElevenLabsVoicesResponse = {
@@ -150,7 +150,12 @@ async function elevenLabsSynthesize(opts: SynthesizeOptions): Promise<Synthesize
   );
   if (!res.ok) {
     const errBody = await res.text().catch(() => '');
-    throw new Error(`elevenlabs tts ${res.status}: ${errBody.slice(0, 400)}`);
+    throw new ProviderHttpError({
+      provider: 'elevenlabs',
+      status: res.status,
+      body: errBody,
+      message: `elevenlabs tts ${res.status}: ${errBody.slice(0, 400)}`,
+    });
   }
   const bytes = Buffer.from(await res.arrayBuffer());
   if (bytes.length === 0) {

@@ -40,7 +40,12 @@ import { registerDynamicSchema } from './dynamic-schema';
 import { notFound } from './errors';
 import { str, strOpt, numOpt as num } from './coerce';
 import { resolveImageParams } from './image-params';
-import { backgroundFence, errorMessage, withFenceNote } from '@mantle/std';
+import {
+  backgroundFence,
+  errorMessage,
+  publicProviderErrorMessage,
+  withFenceNote,
+} from '@mantle/std';
 import { CS } from './client-sourced-rule';
 
 // ─── shared helpers ────────────────────────────────────────────────
@@ -177,7 +182,7 @@ const synthesize_speech: BuiltinToolDef = {
         language: params.language,
       });
     } catch (err) {
-      return { ok: false, error: errorMessage(err) };
+      return { ok: false, error: publicProviderErrorMessage(err, 'synthesize_speech') };
     }
     // Same honesty split as generate_image. TTS providers diverge hard here:
     // Gemini has no speed parameter at all, ElevenLabs takes a language code
@@ -254,7 +259,7 @@ const synthesize_speech: BuiltinToolDef = {
           },
         };
       } catch (err) {
-        return { ok: false, error: errorMessage(err) };
+        return { ok: false, error: publicProviderErrorMessage(err, 'synthesize_speech') };
       }
     }
 
@@ -379,7 +384,7 @@ const extract_from_image: BuiltinToolDef = {
         bytes = downloaded.bytes;
         mimeType = downloaded.mimeType;
       } catch (err) {
-        return { ok: false, error: errorMessage(err) };
+        return { ok: false, error: publicProviderErrorMessage(err, 'extract_from_image') };
       }
     }
 
@@ -420,7 +425,7 @@ const extract_from_image: BuiltinToolDef = {
         },
       };
     } catch (err) {
-      return { ok: false, error: errorMessage(err) };
+      return { ok: false, error: publicProviderErrorMessage(err, 'extract_from_image') };
     }
   },
 };
@@ -572,7 +577,7 @@ const summarize_text: BuiltinToolDef = {
         },
       };
     } catch (err) {
-      return { ok: false, error: errorMessage(err) };
+      return { ok: false, error: publicProviderErrorMessage(err, 'summarize_text') };
     }
   },
 };
@@ -744,7 +749,7 @@ const generate_image: BuiltinToolDef = {
         negativePrompt: get('negativePrompt'),
       });
     } catch (err) {
-      return { ok: false, error: errorMessage(err) };
+      return { ok: false, error: publicProviderErrorMessage(err, 'generate_image') };
     }
 
     // The adapter gets the last word. `supports` is per-provider, but several

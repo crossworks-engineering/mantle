@@ -31,7 +31,7 @@ import type {
 } from './types';
 import type { DiscoveryResult } from '../discover';
 import { OPENAI_VISION_MODELS } from '../catalogs/openai-vision';
-import { errorMessage, PROVIDER_TIMEOUTS } from '@mantle/std';
+import { errorMessage, PROVIDER_TIMEOUTS, ProviderHttpError } from '@mantle/std';
 import { providerFetch } from './provider-fetch';
 
 const OPENAI_CHAT_URL = 'https://api.openai.com/v1/chat/completions';
@@ -96,7 +96,12 @@ export const openAiVisionAdapter: VisionDispatcher = {
     );
     if (!res.ok) {
       const errBody = await res.text().catch(() => '');
-      throw new Error(`openai-vision ${res.status}: ${errBody.slice(0, 400)}`);
+      throw new ProviderHttpError({
+        provider: 'openai',
+        status: res.status,
+        body: errBody,
+        message: `openai-vision ${res.status}: ${errBody.slice(0, 400)}`,
+      });
     }
     const parsed = (await res.json()) as OpenAiChatResponse;
     const text = (parsed.choices?.[0]?.message?.content ?? '').trim();

@@ -59,7 +59,7 @@ import {
   transcriptWordCount,
 } from './video-transcript';
 import { envDynamic } from '@mantle/config';
-import { errorMessage } from '@mantle/std';
+import { errorMessage, publicProviderErrorMessage } from '@mantle/std';
 
 // ─── caps ──────────────────────────────────────────────────────────
 // The STT duration cap deliberately does NOT inherit the voice path's 180 s
@@ -686,7 +686,9 @@ async function transcribeStep(
         h.setMeta({ error: errorMessage(err) });
         return {
           ok: false as const,
-          error: errorMessage(err),
+          // The tool text (the model reads it, a member may see it) is the
+          // fixed sentence; the provider's own text stays in the trace.
+          error: publicProviderErrorMessage(err, 'video_ingest'),
         };
       }
     },

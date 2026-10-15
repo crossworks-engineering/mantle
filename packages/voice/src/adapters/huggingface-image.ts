@@ -35,7 +35,7 @@ import {
   HUGGINGFACE_IMAGE_MODELS,
 } from '../catalogs/huggingface';
 import { providerFetch } from './provider-fetch';
-import { PROVIDER_TIMEOUTS } from '@mantle/std';
+import { PROVIDER_TIMEOUTS, ProviderHttpError } from '@mantle/std';
 
 /** Parse 'NNNNxNNNN' into separate width/height. Returns undefined
  *  for HF's "let the model decide" path when size isn't specified. */
@@ -99,7 +99,12 @@ export const huggingfaceImageAdapter: ImageGenDispatcher = {
             `Retry in ~${wait}s. (HF spins workers up on demand.)`,
         );
       }
-      throw new Error(`huggingface-image ${res.status}: ${errBody.slice(0, 400)}`);
+      throw new ProviderHttpError({
+        provider: 'huggingface',
+        status: res.status,
+        body: errBody,
+        message: `huggingface-image ${res.status}: ${errBody.slice(0, 400)}`,
+      });
     }
     const contentType = res.headers.get('content-type') || 'image/png';
     if (!contentType.startsWith('image/')) {

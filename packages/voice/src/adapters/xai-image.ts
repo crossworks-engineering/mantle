@@ -27,7 +27,7 @@ import {
 } from '../catalogs/xai';
 import { egressFetch } from '@mantle/std/egress';
 import { providerFetch } from './provider-fetch';
-import { PROVIDER_TIMEOUTS } from '@mantle/std';
+import { PROVIDER_TIMEOUTS, ProviderHttpError } from '@mantle/std';
 
 /** A returned image URL: how long its fetch may take and how much it may
  *  read. */
@@ -93,7 +93,12 @@ export const xaiImageAdapter: ImageGenDispatcher = {
             `model to '${XAI_IMAGE_DEFAULT_MODEL}' (current default).`,
         );
       }
-      throw new Error(`xai-image ${res.status}: ${errBody.slice(0, 400)}`);
+      throw new ProviderHttpError({
+        provider: 'xai',
+        status: res.status,
+        body: errBody,
+        message: `xai-image ${res.status}: ${errBody.slice(0, 400)}`,
+      });
     }
     const parsed = (await res.json()) as XaiImageResponse;
     const first = parsed.data?.[0];

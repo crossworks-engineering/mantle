@@ -31,7 +31,7 @@ import type { TranscribeOptions, TranscribeResult } from '../types';
 import { filenameForMime } from '../transcribe';
 import { ELEVENLABS_BASE_URL } from '../catalogs/elevenlabs';
 import { providerFetch } from './provider-fetch';
-import { PROVIDER_TIMEOUTS } from '@mantle/std';
+import { PROVIDER_TIMEOUTS, ProviderHttpError } from '@mantle/std';
 
 const DEFAULT_MODEL = 'scribe_v1';
 
@@ -71,7 +71,12 @@ export const elevenLabsSttAdapter: SttDispatcher = {
     );
     if (!res.ok) {
       const body = await res.text().catch(() => '');
-      throw new Error(`elevenlabs-stt ${res.status}: ${body.slice(0, 400)}`);
+      throw new ProviderHttpError({
+        provider: 'elevenlabs',
+        status: res.status,
+        body,
+        message: `elevenlabs-stt ${res.status}: ${body.slice(0, 400)}`,
+      });
     }
     const parsed = (await res.json()) as ScribeResponse;
     return {

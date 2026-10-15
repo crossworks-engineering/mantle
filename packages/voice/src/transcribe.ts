@@ -16,7 +16,7 @@
 
 import type { TranscribeOptions, TranscribeResult } from './types';
 import { providerFetch } from './adapters/provider-fetch';
-import { PROVIDER_TIMEOUTS } from '@mantle/std';
+import { PROVIDER_TIMEOUTS, ProviderHttpError } from '@mantle/std';
 
 const OPENAI_TRANSCRIBE_URL = 'https://api.openai.com/v1/audio/transcriptions';
 const DEFAULT_MODEL = 'whisper-1';
@@ -107,7 +107,12 @@ export async function transcribeAudio(
           `of recording in-browser.`,
       );
     }
-    throw new Error(`whisper ${res.status}: ${body.slice(0, 400)}`);
+    throw new ProviderHttpError({
+      provider: 'openai',
+      status: res.status,
+      body,
+      message: `whisper ${res.status}: ${body.slice(0, 400)}`,
+    });
   }
   const parsed = (await res.json()) as {
     text?: string;

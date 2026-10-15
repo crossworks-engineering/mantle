@@ -20,7 +20,7 @@
 import type { SynthesizeOptions, SynthesizeResult, TtsVoice, TtsWarning } from './types';
 import { TTS_VOICES } from './types';
 import { providerFetch } from './adapters/provider-fetch';
-import { PROVIDER_TIMEOUTS } from '@mantle/std';
+import { PROVIDER_TIMEOUTS, ProviderHttpError } from '@mantle/std';
 
 const OPENAI_TTS_URL = 'https://api.openai.com/v1/audio/speech';
 const DEFAULT_MODEL = 'gpt-4o-mini-tts';
@@ -102,7 +102,12 @@ export async function synthesizeSpeech(opts: SynthesizeOptions): Promise<Synthes
   );
   if (!res.ok) {
     const body = await res.text().catch(() => '');
-    throw new Error(`openai tts ${res.status}: ${body.slice(0, 400)}`);
+    throw new ProviderHttpError({
+      provider: 'openai',
+      status: res.status,
+      body,
+      message: `openai tts ${res.status}: ${body.slice(0, 400)}`,
+    });
   }
   const buffer = Buffer.from(await res.arrayBuffer());
   if (buffer.length === 0) {

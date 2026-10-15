@@ -33,7 +33,7 @@ import type {
 } from './types';
 import { OPENAI_IMAGE_DEFAULT_MODEL, OPENAI_IMAGE_MODELS } from '../catalogs/openai-image';
 import { providerFetch } from './provider-fetch';
-import { PROVIDER_TIMEOUTS } from '@mantle/std';
+import { PROVIDER_TIMEOUTS, ProviderHttpError } from '@mantle/std';
 
 const OPENAI_IMAGES_URL = 'https://api.openai.com/v1/images/generations';
 /** Editing is a DIFFERENT endpoint and a different encoding: multipart, with
@@ -152,7 +152,12 @@ export const openAiImageAdapter: ImageGenDispatcher = {
     );
     if (!res.ok) {
       const errBody = await res.text().catch(() => '');
-      throw new Error(`openai-image ${res.status}: ${errBody.slice(0, 400)}`);
+      throw new ProviderHttpError({
+        provider: 'openai',
+        status: res.status,
+        body: errBody,
+        message: `openai-image ${res.status}: ${errBody.slice(0, 400)}`,
+      });
     }
     const parsed = (await res.json()) as OpenAiImageResponse;
     const first = parsed.data?.[0];

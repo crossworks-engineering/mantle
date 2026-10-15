@@ -25,7 +25,7 @@ import type {
 } from './types';
 import type { DiscoveryResult } from '../discover';
 import { XAI_BASE_URL, XAI_VISION_MODELS } from '../catalogs/xai';
-import { errorMessage, PROVIDER_TIMEOUTS } from '@mantle/std';
+import { errorMessage, PROVIDER_TIMEOUTS, ProviderHttpError } from '@mantle/std';
 import { providerFetch } from './provider-fetch';
 
 const DEFAULT_MODEL = 'grok-4.3';
@@ -87,7 +87,12 @@ export const xaiVisionAdapter: VisionDispatcher = {
     );
     if (!res.ok) {
       const errBody = await res.text().catch(() => '');
-      throw new Error(`xai-vision ${res.status}: ${errBody.slice(0, 400)}`);
+      throw new ProviderHttpError({
+        provider: 'xai',
+        status: res.status,
+        body: errBody,
+        message: `xai-vision ${res.status}: ${errBody.slice(0, 400)}`,
+      });
     }
     const parsed = (await res.json()) as XaiChatResponse;
     const text = (parsed.choices?.[0]?.message?.content ?? '').trim();

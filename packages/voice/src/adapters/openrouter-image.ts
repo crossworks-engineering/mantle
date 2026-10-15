@@ -29,7 +29,7 @@ import type { ImageGenDispatcher, ImageGenModelInfo, ImageGenWarning } from './t
 import type { GenerateImageOptions, GenerateImageResult } from './types';
 import { OPENROUTER_BASE_URL } from '../catalogs/openrouter';
 import { providerFetch } from './provider-fetch';
-import { PROVIDER_TIMEOUTS } from '@mantle/std';
+import { PROVIDER_TIMEOUTS, ProviderHttpError } from '@mantle/std';
 
 export const OPENROUTER_IMAGE_DEFAULT_MODEL = 'google/gemini-3.1-flash-image-preview';
 
@@ -163,7 +163,12 @@ export const openrouterImageAdapter: ImageGenDispatcher = {
     );
     if (!res.ok) {
       const errBody = await res.text().catch(() => '');
-      throw new Error(`openrouter-image ${res.status}: ${errBody.slice(0, 400)}`);
+      throw new ProviderHttpError({
+        provider: 'openrouter',
+        status: res.status,
+        body: errBody,
+        message: `openrouter-image ${res.status}: ${errBody.slice(0, 400)}`,
+      });
     }
     const parsed = (await res.json()) as OpenRouterImageResponse;
     const first = parsed.data?.[0];

@@ -36,7 +36,7 @@ import type { SttDispatcher } from './types';
 import type { TranscribeOptions, TranscribeResult } from '../types';
 import { DEEPGRAM_BASE_URL } from '../catalogs/deepgram';
 import { providerFetch } from './provider-fetch';
-import { PROVIDER_TIMEOUTS } from '@mantle/std';
+import { PROVIDER_TIMEOUTS, ProviderHttpError } from '@mantle/std';
 
 const DEFAULT_MODEL = 'nova-3';
 
@@ -91,7 +91,12 @@ export const deepgramSttAdapter: SttDispatcher = {
     );
     if (!res.ok) {
       const body = await res.text().catch(() => '');
-      throw new Error(`deepgram-stt ${res.status}: ${body.slice(0, 400)}`);
+      throw new ProviderHttpError({
+        provider: 'deepgram',
+        status: res.status,
+        body,
+        message: `deepgram-stt ${res.status}: ${body.slice(0, 400)}`,
+      });
     }
     const parsed = (await res.json()) as DeepgramResponse;
     const channel = parsed.results?.channels?.[0];

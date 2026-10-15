@@ -30,7 +30,7 @@ import type { SttDispatcher } from './types';
 import type { TranscribeOptions, TranscribeResult } from '../types';
 import { ASSEMBLYAI_BASE_URL, ASSEMBLYAI_POLL_TIMEOUT_SECONDS } from '../catalogs/assemblyai';
 import { providerFetch } from './provider-fetch';
-import { PROVIDER_TIMEOUTS } from '@mantle/std';
+import { PROVIDER_TIMEOUTS, ProviderHttpError } from '@mantle/std';
 
 const DEFAULT_MODEL = 'universal';
 /** Poll cadence — AssemblyAI's docs suggest 3s minimum to avoid being
@@ -68,7 +68,12 @@ async function uploadAudio(apiKey: string, audio: Buffer, mime: string): Promise
   );
   if (!res.ok) {
     const body = await res.text().catch(() => '');
-    throw new Error(`assemblyai upload ${res.status}: ${body.slice(0, 400)}`);
+    throw new ProviderHttpError({
+      provider: 'assemblyai',
+      status: res.status,
+      body,
+      message: `assemblyai upload ${res.status}: ${body.slice(0, 400)}`,
+    });
   }
   const parsed = (await res.json()) as { upload_url?: string };
   if (!parsed.upload_url) throw new Error('assemblyai upload: no upload_url in response');
@@ -102,7 +107,12 @@ async function createTranscript(
   );
   if (!res.ok) {
     const body = await res.text().catch(() => '');
-    throw new Error(`assemblyai create-transcript ${res.status}: ${body.slice(0, 400)}`);
+    throw new ProviderHttpError({
+      provider: 'assemblyai',
+      status: res.status,
+      body,
+      message: `assemblyai create-transcript ${res.status}: ${body.slice(0, 400)}`,
+    });
   }
   const parsed = (await res.json()) as CreateTranscriptResponse;
   if (!parsed.id) throw new Error('assemblyai create-transcript: no id in response');
@@ -124,7 +134,12 @@ async function pollUntilDone(apiKey: string, transcriptId: string): Promise<Poll
     });
     if (!res.ok) {
       const body = await res.text().catch(() => '');
-      throw new Error(`assemblyai poll ${res.status}: ${body.slice(0, 400)}`);
+      throw new ProviderHttpError({
+        provider: 'assemblyai',
+        status: res.status,
+        body,
+        message: `assemblyai poll ${res.status}: ${body.slice(0, 400)}`,
+      });
     }
     const parsed = (await res.json()) as PollResponse;
     if (parsed.status === 'completed') return parsed;

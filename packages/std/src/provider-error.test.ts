@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { domainErrorAnswer } from './domain-errors';
+import { publicProviderErrorMessage } from './index';
 import {
   ProviderHttpError,
   classifyProviderError,
@@ -66,5 +67,28 @@ describe('the three readers share one status reading', () => {
     expect(retryDecision(e409).retry).toBe(true);
     expect(isRouteDownError(e409)).toBe(false);
     expect(classifyProviderError(e409)).toBeNull();
+  });
+});
+
+describe('publicProviderErrorMessage (A10 #10 fix round 1)', () => {
+  const SECRET = 'sk-or-v1-0123456789abcdef org=acme-private';
+
+  it('a ProviderHttpError says its fixed sentence, never the body', () => {
+    const e = new ProviderHttpError({ provider: 'deepgram', status: 401, body: SECRET });
+    const text = publicProviderErrorMessage(e, 'test');
+    expect(text).toBe('The provider refused the API key. (deepgram, HTTP 401)');
+    expect(text).not.toContain('sk-or-v1');
+  });
+
+  it("an SDK's own error the classifier names (the OpenRouter wrap) says its class", () => {
+    const e = new Error(`openrouter-chat 403 on some/model: Forbidden metadata=${SECRET}`);
+    const text = publicProviderErrorMessage(e, 'test');
+    expect(text).toBe('The provider refused the API key. (HTTP 403)');
+    expect(text).not.toContain('acme-private');
+  });
+
+  it('anything else keeps its own message (our own errors stay useful)', () => {
+    const e = new Error('team turn: no api_key_id on agent x');
+    expect(publicProviderErrorMessage(e, 'test')).toBe('team turn: no api_key_id on agent x');
   });
 });

@@ -36,7 +36,7 @@ import {
   ANTHROPIC_BASE_URL,
   ANTHROPIC_VISION_MODELS,
 } from '../catalogs/anthropic';
-import { errorMessage, PROVIDER_TIMEOUTS } from '@mantle/std';
+import { errorMessage, PROVIDER_TIMEOUTS, ProviderHttpError } from '@mantle/std';
 import { providerFetch } from './provider-fetch';
 
 const DEFAULT_MODEL = 'claude-haiku-4-5';
@@ -111,7 +111,12 @@ export const anthropicVisionAdapter: VisionDispatcher = {
     );
     if (!res.ok) {
       const errBody = await res.text().catch(() => '');
-      throw new Error(`anthropic-vision ${res.status}: ${errBody.slice(0, 400)}`);
+      throw new ProviderHttpError({
+        provider: 'anthropic',
+        status: res.status,
+        body: errBody,
+        message: `anthropic-vision ${res.status}: ${errBody.slice(0, 400)}`,
+      });
     }
     const parsed = (await res.json()) as AnthropicResponse;
     const textBlock = parsed.content.find(
@@ -182,7 +187,12 @@ export const anthropicVisionAdapter: VisionDispatcher = {
     );
     if (!res.ok) {
       const errBody = await res.text().catch(() => '');
-      throw new Error(`anthropic-vision (pdf) ${res.status}: ${errBody.slice(0, 400)}`);
+      throw new ProviderHttpError({
+        provider: 'anthropic',
+        status: res.status,
+        body: errBody,
+        message: `anthropic-vision (pdf) ${res.status}: ${errBody.slice(0, 400)}`,
+      });
     }
     const parsed = (await res.json()) as AnthropicResponse;
     const textBlock = parsed.content.find(

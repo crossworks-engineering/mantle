@@ -76,7 +76,7 @@ import {
   createTracePrelude,
   withTracePrelude,
 } from '@mantle/tracing';
-import { errorMessage } from '@mantle/std';
+import { publicProviderErrorMessage } from '@mantle/std';
 import { PRIVATE_OUTPUT_TOOL_SLUGS } from '@mantle/tools';
 import { withAgentViewer } from '../agent/agent-viewer';
 
@@ -284,6 +284,9 @@ export async function runTeamTurn(
     // (0269: a row belongs to one agent's thread): only the error is logged.
     const agentId = progress.agentId;
     if (!progress.inboundWritten && agentId) {
+      // The member's thread and stream hear a fixed sentence for a provider
+      // failure, never the provider's body (logged here, server side).
+      const publicText = publicProviderErrorMessage(err, 'team-turn');
       await runDurableStep('record_team_failed_early', async () => {
         await appendThreadMessage({
           ownerId,
@@ -299,11 +302,11 @@ export async function runTeamTurn(
           loginId: options.loginId,
           direction: 'outbound',
           text: '',
-          error: errorMessage(err),
+          error: publicText,
         });
       }).catch((e) => console.error('[team-turn] could not record the failed turn:', e));
       if (options.streamId) {
-        emitTurnLifecycle(options.streamId, ownerId, 'error', { message: errorMessage(err) });
+        emitTurnLifecycle(options.streamId, ownerId, 'error', { message: publicText });
       }
     }
     throw err;
@@ -543,7 +546,7 @@ async function runTeamTurnSteps(
             ctx,
           };
         } else {
-          const msg = errorMessage(err);
+          const msg = publicProviderErrorMessage(err, 'team-turn');
           await runDurableStep('fail_team_outbound', () =>
             updateThreadMessageOutcome({
               ownerId,

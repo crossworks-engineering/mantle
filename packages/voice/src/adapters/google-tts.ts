@@ -34,7 +34,7 @@ import {
   GOOGLE_TTS_VOICES,
   audioTagsForGoogleTtsModel,
 } from '../catalogs/google';
-import { errorMessage, PROVIDER_TIMEOUTS } from '@mantle/std';
+import { errorMessage, PROVIDER_TIMEOUTS, ProviderHttpError } from '@mantle/std';
 import { providerFetch } from './provider-fetch';
 
 type GeminiTtsResponse = {
@@ -87,7 +87,12 @@ async function googleTtsSynthesize(opts: SynthesizeOptions): Promise<SynthesizeR
   );
   if (!res.ok) {
     const errBody = await res.text().catch(() => '');
-    throw new Error(`google tts ${res.status}: ${errBody.slice(0, 400)}`);
+    throw new ProviderHttpError({
+      provider: 'google',
+      status: res.status,
+      body: errBody,
+      message: `google tts ${res.status}: ${errBody.slice(0, 400)}`,
+    });
   }
   const parsed = (await res.json()) as GeminiTtsResponse;
   // The audio rides inline in the parts array as base64. We take the

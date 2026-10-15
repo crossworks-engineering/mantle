@@ -34,7 +34,7 @@ import type {
 } from './types';
 import type { DiscoveryResult } from '../discover';
 import { GOOGLE_BASE_URL, GOOGLE_VISION_MODELS } from '../catalogs/google';
-import { errorMessage, PROVIDER_TIMEOUTS } from '@mantle/std';
+import { errorMessage, PROVIDER_TIMEOUTS, ProviderHttpError } from '@mantle/std';
 import { providerFetch } from './provider-fetch';
 
 const DEFAULT_MODEL = 'gemini-2.5-flash';
@@ -118,7 +118,12 @@ export const googleVisionAdapter: VisionDispatcher = {
     );
     if (!res.ok) {
       const errBody = await res.text().catch(() => '');
-      throw new Error(`google-vision ${res.status}: ${errBody.slice(0, 400)}`);
+      throw new ProviderHttpError({
+        provider: 'google',
+        status: res.status,
+        body: errBody,
+        message: `google-vision ${res.status}: ${errBody.slice(0, 400)}`,
+      });
     }
     const parsed = (await res.json()) as GeminiResponse;
     const text = (parsed.candidates?.[0]?.content?.parts ?? [])

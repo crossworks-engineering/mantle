@@ -16,6 +16,7 @@
  */
 import { DATABASE_ERROR_PUBLIC, mapAccessError } from './access-error';
 import { domainErrorAnswer } from './domain-errors';
+import { classifyProviderError } from './provider-error';
 
 let dbErrorWatch: () => { texts: string[]; errors: unknown[] } | undefined = () => undefined;
 
@@ -131,6 +132,26 @@ export function publicErrorMessage(err: unknown, where: string): string {
   if (!isDatabaseError(err)) return err instanceof Error ? err.message : String(err);
   console.error(`[${where}] database error:`, err);
   return databaseErrorPublic(err);
+}
+
+/**
+ * {@link publicErrorMessage} for work that called a model provider (a team
+ * turn's error, a speech, vision, image or summary tool; A10 #10 fix round
+ * 1): a provider's answer can carry an account id, an organisation name or
+ * part of a key, so it never reaches a member or a model. A domain error
+ * (ProviderHttpError) says its row's fixed sentence; any other error the
+ * provider classifier names (an SDK's own error, a timeout, a network
+ * failure) says its class's fixed sentence. Either way the detail is logged
+ * under `where`, server side. Anything else is publicErrorMessage.
+ */
+export function publicProviderErrorMessage(err: unknown, where: string): string {
+  if (isDatabaseError(err)) return publicErrorMessage(err, where);
+  const domain = domainErrorAnswer(err);
+  const cls = domain ? null : classifyProviderError(err);
+  if (!domain && !cls) return publicErrorMessage(err, where);
+  console.error(`[${where}] failed:`, err);
+  if (domain) return domain.toolText;
+  return cls!.status ? `${cls!.reason} (HTTP ${cls!.status})` : cls!.reason;
 }
 
 /**

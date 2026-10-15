@@ -39,7 +39,7 @@ import {
   GOOGLE_IMAGE_MODELS,
 } from '../catalogs/google';
 import { providerFetch } from './provider-fetch';
-import { PROVIDER_TIMEOUTS } from '@mantle/std';
+import { PROVIDER_TIMEOUTS, ProviderHttpError } from '@mantle/std';
 
 /** Map a 'NNNNxNNNN' size to an Imagen aspect ratio. Falls back to
  *  1:1 for unknown sizes — Imagen rejects anything else with a 400. */
@@ -117,7 +117,12 @@ export const googleImageAdapter: ImageGenDispatcher = {
             `then verify the key has access.`,
         );
       }
-      throw new Error(`google-image ${res.status}: ${errBody.slice(0, 400)}`);
+      throw new ProviderHttpError({
+        provider: 'google',
+        status: res.status,
+        body: errBody,
+        message: `google-image ${res.status}: ${errBody.slice(0, 400)}`,
+      });
     }
     const parsed = (await res.json()) as ImagenResponse;
     const first = parsed.predictions?.[0];

@@ -29,7 +29,7 @@ import type { TtsModelInfo } from '../catalog';
 import type { DiscoveryResult } from '../discover';
 import { OPENROUTER_BASE_URL } from '../catalogs/openrouter';
 import { providerFetch } from './provider-fetch';
-import { PROVIDER_TIMEOUTS } from '@mantle/std';
+import { PROVIDER_TIMEOUTS, ProviderHttpError } from '@mantle/std';
 
 /** Default OpenRouter TTS route — xAI Grok voice (voices ara/rex…). OpenRouter
  *  does not proxy OpenAI TTS, so we default to a real speech route on it. */
@@ -126,7 +126,12 @@ export const openrouterTtsAdapter: TtsDispatcher = {
     );
     if (!res.ok) {
       const body = await res.text().catch(() => '');
-      throw new Error(`openrouter-tts ${res.status}: ${body.slice(0, 400)}`);
+      throw new ProviderHttpError({
+        provider: 'openrouter',
+        status: res.status,
+        body,
+        message: `openrouter-tts ${res.status}: ${body.slice(0, 400)}`,
+      });
     }
     const buffer = Buffer.from(await res.arrayBuffer());
     if (buffer.length === 0) throw new Error('openrouter-tts: empty response');

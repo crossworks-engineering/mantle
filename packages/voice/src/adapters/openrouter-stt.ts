@@ -15,7 +15,7 @@ import type { SttModelInfo } from '../catalog';
 import type { DiscoveryResult } from '../discover';
 import { OPENROUTER_BASE_URL } from '../catalogs/openrouter';
 import { providerFetch } from './provider-fetch';
-import { PROVIDER_TIMEOUTS } from '@mantle/std';
+import { PROVIDER_TIMEOUTS, ProviderHttpError } from '@mantle/std';
 
 /** Default OpenRouter STT route — GPT-4o mini Transcribe (cheap + accurate;
  *  operator-verified on a single OpenRouter key). */
@@ -99,7 +99,12 @@ export const openrouterSttAdapter: SttDispatcher = {
     );
     if (!res.ok) {
       const body = await res.text().catch(() => '');
-      throw new Error(`openrouter-stt ${res.status}: ${body.slice(0, 400)}`);
+      throw new ProviderHttpError({
+        provider: 'openrouter',
+        status: res.status,
+        body,
+        message: `openrouter-stt ${res.status}: ${body.slice(0, 400)}`,
+      });
     }
     const parsed = (await res.json()) as { text?: string };
     return {

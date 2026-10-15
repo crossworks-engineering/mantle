@@ -38,7 +38,7 @@ import {
 } from '../catalogs/xai';
 import { stripAudioTags } from '../audio-tags';
 import { providerFetch } from './provider-fetch';
-import { PROVIDER_TIMEOUTS } from '@mantle/std';
+import { PROVIDER_TIMEOUTS, ProviderHttpError } from '@mantle/std';
 
 /** Map our `format` option to xAI's `output_format.codec`. xAI doesn't
  *  offer opus, so opus → mp3 with a hint. Other formats map directly. */
@@ -134,7 +134,12 @@ async function xaiTtsSynthesize(opts: SynthesizeOptions): Promise<SynthesizeResu
   );
   if (!res.ok) {
     const errBody = await res.text().catch(() => '');
-    throw new Error(`xai tts ${res.status}: ${errBody.slice(0, 400)}`);
+    throw new ProviderHttpError({
+      provider: 'xai',
+      status: res.status,
+      body: errBody,
+      message: `xai tts ${res.status}: ${errBody.slice(0, 400)}`,
+    });
   }
   const bytes = Buffer.from(await res.arrayBuffer());
   if (bytes.length === 0) {
