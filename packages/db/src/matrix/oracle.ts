@@ -5,9 +5,10 @@
  * SQL, so the grid that checks the database against it tests two independent
  * readings of the guide, not one reading twice.
  *
- * A1 starts it with two actions (read, create) at SQL level. Each later
- * phase adds actions, placements and surfaces; a cell the oracle does not
- * cover yet answers 'n/a' and the grid counts it.
+ * A1 started it with two actions (read, create) at SQL level
+ * (expectedReadCreate) and A3a added the writes (expectedWrite); A8's full
+ * oracle, expectedAccess, is ./guide-oracle.ts (13 actions, 3 placements,
+ * every actor kind, the surfaces). These stay for the A1 and A3a grids.
  *
  * The fixture it speaks of (sql-grid.db.test.ts builds it): every item has
  * its home in workspace H, a grant with Write on to workspace W and a grant
@@ -124,7 +125,7 @@ function isAdminUser(role: OracleRole): boolean {
  *  - at the root: "your private workspace. An Admin user has no private
  *    fallback: the item lands in Admin."
  */
-export function expectedAccess(
+export function expectedReadCreate(
   context: OracleContext,
   role: OracleRole,
   kind: string,
@@ -374,7 +375,7 @@ function adminForWrite(role: OracleWriteRole): boolean {
 /**
  * What the guide (docs/workspaces.md, "Items and grants" and "Apps";
  * docs/actors.md, the actor kinds; the owner's decisions D4 to D6) says a
- * write may do, at SQL level, in the fixture of expectedAccess:
+ * write may do, at SQL level, in the fixture of expectedReadCreate:
  *  - a read key, an assistant with no user, a public link, a peer and a
  *    contact share without Can write write nothing; system work writes
  *    what its reason needs;
@@ -402,7 +403,7 @@ export function expectedWrite(
   if (guideKindClass(kind) !== 'workspace') return { na: 'the grid covers the workspace kinds' };
   if (!actionApplies(kind, action)) return { na: `${action} is not a change of a ${kind}` };
   if (action === 'createDerived' && context.placement !== 'folder') {
-    return { na: 'made in the folder only (a login at the root: expectedAccess)' };
+    return { na: 'made in the folder only (a login at the root: expectedReadCreate)' };
   }
   switch (context.actor) {
     case 'system':
@@ -420,9 +421,9 @@ export function expectedWrite(
     default:
       break;
   }
-  // A login's create is the read and create grid's (expectedAccess, with
+  // A login's create is the read and create grid's (expectedReadCreate, with
   // where it lands): here only the other actor kinds make one.
-  if (action === 'create') return { na: "a login's create: expectedAccess (sql-grid)" };
+  if (action === 'create') return { na: "a login's create: expectedReadCreate (sql-grid)" };
   if (!readsForWrite(role)) return { allow: false, why: 'not found: it does not read the item' };
   const homeMod = role === 'homeModerator';
   const deny = (why: string): OracleAnswer => ({ allow: false, why });

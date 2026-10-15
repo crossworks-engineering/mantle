@@ -140,7 +140,10 @@ describe.skipIf(!URL)('A8 grid at SQL level', () => {
         }
       }),
     );
-    const known = new Set(Object.keys(KNOWN_FAILURES));
+    // The grid's own names (a surface cell's name starts with its surface).
+    const known = new Set(
+      Object.keys(KNOWN_FAILURES).filter((n) => n.split(' ')[0]!.includes('/')),
+    );
     const unexpected = [...failures].filter(([n]) => !known.has(n)).map(([n, r]) => `${n}: ${r}`);
     const fixed = [...known].filter((n) => !failures.has(n));
     const naTotal = Object.values(na).reduce((a, b) => a + b, 0);

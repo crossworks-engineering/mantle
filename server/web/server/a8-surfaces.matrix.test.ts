@@ -570,6 +570,10 @@ describe.skipIf(!DB_URL)('A8 surface cells: every way in gives the oracle’s an
       roles: [null],
       supports: (kind, action) =>
         action === 'read' &&
+        // An app's link serves its frame (a published build, which the
+        // fixture's app has none of); a formula's view needs its spec.
+        kind !== 'app' &&
+        kind !== 'formula' &&
         (ITEM_KINDS as Record<string, { publicLink: boolean | string }>)[kind]!.publicLink === true,
       run: (_role, _kind, _action, id) =>
         guard(async () => {
@@ -620,8 +624,11 @@ describe.skipIf(!DB_URL)('A8 surface cells: every way in gives the oracle’s an
 
   it('each way in: a pairwise set of cells, each the oracle’s answer', async () => {
     const started = Date.now();
+    // The surface cells' names (a grid cell's name starts with its actor).
     const known = new Set(
-      Object.keys((await import('@mantle/db/matrix/a8-known-failures')).KNOWN_FAILURES),
+      Object.keys((await import('@mantle/db/matrix/a8-known-failures')).KNOWN_FAILURES).filter(
+        (n) => !n.split(' ')[0]!.includes('/'),
+      ),
     );
     for (const slug of ['node_read', ...Object.values(TOOL_EDIT), ...Object.values(TOOL_DELETE)]) {
       if (await m.asSystem(() => t.resolveTool(fx.owner, slug), 'test')) resolvable.add(slug);
@@ -694,5 +701,7 @@ describe.skipIf(!DB_URL)('A8 surface cells: every way in gives the oracle’s an
       ].join('\n'),
     );
     expect(unexpected, 'surface cells that fail and are not known failures').toEqual([]);
+    const fixed = [...known].filter((n) => !failures.has(n));
+    expect(fixed, 'known failures that pass now: take them off the list').toEqual([]);
   }, 900_000);
 });

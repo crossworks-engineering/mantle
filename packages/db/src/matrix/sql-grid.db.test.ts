@@ -28,7 +28,7 @@ import { ITEM_KINDS, ITEM_KIND_NAMES } from '@mantle/client-types/kinds';
 import { createMigratedScratchDatabase } from '../test-support';
 import {
   ORACLE_ROLES,
-  expectedAccess,
+  expectedReadCreate,
   guideWorkspaceKinds,
   type OracleAction,
   type OraclePlacement,
@@ -233,7 +233,7 @@ describe.skipIf(!URL)('A8 SQL grid: read and create (A1 slice)', () => {
     placement: OraclePlacement,
     action: OracleAction,
   ): Promise<string | null | 'na'> {
-    const want = expectedAccess({ surface: 'sql', placement }, role, kind, action);
+    const want = expectedReadCreate({ surface: 'sql', placement }, role, kind, action);
     if ('na' in want) return 'na';
     const s = scope[role];
     const f = fx[kind]!;
@@ -330,7 +330,7 @@ describe.skipIf(!URL)('A8 SQL grid: read and create (A1 slice)', () => {
             if (r === 'na') na++;
             else if (r) failures.push(`${role} ${action} ${kind} @${placement}: ${r}`);
             else {
-              const want = expectedAccess({ surface: 'sql', placement }, role, kind, action);
+              const want = expectedReadCreate({ surface: 'sql', placement }, role, kind, action);
               if ('allow' in want && want.allow) allowed++;
               else denied++;
             }
