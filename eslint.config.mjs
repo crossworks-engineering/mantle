@@ -29,6 +29,7 @@ import mantleKindsPlugin from './eslint-rules/no-hand-kind-lists.mjs';
 import mantleAppBrokerPlugin from './eslint-rules/app-broker.mjs';
 import mantleProviderHttpPlugin from './eslint-rules/provider-http.mjs';
 import mantleEnvFlagsPlugin from './eslint-rules/env-flags.mjs';
+import mantleSpendPlugin from './eslint-rules/spend-recording.mjs';
 import mantleRolesPlugin from './eslint-rules/no-hand-role-lists.mjs';
 import mantleReindexPlugin from './eslint-rules/no-hand-reindex.mjs';
 
@@ -309,6 +310,22 @@ export default tseslint.config(
       'mantle-env/handParse': 'error',
       'mantle-env/isEnabledDef': 'error',
       'mantle-env/prefDefault': 'error',
+    },
+  },
+  {
+    // Spend is recorded in one place (A10 #5, docs/spend-recording.md): the
+    // @mantle/voice registry hands out every adapter wrapped to record its
+    // call through @mantle/tracing recordUsage. No hand spend recording, no
+    // provider call around the registry; the files that keep one are named.
+    files: [
+      'packages/**/*.{ts,tsx,mts,mjs,js}',
+      'server/{web,api,mcp,sandboxd}/**/*.{ts,tsx,mts,mjs,js}',
+    ],
+    ignores: ['**/*.test.{ts,tsx}', '**/*.spec.{ts,tsx}'],
+    plugins: { 'mantle-spend': mantleSpendPlugin },
+    rules: {
+      'mantle-spend/handSpend': 'error',
+      'mantle-spend/providerBypass': 'error',
     },
   },
   {

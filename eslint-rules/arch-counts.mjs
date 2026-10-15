@@ -35,7 +35,10 @@
  *    outside and inside the named lists (env-flags.mjs);
  *  - hand re-index lines (A10 #7): notifyNodeIngested calls and raw
  *    node_ingested notifies, `embedding: null` resets and summary clears,
- *    outside markContentChanged and the files no-hand-reindex.mjs names.
+ *    outside markContentChanged and the files no-hand-reindex.mjs names;
+ *  - spend recording (A10 #5): hand spend recording and provider calls that
+ *    bypass the recording point, outside and inside the named lists
+ *    (spend-recording.mjs).
  *
  * Comment lines never count. Product files only: packages/, server/,
  * scripts/; no tests, migrations, archive or build folders (a route segment
@@ -55,6 +58,7 @@ import {
 } from './route-plumbing.mjs';
 import { PROVIDER_HTTP_PATTERNS } from './provider-http.mjs';
 import { ENV_PATTERNS, allowedBy } from './env-flags.mjs';
+import { SPEND_PATTERNS } from './spend-recording.mjs';
 import {
   EXPORT_SYNC_ALLOW,
   EXPORT_SYNC_HOME,
@@ -737,6 +741,9 @@ export function measure(root) {
   );
   const reindex = {};
   const reindexAllowed = {};
+  const spend = Object.fromEntries(
+    Object.keys(SPEND_PATTERNS).map((k) => [k, { outside: {}, allowed: {} }]),
+  );
   for (const f of files) {
     const text = readRepoFile(root, f);
     if (text === null) continue;
@@ -827,6 +834,10 @@ export function measure(root) {
       const n = count(plain);
       if (n) envFlags[k][allowedBy(allowed, f) ? 'allowed' : 'outside'][f] = n;
     }
+    for (const [k, { count, allowed }] of Object.entries(SPEND_PATTERNS)) {
+      const n = count(plain);
+      if (n) spend[k][Object.hasOwn(allowed, f) ? 'allowed' : 'outside'][f] = n;
+    }
   }
   const sum = (o, k) => Object.values(o).reduce((a, v) => a + (k ? v[k] : v), 0);
   const reasons = new Set(Object.values(asSystem).flatMap((v) => v.reasons));
@@ -884,6 +895,12 @@ export function measure(root) {
       reindexEmbeddingResets: sum(reindex, 'embedding'),
       reindexSummaryClears: sum(reindex, 'summary'),
       reindexAllowedFiles: Object.keys(reindexAllowed).length,
+      ...Object.fromEntries(
+        Object.entries(spend).flatMap(([k, v]) => [
+          [`spend_${k}`, sum(v.outside)],
+          [`spend_${k}_allowed`, sum(v.allowed)],
+        ]),
+      ),
       ...Object.fromEntries(Object.entries(stores).map(([k, v]) => [`store_${k}_files`, v.length])),
     },
     perFile: {
@@ -912,6 +929,7 @@ export function measure(root) {
       envFlags,
       reindex,
       reindexAllowed,
+      spend,
     },
   };
 }

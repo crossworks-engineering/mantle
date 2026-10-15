@@ -35,11 +35,10 @@ describe('built-in adapter self-registration', () => {
     expect(a).not.toBeNull();
     expect(a?.providerId).toBe('openai');
     expect(a?.adapterName).toBe('openai-tts');
-    // The adapter object is the same singleton exported from the
-    // module — both routes (registry lookup, direct import) hand
-    // back the same reference, so monkey-patching for tests is
-    // consistent.
-    expect(a).toBe(openAiTtsAdapter);
+    // The wrapper calls the singleton's method at call time, so
+    // monkey-patching the exported adapter for a test still applies.
+    // The registry hands out the recording wrapper around the singleton (A10 #5).
+    expect(a).toMatchObject({ adapterName: openAiTtsAdapter.adapterName, providerId: openAiTtsAdapter.providerId });
   });
 
   it('registers openai-stt on import', () => {
@@ -47,7 +46,8 @@ describe('built-in adapter self-registration', () => {
     expect(a).not.toBeNull();
     expect(a?.providerId).toBe('openai');
     expect(a?.adapterName).toBe('openai-stt');
-    expect(a).toBe(openAiSttAdapter);
+    // The registry hands out the recording wrapper around the singleton (A10 #5).
+    expect(a).toMatchObject({ adapterName: openAiSttAdapter.adapterName, providerId: openAiSttAdapter.providerId });
   });
 
   it('lists at least one adapter per built-in capability', () => {
@@ -131,7 +131,7 @@ describe('registerTtsAdapter', () => {
       },
     };
     registerTtsAdapter(fake);
-    expect(getTtsAdapter('huggingface')).toBe(fake);
+    expect(getTtsAdapter('huggingface')?.adapterName).toBe('hf-test');
     expect(isProviderWired('huggingface', 'tts')).toBe(true);
   });
 });

@@ -87,6 +87,10 @@ const LABELS: Record<string, string> = {
   reindexEmbeddingResets: 'hand embedding: null resets outside markContentChanged (A10 #7)',
   reindexSummaryClears: 'hand summary clears outside markContentChanged (A10 #7)',
   reindexAllowedFiles: 'files named to hold a hand re-index line, each with its reason (A10 #7)',
+  spend_handSpend: 'hand spend recording outside the one recorder and the named list (A10 #5)',
+  spend_handSpend_allowed: 'spend recording sites in the named files (A10 #5)',
+  spend_providerBypass: 'provider calls bypassing the recording point (A10 #5)',
+  spend_providerBypass_allowed: 'provider call sites named outside the registry wrapper (A10 #5)',
 };
 
 /** Numbers that may go up without failing: the route counts grow with

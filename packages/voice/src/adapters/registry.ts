@@ -43,10 +43,17 @@ export * from '@mantle/voice-client/adapters/registry';
  * for uniform 429/5xx/network/timeout backoff (./retry.ts). The spend
  * recording sits outside the retry: one recording per answered call.
  */
+const chatHandedOut = new WeakMap<ChatDispatcher, ChatDispatcher>();
+
 export function getChatAdapter(providerId: string): ChatDispatcher | null {
   const adapter = registeredChatAdapter(providerId);
   if (!adapter) return null;
-  return recordingChat(adapter.providerId === 'openrouter' ? adapter : withChatRetry(adapter));
+  let out = chatHandedOut.get(adapter);
+  if (!out) {
+    out = recordingChat(adapter.providerId === 'openrouter' ? adapter : withChatRetry(adapter));
+    chatHandedOut.set(adapter, out);
+  }
+  return out;
 }
 
 export function getTtsAdapter(providerId: string): TtsDispatcher | null {

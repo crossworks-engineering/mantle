@@ -1,6 +1,9 @@
-export { transcribeAudio, filenameForMime } from './transcribe';
+// The OpenAI speech calls themselves (transcribeAudio, synthesizeSpeech) are
+// not exported: they are reached through the registry's openai adapters,
+// which record their spend (A10 #5, docs/spend-recording.md).
+export { filenameForMime } from './transcribe';
 
-export { synthesizeSpeech, mimeForFormat, isTtsVoice } from './synthesize';
+export { mimeForFormat, isTtsVoice } from './synthesize';
 
 export type {
   TranscribeOptions,
@@ -49,9 +52,9 @@ export {
 
 // Adapter layer. Importing this module triggers self-registration of
 // every built-in adapter (OpenAI TTS, OpenAI STT today). Apps go
-// through `getTtsAdapter(providerId)` etc. instead of calling
-// `synthesizeSpeech` directly so future providers (ElevenLabs,
-// Deepgram, …) slot in via the registry with no caller changes.
+// through `getTtsAdapter(providerId)` etc., which hand out each adapter
+// wrapped to record its spend (./adapters/spend.ts), so every provider
+// slots in via the registry with no caller changes.
 export * from './adapters';
 
 // Audio-tag composition + stripping helpers. Pure, importable from
