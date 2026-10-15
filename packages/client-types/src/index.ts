@@ -239,3 +239,12 @@ export type {
   ListWorkspace,
   ListWsEcho,
 } from './dto/grants';
+// Search across workspaces (task f26a516e).
+export type {
+  ElsewhereCount,
+  HitWorkspace,
+  HitWorkspaceField,
+  SearchApiResponse,
+  SearchChunkHit,
+  SearchNodeHit,
+} from './dto/workspace-hits';

@@ -14,6 +14,7 @@
 import type { AccessLevel } from './dto/access';
 import type { GrantWorkspaceRef, ListWorkspace } from './dto/grants';
 import type { TaskStatus } from './dto/rows';
+import type { ElsewhereCount, HitWorkspaceField } from './dto/workspace-hits';
 import type { AppTint } from './app-nav';
 import {
   ITEM_KINDS,
@@ -115,6 +116,12 @@ export type TreeFolder = {
   system: boolean;
   folderCount: number;
   itemCount: number;
+  /** Asked with `?ws=<id>` (task f26a516e): the items in the folder that
+   *  the caller reads in its other workspaces and `ws` does not read. They
+   *  are not in `itemCount`; a client may still open the folder to say
+   *  where they are (TreeFolderPage `elsewhere`). Absent without `ws`, and
+   *  from a brain before it. */
+  itemsElsewhere?: number;
   /** The workspaces that read the folder (ListChips): filled by the owner's
    *  tree routes; empty in the member tree until W5c. */
   workspaces: ListWorkspace[];
@@ -193,6 +200,12 @@ export type TreeFolderPage = {
   /** Asked with `?ws=<id>` (ListWsEcho): the items are only those that
    *  workspace reads; the folders stay (the way to them). */
   ws?: string;
+  /** Asked with `?ws=<id>`, on the first page of a folder where `ws` reads
+   *  no item (task f26a516e): the caller's other workspaces that read items
+   *  in this same folder, with how many, most first. Only workspaces the
+   *  caller is a user of, and only items its scope reads. Absent when there
+   *  are none, and from a brain before it. */
+  elsewhere?: ElsewhereCount[];
 };
 
 /** Narrowing for GET /api/tree/:kind/search (`ws=`, `tag=`), the tree's
@@ -200,8 +213,15 @@ export type TreeFolderPage = {
  *  lists items only, no folders. The level filter went with the levels
  *  (W5b2). */
 export type TreeFilter = {
-  /** Only items this workspace reads (its id is in their read_ws). */
+  /** Only items this workspace reads (its id is in their read_ws). With
+   *  `across`, the switcher's workspace instead: its items come first. */
   ws?: string;
+  /** `across=1` (task f26a516e): a search with a term looks in every
+   *  workspace the caller reads; `ws` then orders the items (its own
+   *  first) and narrows nothing, and the folders that match come too. Each
+   *  item names the workspace it opens in (`workspace`). An empty term (the
+   *  A to Z view) ignores it. */
+  across?: boolean;
   /** Only items carrying this tag. */
   tag?: string;
 };
@@ -217,10 +237,14 @@ export const TREE_TAGS_LIST_MAX = 40;
 export type TreeSearchResult = {
   kind: TreeKind;
   folders: Array<TreeFolder & { crumbs: TreeCrumb[] }>;
-  items: Array<TreeItem & { crumbs: TreeCrumb[] }>;
+  /** `workspace`: asked `across`, where the item opens (HitWorkspace). */
+  items: Array<TreeItem & { crumbs: TreeCrumb[] } & HitWorkspaceField>;
   nextCursor: string | null;
   /** Asked with `?ws=<id>` (ListWsEcho). */
   ws?: string;
+  /** Asked `across` with a term: the search covered every workspace the
+   *  caller reads. Absent from a brain before it (which narrowed by `ws`). */
+  across?: true;
 };
 
 /** The flat views beside the tree: this login's pins, recent and most used
