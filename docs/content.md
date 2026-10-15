@@ -174,27 +174,43 @@ model call.
 
 **The work stamp.** The reset stamps the work it asks for on the row,
 `data.index_work` (`INDEX_WORK_KEY`), and the extractor's gate reads the
-stamp, not the shape of the row (`embedWork` in `gates.ts`). An `embed`
-stamp is never a model call, whatever else the row holds:
+stamp, not the shape of the row (`embedWork` in `gates.ts`). One module sets,
+reads and drops it, `packages/db/src/index-work.ts`, and it holds the one
+meaning of "a summary" every reader and writer uses (`hasSummary`, and
+`hasSummarySql` for the same test in SQL): a string with something other than
+whitespace in it. An empty summary (`summary: ''`, written when a model reply
+was not JSON) is no summary. markContentChanged is the only code that sets the
+stamp (`packages/db/src/edit-check.test.ts` holds every other product file to
+not spelling the key). An `embed` stamp is never a model call, whatever else
+the row holds:
 
 - with a summary (with the completion marker, or an item extracted before
   the marker existed): the vector from the title and that summary;
-- with no summary, on an item the extractor has seen before (a terminal skip,
-  such as a page too short to summarise, or a completed pass): the vector
-  from the title and the text read locally (a file: its name spine; its
-  bytes are not parsed again);
-- with no summary on an item the extractor has never seen (renamed before
-  its first pass ran): its first pass runs, as it would have without the
-  rename.
+- a table keeping its summary: admitted at once, before the cost guard and
+  the key pre-flight, and the model step reuses the summary and rebuilds its
+  profile passages (no model call, so no key or chat adapter is needed: a
+  rename on a box whose cloud extractor key is missing still gets its vector);
+- with no summary, on an item indexed before (a terminal skip, such as a page
+  too short to summarise, a completed pass, or a vector the reset cleared,
+  which the stamp records as `index_work_had_vector`): the vector from the
+  title and the text read locally (a file: its name spine; its bytes are not
+  parsed again);
+- with no summary on an item never indexed (renamed before its first pass
+  ran): its first pass runs, as it would have without the rename.
 
 An `extract` stamp is never downgraded: a rename that lands while a content
 change still waits for its pass keeps `extract`, so the new content is still
 summarised. The extractor drops the stamp when it has done the work (the
-summary write, the re-embed, a terminal skip, the local index). The
-re-embed lands only while the row still has the title and the summary it was
-made from, so a job for an older title never writes over a newer rename. A
-table's cell commit is `cells` (`embed`) only when the table has a summary to
-keep; a table never summarised runs the whole pass on a commit, as before.
+summary write, the re-embed, a terminal skip, the local index), and only the
+stamp the job read when it loaded the row: a content change that lands while
+a job ends in a terminal skip keeps its `extract` stamp for its own job. (A
+second `extract` stamp over the one the job read cannot be told apart and is
+dropped; that change's own job still runs its whole pass.) The re-embed lands
+only while the row still has the title and the summary it was made from, so a
+job for an older title never writes over a newer rename. A table's cell
+commit is `cells` (`embed`) only when the table has a summary to keep; a
+table with no summary, or an empty one, runs the whole pass on a commit, as
+before.
 
 A conversation digest and a chat archive note are authored summaries the
 extractor never reads: their vector comes from their topic and summary
@@ -263,6 +279,9 @@ main in `a10-content-changed.main.json`):
 - A reused summary (a table's cell commit or new title) keeps the relation
   edges its own pass made; the extractor used to rebuild them from an empty
   list and drop them.
+- A table that reuses its summary needs no extractor key or chat adapter:
+  on main the reuse ran after the key pre-flight, so a missing cloud key
+  left a cell commit unindexed.
 
 **Follow-up in jackdaw.** The dev-tools catalog text that describes what a
 write re-indexes lives in the frontend repo (crossworks-engineering/jackdaw)
