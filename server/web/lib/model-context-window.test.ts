@@ -186,6 +186,53 @@ describe("the dashboard's background fetch is bounded (fix round 2 M1)", () => {
   });
 });
 
+describe('the cache through TtlCache (A10 #15 fix round 1, M2)', () => {
+  const agent = (model: string) => ({ provider: 'anthropic', model, apiKeyId: KEY });
+  const anthropicCalls = (spy: ReturnType<typeof vi.fn>) =>
+    spy.mock.calls.filter(([url]) => !String(url).includes('openrouter.ai')).length;
+  const settle = () => new Promise((r) => setTimeout(r, 0));
+
+  it('a stale list answers the dashboard while one refresh runs; a failed refresh keeps it', async () => {
+    let fail = false;
+    const spy = vi.fn(async (url: unknown) =>
+      String(url).includes('openrouter.ai') || fail
+        ? new Response('down', { status: 503 })
+        : Response.json({
+            data: [{ type: 'model', id: 'claude-opus-4-7', max_input_tokens: OWN }],
+          }),
+    );
+    vi.stubGlobal('fetch', spy);
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      await fetchProviderModels(OWNER, 'anthropic', { keyId: KEY });
+      expect(anthropicCalls(spy)).toBe(1);
+      // Fresh for 5 minutes (age under the TTL): the form's list is served.
+      vi.setSystemTime(Date.now() + 5 * 60_000 - 1);
+      await fetchProviderModels(OWNER, 'anthropic', { keyId: KEY });
+      expect(anthropicCalls(spy)).toBe(1);
+      // Stale: the dashboard still reads the list, and asks for one refresh.
+      vi.setSystemTime(Date.now() + 2);
+      fail = true;
+      expect(await agentContextWindow(OWNER, agent('claude-opus-4-7'))).toEqual({
+        limit: OWN,
+        source: 'live',
+      });
+      await settle();
+      expect(anthropicCalls(spy)).toBe(2);
+      // The refresh failed: the stale list still answers, and no new try
+      // inside the backoff.
+      expect(await agentContextWindow(OWNER, agent('claude-opus-4-7'))).toEqual({
+        limit: OWN,
+        source: 'live',
+      });
+      await settle();
+      expect(anthropicCalls(spy)).toBe(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
 describe('an agent on its own host (fix round 2 L1)', () => {
   it("never sends its key to the provider's public host; reads the mapping", async () => {
     const spy = vi.fn();

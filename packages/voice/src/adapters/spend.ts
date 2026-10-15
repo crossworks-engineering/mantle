@@ -14,6 +14,7 @@
  * swallows and logs any throw. A paid result is always returned, so a broken
  * recording can never turn into a retry that pays again (A10 #5 fix round 1).
  */
+import { errorMessage } from '@mantle/std';
 import { recordUsage, type ProviderUsage } from '@mantle/tracing';
 import type {
   ChatDispatcher,
@@ -36,7 +37,7 @@ export function record(build: () => ProviderUsage): void {
   try {
     recordUsage(build());
   } catch (err) {
-    console.error(`[voice] record spend: ${err instanceof Error ? err.message : String(err)}`);
+    console.error(`[voice] record spend: ${errorMessage(err)}`);
   }
 }
 

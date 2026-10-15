@@ -119,12 +119,9 @@ export const ERROR_IDIOM_ALLOWED = {
     'the fallback is the value itself (a non-Error logs as itself, errorMessage would log String(err))',
   'packages/turn-stream/src/publish.ts':
     'the fallback is the value itself (a non-Error logs as itself, errorMessage would log String(err))',
-  'packages/voice/src/adapters/openrouter-chat.ts':
-    'in flight on feat/anthropic-ws: folds once that lands',
-  'packages/voice/src/adapters/openrouter-tts.ts':
-    'in flight on feat/anthropic-ws: folds once that lands',
-  'packages/voice/src/adapters/spend.ts': 'in flight on feat/anthropic-ws: folds once that lands',
-  'packages/voice/src/adapters/sse.ts': 'in flight on feat/anthropic-ws: folds once that lands',
+  'packages/voice/src/adapters/openrouter-tts.ts': 'the fallback is a fixed text, not String(err)',
+  'packages/voice/src/adapters/sse.ts':
+    'the fallback is the value itself (a non-Error logs as itself, errorMessage would log String(err))',
   'server/api/src/agent/extract-queue.ts':
     'the fallback is the value itself (a non-Error logs as itself, errorMessage would log String(err))',
   'server/api/src/agent/extract/entities.ts':
@@ -205,7 +202,6 @@ export const TTL_AGE_CHECK_ALLOWED = {
     "a token held for the provider's own lifetime, on a clock each call passes in",
   'packages/tracing/src/model-context.ts':
     'the one OpenRouter catalog: refreshed past its TTL, the last good rows kept on a failure',
-  'server/web/lib/model-explorer.ts': 'in flight on feat/anthropic-ws: folds once that lands',
 };
 
 /** @type {AllowList} */

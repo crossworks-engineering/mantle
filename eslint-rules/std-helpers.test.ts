@@ -45,7 +45,7 @@ describe('small helpers copied back (A10 #15)', () => {
     expect(PATTERNS.dedupeTagsCopy!.count(at('packages/content/src/tags.ts'))).toBe(1);
     expect(PATTERNS.signalHandler!.count(at('packages/std/src/shutdown.ts'))).toBe(1);
     expect(PATTERNS.advisoryLock!.count(at('packages/db/src/advisory-lock.ts'))).toBe(2);
-    expect(PATTERNS.ttlAgeCheck!.count(at('packages/std/src/ttl-cache.ts'))).toBe(2);
+    expect(PATTERNS.ttlAgeCheck!.count(at('packages/std/src/ttl-cache.ts'))).toBe(1);
   });
 
   const tester = new RuleTester({ languageOptions: { parser: tseslint.parser } });

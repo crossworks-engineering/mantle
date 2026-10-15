@@ -46,4 +46,17 @@ describe('TtlCache (A10 #15)', () => {
     expect(c.size).toBe(1);
     expect(c.get(-1)).toBe(-1);
   });
+
+  it('peeks at an entry whatever its age, dropping nothing', () => {
+    let now = 0;
+    const c = new TtlCache<string, number>({ ttlMs: 10, now: () => now });
+    expect(c.peek('a')).toBeUndefined();
+    c.set('a', 1);
+    now = 9;
+    expect(c.peek('a')).toEqual({ value: 1, fresh: true });
+    now = 10;
+    expect(c.peek('a')).toEqual({ value: 1, fresh: false });
+    expect(c.size).toBe(1);
+    expect(c.get('a')).toBeUndefined();
+  });
 });

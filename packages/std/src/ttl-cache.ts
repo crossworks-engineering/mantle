@@ -39,7 +39,7 @@ export class TtlCache<K, V> {
   get(key: K): V | undefined {
     const hit = this.map.get(key);
     if (!hit) return undefined;
-    if (this.now() - hit.at >= hit.ttlMs) {
+    if (!this.fresh(hit, this.now())) {
       this.map.delete(key);
       return undefined;
     }
@@ -49,6 +49,15 @@ export class TtlCache<K, V> {
       this.map.set(key, hit);
     }
     return hit.value;
+  }
+
+  /** The entry under `key` whatever its age, and whether it is fresh: a
+   *  reader that serves the last value while a refresh runs (stale while
+   *  revalidate). Drops nothing and leaves the recency as it is. */
+  peek(key: K): { value: V; fresh: boolean } | undefined {
+    const hit = this.map.get(key);
+    if (!hit) return undefined;
+    return { value: hit.value, fresh: this.fresh(hit, this.now()) };
   }
 
   /** Keep `value` under `key` from now, for `ttlMs` (the cache's own when
@@ -70,7 +79,12 @@ export class TtlCache<K, V> {
   /** Drop every stale entry (a cache read by key only, swept now and then). */
   prune(): void {
     const now = this.now();
-    for (const [k, e] of this.map) if (now - e.at >= e.ttlMs) this.map.delete(k);
+    for (const [k, e] of this.map) if (!this.fresh(e, now)) this.map.delete(k);
+  }
+
+  /** The one freshness rule: the age is under the entry's TTL. */
+  private fresh(e: Entry<V>, now: number): boolean {
+    return now - e.at < e.ttlMs;
   }
 
   clear(): void {

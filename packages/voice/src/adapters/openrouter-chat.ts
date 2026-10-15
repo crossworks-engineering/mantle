@@ -33,6 +33,7 @@ import {
   STREAM_IDLE_TIMEOUT_MS,
   abortable,
   chatAbortSignal,
+  safeDelta,
   streamAbort,
   withIdleTimeout,
 } from './sse';
@@ -44,7 +45,6 @@ import type {
   ChatModelInfo,
   ChatOptions,
   ChatResult,
-  ChatStreamDelta,
   ChatStreamSink,
   ChatToolCall,
   ReasoningDetail,
@@ -1065,18 +1065,6 @@ async function openrouterChatStream(
     reportedCostUsd,
     ...(details ? { reasoningDetails: details } : {}),
   };
-}
-
-/** Call the delta sink without ever letting it break the stream loop. */
-function safeDelta(onDelta: ChatStreamSink, delta: ChatStreamDelta): void {
-  try {
-    onDelta(delta);
-  } catch (err) {
-    console.warn(
-      '[openrouter-chat] delta sink threw (ignored):',
-      err instanceof Error ? err.message : err,
-    );
-  }
 }
 
 let warnedRouteOverride = false;

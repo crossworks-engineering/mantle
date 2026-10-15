@@ -37,6 +37,7 @@ import {
   NET_TIMEOUTS,
   ProviderHttpError,
   publicProviderErrorMessage,
+  TtlCache,
   timeoutSignal,
 } from '@mantle/std';
 
@@ -432,7 +433,9 @@ const FETCHERS: Partial<Record<ProviderId, Fetcher>> = {
  *  must not answer for the other. A keyless provider (OpenRouter's public
  *  catalog) keeps one entry. */
 const CACHE_TTL_MS = 5 * 60 * 1000;
-const cache = new Map<string, ProviderModelsResult>();
+/** A stale entry stays until a fetch replaces it: the dashboard reads the
+ *  last list while its background refresh runs (peek). */
+const cache = new TtlCache<string, ProviderModelsResult>({ ttlMs: CACHE_TTL_MS });
 
 /** One fetch per cache slot at a time: a caller that finds one running gets
  *  its answer (N agents on one key on a cold cache make one request). */
@@ -445,7 +448,7 @@ const inflight = new Map<string, Promise<ProviderModelsResult>>();
  *  the owner asks for (the form, Refresh) is not held back, and its success
  *  clears the mark. */
 const FAILURE_BACKOFF_MS = 5 * 60 * 1000;
-const failedAt = new Map<string, number>();
+const failedAt = new TtlCache<string, true>({ ttlMs: FAILURE_BACKOFF_MS });
 
 /** The cache entry for `provider` fetched with key `keyId` (null: keyless). */
 export function modelCacheKey(provider: ProviderId, keyId: string | null): string {
@@ -485,8 +488,8 @@ export async function fetchProviderModels(
   }
   const slot = modelCacheKey(provider, keyId);
   if (!opts.force) {
-    const hit = cache.get(slot);
-    if (hit && Date.now() - hit.fetchedAt < CACHE_TTL_MS) return hit;
+    const hit = cache.peek(slot);
+    if (hit?.fresh) return hit.value;
   }
   // No await between this check and the set: concurrent callers share one.
   const running = inflight.get(slot);
@@ -520,7 +523,7 @@ async function fetchIntoSlot(
     failedAt.delete(slot);
     return result;
   } catch (err) {
-    failedAt.set(slot, Date.now());
+    failedAt.set(slot, true);
     const named =
       err instanceof ProviderHttpError
         ? new ProviderHttpError({ provider, status: err.status, body: err.body, what: 'models' })
@@ -612,14 +615,13 @@ async function cachedListedWindow(
     : null;
   if (fetcher.needsKey && !keyId) return undefined;
   const slot = modelCacheKey(provider, keyId);
-  const hit = cache.get(slot);
-  const failed = failedAt.get(slot);
-  const backingOff = failed !== undefined && Date.now() - failed < FAILURE_BACKOFF_MS;
-  if ((!hit || Date.now() - hit.fetchedAt >= CACHE_TTL_MS) && !backingOff) {
+  const hit = cache.peek(slot);
+  const backingOff = failedAt.get(slot) !== undefined;
+  if (!hit?.fresh && !backingOff) {
     void fetchProviderModels(ownerId, provider, { keyId }).catch(() => {});
   }
   const id = agent.model.trim().toLowerCase();
-  return hit?.models.find((m) => m.id.toLowerCase() === id)?.contextTokens;
+  return hit?.value.models.find((m) => m.id.toLowerCase() === id)?.contextTokens;
 }
 
 /** Provider ids this explorer can fetch a model list for. */
