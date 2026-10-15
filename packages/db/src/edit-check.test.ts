@@ -10,7 +10,7 @@ import {
   ACCESS_MATRIX,
   APP_CODE_COLUMNS,
   APP_SWITCH_COLUMNS,
-  EDIT_CHECK_RO_TRIGGER,
+  EDIT_CHECK_MIGRATION_TRIGGERS,
   NODE_EDIT_COLUMNS,
   editCheckTriggers,
   writeRoleWrites,
@@ -295,7 +295,7 @@ describe('the edit check triggers from the matrix (editCheckTriggers)', () => {
             'embedding',
           ])
         : []) {
-        expect(tr.name).not.toBe(EDIT_CHECK_RO_TRIGGER);
+        expect(EDIT_CHECK_MIGRATION_TRIGGERS).not.toContain(tr.name);
         expect(tr.name).toMatch(/^mantle_edit_check_[a-z_]+$/);
       }
     }

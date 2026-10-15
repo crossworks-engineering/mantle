@@ -311,7 +311,7 @@ queue-work server/web/workers/runs.ts the run's login as it is now, else login(o
 request-slot packages/db/src/viewer.ts defines the helper: runInRequestSlot starts a request as system(http:no-login)
 request-slot server/web/server/middleware/gate.ts system(http:gate) for the gate's own lookups (an API key, a token); a routed request's slot, opened by enterCall: system(http:no-login), then what the guard names; a page's own slot (A4 step 2): the /s page as system(http:share-page), then the link or the contact the share gate names; a render page as system(http:render), then the render cookie's login
 timeout-loop packages/content/src/app-broker.ts the caller's actor: a drain sleep inside an app database restore
-timeout-loop packages/content/src/app-table-exports.ts the scheduling caller's actor, which the debounce timer carries to the export sync
+timeout-loop packages/content/src/app-table-exports.ts system(app-export) for the export sync, whoever scheduled it (F9: never a contact share's actor)
 timeout-loop packages/db/src/access-matrix.ts the caller's actor (migrate's): the write role sync's retry sleep
 timeout-loop packages/db/src/client.ts the caller's actor: a retry sleep
 timeout-loop packages/db/src/resolve-owner.ts the caller's actor: the wait for the first signup

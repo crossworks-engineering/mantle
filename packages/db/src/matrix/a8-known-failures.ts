@@ -9,12 +9,7 @@
  * on a failure not listed, and on a listed one that passes (the list only
  * shrinks). docs/actors.md, "A8 matrix", names each finding.
  */
-import {
-  GUIDE_ACTIONS,
-  GUIDE_PLACEMENTS,
-  GUIDE_WORKSPACE_KINDS,
-  expectedAccess,
-} from './guide-oracle';
+import { GUIDE_WORKSPACE_KINDS, expectedAccess } from './guide-oracle';
 
 /** F4. An Admin user's write request runs on the system pool with its scope
  *  on the transaction (W6a M1, until A4 puts its reads in the scope:
@@ -36,24 +31,6 @@ const F4 = 'F4 an Admin write request on the system pool: edits not held to its 
  *  only. A rule the product has and the guide does not name (every fixture
  *  item is read by W and R, and has an open link). */
 const F6 = 'F6 a peer may not edit a shared item (a rule the guide does not name)';
-
-/** F9. A contact share's write is named system work on the system pool
- *  (docs/actors.md: "its app's data, when the share allows it"), so the
- *  database holds a statement it sends to nothing but a snapshot copy's
- *  read-only rule: an edit, a draft, a delete, a move, a grant change, a
- *  link and a create of any item are made. Only the /s broker holds it, by
- *  sending none but its app's data (the contact-share surface cells pass,
- *  and its deny cells: an Informational app, a share that is no app).
- *  The guide: a contact share writes only its app's data. A defence in
- *  depth gap, not reachable by a contact today (the round 2 re-audit), with
- *  one caveat: the debounced export sync
- *  (packages/content/src/app-table-exports.ts scheduleAppTableExportSync, a
- *  setTimeout) inherits the request's contact:rw actor, so its writes run
- *  as the contact. The fix point: a statement trigger next to
- *  mantle_edit_check_ro (migration 0280, section 5) refusing a statement on
- *  an item table but app_databases WHEN mantle.actor = 'contact:rw', and the
- *  dirty stamp and the export sync bound to a named system actor. */
-const F9 = 'F9 a contact share’s write on the system pool: not held to its app’s data';
 
 /** The actor check modes the surface cells run in (docs/update-prod.md:
  *  off, the fleet's default; warn; on). */
@@ -98,34 +75,9 @@ function adminSystemPoolEdits(): Record<string, KnownFailure> {
   return out;
 }
 
-/** F9's cells: each write a contact share with Can write may not make,
- *  as the oracle reads the guide, but those a snapshot copy refuses to
- *  everyone (update-prod.md: its author may delete it). */
-function contactSystemPoolWrites(): Record<string, KnownFailure> {
-  const copyRefuses = ['edit', 'editDraft', 'move', 'grantAdd', 'link'];
-  const out: Record<string, KnownFailure> = {};
-  for (const kind of GUIDE_WORKSPACE_KINDS) {
-    for (const placement of GUIDE_PLACEMENTS) {
-      for (const action of GUIDE_ACTIONS) {
-        const want = expectedAccess(
-          { surface: 'sql', placement, actor: 'contact-rw' },
-          null,
-          kind,
-          action,
-        );
-        if ('na' in want || want.allow) continue;
-        if (placement === 'snapshot' && copyRefuses.includes(action)) continue;
-        out[`contact-rw/- ${action} ${kind} @${placement}`] = known(F9, 'changed (');
-      }
-    }
-  }
-  return out;
-}
-
 export const KNOWN_FAILURES: Readonly<Record<string, KnownFailure>> = {
   // The grid (SQL).
   ...adminSystemPoolEdits(),
-  ...contactSystemPoolWrites(),
   // The surface cells (all three check modes unless named).
   'peer login/owner edit note @admin': known(F6, 'a peer cannot change its content'),
   'peer login/writeGrant edit note @folder': known(F6, 'a peer cannot change its content'),

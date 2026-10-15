@@ -840,6 +840,20 @@ export type EditCheckTrigger = { name: string; ddl: string };
  *  never by editCheckTriggers. */
 export const EDIT_CHECK_RO_TRIGGER = 'mantle_edit_check_ro';
 
+/** A contact share writes its app's data only (0294, A8 matrix F9): one per
+ *  item table but app_databases and node_acl_head, made by its migration,
+ *  never by editCheckTriggers. */
+export const EDIT_CHECK_CONTACT_TRIGGER = 'mantle_edit_check_contact';
+
+/** The edit check's triggers its migrations make (of the family's name, so
+ *  mantle_set_edit_check switches them with the rest): migrate's sync of
+ *  the matrix-made ones leaves them alone, and the matrix may not use the
+ *  names. */
+export const EDIT_CHECK_MIGRATION_TRIGGERS: readonly string[] = [
+  EDIT_CHECK_RO_TRIGGER,
+  EDIT_CHECK_CONTACT_TRIGGER,
+];
+
 const IDENT = /^[a-z_][a-z0-9_]*$/;
 const EDIT_NEEDS: ReadonlySet<string> = new Set([
   'edit',
@@ -988,7 +1002,9 @@ export function editCheckTriggers(
     });
   }
   for (const x of out) {
-    if (x.name === EDIT_CHECK_RO_TRIGGER) throw new Error(`${where}: ${x.name} is reserved`);
+    if (EDIT_CHECK_MIGRATION_TRIGGERS.includes(x.name)) {
+      throw new Error(`${where}: ${x.name} is reserved`);
+    }
   }
   return out;
 }
@@ -1038,7 +1054,7 @@ async function syncEditChecks(
       from pg_trigger tg
      where tg.tgrelid = ${table}::regclass and not tg.tgisinternal
        and (tg.tgname = 'mantle_edit_check' or tg.tgname like 'mantle\\_edit\\_check\\_%')
-       and tg.tgname <> ${EDIT_CHECK_RO_TRIGGER}`;
+       and tg.tgname::text <> all(${[...EDIT_CHECK_MIGRATION_TRIGGERS]}::text[])`;
   const wanted = new Map(want.map((w) => [w.name, w]));
   const rel = quoteTable(table);
   let off: boolean | null = null;
@@ -1273,7 +1289,8 @@ export async function syncWriteRoleRules(sql: ReturnType<typeof postgres>): Prom
       join pg_class c on c.oid = tg.tgrelid join pg_namespace n on n.oid = c.relnamespace
      where (tg.tgname = 'mantle_write_check' or tg.tgname = 'mantle_edit_check'
             or tg.tgname like 'mantle\\_edit\\_check\\_%')
-       and tg.tgname <> ${EDIT_CHECK_RO_TRIGGER} and n.nspname in ('public', 'auth')`;
+       and tg.tgname::text <> all(${[...EDIT_CHECK_MIGRATION_TRIGGERS]}::text[])
+       and n.nspname in ('public', 'auth')`;
   const tables = [...new Set([...WRITE_ROLE_TABLES, ...others.map((r) => r.t)])].sort();
   for (const table of tables) {
     const t = byTable.get(table);

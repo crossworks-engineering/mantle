@@ -2052,6 +2052,13 @@
       "when": 1790196840000,
       "tag": "0293_a6b_scope_exits",
       "breakpoints": true
+    },
+    {
+      "idx": 294,
+      "version": "7",
+      "when": 1790196960000,
+      "tag": "0294_contact_rw_app_data_only",
+      "breakpoints": true
     }
   ]
 }

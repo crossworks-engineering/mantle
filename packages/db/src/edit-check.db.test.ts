@@ -402,6 +402,51 @@ describe.skipIf(!URL)('the edit check (arch A3a)', () => {
     await setMode('off');
   });
 
+  // ── A contact share writes its app's data only (0294, A8 matrix F9) ─────
+
+  it('a contact share with Can write changes no item but its app’s data: on refuses, warn reports, off runs', async () => {
+    const rw: Who = { ws: [], mod: [], login: '', actor: 'contact:rw', mode: 'rw' };
+    const writes: [string, (tx: postgres.TransactionSql) => Promise<{ count: number }>][] = [
+      ['an edit', (tx) => tx`update nodes set title = title where id = ${n.note}`],
+      ['a delete', (tx) => tx`delete from nodes where id = ${n.note}`],
+      ['a grant', (tx) => tx`update item_grants set write = write where node_id = ${n.note}`],
+      ['a link', (tx) => tx`update shares set revoked_at = revoked_at where node_id = ${n.note}`],
+      [
+        'the export stamp',
+        (tx) => tx`update app_table_exports set last_write_at = now() where app_node_id = ${n.app}`,
+      ],
+    ];
+    const appData = (tx: postgres.TransactionSql) =>
+      tx`update app_databases set size_bytes = size_bytes where app_node_id = ${n.app}`;
+    await setMode('on');
+    for (const [what, fn] of writes) {
+      expect(await attempt(rw, fn, [n.note], sql), what).toMatchObject({
+        code: '42501',
+        detail: 'ro_actor',
+        message: expect.stringContaining('a contact share writes its app'),
+      });
+    }
+    expect(await attempt(rw, appData, [], sql)).toMatchObject({ rows: expect.any(Number) });
+    // The brain's own export bookkeeping, as system(app-export), writes.
+    const bookkeeping = { ...rw, actor: 'system:app-export' };
+    expect(await attempt(bookkeeping, writes[4]![1], [], sql)).toMatchObject({
+      rows: expect.any(Number),
+    });
+    // A contact share without Can write: the read-only refusal, as before.
+    expect(
+      await attempt({ ...rw, actor: 'contact:ro', mode: 'ro' }, appData, [], sql),
+    ).toMatchObject({ code: '42501', detail: 'ro_actor' });
+    await setMode('warn');
+    const warned = await attempt(rw, writes[0]![1], [n.note], sql);
+    expect(warned).toMatchObject({ rows: 1 });
+    expect(editMisses(warned)).toHaveLength(1);
+    expect(editMisses(await attempt(rw, appData, [], sql))).toEqual([]);
+    await setMode('off');
+    const off = await attempt(rw, writes[0]![1], [n.note], sql);
+    expect(off).toMatchObject({ rows: 1 });
+    expect(editMisses(off)).toEqual([]);
+  });
+
   // ── The heads locks filtered by the scope ─────────────────────────────────
 
   it('the heads locks drop the ids the scope does not read: on drops, warn reports and keeps, off keeps', async () => {
@@ -954,7 +999,8 @@ describe.skipIf(!URL)('the edit check (arch A3a)', () => {
         select tg.tgrelid::regclass::text as t, tg.tgname::text as name, tg.oid::int as oid,
                tg.tgenabled <> 'D' as on
           from pg_trigger tg
-         where tg.tgname like 'mantle\\_edit\\_check\\_%' and tg.tgname <> 'mantle_edit_check_ro'
+         where tg.tgname like 'mantle\\_edit\\_check\\_%'
+           and tg.tgname not in ('mantle_edit_check_ro', 'mantle_edit_check_contact')
          order by 1, 2`;
     const before = await triggers();
     await syncWriteRoleRules(sql);
@@ -995,14 +1041,19 @@ describe.skipIf(!URL)('the edit check (arch A3a)', () => {
     expect((await triggers()).some((r) => r.name === 'mantle_edit_check_stray')).toBe(false);
   });
 
-  it('coverage: every item table but the heads rows has the read-only refusal; the derived keys are one list', async () => {
-    const rows = await sql<{ t: string; ro: boolean }[]>`
+  it('coverage: every item table but the heads rows has the read-only refusal, and the contact share’s but its app’s data; the derived keys are one list', async () => {
+    const rows = await sql<{ t: string; ro: boolean; contact: boolean }[]>`
       select c.tbl::text as t,
              exists (select 1 from pg_trigger g where g.tgrelid = c.tbl
-                        and g.tgname = 'mantle_edit_check_ro') as ro
+                        and g.tgname = 'mantle_edit_check_ro') as ro,
+             exists (select 1 from pg_trigger g where g.tgrelid = c.tbl
+                        and g.tgname = 'mantle_edit_check_contact') as contact
         from mantle_actor_check_tables() c`;
     expect(rows.length).toBeGreaterThan(20);
-    for (const r of rows) expect([r.t, r.ro]).toEqual([r.t, r.t !== 'node_acl_head']);
+    for (const r of rows) {
+      expect([r.t, r.ro]).toEqual([r.t, r.t !== 'node_acl_head']);
+      expect([r.t, r.contact]).toEqual([r.t, !['node_acl_head', 'app_databases'].includes(r.t)]);
+    }
     const [k] = await sql<{ keys: string[] }[]>`select mantle_node_derived_keys() as keys`;
     expect([...k!.keys].sort()).toEqual([...NODE_DERIVED_KEYS].sort());
     // The rule written once: the scope forms are the array forms.

@@ -39,7 +39,14 @@
  */
 import { createHash } from 'node:crypto';
 import { and, eq, isNotNull, isNull, lt, lte, or, sql } from 'drizzle-orm';
-import { db, nodes, appDatabases, appTableExports, type AppTableExport } from '@mantle/db';
+import {
+  db,
+  nodes,
+  appDatabases,
+  appTableExports,
+  runAsSystem,
+  type AppTableExport,
+} from '@mantle/db';
 import { importMaxRows } from '@mantle/tabledb';
 import { getApp } from './apps';
 import { appDbReadQuery } from './app-broker';
@@ -291,6 +298,13 @@ async function clearDirty(linkId: string, readAt: Date): Promise<void> {
     );
 }
 
+/** Who the export bookkeeping runs as: the dirty stamp and the debounced
+ *  sync are the brain's own work, never the writer's (A8 matrix F9). A
+ *  contact share's request runs as contact:rw, which writes its app's data
+ *  only (migration 0294); a timer would otherwise carry the request's actor
+ *  to the sync's Table writes 15 s later. */
+const EXPORT_ACTOR = 'app-export';
+
 /** Stamp an app's exports with a write: dirty since the burst's first
  *  write, and the time of this one. EVERY write stamps (one indexed update;
  *  no exports, no rows): a write in another process, or one that lands
@@ -298,16 +312,19 @@ async function clearDirty(linkId: string, readAt: Date): Promise<void> {
  *  still runs if this fails. */
 function markExportsDirty(ownerId: string, appNodeId: string): void {
   try {
-    void db
-      .update(appTableExports)
-      .set({
-        dirtySince: sql`coalesce(${appTableExports.dirtySince}, now())`,
-        lastWriteAt: sql`now()`,
-      })
-      .where(and(eq(appTableExports.ownerId, ownerId), eq(appTableExports.appNodeId, appNodeId)))
-      .catch((err: unknown) =>
-        console.error('[app-table-exports] could not mark exports dirty', appNodeId, err),
-      );
+    void runAsSystem(EXPORT_ACTOR, () =>
+      db
+        .update(appTableExports)
+        .set({
+          dirtySince: sql`coalesce(${appTableExports.dirtySince}, now())`,
+          lastWriteAt: sql`now()`,
+        })
+        .where(
+          and(eq(appTableExports.ownerId, ownerId), eq(appTableExports.appNodeId, appNodeId)),
+        ),
+    ).catch((err: unknown) =>
+      console.error('[app-table-exports] could not mark exports dirty', appNodeId, err),
+    );
   } catch (err) {
     console.error('[app-table-exports] could not mark exports dirty', appNodeId, err);
   }
@@ -506,7 +523,11 @@ export function scheduleAppTableExportSync(ownerId: string, appNodeId: string): 
   if (existing) clearTimeout(existing.timer);
   const firstAt = existing?.firstAt ?? Date.now();
   const wait = exportSyncDelay(firstAt, Date.now());
-  const timer = setTimeout(() => void runScheduledSync(ownerId, appNodeId, key), wait);
+  // The timer runs as system(app-export), whoever scheduled it (F9).
+  const timer = setTimeout(
+    () => void runAsSystem(EXPORT_ACTOR, () => runScheduledSync(ownerId, appNodeId, key)),
+    wait,
+  );
   // Never hold a process open for a pending sync (dev servers, tests, CLIs).
   timer.unref?.();
   pending.set(key, { timer, firstAt });

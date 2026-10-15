@@ -23,6 +23,8 @@ export default defineConfig({
       'server/web/server/a3b2-store-brokers.db.test.ts',
       // A8 fix round 1 (L6): the A8 findings' cells with both checks on.
       'server/web/server/a8-findings.db.test.ts',
+      // A8 matrix F9 (0294): a contact share's write and its export sync.
+      'server/web/server/f9-contact-export.db.test.ts',
     ],
     env: { ...onBase.test?.env, MANTLE_TEST_EDIT_CHECK: 'on' },
   },

@@ -11,8 +11,10 @@
  *
  * The sync is scheduled in the caller's scope, as each writer did: a
  * member's and an MCP login's write run as system work ('app-data') around
- * the whole call, so the export bookkeeping does too; the owner's and a
- * link's run as they always ran. Debounced and hash-gated
+ * the whole call; the owner's and a link's run as they always ran. The
+ * export bookkeeping itself (the dirty stamp and the debounced sync) runs
+ * as system(app-export) whoever wrote: a contact share's own actor writes
+ * its app's data only (A8 matrix F9, migration 0294). Debounced and hash-gated
  * (app-table-exports.ts), so a chatty app costs no extra commits.
  *
  * Server-only (opens the app SQLite): imported as
