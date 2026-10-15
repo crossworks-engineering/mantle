@@ -17,6 +17,8 @@ const h = vi.hoisted(() => ({
   link: null as null | Record<string, unknown>,
   commits: [] as Array<{ at: number; depth: unknown; version: number }>,
   created: [] as Array<Record<string, unknown>>,
+  /** The system reasons the export bookkeeping ran as (runAsSystem). */
+  actors: [] as string[],
 }));
 
 vi.mock('drizzle-orm', () => ({
@@ -63,7 +65,12 @@ vi.mock('@mantle/db', () => {
   const insert = () => ({
     values: (v: Record<string, unknown>) => ({ returning: async () => [{ id: 'new-link', ...v }] }),
   });
-  return { db: { select, update, insert }, nodes, appDatabases, appTableExports };
+  // The actor binding (A8 F9): the bookkeeping runs as system(app-export).
+  const runAsSystem = (reason: string, fn: () => unknown) => {
+    h.actors.push(reason);
+    return Promise.resolve(fn());
+  };
+  return { db: { select, update, insert }, nodes, appDatabases, appTableExports, runAsSystem };
 });
 vi.mock('@mantle/tabledb', () => ({ importMaxRows: () => 100_000 }));
 vi.mock('./apps', () => ({ getApp: vi.fn(async () => ({ title: 'Orders' })) }));
@@ -99,6 +106,7 @@ beforeEach(() => {
   h.tableData = {};
   h.commits.length = 0;
   h.created.length = 0;
+  h.actors.length = 0;
   h.link = {
     id: `link-${appSeq}`,
     ownerId: OWNER,
@@ -130,6 +138,8 @@ describe('export sync', () => {
     await vi.advanceTimersByTimeAsync(16_000);
     expect(h.commits).toHaveLength(1);
     expect(h.link!.dirtySince).toBeNull();
+    // The stamp and the sync ran as system(app-export), never the writer.
+    expect(h.actors).toEqual(['app-export', 'app-export']);
   });
 
   it('an app keeps its timing and full depth', async () => {
