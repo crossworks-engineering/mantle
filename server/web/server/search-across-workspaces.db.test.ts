@@ -149,7 +149,8 @@ describe.skipIf(!URL)('search across workspaces (task f26a516e)', () => {
       (${solo}, ${email('solo')}, 'x', false, 'member', 'Sol Solo')`);
     await x(sql`insert into spaces (id, kind, login_id) values (${owner}, 'brain', ${owner})
       on conflict (id) do nothing`);
-    await x(sql`select * from mantle_ws_migrate()`);
+    // As the migrator: the runtime role may not run the switch (arch A9).
+    await ts.runWorkspacesSwitch(scratch.url);
     // The outside login comes after the switch: it joins no workspace by
     // itself (0286), only the one it makes.
     await x(sql`insert into auth.users (id, email, password_hash, is_owner, role, display_name)

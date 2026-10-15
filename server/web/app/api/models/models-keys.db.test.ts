@@ -67,7 +67,10 @@ describe.skipIf(!URL)('the model list with a key not labelled default', () => {
   beforeAll(async () => {
     process.env.DATABASE_URL = URL;
     prevMasterKey = process.env.MANTLE_MASTER_KEY;
-    process.env.MANTLE_MASTER_KEY = Buffer.alloc(32, 9).toString('base64');
+    // A 32-byte key for the vault, the caller's when it has one: under
+    // MANTLE_DB_RUNTIME_ROLE the system pool's password is derived from it,
+    // so another key here would lock this file's pool out (arch A9).
+    process.env.MANTLE_MASTER_KEY ??= Buffer.alloc(32, 9).toString('base64');
     m = await import('@mantle/db');
     keys = await import('@mantle/api-keys');
     explorer = await import('@/lib/model-explorer');
