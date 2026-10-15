@@ -195,6 +195,9 @@ const V1_READ: Readonly<Record<string, string>> = {
  *  approval (execute-item.ts "requires operator approval"; recipe.ts
  *  "recipes can't call tools that require approval"). */
 const APPROVAL_WAIT = /requires? (operator )?approval/;
+/** The refusal of an owner-side tool on a surface that is not the owner's
+ *  (packages/tools/src/surface.ts OWNER_ONLY_ERROR). */
+const OWNER_SIDE = /owner-side tool: not available here/;
 /** The refusal of a run whose login is no user of Admin (withRunScope:
  *  a run with no workspace is Admin's, and withAgentScope refuses a login
  *  with no seat there). */
@@ -531,6 +534,7 @@ describe.skipIf(!DB_URL)('A8 surface cells: every way in gives the oracle’s an
   const mcpOnly = new Set<string>();
   const confirmGated = new Set<string>();
   const peerRisky = new Set<string>();
+  const ownerSide = new Set<string>();
   const toolEntry = (
     surface: GuideSurface,
     actor: GuideActor,
@@ -839,6 +843,15 @@ describe.skipIf(!DB_URL)('A8 surface cells: every way in gives the oracle’s an
       }
       return { ok: false, thrown: true, text: `RUN CRASH ${said}` };
     });
+  const teamEntry = toolEntry(
+    'team-turn',
+    'turn',
+    MEMBERS,
+    inTurn(
+      (r) => ({ kind: 'team', loginId: fx.logins[r] }),
+      () => t.turnCaller(),
+    ),
+  );
   const runEntry = toolEntry('run', 'turn', ALL, (role, slug, input) =>
     runItemCall(role, slug, input),
   );
@@ -944,15 +957,23 @@ describe.skipIf(!DB_URL)('A8 surface cells: every way in gives the oracle’s an
           () => t.turnCaller(),
         ),
       ),
-      toolEntry(
-        'team-turn',
-        'turn',
-        MEMBERS,
-        inTurn(
-          (r) => ({ kind: 'team', loginId: fx.logins[r] }),
-          () => t.turnCaller(),
-        ),
-      ),
+      {
+        ...teamEntry,
+        // A surface limit the oracle cannot see: the team chat calls no
+        // owner-side tool (`app_delete` is one: ownerOnly), for everyone.
+        // The home Moderator's app delete, allowed by hand (plan s34), is
+        // run whatever the pick so the limit stays pinned.
+        narrow: (kind, action, role) => {
+          const tc = toolCall(kind, action, 'x');
+          return (
+            teamEntry.narrow!(kind, action, role) ??
+            (tc && ownerSide.has(tc.slug)
+              ? { why: `the team chat calls no ${tc.slug}: an owner-side tool`, says: OWNER_SIDE }
+              : null)
+          );
+        },
+        always: [{ role: 'homeModerator', kind: 'app', placement: 'root', action: 'delete' }],
+      },
       toolEntry(
         'telegram',
         'turn',
@@ -1212,6 +1233,7 @@ describe.skipIf(!DB_URL)('A8 surface cells: every way in gives the oracle’s an
       if (b.mcpOnly) mcpOnly.add(b.slug);
       if (b.requiresConfirm) confirmGated.add(b.slug);
       if (b.policy?.peerRisky) peerRisky.add(b.slug);
+      if (b.ownerOnly) ownerSide.add(b.slug);
     }
     const unresolved: string[] = [];
     for (const slug of slugs) {
