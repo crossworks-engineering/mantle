@@ -49,6 +49,8 @@ vi.mock('../../../../packages/db/src/client', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../../../packages/db/src/client')>()),
   scopeHoldsAdmin: async () => h.view.holdsAdmin,
   scopeHasArea: async (a: string) => h.view.holdsAdmin && h.view.areas.has(a),
+  // No database: every Moderator seat a turn holds is held still (A8 L5).
+  moderatorSeatsNow: async (_l: string, ws: readonly string[]) => [...ws],
 }));
 vi.mock('../../../../packages/tools/src/registry', async (importOriginal) => {
   const real = await importOriginal<typeof import('../../../../packages/tools/src/registry')>();

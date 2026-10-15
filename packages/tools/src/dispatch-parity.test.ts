@@ -55,6 +55,8 @@ vi.mock('../../db/src/client', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../db/src/client')>()),
   scopeHoldsAdmin: async () => h.view.holdsAdmin,
   scopeHasArea: async (a: string) => h.view.holdsAdmin && h.view.areas.has(a),
+  // No database: every Moderator seat a turn holds is held still (A8 L5).
+  moderatorSeatsNow: async (_l: string, ws: readonly string[]) => [...ws],
   loginHasArea: async (_l: string, a: string) => h.view.areas.has(a),
   // The rollback switch's gate scope: its checks run in the scope.
   withTurnScope: async (s: Record<string, unknown>, fn: () => Promise<unknown>) => {
