@@ -3749,6 +3749,11 @@ and every Admin user's key is unchanged.
 - Left as it was (a D3 difference): a v1 create does not read `?ws=`
   (`creates` stays the v1 row's own), for every key; the base route reads
   it. Changing it would change the owner's keys.
+- The page PATCH's own key rules read the page (a shared page's content
+  is refused to a key): a member's key first gets the item gate's 404 for a
+  page its login does not read (`keyLoginMissesItem`,
+  `server/web/lib/api-v1.ts`), so the rule tells it nothing about a page it
+  may not read. An Admin user's key is answered as before.
 - The A4 sweeps record it: only member credentials on v1 rows changed
   (`a4-guard-sweep*.txt`), and the member sweep and the field check read a
   v1 row's member admission from its ROUTE_POLICY row.
