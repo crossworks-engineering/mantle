@@ -396,8 +396,9 @@ An app is an item: it has a home and grants like a page.
 
 - **Code.** A Moderator of the app's home builds and edits it.
 - **Delete.** Delete an app: its home Moderator, Admin users and the
-  owner. It goes to Recently deleted with a snapshot; only the owner
-  deletes it for good.
+  owner. It goes to Recently deleted with a snapshot. An app someone
+  other than the owner deleted waits there until the owner deletes it
+  for good.
 - **Data.** A user writes the app's data when they may edit the app: a
   Moderator of its home, or a grant with Write on. While **Informational**
   is on, nobody outside Admin writes the app's data.

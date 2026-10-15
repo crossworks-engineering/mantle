@@ -3859,7 +3859,8 @@ The detail stays in the server log.
 
 **F3: app delete (the owner's decision of 2026-10-15, plan section 34).**
 Delete an app: its home Moderator, Admin users and the owner. It goes to
-Recently deleted with a snapshot; only the owner deletes it for good. A
+Recently deleted with a snapshot; an app a non-owner deleted waits there
+until the owner deletes it for good. A
 delete is an archive (a non-owner's delete is never purged by itself), as a
 Moderator's delete of a page is. This is what the product does. The guide
 says so (docs/workspaces.md, "Apps", **Delete**).
