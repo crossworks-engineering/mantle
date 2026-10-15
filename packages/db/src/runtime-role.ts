@@ -308,10 +308,11 @@ export type OwnOutcome = { owned: string[]; failed: { rel: string; error: string
 
 /**
  * Hand every table and sequence of the app's schemas to mantle_owner, and
- * mantle_acl_internal() to mantle_system. Each change is its own statement
+ * mantle_acl_internal() to mantle_system. All in one transaction first,
  * with a short lock_timeout (ALTER ... OWNER takes the table's strongest
- * lock): a busy table is tried again three times, then left with a warning
- * for the next run. Ownership is not the runtime role's lock (it never owns
+ * lock); when a busy table fails it, each change goes on its own: a busy
+ * table is tried again three times, then left with a warning for the next
+ * run. Ownership is not the runtime role's lock (it never owns
  * anything, whoever does), so a table left behind is untidy, not a hole.
  * A sequence a column owns (serial, identity) moves with its table. Needs a
  * superuser.
