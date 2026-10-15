@@ -4796,107 +4796,121 @@ each):
 
 ## A6b handover
 
-Work in progress on branch `feat/a6b` (worktree `.claude/worktrees/a6b`).
-The honest exit count (`asSystemExits`, eslint-rules/as-system-exits.mjs)
-is **59**, from 191 on main (v0.300.63). The pin in
-scripts/arch-scoreboard.pins.json is not lowered yet (arch:check passes and
-says "went down").
+Branch `feat/a6b` (worktree `.claude/worktrees/a6b`), rebased on main
+v0.300.64 (0292 is main's). The honest exit count (`asSystemExits`,
+eslint-rules/as-system-exits.mjs, the TypeScript parser; no wrapper hides
+an exit) is **47**, from 191 on main. The pins are lowered
+(scripts/arch-scoreboard.pins.json: exits 47, files 15, reasons 14, with
+a note per reason), the allowlist says 16 sites in 15 files
+(eslint-rules/as-system-allowlist.mjs), and AS_SYSTEM_TURN_REASONS holds 14
+(twelve retired, listed in packages/db/src/viewer.ts; viewer.test.ts pins
+both).
 
-**What moved, by group (exits before -> after):**
+**What moved, by reason (main -> now):** owner-preferences 59 -> 0,
+kind-root 21 -> 0, rule-in-query 17 -> 4, login-telegram 17 -> 3,
+client-sourced-check 6 -> 0, workspace-resources 5 -> 0, workspace-write
+5 -> 4, client-sourced-mark 3 -> 0, name-taken 3 -> 0, contact-sharing
+3 -> 0, connector-binding 3 -> 1, app-trash 3 -> 1, export-link 2 -> 0,
+heartbeat-context 2 -> 0, login-notice 2 -> 0, snapshot-copies 2 -> 0,
+login-names, lexeme-stats, runs-scope-check, space-taken-authors 1 -> 0
+each.
 
-- owner-preferences 59 -> 0: loadProfilePreferences and the landing read in
-  the scope; the own-login rule (0266) already shows the brain's row. One
+- owner-preferences: loadProfilePreferences and the landing read in the
+  scope; the own-login rule (0266) already shows the brain's row. One
   named change: a member's landing read no longer makes the anchor's
   missing profile row.
-- kind-root 21 -> 0: `mantle_kind_root_id` (the files root's id only).
+- kind-root: `mantle_kind_root_id` (the files root's id only).
 - rule-in-query 17 -> 4: whoami (both), transcribe, the chat pictures and
-  the assigned assistant run in the scope as they are; the level badge
+  the assigned assistant run in the scope; the level badge
   (`mantle_agent_experience`), the inbox (`mantle_read_cursors`,
   `mantle_read_cursor_mark`), the key list and revoke
   (`mantle_access_keys_seen`, `mantle_access_key_revoke`), the pending
   badge (`mantle_pending_count`), the private workspace flag
   (`mantle_ws_private_for`); the app switches read the gate's answer
-  (`loginIsAdmin` deleted); the asset token is minted with the epoch the
-  guard checked (`mintAssetToken(anchor, login, epoch)`). Left: chat
-  continue, summarize, archive (model call and chat_threads writes) and
-  POST /api/access-keys (password hash). One named change: an Admin user
-  assigned an assistant of a workspace it is not in no longer sees that
-  assignment.
-- system work that never ran in a scope (13 -> 0): `systemWork(fn, reason)`
+  (`ownerCallerWithLogin().kind`, one reader per handler; `loginIsAdmin`
+  deleted); the asset token is minted with the epoch the guard checked.
+  Left: chat continue, summarize, archive (a model call and chat_threads
+  writes) and POST /api/access-keys (the password hash). Named change: an
+  Admin user assigned an assistant of a workspace it is not in no longer
+  sees that assignment.
+- system work that never ran in a scope: `systemWork(fn, reason)`
   (packages/db viewer.ts) runs as asSystem did and refuses a workspace
   scope (no exit): the Telegram tools, chatLoginRefusal, pairedChatOf,
   unpairRefusedChat, loginModeratesBot, a bot's chats screen, the debug
   read, the approval card, the login notices, the snapshot copies, a
-  login's MCP connector listing. `takenFromOf` deleted (no caller).
-- narrow reads 19 -> 0, by definers: connector state, rows, beyond Admin,
-  app holders, a login's connector rows, contact sharing dates, file names
+  login's MCP connector listing.
+- the narrow reads, by definers: connector state, rows, beyond Admin, app
+  holders, a login's connector rows, contact sharing dates, file names
   taken, a Table's export link, access log names, runs' workspaces, keyword
   statistics (`mantle_lexeme_df`), the manageable trash
-  (`mantle_deleted_apps`; `deletedAppHomes` folded into
-  `manageableDeletedApps`). Named stricter changes: a login's connector rule
+  (`mantle_deleted_apps`). Named stricter changes: a login's connector rule
   asked in a scope for another login, an app's connector verdict in a scope
   that does not read the app.
 - login-telegram 17 -> 3: a login's chats, the moderated chats and the
   replay by definers (`mantle_tg_my_chats`, `mantle_tg_moderated_chats`,
-  `mantle_tg_replay`, internal `mantle_login_area`); the rest system work.
-  Left: pairing.ts (3: preview, pair, block/unpair). Named stricter changes:
-  another login's chats or replay asked in a scope; the approval card's
-  logged reason (no card was ever sent from a scope).
+  `mantle_tg_replay`, internal `mantle_login_area`). Named stricter
+  changes: another login's chats or replay asked in a scope; the approval
+  card's logged reason.
+- client-sourced 9 -> 0 (this round): the check
+  (`mantle_client_sourced_any`, `mantle_client_sourced_among`), the
+  conversation's mark (`mantle_conversation_taint`,
+  `mantle_conversation_taint_keep`), the nodes a marked turn made
+  (`mantle_mark_created_client_sourced`), an export Table's mark
+  (`mantle_mark_export_client_sourced`, only when a client wrote the app),
+  and a marked turn's write rule in SQL (`mantle_client_sourced_gate`,
+  writeVerdict's targets, exported Tables, folders, assistants and tool
+  groups). Each answers over every row of the brain as the system pool did
+  (a guard held to the scope would hold back less); internal
+  `mantle_client_ws` and `mantle_client_sourced_brain`. The marks are
+  granted to the workspace role too: they only ever hold more back, and a
+  turn that answers no login runs on it. Named stricter changes: another
+  brain's ids or conversation asked in a scope are refused, and taken as
+  marked (fail closed).
+- heartbeat-context 2 -> 0 (this round): `mantle_turn_heartbeats`, a
+  turn's own open heartbeats, in a scope only the scope's login's
+  (`mantle_login_id`: the system pool with a request's write scope noted
+  reads as the system pool). Every cell as main.
+- workspace-write 5 -> 4 (this round): a new workspace by
+  `mantle_ws_create` (the write role's, WRITE_ROLE_FUNCTIONS; called in its
+  own transaction). Named stricter change: the library asked from a READ
+  scope is refused (the route makes it in a write, as main).
 
 **Migration 0293** (`0293_a6b_scope_exits.sql`, journal `when`
-1790196840000, after feat/anthropic-ws's 0292 at 1790196780000): every
-definer above, fixed search_path (pg_temp last), PUBLIC revoked, EXECUTE to
-mantle_view_user (and demo_reader); the two writes
-(`mantle_read_cursor_mark`, `mantle_access_key_revoke`) are the write
-role's (WRITE_ROLE_FUNCTIONS in access-matrix.ts), not the workspace
-role's. None is on RUNTIME_SYSTEM_FUNCTIONS (each is a viewer role's, which
-the runtime role's allowlist takes); the runtime-role test is not run yet.
-**Merge order: feat/anthropic-ws (0292) first**, or renumber; the journal
-test fails on this branch alone (the 0292 gap) until then.
+1790196840000, after main's 0292 at 1790196780000; 0294 is f9-contact's):
+every definer above, fixed search_path (pg_temp last), PUBLIC revoked,
+EXECUTE to mantle_view_user (and demo_reader for the reads); the writes
+`mantle_read_cursor_mark`, `mantle_access_key_revoke` and
+`mantle_ws_create` are the write role's only.
 
 **Sweep:** server/web/server/a6b-exit-sweep.db.test.ts, sections
-owner-preferences, kind-root, rule-in-query, narrow-reads, telegram, each
-recorded on main (v0.300.63) in off, warn and on
-(`__snapshots__/a6b-exit-sweep.<section>.<mode>.txt`, A6B_RECORD=<section>
-to record) and every cell answering as main or a named change
-(NAMED_CHANGES, with `back`, `now` and `was`). All five pass in off, warn
-and on at 0f29a881c. The file is in vitest.actor-on.config.ts.
+owner-preferences, kind-root, rule-in-query, narrow-reads, telegram,
+client-sourced, heartbeat-context, workspace-create, each recorded on main
+in off, warn and on (`__snapshots__/a6b-exit-sweep.<section>.<mode>.txt`,
+A6B_RECORD=<section> to record; this round's three on v0.300.63's code,
+which they share with v0.300.64) and every cell answering as main or a
+named change (NAMED_CHANGES: `back`, `now`, or `nowTest` for a refusal that
+quotes its own arguments, each with `was`). All eight pass in off, warn and
+on.
 
-**Known failing (unit suite, DATABASE_URL unset, at 0f29a881c):**
-migrations-journal (the 0292 gap, expected), and mocked parity tests that
-need the new imports or answers: packages/mcp-core mcp-call-snapshot,
-packages/tools builtins-read-scope (replay_window), dispatch-parity,
-pending-notify (the card), server/web app-broker-parity, a10-body-sweep,
-a4-guard-sweep. Not investigated yet: most mock `@mantle/db` without
-`systemWork` or read the old system-pool reads.
+**Left, and why (not moved this round):**
 
-**Next, in order:**
-
-1. Fix the failing unit tests above (add `systemWork` to their mocks, or
-   record the named changes), then the DB suites that touch the moved code
-   (w7a, w7d telegram, a6 grant sweep, access keys, files, runtime-role).
-2. client-sourced 9 (client-sourced.ts 6, app-table-exports mark 3):
-   definers `mantle_client_sourced_any/among`, `mantle_conversation_taint`
-   (+keep), `mantle_mark_created_client_sourced`, `mantle_client_sourced_gate`
-   (writeVerdict's rule in SQL), `mantle_mark_export_client_sourced`; answer
-   as on main (no extra scope rule: the guard must not loosen). Sweep first.
-3. workspace-write 5: write definers with the rules in SQL (see the A6
-   section above for each rule).
-4. Then toward 40: pairing 3, turn heartbeats 2 (needs the turn stamp's
-   login in SQL), heartbeat rows 6 (needs the firing heartbeat in a scope
-   setting), searchNodes 6. Likely to stay: agent-workspace 6, app-data 9,
-   admin-area 2, pending-approval 2, connector-call 1, connector binding 1,
-   page-refold 1, app-trash restore 1, audit-log 1, rule-in-query 4.
-5. L2 folds (not started): previewGrant vs mantle_grant_counts, searchUsers
-   vs mantle_ws_login_search, areasFor vs mantle_scope_has_area,
-   loginWsSql vs loadCtx/loginScopeFor, planWorkspaceMove/placeInFolder
-   holders.includes, visibility.ts any(f.holders), heldBySql vs
-   nodeAliasReadBy.
-6. Lower the pins (`node scripts/arch-scoreboard.ts --pin`, with notes),
-   the AS_SYSTEM_TURN_REASONS list and its viewer.test.ts pins, the
-   allowlist header's numbers, this section's prose; the full gates.
-
-Workstation (jasons@192.168.100.75): worktrees `a6b` (branch, pg port 56281) and `a6b-main` (main 219e18ed4 plus the sweep file, port 56282),
-containers `a6b_pg`, `a6b-main_pg`; master key in /tmp/a6b-master-key;
-scripts /tmp/a6b-verify.sh, /tmp/a6b-rec.sh, /tmp/a6b-sync.sh. Clean up with
-docker rm -f -v and git worktree remove when done.
+- workspace-write 4 (patch, archive, add user, remove user): the rules
+  (seeWorkspace's areas and Moderator seats, the assistant and landing app
+  checks, the archive's heads lock over items the caller cannot see) would
+  all have to be rewritten in SQL. A risky design for one exit each;
+  stopped and reported.
+- login-telegram 3 (pairing.ts preview, pair, block/unpair): the pair sends
+  the confirmation DM with the bot's token and runs chatLoginRefusal (system
+  work) inside; it needs the system pool. Stopped and reported.
+- heartbeat rows 6 (heartbeats/tools.ts heartbeatRow): needs the firing
+  heartbeat in a scope setting; not started.
+- keyword-candidates 6 (searchNodes): a performance exit (ids only, the
+  scope's re-read); not a definer's shape.
+- Likely to stay: app-data 9, agent-workspace 6, admin-area 2,
+  pending-approval 2, rule-in-query 4, connector-call 1, connector-binding
+  1, page-refold 1, app-trash 1, audit-log 1.
+- L2 folds (not started): previewGrant vs mantle_grant_counts, searchUsers
+  vs mantle_ws_login_search, areasFor vs mantle_scope_has_area, loginWsSql
+  vs loadCtx/loginScopeFor, planWorkspaceMove/placeInFolder
+  holders.includes, visibility.ts any(f.holders), heldBySql vs
+  nodeAliasReadBy.

@@ -155,6 +155,64 @@ const DEFINERS_THE_WRITE_ROLE_RUNS: Readonly<Record<string, string>> = {
     'a workspace’s homes, grants and removed rows, for a Moderator of it or the users area',
   'mantle_ws_login_search(text,integer,integer)':
     'logins by name or email: the users area, or a Moderator with 3 characters, 10 at most, the first page',
+  // A6b (0293): where a library left the scope for one answer, a definer
+  // returns exactly that answer, held to the scope; the workspace role's,
+  // so the write role's too (docs/actors.md, A6b).
+  'mantle_kind_root_id(uuid,text)':
+    'a kind root folder’s id (structure, no content), the brain’s only',
+  'mantle_agent_experience(uuid,uuid[])':
+    'an assistant’s level counts, for a scope that holds Admin and the assistants it reads',
+  'mantle_read_cursors(uuid,uuid)': 'the scope’s own login’s chat read cursors',
+  'mantle_access_keys_seen(uuid,integer)':
+    'the scope’s own login’s API keys (every key for an Admin user), never a hash',
+  'mantle_pending_count(uuid)': 'the pending approvals count, for a scope that holds Admin',
+  'mantle_ws_private_for(uuid,uuid)': 'whether a workspace is the scope’s own login’s private one',
+  'mantle_connector_state(uuid,text)':
+    'a connector’s id and whether it is usable, never its binding',
+  'mantle_connector_rows(uuid,text,uuid[])':
+    'which live workspaces of the brain hold a connector, with their Write tick',
+  'mantle_connector_beyond_admin(uuid,text)':
+    'whether a live workspace beyond Admin holds a connector (its Write tick)',
+  'mantle_app_holders(uuid,uuid)': 'the workspaces holding an app the scope reads',
+  'mantle_login_connector_rows(uuid,uuid)':
+    'the scope’s own login’s workspaces and the connectors each holds',
+  'mantle_contact_sharing(uuid,uuid[])': 'contact sharing dates (never the code), the brain’s only',
+  'mantle_file_name_taken(uuid,text,text)':
+    'a file name taken in a folder (structure), the brain’s',
+  'mantle_table_app_link(uuid)': 'whether a Table is an app’s export, and the app’s id',
+  'mantle_access_log_names(uuid,uuid[])':
+    'the names of the actors on the access log of an app the scope reads',
+  'mantle_runs_workspaces(uuid[],uuid[])': 'the workspace each named run is stamped with',
+  'mantle_lexeme_df(text,text,integer,integer,double precision)':
+    'the document frequency of the caller’s own query terms: numbers, never a row',
+  'mantle_deleted_apps(uuid)': 'the deleted apps the scope may manage, no code',
+  'mantle_tg_my_chats(uuid,uuid)': 'the scope’s own login’s paired Telegram chats',
+  'mantle_tg_moderated_chats(uuid,uuid)':
+    'the chats of the bots the scope’s own login moderates, with the paired login',
+  'mantle_tg_replay(uuid,uuid,timestamp with time zone,timestamp with time zone,integer)':
+    'the scope’s own login’s Telegram history in a window',
+  'mantle_client_sourced_any(uuid,uuid[])':
+    'whether any id names client-sourced text: yes or no, the brain’s only',
+  'mantle_client_sourced_among(uuid,uuid[])':
+    'which ids are client-sourced items, the brain’s only',
+  'mantle_conversation_taint(uuid,text,integer)': 'a conversation’s mark reason, the brain’s only',
+  'mantle_conversation_taint_keep(uuid,text,text)':
+    'a conversation’s mark kept (only ever holds more back), the brain’s only',
+  'mantle_mark_created_client_sourced(uuid,uuid[],integer,text)':
+    'the nodes a marked turn just made, marked (only ever holds more back)',
+  'mantle_mark_export_client_sourced(uuid,uuid,uuid)':
+    'an export Table marked, only when a client wrote its app',
+  'mantle_client_sourced_gate(uuid,uuid[],uuid[],text[],text[],text[],text[])':
+    'a marked turn’s write rule: why it waits, or none',
+  'mantle_turn_heartbeats(uuid,uuid)': 'the active heartbeats of the scope’s own login',
+  'mantle_read_cursor_mark(uuid,uuid,uuid,timestamp with time zone)':
+    WRITE_ROLE_FUNCTIONS[
+      'public.mantle_read_cursor_mark(uuid,uuid,uuid,timestamp with time zone)'
+    ]!,
+  'mantle_access_key_revoke(uuid,uuid)':
+    WRITE_ROLE_FUNCTIONS['public.mantle_access_key_revoke(uuid,uuid)']!,
+  'mantle_ws_create(uuid,uuid,text,text)':
+    WRITE_ROLE_FUNCTIONS['public.mantle_ws_create(uuid,uuid,text,text)']!,
 };
 
 /** Rolls a cell's transaction back after its checks. */
