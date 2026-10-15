@@ -119,13 +119,21 @@ describe.skipIf(!DB_URL)('the approval re-check (A5 step 6c): the recorded matri
   const x = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
     (await m.systemDb.execute(q)) as unknown as T[];
 
-  /** Each login's private workspace, by id (read before a cell is named). */
+  /** The workspaces the matrix does not make itself (a login's private
+   *  workspace, the brain's own), by id: read before a cell is named. */
   const privateOf = new Map<string, string>();
   const readPrivate = async () => {
     for (const r of await x<{ ws: string; login: string }>(
       sql`select workspace_id::text as ws, login_id::text as login from private_workspaces`,
     )) {
-      privateOf.set(r.ws, label(r.login));
+      privateOf.set(r.ws, `private:${label(r.login)}`);
+    }
+    // Any other workspace (the brain's built-in Team, made with the brain)
+    // by its name.
+    for (const r of await x<{ ws: string; name: string }>(
+      sql`select id::text as ws, name from workspaces where owner_id = ${id.owner}`,
+    )) {
+      if (!privateOf.has(r.ws)) privateOf.set(r.ws, `ws:${r.name.replace(tag, '').trim()}`);
     }
   };
 
@@ -138,7 +146,7 @@ describe.skipIf(!DB_URL)('the approval re-check (A5 step 6c): the recorded matri
     if (s === elseWs) return 'else';
     if (s === noteId) return 'note';
     const own = privateOf.get(s);
-    return own ? `private:${own}` : s;
+    return own ?? s;
   };
   /** A text with its ids named, cut short. */
   const short = (s: string | null | undefined) =>
