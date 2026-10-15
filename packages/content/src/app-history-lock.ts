@@ -5,13 +5,10 @@
  * history to the brain) take it, so a restore never lands on an app that
  * moved under it. No node:fs here: the main content entry may import it.
  */
-import { sql } from 'drizzle-orm';
-import type { db } from '@mantle/db';
+import { advisoryXactLock, type db } from '@mantle/db';
 
 type Tx = Pick<typeof db, 'execute'>;
 
 export async function lockAppHistory(tx: Tx, appId: string): Promise<void> {
-  await tx.execute(
-    sql`select pg_advisory_xact_lock(hashtextextended(${`app-history:${appId}`}, 0))`,
-  );
+  await advisoryXactLock(tx, `app-history:${appId}`, 'hashtextextended');
 }

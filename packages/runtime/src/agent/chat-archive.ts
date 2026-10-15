@@ -21,18 +21,19 @@
  */
 import { and, asc, count, desc, eq, gte, isNull, lt, min, sql } from 'drizzle-orm';
 import {
-  db,
+  advisoryXactLock,
+  agents,
   assistantMessages,
   bumpWorkerUsage,
+  type ChatThread,
   chatThreads,
+  db,
   getDefaultWorker,
   nodes,
   notSuperseded,
-  agents,
   withCreateHome,
   withDeadlockRetry,
   withNodeInsertHeads,
-  type ChatThread,
 } from '@mantle/db';
 import { NOTES_ASSISTANT_PATH, ensureNotesAssistantFolder } from '@mantle/content/tree';
 import { digestEmbedText, embedBatch } from '@mantle/embeddings';
@@ -114,9 +115,7 @@ export async function archiveAgentChat(o: {
   const continueFrom = o.continueFrom ?? null;
   const result = await db.transaction(async (tx) => {
     // One archive at a time per chat (a double click, web + Telegram).
-    await tx.execute(
-      sql`select pg_advisory_xact_lock(hashtextextended(${`chat_threads:${ownerId}:${agentId}:${loginId}`}, 0))`,
-    );
+    await advisoryXactLock(tx, `chat_threads:${ownerId}:${agentId}:${loginId}`, 'hashtextextended');
     const [open] = await tx
       .select()
       .from(chatThreads)

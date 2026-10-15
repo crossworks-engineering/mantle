@@ -7,7 +7,13 @@
 import { createHash } from 'node:crypto';
 import { eq, sql } from 'drizzle-orm';
 import { envNum } from '@mantle/config';
-import { db, nodeSnapshots, type NewNodeSnapshot, type NodeSnapshot } from '@mantle/db';
+import {
+  advisoryXactLock,
+  db,
+  type NewNodeSnapshot,
+  type NodeSnapshot,
+  nodeSnapshots,
+} from '@mantle/db';
 
 type DbTx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
@@ -25,9 +31,7 @@ export async function insertNodeSnapshot(
   tx: DbTx,
   row: Omit<NewNodeSnapshot, 'seq' | 'createdAt'>,
 ): Promise<NodeSnapshot> {
-  await tx.execute(
-    sql`select pg_advisory_xact_lock(hashtextextended(${`node-seq:${row.nodeId}`}, 0))`,
-  );
+  await advisoryXactLock(tx, `node-seq:${row.nodeId}`, 'hashtextextended');
   const [top] = await tx
     .select({ next: sql<number>`coalesce(max(${nodeSnapshots.seq}), 0) + 1` })
     .from(nodeSnapshots)

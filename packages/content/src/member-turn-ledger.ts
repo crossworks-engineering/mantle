@@ -20,7 +20,7 @@
  * 6-a-minute limit's worth). It is a brake on a runaway, not an invoice.
  */
 import { and, eq, gte, lt, sql } from 'drizzle-orm';
-import { memberTurnLedger, systemDb, traces } from '@mantle/db';
+import { advisoryXactLock, memberTurnLedger, systemDb, traces } from '@mantle/db';
 import { envNum } from '@mantle/config';
 
 export type MemberTurnLimits = {
@@ -90,9 +90,7 @@ export async function claimMemberTurn(args: {
 }): Promise<ClaimMemberTurnResult> {
   const { ownerId, loginId, turnId, since, limits } = args;
   return systemDb.transaction(async (tx) => {
-    await tx.execute(
-      sql`select pg_advisory_xact_lock(hashtextextended(${`member-turn:${loginId}`}, 0))`,
-    );
+    await advisoryXactLock(tx, `member-turn:${loginId}`, 'hashtextextended');
     const [seen] = await tx
       .select({ turnId: memberTurnLedger.turnId })
       .from(memberTurnLedger)

@@ -28,9 +28,10 @@
  */
 import { createHash } from 'node:crypto';
 import { createReadStream, promises as fs } from 'node:fs';
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import {
   acceptedSnapshots,
+  advisoryXactLock,
   db,
   draws,
   inFlipTransaction,
@@ -264,9 +265,7 @@ export async function snapshotOf(brainId: string, id: string): Promise<AcceptedS
           db.transaction((tx) =>
             inFlipTransaction(async () => {
               // One completion at a time per item.
-              await tx.execute(
-                sql`select pg_advisory_xact_lock(hashtextextended(${`accepted-snapshot:${id}`}, 0))`,
-              );
+              await advisoryXactLock(tx, `accepted-snapshot:${id}`, 'hashtextextended');
               const [again] = await tx
                 .select()
                 .from(acceptedSnapshots)

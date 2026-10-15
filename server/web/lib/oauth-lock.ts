@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import type { db } from '@mantle/db';
+import { advisoryXactLock, type db } from '@mantle/db';
 
 /** A transaction handle (or db itself). */
 export type OauthExec = Pick<typeof db, 'select' | 'insert' | 'update' | 'delete' | 'execute'>;
@@ -20,7 +20,7 @@ export async function lockOauthActor(tx: OauthExec, actorId: string): Promise<vo
   // full pool deadlocks.
   await tx.execute(sql`set local lock_timeout = '5s'`);
   await tx.execute(sql`set local statement_timeout = '15s'`);
-  await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`oauth-actor:${actorId}`}))`);
+  await advisoryXactLock(tx, `oauth-actor:${actorId}`, 'hashtext');
   // Back to the defaults once held (last check F3): the bound is on the
   // wait, and a caller's own transaction (an admin's End sessions, with its
   // row locks after this) must not inherit it.

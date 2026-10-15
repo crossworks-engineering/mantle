@@ -16,8 +16,7 @@
  * single run. It never fired once. One rule, one definition.
  */
 import { reapDeviceTokens } from '../auth/device-token-reap';
-import { sql } from 'drizzle-orm';
-import { db } from '@mantle/db';
+import { db, tryAdvisoryXactLock } from '@mantle/db';
 import {
   findDuplicateCandidates,
   mergeEntities,
@@ -87,13 +86,7 @@ export async function runEntitiesDedupe(
   // merges themselves run in their own short transactions inside
   // mergeEntities — the outer connection just holds the lock.
   return db.transaction(async (tx) => {
-    const res = (await tx.execute(
-      sql`select pg_try_advisory_xact_lock(hashtext('mantle:maintenance:entities-dedupe')) as locked`,
-    )) as unknown;
-    const rows = (Array.isArray(res) ? res : ((res as { rows?: unknown[] }).rows ?? [])) as {
-      locked: boolean;
-    }[];
-    if (!rows[0]?.locked) {
+    if (!(await tryAdvisoryXactLock(tx, 'mantle:maintenance:entities-dedupe', 'hashtext'))) {
       throw new Error(
         'another entities-dedupe run is in progress (CLI, UI, or the nightly cron) — try again when it finishes',
       );

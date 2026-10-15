@@ -30,8 +30,8 @@
  * The secret is never logged and never returned after create.
  */
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
-import { and, count, eq, gt, isNull, or, sql } from 'drizzle-orm';
-import { accessKeys, db, isUniqueViolation, isWriteRefused } from '@mantle/db';
+import { and, count, eq, gt, isNull, or } from 'drizzle-orm';
+import { accessKeys, advisoryXactLock, db, isUniqueViolation, isWriteRefused } from '@mantle/db';
 import { KEY_AREAS, type KeyArea } from '@mantle/mcp-core/key-scope';
 import { isLoginRole, type LoginRole } from '@mantle/client-types/role-names';
 import { loadLoginRow, type LoginRow } from './auth/login-row';
@@ -337,7 +337,7 @@ export async function lockLoginKeys(
   tx: Pick<typeof db, 'execute'>,
   loginId: string,
 ): Promise<void> {
-  await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`access-keys:${loginId}`}))`);
+  await advisoryXactLock(tx, `access-keys:${loginId}`, 'hashtext');
 }
 
 export async function mintAccessKey(

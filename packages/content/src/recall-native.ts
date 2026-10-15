@@ -28,19 +28,20 @@ import { randomUUID } from 'node:crypto';
 import { and, arrayContains, asc, count, desc, eq, inArray, isNotNull, or, sql } from 'drizzle-orm';
 
 import {
+  advisoryXactLock,
   db,
+  type Db,
   nodes,
+  RECALL_REVISIONS_PER_MAP,
   recallMaps,
   recallNodes,
   recallRevisions,
-  RECALL_REVISIONS_PER_MAP,
   scopeLacksAdmin,
   scopeReadsItem,
   scopeReadsNodes,
   withDeadlockRetry,
   withNodeDeleteHeads,
   withNodeInsertHeads,
-  type Db,
 } from '@mantle/db';
 import { UUID_RE, defineDomainError } from '@mantle/std';
 import {
@@ -582,9 +583,7 @@ export async function createRecallMap(
       // Two creates with the same title at once would both pick the same free
       // slug and the second would die on the unique index as a raw 500. One
       // owner-scoped lock makes the slug pick and the insert one step.
-      await tx.execute(
-        sql`select pg_advisory_xact_lock(hashtext(${`recall-map-create:${ownerId}`}))`,
-      );
+      await advisoryXactLock(tx, `recall-map-create:${ownerId}`, 'hashtext');
       // Slugs are unique across the brain, maps the caller cannot read
       // included. A caller whose scope lacks Admin always gets a random
       // suffix, so its slug never tells it that a map it cannot read holds

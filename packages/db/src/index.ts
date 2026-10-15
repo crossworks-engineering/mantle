@@ -392,6 +392,13 @@ export {
 export { carrySpaceRows, spaceFilesPath, SPACE_FILES_ROOT } from './space-carry';
 export { takeShareReadLock, takeShareWriteLock } from './share-lock';
 export {
+  advisoryKeySql,
+  advisoryXactLock,
+  tryAdvisoryXactLock,
+  type AdvisoryHash,
+  type AdvisoryLockExec,
+} from './advisory-lock';
+export {
   itemReadByWorkspace,
   nodeAliasHomeIs,
   nodeAliasReadByAnyOf,

@@ -30,7 +30,7 @@
  * lost (a crash between the two) is found again by its snapshot_of.
  */
 import { sql } from 'drizzle-orm';
-import { asSystem, db, itemHomeSql, withCreateHome } from '@mantle/db';
+import { advisoryXactLock, asSystem, db, itemHomeSql, withCreateHome } from '@mantle/db';
 import {
   acceptedItemForCopy,
   createDraw,
@@ -70,7 +70,7 @@ export async function makeSnapshotCopies(
   return asSystem(
     () =>
       db.transaction(async (lock) => {
-        await lock.execute(sql`select pg_advisory_xact_lock(hashtext('mantle_snapshot_copies'))`);
+        await advisoryXactLock(lock, 'mantle_snapshot_copies', 'hashtext');
         return makeSnapshotCopiesLocked(opts);
       }),
     'snapshot-copies',
