@@ -550,6 +550,7 @@ export async function searchTree(
   const narrow = opts.cover?.ws ?? undefined;
   const first = across ? (opts.cover?.current ?? undefined) : undefined;
   const filtered = narrow !== undefined || opts.tag !== undefined;
+  // Intended: across under a workspace, matching folders come too (the move picker gets them).
   const folders =
     cursor || !term || filtered
       ? []
