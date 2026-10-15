@@ -32,13 +32,8 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { RequestOutcome } from '@mantle/db';
 import { isAnyLoginRoute } from '../lib/auth/any-login-routes';
 import { isMemberRoute } from '../lib/auth/member-routes';
-import {
-  isReadRequest,
-  itemWriteTarget,
-  memberMayRead,
-  memberMayWrite,
-  routeClass,
-} from '../lib/auth/route-scope';
+import { isReadRequest, itemWriteTarget, routeClass } from '../lib/auth/route-scope';
+import { buildRoutePolicy, memberOpenRead, memberOpenWrite } from '../lib/auth/route-policy';
 import { PUBLIC_PATHS } from '../lib/auth-constants';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
@@ -262,6 +257,8 @@ describe.skipIf(!URL)('W6a route sweep: scoped reads for every login', () => {
       ['/api/files/folders/', 'files-folder'],
       ['/api/tree/:kind/folders/', 'tree-folder'],
       ['/api/tree/items/', 'note'],
+      ['/api/v1/pages/', 'page'],
+      ['/api/v1/tables/', 'table'],
     ] as const) {
       if (pattern.startsWith(prefix)) return kind;
     }
@@ -392,6 +389,23 @@ describe.skipIf(!URL)('W6a route sweep: scoped reads for every login', () => {
   };
   const isPublic = (pattern: string) =>
     PUBLIC_PATHS.some((p) => pattern === p || pattern.startsWith(`${p}/`));
+  /** A row open to a login outside Admin, read off its ROUTE_POLICY row:
+   *  the owner lists, and a v1 row whose base route is one (D3, the A8
+   *  finding F1). */
+  let policy: ReturnType<typeof buildRoutePolicy> | null = null;
+  const rowOf = (method: string, pattern: string) => {
+    policy ??= buildRoutePolicy(manifest);
+    return policy.get(`${method.toUpperCase()} ${pattern}`) ?? null;
+  };
+  const memberMayRead = (method: string, pattern: string) => {
+    const row = rowOf(method, pattern);
+    return !!row && memberOpenRead(row);
+  };
+  const memberMayWrite = (method: string, pattern: string) => {
+    const row = rowOf(method, pattern);
+    return !!row && memberOpenWrite(row);
+  };
+
   const isOwnerRoute = (method: string, pattern: string) =>
     pattern.startsWith('/api/') &&
     !isPublic(pattern) &&
@@ -727,7 +741,7 @@ describe.skipIf(!URL)('W6a route sweep: scoped reads for every login', () => {
     }
   }, 600_000);
 
-  it('a member API key (U5): /api/v1 answers whoami in its scope and refuses the rest', async () => {
+  it('a member API key (U5): /api/v1 answers as its base route answers the member (D3, A8 F1)', async () => {
     const made = await call('/api/access-keys', mem, 'POST', {
       name: 'U5',
       access: 'read_write',
@@ -736,25 +750,63 @@ describe.skipIf(!URL)('W6a route sweep: scoped reads for every login', () => {
     });
     expect(made.status, made.text).toBe(201);
     const secret = (JSON.parse(made.text) as { secret: string }).secret;
+    const { API_V1_ROUTES } = await import('../lib/api-v1');
     const failures: string[] = [];
     let checked = 0;
+    let based = 0;
     for (const e of manifest) {
       if (!e.pattern.startsWith('/api/v1/')) continue;
       for (const method of e.methods) {
         if (method === 'OPTIONS') continue;
-        const r = await call(concrete(e.pattern, method === 'GET'), secret, method);
-        checked += 1;
         const key = `${method} ${e.pattern}`;
+        const path = concrete(e.pattern, method === 'GET');
+        const r = await call(path, secret, method);
+        checked += 1;
         if (r.outcome?.kind === 'system') failures.push(`${key} ran on the system pool`);
         if (key === 'GET /api/v1/whoami') {
           if (r.status !== 200 || r.outcome?.kind !== 'user') failures.push(`${key} ${r.status}`);
-        } else if (r.status !== 403 && r.status !== 401 && r.status !== 404) {
-          failures.push(`${key} not refused: ${r.status}`);
+          continue;
+        }
+        // The base route: the one the file re-exports, or the table's own.
+        const row = rowOf(method, e.pattern);
+        const base =
+          row?.aliasOf ??
+          API_V1_ROUTES.find((v) => v.method === method && v.pattern === e.pattern)?.base ??
+          null;
+        if (!base) {
+          // No base (the table row writes): Admin users only.
+          if (r.status !== 403 || !r.text.includes('member-login')) {
+            failures.push(`${key} with no base not refused: ${r.status}`);
+          }
+          continue;
+        }
+        // The same ids on the base pattern; the download is the bytes.
+        const values = e.pattern
+          .split('/')
+          .map((seg, i) => (seg.startsWith(':') ? path.split('/')[i]! : null))
+          .filter((v): v is string => v !== null);
+        let n = 0;
+        const basePattern = base.slice(base.indexOf(' ') + 1);
+        const basePath =
+          basePattern
+            .split('/')
+            .map((seg) => (seg.startsWith(':') ? values[n++]! : seg))
+            .join('/') + (e.pattern.endsWith('/download') ? '?raw=1' : '');
+        const b = await call(basePath, mem, base.slice(0, base.indexOf(' ')));
+        based += 1;
+        if (r.status !== b.status) {
+          failures.push(`${key}: v1 key ${r.status}, base ${basePath} ${b.status}`);
+        }
+        if (memberMayRead(method, e.pattern) || memberMayWrite(method, e.pattern)) {
+          if (r.text.includes('member-login')) failures.push(`${key} refused as a member`);
+        } else if (r.status !== 403 || !r.text.includes('member-login')) {
+          failures.push(`${key} not refused where its base refuses: ${r.status}`);
         }
       }
     }
     expect(failures).toEqual([]);
     expect(checked).toBeGreaterThan(10);
+    expect(based).toBeGreaterThan(10);
   }, 300_000);
 
   it('no admin screen shows another user’s private item (nor an item of a workspace it is not in)', async () => {

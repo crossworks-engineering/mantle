@@ -12,7 +12,9 @@
  *  - a write made with a key leaves an api.write row naming the key;
  *  - a key never confirms a change of who can see an item (F1), and never
  *    changes the content of an item another workspace reads (N3);
- *  - a key that acts as a member reaches whoami and nothing else on v1;
+ *  - a key that acts as a member answers on v1 as the base route answers
+ *    that member (D3, the A8 finding F1): an item route in its scope, an
+ *    Admin only route (the journal, the table row writes) refused;
  *  - /api/mcp: an admin key's caller carries its write switch, risky tools
  *    and areas; a member key acts as its login at once (no per-login MCP
  *    switch since W7b) and writes only while the key allows it.
@@ -366,12 +368,25 @@ describe.skipIf(!URL)('inbound API keys: scope', () => {
     ).toBe(404);
   });
 
-  it('a key that acts as a member reaches whoami and no admin route', async () => {
+  it('a key that acts as a member answers as the base route answers that member (A8 F1)', async () => {
     const key = await makeKey({ access: 'read_write' }, member);
     expect((await call('/api/v1/whoami', { bearer: key.secret })).status).toBe(200);
-    const res = await call('/api/v1/pages', { bearer: key.secret });
-    expect(res.status).toBe(403);
-    expect(await json(res)).toMatchObject({ reason: 'member-login' });
+    // An item route: the member's own scope, as /api/pages answers it.
+    const pages = await call('/api/v1/pages', { bearer: key.secret });
+    expect(pages.status).toBe(200);
+    // An Admin only base route, and a v1 write with no base: refused.
+    for (const [method, path] of [
+      ['GET', '/api/v1/journal'],
+      ['POST', `/api/v1/tables/${randomUUID()}/rows`],
+    ] as const) {
+      const res = await call(path, {
+        method,
+        bearer: key.secret,
+        ...(method === 'POST' ? { body: { rows: [{ a: 1 }] } } : {}),
+      });
+      expect(res.status, path).toBe(403);
+      expect(await json(res)).toMatchObject({ reason: 'member-login' });
+    }
   });
 
   // ── /api/mcp ──────────────────────────────────────────────────────────────
