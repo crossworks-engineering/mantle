@@ -13,6 +13,12 @@ import type { SQL } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
+/** MANTLE_DB_RUNTIME_ROLE as the run set it, back after the reader. */
+const RUNTIME_SWITCH = process.env.MANTLE_DB_RUNTIME_ROLE;
+const runtimeSwitchBack = () => {
+  if (RUNTIME_SWITCH === undefined) delete process.env.MANTLE_DB_RUNTIME_ROLE;
+  else process.env.MANTLE_DB_RUNTIME_ROLE = RUNTIME_SWITCH;
+};
 
 describe.skipIf(!URL)('best-effort writes on a database that refuses writes', () => {
   type Db = typeof import('@mantle/db');
@@ -43,6 +49,7 @@ describe.skipIf(!URL)('best-effort writes on a database that refuses writes', ()
 
   beforeAll(async () => {
     process.env.DATABASE_URL = URL;
+    runtimeSwitchBack();
     process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
     m = await import('@mantle/db');
     peers = await import('./peers/index');
@@ -71,6 +78,7 @@ describe.skipIf(!URL)('best-effort writes on a database that refuses writes', ()
     if (!m) return;
     await m.closeDb();
     process.env.DATABASE_URL = URL;
+    runtimeSwitchBack();
     await m.db.execute(sqlTag`delete from nodes where owner_id = ${owner}`);
     await m.db.execute(sqlTag`delete from spaces where id = ${owner} or login_id = ${owner}`);
     await m.db.execute(sqlTag`delete from auth.users where id = ${owner}`);
@@ -98,6 +106,8 @@ describe.skipIf(!URL)('best-effort writes on a database that refuses writes', ()
       reader = await createReadOnlyRole(adminClient(), URL!);
       await m.closeDb();
       process.env.DATABASE_URL = reader.url;
+      // The reader logs in as itself, never as the runtime role (arch A9).
+      process.env.MANTLE_DB_RUNTIME_ROLE = '';
     }, 60_000);
 
     it('verifies a peer token without the last-seen stamp', async () => {

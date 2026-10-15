@@ -183,11 +183,6 @@ export async function createReadOnlyRole(
     await sql.end();
   }
   readerAdminUrls.set(name, adminUrl);
-  // From here the caller points DATABASE_URL at the reader: its pools must
-  // log in as the reader, so the runtime role switch is off until the role
-  // is dropped (a reader box never runs it).
-  readerSwitch ??= { value: process.env.MANTLE_DB_RUNTIME_ROLE };
-  process.env.MANTLE_DB_RUNTIME_ROLE = '';
   const url = new URL(adminUrl);
   url.username = name;
   url.password = password;
@@ -196,12 +191,10 @@ export async function createReadOnlyRole(
 
 /** The superuser URL each reader was made on (dropReadOnlyRole). */
 const readerAdminUrls = new Map<string, string>();
-/** MANTLE_DB_RUNTIME_ROLE as it was before the first reader. */
-let readerSwitch: { value: string | undefined } | undefined;
 
-/** Remove a role `createReadOnlyRole` made, as the superuser that made it,
- *  and put the runtime role switch back. Close every connection made with
- *  its URL first: a role that is logged in cannot be dropped. */
+/** Remove a role `createReadOnlyRole` made, as the superuser that made it.
+ *  Close every connection made with its URL first: a role that is logged in
+ *  cannot be dropped. */
 export async function dropReadOnlyRole(_sql: Sql, name: string): Promise<void> {
   if (!/^mantle_test_reader_[0-9a-f]+$/.test(name)) {
     throw new Error('dropReadOnlyRole: not a test reader role');
@@ -216,11 +209,6 @@ export async function dropReadOnlyRole(_sql: Sql, name: string): Promise<void> {
     await sql.end();
   }
   readerAdminUrls.delete(name);
-  if (readerAdminUrls.size === 0 && readerSwitch) {
-    if (readerSwitch.value === undefined) delete process.env.MANTLE_DB_RUNTIME_ROLE;
-    else process.env.MANTLE_DB_RUNTIME_ROLE = readerSwitch.value;
-    readerSwitch = undefined;
-  }
 }
 
 /**

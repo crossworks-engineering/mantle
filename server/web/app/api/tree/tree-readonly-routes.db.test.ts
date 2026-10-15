@@ -17,6 +17,12 @@ import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
+/** MANTLE_DB_RUNTIME_ROLE as the run set it, back after the reader. */
+const RUNTIME_SWITCH = process.env.MANTLE_DB_RUNTIME_ROLE;
+const runtimeSwitchBack = () => {
+  if (RUNTIME_SWITCH === undefined) delete process.env.MANTLE_DB_RUNTIME_ROLE;
+  else process.env.MANTLE_DB_RUNTIME_ROLE = RUNTIME_SWITCH;
+};
 const h = vi.hoisted(() => ({ owner: '' }));
 
 vi.mock('@/lib/auth', async (importOriginal) => ({
@@ -69,6 +75,7 @@ describe.skipIf(!URL)('the owner tree routes as a role with SELECT only', () => 
 
   beforeAll(async () => {
     process.env.DATABASE_URL = URL;
+    runtimeSwitchBack();
     process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
     m = await import('@mantle/db');
     tree = await import('@mantle/content/tree');
@@ -97,6 +104,8 @@ describe.skipIf(!URL)('the owner tree routes as a role with SELECT only', () => 
     // From here the API's pool is the reader, as on the demo.
     await m.closeDb();
     process.env.DATABASE_URL = reader.url;
+    // The reader logs in as itself, never as the runtime role (arch A9).
+    process.env.MANTLE_DB_RUNTIME_ROLE = '';
     nodesBefore = await nodesNow();
   }, 60_000);
 
@@ -104,6 +113,7 @@ describe.skipIf(!URL)('the owner tree routes as a role with SELECT only', () => 
     if (!m) return;
     await m.closeDb();
     process.env.DATABASE_URL = URL;
+    runtimeSwitchBack();
     await m.db.execute(sqlTag`delete from item_marks where actor_id = ${owner}`);
     await m.db.execute(sqlTag`delete from nodes where owner_id = ${owner}`);
     await m.db.execute(sqlTag`delete from profiles where user_id = ${owner}`);
