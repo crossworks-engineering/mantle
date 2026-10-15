@@ -142,12 +142,10 @@ describe.skipIf(!hasManifest)('ROUTE_POLICY: same answers as the lists', () => {
       );
       check(key, 'effect', row.effect, isReadRequest(m, p) ? 'read' : 'write');
       // A v1 row answers a login outside Admin as its base route (D3, the
-      // A8 finding F1): the route it re-exports, or the table's `base`.
-      const v1Base =
-        row.aliasOf ??
-        API_V1_ROUTES.find((r) => r.method === (m === 'HEAD' ? 'GET' : m) && r.pattern === p)
-          ?.base ??
-        null;
+      // A8 finding F1), read from the hand-written V1_BASES below, never
+      // from the code under test (fix round 1, finding 8).
+      const asGetKey = `${m === 'HEAD' ? 'GET' : m} ${p}`;
+      const v1Base = p.startsWith('/api/v1/') ? (V1_BASES[asGetKey] ?? null) : null;
       const [bm, bp] = v1Base
         ? [v1Base.slice(0, v1Base.indexOf(' ')), v1Base.slice(v1Base.indexOf(' ') + 1)]
         : [m, p];
@@ -159,7 +157,8 @@ describe.skipIf(!hasManifest)('ROUTE_POLICY: same answers as the lists', () => {
       check(key, 'isAnyLoginRoute', anyLoginRow(row), isAnyLoginRoute(listed, p));
       check(key, 'isMemberRoute', row.logins === 'member', isMemberRoute(listed, p));
       check(key, 'open', row.open, row.logins ? 'login' : 'admin');
-      check(key, 'creates', row.creates, CREATE_ROUTES.has(`${m} ${p}`));
+      // A v1 create reads ?ws= as its base does (A8 fix round 1, L3).
+      check(key, 'creates', row.creates, CREATE_ROUTES.has(v1Base ?? `${m} ${p}`));
       for (const path of pathsOf(p)) {
         const target = itemWriteTarget(m, p, path);
         check(`${key} @${path}`, 'item', routeItemTarget(row, path), target);
@@ -174,6 +173,30 @@ describe.skipIf(!hasManifest)('ROUTE_POLICY: same answers as the lists', () => {
       }
     }
     expect(diffs).toEqual([]);
+  });
+
+  it('a v1 row: its base, a member’s reach and ?ws= are the hand-written lists (A8 F1, L3)', () => {
+    const v1 = [...table.values()].filter((r) => r.pattern.startsWith('/api/v1/'));
+    const got: Record<string, string | null> = {};
+    const memberReach: string[] = [];
+    const creates: string[] = [];
+    for (const row of v1) {
+      if (row.method === 'HEAD') continue;
+      const v1Row = API_V1_ROUTES.find((r) => r.method === row.method && r.pattern === row.pattern);
+      got[row.key] = row.aliasOf ?? v1Row?.base ?? null;
+      if (memberOpenRead(row) || memberOpenWrite(row)) memberReach.push(row.key);
+      if (row.creates) creates.push(row.key);
+    }
+    expect(got).toEqual(V1_BASES);
+    expect(memberReach.sort()).toEqual([...V1_MEMBER_REACH].sort());
+    expect(creates.sort()).toEqual([...V1_CREATES].sort());
+    // A HEAD row reaches a member where its GET does.
+    for (const row of v1) {
+      if (row.method !== 'HEAD') continue;
+      const get = `GET ${row.pattern}`;
+      expect(memberOpenRead(row), row.key).toBe(V1_MEMBER_REACH.includes(get));
+      expect(row.creates, row.key).toBe(false);
+    }
   });
 
   it('classes every row (plan 7)', () => {
@@ -951,3 +974,80 @@ describe.skipIf(!hasManifest)('A4 step 2: the pages have rows, and the gate read
     expect(routed).toBeGreaterThan(1000);
   });
 });
+
+/**
+ * Every v1 row's base route (D3, the A8 finding F1), written by hand from
+ * the route files and docs/actors.md, so the check above compares the code
+ * with an independent answer (fix round 1, finding 8): the route the file
+ * re-exports, else the key table's `base`; null for a row with neither
+ * (whoami answers the key itself; the table row writes stay Admin only).
+ */
+const V1_BASES: Readonly<Record<string, string | null>> = {
+  'GET /api/v1/whoami': null,
+  'GET /api/v1/search': 'GET /api/search',
+  'GET /api/v1/nodes/:id': 'GET /api/nodes/:id',
+  'GET /api/v1/pages': 'GET /api/pages',
+  'POST /api/v1/pages': 'POST /api/pages',
+  'GET /api/v1/pages/:id': 'GET /api/pages/:id',
+  'PATCH /api/v1/pages/:id': 'PATCH /api/pages/:id',
+  'GET /api/v1/notes': 'GET /api/notes',
+  'POST /api/v1/notes': 'POST /api/notes',
+  'GET /api/v1/notes/:id': 'GET /api/notes/:id',
+  'GET /api/v1/tasks': 'GET /api/tasks',
+  'POST /api/v1/tasks': 'POST /api/tasks',
+  'GET /api/v1/tasks/:id': 'GET /api/tasks/:id',
+  'PATCH /api/v1/tasks/:id': 'PATCH /api/tasks/:id',
+  'GET /api/v1/tables': 'GET /api/tables',
+  'GET /api/v1/tables/:id': 'GET /api/tables/:id',
+  'GET /api/v1/tables/:id/rows': 'GET /api/tables/:id/rows',
+  'POST /api/v1/tables/:id/rows': null,
+  'PATCH /api/v1/tables/:id/rows/:rowId': null,
+  'POST /api/v1/tables/:id/commit': 'POST /api/tables/:id/commit',
+  'GET /api/v1/files': 'GET /api/files/files',
+  'POST /api/v1/files': 'POST /api/files/files',
+  'GET /api/v1/files/:id': 'GET /api/files/files/:id',
+  'GET /api/v1/files/:id/download': 'GET /api/files/files/:id',
+  'GET /api/v1/events': 'GET /api/events',
+  'POST /api/v1/events': 'POST /api/events',
+  'GET /api/v1/contacts': 'GET /api/contacts',
+  'GET /api/v1/contacts/:id': 'GET /api/contacts/:id',
+  'GET /api/v1/journal': 'GET /api/journal',
+  'POST /api/v1/journal': 'POST /api/journal',
+};
+
+/** The v1 rows a login outside Admin reaches (docs/actors.md, F1's changed
+ *  cells): every other v1 row answers it 403 member-login. */
+const V1_MEMBER_REACH: readonly string[] = [
+  'GET /api/v1/search',
+  'GET /api/v1/nodes/:id',
+  'GET /api/v1/pages',
+  'POST /api/v1/pages',
+  'GET /api/v1/pages/:id',
+  'PATCH /api/v1/pages/:id',
+  'GET /api/v1/notes',
+  'POST /api/v1/notes',
+  'GET /api/v1/notes/:id',
+  'GET /api/v1/tasks',
+  'POST /api/v1/tasks',
+  'GET /api/v1/tasks/:id',
+  'PATCH /api/v1/tasks/:id',
+  'GET /api/v1/tables',
+  'GET /api/v1/tables/:id',
+  'GET /api/v1/tables/:id/rows',
+  'POST /api/v1/tables/:id/commit',
+  'GET /api/v1/files',
+  'POST /api/v1/files',
+  'GET /api/v1/files/:id',
+  'GET /api/v1/files/:id/download',
+  'GET /api/v1/events',
+  'POST /api/v1/events',
+];
+
+/** The v1 creates that read ?ws= as their base does (A8 fix round 1, L3). */
+const V1_CREATES: readonly string[] = [
+  'POST /api/v1/pages',
+  'POST /api/v1/notes',
+  'POST /api/v1/tasks',
+  'POST /api/v1/files',
+  'POST /api/v1/events',
+];

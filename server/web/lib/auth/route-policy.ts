@@ -775,7 +775,10 @@ export function buildRouteRow(
     open: logins ? 'login' : 'admin',
     logins,
     effect,
-    creates: CREATE_ROUTES.has(key),
+    // A v1 create reads ?ws= as its base route does (D3; the A8 fix round 1
+    // L3, owner decision: yes), for every key, the owner's and an Admin
+    // user's too. Without ?ws= nothing changes.
+    creates: CREATE_ROUTES.has(key) || (v1Base !== null && CREATE_ROUTES.has(v1Base)),
     makesItems: !(m === 'DELETE' || target?.need === 'read'),
     item,
     // A v1 pattern the key table does not list has none: no key calls it
