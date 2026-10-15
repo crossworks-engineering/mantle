@@ -84,6 +84,12 @@ export type TableAccess = {
    * `user` columns.
    */
   derived?: readonly string[];
+  /**
+   * 'none': the runtime role (mantle_runtime, arch A9) holds no right on it
+   * either: only definer functions touch it (runtime-role.ts). Absent = the
+   * runtime role reads and writes it, as the system pool always has.
+   */
+  runtime?: 'none';
 };
 
 /**
@@ -560,11 +566,11 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   // The actor-check log (arch A2a, 0275): written by a definer function.
   none('public.actor_check_misses', 'system'),
   // The key the held-heads list is signed with: definer functions only.
-  none('public.mantle_heads_key', 'system'),
+  { ...none('public.mantle_heads_key', 'system'), runtime: 'none' },
   // The move triggers' per-transaction list of moved rows: definer only.
-  none('public.mantle_moved_nodes', 'system'),
+  { ...none('public.mantle_moved_nodes', 'system'), runtime: 'none' },
   // The level bridge's per-transaction list of changed nodes (0250).
-  none('public.mantle_bridge_pending', 'system'),
+  { ...none('public.mantle_bridge_pending', 'system'), runtime: 'none' },
   // The tier levels as they were when grants became the truth (0261, W8).
   none('public.archive_node_levels', 'system'),
   // The review tables as they were when the review flows went (0264, W5c),

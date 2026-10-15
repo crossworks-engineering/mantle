@@ -77,6 +77,11 @@ export const FEATURES = {
     default: false,
     doc: 'viewer roles named per database (several brains on one Postgres)',
   },
+  dbRuntimeRole: {
+    env: 'MANTLE_DB_RUNTIME_ROLE',
+    default: false,
+    doc: 'the app pools log in as mantle_runtime, not as the migrator (arch A9, docs/runtime-role.md)',
+  },
   bootReconcileOff: {
     env: 'MANTLE_DISABLE_BOOT_RECONCILE',
     default: false,

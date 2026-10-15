@@ -54,8 +54,9 @@ import {
   ensureViewerRoles,
   withRoleRetry,
 } from './viewer-roles';
-import { applyViewerGrants } from './access-matrix';
 import { viewerRoleName } from './viewer';
+import { afterMigrations, type StepLog } from './migrator-steps';
+import { ensureRuntimeRoles, OWNER_ROLE, RUNTIME_ROLE, SYSTEM_ROLE } from './runtime-role';
 
 type Sql = postgres.Sql;
 
@@ -219,6 +220,9 @@ export async function notifyBarrier(
   });
 }
 
+/** The migrator steps' lines, unprinted in a test. */
+const QUIET: StepLog = { info: () => {}, warn: () => {} };
+
 const here = dirname(fileURLToPath(import.meta.url));
 const MIGRATIONS_DIR = join(here, '..', 'migrations');
 const INIT_DIR = join(here, '..', '..', '..', 'infra', 'postgres', 'init');
@@ -291,8 +295,9 @@ export async function createMigratedScratchDatabase(
     await prepareScratch(sql);
     await applyMigrations(sql, readMigrationFiles({ migrationsFolder: MIGRATIONS_DIR }));
     // Grants are per database: migrate applies the access matrix after the
-    // migrations, so a limited role (a member's space) can work here too.
-    await applyViewerGrants(sql);
+    // migrations, so a limited role (a member's space) can work here too,
+    // and the runtime role's (arch A9), as migrate.ts runs them.
+    await afterMigrations(sql, 'ok', QUIET);
     await applyTestEditCheck(sql);
   } catch (err) {
     await sql.end();
@@ -357,7 +362,7 @@ export async function createScratchDatabaseBefore(
     const rest = postgres(url, { max: 1, prepare: false, onnotice: () => {} });
     try {
       await applyMigrations(rest, until < 0 ? all.slice(at) : all.slice(at, until));
-      await applyViewerGrants(rest);
+      await afterMigrations(rest, 'ok', QUIET);
     } finally {
       await rest.end();
     }
@@ -378,9 +383,15 @@ async function prepareScratch(sql: Sql): Promise<void> {
       >`select rolname from pg_roles where rolname like any(${managedRolePatterns()}::text[])`
     ).map((r) => r.rolname),
   );
-  // The retired roles too: the old migrations still grant to them.
-  for (const level of [...POOL_ROLES, ...RETIRED_POOL_ROLES]) {
-    const role = viewerRoleName(level);
+  // The retired roles too: the old migrations still grant to them. And the
+  // runtime roles (arch A9), without a login, when the global setup made
+  // none (afterMigrations grants to them).
+  for (const role of [
+    ...[...POOL_ROLES, ...RETIRED_POOL_ROLES].map((l) => viewerRoleName(l)),
+    OWNER_ROLE,
+    SYSTEM_ROLE,
+    RUNTIME_ROLE,
+  ]) {
     if (roles.has(role)) continue;
     await sql
       .unsafe(`create role "${role}" with nologin nosuperuser nobypassrls noinherit`)
@@ -417,6 +428,9 @@ export async function ensureTestViewerRoles(url: string, masterKey: string): Pro
   const sql = postgres(url, { max: 1 });
   try {
     await ensureViewerRoles(sql, masterKey);
+    // And the runtime roles (arch A9): a run with MANTLE_DB_RUNTIME_ROLE=1
+    // logs its pools in as mantle_runtime, its password from this key.
+    await ensureRuntimeRoles(sql, masterKey);
   } finally {
     await sql.end();
   }

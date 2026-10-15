@@ -646,6 +646,12 @@ export type SystemHealth = {
     connections: number | null;
     cacheHitPct: number | null;
     topTables: { name: string; bytes: number }[];
+    /** Who the app's system pool logs in as (workspaces arch A9):
+     *  'runtime' = mantle_runtime, not a superuser and owning no table (a
+     *  box after its roll, MANTLE_DB_RUNTIME_ROLE=1); 'superuser' = the
+     *  migrator's superuser (before the roll); 'other' = anything else.
+     *  Absent from a server before A9. */
+    role?: { mode: 'runtime' | 'superuser' | 'other'; user: string } | null;
   };
   storage: {
     /** The object store answered (any S3 backend). */

@@ -1,6 +1,6 @@
 import postgres from 'postgres';
 import { eq } from 'drizzle-orm';
-import { db, nodes, runAsSystem } from '@mantle/db';
+import { db, nodes, runAsSystem, systemDatabaseUrl } from '@mantle/db';
 import {
   APP_NAV_CHANGED_CHANNEL,
   NEEDS_YOU_CHANGED_CHANNEL,
@@ -81,8 +81,8 @@ async function ensureListening(): Promise<void> {
   if (bridge.stop) return;
   if (bridge.starting) return bridge.starting;
   bridge.starting = (async () => {
-    const url = env('DATABASE_URL');
-    if (!url) throw new Error('DATABASE_URL must be set');
+    // The app's own login (the runtime role with MANTLE_DB_RUNTIME_ROLE on).
+    const url = systemDatabaseUrl();
     // Dedicated single connection — a LISTEN monopolises its connection, so
     // keep it off the shared query pool.
     const sql = postgres(url, { max: 1, prepare: false });

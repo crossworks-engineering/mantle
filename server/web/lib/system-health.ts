@@ -1,7 +1,7 @@
 import os from 'node:os';
 import { statfs } from 'node:fs/promises';
 import si from 'systeminformation';
-import { db, sql } from '@mantle/db';
+import { db, dbRoleMode, sql, systemPoolRole } from '@mantle/db';
 import { filesRoot, mediaSidecarHealth, tikaVersion } from '@mantle/files';
 import { sandboxdHealth } from './sandboxd';
 import { bucketReachable } from '@mantle/storage';
@@ -57,11 +57,15 @@ async function pgHealth() {
       ? tablesResult
       : ((tablesResult as { rows?: PgTableRow[] }).rows ?? [])
   ) as PgTableRow[];
+  // Who the system pool logs in as (arch A9): the runtime role after a
+  // box's roll, the superuser before it.
+  const roleRow = await systemPoolRole();
   return {
     dbSizeBytes: stats ? Number(stats.db_size) : null,
     connections: stats ? Number(stats.connections) : null,
     cacheHitPct: stats?.cache_hit != null ? Number(stats.cache_hit) * 100 : null,
     topTables: tables.map((t) => ({ name: t.name, bytes: Number(t.bytes) })),
+    role: roleRow ? { mode: dbRoleMode(roleRow), user: roleRow.user } : null,
   };
 }
 
@@ -259,6 +263,7 @@ export async function getSystemHealth(userId: string): Promise<SystemHealth> {
       connections: pg?.connections ?? null,
       cacheHitPct: pg?.cacheHitPct ?? null,
       topTables: pg?.topTables ?? [],
+      role: pg?.role ?? null,
     },
     storage: {
       objectStoreUp: storeUp,

@@ -23,15 +23,17 @@
  * extractor notify.
  */
 import { sql } from 'drizzle-orm';
-import { db } from '@mantle/db';
+import { db, executeAsMigrator } from '@mantle/db';
 
 export type WsMigrateRow = { section: string; subject: string; metric: string; n: number };
 
-/** Migrate this brain if it has no workspaces and nothing stops it. */
+/** Migrate this brain if it has no workspaces and nothing stops it. The
+ *  switch runs DDL, which the runtime role may not (arch A9): on the
+ *  migrator's connection (executeAsMigrator). */
 export async function migrateWorkspaces(): Promise<WsMigrateRow[]> {
-  const rows = (await db.execute(
+  const rows = await executeAsMigrator<WsMigrateRow>(
     sql`select * from "public"."mantle_ws_migrate_locked"()`,
-  )) as unknown as WsMigrateRow[];
+  );
   return rows.map((r) => ({ ...r, n: Number(r.n) }));
 }
 

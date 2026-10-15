@@ -130,13 +130,16 @@ done
 # to restore: a team-level agent sees an empty brain and a member an empty
 # space. The write role (mantle_write_user, arch A2b2a) too: its rules name it.
 # And the gap writer (mantle_gap_writer, A2b2b: a row rule on each gap table
-# names it). The list is the roles of packages/db/src/viewer-roles.ts
-# (POOL_ROLES and RETIRED_POOL_ROLES) and GAP_WRITER_ROLE (access-matrix.ts).
+# names it). And the runtime roles (arch A9, packages/db/src/runtime-role.ts:
+# mantle_owner, mantle_system, mantle_runtime): the dump's grants and default
+# privileges name them. The list is the roles of
+# packages/db/src/viewer-roles.ts (POOL_ROLES and RETIRED_POOL_ROLES),
+# GAP_WRITER_ROLE (access-matrix.ts) and the three of runtime-role.ts.
 docker exec "$CONTAINER" psql -U postgres -d postgres -v ON_ERROR_STOP=1 -q -c "
 DO \$\$
 DECLARE r text;
 BEGIN
-  FOREACH r IN ARRAY ARRAY['mantle_view_team', 'mantle_view_client', 'mantle_view_public', 'mantle_view_space', 'mantle_view_user', 'mantle_write_user', 'mantle_gap_writer'] LOOP
+  FOREACH r IN ARRAY ARRAY['mantle_view_team', 'mantle_view_client', 'mantle_view_public', 'mantle_view_space', 'mantle_view_user', 'mantle_write_user', 'mantle_gap_writer', 'mantle_owner', 'mantle_system', 'mantle_runtime'] LOOP
     IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = r) THEN
       EXECUTE format('CREATE ROLE %I NOLOGIN NOSUPERUSER NOBYPASSRLS NOINHERIT', r);
     END IF;
@@ -424,6 +427,21 @@ if [ "$HAS_EDIT_SWITCH" = "t" ]; then
     echo "▷ mantle.edit_check is $EDIT_MODE ($EDIT_SWITCHED edit check trigger(s) switched to match). If the"
     echo "  dump's box ran another mode, set it again as this superuser: SELECT mantle_set_edit_check('warn');"
   fi
+fi
+
+# The superuser-only steps a dump does not carry (arch A9). ts_match_vq's
+# LEAKPROOF flag (0249: the keyword index under row security) lives in this
+# database's catalog, so the new database lacks it: set again here. The
+# tables come back owned by this superuser (--no-owner), and the runtime
+# role (made above without a login) has no password: the migrate that runs
+# next (docker compose up) hands the tables to mantle_owner, sets the runtime
+# role's login and rights, and sets the flag again too
+# (packages/db/src/migrator-steps.ts). Start the stack through compose, never
+# the app alone: a box with MANTLE_DB_RUNTIME_ROLE=1 cannot log in before it.
+if q "ALTER FUNCTION pg_catalog.ts_match_vq(tsvector, tsquery) LEAKPROOF" >/dev/null; then
+  echo "▷ ts_match_vq marked LEAKPROOF again (keyword index under row security)."
+else
+  echo "⚠ could not mark ts_match_vq LEAKPROOF: the migrate that runs next does it." >&2
 fi
 
 # Personal-space file bytes (member logins). The rows restored above point at

@@ -43,6 +43,7 @@ import {
   runAsActor,
   runAsSystem,
   systemActor,
+  systemDatabaseUrl,
   type Actor,
   type Agent,
 } from '@mantle/db';
@@ -777,7 +778,10 @@ export function startAgentRuntime(opts: AgentRuntimeOptions) {
 }
 
 async function bootAgentRuntime(opts: AgentRuntimeOptions) {
-  const pg = postgres(DATABASE_URL!, { max: 2 });
+  // The LISTEN connections: the app's own login (the runtime role with
+  // MANTLE_DB_RUNTIME_ROLE on). pg-boss keeps DATABASE_URL: it makes
+  // partitions at run time (docs/runtime-role.md).
+  const pg = postgres(systemDatabaseUrl(), { max: 2 });
   logger.info('starting — config from agents table');
 
   // Resolve the owner before any owner-scoped work. On a fresh install this

@@ -32,6 +32,7 @@ import { pushApproval, pushNeedsYou, pushOutbound, wantsOutboundPush } from '../
 import { createLoginNoticeHandler, warnIfSchemaBehind } from '../lib/push/login-notice-handler';
 import { runWorker } from './_runner';
 import { env } from '@mantle/config';
+import { systemDatabaseUrl } from '@mantle/db';
 
 interface ConversationChange {
   ownerId: string;
@@ -122,7 +123,8 @@ async function checkSchema(sql: postgres.Sql): Promise<void> {
 // This worker is a pure LISTEN loop with no business tick, so the runner's
 // heartbeat measures event-loop liveness — exactly the health signal we want.
 runWorker('push-notify', async () => {
-  const url = env('DATABASE_URL')!;
+  // The app's own login (the runtime role with MANTLE_DB_RUNTIME_ROLE on).
+  const url = systemDatabaseUrl();
   // Needed to decrypt the instance token at rest (@mantle/crypto).
   if (!env('MANTLE_MASTER_KEY')) throw new Error('MANTLE_MASTER_KEY must be set');
 
