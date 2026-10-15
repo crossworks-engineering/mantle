@@ -12,7 +12,7 @@
  * copies (plan S3)") for the snapshot copy, which docs/workspaces.md does not
  * describe (a gap the A8 report names).
  *
- * THE FIXTURE it speaks of (a8-fixture.ts builds it; the grid pins it):
+ * THE FIXTURE it speaks of (test-support/a8-grid.ts builds it; the grid pins it):
  *
  *   Workspaces  Admin (owner, admin: Moderators)
  *               H, the item's home (homeModerator: Moderator)

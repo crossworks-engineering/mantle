@@ -14,7 +14,7 @@
     "./test-support": "./src/test-support.ts",
     "./matrix/oracle": "./src/matrix/oracle.ts",
     "./matrix/guide-oracle": "./src/matrix/guide-oracle.ts",
-    "./matrix/a8-grid": "./src/matrix/a8-grid.ts",
+    "./matrix/a8-grid": "./src/matrix/test-support/a8-grid.ts",
     "./matrix/a8-known-failures": "./src/matrix/a8-known-failures.ts"
   },
   "scripts": {

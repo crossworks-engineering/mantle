@@ -4082,7 +4082,7 @@ workspace, read only). `guide-oracle.test.ts` pins it to the guide's
 sentences. The grid also pins the registry's workspace class and accepted
 kinds to the oracle's lists, so the two readings cannot drift apart unseen.
 
-**The fixture** (`packages/db/src/matrix/a8-grid.ts`, its header in
+**The fixture** (`packages/db/src/matrix/test-support/a8-grid.ts`, its header in
 `guide-oracle.ts`): Admin; H, the items' home; W, a grant with Write on; R, a
 grant with Write off; T, a target with no grant; O, unrelated; each login's
 private workspace. Six logins: the owner, an Admin user, the Moderator of H

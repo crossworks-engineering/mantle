@@ -3,7 +3,7 @@
  * logins (and the actor kinds that answer none) x every workspace kind x 3
  * placements (in a folder, not in one, a snapshot copy) x 13 actions x every
  * actor kind, against the oracle written from the guide (./guide-oracle.ts).
- * The fixture and one cell's run: ./a8-grid.ts.
+ * The fixture and one cell's run: ./test-support/a8-grid.ts.
  *
  * Each cell is one transaction, rolled back. A cell passes only on the right
  * row effect; a cell the oracle does not cover is counted and named, and a
@@ -33,7 +33,7 @@ import {
   runA8Cell,
   type A8Cell,
   type A8Fixture,
-} from './a8-grid';
+} from './test-support/a8-grid';
 import { GUIDE_SNAPSHOT_KINDS, GUIDE_WORKSPACE_KINDS } from './guide-oracle';
 import { KNOWN_FAILURES } from './a8-known-failures';
 

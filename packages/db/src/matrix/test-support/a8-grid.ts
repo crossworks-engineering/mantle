@@ -48,7 +48,7 @@ import {
   type GuidePlacement,
   type GuideRole,
   type GuideWorkspace,
-} from './guide-oracle';
+} from '../guide-oracle';
 
 type Sql = postgres.Sql;
 type Tx = postgres.TransactionSql;
