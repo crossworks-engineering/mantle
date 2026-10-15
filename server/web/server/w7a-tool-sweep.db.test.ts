@@ -124,7 +124,8 @@ const EXPECTED: ReadonlyArray<readonly [string, RegExp]> = [
   // turn may edit is read; on the system pool it read as none).
   [
     'offline',
-    /offline in the W7a|cannot resolve host|returned 503|failed: 503|not enabled on this box|no \w+ API key configured|No Mapbox key|No default [\w_]+ worker|app-runtime manifest not found|draft has no successful build|no send-enabled email account|no enabled telegram account|Runner queues are disabled/i,
+    // A provider error answers fixed text since A10 #10: '... (local, HTTP 503)'.
+    /offline in the W7a|cannot resolve host|returned 503|failed: 503|\(\w+, HTTP 503\)|not enabled on this box|no \w+ API key configured|No Mapbox key|No default [\w_]+ worker|app-runtime manifest not found|draft has no successful build|no send-enabled email account|no enabled telegram account|Runner queues are disabled/i,
   ],
   // (W7c fix round 2: telegram_pair is the anchor's own, until W7d; W7
   // integration fix 2: so is the rest of the Telegram inbox.)

@@ -92,7 +92,8 @@ const EXPECTED: ReadonlyArray<readonly [string, RegExp]> = [
   ['wrong type', /is an? \w+, not an? \w+ . pass/],
   [
     'offline',
-    /offline in the W7b|cannot resolve host|returned 503|failed: 503|not enabled on this box|no \w+ API key configured|No Mapbox key|No default [\w_]+ worker|app-runtime manifest not found|no send-enabled email account|no enabled telegram account|Runner queues are disabled/i,
+    // A provider error answers fixed text since A10 #10: '... (local, HTTP 503)'.
+    /offline in the W7b|cannot resolve host|returned 503|failed: 503|\(\w+, HTTP 503\)|not enabled on this box|no \w+ API key configured|No Mapbox key|No default [\w_]+ worker|app-runtime manifest not found|no send-enabled email account|no enabled telegram account|Runner queues are disabled/i,
   ],
   [
     'context',
