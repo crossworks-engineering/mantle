@@ -692,8 +692,9 @@ tree, tags only if it passed, then pushes main and the tag in one
 both landed at HEAD. If either is missing it exits non-zero and names it.
 
 The push skips the pre-push hook on purpose: the hook would rerun the same
-verify inside `git push`, holding the connection to GitHub idle for minutes,
-and v0.300.50 and v0.300.58 died there without a word. A rerun after a push
+verify inside `git push`, holding the connection to GitHub idle for minutes;
+GitHub closes it, and git dies of SIGPIPE (exit 141) with one ssh line as its
+only output. That is how v0.300.50 and v0.300.58 were tagged and never pushed. A rerun after a push
 that did not land resumes it (a tag already at HEAD is pushed again; a tag
 anywhere else is refused). `--no-verify` skips the verify when the gates
 already ran on this exact commit; CI still runs on the tag. Tests:
