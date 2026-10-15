@@ -151,7 +151,7 @@ describe.skipIf(!DB_URL)('the approval re-check (A5 step 6c): the recorded matri
     const own = privateOf.get(s);
     return own ?? s;
   };
-  /** A text with its ids named, cut short. */
+  /** A text with its ids named and its dashes plain, cut short. */
   const short = (s: string | null | undefined) =>
     s == null
       ? null
@@ -159,6 +159,8 @@ describe.skipIf(!DB_URL)('the approval re-check (A5 step 6c): the recorded matri
           .replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, (u) =>
             label(u),
           )
+          // A product text's dash, written plain in the recorded files.
+          .replace(/[\u2013\u2014]/g, '-')
           .slice(0, 90);
 
   /** Queue `tool` for `asker` in a Team assistant turn, through the tool

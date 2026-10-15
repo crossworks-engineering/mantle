@@ -167,28 +167,28 @@ nothing could tell a refusal the caller should hear from a fault.
   hand, with the body that route gave it (`server/web/server/domain-error-rows.test.ts`
   holds each to its old answer byte for byte):
 
-  | Class                                                          | Status                         | Body beyond `error`                     |
-  | -------------------------------------------------------------- | ------------------------------ | --------------------------------------- |
-  | `AppSourceLimitError` (content apps)                           | 400                            |                                         |
-  | `AppDraftConflictError` (content apps)                         | 409                            | `reason: 'conflict'`                    |
-  | `NoGreenBuildError` (content apps)                             | 409                            |                                         |
-  | `AppRestoreDraftError` (content apps)                          | 409                            | `reason: 'draft'`                       |
-  | `AppDbMissingError` (content app-broker)                       | 409                            | `reason: 'db-missing'`                  |
-  | `AppSnapshotBudgetError` (content app-snapshots)               | 409                            | `reason: 'budget'`                      |
-  | `AppSnapshotRefusedError` (content app-snapshots)              | 409                            | `reason: 'no-data'` from a restore      |
-  | `AppTrashRefusedError` (content app-trash)                     | 409                            |                                         |
-  | `AppPackageError` (content app-package)                        | 400                            | `reason: 'bad-package'`                 |
-  | `TableSnapshotRefusedError` (content table-snapshots)          | 409                            |                                         |
-  | `TableRestoreDraftError` (content table-snapshots)             | 409                            | `reason: 'draft'`                       |
-  | `AppBoundTableError` (content tables)                          | 409                            |                                         |
-  | `TableRevConflict` (content table-broker)                      | 409                            | `current_rev`                           |
-  | `ContactShareRefusedError` (content contact-shares)            | 400                            | `reason` (the refusal's own)            |
-  | `FormulaNotFoundError` (content formulas)                      | 404                            |                                         |
-  | `UploadTooLargeError` (files)                                  | 413                            | `maxUploadBytes`; a video gets the hint |
-  | `TelegramTokenError` (`server/web/lib/agent-telegram.ts`)      | 404 a chat not found, else 400 | `code` when set                         |
-  | `FireRefused` (`server/web/lib/heartbeats.ts`)                 | 403                            |                                         |
-  | `PdfRendererUnavailableError` (`server/web/lib/render-pdf.ts`) | 503                            | (logged where thrown)                   |
-  | `ApprovalRefusedError` (tools pending-approval, A5 step 6d)    | 403                            |                                         |
+  | Class                                                            | Status                         | Body beyond `error`                     |
+  | ---------------------------------------------------------------- | ------------------------------ | --------------------------------------- |
+  | `AppSourceLimitError` (content apps)                             | 400                            |                                         |
+  | `AppDraftConflictError` (content apps)                           | 409                            | `reason: 'conflict'`                    |
+  | `NoGreenBuildError` (content apps)                               | 409                            |                                         |
+  | `AppRestoreDraftError` (content apps)                            | 409                            | `reason: 'draft'`                       |
+  | `AppDbMissingError` (content app-broker)                         | 409                            | `reason: 'db-missing'`                  |
+  | `AppSnapshotBudgetError` (content app-snapshots)                 | 409                            | `reason: 'budget'`                      |
+  | `AppSnapshotRefusedError` (content app-snapshots)                | 409                            | `reason: 'no-data'` from a restore      |
+  | `AppTrashRefusedError` (content app-trash)                       | 409                            |                                         |
+  | `AppPackageError` (content app-package)                          | 400                            | `reason: 'bad-package'`                 |
+  | `TableSnapshotRefusedError` (content table-snapshots)            | 409                            |                                         |
+  | `TableRestoreDraftError` (content table-snapshots)               | 409                            | `reason: 'draft'`                       |
+  | `AppBoundTableError` (content tables)                            | 409                            |                                         |
+  | `TableRevConflict` (content table-broker)                        | 409                            | `current_rev`                           |
+  | `ContactShareRefusedError` (content contact-shares)              | 400                            | `reason` (the refusal's own)            |
+  | `FormulaNotFoundError` (content formulas)                        | 404                            |                                         |
+  | `UploadTooLargeError` (files)                                    | 413                            | `maxUploadBytes`; a video gets the hint |
+  | `TelegramTokenError` (`server/web/lib/agent-telegram.ts`)        | 404 a chat not found, else 400 | `code` when set                         |
+  | `FireRefused` (`server/web/lib/heartbeats.ts`)                   | 403                            |                                         |
+  | `PdfRendererUnavailableError` (`server/web/lib/render-pdf.ts`)   | 503                            | (logged where thrown)                   |
+  | `ApprovalRefusedError` (tools pending-approval, A5 steps 6c, 6d) | 403                            |                                         |
 
   `CloneAgentError` (`server/web/lib/agents.ts`) is an `InputError`.
 

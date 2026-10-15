@@ -3655,9 +3655,10 @@ path that approves gets it with no code of its own: the web's
   (`packages/db/src/pending-elevated.ts`): a scope's row rule shows a login
   only its own calls, which by definition an elevated call is not.
 
-A call that is not elevated keeps main's rule exactly: a login other than
-the owner decides only the calls queued for it (`deciderFilter`), and the
-call runs as its asker; the owner decides every call. The tests: every path
+A call that is not elevated keeps main's rule of who decides: a login other
+than the owner decides only the calls queued for it (`deciderFilter`), and
+the call runs as its asker; the owner decides every call. Since step 6c it
+is judged again, and run, in the scope it was asked in (below). The tests: every path
 and approver on a real database
 (`server/web/server/a5-elevated-approval.db.test.ts`), the rule through the
 real gate (`packages/tools/src/pending-approval.test.ts`), the claim
@@ -3698,13 +3699,141 @@ Approve for the asker, and show `client_sourced` as a warning.
 - **Step 6b, after W9, per release:** delete a tool's `policy.items` only
   when its database check exists with a test and `mantle.edit_check` is on
   on every box of the release.
-- **Step 6c, the approval re-check:** an elevated call's connector rule is
-  re-checked at approval (fix round 1, above); every other call still runs
-  in its asker's current rights without its queued scope. Re-checking the
-  originating scope whole needs the row to carry it (its moderator set and
-  Admin view), a migration.
+- **Step 6c, the approval re-check:** done, below.
 - **Listing for approvers:** on a scoped surface (a login's own MCP)
   `pending_list` shows a login only its own calls, so an Admin user with
   write rights finds an elevated call by its id (the owner's card, the
   web), not in that list.
+- **Egress as a gate concept** (owner decision 2b): not in this step.
+
+## The approval re-check (A5 step 6c)
+
+Plan step 6c (M2 at approval): a call queued for approval is judged again
+when it is approved, in the scope it was asked in, and runs there. Before
+it, an elevated call's connector rule was re-checked (6d); every other call
+ran with its asker's rights now, in whatever scope the approving path ran
+in: none at all on the web, a Telegram tap and a batch (the system pool, as
+its asker's login), the approver's own scope over MCP.
+
+**The stamp (migration 0288).** `pending_tool_calls.origin` (jsonb,
+nullable) holds the scope the asking turn ran in, set by the server at
+queue time (`pendingOriginNow`, `packages/tools/src/pending-origin.ts`),
+never from model arguments: by the tool loop's queue path
+(`execute-call.ts`) and the agent queue helpers (`pending-queue.ts`, the
+Toolsmith's group tools). Its shape (`PendingOrigin`, version 1):
+
+| field     | what                                                                                                     |
+| --------- | -------------------------------------------------------------------------------------------------------- |
+| `scope`   | the turn's scope whole: `kind`, `loginId`, `ws`, `modWs` (its Moderator set); null: the turn ran in none |
+| `enter`   | how the turn held it: `turn` (a turn scope) or `gate` (the rollback switch's gate scope)                 |
+| `writes`  | the turn scope wrote as an Admin turn does                                                               |
+| `admin`   | the Admin view it had: `holds` (Admin) and `areas` (the Admin areas it could do)                         |
+| `surface` | the surface it ran on: `kind`, an owner path's `via`, the `loginId` it names (no chat or account id)     |
+
+A row queued before 0288, or by no turn (a run's question or budget pause,
+the dev console's test row), has none: it is approved by **the legacy rule**,
+its asker's rights now in the scope of the path that approves, as before.
+
+**The re-check rule.** In `approvePendingCall` (the one place: every path
+that approves, the web's `PATCH /api/pending/:id`, MCP `pending_approve`, a
+Telegram tap, a batch, with no code of its own), for every row that is not
+elevated and carries a stamp, before the row is claimed
+(`originApproval`, `packages/tools/src/pending-approval.ts`):
+
+1. The scope is the stamp met with the asker's rights now (`originRunFor`):
+   its workspaces are the stamp's the asker still holds (`loginScopeFor`;
+   a turn that answered no login, a workspace assistant's heartbeat: the
+   stamp's that are still live), its Moderator workspaces the same. A right
+   the asker gained since (another workspace, a Moderator seat) is not the
+   call's: it never runs wider than where it was asked. No workspace left:
+   refused (`PENDING_SCOPE_LOST_ERROR`).
+2. Its Admin view is what the scope holds now, capped by the stamp's
+   (`capAdminView` in `gateCallerFor`, off the approval's `adminCap`).
+3. In that scope (`withOriginScope`: a named exit, `pending-approval`, from
+   the approving path's scope, straight into the asked one), as the call's
+   actor (its asker as it is now; a row with no asker the approving path's),
+   the queue-time check runs again (`approvalCallRefusal`, the same steps
+   `turnCallRefusal` ran: the gate's steps 3 to 5, the narrowers, the
+   pre-run checks with the item pre-check and the queue's reference rule),
+   for the call's arguments and the surface it was asked on, with the
+   caller dispatch then runs it as (`pendingCaller`, its approver, the cap,
+   what was narrowed).
+4. A refusal throws `ApprovalRefusedError` (the domain error table: 403 on
+   the web, its message on MCP and Telegram), the gate's words after
+   `PENDING_RECHECK_ERROR`. **The row stays pending, untouched**: who
+   approves does not change the answer (the re-check judges the call, not
+   the approver), the asker's rights may come back, and an approver can
+   reject it. Marking it refused would decide for the approver.
+5. Passed, the row is claimed as before (`deciderFilter`: who decides is
+   unchanged) and the call runs in the same scope as the same actor. An
+   approved call of a login is that login's write request in the asked
+   scope: it writes as a login's mutating request does there (the login
+   write gateway, the scope on its transactions, the database's checks
+   against it), whatever the turn's own mode (a workspace turn other than
+   Admin's writes none itself). A turn that answered no login keeps its
+   mode.
+
+An elevated row keeps 6d's rule unchanged (`elevatedApproval`). The audit
+row (6d) still names its approver and, when the re-check narrowed anything,
+what (`detail.narrowed`: `workspaces`, `moderator`, `admin`, `areas`: what
+the asker had when it asked and has no more).
+
+**6d's lows, closed.**
+
+- L1: an elevated call whose tool is gone, disabled or has no policy is the
+  owner's alone to approve (`ELEVATED_NO_TOOL_ERROR`): no gate step can
+  judge it.
+- L2: an elevated call that names no asker (`login_id` null) is the owner's
+  alone (`ELEVATED_NO_ASKER_ERROR`).
+- L3, the reject rule: whoever decides a call by `deciderFilter` may reject
+  it (the owner every call, any other login the calls queued for it, so an
+  elevated call's asker withdraws its own), and whoever may approve an
+  elevated call may reject it too (`elevatedRejection`; the owner always,
+  a call it could not run included), flipped on the system pool
+  (`rejectElevatedPendingCall`). A rejection runs nothing, so it is not
+  re-checked.
+- L4: the owner is asked first, so "the owner may always approve" is
+  literally true, a call the owner asked itself included.
+- L5: which tools carry `ToolPolicy.auditRow: false` is pinned
+  (`packages/runtime/src/audit-row-allowlist.test.ts`: only
+  `heartbeat_update_state`).
+- L6: the 0287 header says what the approver's rights are.
+
+**Record, move, compare.** `server/web/server/a5-approval-recheck.db.test.ts`
+queues each call through the real queue path (the tool loop's
+`executeToolCall` in a Team assistant's turn, through the gate's queue-time
+check), changes the asker's rights, and approves it on every path (the web
+through the real app and its gate middleware with a session cookie, MCP
+`pending_approve` on the approver's own OAuth connection, a Telegram tap, a
+batch), for 3 askers (an Admin user and a member who moderate Team, a member
+who does not: its connector write is elevated) x 3 approvers (the owner, the
+asker, another Admin user) x 4 paths x 5 rights (none, lost workspace, lost
+Moderator, lost item, gained) x 2 tools (a connector write, `note_update`):
+360 cells, recorded on main first
+(`a5-approval-recheck.main.json`). 86 changed, each named with its reason in
+`a5-approval-recheck.changes.json`:
+
+| reason                | cells | what changed                                                                                                                                                        |
+| --------------------- | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `runs-where-asked`    | 11    | runs in the asked Team turn scope as its asker, not unscoped or in the approver's MCP scope (where the owner's MCP approval of a Team connector call failed at run) |
+| `gains-not-the-calls` | 11    | the same, with rights gained since: still only the asked scope                                                                                                      |
+| `lost-workspace`      | 20    | refused before the claim, left pending (main ran it unscoped)                                                                                                       |
+| `lost-moderator`      | 22    | refused by the connector write rule or the item rule again, left pending                                                                                            |
+| `lost-item`           | 22    | refused by the item pre-check or the connector rule again, left pending                                                                                             |
+
+Every elevated cell is unchanged (6d's rule), and so is every cell where
+the approver may not decide the call. The rule itself, without a database:
+`packages/tools/src/pending-approval.test.ts` (through the real gate),
+`pending-origin.test.ts` (the stamp, the cap), `pending.test.ts` (before the
+claim, left pending, the legacy rule, the reject rule).
+
+**What is left.**
+
+- **Step 6b, after W9, per release** (above).
+- **Listing for approvers** (above).
+- **A workspace turn's own writes:** a workspace assistant's turn other than
+  Admin's holds no write mode, so a write it makes itself fails
+  (`withSystemTx` refuses it there); its approved calls write as their
+  asker's write request (above), so an approval now does what the turn
+  could not. Whether the turn should write the same way is its own step.
 - **Egress as a gate concept** (owner decision 2b): not in this step.
