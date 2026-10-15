@@ -545,7 +545,7 @@ export async function ownTables(sql: Sql): Promise<OwnOutcome> {
 export async function ensureAclMarker(sql: Sql): Promise<boolean> {
   const [m] = await sql<{ ok: boolean }[]>`
     select to_regprocedure('public.mantle_owner_role()') is null or coalesce((
-      select btrim(p.prosrc) = btrim(${ACL_MARKER_BODY})
+      select btrim(p.prosrc, E' \n\t\r') = btrim(${ACL_MARKER_BODY}, E' \n\t\r')
              and p.provolatile = 's' and p.proparallel = 's' and not p.prosecdef
              and p.proconfig is null and p.prorettype = 'boolean'::regtype
              and l.lanname = 'sql'
