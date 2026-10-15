@@ -69,6 +69,7 @@ import './workflows/runs-worker-turn';
 import './workflows/runs-resume-turn';
 import { enqueueTelegramTurn } from './workflows/telegram-turn';
 import { env } from '@mantle/config';
+import { onShutdown } from '@mantle/std/shutdown';
 
 // Backstop: every LISTEN handler and setInterval above already routes its
 // errors through .catch() (the reflector + heartbeat ticks even back off),
@@ -174,24 +175,28 @@ async function main(): Promise<void> {
   // cycle (the workflow imports handleTelegramMessage from runtime.ts).
   await startAgentRuntime({ enqueueTelegramTurn });
 
-  let shuttingDown = false;
-  const shutdown = (sig: string) => {
-    if (shuttingDown) return;
-    shuttingDown = true;
-    DBOS.logger.info(`[api] ${sig} — shutting down`);
-    // Drain the extractor queue first (finish in-flight pg-boss jobs), then
-    // stop DBOS, then exit.
-    void stopTurnCancelListener()
-      .catch((err) => console.error('[api] stopTurnCancelListener failed:', err))
-      .finally(() =>
-        stopAgentRuntime()
-          .catch((err) => console.error('[api] stopAgentRuntime failed:', err))
-          .finally(() => DBOS.shutdown().finally(() => process.exit(0))),
+  // The one shutdown helper (@mantle/std/shutdown, A10 #15). Drain the
+  // extractor queue first (finish in-flight pg-boss jobs), then stop DBOS,
+  // then exit 0; a teardown past API_EXIT_DEADLINE_MS exits 1 (main had no
+  // deadline: a hung drain held the process).
+  onShutdown({
+    name: 'api',
+    deadlineMs: API_EXIT_DEADLINE_MS,
+    log: { info: (m) => DBOS.logger.info(m), error: (m, ...rest) => console.error(m, ...rest) },
+    stop: async () => {
+      await stopTurnCancelListener().catch((err) =>
+        console.error('[api] stopTurnCancelListener failed:', err),
       );
-  };
-  process.on('SIGINT', () => shutdown('SIGINT'));
-  process.on('SIGTERM', () => shutdown('SIGTERM'));
+      await stopAgentRuntime().catch((err) => console.error('[api] stopAgentRuntime failed:', err));
+      await DBOS.shutdown();
+    },
+  });
 }
+
+/** The most the API's teardown may take: pg-boss drains in-flight jobs for up
+ *  to its own 30 s graceful stop, then DBOS stops. Past it the process exits
+ *  1 (a teardown that outlived it has failed). */
+const API_EXIT_DEADLINE_MS = 45_000;
 
 // Arch A2a: no actor around the boot, so the DBOS dispatch loop carries
 // none: each workflow binds its own at its entry (docs/actors.md), and one

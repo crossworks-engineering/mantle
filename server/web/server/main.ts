@@ -11,6 +11,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadEnvFiles } from './env';
 import { assertEnvShape, env, envNum } from '@mantle/config';
+import { onShutdown } from '@mantle/std/shutdown';
 
 const webRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
 loadEnvFiles(webRoot);
@@ -143,13 +144,14 @@ const server = serve({ fetch: app.fetch, port, hostname, overrideGlobalObjects: 
 // requests finish, and bail hard if something (an SSE stream) pins the process.
 // NOTE: signals only reach us via `pnpm exec tsx …` (the image CMD + worker
 // form); the `pnpm run` script form interposes an sh layer that swallows them.
-for (const signal of ['SIGTERM', 'SIGINT'] as const) {
-  process.on(signal, () => {
-    console.log(`[server] ${signal} — shutting down`);
-    server.close(() => process.exit(0));
-    setTimeout(() => process.exit(0), 5000).unref();
-  });
-}
+// The one shutdown helper (@mantle/std/shutdown, A10 #15): the listener
+// closes, and the deadline exits 0 after 5 s as before.
+onShutdown({
+  name: 'server',
+  deadlineMs: 5000,
+  deadlineExitCode: 0,
+  stop: () => new Promise<void>((done) => server.close(() => done())),
+});
 
 // Next's server logged process-level failures and stayed up; bare node's
 // default is to CRASH on an unhandled rejection — and this app deliberately

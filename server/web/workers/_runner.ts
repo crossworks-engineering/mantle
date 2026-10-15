@@ -26,6 +26,7 @@ import { startProcessHeartbeat } from '@mantle/content';
 import { env } from '@mantle/config';
 import { runAsSystem, startCallAudit } from '@mantle/db';
 import { ensureGateReady } from '@mantle/tools/gate-narrowers';
+import { onShutdown } from '@mantle/std/shutdown';
 
 /** How long pg-boss may take to finish in-flight jobs. */
 const BOSS_STOP_TIMEOUT_MS = 10_000;
@@ -62,8 +63,6 @@ export function startWorkerAs(name: string, start: () => Promise<void>): Promise
  * start still exits instead of being ignored until setup finishes.
  */
 function run(name: string, start: () => Promise<void>, stop: () => Promise<void>): void {
-  let stopping = false;
-
   /**
    * Hold the event loop open for as long as the worker is meant to be running.
    *
@@ -75,26 +74,16 @@ function run(name: string, start: () => Promise<void>, stop: () => Promise<void>
    */
   const keepAlive = setInterval(() => {}, 1 << 30);
 
-  const shutdown = async (signal: string): Promise<void> => {
-    if (stopping) return; // a second signal must not race the first
-    stopping = true;
-    clearInterval(keepAlive);
-    console.log(`[${name}] ${signal} — shutting down…`);
-    const deadline = setTimeout(() => {
-      console.error(`[${name}] shutdown exceeded ${EXIT_DEADLINE_MS}ms — exiting anyway`);
-      process.exit(1);
-    }, EXIT_DEADLINE_MS);
-    try {
+  // The one shutdown helper (@mantle/std/shutdown, A10 #15): a second
+  // signal must not race the first, and a teardown past the deadline exits 1.
+  onShutdown({
+    name,
+    deadlineMs: EXIT_DEADLINE_MS,
+    stop: async () => {
+      clearInterval(keepAlive);
       await stop();
-    } catch (err) {
-      console.error(`[${name}] shutdown failed:`, err);
-    }
-    clearTimeout(deadline);
-    process.exit(0);
-  };
-
-  process.on('SIGINT', () => void shutdown('SIGINT'));
-  process.on('SIGTERM', () => void shutdown('SIGTERM'));
+    },
+  });
 
   // A stray rejection must not take the worker down: Docker would restart it,
   // and staying up is strictly better than a restart loop.
