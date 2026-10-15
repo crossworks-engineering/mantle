@@ -4387,3 +4387,132 @@ branch and leave the list when it lands; F3 is the guide's rule now.
 **Not covered yet:** the owner's and a member's app brokers, `/print`, a
 peer without Acts as, an app's public link view (it needs a published
 build's bundle, beyond the fixture), and the web item edits.
+
+## No hand-written grant logic (A6)
+
+Plan v2 (page fcc4aee4), A6: the access rules are written once, in the
+database, and code outside `packages/db` never names the raw ACL columns
+(`home_ws`, `read_ws`, `write_ws`).
+
+**One definition.** The array forms came in A3a (migration 0280):
+`mantle_may_edit_in(ws, mod_ws, home, write_ws)` and
+`mantle_may_manage_in(mod_ws, home)`; `mantle_may_edit` and
+`mantle_may_manage` call them with the scope's settings. A6 adds no
+migration. `packages/db/src/item-acl.ts` is the one place outside the
+migrations that writes them into a query:
+
+| helper                                                | what it asks                                                                              |
+| ----------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| `mayEditSql`, `mayManageSql`                          | the scope forms, for code in a workspace scope (or with the scope set on its transaction) |
+| `readsInScopeSql`, `factReadsInScopeSql`              | the row rule on nodes, and on the facts table's own copy                                  |
+| `mayReadInSql`, `mayEditInSql`, `mayManageInSql`      | the array forms, for a login asked on the system pool with its workspaces as arrays       |
+| `mayManageHomeInSql`                                  | the manage rule for a home that is on no row (a deleted app's, as its snapshot keeps it)  |
+| `itemHomeSql`, `itemHoldersSql`, `itemHoldersTextSql` | facts: the home, the workspaces holding the item (shown, or compared with another item's) |
+| `heldBySql`, `holdsAllSql`, `missesAnySql`            | facts: one workspace holds it, all of some do, some do not                                |
+| `snapshotHomeSql`, `snapshotHomeMeta`                 | a deleted item's home as its snapshot keeps it (`meta.homeWs`)                            |
+| `wsArraySql`                                          | workspace ids as a checked `uuid[]` parameter                                             |
+
+Every rule answers false, never null. The facts are never a decision: who
+may read, edit or manage is always one of the rules.
+
+**Where the hand logic was.**
+
+- `server/web/lib/grants.ts` (the Grant Access panel, its previews, its
+  writes, the moves): `mayManage` was "the caller moderates the home",
+  `mayEdit` "that, or a Write grant in one of the caller's workspaces", and
+  "the caller reads it" a hand overlap of `read_ws` with the caller's
+  workspaces. Each item is now read with `mayReadInSql`, `mayEditInSql` and
+  `mayManageInSql` over the caller's workspaces and its Moderator ones (the
+  array forms: the panel runs on the system pool through `inRuleInQuery`).
+  The embeds the panel lists, the served titles, the hidden count and a
+  folder's title ask `mayReadInSql` the same way. The workspaces holding an
+  item stay a fact (what a move or a grant adds or removes).
+- `packages/content/src/link-serve.ts` (`linkRights`, `assertMayLink`, the
+  serve candidates): read, edit and manage were three hand `exists` over
+  the login's user rows; now the array forms over the login's workspaces
+  and Moderator ones, read in the same query.
+- `packages/content/src/member-brain-apps.ts`: a deleted app's home was
+  compared by hand with the login's Moderator list; now the manage rule
+  (`mayManageHomeInSql`) in the login's scope.
+- The rest moved their SQL text into the helpers with the same meaning:
+  `list-workspaces.ts` (caps and chips), `session.ts` (the item write gate,
+  a deleted app's home), `member-apps.ts`, `tree/visibility.ts`,
+  `pages/level-text.ts`, the `?ws=` filters of apps, notes and pages
+  (`nodeReadByWorkspace`), `files.ts`, `create-home.ts`, the search scope,
+  the facts search, `client-sourced*.ts`, `external-access.ts`,
+  `shared-item.ts`, `builtins-nodes.ts`, `builtins-apps.ts`,
+  `app-snapshots.ts`, `app-trash.ts`, `snapshot-copies.ts`.
+
+The lint `no-raw-acl-columns` is pinned at 0 (it was 25 files, 86 lines at
+A0; comments are exempt): a new read anywhere outside `packages/db` is a
+lint error, and `eslint-rules/arch-lints.test.ts` holds the pins empty.
+
+**asSystem: 88 sites in 45 files to 39 in 36 (28 reasons).** A6 moved no
+exit into a scope. Where a file left the scope by one reason at several
+places, the places now call that file's one door: a function whose body is
+the one `asSystem` call with its reason. The exits are the same; each is
+reviewed at its door. A door keeps one pinned site, so its calls are
+counted too (`asSystemDoorCalls`, 70, pinned in
+`scripts/arch-scoreboard.pins.json`; the counter is `asSystemDoors` and
+`doorCalls` in `eslint-rules/arch-counts.mjs`): a new call through a door
+raises the number, and the check fails.
+
+| door                             | reason                 | defined in                                   | calls                                                                                                                    |
+| -------------------------------- | ---------------------- | -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `inRuleInQuery` (exported)       | `rule-in-query`        | `server/web/lib/auth/rule-in-query.ts`       | 19: grants, workspaces, access keys (3), both whoami routes, shell, and since A6 the assistant routes and libraries (11) |
+| `clientSourcedSystem` (exported) | `client-sourced-check` | `packages/tools/src/client-sourced.ts`       | 6: client-sourced.ts (5), client-sourced-rules.ts (1)                                                                    |
+| `connectorBindingSystem`         | `connector-binding`    | `packages/tools/src/external-access.ts`      | 2: `connectorGroupOf`, `connectorGroupRow` (dispatch.ts's MCP call and OAuth ref read through it)                        |
+| `workspaceResourcesSystem`       | `workspace-resources`  | `packages/tools/src/external-access.ts`      | 6                                                                                                                        |
+| `agentWorkspaceSystem`           | `agent-workspace`      | `packages/runtime/src/agent/agent-viewer.ts` | 6                                                                                                                        |
+| `appDataSystem`                  | `app-data`             | `packages/tools/src/builtins-app-data.ts`    | 6                                                                                                                        |
+| `appDataSystem`                  | `app-data`             | `server/web/lib/app-runner.ts`               | 3                                                                                                                        |
+| `telegramLoginSystem`            | `login-telegram`       | `packages/telegram/src/chat-login.ts`        | 4                                                                                                                        |
+| `telegramLoginSystem`            | `login-telegram`       | `packages/telegram/src/pairing.ts`           | 3                                                                                                                        |
+| `telegramLoginSystem`            | `login-telegram`       | `packages/tools/src/builtins-telegram.ts`    | 3                                                                                                                        |
+| `telegramLoginSystem`            | `login-telegram`       | `packages/tools/src/pending-notify.ts`       | 2                                                                                                                        |
+| `telegramLoginSystem`            | `login-telegram`       | `server/web/lib/agent-telegram.ts`           | 3                                                                                                                        |
+| `appTrashSystem`                 | `app-trash`            | `packages/tools/src/builtins-apps.ts`        | 3                                                                                                                        |
+| `adminAreaSystem`                | `admin-area`           | `packages/tools/src/admin-gate.ts`           | 2: `runGated`, `areaSystem`                                                                                              |
+| `loginNoticeSystem`              | `login-notice`         | `packages/content/src/login-notices.ts`      | 2                                                                                                                        |
+
+Every other pinned file calls `asSystem` once, by its reason
+(`eslint-rules/as-system-allowlist.mjs`).
+
+**Recorded, moved, compared.** `server/web/server/a6-grant-sweep.db.test.ts`
+records, on a real database, 966 answers for seven logins (the owner, an
+Admin user with every area, an Admin user without the users area, a member
+who moderates P and is a plain user of Q, a member who moderates Q and R, a
+plain user of Q, a member in no workspace), a public link scope and the
+system, over Admin, three shared workspaces and a private one, and items
+homed in each, granted with Write on and off, in a folder with a row
+"Removed here", an embedding page with an open link, apps held by one and
+two workspaces and a deleted app: the panel, its add and remove previews,
+the move previews, every panel write on a fresh item, the chips and caps,
+the link rules, the member and login apps and their trash, the tree
+visibility diffs, the scope's edit check, `othersCanRead`, the scope's
+search ids and the workspace list. Recorded on main (v0.300.53) before the
+move (`__snapshots__/a6-grant-sweep.txt`).
+
+After the move 937 cells answer as main. 29 changed, all one change: the
+member brain-app library (`memberApp`, `listDeletedMemberApps`) names an
+app's home `home`, not after the raw column. Nothing outside reads those
+fields since the `my_app_*` tools went in W7b, and no HTTP or tool reply
+carries them. The test turns the field back and checks the cell then reads
+exactly as main, so no rule, row or refusal moved
+(`__snapshots__/a6-grant-sweep-changes.txt`). No cell is looser, and no case
+was found where the hand logic and the database's rule disagreed.
+
+**What is left.**
+
+- The plan's "the reads move into scope" for `grants.ts` and
+  `workspaces.ts`: their decisions now come from the database's rule, but
+  they still run on the system pool through `inRuleInQuery`. The panel
+  answers about workspaces outside the caller's scope by design (an Admin
+  user names every workspace, a manager sees a row of a workspace it is
+  not in, a folder's hidden count), so a move into the request scope needs
+  definers for those answers and changes what the role reads: a step of
+  its own, with the owner.
+- No `asSystem` exit was moved into a scope. Which of the 39 doors and
+  sites a scope could answer without changing an answer is the next
+  ratchet (`asSystemDoorCalls` is pinned so none grows meanwhile).
+- `member-brain-apps.ts` has no caller outside tests since W7b.
