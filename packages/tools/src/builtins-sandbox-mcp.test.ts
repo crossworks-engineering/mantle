@@ -236,7 +236,7 @@ describe('sandbox_mcp_call', () => {
     const setMeta = vi.fn();
     const res = await call.handler(
       { sandbox: 'scratch', tool: 'Read' },
-      { ...ctx, step: { setMeta, setOutput, addTokens: vi.fn(), addCost: vi.fn() } },
+      { ...ctx, step: { setMeta, setOutput } },
     );
     expect(outputOf(res)).toEqual({
       sandbox: 'scratch',

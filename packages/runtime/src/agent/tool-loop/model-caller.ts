@@ -13,7 +13,6 @@ import {
 } from '@mantle/tracing';
 import type { ChatDispatcher, ChatOptions, ChatResult, ChatToolDefinition } from '@mantle/voice';
 import { errorMessage } from '@mantle/std';
-import { recordChatUsage } from '../llm-usage';
 import { cacheFingerprint } from './cache-fingerprint';
 import { isChatFailover } from '../chat-failover';
 import type { ChatMessage } from '../messages';
@@ -195,7 +194,6 @@ export function createModelCaller(deps: {
               iter,
               streamed,
             );
-            recordChatUsage(h, r, active.model);
             // Which cached part changed, when a call misses the cache.
             h.setMeta({
               cache_fp: {
@@ -249,7 +247,6 @@ export function createModelCaller(deps: {
             // one-line note so the request stays valid for it.
             if (!modelSupportsVision(active.model)) stripImageParts(messages);
             const r = await dispatchChat(active.adapter, { ...routeOpts(), ...chatOpts }, iter);
-            recordChatUsage(h, r, active.model);
             h.setMeta({
               cache_fp: {
                 ...cacheFingerprint(messages, sendTools ? toolsForModel : null),
@@ -295,7 +292,6 @@ export function createModelCaller(deps: {
             },
             iter,
           );
-          recordChatUsage(h, r, active.model);
           h.setMeta({
             cache_fp: { ...cacheFingerprint(messages, null), provider: r.servedBy ?? null },
           });
@@ -338,7 +334,6 @@ export function createModelCaller(deps: {
             signal: currentTurnAbortSignal(),
             ...maxRetries(),
           });
-          recordChatUsage(h, r, active.model);
           h.setMeta({
             cache_fp: { ...cacheFingerprint(messages, null), provider: r.servedBy ?? null },
           });

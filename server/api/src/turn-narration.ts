@@ -19,6 +19,7 @@
 
 import { getDefaultWorker, type NarratorParams } from '@mantle/db';
 import { resolveChatKey, resolveChatRoutes, chatWithFailover } from '@mantle/runtime/agent';
+import { chargeTo, spendTarget } from '@mantle/tracing';
 
 const NARRATION_PROMPT = `You narrate, in the FIRST PERSON, the single action an AI assistant is taking right now, so the user sees what it's doing. You are given a terse system status line. Rewrite it as ONE short, warm, natural first-person line — at most 8 words, present tense, no surrounding quotes, end with an ellipsis (…). Keep any specific topic or name from the input. Never use an em dash (—) or an en dash as a sentence break; a comma or a new sentence carries the pause instead. Reply with ONLY the rewritten line.
 
@@ -69,14 +70,19 @@ export async function narrateStatus(ownerId: string, grounded: string): Promise<
     const maxTokens = params?.max_tokens ?? 32;
 
     const routes = resolveChatRoutes(worker);
-    const { result } = await chatWithFailover(ownerId, routes, {
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: grounded },
-      ],
-      temperature,
-      maxTokens,
-    });
+    // Narration runs beside the step it narrates and may finish after the
+    // turn: its spend counts toward the turn's trace totals, never the meta
+    // of whichever step is running (A10 #5, docs/spend-recording.md).
+    const { result } = await chargeTo(spendTarget(), () =>
+      chatWithFailover(ownerId, routes, {
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: grounded },
+        ],
+        temperature,
+        maxTokens,
+      }),
+    );
     const text = tidy(result.text ?? '');
     return text || null;
   } catch (err) {

@@ -15,6 +15,7 @@
   "dependencies": {
     "@mantle/config": "workspace:*",
     "@mantle/std": "workspace:*",
+    "@mantle/tracing": "workspace:*",
     "@mantle/voice-client": "workspace:*",
     "@openrouter/sdk": "^1.4.25",
     "undici": "^8.11.2"

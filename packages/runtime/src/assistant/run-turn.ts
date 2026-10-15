@@ -52,6 +52,8 @@ import {
 } from '@mantle/content';
 import { registerHeartbeatTools } from '../heartbeats';
 import {
+  spendTarget,
+  type SpendTarget,
   startTrace,
   runDurableStep,
   emitTurnLifecycle,
@@ -110,6 +112,9 @@ export type TurnSuggestionContext = {
   /** The finalized reply text. */
   replyText: string;
   stopped: boolean;
+  /** The turn's trace, for the suggestion's own spend: it runs after the
+   *  trace closed, so it is charged to it explicitly (chargeTo). */
+  spend?: SpendTarget | null;
 };
 
 export type TurnSuggestionHook = (ctx: TurnSuggestionContext) => void;
@@ -463,6 +468,7 @@ export async function runAssistantTurn(
   // shows. The node-biography page at /nodes/<id>/history works for
   // any subject_id — operators can use it on assistant_messages too,
   // though those rows don't show in /files (different table).
+  let turnSpend: SpendTarget | null = null;
   const runLoop = (
     image: UserImage | undefined,
     userText: string,
@@ -496,8 +502,11 @@ export async function runAssistantTurn(
           ...dataExtra,
         },
       },
-      () =>
-        runResponderLoop({
+      () => {
+        // The follow-up suggestion runs after this trace closes; it charges
+        // its spend here (A10 #5). The image-fallback retry's trace wins.
+        turnSpend = spendTarget();
+        return runResponderLoop({
           ownerId,
           agent,
           adapter: assistantAdapter,
@@ -535,7 +544,8 @@ export async function runAssistantTurn(
           // The signed-in login rides along (W6b fix round 2, M-2).
           surface: { kind: 'web', ...(options?.loginId ? { loginId: options.loginId } : {}) },
           abortSignal: abortController?.signal ?? null,
-        }),
+        });
+      },
     );
 
   // Run the turn via the shared image-fallback wrapper: when we attached a
@@ -702,6 +712,7 @@ export async function runAssistantTurn(
         userText: displayText,
         replyText: reply,
         stopped: abortController?.signal.aborted ?? false,
+        spend: turnSpend,
       });
     } catch (err) {
       console.warn('[suggester] hook threw:', err instanceof Error ? err.message : err);

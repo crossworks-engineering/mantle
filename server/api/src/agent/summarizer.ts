@@ -46,7 +46,6 @@ import {
   buildChatMessages,
   chatWithFailover,
   flattenChatMessagesForAdapter,
-  recordChatUsage,
   resolveChatKey,
   resolveChatRoutes,
   withChatNoteHome,
@@ -356,7 +355,7 @@ async function summarizeThread(o: {
           kind: 'llm_call',
           input: { model: worker.model, provider: worker.provider },
         },
-        async (h) => {
+        async () => {
           const {
             result: r,
             failedOver,
@@ -379,7 +378,6 @@ async function summarizeThread(o: {
           );
           if (failedOver)
             console.warn(`[summarizer] summarized via backup route (${usedProvider})`);
-          recordChatUsage(h, r, r.model || routes.primary.model);
           return r;
         },
       );

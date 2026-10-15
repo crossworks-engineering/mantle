@@ -40,7 +40,6 @@ import { startTrace, step } from '@mantle/tracing';
 import { chatWithFailover, resolveChatKey, resolveChatRoutes } from './chat-failover';
 import { backgroundFence, defineDomainError } from '@mantle/std';
 import { buildChatMessages, flattenChatMessagesForAdapter } from './messages';
-import { recordChatUsage } from './llm-usage';
 
 /** A reply is still running in this chat: archiving now would split it. */
 export class ChatArchiveBusyError extends Error {
@@ -351,7 +350,7 @@ export async function summarizeChatThread(
           kind: 'llm_call',
           input: { model: worker.model, provider: worker.provider },
         },
-        async (h) => {
+        async () => {
           const { result: r } = await chatWithFailover(
             ownerId,
             routes,
@@ -362,7 +361,6 @@ export async function summarizeChatThread(
             },
             (m) => console.warn(`[chat-archive] ${m}`),
           );
-          recordChatUsage(h, r, r.model || routes.primary.model);
           return r;
         },
       );

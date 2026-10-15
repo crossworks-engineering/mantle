@@ -34,6 +34,7 @@ import {
 import { resolveChatKey, resolveChatRoutes, chatWithFailover } from '@mantle/runtime/agent';
 import { setTurnSuggestionHook, type TurnSuggestionContext } from '@mantle/runtime/assistant';
 import { feature } from '@mantle/config';
+import { chargeTo } from '@mantle/tracing';
 
 const SUGGESTION_PROMPT = `You propose the user's next message in a conversation with an AI assistant. Given the user's last message and the assistant's reply, propose ONE short follow-up question the user would plausibly ask next, in the user's FIRST PERSON voice, under 15 words, specific to the reply's content (dig deeper, apply it, or ask the natural next step). No preamble, no quotes, no list. Reply with ONLY the question.`;
 
@@ -94,17 +95,21 @@ export async function suggestFollowUp(ctx: TurnSuggestionContext): Promise<strin
     const maxTokens = workerParams?.max_tokens ?? 48;
 
     const routes = resolveChatRoutes(worker);
-    const { result } = await chatWithFailover(ctx.ownerId, routes, {
-      messages: [
-        { role: 'system', content: systemPrompt },
-        {
-          role: 'user',
-          content: `User's message:\n${ctx.userText}\n\nAssistant's reply:\n${ctx.replyText}`,
-        },
-      ],
-      temperature,
-      maxTokens,
-    });
+    // The suggestion runs after the turn's trace closed: its spend is
+    // charged to that trace (A10 #5, docs/spend-recording.md).
+    const { result } = await chargeTo(ctx.spend ?? null, () =>
+      chatWithFailover(ctx.ownerId, routes, {
+        messages: [
+          { role: 'system', content: systemPrompt },
+          {
+            role: 'user',
+            content: `User's message:\n${ctx.userText}\n\nAssistant's reply:\n${ctx.replyText}`,
+          },
+        ],
+        temperature,
+        maxTokens,
+      }),
+    );
     const suggestion = tidy(result.text ?? '');
     if (!suggestion) return null;
 

@@ -36,6 +36,17 @@ vi.mock('@mantle/db', () => ({
 }));
 
 import { createTracePrelude, startTrace, step, withTracePrelude } from './store';
+import { recordUsage } from './spend';
+
+const usage = (inputTokens: number, outputTokens: number, reportedCostUsd: number) =>
+  recordUsage({
+    capability: 'decision',
+    provider: 'p',
+    model: 'm',
+    inputTokens,
+    outputTokens,
+    reportedCostUsd,
+  });
 
 afterEach(() => {
   h.stepInserts.length = 0;
@@ -51,8 +62,7 @@ describe('trace prelude', () => {
     const prelude = createTracePrelude();
     const got = await withTracePrelude(prelude, () =>
       step({ name: 'decide_context_pruning', kind: 'llm_call', input: { use: 'x' } }, async (s) => {
-        s.addTokens({ input: 100, output: 2 });
-        s.addCost(40);
+        usage(100, 2, 0.00004);
         s.setMeta({ use: 'context_pruning' });
         await step({ name: 'embed', kind: 'embed' }, async () => 1);
         return 'answer';
@@ -63,7 +73,9 @@ describe('trace prelude', () => {
     expect(prelude.steps).toHaveLength(2);
 
     await startTrace({ kind: 'responder_turn', ownerId: 'o', prelude }, async () => {
-      await step({ name: 'llm', kind: 'llm_call' }, async (s) => s.addCost(1000));
+      await step({ name: 'llm', kind: 'llm_call' }, async () => {
+        usage(0, 0, 0.001);
+      });
     });
     await flush();
 

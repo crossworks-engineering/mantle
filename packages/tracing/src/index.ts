@@ -4,7 +4,6 @@ export {
   step,
   recordSkippedTrace,
   recordIngest,
-  recordStepUsage,
   currentTrace,
   currentStep,
   createTracePrelude,
@@ -20,6 +19,9 @@ export {
   abortTurn,
   unregisterTurnAbort,
   currentTurnAbortSignal,
+  spendTarget,
+  chargeTo,
+  type SpendTarget,
   type TraceKind,
   type TraceStepKind,
   type StepStatus,
@@ -28,7 +30,6 @@ export {
   type TracePrelude,
   type PreludeStep,
   type StepHandle,
-  type TokenDelta,
   type StepPhase,
   type StepObserver,
   type StepObserverEvent,
@@ -48,11 +49,13 @@ export {
 
 export { fallbackCostMicroUsd } from './pricing';
 export {
+  recordUsage,
   captureLlmUsage,
-  recordChatUsage,
-  type ChatUsageResult,
-  type LlmUsageSink,
-} from './llm-usage';
+  usageCostMicroUsd,
+  type ProviderUsage,
+  type SpendCapability,
+  type SpendUnits,
+} from './spend';
 export {
   contextLimitFor,
   contextSourceFor,

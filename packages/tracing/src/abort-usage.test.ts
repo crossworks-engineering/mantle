@@ -37,11 +37,21 @@ vi.mock('@mantle/db', () => ({
 
 import {
   abortTurn,
-  recordStepUsage,
   registerTurnAbort,
   startTrace,
   unregisterTurnAbort,
 } from './store';
+import { recordUsage } from './spend';
+
+const usage = (inputTokens: number, outputTokens: number, reportedCostUsd: number) =>
+  recordUsage({
+    capability: 'chat',
+    provider: 'p',
+    model: 'm',
+    inputTokens,
+    outputTokens,
+    reportedCostUsd,
+  });
 
 afterEach(() => {
   h.traceUpdates.length = 0;
@@ -54,11 +64,11 @@ describe('aborted turn keeps its partial spend', () => {
     try {
       await startTrace({ ownerId: 'owner-1', kind: 'responder_turn', turnId }, async () => {
         // First LLM round bills before the user hits Stop…
-        recordStepUsage({ model: 'm', input: 100, output: 40, costMicroUsd: 700 });
+        usage(100, 40, 0.0007);
         expect(abortTurn('owner-1', turnId)).toBe(true);
         expect(controller.signal.aborted).toBe(true);
         // …and the streaming adapter's final partial-usage report lands after.
-        recordStepUsage({ model: 'm', input: 0, output: 15, costMicroUsd: 100 });
+        usage(0, 15, 0.0001);
       });
     } finally {
       unregisterTurnAbort(turnId);

@@ -20,17 +20,12 @@ export type ToolHandlerContext = {
    *  the code runs in, if any; a call with none is refused (A5 step 3b). */
   caller?: ToolCaller;
   /** Optional trace step handle — the runtime opens a step around the call;
-   *  handlers can enrich its meta/output and attribute LLM cost via this.
-   *  `addTokens`/`addCost` let a handler that itself calls an LLM (e.g.
-   *  `web_search` → Perplexity Sonar) roll that spend into the active trace,
-   *  so /debug "spend by agent" stays accurate. Shape is a superset of
-   *  `@mantle/tracing`'s `LlmUsageSink`, so `captureLlmUsage(ctx.step, …)`
-   *  accepts it directly. */
+   *  handlers can enrich its meta/output. A handler that calls a provider
+   *  records nothing by hand: the adapter registry records the call's spend
+   *  on the trace and step in context (docs/spend-recording.md). */
   step?: {
     setMeta(m: Record<string, unknown>): void;
     setOutput(o: Record<string, unknown>): void;
-    addTokens(delta: { input?: number; output?: number; cacheRead?: number }): void;
-    addCost(microUsd: number): void;
   };
   /** Parent-agent metadata. Populated by `runToolLoop` so handlers
    *  that need to reason about the calling agent can — currently only

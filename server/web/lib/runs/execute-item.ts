@@ -218,17 +218,16 @@ async function runResolved(
   );
   const input = validation.input;
 
-  // Local usage accumulation so the ITEM row gets its own cost, while the
-  // same numbers flow into the trace step (one source, two sinks).
-  let costMicroUsd = 0;
-  const usage = { input: 0, output: 0, cacheRead: 0 };
 
   // Arch A2a: the tool runs as the run's login as it is now, else the owner.
   const itemActor = await runItemActor(run.ownerId, run.loginId);
   const asRunLogin = <T>(fn: () => Promise<T>) =>
     runAsActor(itemActor, () => withRunScope(run, fn));
 
-  let traceId: string | undefined;
+  // The item's usage is its own trace's (A10 #5): every provider call the
+  // tool makes is recorded there by the adapter registry, so the item row
+  // reads the trace's totals once the tool returns (docs/spend-recording.md).
+  let itemTrace = null as ReturnType<typeof currentTrace>;
   const result = await startTrace(
     {
       ownerId: run.ownerId,
@@ -237,7 +236,7 @@ async function runResolved(
       subjectId: item.id,
     },
     async () => {
-      traceId = currentTrace()?.id;
+      itemTrace = currentTrace();
       return step(
         { name: `tool: ${slug}`, kind: 'compute', input: { slug, args: input, run_id: run.id } },
         async (handle) => {
@@ -255,16 +254,6 @@ async function runResolved(
               step: {
                 setMeta: (m) => handle.setMeta(m),
                 setOutput: (o) => handle.setOutput(o),
-                addTokens: (d) => {
-                  usage.input += d.input ?? 0;
-                  usage.output += d.output ?? 0;
-                  usage.cacheRead += d.cacheRead ?? 0;
-                  handle.addTokens(d);
-                },
-                addCost: (mu) => {
-                  costMicroUsd += mu;
-                  handle.addCost(mu);
-                },
               },
               // The planning agent (see above). invoke_agent is banned as an
               // item, so the empty delegation list never matters. The run is
@@ -290,10 +279,16 @@ async function runResolved(
     error: errorMessage(err),
   }));
 
+  const usage = {
+    input: itemTrace?.tokens.in ?? 0,
+    output: itemTrace?.tokens.out ?? 0,
+    cacheRead: itemTrace?.tokens.cacheRead ?? 0,
+  };
+  const costMicroUsd = itemTrace?.costMicroUsd ?? 0;
   const accounting = {
     ...(usage.input || usage.output || usage.cacheRead ? { usage } : {}),
     ...(costMicroUsd > 0 ? { costMicroUsd } : {}),
-    ...(traceId ? { traceRef: traceId } : {}),
+    ...(itemTrace ? { traceRef: itemTrace.id } : {}),
   };
 
   if (result.ok) {

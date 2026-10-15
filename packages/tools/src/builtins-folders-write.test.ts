@@ -219,7 +219,7 @@ describe('folder_rename', () => {
     const setOutput = vi.fn();
     const stepCtx: ToolHandlerContext = {
       ownerId: 'o1',
-      step: { setOutput, setMeta: vi.fn(), addTokens: vi.fn(), addCost: vi.fn() },
+      step: { setOutput, setMeta: vi.fn() },
     };
     const res = await folderRename.handler(
       { folder_id: FOLDER_ID, new_name: 'Lister Contracts' },

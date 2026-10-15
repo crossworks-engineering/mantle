@@ -103,12 +103,6 @@ export type StepObserverEvent = {
 
 export type StepObserver = (e: StepObserverEvent) => void;
 
-export type TokenDelta = {
-  input?: number;
-  output?: number;
-  cacheRead?: number;
-};
-
 /** Mutable context for a single open trace. */
 export type TraceContext = {
   readonly id: string;
@@ -135,6 +129,10 @@ export type TraceContext = {
   stepCount: number;
   status: 'running' | 'success' | 'error';
   failedError: string | null;
+  /** Set when the trace has closed: its close write. Usage that lands later
+   *  (a call that was still running when the trace ended) is added to the
+   *  row after this write, by an increment (attributeUsage). */
+  closed: Promise<void> | null;
 };
 
 /** Handle a caller passes around inside a step body to enrich it. */
@@ -143,8 +141,6 @@ export type StepHandle = {
   readonly traceId: string;
   setOutput(o: Record<string, unknown>): void;
   setMeta(m: Record<string, unknown>): void;
-  addTokens(delta: TokenDelta): void;
-  addCost(microUsd: number): void;
   setSkipped(reason?: string): void;
   /** Mark this step as FAILED without throwing — for operations that report a
    *  structured failure (a tool returning `{ ok: false, error }`) rather than
@@ -248,14 +244,6 @@ async function preludeStep<T>(
     },
     setMeta(m) {
       entry.meta = { ...entry.meta, ...m };
-    },
-    addTokens(delta) {
-      entry.tokens.in += delta.input ?? 0;
-      entry.tokens.out += delta.output ?? 0;
-      entry.tokens.cacheRead += delta.cacheRead ?? 0;
-    },
-    addCost(microUsd) {
-      entry.costMicroUsd += microUsd;
     },
     setSkipped(reason) {
       skippedReason = reason ?? 'skipped';
@@ -577,55 +565,119 @@ export function emitTurnLifecycle(
   }
 }
 
-/**
- * Attribute LLM usage (tokens + cost) to the *currently running* step and
- * its trace from OUTSIDE the step body — for helpers that run several layers
- * below the `step()` call and don't hold the `StepHandle`. `runVisionWorker`
- * is the motivating case: it's the single chokepoint for every vision adapter
- * call, but the call sites wrap it in a step they own. Tokens + cost bubble to
- * the trace total; per-step `meta` (model + cost) is set only when a step is
- * active, so `/debug`'s spend-by-model picks the vision call up. No-op outside
- * a trace.
- */
-export function recordStepUsage(usage: {
-  model: string;
-  input: number;
-  output: number;
-  cacheRead?: number;
+// ─── Spend attribution (A10 #5) ──────────────────────────────────────────────
+//
+// Provider usage is recorded in ONE place, the adapter registry of
+// @mantle/voice (docs/spend-recording.md), through recordUsage (spend.ts),
+// which lands here. The call's trace, step and prelude come from context:
+// no caller passes numbers by hand.
+
+/** One provider call's usage, as it adds to a trace and a step. */
+export type UsageAttribution = {
+  /** Trace totals: `input` already holds the cache-write tokens. */
+  tokens: { in: number; out: number; cacheRead: number };
   costMicroUsd: number;
-}): void {
+  /** The step meta keys this call adds (numbers are summed into the step's,
+   *  `model` and `provider` replace). */
+  meta: Record<string, string | number>;
+};
+
+const chargeStore = new AsyncLocalStorage<TraceContext>();
+
+/** A trace that spend can be charged to (see chargeTo). */
+export type SpendTarget = TraceContext;
+
+/** The trace provider usage made now would count toward, as a handle a caller
+ *  can carry past the trace's end (a follow-up made after the turn). */
+export function spendTarget(): SpendTarget | null {
+  return chargeStore.getStore() ?? currentTrace();
+}
+
+/**
+ * Run `fn` so the provider usage it makes counts toward `target`'s totals
+ * only: never a step's meta, whichever step is running around it. For work
+ * kicked off beside a step rather than inside it (a narrated status line), or
+ * after the trace closed (a follow-up suggestion). A null target: `fn` as is.
+ */
+export function chargeTo<T>(target: SpendTarget | null, fn: () => Promise<T>): Promise<T> {
+  return target ? chargeStore.run(target, fn) : fn();
+}
+
+function mergeUsageMeta(
+  meta: Record<string, unknown>,
+  add: Record<string, string | number>,
+): Record<string, unknown> {
+  const out: Record<string, unknown> = { ...meta };
+  for (const [k, v] of Object.entries(add)) {
+    if (typeof v === 'number') {
+      const was = out[k];
+      out[k] = (typeof was === 'number' && Number.isFinite(was) ? was : 0) + v;
+    } else {
+      out[k] = v;
+    }
+  }
+  return out;
+}
+
+function addToTotals(ctx: TraceContext, u: UsageAttribution): void {
+  if (!ctx.closed) {
+    ctx.tokens.in += u.tokens.in;
+    ctx.tokens.out += u.tokens.out;
+    ctx.tokens.cacheRead += u.tokens.cacheRead;
+    ctx.costMicroUsd += u.costMicroUsd;
+    return;
+  }
+  // The trace closed while the call ran (or before a follow-up made it): add
+  // to the row after its close write, so the absolute close values cannot
+  // land on top of the increment.
+  if (u.tokens.in + u.tokens.out + u.tokens.cacheRead + u.costMicroUsd === 0) return;
+  void ctx.closed.then(() =>
+    Promise.resolve(
+      systemDb
+        .update(traces)
+        .set({
+          tokensIn: sql`${traces.tokensIn} + ${u.tokens.in}`,
+          tokensOut: sql`${traces.tokensOut} + ${u.tokens.out}`,
+          tokensCacheRead: sql`${traces.tokensCacheRead} + ${u.tokens.cacheRead}`,
+          costMicroUsd: sql`${traces.costMicroUsd} + ${u.costMicroUsd}`,
+        })
+        .where(eq(traces.id, ctx.id)),
+    ).catch((err: unknown) => logErr('late usage', err)),
+  );
+}
+
+/**
+ * Attribute one provider call's usage from context: the trace's totals, and
+ * the running step's meta (summed over the step's calls). Inside a prelude
+ * (no trace yet) it goes to the prelude step. A `chargeTo` target takes the
+ * totals only. No trace, no prelude, no target: nowhere (it is not kept).
+ */
+export function attributeUsage(u: UsageAttribution): void {
+  const charged = chargeStore.getStore();
+  if (charged) {
+    addToTotals(charged, u);
+    return;
+  }
   const trace = currentTrace();
   if (!trace) {
     const prelude = preludeStore.getStore();
     const index = preludeStepStore.getStore();
     const entry = prelude && index !== undefined ? prelude.steps[index] : undefined;
     if (!entry) return;
-    entry.tokens.in += usage.input;
-    entry.tokens.out += usage.output;
-    entry.tokens.cacheRead += usage.cacheRead ?? 0;
-    entry.costMicroUsd += usage.costMicroUsd;
-    entry.meta = {
-      ...entry.meta,
-      model: usage.model,
-      tokens_in: usage.input,
-      tokens_out: usage.output,
-      cost_micro_usd: usage.costMicroUsd,
-    };
+    entry.tokens.in += u.tokens.in;
+    entry.tokens.out += u.tokens.out;
+    entry.tokens.cacheRead += u.tokens.cacheRead;
+    entry.costMicroUsd += u.costMicroUsd;
+    entry.meta = mergeUsageMeta(entry.meta, u.meta);
     return;
   }
-  trace.tokens.in += usage.input;
-  trace.tokens.out += usage.output;
-  trace.tokens.cacheRead += usage.cacheRead ?? 0;
-  trace.costMicroUsd += usage.costMicroUsd;
+  addToTotals(trace, u);
+  // The step must be this trace's: a child trace opened inside a parent's
+  // step (a delegated agent) still sees that step in context until it opens
+  // one of its own.
   const active = currentStep();
-  if (active) {
-    active.meta = {
-      ...active.meta,
-      model: usage.model,
-      tokens_in: usage.input,
-      tokens_out: usage.output,
-      cost_micro_usd: usage.costMicroUsd,
-    };
+  if (active && active.traceId === trace.id && !trace.closed) {
+    active.meta = mergeUsageMeta(active.meta, u.meta);
   }
 }
 
@@ -692,6 +744,7 @@ export async function startTrace<T>(init: StartTraceInit, fn: () => Promise<T>):
     stepCount: 0,
     status: 'running',
     failedError: null,
+    closed: null,
   };
 
   // INSERT the row and AWAIT it before yielding to `fn`. Previously this
@@ -756,7 +809,7 @@ export async function startTrace<T>(init: StartTraceInit, fn: () => Promise<T>):
         turnSeqCounters.delete(turnId);
       }
       const duration = Date.now() - ctx.startedAtMs;
-      systemDb
+      const write = systemDb
         .update(traces)
         .set({
           status: ctx.status,
@@ -769,8 +822,11 @@ export async function startTrace<T>(init: StartTraceInit, fn: () => Promise<T>):
           stepCount: ctx.stepCount,
           error: ctx.failedError,
         })
-        .where(eq(traces.id, ctx.id))
-        .catch((err) => logErr('finish trace', err));
+        .where(eq(traces.id, ctx.id));
+      ctx.closed = Promise.resolve(write).then(
+        () => undefined,
+        (err: unknown) => logErr('finish trace', err),
+      );
     }
   });
 }
@@ -860,14 +916,6 @@ export async function step<T>(
     setMeta(m) {
       stepInfo.meta = { ...stepInfo.meta, ...m };
     },
-    addTokens(delta) {
-      trace.tokens.in += delta.input ?? 0;
-      trace.tokens.out += delta.output ?? 0;
-      trace.tokens.cacheRead += delta.cacheRead ?? 0;
-    },
-    addCost(microUsd) {
-      trace.costMicroUsd += microUsd;
-    },
     setSkipped(reason) {
       stepInfo.skippedReason = reason ?? 'skipped';
     },
@@ -939,8 +987,6 @@ function noopHandle(): StepHandle {
     traceId: '',
     setOutput() {},
     setMeta() {},
-    addTokens() {},
-    addCost() {},
     setSkipped() {},
     setError() {},
   };

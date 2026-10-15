@@ -303,8 +303,6 @@ async function call(
     step: {
       setMeta: (m: Record<string, unknown>) => h.meta.push(m),
       setOutput: () => {},
-      addTokens: () => {},
-      addCost: () => {},
     },
     ...(surface ? { surface } : {}),
     ...(caller ? { caller } : {}),

@@ -232,7 +232,7 @@ describe('invoke_agent hand-off', () => {
     const setMeta = vi.fn();
     const ctx = {
       ...parent(),
-      step: { setMeta, setOutput: vi.fn(), addTokens: vi.fn(), addCost: vi.fn() },
+      step: { setMeta, setOutput: vi.fn() },
     };
     expect(outputOf(await invoke_agent.handler(ARGS, ctx))).toEqual({
       text: 'done',

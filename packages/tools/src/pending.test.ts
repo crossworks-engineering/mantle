@@ -131,7 +131,7 @@ vi.mock('@mantle/db', async () => ({
 vi.mock('@mantle/tracing', () => ({
   startTrace: async (_i: unknown, fn: () => Promise<unknown>) => fn(),
   step: async (_i: unknown, fn: (handle: unknown) => Promise<unknown>) =>
-    fn({ setMeta: () => {}, setOutput: () => {}, addTokens: () => {}, addCost: () => {} }),
+    fn({ setMeta: () => {}, setOutput: () => {} }),
 }));
 
 const { approvePendingCall, rejectPendingCall } = await import('./pending');

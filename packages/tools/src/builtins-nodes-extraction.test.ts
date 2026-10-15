@@ -129,7 +129,7 @@ describe('process_extraction single node', () => {
     const setOutput = vi.fn();
     const res = await extraction.handler(
       { node_id: NODE },
-      { ...ctx, step: { setOutput, setMeta: vi.fn(), addTokens: vi.fn(), addCost: vi.fn() } },
+      { ...ctx, step: { setOutput, setMeta: vi.fn() } },
     );
     expect(outputOf(res)).toEqual({ fired: 1, node_id: NODE });
     expect(resignalNode).toHaveBeenCalledTimes(1);

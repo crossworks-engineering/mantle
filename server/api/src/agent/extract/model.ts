@@ -16,7 +16,6 @@ import { step } from '@mantle/tracing';
 import { backgroundFence, withFenceNote } from '@mantle/std';
 import {
   chatWithFailover,
-  recordChatUsage,
   resolveChatRoutes,
   type ChatRoutes,
 } from '@mantle/runtime/agent';
@@ -39,8 +38,8 @@ export async function resolveExtractor(ownerId: string): Promise<AiWorker | null
  * Anthropic / direct Google / xAI / HF actually routes there instead
  * of falling through to OpenRouter.
  *
- * Returns the typed ChatResult so the call site can pass it straight
- * to `recordChatUsage` without scraping a raw response.
+ * Returns the typed ChatResult. Its usage is recorded where every
+ * provider call's is: the adapter registry (docs/spend-recording.md).
  */
 export async function chatComplete(
   ownerId: string,
@@ -223,7 +222,6 @@ export async function runExtractorModel(
         },
         async (h) => {
           const r = await chatComplete(ownerId, routes, systemPrompt, userPayload, params);
-          recordChatUsage(h, r, r.model || worker.model);
           const result = parseExtractorOutput(r.text, { nodeId: node.id, model: worker.model });
           // Capture the full model output — summary, all entities,
           // all facts. truncateJson at the tracing layer will only

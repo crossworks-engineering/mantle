@@ -248,7 +248,7 @@ describe('file_rename', () => {
     const setOutput = vi.fn();
     const stepCtx: ToolHandlerContext = {
       ownerId: 'o1',
-      step: { setOutput, setMeta: vi.fn(), addTokens: vi.fn(), addCost: vi.fn() },
+      step: { setOutput, setMeta: vi.fn() },
     };
     const renamed = { ...row, filename: 'report.md' };
     vi.mocked(renameFileById).mockResolvedValue(renamed as never);

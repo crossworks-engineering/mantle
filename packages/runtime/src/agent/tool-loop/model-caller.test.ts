@@ -37,13 +37,10 @@ vi.mock('@mantle/tracing', async (importOriginal) => {
       fn({
         setMeta: h.setMeta,
         setOutput: vi.fn(),
-        addTokens: vi.fn(),
-        addCost: vi.fn(),
       }),
     ),
   };
 });
-vi.mock('../llm-usage', () => ({ recordChatUsage: vi.fn() }));
 
 import { createModelCaller } from './model-caller';
 import type { ToolLoopArgs } from '../tool-loop';

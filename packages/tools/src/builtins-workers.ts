@@ -412,8 +412,6 @@ const extract_from_image: BuiltinToolDef = {
         worker_slug: worker.slug,
         bytes: bytes.length,
         text_length: result.text.length,
-        tokens_in: result.tokensIn,
-        tokens_out: result.tokensOut,
       });
       return {
         ok: true,
@@ -564,8 +562,6 @@ const summarize_text: BuiltinToolDef = {
         worker_slug: worker.slug,
         source_length: source.length,
         summary_length: result.text.length,
-        tokens_in: result.tokensIn,
-        tokens_out: result.tokensOut,
       });
       return {
         ok: true,

@@ -412,14 +412,14 @@ describe('web_search', () => {
     );
   });
 
-  it('attributes the Sonar call to the active step', async () => {
+  it('records the Sonar call through the one recorder (onto the trace and step in context)', async () => {
     vi.mocked(getApiKey).mockResolvedValue('sk');
     const step = { setMeta: vi.fn(), setOutput: vi.fn() };
     await webSearch.handler(
       { query: 'q', recency: 'day' },
       { ownerId: 'o1', step: step as unknown as ToolHandlerContext['step'] },
     );
-    expect(captureLlmUsage).toHaveBeenCalledWith(step, expect.any(Object), expect.any(String));
+    expect(captureLlmUsage).toHaveBeenCalledWith(expect.any(Object), expect.any(String));
     expect(step.setMeta).toHaveBeenCalledWith({
       tier: 'search',
       recency: 'day',

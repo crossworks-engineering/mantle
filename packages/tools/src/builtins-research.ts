@@ -186,10 +186,11 @@ async function runWebSearch(
     const answer = typeof msg?.content === 'string' ? msg.content : '';
     const citations = extractCitations(resp);
 
-    // Attribute the Sonar sub-call's tokens + cost to this step → the active
-    // trace, so /debug "spend by agent" reflects research spend.
+    // The one provider call outside an adapter (the SDK call carries the
+    // Perplexity params): its raw usage goes through the one recorder, onto
+    // the trace and step in context (docs/spend-recording.md).
+    captureLlmUsage(resp, model);
     if (ctx.step) {
-      captureLlmUsage(ctx.step, resp, model);
       ctx.step.setMeta({
         tier: kind,
         ...(recency ? { recency } : {}),

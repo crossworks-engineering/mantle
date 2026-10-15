@@ -29,7 +29,7 @@ import {
   parserRouteForExt,
 } from '@mantle/files';
 import { DEFAULT_VISION_DESCRIBE_PROMPT, getVisionAdapter } from '@mantle/voice';
-import { fallbackCostMicroUsd, recordStepUsage, step } from '@mantle/tracing';
+import { step } from '@mantle/tracing';
 import { errorMessage, publicProviderErrorMessage } from '@mantle/std';
 
 /** Max chars of parsed document text folded into a responder prompt. The full
@@ -109,19 +109,10 @@ export async function runVisionWorker(opts: {
     });
     void bumpWorkerUsage(worker.id);
     const text = r.text?.trim() ? r.text : '';
-    // Attribute the vision call's cost to the active trace step (the
-    // extractor's photo_ingest extract_vision, or a conversational turn's
-    // attachment step). The adapter returns token counts but no dollar cost,
-    // so price via the fallback table. No-op outside a trace. Without this,
-    // vision spend read $0 in /debug (file-ingestion.md V1).
-    const tokensIn = r.tokensIn ?? 0;
-    const tokensOut = r.tokensOut ?? 0;
-    recordStepUsage({
-      model: worker.model,
-      input: tokensIn,
-      output: tokensOut,
-      costMicroUsd: fallbackCostMicroUsd(worker.model, { input: tokensIn, output: tokensOut }),
-    });
+    // The call's spend (tokens, cost from the price table) was recorded by the
+    // adapter registry on the step in context: the extractor's photo_ingest
+    // extract_vision, or a conversational turn's attachment step
+    // (docs/spend-recording.md, file-ingestion.md V1).
     return {
       ran: true,
       text,
@@ -212,14 +203,6 @@ export async function runDocumentWorker(opts: {
     });
     void bumpWorkerUsage(worker.id);
     const text = r.text?.trim() ? r.text : '';
-    const tokensIn = r.tokensIn ?? 0;
-    const tokensOut = r.tokensOut ?? 0;
-    recordStepUsage({
-      model: worker.model,
-      input: tokensIn,
-      output: tokensOut,
-      costMicroUsd: fallbackCostMicroUsd(worker.model, { input: tokensIn, output: tokensOut }),
-    });
     return {
       ran: true,
       text,

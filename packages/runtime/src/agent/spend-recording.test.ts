@@ -8,10 +8,13 @@
  * spend-by-model reads), and for a run item the cost on its item row (what the
  * run budget reads).
  *
- * This first version records MAIN as it is: three recorders (recordChatUsage,
- * captureLlmUsage, recordStepUsage), three hand cost sinks (the tool step's
- * addTokens/addCost from the tool loop, the pending path and the run item),
- * and the paths that record nothing.
+ * The first commit of this file recorded MAIN (three recorders, three hand
+ * cost sinks, paths that recorded nothing). Since the move every adapter the
+ * registry hands out records its own call (packages/voice/src/adapters/
+ * spend.ts), so no call site records by hand. Every cell is the same as main
+ * except the ones marked NAMED, each with its main value
+ * (docs/spend-recording.md "Named changes"). One cell changes everywhere: the
+ * step meta now names the call's `provider`.
  */
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
@@ -43,12 +46,12 @@ vi.mock('@mantle/db', () => ({
 
 import {
   captureLlmUsage,
+  chargeTo,
   currentTrace,
-  fallbackCostMicroUsd,
-  recordChatUsage,
-  recordStepUsage,
+  spendTarget,
   startTrace,
   step,
+  type SpendTarget,
   type StepHandle,
 } from '@mantle/tracing';
 import {
@@ -98,6 +101,13 @@ const fakeChat: ChatDispatcher = {
     onDelta({ type: 'text', text: 'ok' });
     return { text: 'ok', ...CHAT, model: o.model || CHAT.model };
   },
+};
+/** A provider that answers under a dated id the price table lacks. */
+const DATED = 'spend-fake-dated' as never;
+const fakeDatedChat: ChatDispatcher = {
+  providerId: DATED,
+  adapterName: 'spend-fake-dated-chat',
+  chat: async () => ({ text: 'ok', ...CHAT, model: 'anthropic/dated-x' }),
 };
 const fakeDecision: DecisionDispatcher = {
   providerId: P,
@@ -168,6 +178,7 @@ const RESEARCH_RAW = {
 
 beforeAll(() => {
   registerChatAdapter(fakeChat);
+  registerChatAdapter(fakeDatedChat);
   registerDecisionAdapter(fakeDecision);
   registerVisionAdapter(fakeVision);
   registerEmbeddingAdapter(fakeEmbedding);
@@ -191,6 +202,7 @@ type Recorded = {
 
 const USAGE_KEYS = [
   'model',
+  'provider',
   'tokens_in',
   'tokens_out',
   'cache_read',
@@ -233,81 +245,65 @@ const chatOpts = {
   messages: [{ role: 'user' as const, content: 'x' }],
 };
 
-/** The tool step sink the tool loop, the pending path and the run item hand a
- *  tool (main: execute-call.ts, pending.ts, execute-item.ts). */
-function toolSink(handle: StepHandle) {
-  return {
-    setMeta: (m: Record<string, unknown>) => handle.setMeta(m),
-    setOutput: (o: Record<string, unknown>) => handle.setOutput(o),
-    addTokens: (d: { input?: number; output?: number; cacheRead?: number }) => handle.addTokens(d),
-    addCost: (mu: number) => handle.addCost(mu),
-  };
-}
+/** A call's full chat meta, as the recorder writes it. */
+const CHAT_META = {
+  model: CHAT.model,
+  provider: P,
+  tokens_in: 1000,
+  tokens_out: 200,
+  cache_read: 300,
+  cache_write: 100,
+  cost_micro_usd: CHAT_COST,
+};
+const CHAT_TRACE = {
+  tokensIn: 1100,
+  tokensOut: 200,
+  tokensCacheRead: 300,
+  costMicroUsd: CHAT_COST,
+};
+const NOTHING = { tokensIn: 0, tokensOut: 0, tokensCacheRead: 0, costMicroUsd: 0 };
+
+const visionOpts = { apiKey: 'k', mimeType: 'image/png', prompt: 'p', model: 'gpt-4o-mini' };
 
 // ─── The paths ───────────────────────────────────────────────────────────────
 
-describe('spend recording per call path (main)', () => {
-  it('tool loop chat round (model-caller): recordChatUsage on the requested model', async () => {
-    const got = await recordPath(async (h) => {
-      const r = await getChatAdapter(P)!.chat(chatOpts);
-      recordChatUsage(h, r, CHAT.model);
-    });
-    expect(got).toEqual({
-      trace: { tokensIn: 1100, tokensOut: 200, tokensCacheRead: 300, costMicroUsd: CHAT_COST },
-      step: {
-        model: CHAT.model,
-        tokens_in: 1000,
-        tokens_out: 200,
-        cache_read: 300,
-        cache_write: 100,
-        cost_micro_usd: CHAT_COST,
-      },
-    });
+describe('spend recording per call path', () => {
+  it('tool loop chat round (model-caller)', async () => {
+    const got = await recordPath(() => getChatAdapter(P)!.chat(chatOpts));
+    // provider: NAMED (absent on main).
+    expect(got).toEqual({ trace: CHAT_TRACE, step: CHAT_META });
   });
 
-  it('tool loop streamed round: the same', async () => {
-    const got = await recordPath(async (h) => {
-      const r = await getChatAdapter(P)!.chatStream!(chatOpts, () => {});
-      recordChatUsage(h, r, CHAT.model);
-    });
-    expect(got.trace).toEqual({
-      tokensIn: 1100,
-      tokensOut: 200,
-      tokensCacheRead: 300,
-      costMicroUsd: CHAT_COST,
-    });
+  it('tool loop streamed round', async () => {
+    const got = await recordPath(() => getChatAdapter(P)!.chatStream!(chatOpts, () => {}));
+    expect(got).toEqual({ trace: CHAT_TRACE, step: CHAT_META });
   });
 
-  it('worker chat (summarizer, reflector, archive, extractor): priced on the SERVED model', async () => {
-    // Requested an alias the table lacks; the provider served a priced id.
-    const got = await recordPath(async (h) => {
-      const r = await getChatAdapter(P)!.chat({ ...chatOpts, model: '' });
-      recordChatUsage(h, r, r.model || 'unpriced/alias');
-    });
+  it('worker chat (summarizer, reflector, archive, extractor)', async () => {
+    // Requested an id the table lacks, served a priced one: priced on the
+    // served id, as main.
+    const got = await recordPath(() => getChatAdapter(P)!.chat({ ...chatOpts, model: '' }));
     expect(got.trace.costMicroUsd).toBe(CHAT_COST);
-    // And requesting a priced id the provider answers under an unpriced one:
-    // the served id is what is priced, so it reads $0.
-    const got2 = await recordPath(async (h) => {
-      const r = { ...(await getChatAdapter(P)!.chat(chatOpts)), model: 'anthropic/dated-x' };
-      recordChatUsage(h, r, r.model || CHAT.model);
-    });
-    expect(got2.trace.costMicroUsd).toBe(0);
+    // Requested a priced id, served under an unpriced dated one.
+    const got2 = await recordPath(() => getChatAdapter(DATED)!.chat(chatOpts));
+    // NAMED: main priced the worker paths on the served id only: 0.
+    expect(got2.trace.costMicroUsd).toBe(CHAT_COST);
   });
 
-  it('decider (decide.ts): recordChatUsage, reported cost', async () => {
-    const got = await recordPath(async (h) => {
-      const res = await getDecisionAdapter(P)!.decide({
+  it('decider (decide.ts)', async () => {
+    const got = await recordPath(() =>
+      getDecisionAdapter(P)!.decide({
         apiKey: 'k',
         model: 'typesafe/jev-1.13',
         state: {},
         questions: { q: { type: 'noul', instructions: 'x' } },
-      });
-      recordChatUsage(h, res, 'typesafe/jev-1.13');
-    });
+      }),
+    );
     expect(got).toEqual({
       trace: { tokensIn: 500, tokensOut: 0, tokensCacheRead: 0, costMicroUsd: 21 },
       step: {
         model: 'typesafe/jev-1.13',
+        provider: P,
         tokens_in: 500,
         tokens_out: 0,
         cache_read: 0,
@@ -316,178 +312,185 @@ describe('spend recording per call path (main)', () => {
     });
   });
 
-  it('vision worker (attachments runVisionWorker): recordStepUsage on the configured model', async () => {
-    const got = await recordPath(async () => {
-      const r = await getVisionAdapter(P)!.extract(Buffer.from('x'), {
-        apiKey: 'k',
-        mimeType: 'image/png',
-        prompt: 'p',
-        model: 'gpt-4o-mini',
-      });
-      recordStepUsage({
-        model: 'gpt-4o-mini',
-        input: r.tokensIn ?? 0,
-        output: r.tokensOut ?? 0,
-        costMicroUsd: fallbackCostMicroUsd('gpt-4o-mini', {
-          input: r.tokensIn ?? 0,
-          output: r.tokensOut ?? 0,
-        }),
-      });
-    });
-    expect(got).toEqual({
+  it('vision worker (attachments runVisionWorker, runDocumentWorker)', async () => {
+    const got = await recordPath(() => getVisionAdapter(P)!.extract(Buffer.from('x'), visionOpts));
+    const doc = await recordPath(() =>
+      getVisionAdapter(P)!.extractDocument!(Buffer.from('x'), visionOpts),
+    );
+    const want = {
       trace: { tokensIn: 800, tokensOut: 150, tokensCacheRead: 0, costMicroUsd: VISION_COST },
-      step: { model: 'gpt-4o-mini', tokens_in: 800, tokens_out: 150, cost_micro_usd: VISION_COST },
-    });
+      step: {
+        model: 'gpt-4o-mini',
+        provider: P,
+        tokens_in: 800,
+        tokens_out: 150,
+        cost_micro_usd: VISION_COST,
+      },
+    };
+    expect(got).toEqual(want);
+    expect(doc).toEqual(want);
   });
 
-  it('vision, two pages in one step: the step meta keeps the LAST call only', async () => {
+  it('vision, two pages in one step: the step meta sums the calls', async () => {
     const got = await recordPath(async () => {
       for (let page = 0; page < 2; page++) {
-        const r = await getVisionAdapter(P)!.extract(Buffer.from('x'), {
-          apiKey: 'k',
-          mimeType: 'image/png',
-          prompt: 'p',
-          model: 'gpt-4o-mini',
-        });
-        const usage = { input: r.tokensIn ?? 0, output: r.tokensOut ?? 0 };
-        recordStepUsage({
-          model: 'gpt-4o-mini',
-          ...usage,
-          costMicroUsd: fallbackCostMicroUsd('gpt-4o-mini', usage),
-        });
+        await getVisionAdapter(P)!.extract(Buffer.from('x'), visionOpts);
       }
     });
     expect(got.trace.costMicroUsd).toBe(2 * VISION_COST);
+    // NAMED: main kept the last call's (210, 800).
+    expect(got.step.cost_micro_usd).toBe(2 * VISION_COST);
+    expect(got.step.tokens_in).toBe(1600);
+  });
+
+  it('extract_from_image tool (builtins-workers)', async () => {
+    const got = await recordPath(() => getVisionAdapter(P)!.extract(Buffer.from('x'), visionOpts));
+    // NAMED: main recorded nothing on the trace (0, 0, 0, 0) and only the
+    // hand tokens_in / tokens_out on the step.
+    expect(got.trace).toEqual({
+      tokensIn: 800,
+      tokensOut: 150,
+      tokensCacheRead: 0,
+      costMicroUsd: VISION_COST,
+    });
     expect(got.step.cost_micro_usd).toBe(VISION_COST);
-    expect(got.step.tokens_in).toBe(800);
   });
 
-  it('extract_from_image tool (builtins-workers): no recorder, hand tokens in the meta', async () => {
-    const got = await recordPath(async (h) => {
-      const r = await getVisionAdapter(P)!.extract(Buffer.from('x'), {
-        apiKey: 'k',
-        mimeType: 'image/png',
-        prompt: 'p',
-        model: 'gpt-4o-mini',
-      });
-      h.setMeta({ tokens_in: r.tokensIn, tokens_out: r.tokensOut });
-    });
-    expect(got).toEqual({
-      trace: { tokensIn: 0, tokensOut: 0, tokensCacheRead: 0, costMicroUsd: 0 },
-      step: { tokens_in: 800, tokens_out: 150 },
-    });
+  it('summarize_text tool (builtins-workers)', async () => {
+    const got = await recordPath(() => getChatAdapter(P)!.chat(chatOpts));
+    // NAMED: main recorded nothing on the trace and only the hand tokens on
+    // the step.
+    expect(got).toEqual({ trace: CHAT_TRACE, step: CHAT_META });
   });
 
-  it('summarize_text tool (builtins-workers): no recorder, hand tokens in the meta', async () => {
-    const got = await recordPath(async (h) => {
-      const r = await getChatAdapter(P)!.chat(chatOpts);
-      h.setMeta({ tokens_in: r.tokensIn, tokens_out: r.tokensOut });
+  it('research (web_search, Sonar): the raw-response reader', async () => {
+    const got = await recordPath(async () => {
+      captureLlmUsage(RESEARCH_RAW, 'perplexity/sonar');
     });
     expect(got).toEqual({
-      trace: { tokensIn: 0, tokensOut: 0, tokensCacheRead: 0, costMicroUsd: 0 },
-      step: { tokens_in: 1000, tokens_out: 200 },
-    });
-  });
-
-  it('research (web_search, Sonar): captureLlmUsage through the tool step sink', async () => {
-    const got = await recordPath(async (h) => {
-      captureLlmUsage(toolSink(h), RESEARCH_RAW, 'perplexity/sonar');
-    });
-    // Main skips the cache-write tokens.
-    expect(got).toEqual({
-      trace: { tokensIn: 400, tokensOut: 300, tokensCacheRead: 0, costMicroUsd: 6000 },
+      // NAMED: tokensIn 400 on main (the cache-write tokens were skipped).
+      trace: { tokensIn: 450, tokensOut: 300, tokensCacheRead: 0, costMicroUsd: 6000 },
       step: {
         model: 'perplexity/sonar',
+        provider: 'openrouter',
         tokens_in: 400,
         tokens_out: 300,
         cache_read: 0,
+        // NAMED: absent on main.
+        cache_write: 50,
         cost_micro_usd: 6000,
       },
     });
   });
 
-  it('run item cost (execute-item): the tool sink accumulates, a provider call does not', async () => {
-    // A run item adds to its row only what a handler reports through the sink.
-    let itemCost = 0;
-    const itemSink = (handle: StepHandle) => ({
-      ...toolSink(handle),
-      addCost: (mu: number) => {
-        itemCost += mu;
-        handle.addCost(mu);
-      },
-    });
-    await recordPath(async (h) => {
-      captureLlmUsage(itemSink(h), RESEARCH_RAW, 'perplexity/sonar');
-    });
-    expect(itemCost).toBe(6000);
-    // summarize_text as a run item: the chat call reaches nothing.
-    itemCost = 0;
-    const got = await recordPath(async (h) => {
-      itemSink(h);
-      await getChatAdapter(P)!.chat(chatOpts);
-    });
-    expect(itemCost).toBe(0);
-    expect(got.trace.costMicroUsd).toBe(0);
+  it('run item cost (execute-item): the item trace totals', async () => {
+    // execute-item reads its own trace's totals once the tool returns.
+    const itemCost = async (tool: () => Promise<unknown>) => {
+      let trace = null as ReturnType<typeof currentTrace>;
+      await startTrace({ ownerId: 'owner-1', kind: 'run_item' }, async () => {
+        trace = currentTrace();
+        return step({ name: 'tool: x', kind: 'compute' }, tool);
+      });
+      return trace?.costMicroUsd ?? 0;
+    };
+    expect(await itemCost(async () => captureLlmUsage(RESEARCH_RAW, 'perplexity/sonar'))).toBe(
+      6000,
+    );
+    // NAMED: 0 on main (a provider call inside a run item's tool reached
+    // neither the trace nor the item row).
+    expect(await itemCost(() => getChatAdapter(P)!.chat(chatOpts))).toBe(CHAT_COST);
   });
 
-  it('embeddings (embed_batch step): nothing recorded', async () => {
+  it('embeddings (embed_batch step)', async () => {
     const got = await recordPath(async (h) => {
       await getEmbeddingAdapter(P)!.embed({
         apiKey: 'k',
         model: 'openai/text-embedding-3-small',
         input: ['a', 'b'],
       });
-      h.setMeta({ model: 'openai/text-embedding-3-small' });
+      h.setMeta({ model: 'openai/text-embedding-3-small', provider: P });
     });
+    // NAMED: main recorded nothing (trace 0, step { model }).
     expect(got).toEqual({
-      trace: { tokensIn: 0, tokensOut: 0, tokensCacheRead: 0, costMicroUsd: 0 },
-      step: { model: 'openai/text-embedding-3-small' },
+      trace: { tokensIn: 50, tokensOut: 0, tokensCacheRead: 0, costMicroUsd: 1 },
+      step: {
+        model: 'openai/text-embedding-3-small',
+        provider: P,
+        tokens_in: 50,
+        tokens_out: 0,
+        cost_micro_usd: 1,
+      },
     });
   });
 
-  it('image generation, speech, transcription: nothing recorded', async () => {
-    for (const call of [
-      () => getImageGenAdapter(P)!.generate({ apiKey: 'k', prompt: 'a cat', model: 'img-1' }),
-      () => getTtsAdapter(P)!.synthesize({ apiKey: 'k', text: 'x'.repeat(120), model: 'tts-1' }),
-      () =>
-        getSttAdapter(P)!.transcribe(Buffer.from('x'), {
-          apiKey: 'k',
-          mimeType: 'audio/ogg',
-          model: 'whisper-1',
-        }),
-    ]) {
-      const got = await recordPath(async () => {
-        await call();
-      });
+  it('image generation, speech, transcription: units, no price', async () => {
+    const cases: Array<[() => Promise<unknown>, Record<string, unknown>]> = [
+      [
+        () => getImageGenAdapter(P)!.generate({ apiKey: 'k', prompt: 'a cat', model: 'img-1' }),
+        { model: 'img-1', images: 1 },
+      ],
+      [
+        () => getTtsAdapter(P)!.synthesize({ apiKey: 'k', text: 'x'.repeat(120), model: 'tts-1' }),
+        { model: 'tts-1', characters: 120 },
+      ],
+      [
+        () =>
+          getSttAdapter(P)!.transcribe(Buffer.from('x'), {
+            apiKey: 'k',
+            mimeType: 'audio/ogg',
+            model: 'whisper-1',
+          }),
+        { model: 'whisper-1', audio_seconds: 42 },
+      ],
+    ];
+    for (const [call, units] of cases) {
+      const got = await recordPath(call);
+      // NAMED: main recorded nothing (step {}). The trace stays at 0: these
+      // calls carry no tokens and the price table has no unit prices.
       expect(got).toEqual({
-        trace: { tokensIn: 0, tokensOut: 0, tokensCacheRead: 0, costMicroUsd: 0 },
-        step: {},
+        trace: NOTHING,
+        step: { ...units, provider: P, cost_micro_usd: 0 },
       });
     }
   });
 
-  it('narration (a chat call beside a step, finishing after the trace closed): nothing', async () => {
+  it('narration: charged to the turn, landing after the trace closed', async () => {
     let late: Promise<unknown> = Promise.resolve();
-    await startTrace({ ownerId: 'owner-1', kind: 'responder_turn' }, async () => {
-      late = (async () => {
-        await new Promise((r) => setTimeout(r, 5));
-        await getChatAdapter(P)!.chat(chatOpts);
-      })();
-    });
+    h.traceUpdates.length = 0;
+    await startTrace({ ownerId: 'owner-1', kind: 'responder_turn' }, () =>
+      step({ name: 'tool: x', kind: 'compute' }, async () => {
+        // As narrateStatus: kicked off beside the step, not awaited by it.
+        late = chargeTo(spendTarget(), async () => {
+          await new Promise((r) => setTimeout(r, 5));
+          return getChatAdapter(P)!.chat(chatOpts);
+        });
+      }),
+    );
     await late;
     await flush();
-    const close = h.traceUpdates.find((u) => u.status === 'success')!;
-    expect(close.costMicroUsd).toBe(0);
-    expect(h.traceUpdates).toHaveLength(1);
+    const [close, increment] = h.traceUpdates;
+    expect(close).toMatchObject({ status: 'success', costMicroUsd: 0 });
+    // NAMED: main wrote nothing more. Now one increment of the call's usage.
+    expect(increment).toBeDefined();
+    expect(h.stepUpdates.at(-1)!.meta).toEqual({});
   });
 
-  it('follow-up suggestion (after the trace closed, outside it): nothing', async () => {
+  it('follow-up suggestion: charged to the turn after it closed', async () => {
+    let target: SpendTarget | null = null;
+    h.traceUpdates.length = 0;
     await startTrace({ ownerId: 'owner-1', kind: 'responder_turn' }, async () => {
-      expect(currentTrace()).not.toBeNull();
+      target = spendTarget();
     });
+    await chargeTo(target, () => getChatAdapter(P)!.chat(chatOpts));
+    await flush();
+    // NAMED: main wrote the close only.
+    expect(h.traceUpdates).toHaveLength(2);
+  });
+
+  it('a call outside any trace records nowhere, as on main', async () => {
+    h.traceUpdates.length = 0;
     await getChatAdapter(P)!.chat(chatOpts);
     await flush();
-    expect(h.traceUpdates).toHaveLength(1);
-    expect(h.traceUpdates[0]!.costMicroUsd).toBe(0);
+    expect(h.traceUpdates).toHaveLength(0);
   });
 });

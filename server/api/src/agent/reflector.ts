@@ -41,7 +41,6 @@ import { recordSkippedTrace, startTrace, step } from '@mantle/tracing';
 import { backgroundFence, withFenceNote, type Fence } from '@mantle/std';
 import {
   chatWithFailover,
-  recordChatUsage,
   resolveChatKey,
   resolveChatRoutes,
 } from '@mantle/runtime/agent';
@@ -415,7 +414,7 @@ async function reflectOnAgent(
           kind: 'llm_call',
           input: { model: reflector.model, provider: reflector.provider },
         },
-        async (h) => {
+        async () => {
           const { result, failedOver, usedProvider } = await chatWithFailover(
             ownerId,
             routes,
@@ -440,7 +439,6 @@ async function reflectOnAgent(
             (m) => console.warn(`[reflector] ${m}`),
           );
           if (failedOver) console.warn(`[reflector] reflected via backup route (${usedProvider})`);
-          recordChatUsage(h, result, result.model || routes.primary.model);
           return result;
         },
       );

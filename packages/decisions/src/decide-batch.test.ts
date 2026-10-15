@@ -25,7 +25,6 @@ vi.mock('@mantle/api-keys', () => ({
   getApiKey: vi.fn(async () => 'key'),
 }));
 vi.mock('@mantle/tracing', () => ({
-  recordChatUsage: vi.fn(),
   step: vi.fn(async (_o: unknown, fn: (h: unknown) => unknown) =>
     fn({ setMeta: vi.fn(), setOutput: vi.fn(), setSkipped: vi.fn() }),
   ),

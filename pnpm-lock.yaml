@@ -993,6 +993,9 @@ importers:
       '@mantle/std':
         specifier: workspace:*
         version: link:../std
+      '@mantle/tracing':
+        specifier: workspace:*
+        version: link:../tracing
       '@mantle/voice-client':
         specifier: workspace:*
         version: link:../voice-client

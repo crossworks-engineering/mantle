@@ -19,8 +19,9 @@
  *      ONE decision) passes a `DecideBatch` and counts once: any group
  *      answering means the endpoint is up.
  *   4. Traced. One `llm_call` step per call with `meta.use`, `meta.mode`, the
- *      model, token + cost rollups (`recordChatUsage`, same keys as every
- *      other LLM step so /debug spend-by-model needs no special case) and a
+ *      model, token + cost rollups (recorded by the adapter registry, same
+ *      keys as every other LLM step so /debug spend-by-model needs no special
+ *      case: docs/spend-recording.md) and a
  *      compact `meta.answers` summary. A shadow week is read from these.
  *   5. Cached in-process on (use, model, state, questions) so a repeated
  *      question costs nothing.
@@ -39,7 +40,7 @@ import {
   type DecisionUseConfig,
 } from '@mantle/db';
 import { errorMessage } from '@mantle/std';
-import { recordChatUsage, step } from '@mantle/tracing';
+import { step } from '@mantle/tracing';
 import {
   getDecisionAdapter,
   type DecisionAnswer,
@@ -294,7 +295,6 @@ export async function decide(input: DecideInput): Promise<DecideOutcome | null> 
           timeoutMs: timeoutOf(params, input.timeoutFactor),
         });
         const ms = Date.now() - t0;
-        recordChatUsage(h, res, worker.model);
         h.setMeta({
           use: input.use,
           mode: use.mode,

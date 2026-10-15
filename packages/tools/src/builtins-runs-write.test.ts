@@ -299,7 +299,7 @@ describe('run_plan', () => {
   });
 
   it('creates the run under the owner, in micro-USD, and enqueues its first actions', async () => {
-    const step = { setMeta: vi.fn(), setOutput: vi.fn(), addTokens: vi.fn(), addCost: vi.fn() };
+    const step = { setMeta: vi.fn(), setOutput: vi.fn() };
     const res = await plan.handler(
       { title: ' Digest ', plan: okPlan, budget_usd: 0.5 },
       {
