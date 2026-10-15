@@ -80,6 +80,18 @@ const CONTENT: Readonly<Record<string, { table: string; column: string }>> = {
   table: { table: 'tables', column: 'data' },
 };
 
+/** The least formula spec that parses (packages/content-core formula-spec). */
+const FORMULA_SPEC = {
+  id: 'a8-formula',
+  name: 'A8 formula',
+  source: { standard: 'none' },
+  variables: [],
+  expressions: [],
+  piecewise: [],
+  lookups: [],
+  classifications: [],
+};
+
 export type A8Item = {
   id: string;
   /** Its title (a public link's view names the item by it). */
@@ -301,7 +313,12 @@ export async function makeA8Item(
   const id = randomUUID();
   const token = `zq${randomUUID().replace(/-/g, '').slice(0, 12)}`;
   const title = `${fx.tag} ${kind} ${placement} ${id.slice(0, 8)}`;
-  const data = { rank: 'a0', ...(snapshotOf ? { snapshot_of: snapshotOf } : {}) };
+  const data = {
+    rank: 'a0',
+    ...(snapshotOf ? { snapshot_of: snapshotOf } : {}),
+    // A formula's spec, the least that parses (its tools and its link read it).
+    ...(kind === 'formula' ? { spec: FORMULA_SPEC } : {}),
+  };
   const O = fx.owner;
   await sql.begin(async (tx) => {
     if (snapshotOf) {

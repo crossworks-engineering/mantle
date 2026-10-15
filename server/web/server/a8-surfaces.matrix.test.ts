@@ -649,9 +649,8 @@ describe.skipIf(!DB_URL)('A8 surface cells: every way in gives the oracle’s an
       supports: (kind, action) =>
         action === 'read' &&
         // An app's link serves its frame (a published build, which the
-        // fixture's app has none of); a formula's view needs its spec.
+        // fixture's app has none of).
         kind !== 'app' &&
-        kind !== 'formula' &&
         (ITEM_KINDS as Record<string, { publicLink: boolean | string }>)[kind]!.publicLink === true,
       run: (_role, _kind, _action, id) =>
         guard(async () => {
