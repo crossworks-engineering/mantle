@@ -25,7 +25,7 @@ export const openAiSttAdapter: SttDispatcher = {
   async transcribe(audio, opts) {
     return transcribeAudio(audio, opts);
   },
-  async discoverModels(apiKey) {
+  async discoverModels({ apiKey }) {
     return discoverSttModels(apiKey);
   },
 };

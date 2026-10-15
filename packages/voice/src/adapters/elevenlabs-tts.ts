@@ -27,7 +27,7 @@
  */
 
 import type { SynthesizeOptions, SynthesizeResult, TtsWarning } from '../types';
-import type { ChatModelInfo, TtsDispatcher } from './types';
+import type { ChatModelInfo, TtsDispatcher, ProviderCredential } from './types';
 import type { DiscoveryResult } from '../discover';
 import type { TtsModelInfo } from '../catalog';
 import {
@@ -225,7 +225,9 @@ async function elevenLabsVoicesForModel(
  * Discover available TTS models. ElevenLabs's /v1/models returns the
  * full model catalogue including any beta access the key has.
  */
-async function elevenLabsDiscoverModels(apiKey: string): Promise<DiscoveryResult<TtsModelInfo>> {
+async function elevenLabsDiscoverModels({
+  apiKey,
+}: ProviderCredential): Promise<DiscoveryResult<TtsModelInfo>> {
   try {
     const res = await providerFetch(
       `${ELEVENLABS_BASE_URL}/v1/models`,

@@ -19,6 +19,8 @@ const h = vi.hoisted(() => ({
   // present key; individual tests set these to null to exercise the miss paths.
   apiKeyByIdReturn: 'k' as string | null,
   apiKeyByServiceReturn: 'k' as string | null,
+  // Whole credentials by key id (a row's workspace id rides with its key).
+  credentialsById: {} as Record<string, { apiKey: string; anthropicWorkspaceId?: string }>,
 }));
 
 vi.mock('@mantle/voice', async (importOriginal) => {
@@ -42,15 +44,19 @@ vi.mock('@mantle/voice', async (importOriginal) => {
   };
 });
 
+/** A lookup's answer for a plain key value: its credential, or none. */
+const cred = (apiKey: string | null) => (apiKey === null ? null : { apiKey });
+
 vi.mock('@mantle/api-keys', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@mantle/api-keys')>();
   return {
     ...actual,
-    getApiKey: async () => h.apiKeyByServiceReturn,
-    getApiKeyById: async () => h.apiKeyByIdReturn,
+    getApiKey: async () => cred(h.apiKeyByServiceReturn),
+    getApiKeyById: async (id: string) => h.credentialsById[id] ?? cred(h.apiKeyByIdReturn),
     // The one provider key lookup: the pinned key, else the service's own.
     resolveProviderKey: async (_owner: string, _service: string, keyId?: string | null) =>
-      (keyId ? h.apiKeyByIdReturn : null) ?? h.apiKeyByServiceReturn,
+      (keyId ? (h.credentialsById[keyId] ?? cred(h.apiKeyByIdReturn)) : null) ??
+      cred(h.apiKeyByServiceReturn),
   };
 });
 
@@ -176,6 +182,35 @@ describe('chatWithFailover', () => {
     expect(h.lastBackupOpts?.baseUrl).toBeUndefined();
     expect(h.lastBackupOpts?.viaTailnet).toBeUndefined();
   });
+
+  it("sends each route's own credential: the same key value, each row's workspace id", async () => {
+    h.credentialsById = {
+      'row-a': { apiKey: 'same-value', anthropicWorkspaceId: 'wrkspc_a' },
+      'row-b': { apiKey: 'same-value', anthropicWorkspaceId: 'wrkspc_b' },
+      'row-none': { apiKey: 'same-value' },
+    };
+    try {
+      h.primaryChat = down;
+      const routes = (primary: string, backup: string): ChatRoutes => ({
+        primary: { ...ROUTES.primary, apiKeyId: primary },
+        backup: { ...ROUTES.backup!, apiKeyId: backup },
+      });
+      await chatWithFailover('o', routes('row-a', 'row-b'), OPTS);
+      expect(h.lastPrimaryOpts).toMatchObject({
+        apiKey: 'same-value',
+        anthropicWorkspaceId: 'wrkspc_a',
+      });
+      expect(h.lastBackupOpts).toMatchObject({
+        apiKey: 'same-value',
+        anthropicWorkspaceId: 'wrkspc_b',
+      });
+      await chatWithFailover('o', routes('row-none', 'row-a'), OPTS);
+      expect(h.lastPrimaryOpts).not.toHaveProperty('anthropicWorkspaceId');
+      expect(h.lastBackupOpts?.anthropicWorkspaceId).toBe('wrkspc_a');
+    } finally {
+      h.credentialsById = {};
+    }
+  });
 });
 
 describe('resolveChatRoutes', () => {
@@ -256,7 +291,7 @@ describe('resolveChatKey — the single source of truth for chat credentials', (
     h.apiKeyByIdReturn = null;
     h.apiKeyByServiceReturn = null;
     const r = await resolveChatKey('o', { provider: 'local', apiKeyId: null, configuredBy: null });
-    expect(r).toEqual({ ok: true, apiKey: 'local' });
+    expect(r).toEqual({ ok: true, credential: { apiKey: 'local' } });
   });
 
   it('honours a pinned key even for local (e.g. a token-guarded proxy)', async () => {
@@ -266,7 +301,7 @@ describe('resolveChatKey — the single source of truth for chat credentials', (
       apiKeyId: 'key-id',
       configuredBy: null,
     });
-    expect(r).toEqual({ ok: true, apiKey: 'pinned' });
+    expect(r).toEqual({ ok: true, credential: { apiKey: 'pinned' } });
   });
 
   it('returns the resolved key for a cloud provider that has one', async () => {
@@ -275,7 +310,7 @@ describe('resolveChatKey — the single source of truth for chat credentials', (
       apiKeyId: 'key-id',
       configuredBy: null,
     });
-    expect(r).toEqual({ ok: true, apiKey: 'k' });
+    expect(r).toEqual({ ok: true, credential: { apiKey: 'k' } });
   });
 
   it('misses with no_api_key_id when a cloud provider has NO key configured', async () => {

@@ -17,6 +17,7 @@ import type {
   EmbedResult,
   EmbeddingDispatcher,
   EmbeddingModelInfo,
+  ProviderCredential,
 } from './types';
 import type { DiscoveryResult } from '../discover';
 import { errorMessage, PROVIDER_TIMEOUTS, ProviderHttpError } from '@mantle/std';
@@ -151,7 +152,9 @@ export const openaiEmbedding: EmbeddingDispatcher = {
     return STATIC_CATALOG;
   },
 
-  async discoverModels(apiKey: string): Promise<DiscoveryResult<EmbeddingModelInfo>> {
+  async discoverModels({
+    apiKey,
+  }: ProviderCredential): Promise<DiscoveryResult<EmbeddingModelInfo>> {
     // OpenAI's /v1/models returns chat + embedding + audio + image
     // models mixed together with no kind tag. We pattern-match
     // `text-embedding-*` ids and cross-reference against the static

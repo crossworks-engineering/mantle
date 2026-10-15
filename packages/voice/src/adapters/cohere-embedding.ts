@@ -27,6 +27,7 @@ import type {
   EmbedResult,
   EmbeddingDispatcher,
   EmbeddingModelInfo,
+  ProviderCredential,
 } from './types';
 import type { DiscoveryResult } from '../discover';
 import { errorMessage, PROVIDER_TIMEOUTS, ProviderHttpError } from '@mantle/std';
@@ -138,7 +139,9 @@ export const cohereEmbedding: EmbeddingDispatcher = {
     return STATIC_CATALOG;
   },
 
-  async discoverModels(apiKey: string): Promise<DiscoveryResult<EmbeddingModelInfo>> {
+  async discoverModels({
+    apiKey,
+  }: ProviderCredential): Promise<DiscoveryResult<EmbeddingModelInfo>> {
     try {
       const res = await providerFetch(
         MODELS_URL,

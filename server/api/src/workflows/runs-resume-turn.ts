@@ -191,8 +191,8 @@ export async function runsResumeTurnImpl(
       }
       // Deliberately NOT a journaled step: never write a decrypted key into
       // the DBOS system DB. A replay re-resolves it as glue (see header).
-      const apiKey = await getApiKeyById(agent.apiKeyId);
-      if (!apiKey) {
+      const credential = await getApiKeyById(agent.apiKeyId);
+      if (!credential) {
         DBOS.logger.error(`[runs_resume_turn] api key for agent '${agent.slug}' failed to decrypt`);
         return { resumed: false, outcome: 'precondition' };
       }
@@ -287,7 +287,7 @@ export async function runsResumeTurnImpl(
             ownerId: run.ownerId,
             agent,
             adapter,
-            apiKey,
+            credential,
             prefs,
             logPrefix: '[runs]',
             assembled,

@@ -1,6 +1,7 @@
 import { and, desc, eq, gte, sql } from 'drizzle-orm';
 import { agents, db, traceSteps, traces } from '@mantle/db';
-import { contextLimitForRoute, contextSourceForRoute, refreshModelCatalog } from '@mantle/tracing';
+import { refreshModelCatalog } from '@mantle/tracing';
+import { agentContextWindow } from './model-explorer';
 import { attachUseSpend } from './metrics-uses';
 import type {
   AgentContext,
@@ -72,6 +73,7 @@ type AgentContextRow = {
   agent_slug: string | null;
   provider: string | null;
   model: string;
+  api_key_id: string | null;
   started_at: string;
   max_tokens_in: number;
 };
@@ -110,6 +112,7 @@ export async function recentAgentContext(userId: string): Promise<AgentContext[]
       a.slug AS agent_slug,
       a.provider,
       a.model,
+      a.api_key_id,
       lt.started_at,
       COALESCE((
         SELECT MAX((meta->>'tokens_in')::int)
@@ -123,23 +126,30 @@ export async function recentAgentContext(userId: string): Promise<AgentContext[]
   const rows = (
     Array.isArray(result) ? result : ((result as { rows?: AgentContextRow[] }).rows ?? [])
   ) as AgentContextRow[];
-  return rows.map((r) => {
-    // A direct provider's id (claude-opus-4-8) maps to its OpenRouter id
-    // (anthropic/claude-opus-4.8) for the window; an OpenRouter slug is itself.
-    const limit = contextLimitForRoute(r.provider, r.model);
-    const tokensIn = Number(r.max_tokens_in);
-    return {
-      agentId: r.agent_id,
-      agentName: r.agent_name,
-      agentSlug: r.agent_slug,
-      modelSlug: r.model,
-      lastTokensIn: tokensIn,
-      contextLimit: limit,
-      contextSource: contextSourceForRoute(r.provider, r.model),
-      pct: limit ? Math.min(1, tokensIn / limit) : null,
-      lastRunAt: new Date(r.started_at).toISOString(),
-    };
-  });
+  return Promise.all(
+    rows.map(async (r) => {
+      // The same window the agent form shows (contextWindowFor): the
+      // provider's own figure where the brain has its model list, else the
+      // OpenRouter window for the model's OpenRouter id.
+      const { limit, source } = await agentContextWindow(userId, {
+        provider: r.provider,
+        model: r.model,
+        apiKeyId: r.api_key_id,
+      });
+      const tokensIn = Number(r.max_tokens_in);
+      return {
+        agentId: r.agent_id,
+        agentName: r.agent_name,
+        agentSlug: r.agent_slug,
+        modelSlug: r.model,
+        lastTokensIn: tokensIn,
+        contextLimit: limit,
+        contextSource: source,
+        pct: limit ? Math.min(1, tokensIn / limit) : null,
+        lastRunAt: new Date(r.started_at).toISOString(),
+      };
+    }),
+  );
 }
 
 export async function trafficWindow(userId: string, hoursBack: number): Promise<Traffic> {

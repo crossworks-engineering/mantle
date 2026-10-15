@@ -397,7 +397,7 @@ const video_ingest: BuiltinToolDef = {
 
         const text = await transcribeStep(audio.value.bytes, {
           adapter,
-          apiKey: stt.apiKey,
+          apiKey: stt.credential.apiKey,
           workerId: stt.worker.id,
           workerSlug: stt.worker.slug,
           model: stt.worker.model,
@@ -565,7 +565,7 @@ const video_ingest: BuiltinToolDef = {
     }
     const text = await transcribeStep(extracted.value.bytes, {
       adapter,
-      apiKey: stt.apiKey,
+      apiKey: stt.credential.apiKey,
       workerId: stt.worker.id,
       workerSlug: stt.worker.slug,
       model: stt.worker.model,

@@ -255,7 +255,7 @@ const route_map: BuiltinToolDef = {
       return { ok: false, error: 'from/to longitude and latitude must be finite numbers' };
     }
 
-    const key = await getApiKey(ctx.ownerId, 'mapbox', 'default');
+    const key = (await getApiKey(ctx.ownerId, 'mapbox', 'default'))?.apiKey;
     if (!key) {
       return {
         ok: false,

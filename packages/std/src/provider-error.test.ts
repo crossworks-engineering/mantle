@@ -258,7 +258,7 @@ describe('an Anthropic key that names no workspace', () => {
     expect(cls?.code).toBe('workspace');
     expect(cls?.permanent).toBe(true);
     expect(cls?.reason).toBe(
-      'This Anthropic key is not tied to a workspace. Add the workspace id on the key, or use a key made inside an Anthropic workspace.',
+      'This Anthropic key is not tied to a workspace. Add or check the workspace id on the key, or use a key made inside an Anthropic workspace.',
     );
     expect(domainErrorAnswer(e)?.toolText).toBe(`${cls?.reason} (anthropic, HTTP 400)`);
   });

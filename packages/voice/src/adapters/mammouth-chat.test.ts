@@ -209,7 +209,7 @@ describe('mammouth-chat discovery', () => {
         { id: 'gemini-3.1-flash-image-preview' },
       ],
     });
-    const res = await mammouthChatAdapter.discoverModels!('k');
+    const res = await mammouthChatAdapter.discoverModels!({ apiKey: 'k' });
     expect(res.filtered).toBe(true);
     expect(res.error).toBeNull();
     expect(res.available.map((m) => m.id)).toEqual([
@@ -223,7 +223,7 @@ describe('mammouth-chat discovery', () => {
 
   it('soft-fails to the static catalog with no liveIds', async () => {
     failFetch(401);
-    const res = await mammouthChatAdapter.discoverModels!('bad');
+    const res = await mammouthChatAdapter.discoverModels!({ apiKey: 'bad' });
     expect(res.filtered).toBe(false);
     expect(res.liveIds).toBeUndefined();
     expect(res.available.length).toBe(MAMMOUTH_CHAT_MODELS.length);

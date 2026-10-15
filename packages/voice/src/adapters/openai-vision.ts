@@ -28,6 +28,7 @@ import type {
   VisionExtractOptions,
   VisionExtractResult,
   VisionModelInfo,
+  ProviderCredential,
 } from './types';
 import type { DiscoveryResult } from '../discover';
 import { OPENAI_VISION_MODELS } from '../catalogs/openai-vision';
@@ -113,7 +114,7 @@ export const openAiVisionAdapter: VisionDispatcher = {
     };
   },
 
-  async discoverModels(apiKey: string): Promise<DiscoveryResult<VisionModelInfo>> {
+  async discoverModels({ apiKey }: ProviderCredential): Promise<DiscoveryResult<VisionModelInfo>> {
     try {
       const res = await providerFetch(
         OPENAI_MODELS_URL,

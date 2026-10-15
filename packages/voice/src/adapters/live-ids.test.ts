@@ -44,7 +44,7 @@ function failFetch(status: number) {
 describe('liveIds carries the whole provider list', () => {
   it('xai: reports an uncatalogued model rather than dropping it', async () => {
     jsonFetch({ data: [{ id: 'grok-4.3' }, { id: 'grok-9-unreleased' }] });
-    const res = await xaiChatAdapter.discoverModels!('xai-test');
+    const res = await xaiChatAdapter.discoverModels!({ apiKey: 'xai-test' });
     expect(res.liveIds).toEqual(['grok-4.3', 'grok-9-unreleased']);
     // `available` stays the intersection — the dropdown is unchanged.
     expect(res.available.map((m) => m.id)).toEqual(['grok-4.3']);
@@ -52,19 +52,19 @@ describe('liveIds carries the whole provider list', () => {
 
   it('deepseek: same contract', async () => {
     jsonFetch({ data: [{ id: 'deepseek-chat' }, { id: 'deepseek-brand-new' }] });
-    const res = await deepseekChatAdapter.discoverModels!('sk-test');
+    const res = await deepseekChatAdapter.discoverModels!({ apiKey: 'sk-test' });
     expect(res.liveIds).toContain('deepseek-brand-new');
   });
 
   it('huggingface: same contract', async () => {
     jsonFetch({ data: [{ id: 'some/model' }] });
-    const res = await huggingfaceChatAdapter.discoverModels!('hf-test');
+    const res = await huggingfaceChatAdapter.discoverModels!({ apiKey: 'hf-test' });
     expect(res.liveIds).toEqual(['some/model']);
   });
 
   it('anthropic: passes dated ids through unresolved, for the report to alias', async () => {
     jsonFetch({ data: [{ id: 'claude-opus-5-20260601' }] });
-    const res = await anthropicChatAdapter.discoverModels!('sk-ant-test');
+    const res = await anthropicChatAdapter.discoverModels!({ apiKey: 'sk-ant-test' });
     expect(res.liveIds).toEqual(['claude-opus-5-20260601']);
   });
 
@@ -75,7 +75,7 @@ describe('liveIds carries the whole provider list', () => {
         { name: 'models/text-embedding-004', supportedGenerationMethods: ['embedContent'] },
       ],
     });
-    const res = await googleChatAdapter.discoverModels!('gk-test');
+    const res = await googleChatAdapter.discoverModels!({ apiKey: 'gk-test' });
     expect(res.liveIds).toEqual(['gemini-2.5-flash']);
   });
 });
@@ -89,7 +89,7 @@ describe('liveIds is absent when the list call failed', () => {
     ['anthropic', anthropicChatAdapter],
   ] as const)('%s', async (_name, adapter) => {
     failFetch(401);
-    const res = await adapter.discoverModels!('bad-key');
+    const res = await adapter.discoverModels!({ apiKey: 'bad-key' });
     expect(res.liveIds).toBeUndefined();
     // The catalogue is still returned so the dropdown stays usable.
     expect(res.available.length).toBeGreaterThan(0);

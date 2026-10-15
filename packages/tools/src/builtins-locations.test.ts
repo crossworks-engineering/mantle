@@ -43,7 +43,7 @@ afterEach(() => {
 
 describe('route_map', () => {
   it('builds a static-images URL with the path + pins and returns a PNG image artifact', async () => {
-    getApiKey.mockResolvedValue('pk.SECRET-KEY');
+    getApiKey.mockResolvedValue({ apiKey: 'pk.SECRET-KEY' });
     let calledUrl = '';
     vi.stubGlobal(
       'fetch',
@@ -89,7 +89,7 @@ describe('route_map', () => {
   });
 
   it('falls back to pins-only when the route URL would exceed the static-images cap', async () => {
-    getApiKey.mockResolvedValue('pk.SECRET-KEY');
+    getApiKey.mockResolvedValue({ apiKey: 'pk.SECRET-KEY' });
     let calledUrl = '';
     vi.stubGlobal(
       'fetch',
@@ -124,7 +124,7 @@ describe('route_map', () => {
   });
 
   it('surfaces a Mapbox HTTP error instead of emitting an artifact', async () => {
-    getApiKey.mockResolvedValue('pk.SECRET-KEY');
+    getApiKey.mockResolvedValue({ apiKey: 'pk.SECRET-KEY' });
     vi.stubGlobal(
       'fetch',
       vi.fn(
@@ -148,7 +148,7 @@ describe('route_map', () => {
   // A10 #10 fix round 2: the deadline (timeoutSignal) raises a TimeoutError,
   // not the AbortError the hand timer did; both read as the timeout.
   it.each(['TimeoutError', 'AbortError'])('says the request timed out on a %s', async (name) => {
-    getApiKey.mockResolvedValue('pk.SECRET-KEY');
+    getApiKey.mockResolvedValue({ apiKey: 'pk.SECRET-KEY' });
     vi.stubGlobal(
       'fetch',
       vi.fn(async () => {

@@ -30,7 +30,7 @@ export const openAiTtsAdapter: TtsDispatcher = {
   async synthesize(opts) {
     return synthesizeSpeech(opts);
   },
-  async discoverModels(apiKey) {
+  async discoverModels({ apiKey }) {
     return discoverTtsModels(apiKey);
   },
   async voicesForModel(modelId) {

@@ -21,7 +21,7 @@ import {
   noteInboundChannel,
   teamHiddenNodeTypes,
 } from '@mantle/content';
-import { getChatAdapter } from '@mantle/voice';
+import { getChatAdapter, type ProviderCredential } from '@mantle/voice';
 import { getAgentTtsWorker } from '@mantle/db';
 import { runDurableStep, step } from '@mantle/tracing';
 import {
@@ -51,7 +51,8 @@ const logger = log('agent');
 export async function runTelegramTurn(args: {
   row: InboundRow;
   agent: Agent;
-  apiKey: string;
+  /** The agent's key as its lookup returned it (resolveChatKey). */
+  credential: ProviderCredential;
   ownerId: string;
   /** The login the chat is paired to (workspaces W7d): the turn answers it,
    *  in its own thread, in the workspace of the assistant. */
@@ -63,7 +64,8 @@ export async function runTelegramTurn(args: {
   voiceFileId: string | null;
   attachmentContext: AttachmentContext | null;
 }): Promise<void> {
-  const { row, agent, apiKey, ownerId, loginId, wasVoice, voiceFileId, attachmentContext } = args;
+  const { row, agent, credential, ownerId, loginId, wasVoice, voiceFileId, attachmentContext } =
+    args;
   // ── 0. Transcribe voice (if any) BEFORE anything downstream reads
   // `row.text`. Failure downgrades the turn to a text apology rather
   // than crashing the trace. See telegram/voice.ts.
@@ -225,7 +227,7 @@ export async function runTelegramTurn(args: {
       ownerId,
       agent,
       adapter: chatAdapter,
-      apiKey,
+      credential,
       prefs,
       logPrefix: '[agent]',
       assembled,

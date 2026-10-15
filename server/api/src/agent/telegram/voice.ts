@@ -53,14 +53,14 @@ export async function transcribeInboundVoice(args: {
       let language: string | undefined;
       let maxDuration = 180;
       if (sttWorker?.apiKeyId) {
-        apiKey = await getApiKeyById(sttWorker.apiKeyId);
+        apiKey = (await getApiKeyById(sttWorker.apiKeyId))?.apiKey ?? null;
         providerId = sttWorker.provider;
         model = sttWorker.model;
         const sttParams = (sttWorker.params ?? {}) as SttParams;
         language = sttParams.language;
         maxDuration = sttParams.max_duration_seconds ?? 180;
       } else {
-        apiKey = await resolveProviderKey(ownerId, 'openai');
+        apiKey = (await resolveProviderKey(ownerId, 'openai'))?.apiKey ?? null;
       }
       if (!apiKey) {
         h.setMeta({ error: 'no openai api_key configured' });

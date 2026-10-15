@@ -364,7 +364,7 @@ export async function runsWorkerTurnImpl(
             asRunLogin(async () => {
               const result = await runToolLoop({
                 adapter,
-                apiKey: keyCheck.apiKey,
+                ...keyCheck.credential,
                 model: route.model,
                 baseUrl: route.baseUrl,
                 viaTailnet: route.viaTailnet,

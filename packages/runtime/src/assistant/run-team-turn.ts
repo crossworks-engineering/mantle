@@ -328,8 +328,8 @@ async function runTeamTurnSteps(
   if (!agent.apiKeyId) {
     throw new Error(`Agent '${agent.slug}' has no api_key_id set — edit at /settings/agents.`);
   }
-  const apiKey = await getApiKeyById(agent.apiKeyId);
-  if (!apiKey) {
+  const credential = await getApiKeyById(agent.apiKeyId);
+  if (!credential) {
     throw new Error(`api_key_id ${agent.apiKeyId} not found for agent '${agent.slug}'.`);
   }
 
@@ -503,7 +503,7 @@ async function runTeamTurnSteps(
               ownerId,
               agent,
               adapter,
-              apiKey,
+              credential,
               prefs,
               logPrefix: '[team-turn]',
               recordToolCount: true,

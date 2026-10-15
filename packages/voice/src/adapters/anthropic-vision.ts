@@ -29,6 +29,7 @@ import type {
   VisionExtractOptions,
   VisionExtractResult,
   VisionModelInfo,
+  ProviderCredential,
 } from './types';
 import type { DiscoveryResult } from '../discover';
 import { ANTHROPIC_BASE_URL, ANTHROPIC_VISION_MODELS } from '../catalogs/anthropic';
@@ -97,7 +98,7 @@ export const anthropicVisionAdapter: VisionDispatcher = {
       `${ANTHROPIC_BASE_URL}/v1/messages`,
       {
         method: 'POST',
-        headers: anthropicHeaders(opts.apiKey, { 'Content-Type': 'application/json' }),
+        headers: anthropicHeaders(opts, { 'Content-Type': 'application/json' }),
         body: JSON.stringify(body),
       },
       { timeoutMs: PROVIDER_TIMEOUTS.vision },
@@ -167,7 +168,7 @@ export const anthropicVisionAdapter: VisionDispatcher = {
       {
         method: 'POST',
         // PDF support flag — harmless if the account already has it GA.
-        headers: anthropicHeaders(opts.apiKey, {
+        headers: anthropicHeaders(opts, {
           'anthropic-beta': 'pdfs-2024-09-25',
           'Content-Type': 'application/json',
         }),
@@ -197,12 +198,12 @@ export const anthropicVisionAdapter: VisionDispatcher = {
     };
   },
 
-  async discoverModels(apiKey: string): Promise<DiscoveryResult<VisionModelInfo>> {
+  async discoverModels(credential: ProviderCredential): Promise<DiscoveryResult<VisionModelInfo>> {
     try {
       const res = await providerFetch(
         `${ANTHROPIC_BASE_URL}/v1/models?limit=100`,
         {
-          headers: anthropicHeaders(apiKey),
+          headers: anthropicHeaders(credential),
         },
         { timeoutMs: PROVIDER_TIMEOUTS.discover },
       );

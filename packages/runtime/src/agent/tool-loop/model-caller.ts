@@ -11,7 +11,14 @@ import {
   currentTurnAbortSignal,
   modelSupportsVision,
 } from '@mantle/tracing';
-import type { ChatDispatcher, ChatOptions, ChatResult, ChatToolDefinition } from '@mantle/voice';
+import { credentialOf } from '@mantle/voice';
+import type {
+  ChatDispatcher,
+  ChatOptions,
+  ChatResult,
+  ChatToolDefinition,
+  ProviderCredential,
+} from '@mantle/voice';
 import { errorMessage } from '@mantle/std';
 import { cacheFingerprint } from './cache-fingerprint';
 import { isChatFailover } from '../chat-failover';
@@ -49,9 +56,8 @@ export function dispatchChat(
   return adapter.chat(withSignal);
 }
 
-type Route = {
+type Route = ProviderCredential & {
   adapter: ChatDispatcher;
-  apiKey: string;
   model: string;
   baseUrl: string | null;
   viaTailnet: boolean;
@@ -84,7 +90,7 @@ export function createModelCaller(deps: {
   // runToolLoop again and starts on the primary.
   let active: Route = {
     adapter: args.adapter,
-    apiKey: args.apiKey,
+    ...credentialOf(args),
     model: args.model,
     baseUrl: args.baseUrl ?? null,
     viaTailnet: args.viaTailnet ?? false,
@@ -95,7 +101,7 @@ export function createModelCaller(deps: {
   let tokensOut = 0;
 
   const routeOpts = () => ({
-    apiKey: active.apiKey,
+    ...credentialOf(active),
     model: active.model,
     ...(active.baseUrl ? { baseUrl: active.baseUrl } : {}),
     ...(active.viaTailnet ? { viaTailnet: true } : {}),
@@ -236,7 +242,7 @@ export function createModelCaller(deps: {
             );
             active = {
               adapter: args.backup.adapter,
-              apiKey: args.backup.apiKey,
+              ...credentialOf(args.backup),
               model: args.backup.model,
               baseUrl: args.backup.baseUrl ?? null,
               viaTailnet: args.backup.viaTailnet ?? false,

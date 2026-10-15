@@ -42,7 +42,7 @@ const FALLBACK_SEARCH_MODEL = env('MANTLE_WEB_SEARCH_MODEL') || 'perplexity/sona
  *  (resolveProviderKey: the 'default' label first, else the oldest
  *  openrouter key on file). */
 export async function resolveOpenRouterKey(ownerId: string): Promise<string | null> {
-  return resolveProviderKey(ownerId, 'openrouter');
+  return (await resolveProviderKey(ownerId, 'openrouter'))?.apiKey ?? null;
 }
 
 /** Resolve the search worker for a tier. The advanced tool falls back to the
@@ -58,7 +58,7 @@ async function resolveSearchWorker(ownerId: string, kind: AiWorkerKind): Promise
 /** The key to call OpenRouter with: the worker's own key if it pins one, else
  *  the owner's OpenRouter key on file (resolveProviderKey). */
 async function keyForWorker(ownerId: string, worker: AiWorker | null): Promise<string | null> {
-  return resolveProviderKey(ownerId, 'openrouter', worker?.apiKeyId);
+  return (await resolveProviderKey(ownerId, 'openrouter', worker?.apiKeyId))?.apiKey ?? null;
 }
 
 /**

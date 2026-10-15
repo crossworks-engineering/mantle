@@ -146,7 +146,7 @@ Whichever capability you're shipping, the adapter file MUST export a `Dispatcher
 | Image-gen  | `ImageGenDispatcher`  | `generate(opts) → GenerateImageResult`       | `openai-image.ts`, `xai-image.ts`                                                    |
 | Decision   | `DecisionDispatcher`  | `decide(opts) → DecisionResult`              | `openrouter-decision.ts` (typed answers, no prose; see `docs/decisions.md`)          |
 
-Every dispatcher also carries `providerId` + `adapterName` (the `<provider>-<capability>` convention for logs/traces) and SHOULD implement `discoverModels(apiKey)` + `staticCatalog()` so the UI's model dropdown lights up.
+Every dispatcher also carries `providerId` + `adapterName` (the `<provider>-<capability>` convention for logs/traces) and SHOULD implement `discoverModels(credential)` (a `ProviderCredential`, `{ apiKey, … }`) + `staticCatalog()` so the UI's model dropdown lights up.
 
 ### Chat-specific: the four required translations
 

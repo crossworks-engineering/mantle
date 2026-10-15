@@ -251,7 +251,10 @@ vi.mock('@mantle/runtime/agent', () => ({
     failures: [],
   })),
   updateAssistantMessageOutcome: vi.fn(async () => null),
-  resolveChatKey: vi.fn(async () => ({ ok: true, apiKey: 'sk-live' })),
+  resolveChatKey: vi.fn(async () => ({
+    ok: true,
+    credential: { apiKey: 'sk-live', anthropicWorkspaceId: 'wrkspc_tg' },
+  })),
   runToolLoop: vi.fn(async (args: any) => {
     h.loopCalls.push(args);
     if (h.loopError) {
@@ -337,12 +340,14 @@ vi.mock('@mantle/files', () => ({
   upsertFile: (...a: unknown[]) => h.upsertFile(...a),
 }));
 vi.mock('@mantle/api-keys', () => ({
-  getApiKey: vi.fn(async () => 'sk-bare'),
-  getApiKeyById: vi.fn(async () => 'sk-by-id'),
-  resolveProviderKey: vi.fn(async () => 'sk-bare'),
+  getApiKey: vi.fn(async () => ({ apiKey: 'sk-bare' })),
+  getApiKeyById: vi.fn(async () => ({ apiKey: 'sk-by-id' })),
+  resolveProviderKey: vi.fn(async () => ({ apiKey: 'sk-bare' })),
 }));
-vi.mock('@mantle/voice', () => ({
+vi.mock('@mantle/voice', async () => ({
   composeAudioTagInstructions: () => '',
+  // The real one: the responder loop hands the agent's credential on with it.
+  credentialOf: (await import('@mantle/voice/client')).credentialOf,
   getChatAdapter: () => ({
     providerId: 'openrouter',
     adapterName: 'openrouter-chat',
@@ -797,6 +802,9 @@ describe('handleTelegramMessage — text turn', () => {
     // Reply sent once, threaded under the inbound message.
     expect(h.sendMessage).toHaveBeenCalledTimes(1);
     expect(h.sendMessage).toHaveBeenCalledWith(h.account, '777', 'hi there!', { replyTo: '555' });
+    // The agent's key reaches the loop as its lookup returned it, with the
+    // key row's workspace id.
+    expect(h.loopCalls[0]).toMatchObject({ apiKey: 'sk-live', anthropicWorkspaceId: 'wrkspc_tg' });
 
     // Transport persistence: one outbound node + one telegram_messages row.
     const nodeRows = insertsInto('nodes');

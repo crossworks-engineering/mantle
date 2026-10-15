@@ -60,8 +60,8 @@ export async function POST(req: Request) {
         { error: `${agent.name} has no API key — set one in Settings → Agents` },
         { status: 400 },
       );
-    const apiKey = await getApiKeyById(agent.apiKeyId);
-    if (!apiKey)
+    const credential = await getApiKeyById(agent.apiKeyId);
+    if (!credential)
       return NextResponse.json(
         { error: 'API key not found or could not decrypt' },
         { status: 400 },
@@ -84,7 +84,7 @@ export async function POST(req: Request) {
     const params = agent.params as { temperature?: number; max_tokens?: number };
 
     const result = await adapter.chat({
-      apiKey,
+      ...credential,
       model: agent.model,
       messages: [
         ...(systemPrompt ? [{ role: 'system' as const, content: systemPrompt }] : []),

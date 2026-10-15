@@ -155,7 +155,7 @@ function baseOpts(overrides: Record<string, unknown> = {}) {
     ownerId: 'owner-1',
     agent: AGENT,
     adapter: { providerId: 'openrouter', adapterName: 'openrouter-chat' } as never,
-    apiKey: 'sk-test',
+    credential: { apiKey: 'sk-test' },
     prefs: { timezone: 'UTC', locale: 'en-GB' },
     logPrefix: '[test]',
     assembled: ASSEMBLED,

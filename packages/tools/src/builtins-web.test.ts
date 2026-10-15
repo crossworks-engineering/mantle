@@ -321,13 +321,13 @@ describe('web_search', () => {
 
   it("asks the one provider key lookup with the worker's pinned key, else with none", async () => {
     vi.mocked(getDefaultWorker).mockResolvedValue(SEARCH_WORKER as never);
-    vi.mocked(getApiKeyById).mockResolvedValue('sk-worker');
+    vi.mocked(getApiKeyById).mockResolvedValue({ apiKey: 'sk-worker' });
     await webSearch.handler({ query: 'q' }, ctx);
     expect(resolveProviderKey).toHaveBeenLastCalledWith('o1', 'openrouter', 'k1');
     expect(h.orCtor).toHaveBeenLastCalledWith(expect.objectContaining({ apiKey: 'sk-worker' }));
 
     vi.mocked(getDefaultWorker).mockResolvedValue({ ...SEARCH_WORKER, apiKeyId: null } as never);
-    vi.mocked(getApiKey).mockResolvedValue('sk-owner');
+    vi.mocked(getApiKey).mockResolvedValue({ apiKey: 'sk-owner' });
     await webSearch.handler({ query: 'q' }, ctx);
     expect(resolveProviderKey).toHaveBeenLastCalledWith('o1', 'openrouter', null);
     expect(h.orCtor).toHaveBeenLastCalledWith(expect.objectContaining({ apiKey: 'sk-owner' }));
@@ -335,7 +335,7 @@ describe('web_search', () => {
 
   it('sends the worker model with its params, a per-call recency winning', async () => {
     vi.mocked(getDefaultWorker).mockResolvedValue(SEARCH_WORKER as never);
-    vi.mocked(getApiKeyById).mockResolvedValue('sk');
+    vi.mocked(getApiKeyById).mockResolvedValue({ apiKey: 'sk' });
     const res = await webSearch.handler({ query: 'latest node lts', recency: 'day' }, ctx);
     expect(h.send).toHaveBeenCalledWith({
       chatRequest: {
@@ -357,14 +357,14 @@ describe('web_search', () => {
 
   it("falls back to the worker's recency, then to the default model when no worker exists", async () => {
     vi.mocked(getDefaultWorker).mockResolvedValue(SEARCH_WORKER as never);
-    vi.mocked(getApiKeyById).mockResolvedValue('sk');
+    vi.mocked(getApiKeyById).mockResolvedValue({ apiKey: 'sk' });
     await webSearch.handler({ query: 'q' }, ctx);
     expect(h.send).toHaveBeenLastCalledWith({
       chatRequest: expect.objectContaining({ search_recency_filter: 'week' }),
     });
 
     vi.mocked(getDefaultWorker).mockResolvedValue(null);
-    vi.mocked(getApiKey).mockResolvedValue('sk');
+    vi.mocked(getApiKey).mockResolvedValue({ apiKey: 'sk' });
     vi.mocked(bumpWorkerUsage).mockClear();
     const out = outputOf(await webSearch.handler({ query: 'q' }, ctx));
     expect(out.model).toBe(process.env.MANTLE_WEB_SEARCH_MODEL || 'perplexity/sonar-pro');
@@ -375,7 +375,7 @@ describe('web_search', () => {
   });
 
   it('reports a provider failure as a tool error, not a throw', async () => {
-    vi.mocked(getApiKey).mockResolvedValue('sk');
+    vi.mocked(getApiKey).mockResolvedValue({ apiKey: 'sk' });
     h.send.mockRejectedValue(new Error('429 rate limited'));
     expect(errorOf(await webSearch.handler({ query: 'q' }, ctx))).toBe('429 rate limited');
   });
@@ -385,7 +385,7 @@ describe('web_search', () => {
   it("never puts the SDK error's body or metadata in the tool text", async () => {
     const SECRET = 'sk-or-v1-0123456789abcdef org=acme-private';
     const log = vi.spyOn(console, 'error').mockImplementation(() => {});
-    vi.mocked(getApiKey).mockResolvedValue('sk');
+    vi.mocked(getApiKey).mockResolvedValue({ apiKey: 'sk' });
     for (const [tool, status, up] of [
       [webSearch, 403, 'Your input was flagged by moderation'],
       [webSearchPro, 429, 'Rate limit exceeded'],
@@ -410,7 +410,7 @@ describe('web_search', () => {
   });
 
   it('reports an empty answer rather than an ok with nothing in it', async () => {
-    vi.mocked(getApiKey).mockResolvedValue('sk');
+    vi.mocked(getApiKey).mockResolvedValue({ apiKey: 'sk' });
     h.send.mockResolvedValue({ choices: [{ message: { content: '' } }] });
     expect(errorOf(await webSearch.handler({ query: 'q' }, ctx))).toBe(
       'web search returned no answer',
@@ -418,7 +418,7 @@ describe('web_search', () => {
   });
 
   it('records the Sonar call through the one recorder (onto the trace and step in context)', async () => {
-    vi.mocked(getApiKey).mockResolvedValue('sk');
+    vi.mocked(getApiKey).mockResolvedValue({ apiKey: 'sk' });
     const step = { setMeta: vi.fn(), setOutput: vi.fn() };
     await webSearch.handler(
       { query: 'q', recency: 'day' },
@@ -439,7 +439,7 @@ describe('web_search_pro', () => {
     vi.mocked(getDefaultWorker).mockImplementation(
       async (_o, kind) => (kind === 'search' ? SEARCH_WORKER : null) as never,
     );
-    vi.mocked(getApiKeyById).mockResolvedValue('sk');
+    vi.mocked(getApiKeyById).mockResolvedValue({ apiKey: 'sk' });
     const out = outputOf(await webSearchPro.handler({ query: 'q' }, ctx));
     expect(getDefaultWorker).toHaveBeenNthCalledWith(1, 'o1', 'search_advanced');
     expect(getDefaultWorker).toHaveBeenNthCalledWith(2, 'o1', 'search');
@@ -451,7 +451,7 @@ describe('web_search_pro', () => {
     vi.mocked(getDefaultWorker).mockImplementation(
       async (_o, kind) => (kind === 'search_advanced' ? pro : SEARCH_WORKER) as never,
     );
-    vi.mocked(getApiKeyById).mockResolvedValue('sk');
+    vi.mocked(getApiKeyById).mockResolvedValue({ apiKey: 'sk' });
     const step = { setMeta: vi.fn(), setOutput: vi.fn() };
     const out = outputOf(
       await webSearchPro.handler(
@@ -484,7 +484,7 @@ const COLLECTION = {
 
 describe('web_map', () => {
   beforeEach(() => {
-    vi.mocked(getApiKey).mockResolvedValue('fc-key');
+    vi.mocked(getApiKey).mockResolvedValue({ apiKey: 'fc-key' });
   });
 
   it.each([['team', { kind: 'team', contactId: 'c1' }]])(
@@ -559,7 +559,7 @@ describe('web_crawl', () => {
   ];
 
   beforeEach(() => {
-    vi.mocked(getApiKey).mockResolvedValue('fc-key');
+    vi.mocked(getApiKey).mockResolvedValue({ apiKey: 'fc-key' });
   });
 
   it('refuses the team surface, a private target and a missing key before any crawl', async () => {

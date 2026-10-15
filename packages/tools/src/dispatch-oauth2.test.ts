@@ -37,8 +37,10 @@ const vault = new Map<string, string>([
   ['svc/client-secret', 'csecret-456'],
 ]);
 vi.mock('@mantle/api-keys', () => ({
-  getApiKey: async (_o: string, service: string, label: string) =>
-    vault.get(`${service}/${label}`) ?? null,
+  getApiKey: async (_o: string, service: string, label: string) => {
+    const apiKey = vault.get(`${service}/${label}`);
+    return apiKey ? { apiKey } : null;
+  },
 }));
 // Loopback servers stand in for the provider; the real guard would block them.
 vi.mock('./ssrf-guard', () => ({

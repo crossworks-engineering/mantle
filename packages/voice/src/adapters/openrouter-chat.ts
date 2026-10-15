@@ -48,6 +48,7 @@ import type {
   ChatStreamSink,
   ChatToolCall,
   ReasoningDetail,
+  ProviderCredential,
 } from './types';
 import type { DiscoveryResult } from '../discover';
 import { OPENROUTER_BASE_URL, OPENROUTER_CHAT_MODELS } from '../catalogs/openrouter';
@@ -674,7 +675,9 @@ function perMillion(v: unknown): number | undefined {
   return Math.round(n * 1_000_000 * 10_000) / 10_000;
 }
 
-async function openrouterDiscover(apiKey: string): Promise<DiscoveryResult<ChatModelInfo>> {
+async function openrouterDiscover({
+  apiKey,
+}: ProviderCredential): Promise<DiscoveryResult<ChatModelInfo>> {
   // OR's /api/v1/models is PUBLIC (returns 200 even with a bogus key), so the
   // catalog fetch alone is NOT an auth probe — probeApiKey relying on it would
   // pass any garbage key. When a key is supplied, validate it first against

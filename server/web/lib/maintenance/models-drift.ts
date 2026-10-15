@@ -85,15 +85,15 @@ export async function runModelsDrift(): Promise<ModelsDriftResult> {
       continue;
     }
 
-    const apiKey = await getApiKeyById(keyId);
-    if (!apiKey) {
+    const credential = await getApiKeyById(keyId);
+    if (!credential) {
       unchecked.push(`${label} — key could not be decrypted (MANTLE_MASTER_KEY?)`);
       continue;
     }
 
     let result;
     try {
-      result = await adapter.discoverModels(apiKey);
+      result = await adapter.discoverModels(credential);
     } catch (err) {
       // One unreachable provider must not abort the sweep for the rest.
       unchecked.push(`${label} — ${errorMessage(err)}`);

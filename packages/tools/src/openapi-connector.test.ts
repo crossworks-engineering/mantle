@@ -22,7 +22,7 @@ vi.mock('./ssrf-guard', () => ({
 }));
 vi.mock('@mantle/api-keys', () => ({
   getApiKey: async (_owner: string, service: string, label: string) =>
-    service === 'petstore' && label === 'default' ? 'live-key-9' : null,
+    service === 'petstore' && label === 'default' ? { apiKey: 'live-key-9' } : null,
 }));
 
 import type { Tool, ToolGroupIntegration } from '@mantle/db';

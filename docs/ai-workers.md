@@ -285,7 +285,7 @@ catalog (static)         /v1/models (live, per key)
        what your key can actually call
 ```
 
-Implemented per-adapter via the optional `discoverModels(apiKey)`
+Implemented per-adapter via the optional `discoverModels(credential)`
 method. Soft-fails to the static catalog if the call errors (with a
 "couldn't verify" hint in the UI). Each provider's discovery shape:
 
@@ -871,7 +871,7 @@ Each adapter implements:
 - `acceptsInput(item)`, text-only adapters return `false` on
   multimodal items so the caller surfaces a clear "use OpenRouter for
   multimodal" error rather than letting the upstream API reject it.
-- `discoverModels(apiKey)`, per-provider catalog fetch, falls back to
+- `discoverModels(credential)`, per-provider catalog fetch, falls back to
   `staticCatalog()` if the API call fails.
 
 The runtime path in [`packages/embeddings/src/index.ts`](../packages/embeddings/src/index.ts):

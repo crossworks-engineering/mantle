@@ -115,7 +115,7 @@ export async function POST(req: Request) {
   }
   const secrets = new Map<string, string>();
   for (const ref of refs) {
-    const plaintext = await getApiKey(user.id, ref.service, ref.label);
+    const plaintext = (await getApiKey(user.id, ref.service, ref.label))?.apiKey ?? null;
     if (plaintext === null) {
       return NextResponse.json(
         {

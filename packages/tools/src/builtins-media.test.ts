@@ -266,7 +266,7 @@ beforeEach(() => {
             ? STT_WORKER
             : null) as never,
   );
-  vi.mocked(getApiKeyById).mockResolvedValue('sk-test');
+  vi.mocked(getApiKeyById).mockResolvedValue({ apiKey: 'sk-test' });
   vi.mocked(getImageGenAdapter).mockReturnValue(imageAdapter as never);
   vi.mocked(getTtsAdapter).mockReturnValue(ttsAdapter as never);
   vi.mocked(getSttAdapter).mockReturnValue(sttAdapter as never);
@@ -340,7 +340,7 @@ describe('generate_image', () => {
     expect(errorOf(await generateImage.handler({ prompt: 'A red fox' }, ctx))).toMatch(
       /could not be decrypted/,
     );
-    vi.mocked(getApiKeyById).mockResolvedValue('sk-test');
+    vi.mocked(getApiKeyById).mockResolvedValue({ apiKey: 'sk-test' });
     vi.mocked(getImageGenAdapter).mockReturnValue(null);
     expect(errorOf(await generateImage.handler({ prompt: 'A red fox' }, ctx))).toMatch(
       /No image-gen adapter wired for 'openai'/,

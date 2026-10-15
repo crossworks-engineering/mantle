@@ -48,7 +48,7 @@ function stubCatalog() {
 describe('openrouter vision discovery', () => {
   it('offers text-out multimodal models and drops generators and routers', async () => {
     stubCatalog();
-    const res = await openrouterVisionAdapter.discoverModels!('sk-or-test');
+    const res = await openrouterVisionAdapter.discoverModels!({ apiKey: 'sk-or-test' });
     const ids = res.available.map((m) => m.id);
     expect(ids).toEqual(['anthropic/claude-opus-5']);
     expect(res.filtered).toBe(true);
@@ -61,7 +61,7 @@ describe('openrouter vision discovery', () => {
       json: async () => ({ data: [] }),
       text: async () => '',
     })) as unknown as typeof fetch;
-    const res = await openrouterVisionAdapter.discoverModels!('sk-or-test');
+    const res = await openrouterVisionAdapter.discoverModels!({ apiKey: 'sk-or-test' });
     expect(res.available.length).toBeGreaterThan(0);
     expect(res.filtered).toBe(false);
   });

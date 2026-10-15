@@ -23,6 +23,7 @@ import type {
   VisionExtractOptions,
   VisionExtractResult,
   VisionModelInfo,
+  ProviderCredential,
 } from './types';
 import type { DiscoveryResult } from '../discover';
 import { OPENROUTER_BASE_URL, OPENROUTER_VISION_MODELS } from '../catalogs/openrouter';
@@ -196,7 +197,7 @@ export const openrouterVisionAdapter: VisionDispatcher = {
     return { text: r.text, model: r.model, tokensIn: r.tokensIn, tokensOut: r.tokensOut };
   },
 
-  async discoverModels(apiKey: string): Promise<DiscoveryResult<VisionModelInfo>> {
+  async discoverModels({ apiKey }: ProviderCredential): Promise<DiscoveryResult<VisionModelInfo>> {
     try {
       const res = await providerFetch(
         `${OPENROUTER_BASE_URL}/models`,

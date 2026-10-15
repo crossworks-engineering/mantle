@@ -43,7 +43,7 @@ const KEY_HINT =
  *  (resolveProviderKey: the 'default' label first, else the oldest
  *  firecrawl key on file). */
 async function resolveFirecrawlKey(ownerId: string): Promise<string | null> {
-  return resolveProviderKey(ownerId, 'firecrawl');
+  return (await resolveProviderKey(ownerId, 'firecrawl'))?.apiKey ?? null;
 }
 
 /** Belt-and-braces on top of the tool-group grant and the dispatch gate (the

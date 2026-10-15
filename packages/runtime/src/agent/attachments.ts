@@ -84,8 +84,8 @@ export async function runVisionWorker(opts: {
       model: worker.model,
     };
   }
-  const apiKey = await getApiKeyById(worker.apiKeyId);
-  if (!apiKey) {
+  const credential = await getApiKeyById(worker.apiKeyId);
+  if (!credential) {
     return {
       ran: false,
       text: '',
@@ -100,7 +100,7 @@ export async function runVisionWorker(opts: {
   const forVision = await transcodeImageForVision(opts.bytes, opts.mimeType, opts.filename);
   try {
     const r = await adapter.extract(forVision.bytes, {
-      apiKey,
+      ...credential,
       mimeType: forVision.mimeType,
       prompt,
       systemPrompt: worker.systemPrompt ?? undefined,
@@ -179,8 +179,8 @@ export async function runDocumentWorker(opts: {
       model: worker.model,
     };
   }
-  const apiKey = await getApiKeyById(worker.apiKeyId);
-  if (!apiKey) {
+  const credential = await getApiKeyById(worker.apiKeyId);
+  if (!credential) {
     return {
       ran: false,
       text: '',
@@ -192,7 +192,7 @@ export async function runDocumentWorker(opts: {
   const prompt = opts.prompt ?? params.extraction_prompt?.trim() ?? DEFAULT_VISION_DESCRIBE_PROMPT;
   try {
     const r = await adapter.extractDocument(opts.bytes, {
-      apiKey,
+      ...credential,
       mimeType: opts.mimeType,
       prompt,
       systemPrompt: worker.systemPrompt ?? undefined,

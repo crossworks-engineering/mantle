@@ -22,10 +22,12 @@ import { resolveProviderKey } from '@mantle/api-keys';
 import { VAULT_PAIR_MAKER_NO_KEYS, vaultPairRunRefusal } from '@mantle/db';
 import {
   classifyChatError,
+  credentialOf,
   getChatAdapter,
   type ChatDispatcher,
   type ChatOptions,
   type ChatResult,
+  type ProviderCredential,
 } from '@mantle/voice';
 import { errorMessage } from '@mantle/std';
 import { isAccountError } from '@mantle/embeddings/provider-error';
@@ -110,10 +112,10 @@ export function isChatFailover(err: unknown): boolean {
   return classifyChatError(err).retry || isAccountError(err);
 }
 
-/** A route resolved to a live adapter + key, ready to `.chat()`. */
-export interface ResolvedChatRoute {
+/** A route resolved to a live adapter + its key's credential (the key and
+ *  what its row carries, e.g. an Anthropic workspace id), ready to `.chat()`. */
+export interface ResolvedChatRoute extends ProviderCredential {
   adapter: ChatDispatcher;
-  apiKey: string;
   model: string;
   provider: string;
   /** Per-route host + tailnet flag, passed into `adapter.chat()` (migration
@@ -148,7 +150,7 @@ export async function resolveRouteAdapter(
   }
   return {
     adapter,
-    apiKey: key.apiKey,
+    ...key.credential,
     model: route.model,
     provider: route.provider,
     baseUrl: route.baseUrl ?? null,
@@ -158,7 +160,7 @@ export async function resolveRouteAdapter(
 
 /** A route's chat credential, or a structured reason it isn't available. */
 export type ChatKeyResult =
-  | { ok: true; apiKey: string }
+  | { ok: true; credential: ProviderCredential }
   | {
       ok: false;
       /** Stable disposition for skipped-trace rows + logs. Mirrors what the
@@ -205,13 +207,13 @@ export async function resolveChatKey(
 
   if (await chatRouteKeyRefusal(ownerId, route)) {
     return keyless
-      ? { ok: true, apiKey: 'local' }
+      ? { ok: true, credential: { apiKey: 'local' } }
       : { ok: false, disposition: 'api_key_maker_no_keys', detail: VAULT_PAIR_MAKER_NO_KEYS };
   }
 
-  const apiKey = await resolveProviderKey(ownerId, route.provider, route.apiKeyId);
-  if (apiKey) return { ok: true, apiKey };
-  if (keyless) return { ok: true, apiKey: 'local' };
+  const credential = await resolveProviderKey(ownerId, route.provider, route.apiKeyId);
+  if (credential) return { ok: true, credential };
+  if (keyless) return { ok: true, credential: { apiKey: 'local' } };
 
   // A non-keyless provider with no usable key. Distinguish "never configured"
   // from "configured but the stored key is gone / undecryptable" so traces stay
@@ -264,9 +266,10 @@ export async function resolveBackupAdapter(
   }
 }
 
-/** Chat options minus the per-route fields — `apiKey` and `model` are supplied
- *  by each route (the backup may run a different model). */
-export type RoutelessChatOptions = Omit<ChatOptions, 'apiKey' | 'model'>;
+/** Chat options minus the per-route fields: the credential and `model` are
+ *  supplied by each route (the backup may run a different model, on a
+ *  different key). */
+export type RoutelessChatOptions = Omit<ChatOptions, keyof ProviderCredential | 'model'>;
 
 export interface ChatWithFailoverResult {
   result: ChatResult;
@@ -293,7 +296,7 @@ export async function chatWithFailover(
   try {
     const result = await primary.adapter.chat({
       ...opts,
-      apiKey: primary.apiKey,
+      ...credentialOf(primary),
       model: primary.model,
       ...(primary.baseUrl ? { baseUrl: primary.baseUrl } : {}),
       ...(primary.viaTailnet ? { viaTailnet: true } : {}),
@@ -309,7 +312,7 @@ export async function chatWithFailover(
     const backup = await resolveRouteAdapter(ownerId, routes.backup);
     const result = await backup.adapter.chat({
       ...opts,
-      apiKey: backup.apiKey,
+      ...credentialOf(backup),
       model: backup.model,
       ...(backup.baseUrl ? { baseUrl: backup.baseUrl } : {}),
       ...(backup.viaTailnet ? { viaTailnet: true } : {}),

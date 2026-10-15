@@ -23,6 +23,7 @@ import { setApiKey } from '@mantle/api-keys';
 import { createNote } from '@mantle/content';
 import { clearEmbeddingModelCache } from '@mantle/embeddings';
 import { loadConversationContext, resolveRouteAdapter } from '@mantle/runtime/agent';
+import { credentialOf } from '@mantle/voice';
 import { extractNode } from '../agent/extractor';
 import { renderContext } from './context';
 import type { BenchQuestion, DatasetName, Haystack } from './datasets';
@@ -236,7 +237,7 @@ async function callModel(
     configuredBy: null,
   });
   const res = await route.adapter.chat({
-    apiKey: route.apiKey,
+    ...credentialOf(route),
     model: route.model,
     messages: [
       { role: 'system', content: system },

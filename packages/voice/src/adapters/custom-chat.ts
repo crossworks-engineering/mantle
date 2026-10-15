@@ -38,6 +38,7 @@ import type {
   ChatOptions,
   ChatResult,
   ChatStreamSink,
+  ProviderCredential,
 } from './types';
 import { ChatHttpError, parseRetryAfterMs } from './retry';
 import type { DiscoveryResult } from '../discover';
@@ -172,7 +173,9 @@ function customChatStream(opts: ChatOptions, onDelta: ChatStreamSink): Promise<C
  * operator commit the model id their endpoint serves. (Threading the route Base
  * URL through discovery is a future enhancement; see the model-audit handover.)
  */
-async function customDiscover(_apiKey: string): Promise<DiscoveryResult<ChatModelInfo>> {
+async function customDiscover(
+  _credential: ProviderCredential,
+): Promise<DiscoveryResult<ChatModelInfo>> {
   return {
     available: [],
     filtered: false,

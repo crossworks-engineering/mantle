@@ -5,9 +5,12 @@
  * Two halves (gateway lens):
  *  - behaviour: each Anthropic call this package makes (chat, streaming
  *    chat, the model list, vision on an image, vision on a PDF, the vision
- *    model list) is run against a stubbed fetch with a key that carries a
- *    workspace id, and the request must name it; the same calls with a key
- *    that carries none must not.
+ *    model list) is run against a stubbed fetch with a credential that
+ *    carries a workspace id, and the request must name it; the same calls
+ *    with a credential that carries none must not. Two credentials holding
+ *    the SAME key value with different workspace ids each send their own,
+ *    however their calls interleave (the id rides on the credential, never
+ *    looked up by the key value).
  *  - structure: no product file but anthropic-headers.ts builds Anthropic
  *    headers itself. Every Anthropic request must send `anthropic-version`,
  *    so a file that writes that header name is a second gateway.
@@ -18,7 +21,6 @@ import { readFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { _clearProviderKeyContexts, rememberProviderKeyContext } from '@mantle/std';
 import { anthropicChatAdapter } from './anthropic-chat';
 import { anthropicVisionAdapter } from './anthropic-vision';
 import {
@@ -26,10 +28,11 @@ import {
   anthropicHeaders,
   anthropicListError,
 } from './anthropic-headers';
+import type { ProviderCredential } from './types';
 
-const WITH_WS = 'test-key-with-workspace';
-const WITHOUT_WS = 'test-key-without-workspace';
 const WS = 'wrkspc_test_gateway';
+const WITH_WS: ProviderCredential = { apiKey: 'test-key-with-workspace', anthropicWorkspaceId: WS };
+const WITHOUT_WS: ProviderCredential = { apiKey: 'test-key-without-workspace' };
 
 const realFetch = globalThis.fetch;
 let seen: Array<{ url: string; headers: Headers }> = [];
@@ -64,51 +67,48 @@ function stubFetch() {
   }) as unknown as typeof fetch;
 }
 
-/** Every Anthropic call path this package has, with `apiKey`. */
-async function everyCallPath(apiKey: string): Promise<string[]> {
+/** Every Anthropic call path this package has, with `credential`. */
+async function everyCallPath(credential: ProviderCredential): Promise<string[]> {
   const names: string[] = [];
   const msgs = [{ role: 'user' as const, content: 'hi' }];
-  await anthropicChatAdapter.chat({ apiKey, model: 'claude-haiku-4-5', messages: msgs });
+  await anthropicChatAdapter.chat({ ...credential, model: 'claude-haiku-4-5', messages: msgs });
   names.push('chat');
   await anthropicChatAdapter.chatStream!(
-    { apiKey, model: 'claude-haiku-4-5', messages: msgs },
+    { ...credential, model: 'claude-haiku-4-5', messages: msgs },
     () => {},
   );
   names.push('chatStream');
-  await anthropicChatAdapter.discoverModels!(apiKey);
+  await anthropicChatAdapter.discoverModels!(credential);
   names.push('chat discoverModels');
   await anthropicVisionAdapter.extract(Buffer.from([1, 2, 3]), {
-    apiKey,
+    ...credential,
     mimeType: 'image/png',
     prompt: 'describe',
   });
   names.push('vision extract');
   await anthropicVisionAdapter.extractDocument!(Buffer.from('%PDF-1.4'), {
-    apiKey,
+    ...credential,
     mimeType: 'application/pdf',
     prompt: 'read',
   });
   names.push('vision extractDocument');
-  await anthropicVisionAdapter.discoverModels!(apiKey);
+  await anthropicVisionAdapter.discoverModels!(credential);
   names.push('vision discoverModels');
   return names;
 }
 
 beforeEach(() => {
-  _clearProviderKeyContexts();
-  rememberProviderKeyContext(WITH_WS, { anthropicWorkspaceId: WS });
   stubFetch();
 });
 
 afterEach(() => {
   globalThis.fetch = realFetch;
-  _clearProviderKeyContexts();
 });
 
 describe('anthropicHeaders', () => {
-  it('sends the key, the version, and the workspace id only when the key carries one', () => {
+  it('sends the key, the version, and the workspace id only when the credential carries one', () => {
     const h = anthropicHeaders(WITH_WS, { 'content-type': 'application/json' });
-    expect(h['x-api-key']).toBe(WITH_WS);
+    expect(h['x-api-key']).toBe(WITH_WS.apiKey);
     expect(h['anthropic-version']).toBeTruthy();
     expect(h[ANTHROPIC_WORKSPACE_HEADER]).toBe(WS);
     expect(h['content-type']).toBe('application/json');
@@ -117,22 +117,55 @@ describe('anthropicHeaders', () => {
 });
 
 describe('every Anthropic call path carries the workspace id', () => {
-  it('names it on each request made with a key that carries one', async () => {
+  it('names it on each request made with a credential that carries one', async () => {
     const paths = await everyCallPath(WITH_WS);
     expect(seen).toHaveLength(paths.length);
     seen.forEach((r, i) => {
       expect(r.headers.get(ANTHROPIC_WORKSPACE_HEADER), paths[i]).toBe(WS);
-      expect(r.headers.get('x-api-key'), paths[i]).toBe(WITH_WS);
+      expect(r.headers.get('x-api-key'), paths[i]).toBe(WITH_WS.apiKey);
     });
   });
 
-  it('names none with a key that carries none (behaviour unchanged)', async () => {
+  it('names none with a credential that carries none (behaviour unchanged)', async () => {
     const paths = await everyCallPath(WITHOUT_WS);
     expect(seen).toHaveLength(paths.length);
     seen.forEach((r, i) => {
       expect(r.headers.has(ANTHROPIC_WORKSPACE_HEADER), paths[i]).toBe(false);
       expect(r.headers.get('anthropic-version'), paths[i]).toBeTruthy();
     });
+  });
+});
+
+describe('two rows holding the same key value', () => {
+  // The bug the credential handle closes: a registry keyed by the key value
+  // let the row opened last decide the workspace id for every call with that
+  // value. Each credential carries its own row's id instead.
+  const SAME = 'test-same-key-value';
+  const rowA: ProviderCredential = { apiKey: SAME, anthropicWorkspaceId: 'wrkspc_row_a' };
+  const rowB: ProviderCredential = { apiKey: SAME, anthropicWorkspaceId: 'wrkspc_row_b' };
+  const rowNone: ProviderCredential = { apiKey: SAME };
+
+  it("each call sends its own row's id, however the calls interleave", async () => {
+    const order = [rowA, rowB, rowNone, rowA, rowNone, rowB];
+    const msgs = [{ role: 'user' as const, content: 'hi' }];
+    for (const c of order) {
+      await anthropicChatAdapter.chat({ ...c, model: 'claude-haiku-4-5', messages: msgs });
+    }
+    await anthropicVisionAdapter.discoverModels!(rowB);
+    await anthropicChatAdapter.discoverModels!(rowA);
+    await anthropicChatAdapter.discoverModels!(rowNone);
+    expect(seen.map((r) => r.headers.get(ANTHROPIC_WORKSPACE_HEADER))).toEqual([
+      'wrkspc_row_a',
+      'wrkspc_row_b',
+      null,
+      'wrkspc_row_a',
+      null,
+      'wrkspc_row_b',
+      'wrkspc_row_b',
+      'wrkspc_row_a',
+      null,
+    ]);
+    expect(new Set(seen.map((r) => r.headers.get('x-api-key')))).toEqual(new Set([SAME]));
   });
 });
 

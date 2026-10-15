@@ -50,8 +50,8 @@ async function main() {
     console.error('regenerate-digests: no default summarizer worker with an api key');
     process.exit(1);
   }
-  const apiKey = await getApiKeyById(worker.apiKeyId);
-  if (!apiKey) {
+  const credential = await getApiKeyById(worker.apiKeyId);
+  if (!credential) {
     console.error(`regenerate-digests: api_key_id ${worker.apiKeyId} not decryptable`);
     process.exit(1);
   }
@@ -122,7 +122,7 @@ async function main() {
       newUserText: transcript,
     });
     const result = await adapter.chat({
-      apiKey,
+      ...credential,
       model: worker.model,
       messages: flattenChatMessagesForAdapter(messages),
       // Re-mark the flattened system prompt, as the summarizer does: an

@@ -43,7 +43,7 @@ function routeFetch(keyStatus: number) {
 describe('openrouter discovery auth probe', () => {
   it('rejects a bad key via /api/v1/key instead of false-passing on the public catalog', async () => {
     const urls = routeFetch(401);
-    const res = await openrouterChatAdapter.discoverModels!('sk-or-bogus');
+    const res = await openrouterChatAdapter.discoverModels!({ apiKey: 'sk-or-bogus' });
     expect(urls.some((u) => u.endsWith('/key'))).toBe(true);
     expect(res.error).toMatch(/rejected the key \(401\)/);
     expect(res.available).toHaveLength(0);
@@ -51,7 +51,7 @@ describe('openrouter discovery auth probe', () => {
 
   it('passes a valid key through to the catalog', async () => {
     const urls = routeFetch(200);
-    const res = await openrouterChatAdapter.discoverModels!('sk-or-good');
+    const res = await openrouterChatAdapter.discoverModels!({ apiKey: 'sk-or-good' });
     expect(urls.some((u) => u.endsWith('/key'))).toBe(true);
     expect(res.error ?? null).toBeNull();
     expect(res.available.length).toBeGreaterThan(0);

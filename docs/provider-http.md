@@ -245,25 +245,43 @@ the provider's body.
 An Anthropic API key not scoped to an Anthropic workspace must name one on
 every call (header `anthropic-workspace-id`), else Anthropic answers 400
 (`invalid_request_error`). The owner sets the id on the key in Settings
-(`api_keys.anthropic_workspace_id`, migration 0292); it is not secret.
+(`api_keys.anthropic_workspace_id`, migration 0292); it is not secret. It is
+ASCII letters, digits, `_` and `-`, 1 to 128 of them, checked in the app
+(`normalizeAnthropicWorkspaceId`, a 400 `InputError` otherwise) and by the
+table's check constraint alike: a header value must be ASCII.
 
-One place sends it: [`anthropicHeaders`](../packages/voice/src/adapters/anthropic-headers.ts)
+The id travels with the key as one handle, the **credential**
+(`ProviderCredential` in
+[`@mantle/voice-client`](../packages/voice-client/src/adapters/types.ts):
+`{ apiKey, anthropicWorkspaceId? }`). Every key lookup returns it
+(`getApiKeyById`, `getApiKey`, `resolveProviderKey`; the one place a row is
+opened is `openKeyRow` in [`@mantle/api-keys`](../packages/api-keys/src/index.ts)).
+Every chat and vision call takes it (`ChatOptions` and `VisionExtractOptions`
+extend it) and every `discoverModels` takes it, and the layers between a
+lookup and an adapter (chat failover, the tool loop and its backup route,
+the responder loop) carry it on, copying it with `credentialOf`. One place
+turns it into headers:
+[`anthropicHeaders`](../packages/voice/src/adapters/anthropic-headers.ts)
 builds the headers of every Anthropic request (chat, streaming chat, vision,
-the model lists, the brain's model explorer). No caller passes the id: the
-one place a key row is opened (`openKeyRow` in
-[`@mantle/api-keys`](../packages/api-keys/src/index.ts)) records what the key
-carries in a small registry
-([`provider-key-context.ts`](../packages/std/src/provider-key-context.ts)),
-and `anthropicHeaders` reads it back by the key. A key opened with no id
-clears its entry. The gateway test
+the model lists, the brain's model explorer). Nothing is looked up by the
+key value, so two rows holding the same key with different workspace ids
+each send their own.
+
+The gateway test
 ([`anthropic-headers.test.ts`](../packages/voice/src/adapters/anthropic-headers.test.ts))
-runs every Anthropic call path against a stubbed fetch, and fails any other
-product file that writes the `anthropic-version` header itself.
+runs every Anthropic call path against a stubbed fetch, with two
+credentials of one key value and different ids interleaved, and fails any
+other product file that writes the `anthropic-version` header itself.
+
+A header another provider needs from its key row (an OpenAI organization or
+project) would go the same way: a field on `ProviderCredential`, filled in
+`openKeyRow`, copied by `credentialOf`, sent by that provider's one header
+builder.
 
 The 400 for a missing id is classified `workspace` (permanent, matched on the
 error type plus the header name, not the sentence) and reads "This Anthropic
-key is not tied to a workspace. Add the workspace id on the key, or use a key
-made inside an Anthropic workspace."
+key is not tied to a workspace. Add or check the workspace id on the key, or
+use a key made inside an Anthropic workspace."
 
 ### Health and breakers
 

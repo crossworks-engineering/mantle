@@ -21,6 +21,9 @@ export * from './providers';
 export * from './catalog';
 export * from './audio-tags';
 
+// The credential an adapter call takes, and its helpers (pure).
+export * from './provider-credential';
+
 // Per-provider model catalogs (data only).
 export * from './catalogs/anthropic';
 export * from './catalogs/google';

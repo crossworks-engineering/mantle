@@ -107,7 +107,7 @@ export function dbMcpOAuthStore(ownerId: string, groupSlug: string): McpOAuthSto
         .set({ integration: { ...row.integration, mcp: next }, updatedAt: new Date() })
         .where(eq(toolGroups.id, row.id));
     },
-    getSecret: (label) => getApiKey(ownerId, groupSlug, label),
+    getSecret: async (label) => (await getApiKey(ownerId, groupSlug, label))?.apiKey ?? null,
     setSecret: async (label, value) => {
       await setApiKey(ownerId, groupSlug, label, value);
     },

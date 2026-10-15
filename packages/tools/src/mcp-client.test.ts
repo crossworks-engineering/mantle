@@ -18,7 +18,7 @@ vi.mock('./ssrf-guard', () => ({
 }));
 vi.mock('@mantle/api-keys', () => ({
   getApiKey: async (_owner: string, service: string, label: string) =>
-    service === 'testsvc' && label === 'default' ? 'test-key-123' : null,
+    service === 'testsvc' && label === 'default' ? { apiKey: 'test-key-123' } : null,
 }));
 
 import { Server } from '@modelcontextprotocol/server';

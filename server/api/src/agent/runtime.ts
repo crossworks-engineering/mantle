@@ -396,7 +396,7 @@ export async function handleTelegramMessage(messageId: string): Promise<void> {
     );
     return;
   }
-  const apiKey = keyCheck.apiKey;
+  const credential = keyCheck.credential;
 
   // Ingest the attachment (if any) into a file node + inline extraction BEFORE
   // the responder runs. The save fires the extractor (durable metadata); this
@@ -476,7 +476,7 @@ export async function handleTelegramMessage(messageId: string): Promise<void> {
         runTelegramTurn({
           row,
           agent,
-          apiKey,
+          credential,
           ownerId,
           loginId,
           textOnly: workspaceAssistant,

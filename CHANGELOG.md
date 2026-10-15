@@ -11,11 +11,17 @@ deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
   Anthropic call made with that key sends `anthropic-workspace-id`: chat,
   streaming, vision, the model lists. One place builds the headers
   (`anthropicHeaders`, [docs/provider-http.md](docs/provider-http.md#anthropic-workspace-id)).
-  Without it nothing changes.
+  Without it nothing changes. The id is ASCII letters, digits, `_` and `-`
+  (app check and table check alike; anything else is a 400).
+- Key lookups (`getApiKeyById`, `getApiKey`, `resolveProviderKey`) return a
+  credential, `ProviderCredential` `{ apiKey, anthropicWorkspaceId? }`, not
+  the bare plaintext; chat and vision options extend it and every
+  `discoverModels` takes it. Two rows holding the same key value with
+  different workspace ids each send their own.
 - Anthropic's 400 for a key not scoped to a workspace is classified
   `workspace` and reads "This Anthropic key is not tied to a workspace. Add
-  the workspace id on the key, or use a key made inside an Anthropic
-  workspace."
+  or check the workspace id on the key, or use a key made inside an
+  Anthropic workspace."
 - `GET /api/keys` lists `anthropicWorkspaceId` per key and
   `features.anthropicWorkspaceId: true`; `POST /api/keys` takes an optional
   `anthropicWorkspaceId`; `PATCH /api/keys/:id` sets or clears it. Additive.
@@ -23,7 +29,8 @@ deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
   model's `contextTokens`: Anthropic's own `max_input_tokens`, else the
   OpenRouter catalog's window for the model's OpenRouter id (vendor prefix
   plus id normalization, no table of models). The dashboard's context bars
-  map a direct agent's model the same way.
+  use the same helper (`contextWindowFor`) over the same cached model list,
+  so the agent form and the dashboard show one number.
 
 ## Unreleased: direct providers list their models in the picker
 

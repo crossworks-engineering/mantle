@@ -141,7 +141,7 @@ async function resolveAuth(
   const secrets = new Map<string, string>();
   if (mcp.secretRef) {
     const [service, label] = mcp.secretRef.split('/');
-    const plaintext = await getApiKey(ownerId, service!, label!);
+    const plaintext = (await getApiKey(ownerId, service!, label!))?.apiKey ?? null;
     if (plaintext === null) {
       throw new Error(
         `secret '${mcp.secretRef}' not found in the API-key vault — add it under Settings → API keys (service '${service}', label '${label}')`,

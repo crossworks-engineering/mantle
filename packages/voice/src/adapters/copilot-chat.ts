@@ -27,6 +27,7 @@ import type {
   ChatOptions,
   ChatResult,
   ChatStreamSink,
+  ProviderCredential,
 } from './types';
 import { ChatHttpError, parseRetryAfterMs } from './retry';
 import type { DiscoveryResult } from '../discover';
@@ -158,7 +159,9 @@ function copilotChatStream(opts: ChatOptions, onDelta: ChatStreamSink): Promise<
   );
 }
 
-async function copilotDiscover(apiKey: string): Promise<DiscoveryResult<ChatModelInfo>> {
+async function copilotDiscover({
+  apiKey,
+}: ProviderCredential): Promise<DiscoveryResult<ChatModelInfo>> {
   try {
     const token = await resolveCopilotToken(apiKey);
     const res = await providerFetch(

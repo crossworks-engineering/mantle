@@ -19,8 +19,18 @@
  * 'default' label first, else the oldest key of that service).
  */
 import { findProviderKeyId, getApiKeyById } from '@mantle/api-keys';
-import { anthropicHeaders, isProviderId, type ProviderId } from '@mantle/voice';
-import { contextLimitForRoute, refreshModelCatalog } from '@mantle/tracing';
+import {
+  anthropicHeaders,
+  isProviderId,
+  type ProviderCredential,
+  type ProviderId,
+} from '@mantle/voice';
+import {
+  contextLimitForRoute,
+  contextSourceForRoute,
+  refreshModelCatalog,
+  type ContextSource,
+} from '@mantle/tracing';
 import type { ExplorerModel, ModelSort } from '@mantle/client-types';
 import { kindFromModalities } from '@mantle/client-types/model-pools';
 import {
@@ -287,7 +297,7 @@ export function parseXaiLanguageModels(models: unknown[]): ExplorerModel[] {
 type Fetcher = {
   /** True when a stored API key is required (false = public endpoint). */
   needsKey: boolean;
-  fetch: (key: string | null) => Promise<ExplorerModel[]>;
+  fetch: (credential: ProviderCredential | null) => Promise<ExplorerModel[]>;
 };
 
 const FETCHERS: Partial<Record<ProviderId, Fetcher>> = {
@@ -310,10 +320,10 @@ const FETCHERS: Partial<Record<ProviderId, Fetcher>> = {
   },
   openai: {
     needsKey: true,
-    fetch: async (key) => {
+    fetch: async (credential) => {
       const body = rec(
         await getJson('https://api.openai.com/v1/models', {
-          headers: { authorization: `Bearer ${key}` },
+          headers: { authorization: `Bearer ${credential?.apiKey ?? ''}` },
         }),
       );
       return parseOpenAiLike(asArray(body.data));
@@ -321,12 +331,12 @@ const FETCHERS: Partial<Record<ProviderId, Fetcher>> = {
   },
   anthropic: {
     needsKey: true,
-    fetch: async (key) => {
+    fetch: async (credential) => {
       const body = rec(
         await getJson('https://api.anthropic.com/v1/models?limit=1000', {
-          // THE Anthropic headers (the version, and the key's workspace id
-          // when it carries one): built in the adapter, never here.
-          headers: anthropicHeaders(key ?? ''),
+          // THE Anthropic headers (the version, and the workspace id when the
+          // key's credential carries one): built in the adapter, never here.
+          headers: anthropicHeaders(credential ?? { apiKey: '' }),
         }),
       );
       return parseAnthropic(asArray(body.data));
@@ -334,10 +344,10 @@ const FETCHERS: Partial<Record<ProviderId, Fetcher>> = {
   },
   google: {
     needsKey: true,
-    fetch: async (key) => {
+    fetch: async (credential) => {
       const body = rec(
         await getJson(
-          `https://generativelanguage.googleapis.com/v1beta/models?pageSize=1000&key=${encodeURIComponent(key ?? '')}`,
+          `https://generativelanguage.googleapis.com/v1beta/models?pageSize=1000&key=${encodeURIComponent(credential?.apiKey ?? '')}`,
         ),
       );
       return parseGoogle(asArray(body.models));
@@ -345,10 +355,10 @@ const FETCHERS: Partial<Record<ProviderId, Fetcher>> = {
   },
   xai: {
     needsKey: true,
-    fetch: async (key) => {
+    fetch: async (credential) => {
       const body = rec(
         await getJson('https://api.x.ai/v1/language-models', {
-          headers: { authorization: `Bearer ${key}` },
+          headers: { authorization: `Bearer ${credential?.apiKey ?? ''}` },
         }),
       );
       return parseXaiLanguageModels(asArray(body.models));
@@ -356,10 +366,10 @@ const FETCHERS: Partial<Record<ProviderId, Fetcher>> = {
   },
   mistral: {
     needsKey: true,
-    fetch: async (key) => {
+    fetch: async (credential) => {
       const body = rec(
         await getJson('https://api.mistral.ai/v1/models', {
-          headers: { authorization: `Bearer ${key}` },
+          headers: { authorization: `Bearer ${credential?.apiKey ?? ''}` },
         }),
       );
       return parseMistral(asArray(body.data));
@@ -367,10 +377,10 @@ const FETCHERS: Partial<Record<ProviderId, Fetcher>> = {
   },
   cohere: {
     needsKey: true,
-    fetch: async (key) => {
+    fetch: async (credential) => {
       const body = rec(
         await getJson('https://api.cohere.com/v1/models?page_size=1000', {
-          headers: { authorization: `Bearer ${key}` },
+          headers: { authorization: `Bearer ${credential?.apiKey ?? ''}` },
         }),
       );
       return parseCohere(asArray(body.models));
@@ -378,10 +388,10 @@ const FETCHERS: Partial<Record<ProviderId, Fetcher>> = {
   },
   deepseek: {
     needsKey: true,
-    fetch: async (key) => {
+    fetch: async (credential) => {
       const body = rec(
         await getJson('https://api.deepseek.com/models', {
-          headers: { authorization: `Bearer ${key}` },
+          headers: { authorization: `Bearer ${credential?.apiKey ?? ''}` },
         }),
       );
       return parseOpenAiLike(asArray(body.data));
@@ -389,10 +399,10 @@ const FETCHERS: Partial<Record<ProviderId, Fetcher>> = {
   },
   mammouth: {
     needsKey: true,
-    fetch: async (key) => {
+    fetch: async (credential) => {
       const body = rec(
         await getJson('https://api.mammouth.ai/v1/models', {
-          headers: { authorization: `Bearer ${key}` },
+          headers: { authorization: `Bearer ${credential?.apiKey ?? ''}` },
         }),
       );
       return parseOpenAiLike(asArray(body.data));
@@ -400,10 +410,10 @@ const FETCHERS: Partial<Record<ProviderId, Fetcher>> = {
   },
   huggingface: {
     needsKey: true,
-    fetch: async (key) => {
+    fetch: async (credential) => {
       const body = rec(
         await getJson('https://router.huggingface.co/v1/models', {
-          headers: { authorization: `Bearer ${key}` },
+          headers: { authorization: `Bearer ${credential?.apiKey ?? ''}` },
         }),
       );
       return parseOpenAiLike(asArray(body.data));
@@ -464,16 +474,16 @@ export async function fetchProviderModels(
     if (hit && Date.now() - hit.fetchedAt < CACHE_TTL_MS) return hit;
   }
 
-  let key: string | null = null;
+  let credential: ProviderCredential | null = null;
   if (keyId) {
-    key = await getApiKeyById(keyId);
-    if (!key) {
+    credential = await getApiKeyById(keyId);
+    if (!credential) {
       return { provider, models: [], fetchedAt: Date.now(), needsKey: true };
     }
   }
 
   try {
-    const models = await withRouteContext(provider, await fetcher.fetch(key));
+    const models = await withRouteContext(provider, await fetcher.fetch(credential));
     models.sort((a, b) => a.id.localeCompare(b.id));
     const result: ProviderModelsResult = { provider, models, fetchedAt: Date.now() };
     cache.set(slot, result);
@@ -493,11 +503,31 @@ export async function fetchProviderModels(
 }
 
 /**
+ * THE context window of a model as the brain reports it, for the agent
+ * form's model list (withRouteContext, read by /api/models) and the
+ * dashboard's context bars (agentContextWindow) alike, so the two agree:
+ * the provider's own figure when its model list published one (`listed`:
+ * Anthropic's `max_input_tokens` from its Models API), else the OpenRouter
+ * catalog's window for the model's OpenRouter id (contextLimitForRoute:
+ * vendor prefix + id normalization, no table of models), else none. The
+ * provider's own figure reads as `live`; a mapped one keeps the OpenRouter
+ * catalog's source.
+ */
+export function contextWindowFor(
+  provider: string | null | undefined,
+  model: string,
+  listed?: number | null,
+): { limit: number | null; source: ContextSource } {
+  const mapped = contextLimitForRoute(provider, model);
+  if (listed && listed > 0 && listed !== mapped) return { limit: listed, source: 'live' };
+  return { limit: mapped, source: contextSourceForRoute(provider, model) };
+}
+
+/**
  * A direct provider's models with the context window filled where its own
- * list gave none: from the OpenRouter catalog, by the model's OpenRouter id
- * (contextLimitForRoute: vendor prefix + id normalization, no table of
- * models). The provider's own number always wins; a model OpenRouter does
- * not list stays without one. OpenRouter's own list is already complete.
+ * list gave none (contextWindowFor). The provider's own number always wins;
+ * a model OpenRouter does not list stays without one. OpenRouter's own list
+ * is already complete.
  */
 export async function withRouteContext(
   provider: ProviderId,
@@ -507,9 +537,44 @@ export async function withRouteContext(
   await refreshModelCatalog();
   return models.map((m) => {
     if (m.contextTokens) return m;
-    const limit = contextLimitForRoute(provider, m.id);
+    const { limit } = contextWindowFor(provider, m.id);
     return limit ? { ...m, contextTokens: limit } : m;
   });
+}
+
+/**
+ * The context window of an agent's model for the dashboard: contextWindowFor
+ * over the same provider model list the agent form shows (this module's
+ * cache, for the agent's key), so the form and the dashboard say the same
+ * number. Never waits on a provider: a list not cached yet is fetched in the
+ * background for the next render, and this one uses the OpenRouter mapping.
+ */
+export async function agentContextWindow(
+  ownerId: string,
+  agent: { provider: string | null; model: string; apiKeyId: string | null },
+): Promise<{ limit: number | null; source: ContextSource }> {
+  const listed = await cachedListedWindow(ownerId, agent).catch(() => undefined);
+  return contextWindowFor(agent.provider, agent.model, listed);
+}
+
+async function cachedListedWindow(
+  ownerId: string,
+  agent: { provider: string | null; model: string; apiKeyId: string | null },
+): Promise<number | undefined> {
+  const provider = agent.provider;
+  if (!provider || provider === 'openrouter' || !isProviderId(provider)) return undefined;
+  const fetcher = FETCHERS[provider];
+  if (!fetcher) return undefined;
+  const keyId = fetcher.needsKey
+    ? (agent.apiKeyId ?? (await findProviderKeyId(ownerId, provider)))
+    : null;
+  if (fetcher.needsKey && !keyId) return undefined;
+  const hit = cache.get(modelCacheKey(provider, keyId));
+  if (!hit || Date.now() - hit.fetchedAt >= CACHE_TTL_MS) {
+    void fetchProviderModels(ownerId, provider, { keyId }).catch(() => {});
+  }
+  const id = agent.model.trim().toLowerCase();
+  return hit?.models.find((m) => m.id.toLowerCase() === id)?.contextTokens;
 }
 
 /** Provider ids this explorer can fetch a model list for. */

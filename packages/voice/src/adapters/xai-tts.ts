@@ -25,7 +25,7 @@
  */
 
 import type { SynthesizeOptions, SynthesizeResult, TtsWarning } from '../types';
-import type { TtsDispatcher } from './types';
+import type { TtsDispatcher, ProviderCredential } from './types';
 import type { TtsModelInfo } from '../catalog';
 import type { DiscoveryResult } from '../discover';
 import {
@@ -160,7 +160,9 @@ async function xaiTtsSynthesize(opts: SynthesizeOptions): Promise<SynthesizeResu
 
 /** Discovery: xAI doesn't publish a TTS-specific /v1/models endpoint
  *  beyond the chat one, so we return the static catalog directly. */
-async function xaiTtsDiscover(_apiKey: string): Promise<DiscoveryResult<TtsModelInfo>> {
+async function xaiTtsDiscover(
+  _credential: ProviderCredential,
+): Promise<DiscoveryResult<TtsModelInfo>> {
   return {
     available: [
       {

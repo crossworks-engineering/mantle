@@ -54,7 +54,7 @@ export const PROVIDER_ERROR_REASONS: Record<ProviderErrorCode, string> = {
   auth: 'The provider refused the API key.',
   no_key: 'No API key is set for this provider.',
   workspace:
-    'This Anthropic key is not tied to a workspace. Add the workspace id on the key, or use a key made inside an Anthropic workspace.',
+    'This Anthropic key is not tied to a workspace. Add or check the workspace id on the key, or use a key made inside an Anthropic workspace.',
   model: 'The provider does not offer this model.',
   rate_limit: 'The provider limits the request rate.',
   server: 'The provider has a server problem.',

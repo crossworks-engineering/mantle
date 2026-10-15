@@ -36,6 +36,28 @@ import type {
 import type { TtsModelInfo, SttModelInfo } from '../catalog';
 import type { DiscoveryResult } from '../catalog';
 
+/**
+ * What a provider call is made with: the key, plus what its key row carries
+ * besides the value. THE handle a key lookup (@mantle/api-keys:
+ * getApiKeyById, getApiKey, resolveProviderKey) returns and every adapter
+ * call takes (ChatOptions and VisionExtractOptions extend it; every
+ * `discoverModels` takes it), so a call sends exactly the row it was opened
+ * from: two rows holding the same key value with different workspace ids each
+ * send their own. Nothing is looked up by the key value.
+ *
+ * A field a provider needs on the wire is added here, filled where the row is
+ * opened (openKeyRow), copied by `credentialOf` (provider-credential.ts), and
+ * turned into a header by that provider's one header builder (Anthropic:
+ * anthropicHeaders). An OpenAI organization or project would go the same way.
+ */
+export interface ProviderCredential {
+  /** The key value. Never logged. */
+  apiKey: string;
+  /** Anthropic only: the workspace id a key not scoped to a workspace names
+   *  on every call (header `anthropic-workspace-id`). Not secret. */
+  anthropicWorkspaceId?: string;
+}
+
 /** Common shape every adapter exposes — used by the registry to log
  *  and surface the right one in errors. */
 export interface AdapterMeta {
@@ -107,7 +129,7 @@ export interface TtsDispatcher extends AdapterMeta {
    *  for ElevenLabs we'd hit /v1/models too but the catalogue is
    *  different. If absent, the UI falls back to whatever static
    *  catalogue the adapter consults. */
-  discoverModels?(apiKey: string): Promise<DiscoveryResult<TtsModelInfo>>;
+  discoverModels?(credential: ProviderCredential): Promise<DiscoveryResult<TtsModelInfo>>;
 
   /** Optional. Returns the voices a given model supports. For OpenAI
    *  this is a static per-model list (we hardcode 13 voices for
@@ -402,8 +424,7 @@ export interface ChatCacheControl {
  *  `reasoning.mandatory` in GET /models reject an explicit none. */
 export type ThinkingEffort = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 
-export interface ChatOptions {
-  apiKey: string;
+export interface ChatOptions extends ProviderCredential {
   model: string;
   /** Standard chat-completion messages. The adapter is free to
    *  transform these into the provider's native shape (e.g. Anthropic's
@@ -522,7 +543,7 @@ export interface ChatDispatcher extends AdapterMeta {
   /** Live-discover available chat models. Adapter does the cross-
    *  reference between provider's /v1/models response and its own
    *  static catalog. */
-  discoverModels?(apiKey: string): Promise<DiscoveryResult<ChatModelInfo>>;
+  discoverModels?(credential: ProviderCredential): Promise<DiscoveryResult<ChatModelInfo>>;
   /** Adapters expose their static catalog for the UI to render before
    *  discovery completes (or when discovery isn't supported). */
   staticCatalog?(): readonly ChatModelInfo[];
@@ -548,7 +569,7 @@ export interface SttDispatcher extends AdapterMeta {
   transcribe(audio: Buffer, opts: TranscribeOptions): Promise<TranscribeResult>;
 
   /** Optional. Live-discover available transcription models. */
-  discoverModels?(apiKey: string): Promise<DiscoveryResult<SttModelInfo>>;
+  discoverModels?(credential: ProviderCredential): Promise<DiscoveryResult<SttModelInfo>>;
 }
 
 // ─── Vision ─────────────────────────────────────────────────────────
@@ -571,8 +592,7 @@ export interface VisionModelInfo {
   tier?: 'fast' | 'balanced' | 'quality';
 }
 
-export interface VisionExtractOptions {
-  apiKey: string;
+export interface VisionExtractOptions extends ProviderCredential {
   /** MIME of the image bytes (image/jpeg, image/png, image/webp, image/gif).
    *  Each provider accepts a slightly different list — adapters error
    *  on unsupported MIMEs rather than silently sending bytes the API
@@ -624,7 +644,9 @@ export interface VisionDispatcher extends AdapterMeta {
   /** Live-discover which vision-capable models the api key can use.
    *  Implementation parity with ChatDispatcher.discoverModels — when
    *  absent, the form falls back to the adapter's static catalog. */
-  discoverModels?(apiKey: string): Promise<import('../catalog').DiscoveryResult<VisionModelInfo>>;
+  discoverModels?(
+    credential: ProviderCredential,
+  ): Promise<import('../catalog').DiscoveryResult<VisionModelInfo>>;
 
   /** Static catalog the UI renders before live discovery returns or
    *  when the adapter doesn't support discovery. */
@@ -868,7 +890,7 @@ export interface EmbeddingDispatcher extends AdapterMeta {
    *  in `/v1/models` (filtered by id pattern); Google requires a
    *  capability filter (`supportedGenerationMethods` includes
    *  `embedContent`). */
-  discoverModels?(apiKey: string): Promise<DiscoveryResult<EmbeddingModelInfo>>;
+  discoverModels?(credential: ProviderCredential): Promise<DiscoveryResult<EmbeddingModelInfo>>;
 
   /** Curated fallback list. Used by the workers form when no API key
    *  is configured yet (so the dropdown isn't empty in create mode)

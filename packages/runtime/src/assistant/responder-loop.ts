@@ -35,6 +35,7 @@ import {
   type ProfilePreferences,
 } from '@mantle/content';
 import { step } from '@mantle/tracing';
+import { credentialOf, type ProviderCredential } from '@mantle/voice';
 import {
   conversationTaintKey,
   loadConversationTaint,
@@ -148,7 +149,9 @@ export type RunResponderLoopOptions = {
    *  caller (before its trace opens) so a missing adapter fails with the
    *  surface's own error message and no half-open trace. */
   adapter: ToolLoopArgs['adapter'];
-  apiKey: string;
+  /** The agent's key as its lookup returned it (the key and what its row
+   *  carries, e.g. an Anthropic workspace id). */
+  credential: ProviderCredential;
   prefs: ProfilePreferences;
   logPrefix: string;
   /** The stage-1 assembly: tools, budgets, delegation, loop overrides. */
@@ -298,7 +301,7 @@ async function runResponderLoopAtLevel(
 
   const loop = await runToolLoop({
     adapter: opts.adapter,
-    apiKey: routeRefused ? 'local' : opts.apiKey,
+    ...(routeRefused ? { apiKey: 'local' } : credentialOf(opts.credential)),
     model: agent.model,
     baseUrl: agent.baseUrl,
     viaTailnet: agent.viaTailnet,

@@ -23,6 +23,7 @@ import type {
   ChatOptions,
   ChatResult,
   ChatStreamSink,
+  ProviderCredential,
 } from './types';
 import { ChatHttpError, parseRetryAfterMs } from './retry';
 import type { DiscoveryResult } from '../discover';
@@ -117,7 +118,9 @@ async function localChat(opts: ChatOptions): Promise<ChatResult> {
   };
 }
 
-async function localChatDiscover(_apiKey: string): Promise<DiscoveryResult<ChatModelInfo>> {
+async function localChatDiscover(
+  _credential: ProviderCredential,
+): Promise<DiscoveryResult<ChatModelInfo>> {
   // Whatever the local server is currently serving (env-default host — the form
   // verifies a specific route live with Test chat). `/v1/models` doesn't report
   // context windows, so we list ids only.

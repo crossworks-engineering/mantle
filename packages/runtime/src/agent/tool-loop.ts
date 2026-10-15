@@ -60,6 +60,7 @@ import {
   type ChatDispatcher,
   type ChatFinishReason,
   type ChatToolDefinition,
+  type ProviderCredential,
   type ThinkingEffort,
 } from '@mantle/voice';
 
@@ -378,7 +379,10 @@ export type ToolLoopResult = {
   finishReason?: ChatFinishReason;
 };
 
-export type ToolLoopArgs = {
+/** The primary route's credential (ProviderCredential: the key and what its
+ *  row carries, e.g. an Anthropic workspace id) sits at the top level of the
+ *  args; callers spread the credential their key lookup returned. */
+export type ToolLoopArgs = ProviderCredential & {
   /** Pre-resolved chat adapter for the agent's provider. Callers
    *  resolve via `getChatAdapter(agent.provider)` and pass it down —
    *  pre-resolving (vs. looking up inside the loop) means a missing
@@ -386,10 +390,6 @@ export type ToolLoopArgs = {
    *  available for the error message, not inside the loop's first
    *  iteration. */
   adapter: ChatDispatcher;
-  /** API key for the adapter's provider. Resolved by the caller from
-   *  the agent's apiKeyId (the agents table has the same apiKeyId
-   *  column the ai_workers table uses). */
-  apiKey: string;
   model: string;
   /** Per-route host + tailnet flag for the PRIMARY (migration 0063). The
    *  `local` chat adapter honours them; others ignore them. */
@@ -402,9 +402,8 @@ export type ToolLoopArgs = {
    *  (sticky — no flip-flopping models mid-reasoning). The next turn starts on
    *  the primary again. Carries its OWN baseUrl/viaTailnet (a cloud-direct
    *  backup must not inherit a local-via-tailnet primary's routing). */
-  backup?: {
+  backup?: ProviderCredential & {
     adapter: ChatDispatcher;
-    apiKey: string;
     model: string;
     baseUrl?: string | null;
     viaTailnet?: boolean;

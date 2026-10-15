@@ -126,7 +126,7 @@ const run = (workspaceId: string | null, surface: unknown = MEMBER_SURFACE) =>
       params: {},
     } as unknown as Agent,
     adapter: { providerId: 'openrouter', adapterName: 'fake' } as never,
-    apiKey: 'k',
+    credential: { apiKey: 'k' },
     prefs: { timezone: 'UTC', locale: 'en-GB' },
     logPrefix: '[test]',
     assembled: ASSEMBLED,

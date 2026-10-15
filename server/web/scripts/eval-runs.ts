@@ -45,7 +45,7 @@ import { and, desc, eq } from 'drizzle-orm';
 import { db, agents, type Agent, type RunItemRow } from '@mantle/db';
 import { getApiKeyById } from '@mantle/api-keys';
 import { renderAuditSection, renderPanelSection } from '@mantle/runs';
-import { getChatAdapter, type ChatToolDefinition } from '@mantle/voice';
+import { getChatAdapter, type ChatToolDefinition, type ProviderCredential } from '@mantle/voice';
 import { env } from '@mantle/config';
 import { errorMessage } from '@mantle/std';
 
@@ -203,7 +203,7 @@ function parseVerdict(argsJson: string): Parsed {
 async function runCase(
   gc: GoldCase,
   agent: Agent,
-  apiKey: string,
+  credential: ProviderCredential,
   model: string,
   maxTokens: number,
 ): Promise<CaseResult> {
@@ -225,7 +225,7 @@ async function runCase(
 
   try {
     const res = await adapter.chat({
-      apiKey,
+      ...credential,
       model,
       messages: [
         {
@@ -304,8 +304,8 @@ async function main() {
     console.error(`eval-runs: responder '${agent.slug}' has no api key`);
     process.exit(1);
   }
-  const apiKey = await getApiKeyById(agent.apiKeyId);
-  if (!apiKey) {
+  const credential = await getApiKeyById(agent.apiKeyId);
+  if (!credential) {
     console.error('eval-runs: api key failed to decrypt');
     process.exit(1);
   }
@@ -327,7 +327,7 @@ async function main() {
   }
   const results: CaseResult[] = [];
   for (const gc of cases) {
-    const r = await runCase(gc, agent, apiKey, model, maxTokens);
+    const r = await runCase(gc, agent, credential, model, maxTokens);
     results.push(r);
     if (!jsonOnly) {
       const mark = r.correct ? '✓' : '✗';

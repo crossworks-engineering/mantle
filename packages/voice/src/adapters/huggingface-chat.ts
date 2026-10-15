@@ -32,6 +32,7 @@ import type {
   ChatOptions,
   ChatResult,
   ChatStreamSink,
+  ProviderCredential,
 } from './types';
 import { ChatHttpError, parseRetryAfterMs } from './retry';
 import type { DiscoveryResult } from '../discover';
@@ -144,7 +145,7 @@ async function hfChat(opts: ChatOptions): Promise<ChatResult> {
   };
 }
 
-async function hfDiscover(apiKey: string): Promise<DiscoveryResult<ChatModelInfo>> {
+async function hfDiscover({ apiKey }: ProviderCredential): Promise<DiscoveryResult<ChatModelInfo>> {
   try {
     const res = await providerFetch(
       `${HUGGINGFACE_BASE_URL}/models`,

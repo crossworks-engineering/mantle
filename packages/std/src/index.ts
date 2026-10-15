@@ -346,11 +346,3 @@ export {
   type ProviderErrorCode,
 } from './provider-error';
 export { CircuitBreaker } from './breaker';
-export {
-  ANTHROPIC_WORKSPACE_ID_MAX,
-  _clearProviderKeyContexts,
-  normalizeAnthropicWorkspaceId,
-  providerKeyContext,
-  rememberProviderKeyContext,
-  type ProviderKeyContext,
-} from './provider-key-context';

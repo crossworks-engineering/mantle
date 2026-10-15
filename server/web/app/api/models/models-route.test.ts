@@ -13,7 +13,10 @@ const TEAM = '22222222-2222-4222-8222-222222222222';
 const OPENAI = '44444444-4444-4444-8444-444444444444';
 const THEIRS = '55555555-5555-4555-8555-555555555555';
 
-const VAULT: Record<string, { owner: string; service: string; plaintext: string }> = {
+const VAULT: Record<
+  string,
+  { owner: string; service: string; plaintext: string; workspace?: string }
+> = {
   [WORK]: { owner: OWNER, service: 'anthropic', plaintext: 'sk-ant-work' },
   [TEAM]: { owner: OWNER, service: 'anthropic', plaintext: 'sk-ant-team' },
   [OPENAI]: { owner: OWNER, service: 'openai', plaintext: 'sk-openai' },
@@ -31,14 +34,20 @@ vi.mock('@mantle/api-keys', () => ({
     const hit = Object.entries(VAULT).find(([, k]) => k.owner === owner && k.service === service);
     return hit?.[0] ?? null;
   }),
-  getApiKeyById: vi.fn(async (id: string) => VAULT[id]?.plaintext ?? null),
+  // The credential the real store returns: the key and its row's workspace id.
+  getApiKeyById: vi.fn(async (id: string) => {
+    const row = VAULT[id];
+    if (!row) return null;
+    return row.workspace
+      ? { apiKey: row.plaintext, anthropicWorkspaceId: row.workspace }
+      : { apiKey: row.plaintext };
+  }),
   ownedKeyService: vi.fn(async (owner: string, id: string) =>
     VAULT[id]?.owner === owner ? VAULT[id]!.service : null,
   ),
 }));
 
 import { GET } from './route';
-import { _clearProviderKeyContexts, rememberProviderKeyContext } from '@mantle/std';
 import { clearModelCache } from '@/lib/model-explorer';
 
 type Body = { models: { id: string }[]; needsKey?: boolean; error?: string };
@@ -53,7 +62,7 @@ beforeEach(() => {
   workspaceSeen.length = 0;
   refused.clear();
   unscoped.clear();
-  _clearProviderKeyContexts();
+  delete VAULT[TEAM]!.workspace;
   vi.stubGlobal(
     'fetch',
     vi.fn(async (url: unknown, init?: RequestInit) => {
@@ -158,18 +167,17 @@ describe('GET /api/models with a picked key', () => {
   });
 
   it("sends the key's workspace id on the model list, and names a missing one plainly", async () => {
-    // The key store records the workspace id when it opens a key; the fake
-    // vault here stands in for that.
+    // The workspace id is the key row's: the fake vault's row stands in.
     unscoped.add('sk-ant-team');
     const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     const missing = (await (await get(`provider=anthropic&keyId=${TEAM}`)).json()) as Body;
     errSpy.mockRestore();
     expect(missing.error).toBe(
-      'This Anthropic key is not tied to a workspace. Add the workspace id on the key, or use a key made inside an Anthropic workspace. (anthropic, HTTP 400)',
+      'This Anthropic key is not tied to a workspace. Add or check the workspace id on the key, or use a key made inside an Anthropic workspace. (anthropic, HTTP 400)',
     );
     expect(JSON.stringify(missing)).not.toMatch(/SECRET|acct_/);
 
-    rememberProviderKeyContext('sk-ant-team', { anthropicWorkspaceId: 'wrkspc_test' });
+    VAULT[TEAM]!.workspace = 'wrkspc_test';
     const ok = (await (await get(`provider=anthropic&keyId=${TEAM}`)).json()) as Body;
     expect(ok.models).toHaveLength(1);
     expect(workspaceSeen).toEqual([null, 'wrkspc_test']);

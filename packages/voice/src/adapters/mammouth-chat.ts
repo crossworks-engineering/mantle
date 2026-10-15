@@ -32,6 +32,7 @@ import type {
   ChatOptions,
   ChatResult,
   ChatStreamSink,
+  ProviderCredential,
 } from './types';
 import { ChatHttpError, parseRetryAfterMs } from './retry';
 import type { DiscoveryResult } from '../discover';
@@ -146,7 +147,9 @@ async function mammouthChatStream(opts: ChatOptions, onDelta: ChatStreamSink): P
   return withCost(result, o.model);
 }
 
-async function mammouthDiscover(apiKey: string): Promise<DiscoveryResult<ChatModelInfo>> {
+async function mammouthDiscover({
+  apiKey,
+}: ProviderCredential): Promise<DiscoveryResult<ChatModelInfo>> {
   try {
     const res = await providerFetch(
       `${MAMMOUTH_BASE_URL}/models`,

@@ -3,7 +3,7 @@
  * (via POST /api/keys/test) and the onboarding sanity checks. Server-only (it
  * decrypts the stored key and calls the provider). Auth is the caller's job.
  *
- * How it works: every wired adapter ships a `discoverModels(apiKey)` method that
+ * How it works: every wired adapter ships a `discoverModels(credential)` method that
  * hits the provider's models endpoint — calling that is effectively an auth probe
  * (200 = key good, 401/403 = key bad) and surfaces the provider's actual error.
  * We pick the adapter by trying chat → tts → stt in turn. Providers in our
@@ -29,8 +29,8 @@ export async function probeApiKey(keyId: string, service: string): Promise<TestA
   const provider = getProvider(service);
   const providerLabel = provider?.label ?? service;
 
-  const apiKey = await getApiKeyById(keyId);
-  if (!apiKey) {
+  const credential = await getApiKeyById(keyId);
+  if (!credential) {
     return {
       ok: false,
       message: 'Key not found or could not be decrypted.',
@@ -62,7 +62,7 @@ export async function probeApiKey(keyId: string, service: string): Promise<TestA
   }
 
   try {
-    const result = await adapter.discoverModels(apiKey);
+    const result = await adapter.discoverModels(credential);
     if (result.filtered) {
       return {
         ok: true,

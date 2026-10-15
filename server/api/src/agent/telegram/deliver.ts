@@ -54,7 +54,7 @@ export async function deliverReply(args: {
           // here. We catch and fall through to text on failure so
           // a transient OpenAI hiccup doesn't drop the reply.
           try {
-            const ttsApiKey = await getApiKeyById(ttsWorker.apiKeyId);
+            const ttsApiKey = (await getApiKeyById(ttsWorker.apiKeyId))?.apiKey;
             if (!ttsApiKey) {
               throw new Error(`tts worker '${ttsWorker.slug}' api key not found`);
             }

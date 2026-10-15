@@ -36,7 +36,7 @@ vi.mock('@mantle/db', async (importOriginal) => ({
     params: {},
   }),
 }));
-vi.mock('@mantle/api-keys', () => ({ getApiKeyById: async () => 'sk-hidden' }));
+vi.mock('@mantle/api-keys', () => ({ getApiKeyById: async () => ({ apiKey: 'sk-hidden' }) }));
 vi.mock('@mantle/voice', () => ({
   getSttAdapter: () => ({
     adapterName: 'stand-in',

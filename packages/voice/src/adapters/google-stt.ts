@@ -34,7 +34,7 @@
  * just filtered to audio-capable model ids).
  */
 
-import type { SttDispatcher } from './types';
+import type { SttDispatcher, ProviderCredential } from './types';
 import type { TranscribeOptions, TranscribeResult } from '../types';
 import type { SttModelInfo } from '../catalog';
 import type { DiscoveryResult } from '../discover';
@@ -177,7 +177,7 @@ export const googleSttAdapter: SttDispatcher = {
     };
   },
 
-  async discoverModels(apiKey: string): Promise<DiscoveryResult<SttModelInfo>> {
+  async discoverModels({ apiKey }: ProviderCredential): Promise<DiscoveryResult<SttModelInfo>> {
     try {
       const res = await providerFetch(
         `${GOOGLE_BASE_URL}/models?key=${encodeURIComponent(apiKey)}`,

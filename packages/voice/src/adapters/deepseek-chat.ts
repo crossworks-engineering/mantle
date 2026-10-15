@@ -30,6 +30,7 @@ import type {
   ChatOptions,
   ChatResult,
   ChatStreamSink,
+  ProviderCredential,
 } from './types';
 import { ChatHttpError, parseRetryAfterMs } from './retry';
 import type { DiscoveryResult } from '../discover';
@@ -129,7 +130,9 @@ async function deepseekChat(opts: ChatOptions): Promise<ChatResult> {
   };
 }
 
-async function deepseekDiscover(apiKey: string): Promise<DiscoveryResult<ChatModelInfo>> {
+async function deepseekDiscover({
+  apiKey,
+}: ProviderCredential): Promise<DiscoveryResult<ChatModelInfo>> {
   try {
     const res = await providerFetch(
       `${DEEPSEEK_BASE_URL}/models`,

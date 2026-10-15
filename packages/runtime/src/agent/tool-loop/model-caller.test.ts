@@ -78,12 +78,19 @@ const idleTimeout = (): Error =>
     name: 'TimeoutError',
   });
 
-function caller(primary: ReturnType<typeof okRoute>, backup: ReturnType<typeof okRoute>) {
+function caller(
+  primary: ReturnType<typeof okRoute>,
+  backup: ReturnType<typeof okRoute>,
+  credentials: {
+    primary?: { apiKey: string; anthropicWorkspaceId?: string };
+    backup?: { apiKey: string; anthropicWorkspaceId?: string };
+  } = {},
+) {
   const args = {
     adapter: primary,
-    apiKey: 'k',
+    ...(credentials.primary ?? { apiKey: 'k' }),
     model: 'primary-model',
-    backup: { adapter: backup, apiKey: 'k2', model: 'backup-model' },
+    backup: { adapter: backup, ...(credentials.backup ?? { apiKey: 'k2' }), model: 'backup-model' },
     params: {},
     ownerId: 'o1',
   } as unknown as ToolLoopArgs;
@@ -141,5 +148,32 @@ describe('failover after a round has streamed', () => {
     const backup = okRoute('backup');
     await expect(caller(primary, backup).round(0)).rejects.toThrow(/bad request/);
     expect(backup.chatStream).not.toHaveBeenCalled();
+  });
+});
+
+describe("each route sends its own key's credential", () => {
+  it("the primary's workspace id, then the backup's own after a failover", async () => {
+    // The same key value on both routes, two rows with different workspace
+    // ids: each round carries the id of the row its route was opened from.
+    const primary = failingRoute('primary', [], idleTimeout());
+    const backup = okRoute('backup');
+    await caller(primary, backup, {
+      primary: { apiKey: 'same-value', anthropicWorkspaceId: 'wrkspc_a' },
+      backup: { apiKey: 'same-value', anthropicWorkspaceId: 'wrkspc_b' },
+    }).round(0);
+    expect(primary.chatStream.mock.calls[0]![0]).toMatchObject({
+      apiKey: 'same-value',
+      anthropicWorkspaceId: 'wrkspc_a',
+    });
+    expect(backup.chatStream.mock.calls[0]![0]).toMatchObject({
+      apiKey: 'same-value',
+      anthropicWorkspaceId: 'wrkspc_b',
+    });
+  });
+
+  it('sends none when the row carries none', async () => {
+    const primary = okRoute('primary');
+    await caller(primary, okRoute('backup'), { primary: { apiKey: 'plain' } }).round(0);
+    expect(primary.chatStream.mock.calls[0]![0]).not.toHaveProperty('anthropicWorkspaceId');
   });
 });

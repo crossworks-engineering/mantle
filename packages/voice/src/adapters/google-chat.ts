@@ -28,6 +28,7 @@ import type {
   ChatResult,
   ChatStreamSink,
   ChatToolCall,
+  ProviderCredential,
 } from './types';
 import { ChatHttpError, parseRetryAfterMs } from './retry';
 import {
@@ -604,7 +605,9 @@ async function googleChat(opts: ChatOptions): Promise<ChatResult> {
   };
 }
 
-async function googleDiscover(apiKey: string): Promise<DiscoveryResult<ChatModelInfo>> {
+async function googleDiscover({
+  apiKey,
+}: ProviderCredential): Promise<DiscoveryResult<ChatModelInfo>> {
   try {
     // Gemini accepts the key as `x-goog-api-key` OR as a `?key=` query
     // param. We use the header so the URL stays clean in logs.

@@ -24,7 +24,7 @@
  */
 
 import type { SynthesizeOptions, SynthesizeResult } from '../types';
-import type { TtsDispatcher } from './types';
+import type { TtsDispatcher, ProviderCredential } from './types';
 import type { TtsModelInfo } from '../catalog';
 import type { DiscoveryResult } from '../discover';
 import {
@@ -120,7 +120,9 @@ async function googleTtsSynthesize(opts: SynthesizeOptions): Promise<SynthesizeR
 /** Discovery: filter the live /v1beta/models response to TTS models
  *  the key can use. Gemini lists all models in one endpoint regardless
  *  of capability; we filter by id pattern and supportedGenerationMethods. */
-async function googleTtsDiscover(apiKey: string): Promise<DiscoveryResult<TtsModelInfo>> {
+async function googleTtsDiscover({
+  apiKey,
+}: ProviderCredential): Promise<DiscoveryResult<TtsModelInfo>> {
   try {
     const res = await providerFetch(
       `${GOOGLE_BASE_URL}/models`,

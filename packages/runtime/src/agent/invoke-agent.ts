@@ -165,7 +165,7 @@ export const invokeAgent: AgentInvoker = async ({
             : `agent '${agentSlug}' api key could not be decrypted`,
     };
   }
-  const apiKey = keyCheck.apiKey;
+  const credential = keyCheck.credential;
 
   // Resolve the chat adapter for the child agent's provider. The
   // agents.provider column drives this; rows without an explicit
@@ -261,7 +261,7 @@ export const invokeAgent: AgentInvoker = async ({
 
       const result = await runToolLoop({
         adapter: childAdapter,
-        apiKey,
+        ...credential,
         model: target.model,
         baseUrl: target.baseUrl,
         viaTailnet: target.viaTailnet,

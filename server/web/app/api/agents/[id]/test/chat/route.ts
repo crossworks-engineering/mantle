@@ -33,8 +33,8 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     const agent = await getAgent(user.id, id);
     if (!agent) throw new Error('agent not found');
     if (!agent.apiKeyId) throw new Error('agent has no api_key configured');
-    const apiKey = await getApiKeyById(agent.apiKeyId);
-    if (!apiKey) throw new Error('api key not found or could not decrypt');
+    const credential = await getApiKeyById(agent.apiKeyId);
+    if (!credential) throw new Error('api key not found or could not decrypt');
 
     const adapter = getChatAdapter(agent.provider);
     if (!adapter) {
@@ -51,7 +51,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     const params = agent.params as { temperature?: number; max_tokens?: number };
 
     const result = await adapter.chat({
-      apiKey,
+      ...credential,
       model: agent.model,
       messages: [
         ...(agent.systemPrompt ? [{ role: 'system' as const, content: agent.systemPrompt }] : []),

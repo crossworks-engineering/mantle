@@ -810,7 +810,7 @@ async function resolveHandlerSecrets(
         error: `secret '${refKey(ref)}' is connector-managed OAuth state (the 'mcp-' service namespace is reserved) — it cannot be referenced from tool templates; use a key the owner added under Settings → API keys`,
       };
     }
-    const plaintext = await getApiKey(ownerId, ref.service, ref.label);
+    const plaintext = (await getApiKey(ownerId, ref.service, ref.label))?.apiKey ?? null;
     if (plaintext === null) {
       return {
         error: `secret '${refKey(ref)}' not found in the API-key vault — add it under Settings → API keys (service '${ref.service}', label '${ref.label}')`,
@@ -870,7 +870,7 @@ async function resolveOauthBinding(
         error: `OAuth2 credential '${ref}' is in the reserved 'mcp-' vault namespace. Use a key the owner added under Settings → API keys`,
       };
     }
-    const plaintext = await getApiKey(ownerId, service, label);
+    const plaintext = (await getApiKey(ownerId, service, label))?.apiKey ?? null;
     if (plaintext === null) {
       return {
         error: `OAuth2 credential '${ref}' for group '${slug}' not found in the API-key vault. Add it under Settings → API keys (service '${service}', label '${label}')`,

@@ -9,6 +9,11 @@
  * else the oldest), caches per key, and says a refused key in a fixed
  * sentence. The providers are a stubbed fetch: no paid API is called. Only
  * the owner check is stubbed.
+ *
+ * Also: two key rows holding the SAME key value with different Anthropic
+ * workspace ids (and one with none) each send their own row's id, on the
+ * model list and on a chat call, however the lookups interleave. The id
+ * rides on the credential the lookup returns; nothing is keyed by the value.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run models-keys.db.test
  */
 import { randomUUID } from 'node:crypto';
@@ -29,6 +34,7 @@ vi.mock('@/lib/auth', async (importOriginal) => ({
  *  `refused` keys answer 401 with a body that must never reach the caller. */
 function fakeProviders(refused: Set<string>) {
   const calls: string[] = [];
+  const workspaces: Array<string | null> = [];
   const fn = vi.fn(async (input: unknown, init?: RequestInit) => {
     // The public OpenRouter catalog the explorer reads for direct models'
     // context windows: not a provider key call, not counted.
@@ -36,14 +42,17 @@ function fakeProviders(refused: Set<string>) {
     const headers = new Headers(init?.headers);
     const key = headers.get('x-api-key') ?? headers.get('authorization') ?? '';
     calls.push(key);
+    workspaces.push(headers.get('anthropic-workspace-id'));
     if (refused.has(key)) {
       return new Response('{"error":"invalid x-api-key acct_SECRET-ORG"}', { status: 401 });
     }
+    if (String(input).includes('/v1/messages')) {
+      return Response.json({ content: [{ type: 'text', text: 'ok' }], model: 'm', usage: {} });
+    }
     const model = `model-for-${key.replace(/^Bearer /, '')}`;
-    void input;
     return Response.json({ data: [{ id: model, display_name: model }] });
   });
-  return { fn, calls };
+  return { fn, calls, workspaces };
 }
 
 describe.skipIf(!URL)('the model list with a key not labelled default', () => {
@@ -177,14 +186,18 @@ describe.skipIf(!URL)('the model list with a key not labelled default', () => {
     await exec(
       sqlTag`update api_keys set created_at = now() - interval '1 hour' where id = ${teamKey}`,
     );
-    expect(await keys.resolveProviderKey(owner, 'anthropic', teamKey)).toBe('sk-ant-team');
+    expect(await keys.resolveProviderKey(owner, 'anthropic', teamKey)).toEqual({
+      apiKey: 'sk-ant-team',
+    });
     // A pinned id that no longer opens falls back to the service's own key.
-    expect(await keys.resolveProviderKey(owner, 'anthropic', randomUUID())).toBe('sk-ant-work');
+    expect(await keys.resolveProviderKey(owner, 'anthropic', randomUUID())).toEqual({
+      apiKey: 'sk-ant-work',
+    });
     expect(await keys.resolveProviderKey(owner, 'mistral')).toBeNull();
     // The oldest wins among non-default keys, and reading a key (which bumps
     // its last_used) never moves the pick: a pinned run used to flip it.
     expect(await keys.findProviderKeyId(owner, 'anthropic')).toBe(workKey);
-    expect(await keys.getApiKeyById(teamKey)).toBe('sk-ant-team');
+    expect(await keys.getApiKeyById(teamKey)).toEqual({ apiKey: 'sk-ant-team' });
     await exec(
       sqlTag`update api_keys set last_used = now() + interval '1 hour' where id = ${teamKey}`,
     );
@@ -207,7 +220,7 @@ describe.skipIf(!URL)('the model list with a key not labelled default', () => {
       apiKeyId: workKey,
       configuredBy: null,
     });
-    expect(pinned).toEqual({ ok: true, apiKey: 'sk-ant-work' });
+    expect(pinned).toEqual({ ok: true, credential: { apiKey: 'sk-ant-work' } });
     // A backup route with no pinned key: before, the 'default' lookup found
     // nothing and the route missed with no_api_key_id.
     const unpinned = await resolveChatKey(owner, {
@@ -215,6 +228,67 @@ describe.skipIf(!URL)('the model list with a key not labelled default', () => {
       apiKeyId: null,
       configuredBy: null,
     });
-    expect(unpinned).toEqual({ ok: true, apiKey: 'sk-openai-mine' });
+    expect(unpinned).toEqual({ ok: true, credential: { apiKey: 'sk-openai-mine' } });
+  });
+
+  it("two rows with the same key value each send their own row's workspace id", async () => {
+    const SAME = 'sk-ant-same-value';
+    const rowA = (
+      await keys.setApiKey(owner, 'anthropic', 'ws-a', SAME, { anthropicWorkspaceId: 'wrkspc_a' })
+    ).id;
+    const rowB = (
+      await keys.setApiKey(owner, 'anthropic', 'ws-b', SAME, { anthropicWorkspaceId: 'wrkspc_b' })
+    ).id;
+    const rowNone = (await keys.setApiKey(owner, 'anthropic', 'ws-none', SAME)).id;
+    try {
+      // The lookups: each returns its own row's id, whichever row opened last.
+      const a = await keys.getApiKeyById(rowA);
+      const b = await keys.getApiKeyById(rowB);
+      const none = await keys.getApiKeyById(rowNone);
+      expect(a).toEqual({ apiKey: SAME, anthropicWorkspaceId: 'wrkspc_a' });
+      expect(b).toEqual({ apiKey: SAME, anthropicWorkspaceId: 'wrkspc_b' });
+      expect(none).toEqual({ apiKey: SAME });
+      expect(await keys.resolveProviderKey(owner, 'anthropic', rowA)).toEqual(a);
+
+      // The model list, picked key by picked key, interleaved.
+      const p = fakeProviders(new Set());
+      vi.stubGlobal('fetch', p.fn);
+      for (const id of [rowA, rowB, rowNone, rowA]) {
+        explorer.clearModelCache();
+        expect((await get(`provider=anthropic&keyId=${id}`)).status).toBe(200);
+      }
+      // A chat call on each row's route (the path agents and workers take),
+      // the other rows opened in between.
+      const { chatWithFailover } = await import('@mantle/runtime/agent');
+      const route = (apiKeyId: string) => ({
+        primary: {
+          provider: 'anthropic',
+          model: 'claude-haiku-4-5',
+          apiKeyId,
+          baseUrl: null,
+          viaTailnet: false,
+          configuredBy: null,
+        },
+        backup: null,
+      });
+      for (const id of [rowB, rowA, rowNone, rowB]) {
+        await chatWithFailover(owner, route(id), {
+          messages: [{ role: 'user', content: 'hi' }],
+        });
+      }
+      expect(new Set(p.calls)).toEqual(new Set([SAME]));
+      expect(p.workspaces).toEqual([
+        'wrkspc_a',
+        'wrkspc_b',
+        null,
+        'wrkspc_a',
+        'wrkspc_b',
+        'wrkspc_a',
+        null,
+        'wrkspc_b',
+      ]);
+    } finally {
+      for (const id of [rowA, rowB, rowNone]) await keys.deleteApiKey(owner, id);
+    }
   });
 });

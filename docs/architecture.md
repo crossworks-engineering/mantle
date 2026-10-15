@@ -929,10 +929,15 @@ api_keys (
 )
 ```
 
-Exposed as:
+Exposed as (every lookup returns a `ProviderCredential`, `{ apiKey,
+anthropicWorkspaceId? }`: the plaintext plus what the key row carries
+besides, so an adapter call sends exactly the row it was opened from; see
+[provider-http.md](provider-http.md#anthropic-workspace-id)):
 
-- `getApiKey(userId, service, label?)`, decrypts and returns plaintext
-  for one named label (a `{{secret:service/label}}` reference).
+- `getApiKey(userId, service, label?)`, decrypts one named label (a
+  `{{secret:service/label}}` reference) into its credential.
+- `getApiKeyById(id)`, the same by row id (an agent's or worker's
+  `api_key_id`).
 - `resolveProviderKey(userId, service, keyId?)`, THE lookup of a model
   provider's key: the pinned key id, else the `default` label, else the
   oldest key of that service (ties by id; `findProviderKeyId`, and

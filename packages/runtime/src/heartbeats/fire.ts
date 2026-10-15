@@ -40,7 +40,7 @@ import {
 } from '@mantle/db';
 import { getApiKeyById } from '@mantle/api-keys';
 import { currentTrace, recordSkippedTrace, startTrace, step } from '@mantle/tracing';
-import { getChatAdapter, type ThinkingEffort } from '@mantle/voice';
+import { getChatAdapter, type ProviderCredential, type ThinkingEffort } from '@mantle/voice';
 import { accountById, pairedChatOf, sendMessage } from '@mantle/telegram';
 import {
   composeSystemPromptWithSkills,
@@ -354,8 +354,8 @@ async function fireAs(hb: Heartbeat, opts: FireOpts & { skipGates: boolean }): P
   if (!agent.apiKeyId) {
     return autoPause(hb, answeredBy, `agent '${agent.slug}' has no api_key configured`);
   }
-  const apiKey = await getApiKeyById(agent.apiKeyId);
-  if (!apiKey) {
+  const credential = await getApiKeyById(agent.apiKeyId);
+  if (!credential) {
     return autoPause(hb, answeredBy, `agent '${agent.slug}' api key could not be decrypted`);
   }
   // The key goes to the agent's base URL only while the login that paired
@@ -364,7 +364,7 @@ async function fireAs(hb: Heartbeat, opts: FireOpts & { skipGates: boolean }): P
   if (routeRefused && agent.provider !== 'local') {
     return autoPause(hb, answeredBy, `agent '${agent.slug}': ${routeRefused}`);
   }
-  const routeKey = routeRefused ? 'local' : apiKey;
+  const routeCredential: ProviderCredential = routeRefused ? { apiKey: 'local' } : credential;
 
   // 3. Compose system prompt -----------------------------------
   //    Agent's normal persistent skills go in (these are general
@@ -488,7 +488,7 @@ async function fireAs(hb: Heartbeat, opts: FireOpts & { skipGates: boolean }): P
             inCaller(() =>
               runToolLoop({
                 adapter: hbAdapter,
-                apiKey: routeKey,
+                ...routeCredential,
                 model: agent.model,
                 baseUrl: agent.baseUrl,
                 viaTailnet: agent.viaTailnet,

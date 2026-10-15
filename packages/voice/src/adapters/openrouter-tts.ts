@@ -21,7 +21,7 @@
  * Docs: https://openrouter.ai/docs/guides/overview/multimodal/tts
  */
 
-import type { TtsDispatcher } from './types';
+import type { TtsDispatcher, ProviderCredential } from './types';
 import type { SynthesizeOptions, SynthesizeResult, TtsVoice } from '../types';
 import { TTS_VOICES } from '../types';
 import { mimeForFormat } from '../synthesize';
@@ -138,7 +138,7 @@ export const openrouterTtsAdapter: TtsDispatcher = {
     return { bytes: buffer, mimeType: mimeForFormat(format), voice: voice as TtsVoice, model };
   },
 
-  async discoverModels(_apiKey: string): Promise<DiscoveryResult<TtsModelInfo>> {
+  async discoverModels(_credential: ProviderCredential): Promise<DiscoveryResult<TtsModelInfo>> {
     try {
       const all = await fetchSpeechModels();
       // Only surface routes that actually work via /audio/speech (see allowlist

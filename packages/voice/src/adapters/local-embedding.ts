@@ -21,6 +21,7 @@ import type {
   EmbedResult,
   EmbeddingDispatcher,
   EmbeddingModelInfo,
+  ProviderCredential,
 } from './types';
 import type { DiscoveryResult } from '../discover';
 import { tailnetFetch } from './tailnet';
@@ -160,7 +161,9 @@ export const localEmbedding: EmbeddingDispatcher = {
     return typeof input === 'string' || input.type === 'text';
   },
 
-  async discoverModels(_apiKey: string): Promise<DiscoveryResult<EmbeddingModelInfo>> {
+  async discoverModels(
+    _credential: ProviderCredential,
+  ): Promise<DiscoveryResult<EmbeddingModelInfo>> {
     // Whatever the local server is currently serving. `/v1/models` doesn't
     // report dimensions, so the form's Test button verifies the live dim
     // (which is the only number that matters for the column).

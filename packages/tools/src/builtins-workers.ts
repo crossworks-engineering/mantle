@@ -34,7 +34,7 @@ import { getApiKeyById } from '@mantle/api-keys';
 import { accountForSurface, downloadTelegramFile, sendPhoto, sendVoice } from '@mantle/telegram';
 import { ensureAutoFiledFolder, fileById, readFileById, upsertFile } from '@mantle/files';
 import { getChatAdapter, getImageGenAdapter, getTtsAdapter, getVisionAdapter } from '@mantle/voice';
-import type { ImageGenModelInfo, ImageGenParam, TtsParam } from '@mantle/voice';
+import type { ImageGenModelInfo, ImageGenParam, ProviderCredential, TtsParam } from '@mantle/voice';
 import type { BuiltinToolDef, ToolArtifact, ToolHandlerResult, ToolPrecondition } from './types';
 import { registerDynamicSchema } from './dynamic-schema';
 import { notFound } from './errors';
@@ -63,7 +63,7 @@ const NODE_ID_PRE: readonly ToolPrecondition[] = [
 ];
 
 /**
- * Resolve `{worker, apiKey}` for a default worker of the given kind,
+ * Resolve `{worker, credential}` for a default worker of the given kind,
  * or return a structured error the tool can pass straight back to the
  * LLM. Centralised so every worker tool reports the same shape of
  * "not configured" message.
@@ -72,7 +72,11 @@ export async function resolveDefaultWorker(
   ownerId: string,
   kind: AiWorkerKind,
 ): Promise<
-  | { ok: true; worker: NonNullable<Awaited<ReturnType<typeof getDefaultWorker>>>; apiKey: string }
+  | {
+      ok: true;
+      worker: NonNullable<Awaited<ReturnType<typeof getDefaultWorker>>>;
+      credential: ProviderCredential;
+    }
   | { ok: false; error: string }
 > {
   const worker = await getDefaultWorker(ownerId, kind);
@@ -88,14 +92,14 @@ export async function resolveDefaultWorker(
       error: `The default ${kind} worker '${worker.slug}' has no api_key attached. Edit it at /settings/ai-workers.`,
     };
   }
-  const apiKey = await getApiKeyById(worker.apiKeyId);
-  if (!apiKey) {
+  const credential = await getApiKeyById(worker.apiKeyId);
+  if (!credential) {
     return {
       ok: false,
       error: `The api_key for ${kind} worker '${worker.slug}' could not be decrypted. Check /settings/api-keys.`,
     };
   }
-  return { ok: true, worker, apiKey };
+  return { ok: true, worker, credential };
 }
 
 // ─── synthesize_speech ─────────────────────────────────────────────
@@ -144,7 +148,7 @@ const synthesize_speech: BuiltinToolDef = {
     }
     const resolved = await resolveDefaultWorker(ctx.ownerId, 'tts');
     if (!resolved.ok) return { ok: false, error: resolved.error };
-    const { worker, apiKey } = resolved;
+    const { worker, credential } = resolved;
 
     const adapter = getTtsAdapter(worker.provider);
     if (!adapter) {
@@ -169,7 +173,7 @@ const synthesize_speech: BuiltinToolDef = {
     let synth;
     try {
       synth = await adapter.synthesize({
-        apiKey,
+        apiKey: credential.apiKey,
         text,
         // Cast through unknown: TtsVoice is OpenAI-shaped at the type
         // layer but at runtime adapters accept arbitrary strings (xAI
@@ -339,7 +343,7 @@ const extract_from_image: BuiltinToolDef = {
 
     const resolved = await resolveDefaultWorker(ctx.ownerId, 'vision');
     if (!resolved.ok) return { ok: false, error: resolved.error };
-    const { worker, apiKey } = resolved;
+    const { worker, credential } = resolved;
     const adapter = getVisionAdapter(worker.provider);
     if (!adapter) {
       return {
@@ -400,7 +404,7 @@ const extract_from_image: BuiltinToolDef = {
 
     try {
       const result = await adapter.extract(bytes, {
-        apiKey,
+        ...credential,
         mimeType,
         prompt,
         systemPrompt: worker.systemPrompt ?? undefined,
@@ -520,7 +524,7 @@ const summarize_text: BuiltinToolDef = {
 
     const resolved = await resolveDefaultWorker(ctx.ownerId, 'summarizer');
     if (!resolved.ok) return { ok: false, error: resolved.error };
-    const { worker, apiKey } = resolved;
+    const { worker, credential } = resolved;
     // Summarizer is chat-shaped — invoke through the chat adapter for
     // the worker's provider. OpenRouter-routed summarizers aren't
     // wired through this path today; if the provider isn't in the
@@ -548,7 +552,7 @@ const summarize_text: BuiltinToolDef = {
     };
     try {
       const result = await adapter.chat({
-        apiKey,
+        ...credential,
         model: worker.model,
         messages: [
           { role: 'system', content: systemPrompt },
@@ -676,7 +680,7 @@ const generate_image: BuiltinToolDef = {
 
     const resolved = await resolveDefaultWorker(ctx.ownerId, 'image_gen');
     if (!resolved.ok) return { ok: false, error: resolved.error };
-    const { worker, apiKey } = resolved;
+    const { worker, credential } = resolved;
     const adapter = getImageGenAdapter(worker.provider);
     if (!adapter) {
       return {
@@ -734,7 +738,7 @@ const generate_image: BuiltinToolDef = {
     let result;
     try {
       result = await adapter.generate({
-        apiKey,
+        apiKey: credential.apiKey,
         prompt,
         model: worker.model,
         ...(inputImages.length > 0 ? { inputImages } : {}),

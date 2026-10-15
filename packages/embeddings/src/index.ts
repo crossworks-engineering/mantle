@@ -187,9 +187,9 @@ async function routeApiKey(
       throw new Error(`embed: ${refused}`);
     }
   }
-  const apiKey = await resolveProviderKey(ownerId, r.provider, r.apiKeyId);
-  if (!apiKey && r.provider === 'local') return 'local';
-  return apiKey;
+  const credential = await resolveProviderKey(ownerId, r.provider, r.apiKeyId);
+  if (!credential && r.provider === 'local') return 'local';
+  return credential?.apiKey ?? null;
 }
 
 /**

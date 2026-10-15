@@ -66,7 +66,7 @@ export async function POST(req: Request) {
     );
   }
   const keyId = worker.apiKeyId;
-  const apiKey = await inRuleInQuery(() => getApiKeyById(keyId));
+  const apiKey = (await inRuleInQuery(() => getApiKeyById(keyId)))?.apiKey;
   if (!apiKey) {
     return NextResponse.json(
       { error: `STT worker '${worker.slug}' api_key could not be decrypted.` },

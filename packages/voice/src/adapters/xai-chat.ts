@@ -26,6 +26,7 @@ import type {
   ChatOptions,
   ChatResult,
   ChatStreamSink,
+  ProviderCredential,
 } from './types';
 import { ChatHttpError, parseRetryAfterMs } from './retry';
 import type { DiscoveryResult } from '../discover';
@@ -115,7 +116,9 @@ async function xaiChat(opts: ChatOptions): Promise<ChatResult> {
   };
 }
 
-async function xaiDiscover(apiKey: string): Promise<DiscoveryResult<ChatModelInfo>> {
+async function xaiDiscover({
+  apiKey,
+}: ProviderCredential): Promise<DiscoveryResult<ChatModelInfo>> {
   try {
     const res = await providerFetch(
       `${XAI_BASE_URL}/models`,

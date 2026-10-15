@@ -17,6 +17,7 @@ import type {
   EmbedResult,
   EmbeddingDispatcher,
   EmbeddingModelInfo,
+  ProviderCredential,
 } from './types';
 import type { DiscoveryResult } from '../discover';
 import { providerFetch } from './provider-fetch';
@@ -166,7 +167,9 @@ export const openrouterEmbedding: EmbeddingDispatcher = {
     return true;
   },
 
-  async discoverModels(_apiKey: string): Promise<DiscoveryResult<EmbeddingModelInfo>> {
+  async discoverModels(
+    _credential: ProviderCredential,
+  ): Promise<DiscoveryResult<EmbeddingModelInfo>> {
     // Keyless catalog — OR publishes /v1/embeddings/models separately
     // from the main /v1/models. Same response shape as the chat catalog
     // (id, name, context_length, pricing, architecture). The _apiKey

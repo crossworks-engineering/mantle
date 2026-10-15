@@ -2,7 +2,10 @@ import { randomUUID } from 'node:crypto';
 import { and, asc, desc, eq, sql } from 'drizzle-orm';
 import { db, systemDb, apiKeys, type ApiKey } from '@mantle/db';
 import { open, seal } from '@mantle/crypto';
-import { InputError, normalizeAnthropicWorkspaceId, rememberProviderKeyContext } from '@mantle/std';
+import { InputError } from '@mantle/std';
+import { normalizeAnthropicWorkspaceId, type ProviderCredential } from '@mantle/voice-client';
+
+export type { ProviderCredential };
 
 /**
  * Encrypted-at-rest API key storage. Every call is owner-scoped — pass the
@@ -58,23 +61,18 @@ export async function listApiKeys(userId: string): Promise<ApiKeySummary[]> {
 }
 
 /**
- * Open a key row: its plaintext, with what the key carries besides (an
- * Anthropic workspace id) recorded for the provider adapter
- * (rememberProviderKeyContext; the adapter's anthropicHeaders reads it). THE
- * one place a key row is opened, so every caller of every lookup below gets
- * the header without passing anything; a key opened with none clears what an
- * earlier read recorded. The workspace id is never logged, and never with
- * the key.
+ * Open a key row into its credential: the plaintext, plus what the row
+ * carries besides (an Anthropic key's workspace id). THE one place a key row
+ * is opened, so every lookup below returns the same handle and the adapter
+ * sends exactly this row's fields (anthropicHeaders reads the credential it
+ * is given; nothing is looked up by the key value). A field a provider needs
+ * later (an OpenAI organization or project) is filled here the same way.
  */
-function openKeyRow(row: ApiKey): string {
-  const plaintext = open(row.keyEnc, row.id);
-  rememberProviderKeyContext(
-    plaintext,
-    row.service === 'anthropic' && row.anthropicWorkspaceId
-      ? { anthropicWorkspaceId: row.anthropicWorkspaceId }
-      : null,
-  );
-  return plaintext;
+function openKeyRow(row: ApiKey): ProviderCredential {
+  const apiKey = open(row.keyEnc, row.id);
+  return row.service === 'anthropic' && row.anthropicWorkspaceId
+    ? { apiKey, anthropicWorkspaceId: row.anthropicWorkspaceId }
+    : { apiKey };
 }
 
 /** The workspace id as stored: trimmed, null for none. Throws InputError
@@ -89,41 +87,43 @@ function checkedWorkspaceId(raw: string | null | undefined): string | null {
 // viewer (a team turn runs on a limited role, member logins Phase 0b), and a
 // key never reaches the model. Key management stays on `db` (owner paths).
 
-/** Read the plaintext for one key by its row id. Used by agents that reference
- * a specific vault entry via `api_key_id`. No owner check here — callers
- * that hold a referenced id have already passed the owner gate. */
-export async function getApiKeyById(id: string): Promise<string | null> {
+/** Open one key by its row id into its credential (openKeyRow). Used by
+ * agents that reference a specific vault entry via `api_key_id`. No owner
+ * check here: callers that hold a referenced id have already passed the
+ * owner gate. */
+export async function getApiKeyById(id: string): Promise<ProviderCredential | null> {
   const [row] = await systemDb.select().from(apiKeys).where(eq(apiKeys.id, id)).limit(1);
   if (!row) return null;
-  const plaintext = openKeyRow(row);
+  const credential = openKeyRow(row);
   void systemDb
     .update(apiKeys)
     .set({ lastUsed: new Date() })
     .where(eq(apiKeys.id, row.id))
     .catch(() => {});
-  return plaintext;
+  return credential;
 }
 
-/** Read the plaintext for one key. Bumps `last_used` opportunistically. */
+/** Open one key by owner, service and label into its credential
+ *  (openKeyRow). Bumps `last_used` opportunistically. */
 export async function getApiKey(
   userId: string,
   service: string,
   label = 'default',
-): Promise<string | null> {
+): Promise<ProviderCredential | null> {
   const [row] = await systemDb
     .select()
     .from(apiKeys)
     .where(and(eq(apiKeys.userId, userId), eq(apiKeys.service, service), eq(apiKeys.label, label)))
     .limit(1);
   if (!row) return null;
-  const plaintext = openKeyRow(row);
+  const credential = openKeyRow(row);
   // Best-effort last_used bump.
   void systemDb
     .update(apiKeys)
     .set({ lastUsed: new Date() })
     .where(eq(apiKeys.id, row.id))
     .catch(() => {});
-  return plaintext;
+  return credential;
 }
 
 /**
@@ -186,7 +186,7 @@ export async function resolveProviderKey(
   userId: string,
   service: string,
   keyId?: string | null,
-): Promise<string | null> {
+): Promise<ProviderCredential | null> {
   if (keyId) {
     const pinned = await getApiKeyById(keyId);
     if (pinned) return pinned;

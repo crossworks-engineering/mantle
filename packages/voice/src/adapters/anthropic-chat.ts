@@ -32,6 +32,7 @@ import type {
   ChatToolCall,
   ReasoningDetail,
   ThinkingEffort,
+  ProviderCredential,
 } from './types';
 import { ChatHttpError, parseRetryAfterMs } from './retry';
 import {
@@ -668,7 +669,7 @@ async function anthropicChat(opts: ChatOptions): Promise<ChatResult> {
     `${routeBase(opts.baseUrl, ANTHROPIC_BASE_URL)}/v1/messages`,
     {
       method: 'POST',
-      headers: anthropicHeaders(opts.apiKey, { 'content-type': 'application/json' }),
+      headers: anthropicHeaders(opts, { 'content-type': 'application/json' }),
       body: JSON.stringify(body),
       signal: opts.signal,
     },
@@ -779,12 +780,14 @@ function toAnthropicImageBlock(url: string): AnthropicImageBlock | null {
   return null;
 }
 
-async function anthropicDiscover(apiKey: string): Promise<DiscoveryResult<ChatModelInfo>> {
+async function anthropicDiscover(
+  credential: ProviderCredential,
+): Promise<DiscoveryResult<ChatModelInfo>> {
   try {
     const res = await providerFetch(
       `${ANTHROPIC_BASE_URL}/v1/models?limit=100`,
       {
-        headers: anthropicHeaders(apiKey),
+        headers: anthropicHeaders(credential),
       },
       { timeoutMs: PROVIDER_TIMEOUTS.discover },
     );
@@ -881,7 +884,7 @@ async function anthropicChatStream(
     `${routeBase(opts.baseUrl, ANTHROPIC_BASE_URL)}/v1/messages`,
     {
       method: 'POST',
-      headers: anthropicHeaders(opts.apiKey, { 'content-type': 'application/json' }),
+      headers: anthropicHeaders(opts, { 'content-type': 'application/json' }),
       body: JSON.stringify(body),
       signal: abort.signal,
     },

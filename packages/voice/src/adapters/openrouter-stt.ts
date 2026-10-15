@@ -9,7 +9,7 @@
  * Docs: https://openrouter.ai/docs/api/api-reference/transcriptions/create-audio-transcriptions
  */
 
-import type { SttDispatcher } from './types';
+import type { SttDispatcher, ProviderCredential } from './types';
 import type { TranscribeOptions, TranscribeResult } from '../types';
 import type { SttModelInfo } from '../catalog';
 import type { DiscoveryResult } from '../discover';
@@ -116,7 +116,7 @@ export const openrouterSttAdapter: SttDispatcher = {
     };
   },
 
-  async discoverModels(_apiKey: string): Promise<DiscoveryResult<SttModelInfo>> {
+  async discoverModels(_credential: ProviderCredential): Promise<DiscoveryResult<SttModelInfo>> {
     // Curated — OpenRouter STT models aren't enumerable via /v1/models.
     return { available: [...OPENROUTER_STT_MODELS], filtered: true, error: null };
   },

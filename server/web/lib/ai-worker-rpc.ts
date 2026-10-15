@@ -70,7 +70,7 @@ export async function testTts(
   if (!worker) throw new Error('worker not found');
   if (worker.kind !== 'tts') throw new Error('worker is not a TTS worker');
   if (!worker.apiKeyId) throw new Error('worker has no api_key configured');
-  const apiKey = await getApiKeyById(worker.apiKeyId);
+  const apiKey = (await getApiKeyById(worker.apiKeyId))?.apiKey;
   if (!apiKey) throw new Error('api key not found or could not decrypt');
 
   const adapter = getTtsAdapter(worker.provider);
@@ -110,7 +110,7 @@ export async function testStt(
   if (!worker) throw new Error('worker not found');
   if (worker.kind !== 'stt') throw new Error('worker is not an STT worker');
   if (!worker.apiKeyId) throw new Error('worker has no api_key configured');
-  const apiKey = await getApiKeyById(worker.apiKeyId);
+  const apiKey = (await getApiKeyById(worker.apiKeyId))?.apiKey;
   if (!apiKey) throw new Error('api key not found or could not decrypt');
 
   const adapter = getSttAdapter(worker.provider);
@@ -155,9 +155,9 @@ export async function discoverModels(
         error: `no embedding adapter registered for provider '${providerId}'`,
       };
     }
-    const apiKey = apiKeyId ? await getApiKeyById(apiKeyId) : '';
+    const credential = (apiKeyId ? await getApiKeyById(apiKeyId) : null) ?? { apiKey: '' };
     const result = adapter.discoverModels
-      ? await adapter.discoverModels(apiKey ?? '')
+      ? await adapter.discoverModels(credential)
       : {
           available: adapter.staticCatalog ? [...adapter.staticCatalog()] : [],
           filtered: false as const,
@@ -170,8 +170,8 @@ export async function discoverModels(
     };
   }
 
-  const apiKey = await getApiKeyById(apiKeyId);
-  if (!apiKey) {
+  const credential = await getApiKeyById(apiKeyId);
+  if (!credential) {
     return { available: [], filtered: false, error: 'API key not found or could not decrypt' };
   }
   const adapter =
@@ -201,7 +201,7 @@ export async function discoverModels(
       error: `adapter '${adapter.adapterName}' does not support model discovery`,
     };
   }
-  return adapter.discoverModels(apiKey);
+  return adapter.discoverModels(credential);
 }
 
 /** List the voices for a tts provider + model (live for ElevenLabs). */
@@ -214,9 +214,9 @@ export async function listVoices(
   if (!adapter || !adapter.voicesForModel) {
     return { voices: [], error: `no voice discovery for provider '${providerId}'` };
   }
-  const apiKey = apiKeyId ? await getApiKeyById(apiKeyId) : null;
+  const apiKey = apiKeyId ? (await getApiKeyById(apiKeyId))?.apiKey : undefined;
   try {
-    const voices = await adapter.voicesForModel(modelId, apiKey ?? undefined);
+    const voices = await adapter.voicesForModel(modelId, apiKey);
     return { voices, error: null };
   } catch (err) {
     return { voices: [], error: errorMessage(err) };
@@ -241,7 +241,7 @@ export async function testImageGen(
   if (!worker) throw new Error('worker not found');
   if (worker.kind !== 'image_gen') throw new Error('worker is not an image_gen worker');
   if (!worker.apiKeyId) throw new Error('worker has no api_key configured');
-  const apiKey = await getApiKeyById(worker.apiKeyId);
+  const apiKey = (await getApiKeyById(worker.apiKeyId))?.apiKey;
   if (!apiKey) throw new Error('api key not found or could not decrypt');
 
   const adapter = getImageGenAdapter(worker.provider);
@@ -287,8 +287,8 @@ export async function testVision(
   if (!worker) throw new Error('worker not found');
   if (worker.kind !== 'vision') throw new Error('worker is not a vision worker');
   if (!worker.apiKeyId) throw new Error('worker has no api_key configured');
-  const apiKey = await getApiKeyById(worker.apiKeyId);
-  if (!apiKey) throw new Error('api key not found or could not decrypt');
+  const credential = await getApiKeyById(worker.apiKeyId);
+  if (!credential) throw new Error('api key not found or could not decrypt');
 
   const adapter = getVisionAdapter(worker.provider);
   if (!adapter) {
@@ -303,7 +303,7 @@ export async function testVision(
     params.extraction_prompt?.trim() ||
     "Describe what's in this image in one or two sentences — the main subject, objects, logos, people, or scene. Then, if the image contains any text, transcribe it verbatim below the description (preserve line breaks; mark anything unclear as [unclear]). If there's no text, the description alone is enough. Output plain text only.";
   const result = await adapter.extract(bytes, {
-    apiKey,
+    ...credential,
     mimeType: mimeType || 'image/jpeg',
     prompt,
     systemPrompt: worker.systemPrompt ?? undefined,
@@ -337,8 +337,8 @@ export async function testDocument(
   if (!worker) throw new Error('worker not found');
   if (worker.kind !== 'document') throw new Error('worker is not a document worker');
   if (!worker.apiKeyId) throw new Error('worker has no api_key configured');
-  const apiKey = await getApiKeyById(worker.apiKeyId);
-  if (!apiKey) throw new Error('api key not found or could not decrypt');
+  const credential = await getApiKeyById(worker.apiKeyId);
+  if (!credential) throw new Error('api key not found or could not decrypt');
 
   const adapter = getVisionAdapter(worker.provider);
   if (!adapter?.extractDocument) {
@@ -351,7 +351,7 @@ export async function testDocument(
   if (bytes.length === 0) throw new Error('empty PDF buffer');
   const params = (worker.params ?? {}) as { extraction_prompt?: string; max_tokens?: number };
   const result = await adapter.extractDocument(bytes, {
-    apiKey,
+    ...credential,
     mimeType: 'application/pdf',
     prompt: params.extraction_prompt?.trim() || 'Transcribe this document in full, verbatim.',
     systemPrompt: worker.systemPrompt ?? undefined,
@@ -461,7 +461,7 @@ export async function testDecision(
   if (worker.kind !== 'decider') throw new Error(`worker '${worker.slug}' is not a decider`);
   const adapter = getDecisionAdapter(worker.provider);
   if (!adapter) throw new Error(`no decision adapter for provider '${worker.provider}'`);
-  const apiKey = await resolveProviderKey(userId, worker.provider, worker.apiKeyId);
+  const apiKey = (await resolveProviderKey(userId, worker.provider, worker.apiKeyId))?.apiKey;
   if (!apiKey) throw new Error('no API key on this worker (or for its provider)');
   const params = (worker.params ?? {}) as { zdr?: boolean; timeout_ms?: number };
   const message =

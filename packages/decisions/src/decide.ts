@@ -182,9 +182,14 @@ export async function resolveDecider(ownerId: string): Promise<Resolved> {
     const worker = await getDefaultWorker(ownerId, 'decider');
     if (worker) {
       const adapter = getDecisionAdapter(worker.provider);
-      const apiKey = await resolveProviderKey(ownerId, worker.provider, worker.apiKeyId);
-      if (adapter && apiKey) {
-        value = { worker, params: (worker.params ?? {}) as DeciderParams, adapter, apiKey };
+      const credential = await resolveProviderKey(ownerId, worker.provider, worker.apiKeyId);
+      if (adapter && credential) {
+        value = {
+          worker,
+          params: (worker.params ?? {}) as DeciderParams,
+          adapter,
+          apiKey: credential.apiKey,
+        };
       }
     }
   } catch (err) {

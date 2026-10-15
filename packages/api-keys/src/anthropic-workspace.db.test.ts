@@ -1,14 +1,16 @@
 /**
  * An Anthropic key's workspace id, against a real database (0292): stored
- * with the key, read back on every open so the adapter can send it, cleared
- * the same way, and refused on any other service. Placeholder key strings
- * only; nothing calls Anthropic.
+ * with the key, returned on every lookup in the key's credential (the handle
+ * the adapters send from), cleared the same way, and refused on any other
+ * service or in any shape but ASCII letters, digits, `_` and `-` (the app
+ * and the table check agree). Two rows holding the same key value keep their
+ * own ids. Placeholder key strings only; nothing calls Anthropic.
  *
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run anthropic-workspace.db.test
  */
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { providerKeyContext, _clearProviderKeyContexts } from '@mantle/std';
+import { InputError } from '@mantle/std';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -35,7 +37,6 @@ describe.skipIf(!URL)('an Anthropic key carries its workspace id', () => {
   }, 60_000);
 
   afterAll(async () => {
-    _clearProviderKeyContexts();
     if (!m) return;
     await exec(sqlTag`delete from api_keys where user_id = ${owner}`);
     await exec(sqlTag`delete from auth.users where id = ${owner}`);
@@ -44,23 +45,19 @@ describe.skipIf(!URL)('an Anthropic key carries its workspace id', () => {
     else process.env.MANTLE_MASTER_KEY = prevMasterKey;
   }, 60_000);
 
-  it('stores it with the key and records it on every open', async () => {
+  it('stores it with the key and returns it in the credential of every lookup', async () => {
     const plaintext = `test-ant-${tag}-a`;
     const row = await keys.setApiKey(owner, 'anthropic', 'ws', plaintext, {
       anthropicWorkspaceId: '  wrkspc_test_one  ',
     });
     expect(row.anthropicWorkspaceId).toBe('wrkspc_test_one');
-    _clearProviderKeyContexts();
-    expect(await keys.getApiKeyById(row.id)).toBe(plaintext);
-    expect(providerKeyContext(plaintext)).toEqual({ anthropicWorkspaceId: 'wrkspc_test_one' });
+    const credential = { apiKey: plaintext, anthropicWorkspaceId: 'wrkspc_test_one' };
+    expect(await keys.getApiKeyById(row.id)).toEqual(credential);
+    expect(await keys.getApiKey(owner, 'anthropic', 'ws')).toEqual(credential);
+    expect(await keys.resolveProviderKey(owner, 'anthropic')).toEqual(credential);
 
     const listed = (await keys.listApiKeys(owner)).find((k) => k.id === row.id);
     expect(listed?.anthropicWorkspaceId).toBe('wrkspc_test_one');
-
-    // Every lookup opens through the same place.
-    _clearProviderKeyContexts();
-    expect(await keys.resolveProviderKey(owner, 'anthropic')).toBe(plaintext);
-    expect(providerKeyContext(plaintext)?.anthropicWorkspaceId).toBe('wrkspc_test_one');
   });
 
   it('keeps it on a re-save that does not name it, and clears it when asked', async () => {
@@ -70,13 +67,46 @@ describe.skipIf(!URL)('an Anthropic key carries its workspace id', () => {
 
     const cleared = await keys.setApiKeyAnthropicWorkspace(owner, row.id, '  ');
     expect(cleared?.anthropicWorkspaceId).toBeNull();
-    expect(await keys.getApiKeyById(row.id)).toBe(plaintext);
-    expect(providerKeyContext(plaintext)).toBeUndefined();
+    expect(await keys.getApiKeyById(row.id)).toEqual({ apiKey: plaintext });
 
     const set = await keys.setApiKeyAnthropicWorkspace(owner, row.id, 'wrkspc_test_two');
     expect(set?.anthropicWorkspaceId).toBe('wrkspc_test_two');
-    await keys.getApiKeyById(row.id);
-    expect(providerKeyContext(plaintext)?.anthropicWorkspaceId).toBe('wrkspc_test_two');
+    expect(await keys.getApiKeyById(row.id)).toEqual({
+      apiKey: plaintext,
+      anthropicWorkspaceId: 'wrkspc_test_two',
+    });
+  });
+
+  it("two rows holding the same key value each return their own row's id", async () => {
+    const same = `test-ant-${tag}-same`;
+    const a = await keys.setApiKey(owner, 'anthropic', 'same-a', same, {
+      anthropicWorkspaceId: 'wrkspc_row_a',
+    });
+    const b = await keys.setApiKey(owner, 'anthropic', 'same-b', same, {
+      anthropicWorkspaceId: 'wrkspc_row_b',
+    });
+    const none = await keys.setApiKey(owner, 'anthropic', 'same-none', same);
+    // Opened in every order: the row opened last never decides another's id.
+    for (const order of [
+      [a, b, none],
+      [none, b, a],
+      [b, none, a],
+    ]) {
+      const got = [];
+      for (const row of order) got.push(await keys.getApiKeyById(row.id));
+      expect(got).toEqual(
+        order.map((row) =>
+          row.anthropicWorkspaceId
+            ? { apiKey: same, anthropicWorkspaceId: row.anthropicWorkspaceId }
+            : { apiKey: same },
+        ),
+      );
+    }
+    expect(await keys.resolveProviderKey(owner, 'anthropic', b.id)).toEqual({
+      apiKey: same,
+      anthropicWorkspaceId: 'wrkspc_row_b',
+    });
+    expect(await keys.resolveProviderKey(owner, 'anthropic', none.id)).toEqual({ apiKey: same });
   });
 
   it('refuses it on another service, a bad shape, and another owner', async () => {
@@ -90,13 +120,28 @@ describe.skipIf(!URL)('an Anthropic key carries its workspace id', () => {
       'Only an Anthropic key can carry a workspace id.',
     );
     const ant = (await keys.listApiKeys(owner)).find((k) => k.service === 'anthropic')!;
-    await expect(keys.setApiKeyAnthropicWorkspace(owner, ant.id, 'has space')).rejects.toThrow(
-      /spaces or control characters/,
-    );
+    // Not ASCII letters, digits, _ or -: a space, a non-ASCII letter, a C1
+    // control character, a dot. Each an InputError (a 400), never a 500.
+    for (const bad of ['has space', 'wrkspc_é', 'wrkspc_\u0085x', 'wrkspc.x', 'x'.repeat(129)]) {
+      await expect(keys.setApiKeyAnthropicWorkspace(owner, ant.id, bad)).rejects.toBeInstanceOf(
+        InputError,
+      );
+      await expect(
+        keys.setApiKey(owner, 'anthropic', 'bad', `test-ant-${tag}-bad`, {
+          anthropicWorkspaceId: bad,
+        }),
+      ).rejects.toBeInstanceOf(InputError);
+    }
     expect(await keys.setApiKeyAnthropicWorkspace(randomUUID(), ant.id, 'wrkspc_x')).toBeNull();
-    // The table refuses it too, whatever writes it.
+    // The table refuses it too, whatever writes it: another service, and the
+    // same shapes the app refuses.
     await expect(
       exec(sqlTag`update api_keys set anthropic_workspace_id = 'x' where id = ${openai.id}`),
     ).rejects.toThrow();
+    for (const bad of ['wrkspc_é', 'wrkspc_\u0085x', 'has space', '']) {
+      await expect(
+        exec(sqlTag`update api_keys set anthropic_workspace_id = ${bad} where id = ${ant.id}`),
+      ).rejects.toThrow();
+    }
   });
 });
