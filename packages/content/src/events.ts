@@ -24,7 +24,8 @@ import {
   brainOnWorkspacesNow,
   db,
   nodes,
-  notifyNodeIngested,
+  changedFields,
+  markContentChanged,
   withDeadlockRetry,
   withNodeDeleteHeads,
   withNodeInsertHeads,
@@ -316,35 +317,32 @@ export async function updateEvent(
       delete newData.reminder_sent_at;
     }
   }
-  const contentChanged =
-    input.title !== undefined ||
-    input.body !== undefined ||
-    input.startsAt !== undefined ||
-    input.endsAt !== undefined ||
-    input.location !== undefined;
-  if (contentChanged) {
-    delete newData.summary;
-    delete newData.summary_model;
-    delete newData.summary_at;
-    delete newData.entities;
-  }
-  const [updated] = await db
-    .update(nodes)
-    .set({
-      ...(input.title !== undefined
-        ? { title: input.title.trim().slice(0, 200) || 'Untitled event' }
-        : {}),
-      ...(input.tags !== undefined ? { tags: dedupeTags(input.tags) } : {}),
-      data: newData,
-      ...(contentChanged ? { embedding: null } : {}),
-      updatedAt: new Date(),
-    })
-    .where(eq(nodes.id, id))
-    .returning();
+  const title =
+    input.title !== undefined ? input.title.trim().slice(0, 200) || 'Untitled event' : node.title;
+  // What the summary reads (the kind registry's `indexed`), compared by
+  // value: a save that sends the fields back unchanged re-indexes nothing.
+  const changed = changedFields({
+    title: [node.title, title],
+    body: [oldData.body, newData.body],
+    starts_at: [oldData.starts_at, newData.starts_at],
+    ends_at: [oldData.ends_at, newData.ends_at],
+    location: [oldData.location, newData.location],
+  });
+  const updated = await db.transaction(async (tx) => {
+    const [row] = await tx
+      .update(nodes)
+      .set({
+        ...(input.title !== undefined ? { title } : {}),
+        ...(input.tags !== undefined ? { tags: dedupeTags(input.tags) } : {}),
+        data: newData,
+        updatedAt: new Date(),
+      })
+      .where(eq(nodes.id, id))
+      .returning();
+    if (!row) return row;
+    return (await markContentChanged(tx, { id, type: 'event' }, changed)) ?? row;
+  });
   if (!updated) throw new Error('updateEvent: update returned no row');
-  if (contentChanged) {
-    await notifyNodeIngested(id);
-  }
   return rowOf(updated);
 }
 
@@ -559,25 +557,31 @@ export async function upsertExternalEvent(
       old.body !== data.body;
     if (!contentChanged) return rowOf(existing); // no-op re-sync, no churn
 
-    // Preserve any fields we don't manage; drop stale extractor output.
+    // Preserve any fields we don't manage; the reset below drops the stale
+    // extractor output.
     const merged: Record<string, unknown> = { ...old, ...data };
-    delete merged.summary;
-    delete merged.summary_model;
-    delete merged.summary_at;
-    delete merged.entities;
-    const [updated] = await db
-      .update(nodes)
-      .set({
-        title,
-        data: merged,
-        tags: dedupeTags(input.tags ?? existing.tags ?? []),
-        embedding: null,
-        updatedAt: new Date(),
-      })
-      .where(eq(nodes.id, existing.id))
-      .returning();
+    const changed = changedFields({
+      title: [existing.title, title],
+      starts_at: [old.starts_at, data.starts_at],
+      ends_at: [old.ends_at, data.ends_at],
+      location: [old.location, data.location],
+      body: [old.body, data.body],
+    });
+    const updated = await db.transaction(async (tx) => {
+      const [row] = await tx
+        .update(nodes)
+        .set({
+          title,
+          data: merged,
+          tags: dedupeTags(input.tags ?? existing.tags ?? []),
+          updatedAt: new Date(),
+        })
+        .where(eq(nodes.id, existing.id))
+        .returning();
+      if (!row) return row;
+      return (await markContentChanged(tx, { id: existing.id, type: 'event' }, changed)) ?? row;
+    });
     if (!updated) throw new Error('upsertExternalEvent: update returned no row');
-    await notifyNodeIngested(existing.id);
     return rowOf(updated);
   }
 

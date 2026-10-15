@@ -17,7 +17,7 @@ import {
   db,
   nodes,
   tables,
-  notifyNodeIngested,
+  markContentChanged,
   oneRow,
   removeSqliteFile,
   StoreRefusedError,
@@ -336,31 +336,18 @@ type StagedCommit = {
   dataText: string;
 };
 
-/** The node's new data for a commit: the shape-hash gate (plan section 6).
- *  Cell-only edits keep the summary and entities (the extractor skips its
- *  LLM pass); a schema change or a first commit clears them. */
-function committedNodeData(
-  nodeData: unknown,
-  oldShapeHash: string | null,
-  newShapeHash: string,
-): Record<string, unknown> {
-  const data = { ...((nodeData ?? {}) as Record<string, unknown>) };
-  const unchanged =
-    oldShapeHash != null && oldShapeHash === newShapeHash && typeof data.summary === 'string';
-  if (!unchanged) {
-    delete data.summary;
-    delete data.summary_model;
-    delete data.summary_at;
-    delete data.entities;
-  }
-  delete data.extract_completed_at;
-  return data;
+/** What a commit changed, for its re-index: the shape-hash gate (plan
+ *  section 6). Cell-only edits are `cells` (the vector again, the summary and
+ *  entities kept: the extractor reuses the summary and skips its model
+ *  pass); a schema change or a first commit is `schema` (the whole pass). */
+function committedChange(oldShapeHash: string | null, newShapeHash: string): 'cells' | 'schema' {
+  return oldShapeHash != null && oldShapeHash === newShapeHash ? 'cells' : 'schema';
 }
 
 /**
  * Commit: publish `data` (or, with none, the server draft) as canonical,
  * recompute `data_text`, clear the draft, bump the version, and fire the
- * extractor. The ONLY path that indexes a table: autosaves never do, so a
+ * extractor. The ONLY path that indexes a table's cells: autosaves never do, so a
  * long editing session produces exactly one re-index per commit (cost-safe,
  * matching Pages). Returns the published detail, or null if the table
  * doesn't exist. The store broker (A3b): the new published workbook (and the
@@ -509,14 +496,16 @@ export async function commitTable(
               async (tx) => {
                 const [updated] = await tx
                   .update(nodes)
-                  .set({
-                    data: committedNodeData(node.data, row.shapeHash, s.shapeHash),
-                    embedding: null,
-                    updatedAt: new Date(),
-                  })
+                  .set({ updatedAt: new Date() })
                   .where(eq(nodes.id, id))
                   .returning();
-                const nodeRow = oneRow('tables', updated ? [updated] : [], 'table');
+                const committed = oneRow('tables', updated ? [updated] : [], 'table');
+                // Announced when this transaction commits (the kind
+                // registry's `indexed`).
+                const nodeRow =
+                  (await markContentChanged(tx, { id, type: 'table' }, [
+                    committedChange(row.shapeHash, s.shapeHash),
+                  ])) ?? committed;
                 if (s.history) {
                   const [v] = await tx
                     .select({ version: tables.version })
@@ -565,7 +554,6 @@ export async function commitTable(
         totalRows: commitTotalRows,
       });
   if (s.history !== null) await pruneTableCommitSnapshots(id);
-  await notifyNodeIngested(id);
   return result;
 }
 

@@ -22,6 +22,9 @@
  *  - Metadata-only runs BEFORE the key pre-flight (it needs no LLM) and
  *    BEFORE the already-extracted guard (it carries its own idempotency, and
  *    a mode flip must re-run).
+ *  - A re-embed only (A10 #7: a new title kept the summary and cleared the
+ *    vector) runs after metadata-only (a name-only file re-runs its spine)
+ *    and BEFORE the cost guard and the key pre-flight: it needs no model.
  *  - Already-extracted is last, and requires the completion marker as well as
  *    summary+embedding: those are written first, so checking them alone made
  *    every retry skip a pass that had failed partway.
@@ -31,13 +34,14 @@
  * gates.test.ts pins the order and the dispositions.
  */
 
-import { eq, sql } from 'drizzle-orm';
+import { and, eq, isNull, sql } from 'drizzle-orm';
 import {
   db,
   nodes,
   contentChunks,
   isExtractExempt,
   llmWorkAllowed,
+  notifyNodeIndexed,
   withDeadlockRetry,
   withHeads,
   type ExtractorParams,
@@ -80,6 +84,54 @@ async function indexLocalOnly(
       .where(eq(nodes.id, node.id));
   });
   return { chunked: !!body, embedded: true };
+}
+
+/**
+ * A re-embed only (A10 #7): the summary and the completion marker are there,
+ * the vector is not. markContentChanged leaves exactly that for a field whose
+ * work is 'embed'. A table goes through the model step's summary reuse
+ * instead (it rebuilds its profile passages there).
+ */
+export function isEmbedOnly(node: typeof nodes.$inferSelect): boolean {
+  const data = (node.data ?? {}) as Record<string, unknown>;
+  return (
+    node.type !== 'table' &&
+    !node.embedding &&
+    typeof data.summary === 'string' &&
+    data.summary.trim().length > 0 &&
+    !!data.extract_completed_at
+  );
+}
+
+/**
+ * The vector from the title and the kept summary (the text update_index
+ * embeds), written only while the row still holds that summary and no vector:
+ * an edit that landed meanwhile (it dropped the summary) keeps its reset and
+ * its own re-extract. Leaves `updated_at` alone, like any derived write.
+ * Returns whether the vector was written.
+ */
+async function reembedFromSummary(
+  node: typeof nodes.$inferSelect,
+  ownerId: string,
+): Promise<boolean> {
+  const summary = String((node.data as Record<string, unknown>).summary);
+  const vec = await embed(ownerId, [node.title, summary].filter(Boolean).join('\n\n'));
+  const written = await db.transaction(async (tx) => {
+    await tx.execute(sql`select set_config('mantle.keep_updated_at', 'on', true)`);
+    return tx
+      .update(nodes)
+      .set({ embedding: vec })
+      .where(
+        and(
+          eq(nodes.id, node.id),
+          isNull(nodes.embedding),
+          sql`${nodes.data}->>'summary' = ${summary}`,
+        ),
+      )
+      .returning({ id: nodes.id });
+  });
+  if (written.length > 0) await notifyNodeIndexed(node.id);
+  return written.length > 0;
 }
 
 /** Types we will NEVER extract from, no matter what the agent config says.
@@ -480,6 +532,31 @@ export async function admitForExtraction(
         .set({ data: sql`${nodes.data} || '{"indexing_applied":"full"}'::jsonb` })
         .where(eq(nodes.id, node.id));
     }
+  }
+
+  // A re-embed (A10 #7, markContentChanged): the write kept the summary and
+  // the completion marker and cleared only the vector (a new title). The
+  // vector is rebuilt from the title and that summary, as update_index makes
+  // it, on the local embedder: no model call. Before the cost guard and the
+  // key pre-flight, which it needs neither of. A table is left to the model
+  // step, which reuses its summary there and rebuilds its profile passages.
+  if (isEmbedOnly(node)) {
+    const embedded = await reembedFromSummary(node, ownerId);
+    await recordSkippedTrace({
+      kind: 'extractor_run',
+      ownerId,
+      subjectId: node.id,
+      subjectKind: 'node',
+      disposition: 'embed_only',
+      details: {
+        worker_slug: worker.slug,
+        node_type: node.type,
+        title: node.title,
+        embedded,
+        hint: 'Only the vector was stale (a new title): re-embedded from the title and the kept summary, no model call (A10 #7).',
+      },
+    });
+    return { proceed: false };
   }
 
   // The LLM-work cost guard (workspaces plan 5.3): no workspace with an

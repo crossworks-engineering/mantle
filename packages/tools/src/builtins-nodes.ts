@@ -6,7 +6,7 @@
  */
 
 import { and, desc, eq, inArray, sql } from 'drizzle-orm';
-import { db, nodes, notifyNodeIngested, workspaces } from '@mantle/db';
+import { db, nodes, resignalNode, workspaces } from '@mantle/db';
 import { resolveSupersededTargets } from '@mantle/search';
 import { corpusCapacity, nodeUrl, supersedeNode, unsupersedeNode } from '@mantle/content';
 import { areaSystem } from './admin-gate';
@@ -299,7 +299,7 @@ export const process_extraction: BuiltinToolDef = {
           error: `node ${nodeId} not found: find the id with search_nodes, then re-issue.`,
         };
       }
-      await notifyNodeIngested(nodeId);
+      await resignalNode(nodeId);
       ctx.step?.setOutput({ fired: 1, node_id: input.node_id });
       return { ok: true, output: { fired: 1, node_id: input.node_id } };
     }
@@ -325,9 +325,7 @@ export const process_extraction: BuiltinToolDef = {
       .where(and(...conds))
       .orderBy(desc(nodes.createdAt))
       .limit(limit);
-    for (const r of rows) {
-      await notifyNodeIngested(r.id);
-    }
+    for (const r of rows) await resignalNode(r.id);
     ctx.step?.setOutput({ fired: rows.length });
     return { ok: true, output: { fired: rows.length } };
   },

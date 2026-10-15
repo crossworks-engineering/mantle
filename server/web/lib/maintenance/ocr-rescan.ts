@@ -23,7 +23,7 @@ import {
   db,
   getDefaultWorker,
   nodes,
-  notifyNodeIngested,
+  markContentChanged,
   withDeadlockRetry,
   withHeads,
 } from '@mantle/db';
@@ -226,14 +226,17 @@ export async function clearForRescan(id: string): Promise<void> {
   await withDeadlockRetry(() =>
     withHeads([id], 'update', async (tx) => {
       await tx.delete(contentChunks).where(eq(contentChunks.nodeId, id));
-      await tx
+      const [file] = await tx
         .update(nodes)
         .set({
-          embedding: null,
           data: sql`coalesce(${nodes.data}, '{}'::jsonb) - ${sql.raw(`array[${keys.map((k) => `'${k}'`).join(',')}]::text[]`)}`,
           updatedAt: new Date(),
         })
-        .where(and(eq(nodes.id, id), eq(nodes.type, 'file')));
+        .where(and(eq(nodes.id, id), eq(nodes.type, 'file')))
+        .returning({ id: nodes.id });
+      // As if its bytes were new: the vector goes too, announced when this
+      // transaction commits (markContentChanged).
+      if (file) await markContentChanged(tx, { id, type: 'file' }, ['content']);
     }),
   );
 }
@@ -287,18 +290,16 @@ export async function runBatch(
     timeoutMs: number;
     pollMs?: number;
     sleep?: (ms: number) => Promise<void>;
-    /** What to do to each node before its notify. Default: `clearForRescan`.
-     *  doc-reindex passes a no-op (its nodes have nothing stale to clear). */
+    /** What to do to each node: reset it and announce it. Default:
+     *  `clearForRescan` (markContentChanged announces). doc-reindex passes
+     *  `resignalNode` (its nodes have nothing stale to clear). */
     prepare?: (id: string) => Promise<void>;
   },
 ): Promise<BatchOutcome> {
   const sleep = opts.sleep ?? stdSleep;
   const prepare = opts.prepare ?? clearForRescan;
   const started = new Date();
-  for (const id of ids) {
-    await prepare(id);
-    await notifyNodeIngested(id);
-  }
+  for (const id of ids) await prepare(id);
   const deadline = Date.now() + opts.timeoutMs;
   let open = [...ids];
   while (open.length > 0 && Date.now() < deadline) {

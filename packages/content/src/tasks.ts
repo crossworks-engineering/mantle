@@ -23,7 +23,8 @@ import {
   TEAM_REQUEST_SOURCE,
   db,
   nodes,
-  notifyNodeIngested,
+  changedFields,
+  markContentChanged,
   type Node,
   withDeadlockRetry,
   withNodeDeleteHeads,
@@ -337,50 +338,44 @@ export async function updateTask(
     if (isValidRank(input.rank)) newData.rank = input.rank;
     else delete newData.rank;
   }
-  // Title/body/priority/due/status/todos all matter for the summary —
-  // invalidate when any of them CHANGES VALUE so the next extractor pass
-  // re-summarises. Compare, don't test presence: a board drag PATCHes
-  // {status, rank} with the status usually unchanged, and a presence test
-  // would wipe the summary + embedding and queue an LLM pass per drag
-  // (caught in review). Rank and tags deliberately never re-index (cost
-  // safety); the tasks_changed trigger still repaints other tabs.
+  // Title/body/priority/due/status/todos all matter for the summary (the
+  // kind registry's `indexed`): each is compared by VALUE, never by
+  // presence. A board drag PATCHes {status, rank} with the status usually
+  // unchanged, and a presence test would queue a model pass per drag. Rank
+  // and tags never re-index (cost safety); the tasks_changed trigger still
+  // repaints other tabs.
   const newTitle =
     input.title !== undefined ? input.title.trim().slice(0, 200) || 'Untitled task' : node.title;
-  const contentChanged =
-    newTitle !== node.title ||
-    (input.body !== undefined && input.body !== (oldData.body ?? '')) ||
-    (status !== undefined && status !== oldStatus) ||
-    (input.priority !== undefined && input.priority !== (oldData.priority ?? 'normal')) ||
-    (input.dueAt !== undefined && (input.dueAt || null) !== (oldData.due_at ?? null)) ||
-    (input.todos !== undefined &&
-      JSON.stringify(newData.todos ?? null) !== JSON.stringify(oldData.todos ?? null));
-  if (contentChanged) {
-    delete newData.summary;
-    delete newData.summary_model;
-    delete newData.summary_at;
-    delete newData.entities;
-  }
   // A team request a member filed is extract-exempt until an admin acts on
   // it (audit F08, extract-exempt.ts). This IS the admin acting: every caller
   // of updateTask is an owner path (the task routes and tools). Stamp it and
-  // announce it once below, as an ordinary task's insert is announced.
+  // announce it once, as an ordinary task's insert is announced.
   const becameReviewed = oldData.source === TEAM_REQUEST_SOURCE && !oldData.reviewed_at;
   if (becameReviewed) newData.reviewed_at = new Date().toISOString();
-  const [updated] = await db
-    .update(nodes)
-    .set({
-      ...(input.title !== undefined ? { title: newTitle } : {}),
-      ...(input.tags !== undefined ? { tags: dedupeTags(input.tags) } : {}),
-      data: newData,
-      ...(contentChanged ? { embedding: null } : {}),
-      updatedAt: new Date(),
-    })
-    .where(eq(nodes.id, id))
-    .returning();
+  const changed = changedFields({
+    title: [node.title, newTitle],
+    body: [oldData.body ?? '', newData.body ?? ''],
+    status: [oldStatus, status ?? oldStatus],
+    priority: [oldData.priority ?? 'normal', newData.priority ?? 'normal'],
+    due_at: [oldData.due_at, newData.due_at],
+    todos: [oldData.todos, newData.todos],
+    reviewed: [false, becameReviewed],
+  });
+  const updated = await db.transaction(async (tx) => {
+    const [row] = await tx
+      .update(nodes)
+      .set({
+        ...(input.title !== undefined ? { title: newTitle } : {}),
+        ...(input.tags !== undefined ? { tags: dedupeTags(input.tags) } : {}),
+        data: newData,
+        updatedAt: new Date(),
+      })
+      .where(eq(nodes.id, id))
+      .returning();
+    if (!row) return row;
+    return (await markContentChanged(tx, { id, type: 'task' }, changed)) ?? row;
+  });
   if (!updated) throw new Error('updateTask: update returned no row');
-  if (contentChanged || becameReviewed) {
-    await notifyNodeIngested(id);
-  }
   return rowOf(updated);
 }
 

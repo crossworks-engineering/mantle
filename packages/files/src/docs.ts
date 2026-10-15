@@ -31,7 +31,7 @@ import {
   inArray,
   isWriteRefused,
   nodes,
-  notifyNodeIngested,
+  markContentChanged,
   sql,
   withDeadlockRetry,
   withNodeDeleteHeads,
@@ -216,13 +216,18 @@ export async function upsertDocFromDisk(args: {
   if (existing) {
     const oldData = (existing.data ?? {}) as Record<string, unknown>;
     if (oldData.sha256 === sha256) return { status: 'noop', nodeId: existing.id };
-    const [updated] = await db
-      .update(nodes)
-      .set({ title: loc.relPath, data: newData, updatedAt: new Date(), embedding: null })
-      .where(eq(nodes.id, existing.id))
-      .returning({ id: nodes.id });
+    // New text: the whole index again (the kind registry's `indexed`),
+    // announced when this transaction commits.
+    const updated = await db.transaction(async (tx) => {
+      const [row] = await tx
+        .update(nodes)
+        .set({ title: loc.relPath, data: newData, updatedAt: new Date() })
+        .where(eq(nodes.id, existing.id))
+        .returning({ id: nodes.id });
+      if (row) await markContentChanged(tx, { id: row.id, type: 'documentation' }, ['content']);
+      return row;
+    });
     if (!updated) throw new Error('upsertDocFromDisk: update returned no row');
-    await notifyNodeIngested(updated.id);
     return { status: 'updated', nodeId: updated.id };
   }
 

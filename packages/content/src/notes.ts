@@ -14,7 +14,8 @@ import {
   db,
   emailAttachmentSql,
   nodes,
-  notifyNodeIngested,
+  changedFields,
+  markContentChanged,
   type Node,
   withBusyRetry,
   headsOrSpace,
@@ -250,39 +251,35 @@ async function updateNoteOnce(
   const contentChanged = input.content !== undefined && input.content !== oldData.content;
   const newData: Record<string, unknown> = { ...oldData };
   if (input.content !== undefined) newData.content = input.content;
-  // Content change invalidates the extractor's prior summary/embedding.
-  if (contentChanged) {
-    delete newData.summary;
-    delete newData.summary_model;
-    delete newData.summary_at;
-    delete newData.entities;
-  }
+  const title =
+    input.title !== undefined ? input.title.trim().slice(0, 200) || 'Untitled note' : node.title;
+  // What the index must redo (the kind registry's `indexed`): a new body
+  // re-extracts, a new title re-embeds.
+  const changed = changedFields({
+    title: [node.title, title],
+    content: [oldData.content, newData.content],
+  });
   // A content change may add or drop an embed: the note's head first.
   const open = contentChanged
     ? <R>(body: (tx: NoteTx) => Promise<R>) =>
         withWriterHeads([id], (tx) => body(tx as unknown as NoteTx))
     : <R>(body: (tx: NoteTx) => Promise<R>) => db.transaction(body);
   // An embed changes no one's access (W5b2): the database keeps the edges.
-  const [updated] = await open(async (tx) => {
-    const rows = await tx
+  const updated = await open(async (tx) => {
+    const [row] = await tx
       .update(nodes)
       .set({
-        ...(input.title !== undefined
-          ? { title: input.title.trim().slice(0, 200) || 'Untitled note' }
-          : {}),
+        ...(input.title !== undefined ? { title } : {}),
         ...(input.tags !== undefined ? { tags: dedupeTags(input.tags) } : {}),
         data: newData,
-        ...(contentChanged ? { embedding: null } : {}),
         updatedAt: new Date(),
       })
       .where(eq(nodes.id, id))
       .returning();
-    return rows;
+    if (!row) return row;
+    return (await markContentChanged(tx, { id, type: 'note' }, changed)) ?? row;
   });
   if (!updated) throw new Error('updateNote: update returned no row');
-  if (contentChanged) {
-    await notifyNodeIngested(id);
-  }
   return rowOf(updated);
 }
 

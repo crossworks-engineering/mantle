@@ -168,7 +168,7 @@ describe.skipIf(!URL)('page text by its holders', () => {
 
   it('a programmatic write (updatePage) folds the same way', async () => {
     const doc = { type: 'doc', content: [para(mention(id.adminNote, 'UPDLABEL'))] };
-    await pages.updatePage(owner, id.teamPage, { doc }, { reindex: false });
+    await pages.updatePage(owner, id.teamPage, { doc });
     const text = (await row(id.teamPage)).doc_text;
     expect(text).not.toContain('UPDLABEL');
     expect(text).toContain('Private item');

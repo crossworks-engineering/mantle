@@ -11,6 +11,8 @@ import { and, eq } from 'drizzle-orm';
 import {
   afterCommit,
   afterOuterRollback,
+  changedFields,
+  markContentChanged,
   db,
   headsOrSpace,
   inFlipTransaction,
@@ -207,18 +209,26 @@ export async function updateTable(
   if (input.icon !== undefined) newData.icon = input.icon;
   if (input.visibility !== undefined) newData.visibility = input.visibility;
 
-  const [row] = await db
-    .update(nodes)
-    .set({
-      ...(input.title !== undefined
-        ? { title: input.title.trim().slice(0, 200) || 'Untitled table' }
-        : {}),
-      ...(input.tags !== undefined ? { tags: dedupeTags(input.tags) } : {}),
-      data: newData,
-      updatedAt: new Date(),
-    })
-    .where(eq(nodes.id, id))
-    .returning();
+  const title =
+    input.title !== undefined ? input.title.trim().slice(0, 200) || 'Untitled table' : node.title;
+  // A new title re-embeds (the kind registry's `indexed`): the extractor
+  // reuses the committed summary and rebuilds the vector and the profile
+  // passages locally, no model call. The look and the tags feed no index.
+  const changed = changedFields({ title: [node.title, title] });
+  const row = await db.transaction(async (tx) => {
+    const [r] = await tx
+      .update(nodes)
+      .set({
+        ...(input.title !== undefined ? { title } : {}),
+        ...(input.tags !== undefined ? { tags: dedupeTags(input.tags) } : {}),
+        data: newData,
+        updatedAt: new Date(),
+      })
+      .where(eq(nodes.id, id))
+      .returning();
+    if (!r) return r;
+    return (await markContentChanged(tx, { id, type: 'table' }, changed)) ?? r;
+  });
   if (!row) return null;
 
   const [p] = await db

@@ -277,7 +277,8 @@ describe.skipIf(!DB_URL)('what a write re-indexes (A10 #7): the recorded matrix'
     await cell('journal|tags', journal, (id) => c.updateJournal(owner, id, { tags: ['me'] }));
 
     // ── formula ──
-    const formula = () => insert('formula', 'Flow', 'formulas', { spec: SPEC });
+    // Made by the service, so the stored spec is the validated one.
+    const formula = async () => (await c.createFormula(owner, { spec: SPEC })).id;
     await cell('formula|rename', formula, (id) =>
       c.updateFormula(owner, id, { title: 'Flow rate' }),
     );
@@ -373,7 +374,13 @@ describe.skipIf(!DB_URL)('what a write re-indexes (A10 #7): the recorded matrix'
     await cell('page|tags', page, (id) => c.updatePage(owner, id, { tags: ['plant'] }));
     await cell('page|edit:doc', page, (id) => c.updatePage(owner, id, { doc: DOC2 }));
     await cell('page|edit:doc-reindex-false', page, (id) =>
-      c.updatePage(owner, id, { doc: DOC2 }, { reindex: false } as never),
+      // The route's PATCH body flag, passed as main passed it (A10 #7 drops it).
+      (c.updatePage as (...a: unknown[]) => Promise<unknown>)(
+        owner,
+        id,
+        { doc: DOC2 },
+        { reindex: false },
+      ),
     );
     await cell('page|commit', page, (id) => c.commitPage(owner, id, DOC2));
     await cell('page|delete', page, (id) => c.deletePage(owner, id));

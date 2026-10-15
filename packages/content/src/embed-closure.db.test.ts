@@ -133,14 +133,9 @@ describe.skipIf(!URL)("embeds change no one's access", () => {
     expect([await access(id.file), await access(id.child)]).toEqual(before);
     expect(await edges(id.page)).toEqual([id.file, id.child].sort());
     // updatePage (the programmatic write) the same.
-    const res2 = await pages.updatePage(
-      owner,
-      id.page,
-      {
-        doc: { ...doc, content: [...doc.content, { type: 'image', attrs: { nodeId: id.file2 } }] },
-      },
-      { reindex: false },
-    );
+    const res2 = await pages.updatePage(owner, id.page, {
+      doc: { ...doc, content: [...doc.content, { type: 'image', attrs: { nodeId: id.file2 } }] },
+    });
     expect(res2).not.toBeNull();
     expect(await access(id.file2)).toEqual({
       rows: [{ ws: admin, write: false, home: true }],

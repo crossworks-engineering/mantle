@@ -27,7 +27,7 @@ import {
   appDatabases,
   shares,
   workspaces,
-  notifyNodeIngested,
+  markContentChanged,
   type Node,
   type AppSource,
   type AppManifest,
@@ -1017,10 +1017,7 @@ export async function publishApp(
     return true;
   });
   if (published === null) return null;
-  if (published) {
-    await notifyNodeIngested(id);
-    void notifyAppNavChanged(ownerId);
-  }
+  if (published) void notifyAppNavChanged(ownerId);
   return loadDetail(ownerId, id);
 }
 
@@ -1050,7 +1047,10 @@ async function promote(
       updatedAt: new Date(),
     })
     .where(eq(apps.nodeId, id));
-  await tx.update(nodes).set({ embedding: null, updatedAt: new Date() }).where(eq(nodes.id, id));
+  await tx.update(nodes).set({ updatedAt: new Date() }).where(eq(nodes.id, id));
+  // New live code: the index again (the kind registry's `indexed`),
+  // announced when this transaction commits.
+  await markContentChanged(tx, { id, type: 'app' }, ['source']);
 }
 
 /** The draft holds unpublished work, and a restore into it would drop that
@@ -1147,7 +1147,8 @@ export async function restoreAppLive(
         updatedAt: new Date(),
       })
       .where(eq(apps.nodeId, id));
-    await tx.update(nodes).set({ embedding: null, updatedAt: new Date() }).where(eq(nodes.id, id));
+    await tx.update(nodes).set({ updatedAt: new Date() }).where(eq(nodes.id, id));
+    await markContentChanged(tx, { id, type: 'app' }, ['source']);
     const live = {
       source: code.source,
       draft: null,
@@ -1168,10 +1169,7 @@ export async function restoreAppLive(
     });
     return true;
   });
-  if (done) {
-    await notifyNodeIngested(id);
-    void notifyAppNavChanged(ownerId);
-  }
+  if (done) void notifyAppNavChanged(ownerId);
   return done;
 }
 
@@ -1209,6 +1207,8 @@ export async function installAppCode(
       })
       .where(eq(apps.nodeId, id));
     if (live) {
+      // Live code it did not have: the index again, announced at commit.
+      await markContentChanged(tx, { id, type: 'app' }, ['source']);
       await insertNodeSnapshot(tx, {
         ownerId,
         nodeId: id,
@@ -1222,7 +1222,6 @@ export async function installAppCode(
     }
     return true;
   });
-  if (done && live) await notifyNodeIngested(id);
   return done;
 }
 

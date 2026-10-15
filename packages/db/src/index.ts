@@ -265,6 +265,13 @@ export {
 } from './context-ref-resolve';
 export { notifyNodeIngested, notifyNodeIndexed } from './notify';
 export {
+  SUMMARY_KEYS,
+  changedFields,
+  markContentChanged,
+  resignalNode,
+  type ContentTx,
+} from './content-changed';
+export {
   FORUM_ARCHIVE_SOURCE,
   TEAM_REQUEST_SOURCE,
   CLIENT_REQUEST_SOURCE,

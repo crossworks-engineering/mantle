@@ -16,8 +16,10 @@ const PatchBody = z.object({
   tags: z.array(z.string().max(40)).max(20).optional(),
   visibility: z.enum(['private', 'public']).optional(),
   width: z.enum(['narrow', 'wide']).optional(),
-  // When false, persist the document without re-running the extractor — the
-  // editor's cheap autosave path. Indexing happens via POST .../reindex.
+  // Accepted and ignored since A10 #7. It once skipped the re-index of a doc
+  // written here, pointing at a POST .../reindex that never existed, so the
+  // page's index stayed on the old doc. No client sends it (the editor
+  // saves drafts and commits); a doc written here is indexed like a commit.
   reindex: z.boolean().optional(),
 });
 
@@ -53,8 +55,8 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   if (!parsed.success) {
     return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
   }
-  const { reindex, ...fields } = parsed.data;
-  const row = await updatePage(user.id, id, fields, { reindex });
+  const { reindex: _ignored, ...fields } = parsed.data;
+  const row = await updatePage(user.id, id, fields);
   if (!row) return NextResponse.json({ error: 'not found' }, { status: 404 });
   return NextResponse.json({ page: row });
 }

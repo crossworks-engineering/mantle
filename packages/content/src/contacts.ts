@@ -18,7 +18,9 @@
 import { and, desc, eq, ilike, inArray, isNull, or, sql } from 'drizzle-orm';
 import {
   authUsers,
+  changedFields,
   db,
+  markContentChanged,
   type Node,
   nodes,
   withDeadlockRetry,
@@ -520,16 +522,16 @@ export async function updateContact(
     throw new InputError('A contact needs at least a first name, last name, or company.');
   }
 
-  // Did any extractor-visible field change? If so the prior summary/embedding
-  // is stale — clear them so the re-extract on UPDATE writes a fresh pass.
-  // The INSERT trigger doesn't fire on UPDATE, so we explicitly re-notify below.
-  const emailsChanged = addedEmails.length > 0 || fields.emails.length !== oldEmailsNorm.length;
-  const visibleChanged =
-    fields.firstName !== (typeof oldData.first_name === 'string' ? oldData.first_name : '') ||
-    fields.lastName !== (typeof oldData.last_name === 'string' ? oldData.last_name : '') ||
-    fields.company !== (typeof oldData.company === 'string' ? oldData.company : '') ||
-    emailsChanged ||
-    fields.description !== (typeof oldData.description === 'string' ? oldData.description : '');
+  // What the extractor reads (the kind registry's `indexed`), compared by
+  // value: a name, the company, an email or the description re-extracts;
+  // the cell and its country code do not.
+  const changed = changedFields({
+    first_name: [oldData.first_name ?? '', fields.firstName],
+    last_name: [oldData.last_name ?? '', fields.lastName],
+    company: [oldData.company ?? '', fields.company],
+    emails: [false, addedEmails.length > 0 || fields.emails.length !== oldEmailsNorm.length],
+    description: [oldData.description ?? '', fields.description],
+  });
 
   const newData: Record<string, unknown> = {
     ...oldData,
@@ -543,38 +545,29 @@ export async function updateContact(
   };
   // Drop the legacy single-email field so it can't diverge from `emails`.
   delete newData.email;
-  if (visibleChanged) {
-    delete newData.summary;
-    delete newData.summary_model;
-    delete newData.summary_at;
-    delete newData.entities;
-  }
 
-  const [updated] = await db
-    .update(nodes)
-    .set({
-      title: deriveContactTitle({
-        firstName: fields.firstName,
-        lastName: fields.lastName,
-        company: fields.company,
-        emails: fields.emails,
-        countryCode: fields.countryCode,
-        cell: fields.cell,
-      }),
-      ...(input.tags !== undefined ? { tags: dedupeTags(input.tags) } : {}),
-      data: newData,
-      ...(visibleChanged ? { embedding: null } : {}),
-      updatedAt: new Date(),
-    })
-    .where(eq(nodes.id, id))
-    .returning();
+  const updated = await db.transaction(async (tx) => {
+    const [row] = await tx
+      .update(nodes)
+      .set({
+        title: deriveContactTitle({
+          firstName: fields.firstName,
+          lastName: fields.lastName,
+          company: fields.company,
+          emails: fields.emails,
+          countryCode: fields.countryCode,
+          cell: fields.cell,
+        }),
+        ...(input.tags !== undefined ? { tags: dedupeTags(input.tags) } : {}),
+        data: newData,
+        updatedAt: new Date(),
+      })
+      .where(eq(nodes.id, id))
+      .returning();
+    if (!row) return row;
+    return (await markContentChanged(tx, { id, type: 'contact' }, changed)) ?? row;
+  });
   if (!updated) throw new Error('updateContact: update returned no row');
-  if (visibleChanged) {
-    // Re-fire the extractor so summary/embedding/facts catch up. The INSERT
-    // trigger only fires on INSERT, so this is the explicit refresh.
-    const { notifyNodeIngested } = await import('@mantle/db');
-    await notifyNodeIngested(id);
-  }
   const [contact] = await withSharing(ownerId, [rowOf(updated)]);
   return { contact: contact!, addedEmails };
 }

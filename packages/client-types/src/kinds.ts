@@ -17,7 +17,10 @@
  *  - the lists of ./kind-lists (A10 #12): extract, corpusMap, contextRef,
  *    embeds, mentionTarget, linkServes, exportAs, accepted, searchTool,
  *    peerPick, documentTitle. A literal list of kind names anywhere else is
- *    an arch count pinned at 0 (eslint-rules/arch-counts.mjs handKindLists).
+ *    an arch count pinned at 0 (eslint-rules/arch-counts.mjs handKindLists);
+ *  - what a write re-indexes (A10 #7): `indexed`, read by markContentChanged
+ *    (@mantle/db) and indexWorkFor below; a hand re-index anywhere else is
+ *    an arch count pinned at 0 (eslint-rules/no-hand-reindex.mjs).
  *
  * Each field holds the value the code had when the registry came in (A1).
  * Who may share or see a kind changes here only as a reviewed diff of the
@@ -119,7 +122,26 @@ export type KindSpec = {
   readonly peerPick: boolean;
   /** Its title names a document, not a thing the user does (entity-names). */
   readonly documentTitle: boolean;
+
+  // ── A10 #7: what a write re-indexes.
+
+  /** Every field a write of this kind may change, with the index work its
+   *  change redoes (markContentChanged, @mantle/db): 'embed', 'extract', or
+   *  false (the field feeds no index). A write names the fields it changed;
+   *  the most work any of them asks for is done once. Each value holds what
+   *  main v0.300.47 did (a10-content-changed.main.json), except the cells
+   *  a10-content-changed.changes.json names. Turning a field to 'extract'
+   *  makes every save of it a model call: a cost decision, never a tidy-up. */
+  readonly indexed: Readonly<Record<string, IndexWork | false>>;
 };
+
+/** What a change of an indexed field makes the extractor redo (A10 #7).
+ *  'embed': the vector only, rebuilt from the title and the summary the item
+ *  keeps (one embedding on the local embedder, no model call; a table also
+ *  rebuilds its profile passages, locally). 'extract': the whole pass (the
+ *  summary, the vector, facts and entities: one model call). There is no
+ *  summary-only pass: the summary and the facts come from one call. */
+export type IndexWork = 'embed' | 'extract';
 
 /** The formats a kind downloads as by default. */
 export type KindExportFormat = 'docx' | 'xlsx' | 'svg';
@@ -148,6 +170,7 @@ export const ITEM_KINDS = {
     searchTool: true,
     peerPick: false,
     documentTitle: false,
+    indexed: {},
   },
   email: {
     class: 'admin_only',
@@ -170,6 +193,7 @@ export const ITEM_KINDS = {
     searchTool: true,
     peerPick: true,
     documentTitle: false,
+    indexed: {},
   },
   email_thread: {
     class: 'admin_only',
@@ -192,6 +216,7 @@ export const ITEM_KINDS = {
     searchTool: true,
     peerPick: true,
     documentTitle: false,
+    indexed: {},
   },
   file: {
     class: 'workspace',
@@ -221,6 +246,7 @@ export const ITEM_KINDS = {
     searchTool: true,
     peerPick: true,
     documentTitle: true,
+    indexed: { title: 'embed', content: 'extract', indexing: 'extract', tags: false },
   },
   note: {
     class: 'workspace',
@@ -250,6 +276,7 @@ export const ITEM_KINDS = {
     searchTool: true,
     peerPick: true,
     documentTitle: false,
+    indexed: { title: 'embed', content: 'extract', tags: false },
   },
   sermon: {
     class: 'admin_only',
@@ -272,6 +299,7 @@ export const ITEM_KINDS = {
     searchTool: true,
     peerPick: true,
     documentTitle: true,
+    indexed: {},
   },
   contact: {
     class: 'admin_only',
@@ -301,6 +329,16 @@ export const ITEM_KINDS = {
     searchTool: true,
     peerPick: true,
     documentTitle: false,
+    indexed: {
+      first_name: 'extract',
+      last_name: 'extract',
+      company: 'extract',
+      emails: 'extract',
+      description: 'extract',
+      country_code: false,
+      cell: false,
+      tags: false,
+    },
   },
   secret: {
     class: 'admin_only',
@@ -330,6 +368,13 @@ export const ITEM_KINDS = {
     searchTool: true,
     peerPick: false,
     documentTitle: false,
+    indexed: {
+      title: 'extract',
+      description: 'extract',
+      kind: 'extract',
+      tags: 'extract',
+      sealed: false,
+    },
   },
   task: {
     class: 'workspace',
@@ -359,6 +404,18 @@ export const ITEM_KINDS = {
     searchTool: true,
     peerPick: true,
     documentTitle: false,
+    indexed: {
+      title: 'extract',
+      body: 'extract',
+      status: 'extract',
+      priority: 'extract',
+      due_at: 'extract',
+      todos: 'extract',
+      reviewed: 'extract',
+      archived_at: false,
+      rank: false,
+      tags: false,
+    },
   },
   event: {
     class: 'workspace',
@@ -388,6 +445,17 @@ export const ITEM_KINDS = {
     searchTool: true,
     peerPick: true,
     documentTitle: false,
+    indexed: {
+      title: 'extract',
+      body: 'extract',
+      starts_at: 'extract',
+      ends_at: 'extract',
+      location: 'extract',
+      recur: false,
+      remind: false,
+      timezone: false,
+      tags: false,
+    },
   },
   printer_project: {
     class: 'admin_only',
@@ -410,6 +478,7 @@ export const ITEM_KINDS = {
     searchTool: true,
     peerPick: true,
     documentTitle: false,
+    indexed: {},
   },
   telegram_message: {
     class: 'conversation',
@@ -432,6 +501,7 @@ export const ITEM_KINDS = {
     searchTool: true,
     peerPick: true,
     documentTitle: false,
+    indexed: {},
   },
   page: {
     class: 'workspace',
@@ -461,6 +531,7 @@ export const ITEM_KINDS = {
     searchTool: true,
     peerPick: true,
     documentTitle: false,
+    indexed: { title: 'embed', doc: 'extract', look: false, tags: false },
   },
   table: {
     class: 'workspace',
@@ -490,6 +561,7 @@ export const ITEM_KINDS = {
     searchTool: false,
     peerPick: true,
     documentTitle: false,
+    indexed: { title: 'embed', cells: 'embed', schema: 'extract', look: false, tags: false },
   },
   mantle_peer: {
     class: 'admin_only',
@@ -512,6 +584,7 @@ export const ITEM_KINDS = {
     searchTool: false,
     peerPick: false,
     documentTitle: false,
+    indexed: {},
   },
   documentation: {
     class: 'admin_only',
@@ -534,6 +607,7 @@ export const ITEM_KINDS = {
     searchTool: true,
     peerPick: true,
     documentTitle: true,
+    indexed: { content: 'extract' },
   },
   journal: {
     class: 'admin_only',
@@ -556,6 +630,7 @@ export const ITEM_KINDS = {
     searchTool: true,
     peerPick: true,
     documentTitle: false,
+    indexed: { title: 'embed', body: 'extract', kind: false, entry_date: false, tags: false },
   },
   location: {
     class: 'admin_only',
@@ -578,6 +653,14 @@ export const ITEM_KINDS = {
     searchTool: false,
     peerPick: true,
     documentTitle: false,
+    indexed: {
+      title: 'embed',
+      body: 'extract',
+      address: 'extract',
+      coordinates: false,
+      source: false,
+      tags: false,
+    },
   },
   app: {
     class: 'workspace',
@@ -607,6 +690,7 @@ export const ITEM_KINDS = {
     searchTool: false,
     peerPick: true,
     documentTitle: false,
+    indexed: { source: 'extract' },
   },
   formula: {
     class: 'workspace',
@@ -636,6 +720,7 @@ export const ITEM_KINDS = {
     searchTool: true,
     peerPick: true,
     documentTitle: false,
+    indexed: { title: 'embed', spec: 'extract', tags: false },
   },
   draw: {
     class: 'workspace',
@@ -665,6 +750,7 @@ export const ITEM_KINDS = {
     searchTool: true,
     peerPick: true,
     documentTitle: false,
+    indexed: { title: 'embed', scene: 'extract', look: false, tags: false },
   },
   recall: {
     class: 'workspace',
@@ -697,6 +783,7 @@ export const ITEM_KINDS = {
     searchTool: false,
     peerPick: true,
     documentTitle: false,
+    indexed: {},
   },
 } as const satisfies Record<string, KindSpec>;
 
@@ -768,4 +855,23 @@ export function treeKindsBy(key: 'order' | 'liveOrder'): readonly RegistryTreeKi
   })
     .sort((a, b) => a[key] - b[key])
     .map((t) => t.kind as RegistryTreeKind);
+}
+
+// ── A10 #7: what a write re-indexes ─────────────────────────────────────────
+
+/** The fields a write of kind `K` may name (its `indexed` keys). */
+export type IndexedField<K extends ItemKind> = keyof Kinds[K]['indexed'] & string;
+
+/** The most work any of `fields` asks of an item of `type` (the registry's
+ *  `indexed`), or null when none feeds its index. A field the kind does not
+ *  name asks for nothing. */
+export function indexWorkFor(type: string, fields: readonly string[]): IndexWork | null {
+  const indexed: Readonly<Record<string, IndexWork | false>> = kindSpecOf(type)?.indexed ?? {};
+  let work: IndexWork | null = null;
+  for (const f of fields) {
+    const w = Object.prototype.hasOwnProperty.call(indexed, f) ? indexed[f] : false;
+    if (w === 'extract') return 'extract';
+    if (w === 'embed') work = 'embed';
+  }
+  return work;
 }

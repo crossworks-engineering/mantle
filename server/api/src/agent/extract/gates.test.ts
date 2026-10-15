@@ -59,7 +59,14 @@ vi.mock('@mantle/db', async (importOriginal) => {
   const updateChain = {
     set: vi.fn((patch: unknown) => {
       h.updates.push(patch);
-      return { where: vi.fn(async () => undefined) };
+      // Awaitable as is, or with .returning() (the re-embed's guarded write).
+      return {
+        where: vi.fn(() =>
+          Object.assign(Promise.resolve(undefined), {
+            returning: vi.fn(async () => [{ id: 'n1' }]),
+          }),
+        ),
+      };
     }),
   };
   const db = {
@@ -329,6 +336,38 @@ describe('admitForExtraction — refusals', () => {
     // completion marker is what distinguishes them.
     h.selectQueue.push([node({ data: { summary: 's' }, embedding: [0.5] })]);
     expect((await admitForExtraction('n1', 'o1')).proceed).toBe(true);
+  });
+});
+
+describe('admitForExtraction: a re-embed only (A10 #7)', () => {
+  const kept = { summary: 'Pump overhaul notes.', extract_completed_at: '2026-01-01' };
+
+  it('re-embeds from the title and the kept summary, with no model and no key check', async () => {
+    h.selectQueue.push([node({ title: 'Valve note', data: kept, embedding: null })]);
+    expect((await admitForExtraction('n1', 'o1')).proceed).toBe(false);
+    expect(disposition()).toBe('embed_only');
+    expect(h.embed).toHaveBeenCalledWith('o1', 'Valve note\n\nPump overhaul notes.');
+    expect(h.resolveChatKey).not.toHaveBeenCalled();
+    expect(h.llmWorkAllowed).not.toHaveBeenCalled();
+    expect(h.updates).toContainEqual({ embedding: [0.1, 0.2] });
+  });
+
+  it('leaves a table to the model step, which reuses its summary there', async () => {
+    h.selectQueue.push([node({ type: 'table', data: kept, embedding: null })]);
+    expect((await admitForExtraction('n1', 'o1')).proceed).toBe(true);
+    expect(h.embed).not.toHaveBeenCalled();
+  });
+
+  it('runs the whole pass when the summary went (an extract reset)', async () => {
+    h.selectQueue.push([node({ data: { extract_completed_at: '2026-01-01' }, embedding: null })]);
+    expect((await admitForExtraction('n1', 'o1')).proceed).toBe(true);
+    expect(h.embed).not.toHaveBeenCalled();
+  });
+
+  it('runs the whole pass for a summary with no completion marker (a pass that died)', async () => {
+    h.selectQueue.push([node({ data: { summary: 's' }, embedding: null })]);
+    expect((await admitForExtraction('n1', 'o1')).proceed).toBe(true);
+    expect(h.embed).not.toHaveBeenCalled();
   });
 });
 

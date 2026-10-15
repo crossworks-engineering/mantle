@@ -26,7 +26,8 @@ import { and, desc, eq, ilike, or, sql } from 'drizzle-orm';
 import {
   db,
   nodes,
-  notifyNodeIngested,
+  changedFields,
+  markContentChanged,
   secrets,
   withDeadlockRetry,
   withNodeDeleteHeads,
@@ -287,33 +288,34 @@ export async function updateSecret(
         }
       : {}),
   };
-  // Editing metadata clears the stale summary/embedding so the next
-  // extractor pass produces a fresh one against the new description.
-  const metadataChanged =
-    input.title !== undefined ||
-    input.description !== undefined ||
-    input.kind !== undefined ||
-    input.tags !== undefined;
-  if (metadataChanged) {
-    delete newData.summary;
-    delete newData.summary_model;
-    delete newData.summary_at;
-    delete newData.entities;
-  }
+  const title =
+    input.title !== undefined ? input.title.trim().slice(0, 200) || 'Untitled secret' : node.title;
+  const tags = input.tags !== undefined ? dedupeTags(input.tags) : node.tags;
+  // The metadata the extractor reads (title, description, kind, tags; the
+  // kind registry's `indexed`), compared by value: a save that sends them
+  // back unchanged re-indexes nothing. The sealed note and fields never
+  // reach the extractor.
+  const changed = changedFields({
+    title: [node.title, title],
+    description: [oldData.description, newData.description],
+    kind: [oldData.kind, newData.kind],
+    tags: [node.tags, tags],
+  });
 
-  const [updated] = await db
-    .update(nodes)
-    .set({
-      ...(input.title !== undefined
-        ? { title: input.title.trim().slice(0, 200) || 'Untitled secret' }
-        : {}),
-      ...(input.tags !== undefined ? { tags: dedupeTags(input.tags) } : {}),
-      data: newData,
-      ...(metadataChanged ? { embedding: null } : {}),
-      updatedAt: new Date(),
-    })
-    .where(eq(nodes.id, id))
-    .returning();
+  const updated = await db.transaction(async (tx) => {
+    const [row] = await tx
+      .update(nodes)
+      .set({
+        ...(input.title !== undefined ? { title } : {}),
+        ...(input.tags !== undefined ? { tags } : {}),
+        data: newData,
+        updatedAt: new Date(),
+      })
+      .where(eq(nodes.id, id))
+      .returning();
+    if (!row) return row;
+    return (await markContentChanged(tx, { id, type: 'secret' }, changed)) ?? row;
+  });
   if (!updated) throw new Error('updateSecret: update returned no row');
 
   if (nextPayload) {
@@ -326,10 +328,6 @@ export async function updateSecret(
         updatedAt: new Date(),
       })
       .where(eq(secrets.nodeId, id));
-  }
-
-  if (metadataChanged) {
-    await notifyNodeIngested(id);
   }
 
   return nodeToRow(updated);

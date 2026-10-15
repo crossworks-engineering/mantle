@@ -12,7 +12,15 @@
  * writing while the user types) from silently winning a lost update.
  */
 import { and, eq, sql } from 'drizzle-orm';
-import { db, nodes, notifyNodeIngested, pages, withBusyRetry, withWriterHeads } from '@mantle/db';
+import {
+  changedFields,
+  db,
+  markContentChanged,
+  nodes,
+  pages,
+  withBusyRetry,
+  withWriterHeads,
+} from '@mantle/db';
 import { ensureBlockIds, repairTableRows } from '@mantle/content-core/block-ids';
 import type { PageVisibility, PageWidth } from '@mantle/client-types';
 import { EMPTY_DOC, dedupeTags, detailOf, type PageDetail } from './shared';
@@ -95,21 +103,23 @@ export type UpdatePageInput = Partial<{
   width: PageWidth;
 }>;
 
-/** updatePage, once more when another write held its rows (withBusyRetry). */
+/** updatePage, once more when another write held its rows (withBusyRetry).
+ *  A doc written here is indexed like a commit (the editor never sends one
+ *  through here: it saves drafts and commits). The old `reindex: false`
+ *  opt-out is gone (A10 #7): it left the page's index on the previous doc,
+ *  and the POST .../reindex route that was to catch it up never existed. */
 export function updatePage(
   ownerId: string,
   id: string,
   input: UpdatePageInput,
-  opts: { reindex?: boolean } = {},
 ): Promise<PageDetail | null> {
-  return withBusyRetry(() => updatePageOnce(ownerId, id, input, opts));
+  return withBusyRetry(() => updatePageOnce(ownerId, id, input));
 }
 
 async function updatePageOnce(
   ownerId: string,
   id: string,
   input: UpdatePageInput,
-  opts: { reindex?: boolean } = {},
 ): Promise<PageDetail | null> {
   const [node] = await db
     .select()
@@ -119,45 +129,39 @@ async function updatePageOnce(
   if (!node) return null;
 
   const docChanged = input.doc !== undefined;
-  // Re-indexing (LLM summary + embedding + fact extraction) is the expensive
-  // part, so it's opt-out via `reindex`. The editor never sends a doc through
-  // here — it uses the draft/commit path (saveDraft / commitPage); this
-  // option exists for programmatic callers that write a doc and want (or want
-  // to skip) indexing. Defaults to true.
-  const willReindex = docChanged && opts.reindex !== false;
   const oldData = (node.data ?? {}) as Record<string, unknown>;
   const newData: Record<string, unknown> = { ...oldData };
   if (input.icon !== undefined) newData.icon = input.icon;
   if (input.visibility !== undefined) newData.visibility = input.visibility;
   if (input.width !== undefined) newData.width = input.width;
-  // A re-index invalidates the extractor's prior summary/embedding.
-  if (willReindex) {
-    delete newData.summary;
-    delete newData.summary_model;
-    delete newData.summary_at;
-    delete newData.entities;
-  }
+  const title =
+    input.title !== undefined ? input.title.trim().slice(0, 200) || 'Untitled page' : node.title;
+  // What the index must redo (the kind registry's `indexed`): a written doc
+  // re-extracts (a model call: summary, vector, facts), a new title
+  // re-embeds; the look and the tags feed no index.
+  const changed = [
+    ...changedFields({ title: [node.title, title] }),
+    ...(docChanged ? (['doc'] as const) : []),
+  ];
 
   // A doc change may add or drop an embed: the page's head first.
   const open = docChanged
     ? <R>(body: (tx: PageTx) => Promise<R>) =>
         withWriterHeads([id], (tx) => body(tx as unknown as PageTx))
     : <R>(body: (tx: PageTx) => Promise<R>) => db.transaction(body);
-  const result = await open(async (tx) => {
-    const [row] = await tx
+  return open(async (tx) => {
+    const [written] = await tx
       .update(nodes)
       .set({
-        ...(input.title !== undefined
-          ? { title: input.title.trim().slice(0, 200) || 'Untitled page' }
-          : {}),
+        ...(input.title !== undefined ? { title } : {}),
         ...(input.tags !== undefined ? { tags: dedupeTags(input.tags) } : {}),
         data: newData,
-        ...(willReindex ? { embedding: null } : {}),
         updatedAt: new Date(),
       })
       .where(eq(nodes.id, id))
       .returning();
-    if (!row) throw new Error('updatePage: update returned no row');
+    if (!written) throw new Error('updatePage: update returned no row');
+    const row = (await markContentChanged(tx, { id, type: 'page' }, changed)) ?? written;
 
     if (docChanged) {
       const doc = input.doc as Record<string, unknown>;
@@ -183,11 +187,6 @@ async function updatePageOnce(
       .limit(1);
     return detailOf(row, (p?.doc as Record<string, unknown> | null) ?? EMPTY_DOC);
   });
-
-  if (willReindex) {
-    await notifyNodeIngested(id);
-  }
-  return result;
 }
 
 /** Result of a draft/commit write under the `draft_rev` etag. `ok` carries the
@@ -309,11 +308,6 @@ async function commitPageOnce(
   // brain (via doc_text), Phase 2b block tools, and the editor diff
   // view all see addressable blocks. Idempotent.
   const enriched = ensureBlockIds(repairTableRows(doc));
-  const newData = { ...((node.data ?? {}) as Record<string, unknown>) };
-  delete newData.summary;
-  delete newData.summary_model;
-  delete newData.summary_at;
-  delete newData.entities;
   // Same etag guard as saveDraft, under the same lock: a stale `baseRev`
   // returns a conflict WITHOUT publishing, so a client committing a doc it
   // built on an out-of-date draft can't blow away a newer draft. The
@@ -331,12 +325,15 @@ async function commitPageOnce(
       // link of an item not every workspace holding the page holds is
       // "Private item" (pages/level-text.ts).
       const docText = await pageDocText(ownerId, await pageHolders(id, tx), enriched, tx);
-      const [row] = await tx
+      // A commit publishes a new doc: the whole index again (the kind
+      // registry's `indexed`), announced when this transaction commits.
+      const [committed] = await tx
         .update(nodes)
-        .set({ data: newData, embedding: null, updatedAt: new Date() })
+        .set({ updatedAt: new Date() })
         .where(eq(nodes.id, id))
         .returning();
-      if (!row) throw new Error('commitPage: update returned no row');
+      if (!committed) throw new Error('commitPage: update returned no row');
+      const row = (await markContentChanged(tx, { id, type: 'page' }, ['doc'])) ?? committed;
       await tx
         .update(pages)
         .set({
@@ -357,9 +354,6 @@ async function commitPageOnce(
     { heads: true },
   );
 
-  if (result.ok) {
-    await notifyNodeIngested(id);
-  }
   return result;
 }
 

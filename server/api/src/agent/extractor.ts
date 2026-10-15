@@ -214,7 +214,11 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
       // (the only edges that carry source_node_id) then re-insert, so a
       // re-extract REPLACES rather than appends — and a doc that no longer
       // yields a relation has its stale edge cleared.
-      if (params.extract_facts !== false && !retrievalOnly) {
+      //
+      // A reused summary (a table's cell commit or new title, A10 #7) made no
+      // relations: its edges are the ones the summary's own pass made, and
+      // stay. Rebuilding from an empty list used to drop them.
+      if (params.extract_facts !== false && !retrievalOnly && !parsed.reused) {
         await processRelations(node, ownerId, parsed, entityIdByName);
       }
 

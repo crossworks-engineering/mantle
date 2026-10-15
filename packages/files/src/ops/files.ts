@@ -51,7 +51,8 @@ import {
   inFlipTransaction,
   type Node,
   nodes,
-  notifyNodeIngested,
+  changedFields,
+  markContentChanged,
   oneRow,
   pgConstraint,
   StoreRefusedError,
@@ -109,18 +110,15 @@ export function fileDataAfterWrite(
 }
 
 /**
- * Column changes for a file whose bytes changed. The embedding goes with the
- * old bytes. A "migrated" mark (page_from_file made a page the living copy)
- * no longer holds: the file now has content the page never saw, and the mark
- * would keep search sending agents to the page.
+ * Column changes for a file whose bytes changed (the vector goes with the
+ * old bytes through markContentChanged). A "migrated" mark (page_from_file
+ * made a page the living copy) no longer holds: the file now has content the
+ * page never saw, and the mark would keep search sending agents to the page.
  */
 function columnsAfterContentChange(old: Node) {
-  return {
-    embedding: null,
-    ...(old.supersededReason === 'migrated'
-      ? { supersededBy: null, supersededReason: null, salience: 1 }
-      : {}),
-  };
+  return old.supersededReason === 'migrated'
+    ? { supersededBy: null, supersededReason: null, salience: 1 }
+    : {};
 }
 
 /**
@@ -450,7 +448,15 @@ export async function upsertFile(args: {
             })
             .where(eq(nodes.id, row.id))
             .returning();
-          const u = oneRow('files', rows, 'file');
+          const flipped = oneRow('files', rows, 'file');
+          // New bytes: the whole index again (the kind registry's `indexed`),
+          // announced when this transaction commits; a new name alone
+          // re-embeds.
+          const u =
+            (await markContentChanged(tx, { id: flipped.id, type: 'file' }, [
+              ...(sameContent ? [] : (['content'] as const)),
+              ...changedFields({ title: [row.title, nextTitle] }),
+            ])) ?? flipped;
           // Old passages go now, not when the re-extract lands: until then
           // (and for good, should it never run) search would quote the old
           // bytes.
@@ -467,10 +473,6 @@ export async function upsertFile(args: {
     ? await flipThenPlace({ ...placement, flip: (place) => flip(place) })
     : await flip(null);
   if (!updated) throw new Error('upsertFile: update returned no row');
-  // Notify the extractor again only when content changed.
-  if (!sameContent) {
-    await notifyNodeIngested(updated.id);
-  }
 
   return fileRowFromNode(updated);
 }
@@ -1025,12 +1027,13 @@ export async function syncFileFromDisk(args: {
           })
           .where(eq(nodes.id, existing.id))
           .returning({ id: nodes.id });
+        // New bytes: the whole index again, announced at commit.
+        await markContentChanged(tx, { id: existing.id, type: 'file' }, ['content']);
         await tx.delete(contentChunks).where(eq(contentChunks.nodeId, existing.id));
         return rows;
       }),
     );
     if (!updated) throw new Error('syncFileFromDisk: update returned no row');
-    await notifyNodeIngested(updated.id);
     return { status: 'updated', nodeId: updated.id };
   }
   // No tree row of this name: a folded member file (W6b) of this name in
@@ -1221,7 +1224,16 @@ export async function renameFileById(args: {
               })
               .where(eq(nodes.id, node.id))
               .returning();
-            const u = oneRow('files', rows, 'file');
+            const written = oneRow('files', rows, 'file');
+            // A new name re-embeds (the kind registry's `indexed`): the
+            // vector from the name and the summary it keeps, no model call;
+            // a name-only file re-runs its spine, no model either.
+            const u =
+              (await markContentChanged(
+                tx,
+                { id: node.id, type: 'file' },
+                changedFields({ title: [node.title, newFilename] }),
+              )) ?? written;
             if (onDisk) await place();
             return u;
           }),

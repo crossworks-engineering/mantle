@@ -31,7 +31,8 @@ import {
   agents,
   db,
   nodes,
-  notifyNodeIngested,
+  changedFields,
+  markContentChanged,
   type Node,
   withDeadlockRetry,
   withNodeDeleteHeads,
@@ -384,15 +385,6 @@ export async function updateJournal(
       delete newData.entry_date;
     }
   }
-  // A body change invalidates the extractor's prior summary/embedding. Kind /
-  // status / date are metadata only — they don't trigger re-extraction (the
-  // body carries the semantic payload), keeping edits cost-safe.
-  if (bodyChanged) {
-    delete newData.summary;
-    delete newData.summary_model;
-    delete newData.summary_at;
-    delete newData.entities;
-  }
   // Re-derive the title only when the caller didn't pass one AND the body
   // changed AND the stored title still looks auto-derived from the old body.
   let nextTitle: string | undefined;
@@ -401,21 +393,28 @@ export async function updateJournal(
   } else if (bodyChanged && node.title === deriveTitle((oldData.body as string) ?? '')) {
     nextTitle = deriveTitle(newData.body as string);
   }
-  const [updated] = await db
-    .update(nodes)
-    .set({
-      ...(nextTitle !== undefined ? { title: nextTitle } : {}),
-      ...(input.tags !== undefined ? { tags: dedupeTags(input.tags) } : {}),
-      data: newData,
-      ...(bodyChanged ? { embedding: null } : {}),
-      updatedAt: new Date(),
-    })
-    .where(eq(nodes.id, id))
-    .returning();
+  // What the index must redo (the kind registry's `indexed`): the body
+  // carries the semantic payload and re-extracts; a new title re-embeds.
+  // Kind / status / date are metadata only, keeping edits cost-safe.
+  const changed = changedFields({
+    title: [node.title, nextTitle ?? node.title],
+    body: [oldData.body, newData.body],
+  });
+  const updated = await db.transaction(async (tx) => {
+    const [row] = await tx
+      .update(nodes)
+      .set({
+        ...(nextTitle !== undefined ? { title: nextTitle } : {}),
+        ...(input.tags !== undefined ? { tags: dedupeTags(input.tags) } : {}),
+        data: newData,
+        updatedAt: new Date(),
+      })
+      .where(eq(nodes.id, id))
+      .returning();
+    if (!row) return row;
+    return (await markContentChanged(tx, { id, type: 'journal' }, changed)) ?? row;
+  });
   if (!updated) throw new Error('updateJournal: update returned no row');
-  if (bodyChanged) {
-    await notifyNodeIngested(id);
-  }
   return rowOf(updated);
 }
 

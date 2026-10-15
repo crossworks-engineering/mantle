@@ -25,7 +25,8 @@ import { and, desc, eq, ilike, or, sql } from 'drizzle-orm';
 import {
   db,
   nodes,
-  notifyNodeIngested,
+  changedFields,
+  markContentChanged,
   type Node,
   withDeadlockRetry,
   withNodeDeleteHeads,
@@ -241,7 +242,6 @@ export async function updateLocation(
   if (!node) return null;
   const oldData = (node.data ?? {}) as Record<string, unknown>;
   const newData: Record<string, unknown> = { ...oldData };
-  let textChanged = false;
 
   if (input.latitude !== undefined && Number.isFinite(input.latitude))
     newData.latitude = input.latitude;
@@ -251,13 +251,11 @@ export async function updateLocation(
     const b = input.body.trim();
     if (b) newData.body = b;
     else delete newData.body;
-    textChanged = true;
   }
   if (input.address !== undefined) {
     const a = input.address.trim();
     if (a) newData.address = a;
     else delete newData.address;
-    textChanged = true;
   }
   if (input.source !== undefined) {
     const s = input.source.trim();
@@ -266,29 +264,30 @@ export async function updateLocation(
   }
   if (input.raw !== undefined) newData.raw = input.raw;
 
-  // title/address feed the embedding — invalidate the prior summary so the
-  // extractor re-runs (mirrors journal/notes).
-  if (textChanged) {
-    delete newData.summary;
-    delete newData.summary_model;
-    delete newData.summary_at;
-    delete newData.entities;
-  }
-  const [updated] = await db
-    .update(nodes)
-    .set({
-      ...(input.title !== undefined
-        ? { title: input.title.trim().slice(0, 200) || node.title }
-        : {}),
-      ...(input.tags !== undefined ? { tags: dedupeTags(input.tags) } : {}),
-      data: newData,
-      ...(textChanged ? { embedding: null } : {}),
-      updatedAt: new Date(),
-    })
-    .where(eq(nodes.id, id))
-    .returning();
+  const title =
+    input.title !== undefined ? input.title.trim().slice(0, 200) || node.title : node.title;
+  // What the index must redo (the kind registry's `indexed`), compared by
+  // value: the body and the address re-extract, a new title re-embeds.
+  const changed = changedFields({
+    title: [node.title, title],
+    body: [oldData.body, newData.body],
+    address: [oldData.address, newData.address],
+  });
+  const updated = await db.transaction(async (tx) => {
+    const [row] = await tx
+      .update(nodes)
+      .set({
+        ...(input.title !== undefined ? { title } : {}),
+        ...(input.tags !== undefined ? { tags: dedupeTags(input.tags) } : {}),
+        data: newData,
+        updatedAt: new Date(),
+      })
+      .where(eq(nodes.id, id))
+      .returning();
+    if (!row) return row;
+    return (await markContentChanged(tx, { id, type: 'location' }, changed)) ?? row;
+  });
   if (!updated) throw new Error('updateLocation: update returned no row');
-  if (textChanged) await notifyNodeIngested(id);
   return rowOf(updated);
 }
 

@@ -1,0 +1,66 @@
+{
+  "reasons": {
+    "title-embeds": "A new title re-embeds (the kind registry's `indexed`, title: 'embed'): the vector is rebuilt from the title and the summary the item keeps, one embedding on the local embedder and no model call (the extractor's embed_only step; a table reuses its summary in the model step and rebuilds its profile passages locally; a name-only file re-runs its spine, no model either). On main a rename re-indexed nothing, so vector search and recall kept the old title.",
+    "unchanged-no-reindex": "A save that sends a field back unchanged re-indexes nothing: fields are compared by value (changedFields), as tasks, notes, journals and contacts already did. On main the field's presence in the save cleared the summary and queued a model pass, one per save.",
+    "reindex-flag-gone": "The page PATCH `reindex: false` flag is accepted and ignored: a doc written through PATCH is indexed like a commit (one model pass, as the same write without the flag). On main it left the index on the previous doc and pointed at a POST .../reindex route that never existed; no client sends it (the editor saves drafts and commits).",
+    "indexing-flip-resets": "A file whose indexing mode flips has its summary and vector dropped at once (field `indexing`: 'extract'), not only its completion marker: a file turned name-only stops answering from its content now, not when the re-run lands. The same work is queued as on main: one extractor pass (the name-only direction needs no model, the full direction runs it)."
+  },
+  "cells": {
+    "draw|rename": {
+      "now": "embed",
+      "why": "title-embeds"
+    },
+    "event|rename-same": {
+      "now": "none",
+      "why": "unchanged-no-reindex"
+    },
+    "file|indexing": {
+      "now": "extract",
+      "why": "indexing-flip-resets"
+    },
+    "file|rename": {
+      "now": "embed",
+      "why": "title-embeds"
+    },
+    "formula|edit:spec-same": {
+      "now": "none",
+      "why": "unchanged-no-reindex"
+    },
+    "formula|rename": {
+      "now": "embed",
+      "why": "title-embeds"
+    },
+    "journal|rename": {
+      "now": "embed",
+      "why": "title-embeds"
+    },
+    "location|edit:body-same": {
+      "now": "none",
+      "why": "unchanged-no-reindex"
+    },
+    "location|rename": {
+      "now": "embed",
+      "why": "title-embeds"
+    },
+    "note|rename": {
+      "now": "embed",
+      "why": "title-embeds"
+    },
+    "page|edit:doc-reindex-false": {
+      "now": "extract",
+      "why": "reindex-flag-gone"
+    },
+    "page|rename": {
+      "now": "embed",
+      "why": "title-embeds"
+    },
+    "secret|rename-same": {
+      "now": "none",
+      "why": "unchanged-no-reindex"
+    },
+    "table|rename": {
+      "now": "embed",
+      "why": "title-embeds"
+    }
+  }
+}

@@ -24,7 +24,8 @@ import { and, eq, ilike, or, sql } from 'drizzle-orm';
 import {
   db,
   nodes,
-  notifyNodeIngested,
+  changedFields,
+  markContentChanged,
   type Node,
   withDeadlockRetry,
   withNodeDeleteHeads,
@@ -306,19 +307,10 @@ export async function updateFormula(
     .limit(1);
   if (!node) return null;
 
-  const data = { ...((node.data ?? {}) as Record<string, unknown>) };
+  const oldData = (node.data ?? {}) as Record<string, unknown>;
+  const data = { ...oldData };
   const specChanged = input.spec !== undefined;
-  if (specChanged) {
-    data.spec = validate(input.spec);
-    // Drop the derived index alongside the embedding below. Keeping the old
-    // summary while nulling the embedding manufactures the exact `half_indexed`
-    // defect /debug/integrity hunts for, and until re-extraction lands
-    // formula_get would serve a summary describing the PREVIOUS spec.
-    delete data.summary;
-    delete data.summary_model;
-    delete data.summary_at;
-    delete data.entities;
-  }
+  if (specChanged) data.spec = validate(input.spec);
 
   const nextTitle = input.title?.trim()
     ? input.title.trim().slice(0, 200)
@@ -326,21 +318,29 @@ export async function updateFormula(
       ? ((data.spec as FormulaSpec).name ?? (data.spec as FormulaSpec).id).slice(0, 200)
       : undefined;
 
-  const [updated] = await db
-    .update(nodes)
-    .set({
-      ...(nextTitle !== undefined ? { title: nextTitle } : {}),
-      ...(input.tags !== undefined ? { tags: dedupeTags(input.tags) } : {}),
-      data,
-      // A changed spec invalidates the summary + embedding; the extractor
-      // rebuilds both off the notify below.
-      ...(specChanged ? { embedding: null } : {}),
-      updatedAt: new Date(),
-    })
-    .where(eq(nodes.id, id))
-    .returning();
+  // What the index must redo (the kind registry's `indexed`), compared by
+  // value: a changed spec re-extracts (the reset drops the summary with the
+  // vector, so formula_get never serves a summary of the previous spec, and
+  // no `half_indexed` row is made); a new title re-embeds.
+  const changed = changedFields({
+    title: [node.title, nextTitle ?? node.title],
+    spec: [oldData.spec, data.spec],
+  });
+  const updated = await db.transaction(async (tx) => {
+    const [row] = await tx
+      .update(nodes)
+      .set({
+        ...(nextTitle !== undefined ? { title: nextTitle } : {}),
+        ...(input.tags !== undefined ? { tags: dedupeTags(input.tags) } : {}),
+        data,
+        updatedAt: new Date(),
+      })
+      .where(eq(nodes.id, id))
+      .returning();
+    if (!row) return row;
+    return (await markContentChanged(tx, { id, type: 'formula' }, changed)) ?? row;
+  });
   if (!updated) throw new Error('updateFormula: update returned no row');
-  if (specChanged) await notifyNodeIngested(id);
   return rowOf(updated);
 }
 

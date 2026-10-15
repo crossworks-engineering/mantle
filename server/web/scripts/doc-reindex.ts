@@ -16,7 +16,7 @@
  */
 
 import { env } from '@mantle/config';
-import { closeDb, getDefaultWorker, resolveSingleOwnerId } from '@mantle/db';
+import { closeDb, getDefaultWorker, resignalNode, resolveSingleOwnerId } from '@mantle/db';
 import {
   estimateDocReindexCost,
   extractRunHistory,
@@ -72,7 +72,7 @@ async function main() {
     // Nothing to clear: a candidate has no summary or embedding to go stale.
     const r = await runBatch(batch, {
       timeoutMs: batchTimeoutMin * 60_000,
-      prepare: async () => {},
+      prepare: resignalNode,
     });
     done = done.concat(r.done);
     if (r.timedOut.length > 0) {

@@ -22,7 +22,7 @@
  */
 
 import { and, eq, sql } from 'drizzle-orm';
-import { db, nodes, notifyNodeIngested, type Node } from '@mantle/db';
+import { db, markContentChanged, nodes, type Node } from '@mantle/db';
 import { InputError } from '@mantle/std';
 
 export type IndexingMode = 'full' | 'metadata';
@@ -105,15 +105,15 @@ export function metadataSpineText(node: Pick<Node, 'title' | 'path' | 'tags' | '
  * for every file whose EFFECTIVE mode this changes. Returns how many were
  * queued.
  *
- * The queueing goes through the ordinary extract pipeline (notifyNodeIngested
+ * The queueing goes through the ordinary extract pipeline (markContentChanged
  * → pg-boss), one job per file — never a burst loop. The metadata direction
  * is LLM-free (spine + local embedding); the full direction re-runs real
  * extraction, which is exactly what the owner asked for by turning content
  * indexing ON.
  *
  * Idempotency plumbing: the extractor's `already_extracted` guard would
- * swallow the re-run, so every re-queued file gets `extract_completed_at`
- * cleared. `data.indexing_applied` (stamped by the extractor) records which
+ * swallow the re-run, so every re-queued file has its index reset
+ * (markContentChanged). `data.indexing_applied` (stamped by the extractor) records which
  * mode a file was LAST indexed under, so only files whose effective mode
  * actually changed are touched — flipping a flag to the value it already has
  * queues nothing.
@@ -170,9 +170,10 @@ export async function setIndexingMode(args: {
  * longer matches its effective one. Shared by the flag toggle above and by
  * MOVES — a file dragged into a name-only gallery must shed its content
  * index, and one dragged out must gain it, exactly as if the flag had been
- * flipped. Clears `extract_completed_at` (the already_extracted guard would
- * swallow the re-run) and notifies through the ordinary queue, one job per
- * file. Files already indexed the right way are untouched.
+ * flipped. Resets the file's index through markContentChanged (the summary
+ * and the vector go, so the already_extracted guard cannot swallow the
+ * re-run) and notifies through the ordinary queue, one job per file. Files
+ * already indexed the right way are untouched.
  */
 export async function reconcileFilesIndexing(
   ownerId: string,
@@ -184,9 +185,11 @@ export async function reconcileFilesIndexing(
     const { effective } = await resolveEffectiveIndexing(ownerId, f);
     const applied = fData.indexing_applied === 'metadata' ? 'metadata' : 'full';
     if (effective === applied) continue; // already indexed the right way
-    delete fData.extract_completed_at; // defeat the already_extracted guard
-    await db.update(nodes).set({ data: fData, updatedAt: new Date() }).where(eq(nodes.id, f.id));
-    await notifyNodeIngested(f.id);
+    // The mode changed: the index again (the kind registry's `indexed`). The
+    // reset drops the summary and the vector now, so a file turned name-only
+    // stops answering from its content at once rather than when the re-run
+    // lands; announced when this transaction commits.
+    await db.transaction((tx) => markContentChanged(tx, { id: f.id, type: 'file' }, ['indexing']));
     requeued++;
   }
   return requeued;

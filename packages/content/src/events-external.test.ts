@@ -40,13 +40,15 @@ const h = vi.hoisted(() => ({
   updates: [] as Record<string, unknown>[],
   inserted: [] as Record<string, unknown>[],
   conflictClauses: 0,
-  notified: [] as string[],
+  /** markContentChanged's calls: the item and the fields it was told of. */
+  marked: [] as Array<{ id: string; type: string; fields: readonly string[] }>,
 }));
 
 vi.mock('@mantle/db', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@mantle/db')>();
-  const db = {
+  const db: Record<string, unknown> = {
     ...actual.db,
+    transaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) => fn(db)),
     select: vi.fn(() => ({
       from: vi.fn().mockReturnThis(),
       where: vi.fn().mockReturnThis(),
@@ -90,7 +92,14 @@ vi.mock('@mantle/db', async (importOriginal) => {
     withDeadlockRetry: vi.fn((run: () => Promise<unknown>) => run()),
     withNodeInsertHeads: vi.fn(viaStub),
     withNodeDeleteHeads: vi.fn(viaStub),
-    notifyNodeIngested: vi.fn(async (id: string) => void h.notified.push(id)),
+    // The reset and its announcement (A10 #7): recorded here; what they do
+    // on a real database is server/web/server/a10-content-changed.db.test.ts.
+    markContentChanged: vi.fn(
+      async (_tx: unknown, node: { id: string; type: string }, fields: readonly string[]) => {
+        h.marked.push({ id: node.id, type: node.type, fields });
+        return null;
+      },
+    ),
   };
 });
 import { upsertExternalEvent } from './events';
@@ -133,7 +142,7 @@ beforeEach(() => {
   h.updates.length = 0;
   h.inserted.length = 0;
   h.conflictClauses = 0;
-  h.notified.length = 0;
+  h.marked.length = 0;
 });
 
 describe('upsertExternalEvent', () => {
@@ -156,9 +165,9 @@ describe('upsertExternalEvent', () => {
     expect(h.inserted).toHaveLength(1);
     expect(h.updates).toHaveLength(1);
     expect(res.title).toBe('Standup');
-    // The update path owns the notify, because ON CONFLICT DO NOTHING fires no
-    // insert trigger and the row is left with a null embedding.
-    expect(h.notified).toEqual(['existing']);
+    // The update path owns the announcement, because ON CONFLICT DO NOTHING
+    // fires no insert trigger.
+    expect(h.marked).toEqual([{ id: 'existing', type: 'event', fields: ['title'] }]);
   });
 
   it('LOST RACE then still missing: reports rather than spinning', async () => {
@@ -177,7 +186,7 @@ describe('upsertExternalEvent', () => {
     await upsertExternalEvent('o1', INPUT);
     expect(h.updates).toEqual([]);
     expect(h.inserted).toEqual([]);
-    expect(h.notified).toEqual([]);
+    expect(h.marked).toEqual([]);
   });
 
   it('drops stale extractor output when the content really changed', async () => {
@@ -185,13 +194,10 @@ describe('upsertExternalEvent', () => {
       stored({ title: 'Old title', data: { ...stored().data, summary: 's', entities: ['x'] } }),
     ];
     await upsertExternalEvent('o1', INPUT);
-    const patch = h.updates[0]!;
-    const data = patch.data as Record<string, unknown>;
     // The summary described the OLD event; keeping it would leave the brain
-    // answering from a meeting that moved.
-    expect(data).not.toHaveProperty('summary');
-    expect(data).not.toHaveProperty('entities');
-    expect(patch.embedding).toBeNull();
-    expect(h.notified).toEqual(['existing']);
+    // answering from a meeting that moved. The changed title is named to
+    // markContentChanged, which drops the summary keys and the vector (an
+    // event's title is 'extract' in the kind registry).
+    expect(h.marked).toEqual([{ id: 'existing', type: 'event', fields: ['title'] }]);
   });
 });

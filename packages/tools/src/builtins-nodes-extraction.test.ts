@@ -19,7 +19,7 @@
  *    filter and the limit (default 100), because the limit is the only cap
  *    on how much work one call can enqueue.
  *
- * The db select chain and `notifyNodeIngested` are stubbed at @mantle/db.
+ * The db select chain and `resignalNode` are stubbed at @mantle/db.
  */
 
 import { describe, expect, it, vi, beforeEach } from 'vitest';
@@ -45,7 +45,7 @@ vi.mock('@mantle/db', async (importOriginal) => {
   return {
     ...actual,
     db: { ...actual.db, select: vi.fn(() => chain) },
-    notifyNodeIngested: vi.fn(),
+    resignalNode: vi.fn(),
   };
 });
 vi.mock('@mantle/search', () => ({ resolveSupersededTargets: vi.fn() }));
@@ -57,7 +57,7 @@ vi.mock('@mantle/content', () => ({
 }));
 
 import * as dbmod from '@mantle/db';
-import { notifyNodeIngested } from '@mantle/db';
+import { resignalNode } from '@mantle/db';
 import { INGEST_TOOLS } from './builtins-nodes';
 import { checkToolPreconditions } from './preconditions';
 import type { BuiltinToolDef, ToolHandlerContext } from './types';
@@ -99,7 +99,7 @@ beforeEach(() => {
   selectRows = [];
   whereArgs.length = 0;
   limitArgs.length = 0;
-  vi.mocked(notifyNodeIngested).mockResolvedValue(undefined);
+  vi.mocked(resignalNode).mockResolvedValue(undefined);
 });
 
 describe('process_extraction single node', () => {
@@ -119,7 +119,7 @@ describe('process_extraction single node', () => {
     expect(refused).not.toBeNull();
     expect(errorOf(refused!)).toMatch(new RegExp(`node ${NODE} not found`));
     expect(lookup).toHaveBeenCalledWith('o1', NODE);
-    expect(notifyNodeIngested).not.toHaveBeenCalled();
+    expect(resignalNode).not.toHaveBeenCalled();
   });
 
   it('fires exactly one signal for the chosen node and runs no sweep', async () => {
@@ -132,8 +132,8 @@ describe('process_extraction single node', () => {
       { ...ctx, step: { setOutput, setMeta: vi.fn(), addTokens: vi.fn(), addCost: vi.fn() } },
     );
     expect(outputOf(res)).toEqual({ fired: 1, node_id: NODE });
-    expect(notifyNodeIngested).toHaveBeenCalledTimes(1);
-    expect(notifyNodeIngested).toHaveBeenCalledWith(NODE);
+    expect(resignalNode).toHaveBeenCalledTimes(1);
+    expect(resignalNode).toHaveBeenCalledWith(NODE);
     expect(dbmod.db.select).toHaveBeenCalledTimes(1);
     expect(limitArgs).toEqual([1]);
     expect(setOutput).toHaveBeenCalledWith({ fired: 1, node_id: NODE });
@@ -145,7 +145,7 @@ describe('process_extraction single node outside the scope (W7a fix round 1, L1)
     selectRows = [];
     const res = await extraction.handler({ node_id: NODE }, ctx);
     expect(errorOf(res)).toMatch(new RegExp(`node ${NODE} not found`));
-    expect(notifyNodeIngested).not.toHaveBeenCalled();
+    expect(resignalNode).not.toHaveBeenCalled();
     expect(paramsOf(whereArgs[0])).toContain('o1');
   });
 });
@@ -155,13 +155,13 @@ describe('process_extraction sweep', () => {
     selectRows = [{ id: 'a' }, { id: 'b' }];
     expect(outputOf(await extraction.handler({}, ctx))).toEqual({ fired: 2 });
     expect(paramsOf(whereArgs[0])).toContain('o1');
-    expect(vi.mocked(notifyNodeIngested).mock.calls.map((c) => c[0])).toEqual(['a', 'b']);
+    expect(vi.mocked(resignalNode).mock.calls.map((c) => c[0])).toEqual(['a', 'b']);
   });
 
   it('fires nothing when nothing is eligible', async () => {
     expect(outputOf(await extraction.handler({}, ctx))).toEqual({ fired: 0 });
     expect(dbmod.db.select).toHaveBeenCalledTimes(1);
-    expect(notifyNodeIngested).not.toHaveBeenCalled();
+    expect(resignalNode).not.toHaveBeenCalled();
   });
 
   it('caps the sweep at 100 by default and at the given limit otherwise', async () => {

@@ -22,7 +22,8 @@ import {
   db,
   nodes,
   draws,
-  notifyNodeIngested,
+  changedFields,
+  markContentChanged,
   type Node,
   withBusyRetry,
   headsOrSpace,
@@ -596,18 +597,25 @@ export async function updateDraw(
   if (input.icon !== undefined) newData.icon = input.icon;
   if (input.description !== undefined) newData.description = input.description;
 
-  const [row] = await db
-    .update(nodes)
-    .set({
-      ...(input.title !== undefined
-        ? { title: input.title.trim().slice(0, 200) || 'Untitled drawing' }
-        : {}),
-      ...(input.tags !== undefined ? { tags: dedupeTags(input.tags) } : {}),
-      data: newData,
-      updatedAt: new Date(),
-    })
-    .where(eq(nodes.id, id))
-    .returning();
+  const title =
+    input.title !== undefined ? input.title.trim().slice(0, 200) || 'Untitled drawing' : node.title;
+  // A new title re-embeds (the kind registry's `indexed`); the look and the
+  // tags feed no index.
+  const changed = changedFields({ title: [node.title, title] });
+  const row = await db.transaction(async (tx) => {
+    const [r] = await tx
+      .update(nodes)
+      .set({
+        ...(input.title !== undefined ? { title } : {}),
+        ...(input.tags !== undefined ? { tags: dedupeTags(input.tags) } : {}),
+        data: newData,
+        updatedAt: new Date(),
+      })
+      .where(eq(nodes.id, id))
+      .returning();
+    if (!r) return r;
+    return (await markContentChanged(tx, { id, type: 'draw' }, changed)) ?? r;
+  });
   if (!row) return null;
 
   const [d] = await db
@@ -737,12 +745,6 @@ async function commitDrawOnce(
     {};
   const sceneText = drawSceneText(normalized, refsForText);
   const sceneSvg = acceptSceneSvg(opts.svg);
-  const newData = { ...((node.data ?? {}) as Record<string, unknown>) };
-  delete newData.summary;
-  delete newData.summary_model;
-  delete newData.summary_at;
-  delete newData.entities;
-
   const result = await withDrawLock(
     id,
     async (tx, locked) => {
@@ -753,12 +755,15 @@ async function commitDrawOnce(
       }
       // An embed changes no one's access (W5b2): the database keeps the
       // edges a committed scene places.
-      const [row] = await tx
+      // A commit is a new scene: the whole index again (the kind registry's
+      // `indexed`), announced when this transaction commits.
+      const [committed] = await tx
         .update(nodes)
-        .set({ data: newData, embedding: null, updatedAt: new Date() })
+        .set({ updatedAt: new Date() })
         .where(eq(nodes.id, id))
         .returning();
-      if (!row) throw new Error('commitDraw: update returned no row');
+      if (!committed) throw new Error('commitDraw: update returned no row');
+      const row = (await markContentChanged(tx, { id, type: 'draw' }, ['scene'])) ?? committed;
       await tx
         .update(draws)
         .set({
@@ -788,7 +793,6 @@ async function commitDrawOnce(
     { heads: true },
   );
 
-  if (result.ok) await notifyNodeIngested(id);
   return result;
 }
 
