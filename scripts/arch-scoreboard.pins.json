@@ -58,7 +58,7 @@
   "reindexSummaryClears": 0,
   "reindexAllowedFiles": 8,
   "spend_handSpend": 0,
-  "spend_handSpend_allowed": 22,
+  "spend_handSpend_allowed": 19,
   "spend_providerBypass": 0,
   "spend_providerBypass_allowed": 8,
   "store_tabledb_files": 1,
