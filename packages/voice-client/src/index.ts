@@ -35,8 +35,8 @@ export * from './catalogs/assemblyai';
 export * from './catalogs/deepseek';
 export * from './catalogs/mammouth';
 
-// Pure wiring metadata (no adapter modules pulled — registry.ts only imports
-// the retry helper, which is itself dependency-free).
+// Pure wiring metadata (no adapter modules pulled: registry.ts imports types
+// only).
 export { isProviderWired, wiredCapabilitiesFor, WIRED_PROVIDERS } from './adapters/registry';
 export type { WiredCapability } from './adapters/registry';
 

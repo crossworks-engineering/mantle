@@ -55,7 +55,7 @@ import { DEFAULT_MAX_RETRIES, isEmptyJsonBodyError } from './retry';
 import { mapOpenAICompatFinishReason } from './openai-compat';
 import { StreamingThinkScrubber } from './think-scrubber';
 import { ReasoningDetailsAccumulator, normalizeReasoningDetails } from './reasoning-accum';
-import { errorMessage } from '@mantle/std';
+import { backoffMs, errorMessage, withRetry } from '@mantle/std';
 import { providerFetch } from './provider-fetch';
 
 // Backoff for the empty-body retry below — mirrors retry.ts's full-jitter shape.
@@ -564,29 +564,30 @@ async function openrouterChat(opts: ChatOptions): Promise<ChatResult> {
   const maxRetries = opts.maxRetries ?? DEFAULT_MAX_RETRIES;
   const startedAt = Date.now();
   let result: Awaited<ReturnType<typeof client.chat.send>>;
-  for (let attempt = 0; ; attempt += 1) {
-    try {
-      result = await sendOnce();
-      break;
-    } catch (err) {
-      if (isEmptyJsonBodyError(err) && attempt < maxRetries) {
-        const delay = Math.round(
-          Math.random() * Math.min(RETRY_MAX_DELAY_MS, RETRY_BASE_DELAY_MS * 2 ** attempt),
-        );
+  try {
+    result = await withRetry(sendOnce, {
+      retries: maxRetries,
+      retryOn: (f) => isEmptyJsonBodyError(f.error),
+      delayMs: (retry) =>
+        backoffMs(retry - 1, {
+          baseMs: RETRY_BASE_DELAY_MS,
+          maxMs: RETRY_MAX_DELAY_MS,
+          jitter: 'full',
+        }),
+      onRetry: ({ retry, delayMs }) => {
         console.warn(
-          `[openrouter-chat] ${opts.model}: empty/truncated response — ` +
-            `retry ${attempt + 1}/${maxRetries} in ${delay}ms`,
+          `[openrouter-chat] ${opts.model}: empty/truncated response, ` +
+            `retry ${retry}/${maxRetries} in ${delayMs}ms`,
         );
-        await new Promise((r) => setTimeout(r, delay));
-        continue;
-      }
-      // Non-2xx → OpenRouterError; its top-level `message` is the generic OR
-      // description ("Provider returned error", "Unauthorized") — the actionable
-      // upstream detail lives in `.error.message` / `.error.metadata` and the raw
-      // body on `.body`. An exhausted empty-body retry → a contextful wrap. Both
-      // go through enrichOpenRouterError so the trace shows what actually failed.
-      throw enrichOpenRouterError(err, opts.model, Date.now() - startedAt);
-    }
+      },
+    });
+  } catch (err) {
+    // Non-2xx: OpenRouterError; its top-level `message` is the generic OR
+    // description ("Provider returned error", "Unauthorized"); the actionable
+    // upstream detail lives in `.error.message` / `.error.metadata` and the raw
+    // body on `.body`. An exhausted empty-body retry: a contextful wrap. Both
+    // go through enrichOpenRouterError so the trace shows what actually failed.
+    throw enrichOpenRouterError(err, opts.model, Date.now() - startedAt);
   }
   if (!('choices' in result)) {
     throw new Error('openrouter-chat: unexpected streaming response (no `choices`)');

@@ -1,3 +1,4 @@
+import { backoffMs, withRetry } from '@mantle/std';
 import { classifyProviderError } from './provider-error';
 
 /**
@@ -7,6 +8,7 @@ import { classifyProviderError } from './provider-error';
  * extractor pool, a windows backfill) can now meet a provider's rate limit.
  * A 429 waits and retries, at most {@link RATE_LIMIT_RETRIES} times
  * (2 s, 4 s, 8 s, 16 s, with jitter); anything else throws at once, as before.
+ * The loop is @mantle/std withRetry since A10 #10, with these numbers.
  *
  * A 429 that says the account has no credits (OpenAI's `insufficient_quota`)
  * is not a rate limit: no wait fixes it, so it throws at once too
@@ -21,17 +23,14 @@ export function isRateLimitError(err: unknown): boolean {
   return classifyProviderError(err)?.code === 'rate_limit';
 }
 
-export async function withRateLimitBackoff<T>(
+export function withRateLimitBackoff<T>(
   call: () => Promise<T>,
   sleep: (ms: number) => Promise<void> = (ms) => new Promise((r) => setTimeout(r, ms)),
 ): Promise<T> {
-  for (let attempt = 0; ; attempt++) {
-    try {
-      return await call();
-    } catch (err) {
-      if (attempt >= RATE_LIMIT_RETRIES || !isRateLimitError(err)) throw err;
-      const base = 2_000 * 2 ** attempt;
-      await sleep(base + Math.floor(Math.random() * base * 0.25));
-    }
-  }
+  return withRetry(call, {
+    retries: RATE_LIMIT_RETRIES,
+    retryOn: (f) => isRateLimitError(f.error),
+    delayMs: (retry) => backoffMs(retry - 1, { baseMs: 2_000, jitter: 'quarter' }),
+    sleep,
+  });
 }

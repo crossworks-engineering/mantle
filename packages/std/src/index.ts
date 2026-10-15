@@ -203,3 +203,33 @@ export {
   withFenceNote,
 } from './fence';
 export type { Fence } from './fence';
+
+export {
+  TimeoutError,
+  backoffMs,
+  formatMs,
+  parseRetryAfterMs,
+  timeoutSignal,
+  withRetry,
+  withTimeout,
+  type BackoffShape,
+  type RetryFailure,
+  type RetryOptions,
+} from './http';
+export { NET_TIMEOUTS, PROVIDER_TIMEOUTS } from './timeouts';
+export {
+  PROVIDER_ERROR_PUBLIC,
+  PROVIDER_ERROR_REASONS,
+  ProviderHttpError,
+  RETRYABLE_STATUS,
+  classifyProviderError,
+  isAccountError,
+  isEmptyJsonBodyError,
+  isRouteDownError,
+  providerErrorPublicText,
+  providerErrorStatus,
+  retryDecision,
+  type ProviderErrorClass,
+  type ProviderErrorCode,
+} from './provider-error';
+export { CircuitBreaker } from './breaker';
