@@ -40,6 +40,19 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const snapOf = (section: string) =>
   join(HERE, '__snapshots__', `a6b-exit-sweep.${section}.${MODE}.txt`);
 
+// Telegram sends are recorded, never sent (an approval card, a DM).
+const tg = vi.hoisted(() => ({ sent: [] as string[] }));
+vi.mock('@mantle/telegram', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@mantle/telegram')>()),
+  sendApprovalCard: async (account: { botUsername: string }, chatId: string, card: unknown) => {
+    tg.sent.push(`card ${account.botUsername} ${chatId} ${JSON.stringify(card)}`);
+  },
+  sendMessage: async (account: { botUsername: string }, chatId: string, text: string) => {
+    tg.sent.push(`message ${account.botUsername} ${chatId} ${text}`);
+    return null;
+  },
+}));
+
 vi.mock('@/lib/audit', () => ({
   auditFireAndForget: () => undefined,
   requestMetaFrom: () => ({}),
@@ -904,5 +917,148 @@ describe.skipIf(!URL)('the A6b exit sweep', () => {
         );
       }
     });
+  });
+  // ── login-telegram: a login's chats, the moderated chats, approval cards,
+  //    the replay of a login's own Telegram history ───────────────────────
+  it('telegram', async () => {
+    const tools = await import('@mantle/tools');
+    const at = await import('@/lib/agent-telegram');
+    // P's assistant has a bot; its chats: modP's and userQ's (allowed), a
+    // pending one, a denied one. Admin's assistant has a bot with the
+    // owner's chat.
+    const CH = { P: id(701), admin: id(702) };
+    const BOT = { P: id(711), admin: id(712) };
+    const CHAT = {
+      modP: id(721),
+      userQ: id(722),
+      pending: id(723),
+      denied: id(724),
+      owner: id(725),
+    };
+    for (const [k, v] of Object.entries(BOT)) names.set(v, `bot:${k}`);
+    for (const [k, v] of Object.entries(CHAT)) names.set(v, `chat:${k}`);
+    for (const k of ['P', 'admin'] as const) {
+      await x(sql`insert into channels (id, owner_id, agent_id, type, display_name, credentials_enc)
+                  values (${CH[k]}, ${L.owner}, ${AG[k]}, 'telegram', ${`${k} bot`}, decode('00', 'hex'))`);
+      await x(sql`insert into telegram_accounts (id, user_id, bot_username, branch_path, channel_id)
+                  values (${BOT[k]}, ${L.owner}, ${`a6b_${k}_bot`}, 'telegram', ${CH[k]})`);
+    }
+    const chat = (cid: string, bot: string, tid: string, status: string, login: string | null) =>
+      x(sql`insert into telegram_chats (id, account_id, user_id, telegram_chat_id, chat_type, title,
+                                        allowlist_status, login_id, last_message_at, pairing_code)
+            values (${cid}, ${bot}, ${L.owner}, ${tid}, 'private', ${`chat ${tid}`},
+                    ${status}::telegram_allowlist_status, ${login},
+                    now() - make_interval(mins => ${Number(tid)}),
+                    ${status === 'pending' ? `code${tid}` : null})`);
+    await chat(CHAT.modP, BOT.P, '101', 'allowed', L.modP);
+    await chat(CHAT.userQ, BOT.P, '102', 'allowed', L.userQ);
+    await chat(CHAT.pending, BOT.P, '103', 'pending', null);
+    await chat(CHAT.denied, BOT.P, '104', 'denied', null);
+    await chat(CHAT.owner, BOT.admin, '105', 'allowed', L.owner);
+    // Messages (each on a node of its chat's login): the owner's, adminAll's
+    // (on the Admin bot, a chat since paired away), modP's.
+    const msg = async (
+      n: number,
+      chatId: string,
+      bot: string,
+      login: string | null,
+      text: string,
+    ) => {
+      const nid = id(730 + n);
+      names.set(nid, `tgnode:${n}`);
+      await x(sql`insert into nodes (id, owner_id, type, title, path, login_id)
+                  values (${nid}, ${L.owner}, 'note', ${`tg ${n}`}, 'telegram', ${login})`);
+      await x(sql`insert into telegram_messages (node_id, account_id, chat_id, text, sent_at, direction, from_name)
+                  values (${nid}, ${bot}, ${chatId}, ${text}, ${`2026-05-0${n} 10:00+00`}::timestamptz, 'inbound', 'Pat')`);
+    };
+    await msg(1, CHAT.owner, BOT.admin, L.owner, 'owner says hi');
+    await msg(2, CHAT.owner, BOT.admin, L.adminAll, 'adminAll said this once');
+    await msg(3, CHAT.modP, BOT.P, L.modP, 'modP says hi');
+    await msg(4, CHAT.owner, BOT.admin, null, 'from before logins');
+    // Pending calls: adminAll's, modP's, an elevated one of modP's, one with
+    // no login.
+    const PEND = { adminAll: id(741), modP: id(742), elevated: id(743), none: id(744) };
+    for (const [k, v] of Object.entries(PEND)) names.set(v, `pending:${k}`);
+    await x(sql`insert into pending_tool_calls (id, owner_id, tool_slug, args, status, login_id, workspace_id, elevated)
+                values (${PEND.adminAll}, ${L.owner}, 'note_create', '{}'::jsonb, 'pending', ${L.adminAll}, ${adminWs}, null),
+                       (${PEND.modP}, ${L.owner}, 'note_create', '{}'::jsonb, 'pending', ${L.modP}, ${W.P}, null),
+                       (${PEND.elevated}, ${L.owner}, 'note_create', '{}'::jsonb, 'pending', ${L.modP}, ${W.P},
+                        '{"elevated":true,"reason":"x"}'::jsonb),
+                       (${PEND.none}, ${L.owner}, 'note_create', '{}'::jsonb, 'pending', null, null, null)`);
+    // adminAll pairs a chat on the Admin bot, so its card has somewhere to go.
+    await chat(id(726), BOT.admin, '106', 'allowed', L.adminAll);
+    names.set(id(726), 'chat:adminAll');
+    const errors: string[] = [];
+    const spy = vi.spyOn(console, 'error').mockImplementation((...a: unknown[]) => {
+      errors.push(a.map((v) => (v instanceof Error ? v.message : String(v))).join(' '));
+    });
+    try {
+      await section('telegram', async (cell) => {
+        for (const who of LOGINS) {
+          cell(
+            `GET /api/telegram/my-chats ${who}`,
+            await http(who, 'GET', '/api/telegram/my-chats'),
+          );
+          cell(
+            `GET /api/telegram/moderated-chats ${who}`,
+            await http(who, 'GET', '/api/telegram/moderated-chats'),
+          );
+          cell(
+            `GET /api/agents/:P/telegram ${who}`,
+            await http(who, 'GET', `/api/agents/${AG.P}/telegram`),
+          );
+        }
+        for (const [ctx, run] of CONTEXTS) {
+          for (const who of LOGINS) {
+            cell(
+              `listMyTelegramChats ${who} ${ctx}`,
+              await answer(() => run(() => at.listMyTelegramChats(L.owner, L[who]))),
+            );
+          }
+          for (const who of ['owner', 'adminAll', 'adminNoUsers', 'modP', 'userQ'] as const) {
+            cell(
+              `listModeratedTelegramChats ${who} ${ctx}`,
+              await answer(() => run(() => at.listModeratedTelegramChats(L.owner, L[who]))),
+            );
+          }
+          for (const [pk, pid] of Object.entries(PEND)) {
+            tg.sent.length = 0;
+            errors.length = 0;
+            const done = await answer(() =>
+              run(() =>
+                tools.notifyPendingCreated({
+                  ownerId: L.owner,
+                  pendingId: pid,
+                  toolSlug: 'note_create',
+                  args: { title: 't' },
+                }),
+              ),
+            );
+            cell(`notifyPendingCreated ${pk} ${ctx}`, {
+              done,
+              sent: [...tg.sent],
+              errors: errors.filter((e) => e.includes('[pending:notify]')),
+            });
+          }
+          for (const who of ['owner', 'adminAll', 'modP'] as const) {
+            cell(
+              `replay_window telegram asker=${who} ${ctx}`,
+              await answer(() =>
+                run(() =>
+                  tools
+                    .getBuiltin('replay_window')!
+                    .handler({ from: '2026-05-01', to: '2026-05-31', surface: 'telegram' }, {
+                      ownerId: L.owner,
+                      surface: { kind: 'web', loginId: L[who] },
+                    } as never),
+                ),
+              ),
+            );
+          }
+        }
+      });
+    } finally {
+      spy.mockRestore();
+    }
   });
 });
