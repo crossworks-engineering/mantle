@@ -4862,7 +4862,7 @@ to record) and every cell answering as main or a named change
 (NAMED_CHANGES, with `back`, `now` and `was`). All five pass in off, warn
 and on at 0f29a881c. The file is in vitest.actor-on.config.ts.
 
-**Known failing (unit suite, DATABASE_URL unset, at 4fa13e9 era):**
+**Known failing (unit suite, DATABASE_URL unset, at 0f29a881c):**
 migrations-journal (the 0292 gap, expected), and mocked parity tests that
 need the new imports or answers: packages/mcp-core mcp-call-snapshot,
 packages/tools builtins-read-scope (replay_window), dispatch-parity,
@@ -4896,8 +4896,7 @@ a4-guard-sweep. Not investigated yet: most mock `@mantle/db` without
    the AS_SYSTEM_TURN_REASONS list and its viewer.test.ts pins, the
    allowlist header's numbers, this section's prose; the full gates.
 
-Workstation (jasons@192.168.100.75): worktrees `a6b` (branch, pg port
-56281) and `a6b-main` (main 219e18ed4 plus the sweep file, port 56282),
+Workstation (jasons@192.168.100.75): worktrees `a6b` (branch, pg port 56281) and `a6b-main` (main 219e18ed4 plus the sweep file, port 56282),
 containers `a6b_pg`, `a6b-main_pg`; master key in /tmp/a6b-master-key;
 scripts /tmp/a6b-verify.sh, /tmp/a6b-rec.sh, /tmp/a6b-sync.sh. Clean up with
 docker rm -f -v and git worktree remove when done.
