@@ -29,6 +29,7 @@ import {
   parseFlag,
   parseNumber,
   type EnvNumberName,
+  type FeatureName,
 } from '@mantle/config';
 import {
   isTurnStreamingEnabled,
@@ -86,7 +87,7 @@ const PROFILE_INPUTS: unknown[] = [undefined, null, true, false, 'true', 'false'
 type Reader = { env: string; kind: 'flag' | 'number'; read: () => Value };
 const flag = (name: string, read: () => boolean): Reader => ({ env: name, kind: 'flag', read });
 const num = (name: string, read: () => number): Reader => ({ env: name, kind: 'number', read });
-const feat = (name: string, f: Parameters<typeof feature>[0]) =>
+const feat = (name: string, f: FeatureName) =>
   flag(name, () => (feature as (n: string) => boolean)(f));
 const reg = (name: EnvNumberName, plus = 0) =>
   num(name, () => (envNum as (n: string) => number)(name) + plus);
