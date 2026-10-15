@@ -142,6 +142,26 @@ const NAMED_CHANGES: Record<
   ],
   telegram: [
     {
+      cells: /^replay_window telegram asker=\w+ (read|write|turn):/,
+      reason:
+        "the replay of a login's Telegram history asked in a scope for ANOTHER asker (a surface " +
+        "that names a login other than the scope's) answers none: its definer holds the scope to " +
+        'its own login (mantle_tg_replay). A turn asks for its own login (its stamp, its scope). ' +
+        'Stricter, never looser.',
+      now: JSON.stringify({
+        ok: {
+          ok: true,
+          output: {
+            window: { from: '<time>', to: '<time>' },
+            surface: 'telegram',
+            count: 0,
+            truncated: false,
+            turns: [],
+          },
+        },
+      }),
+    },
+    {
       cells: /^(listMyTelegramChats|listModeratedTelegramChats) \w+ (read|write|turn):/,
       reason:
         "a login's own chats and its moderated chats asked in a scope for ANOTHER login answer " +
