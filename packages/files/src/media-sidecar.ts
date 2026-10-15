@@ -1,5 +1,5 @@
 import { env, serviceEnabled } from '@mantle/config';
-import { errorMessage } from '@mantle/std';
+import { errorMessage, NET_TIMEOUTS, timeoutSignal } from '@mantle/std';
 
 /**
  * Client for the media sidecar (infra/media-sidecar) — yt-dlp + ffmpeg behind
@@ -100,7 +100,9 @@ function decodeHeader(raw: string | null): string | null {
 }
 
 function asFailure(err: unknown, timeoutMs: number): MediaResult<never> {
-  const aborted = err instanceof Error && err.name === 'AbortError';
+  // The deadline (timeoutSignal) raises a TimeoutError; a bare abort, AbortError.
+  const aborted =
+    err instanceof Error && (err.name === 'AbortError' || err.name === 'TimeoutError');
   return {
     ok: false,
     code: aborted ? 'timeout' : 'unreachable',
@@ -139,8 +141,7 @@ async function exchange<T>(
 ): Promise<MediaResult<T>> {
   const cfg = config();
   if (!cfg) return NOT_ENABLED;
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  const signal = timeoutSignal(timeoutMs);
   try {
     const res = await fetch(`${cfg.url}${path}`, {
       ...init,
@@ -148,14 +149,12 @@ async function exchange<T>(
         Authorization: `Bearer ${cfg.token}`,
         ...(init.headers ?? {}),
       },
-      signal: ctrl.signal,
+      signal,
     });
     if (!res.ok) return await envelopeError(res);
     return await consume(res);
   } catch (err) {
     return asFailure(err, timeoutMs);
-  } finally {
-    clearTimeout(timer);
   }
 }
 
@@ -215,7 +214,7 @@ function consumeMedia(maxBytes: number) {
 const JSON_HEADERS = { 'Content-Type': 'application/json' };
 
 /** /healthz — never-throws, `up: null` when unconfigured (system-health shape). */
-export async function mediaSidecarHealth(timeoutMs = 1_500): Promise<{
+export async function mediaSidecarHealth(timeoutMs: number = NET_TIMEOUTS.localProbe): Promise<{
   up: boolean | null;
   ytDlpVersion: string | null;
   ffmpegVersion: string | null;
@@ -236,10 +235,8 @@ export async function mediaSidecarHealth(timeoutMs = 1_500): Promise<{
   };
   const cfg = config();
   if (!cfg) return { up: null, ...down };
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
-    const res = await fetch(`${cfg.url}/healthz`, { signal: ctrl.signal });
+    const res = await fetch(`${cfg.url}/healthz`, { signal: timeoutSignal(timeoutMs) });
     if (!res.ok) return { up: false, ...down };
     const body = (await res.json()) as {
       ok?: boolean;
@@ -263,8 +260,6 @@ export async function mediaSidecarHealth(timeoutMs = 1_500): Promise<{
     };
   } catch {
     return { up: false, ...down };
-  } finally {
-    clearTimeout(timer);
   }
 }
 

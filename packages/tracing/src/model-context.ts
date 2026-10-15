@@ -16,6 +16,8 @@
  *
  * Values are total context length (input + output).
  */
+import { NET_TIMEOUTS, timeoutSignal } from '@mantle/std';
+
 const FALLBACK_CONTEXT_LIMITS: Record<string, number> = {
   // Anthropic via OpenRouter — 4.x sonnet/opus default to a 1M window.
   'anthropic/claude-haiku-4.5': 200_000,
@@ -68,7 +70,7 @@ const OPENROUTER_MODELS_URL = 'https://openrouter.ai/api/v1/models?output_modali
 /** Re-fetch the live catalog at most this often. */
 const CATALOG_TTL_MS = 6 * 60 * 60 * 1000; // 6h
 /** Abort the catalog fetch if it stalls — must never hang a caller. */
-const CATALOG_FETCH_TIMEOUT_MS = 8_000;
+const CATALOG_FETCH_TIMEOUT_MS = NET_TIMEOUTS.modelCatalog;
 
 /** What we keep per model from the live catalog. */
 export type LiveModelInfo = {
@@ -205,7 +207,7 @@ export async function refreshModelCatalog(force = false): Promise<void> {
   inFlight = (async () => {
     try {
       const res = await fetch(OPENROUTER_MODELS_URL, {
-        signal: AbortSignal.timeout(CATALOG_FETCH_TIMEOUT_MS),
+        signal: timeoutSignal(CATALOG_FETCH_TIMEOUT_MS),
         headers: { accept: 'application/json' },
       });
       if (!res.ok) throw new Error(`openrouter /models ${res.status}`);

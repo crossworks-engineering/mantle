@@ -82,9 +82,9 @@ import { mcpPairing, secretRefsRunRefusal, vaultPairRunRefusal } from './secret-
 // registry, which imports every builtin) reach dispatchTool through the bridge.
 import { resolveTool, resolveTools } from './resolve';
 export { resolveTool, resolveTools };
-import { errorMessage } from '@mantle/std';
+import { errorMessage, NET_TIMEOUTS, timeoutSignal } from '@mantle/std';
 
-const HTTP_TIMEOUT_MS_DEFAULT = 15_000;
+const HTTP_TIMEOUT_MS_DEFAULT = NET_TIMEOUTS.httpTool;
 
 // The Admin gate's words live in admin-gate.ts (W7a: the Admin MCP surface
 // says them too).
@@ -925,7 +925,7 @@ async function dispatchHttp(
       const init: RequestInit = {
         method: req.method,
         headers: req.headers,
-        signal: AbortSignal.timeout(h.timeoutMs ?? HTTP_TIMEOUT_MS_DEFAULT),
+        signal: timeoutSignal(h.timeoutMs ?? HTTP_TIMEOUT_MS_DEFAULT),
       };
       if (req.body !== null) init.body = req.body;
       const res = await safeFetch(req.url, init, [...secrets.values()]);

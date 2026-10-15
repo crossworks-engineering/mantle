@@ -1,3 +1,4 @@
+import { NET_TIMEOUTS, timeoutSignal } from '@mantle/std';
 // Thin client for Mantle → Mantle Push (the relay). Mantle authenticates with
 // its instance token; the relay forwards ciphertext to APNs/FCM. See
 // mantle-push/README.md for the endpoint contract.
@@ -15,8 +16,8 @@ const JSON_HEADERS = { 'content-type': 'application/json' } as const;
 
 /** No call to the relay waits longer than this: a relay that hangs must not
  *  hold the send chain (every later push would queue behind it). */
-export const RELAY_TIMEOUT_MS = 10_000;
-const timeout = () => AbortSignal.timeout(RELAY_TIMEOUT_MS);
+export const RELAY_TIMEOUT_MS = NET_TIMEOUTS.pushRelay;
+const timeout = () => timeoutSignal(RELAY_TIMEOUT_MS);
 
 /** TOFU register/claim this install. Returns the relay's instance id. */
 export async function registerInstance(

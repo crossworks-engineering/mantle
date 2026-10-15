@@ -154,22 +154,6 @@ export const BARE_FETCH_ALLOWED = {
     kind: 'owner config',
     why: 'the push relay: the relay URL the deployment configures',
   },
-  'server/web/lib/services.ts': {
-    kind: 'owner config',
-    why: 'the bundled embedder probe: the stack own embedder URL',
-  },
-  'server/web/lib/system-health.ts': {
-    kind: 'owner config',
-    why: 'the local model and embedder probes: owner-configured base URLs (LAN or tailnet on purpose)',
-  },
-  'server/web/lib/sanity/checks.ts': {
-    kind: 'owner config',
-    why: 'the local model probe: an owner-configured base URL',
-  },
-  'server/web/lib/integrity/capabilities.ts': {
-    kind: 'owner config',
-    why: 'the embedder probe: the owner-configured embedding base URL',
-  },
   'server/web/lib/onboarding-steps.ts': {
     kind: 'owner config',
     why: "the onboarding probes: the box's own public URL and the Azure base URL the owner types in",

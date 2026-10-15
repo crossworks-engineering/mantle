@@ -1,6 +1,6 @@
 import puppeteer from 'puppeteer-core';
 import { env } from '@mantle/config';
-import { defineDomainError } from '@mantle/std';
+import { defineDomainError, NET_TIMEOUTS, timeoutSignal } from '@mantle/std';
 import { openRenderPage } from './render-sandbox';
 
 export { printOrigin } from './render-sandbox';
@@ -67,14 +67,14 @@ defineDomainError(PdfRendererUnavailableError, {
  * hits browserless's /meta — the same endpoint the compose healthcheck uses.
  */
 export async function browserHealth(
-  timeoutMs = 1_500,
+  timeoutMs: number = NET_TIMEOUTS.localProbe,
 ): Promise<{ up: boolean | null; version: string | null }> {
   const endpoint = env('BROWSER_WS_ENDPOINT');
   if (!endpoint) return { up: null, version: null };
   try {
     const url = new URL(endpoint.replace(/^ws/, 'http'));
     url.pathname = '/meta';
-    const res = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) });
+    const res = await fetch(url, { signal: timeoutSignal(timeoutMs) });
     if (!res.ok) return { up: false, version: null };
     const meta = (await res.json()) as { version?: string; chromium?: string };
     const version = [

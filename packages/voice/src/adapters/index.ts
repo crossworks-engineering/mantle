@@ -198,6 +198,9 @@ export {
 // adapters when a route is flagged "via tailnet".
 export { tailnetFetch, tailnetProxyConfigured } from './tailnet';
 
+// The one "is the local model up" probe (A10 #10).
+export { providerHealth, sameLocalModel, type ProviderHealth } from './provider-health';
+
 // Chat error classification — exposed so the agent-runtime failover layer
 // reuses the SAME transient-vs-permanent predicate the per-adapter retry
 // wrapper uses (429 / 5xx / network → transient; 4xx bad-input → permanent).

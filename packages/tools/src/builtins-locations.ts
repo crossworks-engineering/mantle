@@ -30,7 +30,7 @@ import { getApiKey } from '@mantle/api-keys';
 import { recordIngest } from '@mantle/tracing';
 import type { BuiltinToolDef } from './types';
 import { str, strOptTrim as strOpt } from './coerce';
-import { errorMessage } from '@mantle/std';
+import { errorMessage, timeoutSignal } from '@mantle/std';
 import { CS } from './client-sourced-rule';
 
 function num(v: unknown): number | null {
@@ -281,14 +281,9 @@ const route_map: BuiltinToolDef = {
     }
 
     try {
-      const ctrl = new AbortController();
-      const timer = setTimeout(() => ctrl.abort(), STATIC_TIMEOUT_MS);
-      let res: Response;
-      try {
-        res = await fetch(url, { signal: ctrl.signal });
-      } finally {
-        clearTimeout(timer);
-      }
+      // The deadline covers the image body too (A10 #10; before, the
+      // headers only).
+      const res = await fetch(url, { signal: timeoutSignal(STATIC_TIMEOUT_MS) });
       if (!res.ok) {
         const body = (await res.text().catch(() => '')).slice(0, 200);
         return { ok: false, error: `Mapbox static images ${res.status}: ${body}` };

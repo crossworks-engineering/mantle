@@ -41,7 +41,7 @@ import { reapStalePendingTurns, summariseTurnsReap } from './turns-reap';
 import { runFilesStagedReap, summariseFilesStagedReap } from './files-staged-reap';
 import { summariseStoreSweep, sweepStores } from '@mantle/content/store-sweep';
 import { reapActorMisses, summariseActorMissesReap } from './actor-misses-reap';
-import { errorMessage } from '@mantle/std';
+import { errorMessage, NET_TIMEOUTS, withTimeout } from '@mantle/std';
 
 export interface EntitiesDedupeResult {
   auto: MergeCandidate[];
@@ -188,25 +188,7 @@ const GUARD_WINDOW_MS = 20 * 60 * 60 * 1000;
 /** Deadline for one sweep — parity with the UI's RUN_TIMEOUT_MS. On expiry
  *  the run row goes 'failed' but the underlying promise can't be cancelled;
  *  it may still complete in the background (merges are transactional). */
-const SWEEP_TIMEOUT_MS = 30 * 60 * 1000;
-
-async function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
-  let timer: NodeJS.Timeout | undefined;
-  try {
-    return await Promise.race([
-      p,
-      new Promise<never>((_, reject) => {
-        timer = setTimeout(
-          () => reject(new Error(`${label}: timed out after ${ms / 60000} min`)),
-          ms,
-        );
-        timer.unref?.();
-      }),
-    ]);
-  } finally {
-    if (timer) clearTimeout(timer);
-  }
-}
+const SWEEP_TIMEOUT_MS = NET_TIMEOUTS.sweep;
 
 /** Run every schedulable sweep once, recording each into maintenance_runs
  *  (source 'cron'). Called by the nightly pg-boss job. Per-task failures are

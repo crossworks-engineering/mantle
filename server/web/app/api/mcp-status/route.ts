@@ -11,6 +11,7 @@
 import { NextResponse } from '@/server/http-compat';
 import { ownerCaller } from '@/lib/auth';
 import { connectorUrl } from '@/lib/mcp-oauth';
+import { NET_TIMEOUTS, timeoutSignal } from '@mantle/std';
 
 export async function POST() {
   ownerCaller();
@@ -35,7 +36,7 @@ export async function POST() {
         accept: 'application/json, text/event-stream',
       },
       body: initialize,
-      signal: AbortSignal.timeout(5000),
+      signal: timeoutSignal(NET_TIMEOUTS.mcpStatus),
     });
     const hasChallenge = !!res.headers.get('www-authenticate');
     if (res.status === 401 && hasChallenge) {

@@ -55,6 +55,7 @@ import {
 import { resolveAssistantAgent } from './run-turn';
 import { assembleResponderTurn, type AssembledResponderTurn } from './assemble-turn';
 import { runResponderLoop } from './responder-loop';
+import { NET_TIMEOUTS, timeoutSignal } from '@mantle/std';
 
 /** One caller-supplied prior turn. Shape matches an MCP client's chat log — the
  *  sim maps it onto the runtime's internal HistoryTurn ({ role, text }). */
@@ -171,7 +172,9 @@ export async function runSimulatedResponderTurn(
 
   const timeoutMs = Math.min(
     MAX_TIMEOUT_MS,
-    typeof opts.timeoutMs === 'number' && opts.timeoutMs > 0 ? opts.timeoutMs : 300_000,
+    typeof opts.timeoutMs === 'number' && opts.timeoutMs > 0
+      ? opts.timeoutMs
+      : NET_TIMEOUTS.simTurn,
   );
 
   let traceId: string | null = null;
@@ -212,7 +215,7 @@ export async function runSimulatedResponderTurn(
         loadContext: async () => ctx,
         buildMessages: (c) => buildSimulatedMessages(prepared, c),
         surface: opts.loginId ? { kind: 'web', loginId: opts.loginId } : { kind: 'web' },
-        abortSignal: AbortSignal.timeout(timeoutMs),
+        abortSignal: timeoutSignal(timeoutMs),
         // Caller-held history, not the owner's conversation: it neither
         // starts from nor keeps that conversation's client-sourced mark.
         conversationTaint: false,

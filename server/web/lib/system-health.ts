@@ -12,6 +12,8 @@ import { browserHealth } from './render-pdf';
 import type { SystemHealth } from '@mantle/client-types';
 import type { DiskInfo } from '@mantle/client-types';
 import { env } from '@mantle/config';
+import { NET_TIMEOUTS, withTimeout } from '@mantle/std';
+import { providerHealth } from '@mantle/voice';
 
 export type { DiskInfo };
 export type { SystemHealth };
@@ -26,13 +28,6 @@ export type { SystemHealth };
  * is appended to `degraded`. In a prod container CPU/RAM/disk reflect the
  * container's cgroup, not the VPS host — surfaced via `scope`.
  */
-
-function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
-  return Promise.race([
-    p,
-    new Promise<T>((_, reject) => setTimeout(() => reject(new Error('timeout')), ms)),
-  ]);
-}
 
 type PgStatsRow = { db_size: string; connections: number; cache_hit: number | null };
 type PgTableRow = { name: string; bytes: string };
@@ -127,30 +122,23 @@ async function embedderHealth(userId: string): Promise<SystemHealth['embedder']>
     env('MANTLE_LOCAL_EMBEDDING_URL') ||
     DEFAULT_LOCAL_EMBED_URL
   ).replace(/\/+$/, '');
-  try {
-    const res = await fetch(`${base}/models`, { signal: AbortSignal.timeout(1_200) });
-    if (!res.ok)
-      return {
-        up: false,
-        provider,
-        model,
-        detail: `unreachable · HTTP ${res.status}`,
-        scope: 'local',
-      };
-    const body = (await res.json()) as { data?: Array<{ id?: string }> };
-    const ids = (body.data ?? [])
-      .map((m) => m.id)
-      .filter((x): x is string => typeof x === 'string');
-    // Ollama reports ids like `embeddinggemma:latest`; tolerate the `:latest`
-    // suffix on either side so a bare-name config still matches.
-    const norm = (s: string) => s.replace(/:latest$/, '');
-    const present = ids.some((id) => norm(id) === norm(model));
-    return present
-      ? { up: true, provider, model, detail: `${model} · loaded`, scope: 'local' }
-      : { up: false, provider, model, detail: `${model} not loaded`, scope: 'local' };
-  } catch {
+  // THE local model probe (@mantle/voice providerHealth, A10 #10).
+  const probe = await providerHealth(base, { timeoutMs: NET_TIMEOUTS.healthPill, model });
+  if (!probe.up && probe.reason === 'http') {
+    return {
+      up: false,
+      provider,
+      model,
+      detail: `unreachable · HTTP ${probe.status}`,
+      scope: 'local',
+    };
+  }
+  if (!probe.up || probe.ids === null) {
     return { up: false, provider, model, detail: 'unreachable', scope: 'local' };
   }
+  return probe.loaded
+    ? { up: true, provider, model, detail: `${model} · loaded`, scope: 'local' }
+    : { up: false, provider, model, detail: `${model} not loaded`, scope: 'local' };
 }
 
 /** Probe the tailnet via tailscaled's LocalAPI (shared socket). `up: true` only
@@ -203,9 +191,13 @@ async function filesDisk(): Promise<DiskInfo> {
 
 export async function getSystemHealth(userId: string): Promise<SystemHealth> {
   const degraded: string[] = [];
-  async function probe<T>(name: string, fn: () => Promise<T>, ms = 1800): Promise<T | null> {
+  async function probe<T>(
+    name: string,
+    fn: () => Promise<T>,
+    ms: number = NET_TIMEOUTS.healthVital,
+  ): Promise<T | null> {
     try {
-      return await withTimeout(fn(), ms);
+      return await withTimeout(fn(), ms, name);
     } catch {
       degraded.push(name);
       return null;

@@ -25,13 +25,13 @@
 import { createHash } from 'node:crypto';
 
 import type { ToolGroupOauth2 } from '@mantle/db';
-import { errorMessage } from '@mantle/std';
+import { errorMessage, NET_TIMEOUTS, timeoutSignal } from '@mantle/std';
 
 import { scrubSecrets } from './http-template';
 import { safeFetch } from './safe-fetch';
 import { assertFetchableUrl } from './ssrf-guard';
 
-const TOKEN_TIMEOUT_MS = 15_000;
+const TOKEN_TIMEOUT_MS = NET_TIMEOUTS.oauthToken;
 /** Lifetime assumed when the provider omits `expires_in`. */
 const DEFAULT_LIFETIME_MS = 5 * 60_000;
 /** Longest we hold a token, whatever the provider says. */
@@ -173,7 +173,7 @@ async function requestToken(
         method: 'POST',
         headers,
         body: form.toString(),
-        signal: AbortSignal.timeout(TOKEN_TIMEOUT_MS),
+        signal: timeoutSignal(TOKEN_TIMEOUT_MS),
       },
       [...known.values()],
       deps.guard ?? assertFetchableUrl,

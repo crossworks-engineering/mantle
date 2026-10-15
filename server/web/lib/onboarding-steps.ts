@@ -26,7 +26,7 @@ import { isOnboarded, markOnboarded } from '@/lib/onboarding';
 import { listAiWorkers } from '@/lib/ai-workers';
 import { getAgentBySlug } from '@/lib/agents';
 import { env } from '@mantle/config';
-import { errorMessage } from '@mantle/std';
+import { errorMessage, NET_TIMEOUTS, timeoutSignal } from '@mantle/std';
 import { firstIssue } from '@/lib/zod-issue';
 import { tikaIsOptional } from '@/lib/compose-shape';
 
@@ -117,10 +117,10 @@ async function checkDomain(browserHost: string | null): Promise<SanityCheck> {
     };
   }
   try {
-    const ctl = new AbortController();
-    const timer = setTimeout(() => ctl.abort(), 6_000);
-    const res = await fetch(configured, { signal: ctl.signal, redirect: 'manual' });
-    clearTimeout(timer);
+    const res = await fetch(configured, {
+      signal: timeoutSignal(NET_TIMEOUTS.onboardingProbe),
+      redirect: 'manual',
+    });
     void res;
     return {
       label,
@@ -468,13 +468,10 @@ export async function saveModels(
     if (azureKey) {
       // Probe the endpoint with the key BEFORE saving anything.
       try {
-        const ctl = new AbortController();
-        const timer = setTimeout(() => ctl.abort(), 10_000);
         const res = await fetch(`${azureBaseUrl}/models`, {
           headers: { Authorization: `Bearer ${azureKey}`, 'api-key': azureKey },
-          signal: ctl.signal,
+          signal: timeoutSignal(NET_TIMEOUTS.onboardingTest),
         });
-        clearTimeout(timer);
         if (!res.ok) {
           return {
             ok: false as const,

@@ -22,7 +22,7 @@
  */
 import { db, curatedModels, eq, type CuratedRoute } from '@mantle/db';
 import { resolveOpenRouterKey } from '@mantle/tools';
-import { errorMessage } from '@mantle/std';
+import { errorMessage, NET_TIMEOUTS, timeoutSignal } from '@mantle/std';
 import { MANIFEST_WORKERS, PERSONA_MANIFEST } from '../system-manifest';
 import {
   planCuration,
@@ -33,7 +33,7 @@ import {
 } from './curate-pools';
 
 const OR_BASE = 'https://openrouter.ai/api/v1';
-const TIMEOUT_MS = 25_000;
+const TIMEOUT_MS = NET_TIMEOUTS.openRouterData;
 
 async function orGet(
   path: string,
@@ -45,7 +45,7 @@ async function orGet(
   try {
     const res = await fetch(url, {
       headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : {},
-      signal: AbortSignal.timeout(TIMEOUT_MS),
+      signal: timeoutSignal(TIMEOUT_MS),
     });
     if (!res.ok) {
       return { ok: false, error: `OpenRouter ${path} returned ${res.status}` };

@@ -34,6 +34,8 @@ import type {
 import { browserHealth } from './render-pdf';
 import { sandboxdHealth } from './sandboxd';
 import { readUpdaterStatus, updaterAvailable } from './updates';
+import { NET_TIMEOUTS } from '@mantle/std';
+import { providerHealth } from '@mantle/voice';
 
 export function isOptionalService(v: unknown): v is OptionalService {
   return typeof v === 'string' && (OPTIONAL_SERVICES as readonly string[]).includes(v);
@@ -124,16 +126,10 @@ export function usesBundledEmbedder(
   }
 }
 
-/** The bundled embedder answers its OpenAI-compatible model list. */
-async function bundledEmbedderUp(timeoutMs = 1_500): Promise<boolean> {
-  try {
-    const res = await fetch(`${bundledEmbedUrl()}/models`, {
-      signal: AbortSignal.timeout(timeoutMs),
-    });
-    return res.ok;
-  } catch {
-    return false;
-  }
+/** The bundled embedder answers its OpenAI-compatible model list (THE local
+ *  model probe, @mantle/voice providerHealth, A10 #10). */
+async function bundledEmbedderUp(timeoutMs: number = NET_TIMEOUTS.localProbe): Promise<boolean> {
+  return (await providerHealth(bundledEmbedUrl(), { timeoutMs })).up;
 }
 
 /** The warning before the embedder goes off: only when this brain embeds with

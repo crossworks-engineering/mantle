@@ -10,7 +10,8 @@ import { runTableStorageProbes } from '@mantle/tabledb';
 import { readUpdaterStatus, updaterAvailable } from '../updates';
 import type { SanityCheck, SanityReport } from '@mantle/client-types/types/sanity';
 import { env } from '@mantle/config';
-import { errorMessage } from '@mantle/std';
+import { errorMessage, NET_TIMEOUTS, withTimeout } from '@mantle/std';
+import { providerHealth } from '@mantle/voice';
 
 /**
  * System sanity checks — the CONFIG-correctness counterpart to lib/system-health
@@ -23,13 +24,6 @@ import { errorMessage } from '@mantle/std';
  */
 
 const SIGNAL_DIR = env('MANTLE_UPDATE_SIGNAL_DIR') ?? '/signal';
-
-function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
-  return Promise.race([
-    p,
-    new Promise<T>((_, reject) => setTimeout(() => reject(new Error('timeout')), ms)),
-  ]);
-}
 
 // ── Storage ──────────────────────────────────────────────────────────────────
 
@@ -237,38 +231,20 @@ async function checkEmbedder(userId: string): Promise<SanityCheck> {
     env('MANTLE_LOCAL_EMBEDDING_URL') ||
     DEFAULT_LOCAL_EMBED_URL
   ).replace(/\/+$/, '');
-  try {
-    const res = await fetch(`${baseUrl}/models`, { signal: AbortSignal.timeout(1_500) });
-    if (!res.ok) {
-      return {
-        ...base,
-        status: 'fail',
-        detail: `Local embedder at ${baseUrl} answered HTTP ${res.status}. Ingest can't embed → search/recall silently degrade.`,
-        fix: {
-          summary: `Check the bundled ollama service is up and MANTLE_LOCAL_EMBEDDING_URL points at it.`,
-          command: `docker logs mantle_ollama --tail 50`,
-        },
-      };
-    }
-    const body = (await res.json()) as { data?: Array<{ id?: string }> };
-    const ids = (body.data ?? [])
-      .map((m) => m.id)
-      .filter((x): x is string => typeof x === 'string');
-    const norm = (s: string) => s.replace(/:latest$/, '');
-    const present = ids.some((id) => norm(id) === norm(model));
-    if (!present) {
-      return {
-        ...base,
-        status: 'fail',
-        detail: `Local embedder is up but model “${model}” is not loaded — every embed fails silently (the model pull, an up.sh/compose one-shot, didn't run).`,
-        fix: {
-          summary: `Pull the model into the embedder.`,
-          command: `docker exec mantle_ollama ollama pull ${model}`,
-        },
-      };
-    }
-    return { ...base, status: 'pass', detail: `Local embedder serving “${model}”.`, fix: null };
-  } catch {
+  // THE local model probe (@mantle/voice providerHealth, A10 #10).
+  const probe = await providerHealth(baseUrl, { timeoutMs: NET_TIMEOUTS.localProbe, model });
+  if (!probe.up && probe.reason === 'http') {
+    return {
+      ...base,
+      status: 'fail',
+      detail: `Local embedder at ${baseUrl} answered HTTP ${probe.status}. Ingest can't embed → search/recall silently degrade.`,
+      fix: {
+        summary: `Check the bundled ollama service is up and MANTLE_LOCAL_EMBEDDING_URL points at it.`,
+        command: `docker logs mantle_ollama --tail 50`,
+      },
+    };
+  }
+  if (!probe.up || probe.ids === null) {
     return {
       ...base,
       status: 'fail',
@@ -279,6 +255,18 @@ async function checkEmbedder(userId: string): Promise<SanityCheck> {
       },
     };
   }
+  if (!probe.loaded) {
+    return {
+      ...base,
+      status: 'fail',
+      detail: `Local embedder is up but model “${model}” is not loaded — every embed fails silently (the model pull, an up.sh/compose one-shot, didn't run).`,
+      fix: {
+        summary: `Pull the model into the embedder.`,
+        command: `docker exec mantle_ollama ollama pull ${model}`,
+      },
+    };
+  }
+  return { ...base, status: 'pass', detail: `Local embedder serving “${model}”.`, fix: null };
 }
 
 // ── Database ─────────────────────────────────────────────────────────────────
@@ -470,7 +458,7 @@ export async function runSanityChecks(userId: string): Promise<SanityReport> {
   const checks = await Promise.all(
     defs.map(async (d): Promise<SanityCheck> => {
       try {
-        return await withTimeout(d.run(), 3_000);
+        return await withTimeout(d.run(), NET_TIMEOUTS.sanityCheck, d.key);
       } catch (err) {
         return {
           key: d.key,

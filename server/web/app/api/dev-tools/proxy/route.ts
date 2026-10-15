@@ -31,6 +31,7 @@ import { ownerCaller } from '@/lib/auth';
 import { firstIssue } from '@/lib/zod-issue';
 import { vaultPairRefusalFor } from '@/lib/tools';
 import { readJson } from '@/lib/read-body';
+import { timeoutSignal } from '@mantle/std';
 
 const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
 
@@ -137,7 +138,7 @@ export async function POST(req: Request) {
         method,
         headers: built.headers,
         body: method === 'GET' || method === 'HEAD' ? undefined : (built.body ?? undefined),
-        signal: AbortSignal.timeout(timeoutMs),
+        signal: timeoutSignal(timeoutMs),
       },
       [...secrets.values()],
     );

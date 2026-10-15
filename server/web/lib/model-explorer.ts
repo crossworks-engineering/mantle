@@ -19,7 +19,7 @@ import { getApiKey } from '@mantle/api-keys';
 import { isProviderId, type ProviderId } from '@mantle/voice';
 import type { ExplorerModel, ModelSort } from '@mantle/client-types';
 import { kindFromModalities } from '@mantle/client-types/model-pools';
-import { errorMessage } from '@mantle/std';
+import { errorMessage, NET_TIMEOUTS, timeoutSignal } from '@mantle/std';
 
 export type { ExplorerModel, ModelSort };
 
@@ -36,7 +36,7 @@ export type ProviderModelsResult = {
   error?: string;
 };
 
-const FETCH_TIMEOUT_MS = 12_000;
+const FETCH_TIMEOUT_MS = NET_TIMEOUTS.modelExplorer;
 
 // ── small helpers ──────────────────────────────────────────────────────────
 
@@ -88,7 +88,7 @@ function kindFromId(id: string): string {
 async function getJson(url: string, init?: RequestInit): Promise<unknown> {
   const res = await fetch(url, {
     ...init,
-    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    signal: timeoutSignal(FETCH_TIMEOUT_MS),
     headers: { accept: 'application/json', ...(init?.headers ?? {}) },
   });
   if (!res.ok) {

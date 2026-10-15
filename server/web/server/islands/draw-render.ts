@@ -1,4 +1,4 @@
-import { errorMessage } from '@mantle/std';
+import { errorMessage, NET_TIMEOUTS, timeoutSignal } from '@mantle/std';
 /**
  * Draw render island — turns a committed scene into an SVG snapshot inside the
  * browser sidecar's Chromium.
@@ -38,7 +38,7 @@ declare global {
 
 /** Per-image fetch timeout: one hung request must not burn the whole render
  *  budget. Images are same-origin and small; 5s is generous. */
-const FILE_FETCH_TIMEOUT_MS = 5_000;
+const FILE_FETCH_TIMEOUT_MS = NET_TIMEOUTS.drawFile;
 /** Parallel image fetches. Bounded so a scene with dozens of screenshots can
  *  finish where the old one-at-a-time loop could not, without stampeding the
  *  file route. */
@@ -77,11 +77,9 @@ async function loadSceneFiles(
         missing.push(nodeId);
         continue;
       }
-      const ctrl = new AbortController();
-      const timer = setTimeout(() => ctrl.abort(), Math.min(FILE_FETCH_TIMEOUT_MS, remaining));
       try {
         const res = await fetch(`/api/files/files/${encodeURIComponent(nodeId)}?raw=1`, {
-          signal: ctrl.signal,
+          signal: timeoutSignal(Math.min(FILE_FETCH_TIMEOUT_MS, remaining)),
         });
         if (!res.ok) throw new Error(`scene image ${nodeId} failed to load (${res.status})`);
         const blob = await res.blob();
@@ -99,8 +97,6 @@ async function loadSceneFiles(
         };
       } catch {
         missing.push(nodeId);
-      } finally {
-        clearTimeout(timer);
       }
     }
   };

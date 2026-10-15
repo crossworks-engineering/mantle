@@ -8,11 +8,11 @@ import { parseTikaBytes } from '@mantle/files';
 import { guardedFetch } from '../ssrf-guard';
 import { type BuiltinToolDef, type ToolHandlerResult } from '../types';
 import { str } from '../coerce';
-import { errorMessage } from '@mantle/std';
+import { errorMessage, NET_TIMEOUTS, timeoutSignal } from '@mantle/std';
 import { URL_RE } from './common';
 import { CS } from '../client-sourced-rule';
 
-const FETCH_TIMEOUT_MS = 25_000;
+const FETCH_TIMEOUT_MS = NET_TIMEOUTS.webFetch;
 
 const FETCH_MAX_BYTES = 5 * 1024 * 1024;
 
@@ -82,7 +82,7 @@ export const web_fetch: BuiltinToolDef = {
       const res = await guardedFetch(
         url,
         {
-          signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+          signal: timeoutSignal(FETCH_TIMEOUT_MS),
           headers: { 'user-agent': 'mantle-toolsmith/1.0 (+self-hosted assistant)' },
         },
         5,

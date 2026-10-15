@@ -16,6 +16,8 @@ import { mediaSidecarHealth, tikaIsUp } from '@mantle/files';
 
 import type { Capability, Capabilities } from '@mantle/client-types/types/integrity';
 import { env } from '@mantle/config';
+import { NET_TIMEOUTS } from '@mantle/std';
+import { providerHealth } from '@mantle/voice';
 
 async function workerCap(
   ownerId: string,
@@ -52,21 +54,17 @@ async function embeddingCap(ownerId: string): Promise<Capability> {
     env('MANTLE_LOCAL_EMBEDDING_URL') ||
     'http://localhost:11434/v1'
   ).replace(/\/+$/, '');
-  try {
-    const probe = await fetch(`${base}/models`, { signal: AbortSignal.timeout(1_500) });
-    if (!probe.ok)
-      return { available: false, detail: `local embedder unreachable (HTTP ${probe.status})` };
-    const body = (await probe.json()) as { data?: Array<{ id?: string }> };
-    const ids = (body.data ?? [])
-      .map((m) => m.id)
-      .filter((x): x is string => typeof x === 'string');
-    const norm = (s: string) => s.replace(/:latest$/, '');
-    return ids.some((id) => norm(id) === norm(model))
-      ? { available: true, detail: `${model} · loaded (local)` }
-      : { available: false, detail: `${model} not loaded on local embedder` };
-  } catch {
+  // THE local model probe (@mantle/voice providerHealth, A10 #10).
+  const probe = await providerHealth(base, { timeoutMs: NET_TIMEOUTS.localProbe, model });
+  if (!probe.up && probe.reason === 'http') {
+    return { available: false, detail: `local embedder unreachable (HTTP ${probe.status})` };
+  }
+  if (!probe.up || probe.ids === null) {
     return { available: false, detail: 'local embedder unreachable' };
   }
+  return probe.loaded
+    ? { available: true, detail: `${model} · loaded (local)` }
+    : { available: false, detail: `${model} not loaded on local embedder` };
 }
 
 export async function resolveCapabilities(ownerId: string): Promise<Capabilities> {

@@ -42,11 +42,11 @@ import type { BuiltinToolDef, ToolHandlerResult } from './types';
 import { refuseNonOwner } from './builtins-crawl';
 import { resolveOpenRouterKey } from './builtins-research';
 import { str } from './coerce';
-import { errorMessage } from '@mantle/std';
+import { errorMessage, NET_TIMEOUTS, timeoutSignal } from '@mantle/std';
 import { CS } from './client-sourced-rule';
 
 const OR_BASE = 'https://openrouter.ai/api/v1';
-const DATA_TIMEOUT_MS = 25_000;
+const DATA_TIMEOUT_MS = NET_TIMEOUTS.openRouterData;
 
 async function orGet(
   path: string,
@@ -58,7 +58,7 @@ async function orGet(
   try {
     const res = await fetch(url, {
       headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : {},
-      signal: AbortSignal.timeout(DATA_TIMEOUT_MS),
+      signal: timeoutSignal(DATA_TIMEOUT_MS),
     });
     if (!res.ok) {
       const body = (await res.text()).slice(0, 300);
