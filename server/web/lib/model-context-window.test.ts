@@ -105,3 +105,99 @@ describe('the form and the dashboard agree', () => {
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 });
+
+describe("the dashboard's background fetch is bounded (fix round 2 M1)", () => {
+  const agent = (model: string) => ({ provider: 'anthropic', model, apiKeyId: KEY });
+  const anthropicCalls = (spy: ReturnType<typeof vi.fn>) =>
+    spy.mock.calls.filter(([url]) => !String(url).includes('openrouter.ai')).length;
+  const settle = () => new Promise((r) => setTimeout(r, 0));
+
+  it('concurrent callers on one key share one fetch', async () => {
+    const spy = vi.fn(async () =>
+      Response.json({ data: [{ type: 'model', id: 'claude-opus-4-7' }] }),
+    );
+    vi.stubGlobal('fetch', spy);
+    // Five agents on one key, cold cache, one dashboard render.
+    await Promise.all(
+      Array.from({ length: 5 }, () => agentContextWindow(OWNER, agent('claude-opus-4-7'))),
+    );
+    // The form's list asked at the same moment joins the same request.
+    await Promise.all([
+      fetchProviderModels(OWNER, 'anthropic', { keyId: KEY }),
+      fetchProviderModels(OWNER, 'anthropic', { keyId: KEY }),
+    ]);
+    await settle();
+    expect(anthropicCalls(spy)).toBe(1);
+  });
+
+  it('a failing key is not asked again within the backoff window, and logs once', async () => {
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const spy = vi.fn(async () => new Response('{"error":"nope"}', { status: 401 }));
+    vi.stubGlobal('fetch', spy);
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      // Many polls (and agents) while the key fails.
+      for (let i = 0; i < 6; i++) {
+        await agentContextWindow(OWNER, agent('claude-opus-4-7'));
+        await agentContextWindow(OWNER, agent('claude-sonnet-4-6'));
+        await settle();
+      }
+      expect(anthropicCalls(spy)).toBe(1);
+      expect(errors).toHaveBeenCalledTimes(1);
+
+      // Still inside the window: nothing new.
+      vi.setSystemTime(Date.now() + 4 * 60_000);
+      await agentContextWindow(OWNER, agent('claude-opus-4-7'));
+      await settle();
+      expect(anthropicCalls(spy)).toBe(1);
+
+      // Past it: one more try.
+      vi.setSystemTime(Date.now() + 2 * 60_000);
+      await agentContextWindow(OWNER, agent('claude-opus-4-7'));
+      await settle();
+      expect(anthropicCalls(spy)).toBe(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('the form is not held back by the backoff, and its success clears it', async () => {
+    let fail = true;
+    const spy = vi.fn(async () =>
+      fail
+        ? new Response('down', { status: 503 })
+        : Response.json({
+            data: [{ type: 'model', id: 'claude-opus-4-7', max_input_tokens: OWN }],
+          }),
+    );
+    vi.stubGlobal('fetch', spy);
+    await agentContextWindow(OWNER, agent('claude-opus-4-7'));
+    await settle();
+    expect(anthropicCalls(spy)).toBe(1);
+
+    fail = false;
+    const list = await fetchProviderModels(OWNER, 'anthropic', { keyId: KEY });
+    expect(list.error).toBeUndefined();
+    expect(anthropicCalls(spy)).toBe(2);
+    expect(await agentContextWindow(OWNER, agent('claude-opus-4-7'))).toEqual({
+      limit: OWN,
+      source: 'live',
+    });
+  });
+});
+
+describe('an agent on its own host (fix round 2 L1)', () => {
+  it("never sends its key to the provider's public host; reads the mapping", async () => {
+    const spy = vi.fn();
+    vi.stubGlobal('fetch', spy);
+    const got = await agentContextWindow(OWNER, {
+      provider: 'anthropic',
+      model: 'claude-opus-4-7',
+      apiKeyId: KEY,
+      baseUrl: 'https://gateway.example.test/v1',
+    });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(got.limit).toBe(contextLimitFor('anthropic/claude-opus-4.7'));
+    expect(spy.mock.calls.filter(([url]) => !String(url).includes('openrouter.ai'))).toEqual([]);
+  });
+});

@@ -74,6 +74,7 @@ type AgentContextRow = {
   provider: string | null;
   model: string;
   api_key_id: string | null;
+  base_url: string | null;
   started_at: string;
   max_tokens_in: number;
 };
@@ -113,6 +114,7 @@ export async function recentAgentContext(userId: string): Promise<AgentContext[]
       a.provider,
       a.model,
       a.api_key_id,
+      a.base_url,
       lt.started_at,
       COALESCE((
         SELECT MAX((meta->>'tokens_in')::int)
@@ -130,11 +132,13 @@ export async function recentAgentContext(userId: string): Promise<AgentContext[]
     rows.map(async (r) => {
       // The same window the agent form shows (contextWindowFor): the
       // provider's own figure where the brain has its model list, else the
-      // OpenRouter window for the model's OpenRouter id.
+      // OpenRouter window for the model's OpenRouter id. An agent on its own
+      // host (base_url) reads the mapping: its key is not the provider's.
       const { limit, source } = await agentContextWindow(userId, {
         provider: r.provider,
         model: r.model,
         apiKeyId: r.api_key_id,
+        baseUrl: r.base_url,
       });
       const tokensIn = Number(r.max_tokens_in);
       return {

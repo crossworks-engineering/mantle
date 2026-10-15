@@ -434,6 +434,19 @@ const FETCHERS: Partial<Record<ProviderId, Fetcher>> = {
 const CACHE_TTL_MS = 5 * 60 * 1000;
 const cache = new Map<string, ProviderModelsResult>();
 
+/** One fetch per cache slot at a time: a caller that finds one running gets
+ *  its answer (N agents on one key on a cold cache make one request). */
+const inflight = new Map<string, Promise<ProviderModelsResult>>();
+
+/** When a slot's last fetch failed. The dashboard's background fetch
+ *  (cachedListedWindow) does not try that slot again for FAILURE_BACKOFF_MS,
+ *  so a failing key (an unscoped Anthropic key, a revoked key, an outage) costs
+ *  one request and one log line per window, not one per poll per tab. A fetch
+ *  the owner asks for (the form, Refresh) is not held back, and its success
+ *  clears the mark. */
+const FAILURE_BACKOFF_MS = 5 * 60 * 1000;
+const failedAt = new Map<string, number>();
+
 /** The cache entry for `provider` fetched with key `keyId` (null: keyless). */
 export function modelCacheKey(provider: ProviderId, keyId: string | null): string {
   return keyId ? `${provider}:${keyId}` : provider;
@@ -442,6 +455,8 @@ export function modelCacheKey(provider: ProviderId, keyId: string | null): strin
 /** Test seam: forget every cached catalog. */
 export function clearModelCache(): void {
   cache.clear();
+  inflight.clear();
+  failedAt.clear();
 }
 
 /**
@@ -473,7 +488,22 @@ export async function fetchProviderModels(
     const hit = cache.get(slot);
     if (hit && Date.now() - hit.fetchedAt < CACHE_TTL_MS) return hit;
   }
+  // No await between this check and the set: concurrent callers share one.
+  const running = inflight.get(slot);
+  if (running) return running;
+  const pending = fetchIntoSlot(provider, fetcher, keyId, slot).finally(() =>
+    inflight.delete(slot),
+  );
+  inflight.set(slot, pending);
+  return pending;
+}
 
+async function fetchIntoSlot(
+  provider: ProviderId,
+  fetcher: Fetcher,
+  keyId: string | null,
+  slot: string,
+): Promise<ProviderModelsResult> {
   let credential: ProviderCredential | null = null;
   if (keyId) {
     credential = await getApiKeyById(keyId);
@@ -487,8 +517,10 @@ export async function fetchProviderModels(
     models.sort((a, b) => a.id.localeCompare(b.id));
     const result: ProviderModelsResult = { provider, models, fetchedAt: Date.now() };
     cache.set(slot, result);
+    failedAt.delete(slot);
     return result;
   } catch (err) {
+    failedAt.set(slot, Date.now());
     const named =
       err instanceof ProviderHttpError
         ? new ProviderHttpError({ provider, status: err.status, body: err.body, what: 'models' })
@@ -549,9 +581,18 @@ export async function withRouteContext(
  * number. Never waits on a provider: a list not cached yet is fetched in the
  * background for the next render, and this one uses the OpenRouter mapping.
  */
+type ContextAgent = {
+  provider: string | null;
+  model: string;
+  apiKeyId: string | null;
+  /** The agent's own host (a custom gateway): its key is meant for that host,
+   *  so the provider's public model list is never fetched with it. */
+  baseUrl?: string | null;
+};
+
 export async function agentContextWindow(
   ownerId: string,
-  agent: { provider: string | null; model: string; apiKeyId: string | null },
+  agent: ContextAgent,
 ): Promise<{ limit: number | null; source: ContextSource }> {
   const listed = await cachedListedWindow(ownerId, agent).catch(() => undefined);
   return contextWindowFor(agent.provider, agent.model, listed);
@@ -559,18 +600,22 @@ export async function agentContextWindow(
 
 async function cachedListedWindow(
   ownerId: string,
-  agent: { provider: string | null; model: string; apiKeyId: string | null },
+  agent: ContextAgent,
 ): Promise<number | undefined> {
   const provider = agent.provider;
   if (!provider || provider === 'openrouter' || !isProviderId(provider)) return undefined;
+  if (agent.baseUrl?.trim()) return undefined;
   const fetcher = FETCHERS[provider];
   if (!fetcher) return undefined;
   const keyId = fetcher.needsKey
     ? (agent.apiKeyId ?? (await findProviderKeyId(ownerId, provider)))
     : null;
   if (fetcher.needsKey && !keyId) return undefined;
-  const hit = cache.get(modelCacheKey(provider, keyId));
-  if (!hit || Date.now() - hit.fetchedAt >= CACHE_TTL_MS) {
+  const slot = modelCacheKey(provider, keyId);
+  const hit = cache.get(slot);
+  const failed = failedAt.get(slot);
+  const backingOff = failed !== undefined && Date.now() - failed < FAILURE_BACKOFF_MS;
+  if ((!hit || Date.now() - hit.fetchedAt >= CACHE_TTL_MS) && !backingOff) {
     void fetchProviderModels(ownerId, provider, { keyId }).catch(() => {});
   }
   const id = agent.model.trim().toLowerCase();
