@@ -949,6 +949,88 @@ copy; it can read `CONTEXT_REF_KINDS` from the contract once the ref rides
 the wire as a structured block. `library` (and MEMBER_ITEM_KINDS) goes after
 its pair release; `accepted` names the same kinds today (pinned).
 
+## Role and area names (A10 #13)
+
+The names that gate access are each written once, in the contract package
+(`@mantle/client-types`, zero dependency, so the brain and the client read
+the same list), and every type, zod enum, Set and membership test elsewhere
+imports it. Each list is a non-empty `as const` tuple, so it is its own zod
+enum (`z.enum(LOGIN_ROLES)`; the users routes share `LoginRoleSchema` in
+`server/web/lib/login-update.ts`).
+
+| Concept        | Source (list, type, guard)                                                                            | Read by                                                                                                                                                                                                                                                                                   |
+| -------------- | ----------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Login roles    | `LOGIN_ROLES`, `LoginRole`, `isLoginRole` (`packages/client-types/src/role-names.ts`)                 | `LoginKind`, `ShellRole`, `AccessKeyRole`, `AuthWhoami.role` (contract); `auth.users.role` (`@mantle/db`); `McpLoginRole`, `McpDataRole`, `LoginMcpChannel.role`; the session, the bearer refresh, the password reset, OAuth consent, access keys, MCP auth, the users routes, workspaces |
+| Admin areas    | `WORKSPACE_AREAS`, `WorkspaceArea`, `isWorkspaceArea` (`packages/client-types/src/dto/workspaces.ts`) | `SCOPE_AREAS` (`packages/db/src/viewer.ts`), `adminUserSql` (`packages/db/src/admin-user.ts`), the route classes (`server/web/lib/auth/route-scope.ts`), the shell's `areas`                                                                                                              |
+| History actors | `HISTORY_ACTORS`, `HistoryActor` (`role-names.ts`)                                                    | `node_snapshots.actor`, `AppHistoryActor` (`packages/content/src/apps.ts`), `AppSnapshot.actor`, `TableSnapshot.actor`                                                                                                                                                                    |
+| Recall actors  | `RECALL_ACTOR_KINDS`, `RecallActorKind` (`role-names.ts`)                                             | `RecallActor.kind` and the revisions list (`packages/content/src/recall-native.ts`), the recall wire types                                                                                                                                                                                |
+| Access levels  | `ACCESS_LEVELS`, `AccessLevel` (`packages/client-types/src/dto/access.ts`, highest first)             | `VIEWER_LEVELS` (`packages/db/src/viewer.ts`): the same list reversed, lowest first, on purpose                                                                                                                                                                                           |
+| Key areas      | `ACCESS_KEY_AREAS`, `AccessKeyArea` (`packages/client-types/src/dto/access-keys.ts`)                  | `KEY_AREAS` (`packages/mcp-core/src/key-scope.ts`), and through it the API v1 routes and the MCP key scope                                                                                                                                                                                |
+
+The SQL CHECKs hold the same values: `users_role_ck` (migration 0272) and
+`recall_revisions_actor_kind_ck` (0203); `role-names.test.ts` reads the
+newest migration that adds each and pins it to the source.
+
+**Inventory before the move** (main v0.300.47, file:line):
+
+- Login roles, 28 copies of `LOGIN_ROLES` (`packages/db/src/schema/auth-users.ts:48`,
+  imported nowhere): types `client-types` `dto/logins.ts:10`, `dto/shell.ts:13`,
+  `dto/access-keys.ts:34`, `dto/workspaces.ts:219`; `content/src/mcp-app-data.ts:22`;
+  `mcp-core/src/login-surface.ts:68`; `tools/src/types.ts:186`;
+  `server/web/app/api/oauth/authorize/route.ts:94`; `server/web/lib/access-keys.ts:51`;
+  `server/web/lib/auth/session.ts:893`, `:2179`, `:2290`; `server/web/lib/login-update.ts:45`;
+  `server/web/lib/workspaces.ts:107`, `:956`; `db/src/test-support.ts:123`;
+  `server/web/server/a4-guard-sweep.keys.ts:11`, `:44`. Lists and enums:
+  `content/src/contacts.ts:274` (`inArray`), `token/refresh/route.ts:58` (Set),
+  `users/route.ts:97` and `users/[id]/route.ts:22` (z.enum). Membership
+  chains: `access-keys.ts:161` and `mcp-auth.ts:69` (`isRole`),
+  `session.ts:2359`, `users/[id]/password/route.ts:51`, `login-update.ts:127`,
+  `runtime/src/assistant/run-team-turn.ts:248`. Each is now `LoginRole`,
+  `z.enum(LOGIN_ROLES)` or `isLoginRole`.
+- Admin areas: `db/src/admin-user.ts:13` (type), `db/src/viewer.ts:619`
+  (`SCOPE_AREAS`), `server/web/lib/auth/route-scope.ts:151` (Set).
+- History actors: `client-types/src/dto/rows.ts:276`, `:304`,
+  `content/src/apps.ts:979`, and the column comment
+  `db/src/schema/node-snapshots.ts:55` (no source on main).
+- Recall actors: `db/src/schema/recall.ts:183` (the list),
+  `client-types/src/types/recall.ts:114`, `content/src/recall-native.ts:75`,
+  `:1473`, `:1490`.
+- Access levels: `db/src/viewer.ts:47` (`VIEWER_LEVELS`, reversed).
+- Key areas: `mcp-core/src/key-scope.ts:16` (`KEY_AREAS`).
+
+**No difference between copies.** `packages/client-types/src/role-names.test.ts`
+RECORDED holds every copy as main wrote it, proved against the source text
+in the first commit, and every copy already held its source's values (the
+access levels in the reverse order, on purpose). The fold accepts the same
+values in the same order: the same zod enums, the same Sets, the same SQL
+parameters, the same membership tests.
+
+**Not lists, so not folded:** the switches that do a different thing per
+role keep their cases (`resolvedFor` in `server/web/lib/auth/session.ts`
+names each role and answers no login for any other; the OAuth consent and
+the audit switches). Unions with their own meaning that share some names
+stay: `AppViewerKind` (`client-types/src/app-viewer.ts`) and
+`AppViewerSubject` (`content/src/app-viewer.ts`) still carry `client`;
+`NodeCommentAuthorKind`, `MemberItemAuthor.role`, `ExternalAccessRunner`;
+the level subsets (`AppAuthorLevel` and its contract mirror, pinned in
+`server/web/lib/client-types-drift.test.ts`; `AppToolRules`, `AppToolLevel`,
+`TREE_SHARE_LEVELS`). Tests keep their literals (they pin values).
+
+**The pins.** `eslint-rules/no-hand-role-lists.mjs` flags, in product code
+outside a concept's source file, a literal list (an array, a Set's, a
+z.enum's), a string union or a comparison chain (`r === 'admin' || r ===
+'member'`) whose entries are all names of one concept (2 or more login roles
+or recall actors, 3 or more areas, history actors or levels, all but one
+key area). The names are read from the sources (`ROLE_NAME_SOURCES`,
+`eslint-rules/arch-counts.mjs`). The scoreboard counts the same lists:
+`handRoleLists` pinned at 0, `handRoleListsAllowed` at 6 (the six source
+lists). `server/web/lib/client-types-drift.test.ts` pins every alias to its
+source's union and the runtime VALUES of the lists both sides read (the
+server lists equal the contract lists in order; the contract values are
+written out, since jackdaw holds hand copies of some). A list in SQL text
+inside TypeScript (`role in ('admin', 'member')` in
+`packages/db/src/test-support.ts`) is not seen.
+
 ## The one gate (A3c)
 
 Plan section 2: every way in runs the same eight steps, in one order,
