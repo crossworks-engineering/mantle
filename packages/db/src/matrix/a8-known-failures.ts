@@ -28,18 +28,6 @@ import {
  *  same writes on the write role are refused (the `login` cells pass). */
 const F4 = 'F4 an Admin write request on the system pool: edits not held to its scope';
 
-/** F5. The Moderator of an app's home deletes the app: the database lets
- *  it (by hand and in a turn), and so do DELETE /api/apps/:id (an
- *  owner-side route), app_delete over MCP (an MCP connection is an owner
- *  surface to ownerOnlyRefusal) and app_delete in a Telegram turn (a turn
- *  writes with its user's rights since F2's fix, so the database's answer
- *  shows there too). F1 and F2 are fixed (feat/a8-findings) and off the
- *  list. The owner's decision of 2026-10-15 (plan
- *  v2 section 32, F3 revised): the owner and Admin users delete an app, its
- *  home Moderator may not, on any surface; the database gets the rule in a
- *  later product change. */
-const F5 = 'F5 the home Moderator deletes an app (owner and Admin users only, plan s32 F3 revised)';
-
 /** F6. A peer acting as its login, Write on, may not change an item others
  *  read (packages/tools/src/key-shared-content.ts: "this item is shared, so
  *  a peer cannot change its content"; access matrix T3). The guide's
@@ -81,8 +69,6 @@ export type KnownFailure = {
   modes?: readonly CheckMode[];
 };
 
-const GONE = 'changed (gone), the oracle denies';
-const APP_DELETED = 'changed, the oracle denies';
 const known = (finding: string, reason: string, modes?: readonly CheckMode[]): KnownFailure =>
   modes ? { finding, reason, modes } : { finding, reason };
 
@@ -140,17 +126,9 @@ export const KNOWN_FAILURES: Readonly<Record<string, KnownFailure>> = {
   // The grid (SQL).
   ...adminSystemPoolEdits(),
   ...contactSystemPoolWrites(),
-  'login/homeModerator delete app @folder': known(F5, GONE),
-  'login/homeModerator delete app @root': known(F5, GONE),
-  'turn/homeModerator delete app @folder': known(F5, GONE),
-  'turn/homeModerator delete app @root': known(F5, GONE),
   // The surface cells (all three check modes unless named).
-  'telegram turn/homeModerator delete app @folder': known(F5, APP_DELETED),
-  'telegram turn/homeModerator delete app @root': known(F5, APP_DELETED),
   'peer login/owner edit note @admin': known(F6, 'a peer cannot change its content'),
   'peer login/writeGrant edit note @folder': known(F6, 'a peer cannot change its content'),
-  'mcp-oauth login/homeModerator delete app @folder': known(F5, APP_DELETED),
-  'web login/homeModerator delete app @folder': known(F5, APP_DELETED),
 };
 
 /**

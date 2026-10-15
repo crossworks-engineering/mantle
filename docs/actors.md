@@ -3857,11 +3857,12 @@ team turn does; a heartbeat's fire row and its pause reason keep the same
 public text (`firePublicText`, `packages/runtime/src/heartbeats/fire.ts`).
 The detail stays in the server log.
 
-**F3: app delete (revised by the owner, plan section 33).** App delete: the
-owner and Admin users (to trash). A Moderator cannot delete an app. (Rule
-change in progress: until it lands, the product still lets a Moderator
-delete through the app route and MCP.) The guide says so
-(docs/workspaces.md, "Apps", **Delete**).
+**F3: app delete (the owner's decision of 2026-10-15, plan section 34).**
+Delete an app: its home Moderator, Admin users and the owner. It goes to
+Recently deleted with a snapshot; only the owner deletes it for good. A
+delete is an archive (a non-owner's delete is never purged by itself), as a
+Moderator's delete of a page is. This is what the product does. The guide
+says so (docs/workspaces.md, "Apps", **Delete**).
 
 **Approval (fix round 1, finding 8).** `a8-findings.db.test.ts` queues a
 call of a workspace turn through the tool loop's queue path and approves
@@ -4199,7 +4200,8 @@ candidates spread over other combinations), first fit, never in the
 registry's or the tool list's order, so a new kind or tool adds the cells
 its new pairs need and leaves the others as they were. A decision's own
 case runs whatever the pick (each Admin user's delete of an app homed in
-Admin, on the web and over MCP: F3 revised). Every tool slug a cell calls
+Admin, and the home Moderator's of an app homed in H at its kind's root and
+in its folder, on the web and over MCP: F3). Every tool slug a cell calls
 must resolve, but the MCP-only ones (`note_delete`), whose cells on a
 turn, a run, a recipe and a heartbeat are counted under their own reason.
 A deny the oracle cannot see, since it knows no tools, narrows a cell and
@@ -4277,29 +4279,26 @@ branch and leave the list when it lands; F3 is the guide's rule now.
   change by hand (the web turn, the team turn, Telegram, a recipe step), and
   answered in raw runtime or database text. Its turn writes with its user's
   rights now, and the raw text is masked. Its 20 surface cells pass and
-  left the list, but two: a home Moderator's `app_delete` in a Telegram
-  turn is made now, which is F5's database rule showing through (listed
-  under F5).
+  left the list (two of them, a home Moderator's `app_delete` in a Telegram
+  turn, by way of F5, withdrawn).
 - **F3.** `app_delete` is an owner-side tool. Decided (plan section 32),
-  then revised by the owner on 2026-10-15: the owner and Admin users may
-  delete an app (it goes to the trash); the app's home Moderator may not,
-  on any surface (the app, MCP, web chat, team chat). The oracle follows
-  the decision and cites it; the database gets the rule in a later product
-  change.
+  then by the owner on 2026-10-15 (plan section 34, which reverses the rule
+  set earlier that day): delete an app, its home Moderator, Admin users and
+  the owner. It goes to Recently deleted with a snapshot; only the owner
+  deletes it for good. The oracle follows the decision and cites it; the
+  product already does this (the team chat still calls no `app_delete`,
+  an owner-side tool).
 - **F4.** An Admin user's write request on the system pool: the database
   checks a move, a create in a folder, a delete and a grant change against
   the scope on the transaction, and nothing else, so an edit, a draft edit,
   a public link and an app's data write of an item outside Admin are made.
   Only the gate's TypeScript (`itemWriteGate`) holds them. 108 grid cells
   (`login@system`). The same writes on the write role are refused.
-- **F5.** The Moderator of an app's home deletes the app, against F3
-  revised: the database lets it, by hand and in a turn (4 grid cells), and
-  so do `DELETE /api/apps/:id` (`server/web/app/api/apps/[id]/route.ts`, an
-  owner-side route), `app_delete` over MCP (an MCP connection is an owner
-  surface to `ownerOnlyRefusal`) and `app_delete` in a Telegram turn (since
-  F2's fix the turn writes with its user's rights, and the database makes
-  it) (4 surface cells, in each mode). Listed until the product change
-  lands.
+- **F5** (withdrawn, owner decision of 2026-10-15, plan section 34). The
+  home Moderator's app delete, by hand, in a turn, on the web
+  (`DELETE /api/apps/:id`), over MCP and in a Telegram turn, is allowed:
+  a delete is an archive. Its 4 grid cells and 4 surface cells (in each
+  mode) pass and left the list.
 - **F6.** A peer acting as its login, Write on, may not change an item
   others read ("this item is shared, so a peer cannot change its content",
   `packages/tools/src/key-shared-content.ts`, access matrix T3), the owner's
@@ -4324,7 +4323,7 @@ branch and leave the list when it lands; F3 is the guide's rule now.
   Admin workspace's row, is hidden from a member's scope (409 "not set up"),
   and its answer reads `node_embeds`, which the scope may not.
 - **F8** (withdrawn). `DELETE /api/apps/:id` lets an Admin user trash an
-  app: allowed by the owner's decision of 2026-10-15 (F3 revised), so no
+  app: allowed by the owner's decision of 2026-10-15 (F3), so no
   longer a failure; the cells of each Admin user's delete of an app homed in
   Admin run on the web and over MCP and pass.
 - **F9.** A contact share's write is named system work on the system pool,
@@ -4362,9 +4361,6 @@ branch and leave the list when it lands; F3 is the guide's rule now.
   cells;
 - snapshot copies: docs/workspaces.md does not describe them; the oracle
   reads docs/update-prod.md;
-- an app's delete: the owner's and the Admin users' by the owner's
-  decision of 2026-10-15 (plan section 32, F3 revised) until the guide
-  carries the rule;
 - F6's rule for a key or a peer and a shared item.
 
 **Cells that check little** (they pass, and say less than their count):

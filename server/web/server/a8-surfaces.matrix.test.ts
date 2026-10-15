@@ -600,15 +600,24 @@ describe.skipIf(!DB_URL)('A8 surface cells: every way in gives the oracle’s an
     'readGrant',
     'outsider',
   ];
-  /** The owner's decision of 2026-10-15 (plan s32, F3 revised), run on the
-   *  web and over MCP whatever the pick: each Admin user's delete of an app
-   *  homed in Admin, allowed (to the trash). */
-  const ADMIN_APP_DELETES = (['owner', 'admin'] as const).map((role) => ({
-    role,
-    kind: 'app',
-    placement: 'admin' as const,
-    action: 'delete' as const,
-  }));
+  /** The owner's decision of 2026-10-15 (plan s34: a delete is an archive),
+   *  run on the web and over MCP whatever the pick: each Admin user's delete
+   *  of an app homed in Admin, and the home Moderator's of an app homed in
+   *  H, at its kind's root and in its folder, allowed (to Recently deleted). */
+  const APP_DELETES = [
+    ...(['owner', 'admin'] as const).map((role) => ({
+      role,
+      kind: 'app',
+      placement: 'admin' as const,
+      action: 'delete' as const,
+    })),
+    ...(['root', 'folder'] as const).map((placement) => ({
+      role: 'homeModerator' as const,
+      kind: 'app',
+      placement,
+      action: 'delete' as const,
+    })),
+  ];
   const MEMBERS: GuideRole[] = ['homeModerator', 'writeGrant', 'readGrant', 'outsider'];
   /** A contact share of the item (Can write: `write`), made for the cell. */
   const contactShare = async (id: string, write: boolean): Promise<string> => {
@@ -848,7 +857,7 @@ describe.skipIf(!DB_URL)('A8 surface cells: every way in gives the oracle’s an
         supports: (kind, action) =>
           (['read', 'delete'].includes(action) && WEB_READ_KINDS.has(kind)) ||
           ['grantAdd', 'grantRemove', 'writeSwitch', 'move'].includes(action),
-        always: ADMIN_APP_DELETES,
+        always: APP_DELETES,
         run: async (role, kind, action, id) => {
           const r = role!;
           const R = fx.ws.R;
@@ -915,7 +924,7 @@ describe.skipIf(!DB_URL)('A8 surface cells: every way in gives the oracle’s an
             input,
           ),
         ),
-        always: ADMIN_APP_DELETES,
+        always: APP_DELETES,
       },
       toolEntry('mcp-key', 'login-ro', ALL, async (role, slug, input) =>
         mcpCall(await bearer(keyRo[role!]!), loginActor(role!), slug, input),
