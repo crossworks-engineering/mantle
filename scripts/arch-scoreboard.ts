@@ -26,6 +26,7 @@ const LABELS: Record<string, string> = {
   asSystemSites: 'asSystem call sites',
   asSystemFiles: 'files with asSystem',
   asSystemReasons: 'asSystem reasons',
+  asSystemDoorCalls: 'calls of an asSystem door (one pinned site each)',
   rawAclFiles: 'files outside packages/db reading read_ws, write_ws or home_ws',
   rawAclLines: 'lines reading them',
   toolPolicyLists: 'tool policy lists keyed by name',

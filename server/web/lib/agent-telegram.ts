@@ -37,6 +37,15 @@ import type {
   TelegramPairPreview,
   TelegramPairResult,
 } from '@mantle/client-types';
+
+/**
+ * This file's one system door (arch A6): an assistant's bots and their chats
+ * are read and written on the system pool by the named reason
+ * 'login-telegram'. Every read and write below goes through it.
+ */
+function telegramLoginSystem<T>(fn: () => Promise<T>): Promise<T> {
+  return asSystem(fn, 'login-telegram');
+}
 export type {
   AgentTelegramBinding,
   AgentTelegramChat,
@@ -271,18 +280,16 @@ export async function listAgentTelegramChats(
 /** Every chat of bot `accountId`, with the user each is paired to, sorted
  *  for a list. The caller has checked who may see them. */
 async function chatsOfBot(ownerId: string, accountId: string): Promise<AgentTelegramChat[]> {
-  const rows = await asSystem(
-    () =>
-      db
-        .select({
-          chat: telegramChats,
-          displayName: authUsers.displayName,
-          email: authUsers.email,
-        })
-        .from(telegramChats)
-        .leftJoin(authUsers, eq(authUsers.id, telegramChats.loginId))
-        .where(and(eq(telegramChats.userId, ownerId), eq(telegramChats.accountId, accountId))),
-    'login-telegram',
+  const rows = await telegramLoginSystem(() =>
+    db
+      .select({
+        chat: telegramChats,
+        displayName: authUsers.displayName,
+        email: authUsers.email,
+      })
+      .from(telegramChats)
+      .leftJoin(authUsers, eq(authUsers.id, telegramChats.loginId))
+      .where(and(eq(telegramChats.userId, ownerId), eq(telegramChats.accountId, accountId))),
   );
   return rows
     .map(({ chat: r, displayName, email }) => ({
@@ -397,32 +404,30 @@ export async function listMyTelegramChats(
   ownerId: string,
   loginId: string,
 ): Promise<MyTelegramChat[]> {
-  const rows = await asSystem(
-    () =>
-      db
-        .select({
-          id: telegramChats.id,
-          telegramChatId: telegramChats.telegramChatId,
-          title: telegramChats.title,
-          username: telegramChats.username,
-          lastMessageAt: telegramChats.lastMessageAt,
-          botUsername: telegramAccounts.botUsername,
-          agentName: agents.name,
-          agentSlug: agents.slug,
-        })
-        .from(telegramChats)
-        .innerJoin(telegramAccounts, eq(telegramAccounts.id, telegramChats.accountId))
-        .leftJoin(channels, eq(channels.id, telegramAccounts.channelId))
-        .leftJoin(agents, eq(agents.id, channels.agentId))
-        .where(
-          and(
-            eq(telegramChats.userId, ownerId),
-            eq(telegramChats.loginId, loginId),
-            eq(telegramChats.allowlistStatus, 'allowed'),
-          ),
-        )
-        .orderBy(desc(telegramChats.lastMessageAt)),
-    'login-telegram',
+  const rows = await telegramLoginSystem(() =>
+    db
+      .select({
+        id: telegramChats.id,
+        telegramChatId: telegramChats.telegramChatId,
+        title: telegramChats.title,
+        username: telegramChats.username,
+        lastMessageAt: telegramChats.lastMessageAt,
+        botUsername: telegramAccounts.botUsername,
+        agentName: agents.name,
+        agentSlug: agents.slug,
+      })
+      .from(telegramChats)
+      .innerJoin(telegramAccounts, eq(telegramAccounts.id, telegramChats.accountId))
+      .leftJoin(channels, eq(channels.id, telegramAccounts.channelId))
+      .leftJoin(agents, eq(agents.id, channels.agentId))
+      .where(
+        and(
+          eq(telegramChats.userId, ownerId),
+          eq(telegramChats.loginId, loginId),
+          eq(telegramChats.allowlistStatus, 'allowed'),
+        ),
+      )
+      .orderBy(desc(telegramChats.lastMessageAt)),
   );
   return rows.map((r) => ({
     id: r.id,
@@ -456,20 +461,18 @@ export async function listModeratedTelegramChats(
   ownerId: string,
   loginId: string,
 ): Promise<ModeratedTelegramChat[]> {
-  const bots = await asSystem(
-    () =>
-      db
-        .select({
-          accountId: telegramAccounts.id,
-          botUsername: telegramAccounts.botUsername,
-          agentName: agents.name,
-          agentSlug: agents.slug,
-        })
-        .from(telegramAccounts)
-        .leftJoin(channels, eq(channels.id, telegramAccounts.channelId))
-        .leftJoin(agents, eq(agents.id, channels.agentId))
-        .where(eq(telegramAccounts.userId, ownerId)),
-    'login-telegram',
+  const bots = await telegramLoginSystem(() =>
+    db
+      .select({
+        accountId: telegramAccounts.id,
+        botUsername: telegramAccounts.botUsername,
+        agentName: agents.name,
+        agentSlug: agents.slug,
+      })
+      .from(telegramAccounts)
+      .leftJoin(channels, eq(channels.id, telegramAccounts.channelId))
+      .leftJoin(agents, eq(agents.id, channels.agentId))
+      .where(eq(telegramAccounts.userId, ownerId)),
   );
   const out: ModeratedTelegramChat[] = [];
   for (const bot of bots) {

@@ -1,11 +1,12 @@
 import { NextResponse } from '@/server/http-compat';
-import { asSystem, getChatThread } from '@mantle/db';
+import { getChatThread } from '@mantle/db';
 import { UUID_RE } from '@mantle/std';
 import { summarizeChatThread } from '@mantle/runtime/agent';
 import { chatLoginCaller } from '@/lib/auth';
 import { resolveChatAgentById } from '@/lib/assistant-chat';
 import { chatThreadRow } from '@/lib/chat-threads';
 import { claimMemberChatWork } from '@/lib/workspace-turn';
+import { inRuleInQuery } from '@/lib/auth/rule-in-query';
 
 /**
  * POST /api/assistant/threads/<id>/summarize: retry the summary of an archived
@@ -31,9 +32,8 @@ export async function POST(_req: Request, ctx: { params: Promise<{ id: string }>
     if (limited) return limited;
   }
   try {
-    const updated = await asSystem(
-      () => summarizeChatThread(login.ownerId, id, login.loginId),
-      'rule-in-query',
+    const updated = await inRuleInQuery(() =>
+      summarizeChatThread(login.ownerId, id, login.loginId),
     );
     return NextResponse.json({ thread: await chatThreadRow(login.ownerId, updated ?? thread) });
   } catch (err) {

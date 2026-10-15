@@ -22,10 +22,11 @@
 import { NextResponse } from '@/server/http-compat';
 import { chatLoginCaller } from '@/lib/auth';
 import { claimMemberChatWork } from '@/lib/workspace-turn';
-import { asSystem, getDefaultWorker } from '@mantle/db';
+import { getDefaultWorker } from '@mantle/db';
 import { getApiKeyById } from '@mantle/api-keys';
 import { getSttAdapter, type SttDispatcher } from '@mantle/voice';
 import { errorMessage } from '@mantle/std';
+import { inRuleInQuery } from '@/lib/auth/rule-in-query';
 
 export async function POST(req: Request) {
   // A member's clips: the gate took the row's limit (lib/route-limits.ts
@@ -54,7 +55,7 @@ export async function POST(req: Request) {
 
   // The brain's STT worker and its key: system configuration the workspace
   // role does not read.
-  const worker = await asSystem(() => getDefaultWorker(login.ownerId, 'stt'), 'rule-in-query');
+  const worker = await inRuleInQuery(() => getDefaultWorker(login.ownerId, 'stt'));
   if (!worker?.apiKeyId) {
     return NextResponse.json(
       {
@@ -65,7 +66,7 @@ export async function POST(req: Request) {
     );
   }
   const keyId = worker.apiKeyId;
-  const apiKey = await asSystem(() => getApiKeyById(keyId), 'rule-in-query');
+  const apiKey = await inRuleInQuery(() => getApiKeyById(keyId));
   if (!apiKey) {
     return NextResponse.json(
       { error: `STT worker '${worker.slug}' api_key could not be decrypted.` },

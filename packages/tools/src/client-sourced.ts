@@ -48,6 +48,16 @@ import {
 } from '@mantle/db';
 import { asSystem } from '@mantle/db/viewer';
 
+/**
+ * The client-sourced check's one system door (arch A6): what a client wrote,
+ * the shares and exports that expose a row, and the client workspaces are read
+ * on the system pool by the named reason 'client-sourced-check' (the rule is
+ * in the query). This file and client-sourced-rules.ts go through it.
+ */
+export function clientSourcedSystem<T>(fn: () => Promise<T>): Promise<T> {
+  return asSystem(fn, 'client-sourced-check');
+}
+
 /** A turn's taint, shared by reference across the turn (and its delegated
  *  children: a child that reads client text taints the parent too). */
 export type TurnTaint = {
@@ -149,7 +159,7 @@ export async function namesClientSourced(
   ids: readonly string[],
 ): Promise<boolean> {
   if (ids.length === 0) return false;
-  return asSystem(async () => {
+  return clientSourcedSystem(async () => {
     for (const list of batches(ids)) {
       const [task] = await db
         .select({ id: nodes.id })
@@ -189,7 +199,7 @@ export async function namesClientSourced(
       if (exported) return true;
     }
     return false;
-  }, 'client-sourced-check');
+  });
 }
 
 /**
@@ -205,7 +215,7 @@ export async function clientSourcedAmong(
 ): Promise<Set<string>> {
   const out = new Set<string>();
   if (ids.length === 0) return out;
-  await asSystem(async () => {
+  await clientSourcedSystem(async () => {
     for (const list of batches(ids)) {
       const tasks = await db
         .select({ id: nodes.id })
@@ -230,7 +240,7 @@ export async function clientSourcedAmong(
       const exported = await clientAppExportsAmong(ownerId, list);
       for (const r of [...tasks, ...written, ...copied, ...exported]) out.add(r.id);
     }
-  }, 'client-sourced-check');
+  });
   return out;
 }
 
@@ -312,20 +322,18 @@ export function conversationTaintKey(
 export async function loadConversationTaint(ownerId: string, key: string): Promise<TurnTaint> {
   const taint: TurnTaint = { clientSourced: false, conversation: { ownerId, key } };
   try {
-    const [row] = await asSystem(
-      () =>
-        db
-          .select({ via: conversationTaints.via })
-          .from(conversationTaints)
-          .where(
-            and(
-              eq(conversationTaints.ownerId, ownerId),
-              eq(conversationTaints.conversationKey, key),
-              sql`${conversationTaints.taintedAt} > now() - make_interval(hours => ${CONVERSATION_TAINT_HOURS})`,
-            ),
-          )
-          .limit(1),
-      'client-sourced-check',
+    const [row] = await clientSourcedSystem(() =>
+      db
+        .select({ via: conversationTaints.via })
+        .from(conversationTaints)
+        .where(
+          and(
+            eq(conversationTaints.ownerId, ownerId),
+            eq(conversationTaints.conversationKey, key),
+            sql`${conversationTaints.taintedAt} > now() - make_interval(hours => ${CONVERSATION_TAINT_HOURS})`,
+          ),
+        )
+        .limit(1),
     );
     if (row) {
       taint.clientSourced = true;
@@ -347,16 +355,14 @@ async function keepConversationTaint(
   via: string,
 ): Promise<void> {
   try {
-    await asSystem(
-      () =>
-        db
-          .insert(conversationTaints)
-          .values({ ownerId: conv.ownerId, conversationKey: conv.key, via })
-          .onConflictDoUpdate({
-            target: [conversationTaints.ownerId, conversationTaints.conversationKey],
-            set: { via, taintedAt: sql`now()` },
-          }),
-      'client-sourced-check',
+    await clientSourcedSystem(() =>
+      db
+        .insert(conversationTaints)
+        .values({ ownerId: conv.ownerId, conversationKey: conv.key, via })
+        .onConflictDoUpdate({
+          target: [conversationTaints.ownerId, conversationTaints.conversationKey],
+          set: { via, taintedAt: sql`now()` },
+        }),
     );
   } catch (err) {
     console.warn('[client-sourced] could not keep the conversation mark:', err);
@@ -383,7 +389,7 @@ export async function markCreatedClientSourced(
   const secs = Math.ceil(Math.max(0, withinMs) / 1000) + 2;
   let marked = 0;
   try {
-    await asSystem(async () => {
+    await clientSourcedSystem(async () => {
       for (const list of batches(ids)) {
         const created = await db
           .select({ id: nodes.id })
@@ -403,7 +409,7 @@ export async function markCreatedClientSourced(
           .returning({ id: clientSourcedNodes.nodeId });
         marked += rows.length;
       }
-    }, 'client-sourced-check');
+    });
   } catch (err) {
     console.warn('[client-sourced] could not mark created nodes:', err);
   }

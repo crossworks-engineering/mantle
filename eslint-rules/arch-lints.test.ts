@@ -2,7 +2,9 @@ import { join } from 'node:path';
 import { RuleTester } from 'eslint';
 import { describe, expect, it } from 'vitest';
 import {
+  asSystemDoors,
   asSystemSites,
+  doorCalls,
   builtinSlugs,
   countedFiles,
   guardCalls,
@@ -309,6 +311,35 @@ describe('the counters', () => {
     expect(s).toContain("'http://x'");
     expect(s).toContain('"//y"');
     expect(rawAclLines('// read_ws\nconst a = n.read_ws;\n/**\n * homeWs\n */')).toBe(1);
+  });
+
+  it('asSystem doors (A6): a function whose body is one asSystem call, and its calls', () => {
+    const text = [
+      'function telegramLoginSystem<T>(fn: () => Promise<T>): Promise<T> {',
+      "  return asSystem(fn, 'login-telegram');",
+      '}',
+      'export function inRuleInQuery<R>(body: () => Promise<R>): Promise<R> {',
+      "  return asSystem(body, 'rule-in-query');",
+      '}',
+      '// telegramLoginSystem(() => x) in a comment is no call',
+      'const a = await telegramLoginSystem(() => read());',
+      'const b = await telegramLoginSystem(async () => write());',
+      // Not a door: more than the one call in its body.
+      "function wider<T>(fn: () => Promise<T>): Promise<T> { log(); return asSystem(fn, 'x'); }",
+    ].join('\n');
+    expect(asSystemDoors(text)).toEqual([
+      { name: 'telegramLoginSystem', exported: false, reason: 'login-telegram' },
+      { name: 'inRuleInQuery', exported: true, reason: 'rule-in-query' },
+    ]);
+    expect(doorCalls(text, 'telegramLoginSystem')).toBe(2);
+    expect(doorCalls(text, 'inRuleInQuery')).toBe(0);
+    // The doors' own sites are the pinned asSystem sites.
+    expect(asSystemSites(text).count).toBe(3);
+  });
+
+  it('asSystem doors: every pinned door call is counted, at most 40 sites (plan v2 exit)', () => {
+    expect(got.numbers.asSystemSites).toBeLessThanOrEqual(40);
+    expect(got.numbers.asSystemDoorCalls).toBeGreaterThan(0);
   });
 
   it('count asSystem calls with their reasons, not the definition or imports', () => {

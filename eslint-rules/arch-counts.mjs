@@ -252,6 +252,38 @@ export function asSystemSites(text) {
   return { count, reasons: [...reasons].sort() };
 }
 
+/** A door (arch A6): a function whose whole body is one asSystem call with
+ *  its reason, so several places of a file (or, exported, of several files)
+ *  leave the scope by one pinned site. */
+const AS_SYSTEM_DOOR =
+  /(export\s+)?function\s+(\w+)\s*<(\w+)>\s*\(\s*(\w+)\s*:\s*\(\)\s*=>\s*Promise<\3>\s*\)\s*:\s*Promise<\3>\s*\{\s*return\s+asSystem\s*\(\s*\4\s*,\s*'([a-z][a-z0-9:_-]*)'\s*\)\s*;?\s*\}/g;
+
+/** The doors `text` defines: name, whether exported, and its reason. */
+export function asSystemDoors(text) {
+  const code = stripComments(text);
+  const out = [];
+  let m;
+  AS_SYSTEM_DOOR.lastIndex = 0;
+  while ((m = AS_SYSTEM_DOOR.exec(code))) {
+    out.push({ name: m[2], exported: !!m[1], reason: m[5] });
+  }
+  return out;
+}
+
+/** How many times `text` calls the door `name` (its definition is no call). */
+export function doorCalls(text, name) {
+  const code = stripComments(text);
+  const re = new RegExp(`\\b${name}\\s*\\(`, 'g');
+  let n = 0;
+  let m;
+  while ((m = re.exec(code))) {
+    const before = code.slice(Math.max(0, m.index - 20), m.index);
+    if (/function\s+$/.test(before)) continue;
+    n += 1;
+  }
+  return n;
+}
+
 // ── raw ACL columns ─────────────────────────────────────────────────────────
 
 export const RAW_ACL_PATTERN = /\b(read_ws|write_ws|home_ws|readWs|writeWs|homeWs)\b/;
@@ -744,11 +776,29 @@ export function measure(root) {
   const spend = Object.fromEntries(
     Object.keys(SPEND_PATTERNS).map((k) => [k, { outside: {}, allowed: {} }]),
   );
+  // The asSystem doors (A6) and the calls of each, file by file: a door
+  // keeps one pinned site, so the places that go through it are counted
+  // here and pinned as a total (asSystemDoorCalls).
+  const doors = {};
+  const exportedDoors = new Set();
+  for (const f of files) {
+    const text = readRepoFile(root, f);
+    if (text === null || !/\basSystem\b/.test(text)) continue;
+    for (const d of asSystemDoors(text)) {
+      (doors[f] ??= []).push(d.name);
+      if (d.exported) exportedDoors.add(d.name);
+    }
+  }
+  const doorCallsByFile = {};
   for (const f of files) {
     const text = readRepoFile(root, f);
     if (text === null) continue;
     const sys = asSystemSites(text);
     if (sys.count) asSystem[f] = sys;
+    const names = new Set([...(doors[f] ?? []), ...exportedDoors]);
+    let calls = 0;
+    for (const name of names) if (text.includes(name)) calls += doorCalls(text, name);
+    if (calls) doorCallsByFile[f] = calls;
     if (rawAclSwept(f)) {
       const n = rawAclLines(text);
       if (n) rawAcl[f] = n;
@@ -844,6 +894,7 @@ export function measure(root) {
   return {
     numbers: {
       asSystemSites: sum(asSystem, 'count'),
+      asSystemDoorCalls: sum(doorCallsByFile),
       asSystemFiles: Object.keys(asSystem).length,
       asSystemReasons: reasons.size,
       rawAclFiles: Object.keys(rawAcl).length,
@@ -905,6 +956,7 @@ export function measure(root) {
     },
     perFile: {
       asSystem,
+      asSystemDoorCalls: doorCallsByFile,
       rawAcl,
       toolLists,
       routeLists,

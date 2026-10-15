@@ -1,12 +1,6 @@
 import { and, desc, eq, gt, inArray, sql } from 'drizzle-orm';
-import {
-  asSystem,
-  db,
-  agents,
-  assistantMessages,
-  assistantReadCursors,
-  type AgentAvatar,
-} from '@mantle/db';
+import { db, agents, assistantMessages, assistantReadCursors, type AgentAvatar } from '@mantle/db';
+import { inRuleInQuery } from '@/lib/auth/rule-in-query';
 
 /** Roles that hold a back-and-forth chat (mirrors listAssistantAgents). */
 const CHATTABLE_ROLES = ['assistant', 'responder', 'custom'] as const;
@@ -30,18 +24,16 @@ export type ConversationSummary = {
 export async function getReadCursors(ownerId: string, loginId: string): Promise<Map<string, Date>> {
   // The cursors are the login's own rows, which this query names; the
   // workspace role has no grant on them.
-  const rows = await asSystem(
-    () =>
-      db
-        .select({
-          agentId: assistantReadCursors.agentId,
-          lastReadAt: assistantReadCursors.lastReadAt,
-        })
-        .from(assistantReadCursors)
-        .where(
-          and(eq(assistantReadCursors.ownerId, ownerId), eq(assistantReadCursors.loginId, loginId)),
-        ),
-    'rule-in-query',
+  const rows = await inRuleInQuery(() =>
+    db
+      .select({
+        agentId: assistantReadCursors.agentId,
+        lastReadAt: assistantReadCursors.lastReadAt,
+      })
+      .from(assistantReadCursors)
+      .where(
+        and(eq(assistantReadCursors.ownerId, ownerId), eq(assistantReadCursors.loginId, loginId)),
+      ),
   );
   return new Map(rows.map((r) => [r.agentId, r.lastReadAt]));
 }
@@ -54,20 +46,18 @@ export async function markAssistantRead(
   at: Date = new Date(),
 ): Promise<Date> {
   // The login's own cursor row, named here; the system pool writes it.
-  await asSystem(
-    () =>
-      db
-        .insert(assistantReadCursors)
-        .values({ ownerId, agentId, loginId, lastReadAt: at })
-        .onConflictDoUpdate({
-          target: [
-            assistantReadCursors.ownerId,
-            assistantReadCursors.agentId,
-            assistantReadCursors.loginId,
-          ],
-          set: { lastReadAt: at },
-        }),
-    'rule-in-query',
+  await inRuleInQuery(() =>
+    db
+      .insert(assistantReadCursors)
+      .values({ ownerId, agentId, loginId, lastReadAt: at })
+      .onConflictDoUpdate({
+        target: [
+          assistantReadCursors.ownerId,
+          assistantReadCursors.agentId,
+          assistantReadCursors.loginId,
+        ],
+        set: { lastReadAt: at },
+      }),
   );
   return at;
 }

@@ -4,10 +4,10 @@
  * routes stay thin and agree; its errors answer by the one table.
  */
 import { NextResponse } from '@/server/http-compat';
-import { asSystem } from '@mantle/db';
 import { archiveAgentChat } from '@mantle/runtime/agent';
 import type { ChatArchiveResponse } from '@mantle/client-types';
 import { chatThreadRow } from './chat-threads';
+import { inRuleInQuery } from '@/lib/auth/rule-in-query';
 
 export async function archiveResponse(o: {
   ownerId: string;
@@ -22,7 +22,7 @@ export async function archiveResponse(o: {
   // reply still running (ChatArchiveBusyError, 409) and a thread not found
   // (ChatThreadNotFoundError, 404) answer by their rows in the one table
   // (A10 part 2 fix round 1, L7).
-  const r = await asSystem(() => archiveAgentChat(o), 'rule-in-query');
+  const r = await inRuleInQuery(() => archiveAgentChat(o));
   const body: ChatArchiveResponse = {
     archived: r.archived ? await chatThreadRow(o.ownerId, r.archived) : null,
     open: r.open ? await chatThreadRow(o.ownerId, r.open) : null,

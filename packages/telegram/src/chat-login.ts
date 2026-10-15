@@ -25,6 +25,16 @@
 import { and, desc, eq, sql } from 'drizzle-orm';
 import { asSystem, db, loginHasArea, telegramChats } from '@mantle/db';
 
+/**
+ * This file's one system door (arch A6): a Telegram chat's login, its bot and
+ * the bot's assistant are read and written on the system pool by the named
+ * reason 'login-telegram' (the workspace role reads none of them). Every
+ * read and write below goes through it.
+ */
+function telegramLoginSystem<T>(fn: () => Promise<T>): Promise<T> {
+  return asSystem(fn, 'login-telegram');
+}
+
 /** Why a login may not use a chat, or null when it may. */
 export type ChatLoginRefusal = 'no_login' | 'not_a_user' | 'no_assistant';
 
@@ -52,9 +62,8 @@ export async function chatLoginRefusal(args: {
 }): Promise<ChatLoginRefusal | null> {
   const { ownerId, loginId, accountId, responderAgentId } = args;
   if (!loginId || !UUID_RE.test(loginId)) return 'no_login';
-  const rows = (await asSystem(
-    () =>
-      db.execute(sql`
+  const rows = (await telegramLoginSystem(() =>
+    db.execute(sql`
         with chat_agents as (
           select a.workspace_id
             from agents a
@@ -84,7 +93,6 @@ export async function chatLoginRefusal(args: {
              )
           ) as user_of_all
       `),
-    'login-telegram',
   )) as unknown as { agents: number; on_ws: boolean; user_of_all: boolean }[];
   const r = rows[0];
   if (!r || r.agents === 0) return 'no_assistant';
@@ -106,9 +114,8 @@ export async function loginModeratesBot(args: {
   const { ownerId, loginId, accountId } = args;
   if (!UUID_RE.test(loginId)) return false;
   try {
-    const rows = (await asSystem(
-      () =>
-        db.execute(sql`
+    const rows = (await telegramLoginSystem(() =>
+      db.execute(sql`
           with admin_ws as (
             select w.id from workspaces w
              where w.owner_id = ${ownerId}::uuid and w.is_admin
@@ -129,7 +136,6 @@ export async function loginModeratesBot(args: {
                where t.id = ${accountId}::uuid
             ) as moderates
         `),
-      'login-telegram',
     )) as unknown as { on_ws: boolean; moderates: boolean }[];
     const r = rows[0];
     if (!r) return false;
@@ -158,26 +164,24 @@ export async function pairedChatOf(args: {
   telegramChatId: string;
 }): Promise<PairedChat | null> {
   if (!UUID_RE.test(args.loginId)) return null;
-  const [row] = await asSystem(
-    () =>
-      db
-        .select({
-          id: telegramChats.id,
-          accountId: telegramChats.accountId,
-          telegramChatId: telegramChats.telegramChatId,
-        })
-        .from(telegramChats)
-        .where(
-          and(
-            eq(telegramChats.userId, args.ownerId),
-            eq(telegramChats.loginId, args.loginId),
-            eq(telegramChats.telegramChatId, args.telegramChatId),
-            eq(telegramChats.allowlistStatus, 'allowed'),
-          ),
-        )
-        .orderBy(desc(telegramChats.lastMessageAt))
-        .limit(1),
-    'login-telegram',
+  const [row] = await telegramLoginSystem(() =>
+    db
+      .select({
+        id: telegramChats.id,
+        accountId: telegramChats.accountId,
+        telegramChatId: telegramChats.telegramChatId,
+      })
+      .from(telegramChats)
+      .where(
+        and(
+          eq(telegramChats.userId, args.ownerId),
+          eq(telegramChats.loginId, args.loginId),
+          eq(telegramChats.telegramChatId, args.telegramChatId),
+          eq(telegramChats.allowlistStatus, 'allowed'),
+        ),
+      )
+      .orderBy(desc(telegramChats.lastMessageAt))
+      .limit(1),
   );
   return row ?? null;
 }
@@ -194,28 +198,26 @@ export async function unpairRefusedChat(args: {
   chatId: string;
   loginId: string | null;
 }): Promise<void> {
-  await asSystem(
-    () =>
-      db
-        .update(telegramChats)
-        .set({
-          allowlistStatus: 'pending',
-          loginId: null,
-          pairingCode: null,
-          pairingExpiresAt: null,
-          pairingReplies: 0,
-          updatedAt: new Date(),
-        })
-        .where(
-          and(
-            eq(telegramChats.id, args.chatId),
-            eq(telegramChats.userId, args.ownerId),
-            eq(telegramChats.allowlistStatus, 'allowed'),
-            args.loginId
-              ? eq(telegramChats.loginId, args.loginId)
-              : sql`${telegramChats.loginId} is null`,
-          ),
+  await telegramLoginSystem(() =>
+    db
+      .update(telegramChats)
+      .set({
+        allowlistStatus: 'pending',
+        loginId: null,
+        pairingCode: null,
+        pairingExpiresAt: null,
+        pairingReplies: 0,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(telegramChats.id, args.chatId),
+          eq(telegramChats.userId, args.ownerId),
+          eq(telegramChats.allowlistStatus, 'allowed'),
+          args.loginId
+            ? eq(telegramChats.loginId, args.loginId)
+            : sql`${telegramChats.loginId} is null`,
         ),
-    'login-telegram',
+      ),
   );
 }

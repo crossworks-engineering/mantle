@@ -39,6 +39,15 @@ import {
 } from '@mantle/db';
 import { ADMIN_ONLY_ERROR, adminAreaError } from '@mantle/std';
 
+/**
+ * This file's one system door (arch A6): an Admin-area tool's own system tables,
+ * after its area check, by the named reason 'admin-area' (runGated and
+ * areaSystem below).
+ */
+function adminAreaSystem<T>(fn: () => Promise<T>): Promise<T> {
+  return asSystem(fn, 'admin-area');
+}
+
 /** What a scope may list (workspaces W7b): whether it holds Admin, and the
  *  Admin areas it may do. Read once per MCP connection. */
 export type AdminGateView = { holdsAdmin: boolean; areas: ReadonlySet<ScopeArea> };
@@ -122,7 +131,7 @@ export function isAdminGateRefusal(text: string): boolean {
  *  `systemWhole` tool (after its area check, by the named reason), else
  *  in the caller's scope. */
 export function runGated<T>(gate: { system: boolean }, fn: () => Promise<T>): Promise<T> {
-  return gate.system ? asSystem(fn, 'admin-area') : fn();
+  return gate.system ? adminAreaSystem(fn) : fn();
 }
 
 /**
@@ -143,7 +152,7 @@ export async function areaSystem<T>(area: ScopeArea, fn: () => Promise<T>): Prom
     return fn();
   }
   if (!(await scopeHasArea(area))) throw new Error(adminAreaError(area));
-  return asSystem(fn, 'admin-area');
+  return adminAreaSystem(fn);
 }
 
 /**

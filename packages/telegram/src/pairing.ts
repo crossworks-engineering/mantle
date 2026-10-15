@@ -29,6 +29,15 @@ import {
 import { chatLoginRefusal, loginModeratesBot, TELEGRAM_NOT_A_USER_CODE } from './chat-login';
 import { sendMessage } from './outbound';
 
+/**
+ * This file's one system door (arch A6): the pairing rows (a chat's code, its
+ * login) are read and written on the system pool by the named reason
+ * 'login-telegram'. Every read and write below goes through it.
+ */
+function telegramLoginSystem<T>(fn: () => Promise<T>): Promise<T> {
+  return asSystem(fn, 'login-telegram');
+}
+
 /** A refusal: the reply text, and a code a screen can tell apart. */
 export type PairingRefusal = { ok: false; error: string; code: PairingRefusalCode };
 export type PairingRefusalCode =
@@ -306,7 +315,7 @@ export async function previewChatPairing(args: {
   const now = Date.now();
   if (tooManyFailures(loginId, now)) return TOO_MANY;
   const code = args.code.trim().toLowerCase();
-  return asSystem(async () => {
+  return telegramLoginSystem(async () => {
     const t = await pairingTarget({ ownerId, loginId, code, now });
     if (!t.ok) return t;
     const [account] = await db
@@ -328,7 +337,7 @@ export async function previewChatPairing(args: {
       },
       previewToken: previewTokenOf(t.chat, loginId, code, now),
     };
-  }, 'login-telegram');
+  });
 }
 
 /**
@@ -353,7 +362,7 @@ export async function pairChatWithCode(args: {
   const now = Date.now();
   if (tooManyFailures(loginId, now)) return TOO_MANY;
   const code = args.code.trim().toLowerCase();
-  return asSystem(async () => {
+  return telegramLoginSystem(async () => {
     const t = await pairingTarget({ ownerId, loginId, code, now });
     if (!t.ok) return t;
     const { chat, summary } = t;
@@ -405,7 +414,7 @@ export async function pairChatWithCode(args: {
       });
     }
     return { ok: true as const, already: false, chat: summary };
-  }, 'login-telegram');
+  });
 }
 
 /**
@@ -455,7 +464,7 @@ export async function setChatPairing(args: {
   accountId?: string;
 }): Promise<{ ok: true; chat: PairedChatSummary } | PairingRefusal> {
   const { ownerId, actorLoginId, chatId, action } = args;
-  return asSystem(async () => {
+  return telegramLoginSystem(async () => {
     const [chat] = await db
       .select()
       .from(telegramChats)
@@ -498,5 +507,5 @@ export async function setChatPairing(args: {
         agentName: await botAgentName(chat.accountId),
       },
     };
-  }, 'login-telegram');
+  });
 }

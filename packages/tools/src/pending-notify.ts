@@ -40,6 +40,15 @@ import { accountById, sendApprovalCard } from '@mantle/telegram';
 import { loadProfilePreferences } from '@mantle/content';
 import { registerPendingCreatedNotifier } from '@mantle/runs';
 
+/**
+ * This file's one system door (arch A6): the chat a pending call's notice goes
+ * to, and its login, are read on the system pool by the named reason
+ * 'login-telegram'. Every read below goes through it.
+ */
+function telegramLoginSystem<T>(fn: () => Promise<T>): Promise<T> {
+  return asSystem(fn, 'login-telegram');
+}
+
 /** The Postgres channel the web realtime bridge LISTENs on for approval
  *  queue changes. Exported so notifier + listener share one string. */
 export const PENDING_CHANGED_CHANNEL = 'pending_changed';
@@ -116,24 +125,22 @@ export async function resolveApprovalChat(
   loginId: string,
 ): Promise<{ accountId: string; telegramChatId: string } | null> {
   if (!(await loginHasArea(loginId, 'settings'))) return null;
-  const [chat] = await asSystem(
-    () =>
-      db
-        .select({
-          accountId: telegramChats.accountId,
-          telegramChatId: telegramChats.telegramChatId,
-        })
-        .from(telegramChats)
-        .where(
-          and(
-            eq(telegramChats.userId, ownerId),
-            eq(telegramChats.loginId, loginId),
-            eq(telegramChats.allowlistStatus, 'allowed'),
-          ),
-        )
-        .orderBy(desc(telegramChats.lastMessageAt))
-        .limit(1),
-    'login-telegram',
+  const [chat] = await telegramLoginSystem(() =>
+    db
+      .select({
+        accountId: telegramChats.accountId,
+        telegramChatId: telegramChats.telegramChatId,
+      })
+      .from(telegramChats)
+      .where(
+        and(
+          eq(telegramChats.userId, ownerId),
+          eq(telegramChats.loginId, loginId),
+          eq(telegramChats.allowlistStatus, 'allowed'),
+        ),
+      )
+      .orderBy(desc(telegramChats.lastMessageAt))
+      .limit(1),
   );
   return chat ?? null;
 }
@@ -169,10 +176,7 @@ export async function notifyPendingCreated(input: {
   try {
     // The card goes to the call's own login only (W7d): its chat, its last
     // channel.
-    const loginId = await asSystem(
-      () => approvalLogin(input.ownerId, input.pendingId),
-      'login-telegram',
-    );
+    const loginId = await telegramLoginSystem(() => approvalLogin(input.ownerId, input.pendingId));
     if (!loginId) return;
     const prefs = await loadProfilePreferences(loginId);
     if (prefs.reminderChannel === 'mobile') return;

@@ -12,7 +12,6 @@ import { RedirectError } from '../../server/http-compat/redirect-error';
 import { and, eq, isNull, ne, or, sql } from 'drizzle-orm';
 import bcrypt from 'bcryptjs';
 import {
-  asSystem,
   db,
   mayEditSql,
   mayManageSql,
@@ -99,6 +98,7 @@ import {
 } from './tokens';
 import { env } from '@mantle/config';
 import { isLoginRole, type LoginRole } from '@mantle/client-types/role-names';
+import { inRuleInQuery } from './rule-in-query';
 
 /**
  * Fresh install? (empty `auth.users`). Drives the login screen's
@@ -2078,7 +2078,7 @@ export async function adminLoginActive(loginId: string): Promise<boolean> {
  *  the system pool: a member's request scope does not read auth.users (W6b
  *  fix round 1, the admin-only app switches). Its own row only. */
 export async function loginIsAdmin(loginId: string): Promise<boolean> {
-  return asSystem(() => adminLoginActive(loginId), 'rule-in-query');
+  return inRuleInQuery(() => adminLoginActive(loginId));
 }
 
 /** When the calling request's session cookie expires (ms since epoch), or

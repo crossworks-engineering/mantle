@@ -29,8 +29,7 @@
  */
 import { and, arrayOverlaps, eq, inArray, or, sql } from 'drizzle-orm';
 import { agents, appTableExports, db, nodes, toolGroups, mayReadInSql } from '@mantle/db';
-import { asSystem } from '@mantle/db/viewer';
-import { clientWsSql } from './client-sourced';
+import { clientSourcedSystem, clientWsSql } from './client-sourced';
 import type { ClientSourcedRule, ClientSourcedWriteRule } from './client-sourced-rule';
 import { builtinPolicy, policyLowers, policyMayLower, type ToolPolicy } from './tool-policy';
 
@@ -220,7 +219,7 @@ export async function writeVerdict(
     groupSlugs.length +
     toolSlugs.length;
   if (named === 0) return RUN;
-  return asSystem(async (): Promise<GateVerdict> => {
+  return clientSourcedSystem(async (): Promise<GateVerdict> => {
     // An app: the app itself and every brain table it exports.
     const exported =
       appIds.length > 0
@@ -309,5 +308,5 @@ export async function writeVerdict(
       }
     }
     return RUN;
-  }, 'client-sourced-check');
+  });
 }

@@ -22,11 +22,12 @@
  * Journal, no "About the user", the member turn ledger's limits).
  */
 import { eq } from 'drizzle-orm';
-import { agents, asSystem, db, workspaces, type Agent } from '@mantle/db';
+import { agents, db, workspaces, type Agent } from '@mantle/db';
 import { chatTextsForReader, workspaceAssistants, type WorkspaceAssistant } from '@mantle/content';
 import type { AssistantAgentOption } from '@mantle/client-types';
 import type { ChatLogin } from './auth';
 import { listAssistantAgents, resolveAgentForActor } from './assistant';
+import { inRuleInQuery } from '@/lib/auth/rule-in-query';
 
 export type ChatAgent = Agent & { turnEngine: 'owner' | 'workspace' };
 
@@ -137,15 +138,13 @@ export async function messagesForReader<T extends { text: string }>(
   messages: T[],
 ): Promise<T[]> {
   if (login.kind === 'admin' || messages.length === 0) return messages;
-  const texts = await asSystem(
-    () =>
-      chatTextsForReader(
-        login.ownerId,
-        'team',
-        login.loginId,
-        messages.map((m) => m.text),
-      ),
-    'rule-in-query',
+  const texts = await inRuleInQuery(() =>
+    chatTextsForReader(
+      login.ownerId,
+      'team',
+      login.loginId,
+      messages.map((m) => m.text),
+    ),
   );
   return messages.map((m, i) => ({ ...m, text: texts[i] ?? '' }));
 }

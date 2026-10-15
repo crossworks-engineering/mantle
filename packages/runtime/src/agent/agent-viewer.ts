@@ -83,6 +83,16 @@ import {
   withTurnStamp,
 } from '@mantle/db/viewer';
 
+/**
+ * This file's one system door (arch A6): the rows an assistant's workspace
+ * scope is built from (its workspace, the login's user rows, the agent's brain,
+ * the login's role) are read before any scope exists, on the system pool by
+ * the named reason 'agent-workspace'. Every read below goes through it.
+ */
+function agentWorkspaceSystem<T>(fn: () => Promise<T>): Promise<T> {
+  return asSystem(fn, 'agent-workspace');
+}
+
 /** What a scope wrapper needs of an agent. */
 export type ScopedAgent = {
   /** agents.id. */
@@ -111,18 +121,16 @@ export class AgentWorkspaceError extends Error {
 /** The workspace row an assistant answers in, read on the system pool:
  *  whether it is Admin, and the brain (the anchor login) that owns it. */
 async function agentWorkspace(id: string): Promise<{ isAdmin: boolean; ownerId: string }> {
-  const [row] = await asSystem(
-    () =>
-      db
-        .select({
-          isAdmin: workspaces.isAdmin,
-          ownerId: workspaces.ownerId,
-          archivedAt: workspaces.archivedAt,
-        })
-        .from(workspaces)
-        .where(eq(workspaces.id, id))
-        .limit(1),
-    'agent-workspace',
+  const [row] = await agentWorkspaceSystem(() =>
+    db
+      .select({
+        isAdmin: workspaces.isAdmin,
+        ownerId: workspaces.ownerId,
+        archivedAt: workspaces.archivedAt,
+      })
+      .from(workspaces)
+      .where(eq(workspaces.id, id))
+      .limit(1),
   );
   if (!row) throw new AgentWorkspaceError('This assistant’s workspace no longer exists.');
   if (row.archivedAt) throw new AgentWorkspaceError('This assistant’s workspace is archived.');
@@ -132,14 +140,12 @@ async function agentWorkspace(id: string): Promise<{ isAdmin: boolean; ownerId: 
 /** `loginId`'s user row in workspace `wsId` (system pool), or null when the
  *  login is not a user there. */
 async function membership(wsId: string, loginId: string): Promise<{ moderator: boolean } | null> {
-  const [row] = await asSystem(
-    () =>
-      db
-        .select({ moderator: workspaceUsers.moderator })
-        .from(workspaceUsers)
-        .where(and(eq(workspaceUsers.workspaceId, wsId), eq(workspaceUsers.loginId, loginId)))
-        .limit(1),
-    'agent-workspace',
+  const [row] = await agentWorkspaceSystem(() =>
+    db
+      .select({ moderator: workspaceUsers.moderator })
+      .from(workspaceUsers)
+      .where(and(eq(workspaceUsers.workspaceId, wsId), eq(workspaceUsers.loginId, loginId)))
+      .limit(1),
   );
   return row ?? null;
 }
@@ -149,10 +155,8 @@ async function membership(wsId: string, loginId: string): Promise<{ moderator: b
 async function agentBrain(agent: ScopedAgent): Promise<string | null> {
   if (agent.ownerId) return agent.ownerId;
   if (!agent.id) return null;
-  const [row] = await asSystem(
-    () =>
-      db.select({ ownerId: agents.ownerId }).from(agents).where(eq(agents.id, agent.id!)).limit(1),
-    'agent-workspace',
+  const [row] = await agentWorkspaceSystem(() =>
+    db.select({ ownerId: agents.ownerId }).from(agents).where(eq(agents.id, agent.id!)).limit(1),
   );
   return row?.ownerId ?? null;
 }
@@ -161,14 +165,12 @@ async function agentBrain(agent: ScopedAgent): Promise<string | null> {
  *  on workspaces, the role is what puts a login's requests on the system
  *  pool (the session guard's 'not-on-workspaces' outcome). */
 async function enabledAdminLogin(loginId: string): Promise<boolean> {
-  const [row] = await asSystem(
-    () =>
-      db
-        .select({ role: authUsers.role })
-        .from(authUsers)
-        .where(and(eq(authUsers.id, loginId), isNull(authUsers.disabledAt)))
-        .limit(1),
-    'agent-workspace',
+  const [row] = await agentWorkspaceSystem(() =>
+    db
+      .select({ role: authUsers.role })
+      .from(authUsers)
+      .where(and(eq(authUsers.id, loginId), isNull(authUsers.disabledAt)))
+      .limit(1),
   );
   return row?.role === 'admin';
 }
@@ -184,22 +186,20 @@ async function adminUserOf(
   loginId: string,
   ownerId: string | null,
 ): Promise<{ wsId: string; moderator: boolean } | 'no-workspaces' | null> {
-  const rows = await asSystem(
-    () =>
-      db
-        .select({ wsId: workspaces.id, moderator: workspaceUsers.moderator })
-        .from(workspaceUsers)
-        .innerJoin(workspaces, eq(workspaces.id, workspaceUsers.workspaceId))
-        .where(
-          and(
-            eq(workspaceUsers.loginId, loginId),
-            eq(workspaces.isAdmin, true),
-            isNull(workspaces.archivedAt),
-            ...(ownerId ? [eq(workspaces.ownerId, ownerId)] : []),
-          ),
-        )
-        .limit(2),
-    'agent-workspace',
+  const rows = await agentWorkspaceSystem(() =>
+    db
+      .select({ wsId: workspaces.id, moderator: workspaceUsers.moderator })
+      .from(workspaceUsers)
+      .innerJoin(workspaces, eq(workspaces.id, workspaceUsers.workspaceId))
+      .where(
+        and(
+          eq(workspaceUsers.loginId, loginId),
+          eq(workspaces.isAdmin, true),
+          isNull(workspaces.archivedAt),
+          ...(ownerId ? [eq(workspaces.ownerId, ownerId)] : []),
+        ),
+      )
+      .limit(2),
   );
   if (rows.length === 1) return rows[0]!;
   if (rows.length > 1) return null;
@@ -535,20 +535,18 @@ export async function withRunScope<T>(
 /** The brain's live Admin workspace (system pool), or null on a brain not
  *  on workspaces. */
 async function adminWorkspaceOf(ownerId: string): Promise<string | null> {
-  const [row] = await asSystem(
-    () =>
-      db
-        .select({ id: workspaces.id })
-        .from(workspaces)
-        .where(
-          and(
-            eq(workspaces.ownerId, ownerId),
-            eq(workspaces.isAdmin, true),
-            isNull(workspaces.archivedAt),
-          ),
-        )
-        .limit(1),
-    'agent-workspace',
+  const [row] = await agentWorkspaceSystem(() =>
+    db
+      .select({ id: workspaces.id })
+      .from(workspaces)
+      .where(
+        and(
+          eq(workspaces.ownerId, ownerId),
+          eq(workspaces.isAdmin, true),
+          isNull(workspaces.archivedAt),
+        ),
+      )
+      .limit(1),
   );
   return row?.id ?? null;
 }

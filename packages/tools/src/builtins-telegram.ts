@@ -46,6 +46,15 @@ import { errorMessage } from '@mantle/std';
 import { CS } from './client-sourced-rule';
 
 /**
+ * This file's one system door (arch A6): the bot and chat rows the Telegram
+ * tools need are read on the system pool by the named reason 'login-telegram'
+ * (the workspace role reads none of them). Every read below goes through it.
+ */
+function telegramLoginSystem<T>(fn: () => Promise<T>): Promise<T> {
+  return asSystem(fn, 'login-telegram');
+}
+
+/**
  * The login this call acts for (workspaces W7d): the login its surface
  * names (a web or Telegram chat, an MCP connection, an API key), else the
  * login of the scope it runs in (or the scope its system-pool work left, or
@@ -91,7 +100,7 @@ async function ownAllowedChat(
       error: `chat ${chatId} is not one of your paired chats: see yours with telegram_pending, or pair one with telegram_pair`,
     };
   }
-  const account = await asSystem(() => accountById(chat.accountId), 'login-telegram');
+  const account = await telegramLoginSystem(() => accountById(chat.accountId));
   if (!account || !account.enabled) {
     return { ok: false, error: 'no enabled telegram bot for this chat' };
   }
@@ -185,26 +194,24 @@ export const telegram_pending: BuiltinToolDef = {
       eq(telegramChats.allowlistStatus, 'allowed'),
     ];
     if (chatId) conds.push(eq(telegramChats.telegramChatId, chatId));
-    const rows = await asSystem(
-      () =>
-        db
-          .select({
-            id: telegramMessages.id,
-            telegram_message_id: telegramMessages.telegramMessageId,
-            chat_id: telegramChats.telegramChatId,
-            from_user_id: telegramMessages.fromUserId,
-            from_username: telegramMessages.fromUsername,
-            from_name: telegramMessages.fromName,
-            text: telegramMessages.text,
-            sent_at: telegramMessages.sentAt,
-            attachments: telegramMessages.attachments,
-          })
-          .from(telegramMessages)
-          .innerJoin(telegramChats, eq(telegramMessages.chatId, telegramChats.id))
-          .where(and(...conds))
-          .orderBy(asc(telegramMessages.sentAt))
-          .limit(num(input.limit) ?? 20),
-      'login-telegram',
+    const rows = await telegramLoginSystem(() =>
+      db
+        .select({
+          id: telegramMessages.id,
+          telegram_message_id: telegramMessages.telegramMessageId,
+          chat_id: telegramChats.telegramChatId,
+          from_user_id: telegramMessages.fromUserId,
+          from_username: telegramMessages.fromUsername,
+          from_name: telegramMessages.fromName,
+          text: telegramMessages.text,
+          sent_at: telegramMessages.sentAt,
+          attachments: telegramMessages.attachments,
+        })
+        .from(telegramMessages)
+        .innerJoin(telegramChats, eq(telegramMessages.chatId, telegramChats.id))
+        .where(and(...conds))
+        .orderBy(asc(telegramMessages.sentAt))
+        .limit(num(input.limit) ?? 20),
     );
     return { ok: true, output: rows };
   },
@@ -324,7 +331,7 @@ export const telegram_mark_processed: BuiltinToolDef = {
     // column. Resolved first so the UPDATE cannot touch a row of another
     // user's chat: marking it processed means their assistant never
     // answers it, and nothing anywhere errors.
-    const rows = await asSystem(async () => {
+    const rows = await telegramLoginSystem(async () => {
       const [owned] = await db
         .select({ id: telegramMessages.id })
         .from(telegramMessages)
@@ -343,7 +350,7 @@ export const telegram_mark_processed: BuiltinToolDef = {
         .set({ processed: true, processedAt: new Date() })
         .where(eq(telegramMessages.id, id))
         .returning({ id: telegramMessages.id });
-    }, 'login-telegram');
+    });
     if (rows.length === 0) {
       return {
         ok: false,

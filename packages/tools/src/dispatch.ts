@@ -9,21 +9,23 @@
  * tools, and console/agent runs go through the same `requiresConfirm` gate.
  */
 
-import { and, eq } from 'drizzle-orm';
 import {
   asSystem,
   currentActor,
-  db,
   enterCall,
   type GateCaller,
   lowerLevel,
-  toolGroups,
   type Tool,
   type ToolHandler,
   type ViewerLevel,
 } from '@mantle/db';
 import { currentWorkspaceScope, currentScope } from '@mantle/db/viewer';
-import { connectorToolPolicy, LINK_NO_CONNECTORS, loginConnectorRefused } from './external-access';
+import {
+  connectorGroupRow,
+  connectorToolPolicy,
+  LINK_NO_CONNECTORS,
+  loginConnectorRefused,
+} from './external-access';
 import {
   CONNECTOR_STALE_MARK_ERROR,
   connectorScopeFacts,
@@ -568,15 +570,7 @@ async function dispatchMcp(
   // client-level call (an External access tool in a client app) reads tool
   // groups at client level only, so the connector group, whatever its level,
   // would look missing. The caller learns nothing from it but the result.
-  const [group] = await asSystem(
-    () =>
-      db
-        .select()
-        .from(toolGroups)
-        .where(and(eq(toolGroups.ownerId, ctx.ownerId), eq(toolGroups.slug, h.group)))
-        .limit(1),
-    'connector-binding',
-  );
+  const group = await connectorGroupRow(ctx.ownerId, h.group);
   const mcp = group?.integration?.mcp;
   if (!group || !mcp) {
     return {
@@ -843,15 +837,7 @@ async function resolveOauthBinding(
 ): Promise<OauthBinding | { error: string }> {
   // asSystem: like an MCP connector's binding, the group's auth config is
   // infrastructure; a client-level caller may not read the group row.
-  const [group] = await asSystem(
-    () =>
-      db
-        .select()
-        .from(toolGroups)
-        .where(and(eq(toolGroups.ownerId, ownerId), eq(toolGroups.slug, slug)))
-        .limit(1),
-    'connector-binding',
-  );
+  const group = await connectorGroupRow(ownerId, slug);
   const config = group?.integration?.oauth2;
   if (!group || !config) {
     return {

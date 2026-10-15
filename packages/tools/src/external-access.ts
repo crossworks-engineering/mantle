@@ -65,6 +65,26 @@ import type { ToolExternalAccessDTO } from '@mantle/client-types';
 import { resolveTool } from './resolve';
 import type { RuntimeToolPolicy } from './runtime-policy';
 
+/**
+ * The connector binding door (arch A6): a connector's tool group row (its MCP
+ * binding, its OAuth config) is infrastructure, read on the system pool by the
+ * named reason 'connector-binding'. Every such read goes through it: here, and
+ * dispatch.ts through connectorGroupRow.
+ */
+function connectorBindingSystem<T>(fn: () => Promise<T>): Promise<T> {
+  return asSystem(fn, 'connector-binding');
+}
+
+/**
+ * The workspace resources door (arch A6): which workspaces hold a connector,
+ * and a login's or an app's workspaces, are read on the system pool by the
+ * named reason 'workspace-resources' (the rule is in the query). Every such
+ * read below goes through it.
+ */
+function workspaceResourcesSystem<T>(fn: () => Promise<T>): Promise<T> {
+  return asSystem(fn, 'workspace-resources');
+}
+
 /** The handler kinds an admin may open to external access. */
 export const EXTERNAL_ACCESS_KINDS: readonly ToolHandler['kind'][] = ['mcp', 'http'];
 
@@ -291,22 +311,38 @@ export async function connectorGroupOf(
   if (h.kind !== 'mcp') return null;
   // As the system: a limited scope's row security may hide the group, and
   // the rule is in the code below.
-  const [g] = await asSystem(
-    () =>
-      db
-        .select({
-          id: toolGroups.id,
-          slug: toolGroups.slug,
-          enabled: toolGroups.enabled,
-          integration: toolGroups.integration,
-        })
-        .from(toolGroups)
-        .where(and(eq(toolGroups.ownerId, ownerId), eq(toolGroups.slug, h.group)))
-        .limit(1),
-    'connector-binding',
+  const [g] = await connectorBindingSystem(() =>
+    db
+      .select({
+        id: toolGroups.id,
+        slug: toolGroups.slug,
+        enabled: toolGroups.enabled,
+        integration: toolGroups.integration,
+      })
+      .from(toolGroups)
+      .where(and(eq(toolGroups.ownerId, ownerId), eq(toolGroups.slug, h.group)))
+      .limit(1),
   );
   if (!g) return null;
   return { id: g.id, slug: g.slug, usable: g.enabled === true && !!g.integration?.mcp };
+}
+
+/**
+ * The tool group `slug` of brain `ownerId`, the whole row (its MCP binding,
+ * its OAuth config), or undefined: the one read of a connector's binding
+ * outside this file (dispatch.ts: an MCP call and an OAuth ref; arch A6
+ * folded its two copies here). The caller learns nothing from it but what
+ * the call then does.
+ */
+export async function connectorGroupRow(ownerId: string, slug: string) {
+  const [group] = await connectorBindingSystem(() =>
+    db
+      .select()
+      .from(toolGroups)
+      .where(and(eq(toolGroups.ownerId, ownerId), eq(toolGroups.slug, slug)))
+      .limit(1),
+  );
+  return group;
 }
 
 /** The literal of a uuid array for `= any(...)`. */
@@ -324,22 +360,20 @@ export async function connectorResources(
   wsIds: readonly string[],
 ): Promise<{ workspaceId: string; write: boolean }[]> {
   if (wsIds.length === 0) return [];
-  return asSystem(
-    () =>
-      db
-        .select({ workspaceId: workspaceResources.workspaceId, write: workspaceResources.write })
-        .from(workspaceResources)
-        .innerJoin(workspaces, eq(workspaces.id, workspaceResources.workspaceId))
-        .where(
-          and(
-            eq(workspaceResources.type, 'connector'),
-            eq(workspaceResources.refId, groupSlug),
-            eq(workspaces.ownerId, ownerId),
-            sql`${workspaces.archivedAt} is null`,
-            sql`${workspaceResources.workspaceId} = any(${uuidArray(wsIds)}::uuid[])`,
-          ),
+  return workspaceResourcesSystem(() =>
+    db
+      .select({ workspaceId: workspaceResources.workspaceId, write: workspaceResources.write })
+      .from(workspaceResources)
+      .innerJoin(workspaces, eq(workspaces.id, workspaceResources.workspaceId))
+      .where(
+        and(
+          eq(workspaceResources.type, 'connector'),
+          eq(workspaceResources.refId, groupSlug),
+          eq(workspaces.ownerId, ownerId),
+          sql`${workspaces.archivedAt} is null`,
+          sql`${workspaceResources.workspaceId} = any(${uuidArray(wsIds)}::uuid[])`,
         ),
-    'workspace-resources',
+      ),
   );
 }
 
@@ -363,22 +397,20 @@ async function connectorBeyondAdmin(
   ownerId: string,
   groupSlug: string,
 ): Promise<{ write: boolean } | null> {
-  const [row] = await asSystem(
-    () =>
-      db
-        .select({ write: sql<boolean>`bool_or(${workspaceResources.write})` })
-        .from(workspaceResources)
-        .innerJoin(workspaces, eq(workspaces.id, workspaceResources.workspaceId))
-        .where(
-          and(
-            eq(workspaceResources.type, 'connector'),
-            eq(workspaceResources.refId, groupSlug),
-            eq(workspaces.ownerId, ownerId),
-            eq(workspaces.isAdmin, false),
-            sql`${workspaces.archivedAt} is null`,
-          ),
+  const [row] = await workspaceResourcesSystem(() =>
+    db
+      .select({ write: sql<boolean>`bool_or(${workspaceResources.write})` })
+      .from(workspaceResources)
+      .innerJoin(workspaces, eq(workspaces.id, workspaceResources.workspaceId))
+      .where(
+        and(
+          eq(workspaceResources.type, 'connector'),
+          eq(workspaceResources.refId, groupSlug),
+          eq(workspaces.ownerId, ownerId),
+          eq(workspaces.isAdmin, false),
+          sql`${workspaces.archivedAt} is null`,
         ),
-    'workspace-resources',
+      ),
   );
   return row && row.write !== null ? { write: row.write === true } : null;
 }
@@ -396,14 +428,12 @@ export async function appConnectorRefused(
   groupSlug: string,
   write: boolean,
 ): Promise<string | null> {
-  const [app] = await asSystem(
-    () =>
-      db
-        .select({ holders: itemHoldersSql() })
-        .from(nodes)
-        .where(and(eq(nodes.ownerId, ownerId), eq(nodes.id, appId), eq(nodes.type, 'app')))
-        .limit(1),
-    'workspace-resources',
+  const [app] = await workspaceResourcesSystem(() =>
+    db
+      .select({ holders: itemHoldersSql() })
+      .from(nodes)
+      .where(and(eq(nodes.ownerId, ownerId), eq(nodes.id, appId), eq(nodes.type, 'app')))
+      .limit(1),
   );
   const holders = [...new Set(app?.holders ?? [])];
   if (holders.length === 0) {
@@ -441,20 +471,18 @@ export async function loginConnectorRule(
   ownerId: string,
   loginId: string,
 ): Promise<LoginConnectorRule> {
-  const mine = await asSystem(
-    () =>
-      db
-        .select({ workspaceId: workspaceUsers.workspaceId, moderator: workspaceUsers.moderator })
-        .from(workspaceUsers)
-        .innerJoin(workspaces, eq(workspaces.id, workspaceUsers.workspaceId))
-        .where(
-          and(
-            eq(workspaceUsers.loginId, loginId),
-            eq(workspaces.ownerId, ownerId),
-            sql`${workspaces.archivedAt} is null`,
-          ),
+  const mine = await workspaceResourcesSystem(() =>
+    db
+      .select({ workspaceId: workspaceUsers.workspaceId, moderator: workspaceUsers.moderator })
+      .from(workspaceUsers)
+      .innerJoin(workspaces, eq(workspaces.id, workspaceUsers.workspaceId))
+      .where(
+        and(
+          eq(workspaceUsers.loginId, loginId),
+          eq(workspaces.ownerId, ownerId),
+          sql`${workspaces.archivedAt} is null`,
         ),
-    'workspace-resources',
+      ),
   );
   if (mine.length === 0) {
     return () =>
@@ -463,22 +491,20 @@ export async function loginConnectorRule(
   // Every connector resource of the login's workspaces (live, unarchived
   // ones of this brain: `mine` holds no other).
   const wsIds = mine.map((r) => r.workspaceId);
-  const held = await asSystem(
-    () =>
-      db
-        .select({
-          workspaceId: workspaceResources.workspaceId,
-          slug: workspaceResources.refId,
-          write: workspaceResources.write,
-        })
-        .from(workspaceResources)
-        .where(
-          and(
-            eq(workspaceResources.type, 'connector'),
-            sql`${workspaceResources.workspaceId} = any(${uuidArray(wsIds)}::uuid[])`,
-          ),
+  const held = await workspaceResourcesSystem(() =>
+    db
+      .select({
+        workspaceId: workspaceResources.workspaceId,
+        slug: workspaceResources.refId,
+        write: workspaceResources.write,
+      })
+      .from(workspaceResources)
+      .where(
+        and(
+          eq(workspaceResources.type, 'connector'),
+          sql`${workspaceResources.workspaceId} = any(${uuidArray(wsIds)}::uuid[])`,
         ),
-    'workspace-resources',
+      ),
   );
   const moderated = new Set(mine.filter((r) => r.moderator).map((r) => r.workspaceId));
   return (groupSlug, write) => {
@@ -617,34 +643,32 @@ export async function listLoginConnectorTools(
   ownerId: string,
   loginId: string,
 ): Promise<{ tool: Tool; readOnly: boolean; groupId: string; groupName: string }[]> {
-  const rows = await asSystem(
-    () =>
-      db
-        .select({
-          tool: tools,
-          groupId: toolGroups.id,
-          groupName: toolGroups.name,
-          groupSlug: toolGroups.slug,
-        })
-        .from(tools)
-        .innerJoin(
-          toolGroups,
-          and(
-            eq(toolGroups.ownerId, tools.ownerId),
-            sql`${toolGroups.slug} = ${tools.handler}->>'group'`,
-          ),
-        )
-        .where(
-          and(
-            eq(tools.ownerId, ownerId),
-            eq(tools.enabled, true),
-            eq(tools.requiresConfirm, false),
-            sql`${tools.handler}->>'kind' = 'mcp'`,
-            eq(toolGroups.enabled, true),
-            sql`${toolGroups.integration} ? 'mcp'`,
-          ),
+  const rows = await connectorBindingSystem(() =>
+    db
+      .select({
+        tool: tools,
+        groupId: toolGroups.id,
+        groupName: toolGroups.name,
+        groupSlug: toolGroups.slug,
+      })
+      .from(tools)
+      .innerJoin(
+        toolGroups,
+        and(
+          eq(toolGroups.ownerId, tools.ownerId),
+          sql`${toolGroups.slug} = ${tools.handler}->>'group'`,
         ),
-    'connector-binding',
+      )
+      .where(
+        and(
+          eq(tools.ownerId, ownerId),
+          eq(tools.enabled, true),
+          eq(tools.requiresConfirm, false),
+          sql`${tools.handler}->>'kind' = 'mcp'`,
+          eq(toolGroups.enabled, true),
+          sql`${toolGroups.integration} ? 'mcp'`,
+        ),
+      ),
   );
   const rule = await loginConnectorRule(ownerId, loginId);
   return rows.flatMap((r) => {

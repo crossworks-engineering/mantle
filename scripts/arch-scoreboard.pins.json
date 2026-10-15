@@ -1,9 +1,10 @@
 {
-  "asSystemSites": 86,
-  "asSystemFiles": 43,
+  "asSystemSites": 37,
+  "asSystemDoorCalls": 70,
+  "asSystemFiles": 34,
   "asSystemReasons": 27,
-  "rawAclFiles": 25,
-  "rawAclLines": 86,
+  "rawAclFiles": 0,
+  "rawAclLines": 0,
   "toolPolicyLists": 1,
   "toolPolicyListFiles": 1,
   "toolPolicyEntries": 4,
@@ -65,6 +66,8 @@
   "store_objectstore_files": 4,
   "store_appdb_files": 5,
   "_notes": {
+    "asSystemSites": "raised 90 to 91 in A5 step 6c (pending-origin.ts, reason 'pending-approval'); lowered 91 to 88 in A10 #9 (app-runner.ts's system door); 88 to 86 when the provider-key exits went (main). Lowered 86 to 37 (files 43 to 34, reasons 27) in A6: every file that left the scope by one reason at several places does so through that file's one door (a function whose body is the one asSystem call); the rule-in-query routes and libraries through inRuleInQuery (lib/auth/rule-in-query.ts); client-sourced-rules.ts through client-sourced.ts's door; dispatch.ts's connector binding reads through external-access.ts (connectorGroupRow). No exit moved: the calls through a door are counted in asSystemDoorCalls. docs/actors.md, A6.",
+    "asSystemDoorCalls": "new in A6 (70): the calls of an asSystem door, each an exit by the door's reason (the 8 calls of inRuleInQuery from before A6 included, which no number counted then). A door keeps one pinned site, so this total is what stops a file from adding exits through its door unseen.",
     "routePolicyLists": "raised 16 to 17 in A10 #8: ROUTE_GATES (server/web/lib/route-limits.ts) gives each row its named rate limits and its cross-site refusal, read into the row by buildRouteRow (two ROUTE_POLICY fields), where 38 limits were taken by hand in route files (32 calls in 26 files) and helpers. Raised 15 to 16 in A4 hand batch B fix round 1 (M2): PUBLIC_LOGIN_ROWS (route-policy.ts) names the public rows that read a login, so buildRouteRow refuses a public login kind on any other public row (the /s link routes, the remote MCP, federation, sign-in). It is ROUTE_POLICY's own check of the rows, as FRAME_ROWS is, not a policy beside them.",
     "brainOnWorkspacesCalls": "raised 11 to 12 (files 6 to 7) in A1: listDueReminders (packages/content/src/events.ts) must read in the owner scope on a workspaces brain even when that scope is empty, and keep the old rule only off workspaces. A7 removes the call with the switch-over code.",
     "readPathWrites": "raised 7 to 9 in A3a: a public link's view counter (content shares.ts) and the Recall prompt embeddings a reader's recall_match heals (content recall.ts) were writes inside read paths the A2a inventory did not name; the read-only refusal would refuse both, so each is named and pinned now. Raised 9 to 10 in A5 step 4: app_data_schema and app_data_query provision the app's database registry row, its schema and its viewer salt (app_databases, an item table) on a login's own MCP, which runs a read read-only since step 4; the provisioning is named (repair:app-db) rather than moved, so the reads answer as before.",

@@ -93,6 +93,16 @@ import { appCopy, edit, manage, toolItemWriteRefusal } from './item-write-gate';
 import { CS } from './client-sourced-rule';
 
 /**
+ * This file's one system door (arch A6): the trash of deleted apps (their
+ * snapshots, homes and restore) is reached on the system pool by the named
+ * reason 'app-trash', after the scope's own manage check. Every call below
+ * goes through it.
+ */
+function appTrashSystem<T>(fn: () => Promise<T>): Promise<T> {
+  return asSystem(fn, 'app-trash');
+}
+
+/**
  * The app write tools (everything that writes an app's code, manifest,
  * schema, data or exports outside the brokers) run only for the owner
  * (client tier audit I8). Marked `ownerOnly` so dispatchTool refuses a team,
@@ -1479,7 +1489,7 @@ async function manageableDeletedApps(ownerId: string): Promise<Map<string, strin
   if (!scope) return null;
   const anchor = scope.loginId !== null && scope.loginId.toLowerCase() === ownerId.toLowerCase();
   const mod = new Set(anchor ? (await loginScopeFor(scope.loginId!)).modWs : scope.modWs);
-  const all = await asSystem(() => deletedAppHomes(ownerId), 'app-trash');
+  const all = await appTrashSystem(() => deletedAppHomes(ownerId));
   const out = new Map<string, string | null>();
   for (const [id, home] of all) {
     if (home ? mod.has(home) : scope.loginId === ownerId) out.set(id.toLowerCase(), home);
@@ -1501,9 +1511,7 @@ const app_deleted_list: BuiltinToolDef = {
     try {
       const homes = await manageableDeletedApps(ctx.ownerId);
       const deleted = homes
-        ? (await asSystem(() => listDeletedApps(ctx.ownerId), 'app-trash')).filter((d) =>
-            homes.has(d.id),
-          )
+        ? (await appTrashSystem(() => listDeletedApps(ctx.ownerId))).filter((d) => homes.has(d.id))
         : await listDeletedApps(ctx.ownerId);
       ctx.step?.setOutput({ count: deleted.length });
       return { ok: true, output: { apps: deleted } };
@@ -1550,9 +1558,8 @@ const app_undelete: BuiltinToolDef = {
       } else {
         // Back into the workspace it was homed in (the caller moderates it).
         const home = homes.get(id.toLowerCase()) ?? null;
-        app = await asSystem(
-          () => (home ? withCreateHome({ createWs: home, privateWs: null }, restore) : restore()),
-          'app-trash',
+        app = await appTrashSystem(() =>
+          home ? withCreateHome({ createWs: home, privateWs: null }, restore) : restore(),
         );
       }
       if (!app) {

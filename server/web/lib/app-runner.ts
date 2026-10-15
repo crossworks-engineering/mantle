@@ -53,6 +53,15 @@ import { JSON_BODY_CEILING_BYTES } from '@/lib/body-limit';
 import { readJson } from '@/lib/read-body';
 
 /**
+ * This file's one system door (arch A6): a member's app run reaches its app's
+ * database, and the tool broker's verdict reads the tool registry, on the system
+ * pool by the named reason 'app-data'. Every call below goes through it.
+ */
+function appDataSystem<T>(fn: () => Promise<T>): Promise<T> {
+  return asSystem(fn, 'app-data');
+}
+
+/**
  * The seconds-lived frame ticket for a member's run (POST frame-ticket). It
  * names the login (`mem`), so the frame serves the published build and
  * re-checks the login; the owner frame's draft path refuses it.
@@ -170,15 +179,13 @@ export async function memberDbBroker(
   try {
     const output: unknown =
       op === 'query'
-        ? await asSystem(
-            () => appDbQuery(app.ownerId, app.id, sql, params, app.manifest.sqlite, caller),
-            'app-data',
+        ? await appDataSystem(() =>
+            appDbQuery(app.ownerId, app.id, sql, params, app.manifest.sqlite, caller),
           )
         : // The one write path: a write may feed a linked app-table export,
           // scheduled here for the brain too (the sync is not a member act).
-          await asSystem(
-            () => appDbWrite(app.ownerId, app.id, sql, params, app.manifest.sqlite, caller),
-            'app-data',
+          await appDataSystem(() =>
+            appDbWrite(app.ownerId, app.id, sql, params, app.manifest.sqlite, caller),
           );
     return NextResponse.json({ ok: true, output });
   } catch (err) {
@@ -212,6 +219,6 @@ export async function memberToolBroker(
     app: () => memberAppOr404(member.anchorId, id, member.loginId),
     // The verdict reads the tool registry, and the run enters the app's
     // scope from outside the login's: system bookkeeping, by the named door.
-    system: (fn) => asSystem(fn, 'app-data'),
+    system: (fn) => appDataSystem(fn),
   });
 }

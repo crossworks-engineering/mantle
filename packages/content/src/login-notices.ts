@@ -43,6 +43,15 @@ import { acceptedRank } from '@mantle/client-types/kind-lists';
 import { chatTextsForReader } from './chat-images';
 import { loadPreferencesFor } from './profile-preferences';
 
+/**
+ * This file's one system door (arch A6): a login's notices are read and
+ * written on the system pool by the named reason 'login-notice'. Every read
+ * and write below goes through it.
+ */
+function loginNoticeSystem<T>(fn: () => Promise<T>): Promise<T> {
+  return asSystem(fn, 'login-notice');
+}
+
 export const LOGIN_NOTICE_CHANNEL = 'login_notice';
 
 /** An event older than this is not news: a backfill or a bulk repair that
@@ -151,7 +160,7 @@ export function chatReplyNotice(n: {
   loginId: string;
   id: string;
 }): Promise<LoginNoticeMessage | null> {
-  return asSystem(async () => {
+  return loginNoticeSystem(async () => {
     const [msg] = await db
       .select({
         ownerId: assistantMessages.ownerId,
@@ -194,7 +203,7 @@ export function chatReplyNotice(n: {
       deepLink: '/portal/chat',
       collapseKey: 'chat',
     };
-  }, 'login-notice');
+  });
 }
 
 /** Which of a bundle's items names it: a page before a note, a table, a
@@ -214,7 +223,7 @@ export function reviewResultNotice(
   state: ReviewNoticeState,
   nodeIds: readonly string[],
 ): Promise<LoginNoticeMessage | null> {
-  return asSystem(async () => {
+  return loginNoticeSystem(async () => {
     if (!nodeIds.length) return null;
     const login = await noticeLogin(loginId);
     if (!login) return null;
@@ -283,5 +292,5 @@ export function reviewResultNotice(
       state,
       collapseKey: `review:${main.id}`,
     };
-  }, 'login-notice');
+  });
 }

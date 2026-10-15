@@ -57,6 +57,15 @@ import type {
 } from './types';
 import { str } from './coerce';
 
+/**
+ * This file's one system door (arch A6): an app's database registry and its
+ * SQLite run on the system pool after the tool's own check, by the named reason
+ * 'app-data'. Every call below goes through it.
+ */
+function appDataSystem<T>(fn: () => Promise<T>): Promise<T> {
+  return asSystem(fn, 'app-data');
+}
+
 const NO_LOGIN =
   "No one to act for: the app_data tools work on a team member's own MCP connection only.";
 
@@ -130,7 +139,7 @@ function logDetail(who: Who): Record<string, unknown> {
 /** The person's per-app id (host.me) for the log, best effort. */
 async function personId(ownerId: string, appId: string, who: Who): Promise<string | null> {
   try {
-    return (await asSystem(() => appViewerFor(ownerId, appId, viewerOf(who)), 'app-data')).id;
+    return (await appDataSystem(() => appViewerFor(ownerId, appId, viewerOf(who)))).id;
   } catch {
     return null;
   }
@@ -239,7 +248,7 @@ export const app_data_list: BuiltinToolDef = {
             kind: 'db',
             detail: { ...logDetail(who), op: 'list' },
           });
-          const tables = await asSystem(() => appDbSchema(ctx.ownerId, app.id), 'app-data');
+          const tables = await appDataSystem(() => appDbSchema(ctx.ownerId, app.id));
           out.push({
             app_id: app.id,
             name: app.title,
@@ -286,14 +295,12 @@ export const app_data_schema: BuiltinToolDef = {
       // declared schema): that provisioning, and only it, is a named
       // read-path write (A5 step 4; fix round 1, LOW-4), so a read on a
       // read-only actor still brings the app up.
-      const details = await asSystem(
-        () =>
-          appDbTableDetails(ctx.ownerId, app.id, {
-            callerKey: callerKey(who),
-            schema: app.manifest.sqlite,
-            provision: provisionAppDb,
-          }),
-        'app-data',
+      const details = await appDataSystem(() =>
+        appDbTableDetails(ctx.ownerId, app.id, {
+          callerKey: callerKey(who),
+          schema: app.manifest.sqlite,
+          provision: provisionAppDb,
+        }),
       );
       recordAppAccess({
         ownerId: ctx.ownerId,
@@ -371,14 +378,12 @@ export const app_data_query: BuiltinToolDef = {
         // first: that provisioning, never the caller's SQL, is a named
         // read-path write (A5 step 4; fix round 1, LOW-4), as
         // app_data_schema.
-        const rows = await asSystem(
-          () =>
-            appDbQuery(ctx.ownerId, app.id, stmt.sql, stmt.params, app.manifest.sqlite, {
-              callerKey: callerKey(who),
-              viewer: viewerOf(who),
-              provision: provisionAppDb,
-            }),
-          'app-data',
+        const rows = await appDataSystem(() =>
+          appDbQuery(ctx.ownerId, app.id, stmt.sql, stmt.params, app.manifest.sqlite, {
+            callerKey: callerKey(who),
+            viewer: viewerOf(who),
+            provision: provisionAppDb,
+          }),
         );
         ctx.step?.setOutput({ rows: rows.length });
         return { ok: true, output: { rows, row_count: rows.length, note: DATA_NOTE } };
@@ -464,16 +469,14 @@ export const app_data_write: BuiltinToolDef = {
       // Undo first: the first MCP write to this app in an hour takes a
       // snapshot (code and a copy of the data). No snapshot, no write.
       try {
-        await asSystem(
-          () =>
-            createAppSnapshot(ctx.ownerId, app.id, {
-              trigger: 'pre_mcp_write',
-              actor: 'mcp',
-              note: `Before an MCP write by ${who.name?.trim() || who.role}`,
-              requireData: true,
-              onlyIfNoneSince: new Date(Date.now() - APP_DATA_SNAPSHOT_EVERY_MS),
-            }),
-          'app-data',
+        await appDataSystem(() =>
+          createAppSnapshot(ctx.ownerId, app.id, {
+            trigger: 'pre_mcp_write',
+            actor: 'mcp',
+            note: `Before an MCP write by ${who.name?.trim() || who.role}`,
+            requireData: true,
+            onlyIfNoneSince: new Date(Date.now() - APP_DATA_SNAPSHOT_EVERY_MS),
+          }),
         );
       } catch (err) {
         console.error('[app-data] undo snapshot failed:', errorMessage(err));
@@ -507,15 +510,13 @@ export const app_data_write: BuiltinToolDef = {
       }
       let res;
       try {
-        res = await asSystem(
-          () =>
-            // The one write path: it schedules a linked export's sync too.
-            appDbWrite(ctx.ownerId, app.id, stmt.sql, stmt.params, app.manifest.sqlite, {
-              callerKey: callerKey(who),
-              viewer: viewerOf(who),
-              dataOnly: true,
-            }),
-          'app-data',
+        res = await appDataSystem(() =>
+          // The one write path: it schedules a linked export's sync too.
+          appDbWrite(ctx.ownerId, app.id, stmt.sql, stmt.params, app.manifest.sqlite, {
+            callerKey: callerKey(who),
+            viewer: viewerOf(who),
+            dataOnly: true,
+          }),
         );
       } catch (err) {
         if (err instanceof AppSqlError) {

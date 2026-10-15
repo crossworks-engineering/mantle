@@ -1,11 +1,12 @@
 import { NextResponse } from '@/server/http-compat';
-import { asSystem, getChatThread } from '@mantle/db';
+import { getChatThread } from '@mantle/db';
 import { UUID_RE } from '@mantle/std';
 import { summarizeChatThread } from '@mantle/runtime/agent';
 import { chatLoginCaller } from '@/lib/auth';
 import { resolveChatAgentById } from '@/lib/assistant-chat';
 import { archiveResponse } from '@/lib/chat-archive-http';
 import { claimMemberChatWork } from '@/lib/workspace-turn';
+import { inRuleInQuery } from '@/lib/auth/rule-in-query';
 
 /**
  * POST /api/assistant/threads/<id>/continue: "Continue from this" (chat
@@ -32,12 +33,11 @@ export async function POST(_req: Request, ctx: { params: Promise<{ id: string }>
   const limited = await claimMemberChatWork(login, 'summary');
   if (limited) return limited;
   if (!thread.summaryNodeId) {
-    await asSystem(
-      () => summarizeChatThread(login.ownerId, thread.id, login.loginId),
-      'rule-in-query',
-    ).catch((err) => {
-      console.warn('[api/assistant/threads] summary before continue failed:', err);
-    });
+    await inRuleInQuery(() => summarizeChatThread(login.ownerId, thread.id, login.loginId)).catch(
+      (err) => {
+        console.warn('[api/assistant/threads] summary before continue failed:', err);
+      },
+    );
   }
   return archiveResponse({
     ownerId: login.ownerId,
