@@ -1166,8 +1166,10 @@ describe.skipIf(!DB_URL)('A8 surface cells: every way in gives the oracle’s an
       for (const { e, cells, candidates, na } of plan) {
         let pass = 0;
         let allow = 0;
+        let narrow = 0;
         for (const c of cells) {
           const narrowed = e.narrow?.(c.kind, c.action) ?? null;
+          if (narrowed) narrow++;
           const want = (
             narrowed
               ? { allow: false, why: narrowed }
@@ -1199,7 +1201,7 @@ describe.skipIf(!DB_URL)('A8 surface cells: every way in gives the oracle’s an
         }
         total += cells.length;
         counts.push(
-          `  ${e.label ?? e.surface}${e.surface === 'contact-share' ? ` (${e.actor})` : ''}: ${cells.length} cells (${allow} allow) of ${candidates} candidates, ` +
+          `  ${e.label ?? e.surface}${e.surface === 'contact-share' ? ` (${e.actor})` : ''}: ${cells.length} cells (${allow} allow, ${narrow} narrowed) of ${candidates} candidates, ` +
             `${pass} pass, ${cells.length - pass} fail, ${na} not applicable`,
         );
       }
@@ -1238,7 +1240,7 @@ const NOT_APPLICABLE: Readonly<Record<string, number>> = {
   'a snapshot copy carries no link or share': 15,
   'a snapshot copy holds no grant but its home': 60,
   'an Admin-homed item holds no grant but its home': 132,
-  "no snapshot copy of a app is made (only an accepted item's kinds)": 142,
+  "no snapshot copy of a app is made (only an accepted item's kinds)": 148,
   "no snapshot copy of a branch is made (only an accepted item's kinds)": 79,
   "no snapshot copy of a event is made (only an accepted item's kinds)": 202,
   "no snapshot copy of a formula is made (only an accepted item's kinds)": 204,
