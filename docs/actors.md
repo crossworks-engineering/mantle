@@ -4057,3 +4057,106 @@ claim, left pending, the legacy rule, the reject rule).
   asker's write request (above), so an approval now does what the turn
   could not. Whether the turn should write the same way is its own step.
 - **Egress as a gate concept** (owner decision 2b): not in this step.
+
+## A8 matrix
+
+The cross-surface matrix (plan v2, section 12 A8): every access rule of the
+guide, checked against the database and against each way in, by one oracle
+written from the guide alone.
+
+**Run it.** `pnpm test:matrix` with `MANTLE_TEST_DATABASE_URL` set
+(`vitest.matrix.config.ts`; the other configs leave `*.matrix.test.ts` out).
+Each file makes its own scratch database. On the workstation the whole run,
+the scratch databases included, takes about 20 seconds (the grid's cells
+about 7, over 4 workers, `MANTLE_MATRIX_WORKERS`). CI runs it as its own
+step.
+
+**The oracle** is `expectedAccess(context, role, kind, action)` in
+`packages/db/src/matrix/guide-oracle.ts`. It imports nothing: no kind
+registry, no access matrix, no SQL, no gate. Each rule names the guide
+section it reads (docs/workspaces.md; docs/update-prod.md for snapshot
+copies). The context names the surface, the placement and the actor kind;
+the actor carries the narrowing (a turn: the assistant's workspace; a read
+key or a peer with Write off: read only; an assistant with no user: its
+workspace, read only). `guide-oracle.test.ts` pins it to the guide's
+sentences. The grid also pins the registry's workspace class and accepted
+kinds to the oracle's lists, so the two readings cannot drift apart unseen.
+
+**The fixture** (`packages/db/src/matrix/a8-grid.ts`, its header in
+`guide-oracle.ts`): Admin; H, the items' home; W, a grant with Write on; R, a
+grant with Write off; T, a target with no grant; O, unrelated; each login's
+private workspace. Six logins: the owner, an Admin user, the Moderator of H
+(and of R and T), a user of W (a Moderator of T, the snapshot copies'
+author), a Moderator of R, an outsider. Per workspace kind: an item at its
+kind's root (grants by hand), one in folder F (F's grants), and for the
+accepted kinds the author's snapshot copy in writeGrant's private workspace.
+
+**The SQL grid** (`a8-grid.matrix.test.ts`): 6 logins x 11 workspace kinds x
+3 placements x 13 actions (read, list, search, edit, edit draft, delete,
+move, add a grant, remove a grant, the Write switch, a public link, create,
+app data) x every actor kind (login, login-ro and turn for each login;
+assistant, link, contact-ro, contact-rw, peer and system once each): 10,296
+cells. Each cell is one transaction, rolled back. A read runs on the
+workspace role in the caller's scope; a write on a login of the write role
+with the caller's scope, actor and write mode, the heads first, both checks
+on; grants and home moves through the definers the write role calls;
+system work on the system pool. A cell passes only on the row effect read
+back through a probe (`a8_probe`, a definer the scratch database gets):
+allowed is the change made, refused is no change with 42501 or no row
+matched. Any other error fails the cell.
+
+**The surface cells** (`server/web/server/a8-surfaces.matrix.test.ts`): per
+way in, a pairwise set of (role, kind, placement, action) over what the
+surface can do (`pairwise` in `a8-grid.ts`), a fresh item per write cell:
+web (HTTP through `createApp`: item reads and deletes, the grants panel),
+`/api/v1` with the login's read-write key, MCP over OAuth, MCP with a
+read-only key through the bearer lookup, a peer acting as the login with
+Write on, stdio MCP as the owner, the web turn, the team turn, Telegram, a
+run item, a recipe step, a heartbeat (W's assistant with no user), a
+pending call queued in a turn and approved, and an open public link's view.
+Allowed is ok and the change made; refused is no change and an answer that
+is not a crash (a 5xx, a throw, a raw database or runtime text). Each
+cell's actor misses fail it.
+
+**Counts** (v0.300.52): the grid 10,296 cells, 6,478 run (1,551 allow,
+4,927 deny), all pass, 3,818 not applicable. The surface cells 750, 725
+pass, 25 known failures.
+
+**Not applicable** cells are counted and named in the run's summary: a kind
+with no draft, no app data, or no snapshot copy; a snapshot copy has no
+grant but its home and is no place to create in; a link, a contact share
+and a peer read through their share's own gate, not a scope (the surface
+cells check the link); a contact share writes only its app's data; and 66
+cells where the guide is silent (below).
+
+**Known failures** (`packages/db/src/matrix/a8-known-failures.ts`, by cell,
+each a finding for the owner; the list only shrinks, a listed cell that
+passes fails the run):
+
+- **F1.** `/api/v1` answers 403 `member-login` to a key of a login outside
+  Admin (`server/web/lib/api-v1.ts`), where the guide says a key acts as its
+  login and only narrows it. 13 cells. The plan's D3 decides it.
+- **F2.** A workspace assistant's turn other than Admin's cannot write an
+  item its user may change by hand: the web turn, the team turn, Telegram,
+  a run item and a recipe step. Its turn scope holds no write mode (named
+  under "What is left" of the approval re-check above); the reply carries a
+  raw runtime or database text ("Failed query: update nodes ...",
+  "withSystemTx: only outside a viewer scope ..."). 11 cells. An approved
+  pending call from the same turn writes (the pending cells pass).
+- **F3.** `app_delete` is an owner-side tool, so the home Moderator's
+  delete of an app from the team surface is refused; the guide's "Delete it:
+  Moderator of its home" holds for apps too. 1 cell.
+
+**The guide is silent** where the oracle answers not applicable and the
+owner should decide:
+
+- whether a turn's write may use a Moderator seat outside the assistant's
+  workspace (add a grant, a move, the Write switch for the Moderator of H
+  in H's turn: by hand allowed, in the turn's scope refused);
+- snapshot copies: docs/workspaces.md does not describe them; the oracle
+  reads docs/update-prod.md.
+
+**Not covered yet:** the app brokers (owner, member, contact) and a contact
+share's `/s` reads and writes, `/print`, a peer without Acts as, an app's
+public link view (it needs a published build, beyond the fixture), and the
+web item edits.
