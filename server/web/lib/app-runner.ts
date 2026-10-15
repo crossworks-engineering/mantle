@@ -30,20 +30,10 @@
  * opens) asSystem changes nothing.
  */
 import { NextResponse } from '@/server/http-compat';
-import { z } from 'zod';
-import { asSystem, withViewer } from '@mantle/db';
-import { memberMayWriteAppData, recordAppAccess, recordAppError } from '@mantle/content';
-import { appDbExec, appDbQuery } from '@mantle/content/app-broker';
-import { scheduleAppTableExportSync } from '@mantle/content/app-table-exports';
-import {
-  appBrokerCaller,
-  appToolLevel,
-  appToolRefusal,
-  appToolScope,
-  appToolVerdict,
-  dispatchTool,
-  outsideCallLogDetail,
-} from '@mantle/tools';
+import { asSystem } from '@mantle/db';
+import { memberMayWriteAppData, recordAppAccess } from '@mantle/content';
+import { appDbQuery } from '@mantle/content/app-broker';
+import { appDbWrite } from '@mantle/content/app-db-write';
 import {
   buildAppFrameTicket,
   memberLoginActive,
@@ -57,6 +47,7 @@ import {
   readOnlyAppResponse,
 } from '@/lib/app-db-broker-body';
 import { renderAppFrame } from '@/lib/app-frame';
+import { runAppToolBroker } from '@/lib/app-tool-broker';
 import { memberAppOr404, memberName } from '@/lib/member-apps';
 import { JSON_BODY_CEILING_BYTES } from '@/lib/body-limit';
 import { readJson } from '@/lib/read-body';
@@ -183,15 +174,12 @@ export async function memberDbBroker(
             () => appDbQuery(app.ownerId, app.id, sql, params, app.manifest.sqlite, caller),
             'app-data',
           )
-        : await asSystem(
-            () => appDbExec(app.ownerId, app.id, sql, params, app.manifest.sqlite, caller),
+        : // The one write path: a write may feed a linked app-table export,
+          // scheduled here for the brain too (the sync is not a member act).
+          await asSystem(
+            () => appDbWrite(app.ownerId, app.id, sql, params, app.manifest.sqlite, caller),
             'app-data',
           );
-    // A write may feed a linked app-table export: debounced, hash-gated, and
-    // run for the brain (the sync is not a member act).
-    if (op === 'exec') {
-      await asSystem(async () => scheduleAppTableExportSync(member.anchorId, app.id), 'app-data');
-    }
     return NextResponse.json({ ok: true, output });
   } catch (err) {
     return appDbErrorResponse(err, 'member-db-broker', {
@@ -205,14 +193,10 @@ export async function memberDbBroker(
   }
 }
 
-const ToolBody = z.object({
-  slug: z.string().min(1).max(120),
-  input: z.record(z.string(), z.unknown()).optional().default({}),
-});
-
 /**
- * host.tools.call() of a member's run, checked at dispatch time, every call,
- * by the team rules (see the top of this file). Refused calls are logged.
+ * host.tools.call() of a member's run: the one app tool broker
+ * (lib/app-tool-broker.ts, A10 #9) at the team rules (see the top of this
+ * file), checked at dispatch time, every call. Refused calls are logged.
  */
 export async function memberToolBroker(
   req: Request,
@@ -220,78 +204,14 @@ export async function memberToolBroker(
   id: string,
 ): Promise<Response> {
   // The gate took the row's limit (lib/route-limits.ts memberToolBroker).
-  const parsed = ToolBody.safeParse(
-    (await readJson(req, { empty: null, maxBytes: JSON_BODY_CEILING_BYTES })) ?? {},
-  );
-  if (!parsed.success) {
-    return NextResponse.json({ ok: false, error: 'invalid input' }, { status: 400 });
-  }
-  const app = await memberAppOr404(member.anchorId, id, member.loginId);
-  if (app instanceof Response) return app;
-
-  const { slug, input } = parsed.data;
-  // An app a member runs is held by a workspace of theirs, so it runs the
-  // team rules (R2) whatever its author ceiling.
-  const level = appToolLevel('team', 'team', 'admin');
-  // The member's login: a connector tool also needs the login's workspace
-  // rule; every workspace that holds the app must hold the connector (R2).
-  const verdict = await asSystem(
-    () =>
-      appToolVerdict(level, member.anchorId, app.manifest.toolSlugs ?? [], slug, member.loginId, {
-        appId: app.id,
-      }),
-    'app-data',
-  );
-  recordAppAccess({
-    ownerId: app.ownerId,
-    appNodeId: app.id,
-    actorId: member.loginId,
-    kind: 'tool',
-    // An outside tool names its kind, so the log shows which member calls
-    // reached outside the brain; a write keeps its input too.
-    detail: verdict.ok
-      ? { via: 'member', slug, ...outsideCallLogDetail(verdict, input) }
-      : { via: 'member', slug, refused: verdict.reason },
+  return runAppToolBroker(req, {
+    via: 'member',
+    ownerId: member.anchorId,
+    runner: { loginId: member.loginId, name: memberName(member) },
+    maxBytes: JSON_BODY_CEILING_BYTES,
+    app: () => memberAppOr404(member.anchorId, id, member.loginId),
+    // The verdict reads the tool registry, and the run enters the app's
+    // scope from outside the login's: system bookkeeping, by the named door.
+    system: (fn) => asSystem(fn, 'app-data'),
   });
-  const logError = (message: string, status: number) =>
-    recordAppError({
-      ownerId: app.ownerId,
-      appNodeId: app.id,
-      actorId: member.loginId,
-      source: 'tool',
-      via: 'member',
-      slug,
-      message,
-      status,
-    });
-  if (!verdict.ok) {
-    logError(verdict.reason, verdict.status);
-    // A missing tool 404; every other refusal the gate's 403, in the
-    // verdict's words (A5 step 3b).
-    const refused = await appToolRefusal(level, slug, verdict);
-    return NextResponse.json({ ok: false, error: refused.error }, { status: refused.status });
-  }
-  // The run reads through the app (its holders met with the member's
-  // workspaces), never the member's other workspaces (plan R2, H1).
-  const scope = appToolScope(
-    level,
-    { loginId: member.loginId, name: memberName(member) },
-    {
-      id: app.id,
-    },
-  );
-  // Through the one gate as the app's broker (A5 step 3b).
-  const run = () =>
-    dispatchTool(verdict.tool, input, {
-      ownerId: member.anchorId,
-      surface: scope.surface,
-      caller: appBrokerCaller(scope.surface, verdict),
-    });
-  const result = await asSystem(
-    () => (scope.viewer === 'admin' ? run() : withViewer(scope.actsFor, run)),
-    'app-data',
-  );
-
-  if (!result.ok) logError(result.error, 200);
-  return NextResponse.json(result);
 }

@@ -13,30 +13,20 @@
  * app's screens send: the admin confirmed the tool only reads. The call runs
  * on the public role, on a contact surface that names the contact and the
  * share, and is logged with the contact in the app's Activity and the
- * share's trail, refused calls included.
+ * share's trail, refused calls included, and its errors in the app's
+ * error log. A config of the one app tool broker (lib/app-tool-broker.ts
+ * runAppToolBroker, A10 #9): this route answers the link's own refusals
+ * (the code gate, a share that is not an app's, an open link), the broker
+ * the rest.
  *
  * Members and clients run apps from their own logins
  * (/api/member/apps/:id/tool-broker, /api/client/apps/:id/tool-broker).
  */
-import { z } from 'zod';
 import { contactCodeRequired, gateShare } from '@/lib/contact-share-gate';
 import { NextResponse } from '@/server/http-compat';
-import { withViewer } from '@mantle/db';
 import { liveServedIds } from '@/lib/shares';
-import { getAppRuntime, recordAppAccess, recordShareAccess } from '@mantle/content';
-import {
-  appBrokerCaller,
-  appToolRefusal,
-  contactAppToolVerdict,
-  dispatchTool,
-  outsideCallLogDetail,
-} from '@mantle/tools';
-import { readJson } from '@/lib/read-body';
-
-const Body = z.object({
-  slug: z.string().min(1).max(120),
-  input: z.record(z.string(), z.unknown()).optional().default({}),
-});
+import { runAppToolBroker } from '@/lib/app-tool-broker';
+import { getAppRuntime } from '@mantle/content';
 
 export async function POST(req: Request, ctx: { params: Promise<{ token: string }> }) {
   const { token } = await ctx.params;
@@ -62,50 +52,15 @@ export async function POST(req: Request, ctx: { params: Promise<{ token: string 
     );
   }
 
-  const parsed = Body.safeParse((await readJson(req, { empty: null })) ?? {});
-  if (!parsed.success) {
-    return NextResponse.json({ ok: false, error: 'invalid input' }, { status: 400 });
-  }
-  const app = await getAppRuntime(share.ownerId, share.nodeId);
-  if (!app || !app.publishedBuild?.ok) {
-    return NextResponse.json({ ok: false, error: 'app not found' }, { status: 404 });
-  }
-
-  const { slug, input } = parsed.data;
-  const verdict = await contactAppToolVerdict(share.ownerId, app.manifest.toolSlugs ?? [], slug);
-  recordAppAccess({
+  return runAppToolBroker(req, {
+    via: 'contact',
     ownerId: share.ownerId,
-    appNodeId: share.nodeId,
-    shareId: share.id,
-    contactId,
-    kind: 'tool',
-    detail: verdict.ok
-      ? { via: 'contact', contactId, slug, ...outsideCallLogDetail(verdict, input) }
-      : { via: 'contact', contactId, slug, refused: verdict.reason },
+    share: { id: share.id, contactId },
+    // The published build only: a link never runs the draft.
+    app: async () => {
+      const app = await getAppRuntime(share.ownerId, share.nodeId);
+      return app?.publishedBuild?.ok ? app : null;
+    },
+    served: async () => [...(await liveServedIds(share))],
   });
-  recordShareAccess({
-    ownerId: share.ownerId,
-    shareId: share.id,
-    contactId,
-    kind: verdict.ok ? 'tool' : 'refused',
-    detail: verdict.ok ? { slug } : { slug, refused: 'tools' },
-  });
-  if (!verdict.ok) {
-    // A missing tool 404; every other refusal the gate's 403, in the
-    // verdict's words (A5 step 3b).
-    const refused = await appToolRefusal('contact', slug, verdict);
-    return NextResponse.json({ ok: false, error: refused.error }, { status: refused.status });
-  }
-  // A link reads no workspace, only what it serves (plan 8.1, R6), never a
-  // snapshot copy (W6b fix round 3, L-1).
-  const served = [...(await liveServedIds(share))];
-  // Through the one gate as the share's broker (A5 step 3b).
-  const result = await withViewer({ link: { served } }, () =>
-    dispatchTool(verdict.tool, input, {
-      ownerId: share.ownerId,
-      surface: { kind: 'contact', contactId, shareId: share.id },
-      caller: appBrokerCaller({ kind: 'contact' }, verdict),
-    }),
-  );
-  return NextResponse.json(result);
 }

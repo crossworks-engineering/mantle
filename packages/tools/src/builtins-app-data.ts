@@ -40,14 +40,13 @@ import {
 import {
   AppDbMissingError,
   AppSqlError,
-  appDbExec,
   appDbQuery,
   appDbSchema,
   appDbTableDetails,
   appViewerFor,
 } from '@mantle/content/app-broker';
 import { createAppSnapshot } from '@mantle/content/app-snapshots';
-import { scheduleAppTableExportSync } from '@mantle/content/app-table-exports';
+import { appDbWrite } from '@mantle/content/app-db-write';
 import { stripLiterals } from '@mantle/tabledb';
 import { errorMessage } from '@mantle/std';
 import type {
@@ -510,7 +509,8 @@ export const app_data_write: BuiltinToolDef = {
       try {
         res = await asSystem(
           () =>
-            appDbExec(ctx.ownerId, app.id, stmt.sql, stmt.params, app.manifest.sqlite, {
+            // The one write path: it schedules a linked export's sync too.
+            appDbWrite(ctx.ownerId, app.id, stmt.sql, stmt.params, app.manifest.sqlite, {
               callerKey: callerKey(who),
               viewer: viewerOf(who),
               dataOnly: true,
@@ -541,10 +541,6 @@ export const app_data_write: BuiltinToolDef = {
           me: await personId(ctx.ownerId, app.id, who),
         },
       });
-      // As the browser brokers: a write may feed a linked table export.
-      await asSystem(async () => {
-        scheduleAppTableExportSync(ctx.ownerId, app.id);
-      }, 'app-data');
       ctx.step?.setOutput({ changes: res.changes });
       return {
         ok: true,

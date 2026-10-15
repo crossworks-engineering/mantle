@@ -21,8 +21,8 @@ import { NextResponse } from '@/server/http-compat';
 import { ownerCallerWithLogin } from '@/lib/auth';
 import { memberDbBroker } from '@/lib/app-runner';
 import { getAppRuntime } from '@mantle/content';
-import { appDbQuery, appDbExec } from '@mantle/content/app-broker';
-import { scheduleAppTableExportSync } from '@mantle/content/app-table-exports';
+import { appDbQuery } from '@mantle/content/app-broker';
+import { appDbWrite } from '@mantle/content/app-db-write';
 import { AppDbBody, appDbBodyError, appDbErrorResponse } from '@/lib/app-db-broker-body';
 import { readJson } from '@/lib/read-body';
 
@@ -58,9 +58,8 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
       );
       return NextResponse.json({ ok: true, output: rows });
     }
-    const res = await appDbExec(user.id, id, parsed.data.sql, parsed.data.params, schema, caller);
-    // A write may feed a linked app-table export — debounced, hash-gated.
-    scheduleAppTableExportSync(user.id, id);
+    // The one write path: a write may feed a linked app-table export.
+    const res = await appDbWrite(user.id, id, parsed.data.sql, parsed.data.params, schema, caller);
     return NextResponse.json({ ok: true, output: res });
   } catch (err) {
     return appDbErrorResponse(err, 'apps/db-broker', {

@@ -25,8 +25,8 @@
 import { NextResponse } from '@/server/http-compat';
 import { contactCodeRequired, gateShare } from '@/lib/contact-share-gate';
 import { getAppRuntime, recordAppAccess, recordShareAccess } from '@mantle/content';
-import { appDbExec, appDbQuery, markAppClientWritten } from '@mantle/content/app-broker';
-import { scheduleAppTableExportSync } from '@mantle/content/app-table-exports';
+import { appDbQuery } from '@mantle/content/app-broker';
+import { appDbWrite } from '@mantle/content/app-db-write';
 
 import { AppDbBody, appDbBodyError, appDbErrorResponse } from '@/lib/app-db-broker-body';
 import { readJson } from '@/lib/read-body';
@@ -129,18 +129,18 @@ export async function POST(req: Request, ctx: { params: Promise<{ token: string 
   };
   try {
     if (op === 'exec') {
-      const output = await appDbExec(
+      // Rows a contact wrote are written from outside: an export of them
+      // must not be lowered as if the brain wrote them. The one write path
+      // marks them and schedules the export sync.
+      const output = await appDbWrite(
         share.ownerId,
         share.nodeId,
         parsed.data.sql,
         parsed.data.params,
         app.manifest.sqlite,
         caller,
+        { outside: true },
       );
-      // Rows a contact wrote are written from outside: an export of them
-      // must not be lowered as if the brain wrote them.
-      await markAppClientWritten(share.ownerId, share.nodeId);
-      scheduleAppTableExportSync(share.ownerId, share.nodeId);
       return NextResponse.json({ ok: true, output });
     }
     const output = await appDbQuery(

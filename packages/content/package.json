@@ -16,6 +16,7 @@
     "./peers-crypto": "./src/peers-crypto.ts",
     "./pages": "./src/pages/index.ts",
     "./app-broker": "./src/app-broker.ts",
+    "./app-db-write": "./src/app-db-write.ts",
     "./app-snapshots": "./src/app-snapshots.ts",
     "./app-trash": "./src/app-trash.ts",
     "./app-package": "./src/app-package.ts",

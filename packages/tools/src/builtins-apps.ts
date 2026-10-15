@@ -37,15 +37,11 @@ import {
   checkAppSchemaScript,
   appDbReadQuery,
   appDbSchema,
-  appDbSeedRows,
   listAppDatabaseSummaries,
   AppDbMissingError,
 } from '@mantle/content/app-broker';
-import {
-  createAppTableExport,
-  removeAppTableExport,
-  scheduleAppTableExportSync,
-} from '@mantle/content/app-table-exports';
+import { createAppTableExport, removeAppTableExport } from '@mantle/content/app-table-exports';
+import { appDbSeed } from '@mantle/content/app-db-write';
 import {
   AppTrashRefusedError,
   deletedAppHomes,
@@ -813,7 +809,8 @@ const app_db_seed: BuiltinToolDef = {
     const app = await getApp(ctx.ownerId, id);
     if (!app) return { ok: false, error: `app ${id} not found` };
     try {
-      const res = await appDbSeedRows(
+      // The one write path: a seed may feed a linked app-table export too.
+      const res = await appDbSeed(
         ctx.ownerId,
         id,
         table,
@@ -822,8 +819,6 @@ const app_db_seed: BuiltinToolDef = {
         app.manifest.sqlite,
       );
       ctx.step?.setOutput({ id, table, inserted: res.inserted, deleted: res.deleted });
-      // A seed may feed a linked app-table export — debounced, hash-gated.
-      scheduleAppTableExportSync(ctx.ownerId, id);
       return {
         ok: true,
         output: {

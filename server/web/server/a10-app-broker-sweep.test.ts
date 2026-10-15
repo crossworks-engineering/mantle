@@ -449,7 +449,27 @@ const CHANGES = join(HERE, '__snapshots__/a10-app-broker-sweep-changes.txt');
  * The cells the move changed on purpose (A10 #9), each with its reason.
  * Every other cell answers as main recorded it.
  */
-const NAMED_CHANGES: Readonly<Record<string, string>> = {};
+const OWNER_ADMIN_CALL =
+  "the owner's call at admin rules lands its Activity row now, as every other run's call does (main logged none at admin rules)";
+const OWNER_REFUSAL =
+  "the owner's refused call lands its Activity row now (refused: the verdict's reason), as a member's and a contact's always did (main logged only the error row)";
+const LINK_ERROR =
+  "the link's refused or failed call lands its error row now (via 'contact', the share and the contact), as the owner's and a member's always did (main logged none)";
+const NAMED_CHANGES: Readonly<Record<string, string>> = {
+  'tool owner-admin read': OWNER_ADMIN_CALL,
+  'tool owner-admin write': OWNER_ADMIN_CALL,
+  'tool owner-admin tool-error': OWNER_ADMIN_CALL,
+  'tool owner-admin oversized': OWNER_ADMIN_CALL,
+  'tool owner-admin refused': OWNER_REFUSAL,
+  'tool owner-admin unknown-tool': OWNER_REFUSAL,
+  'tool owner-team refused': OWNER_REFUSAL,
+  'tool owner-team unknown-tool': OWNER_REFUSAL,
+  'tool owner-admin confirm-mismatch':
+    'a confirmation that expired or does not match lands its Activity row now (refused: the reason), beside the error row main wrote',
+  'tool link refused': LINK_ERROR,
+  'tool link unknown-tool': LINK_ERROR,
+  'tool link tool-error': LINK_ERROR,
+};
 
 function readCells(file: string): Map<string, string> {
   const out = new Map<string, string>();
@@ -459,6 +479,15 @@ function readCells(file: string): Map<string, string> {
     if (i > 0) out.set(line.slice(0, i), line.slice(i + 4));
   }
   return out;
+}
+
+/** The top-level fields of two recorded cells that differ. */
+function fieldsThatDiffer(was: string, now: string): string[] {
+  const a = JSON.parse(was) as Record<string, unknown>;
+  const b = JSON.parse(now) as Record<string, unknown>;
+  return [...new Set([...Object.keys(a), ...Object.keys(b)])].filter(
+    (k) => JSON.stringify(a[k]) !== JSON.stringify(b[k]),
+  );
 }
 
 function writeCells(file: string, cells: Map<string, string>, header: string): void {
@@ -475,26 +504,30 @@ describe('A10 #9 app broker sweep', () => {
     }
     const recorded = readCells(RECORD);
     expect([...now.keys()]).toEqual([...recorded.keys()]);
-    const changed = new Map<string, string>();
+    // Every cell that differs from main, and the fields that do.
+    const differs = new Map<string, string[]>();
     for (const [key, value] of now) {
-      if (NAMED_CHANGES[key]) {
-        expect(value, `${key} is a named change: it must differ from main`).not.toBe(
-          recorded.get(key),
-        );
-        changed.set(key, value);
-      } else {
-        expect(value, key).toBe(recorded.get(key));
-      }
+      const was = recorded.get(key);
+      if (value !== was) differs.set(key, fieldsThatDiffer(was ?? '{}', value));
     }
+    const unnamed = [...differs.keys()].filter((k) => !NAMED_CHANGES[k]);
+    expect(unnamed, 'cells that differ from main without a named change').toEqual([]);
+    const unchanged = Object.keys(NAMED_CHANGES).filter((k) => !differs.has(k));
+    expect(unchanged, 'named changes whose cell answers as main did').toEqual([]);
+    const changed = new Map(
+      [...differs].map(([k, fields]) => [
+        k,
+        `${now.get(k)}\n  # ${fields.join(', ')}: ${NAMED_CHANGES[k]}`,
+      ]),
+    );
     if (process.env.A10_APP_BROKER_RECORD_CHANGES === '1') {
-      const withWhy = new Map(
-        [...changed].map(([k, v]) => [k, `${v}\n  # ${NAMED_CHANGES[k] ?? ''}`]),
-      );
-      writeCells(CHANGES, withWhy, '# A10 #9 named changes: the cell after the move, and why');
+      writeCells(CHANGES, changed, '# A10 #9 named changes: the cell after the move, and why');
       return;
     }
     const recordedChanges = readCells(CHANGES);
     expect([...changed.keys()].sort()).toEqual([...recordedChanges.keys()].sort());
-    for (const [key, value] of changed) expect(value, key).toBe(recordedChanges.get(key));
+    for (const [key, value] of changed) {
+      expect(value.split('\n')[0], key).toBe(recordedChanges.get(key));
+    }
   }, 120_000);
 });
