@@ -2,8 +2,16 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 // @ts-expect-error: plain-JS module, no types shipped.
-import { composeServices, MARK, serverImageCmd, SKIP, stepsOf } from '../scripts/boot-smoke.mjs';
-import { BOOT_SMOKE_MARK } from '../packages/config/src/boot-smoke';
+import {
+  composeServices,
+  EXTRA,
+  MARK,
+  serverImageCmd,
+  SKIP,
+  stepsOf,
+  STUB_ENV,
+} from '../scripts/boot-smoke.mjs';
+import { BOOT_SMOKE_MARK, BOOT_SMOKE_VALUE } from '../packages/config/src/boot-smoke';
 
 /**
  * The guards that came out of the v0.300.64 crash loop (every server process
@@ -67,6 +75,24 @@ describe('the boot smoke (scripts/boot-smoke.mjs)', () => {
 
   it('prints the marker the entries print', () => {
     expect(MARK).toBe(BOOT_SMOKE_MARK);
+  });
+
+  it('sets the one value the entries honour', () => {
+    expect((STUB_ENV as Record<string, string>).MANTLE_BOOT_SMOKE).toBe(BOOT_SMOKE_VALUE);
+  });
+
+  it('runs the stdio MCP entry the way a client starts it, and the entry has a checkpoint', () => {
+    const extra = EXTRA as { name: string; command: string[] }[];
+    expect(extra.find((e) => e.name === 'mcp-stdio')?.command).toEqual([
+      'pnpm',
+      '-C',
+      'server/mcp',
+      'start',
+    ]);
+    const docs = readFileSync(join(ROOT, 'docs/connecting-claude.md'), 'utf8');
+    expect(docs).toContain('"exec", "-i", "mantle_web", "pnpm", "-C", "server/mcp", "start"');
+    const entry = readFileSync(join(ROOT, 'server/mcp/src/server.ts'), 'utf8');
+    expect(entry).toContain("if (isBootSmoke()) await bootSmokeExit('mcp-stdio');");
   });
 
   it('reads every server-image service of compose, web through the image CMD', () => {

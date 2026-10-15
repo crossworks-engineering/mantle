@@ -1112,6 +1112,9 @@ importers:
 
   server/mcp:
     dependencies:
+      '@mantle/config':
+        specifier: workspace:*
+        version: link:../../packages/config
       '@mantle/content':
         specifier: workspace:*
         version: link:../../packages/content

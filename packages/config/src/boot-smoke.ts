@@ -7,22 +7,32 @@
  * "does not provide an export named ...". Typecheck, vitest and the asset
  * build all passed: none of them boots an entry the way the image does.
  *
- * With MANTLE_BOOT_SMOKE on, each process entry (server/web, server/api, the
- * workers, the migrate steps) runs its usual command up to the point where
+ * With MANTLE_BOOT_SMOKE=import-only, each process entry (server/web,
+ * server/api, the workers, the migrate steps, the stdio MCP server) runs its
+ * usual command up to the point where
  * its import graph is linked, loads the modules it would otherwise load
  * lazily, prints one line and exits 0, before it opens a pool, a listener or
  * a queue. A link failure (a missing export, a module that is not found)
  * exits non-zero, exactly as it would on a box.
+ *
+ * The switch takes one exact value, not a flag: only the smoke's stub env
+ * sets it. A stray `MANTLE_BOOT_SMOKE=1` (or true, on, yes) left in a box's
+ * .env is ignored, so it cannot turn every container into one that exits 0
+ * at start and restarts forever.
  */
-import { feature } from './features';
+import { env } from './index';
 
 /** The line the smoke runner waits for: a process that exits 0 without it
  *  did not reach its checkpoint. */
 export const BOOT_SMOKE_MARK = '[boot-smoke] linked:';
 
-/** Is this an import-only boot? */
+/** The one value of MANTLE_BOOT_SMOKE that means an import-only boot. */
+export const BOOT_SMOKE_VALUE = 'import-only';
+
+/** Is this an import-only boot? Only on the exact {@link BOOT_SMOKE_VALUE};
+ *  any other value, a flag word included, is ignored. */
 export function isBootSmoke(): boolean {
-  return feature('bootSmoke');
+  return env('MANTLE_BOOT_SMOKE') === BOOT_SMOKE_VALUE;
 }
 
 /**

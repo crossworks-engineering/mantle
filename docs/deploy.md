@@ -239,19 +239,32 @@ is fine but harder to roll back from.
 `pnpm boot:smoke` ([`scripts/boot-smoke.mjs`](../scripts/boot-smoke.mjs))
 starts every service compose runs on the server image (web through the image
 `CMD`, api, every worker, the four migrate steps) with its own `command:`,
-from the repo root as the image does, under `MANTLE_BOOT_SMOKE=1`. Each entry
+plus the stdio MCP server as a client starts it (`pnpm -C server/mcp start`),
+from the repo root as the image does, under `MANTLE_BOOT_SMOKE=import-only`.
+That exact value is the only one honoured: a stray `MANTLE_BOOT_SMOKE=1` in a
+box's `.env` is ignored, so it cannot make every container exit 0 at start
+and restart forever. Each entry
 links its imports, loads what it would load lazily (the web: every route
 module and its boot tasks), prints `[boot-smoke] linked: <name>` and exits 0
 before it opens a pool, a listener or a queue
 ([`packages/config/src/boot-smoke.ts`](../packages/config/src/boot-smoke.ts)).
-No database, no network, about ten seconds. It runs in `pnpm verify`, in
+No database, no network; measured 22 to 27 s on a Mac, expect 40 to 60 s on
+a CI runner. It runs in `pnpm verify`, in
 build-check and in the release guard before any image is built. It exists
 because v0.300.64 crash-looped every server process at start (a package
 without `"type": "module"`, loaded by tsx as CommonJS, lost the names its
-barrel re-exported) while typecheck, tests and the build were green;
-`eslint-rules/boot-smoke.test.ts` now also requires `"type": "module"` in
-every `packages/*` and `server/*` package. sandboxd is skipped (standalone,
-no workspace imports).
+barrel re-exported) while typecheck, tests and the build were green.
+
+What it loads: each entry's static import graph, every web route module and
+the entries' own lazy imports. What it does not load: an `await import()`
+that runs only when a request or a job reaches it (the document parsers,
+native and other third-party modules loaded on first use). A broken one of
+those fails that request, not the boot, and the smoke does not see it. For
+workspace packages the guard is `eslint-rules/boot-smoke.test.ts`, which
+requires `"type": "module"` in every `packages/*` and `server/*` package,
+whatever imports it and however. sandboxd is skipped: it runs on the same
+image but imports no workspace package (node: builtins and its own files
+only) and has no `@mantle/config` to read the switch.
 
 ---
 

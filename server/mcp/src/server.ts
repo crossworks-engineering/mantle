@@ -21,6 +21,7 @@
  * package script; this entry just trusts `process.env`.
  */
 import { StdioServerTransport } from '@modelcontextprotocol/server/stdio';
+import { bootSmokeExit, isBootSmoke } from '@mantle/config';
 import { authUsers, db, resolveSingleOwnerId, runAsSystem, startCallAudit } from '@mantle/db';
 import { buildMantleMcpServer, ensureGateReady } from '@mantle/mcp-core';
 import { registerRecallEmbedder } from '@mantle/content';
@@ -41,6 +42,9 @@ registerRecallEmbedder(embedBatch);
 // tool call.
 // gate-boot.test.ts pins this call in every process entry.
 ensureGateReady();
+// Boot smoke (scripts/boot-smoke.mjs): every import above linked and the
+// gate is ready; exit 0 before the audit, the owner lookup or the transport.
+if (isBootSmoke()) await bootSmokeExit('mcp-stdio');
 // One audit row for every tool write (A5 step 6d, @mantle/db call-audit.ts).
 startCallAudit();
 

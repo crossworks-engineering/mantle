@@ -16,8 +16,10 @@
  * image, with the service's own `command:` (the image CMD from the
  * Dockerfile's server stage for `web`, which has none), from the repo root
  * (the image's WORKDIR). So a new worker service is covered the day it lands
- * in compose. Each entry honours MANTLE_BOOT_SMOKE (packages/config/src/
- * boot-smoke.ts): once its imports are linked it loads what it would load
+ * in compose. Plus the entries no compose service runs (EXTRA: the stdio MCP
+ * server, which a client spawns in mantle_web). Each entry honours
+ * MANTLE_BOOT_SMOKE=import-only (packages/config/src/boot-smoke.ts; no other
+ * value counts): once its imports are linked it loads what it would load
  * lazily (server/web: every route module and the boot tasks), prints
  * "[boot-smoke] linked: <name>" and exits 0, before it opens a pool, a
  * listener or a queue. No database and no network: the stub DATABASE_URL
@@ -27,12 +29,21 @@
  * needs one marker per step. Anything else (non-zero exit, a missing marker,
  * a timeout) fails the run and prints the tail of that process's output.
  *
- * Not covered: sandboxd (profile `sandboxes`) is a standalone image with no
- * workspace dependencies and its own config block; a raw env read there
- * would be the only one of its kind, so it is listed in SKIP with that reason.
- * A module that only some request or job imports lazily, deep inside the
- * graph, is not loaded either: the web's route modules and the entries' own
- * lazy imports are.
+ * What it loads: each entry's static import graph, every web route module
+ * (through the route manifest) and the entries' own lazy imports. What it
+ * does NOT load: an `await import()` that runs only when a request or a job
+ * reaches it, deep inside the graph (the document parsers, native and other
+ * third-party modules loaded on first use, and the like). A broken one of
+ * those fails that request, not the boot. For workspace packages the guard
+ * against the v0.300.64 class of failure is the "type": "module" test in
+ * eslint-rules/boot-smoke.test.ts, which covers every package whatever
+ * imports it and however.
+ *
+ * Not covered: sandboxd (profile `sandboxes`) runs on this same image, but it
+ * imports no workspace package at all (node: builtins and its own files
+ * only), so no cross-package link can break it, and it has no @mantle/config
+ * to read the switch, so it would start a real daemon. It is listed in SKIP
+ * with that reason.
  */
 import { spawn, spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
@@ -48,8 +59,13 @@ export const MARK = '[boot-smoke] linked:';
 /** Services on the server image that are not smoked, each with its reason. */
 export const SKIP = {
   sandboxd:
-    'standalone image with no workspace dependencies and its own config block (server/sandboxd)',
+    'imports no workspace package (node: builtins and its own files only) and has no @mantle/config to read the switch (server/sandboxd)',
 };
+
+/** Entries no compose service runs, smoked the way they are started:
+ *  the stdio MCP server is spawned by a client, on a box as
+ *  `docker exec -i mantle_web pnpm -C server/mcp start` (docs/connecting-claude.md). */
+export const EXTRA = [{ name: 'mcp-stdio', command: ['pnpm', '-C', 'server/mcp', 'start'] }];
 
 /** The image every app service runs. */
 const SERVER_IMAGE = /\/mantle-server:/;
@@ -130,8 +146,8 @@ export function stepsOf(command) {
 /** Stub env: enough for every entry to pass assertEnvShape and reach its
  *  checkpoint; nothing here is ever dialled. Explicit values win over any
  *  .env.local the commands load (--env-file-if-exists, loadEnvFiles). */
-const STUB_ENV = {
-  MANTLE_BOOT_SMOKE: '1',
+export const STUB_ENV = {
+  MANTLE_BOOT_SMOKE: 'import-only',
   NODE_ENV: 'production',
   DATABASE_URL: 'postgres://boot-smoke:boot-smoke@127.0.0.1:9/boot_smoke',
   DBOS_SYSTEM_DATABASE_URL: 'postgres://boot-smoke:boot-smoke@127.0.0.1:9/boot_smoke_dbos',
@@ -182,7 +198,7 @@ async function main() {
   const dockerfile = readFileSync(path.join(ROOT, 'Dockerfile'), 'utf8');
   const cmd = serverImageCmd(dockerfile);
   const all = composeServices(compose).map((s) => ({ ...s, command: s.command ?? cmd }));
-  const services = all.filter((s) => !(s.name in SKIP));
+  const services = [...all.filter((s) => !(s.name in SKIP)), ...EXTRA];
   for (const s of all.filter((s) => s.name in SKIP)) {
     console.log(`- ${s.name}: skipped (${SKIP[s.name]})`);
   }

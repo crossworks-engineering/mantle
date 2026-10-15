@@ -119,7 +119,6 @@ as `env()` does) and the three profile readers in
 | `bootReconcileOff` | `MANTLE_DISABLE_BOOT_RECONCILE` | off | skip the system manifest reconcile at production boot |
 | `detachedDev` | `MANTLE_DETACHED_DEV` | off (never in production) | DB-less detached dev: page navigations render without a session |
 | `crashTest` | `MANTLE_CRASH_TEST` | off | the crash-test harness in server/api |
-| `bootSmoke` | `MANTLE_BOOT_SMOKE` | off | import-only boot: each process entry exits 0 once its import graph links (scripts/boot-smoke.mjs) |
 | `mcpTerminal` | `MANTLE_MCP_TERMINAL` | the caller | the MCP surface offers the terminal tools (default: stdio yes, HTTP no) |
 | `shareNeat` | `profile.shareNeat` | on | the public /s share reader paints the saved Neat gradient |
 | `streamThoughts` | `profile.streamThoughts` | on | stream the thought trail live while a turn runs |

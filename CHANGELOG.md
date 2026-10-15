@@ -7,13 +7,18 @@ deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 ## Unreleased: boot smoke; every package is an ES module
 
 - **`pnpm boot:smoke`** starts every server process the way the image does
-  (each compose service's own command, web through the image CMD) up to the
-  point where its imports link, then exits; no database, no network, about
-  ten seconds. It runs in `pnpm verify`, build-check and the release guard
+  (each compose service's own command, web through the image CMD, plus the
+  stdio MCP server) up to the point where its imports link, then exits; no
+  database, no network, measured 22 to 27 s on a Mac (expect 40 to 60 s on
+  CI). It runs in `pnpm verify`, build-check and the release guard
   before images are built. v0.300.64 crash-looped every server process at
   start on an import error with every other gate green; on that tree the
-  smoke fails 7 of 13 services with the same error. Entries honour the new
-  internal `MANTLE_BOOT_SMOKE` switch (never set on a box).
+  smoke fails 7 of 13 services with the same error. It loads entries, every
+  web route and the entries' own lazy imports, not the `await import()`
+  sites a request or job reaches later (parsers, native modules); the
+  `"type": "module"` test below is the guard for workspace packages. Entries
+  honour the internal `MANTLE_BOOT_SMOKE=import-only` switch, that exact
+  value only, so a stray `=1` on a box is ignored.
 - `@mantle/content-core` and `@mantle/share-ui` declare `"type": "module"`
   (published as `@crossworks/content-core` and `@crossworks/share-ui`): tsx
   now loads them as ES modules, like every other package. No source change;
@@ -22,8 +27,10 @@ deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
   `__esModule`). A test now requires the field in every `packages/*` and
   `server/*` package.
 - `scripts/roll.sh`: a web that never becomes healthy ends the roll with a
-  loud banner and the last 20 lines of the `mantle_web` log (lines naming a
-  key, token, password or secret left out). Still no automatic rollback.
+  loud banner and the last 20 lines of the `mantle_web` log, every line, with
+  secret values masked (URL credentials, Authorization and Cookie values,
+  bearer tokens, the value after a key, token, secret or password name).
+  Still no automatic rollback.
 
 ## Unreleased: kind and role list lints read the code (A10 lows)
 
