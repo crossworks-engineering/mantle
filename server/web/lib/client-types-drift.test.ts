@@ -30,11 +30,7 @@ import type {
 import { ACCESS_LEVELS } from '@mantle/client-types/dto/access';
 import { ACCESS_KEY_AREAS as CONTRACT_KEY_AREAS } from '@mantle/client-types/dto/access-keys';
 import { WORKSPACE_AREAS } from '@mantle/client-types/dto/workspaces';
-import {
-  HISTORY_ACTORS,
-  LOGIN_ROLES,
-  RECALL_ACTOR_KINDS,
-} from '@mantle/client-types/role-names';
+import { HISTORY_ACTORS, LOGIN_ROLES, RECALL_ACTOR_KINDS } from '@mantle/client-types/role-names';
 import { SCOPE_AREAS, VIEWER_LEVELS } from '@mantle/db/viewer';
 import { KEY_AREAS, type KeyArea } from '@mantle/mcp-core/key-scope';
 import type { McpLoginRole } from '@mantle/mcp-core';
@@ -211,9 +207,7 @@ describe('client-types mirrors have not drifted from their source of truth', () 
     expectTypeOf<SameUnion<WorkspaceArea, Db.ScopeArea>>().toEqualTypeOf<true>();
     expectTypeOf<SameUnion<HistoryActor, AppHistoryActor>>().toEqualTypeOf<true>();
     expectTypeOf<SameUnion<HistoryActor, Db.NodeSnapshot['actor']>>().toEqualTypeOf<true>();
-    expectTypeOf<
-      SameUnion<(typeof HISTORY_ACTORS)[number], HistoryActor>
-    >().toEqualTypeOf<true>();
+    expectTypeOf<SameUnion<(typeof HISTORY_ACTORS)[number], HistoryActor>>().toEqualTypeOf<true>();
     expectTypeOf<
       SameUnion<(typeof RECALL_ACTOR_KINDS)[number], RecallActorKind>
     >().toEqualTypeOf<true>();
