@@ -224,7 +224,7 @@ describe.skipIf(!DB_URL)('A8: the grants panel’s database rule under a wrong T
           // The control: the true seats, TypeScript refuses, nothing made.
           const control = await attempt(change, via, false);
           expect(control.outcome, `${via} ${change} control: ${control.by}`).toBe('refused');
-          expect(control.by, `${via} ${change} control`).toMatch(/403|"moved":0/);
+          expect(control.by, `${via} ${change} control`).toMatch(/403|moved\\*":0/);
           seen[`${via} ${change}`] = await attempt(change, via, true);
         }
       }
