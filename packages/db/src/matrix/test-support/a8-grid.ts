@@ -1,8 +1,8 @@
 /**
  * The A8 grid at SQL level (workspaces arch plan v2, section 12 A8): the
- * fixture the oracle (./guide-oracle.ts) speaks of, the cells, and one cell's
- * run. The test is a8-grid.db.test.ts; `pnpm test:matrix` runs it with the
- * surface cells.
+ * fixture the oracle (../guide-oracle.ts) speaks of, the cells, and one
+ * cell's run. The test is ../a8-grid.matrix.test.ts; `pnpm test:matrix` runs
+ * it with the surface cells.
  *
  * Each cell is ONE transaction, rolled back at its end. It runs the way the
  * product's statements run at the database:
@@ -11,12 +11,15 @@
  *    a request or turn scope reads; system work on the system pool;
  *  - a login's, a turn's, an assistant's, a link's, a peer's and a contact
  *    share's write on a login of the write role (mantle_write_user), its
- *    scope, actor, write mode and create home set in the transaction, the
- *    heads taken first, as the login write gateway sends a scoped write
- *    (docs/actors.md, "The login write gateway"). An Admin user's write
- *    request still goes to the system pool today (W6a M1, until A4 puts its
- *    reads in the scope): the grid sends it on the write role, where the
- *    database's own checks decide;
+ *    scope, actor, write mode and create home set in the transaction by the
+ *    gateway's own statement (writeRoleSettingsSql), the heads taken first,
+ *    as the login write gateway sends a scoped write (docs/actors.md, "The
+ *    login write gateway");
+ *  - an Admin user's write request twice: on the write role as above, and
+ *    as the product sends it today (W6a M1, until A4 puts its reads in the
+ *    scope), on the system pool with the login's scope and create home on
+ *    the transaction and no mantle.login_id (withSystemTx's systemPoolTx),
+ *    the `login@system` cells;
  *  - grants and a home move through the definers the write role calls
  *    (mantle_grant_change, mantle_grant_move_home: 0279). The grants panel
  *    calls the same definers on the system pool with no scope today, its
@@ -32,6 +35,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import type postgres from 'postgres';
+import { setActorSql, writeRoleSettingsSql } from '../../client';
 import {
   ASSISTANT_WORKSPACE,
   GUIDE_ACTIONS,
@@ -358,6 +362,8 @@ export async function makeA8Item(
 
 // ── cells ───────────────────────────────────────────────────────────────────
 
+const READS: readonly GuideAction[] = ['read', 'list', 'search'];
+
 export type A8Cell = {
   actor: GuideActor;
   /** The login asked for; null for an actor that answers no login. */
@@ -365,12 +371,20 @@ export type A8Cell = {
   kind: string;
   placement: GuidePlacement;
   action: GuideAction;
+  /** An Admin user's write sent as the product sends it today: the system
+   *  pool with its scope on the transaction (withSystemTx). Else the grid's
+   *  own path for the actor. */
+  pool?: 'system';
 };
 
 export const cellName = (c: A8Cell) =>
-  `${c.actor}/${c.role ?? '-'} ${c.action} ${c.kind} @${c.placement}`;
+  `${c.actor}${c.pool ? `@${c.pool}` : ''}/${c.role ?? '-'} ${c.action} ${c.kind} @${c.placement}`;
 
-/** Every cell: each login actor for each role, each other actor once. */
+/** The Admin users (their write requests run on the system pool today). */
+const ADMIN_ROLES: readonly GuideRole[] = ['owner', 'admin'];
+
+/** Every cell: each login actor for each role, each other actor once; an
+ *  Admin user's login write also on the system pool. */
 export function a8Cells(kinds: readonly string[]): A8Cell[] {
   const out: A8Cell[] = [];
   for (const kind of kinds) {
@@ -378,6 +392,11 @@ export function a8Cells(kinds: readonly string[]): A8Cell[] {
       for (const action of GUIDE_ACTIONS) {
         for (const actor of GUIDE_LOGIN_ACTORS) {
           for (const role of GUIDE_ROLES) out.push({ actor, role, kind, placement, action });
+        }
+        if (!READS.includes(action)) {
+          for (const role of ADMIN_ROLES) {
+            out.push({ actor: 'login', role, kind, placement, action, pool: 'system' });
+          }
         }
         for (const actor of GUIDE_OTHER_ACTORS) {
           out.push({ actor, role: null, kind, placement, action });
@@ -477,8 +496,6 @@ function settingsOf(fx: A8Fixture, c: A8Cell): Settings {
   };
 }
 
-const READS: readonly GuideAction[] = ['read', 'list', 'search'];
-
 type Got =
   | { seen: boolean }
   | { changed: boolean; state: string; newId?: string }
@@ -497,7 +514,8 @@ export async function runA8Cell(conns: A8Conns, fx: A8Fixture, c: A8Cell): Promi
     if (READS.includes(c.action)) {
       got = await read(conns.sys, fx, c, item, onSystem ? null : s);
     } else {
-      got = await write(onSystem ? conns.sys : conns.w, fx, c, item, s, onSystem);
+      const path: WritePath = onSystem ? 'system' : c.pool === 'system' ? 'admin-system' : 'write';
+      got = await write(path === 'write' ? conns.w : conns.sys, fx, c, item, settingsSql(s, path));
     }
   } catch (err) {
     if (!(err instanceof Rollback)) {
@@ -568,29 +586,50 @@ async function read(
   return got;
 }
 
+/** Where a cell's write goes: the write role (the login write gateway),
+ *  the system pool as system work (the actor alone), or the system pool as
+ *  an Admin user's write request (the actor, the login's scope and create
+ *  home, no mantle.login_id: withSystemTx's systemPoolTx). */
+type WritePath = 'write' | 'system' | 'admin-system';
+
+/**
+ * The one statement that sets a cell's write transaction up, built by the
+ * product's own helpers so the grid cannot drift from them: the gateway's
+ * writeRoleSettingsSql (scope, actor, create home) on the write role; on
+ * the system pool the actor (setActorSql), and for an Admin user's write
+ * request the scope and create home as systemPoolTx sets them (the same
+ * names; mantle.login_id set empty, which mantle_login_id() reads as unset,
+ * as systemPoolTx leaves it). Both checks on, as a box that runs them.
+ */
+function settingsSql(s: Settings, path: WritePath): string {
+  const params: [string, string, string] = [s.actor, s.mode, 'on'];
+  if (path === 'system') return setActorSql(params);
+  const home = { createWs: s.createWs || null, privateWs: s.privateWs || null };
+  return writeRoleSettingsSql(
+    {
+      kind: 'user',
+      loginId: path === 'write' && s.login ? s.login : null,
+      ws: s.ws,
+      modWs: s.mod,
+    },
+    params,
+    home,
+  );
+}
+
 /** The write a cell makes, and its row effect read back through the probe. */
 async function write(
   pool: Sql,
   fx: A8Fixture,
   c: A8Cell,
   item: A8Item,
-  s: Settings,
-  onSystem: boolean,
+  setSql: string,
 ): Promise<Got> {
   let got: Got = { failure: 'no result' };
   const login = c.role ? fx.logins[c.role] : fx.owner;
   await pool
     .begin(async (tx) => {
-      await tx`select set_config('mantle.actor', ${s.actor}, true),
-                      set_config('mantle.write_mode', ${s.mode}, true),
-                      set_config('mantle.actor_check', 'on', true)`;
-      if (!onSystem) {
-        await tx`select set_config('mantle.ws', ${arr(s.ws)}, true),
-                        set_config('mantle.mod_ws', ${arr(s.mod)}, true),
-                        set_config('mantle.login_id', ${s.login}, true),
-                        set_config('mantle.create_ws', ${s.createWs}, true),
-                        set_config('mantle.private_ws', ${s.privateWs}, true)`;
-      }
+      await tx.unsafe(setSql);
       if (c.action === 'create') {
         await tx`select mantle_lock_heads(array[${item.parent}]::uuid[], 'share')`;
       } else {
@@ -791,11 +830,28 @@ function judge(fx: A8Fixture, c: A8Cell, want: GuideAnswer, got: Got | null): st
 
 // ── pairwise ────────────────────────────────────────────────────────────────
 
+/** FNV-1a (32 bit) of `s`: a stable order key, the same on every run. */
+function stableKey(s: string): number {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  return h;
+}
+
 /**
  * A pairwise subset of `cells` (the surface cells, plan 12 A8): every pair
  * of values of two dimensions (role, kind, placement, action) that some
- * candidate holds is held by at least one picked cell. Greedy, in the
- * candidates' order, so the same candidates give the same cells.
+ * candidate holds is held by at least one picked cell.
+ *
+ * The pick is stable: the candidates are taken in the order of a hash of
+ * their own name (cellName), never in the order they came in (the kind
+ * registry's, the tool list's), and a candidate is picked when it holds a
+ * pair no cell picked before it holds (first fit). So a new kind or tool
+ * adds the cells its new pairs need and changes the pick of an old cell
+ * only where a new candidate, earlier in that order, already holds every
+ * pair the old one was picked for.
  */
 export function pairwise(cells: readonly A8Cell[]): A8Cell[] {
   const dims = (c: A8Cell) => [
@@ -811,23 +867,16 @@ export function pairwise(cells: readonly A8Cell[]): A8Cell[] {
       for (let j = i + 1; j < d.length; j++) out.push(`${d[i]}|${d[j]}`);
     return out;
   };
-  const open = new Set(cells.flatMap(pairsOf));
+  const ordered = cells
+    .map((c) => ({ c, name: cellName(c), key: stableKey(cellName(c)) }))
+    .sort((a, b) => a.key - b.key || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+  const covered = new Set<string>();
   const picked: A8Cell[] = [];
-  const left = [...cells];
-  while (open.size) {
-    let best = -1;
-    let gain = 0;
-    left.forEach((c, i) => {
-      const g = pairsOf(c).filter((p) => open.has(p)).length;
-      if (g > gain) {
-        gain = g;
-        best = i;
-      }
-    });
-    if (best < 0) break;
-    const [c] = left.splice(best, 1);
-    picked.push(c!);
-    for (const p of pairsOf(c!)) open.delete(p);
+  for (const { c } of ordered) {
+    const pairs = pairsOf(c);
+    if (pairs.every((p) => covered.has(p))) continue;
+    picked.push(c);
+    for (const p of pairs) covered.add(p);
   }
   return picked;
 }

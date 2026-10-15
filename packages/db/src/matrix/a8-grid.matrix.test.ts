@@ -2,15 +2,18 @@
  * The A8 grid at SQL level (workspaces arch plan v2, section 12 A8): 6
  * logins (and the actor kinds that answer none) x every workspace kind x 3
  * placements (in a folder, not in one, a snapshot copy) x 13 actions x every
- * actor kind, against the oracle written from the guide (./guide-oracle.ts).
+ * actor kind, and an Admin user's writes once more as the product sends them
+ * today (the system pool, its scope on the transaction: `login@system`),
+ * against the oracle written from the guide (./guide-oracle.ts).
  * The fixture and one cell's run: ./test-support/a8-grid.ts.
  *
  * Each cell is one transaction, rolled back. A cell passes only on the right
  * row effect; a cell the oracle does not cover is counted and named, and a
  * 500 or a generic error is a failure, never a deny. Cells that fail today
- * and are the owner's to decide are listed in KNOWN_FAILURES by name: the
- * test fails on any other failure, and on a known one that passes (so the
- * list only shrinks).
+ * and are the owner's to decide are listed in KNOWN_FAILURES by name and
+ * reason: the test fails on any other failure (a listed cell failing for
+ * another reason included), and on a known one that passes (so the list only
+ * shrinks).
  *
  * The workers: the cells split by kind over MANTLE_MATRIX_WORKERS (default
  * 4) workers, each on its own system and write-role connection, over one
@@ -34,8 +37,8 @@ import {
   type A8Cell,
   type A8Fixture,
 } from './test-support/a8-grid';
-import { GUIDE_SNAPSHOT_KINDS, GUIDE_WORKSPACE_KINDS } from './guide-oracle';
-import { KNOWN_FAILURES } from './a8-known-failures';
+import { GUIDE_SILENT_PINNED, GUIDE_SNAPSHOT_KINDS, GUIDE_WORKSPACE_KINDS } from './guide-oracle';
+import { sortFailures } from './a8-known-failures';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 const WORKERS = Math.max(1, Number(process.env.MANTLE_MATRIX_WORKERS ?? '4') || 4);
@@ -113,6 +116,7 @@ describe.skipIf(!URL)('A8 grid at SQL level', () => {
     const run: A8Cell[] = [];
     let allowed = 0;
     let denied = 0;
+    let pinned = 0;
     for (const c of cells) {
       const want = answerOf(c);
       if ('na' in want) na[want.na] = (na[want.na] ?? 0) + 1;
@@ -120,6 +124,7 @@ describe.skipIf(!URL)('A8 grid at SQL level', () => {
         run.push(c);
         if (want.allow) allowed++;
         else denied++;
+        if (!want.allow && want.why === GUIDE_SILENT_PINNED) pinned++;
       }
     }
     // Split by kind: a worker holds the heads of its own kinds' items only.
@@ -140,12 +145,9 @@ describe.skipIf(!URL)('A8 grid at SQL level', () => {
         }
       }),
     );
-    // The grid's own names (a surface cell's name starts with its surface).
-    const known = new Set(
-      Object.keys(KNOWN_FAILURES).filter((n) => n.split(' ')[0]!.includes('/')),
-    );
-    const unexpected = [...failures].filter(([n]) => !known.has(n)).map(([n, r]) => `${n}: ${r}`);
-    const fixed = [...known].filter((n) => !failures.has(n));
+    // The grid's own names (a surface cell's name starts with its surface);
+    // a listed cell is known only while it fails for its listed reason.
+    const { unexpected, fixed } = sortFailures(failures, true);
     const naTotal = Object.values(na).reduce((a, b) => a + b, 0);
     console.log(
       [
@@ -153,6 +155,7 @@ describe.skipIf(!URL)('A8 grid at SQL level', () => {
           `(${WORKERS} workers): ${run.length} run (${allowed} allow, ${denied} deny), ` +
           `${run.length - failures.size} pass, ${failures.size} fail ` +
           `(${failures.size - unexpected.length} known), ${naTotal} not applicable`,
+        `  of the denies, ${pinned}: ${GUIDE_SILENT_PINNED}`,
         ...Object.entries(na).map(([why, n]) => `  n/a ${n}: ${why}`),
         ...[...failures].map(([n, r]) => `  FAIL ${n}: ${r}`),
       ].join('\n'),

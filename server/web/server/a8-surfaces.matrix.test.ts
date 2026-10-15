@@ -27,10 +27,17 @@
  *   recipe       a recipe tool whose one step is the action, in a turn
  *   heartbeat    the assistant of W with no user (assistant actor, its
  *                scope with no login), the turn caller
+ *   admin-heartbeat  the Admin assistant with no user, which acts for the
+ *                owner (login(owner), the Admin turn scope with no login
+ *                asked), the turn caller
+ *   pending      a call queued in a turn, approved by the owner
+ *   share-link   an open public link's view (/s/<token>/view)
  *
  * A cell passes only on the right row effect (the probe of the SQL grid):
  * allowed is ok and the change made; refused is no change and a refusal
- * that is not a crash (a 5xx, a thrown error, a raw database error). A cell
+ * that is not a crash (a 5xx, a thrown error, a raw database or runtime
+ * text: GENERIC). The cells of a surface are picked in a stable order
+ * (a8-grid.ts pairwise), so a new kind or tool does not reshuffle them. A cell
  * whose oracle answer is not applicable is counted. Each cell's actor
  * misses are its own failure.
  *
@@ -68,9 +75,53 @@ const text = (r: unknown) =>
 type Outcome = { ok: boolean; text: string; status?: number; thrown?: boolean };
 
 /** A crash, never a deny: a 5xx, a throw, a raw database or runtime error
- *  in the reply (the mapper turns a refusal into words of its own). */
-const GENERIC =
-  /internal (server )?error|unexpected|TypeError|ReferenceError|cannot read prop|is not a function|syntax error|violates|duplicate key|does not exist|permission denied for|ECONN|THROWN/i;
+ *  in the reply (the mapper turns a refusal into words of its own). The raw
+ *  texts: a JavaScript error, a driver or query builder's ("Failed query:
+ *  update ..."), a Postgres message or SQLSTATE (a relation, a column, row
+ *  security, 42501 and its kin), a guard of the runtime's own
+ *  ("withSystemTx: only outside a viewer scope"), a stack frame. */
+const GENERIC = new RegExp(
+  [
+    'internal (server )?error',
+    'unexpected',
+    'TypeError',
+    'ReferenceError',
+    'RangeError',
+    'cannot read prop',
+    'is not a function',
+    'syntax error',
+    'violates',
+    'duplicate key',
+    'does not exist',
+    'permission denied for',
+    'ECONN',
+    'THROWN',
+    // The query builder and the driver.
+    'Failed query',
+    'drizzle',
+    'PostgresError',
+    '\\bSQLSTATE\\b',
+    // A Postgres error code: insufficient privilege, the integrity and
+    // syntax classes, a deadlock, a lock timeout.
+    '\\b(42501|42P01|42703|42883|23502|23503|23505|23514|40001|40P01|55P03|25P02)\\b',
+    'current transaction is aborted',
+    'invalid input syntax',
+    'row-level security',
+    '\\brelation "',
+    '\\bcolumn "',
+    // The runtime's own guards.
+    'withSystemTx',
+    'withScope:',
+    'withTurnScope',
+    'enterRequestScope',
+    'only outside a viewer scope',
+    // A stack frame.
+    '\\n\\s*at \\S',
+    '\\.(ts|js|mjs):\\d+:\\d+',
+    'node_modules',
+  ].join('|'),
+  'i',
+);
 
 /** The tools a kind's action goes through on a tool surface. */
 const TOOL_EDIT: Readonly<Record<string, string>> = {
@@ -566,6 +617,26 @@ describe.skipIf(!DB_URL)('A8 surface cells: every way in gives the oracle’s an
         return fromTool(res);
       }),
     ),
+    // The Admin assistant with no user (a heartbeat, a run): "except the
+    // Admin assistant, which acts for the owner" ("Assistants and chats").
+    // Its fire runs as login(owner) (heartbeats/fire.ts, no answerer) in the
+    // Admin turn scope with no login asked (withAgentScope: the owner's
+    // seat): the owner's turn, to the oracle.
+    toolEntry('admin-heartbeat', 'turn', ['owner'], (_role, slug, input) =>
+      guard(async () => {
+        const ws = fx.ws.admin;
+        const res = await m.runAsActor(m.loginActor(fx.owner, 'owner'), () =>
+          rt.withAgentScope({ id: agentOf[ws], ownerId: fx.owner, workspaceId: ws }, async () =>
+            t.dispatchTool(await toolRow(slug), input, {
+              ownerId: fx.owner,
+              surface: { kind: 'web', loginId: null } as never,
+              caller: t.turnCaller(),
+            }),
+          ),
+        );
+        return fromTool(res);
+      }),
+    ),
     toolEntry('pending', 'turn', ALL, (role, slug, input) =>
       guard(async () => {
         // A call that waits for approval (docs/actors.md, "A pending tool
@@ -679,7 +750,7 @@ describe.skipIf(!DB_URL)('A8 surface cells: every way in gives the oracle’s an
     item: { id: string; title: string },
   ): string | null => {
     const generic = out.thrown || (out.status ?? 0) >= 500 || (!out.ok && GENERIC.test(out.text));
-    if (generic) return `a crash, not a deny: ${out.status ?? ''} ${out.text.slice(0, 160)}`;
+    if (generic) return `a crash, not a refusal: ${out.status ?? ''} ${out.text.slice(0, 160)}`;
     if (cell.action === 'read') {
       const seen = out.ok && (out.text.includes(item.id) || out.text.includes(item.title));
       if (want.allow && !seen)
@@ -701,12 +772,7 @@ describe.skipIf(!DB_URL)('A8 surface cells: every way in gives the oracle’s an
 
   it('each way in: a pairwise set of cells, each the oracle’s answer', async () => {
     const started = Date.now();
-    // The surface cells' names (a grid cell's name starts with its actor).
-    const known = new Set(
-      Object.keys((await import('@mantle/db/matrix/a8-known-failures')).KNOWN_FAILURES).filter(
-        (n) => !n.split(' ')[0]!.includes('/'),
-      ),
-    );
+    const { sortFailures } = await import('@mantle/db/matrix/a8-known-failures');
     for (const slug of ['node_read', ...Object.values(TOOL_EDIT), ...Object.values(TOOL_DELETE)]) {
       if (await m.asSystem(() => t.resolveTool(fx.owner, slug), 'test')) resolvable.add(slug);
     }
@@ -768,7 +834,9 @@ describe.skipIf(!DB_URL)('A8 surface cells: every way in gives the oracle’s an
           `${pass} pass, ${cells.length - pass} fail, ${na} not applicable`,
       );
     }
-    const unexpected = [...failures].filter(([n]) => !known.has(n)).map(([n, r]) => `${n}: ${r}`);
+    // The surface cells' names (a grid cell's name starts with its actor); a
+    // listed cell is known only while it fails for its listed reason.
+    const { unexpected, fixed } = sortFailures(failures, false);
     console.log(
       [
         `A8 surfaces: ${total} cells in ${((Date.now() - started) / 1000).toFixed(1)} s, ` +
@@ -778,7 +846,6 @@ describe.skipIf(!DB_URL)('A8 surface cells: every way in gives the oracle’s an
       ].join('\n'),
     );
     expect(unexpected, 'surface cells that fail and are not known failures').toEqual([]);
-    const fixed = [...known].filter((n) => !failures.has(n));
     expect(fixed, 'known failures that pass now: take them off the list').toEqual([]);
   }, 900_000);
 });

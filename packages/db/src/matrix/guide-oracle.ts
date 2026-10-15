@@ -141,6 +141,7 @@ export type GuideSurface =
   | 'team-turn'
   | 'telegram'
   | 'heartbeat'
+  | 'admin-heartbeat'
   | 'run'
   | 'recipe'
   | 'pending'
@@ -275,6 +276,14 @@ function seatsFor(
 
 const deny = (why: string): GuideAnswer => ({ allow: false, why });
 
+/** The why of an app delete by anyone but the owner (plan s32, F3). */
+export const APP_DELETE_OWNER_ONLY = 'an app: only the owner deletes it (plan s32, F3)';
+
+/** The why of a cell where the guide is silent and the oracle pins the
+ *  narrower answer (a turn's write and a Moderator seat outside its
+ *  workspace): the owner's to decide. */
+export const GUIDE_SILENT_PINNED = 'guide silent, pinned deny pending owner';
+
 /**
  * What the guide says a caller in `context` may do as `role` with the
  * fixture's item of `kind`, for `action`. `role` is ignored for an actor that
@@ -377,20 +386,22 @@ export function expectedAccess(
   const homeMod = seats.mods.includes(g.home);
   const edits = homeMod || g.write.some((w) => seats.users.includes(w));
   const modOf = (w: GuideWorkspace) => seats.mods.includes(w);
+  const owner = role === 'owner';
 
   // The guide does not say whether a turn's write may use a Moderator seat
   // outside the assistant's workspace ("It writes only for a user who could
   // do it by hand" against "It reads only its workspace's items"). Where the
-  // two readings part, the cell is not applicable and the report names it.
+  // two readings part, the cell is pinned to the narrower answer, a deny, so
+  // a loosening fails until the owner decides; the report names it.
   if (narrowTo) {
     const byHand = expectedAccess({ ...context, actor: 'login' }, role, kind, action);
-    const narrowed = narrowedAnswer(placement, kind, action, { homeMod, edits, modOf });
+    const narrowed = narrowedAnswer(placement, kind, action, { homeMod, edits, modOf, owner });
     if ('allow' in byHand && 'allow' in narrowed && byHand.allow !== narrowed.allow) {
-      return { na: 'guide silent: a turn’s write and a Moderator seat outside its workspace' };
+      return deny(GUIDE_SILENT_PINNED);
     }
     return narrowed;
   }
-  return narrowedAnswer(placement, kind, action, { homeMod, edits, modOf });
+  return narrowedAnswer(placement, kind, action, { homeMod, edits, modOf, owner });
 }
 
 const READ_ACTIONS: readonly GuideAction[] = ['read', 'list', 'search'];
@@ -400,7 +411,13 @@ function narrowedAnswer(
   placement: GuidePlacement,
   kind: string,
   action: GuideAction,
-  s: { homeMod: boolean; edits: boolean; modOf: (w: GuideWorkspace) => boolean },
+  s: {
+    homeMod: boolean;
+    edits: boolean;
+    modOf: (w: GuideWorkspace) => boolean;
+    /** The brain's owner ("The owner"). */
+    owner: boolean;
+  },
 ): GuideAnswer {
   const snapshot = placement === 'snapshot';
   // update-prod.md: "A copy is read only for everyone, its author included:
@@ -420,6 +437,11 @@ function narrowedAnswer(
         return s.homeMod ? { allow: true } : deny('app code: Moderator of its home');
       return s.edits ? { allow: true } : deny('may not edit it');
     case 'delete':
+      // An app: only the owner deletes it. The owner's decision on the A8
+      // findings (workspaces arch plan v2, section 32, F3: app delete stays
+      // owner-only; the guide gets the rule), over "Delete it: Moderator of
+      // its home" for an app.
+      if (kind === 'app') return s.owner ? { allow: true } : deny(APP_DELETE_OWNER_ONLY);
       // "Delete it: Moderator of its home" (the copy's author is one).
       return s.homeMod ? { allow: true } : deny('not a Moderator of its home');
     case 'move':

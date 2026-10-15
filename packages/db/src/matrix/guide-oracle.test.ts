@@ -5,8 +5,10 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
+  APP_DELETE_OWNER_ONLY,
   GUIDE_ACTIONS,
   GUIDE_ROLES,
+  GUIDE_SILENT_PINNED,
   expectedAccess,
   type GuideActor,
   type GuidePlacement,
@@ -104,15 +106,26 @@ describe('the A8 oracle', () => {
     expect(expectedAccess(at('root', 'contact-rw'), null, 'app', 'appData')).toEqual(allow);
   });
 
+  it('an app: only the owner deletes it (plan s32, F3), any other item its home Moderator', () => {
+    expect(expectedAccess(at('root'), 'homeModerator', 'note', 'delete')).toEqual(allow);
+    expect(expectedAccess(at('root'), 'homeModerator', 'app', 'delete')).toEqual({
+      allow: false,
+      why: APP_DELETE_OWNER_ONLY,
+    });
+  });
+
   it('"It reads only its workspace\'s items": a turn narrows to the assistant\'s workspace', () => {
     // writeGrant's turn is W's: the copy in its private workspace is out.
     expect(expectedAccess(at('snapshot', 'turn'), 'writeGrant', 'page', 'read')).toMatchObject(
       denied,
     );
     expect(expectedAccess(at('root', 'turn'), 'homeModerator', 'note', 'edit')).toEqual(allow);
-    // Where the guide is silent the cell is not applicable.
-    expect(expectedAccess(at('root', 'turn'), 'homeModerator', 'note', 'grantAdd')).toHaveProperty(
-      'na',
-    );
+    // Where the guide is silent the cell is pinned to the narrower answer
+    // (by hand allowed, in the turn's scope refused): a deny, named.
+    expect(expectedAccess(at('root', 'login'), 'homeModerator', 'note', 'grantAdd')).toEqual(allow);
+    expect(expectedAccess(at('root', 'turn'), 'homeModerator', 'note', 'grantAdd')).toEqual({
+      allow: false,
+      why: GUIDE_SILENT_PINNED,
+    });
   });
 });
