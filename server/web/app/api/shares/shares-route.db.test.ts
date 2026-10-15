@@ -205,7 +205,9 @@ describe.skipIf(!URL)('the share routes on the served list', () => {
         from shares where node_id = ${id.oldClient}`);
     expect(oc).toEqual({ revoked: true, retired: 'client' });
     expect(await servedOf(id.oldPublic)).toEqual([]);
-    const again = await x<{ n: number }>(sql`select * from mantle_link_served_fill()`);
+    const again = await (
+      await import('@mantle/db/test-support')
+    ).superuserExec<{ n: number }>(scratch!.url, 'select * from mantle_link_served_fill()');
     expect(again.map((s) => Number(s.n))).toEqual([0, 0]);
   });
 
