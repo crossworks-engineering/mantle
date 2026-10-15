@@ -91,13 +91,22 @@ export function inlineMediaImageIds(source: string | undefined | null): Set<stri
   return ids;
 }
 
+/** The node type each scheme requires (`mention:node:` takes any node, so it
+ *  has none): the one place the scheme names a kind (A10 #12). */
+const SCHEME_NODE_TYPE = {
+  media: 'file',
+  page: 'page',
+  draw: 'draw',
+  folder: 'branch',
+} as const;
+
 /** A reference-link target found in a markdown source: which scheme it used,
  *  the id it points at, and the node type that scheme requires (unset ⇒ any
  *  node). `nodeType` is what makes a wrong-type reference reportable. */
 export type MarkdownRef = {
   scheme: 'media' | 'page' | 'mention' | 'draw' | 'folder';
   id: string;
-  nodeType?: 'file' | 'page' | 'draw' | 'branch';
+  nodeType?: (typeof SCHEME_NODE_TYPE)[keyof typeof SCHEME_NODE_TYPE];
 };
 
 /** Any markdown link or image, capturing the href. */
@@ -122,15 +131,15 @@ export function markdownRefs(source: string | undefined | null): MarkdownRef[] {
     if (!href) continue;
     let ref: MarkdownRef | null = null;
     const media = MEDIA_HREF.exec(href);
-    if (media?.[1]) ref = { scheme: 'media', id: media[1], nodeType: 'file' };
+    if (media?.[1]) ref = { scheme: 'media', id: media[1], nodeType: SCHEME_NODE_TYPE.media };
     const page = PAGE_HREF.exec(href);
-    if (page?.[1]) ref = { scheme: 'page', id: page[1], nodeType: 'page' };
+    if (page?.[1]) ref = { scheme: 'page', id: page[1], nodeType: SCHEME_NODE_TYPE.page };
     const draw = DRAW_HREF.exec(href);
-    if (draw?.[1]) ref = { scheme: 'draw', id: draw[1], nodeType: 'draw' };
+    if (draw?.[1]) ref = { scheme: 'draw', id: draw[1], nodeType: SCHEME_NODE_TYPE.draw };
     // A Folder index names a folder row; `folder:here` names none.
     const folder = FOLDER_HREF.exec(href);
     if (folder?.[1] && folder[1] !== FOLDER_HERE) {
-      ref = { scheme: 'folder', id: folder[1], nodeType: 'branch' };
+      ref = { scheme: 'folder', id: folder[1], nodeType: SCHEME_NODE_TYPE.folder };
     }
     const mention = MENTION_HREF.exec(href);
     // Bare `mention:<id>` defaults to an entity — skip; only `mention:node:` is

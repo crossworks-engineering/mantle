@@ -96,6 +96,32 @@ export type McpSyncPlan = {
   toolSlugs: string[];
 };
 
+/** `v` with every `enum` list sorted (by each value's canonical JSON). */
+function enumsSorted(v: unknown): unknown {
+  if (Array.isArray(v)) return v.map(enumsSorted);
+  if (!v || typeof v !== 'object') return v;
+  return Object.fromEntries(
+    Object.entries(v as Record<string, unknown>).map(([k, x]) => [
+      k,
+      k === 'enum' && Array.isArray(x)
+        ? x
+            .map(enumsSorted)
+            .map((e) => [canonical(e), e] as const)
+            .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+            .map(([, e]) => e)
+        : enumsSorted(x),
+    ]),
+  );
+}
+
+/** What a sync compares two input schemas by: their content, keys in any
+ *  order and each `enum` as a set. Only the comparison: the schema stored and
+ *  the read-only mark's signature (externalAccessToolSig) are as the server
+ *  sent them, so no mark made before this reads differently. */
+export function schemaKey(schema: unknown): string {
+  return canonical(enumsSorted(schema));
+}
+
 /**
  * Decide the row changes for one connector from plain data. `existing` is the
  * connector's current mcp rows; `ownerSlugs` is EVERY tool slug the owner
@@ -137,7 +163,10 @@ export function planMcpSync(args: {
       // By content, not key order: Postgres hands jsonb back with its keys
       // reordered, and a schema that only looks different must not count as
       // a change (it would void the tool's read-only mark on every sync).
-      if (canonical(row.inputSchema) !== canonical(inputSchema)) {
+      // Nor enum order: an enum is a set of allowed values, so a server that
+      // lists the same values in another order changed nothing (A10 #12 put
+      // the MCP `search` tool's `type` enum in registry order).
+      if (schemaKey(row.inputSchema) !== schemaKey(inputSchema)) {
         patch.inputSchema = inputSchema;
       }
       if (syncDisabled) {

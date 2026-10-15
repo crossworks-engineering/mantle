@@ -2,9 +2,13 @@
  * no-hand-kind-lists (arch plan A10 #12): a list of kinds is a filter over
  * the kind registry (packages/client-types/src/kinds.ts, the derived lists
  * in kind-lists.ts), never a literal. A literal list of 3 or more node_type
- * values (an array, a Set's, a z.enum's, an inline `[...].includes(`) in
- * product code is an error, outside the files KIND_LIST_ALLOW names with
- * their reason (eslint-rules/arch-counts.mjs).
+ * values in product code is an error, outside the files KIND_LIST_ALLOW
+ * names with their reason (eslint-rules/arch-counts.mjs). A list is read
+ * from the syntax tree (eslint-rules/name-lists.mjs): an array wherever it
+ * is written (a Set's, a z.enum's, after `of`, `&&` or `export default`, in
+ * a spread), a union type, an object's keys (not a dispatch table of
+ * functions), a comparison chain, a switch's shared cases and a SQL `in`
+ * list in a string or template. Each list is reported where it is written.
  *
  * Why: about ten such lists bypassed the registry, and three disagreed with
  * it (the integrity view could not see three kinds the extractor reads). A
@@ -13,27 +17,29 @@
  * The same count is the scoreboard's handKindLists (pinned at 0) and
  * eslint-rules/arch-lints.test.ts holds the allowed files to exactly the
  * ones that still hold a list. The node types are read from the schema enum
- * (packages/db/src/schema/nodes.ts) of the repo ESLint runs in.
+ * (packages/db/src/schema/nodes.ts) of the repo this rule file is in, found
+ * from the rule file and not from ESLint's working directory (low round,
+ * L2: run from another directory the rule found no enum and passed
+ * everything); no enum there is an error, never a silent pass.
  */
-import { existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   KIND_LIST_ALLOW,
-  handKindLists,
+  handKindListSites,
   isCounted,
   nodeTypes,
   repoPathOf,
 } from './arch-counts.mjs';
 
-/** The node types, by repo root (one read per lint run). */
-const typesByRoot = new Map();
+/** The repo this rule file is in. */
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 
-function typesOf(root) {
-  if (!typesByRoot.has(root)) {
-    const ok = existsSync(join(root, 'packages/db/src/schema/nodes.ts'));
-    typesByRoot.set(root, ok ? nodeTypes(root) : new Set());
-  }
-  return typesByRoot.get(root);
+/** The node types, read once (nodeTypes throws when there are none). */
+let types = null;
+function typesOf() {
+  types ??= nodeTypes(ROOT);
+  return types;
 }
 
 export const noHandKindLists = {
@@ -44,19 +50,22 @@ export const noHandKindLists = {
         'A list of kinds is a filter over the kind registry, not a literal (arch plan A10 #12).',
     },
     messages: {
-      list: 'A literal list of {{n}} kinds: add a field to KindSpec (packages/client-types/src/kinds.ts) and derive the list in kind-lists.ts. A list that must stay literal is named with its reason in eslint-rules/arch-counts.mjs KIND_LIST_ALLOW.',
+      list: 'A literal list of {{n}} kinds ({{form}}): add a field to KindSpec (packages/client-types/src/kinds.ts) and derive the list in kind-lists.ts. A list that must stay literal is named with its reason in eslint-rules/arch-counts.mjs KIND_LIST_ALLOW.',
     },
     schema: [],
   },
   create(context) {
     const path = repoPathOf(context.filename);
     if (!path || !isCounted(path) || Object.hasOwn(KIND_LIST_ALLOW, path)) return {};
-    const types = typesOf(context.cwd ?? process.cwd());
-    if (!types.size) return {};
+    const known = typesOf();
     return {
-      Program(node) {
-        for (const n of handKindLists(context.sourceCode.getText(), types)) {
-          context.report({ node, messageId: 'list', data: { n: String(n) } });
+      Program() {
+        for (const site of handKindListSites(context.sourceCode.getText(), known, path)) {
+          context.report({
+            loc: { start: site.start, end: site.end },
+            messageId: 'list',
+            data: { n: String(site.n), form: site.form },
+          });
         }
       },
     };

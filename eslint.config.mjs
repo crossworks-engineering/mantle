@@ -340,17 +340,32 @@ export default tseslint.config(
       // A route never puts a caught error's text in a reply: it throws and
       // app.onError answers (fold 2). The files not yet moved are named.
       'mantle-plumbing/no-error-text-replies': 'error',
-      // A route takes no rate limit and answers no cross-site refusal of its
-      // own: both are its ROUTE_POLICY row's (A10 #8, lib/route-limits.ts).
-      // The budgets that are not gates on the request are named.
+      // A route answers no cross-site refusal of its own: it is its
+      // ROUTE_POLICY row's (A10 #8, lib/route-limits.ts).
       'mantle-plumbing/no-route-rate-limits': 'error',
     },
   },
   {
+    // No file takes a rate limit but the gate and the named budgets: a limit
+    // is the route's row's (A10 #8, lib/route-limits.ts), and a limiter in a
+    // helper the handler calls first is one too (low round, L2). The budgets
+    // that are not gates on the request are named in the rule.
+    files: ['server/web/**/*.{ts,tsx,mts,mjs,js}'],
+    ignores: ['**/*.test.{ts,tsx,mts,cts,js,jsx,mjs,cjs}'],
+    plugins: { 'mantle-plumbing': mantleRoutePlumbingPlugin },
+    rules: { 'mantle-plumbing/no-route-rate-limits': 'error' },
+  },
+  {
     // A list of kinds is a filter over the kind registry (A10 #12,
     // packages/client-types/src/kind-lists.ts), never a literal of 3 or more
-    // node types. The files that must keep one are named in the rule.
-    files: ['packages/**/*.{ts,tsx,mts,mjs,js}', 'server/**/*.{ts,tsx,mts,mjs,js}'],
+    // node types (an array, a union, an object's keys, a comparison chain,
+    // a switch's shared cases, a SQL list). The files that must keep one are
+    // named in the rule.
+    files: [
+      'packages/**/*.{ts,tsx,mts,mjs,js}',
+      'server/**/*.{ts,tsx,mts,mjs,js}',
+      'scripts/**/*.{ts,tsx,mts,mjs,js}',
+    ],
     ignores: ['**/*.test.{ts,tsx,mts,cts,js,jsx,mjs,cjs}'],
     plugins: { 'mantle-kinds': mantleKindsPlugin },
     rules: { 'mantle-kinds/no-hand-kind-lists': 'error' },
@@ -372,8 +387,13 @@ export default tseslint.config(
   {
     // A role, area or actor name list is read from its source (A10 #13,
     // packages/client-types/src/role-names.ts and the dto lists), never a
-    // literal list, union or comparison chain of those names.
-    files: ['packages/**/*.{ts,tsx,mts,mjs,js}', 'server/**/*.{ts,tsx,mts,mjs,js}'],
+    // literal list, union, comparison chain, shared switch cases or SQL list
+    // of those names.
+    files: [
+      'packages/**/*.{ts,tsx,mts,mjs,js}',
+      'server/**/*.{ts,tsx,mts,mjs,js}',
+      'scripts/**/*.{ts,tsx,mts,mjs,js}',
+    ],
     ignores: ['**/*.test.{ts,tsx,mts,cts,js,jsx,mjs,cjs}'],
     plugins: { 'mantle-roles': mantleRolesPlugin },
     rules: { 'mantle-roles/no-hand-role-lists': 'error' },

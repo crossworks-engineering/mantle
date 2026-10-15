@@ -13,6 +13,7 @@ import {
   mcpGroupSlug,
   mcpToolSlug,
   planMcpSync,
+  schemaKey,
   type McpSyncRowState,
 } from './mcp-sync';
 
@@ -117,6 +118,60 @@ describe('planMcpSync', () => {
       ownerSlugs: existing.map((r) => r.slug),
     });
     expect(plan.updates).toHaveLength(0);
+  });
+
+  // An enum is a set: a server that lists the same values in another order
+  // changed nothing (A10 #12 put the Mantle MCP `search` enum in registry
+  // order; a consuming brain's sync must not void its read-only mark).
+  const searchSchema = (types: string[]) => ({
+    type: 'object',
+    properties: { q: { type: 'string' }, type: { type: 'string', enum: types } },
+  });
+  it('emits no update for the same schema with an enum in another order', () => {
+    const existing = [
+      row({
+        toolName: 'search',
+        inputSchema: searchSchema(['page', 'sermon', 'telegram_message']),
+      }),
+    ];
+    const plan = planMcpSync({
+      groupSlug: GROUP,
+      remote: [
+        {
+          name: 'search',
+          description: 'd',
+          inputSchema: searchSchema(['sermon', 'telegram_message', 'page']),
+        },
+      ],
+      existing,
+      ownerSlugs: existing.map((r) => r.slug),
+    });
+    expect(plan.updates).toHaveLength(0);
+  });
+
+  it('still updates a schema whose enum gained or lost a value', () => {
+    const existing = [row({ toolName: 'search', inputSchema: searchSchema(['page', 'note']) })];
+    for (const types of [['page', 'note', 'draw'], ['page']]) {
+      const plan = planMcpSync({
+        groupSlug: GROUP,
+        remote: [{ name: 'search', description: 'd', inputSchema: searchSchema(types) }],
+        existing,
+        ownerSlugs: existing.map((r) => r.slug),
+      });
+      expect(plan.updates, types.join()).toEqual([
+        { slug: existing[0]!.slug, inputSchema: searchSchema(types) },
+      ]);
+    }
+  });
+
+  it('reads enum order as no change, and nothing else: keys, values and nesting still count', () => {
+    expect(schemaKey({ enum: ['b', 'a'] })).toBe(schemaKey({ enum: ['a', 'b'] }));
+    expect(schemaKey({ enum: [{ x: 1 }, 'a'] })).toBe(schemaKey({ enum: ['a', { x: 1 }] }));
+    expect(schemaKey({ items: ['b', 'a'] })).not.toBe(schemaKey({ items: ['a', 'b'] }));
+    expect(schemaKey({ enum: ['a', 'a'] })).not.toBe(schemaKey({ enum: ['a'] }));
+    expect(schemaKey({ properties: { enum: { type: 'string' } } })).toBe(
+      schemaKey({ properties: { enum: { type: 'string' } } }),
+    );
   });
 
   it('disables vanished tools with a marker (never deletes) and drops them from membership', () => {

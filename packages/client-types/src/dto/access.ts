@@ -42,6 +42,8 @@ export type AccessLinkView = {
 export type MemberItemAuthor = {
   name: string;
   acceptedAt: string | null;
+  /** `client` stays for the wire contract (additive only): the client role
+   *  is gone since workspaces W8a and no brain answers it now. */
   role?: 'member' | 'client' | null;
 };
 

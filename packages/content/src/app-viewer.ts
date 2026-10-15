@@ -16,7 +16,8 @@
  * `contact:<id>`, keyed with the app's random `app_databases.viewer_salt`
  * (migration 0217). Stable for one person inside one app, different in every
  * other app, and the app cannot reverse it. A login keeps its id when its
- * role changes (admin, member and client all hash `login:`).
+ * role changes (every login role hashes `login:`; so did the client role
+ * while it was one, W8a removed it).
  */
 import { createHmac, randomBytes } from 'node:crypto';
 import { and, eq, sql } from 'drizzle-orm';
@@ -28,6 +29,7 @@ import {
   PUBLIC_APP_VIEWER,
   type AppViewer,
 } from '@mantle/client-types/app-viewer';
+import type { LoginRole } from '@mantle/client-types/role-names';
 import { AppSqlError } from './app-sql-runner';
 
 export type { AppViewer, AppViewerKind } from '@mantle/client-types/app-viewer';
@@ -43,7 +45,7 @@ export { PUBLIC_APP_VIEWER } from '@mantle/client-types/app-viewer';
  * or contact id); null means "this person has no display name".
  */
 export type AppViewerSubject =
-  | { kind: 'admin' | 'member' | 'client'; loginId: string; name?: string | null }
+  | { kind: LoginRole; loginId: string; name?: string | null }
   | { kind: 'contact'; contactId: string; name?: string | null }
   | { kind: 'public' };
 

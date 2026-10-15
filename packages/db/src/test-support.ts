@@ -38,7 +38,7 @@
  *    container, so the tests that dump and restore use the tools inside
  *    that container, and a host install only when there is none.
  */
-import type { LoginRole } from '@mantle/client-types/role-names';
+import { LOGIN_ROLES, type LoginRole } from '@mantle/client-types/role-names';
 import { env, envDynamic } from '@mantle/config';
 import { spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
@@ -117,7 +117,7 @@ export function teamWorkspaceSql(owner: string): string {
     joined as (
       insert into public.workspace_users (workspace_id, login_id, moderator)
       select m.id, u.id, true from made m, auth.users u
-       where u.role in ('admin', 'member')
+       where u.role in (${LOGIN_ROLES.map((r) => `'${r}'`).join(', ')})
          and not exists (select 1 from public.archive_client_logins a where a.login_id = u.id)
       on conflict do nothing)
     select id::text as id from ws`;

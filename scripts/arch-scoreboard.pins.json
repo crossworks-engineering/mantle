@@ -18,9 +18,8 @@
   "liveRoutesWithoutGuard": 20,
   "callerReads": 508,
   "callerReadFiles": 364,
-  "kindLists": 1,
   "handKindLists": 0,
-  "handKindListsAllowed": 1,
+  "handKindListsAllowed": 11,
   "handRoleLists": 0,
   "handRoleListsAllowed": 6,
   "brainOnWorkspacesCalls": 12,
@@ -32,8 +31,8 @@
   "routeBodyReadAllowed": 9,
   "routeErrorTextFiles": 0,
   "routeErrorTextAllowed": 31,
-  "routeRateLimitCalls": 0,
-  "routeRateLimitAllowed": 3,
+  "rateLimitCalls": 0,
+  "rateLimitAllowed": 7,
   "handExportSyncCalls": 0,
   "handExportSyncAllowed": 2,
   "appToolBrokerLogicFiles": 0,
@@ -77,6 +76,8 @@
     "asSystemFiles": "raised 36 to 38 in A6 round 2: lib/grants.ts (the page refold, 'page-refold') and lib/workspaces.ts (a login's own workspace change, 'workspace-write') leave the scope by their own doors now, where their whole routes left it through lib/auth/rule-in-query.ts before. See asSystemExits.",
     "asSystemReasons": "raised 28 to 30 in A6 round 2: 'workspace-write' and 'page-refold' (packages/db/src/viewer.ts says what each allows), each narrower than the 'rule-in-query' exit the two libraries took whole before.",
     "systemDbUses": "new in A6 fix round 1 (L1), pinned apart from the asSystem exits: direct uses of systemDb (the admin pool whatever the scope), every use but its declaration, imports and exports (as-system-exits.mjs systemDbUses), 70 in 20 files, the same per file as main (v0.300.55). eslint-rules/system-db-allowlist.mjs names the files that may import it.",
-    "systemDbFiles": "new in A6 fix round 1 (L1): the files of systemDbUses."
+    "systemDbFiles": "new in A6 fix round 1 (L1): the files of systemDbUses.",
+    "handKindListsAllowed": "Raised 1 to 11 in the A10 low round (F2): the count reads the syntax tree now (eslint-rules/name-lists.mjs), so a union, an object's keys, a comparison chain, a switch's shared cases and a SQL list count, where only array literals after a few tokens did. No list is new: the named files held them before. kinds.ts 1 (ITEM_KINDS, the registry itself); the access matrix 7 (guide-oracle.ts 3 and oracle.ts 1, written from the guide on purpose to check the registry; test-support/a8-grid.ts 3, the content table and columns the grid writes per kind); stage-label.ts 1 (CREATE_NOUN, keyed by tool slug nouns); contact-shares-menu.tsx 1 (KIND_ICON, lucide icons); nodes.ts 1 as before. Two new hits outside the list were fixed instead (markdown-refs.ts nodeType, refold-embeds.ts counters).",
+    "rateLimitAllowed": "Was routeRateLimitAllowed (3 route files) until the A10 low round (A10 #8 L2): the count reads every file, not only route files, so the four lib files that take a limit are named too (route-limits.ts, the gate; access-keys.ts and access-key-gate.ts, the key budgets; workspace-turn.ts, the member turn budget). rateLimitCalls (was routeRateLimitCalls) stays 0."
   }
 }

@@ -9,9 +9,14 @@
  * every app), so an app cannot join a person across apps.
  */
 
-/** The kind of viewer: the owner or an admin login, a member login, a client
- *  login, a Contact share's contact, or an open /s link (no person). */
-export type AppViewerKind = 'admin' | 'member' | 'client' | 'contact' | 'public';
+import type { LoginRole } from './role-names';
+
+/** The kind of viewer: a login (its role: the owner or an admin login, a
+ *  member login), a Contact share's contact, or an open /s link (no person).
+ *  `client` stays for the wire contract (additive only): a client login was
+ *  a viewer kind until workspaces W8a removed the role, and an app may still
+ *  test `:host_me_kind` for it. No brain answers it now. */
+export type AppViewerKind = LoginRole | 'client' | 'contact' | 'public';
 
 export type AppViewer = {
   /** Stable for this person inside this app only; null on an open link. */

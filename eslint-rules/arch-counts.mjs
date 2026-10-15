@@ -1,8 +1,9 @@
 /**
  * The architecture counts (workspaces arch plan v2, sections 3 and 11; A0):
  * one place that measures the repo, read by the pinned-count lints in this
- * folder (their tests) and by scripts/arch-scoreboard.ts. Plain text
- * heuristics over product files, deterministic, no type checker:
+ * folder (their tests) and by scripts/arch-scoreboard.ts. Text heuristics
+ * and syntax trees (the TypeScript parser) over product files,
+ * deterministic, no type checker:
  *
  *  - asSystem call sites per file, with the reasons they pass, and the
  *    exits: the uses of the functions holding them (as-system-exits.mjs,
@@ -13,19 +14,20 @@
  *  - route policy lists (a list literal holding 3 or more route patterns);
  *  - route files, 410 stubs, guard calls, and reads of the caller the
  *    pipeline answers (ownerCaller(), A4 step 3b);
- *  - TS kind lists (a list literal holding 5 or more node_type values);
- *  - hand kind lists (A10 #12): any list literal of 3 or more node_type
- *    values outside the kind registry, pinned at 0 outside KIND_LIST_ALLOW;
- *  - hand role lists (A10 #13): a list literal, string union or comparison
- *    chain of role, area or actor names outside its source file
- *    (ROLE_NAME_SOURCES), pinned at 0;
+ *  - hand kind lists (A10 #12): any list of 3 or more node_type values
+ *    (an array, a union, an object's keys, a comparison chain, a switch's
+ *    shared cases, a SQL list: name-lists.mjs reads them from the syntax
+ *    tree) outside the kind registry, pinned at 0 outside KIND_LIST_ALLOW;
+ *  - hand role lists (A10 #13): the same forms (not an object's keys) of
+ *    role, area or actor names outside its source file (ROLE_NAME_SOURCES),
+ *    pinned at 0;
  *  - switch-over code (brainOnWorkspacesNow calls, MANTLE_ADMIN_READS);
  *  - store write API importers (the disk stores of plan section 6);
  *  - route files that read their request body directly (A10 part 2, fold
  *    1), and that put a caught error's text in a reply (fold 2), outside
  *    and inside the named lists (route-plumbing.mjs);
- *  - rate limit calls in route files (A10 #8), outside the named list, and
- *    the named files (route-plumbing.mjs RATE_LIMIT_ALLOW);
+ *  - rate limit calls in any product file (A10 #8), outside the named list,
+ *    and the named files (route-plumbing.mjs RATE_LIMIT_ALLOW);
  *  - the provider HTTP copies (A10 #10): inline deadlines, hand abort
  *    timers, private withTimeout copies, Retry-After reads and sleeping
  *    retry loops, outside and inside the named lists (provider-http.mjs);
@@ -69,6 +71,7 @@ import {
 } from './app-broker.mjs';
 import { REINDEX_ALLOW, handReindex } from './no-hand-reindex.mjs';
 import { asSystemExits, systemDbUses } from './as-system-exits.mjs';
+import { nameListSites } from './name-lists.mjs';
 
 /** Whether the counts read `path` (repo-relative). */
 export function isCounted(path) {
@@ -343,20 +346,18 @@ export function routePolicySwept(path) {
 
 // ── kinds ───────────────────────────────────────────────────────────────────
 
-/** The node_type values (packages/db/src/schema/nodes.ts). */
+/** The node_type values (packages/db/src/schema/nodes.ts), or an error: a
+ *  lint or a count with no kinds to judge by would pass everything (A10 #13
+ *  low round, L2). */
 export function nodeTypes(root) {
-  const text = readRepoFile(root, 'packages/db/src/schema/nodes.ts') ?? '';
+  const path = 'packages/db/src/schema/nodes.ts';
+  const text = readRepoFile(root, path) ?? '';
   const at = text.indexOf("pgEnum('node_type'");
-  if (at < 0) return new Set();
+  if (at < 0) throw new Error(`arch-counts: no node_type enum in ${join(root, path)}`);
   const list = balanced(text, text.indexOf('[', at));
-  return new Set(stringsIn(list));
-}
-
-/** The kind lists of `text`: lists holding 5 or more node types. */
-export function kindLists(text, types) {
-  return listLiterals(stripComments(text))
-    .map((l) => stringsIn(l).filter((s) => types.has(s)).length)
-    .filter((n) => n >= 5);
+  const types = new Set(stringsIn(list));
+  if (!types.size) throw new Error(`arch-counts: the node_type enum in ${path} is empty`);
+  return types;
 }
 
 // ── hand kind lists (A10 #12) ───────────────────────────────────────────────
@@ -367,65 +368,67 @@ export function kindLists(text, types) {
 export const KIND_LIST_ALLOW = Object.freeze({
   'packages/db/src/schema/nodes.ts':
     'the node_type enum: the SQL type the registry mirrors (kinds.test.ts and the db test kind-registry.db.test.ts pin them to one set)',
+  'packages/client-types/src/kinds.ts':
+    'the kind registry itself: ITEM_KINDS is keyed by every kind, and every other list is a filter over it',
+  'packages/db/src/matrix/guide-oracle.ts':
+    'the access matrix oracle reads the guide, never the registry, on purpose: it is what checks the code (its kinds as the guide names them)',
+  'packages/db/src/matrix/oracle.ts':
+    'the access matrix oracle (actionApplies): which kinds an action changes, written from the guide so the matrix can catch the code',
+  'packages/db/src/matrix/test-support/a8-grid.ts':
+    "the access matrix grid's content tables and draft columns per kind: the schema's tables, which the grid writes to directly",
+  'packages/runtime/src/assistant/stage-label.ts':
+    'CREATE_NOUN is keyed by the noun of a `<thing>_create` tool slug (folder_create is no kind), not by kind',
+  'server/web/components/share/contact-shares-menu.tsx':
+    'KIND_ICON: an icon component per kind (lucide-react), which the zero-dependency registry cannot hold',
 });
 
-/** The string entries of a list literal `[...]` at its own level (not in a
- *  nested list, object or call). */
-export function ownStrings(list) {
+/** Whether every member of a `keys` site is a function: a dispatch table
+ *  (behaviour per name, as a switch whose cases have their own bodies), not
+ *  a list. Read from the site's form: name-lists.mjs marks it. */
+const isDispatch = (site) => site.form === 'keys' && site.dispatch;
+
+/** The hand kind list sites of `text` (at repo path `path`): each list
+ *  whose own entries name 3 or more node types, node types being at least
+ *  half of them (a list of tool group slugs that happens to hold
+ *  'journal', 'email' and 'location' among a dozen others is not one).
+ *  Every form name-lists.mjs reads counts: an array, a union, an object's
+ *  keys (not a dispatch table), a comparison chain, the shared cases of a
+ *  switch and a SQL list. `{ n, form, start, end }`. */
+export function handKindListSites(text, types, path = 'x.ts') {
   const out = [];
-  let depth = 0;
-  for (let i = 1; i < list.length - 1; i += 1) {
-    const c = list[i];
-    if (c === "'" || c === '"' || c === '`') {
-      let j = i + 1;
-      while (j < list.length && list[j] !== c) j += list[j] === '\\' ? 2 : 1;
-      if (depth === 0 && c !== '`') out.push(list.slice(i + 1, j));
-      i = j;
-      continue;
+  for (const site of nameListSites(path, text)) {
+    if (isDispatch(site)) continue;
+    const hits = site.strings.filter((s) => types.has(s)).length;
+    if (hits >= 3 && hits * 2 >= site.strings.length) {
+      out.push({ n: hits, form: site.form, start: site.start, end: site.end });
     }
-    if (c === '(' || c === '[' || c === '{') depth += 1;
-    else if (c === ')' || c === ']' || c === '}') depth -= 1;
   }
   return out;
 }
 
-/** Each list literal of `code` (comments stripped), nested ones too: an
- *  array literal where an expression starts (after `=`, `(`, `,`, `:`, `[`,
- *  `!`, `?`, `=>`, `return` or a line start), so a Set's, a z.enum's and an
- *  inline `[...].includes(` are lists, and a type (`string[]`) or an index
- *  (`a['x']`) is not. */
-export function arrayLiterals(code) {
-  const out = [];
-  for (const m of code.matchAll(/(?:^|[=(,:[!?]|=>|\breturn)\s*\[/gm)) {
-    out.push(balanced(code, m.index + m[0].length - 1));
-  }
-  return out;
-}
-
-/** The hand kind lists of `text`: list literals whose own string entries
- *  name 3 or more node types, node types being at least half of them (a
- *  list of tool group slugs that happens to hold 'journal', 'email' and
- *  'location' among a dozen others is not one). */
-export function handKindLists(text, types) {
-  return arrayLiterals(stripComments(text))
-    .map((l) => {
-      const own = ownStrings(l);
-      const hits = own.filter((s) => types.has(s)).length;
-      return hits >= 3 && hits * 2 >= own.length ? hits : 0;
-    })
-    .filter((n) => n > 0);
+/** The hand kind lists of `text`: the number of kinds in each. */
+export function handKindLists(text, types, path = 'x.ts') {
+  return handKindListSites(text, types, path).map((s) => s.n);
 }
 
 // ── hand role lists (A10 #13) ───────────────────────────────────────────────
 
 /** The source of each name list (role, area and actor names): the file and
- *  the `export const NAME = [` list in it. A literal list, a string union
- *  or a comparison chain whose own strings are all names of one concept,
- *  `min` or more of them (a negative `min` counts back from the whole
- *  list), is a hand copy of it anywhere but its source file
- *  (docs/actors.md, "Role and area names"). */
+ *  the `export const NAME = [` list in it. A literal list, a string union, a
+ *  comparison chain, the shared cases of a switch or a SQL list whose own
+ *  strings are all names of one concept, `min` or more of them (a negative
+ *  `min` counts back from the whole list), is a hand copy of it anywhere but
+ *  its source file (docs/actors.md, "Role and area names"). With
+ *  `superset`, a list holding every name of the concept and more is one
+ *  too (`'admin' | 'member' | 'client'`): build it from the source and name
+ *  the extras (`LoginRole | 'client'`). */
 export const ROLE_NAME_SOURCES = Object.freeze({
-  loginRole: { file: 'packages/client-types/src/role-names.ts', list: 'LOGIN_ROLES', min: 2 },
+  loginRole: {
+    file: 'packages/client-types/src/role-names.ts',
+    list: 'LOGIN_ROLES',
+    min: 2,
+    superset: true,
+  },
   historyActor: {
     file: 'packages/client-types/src/role-names.ts',
     list: 'HISTORY_ACTORS',
@@ -452,53 +455,58 @@ export const ROLE_NAME_SOURCES = Object.freeze({
 });
 
 /** Each concept's names and the count that makes a copy, read from the
- *  source files of `root` (a missing source names nothing). */
+ *  source files of `root`. A source that is missing, or holds no list, is
+ *  an error: a lint with no names to judge by would pass everything (A10
+ *  #13 low round, L2). */
 export function roleNameSets(root) {
   const out = {};
   for (const [concept, src] of Object.entries(ROLE_NAME_SOURCES)) {
-    const text = readRepoFile(root, src.file) ?? '';
+    const text = readRepoFile(root, src.file);
+    if (text === null) throw new Error(`arch-counts: no ${src.file} under ${root}`);
     const at = text.indexOf(`export const ${src.list} = [`);
-    if (at < 0) continue;
-    const values = new Set(ownStrings(balanced(text, text.indexOf('[', at))));
+    if (at < 0) throw new Error(`arch-counts: no \`export const ${src.list} = [\` in ${src.file}`);
+    const values = new Set(stringsIn(balanced(text, text.indexOf('[', at))));
+    if (!values.size) throw new Error(`arch-counts: ${src.list} in ${src.file} is empty`);
     const min = src.min < 0 ? values.size + src.min : src.min;
-    out[concept] = { values, min: Math.max(2, Math.min(min, values.size)), file: src.file };
+    out[concept] = {
+      values,
+      min: Math.max(2, Math.min(min, values.size)),
+      file: src.file,
+      superset: !!src.superset,
+    };
   }
   return out;
 }
 
-/** A string literal union: two or more quoted strings joined by `|` (a
- *  `null` or `undefined` member is not a name). */
-const STRING_UNION = /'[\w-]+'(?:\s*\|\s*(?:'[\w-]+'|null|undefined))+/g;
+/** The forms a role list is read in: not an object's keys (a table keyed by
+ *  role is behaviour per role, and indexed by a LoginRole it is checked by
+ *  the compiler). */
+const ROLE_FORMS = new Set(['array', 'union', 'chain', 'switch', 'sql']);
 
-/** A comparison chain on one subject: `x === 'a' || x === 'b'`. */
-const COMPARE_CHAIN = /([\w$.]+)\s*[!=]==\s*'[\w-]+'(?:\s*(?:\|\||&&)\s*\1\s*[!=]==\s*'[\w-]+')+/g;
-
-/** A `typeof x === 'string'` test: a type, not a name (blanked before the
- *  chains are read, so `typeof r === 'string' && r !== 'admin' && r !==
- *  'member'` is the chain of two roles it is). */
-const TYPEOF_TEST = /typeof\s+[\w$.]+\s*[!=]==\s*'[\w-]+'/g;
-
-/** The name lists of `text` (comments stripped): the own strings of each
- *  list literal, string union and comparison chain. */
-export function nameLists(text) {
-  const code = stripComments(text).replace(TYPEOF_TEST, (m) => ' '.repeat(m.length));
-  const quotedIn = (t) => [...t.matchAll(/'([\w-]+)'/g)].map((m) => m[1]);
-  return [
-    ...arrayLiterals(code).map(ownStrings),
-    ...[...code.matchAll(STRING_UNION)].map((m) => quotedIn(m[0])),
-    ...[...code.matchAll(COMPARE_CHAIN)].map((m) => quotedIn(m[0])),
-  ];
-}
-
-/** The hand role lists of `text` at repo path `path`: { concept, n } for
- *  each list whose own strings are all names of one concept, at least its
- *  `min`. A list in its concept's source file is `allowed`. */
-export function handRoleLists(text, sets, path = '') {
+/** The hand role lists of `text` at repo path `path`: `{ concept, n,
+ *  allowed, start, end }` for each list whose own strings are all names of
+ *  one concept, at least its `min`, or (a `superset` concept) every name of
+ *  it and more. A list in its concept's source file is `allowed`. */
+export function handRoleLists(text, sets, path = 'x.ts') {
   const out = [];
-  for (const own of nameLists(text)) {
+  for (const site of nameListSites(path, text)) {
+    if (!ROLE_FORMS.has(site.form)) continue;
+    const own = site.strings;
     for (const [concept, set] of Object.entries(sets)) {
-      if (own.length >= set.min && own.every((v) => set.values.has(v))) {
-        out.push({ concept, n: own.length, allowed: path === set.file });
+      const copy = own.length >= set.min && own.every((v) => set.values.has(v));
+      const superset =
+        set.superset &&
+        own.length > set.values.size &&
+        [...set.values].every((v) => own.includes(v));
+      if (copy || superset) {
+        out.push({
+          concept,
+          n: own.length,
+          superset: !copy,
+          allowed: path === set.file,
+          start: site.start,
+          end: site.end,
+        });
       }
     }
   }
@@ -707,7 +715,6 @@ export function measure(root) {
   const rawAcl = {};
   const toolLists = {};
   const routeLists = {};
-  const kinds = {};
   const handKinds = {};
   const handKindsAllowed = {};
   const handRoles = {};
@@ -768,9 +775,7 @@ export function measure(root) {
       const rl = routePolicyLists(text);
       if (rl.length) routeLists[f] = rl.length;
     }
-    const kl = kindLists(text, types);
-    if (kl.length) kinds[f] = kl.length;
-    const hk = handKindLists(text, types);
+    const hk = handKindLists(text, types, f);
     if (hk.length) (KIND_LIST_ALLOW[f] ? handKindsAllowed : handKinds)[f] = hk.length;
     for (const r of handRoleLists(text, roleSets, f)) {
       const into = r.allowed ? handRolesAllowed : handRoles;
@@ -785,14 +790,6 @@ export function measure(root) {
       }
       if (errorTextReplies(code)) {
         (ERROR_TEXT_ALLOW[f] ? errorTextAllowed : errorTextFiles).push(f);
-      }
-      const limits = rateLimitCalls(code);
-      if (limits) {
-        if (RATE_LIMIT_ALLOW[f]) rateLimitAllowed.push(f);
-        else {
-          rateLimitFiles.push(f);
-          rateLimitCallsOutside += limits;
-        }
       }
       if (f.startsWith('server/web/app/api/')) apiRouteFiles += 1;
       const gone = isGoneStub(text);
@@ -812,6 +809,17 @@ export function measure(root) {
           liveUnguarded += 1;
           liveUnguardedFiles.push(f);
         }
+      }
+    }
+    // Every limiter call, route file or not (A10 #8 low round, L2): a limit
+    // taken in a helper the handler calls first was invisible to a count of
+    // route files only.
+    const limits = rateLimitCalls(stripComments(text));
+    if (limits) {
+      if (Object.hasOwn(RATE_LIMIT_ALLOW, f)) rateLimitAllowed.push(f);
+      else {
+        rateLimitFiles.push(f);
+        rateLimitCallsOutside += limits;
       }
     }
     const b = brainOnWorkspacesCalls(text);
@@ -877,7 +885,6 @@ export function measure(root) {
       liveRoutesWithoutGuard: liveUnguarded,
       callerReads: reads,
       callerReadFiles: readFiles,
-      kindLists: sum(kinds),
       handKindLists: sum(handKinds),
       handKindListsAllowed: sum(handKindsAllowed),
       handRoleLists: sum(handRoles),
@@ -891,8 +898,8 @@ export function measure(root) {
       routeBodyReadAllowed: bodyReadAllowed.length,
       routeErrorTextFiles: errorTextFiles.length,
       routeErrorTextAllowed: errorTextAllowed.length,
-      routeRateLimitCalls: rateLimitCallsOutside,
-      routeRateLimitAllowed: rateLimitAllowed.length,
+      rateLimitCalls: rateLimitCallsOutside,
+      rateLimitAllowed: rateLimitAllowed.length,
       handExportSyncCalls: sum(exportSync),
       handExportSyncAllowed: Object.keys(exportSyncAllowed).length,
       appToolBrokerLogicFiles: Object.keys(brokerLogic).length,
@@ -929,7 +936,6 @@ export function measure(root) {
       rawAcl,
       toolLists,
       routeLists,
-      kinds,
       handKinds,
       handKindsAllowed,
       handRoles,

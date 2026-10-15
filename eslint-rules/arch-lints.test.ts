@@ -198,13 +198,13 @@ describe('the architecture ratchets (pinned counts)', () => {
     expect([...got.perFile.errorTextAllowed].sort()).toEqual(Object.keys(ERROR_TEXT_ALLOW).sort());
   });
 
-  it('no-route-rate-limits (A10 #8): no route takes a rate limit outside the named list', async () => {
+  it('no-route-rate-limits (A10 #8): no file takes a rate limit outside the named list', async () => {
     // A limit is the row's (server/web/lib/route-limits.ts), taken by the
-    // gate. The named files take a budget around a check of their own, and
-    // each still does.
+    // gate. Every file counts, not only route files (low round, L2): the
+    // gate itself and the named budgets take one, and each still does.
     const { RATE_LIMIT_ALLOW } = await import('./route-plumbing.mjs');
     expect(got.perFile.rateLimitFiles).toEqual([]);
-    expect(got.numbers.routeRateLimitCalls).toBe(0);
+    expect(got.numbers.rateLimitCalls).toBe(0);
     expect([...got.perFile.rateLimitAllowed].sort()).toEqual(Object.keys(RATE_LIMIT_ALLOW).sort());
   });
 
@@ -535,30 +535,75 @@ describe('the hand re-index counter (A10 #7)', () => {
 
 describe('the hand kind list counter (A10 #12)', () => {
   const types = nodeTypes(ROOT) as Set<string>;
+  const kinds = (text: string, path = 'x.ts') => handKindLists(text, types, path) as number[];
   it('counts a literal list of 3 or more kinds: assigned, a Set, a z.enum, inline', () => {
-    expect(handKindLists("const A = ['page', 'note', 'draw'];", types)).toEqual([3]);
-    expect(handKindLists("const S = new Set(['file', 'documentation', 'sermon']);", types)).toEqual(
-      [3],
-    );
-    expect(handKindLists("z.enum(['branch', 'email', 'file', 'note'])", types)).toEqual([4]);
-    expect(handKindLists("if (!['page', 'note', 'task'].includes(t)) return;", types)).toEqual([3]);
-    expect(handKindLists("f(x, ['page', 'note', 'table'])", types)).toEqual([3]);
+    expect(kinds("const A = ['page', 'note', 'draw'];")).toEqual([3]);
+    expect(kinds("const S = new Set(['file', 'documentation', 'sermon']);")).toEqual([3]);
+    expect(kinds("z.enum(['branch', 'email', 'file', 'note'])")).toEqual([4]);
+    expect(kinds("if (!['page', 'note', 'task'].includes(t)) return;")).toEqual([3]);
+    expect(kinds("f(x, ['page', 'note', 'table'])")).toEqual([3]);
   });
 
-  it('does not count two kinds, a comment, a type, prose, or a list mostly of other words', () => {
-    expect(handKindLists("const A = ['page', 'note'];", types)).toEqual([]);
-    expect(handKindLists("// ['page', 'note', 'draw']\nconst a = 1;", types)).toEqual([]);
-    expect(handKindLists("type K = 'page' | 'note' | 'draw';", types)).toEqual([]);
-    expect(handKindLists("const d = \"e.g. ['page','note','draw']\";", types)).toEqual([]);
+  it('counts the lists a text scan missed (low round, F2)', () => {
+    // After `of`, `&&`, `||` and `export default`; in a spread; a template.
+    expect(kinds("for (const t of ['page', 'note', 'draw']) f(t);")).toEqual([3]);
+    expect(kinds("const ok = x && ['page', 'note', 'draw'].includes(t);")).toEqual([3]);
+    expect(kinds("const ok = x || ['page', 'note', 'draw'].includes(t);")).toEqual([3]);
+    expect(kinds("export default ['page', 'note', 'draw'];")).toEqual([3]);
+    expect(kinds("const A = [...B, 'page', 'note', 'draw'];")).toEqual([3]);
+    expect(kinds('const A = [`page`, `note`, `draw`];')).toEqual([3]);
+    // A string union, an object keyed by kinds (a type too), a chain, a
+    // switch's shared cases and a SQL list in a template or a string.
+    expect(kinds("type K = 'page' | 'note' | 'draw';")).toEqual([3]);
+    expect(kinds("const L = { page: 'Page', note: 'Note', 'draw': 'Drawing' };")).toEqual([3]);
+    expect(kinds('type L = { page: string; note: string; draw: string };')).toEqual([3]);
     expect(
-      handKindLists(
+      kinds("if (t === 'page' || t === 'note' || n?.type === 'x' || t === 'draw') {}"),
+    ).toEqual([3]);
+    expect(kinds("switch (t) { case 'page': case 'note': case 'draw': return 1; }")).toEqual([3]);
+    expect(kinds("sql`select 1 from nodes where type in ('page', 'note', 'draw')`;")).toEqual([3]);
+    expect(kinds("q(\"select 1 where type = any(array['page','note','draw'])\");")).toEqual([3]);
+  });
+
+  it('does not count two kinds, a comment, prose, a list mostly of other words, or behaviour per kind', () => {
+    expect(kinds("const A = ['page', 'note'];")).toEqual([]);
+    expect(kinds("// ['page', 'note', 'draw']\nconst a = 1;")).toEqual([]);
+    expect(kinds("/* type K = 'page' | 'note' | 'draw'; */")).toEqual([]);
+    expect(kinds("const d = \"e.g. ['page','note','draw']\";")).toEqual([]);
+    expect(
+      kinds(
         "const G = ['memory-core', 'files', 'notes', 'journal', 'email', 'location', 'replay', 'persona'];",
-        types,
       ),
     ).toEqual([]);
+    expect(kinds("const R = [['/draw', 'draw'], ['/notes', 'note'], ['/x', 'page']];")).toEqual([]);
+    // A dispatch table (every member a function) and a switch whose cases
+    // have bodies of their own: behaviour per kind, not a list.
     expect(
-      handKindLists("const R = [['/draw', 'draw'], ['/notes', 'note'], ['/x', 'page']];", types),
+      kinds('forAcceptedKind(i, { page: (p) => 1, note: () => 2, draw() { return 3; } });'),
     ).toEqual([]);
+    expect(
+      kinds("switch (t) { case 'page': return 1; case 'note': return 2; case 'draw': return 3; }"),
+    ).toEqual([]);
+    // A chain on three subjects is no list; a SQL list with a parameter is not literal.
+    expect(kinds("if (a === 'page' || b === 'note' || c === 'draw') {}")).toEqual([]);
+    expect(kinds("sql`where type in ('page', 'note', ${t})`;")).toEqual([]);
+  });
+
+  it('reports each list where it is written', async () => {
+    const { handKindListSites } = await import('./arch-counts.mjs');
+    const sites = handKindListSites(
+      "const a = 1;\nconst L = { page: 1, note: 2, draw: 3 };\ntype K =\n  | 'page'\n  | 'note'\n  | 'draw';",
+      types,
+      'x.ts',
+    ) as { form: string; start: { line: number; column: number } }[];
+    expect(sites.map((x) => [x.form, x.start.line, x.start.column])).toEqual([
+      ['keys', 2, 10],
+      ['union', 4, 2],
+    ]);
+  });
+
+  it('fails loudly when the node types cannot be read (low round, L2)', () => {
+    expect(() => nodeTypes('/nonexistent-repo')).toThrow(/no node_type enum/);
   });
 });
 
@@ -604,6 +649,10 @@ describe('the hand role list counter (A10 #13)', () => {
     expect([...sets.loginRole!.values]).toEqual(['admin', 'member']);
   });
 
+  it('fails loudly when a source cannot be read (low round, L2)', () => {
+    expect(() => roleNameSets('/nonexistent-repo')).toThrow(/no packages\/client-types/);
+  });
+
   it('counts a list, a Set, a z.enum, a union and a comparison chain of one concept', () => {
     expect(concepts("const R = ['admin', 'member'];")).toEqual(['loginRole']);
     expect(concepts("const S = new Set(['member', 'admin']);")).toEqual(['loginRole']);
@@ -617,23 +666,46 @@ describe('the hand role list counter (A10 #13)', () => {
       'loginRole',
     ]);
     expect(concepts("type A = 'settings' | 'users' | 'keys';")).toEqual(['workspaceArea']);
-    expect(concepts("actor: 'owner' | 'agent' | 'mcp' | 'system' | 'member';")).toEqual([
-      'historyActor',
-    ]);
-    expect(concepts("kind: 'owner' | 'agent';")).toEqual(['recallActor']);
+    expect(
+      concepts("type S = { actor: 'owner' | 'agent' | 'mcp' | 'system' | 'member' };"),
+    ).toEqual(['historyActor']);
+    expect(concepts("type A = { kind: 'owner' | 'agent' };")).toEqual(['recallActor']);
     expect(concepts("const L = ['public', 'client', 'team', 'admin'] as const;")).toEqual([
       'accessLevel',
     ]);
   });
 
-  it('does not count one name, another concept, a superset, a subset below min, or a comment', () => {
+  it('counts what a text scan missed (low round, L1)', () => {
+    // A superset of the login roles: a stale copy that still names more.
+    expect(concepts("type V = 'admin' | 'member' | 'client' | 'contact' | 'public';")).toEqual([
+      'loginRole',
+    ]);
+    expect(concepts("const R = ['owner', 'admin', 'member'];")).toEqual(['loginRole']);
+    // A `?.` or call subject, a switch's shared cases, SQL in a template.
+    expect(concepts("if (a?.role === 'admin' || a?.role === 'member') {}")).toEqual(['loginRole']);
+    expect(concepts("if (roleOf(x) !== 'admin' && roleOf(x) !== 'member') {}")).toEqual([
+      'loginRole',
+    ]);
+    expect(concepts("switch (r) { case 'admin': case 'member': return true; }")).toEqual([
+      'loginRole',
+    ]);
+    expect(concepts("sql`select id from auth.users where role in ('admin', 'member')`")).toEqual([
+      'loginRole',
+    ]);
+  });
+
+  it('does not count one name, another concept, a subset below min, a comment or behaviour per role', () => {
     expect(concepts("if (role === 'admin') return;")).toEqual([]);
     expect(concepts("const k = r === 'admin' ? 1 : r === 'member' ? 2 : 3;")).toEqual([]);
-    expect(concepts("type V = 'admin' | 'member' | 'client' | 'contact' | 'public';")).toEqual([]);
     expect(concepts("type C = 'owner' | 'member' | 'agent' | 'client';")).toEqual([]);
     expect(concepts("type L = 'admin' | 'team';")).toEqual([]);
     expect(concepts("const F = ['files', 'tables', 'pages', 'notes'];")).toEqual([]);
     expect(concepts("// type R = 'admin' | 'member';\nconst a = 1;")).toEqual([]);
+    // Built from the source with the extras named: no hand copy.
+    expect(concepts("type V = LoginRole | 'client' | 'contact';")).toEqual([]);
+    // A table keyed by role, and cases with bodies of their own.
+    expect(concepts('const ROUTES = { admin: 1, member: 2 };')).toEqual([]);
+    expect(concepts("switch (r) { case 'admin': return 1; case 'member': return 2; }")).toEqual([]);
   });
 
   it('allows a list in its own source file only', () => {
@@ -745,7 +817,7 @@ describe('the editor rules', () => {
     });
   });
 
-  it('no-hand-kind-lists: a literal kind list fails outside the named files', () => {
+  it('no-hand-kind-lists: a literal kind list fails outside the named files, where it is written', () => {
     const [named] = Object.keys(KIND_LIST_ALLOW as Record<string, string>);
     const list = "export const K = ['page', 'note', 'draw'];";
     tester.run('no-hand-kind-lists', noHandKindLists, {
@@ -758,10 +830,30 @@ describe('the editor rules', () => {
         {
           code: list,
           filename: '/r/packages/content/src/new.ts',
-          errors: [{ messageId: 'list' }],
+          errors: [{ messageId: 'list', line: 1, column: 18, endLine: 1, endColumn: 42 }],
+        },
+        {
+          code: "const a = 1;\nfor (const t of ['page', 'note', 'draw']) a;",
+          filename: '/r/server/web/lib/new.ts',
+          errors: [{ messageId: 'list', line: 2, column: 17 }],
         },
       ],
     });
+  });
+
+  it('no-hand-kind-lists and no-hand-role-lists find the registry from the rule file, not the working directory (L2)', () => {
+    // Run from another directory the rules once read no enum and no source
+    // and passed everything; now they read this repo's wherever ESLint runs.
+    const reports: unknown[] = [];
+    const context = (code: string) => ({
+      filename: '/elsewhere/packages/content/src/new.ts',
+      cwd: '/',
+      sourceCode: { getText: () => code },
+      report: (r: unknown) => reports.push(r),
+    });
+    noHandKindLists.create(context("const K = ['page', 'note', 'draw'];")).Program();
+    noHandRoleLists.create(context("const R = ['admin', 'member'];")).Program();
+    expect(reports).toHaveLength(2);
   });
 
   it('no-hand-role-lists: a hand role list fails outside its source file', () => {
@@ -774,11 +866,20 @@ describe('the editor rules', () => {
         { code: "if (r === 'admin') x();", filename: '/r/packages/content/src/new.ts' },
       ],
       invalid: [
-        { code: list, filename: '/r/packages/content/src/new.ts', errors: [{ messageId: 'list' }] },
+        {
+          code: list,
+          filename: '/r/packages/content/src/new.ts',
+          errors: [{ messageId: 'list', line: 1, column: 18 }],
+        },
         {
           code: "const ok = (v) => v === 'admin' || v === 'member';",
           filename: '/r/server/web/lib/new.ts',
-          errors: [{ messageId: 'list' }],
+          errors: [{ messageId: 'list', line: 1, column: 19 }],
+        },
+        {
+          code: "const ok = (v) => ['owner', 'admin', 'member'].includes(v);",
+          filename: '/r/server/web/lib/new.ts',
+          errors: [{ messageId: 'superset' }],
         },
       ],
     });

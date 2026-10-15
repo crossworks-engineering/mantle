@@ -46,6 +46,11 @@ import type { EmbeddingKind } from '@mantle/client-types/kinds';
 type Kind = EmbeddingKind;
 const KINDS: readonly Kind[] = EMBEDDING_KINDS;
 
+/** A count of 0 per kind (the report's counters), in registry order. */
+function zeroByKind(): Record<Kind, number> {
+  return Object.fromEntries(KINDS.map((k) => [k, 0])) as Record<Kind, number>;
+}
+
 export interface RefoldDeps {
   /** One vector per text, in order (the brain's embedder). */
   embedBatch: (ownerId: string, texts: string[]) => Promise<number[][]>;
@@ -186,8 +191,8 @@ export async function refoldEmbeds(
 ): Promise<RefoldReport> {
   const report: RefoldReport = {
     apply: opts.apply,
-    candidates: { page: 0, note: 0, draw: 0 },
-    marked: { page: 0, note: 0, draw: 0 },
+    candidates: zeroByKind(),
+    marked: zeroByKind(),
     unchanged: 0,
     textRewritten: 0,
     rechunked: 0,

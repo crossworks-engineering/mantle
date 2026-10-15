@@ -55,7 +55,9 @@ export type TaskTodo = {
   done: boolean;
 };
 
-/** Mirrors @mantle/db `NodeCommentAuthorKind`. */
+/** Mirrors @mantle/db `NodeCommentAuthorKind`. `client` stays for the wire
+ *  contract (additive only) and for the comments a client login wrote
+ *  before workspaces W8a removed the role; no new comment gets it. */
 export type NodeCommentAuthorKind = 'owner' | 'member' | 'agent' | 'client';
 
 /**

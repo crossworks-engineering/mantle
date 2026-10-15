@@ -122,9 +122,20 @@ export const ERROR_TEXT_ALLOW = Object.freeze({
  * in the helpers their handlers called first, each with its own max,
  * window and 429. The files that still take one are named here with the
  * reason: a budget around a check inside the handler, not a gate on the
- * request. The scoreboard pins both numbers (arch-counts.mjs).
+ * request. The rule and the count read every server/web file, not only
+ * route files (A10 #8 low round, L2: a limiter in a helper the handler calls
+ * first was invisible), so the gate itself and the key budgets are named
+ * too. The scoreboard pins both numbers (arch-counts.mjs).
  */
 export const RATE_LIMIT_ALLOW = Object.freeze({
+  'server/web/lib/route-limits.ts':
+    "the gate itself: it takes each row's named limits (RATE_LIMITS, ROUTE_GATES) and answers the one 429",
+  'server/web/lib/access-keys.ts':
+    "the API key budgets (rateLimitAccessKey: a key's and its login's; rateLimitKeySearch) and the failed-key counters, taken once the key is resolved (by the key gate and the MCP route): a budget per key, which the row cannot know",
+  'server/web/server/middleware/access-key-gate.ts':
+    "the /api/v1 key gate takes the key's budget (rateLimitAccessKey) once it has resolved the key: a budget per key, not per row",
+  'server/web/lib/workspace-turn.ts':
+    "the chat turn budget of a login that is not an Admin user (6 a minute), counted per queued turn so a retry with the same Idempotency-Key, answered from the turn route's cache, spends nothing (docs/request-plumbing.md, Rate limits)",
   'server/web/app/api/access-keys/route.ts':
     'a failure budget around the password check (taken before it, given back on a right password: M2 audit N2) and the keys made an hour, counted only once the password passed; neither is a gate on the request',
   'server/web/app/api/oauth/authorize/route.ts':
@@ -133,8 +144,8 @@ export const RATE_LIMIT_ALLOW = Object.freeze({
     "each MCP caller's own budget (an API key's, a peer's, a login's), keyed by the bearer the route resolves itself after its own switch check; the per-address limit before it is the row's",
 });
 
-/** The limiter calls a route file must not make (lib/rate-limit.ts and the
- *  key budgets of lib/access-keys.ts). */
+/** The limiter calls no file outside RATE_LIMIT_ALLOW makes
+ *  (lib/rate-limit.ts and the key budgets of lib/access-keys.ts). */
 const LIMITERS = [
   'rateLimit',
   'rateLimitPeek',
@@ -144,6 +155,7 @@ const LIMITERS = [
   'rateLimitFlood',
   'rateLimitFloodPeek',
   'rateLimitAccessKey',
+  'rateLimitKeySearch',
 ];
 const LIMITER_SET = new Set(LIMITERS);
 /** The refusal the gate answers from the row (ROUTE_GATES crossSite). */
@@ -152,7 +164,8 @@ const ROW_REFUSALS = new Set(['refuseCrossSiteAuthPost']);
 /** A text heuristic of the same check, for the counts (comments already
  *  stripped): the limiter calls in `code`. */
 export function rateLimitCalls(code) {
-  const re = new RegExp(`(?<![\\w$])(?:${LIMITERS.join('|')})\\s*\\(`, 'g');
+  // Not a definition (`function rateLimit(`): lib/rate-limit.ts names them.
+  const re = new RegExp(`(?<![\\w$]|\\bfunction\\s+)(?:${LIMITERS.join('|')})\\s*\\(`, 'g');
   return (code.match(re) ?? []).length;
 }
 
@@ -325,7 +338,7 @@ export const noRouteRateLimits = {
     },
     messages: {
       limit:
-        "{{what}}() in a route file: a rate limit is the row's. Name it in server/web/lib/route-limits.ts (RATE_LIMITS) and give the row it in ROUTE_GATES; the gate takes it and answers the one 429. A budget that is not a gate on the request is named with its reason in eslint-rules/route-plumbing.mjs RATE_LIMIT_ALLOW.",
+        "{{what}}(): a rate limit is the row's. Name it in server/web/lib/route-limits.ts (RATE_LIMITS) and give the row it in ROUTE_GATES; the gate takes it and answers the one 429. A budget that is not a gate on the request is named with its reason in eslint-rules/route-plumbing.mjs RATE_LIMIT_ALLOW.",
       crossSite:
         "{{what}}() in a route file: the cross-site refusal is the row's (ROUTE_GATES crossSite, server/web/lib/route-limits.ts), answered by the gate before any limit.",
     },
@@ -333,8 +346,12 @@ export const noRouteRateLimits = {
   },
   create(context) {
     const file = context.filename;
-    if (!isRoutePath(file) || /\.test\.[cm]?[jt]sx?$/.test(file)) return {};
-    const allowed = !!RATE_LIMIT_ALLOW[webPath(file)];
+    const path = webPath(file);
+    if (!path || /\.test\.[cm]?[jt]sx?$/.test(file)) return {};
+    // Any server/web file: a limiter in a helper is a limit too (A10 #8 low
+    // round, L2). The cross-site refusal is a route file's question only.
+    const route = isRoutePath(file);
+    const allowed = Object.hasOwn(RATE_LIMIT_ALLOW, path);
     return {
       CallExpression(node) {
         const callee = node.callee;
@@ -345,7 +362,7 @@ export const noRouteRateLimits = {
               ? callee.property.name
               : null;
         if (!name) return;
-        if (ROW_REFUSALS.has(name)) {
+        if (ROW_REFUSALS.has(name) && route) {
           context.report({ node, messageId: 'crossSite', data: { what: name } });
         } else if (LIMITER_SET.has(name) && !allowed) {
           context.report({ node, messageId: 'limit', data: { what: name } });

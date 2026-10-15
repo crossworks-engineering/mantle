@@ -801,11 +801,16 @@ export const ITEM_KIND_NAMES = Object.keys(ITEM_KINDS) as ItemKind[];
 export type KindsWhere<P> = { [K in ItemKind]: Kinds[K] extends P ? K : never }[ItemKind];
 
 /** The node types whose spec passes `pick`, in registry order. Never empty for
- *  the lists derived here (their snapshot tests say so). */
+ *  the lists derived here (their snapshot tests say so). Frozen: several
+ *  names share one list (DEFAULT_EXTRACT_TYPES and LANDED_TYPES are both
+ *  EXTRACT_KINDS), so a caller that sorted or pushed onto its own would
+ *  change every other's (low round, F4). */
 export function kindsWhere<K extends ItemKind = ItemKind>(
   pick: (spec: KindSpec, type: ItemKind) => boolean,
 ): readonly [K, ...K[]] {
-  return ITEM_KIND_NAMES.filter((t) => pick(ITEM_KINDS[t], t)) as unknown as readonly [K, ...K[]];
+  return Object.freeze(
+    ITEM_KIND_NAMES.filter((t) => pick(ITEM_KINDS[t], t)),
+  ) as unknown as readonly [K, ...K[]];
 }
 
 /** The spec of `type`, or null for a value the registry does not know. */
