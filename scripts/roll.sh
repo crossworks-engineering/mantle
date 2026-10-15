@@ -21,7 +21,9 @@
 #      updater's signal dir by a throwaway alpine container (the dir is
 #      root-owned on the host), exactly as the in-app Update button would
 #   5. wait for a NEW started_at with this target and a finished_at, ok:true
-#   6. wait for mantle_web healthy
+#   6. wait for mantle_web healthy; if it never is, a loud banner and the
+#      last 20 lines of its log (lines naming a key, token, password or secret
+#      left out). No automatic rollback: the operator decides.
 #   7. count again: ANY drop in apps, sandboxes or app-db files stops with a
 #      loud error (mini sandbox apps are never to be lost in a roll)
 #   8. print /api/version
@@ -432,11 +434,38 @@ if [ -n "$UPDATER_DUMPS" ]; then
 fi
 
 # ── 6. health ────────────────────────────────────────────────────────────────
+# A web that never comes up is the worst roll outcome (v0.300.64: every server
+# process crash-looped at start on an import error), so say it loudly and show
+# why: the tail of its own log, minus any line that could carry a secret.
+SECRET_WORDS='key|token|passw|secret|bearer|authori|cookie'
+web_not_healthy() { # <last health status>
+  local logs total kept
+  printf '\n!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n' >&2
+  printf '!!  WEB NOT HEALTHY on %s %ss after the roll to %s (last: %s).\n' \
+    "$SSH_ALIAS" "$HEALTH_TIMEOUT" "$TAG" "${1:-unknown}" >&2
+  printf '!!  The box is DOWN or degraded. Nothing was rolled back. Roll nothing\n' >&2
+  printf '!!  else; read the log below, then fix forward or roll back by hand\n' >&2
+  printf '!!  (docs/update-prod.md). The pre-roll backup is the way back.\n' >&2
+  printf '!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n' >&2
+  logs=$(rsh "docker logs --tail 20 mantle_web 2>&1" 2>/dev/null) || logs=""
+  if [ -z "$logs" ]; then
+    printf '(could not read the mantle_web log on %s)\n' "$SSH_ALIAS" >&2
+  else
+    total=$(printf '%s\n' "$logs" | grep -c '' || true)
+    kept=$(printf '%s\n' "$logs" | grep -ciEv "$SECRET_WORDS" || true)
+    printf 'last %s line(s) of the mantle_web log:\n' "$total" >&2
+    printf '%s\n' "$logs" | grep -iEv "$SECRET_WORDS" | sed 's/^/    /' >&2 || true
+    [ "$kept" -eq "$total" ] \
+      || printf '    (%s line(s) left out: they name a key, token, password or secret)\n' \
+        "$((total - kept))" >&2
+  fi
+  exit 1
+}
 HS=""; waited=0
 while :; do
   HS=$(rsh "docker inspect -f '{{.State.Health.Status}}' mantle_web" 2>/dev/null || true)
   [ "$HS" = healthy ] && break
-  [ "$waited" -ge "$HEALTH_TIMEOUT" ] && die "WEB NOT HEALTHY after ${HEALTH_TIMEOUT}s (last: ${HS:-unknown})"
+  [ "$waited" -ge "$HEALTH_TIMEOUT" ] && web_not_healthy "$HS"
   sleep "$POLL"; waited=$((waited + POLL))
   [ "$POLL" -gt 0 ] || waited=$((waited + 1))
 done

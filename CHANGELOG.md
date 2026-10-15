@@ -4,6 +4,27 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## Unreleased: boot smoke; every package is an ES module
+
+- **`pnpm boot:smoke`** starts every server process the way the image does
+  (each compose service's own command, web through the image CMD) up to the
+  point where its imports link, then exits; no database, no network, about
+  ten seconds. It runs in `pnpm verify`, build-check and the release guard
+  before images are built. v0.300.64 crash-looped every server process at
+  start on an import error with every other gate green; on that tree the
+  smoke fails 7 of 13 services with the same error. Entries honour the new
+  internal `MANTLE_BOOT_SMOKE` switch (never set on a box).
+- `@mantle/content-core` and `@mantle/share-ui` declare `"type": "module"`
+  (published as `@crossworks/content-core` and `@crossworks/share-ui`): tsx
+  now loads them as ES modules, like every other package. No source change;
+  the share runtime bundle differs only in esbuild's interop flag on the
+  React imports, which changes nothing at run time (React is not marked
+  `__esModule`). A test now requires the field in every `packages/*` and
+  `server/*` package.
+- `scripts/roll.sh`: a web that never becomes healthy ends the roll with a
+  loud banner and the last 20 lines of the `mantle_web` log (lines naming a
+  key, token, password or secret left out). Still no automatic rollback.
+
 ## Unreleased: kind and role list lints read the code (A10 lows)
 
 - **Re-mark `search` on a linked Mantle brain, maybe.** A10 #12 put the

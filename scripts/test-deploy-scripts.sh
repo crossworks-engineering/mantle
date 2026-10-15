@@ -1047,7 +1047,13 @@ case "$1" in
       printf '[{"Config":{"Env":["PATH=/bin","MANTLE_STACK_DIR=%s"]},"Mounts":[{"Source":"%s","Destination":"/signal"}]}]\n' "${FAKE_STACK_ENV-$RS/stack}" "$RS/sig"
       exit 0
     fi
-    echo healthy; exit 0 ;;
+    echo "${FAKE_HEALTH:-healthy}"; exit 0 ;;
+  logs)
+    echo "[server] booting"
+    echo "SyntaxError: The requested module '@mantle/voice-client' does not provide an export named 'x'"
+    echo "[config] MANTLE_API_TOKEN=abc123 leaked"
+    echo "Node.js v26.11.1"
+    exit 0 ;;
   run)
     src=""; cmd=""
     while [ $# -gt 0 ]; do
@@ -1163,6 +1169,14 @@ check "an app lost in the roll: loud, with the numbers" grep -q 'COUNTS DROPPED.
 roll_box dropfiles
 FAKE_DROP=files roll_sh --ssh fakebox v8
 check "an app-db file lost in the roll: exit 3" sh -c "test '$rc' = 3 && grep -q 'app-db files 7→6' '$RS/out'"
+
+roll_box unhealthy
+FAKE_HEALTH=unhealthy roll_sh --ssh fakebox v8
+check "web never healthy: exit 1 with a loud banner" sh -c "test '$rc' = 1 && grep -q 'WEB NOT HEALTHY on fakebox' '$RS/out' && grep -q 'Nothing was rolled back' '$RS/out'"
+check "web never healthy: prints its log tail" grep -q "does not provide an export named" "$RS/out"
+check "web never healthy: a line naming a token is left out, and counted" \
+  sh -c "! grep -q abc123 '$RS/out' && grep -q '1 line(s) left out' '$RS/out'"
+check "web never healthy: no rollback requested" sh -c "test \$(grep -c alpine '$RS/calls') = 1"
 
 roll_box notok
 FAKE_OK=false FAKE_PHASE=error FAKE_ERR="compose up failed" roll_sh --ssh fakebox v8

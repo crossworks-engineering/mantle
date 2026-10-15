@@ -104,7 +104,10 @@ What it does, in order:
 5. Waits for a NEW `started_at` with this target and a `finished_at` (a
    same-tag re-roll shows the last run's `done` until the updater claims the
    request), then requires `"ok":true`.
-6. Waits for `mantle_web` healthy.
+6. Waits for `mantle_web` healthy. If it never is, it stops with exit 1, a
+   banner saying the box is down, and the last 20 lines of the `mantle_web`
+   log (a line naming a key, token, password or secret is left out and
+   counted). Nothing is rolled back automatically.
 7. Counts again: **any drop in apps, sandboxes or app-db files stops with exit
    3** and a banner. Roll nothing else; the pre-roll backup is the way back.
 8. Prints `/api/version`.
