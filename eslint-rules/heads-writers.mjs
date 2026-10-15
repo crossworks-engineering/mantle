@@ -79,7 +79,10 @@ const DYNAMIC_UNSAFE_REVIEWED = new Map([
     'the runtime roles (A9): CREATE and ALTER ROLE, GRANT and REVOKE, ALTER ... OWNER',
   ],
   ['packages/db/src/init-scratch.ts', 'the scratch init SQL files'],
-  ['packages/db/src/migrate.ts', 'the migration runner (migrations are out of scope)'],
+  [
+    'packages/db/src/migrate-runner.ts',
+    'the migration runner, its apply loop (migrations are out of scope)',
+  ],
   ['packages/db/src/concurrent-indexes.ts', 'CREATE and DROP INDEX CONCURRENTLY from a fixed list'],
   ['packages/search/src/entities.ts', 'one read query on the simple protocol'],
   [

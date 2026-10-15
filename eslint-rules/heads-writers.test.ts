@@ -72,7 +72,7 @@ describe('heads-writers', () => {
           filename: file,
         },
         // A reviewed file may pass dynamic SQL; a literal concatenation is read.
-        { code: 'tx.unsafe(stmt);', filename: '/r/packages/db/src/migrate.ts' },
+        { code: 'tx.unsafe(stmt);', filename: '/r/packages/db/src/migrate-runner.ts' },
         { code: "sql.unsafe('select 1 ' + (l ? 'limit 2' : ''));", filename: file },
         // An imported Drizzle table of another name is read as that table.
         {
