@@ -80,7 +80,10 @@ vi.mock('@mantle/content', async (importOriginal) => ({
   recordAppAccess: vi.fn(),
   recordAppError: vi.fn(),
   // A member-built app, as the owner broker sees it.
-  getAppRuntime: vi.fn(async () => ({
+  // The runtime row names its id, as getAppRuntime's does: the one app
+  // tool broker (A10 #9) runs the app's scope for it.
+  getAppRuntime: vi.fn(async (_owner: string, id: string) => ({
+    id,
     toolRules: 'admin',
     authorLevel: 'team',
     manifest: { toolSlugs: h.toolSlugs },
