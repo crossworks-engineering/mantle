@@ -6,6 +6,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { GAP_WRITER_ROLE } from './access-matrix';
+import { OWNER_ROLE, RUNTIME_ROLE, SYSTEM_ROLE } from './runtime-role';
 import {
   AS_SYSTEM_TURN_REASONS,
   asSystem,
@@ -314,11 +315,15 @@ describe('brains sharing one Postgres cluster (viewerRolePlan)', () => {
     );
     const list = /FOREACH r IN ARRAY ARRAY\[([^\]]*)\]/.exec(script)?.[1] ?? '';
     const named = [...list.matchAll(/'([a-z_]+)'/g)].map((m) => m[1]!);
-    // The viewer roles, and the gap writer (A2b2b: its row rules too).
+    // The viewer roles, the gap writer (A2b2b: its row rules too) and the
+    // runtime roles (A9: the dump's grants and default privileges).
     expect(named.sort()).toEqual(
       [
         ...[...POOL_ROLES, ...RETIRED_POOL_ROLES].map((r) => viewerRoleName(r)),
         GAP_WRITER_ROLE,
+        OWNER_ROLE,
+        SYSTEM_ROLE,
+        RUNTIME_ROLE,
       ].sort(),
     );
   });

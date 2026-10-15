@@ -329,10 +329,12 @@ describe.skipIf(!DB_URL || (!source && !isCi()))('scripts/db-restore.sh, run for
 
   it('mixed: an error the script cannot explain ends 3 after the last step; the known one is not counted', () => {
     const r = restore('mixed');
-    // Three errors: the known trigger, the table and the COPY into it.
-    expect(r.out).toMatch(/pg_restore exited 1 with 3 error\(s\)/);
+    // Four errors: the known trigger, the table, the COPY into it and its
+    // grant to the runtime role (arch A9: the default privileges give every
+    // new table one).
+    expect(r.out).toMatch(/pg_restore exited 1 with 4 error\(s\)/);
     expect(r.out).toMatch(/Made it, as 0212 does\./);
-    expect(r.out).toMatch(/pg_restore reported 2 error\(s\) this script cannot explain/);
+    expect(r.out).toMatch(/pg_restore reported 3 error\(s\) this script cannot explain/);
     expect(r.out).not.toMatch(/Restore complete/);
     expect(r.out).not.toMatch(/Restore FAILED/);
     // The steps after the checks still ran (the client sign-in step has

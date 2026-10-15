@@ -75,6 +75,7 @@ import {
   type ActorMiss,
 } from './actor';
 import { reserveLease, withLease, type Lease } from './reserved';
+import { withMigratorConnection } from './migrator-connection';
 import { errorMessage } from '@mantle/std';
 import { BusyError, permissionGapOf } from './pg-error';
 import {
@@ -140,8 +141,10 @@ function getAdminDb(): PostgresJsDatabase<typeof schema> {
   globalThis.__mantleDb = client;
   setActorMissLogger(logActorMiss);
   // Out of the caller's context: the timer must not keep its actor.
-  runWithoutActor(() => refreshActorCheckMode(sql));
-  runWithoutActor(() => reportDbRole(sql));
+  runWithoutActor(() => {
+    refreshActorCheckMode(sql);
+    reportDbRole(sql);
+  });
   return client;
 }
 
@@ -150,9 +153,8 @@ function getAdminDb(): PostgresJsDatabase<typeof schema> {
  *  reports it. Null when the pool cannot answer. */
 export async function systemPoolRole(): Promise<DbRoleRow | null> {
   try {
-    const rows = await runWithoutActor(() =>
-      rawAdminSql().unsafe(`${ACTOR_SQL_TAG} ${DB_ROLE_SQL}`),
-    );
+    // A read on the raw pool: no actor, no scope.
+    const rows = await rawAdminSql().unsafe(`${ACTOR_SQL_TAG} ${DB_ROLE_SQL}`);
     return (rows[0] as DbRoleRow | undefined) ?? null;
   } catch {
     return null;
@@ -3199,20 +3201,15 @@ export async function executeAsMigrator<T extends Record<string, unknown>>(
     return [...((await db.execute(query)) as unknown as T[])];
   }
   checkActorBound('executeAsMigrator');
-  const url = env('DATABASE_URL');
-  if (!url) throw new Error('DATABASE_URL must be set');
   const { sql: text, params } = new PgDialect().sqlToQuery(query);
-  const conn = postgres(url, { max: 1, prepare: false, onnotice: onPgNotice });
-  try {
-    const rows = await conn.begin(async (tx) => {
+  const rows = await withMigratorConnection((conn) =>
+    conn.begin(async (tx) => {
       const actor = actorParams();
       if (actor) await tx.unsafe(`${ACTOR_SQL_TAG} ${setActorSql(actor)}`);
       return [...(await tx.unsafe(text, params as never[]))];
-    });
-    return rows as unknown as T[];
-  } finally {
-    await conn.end({ timeout: 5 });
-  }
+    }),
+  );
+  return rows as unknown as T[];
 }
 
 /**

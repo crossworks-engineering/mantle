@@ -13,6 +13,9 @@ import { describe, expect, it } from 'vitest';
  */
 const ALLOWED = new Set([
   'packages/db/src/heads-bypass.ts',
+  // The runtime role's deny list names it to take it away (arch A9).
+  'packages/db/src/runtime-role.ts',
+  'packages/db/src/runtime-role.test.ts',
   'packages/db/src/heads-bypass.test.ts',
   'packages/db/src/heads-bypass-callers.test.ts',
 ]);
