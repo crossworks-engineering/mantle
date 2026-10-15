@@ -26,12 +26,12 @@
     "@mantle/telegram": "workspace:*",
     "@mantle/tools": "workspace:*",
     "@modelcontextprotocol/server": "^2.3.1",
-    "drizzle-orm": "^0.45.3",
-    "zod": "^4.6.5"
+    "drizzle-orm": "^0.45.4",
+    "zod": "^4.6.6"
   },
   "devDependencies": {
     "@modelcontextprotocol/client": "^2.3.1",
-    "@types/node": "^26.6.4",
+    "@types/node": "^26.6.5",
     "typescript": "^5.9.3"
   }
 }
