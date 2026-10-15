@@ -119,6 +119,16 @@ describe.skipIf(!DB_URL)('the approval re-check (A5 step 6c): the recorded matri
   const x = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
     (await m.systemDb.execute(q)) as unknown as T[];
 
+  /** Each login's private workspace, by id (read before a cell is named). */
+  const privateOf = new Map<string, string>();
+  const readPrivate = async () => {
+    for (const r of await x<{ ws: string; login: string }>(
+      sql`select workspace_id::text as ws, login_id::text as login from private_workspaces`,
+    )) {
+      privateOf.set(r.ws, label(r.login));
+    }
+  };
+
   /** A uuid as the matrix names it. */
   const label = (v: unknown): string => {
     const s = String(v ?? '').toLowerCase();
@@ -127,7 +137,8 @@ describe.skipIf(!DB_URL)('the approval re-check (A5 step 6c): the recorded matri
     if (s === teamWs) return 'team';
     if (s === elseWs) return 'else';
     if (s === noteId) return 'note';
-    return s;
+    const own = privateOf.get(s);
+    return own ? `private:${own}` : s;
   };
   /** A text with its ids named, cut short. */
   const short = (s: string | null | undefined) =>
@@ -432,6 +443,7 @@ describe.skipIf(!DB_URL)('the approval re-check (A5 step 6c): the recorded matri
               const [row] = await x<{ s: string; error: string | null }>(
                 sql`select status::text as s, error from pending_tool_calls where id = ${pending}`,
               );
+              await readPrivate();
               const ran =
                 tool === 'connector'
                   ? h.remote.map(ranIn).join('; ') || 'not run'
