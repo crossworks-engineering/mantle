@@ -159,17 +159,16 @@ export function publicProviderErrorMessage(err: unknown, where: string): string 
 
 /**
  * A tool's text for an error a builtin threw (the dispatcher's catch; A10 #10
- * fix round 2). A provider's HTTP failure ({@link isProviderHttpFailure})
- * says its fixed sentence (publicProviderErrorMessage, detail logged under
- * `where`); a domain error says its row's text (the message, for every row
- * but the provider's); anything else keeps errorMessage, as before, so a
+ * fix round 2), or null for the caller's errorMessage. A provider's HTTP
+ * failure ({@link isProviderHttpFailure}) says its fixed sentence
+ * (publicProviderErrorMessage, detail logged under `where`); a domain error
+ * says its row's text (the message, for every row but the provider's).
+ * Anything else is null: the caller keeps errorMessage, as before, so a
  * database error is still collected for the surface's own check.
  */
-export function toolThrowText(err: unknown, where: string): string {
+export function toolThrowText(err: unknown, where: string): string | null {
   if (isProviderHttpFailure(err)) return publicProviderErrorMessage(err, where);
-  const domain = domainErrorAnswer(err);
-  if (domain) return domain.toolText;
-  return errorMessage(err);
+  return domainErrorAnswer(err)?.toolText ?? null;
 }
 
 /**

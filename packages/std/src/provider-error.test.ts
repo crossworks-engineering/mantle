@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { domainErrorAnswer } from './domain-errors';
-import { InputError, publicProviderErrorMessage, toolThrowText } from './index';
+import { InputError, errorMessage, publicProviderErrorMessage, toolThrowText } from './index';
 import {
   ProviderHttpError,
   classifyProviderError,
@@ -154,6 +154,7 @@ describe('a provider failure the classifier does not name (A10 #10 fix round 2)'
 });
 
 describe('toolThrowText: a builtin that throws (A10 #10 fix round 2)', () => {
+  const text = (e: unknown, where = 't') => toolThrowText(e, where) ?? errorMessage(e);
   const SECRET = 'sk-or-v1-0123456789abcdef org=acme-private';
   beforeEach(() => {
     vi.spyOn(console, 'error').mockImplementation(() => {});
@@ -163,7 +164,7 @@ describe('toolThrowText: a builtin that throws (A10 #10 fix round 2)', () => {
   it('a ProviderHttpError says its fixed sentence', () => {
     const e = new ProviderHttpError({ provider: 'openai', status: 500, body: SECRET });
     expect(isProviderHttpFailure(e)).toBe(true);
-    expect(toolThrowText(e, 'tool read_result')).toBe(
+    expect(text(e, 'tool read_result')).toBe(
       'The provider has a server problem. (openai, HTTP 500)',
     );
   });
@@ -174,25 +175,24 @@ describe('toolThrowText: a builtin that throws (A10 #10 fix round 2)', () => {
       body: SECRET,
     });
     const e = new Error(`openrouter-chat 400 on m: bad ${SECRET}`, { cause: inner });
-    expect(toolThrowText(e, 'tool x')).toBe(
-      'The model provider answered with an error. (HTTP 400)',
-    );
+    expect(text(e, 'tool x')).toBe('The model provider answered with an error. (HTTP 400)');
   });
 
   it('our own errors keep their text, as on main', () => {
-    expect(toolThrowText(new InputError('entry_date must be a valid date'), 't')).toBe(
+    // Null for anything not a provider's or a domain error: the dispatcher
+    // keeps its own errorMessage (which collects a database error).
+    expect(toolThrowText(new Error('page not found: abc'), 't')).toBeNull();
+    expect(text(new InputError('entry_date must be a valid date'), 't')).toBe(
       'entry_date must be a valid date',
     );
-    expect(toolThrowText(new Error('page not found: abc'), 't')).toBe('page not found: abc');
+    expect(text(new Error('page not found: abc'), 't')).toBe('page not found: abc');
     // A non-provider fetch's status in our own words is no provider failure.
-    expect(toolThrowText(new Error('fetch failed: 404 Not Found'), 't')).toBe(
-      'fetch failed: 404 Not Found',
-    );
+    expect(text(new Error('fetch failed: 404 Not Found'), 't')).toBe('fetch failed: 404 Not Found');
     // An error with a status but no body (a Graph error) is ours too.
     const graph = Object.assign(new Error('no valid access token'), { status: 401 });
-    expect(toolThrowText(graph, 't')).toBe('no valid access token');
-    expect(
-      toolThrowText(new TypeError("Cannot read properties of undefined (reading 'x')"), 't'),
-    ).toBe("Cannot read properties of undefined (reading 'x')");
+    expect(text(graph, 't')).toBe('no valid access token');
+    expect(text(new TypeError("Cannot read properties of undefined (reading 'x')"), 't')).toBe(
+      "Cannot read properties of undefined (reading 'x')",
+    );
   });
 });
