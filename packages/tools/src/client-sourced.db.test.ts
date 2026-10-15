@@ -19,6 +19,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { asMigrator } from '@mantle/db/test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -108,7 +109,8 @@ describe.skipIf(!URL)('namesClientSourced', () => {
     // author goes NULL, the stamp stays.
     await admin`insert into nodes (id, owner_id, type, title, path, audience) values
       (${ids.acceptedClientItem}, ${owner}, 'page', 'accepted from a client', 'pages', 'team')`;
-    await admin.begin(async (tx) => {
+    // As the superuser: the app's pool may be the runtime role (arch A9).
+    await asMigrator(URL!, async (tx) => {
       await tx`set local session_replication_role = replica`;
       await tx`insert into space_items (node_id, author_login_id, review_state, author_role)
         values (${ids.acceptedClientItem}, ${ids.goneClient}, 'accepted', 'client')`;

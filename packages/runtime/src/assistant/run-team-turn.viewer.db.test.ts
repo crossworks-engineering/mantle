@@ -21,6 +21,7 @@
  */
 import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { asMigrator } from '@mantle/db/test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -282,8 +283,9 @@ describe.skipIf(!URL)('a team turn in its Team turn scope', () => {
 
   it('the Team workspace’s assistant answers whatever level it still stores, and reads only Team', async () => {
     // Levels are frozen since 0268 (W7b): set past the freeze.
+    // As the migrator: the bypass is not the app's (arch A9).
     const setLevel = (level: string) =>
-      admin.begin(async (tx) => {
+      asMigrator(scratch!.url, async (tx) => {
         await tx`select mantle_heads_bypass('test fixture')`;
         await tx`update agents set audience = ${level} where id = ${agentId}`;
       });

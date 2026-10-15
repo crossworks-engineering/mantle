@@ -151,6 +151,10 @@ describe.skipIf(!URL)('every read builtin runs read only through the brokers (A5
   let reads: string[] = [];
   const suiteMode = process.env.MANTLE_ACTOR_CHECK;
 
+  /** A fixture only the superuser may run (a box mode, a table, a trigger):
+   *  the app's pool may log in as the runtime role (arch A9). */
+  const su = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
+    (await import('@mantle/db/test-support')).superuserExec<T>(scratch!.url, q);
   const x = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
     (await m.systemDb.execute(q)) as unknown as T[];
 
@@ -442,8 +446,8 @@ describe.skipIf(!URL)('every read builtin runs read only through the brokers (A5
     // The box's checks on, as an operator switches them, and this
     // process's actor check (the write mode is sent with the actor).
     process.env.MANTLE_ACTOR_CHECK = 'on';
-    await x(sql`select mantle_set_actor_check('on')`);
-    await x(sql`select mantle_set_edit_check('on')`);
+    await su(sql`select mantle_set_actor_check('on')`);
+    await su(sql`select mantle_set_edit_check('on')`);
   }, 240_000);
 
   afterAll(async () => {
@@ -457,7 +461,7 @@ describe.skipIf(!URL)('every read builtin runs read only through the brokers (A5
 
   /** One pass: every read builtin and the recipes through every entry. */
   const sweep = async (mode: 'on' | 'warn') => {
-    await x(sql`select mantle_set_edit_check(${mode})`);
+    await su(sql`select mantle_set_edit_check(${mode})`);
     const readOnlyWrites: Record<string, string[]> = {};
     const otherMisses: Record<string, string[]> = {};
     const stuck: string[] = [];

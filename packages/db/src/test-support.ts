@@ -47,6 +47,8 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readMigrationFiles } from 'drizzle-orm/migrator';
 import postgres from 'postgres';
+import type { SQL } from 'drizzle-orm';
+import { PgDialect } from 'drizzle-orm/pg-core';
 import {
   managedRolePatterns,
   POOL_ROLES,
@@ -239,6 +241,32 @@ export async function asMigrator<T>(
                       set_config('mantle.write_mode', 'rw', true)`;
       return fn(tx);
     })) as T;
+  } finally {
+    await sql.end();
+  }
+}
+
+/**
+ * One statement as the superuser of `url`, as system(test), in a transaction
+ * of its own (arch A9): a fixture that switches a box mode, makes a table
+ * or a trigger function, or sets the heads check, which the app's pool may
+ * not do when it logs in as the runtime role. A drizzle `sql` query or raw
+ * text.
+ */
+export async function superuserExec<T = Record<string, unknown>>(
+  url: string,
+  query: SQL | string,
+): Promise<T[]> {
+  const { sql: text, params } =
+    typeof query === 'string' ? { sql: query, params: [] } : new PgDialect().sqlToQuery(query);
+  const sql = postgres(url, { max: 1, prepare: false, onnotice: () => {} });
+  try {
+    const rows = await sql.begin(async (tx) => {
+      await tx`select set_config('mantle.actor', 'system:test', true),
+                      set_config('mantle.write_mode', 'rw', true)`;
+      return [...(await tx.unsafe(text, params as never[]))];
+    });
+    return rows as unknown as T[];
   } finally {
     await sql.end();
   }

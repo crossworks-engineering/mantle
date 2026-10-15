@@ -127,6 +127,10 @@ describe.skipIf(!URL)('app drafts under the row lock read as the caller’s scop
   let projWs = '';
   const suiteMode = process.env.MANTLE_ACTOR_CHECK;
 
+  /** A fixture only the superuser may run (a box mode, a table, a trigger):
+   *  the app's pool may log in as the runtime role (arch A9). */
+  const su = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
+    (await import('@mantle/db/test-support')).superuserExec<T>(scratch!.url, q);
   const x = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
     (await m.systemDb.execute(q)) as unknown as T[];
   const email = (who: string) => `${tag}-${who}@example.invalid`;
@@ -135,8 +139,8 @@ describe.skipIf(!URL)('app drafts under the row lock read as the caller’s scop
    *  actor check (never below the box's). */
   const setModes = async (modes: Modes) => {
     process.env.MANTLE_ACTOR_CHECK = modes.actor;
-    await x(sql`select mantle_set_actor_check(${modes.actor})`);
-    await x(sql`select mantle_set_edit_check(${modes.edit})`);
+    await su(sql`select mantle_set_actor_check(${modes.actor})`);
+    await su(sql`select mantle_set_edit_check(${modes.edit})`);
   };
 
   /** The edit check's word on a Write-grant user's code change: the code

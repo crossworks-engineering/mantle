@@ -98,6 +98,10 @@ describe.skipIf(!URL)('A3b: the store brokers, both checks on', () => {
   let R = '';
   let O = '';
 
+  /** A fixture only the superuser may run (a box mode, a table, a trigger):
+   *  the app's pool may log in as the runtime role (arch A9). */
+  const su = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
+    (await import('@mantle/db/test-support')).superuserExec<T>(scratch!.url, q);
   const x = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
     (await m.systemDb.execute(q)) as unknown as T[];
   const sys = <T>(fn: () => Promise<T>) => m.runAsSystem('test:a3b', fn) as Promise<T>;
@@ -156,7 +160,7 @@ describe.skipIf(!URL)('A3b: the store brokers, both checks on', () => {
   };
   const setChecks = async (mode: 'on' | 'off') => {
     process.env.MANTLE_ACTOR_CHECK = mode;
-    await x(sql`select mantle_set_edit_check(${mode})`);
+    await su(sql`select mantle_set_edit_check(${mode})`);
   };
 
   beforeAll(async () => {
@@ -207,8 +211,8 @@ describe.skipIf(!URL)('A3b: the store brokers, both checks on', () => {
                  where w.id = u.workspace_id and w.name = 'Team' and not w.is_admin and u.login_id = ${mem}`);
     // A commit that fails after the work (this scratch database only): a
     // deferred trigger on the stores' rows, armed by a row in a3b_fail.
-    await x(sql`create table a3b_fail (on_ boolean)`);
-    await x(
+    await su(sql`create table a3b_fail (on_ boolean)`);
+    await su(
       sql.raw(`create function a3b_fail_commit() returns trigger language plpgsql
         security definer set search_path = public as $$
         begin
@@ -217,7 +221,7 @@ describe.skipIf(!URL)('A3b: the store brokers, both checks on', () => {
         end $$`),
     );
     for (const t of ['tables', 'app_databases']) {
-      await x(
+      await su(
         sql.raw(`create constraint trigger a3b_fail_commit after update on ${t}
           deferrable initially deferred for each row execute function a3b_fail_commit()`),
       );
@@ -226,8 +230,8 @@ describe.skipIf(!URL)('A3b: the store brokers, both checks on', () => {
     // and its check (this scratch database only): armed by a row in
     // a3b_moved, the next bump of write_seq lands on a row that names
     // another file, as if a restore had flipped it just before.
-    await x(sql`create table a3b_moved (app uuid, path text)`);
-    await x(
+    await su(sql`create table a3b_moved (app uuid, path text)`);
+    await su(
       sql.raw(`create function a3b_move_path() returns trigger language plpgsql
         security definer set search_path = public as $$
         declare p text;
@@ -237,7 +241,7 @@ describe.skipIf(!URL)('A3b: the store brokers, both checks on', () => {
           return new;
         end $$`),
     );
-    await x(
+    await su(
       sql.raw(`create trigger a3b_move_path before update on app_databases
         for each row execute function a3b_move_path()`),
     );

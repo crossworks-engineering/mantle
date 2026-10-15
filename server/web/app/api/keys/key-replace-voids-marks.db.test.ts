@@ -39,6 +39,7 @@ describe.skipIf(!URL)("replacing a connector's key", () => {
   let toolId = '';
   let keyId = '';
   let prevMasterKey: string | undefined;
+  let prevRuntimeRole: string | undefined;
 
   const exec = (q: ReturnType<typeof sqlTag>) => m.systemDb.execute(q);
   const mark = async () => {
@@ -70,6 +71,10 @@ describe.skipIf(!URL)("replacing a connector's key", () => {
     // The vault seals with a 32-byte master key; this test's own.
     prevMasterKey = process.env.MANTLE_MASTER_KEY;
     process.env.MANTLE_MASTER_KEY = Buffer.alloc(32, 7).toString('base64');
+    // The runtime role's password follows the master key (arch A9), and no
+    // migrate set it from this one: the pools log in as DATABASE_URL here.
+    prevRuntimeRole = process.env.MANTLE_DB_RUNTIME_ROLE;
+    process.env.MANTLE_DB_RUNTIME_ROLE = '';
     m = await import('@mantle/db');
     ta = await import('@mantle/tools');
     keys = await import('@mantle/api-keys');
@@ -109,6 +114,8 @@ describe.skipIf(!URL)("replacing a connector's key", () => {
     await m.closeDb();
     if (prevMasterKey === undefined) delete process.env.MANTLE_MASTER_KEY;
     else process.env.MANTLE_MASTER_KEY = prevMasterKey;
+    if (prevRuntimeRole === undefined) delete process.env.MANTLE_DB_RUNTIME_ROLE;
+    else process.env.MANTLE_DB_RUNTIME_ROLE = prevRuntimeRole;
   }, 60_000);
 
   it('a key no connector uses voids nothing', async () => {
