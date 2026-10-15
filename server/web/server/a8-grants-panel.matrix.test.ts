@@ -218,6 +218,7 @@ describe.skipIf(!DB_URL)('A8: the grants panel’s database rule under a wrong T
   for (const mode of ['off', 'warn', 'on'] as const) {
     it(`check ${mode}: a member who may not manage the item, the panel told it may`, async () => {
       process.env.MANTLE_ACTOR_CHECK = mode;
+      m.takeActorMisses();
       const seen: Record<string, Answer> = {};
       for (const via of ['route', 'scope'] as const) {
         for (const change of ['add', 'move'] as const) {
@@ -228,12 +229,17 @@ describe.skipIf(!DB_URL)('A8: the grants panel’s database rule under a wrong T
           seen[`${via} ${change}`] = await attempt(change, via, true);
         }
       }
+      // Statements that ran with no actor, taken here so they are reported
+      // and pinned, not the setup's generic failure.
+      const misses = m.takeActorMisses();
       console.log(
         [
           `A8 grants panel, check ${mode} (member writeGrant, H's seat claimed in TypeScript):`,
           ...Object.entries(seen).map(([c, a]) => `  ${c} to T: ${a.outcome} (${a.by})`),
+          `  actor misses: ${misses.length} ${JSON.stringify(misses).slice(0, 600)}`,
         ].join('\n'),
       );
+      expect(misses.length, JSON.stringify(misses)).toBe(MISSES[mode]);
       // Pinned as found (docs/actors.md, "A8 matrix", the grants panel).
       expect(
         Object.fromEntries(Object.entries(seen).map(([c, a]) => [c, a.outcome])),
@@ -261,3 +267,7 @@ const EXPECTED: Record<'off' | 'warn' | 'on', Record<string, 'made' | 'refused'>
   warn: { ...ROUTE_MADE, 'scope add': 'made', 'scope move': 'made' },
   on: { ...ROUTE_MADE, 'scope add': 'refused', 'scope move': 'refused' },
 };
+
+/** Statements with no actor a run of the cases above leaves (the warn
+ *  rerun's, see EXPECTED). */
+const MISSES: Record<'off' | 'warn' | 'on', number> = { off: 0, warn: 0, on: 0 };
