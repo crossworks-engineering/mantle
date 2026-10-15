@@ -53,7 +53,10 @@ describe('chat adapter self-registration', () => {
     expect(a).not.toBeNull();
     expect(a?.adapterName).toBe('openrouter-chat');
     // The registry hands out the recording wrapper around the singleton (A10 #5).
-    expect(a).toMatchObject({ adapterName: openrouterChatAdapter.adapterName, providerId: openrouterChatAdapter.providerId });
+    expect(a).toMatchObject({
+      adapterName: openrouterChatAdapter.adapterName,
+      providerId: openrouterChatAdapter.providerId,
+    });
   });
 
   it('registers deepseek-chat on import', () => {

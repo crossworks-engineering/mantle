@@ -23,14 +23,7 @@ import { fallbackCostMicroUsd } from './pricing';
 
 /** What kind of provider call it was. */
 export type SpendCapability =
-  | 'chat'
-  | 'decision'
-  | 'embedding'
-  | 'vision'
-  | 'image_gen'
-  | 'tts'
-  | 'stt'
-  | 'research';
+  'chat' | 'decision' | 'embedding' | 'vision' | 'image_gen' | 'tts' | 'stt' | 'research';
 
 /** Billing units of a call that is not billed by the token. */
 export type SpendUnits = {

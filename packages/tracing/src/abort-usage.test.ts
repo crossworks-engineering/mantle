@@ -35,12 +35,7 @@ vi.mock('@mantle/db', () => ({
   },
 }));
 
-import {
-  abortTurn,
-  registerTurnAbort,
-  startTrace,
-  unregisterTurnAbort,
-} from './store';
+import { abortTurn, registerTurnAbort, startTrace, unregisterTurnAbort } from './store';
 import { recordUsage } from './spend';
 
 const usage = (inputTokens: number, outputTokens: number, reportedCostUsd: number) =>

@@ -218,7 +218,6 @@ async function runResolved(
   );
   const input = validation.input;
 
-
   // Arch A2a: the tool runs as the run's login as it is now, else the owner.
   const itemActor = await runItemActor(run.ownerId, run.loginId);
   const asRunLogin = <T>(fn: () => Promise<T>) =>

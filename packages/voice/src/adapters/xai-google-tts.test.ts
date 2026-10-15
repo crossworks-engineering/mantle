@@ -30,7 +30,10 @@ describe('xAI TTS adapter', () => {
     expect(a).not.toBeNull();
     expect(a?.adapterName).toBe('xai-tts');
     // The registry hands out the recording wrapper around the singleton (A10 #5).
-    expect(a).toMatchObject({ adapterName: xaiTtsAdapter.adapterName, providerId: xaiTtsAdapter.providerId });
+    expect(a).toMatchObject({
+      adapterName: xaiTtsAdapter.adapterName,
+      providerId: xaiTtsAdapter.providerId,
+    });
   });
 
   it('is reported wired for tts by isProviderWired', () => {
@@ -116,7 +119,10 @@ describe('Google (Gemini) TTS adapter', () => {
     expect(a).not.toBeNull();
     expect(a?.adapterName).toBe('google-tts');
     // The registry hands out the recording wrapper around the singleton (A10 #5).
-    expect(a).toMatchObject({ adapterName: googleTtsAdapter.adapterName, providerId: googleTtsAdapter.providerId });
+    expect(a).toMatchObject({
+      adapterName: googleTtsAdapter.adapterName,
+      providerId: googleTtsAdapter.providerId,
+    });
   });
 
   it('is reported wired for tts by isProviderWired', () => {

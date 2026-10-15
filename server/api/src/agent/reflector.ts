@@ -39,11 +39,7 @@ import {
 } from '@mantle/db';
 import { recordSkippedTrace, startTrace, step } from '@mantle/tracing';
 import { backgroundFence, withFenceNote, type Fence } from '@mantle/std';
-import {
-  chatWithFailover,
-  resolveChatKey,
-  resolveChatRoutes,
-} from '@mantle/runtime/agent';
+import { chatWithFailover, resolveChatKey, resolveChatRoutes } from '@mantle/runtime/agent';
 import { knownJournalEntries, notesTargetOf, writeLearnedEntries } from '@mantle/content';
 import { reconcileMeta, ruleReconcilerFor } from '@mantle/tools';
 import { CONVERSATIONAL_ROLES, rankActiveAgents } from './agent-select.js';

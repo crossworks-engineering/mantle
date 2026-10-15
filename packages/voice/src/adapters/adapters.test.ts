@@ -38,7 +38,10 @@ describe('built-in adapter self-registration', () => {
     // The wrapper calls the singleton's method at call time, so
     // monkey-patching the exported adapter for a test still applies.
     // The registry hands out the recording wrapper around the singleton (A10 #5).
-    expect(a).toMatchObject({ adapterName: openAiTtsAdapter.adapterName, providerId: openAiTtsAdapter.providerId });
+    expect(a).toMatchObject({
+      adapterName: openAiTtsAdapter.adapterName,
+      providerId: openAiTtsAdapter.providerId,
+    });
   });
 
   it('registers openai-stt on import', () => {
@@ -47,7 +50,10 @@ describe('built-in adapter self-registration', () => {
     expect(a?.providerId).toBe('openai');
     expect(a?.adapterName).toBe('openai-stt');
     // The registry hands out the recording wrapper around the singleton (A10 #5).
-    expect(a).toMatchObject({ adapterName: openAiSttAdapter.adapterName, providerId: openAiSttAdapter.providerId });
+    expect(a).toMatchObject({
+      adapterName: openAiSttAdapter.adapterName,
+      providerId: openAiSttAdapter.providerId,
+    });
   });
 
   it('lists at least one adapter per built-in capability', () => {

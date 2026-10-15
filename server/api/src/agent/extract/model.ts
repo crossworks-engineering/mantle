@@ -14,11 +14,7 @@ import {
 } from '@mantle/db';
 import { step } from '@mantle/tracing';
 import { backgroundFence, withFenceNote } from '@mantle/std';
-import {
-  chatWithFailover,
-  resolveChatRoutes,
-  type ChatRoutes,
-} from '@mantle/runtime/agent';
+import { chatWithFailover, resolveChatRoutes, type ChatRoutes } from '@mantle/runtime/agent';
 import { type ChatResult } from '@mantle/voice';
 import { noteProviderFailure, noteProviderSuccess, tagProviderSubject } from '@mantle/embeddings';
 import { parseExtractorOutput, type ExtractorOutput } from '../extractor-parse';

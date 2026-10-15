@@ -96,7 +96,10 @@ describe('ElevenLabs TTS adapter', () => {
     expect(a).not.toBeNull();
     expect(a?.adapterName).toBe('elevenlabs-tts');
     // The registry hands out the recording wrapper around the singleton (A10 #5).
-    expect(a).toMatchObject({ adapterName: elevenLabsTtsAdapter.adapterName, providerId: elevenLabsTtsAdapter.providerId });
+    expect(a).toMatchObject({
+      adapterName: elevenLabsTtsAdapter.adapterName,
+      providerId: elevenLabsTtsAdapter.providerId,
+    });
   });
 
   it('is reported wired for tts by isProviderWired', () => {
