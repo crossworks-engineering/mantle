@@ -84,6 +84,19 @@ const NAMED_CHANGES: Record<
       now: '[]',
     },
   ],
+  'rule-in-query': [
+    {
+      cells: /^GET \/api\/assistant\/thread adminNoUsers( agent=\w+)?$/,
+      reason:
+        'an Admin user assigned an assistant of a workspace it is not in no longer sees that ' +
+        'assignment in its chat bundle: the assignment is read in its scope now, where the agents ' +
+        'row rule (0254) hides an assistant of a workspace outside it. It could not chat with that ' +
+        "assistant on main either (the bundle's agents and its selected agent left it out); only " +
+        'the slug was shown. Stricter, never looser.',
+      back: (now) =>
+        now.replace('"assigned":null}}', '"assigned":{"slug":"a6b-P","assignedAt":"<time>"}}}'),
+    },
+  ],
 };
 
 type Json = Record<string, any>;
