@@ -9,7 +9,8 @@
  *
  * Limits: per address (an IPv4 address or an IPv6 /64) 10 a minute and 30
  * an hour (the row's, taken by the gate after its cross-site refusal:
- * lib/route-limits.ts contactCode, contactCodeHour); per share 10 failures an hour; per contact 30 failures a day,
+ * lib/route-limits.ts contactCode, contactCodeHour); per share 10 failures
+ * an hour; per contact 30 failures a day,
  * then a 24-hour lock, an audit row and an admin notice in "Needs you". The
  * share and contact counters live in the database, so a restart or a second
  * web process does not reset them. The attacker needs the 128-bit link
