@@ -5,7 +5,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
-  APP_DELETE_OWNER_ONLY,
+  APP_DELETE_ADMIN_ONLY,
   CONTACT_WRITES_APP_DATA_ONLY,
   GUIDE_ACTIONS,
   GUIDE_ROLES,
@@ -107,11 +107,15 @@ describe('the A8 oracle', () => {
     expect(expectedAccess(at('root', 'contact-rw'), null, 'app', 'appData')).toEqual(allow);
   });
 
-  it('an app: only the owner deletes it (plan s32, F3), any other item its home Moderator', () => {
+  it('an app: the owner and Admin users delete it (owner decision 2026-10-15), never its home Moderator', () => {
     expect(expectedAccess(at('root'), 'homeModerator', 'note', 'delete')).toEqual(allow);
+    expect(expectedAccess(at('root', 'turn'), 'homeModerator', 'app', 'delete')).toEqual({
+      allow: false,
+      why: APP_DELETE_ADMIN_ONLY,
+    });
     expect(expectedAccess(at('root'), 'homeModerator', 'app', 'delete')).toEqual({
       allow: false,
-      why: APP_DELETE_OWNER_ONLY,
+      why: APP_DELETE_ADMIN_ONLY,
     });
   });
 
@@ -144,12 +148,10 @@ describe('the A8 oracle', () => {
     }
     expect(expectedAccess(at('admin', 'login-ro'), 'owner', 'note', 'edit')).toMatchObject(denied);
     expect(expectedAccess(at('admin', 'assistant'), null, 'note', 'read')).toMatchObject(denied);
-    // F3: only the owner deletes an app, Admin-homed too.
+    // F3 revised (owner decision 2026-10-15): Admin users delete an app.
     expect(expectedAccess(at('admin'), 'owner', 'app', 'delete')).toEqual(allow);
-    expect(expectedAccess(at('admin'), 'admin', 'app', 'delete')).toEqual({
-      allow: false,
-      why: APP_DELETE_OWNER_ONLY,
-    });
+    expect(expectedAccess(at('admin'), 'admin', 'app', 'delete')).toEqual(allow);
+    expect(expectedAccess(at('admin', 'turn'), 'admin', 'app', 'delete')).toEqual(allow);
     expect(expectedAccess(at('admin'), 'owner', 'note', 'grantRemove')).toHaveProperty('na');
   });
 

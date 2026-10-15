@@ -508,9 +508,9 @@ describe.skipIf(!DB_URL)('A8 surface cells: every way in gives the oracle’s an
     'readGrant',
     'outsider',
   ];
-  /** F8's case, run on the web and over MCP whatever the pick: each Admin
-   *  user's delete of an app homed in Admin (the owner's allowed, the other
-   *  Admin user's not: plan s32, F3). */
+  /** The owner's decision of 2026-10-15 (plan s32, F3 revised), run on the
+   *  web and over MCP whatever the pick: each Admin user's delete of an app
+   *  homed in Admin, allowed (to the trash). */
   const ADMIN_APP_DELETES = (['owner', 'admin'] as const).map((role) => ({
     role,
     kind: 'app',

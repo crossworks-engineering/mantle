@@ -433,7 +433,7 @@ export function expectedWrite(
     case 'deleteContent':
     case 'appDataDelete':
       // "Delete it: Moderator of its home" (an app's delete at SQL level;
-      // the owner-only decision is expectedAccess's, F3).
+      // the owner's decision, the owner and Admin users only, is expectedAccess's, F3).
       return GUIDE_RULES.delete(standing) ? { allow: true } : deny('not a Moderator of its home');
     case 'appCode':
     case 'appCreate':

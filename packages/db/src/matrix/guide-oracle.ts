@@ -355,7 +355,8 @@ export const GUIDE_RULES = {
 } as const;
 
 /** The why of an app delete by anyone but the owner (plan s32, F3). */
-export const APP_DELETE_OWNER_ONLY = 'an app: only the owner deletes it (plan s32, F3)';
+export const APP_DELETE_ADMIN_ONLY =
+  'an app: the owner and Admin users delete it (owner decision 2026-10-15, plan s32 F3 revised)';
 
 /** The why of a contact share's write of anything but its app's data
  *  (docs/actors.md, the actor kinds: "its app's data, when the share
@@ -514,11 +515,12 @@ function narrowedAnswer(
         return GUIDE_RULES.appCode(s) ? { allow: true } : deny('app code: Moderator of its home');
       return GUIDE_RULES.edit(s) ? { allow: true } : deny('may not edit it');
     case 'delete':
-      // An app: only the owner deletes it. The owner's decision on the A8
-      // findings (workspaces arch plan v2, section 32, F3: app delete stays
-      // owner-only; the guide gets the rule), over "Delete it: Moderator of
-      // its home" for an app.
-      if (kind === 'app') return s.owner ? { allow: true } : deny(APP_DELETE_OWNER_ONLY);
+      // An app: the owner and Admin users delete it (to the trash); its
+      // home Moderator may not, on any surface. The owner's decision of
+      // 2026-10-15 (workspaces arch plan v2, section 32, F3 revised; the
+      // guide gets the rule), over "Delete it: Moderator of its home" for an
+      // app. In a turn the Admin user's seat is the Admin assistant's.
+      if (kind === 'app') return s.admin ? { allow: true } : deny(APP_DELETE_ADMIN_ONLY);
       // "Delete it: Moderator of its home" (the copy's author is one).
       return GUIDE_RULES.delete(s) ? { allow: true } : deny('not a Moderator of its home');
     case 'move':

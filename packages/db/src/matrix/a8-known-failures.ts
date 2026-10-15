@@ -50,13 +50,14 @@ const F2 = 'F2 a workspace assistant turn cannot write (raw error text)';
  *  same writes on the write role are refused (the `login` cells pass). */
 const F4 = 'F4 an Admin write request on the system pool: edits not held to its scope';
 
-/** F5. The database lets the Moderator of an app's home delete the app (by
- *  hand and in a turn; an Admin user, a Moderator of Admin, an app homed in
- *  Admin, on the system pool too). The owner's decision (plan v2 section
- *  32, F3): an app's delete stays owner-only; today only the owner-side tool
- *  holds it (app_delete: "owner-side tool: not available here"), not the
- *  database. */
-const F5 = 'F5 the database lets the home Moderator delete an app (owner-only, plan s32)';
+/** F5. The Moderator of an app's home deletes the app: the database lets
+ *  it (by hand and in a turn), and so do DELETE /api/apps/:id (an
+ *  owner-side route) and app_delete over MCP (an MCP connection is an owner
+ *  surface to ownerOnlyRefusal). The owner's decision of 2026-10-15 (plan
+ *  v2 section 32, F3 revised): the owner and Admin users delete an app, its
+ *  home Moderator may not, on any surface; the database gets the rule in a
+ *  later product change. */
+const F5 = 'F5 the home Moderator deletes an app (owner and Admin users only, plan s32 F3 revised)';
 
 /** F6. A peer acting as its login, Write on, may not change an item others
  *  read (packages/tools/src/key-shared-content.ts: "this item is shared, so
@@ -66,12 +67,6 @@ const F5 = 'F5 the database lets the home Moderator delete an app (owner-only, p
  *  only. A rule the product has and the guide does not name (every fixture
  *  item is read by W and R, and has an open link). */
 const F6 = 'F6 a peer may not edit a shared item (a rule the guide does not name)';
-
-/** F8. DELETE /api/apps/:id (server/web/app/api/apps/[id]/route.ts) is an
- *  owner-side route: any Admin user trashes an app there, where the owner's
- *  decision (plan v2 section 32, F3) makes an app's delete owner-only. Asked
- *  of the owner: may an Admin user delete an app? */
-const F8 = 'F8 DELETE /api/apps/:id lets any Admin user trash an app (owner-only, plan s32)';
 
 /** F9. A contact share's write is named system work on the system pool
  *  (docs/actors.md: "its app's data, when the share allows it"), so the
@@ -159,9 +154,6 @@ export const KNOWN_FAILURES: Readonly<Record<string, KnownFailure>> = {
   // The grid (SQL).
   ...adminSystemPoolEdits(),
   ...contactSystemPoolWrites(),
-  'login/admin delete app @admin': known(F5, GONE),
-  'turn/admin delete app @admin': known(F5, GONE),
-  'login@system/admin delete app @admin': known(F5, GONE),
   'login/homeModerator delete app @folder': known(F5, GONE),
   'login/homeModerator delete app @root': known(F5, GONE),
   'turn/homeModerator delete app @folder': known(F5, GONE),
@@ -207,14 +199,8 @@ export const KNOWN_FAILURES: Readonly<Record<string, KnownFailure>> = {
   'web-turn turn/writeGrant edit task @folder': known(F2, RAW_UPDATE),
   'peer login/owner edit note @admin': known(F6, 'a peer cannot change its content'),
   'peer login/writeGrant edit note @folder': known(F6, 'a peer cannot change its content'),
-  'mcp-oauth login/homeModerator delete app @folder': known(F8, APP_DELETED),
-  'recipe turn/admin delete app @admin': known(F8, APP_DELETED, ['warn', 'on']),
-  'web login/homeModerator delete app @folder': known(F8, APP_DELETED),
-
-  // Always run (the web and MCP entries' named cells): an Admin user's app
-  // delete of an app homed in Admin.
-  'web login/admin delete app @admin': known(F8, APP_DELETED),
-  'mcp-oauth login/admin delete app @admin': known(F8, APP_DELETED),
+  'mcp-oauth login/homeModerator delete app @folder': known(F5, APP_DELETED),
+  'web login/homeModerator delete app @folder': known(F5, APP_DELETED),
 };
 
 /**
