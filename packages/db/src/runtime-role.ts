@@ -224,6 +224,10 @@ export function runtimeRoleStatements(
   // The runtime role inherits mantle_system (mantle_owner_role says yes)
   // and may SET it, and through it the write role and the gap writer.
   out.push(`GRANT "${SYSTEM_ROLE}" TO "${RUNTIME_ROLE}" WITH INHERIT TRUE, SET TRUE, ADMIN FALSE`);
+  // The owner too, without SET: a cascade (ON DELETE CASCADE, SET NULL)
+  // runs as the owner of the table it changes, and so do the triggers it
+  // fires; as the superuser's tables they passed the owner test.
+  out.push(`GRANT "${SYSTEM_ROLE}" TO "${OWNER_ROLE}" WITH INHERIT TRUE, SET FALSE, ADMIN FALSE`);
   for (const target of [viewerRoleName('write'), GAP_WRITER_ROLE]) {
     out.push(`GRANT "${target}" TO "${SYSTEM_ROLE}" WITH INHERIT FALSE, SET TRUE, ADMIN FALSE`);
   }
@@ -234,6 +238,7 @@ export function runtimeRoleStatements(
  *  (a hand grant of mantle_owner, say) is taken back on every run. */
 const WANTED_MEMBERSHIPS: Readonly<Record<string, readonly string[]>> = {
   [RUNTIME_ROLE]: [SYSTEM_ROLE],
+  [OWNER_ROLE]: [SYSTEM_ROLE],
   [SYSTEM_ROLE]: [viewerRoleName('write'), GAP_WRITER_ROLE],
 };
 
@@ -282,7 +287,7 @@ export async function ensureRuntimeRoles(
       from pg_auth_members m
       join pg_roles r on r.oid = m.roleid
       join pg_roles u on u.oid = m.member
-     where u.rolname in (${RUNTIME_ROLE}, ${SYSTEM_ROLE})`;
+     where u.rolname in (${RUNTIME_ROLE}, ${SYSTEM_ROLE}, ${OWNER_ROLE})`;
   for (const { member, role } of held) {
     if (WANTED_MEMBERSHIPS[member]?.includes(role)) continue;
     await withRoleRetry(() => sql.unsafe(`REVOKE "${role}" FROM "${member}"`));
@@ -383,7 +388,14 @@ async function deniedFunctionsPresent(sql: Sql): Promise<string[]> {
  * RUNTIME_DENIED_FUNCTIONS (also taken from PUBLIC and every viewer role),
  * CONNECT on the database, and default privileges so a table a later
  * migration makes is the runtime role's at once. CREATE on public is taken
- * from PUBLIC: the runtime role may make nothing there. One transaction.
+ * from PUBLIC: the runtime role may make nothing there.
+ *
+ * And mantle_owner's: USAGE on the schemas, every right on the tables and
+ * EXECUTE on every function. Nobody logs in as it, but Postgres runs a
+ * foreign key's check and its cascade as the owner of the table queried,
+ * and the triggers a cascade fires as that owner too: as the superuser's
+ * tables these ran as the superuser, so the owner must reach what they
+ * reach (auth's tables, the functions taken from PUBLIC). One transaction.
  */
 export async function applyRuntimeGrants(sql: Sql): Promise<void> {
   const rt = `"${RUNTIME_ROLE}"`;
@@ -397,6 +409,11 @@ export async function applyRuntimeGrants(sql: Sql): Promise<void> {
         select current_database() as name, current_user as me`;
       await tx.unsafe(`REVOKE CREATE ON SCHEMA public FROM PUBLIC`);
       await tx.unsafe(`GRANT CONNECT ON DATABASE "${db!.name}" TO ${rt}`);
+      const ow = `"${OWNER_ROLE}"`;
+      await tx.unsafe(`GRANT USAGE ON SCHEMA ${schemas} TO ${ow}`);
+      await tx.unsafe(`GRANT ALL ON ALL TABLES IN SCHEMA ${schemas} TO ${ow}`);
+      await tx.unsafe(`GRANT ALL ON ALL SEQUENCES IN SCHEMA ${schemas} TO ${ow}`);
+      await tx.unsafe(`GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA ${schemas} TO ${ow}`);
       await tx.unsafe(`GRANT USAGE ON SCHEMA ${schemas} TO ${rt}`);
       await tx.unsafe(`REVOKE ALL ON ALL TABLES IN SCHEMA ${schemas} FROM ${rt}`);
       await tx.unsafe(`REVOKE ALL ON ALL SEQUENCES IN SCHEMA ${schemas} FROM ${rt}`);
@@ -414,6 +431,10 @@ export async function applyRuntimeGrants(sql: Sql): Promise<void> {
       }
       // Objects a later migration makes (as this role, or as mantle_owner)
       // are the runtime role's at once; the next run applies the denials.
+      await tx.unsafe(
+        `ALTER DEFAULT PRIVILEGES FOR ROLE "${db!.me}" IN SCHEMA ${schemas} ` +
+          `GRANT EXECUTE ON FUNCTIONS TO ${ow}`,
+      );
       for (const owner of [db!.me, OWNER_ROLE]) {
         await tx.unsafe(
           `ALTER DEFAULT PRIVILEGES FOR ROLE "${owner}" IN SCHEMA ${schemas} ` +
