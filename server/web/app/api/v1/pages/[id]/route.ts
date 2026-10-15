@@ -16,7 +16,7 @@
 import { NextResponse } from '@/server/http-compat';
 import { resolveSingleOwnerId } from '@mantle/db';
 import { othersCanRead } from '@mantle/mcp-core/shared-item';
-import { hiddenFromKey, isApiKeyRequest } from '@/lib/api-v1';
+import { hiddenFromKey, isApiKeyRequest, keyLoginMissesItem } from '@/lib/api-v1';
 import { PATCH as patchPage } from '../../../pages/[id]/route';
 
 export { GET } from '../../../pages/[id]/route';
@@ -29,6 +29,11 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   const { id } = await ctx.params;
   if (ownerId && (await hiddenFromKey(ownerId, [id])).size > 0) {
     return NextResponse.json({ error: 'not found' }, { status: 404 });
+  }
+  // A key of a login outside Admin (the A8 finding F1): a page it does not
+  // read is the item gate's 404 before the rules below read the page.
+  if (await keyLoginMissesItem(id)) {
+    return NextResponse.json({ ok: false, error: 'not found' }, { status: 404 });
   }
   const raw = await req.text();
   let body: unknown = null;

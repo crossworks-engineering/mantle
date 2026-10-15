@@ -327,6 +327,20 @@ describe.skipIf(!DB_URL)('A8 findings: the owner’s decisions F1 and F2', () =>
         failures.push(`${who} POST /api/v1/tables/:id/rows: ${rows.status} ${rows.text}`);
       }
     }
+    // A key's own rule on a page's content (a page others read) never tells
+    // a member's key about a page it does not read: the same 404 as an id
+    // no row has.
+    const unread = await makeItem('page', ws.H);
+    const doc = { doc: { type: 'doc', content: [] } };
+    for (const [cell, id] of [
+      ['a page it does not read', unread],
+      ['no such page', randomUUID()],
+    ] as const) {
+      const r = await http({ key: keyOf.user! }, 'PATCH', `/api/v1/pages/${id}`, doc);
+      note(`api-v1 user PATCH /api/v1/pages/:id doc, ${cell}`, r);
+      if (r.status !== 404) failures.push(`PATCH doc, ${cell}: ${r.status} ${r.text}`);
+    }
+
     // The owner's key: unchanged, every item read.
     const own = await makeItem('note', ws.admin);
     const ownRead = await http({ key: keyOf.owner! }, 'GET', `/api/v1/notes/${own}`);
