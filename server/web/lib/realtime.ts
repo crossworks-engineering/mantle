@@ -12,7 +12,6 @@ import { PENDING_CHANGED_CHANNEL } from '@mantle/tools';
 import { RUNS_CHANGED_CHANNEL, RUNS_CHANGED_TYPE } from '@mantle/runs';
 import { TURN_STREAM_CHANNEL, type TurnStreamEnvelope } from '@mantle/turn-stream';
 import type { TurnEvent } from '@mantle/client-types';
-import { env } from '@mantle/config';
 
 /**
  * Realtime bridge (server-only). A single app-wide Postgres LISTENer on the
