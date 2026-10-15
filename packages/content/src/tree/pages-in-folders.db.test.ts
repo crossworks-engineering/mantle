@@ -88,7 +88,7 @@ describe.skipIf(!URL)('migration 0210: pages in folders', () => {
   // Run again on a database past 0261, whose levels are frozen: in one
   // transaction under the migration's own named bypass, as the runner would.
   const run = async () => {
-    await asMigrator(URL!, async (tx) => {
+    await asMigrator(scratch!.url, async (tx) => {
       await tx.unsafe(`select mantle_heads_bypass('0210_pages_in_folders')`);
       for (const stmt of statementsOf('0210_pages_in_folders.sql')) await tx.unsafe(stmt);
     });

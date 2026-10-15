@@ -246,6 +246,14 @@ export async function asMigrator<T>(
   }
 }
 
+/** A client of its own as the superuser of `url` (arch A9), for a package
+ *  that has no postgres dependency of its own: a migrator's step under
+ *  test (CREATE INDEX CONCURRENTLY runs outside a transaction). The caller
+ *  ends it. */
+export function superuserClient(url: string): Sql {
+  return postgres(url, { max: 1, onnotice: () => {} });
+}
+
 /**
  * One statement as the superuser of `url`, as system(test), in a transaction
  * of its own (arch A9): a fixture that switches a box mode, makes a table

@@ -41,6 +41,7 @@ describe.skipIf(!URL_ADMIN)('sign-in reads on a database that refuses writes', (
   const rotated = randomUUID();
   const usedSuccessor = randomUUID();
   let savedUrl: string | undefined;
+  let savedRuntime: string | undefined;
 
   beforeAll(async () => {
     admin = postgres(URL_ADMIN!, { max: 1, onnotice: () => {} });
@@ -68,6 +69,10 @@ describe.skipIf(!URL_ADMIN)('sign-in reads on a database that refuses writes', (
     u.username = role;
     u.password = tag;
     savedUrl = process.env.DATABASE_URL;
+    // The app's pools log in as this role, as written: not the runtime
+    // role (arch A9), whatever the run's switch says.
+    savedRuntime = process.env.MANTLE_DB_RUNTIME_ROLE;
+    process.env.MANTLE_DB_RUNTIME_ROLE = '';
     process.env.DATABASE_URL = u.toString();
     process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
     m = await import('@mantle/db');
@@ -78,6 +83,8 @@ describe.skipIf(!URL_ADMIN)('sign-in reads on a database that refuses writes', (
     await m?.closeDb();
     if (savedUrl === undefined) delete process.env.DATABASE_URL;
     else process.env.DATABASE_URL = savedUrl;
+    if (savedRuntime === undefined) delete process.env.MANTLE_DB_RUNTIME_ROLE;
+    else process.env.MANTLE_DB_RUNTIME_ROLE = savedRuntime;
     if (!admin) return;
     await aclChange(() => admin.unsafe(`drop owned by ${role}`));
     await admin.unsafe(`drop role if exists ${role}`);

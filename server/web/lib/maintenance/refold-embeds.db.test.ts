@@ -118,7 +118,12 @@ describe.skipIf(!URL)('W2: a page without its embed finds none of its words', ()
     m = await import('@mantle/db');
     refold = await import('./refold-embeds');
     const { ensureTestAnchor } = await import('@mantle/db/test-support');
-    admin = (m.systemDb as unknown as { $client: Admin }).$client;
+    // The superuser: the fixture starts pg-boss, grants and sets roles (the
+    // app's pool may log in as the runtime role, arch A9).
+    admin = (await import('postgres')).default(URL!, {
+      max: 3,
+      onnotice: () => {},
+    }) as unknown as Admin;
     await m.ensureViewerRoles(admin, process.env.MANTLE_MASTER_KEY);
     anchor = await ensureTestAnchor(admin);
     await admin`insert into auth.users (id, email, password_hash, role)
@@ -193,6 +198,7 @@ describe.skipIf(!URL)('W2: a page without its embed finds none of its words', ()
     await admin`delete from spaces where login_id = ${member}`;
     await admin`delete from auth.users where id = ${member}`;
     await m?.closeDb();
+    await (admin as unknown as { end?: () => Promise<void> } | undefined)?.end?.();
   });
 
   // The control: the old rows hold the embed's words in every derived store
