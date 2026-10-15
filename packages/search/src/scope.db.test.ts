@@ -336,7 +336,8 @@ describe.skipIf(!URL)('W3: chunks follow their node; small scopes search exactly
     // The migrator's step, as the superuser: the app's pool may be the
     // runtime role (arch A9), which makes no table and no index.
     const { superuserClient } = await import('@mantle/db/test-support');
-    const admin = superuserClient(URL!) as unknown as Admin;
+    // Three connections: the test holds one while the step takes another.
+    const admin = superuserClient(URL!, 3) as unknown as Admin;
     onTestFinished(() => (admin as unknown as { end: () => Promise<void> }).end());
     const t = `${tag}_cix`;
     await admin.unsafe(`create table public.${t} (a int)`);

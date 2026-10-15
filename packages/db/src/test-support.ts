@@ -238,8 +238,8 @@ export async function asMigrator<T>(
  *  that has no postgres dependency of its own: a migrator's step under
  *  test (CREATE INDEX CONCURRENTLY runs outside a transaction). The caller
  *  ends it. */
-export function superuserClient(url: string): Sql {
-  return postgres(url, { max: 1, onnotice: () => {} });
+export function superuserClient(url: string, max = 1): Sql {
+  return postgres(url, { max, onnotice: () => {} });
 }
 
 /**
