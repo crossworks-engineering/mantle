@@ -27,10 +27,12 @@
  *    spine) and BEFORE the cost guard and the key pre-flight: it needs no
  *    model, with a summary to keep or without one (embedWork). A table
  *    keeping its summary is admitted there too: the model step reuses the
- *    summary, so it needs no key.
+ *    summary, so it needs no key; one no assistant workspace reads goes to
+ *    the cost guard's local index instead, as before the stamp.
  *  - Already-extracted is last, and requires the completion marker as well as
  *    summary+embedding: those are written first, so checking them alone made
- *    every retry skip a pass that had failed partway.
+ *    every retry skip a pass that had failed partway. An 'extract' stamp (a
+ *    content change waiting) is never skipped there.
  *
  * Each refusal records its own `skipped` trace with a disposition, which is
  * what makes "I uploaded X and nothing happened" answerable in /traces.
@@ -653,9 +655,13 @@ export async function admitForExtraction(
   // title and the text read locally (embedWork). Before the cost guard and
   // the key pre-flight, which it needs neither of. A table keeping its
   // summary is admitted here too: the model step reuses the summary (no model
-  // call, so no key) and rebuilds its profile passages.
+  // call, so no key) and rebuilds its profile passages, unless no workspace
+  // with an assistant reads it: then the cost guard below indexes it locally,
+  // as it did before the stamp (fix round 3, L1).
   const work = embedWork(node);
-  if (work === 'table_summary') {
+  let allowed: boolean | undefined;
+  const workAllowed = async () => (allowed ??= await llmWorkAllowed(node.id));
+  if (work === 'table_summary' && (await workAllowed())) {
     return {
       proceed: true,
       node,
@@ -665,7 +671,7 @@ export async function admitForExtraction(
       existingData: (node.data ?? {}) as Record<string, unknown>,
     };
   }
-  if (work) {
+  if (work === 'summary' || work === 'local') {
     const embedded =
       work === 'summary'
         ? await reembedFromSummary(node, ownerId)
@@ -696,7 +702,7 @@ export async function admitForExtraction(
   // embedder and no model work (no summary, no facts, no vision or OCR).
   // Before the key pre-flight: it needs no model. Under today's levels every
   // brain item passes (llm-guard.ts).
-  if (!(await llmWorkAllowed(node.id))) {
+  if (!(await workAllowed())) {
     const indexed = await indexLocalOnly(node, ownerId);
     await recordSkippedTrace({
       kind: 'extractor_run',
@@ -742,8 +748,18 @@ export async function admitForExtraction(
   // once on their next notify (edits clear summary anyway, so in practice
   // this only costs a stray duplicate notify on an old node) and get
   // stamped.
+  //
+  // An 'extract' stamp (A10 #7) is a content change still waiting: never
+  // skipped, whatever else the row holds (fix round 3, M1, defence in depth).
+  // The pass it admits drops the stamp in its xmin-guarded write, so the next
+  // notify skips here again: one pass, never a loop.
   const existingData = (node.data ?? {}) as Record<string, unknown>;
-  if (existingData.summary && node.embedding && existingData.extract_completed_at) {
+  if (
+    existingData.summary &&
+    node.embedding &&
+    existingData.extract_completed_at &&
+    readIndexWork(existingData) !== 'extract'
+  ) {
     await recordSkippedTrace({
       kind: 'extractor_run',
       ownerId,

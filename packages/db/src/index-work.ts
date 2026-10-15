@@ -62,8 +62,21 @@ export function hasSummarySql(data: DataExpr = nodes.data): SQL {
 
 /** The work a reset stamped on `data`, or null. */
 export function readIndexWork(data: unknown): IndexWork | null {
-  const work = (data as Data)?.[INDEX_WORK_KEY];
+  return parseIndexWork((data as Data)?.[INDEX_WORK_KEY]);
+}
+
+/** A stamp read as text (indexWorkSql), or null. */
+export function parseIndexWork(work: unknown): IndexWork | null {
   return work === 'embed' || work === 'extract' ? work : null;
+}
+
+/**
+ * The stamp of `data` in SQL, as text (null with none). The extractor reads
+ * it in the same select as the row's xmin, so the stamp its xmin-guarded
+ * write drops is the one on the row it writes (fix round 3, M1).
+ */
+export function indexWorkSql(data: DataExpr = nodes.data): SQL {
+  return sql`${data}->>${INDEX_WORK_KEY}::text`;
 }
 
 /** Whether an 'embed' stamp on `data` was set on a row that had a vector. */
@@ -73,7 +86,7 @@ export function stampHadVector(data: unknown): boolean {
 
 /** `data` holds the stamp `work`. */
 export function indexWorkIs(work: IndexWork, data: DataExpr = nodes.data): SQL {
-  return sql`${data}->>${INDEX_WORK_KEY}::text = ${work}`;
+  return sql`${indexWorkSql(data)} = ${work}`;
 }
 
 /**

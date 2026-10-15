@@ -12,7 +12,6 @@ import {
   nodeMixedSummaries,
   dropIndexWork,
   notifyNodeIndexed,
-  readIndexWork,
   withDeadlockRetry,
   withHeads,
   tables,
@@ -20,6 +19,7 @@ import {
   contentChunkWindows,
   type AiWorker,
 } from '@mantle/db';
+import type { IndexWork } from '@mantle/client-types/kinds';
 import { embed } from '@mantle/embeddings';
 import {
   describeWorkbook,
@@ -129,6 +129,8 @@ export async function writeContentIndex(
   persistedText: string | undefined,
   tableSchemaDigest: string | null,
   rowVersion: string | null,
+  /** The work stamp read with `rowVersion` (A10 #7 fix round 3, M1). */
+  seenWork: IndexWork | null,
 ): Promise<void> {
   // Embed against title + summary. The summary already condenses the
   // full body (after head+tail truncation), so it's a faithful
@@ -185,8 +187,9 @@ export async function writeContentIndex(
         .update(nodes)
         .set({
           // The work a reset stamped (A10 #7, data.index_work) is done: the
-          // stamp the job saw, never a newer one.
-          data: sql`${dropIndexWork(nodes.data, readIndexWork(node.data))} || ${JSON.stringify(indexPatch)}::jsonb`,
+          // stamp read with the row version this write is guarded on, so the
+          // one on the row it lands on (fix round 3, M1).
+          data: sql`${dropIndexWork(nodes.data, seenWork)} || ${JSON.stringify(indexPatch)}::jsonb`,
           ...(embedding ? { embedding } : {}),
           // A summary from folded text: the W2 mark clears (0247).
           derivedMixed: false,

@@ -272,13 +272,12 @@ export {
   type ContentTx,
 } from './content-changed';
 export {
-  INDEX_WORK_KEY,
-  INDEX_WORK_HAD_VECTOR_KEY,
-  INDEX_WORK_KEYS,
   dropIndexWork,
   hasSummary,
   hasSummarySql,
   indexWorkIs,
+  indexWorkSql,
+  parseIndexWork,
   readIndexWork,
   stampHadVector,
 } from './index-work';

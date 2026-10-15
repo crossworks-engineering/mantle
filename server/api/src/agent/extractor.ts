@@ -31,7 +31,7 @@
  */
 
 import { eq, sql } from 'drizzle-orm';
-import { db, bumpWorkerUsage, nodes } from '@mantle/db';
+import { db, bumpWorkerUsage, indexWorkSql, nodes, parseIndexWork } from '@mantle/db';
 import { recordSkippedTrace, startTrace } from '@mantle/tracing';
 import { resolveChatRoutes } from '@mantle/runtime/agent';
 import { getChatAdapter } from '@mantle/voice';
@@ -125,8 +125,19 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
   // guard, leaving stale memory durably). Captured HERE, after the
   // vision/OCR passes above persisted their own data.text writes, so only
   // foreign writes during the LLM window trip it.
-  const verRows = await db.execute(sql`select xmin::text as v from ${nodes} where id = ${node.id}`);
-  const rowVersion = (verRows as unknown as Array<{ v?: string }>)[0]?.v ?? null;
+  //
+  // The work stamp (A10 #7, data.index_work) is read in the same select: the
+  // update_index write lands only on this row version, so the stamp it drops
+  // is the one read here, not the one admission saw. A content change that
+  // committed while the body loaded set an 'extract' stamp after admission;
+  // dropping only admission's stamp left it on the row for good, and every
+  // later rename then ran a full model pass (fix round 3, M1).
+  const verRows = await db.execute(
+    sql`select xmin::text as v, ${indexWorkSql()} as w from ${nodes} where id = ${node.id}`,
+  );
+  const ver = (verRows as unknown as Array<{ v?: string; w?: string | null }>)[0];
+  const rowVersion = ver?.v ?? null;
+  const seenWork = parseIndexWork(ver?.w);
 
   await startTrace(
     {
@@ -190,6 +201,7 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
         persistedText,
         tableSchemaDigest,
         rowVersion,
+        seenWork,
       );
 
       // ─── chunked retrieval index ─────────────────────────────────────
