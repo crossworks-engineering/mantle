@@ -200,7 +200,11 @@ describe.skipIf(!URL)('the A6 grant sweep', () => {
     const scope = await m.viewerScopeFor({ login: L[who] });
     return m.runInRequestSlot(async () => {
       if (isAdmin(who) && write) m.noteRequestWriteScope(scope);
-      else expect(m.enterRequestScope(scope, { writes: write, drafts: isAdmin(who) })).toBe(true);
+      else {
+        expect(m.enterRequestScope(scope, { writes: write, drafts: isAdmin(who) })).toBe(true);
+        // The reads run in the scope (the workspace role), not the pool.
+        expect(m.currentRequestMode()).not.toBeNull();
+      }
       return fn();
     });
   };
