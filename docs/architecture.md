@@ -935,9 +935,12 @@ Exposed as:
   for one named label (a `{{secret:service/label}}` reference).
 - `resolveProviderKey(userId, service, keyId?)`, THE lookup of a model
   provider's key: the pinned key id, else the `default` label, else the
-  most recently used key of that service. A hard `getApiKey(owner,
-  provider)` read `default` only and missed any key saved under another
-  label; it is pinned out of product code by
+  oldest key of that service (ties by id; `findProviderKeyId`, and
+  `findProviderKeyIds` for every service at once). The order reads
+  nothing a read changes, so a pinned run never moves which key an
+  unpinned lookup uses. A hard `getApiKey(owner, provider)` read
+  `default` only and missed any key saved under another label; it, and a
+  hand pick of a key by service, are pinned out of product code by
   `packages/api-keys/src/provider-key-lookups.test.ts`.
 - `setApiKey`, `rotateApiKey`, `deleteApiKey`, `listApiKeys` (returns
   masked view).

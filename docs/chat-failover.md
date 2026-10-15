@@ -106,7 +106,7 @@ So "should we fail over?" is **exactly** "is this a transient error the retry la
 Turns a `ChatRoute` into a callable `{ adapter, apiKey, model, provider }`:
 
 - `getChatAdapter(route.provider)`; throws if the provider isn't wired.
-- API key: `resolveProviderKey(owner, provider, apiKeyId)` (`packages/api-keys/src/index.ts`): the route-pinned `apiKeyId` wins → else the provider's own key on file (the `default` label, else the most recently used key of that service; any label, since a key added on /settings/keys keeps the label typed there) → **`local` is keyless** (a self-hosted OpenAI-compatible chat server needs no credential, mirroring the embedding adapter's keyless-local handling).
+- API key: `resolveProviderKey(owner, provider, apiKeyId)` (`packages/api-keys/src/index.ts`): the route-pinned `apiKeyId` wins → else the provider's own key on file (the `default` label, else the oldest key of that service, ties by id; any label, since a key added on /settings/keys keeps the label typed there) → **`local` is keyless** (a self-hosted OpenAI-compatible chat server needs no credential, mirroring the embedding adapter's keyless-local handling).
 
 ### `chatWithFailover(ownerId, routes, opts): { result, usedProvider, failedOver }`
 

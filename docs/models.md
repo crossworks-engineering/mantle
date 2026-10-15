@@ -53,8 +53,9 @@ columns are best-effort and the raw pane always shows everything.
 - **Which key:** `keyId` (the agent form's picked key) lists with that key;
   it must be one of the owner's keys and this provider's, else 404 (another
   owner's key reads as missing) or 400. Without it, the provider's own key on
-  file (`findProviderKeyId`: the `default` label, else the most recently used
-  key of that service). A key saved on /settings/keys under any other label
+  file (`findProviderKeyId`: the `default` label, else the oldest key of that
+  service, ties by id; a stable order, so reading a key never moves the
+  pick). A key saved on /settings/keys under any other label
   used to answer `needsKey`, so the agent form listed no models for it.
 - **Errors:** a provider's refusal is a fixed sentence from
   `publicProviderErrorMessage` (a 401 reads "The provider refused the API
