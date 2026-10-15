@@ -19,6 +19,12 @@ import type { SQL } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
+/** MANTLE_DB_RUNTIME_ROLE as the run set it, back after the reader. */
+const RUNTIME_SWITCH = process.env.MANTLE_DB_RUNTIME_ROLE;
+const runtimeSwitchBack = () => {
+  if (RUNTIME_SWITCH === undefined) delete process.env.MANTLE_DB_RUNTIME_ROLE;
+  else process.env.MANTLE_DB_RUNTIME_ROLE = RUNTIME_SWITCH;
+};
 
 describe.skipIf(!URL)('tree reads on a database that refuses writes', () => {
   type Db = typeof import('@mantle/db');
@@ -70,6 +76,7 @@ describe.skipIf(!URL)('tree reads on a database that refuses writes', () => {
 
   beforeAll(async () => {
     process.env.DATABASE_URL = URL;
+    runtimeSwitchBack();
     process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
     m = await import('@mantle/db');
     tree = await import('./index');
@@ -90,6 +97,7 @@ describe.skipIf(!URL)('tree reads on a database that refuses writes', () => {
     // Back on the admin role, whatever state a failed test left.
     await m.closeDb();
     process.env.DATABASE_URL = URL;
+    runtimeSwitchBack();
     for (const id of [owner, fresh]) {
       await m.db.execute(sqlTag`delete from item_marks where actor_id = ${id}`);
       await m.db.execute(sqlTag`delete from nodes where owner_id = ${id}`);
@@ -152,6 +160,8 @@ describe.skipIf(!URL)('tree reads on a database that refuses writes', () => {
       // From here `db` is the reader, as the demo's API is.
       await m.closeDb();
       process.env.DATABASE_URL = reader.url;
+      // The reader logs in as itself, never as the runtime role (arch A9).
+      process.env.MANTLE_DB_RUNTIME_ROLE = '';
       before = await fingerprint();
     }, 60_000);
 

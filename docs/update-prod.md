@@ -337,8 +337,7 @@ tree, and refuses a second run on the same box. The log stays on the box in
 
 ## Rolling across the client logins releases (history)
 
-The client logins releases (v0.232.318 to v0.232.350, migrations 0186 to
-0200) are behind every box we run. Their roll notes (the client level, the
+The client logins releases (v0.232.318 to v0.232.350, migrations 0186 to 0200) are behind every box we run. Their roll notes (the client level, the
 sign-in links and codes, the client space quotas, client apps) are in the
 repository history before workspaces W8f. Client logins themselves are
 gone since W8a (below, and [client-logins.md](./client-logins.md)); the
@@ -726,8 +725,7 @@ select mantle_operator_actor('fix-slug');   -- a short reason, lower case
 The session then runs as `system:operator:fix-slug` until it ends. Without
 it, a write on an item table (nodes, pages, tables, grants, shares and the
 other item tables) is an actor miss: psql prints `NOTICE: mantle actor miss:
-UPDATE on nodes`. In `warn` a miss only logs. In `on` (A2b, migration
-0277) the write is refused: `ERROR: mantle actor check: UPDATE on nodes
+UPDATE on nodes`. In `warn` a miss only logs. In `on` (A2b, migration 0277) the write is refused: `ERROR: mantle actor check: UPDATE on nodes
 with no actor`. Name the session first.
 
 The check has three steps, set per box in the database (the box setting
@@ -1116,7 +1114,7 @@ from auth.users where role = 'client'"`.
   row names as its own to change, where this release keeps each revision
   unchanged (a commit's history entry may be a hard link to it). Before
   pinning an older tag: commit or discard every open table draft (`select
-  count(*) from tables where draft_path is not null` must be 0), and expect
+count(*) from tables where draft_path is not null` must be 0), and expect
   app restores made since the roll to stay where they are (the older image
   follows `storage_path` and reads them). If drafts were lost, restore the
   pre-roll backup (the dump and the table and app database archives) instead.

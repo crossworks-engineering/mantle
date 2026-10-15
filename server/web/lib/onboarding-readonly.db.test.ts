@@ -10,6 +10,12 @@ import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
+/** MANTLE_DB_RUNTIME_ROLE as the run set it, back after the reader. */
+const RUNTIME_SWITCH = process.env.MANTLE_DB_RUNTIME_ROLE;
+const runtimeSwitchBack = () => {
+  if (RUNTIME_SWITCH === undefined) delete process.env.MANTLE_DB_RUNTIME_ROLE;
+  else process.env.MANTLE_DB_RUNTIME_ROLE = RUNTIME_SWITCH;
+};
 
 describe.skipIf(!URL)('isOnboarded as a role with SELECT only', () => {
   type Db = typeof import('@mantle/db');
@@ -26,6 +32,7 @@ describe.skipIf(!URL)('isOnboarded as a role with SELECT only', () => {
 
   beforeAll(async () => {
     process.env.DATABASE_URL = URL;
+    runtimeSwitchBack();
     process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
     m = await import('@mantle/db');
     onboarding = await import('./onboarding');
@@ -39,12 +46,15 @@ describe.skipIf(!URL)('isOnboarded as a role with SELECT only', () => {
     reader = await createReadOnlyRole(adminClient(), URL!);
     await m.closeDb();
     process.env.DATABASE_URL = reader.url;
+    // The reader logs in as itself, never as the runtime role (arch A9).
+    process.env.MANTLE_DB_RUNTIME_ROLE = '';
   }, 60_000);
 
   afterAll(async () => {
     if (!m) return;
     await m.closeDb();
     process.env.DATABASE_URL = URL;
+    runtimeSwitchBack();
     await m.db.execute(sqlTag`delete from agents where id = ${agent}`);
     if (reader) {
       const { dropReadOnlyRole } = await import('@mantle/db/test-support');
