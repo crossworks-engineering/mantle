@@ -168,7 +168,7 @@ jobs:
       # Build this single arch natively and push it BY DIGEST (no tag yet) —
       # the merge job assembles the tagged multi-arch manifest from both digests.
       - id: build
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           target: ${{ matrix.target }}
