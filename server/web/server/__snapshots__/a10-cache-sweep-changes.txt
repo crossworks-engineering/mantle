@@ -1,0 +1,4 @@
+# A10 #15: the cells that answer otherwise than on main, each with its named
+# kind (changeKind, a10-cache-sweep.test.ts). Every other cell of
+# a10-cache-sweep.txt answers byte for byte as recorded.
+# gate-default: 0 cells

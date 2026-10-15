@@ -1,0 +1,382 @@
+/**
+ * The cache sweep (A10 #15: the gate answers Cache-Control: no-store on /api
+ * by default; docs/request-plumbing.md, "Cache-Control"). Every route of the
+ * manifest and every method, driven through the full pipeline (the gate,
+ * the row, the caller's answer, the handler) as each credential its row
+ * admits (nobody always; the owner on a login row; a member too where the
+ * row admits members), a write with the body sweep's valid body
+ * (__snapshots__/a10-body-sweep.bodies.json). Per cell: the status, the
+ * content type and the Cache-Control header. Plus an unknown /api path and
+ * a CORS preflight.
+ *
+ * The stand-ins are the body sweep's: no database (a query finds no row, a
+ * statement finds one item the login may edit), no network, no child
+ * process.
+ *
+ * Recorded on main (v0.300.63) BEFORE the move, in
+ * __snapshots__/a10-cache-sweep.txt (A10_CACHE_SWEEP_RECORD=1 writes it; a
+ * normal run only reads it). After the move every cell must answer as
+ * recorded, or be the one named change: an /api answer that had no
+ * Cache-Control on main answers `no-store` now (the gate's default). The
+ * changed cells are listed in __snapshots__/a10-cache-sweep-changes.txt.
+ */
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+
+const ANCHOR_ID = '33333333-3333-4333-8333-333333333333';
+const MEMBER_ID = '22222222-2222-4222-8222-222222222222';
+const SPACE_ID = '66666666-6666-4666-8666-666666666666';
+
+const loginRow = (id: string, role: string, isOwner = false) => ({
+  id,
+  email: `${role}-${id.slice(0, 4)}@example.invalid`,
+  isOwner,
+  displayName: `${role} ${id.slice(0, 4)}`,
+  role,
+  contactId: null,
+  disabledAt: null,
+  sessionEpoch: 0,
+});
+
+vi.mock('../lib/brain-identity', () => ({
+  brainIdOrNull: async () => '0b7c6a1e-2f4d-4c1a-9e8b-5d3f2a1c0e9f',
+  getBrainId: async () => '0b7c6a1e-2f4d-4c1a-9e8b-5d3f2a1c0e9f',
+  brainIdField: async () => ({ brainId: '0b7c6a1e-2f4d-4c1a-9e8b-5d3f2a1c0e9f' }),
+}));
+
+vi.mock('../lib/auth/login-row', () => ({
+  loadLoginRow: async (id: string) =>
+    id === ANCHOR_ID
+      ? loginRow(ANCHOR_ID, 'admin', true)
+      : id === MEMBER_ID
+        ? loginRow(MEMBER_ID, 'member')
+        : null,
+  loadAnchorId: async () => ANCHOR_ID,
+  loadPersonalSpaceId: async () => SPACE_ID,
+  loadBearerToken: async () => null,
+  touchBearerToken: async () => undefined,
+}));
+
+// The audit row a write makes (fire and forget): never written.
+vi.mock('../lib/audit', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  auditFireAndForget: () => undefined,
+}));
+
+vi.mock('../lib/mcp-auth', () => ({
+  mcpLoginEnabled: async () => false,
+  mcpTargetLogin: async () => null,
+}));
+
+vi.mock('../lib/mcp-oauth', async (importOriginal) => {
+  const { SWEEP_OAUTH_CLIENT } = await import('./public-session-routes');
+  return {
+    ...(await importOriginal<Record<string, unknown>>()),
+    isRemoteMcpEnabled: async () => true,
+    getClient: async (id: string) =>
+      id === SWEEP_OAUTH_CLIENT.id
+        ? { id, clientName: 'Sweep client', redirectUris: [SWEEP_OAUTH_CLIENT.redirectUri] }
+        : null,
+  };
+});
+
+vi.mock('../lib/pair-code', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  issuePairCode: async () => ({
+    id: '00000000-0000-4000-8000-0000000000c0',
+    code: 'sweep-code-sweep-code-sweep',
+    expiresAt: new Date('2026-10-01T00:01:30.000Z'),
+  }),
+  pairCodeStatus: async () => ({ status: 'pending', deviceLabel: null }),
+}));
+
+vi.mock('../lib/shares', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  resolveActiveShareByToken: async () => null,
+  resolveActiveShareRowByToken: async () => null,
+}));
+vi.mock('@mantle/content', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  isRetiredTeamLinkToken: async () => false,
+  isRetiredClientLinkToken: async () => false,
+}));
+
+// No child process is started from a sweep.
+vi.mock('node:child_process', async (importOriginal) => {
+  const real = await importOriginal<Record<string, unknown>>();
+  const refuse = () => {
+    throw new Error('sweep: no child process');
+  };
+  return { ...real, spawn: refuse, exec: refuse, execFile: refuse, fork: refuse };
+});
+
+vi.mock('@mantle/db', async (importOriginal) => {
+  const real = await importOriginal<typeof import('@mantle/db')>();
+  // The guard sweep's READS (a4-guard-sweep.test.ts): a query (db.select and
+  // its chain) finds no row; a statement (db.execute) finds one item the
+  // login may edit and manage; withViewer runs its function. Anything else
+  // is the real module's, which wants a database and throws.
+  const none: unknown = new Proxy(() => undefined, {
+    get: (_t, k) =>
+      k === 'then'
+        ? (ok: (v: unknown) => unknown, ko: (e: unknown) => unknown) =>
+            Promise.resolve([]).then(ok, ko)
+        : () => none,
+  });
+  const db = new Proxy(real.db, {
+    get: (t, k) => {
+      if (k === 'select') return () => none;
+      if (k === 'execute') {
+        return async () => [
+          {
+            id: '11111111-1111-4111-8111-111111111111',
+            type: 'page',
+            edit: true,
+            manage: true,
+            copy: false,
+            home: null,
+            held: false,
+          },
+        ];
+      }
+      return Reflect.get(t, k);
+    },
+  });
+  return {
+    ...real,
+    db,
+    withViewer: ((_actsFor, fn) => fn()) as typeof real.withViewer,
+    loginScopeFor: async (loginId: string) => ({ kind: 'user', loginId, ws: [], modWs: [] }),
+    brainOnWorkspacesNow: async () => true,
+    createHomeIntent: async () => ({ createWs: null, privateWs: null }),
+  };
+});
+vi.mock('../lib/workspaces', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../lib/workspaces')>()),
+  requireArea: async () => true,
+}));
+// The unpinned key picks (model picker fix round 1, L1) read through the
+// keys package's own handle, not `db`; as a query here, they find no row,
+// which is what the seeder's and the model combos' hand picks over `db`
+// found on main.
+vi.mock('@mantle/api-keys', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@mantle/api-keys')>()),
+  findProviderKeyId: async () => null,
+  findProviderKeyIds: async () => new Map<string, string>(),
+}));
+
+import { SESSION_COOKIE_NAME } from '../lib/auth-constants';
+import { SAMPLE_ID } from './a10-body-sweep.samples';
+
+const here = dirname(fileURLToPath(import.meta.url));
+const hasManifest = existsSync(join(here, 'route-manifest.gen.ts'));
+if (!hasManifest && process.env.CI) {
+  throw new Error('server/web/server/route-manifest.gen.ts is missing: the sweep cannot run');
+}
+const RECORD = process.env.A10_CACHE_SWEEP_RECORD === '1';
+const BASELINE = join(here, '__snapshots__/a10-cache-sweep.txt');
+const BODIES = join(here, '__snapshots__/a10-body-sweep.bodies.json');
+const WRITE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
+const NOW = new Date('2026-10-01T00:00:00.000Z');
+const DAY = 24 * 60 * 60 * 1000;
+/** Each cell runs a day after the one before, so every rate limit it meets
+ *  starts empty. */
+const cellTime = (n: number) => new Date(NOW.getTime() + n * DAY);
+
+function concretePath(pattern: string): string {
+  return pattern.replace(/:[A-Za-z0-9_]+\??/g, SAMPLE_ID).replace(/\*$/, 'a/b');
+}
+
+/** The one named change: an /api answer with no Cache-Control on main
+ *  answers the gate's default now. */
+function changeKind(cell: string, main: string, now: string): string | null {
+  const path = cell.split(' ')[1] ?? '';
+  const api = path === '/api' || path.startsWith('/api/');
+  if (api && / cache-control=-$/.test(main) && now === main.replace(/-$/, 'no-store')) {
+    return 'gate-default (no Cache-Control on main, no-store now)';
+  }
+  return null;
+}
+
+type Cell = { row: string; method: string; pattern: string; cred: string };
+
+describe.skipIf(!hasManifest)('A10 #15: every /api answer carries Cache-Control', () => {
+  const saved = {
+    secret: process.env.SESSION_SECRET,
+    db: process.env.DATABASE_URL,
+    cors: process.env.MANTLE_API_CORS_ORIGINS,
+    detached: process.env.MANTLE_DETACHED_DEV,
+  };
+  const realFetch = globalThis.fetch;
+  let app: import('hono').Hono;
+  const cells: Cell[] = [];
+  const creds: Record<string, Record<string, string>> = {};
+
+  beforeAll(async () => {
+    process.env.SESSION_SECRET = 'a10-cache-sweep-secret-that-is-at-least-32-chars';
+    delete process.env.DATABASE_URL;
+    process.env.MANTLE_API_CORS_ORIGINS = 'https://client.example.invalid';
+    delete process.env.MANTLE_DETACHED_DEV;
+    globalThis.fetch = (async () => {
+      throw new Error('sweep: no network');
+    }) as typeof fetch;
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(NOW);
+    const tokens = await import('../lib/auth/tokens');
+    const cookie = (id: string) => ({
+      cookie: `${SESSION_COOKIE_NAME}=${tokens.buildSessionCookie(id, { ttlSeconds: 20 * 365 * 86_400 }).value}`,
+    });
+    creds.owner = cookie(ANCHOR_ID);
+    creds.member = cookie(MEMBER_ID);
+    creds.none = {};
+    const { createApp } = await import('./app');
+    app = await createApp();
+    const { routeManifest } = await import('./route-manifest.gen');
+    const { buildRoutePolicy } = await import('../lib/auth/route-policy');
+    const policy = buildRoutePolicy(routeManifest);
+    const entries = [...routeManifest].sort((a, b) =>
+      a.pattern < b.pattern ? -1 : a.pattern > b.pattern ? 1 : 0,
+    );
+    for (const e of entries) {
+      for (const method of e.methods) {
+        const row = policy.get(`${method} ${e.pattern}`);
+        const who = !row
+          ? ['none', 'owner']
+          : row.public
+            ? ['none']
+            : row.logins && row.logins !== 'owner'
+              ? ['none', 'owner', 'member']
+              : ['none', 'owner'];
+        for (const cred of who) {
+          cells.push({ row: `${method} ${e.pattern}`, method, pattern: e.pattern, cred });
+        }
+      }
+    }
+  }, 120_000);
+
+  afterAll(() => {
+    globalThis.fetch = realFetch;
+    vi.useRealTimers();
+    for (const [k, v] of [
+      ['SESSION_SECRET', saved.secret],
+      ['DATABASE_URL', saved.db],
+      ['MANTLE_API_CORS_ORIGINS', saved.cors],
+      ['MANTLE_DETACHED_DEV', saved.detached],
+    ] as const) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
+  });
+
+  async function send(
+    method: string,
+    path: string,
+    headers: Record<string, string>,
+    body: string | undefined,
+  ): Promise<string> {
+    const res = await app.request(path, { method, headers, body });
+    const type = res.headers.get('content-type') ?? '';
+    if (type.includes('text/event-stream')) await res.body?.cancel().catch(() => undefined);
+    else await res.text().catch(() => '');
+    return [
+      String(res.status),
+      type.split(';')[0] || '-',
+      `cache-control=${res.headers.get('cache-control') ?? '-'}`,
+    ].join(' ');
+  }
+
+  /** Every cell's answer, `METHOD pattern cred` to its answer. */
+  async function driveAll(): Promise<Map<string, string>> {
+    const bodies = JSON.parse(readFileSync(BODIES, 'utf8')) as Record<string, unknown>;
+    const out = new Map<string, string>();
+    const quiet = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    let n = 0;
+    try {
+      for (const c of cells) {
+        vi.setSystemTime(cellTime(n++));
+        const write = WRITE_METHODS.has(c.method);
+        const body = write ? JSON.stringify(bodies[c.row] ?? {}) : undefined;
+        const headers = {
+          ...creds[c.cred],
+          ...(write ? { 'content-type': 'application/json' } : {}),
+        };
+        out.set(`${c.row} ${c.cred}`, await send(c.method, concretePath(c.pattern), headers, body));
+      }
+      vi.setSystemTime(cellTime(n++));
+      out.set(
+        'GET /api/no-such-route owner',
+        await send('GET', '/api/no-such-route', creds.owner!, undefined),
+      );
+      vi.setSystemTime(cellTime(n++));
+      out.set(
+        'OPTIONS /api/activity preflight',
+        await send(
+          'OPTIONS',
+          '/api/activity',
+          {
+            origin: 'https://client.example.invalid',
+            'access-control-request-method': 'GET',
+          },
+          undefined,
+        ),
+      );
+    } finally {
+      quiet.mockRestore();
+      warn.mockRestore();
+      log.mockRestore();
+    }
+    return out;
+  }
+
+  function readBaseline(): Map<string, string> {
+    const out = new Map<string, string>();
+    for (const line of readFileSync(BASELINE, 'utf8').split('\n')) {
+      if (!line || line.startsWith('#')) continue;
+      const at = line.indexOf(' => ');
+      out.set(line.slice(0, at), line.slice(at + 4));
+    }
+    return out;
+  }
+
+  it('answers every route as recorded on main, or the gate default', async () => {
+    const now = await driveAll();
+    expect(now.size).toBeGreaterThan(1000);
+    if (RECORD) {
+      writeFileSync(
+        BASELINE,
+        [
+          '# A10 #15: every route, method and credential, its status, content type and',
+          '# Cache-Control, recorded on main (v0.300.63) BEFORE the move. Written once',
+          '# (A10_CACHE_SWEEP_RECORD=1); a10-cache-sweep.test.ts reads it back.',
+          `# cells: ${now.size}`,
+          ...[...now].map(([cell, answer]) => `${cell} => ${answer}`),
+          '',
+        ].join('\n'),
+      );
+      return;
+    }
+    const before = readBaseline();
+    expect([...now.keys()].sort()).toEqual([...before.keys()].sort());
+    const changed = [...now].filter(([cell, answer]) => before.get(cell) !== answer);
+    const unnamed = changed
+      .filter(([cell, answer]) => changeKind(cell, before.get(cell)!, answer) === null)
+      .map(([cell, answer]) => `${cell}: main ${before.get(cell)}; now ${answer}`);
+    expect(unnamed).toEqual([]);
+    await expect(
+      [
+        '# A10 #15: the cells that answer otherwise than on main, each with its named',
+        '# kind (changeKind, a10-cache-sweep.test.ts). Every other cell of',
+        '# a10-cache-sweep.txt answers byte for byte as recorded.',
+        `# gate-default: ${changed.length} cells`,
+        ...changed.map(
+          ([cell, answer]) => `${cell}: main ${before.get(cell)}; now ${answer.split(' ').pop()}`,
+        ),
+        '',
+      ].join('\n'),
+    ).toMatchFileSnapshot('./__snapshots__/a10-cache-sweep-changes.txt');
+  }, 1_800_000);
+});
