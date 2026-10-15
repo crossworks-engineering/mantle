@@ -74,6 +74,11 @@ const OPENROUTER_MODELS_URL = 'https://openrouter.ai/api/v1/models?output_modali
 const CATALOG_TTL_MS = 6 * 60 * 60 * 1000; // 6h
 /** Abort the catalog fetch if it stalls — must never hang a caller. */
 const CATALOG_FETCH_TIMEOUT_MS = NET_TIMEOUTS.modelCatalog;
+/** The rows' first load (openRouterCatalogRows, the curation tools): the
+ *  OpenRouter Data API's deadline, as the tools' own copy had. Nothing to
+ *  serve yet, so a slow answer beats an error; later refreshes keep the
+ *  shorter deadline (the last good rows serve meanwhile). */
+const CATALOG_FIRST_LOAD_TIMEOUT_MS = NET_TIMEOUTS.openRouterData;
 
 /** What we keep per model from the live catalog. */
 export type LiveModelInfo = {
@@ -108,6 +113,8 @@ let liveModels: Record<string, LiveModelInfo> | null = null;
 let liveModelIds: Set<string> | null = null;
 let liveFetchedAt = 0;
 let inFlight: Promise<void> | null = null;
+/** The deadline of the refresh in flight. */
+let inFlightTimeoutMs = 0;
 /** The catalog's rows as OpenRouter sent them (every field), for a reader
  *  that wants more than this module keeps: the curation tools' model_catalog
  *  (A10 #15: one OpenRouter catalog cache, one TTL, where the tools kept a
@@ -211,13 +218,18 @@ export function parseCatalog(models: OpenRouterModel[]): Record<string, LiveMode
  * is also fine since the fallbacks are accurate.
  */
 export async function refreshModelCatalog(force = false): Promise<void> {
+  return refreshCatalog(force, CATALOG_FETCH_TIMEOUT_MS);
+}
+
+function refreshCatalog(force: boolean, timeoutMs: number): Promise<void> {
   const fresh = liveModels && Date.now() - liveFetchedAt < CATALOG_TTL_MS;
-  if (fresh && !force) return;
+  if (fresh && !force) return Promise.resolve();
   if (inFlight) return inFlight;
+  inFlightTimeoutMs = timeoutMs;
   inFlight = (async () => {
     try {
       const res = await fetch(OPENROUTER_MODELS_URL, {
-        signal: timeoutSignal(CATALOG_FETCH_TIMEOUT_MS),
+        signal: timeoutSignal(timeoutMs),
         headers: { accept: 'application/json' },
       });
       if (!res.ok) {
@@ -259,7 +271,16 @@ export async function refreshModelCatalog(force = false): Promise<void> {
 export async function openRouterCatalogRows(): Promise<
   { ok: true; rows: readonly unknown[] } | { ok: false; error: string }
 > {
-  await refreshModelCatalog();
+  if (liveRows) {
+    await refreshModelCatalog();
+  } else {
+    // The first load: the longer deadline. A shorter refresh already in
+    // flight (a context-window reader's) is joined; when it landed nothing,
+    // one more try with the longer deadline.
+    const joined = inFlight !== null && inFlightTimeoutMs < CATALOG_FIRST_LOAD_TIMEOUT_MS;
+    await refreshCatalog(false, CATALOG_FIRST_LOAD_TIMEOUT_MS);
+    if (!liveRows && joined) await refreshCatalog(false, CATALOG_FIRST_LOAD_TIMEOUT_MS);
+  }
   if (liveRows) return { ok: true, rows: liveRows };
   return { ok: false, error: lastRefreshError ?? 'the OpenRouter model catalog is empty' };
 }

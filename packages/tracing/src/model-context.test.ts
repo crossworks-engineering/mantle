@@ -362,4 +362,48 @@ describe('openRouterCatalogRows (A10 #15: the one OpenRouter catalog cache)', ()
       vi.unstubAllGlobals();
     }
   });
+
+  it('allows the first load 25 s and a later refresh 8 s (fix round 1, L4)', async () => {
+    vi.resetModules();
+    const { openRouterCatalogRows, refreshModelCatalog } = await import('./model-context');
+    const rows = [{ id: 'a/model', context_length: 1000, name: 'A', created: 1 }];
+    vi.stubGlobal('fetch', async () => Response.json({ data: rows }));
+    const timeout = vi.spyOn(AbortSignal, 'timeout');
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      vi.setSystemTime(new Date('2026-10-01T00:00:00Z'));
+      expect(await openRouterCatalogRows()).toEqual({ ok: true, rows });
+      expect(timeout.mock.calls.map((c) => c[0])).toEqual([25_000]);
+      vi.setSystemTime(new Date('2026-10-01T06:00:01Z'));
+      await openRouterCatalogRows();
+      await refreshModelCatalog(true);
+      expect(timeout.mock.calls.map((c) => c[0])).toEqual([25_000, 8_000, 8_000]);
+    } finally {
+      timeout.mockRestore();
+      vi.useRealTimers();
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('a first load that joins a short refresh which failed tries once more with 25 s', async () => {
+    vi.resetModules();
+    const { openRouterCatalogRows, refreshModelCatalog } = await import('./model-context');
+    const rows = [{ id: 'a/model', context_length: 1000, name: 'A', created: 1 }];
+    let calls = 0;
+    vi.stubGlobal('fetch', async () =>
+      ++calls === 1 ? new Response('slow', { status: 504 }) : Response.json({ data: rows }),
+    );
+    const timeout = vi.spyOn(AbortSignal, 'timeout');
+    const quiet = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      const short = refreshModelCatalog();
+      expect(await openRouterCatalogRows()).toEqual({ ok: true, rows });
+      await short;
+      expect(timeout.mock.calls.map((c) => c[0])).toEqual([8_000, 25_000]);
+    } finally {
+      quiet.mockRestore();
+      timeout.mockRestore();
+      vi.unstubAllGlobals();
+    }
+  });
 });
