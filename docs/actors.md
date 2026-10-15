@@ -3705,9 +3705,10 @@ run-time imports (`@mantle/runtime/slugs`, `@mantle/runtime/heartbeats/specs`),
 not from the assistant or heartbeat runtime (pinned by
 `server/web/lib/system-manifest/manifest.test.ts`).
 
-Jackdaw follow-up: the pending card should show `elevated.reason` as a
-badge with its text (an Admin user must approve; the asker cannot), hide
-Approve for the asker, and show `client_sourced` as a warning.
+Jackdaw follow-up (lows round, built on jackdaw `feat/lows-approvals`): the
+pending card shows `elevated.reason` as a badge with its text (an Admin user
+must approve; the asker cannot), hides Approve for the asker (the summary's
+`loginId`), and shows `client_sourced` as a warning.
 
 **What is left.**
 
@@ -3988,10 +3989,44 @@ the asker had when it asked and has no more).
   re-checked.
 - L4: the owner is asked first, so "the owner may always approve" is
   literally true, a call the owner asked itself included.
-- L5: which tools carry `ToolPolicy.auditRow: false` is pinned
+- L5: which tools carry `ToolPolicy.auditRow` is pinned, with its shape
   (`packages/runtime/src/audit-row-allowlist.test.ts`: only
-  `heartbeat_update_state`).
-- L6: the 0287 header says what the approver's rights are.
+  `heartbeat_update_state`). Lows round: its flag is `{ unlessArg: 'slug' }`,
+  so it skips its row only inside a fire on the firing heartbeat; a call
+  naming a heartbeat by `slug`, as a responder turn must (and which may move
+  another login's heartbeat to its own), keeps its row. Main wrote none.
+- L6: the 0287 header says what the approver's rights are. The runner
+  matches an applied migration by its `when` or its hash
+  (`packages/db/src/migrate-plan.ts`), so the comment edit is safe.
+
+**Lows round (approvals).**
+
+- 6c L1: a stamped call asked in a Telegram chat that named no login runs on
+  an owner path that names none and is no owner fallback (`owner/delegate`):
+  a link is refused, never opened as the owner. Main linked as the owner.
+- 6c L2: the surface a stamped call runs on names its asker (`login_id`),
+  never the stamp's login alone: a stamp naming another login refuses the
+  approval (`PENDING_SURFACE_LOGIN_ERROR`), one naming none runs as the
+  asker; a row with no asker keeps a stamp's login only when it is the
+  owner's. Main ran as the stamp's login.
+- 6c L3: a login's own MCP connection is stamped (how it came in, and
+  `ownerKeysOff`; no key, peer or client id, no role) and restored with its
+  Write off, so an approved call of a member's MCP turn still spends nothing
+  on the owner's provider keys, and a peer's connection that named no login
+  is never read as the owner's stdio path (`linkLoginId`). Main dropped it.
+  Pinned in `packages/tools/src/pending-origin.test.ts`, each answer recorded
+  on main first.
+- The summary of a pending call names its asker (`loginId`), so a screen
+  hides Approve on an elevated call for its asker (jackdaw: the pending card
+  shows `elevated.reason` as a badge, `client_sourced` as a warning).
+- The database cells the 6d audit found missing
+  (`server/web/server/a5-elevated-approval.db.test.ts`): its web path now
+  through the real app and its gate middleware with a session cookie; reject
+  on every path; a row with no workspace (judged in Admin); a row with no
+  asker (the owner's alone, on every path); two approvers racing (one claims
+  it, it runs once); the stored result; a member's connector write queued by
+  the real tool loop, elevated and stamped, its card routed to the owner's
+  chat, never its asker's.
 
 **Record, move, compare.** `server/web/server/a5-approval-recheck.db.test.ts`
 queues each call through the real queue path (the tool loop's
