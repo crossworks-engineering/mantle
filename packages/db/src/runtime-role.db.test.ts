@@ -446,7 +446,7 @@ describe.skipIf(!URL)('the runtime role is not the owner (arch A9)', () => {
       }
       await afterMigrations(admin, 'ok', { info: () => {}, warn: () => {} });
       const [m] = await admin<{ owner: string; vol: string; src: string }[]>`
-        select pg_get_userbyid(proowner) as owner, provolatile::text as vol, btrim(prosrc) as src
+        select pg_get_userbyid(proowner) as owner, provolatile::text as vol, btrim(prosrc, E' \n\t\r') as src
           from pg_proc where oid = ${ACL_MARKER_FUNCTION}::regprocedure`;
       expect(m, breakIt).toEqual({
         owner: OWNER_ROLE,
