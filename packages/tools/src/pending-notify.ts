@@ -29,11 +29,11 @@
 
 import { and, desc, eq, sql } from 'drizzle-orm';
 import {
-  asSystem,
   db,
   executeWrite,
   loginHasArea,
   pendingToolCalls,
+  systemWork,
   telegramChats,
 } from '@mantle/db';
 import { accountById, sendApprovalCard } from '@mantle/telegram';
@@ -41,12 +41,16 @@ import { loadProfilePreferences } from '@mantle/content';
 import { registerPendingCreatedNotifier } from '@mantle/runs';
 
 /**
- * This file's one system door (arch A6): the chat a pending call's notice goes
- * to, and its login, are read on the system pool by the named reason
- * 'login-telegram'. Every read below goes through it.
+ * The chat a pending call's card goes to, and its login, are read on the
+ * system pool by the named reason 'login-telegram' (the Telegram tables are
+ * granted to no role). The card never left a workspace scope: there the
+ * bot's row (accountById) was refused, so no card was sent from one;
+ * systemWork now refuses the card at its first read (A6b: no exit), and the
+ * in-app badge still tells every login. Off a scope (the runs worker, a
+ * workflow, an Admin area's tool) it reads as asSystem did.
  */
-function telegramLoginSystem<T>(fn: () => Promise<T>): Promise<T> {
-  return asSystem(fn, 'login-telegram');
+function telegramSystemWork<T>(fn: () => Promise<T>): Promise<T> {
+  return systemWork(fn, 'login-telegram');
 }
 
 /** The Postgres channel the web realtime bridge LISTENs on for approval
@@ -125,7 +129,7 @@ export async function resolveApprovalChat(
   loginId: string,
 ): Promise<{ accountId: string; telegramChatId: string } | null> {
   if (!(await loginHasArea(loginId, 'settings'))) return null;
-  const [chat] = await telegramLoginSystem(() =>
+  const [chat] = await telegramSystemWork(() =>
     db
       .select({
         accountId: telegramChats.accountId,
@@ -176,7 +180,7 @@ export async function notifyPendingCreated(input: {
   try {
     // The card goes to the call's own login only (W7d): its chat, its last
     // channel.
-    const loginId = await telegramLoginSystem(() => approvalLogin(input.ownerId, input.pendingId));
+    const loginId = await telegramSystemWork(() => approvalLogin(input.ownerId, input.pendingId));
     if (!loginId) return;
     const prefs = await loadProfilePreferences(loginId);
     if (prefs.reminderChannel === 'mobile') return;

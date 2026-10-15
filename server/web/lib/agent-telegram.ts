@@ -9,11 +9,11 @@
  * username + branch path), upsert the account's poll-state row, then write the
  * channel (token + binding) via `upsertTelegramChannel`.
  */
-import { and, desc, eq } from 'drizzle-orm';
+import { and, desc, eq, sql } from 'drizzle-orm';
 import { defineDomainError, UUID_RE } from '@mantle/std';
 import {
   agents,
-  asSystem,
+  systemWork,
   authUsers,
   channels,
   db,
@@ -22,7 +22,6 @@ import {
 } from '@mantle/db';
 import {
   disableTelegramChannel,
-  loginModeratesBot,
   pairChatWithCode,
   previewChatPairing,
   setChatPairing,
@@ -39,12 +38,13 @@ import type {
 } from '@mantle/client-types';
 
 /**
- * This file's one system door (arch A6): an assistant's bots and their chats
- * are read and written on the system pool by the named reason
- * 'login-telegram'. Every read and write below goes through it.
+ * An assistant's bots and their chats are read on the system pool by the
+ * named reason 'login-telegram' where a caller never runs in a scope (an
+ * Admin area's screen); systemWork refuses a scope (A6b: no exit). A
+ * login's own screens read by their definers (0293).
  */
-function telegramLoginSystem<T>(fn: () => Promise<T>): Promise<T> {
-  return asSystem(fn, 'login-telegram');
+function telegramSystemWork<T>(fn: () => Promise<T>): Promise<T> {
+  return systemWork(fn, 'login-telegram');
 }
 export type {
   AgentTelegramBinding,
@@ -280,7 +280,9 @@ export async function listAgentTelegramChats(
 /** Every chat of bot `accountId`, with the user each is paired to, sorted
  *  for a list. The caller has checked who may see them. */
 async function chatsOfBot(ownerId: string, accountId: string): Promise<AgentTelegramChat[]> {
-  const rows = await telegramLoginSystem(() =>
+  // The assistants area's screen of the bot (GET /api/agents/:id/telegram),
+  // on the system pool: never in a scope (A6b: systemWork, no exit).
+  const rows = await telegramSystemWork(() =>
     db
       .select({
         chat: telegramChats,
@@ -399,36 +401,29 @@ export async function pairMyTelegramChat(args: {
   };
 }
 
-/** The signed-in login's own paired chats (GET /api/telegram/my-chats). */
+/** The signed-in login's own paired chats (GET /api/telegram/my-chats), by
+ *  their definer (mantle_tg_my_chats, 0293: the Telegram tables are granted
+ *  to no role; in a scope, the scope's own login only; A6b: on the system
+ *  pool before, 'login-telegram'). */
 export async function listMyTelegramChats(
   ownerId: string,
   loginId: string,
 ): Promise<MyTelegramChat[]> {
-  const rows = await telegramLoginSystem(() =>
-    db
-      .select({
-        id: telegramChats.id,
-        telegramChatId: telegramChats.telegramChatId,
-        title: telegramChats.title,
-        username: telegramChats.username,
-        lastMessageAt: telegramChats.lastMessageAt,
-        botUsername: telegramAccounts.botUsername,
-        agentName: agents.name,
-        agentSlug: agents.slug,
-      })
-      .from(telegramChats)
-      .innerJoin(telegramAccounts, eq(telegramAccounts.id, telegramChats.accountId))
-      .leftJoin(channels, eq(channels.id, telegramAccounts.channelId))
-      .leftJoin(agents, eq(agents.id, channels.agentId))
-      .where(
-        and(
-          eq(telegramChats.userId, ownerId),
-          eq(telegramChats.loginId, loginId),
-          eq(telegramChats.allowlistStatus, 'allowed'),
-        ),
-      )
-      .orderBy(desc(telegramChats.lastMessageAt)),
-  );
+  const rows = (await db.execute(
+    sql`select id::text as id, telegram_chat_id as "telegramChatId", title, username,
+               last_message_at as "lastMessageAt", bot_username as "botUsername",
+               agent_name as "agentName", agent_slug as "agentSlug"
+          from "public"."mantle_tg_my_chats"(${ownerId}::uuid, ${loginId}::uuid)`,
+  )) as unknown as {
+    id: string;
+    telegramChatId: string;
+    title: string | null;
+    username: string | null;
+    lastMessageAt: Date | string | null;
+    botUsername: string;
+    agentName: string | null;
+    agentSlug: string | null;
+  }[];
   return rows.map((r) => ({
     id: r.id,
     telegramChatId: r.telegramChatId,
@@ -436,7 +431,7 @@ export async function listMyTelegramChats(
     botUsername: r.botUsername,
     agentName: r.agentName ?? null,
     agentSlug: r.agentSlug ?? null,
-    lastMessageAt: r.lastMessageAt?.toISOString() ?? null,
+    lastMessageAt: r.lastMessageAt ? new Date(r.lastMessageAt).toISOString() : null,
   }));
 }
 
@@ -455,34 +450,65 @@ export async function unpairMyTelegramChat(
  * The chats of every bot the signed-in login moderates (GET
  * /api/telegram/moderated-chats, workspaces W7d): bots whose assistant's
  * workspace it is a Moderator of, or every bot for an Admin user with the
- * users area (loginModeratesBot). Empty for anyone else.
+ * users area (loginModeratesBot's rule). Empty for anyone else. By their
+ * definer (mantle_tg_moderated_chats, 0293: the rule in SQL; in a scope,
+ * the scope's own login only; A6b: on the system pool before,
+ * 'login-telegram'). Each bot's chats as its own screen sorts them.
  */
 export async function listModeratedTelegramChats(
   ownerId: string,
   loginId: string,
 ): Promise<ModeratedTelegramChat[]> {
-  const bots = await telegramLoginSystem(() =>
-    db
-      .select({
-        accountId: telegramAccounts.id,
-        botUsername: telegramAccounts.botUsername,
-        agentName: agents.name,
-        agentSlug: agents.slug,
-      })
-      .from(telegramAccounts)
-      .leftJoin(channels, eq(channels.id, telegramAccounts.channelId))
-      .leftJoin(agents, eq(agents.id, channels.agentId))
-      .where(eq(telegramAccounts.userId, ownerId)),
-  );
+  const rows = (await db.execute(
+    sql`select account_id::text as "accountId", bot_username as "botUsername",
+               agent_name as "agentName", agent_slug as "agentSlug", id::text as id,
+               telegram_chat_id as "telegramChatId", title, username, status,
+               last_message_at as "lastMessageAt", login_id::text as "loginId",
+               paired_name as "displayName", paired_email as email
+          from "public"."mantle_tg_moderated_chats"(${ownerId}::uuid, ${loginId}::uuid)`,
+  )) as unknown as {
+    accountId: string;
+    botUsername: string;
+    agentName: string | null;
+    agentSlug: string | null;
+    id: string;
+    telegramChatId: string;
+    title: string | null;
+    username: string | null;
+    status: AgentTelegramChat['status'];
+    lastMessageAt: Date | string | null;
+    loginId: string | null;
+    displayName: string | null;
+    email: string | null;
+  }[];
+  const byBot = new Map<string, typeof rows>();
+  for (const r of rows) byBot.set(r.accountId, [...(byBot.get(r.accountId) ?? []), r]);
   const out: ModeratedTelegramChat[] = [];
-  for (const bot of bots) {
-    if (!(await loginModeratesBot({ ownerId, loginId, accountId: bot.accountId }))) continue;
-    for (const chat of await chatsOfBot(ownerId, bot.accountId)) {
+  for (const chats of byBot.values()) {
+    const sorted = chats
+      .map((r) => ({
+        row: r,
+        chat: {
+          id: r.id,
+          telegramChatId: r.telegramChatId,
+          label: r.title ?? (r.username ? `@${r.username}` : r.telegramChatId),
+          status: r.status,
+          lastMessageAt: r.lastMessageAt ? new Date(r.lastMessageAt).toISOString() : null,
+          loginId: r.loginId ?? null,
+          pairedTo: r.loginId ? nameOf({ displayName: r.displayName, email: r.email }) : null,
+        } satisfies AgentTelegramChat,
+      }))
+      .sort((a, b) => {
+        const st = STATUS_ORDER[a.chat.status] - STATUS_ORDER[b.chat.status];
+        if (st !== 0) return st;
+        return (b.chat.lastMessageAt ?? '').localeCompare(a.chat.lastMessageAt ?? '');
+      });
+    for (const { row, chat } of sorted) {
       out.push({
         ...chat,
-        botUsername: bot.botUsername,
-        agentName: bot.agentName ?? null,
-        agentSlug: bot.agentSlug ?? null,
+        botUsername: row.botUsername,
+        agentName: row.agentName ?? null,
+        agentSlug: row.agentSlug ?? null,
       });
     }
   }

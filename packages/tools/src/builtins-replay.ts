@@ -24,14 +24,11 @@
 
 import { and, asc, eq, gte, inArray, lte, sql } from 'drizzle-orm';
 import {
-  asSystem,
   assistantMessages,
   currentTurnStamp,
   currentWorkspaceScope,
   db,
   nodes,
-  telegramChats,
-  telegramMessages,
   traces,
   traceSteps,
 } from '@mantle/db';
@@ -399,34 +396,23 @@ const replay_window: BuiltinToolDef = {
     // carries its chat's login (nodes.login_id); one from before W7d has
     // none and was the anchor's chat. Per message, not per chat, so a chat
     // paired to another user later never hands over its old messages. No
-    // role is granted the Telegram tables, so inside the asker's turn scope
-    // the read leaves for the system pool, named; the login filter in the
-    // query is the gate.
+    // role is granted the Telegram tables: by their definer
+    // (mantle_tg_replay, 0293: in a scope, the scope's own login only; A6b:
+    // on the system pool before, 'login-telegram').
     if (surface === 'all' || surface === 'telegram') {
-      const tg = await asSystem(
-        () =>
-          db
-            .select({
-              text: telegramMessages.text,
-              sentAt: telegramMessages.sentAt,
-              direction: telegramMessages.direction,
-              fromName: telegramMessages.fromName,
-            })
-            .from(telegramMessages)
-            .innerJoin(telegramChats, eq(telegramMessages.chatId, telegramChats.id))
-            .innerJoin(nodes, eq(nodes.id, telegramMessages.nodeId))
-            .where(
-              and(
-                eq(telegramChats.userId, ctx.ownerId),
-                sql`(${nodes.loginId} = ${asker}::uuid or (${nodes.loginId} is null and ${asker}::uuid = ${ctx.ownerId}::uuid))`,
-                gte(telegramMessages.sentAt, from),
-                lte(telegramMessages.sentAt, to),
-              ),
-            )
-            .orderBy(asc(telegramMessages.sentAt))
-            .limit(limit + 1),
-        'login-telegram',
-      );
+      const tg = (
+        (await db.execute(
+          sql`select text, sent_at as "sentAt", direction, from_name as "fromName"
+                from "public"."mantle_tg_replay"(${ctx.ownerId}::uuid, ${asker}::uuid,
+                     ${from.toISOString()}::timestamptz, ${to.toISOString()}::timestamptz,
+                     ${limit + 1}::int)`,
+        )) as unknown as {
+          text: string;
+          sentAt: Date | string;
+          direction: 'inbound' | 'outbound';
+          fromName: string | null;
+        }[]
+      ).map((r) => ({ ...r, sentAt: new Date(r.sentAt) }));
       for (const r of tg) {
         turns.push({
           surface: 'telegram',

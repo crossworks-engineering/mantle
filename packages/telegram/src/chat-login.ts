@@ -20,27 +20,19 @@
  *
  * The Telegram tables are granted to no role, and each rule is held in the
  * query itself. Every read here runs on the system pool by the named reason
- * 'login-telegram': only loginModeratesBot is asked in a scope (and leaves
- * it); the others never are (systemWork refuses one, A6b).
+ * 'login-telegram', never in a scope (systemWork refuses one, A6b).
  */
 import { and, desc, eq, sql } from 'drizzle-orm';
-import { asSystem, db, liveWorkspaceSql, loginHasArea, systemWork, telegramChats } from '@mantle/db';
+import { db, liveWorkspaceSql, loginHasArea, systemWork, telegramChats } from '@mantle/db';
 import { UUID_RE } from '@mantle/std';
 
 /**
- * This file's system door (arch A6): a Telegram chat's login, its bot and
- * the bot's assistant are read on the system pool by the named reason
- * 'login-telegram' (the workspace role reads none of them), for a caller in
- * a scope (loginModeratesBot: the moderated chats screen).
- */
-function telegramLoginSystem<T>(fn: () => Promise<T>): Promise<T> {
-  return asSystem(fn, 'login-telegram');
-}
-
-/**
- * The same rows for the callers that never run in a scope (A6b): the
- * Telegram turn and the poller, an Admin area's route or tool, the pairing
- * door. systemWork runs them as asSystem did and refuses a scope (no exit).
+ * A Telegram chat's login, its bot and the bot's assistant are read on the
+ * system pool by the named reason 'login-telegram' (the workspace role reads
+ * none of them). Every caller here runs on the system pool: the Telegram
+ * turn and the poller, an Admin area's route or tool, the pairing door.
+ * systemWork runs them as asSystem did and refuses a scope (A6b: no exit;
+ * the moderated chats screen reads by its definer, 0293).
  */
 function telegramSystemWork<T>(fn: () => Promise<T>): Promise<T> {
   return systemWork(fn, 'login-telegram');
@@ -122,7 +114,7 @@ export async function loginModeratesBot(args: {
   const { ownerId, loginId, accountId } = args;
   if (!UUID_RE.test(loginId)) return false;
   try {
-    const rows = (await telegramLoginSystem(() =>
+    const rows = (await telegramSystemWork(() =>
       db.execute(sql`
           with admin_ws as (
             select w.id from workspaces w

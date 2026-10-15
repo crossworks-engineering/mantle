@@ -75,6 +75,17 @@
 --    its home. In a scope only the apps the scope may manage: a home among
 --    the scope's Moderator workspaces (the anchor login: its Moderator
 --    seats in every live workspace), or no home and the anchor login.
+-- 15. The Telegram screens (server/web lib/agent-telegram.ts; the
+--    Telegram tables are granted to no role): a login's own paired chats
+--    (mantle_tg_my_chats), and the chats of every bot the login moderates
+--    (mantle_tg_moderated_chats: a Moderator of the bot's assistant's
+--    workspace, an Admin user with the users area; a brain not on
+--    workspaces, the anchor login), with the paired login's name and email.
+--    mantle_tg_replay: a login's own Telegram history in a window (each
+--    message's node carries its chat's login; one from before logins is the
+--    anchor's). In a scope, the scope's own login only.
+--    mantle_login_area(login, area) is their internal rule (packages/db
+--    loginHasArea, in SQL): no role may run it.
 --
 -- The writes (3, 4) are the write role's (WRITE_ROLE_FUNCTIONS,
 -- access-matrix.ts: applyViewerGrants grants them), not the workspace
@@ -569,6 +580,116 @@ REVOKE ALL ON FUNCTION "public"."mantle_deleted_apps"(uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION "public"."mantle_deleted_apps"(uuid) TO "mantle_view_user";
 --> statement-breakpoint
 
+CREATE OR REPLACE FUNCTION "public"."mantle_login_area"(login uuid, area text)
+  RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER
+  SET search_path = "public", pg_temp AS $$
+  SELECT NOT EXISTS (SELECT 1 FROM "public"."workspaces" w
+                      WHERE w."owner_id" = "public"."mantle_brain_id"() AND w."is_admin")
+      OR EXISTS (SELECT 1 FROM "public"."workspaces" w
+                   JOIN "public"."workspace_users" u ON u."workspace_id" = w."id" AND u."login_id" = login
+                   JOIN "auth"."users" l ON l."id" = u."login_id" AND l."disabled_at" IS NULL
+                  WHERE w."owner_id" = "public"."mantle_brain_id"() AND w."is_admin"
+                    AND w."archived_at" IS NULL
+                    AND area IN ('settings', 'users', 'assistants', 'connectors', 'keys')
+                    AND coalesce(u."limits" -> 'areas' ->> area, '') <> 'false')
+$$;
+--> statement-breakpoint
+REVOKE ALL ON FUNCTION "public"."mantle_login_area"(uuid, text) FROM PUBLIC;
+--> statement-breakpoint
+
+CREATE OR REPLACE FUNCTION "public"."mantle_tg_my_chats"(owner uuid, login uuid)
+  RETURNS TABLE ("id" uuid, "telegram_chat_id" text, "title" text, "username" text,
+                 "last_message_at" timestamptz, "bot_username" text, "agent_name" text,
+                 "agent_slug" text)
+  LANGUAGE sql STABLE SECURITY DEFINER
+  SET search_path = "public", pg_temp AS $$
+  SELECT c."id", c."telegram_chat_id", c."title", c."username", c."last_message_at",
+         t."bot_username", a."name", a."slug"
+    FROM "public"."telegram_chats" c
+    JOIN "public"."telegram_accounts" t ON t."id" = c."account_id"
+    LEFT JOIN "public"."channels" ch ON ch."id" = t."channel_id"
+    LEFT JOIN "public"."agents" a ON a."id" = ch."agent_id"
+   WHERE c."user_id" = owner AND c."login_id" = login AND c."allowlist_status" = 'allowed'
+     AND (NOT "public"."mantle_scope_active"()
+          OR (login = "public"."mantle_scope_login_id"() AND owner = "public"."mantle_brain_id"()))
+   ORDER BY c."last_message_at" DESC NULLS LAST
+$$;
+--> statement-breakpoint
+REVOKE ALL ON FUNCTION "public"."mantle_tg_my_chats"(uuid, uuid) FROM PUBLIC;
+--> statement-breakpoint
+GRANT EXECUTE ON FUNCTION "public"."mantle_tg_my_chats"(uuid, uuid) TO "mantle_view_user";
+--> statement-breakpoint
+
+CREATE OR REPLACE FUNCTION "public"."mantle_tg_moderated_chats"(owner uuid, login uuid)
+  RETURNS TABLE ("account_id" uuid, "bot_username" text, "agent_name" text, "agent_slug" text,
+                 "id" uuid, "telegram_chat_id" text, "title" text, "username" text,
+                 "status" text, "last_message_at" timestamptz, "login_id" uuid,
+                 "paired_name" text, "paired_email" text)
+  LANGUAGE sql STABLE SECURITY DEFINER
+  SET search_path = "public", pg_temp AS $$
+  WITH admin_ws AS (
+    SELECT w."id" FROM "public"."workspaces" w WHERE w."owner_id" = owner AND w."is_admin" LIMIT 1
+  ), bots AS (
+    SELECT t."id", t."bot_username", t."created_at", a."name" AS agent_name, a."slug" AS agent_slug
+      FROM "public"."telegram_accounts" t
+      LEFT JOIN "public"."channels" ch ON ch."id" = t."channel_id"
+      LEFT JOIN "public"."agents" a ON a."id" = ch."agent_id"
+     WHERE t."user_id" = owner
+       AND (NOT "public"."mantle_scope_active"()
+            OR (login = "public"."mantle_scope_login_id"() AND owner = "public"."mantle_brain_id"()))
+       AND CASE
+             WHEN NOT EXISTS (SELECT 1 FROM admin_ws) THEN login = owner
+             ELSE EXISTS (
+                    SELECT 1
+                      FROM "public"."channels" ch2
+                      JOIN "public"."agents" a2 ON a2."id" = ch2."agent_id" AND a2."owner_id" = owner
+                      JOIN "public"."workspaces" w
+                        ON w."id" = coalesce(a2."workspace_id", (SELECT "id" FROM admin_ws))
+                       AND w."archived_at" IS NULL
+                      JOIN "public"."workspace_users" u
+                        ON u."workspace_id" = w."id" AND u."login_id" = login AND u."moderator"
+                      JOIN "auth"."users" l ON l."id" = u."login_id" AND l."disabled_at" IS NULL
+                     WHERE ch2."id" = t."channel_id")
+                  OR "public"."mantle_login_area"(login, 'users')
+           END
+  )
+  SELECT b."id", b."bot_username", b.agent_name, b.agent_slug,
+         c."id", c."telegram_chat_id", c."title", c."username", c."allowlist_status"::text,
+         c."last_message_at", c."login_id", l."display_name", l."email"
+    FROM bots b
+    JOIN "public"."telegram_chats" c ON c."account_id" = b."id" AND c."user_id" = owner
+    LEFT JOIN "auth"."users" l ON l."id" = c."login_id"
+   ORDER BY b."created_at", b."id"
+$$;
+--> statement-breakpoint
+REVOKE ALL ON FUNCTION "public"."mantle_tg_moderated_chats"(uuid, uuid) FROM PUBLIC;
+--> statement-breakpoint
+GRANT EXECUTE ON FUNCTION "public"."mantle_tg_moderated_chats"(uuid, uuid) TO "mantle_view_user";
+--> statement-breakpoint
+
+CREATE OR REPLACE FUNCTION "public"."mantle_tg_replay"(
+  owner uuid, asker uuid, since timestamptz, until timestamptz, lim integer)
+  RETURNS TABLE ("text" text, "sent_at" timestamptz, "direction" text, "from_name" text)
+  LANGUAGE sql STABLE SECURITY DEFINER
+  SET search_path = "public", pg_temp AS $$
+  SELECT m."text", m."sent_at", m."direction"::text, m."from_name"
+    FROM "public"."telegram_messages" m
+    JOIN "public"."telegram_chats" c ON c."id" = m."chat_id"
+    JOIN "public"."nodes" n ON n."id" = m."node_id"
+   WHERE c."user_id" = owner
+     AND (n."login_id" = asker OR (n."login_id" IS NULL AND asker = owner))
+     AND m."sent_at" >= since AND m."sent_at" <= until
+     AND (NOT "public"."mantle_scope_active"()
+          OR (asker = "public"."mantle_scope_login_id"() AND owner = "public"."mantle_brain_id"()))
+   ORDER BY m."sent_at"
+   LIMIT lim
+$$;
+--> statement-breakpoint
+REVOKE ALL ON FUNCTION "public"."mantle_tg_replay"(uuid, uuid, timestamptz, timestamptz, integer) FROM PUBLIC;
+--> statement-breakpoint
+GRANT EXECUTE ON FUNCTION "public"."mantle_tg_replay"(uuid, uuid, timestamptz, timestamptz, integer) TO "mantle_view_user";
+--> statement-breakpoint
+
 -- The public demo's SELECT-only reader serves owner reads (as 0285, 0286, 0291).
 DO $$
 BEGIN
@@ -591,6 +712,9 @@ BEGIN
     GRANT EXECUTE ON FUNCTION "public"."mantle_runs_workspaces"(uuid[], uuid[]) TO demo_reader;
     GRANT EXECUTE ON FUNCTION "public"."mantle_lexeme_df"(text, text, integer, integer, float8) TO demo_reader;
     GRANT EXECUTE ON FUNCTION "public"."mantle_deleted_apps"(uuid) TO demo_reader;
+    GRANT EXECUTE ON FUNCTION "public"."mantle_tg_my_chats"(uuid, uuid) TO demo_reader;
+    GRANT EXECUTE ON FUNCTION "public"."mantle_tg_moderated_chats"(uuid, uuid) TO demo_reader;
+    GRANT EXECUTE ON FUNCTION "public"."mantle_tg_replay"(uuid, uuid, timestamptz, timestamptz, integer) TO demo_reader;
   END IF;
 END
 $$;
