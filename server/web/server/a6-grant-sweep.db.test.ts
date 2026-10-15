@@ -61,14 +61,20 @@ const NAMED_CHANGES: ReadonlyArray<{
   cells: RegExp;
   reason: string;
   back: (now: string) => string;
-}> = [
+}> = [];
+
+/**
+ * Cells recorded on main whose code is gone, with why: they are left out of
+ * the comparison (the record itself stays as main wrote it).
+ */
+const REMOVED_CELLS: ReadonlyArray<{ cells: RegExp; reason: string }> = [
   {
-    cells: /^apps\.(memberApp|deleted) /,
+    cells: /^apps\.(memberApp|loginApps|deleted) /,
     reason:
-      "field rename only: the member brain-app library names an app's home `home`, not after the raw column (nothing outside reads it since the my_app tools went in W7b; no HTTP or tool reply carries it); every rule and row as main",
-    back: (now) => now.replaceAll('"home":', '"homeWs":'),
+      'the member brain-app library (member-brain-apps.ts: memberApp, listLoginApps, listDeletedMemberApps) is deleted in A6 round 2: no caller outside tests since the my_app tools went in W7b',
   },
 ];
+const removedCell = (key: string) => REMOVED_CELLS.some((c) => c.cells.test(key));
 const namedChange = (key: string) => NAMED_CHANGES.find((c) => c.cells.test(key)) ?? null;
 
 type Json = Record<string, any>;
@@ -115,7 +121,6 @@ describe.skipIf(!URL)('the A6 grant sweep', () => {
   let g: typeof import('@/lib/grants');
   let lw: typeof import('@/lib/list-workspaces');
   let wsLib: typeof import('@/lib/workspaces');
-  let rq: typeof import('@/lib/auth/rule-in-query');
   let content: typeof import('@mantle/content');
   let tree: typeof import('@mantle/content/tree');
   let trash: typeof import('@mantle/content/app-trash');
@@ -180,8 +185,25 @@ describe.skipIf(!URL)('the A6 grant sweep', () => {
       : { kind: 'member' as const, loginId, anchorId: L.owner, user: null };
   };
   const asLogin = <T>(who: LoginKey, fn: () => Promise<T>) => m.withViewer({ login: L[who] }, fn);
-  /** The grants library as its route runs it: through the one exit. */
-  const grantsAs = <T>(fn: () => Promise<T>) => rq.inRuleInQuery(fn);
+  const isAdmin = (who: LoginKey) =>
+    who === 'owner' || who === 'adminAll' || who === 'adminNoUsers';
+  /**
+   * The grants and workspace libraries as their routes run them since A6
+   * round 2 (session.ts anyLoginScope): in a request slot, a read and a
+   * member's write in the login's own scope (a write's transactions on the
+   * write role), an Admin user's write on the system pool with the login's
+   * scope on its transactions (`write`: the route writes; a POST preview
+   * does). Recorded on main through the one exit (inRuleInQuery): every
+   * cell must answer as it did there.
+   */
+  const grantsAs = async <T>(who: LoginKey, write: boolean, fn: () => Promise<T>): Promise<T> => {
+    const scope = await m.viewerScopeFor({ login: L[who] });
+    return m.runInRequestSlot(async () => {
+      if (isAdmin(who) && write) m.noteRequestWriteScope(scope);
+      else expect(m.enterRequestScope(scope, { writes: write, drafts: isAdmin(who) })).toBe(true);
+      return fn();
+    });
+  };
 
   /** A node of the owner's brain. */
   const node = async (key: string, nid: string, type: string, title: string, path: string) => {
@@ -240,7 +262,6 @@ describe.skipIf(!URL)('the A6 grant sweep', () => {
     g = await import('@/lib/grants');
     lw = await import('@/lib/list-workspaces');
     wsLib = await import('@/lib/workspaces');
-    rq = await import('@/lib/auth/rule-in-query');
     content = await import('@mantle/content');
     tree = await import('@mantle/content/tree');
     trash = await import('@mantle/content/app-trash');
@@ -359,17 +380,20 @@ describe.skipIf(!URL)('the A6 grant sweep', () => {
     for (const who of LOGINS) {
       const c = callerOf(who);
       for (const k of ITEMS) {
-        cell(`grants.get ${who} ${k}`, await answer(() => grantsAs(() => g.getGrants(c, I[k]))));
+        cell(
+          `grants.get ${who} ${k}`,
+          await answer(() => grantsAs(who, false, () => g.getGrants(c, I[k]))),
+        );
       }
       for (const k of ['nP', 'nPQw', 'nQP', 'fP', 'aP'] as const) {
         for (const [wk, wid] of Object.entries(ws())) {
           cell(
             `grants.preview ${who} ${k} add=${wk}`,
-            await answer(() => grantsAs(() => g.previewGrant(c, I[k], wid, null))),
+            await answer(() => grantsAs(who, false, () => g.previewGrant(c, I[k], wid, null))),
           );
           cell(
             `grants.preview ${who} ${k} remove=${wk}`,
-            await answer(() => grantsAs(() => g.previewGrant(c, I[k], null, wid))),
+            await answer(() => grantsAs(who, false, () => g.previewGrant(c, I[k], null, wid))),
           );
         }
       }
@@ -377,7 +401,7 @@ describe.skipIf(!URL)('the A6 grant sweep', () => {
         cell(
           `grants.movePreview ${who} [nP,nQP,nPQr] to=${wk}`,
           await answer(() =>
-            grantsAs(() =>
+            grantsAs(who, true, () =>
               g.previewMove(c, { nodeIds: [I.nP, I.nQP, I.nPQr], toWorkspaceId: wid }),
             ),
           ),
@@ -387,7 +411,7 @@ describe.skipIf(!URL)('the A6 grant sweep', () => {
         cell(
           `grants.movePreview ${who} [nP,nQP,nAdmin] into=${fk}`,
           await answer(() =>
-            grantsAs(() =>
+            grantsAs(who, true, () =>
               g.previewMove(c, { nodeIds: [I.nP, I.nQP, I.nAdmin], toFolderId: I[fk] }),
             ),
           ),
@@ -445,23 +469,25 @@ describe.skipIf(!URL)('the A6 grant sweep', () => {
       ];
       for (const [label, write, op] of ops) {
         const nid = await freshNote(write);
-        const res = await answer(() => grantsAs(() => op(nid)));
+        const res = await answer(() => grantsAs(who, true, () => op(nid)));
         cell(`grants.write ${who} ${label}`, { res, rows: await grantRows(nid) });
       }
       const handChild = await freshFolder(false);
       cell(`grants.write ${who} hand Q`, {
-        res: await answer(() => grantsAs(() => g.handGrant(c, handChild, W.Q))),
+        res: await answer(() => grantsAs(who, true, () => g.handGrant(c, handChild, W.Q))),
         rows: await grantRows(handChild),
       });
       const exChild = await freshFolder(true);
       cell(`grants.write ${who} restore Q`, {
-        res: await answer(() => grantsAs(() => g.restoreGrant(c, exChild, W.Q, false))),
+        res: await answer(() => grantsAs(who, true, () => g.restoreGrant(c, exChild, W.Q, false))),
         rows: await grantRows(exChild),
       });
       const placed = await freshNote(false);
       cell(`grants.write ${who} move into fQ`, {
         res: await answer(() =>
-          grantsAs(() => g.moveItems(c, { nodeIds: [placed], toFolderId: I.fQ, confirm: true })),
+          grantsAs(who, true, () =>
+            g.moveItems(c, { nodeIds: [placed], toFolderId: I.fQ, confirm: true }),
+          ),
         ),
         rows: await grantRows(placed),
       });
@@ -534,12 +560,72 @@ describe.skipIf(!URL)('the A6 grant sweep', () => {
         );
       }
     }
+
+    // A6 round 2: the link rules read in a login's scope too (the Grant
+    // Access panel, the share tool). Not recorded: each answer in the
+    // login's own scope must be the system pool's answer above (rights:
+    // the items the login reads, as the row rule leaves them).
+    const differ: string[] = [];
+    const same = (key: string, a: unknown, b: unknown) => {
+      if (JSON.stringify(norm(a)) !== JSON.stringify(norm(b))) {
+        differ.push(
+          `${key}\n  system: ${JSON.stringify(norm(a))}\n  scope:  ${JSON.stringify(norm(b))}`,
+        );
+      }
+    };
+    const readable = (mp: Map<string, { read: boolean }>) =>
+      Object.fromEntries(
+        [...mp].filter(([, r]) => r.read).sort(([x1], [x2]) => (x1 < x2 ? -1 : 1)),
+      );
+    for (const who of LOGINS) {
+      same(
+        `link.rights ${who}`,
+        readable(await content.linkRights(L.owner, L[who], all)),
+        readable(await asLogin(who, () => content.linkRights(L.owner, L[who], all))),
+      );
+      for (const k of ITEMS) {
+        const run = async () => {
+          const r = await content.assertMayLink(L.owner, L[who], I[k]);
+          return { edit: r.edit, manage: r.manage, read: r.read };
+        };
+        same(
+          `link.assertMayLink ${who} ${k}`,
+          await answer(run),
+          await answer(() => asLogin(who, run)),
+        );
+      }
+      for (const [label, item] of [
+        ['pg', page],
+        ['fP', folder],
+      ] as const) {
+        const run = () => content.listServeCandidates(L.owner, L[who], item);
+        same(
+          `link.candidates ${who} ${label}`,
+          await answer(run),
+          await answer(() => asLogin(who, run)),
+        );
+      }
+      for (const [label, item, k] of [
+        ['pg', page, 'nR'],
+        ['pg', page, 'nP'],
+        ['pg', page, 'aQ'],
+        ['fP', folder, 'c1'],
+        ['fP', folder, 'c2'],
+      ] as const) {
+        const run = () => content.checkServeList(L.owner, L[who], item, [I[k]], []);
+        same(
+          `link.checkServe ${who} ${label} +${k}`,
+          await answer(run),
+          await answer(() => asLogin(who, run)),
+        );
+      }
+    }
+    expect(differ).toEqual([]);
   });
 
   it('records the member and login apps', async () => {
     const W2 = ws();
     for (const who of LOGINS) {
-      const author = { loginId: L[who], brainId: L.owner };
       cell(
         `apps.launcher ${who}`,
         await answer(() => asLogin(who, () => content.listMemberApps(L.owner))),
@@ -550,16 +636,6 @@ describe.skipIf(!URL)('the A6 grant sweep', () => {
           await answer(() => asLogin(who, () => content.listMemberApps(L.owner, { ws: wid }))),
         );
       }
-      for (const k of ['aP', 'aQ', 'aAdmin'] as const) {
-        for (const o of [{}, { write: true }, { manage: true }, { edit: true }]) {
-          cell(
-            `apps.memberApp ${who} ${k} ${JSON.stringify(o)}`,
-            await answer(() => content.memberApp(author, I[k], o)),
-          );
-        }
-      }
-      cell(`apps.loginApps ${who}`, await answer(() => content.listLoginApps(author)));
-      cell(`apps.deleted ${who}`, await answer(() => content.listDeletedMemberApps(author)));
     }
     cell(`apps.deletedHomes`, await trash.deletedAppHomes(L.owner));
   });
@@ -622,7 +698,7 @@ describe.skipIf(!URL)('the A6 grant sweep', () => {
       );
       cell(
         `workspaces.list ${who}`,
-        await answer(() => grantsAs(() => wsLib.listWorkspaces(callerOf(who)))),
+        await answer(() => grantsAs(who, false, () => wsLib.listWorkspaces(callerOf(who)))),
       );
     }
     const others: Record<string, boolean> = {};
@@ -642,7 +718,8 @@ describe.skipIf(!URL)('the A6 grant sweep', () => {
       readFileSync(SNAP, 'utf8')
         .split('\n')
         .filter(Boolean)
-        .map((l) => [l.slice(0, l.indexOf(' => ')), l.slice(l.indexOf(' => ') + 4)]),
+        .map((l) => [l.slice(0, l.indexOf(' => ')), l.slice(l.indexOf(' => ') + 4)] as const)
+        .filter(([k]) => !removedCell(k)),
     );
     const got = new Map(
       cells.map((l) => [l.slice(0, l.indexOf(' => ')), l.slice(l.indexOf(' => ') + 4)]),

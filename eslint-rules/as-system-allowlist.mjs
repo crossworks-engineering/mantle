@@ -26,6 +26,12 @@ import { asSystemSites, isCounted, repoPathOf, pinnedRule } from './arch-counts.
  * client-sourced.ts (clientSourcedSystem); dispatch.ts's connector binding
  * through external-access.ts (connectorGroupRow). docs/actors.md, "A6",
  * lists every door and its callers.
+ *
+ * A6 round 2: 41 sites in 38 files, 30 reasons. lib/grants.ts and
+ * lib/workspaces.ts read in the caller's scope and no longer leave it
+ * through rule-in-query.ts; each has its own door for what still needs the
+ * system pool. The honest number is the exits (every site that is no door,
+ * plus every door call: asSystemExits, scripts/arch-scoreboard.pins.json).
  */
 export const AS_SYSTEM_PINS = {
   'packages/content/src/admin-space-taken.ts': { count: 1, why: ['space-taken-authors'] },
@@ -70,8 +76,14 @@ export const AS_SYSTEM_PINS = {
   'server/web/lib/app-runner.ts': { count: 1, why: ['app-data'] },
   'server/web/lib/auth/rule-in-query.ts': { count: 1, why: ['rule-in-query'] },
   'server/web/lib/debug.ts': { count: 1, why: ['login-telegram'] },
+  // A6 round 2: the grants panel reads in the caller's scope; the page
+  // refold after a change is its one exit (pageRefoldSystem).
+  'server/web/lib/grants.ts': { count: 1, why: ['page-refold'] },
   'server/web/lib/landing.ts': { count: 1, why: ['owner-preferences'] },
   'server/web/lib/snapshot-copies.ts': { count: 1, why: ['snapshot-copies'] },
+  // A6 round 2: the workspace screens read in the caller's scope; a login's
+  // own workspace change writes through one door (workspaceWriteSystem).
+  'server/web/lib/workspaces.ts': { count: 1, why: ['workspace-write'] },
 };
 
 export const rule = pinnedRule({

@@ -1,8 +1,7 @@
 {
-  "asSystemSites": 37,
-  "asSystemDoorCalls": 70,
-  "asSystemFiles": 34,
-  "asSystemReasons": 27,
+  "asSystemExits": 96,
+  "asSystemFiles": 36,
+  "asSystemReasons": 29,
   "rawAclFiles": 0,
   "rawAclLines": 0,
   "toolPolicyLists": 1,
@@ -66,13 +65,14 @@
   "store_objectstore_files": 4,
   "store_appdb_files": 5,
   "_notes": {
-    "asSystemSites": "raised 90 to 91 in A5 step 6c (pending-origin.ts, reason 'pending-approval'); lowered 91 to 88 in A10 #9 (app-runner.ts's system door); 88 to 86 when the provider-key exits went (main). Lowered 86 to 37 (files 43 to 34, reasons 27) in A6: every file that left the scope by one reason at several places does so through that file's one door (a function whose body is the one asSystem call); the rule-in-query routes and libraries through inRuleInQuery (lib/auth/rule-in-query.ts); client-sourced-rules.ts through client-sourced.ts's door; dispatch.ts's connector binding reads through external-access.ts (connectorGroupRow). No exit moved: the calls through a door are counted in asSystemDoorCalls. docs/actors.md, A6.",
-    "asSystemDoorCalls": "new in A6 (70): the calls of an asSystem door, each an exit by the door's reason (the 8 calls of inRuleInQuery from before A6 included, which no number counted then). A door keeps one pinned site, so this total is what stops a file from adding exits through its door unseen.",
+    "asSystemExits": "new in A6 round 2 (96 after main dropped the two provider-key exits; 98 before), replacing asSystemSites (39) and asSystemDoorCalls (70): the real system-pool exits, every asSystem site that is no door plus every call of a door (eslint-rules/arch-counts.mjs, exitsByFile). Round 1's number was 94 (24 direct sites, 70 door calls). Round 2 moved the reads of lib/grants.ts and lib/workspaces.ts into the caller's scope: grants.ts went from 1 exit (the whole route through inRuleInQuery) to 1 (the page refold, pageRefoldSystem), workspaces.ts from 1 (the whole route) to 5 (a login's own workspace change, workspaceWriteSystem, one per change: make, rename, archive, add a user, remove or leave). 98 is above the plan's 40: docs/actors.md, A6, lists every exit left with its reason.",
     "routePolicyLists": "raised 16 to 17 in A10 #8: ROUTE_GATES (server/web/lib/route-limits.ts) gives each row its named rate limits and its cross-site refusal, read into the row by buildRouteRow (two ROUTE_POLICY fields), where 38 limits were taken by hand in route files (32 calls in 26 files) and helpers. Raised 15 to 16 in A4 hand batch B fix round 1 (M2): PUBLIC_LOGIN_ROWS (route-policy.ts) names the public rows that read a login, so buildRouteRow refuses a public login kind on any other public row (the /s link routes, the remote MCP, federation, sign-in). It is ROUTE_POLICY's own check of the rows, as FRAME_ROWS is, not a policy beside them.",
     "brainOnWorkspacesCalls": "raised 11 to 12 (files 6 to 7) in A1: listDueReminders (packages/content/src/events.ts) must read in the owner scope on a workspaces brain even when that scope is empty, and keep the old rule only off workspaces. A7 removes the call with the switch-over code.",
     "readPathWrites": "raised 7 to 9 in A3a: a public link's view counter (content shares.ts) and the Recall prompt embeddings a reader's recall_match heals (content recall.ts) were writes inside read paths the A2a inventory did not name; the read-only refusal would refuse both, so each is named and pinned now. Raised 9 to 10 in A5 step 4: app_data_schema and app_data_query provision the app's database registry row, its schema and its viewer salt (app_databases, an item table) on a login's own MCP, which runs a read read-only since step 4; the provisioning is named (repair:app-db) rather than moved, so the reads answer as before.",
     "store_appdb_files": "A3b counts the app database WRITE API (the SQL runner's writing functions) as well as APP_DB_DIR: 3 to 5 is the measure widening (app-package.ts adopts into a temp file; history-files.ts copied snapshots; A3b part 2 moved that copy into the snapshot broker, snapshot-broker.ts), not a new writer.",
     "store_tabledb_files": "A3b: the tables write API moved to @mantle/tabledb/write, which only the tables broker imports (29 importers of the whole package before).",
-    "store_objectstore_files": "A3b: the object store write API moved to @mantle/storage/write (17 importers of the whole package before, readers included). A3b part 2: 5 to 4, email attachments and drive files through the files broker (file-broker.ts)."
+    "store_objectstore_files": "A3b: the object store write API moved to @mantle/storage/write (17 importers of the whole package before, readers included). A3b part 2: 5 to 4, email attachments and drive files through the files broker (file-broker.ts).",
+    "asSystemFiles": "raised 36 to 38 in A6 round 2: lib/grants.ts (the page refold, 'page-refold') and lib/workspaces.ts (a login's own workspace change, 'workspace-write') leave the scope by their own doors now, where their whole routes left it through lib/auth/rule-in-query.ts before. See asSystemExits.",
+    "asSystemReasons": "raised 28 to 30 in A6 round 2: 'workspace-write' and 'page-refold' (packages/db/src/viewer.ts says what each allows), each narrower than the 'rule-in-query' exit the two libraries took whole before."
   }
 }

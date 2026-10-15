@@ -917,10 +917,21 @@ export function currentSystemTx(): { tx: unknown; hooks: TxHooks; nest: SystemTx
  *    my_app_* tools, which used it for an app's files, builds and history,
  *    went with W7b: every login builds apps with the app tools in its own
  *    workspaces.)
- *  - `rule-in-query`: inside a REQUEST scope (W6a), the any-login libraries
- *    that hold the workspace rule in their own SQL on the system pool
- *    (lib/workspaces.ts, lib/grants.ts, the shell, access keys): the rule
- *    is the query's, as it was before the request scope.
+ *  - `rule-in-query`: inside a REQUEST scope (W6a), the any-login routes
+ *    that hold the workspace rule in their own SQL on the system pool (the
+ *    shell, access keys, whoami, the chat routes): the rule is the query's,
+ *    as it was before the request scope. Since arch A6 the grants and the
+ *    workspace screens read in the scope (their definers, 0291) and no
+ *    longer leave it by this reason.
+ *  - `workspace-write`: a login's own change of a workspace (make one,
+ *    rename it, archive it, add or remove a user, leave): the workspace
+ *    tables and their events are the system pool's to write (the write role
+ *    holds no right on them). The change's rules run first, in the scope,
+ *    and again inside the change's transaction (lib/workspaces.ts, arch A6).
+ *  - `page-refold`: after a grant change, the derived text of every page
+ *    the change reaches is folded again, pages the caller may not read or
+ *    edit included (lib/grants.ts, arch A6): nothing goes back to the
+ *    caller.
  *  - `kind-root`: structure with no content, looked up whatever the
  *    caller's scope holds: a kind's root folder row (the files root; a
  *    member's scope does not hold the Admin-homed root) so it is not made
@@ -1017,6 +1028,8 @@ export const AS_SYSTEM_TURN_REASONS = [
   'audit-log',
   'client-sourced-mark',
   'pending-approval',
+  'workspace-write',
+  'page-refold',
 ] as const;
 
 /**

@@ -16,6 +16,14 @@
  *
  * A brain with no workspaces yet (never migrated) has no grants to ask: the
  * owner gate of the caller decides alone, as before workspaces.
+ *
+ * Every read here runs where its caller runs (arch A6): the system pool,
+ * or a login's scope (the Grant Access panel, the share tool), where the
+ * row rules hold. What a scope cannot read goes through a definer held to
+ * it: whether the brain is on workspaces (mantle_ws_admin_id, 0279; the
+ * Admin workspace's row is outside a member's scope) and what an item
+ * embeds (mantle_item_embeds, 0291; node_embeds is not the workspace
+ * role's).
  */
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { defineDomainError } from '@mantle/std';
@@ -25,7 +33,6 @@ import {
   mayEditInSql,
   mayManageInSql,
   mayReadInSql,
-  nodeEmbeds,
   nodes,
   pages,
   SNAPSHOT_COPY_NO_SHARE,
@@ -84,6 +91,12 @@ function loginWsSql(ownerId: string, loginId: string, moderated: boolean) {
                  ${moderated ? sql`and u.moderator` : sql``})`;
 }
 
+/** The brain `ownerId` is on workspaces: it has an Admin workspace (by
+ *  definer: a scope outside Admin does not read its row). */
+function migratedSql(ownerId: string) {
+  return sql`(mantle_ws_admin_id(${ownerId}::uuid) is not null)`;
+}
+
 /** The caller's rights on `ids` (the owner's items; an id with no row is
  *  left out). Keys lower-case. */
 export async function linkRights(
@@ -99,9 +112,7 @@ export async function linkRights(
       select ${loginWsSql(ownerId, loginId, false)} as ws,
              ${loginWsSql(ownerId, loginId, true)} as mods
     ),
-    migrated as (
-      select exists (select 1 from workspaces where owner_id = ${ownerId} and is_admin) as yes
-    )
+    migrated as (select ${migratedSql(ownerId)} as yes)
     select n.id::text as id, n.type::text as type, n.path::text as path,
            (not m.yes or ${mayReadInSql('n', sql`me.ws`)}) as read,
            (not m.yes or ${mayManageInSql('n', sql`me.mods`)}) as manage,
@@ -178,7 +189,7 @@ export const FOLDER_SERVE_OFFER_MAX = 500;
  *  grant has Write on; anyone on a brain never migrated. */
 function editableSql(ownerId: string, loginId: string) {
   return sql`(
-    not exists (select 1 from workspaces w0 where w0.owner_id = ${ownerId} and w0.is_admin)
+    not ${migratedSql(ownerId)}
     or ${mayEditInSql(undefined, loginWsSql(ownerId, loginId, false), loginWsSql(ownerId, loginId, true))})`;
 }
 
@@ -218,23 +229,16 @@ async function serveCandidates(
   if (!(LINK_SERVE_KINDS as readonly string[]).includes(item.type)) return new Set();
 
   const out = new Set<string>();
-  const embeds = await q
-    .select({ id: nodeEmbeds.toId, type: nodes.type })
-    .from(nodeEmbeds)
-    .innerJoin(nodes, eq(nodes.id, nodeEmbeds.toId))
-    .where(eq(nodeEmbeds.fromId, item.id));
-  for (const e of embeds) out.add(e.id.toLowerCase());
-  if (item.type === 'draw') return out;
-
-  // The images of a drawing the item embeds: its snapshot carries them.
-  const draws = embeds.filter((e) => e.type === 'draw').map((e) => e.id);
-  if (draws.length) {
-    const hop = await q
-      .select({ id: nodeEmbeds.toId })
-      .from(nodeEmbeds)
-      .where(inArray(nodeEmbeds.fromId, draws));
-    for (const h of hop) out.add(h.id.toLowerCase());
+  // What it embeds, and the images of a drawing it embeds (its snapshot
+  // carries them: `hop`), by definer (see the top).
+  const embeds = (await q.execute(
+    sql`select e.to_id::text as id, e.hop from mantle_item_embeds(${item.id}::uuid) e`,
+  )) as unknown as { id: string; hop: boolean }[];
+  for (const e of embeds) {
+    if (e.hop && item.type === 'draw') continue;
+    out.add(e.id.toLowerCase());
   }
+  if (item.type === 'draw') return out;
 
   // What its text names: a mention, a link into this brain, an embed.
   const ownUrl = clientOwnUrl(clientRedactOrigins());

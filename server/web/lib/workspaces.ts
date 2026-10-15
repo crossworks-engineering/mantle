@@ -45,6 +45,7 @@
  */
 import { NextResponse } from '@/server/http-compat';
 import {
+  asSystem,
   db,
   sql,
   isUniqueViolation,
@@ -71,7 +72,6 @@ import type {
 import { WORKSPACE_AREAS } from '@mantle/client-types/dto/workspaces';
 import type { LoginRole } from '@mantle/client-types/role-names';
 import { workspaceHeldApp } from '@mantle/content';
-import { inRuleInQuery } from '@/lib/auth/rule-in-query';
 import type { AnyLogin, SessionUser } from '@/lib/auth';
 import { auditFireAndForget, requestMeta } from '@/lib/audit';
 import { applyLoginChange, loadLoginTarget } from '@/lib/login-update';
@@ -127,18 +127,33 @@ export function workspaceCaller(login: AnyLogin): WsCaller {
 /** Run a workspace route for the login the handler read (loginCaller()):
  *  answer the result as JSON. A WsError answers `{ error, code }` by its
  *  row in the one table (A10 part 2 fix round 1, L7); anything else is the
- *  opaque 500. */
+ *  opaque 500.
+ *
+ *  It runs where the gate put the request (arch A6): a login's read, and a
+ *  member's write, in the login's own scope; an Admin user's write on the
+ *  system pool. What a scope cannot read goes through the definers of
+ *  0291, each held to the scope: the workspaces the caller sees
+ *  (mantle_ws_seen), a workspace's users and resources (mantle_ws_people,
+ *  mantle_ws_resource_rows), its item counts (mantle_ws_item_counts), the
+ *  user search (mantle_ws_login_search). A login's own change of a
+ *  workspace writes on the system pool by one door (workspaceWriteSystem). */
 export async function wsRoute(
   login: AnyLogin,
   fn: (caller: WsCaller) => Promise<unknown>,
   okStatus = 200,
 ): Promise<Response> {
-  const caller = workspaceCaller(login);
-  // The rule is in this library's own SQL on the system pool: it leaves
-  // the request scope the gate entered by name (W6a), at the one exit
-  // site (lib/auth/rule-in-query.ts).
-  const out = await inRuleInQuery(() => fn(caller));
+  const out = await fn(workspaceCaller(login));
   return NextResponse.json(out, { status: okStatus });
+}
+
+/** The one exit of the workspace library (arch A6): a change of a
+ *  workspace (its row, its users, its events) writes on the system pool by
+ *  its reason ('workspace-write'), the write role holding no right on those
+ *  tables. The change's rules run first in the caller's scope, and again
+ *  inside the transaction. An Admin user's write request runs on the system
+ *  pool already (session.ts anyLoginScope); the door changes nothing there. */
+function workspaceWriteSystem<T>(body: () => Promise<T>): Promise<T> {
+  return asSystem(body, 'workspace-write');
 }
 
 /** A body parsed by a zod schema, or a 400. */
@@ -192,15 +207,20 @@ type AdminInfo = {
 };
 
 async function adminInfo(caller: WsCaller, q: Exec = db): Promise<AdminInfo> {
-  const [r] = await rows<{ id: string; member: boolean; limits: Record<string, unknown> | null }>(
+  // The Admin workspace by definer (0279): a scope outside Admin does not
+  // read its row. The caller's own row there is its scope's when it is a
+  // user of Admin.
+  const [r] = await rows<{
+    id: string | null;
+    member: boolean;
+    limits: Record<string, unknown> | null;
+  }>(
     q,
-    sql`select w.id, u.login_id is not null as member, u.limits
-          from workspaces w
-          left join workspace_users u on u.workspace_id = w.id and u.login_id = ${caller.loginId}
-         where w.owner_id = ${caller.anchorId} and w.is_admin
-         limit 1`,
+    sql`select a.id, u.login_id is not null as member, u.limits
+          from (select mantle_ws_admin_id(${caller.anchorId}::uuid) as id) a
+          left join workspace_users u on u.workspace_id = a.id and u.login_id = ${caller.loginId}`,
   );
-  if (!r) return { migrated: false, adminWsId: null, member: false, limits: {} };
+  if (!r?.id) return { migrated: false, adminWsId: null, member: false, limits: {} };
   return { migrated: true, adminWsId: r.id, member: r.member, limits: r.limits ?? {} };
 }
 
@@ -249,24 +269,29 @@ type WsRow = LookRow & {
   me_moderator: boolean;
   agent_id: string | null;
   agent_name: string | null;
+  /** The assistant has history (mantle_agent_has_history). */
+  agent_history: boolean;
+  /** The landing app: the workspace holds it, its build is green, and its
+   *  title (to a user of the workspace only). */
+  landing_held: boolean;
+  landing_ready: boolean;
+  landing_title: string | null;
 };
 
-function wsSelect(caller: WsCaller, where: ReturnType<typeof sql>, lock = false) {
+/** The workspaces the caller sees, as the screens list them (`where` over
+ *  the row `w`): by the definer of 0291 (mantle_ws_seen), its live ones,
+ *  every one for the users area, with the counts, its own seat, the
+ *  assistant and the landing app. */
+function wsSelect(caller: WsCaller, where: ReturnType<typeof sql>) {
   return sql`
     select w.id, w.name, w.description, w.contact_id, w.is_admin,
            w.landing_app_id, w.archived_at, ${WS_LOOK_COLUMNS},
-           (select count(*)::int from workspace_users u where u.workspace_id = w.id) as user_count,
-           (select count(*)::int from workspace_resources r where r.workspace_id = w.id) as resource_count,
-           me.login_id is not null as me_member,
-           coalesce(me.moderator, false) as me_moderator,
-           a.id as agent_id, a.name as agent_name
-      from workspaces w
-      left join workspace_users me on me.workspace_id = w.id and me.login_id = ${caller.loginId}
-      left join workspace_resources ar on ar.workspace_id = w.id and ar.type = 'assistant'
-      left join agents a on a.id::text = ar.ref_id
-     where w.owner_id = ${caller.anchorId} and ${where}
-     order by w.is_admin desc, lower(w.name)
-     ${lock ? sql`for update of w` : sql``}`;
+           w.user_count, w.resource_count, w.me_member, w.me_moderator,
+           w.agent_id, w.agent_name, w.agent_history,
+           w.landing_held, w.landing_ready, w.landing_title
+      from mantle_ws_seen(${caller.loginId}::uuid) w
+     where ${where}
+     order by w.is_admin desc, lower(w.name)`;
 }
 
 function toWorkspace(r: WsRow): Workspace {
@@ -309,7 +334,13 @@ async function seeWorkspace(
   q: Exec = db,
   lock = false,
 ): Promise<Seen> {
-  const [row] = await rows<WsRow>(q, wsSelect(caller, sql`w.id = ${wsId(id)}`, lock));
+  const wid = wsId(id);
+  if (lock) {
+    await q.execute(
+      sql`select 1 from workspaces where id = ${wid} and owner_id = ${caller.anchorId} for update`,
+    );
+  }
+  const [row] = await rows<WsRow>(q, wsSelect(caller, sql`w.id = ${wid}`));
   if (!row) throw NOT_FOUND();
   const areas = areasOf(await adminInfo(caller, q), caller);
   const admin = areas.includes('users');
@@ -320,9 +351,7 @@ async function seeWorkspace(
 /** GET /api/workspaces. */
 export async function listWorkspaces(caller: WsCaller): Promise<{ workspaces: Workspace[] }> {
   const areas = await areasFor(caller);
-  const where = areas.includes('users')
-    ? sql`true`
-    : sql`me.login_id is not null and w.archived_at is null`;
+  const where = areas.includes('users') ? sql`true` : sql`w.me_member and w.archived_at is null`;
   const list = await rows<WsRow>(db, wsSelect(caller, where));
   return { workspaces: list.map(toWorkspace) };
 }
@@ -387,25 +416,19 @@ async function detail(
       added_by_name: string | null;
       added_at: string | Date;
     }>(
+      // A login's name and email, and the users of a workspace outside the
+      // scope (the users area): by definer (0291, mantle_ws_people).
       q,
-      sql`select u.login_id, x.display_name as name, x.email, u.moderator,
-                 u.added_by, coalesce(nullif(btrim(b.display_name), ''), b.email) as added_by_name,
+      sql`select u.login_id, u.name, u.email, u.moderator, u.added_by, u.added_by_name,
                  u.added_at
-            from workspace_users u
-            join auth.users x on x.id = u.login_id
-            left join auth.users b on b.id = u.added_by
-           where u.workspace_id = ${id}
-           order by lower(coalesce(x.display_name, x.email))`,
+            from mantle_ws_people(${id}::uuid) u
+           order by lower(coalesce(u.name, u.email))`,
     ),
     rows<{ type: WorkspaceResourceKind; ref_id: string; write: boolean; name: string }>(
       q,
-      sql`select r.type, r.ref_id, r.write, coalesce(a.name, g.name, r.ref_id) as name
-            from workspace_resources r
-            left join agents a on r.type = 'assistant' and a.id::text = r.ref_id
-            left join tool_groups g on r.type = 'connector' and g.slug = r.ref_id
-                                    and g.owner_id = ${caller.anchorId}
-           where r.workspace_id = ${id}
-           order by r.type, lower(coalesce(a.name, g.name, r.ref_id))`,
+      sql`select r.type, r.ref_id, r.write, r.name
+            from mantle_ws_resource_rows(${id}::uuid) r
+           order by r.type, lower(r.name)`,
     ),
   ]);
   const outUsers: WorkspaceUser[] = users.map((u) => ({
@@ -425,8 +448,8 @@ async function detail(
     name: r.name,
     write: r.write,
   }));
-  const hasHistory = seen.row.agent_id ? await agentHasHistory(q, seen.row.agent_id) : false;
-  const landingApp = await landingAppOf(caller, seen);
+  const hasHistory = seen.row.agent_id ? seen.row.agent_history === true : false;
+  const landingApp = landingAppOf(seen);
   return {
     workspace: toWorkspace(seen.row),
     users: outUsers,
@@ -444,14 +467,15 @@ async function detail(
  * the screen can offer the clear (audit M2; the item_grants trigger of 0276
  * clears such a pointer at commit, this covers one left from before).
  */
-async function landingAppOf(caller: WsCaller, seen: Seen): Promise<WorkspaceLandingApp | null> {
-  const appId = seen.row.landing_app_id;
-  if (!appId) return null;
-  const held = await workspaceHeldApp(caller.anchorId, seen.row.id, appId);
-  if (!held) return { held: false, appId: null, title: null, ready: false };
-  return seen.row.me_member
-    ? { held: true, appId: held.appId, title: held.title, ready: held.ready }
-    : { held: true, appId: null, title: null, ready: held.ready };
+function landingAppOf(seen: Seen): WorkspaceLandingApp | null {
+  const r = seen.row;
+  if (!r.landing_app_id) return null;
+  // Read with the row (mantle_ws_seen, 0291): an Admin user outside the
+  // workspace may not read the app itself.
+  if (!r.landing_held) return { held: false, appId: null, title: null, ready: false };
+  return r.me_member
+    ? { held: true, appId: r.landing_app_id, title: r.landing_title ?? '', ready: r.landing_ready }
+    : { held: true, appId: null, title: null, ready: r.landing_ready };
 }
 
 /** GET /api/workspaces/:id. */
@@ -519,20 +543,22 @@ export async function createWorkspace(
   refuseReservedName(body.name);
   let id: string;
   try {
-    id = await db.transaction(async (tx) => {
-      const [w] = await rows<{ id: string }>(
-        tx,
-        sql`insert into workspaces (owner_id, name, description, created_by)
+    id = await workspaceWriteSystem(() =>
+      db.transaction(async (tx) => {
+        const [w] = await rows<{ id: string }>(
+          tx,
+          sql`insert into workspaces (owner_id, name, description, created_by)
             values (${caller.anchorId}, ${body.name}, ${body.description ?? ''}, ${caller.loginId})
             returning id`,
-      );
-      await tx.execute(
-        sql`insert into workspace_users (workspace_id, login_id, moderator, added_by)
+        );
+        await tx.execute(
+          sql`insert into workspace_users (workspace_id, login_id, moderator, added_by)
             values (${w!.id}, ${caller.loginId}, true, ${caller.loginId})`,
-      );
-      await event(tx, w!.id, caller.loginId, 'workspace.create', { name: body.name });
-      return w!.id;
-    });
+        );
+        await event(tx, w!.id, caller.loginId, 'workspace.create', { name: body.name });
+        return w!.id;
+      }),
+    );
   } catch (err) {
     throw nameError(err) ?? err;
   }
@@ -564,52 +590,53 @@ export async function patchWorkspace(
   },
 ): Promise<Workspace> {
   try {
-    await db.transaction(async (tx) => {
-      const seen = await seeWorkspace(caller, id, tx, true);
-      const w = seen.row;
-      if (w.archived_at !== null) throw archivedError();
-      const look = body.color !== undefined || body.icon !== undefined;
-      const own = body.name !== undefined || body.description !== undefined || look;
-      if (own && !mayChangeAbout(seen)) {
-        throw new WsError(403, 'forbidden', 'Only a Moderator of this workspace can change it.');
-      }
-      if (body.name !== undefined && body.name !== w.name) {
-        // Admin keeps its name (fix round 2, L-3): a renamed Admin would
-        // free "Admin" for anyone, and a later clash would tell them it
-        // exists. Every other workspace, Team too (0286), is renamed.
-        if (w.is_admin) {
-          throw new WsError(409, 'reserved_name', 'The Admin workspace keeps its name.');
+    await workspaceWriteSystem(() =>
+      db.transaction(async (tx) => {
+        const seen = await seeWorkspace(caller, id, tx, true);
+        const w = seen.row;
+        if (w.archived_at !== null) throw archivedError();
+        const look = body.color !== undefined || body.icon !== undefined;
+        const own = body.name !== undefined || body.description !== undefined || look;
+        if (own && !mayChangeAbout(seen)) {
+          throw new WsError(403, 'forbidden', 'Only a Moderator of this workspace can change it.');
         }
-        refuseReservedName(body.name);
-      }
-      if (body.contactNodeId !== undefined && !seen.admin) {
-        throw new WsError(403, 'admin_only', 'Only an Admin user can set the contact.');
-      }
-      if (body.assistantId !== undefined && !seen.areas.includes('assistants')) {
-        throw new WsError(403, 'admin_only', 'Only an Admin user can change the assistant.');
-      }
-      if (body.contactNodeId) {
-        const [c] = await rows<{ id: string }>(
-          tx,
-          sql`select id from nodes
+        if (body.name !== undefined && body.name !== w.name) {
+          // Admin keeps its name (fix round 2, L-3): a renamed Admin would
+          // free "Admin" for anyone, and a later clash would tell them it
+          // exists. Every other workspace, Team too (0286), is renamed.
+          if (w.is_admin) {
+            throw new WsError(409, 'reserved_name', 'The Admin workspace keeps its name.');
+          }
+          refuseReservedName(body.name);
+        }
+        if (body.contactNodeId !== undefined && !seen.admin) {
+          throw new WsError(403, 'admin_only', 'Only an Admin user can set the contact.');
+        }
+        if (body.assistantId !== undefined && !seen.areas.includes('assistants')) {
+          throw new WsError(403, 'admin_only', 'Only an Admin user can change the assistant.');
+        }
+        if (body.contactNodeId) {
+          const [c] = await rows<{ id: string }>(
+            tx,
+            sql`select id from nodes
                where id = ${wsIdOrInvalid(body.contactNodeId)} and owner_id = ${caller.anchorId}
                  and type = 'contact'`,
-        );
-        if (!c) throw new WsError(400, 'invalid', 'contactNodeId: no such contact.');
-      }
-      const changed: Record<string, unknown> = {};
-      if (body.name !== undefined && body.name !== w.name) changed.name = body.name;
-      if (body.description !== undefined && body.description !== w.description) {
-        changed.description = body.description;
-      }
-      if (body.color !== undefined && body.color !== w.look_color) changed.color = body.color;
-      if (body.icon !== undefined && body.icon !== w.look_icon) changed.icon = body.icon;
-      if (body.contactNodeId !== undefined && body.contactNodeId !== w.contact_id) {
-        changed.contactNodeId = body.contactNodeId;
-      }
-      if (Object.keys(changed).length > 0) {
-        await tx.execute(
-          sql`update workspaces set
+          );
+          if (!c) throw new WsError(400, 'invalid', 'contactNodeId: no such contact.');
+        }
+        const changed: Record<string, unknown> = {};
+        if (body.name !== undefined && body.name !== w.name) changed.name = body.name;
+        if (body.description !== undefined && body.description !== w.description) {
+          changed.description = body.description;
+        }
+        if (body.color !== undefined && body.color !== w.look_color) changed.color = body.color;
+        if (body.icon !== undefined && body.icon !== w.look_icon) changed.icon = body.icon;
+        if (body.contactNodeId !== undefined && body.contactNodeId !== w.contact_id) {
+          changed.contactNodeId = body.contactNodeId;
+        }
+        if (Object.keys(changed).length > 0) {
+          await tx.execute(
+            sql`update workspaces set
                 name = ${body.name ?? w.name},
                 description = ${body.description ?? w.description},
                 color = ${body.color === undefined ? w.look_color : body.color},
@@ -617,16 +644,17 @@ export async function patchWorkspace(
                 contact_id = ${body.contactNodeId === undefined ? w.contact_id : body.contactNodeId},
                 updated_at = now()
               where id = ${w.id}`,
-        );
-        await event(tx, w.id, caller.loginId, 'workspace.update', changed);
-      }
-      if (body.assistantId !== undefined) {
-        await setAssistant(caller, tx, w, body.assistantId);
-      }
-      if (body.landingAppId !== undefined) {
-        await setLandingApp(caller, tx, seen, body.landingAppId);
-      }
-    });
+          );
+          await event(tx, w.id, caller.loginId, 'workspace.update', changed);
+        }
+        if (body.assistantId !== undefined) {
+          await setAssistant(caller, tx, w, body.assistantId);
+        }
+        if (body.landingAppId !== undefined) {
+          await setLandingApp(caller, tx, seen, body.landingAppId);
+        }
+      }),
+    );
   } catch (err) {
     throw nameError(err) ?? assistantError(err) ?? err;
   }
@@ -786,12 +814,12 @@ async function archiveCounts(
   q: Exec,
   id: string,
 ): Promise<WorkspaceArchivePreview & { exclusionCount: number }> {
+  // Every item the workspace holds, the ones the caller cannot open
+  // included: by definer (0291, mantle_ws_item_counts), for a Moderator of
+  // it or the users area.
   const [r] = await rows<{ items: number; grants: number; exclusions: number }>(
     q,
-    sql`select count(*) filter (where is_home)::int as items,
-               count(*) filter (where not is_home and not excluded)::int as grants,
-               count(*) filter (where excluded)::int as exclusions
-          from item_grants where workspace_id = ${id}`,
+    sql`select c.items, c.grants, c.exclusions from mantle_ws_item_counts(${id}::uuid) c`,
   );
   return {
     itemCount: r?.items ?? 0,
@@ -841,35 +869,39 @@ export async function archiveWorkspace(
         sql`select node_id from item_grants where workspace_id = ${wid} and not is_home`,
       )
     ).map((r) => r.node_id);
-  const first = await nodeIds(db);
-  const counts = await withDeadlockRetry(() =>
-    withHeads(first, 'update', async (tx) => {
-      const again = await seeWorkspace(caller, wid, tx, true);
-      mayArchive(again);
-      const now = await archiveCounts(tx, wid);
-      if (now.itemCount > 0) {
-        throw new WsError(
-          409,
-          'workspace_holds_items',
-          `${now.itemCount} item(s) have their home in this workspace. Move them first.`,
+  const counts = await workspaceWriteSystem(async () => {
+    // Every item the workspace holds, the ones the caller cannot open
+    // included: their heads come first.
+    const first = await nodeIds(db);
+    return withDeadlockRetry(() =>
+      withHeads(first, 'update', async (tx) => {
+        const again = await seeWorkspace(caller, wid, tx, true);
+        mayArchive(again);
+        const now = await archiveCounts(tx, wid);
+        if (now.itemCount > 0) {
+          throw new WsError(
+            409,
+            'workspace_holds_items',
+            `${now.itemCount} item(s) have their home in this workspace. Move them first.`,
+          );
+        }
+        const known = new Set(first);
+        const later = (await nodeIds(tx)).filter((n) => !known.has(n));
+        await lockMoreHeads(tx, later);
+        await tx.execute(sql`delete from item_grants where workspace_id = ${wid} and not is_home`);
+        await tx.execute(
+          sql`update workspaces set archived_at = now(), updated_at = now() where id = ${wid}`,
         );
-      }
-      const known = new Set(first);
-      const later = (await nodeIds(tx)).filter((n) => !known.has(n));
-      await lockMoreHeads(tx, later);
-      await tx.execute(sql`delete from item_grants where workspace_id = ${wid} and not is_home`);
-      await tx.execute(
-        sql`update workspaces set archived_at = now(), updated_at = now() where id = ${wid}`,
-      );
-      // Both kinds of row the delete drops (audit L5): grants, and the
-      // "removed here" exclusions against a folder's grant.
-      await event(tx, wid, caller.loginId, 'workspace.archive', {
-        grantsDropped: now.grantCount,
-        exclusionsDropped: now.exclusionCount,
-      });
-      return { itemCount: now.itemCount, grantCount: now.grantCount, row: again.row };
-    }),
-  );
+        // Both kinds of row the delete drops (audit L5): grants, and the
+        // "removed here" exclusions against a folder's grant.
+        await event(tx, wid, caller.loginId, 'workspace.archive', {
+          grantsDropped: now.grantCount,
+          exclusionsDropped: now.exclusionCount,
+        });
+        return { itemCount: now.itemCount, grantCount: now.grantCount, row: again.row };
+      }),
+    );
+  });
   // Read inside the change: a login that is not an Admin user no longer
   // sees an archived workspace.
   const { row, ...applied } = counts;
@@ -878,14 +910,13 @@ export async function archiveWorkspace(
 
 // ── Users (plan 18.13 Q3, R7, 18.8; the owner decision of 2026-10-13) ───────
 
-type LoginRow = { id: string; role: string; disabled: boolean };
+type LoginRow = { id: string };
 
+/** The login `loginId` names, or null: its id only (the column the
+ *  workspace role reads; arch A6). */
 async function loginOf(q: Exec, loginId: string): Promise<LoginRow | null> {
   if (!UUID_RE.test(loginId)) return null;
-  const [r] = await rows<LoginRow>(
-    q,
-    sql`select id, role, disabled_at is not null as disabled from auth.users where id = ${loginId}`,
-  );
+  const [r] = await rows<LoginRow>(q, sql`select id from auth.users where id = ${loginId}`);
   return r ?? null;
 }
 
@@ -1073,15 +1104,17 @@ export async function addUser(
     );
     return reread(caller, wid);
   }
-  await db.transaction(async (tx) => {
-    await checks(tx);
-    const moderator = body.moderator ?? false;
-    await tx.execute(
-      sql`insert into workspace_users (workspace_id, login_id, moderator, added_by)
-          values (${wid}, ${target.id}, ${moderator}, ${caller.loginId})`,
-    );
-    await event(tx, wid, caller.loginId, 'user.add', subject(moderator));
-  });
+  await workspaceWriteSystem(() =>
+    db.transaction(async (tx) => {
+      await checks(tx);
+      const moderator = body.moderator ?? false;
+      await tx.execute(
+        sql`insert into workspace_users (workspace_id, login_id, moderator, added_by)
+            values (${wid}, ${target.id}, ${moderator}, ${caller.loginId})`,
+      );
+      await event(tx, wid, caller.loginId, 'user.add', subject(moderator));
+    }),
+  );
   return reread(caller, wid);
 }
 
@@ -1093,7 +1126,12 @@ export async function setModerator(
   loginId: string,
   moderator: boolean,
 ): Promise<WorkspaceDetailResponse> {
-  const wid = (await seeWorkspace(caller, id)).row.id;
+  const pre = await seeWorkspace(caller, id);
+  // An Admin user only (the users area), whose write request runs on the
+  // system pool: refused here, in the caller's scope, before the change
+  // (arch A6; and again inside it).
+  mayPromote(pre);
+  const wid = pre.row.id;
   await db
     .transaction(async (tx) => {
       const seen = await seeWorkspace(caller, wid, tx, true);
@@ -1164,15 +1202,17 @@ export async function removeUser(
       },
     );
   } else {
-    await db.transaction(async (tx) => {
-      await checks(tx);
-      await tx.execute(
-        sql`delete from workspace_users where workspace_id = ${wid} and login_id = ${loginId}`,
-      );
-      await event(tx, wid, caller.loginId, self ? 'user.leave' : 'user.remove', {
-        login: loginId,
-      });
-    });
+    await workspaceWriteSystem(() =>
+      db.transaction(async (tx) => {
+        await checks(tx);
+        await tx.execute(
+          sql`delete from workspace_users where workspace_id = ${wid} and login_id = ${loginId}`,
+        );
+        await event(tx, wid, caller.loginId, self ? 'user.leave' : 'user.remove', {
+          login: loginId,
+        });
+      }),
+    );
   }
   // A login that left can no longer see the workspace.
   if (self && !pre.admin) return { ...(await detailAfterLeave(pre)) };
@@ -1232,14 +1272,15 @@ export async function searchUsers(
   if (!admin && term.length < 3) {
     throw new WsError(400, 'query_too_short', 'Type at least 3 characters of a name or email.');
   }
-  const like = `%${term.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
+  // By definer (0291, mantle_ws_login_search): the workspace role reads no
+  // email. It holds the same limits to the caller's scope (the users area;
+  // else a Moderator, 3 characters, 10 at most, the first page).
   const hits = await rows<{ id: string; name: string | null; email: string }>(
     db,
-    sql`select id, display_name as name, email from auth.users
-         where disabled_at is null
-           and (${term} = '' or email ilike ${like} or coalesce(display_name, '') ilike ${like})
-         order by lower(coalesce(display_name, email)), id
-         limit ${admin ? USER_SEARCH_PAGE : 10} offset ${offset}`,
+    sql`select s.id, s.name, s.email
+          from mantle_ws_login_search(${term}, ${admin ? USER_SEARCH_PAGE : 10}::int,
+                                      ${offset}::int) s
+         order by lower(coalesce(s.name, s.email)), s.id`,
   );
   return hits.map((h) => ({ loginId: h.id, name: h.name, email: h.email }));
 }
@@ -1264,7 +1305,12 @@ export async function addResource(
   id: string,
   body: { kind: WorkspaceResourceKind; id: string; write?: boolean },
 ): Promise<WorkspaceDetailResponse> {
-  const wid = (await seeWorkspace(caller, id)).row.id;
+  const pre = await seeWorkspace(caller, id);
+  // An Admin user only (its area), whose write request runs on the system
+  // pool: refused here, in the caller's scope, before the change (arch A6;
+  // and again inside it).
+  mayManageResource(pre, body.kind);
+  const wid = pre.row.id;
   try {
     await db.transaction(async (tx) => {
       const seen = await seeWorkspace(caller, wid, tx, true);
@@ -1314,7 +1360,10 @@ export async function patchResource(
   write: boolean,
 ): Promise<WorkspaceDetailResponse> {
   const k = resourceKind(kind);
-  const wid = (await seeWorkspace(caller, id)).row.id;
+  const pre = await seeWorkspace(caller, id);
+  // An Admin user only, refused before the change (see addResource).
+  mayManageResource(pre, k);
+  const wid = pre.row.id;
   await db.transaction(async (tx) => {
     const seen = await seeWorkspace(caller, wid, tx, true);
     mayManageResource(seen, k);
@@ -1343,7 +1392,10 @@ export async function removeResource(
   refId: string,
 ): Promise<WorkspaceDetailResponse> {
   const k = resourceKind(kind);
-  const wid = (await seeWorkspace(caller, id)).row.id;
+  const pre = await seeWorkspace(caller, id);
+  // An Admin user only, refused before the change (see addResource).
+  mayManageResource(pre, k);
+  const wid = pre.row.id;
   await db.transaction(async (tx) => {
     const seen = await seeWorkspace(caller, wid, tx, true);
     mayManageResource(seen, k);

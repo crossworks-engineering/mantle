@@ -25,6 +25,7 @@ import {
   SNAPSHOT_COPY_NO_SHARE,
 } from '@mantle/db';
 import { defineDomainError } from '@mantle/std';
+import { contactSharingByContact } from './contact-share-codes';
 import { kindsWhere, type ContactShareKind } from '@mantle/client-types/kinds';
 import type {
   AccessContactShare,
@@ -364,7 +365,11 @@ export async function listContactSharesForAdmin(
   };
 }
 
-/** The contacts one item is shared with, for the Access control. */
+/** The contacts one item is shared with, for the Access control. Whether
+ *  a contact's sharing is on comes from contactSharingByContact, the one
+ *  reader of the codes table (contact-share-codes.ts): the workspace role
+ *  never reads it, so this list reads in the caller's scope too (the Grant
+ *  Access panel, arch A6). */
 export async function contactSharesForNode(
   ownerId: string,
   nodeId: string,
@@ -377,19 +382,20 @@ export async function contactSharesForNode(
       name: nodes.title,
       canWrite: shares.canWrite,
       lastViewedAt: shares.lastViewedAt,
-      on: contactShareCodes.codeHash,
     })
     .from(shares)
     .innerJoin(nodes, and(eq(nodes.id, shares.contactId), eq(nodes.ownerId, shares.ownerId)))
-    .leftJoin(contactShareCodes, eq(contactShareCodes.contactId, shares.contactId))
     .where(and(eq(shares.ownerId, ownerId), eq(shares.nodeId, nodeId), live()))
     .orderBy(nodes.title);
+  const on = rows.length
+    ? await contactSharingByContact(ownerId, [...new Set(rows.map((r) => r.contactId!))])
+    : new Map();
   return rows.map((r) => ({
     shareId: r.id,
     contactId: r.contactId!,
     name: r.name,
     canWrite: r.canWrite,
-    sharingOn: r.on !== null,
+    sharingOn: on.has(r.contactId!),
     lastOpenedAt: r.lastViewedAt ? r.lastViewedAt.toISOString() : null,
     path: `/s/${r.token}`,
   }));

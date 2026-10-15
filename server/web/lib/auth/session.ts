@@ -2246,8 +2246,10 @@ export async function getChatLoginOr401(): Promise<ChatLogin | NextResponse> {
  * The request scope of getLoginOr401 (W6a). On an any-login route
  * (ANY_LOGIN_ROUTES: shell, workspaces, grants, access keys, whoami) every
  * login enters its scope, an Admin user's write excepted (system pool, as
- * on the owner routes); those libraries hold their rule in their own SQL
- * and leave the scope by name (asSystem 'rule-in-query'). Anywhere else
+ * on the owner routes; a grants write with the login's scope on its
+ * transactions). The grants and workspace libraries read in the scope
+ * (arch A6); the shell, the access keys and whoami hold their rule in their
+ * own SQL and leave the scope by name (asSystem 'rule-in-query'). Anywhere else
  * (sign-out, change password, OAuth consent: the login's own row, never
  * brain data) the request stays on the system pool. Outside a request
  * slot nothing changes; a request slot with no row is refused
@@ -2263,7 +2265,18 @@ async function anyLoginScope(res: Resolved): Promise<NextResponse | null> {
   }
   const loginId = res.kind === 'admin' ? res.user.actor.id : res.member.loginId;
   if (res.kind === 'admin') {
-    if (route.effect === 'write') return noteSystem('admin-write');
+    if (route.effect === 'write') {
+      // The grants panel's writes (arch A6, A8 matrix F7 a): the login's
+      // scope on the request's system transactions, as an Admin user's
+      // owner write has it (adminRouteGate), so the database's grant checks
+      // (mantle_grant_change, 0279) run on them too. Its reads stay on the
+      // system pool, as on every Admin user's write. (A brain not on
+      // workspaces has no panel: lib/grants.ts refuses it first.)
+      if (route.pattern.startsWith('/api/grants/') && !(await adminReadsOnSystemPoolFor(loginId))) {
+        noteRequestWriteScope(await loginScopeFor(loginId));
+      }
+      return noteSystem('admin-write');
+    }
     if (await adminReadsOnSystemPoolFor(loginId)) return noteSystem('admin-reads-flag');
     if (!(await brainOnWorkspacesNow())) return noteSystem('not-on-workspaces');
   }

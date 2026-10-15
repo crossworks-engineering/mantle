@@ -891,10 +891,21 @@ export function measure(root) {
   }
   const sum = (o, k) => Object.values(o).reduce((a, v) => a + (k ? v[k] : v), 0);
   const reasons = new Set(Object.values(asSystem).flatMap((v) => v.reasons));
+  // The real system-pool exits (arch A6 round 2), file by file: every
+  // asSystem site that is not a door's own, plus every call of a door. A
+  // door keeps one pinned site, so its calls are where the code leaves the
+  // scope; this one number is what the plan's "at most 40" is about.
+  const exitsByFile = {};
+  for (const f of new Set([...Object.keys(asSystem), ...Object.keys(doorCallsByFile)])) {
+    const n = (asSystem[f]?.count ?? 0) - (doors[f]?.length ?? 0) + (doorCallsByFile[f] ?? 0);
+    if (n) exitsByFile[f] = n;
+  }
   return {
     numbers: {
       asSystemSites: sum(asSystem, 'count'),
       asSystemDoorCalls: sum(doorCallsByFile),
+      asSystemDoors: sum(doors, 'length'),
+      asSystemExits: sum(exitsByFile),
       asSystemFiles: Object.keys(asSystem).length,
       asSystemReasons: reasons.size,
       rawAclFiles: Object.keys(rawAcl).length,
@@ -957,6 +968,7 @@ export function measure(root) {
     perFile: {
       asSystem,
       asSystemDoorCalls: doorCallsByFile,
+      asSystemExits: exitsByFile,
       rawAcl,
       toolLists,
       routeLists,

@@ -529,10 +529,12 @@ describe.skipIf(!URL)('W6b fix round 1', () => {
 
   it('decision 1: a non-owner’s app delete waits for the owner; the nightly purge skips it', async () => {
     const trash = await import('@mantle/content/app-trash');
-    // A member's delete (the my_app tools' delete).
-    const author = { loginId: mem, brainId: owner };
-    const mine = await sys(() => c.createMemberApp(author, { title: `${tag} held` }));
-    await sys(() => c.deleteMemberApp(author, mine.id));
+    // A member's delete: the brain's delete named as the member's (what the
+    // my_app tools' delete did; their library went in A6 round 2).
+    const mine = await sys(() => c.createApp(owner, { title: `${tag} held` }));
+    await sys(() =>
+      c.deleteApp(owner, mine.id, { actor: 'member', deletedBy: { loginId: mem, owner: false } }),
+    );
     // A second Admin user's delete through the route.
     const a = idOf(await call('/api/apps', admin2, 'POST', { name: `${tag} a2 app` }), 'app');
     expect((await call(`/api/apps/${a}`, admin2, 'DELETE')).status).toBe(200);

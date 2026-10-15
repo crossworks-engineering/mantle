@@ -31,6 +31,7 @@
 import { z } from 'zod';
 import { NextResponse } from '@/server/http-compat';
 import {
+  asSystem,
   db,
   sql,
   isCheckViolation,
@@ -72,7 +73,6 @@ import { appDbTableDetails } from '@mantle/content/app-broker';
 import { refoldPageTexts } from '@mantle/content/pages';
 import { moveTreeItems, notifyTreeChanged } from '@mantle/content/tree';
 import { defineDomainError, publicErrorMessage } from '@mantle/std';
-import { inRuleInQuery } from '@/lib/auth/rule-in-query';
 import type { AnyLogin } from '@/lib/auth';
 import { areasFor, workspaceCaller, type WsCaller } from '@/lib/workspaces';
 
@@ -108,17 +108,25 @@ export const FOLDER_GRANT_LIMIT = { max: 50_000 };
 /** Run a grants route for the login the handler read (loginCaller()):
  *  answer the result as JSON. A GrantError or a WsError answers
  *  `{ error, code }` by its row in the one table (A10 part 2 fix round 1,
- *  L7); anything else is the opaque 500. */
+ *  L7); anything else is the opaque 500.
+ *
+ *  It runs where the gate put the request (arch A6): a login's read, and a
+ *  member's write, in the login's own scope (the workspace role and its row
+ *  rules; a write's transaction on the write role, or the system pool with
+ *  the scope on it); an Admin user's write on the system pool with the
+ *  login's scope on its transactions (session.ts anyLoginScope), so the
+ *  database's own grant checks run for every caller (mantle_grant_change,
+ *  0279; A8 matrix F7 a). What the scope cannot read goes through the
+ *  definers of 0291, each held to the scope: an item's grant rows
+ *  (mantle_item_grants), a change's counts (mantle_grant_counts), what an
+ *  item embeds (mantle_item_embeds), the workspaces an Admin user names
+ *  (mantle_ws_seen). The page refold after a change is the one exit. */
 export async function grantsRoute(
   login: AnyLogin,
   fn: (caller: WsCaller) => Promise<unknown>,
   okStatus = 200,
 ): Promise<Response> {
-  const caller = workspaceCaller(login);
-  // The rule is in this library's own SQL on the system pool: it leaves
-  // the request scope the gate entered by name (W6a), at the one exit
-  // site (lib/auth/rule-in-query.ts).
-  const out = await inRuleInQuery(() => fn(caller));
+  const out = await fn(workspaceCaller(login));
   return NextResponse.json(out, { status: okStatus });
 }
 
@@ -179,11 +187,14 @@ type Ctx = {
 };
 
 async function loadCtx(caller: WsCaller, q: Exec = db): Promise<Ctx> {
-  const [a] = await rows<{ id: string }>(
+  // The Admin workspace by definer (0279): a scope outside Admin does not
+  // read its row.
+  const [a] = await rows<{ id: string | null }>(
     q,
-    sql`select id from workspaces where owner_id = ${caller.anchorId} and is_admin limit 1`,
+    sql`select mantle_ws_admin_id(${caller.anchorId}::uuid) as id`,
   );
-  if (!a) throw new GrantError(409, 'not_migrated', 'Workspaces are not set up on this brain yet.');
+  if (!a?.id)
+    throw new GrantError(409, 'not_migrated', 'Workspaces are not set up on this brain yet.');
   const list = await rows<{ id: string; name: string; is_admin: boolean; moderator: boolean }>(
     q,
     sql`select w.id, w.name, w.is_admin, u.moderator
@@ -222,10 +233,14 @@ async function seeTarget(ctx: Ctx, wsId: string, q: Exec = db): Promise<GrantWor
   const own = ctx.mine.get(id);
   if (own) return { wsId: own.id, name: own.name };
   if (ctx.seesAll) {
+    // Any live workspace of the brain, named by the definers of 0279
+    // (mantle_ws_live, mantle_ws_names): a scope that holds Admin may name
+    // every one (and the system pool, where the users area was read).
     const [w] = await rows<{ id: string; name: string }>(
       q,
-      sql`select id, name from workspaces
-           where id = ${id} and owner_id = ${ctx.caller.anchorId} and archived_at is null`,
+      sql`select x ->> 'wsId' as id, x ->> 'name' as name
+            from jsonb_array_elements(mantle_ws_names(array[${id}::uuid], null)) x
+           where mantle_ws_live(${id}::uuid, null)`,
     );
     if (w) return { wsId: w.id, name: w.name };
   }
@@ -249,8 +264,6 @@ type Item = {
   mayEdit: boolean;
   /** A Moderator of the home. */
   mayManage: boolean;
-  /** The folder it sits in (a folder: the one above it). */
-  parent: string | null;
 };
 
 type GrantDbRow = {
@@ -260,6 +273,9 @@ type GrantDbRow = {
   isHome: boolean;
   via: string | null;
   excluded: boolean;
+  /** The item's folder passes this workspace on (its row there, not
+   *  removed, for a kind that may take it from a folder). */
+  derivable: boolean;
 };
 
 /** The item if the caller reads it (one of its workspaces holds a grant),
@@ -275,15 +291,13 @@ async function loadItem(ctx: Ctx, id: string, q: Exec = db): Promise<Item> {
     readable: boolean;
     may_edit: boolean;
     may_manage: boolean;
-    parent: string | null;
   }>(
     q,
     sql`select n.id, n.type::text as type, n.title, n.path::text as path,
                ${itemHomeSql('n')} as home, ${itemHoldersSql('n')} as holders,
                ${mayReadInSql('n', mineSql(ctx))} as readable,
                ${mayEditInSql('n', mineSql(ctx), modsSql(ctx))} as may_edit,
-               ${mayManageInSql('n', modsSql(ctx))} as may_manage,
-               mantle_parent_folder(n.owner_id, n.type, n.path) as parent
+               ${mayManageInSql('n', modsSql(ctx))} as may_manage
           from nodes n
          where n.id = ${itemId(id)} and n.owner_id = ${ctx.caller.anchorId}`,
   );
@@ -297,10 +311,15 @@ async function loadItem(ctx: Ctx, id: string, q: Exec = db): Promise<Item> {
     holders: idsOf(n.holders),
     mayEdit: n.may_edit === true,
     mayManage: n.may_manage === true,
-    parent: n.parent,
   };
 }
 
+/** The item's grant rows (mantle_item_grants, 0291): the item_grants row
+ *  rule shows a scope only its own workspaces' rows, and a change's rules
+ *  read the others too (a manager's removal of a workspace it is not in,
+ *  what a folder passes on). The definer holds itself to the scope: every
+ *  row not "Removed here", and those only for a manager of the item or the
+ *  users area. */
 async function grantRows(q: Exec, nodeId: string): Promise<Map<string, GrantDbRow>> {
   const list = await rows<{
     ws: string;
@@ -309,12 +328,12 @@ async function grantRows(q: Exec, nodeId: string): Promise<Map<string, GrantDbRo
     is_home: boolean;
     via: string | null;
     excluded: boolean;
+    derivable: boolean;
   }>(
     q,
-    sql`select g.workspace_id as ws, w.name, g.write, g.is_home, g.via_folder_id as via,
-               g.excluded
-          from item_grants g join workspaces w on w.id = g.workspace_id
-         where g.node_id = ${nodeId}`,
+    sql`select g.workspace_id as ws, g.name, g.write, g.is_home, g.via_folder_id as via,
+               g.excluded, g.derivable
+          from mantle_item_grants(${nodeId}::uuid) g`,
   );
   return new Map(
     list.map((r) => [
@@ -326,6 +345,7 @@ async function grantRows(q: Exec, nodeId: string): Promise<Map<string, GrantDbRo
         isHome: r.is_home,
         via: r.via,
         excluded: r.excluded,
+        derivable: r.derivable === true,
       },
     ]),
   );
@@ -335,17 +355,10 @@ const mayManage = (_ctx: Ctx, item: Item) => item.mayManage;
 const mayEdit = (_ctx: Ctx, item: Item) => item.mayEdit;
 
 /** Whether the item's folder passes `ws` on to it (a non-excluded row of
- *  the folder, for a kind that may take it from a folder). */
-async function folderGrants(q: Exec, item: Item, ws: string): Promise<boolean> {
-  if (!item.parent) return false;
-  const [r] = await rows<{ ok: boolean }>(
-    q,
-    sql`select exists (
-          select 1 from item_grants g
-           where g.node_id = ${item.parent} and g.workspace_id = ${ws} and not g.excluded
-             and mantle_grant_kind_ok(${item.type}::node_type, ${ws}::uuid, true)) as ok`,
-  );
-  return r?.ok === true;
+ *  the folder, for a kind that may take it from a folder), for a workspace
+ *  that holds a row of the item. */
+function folderGrants(grants: Grants, ws: string): boolean {
+  return grants.get(ws)?.derivable === true;
 }
 
 async function kindOk(q: Exec, type: string, ws: string): Promise<boolean> {
@@ -356,14 +369,55 @@ async function kindOk(q: Exec, type: string, ws: string): Promise<boolean> {
   return r?.ok === true;
 }
 
-async function subtreeCount(q: Exec, anchorId: string, item: Item): Promise<number> {
-  if (item.type !== 'branch' || !item.path) return 1;
-  const [r] = await rows<{ n: number }>(
+type Counts = {
+  total: number;
+  gain: number;
+  gainApps: number;
+  lose: number;
+  hidden: number;
+  exports: number;
+};
+
+/** The counts of a change on the item (a folder: its whole subtree, the
+ *  items the caller cannot open included), by the definer of 0291
+ *  (mantle_grant_counts), which answers only the change's own rule: add
+ *  needs manage and a Moderator of `add`; remove manage or a Moderator of
+ *  `remove`; the size alone manage or a Moderator of a holder. `hidden`
+ *  counts what the caller's workspaces do not read (the scope's, or with
+ *  no scope set the caller's own). */
+async function grantCounts(
+  q: Exec,
+  ctx: Ctx,
+  item: Item,
+  o: { add?: string | null; remove?: string | null } = {},
+): Promise<Counts> {
+  const [r] = await rows<{
+    total: number;
+    gain: number;
+    gain_apps: number;
+    lose: number;
+    hidden: number;
+    exports: number;
+  }>(
     q,
-    sql`select count(*)::int as n from nodes
-         where owner_id = ${anchorId} and path <@ ${item.path}::ltree`,
+    sql`select * from mantle_grant_counts(${item.id}::uuid, ${o.add ?? null}::uuid,
+                                         ${o.remove ?? null}::uuid, ${mineSql(ctx)})`,
   );
-  return r?.n ?? 1;
+  if (!r) throw new GrantError(403, 'forbidden', 'Only a Moderator can preview this change.');
+  return {
+    total: r.total,
+    gain: r.gain,
+    gainApps: r.gain_apps,
+    lose: r.lose,
+    hidden: r.hidden,
+    exports: r.exports,
+  };
+}
+
+/** How many items a change on the item reaches (1 for an item). */
+async function subtreeCount(q: Exec, ctx: Ctx, item: Item): Promise<number> {
+  if (item.type !== 'branch' || !item.path) return 1;
+  return (await grantCounts(q, ctx, item)).total;
 }
 
 async function event(
@@ -411,29 +465,25 @@ async function buildResponse(ctx: Ctx, item: Item, q: Exec = db): Promise<Grants
     via_readable: boolean | null;
     excluded: boolean;
     derivable: boolean;
+    parent: string | null;
   }>(
     q,
-    sql`select g.workspace_id as ws, w.name, g.write, g.is_home, g.via_folder_id as via,
+    sql`select g.workspace_id as ws, g.name, g.write, g.is_home, g.via_folder_id as via,
                f.title as via_title, ${mayReadInSql('f', mine)} as via_readable,
-               g.excluded,
-               (${item.parent}::uuid is not null and exists (
-                  select 1 from item_grants fg
-                   where fg.node_id = ${item.parent}::uuid and fg.workspace_id = g.workspace_id
-                     and not fg.excluded)
-                and mantle_grant_kind_ok(${item.type}::node_type, g.workspace_id, true)) as derivable
-          from item_grants g
-          join workspaces w on w.id = g.workspace_id
+               g.excluded, g.derivable, g.parent_folder as parent
+          from mantle_item_grants(${item.id}::uuid) g
           left join nodes f on f.id = g.via_folder_id
-         where g.node_id = ${item.id}
-         order by g.is_home desc, lower(w.name), g.workspace_id`,
+         order by g.is_home desc, lower(g.name), g.workspace_id`,
   );
+  // The item's folder (the definer names it: the scope may not read it).
+  const parent = list[0]?.parent ?? null;
   let parentFolder: { id: string; title: string | null } | null = null;
-  if (item.parent && list.some((r) => r.excluded && r.derivable)) {
+  if (parent && list.some((r) => r.excluded && r.derivable)) {
     const [p] = await rows<{ title: string; readable: boolean }>(
       q,
-      sql`select p.title, ${mayReadInSql('p', mine)} as readable from nodes p where p.id = ${item.parent}`,
+      sql`select p.title, ${mayReadInSql('p', mine)} as readable from nodes p where p.id = ${parent}`,
     );
-    parentFolder = { id: item.parent, title: p?.readable ? p.title : null };
+    parentFolder = { id: parent, title: p?.readable ? p.title : null };
   }
   const shown = (ws: string) => ctx.mine.has(ws) || ctx.seesAll || manage;
   const out: GrantRow[] = [];
@@ -527,10 +577,10 @@ async function buildResponse(ctx: Ctx, item: Item, q: Exec = db): Promise<Grants
       ? (
           await rows<{ id: string; name: string }>(
             q,
-            sql`select w.id, w.name from item_grants g join workspaces w on w.id = g.workspace_id
-                 where g.node_id = ${item.id} and not g.excluded and w.archived_at is null
-                   and mantle_grant_kind_ok(${nodeType}::node_type, w.id, true)
-                 order by lower(w.name), w.id`,
+            sql`select g.workspace_id as id, g.name from mantle_item_grants(${item.id}::uuid) g
+                 where not g.excluded and not g.archived
+                   and mantle_grant_kind_ok(${nodeType}::node_type, g.workspace_id, true)
+                 order by lower(g.name), g.workspace_id`,
           )
         ).map((w) => ({ wsId: w.id, name: w.name }))
       : [];
@@ -566,13 +616,15 @@ async function servedRefs(ctx: Ctx, served: readonly string[], q: Exec): Promise
 type EmbedRow = { id: string; title: string; type: string };
 
 /** What a page, drawing or note embeds that is not granted to every
- *  workspace the item is: only embeds the caller may open. */
+ *  workspace the item is: only embeds the caller may open. The embeds by
+ *  the definer of 0291 (mantle_item_embeds): the workspace role does not
+ *  read node_embeds. */
 async function embedRows(ctx: Ctx, item: Item, q: Exec): Promise<EmbedRow[]> {
   return rows<EmbedRow>(
     q,
     sql`select e.id, e.title, e.type::text as type
-          from node_embeds ne join nodes e on e.id = ne.to_id
-         where ne.from_id = ${item.id} and e.owner_id = ${ctx.caller.anchorId}
+          from mantle_item_embeds(${item.id}::uuid) ne join nodes e on e.id = ne.to_id
+         where not ne.hop and e.owner_id = ${ctx.caller.anchorId}
            and e.type <> 'branch'
            and ${mayReadInSql('e', mineSql(ctx))}
            and ${missesAnySql('e', wsArraySql(item.holders))}
@@ -663,7 +715,7 @@ async function change<T>(
   await check(db, ctx0, item0, await grantRows(db, item0.id));
   const folder = item0.type === 'branch';
   if (folder) {
-    const total = await subtreeCount(db, caller.anchorId, item0);
+    const total = await subtreeCount(db, ctx0, item0);
     if (total > FOLDER_GRANT_LIMIT.max) {
       throw new GrantError(
         409,
@@ -703,6 +755,15 @@ async function change<T>(
   return after(caller, item0.id);
 }
 
+/** The one exit of the grants library (arch A6): the page refold after a
+ *  change runs on the system pool by its reason ('page-refold'). It folds
+ *  the derived text of every page the change reaches, pages the caller may
+ *  not read or edit included (a page names an item only when every holder
+ *  of the page holds it): no answer goes back to the caller. */
+function pageRefoldSystem<T>(body: () => Promise<T>): Promise<T> {
+  return asSystem(body, 'page-refold');
+}
+
 /**
  * Page texts after a grant change (plan 5.3): a page's indexed text names
  * another item only when every holder of the page holds it, so the pages
@@ -716,24 +777,31 @@ async function refoldAfter(
   items: ReadonlyArray<{ id: string; type: string; path: string | null }>,
 ): Promise<void> {
   try {
-    const ids: string[] = [];
-    for (const item of items) {
-      if (item.type === 'branch' && item.path) {
-        const inside = await rows<{ id: string }>(
-          db,
-          sql`select id from nodes
-               where owner_id = ${anchorId} and type = 'page' and path <@ ${item.path}::ltree`,
-        );
-        ids.push(...inside.map((r) => r.id));
-      } else {
-        ids.push(item.id);
-      }
-    }
-    for (let i = 0; i < ids.length; i += 200) {
-      await refoldPageTexts(anchorId, ids.slice(i, i + 200));
-    }
+    await pageRefoldSystem(() => refoldPages(anchorId, items));
   } catch (err) {
     console.error('[grants] page text refold failed:', publicErrorMessage(err, 'grants refold'));
+  }
+}
+
+async function refoldPages(
+  anchorId: string,
+  items: ReadonlyArray<{ id: string; type: string; path: string | null }>,
+): Promise<void> {
+  const ids: string[] = [];
+  for (const item of items) {
+    if (item.type === 'branch' && item.path) {
+      const inside = await rows<{ id: string }>(
+        db,
+        sql`select id from nodes
+             where owner_id = ${anchorId} and type = 'page' and path <@ ${item.path}::ltree`,
+      );
+      ids.push(...inside.map((r) => r.id));
+    } else {
+      ids.push(item.id);
+    }
+  }
+  for (let i = 0; i < ids.length; i += 200) {
+    await refoldPageTexts(anchorId, ids.slice(i, i + 200));
   }
 }
 
@@ -879,8 +947,8 @@ export async function removeGrant(
       return row;
     },
     // @heads-held: change() runs this under the item's heads (a folder: its subtree).
-    async (tx, ctx, item, _grants, row) => {
-      const exclude = row.via !== null || (await folderGrants(tx, item, row.ws));
+    async (tx, ctx, item, grants, row) => {
+      const exclude = row.via !== null || folderGrants(grants, row.ws);
       // Logged first, while the row is there: an event in a workspace
       // outside the caller's scope needs that workspace's grant row on the
       // item (mantle_workspace_event, A2b2b fix round 2, L3).
@@ -1069,79 +1137,6 @@ export async function grantEmbeds(
 
 // ── Preview (S5, S7) ─────────────────────────────────────────────────────────
 
-/** How many items (the item, and for a folder everything in it) would gain
- *  `ws` if it were granted to the item. An exclusion inside the folder stops
- *  the folder's grant below it; an item already granted gains nothing. */
-async function gainCount(
-  q: Exec,
-  anchorId: string,
-  item: Item,
-  ws: string,
-): Promise<{ n: number; apps: number }> {
-  const [r] = await rows<{ n: number; apps: number }>(
-    q,
-    sql`with x as (select id, owner_id, path, type from nodes where id = ${item.id}),
-        sub as (
-          select n.id, n.type, n.path from nodes n, x
-           where n.owner_id = ${anchorId}
-             and (n.id = x.id or (x.type = 'branch' and n.path <@ x.path)))
-        select count(*)::int as n, (count(*) filter (where d.type = 'app'))::int as apps
-          from sub d, x
-         where not exists (select 1 from item_grants g
-                            where g.node_id = d.id and g.workspace_id = ${ws} and not g.excluded)
-           and (d.id = x.id or (
-                 not exists (select 1 from item_grants g
-                              where g.node_id = d.id and g.workspace_id = ${ws})
-                 and mantle_grant_kind_ok(d.type, ${ws}::uuid, true)
-                 and not exists (
-                   select 1 from nodes a
-                     join item_grants ag on ag.node_id = a.id and ag.workspace_id = ${ws}
-                                        and ag.excluded
-                    where a.owner_id = x.owner_id and a.type = 'branch' and a.path <@ x.path
-                      and a.id <> x.id and a.id <> d.id and d.path <@ a.path)))`,
-  );
-  return { n: r?.n ?? 0, apps: r?.apps ?? 0 };
-}
-
-/** Items in the folder the caller cannot open (0 for an item: the caller
- *  reads it). The counts stay honest; the panel says some are hidden. */
-async function hiddenCount(q: Exec, ctx: Ctx, item: Item): Promise<number> {
-  if (item.type !== 'branch' || !item.path) return 0;
-  const [r] = await rows<{ n: number }>(
-    q,
-    sql`select count(*)::int as n from nodes h
-         where h.owner_id = ${ctx.caller.anchorId} and h.path <@ ${item.path}::ltree
-           and not ${mayReadInSql('h', mineSql(ctx))}`,
-  );
-  return r?.n ?? 0;
-}
-
-/** How many items would lose `ws` if it were removed from the item: the
- *  item, and the folder-derived rows below it up to the first folder that
- *  holds `ws` by a grant set on it. */
-async function loseCount(q: Exec, anchorId: string, item: Item, ws: string): Promise<number> {
-  const [r] = await rows<{ n: number }>(
-    q,
-    sql`with x as (select id, owner_id, path, type from nodes where id = ${item.id}),
-        sub as (
-          select n.id, n.type, n.path from nodes n, x
-           where n.owner_id = ${anchorId}
-             and (n.id = x.id or (x.type = 'branch' and n.path <@ x.path)))
-        select count(*)::int as n from sub d, x
-         where exists (select 1 from item_grants g
-                        where g.node_id = d.id and g.workspace_id = ${ws} and not g.excluded
-                          and ((d.id = x.id and not g.is_home)
-                               or (d.id <> x.id and g.via_folder_id is not null)))
-           and (d.id = x.id or not exists (
-                 select 1 from nodes a
-                   join item_grants ag on ag.node_id = a.id and ag.workspace_id = ${ws}
-                                      and not ag.excluded and ag.via_folder_id is null
-                  where a.owner_id = x.owner_id and a.type = 'branch' and a.path <@ x.path
-                    and a.id <> x.id and a.id <> d.id and d.path <@ a.path))`,
-  );
-  return r?.n ?? 0;
-}
-
 /** GET /api/grants/:nodeId/preview?add=<ws>&remove=<ws>. */
 export async function previewGrant(
   caller: WsCaller,
@@ -1166,21 +1161,24 @@ export async function previewGrant(
     throw new GrantError(403, 'forbidden', 'Only a Moderator can preview this change.');
   }
   const anchor = caller.anchorId;
-  const total = await subtreeCount(db, anchor, item);
-  const gain = addWs ? await gainCount(db, anchor, item, addWs) : { n: 0, apps: 0 };
+  // How many items (the item, and for a folder everything in it) would gain
+  // the added workspace (an exclusion inside the folder stops the folder's
+  // grant below it; an item already granted gains nothing), how many would
+  // lose the removed one (the item, and the folder-derived rows below it up
+  // to the first folder that holds it by a grant set on it), and the items
+  // in the folder the caller cannot open (the counts stay honest; the panel
+  // says some are hidden): mantle_grant_counts (0291).
+  const counts = await grantCounts(db, ctx, item, { add: addWs, remove: removeWs });
+  const total = counts.total;
   const out: GrantPreviewResponse = {
-    gain: gain.n,
-    gainApps: gain.apps,
-    lose: removeWs ? await loseCount(db, anchor, item, removeWs) : 0,
+    gain: counts.gain,
+    gainApps: counts.gainApps,
+    lose: counts.lose,
     total,
-    hidden: await hiddenCount(db, ctx, item),
+    hidden: counts.hidden,
     tooBig: item.type === 'branch' && total > FOLDER_GRANT_LIMIT.max,
   };
   if (item.type === 'app' && addWs) {
-    const [x] = await rows<{ n: number }>(
-      db,
-      sql`select count(*)::int as n from app_table_exports where app_node_id = ${item.id}`,
-    );
     let rowCount: number | null;
     try {
       const { tables } = await appDbTableDetails(anchor, item.id);
@@ -1188,7 +1186,7 @@ export async function previewGrant(
     } catch {
       rowCount = null;
     }
-    out.app = { rows: rowCount, exportedTables: x?.n ?? 0 };
+    out.app = { rows: rowCount, exportedTables: counts.exports };
   }
   return out;
 }
@@ -1231,16 +1229,28 @@ function treeKindOf(path: string | null): TreeKind | null {
   return null;
 }
 
-const nameOf = async (ctx: Ctx, ids: Iterable<string>): Promise<GrantWorkspaceRef[]> => {
-  const list = [...new Set(ids)];
-  if (!list.length) return [];
-  const named = await rows<{ id: string; name: string }>(
+/**
+ * The workspaces of a move's gain or loss, by name: each through the item
+ * it is named by (`via`: the folder a gain comes through, the item a loss is
+ * taken from; null for a workspace of the caller's own), by the definer of
+ * 0279 (mantle_ws_names), which names a workspace the scope is not in only
+ * through a grant row of `via`. By name, then id.
+ */
+const nameOf = async (named: Map<string, string | null>): Promise<GrantWorkspaceRef[]> => {
+  if (!named.size) return [];
+  const ws = [...named.keys()];
+  const via = ws.map((w) => named.get(w) ?? null);
+  for (const v of [...ws, ...via]) if (v !== null && !UUID_RE.test(v)) throw new Error('nameOf');
+  const vias = `{${via.map((v) => v ?? 'NULL').join(',')}}`;
+  const found = await rows<{ id: string; name: string }>(
     db,
-    sql`select id, name from workspaces
-         where id = any(${uuidList(list)}::uuid[]) and owner_id = ${ctx.caller.anchorId}
-         order by lower(name), id`,
+    sql`with p(ws, via) as (select * from unnest(${uuidList(ws)}::uuid[], ${vias}::uuid[])),
+        named as (
+          select distinct (e ->> 'wsId')::uuid as id, e ->> 'name' as name
+            from p, jsonb_array_elements(mantle_ws_names(array[p.ws], p.via)) e)
+        select id::text as id, name from named order by lower(name), id`,
   );
-  return named.map((w) => ({ wsId: w.id, name: w.name }));
+  return found.map((w) => ({ wsId: w.id, name: w.name }));
 };
 
 /** The move to a workspace, checked by its own rules first (audit M3):
@@ -1264,12 +1274,14 @@ async function planWorkspaceMove(ctx: Ctx, body: MoveInput, q: Exec) {
     }
     items.push(item);
   }
-  const gain = new Set<string>();
-  const lose = new Set<string>();
+  // Each workspace with the item it is named through (nameOf): here the
+  // target and the old homes, all the caller's own.
+  const gain = new Map<string, string | null>();
+  const lose = new Map<string, string | null>();
   for (const item of items) {
-    if (!item.holders.includes(t.wsId)) gain.add(t.wsId);
+    if (!item.holders.includes(t.wsId)) gain.set(t.wsId, null);
     if (item.home && item.home !== t.wsId && body.keepReadableIn !== item.home) {
-      if (!(await folderGrants(q, item, item.home))) lose.add(item.home);
+      if (!folderGrants(await grantRows(q, item.id), item.home)) lose.set(item.home, null);
     }
   }
   return { gain, lose };
@@ -1279,13 +1291,7 @@ async function planWorkspaceMove(ctx: Ctx, body: MoveInput, q: Exec) {
  *  a kind's root. */
 async function folderWorkspaces(q: Exec, folder: Item | null): Promise<string[]> {
   if (!folder) return [];
-  return (
-    await rows<{ ws: string }>(
-      q,
-      sql`select workspace_id as ws from item_grants
-           where node_id = ${folder.id} and not excluded`,
-    )
-  ).map((r) => r.ws);
+  return [...(await grantRows(q, folder.id)).values()].filter((g) => !g.excluded).map((g) => g.ws);
 }
 
 /** What one item gains and loses by being placed in a folder that passes
@@ -1357,8 +1363,8 @@ async function planFolderMove(ctx: Ctx, body: MoveInput, q: Exec, strict: boolea
   const kind = [...kinds][0]!;
   const folder = await targetFolder(ctx, body.toFolderId, kind, q);
   const folderWs = await folderWorkspaces(q, folder);
-  const gain = new Set<string>();
-  const lose = new Set<string>();
+  const gain = new Map<string, string | null>();
+  const lose = new Map<string, string | null>();
   const perItem: Array<{ item: Item; adds: string[]; refusal: GrantError | null }> = [];
   for (const item of items) {
     const { adds, loses } = await placeInFolder(q, item, folderWs);
@@ -1372,8 +1378,9 @@ async function planFolderMove(ctx: Ctx, body: MoveInput, q: Exec, strict: boolea
       perItem.push({ item, adds, refusal });
       continue;
     }
-    for (const w of adds) gain.add(w);
-    for (const w of loses) lose.add(w);
+    // A gain is named through the folder, a loss through the item.
+    for (const w of adds) if (!gain.has(w)) gain.set(w, folder?.id ?? null);
+    for (const w of loses) if (!lose.has(w)) lose.set(w, item.id);
     perItem.push({ item, adds, refusal: null });
   }
   return { kind, folder, gain, lose, perItem };
@@ -1389,7 +1396,7 @@ export async function previewMove(
     moveTarget(body) === 'workspace'
       ? await planWorkspaceMove(ctx, body, db)
       : await planFolderMove(ctx, body, db, true);
-  return { alsoVisibleTo: await nameOf(ctx, plan.gain), removedFrom: await nameOf(ctx, plan.lose) };
+  return { alsoVisibleTo: await nameOf(plan.gain), removedFrom: await nameOf(plan.lose) };
 }
 
 /** POST /api/grants/move. Each item moves on its own; one that cannot is

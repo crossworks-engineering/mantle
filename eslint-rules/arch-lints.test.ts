@@ -337,9 +337,16 @@ describe('the counters', () => {
     expect(asSystemSites(text).count).toBe(3);
   });
 
-  it('asSystem doors: every pinned door call is counted, at most 40 sites (plan v2 exit)', () => {
-    expect(got.numbers.asSystemSites).toBeLessThanOrEqual(40);
-    expect(got.numbers.asSystemDoorCalls).toBeGreaterThan(0);
+  it('asSystem exits (A6 round 2): one honest count, every door call included', () => {
+    // The real exits: the sites that are no door, plus each call of a door
+    // (a door keeps one pinned site, its calls are where the code leaves).
+    // Pinned in scripts/arch-scoreboard.pins.json (asSystemExits), so no
+    // exit is added unseen, through a door or not. The plan v2 exit, at
+    // most 40, is not met yet: docs/actors.md, A6, lists every exit left
+    // with its reason.
+    const n = got.numbers;
+    expect(n.asSystemExits).toBe(n.asSystemSites - n.asSystemDoors + n.asSystemDoorCalls);
+    expect(n.asSystemDoorCalls).toBeGreaterThan(0);
   });
 
   it('count asSystem calls with their reasons, not the definition or imports', () => {

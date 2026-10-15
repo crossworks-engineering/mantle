@@ -13,9 +13,6 @@
  *    its own page's draft), not an item it only reads (403 item-workspace);
  *  - an Admin user's create without ?ws= lands as before (Admin); with
  *    ?ws=Team in Team;
- *  - the member app layer (my_app_* tools): an app made in the private
- *    workspace at team rules, changed only where the member may edit,
- *    deleted where it moderates the home, brought back into its home.
  *
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run server/web/server/w6b-member-writes.db.test.ts
  */
@@ -254,52 +251,6 @@ describe.skipIf(!URL)('W6b: members write through the owner routes', () => {
     const note = idOf(await call('/api/notes', mem, 'POST', { title: `${tag} gone` }), 'note');
     expect((await call(`/api/notes/${note}`, mem, 'DELETE')).status).toBe(200);
     expect(await homeOf(note)).toBeUndefined();
-  });
-
-  it('member apps (the my_app_* tools): made in the private workspace at team rules, edited and deleted by the member, brought back home', async () => {
-    const c = await import('@mantle/content');
-    const author = { loginId: mem, brainId: owner };
-    const app = await m.asSystem(() => c.createMemberApp(author, { title: `${tag} app` }), 'test');
-    const priv = await privateOf(mem);
-    expect(await homeOf(app.id)).toEqual({ home: priv, r: [priv] });
-    const [a] = await x<{ level: string; author: string }>(sql`
-      select author_level as level, author_login_id::text as author from apps where node_id = ${app.id}`);
-    expect(a).toEqual({ level: 'team', author: mem });
-    const mine = await m.asSystem(() => c.listLoginApps(author), 'test');
-    expect(mine.find((r) => r.id === app.id)).toMatchObject({ mine: true });
-    await expect(
-      m.asSystem(() => c.memberApp(author, app.id, { write: true }), 'test'),
-    ).resolves.toMatchObject({
-      mayEdit: true,
-      mayManage: true,
-    });
-    // Another member does not see it; an app it only reads it may not change.
-    await expect(
-      m.asSystem(() => c.memberApp({ loginId: mem2, brainId: owner }, app.id), 'test'),
-    ).rejects.toThrow(/No app/);
-    const roApp = await m.asSystem(
-      () => c.createMemberApp({ loginId: mem2, brainId: owner }, { title: `${tag} ro app` }),
-      'test',
-    );
-    await homeIn(roApp.id, ro);
-    await expect(
-      m.asSystem(() => c.memberApp(author, roApp.id, { write: true }), 'test'),
-    ).rejects.toThrow(/not change it/);
-    await expect(m.asSystem(() => c.deleteMemberApp(author, roApp.id), 'test')).rejects.toThrow(
-      /Moderator/,
-    );
-    // Its own delete: the brain's, then back into its home.
-    await m.asSystem(() => c.deleteMemberApp(author, app.id), 'test');
-    expect(await homeOf(app.id)).toBeUndefined();
-    const trash = await m.asSystem(() => c.listDeletedMemberApps(author), 'test');
-    expect(trash.map((t) => t.id)).toContain(app.id);
-    expect(
-      (
-        await m.asSystem(() => c.listDeletedMemberApps({ loginId: mem2, brainId: owner }), 'test')
-      ).map((t) => t.id),
-    ).not.toContain(app.id);
-    await m.asSystem(() => c.undeleteMemberApp(author, app.id), 'test');
-    expect((await homeOf(app.id))!.home).toBe(priv);
   });
 
   it('a route not opened to members still refuses them', async () => {
