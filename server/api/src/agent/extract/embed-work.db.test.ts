@@ -5,9 +5,10 @@
  * counts its calls. A rename stamps `data.index_work = 'embed'`
  * (markContentChanged), and an embed stamp is never a model call:
  *
- *  - M1 scenario A: a page, a drawing and a table the extractor skipped as
- *    too short (no summary), renamed to a long title: embedded from the
- *    title and the local text, 0 model calls;
+ *  - M1 scenario A: a page and a drawing the extractor skipped as too short
+ *    (no summary), and a table indexed with no summary (the cost guard's
+ *    local index), renamed to a long title: embedded from the title and the
+ *    local text, 0 model calls;
  *  - M1 scenario B: an item extracted before the completion marker existed
  *    (a summary, no marker), renamed: re-embedded from its summary, 0 calls;
  *  - a table keeping its summary, renamed: the model step reuses the
@@ -101,6 +102,12 @@ vi.mock('@mantle/runtime/agent', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@mantle/runtime/agent')>();
   return { ...actual, resolveChatKey: async () => ({ ok: true }) };
 });
+// Every brain item passes the LLM-work cost guard (llm-guard.ts) once a
+// workspace with an assistant reads it; this scratch brain has no assistant.
+vi.mock('@mantle/db', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@mantle/db')>();
+  return { ...actual, llmWorkAllowed: async () => true };
+});
 vi.mock('./auto-table', () => ({ maybeAutoTableSpreadsheet: async () => undefined }));
 vi.mock('./images', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./images')>();
@@ -191,6 +198,7 @@ describe.skipIf(!URL)('an embed stamp is never a model call (A10 #7 fix round 1)
   it('scenario A: a page skipped as too short, renamed to a long title: embedded locally, 0 model calls', async () => {
     const page = await c.createPage(owner, { title: 'Untitled page' });
     await extractNode(page.id, owner);
+    expect(await lastDisposition(page.id)).toBe('body_too_short');
     expect((await row(page.id)).skipped).toBe('body_too_short');
 
     await c.updatePage(owner, page.id, { title: LONG });
@@ -219,18 +227,23 @@ describe.skipIf(!URL)('an embed stamp is never a model call (A10 #7 fix round 1)
     expect(r.work).toBeNull();
   });
 
-  it('scenario A: a table skipped as too short, renamed: embedded locally, 0 model calls', async () => {
+  it('a table indexed with no summary (the cost guard local index), renamed: embedded locally, 0 model calls', async () => {
     const table = await c.createTable(owner, { title: 'Untitled table' });
-    await extractNode(table.id, owner);
-    expect((await row(table.id)).skipped).toBe('body_too_short');
+    const v = `[${vectorOf(`local ${table.id}`).join(',')}]`;
+    await x(sql`update nodes set embedding = ${v}::vector,
+        data = data || jsonb_build_object('indexing_applied', 'local',
+                                          'extract_completed_at', now()::text)
+      where id = ${table.id}`);
 
     await c.updateTable(owner, table.id, { title: LONG });
+    expect((await row(table.id)).work).toBe('embed');
     await extractNode(table.id, owner);
 
     const r = await row(table.id);
     expect(h.modelCalls).toBe(0);
-    expect(r.vec).not.toBeNull();
+    expect(await lastDisposition(table.id)).toBe('embed_only');
     expect(textOf(r.vec)?.startsWith(LONG)).toBe(true);
+    expect(r.summary).toBeNull();
     expect(r.work).toBeNull();
   });
 
