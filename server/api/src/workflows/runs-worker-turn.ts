@@ -47,7 +47,6 @@ import {
   enqueueRunJobsSafe,
   runPendingNotices,
   ensureWorkerAgent,
-  isRunsEnabled,
   requeueForRetry,
   RUNS_WORKER_TURN_WORKFLOW,
   WORKER_MODEL_INHERIT,
@@ -55,6 +54,7 @@ import {
   type RunsWorkerTurnInput,
   type RunsWorkerTurnResult,
 } from '@mantle/runs';
+import { feature } from '@mantle/config';
 import {
   composeSystemPromptWithSkills,
   effectiveToolSlugs,
@@ -198,7 +198,7 @@ export async function runsWorkerTurnImpl(
       // runner refuses with a structured, counter-driving failure when
       // MANTLE_RUNS is off HERE — visible in the run view, never a silent
       // stall. (The shared compose app-env anchor feeds both containers.)
-      if (!isRunsEnabled()) {
+      if (!feature('runs')) {
         const { actions } = await completeDurable({
           itemId: item.id,
           state: 'failed',

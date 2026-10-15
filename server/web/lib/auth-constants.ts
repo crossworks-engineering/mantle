@@ -1,4 +1,4 @@
-import { env } from '@mantle/config';
+import { feature } from '@mantle/config';
 /**
  * Constants shared between middleware (Edge runtime) and lib/auth.ts
  * (Node runtime). Both files validate the session cookie but can't share
@@ -200,5 +200,5 @@ export function requestOrigin(req: Request): string {
  * call from the Edge middleware. See docs/db-less-dev.md.
  */
 export function isDetachedDev(): boolean {
-  return env('NODE_ENV') !== 'production' && !!env('MANTLE_DETACHED_DEV')?.trim();
+  return feature('detachedDev');
 }

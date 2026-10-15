@@ -6,7 +6,7 @@ import { PgTable, getTableConfig, type AnyPgColumn } from 'drizzle-orm/pg-core';
 import postgres from 'postgres';
 import * as schema from './schema/index';
 import { holderWorkspacesSql } from './grant-reads';
-import { env, envFlag } from '@mantle/config';
+import { env, feature } from '@mantle/config';
 import {
   currentScopeTx,
   currentSpaceScope,
@@ -723,7 +723,7 @@ function getViewerDb(level: PoolRole): PostgresJsDatabase<typeof schema> {
   const url = env('DATABASE_URL');
   if (!url) throw new Error('DATABASE_URL must be set');
   const password = viewerRolePassword(env('MANTLE_MASTER_KEY') ?? '', level);
-  const perDatabase = envFlag('MANTLE_VIEWER_ROLES_PER_DATABASE');
+  const perDatabase = feature('viewerRolesPerDatabase');
   const sql = postgres(viewerDatabaseUrl(url, level, password, perDatabase), {
     max: VIEWER_POOL_MAX,
     prepare: false,

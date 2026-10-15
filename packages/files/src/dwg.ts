@@ -33,7 +33,7 @@ import { createHash } from 'node:crypto';
 import { describeImageBytes, type EmbeddedImage } from './embedded-images';
 import { mediaDwgRender, mediaSidecarEnabled, type DwgRender } from './media-sidecar';
 import type { ParsedSheet } from './sheet-to-grid';
-import { env } from '@mantle/config';
+import { env, envNum } from '@mantle/config';
 
 /** True when the bytes open with a DWG version magic (`AC1012`…`AC1032`). */
 export function sniffDwg(bytes: Buffer): boolean {
@@ -104,9 +104,7 @@ const MAX_TEXT_ROWS = 20_000;
  *  `too_few_bytes` and the drawing got no picture at all. Found on a client brain
  *  2026-09-02 — a 563 KB P&ID rendered 1003 bytes at 50 dpi, 15 KB at 300. */
 export function dwgRenderDpi(): number {
-  const raw = Number(env('DWG_RENDER_DPI'));
-  if (!Number.isFinite(raw) || raw <= 0) return 300;
-  return Math.max(50, Math.min(600, Math.round(raw)));
+  return envNum('DWG_RENDER_DPI');
 }
 
 /**

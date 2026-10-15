@@ -11,7 +11,7 @@ import { extOf } from '@mantle/files';
 import { parseSpreadsheetToGrid } from '@mantle/files/sheet-to-grid';
 import { recordIngest, step } from '@mantle/tracing';
 import { createTable, tableDocFromGrid } from '@mantle/content';
-import { env } from '@mantle/config';
+import { envNum } from '@mantle/config';
 import { loadFileBytes, loadFileHead } from './file-bytes';
 
 /** Extensions that auto-convert to Table(s) on ingest.
@@ -26,7 +26,7 @@ const AUTO_TABLE_EXTS = new Set(['xlsx', 'xls', 'csv', 'xml', 'dwf', 'dwg', 'dxf
  *  into a burst of extractor runs from one upload. Beyond this we create the
  *  leading tables and log the rest as skipped (the source file stays fully
  *  searchable). An explicit `table_from_file` is user-initiated, not capped. */
-const MAX_AUTO_TABLE_TABLES = Number(env('MANTLE_MAX_AUTO_TABLE_TABLES')) || 20;
+const MAX_AUTO_TABLE_TABLES = envNum('MANTLE_MAX_AUTO_TABLE_TABLES');
 
 /**
  * On ingest, turn a spreadsheet file node into typed Table(s) — one per

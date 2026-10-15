@@ -10,15 +10,12 @@ import { and, eq, inArray, isNull } from 'drizzle-orm';
 import { db, nodes } from '@mantle/db';
 import { step } from '@mantle/tracing';
 import { fileFamilyKey } from '@mantle/content';
-import { env } from '@mantle/config';
+import { envNum } from '@mantle/config';
 
 /** Salience for superseded file versions (older same-family exports). A
  *  re-ranking nudge — λ·(1−0.5)=+0.075 effective distance — not a hide.
  *  Set to 1 to disable version demotion entirely. */
-const SUPERSEDED_FILE_SALIENCE = Math.min(
-  1,
-  Math.max(0, Number(env('MANTLE_SUPERSEDED_FILE_SALIENCE') ?? 0.5)),
-);
+const SUPERSEDED_FILE_SALIENCE = envNum('MANTLE_SUPERSEDED_FILE_SALIENCE');
 
 /**
  * versioned-export supersede (file nodes): group same-family siblings

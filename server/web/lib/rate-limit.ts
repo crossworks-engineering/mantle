@@ -1,4 +1,4 @@
-import { env } from '@mantle/config';
+import { envNum } from '@mantle/config';
 /**
  * Tiny in-memory rate limiter — fixed window per key.
  *
@@ -46,10 +46,7 @@ const logins: Store = { buckets: new Map(), lastSweepMs: 0, keep: true };
  * everywhere real. Parsed once at module load, deliberately — a runtime
  * toggle would make limiter behavior ambient state.
  */
-const SCALE = (() => {
-  const raw = Number(env('MANTLE_RATE_LIMIT_SCALE') ?? '1');
-  return Number.isFinite(raw) && raw >= 1 ? raw : 1;
-})();
+const SCALE = envNum('MANTLE_RATE_LIMIT_SCALE');
 
 /** Cap the map size so a flood of unique keys can't OOM the process. */
 const MAX_BUCKETS = 10_000;
@@ -221,7 +218,7 @@ export function clientIpFromHeaders(headers: { get(name: string): string | null 
       .map((s) => s.trim())
       .filter(Boolean);
     if (parts.length) {
-      const hops = Math.max(1, Number(env('MANTLE_TRUSTED_PROXIES')) || 1);
+      const hops = envNum('MANTLE_TRUSTED_PROXIES');
       return parts[Math.max(0, parts.length - hops)]!;
     }
   }

@@ -38,10 +38,10 @@ import { DBOS } from '@dbos-inc/dbos-sdk';
 import { sql } from 'drizzle-orm';
 import { db } from '@mantle/db';
 import { configureDBOS } from './config';
-import { env } from '@mantle/config';
+import { env, feature } from '@mantle/config';
 
 const MARKER = env('CRASH_MARKER') || 'crashtest';
-const CRASH = env('MANTLE_CRASH_TEST') === '1';
+const CRASH = feature('crashTest');
 /** 'resume' runs the WP2-shaped variant (preflight + claim_resume +
  *  record_outbound steps) — the slice-3 acceptance gate for the resume-loss
  *  claim. Default: the original single-step shape. */

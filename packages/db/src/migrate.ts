@@ -42,7 +42,7 @@
  */
 import { readMigrationFiles } from 'drizzle-orm/migrator';
 import postgres from 'postgres';
-import { env, envFlag } from '@mantle/config';
+import { env, feature } from '@mantle/config';
 import { ensureViewerRoles } from './viewer-roles';
 import { applyViewerGrants } from './access-matrix';
 import { headsBypassesIn } from './heads-bypass';
@@ -65,7 +65,7 @@ async function main() {
     await ensureViewerRoles(
       sql,
       env('MANTLE_MASTER_KEY') ?? null,
-      envFlag('MANTLE_VIEWER_ROLES_PER_DATABASE'),
+      feature('viewerRolesPerDatabase'),
     );
 
     await sql`create schema if not exists "drizzle"`;

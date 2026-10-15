@@ -4,6 +4,7 @@ import { ownerCaller } from '@/lib/auth';
 import { brandSettingsRefusal } from '@/lib/brand-gate';
 import { savePreferencesFor } from '@mantle/content';
 import { readJson } from '@/lib/read-body';
+import { feature } from '@mantle/config';
 
 /**
  * PUT /api/profile/share-neat { shareNeat }, persist whether shared surfaces
@@ -32,5 +33,5 @@ export async function PUT(req: Request) {
   const preferences = await savePreferencesFor(user.id, {
     shareNeat: parsed.data.shareNeat,
   });
-  return NextResponse.json({ shareNeat: preferences.shareNeat !== false });
+  return NextResponse.json({ shareNeat: feature('shareNeat', { prefs: preferences }) });
 }

@@ -29,12 +29,12 @@ import { registerHeartbeatTools } from '@mantle/runtime/heartbeats';
 import {
   enqueueRunActionsSafe,
   ensureRunQueues,
-  isRunsEnabled,
   RUN_RESUME_QUEUE,
   RUN_TOOL_QUEUE,
   RUN_WORKER_QUEUE,
   sweepRuns,
 } from '@mantle/runs';
+import { feature } from '@mantle/config';
 
 import { registerRecallEmbedder } from '@mantle/content';
 import { embedBatch } from '@mantle/embeddings';
@@ -69,7 +69,7 @@ type ResumeJob = { runId: string; groupId: string };
 // Not runQueueWorker: with the flag off this worker must idle WITHOUT opening a
 // queue at all, so it decides for itself whether to connect.
 runWorker('runs', async () => {
-  if (!isRunsEnabled()) {
+  if (!feature('runs')) {
     console.log('[runs] MANTLE_RUNS is not set — runner queues disabled; worker idling.');
     // Flag flipped off with runs in flight? Nothing executes AND nothing
     // times out (no sweep) — those runs sit 'running' forever. Cancel them

@@ -16,13 +16,13 @@
  */
 import { and, asc, eq, lt, sql } from 'drizzle-orm';
 import { db, agents, assistantMessages } from '@mantle/db';
-import { env } from '@mantle/config';
+import { envNum } from '@mantle/config';
 
 /** Minutes before an unsettled turn is treated as abandoned. Well clear of a
  *  legitimately long tool-loop turn and of every guard the chat adapters apply
  *  (60s connect, 120s idle, 90s SDK retry envelope). */
 export function staleAfterMin(): number {
-  return Number(env('MANTLE_TURN_STALE_MIN')) || 30;
+  return envNum('MANTLE_TURN_STALE_MIN');
 }
 
 export type StaleTurn = {

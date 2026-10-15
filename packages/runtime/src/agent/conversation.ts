@@ -110,7 +110,7 @@ import {
   journalTiersForTurn,
   passageKey,
 } from './conversation/journal-tiers';
-import { env } from '@mantle/config';
+import { env, feature, envNum } from '@mantle/config';
 
 export type { SnapshotItem, ContextSnapshot };
 
@@ -164,7 +164,8 @@ const RELATION_LIMIT = 12;
 // referential queries so a clear standalone query ("my bank balance") is never
 // diluted. Env kill-switch; full LLM HyDE is deliberately NOT the default — a
 // per-turn model call isn't justified when retrieval is already strong.
-const QUERY_ENRICH = env('MANTLE_QUERY_ENRICH') !== '0';
+// MANTLE_QUERY_ENRICH=0 (or false, off, no) turns it off.
+const QUERY_ENRICH = feature('queryEnrich');
 const ANAPHORA =
   /\b(that|those|this|these|it|its|they|them|one|ones|there|then|the same|more|again|continue|go on|elaborate|what about|how about)\b/i;
 
@@ -237,7 +238,7 @@ const PREFERENCE_INJECT_LIMIT = 8;
  *  distance, sliding it below real content / under the 0.6 cutoff. Tunable via
  *  env for the recall eval; 0.15 chosen against the noisy gold cases. Keep in
  *  sync with the same constant in @mantle/search. */
-const SALIENCE_LAMBDA = Number(env('MANTLE_SALIENCE_LAMBDA') ?? 0.15);
+const SALIENCE_LAMBDA = envNum('MANTLE_SALIENCE_LAMBDA');
 
 // ─── Recency / time-decay ────────────────────────────────────────────────
 // A saturating age penalty added to the ranking distance: λ·(1 − e^(−age/τ)),
@@ -246,10 +247,10 @@ const SALIENCE_LAMBDA = Number(env('MANTLE_SALIENCE_LAMBDA') ?? 0.15);
 // (a tiebreaker, not a sledgehammer). KIND-AWARE for facts: episodic memories
 // ("on the 4th the user said…") are recency-driven; semantic/preference facts are
 // stable identity and must NOT decay; factual sits in between. Mild on content.
-const RECENCY_TAU_SEC = Number(env('MANTLE_RECENCY_TAU_DAYS') ?? 180) * 86_400;
-const RECENCY_EPISODIC = Number(env('MANTLE_RECENCY_EPISODIC') ?? 0.15);
+const RECENCY_TAU_SEC = envNum('MANTLE_RECENCY_TAU_DAYS') * 86_400;
+const RECENCY_EPISODIC = envNum('MANTLE_RECENCY_EPISODIC');
 const RECENCY_FACTUAL = 0.05;
-const RECENCY_CONTENT = Number(env('MANTLE_RECENCY_CONTENT') ?? 0.06);
+const RECENCY_CONTENT = envNum('MANTLE_RECENCY_CONTENT');
 
 /**
  * Append one turn to the unified stream. Defaults `channel` to 'web' and

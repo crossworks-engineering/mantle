@@ -21,7 +21,7 @@
  */
 import { and, eq, gte, lt, sql } from 'drizzle-orm';
 import { memberTurnLedger, systemDb, traces } from '@mantle/db';
-import { env } from '@mantle/config';
+import { envNum } from '@mantle/config';
 
 export type MemberTurnLimits = {
   /** Turns per UTC day. */
@@ -43,12 +43,9 @@ export type ClaimMemberTurnResult =
  * of a login that is not an Admin user (workspaces W7d).
  */
 export function memberDailyLimits(): MemberTurnLimits {
-  const turns = Number(env('TEAM_CHAT_DAILY_TURNS'));
-  const rawTokens = env('MANTLE_MEMBER_DAILY_TOKENS');
-  const tokens = rawTokens === undefined || rawTokens === '' ? NaN : Number(rawTokens);
   return {
-    dailyTurns: Number.isFinite(turns) && turns > 0 ? Math.floor(turns) : 100,
-    dailyTokens: Number.isFinite(tokens) && tokens >= 0 ? Math.floor(tokens) : 2_000_000,
+    dailyTurns: envNum('TEAM_CHAT_DAILY_TURNS'),
+    dailyTokens: envNum('MANTLE_MEMBER_DAILY_TOKENS'),
   };
 }
 

@@ -38,7 +38,7 @@ import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import postgres from 'postgres';
-import { envDynamic } from '@mantle/config';
+import { envDynamic, parseFlag, parseNumber } from '@mantle/config';
 import { createMigratedScratchDatabase } from '@mantle/db/test-support';
 import {
   DATA_SOURCES,
@@ -430,16 +430,16 @@ async function child(file: string): Promise<void> {
       haystack,
       models: JSON.parse(envDynamic('BENCH_MODELS') ?? '{}') as BenchModels,
       apiKey: envDynamic('BENCH_OPENROUTER_API_KEY') ?? '',
-      maxUsd: Number(envDynamic('BENCH_MAX_USD') ?? 0),
-      extractConcurrency: Number(envDynamic('BENCH_EXTRACT_CONCURRENCY') ?? 4),
-      ingestOnly: envDynamic('BENCH_INGEST_ONLY') === '1',
+      maxUsd: parseNumber(envDynamic('BENCH_MAX_USD'), 0),
+      extractConcurrency: parseNumber(envDynamic('BENCH_EXTRACT_CONCURRENCY'), 4),
+      ingestOnly: parseFlag(envDynamic('BENCH_INGEST_ONLY'), false),
       memoryConfig: JSON.parse(envDynamic('BENCH_MEMORY_CONFIG') ?? '{}') as Record<
         string,
         unknown
       >,
       answerStyle: (envDynamic('BENCH_ANSWER_STYLE') ?? 'infer') as AnswerStyle,
-      reuseIngest: envDynamic('BENCH_REUSE_INGEST') === '1',
-      retrieveOnly: envDynamic('BENCH_RETRIEVE_ONLY') === '1',
+      reuseIngest: parseFlag(envDynamic('BENCH_REUSE_INGEST'), false),
+      retrieveOnly: parseFlag(envDynamic('BENCH_RETRIEVE_ONLY'), false),
     });
     writeFileSync(resultFileFor(file), JSON.stringify(result));
   } finally {

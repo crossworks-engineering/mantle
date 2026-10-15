@@ -1,7 +1,7 @@
 import { NextResponse } from '@/server/http-compat';
 import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { agents, db, runItems, runs } from '@mantle/db';
-import { isRunsEnabled } from '@mantle/runs';
+import { feature } from '@mantle/config';
 import { ownerCaller } from '@/lib/auth';
 
 /**
@@ -68,7 +68,7 @@ export async function GET(req: Request) {
       : [];
     const waitingRuns = new Set(waitingRows.map((r) => r.runId));
     return NextResponse.json({
-      enabled: isRunsEnabled(),
+      enabled: feature('runs'),
       active: activeRuns.map((r) => ({
         id: r.id,
         title: r.title,
@@ -179,7 +179,7 @@ export async function GET(req: Request) {
     });
 
   return NextResponse.json({
-    enabled: isRunsEnabled(),
+    enabled: feature('runs'),
     page,
     pageSize: PAGE_SIZE,
     total,

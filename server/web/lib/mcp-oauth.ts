@@ -25,6 +25,7 @@ import {
   type OAuthClient,
 } from '@mantle/db';
 import { loadProfilePreferences, publicBaseUrl } from '@mantle/content';
+import { feature } from '@mantle/config';
 
 export const ACCESS_TTL_SEC = 60 * 60; // 1 hour
 export const REFRESH_TTL_SEC = 60 * 60 * 24 * 30; // 30 days
@@ -87,7 +88,7 @@ export async function isRemoteMcpEnabled(): Promise<boolean> {
   const ownerId = await resolveSingleOwnerId();
   if (!ownerId) return false;
   const prefs = await loadProfilePreferences(ownerId);
-  return prefs.remoteMcpEnabled === true;
+  return feature('remoteMcp', { prefs });
 }
 
 // ── PKCE ─────────────────────────────────────────────────────────────────────

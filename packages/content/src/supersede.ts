@@ -29,19 +29,15 @@
  */
 import { and, eq } from 'drizzle-orm';
 import { db, nodes, type Node } from '@mantle/db';
-import { env } from '@mantle/config';
+import { envNum } from '@mantle/config';
 
 export type SupersedeReason = 'version' | 'migrated' | 'corrected';
 
 /** Salience a superseded node drops to. 'corrected' (an explicit "this is
  *  wrong") demotes harder than 'version'/'migrated' (merely older). Both are
  *  re-ranking nudges on the existing λ path, not hides. */
-const SUPERSEDED_SALIENCE = clamp01(Number(env('MANTLE_SUPERSEDED_SALIENCE') ?? 0.5));
-const CORRECTED_SALIENCE = clamp01(Number(env('MANTLE_CORRECTED_SALIENCE') ?? 0.3));
-
-function clamp01(n: number): number {
-  return Number.isFinite(n) ? Math.min(1, Math.max(0, n)) : 0.5;
-}
+const SUPERSEDED_SALIENCE = envNum('MANTLE_SUPERSEDED_SALIENCE');
+const CORRECTED_SALIENCE = envNum('MANTLE_CORRECTED_SALIENCE');
 
 export function salienceForSupersedeReason(reason: SupersedeReason): number {
   return reason === 'corrected' ? CORRECTED_SALIENCE : SUPERSEDED_SALIENCE;

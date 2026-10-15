@@ -24,7 +24,7 @@ import type {
 } from './types';
 import type { DiscoveryResult } from '../discover';
 import { tailnetFetch } from './tailnet';
-import { env } from '@mantle/config';
+import { env, envNum } from '@mantle/config';
 import { errorMessage, PROVIDER_TIMEOUTS, ProviderHttpError } from '@mantle/std';
 import { providerFetch } from './provider-fetch';
 
@@ -58,19 +58,13 @@ function toPlainText(item: EmbedInput): string {
  *  well inside the timeout (~16 chunk-sized texts ≈ seconds on a shared
  *  vCPU; a GPU box doesn't notice the difference). Override via env for
  *  unusually slow/fast hardware. */
-const SUB_BATCH = (() => {
-  const n = Number.parseInt(env('MANTLE_LOCAL_EMBED_BATCH') ?? '', 10);
-  return Number.isFinite(n) && n >= 1 ? n : 16;
-})();
+const SUB_BATCH = envNum('MANTLE_LOCAL_EMBED_BATCH');
 
 /** Per-request timeout. Generous because the slow case is legitimate work
  *  (CPU inference), not a hung socket — the sub-batching above is what keeps
  *  any single request small enough that this rarely matters. Override via
  *  `MANTLE_LOCAL_EMBED_TIMEOUT_MS` for unusually slow hardware. */
-const REQUEST_TIMEOUT_MS = (() => {
-  const n = Number.parseInt(env('MANTLE_LOCAL_EMBED_TIMEOUT_MS') ?? '', 10);
-  return Number.isFinite(n) && n >= 1_000 ? n : PROVIDER_TIMEOUTS.localEmbed;
-})();
+const REQUEST_TIMEOUT_MS = envNum('MANTLE_LOCAL_EMBED_TIMEOUT_MS', PROVIDER_TIMEOUTS.localEmbed);
 
 async function embedOnce(
   req: EmbedRequest,

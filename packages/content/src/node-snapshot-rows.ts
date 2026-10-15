@@ -6,7 +6,7 @@
  */
 import { createHash } from 'node:crypto';
 import { eq, sql } from 'drizzle-orm';
-import { env, envInt } from '@mantle/config';
+import { envNum } from '@mantle/config';
 import { db, nodeSnapshots, type NewNodeSnapshot, type NodeSnapshot } from '@mantle/db';
 
 type DbTx = Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -48,11 +48,16 @@ export async function insertNodeSnapshot(
   return inserted;
 }
 
-/** A size setting in MB, as bytes. Compose passes an unset variable as '',
- *  which must read as the default, not as 0. */
-export function envMbBytes(name: Parameters<typeof envInt>[0], defaultMb: number): number {
-  const mb = env(name)?.trim() ? envInt(name, defaultMb, 1) : defaultMb;
-  return mb * 1024 * 1024;
+/** A size setting in MB (its default in @mantle/config ENV_NUMBERS), as
+ *  bytes. */
+export function envMbBytes(
+  name:
+    | 'APP_SNAPSHOT_MAX_MB'
+    | 'APP_SNAPSHOT_AUTO_MAX_MB'
+    | 'APP_SNAPSHOT_MCP_MAX_MB'
+    | 'TABLE_HISTORY_MAX_MB',
+): number {
+  return envNum(name) * 1024 * 1024;
 }
 
 /**

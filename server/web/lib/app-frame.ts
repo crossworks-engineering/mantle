@@ -15,7 +15,7 @@ import { appViewerFor, type AppViewer, type AppViewerSubject } from '@mantle/con
 import { resolveSingleOwnerId } from '@mantle/db';
 import { requestOrigin } from '@/lib/auth-constants';
 import type { Readable } from 'node:stream';
-import { env } from '@mantle/config';
+import { env, feature } from '@mantle/config';
 import { BundleTextCache } from './bundle-text-cache';
 
 /** Bundle and CSS text by content-addressed key (apps audit P3): one read
@@ -64,7 +64,7 @@ async function resolveFrameNeat(shared: boolean): Promise<string | null> {
     const ownerId = await resolveSingleOwnerId();
     if (!ownerId) return null;
     const prefs = await loadProfilePreferences(ownerId);
-    if (shared && prefs.shareNeat === false) return null;
+    if (shared && !feature('shareNeat', { prefs })) return null;
     const spec = decodeNeatSpec(prefs.neatBackground);
     return spec ? encodeNeatSpec(spec) : null;
   } catch {

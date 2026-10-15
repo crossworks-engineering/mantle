@@ -1,0 +1,460 @@
+{
+  "cells": {
+    "MANTLE_TURN_STREAMING client-types/turn-streaming isTurnStreamingEnabled | alias=\"0\"": {
+      "now": false,
+      "why": "Split fixed (MANTLE_TURN_STREAMING): the SSE route, the cancel route and the non-blocking turn POST read MANTLE_TURN_STREAMING raw (client-types isTurnStreamingEnabled) and ignored the legacy NEXT_PUBLIC_MANTLE_TURN_STREAMING, while the replay buffer (turn-stream publish.ts, through env()) honoured it. A box setting only the legacy name to an off word served the stream routes with no buffer behind them. Both now read feature('turnStreaming'), and the published reader honours the alias as env() does. Boxes: one whose environment sets only the legacy name (a dev .env or .env.local; compose does not pass the legacy name to the app containers)."
+    },
+    "MANTLE_TURN_STREAMING client-types/turn-streaming isTurnStreamingEnabled | alias=\"false\"": {
+      "now": false,
+      "why": "Split fixed (MANTLE_TURN_STREAMING): the SSE route, the cancel route and the non-blocking turn POST read MANTLE_TURN_STREAMING raw (client-types isTurnStreamingEnabled) and ignored the legacy NEXT_PUBLIC_MANTLE_TURN_STREAMING, while the replay buffer (turn-stream publish.ts, through env()) honoured it. A box setting only the legacy name to an off word served the stream routes with no buffer behind them. Both now read feature('turnStreaming'), and the published reader honours the alias as env() does. Boxes: one whose environment sets only the legacy name (a dev .env or .env.local; compose does not pass the legacy name to the app containers)."
+    },
+    "MANTLE_TURN_STREAMING client-types/turn-streaming isTurnStreamingEnabled | alias=\"no\"": {
+      "now": false,
+      "why": "Split fixed (MANTLE_TURN_STREAMING): the SSE route, the cancel route and the non-blocking turn POST read MANTLE_TURN_STREAMING raw (client-types isTurnStreamingEnabled) and ignored the legacy NEXT_PUBLIC_MANTLE_TURN_STREAMING, while the replay buffer (turn-stream publish.ts, through env()) honoured it. A box setting only the legacy name to an off word served the stream routes with no buffer behind them. Both now read feature('turnStreaming'), and the published reader honours the alias as env() does. Boxes: one whose environment sets only the legacy name (a dev .env or .env.local; compose does not pass the legacy name to the app containers)."
+    },
+    "MANTLE_TURN_STREAMING client-types/turn-streaming isTurnStreamingEnabled | alias=\"off\"": {
+      "now": false,
+      "why": "Split fixed (MANTLE_TURN_STREAMING): the SSE route, the cancel route and the non-blocking turn POST read MANTLE_TURN_STREAMING raw (client-types isTurnStreamingEnabled) and ignored the legacy NEXT_PUBLIC_MANTLE_TURN_STREAMING, while the replay buffer (turn-stream publish.ts, through env()) honoured it. A box setting only the legacy name to an off word served the stream routes with no buffer behind them. Both now read feature('turnStreaming'), and the published reader honours the alias as env() does. Boxes: one whose environment sets only the legacy name (a dev .env or .env.local; compose does not pass the legacy name to the app containers)."
+    },
+    "MANTLE_TURN_STREAMING client-types/turn-streaming isTurnStreamingEnabled | alias=\" Off \"": {
+      "now": false,
+      "why": "Split fixed (MANTLE_TURN_STREAMING): the SSE route, the cancel route and the non-blocking turn POST read MANTLE_TURN_STREAMING raw (client-types isTurnStreamingEnabled) and ignored the legacy NEXT_PUBLIC_MANTLE_TURN_STREAMING, while the replay buffer (turn-stream publish.ts, through env()) honoured it. A box setting only the legacy name to an off word served the stream routes with no buffer behind them. Both now read feature('turnStreaming'), and the published reader honours the alias as env() does. Boxes: one whose environment sets only the legacy name (a dev .env or .env.local; compose does not pass the legacy name to the app containers)."
+    },
+    "MANTLE_MCP_TOOLSMITH_WRITE mcp-core/build-server | =\" Off \"": {
+      "now": false,
+      "why": "The one flag dialect trims: a padded ' Off ' is off. The regex readers (/^(0|false|off|no)$/i) did not trim. Boxes: one whose value carries spaces set outside the .env loader, which trims unquoted values; none known."
+    },
+    "MANTLE_QUERY_ENRICH runtime/conversation | =\"false\"": {
+      "now": false,
+      "why": "MANTLE_QUERY_ENRICH was off only for exactly '0'; false, no and off (any case) were ignored and left it on. Every off word turns it off now, as for every default-on switch. Boxes: one setting MANTLE_QUERY_ENRICH to false, no or off (compose does not pass it, so a dev process or a compose override)."
+    },
+    "MANTLE_QUERY_ENRICH runtime/conversation | =\"no\"": {
+      "now": false,
+      "why": "MANTLE_QUERY_ENRICH was off only for exactly '0'; false, no and off (any case) were ignored and left it on. Every off word turns it off now, as for every default-on switch. Boxes: one setting MANTLE_QUERY_ENRICH to false, no or off (compose does not pass it, so a dev process or a compose override)."
+    },
+    "MANTLE_QUERY_ENRICH runtime/conversation | =\"off\"": {
+      "now": false,
+      "why": "MANTLE_QUERY_ENRICH was off only for exactly '0'; false, no and off (any case) were ignored and left it on. Every off word turns it off now, as for every default-on switch. Boxes: one setting MANTLE_QUERY_ENRICH to false, no or off (compose does not pass it, so a dev process or a compose override)."
+    },
+    "MANTLE_QUERY_ENRICH runtime/conversation | =\" Off \"": {
+      "now": false,
+      "why": "MANTLE_QUERY_ENRICH was off only for exactly '0'; false, no and off (any case) were ignored and left it on. Every off word turns it off now, as for every default-on switch. Boxes: one setting MANTLE_QUERY_ENRICH to false, no or off (compose does not pass it, so a dev process or a compose override)."
+    },
+    "S3_FORCE_PATH_STYLE storage/index | =\"off\"": {
+      "now": false,
+      "why": "S3_FORCE_PATH_STYLE knew false, 0 and no but not off. Boxes: one setting S3_FORCE_PATH_STYLE=off (compose passes the box's value, default true)."
+    },
+    "S3_FORCE_PATH_STYLE storage/index | =\" Off \"": {
+      "now": false,
+      "why": "S3_FORCE_PATH_STYLE knew false, 0 and no but not off. Boxes: one setting S3_FORCE_PATH_STYLE=off (compose passes the box's value, default true)."
+    },
+    "MANTLE_DISABLE_BOOT_RECONCILE web/system-manifest/reconcile | =\"true\"": {
+      "now": true,
+      "why": "MANTLE_DISABLE_BOOT_RECONCILE disabled the boot reconcile only for exactly '1'; true, yes and on were ignored. Boxes: one setting it to true, yes or on (compose does not pass it by default)."
+    },
+    "MANTLE_DISABLE_BOOT_RECONCILE web/system-manifest/reconcile | =\"yes\"": {
+      "now": true,
+      "why": "MANTLE_DISABLE_BOOT_RECONCILE disabled the boot reconcile only for exactly '1'; true, yes and on were ignored. Boxes: one setting it to true, yes or on (compose does not pass it by default)."
+    },
+    "MANTLE_DISABLE_BOOT_RECONCILE web/system-manifest/reconcile | =\"on\"": {
+      "now": true,
+      "why": "MANTLE_DISABLE_BOOT_RECONCILE disabled the boot reconcile only for exactly '1'; true, yes and on were ignored. Boxes: one setting it to true, yes or on (compose does not pass it by default)."
+    },
+    "MANTLE_DISABLE_BOOT_RECONCILE web/system-manifest/reconcile | =\"TRUE\"": {
+      "now": true,
+      "why": "MANTLE_DISABLE_BOOT_RECONCILE disabled the boot reconcile only for exactly '1'; true, yes and on were ignored. Boxes: one setting it to true, yes or on (compose does not pass it by default)."
+    },
+    "MANTLE_CRASH_TEST api/crash-test | =\"true\"": {
+      "now": true,
+      "why": "The crash-test harness switch (MANTLE_CRASH_TEST) took only '1'; every on word works now. A test harness, set on its own command line; no box."
+    },
+    "MANTLE_CRASH_TEST api/crash-test | =\"yes\"": {
+      "now": true,
+      "why": "The crash-test harness switch (MANTLE_CRASH_TEST) took only '1'; every on word works now. A test harness, set on its own command line; no box."
+    },
+    "MANTLE_CRASH_TEST api/crash-test | =\"on\"": {
+      "now": true,
+      "why": "The crash-test harness switch (MANTLE_CRASH_TEST) took only '1'; every on word works now. A test harness, set on its own command line; no box."
+    },
+    "MANTLE_CRASH_TEST api/crash-test | =\"TRUE\"": {
+      "now": true,
+      "why": "The crash-test harness switch (MANTLE_CRASH_TEST) took only '1'; every on word works now. A test harness, set on its own command line; no box."
+    },
+    "MANTLE_DETACHED_DEV web/auth-constants isDetachedDev (NODE_ENV development) | =\"0\"": {
+      "now": false,
+      "why": "MANTLE_DETACHED_DEV was on for any non-blank value, so 0, false, off and garbage turned the dev auth bypass on. Only an on word does now (the documented =1 keeps working). A tightening; production stays off regardless. Boxes: a dev process with the variable set to an off word or garbage."
+    },
+    "MANTLE_DETACHED_DEV web/auth-constants isDetachedDev (NODE_ENV development) | =\"false\"": {
+      "now": false,
+      "why": "MANTLE_DETACHED_DEV was on for any non-blank value, so 0, false, off and garbage turned the dev auth bypass on. Only an on word does now (the documented =1 keeps working). A tightening; production stays off regardless. Boxes: a dev process with the variable set to an off word or garbage."
+    },
+    "MANTLE_DETACHED_DEV web/auth-constants isDetachedDev (NODE_ENV development) | =\"no\"": {
+      "now": false,
+      "why": "MANTLE_DETACHED_DEV was on for any non-blank value, so 0, false, off and garbage turned the dev auth bypass on. Only an on word does now (the documented =1 keeps working). A tightening; production stays off regardless. Boxes: a dev process with the variable set to an off word or garbage."
+    },
+    "MANTLE_DETACHED_DEV web/auth-constants isDetachedDev (NODE_ENV development) | =\"off\"": {
+      "now": false,
+      "why": "MANTLE_DETACHED_DEV was on for any non-blank value, so 0, false, off and garbage turned the dev auth bypass on. Only an on word does now (the documented =1 keeps working). A tightening; production stays off regardless. Boxes: a dev process with the variable set to an off word or garbage."
+    },
+    "MANTLE_DETACHED_DEV web/auth-constants isDetachedDev (NODE_ENV development) | =\" Off \"": {
+      "now": false,
+      "why": "MANTLE_DETACHED_DEV was on for any non-blank value, so 0, false, off and garbage turned the dev auth bypass on. Only an on word does now (the documented =1 keeps working). A tightening; production stays off regardless. Boxes: a dev process with the variable set to an off word or garbage."
+    },
+    "MANTLE_DETACHED_DEV web/auth-constants isDetachedDev (NODE_ENV development) | =\"garbage\"": {
+      "now": false,
+      "why": "MANTLE_DETACHED_DEV was on for any non-blank value, so 0, false, off and garbage turned the dev auth bypass on. Only an on word does now (the documented =1 keeps working). A tightening; production stays off regardless. Boxes: a dev process with the variable set to an off word or garbage."
+    },
+    "MANTLE_MCP_TERMINAL mcp-core/register/context (stdio) | =\" Off \"": {
+      "now": false,
+      "why": "The one flag dialect trims: a padded ' Off ' is off. The regex readers (/^(0|false|off|no)$/i) did not trim. Boxes: one whose value carries spaces set outside the .env loader, which trims unquoted values; none known."
+    },
+    "MANTLE_SHEET_PROFILE_ROWS content/chunk-spreadsheet | =\"\"": {
+      "now": 8,
+      "why": "Blank ('' or spaces) means the default now; Number('') read it as 0 (a zero weight, the exact scope path off, a 1 MB upload cap, no profile rows). Compose does not pass these variables, so only a process whose .env names the variable with no value is affected."
+    },
+    "MANTLE_SHEET_PROFILE_ROWS content/chunk-spreadsheet | =\"16abc\"": {
+      "now": 8,
+      "why": "Not a number means the default now; it read as NaN (a NaN ranking weight or salience, an unordered SQL sort) or as 0 (the exact scope path off). Boxes: one with a typo in the value."
+    },
+    "MANTLE_SHEET_PROFILE_ROWS content/chunk-spreadsheet | =\"garbage\"": {
+      "now": 8,
+      "why": "Not a number means the default now; it read as NaN (a NaN ranking weight or salience, an unordered SQL sort) or as 0 (the exact scope path off). Boxes: one with a typo in the value."
+    },
+    "TEAM_CHAT_DAILY_TURNS content/member-turn-ledger | =\"0.5\"": {
+      "now": 100,
+      "why": "A fraction that floors to 0 means the default now (a count is floored first, then held positive); it read as 0 (no member turns, a queue that runs nothing, no table import, no media). Boxes: one setting a value between 0 and 1; none known."
+    },
+    "TEAM_CHAT_DAILY_TURNS web/member-daily-cap | =\"0.5\"": {
+      "now": 100,
+      "why": "A fraction that floors to 0 means the default now (a count is floored first, then held positive); it read as 0 (no member turns, a queue that runs nothing, no table import, no media). Boxes: one setting a value between 0 and 1; none known."
+    },
+    "MANTLE_SUPERSEDED_SALIENCE content/supersede | =\"\"": {
+      "now": 0.5,
+      "why": "Blank ('' or spaces) means the default now; Number('') read it as 0 (a zero weight, the exact scope path off, a 1 MB upload cap, no profile rows). Compose does not pass these variables, so only a process whose .env names the variable with no value is affected."
+    },
+    "MANTLE_CORRECTED_SALIENCE content/supersede | =\"\"": {
+      "now": 0.3,
+      "why": "Blank ('' or spaces) means the default now; Number('') read it as 0 (a zero weight, the exact scope path off, a 1 MB upload cap, no profile rows). Compose does not pass these variables, so only a process whose .env names the variable with no value is affected."
+    },
+    "MANTLE_CORRECTED_SALIENCE content/supersede | =\"16abc\"": {
+      "now": 0.3,
+      "why": "Not a number means this variable's own default (0.3) now; clamp01's NaN fallback answered 0.5, the superseded salience's default, for both readers. Boxes: one with a typo in the value."
+    },
+    "MANTLE_CORRECTED_SALIENCE content/supersede | =\"garbage\"": {
+      "now": 0.3,
+      "why": "Not a number means this variable's own default (0.3) now; clamp01's NaN fallback answered 0.5, the superseded salience's default, for both readers. Boxes: one with a typo in the value."
+    },
+    "MANTLE_SUPERSEDED_FILE_SALIENCE api/extract/supersede | =\"\"": {
+      "now": 0.5,
+      "why": "Blank ('' or spaces) means the default now; Number('') read it as 0 (a zero weight, the exact scope path off, a 1 MB upload cap, no profile rows). Compose does not pass these variables, so only a process whose .env names the variable with no value is affected."
+    },
+    "MANTLE_SUPERSEDED_FILE_SALIENCE api/extract/supersede | =\"16abc\"": {
+      "now": 0.5,
+      "why": "Not a number means the default now; it read as NaN (a NaN ranking weight or salience, an unordered SQL sort) or as 0 (the exact scope path off). Boxes: one with a typo in the value."
+    },
+    "MANTLE_SUPERSEDED_FILE_SALIENCE api/extract/supersede | =\"garbage\"": {
+      "now": 0.5,
+      "why": "Not a number means the default now; it read as NaN (a NaN ranking weight or salience, an unordered SQL sort) or as 0 (the exact scope path off). Boxes: one with a typo in the value."
+    },
+    "EXTRACT_CONCURRENCY embeddings/extraction-concurrency (no saved value) | =\"1e3\"": {
+      "now": 16,
+      "why": "parseInt read the leading digits ('16abc' as 16, '1e3' as 1); the one dialect reads the whole value with Number() ('16abc' is not a number and means the default, '1e3' is 1000). Boxes: one with trailing text or an exponent in the value; none known."
+    },
+    "EXTRACT_CONCURRENCY embeddings/extraction-concurrency (no saved value) | =\"16abc\"": {
+      "now": 2,
+      "why": "parseInt read the leading digits ('16abc' as 16, '1e3' as 1); the one dialect reads the whole value with Number() ('16abc' is not a number and means the default, '1e3' is 1000). Boxes: one with trailing text or an exponent in the value; none known."
+    },
+    "MANTLE_SALIENCE_LAMBDA runtime/conversation | =\"\"": {
+      "now": 0.15,
+      "why": "Blank ('' or spaces) means the default now; Number('') read it as 0 (a zero weight, the exact scope path off, a 1 MB upload cap, no profile rows). Compose does not pass these variables, so only a process whose .env names the variable with no value is affected."
+    },
+    "MANTLE_SALIENCE_LAMBDA runtime/conversation | =\"16abc\"": {
+      "now": 0.15,
+      "why": "Not a number means the default now; it read as NaN (a NaN ranking weight or salience, an unordered SQL sort) or as 0 (the exact scope path off). Boxes: one with a typo in the value."
+    },
+    "MANTLE_SALIENCE_LAMBDA runtime/conversation | =\"garbage\"": {
+      "now": 0.15,
+      "why": "Not a number means the default now; it read as NaN (a NaN ranking weight or salience, an unordered SQL sort) or as 0 (the exact scope path off). Boxes: one with a typo in the value."
+    },
+    "MANTLE_SALIENCE_LAMBDA search/chunks | =\"\"": {
+      "now": 0.15,
+      "why": "Blank ('' or spaces) means the default now; Number('') read it as 0 (a zero weight, the exact scope path off, a 1 MB upload cap, no profile rows). Compose does not pass these variables, so only a process whose .env names the variable with no value is affected."
+    },
+    "MANTLE_SALIENCE_LAMBDA search/chunks | =\"16abc\"": {
+      "now": 0.15,
+      "why": "Not a number means the default now; it read as NaN (a NaN ranking weight or salience, an unordered SQL sort) or as 0 (the exact scope path off). Boxes: one with a typo in the value."
+    },
+    "MANTLE_SALIENCE_LAMBDA search/chunks | =\"garbage\"": {
+      "now": 0.15,
+      "why": "Not a number means the default now; it read as NaN (a NaN ranking weight or salience, an unordered SQL sort) or as 0 (the exact scope path off). Boxes: one with a typo in the value."
+    },
+    "MANTLE_SALIENCE_LAMBDA search/index | =\"\"": {
+      "now": 0.15,
+      "why": "Blank ('' or spaces) means the default now; Number('') read it as 0 (a zero weight, the exact scope path off, a 1 MB upload cap, no profile rows). Compose does not pass these variables, so only a process whose .env names the variable with no value is affected."
+    },
+    "MANTLE_SALIENCE_LAMBDA search/index | =\"16abc\"": {
+      "now": 0.15,
+      "why": "Not a number means the default now; it read as NaN (a NaN ranking weight or salience, an unordered SQL sort) or as 0 (the exact scope path off). Boxes: one with a typo in the value."
+    },
+    "MANTLE_SALIENCE_LAMBDA search/index | =\"garbage\"": {
+      "now": 0.15,
+      "why": "Not a number means the default now; it read as NaN (a NaN ranking weight or salience, an unordered SQL sort) or as 0 (the exact scope path off). Boxes: one with a typo in the value."
+    },
+    "MANTLE_RECENCY_TAU_DAYS runtime/conversation (days) | =\"\"": {
+      "now": 180,
+      "why": "Blank ('' or spaces) means the default now; Number('') read it as 0 (a zero weight, the exact scope path off, a 1 MB upload cap, no profile rows). Compose does not pass these variables, so only a process whose .env names the variable with no value is affected."
+    },
+    "MANTLE_RECENCY_TAU_DAYS runtime/conversation (days) | =\"16abc\"": {
+      "now": 180,
+      "why": "Not a number means the default now; it read as NaN (a NaN ranking weight or salience, an unordered SQL sort) or as 0 (the exact scope path off). Boxes: one with a typo in the value."
+    },
+    "MANTLE_RECENCY_TAU_DAYS runtime/conversation (days) | =\"garbage\"": {
+      "now": 180,
+      "why": "Not a number means the default now; it read as NaN (a NaN ranking weight or salience, an unordered SQL sort) or as 0 (the exact scope path off). Boxes: one with a typo in the value."
+    },
+    "MANTLE_RECENCY_EPISODIC runtime/conversation | =\"\"": {
+      "now": 0.15,
+      "why": "Blank ('' or spaces) means the default now; Number('') read it as 0 (a zero weight, the exact scope path off, a 1 MB upload cap, no profile rows). Compose does not pass these variables, so only a process whose .env names the variable with no value is affected."
+    },
+    "MANTLE_RECENCY_EPISODIC runtime/conversation | =\"16abc\"": {
+      "now": 0.15,
+      "why": "Not a number means the default now; it read as NaN (a NaN ranking weight or salience, an unordered SQL sort) or as 0 (the exact scope path off). Boxes: one with a typo in the value."
+    },
+    "MANTLE_RECENCY_EPISODIC runtime/conversation | =\"garbage\"": {
+      "now": 0.15,
+      "why": "Not a number means the default now; it read as NaN (a NaN ranking weight or salience, an unordered SQL sort) or as 0 (the exact scope path off). Boxes: one with a typo in the value."
+    },
+    "MANTLE_RECENCY_CONTENT runtime/conversation | =\"\"": {
+      "now": 0.06,
+      "why": "Blank ('' or spaces) means the default now; Number('') read it as 0 (a zero weight, the exact scope path off, a 1 MB upload cap, no profile rows). Compose does not pass these variables, so only a process whose .env names the variable with no value is affected."
+    },
+    "MANTLE_RECENCY_CONTENT runtime/conversation | =\"16abc\"": {
+      "now": 0.06,
+      "why": "Not a number means the default now; it read as NaN (a NaN ranking weight or salience, an unordered SQL sort) or as 0 (the exact scope path off). Boxes: one with a typo in the value."
+    },
+    "MANTLE_RECENCY_CONTENT runtime/conversation | =\"garbage\"": {
+      "now": 0.06,
+      "why": "Not a number means the default now; it read as NaN (a NaN ranking weight or salience, an unordered SQL sort) or as 0 (the exact scope path off). Boxes: one with a typo in the value."
+    },
+    "MANTLE_SCOPE_EXACT_MAX_ROWS search/scope | =\"\"": {
+      "now": 15000,
+      "why": "Blank ('' or spaces) means the default now; Number('') read it as 0 (a zero weight, the exact scope path off, a 1 MB upload cap, no profile rows). Compose does not pass these variables, so only a process whose .env names the variable with no value is affected."
+    },
+    "MANTLE_SCOPE_EXACT_MAX_ROWS search/scope | =\"16abc\"": {
+      "now": 15000,
+      "why": "Not a number means the default now; it read as NaN (a NaN ranking weight or salience, an unordered SQL sort) or as 0 (the exact scope path off). Boxes: one with a typo in the value."
+    },
+    "MANTLE_SCOPE_EXACT_MAX_ROWS search/scope | =\"garbage\"": {
+      "now": 15000,
+      "why": "Not a number means the default now; it read as NaN (a NaN ranking weight or salience, an unordered SQL sort) or as 0 (the exact scope path off). Boxes: one with a typo in the value."
+    },
+    "MANTLE_SCOPE_EXACT_MAX_ITEMS search/scope | =\"\"": {
+      "now": 500,
+      "why": "Blank ('' or spaces) means the default now; Number('') read it as 0 (a zero weight, the exact scope path off, a 1 MB upload cap, no profile rows). Compose does not pass these variables, so only a process whose .env names the variable with no value is affected."
+    },
+    "MANTLE_SCOPE_EXACT_MAX_ITEMS search/scope | =\"16abc\"": {
+      "now": 500,
+      "why": "Not a number means the default now; it read as NaN (a NaN ranking weight or salience, an unordered SQL sort) or as 0 (the exact scope path off). Boxes: one with a typo in the value."
+    },
+    "MANTLE_SCOPE_EXACT_MAX_ITEMS search/scope | =\"garbage\"": {
+      "now": 500,
+      "why": "Not a number means the default now; it read as NaN (a NaN ranking weight or salience, an unordered SQL sort) or as 0 (the exact scope path off). Boxes: one with a typo in the value."
+    },
+    "TABLE_IMPORT_MAX_ROWS tabledb/engine | =\"0.5\"": {
+      "now": 2000000,
+      "why": "A fraction that floors to 0 means the default now (a count is floored first, then held positive); it read as 0 (no member turns, a queue that runs nothing, no table import, no media). Boxes: one setting a value between 0 and 1; none known."
+    },
+    "MANTLE_LOCAL_EMBED_BATCH voice/local-embedding | =\"1e3\"": {
+      "now": 1000,
+      "why": "parseInt read the leading digits ('16abc' as 16, '1e3' as 1); the one dialect reads the whole value with Number() ('16abc' is not a number and means the default, '1e3' is 1000). Boxes: one with trailing text or an exponent in the value; none known."
+    },
+    "MANTLE_LOCAL_EMBED_TIMEOUT_MS voice/local-embedding | =\"1e3\"": {
+      "now": 1000,
+      "why": "parseInt read the leading digits ('16abc' as 16, '1e3' as 1); the one dialect reads the whole value with Number() ('16abc' is not a number and means the default, '1e3' is 1000). Boxes: one with trailing text or an exponent in the value; none known."
+    },
+    "MANTLE_EXTRACT_EXPIRE_MIN api/extract-queue | =\"-1\"": {
+      "now": 60,
+      "why": "A negative value means the default now; the `Number(x) || default` readers kept it (a negative expiry, batch, window or period). Boxes: one setting a negative value; none known."
+    },
+    "MANTLE_EXTRACT_EXPIRE_MIN web/journey (+15) | =\"-1\"": {
+      "now": 75,
+      "why": "A negative value means the default now; the `Number(x) || default` readers kept it (a negative expiry, batch, window or period). Boxes: one setting a negative value; none known."
+    },
+    "MANTLE_EXTRACT_EXPIRE_MIN web/scripts/traces-reap (+15) | =\"-1\"": {
+      "now": 75,
+      "why": "A negative value means the default now; the `Number(x) || default` readers kept it (a negative expiry, batch, window or period). Boxes: one setting a negative value; none known."
+    },
+    "MANTLE_MAX_AUTO_TABLE_TABLES api/extract/auto-table | =\"-1\"": {
+      "now": 20,
+      "why": "A negative value means the default now; the `Number(x) || default` readers kept it (a negative expiry, batch, window or period). Boxes: one setting a negative value; none known."
+    },
+    "MANTLE_EXTRACT_DRAIN_WINDOW_HOURS api/runtime | =\"-1\"": {
+      "now": 168,
+      "why": "A negative value means the default now; the `Number(x) || default` readers kept it (a negative expiry, batch, window or period). Boxes: one setting a negative value; none known."
+    },
+    "MANTLE_EXTRACT_DRAIN_LIMIT api/runtime | =\"-1\"": {
+      "now": 1000,
+      "why": "A negative value means the default now; the `Number(x) || default` readers kept it (a negative expiry, batch, window or period). Boxes: one setting a negative value; none known."
+    },
+    "MANTLE_EXTRACT_SWEEP_LIMIT api/runtime | =\"-1\"": {
+      "now": 200,
+      "why": "A negative value means the default now; the `Number(x) || default` readers kept it (a negative expiry, batch, window or period). Boxes: one setting a negative value; none known."
+    },
+    "MANTLE_EXTRACT_SWEEP_MS api/runtime | =\"-1\"": {
+      "now": 120000,
+      "why": "A negative value means the default now; the `Number(x) || default` readers kept it (a negative expiry, batch, window or period). Boxes: one setting a negative value; none known."
+    },
+    "MANTLE_TABLE_MIGRATE_SWEEP_MS api/runtime | =\"-1\"": {
+      "now": 300000,
+      "why": "A negative value means the default now; the `Number(x) || default` readers kept it (a negative expiry, batch, window or period). Boxes: one setting a negative value; none known."
+    },
+    "MANTLE_RUNNER_CONCURRENCY api/config | =\"0.5\"": {
+      "now": 8,
+      "why": "A fraction that floors to 0 means the default now (a count is floored first, then held positive); it read as 0 (no member turns, a queue that runs nothing, no table import, no media). Boxes: one setting a value between 0 and 1; none known."
+    },
+    "MANTLE_RUNS_TURN_CONCURRENCY api/config | =\"0.5\"": {
+      "now": 2,
+      "why": "A fraction that floors to 0 means the default now (a count is floored first, then held positive); it read as 0 (no member turns, a queue that runs nothing, no table import, no media). Boxes: one setting a value between 0 and 1; none known."
+    },
+    "MANTLE_MEMBER_TURN_CONCURRENCY api/config | =\"0.5\"": {
+      "now": 2,
+      "why": "A fraction that floors to 0 means the default now (a count is floored first, then held positive); it read as 0 (no member turns, a queue that runs nothing, no table import, no media). Boxes: one setting a value between 0 and 1; none known."
+    },
+    "MANTLE_TURN_STALE_MIN web/maintenance/turns-reap | =\"-1\"": {
+      "now": 30,
+      "why": "A negative value means the default now; the `Number(x) || default` readers kept it (a negative expiry, batch, window or period). Boxes: one setting a negative value; none known."
+    },
+    "MANTLE_MAX_UPLOAD_MB files/limits (MB) | =\"\"": {
+      "now": 512,
+      "why": "Blank ('' or spaces) means the default now; Number('') read it as 0 (a zero weight, the exact scope path off, a 1 MB upload cap, no profile rows). Compose does not pass these variables, so only a process whose .env names the variable with no value is affected."
+    },
+    "TOOL_RESULT_INLINE_MAX tools/tool-results | =\"1e3\"": {
+      "now": 1000,
+      "why": "parseInt read the leading digits ('16abc' as 16, '1e3' as 1); the one dialect reads the whole value with Number() ('16abc' is not a number and means the default, '1e3' is 1000). Boxes: one with trailing text or an exponent in the value; none known."
+    },
+    "TOOL_RESULT_INLINE_MAX tools/tool-results | =\"16abc\"": {
+      "now": 32768,
+      "why": "parseInt read the leading digits ('16abc' as 16, '1e3' as 1); the one dialect reads the whole value with Number() ('16abc' is not a number and means the default, '1e3' is 1000). Boxes: one with trailing text or an exponent in the value; none known."
+    },
+    "TOOL_RESULT_EMBED_MIN tools/tool-results | =\"1e3\"": {
+      "now": 1000,
+      "why": "parseInt read the leading digits ('16abc' as 16, '1e3' as 1); the one dialect reads the whole value with Number() ('16abc' is not a number and means the default, '1e3' is 1000). Boxes: one with trailing text or an exponent in the value; none known."
+    },
+    "TOOL_RESULT_EMBED_MIN tools/tool-results | =\"16abc\"": {
+      "now": 102400,
+      "why": "parseInt read the leading digits ('16abc' as 16, '1e3' as 1); the one dialect reads the whole value with Number() ('16abc' is not a number and means the default, '1e3' is 1000). Boxes: one with trailing text or an exponent in the value; none known."
+    },
+    "TOOL_RESULT_PAGE_BYTES tools/tool-results | =\"1e3\"": {
+      "now": 1000,
+      "why": "parseInt read the leading digits ('16abc' as 16, '1e3' as 1); the one dialect reads the whole value with Number() ('16abc' is not a number and means the default, '1e3' is 1000). Boxes: one with trailing text or an exponent in the value; none known."
+    },
+    "TOOL_RESULT_PAGE_BYTES tools/tool-results | =\"16abc\"": {
+      "now": 16384,
+      "why": "parseInt read the leading digits ('16abc' as 16, '1e3' as 1); the one dialect reads the whole value with Number() ('16abc' is not a number and means the default, '1e3' is 1000). Boxes: one with trailing text or an exponent in the value; none known."
+    },
+    "TOOL_RESULT_SPILL_MAX tools/tool-results | =\"1e3\"": {
+      "now": 1000,
+      "why": "parseInt read the leading digits ('16abc' as 16, '1e3' as 1); the one dialect reads the whole value with Number() ('16abc' is not a number and means the default, '1e3' is 1000). Boxes: one with trailing text or an exponent in the value; none known."
+    },
+    "TOOL_RESULT_SPILL_MAX tools/tool-results | =\"16abc\"": {
+      "now": 1048576,
+      "why": "parseInt read the leading digits ('16abc' as 16, '1e3' as 1); the one dialect reads the whole value with Number() ('16abc' is not a number and means the default, '1e3' is 1000). Boxes: one with trailing text or an exponent in the value; none known."
+    },
+    "TOOL_RESULT_MAX_CHUNKS tools/tool-results | =\"1e3\"": {
+      "now": 1000,
+      "why": "parseInt read the leading digits ('16abc' as 16, '1e3' as 1); the one dialect reads the whole value with Number() ('16abc' is not a number and means the default, '1e3' is 1000). Boxes: one with trailing text or an exponent in the value; none known."
+    },
+    "TOOL_RESULT_MAX_CHUNKS tools/tool-results | =\"16abc\"": {
+      "now": 200,
+      "why": "parseInt read the leading digits ('16abc' as 16, '1e3' as 1); the one dialect reads the whole value with Number() ('16abc' is not a number and means the default, '1e3' is 1000). Boxes: one with trailing text or an exponent in the value; none known."
+    },
+    "TOOL_RESULT_TTL_DAYS tools/tool-results (days) | =\"1e3\"": {
+      "now": 1000,
+      "why": "parseInt read the leading digits ('16abc' as 16, '1e3' as 1); the one dialect reads the whole value with Number() ('16abc' is not a number and means the default, '1e3' is 1000). Boxes: one with trailing text or an exponent in the value; none known."
+    },
+    "TOOL_RESULT_TTL_DAYS tools/tool-results (days) | =\"16abc\"": {
+      "now": 7,
+      "why": "parseInt read the leading digits ('16abc' as 16, '1e3' as 1); the one dialect reads the whole value with Number() ('16abc' is not a number and means the default, '1e3' is 1000). Boxes: one with trailing text or an exponent in the value; none known."
+    },
+    "MEDIA_MAX_STT_DURATION_S tools/builtins-video | =\"0.5\"": {
+      "now": 3600,
+      "why": "A fraction that floors to 0 means the default now (a count is floored first, then held positive); it read as 0 (no member turns, a queue that runs nothing, no table import, no media). Boxes: one setting a value between 0 and 1; none known."
+    },
+    "MEDIA_MAX_AUDIO_BYTES tools/builtins-video | =\"0.5\"": {
+      "now": 20000000,
+      "why": "A fraction that floors to 0 means the default now (a count is floored first, then held positive); it read as 0 (no member turns, a queue that runs nothing, no table import, no media). Boxes: one setting a value between 0 and 1; none known."
+    },
+    "MEDIA_MAX_VIDEO_BYTES tools/builtins-video | =\"0.5\"": {
+      "now": 1073741824,
+      "why": "A fraction that floors to 0 means the default now (a count is floored first, then held positive); it read as 0 (no member turns, a queue that runs nothing, no table import, no media). Boxes: one setting a value between 0 and 1; none known."
+    },
+    "BENCH_MAX_USD api/bench/run | =\"16abc\"": {
+      "now": 0,
+      "why": "The memory benchmark harness (server/api/src/bench/run.ts) reads its switches and numbers in the one dialect: every on word (it took only '1'), and blank or garbage means the default (it read NaN or 0). Set on its own command line; no box."
+    },
+    "BENCH_MAX_USD api/bench/run | =\"garbage\"": {
+      "now": 0,
+      "why": "The memory benchmark harness (server/api/src/bench/run.ts) reads its switches and numbers in the one dialect: every on word (it took only '1'), and blank or garbage means the default (it read NaN or 0). Set on its own command line; no box."
+    },
+    "BENCH_EXTRACT_CONCURRENCY api/bench/run | =\"\"": {
+      "now": 4,
+      "why": "The memory benchmark harness (server/api/src/bench/run.ts) reads its switches and numbers in the one dialect: every on word (it took only '1'), and blank or garbage means the default (it read NaN or 0). Set on its own command line; no box."
+    },
+    "BENCH_EXTRACT_CONCURRENCY api/bench/run | =\"16abc\"": {
+      "now": 4,
+      "why": "The memory benchmark harness (server/api/src/bench/run.ts) reads its switches and numbers in the one dialect: every on word (it took only '1'), and blank or garbage means the default (it read NaN or 0). Set on its own command line; no box."
+    },
+    "BENCH_EXTRACT_CONCURRENCY api/bench/run | =\"garbage\"": {
+      "now": 4,
+      "why": "The memory benchmark harness (server/api/src/bench/run.ts) reads its switches and numbers in the one dialect: every on word (it took only '1'), and blank or garbage means the default (it read NaN or 0). Set on its own command line; no box."
+    },
+    "BENCH_INGEST_ONLY api/bench/run | =\"true\"": {
+      "now": true,
+      "why": "The memory benchmark harness (server/api/src/bench/run.ts) reads its switches and numbers in the one dialect: every on word (it took only '1'), and blank or garbage means the default (it read NaN or 0). Set on its own command line; no box."
+    },
+    "BENCH_INGEST_ONLY api/bench/run | =\"yes\"": {
+      "now": true,
+      "why": "The memory benchmark harness (server/api/src/bench/run.ts) reads its switches and numbers in the one dialect: every on word (it took only '1'), and blank or garbage means the default (it read NaN or 0). Set on its own command line; no box."
+    },
+    "BENCH_INGEST_ONLY api/bench/run | =\"on\"": {
+      "now": true,
+      "why": "The memory benchmark harness (server/api/src/bench/run.ts) reads its switches and numbers in the one dialect: every on word (it took only '1'), and blank or garbage means the default (it read NaN or 0). Set on its own command line; no box."
+    },
+    "BENCH_INGEST_ONLY api/bench/run | =\"TRUE\"": {
+      "now": true,
+      "why": "The memory benchmark harness (server/api/src/bench/run.ts) reads its switches and numbers in the one dialect: every on word (it took only '1'), and blank or garbage means the default (it read NaN or 0). Set on its own command line; no box."
+    },
+    "BENCH_REUSE_INGEST api/bench/run | =\"true\"": {
+      "now": true,
+      "why": "The memory benchmark harness (server/api/src/bench/run.ts) reads its switches and numbers in the one dialect: every on word (it took only '1'), and blank or garbage means the default (it read NaN or 0). Set on its own command line; no box."
+    },
+    "BENCH_REUSE_INGEST api/bench/run | =\"yes\"": {
+      "now": true,
+      "why": "The memory benchmark harness (server/api/src/bench/run.ts) reads its switches and numbers in the one dialect: every on word (it took only '1'), and blank or garbage means the default (it read NaN or 0). Set on its own command line; no box."
+    },
+    "BENCH_REUSE_INGEST api/bench/run | =\"on\"": {
+      "now": true,
+      "why": "The memory benchmark harness (server/api/src/bench/run.ts) reads its switches and numbers in the one dialect: every on word (it took only '1'), and blank or garbage means the default (it read NaN or 0). Set on its own command line; no box."
+    },
+    "BENCH_REUSE_INGEST api/bench/run | =\"TRUE\"": {
+      "now": true,
+      "why": "The memory benchmark harness (server/api/src/bench/run.ts) reads its switches and numbers in the one dialect: every on word (it took only '1'), and blank or garbage means the default (it read NaN or 0). Set on its own command line; no box."
+    },
+    "BENCH_RETRIEVE_ONLY api/bench/run | =\"true\"": {
+      "now": true,
+      "why": "The memory benchmark harness (server/api/src/bench/run.ts) reads its switches and numbers in the one dialect: every on word (it took only '1'), and blank or garbage means the default (it read NaN or 0). Set on its own command line; no box."
+    },
+    "BENCH_RETRIEVE_ONLY api/bench/run | =\"yes\"": {
+      "now": true,
+      "why": "The memory benchmark harness (server/api/src/bench/run.ts) reads its switches and numbers in the one dialect: every on word (it took only '1'), and blank or garbage means the default (it read NaN or 0). Set on its own command line; no box."
+    },
+    "BENCH_RETRIEVE_ONLY api/bench/run | =\"on\"": {
+      "now": true,
+      "why": "The memory benchmark harness (server/api/src/bench/run.ts) reads its switches and numbers in the one dialect: every on word (it took only '1'), and blank or garbage means the default (it read NaN or 0). Set on its own command line; no box."
+    },
+    "BENCH_RETRIEVE_ONLY api/bench/run | =\"TRUE\"": {
+      "now": true,
+      "why": "The memory benchmark harness (server/api/src/bench/run.ts) reads its switches and numbers in the one dialect: every on word (it took only '1'), and blank or garbage means the default (it read NaN or 0). Set on its own command line; no box."
+    }
+  }
+}

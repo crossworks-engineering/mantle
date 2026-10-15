@@ -37,8 +37,7 @@
  * the member lists are generated from ITEM_KINDS.
  */
 import type { WorkspaceArea } from '@mantle/client-types';
-import { isTurnStreamingEnabled } from '@mantle/client-types/turn-streaming';
-import { env } from '@mantle/config';
+import { env, feature } from '@mantle/config';
 import { registerPolicySource, systemActor, type GatePolicy, type PolicyRef } from '@mantle/db';
 import type { AccessKeyArea, AccessKeyGrant } from '../access-keys';
 import { API_V1_ROUTES, keyMayCall, type KeyRoute } from '../api-v1';
@@ -534,7 +533,7 @@ const SWITCHES: Readonly<
 > = {
   // MANTLE_TURN_STREAMING (on unless set off): the streamed turn's stream
   // and its cancel do not exist while it is off.
-  'turn-streaming': { on: isTurnStreamingEnabled, status: 404, error: 'not found' },
+  'turn-streaming': { on: () => feature('turnStreaming'), status: 404, error: 'not found' },
   // A dev tool: never in production.
   'not-production': {
     on: () => env('NODE_ENV') !== 'production',

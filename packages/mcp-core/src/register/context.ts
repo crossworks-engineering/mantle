@@ -16,7 +16,7 @@
 import type { McpServer } from '@modelcontextprotocol/server';
 import type { z } from 'zod';
 import type { BuiltinToolDef, LoginMcpChannel, OwnerSurfaceVia, ToolSurface } from '@mantle/tools';
-import { env } from '@mantle/config';
+import { feature } from '@mantle/config';
 import { mcpDefinition } from '../mcp-defs';
 import {
   builtinCallerOn,
@@ -67,12 +67,7 @@ export function makeRegisterContext(
       : surface;
   // Explicit env wins in both directions: =1 opts a network surface in, =0 opts
   // a local one out. Unset means stdio yes, HTTP no.
-  const terminalEnv = env('MANTLE_MCP_TERMINAL') ?? '';
-  const exposeTerminal = /^(1|true|on|yes)$/i.test(terminalEnv)
-    ? true
-    : /^(0|false|off|no)$/i.test(terminalEnv)
-      ? false
-      : transport === 'stdio';
+  const exposeTerminal = feature('mcpTerminal', { default: transport === 'stdio' });
   // The connection's side of the gate (gated-tools.ts): what it lists,
   // who each call runs as. Absent: the anchor's own (stdio, the tests).
   const callGate: McpGate =

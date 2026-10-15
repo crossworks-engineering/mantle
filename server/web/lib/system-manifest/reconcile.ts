@@ -69,7 +69,7 @@ import {
   specialistParamsTarget,
 } from './reconcile-util';
 import { saveProse } from '../studio/prompt-versions';
-import { env } from '@mantle/config';
+import { env, feature } from '@mantle/config';
 
 let ranThisProcess = false;
 
@@ -506,7 +506,7 @@ export async function reconcileManifestOnBoot(): Promise<void> {
   // dev may point at the prod DB (the tailnet workflow), which we must not mutate
   // on a `pnpm dev` boot.
   if (env('NODE_ENV') !== 'production') return;
-  if (env('MANTLE_DISABLE_BOOT_RECONCILE') === '1') {
+  if (feature('bootReconcileOff')) {
     console.log('[reconcile] disabled via MANTLE_DISABLE_BOOT_RECONCILE');
     return;
   }

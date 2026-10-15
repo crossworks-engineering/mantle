@@ -21,10 +21,10 @@ import { gateRareTerms, keywordSql, resolveKeywordQuery } from './keyword-query'
 import { applyRescueFloor, fuseRrf, mergeIds, type MergeOrder } from './rrf';
 import type { ChunkArms } from './trace';
 import type { ContextTrace } from '@mantle/client-types';
-import { env } from '@mantle/config';
+import { env, envNum } from '@mantle/config';
 
 /** Salience down-weight strength (see @mantle/search index). Tunable via env. */
-const SALIENCE_LAMBDA = Number(env('MANTLE_SALIENCE_LAMBDA') ?? 0.15);
+const SALIENCE_LAMBDA = envNum('MANTLE_SALIENCE_LAMBDA');
 
 export type ChunkHit = {
   nodeId: string;

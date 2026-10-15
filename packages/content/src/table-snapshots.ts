@@ -35,6 +35,7 @@ import { resolveStoragePath, tableDbRoot } from '@mantle/tabledb';
 import { defineDomainError } from '@mantle/std';
 import type { TableSnapshot } from '@mantle/client-types';
 import { copySqliteFile, SnapshotNotRecorded, stageThenFlipSnapshot } from './snapshot-broker';
+import { envNumDefault } from '@mantle/config';
 import { envMbBytes, insertNodeSnapshot, pruneHistoryRows } from './node-snapshot-rows';
 
 import {
@@ -51,7 +52,7 @@ import type { AppHistoryActor } from './apps';
 export const TABLE_SNAPSHOT_COMMIT_KEEP = 20;
 /** The default budget for one table's commit entries, in MB
  *  (TABLE_HISTORY_MAX_MB). */
-export const TABLE_HISTORY_DEFAULT_MAX_MB = 512;
+export const TABLE_HISTORY_DEFAULT_MAX_MB = envNumDefault('TABLE_HISTORY_MAX_MB');
 /** Deleted tables' history goes this long after its newest entry. */
 export const TABLE_HISTORY_ORPHAN_DAYS = 30;
 
@@ -171,7 +172,7 @@ export async function pruneTableCommitSnapshots(tableId: string): Promise<void> 
     tableId,
     ['commit'],
     TABLE_SNAPSHOT_COMMIT_KEEP,
-    envMbBytes('TABLE_HISTORY_MAX_MB', TABLE_HISTORY_DEFAULT_MAX_MB),
+    envMbBytes('TABLE_HISTORY_MAX_MB'),
   );
 }
 
@@ -288,7 +289,7 @@ export async function tableSnapshotFile(
 }
 
 function maxSnapshotBytes(): number {
-  return envMbBytes('APP_SNAPSHOT_MAX_MB', 2048);
+  return envMbBytes('APP_SNAPSHOT_MAX_MB');
 }
 
 /**

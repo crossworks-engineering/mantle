@@ -21,7 +21,7 @@
  */
 
 import postgres from 'postgres';
-import { env } from '@mantle/config';
+import { env, envNum } from '@mantle/config';
 
 const DATABASE_URL = env('DATABASE_URL');
 if (!DATABASE_URL) {
@@ -30,7 +30,7 @@ if (!DATABASE_URL) {
 }
 
 const apply = process.argv.slice(2).includes('--apply');
-const ABANDON_AFTER_MIN = (Number(env('MANTLE_EXTRACT_EXPIRE_MIN')) || 60) + 15;
+const ABANDON_AFTER_MIN = envNum('MANTLE_EXTRACT_EXPIRE_MIN') + 15;
 
 async function main() {
   const sql = postgres(DATABASE_URL!, { max: 1 });

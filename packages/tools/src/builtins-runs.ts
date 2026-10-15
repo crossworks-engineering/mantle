@@ -25,7 +25,6 @@ import {
   createRun,
   ensureWorkerAgent,
   enqueueRunActionsSafe,
-  isRunsEnabled,
   ItemCapError,
   listWorkerAgents,
   renderRunStateText,
@@ -36,6 +35,7 @@ import {
   type PlanLeaf,
   type PlanNode,
 } from '@mantle/runs';
+import { feature } from '@mantle/config';
 import {
   ASK_HUMAN_FORM_LIMITS,
   type AskHumanForm,
@@ -671,7 +671,7 @@ export const RUN_TOOLS: BuiltinToolDef[] = [
     handler: async (input, ctx) => {
       const refused = await refuseIfDelegated(ctx);
       if (refused) return refused;
-      if (!isRunsEnabled()) return { ok: false, error: DISABLED_ERROR };
+      if (!feature('runs')) return { ok: false, error: DISABLED_ERROR };
       const belowAdmin = await refuseBelowAdminAgent(ctx);
       if (belowAdmin) return belowAdmin;
       const budgetUsd =
@@ -793,7 +793,7 @@ export const RUN_TOOLS: BuiltinToolDef[] = [
     handler: async (input, ctx) => {
       const refused = await refuseIfDelegated(ctx);
       if (refused) return refused;
-      if (!isRunsEnabled()) return { ok: false, error: DISABLED_ERROR };
+      if (!feature('runs')) return { ok: false, error: DISABLED_ERROR };
       const belowAdmin = await refuseBelowAdminAgent(ctx);
       if (belowAdmin) return belowAdmin;
       const run = await loadOwnedRun(ctx.ownerId, input.run_id);

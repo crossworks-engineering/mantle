@@ -2,6 +2,7 @@ import { loadProfilePreferences, projectDefaultMode } from '@mantle/content';
 import { FRESH_APPEARANCE } from '@mantle/content-core/profile-projections';
 import { resolveAppearanceAttrs, type AppearanceAttrs } from '@mantle/share-ui/appearance';
 import { decodeNeatSpec, encodeNeatSpec } from '@mantle/share-ui/neat-background';
+import { feature } from '@mantle/config';
 
 /**
  * The brain's stored appearance — colour theme, the four fonts and their sizes,
@@ -88,7 +89,7 @@ export async function loadShareAppearance(ownerId: string): Promise<ShareAppeara
       // canonical form of a spec that actually decodes. The shareNeat switch
       // gates it here so OFF renders the plain, printable surface with no
       // trace of the gradient in the document at all.
-      neatBackground: spec && prefs.shareNeat !== false ? encodeNeatSpec(spec) : null,
+      neatBackground: spec && feature('shareNeat', { prefs }) ? encodeNeatSpec(spec) : null,
     };
   } catch {
     // prefs unavailable: fall back to the defaults rather than failing,

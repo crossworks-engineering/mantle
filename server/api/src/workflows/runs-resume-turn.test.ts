@@ -100,8 +100,17 @@ vi.mock('@mantle/db', () => ({
   runAsSystem: (_reason: string, fn: () => unknown) => fn(),
 }));
 
+// The runs switch, feature('runs') (@mantle/config FEATURES), follows h.
+vi.mock('@mantle/config', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@mantle/config')>();
+  const feature = (name: string, ctx?: unknown) =>
+    name === 'runs'
+      ? h.runsEnabled
+      : (actual.feature as (n: string, c?: unknown) => boolean)(name, ctx);
+  return { ...actual, feature };
+});
+
 vi.mock('@mantle/runs', () => ({
-  isRunsEnabled: () => h.runsEnabled,
   claimResume: (...a: unknown[]) => h.claimResume(...a),
   compileRunState: async () => h.compiled,
   renderRunStateText: () => 'RUN STATE TEXT',

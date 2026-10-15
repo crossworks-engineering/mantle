@@ -58,7 +58,7 @@ import {
   parseVtt,
   transcriptWordCount,
 } from './video-transcript';
-import { envDynamic } from '@mantle/config';
+import { envNum } from '@mantle/config';
 import { errorMessage, publicProviderErrorMessage } from '@mantle/std';
 
 // ─── caps ──────────────────────────────────────────────────────────
@@ -67,13 +67,9 @@ import { errorMessage, publicProviderErrorMessage } from '@mantle/std';
 // tutorial video is 10–40 minutes and paying for it is this tool's job.
 // 3600 s at 32 kbps mono ≈ 14.4 MB, inside both Google's 20 MB inline cap
 // and Whisper's 25 MB file cap.
-function intEnv(name: string, dflt: number): number {
-  const v = Number(envDynamic(name));
-  return Number.isFinite(v) && v > 0 ? Math.floor(v) : dflt;
-}
-const MAX_STT_DURATION_S = () => intEnv('MEDIA_MAX_STT_DURATION_S', 3600);
-const MAX_AUDIO_BYTES = () => intEnv('MEDIA_MAX_AUDIO_BYTES', 20_000_000);
-const MAX_VIDEO_BYTES = () => intEnv('MEDIA_MAX_VIDEO_BYTES', 1024 ** 3);
+const MAX_STT_DURATION_S = () => envNum('MEDIA_MAX_STT_DURATION_S');
+const MAX_AUDIO_BYTES = () => envNum('MEDIA_MAX_AUDIO_BYTES');
+const MAX_VIDEO_BYTES = () => envNum('MEDIA_MAX_VIDEO_BYTES');
 
 /** Where an ingested video lands: this month's folder under Auto-filed. */
 function ensureVideoIngestDateFolder(ownerId: string): Promise<string> {

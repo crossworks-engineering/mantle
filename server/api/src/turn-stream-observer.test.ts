@@ -54,8 +54,8 @@ vi.mock('@mantle/turn-stream', () => ({
   },
 }));
 
+// Narration is on: feature('turnNarration') with MANTLE_TURN_NARRATION unset.
 vi.mock('./turn-narration', () => ({
-  isTurnNarrationEnabled: () => true,
   narrateStatus: (_ownerId: string, label: string) => h.narrate(label),
 }));
 

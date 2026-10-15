@@ -57,6 +57,7 @@ import {
 import { and, eq, sql } from 'drizzle-orm';
 import { InputError } from '@mantle/std';
 import { APP_OPENS_MAX } from '@mantle/client-types/app-nav';
+import { profileFlag } from '@mantle/client-types/profile-flags';
 import {
   asSystem,
   currentWorkspaceScope,
@@ -135,8 +136,8 @@ export async function loadProfilePreferences(userId: string): Promise<ProfilePre
     backgrounds: projectBackgrounds(prefs.backgrounds),
     neatBackground: readNeatBackground(prefs.neatBackground),
     defaultMode: projectDefaultMode(prefs.defaultMode),
-    // Default ON: only an explicit `false` disables (the streamThoughts contract).
-    shareNeat: prefs.shareNeat !== false,
+    // The profile booleans read their defaults from PROFILE_FLAGS.
+    shareNeat: profileFlag(prefs, 'shareNeat'),
     avatarSeed:
       typeof prefs.avatarSeed === 'string' && prefs.avatarSeed.length > 0
         ? prefs.avatarSeed
@@ -184,21 +185,17 @@ export async function loadProfilePreferences(userId: string): Promise<ProfilePre
         ? prefs.onboardingStep
         : undefined,
     onboardingModels: projectOnboardingModels(prefs.onboardingModels),
-    toolsmithRequireApproval: prefs.toolsmithRequireApproval === true,
-    heartbeatEgressGate: prefs.heartbeatEgressGate === true,
-    // Default ON: only an explicit `false` disables (matches isStreamThoughtsEnabled).
-    streamThoughts: prefs.streamThoughts !== false,
+    toolsmithRequireApproval: profileFlag(prefs, 'toolsmithRequireApproval'),
+    heartbeatEgressGate: profileFlag(prefs, 'heartbeatEgressGate'),
+    streamThoughts: profileFlag(prefs, 'streamThoughts'),
     thoughtTrailMode: prefs.thoughtTrailMode === 'replace' ? 'replace' : 'list',
-    persistThoughts: prefs.persistThoughts !== false,
+    persistThoughts: profileFlag(prefs, 'persistThoughts'),
     // Clamp defensively — jsonb can hold anything an older/hand write put there.
     // Unset/non-positive ⇒ undefined (no thinking); resolveThinkingBudget also
     // gates on the switch.
     thinkingBudget: projectThinkingBudget(prefs.thinkingBudget),
-    // Default OFF: only an explicit `true` exposes the remote MCP connector.
-    remoteMcpEnabled: prefs.remoteMcpEnabled === true,
-    // Default OFF: team members can't read the owner's email/journal unless
-    // explicitly opted in.
-    teamPrivateReads: prefs.teamPrivateReads === true,
+    remoteMcpEnabled: profileFlag(prefs, 'remoteMcpEnabled'),
+    teamPrivateReads: profileFlag(prefs, 'teamPrivateReads'),
     teamHubAppId: projectTeamHubAppId(prefs.teamHubAppId),
     clientSigninSenderId: projectTeamHubAppId(prefs.clientSigninSenderId),
     teamHubTags: projectTeamHubTags(prefs.teamHubTags),
@@ -347,7 +344,7 @@ export async function updateProfilePreferences(
     backgrounds: projectBackgrounds(merged.backgrounds),
     neatBackground: readNeatBackground(merged.neatBackground),
     defaultMode: projectDefaultMode(merged.defaultMode),
-    shareNeat: merged.shareNeat !== false,
+    shareNeat: profileFlag(merged, 'shareNeat'),
     avatarSeed: merged.avatarSeed || undefined,
     avatarParts: projectAvatarParts(merged.avatarParts),
     avatarPhotoKey: projectLogoKey(merged.avatarPhotoKey),
@@ -376,14 +373,14 @@ export async function updateProfilePreferences(
     onboardedAt: merged.onboardedAt || undefined,
     onboardingStep: merged.onboardingStep || undefined,
     onboardingModels: projectOnboardingModels(merged.onboardingModels),
-    toolsmithRequireApproval: merged.toolsmithRequireApproval === true,
-    heartbeatEgressGate: merged.heartbeatEgressGate === true,
-    streamThoughts: merged.streamThoughts !== false,
+    toolsmithRequireApproval: profileFlag(merged, 'toolsmithRequireApproval'),
+    heartbeatEgressGate: profileFlag(merged, 'heartbeatEgressGate'),
+    streamThoughts: profileFlag(merged, 'streamThoughts'),
     thoughtTrailMode: merged.thoughtTrailMode === 'replace' ? 'replace' : 'list',
-    persistThoughts: merged.persistThoughts !== false,
+    persistThoughts: profileFlag(merged, 'persistThoughts'),
     thinkingBudget: projectThinkingBudget(merged.thinkingBudget),
-    remoteMcpEnabled: merged.remoteMcpEnabled === true,
-    teamPrivateReads: merged.teamPrivateReads === true,
+    remoteMcpEnabled: profileFlag(merged, 'remoteMcpEnabled'),
+    teamPrivateReads: profileFlag(merged, 'teamPrivateReads'),
     teamHubAppId: projectTeamHubAppId(merged.teamHubAppId),
     clientSigninSenderId: projectTeamHubAppId(merged.clientSigninSenderId),
     teamHubTags: projectTeamHubTags(merged.teamHubTags),

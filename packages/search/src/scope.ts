@@ -22,7 +22,7 @@
  */
 import { sql, type SQL } from 'drizzle-orm';
 import { currentWorkspaceScope, db, type WorkspaceScope } from '@mantle/db';
-import { env } from '@mantle/config';
+import { envNum } from '@mantle/config';
 
 /** The tables a vector arm searches. */
 export type ScopeTable = 'nodes' | 'content_chunks' | 'content_chunk_windows' | 'facts';
@@ -30,15 +30,13 @@ export type ScopeTable = 'nodes' | 'content_chunks' | 'content_chunk_windows' | 
 /** The most rows the exact path may search (the W3 bench set it).
  *  MANTLE_SCOPE_EXACT_MAX_ROWS tunes it per box; 0 turns the exact path off. */
 export function scopeExactMaxRows(): number {
-  const n = Math.floor(Number(env('MANTLE_SCOPE_EXACT_MAX_ROWS') ?? 15000));
-  return Number.isFinite(n) && n > 0 ? n : 0;
+  return envNum('MANTLE_SCOPE_EXACT_MAX_ROWS');
 }
 
 /** The most items a scope may hold for the exact path (W6a). Default 500;
  *  MANTLE_SCOPE_EXACT_MAX_ITEMS changes it. */
 export function scopeExactMaxItems(): number {
-  const n = Math.floor(Number(env('MANTLE_SCOPE_EXACT_MAX_ITEMS') ?? 500));
-  return Number.isFinite(n) && n > 0 ? n : 0;
+  return envNum('MANTLE_SCOPE_EXACT_MAX_ITEMS');
 }
 
 const counted = new WeakMap<WorkspaceScope, Map<ScopeTable, Promise<number>>>();

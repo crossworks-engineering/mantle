@@ -43,7 +43,7 @@ import {
 } from '@mantle/db';
 
 import { RUN_TOOL_QUEUE, RUN_WORKER_QUEUE } from './queues';
-import { env } from '@mantle/config';
+import { envNum } from '@mantle/config';
 
 type Tx = Parameters<Parameters<Db['transaction']>[0]>[0];
 
@@ -306,8 +306,7 @@ export async function claimItem(db: Db | Tx, itemId: string): Promise<RunItemRow
 /** Per-run worker concurrency cap (plan §5): how many `worker_invoke` items
  *  may be `running` at once. Protects small boxes from a wide par group. */
 export function workerConcurrencyCap(): number {
-  const raw = Number(env('MANTLE_RUNS_WORKER_CONCURRENCY') ?? '');
-  return Number.isFinite(raw) && raw >= 1 ? Math.floor(raw) : 3;
+  return envNum('MANTLE_RUNS_WORKER_CONCURRENCY');
 }
 
 /**

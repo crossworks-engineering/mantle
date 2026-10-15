@@ -1,4 +1,4 @@
-import { envInt } from '@mantle/config';
+import { envNum } from '@mantle/config';
 
 /**
  * Upload size caps. There are two, because there are two transports.
@@ -34,13 +34,11 @@ import { envInt } from '@mantle/config';
  */
 export const MAX_UPLOAD_BYTES = 64 * 1024 * 1024; // 64 MB
 
-const DEFAULT_STREAMED_UPLOAD_MB = 512;
-
 /** Cap for the streamed web uploader, read at call time so a box can tune it
  *  in .env without a rebuild. Never below the buffered cap: a client that
  *  learned the limit from /api/shell must not be refused a file the old
  *  buffered route would have taken. */
 export function maxStreamedUploadBytes(): number {
-  const mb = envInt('MANTLE_MAX_UPLOAD_MB', DEFAULT_STREAMED_UPLOAD_MB, 1);
+  const mb = envNum('MANTLE_MAX_UPLOAD_MB');
   return Math.max(MAX_UPLOAD_BYTES, mb * 1024 * 1024);
 }

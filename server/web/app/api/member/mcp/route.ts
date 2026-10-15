@@ -25,6 +25,7 @@ import type { MemberMcpConnector, MemberMcpView } from '@mantle/client-types';
 import { memberCaller } from '@/lib/auth';
 import { connectorUrl } from '@/lib/mcp-oauth';
 import { listLoginClients } from '@/lib/mcp-clients';
+import { feature } from '@mantle/config';
 
 export async function GET() {
   const member = memberCaller();
@@ -36,7 +37,7 @@ export async function GET() {
   // The connectors the member's MCP offers (M2 audit, low 7; access matrix
   // N10): none while the box's remote MCP is off; else the connector tools
   // of the member's workspaces, as the one surface lists them (W7b).
-  const open = prefs.remoteMcpEnabled === true;
+  const open = feature('remoteMcp', { prefs });
   const offered = new Set(open ? tools.map((t) => t.tool.id) : []);
   const byGroup = new Map<string, MemberMcpConnector>();
   for (const t of tools) {
@@ -52,7 +53,7 @@ export async function GET() {
     byGroup.set(t.groupId, c);
   }
   const body: MemberMcpView = {
-    remoteEnabled: prefs.remoteMcpEnabled === true,
+    remoteEnabled: feature('remoteMcp', { prefs }),
     connectorUrl: connectorUrl(),
     access: { enabled: true, writeEnabled: true },
     clients,

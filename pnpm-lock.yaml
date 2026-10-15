@@ -169,6 +169,10 @@ importers:
         version: 26.6.4
 
   packages/config:
+    dependencies:
+      '@mantle/client-types':
+        specifier: workspace:*
+        version: link:../client-types
     devDependencies:
       '@types/node':
         specifier: ^26.6.4

@@ -19,7 +19,7 @@ import {
   RUNNER_QUEUE,
   MEMBER_TURN_QUEUE,
 } from '@mantle/runtime/assistant';
-import { env } from '@mantle/config';
+import { env, envNum } from '@mantle/config';
 
 // The system-DB resolver + queue name are the shared cross-process contract
 // (the web enqueuer uses the same), so they live in @mantle/runtime/assistant.
@@ -60,8 +60,7 @@ export function configureDBOS(): void {
  *  across every server/api process (the LLM-provider backpressure valve).
  *  Override with MANTLE_RUNNER_CONCURRENCY. */
 export function runnerConcurrency(): number {
-  const raw = Number(env('MANTLE_RUNNER_CONCURRENCY'));
-  return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 8;
+  return envNum('MANTLE_RUNNER_CONCURRENCY');
 }
 
 /** Concurrency cap for the dedicated RUNS_TURN_QUEUE — bounds in-flight
@@ -71,8 +70,7 @@ export function runnerConcurrency(): number {
  *  low by default — background work should trickle, not flood the LLM route.
  *  Override with MANTLE_RUNS_TURN_CONCURRENCY. */
 export function runsTurnConcurrency(): number {
-  const raw = Number(env('MANTLE_RUNS_TURN_CONCURRENCY'));
-  return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 2;
+  return envNum('MANTLE_RUNS_TURN_CONCURRENCY');
 }
 
 /** Concurrency cap for MEMBER_TURN_QUEUE: in-flight member chat turns across
@@ -80,6 +78,5 @@ export function runsTurnConcurrency(): number {
  *  the owner (audit F31). Low by default; a member turn waiting a little is
  *  fine. Override with MANTLE_MEMBER_TURN_CONCURRENCY. */
 export function memberTurnConcurrency(): number {
-  const raw = Number(env('MANTLE_MEMBER_TURN_CONCURRENCY'));
-  return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 2;
+  return envNum('MANTLE_MEMBER_TURN_CONCURRENCY');
 }

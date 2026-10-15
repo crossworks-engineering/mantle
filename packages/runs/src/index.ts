@@ -29,7 +29,6 @@ export {
   type RunsWorkerTurnInput,
   type RunsWorkerTurnResult,
 } from './queues';
-export { isRunsEnabled } from './flag';
 export {
   ensureRunQueues,
   enqueueRunActions,

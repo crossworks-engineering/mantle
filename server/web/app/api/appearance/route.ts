@@ -2,6 +2,7 @@ import { NextResponse } from '@/server/http-compat';
 import { resolveSingleOwnerId } from '@mantle/db';
 import { loadProfilePreferences, logoVersion } from '@mantle/content';
 import { FRESH_APPEARANCE } from '@mantle/content-core/profile-projections';
+import { feature } from '@mantle/config';
 
 /**
  * GET /api/appearance — the brain's SYSTEM-WIDE appearance: colour theme, the
@@ -93,7 +94,7 @@ export async function GET() {
         backgrounds: prefs.backgrounds ?? null,
         neatBackground: prefs.neatBackground ?? null,
         defaultMode: prefs.defaultMode ?? null,
-        shareNeat: prefs.shareNeat !== false,
+        shareNeat: feature('shareNeat', { prefs }),
       },
       { headers },
     );

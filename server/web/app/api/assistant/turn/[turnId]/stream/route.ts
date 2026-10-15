@@ -2,7 +2,8 @@ import { NextResponse } from '@/server/http-compat';
 import { getBufferedTurnEvents, makeReplayMerger } from '@mantle/turn-stream';
 import { ownerCaller } from '@/lib/auth';
 import { subscribeTurnStream } from '@/lib/realtime';
-import { loadProfilePreferences, isStreamThoughtsEnabled } from '@mantle/content';
+import { loadProfilePreferences } from '@mantle/content';
+import { feature } from '@mantle/config';
 import type { RouteSwitches } from '@/lib/auth/route-switches';
 
 /**
@@ -50,7 +51,7 @@ export async function GET(
   // Per-brain gate: if this owner turned live thinking off in Settings → Profile,
   // the route 404s just like the env-off case. The client treats that as a clean
   // fallback (no reconnect loop) and shows the static thinking bubble instead.
-  if (!isStreamThoughtsEnabled(await loadProfilePreferences(owner.id))) {
+  if (!feature('streamThoughts', { prefs: await loadProfilePreferences(owner.id) })) {
     return NextResponse.json({ error: 'not found' }, { status: 404 });
   }
 

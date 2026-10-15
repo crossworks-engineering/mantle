@@ -34,6 +34,8 @@
  * its own config block).
  */
 
+import { parseFlag, parseNumber, type NumberOptions } from './parse';
+
 /** Every environment variable the server tree reads. Keep sorted.
  *
  *  Adding a name here is half the job: `env-coverage.test.ts` also requires it
@@ -144,6 +146,9 @@ export type KnownEnvName =
   | 'MANTLE_UPDATE_SIGNAL_DIR'
   | 'MANTLE_VIEWER_ROLES_PER_DATABASE'
   | 'MANTLE_WEB_SEARCH_MODEL'
+  | 'MEDIA_MAX_AUDIO_BYTES'
+  | 'MEDIA_MAX_STT_DURATION_S'
+  | 'MEDIA_MAX_VIDEO_BYTES'
   | 'MEDIA_SIDECAR_TOKEN'
   | 'MEDIA_SIDECAR_URL'
   | 'MS_CLIENT_ID'
@@ -187,6 +192,12 @@ export type KnownEnvName =
   | 'TEAM_CHAT_DAILY_TURNS'
   | 'TEAM_UPLOAD_DAILY_BYTES'
   | 'TG_CHAT_ID'
+  | 'TOOL_RESULT_EMBED_MIN'
+  | 'TOOL_RESULT_INLINE_MAX'
+  | 'TOOL_RESULT_MAX_CHUNKS'
+  | 'TOOL_RESULT_PAGE_BYTES'
+  | 'TOOL_RESULT_SPILL_MAX'
+  | 'TOOL_RESULT_TTL_DAYS'
   | 'TIKA_URL'
   | 'VERIFY_AGENT_SLUG'
   | 'VERIFY_OWNER_ID';
@@ -289,20 +300,30 @@ export function envDynamic(name: string): string | undefined {
   return process.env[name];
 }
 
-/** Integer with a default; a missing or non-numeric value yields the default,
- *  and `min` (default 0) floors it. */
-export function envInt(name: KnownEnvName, fallback: number, min = 0): number {
-  const raw = Number(env(name));
-  if (!Number.isFinite(raw)) return fallback;
-  return Math.max(min, Math.floor(raw));
+/** A whole number with a default, in the one number dialect (parse.ts):
+ *  blank or not a number means `fallback`, then floored and held to `opts`
+ *  (a bare number is the old `min` clamp). Prefer a registered number,
+ *  {@link envNum}, so the default lives in one table. */
+export function envInt(
+  name: KnownEnvName,
+  fallback: number,
+  opts: number | NumberOptions = 0,
+): number {
+  const o = typeof opts === 'number' ? { min: opts } : opts;
+  return parseNumber(env(name), fallback, { int: 'floor', ...o });
 }
 
-/** Boolean flag: `1`, `true`, `yes`, `on` (any case) are on; anything else,
- *  including unset, is `fallback`. */
+/** A number with a default, in the one number dialect (parse.ts). */
+export function envNumber(name: KnownEnvName, fallback: number, opts: NumberOptions = {}): number {
+  return parseNumber(env(name), fallback, opts);
+}
+
+/** A boolean flag in the one flag dialect (parse.ts): `1 true yes on` are
+ *  on, `0 false no off` are off (any case), anything else, unset and blank
+ *  included, is `fallback`. Prefer a registered feature, `feature(name)`, so
+ *  the default lives in one table. */
 export function envFlag(name: KnownEnvName, fallback = false): boolean {
-  const raw = env(name)?.trim().toLowerCase();
-  if (raw === undefined || raw === '') return fallback;
-  return raw === '1' || raw === 'true' || raw === 'yes' || raw === 'on';
+  return parseFlag(env(name), fallback);
 }
 
 export function isProduction(): boolean {
@@ -342,3 +363,6 @@ export function assertEnvShape(): void {
 }
 
 export * from './services';
+export * from './parse';
+export * from './numbers';
+export * from './features';

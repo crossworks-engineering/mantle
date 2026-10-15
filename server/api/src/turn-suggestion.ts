@@ -33,7 +33,7 @@ import {
 } from '@mantle/db';
 import { resolveChatKey, resolveChatRoutes, chatWithFailover } from '@mantle/runtime/agent';
 import { setTurnSuggestionHook, type TurnSuggestionContext } from '@mantle/runtime/assistant';
-import { env } from '@mantle/config';
+import { feature } from '@mantle/config';
 
 const SUGGESTION_PROMPT = `You propose the user's next message in a conversation with an AI assistant. Given the user's last message and the assistant's reply, propose ONE short follow-up question the user would plausibly ask next, in the user's FIRST PERSON voice, under 15 words, specific to the reply's content (dig deeper, apply it, or ask the natural next step). No preamble, no quotes, no list. Reply with ONLY the question.`;
 
@@ -43,14 +43,6 @@ const MIN_REPLY_CHARS = 200;
 /** User text shorter than this ("ok", "thanks") signals a closing beat, not a
  *  thread the user wants to keep pulling. */
 const MIN_USER_CHARS = 8;
-
-export function isTurnSuggestionsEnabled(): boolean {
-  // On unless explicitly disabled (0/false/off/no). Unset → on. The real
-  // default-off lives per agent (params.suggest_follow_up); this is the
-  // operator's fleet-wide kill switch.
-  const v = env('MANTLE_TURN_SUGGESTIONS')?.trim().toLowerCase();
-  return v !== '0' && v !== 'false' && v !== 'off' && v !== 'no';
-}
 
 /** Strip wrapping quotes/bullets, collapse whitespace, cap length. `max_tokens`
  *  is the real length control; this is a runaway guard. */
@@ -72,7 +64,9 @@ function tidy(raw: string): string {
  */
 export async function suggestFollowUp(ctx: TurnSuggestionContext): Promise<string | null> {
   try {
-    if (!isTurnSuggestionsEnabled()) return null;
+    // The operator's fleet-wide kill switch; the real default-off lives per
+    // agent (params.suggest_follow_up).
+    if (!feature('turnSuggestions')) return null;
     const params = (ctx.agent.params ?? {}) as AgentParams;
     if (params.suggest_follow_up !== true) return null;
     if (ctx.stopped) return null;

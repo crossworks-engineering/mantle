@@ -4,21 +4,13 @@ import { systemDb, turnStreamBuffer } from '@mantle/db';
 // turn under a limited role (member logins Phase 0b) still records them.
 import type { TurnEvent } from '@mantle/client-types';
 import { TURN_STREAM_CHANNEL, TURN_CANCEL_CHANNEL } from './channel';
-import { env } from '@mantle/config';
+import { feature } from '@mantle/config';
 
-/**
- * Buffering is gated on the SAME master flag as the SSE route + the non-blocking
- * POST (`MANTLE_TURN_STREAMING`) — and mirrors its **on-by-default** stance
- * (see server/web/lib/turn-streaming.ts): the buffer fills unless the flag is
- * explicitly `0`/`false`/`off`/`no`. Keep these two defaults in lockstep — a
- * producer that buffers while the SSE route is dark (or vice versa) is the kind
- * of split-brain that made this hard to reason about before. (The `pg_notify`
- * below stays unconditional — harmless when no consumer is subscribed.)
- */
-function isBufferingEnabled(): boolean {
-  const v = env('MANTLE_TURN_STREAMING')?.trim().toLowerCase();
-  return v !== '0' && v !== 'false' && v !== 'off' && v !== 'no';
-}
+/* Buffering is gated on the SAME switch as the SSE route and the non-blocking
+ * POST, `feature('turnStreaming')` (@mantle/config FEATURES): one reader, so
+ * the producer cannot buffer while the route is dark or the other way round.
+ * (The `pg_notify` below stays unconditional: harmless when no consumer is
+ * subscribed.) */
 
 /** How long a turn's buffered events live before the lazy sweep reaps them — a
  *  Postgres interval literal (internal constant, never user input). Ample for a
@@ -43,7 +35,7 @@ const BUFFER_TTL_SQL = sql`now() - interval '15 minutes'`;
  * source of truth either way.
  */
 async function bufferTurnEvent(ownerId: string, event: TurnEvent): Promise<void> {
-  if (!isBufferingEnabled()) return;
+  if (!feature('turnStreaming')) return;
   try {
     await systemDb
       .insert(turnStreamBuffer)

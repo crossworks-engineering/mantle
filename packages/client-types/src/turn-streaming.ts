@@ -22,9 +22,15 @@ function flagOn(raw: string | undefined): boolean {
 }
 
 /** Server-side master gate: the SSE/cancel routes exist and the POST turn route
- *  goes non-blocking. Off only when `MANTLE_TURN_STREAMING` is explicitly falsy. */
+ *  goes non-blocking. Off only when `MANTLE_TURN_STREAMING` is explicitly falsy.
+ *  Honours the legacy name `NEXT_PUBLIC_MANTLE_TURN_STREAMING` when the new
+ *  one is unset, exactly as `env()` does (@mantle/config ENV_ALIASES): until
+ *  A10 #11 this reader ignored it while the replay buffer honoured it, so a
+ *  box setting only the legacy name to 0 served the stream routes with no
+ *  buffer behind them. The brain reads `feature('turnStreaming')`; this stays
+ *  for the published contract. */
 export function isTurnStreamingEnabled(): boolean {
-  return flagOn(process.env.MANTLE_TURN_STREAMING);
+  return flagOn(process.env.MANTLE_TURN_STREAMING ?? process.env.NEXT_PUBLIC_MANTLE_TURN_STREAMING);
 }
 
 /** Client-side twin, compiled into the browser bundle. Defaults on (an unset

@@ -34,7 +34,7 @@ import { resolveChatAgent, type ChatAgent } from '@/lib/assistant-chat';
 import { queueWorkspaceTurn } from '@/lib/workspace-turn';
 import { getDbosClient } from '@/lib/dbos-client';
 import { ASSISTANT_TURN_MAX_CHARS } from '@mantle/client-types/assistant-limits';
-import { isTurnStreamingEnabled } from '@mantle/client-types/turn-streaming';
+import { feature } from '@mantle/config';
 import {
   ASSISTANT_TURN_WORKFLOW,
   RUNNER_QUEUE,
@@ -42,12 +42,7 @@ import {
   type AssistantTurnRunResult,
   type RunAssistantTurnOptions,
 } from '@mantle/runtime/assistant';
-import {
-  sanitizeLocationPing,
-  loadProfilePreferences,
-  isStreamThoughtsEnabled,
-  type LocationPing,
-} from '@mantle/content';
+import { sanitizeLocationPing, loadProfilePreferences, type LocationPing } from '@mantle/content';
 import { extractAttachmentForTurn } from '@mantle/runtime/agent';
 import {
   ensureAutoFiledFolder,
@@ -386,8 +381,8 @@ async function runTurn(
       const streamable =
         login.kind === 'admin' &&
         !!idempotencyKey &&
-        isTurnStreamingEnabled() &&
-        isStreamThoughtsEnabled(await loadProfilePreferences(login.ownerId));
+        feature('turnStreaming') &&
+        feature('streamThoughts', { prefs: await loadProfilePreferences(login.ownerId) });
       return queueWorkspaceTurn({
         login,
         agent: chatAgent,
@@ -409,7 +404,8 @@ async function runTurn(
     // streamId (so the producer never publishes for this turn) and fall through
     // to the blocking path below — the chat shows a static thinking bubble.
     const streamingOn =
-      isTurnStreamingEnabled() && isStreamThoughtsEnabled(await loadProfilePreferences(user.id));
+      feature('turnStreaming') &&
+      feature('streamThoughts', { prefs: await loadProfilePreferences(user.id) });
 
     // The agent resolveChatAgent picked: an explicit slug, else THIS LOGIN's
     // assigned assistant (migration 0143), else the brain-wide default. Each

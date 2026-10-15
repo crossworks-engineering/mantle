@@ -9,6 +9,7 @@ import { loadProfilePreferences, updateProfilePreferences } from '@mantle/conten
 import { connectorUrl } from '@/lib/mcp-oauth';
 import { listConnectedClients } from '@/lib/mcp-clients';
 import { readJson } from '@/lib/read-body';
+import { feature } from '@mantle/config';
 
 export async function GET() {
   const user = ownerCaller();
@@ -17,7 +18,7 @@ export async function GET() {
     listConnectedClients(user.id),
   ]);
   return NextResponse.json(
-    { enabled: prefs.remoteMcpEnabled === true, connectorUrl: connectorUrl(), clients },
+    { enabled: feature('remoteMcp', { prefs }), connectorUrl: connectorUrl(), clients },
     { headers: { 'Cache-Control': 'no-store' } },
   );
 }

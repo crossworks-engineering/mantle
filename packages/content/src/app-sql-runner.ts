@@ -47,7 +47,7 @@
  * stays when any statement fails or is killed.
  */
 import { spawn, type ChildProcess } from 'node:child_process';
-import { env, envDynamic, envInt } from '@mantle/config';
+import { envDynamic, envNum, envNumDefault } from '@mantle/config';
 import { errorMessage } from '@mantle/std';
 
 /** How long one app statement may run. */
@@ -68,7 +68,7 @@ export const APP_SQL_MAX_CHILDREN = 4;
 /** An idle child exits after this long, so a quiet server holds none. */
 export const APP_SQL_CHILD_IDLE_MS = 60_000;
 /** The default cap on one app's database file, in MB (APP_SQL_MAX_DB_MB). */
-export const APP_SQL_DEFAULT_MAX_DB_MB = 256;
+export const APP_SQL_DEFAULT_MAX_DB_MB = envNumDefault('APP_SQL_MAX_DB_MB');
 /** The most bytes one query returns (roughly as serialized); beyond it the
  *  query fails with an "add a LIMIT" error. The rows cross into the web
  *  process and are JSON-encoded there, so this bounds its memory. */
@@ -91,11 +91,7 @@ export const APP_SQL_MAX_WAITING_PER_CALLER = 16;
 /** The cap on one app's database file, in bytes: APP_SQL_MAX_DB_MB (default
  *  256), read at call time. */
 export function appSqlMaxDbBytes(): number {
-  // Compose passes an unset variable as '', which Number() reads as 0.
-  const mb = env('APP_SQL_MAX_DB_MB')?.trim()
-    ? envInt('APP_SQL_MAX_DB_MB', APP_SQL_DEFAULT_MAX_DB_MB, 1)
-    : APP_SQL_DEFAULT_MAX_DB_MB;
-  return mb * 1024 * 1024;
+  return envNum('APP_SQL_MAX_DB_MB') * 1024 * 1024;
 }
 
 /** An error an app's own statement earned: its SQL, a refusal, a cap, the

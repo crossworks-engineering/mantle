@@ -100,7 +100,7 @@ import { isNewChatCommand, newChatReply, sendApology, startTyping } from './tele
 import type { AttachmentContext, FileAttachment, InboundRow } from './telegram/types';
 import { runTelegramTurn } from './telegram/turn';
 import { loginActorNow } from '../workflows/login-actor';
-import { env } from '@mantle/config';
+import { env, envNum } from '@mantle/config';
 import { errorMessage } from '@mantle/std';
 
 // The owner id is resolved ONCE in startAgentRuntime (waitForOwner: either
@@ -560,8 +560,8 @@ async function drainPending(
  * there.
  */
 async function drainUnextractedNodes(ownerId: string): Promise<void> {
-  const windowHours = Number(env('MANTLE_EXTRACT_DRAIN_WINDOW_HOURS')) || 168;
-  const limit = Number(env('MANTLE_EXTRACT_DRAIN_LIMIT')) || 1000;
+  const windowHours = envNum('MANTLE_EXTRACT_DRAIN_WINDOW_HOURS');
+  const limit = envNum('MANTLE_EXTRACT_DRAIN_LIMIT');
   const since = new Date(Date.now() - windowHours * 60 * 60 * 1000);
   // Exempt nodes (the Forum archive, @mantle/db extract-exempt.ts) are left
   // out: they have no embedding by design and must never be queued. So are
@@ -617,8 +617,8 @@ async function drainUnextractedNodes(ownerId: string): Promise<void> {
  * something.
  */
 async function sweepMissedExtractions(ownerId: string): Promise<void> {
-  const windowHours = Number(env('MANTLE_EXTRACT_DRAIN_WINDOW_HOURS')) || 168;
-  const limit = Number(env('MANTLE_EXTRACT_SWEEP_LIMIT')) || 200;
+  const windowHours = envNum('MANTLE_EXTRACT_DRAIN_WINDOW_HOURS');
+  const limit = envNum('MANTLE_EXTRACT_SWEEP_LIMIT');
   const since = new Date(Date.now() - windowHours * 60 * 60 * 1000);
   const rows = await db
     .select({ id: nodes.id })
@@ -937,7 +937,7 @@ async function bootAgentRuntime(opts: AgentRuntimeOptions) {
   // extractor_run (a node_ingested notify lost to a dropped listener / wedged
   // extraction), so a missed file self-heals in minutes instead of waiting for
   // a restart's boot-drain. Loop-safe + bounded (see sweepMissedExtractions).
-  const SWEEP_INTERVAL_MS = Number(env('MANTLE_EXTRACT_SWEEP_MS')) || 120 * 1000;
+  const SWEEP_INTERVAL_MS = envNum('MANTLE_EXTRACT_SWEEP_MS');
   startTicker({
     name: 'extract sweep',
     everyMs: SWEEP_INTERVAL_MS,
@@ -950,7 +950,7 @@ async function bootAgentRuntime(opts: AgentRuntimeOptions) {
   // registry lock every writer takes (so a sweep step can never fork against
   // a concurrent edit). Lazy migration (first op/commit) handles hot tables;
   // this catches the rest. No-op once storage_path is set everywhere.
-  const TABLE_MIGRATE_SWEEP_MS = Number(env('MANTLE_TABLE_MIGRATE_SWEEP_MS')) || 5 * 60 * 1000;
+  const TABLE_MIGRATE_SWEEP_MS = envNum('MANTLE_TABLE_MIGRATE_SWEEP_MS');
   const TABLE_MIGRATE_BATCH = 5;
   startTicker({
     name: 'table migration sweep',

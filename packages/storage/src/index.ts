@@ -11,7 +11,7 @@ import {
 } from '@aws-sdk/client-s3';
 import type { Readable } from 'node:stream';
 import { createHash } from 'node:crypto';
-import { env } from '@mantle/config';
+import { env, feature } from '@mantle/config';
 
 /**
  * Thin wrapper around an S3-compatible object store: the bundled one that runs
@@ -38,7 +38,7 @@ export function clientConfig(): S3ClientConfig {
     // stores serve without DNS tricks, so it is the default. Set
     // S3_FORCE_PATH_STYLE=false for a provider that wants virtual-hosted
     // style (http://bucket.host/key).
-    forcePathStyle: !/^(false|0|no)$/i.test(env('S3_FORCE_PATH_STYLE') ?? ''),
+    forcePathStyle: feature('s3ForcePathStyle'),
     // Since SDK 3.729 every PutObject carries a flexible checksum header
     // (x-amz-checksum-crc32) by default, and not every S3-compatible server
     // implements those. Send and check them only when an operation requires

@@ -28,17 +28,13 @@ import {
 import { stageLabelForStep, type StageLabel } from '@mantle/runtime/assistant';
 import { publishTurnEvent, TURN_EVENT_SCHEMA_VERSION } from '@mantle/turn-stream';
 import type { TurnEvent } from '@mantle/client-types';
-import { isTurnNarrationEnabled, narrateStatus } from './turn-narration';
-import { env } from '@mantle/config';
+import { narrateStatus } from './turn-narration';
+import { feature } from '@mantle/config';
 
-/** Token streaming (Phase 3): installing the delta observer is what makes the
- *  tool-loop stream (`isTurnStreaming()`). On by default, on its own flag so it
- *  can be turned off independently of the status stream; set
- *  `MANTLE_TURN_TOKENS=0` to disable just the live reply typing. */
-export function isTurnTokenStreamingEnabled(): boolean {
-  const v = env('MANTLE_TURN_TOKENS')?.trim().toLowerCase();
-  return v !== '0' && v !== 'false' && v !== 'off' && v !== 'no';
-}
+/* Token streaming (Phase 3): installing the delta observer is what makes the
+ * tool-loop stream (`isTurnStreaming()`). On by default, on its own switch,
+ * `feature('turnTokens')` (MANTLE_TURN_TOKENS=0 turns just the live reply
+ * typing off). */
 
 /** Build a `status` event for one step. `stepId` ties the grounded line to its
  *  later narrated upgrade so the client replaces it in place.
@@ -153,7 +149,7 @@ export function installTurnStreamObserver(): void {
   // `isTurnStreaming()` true in the tool-loop, so the turn only streams (uses the
   // adapter's chatStream + streaming HTTP) when this flag is set. Each delta
   // publishes over the SAME NOTIFY bus as status — fire-and-forget, never throws.
-  if (isTurnTokenStreamingEnabled()) {
+  if (feature('turnTokens')) {
     setTurnDeltaObserver((e: TurnDeltaEvent) => {
       publishOrdered(e.turnId, e.ownerId, deltaEvent(e));
     });
@@ -197,7 +193,7 @@ export function installTurnStreamObserver(): void {
     //    under a FRESH seq minted now (see statusEvent) — and only while the
     //    turn is still publishing (a narration resolving after done/error has
     //    no audience and a reset seq cursor).
-    if (isTurnNarrationEnabled() && stage.kind !== 'thinking') {
+    if (feature('turnNarration') && stage.kind !== 'thinking') {
       void narrateStatus(e.ownerId, stage.label).then((narrated) => {
         if (!narrated || !isTurnPublishing(e.turnId)) return;
         const upgrade = { seq: allocateTurnSeq(e.turnId), narrated: true as const };

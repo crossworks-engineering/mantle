@@ -81,7 +81,7 @@ import {
 import { extractNode } from './extractor.js';
 import { probeExtractionModel } from './extract/model.js';
 import { ProviderCircuit } from './provider-circuit.js';
-import { env } from '@mantle/config';
+import { env, envNum } from '@mantle/config';
 import { assertNoViewer } from '@mantle/db/viewer';
 
 const EXTRACT_QUEUE = 'mantle.extract';
@@ -95,7 +95,7 @@ const DEAD_LETTER_QUEUE = 'mantle.extract.dead';
  *  slow box it mostly thrashes). 60 min gives a big extraction room to complete
  *  in one clean pass; raise via `MANTLE_EXTRACT_EXPIRE_MIN` on very slow
  *  hardware (a GPU/upgraded box can leave it at the default). */
-const EXTRACT_EXPIRE_MIN = Number(env('MANTLE_EXTRACT_EXPIRE_MIN')) || 60;
+const EXTRACT_EXPIRE_MIN = envNum('MANTLE_EXTRACT_EXPIRE_MIN');
 
 /** Retry policy lives on the queue so every job inherits it. With backoff the
  *  delays grow ~30s → 60s → 120s → 240s → 480s, spreading rate-limit retries

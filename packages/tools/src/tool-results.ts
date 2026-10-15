@@ -38,7 +38,7 @@ import {
 // Infrastructure writes: systemDb (the admin pool) whatever the viewer, so a
 // turn under a limited role (member logins Phase 0b) still records them.
 import { embed, embedBatch } from '@mantle/embeddings';
-import { envDynamic } from '@mantle/config';
+import { envNum } from '@mantle/config';
 
 // ─── Configuration ──────────────────────────────────────────────────────────
 
@@ -78,29 +78,23 @@ export type ResultHandlingConfig = {
   spill_max_kb?: number;
 };
 
-function envInt(name: string, def: number): number {
-  const v = envDynamic(name);
-  const n = v ? parseInt(v, 10) : NaN;
-  return Number.isFinite(n) && n > 0 ? n : def;
-}
-
 /** Global defaults — env-overridable for ops/testing. 32 KB inline is safe on
  *  today's 1M-context models with prompt caching (the re-send cost the old
  *  8 KB cap guarded against is now fractions of a cent). */
 export const DEFAULT_RESULT_HANDLING: ResultHandling = {
-  inlineMaxBytes: envInt('TOOL_RESULT_INLINE_MAX', 32 * 1024),
-  embedMinBytes: envInt('TOOL_RESULT_EMBED_MIN', 100 * 1024),
-  pageBytes: envInt('TOOL_RESULT_PAGE_BYTES', 16 * 1024),
-  spillMaxBytes: envInt('TOOL_RESULT_SPILL_MAX', 1024 * 1024), // 1 MB
+  inlineMaxBytes: envNum('TOOL_RESULT_INLINE_MAX'),
+  embedMinBytes: envNum('TOOL_RESULT_EMBED_MIN'),
+  pageBytes: envNum('TOOL_RESULT_PAGE_BYTES'),
+  spillMaxBytes: envNum('TOOL_RESULT_SPILL_MAX'),
 };
 
 /** Max chunks embedded for the semantic tier (global). Chunk size adapts so
  *  this many chunks cover the whole stored content — so embedding cost +
  *  latency stay bounded no matter how big the (capped) result is. */
-export const TOOL_RESULT_MAX_CHUNKS = envInt('TOOL_RESULT_MAX_CHUNKS', 200);
+export const TOOL_RESULT_MAX_CHUNKS = envNum('TOOL_RESULT_MAX_CHUNKS');
 
 /** Retention before a spilled result is swept (global store policy). */
-export const TOOL_RESULT_TTL_MS = envInt('TOOL_RESULT_TTL_DAYS', 7) * 24 * 60 * 60 * 1000;
+export const TOOL_RESULT_TTL_MS = envNum('TOOL_RESULT_TTL_DAYS') * 24 * 60 * 60 * 1000;
 
 /** Base chunk size (chars) for the semantic tier before adaptive widening. */
 const BASE_CHUNK_CHARS = 1500;

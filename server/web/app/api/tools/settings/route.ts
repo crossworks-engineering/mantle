@@ -4,6 +4,7 @@ import { loadProfilePreferences, updateProfilePreferences } from '@mantle/conten
 import type { ToolSettings } from '@mantle/client-types';
 import { ownerCaller } from '@/lib/auth';
 import { readBody } from '@/lib/read-body';
+import { feature } from '@mantle/config';
 
 /** The two owner-level tool policy toggles (stored in profile preferences):
  *  agent-built-tool approval, and the unattended-heartbeat email/web egress gate. */
@@ -11,8 +12,8 @@ export async function GET() {
   const user = ownerCaller();
   const prefs = await loadProfilePreferences(user.id);
   const body: ToolSettings = {
-    requireApproval: prefs.toolsmithRequireApproval === true,
-    egressGate: prefs.heartbeatEgressGate === true,
+    requireApproval: feature('toolsmithRequireApproval', { prefs }),
+    egressGate: feature('heartbeatEgressGate', { prefs }),
   };
   return NextResponse.json(body);
 }
@@ -35,8 +36,8 @@ export async function PUT(req: Request) {
   });
   const prefs = await loadProfilePreferences(user.id);
   const body: ToolSettings = {
-    requireApproval: prefs.toolsmithRequireApproval === true,
-    egressGate: prefs.heartbeatEgressGate === true,
+    requireApproval: feature('toolsmithRequireApproval', { prefs }),
+    egressGate: feature('heartbeatEgressGate', { prefs }),
   };
   return NextResponse.json(body);
 }

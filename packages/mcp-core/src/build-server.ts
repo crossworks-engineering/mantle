@@ -87,7 +87,7 @@ import {
   TERMINAL_TOOLS,
 } from '@mantle/tools';
 import {} from '@mantle/content';
-import { env } from '@mantle/config';
+import { feature } from '@mantle/config';
 import { makeRegisterContext } from './register/context';
 import type { LoginMcpChannel, OwnerSurfaceVia } from '@mantle/tools';
 import { registerSearchTools } from './register/search';
@@ -106,7 +106,7 @@ import type { McpGate } from './gated-tools';
  *  decides; A5 step 6a deleted the TOOLSMITH_WRITE_SLUGS view). The env is
  *  read at module scope (process-stable) so the gate is evaluated once, not
  *  per build: for the HTTP transport a server is built per request. */
-const toolsmithWriteEnabled = !/^(0|false|off|no)$/i.test(env('MANTLE_MCP_TOOLSMITH_WRITE') ?? '');
+const toolsmithWriteEnabled = feature('mcpToolsmithWrite');
 if (!toolsmithWriteEnabled) {
   console.error(
     '[mantle-mcp] MANTLE_MCP_TOOLSMITH_WRITE is off — exposing Toolsmith read-only ' +

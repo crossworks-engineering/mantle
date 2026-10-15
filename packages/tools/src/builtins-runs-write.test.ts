@@ -50,11 +50,23 @@ vi.mock('@mantle/db', async (importOriginal) => {
     scopeHasArea: vi.fn(async () => true),
   };
 });
+// The runs switch, feature('runs') (@mantle/config FEATURES): a spy the
+// tests set, passing every other switch through.
+const flags = vi.hoisted(() => ({ runs: true }));
+vi.mock('@mantle/config', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@mantle/config')>();
+  const real = actual.feature as (name: string, ctx?: unknown) => boolean;
+  return {
+    ...actual,
+    feature: vi.fn((name: string, ctx?: unknown) =>
+      name === 'runs' ? flags.runs : real(name, ctx),
+    ),
+  };
+});
 vi.mock('@mantle/runs', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@mantle/runs')>();
   return {
     ...actual,
-    isRunsEnabled: vi.fn(),
     createRun: vi.fn(),
     appendChildren: vi.fn(),
     cancelRun: vi.fn(),
@@ -69,6 +81,7 @@ vi.mock('@mantle/runs', async (importOriginal) => {
 vi.mock('./resolve', () => ({ resolveTool: vi.fn(), resolveTools: vi.fn() }));
 
 import * as dbmod from '@mantle/db';
+import { feature } from '@mantle/config';
 import {
   appendChildren,
   applyAuditVerdict,
@@ -77,7 +90,6 @@ import {
   createRun,
   enqueueRunActionsSafe,
   ensureWorkerAgent,
-  isRunsEnabled,
   ItemCapError,
   listWorkerAgents,
   renderRunStateText,
@@ -134,7 +146,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   selectQueue.length = 0;
   whereArgs.length = 0;
-  vi.mocked(isRunsEnabled).mockReturnValue(true);
+  flags.runs = true;
   vi.mocked(resolveTools).mockResolvedValue([{ slug: 'search' }] as never);
   vi.mocked(listWorkerAgents).mockResolvedValue([] as never);
   vi.mocked(ensureWorkerAgent).mockResolvedValue({ id: 'w-default', slug: 'worker' } as never);
@@ -159,7 +171,7 @@ describe('run_plan', () => {
   it('refuses a delegated agent before consulting anything else', async () => {
     const res = await plan.handler({ title: 'Digest', plan: okPlan }, delegated);
     expect(errorOf(res)).toMatch(/responder-only/);
-    expect(isRunsEnabled).not.toHaveBeenCalled();
+    expect(feature).not.toHaveBeenCalledWith('runs');
     expect(createRun).not.toHaveBeenCalled();
   });
 
@@ -171,7 +183,7 @@ describe('run_plan', () => {
   });
 
   it('refuses when runner queues are dark, naming the flag', async () => {
-    vi.mocked(isRunsEnabled).mockReturnValue(false);
+    flags.runs = false;
     const res = await plan.handler({ title: 'Digest', plan: okPlan }, ctx);
     expect(errorOf(res)).toMatch(/MANTLE_RUNS/);
     expect(createRun).not.toHaveBeenCalled();
@@ -397,7 +409,7 @@ describe('run_append', () => {
     expect(errorOf(await append.handler({ run_id: 'r1', children }, delegated))).toMatch(
       /responder-only/,
     );
-    vi.mocked(isRunsEnabled).mockReturnValue(false);
+    flags.runs = false;
     expect(errorOf(await append.handler({ run_id: 'r1', children }, ctx))).toMatch(/MANTLE_RUNS/);
     expect(dbmod.db.select).not.toHaveBeenCalled();
   });

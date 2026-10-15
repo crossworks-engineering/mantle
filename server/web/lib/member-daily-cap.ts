@@ -10,22 +10,14 @@
  * So a leaked credential or a runaway client never becomes a wallet drain.
  * Both are checked before a turn is queued (packages/content member-turn-ledger.ts).
  */
-import { env } from '@mantle/config';
+import { env, envNum, envNumDefault } from '@mantle/config';
 
-export const MEMBER_DAILY_CAP = (() => {
-  const n = Number(env('TEAM_CHAT_DAILY_TURNS'));
-  return Number.isFinite(n) && n > 0 ? Math.floor(n) : 100;
-})();
+export const MEMBER_DAILY_CAP = envNum('TEAM_CHAT_DAILY_TURNS');
 
 /** The default token budget: room for dozens of tool-heavy turns a day. */
-export const MEMBER_DAILY_TOKENS_DEFAULT = 2_000_000;
+export const MEMBER_DAILY_TOKENS_DEFAULT = envNumDefault('MANTLE_MEMBER_DAILY_TOKENS');
 
-export const MEMBER_DAILY_TOKENS = (() => {
-  const raw = env('MANTLE_MEMBER_DAILY_TOKENS');
-  if (raw === undefined || raw === '') return MEMBER_DAILY_TOKENS_DEFAULT;
-  const n = Number(raw);
-  return Number.isFinite(n) && n >= 0 ? Math.floor(n) : MEMBER_DAILY_TOKENS_DEFAULT;
-})();
+export const MEMBER_DAILY_TOKENS = envNum('MANTLE_MEMBER_DAILY_TOKENS');
 
 /** Midnight UTC today: where the daily budget window starts. */
 export function startOfTodayUtc(): Date {

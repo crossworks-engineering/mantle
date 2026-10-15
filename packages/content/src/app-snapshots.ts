@@ -47,6 +47,7 @@ import {
 import { lockAppHistory } from './app-history-lock';
 import { SnapshotNotRecorded, stageThenFlipSnapshot } from './snapshot-broker';
 import { scheduleAppTableExportSync } from './app-table-exports';
+import { envNumDefault } from '@mantle/config';
 import { codeHash, envMbBytes, insertNodeSnapshot, pruneHistoryRows } from './node-snapshot-rows';
 
 export type AppSnapshotTrigger = Exclude<AppSnapshot['trigger'], 'publish'>;
@@ -55,11 +56,11 @@ export type AppSnapshotTrigger = Exclude<AppSnapshot['trigger'], 'publish'>;
 export const APP_SNAPSHOT_AUTO_KEEP = 20;
 /** The default budget for one owner's snapshot copies, in MB
  *  (APP_SNAPSHOT_MAX_MB). */
-export const APP_SNAPSHOT_DEFAULT_MAX_MB = 2048;
+export const APP_SNAPSHOT_DEFAULT_MAX_MB = envNumDefault('APP_SNAPSHOT_MAX_MB');
 /** The default budget for one app's automatic snapshot copies, in MB
  *  (APP_SNAPSHOT_AUTO_MAX_MB): about four copies of an app at the
  *  256 MB database cap. */
-export const APP_SNAPSHOT_AUTO_DEFAULT_MAX_MB = 1024;
+export const APP_SNAPSHOT_AUTO_DEFAULT_MAX_MB = envNumDefault('APP_SNAPSHOT_AUTO_MAX_MB');
 
 /** The `pre_mcp_write` snapshots kept per app: a day of hourly ones. They
  *  are pruned on their own line (M1 audit, medium 2), so writes over MCP can
@@ -67,7 +68,7 @@ export const APP_SNAPSHOT_AUTO_DEFAULT_MAX_MB = 1024;
 export const APP_SNAPSHOT_MCP_KEEP = 24;
 /** The default budget for one app's `pre_mcp_write` copies, in MB
  *  (APP_SNAPSHOT_MCP_MAX_MB), apart from the other automatic ones. */
-export const APP_SNAPSHOT_MCP_DEFAULT_MAX_MB = 512;
+export const APP_SNAPSHOT_MCP_DEFAULT_MAX_MB = envNumDefault('APP_SNAPSHOT_MCP_MAX_MB');
 
 /** The owner's own snapshots would pass APP_SNAPSHOT_MAX_MB. A member
  *  deletes their own with my_app_snapshot_delete (access matrix N6), so
@@ -127,15 +128,15 @@ const AUTO_TRIGGERS: AppSnapshotTrigger[] = [
 const MCP_TRIGGERS: AppSnapshotTrigger[] = ['pre_mcp_write'];
 
 function maxSnapshotBytes(): number {
-  return envMbBytes('APP_SNAPSHOT_MAX_MB', APP_SNAPSHOT_DEFAULT_MAX_MB);
+  return envMbBytes('APP_SNAPSHOT_MAX_MB');
 }
 
 function maxAutoSnapshotBytes(): number {
-  return envMbBytes('APP_SNAPSHOT_AUTO_MAX_MB', APP_SNAPSHOT_AUTO_DEFAULT_MAX_MB);
+  return envMbBytes('APP_SNAPSHOT_AUTO_MAX_MB');
 }
 
 function maxMcpSnapshotBytes(): number {
-  return envMbBytes('APP_SNAPSHOT_MCP_MAX_MB', APP_SNAPSHOT_MCP_DEFAULT_MAX_MB);
+  return envMbBytes('APP_SNAPSHOT_MCP_MAX_MB');
 }
 
 /** A snapshot file's place, relative to APP_DB_DIR (what the row keeps). */

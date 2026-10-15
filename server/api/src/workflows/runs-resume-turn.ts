@@ -63,13 +63,13 @@ import {
   claimResume,
   compileRunState,
   isPanelAudit,
-  isRunsEnabled,
   renderRunStateText,
   runStateUntrusted,
   RUNS_RESUME_TURN_WORKFLOW,
   type RunsResumeTurnInput,
   type RunsResumeTurnResult,
 } from '@mantle/runs';
+import { feature } from '@mantle/config';
 import { pairedChatOf, sendMessage } from '@mantle/telegram';
 import type { ToolHandlerContext } from '@mantle/tools';
 import {
@@ -119,7 +119,7 @@ export async function runsResumeTurnImpl(
       // wake-up stays re-sendable for when the flag is fixed. Nothing to
       // fail here: the run is already terminal (or the audit times out via
       // sweep duty 1), so an unresumed run is stalled-but-honest.
-      if (!isRunsEnabled()) {
+      if (!feature('runs')) {
         DBOS.logger.warn(
           `[runs_resume_turn] MANTLE_RUNS is off in the api runner — not resuming run ${runId}. ` +
             `Set the flag in the shared app env (compose app-env anchor).`,

@@ -392,7 +392,7 @@ function queueWorkers(processes: string[]): { always: string[]; runs: string[] }
     const src = code(read(entry));
     if (/\brunQueueWorker\(\s*['"]/.test(src)) always.push(p);
     else if (/\bcreateBoss\(/.test(src)) {
-      const gate = src.search(/!\s*isRunsEnabled\(\)/);
+      const gate = src.search(/!\s*feature\(\s*'runs'\s*\)/);
       if (gate < 0 || gate > src.search(/\bcreateBoss\(/)) always.push(p);
       else runs.push(p);
     }

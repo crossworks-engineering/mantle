@@ -24,6 +24,7 @@ import type {
   ThoughtTrailMode,
 } from '@mantle/client-types';
 import { kindsWhere } from '@mantle/client-types/kinds';
+import { profileFlag } from '@mantle/client-types/profile-flags';
 
 import {
   parseAgentThinkingEffort,
@@ -53,7 +54,7 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 export function isStreamThoughtsEnabled(
   prefs: Pick<ProfilePreferences, 'streamThoughts'>,
 ): boolean {
-  return prefs.streamThoughts !== false;
+  return profileFlag(prefs, 'streamThoughts');
 }
 
 /** Resolve the trail display mode to a definite value — 'list' unless explicitly
@@ -69,7 +70,7 @@ export function resolveThoughtTrailMode(
 export function isPersistThoughtsEnabled(
   prefs: Pick<ProfilePreferences, 'persistThoughts'>,
 ): boolean {
-  return prefs.persistThoughts !== false;
+  return profileFlag(prefs, 'persistThoughts');
 }
 
 /** Builtin read tools that reach the owner's PRIVATE corpus (email + journal).
@@ -93,7 +94,7 @@ export const TEAM_PRIVATE_READ_SLUGS: readonly string[] = [
 export function isTeamPrivateReadsEnabled(
   prefs: Pick<ProfilePreferences, 'teamPrivateReads'>,
 ): boolean {
-  return prefs.teamPrivateReads === true;
+  return profileFlag(prefs, 'teamPrivateReads');
 }
 
 /** Node types that hold the owner's private corpus (email + journal). A team

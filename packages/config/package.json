@@ -11,6 +11,9 @@
   "scripts": {
     "typecheck": "tsc --noEmit"
   },
+  "dependencies": {
+    "@mantle/client-types": "workspace:*"
+  },
   "devDependencies": {
     "@types/node": "^26.6.4",
     "typescript": "^5.9.3"
