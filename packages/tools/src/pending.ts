@@ -72,6 +72,11 @@ export type PendingSummary = {
    *  they made from one a client's text led to. Null for a turn that read
    *  none. */
   clientSourced: { via: string } | null;
+  /** The login the call was queued for, its asker (pending_tool_calls.
+   *  login_id); null for a call no login asked (system work, a turn that
+   *  answered no one). An approver's screen hides Approve on an elevated
+   *  call for its asker, who may not approve it (lows round). */
+  loginId: string | null;
 };
 
 function toSummary(row: PendingToolCall): PendingSummary {
@@ -89,6 +94,7 @@ function toSummary(row: PendingToolCall): PendingSummary {
     executedAt: row.executedAt?.toISOString() ?? null,
     elevated: row.elevated ?? null,
     clientSourced: row.clientSourced ?? null,
+    loginId: row.loginId ?? null,
   };
 }
 

@@ -391,6 +391,8 @@ describe.skipIf(!URL)('the approval of an elevated pending call (A5 step 6d fix 
       );
     const [a, b] = await Promise.all([asLogin(owner), asLogin(mod)]);
     expect([a, b].filter((r) => r !== null)).toHaveLength(1);
+    // The summary names its asker (lows round: a screen hides Approve for it).
+    expect((a ?? b)!.loginId).toBe(asker);
     expect((await statusOf(id)).s).toBe('approved');
     expect(h.remote).toHaveLength(1);
     expect(await auditRows()).toHaveLength(1);
