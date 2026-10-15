@@ -492,6 +492,88 @@ describe.skipIf(!DB_URL)('the approval re-check (A5 step 6c): the recorded matri
     }
   }, 900_000);
 
+  it("the owner's MCP approval reads the row on the system pool: an asker who left the workspace is refused, though Admin holds the connector (fix round 1)", async () => {
+    // Member M moderates Team, the connector's Write on there; it asks for a
+    // crm write, then is removed from Team. Admin holds crm with Write, so
+    // the owner's own MCP scope could run it: before the fix the owner's
+    // scope read no row (0254's rule shows a login only its own), the call
+    // went unjudged and ran there.
+    await reset();
+    await x(sql`insert into workspace_resources (workspace_id, type, ref_id, write)
+      values (${adminWs}, 'connector', 'crm', true) on conflict do nothing`);
+    try {
+      const queued = await queue('member', 'connector', 'own-mcp');
+      expect(queued.pending).toBeDefined();
+      await change('member', 'lostWorkspace', 'connector');
+      h.remote = [];
+      const answer = await approve('mcp', id.owner, queued.pending!);
+      const [row] = await x<{ s: string }>(
+        sql`select status::text as s from pending_tool_calls where id = ${queued.pending!}`,
+      );
+      expect(answer).toMatch(/^mcp error .*no longer has the workspace it was asked in/);
+      expect(row!.s).toBe('pending');
+      expect(h.remote).toEqual([]);
+      await x(sql`update pending_tool_calls set status = 'expired' where id = ${queued.pending!}`);
+    } finally {
+      await x(
+        sql`delete from workspace_resources where workspace_id = ${adminWs} and ref_id = 'crm'`,
+      );
+    }
+  }, 120_000);
+
+  it("an approved call runs on its asker's surface: app_create's author is its asker, not its approver (fix round 1, L2)", async () => {
+    await reset();
+    await x(sql`update tools set requires_confirm = true
+      where owner_id = ${id.owner} and slug = 'app_create'`);
+    const row = await m.asSystem(() => t.resolveTool(id.owner, 'app_create'), 'test');
+    const title = `${tag} authored`;
+    const pendingIds: string[] = [];
+    const res = await m.runAsActor(m.loginActor(id.adminUser, 'rw'), () =>
+      rt.withAgentScope(
+        { id: teamAgent, ownerId: id.owner, workspaceId: teamWs, role: 'responder' },
+        () =>
+          tracing.startTrace(
+            {
+              kind: 'responder_turn',
+              ownerId: id.owner,
+              agentId: teamAgent,
+              loginId: id.adminUser,
+            },
+            () =>
+              ex.executeToolCall({
+                args: {
+                  ownerId: id.owner,
+                  agentId: teamAgent,
+                  agentSlug: `${tag}-team`,
+                  surface: { kind: 'web', loginId: id.adminUser },
+                } as never,
+                slug: 'app_create',
+                call: {
+                  id: 'call-author',
+                  function: { name: 'app_create', arguments: JSON.stringify({ name: title }) },
+                },
+                tool: row!,
+                input: { name: title },
+                argParseError: null,
+                argValidation: null,
+                argValidationMode: 'off',
+                lastUserMessage: undefined,
+                pendingIds,
+              }),
+          ),
+        { loginId: id.adminUser },
+      ),
+    );
+    expect(res.ok, JSON.stringify(res)).toBe(true);
+    expect(pendingIds).toHaveLength(1);
+    expect(await approve('batch', id.owner, pendingIds[0]!)).toBe('batch ok');
+    const [app] = await x<{ author: string | null }>(
+      sql`select author_login_id::text as author from apps
+          where owner_id = ${id.owner} and title = ${title}`,
+    );
+    expect(app?.author).toBe(id.adminUser);
+  }, 120_000);
+
   const noteBody = async () =>
     (await x<{ c: string | null }>(sql`select data::text as c from nodes where id = ${noteId}`))[0]
       ?.c ?? null;

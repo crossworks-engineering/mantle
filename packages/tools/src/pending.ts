@@ -10,10 +10,12 @@ import {
   pendingToolCalls,
   runAsActor,
   type PendingToolCall,
+  type Tool,
   tools as toolsTable,
   loginActorNow,
   claimElevatedPendingCall,
   elevatedPendingCall,
+  pendingCallToDecide,
   rejectElevatedPendingCall,
 } from '@mantle/db';
 import {
@@ -30,11 +32,14 @@ import {
 import { dispatchViaBridge as dispatchTool } from './dispatch-bridge';
 import { pendingCaller } from './gate-callers';
 import {
+  ApprovalRefusedError,
   deciderOf,
   elevatedApproval,
   elevatedRejection,
   isBrainOwner,
   originApproval,
+  PENDING_NO_TOOL_ERROR,
+  PENDING_NOT_RECHECKED_ERROR,
   type ElevatedRun,
   type OriginApproval,
 } from './pending-approval';
@@ -326,6 +331,20 @@ function deciderFilter(ownerId: string, decider?: string | null): SQL | undefine
   return eq(pendingToolCalls.loginId, login);
 }
 
+/** deciderFilter's rule for a row already read (A5 step 6c fix round 1):
+ *  whether the deciding login may decide `row`. The same rule, in code, for
+ *  the row an approval reads on the system pool to judge it. */
+function decidesRow(
+  ownerId: string,
+  decider: string | null | undefined,
+  row: Pick<PendingToolCall, 'loginId'>,
+): boolean {
+  const login = deciderOf(ownerId, decider);
+  if (login === null) return row.loginId === null;
+  if (isBrainOwner(ownerId, login)) return true;
+  return row.loginId !== null && row.loginId.toLowerCase() === login;
+}
+
 /**
  * Mark a pending call rejected. For ordinary tool calls: no execution, just
  * a status flip. For runner `ask_human` questions: ALSO completes the run
@@ -435,11 +454,24 @@ export async function approvePendingCall(
   // its asker's rights now (originApproval); a refusal throws
   // ApprovalRefusedError and leaves it pending. A row with no stamp keeps
   // the legacy rule (the asker's current rights, in this path's scope).
+  // Read on the system pool (fix round 1): the deciding scope's row rule
+  // shows a login only its own rows of the workspaces it holds now, so the
+  // owner's MCP scope, an Admin assistant's turn, or an asker who left the
+  // workspace would read nothing and the call would run unjudged. Who may
+  // decide it is deciderFilter's rule, applied to the row read.
   let origin: OriginApproval | null = null;
-  const [waiting] = await db.select().from(pendingToolCalls).where(decides).limit(1);
-  if (waiting?.origin && !runnerRow(waiting.toolSlug)) {
-    const tool = await enabledTool(ownerId, waiting.toolSlug);
-    if (tool) origin = await originApproval(ownerId, waiting, tool, approver);
+  let judgedTool: Tool | null = null;
+  const waiting = await pendingCallToDecide(ownerId, id);
+  if (
+    waiting?.origin &&
+    !runnerRow(waiting.toolSlug) &&
+    decidesRow(ownerId, opts?.approverLoginId, waiting)
+  ) {
+    judgedTool = await enabledTool(ownerId, waiting.toolSlug);
+    // A stamped call whose tool is gone or disabled: no re-check can judge
+    // it, and it never falls back to the rule of a call with no stamp.
+    if (!judgedTool) throw new ApprovalRefusedError(PENDING_NO_TOOL_ERROR);
+    origin = await originApproval(ownerId, waiting, judgedTool, approver);
   }
   // Atomic claim: only act if still pending. Every call but an elevated
   // one: by whose calls the approver decides (deciderFilter), as before.
@@ -471,6 +503,16 @@ export async function approvePendingCall(
     claimed = (await claimElevatedPendingCall(ownerId, id)) ?? undefined;
   }
   if (!claimed) return null;
+  // Fail closed (fix round 1): a stamped call this approval claimed without
+  // judging it (not read, or decided between the read and the claim) is put
+  // back, pending, and refused: it never runs by the legacy rule.
+  if (claimed.origin && !runnerRow(claimed.toolSlug) && !origin && !elevated) {
+    await db
+      .update(pendingToolCalls)
+      .set({ status: 'pending', decidedAt: null, updatedAt: new Date() })
+      .where(and(eq(pendingToolCalls.id, claimed.id), eq(pendingToolCalls.status, 'approved')));
+    throw new ApprovalRefusedError(PENDING_NOT_RECHECKED_ERROR);
+  }
   // Status has flipped to 'approved' — repaint the badge now, before the
   // (possibly slow) dispatch below.
   void notifyPendingChanged(ownerId);
@@ -487,8 +529,9 @@ export async function approvePendingCall(
   }
 
   // Resolve the tool by slug (not the snapshot at queue time — the
-  // operator might have edited the handler in the meantime).
-  const tool = await enabledTool(ownerId, claimed.toolSlug);
+  // operator might have edited the handler in the meantime). A re-checked
+  // call runs the tool it was judged with.
+  const tool = origin ? judgedTool : await enabledTool(ownerId, claimed.toolSlug);
   if (!tool) {
     const [errRow] = await db
       .update(pendingToolCalls)
@@ -549,13 +592,19 @@ export async function approvePendingCall(
               // re-checked call with the Admin view it may not exceed and
               // what its asker lost since (A5 step 6c).
               caller: origin?.caller ?? elevated?.caller ?? pendingCaller({ approver }),
-              // An Admin user approves a pending call, so it runs on the owner
-              // surface, naming the approver when the path names one.
-              surface: {
-                kind: 'owner',
-                via: 'pending',
-                ...(opts?.approverLoginId ? { loginId: opts.approverLoginId } : {}),
-              },
+              // A re-checked call runs on the surface it was asked on (its
+              // asker's kind and login, fix round 1), so a handler's author
+              // and owner-only rule see the asker; its approver is named on
+              // the caller (the audit row's own field). Any other call: an
+              // Admin user approves it, so it runs on the owner surface,
+              // naming the approver when the path names one.
+              surface: origin
+                ? origin.run.surface
+                : {
+                    kind: 'owner',
+                    via: 'pending',
+                    ...(opts?.approverLoginId ? { loginId: opts.approverLoginId } : {}),
+                  },
               step: {
                 setMeta: (m) => handle.setMeta(m),
                 setOutput: (o) => handle.setOutput(o),

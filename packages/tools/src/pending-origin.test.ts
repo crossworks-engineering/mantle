@@ -32,6 +32,7 @@ vi.mock('../../db/src/client', async (importOriginal) => ({
   withTurnScope: async (_s: unknown, fn: () => Promise<unknown>) => fn(),
 }));
 
+import { loginActor, runAsActor } from '@mantle/db';
 import { capAdminView } from './gate-callers';
 import { pendingOriginNow } from './pending-origin';
 
@@ -60,6 +61,7 @@ describe('the stamp a queued call carries (pendingOriginNow)', () => {
       admin: { holds: false, areas: [] },
       // No chat or account id: only what a re-check reads.
       surface: { kind: 'telegram', loginId: LOGIN },
+      actor: { kind: 'system', reason: 'test' },
     });
   });
 
@@ -100,6 +102,38 @@ describe('the stamp a queued call carries (pendingOriginNow)', () => {
       writes: false,
       admin: null,
       surface: null,
+      actor: { kind: 'system', reason: 'test' },
+    });
+  });
+
+  it('the actor the turn runs as, so a row with no asker runs as it (fix round 1, L5)', async () => {
+    h.scope = { kind: 'assistant', loginId: null, ws: [TEAM], modWs: [] };
+    h.gate = null;
+    h.mode = null;
+    h.holds = false;
+    const agent = '44444444-4444-4444-8444-444444444444';
+    expect(
+      await runAsActor({ kind: 'assistant', agentId: agent }, () =>
+        pendingOriginNow({ kind: 'owner', via: 'heartbeat' }),
+      ),
+    ).toMatchObject({ actor: { kind: 'assistant', agentId: agent } });
+    expect(
+      await runAsActor(loginActor(LOGIN, 'owner'), () => pendingOriginNow(undefined)),
+    ).toMatchObject({ actor: { kind: 'login', mode: 'owner', loginId: LOGIN } });
+    // A link or a contact is no actor a call runs as: none.
+    expect(await runAsActor({ kind: 'link' }, () => pendingOriginNow(undefined))).toMatchObject({
+      actor: null,
+    });
+  });
+
+  it("a public link's turn: no scope, marked, so only the owner approves it (fix round 1, L4)", async () => {
+    h.scope = { kind: 'link', loginId: null, ws: [], modWs: [], served: ['n1'] };
+    h.gate = null;
+    expect(await pendingOriginNow(undefined)).toMatchObject({
+      scope: null,
+      enter: null,
+      admin: null,
+      link: true,
     });
   });
 });

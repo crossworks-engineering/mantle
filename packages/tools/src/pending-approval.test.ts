@@ -21,6 +21,8 @@ const h = vi.hoisted(() => ({
   ws: {} as Record<string, string[]>,
   /** The live workspaces a loginless re-check still reads. */
   live: [] as string[],
+  /** The workspaces the asking assistant still runs in (fix round 1). */
+  assistantWs: [] as string[],
 }));
 
 vi.mock('../../db/src/viewer', async (importOriginal) => {
@@ -48,6 +50,8 @@ vi.mock('../../db/src/pending-elevated', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../db/src/pending-elevated')>()),
   liveWorkspaceIds: async (_owner: string, ids: readonly string[]) =>
     ids.filter((w) => h.live.includes(w)),
+  assistantWorkspaceIds: async (_owner: string, _agent: string, ids: readonly string[]) =>
+    ids.filter((w) => h.assistantWs.includes(w)),
 }));
 vi.mock('./external-access', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./external-access')>()),
@@ -81,6 +85,7 @@ import {
   ELEVATED_SELF_APPROVAL_ERROR,
   elevatedRejection,
   originApproval,
+  PENDING_LINK_OWNER_ERROR,
 } from './pending-approval';
 import { runtimeToolPolicy } from './runtime-policy';
 
@@ -90,6 +95,7 @@ const MOD = '66666666-6666-4666-8666-666666666666';
 const OTHER = '77777777-7777-4777-8777-777777777777';
 const TEAM_WS = '22222222-2222-4222-8222-222222222222';
 const ELSEWHERE_WS = '33333333-3333-4333-8333-333333333333';
+const AGENT = '44444444-4444-4444-8444-444444444444';
 
 const update = {
   slug: 'crm_update',
@@ -131,6 +137,7 @@ function reset() {
   h.modWs = { [MOD]: [TEAM_WS], [ASKER]: [], [OTHER]: [ELSEWHERE_WS] };
   h.ws = {};
   h.live = [];
+  h.assistantWs = [];
 }
 
 describe('who decides (deciderOf)', () => {
@@ -282,13 +289,17 @@ describe('the approval re-check (A5 step 6c): the queue-time check again, where 
     surface: { kind: 'team', loginId: ASKER },
     ...extra,
   });
-  const recheck = async (o: PendingOrigin | null, approver: string | null = OWNER) => {
+  const recheck = async (
+    o: PendingOrigin | null,
+    approver: string | null = OWNER,
+    agentId: string | null = null,
+  ) => {
     ensureGateReady();
     try {
       return await runAsActor(loginActor(approver ?? OWNER), () =>
         originApproval(
           OWNER,
-          { loginId: o?.scope?.loginId ?? null, origin: o, args: { id: 'c-1' } },
+          { loginId: o?.scope?.loginId ?? null, origin: o, args: { id: 'c-1' }, agentId },
           update,
           approver,
         ),
@@ -365,6 +376,61 @@ describe('the approval re-check (A5 step 6c): the queue-time check again, where 
     h.live = [TEAM_WS];
     expect(await recheck(loginless)).toEqual({
       refused: `${PENDING_RECHECK_ERROR}${CONNECTOR_WRITE_ERROR}`,
+    });
+  });
+
+  it('a turn that answered no login keeps the Moderator seat its stamp named while its assistant still runs there (fix round 1, L6)', async () => {
+    reset();
+    const seated = origin({
+      scope: { kind: 'assistant', loginId: null, ws: [TEAM_WS], modWs: [TEAM_WS] },
+      actor: { kind: 'assistant', agentId: AGENT },
+    });
+    h.assistantWs = [TEAM_WS];
+    const run = await recheck(seated, OWNER, AGENT);
+    expect(run).toMatchObject({
+      run: { scope: { loginId: null, ws: [TEAM_WS], modWs: [TEAM_WS] }, narrowed: [] },
+    });
+    // The assistant moved to another workspace: the scope is gone.
+    h.assistantWs = [];
+    expect(await recheck(seated, OWNER, AGENT)).toEqual({ refused: PENDING_SCOPE_LOST_ERROR });
+  });
+
+  it('a row with no asker runs as the actor its turn ran as, never the approving path’s (fix round 1, L5)', async () => {
+    reset();
+    h.assistantWs = [TEAM_WS];
+    const stamped = (actor: PendingOrigin['actor']) =>
+      origin({
+        scope: { kind: 'assistant', loginId: null, ws: [TEAM_WS], modWs: [TEAM_WS] },
+        actor,
+      });
+    expect(
+      await recheck(stamped({ kind: 'assistant', agentId: AGENT }), OWNER, AGENT),
+    ).toMatchObject({ actor: { kind: 'assistant', agentId: AGENT } });
+    // None stamped: the asking assistant, not the owner who approves.
+    expect(await recheck(stamped(undefined), OWNER, AGENT)).toMatchObject({
+      actor: { kind: 'assistant', agentId: AGENT },
+    });
+    // An Admin assistant that answered no one ran as the owner: so it runs.
+    expect(
+      await recheck(stamped({ kind: 'login', mode: 'owner', loginId: OWNER }), MOD, AGENT),
+    ).toMatchObject({ actor: { kind: 'login', loginId: OWNER } });
+  });
+
+  it('a call asked through a public link: only the owner approves it, in no scope (fix round 1, L4)', async () => {
+    reset();
+    const linked = origin({ scope: null, enter: null, admin: null, surface: null, link: true });
+    for (const approver of [MOD, ASKER, null]) {
+      expect(await recheck(linked, approver)).toEqual({ refused: PENDING_LINK_OWNER_ERROR });
+    }
+    expect(await recheck(linked, OWNER)).toMatchObject({ run: { scope: null } });
+  });
+
+  it('a Telegram chat’s call is judged on an owner path naming its login, the chat id not stamped (fix round 1)', async () => {
+    reset();
+    asker([TEAM_WS], [TEAM_WS]);
+    const run = await recheck(origin({ surface: { kind: 'telegram', loginId: ASKER } }));
+    expect(run).toMatchObject({
+      run: { surface: { kind: 'owner', via: 'pending', loginId: ASKER } },
     });
   });
 });

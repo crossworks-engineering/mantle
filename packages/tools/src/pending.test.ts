@@ -81,6 +81,8 @@ vi.mock('./pending-approval', () => {
   class ApprovalRefusedError extends Error {}
   return {
     ApprovalRefusedError,
+    PENDING_NO_TOOL_ERROR: 'tool gone',
+    PENDING_NOT_RECHECKED_ERROR: 'not rechecked',
     deciderOf: (ownerId: string, named?: string | null) => named ?? ownerId,
     isBrainOwner: (ownerId: string, login: string | null) => login === ownerId,
     elevatedApproval: (...a: unknown[]) => h.elevated(...a),
@@ -106,6 +108,14 @@ vi.mock('@mantle/db', async () => ({
   runAsActor: async (actor: unknown, fn: () => Promise<unknown>) => {
     h.actors.push(actor);
     return fn();
+  },
+  // The row an approval judges, on the system pool (pending-elevated.ts):
+  // the fake's first queued row, as the claim would see it.
+  pendingCallToDecide: async () => {
+    const rows = (await (h.db as { select: () => { from: (t: unknown) => Promise<Row[]> } })
+      .select()
+      .from({ __table: 'pending_tool_calls' })) as Row[];
+    return rows[0] ?? null;
   },
   // The elevated call on the system pool (pending-elevated.ts).
   elevatedPendingCall: async () => h.elevatedRow,
@@ -533,16 +543,63 @@ describe('the approval re-check (A5 step 6c)', () => {
     h.origin = vi.fn(async () => {
       throw new ApprovalRefusedError('no longer passes');
     });
-    await expect(approvePendingCall(OWNER, ROW_ID, { approverLoginId: 'login-a' })).rejects.toThrow(
-      'no longer passes',
-    );
+    await expect(approvePendingCall(OWNER, ROW_ID)).rejects.toThrow('no longer passes');
     // Read, never claimed: no write to the row, no dispatch.
     expect(pendingWrites()).toEqual([]);
     expect(h.dispatchTool).not.toHaveBeenCalled();
     // Judged with its approver, on the row as queued.
     expect(h.origin.mock.calls[0]![0]).toBe(OWNER);
     expect(h.origin.mock.calls[0]![1]).toMatchObject({ id: ROW_ID, loginId: 'login-asker' });
-    expect(h.origin.mock.calls[0]![3]).toBe('login-a');
+    expect(h.origin.mock.calls[0]![3]).toBe(OWNER);
+  });
+
+  it('its asker approves its own: judged as the owner is (deciderFilter, in code)', async () => {
+    fake.queue('pending_tool_calls', [stamped()]);
+    fake.queue('tools', [{ slug: 'crm_update', ownerId: OWNER, enabled: true }]);
+    const { ApprovalRefusedError } = await import('./pending-approval');
+    h.origin = vi.fn(async () => {
+      throw new ApprovalRefusedError('no longer passes');
+    });
+    await expect(
+      approvePendingCall(OWNER, ROW_ID, { approverLoginId: 'login-asker' }),
+    ).rejects.toThrow('no longer passes');
+    expect(h.origin.mock.calls[0]![3]).toBe('login-asker');
+  });
+
+  it('fails closed: a stamped call claimed without being judged is put back and refused (fix round 1)', async () => {
+    // Another login, who may not decide it: not judged; a claim that took
+    // it anyway (the fake's claim matches every row) must not run it.
+    fake.queue('pending_tool_calls', [stamped()]);
+    fake.queue('tools', [{ slug: 'crm_update', ownerId: OWNER, enabled: true }]);
+    await expect(approvePendingCall(OWNER, ROW_ID, { approverLoginId: 'login-a' })).rejects.toThrow(
+      'not rechecked',
+    );
+    expect(h.origin).not.toHaveBeenCalled();
+    expect(h.dispatchTool).not.toHaveBeenCalled();
+    expect(pendingWrites().at(-1)!.values).toMatchObject({ status: 'pending', decidedAt: null });
+  });
+
+  it('a stamped call whose tool is gone or disabled: refused before the claim, never the legacy rule (fix round 1, L3)', async () => {
+    fake.queue('pending_tool_calls', [stamped()]);
+    fake.queue('tools', []);
+    await expect(approvePendingCall(OWNER, ROW_ID)).rejects.toThrow('tool gone');
+    expect(h.origin).not.toHaveBeenCalled();
+    expect(pendingWrites()).toEqual([]);
+    expect(h.dispatchTool).not.toHaveBeenCalled();
+  });
+
+  it("runs on the surface it was asked on, so a handler's author is its asker (fix round 1, L2)", async () => {
+    fake.queue('pending_tool_calls', [stamped()]);
+    fake.queue('tools', [{ slug: 'crm_update', ownerId: OWNER, enabled: true }]);
+    const surface = { kind: 'web', loginId: 'login-asker' };
+    const run = { scope: { ws: ['ws-team'] }, narrowed: [], surface };
+    const caller = { entry: 'pending', via: 'process', approval: { approver: OWNER } };
+    h.origin = vi.fn(async () => ({ run, caller, actor: null }));
+    await approvePendingCall(OWNER, ROW_ID, { approverLoginId: OWNER });
+    const ctx = h.dispatchTool.mock.calls[0]![2] as { surface: unknown; caller: unknown };
+    expect(ctx.surface).toBe(surface);
+    // The approver is named on the caller (its audit row's own field).
+    expect(ctx.caller).toBe(caller);
   });
 
   it('a call it lets through runs in the scope it was asked in, as the caller and actor it was judged with', async () => {
@@ -552,7 +609,7 @@ describe('the approval re-check (A5 step 6c)', () => {
     const caller = { entry: 'pending', via: 'process', approval: { approver: 'login-a' } };
     const actor = { kind: 'login', mode: 'rw', loginId: 'login-asker' };
     h.origin = vi.fn(async () => ({ run, caller, actor }));
-    await approvePendingCall(OWNER, ROW_ID, { approverLoginId: 'login-a' });
+    await approvePendingCall(OWNER, ROW_ID);
     expect(h.dispatchTool).toHaveBeenCalledTimes(1);
     expect((h.dispatchTool.mock.calls[0]![2] as { caller: unknown }).caller).toBe(caller);
     expect(h.entered).toEqual([run]);

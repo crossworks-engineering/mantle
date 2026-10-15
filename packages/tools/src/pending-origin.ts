@@ -19,9 +19,24 @@
  * approval (PENDING_SCOPE_LOST_ERROR). withOriginScope enters it for the
  * re-check and for the run, whatever scope the approving path runs in (a
  * web request's, an MCP connection's, a Telegram tap's none).
+ *
+ * Fix round 1: the call is judged and dispatched on the surface it was
+ * asked on (the stamp's kind and login; a Telegram chat's as an owner path
+ * naming its login, the chat id not being stamped), so a handler that reads
+ * its author or an owner-only rule off the surface sees the asker, never
+ * the approver (the audit row names the approver on its own field). A turn
+ * that answered no login keeps the workspaces its assistant still runs in,
+ * and the Moderator seats the stamp named there; it runs as the actor the
+ * turn ran as (the stamp's), never the approving path's. A turn in a public
+ * link's scope is stamped with no scope and marked (`link`): rebuilding a
+ * link's scope needs its share and its served list as they are now, which
+ * the approval does not hold, so only the owner may approve such a call,
+ * and it runs in no scope, as before the stamp.
  */
 import {
   asSystem,
+  assistantWorkspaceIds,
+  currentActor,
   currentGateScope,
   currentRequestMode,
   liveWorkspaceIds,
@@ -35,6 +50,7 @@ import {
   withTurnScope,
   withTurnStamp,
   type PendingOrigin,
+  type PendingToolCall,
   type WorkspaceScope,
 } from '@mantle/db';
 import { currentWorkspaceScope } from '@mantle/db/viewer';
@@ -100,9 +116,9 @@ export async function pendingOriginNow(
   const gate = ws ? null : currentGateScope();
   const held = ws ?? gate;
   const base = { v: 1 as const, surface: stampSurface(surface) };
-  if (!held || held.kind === 'link') {
-    return { ...base, scope: null, enter: null, writes: false, admin: null };
-  }
+  const empty = { ...base, scope: null, enter: null, writes: false, admin: null } as const;
+  if (held?.kind === 'link') return { ...empty, link: true, actor: stampActor() };
+  if (!held) return { ...empty, actor: stampActor() };
   let admin: PendingOrigin['admin'];
   if (ws) {
     const holds = await scopeHoldsAdmin();
@@ -128,7 +144,33 @@ export async function pendingOriginNow(
     enter: ws ? 'turn' : 'gate',
     writes: ws ? currentRequestMode()?.writes === true : false,
     admin,
+    actor: stampActor(),
   };
+}
+
+/** The actor the queuing turn runs as, as the stamp keeps it: an
+ *  assistant's, a login's, the system's; any other (a link, a contact, a
+ *  peer) or none: null. */
+function stampActor(): PendingOrigin['actor'] {
+  const a = currentActor();
+  if (!a) return null;
+  if (a.kind === 'assistant') return { kind: 'assistant', agentId: a.agentId };
+  if (a.kind === 'login') return { kind: 'login', mode: a.mode, loginId: a.loginId };
+  if (a.kind === 'system') {
+    return { kind: 'system', reason: a.reason, ...(a.mode ? { mode: a.mode } : {}) };
+  }
+  return null;
+}
+
+/** The surface a stamped call is judged and run on: the stamp's, a
+ *  Telegram chat's as an owner path naming its login (the chat id is not
+ *  stamped, so no tool may send into it at approval). None: none. */
+function runSurface(stamp: PendingOrigin['surface']): ToolHandlerContext['surface'] {
+  if (!stamp) return undefined;
+  if (stamp.kind === 'telegram') {
+    return { kind: 'owner', via: 'pending', ...(stamp.loginId ? { loginId: stamp.loginId } : {}) };
+  }
+  return stamp as ToolHandlerContext['surface'];
 }
 
 /** `a` met with `b`, in `a`'s order, lower case. */
@@ -145,16 +187,27 @@ function meet(a: readonly string[], b: readonly string[]): string[] {
 export async function originRunFor(
   ownerId: string,
   origin: PendingOrigin,
+  row: Pick<PendingToolCall, 'agentId'>,
   refuse: (message: string) => Error,
 ): Promise<OriginRun> {
-  const surface = (origin.surface ?? undefined) as ToolHandlerContext['surface'];
+  const surface = runSurface(origin.surface);
   const stamped = origin.scope;
   if (!stamped) {
     return { scope: null, enter: null, writes: false, adminCap: null, surface, narrowed: [] };
   }
-  const now = stamped.loginId
-    ? await loginScopeFor(stamped.loginId)
-    : { ws: await liveWorkspaceIds(ownerId, stamped.ws), modWs: [] as string[] };
+  // A turn that answered no login holds what its assistant still runs in:
+  // the stamp's workspace while the assistant is still of it and it is
+  // live, and the Moderator seats the stamp named there (no login of its
+  // own to lose them). Without an asking agent: the stamp's live ones.
+  let now: { ws: readonly string[]; modWs: readonly string[] };
+  if (stamped.loginId) {
+    now = await loginScopeFor(stamped.loginId);
+  } else {
+    const live = row.agentId
+      ? await assistantWorkspaceIds(ownerId, row.agentId, stamped.ws)
+      : await liveWorkspaceIds(ownerId, stamped.ws);
+    now = { ws: live, modWs: live };
+  }
   const ws = meet(stamped.ws, now.ws);
   const modWs = meet(meet(stamped.modWs, now.modWs), ws);
   if (ws.length === 0) throw refuse(PENDING_SCOPE_LOST_ERROR);

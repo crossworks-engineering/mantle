@@ -151,10 +151,12 @@ export {
 } from './viewer';
 export { ensureViewerRoles } from './viewer-roles';
 export {
+  assistantWorkspaceIds,
   claimElevatedPendingCall,
   elevatedCallWorkspace,
   elevatedPendingCall,
   liveWorkspaceIds,
+  pendingCallToDecide,
   rejectElevatedPendingCall,
 } from './pending-elevated';
 export {

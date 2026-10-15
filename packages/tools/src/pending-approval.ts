@@ -38,15 +38,17 @@
  * rights in the scope of the path that approves.
  */
 import {
-  currentActor,
   elevatedCallWorkspace,
   gateCallRefusal,
+  loginActor,
   loginActorNow,
   loginScopeFor,
   runAsActor,
   scopeHasArea,
   scopeHoldsAdmin,
+  systemActor,
   type Actor,
+  type PendingOrigin,
   type PendingToolCall,
   type ScopeArea,
   type Tool,
@@ -80,6 +82,23 @@ export const ELEVATED_NO_APPROVER_ERROR =
  *  asker (6d L2): no rule can tell the approver is not the one who asked. */
 export const ELEVATED_NO_ASKER_ERROR =
   'This call names no one who asked for it, so only the owner may approve it.';
+
+/** The refusal of an approval of a call asked in a public link's scope by
+ *  anyone but the owner (A5 step 6c fix round 1): the link's scope is not
+ *  rebuilt at approval, so no one else's rights can be told to reach it. */
+export const PENDING_LINK_OWNER_ERROR =
+  'This call was asked through a public link, so only the owner may approve it.';
+
+/** The refusal of an approval of a stamped call whose tool is gone or
+ *  disabled now (A5 step 6c fix round 1): no re-check can judge it, and it
+ *  never runs by the rule of a call with no stamp. */
+export const PENDING_NO_TOOL_ERROR =
+  'This call’s tool is gone or disabled, so it cannot be checked again where it was asked and does not run: reject it, or enable the tool and approve it again.';
+
+/** The refusal of an approval that claimed a stamped call it had not
+ *  judged (A5 step 6c fix round 1): the call is put back, pending. */
+export const PENDING_NOT_RECHECKED_ERROR =
+  'This call could not be checked again in the workspace it was asked in, so it does not run and is pending again: approve it again, or reject it.';
 
 /** The refusal of a non-owner's approval of an elevated call whose tool is
  *  gone, disabled or has no policy (6d L1): no gate step can judge it. */
@@ -250,21 +269,27 @@ async function adminNarrowed(run: OriginRun): Promise<string[]> {
  * an approver may reject it. Who decides is unchanged (deciderFilter): the
  * re-check judges the call, not the approver.
  *
- * The actor is the one the call ran as before (the asker as it is now, a
- * row with no asker the approving path's), bound inside the scope.
+ * The actor is the asker as it is now; a row with no asker runs as the
+ * actor its turn ran as (the stamp's: an assistant's, the owner's for an
+ * Admin assistant that answered no one, the system's), never the approving
+ * path's (fix round 1). A call asked through a public link is the owner's
+ * alone to approve (PENDING_LINK_OWNER_ERROR).
  */
 export async function originApproval(
   ownerId: string,
-  row: Pick<PendingToolCall, 'loginId' | 'origin' | 'args'>,
+  row: Pick<PendingToolCall, 'loginId' | 'origin' | 'args' | 'agentId'>,
   tool: Tool,
   approver: string | null,
 ): Promise<OriginApproval | null> {
   const origin = row.origin;
   if (!origin) return null;
-  const run = await originRunFor(ownerId, origin, (m) => new ApprovalRefusedError(m));
+  if (origin.link && !isBrainOwner(ownerId, approver)) {
+    throw new ApprovalRefusedError(PENDING_LINK_OWNER_ERROR);
+  }
+  const run = await originRunFor(ownerId, origin, row, (m) => new ApprovalRefusedError(m));
   const actor = row.loginId
     ? await loginActorNow(row.loginId, 'pending:approve')
-    : (currentActor() ?? null);
+    : await stampedActor(ownerId, origin.actor, row.agentId);
   const asActor = <T>(fn: () => Promise<T>) => (actor ? runAsActor(actor, fn) : fn());
   const judged = await withOriginScope(run, () =>
     asActor(async () => {
@@ -283,4 +308,27 @@ export async function originApproval(
     throw new ApprovalRefusedError(`${PENDING_RECHECK_ERROR}${judged.refused}`);
   }
   return { run, caller: judged.caller, actor };
+}
+
+/** The actor a row with no asker runs as (A5 step 6c fix round 1): the one
+ *  its turn ran as, as the stamp keeps it. A login is that login now (owner
+ *  mode only for the brain owner); with none stamped, the asking assistant. */
+async function stampedActor(
+  ownerId: string,
+  stamped: PendingOrigin['actor'],
+  agentId: string | null,
+): Promise<Actor> {
+  if (stamped?.kind === 'login') {
+    // A read-only login stays read only.
+    if (stamped.mode === 'ro') return loginActor(stamped.loginId, 'ro');
+    const owner = stamped.mode === 'owner' && isBrainOwner(ownerId, stamped.loginId);
+    return loginActorNow(stamped.loginId, 'pending:approve', owner ? 'owner' : 'rw');
+  }
+  if (stamped?.kind === 'system') {
+    // A read-only caller's system work stays read only.
+    if (stamped.mode === 'ro') return { kind: 'system', reason: stamped.reason, mode: 'ro' };
+    return systemActor(stamped.reason);
+  }
+  if (stamped?.kind === 'assistant') return { kind: 'assistant', agentId: stamped.agentId };
+  return { kind: 'assistant', agentId };
 }

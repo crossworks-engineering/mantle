@@ -38,6 +38,18 @@ export type PendingOrigin = {
   /** The surface the turn ran on: its kind, an owner path's via, the login
    *  it names (no chat or account ids). Null: none. */
   surface: { kind: string; via?: string; loginId?: string } | null;
+  /** The turn ran in a public link's scope (A5 step 6c fix round 1): its
+   *  scope is not stamped (a link's served list and its liveness are not
+   *  the approval's to rebuild), so only the owner may approve it. */
+  link?: true;
+  /** The actor the asking turn ran as (A5 step 6c fix round 1): what a row
+   *  that names no asker runs as at approval, never the approving path's.
+   *  A row with an asker runs as that login now. Absent: none read. */
+  actor?:
+    | { kind: 'assistant'; agentId: string | null }
+    | { kind: 'login'; mode: 'rw' | 'ro' | 'owner'; loginId: string }
+    | { kind: 'system'; reason: string; mode?: 'ro' }
+    | null;
 };
 
 /**
