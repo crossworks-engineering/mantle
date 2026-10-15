@@ -136,7 +136,7 @@ describe.skipIf(!URL)('F9: a contact share writes its app’s data, and its expo
     await m?.closeDb();
     await scratch?.drop();
     if (dir) await rm(dir, { recursive: true, force: true });
-  });
+  }, 60_000);
 
   it('the write lands, the exports are stamped and the Table syncs, all with the check on', async () => {
     const before = await link();
