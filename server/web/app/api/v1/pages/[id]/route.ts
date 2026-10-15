@@ -10,13 +10,18 @@
  *    and a key cannot confirm. MCP holds the same rule (register/context).
  *
  * The page route's PATCH reads its owner at the read (ownerCallerAtRead,
- * A4 hand batch B): the gate binds the answer and runs it when the page
- * route reads it, after these rules, as the page route's guard ran.
+ * A4 hand batch B). For a key this wrapper reads it first, after the hidden
+ * email page (audit C1) and before the two rules (the A8 fix round 1, L4):
+ * the one item gate answers a page the key's login does not read with its
+ * 404, an Admin user's key and a member's alike, so a rule that reads the
+ * page tells a key nothing about a page it may not read. The page route's
+ * own read then takes the same answer (taken once per request).
  */
 import { NextResponse } from '@/server/http-compat';
 import { resolveSingleOwnerId } from '@mantle/db';
 import { othersCanRead } from '@mantle/mcp-core/shared-item';
-import { hiddenFromKey, isApiKeyRequest, keyLoginMissesItem } from '@/lib/api-v1';
+import { hiddenFromKey, isApiKeyRequest } from '@/lib/api-v1';
+import { ownerCallerAtRead } from '@/lib/auth';
 import { PATCH as patchPage } from '../../../pages/[id]/route';
 
 export { GET } from '../../../pages/[id]/route';
@@ -30,11 +35,10 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   if (ownerId && (await hiddenFromKey(ownerId, [id])).size > 0) {
     return NextResponse.json({ error: 'not found' }, { status: 404 });
   }
-  // A key of a login outside Admin (the A8 finding F1): a page it does not
-  // read is the item gate's 404 before the rules below read the page.
-  if (await keyLoginMissesItem(id)) {
-    return NextResponse.json({ ok: false, error: 'not found' }, { status: 404 });
-  }
+  // The item gate first (the A8 fix round 1, L4): a page the key's login
+  // does not read is its 404 (a refusal is thrown and answered as the
+  // guard's), before the rules below read the page.
+  await ownerCallerAtRead();
   const raw = await req.text();
   let body: unknown = null;
   try {

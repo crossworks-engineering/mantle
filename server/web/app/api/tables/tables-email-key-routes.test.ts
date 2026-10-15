@@ -56,7 +56,7 @@ vi.mock('@/lib/pages', async (importOriginal) => ({
 }));
 
 const key = (areas: AccessKeyGrant['areas']) =>
-  ({ id: 'k1', loginId: OWNER, role: 'admin', access: 'read', areas }) as unknown as AccessKeyGrant;
+  ({ id: 'k1', loginId: OWNER, access: 'read', areas }) as unknown as AccessKeyGrant;
 
 vi.mock('@mantle/mcp-core/shared-item', () => ({ othersCanRead: vi.fn(async () => false) }));
 

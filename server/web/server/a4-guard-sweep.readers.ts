@@ -63,6 +63,17 @@ function readerOf(file: string, method: string): string {
     const own = calls(end < 0 ? rest : rest.slice(0, end));
     if (own.length === 1) return own[0]!;
   }
+  // A method with no handler of its own, re-exported from another route
+  // file (an /api/v1 alias), reads what that file's handler reads, whatever
+  // another handler of this file reads (the v1 page PATCH reads
+  // ownerCallerAtRead() beside a re-exported GET; A8 fix round 1, L4).
+  if (!at) {
+    for (const m of text.matchAll(/export\s*\{([^}]*)\}\s*from\s*'([^']+)'/g)) {
+      if (exportNames(m[1]!).includes(method) && m[2]!.startsWith('.')) {
+        return readerOf(routeFile(resolve(dirname(file), m[2]!)), method);
+      }
+    }
+  }
   const called = calls(text);
   if (called.length === 1) return called[0]!;
   if (called.length > 1) {
@@ -72,17 +83,21 @@ function readerOf(file: string, method: string): string {
   }
   // An alias: the method re-exported or imported from another route file.
   for (const m of text.matchAll(/(?:export|import)\s*\{([^}]*)\}\s*from\s*'([^']+)'/g)) {
-    const names = m[1]!.split(',').map((p) =>
-      p
-        .trim()
-        .split(/\s+as\s+/)[0]!
-        .trim(),
-    );
-    if (names.includes(method) && m[2]!.startsWith('.')) {
+    if (exportNames(m[1]!).includes(method) && m[2]!.startsWith('.')) {
       return readerOf(routeFile(resolve(dirname(file), m[2]!)), method);
     }
   }
   throw new Error(`a4-guard-sweep.readers: ${file} ${method} reads no reader the sweep can name`);
+}
+
+/** The names an `{ ... }` import or export list takes from its module. */
+function exportNames(list: string): string[] {
+  return list.split(',').map((p) =>
+    p
+      .trim()
+      .split(/\s+as\s+/)[0]!
+      .trim(),
+  );
 }
 
 const memo = new Map<string, string>();

@@ -26,10 +26,7 @@
  * row writes, which run a builtin on the owner's surface) stays for Admin
  * users only.
  */
-import { sql } from 'drizzle-orm';
-import { db, withViewer } from '@mantle/db';
 import { emailAttachmentIds } from '@mantle/files';
-import { isUuid } from '@mantle/std';
 import { keyAreasReachEmail } from '@mantle/mcp-core/key-scope';
 import type { AccessKeyArea, AccessKeyGrant } from './access-keys';
 import { getRequestContext } from '../server/request-context';
@@ -65,24 +62,6 @@ export function callerMayReadEmail(): boolean {
 export async function hiddenFromKey(ownerId: string, ids: readonly string[]): Promise<Set<string>> {
   if (callerMayReadEmail() || ids.length === 0) return new Set();
   return emailAttachmentIds(ownerId, ids);
-}
-
-/**
- * Whether this request's key acts as a login outside Admin that does not
- * read item `id` (the A8 finding F1). A v1 file with rules of its own for a
- * key (the page PATCH: a shared item's content) asks this first, so a rule
- * that reads the item never tells such a login about an item it may not
- * read: it hears the item gate's 404, as on the base route. False for no
- * key and for an Admin user's key (their answers are as before).
- */
-export async function keyLoginMissesItem(id: string): Promise<boolean> {
-  const key = getRequestContext()?.accessKey;
-  if (!key || key.role === 'admin') return false;
-  if (!isUuid(id)) return true;
-  const rows = (await withViewer({ login: key.loginId }, () =>
-    db.execute(sql`select 1 as one from nodes where id = ${id}`),
-  )) as unknown as unknown[];
-  return rows.length === 0;
 }
 
 /** Whether the gate let this request in with an API key. */

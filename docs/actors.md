@@ -2129,10 +2129,13 @@ every caller a route reads, and `getOwnerOr401` is gone.
   `inRuleInQuery`, the one exit site, and reads the login inside it, where
   its guard ran.
 - **`PATCH /api/pages/:id` and its /api/v1 wrapper**: the page route's
-  PATCH reads `await ownerCallerAtRead()` (kind `ownerAtRead`), so the v1
-  wrapper's key rules (the hidden email page, `key-publish`,
-  `key-shared-item`) still come before the owner's answer, its item check
-  and its audit row.
+  PATCH reads `await ownerCallerAtRead()` (kind `ownerAtRead`). For a key
+  the v1 wrapper reads it first, after the hidden email page and before
+  its two rules (`key-publish`, `key-shared-item`; the A8 fix round 1,
+  L4): the owner's answer, its item check and its audit row come before
+  the rules, so a page the key's login does not read is the item gate's
+  404 for every key, an Admin user's too. The page route's read takes the
+  same answer (once per request).
 - **`GET /api/v1/files/:id/download` with its base**: the base reads the
   asset reader (above); the wrapper sets the query it hands the base and is
   a marked hand case (`// route-callers: hand case`: it runs nothing and
@@ -3750,10 +3753,12 @@ and every Admin user's key is unchanged.
   (`creates` stays the v1 row's own), for every key; the base route reads
   it. Changing it would change the owner's keys.
 - The page PATCH's own key rules read the page (a shared page's content
-  is refused to a key): a member's key first gets the item gate's 404 for a
-  page its login does not read (`keyLoginMissesItem`,
-  `server/web/lib/api-v1.ts`), so the rule tells it nothing about a page it
-  may not read. An Admin user's key is answered as before.
+  is refused to a key): every key first meets the page route's item gate
+  (`ownerCallerAtRead()`, read by the v1 wrapper before its rules; fix
+  round 1, L4, which replaced a second query of its own), so a page its
+  login does not read is a 404 and the rule tells it nothing about it.
+  Changed cell: an Admin user's key on a shared page outside its scope,
+  403 `key-shared-item` before, 404 now.
 - The A4 sweeps record it: only member credentials on v1 rows changed
   (`a4-guard-sweep*.txt`), and the member sweep and the field check read a
   v1 row's member admission from its ROUTE_POLICY row.
