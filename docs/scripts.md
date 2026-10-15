@@ -696,8 +696,19 @@ verify inside `git push`, holding the connection to GitHub idle for minutes;
 GitHub closes it, and git dies of SIGPIPE (exit 141) with one ssh line as its
 only output. That is how v0.300.50 and v0.300.58 were tagged and never pushed. A rerun after a push
 that did not land resumes it (a tag already at HEAD is pushed again; a tag
-anywhere else is refused). `--no-verify` skips the verify when the gates
-already ran on this exact commit; CI still runs on the tag. Tests:
+anywhere else is refused). A resume trusts any tag already at HEAD, even one
+made by hand without a verify; if you did not make it with this script,
+`git tag -d` it and rerun. `--no-verify` skips the verify when the gates
+already ran on this exact commit; CI still runs on the tag.
+
+Because the push skips the hook, the hook's demo/ guard runs here too, against
+HEAD before the verify: both source `scripts/lib/demo-guard.sh`. Origin's tag
+is compared with the local tag's own object id, so a hand-made annotated tag is
+judged right. When `git ls-remote` itself fails the script says the state is
+unknown and shows its error rather than calling the refs missing; when origin's
+main has moved on (the atomic push refused as non-fast-forward) it says to
+`git tag -d vX.Y.Z` before integrating and rerunning. The jackdaw repo has the
+same script and harness; change both together. Tests:
 `bash scripts/test-tag-release.sh` (a local bare repo as origin, no GitHub).
 
 ### `pnpm verify` and the git hooks
