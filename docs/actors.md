@@ -4707,7 +4707,7 @@ each):
     (lib/grants.ts, `holders.includes`);
   - `packages/content/src/tree/visibility.ts:252`, `any(f.holders)`.
 - **The migration order (fix round 1, H1).** 0290 is A9's (the runtime
-  role) and must land before this branch's 0291: the journal test fails on
-  any skipped number but 0211 (no tolerance for 0290), so this branch
-  cannot merge first, and the runner refuses a never-applied migration
-  below the highest applied one from 0290 on (`packages/db/README.md`).
+  role), on main since v0.300.58; this branch's 0291 comes after it, its
+  journal `when` above 0290's. The journal test fails on any skipped number
+  but 0211, and the runner refuses a never-applied migration below the
+  highest applied one from 0290 on (`packages/db/README.md`).
