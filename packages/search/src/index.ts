@@ -1,4 +1,4 @@
-import { asSystem, currentWorkspaceScope, db, nodes, type Node } from '@mantle/db';
+import { asSystem, currentWorkspaceScope, db, nodes, type Node, readsInScopeSql } from '@mantle/db';
 import { and, desc, eq, inArray, sql, type SQL } from 'drizzle-orm';
 import { withHnswPool } from './hnsw';
 import { distanceOrder, hnswFirst, smallScope } from './scope';
@@ -201,7 +201,7 @@ export async function searchNodes(opts: SearchOptions): Promise<Node[]> {
         where ${and(
           ...filters,
           sql`${nodes.embedding} is not null`,
-          ...(exact ? [sql`${nodes.readWs} && mantle_scope_ws()`] : []),
+          ...(exact ? [readsInScopeSql()] : []),
         )}
         order by ${distanceOrder(sql`${nodes.embedding} <=> ${vec}::vector`, exact)}
         limit ${pool}

@@ -20,6 +20,7 @@ import { randomUUID } from 'node:crypto';
 import { and, asc, desc, eq, ilike, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
 import {
   db,
+  nodeReadByWorkspace,
   oneRow,
   executeWrite,
   nodes,
@@ -271,7 +272,7 @@ function appConds(ownerId: string, opts: ListAppsOpts) {
     if (c) conds.push(c);
   }
   if (opts.tag) conds.push(sql`${opts.tag} = ANY(${nodes.tags})`);
-  if (opts.ws) conds.push(sql`${opts.ws}::uuid = ANY(${nodes.readWs})`);
+  if (opts.ws) conds.push(nodeReadByWorkspace(opts.ws));
   return conds;
 }
 

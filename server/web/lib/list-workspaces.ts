@@ -20,7 +20,15 @@
  * every item of a workspace the caller is not in. `hitWorkspaces` names
  * where each hit opens, from the caller's own workspaces only.
  */
-import { db, nodeAliasHomeIs, nodeAliasReadBy, sql } from '@mantle/db';
+import {
+  db,
+  heldBySql,
+  mayEditSql,
+  mayManageSql,
+  nodeAliasHomeIs,
+  nodeAliasReadBy,
+  sql,
+} from '@mantle/db';
 import { currentWorkspaceScope } from '@mantle/db/viewer';
 import type { HitWorkspace, ItemCaps, ListChips, ListWorkspace } from '@mantle/client-types';
 import type { TreeSearchCover } from '@mantle/content/tree';
@@ -40,10 +48,8 @@ const NONE: ListChips = { workspaces: [], hasLink: false, mayEdit: false, mayMan
  */
 function capsColumns() {
   const scoped = currentWorkspaceScope() !== null;
-  const edit = scoped
-    ? sql`coalesce("public"."mantle_may_edit"(n.home_ws, n.write_ws), false)`
-    : sql`true`;
-  const manage = scoped ? sql`coalesce("public"."mantle_may_manage"(n.home_ws), false)` : sql`true`;
+  const edit = scoped ? mayEditSql('n') : sql`true`;
+  const manage = scoped ? mayManageSql('n') : sql`true`;
   return sql`(${edit} and not coalesce(n.data ? 'snapshot_of', false)) as may_edit,
              ${manage} as may_manage,
              nullif(n.data->>'snapshot_of', '') as snapshot_of,
@@ -122,7 +128,7 @@ export async function workspaceChips(
              select jsonb_agg(jsonb_build_object('id', w.id, 'name', w.name, ${WS_LOOK_PAIRS})
                               order by lower(w.name), w.id)
                from workspaces w
-              where w.id = any(n.read_ws) and w.owner_id = ${ownerId} and w.archived_at is null
+              where ${heldBySql('n', sql`w.id`)} and w.owner_id = ${ownerId} and w.archived_at is null
                 and (exists (select 1 from me where me.is_admin)
                      or w.id in (select me.id from me))), '[]'::jsonb) as workspaces,
            exists (

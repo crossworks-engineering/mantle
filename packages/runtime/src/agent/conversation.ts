@@ -44,6 +44,7 @@ import {
   type ConversationChannel,
   type ConversationExternalRef,
   type PersonaNote,
+  factReadsInScopeSql,
 } from '@mantle/db';
 import {
   isSmallTalk,
@@ -871,7 +872,7 @@ async function loadConversationContextAtLevel(args: {
               ${
                 factExact
                   ? sql`and (${facts.sourceNodeId} = any(${scopeNodeIds(ownerId)})
-                         or (${facts.sourceNodeId} is null and ${facts.readWs} && mantle_scope_ws()))`
+                         or (${facts.sourceNodeId} is null and ${factReadsInScopeSql()}))`
                   : sql``
               }
               order by ${distanceOrder(vecDist, factExact)}

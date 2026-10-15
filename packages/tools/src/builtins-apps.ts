@@ -87,6 +87,7 @@ import {
   nodes as nodesTable,
   scopeHoldsAdmin,
   withCreateHome,
+  mayEditSql,
 } from '@mantle/db';
 import { appCopy, edit, manage, toolItemWriteRefusal } from './item-write-gate';
 import { CS } from './client-sourced-rule';
@@ -1905,7 +1906,7 @@ async function outsideAdmin(): Promise<boolean> {
  *  the caller may edit it: never lifted here, only lowered. */
 async function lowerToTeamRules(ownerId: string, id: string): Promise<void> {
   const rows = (await scopedDb.execute(
-    sqlTag`select coalesce("public"."mantle_may_edit"(n.home_ws, n.write_ws), false) as edit
+    sqlTag`select ${mayEditSql('n')} as edit
           from nodes n where n.id = ${id} and n.owner_id = ${ownerId} and n.type = 'app'`,
   )) as unknown as { edit: boolean }[];
   if (rows[0]?.edit !== true) return;

@@ -60,6 +60,8 @@ import {
   withHeads,
   withNodeDeleteHeads,
   withNodeInsertHeads,
+  itemHomeSql,
+  mayEditSql,
 } from '@mantle/db';
 import { getContent } from '@mantle/storage';
 import { fileRowFromNode, rowNow, type FileRow } from './shared';
@@ -571,10 +573,10 @@ async function isWatcherInsert(
            and not coalesce(n.data ? 'snapshot_of' or n.data ? 'space_file', false)
            and not exists (select 1 from item_grants g
                             where g.node_id = n.id and g.granted_by is not null)
-           and (n.home_ws is null
-                or n.home_ws = (select f.home_ws from nodes f
+           and (${itemHomeSql('n')} is null
+                or ${itemHomeSql('n')} = (select ${itemHomeSql('f')} from nodes f
                                  where f.id = "public"."mantle_parent_folder"(n.owner_id, n.type, n.path))
-                or n.home_ws = (select w.id from workspaces w
+                or ${itemHomeSql('n')} = (select w.id from workspaces w
                                  where w.owner_id = n.owner_id and w.is_admin limit 1)) as ok
       from nodes n
      where n.id = ${id}::uuid`)) as unknown as { ok: boolean }[];
@@ -1350,7 +1352,7 @@ export async function callerSeesNode(id: string): Promise<boolean | null> {
  *  snapshot copy). Asked in the caller's scope: false when it cannot read it. */
 async function mayEditNode(id: string): Promise<boolean> {
   const rows = (await db.execute(sql`
-    select coalesce("public"."mantle_may_edit"(n.home_ws, n.write_ws), false)
+    select ${mayEditSql('n')}
            and not coalesce(n.data ? 'snapshot_of', false) as edit
       from nodes n where n.id = ${id}`)) as unknown as { edit: boolean }[];
   return rows[0]?.edit === true;

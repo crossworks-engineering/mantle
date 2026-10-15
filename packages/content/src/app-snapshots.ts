@@ -29,6 +29,8 @@ import {
   nodeSnapshots,
   nodes,
   type AppSnapshotCode,
+  itemHomeSql,
+  snapshotHomeMeta,
 } from '@mantle/db';
 import { defineDomainError } from '@mantle/std';
 import type { AppRestoreMode, AppSnapshot } from '@mantle/client-types';
@@ -220,7 +222,7 @@ async function currentCode(
       manifest: apps.manifest,
       publishedBuild: apps.publishedBuild,
       authorLevel: apps.authorLevel,
-      homeWs: nodes.homeWs,
+      home: itemHomeSql(),
     })
     .from(apps)
     .innerJoin(nodes, eq(nodes.id, apps.nodeId))
@@ -237,7 +239,7 @@ async function currentCode(
       ...(row.authorLevel === 'team' ? { authorLevel: 'team' as const } : {}),
       // Where it lives: a deleted app's purge and restore are checked
       // against it (W6a fix round 1, M1).
-      ...(row.homeWs ? { homeWs: row.homeWs } : {}),
+      ...snapshotHomeMeta(row.home),
     },
     source: row.source,
     draft: row.draft ?? null,

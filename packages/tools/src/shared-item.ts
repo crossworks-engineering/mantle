@@ -6,7 +6,7 @@
  * v1 page route read one copy.
  */
 import { and, eq, gt, isNull, or, sql } from 'drizzle-orm';
-import { db, nodes, shares } from '@mantle/db';
+import { db, nodes, shares, heldBySql } from '@mantle/db';
 
 /**
  * Whether anyone but an admin can read this item now (workspaces W5b2, from
@@ -23,7 +23,7 @@ export async function othersCanRead(ownerId: string, id: string): Promise<boolea
   const [row] = await db
     .select({
       heldBeyondAdmin: sql<boolean>`exists (
-        select 1 from workspaces w where w.id = any(${nodes.readWs}) and not w.is_admin)`,
+        select 1 from workspaces w where ${heldBySql(undefined, sql`w.id`)} and not w.is_admin)`,
       linked: sql<boolean>`exists (${db
         .select({ one: sql`1` })
         .from(shares)

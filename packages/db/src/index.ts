@@ -404,6 +404,25 @@ export {
   scopeReadsNodes,
 } from './scope-readable';
 export {
+  factReadsInScopeSql,
+  heldBySql,
+  holdsAllSql,
+  itemHoldersSql,
+  itemHoldersTextSql,
+  itemHomeSql,
+  mayEditInSql,
+  mayEditSql,
+  mayManageHomeInSql,
+  mayManageInSql,
+  mayManageSql,
+  mayReadInSql,
+  missesAnySql,
+  readsInScopeSql,
+  snapshotHomeMeta,
+  snapshotHomeSql,
+  wsArraySql,
+} from './item-acl';
+export {
   foldersReadOf,
   itemWriteRefusal,
   itemWriteRefusalOf,

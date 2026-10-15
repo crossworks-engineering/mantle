@@ -19,10 +19,17 @@
  * by the 'app-data' door for exactly that.
  */
 import { and, eq, sql } from 'drizzle-orm';
+import { isUuid } from '@mantle/std';
 import {
   apps,
   createHomeIntent,
   db,
+  itemHomeSql,
+  mayEditSql,
+  mayManageHomeInSql,
+  mayManageSql,
+  snapshotHomeSql,
+  wsArraySql,
   withCreateHome,
   withViewer,
   type AppManifest,
@@ -48,7 +55,8 @@ const notFound = (id: string) =>
 export type MemberAppState = {
   id: string;
   title: string;
-  homeWs: string | null;
+  /** Its home workspace. */
+  home: string | null;
   mayEdit: boolean;
   mayManage: boolean;
 };
@@ -64,9 +72,8 @@ export async function memberApp(
 ): Promise<MemberAppState> {
   const rows = (await withViewer({ login: author.loginId }, () =>
     db.execute(sql`
-      select n.id::text as id, n.title, n.home_ws::text as home,
-             coalesce("public"."mantle_may_edit"(n.home_ws, n.write_ws), false) as edit,
-             coalesce("public"."mantle_may_manage"(n.home_ws), false) as manage
+      select n.id::text as id, n.title, ${itemHomeSql('n')}::text as home,
+             ${mayEditSql('n')} as edit, ${mayManageSql('n')} as manage
         from nodes n
        where n.id = ${appId} and n.owner_id = ${author.brainId} and n.type = 'app'`),
   )) as unknown as {
@@ -96,7 +103,7 @@ export async function memberApp(
   return {
     id: row.id,
     title: row.title,
-    homeWs: row.home,
+    home: row.home,
     mayEdit: row.edit,
     mayManage: row.manage,
   };
@@ -137,13 +144,13 @@ export async function listLoginApps(author: MemberAppAuthor): Promise<LoginAppCa
       select n.id::text as id, n.title, n.updated_at,
              coalesce((n.data->>'trashedBeforeFold')::boolean, false) as trashed,
              w.name as home,
-             coalesce("public"."mantle_may_edit"(n.home_ws, n.write_ws), false) as edit,
+             ${mayEditSql('n')} as edit,
              a.manifest, (a.published_build->>'ok')::boolean is true as runnable,
              (a.draft_source is not null or a.draft_build is not null) as has_draft,
              a.version
         from nodes n
         join apps a on a.node_id = n.id
-        left join workspaces w on w.id = n.home_ws
+        left join workspaces w on w.id = ${itemHomeSql('n')}
        where n.owner_id = ${author.brainId} and n.type = 'app'
        order by n.updated_at desc
        limit 500`),
@@ -232,28 +239,34 @@ export async function deleteMemberApp(
  *  snapshot names it), newest first. */
 export async function listDeletedMemberApps(
   author: MemberAppAuthor,
-): Promise<(DeletedApp & { homeWs: string })[]> {
+): Promise<(DeletedApp & { home: string })[]> {
   const homes = await deletedHomes(author);
   return (await listDeletedApps(author.brainId))
     .filter((d) => homes.has(d.id))
-    .map((d) => ({ ...d, homeWs: homes.get(d.id)! }));
+    .map((d) => ({ ...d, home: homes.get(d.id)! }));
 }
 
 /** Deleted app id to its home, for the homes the login moderates. */
 async function deletedHomes(author: MemberAppAuthor): Promise<Map<string, string>> {
   const rows = (await db.execute(sql`
-    select distinct on (s.node_id) s.node_id::text as id,
-           nullif(s.code->'meta'->>'homeWs', '') as home
+    select distinct on (s.node_id) s.node_id::text as id, ${snapshotHomeSql('s')} as home
       from node_snapshots s
      where s.owner_id = ${author.brainId} and s.node_kind = 'app' and s.trigger = 'pre_delete'
        and not exists (select 1 from nodes n where n.id = s.node_id)
      order by s.node_id, s.seq desc`)) as unknown as { id: string; home: string | null }[];
-  const mod = (await withViewer({ login: author.loginId }, () =>
-    db.execute(sql`select unnest("public"."mantle_scope_mod_ws"())::text as ws`),
-  )) as unknown as { ws: string }[];
-  const moderated = new Set(mod.map((r) => r.ws));
+  // The homes the login may manage, by the rule (mantle_may_manage in its
+  // scope; arch A6), not by a hand comparison with its Moderator list. A
+  // stored home that is no id is no workspace: nobody manages it.
+  const homes = [...new Set(rows.map((r) => r.home).filter((h): h is string => isUuid(h)))];
+  const managed = homes.length
+    ? ((await withViewer({ login: author.loginId }, () =>
+        db.execute(sql`select h::text as ws from unnest(${wsArraySql(homes)}) as h(h)
+                        where ${mayManageHomeInSql(sql`h.h`, sql`"public"."mantle_scope_mod_ws"()`)}`),
+      )) as unknown as { ws: string }[])
+    : [];
+  const may = new Set(managed.map((r) => r.ws));
   const out = new Map<string, string>();
-  for (const r of rows) if (r.home && moderated.has(r.home)) out.set(r.id, r.home);
+  for (const r of rows) if (r.home && may.has(r.home)) out.set(r.id, r.home);
   return out;
 }
 

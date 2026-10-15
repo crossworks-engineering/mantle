@@ -30,7 +30,7 @@
  * lost (a crash between the two) is found again by its snapshot_of.
  */
 import { sql } from 'drizzle-orm';
-import { asSystem, db, withCreateHome } from '@mantle/db';
+import { asSystem, db, itemHomeSql, withCreateHome } from '@mantle/db';
 import {
   acceptedItemForCopy,
   createDraw,
@@ -118,7 +118,7 @@ async function makeSnapshotCopiesLocked(opts: { dryRun?: boolean }): Promise<Sna
     const stamped = (await db.execute(sql`
       select n.id::text as id from nodes n
        where n.owner_id = ${brain}::uuid and n.data->>'snapshot_of' = ${r.node_id}
-         and n.home_ws = ${r.home}::uuid
+         and ${itemHomeSql('n')} = ${r.home}::uuid
        order by n.created_at limit 1`)) as unknown as { id: string }[];
     if (stamped[0]) {
       if (!opts.dryRun) {

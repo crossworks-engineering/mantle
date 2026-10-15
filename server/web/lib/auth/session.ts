@@ -14,6 +14,9 @@ import bcrypt from 'bcryptjs';
 import {
   asSystem,
   db,
+  mayEditSql,
+  mayManageSql,
+  snapshotHomeSql,
   accessKeys,
   authUsers,
   mobileTokens,
@@ -1845,7 +1848,7 @@ async function itemWriteGate(
     // may (W6a fix round 2, L-b), not every Admin user.
     // No snapshot: the handler's 404.
     const snap = (await db.execute(sql`
-      select nullif(s.code->'meta'->>'homeWs', '') as home,
+      select ${snapshotHomeSql('s')} as home,
              coalesce((s.code->'meta'->>'keepForOwner')::boolean, false) as held
         from node_snapshots s
        where s.node_id = ${id} and s.node_kind = 'app' and s.trigger = 'pre_delete'
@@ -1910,10 +1913,9 @@ async function itemWriteGate(
     if (!nodeId) return opts.admin ? null : notFound();
     const rows = (await withViewer({ login: loginId }, () =>
       db.execute(sql`
-        select "public"."mantle_may_edit"(home_ws, write_ws) as edit,
-               "public"."mantle_may_manage"(home_ws) as manage,
-               coalesce(data ? 'snapshot_of', false) as copy
-          from nodes where id = ${nodeId}`),
+        select ${mayEditSql('n')} as edit, ${mayManageSql('n')} as manage,
+               coalesce(n.data ? 'snapshot_of', false) as copy
+          from nodes n where n.id = ${nodeId}`),
     )) as unknown as { edit: boolean | null; manage: boolean | null; copy: boolean }[];
     row = rows[0];
     if (row) {

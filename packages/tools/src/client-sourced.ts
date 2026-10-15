@@ -44,6 +44,7 @@ import {
   db,
   nodes,
   spaceItems,
+  mayReadInSql,
 } from '@mantle/db';
 import { asSystem } from '@mantle/db/viewer';
 
@@ -124,10 +125,7 @@ function clientAppExportsAmong(ownerId: string, list: readonly string[]) {
         // A client workspace holds the app now (its own grant or its
         // folder's; workspaces W5b2: grants, not the frozen level), or a
         // client has written it.
-        or(
-          sql`${nodes.readWs} && ${clientWsSql(ownerId)}`,
-          isNotNull(appDatabases.clientWrittenAt),
-        ),
+        or(mayReadInSql(undefined, clientWsSql(ownerId)), isNotNull(appDatabases.clientWrittenAt)),
       ),
     );
 }

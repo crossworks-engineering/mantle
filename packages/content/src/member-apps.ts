@@ -29,9 +29,12 @@ import {
   apps,
   currentWorkspaceScope,
   db,
+  mayEditSql,
+  mayReadInSql,
   nodeReadByWorkspace,
   nodes,
   sharedWorkspacesSql,
+  wsArraySql,
   workspaces,
   type AppManifest,
   type BuildRef,
@@ -60,14 +63,10 @@ export type MemberRunnableApp = {
   dataReadOnly: boolean;
 };
 
-function wsArray(ws: readonly string[]): SQL {
-  return sql`${`{${ws.join(',')}}`}::uuid[]`;
-}
-
 /** A workspace of the member reads the app (its grant). */
 export function memberReachSql(): SQL<boolean> {
   const scope = currentWorkspaceScope();
-  if (scope) return sql<boolean>`(${nodes.readWs} && ${wsArray(scope.ws)})`;
+  if (scope) return mayReadInSql(undefined, wsArraySql(scope.ws));
   return sql<boolean>`false`;
 }
 
@@ -80,7 +79,7 @@ export function memberWritesSql(): SQL<boolean> {
   const scope = currentWorkspaceScope();
   const notInformational = sql`not coalesce(${apps.dataReadOnly}, false)`;
   if (scope) {
-    return sql<boolean>`(${notInformational} and coalesce("public"."mantle_may_edit"(${nodes.homeWs}, ${nodes.writeWs}), false))`;
+    return sql<boolean>`(${notInformational} and ${mayEditSql()})`;
   }
   // No workspace scope means no login to ask "Moderator of the home" of:
   // nothing writes (it kept the old Team grant's Write until 0286). No

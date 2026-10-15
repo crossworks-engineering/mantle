@@ -20,7 +20,16 @@
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { defineDomainError } from '@mantle/std';
 import { LINK_SERVE_KINDS } from '@mantle/client-types/kind-lists';
-import { db, nodeEmbeds, nodes, pages, SNAPSHOT_COPY_NO_SHARE } from '@mantle/db';
+import {
+  db,
+  mayEditInSql,
+  mayManageInSql,
+  mayReadInSql,
+  nodeEmbeds,
+  nodes,
+  pages,
+  SNAPSHOT_COPY_NO_SHARE,
+} from '@mantle/db';
 import { clientOwnUrl, docRefIds, noteRefIds } from './client-redact';
 import { clientRedactOrigins } from './client-origins';
 import { canShareNode, ShareInputError, shareServedIds, type ShareDb } from './shares';
@@ -63,6 +72,18 @@ export type LinkRights = {
   snapshotCopy?: boolean;
 };
 
+/**
+ * The live workspaces of the brain `ownerId` that `loginId` is a user of
+ * (`moderated`: those it moderates), as a uuid[] expression: what the array
+ * forms of the rules take (arch A6: the database decides, one definition).
+ */
+function loginWsSql(ownerId: string, loginId: string, moderated: boolean) {
+  return sql`(select coalesce(array_agg(u.workspace_id), '{}'::uuid[])
+                from workspace_users u join workspaces w on w.id = u.workspace_id
+               where u.login_id = ${loginId} and w.owner_id = ${ownerId} and w.archived_at is null
+                 ${moderated ? sql`and u.moderator` : sql``})`;
+}
+
 /** The caller's rights on `ids` (the owner's items; an id with no row is
  *  left out). Keys lower-case. */
 export async function linkRights(
@@ -75,20 +96,18 @@ export async function linkRights(
   if (!wanted.length) return new Map();
   const rows = (await q.execute(sql`
     with mine as (
-      select u.workspace_id as ws, u.moderator
-        from workspace_users u join workspaces w on w.id = u.workspace_id
-       where u.login_id = ${loginId} and w.owner_id = ${ownerId} and w.archived_at is null
+      select ${loginWsSql(ownerId, loginId, false)} as ws,
+             ${loginWsSql(ownerId, loginId, true)} as mods
     ),
     migrated as (
       select exists (select 1 from workspaces where owner_id = ${ownerId} and is_admin) as yes
     )
     select n.id::text as id, n.type::text as type, n.path::text as path,
-           (not m.yes or exists (select 1 from mine where mine.ws = any (n.read_ws))) as read,
-           (not m.yes or exists (select 1 from mine where mine.ws = n.home_ws and mine.moderator))
-             as manage,
-           (not m.yes or exists (select 1 from mine where mine.ws = any (n.write_ws))) as write_any,
+           (not m.yes or ${mayReadInSql('n', sql`me.ws`)}) as read,
+           (not m.yes or ${mayManageInSql('n', sql`me.mods`)}) as manage,
+           (not m.yes or ${mayEditInSql('n', sql`me.ws`, sql`me.mods`)}) as edit,
            coalesce(n.data ? 'snapshot_of', false) as copy
-      from nodes n cross join migrated m
+      from nodes n cross join migrated m cross join mine me
      where n.owner_id = ${ownerId}
        and n.id = any (${`{${wanted.join(',')}}`}::uuid[])
   `)) as unknown as {
@@ -97,7 +116,7 @@ export async function linkRights(
     path: string | null;
     read: boolean;
     manage: boolean;
-    write_any: boolean;
+    edit: boolean;
     copy: boolean;
   }[];
   return new Map(
@@ -109,7 +128,7 @@ export async function linkRights(
         path: r.path,
         read: r.read === true,
         manage: r.manage === true,
-        edit: r.manage === true || r.write_any === true,
+        edit: r.edit === true,
         snapshotCopy: r.copy === true,
       },
     ]),
@@ -160,11 +179,7 @@ export const FOLDER_SERVE_OFFER_MAX = 500;
 function editableSql(ownerId: string, loginId: string) {
   return sql`(
     not exists (select 1 from workspaces w0 where w0.owner_id = ${ownerId} and w0.is_admin)
-    or exists (
-      select 1 from workspace_users u join workspaces w on w.id = u.workspace_id
-       where u.login_id = ${loginId} and w.owner_id = ${ownerId} and w.archived_at is null
-         and ((u.workspace_id = ${nodes.homeWs} and u.moderator)
-              or u.workspace_id = any (${nodes.writeWs}))))`;
+    or ${mayEditInSql(undefined, loginWsSql(ownerId, loginId, false), loginWsSql(ownerId, loginId, true))})`;
 }
 
 /** The ids the item may serve (see the top): named or embedded by it, or

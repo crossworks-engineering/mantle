@@ -21,7 +21,13 @@
  * (the system pool, a level role, a personal space) nothing here applies.
  */
 import { sql, type SQL } from 'drizzle-orm';
-import { currentWorkspaceScope, db, type WorkspaceScope } from '@mantle/db';
+import {
+  currentWorkspaceScope,
+  db,
+  factReadsInScopeSql,
+  readsInScopeSql,
+  type WorkspaceScope,
+} from '@mantle/db';
 import { envNum } from '@mantle/config';
 
 /** The tables a vector arm searches. */
@@ -74,7 +80,7 @@ function countsFor(scope: WorkspaceScope): Map<ScopeTable, Promise<number>> {
 
 /** The scope's items, as one array (at most `cap`, on the GIN index). */
 function scopeItems(cap: number): SQL {
-  return sql`array(select id from nodes where read_ws && mantle_scope_ws() limit ${cap})`;
+  return sql`array(select s.id from nodes s where ${readsInScopeSql('s')} limit ${cap})`;
 }
 
 /** The scope's rows of `table`, counted up to `cap` (an index read per item:
@@ -83,7 +89,7 @@ function countRows(table: ScopeTable, cap: number): SQL {
   switch (table) {
     case 'nodes':
       return sql`select count(*)::int as n from (
-        select 1 from nodes where read_ws && mantle_scope_ws() limit ${cap}) s`;
+        select 1 from nodes x where ${readsInScopeSql('x')} limit ${cap}) s`;
     case 'content_chunks':
       return sql`select count(*)::int as n from (
         select 1 from content_chunks where node_id = any(${scopeItems(cap)}) limit ${cap}) s`;
@@ -96,7 +102,7 @@ function countRows(table: ScopeTable, cap: number): SQL {
       return sql`select count(*)::int as n from (
         (select 1 from facts where source_node_id = any(${scopeItems(cap)}) limit ${cap})
         union all
-        (select 1 from facts where source_node_id is null and read_ws && mantle_scope_ws() limit ${cap})
+        (select 1 from facts where source_node_id is null and ${factReadsInScopeSql()} limit ${cap})
         limit ${cap}) s`;
   }
 }
@@ -140,7 +146,7 @@ export async function smallScope(table: ScopeTable = 'nodes'): Promise<boolean> 
 /** The ids of the scope's items of `ownerId`, as one array (the exact path's
  *  filter: `<row>.node_id = any(...)` uses the row table's node index). */
 export function scopeNodeIds(ownerId: string): SQL {
-  return sql`array(select id from nodes where read_ws && mantle_scope_ws() and owner_id = ${ownerId})`;
+  return sql`array(select s.id from nodes s where ${readsInScopeSql('s')} and s.owner_id = ${ownerId})`;
 }
 
 /** The ORDER BY of a vector arm: the bare distance (HNSW-eligible), or on the

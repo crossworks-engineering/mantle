@@ -11,6 +11,7 @@
 import { and, asc, desc, eq, ilike, or, sql } from 'drizzle-orm';
 import {
   db,
+  nodeReadByWorkspace,
   draftAllowed,
   draftColumn,
   emailAttachmentSql,
@@ -65,7 +66,7 @@ function pageConds(ownerId: string, opts: ListPagesOpts) {
   }
   if (opts.tag) conds.push(sql`${opts.tag} = ANY(${nodes.tags})`);
   if (opts.withoutEmailCopies) conds.push(sql`not ${emailAttachmentSql()}`);
-  if (opts.ws) conds.push(sql`${opts.ws}::uuid = any(${nodes.readWs})`);
+  if (opts.ws) conds.push(nodeReadByWorkspace(opts.ws));
   return conds;
 }
 

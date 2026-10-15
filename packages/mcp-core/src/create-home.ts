@@ -16,8 +16,8 @@
  * run in the call's scope by gated-tools.ts). Nothing here grants: it only
  * names a place, and the database's create checks still run.
  */
-import { and, eq, gte, inArray, or, sql } from 'drizzle-orm';
-import { db, nodes, workspaces } from '@mantle/db';
+import { and, gte, inArray, or, sql } from 'drizzle-orm';
+import { db, nodes, workspaces, itemHomeSql } from '@mantle/db';
 
 /*
  * The create tools that make an item of a workspace kind take `workspace`
@@ -133,7 +133,7 @@ async function landedIn(ids: string[], since: Date): Promise<{ id: string; name:
   const rows = await db
     .select({ id: workspaces.id, name: workspaces.name })
     .from(nodes)
-    .innerJoin(workspaces, eq(workspaces.id, nodes.homeWs))
+    .innerJoin(workspaces, sql`${workspaces.id} = ${itemHomeSql()}`)
     .where(
       and(inArray(nodes.id, ids), or(gte(nodes.createdAt, since), sql`${nodes.createdAt} is null`)),
     );

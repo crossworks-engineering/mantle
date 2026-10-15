@@ -28,7 +28,7 @@
  * approving the pending entry runs the original call.
  */
 import { and, arrayOverlaps, eq, inArray, or, sql } from 'drizzle-orm';
-import { agents, appTableExports, db, nodes, toolGroups } from '@mantle/db';
+import { agents, appTableExports, db, nodes, toolGroups, mayReadInSql } from '@mantle/db';
 import { asSystem } from '@mantle/db/viewer';
 import { clientWsSql } from './client-sourced';
 import type { ClientSourcedRule, ClientSourcedWriteRule } from './client-sourced-rule';
@@ -72,7 +72,7 @@ function exposedSql(ownerId: string) {
   // Written out in full: inside the subquery an unqualified id would name
   // the share's own id.
   return sql<boolean>`(
-    "nodes"."read_ws" && ${clientWsSql(ownerId)}
+    ${mayReadInSql(undefined, clientWsSql(ownerId))}
     or exists (
       select 1 from shares s
        where s.owner_id = ${ownerId} and s.revoked_at is null and s.contact_id is null
@@ -257,7 +257,7 @@ export async function writeVerdict(
             eq(nodes.ownerId, ownerId),
             eq(nodes.type, 'branch'),
             sql`${nodes.path} @> ${path}::ltree`,
-            sql`${nodes.readWs} && ${clientWsSql(ownerId)}`,
+            mayReadInSql(undefined, clientWsSql(ownerId)),
           ),
         )
         .limit(1);

@@ -18,7 +18,15 @@
  * Embeds do not follow (0261): nothing is ever granted for you.
  */
 import { sql, type SQL } from 'drizzle-orm';
-import { currentCreateHome, db, itemWriteRefusal, scopeReadsItem } from '@mantle/db';
+import {
+  currentCreateHome,
+  db,
+  heldBySql,
+  itemHoldersSql,
+  itemHomeSql,
+  itemWriteRefusal,
+  scopeReadsItem,
+} from '@mantle/db';
 import { defineDomainError } from '@mantle/std';
 import {
   TREE_KIND_SPECS,
@@ -117,9 +125,9 @@ function newItemSet(ownerId: string, nodeType: string, destPath: string): SQL {
   const folder = sql`mantle_parent_folder(${ownerId}::uuid, ${type}, ${destPath}::ltree)`;
   return sql`array(select distinct x from unnest(
     ${folderPasses(folder, type)} || array[coalesce(
-      (select f.home_ws from nodes f
-        where f.id = ${folder} and mantle_ws_live(f.home_ws, f.id)
-          and mantle_grant_kind_ok(${type}, f.home_ws)),
+      (select ${itemHomeSql('f')} from nodes f
+        where f.id = ${folder} and mantle_ws_live(${itemHomeSql('f')}, f.id)
+          and mantle_grant_kind_ok(${type}, ${itemHomeSql('f')})),
       mantle_ws_admin_id(${ownerId}::uuid))]
   ) as s(x) where x is not null)`;
 }
@@ -182,7 +190,7 @@ function placedRows(ownerId: string, where: SQL, destPath: string): SQL {
   return sql`
     select n.id, n.title,
            array(select d.x from unnest(${folderPasses(folder, sql`n.type`)}) as d(x)
-                  where not (d.x = any(n.read_ws))
+                  where not ${heldBySql('n', sql`d.x`)}
                     and not exists (select 1 from item_grants e
                                      where e.node_id = n.id and e.workspace_id = d.x
                                        and e.excluded)) as gain,
@@ -237,10 +245,11 @@ export function moveFolderDiff(
   return listed(
     db,
     sql`
-    with f as (select id, path, read_ws from nodes where id = ${folder.id} and owner_id = ${ownerId}),
+    with f as (select f0.id, f0.path, ${itemHoldersSql('f0')} as holders from nodes f0
+                where f0.id = ${folder.id} and f0.owner_id = ${ownerId}),
     gain as (
       select x from unnest(${passes}) as p(x), f
-       where not (x = any(f.read_ws))
+       where not (x = any(f.holders))
          and not exists (select 1 from item_grants e
                           where e.node_id = f.id and e.workspace_id = x and e.excluded)),
     lose as (
@@ -251,7 +260,7 @@ export function moveFolderDiff(
     select n.id, n.title,
            case when n.id = f.id then array(select x from gain) else array(
              select w.x from gain w
-              where not (w.x = any(n.read_ws))
+              where not ${heldBySql('n', sql`w.x`)}
                 and mantle_grant_kind_ok(n.type, w.x, true)
                 and not exists (select 1 from item_grants e
                                  where e.node_id = n.id and e.workspace_id = w.x and e.excluded)
@@ -259,7 +268,7 @@ export function moveFolderDiff(
            end as gain,
            case when n.id = f.id then array(select x from lose) else array(
              select w.x from lose w
-              where w.x = any(n.read_ws)
+              where ${heldBySql('n', sql`w.x`)}
                 and exists (select 1 from item_grants e
                              where e.node_id = n.id and e.workspace_id = w.x
                                and e.via_folder_id is not null and not e.is_home
@@ -329,7 +338,7 @@ export function copyDiff(
     sql`
     select n.id, n.title,
            array(select x from unnest(${newItemSet(ownerId, TREE_KIND_SPECS.files.nodeType, destPath)}) as s(x)
-                  where not (x = any(n.read_ws))) as gain,
+                  where not ${heldBySql('n', sql`x`)}) as gain,
            '{}'::uuid[] as lose,
            mantle_parent_folder(${ownerId}::uuid, ${TREE_KIND_SPECS.files.nodeType}::node_type, ${destPath}::ltree) as via
       from nodes n

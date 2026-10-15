@@ -59,6 +59,7 @@ import {
   type Tool,
   type ToolHandler,
   type ToolExternalAccess,
+  itemHoldersSql,
 } from '@mantle/db';
 import type { ToolExternalAccessDTO } from '@mantle/client-types';
 import { resolveTool } from './resolve';
@@ -398,13 +399,13 @@ export async function appConnectorRefused(
   const [app] = await asSystem(
     () =>
       db
-        .select({ readWs: nodes.readWs })
+        .select({ holders: itemHoldersSql() })
         .from(nodes)
         .where(and(eq(nodes.ownerId, ownerId), eq(nodes.id, appId), eq(nodes.type, 'app')))
         .limit(1),
     'workspace-resources',
   );
-  const holders = [...new Set(app?.readWs ?? [])];
+  const holders = [...new Set(app?.holders ?? [])];
   if (holders.length === 0) {
     return 'This app is in no workspace, so connector tools do not run from it.';
   }

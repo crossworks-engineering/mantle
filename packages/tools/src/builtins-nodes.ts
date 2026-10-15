@@ -6,7 +6,7 @@
  */
 
 import { and, desc, eq, inArray, sql } from 'drizzle-orm';
-import { db, nodes, resignalNode, workspaces } from '@mantle/db';
+import { db, nodes, resignalNode, workspaces, heldBySql } from '@mantle/db';
 import { resolveSupersededTargets } from '@mantle/search';
 import { corpusCapacity, nodeUrl, supersedeNode, unsupersedeNode } from '@mantle/content';
 import { areaSystem } from './admin-gate';
@@ -131,7 +131,7 @@ async function readingWorkspaces(nodeId: string): Promise<string[]> {
   const rows = await db
     .select({ name: workspaces.name })
     .from(nodes)
-    .innerJoin(workspaces, sql`${workspaces.id} = any(${nodes.readWs})`)
+    .innerJoin(workspaces, heldBySql(undefined, sql`${workspaces.id}`))
     .where(and(eq(nodes.id, nodeId), eq(workspaces.isAdmin, false)))
     .orderBy(workspaces.name);
   return rows.map((r) => r.name);

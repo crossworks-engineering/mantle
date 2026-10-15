@@ -11,7 +11,7 @@
  */
 import * as path from 'node:path';
 import { and, eq, sql } from 'drizzle-orm';
-import { db, nodeSnapshots, nodes, type AppSnapshotCode } from '@mantle/db';
+import { db, nodeSnapshots, nodes, snapshotHomeSql, type AppSnapshotCode } from '@mantle/db';
 import {
   createApp,
   restoreAppDraft,
@@ -100,7 +100,7 @@ async function deletedRows(ownerId: string, appId?: string): Promise<DeletedRow[
 export async function deletedAppHomes(ownerId: string): Promise<Map<string, string | null>> {
   const rows = (await db.execute(sql`
     select distinct on (s.node_id) s.node_id::text as id,
-           nullif(s.code->'meta'->>'homeWs', '') as home
+           ${snapshotHomeSql('s')} as home
       from node_snapshots s
      where s.owner_id = ${ownerId} and s.node_kind = 'app' and s.trigger = 'pre_delete'
        and not exists (select 1 from nodes n where n.id = s.node_id)

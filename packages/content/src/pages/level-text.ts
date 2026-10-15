@@ -22,7 +22,7 @@
  * (the share pages): a link shows the items on its served list.
  */
 import { and, eq, inArray, or, sql } from 'drizzle-orm';
-import { db, nodes, pages } from '@mantle/db';
+import { db, holdsAllSql, itemHoldersTextSql, nodes, pages } from '@mantle/db';
 import { CLIENT_PRIVATE_LABEL } from '@mantle/client-types/dto/client';
 import { docToText } from '../doc-to-text';
 import {
@@ -128,8 +128,8 @@ function uuidArray(ids: readonly string[]) {
 export async function pageHolders(pageId: string, q: LevelTextDb = db): Promise<string[]> {
   if (!UUID.test(pageId)) return [];
   const [row] = (await q.execute(sql`
-    select coalesce(array_to_string(read_ws, ','), '') as ws
-      from nodes where id = ${pageId}::uuid`)) as unknown as Array<{ ws: string }>;
+    select ${itemHoldersTextSql('n')} as ws
+      from nodes n where n.id = ${pageId}::uuid`)) as unknown as Array<{ ws: string }>;
   return wsList(row?.ws);
 }
 
@@ -155,7 +155,7 @@ async function holderView(
         and(
           eq(nodes.ownerId, ownerId),
           inArray(nodes.id, wanted),
-          sql`${nodes}.read_ws @> ${uuidArray(holders)}`,
+          holdsAllSql(undefined, uuidArray(holders)),
         ),
       );
     for (const r of rows) held.set(r.id.toLowerCase(), r.title);
@@ -258,7 +258,7 @@ export async function refoldPageTexts(
   const rows = await q
     .select({
       id: nodes.id,
-      ws: sql<string>`coalesce(array_to_string(${nodes}.read_ws, ','), '')`,
+      ws: itemHoldersTextSql(),
       doc: pages.doc,
       docText: pages.docText,
     })

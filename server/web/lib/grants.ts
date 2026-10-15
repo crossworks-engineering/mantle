@@ -34,10 +34,17 @@ import {
   db,
   sql,
   isCheckViolation,
+  itemHoldersSql,
+  itemHomeSql,
   lockMoreHeads,
+  mayEditInSql,
+  mayManageInSql,
+  mayReadInSql,
+  missesAnySql,
   withDeadlockRetry,
   withHeads,
   withSubtreeHeads,
+  wsArraySql,
 } from '@mantle/db';
 import type {
   GrantContactShare,
@@ -200,6 +207,12 @@ async function loadCtx(caller: WsCaller, q: Exec = db): Promise<Ctx> {
 }
 
 const myIds = (ctx: Ctx) => [...ctx.mine.keys()];
+const modIds = (ctx: Ctx) => [...ctx.mine.values()].filter((w) => w.moderator).map((w) => w.id);
+/** The caller's workspaces, and its Moderator ones, as uuid[] parameters:
+ *  what the array forms of the rules take (mantle_may_edit_in,
+ *  mantle_may_manage_in; arch A6). */
+const mineSql = (ctx: Ctx) => wsArraySql(myIds(ctx));
+const modsSql = (ctx: Ctx) => wsArraySql(modIds(ctx));
 const isMod = (ctx: Ctx, ws: string | null) => !!ws && ctx.mine.get(ws)?.moderator === true;
 
 /** A live workspace the caller may see (a user of it, or an Admin user),
@@ -227,8 +240,15 @@ type Item = {
   title: string;
   path: string | null;
   home: string | null;
-  readWs: string[];
-  writeWs: string[];
+  /** The workspaces that hold it (a fact, for what a change adds or
+   *  removes: never a decision). */
+  holders: string[];
+  /** The rules, asked of the database with the caller's workspaces (the
+   *  array forms; arch A6): a Moderator of the home, or a grant with Write
+   *  on in one of them. */
+  mayEdit: boolean;
+  /** A Moderator of the home. */
+  mayManage: boolean;
   /** The folder it sits in (a folder: the one above it). */
   parent: string | null;
 };
@@ -250,31 +270,35 @@ async function loadItem(ctx: Ctx, id: string, q: Exec = db): Promise<Item> {
     type: string;
     title: string;
     path: string | null;
-    home_ws: string | null;
-    read_ws: unknown;
-    write_ws: unknown;
+    home: string | null;
+    holders: unknown;
+    readable: boolean;
+    may_edit: boolean;
+    may_manage: boolean;
     parent: string | null;
   }>(
     q,
-    sql`select n.id, n.type::text as type, n.title, n.path::text as path, n.home_ws,
-               n.read_ws, n.write_ws,
+    sql`select n.id, n.type::text as type, n.title, n.path::text as path,
+               ${itemHomeSql('n')} as home, ${itemHoldersSql('n')} as holders,
+               ${mayReadInSql('n', mineSql(ctx))} as readable,
+               ${mayEditInSql('n', mineSql(ctx), modsSql(ctx))} as may_edit,
+               ${mayManageInSql('n', modsSql(ctx))} as may_manage,
                mantle_parent_folder(n.owner_id, n.type, n.path) as parent
           from nodes n
          where n.id = ${itemId(id)} and n.owner_id = ${ctx.caller.anchorId}`,
   );
-  if (!n) throw ITEM_NOT_FOUND();
-  const item: Item = {
+  if (!n || n.readable !== true) throw ITEM_NOT_FOUND();
+  return {
     id: n.id,
     type: n.type,
     title: n.title,
     path: n.path,
-    home: n.home_ws,
-    readWs: idsOf(n.read_ws),
-    writeWs: idsOf(n.write_ws),
+    home: n.home,
+    holders: idsOf(n.holders),
+    mayEdit: n.may_edit === true,
+    mayManage: n.may_manage === true,
     parent: n.parent,
   };
-  if (!item.readWs.some((w) => ctx.mine.has(w))) throw ITEM_NOT_FOUND();
-  return item;
 }
 
 async function grantRows(q: Exec, nodeId: string): Promise<Map<string, GrantDbRow>> {
@@ -307,9 +331,8 @@ async function grantRows(q: Exec, nodeId: string): Promise<Map<string, GrantDbRo
   );
 }
 
-const mayManage = (ctx: Ctx, item: Item) => isMod(ctx, item.home);
-const mayEdit = (ctx: Ctx, item: Item) =>
-  mayManage(ctx, item) || item.writeWs.some((w) => ctx.mine.has(w));
+const mayManage = (_ctx: Ctx, item: Item) => item.mayManage;
+const mayEdit = (_ctx: Ctx, item: Item) => item.mayEdit;
 
 /** Whether the item's folder passes `ws` on to it (a non-excluded row of
  *  the folder, for a kind that may take it from a folder). */
@@ -377,7 +400,7 @@ async function grantChange(
 
 async function buildResponse(ctx: Ctx, item: Item, q: Exec = db): Promise<GrantsResponse> {
   const manage = mayManage(ctx, item);
-  const mine = uuidList(myIds(ctx));
+  const mine = mineSql(ctx);
   const list = await rows<{
     ws: string;
     name: string;
@@ -391,7 +414,7 @@ async function buildResponse(ctx: Ctx, item: Item, q: Exec = db): Promise<Grants
   }>(
     q,
     sql`select g.workspace_id as ws, w.name, g.write, g.is_home, g.via_folder_id as via,
-               f.title as via_title, (f.read_ws && ${mine}::uuid[]) as via_readable,
+               f.title as via_title, ${mayReadInSql('f', mine)} as via_readable,
                g.excluded,
                (${item.parent}::uuid is not null and exists (
                   select 1 from item_grants fg
@@ -408,7 +431,7 @@ async function buildResponse(ctx: Ctx, item: Item, q: Exec = db): Promise<Grants
   if (item.parent && list.some((r) => r.excluded && r.derivable)) {
     const [p] = await rows<{ title: string; readable: boolean }>(
       q,
-      sql`select title, read_ws && ${mine}::uuid[] as readable from nodes where id = ${item.parent}`,
+      sql`select p.title, ${mayReadInSql('p', mine)} as readable from nodes p where p.id = ${item.parent}`,
     );
     parentFolder = { id: item.parent, title: p?.readable ? p.title : null };
   }
@@ -468,7 +491,7 @@ async function buildResponse(ctx: Ctx, item: Item, q: Exec = db): Promise<Grants
   }
 
   let embedsNotGranted: GrantEmbed[] = [];
-  if (EMBEDDING_KINDS.includes(item.type) && item.readWs.length) {
+  if (EMBEDDING_KINDS.includes(item.type) && item.holders.length) {
     embedsNotGranted = await missingEmbeds(ctx, item, q);
   }
 
@@ -530,9 +553,9 @@ async function servedRefs(ctx: Ctx, served: readonly string[], q: Exec): Promise
   if (!ids.length) return [];
   const found = await rows<{ id: string; title: string; readable: boolean }>(
     q,
-    sql`select id::text as id, title, read_ws && ${uuidList(myIds(ctx))}::uuid[] as readable
-          from nodes
-         where owner_id = ${ctx.caller.anchorId} and id = any (${uuidList(ids)}::uuid[])`,
+    sql`select s.id::text as id, s.title, ${mayReadInSql('s', mineSql(ctx))} as readable
+          from nodes s
+         where s.owner_id = ${ctx.caller.anchorId} and s.id = any (${uuidList(ids)}::uuid[])`,
   );
   const titles = new Map(
     found.map((r) => [r.id.toLowerCase(), r.readable === true ? r.title : null]),
@@ -540,20 +563,19 @@ async function servedRefs(ctx: Ctx, served: readonly string[], q: Exec): Promise
   return ids.map((id) => ({ nodeId: id, title: titles.get(id) ?? null }));
 }
 
-type EmbedRow = { id: string; title: string; type: string; read_ws: unknown };
+type EmbedRow = { id: string; title: string; type: string };
 
 /** What a page, drawing or note embeds that is not granted to every
  *  workspace the item is: only embeds the caller may open. */
 async function embedRows(ctx: Ctx, item: Item, q: Exec): Promise<EmbedRow[]> {
   return rows<EmbedRow>(
     q,
-    sql`select e.id, e.title, e.type::text as type, e.read_ws
+    sql`select e.id, e.title, e.type::text as type
           from node_embeds ne join nodes e on e.id = ne.to_id
          where ne.from_id = ${item.id} and e.owner_id = ${ctx.caller.anchorId}
            and e.type <> 'branch'
-           and e.read_ws && ${uuidList(myIds(ctx))}::uuid[]
-           and exists (select 1 from unnest(${uuidList(item.readWs)}::uuid[]) as w(id)
-                        where not (w.id = any (e.read_ws)))
+           and ${mayReadInSql('e', mineSql(ctx))}
+           and ${missesAnySql('e', wsArraySql(item.holders))}
          order by lower(e.title), e.id`,
   );
 }
@@ -970,7 +992,7 @@ export async function grantEmbeds(
     const out: string[] = [];
     for (const raw of new Set(body.wsIds)) {
       const t = await seeTarget(ctx, raw, q);
-      if (!host.readWs.includes(t.wsId)) {
+      if (!host.holders.includes(t.wsId)) {
         throw new GrantError(
           400,
           'invalid',
@@ -1087,9 +1109,9 @@ async function hiddenCount(q: Exec, ctx: Ctx, item: Item): Promise<number> {
   if (item.type !== 'branch' || !item.path) return 0;
   const [r] = await rows<{ n: number }>(
     q,
-    sql`select count(*)::int as n from nodes
-         where owner_id = ${ctx.caller.anchorId} and path <@ ${item.path}::ltree
-           and not (read_ws && ${uuidList(myIds(ctx))}::uuid[])`,
+    sql`select count(*)::int as n from nodes h
+         where h.owner_id = ${ctx.caller.anchorId} and h.path <@ ${item.path}::ltree
+           and not ${mayReadInSql('h', mineSql(ctx))}`,
   );
   return r?.n ?? 0;
 }
@@ -1245,7 +1267,7 @@ async function planWorkspaceMove(ctx: Ctx, body: MoveInput, q: Exec) {
   const gain = new Set<string>();
   const lose = new Set<string>();
   for (const item of items) {
-    if (!item.readWs.includes(t.wsId)) gain.add(t.wsId);
+    if (!item.holders.includes(t.wsId)) gain.add(t.wsId);
     if (item.home && item.home !== t.wsId && body.keepReadableIn !== item.home) {
       if (!(await folderGrants(q, item, item.home))) lose.add(item.home);
     }
@@ -1286,7 +1308,7 @@ async function placeInFolder(
       )
     : [];
   const takes = new Set(okRows.map((r) => r.id).filter((w) => !blocked.has(w)));
-  const adds = [...takes].filter((w) => !item.readWs.includes(w));
+  const adds = [...takes].filter((w) => !item.holders.includes(w));
   const loses = [...grants.values()]
     .filter((g) => !g.excluded && g.via && !takes.has(g.ws) && !kept.has(g.ws))
     .map((g) => g.ws);

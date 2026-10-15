@@ -12,6 +12,7 @@
 import { and, desc, eq, ilike, or, sql } from 'drizzle-orm';
 import {
   db,
+  nodeReadByWorkspace,
   emailAttachmentSql,
   nodes,
   changedFields,
@@ -135,7 +136,7 @@ function noteConds(ownerId: string, opts: ListNotesOpts) {
   }
   if (opts.tag) conds.push(sql`${opts.tag} = ANY(${nodes.tags})`);
   if (opts.withoutEmailCopies) conds.push(sql`not ${emailAttachmentSql()}`);
-  if (opts.ws) conds.push(sql`${opts.ws}::uuid = any(${nodes.readWs})`);
+  if (opts.ws) conds.push(nodeReadByWorkspace(opts.ws));
   return conds;
 }
 
