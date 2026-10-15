@@ -650,7 +650,12 @@ describe.skipIf(!URL)('device tokens for an admin and a member', () => {
       body: { routingToken: `${tag}-lim-x`, publicKey: 'pk', platform: 'ios' },
     });
     expect(last.status).toBe(429);
-    expect(await json(last)).toEqual({ error: 'too_many_requests' });
+    // The one 429 (lib/route-limits.ts, A10 #8).
+    expect(await json(last)).toEqual({
+      error: 'Too many requests. Try again later.',
+      code: 'rate_limited',
+      retryAfter: Number(last.headers.get('retry-after')),
+    });
     expect(last.headers.get('retry-after')).toBeTruthy();
   });
 

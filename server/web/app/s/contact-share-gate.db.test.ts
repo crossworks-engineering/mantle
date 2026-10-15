@@ -397,15 +397,25 @@ describe.skipIf(!URL)('contact shares through /s on Postgres', () => {
     });
 
     it('an address gets 10 tries a minute', async () => {
+      // The row's limit, taken by the gate before the handler (A10 #8,
+      // lib/route-limits.ts contactCode): the route driven through the gate
+      // and the loader with its real row.
+      const { Hono } = await import('hono');
+      const { gate } = await import('@/server/middleware/gate');
+      const { registerRoutes } = await import('@/server/route-loader');
+      const { routeManifest } = await import('@/server/route-manifest.gen');
+      const app = new Hono();
+      app.use('*', gate());
+      registerRoutes(
+        app,
+        routeManifest.filter((e) => e.pattern === '/s/:token/code'),
+      );
       const fixed = (code: string) =>
-        r.code!(
-          new Request(`https://brain.example.invalid/s/${tok.aPage}/code`, {
-            method: 'POST',
-            headers: { 'content-type': 'application/json', 'x-forwarded-for': '10.99.0.1' },
-            body: JSON.stringify({ code }),
-          }),
-          p({ token: 'no-such-token' }),
-        );
+        app.request(`https://brain.example.invalid/s/no-such-token/code`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'x-forwarded-for': '10.99.0.1' },
+          body: JSON.stringify({ code }),
+        });
       const statuses = [];
       for (let i = 0; i < 11; i++) statuses.push((await fixed('x')).status);
       expect(statuses.slice(0, 10).every((s) => s === 401)).toBe(true);
