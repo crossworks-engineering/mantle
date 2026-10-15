@@ -2,7 +2,7 @@
  * The profile booleans and their defaults, in one table (A10 #11;
  * docs/configuration.md, "Flags and env"). A preference the owner never set
  * is absent from the stored jsonb, so every reader has to supply the
- * default; 26 sites did, each with its own `!== false` or `=== true`. Read
+ * default; 29 sites did, each with its own `!== false` or `=== true`. Read
  * one with {@link profileFlag}; the brain's preferences loader, its routes
  * and the feature registry (@mantle/config FEATURES) all do.
  *

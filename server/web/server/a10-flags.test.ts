@@ -217,6 +217,18 @@ const READERS: Record<string, Reader> = {
   ),
 };
 
+/**
+ * Readers the lint found after the record was taken: each keeps the reading
+ * it had on main beside the reading now, so it is compared on the same
+ * matrix (its main cells are computed here, not read from the main file).
+ */
+const LATE: Record<string, { main: Reader; now: Reader }> = {
+  'PORT web/server/main': {
+    main: num('PORT', () => Number(process.env.PORT || 3000)),
+    now: reg('PORT'),
+  },
+};
+
 /** Profile booleans: key -> the reading now, through the one table. The
  *  feature registry's reading of the same key must agree (checked below). */
 const PROFILE_READERS: Record<string, (v: unknown) => boolean> = Object.fromEntries(
@@ -302,7 +314,9 @@ function readJson<T>(file: string, fallback: T): T {
 }
 
 describe('flags and env: record, move, compare (A10 #11)', () => {
-  const now = { ...measure(READERS), ...measureProfile(PROFILE_READERS) };
+  const late = (side: 'main' | 'now') =>
+    measure(Object.fromEntries(Object.entries(LATE).map(([id, r]) => [id, r[side]])));
+  const now = { ...measure(READERS), ...measureProfile(PROFILE_READERS), ...late('now') };
 
   if (RECORD === 'main' || RECORD === 'now') {
     it(`records ${RECORD}`, () => {
@@ -312,7 +326,7 @@ describe('flags and env: record, move, compare (A10 #11)', () => {
     return;
   }
 
-  const main = readJson<Record<string, Value>>(MAIN_FILE, {});
+  const main = { ...readJson<Record<string, Value>>(MAIN_FILE, {}), ...late('main') };
   const changes = readJson<Changes>(CHANGES_FILE, { cells: {} });
 
   it('reads every recorded cell, and only those', () => {

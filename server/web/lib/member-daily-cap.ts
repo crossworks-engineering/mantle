@@ -10,7 +10,7 @@
  * So a leaked credential or a runaway client never becomes a wallet drain.
  * Both are checked before a turn is queued (packages/content member-turn-ledger.ts).
  */
-import { env, envNum, envNumDefault } from '@mantle/config';
+import { envNum, envNumDefault } from '@mantle/config';
 
 export const MEMBER_DAILY_CAP = envNum('TEAM_CHAT_DAILY_TURNS');
 

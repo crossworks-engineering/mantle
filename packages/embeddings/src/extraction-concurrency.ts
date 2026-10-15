@@ -1,4 +1,4 @@
-import { env, envNum, envNumDefault, ENV_NUMBERS } from '@mantle/config';
+import { envNum, envNumDefault, ENV_NUMBERS } from '@mantle/config';
 
 /** How many extractions may run at once. One place for the numbers, so the
  *  extractor (server/api) and the settings API (server/web) agree. */

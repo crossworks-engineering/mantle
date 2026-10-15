@@ -86,7 +86,7 @@ export const FEATURES = {
     env: 'MANTLE_DETACHED_DEV',
     default: false,
     devOnly: true,
-    doc: 'DB-less detached dev: page navigations render without a session (never in production)',
+    doc: 'DB-less detached dev: page navigations render without a session',
   },
   crashTest: {
     env: 'MANTLE_CRASH_TEST',

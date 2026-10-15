@@ -58,7 +58,7 @@
 import JSZip from 'jszip';
 import { describeImageBytes, type EmbeddedImage } from './embedded-images';
 import type { ParsedSheet } from './sheet-to-grid';
-import { env, envNum } from '@mantle/config';
+import { envNum } from '@mantle/config';
 import { errorMessage } from '@mantle/std';
 
 /** True when the bytes carry the classic DWF magic (`(DWF Vnn.nn)`). */

@@ -6,8 +6,8 @@
  * (features.ts, numbers.ts). A hand parse elsewhere is a lint error
  * (eslint-rules/env-flags.mjs).
  *
- * Before: 41 number parses and 16 boolean parses in 6 dialects. `'0'`
- * turned one flag off and not its neighbour; `''` (what compose passes for
+ * Before: 57 number readers and 19 flag readers parsed by hand, the flags
+ * in seven dialects. `'0'` turned one flag off and not its neighbour; `''` (what compose passes for
  * an unset `${VAR:-}`) read as 0 in some number parses and as the default in
  * others; garbage read as NaN, as the default, or as "on".
  *

@@ -33,7 +33,7 @@ import { createHash } from 'node:crypto';
 import { describeImageBytes, type EmbeddedImage } from './embedded-images';
 import { mediaDwgRender, mediaSidecarEnabled, type DwgRender } from './media-sidecar';
 import type { ParsedSheet } from './sheet-to-grid';
-import { env, envNum } from '@mantle/config';
+import { envNum } from '@mantle/config';
 
 /** True when the bytes open with a DWG version magic (`AC1012`…`AC1032`). */
 export function sniffDwg(bytes: Buffer): boolean {

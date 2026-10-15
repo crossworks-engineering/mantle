@@ -81,7 +81,7 @@ import {
 import { extractNode } from './extractor.js';
 import { probeExtractionModel } from './extract/model.js';
 import { ProviderCircuit } from './provider-circuit.js';
-import { env, envNum } from '@mantle/config';
+import { envNum } from '@mantle/config';
 import { assertNoViewer } from '@mantle/db/viewer';
 
 const EXTRACT_QUEUE = 'mantle.extract';

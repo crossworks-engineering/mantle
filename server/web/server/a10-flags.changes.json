@@ -455,6 +455,14 @@
     "BENCH_RETRIEVE_ONLY api/bench/run | =\"TRUE\"": {
       "now": true,
       "why": "The memory benchmark harness (server/api/src/bench/run.ts) reads its switches and numbers in the one dialect: every on word (it took only '1'), and blank or garbage means the default (it read NaN or 0). Set on its own command line; no box."
+    },
+    "PORT web/server/main | =\"16abc\"": {
+      "now": 3000,
+      "why": "Not a number means the default (3000) now; Number() read it as NaN and the server could not listen. Compose sets PORT, so no box; a dev process with a typo in PORT."
+    },
+    "PORT web/server/main | =\"garbage\"": {
+      "now": 3000,
+      "why": "Not a number means the default (3000) now; Number() read it as NaN and the server could not listen. Compose sets PORT, so no box; a dev process with a typo in PORT."
     }
   }
 }

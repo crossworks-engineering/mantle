@@ -73,6 +73,16 @@ const LABELS: Record<string, string> = {
   http_retryAfterRead_allowed: 'Retry-After header reads named (std) (A10 #10)',
   http_backoffLoop: 'sleeping retry loops outside the named list (A10 #10)',
   http_backoffLoop_allowed: 'sleeping retry loops named (std, database retries) (A10 #10)',
+  env_rawRead: 'raw process.env reads outside the named list (A10 #11)',
+  env_rawRead_allowed:
+    'raw process.env reads named (config, boot, published, standalone) (A10 #11)',
+  env_handParse: 'hand parses of an env value outside the named list (A10 #11)',
+  env_handParse_allowed: 'hand parses of an env value named (sandboxd, repo CLIs) (A10 #11)',
+  env_isEnabledDef: 'isXEnabled definitions outside the named list (A10 #11)',
+  env_isEnabledDef_allowed:
+    'isXEnabled definitions named (published contracts, owner lookup) (A10 #11)',
+  env_prefDefault: 'profile booleans compared with their default by hand (A10 #11)',
+  env_prefDefault_allowed: 'profile boolean default checks named (A10 #11)',
 };
 
 /** Numbers that may go up without failing: the route counts grow with

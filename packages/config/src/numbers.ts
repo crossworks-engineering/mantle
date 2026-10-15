@@ -149,6 +149,7 @@ export const ENV_NUMBERS = {
   },
 
   // HTTP
+  PORT: { default: 3000, doc: 'the port server/web listens on (compose sets it)' },
   MANTLE_RATE_LIMIT_SCALE: { default: 1, atLeast: 1, doc: 'multiplies every rate limit' },
   MANTLE_TRUSTED_PROXIES: {
     default: 1,
@@ -202,13 +203,13 @@ export const ENV_NUMBERS = {
     default: 32 * 1024,
     positive: true,
     int: 'floor',
-    doc: 'a tool result up to this many bytes goes to the model inline',
+    doc: 'a tool result up to this many bytes goes to the model inline (per agent overridable)',
   },
   TOOL_RESULT_EMBED_MIN: {
     default: 100 * 1024,
     positive: true,
     int: 'floor',
-    doc: 'a spilled result from this many bytes is embedded for semantic reads',
+    doc: 'from this many bytes a stored result is read back by semantic query',
   },
   TOOL_RESULT_PAGE_BYTES: {
     default: 16 * 1024,
@@ -220,19 +221,19 @@ export const ENV_NUMBERS = {
     default: 1024 * 1024,
     positive: true,
     int: 'floor',
-    doc: 'largest spilled result kept, bytes',
+    doc: 'a stored result is cut at this many bytes',
   },
   TOOL_RESULT_MAX_CHUNKS: {
     default: 200,
     positive: true,
     int: 'floor',
-    doc: 'chunks embedded per spilled result',
+    doc: 'chunks embedded per stored result',
   },
   TOOL_RESULT_TTL_DAYS: {
     default: 7,
     positive: true,
     int: 'floor',
-    doc: 'days a spilled result is kept',
+    doc: 'days a stored result is kept',
   },
 
   // Media

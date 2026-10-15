@@ -10,7 +10,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadEnvFiles } from './env';
-import { assertEnvShape } from '@mantle/config';
+import { assertEnvShape, env, envNum } from '@mantle/config';
 
 const webRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
 loadEnvFiles(webRoot);
@@ -123,8 +123,8 @@ void runAsSystem('boot:app-table-exports', () =>
 );
 
 const app = await createApp();
-const port = Number(process.env.PORT || 3000);
-const hostname = process.env.HOST || '0.0.0.0';
+const port = envNum('PORT');
+const hostname = env('HOST') || '0.0.0.0';
 
 // overrideGlobalObjects: false is a SECURITY setting, not a tuning knob. By
 // default @hono/node-server swaps `global.Response` for its own class when

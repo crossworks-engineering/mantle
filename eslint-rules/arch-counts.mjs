@@ -29,7 +29,10 @@
  *    retry loops, outside and inside the named lists (provider-http.mjs);
  *  - the app brokers (A10 #9): hand calls of the export sync outside the
  *    one write path and the named files, and the files holding app tool
- *    broker logic outside the one broker (app-broker.mjs).
+ *    broker logic outside the one broker (app-broker.mjs);
+ *  - flags and env (A10 #11): raw process.env reads, hand parses of an env
+ *    value, isXEnabled definitions and hand profile boolean defaults,
+ *    outside and inside the named lists (env-flags.mjs).
  *
  * Comment lines never count. Product files only: packages/, server/,
  * scripts/; no tests, migrations, archive or build folders (a route segment
@@ -48,6 +51,7 @@ import {
   rateLimitCalls,
 } from './route-plumbing.mjs';
 import { PROVIDER_HTTP_PATTERNS } from './provider-http.mjs';
+import { ENV_PATTERNS, allowedBy } from './env-flags.mjs';
 import {
   EXPORT_SYNC_ALLOW,
   EXPORT_SYNC_HOME,
@@ -724,6 +728,9 @@ export function measure(root) {
   const providerHttp = Object.fromEntries(
     Object.keys(PROVIDER_HTTP_PATTERNS).map((k) => [k, { outside: {}, allowed: {} }]),
   );
+  const envFlags = Object.fromEntries(
+    Object.keys(ENV_PATTERNS).map((k) => [k, { outside: {}, allowed: {} }]),
+  );
   for (const f of files) {
     const text = readRepoFile(root, f);
     if (text === null) continue;
@@ -806,6 +813,10 @@ export function measure(root) {
       const n = count(plain);
       if (n) providerHttp[k][Object.hasOwn(allowed, f) ? 'allowed' : 'outside'][f] = n;
     }
+    for (const [k, { count, allowed }] of Object.entries(ENV_PATTERNS)) {
+      const n = count(plain);
+      if (n) envFlags[k][allowedBy(allowed, f) ? 'allowed' : 'outside'][f] = n;
+    }
   }
   const sum = (o, k) => Object.values(o).reduce((a, v) => a + (k ? v[k] : v), 0);
   const reasons = new Set(Object.values(asSystem).flatMap((v) => v.reasons));
@@ -853,6 +864,12 @@ export function measure(root) {
           [`http_${k}_allowed`, sum(v.allowed)],
         ]),
       ),
+      ...Object.fromEntries(
+        Object.entries(envFlags).flatMap(([k, v]) => [
+          [`env_${k}`, sum(v.outside)],
+          [`env_${k}_allowed`, sum(v.allowed)],
+        ]),
+      ),
       ...Object.fromEntries(Object.entries(stores).map(([k, v]) => [`store_${k}_files`, v.length])),
     },
     perFile: {
@@ -878,6 +895,7 @@ export function measure(root) {
       exportSyncAllowed,
       brokerLogic,
       providerHttp,
+      envFlags,
     },
   };
 }

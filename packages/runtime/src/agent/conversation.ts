@@ -110,7 +110,7 @@ import {
   journalTiersForTurn,
   passageKey,
 } from './conversation/journal-tiers';
-import { env, feature, envNum } from '@mantle/config';
+import { feature, envNum } from '@mantle/config';
 
 export type { SnapshotItem, ContextSnapshot };
 

@@ -28,6 +28,7 @@ import mantleRoutePlumbingPlugin from './eslint-rules/route-plumbing.mjs';
 import mantleKindsPlugin from './eslint-rules/no-hand-kind-lists.mjs';
 import mantleAppBrokerPlugin from './eslint-rules/app-broker.mjs';
 import mantleProviderHttpPlugin from './eslint-rules/provider-http.mjs';
+import mantleEnvFlagsPlugin from './eslint-rules/env-flags.mjs';
 import mantleRolesPlugin from './eslint-rules/no-hand-role-lists.mjs';
 
 export default tseslint.config(
@@ -288,6 +289,25 @@ export default tseslint.config(
       'mantle-http/withTimeoutCopy': 'error',
       'mantle-http/retryAfterRead': 'error',
       'mantle-http/backoffLoop': 'error',
+    },
+  },
+  {
+    // Flags and env from one place (A10 #11, docs/configuration.md "Flags
+    // and env"): no raw process.env read, no hand parse of an env value, no
+    // isXEnabled definition, no hand profile boolean default. Read through
+    // @mantle/config (env, envNum, feature) and profileFlag. The files that
+    // keep a pattern are named in the rule file, each with its reason.
+    files: [
+      'packages/**/*.{ts,tsx,mts,mjs,js}',
+      'server/{web,api,mcp,sandboxd}/**/*.{ts,tsx,mts,mjs,js}',
+    ],
+    ignores: ['**/*.test.{ts,tsx}', '**/*.spec.{ts,tsx}'],
+    plugins: { 'mantle-env': mantleEnvFlagsPlugin },
+    rules: {
+      'mantle-env/rawRead': 'error',
+      'mantle-env/handParse': 'error',
+      'mantle-env/isEnabledDef': 'error',
+      'mantle-env/prefDefault': 'error',
     },
   },
   {

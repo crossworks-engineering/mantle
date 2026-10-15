@@ -4,7 +4,7 @@ import { withHnswPool } from './hnsw';
 import { distanceOrder, hnswFirst, smallScope } from './scope';
 import { grantUnionFilter, pgArrayLiteral } from './pg';
 import { keywordSql, resolveKeywordQuery } from './keyword-query';
-import { env, envNum } from '@mantle/config';
+import { envNum } from '@mantle/config';
 
 export { withHnswPool } from './hnsw';
 export {
