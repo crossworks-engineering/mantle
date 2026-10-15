@@ -4861,11 +4861,10 @@ each.
   writeVerdict's targets, exported Tables, folders, assistants and tool
   groups). Each answers over every row of the brain as the system pool did
   (a guard held to the scope would hold back less); internal
-  `mantle_client_ws` and `mantle_client_sourced_brain`. The marks are
+  `mantle_client_ws`. The marks are
   granted to the workspace role too: they only ever hold more back, and a
-  turn that answers no login runs on it. Named stricter changes: another
-  brain's ids or conversation asked in a scope are refused, and taken as
-  marked (fail closed).
+  turn that answers no login runs on it. No extra scope rule (a guard
+  refused in a scope would hold back less): every cell as main.
 - heartbeat-context 2 -> 0 (this round): `mantle_turn_heartbeats`, a
   turn's own open heartbeats, in a scope only the scope's login's
   (`mantle_login_id`: the system pool with a request's write scope noted

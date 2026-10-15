@@ -192,12 +192,13 @@ const DEFINERS_THE_WRITE_ROLE_RUNS: Readonly<Record<string, string>> = {
   'mantle_tg_replay(uuid,uuid,timestamp with time zone,timestamp with time zone,integer)':
     'the scope’s own login’s Telegram history in a window',
   'mantle_client_sourced_any(uuid,uuid[])':
-    'whether any id names client-sourced text: yes or no, the brain’s only',
+    'whether any id names client-sourced text: yes or no, as the system pool answered it',
   'mantle_client_sourced_among(uuid,uuid[])':
-    'which ids are client-sourced items, the brain’s only',
-  'mantle_conversation_taint(uuid,text,integer)': 'a conversation’s mark reason, the brain’s only',
+    'which ids are client-sourced items, as the system pool answered it',
+  'mantle_conversation_taint(uuid,text,integer)':
+    'a conversation’s mark reason, as the system pool answered it',
   'mantle_conversation_taint_keep(uuid,text,text)':
-    'a conversation’s mark kept (only ever holds more back), the brain’s only',
+    'a conversation’s mark kept (only ever holds more back)',
   'mantle_mark_created_client_sourced(uuid,uuid[],integer,text)':
     'the nodes a marked turn just made, marked (only ever holds more back)',
   'mantle_mark_export_client_sourced(uuid,uuid,uuid)':

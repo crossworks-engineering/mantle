@@ -42,8 +42,8 @@ import { db } from '@mantle/db';
  * _keep, mantle_mark_created_client_sourced; A6b: on the system pool before,
  * 'client-sourced-check'). Each answers as the system pool did, over every
  * row of the brain whatever the scope reads (the rule is in the query; a
- * guard held to the scope would mark less), and refuses another brain in a
- * scope, which every caller below takes as marked.
+ * guard held to the scope would mark less), for the owner it is asked
+ * about, with no extra scope rule.
  */
 const uuidArray = (ids: readonly string[]) => `{${ids.join(',')}}`;
 

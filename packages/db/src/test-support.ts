@@ -137,6 +137,36 @@ export async function setLoginRoleUnguarded(
   await sql`update auth.users set role = ${role} where id = ${loginId}`;
 }
 
+/** The read definers 0293 grants the demo's reader (its DO block). */
+const DEMO_READER_DEFINERS_0293 = [
+  'public.mantle_kind_root_id(uuid, text)',
+  'public.mantle_agent_experience(uuid, uuid[])',
+  'public.mantle_read_cursors(uuid, uuid)',
+  'public.mantle_access_keys_seen(uuid, integer)',
+  'public.mantle_pending_count(uuid)',
+  'public.mantle_ws_private_for(uuid, uuid)',
+  'public.mantle_connector_state(uuid, text)',
+  'public.mantle_connector_rows(uuid, text, uuid[])',
+  'public.mantle_connector_beyond_admin(uuid, text)',
+  'public.mantle_app_holders(uuid, uuid)',
+  'public.mantle_login_connector_rows(uuid, uuid)',
+  'public.mantle_contact_sharing(uuid, uuid[])',
+  'public.mantle_file_name_taken(uuid, text, text)',
+  'public.mantle_table_app_link(uuid)',
+  'public.mantle_access_log_names(uuid, uuid[])',
+  'public.mantle_runs_workspaces(uuid[], uuid[])',
+  'public.mantle_lexeme_df(text, text, integer, integer, float8)',
+  'public.mantle_deleted_apps(uuid)',
+  'public.mantle_tg_my_chats(uuid, uuid)',
+  'public.mantle_tg_moderated_chats(uuid, uuid)',
+  'public.mantle_tg_replay(uuid, uuid, timestamptz, timestamptz, integer)',
+  'public.mantle_client_sourced_among(uuid, uuid[])',
+  'public.mantle_client_sourced_any(uuid, uuid[])',
+  'public.mantle_conversation_taint(uuid, text, integer)',
+  'public.mantle_client_sourced_gate(uuid, uuid[], uuid[], text[], text[], text[], text[])',
+  'public.mantle_turn_heartbeats(uuid, uuid)',
+];
+
 /**
  * A LOGIN role that reads everything and writes nothing, as the public demo's
  * reader does: SELECT on every table of the app's schemas, BYPASSRLS, and no
@@ -148,6 +178,7 @@ export async function setLoginRoleUnguarded(
  * the runtime role). Grants touch the catalog rows other test files grant
  * on at the same time, hence the retries.
  */
+
 export async function createReadOnlyRole(
   _sql: Sql,
   adminUrl: string,
@@ -180,6 +211,14 @@ export async function createReadOnlyRole(
         `grant execute on function "public"."mantle_brain_team_ws"(), "public"."mantle_brain_id"(), "public"."mantle_ws_kind"(uuid), "public"."mantle_ws_any_shared"(uuid[]), "public"."mantle_ws_any_holder"(uuid[]) to "${name}"`,
       ),
     );
+    // And the reads A6b moved into the scope by their definers (0293): each
+    // that exists here (a database migrated part way lacks the newer ones).
+    for (const fn of DEMO_READER_DEFINERS_0293) {
+      const [found] = await sql<{ ok: boolean }[]>`select to_regprocedure(${fn}) is not null as ok`;
+      if (found?.ok) {
+        await withRoleRetry(() => sql.unsafe(`grant execute on function ${fn} to "${name}"`));
+      }
+    }
   } finally {
     await sql.end();
   }

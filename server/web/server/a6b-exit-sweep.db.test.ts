@@ -220,38 +220,6 @@ const NAMED_CHANGES: Record<
       },
     },
   ],
-  'client-sourced': [
-    {
-      cells: /^namesClientSourced other brain (read|write|turn):/,
-      reason:
-        "the check asked in a scope for ANOTHER brain's ids is refused: its definer " +
-        "(mantle_client_sourced_any) answers only the scope's own brain. Every caller passes its " +
-        'own brain, and a refusal marks the turn (taintFromText fails closed). It answered for ' +
-        'any brain on the system pool before. Stricter, never looser.',
-      was: /=> \{"ok":true\}$/,
-      back: (now) =>
-        now.startsWith(
-          '{"refused":{"name":"Error","status":null,"code":null,"message":"Failed query: select \\"public\\".\\"mantle_client_sourced_any\\"',
-        )
-          ? '{"ok":true}'
-          : now,
-    },
-    {
-      cells: /^loadConversationTaint other brain (read|write|turn):/,
-      reason:
-        "another brain's conversation mark asked in a scope is refused by its definer " +
-        "(mantle_conversation_taint: the scope's own brain only), and a failed read marks the " +
-        'turn (fail closed). It read any brain on the system pool before. Stricter, never looser.',
-      now: JSON.stringify({
-        ok: {
-          clientSourced: true,
-          conversation: { ownerId: 'brain:other', key: 'a6b:marked' },
-          via: 'the conversation check failed',
-          carried: true,
-        },
-      }),
-    },
-  ],
 };
 
 type Json = Record<string, any>;
