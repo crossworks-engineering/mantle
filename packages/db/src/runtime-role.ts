@@ -439,17 +439,16 @@ export async function applyRuntimeGrants(sql: Sql): Promise<void> {
       }
       // pg-boss's own schema (it stays the migrator's: pg-boss makes
       // partitions at run time): read only, for the queue counts the app
-      // shows (provider-alerts.ts, the integrity page). Made by pgboss:init
-      // after the first migrate, so a fresh box gets this at its next one.
-      const [boss] = await tx<{ ok: boolean }[]>`
-        select exists (select 1 from pg_namespace where nspname = 'pgboss') as ok`;
-      if (boss?.ok) {
-        await tx.unsafe(`GRANT USAGE ON SCHEMA pgboss TO ${rt}`);
-        await tx.unsafe(`GRANT SELECT ON ALL TABLES IN SCHEMA pgboss TO ${rt}`);
-        await tx.unsafe(
-          `ALTER DEFAULT PRIVILEGES FOR ROLE "${db!.me}" IN SCHEMA pgboss GRANT SELECT ON TABLES TO ${rt}`,
-        );
-      }
+      // shows (provider-alerts.ts, ocr-rescan.ts, the integrity page). Made
+      // here when missing (pg-boss installs into it: CREATE SCHEMA IF NOT
+      // EXISTS, then its version table), so the default privileges cover the
+      // tables pgboss:init makes after this migrate on a fresh box.
+      await tx.unsafe(`CREATE SCHEMA IF NOT EXISTS pgboss`);
+      await tx.unsafe(`GRANT USAGE ON SCHEMA pgboss TO ${rt}`);
+      await tx.unsafe(`GRANT SELECT ON ALL TABLES IN SCHEMA pgboss TO ${rt}`);
+      await tx.unsafe(
+        `ALTER DEFAULT PRIVILEGES FOR ROLE "${db!.me}" IN SCHEMA pgboss GRANT SELECT ON TABLES TO ${rt}`,
+      );
       // Objects a later migration makes (as this role, or as mantle_owner)
       // are the runtime role's at once; the next run applies the denials.
       await tx.unsafe(

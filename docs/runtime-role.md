@@ -42,9 +42,9 @@ Code: `packages/db/src/runtime-role.ts` (the roles, the rights, the URL),
   that it is the switch the app runs at boot anyway, with no statement of the
   caller's in it;
 - `USAGE` on schema `pgboss` and `SELECT` on its tables, read only: the
-  extract backlog and the integrity page count its jobs. pgboss:init makes
-  the schema after the first migrate, so a fresh box gets these at its next
-  migrate (until then those counts read as unknown);
+  extract backlog, the OCR rescan and the integrity page count its jobs.
+  migrate makes the schema when it is missing (pg-boss installs into it), so
+  the default privileges cover the tables pgboss:init makes right after;
 - membership in `mantle_system` (inherit and set), and nothing else: a hand
   grant is taken back at the next migrate.
 
