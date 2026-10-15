@@ -46,6 +46,7 @@ import type { ToolHandlerContext } from './types';
 export type OriginRun = Readonly<{
   scope: WorkspaceScope | null;
   enter: 'turn' | 'gate' | null;
+  /** The scope is entered in write mode (a login's: see originRunFor). */
   writes: boolean;
   /** The Admin view the call may not exceed (the stamp's). */
   adminCap: Readonly<{ holds: boolean; areas: readonly string[] }> | null;
@@ -168,7 +169,13 @@ export async function originRunFor(
       modWs,
     }),
     enter: origin.enter,
-    writes: origin.writes,
+    // An approved call of a login is that login's write request in the
+    // asked scope: it writes as a login's mutating request does there (the
+    // login write gateway, the scope on its transactions, the database's
+    // checks against it), whatever the turn's own mode (a workspace turn
+    // other than Admin's writes none itself). A turn that answered no login
+    // keeps its own mode.
+    writes: origin.writes || stamped.loginId !== null,
     adminCap: origin.admin
       ? Object.freeze({ holds: origin.admin.holds, areas: Object.freeze([...origin.admin.areas]) })
       : null,
