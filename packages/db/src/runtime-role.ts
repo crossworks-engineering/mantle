@@ -64,6 +64,12 @@ export const ACL_MARKER_FUNCTION = 'public.mantle_acl_internal()';
  * app's. A missing one (a database before its migration) is skipped.
  * runtime-role.db.test.ts also proves no SECURITY DEFINER function the
  * runtime role may run has DDL in its body.
+ *
+ * mantle_ws_migrate() stays open: on a brain already on workspaces it does
+ * nothing, and before that it is the switch the app runs at boot anyway
+ * (with no statement of the caller's in it). The app itself runs the switch
+ * as the migrator (mantle_ws_migrate_locked, executeAsMigrator), which
+ * holds its locks and time budget.
  */
 export const RUNTIME_DENIED_FUNCTIONS: Readonly<Record<string, string>> = {
   'public.mantle_set_check(text,text,integer)': 'sets a check mode (ALTER DATABASE)',
@@ -81,7 +87,6 @@ export const RUNTIME_DENIED_FUNCTIONS: Readonly<Record<string, string>> = {
   'public.mantle_write_role_sync_table(text,boolean,text[])': 'row rules and triggers (DDL)',
   'public.mantle_ws_ddl_retry(text[],text)': 'runs DDL (the workspaces switch)',
   'public.mantle_ws_switch_off()': 'drops the bridge triggers (DDL)',
-  'public.mantle_ws_migrate()': 'the workspaces switch, as its definer',
   'public.mantle_ws_migrate_locked()': 'the workspaces switch (executeAsMigrator)',
 };
 

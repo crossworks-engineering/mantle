@@ -28,7 +28,9 @@ describe.skipIf(!URL)('mantle_brain_id() after the audit fixes', () => {
     m = await import('./index');
     sqlTag = (await import('drizzle-orm')).sql;
     const { ensureTestAnchor } = await import('./test-support');
-    admin = (m.systemDb as unknown as { $client: Admin }).$client;
+    // The superuser, not the app's pool: the fixture makes a role (the
+    // pool may log in as the runtime role, arch A9).
+    admin = (await import('postgres')).default(URL!, { max: 1, onnotice: () => {} });
     await m.ensureViewerRoles(admin, process.env.MANTLE_MASTER_KEY);
     anchor = await ensureTestAnchor(admin);
     await admin.unsafe(`create role "${probeRole}" nologin`);
@@ -37,6 +39,7 @@ describe.skipIf(!URL)('mantle_brain_id() after the audit fixes', () => {
   afterAll(async () => {
     if (!admin) return;
     await admin.unsafe(`drop role if exists "${probeRole}"`);
+    await admin.end();
     await m?.closeDb();
   });
 

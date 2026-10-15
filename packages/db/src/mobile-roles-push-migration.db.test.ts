@@ -62,8 +62,12 @@ describe.skipIf(!URL)('migration mobile_roles_push: dedupe and token backfill', 
 
   beforeAll(async () => {
     process.env.DATABASE_URL = URL;
-    const m = await import('./index');
-    admin = (m.systemDb as unknown as { $client: Sql }).$client;
+    // The superuser, as migrate runs the statements under test (DDL): the
+    // app's pool may log in as the runtime role (arch A9).
+    admin = (await import('postgres')).default(URL!, {
+      max: 1,
+      onnotice: () => {},
+    }) as unknown as Sql;
     await admin`insert into auth.users (id, email, password_hash, role) values
       (${anchor}, ${`anchor-${tag}@example.invalid`}, 'x', 'admin'),
       (${one}, ${`one-${tag}@example.invalid`}, 'x', 'admin'),
@@ -86,6 +90,7 @@ describe.skipIf(!URL)('migration mobile_roles_push: dedupe and token backfill', 
     await admin`delete from push_subscriptions where login_id = any(${all}::uuid[])`;
     await admin`delete from mobile_tokens where user_id = any(${all}::uuid[])`;
     await admin`delete from auth.users where id = any(${all}::uuid[])`;
+    await (admin as unknown as { end: () => Promise<void> }).end();
   });
 
   it('keeps the newest row of each routing token, then makes the unique index', async () => {

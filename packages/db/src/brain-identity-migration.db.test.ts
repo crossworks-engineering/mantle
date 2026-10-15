@@ -8,7 +8,7 @@
  */
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -31,11 +31,17 @@ class Rollback extends Error {}
 describe.skipIf(!URL)('migration brain_identity', () => {
   let admin: Sql;
 
+  let end: () => Promise<void> = async () => {};
+
   beforeAll(async () => {
-    process.env.DATABASE_URL = URL;
-    const m = await import('./index');
-    admin = (m.systemDb as unknown as { $client: Sql }).$client;
+    // The superuser, as migrate runs the migration under test (CREATE
+    // TABLE): the app's pool may log in as the runtime role (arch A9).
+    const sql = (await import('postgres')).default(URL!, { max: 1, onnotice: () => {} });
+    admin = sql as unknown as Sql;
+    end = () => sql.end();
   }, 60_000);
+
+  afterAll(() => end());
 
   it('made exactly one row holding a random uuid', async () => {
     const rows = await admin`select singleton, brain_id::text as id from brain_identity`;

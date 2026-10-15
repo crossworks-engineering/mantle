@@ -56,7 +56,14 @@ import {
 } from './viewer-roles';
 import { viewerRoleName } from './viewer';
 import { afterMigrations, type StepLog } from './migrator-steps';
-import { ensureRuntimeRoles, OWNER_ROLE, RUNTIME_ROLE, SYSTEM_ROLE } from './runtime-role';
+import {
+  applyRuntimeGrants,
+  ensureRuntimeRoles,
+  ownTables,
+  OWNER_ROLE,
+  RUNTIME_ROLE,
+  SYSTEM_ROLE,
+} from './runtime-role';
 
 type Sql = postgres.Sql;
 
@@ -133,51 +140,108 @@ export async function setLoginRoleUnguarded(
  * INSERT, UPDATE or DELETE anywhere. Returns its name and the database URL
  * that logs in as it; `dropReadOnlyRole` removes it.
  *
- * `sql` must be a superuser connection to the database `adminUrl` names
- * (BYPASSRLS is a superuser's to give). Grants touch the catalog rows other
- * test files grant on at the same time, hence the retries.
+ * `adminUrl` must name a superuser (BYPASSRLS is a superuser's to give);
+ * the first argument is unused (it was the caller's client, which may now be
+ * the runtime role). Grants touch the catalog rows other test files grant
+ * on at the same time, hence the retries.
  */
 export async function createReadOnlyRole(
-  sql: Sql,
+  _sql: Sql,
   adminUrl: string,
 ): Promise<{ name: string; url: string }> {
+  // The superuser of `adminUrl`, on a connection of its own: the caller's
+  // client may be the app's pool, which logs in as the runtime role under
+  // MANTLE_DB_RUNTIME_ROLE (arch A9) and may not make roles.
+  const sql = postgres(adminUrl, { max: 1, onnotice: () => {} });
   const name = `mantle_test_reader_${randomUUID().replace(/-/g, '').slice(0, 12)}`;
   const password = randomUUID().replace(/-/g, '');
-  await sql.unsafe(
-    `create role "${name}" with login bypassrls nosuperuser nocreatedb nocreaterole noinherit password '${password}'`,
-  );
-  const schemas = await sql<{ nspname: string }[]>`
-    select nspname from pg_namespace
-     where nspname !~ '^pg_' and nspname <> 'information_schema'`;
-  for (const { nspname } of schemas) {
-    await withRoleRetry(() => sql.unsafe(`grant usage on schema "${nspname}" to "${name}"`));
-    await withRoleRetry(() =>
-      sql.unsafe(`grant select on all tables in schema "${nspname}" to "${name}"`),
+  try {
+    await sql.unsafe(
+      `create role "${name}" with login bypassrls nosuperuser nocreatedb nocreaterole noinherit password '${password}'`,
     );
+    const schemas = await sql<{ nspname: string }[]>`
+      select nspname from pg_namespace
+       where nspname !~ '^pg_' and nspname <> 'information_schema'`;
+    for (const { nspname } of schemas) {
+      await withRoleRetry(() => sql.unsafe(`grant usage on schema "${nspname}" to "${name}"`));
+      await withRoleRetry(() =>
+        sql.unsafe(`grant select on all tables in schema "${nspname}" to "${name}"`),
+      );
+    }
+    // What the demo's reader is granted besides SELECT (0256): the owner's
+    // app sidebar asks for the Team workspace; the chips ask each workspace's
+    // kind (0285); the grant reads ask whether a workspace is shared, and the
+    // app sidebar whether one holds an app (0286).
+    await withRoleRetry(() =>
+      sql.unsafe(
+        `grant execute on function "public"."mantle_brain_team_ws"(), "public"."mantle_brain_id"(), "public"."mantle_ws_kind"(uuid), "public"."mantle_ws_any_shared"(uuid[]), "public"."mantle_ws_any_holder"(uuid[]) to "${name}"`,
+      ),
+    );
+  } finally {
+    await sql.end();
   }
-  // What the demo's reader is granted besides SELECT (0256): the owner's
-  // app sidebar asks for the Team workspace; the chips ask each workspace's
-  // kind (0285); the grant reads ask whether a workspace is shared, and the
-  // app sidebar whether one holds an app (0286).
-  await withRoleRetry(() =>
-    sql.unsafe(
-      `grant execute on function "public"."mantle_brain_team_ws"(), "public"."mantle_brain_id"(), "public"."mantle_ws_kind"(uuid), "public"."mantle_ws_any_shared"(uuid[]), "public"."mantle_ws_any_holder"(uuid[]) to "${name}"`,
-    ),
-  );
+  readerAdminUrls.set(name, adminUrl);
+  // From here the caller points DATABASE_URL at the reader: its pools must
+  // log in as the reader, so the runtime role switch is off until the role
+  // is dropped (a reader box never runs it).
+  readerSwitch ??= { value: process.env.MANTLE_DB_RUNTIME_ROLE };
+  process.env.MANTLE_DB_RUNTIME_ROLE = '';
   const url = new URL(adminUrl);
   url.username = name;
   url.password = password;
   return { name, url: url.toString() };
 }
 
-/** Remove a role `createReadOnlyRole` made. Close every connection made with
+/** The superuser URL each reader was made on (dropReadOnlyRole). */
+const readerAdminUrls = new Map<string, string>();
+/** MANTLE_DB_RUNTIME_ROLE as it was before the first reader. */
+let readerSwitch: { value: string | undefined } | undefined;
+
+/** Remove a role `createReadOnlyRole` made, as the superuser that made it,
+ *  and put the runtime role switch back. Close every connection made with
  *  its URL first: a role that is logged in cannot be dropped. */
-export async function dropReadOnlyRole(sql: Sql, name: string): Promise<void> {
+export async function dropReadOnlyRole(_sql: Sql, name: string): Promise<void> {
   if (!/^mantle_test_reader_[0-9a-f]+$/.test(name)) {
     throw new Error('dropReadOnlyRole: not a test reader role');
   }
-  await withRoleRetry(() => sql.unsafe(`drop owned by "${name}"`));
-  await sql.unsafe(`drop role if exists "${name}"`);
+  const adminUrl = readerAdminUrls.get(name);
+  if (!adminUrl) throw new Error(`dropReadOnlyRole: ${name} was not made here`);
+  const sql = postgres(adminUrl, { max: 1, onnotice: () => {} });
+  try {
+    await withRoleRetry(() => sql.unsafe(`drop owned by "${name}"`));
+    await sql.unsafe(`drop role if exists "${name}"`);
+  } finally {
+    await sql.end();
+  }
+  readerAdminUrls.delete(name);
+  if (readerAdminUrls.size === 0 && readerSwitch) {
+    if (readerSwitch.value === undefined) delete process.env.MANTLE_DB_RUNTIME_ROLE;
+    else process.env.MANTLE_DB_RUNTIME_ROLE = readerSwitch.value;
+    readerSwitch = undefined;
+  }
+}
+
+/**
+ * Work only the migrator does (arch A9): a migration run again, a schema
+ * change, a role made or dropped, the heads check's named bypass. On its
+ * own connection as the superuser of `url`, in one transaction as
+ * system(migration), as migrate.ts runs one; never through the app's
+ * pools, which log in as the runtime role under MANTLE_DB_RUNTIME_ROLE.
+ */
+export async function asMigrator<T>(
+  url: string,
+  fn: (tx: postgres.TransactionSql) => Promise<T>,
+): Promise<T> {
+  const sql = postgres(url, { max: 1, prepare: false, onnotice: () => {} });
+  try {
+    return (await sql.begin(async (tx) => {
+      await tx`select set_config('mantle.actor', 'system:migration', true),
+                      set_config('mantle.write_mode', 'rw', true)`;
+      return fn(tx);
+    })) as T;
+  } finally {
+    await sql.end();
+  }
 }
 
 /** Poll `check` until it holds, or fail after `timeoutMs`. */
@@ -350,6 +414,11 @@ export async function createScratchDatabaseBefore(
   try {
     await prepareScratch(sql);
     await applyMigrations(sql, all.slice(0, at));
+    // The runtime role's rights on the tables of that older schema (arch
+    // A9), as a box at that migration has them: a test seeds the old world
+    // through the app's pool.
+    await ownTables(sql);
+    await applyRuntimeGrants(sql);
   } catch (err) {
     await sql.end();
     await drop();

@@ -60,6 +60,9 @@ describe.skipIf(!URL)('viewer pools on Postgres', () => {
         create policy viewer_probe_read on viewer_probe for select to mantle_view_user
           using (ws = any (coalesce(nullif(current_setting('mantle.ws', true), ''), '{}')::uuid[]));
         grant select on viewer_probe to mantle_view_user;
+        -- The system pool, when it logs in as the runtime role (arch A9).
+        grant usage on schema viewer_test to mantle_runtime;
+        grant select on viewer_probe to mantle_runtime;
       `);
     } finally {
       await admin.end();
@@ -69,8 +72,16 @@ describe.skipIf(!URL)('viewer pools on Postgres', () => {
   }, 60_000);
 
   afterAll(async () => {
-    await m.systemDb.execute(sqlTag`drop schema if exists viewer_test cascade`);
     await m.closeDb();
+    // As the superuser that made it: the system pool may be the runtime
+    // role (arch A9), which owns nothing.
+    const postgres = (await import('postgres')).default;
+    const admin = postgres(URL!, { max: 1, onnotice: () => {} });
+    try {
+      await admin.unsafe('drop schema if exists viewer_test cascade');
+    } finally {
+      await admin.end();
+    }
   });
 
   it('outside a viewer scope, db is the admin pool and sees every row', async () => {

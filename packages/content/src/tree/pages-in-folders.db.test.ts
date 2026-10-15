@@ -16,6 +16,7 @@ import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { asMigrator } from '@mantle/db/test-support';
 import { dashToLtree, folderSlugOf } from '@mantle/files';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
@@ -87,11 +88,9 @@ describe.skipIf(!URL)('migration 0210: pages in folders', () => {
   // Run again on a database past 0261, whose levels are frozen: in one
   // transaction under the migration's own named bypass, as the runner would.
   const run = async () => {
-    await m.systemDb.transaction(async (tx) => {
-      await tx.execute(sqlTag`select mantle_heads_bypass('0210_pages_in_folders')`);
-      for (const stmt of statementsOf('0210_pages_in_folders.sql')) {
-        await tx.execute(sqlTag.raw(stmt));
-      }
+    await asMigrator(URL!, async (tx) => {
+      await tx.unsafe(`select mantle_heads_bypass('0210_pages_in_folders')`);
+      for (const stmt of statementsOf('0210_pages_in_folders.sql')) await tx.unsafe(stmt);
     });
   };
   const pageOf = async (pageId: string) =>
