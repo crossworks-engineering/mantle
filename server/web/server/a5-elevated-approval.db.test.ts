@@ -14,8 +14,17 @@
  *   (d) another Admin user, not one            403    refused refused
  *
  * A refused approval leaves the call pending and runs nothing; one that
- * runs leaves one audit row naming its approver. Only the model's provider
- * and the connector's remote server are stood in.
+ * runs leaves one audit row naming its approver. The web path is the real
+ * app with its gate middleware and a session cookie (lows round: it called
+ * the route's handler before, past the middleware).
+ *
+ * The lows round adds the cells the A5 6d audit found untested: a call
+ * queued through the real tool loop (a member's Team turn) and its card
+ * routed to the owner's chat, never its asker's; reject on every path; a
+ * row with no workspace (judged in Admin); a row that names no asker (the
+ * owner's alone); two approvers racing (one runs); the stored result.
+ * Only the model's provider, the connector's remote server and Telegram's
+ * send are stood in.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run server/web/server/a5-elevated-approval.db.test.ts
  */
 import { randomUUID } from 'node:crypto';
@@ -28,15 +37,19 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
 const h = vi.hoisted(() => ({
-  session: null as unknown,
   /** The connector's remote calls (tool name, input). */
   remote: [] as Array<{ tool: string; input: Record<string, unknown> }>,
+  /** The approval cards sent (chat id, card). */
+  cards: [] as Array<{ chat: string; card: Record<string, unknown> }>,
 }));
 
-vi.mock('@/lib/auth', async (importOriginal) => ({
+// Telegram's send: the card a queued call pushes, recorded.
+vi.mock('@mantle/telegram', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
-  getOwnerOr401: vi.fn(async () => h.session),
-  ownerCaller: vi.fn(() => h.session),
+  accountById: vi.fn(async (id: string) => ({ id })),
+  sendApprovalCard: vi.fn(async (_a: unknown, chat: string, card: Record<string, unknown>) => {
+    h.cards.push({ chat, card });
+  }),
 }));
 // The connector's remote server.
 vi.mock('../../../packages/tools/src/mcp-client', async (importOriginal) => ({
@@ -59,12 +72,16 @@ describe.skipIf(!URL)('the approval of an elevated pending call (A5 step 6d fix 
   let m: typeof import('@mantle/db');
   let t: typeof import('@mantle/tools');
   let ls: typeof import('@mantle/mcp-core');
+  let app: import('hono').Hono;
+  let cookieOf: (id: string) => string;
   let dir = '';
   const tag = `a5ea${randomUUID().slice(0, 6)}`;
   const owner = randomUUID(); // the anchor
   const asker = randomUUID(); // an Admin user, in Team but no Moderator there
   const mod = randomUUID(); // an Admin user, a Moderator of Team
   const other = randomUUID(); // an Admin user, not in Team
+  const member = randomUUID(); // a member, in Team but no Moderator there
+  const teamAgent = randomUUID();
   const emailOf = (login: string) => `${tag}-${login.slice(0, 8)}@example.invalid`;
   const SLUG = 'mcp_crm_update';
   let adminWs = '';
@@ -73,12 +90,13 @@ describe.skipIf(!URL)('the approval of an elevated pending call (A5 step 6d fix 
   const x = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
     (await m.systemDb.execute(q)) as unknown as T[];
 
-  /** A connector write queued for `asker` in Team, elevated. */
-  const queue = async () =>
+  /** A connector write queued for `by` (default its asker) in `ws`
+   *  (default Team), elevated. */
+  const queue = async (by: string | null = asker, ws: string | null = teamWs) =>
     (
       await x<{ id: string }>(sql`insert into pending_tool_calls
           (owner_id, tool_slug, args, login_id, workspace_id, elevated)
-        values (${owner}, ${SLUG}, ${JSON.stringify({ id: 'c-1' })}::jsonb, ${asker}, ${teamWs},
+        values (${owner}, ${SLUG}, ${JSON.stringify({ id: 'c-1' })}::jsonb, ${by}, ${ws},
                 ${JSON.stringify({ elevated: true, reason: 'r' })}::jsonb)
         returning id::text`)
     )[0]!.id;
@@ -86,6 +104,25 @@ describe.skipIf(!URL)('the approval of an elevated pending call (A5 step 6d fix 
     (
       await x<{ s: string; error: string | null }>(
         sql`select status::text as s, error from pending_tool_calls where id = ${id}`,
+      )
+    )[0]!;
+  const rowOf = async (id: string) =>
+    (
+      await x<{
+        s: string;
+        error: string | null;
+        result: unknown;
+        decided: boolean;
+        executed: boolean;
+        login: string | null;
+        ws: string | null;
+        elevated: unknown;
+        origin: unknown;
+      }>(
+        sql`select status::text as s, error, result, decided_at is not null as decided,
+                   executed_at is not null as executed, login_id::text as login,
+                   workspace_id::text as ws, elevated, origin
+              from pending_tool_calls where id = ${id}`,
       )
     )[0]!;
   const auditRows = async () => {
@@ -96,35 +133,23 @@ describe.skipIf(!URL)('the approval of an elevated pending call (A5 step 6d fix 
     );
   };
 
-  /** The web: PATCH /api/pending/:id signed in as `login`. */
-  const web = async (login: string, id: string) => {
-    h.session = {
-      id: owner,
-      email: emailOf(login),
-      actor: { id: login, email: emailOf(login), displayName: null, isOwner: login === owner },
-    };
-    const route = await import('@/app/api/pending/[id]/route');
-    const { appAnswerOf } = await import('./app-error');
-    // As behind app.onError: a refusal of the rule is a domain error (403).
-    const res = await m.runAsActor(m.loginActor(login, login === owner ? 'owner' : 'rw'), () =>
-      appAnswerOf(
-        route.PATCH(
-          new Request('http://x/api/pending', {
-            method: 'PATCH',
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ decision: 'approve' }),
-          }),
-          { params: Promise.resolve({ id }) },
-        ),
-        'http://x/api/pending',
-        'PATCH',
-      ),
-    );
+  type Decision = 'approve' | 'reject';
+
+  /** The web: PATCH /api/pending/:id signed in as `login`, through the real
+   *  app and its gate middleware (a refusal of the rule is a domain error:
+   *  403 through app.onError). */
+  const web = async (login: string, id: string, decision: Decision = 'approve') => {
+    const res = await app.request(`/api/pending/${id}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json', cookie: cookieOf(login) },
+      body: JSON.stringify({ decision }),
+    });
     return { ran: res.status === 200, status: res.status, text: await res.text() };
   };
 
-  /** MCP: pending_approve on `login`'s own OAuth connection. */
-  const mcp = async (login: string, id: string) => {
+  /** MCP: pending_approve (or pending_reject) on `login`'s own OAuth
+   *  connection. */
+  const mcp = async (login: string, id: string, decision: Decision = 'approve') => {
     const { McpServer, InMemoryTransport } = await import('@modelcontextprotocol/server');
     const { Client } = await import('@modelcontextprotocol/client');
     const prepared = await ls.prepareCallerTools({
@@ -142,7 +167,7 @@ describe.skipIf(!URL)('the approval of an elevated pending call (A5 step 6d fix 
     await Promise.all([server.connect(a), c.connect(b)]);
     try {
       const r = (await m.runAsActor(m.loginActor(login, login === owner ? 'owner' : 'rw'), () =>
-        c.callTool({ name: 'pending_approve', arguments: { id } }),
+        c.callTool({ name: `pending_${decision}`, arguments: { id } }),
       )) as Reply;
       return { ran: !(r.isError ?? false), status: r.isError ? 'error' : 'ok', text: text(r) };
     } finally {
@@ -151,12 +176,12 @@ describe.skipIf(!URL)('the approval of an elevated pending call (A5 step 6d fix 
   };
 
   /** Telegram: a tap on the card, as the chat's login. */
-  const telegram = async (login: string, id: string) => {
+  const telegram = async (login: string, id: string, decision: Decision = 'approve') => {
     const { telegramApprovalHandlers } = await import('@/lib/telegram-approval');
     const r = await telegramApprovalHandlers.onApproval!({
       ownerId: owner,
       loginId: login,
-      decision: 'approve',
+      decision,
       pendingId: id,
     });
     return { ran: r.ok, status: r.ok ? 'ok' : 'refused', text: r.text };
@@ -173,6 +198,7 @@ describe.skipIf(!URL)('the approval of an elevated pending call (A5 step 6d fix 
     process.env.MANTLE_FILES_ROOT = path.join(dir, 'files');
     process.env.MANTLE_SPACES_ROOT = path.join(dir, 'spaces');
     process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
+    process.env.SESSION_SECRET = 'a5-elevated-approval-secret-at-least-32-chars';
     delete process.env.MANTLE_ADMIN_READS;
     delete process.env.MANTLE_DETACHED_DEV;
     m = await import('@mantle/db');
@@ -182,7 +208,8 @@ describe.skipIf(!URL)('the approval of an elevated pending call (A5 step 6d fix 
       (${owner}, ${emailOf(owner)}, 'x', true, 'admin', 'Owner'),
       (${asker}, ${emailOf(asker)}, 'x', false, 'admin', 'Asker'),
       (${mod}, ${emailOf(mod)}, 'x', false, 'admin', 'Mod'),
-      (${other}, ${emailOf(other)}, 'x', false, 'admin', 'Other')`);
+      (${other}, ${emailOf(other)}, 'x', false, 'admin', 'Other'),
+      (${member}, ${emailOf(member)}, 'x', false, 'member', 'Member')`);
     await x(sql`insert into spaces (id, kind, login_id) values (${owner}, 'brain', ${owner})
       on conflict (id) do nothing`);
     await (await import('@mantle/db/test-support')).runWorkspacesSwitch();
@@ -202,7 +229,19 @@ describe.skipIf(!URL)('the approval of an elevated pending call (A5 step 6d fix 
         on conflict (workspace_id, login_id) do update set moderator = false`);
     }
     await x(sql`insert into workspace_users (workspace_id, login_id, moderator) values
-      (${teamWs}, ${asker}, false), (${teamWs}, ${mod}, true)`);
+      (${teamWs}, ${asker}, false), (${teamWs}, ${mod}, true), (${teamWs}, ${member}, false)`);
+    // Team's assistant, whose turn queues the member's call.
+    await x(sql`insert into agents (id, owner_id, slug, name, model, system_prompt, role, workspace_id)
+      values (${teamAgent}, ${owner}, ${`${tag}-team`}, 'Team', 'fake/model', 'p', 'responder', ${teamWs})`);
+    // A bot with a chat paired to the owner and one to the asker.
+    const account = (
+      await x<{ id: string }>(sql`insert into telegram_accounts (user_id, bot_username, branch_path)
+        values (${owner}, ${`${tag}_bot`}, 'telegram') returning id::text`)
+    )[0]!.id;
+    await x(sql`insert into telegram_chats
+        (account_id, user_id, telegram_chat_id, chat_type, allowlist_status, login_id) values
+      (${account}, ${owner}, 'chat-owner', 'private', 'allowed', ${owner}),
+      (${account}, ${owner}, 'chat-asker', 'private', 'allowed', ${asker})`);
     // The connector, a resource of Team with its Write on, and its write
     // tool, which waits for approval.
     await x(sql`insert into tool_groups (owner_id, slug, name, tool_slugs, integration, enabled)
@@ -217,11 +256,18 @@ describe.skipIf(!URL)('the approval of an elevated pending call (A5 step 6d fix 
     await x(sql`insert into workspace_resources (workspace_id, type, ref_id, write)
       values (${teamWs}, 'connector', 'crm', true)`);
     await m.asSystem(() => t.seedBuiltinTools(owner), 'test');
+    const tokens = await import('../lib/auth/tokens');
+    cookieOf = (login) => `mantle_session=${tokens.buildSessionCookie(login).value}`;
+    const { createApp } = await import('./app');
+    app = await createApp();
     m.startCallAudit();
   }, 240_000);
 
   afterAll(async () => {
     m?.stopCallAudit();
+    const bridge = (globalThis as { __mantleRealtime?: { stop?: (() => Promise<void>) | null } })
+      .__mantleRealtime;
+    await bridge?.stop?.();
     await m?.closeDb();
     await scratch?.drop();
     if (dir) await rm(dir, { recursive: true, force: true });
@@ -229,6 +275,7 @@ describe.skipIf(!URL)('the approval of an elevated pending call (A5 step 6d fix 
 
   beforeEach(async () => {
     h.remote = [];
+    h.cards = [];
     await x(sql`delete from audit_log`);
   });
 
@@ -283,25 +330,135 @@ describe.skipIf(!URL)('the approval of an elevated pending call (A5 step 6d fix 
     });
   }
 
-  it('who may reject it (A5 step 6c, L3): whoever may approve it, and its asker; nobody else', async () => {
-    const { rejectPendingCall } = t;
-    const reject = (login: string, id: string) =>
+  for (const [name, decide] of Object.entries(PATHS)) {
+    it(`who may reject it on the ${name} path (A5 step 6c, 6d L3): whoever may approve it, and its asker; nobody else`, async () => {
+      // An Admin user with write rights on the connector there: rejected.
+      const byMod = await queue();
+      expect((await decide(mod, byMod, 'reject')).ran).toBe(true);
+      expect((await statusOf(byMod)).s).toBe('rejected');
+      // An Admin user without them: refused, still pending.
+      const byOther = await queue();
+      expect((await decide(other, byOther, 'reject')).ran).toBe(false);
+      expect((await statusOf(byOther)).s).toBe('pending');
+      // Its asker withdraws its own call; the owner rejects any.
+      const byAsker = await queue();
+      expect((await decide(asker, byAsker, 'reject')).ran).toBe(true);
+      expect((await statusOf(byAsker)).s).toBe('rejected');
+      expect((await decide(owner, byOther, 'reject')).ran).toBe(true);
+      expect((await statusOf(byOther)).s).toBe('rejected');
+      expect(h.remote).toEqual([]);
+    });
+  }
+
+  it('a row with no workspace is judged in Admin: a Moderator of Team may not approve it, the owner may', async () => {
+    // Admin holds the connector with its Write on, for this cell.
+    await x(sql`insert into workspace_resources (workspace_id, type, ref_id, write)
+      values (${adminWs}, 'connector', 'crm', true)`);
+    try {
+      const id = await queue(asker, null);
+      const r = await telegram(mod, id);
+      expect(r.ran, r.text).toBe(false);
+      expect(r.text).toContain(t.ELEVATED_APPROVER_ERROR.slice(0, 60));
+      expect((await statusOf(id)).s).toBe('pending');
+      const o = await telegram(owner, id);
+      expect(o.ran, o.text).toBe(true);
+      expect(await statusOf(id)).toEqual({ s: 'approved', error: null });
+      expect(h.remote).toHaveLength(1);
+    } finally {
+      await x(sql`delete from workspace_resources
+        where workspace_id = ${adminWs} and type = 'connector' and ref_id = 'crm'`);
+    }
+  });
+
+  it('a row that names no asker is the owner’s alone (6d L2), on every path', async () => {
+    for (const approve of Object.values(PATHS)) {
+      const id = await queue(null);
+      const r = await approve(mod, id);
+      expect(r.ran, r.text).toBe(false);
+      expect(r.text).toContain(t.ELEVATED_NO_ASKER_ERROR.slice(0, 40));
+      expect((await statusOf(id)).s).toBe('pending');
+      expect((await approve(owner, id)).ran).toBe(true);
+      expect((await statusOf(id)).s).toBe('approved');
+    }
+    expect(h.remote).toHaveLength(3);
+  });
+
+  it('two approvers racing: exactly one claims it and it runs once', async () => {
+    const id = await queue();
+    const asLogin = (login: string) =>
       m.runAsActor(m.loginActor(login, login === owner ? 'owner' : 'rw'), () =>
-        rejectPendingCall(owner, id, login),
+        t.approvePendingCall(owner, id, { approverLoginId: login }),
       );
-    // An Admin user with write rights on the connector there: rejected.
-    const byMod = await queue();
-    expect(await reject(mod, byMod)).toMatchObject({ status: 'rejected' });
-    expect((await statusOf(byMod)).s).toBe('rejected');
-    // An Admin user without them: not found, still pending.
-    const byOther = await queue();
-    expect(await reject(other, byOther)).toBeNull();
-    expect((await statusOf(byOther)).s).toBe('pending');
-    // Its asker withdraws its own call; the owner rejects any.
-    const byAsker = await queue();
-    expect(await reject(asker, byAsker)).toMatchObject({ status: 'rejected' });
-    expect(await reject(owner, byOther)).toMatchObject({ status: 'rejected' });
-    expect(h.remote).toEqual([]);
+    const [a, b] = await Promise.all([asLogin(owner), asLogin(mod)]);
+    expect([a, b].filter((r) => r !== null)).toHaveLength(1);
+    expect((await statusOf(id)).s).toBe('approved');
+    expect(h.remote).toHaveLength(1);
+    expect(await auditRows()).toHaveLength(1);
+  });
+
+  it('an approved call stores its result: the output, when it ran, no error', async () => {
+    const id = await queue();
+    expect((await mcp(mod, id)).ran).toBe(true);
+    expect(await rowOf(id)).toMatchObject({
+      s: 'approved',
+      error: null,
+      result: { updated: true },
+      decided: true,
+      executed: true,
+    });
+  });
+
+  it("a member's connector write queued by the real tool loop: elevated, stamped, its card to the owner's chat; a Moderator of Team runs it", async () => {
+    const rt = await import('@mantle/runtime/agent');
+    const tracing = await import('@mantle/tracing');
+    const ex = await import('../../../packages/runtime/src/agent/tool-loop/execute-call');
+    const row = await m.asSystem(() => t.resolveTool(owner, SLUG), 'test');
+    const input = { id: 'c-queued' };
+    const pendingIds: string[] = [];
+    await m.runAsActor(m.loginActor(member, 'rw'), () =>
+      rt.withAgentScope(
+        { id: teamAgent, ownerId: owner, workspaceId: teamWs, role: 'responder' },
+        () =>
+          tracing.startTrace(
+            { kind: 'responder_turn', ownerId: owner, agentId: teamAgent, loginId: member },
+            () =>
+              ex.executeToolCall({
+                args: {
+                  ownerId: owner,
+                  agentId: teamAgent,
+                  agentSlug: `${tag}-team`,
+                  surface: { kind: 'team', loginId: member },
+                } as never,
+                slug: SLUG,
+                call: { id: 'call-q', function: { name: SLUG, arguments: JSON.stringify(input) } },
+                tool: row!,
+                input,
+                argParseError: null,
+                argValidation: null,
+                argValidationMode: 'off',
+                lastUserMessage: undefined,
+                pendingIds,
+              }),
+          ),
+        { loginId: member },
+      ),
+    );
+    expect(pendingIds).toHaveLength(1);
+    const id = pendingIds[0]!;
+    const queued = await rowOf(id);
+    expect(queued).toMatchObject({ s: 'pending', login: member, ws: teamWs });
+    expect(queued.elevated).toMatchObject({ elevated: true });
+    expect(queued.origin).toMatchObject({ surface: { kind: 'team', loginId: member } });
+    // The card goes to the owner's chat, never its asker's, with the reason.
+    await vi.waitFor(() => expect(h.cards).toHaveLength(1));
+    expect(h.cards[0]!.chat).toBe('chat-owner');
+    expect(h.cards[0]!.card).toMatchObject({ pendingId: id, toolSlug: SLUG });
+    expect(typeof h.cards[0]!.card['elevated']).toBe('string');
+    // Its asker may not approve it; a Moderator of Team does, and it runs.
+    expect((await web(member, id)).ran).toBe(false);
+    const r = await web(mod, id);
+    expect(r.ran, r.text).toBe(true);
+    expect(h.remote).toEqual([{ tool: 'update', input }]);
   });
 
   it("a call that is not elevated keeps main's rule: its asker approves its own", async () => {
