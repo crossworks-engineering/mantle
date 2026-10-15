@@ -4,6 +4,25 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## Unreleased: kind and role list lints read the code (A10 lows)
+
+- **Re-mark `search` on a linked Mantle brain, maybe.** A10 #12 put the
+  Mantle MCP `search` tool's `type` enum in registry order (the same 17
+  values). A brain that has another Mantle brain as a connector read the
+  new order as a schema change on its next Sync and voided a read-only mark
+  on that brain's `search`. From this version a Sync compares an enum as a
+  set, so a brain running it keeps its mark; a brain on an older version
+  that already synced against a newer one needs `search` marked read-only
+  again.
+- The kind list and role list lints read the syntax tree: a union, an
+  object keyed by kinds, a comparison chain on any subject, a switch's
+  shared cases and a SQL `in` list count now, each reported where it is
+  written, and the rules find the registry wherever ESLint runs from (a
+  missing one is an error, not a pass). The rate limit lint reads every
+  `server/web` file, not only route files.
+- `kindsWhere` lists are frozen. No behaviour change otherwise: the refold
+  report's per-kind counters list their kinds in registry order.
+
 ## Unreleased: Anthropic workspace id on a key; direct models show their context window
 
 - An Anthropic API key can carry an optional **Anthropic workspace id**
@@ -31,6 +50,7 @@ deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
   plus id normalization, no table of models). The dashboard's context bars
   use the same helper (`contextWindowFor`) over the same cached model list,
   so the agent form and the dashboard show one number.
+
 
 ## Unreleased: direct providers list their models in the picker
 

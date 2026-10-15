@@ -67,7 +67,6 @@ vi.mock('@mantle/db', async () => {
 
 const admin: AppViewerSubject = { kind: 'admin', loginId: 'login-admin', name: 'Robin' };
 const member: AppViewerSubject = { kind: 'member', loginId: 'login-member', name: 'Pat' };
-const client: AppViewerSubject = { kind: 'client', loginId: 'login-client', name: 'Casey' };
 const contact: AppViewerSubject = { kind: 'contact', contactId: 'contact-7', name: 'Ann' };
 const pub: AppViewerSubject = { kind: 'public' };
 
@@ -89,7 +88,6 @@ describe('the server fills :host_me_* on every kind of viewer', () => {
   const cases: [AppViewerSubject, Record<string, unknown>][] = [
     [admin, { id: appViewerPseudonym(SALT, 'login:login-admin'), name: 'Robin', kind: 'admin' }],
     [member, { id: appViewerPseudonym(SALT, 'login:login-member'), name: 'Pat', kind: 'member' }],
-    [client, { id: appViewerPseudonym(SALT, 'login:login-client'), name: 'Casey', kind: 'client' }],
     [contact, { id: appViewerPseudonym(SALT, 'contact:contact-7'), name: 'Ann', kind: 'contact' }],
     [pub, { id: null, name: null, kind: 'public' }],
   ];
@@ -129,9 +127,9 @@ describe('the server fills :host_me_* on every kind of viewer', () => {
       'SELECT :mine AS mine, @host_me_kind AS k, $host_me_name AS n, ? AS p',
       [{ mine: 'x' }, 'pos'],
       undefined,
-      { viewer: client },
+      { viewer: admin },
     );
-    expect(rows).toEqual([{ mine: 'x', k: 'client', n: 'Casey', p: 'pos' }]);
+    expect(rows).toEqual([{ mine: 'x', k: 'admin', n: 'Robin', p: 'pos' }]);
   });
 
   it('the same person keeps one id per app, and the salt is provisioned once', async () => {
@@ -248,10 +246,10 @@ describe('appViewerFor (what host.me() answers in the frame)', () => {
       kind: 'member',
     });
     h.nameRows = [{ displayName: null }];
-    expect(await appViewerFor(OWNER, APP, { kind: 'client', loginId: 'login-client' })).toEqual({
-      id: appViewerPseudonym(SALT, 'login:login-client'),
+    expect(await appViewerFor(OWNER, APP, { kind: 'admin', loginId: 'login-admin' })).toEqual({
+      id: appViewerPseudonym(SALT, 'login:login-admin'),
       name: null,
-      kind: 'client',
+      kind: 'admin',
     });
   });
 

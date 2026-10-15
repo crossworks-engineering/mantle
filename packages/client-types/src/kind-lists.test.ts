@@ -4,11 +4,15 @@
  *
  * Record, move, compare: the first commit of A10 #12 proved RECORDED
  * against the literals in the source (git show 12b4564ec); now each list is
- * a filter over a registry field (./kind-lists), and this proves the derived
- * list equals RECORDED with CHANGES applied, CHANGES naming every cell that
- * moved. A list the code only asks membership of is compared as a set; a
- * list whose order means something (TYPE_RANK) is compared in order.
+ * a filter over a registry field (./kind-lists), and this proves two things:
+ * each consumer named in RECORDED reads the derived list (CONSUMERS: its
+ * file binds the list's name, so the value it uses is the derived one), and
+ * the derived list equals RECORDED with CHANGES applied, CHANGES naming
+ * every cell that moved. A list the code only asks membership of is
+ * compared as a set; a list whose order means something (TYPE_RANK) or that
+ * CHANGES says moved in order is compared in order.
  */
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
   ACCEPTED_KINDS,
@@ -190,7 +194,91 @@ export const CHANGES = {
   Record<keyof typeof RECORDED, { add?: readonly string[]; order?: true; why: string }>
 >;
 
+/**
+ * Where each recorded list is read now: the consumer file and the line that
+ * binds it to the derived list (whitespace collapsed). The lists themselves
+ * are not exported by most consumers (and importing server code here would
+ * turn the package graph around), so the test reads the binding: a consumer
+ * that went back to a literal, or to another list, fails here as well as in
+ * the lint (no-hand-kind-lists).
+ */
+export const CONSUMERS: Record<keyof typeof RECORDED, readonly [string, string]> = {
+  DEFAULT_EXTRACT_TYPES: [
+    'server/api/src/agent/extract/gates.ts',
+    'const DEFAULT_EXTRACT_TYPES: readonly string[] = EXTRACT_KINDS;',
+  ],
+  LANDED_TYPES: [
+    'server/web/lib/integrity/landed.ts',
+    'export const LANDED_TYPES: readonly string[] = EXTRACT_KINDS;',
+  ],
+  CORPUS_MAP_TYPES: [
+    'packages/runtime/src/agent/conversation.ts',
+    'const CORPUS_MAP_TYPES: readonly string[] = CORPUS_MAP_KINDS;',
+  ],
+  CONTEXT_KINDS: [
+    'packages/db/src/context-ref-resolve.ts',
+    'export const CONTEXT_KINDS = CONTEXT_REF_KINDS;',
+  ],
+  NODE_TYPE_BY_KIND: [
+    'packages/db/src/context-ref-resolve.ts',
+    "Object.entries(NODE_TYPE_BY_CONTEXT_REF).filter(([kind]) => kind !== 'email'),",
+  ],
+  EMBEDDING_KINDS: [
+    'packages/content/src/embed-closure.ts',
+    'export const EMBEDDING_KINDS: readonly string[] = REGISTRY_EMBEDDING_KINDS;',
+  ],
+  REFOLD_KINDS: [
+    'server/web/lib/maintenance/refold-embeds.ts',
+    'const KINDS: readonly Kind[] = EMBEDDING_KINDS;',
+  ],
+  MENTION_TARGETS: [
+    'server/web/app/api/mentions/search/route.ts',
+    'inArray(nodes.type, [...MENTION_TARGET_KINDS]),',
+  ],
+  LINK_SERVE_KINDS: [
+    'packages/content/src/link-serve.ts',
+    'if (!(LINK_SERVE_KINDS as readonly string[]).includes(item.type)) return new Set();',
+  ],
+  EXPORTABLE_TYPES: [
+    'packages/content/src/export-node.ts',
+    'export const EXPORTABLE_TYPES: Readonly<Record<ExportKind, ExportFormat>> = EXPORT_FORMAT_BY_KIND;',
+  ],
+  TYPE_RANK: ['packages/content/src/login-notices.ts', 'const rank = acceptedRank;'],
+  SWITCH_MEMBER_ACCEPTED: ['packages/content/src/member-accepted.ts', 'forAcceptedKind<'],
+  SWITCH_MEMBER_LIBRARY: ['packages/content/src/member-library.ts', 'forAcceptedKind<'],
+  SWITCH_MEMBER_SNAPSHOTS: ['packages/content/src/member-snapshots.ts', 'forAcceptedKind<'],
+  SWITCH_SNAPSHOT_COPIES: ['server/web/lib/snapshot-copies.ts', 'forAcceptedKind<'],
+  SEARCH_NODES_TYPE_ENUM: [
+    'packages/tools/src/builtins-search.ts',
+    'enum: [...SEARCH_TOOL_KINDS],',
+  ],
+  MCP_SEARCH_TYPE_ENUM: [
+    'packages/mcp-core/src/mcp-defs.ts',
+    'type: z.enum(SEARCH_TOOL_KINDS).optional(),',
+  ],
+  PEER_PICKER_EXCLUDED: [
+    'server/web/app/api/peers/nodes/route.ts',
+    'const EXCLUDED = PEER_PICK_EXCLUDED_KINDS;',
+  ],
+  DOCUMENT_NODE_TYPES: [
+    'packages/content/src/entity-names.ts',
+    'const DOCUMENT_NODE_TYPES: ReadonlySet<string> = new Set(DOCUMENT_TITLE_KINDS);',
+  ],
+};
+
+const REPO = new URL('../../../', import.meta.url);
+const flat = (t: string) => t.replace(/\s+/g, ' ');
+
 const set = (xs: readonly string[]) => [...xs].sort();
+/** `xs` in registry order (the order kindsWhere gives). */
+const inRegistryOrder = (xs: readonly string[]) =>
+  ITEM_KIND_NAMES.filter((t) => (xs as readonly string[]).includes(t));
+/** The lists CHANGES says moved in order: compared in order. */
+const ORDER_MOVED = new Set(
+  Object.entries(CHANGES)
+    .filter(([, c]) => 'order' in c)
+    .map(([name]) => name),
+);
 const omit = <T extends Record<string, unknown>>(o: T, k: string) =>
   Object.fromEntries(Object.entries(o).filter(([key]) => key !== k));
 
@@ -213,8 +301,9 @@ function derived(): Record<keyof typeof RECORDED, unknown> {
     SWITCH_MEMBER_LIBRARY: accepted,
     SWITCH_MEMBER_SNAPSHOTS: accepted,
     SWITCH_SNAPSHOT_COPIES: accepted,
-    SEARCH_NODES_TYPE_ENUM: set(SEARCH_TOOL_KINDS),
-    MCP_SEARCH_TYPE_ENUM: set(SEARCH_TOOL_KINDS),
+    // In order: CHANGES says these moved to registry order.
+    SEARCH_NODES_TYPE_ENUM: [...SEARCH_TOOL_KINDS],
+    MCP_SEARCH_TYPE_ENUM: [...SEARCH_TOOL_KINDS],
     PEER_PICKER_EXCLUDED: set(PEER_PICK_EXCLUDED_KINDS),
     DOCUMENT_NODE_TYPES: set(DOCUMENT_TITLE_KINDS),
   };
@@ -227,7 +316,8 @@ function expected(): Record<keyof typeof RECORDED, unknown> {
     const change = (CHANGES as Partial<Record<string, { add?: readonly string[] }>>)[name];
     if (Array.isArray(value)) {
       const list = [...(value as string[]), ...(change?.add ?? [])];
-      out[name] = name === 'TYPE_RANK' ? list : set(list);
+      out[name] =
+        name === 'TYPE_RANK' ? list : ORDER_MOVED.has(name) ? inRegistryOrder(list) : set(list);
     } else out[name] = value;
   }
   return out;
@@ -238,12 +328,33 @@ describe('the hand kind lists, derived from the registry', () => {
     expect(derived()).toEqual(expected());
   });
 
-  it('CHANGES names only lists that moved', () => {
+  it('each recorded list is read from the derived list by its consumer', () => {
+    for (const [name, [file, binding]] of Object.entries(CONSUMERS)) {
+      const text = flat(readFileSync(new URL(file, REPO), 'utf8'));
+      expect(text.includes("from '@mantle/client-types/kind-lists'"), `${name}: ${file}`).toBe(
+        true,
+      );
+      expect(text.includes(flat(binding)), `${name}: ${file} binds ${binding}`).toBe(true);
+    }
+  });
+
+  it('CHANGES names only lists that moved: an order entry moved its order and kept its set', () => {
     for (const name of Object.keys(CHANGES) as (keyof typeof CHANGES)[]) {
       const was = RECORDED[name] as readonly string[];
       const now = derived()[name] as readonly string[];
-      const moved = 'order' in CHANGES[name] ? true : set(was).join() !== set(now).join();
-      expect(moved, name).toBe(true);
+      if ('order' in CHANGES[name]) {
+        expect(now.join(), `${name}: the order moved`).not.toBe(was.join());
+        expect(set(now), `${name}: the same set`).toEqual(set(was));
+      } else {
+        expect(set(now).join(), `${name}: the set moved`).not.toBe(set(was).join());
+      }
+    }
+  });
+
+  it('the derived lists are frozen: one shared list cannot be changed through a name (F4)', () => {
+    for (const list of [EXTRACT_KINDS, SEARCH_TOOL_KINDS, ACCEPTED_KINDS, EMBEDDING_KINDS]) {
+      expect(Object.isFrozen(list)).toBe(true);
+      expect(() => (list as unknown as string[]).push('x')).toThrow(TypeError);
     }
   });
 

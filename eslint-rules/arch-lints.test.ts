@@ -602,6 +602,18 @@ describe('the hand kind list counter (A10 #12)', () => {
     ]);
   });
 
+  it('the fast path parses every file that can hold a list: entries quoted, or keys', async () => {
+    const { mayHoldNameList } = await import('./arch-counts.mjs');
+    const may = mayHoldNameList(['page', 'note', 'admin', 'member']);
+    expect(may('const a = [\'page\', "note"];')).toBe(true);
+    expect(may('const a = [`page`, `note`];')).toBe(true);
+    expect(may('const o = { page: 1, note?: 2 };')).toBe(true);
+    expect(may('const o = { page() {}, note: 1 };')).toBe(true);
+    expect(may("sql`where role in ('admin', 'member')`")).toBe(true);
+    expect(may("const a = ['page', 'x'];")).toBe(false);
+    expect(may('// a page and a note, by an admin member\nconst a = 1;')).toBe(false);
+  });
+
   it('fails loudly when the node types cannot be read (low round, L2)', () => {
     expect(() => nodeTypes('/nonexistent-repo')).toThrow(/no node_type enum/);
   });

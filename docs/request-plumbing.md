@@ -519,7 +519,8 @@ daily_cap` or `token_budget`, which the client reads); they say when to
 Budgets that are not a gate on the request stay where they are taken,
 each named with its reason:
 
-- in route files (`RATE_LIMIT_ALLOW`, `eslint-rules/route-plumbing.mjs`):
+- in route files (`RATE_LIMIT_ALLOW`, `eslint-rules/route-plumbing.mjs`,
+  which names the lib files below too):
   `POST /api/access-keys` (the password failure budget, taken before the
   check and given back on a right password, and the keys made an hour,
   counted only once the password passed), `POST /api/oauth/authorize` (the
@@ -805,15 +806,21 @@ byte for byte.
 
 ### The pins
 
-- Scoreboard (`scripts/arch-scoreboard.pins.json`): `routeRateLimitCalls`,
-  limiter calls in route files outside the named list, 32 on main, pinned
-  at 0; `routeRateLimitAllowed`, the named files, pinned at 3.
+- Scoreboard (`scripts/arch-scoreboard.pins.json`): `rateLimitCalls`,
+  limiter calls in any file outside the named list (route files only until
+  the A10 low round, 32 on main before A10 #8), pinned at 0;
+  `rateLimitAllowed`, the named files, pinned at 7: the three route files
+  below and the four lib files that take a limit (`route-limits.ts`, the
+  gate; `access-keys.ts` and `access-key-gate.ts`, the key budgets;
+  `workspace-turn.ts`, the member turn budget).
   `routePolicyLists` went 16 to 17: `ROUTE_GATES` is the source of two row
   fields, named with its reason in `eslint-rules/no-policy-name-lists.mjs`.
 - ESLint (`eslint-rules/route-plumbing.mjs`, `no-route-rate-limits`): a
-  limiter call (`rateLimit` and its forms, `rateLimitAccessKey`) in a route
-  file outside `RATE_LIMIT_ALLOW` is an error, and so is
-  `refuseCrossSiteAuthPost` in any route file (the row's `crossSite`).
+  limiter call (`rateLimit` and its forms, `rateLimitAccessKey`,
+  `rateLimitKeySearch`) in any `server/web` file outside `RATE_LIMIT_ALLOW`
+  is an error (a limiter in a helper the handler calls first is a limit
+  too), and so is `refuseCrossSiteAuthPost` in any route file (the row's
+  `crossSite`).
   `eslint-rules/arch-lints.test.ts` holds the count at 0 and the named list
   to the files that still take a budget.
 - `server/web/lib/route-limits.test.ts`: every key of `ROUTE_GATES` is a

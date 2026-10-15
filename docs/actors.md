@@ -937,20 +937,42 @@ per kind keep their cases (journey wording in
 `packages/client-types/src/journey-format.ts`, the share renderers in
 `server/web/lib/shares.ts` and `server/web/server/pages/share.tsx`, derived
 node buckets in `packages/content/src/derived.ts` and
-`packages/files/src/derived-counts.ts`, kind icons in
-`server/web/components/share/contact-shares-menu.tsx`, the scheme types in
-`packages/content-core/src/markdown-refs.ts`), and the access oracle
-(`packages/db/src/matrix/oracle.ts`) is written from the guide on purpose,
-not from the registry.
+`packages/files/src/derived-counts.ts`), and the access oracle
+(`packages/db/src/matrix/`) is written from the guide on purpose, not from
+the registry.
 
-**The pin.** `eslint-rules/no-hand-kind-lists.mjs` flags a literal list of
-3 or more node types (an array, a Set's, a z.enum's, an inline
-`[...].includes(`) in product code outside `KIND_LIST_ALLOW`
-(`eslint-rules/arch-counts.mjs`). The scoreboard counts the same lists:
-`handKindLists` pinned at 0, `handKindListsAllowed` at 1;
-`eslint-rules/arch-lints.test.ts` holds the allowed files to exactly the
-ones that still hold a list. Turning `extract` on for a kind is a cost
-decision (its whole corpus is extracted), never a tidy-up.
+**The pin.** `eslint-rules/no-hand-kind-lists.mjs` flags a list of 3 or
+more node types (node types at least half its entries) in product code
+outside `KIND_LIST_ALLOW` (`eslint-rules/arch-counts.mjs`), each where it is
+written. The lists are read from the syntax tree
+(`eslint-rules/name-lists.mjs`, the TypeScript parser): an array wherever
+it stands (a Set's, a z.enum's, after `of`, `&&` or `export default`, in a
+spread), a union type, an object's keys (a table of functions, as
+`forAcceptedKind`'s cases, is behaviour per kind and does not count), a
+comparison chain on one subject, a switch's shared cases and a SQL `in` or
+`array[...]` list in a string or template. The scoreboard counts the same
+lists: `handKindLists` pinned at 0, `handKindListsAllowed` at 11 (A10 low
+round; 1 before, when only arrays after a few tokens counted): the registry
+itself (`kinds.ts`), the node_type enum, the access matrix
+(`guide-oracle.ts`, `oracle.ts`, `test-support/a8-grid.ts`), the tool slug
+nouns of `stage-label.ts` and the kind icons of `contact-shares-menu.tsx`,
+each named with its reason. `eslint-rules/arch-lints.test.ts` holds the
+allowed files to exactly the ones that still hold a list. The old
+`kindLists` count (5 or more node types in an array, comments and SQL
+text included) is retired: its one hit was a false one, in SQL text. The
+node types are read from the repo the rule file is in, whatever directory
+ESLint runs from; none there is an error. Turning `extract` on for a kind
+is a cost decision (its whole corpus is extracted), never a tidy-up.
+
+**Frozen.** `kindsWhere` freezes the list it returns: several names share
+one list (`DEFAULT_EXTRACT_TYPES` and `LANDED_TYPES` are both
+`EXTRACT_KINDS`), so no caller can sort or push onto another's.
+
+**The search enum.** Putting the MCP `search` tool's `type` enum in registry
+order changed its schema text, which a consuming brain's connector sync
+read as a change and voided a read-only mark on `search`. The sync compares
+an `enum` as a set now (`schemaKey`, `packages/tools/src/mcp-sync.ts`); the
+stored schema and the mark's signature are as the server sent them.
 
 **Left:** jackdaw's `CONTEXT_KINDS` (its assistant dock) is still a hand
 copy; it can read `CONTEXT_REF_KINDS` from the contract once the ref rides
@@ -1017,27 +1039,38 @@ parameters, the same membership tests.
 role keep their cases (`resolvedFor` in `server/web/lib/auth/session.ts`
 names each role and answers no login for any other; the OAuth consent and
 the audit switches). Unions with their own meaning that share some names
-stay: `AppViewerKind` (`client-types/src/app-viewer.ts`) and
-`AppViewerSubject` (`content/src/app-viewer.ts`) still carry `client`;
-`NodeCommentAuthorKind`, `MemberItemAuthor.role`, `ExternalAccessRunner`;
+stay: `AppViewerKind` (`client-types/src/app-viewer.ts`, now `LoginRole |
+'client' | 'contact' | 'public'`: `client` stays for the wire contract,
+additive only), `NodeCommentAuthorKind` (old comment rows hold `client`) and
+`MemberItemAuthor.role` (the contract); `ExternalAccessRunner`;
+`AppViewerSubject` (`content/src/app-viewer.ts`, server only) lost
+`client`, which no caller sent;
 the level subsets (`AppAuthorLevel` and its contract mirror, pinned in
 `server/web/lib/client-types-drift.test.ts`; `AppToolRules`, `AppToolLevel`,
 `TREE_SHARE_LEVELS`). Tests keep their literals (they pin values).
 
 **The pins.** `eslint-rules/no-hand-role-lists.mjs` flags, in product code
 outside a concept's source file, a literal list (an array, a Set's, a
-z.enum's), a string union or a comparison chain (`r === 'admin' || r ===
-'member'`) whose entries are all names of one concept (2 or more login roles
-or recall actors, 3 or more areas, history actors or levels, all but one
-key area). The names are read from the sources (`ROLE_NAME_SOURCES`,
-`eslint-rules/arch-counts.mjs`). The scoreboard counts the same lists:
+z.enum's), a string union, a comparison chain on one subject (`r ===
+'admin' || r === 'member'`, the subject any expression: `a?.role`,
+`f(x)`), a switch's shared cases or a SQL `in` list in a string or template,
+whose entries are all names of one concept (2 or more login roles or recall
+actors, 3 or more areas, history actors or levels, all but one key area),
+and a list holding every login role and more (`'admin' | 'member' |
+'client'`: build it as `LoginRole | 'client'`). An object keyed by role is
+behaviour per role and does not count. The lists are read from the syntax
+tree (`eslint-rules/name-lists.mjs`) and reported where they are written.
+The names are read from the sources (`ROLE_NAME_SOURCES`,
+`eslint-rules/arch-counts.mjs`) of the repo the rule file is in, whatever
+directory ESLint runs from; a missing source is an error, not a silent
+pass. The scoreboard counts the same lists:
 `handRoleLists` pinned at 0, `handRoleListsAllowed` at 6 (the six source
 lists). `server/web/lib/client-types-drift.test.ts` pins every alias to its
 source's union and the runtime VALUES of the lists both sides read (the
 server lists equal the contract lists in order; the contract values are
 written out, since jackdaw holds hand copies of some). A list in SQL text
-inside TypeScript (`role in ('admin', 'member')` in
-`packages/db/src/test-support.ts`) is not seen.
+inside TypeScript counts too: `packages/db/src/test-support.ts` builds its
+`role in (...)` from `LOGIN_ROLES`.
 
 ## The one gate (A3c)
 

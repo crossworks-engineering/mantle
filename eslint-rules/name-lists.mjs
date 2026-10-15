@@ -36,7 +36,8 @@ function parse(path, text) {
     : /\.[cm]?js$/.test(path)
       ? ts.ScriptKind.JS
       : ts.ScriptKind.TS;
-  return ts.createSourceFile(path, text, ts.ScriptTarget.Latest, true, kind);
+  // No parent pointers (a third of the parse): the walk keeps its own stack.
+  return ts.createSourceFile(path, text, ts.ScriptTarget.Latest, false, kind);
 }
 
 /** A string or plain template literal's value, else null. */
@@ -151,6 +152,8 @@ export function nameListSites(path, text) {
   const push = (form, strings, from, to) => {
     if (strings.length) out.push({ form, strings, start: at(from), end: at(to) });
   };
+  /** The ancestors of the node being visited, nearest last. */
+  const stack = [];
   const visit = (node) => {
     if (ts.isArrayLiteralExpression(node)) {
       const own = node.elements.map(stringOf).filter((s) => s !== null);
@@ -173,7 +176,7 @@ export function nameListSites(path, text) {
     } else if (
       ts.isBinaryExpression(node) &&
       LOGICAL.has(node.operatorToken.kind) &&
-      isChainTop(node)
+      isChainTop(stack)
     ) {
       const groups = new Map();
       for (const leaf of chainLeaves(node)) {
@@ -218,17 +221,20 @@ export function nameListSites(path, text) {
         push('sql', l.strings, start + l.at, start + l.at + l.len);
       }
     }
+    stack.push(node);
     ts.forEachChild(node, visit);
+    stack.pop();
   };
   visit(sf);
   return out;
 }
 
-/** Whether the logical expression `node` is the top of its chain: the
- *  first ancestor beyond parentheses is no `||` or `&&` (a chain is read
- *  once, from its top). */
-function isChainTop(node) {
-  let p = node.parent;
-  while (p && ts.isParenthesizedExpression(p)) p = p.parent;
+/** Whether a logical expression is the top of its chain: its first
+ *  ancestor (nearest last in `ancestors`) beyond parentheses is no `||` or
+ *  `&&` (a chain is read once, from its top). */
+function isChainTop(ancestors) {
+  let i = ancestors.length - 1;
+  while (i >= 0 && ts.isParenthesizedExpression(ancestors[i])) i -= 1;
+  const p = ancestors[i];
   return !(p && ts.isBinaryExpression(p) && LOGICAL.has(p.operatorToken.kind));
 }

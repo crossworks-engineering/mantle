@@ -7,8 +7,11 @@
  * every copy of a concept already held its source's values (no difference
  * on main). Now each copy reads its source (./role-names and the dto lists),
  * and this proves each source holds exactly the values main recorded, in
- * main's order. A list the code only asks membership of is compared as a
- * set; a list whose order means something is compared in order (ORDERED).
+ * main's order, and that each recorded copy's file now names its source.
+ * A list the code only asks membership of is compared as a set; a list
+ * whose order means something is compared in order (ORDERED). That no hand
+ * copy is left anywhere is the lint's (no-hand-role-lists, pinned at 0 in
+ * eslint-rules/arch-lints.test.ts).
  *
  * These are also the contract's VALUES (jackdaw holds hand copies of some):
  * a change here is a contract change, made on purpose.
@@ -189,6 +192,19 @@ const SOURCES = {
   keyArea: ACCESS_KEY_AREAS,
 } as const satisfies Record<keyof typeof RECORDED, readonly string[]>;
 
+/** The names a copy reads its concept's source by: the list, its type, its
+ *  guard or its zod schema (LoginRoleSchema in server/web/lib/login-update.ts,
+ *  z.enum(LOGIN_ROLES)). */
+const SOURCE_NAMES = {
+  loginRole: ['LOGIN_ROLES', 'LoginRole', 'isLoginRole', 'LoginRoleSchema'],
+  workspaceArea: ['WORKSPACE_AREAS', 'WorkspaceArea', 'isWorkspaceArea'],
+  historyActor: ['HISTORY_ACTORS', 'HistoryActor'],
+  recallActor: ['RECALL_ACTOR_KINDS', 'RecallActorKind'],
+  accessLevel: ['ACCESS_LEVELS', 'AccessLevel'],
+  keyArea: ['ACCESS_KEY_AREAS', 'AccessKeyArea'],
+} as const satisfies Record<keyof typeof RECORDED, readonly string[]>;
+
+const REPO = new URL('../../../', import.meta.url);
 const MIGRATIONS = new URL('../../db/migrations/', import.meta.url);
 
 /** The text of the newest migration that adds `constraint`. */
@@ -210,8 +226,9 @@ function newestCheck(constraint: string): string {
 
 const quoted = (values: readonly string[]) => values.map((v) => `'${v}'`).join(', ');
 
-/** Each copy that differs from its source (as a set, or in order for
- *  ORDERED): none on main. */
+/** Each RECORDED copy that differs from its source (as a set, or in order
+ *  for ORDERED): none. A check of the record (literals against literals),
+ *  not of the code: see the copies' own test below. */
 function differences(): string[] {
   const out: string[] = [];
   for (const [concept, { source: src, copies }] of Object.entries(RECORDED)) {
@@ -234,8 +251,23 @@ describe('the role, area and actor names, recorded on main v0.300.47', () => {
     }
   });
 
-  it('every copy on main already held its source values', () => {
+  it('the record: every copy main held had its source values', () => {
     expect(differences()).toEqual([]);
+  });
+
+  it('every recorded copy reads its source now: its file names the list, its type or its guard', () => {
+    const missing: string[] = [];
+    for (const [concept, { copies }] of Object.entries(RECORDED)) {
+      const names: readonly string[] = SOURCE_NAMES[concept as keyof typeof RECORDED];
+      for (const site of Object.keys(copies)) {
+        const file = site.split(' ')[0]!;
+        const text = readFileSync(new URL(file, REPO), 'utf8');
+        if (!names.some((n) => new RegExp(`\\b${n}\\b`).test(text))) {
+          missing.push(`${concept}: ${site}`);
+        }
+      }
+    }
+    expect(missing).toEqual([]);
   });
 
   it('the guards accept exactly the source values', () => {

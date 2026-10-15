@@ -394,9 +394,9 @@ const isDispatch = (site) => site.form === 'keys' && site.dispatch;
  *  Every form name-lists.mjs reads counts: an array, a union, an object's
  *  keys (not a dispatch table), a comparison chain, the shared cases of a
  *  switch and a SQL list. `{ n, form, start, end }`. */
-export function handKindListSites(text, types, path = 'x.ts') {
+export function handKindListSites(text, types, path = 'x.ts', sites = nameListSites(path, text)) {
   const out = [];
-  for (const site of nameListSites(path, text)) {
+  for (const site of sites) {
     if (isDispatch(site)) continue;
     const hits = site.strings.filter((s) => types.has(s)).length;
     if (hits >= 3 && hits * 2 >= site.strings.length) {
@@ -406,9 +406,28 @@ export function handKindListSites(text, types, path = 'x.ts') {
   return out;
 }
 
-/** The hand kind lists of `text`: the number of kinds in each. */
-export function handKindLists(text, types, path = 'x.ts') {
-  return handKindListSites(text, types, path).map((s) => s.n);
+/** The hand kind lists of `text`: the number of kinds in each. `sites`:
+ *  the file's name list sites when the caller has them already. */
+export function handKindLists(text, types, path = 'x.ts', sites) {
+  return handKindListSites(text, types, path, sites).map((s) => s.n);
+}
+
+/** A cheap test of whether a file can hold a name list of `names`: two or
+ *  more of them written where a list entry is (quoted, as a string, a
+ *  template or a SQL literal is; or as a key, `name:`, `name?:` or
+ *  `name(`). Every entry nameListSites reads is written one of these ways,
+ *  so a file that fails it holds no list (a fast path, not a heuristic). */
+export function mayHoldNameList(names) {
+  const alt = [...new Set(names)].map((n) => n.replace(/[^\w-]/g, '')).join('|');
+  const re = new RegExp(`['"\`](${alt})['"\`]|\\b(${alt})\\??\\s*[:(]`, 'g');
+  return (text) => {
+    const seen = new Set();
+    for (const m of text.matchAll(re)) {
+      seen.add(m[1] ?? m[2]);
+      if (seen.size >= 2) return true;
+    }
+    return false;
+  };
 }
 
 // ── hand role lists (A10 #13) ───────────────────────────────────────────────
@@ -487,9 +506,9 @@ const ROLE_FORMS = new Set(['array', 'union', 'chain', 'switch', 'sql']);
  *  allowed, start, end }` for each list whose own strings are all names of
  *  one concept, at least its `min`, or (a `superset` concept) every name of
  *  it and more. A list in its concept's source file is `allowed`. */
-export function handRoleLists(text, sets, path = 'x.ts') {
+export function handRoleLists(text, sets, path = 'x.ts', sites = nameListSites(path, text)) {
   const out = [];
-  for (const site of nameListSites(path, text)) {
+  for (const site of sites) {
     if (!ROLE_FORMS.has(site.form)) continue;
     const own = site.strings;
     for (const [concept, set] of Object.entries(sets)) {
@@ -711,6 +730,10 @@ export function measure(root) {
   const slugs = builtinSlugs(root, files);
   const types = nodeTypes(root);
   const roleSets = roleNameSets(root);
+  const mayHold = mayHoldNameList([
+    ...types,
+    ...Object.values(roleSets).flatMap((r) => [...r.values]),
+  ]);
   const asSystem = {};
   const rawAcl = {};
   const toolLists = {};
@@ -775,9 +798,13 @@ export function measure(root) {
       const rl = routePolicyLists(text);
       if (rl.length) routeLists[f] = rl.length;
     }
-    const hk = handKindLists(text, types, f);
+    // One walk of the syntax tree for both name list counts, and none for a
+    // file that names fewer than two of the names (most files: it keeps the
+    // count fast enough for the tests that run it).
+    const sites = mayHold(text) ? nameListSites(f, text) : [];
+    const hk = handKindLists(text, types, f, sites);
     if (hk.length) (KIND_LIST_ALLOW[f] ? handKindsAllowed : handKinds)[f] = hk.length;
-    for (const r of handRoleLists(text, roleSets, f)) {
+    for (const r of handRoleLists(text, roleSets, f, sites)) {
       const into = r.allowed ? handRolesAllowed : handRoles;
       into[f] = (into[f] ?? 0) + 1;
     }
