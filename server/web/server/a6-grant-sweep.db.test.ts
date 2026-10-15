@@ -51,8 +51,25 @@ vi.mock('@/lib/audit', () => ({
   requestMeta: async () => ({ ip: null, userAgent: null }),
 }));
 
-/** Cells whose answer changed on purpose, each with its reason. */
-const NAMED_CHANGES: Record<string, string> = {};
+/**
+ * Cells whose answer changed on purpose: the cells a pattern names, its
+ * reason, and `back`, which turns the new answer into main's form: the
+ * test checks that it then reads exactly as main recorded, so nothing else
+ * in the cell moved (no rule, no row, no refusal).
+ */
+const NAMED_CHANGES: ReadonlyArray<{
+  cells: RegExp;
+  reason: string;
+  back: (now: string) => string;
+}> = [
+  {
+    cells: /^apps\.(memberApp|deleted) /,
+    reason:
+      "field rename only: the member brain-app library names an app's home `home`, not after the raw column (nothing outside reads it since the my_app tools went in W7b; no HTTP or tool reply carries it); every rule and row as main",
+    back: (now) => now.replaceAll('"home":', '"homeWs":'),
+  },
+];
+const namedChange = (key: string) => NAMED_CHANGES.find((c) => c.cells.test(key)) ?? null;
 
 type Json = Record<string, any>;
 
@@ -633,10 +650,14 @@ describe.skipIf(!URL)('the A6 grant sweep', () => {
     expect([...got.keys()]).toEqual([...want.keys()]);
     const changed: string[] = [];
     const unnamed: string[] = [];
+    const notOnlyNamed: string[] = [];
     for (const [k, v] of got) {
       if (want.get(k) === v) continue;
-      if (NAMED_CHANGES[k]) changed.push(`${k} => ${v}\n  # ${NAMED_CHANGES[k]}`);
-      else unnamed.push(`${k}\n  main: ${want.get(k)}\n  now:  ${v}`);
+      const named = namedChange(k);
+      if (named) {
+        changed.push(`${k} => ${v}\n  # ${named.reason}`);
+        if (named.back(v) !== want.get(k)) notOnlyNamed.push(k);
+      } else unnamed.push(`${k}\n  main: ${want.get(k)}\n  now:  ${v}`);
     }
     if (process.env.A6_GRANT_CHANGES === '1') {
       writeFileSync(
@@ -645,7 +666,11 @@ describe.skipIf(!URL)('the A6 grant sweep', () => {
       );
     }
     expect(unnamed).toEqual([]);
-    const stale = Object.keys(NAMED_CHANGES).filter((k) => want.get(k) === got.get(k));
+    expect(notOnlyNamed).toEqual([]);
+    // Every named change still names a changed cell.
+    const stale = NAMED_CHANGES.filter(
+      (c) => ![...got].some(([k, v]) => c.cells.test(k) && want.get(k) !== v),
+    ).map((c) => String(c.cells));
     expect(stale).toEqual([]);
   });
 });
