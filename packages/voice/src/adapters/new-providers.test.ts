@@ -19,14 +19,14 @@ import {
   ELEVENLABS_PREMADE_VOICES,
   ELEVENLABS_TTS_MODELS,
   GOOGLE_CHAT_MODELS,
-  anthropicChatAdapter,
-  elevenLabsTtsAdapter,
   getChatAdapter,
   getTtsAdapter,
-  googleChatAdapter,
   isProviderWired,
   mimeForElevenLabsFormat,
 } from './index';
+import { anthropicChatAdapter } from './anthropic-chat';
+import { elevenLabsTtsAdapter } from './elevenlabs-tts';
+import { googleChatAdapter } from './google-chat';
 
 describe('Anthropic chat adapter', () => {
   it('self-registers on import', () => {

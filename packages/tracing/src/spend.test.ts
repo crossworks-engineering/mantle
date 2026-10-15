@@ -138,6 +138,49 @@ describe('recordUsage', () => {
     });
   });
 
+  it('an embedding lands in the embed total, never the completion tokens', async () => {
+    // The member token budget reads tokens in + out (A10 #5 fix round 1).
+    await startTrace({ ownerId: 'o', kind: 'manual' }, () =>
+      step({ name: 's', kind: 'embed' }, async () => {
+        recordUsage({
+          capability: 'embedding',
+          provider: 'openai',
+          model: 'openai/text-embedding-3-small',
+          inputTokens: 250_000,
+          outputTokens: 0,
+        });
+        recordUsage(chat());
+      }),
+    );
+    await flush();
+    expect(h.traceUpdates.at(-1)).toMatchObject({
+      tokensIn: 1000,
+      tokensOut: 200,
+      tokensEmbed: 250_000,
+      // 250k * 2e-8 = 0.005 USD, plus the chat call's 5190: cost is one total.
+      costMicroUsd: 5000 + 5190,
+    });
+  });
+
+  it('an embedding in a prelude step lands in the embed total too', async () => {
+    const prelude = createTracePrelude();
+    await withTracePrelude(prelude, () =>
+      step({ name: 'p', kind: 'embed' }, async () => {
+        recordUsage({
+          capability: 'embedding',
+          provider: 'local',
+          model: 'm',
+          inputTokens: 40,
+          outputTokens: 0,
+        });
+      }),
+    );
+    expect(prelude.steps[0]!.tokens).toEqual({ in: 0, out: 0, cacheRead: 0, embed: 40 });
+    await startTrace({ ownerId: 'o', kind: 'manual', prelude }, async () => {});
+    await flush();
+    expect(h.traceUpdates.at(-1)).toMatchObject({ tokensIn: 0, tokensEmbed: 40 });
+  });
+
   it('a unit call carries its unit key and no token keys', async () => {
     await startTrace({ ownerId: 'o', kind: 'manual' }, () =>
       step({ name: 's', kind: 'compute' }, async () => {
@@ -166,7 +209,7 @@ describe('recordUsage', () => {
       }),
     );
     expect(prelude.steps[0]).toMatchObject({
-      tokens: { in: 1000, out: 200, cacheRead: 300 },
+      tokens: { in: 1000, out: 200, cacheRead: 300, embed: 0 },
       costMicroUsd: 1000,
       meta: { model: 'anthropic/claude-sonnet-4.6', cost_micro_usd: 1000 },
     });
@@ -221,6 +264,7 @@ describe('chargeTo', () => {
     expect(Object.keys(h.traceUpdates[1]!).sort()).toEqual([
       'costMicroUsd',
       'tokensCacheRead',
+      'tokensEmbed',
       'tokensIn',
       'tokensOut',
     ]);
@@ -238,6 +282,31 @@ describe('chargeTo', () => {
     await flush();
     expect(h.traceUpdates).toHaveLength(2);
     expect(h.traceUpdates[0]).toMatchObject({ costMicroUsd: 0 });
+  });
+
+  it('a trace opened inside a chargeTo scope takes its own usage', async () => {
+    // A10 #5 fix round 1: the charged target is cleared for the new trace's
+    // work, so neither its totals nor its steps leak to the outer turn.
+    let outer: SpendTarget | null = null;
+    let inner: SpendTarget | null = null;
+    await startTrace({ ownerId: 'o', kind: 'responder_turn' }, async () => {
+      outer = spendTarget();
+      await chargeTo(outer, () =>
+        startTrace({ ownerId: 'o', kind: 'manual' }, () =>
+          step({ name: 'inner', kind: 'llm_call' }, async () => {
+            inner = spendTarget();
+            recordUsage(chat());
+          }),
+        ),
+      );
+    });
+    await flush();
+    expect(inner).not.toBe(outer);
+    const [innerClose, outerClose] = h.traceUpdates;
+    expect(innerClose).toMatchObject({ tokensIn: 1000, costMicroUsd: 5190 });
+    expect(outerClose).toMatchObject({ tokensIn: 0, costMicroUsd: 0 });
+    expect(h.traceUpdates).toHaveLength(2);
+    expect(h.stepUpdates.at(-1)!.meta).toMatchObject({ cost_micro_usd: 5190 });
   });
 
   it('a null target runs the work as is', async () => {
@@ -275,7 +344,7 @@ describe('captureLlmUsage (the raw-response reader)', () => {
     expect(got.trace).toMatchObject({ tokensIn: 7, tokensOut: 3, tokensCacheRead: 2 });
   });
 
-  it('counts the cache-write tokens (A10 #5: skipped before)', async () => {
+  it('counts the cache-write tokens once: they are inside prompt_tokens', async () => {
     const got = await inStep(() =>
       captureLlmUsage(
         {
@@ -289,8 +358,11 @@ describe('captureLlmUsage (the raw-response reader)', () => {
         'perplexity/sonar',
       ),
     );
-    expect(got.trace).toMatchObject({ tokensIn: 450, tokensCacheRead: 20, costMicroUsd: 6000 });
-    expect(got.meta).toMatchObject({ tokens_in: 400, cache_read: 20, cache_write: 50 });
+    // OpenRouter's prompt_tokens_details are a breakdown of prompt_tokens: the
+    // trace's input is the prompt total (400), not 400 + 50 (A10 #5 fix round
+    // 1); the step shows the writes apart from the rest of the prompt.
+    expect(got.trace).toMatchObject({ tokensIn: 400, tokensCacheRead: 20, costMicroUsd: 6000 });
+    expect(got.meta).toMatchObject({ tokens_in: 350, cache_read: 20, cache_write: 50 });
   });
 
   it('falls back to the price table when no cost is reported', () => {

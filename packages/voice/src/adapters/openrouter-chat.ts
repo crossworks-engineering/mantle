@@ -625,13 +625,31 @@ async function openrouterChat(opts: ChatOptions): Promise<ChatResult> {
     ...(servedBy ? { servedBy } : {}),
     ...(toolCalls && toolCalls.length > 0 ? { toolCalls } : {}),
     ...(finishReason ? { finishReason } : {}),
-    tokensIn: usage?.promptTokens,
+    tokensIn: orPromptTokens(usage?.promptTokens, usage?.promptTokensDetails?.cacheWriteTokens),
     tokensOut: usage?.completionTokens,
     cacheReadTokens: usage?.promptTokensDetails?.cachedTokens ?? undefined,
     cacheWriteTokens: usage?.promptTokensDetails?.cacheWriteTokens ?? undefined,
     reportedCostUsd,
     ...(reasoningDetails ? { reasoningDetails } : {}),
   };
+}
+
+/**
+ * The prompt tokens in this repo's sense: the prompt total WITHOUT the
+ * cache-write tokens (ChatResult.cacheWriteTokens are reported apart, and the
+ * recorder adds them to the trace's input total). OpenRouter's `prompt_tokens`
+ * is the whole prompt and `prompt_tokens_details` "a breakdown of prompt
+ * tokens" (its API reference, ResponseUsage), so the writes are inside it:
+ * taken out once here, or a cache-writing call counted them twice (A10 #5
+ * fix round 1). Cache reads stay inside, as every OpenAI-shaped adapter
+ * reports them: the price table prices them out of the input total.
+ */
+export function orPromptTokens(
+  prompt: number | null | undefined,
+  cacheWrite: number | null | undefined,
+): number | undefined {
+  if (typeof prompt !== 'number') return undefined;
+  return Math.max(0, prompt - (cacheWrite ?? 0));
 }
 
 type OrListModelsResponse = {
@@ -1037,7 +1055,7 @@ async function openrouterChatStream(
     ...(servedBy ? { servedBy } : {}),
     ...(toolCalls.length > 0 ? { toolCalls } : {}),
     ...(finishReason ? { finishReason } : {}),
-    tokensIn: usage?.promptTokens ?? usage?.prompt_tokens,
+    tokensIn: orPromptTokens(usage?.promptTokens ?? usage?.prompt_tokens, cacheWrite),
     tokensOut: usage?.completionTokens ?? usage?.completion_tokens,
     cacheReadTokens: cacheRead ?? undefined,
     cacheWriteTokens: cacheWrite ?? undefined,

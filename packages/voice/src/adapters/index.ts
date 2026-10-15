@@ -206,46 +206,11 @@ export { providerHealth, sameLocalModel, type ProviderHealth } from './provider-
 // wrapper uses (429 / 5xx / network → transient; 4xx bad-input → permanent).
 export { ChatHttpError, classifyChatError, parseRetryAfterMs } from './retry';
 
-// Re-export the built-in adapter objects so apps can compose them
-// (e.g. for testing against a mocked HTTP layer).
-export { openAiTtsAdapter } from './openai-tts';
-export { openrouterDecisionAdapter } from './openrouter-decision';
-export { openAiSttAdapter } from './openai-stt';
-export { xaiSttAdapter } from './xai-stt';
-export { elevenLabsSttAdapter } from './elevenlabs-stt';
-export { deepgramSttAdapter } from './deepgram-stt';
-export { assemblyAiSttAdapter } from './assemblyai-stt';
-export { googleSttAdapter } from './google-stt';
-export { openAiVisionAdapter } from './openai-vision';
-export { anthropicVisionAdapter } from './anthropic-vision';
-export { googleVisionAdapter } from './google-vision';
-export { xaiVisionAdapter } from './xai-vision';
-export { openAiImageAdapter } from './openai-image';
-export { xaiImageAdapter } from './xai-image';
-export { googleImageAdapter } from './google-image';
-export { huggingfaceImageAdapter } from './huggingface-image';
-export { xaiChatAdapter } from './xai-chat';
-export {
-  huggingfaceChatAdapter,
-  HUGGINGFACE_ROUTING_POLICIES,
-  type HuggingfaceRoutingPolicy,
-} from './huggingface-chat';
-export { anthropicChatAdapter } from './anthropic-chat';
-export { googleChatAdapter } from './google-chat';
-export { openrouterChatAdapter } from './openrouter-chat';
-export { deepseekChatAdapter } from './deepseek-chat';
-export { mammouthChatAdapter } from './mammouth-chat';
-export { copilotChatAdapter } from './copilot-chat';
-export { customChatAdapter } from './custom-chat';
-export { localChatAdapter } from './local-chat';
-export { googleTtsAdapter } from './google-tts';
-export { xaiTtsAdapter } from './xai-tts';
-export { elevenLabsTtsAdapter } from './elevenlabs-tts';
-export { openrouterEmbedding } from './openrouter-embedding';
-export { openaiEmbedding } from './openai-embedding';
-export { googleEmbedding } from './google-embedding';
-export { mistralEmbedding } from './mistral-embedding';
-export { cohereEmbedding } from './cohere-embedding';
+// The built-in adapter objects are NOT exported (A10 #5 fix round 1): a raw
+// adapter's call records no spend. Callers reach a provider through the
+// lookups above, which hand each adapter out wrapped to record its call; a
+// test of one adapter imports it from its own module.
+export { HUGGINGFACE_ROUTING_POLICIES, type HuggingfaceRoutingPolicy } from './huggingface-chat';
 
 // Catalogues — exposed so the UI can render the static list before
 // live discovery completes.

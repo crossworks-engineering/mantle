@@ -89,6 +89,9 @@ export type AgentSpend = {
   tokensIn: number;
   tokensOut: number;
   cacheReadTokens: number;
+  /** Embedding input tokens, apart from the completion tokens above (A10 #5).
+   *  Absent from a server before it. */
+  tokensEmbed?: number;
   runs: number;
 };
 
@@ -124,6 +127,9 @@ export type DailySpend = {
   tokensIn: number;
   tokensOut: number;
   cacheReadTokens: number;
+  /** Embedding input tokens, apart from the completion tokens above (A10 #5).
+   *  Absent from a server before it. */
+  tokensEmbed?: number;
   runs: number;
 };
 
@@ -980,6 +986,9 @@ export type Traffic = {
   tokensIn: number;
   tokensOut: number;
   tokensCacheRead: number;
+  /** Embedding input tokens, apart from the completion tokens above (A10 #5).
+   *  Absent from a server before it. */
+  tokensEmbed?: number;
 };
 
 export type StudioGraph = {

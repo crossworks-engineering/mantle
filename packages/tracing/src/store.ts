@@ -124,7 +124,10 @@ export type TraceContext = {
   startedAtMs: number;
   ordinalCounter: number; // next root-step ordinal
   childOrdinals: Map<string, number>; // parent step id -> next child ordinal
-  tokens: { in: number; out: number; cacheRead: number };
+  /** Completion tokens (in, out, cache read) and embedding tokens (embed),
+   *  kept apart: the member token budget reads the completion tokens only
+   *  (docs/spend-recording.md). */
+  tokens: { in: number; out: number; cacheRead: number; embed: number };
   costMicroUsd: number;
   stepCount: number;
   status: 'running' | 'success' | 'error';
@@ -189,7 +192,7 @@ export type PreludeStep = {
   error: string | null;
   startedAtMs: number;
   durationMs: number | null;
-  tokens: { in: number; out: number; cacheRead: number };
+  tokens: { in: number; out: number; cacheRead: number; embed: number };
   costMicroUsd: number;
   /** Index of the enclosing prelude step, or null for a root step. */
   parentIndex: number | null;
@@ -229,7 +232,7 @@ async function preludeStep<T>(
     error: null,
     startedAtMs: Date.now(),
     durationMs: null,
-    tokens: { in: 0, out: 0, cacheRead: 0 },
+    tokens: { in: 0, out: 0, cacheRead: 0, embed: 0 },
     costMicroUsd: 0,
     parentIndex: preludeStepStore.getStore() ?? null,
   };
@@ -292,6 +295,7 @@ async function writePrelude(ctx: TraceContext, steps: PreludeStep[]): Promise<vo
     ctx.tokens.in += s.tokens.in;
     ctx.tokens.out += s.tokens.out;
     ctx.tokens.cacheRead += s.tokens.cacheRead;
+    ctx.tokens.embed += s.tokens.embed;
     ctx.costMicroUsd += s.costMicroUsd;
     ctx.stepCount++;
     return {
@@ -574,15 +578,19 @@ export function emitTurnLifecycle(
 
 /** One provider call's usage, as it adds to a trace and a step. */
 export type UsageAttribution = {
-  /** Trace totals: `input` already holds the cache-write tokens. */
-  tokens: { in: number; out: number; cacheRead: number };
+  /** Trace totals: `in` already holds the cache-write tokens. `in`, `out`
+   *  and `cacheRead` are completion tokens; `embed` the embedding input
+   *  tokens, kept apart (the member token budget reads `in + out` only). */
+  tokens: { in: number; out: number; cacheRead: number; embed: number };
   costMicroUsd: number;
   /** The step meta keys this call adds (numbers are summed into the step's,
    *  `model` and `provider` replace). */
   meta: Record<string, string | number>;
 };
 
-const chargeStore = new AsyncLocalStorage<TraceContext>();
+// null: no target here. startTrace runs its work with null, so a trace opened
+// inside a chargeTo scope takes its own usage (A10 #5 fix round 1).
+const chargeStore = new AsyncLocalStorage<TraceContext | null>();
 
 /** A trace that spend can be charged to (see chargeTo). */
 export type SpendTarget = TraceContext;
@@ -624,13 +632,16 @@ function addToTotals(ctx: TraceContext, u: UsageAttribution): void {
     ctx.tokens.in += u.tokens.in;
     ctx.tokens.out += u.tokens.out;
     ctx.tokens.cacheRead += u.tokens.cacheRead;
+    ctx.tokens.embed += u.tokens.embed;
     ctx.costMicroUsd += u.costMicroUsd;
     return;
   }
   // The trace closed while the call ran (or before a follow-up made it): add
   // to the row after its close write, so the absolute close values cannot
   // land on top of the increment.
-  if (u.tokens.in + u.tokens.out + u.tokens.cacheRead + u.costMicroUsd === 0) return;
+  if (u.tokens.in + u.tokens.out + u.tokens.cacheRead + u.tokens.embed + u.costMicroUsd === 0) {
+    return;
+  }
   void ctx.closed.then(() =>
     Promise.resolve(
       systemDb
@@ -639,6 +650,7 @@ function addToTotals(ctx: TraceContext, u: UsageAttribution): void {
           tokensIn: sql`${traces.tokensIn} + ${u.tokens.in}`,
           tokensOut: sql`${traces.tokensOut} + ${u.tokens.out}`,
           tokensCacheRead: sql`${traces.tokensCacheRead} + ${u.tokens.cacheRead}`,
+          tokensEmbed: sql`${traces.tokensEmbed} + ${u.tokens.embed}`,
           costMicroUsd: sql`${traces.costMicroUsd} + ${u.costMicroUsd}`,
         })
         .where(eq(traces.id, ctx.id)),
@@ -667,6 +679,7 @@ export function attributeUsage(u: UsageAttribution): void {
     entry.tokens.in += u.tokens.in;
     entry.tokens.out += u.tokens.out;
     entry.tokens.cacheRead += u.tokens.cacheRead;
+    entry.tokens.embed += u.tokens.embed;
     entry.costMicroUsd += u.costMicroUsd;
     entry.meta = mergeUsageMeta(entry.meta, u.meta);
     return;
@@ -739,7 +752,7 @@ export async function startTrace<T>(init: StartTraceInit, fn: () => Promise<T>):
     startedAtMs: Date.now(),
     ordinalCounter: 0,
     childOrdinals: new Map(),
-    tokens: { in: 0, out: 0, cacheRead: 0 },
+    tokens: { in: 0, out: 0, cacheRead: 0, embed: 0 },
     costMicroUsd: 0,
     stepCount: 0,
     status: 'running',
@@ -790,45 +803,50 @@ export async function startTrace<T>(init: StartTraceInit, fn: () => Promise<T>):
   // splice(0) consumes the prelude so a retry trace cannot double-count it.
   if (init.prelude) await writePrelude(ctx, init.prelude.steps.splice(0));
 
-  return traceStore.run(ctx, async () => {
-    try {
-      const result = await fn();
-      ctx.status = 'success';
-      return result;
-    } catch (err) {
-      ctx.status = 'error';
-      ctx.failedError = errorMessage(err);
-      throw err;
-    } finally {
-      // The root turn owns the per-turn seq cursor. When a lifecycle observer is
-      // installed (the runner), the terminal `done`/`error` event — which fires
-      // AFTER this trace closes, once the outbound row is finalized — retires the
-      // cursor instead, so its seq stays monotonic past the trace boundary. Only
-      // clean up here when nothing downstream will (no runner wired).
-      if (isStreamRoot && turnId && turnLifecycleObserver === null) {
-        turnSeqCounters.delete(turnId);
+  // A trace opened inside a chargeTo scope is its own: its work's usage lands
+  // on it and its steps, not on the charged target (the target is cleared).
+  return chargeStore.run(null, () =>
+    traceStore.run(ctx, async () => {
+      try {
+        const result = await fn();
+        ctx.status = 'success';
+        return result;
+      } catch (err) {
+        ctx.status = 'error';
+        ctx.failedError = errorMessage(err);
+        throw err;
+      } finally {
+        // The root turn owns the per-turn seq cursor. When a lifecycle observer is
+        // installed (the runner), the terminal `done`/`error` event — which fires
+        // AFTER this trace closes, once the outbound row is finalized — retires the
+        // cursor instead, so its seq stays monotonic past the trace boundary. Only
+        // clean up here when nothing downstream will (no runner wired).
+        if (isStreamRoot && turnId && turnLifecycleObserver === null) {
+          turnSeqCounters.delete(turnId);
+        }
+        const duration = Date.now() - ctx.startedAtMs;
+        const write = systemDb
+          .update(traces)
+          .set({
+            status: ctx.status,
+            finishedAt: new Date(),
+            durationMs: duration,
+            tokensIn: ctx.tokens.in,
+            tokensOut: ctx.tokens.out,
+            tokensCacheRead: ctx.tokens.cacheRead,
+            tokensEmbed: ctx.tokens.embed,
+            costMicroUsd: ctx.costMicroUsd,
+            stepCount: ctx.stepCount,
+            error: ctx.failedError,
+          })
+          .where(eq(traces.id, ctx.id));
+        ctx.closed = Promise.resolve(write).then(
+          () => undefined,
+          (err: unknown) => logErr('finish trace', err),
+        );
       }
-      const duration = Date.now() - ctx.startedAtMs;
-      const write = systemDb
-        .update(traces)
-        .set({
-          status: ctx.status,
-          finishedAt: new Date(),
-          durationMs: duration,
-          tokensIn: ctx.tokens.in,
-          tokensOut: ctx.tokens.out,
-          tokensCacheRead: ctx.tokens.cacheRead,
-          costMicroUsd: ctx.costMicroUsd,
-          stepCount: ctx.stepCount,
-          error: ctx.failedError,
-        })
-        .where(eq(traces.id, ctx.id));
-      ctx.closed = Promise.resolve(write).then(
-        () => undefined,
-        (err: unknown) => logErr('finish trace', err),
-      );
-    }
-  });
+    }),
+  );
 }
 
 /**

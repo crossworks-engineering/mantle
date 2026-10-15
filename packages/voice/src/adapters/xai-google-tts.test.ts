@@ -18,11 +18,11 @@ import {
   audioTagsForGoogleTtsModel,
   audioTagsForXaiTtsModel,
   getTtsAdapter,
-  googleTtsAdapter,
   isProviderWired,
   wrappingTagsForXaiTtsModel,
-  xaiTtsAdapter,
 } from './index';
+import { googleTtsAdapter } from './google-tts';
+import { xaiTtsAdapter } from './xai-tts';
 
 describe('xAI TTS adapter', () => {
   it('self-registers on import', () => {

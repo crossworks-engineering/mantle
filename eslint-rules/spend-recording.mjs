@@ -10,8 +10,12 @@
  *    usage total (`costMicroUsd +=`, `tokens.in +=` and the like). Before:
  *    three recorders called from eight files, and three hand cost sinks;
  *  - a provider call that bypasses the recording point: the contract
- *    package's unwrapped registry, the OpenRouter SDK constructed outside an
- *    adapter, or the OpenAI speech calls reached without their adapter.
+ *    package's unwrapped registry (any spelling of its path, with or without
+ *    `src/` and a file suffix), the OpenRouter SDK constructed outside an
+ *    adapter, the OpenAI speech calls reached without their adapter, or a
+ *    call on a raw built-in adapter object (`openrouterChatAdapter.chat(`,
+ *    `openaiEmbedding.embed(`): those are no longer exported from
+ *    @mantle/voice, and this keeps a deep import from bringing one back.
  *
  * scripts/arch-scoreboard.ts pins each number; spend-recording.test.ts holds
  * each list to exactly the files that still have the pattern. The rule is the
@@ -50,23 +54,33 @@ export const PROVIDER_BYPASS_ALLOWED = {
 /** Recorder calls and hand usage additions in `code` (comments blanked). */
 export function handSpendSites(code) {
   const calls = code.match(/\b(?:recordUsage|captureLlmUsage|attributeUsage)\s*\(/g) ?? [];
-  const sums = code.match(/\b(?:costMicroUsd|tokens\.(?:in|out|cacheRead))\s*\+=/g) ?? [];
+  const sums = code.match(/\b(?:costMicroUsd|tokens\.(?:in|out|cacheRead|embed))\s*\+=/g) ?? [];
   // A definition is not a call.
   const defs =
     code.match(/\bfunction\s+(?:recordUsage|captureLlmUsage|attributeUsage)\s*\(/g) ?? [];
   return calls.length - defs.length + sums.length;
 }
 
+/** A call on a built-in adapter object (named `<provider>ChatAdapter`,
+ *  `<provider>Embedding` and the like, as in packages/voice/src/adapters). */
+const RAW_ADAPTER_CALL =
+  /\b[a-z][A-Za-z0-9]*(?:ChatAdapter|DecisionAdapter|VisionAdapter|ImageAdapter|TtsAdapter|SttAdapter|Embedding)\s*\.\s*(?:chat|chatStream|decide|embed|extract|extractDocument|generate|synthesize|transcribe)\s*\(/g;
+
 /** Provider calls that bypass the recording point, in `code`. */
 export function providerBypassSites(code) {
-  const registry = code.match(/['"]@mantle\/voice-client\/adapters\/registry['"]/g) ?? [];
+  const registry =
+    code.match(/['"]@mantle\/voice-client\/(?:src\/)?adapters\/registry(?:\.[cm]?[jt]sx?)?['"]/g) ??
+    [];
   const unwrapped = code.match(/\bregisteredChatAdapter\s*\(/g) ?? [];
   const sdk = code.match(/\bnew\s+OpenRouter\s*\(/g) ?? [];
   const speech = code.match(/\b(?:transcribeAudio|synthesizeSpeech)\s*\(/g) ?? [];
+  // A raw built-in adapter object's own call: the registry hands each one out
+  // wrapped; the object itself records nothing.
+  const raw = code.match(RAW_ADAPTER_CALL) ?? [];
   const defs =
     code.match(/\bfunction\s+(?:registeredChatAdapter|transcribeAudio|synthesizeSpeech)\s*\(/g) ??
     [];
-  return registry.length + unwrapped.length + sdk.length + speech.length - defs.length;
+  return registry.length + unwrapped.length + sdk.length + speech.length + raw.length - defs.length;
 }
 
 /** Each pattern: its counter and its named list. */

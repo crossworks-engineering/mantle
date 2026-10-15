@@ -469,6 +469,37 @@ describe('openrouter-chat usage round-trip', () => {
     });
     expect(result.cacheReadTokens).toBe(800);
     expect(result.cacheWriteTokens).toBe(100);
+    // A10 #5 fix round 1: promptTokens is the whole prompt and its details a
+    // breakdown of it, so the cache writes come out of tokensIn once (the
+    // recorder adds cacheWriteTokens back): the trace's input is 1000, not
+    // 1100. The cache reads stay inside, as every OpenAI-shaped adapter.
+    expect(result.tokensIn).toBe(900);
+  });
+
+  it('streamed: the cache writes come out of tokensIn once (snake_case usage)', async () => {
+    mockSendImpl = async () =>
+      streamOf([
+        { model: 'anthropic/claude-sonnet-4.6', choices: [{ delta: { content: 'ok' } }] },
+        { choices: [{ delta: {}, finishReason: 'stop' }] },
+        {
+          usage: {
+            prompt_tokens: 1000,
+            completion_tokens: 5,
+            prompt_tokens_details: { cached_tokens: 800, cache_write_tokens: 100 },
+          },
+        },
+      ]);
+    const r = await openrouterChatAdapter.chatStream!(
+      {
+        apiKey: 'sk-test',
+        model: 'anthropic/claude-sonnet-4.6',
+        messages: [{ role: 'user', content: 'hi' }],
+      },
+      () => {},
+    );
+    expect(r.tokensIn).toBe(900);
+    expect(r.cacheReadTokens).toBe(800);
+    expect(r.cacheWriteTokens).toBe(100);
   });
 
   it('surfaces reportedCostUsd from usage.cost', async () => {

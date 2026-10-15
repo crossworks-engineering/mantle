@@ -20,15 +20,15 @@ import {
   HUGGINGFACE_CHAT_MODELS,
   OPENROUTER_CHAT_MODELS,
   XAI_CHAT_MODELS,
-  anthropicChatAdapter,
-  deepseekChatAdapter,
   getChatAdapter,
-  huggingfaceChatAdapter,
   isProviderWired,
   listChatAdapters,
-  openrouterChatAdapter,
-  xaiChatAdapter,
 } from './index';
+import { anthropicChatAdapter } from './anthropic-chat';
+import { deepseekChatAdapter } from './deepseek-chat';
+import { huggingfaceChatAdapter } from './huggingface-chat';
+import { openrouterChatAdapter } from './openrouter-chat';
+import { xaiChatAdapter } from './xai-chat';
 import { applyRoutingSuffix } from './huggingface-chat';
 
 describe('chat adapter self-registration', () => {

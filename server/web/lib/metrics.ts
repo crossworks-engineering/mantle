@@ -149,6 +149,7 @@ export async function trafficWindow(userId: string, hoursBack: number): Promise<
       tokensIn: sql<number>`coalesce(sum(${traces.tokensIn}), 0)::int`,
       tokensOut: sql<number>`coalesce(sum(${traces.tokensOut}), 0)::int`,
       tokensCacheRead: sql<number>`coalesce(sum(${traces.tokensCacheRead}), 0)::int`,
+      tokensEmbed: sql<number>`coalesce(sum(${traces.tokensEmbed}), 0)::int`,
     })
     .from(traces)
     .where(and(eq(traces.ownerId, userId), gte(traces.startedAt, since)));
@@ -161,6 +162,7 @@ export async function trafficWindow(userId: string, hoursBack: number): Promise<
     tokensIn: r?.tokensIn ?? 0,
     tokensOut: r?.tokensOut ?? 0,
     tokensCacheRead: r?.tokensCacheRead ?? 0,
+    tokensEmbed: r?.tokensEmbed ?? 0,
   };
 }
 
@@ -175,6 +177,7 @@ export async function spendByAgent(userId: string, daysBack: number): Promise<Ag
       tokensIn: sql<number>`coalesce(sum(${traces.tokensIn}), 0)::int`,
       tokensOut: sql<number>`coalesce(sum(${traces.tokensOut}), 0)::int`,
       cacheReadTokens: sql<number>`coalesce(sum(${traces.tokensCacheRead}), 0)::int`,
+      tokensEmbed: sql<number>`coalesce(sum(${traces.tokensEmbed}), 0)::int`,
       runs: sql<number>`count(*)::int`,
     })
     .from(traces)
@@ -191,6 +194,7 @@ export async function spendByAgent(userId: string, daysBack: number): Promise<Ag
     tokensIn: r.tokensIn,
     tokensOut: r.tokensOut,
     cacheReadTokens: r.cacheReadTokens,
+    tokensEmbed: r.tokensEmbed,
     runs: r.runs,
   }));
 }
@@ -233,6 +237,7 @@ export async function spendByDay(userId: string, daysBack: number): Promise<Dail
       tokensIn: sql<number>`coalesce(sum(${traces.tokensIn}), 0)::int`,
       tokensOut: sql<number>`coalesce(sum(${traces.tokensOut}), 0)::int`,
       cacheReadTokens: sql<number>`coalesce(sum(${traces.tokensCacheRead}), 0)::int`,
+      tokensEmbed: sql<number>`coalesce(sum(${traces.tokensEmbed}), 0)::int`,
       runs: sql<number>`count(*)::int`,
     })
     .from(traces)
@@ -255,6 +260,7 @@ export async function spendByDay(userId: string, daysBack: number): Promise<Dail
       tokensIn: row?.tokensIn ?? 0,
       tokensOut: row?.tokensOut ?? 0,
       cacheReadTokens: row?.cacheReadTokens ?? 0,
+      tokensEmbed: row?.tokensEmbed ?? 0,
       runs: row?.runs ?? 0,
     });
   }

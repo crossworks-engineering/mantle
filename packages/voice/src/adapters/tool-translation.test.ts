@@ -20,7 +20,11 @@
  */
 
 import { afterEach, describe, expect, it } from 'vitest';
-import { anthropicChatAdapter, googleChatAdapter, xaiChatAdapter } from './index';
+// The registry (and its built-in adapters) wires up on import.
+import './index';
+import { anthropicChatAdapter } from './anthropic-chat';
+import { googleChatAdapter } from './google-chat';
+import { xaiChatAdapter } from './xai-chat';
 import type { ChatToolDefinition, ThinkingEffort } from './types';
 
 const realFetch = globalThis.fetch;

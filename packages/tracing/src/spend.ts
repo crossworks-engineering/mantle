@@ -14,6 +14,12 @@
  * token budget and a run item's cost read) and the running step's meta (what
  * spend-by-model reads), summed over the step's calls.
  *
+ * Completion tokens and embedding tokens land apart: a completion's (chat,
+ * stream, decision, vision, research) in the trace's tokens in/out, which the
+ * member token budget reads; an embedding call's input tokens in the trace's
+ * embed tokens, which it does not (A10 #5 fix round 1). Cost is one total:
+ * every priced call counts toward a run budget.
+ *
  * Cost: the provider's reported cost when it gave one, else the static price
  * table (pricing.ts). Never a network call: recording spend must not spend.
  */
@@ -42,9 +48,12 @@ export type ProviderUsage = {
    *  reported no cost: the requested id first, then the served one. Default:
    *  `[model]`. */
   priceAs?: readonly (string | null | undefined)[];
-  /** Prompt tokens, without the cache-write tokens. Undefined: a call with no
-   *  token usage (speech, transcription, images); the step meta then carries
-   *  no token keys. */
+  /** Prompt tokens, without the cache-write tokens (a provider that counts
+   *  the writes inside its prompt total, OpenRouter, takes them out in its
+   *  adapter). Cache reads stay inside: the price table prices them out of
+   *  this number. Undefined: a call with no token usage (speech,
+   *  transcription, images); the step meta then carries no token keys. For an
+   *  embedding: its input tokens, kept in the trace's embed total. */
   inputTokens?: number;
   outputTokens?: number;
   /** Prompt tokens served from the provider's cache. Undefined: the
@@ -102,11 +111,13 @@ export function recordUsage(u: ProviderUsage): number {
     if (cacheWrite > 0) meta.cache_write = cacheWrite;
     if (u.units && num(u.units.count) > 0) meta[u.units.kind] = num(u.units.count);
     meta.cost_micro_usd = costMicroUsd;
-    attributeUsage({
-      tokens: { in: input + cacheWrite, out: output, cacheRead },
-      costMicroUsd,
-      meta,
-    });
+    // An embedding's tokens are not completion tokens: the member token
+    // budget reads tokens in + out, never these (docs/spend-recording.md).
+    const tokens =
+      u.capability === 'embedding'
+        ? { in: 0, out: 0, cacheRead: 0, embed: input + output }
+        : { in: input + cacheWrite, out: output, cacheRead, embed: 0 };
+    attributeUsage({ tokens, costMicroUsd, meta });
     return costMicroUsd;
   } catch (err) {
     console.error(`[tracing] record usage: ${err instanceof Error ? err.message : String(err)}`);
@@ -118,8 +129,14 @@ export function recordUsage(u: ProviderUsage): number {
  * The raw-response reader, for the one provider call that holds an untyped
  * response instead of an adapter result: the research tool's OpenRouter SDK
  * call (Perplexity Sonar). Reads camelCase (the SDK's typed shape) and
- * snake_case (the JSON), cache reads and cache writes (A10 #5: the writes
- * were skipped before), then records through {@link recordUsage}.
+ * snake_case (the JSON), cache reads and cache writes, then records through
+ * {@link recordUsage}.
+ *
+ * OpenRouter's `prompt_tokens` is the whole prompt and `prompt_tokens_details`
+ * a breakdown of it (its API reference: "Breakdown of prompt tokens"), so the
+ * cache-write tokens are taken out of the prompt total once here, as the
+ * recorder's input excludes them: the trace's input total is the provider's
+ * prompt total, not that plus the writes again.
  */
 export function captureLlmUsage(
   raw: unknown,
@@ -144,14 +161,16 @@ export function captureLlmUsage(
     usage.cache_creation_input_tokens ??
     details.cacheWriteTokens ??
     details.cache_write_tokens;
+  const prompt = num(usage.promptTokens ?? usage.prompt_tokens);
+  const writes = num(cacheWrite);
   return recordUsage({
     capability: opts.capability ?? 'research',
     provider: opts.provider ?? 'openrouter',
     model,
-    inputTokens: num(usage.promptTokens ?? usage.prompt_tokens),
+    inputTokens: Math.max(0, prompt - writes),
     outputTokens: num(usage.completionTokens ?? usage.completion_tokens),
     cacheReadTokens: num(cacheRead),
-    cacheWriteTokens: num(cacheWrite),
+    cacheWriteTokens: writes,
     reportedCostUsd: num(usage.cost ?? usage.total_cost),
   });
 }

@@ -36,6 +36,23 @@ describe('spend recording', () => {
     });
   }
 
+  it('@mantle/voice exports no raw built-in adapter object', () => {
+    // A raw adapter's call records nothing: only the wrapped lookups leave
+    // the package (A10 #5 fix round 1).
+    const barrel = stripComments(
+      readFileSync(join(ROOT, 'packages/voice/src/adapters/index.ts'), 'utf8'),
+    ) as string;
+    const exported = [...barrel.matchAll(/export\s*\{([^}]*)\}/g)].flatMap((m) =>
+      m[1]!.split(',').map((n) => n.trim().replace(/^type\s+/, '')),
+    );
+    const raw = exported.filter((n) =>
+      /^(?!get|register|list)[a-z]\w*(?:ChatAdapter|DecisionAdapter|VisionAdapter|ImageAdapter|TtsAdapter|SttAdapter|Embedding)$/.test(
+        n,
+      ),
+    );
+    expect(raw).toEqual([]);
+  });
+
   it('the registry wraps every lookup the contract package exports', () => {
     // A lookup added to @mantle/voice-client without a recording twin in
     // @mantle/voice would hand out an adapter that records nothing.
@@ -58,6 +75,17 @@ describe('spend recording', () => {
     ['handSpend', "recordUsage({ capability: 'chat', provider: 'p', model: 'm' });"],
     ['providerBypass', "import { getTtsAdapter } from '@mantle/voice-client/adapters/registry';"],
     ['providerBypass', 'const c = new OpenRouter({ apiKey });'],
+    // A10 #5 fix round 1: a suffixed registry path, a raw adapter object's
+    // call, a hand addition to the embedding total.
+    [
+      'providerBypass',
+      "import { getTtsAdapter } from '@mantle/voice-client/adapters/registry.ts';",
+    ],
+    ['providerBypass', "import { x } from '@mantle/voice-client/src/adapters/registry.js';"],
+    ['providerBypass', 'await openrouterChatAdapter.chat(opts);'],
+    ['providerBypass', 'await openrouterDecisionAdapter.decide(opts);'],
+    ['providerBypass', 'await openaiEmbedding.embed(req);'],
+    ['handSpend', 'ctx.tokens.embed += 5;'],
   ];
   for (const [key, code] of cases) {
     it(`${key}: flags a product file, passes a named one (${code.slice(0, 30)})`, () => {

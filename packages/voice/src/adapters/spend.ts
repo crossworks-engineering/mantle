@@ -8,8 +8,13 @@
  * A call that throws records nothing (no usage came back). The chat wrapper
  * sits OUTSIDE the retry wrapper, so a call retried three times is one
  * recording: the attempt that answered.
+ *
+ * Recording never costs a call its result: every recording, from reading the
+ * result and the options to the recorder itself, runs inside `record`, which
+ * swallows and logs any throw. A paid result is always returned, so a broken
+ * recording can never turn into a retry that pays again (A10 #5 fix round 1).
  */
-import { recordUsage } from '@mantle/tracing';
+import { recordUsage, type ProviderUsage } from '@mantle/tracing';
 import type {
   ChatDispatcher,
   ChatOptions,
@@ -25,8 +30,18 @@ import type {
   VisionExtractResult,
 } from './types';
 
+/** Record one call's usage, built by `build` after the call returned. Never
+ *  throws: a throw while building or recording is logged and dropped. */
+export function record(build: () => ProviderUsage): void {
+  try {
+    recordUsage(build());
+  } catch (err) {
+    console.error(`[voice] record spend: ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
+
 function recordChat(provider: string, opts: ChatOptions, r: ChatResult): void {
-  recordUsage({
+  record(() => ({
     capability: 'chat',
     provider,
     model: r.model || opts.model,
@@ -36,11 +51,11 @@ function recordChat(provider: string, opts: ChatOptions, r: ChatResult): void {
     cacheReadTokens: r.cacheReadTokens ?? 0,
     ...(r.cacheWriteTokens ? { cacheWriteTokens: r.cacheWriteTokens } : {}),
     ...(r.reportedCostUsd !== undefined ? { reportedCostUsd: r.reportedCostUsd } : {}),
-  });
+  }));
 }
 
 function recordVision(provider: string, opts: VisionExtractOptions, r: VisionExtractResult): void {
-  recordUsage({
+  record(() => ({
     capability: 'vision',
     provider,
     // The configured id, as the vision workers always recorded it.
@@ -48,7 +63,7 @@ function recordVision(provider: string, opts: VisionExtractOptions, r: VisionExt
     priceAs: [opts.model, r.model],
     inputTokens: r.tokensIn ?? 0,
     outputTokens: r.tokensOut ?? 0,
-  });
+  }));
 }
 
 const wrapped = new WeakMap<object, object>();
@@ -85,7 +100,7 @@ export function recordingDecision(adapter: DecisionDispatcher): DecisionDispatch
     ...a,
     decide: async (opts) => {
       const r = await a.decide(opts);
-      recordUsage({
+      record(() => ({
         capability: 'decision',
         provider: a.providerId,
         model: r.model || opts.model,
@@ -94,7 +109,7 @@ export function recordingDecision(adapter: DecisionDispatcher): DecisionDispatch
         outputTokens: r.tokensOut ?? 0,
         cacheReadTokens: 0,
         ...(r.reportedCostUsd !== undefined ? { reportedCostUsd: r.reportedCostUsd } : {}),
-      });
+      }));
       return r;
     },
   }));
@@ -105,14 +120,14 @@ export function recordingEmbedding(adapter: EmbeddingDispatcher): EmbeddingDispa
     ...a,
     embed: async (req) => {
       const r = await a.embed(req);
-      recordUsage({
+      record(() => ({
         capability: 'embedding',
         provider: a.providerId,
         model: req.model,
         priceAs: [req.model, r.model],
         inputTokens: r.tokensIn ?? 0,
         outputTokens: 0,
-      });
+      }));
       return r;
     },
   }));
@@ -146,12 +161,12 @@ export function recordingImageGen(adapter: ImageGenDispatcher): ImageGenDispatch
     ...a,
     generate: async (opts) => {
       const r = await a.generate(opts);
-      recordUsage({
+      record(() => ({
         capability: 'image_gen',
         provider: a.providerId,
         model: r.model || opts.model || '',
         units: { kind: 'images', count: 1 },
-      });
+      }));
       return r;
     },
   }));
@@ -162,12 +177,12 @@ export function recordingTts(adapter: TtsDispatcher): TtsDispatcher {
     ...a,
     synthesize: async (opts) => {
       const r = await a.synthesize(opts);
-      recordUsage({
+      record(() => ({
         capability: 'tts',
         provider: a.providerId,
         model: r.model || opts.model || '',
         units: { kind: 'characters', count: opts.text.length },
-      });
+      }));
       return r;
     },
   }));
@@ -178,14 +193,14 @@ export function recordingStt(adapter: SttDispatcher): SttDispatcher {
     ...a,
     transcribe: async (audio, opts) => {
       const r = await a.transcribe(audio, opts);
-      recordUsage({
+      record(() => ({
         capability: 'stt',
         provider: a.providerId,
         model: r.model || opts.model || '',
         ...(typeof r.durationSeconds === 'number'
           ? { units: { kind: 'audio_seconds' as const, count: r.durationSeconds } }
           : {}),
-      });
+      }));
       return r;
     },
   }));

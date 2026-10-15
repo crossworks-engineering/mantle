@@ -22,12 +22,12 @@ import {
   isProviderWired,
   listSttAdapters,
   listTtsAdapters,
-  openAiSttAdapter,
-  openAiTtsAdapter,
   registerTtsAdapter,
   wiredCapabilitiesFor,
   type TtsDispatcher,
 } from './index';
+import { openAiSttAdapter } from './openai-stt';
+import { openAiTtsAdapter } from './openai-tts';
 
 describe('built-in adapter self-registration', () => {
   it('registers openai-tts on import', () => {

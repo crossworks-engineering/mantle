@@ -195,7 +195,13 @@ afterEach(() => {
 // ─── Harness ─────────────────────────────────────────────────────────────────
 
 type Recorded = {
-  trace: { tokensIn: number; tokensOut: number; tokensCacheRead: number; costMicroUsd: number };
+  trace: {
+    tokensIn: number;
+    tokensOut: number;
+    tokensCacheRead: number;
+    tokensEmbed: number;
+    costMicroUsd: number;
+  };
   /** The usage keys of the step the call ran in (empty: none recorded). */
   step: Record<string, unknown>;
 };
@@ -233,6 +239,7 @@ async function recordPath(body: (handle: StepHandle) => Promise<unknown>): Promi
       tokensIn: close.tokensIn as number,
       tokensOut: close.tokensOut as number,
       tokensCacheRead: close.tokensCacheRead as number,
+      tokensEmbed: close.tokensEmbed as number,
       costMicroUsd: close.costMicroUsd as number,
     },
     step: Object.fromEntries(USAGE_KEYS.filter((k) => k in meta).map((k) => [k, meta[k]])),
@@ -259,9 +266,10 @@ const CHAT_TRACE = {
   tokensIn: 1100,
   tokensOut: 200,
   tokensCacheRead: 300,
+  tokensEmbed: 0,
   costMicroUsd: CHAT_COST,
 };
-const NOTHING = { tokensIn: 0, tokensOut: 0, tokensCacheRead: 0, costMicroUsd: 0 };
+const NOTHING = { tokensIn: 0, tokensOut: 0, tokensCacheRead: 0, tokensEmbed: 0, costMicroUsd: 0 };
 
 const visionOpts = { apiKey: 'k', mimeType: 'image/png', prompt: 'p', model: 'gpt-4o-mini' };
 
@@ -300,7 +308,7 @@ describe('spend recording per call path', () => {
       }),
     );
     expect(got).toEqual({
-      trace: { tokensIn: 500, tokensOut: 0, tokensCacheRead: 0, costMicroUsd: 21 },
+      trace: { tokensIn: 500, tokensOut: 0, tokensCacheRead: 0, tokensEmbed: 0, costMicroUsd: 21 },
       step: {
         model: 'typesafe/jev-1.13',
         provider: P,
@@ -318,7 +326,13 @@ describe('spend recording per call path', () => {
       getVisionAdapter(P)!.extractDocument!(Buffer.from('x'), visionOpts),
     );
     const want = {
-      trace: { tokensIn: 800, tokensOut: 150, tokensCacheRead: 0, costMicroUsd: VISION_COST },
+      trace: {
+        tokensIn: 800,
+        tokensOut: 150,
+        tokensCacheRead: 0,
+        tokensEmbed: 0,
+        costMicroUsd: VISION_COST,
+      },
       step: {
         model: 'gpt-4o-mini',
         provider: P,
@@ -351,6 +365,7 @@ describe('spend recording per call path', () => {
       tokensIn: 800,
       tokensOut: 150,
       tokensCacheRead: 0,
+      tokensEmbed: 0,
       costMicroUsd: VISION_COST,
     });
     expect(got.step.cost_micro_usd).toBe(VISION_COST);
@@ -368,12 +383,21 @@ describe('spend recording per call path', () => {
       captureLlmUsage(RESEARCH_RAW, 'perplexity/sonar');
     });
     expect(got).toEqual({
-      // NAMED: tokensIn 400 on main (the cache-write tokens were skipped).
-      trace: { tokensIn: 450, tokensOut: 300, tokensCacheRead: 0, costMicroUsd: 6000 },
+      // tokensIn 400, as main: OpenRouter's prompt_tokens already holds the
+      // cache writes (its details are a breakdown of it), so they count once.
+      trace: {
+        tokensIn: 400,
+        tokensOut: 300,
+        tokensCacheRead: 0,
+        tokensEmbed: 0,
+        costMicroUsd: 6000,
+      },
       step: {
         model: 'perplexity/sonar',
         provider: 'openrouter',
-        tokens_in: 400,
+        // NAMED: 400 on main. The prompt without its cache writes, which the
+        // step shows apart (cache_write below).
+        tokens_in: 350,
         tokens_out: 300,
         cache_read: 0,
         // NAMED: absent on main.
@@ -410,9 +434,11 @@ describe('spend recording per call path', () => {
       });
       h.setMeta({ model: 'openai/text-embedding-3-small', provider: P });
     });
-    // NAMED: main recorded nothing (trace 0, step { model }).
+    // NAMED: main recorded nothing (trace 0, step { model }). The tokens land
+    // in the trace's embed total, never tokens in (the member token budget
+    // reads in + out only, A10 #5 fix round 1); the cost counts.
     expect(got).toEqual({
-      trace: { tokensIn: 50, tokensOut: 0, tokensCacheRead: 0, costMicroUsd: 1 },
+      trace: { tokensIn: 0, tokensOut: 0, tokensCacheRead: 0, tokensEmbed: 50, costMicroUsd: 1 },
       step: {
         model: 'openai/text-embedding-3-small',
         provider: P,
