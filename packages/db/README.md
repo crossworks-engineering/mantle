@@ -43,10 +43,31 @@ under drizzle's migrator.
 Our runner applies **each migration in its own transaction**, committing between
 them — the same granularity the incremental path always had. It stays
 byte-compatible with drizzle's ledger: same `drizzle.__drizzle_migrations` table,
-same `created_at` (journal `when`) gating, same `readMigrationFiles` parsing and
-hash. Trade-off: no whole-batch atomicity (a mid-batch failure leaves earlier
+same `created_at` (journal `when`) gating (with one difference, below), same
+`readMigrationFiles` parsing and hash. Trade-off: no whole-batch atomicity (a mid-batch failure leaves earlier
 migrations applied) — standard for migration tools and better for resumability.
 **A fresh DB now replays `0001 → latest` in one pass.**
+
+### A migration below the high-water mark is never skipped silently
+
+The `when` gating applies only entries above the highest applied one, so an
+entry that was never applied but sits below it (a lower number merged after a
+higher one, or a `when` stamped too low) would be skipped on that database for
+ever, with "Already up to date". The runner reads the whole ledger and finds
+such an entry by its `when` and its hash (`src/migrate-plan.ts`, the loop in
+`src/migrate-runner.ts`):
+
+- **0290 and later: refused.** Nothing is applied; `migrate` exits 1 naming each
+  missing migration (so the compose `migrate` service fails and nothing starts
+  on a schema that lacks it). Apply it by hand in a transaction and record it in
+  `drizzle.__drizzle_migrations` with its hash and `when`, or restamp it above
+  the mark in a new release, then run again.
+- **Older: a loud `WARNING` and the run goes on.** Some boxes carry historic gaps
+  (an entry re-stamped or edited long ago) and must keep rolling.
+
+`src/migrations-journal.test.ts` also fails on any skipped number but `0211`,
+so a branch whose migration number is above a reserved, unmerged one cannot
+land first.
 
 Constraints this implies for new migrations:
 

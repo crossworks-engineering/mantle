@@ -26,7 +26,8 @@
  * drizzle's migrator:
  *   - same ledger table `drizzle.__drizzle_migrations` (id serial, hash, created_at),
  *   - same gating: apply migrations whose journal `when` (folderMillis) is
- *     greater than the max recorded `created_at`,
+ *     greater than the max recorded `created_at` (the high-water mark),
+ *     except that a gap is never skipped silently (below),
  *   - same file parsing via drizzle's `readMigrationFiles` (statement-breakpoint
  *     splitting + the same hash), so the ledger stays byte-compatible with
  *     anything drizzle wrote before.
@@ -39,11 +40,28 @@
  * (CONCURRENTLY / VACUUM — verified absent). An index a live table must gain
  * without blocking writes is built CONCURRENTLY after the migrations
  * (concurrent-indexes.ts).
+ *
+ * ── A migration below the high-water mark (arch A6 fix round 1, H1) ──────────
+ * drizzle's gating skips any entry whose `when` is at or below the highest
+ * applied one, so an entry that was never applied but sits below the mark
+ * (a lower number merged after a higher one, or a `when` stamped too low)
+ * would be skipped on this database for ever, with "Already up to date".
+ * The runner reads the whole ledger and finds such an entry (by its `when`
+ * and its hash; migrate-plan.ts):
+ *   - numbered 0290 or later: REFUSED. Nothing is applied, the run fails
+ *     (exit 1) naming each missing migration, before any later one runs over
+ *     a schema that lacks it;
+ *   - older: a loud WARNING and the run goes on. Some boxes carry historic
+ *     gaps (an entry re-stamped or edited long ago) and must keep rolling.
+ * The ledger and apply loop live in migrate-runner.ts (applyJournal), so a
+ * database test runs the real one (migrate-runner.db.test.ts).
  */
+import { readFileSync } from 'node:fs';
 import { readMigrationFiles } from 'drizzle-orm/migrator';
 import postgres from 'postgres';
 import { env, feature } from '@mantle/config';
-import { headsBypassesIn } from './heads-bypass';
+import { applyJournal } from './migrate-runner';
+import type { JournalEntry } from './migrate-plan';
 import { CONCURRENT_INDEXES, ensureConcurrentIndexes } from './concurrent-indexes';
 import { afterMigrations, beforeMigrations } from './migrator-steps';
 
@@ -67,45 +85,14 @@ async function main() {
       feature('dbRuntimeRole'),
     );
 
-    await sql`create schema if not exists "drizzle"`;
-    await sql`
-      create table if not exists "drizzle"."__drizzle_migrations" (
-        id serial primary key,
-        hash text not null,
-        created_at bigint
-      )
-    `;
-    const last = await sql<{ created_at: string | null }[]>`
-      select created_at from "drizzle"."__drizzle_migrations"
-      order by created_at desc limit 1
-    `;
-    const lastWhen = last[0]?.created_at != null ? Number(last[0].created_at) : -1;
-
-    let applied = 0;
-    for (const migration of migrations) {
-      // `migrations` is sorted ascending by folderMillis; gate on the original
-      // high-water mark exactly like drizzle does.
-      if (migration.folderMillis <= lastWhen) continue;
-      // Each migration in its OWN transaction (see file header).
-      await sql.begin(async (tx) => {
-        // Arch A2a: a migration's writes run as system(migration).
-        await tx`select set_config('mantle.actor', 'system:migration', true),
-                        set_config('mantle.write_mode', 'rw', true)`;
-        for (const stmt of migration.sql) {
-          await tx.unsafe(stmt);
-        }
-        await tx`
-          insert into "drizzle"."__drizzle_migrations" ("hash", "created_at")
-          values (${migration.hash}, ${migration.folderMillis})
-        `;
-      });
-      applied += 1;
-      console.log(`  ✓ ${migration.folderMillis} (${migration.sql.length} statement(s))`);
-      // A named heads-check bypass (0244) shows here as well as in the log.
-      for (const name of headsBypassesIn(migration.sql)) {
-        console.log(`    heads check bypassed by name: ${name}`);
+    const journal = (
+      JSON.parse(readFileSync('./migrations/meta/_journal.json', 'utf8')) as {
+        entries: JournalEntry[];
       }
-    }
+    ).entries;
+    // Refuses (throws, nothing applied) a never-applied entry from 0290 on
+    // below the high-water mark; warns on an older one (see the header).
+    const applied = await applyJournal(sql, migrations, journal);
 
     console.log(applied === 0 ? 'Already up to date.' : `Done — applied ${applied} migration(s).`);
 
