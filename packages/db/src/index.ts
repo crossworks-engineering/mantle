@@ -265,6 +265,7 @@ export {
 } from './context-ref-resolve';
 export { notifyNodeIngested, notifyNodeIndexed } from './notify';
 export {
+  INDEX_WORK_KEY,
   SUMMARY_KEYS,
   changedFields,
   markContentChanged,

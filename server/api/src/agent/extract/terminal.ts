@@ -11,7 +11,7 @@
  */
 
 import { eq, sql } from 'drizzle-orm';
-import { db, nodes, extractSkippedStamp } from '@mantle/db';
+import { db, nodes, extractSkippedStamp, INDEX_WORK_KEY } from '@mantle/db';
 import { recordSkippedTrace } from '@mantle/tracing';
 
 type SkipInit = Parameters<typeof recordSkippedTrace>[0] & { subjectId: string };
@@ -22,14 +22,18 @@ export async function recordTerminalSkip(init: SkipInit): Promise<void> {
   await stampExtractSkipped(init.subjectId, init.disposition);
 }
 
-/** Merge `data.extract_skipped = { reason, at: now() }` onto the node. Leaves
+/** Merge `data.extract_skipped = { reason, at: now() }` onto the node, and
+ *  drop the work a reset stamped (A10 #7, `data.index_work`): the verdict is
+ *  the answer to it, so a later rename re-embeds without a model call. Leaves
  *  `updated_at` alone: the stamp must not look like a content change. Best
  *  effort: a failed stamp only means the drain re-queues the node once more. */
 export async function stampExtractSkipped(nodeId: string, reason: string): Promise<void> {
   try {
     await db
       .update(nodes)
-      .set({ data: sql`coalesce(${nodes.data}, '{}'::jsonb) || ${extractSkippedStamp(reason)}` })
+      .set({
+        data: sql`(coalesce(${nodes.data}, '{}'::jsonb) - ${INDEX_WORK_KEY}::text) || ${extractSkippedStamp(reason)}`,
+      })
       .where(eq(nodes.id, nodeId));
   } catch (err) {
     console.error(

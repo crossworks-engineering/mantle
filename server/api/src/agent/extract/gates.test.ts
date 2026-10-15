@@ -89,7 +89,10 @@ vi.mock('@mantle/db', async (importOriginal) => {
     llmWorkAllowed: h.llmWorkAllowed,
   };
 });
-vi.mock('@mantle/embeddings', () => ({ embed: h.embed }));
+vi.mock('@mantle/embeddings', () => ({
+  embed: h.embed,
+  digestEmbedText: (label: string, summary: string) => `${label}\n${summary}`,
+}));
 vi.mock('@mantle/files', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@mantle/files')>();
   return {
@@ -246,9 +249,35 @@ describe('admitForExtraction — refusals', () => {
     ['a conversation-digest TAG', { type: 'note', tags: ['conversation-digest'] }],
     ['a conversation_digest KIND', { type: 'note', data: { kind: 'conversation_digest' } }],
   ])('refuses %s — re-summarising an authored summary destroys it', async (_label, over) => {
-    h.selectQueue.push([node(over)]);
+    h.selectQueue.push([node({ ...over, embedding: [0.3] })]);
     expect((await admitForExtraction('n1', 'o1')).proceed).toBe(false);
     expect(disposition()).toBe('conversation_digest');
+    expect(h.embed).not.toHaveBeenCalled();
+    expect(h.resolveChatKey).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['conversation_digest', { kind: 'conversation_digest', topic: 'Pumps', summary: 'We talked.' }],
+    ['chat_archive', { kind: 'chat_archive', topic: 'Pumps', summary: 'We talked.' }],
+  ])(
+    'rebuilds a missing vector of a %s from its topic and summary, no model (A10 #7 M2)',
+    async (kind, data) => {
+      h.selectQueue.push([node({ title: 'Renamed', data, embedding: null })]);
+      expect((await admitForExtraction('n1', 'o1')).proceed).toBe(false);
+      expect(disposition()).toBe(kind);
+      expect(h.embed).toHaveBeenCalledWith('o1', 'Pumps\nWe talked.');
+      expect(h.updates).toContainEqual({ embedding: [0.1, 0.2] });
+      expect(h.resolveChatKey).not.toHaveBeenCalled();
+    },
+  );
+
+  it('leaves an authored summary to the drain when its embed fails (not terminal)', async () => {
+    h.embed.mockRejectedValueOnce(new Error('embedder down'));
+    h.selectQueue.push([node({ data: { kind: 'chat_archive', summary: 's' }, embedding: null })]);
+    expect((await admitForExtraction('n1', 'o1')).proceed).toBe(false);
+    expect(disposition()).toBe('chat_archive');
+    // The terminal stamp (an update with extract_skipped) is not written.
+    expect(writtenJson()).not.toContain('extract_skipped');
   });
 
   it('embeds a telegram turn but never admits it for summarising', async () => {
@@ -340,7 +369,11 @@ describe('admitForExtraction — refusals', () => {
 });
 
 describe('admitForExtraction: a re-embed only (A10 #7)', () => {
-  const kept = { summary: 'Pump overhaul notes.', extract_completed_at: '2026-01-01' };
+  const kept = {
+    summary: 'Pump overhaul notes.',
+    extract_completed_at: '2026-01-01',
+    index_work: 'embed',
+  };
 
   it('re-embeds from the title and the kept summary, with no model and no key check', async () => {
     h.selectQueue.push([node({ title: 'Valve note', data: kept, embedding: null })]);
@@ -349,23 +382,82 @@ describe('admitForExtraction: a re-embed only (A10 #7)', () => {
     expect(h.embed).toHaveBeenCalledWith('o1', 'Valve note\n\nPump overhaul notes.');
     expect(h.resolveChatKey).not.toHaveBeenCalled();
     expect(h.llmWorkAllowed).not.toHaveBeenCalled();
-    expect(h.updates).toContainEqual({ embedding: [0.1, 0.2] });
+    expect(h.updates).toContainEqual(expect.objectContaining({ embedding: [0.1, 0.2] }));
   });
 
-  it('leaves a table to the model step, which reuses its summary there', async () => {
+  it('re-embeds an item extracted before the completion marker existed (M1 scenario B)', async () => {
+    const legacy = { summary: 'Pump overhaul notes.', index_work: 'embed' };
+    h.selectQueue.push([node({ title: 'Valve note', data: legacy, embedding: null })]);
+    expect((await admitForExtraction('n1', 'o1')).proceed).toBe(false);
+    expect(disposition()).toBe('embed_only');
+    expect(h.embed).toHaveBeenCalledWith('o1', 'Valve note\n\nPump overhaul notes.');
+    expect(h.resolveChatKey).not.toHaveBeenCalled();
+  });
+
+  it('embeds the title and the local text of an item with no summary the extractor skipped (M1 scenario A)', async () => {
+    const skipped = {
+      extract_skipped: { reason: 'body_too_short', at: '2026-01-01' },
+      index_work: 'embed',
+    };
+    h.selectQueue.push([
+      node({ type: 'page', title: 'Pump overhaul plan', data: skipped, embedding: null }),
+    ]);
+    expect((await admitForExtraction('n1', 'o1')).proceed).toBe(false);
+    expect(disposition()).toBe('embed_only');
+    expect(h.embed).toHaveBeenCalledWith('o1', 'Pump overhaul plan\n\nthe body');
+    expect(h.resolveChatKey).not.toHaveBeenCalled();
+    expect(h.llmWorkAllowed).not.toHaveBeenCalled();
+  });
+
+  it('embeds a file with no summary from its name spine, never re-parsing its bytes', async () => {
+    const skipped = {
+      extract_skipped: { reason: 'no_parser', at: '2026-01-01' },
+      index_work: 'embed',
+    };
+    h.selectQueue.push([node({ type: 'file', title: 'tool.exe', data: skipped, embedding: null })]);
+    expect((await admitForExtraction('n1', 'o1')).proceed).toBe(false);
+    expect(disposition()).toBe('embed_only');
+    expect(h.embed).toHaveBeenCalledWith('o1', 'spine text');
+    expect(h.readNodeBodyLocal).not.toHaveBeenCalled();
+  });
+
+  it('leaves a table keeping its summary to the model step, which reuses it there', async () => {
     h.selectQueue.push([node({ type: 'table', data: kept, embedding: null })]);
     expect((await admitForExtraction('n1', 'o1')).proceed).toBe(true);
     expect(h.embed).not.toHaveBeenCalled();
   });
 
-  it('runs the whole pass when the summary went (an extract reset)', async () => {
-    h.selectQueue.push([node({ data: { extract_completed_at: '2026-01-01' }, embedding: null })]);
+  it('embeds a table with no summary the extractor skipped, locally', async () => {
+    const skipped = { extract_skipped: { reason: 'body_too_short', at: 'x' }, index_work: 'embed' };
+    h.selectQueue.push([
+      node({ type: 'table', title: 'Readings', data: skipped, embedding: null }),
+    ]);
+    expect((await admitForExtraction('n1', 'o1')).proceed).toBe(false);
+    expect(disposition()).toBe('embed_only');
+    expect(h.resolveChatKey).not.toHaveBeenCalled();
+  });
+
+  it('runs the first pass of an item the extractor never saw, renamed before it ran', async () => {
+    h.selectQueue.push([node({ data: { index_work: 'embed' }, embedding: null })]);
     expect((await admitForExtraction('n1', 'o1')).proceed).toBe(true);
     expect(h.embed).not.toHaveBeenCalled();
   });
 
-  it('runs the whole pass for a summary with no completion marker (a pass that died)', async () => {
-    h.selectQueue.push([node({ data: { summary: 's' }, embedding: null })]);
+  it('runs the whole pass when a content change waits (an extract stamp)', async () => {
+    h.selectQueue.push([
+      node({
+        data: { extract_completed_at: '2026-01-01', index_work: 'extract' },
+        embedding: null,
+      }),
+    ]);
+    expect((await admitForExtraction('n1', 'o1')).proceed).toBe(true);
+    expect(h.embed).not.toHaveBeenCalled();
+  });
+
+  it('runs the whole pass for a vectorless item with no stamp (as before A10 #7)', async () => {
+    h.selectQueue.push([
+      node({ data: { summary: 's', extract_completed_at: 'x' }, embedding: null }),
+    ]);
     expect((await admitForExtraction('n1', 'o1')).proceed).toBe(true);
     expect(h.embed).not.toHaveBeenCalled();
   });

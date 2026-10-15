@@ -228,6 +228,18 @@ export async function createNote(ownerId: string, input: CreateNoteInput): Promi
 
 export type UpdateNoteInput = Partial<CreateNoteInput>;
 
+/** A note whose words the brain authored and embeds itself, from its topic and
+ *  summary (digestEmbedText): a conversation digest or a chat archive. The
+ *  extractor never reads one (its gate refuses both). */
+export function isAuthoredSummaryNote(node: Pick<Node, 'tags' | 'data'>): boolean {
+  const data = (node.data ?? {}) as Record<string, unknown>;
+  return (
+    (node.tags ?? []).includes('conversation-digest') ||
+    data.kind === 'conversation_digest' ||
+    data.kind === 'chat_archive'
+  );
+}
+
 export function updateNote(
   ownerId: string,
   id: string,
@@ -254,9 +266,12 @@ async function updateNoteOnce(
   const title =
     input.title !== undefined ? input.title.trim().slice(0, 200) || 'Untitled note' : node.title;
   // What the index must redo (the kind registry's `indexed`): a new body
-  // re-extracts, a new title re-embeds.
+  // re-extracts, a new title re-embeds. Not the title of an authored summary
+  // note (a chat archive, a conversation digest): its vector comes from its
+  // topic and summary, never its title, and the extractor never reads it, so
+  // a rename keeps the vector it has (fix round 1 of A10 #7, M2).
   const changed = changedFields({
-    title: [node.title, title],
+    ...(isAuthoredSummaryNote(node) ? {} : { title: [node.title, title] as const }),
     content: [oldData.content, newData.content],
   });
   // A content change may add or drop an embed: the note's head first.

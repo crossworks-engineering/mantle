@@ -129,7 +129,8 @@ export type KindSpec = {
    *  change redoes (markContentChanged, @mantle/db): 'embed', 'extract', or
    *  false (the field feeds no index). A write names the fields it changed;
    *  the most work any of them asks for is done once. Each value holds what
-   *  main v0.300.47 did (a10-content-changed.main.json), except the cells
+   *  main did at v0.300.48, where a10-content-changed.main.json was
+   *  recorded, except the cells
    *  a10-content-changed.changes.json names. Turning a field to 'extract'
    *  makes every save of it a model call: a cost decision, never a tidy-up. */
   readonly indexed: Readonly<Record<string, IndexWork | false>>;
@@ -137,7 +138,8 @@ export type KindSpec = {
 
 /** What a change of an indexed field makes the extractor redo (A10 #7).
  *  'embed': the vector only, rebuilt from the title and the summary the item
- *  keeps (one embedding on the local embedder, no model call; a table also
+ *  keeps, or with none from the title and the text read locally (one
+ *  embedding on the local embedder, never a model call; a table also
  *  rebuilds its profile passages, locally). 'extract': the whole pass (the
  *  summary, the vector, facts and entities: one model call). There is no
  *  summary-only pass: the summary and the facts come from one call. */

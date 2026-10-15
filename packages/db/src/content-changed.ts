@@ -15,6 +15,15 @@
  *  - nothing: no field the write changed feeds the index; no reset, no
  *    announcement.
  *
+ * The reset stamps the work it asks for on the row, `data.index_work`
+ * (INDEX_WORK_KEY), which is what the extractor's gate reads: an 'embed'
+ * stamp is never a model call (re-embedded from the kept summary, or, with
+ * none, from the title and the text read locally), whatever else the row
+ * holds. An 'extract' stamp is never downgraded: a rename that lands while a
+ * content change still waits for its pass keeps 'extract', so the new
+ * content is still summarised. The extractor drops the stamp when it has done
+ * the work (fix round 1 of A10 #7, M1).
+ *
  * The announcement is a `pg_notify` on the write's transaction, so Postgres
  * delivers it once the write commits and drops it when the write rolls back:
  * the extractor never reads a row that is not there yet, and a refused write
@@ -50,6 +59,12 @@ import { currentCreateHome, currentSpaceScope } from './viewer';
  *  derived from the old content (it writes them again). */
 export const SUMMARY_KEYS = ['summary', 'summary_model', 'summary_at', 'entities'] as const;
 
+/** The key of nodes.data a reset stamps with its work ('embed' or
+ *  'extract'): what the extractor's gate reads. Not a derived key: the
+ *  user's own write sets it, and the extractor drops it once the work is
+ *  done. */
+export const INDEX_WORK_KEY = 'index_work';
+
 const DROP_SUMMARY = sql.raw(`array[${SUMMARY_KEYS.map((k) => `'${k}'`).join(', ')}]::text[]`);
 
 /** Any transaction (or pool) of the schema: db.transaction's, the heads
@@ -73,18 +88,27 @@ export async function markContentChanged<K extends ItemKind>(
   return row ?? null;
 }
 
-/** The reset itself: one UPDATE of the item's own row. */
+/** The reset itself: one UPDATE of the item's own row. An 'embed' reset
+ *  stamps 'embed' unless a content change is still waiting ('extract'). */
 function resetIndex(tx: ContentTx, id: string, work: IndexWork) {
+  const data = sql`coalesce(${nodes.data}, '{}'::jsonb)`;
   if (work === 'embed') {
     return tx
       .update(nodes)
-      .set({ embedding: null, data: sql`${nodes.data}` })
+      .set({
+        embedding: null,
+        data: sql`case when ${data}->>${INDEX_WORK_KEY}::text = 'extract' then ${data}
+          else ${data} || jsonb_build_object(${INDEX_WORK_KEY}::text, 'embed') end`,
+      })
       .where(eq(nodes.id, id))
       .returning();
   }
   return tx
     .update(nodes)
-    .set({ embedding: null, data: sql`coalesce(${nodes.data}, '{}'::jsonb) - ${DROP_SUMMARY}` })
+    .set({
+      embedding: null,
+      data: sql`(${data} - ${DROP_SUMMARY}) || jsonb_build_object(${INDEX_WORK_KEY}::text, 'extract')`,
+    })
     .where(eq(nodes.id, id))
     .returning();
 }

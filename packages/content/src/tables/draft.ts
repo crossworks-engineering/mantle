@@ -337,11 +337,19 @@ type StagedCommit = {
 };
 
 /** What a commit changed, for its re-index: the shape-hash gate (plan
- *  section 6). Cell-only edits are `cells` (the vector again, the summary and
- *  entities kept: the extractor reuses the summary and skips its model
- *  pass); a schema change or a first commit is `schema` (the whole pass). */
-function committedChange(oldShapeHash: string | null, newShapeHash: string): 'cells' | 'schema' {
-  return oldShapeHash != null && oldShapeHash === newShapeHash ? 'cells' : 'schema';
+ *  section 6). Cell-only edits on a table that has a summary are `cells`
+ *  (the vector again, the summary and entities kept: the extractor reuses
+ *  the summary and skips its model pass); a schema change, a first commit,
+ *  or a table never summarised is `schema` (the whole pass), as main did. */
+function committedChange(
+  oldShapeHash: string | null,
+  newShapeHash: string,
+  nodeData: unknown,
+): 'cells' | 'schema' {
+  const summary = ((nodeData ?? {}) as Record<string, unknown>).summary;
+  return oldShapeHash != null && oldShapeHash === newShapeHash && typeof summary === 'string'
+    ? 'cells'
+    : 'schema';
 }
 
 /**
@@ -504,7 +512,7 @@ export async function commitTable(
                 // registry's `indexed`).
                 const nodeRow =
                   (await markContentChanged(tx, { id, type: 'table' }, [
-                    committedChange(row.shapeHash, s.shapeHash),
+                    committedChange(row.shapeHash, s.shapeHash, committed.data),
                   ])) ?? committed;
                 if (s.history) {
                   const [v] = await tx
