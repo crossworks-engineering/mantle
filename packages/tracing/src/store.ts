@@ -817,8 +817,8 @@ export async function startTrace<T>(init: StartTraceInit, fn: () => Promise<T>):
         throw err;
       } finally {
         // The root turn owns the per-turn seq cursor. When a lifecycle observer is
-        // installed (the runner), the terminal `done`/`error` event — which fires
-        // AFTER this trace closes, once the outbound row is finalized — retires the
+        // installed (the runner), the terminal `done`/`error` event (which fires
+        // AFTER this trace closes, once the outbound row is finalized) retires the
         // cursor instead, so its seq stays monotonic past the trace boundary. Only
         // clean up here when nothing downstream will (no runner wired).
         if (isStreamRoot && turnId && turnLifecycleObserver === null) {
