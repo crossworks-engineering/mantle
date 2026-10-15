@@ -394,6 +394,122 @@ export function runtimeRoleStatements(
 
 export type RuntimeRolesOutcome = 'ok' | 'not-superuser' | 'old-server';
 
+/** One row of pg_auth_members, by name. */
+export type HeldMembership = {
+  member: string;
+  role: string;
+  grantor: string;
+  inherit: boolean;
+  set: boolean;
+  admin: boolean;
+};
+
+/** Anything that runs a query string: a pool, or a transaction (a test
+ *  takes its own grants back in the transaction that made them). */
+type Runner = Pick<postgres.TransactionSql, 'unsafe'>;
+
+/**
+ * The order to take memberships back in, from every membership `held` in
+ * the same roles: a grant made on the strength of another's ADMIN option
+ * (an operator's `GRANT mantle_system TO ops_a WITH ADMIN OPTION`, then
+ * ops_a's own grant on to ops_b) before the one it rests on, the far end of
+ * a grant chain first. So the CASCADE each revoke carries rarely has
+ * anything left to take. Pure; stable for rows of equal depth.
+ */
+export function revokeOrder<T extends HeldMembership>(
+  revoke: readonly T[],
+  held: readonly HeldMembership[],
+): T[] {
+  const depth = (m: HeldMembership, seen: Set<string>): number => {
+    const key = `${m.role}\u0000${m.member}\u0000${m.grantor}`;
+    if (seen.has(key)) return 0; // a cycle: Postgres refuses one, but never loop
+    seen.add(key);
+    const parents = held.filter((x) => x.role === m.role && x.member === m.grantor && x.admin);
+    return parents.length === 0 ? 0 : 1 + Math.max(...parents.map((p) => depth(p, seen)));
+  };
+  return revoke
+    .map((m, i) => ({ m, i, d: depth(m, new Set()) }))
+    .sort((a, b) => b.d - a.d || a.i - b.i)
+    .map((x) => x.m);
+}
+
+/** pg_auth_members by name: the three roles' memberships both ways, or
+ *  (`role`) every membership in one role. */
+async function readMemberships(sql: Runner, role?: string): Promise<HeldMembership[]> {
+  const where = role
+    ? 'r.rolname = $1'
+    : `u.rolname IN (${RUNTIME_ROLES.map((r) => `'${r}'`).join(', ')})
+        OR r.rolname IN (${RUNTIME_ROLES.map((r) => `'${r}'`).join(', ')})`;
+  return (await sql.unsafe(
+    `select u.rolname as member, r.rolname as role, g.rolname as grantor,
+            m.inherit_option as inherit, m.set_option as set, m.admin_option as admin
+       from pg_auth_members m
+       join pg_roles r on r.oid = m.roleid
+       join pg_roles u on u.oid = m.member
+       join pg_roles g on g.oid = m.grantor
+      where ${where}`,
+    role ? [role] : [],
+  )) as unknown as HeldMembership[];
+}
+
+const membershipKey = (m: { role: string; member: string; grantor: string }) =>
+  `${m.role}\u0000${m.member}\u0000${m.grantor}`;
+
+/**
+ * Take back every membership the three roles hold, and every one held in
+ * them, that wantedMemberships does not name with these options (part of
+ * ensureRuntimeRoles). Each revoke names its grantor and CASCADEs: an
+ * operator's grant WITH ADMIN OPTION that its holder passed on leaves a
+ * dependent membership, and without CASCADE Postgres refuses the revoke
+ * (2BP01) and migrate, and so the app, would not start. The dependents are
+ * memberships in the same role, made on the strength of the one taken back,
+ * and go with it; revokeOrder takes them first anyway. Every membership
+ * that goes, a dependent too, is one warning (role, member, grantor). A
+ * revoke that fails for any other reason is a warning as well, never a
+ * failed migrate: the integrity row runtime_role_lock shows what is left.
+ * Needs a superuser.
+ */
+export async function takeBackMemberships(
+  sql: Runner,
+  warn: (line: string) => void,
+): Promise<void> {
+  const held = await readMemberships(sql);
+  const wanted = wantedMemberships();
+  const revoke = held.filter((h) => {
+    const w = wanted.find((x) => x.member === h.member && x.role === h.role);
+    return !(w && w.inherit === h.inherit && w.set === h.set && !h.admin);
+  });
+  const gone = new Set<string>();
+  for (const h of revokeOrder(revoke, held)) {
+    if (gone.has(membershipKey(h))) continue; // went with an earlier CASCADE
+    try {
+      const before = await readMemberships(sql, h.role);
+      if (!before.some((b) => membershipKey(b) === membershipKey(h))) continue;
+      await withRoleRetry(() =>
+        sql.unsafe(
+          `REVOKE "${h.role.replace(/"/g, '""')}" FROM "${h.member.replace(/"/g, '""')}" ` +
+            `GRANTED BY "${h.grantor.replace(/"/g, '""')}" CASCADE`,
+        ),
+      );
+      const after = new Set((await readMemberships(sql, h.role)).map(membershipKey));
+      for (const b of before) {
+        if (after.has(membershipKey(b))) continue;
+        gone.add(membershipKey(b));
+        warn(
+          `  WARNING membership taken back: ${b.role} from ${b.member} (granted by ${b.grantor})` +
+            (membershipKey(b) === membershipKey(h) ? '' : ', with the grant it rested on'),
+        );
+      }
+    } catch (err) {
+      warn(
+        `  WARNING could not take back ${h.role} from ${h.member} (granted by ${h.grantor}): ` +
+          `${err instanceof Error ? err.message : String(err)}; ` +
+          'the integrity row runtime_role_lock shows what is left',
+      );
+    }
+  }
+}
+
 /**
  * Make the three roles and their memberships (runtimeRoleStatements), and
  * take back any other membership they hold or another role holds in them,
@@ -404,12 +520,13 @@ export type RuntimeRolesOutcome = 'ok' | 'not-superuser' | 'old-server';
  * the next migrate. Needs a superuser (a BYPASSRLS role is a superuser's to
  * make): any other caller changes nothing and gets 'not-superuser'.
  * Postgres 16 or later (membership options). Before the migrations: they
- * and the grants name the roles.
+ * and the grants name the roles. `warn`: each membership taken back
+ * (takeBackMemberships); console.warn when not given.
  */
 export async function ensureRuntimeRoles(
   sql: Sql,
   masterKey: string | null,
-  opts: { login: boolean; perDatabase?: boolean },
+  opts: { login: boolean; perDatabase?: boolean; warn?: (line: string) => void },
 ): Promise<RuntimeRolesOutcome> {
   const [me] = await sql<{ su: boolean; v: number }[]>`
     select r.rolsuper as su, current_setting('server_version_num')::int as v
@@ -436,34 +553,8 @@ export async function ensureRuntimeRoles(
     opts.login && masterKey && !opts.perDatabase ? runtimeRolePassword(masterKey) : null;
   // Wrong memberships first, so the GRANTs below land on a clean slate (a
   // membership is one row per grantor: a GRANT does not change another
-  // grantor's row). Both ways: what the three hold, and what any role holds
-  // in them (wantedMemberships names no member outside the three).
-  const held = await sql<
-    {
-      member: string;
-      role: string;
-      grantor: string;
-      inherit: boolean;
-      set: boolean;
-      admin: boolean;
-    }[]
-  >`
-    select u.rolname as member, r.rolname as role, g.rolname as grantor,
-           m.inherit_option as inherit, m.set_option as set, m.admin_option as admin
-      from pg_auth_members m
-      join pg_roles r on r.oid = m.roleid
-      join pg_roles u on u.oid = m.member
-      join pg_roles g on g.oid = m.grantor
-     where u.rolname = any(${[...RUNTIME_ROLES]}::text[])
-        or r.rolname = any(${[...RUNTIME_ROLES]}::text[])`;
-  const wanted = wantedMemberships();
-  for (const h of held) {
-    const w = wanted.find((x) => x.member === h.member && x.role === h.role);
-    if (w && w.inherit === h.inherit && w.set === h.set && !h.admin) continue;
-    await withRoleRetry(() =>
-      sql.unsafe(`REVOKE "${h.role}" FROM "${h.member}" GRANTED BY "${h.grantor}"`),
-    );
-  }
+  // grantor's row).
+  await takeBackMemberships(sql, opts.warn ?? ((line) => console.warn(line)));
   for (const stmt of runtimeRoleStatements(new Set(rows.map((r) => r.rolname)), password)) {
     await runRoleStatement(sql, stmt, true);
   }

@@ -44,6 +44,7 @@ import {
   runtimeDatabaseUrl,
   runtimeDeniedTables,
   runtimeRolePassword,
+  takeBackMemberships,
   type DbRoleRow,
 } from './runtime-role';
 import { viewerDatabaseUrl, viewerRoleName, viewerRolePassword } from './viewer';
@@ -480,34 +481,57 @@ describe.skipIf(!URL)('the runtime role is not the owner (arch A9)', () => {
     await admin.unsafe(`CREATE ROLE "${probe}" NOLOGIN`);
     await admin.unsafe(`CREATE ROLE "${held}" NOLOGIN`);
     try {
-      await admin.unsafe(`GRANT ${RUNTIME_ROLE} TO "${probe}" WITH INHERIT FALSE, SET FALSE`);
-      await admin.unsafe(`GRANT ${SYSTEM_ROLE} TO "${probe}" WITH INHERIT FALSE, SET TRUE`);
-      // And a hand GRANT to the runtime role without options: NOINHERIT
-      // makes it INHERIT FALSE.
-      await admin.unsafe(`GRANT "${held}" TO ${RUNTIME_ROLE}`);
-      const asProbe = () =>
-        admin.begin(async (tx) => {
+      const warned: string[] = [];
+      // The grants, the checks and the take-back in one transaction: the
+      // roles are cluster-wide, and every other file's scratch migrate
+      // (ensureRuntimeRoles) would take a committed grant back under this
+      // test. Uncommitted, no other session sees them.
+      await admin.begin(async (tx) => {
+        await tx.unsafe(`GRANT ${RUNTIME_ROLE} TO "${probe}" WITH INHERIT FALSE, SET FALSE`);
+        await tx.unsafe(`GRANT ${SYSTEM_ROLE} TO "${probe}" WITH INHERIT FALSE, SET TRUE`);
+        // And a hand GRANT to the runtime role without options: NOINHERIT
+        // makes it INHERIT FALSE.
+        await tx.unsafe(`GRANT "${held}" TO ${RUNTIME_ROLE}`);
+        const asProbe = async () => {
           await tx.unsafe(`set local role "${probe}"`);
           const [r] = await tx<{ ok: boolean }[]>`select mantle_owner_role() as ok`;
+          await tx.unsafe('reset role');
           return r?.ok;
-        });
-      expect(await asProbe()).toBe(true);
-      const [inh] = await admin<{ inherit: boolean }[]>`
-        select m.inherit_option as inherit from pg_auth_members m
-         where m.roleid = to_regrole(${held}) and m.member = to_regrole(${RUNTIME_ROLE})`;
-      expect(inh?.inherit).toBe(false);
-      const broken = (await admin.unsafe(RUNTIME_LOCK_SQL)) as unknown as { detail: string }[];
-      expect(broken[0]?.detail).toContain(`other members of ${OWNER_ROLE}: ${probe}`);
-      // migrate (beforeMigrations) takes them back, both ways.
-      expect(await ensureRuntimeRoles(admin, KEY, { login: true })).toBe('ok');
-      const left = await admin<{ role: string; member: string }[]>`
-        select r.rolname as role, u.rolname as member from pg_auth_members m
-          join pg_roles r on r.oid = m.roleid join pg_roles u on u.oid = m.member
-         where r.rolname = any(${[probe, held]}::text[])
-            or u.rolname = any(${[probe, held]}::text[])`;
-      expect(left).toEqual([]);
-      expect(await asProbe()).toBe(false);
-      expect(await admin.unsafe(RUNTIME_LOCK_SQL)).toEqual([]);
+        };
+        expect(await asProbe()).toBe(true);
+        const [inh] = await tx<{ inherit: boolean }[]>`
+          select m.inherit_option as inherit from pg_auth_members m
+           where m.roleid = to_regrole(${held}) and m.member = to_regrole(${RUNTIME_ROLE})`;
+        expect(inh?.inherit).toBe(false);
+        const broken = (await tx.unsafe(RUNTIME_LOCK_SQL)) as unknown as { detail: string }[];
+        expect(broken[0]?.detail).toContain(`other members of ${OWNER_ROLE}: ${probe}`);
+        // migrate (beforeMigrations, ensureRuntimeRoles) takes them back,
+        // both ways.
+        await takeBackMemberships(tx, (l) => warned.push(l));
+        const left = await tx<{ role: string; member: string }[]>`
+          select r.rolname as role, u.rolname as member from pg_auth_members m
+            join pg_roles r on r.oid = m.roleid join pg_roles u on u.oid = m.member
+           where r.rolname = any(${[probe, held]}::text[])
+              or u.rolname = any(${[probe, held]}::text[])`;
+        expect(left).toEqual([]);
+        expect(await asProbe()).toBe(false);
+        expect(await tx.unsafe(RUNTIME_LOCK_SQL)).toEqual([]);
+      });
+      // One warning each, naming role, member and grantor.
+      const mine = warned.filter((l) => l.includes(probe)).sort();
+      expect(mine).toHaveLength(3);
+      for (const [role, member] of [
+        [held, RUNTIME_ROLE],
+        [RUNTIME_ROLE, probe],
+        [SYSTEM_ROLE, probe],
+      ]) {
+        expect(
+          mine.some((l) =>
+            l.startsWith(`  WARNING membership taken back: ${role} from ${member} (granted by `),
+          ),
+        ).toBe(true);
+      }
+      expect(await ensureRuntimeRoles(admin, KEY, { login: true, warn: () => {} })).toBe('ok');
       // Who is a member of mantle_owner now: the runtime role, and no other
       // role that is not a superuser.
       const members = await admin<{ name: string }[]>`
@@ -517,6 +541,65 @@ describe.skipIf(!URL)('the runtime role is not the owner (arch A9)', () => {
       expect(members.map((m) => m.name)).toEqual([RUNTIME_ROLE]);
     } finally {
       await admin.unsafe(`DROP ROLE IF EXISTS "${probe}", "${held}"`);
+    }
+  });
+
+  it('an operator grant WITH ADMIN OPTION passed on goes too: a warning each, never a failed migrate', async () => {
+    // GRANT mantle_system TO ops_a WITH ADMIN OPTION, and ops_a's own grant
+    // on to ops_b: a plain REVOKE of ops_a's is refused (2BP01, dependent
+    // privileges exist), and migrate exited 1 with web and workers waiting
+    // on it. And a plain operator membership in mantle_owner.
+    const tag = randomBytes(4).toString('hex');
+    const [a, b, c] = ['a', 'b', 'c'].map((x) => `a9_ops_${x}_${tag}`) as [string, string, string];
+    for (const r of [a, b, c]) await admin.unsafe(`CREATE ROLE "${r}" NOLOGIN`);
+    try {
+      const warned: string[] = [];
+      const failed: string[] = [];
+      // In one transaction, as above: no other file's migrate sees them.
+      await admin.begin(async (tx) => {
+        await tx.unsafe(`GRANT ${SYSTEM_ROLE} TO "${a}" WITH ADMIN OPTION`);
+        await tx.unsafe(`SET LOCAL ROLE "${a}"`);
+        await tx.unsafe(`GRANT ${SYSTEM_ROLE} TO "${b}"`);
+        await tx.unsafe('RESET ROLE');
+        await tx.unsafe(`GRANT ${OWNER_ROLE} TO "${c}"`);
+        await expect(
+          tx.savepoint((sp) => sp.unsafe(`REVOKE ${SYSTEM_ROLE} FROM "${a}"`)),
+        ).rejects.toMatchObject({ code: '2BP01' });
+        const broken = (await tx.unsafe(RUNTIME_LOCK_SQL)) as unknown as { detail: string }[];
+        expect(broken[0]?.detail).toContain(`other members of ${OWNER_ROLE}: ${c}`);
+        // A revoke that fails for any other reason is a warning, not a
+        // failed run: nothing is taken back, and the run goes on.
+        const failing = {
+          unsafe: (q: string, p?: never[]) =>
+            q.startsWith('REVOKE')
+              ? Promise.reject(Object.assign(new Error('refused for the test'), { code: 'XX999' }))
+              : tx.unsafe(q, p),
+        } as unknown as Parameters<typeof takeBackMemberships>[0];
+        await takeBackMemberships(failing, (l) => failed.push(l));
+        // The real one: the far end of the chain first, each with CASCADE.
+        await takeBackMemberships(tx, (l) => warned.push(l));
+        const left = await tx<{ n: number }[]>`
+          select count(*)::int as n from pg_auth_members m join pg_roles u on u.oid = m.member
+           where u.rolname = any(${[a, b, c]}::text[])`;
+        expect(left[0]?.n).toBe(0);
+        expect(await tx.unsafe(RUNTIME_LOCK_SQL)).toEqual([]);
+      });
+      expect(failed.filter((l) => l.includes(tag))).toHaveLength(3);
+      for (const l of failed.filter((x) => x.includes(tag))) {
+        expect(l).toMatch(
+          /^ {2}WARNING could not take back .*refused for the test; the integrity row/,
+        );
+      }
+      const mine = warned.filter((l) => l.includes(tag));
+      expect(mine).toHaveLength(3);
+      expect(mine[0]).toBe(
+        `  WARNING membership taken back: ${SYSTEM_ROLE} from ${b} (granted by ${a})`,
+      );
+      expect(mine.some((l) => l.includes(`${SYSTEM_ROLE} from ${a} (granted by `))).toBe(true);
+      expect(mine.some((l) => l.includes(`${OWNER_ROLE} from ${c} (granted by `))).toBe(true);
+      expect(warned.filter((l) => /could not take back/.test(l))).toEqual([]);
+    } finally {
+      await admin.unsafe(`DROP ROLE IF EXISTS "${b}", "${a}", "${c}"`);
     }
   });
 
