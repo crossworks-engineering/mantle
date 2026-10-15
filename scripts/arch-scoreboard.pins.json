@@ -1,7 +1,7 @@
 {
-  "asSystemSites": 88,
-  "asSystemFiles": 45,
-  "asSystemReasons": 28,
+  "asSystemSites": 86,
+  "asSystemFiles": 43,
+  "asSystemReasons": 27,
   "rawAclFiles": 25,
   "rawAclLines": 86,
   "toolPolicyLists": 1,
@@ -65,7 +65,6 @@
   "store_objectstore_files": 4,
   "store_appdb_files": 5,
   "_notes": {
-    "asSystemSites": "raised 90 to 91 (files 44 to 45, reasons 27 to 28) in A5 step 6c: an approved pending call leaves the scope of the path that approves it (a request's, an MCP connection's) only to enter the scope it was asked in, met with its asker's rights now (packages/tools/src/pending-origin.ts withOriginScope, reason 'pending-approval'). It reads nothing on the system pool on the way; before it, the call ran in the approving path's scope or in none. Lowered 91 to 88 in A10 #9: the member tool broker's two asSystem calls and the two hand export sync wrappers went, one system door in the member broker's config came (server/web/lib/app-runner.ts).",
     "routePolicyLists": "raised 16 to 17 in A10 #8: ROUTE_GATES (server/web/lib/route-limits.ts) gives each row its named rate limits and its cross-site refusal, read into the row by buildRouteRow (two ROUTE_POLICY fields), where 38 limits were taken by hand in route files (32 calls in 26 files) and helpers. Raised 15 to 16 in A4 hand batch B fix round 1 (M2): PUBLIC_LOGIN_ROWS (route-policy.ts) names the public rows that read a login, so buildRouteRow refuses a public login kind on any other public row (the /s link routes, the remote MCP, federation, sign-in). It is ROUTE_POLICY's own check of the rows, as FRAME_ROWS is, not a policy beside them.",
     "brainOnWorkspacesCalls": "raised 11 to 12 (files 6 to 7) in A1: listDueReminders (packages/content/src/events.ts) must read in the owner scope on a workspaces brain even when that scope is empty, and keep the old rule only off workspaces. A7 removes the call with the switch-over code.",
     "readPathWrites": "raised 7 to 9 in A3a: a public link's view counter (content shares.ts) and the Recall prompt embeddings a reader's recall_match heals (content recall.ts) were writes inside read paths the A2a inventory did not name; the read-only refusal would refuse both, so each is named and pinned now. Raised 9 to 10 in A5 step 4: app_data_schema and app_data_query provision the app's database registry row, its schema and its viewer salt (app_databases, an item table) on a login's own MCP, which runs a read read-only since step 4; the provisioning is named (repair:app-db) rather than moved, so the reads answer as before.",

@@ -16,20 +16,16 @@
  * synthesis and Saskia decides whether to persist it as a note.
  */
 
-import { and, eq } from 'drizzle-orm';
 import { OpenRouter } from '@openrouter/sdk';
 import { openrouterClientMeta } from '@mantle/voice';
 import {
-  apiKeys,
-  asSystem,
-  db,
   getDefaultWorker,
   bumpWorkerUsage,
   type AiWorker,
   type AiWorkerKind,
   type SearchParams,
 } from '@mantle/db';
-import { getApiKey, getApiKeyById } from '@mantle/api-keys';
+import { resolveProviderKey } from '@mantle/api-keys';
 import { captureLlmUsage } from '@mantle/tracing';
 import type { BuiltinToolDef, ToolHandlerContext, ToolHandlerResult } from './types';
 import { str, strOpt } from './coerce';
@@ -42,23 +38,11 @@ import { CS } from './client-sourced-rule';
  *  truth; this just keeps web_search functional rather than erroring. */
 const FALLBACK_SEARCH_MODEL = env('MANTLE_WEB_SEARCH_MODEL') || 'perplexity/sonar-pro';
 
-/** An OpenRouter key for this owner — prefers the 'default' label, falls back
- *  to any openrouter key on file. */
+/** An OpenRouter key for this owner: the one provider key lookup
+ *  (resolveProviderKey: the 'default' label first, else the most recent
+ *  openrouter key on file). */
 export async function resolveOpenRouterKey(ownerId: string): Promise<string | null> {
-  const k = await getApiKey(ownerId, 'openrouter');
-  if (k) return k;
-  // The id of a key on file: infrastructure the call itself uses, read on
-  // the system pool by its named reason in a scope (W7a).
-  const [row] = await asSystem(
-    () =>
-      db
-        .select({ id: apiKeys.id })
-        .from(apiKeys)
-        .where(and(eq(apiKeys.userId, ownerId), eq(apiKeys.service, 'openrouter')))
-        .limit(1),
-    'provider-key',
-  );
-  return row ? await getApiKeyById(row.id) : null;
+  return resolveProviderKey(ownerId, 'openrouter');
 }
 
 /** Resolve the search worker for a tier. The advanced tool falls back to the
@@ -71,14 +55,10 @@ async function resolveSearchWorker(ownerId: string, kind: AiWorkerKind): Promise
   return null;
 }
 
-/** The key to call OpenRouter with — the worker's own key if it pins one, else
- *  any OpenRouter key on file for the owner. */
+/** The key to call OpenRouter with: the worker's own key if it pins one, else
+ *  the owner's OpenRouter key on file (resolveProviderKey). */
 async function keyForWorker(ownerId: string, worker: AiWorker | null): Promise<string | null> {
-  if (worker?.apiKeyId) {
-    const k = await getApiKeyById(worker.apiKeyId);
-    if (k) return k;
-  }
-  return resolveOpenRouterKey(ownerId);
+  return resolveProviderKey(ownerId, 'openrouter', worker?.apiKeyId);
 }
 
 /**

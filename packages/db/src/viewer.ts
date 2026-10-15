@@ -919,9 +919,6 @@ export function currentSystemTx(): { tx: unknown; hooks: TxHooks; nest: SystemTx
  *    them (two numbers, never a row), and secret_create makes the Secrets
  *    root (structure, no content). The scope it leaves is kept
  *    (scopeLeftForSystem): a turn started there answers that scope's login.
- *  - `provider-key`: the id of a provider's API key on file (OpenRouter,
- *    Firecrawl) that a tool calls out with (builtins-research.ts,
- *    builtins-crawl.ts): infrastructure, like a connector's keys (W7a).
  *  - `contact-sharing`: the sharing status (dates and a lock, never the
  *    code) of contacts the caller already read in its scope
  *    (contactSharingByContact): the rule is the id list (W7a).
@@ -988,7 +985,6 @@ export const AS_SYSTEM_TURN_REASONS = [
   'name-taken',
   'export-link',
   'admin-area',
-  'provider-key',
   'contact-sharing',
   'login-names',
   'owner-preferences',

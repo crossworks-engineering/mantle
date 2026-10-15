@@ -25,8 +25,8 @@
 
 import { and, eq } from 'drizzle-orm';
 import { Firecrawl } from 'firecrawl';
-import { apiKeys, asSystem, db, docCollections, type DocCollection } from '@mantle/db';
-import { getApiKey, getApiKeyById } from '@mantle/api-keys';
+import { db, docCollections, type DocCollection } from '@mantle/db';
+import { resolveProviderKey } from '@mantle/api-keys';
 import { createDocCollection, slugifyFolder, upsertDocFromDisk } from '@mantle/files';
 import { recordIngest, step } from '@mantle/tracing';
 import type { BuiltinToolDef, ToolHandlerContext, ToolHandlerResult } from './types';
@@ -39,23 +39,11 @@ import { CS } from './client-sourced-rule';
 const KEY_HINT =
   'no firecrawl API key configured — add one at /settings/keys (service `firecrawl`; keys at https://www.firecrawl.dev). The free tier covers ~1,000 pages/month.';
 
-/** A Firecrawl key for this owner — prefers the 'default' label, falls back to
- *  any firecrawl key on file (same shape as resolveOpenRouterKey). */
+/** A Firecrawl key for this owner: the one key lookup by service
+ *  (resolveProviderKey: the 'default' label first, else the most recent
+ *  firecrawl key on file). */
 async function resolveFirecrawlKey(ownerId: string): Promise<string | null> {
-  const k = await getApiKey(ownerId, 'firecrawl');
-  if (k) return k;
-  // The id of a key on file: infrastructure the call itself uses, read on
-  // the system pool by its named reason in a scope (W7a).
-  const [row] = await asSystem(
-    () =>
-      db
-        .select({ id: apiKeys.id })
-        .from(apiKeys)
-        .where(and(eq(apiKeys.userId, ownerId), eq(apiKeys.service, 'firecrawl')))
-        .limit(1),
-    'provider-key',
-  );
-  return row ? await getApiKeyById(row.id) : null;
+  return resolveProviderKey(ownerId, 'firecrawl');
 }
 
 /** Belt-and-braces on top of the tool-group grant and the dispatch gate (the

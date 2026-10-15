@@ -551,9 +551,13 @@ describe('asSystem inside a turn scope needs a named reason (W4b fix round 1, M4
     // an app's table export writes ('client-sourced-mark') had borrowed
     // 'client-sourced-check', a reason for reads. 25 since arch A5 step
     // 6c: an approved pending call leaves the approving path's scope only
-    // to enter the one it was asked in ('pending-approval').
-    expect(AS_SYSTEM_TURN_REASONS.length).toBeLessThanOrEqual(25);
-    expect(AS_SYSTEM_TURN_REASONS).toHaveLength(25);
+    // to enter the one it was asked in ('pending-approval'). 24 since task
+    // 698e6faf: a tool's provider key is read by resolveProviderKey
+    // (@mantle/api-keys, a system pool module), so no call leaves a scope
+    // for a key's id ('provider-key').
+    expect(AS_SYSTEM_TURN_REASONS.length).toBeLessThanOrEqual(24);
+    expect(AS_SYSTEM_TURN_REASONS).toHaveLength(24);
+    expect(AS_SYSTEM_TURN_REASONS).not.toContain('provider-key');
     expect(AS_SYSTEM_TURN_REASONS).toContain('heartbeat-context');
     expect(AS_SYSTEM_TURN_REASONS).not.toContain('member-request');
     expect(AS_SYSTEM_TURN_REASONS).not.toContain('owner-telegram');
@@ -562,7 +566,6 @@ describe('asSystem inside a turn scope needs a named reason (W4b fix round 1, M4
   it('each W7a exit names its own reason', () => {
     for (const r of [
       'admin-area',
-      'provider-key',
       'contact-sharing',
       'login-names',
       'owner-preferences',

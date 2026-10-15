@@ -22,15 +22,6 @@ import { describe, expect, it } from 'vitest';
 const ROOT = join(import.meta.dirname, '../../..');
 
 const ALLOWED: Record<string, { calls: number; reason: string }> = {
-  'packages/tools/src/builtins-research.ts': {
-    calls: 1,
-    reason:
-      "resolveOpenRouterKey: 'default' first, then any openrouter key on file (its own fallback, kept until it folds into resolveProviderKey with its 'provider-key' scope exit)",
-  },
-  'packages/tools/src/builtins-crawl.ts': {
-    calls: 1,
-    reason: 'resolveFirecrawlKey: the same shape as resolveOpenRouterKey, a tool key',
-  },
   'packages/tools/src/builtins-locations.ts': {
     calls: 1,
     reason:

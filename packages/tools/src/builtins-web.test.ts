@@ -74,7 +74,13 @@ vi.mock('@mantle/content', async (importOriginal) => {
 });
 vi.mock('@mantle/api-keys', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@mantle/api-keys')>();
-  return { ...actual, listApiKeys: vi.fn(), getApiKey: vi.fn(), getApiKeyById: vi.fn() };
+  return {
+    ...actual,
+    listApiKeys: vi.fn(),
+    getApiKey: vi.fn(),
+    getApiKeyById: vi.fn(),
+    resolveProviderKey: vi.fn(),
+  };
 });
 vi.mock('@mantle/files', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@mantle/files')>();
@@ -125,7 +131,7 @@ vi.mock('firecrawl', () => ({
 }));
 
 import { bumpWorkerUsage, getDefaultWorker } from '@mantle/db';
-import { getApiKey, getApiKeyById } from '@mantle/api-keys';
+import { getApiKey, getApiKeyById, resolveProviderKey } from '@mantle/api-keys';
 import { createDocCollection, parseTikaBytes, upsertDocFromDisk } from '@mantle/files';
 import { captureLlmUsage, recordIngest } from '@mantle/tracing';
 import { paramsOf } from './test-support';
@@ -177,6 +183,13 @@ beforeEach(() => {
   vi.mocked(getDefaultWorker).mockResolvedValue(null);
   vi.mocked(getApiKey).mockResolvedValue(null);
   vi.mocked(getApiKeyById).mockResolvedValue(null);
+  // The one provider key lookup, faked over the two mocks: the pinned key,
+  // else the service's own (its 'default' then most-recent pick is
+  // models-keys.db.test.ts's).
+  vi.mocked(resolveProviderKey).mockImplementation(
+    async (owner, service, keyId) =>
+      (keyId ? await getApiKeyById(keyId) : null) ?? (await getApiKey(owner, service)),
+  );
   vi.mocked(parseTikaBytes).mockResolvedValue('');
   h.send.mockResolvedValue({
     choices: [{ message: { content: 'The answer' } }],
@@ -306,26 +319,18 @@ describe('web_search', () => {
     expect(h.send).not.toHaveBeenCalled();
   });
 
-  it("uses the worker's pinned key first, then the owner's default label, then any row", async () => {
+  it("asks the one provider key lookup with the worker's pinned key, else with none", async () => {
     vi.mocked(getDefaultWorker).mockResolvedValue(SEARCH_WORKER as never);
     vi.mocked(getApiKeyById).mockResolvedValue('sk-worker');
     await webSearch.handler({ query: 'q' }, ctx);
-    expect(getApiKeyById).toHaveBeenCalledWith('k1');
+    expect(resolveProviderKey).toHaveBeenLastCalledWith('o1', 'openrouter', 'k1');
     expect(h.orCtor).toHaveBeenLastCalledWith(expect.objectContaining({ apiKey: 'sk-worker' }));
-    expect(getApiKey).not.toHaveBeenCalled();
 
     vi.mocked(getDefaultWorker).mockResolvedValue({ ...SEARCH_WORKER, apiKeyId: null } as never);
     vi.mocked(getApiKey).mockResolvedValue('sk-owner');
     await webSearch.handler({ query: 'q' }, ctx);
-    expect(getApiKey).toHaveBeenCalledWith('o1', 'openrouter');
+    expect(resolveProviderKey).toHaveBeenLastCalledWith('o1', 'openrouter', null);
     expect(h.orCtor).toHaveBeenLastCalledWith(expect.objectContaining({ apiKey: 'sk-owner' }));
-
-    vi.mocked(getApiKey).mockResolvedValue(null);
-    h.selectQueue.push([{ id: 'k9' }]);
-    vi.mocked(getApiKeyById).mockResolvedValue('sk-any');
-    await webSearch.handler({ query: 'q' }, ctx);
-    expect(getApiKeyById).toHaveBeenLastCalledWith('k9');
-    expect(h.orCtor).toHaveBeenLastCalledWith(expect.objectContaining({ apiKey: 'sk-any' }));
   });
 
   it('sends the worker model with its params, a per-call recency winning', async () => {

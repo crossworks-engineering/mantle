@@ -946,8 +946,8 @@ UI at `/settings/keys`. Plaintext is shown to the user exactly once
 (at create / rotate); the list endpoint returns only `sk-1…abcd`
 masked views.
 
-The agent reads `getApiKey(USER_ID, 'openrouter')` at the start of
-every reply. If the key is rotated in the UI, the next reply picks up
+The agent reads its key (its pinned key id, else
+`resolveProviderKey`) at the start of every reply. If the key is rotated in the UI, the next reply picks up
 the new value with no restart.
 
 The **provider catalogue** in `@mantle/voice` (see §9d) drives the
