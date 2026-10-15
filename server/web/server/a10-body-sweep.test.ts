@@ -348,6 +348,8 @@ describe.skipIf(!hasManifest)('A10 part 2 fold 1: every write route reads its bo
     db: process.env.DATABASE_URL,
     cors: process.env.MANTLE_API_CORS_ORIGINS,
     detached: process.env.MANTLE_DETACHED_DEV,
+    masterKey: process.env.MANTLE_MASTER_KEY,
+    tailscaleSock: process.env.MANTLE_TAILSCALE_SOCK,
   };
   const realFetch = globalThis.fetch;
   let app: import('hono').Hono;
@@ -359,6 +361,12 @@ describe.skipIf(!hasManifest)('A10 part 2 fold 1: every write route reads its bo
     delete process.env.DATABASE_URL;
     delete process.env.MANTLE_API_CORS_ORIGINS;
     delete process.env.MANTLE_DETACHED_DEV;
+    // The answers were recorded on a host with neither: no master key (the
+    // pdf-passwords cells answer "MANTLE_MASTER_KEY is not set") and no
+    // tailscaled (network/deactivate answers "no tailscaled socket"). A host
+    // with either (the workstation runs tailscaled) answered otherwise.
+    delete process.env.MANTLE_MASTER_KEY;
+    process.env.MANTLE_TAILSCALE_SOCK = '/nonexistent/a10-sweep/tailscaled.sock';
     globalThis.fetch = (async () => {
       throw new Error('sweep: no network');
     }) as typeof fetch;
@@ -405,6 +413,8 @@ describe.skipIf(!hasManifest)('A10 part 2 fold 1: every write route reads its bo
       ['DATABASE_URL', saved.db],
       ['MANTLE_API_CORS_ORIGINS', saved.cors],
       ['MANTLE_DETACHED_DEV', saved.detached],
+      ['MANTLE_MASTER_KEY', saved.masterKey],
+      ['MANTLE_TAILSCALE_SOCK', saved.tailscaleSock],
     ] as const) {
       if (v === undefined) delete process.env[k];
       else process.env[k] = v;
