@@ -17,6 +17,14 @@
  * itself (who the call runs as) is the one bound at the broker's entry, as
  * before. Every other cell is as it was (docs/actors.md, A5 step 3b).
  *
+ * A10 #9 (one runAppToolBroker, lib/app-tool-broker.ts) added audit rows
+ * and changed nothing else: every call the owner's run judged lands its
+ * Activity row (main logged none at admin rules, and no refusal at any),
+ * and a contact link's refused or failed call lands its error row (main
+ * logged none). Each added row comes after the rows main wrote, in the
+ * same order (server/web/server/a10-app-broker-sweep.test.ts names them
+ * cell by cell).
+ *
  * The entries: the shared link broker (a contact share), a member's run of
  * an app (the owner route with a member login, lib/app-runner.ts), an
  * admin's run of an app the Admin workspace alone holds (admin rules), an

@@ -35,6 +35,20 @@
        "refused": "tools"
       }
      }
+    ],
+    [
+     "app-error",
+     {
+      "ownerId": "33333333-3333-4333-8333-333333333333",
+      "appNodeId": "77777777-7777-4777-8777-777777777777",
+      "shareId": "share-2",
+      "contactId": "contact-7",
+      "source": "tool",
+      "via": "contact",
+      "slug": "note_list",
+      "message": "The tool 'note_list' is built in, and a shared link runs no built-in tools (only an outside tool with External access).",
+      "status": 403
+     }
     ]
    ],
    "touches": [],
@@ -74,6 +88,20 @@
        "slug": "note_create",
        "refused": "tools"
       }
+     }
+    ],
+    [
+     "app-error",
+     {
+      "ownerId": "33333333-3333-4333-8333-333333333333",
+      "appNodeId": "77777777-7777-4777-8777-777777777777",
+      "shareId": "share-2",
+      "contactId": "contact-7",
+      "source": "tool",
+      "via": "contact",
+      "slug": "note_create",
+      "message": "The tool 'note_create' is built in, and a shared link runs no built-in tools (only an outside tool with External access).",
+      "status": 403
      }
     ]
    ],
@@ -115,6 +143,20 @@
        "refused": "tools"
       }
      }
+    ],
+    [
+     "app-error",
+     {
+      "ownerId": "33333333-3333-4333-8333-333333333333",
+      "appNodeId": "77777777-7777-4777-8777-777777777777",
+      "shareId": "share-2",
+      "contactId": "contact-7",
+      "source": "tool",
+      "via": "contact",
+      "slug": "page_update",
+      "message": "The tool 'page_update' is built in, and a shared link runs no built-in tools (only an outside tool with External access).",
+      "status": 403
+     }
     ]
    ],
    "touches": [],
@@ -154,6 +196,20 @@
        "slug": "page_update",
        "refused": "tools"
       }
+     }
+    ],
+    [
+     "app-error",
+     {
+      "ownerId": "33333333-3333-4333-8333-333333333333",
+      "appNodeId": "77777777-7777-4777-8777-777777777777",
+      "shareId": "share-2",
+      "contactId": "contact-7",
+      "source": "tool",
+      "via": "contact",
+      "slug": "page_update",
+      "message": "The tool 'page_update' is built in, and a shared link runs no built-in tools (only an outside tool with External access).",
+      "status": 403
      }
     ]
    ],
@@ -195,6 +251,20 @@
        "refused": "tools"
       }
      }
+    ],
+    [
+     "app-error",
+     {
+      "ownerId": "33333333-3333-4333-8333-333333333333",
+      "appNodeId": "77777777-7777-4777-8777-777777777777",
+      "shareId": "share-2",
+      "contactId": "contact-7",
+      "source": "tool",
+      "via": "contact",
+      "slug": "no_such_tool",
+      "message": "tool 'no_such_tool' not found",
+      "status": 404
+     }
     ]
    ],
    "touches": [],
@@ -234,6 +304,20 @@
        "slug": "tree_folders",
        "refused": "tools"
       }
+     }
+    ],
+    [
+     "app-error",
+     {
+      "ownerId": "33333333-3333-4333-8333-333333333333",
+      "appNodeId": "77777777-7777-4777-8777-777777777777",
+      "shareId": "share-2",
+      "contactId": "contact-7",
+      "source": "tool",
+      "via": "contact",
+      "slug": "tree_folders",
+      "message": "The tool 'tree_folders' is built in, and a shared link runs no built-in tools (only an outside tool with External access).",
+      "status": 403
      }
     ]
    ],
@@ -275,6 +359,20 @@
        "refused": "tools"
       }
      }
+    ],
+    [
+     "app-error",
+     {
+      "ownerId": "33333333-3333-4333-8333-333333333333",
+      "appNodeId": "77777777-7777-4777-8777-777777777777",
+      "shareId": "share-2",
+      "contactId": "contact-7",
+      "source": "tool",
+      "via": "contact",
+      "slug": "brain_capacity",
+      "message": "The tool 'brain_capacity' is built in, and a shared link runs no built-in tools (only an outside tool with External access).",
+      "status": 403
+     }
     ]
    ],
    "touches": [],
@@ -314,6 +412,20 @@
        "slug": "model_pool_list",
        "refused": "tools"
       }
+     }
+    ],
+    [
+     "app-error",
+     {
+      "ownerId": "33333333-3333-4333-8333-333333333333",
+      "appNodeId": "77777777-7777-4777-8777-777777777777",
+      "shareId": "share-2",
+      "contactId": "contact-7",
+      "source": "tool",
+      "via": "contact",
+      "slug": "model_pool_list",
+      "message": "The tool 'model_pool_list' is built in, and a shared link runs no built-in tools (only an outside tool with External access).",
+      "status": 403
      }
     ]
    ],
@@ -355,6 +467,20 @@
        "refused": "tools"
       }
      }
+    ],
+    [
+     "app-error",
+     {
+      "ownerId": "33333333-3333-4333-8333-333333333333",
+      "appNodeId": "77777777-7777-4777-8777-777777777777",
+      "shareId": "share-2",
+      "contactId": "contact-7",
+      "source": "tool",
+      "via": "contact",
+      "slug": "shell_echo",
+      "message": "The tool 'shell_echo' can't be used from a shared link: it is an outside tool without External access. An admin can switch External access on for a tool that only reads (Settings → Tools).",
+      "status": 403
+     }
     ]
    ],
    "touches": [],
@@ -395,6 +521,20 @@
        "refused": "tools"
       }
      }
+    ],
+    [
+     "app-error",
+     {
+      "ownerId": "33333333-3333-4333-8333-333333333333",
+      "appNodeId": "77777777-7777-4777-8777-777777777777",
+      "shareId": "share-2",
+      "contactId": "contact-7",
+      "source": "tool",
+      "via": "contact",
+      "slug": "mcp_conn_do",
+      "message": "The tool 'mcp_conn_do' can't run: A shared link holds no workspace, so it uses no connector tools (connectors are attached to workspaces).",
+      "status": 403
+     }
     ]
    ],
    "touches": [],
@@ -434,6 +574,20 @@
        "slug": "mcp_conn_read",
        "refused": "tools"
       }
+     }
+    ],
+    [
+     "app-error",
+     {
+      "ownerId": "33333333-3333-4333-8333-333333333333",
+      "appNodeId": "77777777-7777-4777-8777-777777777777",
+      "shareId": "share-2",
+      "contactId": "contact-7",
+      "source": "tool",
+      "via": "contact",
+      "slug": "mcp_conn_read",
+      "message": "The tool 'mcp_conn_read' can't run: A shared link holds no workspace, so it uses no connector tools (connectors are attached to workspaces).",
+      "status": 403
      }
     ]
    ],
@@ -535,6 +689,20 @@
        "refused": "tools"
       }
      }
+    ],
+    [
+     "app-error",
+     {
+      "ownerId": "33333333-3333-4333-8333-333333333333",
+      "appNodeId": "77777777-7777-4777-8777-777777777777",
+      "shareId": "share-2",
+      "contactId": "contact-7",
+      "source": "tool",
+      "via": "contact",
+      "slug": "page_list",
+      "message": "This app isn't allowed to use the tool 'page_list'. It must be declared in the app's tools.",
+      "status": 403
+     }
     ]
    ],
    "touches": [],
@@ -574,6 +742,20 @@
        "slug": "note_list",
        "refused": "tools"
       }
+     }
+    ],
+    [
+     "app-error",
+     {
+      "ownerId": "33333333-3333-4333-8333-333333333333",
+      "appNodeId": "77777777-7777-4777-8777-777777777777",
+      "shareId": "share-2",
+      "contactId": "contact-7",
+      "source": "tool",
+      "via": "contact",
+      "slug": "note_list",
+      "message": "The tool 'note_list' is built in, and a shared link runs no built-in tools (only an outside tool with External access).",
+      "status": 403
      }
     ]
    ],
@@ -615,6 +797,20 @@
        "refused": "tools"
       }
      }
+    ],
+    [
+     "app-error",
+     {
+      "ownerId": "33333333-3333-4333-8333-333333333333",
+      "appNodeId": "77777777-7777-4777-8777-777777777777",
+      "shareId": "share-2",
+      "contactId": "contact-7",
+      "source": "tool",
+      "via": "contact",
+      "slug": "note_list",
+      "message": "The tool 'note_list' is built in, and a shared link runs no built-in tools (only an outside tool with External access).",
+      "status": 403
+     }
     ]
    ],
    "touches": [],
@@ -653,6 +849,20 @@
       "detail": {
        "slug": "api_thing"
       }
+     }
+    ],
+    [
+     "app-error",
+     {
+      "ownerId": "33333333-3333-4333-8333-333333333333",
+      "appNodeId": "77777777-7777-4777-8777-777777777777",
+      "shareId": "share-2",
+      "contactId": "contact-7",
+      "source": "tool",
+      "via": "contact",
+      "slug": "api_thing",
+      "message": "the database could not run this request (the details are in the server log)",
+      "status": 200
      }
     ]
    ],
@@ -711,6 +921,20 @@
        "slug": "page_update",
        "refused": "tools"
       }
+     }
+    ],
+    [
+     "app-error",
+     {
+      "ownerId": "33333333-3333-4333-8333-333333333333",
+      "appNodeId": "77777777-7777-4777-8777-777777777777",
+      "shareId": "share-2",
+      "contactId": "contact-7",
+      "source": "tool",
+      "via": "contact",
+      "slug": "page_update",
+      "message": "The tool 'page_update' is built in, and a shared link runs no built-in tools (only an outside tool with External access).",
+      "status": 403
      }
     ]
    ],
@@ -1554,7 +1778,21 @@
      "ran": "note_list"
     }
    },
-   "audit": [],
+   "audit": [
+    [
+     "app-access",
+     {
+      "ownerId": "33333333-3333-4333-8333-333333333333",
+      "appNodeId": "77777777-7777-4777-8777-777777777777",
+      "actorId": "55555555-5555-4555-8555-555555555555",
+      "kind": "tool",
+      "detail": {
+       "via": "owner",
+       "slug": "note_list"
+      }
+     }
+    ]
+   ],
    "touches": [
     {
      "ran": "note_list",
@@ -1585,7 +1823,21 @@
      "ran": "note_create"
     }
    },
-   "audit": [],
+   "audit": [
+    [
+     "app-access",
+     {
+      "ownerId": "33333333-3333-4333-8333-333333333333",
+      "appNodeId": "77777777-7777-4777-8777-777777777777",
+      "actorId": "55555555-5555-4555-8555-555555555555",
+      "kind": "tool",
+      "detail": {
+       "via": "owner",
+       "slug": "note_create"
+      }
+     }
+    ]
+   ],
    "touches": [
     {
      "ran": "note_create",
@@ -1618,7 +1870,21 @@
      "ran": "page_update"
     }
    },
-   "audit": [],
+   "audit": [
+    [
+     "app-access",
+     {
+      "ownerId": "33333333-3333-4333-8333-333333333333",
+      "appNodeId": "77777777-7777-4777-8777-777777777777",
+      "actorId": "55555555-5555-4555-8555-555555555555",
+      "kind": "tool",
+      "detail": {
+       "via": "owner",
+       "slug": "page_update"
+      }
+     }
+    ]
+   ],
    "touches": [
     {
      "ran": "page_update",
@@ -1651,6 +1917,19 @@
    },
    "audit": [
     [
+     "app-access",
+     {
+      "ownerId": "33333333-3333-4333-8333-333333333333",
+      "appNodeId": "77777777-7777-4777-8777-777777777777",
+      "actorId": "55555555-5555-4555-8555-555555555555",
+      "kind": "tool",
+      "detail": {
+       "via": "owner",
+       "slug": "page_update"
+      }
+     }
+    ],
+    [
      "app-error",
      {
       "ownerId": "33333333-3333-4333-8333-333333333333",
@@ -1674,6 +1953,20 @@
     "error": "tool 'no_such_tool' not found"
    },
    "audit": [
+    [
+     "app-access",
+     {
+      "ownerId": "33333333-3333-4333-8333-333333333333",
+      "appNodeId": "77777777-7777-4777-8777-777777777777",
+      "actorId": "55555555-5555-4555-8555-555555555555",
+      "kind": "tool",
+      "detail": {
+       "via": "owner",
+       "slug": "no_such_tool",
+       "refused": "tool 'no_such_tool' not found"
+      }
+     }
+    ],
     [
      "app-error",
      {
@@ -1699,7 +1992,21 @@
      "ran": "tree_folders"
     }
    },
-   "audit": [],
+   "audit": [
+    [
+     "app-access",
+     {
+      "ownerId": "33333333-3333-4333-8333-333333333333",
+      "appNodeId": "77777777-7777-4777-8777-777777777777",
+      "actorId": "55555555-5555-4555-8555-555555555555",
+      "kind": "tool",
+      "detail": {
+       "via": "owner",
+       "slug": "tree_folders"
+      }
+     }
+    ]
+   ],
    "touches": [
     {
      "ran": "tree_folders",
@@ -1730,7 +2037,21 @@
      "ran": "brain_capacity"
     }
    },
-   "audit": [],
+   "audit": [
+    [
+     "app-access",
+     {
+      "ownerId": "33333333-3333-4333-8333-333333333333",
+      "appNodeId": "77777777-7777-4777-8777-777777777777",
+      "actorId": "55555555-5555-4555-8555-555555555555",
+      "kind": "tool",
+      "detail": {
+       "via": "owner",
+       "slug": "brain_capacity"
+      }
+     }
+    ]
+   ],
    "touches": [
     {
      "ran": "brain_capacity",
@@ -1761,7 +2082,21 @@
      "ran": "model_pool_list"
     }
    },
-   "audit": [],
+   "audit": [
+    [
+     "app-access",
+     {
+      "ownerId": "33333333-3333-4333-8333-333333333333",
+      "appNodeId": "77777777-7777-4777-8777-777777777777",
+      "actorId": "55555555-5555-4555-8555-555555555555",
+      "kind": "tool",
+      "detail": {
+       "via": "owner",
+       "slug": "model_pool_list"
+      }
+     }
+    ]
+   ],
    "touches": [
     {
      "ran": "model_pool_list",
@@ -1787,7 +2122,22 @@
      "exitCode": 0
     }
    },
-   "audit": [],
+   "audit": [
+    [
+     "app-access",
+     {
+      "ownerId": "33333333-3333-4333-8333-333333333333",
+      "appNodeId": "77777777-7777-4777-8777-777777777777",
+      "actorId": "55555555-5555-4555-8555-555555555555",
+      "kind": "tool",
+      "detail": {
+       "via": "owner",
+       "slug": "shell_echo",
+       "handler": "shell"
+      }
+     }
+    ]
+   ],
    "touches": [],
    "viewers": []
   },
@@ -1801,7 +2151,22 @@
     },
     "untrusted": true
    },
-   "audit": [],
+   "audit": [
+    [
+     "app-access",
+     {
+      "ownerId": "33333333-3333-4333-8333-333333333333",
+      "appNodeId": "77777777-7777-4777-8777-777777777777",
+      "actorId": "55555555-5555-4555-8555-555555555555",
+      "kind": "tool",
+      "detail": {
+       "via": "owner",
+       "slug": "mcp_conn_do",
+       "handler": "mcp"
+      }
+     }
+    ]
+   ],
    "touches": [
     {
      "remote": "mcp",
@@ -1829,7 +2194,22 @@
     },
     "untrusted": true
    },
-   "audit": [],
+   "audit": [
+    [
+     "app-access",
+     {
+      "ownerId": "33333333-3333-4333-8333-333333333333",
+      "appNodeId": "77777777-7777-4777-8777-777777777777",
+      "actorId": "55555555-5555-4555-8555-555555555555",
+      "kind": "tool",
+      "detail": {
+       "via": "owner",
+       "slug": "mcp_conn_read",
+       "handler": "mcp"
+      }
+     }
+    ]
+   ],
    "touches": [
     {
      "remote": "mcp",
@@ -1856,7 +2236,22 @@
     },
     "untrusted": true
    },
-   "audit": [],
+   "audit": [
+    [
+     "app-access",
+     {
+      "ownerId": "33333333-3333-4333-8333-333333333333",
+      "appNodeId": "77777777-7777-4777-8777-777777777777",
+      "actorId": "55555555-5555-4555-8555-555555555555",
+      "kind": "tool",
+      "detail": {
+       "via": "owner",
+       "slug": "api_thing",
+       "handler": "http"
+      }
+     }
+    ]
+   ],
    "touches": [
     {
      "remote": "http",
@@ -1877,6 +2272,20 @@
     "error": "This app isn't allowed to use the tool 'page_list'. It must be declared in the app's tools before it can run."
    },
    "audit": [
+    [
+     "app-access",
+     {
+      "ownerId": "33333333-3333-4333-8333-333333333333",
+      "appNodeId": "77777777-7777-4777-8777-777777777777",
+      "actorId": "55555555-5555-4555-8555-555555555555",
+      "kind": "tool",
+      "detail": {
+       "via": "owner",
+       "slug": "page_list",
+       "refused": "This app isn't allowed to use the tool 'page_list'. It must be declared in the app's tools before it can run."
+      }
+     }
+    ],
     [
      "app-error",
      {
@@ -1901,6 +2310,19 @@
     "error": "handler threw: note_list"
    },
    "audit": [
+    [
+     "app-access",
+     {
+      "ownerId": "33333333-3333-4333-8333-333333333333",
+      "appNodeId": "77777777-7777-4777-8777-777777777777",
+      "actorId": "55555555-5555-4555-8555-555555555555",
+      "kind": "tool",
+      "detail": {
+       "via": "owner",
+       "slug": "note_list"
+      }
+     }
+    ],
     [
      "app-error",
      {
@@ -1947,6 +2369,19 @@
    },
    "audit": [
     [
+     "app-access",
+     {
+      "ownerId": "33333333-3333-4333-8333-333333333333",
+      "appNodeId": "77777777-7777-4777-8777-777777777777",
+      "actorId": "55555555-5555-4555-8555-555555555555",
+      "kind": "tool",
+      "detail": {
+       "via": "owner",
+       "slug": "note_list"
+      }
+     }
+    ],
+    [
      "app-error",
      {
       "ownerId": "33333333-3333-4333-8333-333333333333",
@@ -1990,6 +2425,20 @@
    },
    "audit": [
     [
+     "app-access",
+     {
+      "ownerId": "33333333-3333-4333-8333-333333333333",
+      "appNodeId": "77777777-7777-4777-8777-777777777777",
+      "actorId": "55555555-5555-4555-8555-555555555555",
+      "kind": "tool",
+      "detail": {
+       "via": "owner",
+       "slug": "api_thing",
+       "handler": "http"
+      }
+     }
+    ],
+    [
      "app-error",
      {
       "ownerId": "33333333-3333-4333-8333-333333333333",
@@ -2023,6 +2472,19 @@
     "error": "page 44444444-4444-4444-8444-444444444444 not found — it may have been deleted or the id mistyped. Find the right id with page_list / search_nodes, then re-issue."
    },
    "audit": [
+    [
+     "app-access",
+     {
+      "ownerId": "33333333-3333-4333-8333-333333333333",
+      "appNodeId": "77777777-7777-4777-8777-777777777777",
+      "actorId": "55555555-5555-4555-8555-555555555555",
+      "kind": "tool",
+      "detail": {
+       "via": "owner",
+       "slug": "page_update"
+      }
+     }
+    ],
     [
      "app-error",
      {
@@ -2101,6 +2563,20 @@
    },
    "audit": [
     [
+     "app-access",
+     {
+      "ownerId": "33333333-3333-4333-8333-333333333333",
+      "appNodeId": "77777777-7777-4777-8777-777777777777",
+      "actorId": "55555555-5555-4555-8555-555555555555",
+      "kind": "tool",
+      "detail": {
+       "via": "owner",
+       "slug": "note_create",
+       "refused": "The tool 'note_create' changes data or reaches outside the brain, so a team app can't use it (only read-only built-in tools are)."
+      }
+     }
+    ],
+    [
      "app-error",
      {
       "ownerId": "33333333-3333-4333-8333-333333333333",
@@ -2124,6 +2600,20 @@
     "error": "The tool 'page_update' changes data or reaches outside the brain, so a team app can't use it (only read-only built-in tools are)."
    },
    "audit": [
+    [
+     "app-access",
+     {
+      "ownerId": "33333333-3333-4333-8333-333333333333",
+      "appNodeId": "77777777-7777-4777-8777-777777777777",
+      "actorId": "55555555-5555-4555-8555-555555555555",
+      "kind": "tool",
+      "detail": {
+       "via": "owner",
+       "slug": "page_update",
+       "refused": "The tool 'page_update' changes data or reaches outside the brain, so a team app can't use it (only read-only built-in tools are)."
+      }
+     }
+    ],
     [
      "app-error",
      {
@@ -2149,6 +2639,20 @@
    },
    "audit": [
     [
+     "app-access",
+     {
+      "ownerId": "33333333-3333-4333-8333-333333333333",
+      "appNodeId": "77777777-7777-4777-8777-777777777777",
+      "actorId": "55555555-5555-4555-8555-555555555555",
+      "kind": "tool",
+      "detail": {
+       "via": "owner",
+       "slug": "page_update",
+       "refused": "The tool 'page_update' changes data or reaches outside the brain, so a team app can't use it (only read-only built-in tools are)."
+      }
+     }
+    ],
+    [
      "app-error",
      {
       "ownerId": "33333333-3333-4333-8333-333333333333",
@@ -2172,6 +2676,20 @@
     "error": "tool 'no_such_tool' not found"
    },
    "audit": [
+    [
+     "app-access",
+     {
+      "ownerId": "33333333-3333-4333-8333-333333333333",
+      "appNodeId": "77777777-7777-4777-8777-777777777777",
+      "actorId": "55555555-5555-4555-8555-555555555555",
+      "kind": "tool",
+      "detail": {
+       "via": "owner",
+       "slug": "no_such_tool",
+       "refused": "tool 'no_such_tool' not found"
+      }
+     }
+    ],
     [
      "app-error",
      {
@@ -2285,6 +2803,20 @@
    },
    "audit": [
     [
+     "app-access",
+     {
+      "ownerId": "33333333-3333-4333-8333-333333333333",
+      "appNodeId": "77777777-7777-4777-8777-777777777777",
+      "actorId": "55555555-5555-4555-8555-555555555555",
+      "kind": "tool",
+      "detail": {
+       "via": "owner",
+       "slug": "model_pool_list",
+       "refused": "The tool 'model_pool_list' changes data or reaches outside the brain, so a team app can't use it (only read-only built-in tools are)."
+      }
+     }
+    ],
+    [
      "app-error",
      {
       "ownerId": "33333333-3333-4333-8333-333333333333",
@@ -2308,6 +2840,20 @@
     "error": "outside tool 'shell_echo' refused"
    },
    "audit": [
+    [
+     "app-access",
+     {
+      "ownerId": "33333333-3333-4333-8333-333333333333",
+      "appNodeId": "77777777-7777-4777-8777-777777777777",
+      "actorId": "55555555-5555-4555-8555-555555555555",
+      "kind": "tool",
+      "detail": {
+       "via": "owner",
+       "slug": "shell_echo",
+       "refused": "outside tool 'shell_echo' refused"
+      }
+     }
+    ],
     [
      "app-error",
      {
@@ -2474,6 +3020,20 @@
     "error": "This app isn't allowed to use the tool 'page_list'. It must be declared in the app's tools."
    },
    "audit": [
+    [
+     "app-access",
+     {
+      "ownerId": "33333333-3333-4333-8333-333333333333",
+      "appNodeId": "77777777-7777-4777-8777-777777777777",
+      "actorId": "55555555-5555-4555-8555-555555555555",
+      "kind": "tool",
+      "detail": {
+       "via": "owner",
+       "slug": "page_list",
+       "refused": "This app isn't allowed to use the tool 'page_list'. It must be declared in the app's tools."
+      }
+     }
+    ],
     [
      "app-error",
      {
@@ -2679,6 +3239,20 @@
     "error": "The tool 'page_update' changes data or reaches outside the brain, so a team app can't use it (only read-only built-in tools are)."
    },
    "audit": [
+    [
+     "app-access",
+     {
+      "ownerId": "33333333-3333-4333-8333-333333333333",
+      "appNodeId": "77777777-7777-4777-8777-777777777777",
+      "actorId": "55555555-5555-4555-8555-555555555555",
+      "kind": "tool",
+      "detail": {
+       "via": "owner",
+       "slug": "page_update",
+       "refused": "The tool 'page_update' changes data or reaches outside the brain, so a team app can't use it (only read-only built-in tools are)."
+      }
+     }
+    ],
     [
      "app-error",
      {

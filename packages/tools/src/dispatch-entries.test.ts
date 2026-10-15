@@ -27,11 +27,12 @@ const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '../../..');
  *  tool brokers and the dev console were the last). */
 const NO_CALLER_YET: Readonly<Record<string, string>> = {};
 
-/** The entries A5 step 3b moved onto the gate: each names its caller now. */
+/** The entries A5 step 3b moved onto the gate: each names its caller now.
+ *  The three app tool brokers are one since A10 #9 (lib/app-tool-broker.ts
+ *  runAppToolBroker; the owner route, a member's run and the link route
+ *  are its configs). */
 const MOVED_IN_STEP_3B: readonly string[] = [
-  'server/web/lib/app-runner.ts',
-  'server/web/app/api/apps/[id]/tool-broker/route.ts',
-  'server/web/app/s/[token]/tool-broker/route.ts',
+  'server/web/lib/app-tool-broker.ts',
   'server/web/app/api/dev-tools/execute-tool/route.ts',
 ];
 

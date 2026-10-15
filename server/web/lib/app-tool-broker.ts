@@ -239,8 +239,20 @@ export async function runAppToolBroker(
   const who = whoOf(config);
   const via = config.via;
   const tagged = { via, ...('contactId' in who ? { contactId: who.contactId } : {}), slug };
-  const logCall = (detail: Record<string, unknown>) =>
+  // The call's Activity row, and a contact's on the share's own trail
+  // (refused calls included).
+  const logCall = (detail: Record<string, unknown>, allowed: boolean) => {
     recordAppAccess({ ownerId: config.ownerId, appNodeId: app.id, ...who, kind: 'tool', detail });
+    if ('shareId' in who) {
+      recordShareAccess({
+        ownerId: config.ownerId,
+        shareId: who.shareId,
+        contactId: who.contactId,
+        kind: allowed ? 'tool' : 'refused',
+        detail: allowed ? { slug } : { slug, refused: 'tools' },
+      });
+    }
+  };
   const logError = (message: string, status: number) =>
     recordAppError({
       ownerId: config.ownerId,
@@ -252,19 +264,9 @@ export async function runAppToolBroker(
       message,
       status,
     });
-  if ('shareId' in who) {
-    // The share's own trail (refused calls included).
-    recordShareAccess({
-      ownerId: config.ownerId,
-      shareId: who.shareId,
-      contactId: who.contactId,
-      kind: verdict.ok ? 'tool' : 'refused',
-      detail: verdict.ok ? { slug } : { slug, refused: 'tools' },
-    });
-  }
 
   if (!verdict.ok) {
-    logCall({ ...tagged, refused: verdict.reason });
+    logCall({ ...tagged, refused: verdict.reason }, false);
     logError(verdict.reason, verdict.status);
     // A missing tool 404; every other refusal the gate's 403, in the
     // verdict's words (A5 step 3b).
@@ -294,7 +296,7 @@ export async function runAppToolBroker(
     }
     if (!verifyAppToolConfirmToken(confirmToken, claims)) {
       const why = 'the confirmation expired or did not match the call';
-      logCall({ ...tagged, refused: why });
+      logCall({ ...tagged, refused: why }, false);
       logError(why, 403);
       return NextResponse.json(
         {
@@ -308,7 +310,7 @@ export async function runAppToolBroker(
 
   // An outside call names its kind, so the log shows which calls reached
   // outside the brain; a write keeps its input too (M2 audit, low 4).
-  logCall({ ...tagged, ...outsideCallLogDetail(verdict, input) });
+  logCall({ ...tagged, ...outsideCallLogDetail(verdict, input) }, true);
   // Through the one gate as the app's broker (A5 step 3b).
   const dispatch = () =>
     dispatchTool(verdict.tool, input, {

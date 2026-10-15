@@ -135,11 +135,14 @@ const SITES: Record<string, Site> = {
     scope: 'call',
     why: "the owner's dev tool console, naming its signed-in login",
   },
-  'server/web/app/api/apps/[id]/tool-broker/route.ts': {
+  'server/web/lib/app-tool-broker.ts': {
     calls: 1,
-    surface: /surface: scope\.surface/,
+    // runOf: appToolScope's surface for a login's run (web for the owner's
+    // admin-level app, the team surface naming the login below it and for
+    // every member), the contact surface naming the share for a link.
+    surface: /surface: run\.surface/,
     scope: 'call',
-    why: "the owner's own app: appToolScope, web for an admin-level app, the app level's surface below it (client tier audit L1)",
+    why: "an app's call through the one app tool broker (A10 #9): the owner's own app on appToolScope's surface (client tier audit L1), a member's on the team surface, a contact link's on the contact surface, never the owner for anyone else",
   },
   // ── someone else: their surface, explicitly ──
   'packages/runtime/src/assistant/run-team-turn.ts': {
@@ -148,18 +151,6 @@ const SITES: Record<string, Site> = {
     surface: /surface: \{\s*kind: 'team',/,
     scope: 'call',
     why: "a member's chat turn: always the team surface, never the owner",
-  },
-  'server/web/lib/app-runner.ts': {
-    calls: 1,
-    surface: /surface: scope\.surface/,
-    scope: 'call',
-    why: "a member's app call (the owner and the deprecated member tool broker, W7e): appToolScope at the team rules, never the owner",
-  },
-  'server/web/app/s/[token]/tool-broker/route.ts': {
-    calls: 1,
-    surface: /surface: \{ kind: 'contact', contactId, shareId: share\.id \}/,
-    scope: 'call',
-    why: "a contact link's call of an External access tool: the contact surface, never the owner",
   },
   // ── pass-through: the caller's surface, unchanged ──
   'packages/tools/src/dispatch.ts': {
