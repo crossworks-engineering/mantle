@@ -20,7 +20,10 @@
  *    1), and that put a caught error's text in a reply (fold 2), outside
  *    and inside the named lists (route-plumbing.mjs);
  *  - rate limit calls in route files (A10 #8), outside the named list, and
- *    the named files (route-plumbing.mjs RATE_LIMIT_ALLOW).
+ *    the named files (route-plumbing.mjs RATE_LIMIT_ALLOW);
+ *  - the provider HTTP copies (A10 #10): inline deadlines, hand abort
+ *    timers, private withTimeout copies, Retry-After reads and sleeping
+ *    retry loops, outside and inside the named lists (provider-http.mjs).
  *
  * Comment lines never count. Product files only: packages/, server/,
  * scripts/; no tests, migrations, archive or build folders (a route segment
@@ -38,6 +41,7 @@ import {
   errorTextReplies,
   rateLimitCalls,
 } from './route-plumbing.mjs';
+import { PROVIDER_HTTP_PATTERNS } from './provider-http.mjs';
 
 /** Whether the counts read `path` (repo-relative). */
 export function isCounted(path) {
@@ -610,6 +614,9 @@ export function measure(root) {
   const rateLimitFiles = [];
   const rateLimitAllowed = [];
   let rateLimitCallsOutside = 0;
+  const providerHttp = Object.fromEntries(
+    Object.keys(PROVIDER_HTTP_PATTERNS).map((k) => [k, { outside: {}, allowed: {} }]),
+  );
   for (const f of files) {
     const text = readRepoFile(root, f);
     if (text === null) continue;
@@ -677,6 +684,11 @@ export function measure(root) {
       const n = bareFetchSites(text);
       if (n) bareFetch[f] = n;
     }
+    const plain = stripComments(text);
+    for (const [k, { count, allowed }] of Object.entries(PROVIDER_HTTP_PATTERNS)) {
+      const n = count(plain);
+      if (n) providerHttp[k][Object.hasOwn(allowed, f) ? 'allowed' : 'outside'][f] = n;
+    }
   }
   const sum = (o, k) => Object.values(o).reduce((a, v) => a + (k ? v[k] : v), 0);
   const reasons = new Set(Object.values(asSystem).flatMap((v) => v.reasons));
@@ -713,6 +725,12 @@ export function measure(root) {
       routeErrorTextAllowed: errorTextAllowed.length,
       routeRateLimitCalls: rateLimitCallsOutside,
       routeRateLimitAllowed: rateLimitAllowed.length,
+      ...Object.fromEntries(
+        Object.entries(providerHttp).flatMap(([k, v]) => [
+          [`http_${k}`, sum(v.outside)],
+          [`http_${k}_allowed`, sum(v.allowed)],
+        ]),
+      ),
       ...Object.fromEntries(Object.entries(stores).map(([k, v]) => [`store_${k}_files`, v.length])),
     },
     perFile: {
@@ -732,6 +750,7 @@ export function measure(root) {
       errorTextAllowed,
       rateLimitFiles,
       rateLimitAllowed,
+      providerHttp,
     },
   };
 }

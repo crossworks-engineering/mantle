@@ -309,7 +309,7 @@ How it behaves at runtime ([`doEmbed`](../packages/embeddings/src/index.ts)):
 
 - The primary route runs first.
 - On a **route-down** error, connection refused, DNS failure, request timeout, or a 5xx (classified by `isRouteDownError`); it retries the misses on the backup route and stamps `last_failover_at` (surfaced on the page).
-- On an **account** error (no credits, a refused key, no key, a model the provider does not offer; `isAccountError` in [`provider-error.ts`](../packages/embeddings/src/provider-error.ts)) it fails over too: the backup is another provider or key, which gets round exactly that. Added 2026-10-04, see "Provider outages" below.
+- On an **account** error (no credits, a refused key, no key, a model the provider does not offer; `isAccountError` in [`provider-error.ts`](../packages/std/src/provider-error.ts)) it fails over too: the backup is another provider or key, which gets round exactly that. Added 2026-10-04, see "Provider outages" below.
 - On a **bad-input** error (any other 4xx, unsupported input) it rethrows, a second route wouldn't help.
 - The cache is keyed on **model only**, so both routes share entries and a failover never pollutes the cache.
 
@@ -323,7 +323,7 @@ How it behaves at runtime ([`doEmbed`](../packages/embeddings/src/index.ts)):
 
 **What happened (2026-10-04).** Two brains embedded through OpenAI direct while the account had no credits. OpenAI answered `429 insufficient_quota`, which looks like a rate limit. Every extract job retried five times and went to the dead-letter queue, new files were not indexed, and some chat turns had no retrieved context. No backup route was set. Nobody was told: the only traces were log lines and the /debug/integrity dead-letter check. When the admin switched to OpenRouter, new embeds worked, but the backlog did not move until a restart.
 
-**1. Error classes** ([`provider-error.ts`](../packages/embeddings/src/provider-error.ts)). `classifyProviderError(err)` sorts a provider error:
+**1. Error classes** ([`provider-error.ts`](../packages/std/src/provider-error.ts)). `classifyProviderError(err)` sorts a provider error:
 
 | Class               | Codes                                                                                                               | What the brain does                                                                               |
 | ------------------- | ------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |

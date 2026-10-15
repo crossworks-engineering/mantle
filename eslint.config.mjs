@@ -26,6 +26,7 @@ import mantleNoGuardCallsPlugin from './eslint-rules/no-guard-calls.mjs';
 import mantleEgressPlugin from './eslint-rules/no-bare-fetch.mjs';
 import mantleRoutePlumbingPlugin from './eslint-rules/route-plumbing.mjs';
 import mantleKindsPlugin from './eslint-rules/no-hand-kind-lists.mjs';
+import mantleProviderHttpPlugin from './eslint-rules/provider-http.mjs';
 
 export default tseslint.config(
   {
@@ -267,6 +268,25 @@ export default tseslint.config(
     ignores: ['**/*.test.{ts,tsx}', '**/*.spec.{ts,tsx}', '**/scripts/**'],
     plugins: { 'mantle-egress': mantleEgressPlugin },
     rules: { 'mantle-egress/no-bare-fetch': 'error' },
+  },
+  {
+    // Provider HTTP plumbing (A10 #10, docs/provider-http.md): deadlines,
+    // retries and Retry-After go through @mantle/std (timeoutSignal and the
+    // timeout tables, withRetry, parseRetryAfterMs, withTimeout). The files
+    // that keep a pattern are named in the rule file, each with its reason.
+    files: [
+      'packages/**/*.{ts,tsx,mts,mjs,js}',
+      'server/{web,api,mcp,sandboxd}/**/*.{ts,tsx,mts,mjs,js}',
+    ],
+    ignores: ['**/*.test.{ts,tsx}', '**/*.spec.{ts,tsx}'],
+    plugins: { 'mantle-http': mantleProviderHttpPlugin },
+    rules: {
+      'mantle-http/inlineTimeout': 'error',
+      'mantle-http/handAbortTimer': 'error',
+      'mantle-http/withTimeoutCopy': 'error',
+      'mantle-http/retryAfterRead': 'error',
+      'mantle-http/backoffLoop': 'error',
+    },
   },
   {
     // A route reads its body through the one reader (A10 part 2):

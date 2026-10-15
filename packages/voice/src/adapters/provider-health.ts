@@ -44,7 +44,7 @@ export async function providerHealth(
     await res.body?.cancel().catch(() => {});
     return { up: false, reason: 'http', status: res.status };
   }
-  let ids: string[] | null = null;
+  let ids: string[] | null;
   try {
     const body = (await res.json()) as { data?: Array<{ id?: unknown }> };
     ids = (body.data ?? []).map((m) => m.id).filter((x): x is string => typeof x === 'string');

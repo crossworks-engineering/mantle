@@ -58,6 +58,16 @@ const LABELS: Record<string, string> = {
   store_objectstore_files: 'files reaching the object store write API (A3b)',
   store_appdb_files: 'files reaching the app database write API or APP_DB_DIR (A3b)',
   bareFetchSites: 'bare fetch( sites in tools, calendar, content (A10 part 1)',
+  http_inlineTimeout: 'inline AbortSignal.timeout( sites outside the named list (A10 #10)',
+  http_inlineTimeout_allowed: 'inline AbortSignal.timeout( sites named in the list (A10 #10)',
+  http_handAbortTimer: 'hand abort timers outside the named list (A10 #10)',
+  http_handAbortTimer_allowed: 'hand abort timers named (headers-only deadlines) (A10 #10)',
+  http_withTimeoutCopy: 'private withTimeout copies (A10 #10)',
+  http_withTimeoutCopy_allowed: 'withTimeout definitions named (std) (A10 #10)',
+  http_retryAfterRead: 'Retry-After header reads outside std (A10 #10)',
+  http_retryAfterRead_allowed: 'Retry-After header reads named (std) (A10 #10)',
+  http_backoffLoop: 'sleeping retry loops outside the named list (A10 #10)',
+  http_backoffLoop_allowed: 'sleeping retry loops named (std, database retries) (A10 #10)',
 };
 
 /** Numbers that may go up without failing: the route counts grow with
