@@ -36,7 +36,7 @@ type ListModelsResponse = {
 };
 
 import type { DiscoveryResult } from '@mantle/voice-client/catalog';
-import { errorMessage } from '@mantle/std';
+import { errorMessage, PROVIDER_TIMEOUTS } from '@mantle/std';
 import { providerFetch } from './adapters/provider-fetch';
 
 export type { DiscoveryResult };
@@ -77,12 +77,15 @@ export function catalogDrift(
 /** Fetch the list of model ids the key has access to. Used by both
  *  TTS and STT discovery — single network round trip. */
 async function fetchAvailableModelIds(apiKey: string): Promise<Set<string>> {
-  const res = await providerFetch(OPENAI_MODELS_URL, {
-    headers: { Authorization: `Bearer ${apiKey}` },
-    // GET /v1/models is small and fast, but we cap defensively so a
-    // misbehaving network doesn't hang the edit page.
-    signal: AbortSignal.timeout(15_000),
-  });
+  const res = await providerFetch(
+    OPENAI_MODELS_URL,
+    {
+      headers: { Authorization: `Bearer ${apiKey}` },
+      // GET /v1/models is small and fast, but we cap defensively so a
+      // misbehaving network doesn't hang the edit page.
+    },
+    { timeoutMs: PROVIDER_TIMEOUTS.discover },
+  );
   if (!res.ok) {
     const body = await res.text().catch(() => '');
     throw new Error(`openai list-models ${res.status}: ${body.slice(0, 300)}`);

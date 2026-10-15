@@ -31,7 +31,7 @@ import type {
 } from './types';
 import type { DiscoveryResult } from '../discover';
 import { OPENAI_VISION_MODELS } from '../catalogs/openai-vision';
-import { errorMessage } from '@mantle/std';
+import { errorMessage, PROVIDER_TIMEOUTS } from '@mantle/std';
 import { providerFetch } from './provider-fetch';
 
 const OPENAI_CHAT_URL = 'https://api.openai.com/v1/chat/completions';
@@ -80,17 +80,20 @@ export const openAiVisionAdapter: VisionDispatcher = {
       max_tokens: opts.maxTokens ?? 2000,
     };
 
-    const res = await providerFetch(OPENAI_CHAT_URL, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${opts.apiKey}`,
-        'Content-Type': 'application/json',
+    const res = await providerFetch(
+      OPENAI_CHAT_URL,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${opts.apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(body),
+        // Vision calls are usually fast but a big image with high detail
+        // can take 15-20s — give a comfortable cap.
       },
-      body: JSON.stringify(body),
-      // Vision calls are usually fast but a big image with high detail
-      // can take 15-20s — give a comfortable cap.
-      signal: AbortSignal.timeout(60_000),
-    });
+      { timeoutMs: PROVIDER_TIMEOUTS.vision },
+    );
     if (!res.ok) {
       const errBody = await res.text().catch(() => '');
       throw new Error(`openai-vision ${res.status}: ${errBody.slice(0, 400)}`);
@@ -107,10 +110,13 @@ export const openAiVisionAdapter: VisionDispatcher = {
 
   async discoverModels(apiKey: string): Promise<DiscoveryResult<VisionModelInfo>> {
     try {
-      const res = await providerFetch(OPENAI_MODELS_URL, {
-        headers: { Authorization: `Bearer ${apiKey}` },
-        signal: AbortSignal.timeout(15_000),
-      });
+      const res = await providerFetch(
+        OPENAI_MODELS_URL,
+        {
+          headers: { Authorization: `Bearer ${apiKey}` },
+        },
+        { timeoutMs: PROVIDER_TIMEOUTS.discover },
+      );
       if (!res.ok) {
         const body = await res.text().catch(() => '');
         throw new Error(`openai list-models ${res.status}: ${body.slice(0, 300)}`);

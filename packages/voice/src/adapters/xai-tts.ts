@@ -38,6 +38,7 @@ import {
 } from '../catalogs/xai';
 import { stripAudioTags } from '../audio-tags';
 import { providerFetch } from './provider-fetch';
+import { PROVIDER_TIMEOUTS } from '@mantle/std';
 
 /** Map our `format` option to xAI's `output_format.codec`. xAI doesn't
  *  offer opus, so opus → mp3 with a hint. Other formats map directly. */
@@ -119,15 +120,18 @@ async function xaiTtsSynthesize(opts: SynthesizeOptions): Promise<SynthesizeResu
     // text_normalization is on by default (numbers/abbreviations); left alone.
   };
 
-  const res = await providerFetch(`${XAI_BASE_URL}/tts`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${opts.apiKey}`,
-      'content-type': 'application/json',
+  const res = await providerFetch(
+    `${XAI_BASE_URL}/tts`,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${opts.apiKey}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify(body),
     },
-    body: JSON.stringify(body),
-    signal: AbortSignal.timeout(60_000),
-  });
+    { timeoutMs: PROVIDER_TIMEOUTS.speech },
+  );
   if (!res.ok) {
     const errBody = await res.text().catch(() => '');
     throw new Error(`xai tts ${res.status}: ${errBody.slice(0, 400)}`);

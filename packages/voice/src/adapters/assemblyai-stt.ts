@@ -30,6 +30,7 @@ import type { SttDispatcher } from './types';
 import type { TranscribeOptions, TranscribeResult } from '../types';
 import { ASSEMBLYAI_BASE_URL, ASSEMBLYAI_POLL_TIMEOUT_SECONDS } from '../catalogs/assemblyai';
 import { providerFetch } from './provider-fetch';
+import { PROVIDER_TIMEOUTS } from '@mantle/std';
 
 const DEFAULT_MODEL = 'universal';
 /** Poll cadence — AssemblyAI's docs suggest 3s minimum to avoid being
@@ -52,15 +53,19 @@ type PollResponse = {
 };
 
 async function uploadAudio(apiKey: string, audio: Buffer, mime: string): Promise<string> {
-  const res = await providerFetch(`${ASSEMBLYAI_BASE_URL}/v2/upload`, {
-    method: 'POST',
-    headers: {
-      // AssemblyAI's `Authorization` is the bare key — no `Bearer ` prefix.
-      Authorization: apiKey,
-      'Content-Type': mime || 'application/octet-stream',
+  const res = await providerFetch(
+    `${ASSEMBLYAI_BASE_URL}/v2/upload`,
+    {
+      method: 'POST',
+      headers: {
+        // AssemblyAI's `Authorization` is the bare key — no `Bearer ` prefix.
+        Authorization: apiKey,
+        'Content-Type': mime || 'application/octet-stream',
+      },
+      body: new Uint8Array(audio),
     },
-    body: new Uint8Array(audio),
-  });
+    { timeoutMs: PROVIDER_TIMEOUTS.transcribe },
+  );
   if (!res.ok) {
     const body = await res.text().catch(() => '');
     throw new Error(`assemblyai upload ${res.status}: ${body.slice(0, 400)}`);
@@ -83,14 +88,18 @@ async function createTranscript(
   if (language) body.language_code = language;
   else body.language_detection = true;
 
-  const res = await providerFetch(`${ASSEMBLYAI_BASE_URL}/v2/transcript`, {
-    method: 'POST',
-    headers: {
-      Authorization: apiKey,
-      'Content-Type': 'application/json',
+  const res = await providerFetch(
+    `${ASSEMBLYAI_BASE_URL}/v2/transcript`,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: apiKey,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body),
     },
-    body: JSON.stringify(body),
-  });
+    { timeoutMs: PROVIDER_TIMEOUTS.transcribe },
+  );
   if (!res.ok) {
     const body = await res.text().catch(() => '');
     throw new Error(`assemblyai create-transcript ${res.status}: ${body.slice(0, 400)}`);

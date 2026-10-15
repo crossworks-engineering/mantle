@@ -39,7 +39,7 @@ import {
   type OpenAICompatChatResponse,
 } from './openai-compat';
 import { scrubThinkBlocks } from './think-scrubber';
-import { errorMessage } from '@mantle/std';
+import { errorMessage, PROVIDER_TIMEOUTS } from '@mantle/std';
 import { providerFetch } from './provider-fetch';
 
 /** xAI's chat response shape — the shared OpenAI-compat envelope plus
@@ -81,7 +81,7 @@ async function xaiChat(opts: ChatOptions): Promise<ChatResult> {
       ...convIdHeader(opts),
     },
     body: JSON.stringify(body),
-    signal: chatAbortSignal(opts.signal, 60_000),
+    signal: chatAbortSignal(opts.signal, PROVIDER_TIMEOUTS.chat),
   });
   if (!res.ok) {
     const errBody = await res.text().catch(() => '');
@@ -114,10 +114,13 @@ async function xaiChat(opts: ChatOptions): Promise<ChatResult> {
 
 async function xaiDiscover(apiKey: string): Promise<DiscoveryResult<ChatModelInfo>> {
   try {
-    const res = await providerFetch(`${XAI_BASE_URL}/models`, {
-      headers: { Authorization: `Bearer ${apiKey}` },
-      signal: AbortSignal.timeout(15_000),
-    });
+    const res = await providerFetch(
+      `${XAI_BASE_URL}/models`,
+      {
+        headers: { Authorization: `Bearer ${apiKey}` },
+      },
+      { timeoutMs: PROVIDER_TIMEOUTS.discover },
+    );
     if (!res.ok) {
       // 404 here means xAI hasn't implemented /v1/models — that's
       // fine, we fall back to the static catalog with a hint.

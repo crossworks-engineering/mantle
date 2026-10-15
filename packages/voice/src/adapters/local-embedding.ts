@@ -25,7 +25,7 @@ import type {
 import type { DiscoveryResult } from '../discover';
 import { tailnetFetch } from './tailnet';
 import { env } from '@mantle/config';
-import { errorMessage } from '@mantle/std';
+import { errorMessage, PROVIDER_TIMEOUTS, ProviderHttpError } from '@mantle/std';
 import { providerFetch } from './provider-fetch';
 
 const DEFAULT_BASE_URL = 'http://localhost:11434/v1';
@@ -69,7 +69,7 @@ const SUB_BATCH = (() => {
  *  `MANTLE_LOCAL_EMBED_TIMEOUT_MS` for unusually slow hardware. */
 const REQUEST_TIMEOUT_MS = (() => {
   const n = Number.parseInt(env('MANTLE_LOCAL_EMBED_TIMEOUT_MS') ?? '', 10);
-  return Number.isFinite(n) && n >= 1_000 ? n : 120_000;
+  return Number.isFinite(n) && n >= 1_000 ? n : PROVIDER_TIMEOUTS.localEmbed;
 })();
 
 async function embedOnce(
@@ -87,25 +87,32 @@ async function embedOnce(
   if (req.dimensions) body.dimensions = req.dimensions;
 
   const doFetch = req.viaTailnet ? tailnetFetch : providerFetch;
-  const res = await doFetch(`${baseUrl(req.baseUrl)}/embeddings`, {
-    method: 'POST',
-    headers: {
-      authorization: `Bearer ${req.apiKey || 'local'}`,
-      'content-type': 'application/json',
+  const res = await doFetch(
+    `${baseUrl(req.baseUrl)}/embeddings`,
+    {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${req.apiKey || 'local'}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify(body),
     },
-    body: JSON.stringify(body),
-    // Per-call override from the embedding config (null/<1s → the env/const default).
-    signal: AbortSignal.timeout(
-      req.localEmbedTimeoutMs && req.localEmbedTimeoutMs >= 1_000
-        ? req.localEmbedTimeoutMs
-        : REQUEST_TIMEOUT_MS,
-    ),
-  });
+    {
+      // Per-call override from the embedding config (null/<1s: the env/const default).
+      timeoutMs:
+        req.localEmbedTimeoutMs && req.localEmbedTimeoutMs >= 1_000
+          ? req.localEmbedTimeoutMs
+          : REQUEST_TIMEOUT_MS,
+    },
+  );
   if (!res.ok) {
     const text = await res.text().catch(() => '');
-    throw new Error(
-      `local embeddings failed: ${res.status} ${res.statusText} — ${text.slice(0, 500)}`,
-    );
+    throw new ProviderHttpError({
+      provider: 'local',
+      status: res.status,
+      body: text.slice(0, 500),
+      message: `local embeddings failed: ${res.status} ${res.statusText} — ${text.slice(0, 500)}`,
+    });
   }
   const json = (await res.json()) as {
     data: Array<{ embedding: number[]; index: number }>;
@@ -164,9 +171,11 @@ export const localEmbedding: EmbeddingDispatcher = {
     // report dimensions, so the form's Test button verifies the live dim
     // (which is the only number that matters for the column).
     try {
-      const res = await providerFetch(`${baseUrl()}/models`, {
-        signal: AbortSignal.timeout(8_000),
-      });
+      const res = await providerFetch(
+        `${baseUrl()}/models`,
+        {},
+        { timeoutMs: PROVIDER_TIMEOUTS.catalog },
+      );
       if (!res.ok) {
         return { available: [], filtered: false, error: `local /v1/models: HTTP ${res.status}` };
       }

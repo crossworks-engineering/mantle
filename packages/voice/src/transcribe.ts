@@ -16,6 +16,7 @@
 
 import type { TranscribeOptions, TranscribeResult } from './types';
 import { providerFetch } from './adapters/provider-fetch';
+import { PROVIDER_TIMEOUTS } from '@mantle/std';
 
 const OPENAI_TRANSCRIBE_URL = 'https://api.openai.com/v1/audio/transcriptions';
 const DEFAULT_MODEL = 'whisper-1';
@@ -72,11 +73,15 @@ export async function transcribeAudio(
   const blob = new Blob([new Uint8Array(audio)], { type: opts.mimeType });
   form.append('file', blob, filename);
 
-  const res = await providerFetch(OPENAI_TRANSCRIBE_URL, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${opts.apiKey}` },
-    body: form,
-  });
+  const res = await providerFetch(
+    OPENAI_TRANSCRIBE_URL,
+    {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${opts.apiKey}` },
+      body: form,
+    },
+    { timeoutMs: PROVIDER_TIMEOUTS.transcribe },
+  );
   if (!res.ok) {
     const body = await res.text().catch(() => '');
     // Known footgun: MediaRecorder-produced WebM has no duration in its

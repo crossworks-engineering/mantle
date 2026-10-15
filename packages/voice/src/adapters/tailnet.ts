@@ -19,7 +19,13 @@ import { env } from '@mantle/config';
  * The unit tests cover the SELECTION logic and a local CONNECT proxy; the
  * actual NAT traversal is validated by the operator once their tailnet is up.
  */
-import { fetchVia, loadUndici, providerAgentOptions, providerFetch } from './provider-fetch';
+import {
+  fetchVia,
+  loadUndici,
+  providerAgentOptions,
+  providerFetch,
+  type ProviderFetchOptions,
+} from './provider-fetch';
 
 type UndiciProxyAgent = import('undici').ProxyAgent;
 
@@ -43,11 +49,15 @@ export function tailnetProxyConfigured(): boolean {
  * a plain direct fetch otherwise. Drop-in for `fetch(url, init)` in adapters
  * that honour a per-route "via tailnet" flag.
  */
-export async function tailnetFetch(url: string, init?: RequestInit): Promise<Response> {
+export async function tailnetFetch(
+  url: string,
+  init?: RequestInit,
+  opts?: ProviderFetchOptions,
+): Promise<Response> {
   const agent = proxyAgent();
-  // No proxy configured (or `undici` unavailable) → the direct provider pool.
-  if (!agent) return providerFetch(url, init);
-  return fetchVia(agent, url, init);
+  // No proxy configured (or `undici` unavailable): the direct provider pool.
+  if (!agent) return providerFetch(url, init, opts);
+  return fetchVia(agent, url, init, opts);
 }
 
 /** Test seam — clears the cached agent so an env change takes effect. */

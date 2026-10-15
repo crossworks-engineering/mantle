@@ -27,6 +27,7 @@ import {
 } from '../catalogs/xai';
 import { egressFetch } from '@mantle/std/egress';
 import { providerFetch } from './provider-fetch';
+import { PROVIDER_TIMEOUTS } from '@mantle/std';
 
 /** A returned image URL: how long its fetch may take and how much it may
  *  read. */
@@ -63,15 +64,18 @@ export const xaiImageAdapter: ImageGenDispatcher = {
       ...(opts.aspectRatio ? { aspect_ratio: opts.aspectRatio } : {}),
     };
 
-    const res = await providerFetch(`${XAI_BASE_URL}/images/generations`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${opts.apiKey}`,
-        'Content-Type': 'application/json',
+    const res = await providerFetch(
+      `${XAI_BASE_URL}/images/generations`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${opts.apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(body),
       },
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(120_000),
-    });
+      { timeoutMs: PROVIDER_TIMEOUTS.image },
+    );
     if (!res.ok) {
       const errBody = await res.text().catch(() => '');
       // Rewrite the deprecation 404 into an actionable migration

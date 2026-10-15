@@ -39,6 +39,7 @@ import {
   GOOGLE_IMAGE_MODELS,
 } from '../catalogs/google';
 import { providerFetch } from './provider-fetch';
+import { PROVIDER_TIMEOUTS } from '@mantle/std';
 
 /** Map a 'NNNNxNNNN' size to an Imagen aspect ratio. Falls back to
  *  1:1 for unknown sizes — Imagen rejects anything else with a 400. */
@@ -91,15 +92,18 @@ export const googleImageAdapter: ImageGenDispatcher = {
     };
 
     const url = `${GOOGLE_BASE_URL}/models/${encodeURIComponent(model)}:predict`;
-    const res = await providerFetch(url, {
-      method: 'POST',
-      headers: {
-        'x-goog-api-key': opts.apiKey,
-        'Content-Type': 'application/json',
+    const res = await providerFetch(
+      url,
+      {
+        method: 'POST',
+        headers: {
+          'x-goog-api-key': opts.apiKey,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(body),
       },
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(120_000),
-    });
+      { timeoutMs: PROVIDER_TIMEOUTS.image },
+    );
     if (!res.ok) {
       const errBody = await res.text().catch(() => '');
       // Translate the misleading 404 into something an operator can

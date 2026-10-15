@@ -51,6 +51,7 @@ import {
 } from './openai-compat';
 import { scrubThinkBlocks } from './think-scrubber';
 import { providerFetch } from './provider-fetch';
+import { PROVIDER_TIMEOUTS } from '@mantle/std';
 
 /** Resolve + normalise the per-route base URL. Required — a custom cloud route
  *  has no sensible default (unlike `local`, which falls back to localhost). */
@@ -112,7 +113,7 @@ async function customChat(opts: ChatOptions): Promise<ChatResult> {
       'content-type': 'application/json',
     },
     body: JSON.stringify(body),
-    signal: chatAbortSignal(o.signal, 120_000),
+    signal: chatAbortSignal(o.signal, PROVIDER_TIMEOUTS.chatRelay),
   });
   if (!res.ok) {
     const errBody = await res.text().catch(() => '');

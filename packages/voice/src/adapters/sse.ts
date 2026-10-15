@@ -31,15 +31,16 @@
  */
 
 import type { ChatStreamDelta, ChatStreamSink } from './types';
+import { PROVIDER_TIMEOUTS, timeoutSignal } from '@mantle/std';
 
 /** Headers must arrive within this long, or the request is abandoned. */
-export const STREAM_CONNECT_TIMEOUT_MS = 60_000;
+export const STREAM_CONNECT_TIMEOUT_MS = PROVIDER_TIMEOUTS.streamConnect;
 /** Longest silence tolerated between two chunks of an open stream. */
-export const STREAM_IDLE_TIMEOUT_MS = 120_000;
+export const STREAM_IDLE_TIMEOUT_MS = PROVIDER_TIMEOUTS.streamIdle;
 
 function timeoutError(what: string, ms: number): Error {
   // `name === 'TimeoutError'` is what classifyChatError keys on, matching the
-  // DOMException `AbortSignal.timeout()` raises on the one-shot path.
+  // DOMException the one-shot path's deadline raises (timeoutSignal).
   return new DOMException(`chat stream ${what} after ${ms}ms of silence`, 'TimeoutError');
 }
 
@@ -165,8 +166,7 @@ export async function* withIdleTimeout<T>(
  *  the one-shot `chat()` path; the streaming path uses {@link streamAbort}, whose
  *  timer stops at the headers so it cannot cut a long, healthy stream. */
 export function chatAbortSignal(signal: AbortSignal | undefined, timeoutMs: number): AbortSignal {
-  const timeout = AbortSignal.timeout(timeoutMs);
-  return signal ? AbortSignal.any([signal, timeout]) : timeout;
+  return timeoutSignal(timeoutMs, signal);
 }
 
 /** The abort reason to reject with — the signal's own reason when it has one

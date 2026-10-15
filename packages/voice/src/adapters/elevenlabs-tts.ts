@@ -38,7 +38,7 @@ import {
   mimeForElevenLabsFormat,
 } from '../catalogs/elevenlabs';
 import { stripAudioTags } from '../audio-tags';
-import { errorMessage } from '@mantle/std';
+import { errorMessage, PROVIDER_TIMEOUTS } from '@mantle/std';
 import { providerFetch } from './provider-fetch';
 
 type ElevenLabsVoicesResponse = {
@@ -136,15 +136,18 @@ async function elevenLabsSynthesize(opts: SynthesizeOptions): Promise<Synthesize
   const url = new URL(`${ELEVENLABS_BASE_URL}/v1/text-to-speech/${voiceId}`);
   url.searchParams.set('output_format', outputFormat);
 
-  const res = await providerFetch(url.toString(), {
-    method: 'POST',
-    headers: {
-      'xi-api-key': opts.apiKey,
-      'content-type': 'application/json',
+  const res = await providerFetch(
+    url.toString(),
+    {
+      method: 'POST',
+      headers: {
+        'xi-api-key': opts.apiKey,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify(body),
     },
-    body: JSON.stringify(body),
-    signal: AbortSignal.timeout(60_000),
-  });
+    { timeoutMs: PROVIDER_TIMEOUTS.speech },
+  );
   if (!res.ok) {
     const errBody = await res.text().catch(() => '');
     throw new Error(`elevenlabs tts ${res.status}: ${errBody.slice(0, 400)}`);
@@ -180,10 +183,13 @@ async function elevenLabsVoicesForModel(
     return ELEVENLABS_PREMADE_VOICES.map((v) => ({ id: v.id, description: v.description }));
   }
   try {
-    const res = await providerFetch(`${ELEVENLABS_BASE_URL}/v1/voices`, {
-      headers: { 'xi-api-key': apiKey },
-      signal: AbortSignal.timeout(15_000),
-    });
+    const res = await providerFetch(
+      `${ELEVENLABS_BASE_URL}/v1/voices`,
+      {
+        headers: { 'xi-api-key': apiKey },
+      },
+      { timeoutMs: PROVIDER_TIMEOUTS.discover },
+    );
     if (!res.ok) {
       return ELEVENLABS_PREMADE_VOICES.map((v) => ({
         id: v.id,
@@ -216,10 +222,13 @@ async function elevenLabsVoicesForModel(
  */
 async function elevenLabsDiscoverModels(apiKey: string): Promise<DiscoveryResult<TtsModelInfo>> {
   try {
-    const res = await providerFetch(`${ELEVENLABS_BASE_URL}/v1/models`, {
-      headers: { 'xi-api-key': apiKey },
-      signal: AbortSignal.timeout(15_000),
-    });
+    const res = await providerFetch(
+      `${ELEVENLABS_BASE_URL}/v1/models`,
+      {
+        headers: { 'xi-api-key': apiKey },
+      },
+      { timeoutMs: PROVIDER_TIMEOUTS.discover },
+    );
     if (!res.ok) {
       const body = await res.text().catch(() => '');
       return {

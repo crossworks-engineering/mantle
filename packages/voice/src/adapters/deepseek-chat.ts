@@ -43,7 +43,7 @@ import {
   type OpenAICompatChatResponse,
 } from './openai-compat';
 import { scrubThinkBlocks } from './think-scrubber';
-import { errorMessage } from '@mantle/std';
+import { errorMessage, PROVIDER_TIMEOUTS } from '@mantle/std';
 import { providerFetch } from './provider-fetch';
 
 /** DeepSeek's chat response shape — the shared OpenAI-compat envelope
@@ -89,7 +89,7 @@ async function deepseekChat(opts: ChatOptions): Promise<ChatResult> {
       'content-type': 'application/json',
     },
     body: JSON.stringify(body),
-    signal: chatAbortSignal(opts.signal, 60_000),
+    signal: chatAbortSignal(opts.signal, PROVIDER_TIMEOUTS.chat),
   });
   if (!res.ok) {
     const errBody = await res.text().catch(() => '');
@@ -128,10 +128,13 @@ async function deepseekChat(opts: ChatOptions): Promise<ChatResult> {
 
 async function deepseekDiscover(apiKey: string): Promise<DiscoveryResult<ChatModelInfo>> {
   try {
-    const res = await providerFetch(`${DEEPSEEK_BASE_URL}/models`, {
-      headers: { Authorization: `Bearer ${apiKey}` },
-      signal: AbortSignal.timeout(15_000),
-    });
+    const res = await providerFetch(
+      `${DEEPSEEK_BASE_URL}/models`,
+      {
+        headers: { Authorization: `Bearer ${apiKey}` },
+      },
+      { timeoutMs: PROVIDER_TIMEOUTS.discover },
+    );
     if (!res.ok) {
       const body = await res.text().catch(() => '');
       return {

@@ -33,6 +33,7 @@ import type {
 } from './types';
 import { OPENAI_IMAGE_DEFAULT_MODEL, OPENAI_IMAGE_MODELS } from '../catalogs/openai-image';
 import { providerFetch } from './provider-fetch';
+import { PROVIDER_TIMEOUTS } from '@mantle/std';
 
 const OPENAI_IMAGES_URL = 'https://api.openai.com/v1/images/generations';
 /** Editing is a DIFFERENT endpoint and a different encoding: multipart, with
@@ -139,13 +140,16 @@ export const openAiImageAdapter: ImageGenDispatcher = {
       headers['Content-Type'] = 'application/json';
     }
 
-    const res = await providerFetch(editing ? OPENAI_IMAGE_EDITS_URL : OPENAI_IMAGES_URL, {
-      method: 'POST',
-      headers,
-      body: payload,
-      // Image generation can take 20-40s on dall-e-3 hd; give plenty.
-      signal: AbortSignal.timeout(120_000),
-    });
+    const res = await providerFetch(
+      editing ? OPENAI_IMAGE_EDITS_URL : OPENAI_IMAGES_URL,
+      {
+        method: 'POST',
+        headers,
+        body: payload,
+        // Image generation can take 20-40s on dall-e-3 hd; give plenty.
+      },
+      { timeoutMs: PROVIDER_TIMEOUTS.image },
+    );
     if (!res.ok) {
       const errBody = await res.text().catch(() => '');
       throw new Error(`openai-image ${res.status}: ${errBody.slice(0, 400)}`);
@@ -158,7 +162,7 @@ export const openAiImageAdapter: ImageGenDispatcher = {
       // here. Not silently going to send the operator a half-baked
       // result.
       if (first?.url) {
-        const imgRes = await providerFetch(first.url);
+        const imgRes = await providerFetch(first.url, {}, { timeoutMs: PROVIDER_TIMEOUTS.image });
         if (!imgRes.ok) {
           throw new Error(`openai-image: failed to fetch returned URL (${imgRes.status})`);
         }

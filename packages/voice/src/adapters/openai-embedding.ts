@@ -19,7 +19,7 @@ import type {
   EmbeddingModelInfo,
 } from './types';
 import type { DiscoveryResult } from '../discover';
-import { errorMessage } from '@mantle/std';
+import { errorMessage, PROVIDER_TIMEOUTS, ProviderHttpError } from '@mantle/std';
 import { providerFetch } from './provider-fetch';
 
 const ENDPOINT = 'https://api.openai.com/v1/embeddings';
@@ -106,19 +106,26 @@ export const openaiEmbedding: EmbeddingDispatcher = {
     // model, which the form's Test button will catch.
     if (req.dimensions) body.dimensions = req.dimensions;
 
-    const res = await providerFetch(ENDPOINT, {
-      method: 'POST',
-      headers: {
-        authorization: `Bearer ${req.apiKey}`,
-        'content-type': 'application/json',
+    const res = await providerFetch(
+      ENDPOINT,
+      {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${req.apiKey}`,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify(body),
       },
-      body: JSON.stringify(body),
-    });
+      { timeoutMs: PROVIDER_TIMEOUTS.embed },
+    );
     if (!res.ok) {
       const text = await res.text().catch(() => '');
-      throw new Error(
-        `OpenAI embeddings failed: ${res.status} ${res.statusText} — ${text.slice(0, 500)}`,
-      );
+      throw new ProviderHttpError({
+        provider: 'openai',
+        status: res.status,
+        body: text.slice(0, 500),
+        message: `OpenAI embeddings failed: ${res.status} ${res.statusText} — ${text.slice(0, 500)}`,
+      });
     }
     const json = (await res.json()) as {
       data: Array<{ embedding: number[]; index: number }>;
@@ -153,10 +160,13 @@ export const openaiEmbedding: EmbeddingDispatcher = {
     // form's Test button verifies dim live, so unknown models are
     // safe to expose.
     try {
-      const res = await providerFetch(MODELS_URL, {
-        headers: { authorization: `Bearer ${apiKey}` },
-        signal: AbortSignal.timeout(8_000),
-      });
+      const res = await providerFetch(
+        MODELS_URL,
+        {
+          headers: { authorization: `Bearer ${apiKey}` },
+        },
+        { timeoutMs: PROVIDER_TIMEOUTS.catalog },
+      );
       if (!res.ok) {
         return {
           available: [...STATIC_CATALOG],

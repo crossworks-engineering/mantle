@@ -26,7 +26,7 @@ import type {
 } from './types';
 import type { DiscoveryResult } from '../discover';
 import { OPENROUTER_BASE_URL, OPENROUTER_VISION_MODELS } from '../catalogs/openrouter';
-import { errorMessage } from '@mantle/std';
+import { errorMessage, PROVIDER_TIMEOUTS } from '@mantle/std';
 import { providerFetch } from './provider-fetch';
 
 const DEFAULT_MODEL = 'anthropic/claude-sonnet-5';
@@ -69,12 +69,15 @@ async function post(
   body: Record<string, unknown>,
   timeoutMs: number,
 ): Promise<VisionExtractResult & { _model: string }> {
-  const res = await providerFetch(`${OPENROUTER_BASE_URL}/chat/completions`, {
-    method: 'POST',
-    headers: headers(apiKey),
-    body: JSON.stringify(body),
-    signal: AbortSignal.timeout(timeoutMs),
-  });
+  const res = await providerFetch(
+    `${OPENROUTER_BASE_URL}/chat/completions`,
+    {
+      method: 'POST',
+      headers: headers(apiKey),
+      body: JSON.stringify(body),
+    },
+    { timeoutMs },
+  );
   if (!res.ok) {
     const errBody = await res.text().catch(() => '');
     throw new Error(`openrouter-vision ${res.status}: ${errBody.slice(0, 400)}`);
@@ -153,7 +156,7 @@ export const openrouterVisionAdapter: VisionDispatcher = {
           },
         ],
       },
-      60_000,
+      PROVIDER_TIMEOUTS.vision,
     );
     return { text: r.text, model: r.model, tokensIn: r.tokensIn, tokensOut: r.tokensOut };
   },
@@ -183,17 +186,20 @@ export const openrouterVisionAdapter: VisionDispatcher = {
           },
         ],
       },
-      120_000,
+      PROVIDER_TIMEOUTS.visionDocument,
     );
     return { text: r.text, model: r.model, tokensIn: r.tokensIn, tokensOut: r.tokensOut };
   },
 
   async discoverModels(apiKey: string): Promise<DiscoveryResult<VisionModelInfo>> {
     try {
-      const res = await providerFetch(`${OPENROUTER_BASE_URL}/models`, {
-        headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : undefined,
-        signal: AbortSignal.timeout(15_000),
-      });
+      const res = await providerFetch(
+        `${OPENROUTER_BASE_URL}/models`,
+        {
+          headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : undefined,
+        },
+        { timeoutMs: PROVIDER_TIMEOUTS.discover },
+      );
       if (!res.ok) {
         return {
           available: [...OPENROUTER_VISION_MODELS],

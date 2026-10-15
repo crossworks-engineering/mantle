@@ -55,7 +55,7 @@ import { DEFAULT_MAX_RETRIES, isEmptyJsonBodyError } from './retry';
 import { mapOpenAICompatFinishReason } from './openai-compat';
 import { StreamingThinkScrubber } from './think-scrubber';
 import { ReasoningDetailsAccumulator, normalizeReasoningDetails } from './reasoning-accum';
-import { backoffMs, errorMessage, withRetry } from '@mantle/std';
+import { backoffMs, errorMessage, withRetry, PROVIDER_TIMEOUTS } from '@mantle/std';
 import { providerFetch } from './provider-fetch';
 
 // Backoff for the empty-body retry below — mirrors retry.ts's full-jitter shape.
@@ -68,7 +68,7 @@ const RETRY_MAX_DELAY_MS = 8_000;
  *  passes `chatAbortSignal(opts.signal, 60_000)`. Not applied to the streaming
  *  path: there the SDK would fold it into the Request signal and cut a long,
  *  healthy stream mid-body. */
-const ONE_SHOT_TIMEOUT_MS = 60_000;
+const ONE_SHOT_TIMEOUT_MS = PROVIDER_TIMEOUTS.chat;
 
 /** Ceiling on the SDK's INTERNAL retry envelope, whose default `maxElapsedTime`
  *  is 3_600_000 — one hour. Our own guards (connect/idle, and `abortable`)
@@ -662,10 +662,13 @@ async function openrouterDiscover(apiKey: string): Promise<DiscoveryResult<ChatM
   // 401/403 does, so catalog browsing keeps working offline-ish.
   if (apiKey) {
     try {
-      const auth = await providerFetch(`${OPENROUTER_BASE_URL}/key`, {
-        headers: { Authorization: `Bearer ${apiKey}` },
-        signal: AbortSignal.timeout(10_000),
-      });
+      const auth = await providerFetch(
+        `${OPENROUTER_BASE_URL}/key`,
+        {
+          headers: { Authorization: `Bearer ${apiKey}` },
+        },
+        { timeoutMs: PROVIDER_TIMEOUTS.keyInfo },
+      );
       if (auth.status === 401 || auth.status === 403) {
         return {
           available: [],
@@ -678,10 +681,13 @@ async function openrouterDiscover(apiKey: string): Promise<DiscoveryResult<ChatM
     }
   }
   try {
-    const res = await providerFetch(`${OPENROUTER_BASE_URL}/models`, {
-      headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : undefined,
-      signal: AbortSignal.timeout(15_000),
-    });
+    const res = await providerFetch(
+      `${OPENROUTER_BASE_URL}/models`,
+      {
+        headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : undefined,
+      },
+      { timeoutMs: PROVIDER_TIMEOUTS.discover },
+    );
     if (!res.ok) {
       const body = await res.text().catch(() => '');
       return {

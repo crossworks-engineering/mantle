@@ -34,7 +34,7 @@ import type {
 } from './types';
 import type { DiscoveryResult } from '../discover';
 import { GOOGLE_BASE_URL, GOOGLE_VISION_MODELS } from '../catalogs/google';
-import { errorMessage } from '@mantle/std';
+import { errorMessage, PROVIDER_TIMEOUTS } from '@mantle/std';
 import { providerFetch } from './provider-fetch';
 
 const DEFAULT_MODEL = 'gemini-2.5-flash';
@@ -104,15 +104,18 @@ export const googleVisionAdapter: VisionDispatcher = {
     }
 
     const url = `${GOOGLE_BASE_URL}/models/${encodeURIComponent(model)}:generateContent`;
-    const res = await providerFetch(url, {
-      method: 'POST',
-      headers: {
-        'x-goog-api-key': opts.apiKey,
-        'Content-Type': 'application/json',
+    const res = await providerFetch(
+      url,
+      {
+        method: 'POST',
+        headers: {
+          'x-goog-api-key': opts.apiKey,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(body),
       },
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(60_000),
-    });
+      { timeoutMs: PROVIDER_TIMEOUTS.vision },
+    );
     if (!res.ok) {
       const errBody = await res.text().catch(() => '');
       throw new Error(`google-vision ${res.status}: ${errBody.slice(0, 400)}`);
@@ -134,9 +137,8 @@ export const googleVisionAdapter: VisionDispatcher = {
     try {
       const res = await providerFetch(
         `${GOOGLE_BASE_URL}/models?key=${encodeURIComponent(apiKey)}`,
-        {
-          signal: AbortSignal.timeout(15_000),
-        },
+        {},
+        { timeoutMs: PROVIDER_TIMEOUTS.discover },
       );
       if (!res.ok) {
         const body = await res.text().catch(() => '');

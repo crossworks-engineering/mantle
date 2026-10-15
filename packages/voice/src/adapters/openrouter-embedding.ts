@@ -20,6 +20,7 @@ import type {
 } from './types';
 import type { DiscoveryResult } from '../discover';
 import { providerFetch } from './provider-fetch';
+import { PROVIDER_TIMEOUTS, ProviderHttpError } from '@mantle/std';
 
 const ENDPOINT = 'https://openrouter.ai/api/v1/embeddings';
 const CATALOG_URL = 'https://openrouter.ai/api/v1/embeddings/models';
@@ -106,21 +107,28 @@ export const openrouterEmbedding: EmbeddingDispatcher = {
       body.dimensions = req.dimensions;
     }
 
-    const res = await providerFetch(ENDPOINT, {
-      method: 'POST',
-      headers: {
-        authorization: `Bearer ${req.apiKey}`,
-        'content-type': 'application/json',
-        'http-referer': 'https://mantle-ai.tech',
-        'x-title': 'Mantle',
+    const res = await providerFetch(
+      ENDPOINT,
+      {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${req.apiKey}`,
+          'content-type': 'application/json',
+          'http-referer': 'https://mantle-ai.tech',
+          'x-title': 'Mantle',
+        },
+        body: JSON.stringify(body),
       },
-      body: JSON.stringify(body),
-    });
+      { timeoutMs: PROVIDER_TIMEOUTS.embed },
+    );
     if (!res.ok) {
       const text = await res.text().catch(() => '');
-      throw new Error(
-        `OpenRouter embeddings failed: ${res.status} ${res.statusText} — ${text.slice(0, 500)}`,
-      );
+      throw new ProviderHttpError({
+        provider: 'openrouter',
+        status: res.status,
+        body: text.slice(0, 500),
+        message: `OpenRouter embeddings failed: ${res.status} ${res.statusText} — ${text.slice(0, 500)}`,
+      });
     }
     const json = (await res.json()) as {
       data: Array<{ embedding: number[]; index: number }>;
@@ -163,10 +171,13 @@ export const openrouterEmbedding: EmbeddingDispatcher = {
     // from the main /v1/models. Same response shape as the chat catalog
     // (id, name, context_length, pricing, architecture). The _apiKey
     // argument is unused but kept to match the dispatcher interface.
-    const res = await providerFetch(CATALOG_URL, {
-      headers: { accept: 'application/json' },
-      signal: AbortSignal.timeout(8_000),
-    });
+    const res = await providerFetch(
+      CATALOG_URL,
+      {
+        headers: { accept: 'application/json' },
+      },
+      { timeoutMs: PROVIDER_TIMEOUTS.catalog },
+    );
     if (!res.ok) {
       return {
         available: [],

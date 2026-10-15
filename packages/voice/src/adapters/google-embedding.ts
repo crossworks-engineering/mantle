@@ -24,7 +24,7 @@ import type {
   EmbeddingModelInfo,
 } from './types';
 import type { DiscoveryResult } from '../discover';
-import { errorMessage } from '@mantle/std';
+import { errorMessage, PROVIDER_TIMEOUTS, ProviderHttpError } from '@mantle/std';
 import { providerFetch } from './provider-fetch';
 
 const BASE = 'https://generativelanguage.googleapis.com/v1beta';
@@ -99,16 +99,23 @@ export const googleEmbedding: EmbeddingDispatcher = {
       }),
     };
 
-    const res = await providerFetch(url, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(body),
-    });
+    const res = await providerFetch(
+      url,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      },
+      { timeoutMs: PROVIDER_TIMEOUTS.embed },
+    );
     if (!res.ok) {
       const text = await res.text().catch(() => '');
-      throw new Error(
-        `Google embeddings failed: ${res.status} ${res.statusText} — ${text.slice(0, 500)}`,
-      );
+      throw new ProviderHttpError({
+        provider: 'google',
+        status: res.status,
+        body: text.slice(0, 500),
+        message: `Google embeddings failed: ${res.status} ${res.statusText} — ${text.slice(0, 500)}`,
+      });
     }
     const json = (await res.json()) as {
       embeddings?: Array<{ values: number[] }>;
@@ -133,10 +140,13 @@ export const googleEmbedding: EmbeddingDispatcher = {
 
   async discoverModels(apiKey: string): Promise<DiscoveryResult<EmbeddingModelInfo>> {
     try {
-      const res = await providerFetch(`${BASE}/models?key=${encodeURIComponent(apiKey)}`, {
-        signal: AbortSignal.timeout(8_000),
-        headers: { accept: 'application/json' },
-      });
+      const res = await providerFetch(
+        `${BASE}/models?key=${encodeURIComponent(apiKey)}`,
+        {
+          headers: { accept: 'application/json' },
+        },
+        { timeoutMs: PROVIDER_TIMEOUTS.catalog },
+      );
       if (!res.ok) {
         return {
           available: [...STATIC_CATALOG],

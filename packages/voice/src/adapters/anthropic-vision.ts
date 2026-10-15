@@ -36,7 +36,7 @@ import {
   ANTHROPIC_BASE_URL,
   ANTHROPIC_VISION_MODELS,
 } from '../catalogs/anthropic';
-import { errorMessage } from '@mantle/std';
+import { errorMessage, PROVIDER_TIMEOUTS } from '@mantle/std';
 import { providerFetch } from './provider-fetch';
 
 const DEFAULT_MODEL = 'claude-haiku-4-5';
@@ -96,16 +96,19 @@ export const anthropicVisionAdapter: VisionDispatcher = {
       body.system = opts.systemPrompt;
     }
 
-    const res = await providerFetch(`${ANTHROPIC_BASE_URL}/v1/messages`, {
-      method: 'POST',
-      headers: {
-        'x-api-key': opts.apiKey,
-        'anthropic-version': ANTHROPIC_API_VERSION,
-        'Content-Type': 'application/json',
+    const res = await providerFetch(
+      `${ANTHROPIC_BASE_URL}/v1/messages`,
+      {
+        method: 'POST',
+        headers: {
+          'x-api-key': opts.apiKey,
+          'anthropic-version': ANTHROPIC_API_VERSION,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(body),
       },
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(60_000),
-    });
+      { timeoutMs: PROVIDER_TIMEOUTS.vision },
+    );
     if (!res.ok) {
       const errBody = await res.text().catch(() => '');
       throw new Error(`anthropic-vision ${res.status}: ${errBody.slice(0, 400)}`);
@@ -161,19 +164,22 @@ export const anthropicVisionAdapter: VisionDispatcher = {
     };
     if (opts.systemPrompt && opts.systemPrompt.trim()) body.system = opts.systemPrompt;
 
-    const res = await providerFetch(`${ANTHROPIC_BASE_URL}/v1/messages`, {
-      method: 'POST',
-      headers: {
-        'x-api-key': opts.apiKey,
-        'anthropic-version': ANTHROPIC_API_VERSION,
-        // PDF support flag — harmless if the account already has it GA.
-        'anthropic-beta': 'pdfs-2024-09-25',
-        'Content-Type': 'application/json',
+    const res = await providerFetch(
+      `${ANTHROPIC_BASE_URL}/v1/messages`,
+      {
+        method: 'POST',
+        headers: {
+          'x-api-key': opts.apiKey,
+          'anthropic-version': ANTHROPIC_API_VERSION,
+          // PDF support flag — harmless if the account already has it GA.
+          'anthropic-beta': 'pdfs-2024-09-25',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(body),
+        // PDFs are heavier than a single image — give the call more headroom.
       },
-      body: JSON.stringify(body),
-      // PDFs are heavier than a single image — give the call more headroom.
-      signal: AbortSignal.timeout(120_000),
-    });
+      { timeoutMs: PROVIDER_TIMEOUTS.visionDocument },
+    );
     if (!res.ok) {
       const errBody = await res.text().catch(() => '');
       throw new Error(`anthropic-vision (pdf) ${res.status}: ${errBody.slice(0, 400)}`);
@@ -192,13 +198,16 @@ export const anthropicVisionAdapter: VisionDispatcher = {
 
   async discoverModels(apiKey: string): Promise<DiscoveryResult<VisionModelInfo>> {
     try {
-      const res = await providerFetch(`${ANTHROPIC_BASE_URL}/v1/models?limit=100`, {
-        headers: {
-          'x-api-key': apiKey,
-          'anthropic-version': ANTHROPIC_API_VERSION,
+      const res = await providerFetch(
+        `${ANTHROPIC_BASE_URL}/v1/models?limit=100`,
+        {
+          headers: {
+            'x-api-key': apiKey,
+            'anthropic-version': ANTHROPIC_API_VERSION,
+          },
         },
-        signal: AbortSignal.timeout(15_000),
-      });
+        { timeoutMs: PROVIDER_TIMEOUTS.discover },
+      );
       if (!res.ok) {
         const body = await res.text().catch(() => '');
         throw new Error(`anthropic list-models ${res.status}: ${body.slice(0, 300)}`);

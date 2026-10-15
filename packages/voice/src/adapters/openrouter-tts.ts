@@ -29,6 +29,7 @@ import type { TtsModelInfo } from '../catalog';
 import type { DiscoveryResult } from '../discover';
 import { OPENROUTER_BASE_URL } from '../catalogs/openrouter';
 import { providerFetch } from './provider-fetch';
+import { PROVIDER_TIMEOUTS } from '@mantle/std';
 
 /** Default OpenRouter TTS route — xAI Grok voice (voices ara/rex…). OpenRouter
  *  does not proxy OpenAI TTS, so we default to a real speech route on it. */
@@ -67,10 +68,13 @@ type OrSpeechModel = {
 
 /** Keyless fetch of the speech-capable models (id, name, supported_voices). */
 async function fetchSpeechModels(): Promise<OrSpeechModel[]> {
-  const res = await providerFetch(SPEECH_MODELS_URL, {
-    headers: { accept: 'application/json' },
-    signal: AbortSignal.timeout(8_000),
-  });
+  const res = await providerFetch(
+    SPEECH_MODELS_URL,
+    {
+      headers: { accept: 'application/json' },
+    },
+    { timeoutMs: PROVIDER_TIMEOUTS.catalog },
+  );
   if (!res.ok) throw new Error(`openrouter /models?output_modalities=speech: HTTP ${res.status}`);
   const body = (await res.json()) as { data?: OrSpeechModel[] };
   return (body.data ?? []).filter((m) => typeof m.id === 'string' && m.id.length > 0);
@@ -99,23 +103,27 @@ export const openrouterTtsAdapter: TtsDispatcher = {
     const format = clampFormat(opts.format);
     const speed = Math.min(Math.max(opts.speed ?? 1.0, 0.25), 4.0);
 
-    const res = await providerFetch(`${OPENROUTER_BASE_URL}/audio/speech`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${opts.apiKey}`,
-        'content-type': 'application/json',
-        'HTTP-Referer': 'https://mantle-ai.tech',
-        'X-Title': 'Mantle',
+    const res = await providerFetch(
+      `${OPENROUTER_BASE_URL}/audio/speech`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${opts.apiKey}`,
+          'content-type': 'application/json',
+          'HTTP-Referer': 'https://mantle-ai.tech',
+          'X-Title': 'Mantle',
+        },
+        body: JSON.stringify({
+          model,
+          voice,
+          input: text,
+          response_format: format,
+          speed,
+          ...(opts.instructions ? { instructions: opts.instructions } : {}),
+        }),
       },
-      body: JSON.stringify({
-        model,
-        voice,
-        input: text,
-        response_format: format,
-        speed,
-        ...(opts.instructions ? { instructions: opts.instructions } : {}),
-      }),
-    });
+      { timeoutMs: PROVIDER_TIMEOUTS.speech },
+    );
     if (!res.ok) {
       const body = await res.text().catch(() => '');
       throw new Error(`openrouter-tts ${res.status}: ${body.slice(0, 400)}`);

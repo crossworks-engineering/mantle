@@ -29,7 +29,7 @@ import type {
   EmbeddingModelInfo,
 } from './types';
 import type { DiscoveryResult } from '../discover';
-import { errorMessage } from '@mantle/std';
+import { errorMessage, PROVIDER_TIMEOUTS, ProviderHttpError } from '@mantle/std';
 import { providerFetch } from './provider-fetch';
 
 const ENDPOINT = 'https://api.cohere.com/v2/embed';
@@ -85,28 +85,35 @@ export const cohereEmbedding: EmbeddingDispatcher = {
 
   async embed(req: EmbedRequest): Promise<EmbedResult> {
     assertTextOnly(req.input);
-    const res = await providerFetch(ENDPOINT, {
-      method: 'POST',
-      headers: {
-        authorization: `Bearer ${req.apiKey}`,
-        'content-type': 'application/json',
+    const res = await providerFetch(
+      ENDPOINT,
+      {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${req.apiKey}`,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: req.model,
+          texts: req.input.map(toPlainText),
+          // Default to 'search_document' — Mantle's dominant use case is
+          // the corpus side (extractor writes). The query side would
+          // ideally use 'search_query' but plumbing that distinction
+          // through embed() is a future enhancement.
+          input_type: 'search_document',
+          embedding_types: ['float'],
+        }),
       },
-      body: JSON.stringify({
-        model: req.model,
-        texts: req.input.map(toPlainText),
-        // Default to 'search_document' — Mantle's dominant use case is
-        // the corpus side (extractor writes). The query side would
-        // ideally use 'search_query' but plumbing that distinction
-        // through embed() is a future enhancement.
-        input_type: 'search_document',
-        embedding_types: ['float'],
-      }),
-    });
+      { timeoutMs: PROVIDER_TIMEOUTS.embed },
+    );
     if (!res.ok) {
       const text = await res.text().catch(() => '');
-      throw new Error(
-        `Cohere embeddings failed: ${res.status} ${res.statusText} — ${text.slice(0, 500)}`,
-      );
+      throw new ProviderHttpError({
+        provider: 'cohere',
+        status: res.status,
+        body: text.slice(0, 500),
+        message: `Cohere embeddings failed: ${res.status} ${res.statusText} — ${text.slice(0, 500)}`,
+      });
     }
     const json = (await res.json()) as {
       embeddings?: { float?: number[][] };
@@ -133,10 +140,13 @@ export const cohereEmbedding: EmbeddingDispatcher = {
 
   async discoverModels(apiKey: string): Promise<DiscoveryResult<EmbeddingModelInfo>> {
     try {
-      const res = await providerFetch(MODELS_URL, {
-        headers: { authorization: `Bearer ${apiKey}` },
-        signal: AbortSignal.timeout(8_000),
-      });
+      const res = await providerFetch(
+        MODELS_URL,
+        {
+          headers: { authorization: `Bearer ${apiKey}` },
+        },
+        { timeoutMs: PROVIDER_TIMEOUTS.catalog },
+      );
       if (!res.ok) {
         return {
           available: [...STATIC_CATALOG],

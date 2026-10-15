@@ -46,7 +46,7 @@ import {
 } from './openai-compat';
 import { customReasoningEffort, sanitizeForReasoning } from './custom-chat';
 import { scrubThinkBlocks } from './think-scrubber';
-import { errorMessage } from '@mantle/std';
+import { errorMessage, PROVIDER_TIMEOUTS } from '@mantle/std';
 import { providerFetch } from './provider-fetch';
 
 type ListModelsResponse = {
@@ -92,7 +92,7 @@ async function mammouthChat(opts: ChatOptions): Promise<ChatResult> {
       'content-type': 'application/json',
     },
     body: JSON.stringify(body),
-    signal: chatAbortSignal(o.signal, 120_000),
+    signal: chatAbortSignal(o.signal, PROVIDER_TIMEOUTS.chatRelay),
   });
   if (!res.ok) {
     const errBody = await res.text().catch(() => '');
@@ -145,10 +145,13 @@ async function mammouthChatStream(opts: ChatOptions, onDelta: ChatStreamSink): P
 
 async function mammouthDiscover(apiKey: string): Promise<DiscoveryResult<ChatModelInfo>> {
   try {
-    const res = await providerFetch(`${MAMMOUTH_BASE_URL}/models`, {
-      headers: { Authorization: `Bearer ${apiKey}` },
-      signal: AbortSignal.timeout(15_000),
-    });
+    const res = await providerFetch(
+      `${MAMMOUTH_BASE_URL}/models`,
+      {
+        headers: { Authorization: `Bearer ${apiKey}` },
+      },
+      { timeoutMs: PROVIDER_TIMEOUTS.discover },
+    );
     if (!res.ok) {
       const body = await res.text().catch(() => '');
       return {

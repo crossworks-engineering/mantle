@@ -19,11 +19,12 @@
 import type { DecisionAnswer, DecisionDispatcher, DecisionOptions, DecisionResult } from './types';
 import { OPENROUTER_BASE_URL } from '../catalogs/openrouter';
 import { providerFetch } from './provider-fetch';
+import { PROVIDER_TIMEOUTS } from '@mantle/std';
 
 /** `${OPENROUTER_BASE_URL}` is `…/api/v1`; decisions live one level up. */
 const DECISIONS_URL = OPENROUTER_BASE_URL.replace(/\/v1\/?$/, '') + '/alpha/decisions';
 
-const DEFAULT_TIMEOUT_MS = 1_500;
+const DEFAULT_TIMEOUT_MS = PROVIDER_TIMEOUTS.decision;
 
 type WireAnswer =
   | { type: 'noul'; noul?: number }
@@ -104,12 +105,15 @@ export const openrouterDecisionAdapter: DecisionDispatcher = {
   adapterName: 'openrouter-decision',
 
   async decide(opts: DecisionOptions): Promise<DecisionResult> {
-    const res = await providerFetch(DECISIONS_URL, {
-      method: 'POST',
-      headers: headers(opts.apiKey),
-      body: JSON.stringify(buildDecisionBody(opts)),
-      signal: AbortSignal.timeout(opts.timeoutMs ?? DEFAULT_TIMEOUT_MS),
-    });
+    const res = await providerFetch(
+      DECISIONS_URL,
+      {
+        method: 'POST',
+        headers: headers(opts.apiKey),
+        body: JSON.stringify(buildDecisionBody(opts)),
+      },
+      { timeoutMs: opts.timeoutMs ?? DEFAULT_TIMEOUT_MS },
+    );
     const text = await res.text();
     let json: WireResponse | null;
     try {

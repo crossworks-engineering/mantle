@@ -121,7 +121,7 @@ import {
   ANTHROPIC_BASE_URL,
   ANTHROPIC_CHAT_MODELS,
 } from '../catalogs/anthropic';
-import { errorMessage } from '@mantle/std';
+import { errorMessage, PROVIDER_TIMEOUTS } from '@mantle/std';
 import { providerFetch } from './provider-fetch';
 
 /** Anthropic content blocks. `string` content is the simple shape; the
@@ -677,7 +677,7 @@ async function anthropicChat(opts: ChatOptions): Promise<ChatResult> {
         'content-type': 'application/json',
       },
       body: JSON.stringify(body),
-      signal: chatAbortSignal(opts.signal, 60_000),
+      signal: chatAbortSignal(opts.signal, PROVIDER_TIMEOUTS.chat),
     },
   );
   if (!res.ok) {
@@ -787,13 +787,16 @@ function toAnthropicImageBlock(url: string): AnthropicImageBlock | null {
 
 async function anthropicDiscover(apiKey: string): Promise<DiscoveryResult<ChatModelInfo>> {
   try {
-    const res = await providerFetch(`${ANTHROPIC_BASE_URL}/v1/models?limit=100`, {
-      headers: {
-        'x-api-key': apiKey,
-        'anthropic-version': ANTHROPIC_API_VERSION,
+    const res = await providerFetch(
+      `${ANTHROPIC_BASE_URL}/v1/models?limit=100`,
+      {
+        headers: {
+          'x-api-key': apiKey,
+          'anthropic-version': ANTHROPIC_API_VERSION,
+        },
       },
-      signal: AbortSignal.timeout(15_000),
-    });
+      { timeoutMs: PROVIDER_TIMEOUTS.discover },
+    );
     if (!res.ok) {
       const body = await res.text().catch(() => '');
       return {

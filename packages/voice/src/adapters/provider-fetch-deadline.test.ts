@@ -1,0 +1,77 @@
+import { once } from 'node:events';
+import http from 'node:http';
+import type { AddressInfo } from 'node:net';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { PROVIDER_TIMEOUTS } from '@mantle/std';
+import { providerFetch } from './provider-fetch';
+
+/**
+ * providerFetch's deadline (A10 #10): every call has one; it covers the whole
+ * exchange of an ordinary answer and only the headers of an event stream, so
+ * a long healthy stream is never cut.
+ */
+
+let server: http.Server;
+let base = '';
+
+beforeAll(async () => {
+  server = http.createServer((req, res) => {
+    if (req.url === '/hang') return; // never answers
+    if (req.url === '/slow-body') {
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.write('{"a":');
+      setTimeout(() => res.end('1}'), 400);
+      return;
+    }
+    if (req.url === '/stream') {
+      res.writeHead(200, { 'content-type': 'text/event-stream' });
+      res.write('data: 1\n\n');
+      setTimeout(() => res.end('data: 2\n\n'), 400);
+      return;
+    }
+    res.end('ok');
+  });
+  server.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+});
+
+afterAll(() => {
+  server.closeAllConnections();
+  server.close();
+});
+
+describe('providerFetch deadline', () => {
+  it('has a named default, generous enough for the slowest provider call', () => {
+    expect(PROVIDER_TIMEOUTS.default).toBe(180_000);
+    expect(PROVIDER_TIMEOUTS.default).toBeGreaterThanOrEqual(PROVIDER_TIMEOUTS.imageCold);
+  });
+
+  it('fails a call that never answers with a TimeoutError', async () => {
+    const err = await providerFetch(`${base}/hang`, {}, { timeoutMs: 150 }).catch((e) => e);
+    expect((err as Error).name).toBe('TimeoutError');
+  });
+
+  it('covers the body of an ordinary answer', async () => {
+    const res = await providerFetch(`${base}/slow-body`, {}, { timeoutMs: 150 });
+    const err = await res.text().catch((e) => e);
+    expect((err as Error).name).toBe('TimeoutError');
+  });
+
+  it('covers only the headers of an event stream', async () => {
+    const res = await providerFetch(`${base}/stream`, {}, { timeoutMs: 150 });
+    await expect(res.text()).resolves.toBe('data: 1\n\ndata: 2\n\n');
+  });
+
+  it("still aborts on the caller's own signal", async () => {
+    const stop = new AbortController();
+    const p = providerFetch(`${base}/hang`, { signal: stop.signal }, { timeoutMs: 60_000 });
+    stop.abort(new Error('stop'));
+    await expect(p).rejects.toThrow('stop');
+  });
+
+  it('answers in time when the provider does', async () => {
+    const res = await providerFetch(`${base}/`, {}, { timeoutMs: 1_000 });
+    await expect(res.text()).resolves.toBe('ok');
+  });
+});

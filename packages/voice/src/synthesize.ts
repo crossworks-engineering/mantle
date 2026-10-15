@@ -20,6 +20,7 @@
 import type { SynthesizeOptions, SynthesizeResult, TtsVoice, TtsWarning } from './types';
 import { TTS_VOICES } from './types';
 import { providerFetch } from './adapters/provider-fetch';
+import { PROVIDER_TIMEOUTS } from '@mantle/std';
 
 const OPENAI_TTS_URL = 'https://api.openai.com/v1/audio/speech';
 const DEFAULT_MODEL = 'gpt-4o-mini-tts';
@@ -75,26 +76,30 @@ export async function synthesizeSpeech(opts: SynthesizeOptions): Promise<Synthes
   // Clamp speed to OpenAI's documented range.
   const speed = Math.min(Math.max(opts.speed ?? DEFAULT_SPEED, 0.25), 4.0);
 
-  const res = await providerFetch(OPENAI_TTS_URL, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${opts.apiKey}`,
-      'content-type': 'application/json',
+  const res = await providerFetch(
+    OPENAI_TTS_URL,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${opts.apiKey}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        model,
+        voice,
+        input: text,
+        response_format: format,
+        speed,
+        // Style instructions are only honoured by gpt-4o-mini-tts; tts-1 and
+        // tts-1-hd ignore the field (OpenAI's own reference says so outright).
+        // Sending it regardless is safe, and it stays that way — but "safe" is
+        // not "applied", so a request against those models is warned about
+        // below rather than left to look like it worked.
+        ...(opts.instructions ? { instructions: opts.instructions } : {}),
+      }),
     },
-    body: JSON.stringify({
-      model,
-      voice,
-      input: text,
-      response_format: format,
-      speed,
-      // Style instructions are only honoured by gpt-4o-mini-tts; tts-1 and
-      // tts-1-hd ignore the field (OpenAI's own reference says so outright).
-      // Sending it regardless is safe, and it stays that way — but "safe" is
-      // not "applied", so a request against those models is warned about
-      // below rather than left to look like it worked.
-      ...(opts.instructions ? { instructions: opts.instructions } : {}),
-    }),
-  });
+    { timeoutMs: PROVIDER_TIMEOUTS.speech },
+  );
   if (!res.ok) {
     const body = await res.text().catch(() => '');
     throw new Error(`openai tts ${res.status}: ${body.slice(0, 400)}`);

@@ -19,7 +19,7 @@ import type {
   EmbeddingModelInfo,
 } from './types';
 import type { DiscoveryResult } from '../discover';
-import { errorMessage } from '@mantle/std';
+import { errorMessage, PROVIDER_TIMEOUTS, ProviderHttpError } from '@mantle/std';
 import { providerFetch } from './provider-fetch';
 
 const ENDPOINT = 'https://api.mistral.ai/v1/embeddings';
@@ -59,23 +59,30 @@ export const mistralEmbedding: EmbeddingDispatcher = {
 
   async embed(req: EmbedRequest): Promise<EmbedResult> {
     assertTextOnly(req.input);
-    const res = await providerFetch(ENDPOINT, {
-      method: 'POST',
-      headers: {
-        authorization: `Bearer ${req.apiKey}`,
-        'content-type': 'application/json',
+    const res = await providerFetch(
+      ENDPOINT,
+      {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${req.apiKey}`,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: req.model,
+          input: req.input.map(toPlainText),
+          encoding_format: 'float',
+        }),
       },
-      body: JSON.stringify({
-        model: req.model,
-        input: req.input.map(toPlainText),
-        encoding_format: 'float',
-      }),
-    });
+      { timeoutMs: PROVIDER_TIMEOUTS.embed },
+    );
     if (!res.ok) {
       const text = await res.text().catch(() => '');
-      throw new Error(
-        `Mistral embeddings failed: ${res.status} ${res.statusText} — ${text.slice(0, 500)}`,
-      );
+      throw new ProviderHttpError({
+        provider: 'mistral',
+        status: res.status,
+        body: text.slice(0, 500),
+        message: `Mistral embeddings failed: ${res.status} ${res.statusText} — ${text.slice(0, 500)}`,
+      });
     }
     const json = (await res.json()) as {
       data: Array<{ embedding: number[]; index: number }>;
@@ -103,10 +110,13 @@ export const mistralEmbedding: EmbeddingDispatcher = {
 
   async discoverModels(apiKey: string): Promise<DiscoveryResult<EmbeddingModelInfo>> {
     try {
-      const res = await providerFetch(MODELS_URL, {
-        headers: { authorization: `Bearer ${apiKey}` },
-        signal: AbortSignal.timeout(8_000),
-      });
+      const res = await providerFetch(
+        MODELS_URL,
+        {
+          headers: { authorization: `Bearer ${apiKey}` },
+        },
+        { timeoutMs: PROVIDER_TIMEOUTS.catalog },
+      );
       if (!res.ok) {
         return {
           available: [...STATIC_CATALOG],

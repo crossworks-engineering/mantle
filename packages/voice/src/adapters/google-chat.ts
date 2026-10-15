@@ -42,7 +42,7 @@ import { tailnetFetch } from './tailnet';
 import { wantGuardedThinking } from './thinking-guard';
 import type { DiscoveryResult } from '../discover';
 import { GOOGLE_BASE_URL, GOOGLE_CHAT_MODELS } from '../catalogs/google';
-import { errorMessage } from '@mantle/std';
+import { errorMessage, PROVIDER_TIMEOUTS } from '@mantle/std';
 import { providerFetch } from './provider-fetch';
 
 /** A Gemini content part. The runtime emits three kinds:
@@ -561,7 +561,7 @@ async function googleChat(opts: ChatOptions): Promise<ChatResult> {
         'content-type': 'application/json',
       },
       body: JSON.stringify(body),
-      signal: chatAbortSignal(opts.signal, 60_000),
+      signal: chatAbortSignal(opts.signal, PROVIDER_TIMEOUTS.chat),
     },
   );
   if (!res.ok) {
@@ -607,10 +607,13 @@ async function googleDiscover(apiKey: string): Promise<DiscoveryResult<ChatModel
   try {
     // Gemini accepts the key as `x-goog-api-key` OR as a `?key=` query
     // param. We use the header so the URL stays clean in logs.
-    const res = await providerFetch(`${GOOGLE_BASE_URL}/models`, {
-      headers: { 'x-goog-api-key': apiKey },
-      signal: AbortSignal.timeout(15_000),
-    });
+    const res = await providerFetch(
+      `${GOOGLE_BASE_URL}/models`,
+      {
+        headers: { 'x-goog-api-key': apiKey },
+      },
+      { timeoutMs: PROVIDER_TIMEOUTS.discover },
+    );
     if (!res.ok) {
       const body = await res.text().catch(() => '');
       return {

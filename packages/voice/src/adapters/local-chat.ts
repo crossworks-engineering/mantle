@@ -37,7 +37,7 @@ import {
 import { scrubThinkBlocks } from './think-scrubber';
 import { tailnetFetch } from './tailnet';
 import { env } from '@mantle/config';
-import { errorMessage } from '@mantle/std';
+import { errorMessage, PROVIDER_TIMEOUTS } from '@mantle/std';
 import { providerFetch } from './provider-fetch';
 
 const DEFAULT_BASE_URL = 'http://localhost:11434/v1';
@@ -54,7 +54,7 @@ const DEFAULT_BASE_URL = 'http://localhost:11434/v1';
  * turn. The idle bound (120s between chunks, once tokens are flowing) is
  * unchanged: by then the model is generating, and silence means a dead socket.
  */
-const LOCAL_TIMEOUT_MS = 300_000;
+const LOCAL_TIMEOUT_MS = PROVIDER_TIMEOUTS.chatLocal;
 
 /** Resolved per-call so a config change takes effect without a restart. */
 function baseUrl(override?: string): string {
@@ -119,7 +119,11 @@ async function localChatDiscover(_apiKey: string): Promise<DiscoveryResult<ChatM
   // verifies a specific route live with Test chat). `/v1/models` doesn't report
   // context windows, so we list ids only.
   try {
-    const res = await providerFetch(`${baseUrl()}/models`, { signal: AbortSignal.timeout(8_000) });
+    const res = await providerFetch(
+      `${baseUrl()}/models`,
+      {},
+      { timeoutMs: PROVIDER_TIMEOUTS.catalog },
+    );
     if (!res.ok) {
       return { available: [], filtered: false, error: `local /v1/models: HTTP ${res.status}` };
     }

@@ -29,6 +29,7 @@ import type { ImageGenDispatcher, ImageGenModelInfo, ImageGenWarning } from './t
 import type { GenerateImageOptions, GenerateImageResult } from './types';
 import { OPENROUTER_BASE_URL } from '../catalogs/openrouter';
 import { providerFetch } from './provider-fetch';
+import { PROVIDER_TIMEOUTS } from '@mantle/std';
 
 export const OPENROUTER_IMAGE_DEFAULT_MODEL = 'google/gemini-3.1-flash-image-preview';
 
@@ -146,17 +147,20 @@ export const openrouterImageAdapter: ImageGenDispatcher = {
       ...(typeof opts.seed === 'number' ? { seed: opts.seed } : {}),
     };
 
-    const res = await providerFetch(`${OPENROUTER_BASE_URL}/images`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${opts.apiKey}`,
-        'content-type': 'application/json',
-        'HTTP-Referer': 'https://mantle-ai.tech',
-        'X-Title': 'Mantle',
+    const res = await providerFetch(
+      `${OPENROUTER_BASE_URL}/images`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${opts.apiKey}`,
+          'content-type': 'application/json',
+          'HTTP-Referer': 'https://mantle-ai.tech',
+          'X-Title': 'Mantle',
+        },
+        body: JSON.stringify(body),
       },
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(120_000),
-    });
+      { timeoutMs: PROVIDER_TIMEOUTS.image },
+    );
     if (!res.ok) {
       const errBody = await res.text().catch(() => '');
       throw new Error(`openrouter-image ${res.status}: ${errBody.slice(0, 400)}`);

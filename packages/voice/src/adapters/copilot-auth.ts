@@ -16,6 +16,7 @@
 
 import { ChatHttpError } from './retry';
 import { providerFetch } from './provider-fetch';
+import { PROVIDER_TIMEOUTS } from '@mantle/std';
 
 /** Editor identity Copilot expects on every request. Kept in one place so the
  *  exchange and the chat call send a consistent fingerprint. */
@@ -50,16 +51,19 @@ const tokenCache = new Map<string, CachedToken>();
 const inflight = new Map<string, Promise<string>>();
 
 async function exchange(oauthToken: string): Promise<string> {
-  const res = await providerFetch(TOKEN_URL, {
-    method: 'GET',
-    headers: {
-      Authorization: `token ${oauthToken}`,
-      'Editor-Version': COPILOT_EDITOR_VERSION,
-      'User-Agent': COPILOT_USER_AGENT,
-      Accept: 'application/json',
+  const res = await providerFetch(
+    TOKEN_URL,
+    {
+      method: 'GET',
+      headers: {
+        Authorization: `token ${oauthToken}`,
+        'Editor-Version': COPILOT_EDITOR_VERSION,
+        'User-Agent': COPILOT_USER_AGENT,
+        Accept: 'application/json',
+      },
     },
-    signal: AbortSignal.timeout(15_000),
-  });
+    { timeoutMs: PROVIDER_TIMEOUTS.tokenExchange },
+  );
   if (!res.ok) {
     const body = await res.text().catch(() => '');
     throw new ChatHttpError({

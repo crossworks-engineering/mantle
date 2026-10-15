@@ -36,6 +36,7 @@ import type { SttDispatcher } from './types';
 import type { TranscribeOptions, TranscribeResult } from '../types';
 import { DEEPGRAM_BASE_URL } from '../catalogs/deepgram';
 import { providerFetch } from './provider-fetch';
+import { PROVIDER_TIMEOUTS } from '@mantle/std';
 
 const DEFAULT_MODEL = 'nova-3';
 
@@ -73,17 +74,21 @@ export const deepgramSttAdapter: SttDispatcher = {
       params.set('detect_language', 'true');
     }
 
-    const res = await providerFetch(`${DEEPGRAM_BASE_URL}/v1/listen?${params.toString()}`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Token ${opts.apiKey}`,
-        // Mime carries the codec — Deepgram sniffs containers but the
-        // explicit header avoids ambiguous-format 400s on opus-in-webm.
-        'Content-Type': opts.mimeType || 'application/octet-stream',
+    const res = await providerFetch(
+      `${DEEPGRAM_BASE_URL}/v1/listen?${params.toString()}`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Token ${opts.apiKey}`,
+          // Mime carries the codec — Deepgram sniffs containers but the
+          // explicit header avoids ambiguous-format 400s on opus-in-webm.
+          'Content-Type': opts.mimeType || 'application/octet-stream',
+        },
+        // Buffer is a Uint8Array; Node 18+ fetch accepts it directly.
+        body: new Uint8Array(audio),
       },
-      // Buffer is a Uint8Array; Node 18+ fetch accepts it directly.
-      body: new Uint8Array(audio),
-    });
+      { timeoutMs: PROVIDER_TIMEOUTS.transcribe },
+    );
     if (!res.ok) {
       const body = await res.text().catch(() => '');
       throw new Error(`deepgram-stt ${res.status}: ${body.slice(0, 400)}`);

@@ -41,7 +41,7 @@ import {
 } from './openai-compat';
 import { scrubThinkBlocks } from './think-scrubber';
 import { copilotHeaders, resolveCopilotToken } from './copilot-auth';
-import { errorMessage } from '@mantle/std';
+import { errorMessage, PROVIDER_TIMEOUTS } from '@mantle/std';
 import { providerFetch } from './provider-fetch';
 
 /** Map our token-budget hint to Copilot's `reasoning_effort` tier. Any positive
@@ -104,7 +104,7 @@ async function copilotChat(opts: ChatOptions): Promise<ChatResult> {
         'content-type': 'application/json',
       }),
       body: JSON.stringify(body),
-      signal: chatAbortSignal(o.signal, 120_000),
+      signal: chatAbortSignal(o.signal, PROVIDER_TIMEOUTS.chatRelay),
     });
     if (!res.ok) {
       const errBody = await res.text().catch(() => '');
@@ -158,10 +158,13 @@ function copilotChatStream(opts: ChatOptions, onDelta: ChatStreamSink): Promise<
 async function copilotDiscover(apiKey: string): Promise<DiscoveryResult<ChatModelInfo>> {
   try {
     const token = await resolveCopilotToken(apiKey);
-    const res = await providerFetch(`${COPILOT_BASE_URL}/models`, {
-      headers: copilotHeaders({ Authorization: `Bearer ${token}` }),
-      signal: AbortSignal.timeout(15_000),
-    });
+    const res = await providerFetch(
+      `${COPILOT_BASE_URL}/models`,
+      {
+        headers: copilotHeaders({ Authorization: `Bearer ${token}` }),
+      },
+      { timeoutMs: PROVIDER_TIMEOUTS.discover },
+    );
     if (!res.ok) {
       return {
         available: [...COPILOT_CHAT_MODELS],

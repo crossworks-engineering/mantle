@@ -34,7 +34,7 @@ import {
   GOOGLE_TTS_VOICES,
   audioTagsForGoogleTtsModel,
 } from '../catalogs/google';
-import { errorMessage } from '@mantle/std';
+import { errorMessage, PROVIDER_TIMEOUTS } from '@mantle/std';
 import { providerFetch } from './provider-fetch';
 
 type GeminiTtsResponse = {
@@ -73,15 +73,18 @@ async function googleTtsSynthesize(opts: SynthesizeOptions): Promise<SynthesizeR
     },
   };
 
-  const res = await providerFetch(`${GOOGLE_BASE_URL}/models/${modelId}:generateContent`, {
-    method: 'POST',
-    headers: {
-      'x-goog-api-key': opts.apiKey,
-      'content-type': 'application/json',
+  const res = await providerFetch(
+    `${GOOGLE_BASE_URL}/models/${modelId}:generateContent`,
+    {
+      method: 'POST',
+      headers: {
+        'x-goog-api-key': opts.apiKey,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify(body),
     },
-    body: JSON.stringify(body),
-    signal: AbortSignal.timeout(60_000),
-  });
+    { timeoutMs: PROVIDER_TIMEOUTS.speech },
+  );
   if (!res.ok) {
     const errBody = await res.text().catch(() => '');
     throw new Error(`google tts ${res.status}: ${errBody.slice(0, 400)}`);
@@ -114,10 +117,13 @@ async function googleTtsSynthesize(opts: SynthesizeOptions): Promise<SynthesizeR
  *  of capability; we filter by id pattern and supportedGenerationMethods. */
 async function googleTtsDiscover(apiKey: string): Promise<DiscoveryResult<TtsModelInfo>> {
   try {
-    const res = await providerFetch(`${GOOGLE_BASE_URL}/models`, {
-      headers: { 'x-goog-api-key': apiKey },
-      signal: AbortSignal.timeout(15_000),
-    });
+    const res = await providerFetch(
+      `${GOOGLE_BASE_URL}/models`,
+      {
+        headers: { 'x-goog-api-key': apiKey },
+      },
+      { timeoutMs: PROVIDER_TIMEOUTS.discover },
+    );
     if (!res.ok) {
       return {
         available: ttsModelInfo(),

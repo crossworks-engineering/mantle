@@ -15,6 +15,7 @@ import type { SttModelInfo } from '../catalog';
 import type { DiscoveryResult } from '../discover';
 import { OPENROUTER_BASE_URL } from '../catalogs/openrouter';
 import { providerFetch } from './provider-fetch';
+import { PROVIDER_TIMEOUTS } from '@mantle/std';
 
 /** Default OpenRouter STT route — GPT-4o mini Transcribe (cheap + accurate;
  *  operator-verified on a single OpenRouter key). */
@@ -75,23 +76,27 @@ export const openrouterSttAdapter: SttDispatcher = {
     if (!audio || audio.length === 0) throw new Error('openrouter-stt: empty audio buffer');
 
     const model = opts.model || OPENROUTER_STT_DEFAULT_MODEL;
-    const res = await providerFetch(`${OPENROUTER_BASE_URL}/audio/transcriptions`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${opts.apiKey}`,
-        'content-type': 'application/json',
-        'HTTP-Referer': 'https://mantle-ai.tech',
-        'X-Title': 'Mantle',
-      },
-      body: JSON.stringify({
-        model,
-        input_audio: {
-          data: audio.toString('base64'),
-          format: formatFromMime(opts.mimeType),
+    const res = await providerFetch(
+      `${OPENROUTER_BASE_URL}/audio/transcriptions`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${opts.apiKey}`,
+          'content-type': 'application/json',
+          'HTTP-Referer': 'https://mantle-ai.tech',
+          'X-Title': 'Mantle',
         },
-        ...(opts.language ? { language: opts.language } : {}),
-      }),
-    });
+        body: JSON.stringify({
+          model,
+          input_audio: {
+            data: audio.toString('base64'),
+            format: formatFromMime(opts.mimeType),
+          },
+          ...(opts.language ? { language: opts.language } : {}),
+        }),
+      },
+      { timeoutMs: PROVIDER_TIMEOUTS.transcribe },
+    );
     if (!res.ok) {
       const body = await res.text().catch(() => '');
       throw new Error(`openrouter-stt ${res.status}: ${body.slice(0, 400)}`);
