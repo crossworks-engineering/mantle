@@ -59,3 +59,44 @@ describe('every app service can read the live optional-service state', () => {
     });
   }
 });
+
+/**
+ * A stop waits for the process's own exit deadline (@mantle/std/shutdown,
+ * A10 #15 fix round 1 L3): Docker sends SIGKILL after stop_grace_period
+ * (10 s when unset), so a service whose teardown may take longer names a
+ * grace period past its deadline. The API drains pg-boss and DBOS (45 s),
+ * the workers' runner allows 15 s, the web server 5 s.
+ */
+describe('a stop waits for the exit deadline', () => {
+  const services = compose.slice(compose.indexOf('\nservices:\n'));
+  const blocks = services.split(/\n(?= {2}[a-z_]+:\n)/).slice(1);
+  const name = (b: string) => b.slice(2, b.indexOf(':'));
+  const graceMs = (b: string) => {
+    const m = /^ {4}stop_grace_period: (\d+)s$/m.exec(b);
+    return m ? Number(m[1]) * 1000 : 10_000;
+  };
+  const deadline = (file: string, constName: string) => {
+    const text = readFileSync(join(repoRoot, file), 'utf8');
+    const m = new RegExp(`const ${constName} = ([\\d_]+);`).exec(text);
+    if (!m) throw new Error(`${constName} not found in ${file}`);
+    return Number(m[1]!.replace(/_/g, ''));
+  };
+  const api = deadline('server/api/src/main.ts', 'API_EXIT_DEADLINE_MS');
+  const worker = deadline('server/web/workers/_runner.ts', 'EXIT_DEADLINE_MS');
+
+  it('the API', () => {
+    const b = blocks.find((x) => name(x) === 'api')!;
+    expect(graceMs(b)).toBeGreaterThan(api);
+  });
+
+  it('every worker', () => {
+    const workers = blocks.filter((b) => name(b).startsWith('worker_'));
+    expect(workers.length).toBeGreaterThanOrEqual(10);
+    for (const b of workers) expect([name(b), graceMs(b) > worker]).toEqual([name(b), true]);
+  });
+
+  it('the web server (5 s, inside the default)', () => {
+    const b = blocks.find((x) => name(x) === 'web')!;
+    expect(graceMs(b)).toBeGreaterThan(5_000);
+  });
+});

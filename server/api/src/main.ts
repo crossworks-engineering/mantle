@@ -198,7 +198,10 @@ async function main(): Promise<void> {
 
 /** The most the API's teardown may take: pg-boss drains in-flight jobs for up
  *  to its own 30 s graceful stop, then DBOS stops. Past it the process exits
- *  1 (a teardown that outlived it has failed). */
+ *  1 (a teardown that outlived it has failed). Under Docker the container's
+ *  stop_grace_period (50 s, docker-compose.yml) gives it the room before the
+ *  SIGKILL; Docker's default of 10 s would cut the drain short.
+ *  compose-env.test.ts holds the grace period past this deadline. */
 const API_EXIT_DEADLINE_MS = 45_000;
 
 // Arch A2a: no actor around the boot, so the DBOS dispatch loop carries

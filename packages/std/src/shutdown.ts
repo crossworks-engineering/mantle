@@ -4,7 +4,9 @@
  * guard and a 15 s exit deadline, the web server a 5 s one and no guard,
  * and the API process neither guard nor deadline, so a teardown that hung
  * (a pg-boss drain, DBOS) held the process forever where nothing sends a
- * SIGKILL (a dev shell, a systemd unit without a stop timeout).
+ * SIGKILL (a dev shell, a systemd unit without a stop timeout). Under
+ * Docker the SIGKILL comes after the container's stop_grace_period, so each
+ * service names one past its process's deadline (docker-compose.yml).
  *
  * onShutdown installs both handlers. The first signal logs, arms the exit
  * deadline, runs `stop`, and exits with `exitCode`; a stop that throws is

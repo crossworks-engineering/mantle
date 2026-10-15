@@ -1056,6 +1056,11 @@ services:
     command: ['pnpm', '-C', 'server/api', 'start']
     container_name: mantle_api
     restart: unless-stopped
+    # A stop waits for the API's own exit deadline (45 s: pg-boss drains its
+    # in-flight jobs for up to 30 s, then DBOS stops; @mantle/std/shutdown)
+    # before Docker sends SIGKILL. Docker's default is 10 s, which cut the
+    # drain short. Takes effect when the container is next recreated (a roll).
+    stop_grace_period: 50s
     logging: *default-logging
     # A box carrying large Tables workbooks next to heavy extraction spiked
     # past the old 1.5g default: a cgroup OOM measured 2026-09-09 at ~1.46 GB
@@ -1097,6 +1102,9 @@ services:
     command: ['pnpm', '-C', 'server/web', 'exec', 'tsx', 'workers/email-sync.ts']
     container_name: mantle_worker_email
     restart: unless-stopped
+    # A stop waits for the worker's exit deadline (15 s, the workers'
+    # runner) before Docker sends SIGKILL; Docker's default is 10 s.
+    stop_grace_period: 20s
     logging: *default-logging
     mem_limit: 1g
     healthcheck: *worker-healthcheck
@@ -1120,6 +1128,8 @@ services:
     command: ['pnpm', '-C', 'server/web', 'exec', 'tsx', 'workers/telegram-poll.ts']
     container_name: mantle_worker_telegram
     restart: unless-stopped
+    # The worker's 15 s exit deadline, before SIGKILL (see worker_email).
+    stop_grace_period: 20s
     logging: *default-logging
     mem_limit: 1g
     healthcheck: *worker-healthcheck
@@ -1145,6 +1155,8 @@ services:
     command: ['pnpm', '-C', 'server/web', 'exec', 'tsx', 'workers/microsoft-sync.ts']
     container_name: mantle_worker_microsoft
     restart: unless-stopped
+    # The worker's 15 s exit deadline, before SIGKILL (see worker_email).
+    stop_grace_period: 20s
     logging: *default-logging
     mem_limit: 1g
     healthcheck: *worker-healthcheck
@@ -1170,6 +1182,8 @@ services:
     command: ['pnpm', '-C', 'server/web', 'exec', 'tsx', 'workers/files-watch.ts']
     container_name: mantle_worker_files
     restart: unless-stopped
+    # The worker's 15 s exit deadline, before SIGKILL (see worker_email).
+    stop_grace_period: 20s
     logging: *default-logging
     mem_limit: 1g
     healthcheck: *worker-healthcheck
@@ -1199,6 +1213,8 @@ services:
     command: ['pnpm', '-C', 'server/web', 'exec', 'tsx', 'workers/docs-sync.ts']
     container_name: mantle_worker_docs
     restart: unless-stopped
+    # The worker's 15 s exit deadline, before SIGKILL (see worker_email).
+    stop_grace_period: 20s
     logging: *default-logging
     mem_limit: 1g
     healthcheck: *worker-healthcheck
@@ -1223,6 +1239,8 @@ services:
     command: ['pnpm', '-C', 'server/web', 'exec', 'tsx', 'workers/events-reminders.ts']
     container_name: mantle_worker_events
     restart: unless-stopped
+    # The worker's 15 s exit deadline, before SIGKILL (see worker_email).
+    stop_grace_period: 20s
     logging: *default-logging
     mem_limit: 1g
     healthcheck: *worker-healthcheck
@@ -1260,6 +1278,8 @@ services:
     command: ['pnpm', '-C', 'server/web', 'exec', 'tsx', 'workers/calendar-sync.ts']
     container_name: mantle_worker_calendar
     restart: unless-stopped
+    # The worker's 15 s exit deadline, before SIGKILL (see worker_email).
+    stop_grace_period: 20s
     logging: *default-logging
     mem_limit: 1g
     healthcheck: *worker-healthcheck
@@ -1286,6 +1306,8 @@ services:
     command: ['pnpm', '-C', 'server/web', 'exec', 'tsx', 'workers/maintenance.ts']
     container_name: mantle_worker_maintenance
     restart: unless-stopped
+    # The worker's 15 s exit deadline, before SIGKILL (see worker_email).
+    stop_grace_period: 20s
     logging: *default-logging
     mem_limit: 1g
     healthcheck: *worker-healthcheck
@@ -1328,6 +1350,8 @@ services:
     command: ['pnpm', '-C', 'server/web', 'exec', 'tsx', 'workers/runs.ts']
     container_name: mantle_worker_runs
     restart: unless-stopped
+    # The worker's 15 s exit deadline, before SIGKILL (see worker_email).
+    stop_grace_period: 20s
     logging: *default-logging
     mem_limit: 1g
     healthcheck: *worker-healthcheck
@@ -1350,6 +1374,8 @@ services:
     command: ['pnpm', '-C', 'server/web', 'exec', 'tsx', 'workers/push-notify.ts']
     container_name: mantle_worker_push
     restart: unless-stopped
+    # The worker's 15 s exit deadline, before SIGKILL (see worker_email).
+    stop_grace_period: 20s
     logging: *default-logging
     mem_limit: 1g
     healthcheck: *worker-healthcheck
