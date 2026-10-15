@@ -581,6 +581,17 @@ describe.skipIf(!URL)('the A6b exit sweep', () => {
         }
         cell(`POST /api/access-keys ${who}`, blank(made));
       }
+      // A made key tells its login in its chat (not awaited by the route):
+      // wait until those notices have landed, so the chat cells below read
+      // them on every run.
+      for (let i = 0, last = -1; i < 50; i += 1) {
+        const [r] = await x<{ n: number }>(
+          sql`select count(*)::int as n from assistant_messages where text like 'A new API key%'`,
+        );
+        if (r!.n === last) break;
+        last = r!.n;
+        await new Promise((res) => setTimeout(res, 100));
+      }
       for (const who of LOGINS) {
         cell(`GET /api/access-keys ${who}`, await http(who, 'GET', '/api/access-keys'));
         const k = keys.get(who);
