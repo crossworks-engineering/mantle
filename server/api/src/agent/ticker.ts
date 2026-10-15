@@ -24,6 +24,7 @@
 
 import { log } from '@mantle/tracing';
 import { runAsActor, systemActor } from '@mantle/db';
+import { backoffMs } from '@mantle/std';
 
 export type Ticker = {
   /** Stop the timer. Idempotent. An in-flight `run` is not cancelled — it
@@ -75,16 +76,17 @@ export function startTicker<T>(opts: TickerOpts<T>): Ticker {
   // Arch A2a: each tick runs as system(tick:<name>), e.g. tick:heartbeat-tick.
   const actor = systemActor(`tick:${name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`);
 
-  // Backoff state, previously a pair of `let`s per call site.
-  let backoffMs = 0;
+  // Backoff state, previously a pair of `let`s per call site: the failures
+  // in a row (the backoffMs step) and the tick to wait for.
+  let failures = 0;
   let skipUntil = 0;
 
   const timer = setInterval(() => {
     if (Date.now() < skipUntil) return;
     runAsActor(actor, run)
       .then((result) => {
-        if (backoffMs > 0) logger.log(`${name} recovered; clearing backoff`);
-        backoffMs = 0;
+        if (failures > 0) logger.log(`${name} recovered; clearing backoff`);
+        failures = 0;
         skipUntil = 0;
         onSuccess?.(result);
       })
@@ -94,13 +96,11 @@ export function startTicker<T>(opts: TickerOpts<T>): Ticker {
           return;
         }
         // First failure waits one interval; every one after that doubles,
-        // capped. A success resets both, above.
-        backoffMs = Math.min(backoffCapMs, backoffMs === 0 ? everyMs : backoffMs * 2);
-        skipUntil = Date.now() + backoffMs;
-        logger.error(
-          `${name} error (next try in ${Math.round(backoffMs / 1000)}s):`,
-          reasonOf(err),
-        );
+        // capped (std backoffMs). A success resets both, above.
+        const waitMs = backoffMs(failures, { baseMs: everyMs, maxMs: backoffCapMs });
+        failures += 1;
+        skipUntil = Date.now() + waitMs;
+        logger.error(`${name} error (next try in ${Math.round(waitMs / 1000)}s):`, reasonOf(err));
       });
   }, everyMs);
 

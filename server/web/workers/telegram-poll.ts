@@ -27,7 +27,7 @@ import { registerRecallEmbedder } from '@mantle/content';
 import { embedBatch } from '@mantle/embeddings';
 import { runWorker } from './_runner';
 import { env } from '@mantle/config';
-import { sleep } from '@mantle/std';
+import { backoffMs, sleep } from '@mantle/std';
 
 // An Approve tap runs the parked tool IN THIS PROCESS — `page_create` included
 // — and a page write kicks off `embedPendingRecallPrompts` fire-and-forget.
@@ -111,7 +111,14 @@ async function refreshChannels(): Promise<void> {
 
 function startTelegramLoop(channel: Channel): { stop: () => void } {
   let stopped = false;
-  let backoffMs = BACKOFF_BASE_MS;
+  // Failures in a row: the step of the wait (std backoffMs, doubling from
+  // BACKOFF_BASE_MS to BACKOFF_MAX_MS); a delivered poll resets it.
+  let failures = 0;
+  const backOff = () => {
+    const waitMs = backoffMs(failures, { baseMs: BACKOFF_BASE_MS, maxMs: BACKOFF_MAX_MS });
+    failures += 1;
+    return sleep(waitMs);
+  };
   // Track the resolved account id so we can evict its cached Bot when the loop
   // ends (token rotation / disable). Set on the first successful re-read.
   let accountId: string | null = null;
@@ -141,8 +148,7 @@ function startTelegramLoop(channel: Channel): { stop: () => void } {
           .limit(1);
       } catch (err) {
         console.error(`[channel-poll] ${channel.displayName} account re-read failed:`, err);
-        await sleep(backoffMs);
-        backoffMs = Math.min(backoffMs * 2, BACKOFF_MAX_MS);
+        await backOff();
         continue;
       }
       if (!account) {
@@ -163,11 +169,10 @@ function startTelegramLoop(channel: Channel): { stop: () => void } {
             `[channel-poll] ${channel.displayName} — ${updatesReceived} updates, ${delivered} delivered`,
           );
         }
-        backoffMs = BACKOFF_BASE_MS;
+        failures = 0;
       } catch (err) {
         console.error(`[channel-poll] ${channel.displayName} error:`, err);
-        await sleep(backoffMs);
-        backoffMs = Math.min(backoffMs * 2, BACKOFF_MAX_MS);
+        await backOff();
       }
     }
   })();
