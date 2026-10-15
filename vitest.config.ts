@@ -1,5 +1,5 @@
 import { fileURLToPath } from 'node:url';
-import { defineConfig } from 'vitest/config';
+import { configDefaults, defineConfig } from 'vitest/config';
 
 /**
  * Minimal vitest setup. Each package can ship `*.test.ts` files anywhere
@@ -22,6 +22,8 @@ export default defineConfig({
   },
   test: {
     include: ['packages/**/src/**/*.test.ts', 'server/**/*.test.ts', 'eslint-rules/**/*.test.ts'],
+    // The A8 matrix runs on its own (vitest.matrix.config.ts, `pnpm test:matrix`).
+    exclude: [...configDefaults.exclude, '**/*.matrix.test.ts'],
     environment: 'node',
     // Writes the route manifest the security sweeps need (vitest.global-setup.ts).
     globalSetup: ['./vitest.global-setup.ts'],
