@@ -711,6 +711,40 @@ describe.skipIf(!URL)('the A6 grant sweep', () => {
     void all;
   });
 
+  it('F7 b: the database refuses a grant change its rule refuses in every check mode', async () => {
+    // A member's own write scope (the write role in warn and on, the system
+    // pool with the scope in off): adding a grant to an item it does not
+    // manage, and moving one, is refused by the database itself (0291:
+    // mantle_grant_refuses refuses in warn too, where it only reported).
+    const nid = id(++fresh);
+    await node(`f7b${fresh}`, nid, 'note', `f7b ${fresh}`, 'notes');
+    await homeIn(nid, W.Q);
+    const before = await grantRows(nid);
+    const asked = (q: ReturnType<typeof sql>) =>
+      grantsAs('modP', true, () =>
+        m.withHeads([nid], 'update', async (tx) => {
+          await tx.execute(q);
+        }),
+      );
+    for (const q of [
+      sql`select mantle_grant_change('add', ${nid}::uuid, ${W.P}::uuid, false, ${L.modP}::uuid)`,
+      sql`select mantle_grant_move_home(${nid}::uuid, ${W.P}::uuid, false, ${L.modP}::uuid)`,
+    ]) {
+      const err = await asked(q).then(
+        () => null,
+        (e: unknown) => e,
+      );
+      const codes: unknown[] = [];
+      for (let e = err as { code?: unknown; cause?: unknown } | null, d = 0; e && d < 4; d++) {
+        codes.push(e.code);
+        e = e.cause as typeof e;
+      }
+      expect(codes).toContain('42501');
+    }
+    expect(await grantRows(nid)).toEqual(before);
+    m.takeActorMisses();
+  });
+
   it('answers as recorded on main, or as a named change', () => {
     const text = `${cells.join('\n')}\n`;
     if (RECORD) {
