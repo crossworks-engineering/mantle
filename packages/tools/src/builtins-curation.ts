@@ -43,6 +43,7 @@ import { refuseNonOwner } from './builtins-crawl';
 import { resolveOpenRouterKey } from './builtins-research';
 import { str } from './coerce';
 import { errorMessage, NET_TIMEOUTS, timeoutSignal } from '@mantle/std';
+import { openRouterCatalogRows } from '@mantle/tracing';
 import { CS } from './client-sourced-rule';
 
 const OR_BASE = 'https://openrouter.ai/api/v1';
@@ -148,23 +149,17 @@ export function voiceCatalogSupplement(): CatalogModel[] {
   return out;
 }
 
-let catalogCache: { at: number; models: CatalogModel[] } | null = null;
-const CATALOG_TTL_MS = 5 * 60_000;
-
+/** The catalog as model_catalog and the pool fit check read it: the one
+ *  OpenRouter catalog cache (@mantle/tracing openRouterCatalogRows, 6 hours,
+ *  the full `output_modalities=all` roster; A10 #15), where this file kept
+ *  a copy of its own for 5 minutes. The rows are parsed per call (a few
+ *  hundred, cheap); the last good rows hold through a failed refresh. */
 async function loadCatalog(): Promise<
   { ok: true; models: CatalogModel[] } | { ok: false; error: string }
 > {
-  if (catalogCache && Date.now() - catalogCache.at < CATALOG_TTL_MS) {
-    return { ok: true, models: catalogCache.models };
-  }
-  // `output_modalities=all` — WITHOUT it this is the text-out slice only
-  // (430 of 581 rows on 2026-09-07): 41 of the 52 image generators, all 28
-  // video models, all 18 speech and all 20 transcription engines and the
-  // embedding/rerank routes are simply absent, which left the image_gen,
-  // tts and stt pools uncuratable from live data.
-  const res = await orGet('/models', { output_modalities: 'all' });
+  const res = await openRouterCatalogRows();
   if (!res.ok) return res;
-  const data = (res.json as { data?: unknown[] }).data ?? [];
+  const data = res.rows;
   const perM = (v: unknown): number | null => {
     const n = Number(v);
     return Number.isFinite(n) && n >= 0 ? Math.round(n * 1_000_000 * 10_000) / 10_000 : null;
@@ -199,7 +194,6 @@ async function loadCatalog(): Promise<
       created: typeof m.created === 'number' ? m.created : null,
     });
   }
-  catalogCache = { at: Date.now(), models };
   return { ok: true, models };
 }
 

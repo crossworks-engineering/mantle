@@ -1,4 +1,5 @@
 import { NextResponse } from '@/server/http-compat';
+import { TtlCache } from '@mantle/std';
 import { ownerCaller } from '@/lib/auth';
 import { recentFailures, spendByDay, topErrors } from '@/lib/metrics';
 import {
@@ -30,14 +31,14 @@ import {
  */
 const CACHE_TTL_MS = 5_000;
 type Bundle = Record<string, unknown>;
-const cache = new Map<string, { at: number; payload: Bundle }>();
+const cache = new TtlCache<string, Bundle>({ ttlMs: CACHE_TTL_MS });
 
 export async function GET() {
   const user = ownerCaller();
 
   const cached = cache.get(user.id);
-  if (cached && Date.now() - cached.at < CACHE_TTL_MS) {
-    return NextResponse.json(cached.payload);
+  if (cached) {
+    return NextResponse.json(cached);
   }
 
   const [
@@ -82,6 +83,6 @@ export async function GET() {
     fails,
     integrity,
   };
-  cache.set(user.id, { at: Date.now(), payload });
+  cache.set(user.id, payload);
   return NextResponse.json(payload);
 }

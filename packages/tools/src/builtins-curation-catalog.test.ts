@@ -17,7 +17,8 @@
  *  - the request itself is pinned (path, query, bearer) because the wrong
  *    window or a missing key is a silent wrong answer, not an error.
  *
- * model_catalog is keyless and cached at module level for a few minutes, so
+ * model_catalog is keyless and cached at module level (the one OpenRouter
+ * catalog cache of @mantle/tracing, 6 hours; A10 #15), so
  * its outage test runs FIRST and the later tests share one loaded catalog.
  * model_pool_list is a plain owner-scoped read; its where clause is walked
  * for the owner id. The network is stubbed at `fetch`, the key lookup at

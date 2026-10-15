@@ -42,7 +42,7 @@ import { currentTrace, step } from '@mantle/tracing';
 // online as a side effect of touching this module. Don't tree-shake.
 import { getEmbeddingAdapter, type EmbedInput } from '@mantle/voice';
 import { env } from '@mantle/config';
-import { errorMessage, isRouteDownError } from '@mantle/std';
+import { errorMessage, isRouteDownError, TtlCache } from '@mantle/std';
 
 export type { EmbedInput };
 export {
@@ -235,7 +235,7 @@ const LOCAL_FALLBACK_CONFIG: EmbeddingConfig = {
   backup: null,
 };
 
-const _resolverCache = new Map<string, { config: EmbeddingConfig; expiresAt: number }>();
+const _resolverCache = new TtlCache<string, EmbeddingConfig>({ ttlMs: RESOLVER_TTL_MS });
 
 /**
  * Return the single embedding config for this owner from `embedding_config`.
@@ -270,7 +270,7 @@ function warnCacheReadOnlyOnce(): void {
 
 export async function resolveEmbeddingConfig(ownerId: string): Promise<EmbeddingConfig> {
   const cached = _resolverCache.get(ownerId);
-  if (cached && cached.expiresAt > Date.now()) return cached.config;
+  if (cached) return cached;
   let config: EmbeddingConfig = LOCAL_FALLBACK_CONFIG;
   try {
     const [row] = await systemDb
@@ -314,7 +314,7 @@ export async function resolveEmbeddingConfig(ownerId: string): Promise<Embedding
       err instanceof Error ? err.message : err,
     );
   }
-  _resolverCache.set(ownerId, { config, expiresAt: Date.now() + RESOLVER_TTL_MS });
+  _resolverCache.set(ownerId, config);
   return config;
 }
 

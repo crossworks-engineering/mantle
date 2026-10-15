@@ -16,7 +16,7 @@
  *
  * Values are total context length (input + output).
  */
-import { NET_TIMEOUTS, timeoutSignal } from '@mantle/std';
+import { errorMessage, NET_TIMEOUTS, timeoutSignal } from '@mantle/std';
 
 const FALLBACK_CONTEXT_LIMITS: Record<string, number> = {
   // Anthropic via OpenRouter — 4.x sonnet/opus default to a 1M window.
@@ -105,6 +105,13 @@ let liveModels: Record<string, LiveModelInfo> | null = null;
 let liveModelIds: Set<string> | null = null;
 let liveFetchedAt = 0;
 let inFlight: Promise<void> | null = null;
+/** The catalog's rows as OpenRouter sent them (every field), for a reader
+ *  that wants more than this module keeps: the curation tools' model_catalog
+ *  (A10 #15: one OpenRouter catalog cache, one TTL, where the tools kept a
+ *  copy of their own for 5 minutes). */
+let liveRows: readonly unknown[] | null = null;
+/** Why the last refresh failed, cleared by a refresh that lands. */
+let lastRefreshError: string | null = null;
 
 type OpenRouterModel = {
   id?: string;
@@ -210,13 +217,18 @@ export async function refreshModelCatalog(force = false): Promise<void> {
         signal: timeoutSignal(CATALOG_FETCH_TIMEOUT_MS),
         headers: { accept: 'application/json' },
       });
-      if (!res.ok) throw new Error(`openrouter /models ${res.status}`);
+      if (!res.ok) {
+        const text = (await res.text().catch(() => '')).slice(0, 300);
+        throw new Error(`OpenRouter /models returned ${res.status}: ${text}`);
+      }
       const body = (await res.json()) as { data?: OpenRouterModel[] };
       const parsed = parseCatalog(body.data ?? []);
+      lastRefreshError = null;
       // Only replace the cache on a non-empty parse — a malformed/empty
       // response shouldn't wipe good data.
       if (Object.keys(parsed).length > 0) {
         liveModels = parsed;
+        liveRows = body.data ?? [];
         liveModelIds = new Set(
           (body.data ?? [])
             .map((m) => (typeof m.id === 'string' ? m.id.toLowerCase() : ''))
@@ -226,15 +238,27 @@ export async function refreshModelCatalog(force = false): Promise<void> {
       }
     } catch (err) {
       // Decorative metadata — never let a failed refresh break a caller.
-      console.error(
-        '[model-context] live model-catalog refresh failed:',
-        err instanceof Error ? err.message : err,
-      );
+      lastRefreshError = errorMessage(err);
+      console.error('[model-context] live model-catalog refresh failed:', lastRefreshError);
     } finally {
       inFlight = null;
     }
   })();
   return inFlight;
+}
+
+/**
+ * The live catalog's rows as OpenRouter sent them, refreshed as
+ * {@link refreshModelCatalog} refreshes (at most once per CATALOG_TTL_MS,
+ * the last good rows kept on a failure). Before any refresh has landed: the
+ * failure's text, so a caller can say why (model_catalog's tool error).
+ */
+export async function openRouterCatalogRows(): Promise<
+  { ok: true; rows: readonly unknown[] } | { ok: false; error: string }
+> {
+  await refreshModelCatalog();
+  if (liveRows) return { ok: true, rows: liveRows };
+  return { ok: false, error: lastRefreshError ?? 'the OpenRouter model catalog is empty' };
 }
 
 export type ContextSource = 'live' | 'fallback' | 'unknown';

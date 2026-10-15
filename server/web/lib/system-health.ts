@@ -12,7 +12,7 @@ import { browserHealth } from './render-pdf';
 import type { SystemHealth } from '@mantle/client-types';
 import type { DiskInfo } from '@mantle/client-types';
 import { env } from '@mantle/config';
-import { NET_TIMEOUTS, withTimeout } from '@mantle/std';
+import { NET_TIMEOUTS, TtlCache, withTimeout } from '@mantle/std';
 import { providerHealth } from '@mantle/voice';
 
 export type { DiskInfo };
@@ -89,16 +89,18 @@ const DEFAULT_LOCAL_EMBED_URL = 'http://localhost:11434/v1';
  *  healthy, 60s after a failure (recovery shows within a minute). */
 const REMOTE_EMBED_OK_TTL_MS = 5 * 60_000;
 const REMOTE_EMBED_FAIL_TTL_MS = 60_000;
-const remoteEmbedCache = new Map<string, { at: number; up: boolean; detail: string }>();
+const remoteEmbedCache = new TtlCache<string, { up: boolean; detail: string }>({
+  ttlMs: REMOTE_EMBED_OK_TTL_MS,
+});
 
 async function embedderHealth(userId: string): Promise<SystemHealth['embedder']> {
   const cfg = await resolveEmbeddingConfig(userId);
   const provider = cfg.primary.provider;
   const model = cfg.model;
   if (provider !== 'local') {
+    // A health answer holds 5 min, a failure 60 s (the TTL each set names).
     const cached = remoteEmbedCache.get(userId);
-    const ttl = cached?.up ? REMOTE_EMBED_OK_TTL_MS : REMOTE_EMBED_FAIL_TTL_MS;
-    if (cached && Date.now() - cached.at < ttl) {
+    if (cached) {
       return { up: cached.up, provider, model, detail: cached.detail, scope: 'remote' };
     }
     try {
@@ -112,12 +114,12 @@ async function embedderHealth(userId: string): Promise<SystemHealth['embedder']>
         configuredBy: cfg.primary.configuredBy ?? null,
       });
       const detail = `${provider} · ${model} · ${Date.now() - t0}ms`;
-      remoteEmbedCache.set(userId, { at: Date.now(), up: true, detail });
+      remoteEmbedCache.set(userId, { up: true, detail }, REMOTE_EMBED_OK_TTL_MS);
       return { up: true, provider, model, detail, scope: 'remote' };
     } catch (e) {
       const msg = e instanceof Error ? e.message.slice(0, 120) : 'probe failed';
       const detail = `${provider} · ${model} · ${msg}`;
-      remoteEmbedCache.set(userId, { at: Date.now(), up: false, detail });
+      remoteEmbedCache.set(userId, { up: false, detail }, REMOTE_EMBED_FAIL_TTL_MS);
       return { up: false, provider, model, detail, scope: 'remote' };
     }
   }

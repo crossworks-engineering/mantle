@@ -65,6 +65,7 @@ export {
   contextLimitMap,
   contextLimitsFetchedAt,
   refreshModelCatalog,
+  openRouterCatalogRows,
   catalogHasModel,
   catalogModalities,
   catalogSuggestions,

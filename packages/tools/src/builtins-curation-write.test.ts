@@ -16,8 +16,8 @@
  *    with only the fields supplied, so a partial call cannot blank a price
  *    or a rating; a new one appends after the highest sibling position.
  *
- * The catalog is loaded through `fetch` and cached at module level for a few
- * minutes, so the outage test runs FIRST and the later tests share one
+ * The catalog is loaded through `fetch` and cached at module level (the one
+ * OpenRouter catalog cache of @mantle/tracing, 6 hours; A10 #15), so the outage test runs FIRST and the later tests share one
  * loaded catalog. The db chains are stubbed at select / update / insert.
  */
 

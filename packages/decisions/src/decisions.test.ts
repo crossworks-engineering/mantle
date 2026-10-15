@@ -89,6 +89,18 @@ describe('DecisionCache', () => {
     expect(c.get('a')).toBeUndefined();
   });
 
+  it('a decision is fresh under its TTL and stale from it (A10 #15: stale at exactly the TTL)', () => {
+    let now = 0;
+    const c = new DecisionCache<number>(2, 100, () => now);
+    c.set('a', 1);
+    now = 99;
+    expect(c.get('a')).toBe(1);
+    now = 100;
+    // Main (v0.300.63) held it fresh at exactly the TTL (age > ttl was
+    // stale); the one TtlCache holds it stale from the TTL on.
+    expect(c.get('a')).toBeUndefined();
+  });
+
   it('keys are stable for equal inputs and differ otherwise', () => {
     expect(DecisionCache.key(['u', { a: 1 }])).toBe(DecisionCache.key(['u', { a: 1 }]));
     expect(DecisionCache.key(['u', { a: 1 }])).not.toBe(DecisionCache.key(['u', { a: 2 }]));

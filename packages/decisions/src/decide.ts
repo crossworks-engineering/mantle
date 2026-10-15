@@ -39,7 +39,7 @@ import {
   type DecisionUse,
   type DecisionUseConfig,
 } from '@mantle/db';
-import { errorMessage } from '@mantle/std';
+import { errorMessage, TtlCache } from '@mantle/std';
 import { step } from '@mantle/tracing';
 import {
   getDecisionAdapter,
@@ -168,7 +168,7 @@ type Resolved = {
 } | null;
 
 const RESOLVE_TTL_MS = 30_000;
-const resolved = new Map<string, { at: number; value: Resolved }>();
+const resolved = new TtlCache<string, Resolved>({ ttlMs: RESOLVE_TTL_MS });
 
 /** Find the owner's decider worker + adapter + key. Negative results are
  *  cached too (30 s) so a brain without the worker pays one query per half
@@ -176,7 +176,7 @@ const resolved = new Map<string, { at: number; value: Resolved }>();
  *  that window. */
 export async function resolveDecider(ownerId: string): Promise<Resolved> {
   const hit = resolved.get(ownerId);
-  if (hit && Date.now() - hit.at < RESOLVE_TTL_MS) return hit.value;
+  if (hit !== undefined) return hit;
   let value: Resolved = null;
   try {
     const worker = await getDefaultWorker(ownerId, 'decider');
@@ -196,7 +196,7 @@ export async function resolveDecider(ownerId: string): Promise<Resolved> {
     console.warn(`[decisions] resolve failed for owner ${ownerId}: ${errorMessage(err)}`);
     value = null;
   }
-  resolved.set(ownerId, { at: Date.now(), value });
+  resolved.set(ownerId, value);
   return value;
 }
 

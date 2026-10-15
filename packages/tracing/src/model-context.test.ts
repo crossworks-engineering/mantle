@@ -319,3 +319,47 @@ describe('a direct provider model id maps to its OpenRouter id', () => {
     expect(contextSourceForRoute('local', 'claude-opus-4-7')).toBe('unknown');
   });
 });
+
+describe('openRouterCatalogRows (A10 #15: the one OpenRouter catalog cache)', () => {
+  it('serves the rows as sent, refreshes at most once per 6 hours, keeps the last good rows', async () => {
+    vi.resetModules();
+    const { openRouterCatalogRows } = await import('./model-context');
+    const rows = [{ id: 'a/model', context_length: 1000, name: 'A', created: 1 }];
+    const fetchMock = vi.fn(async () => Response.json({ data: rows }));
+    vi.stubGlobal('fetch', fetchMock);
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      vi.setSystemTime(new Date('2026-10-01T00:00:00Z'));
+      expect(await openRouterCatalogRows()).toEqual({ ok: true, rows });
+      vi.setSystemTime(new Date('2026-10-01T05:59:59Z'));
+      await openRouterCatalogRows();
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      // Past the TTL a refresh runs; when it fails, the last good rows hold.
+      vi.setSystemTime(new Date('2026-10-01T06:00:01Z'));
+      fetchMock.mockImplementation(async () => new Response('down', { status: 503 }));
+      const quiet = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      expect(await openRouterCatalogRows()).toEqual({ ok: true, rows });
+      quiet.mockRestore();
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('says why when no refresh has landed yet', async () => {
+    vi.resetModules();
+    const { openRouterCatalogRows } = await import('./model-context');
+    vi.stubGlobal('fetch', async () => new Response('upstream unavailable', { status: 503 }));
+    const quiet = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      expect(await openRouterCatalogRows()).toEqual({
+        ok: false,
+        error: 'OpenRouter /models returned 503: upstream unavailable',
+      });
+    } finally {
+      quiet.mockRestore();
+      vi.unstubAllGlobals();
+    }
+  });
+});

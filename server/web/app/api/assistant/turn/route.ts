@@ -54,7 +54,7 @@ import {
 } from '@mantle/files';
 import type { ToolArtifact } from '@mantle/tools';
 import { recordIngest, startTrace, step } from '@mantle/tracing';
-import { errorMessage } from '@mantle/std';
+import { errorMessage, TtlCache } from '@mantle/std';
 import { firstIssue } from '@/lib/zod-issue';
 import { JSON_BODY_CEILING_BYTES } from '@/lib/body-limit';
 import { readJson } from '@/lib/read-body';
@@ -226,15 +226,8 @@ type TurnResult = { status: number; body: unknown; headers?: HeadersInit };
 // key never replays another login's turn, nor answers an unauthenticated
 // request.
 const TURN_DEDUP_TTL_MS = 2 * 60_000;
-const recentTurns = new Map<string, { at: number; result: TurnResult }>();
+const recentTurns = new TtlCache<string, TurnResult>({ ttlMs: TURN_DEDUP_TTL_MS });
 const inflightTurns = new Map<string, Promise<TurnResult>>();
-
-function pruneRecentTurns() {
-  const now = Date.now();
-  for (const [k, v] of recentTurns) {
-    if (now - v.at > TURN_DEDUP_TTL_MS) recentTurns.delete(k);
-  }
-}
 
 export async function POST(req: Request): Promise<NextResponse> {
   // The login the gate answered, before the dedup cache is read, so a
@@ -249,7 +242,7 @@ export async function POST(req: Request): Promise<NextResponse> {
 
   const cacheKey = `${login.loginId}:${key}`;
   const cached = recentTurns.get(cacheKey);
-  if (cached && Date.now() - cached.at < TURN_DEDUP_TTL_MS) return toResponse(cached.result);
+  if (cached) return toResponse(cached);
 
   let pending = inflightTurns.get(cacheKey);
   if (!pending) {
@@ -257,8 +250,8 @@ export async function POST(req: Request): Promise<NextResponse> {
     inflightTurns.set(cacheKey, pending);
     pending
       .then((result) => {
-        recentTurns.set(cacheKey, { at: Date.now(), result });
-        pruneRecentTurns();
+        recentTurns.set(cacheKey, result);
+        recentTurns.prune();
       })
       .finally(() => inflightTurns.delete(cacheKey));
   }

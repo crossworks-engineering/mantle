@@ -346,3 +346,4 @@ export {
   type ProviderErrorCode,
 } from './provider-error';
 export { CircuitBreaker } from './breaker';
+export { TtlCache, type TtlCacheOptions } from './ttl-cache';
