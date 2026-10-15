@@ -637,6 +637,11 @@ async function act(
                                           ${R}::uuid, null, ${login}::uuid)`;
       return undefined;
     case 'writeSwitch':
+      // A grant the item took from its folder is made its own first ("This
+      // grant comes from the folder. Use Change here first": patchGrant).
+      if (item.folder) {
+        await tx`select mantle_grant_change('hand', ${id}::uuid, ${R}::uuid, null, ${login}::uuid)`;
+      }
       await tx`select mantle_grant_change('write', ${id}::uuid, ${R}::uuid, true, ${login}::uuid)`;
       return undefined;
     case 'link':
