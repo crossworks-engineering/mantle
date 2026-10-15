@@ -57,8 +57,9 @@
 --    that name (ignoring case): its id, whether it is a folded member file,
 --    whether the name is exact. Structure, never content; in a scope only
 --    the brain's.
--- 10. mantle_table_app_link(table): the app a Table is the export of (in a
---    scope, of a Table the scope reads).
+-- 10. mantle_table_app_link(table): the app a Table is the export of, yes
+--    or no and its id (the guard of a grid write and a delete; in a scope,
+--    the brain's).
 -- 11. mantle_access_log_names(app, ids): the names of logins that are
 --    actors on the access log of an app (in a scope, an app the scope
 --    reads): the display name, else the email's local part.
@@ -413,12 +414,7 @@ CREATE OR REPLACE FUNCTION "public"."mantle_table_app_link"(tbl uuid)
   SET search_path = "public", pg_temp AS $$
   SELECT e."app_node_id" FROM "public"."app_table_exports" e
    WHERE e."table_node_id" = tbl
-     AND (NOT "public"."mantle_scope_active"()
-          OR EXISTS (SELECT 1 FROM "public"."nodes" n
-                      WHERE n."id" = tbl AND n."owner_id" = "public"."mantle_brain_id"()
-                        AND n."read_ws" && "public"."mantle_scope_ws"()
-                        AND (n."login_id" IS NULL
-                             OR n."login_id" = "public"."mantle_scope_login_id"())))
+     AND (NOT "public"."mantle_scope_active"() OR e."owner_id" = "public"."mantle_brain_id"())
    LIMIT 1
 $$;
 --> statement-breakpoint

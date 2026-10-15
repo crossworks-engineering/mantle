@@ -92,7 +92,7 @@ export async function assertTableNotAppBound(tableNodeId: string): Promise<void>
   // fail, and inside a space transaction even a caught failure aborts it.
   if (currentSpaceScope()) return;
   // The export registry is the system's (no workspace role reads it): asked
-  // by its definer, which app a Table the scope reads exports (0293,
+  // by its definer, which app a Table exports (0293,
   // mantle_table_app_link; A6b: on the system pool before, 'export-link'),
   // so a member's own table write or delete is checked rather than failing
   // on the grant (W6b fix round 2). The app's name below is read in the

@@ -97,6 +97,34 @@ const NAMED_CHANGES: Record<
         now.replace('"assigned":null}}', '"assigned":{"slug":"a6b-P","assignedAt":"<time>"}}}'),
     },
   ],
+  'narrow-reads': [
+    {
+      cells: /^loginConnectorRule \w+ (read|write|turn):/,
+      reason:
+        "a login's connector rule asked in a scope for ANOTHER login answers as for a login in no " +
+        'workspace: its rows come from a definer that holds the scope to its own login ' +
+        '(mantle_login_connector_rows: the caller from the scope, never from an argument). Every ' +
+        "product caller asks for the scope's own login (the MCP connection's pre-run check, an " +
+        "app run's broker) or runs on the system pool (dispatch, the MCP listing), where it " +
+        'answers as main. Stricter, never looser.',
+      now: JSON.stringify({
+        ok: Array(3).fill(
+          'You are not a user of any workspace on this brain, so connector tools do not run for you.',
+        ),
+      }),
+    },
+    {
+      cells: /^appConnectorRefused (read|write) (read|write|turn):/,
+      reason:
+        "an app's connector verdict asked in a scope that does not read the app answers as for " +
+        'an app in no workspace: its holders come from a definer held to the apps the scope reads ' +
+        "(mantle_app_holders). The broker asks it in the app run's scope, which reads the app. " +
+        'Stricter, never looser.',
+      now: JSON.stringify({
+        ok: 'This app is in no workspace, so connector tools do not run from it.',
+      }),
+    },
+  ],
 };
 
 type Json = Record<string, any>;
@@ -594,6 +622,8 @@ describe.skipIf(!URL)('the A6b exit sweep', () => {
       }
       for (const who of LOGINS) {
         cell(`GET /api/access-keys ${who}`, await http(who, 'GET', '/api/access-keys'));
+      }
+      for (const who of LOGINS) {
         const k = keys.get(who);
         if (k) {
           cell(
@@ -601,6 +631,15 @@ describe.skipIf(!URL)('the A6b exit sweep', () => {
             await http({ bearer: k.secret }, 'GET', '/api/v1/whoami'),
           );
         }
+      }
+      // A key's use is stamped after its answer: wait until every stamp has
+      // landed, so the lists below read them on every run.
+      for (let i = 0; i < 50; i += 1) {
+        const [r] = await x<{ n: number }>(
+          sql`select count(*)::int as n from access_keys where last_used_at is null`,
+        );
+        if (r!.n === 0) break;
+        await new Promise((res) => setTimeout(res, 100));
       }
       // Revoke: a member another's key (refused), an Admin user a member's,
       // each its own.
@@ -791,8 +830,9 @@ describe.skipIf(!URL)('the A6b exit sweep', () => {
     for (const [i, g] of GONE.entries()) {
       const meta =
         i === 2 ? { title: `gone ${i}` } : { title: `gone ${i}`, homeWs: i === 0 ? W.P : W.Q };
-      await x(sql`insert into node_snapshots (owner_id, node_id, node_kind, seq, trigger, actor, code)
-                  values (${L.owner}, ${g}, 'app', 1, 'pre_delete', 'owner', ${JSON.stringify({ meta })}::jsonb)`);
+      await x(sql`insert into node_snapshots (owner_id, node_id, node_kind, seq, trigger, actor, code, created_at)
+                  values (${L.owner}, ${g}, 'app', 1, 'pre_delete', 'owner', ${JSON.stringify({ meta })}::jsonb,
+                          now() - make_interval(mins => ${i}))`);
     }
     await section('narrow-reads', async (cell) => {
       for (const [ctx, run] of CONTEXTS) {
