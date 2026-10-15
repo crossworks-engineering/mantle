@@ -25,7 +25,10 @@ export async function GET() {
     ...s,
     configured: configured.has(s.service),
   }));
-  return NextResponse.json({ keys, knownServices });
+  // What this brain's key form can carry, so a newer UI shows a field only
+  // where the brain stores it (an older brain sends no `features`).
+  const features = { anthropicWorkspaceId: true };
+  return NextResponse.json({ keys, knownServices, features });
 }
 
 const CreateBody = z.object({
@@ -36,6 +39,10 @@ const CreateBody = z.object({
     .regex(/^[a-z0-9_-]+$/i, 'service must be alphanumeric'),
   label: z.string().min(1).max(64).default('default'),
   plaintext: z.string().min(1).max(8192),
+  /** Anthropic keys only: the workspace id a key not scoped to a workspace
+   *  names on every call. Optional; checked in @mantle/api-keys (a 400 for
+   *  another service or a shape that could never be a header value). */
+  anthropicWorkspaceId: z.string().max(256).nullable().optional(),
 });
 
 export async function POST(req: Request) {
@@ -57,6 +64,9 @@ export async function POST(req: Request) {
         parsed.data.service,
         parsed.data.label,
         parsed.data.plaintext,
+        parsed.data.anthropicWorkspaceId === undefined
+          ? {}
+          : { anthropicWorkspaceId: parsed.data.anthropicWorkspaceId },
       );
       // A save over an existing key replaces it, as a rotate does (access
       // matrix T7): a connector's marks were for the old key.
@@ -65,6 +75,7 @@ export async function POST(req: Request) {
         id: row.id,
         service: row.service,
         label: row.label,
+        anthropicWorkspaceId: row.anthropicWorkspaceId,
         createdAt: row.createdAt,
       });
     },

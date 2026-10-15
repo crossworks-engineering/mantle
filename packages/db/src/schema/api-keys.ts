@@ -41,6 +41,10 @@ export const apiKeys = pgTable(
     /** Precomputed first-4 + last-4 of the plaintext, set at create
      *  and rotate. Lets list views render without decrypting every row. */
     masked: text('masked').notNull().default('••••'),
+    /** Anthropic only: the workspace id a key not scoped to a workspace
+     *  names on every call (`anthropic-workspace-id`, sent by the adapter's
+     *  anthropicHeaders). Not secret; null = none (0292). */
+    anthropicWorkspaceId: text('anthropic_workspace_id'),
     scopes: text('scopes')
       .array()
       .default(sql`'{}'::text[]`)

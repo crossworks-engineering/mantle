@@ -10,6 +10,8 @@ API keys holds the provider keys that agents, workers and tools use, such as Ope
 2. Pick the **Provider**, give a **Label** and paste the **Key value**.
 3. Click **Save key**. The key is shown once so you can copy it. After that only a masked form shows.
 
+An Anthropic key made outside an Anthropic workspace needs the **Anthropic workspace id** (optional field, shown for Anthropic keys). Without it every call with that key fails with "This Anthropic key is not tied to a workspace". A key made inside a workspace needs nothing. You can add or clear the id on a saved key without re-entering the key.
+
 Open a key to **Test** it (a no-cost call to the provider), **Rotate** it to a new value, or delete it.
 
 Rotating keeps the same entry, so everything that uses the key follows at once. Deleting is the risky one: agents and workers that used the key are left with no key set. One key often powers chat, embeddings and several workers.

@@ -229,9 +229,9 @@ adapters' `ChatHttpError` is one, and the embedding adapters throw one (with
 their old message text). Three readers live beside it over one status
 reading, each keeping its own rule:
 
-- `classifyProviderError`: what failed (quota, auth, no key, model, rate
-  limit, server, network, timeout), for the alert banner and the extract
-  queue's circuit;
+- `classifyProviderError`: what failed (quota, auth, no key, an Anthropic
+  key with no workspace, model, rate limit, server, network, timeout), for
+  the alert banner and the extract queue's circuit;
 - `retryDecision`: retry this chat call now (408, 409, 425, 429, 500, 502, 503,
   504, network, timeout, an empty body);
 - `isRouteDownError`: fail an embedding over (any 5xx, network, timeout).
@@ -239,6 +239,31 @@ reading, each keeping its own rule:
 It is a domain error (`DOMAIN_ERRORS`): a reply says a fixed sentence per
 class with the provider and the status (502, or 504 for a timeout), never
 the provider's body.
+
+### Anthropic workspace id
+
+An Anthropic API key not scoped to an Anthropic workspace must name one on
+every call (header `anthropic-workspace-id`), else Anthropic answers 400
+(`invalid_request_error`). The owner sets the id on the key in Settings
+(`api_keys.anthropic_workspace_id`, migration 0292); it is not secret.
+
+One place sends it: [`anthropicHeaders`](../packages/voice/src/adapters/anthropic-headers.ts)
+builds the headers of every Anthropic request (chat, streaming chat, vision,
+the model lists, the brain's model explorer). No caller passes the id: the
+one place a key row is opened (`openKeyRow` in
+[`@mantle/api-keys`](../packages/api-keys/src/index.ts)) records what the key
+carries in a small registry
+([`provider-key-context.ts`](../packages/std/src/provider-key-context.ts)),
+and `anthropicHeaders` reads it back by the key. A key opened with no id
+clears its entry. The gateway test
+([`anthropic-headers.test.ts`](../packages/voice/src/adapters/anthropic-headers.test.ts))
+runs every Anthropic call path against a stubbed fetch, and fails any other
+product file that writes the `anthropic-version` header itself.
+
+The 400 for a missing id is classified `workspace` (permanent, matched on the
+error type plus the header name, not the sentence) and reads "This Anthropic
+key is not tied to a workspace. Add the workspace id on the key, or use a key
+made inside an Anthropic workspace."
 
 ### Health and breakers
 

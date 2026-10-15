@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { and, asc, desc, eq, sql } from 'drizzle-orm';
 import { db, systemDb, apiKeys, type ApiKey } from '@mantle/db';
 import { open, seal } from '@mantle/crypto';
+import { InputError, normalizeAnthropicWorkspaceId, rememberProviderKeyContext } from '@mantle/std';
 
 /**
  * Encrypted-at-rest API key storage. Every call is owner-scoped — pass the
@@ -19,6 +20,9 @@ export type ApiKeySummary = {
   label: string;
   /** First-4 + last-4 of the plaintext, e.g. `sk-1…abcd`. Never the full key. */
   masked: string;
+  /** Anthropic only: the workspace id the key names on every call, or null.
+   *  Not secret (an id, never the key). */
+  anthropicWorkspaceId: string | null;
   lastUsed: Date | null;
   createdAt: Date;
   updatedAt: Date;
@@ -42,6 +46,7 @@ export async function listApiKeys(userId: string): Promise<ApiKeySummary[]> {
       service: apiKeys.service,
       label: apiKeys.label,
       masked: apiKeys.masked,
+      anthropicWorkspaceId: apiKeys.anthropicWorkspaceId,
       lastUsed: apiKeys.lastUsed,
       createdAt: apiKeys.createdAt,
       updatedAt: apiKeys.updatedAt,
@@ -50,6 +55,34 @@ export async function listApiKeys(userId: string): Promise<ApiKeySummary[]> {
     .where(eq(apiKeys.userId, userId))
     .orderBy(desc(apiKeys.updatedAt));
   return rows;
+}
+
+/**
+ * Open a key row: its plaintext, with what the key carries besides (an
+ * Anthropic workspace id) recorded for the provider adapter
+ * (rememberProviderKeyContext; the adapter's anthropicHeaders reads it). THE
+ * one place a key row is opened, so every caller of every lookup below gets
+ * the header without passing anything; a key opened with none clears what an
+ * earlier read recorded. The workspace id is never logged, and never with
+ * the key.
+ */
+function openKeyRow(row: ApiKey): string {
+  const plaintext = open(row.keyEnc, row.id);
+  rememberProviderKeyContext(
+    plaintext,
+    row.service === 'anthropic' && row.anthropicWorkspaceId
+      ? { anthropicWorkspaceId: row.anthropicWorkspaceId }
+      : null,
+  );
+  return plaintext;
+}
+
+/** The workspace id as stored: trimmed, null for none. Throws InputError
+ *  (a 400 with this text) for one that could never be a header value. */
+function checkedWorkspaceId(raw: string | null | undefined): string | null {
+  const checked = normalizeAnthropicWorkspaceId(raw);
+  if (!checked.ok) throw new InputError(checked.error);
+  return checked.value;
 }
 
 // Key READS use systemDb: the process needs a model's credentials whatever the
@@ -62,7 +95,7 @@ export async function listApiKeys(userId: string): Promise<ApiKeySummary[]> {
 export async function getApiKeyById(id: string): Promise<string | null> {
   const [row] = await systemDb.select().from(apiKeys).where(eq(apiKeys.id, id)).limit(1);
   if (!row) return null;
-  const plaintext = open(row.keyEnc, row.id);
+  const plaintext = openKeyRow(row);
   void systemDb
     .update(apiKeys)
     .set({ lastUsed: new Date() })
@@ -83,7 +116,7 @@ export async function getApiKey(
     .where(and(eq(apiKeys.userId, userId), eq(apiKeys.service, service), eq(apiKeys.label, label)))
     .limit(1);
   if (!row) return null;
-  const plaintext = open(row.keyEnc, row.id);
+  const plaintext = openKeyRow(row);
   // Best-effort last_used bump.
   void systemDb
     .update(apiKeys)
@@ -188,7 +221,19 @@ export async function setApiKey(
   service: string,
   label: string,
   plaintext: string,
+  opts: {
+    /** Anthropic keys only. Undefined keeps what an existing row has; null
+     *  or blank clears it. */
+    anthropicWorkspaceId?: string | null;
+  } = {},
 ): Promise<ApiKey> {
+  const workspace =
+    opts.anthropicWorkspaceId === undefined
+      ? undefined
+      : checkedWorkspaceId(opts.anthropicWorkspaceId);
+  if (workspace && service !== 'anthropic') {
+    throw new InputError('Only an Anthropic key can carry a workspace id.');
+  }
   const [existing] = await db
     .select({ id: apiKeys.id })
     .from(apiKeys)
@@ -202,6 +247,7 @@ export async function setApiKey(
         keyEnc: ciphertext,
         keyVersion,
         masked: maskPlaintext(plaintext),
+        ...(workspace !== undefined ? { anthropicWorkspaceId: workspace } : {}),
         updatedAt: new Date(),
       })
       .where(eq(apiKeys.id, existing.id))
@@ -214,7 +260,16 @@ export async function setApiKey(
   const masked = maskPlaintext(plaintext);
   const [inserted] = await db
     .insert(apiKeys)
-    .values({ id, userId, service, label, keyEnc: ciphertext, keyVersion, masked })
+    .values({
+      id,
+      userId,
+      service,
+      label,
+      keyEnc: ciphertext,
+      keyVersion,
+      masked,
+      anthropicWorkspaceId: workspace ?? null,
+    })
     .returning();
   if (!inserted) throw new Error('failed to insert api_key');
   return inserted;
@@ -239,6 +294,39 @@ export async function rotateApiKey(
     .set({ keyEnc: ciphertext, keyVersion, masked, updatedAt: new Date() })
     .where(eq(apiKeys.id, row.id))
     .returning();
+  return updated ?? null;
+}
+
+/**
+ * Set or clear (null, blank) the Anthropic workspace id on the caller's key
+ * `id`. Null: no such key of this owner. Throws InputError for a key of
+ * another service, or an id that could never be a header value. The next
+ * read of the key carries it (openKeyRow); the key itself is untouched.
+ */
+export async function setApiKeyAnthropicWorkspace(
+  userId: string,
+  id: string,
+  workspaceId: string | null,
+): Promise<{ id: string; anthropicWorkspaceId: string | null; updatedAt: Date } | null> {
+  const value = checkedWorkspaceId(workspaceId);
+  const [row] = await db
+    .select({ id: apiKeys.id, service: apiKeys.service })
+    .from(apiKeys)
+    .where(and(eq(apiKeys.id, id), eq(apiKeys.userId, userId)))
+    .limit(1);
+  if (!row) return null;
+  if (row.service !== 'anthropic') {
+    throw new InputError('Only an Anthropic key can carry a workspace id.');
+  }
+  const [updated] = await db
+    .update(apiKeys)
+    .set({ anthropicWorkspaceId: value, updatedAt: new Date() })
+    .where(eq(apiKeys.id, row.id))
+    .returning({
+      id: apiKeys.id,
+      anthropicWorkspaceId: apiKeys.anthropicWorkspaceId,
+      updatedAt: apiKeys.updatedAt,
+    });
   return updated ?? null;
 }
 

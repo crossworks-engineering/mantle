@@ -236,6 +236,11 @@ export {
   HUGGINGFACE_IMAGE_DEFAULT_MODEL,
 } from '../catalogs/huggingface';
 export {
+  ANTHROPIC_WORKSPACE_HEADER,
+  anthropicHeaders,
+  anthropicListError,
+} from './anthropic-headers';
+export {
   ANTHROPIC_CHAT_MODELS,
   ANTHROPIC_VISION_MODELS,
   ANTHROPIC_BASE_URL,

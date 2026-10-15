@@ -31,13 +31,10 @@ import type {
   VisionModelInfo,
 } from './types';
 import type { DiscoveryResult } from '../discover';
-import {
-  ANTHROPIC_API_VERSION,
-  ANTHROPIC_BASE_URL,
-  ANTHROPIC_VISION_MODELS,
-} from '../catalogs/anthropic';
+import { ANTHROPIC_BASE_URL, ANTHROPIC_VISION_MODELS } from '../catalogs/anthropic';
 import { errorMessage, PROVIDER_TIMEOUTS, ProviderHttpError } from '@mantle/std';
 import { providerFetch } from './provider-fetch';
+import { anthropicHeaders, anthropicListError } from './anthropic-headers';
 
 const DEFAULT_MODEL = 'claude-haiku-4-5';
 const ALLOWED_MIMES = new Set(['image/jpeg', 'image/png', 'image/gif', 'image/webp']);
@@ -100,11 +97,7 @@ export const anthropicVisionAdapter: VisionDispatcher = {
       `${ANTHROPIC_BASE_URL}/v1/messages`,
       {
         method: 'POST',
-        headers: {
-          'x-api-key': opts.apiKey,
-          'anthropic-version': ANTHROPIC_API_VERSION,
-          'Content-Type': 'application/json',
-        },
+        headers: anthropicHeaders(opts.apiKey, { 'Content-Type': 'application/json' }),
         body: JSON.stringify(body),
       },
       { timeoutMs: PROVIDER_TIMEOUTS.vision },
@@ -173,13 +166,11 @@ export const anthropicVisionAdapter: VisionDispatcher = {
       `${ANTHROPIC_BASE_URL}/v1/messages`,
       {
         method: 'POST',
-        headers: {
-          'x-api-key': opts.apiKey,
-          'anthropic-version': ANTHROPIC_API_VERSION,
-          // PDF support flag — harmless if the account already has it GA.
+        // PDF support flag — harmless if the account already has it GA.
+        headers: anthropicHeaders(opts.apiKey, {
           'anthropic-beta': 'pdfs-2024-09-25',
           'Content-Type': 'application/json',
-        },
+        }),
         body: JSON.stringify(body),
         // PDFs are heavier than a single image — give the call more headroom.
       },
@@ -211,16 +202,19 @@ export const anthropicVisionAdapter: VisionDispatcher = {
       const res = await providerFetch(
         `${ANTHROPIC_BASE_URL}/v1/models?limit=100`,
         {
-          headers: {
-            'x-api-key': apiKey,
-            'anthropic-version': ANTHROPIC_API_VERSION,
-          },
+          headers: anthropicHeaders(apiKey),
         },
         { timeoutMs: PROVIDER_TIMEOUTS.discover },
       );
       if (!res.ok) {
         const body = await res.text().catch(() => '');
-        throw new Error(`anthropic list-models ${res.status}: ${body.slice(0, 300)}`);
+        throw new Error(
+          anthropicListError(
+            res.status,
+            body,
+            `anthropic list-models ${res.status}: ${body.slice(0, 300)}`,
+          ),
+        );
       }
       const parsed = (await res.json()) as AnthropicListModelsResponse;
       const ids = new Set((parsed.data ?? []).map((m) => m.id));

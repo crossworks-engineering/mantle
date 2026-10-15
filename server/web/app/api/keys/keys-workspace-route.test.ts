@@ -1,0 +1,136 @@
+/**
+ * The Anthropic workspace id on the keys routes, without a database: GET
+ * says the brain stores it (`features`), POST passes it to the store only
+ * when sent, and PATCH sets or clears it on an existing key. The store's own
+ * rules (anthropic only, the shape) are pinned in
+ * packages/api-keys/src/anthropic-workspace.db.test.ts.
+ */
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { InputError } from '@mantle/std';
+
+const OWNER = '33333333-3333-4333-8333-333333333333';
+const KEY_ID = '11111111-1111-4111-8111-111111111111';
+
+const h = vi.hoisted(() => ({
+  setApiKey: vi.fn(),
+  setWorkspace: vi.fn(),
+}));
+
+vi.mock('@/lib/auth', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  ownerCaller: vi.fn(() => ({ id: OWNER, actor: { id: OWNER } })),
+}));
+
+vi.mock('@/lib/api-keys', () => ({
+  listApiKeys: vi.fn(async () => [
+    { id: KEY_ID, service: 'anthropic', label: 'default', anthropicWorkspaceId: 'wrkspc_a' },
+  ]),
+  setApiKey: h.setApiKey,
+  setApiKeyAnthropicWorkspace: h.setWorkspace,
+  deleteApiKey: vi.fn(),
+}));
+
+vi.mock('@mantle/tools', () => ({ isMcpManagedSecretService: () => false }));
+vi.mock('@/lib/mcp-connectors', () => ({ afterVaultKeyReplaced: vi.fn(async () => {}) }));
+
+const json = (url: string, method: string, body: unknown) =>
+  new Request(url, {
+    method,
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+
+beforeEach(() => {
+  h.setApiKey.mockReset();
+  h.setWorkspace.mockReset();
+  h.setApiKey.mockImplementation(async (_o, service, label, _p, opts) => ({
+    id: KEY_ID,
+    service,
+    label,
+    anthropicWorkspaceId: opts?.anthropicWorkspaceId ?? null,
+    createdAt: new Date(0),
+  }));
+});
+
+describe('GET /api/keys', () => {
+  it('lists the workspace id and says the brain stores it', async () => {
+    const { GET } = await import('./route');
+    const body = (await (await GET()).json()) as {
+      keys: Array<{ anthropicWorkspaceId: string | null }>;
+      features?: { anthropicWorkspaceId?: boolean };
+    };
+    expect(body.keys[0]!.anthropicWorkspaceId).toBe('wrkspc_a');
+    expect(body.features?.anthropicWorkspaceId).toBe(true);
+  });
+});
+
+describe('POST /api/keys', () => {
+  it('passes the workspace id when sent, and nothing when not (an older UI)', async () => {
+    const { POST } = await import('./route');
+    const withWs = await POST(
+      json('http://localhost/api/keys', 'POST', {
+        service: 'anthropic',
+        label: 'default',
+        plaintext: 'test-not-a-key',
+        anthropicWorkspaceId: 'wrkspc_b',
+      }),
+    );
+    expect(withWs.status).toBe(200);
+    expect(h.setApiKey.mock.calls[0]![4]).toEqual({ anthropicWorkspaceId: 'wrkspc_b' });
+    expect(((await withWs.json()) as { anthropicWorkspaceId: string }).anthropicWorkspaceId).toBe(
+      'wrkspc_b',
+    );
+
+    await POST(
+      json('http://localhost/api/keys', 'POST', {
+        service: 'openrouter',
+        label: 'default',
+        plaintext: 'test-not-a-key',
+      }),
+    );
+    expect(h.setApiKey.mock.calls[1]![4]).toEqual({});
+  });
+});
+
+describe('PATCH /api/keys/:id', () => {
+  const ctx = (id: string) => ({ params: Promise.resolve({ id }) });
+
+  it('sets and clears the workspace id', async () => {
+    h.setWorkspace.mockImplementation(async (_o, id, v) => ({
+      id,
+      anthropicWorkspaceId: v && v.trim() ? v.trim() : null,
+      updatedAt: new Date(0),
+    }));
+    const { PATCH } = await import('./[id]/route');
+    const set = await PATCH(
+      json(`http://localhost/api/keys/${KEY_ID}`, 'PATCH', { anthropicWorkspaceId: 'wrkspc_c' }),
+      ctx(KEY_ID),
+    );
+    expect(set.status).toBe(200);
+    expect(h.setWorkspace).toHaveBeenCalledWith(OWNER, KEY_ID, 'wrkspc_c');
+    const clear = await PATCH(
+      json(`http://localhost/api/keys/${KEY_ID}`, 'PATCH', { anthropicWorkspaceId: null }),
+      ctx(KEY_ID),
+    );
+    expect(
+      ((await clear.json()) as { anthropicWorkspaceId: null }).anthropicWorkspaceId,
+    ).toBeNull();
+  });
+
+  it('answers 400 for a bad body or id, 404 for no such key, and lets the store refuse', async () => {
+    const { PATCH } = await import('./[id]/route');
+    expect((await PATCH(json('http://x', 'PATCH', {}), ctx(KEY_ID))).status).toBe(400);
+    expect(
+      (await PATCH(json('http://x', 'PATCH', { anthropicWorkspaceId: 'w' }), ctx('nope'))).status,
+    ).toBe(400);
+    h.setWorkspace.mockResolvedValueOnce(null);
+    expect(
+      (await PATCH(json('http://x', 'PATCH', { anthropicWorkspaceId: 'w' }), ctx(KEY_ID))).status,
+    ).toBe(404);
+    const refusal = new InputError('Only an Anthropic key can carry a workspace id.');
+    h.setWorkspace.mockRejectedValueOnce(refusal);
+    await expect(
+      PATCH(json('http://x', 'PATCH', { anthropicWorkspaceId: 'w' }), ctx(KEY_ID)),
+    ).rejects.toBe(refusal);
+  });
+});

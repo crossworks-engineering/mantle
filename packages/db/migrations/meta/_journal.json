@@ -2038,6 +2038,13 @@
       "when": 1790196720000,
       "tag": "0291_a6_grant_reads",
       "breakpoints": true
+    },
+    {
+      "idx": 292,
+      "version": "7",
+      "when": 1790196780000,
+      "tag": "0292_api_key_anthropic_workspace",
+      "breakpoints": true
     }
   ]
 }

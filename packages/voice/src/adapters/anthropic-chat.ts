@@ -116,13 +116,10 @@ export function anthropicEffort(
   return effort;
 }
 import type { DiscoveryResult } from '../discover';
-import {
-  ANTHROPIC_API_VERSION,
-  ANTHROPIC_BASE_URL,
-  ANTHROPIC_CHAT_MODELS,
-} from '../catalogs/anthropic';
+import { ANTHROPIC_BASE_URL, ANTHROPIC_CHAT_MODELS } from '../catalogs/anthropic';
 import { errorMessage, PROVIDER_TIMEOUTS } from '@mantle/std';
 import { providerFetch } from './provider-fetch';
+import { anthropicHeaders, anthropicListError } from './anthropic-headers';
 
 /** Anthropic content blocks. `string` content is the simple shape; the
  *  array form is required when any block needs a `cache_control` marker
@@ -671,11 +668,7 @@ async function anthropicChat(opts: ChatOptions): Promise<ChatResult> {
     `${routeBase(opts.baseUrl, ANTHROPIC_BASE_URL)}/v1/messages`,
     {
       method: 'POST',
-      headers: {
-        'x-api-key': opts.apiKey,
-        'anthropic-version': ANTHROPIC_API_VERSION,
-        'content-type': 'application/json',
-      },
+      headers: anthropicHeaders(opts.apiKey, { 'content-type': 'application/json' }),
       body: JSON.stringify(body),
       signal: opts.signal,
     },
@@ -791,10 +784,7 @@ async function anthropicDiscover(apiKey: string): Promise<DiscoveryResult<ChatMo
     const res = await providerFetch(
       `${ANTHROPIC_BASE_URL}/v1/models?limit=100`,
       {
-        headers: {
-          'x-api-key': apiKey,
-          'anthropic-version': ANTHROPIC_API_VERSION,
-        },
+        headers: anthropicHeaders(apiKey),
       },
       { timeoutMs: PROVIDER_TIMEOUTS.discover },
     );
@@ -803,7 +793,11 @@ async function anthropicDiscover(apiKey: string): Promise<DiscoveryResult<ChatMo
       return {
         available: [...ANTHROPIC_CHAT_MODELS],
         filtered: false,
-        error: `anthropic /v1/models ${res.status}: ${body.slice(0, 200)}`,
+        error: anthropicListError(
+          res.status,
+          body,
+          `anthropic /v1/models ${res.status}: ${body.slice(0, 200)}`,
+        ),
       };
     }
     const parsed = (await res.json()) as AnthropicListModelsResponse;
@@ -887,11 +881,7 @@ async function anthropicChatStream(
     `${routeBase(opts.baseUrl, ANTHROPIC_BASE_URL)}/v1/messages`,
     {
       method: 'POST',
-      headers: {
-        'x-api-key': opts.apiKey,
-        'anthropic-version': ANTHROPIC_API_VERSION,
-        'content-type': 'application/json',
-      },
+      headers: anthropicHeaders(opts.apiKey, { 'content-type': 'application/json' }),
       body: JSON.stringify(body),
       signal: abort.signal,
     },

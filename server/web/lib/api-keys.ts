@@ -9,5 +9,6 @@ export {
   setApiKey,
   rotateApiKey,
   deleteApiKey,
+  setApiKeyAnthropicWorkspace,
   type ApiKeySummary,
 } from '@mantle/api-keys';

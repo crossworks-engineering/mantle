@@ -7,7 +7,8 @@
  *  - {@link classifyProviderError}: WHAT failed, for the alert banner and the
  *    extract queue's circuit (was @mantle/embeddings provider-error.ts,
  *    2026-10-04). An account problem (no credits, a refused key, a model the
- *    provider does not offer, no key) is permanent; a rate limit, a server
+ *    provider does not offer, no key, an Anthropic key that names no
+ *    workspace) is permanent; a rate limit, a server
  *    error, a network failure or a timeout is transient; anything else (a bad
  *    input, a parse error) is null: it says nothing about the provider.
  *  - {@link retryDecision}: retry this chat call now, and after how long (was
@@ -28,7 +29,15 @@
 import { defineDomainError } from './domain-errors';
 
 export type ProviderErrorCode =
-  'quota' | 'auth' | 'no_key' | 'model' | 'rate_limit' | 'server' | 'network' | 'timeout';
+  | 'quota'
+  | 'auth'
+  | 'no_key'
+  | 'workspace'
+  | 'model'
+  | 'rate_limit'
+  | 'server'
+  | 'network'
+  | 'timeout';
 
 export interface ProviderErrorClass {
   code: ProviderErrorCode;
@@ -44,6 +53,8 @@ export const PROVIDER_ERROR_REASONS: Record<ProviderErrorCode, string> = {
   quota: 'The provider account has no credits or quota left.',
   auth: 'The provider refused the API key.',
   no_key: 'No API key is set for this provider.',
+  workspace:
+    'This Anthropic key is not tied to a workspace. Add the workspace id on the key, or use a key made inside an Anthropic workspace.',
   model: 'The provider does not offer this model.',
   rate_limit: 'The provider limits the request rate.',
   server: 'The provider has a server problem.',
@@ -227,7 +238,13 @@ export function providerErrorStatus(err: unknown): number | undefined {
 
 // ── what failed (alerts, the extract circuit) ───────────────────────────────
 
-const PERMANENT: ReadonlySet<ProviderErrorCode> = new Set(['quota', 'auth', 'no_key', 'model']);
+const PERMANENT: ReadonlySet<ProviderErrorCode> = new Set([
+  'quota',
+  'auth',
+  'no_key',
+  'workspace',
+  'model',
+]);
 
 function make(code: ProviderErrorCode, status?: number): ProviderErrorClass {
   return {
@@ -246,6 +263,15 @@ const INPUT_REFUSED_RE = /moderation|flagged|content policy|safety system/i;
 /** A 400/404 about the model itself. */
 const MODEL_RE =
   /model[^.]{0,80}(?:not (?:be )?found|does not exist|not exist|is not (?:a )?valid|invalid|not supported|unknown|not available)|(?:unknown|invalid) model|no endpoints found|model_not_found/i;
+/**
+ * Anthropic's 400 for a key not scoped to a workspace that named none: its
+ * error type plus the header it asks for, not the whole sentence (the
+ * wording can change; the header name is the contract). Both must be in the
+ * text, so another invalid request that merely mentions a workspace is not
+ * this one.
+ */
+const ANTHROPIC_INVALID_REQUEST_RE = /"type"\s*:\s*"invalid_request_error"/;
+const ANTHROPIC_WORKSPACE_HEADER_RE = /anthropic-workspace-id/i;
 const NETWORK_RE =
   /ECONNREFUSED|ENOTFOUND|EAI_AGAIN|ECONNRESET|EHOSTUNREACH|ENETUNREACH|fetch failed|socket hang up|network error/i;
 const TIMEOUT_RE = /ETIMEDOUT|timed? ?out/i;
@@ -280,6 +306,13 @@ export function classifyProviderError(err: unknown): ProviderErrorClass | null {
       return make('auth', status);
     }
     if (status === 404) return make('model', status);
+    if (
+      status === 400 &&
+      ANTHROPIC_INVALID_REQUEST_RE.test(text) &&
+      ANTHROPIC_WORKSPACE_HEADER_RE.test(text)
+    ) {
+      return make('workspace', status);
+    }
     if (status === 400 || status === 422) return MODEL_RE.test(text) ? make('model', status) : null;
     if (status === 408) return make('timeout', status);
     if (status >= 500) return make('server', status);

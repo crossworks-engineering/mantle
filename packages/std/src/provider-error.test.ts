@@ -239,3 +239,72 @@ describe('toolThrowText: a builtin that throws (A10 #10 fix round 2)', () => {
     );
   });
 });
+
+describe('an Anthropic key that names no workspace', () => {
+  // The shape Anthropic answers; the sentence is theirs and may change, so
+  // the classifier reads only the error type and the header name.
+  const body = JSON.stringify({
+    type: 'error',
+    error: {
+      type: 'invalid_request_error',
+      message:
+        'This API key is not scoped to a workspace, so this request must include the anthropic-workspace-id header with the ID of the workspace to use.',
+    },
+  });
+
+  it('is its own permanent class with a fixed sentence', () => {
+    const e = new ProviderHttpError({ provider: 'anthropic', status: 400, body, what: 'chat' });
+    const cls = classifyProviderError(e);
+    expect(cls?.code).toBe('workspace');
+    expect(cls?.permanent).toBe(true);
+    expect(cls?.reason).toBe(
+      'This Anthropic key is not tied to a workspace. Add the workspace id on the key, or use a key made inside an Anthropic workspace.',
+    );
+    expect(domainErrorAnswer(e)?.toolText).toBe(`${cls?.reason} (anthropic, HTTP 400)`);
+  });
+
+  it('reads the same from the message when the body rides in it', () => {
+    const e = new Error(`anthropic chat 400: ${body}`);
+    expect(classifyProviderError(e)?.code).toBe('workspace');
+  });
+
+  it('needs both the error type and the header name', () => {
+    const noHeader = JSON.stringify({
+      type: 'error',
+      error: { type: 'invalid_request_error', message: 'workspace is archived' },
+    });
+    const otherType = JSON.stringify({
+      type: 'error',
+      error: { type: 'permission_error', message: 'anthropic-workspace-id names no workspace' },
+    });
+    expect(
+      classifyProviderError(
+        new ProviderHttpError({ provider: 'anthropic', status: 400, body: noHeader }),
+      ),
+    ).toBeNull();
+    expect(
+      classifyProviderError(
+        new ProviderHttpError({ provider: 'anthropic', status: 400, body: otherType }),
+      ),
+    ).toBeNull();
+    // Another status is not this one.
+    expect(
+      classifyProviderError(new ProviderHttpError({ provider: 'anthropic', status: 401, body }))
+        ?.code,
+    ).toBe('auth');
+  });
+
+  it('says the sentence through publicProviderErrorMessage', () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const text = publicProviderErrorMessage(
+        new ProviderHttpError({ provider: 'anthropic', status: 400, body }),
+        'test',
+      );
+      expect(text).toContain('This Anthropic key is not tied to a workspace.');
+      expect(text).not.toContain('invalid_request_error');
+    } finally {
+      spy.mockRestore();
+    }
+  });
+});

@@ -17,7 +17,10 @@ import {
   modelSupportsVision,
   parseCatalog,
   contextLimitFor,
+  contextLimitForRoute,
   contextSourceFor,
+  contextSourceForRoute,
+  openRouterIdCandidates,
 } from './model-context';
 
 describe('maxImageBytesFor', () => {
@@ -273,5 +276,46 @@ describe('catalogHasModel / catalogSuggestions (save-time validation)', () => {
     } finally {
       vi.unstubAllGlobals();
     }
+  });
+});
+
+describe('a direct provider model id maps to its OpenRouter id', () => {
+  it('prefixes the vendor and tries the id as given, then dotted, then undated', () => {
+    // Shapes taken from the two catalogs (OpenRouter /api/v1/models and the
+    // Anthropic Models API), not invented: claude-opus-4-8 vs claude-opus-4.8.
+    expect(openRouterIdCandidates('anthropic', 'claude-opus-4-8')).toEqual([
+      'anthropic/claude-opus-4-8',
+      'anthropic/claude-opus-4.8',
+    ]);
+    expect(openRouterIdCandidates('anthropic', 'claude-haiku-4-5-20251001')).toEqual([
+      'anthropic/claude-haiku-4-5-20251001',
+      'anthropic/claude-haiku-4.5-20251001',
+      'anthropic/claude-haiku-4-5',
+      'anthropic/claude-haiku-4.5',
+    ]);
+    expect(openRouterIdCandidates('openai', 'gpt-4o-2024-08-06')).toContain('openai/gpt-4o');
+    expect(openRouterIdCandidates('xai', 'grok-4-0709')).toEqual(['x-ai/grok-4-0709']);
+    expect(openRouterIdCandidates('mistral', 'mistral-medium-3-5')[0]).toBe(
+      'mistralai/mistral-medium-3-5',
+    );
+  });
+
+  it('keeps an OpenRouter slug as it is and knows no vendor for an unrouted provider', () => {
+    expect(openRouterIdCandidates('openrouter', 'Anthropic/Claude-Opus-4.7')).toEqual([
+      'anthropic/claude-opus-4.7',
+    ]);
+    expect(openRouterIdCandidates(null, 'x-ai/grok-4')).toEqual(['x-ai/grok-4']);
+    expect(openRouterIdCandidates('local', 'gemma-3')).toEqual([]);
+    expect(openRouterIdCandidates('anthropic', '  ')).toEqual([]);
+  });
+
+  it('resolves a direct id to the window its OpenRouter id has', () => {
+    const slug = 'anthropic/claude-opus-4.7';
+    expect(contextLimitFor(slug)).not.toBeNull();
+    expect(contextLimitForRoute('anthropic', 'claude-opus-4-7')).toBe(contextLimitFor(slug));
+    expect(contextSourceForRoute('anthropic', 'claude-opus-4-7')).toBe(contextSourceFor(slug));
+    expect(contextLimitForRoute('openrouter', slug)).toBe(contextLimitFor(slug));
+    expect(contextLimitForRoute('anthropic', 'no-such-model-x')).toBeNull();
+    expect(contextSourceForRoute('local', 'claude-opus-4-7')).toBe('unknown');
   });
 });

@@ -38,21 +38,44 @@ vi.mock('@mantle/api-keys', () => ({
 }));
 
 import { GET } from './route';
+import { _clearProviderKeyContexts, rememberProviderKeyContext } from '@mantle/std';
 import { clearModelCache } from '@/lib/model-explorer';
 
 type Body = { models: { id: string }[]; needsKey?: boolean; error?: string };
 
 const refused = new Set<string>();
 const calls: string[] = [];
+const workspaceSeen: Array<string | null> = [];
+const unscoped = new Set<string>();
 
 beforeEach(() => {
   calls.length = 0;
+  workspaceSeen.length = 0;
   refused.clear();
+  unscoped.clear();
+  _clearProviderKeyContexts();
   vi.stubGlobal(
     'fetch',
-    vi.fn(async (_url: unknown, init?: RequestInit) => {
-      const key = new Headers(init?.headers).get('x-api-key') ?? '';
+    vi.fn(async (url: unknown, init?: RequestInit) => {
+      // The public OpenRouter catalog the explorer reads for direct models'
+      // context windows: not a provider key call, not counted.
+      if (String(url).includes('openrouter.ai')) return Response.json({ data: [] });
+      const headers = new Headers(init?.headers);
+      const key = headers.get('x-api-key') ?? '';
       calls.push(key);
+      workspaceSeen.push(headers.get('anthropic-workspace-id'));
+      if (unscoped.has(key) && !headers.get('anthropic-workspace-id')) {
+        return new Response(
+          JSON.stringify({
+            type: 'error',
+            error: {
+              type: 'invalid_request_error',
+              message: 'must include the anthropic-workspace-id header (org acct_SECRET)',
+            },
+          }),
+          { status: 400 },
+        );
+      }
       if (refused.has(key)) {
         return new Response('{"error":"invalid x-api-key for org acct_SECRET"}', { status: 401 });
       }
@@ -132,5 +155,23 @@ describe('GET /api/models with a picked key', () => {
     refused.clear();
     const again = (await (await get(`provider=anthropic&keyId=${TEAM}`)).json()) as Body;
     expect(again.models).toHaveLength(1);
+  });
+
+  it("sends the key's workspace id on the model list, and names a missing one plainly", async () => {
+    // The key store records the workspace id when it opens a key; the fake
+    // vault here stands in for that.
+    unscoped.add('sk-ant-team');
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const missing = (await (await get(`provider=anthropic&keyId=${TEAM}`)).json()) as Body;
+    errSpy.mockRestore();
+    expect(missing.error).toBe(
+      'This Anthropic key is not tied to a workspace. Add the workspace id on the key, or use a key made inside an Anthropic workspace. (anthropic, HTTP 400)',
+    );
+    expect(JSON.stringify(missing)).not.toMatch(/SECRET|acct_/);
+
+    rememberProviderKeyContext('sk-ant-team', { anthropicWorkspaceId: 'wrkspc_test' });
+    const ok = (await (await get(`provider=anthropic&keyId=${TEAM}`)).json()) as Body;
+    expect(ok.models).toHaveLength(1);
+    expect(workspaceSeen).toEqual([null, 'wrkspc_test']);
   });
 });

@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { contextLimitFor } from '@mantle/tracing';
 import {
   parseOpenRouter,
   parseOpenAiLike,
@@ -8,6 +9,7 @@ import {
   parseCohere,
   parseXaiLanguageModels,
   queryModels,
+  withRouteContext,
 } from './model-explorer';
 import type { ExplorerModel } from './model-explorer';
 
@@ -105,6 +107,16 @@ describe('parseAnthropic', () => {
     expect(m.name).toBe('Claude Opus 4.7');
     expect(m.created).toBe('2026-01-01T00:00:00Z');
     expect(m.kind).toBe('chat');
+    // An answer from before the Models API published windows has none.
+    expect(m.contextTokens).toBeUndefined();
+  });
+
+  it('reads the context window and output cap the Models API publishes', () => {
+    const m = parseAnthropic([
+      { type: 'model', id: 'claude-x', max_input_tokens: 123_456, max_tokens: 7_890 },
+    ])[0]!;
+    expect(m.contextTokens).toBe(123_456);
+    expect(m.maxOutputTokens).toBe(7_890);
   });
 });
 
@@ -220,5 +232,38 @@ describe('robustness', () => {
   it('tolerates empty / malformed entries without throwing', () => {
     expect(() => parseOpenRouter([{}, null as unknown as object])).not.toThrow();
     expect(parseOpenAiLike([{}]).at(0)?.id).toBe('');
+  });
+});
+
+describe('withRouteContext', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it('fills a direct model with no window from its OpenRouter id, and keeps a provider number', async () => {
+    // No network: the catalog refresh fails safe to the static table.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response('down', { status: 503 })),
+    );
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const out = await withRouteContext('anthropic', [
+      { id: 'claude-opus-4-7', raw: {} },
+      { id: 'claude-own-window', contextTokens: 42, raw: {} },
+      { id: 'no-such-model-x', raw: {} },
+    ]);
+    expect(out[0]!.contextTokens).toBe(contextLimitFor('anthropic/claude-opus-4.7'));
+    expect(out[0]!.contextTokens).toBeGreaterThan(0);
+    expect(out[1]!.contextTokens).toBe(42);
+    expect(out[2]!.contextTokens).toBeUndefined();
+  });
+
+  it('leaves the OpenRouter list as it is', async () => {
+    const fetchSpy = vi.fn();
+    vi.stubGlobal('fetch', fetchSpy);
+    const rows = [{ id: 'anthropic/claude-opus-4.7', raw: {} }];
+    expect(await withRouteContext('openrouter', rows)).toBe(rows);
+    expect(fetchSpy).not.toHaveBeenCalled();
   });
 });

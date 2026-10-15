@@ -1,6 +1,6 @@
 import { and, desc, eq, gte, sql } from 'drizzle-orm';
 import { agents, db, traceSteps, traces } from '@mantle/db';
-import { contextLimitFor, contextSourceFor, refreshModelCatalog } from '@mantle/tracing';
+import { contextLimitForRoute, contextSourceForRoute, refreshModelCatalog } from '@mantle/tracing';
 import { attachUseSpend } from './metrics-uses';
 import type {
   AgentContext,
@@ -70,6 +70,7 @@ type AgentContextRow = {
   agent_id: string;
   agent_name: string | null;
   agent_slug: string | null;
+  provider: string | null;
   model: string;
   started_at: string;
   max_tokens_in: number;
@@ -107,6 +108,7 @@ export async function recentAgentContext(userId: string): Promise<AgentContext[]
       lt.agent_id,
       a.name AS agent_name,
       a.slug AS agent_slug,
+      a.provider,
       a.model,
       lt.started_at,
       COALESCE((
@@ -122,7 +124,9 @@ export async function recentAgentContext(userId: string): Promise<AgentContext[]
     Array.isArray(result) ? result : ((result as { rows?: AgentContextRow[] }).rows ?? [])
   ) as AgentContextRow[];
   return rows.map((r) => {
-    const limit = contextLimitFor(r.model);
+    // A direct provider's id (claude-opus-4-8) maps to its OpenRouter id
+    // (anthropic/claude-opus-4.8) for the window; an OpenRouter slug is itself.
+    const limit = contextLimitForRoute(r.provider, r.model);
     const tokensIn = Number(r.max_tokens_in);
     return {
       agentId: r.agent_id,
@@ -131,7 +135,7 @@ export async function recentAgentContext(userId: string): Promise<AgentContext[]
       modelSlug: r.model,
       lastTokensIn: tokensIn,
       contextLimit: limit,
-      contextSource: contextSourceFor(r.model),
+      contextSource: contextSourceForRoute(r.provider, r.model),
       pct: limit ? Math.min(1, tokensIn / limit) : null,
       lastRunAt: new Date(r.started_at).toISOString(),
     };

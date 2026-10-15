@@ -19,7 +19,8 @@
  * 'default' label first, else the oldest key of that service).
  */
 import { findProviderKeyId, getApiKeyById } from '@mantle/api-keys';
-import { isProviderId, type ProviderId } from '@mantle/voice';
+import { anthropicHeaders, isProviderId, type ProviderId } from '@mantle/voice';
+import { contextLimitForRoute, refreshModelCatalog } from '@mantle/tracing';
 import type { ExplorerModel, ModelSort } from '@mantle/client-types';
 import { kindFromModalities } from '@mantle/client-types/model-pools';
 import {
@@ -173,6 +174,10 @@ export function parseAnthropic(data: unknown[]): ExplorerModel[] {
     return {
       id: String(m.id ?? ''),
       name: str(m.display_name),
+      // The Models API publishes the context window as `max_input_tokens`
+      // and the output cap as `max_tokens`; an older answer has neither.
+      contextTokens: num(m.max_input_tokens),
+      maxOutputTokens: num(m.max_tokens),
       kind: 'chat',
       created: str(m.created_at),
       raw,
@@ -319,7 +324,9 @@ const FETCHERS: Partial<Record<ProviderId, Fetcher>> = {
     fetch: async (key) => {
       const body = rec(
         await getJson('https://api.anthropic.com/v1/models?limit=1000', {
-          headers: { 'x-api-key': key ?? '', 'anthropic-version': '2023-06-01' },
+          // THE Anthropic headers (the version, and the key's workspace id
+          // when it carries one): built in the adapter, never here.
+          headers: anthropicHeaders(key ?? ''),
         }),
       );
       return parseAnthropic(asArray(body.data));
@@ -466,7 +473,7 @@ export async function fetchProviderModels(
   }
 
   try {
-    const models = await fetcher.fetch(key);
+    const models = await withRouteContext(provider, await fetcher.fetch(key));
     models.sort((a, b) => a.id.localeCompare(b.id));
     const result: ProviderModelsResult = { provider, models, fetchedAt: Date.now() };
     cache.set(slot, result);
@@ -483,6 +490,26 @@ export async function fetchProviderModels(
       error: publicProviderErrorMessage(named, `model-explorer ${provider}`),
     };
   }
+}
+
+/**
+ * A direct provider's models with the context window filled where its own
+ * list gave none: from the OpenRouter catalog, by the model's OpenRouter id
+ * (contextLimitForRoute: vendor prefix + id normalization, no table of
+ * models). The provider's own number always wins; a model OpenRouter does
+ * not list stays without one. OpenRouter's own list is already complete.
+ */
+export async function withRouteContext(
+  provider: ProviderId,
+  models: ExplorerModel[],
+): Promise<ExplorerModel[]> {
+  if (provider === 'openrouter' || models.every((m) => m.contextTokens)) return models;
+  await refreshModelCatalog();
+  return models.map((m) => {
+    if (m.contextTokens) return m;
+    const limit = contextLimitForRoute(provider, m.id);
+    return limit ? { ...m, contextTokens: limit } : m;
+  });
 }
 
 /** Provider ids this explorer can fetch a model list for. */

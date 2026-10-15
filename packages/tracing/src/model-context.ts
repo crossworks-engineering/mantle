@@ -252,6 +252,82 @@ export function contextLimitFor(modelSlug: string | null | undefined): number | 
   return FALLBACK_CONTEXT_LIMITS[key] ?? null;
 }
 
+/**
+ * OpenRouter's vendor prefix for each direct provider whose models
+ * OpenRouter also routes (checked against the live catalog, 2026-10-15).
+ * Provider ids only, never model ids: the model half of the id comes from
+ * the provider's own id by {@link openRouterIdCandidates}.
+ */
+const OPENROUTER_VENDOR: Readonly<Record<string, string>> = {
+  anthropic: 'anthropic',
+  openai: 'openai',
+  google: 'google',
+  xai: 'x-ai',
+  deepseek: 'deepseek',
+  mistral: 'mistralai',
+  cohere: 'cohere',
+};
+
+/**
+ * The OpenRouter ids a direct provider's model id may go by, most likely
+ * first. Rules, no table of models: the vendor prefix, then the id as given
+ * (`mistral-medium-3-5` stays dashed on OpenRouter), then version digits
+ * joined by a dot (Anthropic's `claude-opus-4-8` is OpenRouter's
+ * `claude-opus-4.8`), each also without a dated snapshot suffix
+ * (`-20251001`, `-2024-08-06`). An OpenRouter slug (or an id that already
+ * names a vendor) is its own only candidate; a provider OpenRouter does not
+ * route has none.
+ */
+export function openRouterIdCandidates(
+  provider: string | null | undefined,
+  model: string | null | undefined,
+): string[] {
+  const id = (model ?? '').trim().toLowerCase();
+  if (!id) return [];
+  if (!provider || provider === 'openrouter' || id.includes('/')) return [id];
+  const vendor = OPENROUTER_VENDOR[provider];
+  if (!vendor) return [];
+  const undated = id.replace(/-(?:\d{8}|\d{4}-\d{2}-\d{2})$/, '');
+  // One- or two-digit version parts only, so a snapshot number like
+  // `grok-4-0709` is never read as a version.
+  const dotted = (s: string) => s.replace(/(?<=(?:^|\D)\d{1,2})-(?=\d{1,2}(?:\D|$))/g, '.');
+  const out: string[] = [];
+  for (const c of [id, dotted(id), undated, dotted(undated)]) {
+    const full = `${vendor}/${c}`;
+    if (!out.includes(full)) out.push(full);
+  }
+  return out;
+}
+
+/**
+ * The context window of a model as an agent or worker names it (provider +
+ * model id): the OpenRouter slug itself, or a direct provider's id mapped to
+ * its OpenRouter id ({@link openRouterIdCandidates}); null when no candidate
+ * is known.
+ */
+export function contextLimitForRoute(
+  provider: string | null | undefined,
+  model: string | null | undefined,
+): number | null {
+  for (const slug of openRouterIdCandidates(provider, model)) {
+    const limit = contextLimitFor(slug);
+    if (limit) return limit;
+  }
+  return null;
+}
+
+/** {@link contextSourceFor} for a provider + model pair. */
+export function contextSourceForRoute(
+  provider: string | null | undefined,
+  model: string | null | undefined,
+): ContextSource {
+  for (const slug of openRouterIdCandidates(provider, model)) {
+    const source = contextSourceFor(slug);
+    if (source !== 'unknown') return source;
+  }
+  return 'unknown';
+}
+
 /** Provenance of a slug's limit — for showing the user where it came from. */
 export function contextSourceFor(modelSlug: string | null | undefined): ContextSource {
   if (!modelSlug) return 'unknown';

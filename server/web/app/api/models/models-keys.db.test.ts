@@ -30,6 +30,9 @@ vi.mock('@/lib/auth', async (importOriginal) => ({
 function fakeProviders(refused: Set<string>) {
   const calls: string[] = [];
   const fn = vi.fn(async (input: unknown, init?: RequestInit) => {
+    // The public OpenRouter catalog the explorer reads for direct models'
+    // context windows: not a provider key call, not counted.
+    if (String(input).includes('openrouter.ai')) return Response.json({ data: [] });
     const headers = new Headers(init?.headers);
     const key = headers.get('x-api-key') ?? headers.get('authorization') ?? '';
     calls.push(key);

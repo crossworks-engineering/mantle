@@ -4,6 +4,27 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## Unreleased: Anthropic workspace id on a key; direct models show their context window
+
+- An Anthropic API key can carry an optional **Anthropic workspace id**
+  (migration 0292, `api_keys.anthropic_workspace_id`). When set, every
+  Anthropic call made with that key sends `anthropic-workspace-id`: chat,
+  streaming, vision, the model lists. One place builds the headers
+  (`anthropicHeaders`, [docs/provider-http.md](docs/provider-http.md#anthropic-workspace-id)).
+  Without it nothing changes.
+- Anthropic's 400 for a key not scoped to a workspace is classified
+  `workspace` and reads "This Anthropic key is not tied to a workspace. Add
+  the workspace id on the key, or use a key made inside an Anthropic
+  workspace."
+- `GET /api/keys` lists `anthropicWorkspaceId` per key and
+  `features.anthropicWorkspaceId: true`; `POST /api/keys` takes an optional
+  `anthropicWorkspaceId`; `PATCH /api/keys/:id` sets or clears it. Additive.
+- A direct provider's model list (`/api/models?provider=`) fills each
+  model's `contextTokens`: Anthropic's own `max_input_tokens`, else the
+  OpenRouter catalog's window for the model's OpenRouter id (vendor prefix
+  plus id normalization, no table of models). The dashboard's context bars
+  map a direct agent's model the same way.
+
 ## Unreleased: direct providers list their models in the picker
 
 - A model provider's key is looked up through one helper

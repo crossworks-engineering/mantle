@@ -58,7 +58,10 @@ export {
 } from './spend';
 export {
   contextLimitFor,
+  contextLimitForRoute,
   contextSourceFor,
+  contextSourceForRoute,
+  openRouterIdCandidates,
   contextLimitMap,
   contextLimitsFetchedAt,
   refreshModelCatalog,
