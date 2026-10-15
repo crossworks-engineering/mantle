@@ -3,6 +3,7 @@
   "version": "0.0.1",
   "description": "The server-rendered share surface — the /s/<token> presenters, view-payload contract, mini-app sandbox, and the few primitives they need. Lives in MANTLE (the server renders these), published for jackdaw to consume; may depend only on @mantle/{client-types,content-core} (the jackdaw-repo-split boundary).",
   "private": true,
+  "type": "module",
   "scripts": {
     "typecheck": "tsc --noEmit",
     "themes:build": "node themes/generate.mjs",
