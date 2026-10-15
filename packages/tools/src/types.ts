@@ -3,6 +3,7 @@
  * this file is the runtime contract every handler implements.
  */
 
+import type { LoginRole } from '@mantle/client-types/role-names';
 import type { TurnTaint } from './client-sourced';
 import type { ToolCaller } from './gate-callers';
 import type { ToolPolicy } from './tool-policy';
@@ -183,7 +184,7 @@ export type LoginMcpChannel = {
   via: 'oauth' | 'peer' | 'key';
   /** The login's role (W8 integration): what `:host_me_kind` says it is in
    *  an app, as the app's own broker does in the browser. Absent = member. */
-  role?: 'admin' | 'member';
+  role?: LoginRole;
   /** The login's Write switch (and for a key or a peer, theirs too). */
   write: boolean;
   /** The API key, the peer, or the OAuth client of this connection: the

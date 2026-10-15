@@ -13,6 +13,7 @@
  * `GET /api/shell`, absent on a brain older than v2. Branch the SCREEN on
  * that, not on the shapes below.
  */
+import type { RecallActorKind } from '../role-names';
 
 /** One map in the catalog (`GET /api/recall/maps`). Unlike the agent-facing
  *  `recall_index`, the owner catalog includes unpublished maps and maps with
@@ -109,9 +110,10 @@ export interface RecallMapDetailDTO extends RecallMapSummaryDTO {
 // `version` it was made against; a stale one is refused rather than silently
 // overwriting another editor's (or an agent's) change.
 
-/** Who made a change. An `agent` row is why the revision log exists: v2 serves
- *  an agent's card edit immediately, with no compile step to hold it back. */
-export type RecallActorKind = 'owner' | 'agent';
+/** Who made a change (RECALL_ACTOR_KINDS, ../role-names). An `agent` row is
+ *  why the revision log exists: v2 serves an agent's card edit immediately,
+ *  with no compile step to hold it back. */
+export type { RecallActorKind };
 
 /** `POST /api/recall/maps` — a new map, with its entry card. Created
  *  unpublished when an agent asks; the owner publishes it. */

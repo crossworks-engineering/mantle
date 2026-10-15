@@ -11,6 +11,7 @@
  * (`@crossworks/client-types/dto/access-keys`); the brain pins it to its
  * own list in a test.
  */
+import type { LoginRole } from '../role-names';
 
 /** The parts of the brain a key can be limited to. */
 export const ACCESS_KEY_AREAS = [
@@ -31,7 +32,8 @@ export type AccessKeyArea = (typeof ACCESS_KEY_AREAS)[number];
 
 export type AccessKeyAccess = 'read' | 'read_write';
 
-export type AccessKeyRole = 'admin' | 'member';
+/** The role of the login a key acts as (LOGIN_ROLES, ../role-names). */
+export type AccessKeyRole = LoginRole;
 
 export type AccessKeyStatus = 'active' | 'expired' | 'revoked';
 

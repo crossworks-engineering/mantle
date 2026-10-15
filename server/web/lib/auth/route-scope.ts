@@ -22,7 +22,7 @@
  * since W6a (reads only, in its scope); every other owner route still
  * refuses it.
  */
-import type { WorkspaceArea } from '@mantle/client-types';
+import { isWorkspaceArea, type WorkspaceArea } from '@mantle/client-types/dto/workspaces';
 import { ITEM_KINDS, ITEM_KIND_NAMES } from '@mantle/client-types/kinds';
 
 export type RouteClass =
@@ -148,14 +148,6 @@ export const ROUTE_PREFIXES: ReadonlyArray<readonly [string, Tag]> = [
   ['/api/pdf-passwords', 'keys'],
 ];
 
-const AREAS: ReadonlySet<string> = new Set([
-  'settings',
-  'users',
-  'assistants',
-  'connectors',
-  'keys',
-]);
-
 /** The class of an owner route pattern, or null when no prefix matches (a
  *  route nobody classified: the guard refuses it, the test fails). */
 export function routeClass(pattern: string): RouteClass | null {
@@ -167,7 +159,7 @@ export function routeClass(pattern: string): RouteClass | null {
   }
   if (!best) return null;
   const tag = best[1];
-  if (AREAS.has(tag)) return { kind: 'area', area: tag as WorkspaceArea };
+  if (isWorkspaceArea(tag)) return { kind: 'area', area: tag };
   return { kind: tag as 'content' | 'self' };
 }
 

@@ -40,12 +40,15 @@ import {
 } from './actor';
 import { hkdfSync } from 'node:crypto';
 import { env } from '@mantle/config';
+import { ACCESS_LEVELS, type AccessLevel } from '@mantle/client-types/dto/access';
+import { WORKSPACE_AREAS, type WorkspaceArea } from '@mantle/client-types/dto/workspaces';
 
-/** The four tier levels, lowest first. Since client logins C1 (decision 3)
+/** The four tier levels, lowest first: ACCESS_LEVELS (@mantle/client-types,
+ *  highest first) reversed (A10 #13). Since client logins C1 (decision 3)
  *  client and public are siblings under team: `levelCovers` is that rule,
  *  `lowerLevel` builds on it. No read is decided by them (W8c). */
-export const VIEWER_LEVELS = ['public', 'client', 'team', 'admin'] as const;
-export type ViewerLevel = (typeof VIEWER_LEVELS)[number];
+export const VIEWER_LEVELS: readonly AccessLevel[] = [...ACCESS_LEVELS].reverse();
+export type ViewerLevel = AccessLevel;
 
 /**
  * Whether a caller at `viewer` reads what sits at `level`: admin reads all,
@@ -614,10 +617,10 @@ export function isSystemScope(): boolean {
   return currentScope().kind === 'system';
 }
 
-/** The areas an Admin workspace user manages (plan 2.4). Equal to
- *  WORKSPACE_AREAS in @mantle/client-types (a test pins it). */
-export const SCOPE_AREAS = ['settings', 'users', 'assistants', 'connectors', 'keys'] as const;
-export type ScopeArea = (typeof SCOPE_AREAS)[number];
+/** The areas an Admin workspace user manages (plan 2.4): WORKSPACE_AREAS in
+ *  @mantle/client-types, the one list (A10 #13). */
+export const SCOPE_AREAS = WORKSPACE_AREAS;
+export type ScopeArea = WorkspaceArea;
 
 /** The workspace scope the current code runs in, if any. */
 export function currentWorkspaceScope(): WorkspaceScope | null {

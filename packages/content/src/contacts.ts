@@ -78,6 +78,7 @@ export {
 } from '@mantle/content-core/contacts-format';
 import { asKindRootRepair } from './kind-root';
 import { InputError } from '@mantle/std';
+import { LOGIN_ROLES } from '@mantle/client-types/role-names';
 
 // ─── row + CRUD ────────────────────────────────────────────────────────────
 
@@ -271,7 +272,7 @@ export async function loginEmails(): Promise<string[]> {
   const rows = await db
     .select({ email: authUsers.email })
     .from(authUsers)
-    .where(and(isNull(authUsers.disabledAt), inArray(authUsers.role, ['admin', 'member'])));
+    .where(and(isNull(authUsers.disabledAt), inArray(authUsers.role, [...LOGIN_ROLES])));
   return [...new Set(rows.map((r) => r.email.trim().toLowerCase()).filter(Boolean))];
 }
 

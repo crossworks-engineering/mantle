@@ -1,7 +1,8 @@
 /**
  * The areas an inbound API key can be limited to (migration 0232, plan page
- * 1e62e204). A leaf module (no imports): the HTTP gate reads the area list
- * from here too, so the two surfaces share one list.
+ * 1e62e204). A leaf module (its one import is the contract's zero-dependency
+ * list): the HTTP gate reads the area list from here too, so the two
+ * surfaces share one list.
  *
  * Which area a tool belongs to is its policy's `keyArea` (A5 step 2:
  * mcp-policy.ts toolKeyArea reads it, for a builtin and a hand-written MCP
@@ -13,21 +14,13 @@
  * as its login and reads that login's workspaces; its areas and its access
  * then take tools and routes away from that, never add to it.
  */
-export const KEY_AREAS = [
-  'search',
-  'pages',
-  'notes',
-  'tasks',
-  'tables',
-  'files',
-  'calendar',
-  'contacts',
-  'journal',
-  'apps',
-  // The data of mini apps opened to MCP (team apps Phase 1): the app_data_*
-  // tools. The apps area stays the authoring tools.
-  'app_data',
-] as const;
+import { ACCESS_KEY_AREAS } from '@mantle/client-types/dto/access-keys';
+
+/** ACCESS_KEY_AREAS of the contract (@mantle/client-types/dto/access-keys),
+ *  the one list (A10 #13). 'app_data' is the data of mini apps opened to MCP
+ *  (team apps Phase 1): the app_data_* tools. The apps area stays the
+ *  authoring tools. */
+export const KEY_AREAS = ACCESS_KEY_AREAS;
 export type KeyArea = (typeof KEY_AREAS)[number];
 
 /** Whole tool families by slug prefix: the area of a NAME no policy table

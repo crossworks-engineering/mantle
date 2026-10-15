@@ -25,7 +25,8 @@
 import { eq } from 'drizzle-orm';
 import { authUsers, db, resolveSingleOwnerId } from '@mantle/db';
 import { PEER_TOKEN_PREFIX, verifyInboundToken } from '@mantle/content';
-import { mcpToolPolicyOf, type McpCaller, type McpLoginRole } from '@mantle/mcp-core';
+import { mcpToolPolicyOf, type McpCaller } from '@mantle/mcp-core';
+import { isLoginRole } from '@mantle/client-types/role-names';
 import { bearerFrom } from './auth/request';
 import {
   auditKeyRefusal,
@@ -63,10 +64,6 @@ async function loadLogin(loginId: string): Promise<LoginRow | null> {
     .where(eq(authUsers.id, loginId))
     .limit(1);
   return row ?? null;
-}
-
-function isRole(v: string): v is McpLoginRole {
-  return v === 'admin' || v === 'member';
 }
 
 /** A member's caller from its login row, or null. Its writes are whatever
@@ -246,7 +243,7 @@ async function callerFromPeerToken(token: string): Promise<McpCaller | null> {
   const row = await loadLogin(peer.actsAsLoginId);
   if (!row || row.disabledAt || !row.email) return null;
   // A role this code does not know is no login (fail closed).
-  if (!isRole(row.role)) return null;
+  if (!isLoginRole(row.role)) return null;
   // A linked brain acts as the login it is bound to, as that login is now
   // (workspaces plan 7.6; W8a: no role is kept on the peer): it reads that
   // login's workspaces, and only narrows it, with its own write switch and

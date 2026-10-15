@@ -7,10 +7,11 @@
  * both now answer 410 code gone.
  */
 import type { TreeKind } from '../tree';
+import type { LoginRole } from '../role-names';
 import type { ShellWorkspace, WorkspaceArea } from './workspaces';
 
-/** Who is signed in, by role. */
-export type ShellRole = 'admin' | 'member';
+/** Who is signed in, by role (LOGIN_ROLES, ../role-names). */
+export type ShellRole = LoginRole;
 
 /** What this brain can do, so a client branches on capability, not version. */
 export type ShellFeatures = { recallV2: boolean };

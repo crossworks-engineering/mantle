@@ -179,8 +179,8 @@ export type RecallRevision = typeof recallRevisions.$inferSelect;
 
 export const RECALL_NODE_KINDS = ['index', 'knowledge', 'prompt'] as const;
 
-/** v2: who wrote a revision. */
-export const RECALL_ACTOR_KINDS = ['owner', 'agent'] as const;
+// v2: who wrote a revision is RECALL_ACTOR_KINDS in
+// @mantle/client-types/role-names (A10 #13), the CHECK's values.
 
 /** v2: revisions kept per map; the write path prunes beyond this. */
 export const RECALL_REVISIONS_PER_MAP = 50;

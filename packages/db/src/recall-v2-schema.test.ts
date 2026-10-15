@@ -3,8 +3,8 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import { nodeType } from './schema/nodes';
+import { RECALL_ACTOR_KINDS } from '@mantle/client-types/role-names';
 import {
-  RECALL_ACTOR_KINDS,
   RECALL_REVISIONS_PER_MAP,
   recallMaps,
   recallNodes,

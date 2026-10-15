@@ -43,7 +43,7 @@ import {
 import { defineDomainError } from '@mantle/std';
 import { notifyAppNavChanged } from './app-nav';
 import { codeHash, insertNodeSnapshot } from './node-snapshot-rows';
-import type { AppRow, AppDetail, AppTint } from '@mantle/client-types';
+import type { AppRow, AppDetail, AppTint, HistoryActor } from '@mantle/client-types';
 import { projectAppIcon, projectAppTint } from '@mantle/content-core/app-nav';
 import { asKindRootRepair } from './kind-root';
 export type { AppRow, AppDetail };
@@ -973,10 +973,10 @@ export type PublishAppOpts = {
   actorLoginId?: string | null;
 };
 
-/** Who wrote a version or snapshot row. */
-/** Who a history row names: 'member' is a member author's own act (team apps
- *  Phase 3); the row then names the login too. */
-export type AppHistoryActor = 'owner' | 'agent' | 'mcp' | 'system' | 'member';
+/** Who a history row names: HISTORY_ACTORS (@mantle/client-types/role-names).
+ *  'member' is a member author's own act (team apps Phase 3); the row then
+ *  names the login too. */
+export type AppHistoryActor = HistoryActor;
 
 export async function publishApp(
   ownerId: string,

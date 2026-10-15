@@ -6,8 +6,11 @@
  * one of the reasons below.
  */
 
-/** Who a login is. The brain reads it from the login row on every request. */
-export type LoginKind = 'admin' | 'member';
+import type { LoginRole } from '../role-names';
+
+/** Who a login is. The brain reads it from the login row on every request.
+ *  The login roles (LOGIN_ROLES, ../role-names). */
+export type LoginKind = LoginRole;
 
 /** The `reason` of a 403 a gate answers a login of the wrong kind with:
  *  `member-login` from an admin route, `admin-login` from a member route. */

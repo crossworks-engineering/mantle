@@ -180,6 +180,10 @@ export type {
   TreeVisibilityRefusal,
   TreeWorkspaceChange,
 } from './tree';
+// Role and actor names (A10 #13). Types only; the lists (LOGIN_ROLES,
+// HISTORY_ACTORS, RECALL_ACTOR_KINDS) are the `@mantle/client-types/role-names`
+// subpath. RecallActorKind comes through ./dto/recall.
+export type { HistoryActor, LoginRole } from './role-names';
 // Types only; WORKSPACE_AREAS (runtime) is the `@mantle/client-types/dto/workspaces` subpath.
 export type {
   AuthWhoami,

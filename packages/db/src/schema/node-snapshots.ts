@@ -11,6 +11,7 @@ import {
   uniqueIndex,
   uuid,
 } from 'drizzle-orm/pg-core';
+import type { HistoryActor } from '@mantle/client-types/role-names';
 import type { AppManifest, AppSource, BuildRef } from './apps';
 
 /**
@@ -52,8 +53,8 @@ export const nodeSnapshots = pgTable(
      *  'pre_schema' | 'pre_delete' | 'pre_import' | 'nightly'. */
     trigger: text('trigger').notNull(),
     note: text('note'),
-    /** 'owner' | 'agent' | 'mcp' | 'system' | 'member'. */
-    actor: text('actor').notNull(),
+    /** Who the row names: HISTORY_ACTORS (@mantle/client-types/role-names). */
+    actor: text('actor').$type<HistoryActor>().notNull(),
     /** The member a 'member' row names (team apps Phase 3, 0235). */
     actorLoginId: uuid('actor_login_id'),
     /** The app's code at the time (null for a table). */

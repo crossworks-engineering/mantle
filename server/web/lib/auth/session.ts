@@ -95,6 +95,7 @@ import {
   type AppFrameTicket,
 } from './tokens';
 import { env } from '@mantle/config';
+import { isLoginRole, type LoginRole } from '@mantle/client-types/role-names';
 
 /**
  * Fresh install? (empty `auth.users`). Drives the login screen's
@@ -890,7 +891,7 @@ export type HttpLogin = Readonly<{
    *  one and it resolved; else null (a public row: its guard finds the
    *  login on first read). */
   loginId: string | null;
-  role: 'admin' | 'member' | null;
+  role: LoginRole | null;
   /** The mode its actor is named in (a read key: ro). */
   mode: 'rw' | 'ro' | null;
   /** What the login holds of the row's Admin area (the Admin step's
@@ -2176,7 +2177,7 @@ export async function getLoginOr401(opts: { audit?: boolean } = {}): Promise<
  * brain's anchor, `actor` the login), so the chat helpers take one shape.
  */
 export type ChatLogin = {
-  kind: 'admin' | 'member';
+  kind: LoginRole;
   /** The brain (the anchor login's id). */
   ownerId: string;
   /** The login whose threads this request reads and writes. */
@@ -2287,7 +2288,7 @@ function noteSystem(reason: Parameters<typeof noteRequestSystem>[0]): null {
  * to it.
  */
 export async function getCookieUpgradeLoginOr401(): Promise<
-  | { loginId: string; email: string; role: 'admin' | 'member'; epoch: number; deviceJti: string }
+  | { loginId: string; email: string; role: LoginRole; epoch: number; deviceJti: string }
   | NextResponse
 > {
   const bearer = await bearerLogin();
@@ -2356,7 +2357,7 @@ export async function authenticatePassword(
   // workspaces W8a): a role this code does not know never signs in.
   // Refused like a wrong password (no role oracle).
   const role: string = row.role;
-  const passwordRole = role === 'admin' || role === 'member';
+  const passwordRole = isLoginRole(role);
   return ok && passwordRole && loginUsable(row)
     ? { id: row.id, sessionEpoch: row.sessionEpoch }
     : null;

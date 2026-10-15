@@ -33,6 +33,7 @@ import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { and, count, eq, gt, isNull, or, sql } from 'drizzle-orm';
 import { accessKeys, db, isUniqueViolation, isWriteRefused } from '@mantle/db';
 import { KEY_AREAS, type KeyArea } from '@mantle/mcp-core/key-scope';
+import { isLoginRole, type LoginRole } from '@mantle/client-types/role-names';
 import { loadLoginRow, type LoginRow } from './auth/login-row';
 import { auditFireAndForget } from './audit';
 import { rateLimit, rateLimitFlood, rateLimitFloodPeek, type RateLimitResult } from './rate-limit';
@@ -48,7 +49,8 @@ export type AccessKeyArea = KeyArea;
 export const ACCESS_KEY_ACCESS = ['read', 'read_write'] as const;
 export type AccessKeyAccess = (typeof ACCESS_KEY_ACCESS)[number];
 
-export type AccessKeyRole = 'admin' | 'member';
+/** The role of the login a key acts as (LOGIN_ROLES, A10 #13). */
+export type AccessKeyRole = LoginRole;
 
 /** The expiry a new key gets when the caller names none. */
 export const DEFAULT_ACCESS_KEY_EXPIRY_DAYS = 90;
@@ -157,10 +159,6 @@ function isArea(v: string): v is AccessKeyArea {
   return (ACCESS_KEY_AREAS as readonly string[]).includes(v);
 }
 
-function isRole(v: string): v is AccessKeyRole {
-  return v === 'admin' || v === 'member';
-}
-
 /** A login row may use a key only while it may hold a session. */
 function loginUsable(row: LoginRow): boolean {
   return !!row.email && !row.disabledAt;
@@ -188,7 +186,7 @@ export async function verifyAccessKey(token: string): Promise<AccessKeyCheck> {
   }
   const login = await loadLoginRow(row.loginId);
   // The login as it is now: no role is kept on the key (W8a).
-  if (!login || !loginUsable(login) || !isRole(login.role)) {
+  if (!login || !loginUsable(login) || !isLoginRole(login.role)) {
     return { ok: false, reason: 'login', keyId: row.id };
   }
   return {

@@ -51,6 +51,7 @@ import {
 
 import { RECALL_ROOT_LABEL, embedPendingRecallPrompts, ensureRecallRoot } from './recall';
 import { notifyTreeChanged } from './tree/write';
+import type { RecallActorKind } from '@mantle/client-types/role-names';
 
 /**
  * Size caps on everything a write stores besides the body (which has its own
@@ -72,7 +73,7 @@ const RESERVED_CARD_SLUGS = new Set(['reorder']);
  *  owner's act, exactly as in v1, where an agent could edit pages inside a
  *  tagged tree but never add the `recall` or `prompt` tag. */
 export type RecallActor = {
-  kind: 'owner' | 'agent';
+  kind: RecallActorKind;
   /** The admin login or the agent's node id, for the revision log. */
   id?: string | null;
   /** Display name, agent slug, or 'mcp' for an external MCP client. Stored on
@@ -1470,7 +1471,7 @@ export async function listRecallRevisions(
     id: string;
     cardId: string | null;
     cardSlug: string | null;
-    actorKind: 'owner' | 'agent';
+    actorKind: RecallActorKind;
     actorId: string | null;
     actorName: string | null;
     summary: string;
@@ -1487,7 +1488,7 @@ export async function listRecallRevisions(
     id: r.id,
     cardId: r.cardId,
     cardSlug: r.cardSlug,
-    actorKind: r.actorKind as 'owner' | 'agent',
+    actorKind: r.actorKind as RecallActorKind,
     actorId: r.actorId,
     actorName: r.actorName,
     summary: r.summary,

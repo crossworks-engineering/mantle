@@ -34,6 +34,7 @@ import { getClient, isRemoteMcpEnabled, mintAuthCode, DEFAULT_SCOPE } from '@/li
 import { mcpLoginEnabled, mcpTargetLogin } from '@/lib/mcp-auth';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
 import { env } from '@mantle/config';
+import type { LoginRole } from '@mantle/client-types/role-names';
 
 type AuthorizeParams = {
   clientId: string;
@@ -91,7 +92,7 @@ type Consenter = {
   ownerId: string;
   loginId: string;
   email: string;
-  role: 'admin' | 'member';
+  role: LoginRole;
   sessionEpoch: number | null;
   /** The epoch the session check verified (any role): the code is minted
    *  only if it is still the login's then (mintAuthCode). */

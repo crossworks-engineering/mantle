@@ -38,6 +38,7 @@
  *    container, so the tests that dump and restore use the tools inside
  *    that container, and a host install only when there is none.
  */
+import type { LoginRole } from '@mantle/client-types/role-names';
 import { envDynamic } from '@mantle/config';
 import { spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
@@ -120,7 +121,7 @@ export function teamWorkspaceSql(owner: string): string {
 export async function setLoginRoleUnguarded(
   sql: Sql,
   loginId: string,
-  role: 'admin' | 'member',
+  role: LoginRole,
 ): Promise<void> {
   await sql`update auth.users set role = ${role} where id = ${loginId}`;
 }

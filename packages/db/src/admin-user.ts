@@ -8,9 +8,7 @@
  * mayPromote: the session refuses it first).
  */
 import { sql, type SQL } from 'drizzle-orm';
-
-/** The areas an Admin user may hold (WORKSPACE_AREAS in client-types). */
-type Area = 'settings' | 'users' | 'assistants' | 'connectors' | 'keys';
+import type { WorkspaceArea as Area } from '@mantle/client-types/dto/workspaces';
 
 /** `login` (a uuid expression) is an Admin user holding `area`. */
 export function adminUserSql(login: SQL, area: Area = 'users'): SQL<boolean> {

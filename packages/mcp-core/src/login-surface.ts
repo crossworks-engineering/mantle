@@ -64,8 +64,9 @@ import { keyAreasAllowTool } from './mcp-policy';
 import { mcpDefinition } from './mcp-defs';
 import { mcpGateCaller } from './gate-policy';
 import { registerGatedTool, type McpGate } from './gated-tools';
+import type { LoginRole } from '@mantle/client-types/role-names';
 
-export type McpLoginRole = 'admin' | 'member';
+export type McpLoginRole = LoginRole;
 
 /** Who is on the other end of an /api/mcp request, resolved once from its
  *  bearer by the route (server/web/lib/mcp-auth.ts). */

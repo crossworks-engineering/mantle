@@ -14,12 +14,13 @@
  */
 import { and, asc, eq, sql } from 'drizzle-orm';
 import { apps, db, nodes, type AppManifest } from '@mantle/db';
+import type { LoginRole } from '@mantle/client-types/role-names';
 import { memberReachSql, memberWritesSql } from './member-apps';
 
 /** Who the connection acts for: an admin or a member login. The reach rule
  *  is the same for both (their workspaces); the role is what the app sees
  *  in `:host_me_kind`. */
-export type McpDataRole = 'admin' | 'member';
+export type McpDataRole = LoginRole;
 
 /** One app a login's MCP may reach. */
 export type McpDataApp = {

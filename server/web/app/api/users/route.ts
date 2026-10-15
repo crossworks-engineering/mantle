@@ -22,6 +22,7 @@ import {
 import { hashLoginPassword, ownerCaller } from '@/lib/auth';
 import { cloneAgentForUser } from '@/lib/agents';
 import { insertLoginWithWorkspaces } from '@/lib/login-create';
+import { LoginRoleSchema } from '@/lib/login-update';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
 import { readJson } from '@/lib/read-body';
 
@@ -94,7 +95,7 @@ const CreateBody = z.object({
   agent: AgentAssignmentBody.optional(),
   /** Default member: an admin login (a full co-owner) is only ever made
    *  when asked for by name (W5a fix round 3). */
-  role: z.enum(['admin', 'member']).optional(),
+  role: LoginRoleSchema.optional(),
   /** The team contact a member login belongs to. */
   contactId: z.string().uuid().optional(),
 });

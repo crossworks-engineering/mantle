@@ -3,12 +3,13 @@
  * presents, the grants they verify to, and the one summary of a guard's
  * answer. Test support only: nothing in the server imports it.
  */
+import type { LoginRole } from '@mantle/client-types/role-names';
 import type { AccessKeyGrant } from '../lib/access-keys';
 
 const ADMIN_ID = '55555555-5555-4555-8555-555555555555';
 const MEMBER_ID = '22222222-2222-4222-8222-222222222222';
 
-const row = (id: string, role: 'admin' | 'member') => ({
+const row = (id: string, role: LoginRole) => ({
   id,
   email: `${role}-${id.slice(0, 4)}@example.invalid`,
   isOwner: false,
@@ -41,7 +42,7 @@ export const KEY_REFUSALS: Record<string, { reason: 'revoked'; keyId: string }> 
 const grant = (
   n: number,
   loginId: string,
-  role: 'admin' | 'member',
+  role: LoginRole,
   access: AccessKeyGrant['access'],
   areas: AccessKeyGrant['areas'],
 ): AccessKeyGrant => ({

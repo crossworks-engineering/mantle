@@ -9,6 +9,7 @@ import {
   isLastAdminRefusal,
   LAST_ADMIN_MESSAGE,
   loadLoginTarget,
+  LoginRoleSchema,
 } from '@/lib/login-update';
 import { readJson } from '@/lib/read-body';
 
@@ -19,7 +20,7 @@ const PatchBody = z
     displayName: z.string().trim().max(120).nullable().optional(),
     /** Never 'member' on the anchor or yourself (there is no client role
      *  since workspaces W8a). */
-    role: z.enum(['admin', 'member']).optional(),
+    role: LoginRoleSchema.optional(),
     /** true = the login cannot sign in or use a session it holds. */
     disabled: z.boolean().optional(),
     contactId: z.string().uuid().nullable().optional(),

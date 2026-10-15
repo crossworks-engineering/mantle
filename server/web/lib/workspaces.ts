@@ -69,6 +69,7 @@ import type {
   WorkspaceLandingApp,
 } from '@mantle/client-types';
 import { WORKSPACE_AREAS } from '@mantle/client-types/dto/workspaces';
+import type { LoginRole } from '@mantle/client-types/role-names';
 import { workspaceHeldApp } from '@mantle/content';
 import { inRuleInQuery } from '@/lib/auth/rule-in-query';
 import type { AnyLogin, SessionUser } from '@/lib/auth';
@@ -104,7 +105,7 @@ const NOT_FOUND = () => new WsError(404, 'not_found', 'Workspace not found.');
 /** Who calls: any login. `user` is the admin session (anchor id + actor),
  *  needed for a role change; null for a member. */
 export type WsCaller = {
-  kind: 'admin' | 'member';
+  kind: LoginRole;
   loginId: string;
   anchorId: string;
   user: SessionUser | null;
@@ -953,7 +954,7 @@ function mayPromote(seen: Seen): void {
 async function adminRoleChange(
   caller: WsCaller,
   loginId: string,
-  role: 'admin' | 'member',
+  role: LoginRole,
   path: { method: 'POST' | 'DELETE'; path: string },
   checks: (tx: Exec) => Promise<unknown>,
   inTx: (tx: Exec) => Promise<void>,

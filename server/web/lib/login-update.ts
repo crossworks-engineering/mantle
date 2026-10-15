@@ -1,3 +1,5 @@
+import { z } from 'zod';
+import { LOGIN_ROLES, isLoginRole, type LoginRole } from '@mantle/client-types/role-names';
 import {
   isCheckViolation,
   isUniqueViolation,
@@ -39,10 +41,14 @@ import { deleteLoginSubscriptions, forgetRelayDevices } from '@/lib/push/store';
  * sessions, settle the same drafts and lock the same devices out.
  */
 
+/** A login role in a request body: the users routes' zod enum over
+ *  LOGIN_ROLES (A10 #13), so a role added there is accepted here too. */
+export const LoginRoleSchema = z.enum(LOGIN_ROLES);
+
 export type LoginChange = {
   displayName?: string | null;
   /** Never 'member' on the anchor or yourself. */
-  role?: 'admin' | 'member';
+  role?: LoginRole;
   disabled?: boolean;
   contactId?: string | null;
   signOut?: true;
@@ -115,12 +121,7 @@ export async function applyLoginChange(
     (change.role !== undefined && change.role !== 'admin') || change.disabled === true;
   // A role change touches admins and members only: a row with a role this
   // code does not know is refused (fail closed); disable it instead.
-  if (
-    change.role !== undefined &&
-    change.role !== target.role &&
-    target.role !== 'admin' &&
-    target.role !== 'member'
-  ) {
+  if (change.role !== undefined && change.role !== target.role && !isLoginRole(target.role)) {
     return {
       ok: false,
       status: 400,

@@ -12,6 +12,7 @@ import {
 } from '@/lib/auth';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
 import { brainIdField } from '@/lib/brain-identity';
+import { LOGIN_ROLES } from '@mantle/client-types/role-names';
 
 /**
  * Rotate the calling bearer: mint a new jti + token, revoke the old row,
@@ -55,7 +56,7 @@ import { brainIdField } from '@/lib/brain-identity';
 /** The roles whose bearer rotates here, named: a role this code does not
  *  know is no login (a row still marked client too: none is left after
  *  migration 0272, workspaces W8a). */
-const BEARER_ROLES: ReadonlySet<string> = new Set(['admin', 'member']);
+const BEARER_ROLES: ReadonlySet<string> = new Set(LOGIN_ROLES);
 
 const NO_STORE = { 'Cache-Control': 'no-store' } as const;
 

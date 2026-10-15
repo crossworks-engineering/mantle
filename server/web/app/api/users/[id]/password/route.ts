@@ -2,6 +2,7 @@ import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { db, authUsers, eq } from '@mantle/db';
 import type { PasswordResetRefused } from '@mantle/client-types';
+import { isLoginRole } from '@mantle/client-types/role-names';
 import {
   endLoginSessions,
   setSessionCookie,
@@ -48,7 +49,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   // Admins and members sign in with a password (the only roles since
   // workspaces W8a). Named roles only: an unknown role is refused. A member's reset stays (decision
   // (a), 2026-09-29): it is a member's only way back in.
-  if (target.role !== 'admin' && target.role !== 'member') {
+  if (!isLoginRole(target.role)) {
     const body: PasswordResetRefused = {
       error: 'This login does not sign in with a password.',
       reason: 'not-a-password-login',

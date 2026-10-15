@@ -1,4 +1,5 @@
 import { boolean, integer, pgSchema, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+import type { LoginRole } from '@mantle/client-types/role-names';
 
 /**
  * `auth.users` lives outside the public schema. Historically owned by Supabase
@@ -42,10 +43,10 @@ export const authUsers = authSchema.table('users', {
   sessionEpoch: integer('session_epoch').notNull().default(0),
 });
 
-/** Every role a login can hold (workspaces W8a, migration 0272: the client
- *  role is gone). A role grants nothing: what a login reads and may do
- *  comes from its workspaces. */
-export const LOGIN_ROLES = ['admin', 'member'] as const;
-export type LoginRole = (typeof LOGIN_ROLES)[number];
+/** Every role a login can hold: LOGIN_ROLES in @mantle/client-types/role-names
+ *  (A10 #13), the one list (role-names.test.ts pins it to users_role_ck). A
+ *  role grants nothing: what a login reads and may do comes from its
+ *  workspaces. */
+export type { LoginRole };
 
 export type AuthUser = typeof authUsers.$inferSelect;

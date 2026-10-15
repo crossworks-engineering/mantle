@@ -45,6 +45,7 @@ import {
   type ConversationAttachment,
 } from '@mantle/db';
 import { getApiKeyById } from '@mantle/api-keys';
+import { isLoginRole } from '@mantle/client-types/role-names';
 import {
   buildChatMessages,
   loadConversationContext,
@@ -245,7 +246,7 @@ async function hasUnknownRole(loginId: string): Promise<boolean> {
     .from(authUsers)
     .where(eq(authUsers.id, loginId))) as unknown;
   const role = Array.isArray(rows) ? (rows[0] as { role?: unknown } | undefined)?.role : undefined;
-  return typeof role === 'string' && role !== 'admin' && role !== 'member';
+  return typeof role === 'string' && !isLoginRole(role);
 }
 
 export async function runTeamTurn(

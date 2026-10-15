@@ -8,18 +8,20 @@
  * or login the caller may not see answers 404, never 403.
  */
 import type { AppTint } from '../app-nav';
+import type { LoginRole } from '../role-names';
 
-/** The Admin areas (plan 1.4). An Admin workspace user has all of them
- *  unless a per-user switch turns one off (none can be switched off yet). */
-export type WorkspaceArea = 'settings' | 'users' | 'assistants' | 'connectors' | 'keys';
+/** The Admin areas (plan 1.4), the one list of them (A10 #13: the brain's
+ *  SCOPE_AREAS, adminUserSql and the route classes read it). An Admin
+ *  workspace user has all of them unless a per-user switch turns one off
+ *  (none can be switched off yet). In this order on the wire (the shell's
+ *  `areas`). */
+export const WORKSPACE_AREAS = ['settings', 'users', 'assistants', 'connectors', 'keys'] as const;
+export type WorkspaceArea = (typeof WORKSPACE_AREAS)[number];
 
-export const WORKSPACE_AREAS: readonly WorkspaceArea[] = [
-  'settings',
-  'users',
-  'assistants',
-  'connectors',
-  'keys',
-];
+/** Whether `v` names an Admin area. */
+export function isWorkspaceArea(v: unknown): v is WorkspaceArea {
+  return typeof v === 'string' && (WORKSPACE_AREAS as readonly string[]).includes(v);
+}
 
 /** What a workspace is, for its default icon: the Admin workspace, a
  *  login's private workspace, or any other. 'team' (the built-in Team
@@ -216,7 +218,7 @@ export type ShellWorkspaces = { workspaces: ShellWorkspace[]; areas: WorkspaceAr
  * `brainId` is left out only while the database is behind the code.
  */
 export type AuthWhoami = {
-  role: 'admin' | 'member';
+  role: LoginRole;
   loginId: string;
   email: string;
   displayName: string | null;
