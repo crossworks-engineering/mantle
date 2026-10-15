@@ -4097,7 +4097,18 @@ there (`expectedReadCreate` is `expectedAccess`'s read and create, and
 `GUIDE_WORKSPACE_KINDS`. The fold changed no answer: every answer of the
 three oracles over every input was compared before and after, and only the
 cells added on purpose (the Admin-homed placement, the contact share's
-writes) differ. The fixture's kinds and tree roots are one list too
+writes) differ. That comparison is a test now
+(`packages/db/src/matrix/oracle-answers.test.ts`): every answer of the A1
+oracle (read and create, and the folder counts), the A3a oracle (the
+writes, and the refusal detail) and the A8 oracle over every input, pinned
+by one sha256 per oracle, so a change anywhere fails, not only where a guide
+sentence test or a grid cell looks. The inputs are the oracles' own lists,
+the kinds the guide's workspace kinds and one of each other class (not the
+registry's, so a kind the registry gains moves no hash).
+`pnpm -C packages/db oracle:answers <oracle>` prints the answers, one input
+a line, and with `--against <file>` the inputs whose answer changed: print
+them before the change, diff after, then take the new hashes
+(`oracle:answers` with no name prints them). The fixture's kinds and tree roots are one list too
 (`A8_KINDS`, `a8RootOf` in `a8-grid.ts`), which the grid, the surface cells
 and the grants panel test share.
 
@@ -4144,16 +4155,33 @@ web (HTTP through `createApp`: item reads and deletes, the grants panel),
 `/api/v1` with the login's read-write key, MCP over OAuth, MCP with a
 read-only key through the bearer lookup, a peer acting as the login with
 Write on, stdio MCP as the owner, the web turn, the team turn, Telegram, a
-run item, a recipe step, a heartbeat (W's assistant with no user), the
-Admin assistant with no user (it acts for the owner: login(owner) in the
-Admin turn scope, the owner's turn to the oracle), a pending call queued in
-a turn and approved, an open public link's view, and a contact share
-through the `/s` broker with the contact's cookie (its view, and its app's
-data through `/s/<token>/db-broker`, with Can write on and off; the app's
-SQLite is stood in, as `contact-share-gate.db.test.ts` does, and the
-brain's side of the write, the client-written stamp, is read back). Every
-cell runs in each actor check mode, off (the fleet's default), warn and
-on, the box's mode and the process's set together. Allowed is ok and the
+run item (through the product's own executor, `executeRunItem` in
+`server/web/lib/runs/execute-item.ts`: a run of the login, stamped with its
+turn workspace, one tool_call item run as the runs worker runs it, so the
+item meets the executor's checks, its actor and its surface), a recipe
+step, a heartbeat (W's assistant with no user), the Admin assistant with no
+user (it acts for the owner: login(owner) in the Admin turn scope, the
+owner's turn to the oracle), a pending call queued in a turn and approved,
+an open public link's view, and a contact share through the `/s` broker
+with the contact's cookie (its view, and its app's data through
+`/s/<token>/db-broker`, with Can write on and off; the app's SQLite is
+stood in, as `contact-share-gate.db.test.ts` does, and the brain's side of
+the write, the client-written stamp, is read back). The two heartbeats
+send the surface `heartbeats/fire.ts` gives their turn: a workspace
+assistant's fire a team surface with no login and private reads off, the
+Admin assistant's the owner's web surface. fire.ts builds it inline, with
+no builder to import, so a test pins its source text to the surfaces the
+cells send. Two deny cells with Can write on stand beside the pick
+(`contact-share-deny`): an Informational app's data ("Informational wins
+over a share's Can write") and the db-broker of a contact share of a kind
+that is no app (the broker serves an app only). Every cell runs in each
+actor check mode, off (the fleet's default), warn and on, the box's mode
+and the process's set together, in that order: the process's mode is the
+greater of `MANTLE_ACTOR_CHECK` and the box's mode it last read (read once
+a minute, `packages/db/src/client.ts`), so a falling order could run a cell
+in the mode before. The run asserts the order, sets the process's read of
+the box at each step (`noteBoxActorCheckMode`), and checks the process's
+and the box's mode before the cells. Allowed is ok and the
 change made; refused is no change and an answer that is not a crash: a
 5xx, a throw, or a raw text in the reply (`GENERIC`: a JavaScript error, a
 query builder's or driver's "Failed query", a Postgres message or SQLSTATE
@@ -4169,12 +4197,16 @@ its new pairs need and leaves the others as they were. A decision's own
 case runs whatever the pick (each Admin user's delete of an app homed in
 Admin, on the web and over MCP: F3 revised). Every tool slug a cell calls
 must resolve, but the MCP-only ones (`note_delete`), whose cells on a
-turn, a run, a recipe and a heartbeat are counted under their own reason;
-so are a recipe's cells of a tool that waits for approval (`app_delete`:
-a recipe calls none, for anyone). A peer's cell of a risky tool
-(`peerRisky`) is a deny the oracle cannot see, since it knows no tools:
-"Linked brains" lets a peer call one only when its list allows it, and
-the fixture's peers allow none. The pending cells set a tool to wait for
+turn, a run, a recipe and a heartbeat are counted under their own reason.
+A deny the oracle cannot see, since it knows no tools, narrows a cell and
+the cell runs: a peer's risky tool (`peerRisky`: "Linked brains" lets a
+peer call one only when its list allows it, and the fixture's peers allow
+none), and a tool that waits for approval (`app_delete`) in a recipe step
+(`classifyRecipeStepTool`: a recipe calls none) or a run item (the
+executor refuses it before dispatch, "Confirm-gated tools never run
+headless"). Those two are approval, not access, for everyone, the owner
+too: the call waits for a human, in a turn (the pending cells) or on an
+ask_human step of the run. The pending cells set a tool to wait for
 approval for their call and leave it as it was. The not-applicable counts
 are pinned by reason.
 
@@ -4187,14 +4219,19 @@ asks whether the database still refuses an add to T and a move to T, by
 the route as the product runs it and in the member's own mutating request
 scope, with the check off, warn and on. See F7.
 
-**Counts** (fix round 2, on v0.300.54): the grid 14,608 cells, 9,404 run
+**Counts** (fix round 3, on v0.300.56): the grid 14,608 cells, 9,404 run
 (2,089 allow, 7,315 deny, of which 66 are the pinned guide-silent denies),
 9,044 pass, 360 known failures, 5,204 not applicable. Against fix round 1
 (10,956 cells, 6,972 run, 3,984 not applicable) the difference is only
 what was added: the Admin-homed placement (3,652 cells: 2,220 run, 1,432
 not applicable) and the contact share's 212 writes, not applicable before
-and denies now. The surface cells 1,120 per check mode, 3,360 in all; 42
-known failures in each mode. The grants panel: 3 cases (one per check
+and denies now. The surface cells 1,122 per check mode, 3,366 in all; 41
+known failures in each mode (fix round 2: 1,120, 3,360 and 42). The two
+added are the contact-share deny cells; F10 left the list. The recipe's 24
+cells of a tool that waits for approval are candidates now, not counted
+apart (18 more candidates, 6 more not applicable as a snapshot copy of an
+app). A run's line names its narrowed
+cells too: 5 on the run (`app_delete`), 3 on the recipe, 6 on the peer. The grants panel: 3 cases (one per check
 mode), pinned as found.
 
 **Not applicable** cells are counted and named in the run's summary: a kind
@@ -4278,12 +4315,25 @@ branch and leave the list when it lands; F3 is the guide's rule now.
   copy's read-only rule: an edit, a draft, a delete, a move, a grant change,
   a link and a create of any item are made. Only the `/s` broker holds it,
   by sending nothing but its app's data (the contact-share surface cells
-  pass: Can write off refuses the app's data, on writes it). The guide: a
-  contact share writes only its app's data. 248 grid cells.
-- **F10.** `app_delete` refuses an Admin user's run item ("owner-side
-  tool: not available here": a run's caller is no owner surface to
-  `ownerOnlyRefusal`), the owner's own run too, where F3 revised lets the
-  owner and Admin users delete an app. 1 surface cell, in each mode.
+  pass: Can write off refuses the app's data, on writes it, and the deny
+  cells refuse an Informational app's data and a share that is no app).
+  The guide: a contact share writes only its app's data. 248 grid cells.
+  The round 2 re-audit's diagnosis: a defence in depth gap, not reachable
+  by a contact today, with one caveat. The debounced export sync
+  (`scheduleAppTableExportSync` in `packages/content/src/app-table-exports.ts`,
+  a `setTimeout`) inherits the request's `contact:rw` actor, so its writes
+  and the dirty stamp run as the contact. The fix point: a statement
+  trigger next to `mantle_edit_check_ro` (migration 0280, section 5) that
+  refuses a statement on an item table but `app_databases` when
+  `mantle.actor` is `contact:rw`, and the dirty stamp and the export sync
+  bound to a named system actor. Not fixed here (A8 is test code).
+- **F10** (withdrawn in fix round 3). `app_delete` refused an Admin user's
+  run item only because the cells skipped the product's run path: they
+  called `dispatchTool` with no surface. A real run item meets
+  `executeRunItem` first, which refuses every tool that waits for approval
+  before dispatch ("never run headless"), for everyone, the owner too: an
+  approval gate, intended, not an access rule. The run cells now go through
+  the executor, and `app_delete` on a run is a narrowed deny that passes.
 
 **The guide is silent** where the owner should decide:
 
