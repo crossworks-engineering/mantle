@@ -163,14 +163,51 @@ field back unchanged changes nothing). The kind registry's `indexed` field
 (`packages/client-types/src/kinds.ts`) says what each field feeds, and the
 most work any changed field asks for is done once:
 
-| Work      | What the reset leaves                                          | What the extractor does                                                                                                                                                                     | Cost                                               |
-| --------- | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- |
-| `embed`   | the vector cleared, the summary and the completion marker kept | `embed_only` step (`server/api/src/agent/extract/gates.ts`): the vector from the title and the kept summary; a table reuses its summary in the model step and rebuilds its profile passages | one embedding on the local embedder, no model call |
-| `extract` | the vector and the four summary keys cleared                   | the whole pass: summary, vector, passages, facts, entities                                                                                                                                  | one model call                                     |
-| none      | nothing                                                        | nothing (not announced)                                                                                                                                                                     | nothing                                            |
+| Work      | What the reset leaves                                                                       | What the extractor does                                                                                                                                                                                                                                           | Cost                                                    |
+| --------- | ------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------- |
+| `embed`   | the vector cleared, the summary and the completion marker kept, `data.index_work = 'embed'` | `embed_only` step (`server/api/src/agent/extract/gates.ts`): the vector from the title and the kept summary; with no summary, from the title and the text read locally; a table keeping its summary reuses it in the model step and rebuilds its profile passages | one embedding on the local embedder, never a model call |
+| `extract` | the vector and the four summary keys cleared, `data.index_work = 'extract'`                 | the whole pass: summary, vector, passages, facts, entities                                                                                                                                                                                                        | one model call                                          |
+| none      | nothing                                                                                     | nothing (not announced)                                                                                                                                                                                                                                           | nothing                                                 |
 
 There is no summary-only pass: the summary and the facts come from one
 model call.
+
+**The work stamp.** The reset stamps the work it asks for on the row,
+`data.index_work` (`INDEX_WORK_KEY`), and the extractor's gate reads the
+stamp, not the shape of the row (`embedWork` in `gates.ts`). An `embed`
+stamp is never a model call, whatever else the row holds:
+
+- with a summary (with the completion marker, or an item extracted before
+  the marker existed): the vector from the title and that summary;
+- with no summary, on an item the extractor has seen before (a terminal skip,
+  such as a page too short to summarise, or a completed pass): the vector
+  from the title and the text read locally (a file: its name spine; its
+  bytes are not parsed again);
+- with no summary on an item the extractor has never seen (renamed before
+  its first pass ran): its first pass runs, as it would have without the
+  rename.
+
+An `extract` stamp is never downgraded: a rename that lands while a content
+change still waits for its pass keeps `extract`, so the new content is still
+summarised. The extractor drops the stamp when it has done the work (the
+summary write, the re-embed, a terminal skip, the local index). The
+re-embed lands only while the row still has the title and the summary it was
+made from, so a job for an older title never writes over a newer rename. A
+table's cell commit is `cells` (`embed`) only when the table has a summary to
+keep; a table never summarised runs the whole pass on a commit, as before.
+
+A conversation digest and a chat archive note are authored summaries the
+extractor never reads: their vector comes from their topic and summary
+(`digestEmbedText`), so a rename of one names no field and keeps the vector.
+If one has no vector (a hand edit cleared it), the gate rebuilds it from the
+topic and summary on the embedder before its terminal skip.
+
+**What a title costs while it is typed.** The editors save a title on a
+pause (a page's meta after 1 s, a table's after 800 ms, a drawing's on its
+own pause), so each pause is one rename: one `embed_only` trace row and one
+embedding. On the bundled local embedder that embedding is free; on a box
+configured with a cloud embedder it is one embedding call per pause (a
+fraction of a cent each, never a model call).
 
 The announcement is a `pg_notify` on the write's transaction, so it is
 delivered when the write commits and dropped when it rolls back. A
@@ -226,6 +263,11 @@ main in `a10-content-changed.main.json`):
 - A reused summary (a table's cell commit or new title) keeps the relation
   edges its own pass made; the extractor used to rebuild them from an empty
   list and drop them.
+
+**Follow-up in jackdaw.** The dev-tools catalog text that describes what a
+write re-indexes lives in the frontend repo (crossworks-engineering/jackdaw)
+and still describes main before A10 #7; it should be brought in line with
+this section (a rename re-embeds, never a model call).
 
 **The boot drain stays.** The extractor's boot drain and periodic sweep
 (`server/api/src/agent/runtime.ts`) re-queue recently written items with no
