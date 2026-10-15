@@ -167,6 +167,15 @@ vi.mock('../lib/workspaces', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../lib/workspaces')>()),
   requireArea: async () => true,
 }));
+// The unpinned key picks (model picker fix round 1, L1) read through the
+// keys package's own handle, not `db`; as a query here, they find no row,
+// which is what the seeder's and the model combos' hand picks over `db`
+// found on main.
+vi.mock('@mantle/api-keys', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@mantle/api-keys')>()),
+  findProviderKeyId: async () => null,
+  findProviderKeyIds: async () => new Map<string, string>(),
+}));
 
 import { SESSION_COOKIE_NAME } from '../lib/auth-constants';
 import { bodyCeilingFor, JSON_BODY_CEILING_BYTES } from '../lib/body-limit';
