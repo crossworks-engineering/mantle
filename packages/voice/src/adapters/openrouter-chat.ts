@@ -64,8 +64,10 @@ const RETRY_MAX_DELAY_MS = 8_000;
 
 /** Per-attempt HTTP bound for the ONE-SHOT path. The SDK's own default is
  *  `timeoutMs: -1` — no bound at all — which is why this adapter was the only
- *  one whose `chat()` could hang indefinitely; every other adapter already
- *  passes `chatAbortSignal(opts.signal, 60_000)`. Not applied to the streaming
+ *  one whose `chat()` could hang indefinitely; every other adapter names the
+ *  same 60 s to providerFetch (`{ timeoutMs: PROVIDER_TIMEOUTS.chat }`). The
+ *  SDK hands providerFetch a Request, whose signal is the deadline (no 180 s
+ *  default is added on top). Not applied to the streaming
  *  path: there the SDK would fold it into the Request signal and cut a long,
  *  healthy stream mid-body. */
 const ONE_SHOT_TIMEOUT_MS = PROVIDER_TIMEOUTS.chat;
@@ -531,8 +533,9 @@ async function openrouterChat(opts: ChatOptions): Promise<ChatResult> {
     ...(opts.extra ?? {}),
   };
   const affinityHeaders = affinity(opts).headers;
-  // Every other adapter bounds its one-shot call with
-  // `chatAbortSignal(opts.signal, 60_000)`; this one passed no options at all,
+  // Every other adapter names its one-shot deadline to providerFetch
+  // (`timeoutMs`); the SDK cannot pass one through, so it rides the signal
+  // here. This call once passed no options at all,
   // so a user Stop was a no-op and a stalled request had nothing to end it.
   // `abortable` is belt to that brace — the SDK retries our abort otherwise.
   const callSignal = chatAbortSignal(opts.signal, ONE_SHOT_TIMEOUT_MS);

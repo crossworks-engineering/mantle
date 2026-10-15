@@ -162,9 +162,11 @@ export async function* withIdleTimeout<T>(
 }
 
 /** Combine a request's cancellation signal (`opts.signal`, for a user Stop) with
- *  a per-call timeout, so a chat fetch aborts on whichever fires first. Use for
- *  the one-shot `chat()` path; the streaming path uses {@link streamAbort}, whose
- *  timer stops at the headers so it cannot cut a long, healthy stream. */
+ *  a per-call timeout, so a chat call aborts on whichever fires first. Only for
+ *  a call that can carry a signal and nothing else (the OpenRouter SDK); a
+ *  providerFetch call names its deadline as `{ timeoutMs }` instead, so the
+ *  pool never adds a shorter default of its own. The streaming path uses
+ *  {@link streamAbort}, whose timer stops at the headers. */
 export function chatAbortSignal(signal: AbortSignal | undefined, timeoutMs: number): AbortSignal {
   return timeoutSignal(timeoutMs, signal);
 }

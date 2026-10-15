@@ -117,12 +117,27 @@ at 0 outside a named list (`eslint-rules/provider-http.mjs`, the scoreboard's
   aborts with a `TimeoutError`, the name every classifier reads.
 - **providerFetch `{ timeoutMs, timeoutScope }`**
   ([`provider-fetch.ts`](../packages/voice/src/adapters/provider-fetch.ts)):
-  every provider call has a deadline. A call that names none gets
-  `PROVIDER_TIMEOUTS.default` (180 s, the longest one we already had). The
-  scope `auto` covers the whole exchange of an ordinary answer and only the
-  headers of an event stream, so a long healthy stream is never cut (the
-  stream's idle guard in `sse.ts` bounds it after that). There is no second
-  fetch path: egressFetch already takes `timeoutMs`.
+  every adapter names its deadline here, the chat calls included (one-shot:
+  `{ timeoutMs }`; stream: `{ timeoutMs, timeoutScope: 'headers' }`). A call
+  that names none AND brings no signal of its own gets
+  `PROVIDER_TIMEOUTS.default` (180 s, the longest one we already had). A
+  call that brings its own signal (an `init.signal`, or a Request, which
+  always carries one: the OpenRouter SDK) and names none gets no default,
+  because a default could only ever cut it shorter than the caller asked.
+  Scope `headers` clears the deadline when the headers arrive, whatever the
+  answer's type (event stream, ndjson, plain text); every stream call passes
+  it. Scope `auto` covers the whole exchange, except an answer typed
+  `text/event-stream` (the fallback for a stream call that does not say).
+  After the headers the stream's idle guard in `sse.ts` bounds it. There is
+  no second fetch path: egressFetch already takes `timeoutMs`.
+
+  Fix round 1 found the first cut wrong: the chat adapters still carried
+  their deadline only on `init.signal`, so the 180 s default fired first. A
+  local model call allowed 300 s (`chatLocal`) was cut at 180 s, retried
+  three times, then failed over to the paid cloud backup. A test now holds
+  each adapter's options, and one shows a caller's longer signal is never
+  cut at the default.
+
 - **`withTimeout(promise, ms, label)`**: for work that is not a fetch (a
   dashboard vital, a sanity check, a nightly sweep). Rejects with
   `<label> timed out after <ms>`.
@@ -130,6 +145,46 @@ at 0 outside a named list (`eslint-rules/provider-http.mjs`, the scoreboard's
 A headers-only deadline (cleared when the headers arrive) cannot be a
 `timeoutSignal`; the three that exist (providerFetch itself, the stream
 connect in `sse.ts`, the MCP SSE stream in `mcp-client.ts`) are named.
+
+### Every provider call's deadline, main vs now
+
+"Exchange" is the headers and the body; "headers" is the first byte only,
+after which a stream's idle guard (120 s between chunks) bounds it.
+"undici" is no deadline of our own: undici's 300 s for the headers and
+300 s of body silence, no total.
+
+| Caller                                                                       | Main                                       | Now                                             |
+| ---------------------------------------------------------------------------- | ------------------------------------------ | ----------------------------------------------- |
+| Chat one-shot: Anthropic, Google, xAI, Hugging Face, DeepSeek                | 60 s exchange (`init.signal`)              | 60 s exchange (`chat`)                          |
+| Chat one-shot: Copilot, Mammouth, custom                                     | 120 s exchange                             | 120 s exchange (`chatRelay`)                    |
+| Chat one-shot: local (direct or tailnet)                                     | 300 s exchange                             | 300 s exchange (`chatLocal`)                    |
+| Chat one-shot: OpenRouter (SDK)                                              | 60 s exchange (SDK signal)                 | the same (a Request input: no default)          |
+| Chat stream: Anthropic, Google, xAI, HF, DeepSeek, Copilot, Mammouth, custom | 60 s headers                               | 60 s headers (`streamConnect`, scope `headers`) |
+| Chat stream: local (direct or tailnet)                                       | 300 s headers                              | 300 s headers (scope `headers`)                 |
+| Chat stream: OpenRouter (SDK)                                                | 60 s headers                               | the same (a Request input: no default)          |
+| OpenRouter research (`web_search_pro`, SDK)                                  | undici                                     | undici (a Request input: no default)            |
+| Model lists (discover)                                                       | 15 s                                       | 15 s (`discover`)                               |
+| Catalogue lists (embedding models, local models, speech models)              | 8 s                                        | 8 s (`catalog`)                                 |
+| OpenRouter key info                                                          | 10 s                                       | 10 s (`keyInfo`)                                |
+| Copilot token exchange                                                       | 15 s                                       | 15 s (`tokenExchange`)                          |
+| Decisions judge                                                              | 1.5 s (or the caller's)                    | the same (`decision`)                           |
+| Vision (one image)                                                           | 60 s                                       | 60 s (`vision`)                                 |
+| Vision (Anthropic PDF)                                                       | 120 s                                      | 120 s (`visionDocument`)                        |
+| Image generation (OpenAI, xAI, Google, OpenRouter)                           | 120 s                                      | 120 s (`image`)                                 |
+| Image generation (Hugging Face)                                              | 180 s                                      | 180 s (`imageCold`)                             |
+| OpenAI returned-image fetch                                                  | undici                                     | **120 s** exchange (`image`, new)               |
+| Text to speech: ElevenLabs, Google, xAI                                      | 60 s                                       | 60 s (`speech`)                                 |
+| Text to speech: OpenAI, OpenRouter                                           | undici                                     | **60 s** (`speech`, new)                        |
+| Speech to text (all adapters, AssemblyAI upload and create)                  | undici                                     | **10 min** (`transcribe`, new)                  |
+| AssemblyAI status poll (a GET)                                               | undici                                     | **180 s** (`default`, new)                      |
+| Hosted embeddings (OpenAI, OpenRouter, Google, Mistral, Cohere)              | undici                                     | **120 s** (`embed`, new)                        |
+| Local embeddings (direct or tailnet)                                         | 120 s (or `MANTLE_LOCAL_EMBED_TIMEOUT_MS`) | the same (`localEmbed`)                         |
+| Local model probe (pill, sanity check, capabilities, services)               | 1.2 to 1.5 s                               | the same (`healthPill`, `localProbe`)           |
+| Push relay (egress, not the pool)                                            | 10 s                                       | 10 s (`pushRelay`)                              |
+| Tailnet route                                                                | whatever the adapter set                   | the same options, passed through                |
+
+Only the rows in bold are shorter than main, and each was a call with no
+deadline of its own (named behaviour changes below).
 
 ### Retries
 
@@ -196,19 +251,46 @@ retries and the failover. That is a known gap, left for its own step.
   before, only undici's 300 s header and 300 s body-silence defaults applied.
 - Speech-to-text calls abort after 10 min (`transcribe`); the OpenAI and
   OpenRouter speech calls after 60 s (`speech`, the value the other speech
-  adapters had). Before, none.
-- A provider call that names no deadline aborts after 180 s (`default`),
-  headers only for an event stream.
+  adapters had). The OpenAI image adapter's fetch of a returned image URL
+  after 120 s (`image`). Before, none.
+- A provider call that names no deadline and brings no signal of its own
+  aborts after 180 s (`default`), headers only for an event stream. In
+  practice that is one call, the AssemblyAI status poll; a caller's own
+  signal is never cut shorter by the default.
 - Microsoft Graph and Tika honour a Retry-After given as an HTTP date (the
   shared reader); before, a date fell back to the doubling or 1 s wait.
-- A provider error that reaches a reply or a tool answer says a fixed
-  sentence (`The provider limits the request rate. (anthropic, HTTP 429)`),
-  status 502 or 504; before, an opaque 500, and a tool answer carried the
-  provider's own text.
-- `withTimeout` messages read `<label> timed out after <n>` (a sanity check
-  said "timeout", a sweep "<slug>: timed out after 30 min").
+- A provider error that reaches a member or the model says a fixed
+  sentence (`The provider limits the request rate. (anthropic, HTTP 429)`);
+  an HTTP answer says it with status 502 or 504 (before, an opaque 500).
+  Every adapter throws `ProviderHttpError` on a non-2xx answer: chat,
+  embeddings, and since fix round 1 speech, speech to text, vision and
+  image generation (the body stays on the error, for the server log; the
+  message text is unchanged). `publicProviderErrorMessage` (@mantle/std)
+  is the text for a member's thread and turn stream, the worker tools
+  (`synthesize_speech`, `extract_from_image`, `summarize_text`,
+  `generate_image`), `video_ingest`'s transcript step and an attachment's
+  vision or document note: a domain error's fixed sentence, or the
+  classifier's fixed sentence for an SDK's own error (OpenRouter's), the
+  detail logged server side. Owner-only surfaces keep the detail where
+  they had it on main: the transcribe route for an Admin user, a settings
+  form's model discovery, the trace.
+- `withTimeout` rejects with a `TimeoutError` (std), message
+  `<label> timed out after <n>`: a nightly sweep and a sanity check that
+  run out of time now fail with that error, where before they threw a
+  plain `Error` ("timeout" for a sanity check, "<slug>: timed out after
+  30 min" for a sweep). Each caller records the message as before; a
+  classifier that reads the name now sees a timeout.
+- The drawing render's per-image deadline (5 s, `drawFile`) covers the
+  image's fetch and its body, as the hand timer did (it was cleared after
+  the read); it now aborts with a `TimeoutError` rather than an
+  `AbortError`, and the image is counted missing either way.
 - The Mapbox static image deadline (15 s) now covers the image body too;
   before, the headers only. Tika, the media sidecar and the onboarding
   probes abort with a `TimeoutError` rather than an `AbortError` (each
   caller treats both alike).
 - The chat retry log line reads `..., retry 1/2 in 250ms` (no dash).
+- The member thread's error for a failed team turn, and the stream's error
+  event, say the fixed sentence for a provider failure (before, the
+  provider's own text).
+- The ticker's and the Telegram poller's doubling waits are std `backoffMs`
+  (the same delays).
