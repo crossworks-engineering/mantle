@@ -124,7 +124,9 @@ function treeItemFromRow(kind: TreeKind, r: ItemSqlRow): TreeItem {
  *  `others` (with `ws`; task f26a516e): the caller's other workspaces. Each
  *  folder then also counts the items in it that one of them reads and `ws`
  *  does not (`itemsElsewhere`), under the same read rule, so a client can
- *  open a folder whose items all live in another workspace and say so. */
+ *  open a folder whose items all live in another workspace and say so.
+ *  Both item counts come from one scan (`count(*) filter`); with no other
+ *  workspace (none, or only `ws`) there is no second count at all. */
 export async function selectFolders(
   ownerId: string,
   kind: TreeKind,
@@ -133,7 +135,18 @@ export async function selectFolders(
   others?: readonly string[],
 ): Promise<TreeFolder[]> {
   const itemType = TREE_KIND_SPECS[kind].nodeType;
-  const elsewhere = ws && others ? elsewhereOf(ws, others, 'c') : null;
+  const elsewhere = ws ? elsewhereOf(ws, others ?? [], 'c') : null;
+  // With `elsewhere`, one scan counts both: the items `ws` reads (`n`) and
+  // those only the others read (`e`); a row neither reads is not scanned in.
+  const counted =
+    ws && elsewhere
+      ? sql`count(*) filter (where ${nodeAliasReadByWorkspace(ws, 'c')})::int as n,
+            count(*) filter (where ${elsewhere})::int as e`
+      : sql`count(*)::int as n`;
+  const itemWhere =
+    ws && elsewhere
+      ? sql`and (${nodeAliasReadByWorkspace(ws, 'c')} or ${elsewhere})`
+      : readBy(ws, 'c');
   const rows = (await db.execute(sql`
     with f as materialized (
       select f.id, f.path, f.title, f.data from nodes f
@@ -150,21 +163,11 @@ export async function selectFolders(
          and ${nodeAliasScopeReads('c')}
        group by 1),
     ic as materialized (
-      select c.path as p, count(*)::int as n from nodes c
+      select c.path as p, ${counted} from nodes c
        where c.owner_id = ${ownerId} and c.type = ${itemType}
          and c.path = any(array(select path from f)) ${kindItemFilter(kind, 'c')}
-         and ${nodeAliasScopeReads('c')} ${readBy(ws, 'c')}
+         and ${nodeAliasScopeReads('c')} ${itemWhere}
        group by 1)
-    ${
-      elsewhere
-        ? sql`, ec as materialized (
-      select c.path as p, count(*)::int as n from nodes c
-       where c.owner_id = ${ownerId} and c.type = ${itemType}
-         and c.path = any(array(select path from f)) ${kindItemFilter(kind, 'c')}
-         and ${nodeAliasScopeReads('c')} and ${elsewhere}
-       group by 1)`
-        : sql``
-    }
     select f.id, f.path::text as path, f.title, f.data,
            (select up.id from up
              where nlevel(f.path) > 2 and up.path = subpath(f.path, 0, nlevel(f.path) - 1)
@@ -173,8 +176,11 @@ export async function selectFolders(
            coalesce((select ic.n from ic where ic.p = f.path), 0) as item_count,
            ${
              elsewhere
-               ? sql`coalesce((select ec.n from ec where ec.p = f.path), 0)`
-               : sql`null::int`
+               ? sql`coalesce((select ic.e from ic where ic.p = f.path), 0)`
+               : // Asked (`ws` and `others`) with no other left: 0, not absent.
+                 ws && others
+                 ? sql`0`
+                 : sql`null::int`
            } as items_elsewhere
       from f
      order by f.data->>'rank' collate "C" nulls last, lower(f.title), f.id`)) as unknown as FolderSqlRow[];
@@ -406,9 +412,12 @@ export async function loadTreeFolder(
 
 /** Of a row aliased `alias`: `ws` does not read it and one of `others`
  *  does (task f26a516e). `ws` and `others` are checked ids (the caller's
- *  own live workspaces, lib/list-workspaces.ts). */
-function elsewhereOf(ws: string, others: readonly string[], alias: string): SQL {
+ *  own live workspaces, lib/list-workspaces.ts). Null when no other is
+ *  left (none named, or only `ws`): nothing can be elsewhere, so a caller
+ *  counts nothing rather than scanning for a match that cannot be. */
+function elsewhereOf(ws: string, others: readonly string[], alias: string): SQL | null {
   const ids = others.filter((id) => isUuid(id) && id !== ws);
+  if (!ids.length) return null;
   return sql`not ${nodeAliasReadByWorkspace(ws, alias)} and ${nodeAliasReadByAnyOf(ids, alias)}`;
 }
 
