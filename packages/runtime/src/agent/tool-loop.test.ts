@@ -69,6 +69,10 @@ vi.mock('@mantle/tools', async () => ({
     },
   ),
   turnListedTools: async <T>(rows: readonly T[]) => [...rows],
+  // The stamp of the scope a queued call was asked in (A5 step 6c): proven
+  // against a real database in server/web/server/a5-approval-recheck.db.test.ts;
+  // here it names the surface the loop passed.
+  pendingOriginNow: vi.fn(async (surface: unknown) => ({ v: 1, stamped: true, surface })),
   // The validator + error sanitizer are pure (no DB/runtime deps), so the
   // loop tests exercise the REAL implementations — mocking them would let
   // the wiring drift undetected.
@@ -1019,6 +1023,8 @@ describe('runToolLoop — requires_confirm path', () => {
       agentId: 'agent-1',
       toolSlug: 'send_email',
       args: { to: 'a@b.com', subject: 'hi' },
+      // The scope it was asked in (A5 step 6c), stamped by the server.
+      origin: { v: 1, stamped: true },
     });
     // The loop returns the pending id.
     expect(result.pendingIds).toEqual(['pending-1']);

@@ -17,6 +17,10 @@ const h = vi.hoisted(() => ({
   connector: { held: true, write: true },
   /** The Moderator workspaces of each login's own scope. */
   modWs: {} as Record<string, string[]>,
+  /** The workspaces of each login's own scope (default: its modWs). */
+  ws: {} as Record<string, string[]>,
+  /** The live workspaces a loginless re-check still reads. */
+  live: [] as string[],
 }));
 
 vi.mock('../../db/src/viewer', async (importOriginal) => {
@@ -35,9 +39,15 @@ vi.mock('../../db/src/client', async (importOriginal) => ({
   loginScopeFor: async (login: string) => ({
     kind: 'user',
     loginId: login,
-    ws: h.modWs[login] ?? [],
+    ws: h.ws[login] ?? h.modWs[login] ?? [],
     modWs: h.modWs[login] ?? [],
   }),
+  loginActorNow: async (login: string) => ({ kind: 'login', mode: 'rw', loginId: login }),
+}));
+vi.mock('../../db/src/pending-elevated', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../db/src/pending-elevated')>()),
+  liveWorkspaceIds: async (_owner: string, ids: readonly string[]) =>
+    ids.filter((w) => h.live.includes(w)),
 }));
 vi.mock('./external-access', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./external-access')>()),
@@ -54,7 +64,9 @@ vi.mock('./external-access', async (importOriginal) => ({
       : [],
 }));
 
-import { loginActor, runAsActor, type Tool } from '@mantle/db';
+import { loginActor, runAsActor, type PendingOrigin, type Tool } from '@mantle/db';
+import { CONNECTOR_WRITE_ERROR } from './connector-scope';
+import { PENDING_RECHECK_ERROR, PENDING_SCOPE_LOST_ERROR } from './pending-origin';
 import { ensureGateReady } from './index';
 import { CONNECTOR_NOT_HELD_ERROR } from './connector-scope';
 import { gateCallerFor } from './gate-callers';
@@ -64,7 +76,11 @@ import {
   elevatedApproval,
   ELEVATED_APPROVER_ERROR,
   ELEVATED_NO_APPROVER_ERROR,
+  ELEVATED_NO_ASKER_ERROR,
+  ELEVATED_NO_TOOL_ERROR,
   ELEVATED_SELF_APPROVAL_ERROR,
+  elevatedRejection,
+  originApproval,
 } from './pending-approval';
 import { runtimeToolPolicy } from './runtime-policy';
 
@@ -90,12 +106,17 @@ const context = { ownerId: OWNER, surface: { kind: 'owner', via: 'pending' } };
 
 /** The approval of `decider`, in the surface scope `scope` (null: none, a
  *  Telegram tap's), as the refusal it throws or the run it gives. */
-async function approve(decider: string | null, scope: Record<string, unknown> | null = null) {
+async function approve(
+  decider: string | null,
+  scope: Record<string, unknown> | null = null,
+  asked: { loginId: string | null; workspaceId: string } = row,
+  tool: Tool | null = update,
+) {
   ensureGateReady();
   h.scope = scope;
   try {
     return await runAsActor(loginActor(decider ?? OWNER), () =>
-      elevatedApproval(OWNER, row, update, decider, context),
+      elevatedApproval(OWNER, asked, tool, decider, context),
     );
   } catch (err) {
     if (err instanceof ApprovalRefusedError) return { refused: err.message };
@@ -108,6 +129,8 @@ async function approve(decider: string | null, scope: Record<string, unknown> | 
 function reset() {
   h.connector = { held: true, write: true };
   h.modWs = { [MOD]: [TEAM_WS], [ASKER]: [], [OTHER]: [ELSEWHERE_WS] };
+  h.ws = {};
+  h.live = [];
 }
 
 describe('who decides (deciderOf)', () => {
@@ -196,6 +219,152 @@ describe('an elevated call: the approval rule (A5 step 6d fix round 1)', () => {
     expect(gate.facts?.connector).toMatchObject({
       held: [{ workspaceId: TEAM_WS, write: true }],
       modWs: [TEAM_WS],
+    });
+  });
+});
+
+describe("6d's lows, closed in A5 step 6c", () => {
+  it('L4: the owner is asked first, so the owner may approve even a call it asked itself', async () => {
+    reset();
+    h.connector = { held: true, write: false };
+    expect(await approve(OWNER, null, { loginId: OWNER, workspaceId: TEAM_WS })).toMatchObject({
+      runAs: OWNER,
+      owner: true,
+    });
+    // Anyone else who asked is still refused.
+    expect(await approve(MOD, null, { loginId: MOD, workspaceId: TEAM_WS })).toEqual({
+      refused: ELEVATED_SELF_APPROVAL_ERROR,
+    });
+  });
+
+  it('L2: a row that names no asker is the owner’s alone', async () => {
+    reset();
+    const noAsker = { loginId: null, workspaceId: TEAM_WS };
+    expect(await approve(MOD, null, noAsker)).toEqual({ refused: ELEVATED_NO_ASKER_ERROR });
+    expect(await approve(OWNER, null, noAsker)).toMatchObject({ runAs: OWNER, owner: true });
+  });
+
+  it('L1: a tool gone or with no policy is the owner’s alone (no gate step judges it)', async () => {
+    reset();
+    expect(await approve(MOD, null, row, null)).toEqual({ refused: ELEVATED_NO_TOOL_ERROR });
+    const noPolicy = { ...update, handler: { kind: 'nothing-known' } } as unknown as Tool;
+    expect(await approve(MOD, null, row, noPolicy)).toEqual({ refused: ELEVATED_NO_TOOL_ERROR });
+    // The owner decides it: the approval then records the tool is gone.
+    expect(await approve(OWNER, null, row, null)).toMatchObject({ runAs: OWNER, owner: true });
+  });
+
+  it('L3: whoever may approve it may reject it; nobody else', async () => {
+    reset();
+    ensureGateReady();
+    const rejects = (login: string | null) =>
+      runAsActor(loginActor(login ?? OWNER), () =>
+        elevatedRejection(OWNER, row, update, login, context),
+      );
+    expect(await rejects(OWNER)).toBe(true);
+    expect(await rejects(MOD)).toBe(true);
+    expect(await rejects(OTHER)).toBe(false);
+    expect(await rejects(ASKER)).toBe(false); // its asker withdraws by deciderFilter
+    // The owner may reject even what it could not run (a connector not held).
+    h.connector = { held: false, write: true };
+    expect(await rejects(OWNER)).toBe(true);
+    expect(await rejects(MOD)).toBe(false);
+  });
+});
+
+describe('the approval re-check (A5 step 6c): the queue-time check again, where it was asked', () => {
+  /** A connector write ASKER queued in a Team turn, a Moderator there. */
+  const origin = (extra: Partial<PendingOrigin> = {}): PendingOrigin => ({
+    v: 1,
+    scope: { kind: 'assistant', loginId: ASKER, ws: [TEAM_WS], modWs: [TEAM_WS] },
+    enter: 'turn',
+    writes: false,
+    admin: { holds: false, areas: [] },
+    surface: { kind: 'team', loginId: ASKER },
+    ...extra,
+  });
+  const recheck = async (o: PendingOrigin | null, approver: string | null = OWNER) => {
+    ensureGateReady();
+    try {
+      return await runAsActor(loginActor(approver ?? OWNER), () =>
+        originApproval(
+          OWNER,
+          { loginId: o?.scope?.loginId ?? null, origin: o, args: { id: 'c-1' } },
+          update,
+          approver,
+        ),
+      );
+    } catch (err) {
+      if (err instanceof ApprovalRefusedError) return { refused: err.message };
+      throw err;
+    }
+  };
+  const asker = (ws: string[], modWs: string[]) => {
+    h.ws[ASKER] = ws;
+    h.modWs[ASKER] = modWs;
+  };
+
+  it('a row with no stamp is not re-checked (the legacy rule)', async () => {
+    reset();
+    expect(await recheck(null)).toBeNull();
+  });
+
+  it('nothing changed: it passes, and runs in the scope it was asked in as its asker', async () => {
+    reset();
+    asker([TEAM_WS], [TEAM_WS]);
+    const run = await recheck(origin());
+    expect(run).toMatchObject({
+      run: {
+        scope: { kind: 'assistant', loginId: ASKER, ws: [TEAM_WS], modWs: [TEAM_WS] },
+        narrowed: [],
+      },
+      caller: { entry: 'pending', approval: { approver: OWNER, narrowed: [] } },
+      actor: { kind: 'login', loginId: ASKER },
+    });
+  });
+
+  it('a lost Moderator seat: refused in the gate’s words, whoever approves', async () => {
+    reset();
+    asker([TEAM_WS], []);
+    for (const approver of [OWNER, ASKER, MOD]) {
+      expect(await recheck(origin(), approver)).toEqual({
+        refused: `${PENDING_RECHECK_ERROR}${CONNECTOR_WRITE_ERROR}`,
+      });
+    }
+  });
+
+  it('a lost workspace: refused, the scope is gone', async () => {
+    reset();
+    asker([ELSEWHERE_WS], [ELSEWHERE_WS]);
+    expect(await recheck(origin())).toEqual({ refused: PENDING_SCOPE_LOST_ERROR });
+  });
+
+  it('gained rights are not the call’s: the scope stays the one it asked in', async () => {
+    reset();
+    asker([TEAM_WS, ELSEWHERE_WS], [TEAM_WS, ELSEWHERE_WS]);
+    const run = await recheck(origin());
+    expect(run).toMatchObject({ run: { scope: { ws: [TEAM_WS], modWs: [TEAM_WS] } } });
+  });
+
+  it('a call asked without a Moderator seat stays without one, though its asker gained it', async () => {
+    reset();
+    asker([TEAM_WS], [TEAM_WS]);
+    const plain = origin({
+      scope: { kind: 'assistant', loginId: ASKER, ws: [TEAM_WS], modWs: [] },
+    });
+    expect(await recheck(plain)).toEqual({
+      refused: `${PENDING_RECHECK_ERROR}${CONNECTOR_WRITE_ERROR}`,
+    });
+  });
+
+  it('a turn that answered no login: its workspace while it is live, never a Moderator seat', async () => {
+    reset();
+    const loginless = origin({
+      scope: { kind: 'assistant', loginId: null, ws: [TEAM_WS], modWs: [] },
+    });
+    expect(await recheck(loginless)).toEqual({ refused: PENDING_SCOPE_LOST_ERROR });
+    h.live = [TEAM_WS];
+    expect(await recheck(loginless)).toEqual({
+      refused: `${PENDING_RECHECK_ERROR}${CONNECTOR_WRITE_ERROR}`,
     });
   });
 });

@@ -37,6 +37,13 @@ const h = vi.hoisted(() => ({
   actors: [] as unknown[],
   elevatedRow: null as Record<string, unknown> | null,
   elevatedClaims: 0,
+  elevatedRejects: 0,
+  /** The approval re-check (A5 step 6c): the stub answer for a stamped row
+   *  (a refusal it throws, or the run), and whether it may reject. */
+  origin: null as unknown as Mock<(...a: unknown[]) => Promise<unknown>>,
+  mayReject: false,
+  /** Calls run inside withOriginScope, by the run they entered. */
+  entered: [] as unknown[],
 }));
 
 vi.mock('drizzle-orm', () => {
@@ -77,8 +84,16 @@ vi.mock('./pending-approval', () => {
     deciderOf: (ownerId: string, named?: string | null) => named ?? ownerId,
     isBrainOwner: (ownerId: string, login: string | null) => login === ownerId,
     elevatedApproval: (...a: unknown[]) => h.elevated(...a),
+    elevatedRejection: async () => h.mayReject,
+    originApproval: (...a: unknown[]) => h.origin(...a),
   };
 });
+vi.mock('./pending-origin', () => ({
+  withOriginScope: async (run: unknown, fn: () => Promise<unknown>) => {
+    h.entered.push(run);
+    return fn();
+  },
+}));
 vi.mock('@mantle/db', async () => ({
   db: new Proxy({}, { get: (_t, p: string) => (h.db as Record<string, unknown>)[p] }) as unknown,
   pendingToolCalls: { __table: 'pending_tool_calls' },
@@ -97,6 +112,10 @@ vi.mock('@mantle/db', async () => ({
   claimElevatedPendingCall: async () => {
     h.elevatedClaims += 1;
     return h.elevatedRow ? { ...h.elevatedRow, status: 'approved' } : null;
+  },
+  rejectElevatedPendingCall: async () => {
+    h.elevatedRejects += 1;
+    return h.elevatedRow ? { ...h.elevatedRow, status: 'rejected' } : null;
   },
 }));
 vi.mock('@mantle/tracing', () => ({
@@ -215,6 +234,10 @@ beforeEach(() => {
   h.actors = [];
   h.elevatedRow = null;
   h.elevatedClaims = 0;
+  h.elevatedRejects = 0;
+  h.origin = vi.fn(async () => null);
+  h.mayReject = false;
+  h.entered = [];
 });
 
 /** Writes recorded against the pending table, newest last. */
@@ -487,5 +510,100 @@ describe('an elevated call: the approval rule decides before the claim (A5 step 
     expect(h.actors).toEqual([{ kind: 'login', mode: 'rw', loginId: 'login-asker' }]);
     const caller = (h.dispatchTool.mock.calls[0]![2] as { caller: Record<string, unknown> }).caller;
     expect(caller).toMatchObject({ entry: 'pending', approval: { approver: 'login-a' } });
+  });
+});
+
+describe('the approval re-check (A5 step 6c)', () => {
+  const stamped = (extra: Record<string, unknown> = {}) => ({
+    ...askRow(),
+    status: 'pending',
+    toolSlug: 'crm_update',
+    args: { id: 'c-1' },
+    loginId: 'login-asker',
+    workspaceId: 'ws-team',
+    elevated: null,
+    origin: { v: 1, scope: { kind: 'assistant', loginId: 'login-asker', ws: ['ws-team'] } },
+    ...extra,
+  });
+
+  it('a call the re-check refuses: thrown before the claim, left pending, nothing ran', async () => {
+    fake.queue('pending_tool_calls', [stamped()]);
+    fake.queue('tools', [{ slug: 'crm_update', ownerId: OWNER, enabled: true }]);
+    const { ApprovalRefusedError } = await import('./pending-approval');
+    h.origin = vi.fn(async () => {
+      throw new ApprovalRefusedError('no longer passes');
+    });
+    await expect(approvePendingCall(OWNER, ROW_ID, { approverLoginId: 'login-a' })).rejects.toThrow(
+      'no longer passes',
+    );
+    // Read, never claimed: no write to the row, no dispatch.
+    expect(pendingWrites()).toEqual([]);
+    expect(h.dispatchTool).not.toHaveBeenCalled();
+    // Judged with its approver, on the row as queued.
+    expect(h.origin.mock.calls[0]![0]).toBe(OWNER);
+    expect(h.origin.mock.calls[0]![1]).toMatchObject({ id: ROW_ID, loginId: 'login-asker' });
+    expect(h.origin.mock.calls[0]![3]).toBe('login-a');
+  });
+
+  it('a call it lets through runs in the scope it was asked in, as the caller and actor it was judged with', async () => {
+    fake.queue('pending_tool_calls', [stamped()]);
+    fake.queue('tools', [{ slug: 'crm_update', ownerId: OWNER, enabled: true }]);
+    const run = { scope: { ws: ['ws-team'] }, narrowed: [] };
+    const caller = { entry: 'pending', via: 'process', approval: { approver: 'login-a' } };
+    const actor = { kind: 'login', mode: 'rw', loginId: 'login-asker' };
+    h.origin = vi.fn(async () => ({ run, caller, actor }));
+    await approvePendingCall(OWNER, ROW_ID, { approverLoginId: 'login-a' });
+    expect(h.dispatchTool).toHaveBeenCalledTimes(1);
+    expect((h.dispatchTool.mock.calls[0]![2] as { caller: unknown }).caller).toBe(caller);
+    expect(h.entered).toEqual([run]);
+    expect(h.actors).toEqual([actor]);
+    expect(pendingWrites()[0]!.values).toMatchObject({ status: 'approved' });
+  });
+
+  it('a row with no stamp keeps the legacy rule: not re-checked, run where the path runs', async () => {
+    fake.queue('pending_tool_calls', [stamped({ origin: null })]);
+    fake.queue('tools', [{ slug: 'crm_update', ownerId: OWNER, enabled: true }]);
+    await approvePendingCall(OWNER, ROW_ID, { approverLoginId: 'login-a' });
+    expect(h.origin).not.toHaveBeenCalled();
+    expect(h.entered).toEqual([]);
+    expect(h.actors).toEqual([{ kind: 'login', mode: 'rw', loginId: 'login-asker' }]);
+  });
+
+  it('a runner row is never re-checked (it runs no tool)', async () => {
+    fake.queue('pending_tool_calls', [askRow({ origin: { v: 1, scope: null } })]);
+    await approvePendingCall(OWNER, ROW_ID, { answer: 'yes' });
+    expect(h.origin).not.toHaveBeenCalled();
+    expect(h.applyHumanAnswer).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('who may reject an elevated call (A5 step 6c, 6d L3)', () => {
+  const elevRow = () => ({
+    ...askRow(),
+    status: 'pending',
+    toolSlug: 'crm_update',
+    args: { id: 'c-1' },
+    loginId: 'login-asker',
+    workspaceId: 'ws-team',
+    elevated: { elevated: true, reason: 'r' },
+  });
+
+  it('whoever may approve it may reject it: flipped on the system pool', async () => {
+    fake.queue('pending_tool_calls', []); // the plain rule matches nothing
+    h.elevatedRow = elevRow();
+    fake.queue('tools', [{ slug: 'crm_update', ownerId: OWNER, enabled: true }]);
+    h.mayReject = true;
+    const res = await rejectPendingCall(OWNER, ROW_ID, 'login-mod');
+    expect(h.elevatedRejects).toBe(1);
+    expect(res).toMatchObject({ id: ROW_ID, status: 'rejected' });
+  });
+
+  it('anyone else may not: nothing changes', async () => {
+    fake.queue('pending_tool_calls', []);
+    h.elevatedRow = elevRow();
+    fake.queue('tools', [{ slug: 'crm_update', ownerId: OWNER, enabled: true }]);
+    h.mayReject = false;
+    expect(await rejectPendingCall(OWNER, ROW_ID, 'login-other')).toBeNull();
+    expect(h.elevatedRejects).toBe(0);
   });
 });

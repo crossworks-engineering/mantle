@@ -549,9 +549,11 @@ describe('asSystem inside a turn scope needs a named reason (W4b fix round 1, M4
     // logged and allowed in production, refused and so never written in
     // tests and development). 24 in its fix round: the client-sourced mark
     // an app's table export writes ('client-sourced-mark') had borrowed
-    // 'client-sourced-check', a reason for reads.
-    expect(AS_SYSTEM_TURN_REASONS.length).toBeLessThanOrEqual(24);
-    expect(AS_SYSTEM_TURN_REASONS).toHaveLength(24);
+    // 'client-sourced-check', a reason for reads. 25 since arch A5 step
+    // 6c: an approved pending call leaves the approving path's scope only
+    // to enter the one it was asked in ('pending-approval').
+    expect(AS_SYSTEM_TURN_REASONS.length).toBeLessThanOrEqual(25);
+    expect(AS_SYSTEM_TURN_REASONS).toHaveLength(25);
     expect(AS_SYSTEM_TURN_REASONS).toContain('heartbeat-context');
     expect(AS_SYSTEM_TURN_REASONS).not.toContain('member-request');
     expect(AS_SYSTEM_TURN_REASONS).not.toContain('owner-telegram');
