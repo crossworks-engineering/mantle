@@ -244,7 +244,9 @@ export async function withAgentScope<T>(
     loginId?: string | null;
     /** The login an owner surface names (the web chat's signed-in login,
      *  an MCP connection's): whom the Admin assistant answers when no
-     *  member or client login is given. Ignored for other assistants. */
+     *  member or client login is given. Another workspace's assistant
+     *  answers it only when it is a user of that workspace (A8 fix round
+     *  1); else it answers none. */
     ownerLoginId?: string | null;
   } = {},
 ): Promise<T> {
@@ -412,14 +414,26 @@ export async function withAgentScope<T>(
       withTurnScope(scope, fn, { writes: turnScopeWrites(scope, true) }),
     );
   }
-  const loginId = opts.loginId ?? scopeLogin;
+  let loginId = opts.loginId ?? scopeLogin;
   // The login the turn answers must be a user of the workspace (L3): a
   // login with no row there is refused, never read as a reader without one.
-  const user = loginId ? await membership(wsId, loginId) : null;
+  let user = loginId ? await membership(wsId, loginId) : null;
   if (loginId && !user) {
     throw new AgentWorkspaceError(
       'The login this turn answers is not a user of the assistant’s workspace.',
     );
+  }
+  // A web chat names its signed-in login as an owner surface (the tool
+  // loop's ownerLoginId; the A8 fix round 1, finding 8: the web turn's real
+  // path): a workspace assistant answers it, with its rights there, when it
+  // is a user of the workspace. Any other web login's turn answers none and
+  // only reads, as before.
+  if (!loginId && !caller && opts.ownerLoginId) {
+    const seat = await membership(wsId, opts.ownerLoginId);
+    if (seat) {
+      loginId = opts.ownerLoginId;
+      user = seat;
+    }
   }
   const modWs = user?.moderator ? [wsId] : [];
   // It writes for its user with that user's rights, in its own workspace
