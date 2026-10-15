@@ -101,6 +101,51 @@ const NOT_AN_ITEM_WRITE: ReadonlyMap<string, string> = new Map([
   ['video_ingest', 'reads the video file; the transcript is a create'],
 ]);
 
+/**
+ * The writes a workspace turn reaches (scope `any`, an owner-side tool on
+ * the web and Telegram too) that name no item and create none, each with
+ * why (the A8 fix round 1, L6): since F2 such a turn writes with its
+ * user's rights, so every other one declares the items it changes
+ * (`items`, read by the item pre-check) or what it creates.
+ */
+const WORKSPACE_TURN_NO_ITEMS: ReadonlyMap<string, string> = new Map([
+  [
+    'app_data_write',
+    "an app's data: the app's MCP switch and the login's Write switch, in the handler",
+  ],
+  ['app_undelete', "a deleted app: its home's Moderators only, in the handler (app-trash)"],
+  ['invoke_agent', "hands item ids to a child turn that runs in the caller's scope"],
+  ['route_map', 'draws a map for the reply; it changes no item'],
+  ['show_image', 'reads the image it shows'],
+  ['synthesize_speech', 'makes audio for the reply; it changes no item'],
+  ['telegram_pair', "pairs the caller's own Telegram chat with its login; no item"],
+  ['web_fetch', 'reads a web page (a write by its outside reach); no item'],
+  ['web_search', 'searches the web (a write by its outside reach); no item'],
+  ['web_search_pro', 'searches the web (a write by its outside reach); no item'],
+]);
+
+describe('every write a workspace turn reaches declares its items (A8 fix round 1, L6)', () => {
+  it('an item list, a create, or a reason here', () => {
+    const reached = listBuiltins().filter(
+      (d) => !d.readOnly && d.policy.effect === 'write' && d.policy.scope === 'any',
+    );
+    expect(reached.length).toBeGreaterThan(50);
+    const missing = reached
+      .filter((d) => !d.policy.items && !d.policy.creates && !d.policy.createsIn)
+      .map((d) => d.slug)
+      .filter((slug) => !WORKSPACE_TURN_NO_ITEMS.has(slug));
+    expect(missing).toEqual([]);
+    // A reason for a tool that now declares its items, or is gone, goes.
+    for (const slug of WORKSPACE_TURN_NO_ITEMS.keys()) {
+      const def = getBuiltin(slug);
+      expect(def, `${slug} is no builtin now: drop it`).not.toBeNull();
+      expect(!!def!.policy.items || !!def!.policy.creates, `${slug} declares now: drop it`).toBe(
+        false,
+      );
+    }
+  });
+});
+
 describe('the Admin gate lists (W7a fix round 1)', () => {
   it('every whole-system area tool is an area tool that names no item', () => {
     for (const def of systemWhole()) {
