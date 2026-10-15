@@ -174,7 +174,9 @@ describe('toolThrowText: a builtin that throws (A10 #10 fix round 2)', () => {
       body: SECRET,
     });
     const e = new Error(`openrouter-chat 400 on m: bad ${SECRET}`, { cause: inner });
-    expect(toolThrowText(e, 'tool x')).toBe('The model provider answered with an error. (HTTP 400)');
+    expect(toolThrowText(e, 'tool x')).toBe(
+      'The model provider answered with an error. (HTTP 400)',
+    );
   });
 
   it('our own errors keep their text, as on main', () => {
@@ -189,7 +191,8 @@ describe('toolThrowText: a builtin that throws (A10 #10 fix round 2)', () => {
     // An error with a status but no body (a Graph error) is ours too.
     const graph = Object.assign(new Error('no valid access token'), { status: 401 });
     expect(toolThrowText(graph, 't')).toBe('no valid access token');
-    expect(toolThrowText(new TypeError("Cannot read properties of undefined (reading 'x')"), 't'))
-      .toBe("Cannot read properties of undefined (reading 'x')");
+    expect(
+      toolThrowText(new TypeError("Cannot read properties of undefined (reading 'x')"), 't'),
+    ).toBe("Cannot read properties of undefined (reading 'x')");
   });
 });

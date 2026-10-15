@@ -65,15 +65,7 @@ describe('telegram poller backoff (same delays as main)', () => {
   it('doubles from 1 s, caps at 60 s, and resets after a poll that goes through', async () => {
     const err = vi.spyOn(console, 'error').mockImplementation(() => {});
     const log = vi.spyOn(console, 'log').mockImplementation(() => {});
-    h.script = [
-      ...Array<'fail'>(8).fill('fail'),
-      'ok',
-      'fail',
-      'fail',
-      'ok',
-      'ok',
-      'fail',
-    ];
+    h.script = [...Array<'fail'>(8).fill('fail'), 'ok', 'fail', 'fail', 'ok', 'ok', 'fail'];
     const finished = new Promise<void>((resolve) => {
       h.done = resolve;
     });
