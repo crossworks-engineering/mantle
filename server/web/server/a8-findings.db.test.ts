@@ -734,19 +734,35 @@ describe.skipIf(!DB_URL)('A8 findings: the owner’s decisions F1 and F2', () =>
     if (write.status !== 403 || !write.text.includes('key-read-only')) {
       failures.push(`read-only key write: ${write.status} ${write.text}`);
     }
-    // L4: an Admin user's key on a shared page outside its scope is the item
-    // gate's 404, before the key's shared-content rule reads it; a shared
-    // page it reads still meets the rule.
+    // L4: an Admin user's key meets the page route's item gate before the
+    // key's shared-content rule reads the page: a shared page outside its
+    // scope gets the base route's answer to that login (an Admin user may
+    // add itself to any workspace: 403 item-workspace, "Add yourself to it
+    // first"), never key-shared-item; a shared page it may change still
+    // meets the rule.
     const doc = { doc: { type: 'doc', content: [] } };
     const outside = await makeItem('page', ws.H, [{ ws: ws.W, write: false }]);
-    const inside = await makeItem('page', ws.admin, [{ ws: ws.W, write: false }]);
-    for (const [cell, id, want] of [
-      ['a shared page outside its scope', outside, 404],
-      ['a shared page it reads', inside, 403],
-    ] as const) {
-      const r = await http({ key: keyOf.admin! }, 'PATCH', `/api/v1/pages/${id}`, doc);
-      note(`api-v1 admin PATCH /api/v1/pages/:id doc, ${cell}`, r);
-      if (r.status !== want) failures.push(`admin key PATCH doc, ${cell}: ${r.status} ${r.text}`);
+    const viaKey = await http({ key: keyOf.admin! }, 'PATCH', `/api/v1/pages/${outside}`, doc);
+    const viaBase = await http(L.admin, 'PATCH', `/api/pages/${outside}`, doc);
+    note('api-v1 admin PATCH /api/v1/pages/:id doc, a shared page outside its scope', viaKey);
+    note('base   admin PATCH /api/pages/:id doc, a shared page outside its scope', viaBase);
+    if (viaKey.status !== viaBase.status || viaKey.text.includes('key-shared-item')) {
+      failures.push(
+        `admin key, outside: v1 ${viaKey.status} ${viaKey.text}, base ${viaBase.status}`,
+      );
+    }
+    await raw`update workspace_users set moderator = true
+               where workspace_id = ${ws.admin} and login_id = ${L.admin}`;
+    try {
+      const inside = await makeItem('page', ws.admin, [{ ws: ws.W, write: false }]);
+      const r = await http({ key: keyOf.admin! }, 'PATCH', `/api/v1/pages/${inside}`, doc);
+      note('api-v1 admin PATCH /api/v1/pages/:id doc, a shared page it may change', r);
+      if (r.status !== 403 || !r.text.includes('key-shared-item')) {
+        failures.push(`admin key, inside: ${r.status} ${r.text}`);
+      }
+    } finally {
+      await raw`update workspace_users set moderator = false
+                 where workspace_id = ${ws.admin} and login_id = ${L.admin}`;
     }
     expect(failures).toEqual([]);
   }, 600_000);

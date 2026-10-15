@@ -178,19 +178,19 @@ folder page asked with `ws` carries `elsewhere`.
 Open an item and use **Grant Access**. The panel lists the item's home and
 every workspace it is granted to, each with a Write switch.
 
-| To do this                       | You need                                              |
-| -------------------------------- | ----------------------------------------------------- |
-| Read the item                    | to be a user of a workspace it is granted to          |
-| Edit its content                 | Moderator of its home, or a grant with Write on       |
-| Add a grant to workspace T       | Moderator of its home and Moderator of T              |
-| Remove a grant from T            | Moderator of its home, or Moderator of T              |
-| Switch Write on for T            | Moderator of its home and Moderator of T              |
-| Switch Write off for T           | Moderator of its home, or Moderator of T              |
-| Open, change or close its link   | to be able to edit it (an app: Moderator of its home) |
-| Close any public link            | to be an Admin user with the users area               |
-| Share it with one contact        | to be an Admin user (its home is not checked)         |
-| Delete it                        | Moderator of its home (an app: see Apps)              |
-| Move it to another home (H to T) | Moderator of H and Moderator of T                     |
+| To do this                       | You need                                                            |
+| -------------------------------- | ------------------------------------------------------------------- |
+| Read the item                    | to be a user of a workspace it is granted to                        |
+| Edit its content                 | Moderator of its home, or a grant with Write on                     |
+| Add a grant to workspace T       | Moderator of its home and Moderator of T                            |
+| Remove a grant from T            | Moderator of its home, or Moderator of T                            |
+| Switch Write on for T            | Moderator of its home and Moderator of T                            |
+| Switch Write off for T           | Moderator of its home, or Moderator of T                            |
+| Open, change or close its link   | to be able to edit it (an app: Moderator of its home)               |
+| Close any public link            | to be an Admin user with the users area                             |
+| Share it with one contact        | to be an Admin user (its home is not checked)                       |
+| Delete it                        | Moderator of its home (an app: the owner and Admin users, see Apps) |
+| Move it to another home (H to T) | Moderator of H and Moderator of T                                   |
 
 - A Moderator of a workspace that is not the item's home edits the item
   only when that grant has Write on.
@@ -395,11 +395,9 @@ chat belongs to one user. Details: [telegram.md](./telegram.md).
 An app is an item: it has a home and grants like a page.
 
 - **Code.** A Moderator of the app's home builds and edits it.
-- **Delete.** A Moderator of the app's home deletes it in the app, over
-  MCP or in a chat on the web; it then waits in Recently deleted until the
-  owner deletes it for good. An assistant answering a user in the team
-  chat never deletes an app: `app_delete` is an owner-side tool, refused
-  there for every user, a Moderator of the app's home too.
+- **Delete.** The owner and Admin users (to trash). A Moderator cannot
+  delete an app. (Rule change in progress: until it lands, the product
+  still lets a Moderator delete through the app route and MCP.)
 - **Data.** A user writes the app's data when they may edit the app: a
   Moderator of its home, or a grant with Write on. While **Informational**
   is on, nobody outside Admin writes the app's data.

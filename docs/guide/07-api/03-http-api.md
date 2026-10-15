@@ -19,28 +19,30 @@ A key acts as the login that made it, limited to its access and areas. A login t
 
 A route answers a key as the login it acts as, as the same route in the app does. A key of a login outside the Admin workspace reads and changes, in that login's workspaces, what the login may there: the item routes (search, pages, notes, tasks, tables and their commit, files, events). Contacts, the journal and the table row writes are for logins in the Admin workspace: any other login's key gets `403` with `reason: "member-login"` from them.
 
-| Method and path | Area | Does |
-| --- | --- | --- |
-| `GET /api/v1/whoami` | none | Who the key acts as, and its scope |
-| `GET /api/v1/search?q=&ws=` | Search | Search the brain, across workspaces |
-| `GET /api/v1/nodes/{id}` | All areas | Read any item by id |
-| `GET`, `POST /api/v1/pages` | Pages | List, create |
-| `GET`, `PATCH /api/v1/pages/{id}` | Pages | Read, change |
-| `GET`, `POST /api/v1/notes` | Notes | List, create |
-| `GET /api/v1/notes/{id}` | Notes | Read |
-| `GET`, `POST /api/v1/tasks` | Tasks | List, create |
-| `GET`, `PATCH /api/v1/tasks/{id}` | Tasks | Read, change |
-| `GET /api/v1/tables` | Tables | List |
-| `GET /api/v1/tables/{id}` | Tables | Read, with columns |
-| `GET`, `POST /api/v1/tables/{id}/rows` | Tables | Read rows; add rows to the draft |
-| `PATCH /api/v1/tables/{id}/rows/{rowId}` | Tables | Change one row in the draft |
-| `POST /api/v1/tables/{id}/commit` | Tables | Publish the draft |
-| `GET`, `POST /api/v1/files` | Files | List, upload |
-| `GET /api/v1/files/{id}` | Files | File details |
-| `GET /api/v1/files/{id}/download` | Files | The bytes |
-| `GET`, `POST /api/v1/events` | Calendar | List, create |
-| `GET /api/v1/contacts`, `/{id}` | Contacts | List, read |
-| `GET`, `POST /api/v1/journal` | Journal | List, create |
+| Method and path                          | Area      | Does                                |
+| ---------------------------------------- | --------- | ----------------------------------- |
+| `GET /api/v1/whoami`                     | none      | Who the key acts as, and its scope  |
+| `GET /api/v1/search?q=&ws=`              | Search    | Search the brain, across workspaces |
+| `GET /api/v1/nodes/{id}`                 | All areas | Read any item by id                 |
+| `GET`, `POST /api/v1/pages`              | Pages     | List, create                        |
+| `GET`, `PATCH /api/v1/pages/{id}`        | Pages     | Read, change                        |
+| `GET`, `POST /api/v1/notes`              | Notes     | List, create                        |
+| `GET /api/v1/notes/{id}`                 | Notes     | Read                                |
+| `GET`, `POST /api/v1/tasks`              | Tasks     | List, create                        |
+| `GET`, `PATCH /api/v1/tasks/{id}`        | Tasks     | Read, change                        |
+| `GET /api/v1/tables`                     | Tables    | List                                |
+| `GET /api/v1/tables/{id}`                | Tables    | Read, with columns                  |
+| `GET`, `POST /api/v1/tables/{id}/rows`   | Tables    | Read rows; add rows to the draft    |
+| `PATCH /api/v1/tables/{id}/rows/{rowId}` | Tables    | Change one row in the draft         |
+| `POST /api/v1/tables/{id}/commit`        | Tables    | Publish the draft                   |
+| `GET`, `POST /api/v1/files`              | Files     | List, upload                        |
+| `GET /api/v1/files/{id}`                 | Files     | File details                        |
+| `GET /api/v1/files/{id}/download`        | Files     | The bytes                           |
+| `GET`, `POST /api/v1/events`             | Calendar  | List, create                        |
+| `GET /api/v1/contacts`, `/{id}`          | Contacts  | List, read                          |
+| `GET`, `POST /api/v1/journal`            | Journal   | List, create                        |
+
+A create (`POST` on pages, notes, tasks, files and events) takes `?ws=` with a workspace id, as in the app: the item lands in that workspace when the key's login may create there. Without it, the item lands where the app would put it.
 
 Add rows with `{ "rows": [{ "Name": "Alpha" }] }`: each row is cells keyed by column name. Rows land on the table's draft. Commit to publish them.
 
@@ -59,14 +61,14 @@ curl -s "https://example.com/api/v1/search?q=invoice&ws=<workspace id>" \
 
 ## Errors
 
-| Status | Meaning |
-| --- | --- |
-| `401` | No key, a wrong key, or a revoked or expired one |
-| `403` with `reason: "key-read-only"` | A read only key tried to write |
-| `403` with `reason: "key-area"` | The route is outside the key's areas |
-| `403` with `reason: "member-login"` | A route for logins in the Admin workspace, and the key's login is not one |
-| `404` | Not a `/api/v1` route, no such item, or a `ws` the login cannot name |
-| `429` | Too many requests; wait for `Retry-After` seconds |
+| Status                               | Meaning                                                                   |
+| ------------------------------------ | ------------------------------------------------------------------------- |
+| `401`                                | No key, a wrong key, or a revoked or expired one                          |
+| `403` with `reason: "key-read-only"` | A read only key tried to write                                            |
+| `403` with `reason: "key-area"`      | The route is outside the key's areas                                      |
+| `403` with `reason: "member-login"`  | A route for logins in the Admin workspace, and the key's login is not one |
+| `404`                                | Not a `/api/v1` route, no such item, or a `ws` the login cannot name      |
+| `429`                                | Too many requests; wait for `Retry-After` seconds                         |
 
 ## Calling from a browser on another origin
 
