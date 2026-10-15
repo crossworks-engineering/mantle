@@ -548,13 +548,17 @@ export async function createWorkspace(
   try {
     // The row, the maker its only user and a Moderator, and the event, by
     // its definer (mantle_ws_create, 0293: in a scope only the scope's own
-    // login; A6b: on the system pool before, 'workspace-write').
-    const [w] = await rows<{ id: string }>(
-      db,
-      sql`select "public"."mantle_ws_create"(${caller.anchorId}::uuid, ${caller.loginId}::uuid,
-                   ${body.name}, ${body.description ?? ''}) as id`,
-    );
-    id = w!.id;
+    // login; A6b: on the system pool before, 'workspace-write'). A write: in
+    // its own transaction (a member's on the write role, an Admin user's on
+    // the system pool with its scope set).
+    id = await db.transaction(async (tx) => {
+      const [w] = await rows<{ id: string }>(
+        tx,
+        sql`select "public"."mantle_ws_create"(${caller.anchorId}::uuid, ${caller.loginId}::uuid,
+                     ${body.name}, ${body.description ?? ''}) as id`,
+      );
+      return w!.id;
+    });
   } catch (err) {
     throw nameError(err) ?? err;
   }

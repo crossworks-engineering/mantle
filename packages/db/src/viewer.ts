@@ -899,15 +899,8 @@ export function currentSystemTx(): { tx: unknown; hooks: TxHooks; nest: SystemTx
  *    (connectorScopeRefused) decides whether the call runs.
  *  - `connector-call`: the remote MCP call, which reads and refreshes the
  *    connector's own credentials (api_keys); no brain content is read.
- *  - `workspace-resources`: the workspace_resources rows of a connector
- *    (external-access.ts); the rule is in the query.
- *  - `runs-scope-check`: enqueue checks the runs it names carry the scope
- *    (runs boss.ts); the rule is in the query.
  *  - `heartbeat-own-row`: a heartbeat's control tools change the row of the
  *    heartbeat that is firing, and only that one (heartbeats/tools.ts).
- *  - `client-sourced-check`: the client-sourced taint checks and the
- *    conversation mark (client-sourced.ts, client-sourced-rules.ts): yes or
- *    no over admin tables, fail closed, no content returned.
  *  - `app-data`: the app_data tools on a login's own MCP
  *    (builtins-app-data.ts) run the app's SQLite work, its registry rows and
  *    its undo snapshot as the system, only after the lookup in the login's
@@ -921,8 +914,9 @@ export function currentSystemTx(): { tx: unknown; hooks: TxHooks; nest: SystemTx
  *    as it was before the request scope. Since arch A6 the grants and the
  *    workspace screens read in the scope (their definers, 0291) and no
  *    longer leave it by this reason.
- *  - `workspace-write`: a login's own change of a workspace (make one,
- *    rename it, archive it, add or remove a user, leave): the workspace
+ *  - `workspace-write`: a login's own change of a workspace (rename it,
+ *    archive it, add or remove a user, leave; a new one is made by its
+ *    definer, mantle_ws_create, since A6b): the workspace
  *    tables and their events are the system pool's to write (the write role
  *    holds no right on them). The rules are checked inside the change's
  *    transaction, on the system pool, as before arch A6; only archiving
@@ -932,16 +926,6 @@ export function currentSystemTx(): { tx: unknown; hooks: TxHooks; nest: SystemTx
  *    the change reaches is folded again, pages the caller may not read or
  *    edit included (lib/grants.ts, arch A6): nothing goes back to the
  *    caller.
- *  - `kind-root`: structure with no content, looked up whatever the
- *    caller's scope holds: a kind's root folder row (the files root; a
- *    member's scope does not hold the Admin-homed root) so it is not made
- *    again (W6b).
- *  - `name-taken`: whether a file name is taken in a folder, its id and
- *    flags only, so a write never lands on bytes its caller cannot read
- *    (W6b fix round 1, H3: @mantle/files fileNameTaken).
- *  - `export-link`: whether a table is bound to an app's export, yes or
- *    no, so a login's own table write or delete is checked (W6b fix round
- *    2: assertTableNotAppBound).
  *  - `admin-area`: a tool of an Admin area (@mantle/tools admin-gate.ts:
  *    the brain's settings, assistants, connectors, keys) in the Admin
  *    assistant's or the Admin MCP surface's scope (W7a), only AFTER the
@@ -951,21 +935,6 @@ export function currentSystemTx(): { tx: unknown; hooks: TxHooks; nest: SystemTx
  *    them (two numbers, never a row), and secret_create makes the Secrets
  *    root (structure, no content). The scope it leaves is kept
  *    (scopeLeftForSystem): a turn started there answers that scope's login.
- *  - `contact-sharing`: the sharing status (dates and a lock, never the
- *    code) of contacts the caller already read in its scope
- *    (contactSharingByContact): the rule is the id list (W7a).
- *  - `login-names`: the display names of the logins on rows the caller
- *    already read (an app's access log, app-access-log.ts): a name for
- *    exactly those ids, no credential (W7a).
- *  - `owner-preferences`: the brain owner's profile preferences (time zone,
- *    purpose, house style) in a scope that holds Admin, for the Admin
- *    assistant answering another Admin user (profile-preferences.ts, W7a);
- *    and the brain's home pin and site name for a member's home (GET
- *    /api/member/home, in the member's request scope since W7e fix round 1).
- *  - `lexeme-stats`: the table-wide document frequency of the caller's own
- *    query terms (pg_stats, which Postgres hides from a role under row
- *    security, and capped counts): numbers that pick which terms the keyword
- *    arm ORs, never a row (@mantle/search keyword-query.ts, W7a).
  *  - `keyword-candidates`: in a big workspace scope, the ids of the items
  *    whose text matches the caller's own terms, ranked (the text match is
  *    not leakproof, so under the row rule its index is never used); only the
@@ -982,16 +951,9 @@ export function currentSystemTx(): { tx: unknown; hooks: TxHooks; nest: SystemTx
  *    login a rule in the query checks (a chat's workspace, a bot's
  *    Moderators, the login a queued call's approval card goes to), never
  *    another login's chat rows.
- *  - `heartbeat-context`: the open heartbeats a turn's login set up
- *    (heartbeats.created_by, null the anchor's), for the turn's awareness
- *    block and its continuity tools (@mantle/runtime heartbeats/tick.ts, W7
- *    integration fix 2): the heartbeats table is granted to no role.
  *  - `audit-log`: the audit row of a connector call made over a login's
  *    MCP (mcp-core login-surface.ts): an admin table, written after the
  *    call, never read back in the scope (arch A2a named it).
- *  - `client-sourced-mark`: the client-sourced mark on a Table an app's
- *    export writes once a client wrote the app (app-table-exports.ts): an
- *    insert into client_sourced_nodes, nothing read back (A2a fix round).
  *  - `pending-approval`: an approved pending call leaves the scope of the
  *    path that approves it (a request's, an MCP connection's) only to enter
  *    the scope the call was asked in, met with its asker's rights now
@@ -1002,31 +964,26 @@ export function currentSystemTx(): { tx: unknown; hooks: TxHooks; nest: SystemTx
  *
  * A request scope (W6a) is held to the same list: inside it, `asSystem`
  * names a reason and `systemDb` is for SYSTEM_DB_MODULES only.
+ *
+ * Retired in arch A6b (docs/actors.md): what each named is read in the
+ * scope or by a narrow definer (0293), or is system work that never runs in
+ * a scope (systemWork): 'kind-root', 'name-taken', 'export-link',
+ * 'contact-sharing', 'login-names', 'owner-preferences', 'lexeme-stats',
+ * 'workspace-resources', 'runs-scope-check', 'client-sourced-check',
+ * 'client-sourced-mark', 'heartbeat-context'.
  */
 export const AS_SYSTEM_TURN_REASONS = [
   'agent-workspace',
   'connector-binding',
   'connector-call',
-  'workspace-resources',
-  'runs-scope-check',
   'heartbeat-own-row',
-  'client-sourced-check',
   'app-data',
   'rule-in-query',
-  'kind-root',
-  'name-taken',
-  'export-link',
   'admin-area',
-  'contact-sharing',
-  'login-names',
-  'owner-preferences',
-  'lexeme-stats',
   'keyword-candidates',
   'app-trash',
   'login-telegram',
-  'heartbeat-context',
   'audit-log',
-  'client-sourced-mark',
   'pending-approval',
   'workspace-write',
   'page-refold',

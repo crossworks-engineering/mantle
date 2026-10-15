@@ -22,9 +22,8 @@ import { asSystemSites, isCounted, repoPathOf, pinnedRule } from './arch-counts.
  * door (a function that calls asSystem once, with the reason): the exits are
  * the same, each is reviewed at its door. The rule-in-query routes and
  * libraries go through lib/auth/rule-in-query.ts (inRuleInQuery), the one
- * exit of the any-login handlers; client-sourced-rules.ts through
- * client-sourced.ts (clientSourcedSystem); dispatch.ts's connector binding
- * through external-access.ts (connectorGroupRow). docs/actors.md, "A6",
+ * exit of the any-login handlers; dispatch.ts's connector binding through
+ * external-access.ts (connectorGroupRow). docs/actors.md, "A6",
  * lists every door and its callers.
  *
  * A6 round 2: 39 sites in 36 files, 29 reasons (41, 38, 30 before main
@@ -35,16 +34,17 @@ import { asSystemSites, isCounted, repoPathOf, pinnedRule } from './arch-counts.
  * every use of a function holding a site (A6 fix round 1, L1:
  * as-system-exits.mjs, asSystemExits in scripts/arch-scoreboard.pins.json).
  *
- * A6b (docs/actors.md): 21 sites in 18 files. The reads that left the scope
+ * A6b (docs/actors.md): 16 sites in 15 files, 14 reasons. The reads that left the scope
  * for one answer read it in the scope (the own-login rule) or by a narrow
  * definer (migration 0293); the code that never ran in a scope says so with
- * systemWork (no exit: it refuses a workspace scope).
+ * systemWork (no exit: it refuses a workspace scope). The client-sourced
+ * guard (client-sourced.ts, client-sourced-rules.ts, app-table-exports.ts)
+ * and a turn's own heartbeats (heartbeats/tick.ts) left the list: their
+ * definers answer as the system pool did, in the scope.
  */
 export const AS_SYSTEM_PINS = {
-  'packages/content/src/app-table-exports.ts': { count: 1, why: ['client-sourced-mark'] },
   'packages/mcp-core/src/login-surface.ts': { count: 1, why: ['audit-log'] },
   'packages/runtime/src/agent/agent-viewer.ts': { count: 1, why: ['agent-workspace'] },
-  'packages/runtime/src/heartbeats/tick.ts': { count: 1, why: ['heartbeat-context'] },
   'packages/runtime/src/heartbeats/tools.ts': {
     count: 2,
     why: ['admin-area', 'heartbeat-own-row'],
@@ -54,7 +54,6 @@ export const AS_SYSTEM_PINS = {
   'packages/tools/src/admin-gate.ts': { count: 1, why: ['admin-area'] },
   'packages/tools/src/builtins-app-data.ts': { count: 1, why: ['app-data'] },
   'packages/tools/src/builtins-apps.ts': { count: 1, why: ['app-trash'] },
-  'packages/tools/src/client-sourced.ts': { count: 1, why: ['client-sourced-check'] },
   'packages/tools/src/dispatch.ts': { count: 1, why: ['connector-call'] },
   // One door since A6b (connector-binding: the tool group row, dispatch.ts
   // reads it through connectorGroupRow); the workspace resources and a
@@ -69,7 +68,9 @@ export const AS_SYSTEM_PINS = {
   // refold after a change is its one exit (pageRefoldSystem).
   'server/web/lib/grants.ts': { count: 1, why: ['page-refold'] },
   // A6 round 2: the workspace screens read in the caller's scope; a login's
-  // own workspace change writes through one door (workspaceWriteSystem).
+  // own workspace change writes through one door (workspaceWriteSystem). A6b:
+  // a new workspace by its definer (mantle_ws_create, 0293); the change, the
+  // archive and the user writes still go through the door.
   'server/web/lib/workspaces.ts': { count: 1, why: ['workspace-write'] },
 };
 

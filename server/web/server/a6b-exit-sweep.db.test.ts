@@ -83,6 +83,9 @@ const NAMED_CHANGES: Record<
     reason: string;
     back?: (now: string) => string;
     now?: string;
+    /** For a new answer that names the cell (a refusal quoting its own
+     *  arguments): whether `now` is the named change for cell `k`. */
+    nowTest?: (now: string, k: string) => boolean;
     /** What main's answer must have been for the change to hold. */
     was?: RegExp;
   }>
@@ -185,6 +188,36 @@ const NAMED_CHANGES: Record<
           "[pending:notify] Telegram approval push failed (in-app /pending still has it): system work 'login-telegram' runs on the system pool only, never in a workspace scope",
         ],
       }),
+    },
+  ],
+  'workspace-create': [
+    {
+      cells: /^createWorkspace read:\w+$/,
+      reason:
+        'a workspace made from a READ scope is refused: its definer (mantle_ws_create) is the ' +
+        "write role's (WRITE_ROLE_FUNCTIONS), where the system pool made it whatever the scope " +
+        'before. The route makes it in a write (a member on the write role, an Admin user on the ' +
+        'system pool), which answers as main. Stricter, never looser.',
+      was: /"rows":\{"ws":\[\{"created_by"/,
+      nowTest: (now, k) => {
+        const who = k.slice('createWorkspace read:'.length);
+        return (
+          now ===
+          JSON.stringify({
+            res: {
+              refused: {
+                name: 'Error',
+                status: null,
+                code: null,
+                message:
+                  'Failed query: select "public"."mantle_ws_create"($1::uuid, $2::uuid,\n' +
+                  `                     $3, $4) as id\nparams: login:owner,login:${who},a6b-lib-read:${who},lib`,
+              },
+            },
+            rows: { ws: [], users: [], events: [] },
+          })
+        );
+      },
     },
   ],
   'client-sourced': [
@@ -403,6 +436,7 @@ describe.skipIf(!URL)('the A6b exit sweep', () => {
       const wasOk = !named?.was || named.was.test(line);
       if (named?.back && wasOk && `${k} => ${named.back(value)}` === line) continue;
       if (named?.now !== undefined && wasOk && value === named.now) continue;
+      if (named?.nowTest && wasOk && named.nowTest(value, k)) continue;
       problems.push(`changed: ${line}\n     now: ${cur}`);
     }
     for (const k of now.keys()) if (!was.has(k)) problems.push(`new cell: ${k}`);

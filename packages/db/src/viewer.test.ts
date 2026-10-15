@@ -561,33 +561,38 @@ describe('asSystem inside a turn scope needs a named reason (W4b fix round 1, M4
     // and the workspace screens read in the scope, and leave it only for a
     // login's own workspace change ('workspace-write') and the page refold
     // after a grant change ('page-refold'), where they left it whole by
-    // 'rule-in-query' before.
-    expect(AS_SYSTEM_TURN_REASONS.length).toBeLessThanOrEqual(26);
-    expect(AS_SYSTEM_TURN_REASONS).toHaveLength(26);
+    // 'rule-in-query' before. 14 since arch A6b: the reads that left the
+    // scope for one answer read it in the scope or by a narrow definer
+    // (0293), so twelve reasons name no exit any more (docs/actors.md, A6b).
+    expect(AS_SYSTEM_TURN_REASONS.length).toBeLessThanOrEqual(14);
+    expect(AS_SYSTEM_TURN_REASONS).toHaveLength(14);
     expect(AS_SYSTEM_TURN_REASONS).not.toContain('provider-key');
-    expect(AS_SYSTEM_TURN_REASONS).toContain('heartbeat-context');
     expect(AS_SYSTEM_TURN_REASONS).not.toContain('member-request');
     expect(AS_SYSTEM_TURN_REASONS).not.toContain('owner-telegram');
   });
 
-  it('each W7a exit names its own reason', () => {
-    for (const r of [
-      'admin-area',
-      'contact-sharing',
-      'login-names',
-      'owner-preferences',
-      'lexeme-stats',
-      'keyword-candidates',
-      'app-trash',
-      'login-telegram',
-    ]) {
+  it('each W7a exit that still leaves the scope names its own reason', () => {
+    for (const r of ['admin-area', 'keyword-candidates', 'app-trash', 'login-telegram']) {
       expect(AS_SYSTEM_TURN_REASONS).toContain(r);
     }
   });
 
-  it('each W6b structure lookup names its own reason (W6b fix round 3)', () => {
-    for (const r of ['kind-root', 'name-taken', 'export-link']) {
-      expect(AS_SYSTEM_TURN_REASONS).toContain(r);
+  it('the reasons A6b retired name no exit (each read in the scope or by its definer, 0293)', () => {
+    for (const r of [
+      'kind-root',
+      'name-taken',
+      'export-link',
+      'contact-sharing',
+      'login-names',
+      'owner-preferences',
+      'lexeme-stats',
+      'workspace-resources',
+      'runs-scope-check',
+      'client-sourced-check',
+      'client-sourced-mark',
+      'heartbeat-context',
+    ]) {
+      expect(AS_SYSTEM_TURN_REASONS as readonly string[]).not.toContain(r);
     }
   });
 });
