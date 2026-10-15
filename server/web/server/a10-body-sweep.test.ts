@@ -233,7 +233,14 @@ function chunked(bytes: number): ReadableStream<Uint8Array> {
  *  stays null, and still differs from the record). */
 const PAIRED_TAG = /"pairedTag":"v\d+\.\d+\.\d+[^"]*"/g;
 const pairedTagStandIn = (answer: string) =>
-  answer.replace(PAIRED_TAG, '"pairedTag":"<client-pair.tag>"');
+  answer
+    .replace(PAIRED_TAG, '"pairedTag":"<client-pair.tag>"')
+    .replace(CHECKED_AT, '"checkedAt":"<cell clock>"');
+/** POST /api/updates/check stamps the cell's clock (cellTime), which moves
+ *  by a day for every cell swept before it: a new write route earlier in
+ *  the sweep shifts it. The sweep holds the answer's shape, so the stamp is
+ *  stood in too. */
+const CHECKED_AT = /"checkedAt":"\d{4}-\d{2}-\d{2}T[\d:.]+Z"/g;
 
 /** The one 400 a body that is not JSON answers (lib/read-body.ts). */
 const BAD_JSON = '400 application/json {"error":"invalid JSON"}';

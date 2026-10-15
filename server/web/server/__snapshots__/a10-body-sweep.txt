@@ -1,7 +1,7 @@
 # A10 part 2 fold 1: every write route and body, recorded on main (v0.300.41)
 # BEFORE the move. Written once (A10_BODY_SWEEP_RECORD=1); a10-body-sweep.test.ts
 # reads it back and holds every cell to it, or to a named change.
-# cells: 2178
+# cells: 2184
 POST /api/access-keys owner valid => 403 application/json {"error":"Type your password to make a key.","reason":"password"}
 POST /api/access-keys owner malformed => 400 application/json {"error":"Invalid input: expected object, received null"}
 POST /api/access-keys owner empty => 400 application/json {"error":"Invalid input: expected object, received null"}
@@ -986,6 +986,12 @@ POST /api/keys owner empty => 400 application/json {"error":"service: Invalid in
 POST /api/keys owner nul => 400 application/json {"error":"service: service must be alphanumeric"}
 POST /api/keys owner array => 400 application/json {"error":"Invalid input: expected object, received array"}
 POST /api/keys owner chunked => 400 application/json {"error":"service: Invalid input: expected string, received undefined"}
+PATCH /api/keys/:id owner valid => 400 application/json {"error":"anthropicWorkspaceId required (null clears it)."}
+PATCH /api/keys/:id owner malformed => 400 application/json {"error":"invalid JSON"}
+PATCH /api/keys/:id owner empty => 400 application/json {"error":"anthropicWorkspaceId required (null clears it)."}
+PATCH /api/keys/:id owner nul => 400 application/json {"error":"anthropicWorkspaceId required (null clears it)."}
+PATCH /api/keys/:id owner array => 400 application/json {"error":"anthropicWorkspaceId required (null clears it)."}
+PATCH /api/keys/:id owner chunked => 413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
 DELETE /api/keys/:id owner valid => 500 application/json {"error":"internal error"}
 DELETE /api/keys/:id owner malformed => 500 application/json {"error":"internal error"}
 DELETE /api/keys/:id owner empty => 500 application/json {"error":"internal error"}
@@ -1922,12 +1928,12 @@ PUT /api/tree/items/:id/pin owner empty => 400 application/json {"error":"pinned
 PUT /api/tree/items/:id/pin owner nul => 500 application/json {"error":"internal error"}
 PUT /api/tree/items/:id/pin owner array => 400 application/json {"error":"pinned is required"}
 PUT /api/tree/items/:id/pin owner chunked => 400 application/json {"error":"pinned is required"}
-POST /api/updates/check owner valid => 200 application/json {"currentVersion":"0.0.0","latest":null,"updateAvailable":false,"checkedAt":"2032-01-03T00:00:00.000Z","error":"sweep: no network","client":{"latest":null,"pairedTag":"<client-pair.tag>","error":"sweep: no network"}}
-POST /api/updates/check owner malformed => 200 application/json {"currentVersion":"0.0.0","latest":null,"updateAvailable":false,"checkedAt":"2032-01-04T00:00:00.000Z","error":"sweep: no network","client":{"latest":null,"pairedTag":"<client-pair.tag>","error":"sweep: no network"}}
-POST /api/updates/check owner empty => 200 application/json {"currentVersion":"0.0.0","latest":null,"updateAvailable":false,"checkedAt":"2032-01-05T00:00:00.000Z","error":"sweep: no network","client":{"latest":null,"pairedTag":"<client-pair.tag>","error":"sweep: no network"}}
-POST /api/updates/check owner nul => 200 application/json {"currentVersion":"0.0.0","latest":null,"updateAvailable":false,"checkedAt":"2032-01-06T00:00:00.000Z","error":"sweep: no network","client":{"latest":null,"pairedTag":"<client-pair.tag>","error":"sweep: no network"}}
-POST /api/updates/check owner array => 200 application/json {"currentVersion":"0.0.0","latest":null,"updateAvailable":false,"checkedAt":"2032-01-07T00:00:00.000Z","error":"sweep: no network","client":{"latest":null,"pairedTag":"<client-pair.tag>","error":"sweep: no network"}}
-POST /api/updates/check owner chunked => 200 application/json {"currentVersion":"0.0.0","latest":null,"updateAvailable":false,"checkedAt":"2032-01-08T00:00:00.000Z","error":"sweep: no network","client":{"latest":null,"pairedTag":"<client-pair.tag>","error":"sweep: no network"}}
+POST /api/updates/check owner valid => 200 application/json {"currentVersion":"0.0.0","latest":null,"updateAvailable":false,"checkedAt":"<cell clock>","error":"sweep: no network","client":{"latest":null,"pairedTag":"<client-pair.tag>","error":"sweep: no network"}}
+POST /api/updates/check owner malformed => 200 application/json {"currentVersion":"0.0.0","latest":null,"updateAvailable":false,"checkedAt":"<cell clock>","error":"sweep: no network","client":{"latest":null,"pairedTag":"<client-pair.tag>","error":"sweep: no network"}}
+POST /api/updates/check owner empty => 200 application/json {"currentVersion":"0.0.0","latest":null,"updateAvailable":false,"checkedAt":"<cell clock>","error":"sweep: no network","client":{"latest":null,"pairedTag":"<client-pair.tag>","error":"sweep: no network"}}
+POST /api/updates/check owner nul => 200 application/json {"currentVersion":"0.0.0","latest":null,"updateAvailable":false,"checkedAt":"<cell clock>","error":"sweep: no network","client":{"latest":null,"pairedTag":"<client-pair.tag>","error":"sweep: no network"}}
+POST /api/updates/check owner array => 200 application/json {"currentVersion":"0.0.0","latest":null,"updateAvailable":false,"checkedAt":"<cell clock>","error":"sweep: no network","client":{"latest":null,"pairedTag":"<client-pair.tag>","error":"sweep: no network"}}
+POST /api/updates/check owner chunked => 200 application/json {"currentVersion":"0.0.0","latest":null,"updateAvailable":false,"checkedAt":"<cell clock>","error":"sweep: no network","client":{"latest":null,"pairedTag":"<client-pair.tag>","error":"sweep: no network"}}
 POST /api/updates/request owner valid => 200 application/json {"ok":false,"error":"updater sidecar not available on this deployment"}
 POST /api/updates/request owner malformed => 400 application/json {"error":"target or clientTarget required"}
 POST /api/updates/request owner empty => 400 application/json {"error":"target or clientTarget required"}

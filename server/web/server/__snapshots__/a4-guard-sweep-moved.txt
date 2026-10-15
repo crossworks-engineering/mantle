@@ -281,7 +281,7 @@ m279 500 content-type=application/json {"error":"internal error"} [pipeline:owne
 m280 500 content-type=application/json {"error":"internal error"} [touch 00000001] [pipeline:ownerAtRead ok {"actor.displayName":"admin 5555","actor.email":"admin-5555@example.invalid","actor.id":"55555555-5555-4555-8555-555555555555","actor.isOwner":false,"email":"admin-5555@example.invalid","id":"33333333-3333-4333-8333-333333333333"} actor=login:rw:55555555-5555-4555-8555-555555555555 out=system:admin-write]
 m281 500 content-type=application/json {"error":"internal error"} [touch 00000002] [pipeline:ownerAtRead ok {"actor.displayName":"member 2222","actor.email":"member-2222@example.invalid","actor.id":"22222222-2222-4222-8222-222222222222","actor.isOwner":false,"email":"member-2222@example.invalid","id":"33333333-3333-4333-8333-333333333333"} actor=login:rw:22222222-2222-4222-8222-222222222222 out=user:true]
 
-# cells whose guard entry moved to the pipeline: 12321
+# cells whose guard entry moved to the pipeline: 12333
 first GET /api/access-keys owner-cookie=m1
 first GET /api/access-keys admin-cookie=m2
 first GET /api/access-keys limited-cookie=m3
@@ -3311,6 +3311,13 @@ first HEAD /api/keys member-cookie=m31
 first HEAD /api/keys admin-bearer=m32
 first HEAD /api/keys member-bearer=m33
 first HEAD /api/keys revoked-bearer=m34
+first PATCH /api/keys/:id owner-cookie=m21
+first PATCH /api/keys/:id admin-cookie=m22
+first PATCH /api/keys/:id limited-cookie=m184
+first PATCH /api/keys/:id member-cookie=m24
+first PATCH /api/keys/:id admin-bearer=m25
+first PATCH /api/keys/:id member-bearer=m26
+first PATCH /api/keys/:id revoked-bearer=m27
 first DELETE /api/keys/:id owner-cookie=m21
 first DELETE /api/keys/:id admin-cookie=m22
 first DELETE /api/keys/:id limited-cookie=m184
@@ -9454,6 +9461,11 @@ more HEAD /api/keys bumped-cookie=m34
 more HEAD /api/keys gone-cookie=m34
 more HEAD /api/keys rotated-bearer=m34
 more HEAD /api/keys expired-bearer=m34
+more PATCH /api/keys/:id disabled-cookie=m27
+more PATCH /api/keys/:id bumped-cookie=m27
+more PATCH /api/keys/:id gone-cookie=m27
+more PATCH /api/keys/:id rotated-bearer=m27
+more PATCH /api/keys/:id expired-bearer=m27
 more DELETE /api/keys/:id disabled-cookie=m27
 more DELETE /api/keys/:id bumped-cookie=m27
 more DELETE /api/keys/:id gone-cookie=m27
