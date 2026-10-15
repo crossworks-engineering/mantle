@@ -60,7 +60,7 @@ async function handleDELETE(login: AnyLogin, ctx: Ctx) {
       loginId: row.loginId,
     },
   });
-  return NextResponse.json({ ok: true }, { headers: { 'Cache-Control': 'no-store' } });
+  return NextResponse.json({ ok: true });
 }
 
 /** The login the pipeline answered, read before the exit: the body runs on

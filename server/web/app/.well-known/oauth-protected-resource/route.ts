@@ -5,6 +5,7 @@
  */
 import { NextResponse } from '@/server/http-compat';
 import { issuerUrl, mcpResourceUrl } from '@/lib/mcp-oauth';
+import { CACHE_CONTROL } from '@/lib/cache-control';
 
 export async function GET() {
   return NextResponse.json(
@@ -14,6 +15,6 @@ export async function GET() {
       scopes_supported: ['mcp'],
       bearer_methods_supported: ['header'],
     },
-    { headers: { 'Cache-Control': 'no-store' } },
+    { headers: { 'Cache-Control': CACHE_CONTROL.none } },
   );
 }

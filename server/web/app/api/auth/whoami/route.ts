@@ -50,6 +50,6 @@ export async function GET() {
       ...(await brainIdField()),
       ...(await loginWorkspaces('whoami', login)),
     };
-    return NextResponse.json(body, { headers: { 'Cache-Control': 'no-store' } });
+    return NextResponse.json(body);
   });
 }

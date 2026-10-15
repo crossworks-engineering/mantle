@@ -8,6 +8,7 @@ import { archiveAgentChat } from '@mantle/runtime/agent';
 import type { ChatArchiveResponse } from '@mantle/client-types';
 import { chatThreadRow } from './chat-threads';
 import { inRuleInQuery } from '@/lib/auth/rule-in-query';
+import { CACHE_CONTROL } from './cache-control';
 
 export async function archiveResponse(o: {
   ownerId: string;
@@ -27,5 +28,5 @@ export async function archiveResponse(o: {
     archived: r.archived ? await chatThreadRow(o.ownerId, r.archived) : null,
     open: r.open ? await chatThreadRow(o.ownerId, r.open) : null,
   };
-  return NextResponse.json(body, { headers: { 'Cache-Control': 'no-store' } });
+  return NextResponse.json(body, { headers: { 'Cache-Control': CACHE_CONTROL.none } });
 }

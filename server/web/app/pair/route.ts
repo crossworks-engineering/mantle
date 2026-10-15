@@ -1,3 +1,4 @@
+import { CACHE_CONTROL } from '@/lib/cache-control';
 /**
  * GET /pair — where a BROWSER lands when it scans the "Sign in on your phone"
  * QR (the phone app parses the URL itself and never opens it). The code is in
@@ -23,6 +24,6 @@ const PAGE = `<!doctype html>
 
 export function GET() {
   return new Response(PAGE, {
-    headers: { 'content-type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' },
+    headers: { 'content-type': 'text/html; charset=utf-8', 'Cache-Control': CACHE_CONTROL.none },
   });
 }

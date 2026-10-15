@@ -3,6 +3,7 @@ import { resolveSingleOwnerId } from '@mantle/db';
 import { loadProfilePreferences, logoVersion } from '@mantle/content';
 import { FRESH_APPEARANCE } from '@mantle/content-core/profile-projections';
 import { feature } from '@mantle/config';
+import { CACHE_CONTROL } from '@/lib/cache-control';
 
 /**
  * GET /api/appearance — the brain's SYSTEM-WIDE appearance: colour theme, the
@@ -60,7 +61,7 @@ export async function GET() {
     defaultMode: null,
     shareNeat: true,
   };
-  const headers = { 'Cache-Control': 'public, max-age=30' };
+  const headers = { 'Cache-Control': CACHE_CONTROL.public30s };
 
   // The whole body is fail-soft: resolveSingleOwnerId THROWS on a corrupt
   // no-anchor multi-user state (deliberately loud for workers), and a branding

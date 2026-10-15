@@ -16,5 +16,5 @@ import { toolMakerFor } from '@/lib/tools';
 export async function GET() {
   const user = ownerCaller();
   const live = await getLiveActivity(user.id, toolMakerFor(user));
-  return NextResponse.json(live, { headers: { 'Cache-Control': 'no-store' } });
+  return NextResponse.json(live);
 }

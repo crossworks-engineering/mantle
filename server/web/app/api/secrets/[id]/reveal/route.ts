@@ -8,6 +8,7 @@
 import { NextResponse } from '@/server/http-compat';
 import { ownerCaller } from '@/lib/auth';
 import { revealSecret } from '@/lib/secrets';
+import { CACHE_CONTROL } from '@/lib/cache-control';
 
 export async function POST(_req: Request, ctx: { params: Promise<{ id: string }> }) {
   const user = ownerCaller();
@@ -19,7 +20,7 @@ export async function POST(_req: Request, ctx: { params: Promise<{ id: string }>
     {
       headers: {
         // Sensitive — never store this in any cache between us and the browser.
-        'Cache-Control': 'no-store, no-cache, must-revalidate, private',
+        'Cache-Control': CACHE_CONTROL.secret,
       },
     },
   );

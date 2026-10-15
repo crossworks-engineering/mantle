@@ -27,6 +27,7 @@ import { setContactVisitorCookie } from '@/lib/contact-share-gate';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
 import { AUTH_BODY_CEILING_BYTES } from '@/lib/body-limit';
 import { readJson } from '@/lib/read-body';
+import { CACHE_CONTROL } from '@/lib/cache-control';
 
 const Body = z.object({ code: z.string().max(64) });
 
@@ -36,7 +37,7 @@ const PATH = '/s/:token/code';
 function invalid() {
   return NextResponse.json(
     { ok: false, error: 'That code was not recognised.' },
-    { status: 401, headers: { 'cache-control': 'no-store' } },
+    { status: 401, headers: { 'Cache-Control': CACHE_CONTROL.none } },
   );
 }
 
@@ -88,7 +89,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ token: string 
     detail: { contactId: result.contactId, shareId: share!.id },
     ...meta,
   });
-  const res = NextResponse.json({ ok: true }, { headers: { 'cache-control': 'no-store' } });
+  const res = NextResponse.json({ ok: true }, { headers: { 'Cache-Control': CACHE_CONTROL.none } });
   setContactVisitorCookie(res, req, {
     contactId: result.contactId,
     ownerId: result.ownerId,

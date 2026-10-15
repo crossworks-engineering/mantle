@@ -3,6 +3,7 @@ import { NextResponse } from '@/server/http-compat';
 import { and, eq } from 'drizzle-orm';
 import { db, nodes, tables } from '@mantle/db';
 import { queryRowsWindow, resolveStoragePath } from '@mantle/tabledb';
+import { CACHE_CONTROL } from '@/lib/cache-control';
 
 /**
  * Row window for a SHARED table — the public counterpart of
@@ -15,7 +16,7 @@ import { queryRowsWindow, resolveStoragePath } from '@mantle/tabledb';
 function notFound() {
   return NextResponse.json(
     { error: 'not found' },
-    { status: 404, headers: { 'cache-control': 'no-store' } },
+    { status: 404, headers: { 'Cache-Control': CACHE_CONTROL.none } },
   );
 }
 
@@ -60,7 +61,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ token: string }
     if (!page) return NextResponse.json({ error: 'window read failed' }, { status: 500 });
     return NextResponse.json(
       { rows: page.rows, total: page.total, offset },
-      { headers: { 'cache-control': 'private, max-age=30' } },
+      { headers: { 'Cache-Control': CACHE_CONTROL.private30s } },
     );
   } catch {
     // Unknown tab / missing file — uniform 404, never an error detail.

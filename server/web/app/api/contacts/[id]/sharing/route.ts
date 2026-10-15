@@ -57,13 +57,10 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
       );
     }
     audit('enabled', {});
-    return NextResponse.json(
-      {
-        code: r.code,
-        sharing: await contactSharingFor(user.id, id),
-      } satisfies ContactSharingResponse,
-      { headers: { 'cache-control': 'no-store' } },
-    );
+    return NextResponse.json({
+      code: r.code,
+      sharing: await contactSharingFor(user.id, id),
+    } satisfies ContactSharingResponse);
   }
   if (action === 'regenerate') {
     const r = await regenerateContactCode(user.id, id);
@@ -74,13 +71,10 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
       );
     }
     audit('regenerated', {});
-    return NextResponse.json(
-      {
-        code: r.code,
-        sharing: await contactSharingFor(user.id, id),
-      } satisfies ContactSharingResponse,
-      { headers: { 'cache-control': 'no-store' } },
-    );
+    return NextResponse.json({
+      code: r.code,
+      sharing: await contactSharingFor(user.id, id),
+    } satisfies ContactSharingResponse);
   }
   const r = await disableContactSharing(user.id, id);
   if (r) audit('disabled', { revoked: r.revoked });

@@ -1,13 +1,14 @@
 import { Hono } from 'hono';
 import { answerAppError } from './app-error';
-import { gate } from './middleware/gate';
+import { apiCacheDefault, gate } from './middleware/gate';
 import { registerPages, registerRoutes } from './route-loader';
 import { mountRedirects, mountStatic, trailingSlashRedirect } from './static';
 import { mountRetiredTeamPages } from './pages/stubs';
 
 /**
  * The server/web HTTP app. Layering (first match wins):
- *   legacy + retired-page redirects → static assets → auth/CORS gate →
+ *   legacy + retired-page redirects → static assets → the /api
+ *   Cache-Control default → auth/CORS gate →
  *   app/** route handlers
  *   → render surfaces (/s, /print, stubs — mounted by server/pages, H2).
  */
@@ -19,6 +20,8 @@ export async function createApp(): Promise<Hono> {
   // The retired team-code pages (/team, /hub) redirect to /login, gate or not.
   mountRetiredTeamPages(app);
   mountStatic(app);
+  // Cache-Control: no-store on every /api answer that names none (A10 #15).
+  app.use('*', apiCacheDefault());
   app.use('*', gate());
 
   // The generated manifest is imported lazily so `createApp` stays importable

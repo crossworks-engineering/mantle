@@ -23,6 +23,7 @@ import { DrawPresenter } from '@mantle/share-ui/draw-presenter';
 import { escapeHtml, htmlPage, islandDiv, shareShell } from './template';
 import { env } from '@mantle/config';
 import type { PageRoute } from '../route-loader';
+import { CACHE_CONTROL } from '../../lib/cache-control';
 
 /**
  * The public /s/[token] share surface — the port of app/s/[token]/page.tsx.
@@ -124,7 +125,7 @@ async function renderShare(c: Context): Promise<Response> {
     return c.notFound();
   }
   if (gate.kind === 'code') {
-    c.header('cache-control', 'no-store');
+    c.header('Cache-Control', CACHE_CONTROL.none);
     return c.html(await contactCodePage(gate.share.ownerId, token), 401);
   }
   const { share, contact } = gate;
@@ -182,7 +183,7 @@ async function renderShare(c: Context): Promise<Response> {
         shape={view.kind === 'app' ? 'pill' : 'strip'}
       />,
     );
-    c.header('cache-control', 'no-store');
+    c.header('Cache-Control', CACHE_CONTROL.none);
   }
 
   // Encoded, as drawUrl is: a note's `media:` id is free text from its

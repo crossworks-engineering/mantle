@@ -3,6 +3,7 @@ import type { ReadableStream as NodeReadableStream } from 'node:stream/web';
 import { resolveSingleOwnerId } from '@mantle/db';
 import { loadProfilePreferences } from '@mantle/content';
 import { getContent } from '@mantle/storage';
+import { CACHE_CONTROL } from '@/lib/cache-control';
 
 /**
  * GET /api/appearance/logo — the brand logo bytes, public like the rest of
@@ -24,7 +25,7 @@ import { getContent } from '@mantle/storage';
  * the `?v=<sha8>` the clients append.
  */
 export async function GET(req: Request) {
-  const notFound = new Headers({ 'cache-control': 'no-store' });
+  const notFound = new Headers();
   try {
     const ownerId = await resolveSingleOwnerId();
     if (!ownerId) return new Response('Not found', { status: 404, headers: notFound });
@@ -38,7 +39,7 @@ export async function GET(req: Request) {
     const obj = await getContent(key);
     const headers = new Headers({
       'content-type': type,
-      'cache-control': 'public, max-age=31536000, immutable',
+      'Cache-Control': CACHE_CONTROL.publicImmutable,
       'x-content-type-options': 'nosniff',
       'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'",
       'content-disposition': 'inline',

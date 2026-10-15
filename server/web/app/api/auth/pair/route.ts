@@ -2,6 +2,7 @@ import { NextResponse } from '@/server/http-compat';
 import { publicLoginCaller, unauthorizedRefusal } from '@/lib/auth';
 import { publicBaseUrl } from '@mantle/content';
 import { issuePairCode, pairPayloadUrl, PAIR_CODE_TTL_SEC } from '@/lib/pair-code';
+import { CACHE_CONTROL } from '@/lib/cache-control';
 
 /**
  * POST /api/auth/pair — mint a one-time pairing code for "Sign in on your
@@ -36,6 +37,6 @@ export async function POST() {
       expiresAt: issued.expiresAt.toISOString(),
       ttlSeconds: PAIR_CODE_TTL_SEC,
     },
-    { headers: { 'Cache-Control': 'no-store' } },
+    { headers: { 'Cache-Control': CACHE_CONTROL.none } },
   );
 }

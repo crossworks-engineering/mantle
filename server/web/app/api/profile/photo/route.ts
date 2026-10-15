@@ -6,6 +6,7 @@ import { loadPreferencesFor, savePreferencesFor, projectAvatarPhotoType } from '
 import { getContent } from '@mantle/storage';
 import { putContent } from '@mantle/storage/write';
 import { sniffType, LOGO_MAX_BYTES } from '@/lib/logo-validation';
+import { CACHE_CONTROL } from '@/lib/cache-control';
 
 /**
  * The user's PROFILE PHOTO — an uploaded, pre-cropped square raster that
@@ -94,7 +95,7 @@ export async function DELETE() {
 
 export async function GET() {
   const user = ownerAssetCaller();
-  const notFound = new Headers({ 'cache-control': 'no-store' });
+  const notFound = new Headers();
   try {
     const prefs = await loadPreferencesFor(user.actor.id);
     const key = prefs.avatarPhotoKey;
@@ -105,7 +106,7 @@ export async function GET() {
     const obj = await getContent(key);
     const headers = new Headers({
       'content-type': type,
-      'cache-control': 'private, max-age=31536000, immutable',
+      'Cache-Control': CACHE_CONTROL.privateImmutable,
       'x-content-type-options': 'nosniff',
       'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'",
       'content-disposition': 'inline',

@@ -81,6 +81,9 @@ vi.mock('@mantle/db', () => {
   };
   const cols = (names: string[]) => Object.fromEntries(names.map((n) => [n, `col:${n}`]));
   return {
+    // The OAuth lock (A10 #15: through the one advisory lock helper) is a
+    // no-op here, as its execute is.
+    advisoryXactLock: async () => undefined,
     db: {
       select: () => selectChain(),
       insert: () => insertChain(),

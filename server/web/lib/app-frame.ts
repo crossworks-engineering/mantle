@@ -17,6 +17,7 @@ import { requestOrigin } from '@/lib/auth-constants';
 import type { Readable } from 'node:stream';
 import { env, feature } from '@mantle/config';
 import { BundleTextCache } from './bundle-text-cache';
+import { CACHE_CONTROL } from './cache-control';
 
 /** Bundle and CSS text by content-addressed key (apps audit P3): one read
  *  from object storage per build per process, not one per frame load. */
@@ -137,7 +138,7 @@ export async function renderAppFrame(
       'content-security-policy': buildAppFrameCsp(requestOrigin(req)),
       // The ticket in the URL is single-purpose and seconds-lived, but keep
       // the document itself out of shared caches.
-      'cache-control': 'private, no-store',
+      'Cache-Control': CACHE_CONTROL.privateNone,
     },
   });
 }

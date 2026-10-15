@@ -56,16 +56,13 @@ export async function GET(req: Request) {
       }
     : null;
 
-  return NextResponse.json(
-    {
-      agents,
-      agent: agentOut,
-      messages: await messagesForReader(login, messages),
-      thread,
-      assigned: assigned ? { slug: assigned.slug, assignedAt: assigned.assignedAt } : null,
-    },
-    { headers: { 'Cache-Control': 'no-store' } },
-  );
+  return NextResponse.json({
+    agents,
+    agent: agentOut,
+    messages: await messagesForReader(login, messages),
+    thread,
+    assigned: assigned ? { slug: assigned.slug, assignedAt: assigned.assignedAt } : null,
+  });
 }
 
 /** An Admin user's bundle keeps the full agent row it always had. */

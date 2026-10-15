@@ -21,10 +21,7 @@ export async function GET(req: Request) {
   const agent = await resolveChatAgent(login, slug);
   if (!agent) return NextResponse.json({ threads: [] });
   const threads = await chatThreadRows(login.ownerId, agent.id, login.loginId);
-  return NextResponse.json(
-    { agent: { id: agent.id, slug: agent.slug }, threads },
-    { headers: { 'Cache-Control': 'no-store' } },
-  );
+  return NextResponse.json({ agent: { id: agent.id, slug: agent.slug }, threads });
 }
 
 export async function POST(req: Request) {

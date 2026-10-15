@@ -3,6 +3,7 @@ import { readerAssetCaller } from '@/lib/auth';
 import { getDrawSvg, scopedDrawSvg } from '@mantle/content';
 import { isUuid } from '@mantle/std';
 import { getDrawSvgOrRender } from '@/lib/draw-snapshot';
+import { CACHE_CONTROL } from '@/lib/cache-control';
 
 /**
  * The committed SVG snapshot, in two shapes:
@@ -55,8 +56,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
   if (url.searchParams.get('raw') !== '1') {
     return NextResponse.json({ svg });
   }
-  if (!svg)
-    return new Response('Not found', { status: 404, headers: { 'cache-control': 'no-store' } });
+  if (!svg) return new Response('Not found', { status: 404 });
   return new Response(svg, {
     status: 200,
     headers: {
@@ -65,7 +65,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
       'x-content-type-options': 'nosniff',
       // A member's bytes were read in its scope, which a Moderator may
       // narrow at any time: a cache revalidates before reuse (W7d+e).
-      'cache-control': reader.member ? 'private, no-cache' : 'private, max-age=300',
+      'Cache-Control': reader.member ? CACHE_CONTROL.privateRevalidate : CACHE_CONTROL.private5m,
     },
   });
 }

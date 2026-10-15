@@ -4,6 +4,7 @@ import { and, eq } from 'drizzle-orm';
 import { db, nodes, tables } from '@mantle/db';
 import { aggregateWindow, resolveStoragePath } from '@mantle/tabledb';
 import { AGGREGATE_KINDS, type AggregateKind } from '@mantle/content';
+import { CACHE_CONTROL } from '@/lib/cache-control';
 
 /**
  * One footer total for a SHARED table, computed over the whole tab.
@@ -29,7 +30,7 @@ import { AGGREGATE_KINDS, type AggregateKind } from '@mantle/content';
 function notFound() {
   return NextResponse.json(
     { error: 'not found' },
-    { status: 404, headers: { 'cache-control': 'no-store' } },
+    { status: 404, headers: { 'Cache-Control': CACHE_CONTROL.none } },
   );
 }
 
@@ -75,7 +76,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ token: string }
     // `null` is a real answer — "this column cannot be totalled that way" (a
     // formula target, or a sum over text). The reader draws a blank cell for
     // it, which is the honest rendering; a 0 would be a lie.
-    return NextResponse.json({ value }, { headers: { 'cache-control': 'private, max-age=30' } });
+    return NextResponse.json({ value }, { headers: { 'Cache-Control': CACHE_CONTROL.private30s } });
   } catch {
     return notFound();
   }

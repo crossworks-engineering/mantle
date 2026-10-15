@@ -26,6 +26,7 @@ import { memberCaller } from '@/lib/auth';
 import { connectorUrl } from '@/lib/mcp-oauth';
 import { listLoginClients } from '@/lib/mcp-clients';
 import { feature } from '@mantle/config';
+import { CACHE_CONTROL } from '@/lib/cache-control';
 
 export async function GET() {
   const member = memberCaller();
@@ -59,5 +60,5 @@ export async function GET() {
     clients,
     connectors: [...byGroup.values()].sort((a, b) => a.name.localeCompare(b.name)),
   };
-  return NextResponse.json(body, { headers: { 'Cache-Control': 'no-store' } });
+  return NextResponse.json(body, { headers: { 'Cache-Control': CACHE_CONTROL.none } });
 }

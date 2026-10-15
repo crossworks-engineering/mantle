@@ -57,10 +57,7 @@ export async function GET(req: NextRequest) {
       limit,
       threadRange(thread),
     );
-    return NextResponse.json(
-      { messages: await messagesForReader(login, messages) },
-      { headers: { 'Cache-Control': 'no-store' } },
-    );
+    return NextResponse.json({ messages: await messagesForReader(login, messages) });
   }
 
   // No `?agent=` → this login's assigned assistant, else the brain default.
@@ -79,8 +76,5 @@ export async function GET(req: NextRequest) {
     limit,
     threadRange(open),
   );
-  return NextResponse.json(
-    { messages: await messagesForReader(login, messages) },
-    { headers: { 'Cache-Control': 'no-store' } },
-  );
+  return NextResponse.json({ messages: await messagesForReader(login, messages) });
 }

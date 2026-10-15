@@ -2,6 +2,7 @@ import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { publicLoginCaller, unauthorizedRefusal } from '@/lib/auth';
 import { pairCodeStatus } from '@/lib/pair-code';
+import { CACHE_CONTROL } from '@/lib/cache-control';
 
 const Params = z.object({ id: z.string().uuid() });
 
@@ -18,5 +19,5 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
   const parsed = Params.safeParse(await ctx.params);
   if (!parsed.success) return NextResponse.json({ error: 'Invalid id.' }, { status: 400 });
   const status = await pairCodeStatus(parsed.data.id, login.loginId);
-  return NextResponse.json(status, { headers: { 'Cache-Control': 'no-store' } });
+  return NextResponse.json(status, { headers: { 'Cache-Control': CACHE_CONTROL.none } });
 }

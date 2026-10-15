@@ -15,7 +15,6 @@
 // eslint-disable-next-line @typescript-eslint/triple-slash-reference -- loads the local ambient type for the untyped wawoff2 module
 /// <reference path="./wawoff2.d.ts" />
 import { isMainThread, parentPort, workerData } from 'node:worker_threads';
-import { errorMessage } from '@mantle/std';
 
 export type RenderJob = {
   svg: string;
@@ -237,6 +236,7 @@ if (
   const port = parentPort;
   renderJob(job, wasm).then(
     (r) => port.postMessage({ ok: true, result: r }, [r.png.buffer as ArrayBuffer]),
-    (err: unknown) => port.postMessage({ ok: false, error: errorMessage(err) }),
+    (err: unknown) =>
+      port.postMessage({ ok: false, error: err instanceof Error ? err.message : String(err) }),
   );
 }

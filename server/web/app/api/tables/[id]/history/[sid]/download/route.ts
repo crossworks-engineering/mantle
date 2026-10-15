@@ -30,7 +30,6 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string; si
       'content-type': 'application/vnd.sqlite3',
       'content-disposition': `attachment; filename="${base}-v${file.seq}.sqlite"`,
       'content-length': String(size),
-      'cache-control': 'no-store',
     },
   });
 }

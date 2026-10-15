@@ -74,5 +74,5 @@ export async function POST(req: Request) {
       });
     }
   }
-  return NextResponse.json({ ok: true }, { headers: { 'Cache-Control': 'no-store' } });
+  return NextResponse.json({ ok: true });
 }

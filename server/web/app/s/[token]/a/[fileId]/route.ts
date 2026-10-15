@@ -3,6 +3,7 @@ import { isAssetAllowed } from '@/lib/shares';
 import { recordShareAccess } from '@mantle/content';
 import { readFileById } from '@/lib/files';
 import { safeDownloadHeaders } from '@mantle/client-types/lib/safe-download';
+import { CACHE_CONTROL } from '@/lib/cache-control';
 
 /**
  * Public asset bytes for a shared node. Authorization = the token must be
@@ -15,7 +16,10 @@ import { safeDownloadHeaders } from '@mantle/client-types/lib/safe-download';
  */
 
 function notFound() {
-  return new Response('Not found', { status: 404, headers: { 'cache-control': 'no-store' } });
+  return new Response('Not found', {
+    status: 404,
+    headers: { 'Cache-Control': CACHE_CONTROL.none },
+  });
 }
 
 export async function GET(
@@ -51,7 +55,7 @@ export async function GET(
     'accept-ranges': 'bytes',
     // Private + short: browser may cache, shared caches won't; a revoked link
     // 404s on the next request regardless (token is in the path).
-    'cache-control': 'private, max-age=300',
+    'Cache-Control': CACHE_CONTROL.private5m,
   };
 
   const range = req.headers.get('range');

@@ -1,6 +1,7 @@
 import { contactCodeRequired, gateShare } from '@/lib/contact-share-gate';
 import { isEmbeddedDrawAllowed } from '@/lib/shares';
 import { getDrawSvg } from '@mantle/content';
+import { CACHE_CONTROL } from '@/lib/cache-control';
 
 /**
  * A drawing EMBEDDED in a shared page or note, as an image.
@@ -20,7 +21,10 @@ import { getDrawSvg } from '@mantle/content';
  */
 
 function notFound() {
-  return new Response('Not found', { status: 404, headers: { 'cache-control': 'no-store' } });
+  return new Response('Not found', {
+    status: 404,
+    headers: { 'Cache-Control': CACHE_CONTROL.none },
+  });
 }
 
 export async function GET(
@@ -46,7 +50,7 @@ export async function GET(
       // As with every other snapshot surface: inert if opened directly.
       'content-security-policy': "sandbox; default-src 'none'; style-src 'unsafe-inline'",
       'x-content-type-options': 'nosniff',
-      'cache-control': 'private, max-age=300',
+      'Cache-Control': CACHE_CONTROL.private5m,
     },
   });
 }

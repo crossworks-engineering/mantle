@@ -2,6 +2,7 @@ import { serveStatic } from '@hono/node-server/serve-static';
 import type { Hono } from 'hono';
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { CACHE_CONTROL } from '../lib/cache-control';
 
 /**
  * Static layer: serves public/ (fonts, Inter, app-runtime, share-runtime)
@@ -35,7 +36,9 @@ export function mountStatic(app: Hono, publicDir: string = join(webRoot, 'public
     c.header('Access-Control-Allow-Origin', '*');
     c.header(
       'Cache-Control',
-      c.req.path.endsWith('manifest.json') ? 'no-cache' : 'public, max-age=31536000, immutable',
+      c.req.path.endsWith('manifest.json')
+        ? CACHE_CONTROL.revalidate
+        : CACHE_CONTROL.publicImmutable,
     );
   });
   app.use('/app-runtime/*', serveStatic({ root }));

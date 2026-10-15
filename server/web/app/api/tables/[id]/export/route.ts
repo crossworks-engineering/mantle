@@ -38,7 +38,6 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
       headers: {
         'content-type': 'application/vnd.sqlite3',
         'content-disposition': `attachment; filename="${filename}"`,
-        'cache-control': 'no-store',
       },
     });
   } finally {

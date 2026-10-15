@@ -1,5 +1,6 @@
 import { chatLoginCaller } from '@/lib/auth';
 import { subscribeConversations, type ConversationChange } from '@/lib/realtime';
+import { CACHE_CONTROL } from '@/lib/cache-control';
 
 /**
  * Server-Sent Events stream of live conversation turns for the current owner —
@@ -64,7 +65,7 @@ export async function GET(req: Request): Promise<Response> {
   return new Response(stream, {
     headers: {
       'Content-Type': 'text/event-stream; charset=utf-8',
-      'Cache-Control': 'no-store, no-transform',
+      'Cache-Control': CACHE_CONTROL.stream,
       Connection: 'keep-alive',
     },
   });

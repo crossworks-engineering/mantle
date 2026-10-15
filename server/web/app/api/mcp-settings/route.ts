@@ -17,10 +17,11 @@ export async function GET() {
     loadProfilePreferences(user.id),
     listConnectedClients(user.id),
   ]);
-  return NextResponse.json(
-    { enabled: feature('remoteMcp', { prefs }), connectorUrl: connectorUrl(), clients },
-    { headers: { 'Cache-Control': 'no-store' } },
-  );
+  return NextResponse.json({
+    enabled: feature('remoteMcp', { prefs }),
+    connectorUrl: connectorUrl(),
+    clients,
+  });
 }
 
 export async function PATCH(req: Request) {

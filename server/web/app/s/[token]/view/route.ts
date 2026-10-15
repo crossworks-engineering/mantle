@@ -6,6 +6,7 @@ import { loadShareView, recordShareView } from '@/lib/shares';
 import { renderPageDoc } from '@/lib/render-page-doc';
 import { recordShareAccess } from '@mantle/content';
 import { loadFolderListing } from '@/components/share/folder-presenter';
+import { CACHE_CONTROL } from '@/lib/cache-control';
 
 /**
  * The share view as JSON, for a client that renders the presenter itself (no
@@ -25,7 +26,7 @@ import { loadFolderListing } from '@/components/share/folder-presenter';
 function notFound() {
   return NextResponse.json(
     { error: 'not found' },
-    { status: 404, headers: { 'cache-control': 'no-store' } },
+    { status: 404, headers: { 'Cache-Control': CACHE_CONTROL.none } },
   );
 }
 
@@ -101,6 +102,6 @@ export async function GET(req: Request, ctx: { params: Promise<{ token: string }
 
   return NextResponse.json(
     { mode: 'public', view: payload },
-    { headers: { 'cache-control': 'no-store' } },
+    { headers: { 'Cache-Control': CACHE_CONTROL.none } },
   );
 }

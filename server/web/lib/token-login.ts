@@ -8,6 +8,7 @@ import { AUTH_BODY_CEILING_BYTES } from '@/lib/body-limit';
 import { brainIdField } from '@/lib/brain-identity';
 import { updateTheAppResponse } from '@/lib/mobile-build';
 import { readJson } from '@/lib/read-body';
+import { CACHE_CONTROL } from './cache-control';
 
 /**
  * Shared credentials→bearer flow behind BOTH token-login routes:
@@ -131,6 +132,6 @@ export async function handleTokenLogin(
       // several logins files the session under, docs/mobile-companion-backend.md).
       ...(opts.withRole ? { role: login?.role, loginId: userId, ...(await brainIdField()) } : {}),
     },
-    { headers: { 'Cache-Control': 'no-store' } },
+    { headers: { 'Cache-Control': CACHE_CONTROL.none } },
   );
 }

@@ -13,6 +13,7 @@ import { requestMetaFrom } from '../../lib/audit';
 import { keyOnRow, type RouteRow } from '../../lib/auth/route-policy';
 import { clientIp, clientIpKey } from '../../lib/rate-limit';
 import { rateLimitedResponse } from '../../lib/route-limits';
+import { CACHE_CONTROL } from '../../lib/cache-control';
 
 /**
  * The gate's answer to an `mtlk_` bearer (inbound API keys, plan page
@@ -91,14 +92,14 @@ export async function gateAccessKey(
 function unauthorized(): Response {
   return Response.json(
     { error: 'unauthorized' },
-    { status: 401, headers: { 'Cache-Control': 'no-store' } },
+    { status: 401, headers: { 'Cache-Control': CACHE_CONTROL.none } },
   );
 }
 
 function notFound(): Response {
   return Response.json(
     { error: 'not found' },
-    { status: 404, headers: { 'Cache-Control': 'no-store' } },
+    { status: 404, headers: { 'Cache-Control': CACHE_CONTROL.none } },
   );
 }
 
@@ -112,7 +113,7 @@ function outOfScope(reason: string): Response {
           ? 'This API key is read only.'
           : "This route is outside this API key's areas.",
     },
-    { status: 403, headers: { 'Cache-Control': 'no-store' } },
+    { status: 403, headers: { 'Cache-Control': CACHE_CONTROL.none } },
   );
 }
 

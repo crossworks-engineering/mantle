@@ -299,9 +299,9 @@ listen server/sandboxd/src/main.ts none: a network listener, no brain database
 listen server/web/lib/realtime.ts system(listen:realtime)
 listen server/web/workers/push-notify.ts system(worker:push-notify)
 process-on packages/content/src/app-sql-runner.ts none: the SQLite child's message handler, no brain database
-process-on server/api/src/main.ts none: the signal handlers stop DBOS and the runtime, no statement of their own
-process-on server/web/server/main.ts none: signal and error handlers that close the server and log
-process-on server/web/workers/_runner.ts none: signal handlers run the worker's teardown; a rejection handler that logs
+process-on server/api/src/main.ts none: a rejection handler that logs; its signal handlers (@mantle/std/shutdown onShutdown) stop DBOS and the runtime, no statement of their own
+process-on server/web/server/main.ts none: error handlers that log; its signal handlers (@mantle/std/shutdown onShutdown) close the server
+process-on server/web/workers/_runner.ts none: a rejection handler that logs; its signal handlers (@mantle/std/shutdown onShutdown) run the worker's teardown
 queue-work server/api/src/agent/extract-queue.ts system(queue:extract) per job
 queue-work server/web/workers/calendar-sync.ts system(worker:calendar-sync)
 queue-work server/web/workers/email-sync.ts system(worker:email-sync)
@@ -319,7 +319,6 @@ timeout-loop packages/db/src/test-support.ts none: test helpers' poll and retry 
 timeout-loop packages/db/src/viewer-roles.ts the caller's actor: a retry sleep
 timeout-loop server/api/src/agent/runtime.ts system(timer:summarize) for the summarize debounce
 timeout-loop server/web/lib/push/login-notice-handler.ts system(worker:push-notify), carried by the batching timer
-timeout-loop server/web/workers/_runner.ts none: the shutdown deadline, it only exits
 timeout-loop server/web/workers/telegram-poll.ts system(worker:channel-poll): a settle sleep at shutdown
 worker-shell server/web/workers/_runner.ts system(worker:<name>) around each worker's setup (startWorkerAs)
 worker-shell server/web/workers/calendar-sync.ts system(worker:calendar-sync)

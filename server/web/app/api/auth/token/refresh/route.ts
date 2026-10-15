@@ -13,6 +13,7 @@ import {
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
 import { brainIdField } from '@/lib/brain-identity';
 import { LOGIN_ROLES } from '@mantle/client-types/role-names';
+import { CACHE_CONTROL } from '@/lib/cache-control';
 
 /**
  * Rotate the calling bearer: mint a new jti + token, revoke the old row,
@@ -58,7 +59,7 @@ import { LOGIN_ROLES } from '@mantle/client-types/role-names';
  *  migration 0272, workspaces W8a). */
 const BEARER_ROLES: ReadonlySet<string> = new Set(LOGIN_ROLES);
 
-const NO_STORE = { 'Cache-Control': 'no-store' } as const;
+const NO_STORE = { 'Cache-Control': CACHE_CONTROL.none } as const;
 
 function bearer(req: Request): string | null {
   const h = req.headers.get('authorization') ?? '';

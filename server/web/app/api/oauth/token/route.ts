@@ -18,11 +18,12 @@ import {
   type TokenResponse,
 } from '@/lib/mcp-oauth';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
+import { CACHE_CONTROL } from '@/lib/cache-control';
 
 function oauthError(error: string, description?: string, status = 400) {
   return NextResponse.json(
     { error, ...(description ? { error_description: description } : {}) },
-    { status, headers: { 'Cache-Control': 'no-store', Pragma: 'no-cache' } },
+    { status, headers: { 'Cache-Control': CACHE_CONTROL.none, Pragma: 'no-cache' } },
   );
 }
 
@@ -45,7 +46,7 @@ async function whenNotBusy<T>(run: () => Promise<T>): Promise<T | Response> {
 
 function tokenOk(tokens: TokenResponse) {
   return NextResponse.json(tokens, {
-    headers: { 'Cache-Control': 'no-store', Pragma: 'no-cache' },
+    headers: { 'Cache-Control': CACHE_CONTROL.none, Pragma: 'no-cache' },
   });
 }
 

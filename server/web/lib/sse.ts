@@ -5,6 +5,7 @@
  * not reap an idle connection, and cleans up exactly once, however it ends
  * (the client leaves, `onPing` says stop, or `maxLifetimeMs` runs out).
  */
+import { CACHE_CONTROL } from './cache-control';
 
 export type SseSend = (data: unknown) => void;
 
@@ -92,7 +93,7 @@ export function sseResponse(req: Request, opts: SseOptions): Response {
   return new Response(stream, {
     headers: {
       'Content-Type': 'text/event-stream; charset=utf-8',
-      'Cache-Control': 'no-store, no-transform',
+      'Cache-Control': CACHE_CONTROL.stream,
       Connection: 'keep-alive',
     },
   });

@@ -5,6 +5,7 @@ import { subscribeTurnStream } from '@/lib/realtime';
 import { loadProfilePreferences } from '@mantle/content';
 import { feature } from '@mantle/config';
 import type { RouteSwitches } from '@/lib/auth/route-switches';
+import { CACHE_CONTROL } from '@/lib/cache-control';
 
 /**
  * GET /api/assistant/turn/[turnId]/stream — Server-Sent Events for ONE in-flight
@@ -123,7 +124,7 @@ export async function GET(
   return new Response(stream, {
     headers: {
       'Content-Type': 'text/event-stream; charset=utf-8',
-      'Cache-Control': 'no-store, no-transform',
+      'Cache-Control': CACHE_CONTROL.stream,
       Connection: 'keep-alive',
     },
   });

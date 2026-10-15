@@ -29,6 +29,7 @@
  */
 import { NextResponse } from '../server/http-compat';
 import { clientIpKey, rateLimit, rateLimitPeek, type RateLimitResult } from './rate-limit';
+import { CACHE_CONTROL } from './cache-control';
 
 /** Whose key a limit counts: the caller's address (clientIpKey, an IPv6
  *  caller by its /64), the login the caller is, or the whole brain (one
@@ -256,7 +257,7 @@ export function rateLimitedAnswer(retryAfterSec: number) {
   return {
     status: 429 as const,
     body: { error: RATE_LIMITED_TEXT, code: 'rate_limited' as const, retryAfter: sec },
-    headers: { 'Retry-After': String(sec), 'Cache-Control': 'no-store' },
+    headers: { 'Retry-After': String(sec), 'Cache-Control': CACHE_CONTROL.none },
   };
 }
 

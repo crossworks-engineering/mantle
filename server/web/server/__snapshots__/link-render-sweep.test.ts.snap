@@ -800,6 +800,7 @@ exports[`the /s and /print sweep (A4 step 2: the same answers) > answers every /
     "actors": [],
     "body": "{"error":"unauthorized"}",
     "headers": {
+      "cache-control": "no-store",
       "content-type": "application/json",
     },
     "status": 401,

@@ -35,6 +35,7 @@ import { mcpLoginEnabled, mcpTargetLogin } from '@/lib/mcp-auth';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
 import { env } from '@mantle/config';
 import type { LoginRole } from '@mantle/client-types/role-names';
+import { CACHE_CONTROL } from '@/lib/cache-control';
 
 type AuthorizeParams = {
   clientId: string;
@@ -70,7 +71,7 @@ function escapeHtml(s: string): string {
 /** Every page this route renders: never cached, never framed (T12). */
 const HTML_HEADERS = {
   'content-type': 'text/html; charset=utf-8',
-  'Cache-Control': 'no-store',
+  'Cache-Control': CACHE_CONTROL.none,
   'Content-Security-Policy': "frame-ancestors 'none'",
   'X-Frame-Options': 'DENY',
 } as const;

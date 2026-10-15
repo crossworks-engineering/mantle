@@ -5,6 +5,7 @@
  */
 import { NextResponse } from '@/server/http-compat';
 import { issuerUrl } from '@/lib/mcp-oauth';
+import { CACHE_CONTROL } from '@/lib/cache-control';
 
 export async function GET() {
   const base = issuerUrl();
@@ -20,6 +21,6 @@ export async function GET() {
       token_endpoint_auth_methods_supported: ['none'],
       scopes_supported: ['mcp'],
     },
-    { headers: { 'Cache-Control': 'no-store' } },
+    { headers: { 'Cache-Control': CACHE_CONTROL.none } },
   );
 }

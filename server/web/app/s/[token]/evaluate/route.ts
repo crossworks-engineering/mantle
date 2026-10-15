@@ -4,6 +4,7 @@ import { evaluateSpec, parseFormulaSpec, type FormulaValue } from '@mantle/conte
 import { and, eq } from 'drizzle-orm';
 import { db, nodes } from '@mantle/db';
 import { readJson } from '@/lib/read-body';
+import { CACHE_CONTROL } from '@/lib/cache-control';
 
 /**
  * Evaluate one target of a SHARED formula — the public counterpart of
@@ -35,7 +36,7 @@ const MAX_BODY_BYTES = 512_000;
 function notFound() {
   return NextResponse.json(
     { error: 'not found' },
-    { status: 404, headers: { 'cache-control': 'no-store' } },
+    { status: 404, headers: { 'Cache-Control': CACHE_CONTROL.none } },
   );
 }
 
@@ -53,7 +54,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ token: string 
   if (declaredLength > MAX_BODY_BYTES) {
     return NextResponse.json(
       { error: 'request body too large' },
-      { status: 413, headers: { 'cache-control': 'no-store' } },
+      { status: 413, headers: { 'Cache-Control': CACHE_CONTROL.none } },
     );
   }
 
@@ -103,6 +104,6 @@ export async function POST(req: Request, ctx: { params: Promise<{ token: string 
     result.ok
       ? { ok: true, value: result.value, trace: result.trace }
       : { ok: false, error: result.error, trace: result.trace },
-    { headers: { 'cache-control': 'no-store' } },
+    { headers: { 'Cache-Control': CACHE_CONTROL.none } },
   );
 }

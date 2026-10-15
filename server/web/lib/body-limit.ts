@@ -21,6 +21,7 @@
  * buffers the whole body, have one: their file cap plus room for the
  * framing (MULTIPART_CEILINGS, fix round 1, M3).
  */
+import { CACHE_CONTROL } from './cache-control';
 
 const MB = 1024 * 1024;
 
@@ -175,7 +176,7 @@ export function bodyTooLargeResponse(maxBytes: number): Response {
       error: `This request is too large (at most ${Math.round(maxBytes / MB)} MB).`,
       reason: 'body-too-large',
     },
-    { status: 413, headers: { 'Cache-Control': 'no-store' } },
+    { status: 413, headers: { 'Cache-Control': CACHE_CONTROL.none } },
   );
 }
 

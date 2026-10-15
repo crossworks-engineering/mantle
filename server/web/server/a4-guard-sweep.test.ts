@@ -608,6 +608,16 @@ function maskActor(answer: string): string {
   return answer.replace(/\bactor=\S+ out=[^\]\s]+/g, 'actor=* out=*');
 }
 
+/** A main answer as the gate answers it since A10 #15: an /api answer
+ *  that named no Cache-Control answers `no-store` (the gate's default,
+ *  apiCacheDefault). Every cell of these files is an /api route; the
+ *  header follows the content type, as the sweep writes it. */
+function withGateCacheDefault(answer: string): string {
+  return / cache-control=/.test(answer.split(' {')[0]!.split(' [')[0]!)
+    ? answer
+    : answer.replace(/^(\d{3} content-type=\S+)/, '$1 cache-control=no-store');
+}
+
 /** The header of the main answers in a decision file (decisionFile). */
 const MAIN_ANSWERS = '# answers on main';
 
@@ -656,10 +666,11 @@ async function decisionFile(
   expect([...cells.keys()].sort(), `${file}: the cells kept with a main answer`).toEqual(
     [...mainOf.keys()].sort(),
   );
-  // Each differs from main in the actor and the request outcome only.
+  // Each differs from main in the actor and the request outcome only (and
+  // the gate's Cache-Control default, A10 #15).
   for (const [cell, answer] of cells) {
     expect(maskActor(answer), `${file}: ${cell} against its answer on main`).toBe(
-      maskActor(mainOf.get(cell)!),
+      maskActor(withGateCacheDefault(mainOf.get(cell)!)),
     );
   }
   const ids = new Map<string, string>();

@@ -25,8 +25,5 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     chatThreadRow(login.ownerId, thread),
     recentAssistantMessages(login.ownerId, thread.agentId, login.loginId, 100, threadRange(thread)),
   ]);
-  return NextResponse.json(
-    { thread: row, messages: await messagesForReader(login, messages) },
-    { headers: { 'Cache-Control': 'no-store' } },
-  );
+  return NextResponse.json({ thread: row, messages: await messagesForReader(login, messages) });
 }

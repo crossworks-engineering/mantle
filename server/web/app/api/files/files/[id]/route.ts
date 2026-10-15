@@ -18,12 +18,13 @@ import { firstIssue } from '@/lib/zod-issue';
 import { guardFileCopyTo, guardFileTo } from '@mantle/content/tree';
 import { callerMayReadEmail } from '@/lib/api-v1';
 import { readJson } from '@/lib/read-body';
+import { CACHE_CONTROL } from '@/lib/cache-control';
 
 const IdParams = z.object({ id: z.string().uuid() });
 /** A file's raw bytes are read in the login's scope (W7e): never stored. */
-const RAW_CACHE = 'private, no-store';
+const RAW_CACHE = CACHE_CONTROL.privateNone;
 /** A thumbnail is kept privately but revalidated on every use (its etag). */
-const THUMB_CACHE = 'private, no-cache';
+const THUMB_CACHE = CACHE_CONTROL.privateRevalidate;
 const PatchBody = z.union([
   z.object({ content: z.string().max(2_000_000) }),
   z.object({ rename: z.string().min(1).max(200) }),

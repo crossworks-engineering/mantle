@@ -44,7 +44,6 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
       'content-type': 'application/zip',
       'content-disposition': `attachment; filename="${appPackageFileName(written.title)}"`,
       'content-length': String(written.bytes),
-      'cache-control': 'no-store',
     },
   });
 }

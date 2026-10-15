@@ -9,6 +9,7 @@ import { Readable } from 'node:stream';
 import { ReadableStream as NodeReadableStream } from 'node:stream/web';
 import { getApp } from '@mantle/content';
 import { getContent } from '@mantle/storage';
+import { CACHE_CONTROL } from '@/lib/cache-control';
 
 export async function GET(req: Request, ctx: { params: Promise<{ token: string }> }) {
   const { token } = await ctx.params;
@@ -24,7 +25,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ token: string }
   const { body, contentLength } = await getContent(build.css.storageKey);
   const headers = new Headers({
     'content-type': 'text/css; charset=utf-8',
-    'cache-control': 'private, max-age=300',
+    'Cache-Control': CACHE_CONTROL.private5m,
   });
   if (contentLength !== undefined) headers.set('content-length', String(contentLength));
   const webStream = Readable.toWeb(body) as unknown as NodeReadableStream<Uint8Array>;

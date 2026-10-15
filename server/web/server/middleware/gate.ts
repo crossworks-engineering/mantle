@@ -9,6 +9,7 @@ import {
 } from '../../lib/auth-constants';
 import { isAccessKey, type AccessKeyGrant } from '../../lib/access-keys';
 import { bodyCeilingFor, bodyTooLargeResponse, declaredOver } from '../../lib/body-limit';
+import { API_CACHE_DEFAULT, CACHE_CONTROL } from '../../lib/cache-control';
 import {
   ANSWERED_AT_READ,
   assetQueryAsHanded,
@@ -131,7 +132,7 @@ function applyCors(headers: Headers, origin: string): void {
 function unauthorized(): Response {
   return Response.json(
     { error: 'unauthorized' },
-    { status: 401, headers: { 'Cache-Control': 'no-store' } },
+    { status: 401, headers: { 'Cache-Control': CACHE_CONTROL.none } },
   );
 }
 
@@ -301,6 +302,31 @@ export function gateRouteView(
     cors: isApi || (spelled && route.cors),
     // Every path the render cookie opens has a row (route-policy.test.ts).
     renderCookie: false,
+  };
+}
+
+/**
+ * The gate's Cache-Control default (A10 #15, lib/cache-control.ts): an /api
+ * answer that names no Cache-Control answers `no-store`, whatever made it (a
+ * handler, a refusal of the gate, the app's error or not-found answer: this
+ * runs outside them all, so it sees the answer that goes out). A route that
+ * may be cached names its policy from CACHE_CONTROL; this never overrides
+ * one. Mounted just before the gate (server/app.ts).
+ */
+export function apiCacheDefault(): MiddlewareHandler {
+  return async (c, next) => {
+    await next();
+    const path = new URL(c.req.url).pathname;
+    if (path !== '/api' && !path.startsWith('/api/')) return;
+    if (c.res.headers.has('cache-control')) return;
+    try {
+      c.res.headers.set('Cache-Control', API_CACHE_DEFAULT);
+    } catch {
+      // Immutable headers (a fetched or a redirect Response): a copy takes it.
+      const res = new Response(c.res.body, c.res);
+      res.headers.set('Cache-Control', API_CACHE_DEFAULT);
+      c.res = res;
+    }
   };
 }
 
@@ -487,7 +513,7 @@ function gateHandler(): MiddlewareHandler {
       return withCors(
         new Response('Service unavailable', {
           status: 500,
-          headers: { 'Cache-Control': 'no-store' },
+          headers: { 'Cache-Control': CACHE_CONTROL.none },
         }),
       );
     }

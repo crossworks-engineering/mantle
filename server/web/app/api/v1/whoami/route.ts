@@ -13,24 +13,21 @@ async function handleGET(login: AnyLogin) {
   const displayName =
     login.kind === 'admin' ? login.user.actor.displayName : login.member.displayName;
   const key = getRequestContext()?.accessKey;
-  return NextResponse.json(
-    {
-      role: login.kind,
-      loginId: login.loginId,
-      email: login.email,
-      displayName,
-      key: key
-        ? {
-            id: key.id,
-            prefix: `mtlk_${key.prefix}`,
-            name: key.name,
-            access: key.access,
-            areas: key.areas ? [...key.areas] : null,
-          }
-        : null,
-    } satisfies ApiV1Whoami,
-    { headers: { 'Cache-Control': 'no-store' } },
-  );
+  return NextResponse.json({
+    role: login.kind,
+    loginId: login.loginId,
+    email: login.email,
+    displayName,
+    key: key
+      ? {
+          id: key.id,
+          prefix: `mtlk_${key.prefix}`,
+          name: key.name,
+          access: key.access,
+          areas: key.areas ? [...key.areas] : null,
+        }
+      : null,
+  } satisfies ApiV1Whoami);
 }
 
 /** The login the pipeline answered, read before the exit (A4 hand batch A). */

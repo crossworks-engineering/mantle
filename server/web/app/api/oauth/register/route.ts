@@ -7,11 +7,12 @@
 import { NextResponse } from '@/server/http-compat';
 import { isAllowedRedirectUri, isRemoteMcpEnabled, registerClient } from '@/lib/mcp-oauth';
 import { readJson } from '@/lib/read-body';
+import { CACHE_CONTROL } from '@/lib/cache-control';
 
 function error(status: number, error: string, description?: string) {
   return NextResponse.json(
     { error, ...(description ? { error_description: description } : {}) },
-    { status, headers: { 'Cache-Control': 'no-store' } },
+    { status, headers: { 'Cache-Control': CACHE_CONTROL.none } },
   );
 }
 
@@ -54,6 +55,6 @@ export async function POST(req: Request) {
       response_types: ['code'],
       client_id_issued_at: Math.floor(client.createdAt.getTime() / 1000),
     },
-    { status: 201, headers: { 'Cache-Control': 'no-store' } },
+    { status: 201, headers: { 'Cache-Control': CACHE_CONTROL.none } },
   );
 }

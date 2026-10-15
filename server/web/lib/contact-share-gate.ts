@@ -27,6 +27,7 @@ import {
 } from '@/lib/auth';
 import { cookieValues } from '@/lib/auth/request';
 import { secureCookies } from '@/lib/auth-constants';
+import { CACHE_CONTROL } from './cache-control';
 
 /** A browser keeps at most this many contacts' values in the cookie. */
 export const CONTACT_COOKIE_MAX_VALUES = 8;
@@ -137,7 +138,7 @@ export function contactCodeRequired(share: Share): Response {
   }
   return NextResponse.json(
     { ok: false, error: 'code required' },
-    { status: 401, headers: { 'cache-control': 'no-store' } },
+    { status: 401, headers: { 'Cache-Control': CACHE_CONTROL.none } },
   );
 }
 

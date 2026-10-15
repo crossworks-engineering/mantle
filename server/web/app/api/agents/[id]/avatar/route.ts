@@ -6,6 +6,7 @@ import { loadProfilePreferences } from '@mantle/content';
 import { renderAvatarSvg, resolveAvatarTint } from '@mantle/share-ui/avatar';
 import { db, agents } from '@mantle/db';
 import { UUID_RE } from '@mantle/std';
+import { CACHE_CONTROL } from '@/lib/cache-control';
 
 // Server-render the agent's avatar SVG so non-web clients (the mobile
 // companion) show the same one the web app does.
@@ -79,7 +80,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
   const etag = `"${createHash('sha1').update(JSON.stringify(inputs)).digest('hex')}"`;
   const headers = {
     'Content-Type': 'image/svg+xml; charset=utf-8',
-    'Cache-Control': 'private, max-age=300',
+    'Cache-Control': CACHE_CONTROL.private5m,
     ETag: etag,
   };
   // Tolerate weak validators: a compressing proxy may rewrite the strong tag
