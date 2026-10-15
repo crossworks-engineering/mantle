@@ -229,8 +229,8 @@ describe.skipIf(!DB_URL)('A8: the grants panel’s database rule under a wrong T
           seen[`${via} ${change}`] = await attempt(change, via, true);
         }
       }
-      // Statements that ran with no actor, taken here so they are reported
-      // and pinned, not the setup's generic failure.
+      // The misses logged (warn's staged refusals), taken here so they are
+      // reported and pinned, not the setup's generic failure.
       const misses = m.takeActorMisses();
       console.log(
         [
@@ -268,6 +268,7 @@ const EXPECTED: Record<'off' | 'warn' | 'on', Record<string, 'made' | 'refused'>
   on: { ...ROUTE_MADE, 'scope add': 'refused', 'scope move': 'refused' },
 };
 
-/** Statements with no actor a run of the cases above leaves (the warn
- *  rerun's, see EXPECTED). */
-const MISSES: Record<'off' | 'warn' | 'on', number> = { off: 0, warn: 0, on: 0 };
+/** The misses a run of the cases above logs: in warn, the database's own
+ *  "refused when the check is on" for the scope path's add, its move and
+ *  the move's workspace event (warn logs the refusal and lets it through). */
+const MISSES: Record<'off' | 'warn' | 'on', number> = { off: 0, warn: 3, on: 0 };
