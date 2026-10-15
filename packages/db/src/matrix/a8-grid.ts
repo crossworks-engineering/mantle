@@ -103,6 +103,8 @@ export type A8Fixture = {
   items: Record<string, Partial<Record<GuidePlacement, A8Item>>>;
   kindRoot: Record<string, string>;
   kindRootPath: Record<string, string>;
+  /** Each kind's folder F. */
+  folders: Record<string, { id: string; path: string }>;
 };
 
 const arr = (ids: readonly string[]) => `{${ids.join(',')}}`;
@@ -217,62 +219,18 @@ export async function buildA8Fixture(
     scope[role] = { ws: [...s!.ws], mod: [...s!.mod] };
   }
 
-  const grant = async (id: string) => {
-    await sql.begin(async (tx) => {
-      await tx`select mantle_lock_heads(array[${id}]::uuid[], 'update')`;
-      await tx`delete from item_grants where node_id = ${id} and via_folder_id is null`;
-      await tx`insert into item_grants (node_id, workspace_id, is_home, write) values
-        (${id}, ${ws.H}, true, false), (${id}, ${ws.W}, false, true), (${id}, ${ws.R}, false, false)`;
-    });
+  const fx: A8Fixture = {
+    tag,
+    owner: L.owner,
+    logins: L,
+    ws,
+    privateWs,
+    scope,
+    items: {},
+    kindRoot: {},
+    kindRootPath: {},
+    folders: {},
   };
-
-  /** One item of `kind` at `path` under `parent`, with its content rows,
-   *  its passage and (unless a snapshot copy) an open public link. */
-  const makeItem = async (
-    kind: string,
-    parent: string,
-    path: string,
-    o: { snapshotOf?: string; homeWs?: string } = {},
-  ): Promise<{ id: string; token: string }> => {
-    const id = randomUUID();
-    const token = `zq${randomUUID().replace(/-/g, '').slice(0, 12)}`;
-    const data = { rank: 'a0', ...(o.snapshotOf ? { snapshot_of: o.snapshotOf } : {}) };
-    await sql.begin(async (tx) => {
-      if (o.homeWs) await tx`select set_config('mantle.create_ws', ${o.homeWs}, true)`;
-      await tx`select mantle_lock_heads(array[${parent}]::uuid[], 'share')`;
-      await tx`insert into nodes (id, owner_id, type, title, path, data)
-               values (${id}, ${L.owner}, ${kind}, ${`${tag} ${kind} ${path}`}, ${path}::ltree,
-                       ${sql.json(data)})`;
-    });
-    await sql.begin(async (tx) => {
-      await tx`select mantle_lock_heads(array[${id}]::uuid[], 'update')`;
-      if (kind === 'page') await tx`insert into pages (node_id, doc) values (${id}, '{"v":0}')`;
-      if (kind === 'draw') await tx`insert into draws (node_id, scene) values (${id}, '{"v":0}')`;
-      if (kind === 'table') await tx`insert into tables (node_id, data) values (${id}, '{"v":0}')`;
-      if (kind === 'app') {
-        await tx`insert into apps (node_id) values (${id})`;
-        await tx`insert into app_databases (owner_id, app_node_id, storage_path)
-                 values (${L.owner}, ${id}, ${`/tmp/${id}.db`})`;
-      }
-      if (kind === 'recall') {
-        await tx`insert into recall_maps (id, owner_id, slug, title, node_id)
-                 values (${id}, ${L.owner}, ${`${tag}-${id.slice(0, 8)}`}, ${tag}, ${id})`;
-        await tx`insert into recall_nodes (owner_id, map_id, slug, kind, title)
-                 values (${L.owner}, ${id}, 'card', 'card', 'A card')`;
-      }
-      await tx`insert into content_chunks (owner_id, node_id, ordinal, text)
-               values (${L.owner}, ${id}, 0, ${`a passage about ${token}`})`;
-      if (!o.snapshotOf) {
-        await tx`insert into shares (token, owner_id, node_id, node_type)
-                 values (${`${tag}-${randomUUID()}`}, ${L.owner}, ${id}, ${kind})`;
-      }
-    });
-    return { id, token };
-  };
-
-  const items: A8Fixture['items'] = {};
-  const kindRoot: Record<string, string> = {};
-  const kindRootPath: Record<string, string> = {};
   for (const kind of kinds) {
     const root = rootOf(kind);
     await sql`insert into nodes (owner_id, type, title, path)
@@ -283,36 +241,99 @@ export async function buildA8Fixture(
       await sql<{ id: string }[]>`select id::text as id from nodes
          where owner_id = ${L.owner} and type = 'branch' and path = ${root}::ltree`
     )[0]!.id;
-    kindRoot[kind] = rootId;
-    kindRootPath[kind] = root;
-    const label = `${tag}${kind.replace(/_/g, '')}`;
-    const folderPath = `${root}.${label}f`;
+    fx.kindRoot[kind] = rootId;
+    fx.kindRootPath[kind] = root;
+    const folderPath = `${root}.${tag}${kind.replace(/_/g, '')}f`;
     const folder = randomUUID();
     await sql.begin(async (tx) => {
       await tx`select mantle_lock_heads(array[${rootId}]::uuid[], 'share')`;
       await tx`insert into nodes (id, owner_id, type, title, path)
                values (${folder}, ${L.owner}, 'branch', ${`${tag} F ${kind}`}, ${folderPath}::ltree)`;
     });
-    await grant(folder);
-    const pathAt = (base: string, n: string) => (kind === 'branch' ? `${base}.${label}${n}` : base);
-    const rootItem = await makeItem(kind, rootId, pathAt(root, 'r'));
-    await grant(rootItem.id);
-    const folderItem = await makeItem(kind, folder, pathAt(folderPath, 's'));
-    items[kind] = {
-      root: { ...rootItem, folder: null, parent: rootId, parentPath: root },
-      folder: { ...folderItem, folder, parent: folder, parentPath: folderPath },
-    };
-    // The author's snapshot copy (update-prod.md, "Snapshot copies"): of
-    // the root item, homed in writeGrant's private workspace, Write off.
+    await grantByHand(sql, fx, folder);
+    fx.folders[kind] = { id: folder, path: folderPath };
+    const rootItem = await makeA8Item(sql, fx, kind, 'root');
+    fx.items[kind] = { root: rootItem, folder: await makeA8Item(sql, fx, kind, 'folder') };
     if (GUIDE_SNAPSHOT_KINDS.includes(kind)) {
-      const copy = await makeItem(kind, rootId, pathAt(root, 'c'), {
-        snapshotOf: rootItem.id,
-        homeWs: privateWs.writeGrant!,
-      });
-      items[kind]!.snapshot = { ...copy, folder: null, parent: rootId, parentPath: root };
+      fx.items[kind]!.snapshot = await makeA8Item(sql, fx, kind, 'snapshot', rootItem.id);
     }
   }
-  return { tag, owner: L.owner, logins: L, ws, privateWs, scope, items, kindRoot, kindRootPath };
+  return fx;
+}
+
+/** The fixture's grants by hand on `id`: home H, W with Write on, R with
+ *  Write off. */
+async function grantByHand(sql: Sql, fx: A8Fixture, id: string): Promise<void> {
+  await sql.begin(async (tx) => {
+    await tx`select mantle_lock_heads(array[${id}]::uuid[], 'update')`;
+    await tx`delete from item_grants where node_id = ${id} and via_folder_id is null`;
+    await tx`insert into item_grants (node_id, workspace_id, is_home, write) values
+      (${id}, ${fx.ws.H}, true, false), (${id}, ${fx.ws.W}, false, true),
+      (${id}, ${fx.ws.R}, false, false)`;
+  });
+}
+
+/**
+ * A new item of `kind` in `placement` (guide-oracle.ts, the fixture): at
+ * its kind's root with the grants by hand, in the kind's folder F (it takes
+ * F's grants), or the author's snapshot copy (update-prod.md, "Snapshot
+ * copies": of `copyOf`, homed in writeGrant's private workspace, Write off).
+ * With its content rows, its passage and, unless a copy, an open public
+ * link. The surface cells make one per write cell.
+ */
+export async function makeA8Item(
+  sql: Sql,
+  fx: A8Fixture,
+  kind: string,
+  placement: GuidePlacement,
+  copyOf?: string,
+): Promise<A8Item> {
+  const rootId = fx.kindRoot[kind]!;
+  const root = fx.kindRootPath[kind]!;
+  const f = fx.folders[kind]!;
+  const parent = placement === 'folder' ? f.id : rootId;
+  const parentPath = placement === 'folder' ? f.path : root;
+  const path =
+    kind === 'branch' ? `${parentPath}.${fx.tag}i${randomUUID().slice(0, 8)}` : parentPath;
+  const snapshotOf = placement === 'snapshot' ? (copyOf ?? fx.items[kind]?.root?.id) : undefined;
+  const id = randomUUID();
+  const token = `zq${randomUUID().replace(/-/g, '').slice(0, 12)}`;
+  const data = { rank: 'a0', ...(snapshotOf ? { snapshot_of: snapshotOf } : {}) };
+  const O = fx.owner;
+  await sql.begin(async (tx) => {
+    if (snapshotOf) {
+      await tx`select set_config('mantle.create_ws', ${fx.privateWs.writeGrant!}, true)`;
+    }
+    await tx`select mantle_lock_heads(array[${parent}]::uuid[], 'share')`;
+    await tx`insert into nodes (id, owner_id, type, title, path, data)
+             values (${id}, ${O}, ${kind}, ${`${fx.tag} ${kind} ${placement}`}, ${path}::ltree,
+                     ${sql.json(data)})`;
+  });
+  if (placement === 'root') await grantByHand(sql, fx, id);
+  await sql.begin(async (tx) => {
+    await tx`select mantle_lock_heads(array[${id}]::uuid[], 'update')`;
+    if (kind === 'page') await tx`insert into pages (node_id, doc) values (${id}, '{"v":0}')`;
+    if (kind === 'draw') await tx`insert into draws (node_id, scene) values (${id}, '{"v":0}')`;
+    if (kind === 'table') await tx`insert into tables (node_id, data) values (${id}, '{"v":0}')`;
+    if (kind === 'app') {
+      await tx`insert into apps (node_id) values (${id})`;
+      await tx`insert into app_databases (owner_id, app_node_id, storage_path)
+               values (${O}, ${id}, ${`/tmp/${id}.db`})`;
+    }
+    if (kind === 'recall') {
+      await tx`insert into recall_maps (id, owner_id, slug, title, node_id)
+               values (${id}, ${O}, ${`${fx.tag}-${id.slice(0, 8)}`}, ${fx.tag}, ${id})`;
+      await tx`insert into recall_nodes (owner_id, map_id, slug, kind, title)
+               values (${O}, ${id}, 'card', 'card', 'A card')`;
+    }
+    await tx`insert into content_chunks (owner_id, node_id, ordinal, text)
+             values (${O}, ${id}, 0, ${`a passage about ${token}`})`;
+    if (!snapshotOf) {
+      await tx`insert into shares (token, owner_id, node_id, node_type)
+               values (${`${fx.tag}-${randomUUID()}`}, ${O}, ${id}, ${kind})`;
+    }
+  });
+  return { id, token, folder: placement === 'folder' ? f.id : null, parent, parentPath };
 }
 
 // ── cells ───────────────────────────────────────────────────────────────────
