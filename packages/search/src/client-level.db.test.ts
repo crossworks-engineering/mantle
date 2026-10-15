@@ -51,9 +51,16 @@ describe.skipIf(!URL)('every search arm fails closed in a scope that holds no wo
     m = await import('@mantle/db');
     s = await import('./index');
     sqlTag = (await import('drizzle-orm')).sql;
-    const { ensureTestAnchor } = await import('@mantle/db/test-support');
+    const { ensureTestAnchor, superuserClient } = await import('@mantle/db/test-support');
     admin = (m.systemDb as unknown as { $client: Admin }).$client;
-    await m.ensureViewerRoles(admin, process.env.MANTLE_MASTER_KEY);
+    // The roles as the superuser (arch A9): the app's pool may be the
+    // runtime role, which may not manage roles.
+    const su = superuserClient(URL!);
+    try {
+      expect(await m.ensureViewerRoles(su, process.env.MANTLE_MASTER_KEY)).toBe('ok');
+    } finally {
+      await su.end();
+    }
     anchor = await ensureTestAnchor(admin);
 
     for (const l of LEVELS) {
@@ -183,8 +190,15 @@ describe.skipIf(!URL)('every search arm fails closed in a scope that holds no wo
   // There is no client login since W8a: only the member half of the old
   // "a client login is never a member" case is left.
   it("a member login's space is a member space (Team drafts)", async () => {
-    const [r] = await admin<{ member: boolean }[]>`
-      select mantle_member_space((select id from spaces where kind = 'personal' and login_id = ${member})) as member`;
+    // As the superuser: the runtime role (arch A9) may not run the space
+    // predicate the row rules use (the app never calls it).
+    const [r] = await (
+      await import('@mantle/db/test-support')
+    ).asMigrator(
+      URL!,
+      (tx) => tx<{ member: boolean }[]>`
+      select mantle_member_space((select id from spaces where kind = 'personal' and login_id = ${member})) as member`,
+    );
     expect(r).toEqual({ member: true });
   });
 });

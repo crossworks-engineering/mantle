@@ -39,7 +39,7 @@
  *    that container, and a host install only when there is none.
  */
 import type { LoginRole } from '@mantle/client-types/role-names';
-import { envDynamic } from '@mantle/config';
+import { env, envDynamic } from '@mantle/config';
 import { spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { readdirSync, readFileSync } from 'node:fs';
@@ -59,12 +59,12 @@ import {
 import { viewerRoleName } from './viewer';
 import { afterMigrations, type StepLog } from './migrator-steps';
 import {
+  APP_SCHEMAS,
   applyRuntimeGrants,
   ensureRuntimeRoles,
   ownTables,
-  OWNER_ROLE,
   RUNTIME_ROLE,
-  SYSTEM_ROLE,
+  RUNTIME_ROLES,
 } from './runtime-role';
 
 type Sql = postgres.Sql;
@@ -268,6 +268,21 @@ export async function superuserExec<T = Record<string, unknown>>(
   }
 }
 
+/**
+ * The workspaces switch (mantle_ws_migrate), as the migrator runs it: on a
+ * connection of its own as the superuser of `url` (default DATABASE_URL,
+ * the database a test points the app's pools at), as system(test). Never
+ * through the app's pools: under MANTLE_DB_RUNTIME_ROLE they log in as the
+ * runtime role, which may not run it (arch A9: the switch reaches DDL; the
+ * app runs it as the migrator, executeAsMigrator). Returns its rows.
+ */
+export async function runWorkspacesSwitch<T = Record<string, unknown>>(
+  url: string | undefined = env('DATABASE_URL'),
+): Promise<T[]> {
+  if (!url) throw new Error('runWorkspacesSwitch: no database URL (set DATABASE_URL)');
+  return superuserExec<T>(url, 'select * from mantle_ws_migrate()');
+}
+
 /** Poll `check` until it holds, or fail after `timeoutMs`. */
 export async function pollUntil(
   check: () => boolean | Promise<boolean>,
@@ -443,6 +458,14 @@ export async function createScratchDatabaseBefore(
     // through the app's pool.
     await ownTables(sql);
     await applyRuntimeGrants(sql);
+    // And EXECUTE on every function of that schema: the allowlist reads
+    // the viewer roles' grants of the final schema (0278 gives the write
+    // role mantle_is_brain_space, say), which an older one lacks, and no
+    // box ever ran an older schema under the runtime role. The rest of the
+    // migrations' afterMigrations puts the allowlist back.
+    await sql.unsafe(
+      `GRANT EXECUTE ON ALL ROUTINES IN SCHEMA ${APP_SCHEMAS.join(', ')} TO "${RUNTIME_ROLE}"`,
+    );
   } catch (err) {
     await sql.end();
     await drop();
@@ -481,9 +504,7 @@ async function prepareScratch(sql: Sql): Promise<void> {
   // none (afterMigrations grants to them).
   for (const role of [
     ...[...POOL_ROLES, ...RETIRED_POOL_ROLES].map((l) => viewerRoleName(l)),
-    OWNER_ROLE,
-    SYSTEM_ROLE,
-    RUNTIME_ROLE,
+    ...RUNTIME_ROLES,
   ]) {
     if (roles.has(role)) continue;
     await sql

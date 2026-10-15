@@ -215,7 +215,7 @@ describe.skipIf(!URL)('W7a fix round 2', () => {
       (${second}, ${`${tag}-l@example.invalid`}, 'x', false, 'admin', 'Second Admin')`);
     await x(sql`insert into spaces (id, kind, login_id) values (${owner}, 'brain', ${owner})
       on conflict (id) do nothing`);
-    await x(sql`select * from mantle_ws_migrate()`);
+    await (await import('@mantle/db/test-support')).runWorkspacesSwitch();
     adminWs = (
       await x<{ id: string }>(sql`select id::text from workspaces
         where owner_id = ${owner} and is_admin and archived_at is null`)

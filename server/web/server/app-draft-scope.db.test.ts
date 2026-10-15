@@ -274,7 +274,7 @@ describe.skipIf(!URL)('app drafts under the row lock read as the caller’s scop
       (${ids.writer}, ${email('writer')}, 'x', false, 'member', 'Writer')`);
     await x(sql`insert into spaces (id, kind, login_id) values (${ids.owner}, 'brain', ${ids.owner})
       on conflict (id) do nothing`);
-    await x(sql`select * from mantle_ws_migrate()`);
+    await (await import('@mantle/db/test-support')).runWorkspacesSwitch();
     const ws = await x<{ id: string; admin: boolean }>(sql`
       select id::text, is_admin as admin from workspaces
        where owner_id = ${ids.owner} and archived_at is null`);

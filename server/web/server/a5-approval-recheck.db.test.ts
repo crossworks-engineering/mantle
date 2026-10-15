@@ -375,7 +375,7 @@ describe.skipIf(!DB_URL)('the approval re-check (A5 step 6c): the recorded matri
       (${id.other}, ${emailOf(id.other)}, 'x', false, 'admin', 'Other')`);
     await x(sql`insert into spaces (id, kind, login_id) values (${id.owner}, 'brain', ${id.owner})
       on conflict (id) do nothing`);
-    await x(sql`select * from mantle_ws_migrate()`);
+    await (await import('@mantle/db/test-support')).runWorkspacesSwitch();
     adminWs = (
       await x<{ id: string }>(sql`select id::text from workspaces
         where owner_id = ${id.owner} and is_admin and archived_at is null`)

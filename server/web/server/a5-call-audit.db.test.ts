@@ -103,7 +103,7 @@ describe.skipIf(!URL)('one audit row for every tool write (A5 step 6d)', () => {
       values (${owner}, ${email}, 'x', true, 'admin', 'Owner')`);
     await x(sql`insert into spaces (id, kind, login_id) values (${owner}, 'brain', ${owner})
       on conflict (id) do nothing`);
-    await x(sql`select * from mantle_ws_migrate()`);
+    await (await import('@mantle/db/test-support')).runWorkspacesSwitch();
     await m.asSystem(() => t.seedBuiltinTools(owner), 'test');
     const note = await m.asSystem(
       () => content.createNote(owner, { title: `${tag} note`, content: 'body' }),

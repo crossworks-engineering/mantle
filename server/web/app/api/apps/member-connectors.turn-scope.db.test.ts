@@ -204,7 +204,7 @@ describe.skipIf(!URL)('a login’s connector tools: one rule (W4b fix round 2)',
         values (${owner}, ${slug}, ${slug}, ${slug}, ${JSON.stringify(t.inputSchema)}::jsonb,
                 ${JSON.stringify(t.handler)}::jsonb, ${mark}::jsonb)`);
     }
-    await x(sql`select * from mantle_ws_migrate()`);
+    await (await import('@mantle/db/test-support')).runWorkspacesSwitch();
     const [teamRow] = await x<{ id: string }>(sql`
       select id::text as id from workspaces where owner_id = ${owner} and name = 'Team' and not is_admin`);
     team = teamRow!.id;

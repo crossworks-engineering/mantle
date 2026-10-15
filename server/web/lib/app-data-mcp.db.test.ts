@@ -133,7 +133,7 @@ describe.skipIf(!URL)('app data over a login MCP, end to end', () => {
       (${member}, ${`${tag}-m@example.invalid`}, 'x', false, 'member', 'Mia Member')`;
     await sql`insert into spaces (id, kind, login_id) values (${anchor}, 'brain', ${anchor})
       on conflict (id) do nothing`;
-    await sql`select * from mantle_ws_migrate()`;
+    await (await import('@mantle/db/test-support')).runWorkspacesSwitch();
     team = (
       await sql<{ id: string }[]>`select id::text as id from workspaces
         where owner_id = ${anchor} and name = 'Team' and not is_admin`

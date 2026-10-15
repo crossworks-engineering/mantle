@@ -151,7 +151,7 @@ describe.skipIf(!URL)('W6b fix round 2', () => {
       (${mem}, ${email('mem')}, 'x', false, 'member', 'Mia Member')`);
     await x(sql`insert into spaces (id, kind, login_id) values (${owner}, 'brain', ${owner})
       on conflict (id) do nothing`);
-    await x(sql`select * from mantle_ws_migrate()`);
+    await (await import('@mantle/db/test-support')).runWorkspacesSwitch();
     const tokens = await import('../lib/auth/tokens');
     cookieOf = (id) => `mantle_session=${tokens.buildSessionCookie(id).value}`;
     const { createApp } = await import('./app');

@@ -117,7 +117,7 @@ describe.skipIf(!URL)('W8 integration: agents with no workspace', () => {
     let adminWs = '';
 
     beforeAll(async () => {
-      await x(sql`select * from mantle_ws_migrate()`);
+      await (await import('@mantle/db/test-support')).runWorkspacesSwitch();
       adminWs = (
         await x<{ id: string }>(sql`select id::text as id from workspaces
           where owner_id = ${owner} and is_admin and archived_at is null`)

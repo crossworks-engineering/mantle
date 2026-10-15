@@ -151,7 +151,7 @@ describe.skipIf(!URL)('a Team assistant turn in its workspace scope (W4b)', () =
       returning id`);
     agentId = a!.id;
     // The workspaces go live: the team responder becomes Team's assistant.
-    await x(sqlTag`select * from mantle_ws_migrate()`);
+    await (await import('@mantle/db/test-support')).runWorkspacesSwitch();
     const [ws] = await x<{ id: string }>(
       sqlTag`select id::text as id from workspaces where owner_id = ${ownerId} and name = 'Team' and not is_admin`,
     );

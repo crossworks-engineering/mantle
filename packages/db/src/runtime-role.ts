@@ -42,6 +42,7 @@
 import { hkdfSync } from 'node:crypto';
 import type postgres from 'postgres';
 import { env, feature } from '@mantle/config';
+import { backoffMs, withRetry } from '@mantle/std';
 import { ACCESS_MATRIX, GAP_WRITER_ROLE } from './access-matrix';
 import { viewerRoleName } from './viewer';
 import { LOCK_ATTRS, POOL_ROLES, runRoleStatement, withRoleRetry } from './viewer-roles';
@@ -441,6 +442,11 @@ export const OWN_LOCK_TIMEOUT = '200ms';
  *  so every lock it took is let go) and each table goes on its own. */
 const OWN_BATCH_BUDGET_MS = 1_000;
 
+/** A lock not to be had within lock_timeout. */
+function isBusy(err: unknown): boolean {
+  return (err as { code?: string })?.code === '55P03';
+}
+
 /** "tuple concurrently updated": two sessions changing the same catalog
  *  row (a GRANT on the table in another migrate or test). Idempotent, so
  *  tried again; any other internal error is not. */
@@ -483,23 +489,28 @@ export async function ownTables(sql: Sql): Promise<OwnOutcome> {
                 and d.refclassid = 'pg_class'::regclass and d.deptype in ('a', 'i')))
      order by 1`;
   const change = async (stmt: string, rel: string) => {
-    for (let attempt = 1; ; attempt++) {
-      try {
-        await sql.begin(async (tx) => {
-          await tx.unsafe(`set local lock_timeout = '${OWN_LOCK_TIMEOUT}'`);
-          await tx.unsafe(stmt);
-        });
-        out.owned.push(rel);
-        return;
-      } catch (err) {
-        const busy = (err as { code?: string }).code === '55P03';
-        if (attempt < 3 && (busy || isConcurrentUpdate(err))) {
-          await new Promise((r) => setTimeout(r, 50 * attempt + Math.random() * 50));
-          continue;
-        }
-        out.failed.push({ rel, error: err instanceof Error ? err.message : String(err), busy });
-        return;
-      }
+    try {
+      // Three tries, 50 then 100 ms apart (plus jitter), on a busy lock or
+      // a concurrent catalog update only.
+      await withRetry(
+        () =>
+          sql.begin(async (tx) => {
+            await tx.unsafe(`set local lock_timeout = '${OWN_LOCK_TIMEOUT}'`);
+            await tx.unsafe(stmt);
+          }),
+        {
+          retries: 2,
+          retryOn: ({ error }) => isBusy(error) || isConcurrentUpdate(error),
+          delayMs: (retry) => backoffMs(retry - 1, { baseMs: 50, jitter: 'quarter' }),
+        },
+      );
+      out.owned.push(rel);
+    } catch (err) {
+      out.failed.push({
+        rel,
+        error: err instanceof Error ? err.message : String(err),
+        busy: isBusy(err),
+      });
     }
   };
   const alter = ({ rel, kind }: { rel: string; kind: string }) =>

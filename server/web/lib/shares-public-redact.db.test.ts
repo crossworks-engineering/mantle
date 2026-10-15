@@ -189,7 +189,12 @@ describe.skipIf(!URL)('open links redact what the public may not read', () => {
         values (${owner}, ${nodeId}, ${type}, ${`${tag}-${type}`}) returning id`)) as unknown as {
         id: string;
       }[];
-      const [got] = (await m.db.execute(
+      // As the superuser: the runtime role (arch A9) may not run the 0262
+      // fill's function (the app never calls it).
+      const [got] = (await (
+        await import('@mantle/db/test-support')
+      ).superuserExec(
+        URL!,
         sqlTag`select mantle_link_served_by_levels(${row!.id}) as served`,
       )) as unknown as { served: string[] }[];
       expect(got!.served, type).toEqual([id.openPage]);

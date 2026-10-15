@@ -79,7 +79,7 @@ describe.skipIf(!URL)('POST /api/pages/:id/move, on Postgres', () => {
     await m.systemDb.execute(sqlTag`
       insert into spaces (id, kind, login_id) values (${h.owner}, 'brain', ${h.owner})
       on conflict (id) do nothing`);
-    await m.systemDb.execute(sqlTag`select * from mantle_ws_migrate()`);
+    await (await import('@mantle/db/test-support')).runWorkspacesSwitch();
     await m.systemDb.execute(sqlTag`
       insert into workspaces (id, owner_id, name) values (${S}, ${h.owner}, 'Sales')`);
     await tree.ensureKindRoot(h.owner, 'pages');

@@ -34,6 +34,15 @@ describe.skipIf(!URL)('W2: a page without its embed finds none of its words', ()
   let refold: typeof import('./refold-embeds');
   let admin: Admin;
   let anchor = '';
+  /** The mark and the unmark (0247's repair functions, run by a migration
+   *  or an operator, never by the app) as the superuser, as system(migration),
+   *  in a transaction of their own: the runtime role (arch A9) may not run
+   *  them. */
+  type MigratorTx = Parameters<
+    Parameters<(typeof import('@mantle/db/test-support'))['asMigrator']>[1]
+  >[0];
+  const asSu = async <T>(fn: (tx: MigratorTx) => Promise<T>): Promise<T> =>
+    (await import('@mantle/db/test-support')).asMigrator(URL!, fn);
   const tag = `wsw2${randomUUID().replace(/-/g, '').slice(0, 10)}`;
   // The embed's words: in its title and in its text. None may reach a reader
   // of the page who may not read the file.
@@ -117,9 +126,16 @@ describe.skipIf(!URL)('W2: a page without its embed finds none of its words', ()
     process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
     m = await import('@mantle/db');
     refold = await import('./refold-embeds');
-    const { ensureTestAnchor } = await import('@mantle/db/test-support');
+    const { ensureTestAnchor, superuserClient } = await import('@mantle/db/test-support');
     admin = (m.systemDb as unknown as { $client: Admin }).$client;
-    await m.ensureViewerRoles(admin, process.env.MANTLE_MASTER_KEY);
+    // The roles as the superuser (arch A9): the app's pool may be the
+    // runtime role, which may not manage roles.
+    const su = superuserClient(URL!);
+    try {
+      expect(await m.ensureViewerRoles(su, process.env.MANTLE_MASTER_KEY)).toBe('ok');
+    } finally {
+      await su.end();
+    }
     anchor = await ensureTestAnchor(admin);
     await admin`insert into auth.users (id, email, password_hash, role)
       values (${member}, ${`${tag}-m@example.invalid`}, 'x', 'member')`;
@@ -210,8 +226,10 @@ describe.skipIf(!URL)('W2: a page without its embed finds none of its words', ()
   });
 
   it('the mark sets the old summary aside and hides the old facts; the re-fold changes no queue', async () => {
-    const marked = (await admin`
-      select * from mantle_mark_derived_mixed(false, ${[unheld, granted, orphan]}::uuid[])`) as unknown as {
+    const marked = (await asSu(
+      (tx) => tx`
+      select * from mantle_mark_derived_mixed(false, ${[unheld, granted, orphan]}::uuid[])`,
+    )) as unknown as {
       node_type: string;
       nodes_marked: string;
       summaries_moved: string;
@@ -222,8 +240,10 @@ describe.skipIf(!URL)('W2: a page without its embed finds none of its words', ()
       { node_type: 'page', nodes_marked: '3', summaries_moved: '3', facts_marked: '6' },
     ]);
     // Idempotent.
-    const again =
-      await admin`select * from mantle_mark_derived_mixed(false, ${[unheld, granted, orphan]}::uuid[])`;
+    const again = await asSu(
+      (tx) =>
+        tx`select * from mantle_mark_derived_mixed(false, ${[unheld, granted, orphan]}::uuid[])`,
+    );
     expect(again).toEqual([]);
 
     const notified: string[] = [];
@@ -272,7 +292,7 @@ describe.skipIf(!URL)('W2: a page without its embed finds none of its words', ()
   });
 
   it('a row that changes between the read and the write is left for the next run', async () => {
-    await admin`select * from mantle_mark_derived_mixed(false, ${[raced]}::uuid[])`;
+    await asSu((tx) => tx`select * from mantle_mark_derived_mixed(false, ${[raced]}::uuid[])`);
     const racing = {
       ...deps,
       // Runs between the re-fold's read and its locked write: an edit lands.
@@ -295,17 +315,18 @@ describe.skipIf(!URL)('W2: a page without its embed finds none of its words', ()
   it('the mark reads each page by its own content: a child page counts, a page with no embed never', async () => {
     // Another page in the database hosts a child page: the plain one must
     // still not be marked (each page is judged by its own doc).
-    expect(await admin`select * from mantle_mark_derived_mixed(true, ${[plain]}::uuid[])`).toEqual(
-      [],
-    );
+    expect(
+      await asSu((tx) => tx`select * from mantle_mark_derived_mixed(true, ${[plain]}::uuid[])`),
+    ).toEqual([]);
     const [h] = await admin<{ plain: boolean; parent: boolean }[]>`
       select mantle_embed_host(${plain}, 'page') as plain, mantle_embed_host(${parent}, 'page') as parent`;
     expect(h).toEqual({ plain: false, parent: true });
   });
 
   it('notes are never marked; a note 0247 marked gets its summary back', async () => {
-    const [u] = await admin<{ n: string }[]>`
-      select mantle_unmark_mixed_notes(${[note]}::uuid[]) as n`;
+    const [u] = await asSu(
+      (tx) => tx<{ n: string }[]>`select mantle_unmark_mixed_notes(${[note]}::uuid[]) as n`,
+    );
     expect(Number(u!.n)).toBe(1);
     const [n] = await admin<{ s: string | null; d: boolean }[]>`
       select data->>'summary' as s, derived_mixed as d from nodes where id = ${note}`;
@@ -314,8 +335,9 @@ describe.skipIf(!URL)('W2: a page without its embed finds none of its words', ()
       select count(*)::int as n from node_mixed_summaries where node_id = ${note}`;
     expect(side!.n).toBe(0);
     // Edited after the mark: unmarked, its stale summary not brought back.
-    const [ue] = await admin<{ n: string }[]>`
-      select mantle_unmark_mixed_notes(${[noteEdited]}::uuid[]) as n`;
+    const [ue] = await asSu(
+      (tx) => tx<{ n: string }[]>`select mantle_unmark_mixed_notes(${[noteEdited]}::uuid[]) as n`,
+    );
     expect(Number(ue!.n)).toBe(1);
     const [e] = await admin<{ s: string | null; d: boolean; side: number }[]>`
       select data->>'summary' as s, derived_mixed as d,
@@ -323,9 +345,9 @@ describe.skipIf(!URL)('W2: a page without its embed finds none of its words', ()
         from nodes where id = ${noteEdited}`;
     expect(e).toEqual({ s: null, d: false, side: 0 });
     // It embeds a file and has a summary: still never marked.
-    expect(await admin`select * from mantle_mark_derived_mixed(false, ${[note]}::uuid[])`).toEqual(
-      [],
-    );
+    expect(
+      await asSu((tx) => tx`select * from mantle_mark_derived_mixed(false, ${[note]}::uuid[])`),
+    ).toEqual([]);
   });
 
   it('GRANTED without its embed: a Team scope finds none of its words', async () => {

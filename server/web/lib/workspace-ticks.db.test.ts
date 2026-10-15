@@ -77,7 +77,7 @@ describe.skipIf(!URL)('the 0286 roll: count, then clear the member ticks', () =>
     }
     // The switch: every login a Team Moderator, then 0286's step makes
     // Team a normal workspace (it holds members, so it is kept).
-    await x(sql`select * from mantle_ws_migrate()`);
+    await (await import('@mantle/db/test-support')).runWorkspacesSwitch();
     const ws = await x<{ id: string; is_admin: boolean }>(sql`
       select id::text as id, is_admin from workspaces
        where owner_id = ${owner} and (is_admin or name = 'Team')`);

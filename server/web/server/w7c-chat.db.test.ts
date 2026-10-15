@@ -204,7 +204,9 @@ describe.skipIf(!URL)('W7c: own threads only, per role', () => {
       (${member3}, ${`${tag}-p@example.invalid`}, 'x', false, 'member', 'Member three')`);
     await x(sql`insert into spaces (id, kind, login_id) values (${owner}, 'brain', ${owner})
       on conflict (id) do nothing`);
-    const migrated = await x<{ section: string }>(sql`select * from mantle_ws_migrate()`);
+    const migrated = await (
+      await import('@mantle/db/test-support')
+    ).runWorkspacesSwitch<{ section: string }>();
     expect(migrated.filter((r) => r.section === 'reach-fail')).toEqual([]);
     const wsRows = await x<{ id: string; is_admin: boolean; bridge_key: string | null }>(
       sql`select id::text, is_admin, bridge_key from workspaces where owner_id = ${owner}`,

@@ -114,7 +114,7 @@ describe.skipIf(!URL)('assistant turn creates follow the home rule (A0)', () => 
       (${adm2}, ${`${tag}-a@example.invalid`}, 'x', false, 'admin')`);
     await x(sql`insert into spaces (id, kind, login_id) values (${owner}, 'brain', ${owner})
       on conflict (id) do nothing`);
-    await x(sql`select * from mantle_ws_migrate()`);
+    await (await import('@mantle/db/test-support')).runWorkspacesSwitch();
     const wsRows = await x<{ id: string; key: string }>(sql`
       select id::text as id, (case when is_admin then 'admin' when name = 'Team' then 'team' end) as key from workspaces where owner_id = ${owner}`);
     team = wsRows.find((r) => r.key === 'team')!.id;

@@ -86,7 +86,7 @@ describe.skipIf(!URL)('writers with the bridge off hold their heads (heads check
       values (${brain}, ${`bw-${brain.slice(0, 8)}@example.invalid`}, 'x', true, 'admin')`);
     await m.systemDb.execute(sqlTag`insert into spaces (id, kind, login_id)
       values (${brain}, 'brain', ${brain}) on conflict (id) do nothing`);
-    await m.systemDb.execute(sqlTag`select * from mantle_ws_migrate()`);
+    await (await import('@mantle/db/test-support')).runWorkspacesSwitch();
     // A Team as a brain switched before 0286 has it (a new brain has none).
     await m.systemDb.execute(sqlTag.raw(teamWorkspaceSql(brain)));
     const ws = await rows<{ name: string; id: string }>(
@@ -110,7 +110,11 @@ describe.skipIf(!URL)('writers with the bridge off hold their heads (heads check
 
   it('migrated, and the check is on', async () => {
     expect(admin && team).toBeTruthy();
-    const mode = await rows<{ m: string }>(sqlTag`select mantle_heads_check_mode() as m`);
+    // The box mode, as the superuser: the runtime role (arch A9) may not
+    // run mantle_heads_check_mode (the app never calls it).
+    const mode = await (
+      await import('@mantle/db/test-support')
+    ).superuserExec<{ m: string }>(scratch!.url, 'select mantle_heads_check_mode() as m');
     expect(mode[0]!.m).toBe('on');
   });
 

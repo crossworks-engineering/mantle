@@ -91,7 +91,7 @@ describe.skipIf(!URL)('list chips and ?ws= (W5b2)', () => {
       (${mem}, ${email('mem')}, 'x', false, 'member')`);
     await x(sql`insert into spaces (id, kind, login_id) values (${owner}, 'brain', ${owner})
                 on conflict (id) do nothing`);
-    await x(sql`select * from mantle_ws_migrate()`);
+    await (await import('@mantle/db/test-support')).runWorkspacesSwitch();
     admin = (
       await x<{ id: string }>(
         sql`select id::text as id from workspaces where owner_id = ${owner} and is_admin`,

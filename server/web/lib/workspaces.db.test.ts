@@ -182,7 +182,7 @@ describe.skipIf(!URL)('workspace management (W5a)', () => {
       values (${owner}, ${CONN}, 'Connector W', ARRAY['conn_w_do']::text[], 'admin', true, ${binding}::jsonb)`);
     await x(sql`insert into nodes (id, owner_id, type, title, path)
       values (${note}, ${owner}, 'note', 'a note', 'notes')`);
-    await x(sql`select * from mantle_ws_migrate()`);
+    await (await import('@mantle/db/test-support')).runWorkspacesSwitch();
     // After the migration, so it attaches neither (it picks the persona).
     await x(sql`insert into agents (id, owner_id, slug, name, model, system_prompt, role) values
       (${agentA}, ${owner}, 'w5a-a', 'Assistant A', 'm', 'p', 'responder'),

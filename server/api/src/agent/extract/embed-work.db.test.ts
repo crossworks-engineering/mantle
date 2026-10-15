@@ -234,7 +234,7 @@ describe.skipIf(!URL)('an embed stamp is never a model call (A10 #7 fix round 1)
       (${owner}, ${`a10ew-${owner.slice(0, 8)}@example.invalid`}, 'x', true, 'admin')`);
     await x(sql`insert into spaces (id, kind, login_id) values (${owner}, 'brain', ${owner})
       on conflict (id) do nothing`);
-    await x(sql`select * from mantle_ws_migrate()`);
+    await (await import('@mantle/db/test-support')).runWorkspacesSwitch();
   }, 180_000);
 
   afterAll(async () => {
