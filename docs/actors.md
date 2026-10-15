@@ -836,6 +836,119 @@ row's rate limits (RouteRow `rateLimit`, named in
 that reads its login at the read takes a login's limit at that read
 (`publicLoginCaller`). Then the handler.
 
+## Kind lists (A10 #12)
+
+The kind registry (`ITEM_KINDS`, `packages/client-types/src/kinds.ts`, A1)
+names every `node_type` value once. Before A10 #12 about ten lists of kinds
+were written by hand beside it, and three disagreed with it; now each list
+is a filter over one registry field, derived in
+`packages/client-types/src/kind-lists.ts` (the `@mantle/client-types/kind-lists`
+subpath, additive to the published contract).
+
+**The fields and the lists derived from them** (every list in registry
+order; the code asks each one for membership only, except the rank):
+
+| Field           | Means                                                   | Derived list                                        | Read by                                                                                                                  |
+| --------------- | ------------------------------------------------------- | --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `extract`       | the extractor reads it by default                       | `EXTRACT_KINDS`                                     | `DEFAULT_EXTRACT_TYPES` (`server/api/src/agent/extract/gates.ts`), `LANDED_TYPES` (`server/web/lib/integrity/landed.ts`) |
+| `corpusMap`     | listed by title in the responder's corpus map           | `CORPUS_MAP_KINDS`                                  | `packages/runtime/src/agent/conversation.ts`                                                                             |
+| `contextRef`    | the name a context ref uses (`branch` is `folder`)      | `CONTEXT_REF_KINDS`, `NODE_TYPE_BY_CONTEXT_REF`     | `CONTEXT_KINDS`, `NODE_TYPE_BY_KIND` (`packages/db/src/context-ref-resolve.ts`)                                          |
+| `embeds`        | embeds other items (node_embeds)                        | `EMBEDDING_KINDS`                                   | `packages/content/src/embed-closure.ts`, `server/web/lib/maintenance/refold-embeds.ts`                                   |
+| `mentionTarget` | a mention chip may name it                              | `MENTION_TARGET_KINDS`                              | `server/web/app/api/mentions/search/route.ts`                                                                            |
+| `linkServes`    | its public link serves what it names or embeds          | `LINK_SERVE_KINDS`                                  | `packages/content/src/link-serve.ts`                                                                                     |
+| `exportAs`      | default download format, or false                       | `EXPORT_FORMAT_BY_KIND`                             | `EXPORTABLE_TYPES`, `ExportKind` (`packages/content/src/export-node.ts`)                                                 |
+| `accepted`      | an accepted item, with the rank that names a bundle     | `ACCEPTED_KINDS`, `acceptedRank`, `forAcceptedKind` | the four accepted item switches (below), `packages/content/src/login-notices.ts`                                         |
+| `searchTool`    | a `type` of the search tools (searchable plus `secret`) | `SEARCH_TOOL_KINDS`                                 | `search_nodes` (`packages/tools/src/builtins-search.ts`), the MCP `search` (`packages/mcp-core/src/mcp-defs.ts`)         |
+| `peerPick`      | offered by the linked brain grant picker                | `PEER_PICK_EXCLUDED_KINDS`                          | `server/web/app/api/peers/nodes/route.ts`                                                                                |
+| `documentTitle` | its title names a document                              | `DOCUMENT_TITLE_KINDS`                              | `packages/content/src/entity-names.ts`                                                                                   |
+
+**One switch over an accepted item.** The same 5-case switch (page, note,
+table, draw, file) was copied four times: reading an accepted item back
+(`packages/content/src/member-accepted.ts`), the Library item
+(`packages/content/src/member-library.ts`), recording the snapshot on accept
+(`packages/content/src/member-snapshots.ts`) and making an accepted copy
+(`server/web/lib/snapshot-copies.ts`). Each now calls `forAcceptedKind(item,
+cases)`, whose `cases` must have one entry per accepted kind: a kind that
+turns `accepted` on fails to compile at all four until it has its case, and
+a kind that is not accepted answers null.
+
+**Inventory before the move** (main v0.300.46, file:line, what it meant):
+
+- `server/api/src/agent/extract/gates.ts:101` DEFAULT_EXTRACT_TYPES (15): the
+  extractor's default allowlist. Now `extract`.
+- `server/web/lib/integrity/landed.ts:29` LANDED_TYPES (12): the integrity
+  view's kinds. Now `extract` (the named fix below).
+- `packages/runtime/src/agent/conversation.ts:224` CORPUS_MAP_TYPES (6). Now
+  `corpusMap`.
+- `packages/db/src/context-ref-resolve.ts:40` CONTEXT_KINDS (13) and `:88`
+  NODE_TYPE_BY_KIND. Now `contextRef`.
+- `packages/content/src/embed-closure.ts:22` EMBEDDING_KINDS (3) and
+  `server/web/lib/maintenance/refold-embeds.ts:43` Kind and KINDS (3). Now
+  `embeds`.
+- `server/web/app/api/mentions/search/route.ts:32` (3): mention targets. Now
+  `mentionTarget`.
+- `packages/content/src/link-serve.ts:200` (5): kinds whose link serves
+  their embeds. Now `linkServes`.
+- `packages/content/src/export-node.ts:28` ExportKind and `:68`
+  EXPORTABLE_TYPES (4). Now `exportAs`.
+- `packages/content/src/login-notices.ts:201` TYPE_RANK (5, ordered). Now
+  `accepted.rank`.
+- The four switches: `member-accepted.ts:250`, `member-library.ts:180`,
+  `member-snapshots.ts:176`, `snapshot-copies.ts:194`. Now `accepted` and
+  `forAcceptedKind`.
+- `packages/tools/src/builtins-search.ts:55` and
+  `packages/mcp-core/src/mcp-defs.ts:174`: the search tools' `type` enums
+  (17 each, two hand orders). Now `searchTool`.
+- `server/web/app/api/peers/nodes/route.ts:11` EXCLUDED (3). Now `peerPick`.
+- `packages/content/src/entity-names.ts:31` DOCUMENT_NODE_TYPES (3). Now
+  `documentTitle`.
+- `packages/db/src/schema/nodes.ts:21` the `node_type` enum itself: kept, the
+  one named file (the SQL type the registry mirrors).
+
+**Named changes** (`packages/client-types/src/kind-lists.test.ts` RECORDED
+holds every list as main wrote it, proved against the source in the first
+commit; CHANGES names each cell that moved):
+
+- **Fixed:** LANDED_TYPES gains `email_thread`, `documentation` and
+  `location`, the three kinds the extractor reads that the integrity view
+  could not see. Visibility only: the view is read only, and the extract
+  set is unchanged (no kind is extracted that was not before).
+- **Order only:** the search tools' `type` enums list the same 17 kinds in
+  registry order (the tool schema text changes, the accepted values do not).
+
+**Differences kept, now a field each:** the corpus map lists `app` (not
+extracted) and leaves out mail, journal, events and contacts; the context
+refs speak the client's vocabulary (`folder`); the search tools accept
+`secret` where the search screen's filter (`searchable`) does not; the peer
+picker offers any kind but folders, peer records and secrets, wider than the
+category grants (`peerShare`); a bundle's naming rank puts tables before
+drawings, unlike the Library order.
+
+**Not lists, so not folded:** switches and maps that do a different thing
+per kind keep their cases (journey wording in
+`packages/client-types/src/journey-format.ts`, the share renderers in
+`server/web/lib/shares.ts` and `server/web/server/pages/share.tsx`, derived
+node buckets in `packages/content/src/derived.ts` and
+`packages/files/src/derived-counts.ts`, kind icons in
+`server/web/components/share/contact-shares-menu.tsx`, the scheme types in
+`packages/content-core/src/markdown-refs.ts`), and the access oracle
+(`packages/db/src/matrix/oracle.ts`) is written from the guide on purpose,
+not from the registry.
+
+**The pin.** `eslint-rules/no-hand-kind-lists.mjs` flags a literal list of
+3 or more node types (an array, a Set's, a z.enum's, an inline
+`[...].includes(`) in product code outside `KIND_LIST_ALLOW`
+(`eslint-rules/arch-counts.mjs`). The scoreboard counts the same lists:
+`handKindLists` pinned at 0, `handKindListsAllowed` at 1;
+`eslint-rules/arch-lints.test.ts` holds the allowed files to exactly the
+ones that still hold a list. Turning `extract` on for a kind is a cost
+decision (its whole corpus is extracted), never a tidy-up.
+
+**Left:** jackdaw's `CONTEXT_KINDS` (its assistant dock) is still a hand
+copy; it can read `CONTEXT_REF_KINDS` from the contract once the ref rides
+the wire as a structured block. `library` (and MEMBER_ITEM_KINDS) goes after
+its pair release; `accepted` names the same kinds today (pinned).
+
 ## The one gate (A3c)
 
 Plan section 2: every way in runs the same eight steps, in one order,
