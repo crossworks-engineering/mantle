@@ -683,6 +683,22 @@ version files, so the numbers ride along in the same `release:` commit. A stats
 failure warns and never blocks the bump; run `pnpm readme:stats` by hand if it
 does, and `pnpm readme:stats --check` to see whether the block is stale.
 
+### `scripts/tag-release.sh [--no-push] [--no-verify]`
+
+Run in the integrator after `scripts/merge-branch.sh`. It asserts main's tip is
+the `release: vX.Y.Z` commit (and not behind origin), runs `pnpm verify` on that
+tree, tags only if it passed, then pushes main and the tag in one
+`git push --atomic --no-verify` and asks origin with `git ls-remote` whether
+both landed at HEAD. If either is missing it exits non-zero and names it.
+
+The push skips the pre-push hook on purpose: the hook would rerun the same
+verify inside `git push`, holding the connection to GitHub idle for minutes,
+and v0.300.50 and v0.300.58 died there without a word. A rerun after a push
+that did not land resumes it (a tag already at HEAD is pushed again; a tag
+anywhere else is refused). `--no-verify` skips the verify when the gates
+already ran on this exact commit; CI still runs on the tag. Tests:
+`bash scripts/test-tag-release.sh` (a local bare repo as origin, no GitHub).
+
 ### `pnpm verify` and the git hooks
 
 `pnpm verify` = `typecheck` (all packages) + `lint` + `format:check` + `docs:check` + `vitest run`.

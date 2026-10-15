@@ -388,8 +388,8 @@ describe('shell scripts run on the Mac (bash 3.2, BSD tools)', () => {
     );
   });
 
-  it('both harnesses drop GIT_* (and refuse to run if any is left) before their first command', () => {
-    for (const f of ['test-rm-worktree.sh', 'test-deploy-scripts.sh']) {
+  it('every harness drops GIT_* (and refuses to run if any is left) before its first command', () => {
+    for (const f of ['test-rm-worktree.sh', 'test-deploy-scripts.sh', 'test-tag-release.sh']) {
       const lines = code(readFileSync(join(ROOT, 'scripts', f), 'utf8')).map((l) => l.text);
       const drop = lines.findIndex((l) => /unset "\$gv".*\^\\\(GIT_/.test(l));
       expect(drop, `${f} does not drop GIT_*`).toBeGreaterThanOrEqual(0);
@@ -408,6 +408,17 @@ describe('shell scripts run on the Mac (bash 3.2, BSD tools)', () => {
     'the worktree harness passes under /bin/bash (3.2 on a Mac)',
     () => {
       const out = runHarness('test-rm-worktree.sh', cleanEnv());
+      expect(out).toMatch(/all passed/);
+    },
+    90_000,
+  );
+
+  // tag-release.sh against a local bare origin: verify before the tag, an
+  // atomic push without the hook, and origin asked (ls-remote) afterwards.
+  itBash(
+    'the tag-release harness passes under /bin/bash (3.2 on a Mac)',
+    () => {
+      const out = runHarness('test-tag-release.sh', cleanEnv());
       expect(out).toMatch(/all passed/);
     },
     90_000,
