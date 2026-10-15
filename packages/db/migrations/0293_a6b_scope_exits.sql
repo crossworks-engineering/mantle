@@ -109,8 +109,12 @@
 --    'heartbeat-context'): the ones the login set up, NULL for the anchor
 --    login. In a scope only the scope's own login's (the login a turn
 --    answers is its scope's), and the brain's.
+-- 18. mantle_ws_create(owner, login, name, description): a login makes a
+--    workspace, its only user and a Moderator (server/web
+--    lib/workspaces.ts createWorkspace; on the system pool before,
+--    'workspace-write'). In a scope only the scope's own login.
 --
--- The writes (3, 4) are the write role's (WRITE_ROLE_FUNCTIONS,
+-- The writes (3, 4, 18) are the write role's (WRITE_ROLE_FUNCTIONS,
 -- access-matrix.ts: applyViewerGrants grants them), not the workspace
 -- role's: a scope reaches them only from a write.
 --
@@ -990,6 +994,42 @@ $$;
 REVOKE ALL ON FUNCTION "public"."mantle_turn_heartbeats"(uuid, uuid) FROM PUBLIC;
 --> statement-breakpoint
 GRANT EXECUTE ON FUNCTION "public"."mantle_turn_heartbeats"(uuid, uuid) TO "mantle_view_user";
+--> statement-breakpoint
+
+-- A login makes a workspace (18): its row, the login its only user and a
+-- Moderator, and the event; its id. Any login of a brain on workspaces
+-- (plan 15); in a scope only the scope's own login, on its brain. The
+-- write role's (WRITE_ROLE_FUNCTIONS): a scope reaches it only from a
+-- write. The reserved name is the index's (0255, 0286).
+CREATE OR REPLACE FUNCTION "public"."mantle_ws_create"(
+  owner uuid, login uuid, ws_name text, ws_description text)
+  RETURNS uuid LANGUAGE plpgsql VOLATILE SECURITY DEFINER
+  SET search_path = "public", pg_temp AS $$
+DECLARE
+  wid uuid;
+BEGIN
+  IF "public"."mantle_scope_active"() AND NOT (
+       login IS NOT DISTINCT FROM "public"."mantle_scope_login_id"()
+       AND owner = "public"."mantle_brain_id"()) THEN
+    RAISE EXCEPTION 'mantle_ws_create: only the scope''s own login, on its brain'
+      USING ERRCODE = '42501';
+  END IF;
+  IF "public"."mantle_ws_admin_id"(owner) IS NULL THEN
+    RAISE EXCEPTION 'mantle_ws_create: workspaces are not set up on this brain'
+      USING ERRCODE = '42501';
+  END IF;
+  INSERT INTO "public"."workspaces" ("owner_id", "name", "description", "created_by")
+  VALUES (owner, ws_name, coalesce(ws_description, ''), login)
+  RETURNING "id" INTO wid;
+  INSERT INTO "public"."workspace_users" ("workspace_id", "login_id", "moderator", "added_by")
+  VALUES (wid, login, true, login);
+  INSERT INTO "public"."workspace_events" ("workspace_id", "actor_id", "action", "subject")
+  VALUES (wid, login, 'workspace.create', jsonb_build_object('name', ws_name));
+  RETURN wid;
+END
+$$;
+--> statement-breakpoint
+REVOKE ALL ON FUNCTION "public"."mantle_ws_create"(uuid, uuid, text, text) FROM PUBLIC;
 --> statement-breakpoint
 
 -- The public demo's SELECT-only reader serves owner reads (as 0285, 0286, 0291).

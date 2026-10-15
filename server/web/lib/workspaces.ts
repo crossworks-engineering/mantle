@@ -546,22 +546,15 @@ export async function createWorkspace(
   refuseReservedName(body.name);
   let id: string;
   try {
-    id = await workspaceWriteSystem(() =>
-      db.transaction(async (tx) => {
-        const [w] = await rows<{ id: string }>(
-          tx,
-          sql`insert into workspaces (owner_id, name, description, created_by)
-            values (${caller.anchorId}, ${body.name}, ${body.description ?? ''}, ${caller.loginId})
-            returning id`,
-        );
-        await tx.execute(
-          sql`insert into workspace_users (workspace_id, login_id, moderator, added_by)
-            values (${w!.id}, ${caller.loginId}, true, ${caller.loginId})`,
-        );
-        await event(tx, w!.id, caller.loginId, 'workspace.create', { name: body.name });
-        return w!.id;
-      }),
+    // The row, the maker its only user and a Moderator, and the event, by
+    // its definer (mantle_ws_create, 0293: in a scope only the scope's own
+    // login; A6b: on the system pool before, 'workspace-write').
+    const [w] = await rows<{ id: string }>(
+      db,
+      sql`select "public"."mantle_ws_create"(${caller.anchorId}::uuid, ${caller.loginId}::uuid,
+                   ${body.name}, ${body.description ?? ''}) as id`,
     );
+    id = w!.id;
   } catch (err) {
     throw nameError(err) ?? err;
   }

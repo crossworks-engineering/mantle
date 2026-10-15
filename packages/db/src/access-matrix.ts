@@ -802,6 +802,8 @@ export const WRITE_ROLE_FUNCTIONS: Readonly<Record<string, string>> = {
     'the login’s own chat read cursor (0293): the role holds no right on assistant_read_cursors',
   'public.mantle_access_key_revoke(uuid,uuid)':
     'the login’s own API key revoked, any for an Admin user (0293): the role holds no right on access_keys',
+  'public.mantle_ws_create(uuid,uuid,text,text)':
+    'a workspace the login makes, its only user a Moderator (0293): the role holds no right on workspaces',
 };
 
 /** The GRANT statements for the write role. Pure. It reads exactly what the
