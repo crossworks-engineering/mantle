@@ -32,6 +32,33 @@ const F1 = 'F1 /api/v1 refuses member keys (guide: a key acts as its login)';
  *  answer, in the wrong words. */
 const F2 = 'F2 a workspace assistant turn cannot write (raw error text)';
 
+/** F4. An Admin user's write request runs on the system pool with its scope
+ *  on the transaction (W6a M1, until A4 puts its reads in the scope:
+ *  withSystemTx's systemPoolTx), where the database checks a move, a create
+ *  in a folder, a delete and a grant change against that scope, and nothing
+ *  else: an edit, a draft edit, a public link and an app's data write on an
+ *  item outside Admin are made (the `login@system` cells). Its rights are
+ *  checked in TypeScript only (the gate's itemWriteGate). The guide: "Read
+ *  the item: to be a user of a workspace it is granted to"; "Being an Admin
+ *  user is management, not reading". A second line the owner may want; the
+ *  same writes on the write role are refused (the `login` cells pass). */
+const F4 = 'F4 an Admin write request on the system pool: edits not held to its scope';
+
+/** F5. The database lets the Moderator of an app's home delete the app (by
+ *  hand and in a turn). The owner's decision (plan v2 section 32, F3): an
+ *  app's delete stays owner-only; today only the owner-side tool holds it
+ *  (app_delete: "owner-side tool: not available here"), not the database. */
+const F5 = 'F5 the database lets the home Moderator delete an app (owner-only, plan s32)';
+
+/** F6. A peer acting as its login, Write on, may not change an item others
+ *  read (packages/tools/src/key-shared-content.ts: "this item is shared, so
+ *  a peer cannot change its content"; access matrix T3). The guide's
+ *  "Linked brains": a peer with Acts as "gets the MCP surface as that login,
+ *  as the login is now", narrowed by its Write switch and its risky tools
+ *  only. A rule the product has and the guide does not name (every fixture
+ *  item is read by W and R, and has an open link). */
+const F6 = 'F6 a peer may not edit a shared item (a rule the guide does not name)';
+
 export type KnownFailure = {
   /** The finding (F1, F2, ...). */
   finding: string;
@@ -42,33 +69,94 @@ export type KnownFailure = {
 const MEMBER_LOGIN = '"reason":"member-login"';
 const RAW_UPDATE = 'Failed query: update "nodes"';
 const RAW_SYSTEM_TX = 'withSystemTx: only outside a viewer scope';
+const RAW_SNAPSHOT = 'Failed query: insert into "node_snapshots"';
+const GONE = 'changed (gone), the oracle denies';
 const known = (finding: string, reason: string): KnownFailure => ({ finding, reason });
 
+/** F4's cells: each Admin user's edit, link, draft edit and app data write
+ *  of an item outside Admin (at its kind's root and in its folder; a
+ *  snapshot copy refuses them all), on the system pool. */
+function adminSystemPoolEdits(): Record<string, KnownFailure> {
+  const kinds = [
+    'branch',
+    'file',
+    'note',
+    'page',
+    'table',
+    'app',
+    'formula',
+    'draw',
+    'task',
+    'event',
+    'recall',
+  ];
+  const cells = [
+    ...kinds.map((k) => `edit ${k}`),
+    ...kinds.map((k) => `link ${k}`),
+    ...['page', 'draw', 'table', 'app'].map((k) => `editDraft ${k}`),
+    'appData app',
+  ];
+  const out: Record<string, KnownFailure> = {};
+  for (const role of ['owner', 'admin']) {
+    for (const placement of ['root', 'folder']) {
+      for (const c of cells) {
+        out[`login@system/${role} ${c} @${placement}`] = known(F4, 'changed ({');
+      }
+    }
+  }
+  return out;
+}
+
 export const KNOWN_FAILURES: Readonly<Record<string, KnownFailure>> = {
+  // The grid (SQL).
+  ...adminSystemPoolEdits(),
+  'login/homeModerator delete app @folder': known(F5, GONE),
+  'login/homeModerator delete app @root': known(F5, GONE),
+  'turn/homeModerator delete app @folder': known(F5, GONE),
+  'turn/homeModerator delete app @root': known(F5, GONE),
+  // The surface cells.
+  'api-v1 login/readGrant read task @root': known(F1, MEMBER_LOGIN),
   'api-v1 login/homeModerator read file @folder': known(F1, MEMBER_LOGIN),
-  'api-v1 login/homeModerator read note @folder': known(F1, MEMBER_LOGIN),
-  'api-v1 login/homeModerator read table @root': known(F1, MEMBER_LOGIN),
-  'api-v1 login/homeModerator read task @folder': known(F1, MEMBER_LOGIN),
-  'api-v1 login/readGrant read file @root': known(F1, MEMBER_LOGIN),
-  'api-v1 login/readGrant read page @folder': known(F1, MEMBER_LOGIN),
-  'api-v1 login/readGrant read table @folder': known(F1, MEMBER_LOGIN),
-  'api-v1 login/readGrant read task @folder': known(F1, MEMBER_LOGIN),
   'api-v1 login/writeGrant read file @folder': known(F1, MEMBER_LOGIN),
-  'api-v1 login/writeGrant read note @folder': known(F1, MEMBER_LOGIN),
-  'api-v1 login/writeGrant read page @root': known(F1, MEMBER_LOGIN),
+  'api-v1 login/writeGrant read note @root': known(F1, MEMBER_LOGIN),
+  'api-v1 login/writeGrant read task @root': known(F1, MEMBER_LOGIN),
+  'api-v1 login/writeGrant read file @snapshot': known(F1, MEMBER_LOGIN),
   'api-v1 login/writeGrant read table @snapshot': known(F1, MEMBER_LOGIN),
-  'api-v1 login/writeGrant read task @folder': known(F1, MEMBER_LOGIN),
+  'api-v1 login/readGrant read note @folder': known(F1, MEMBER_LOGIN),
+  'api-v1 login/homeModerator read note @root': known(F1, MEMBER_LOGIN),
+  'api-v1 login/homeModerator read task @folder': known(F1, MEMBER_LOGIN),
+  'api-v1 login/writeGrant read page @root': known(F1, MEMBER_LOGIN),
   'web-turn turn/homeModerator delete task @root': known(F2, RAW_SYSTEM_TX),
-  'web-turn turn/homeModerator edit formula @folder': known(F2, RAW_UPDATE),
-  'team-turn turn/homeModerator edit note @root': known(F2, RAW_UPDATE),
-  'team-turn turn/writeGrant edit event @folder': known(F2, RAW_UPDATE),
-  'team-turn turn/writeGrant edit task @folder': known(F2, RAW_UPDATE),
+  'web-turn turn/homeModerator edit event @root': known(F2, RAW_UPDATE),
+  'web-turn turn/writeGrant edit event @root': known(F2, RAW_UPDATE),
+  'web-turn turn/homeModerator delete formula @folder': known(F2, RAW_SYSTEM_TX),
+  'team-turn turn/homeModerator delete task @root': known(F2, RAW_SYSTEM_TX),
+  'team-turn turn/homeModerator edit event @root': known(F2, RAW_UPDATE),
+  'team-turn turn/writeGrant edit event @root': known(F2, RAW_UPDATE),
+  'team-turn turn/homeModerator delete formula @folder': known(F2, RAW_SYSTEM_TX),
   'telegram turn/homeModerator delete task @root': known(F2, RAW_SYSTEM_TX),
-  'telegram turn/homeModerator edit formula @folder': known(F2, RAW_UPDATE),
+  'telegram turn/homeModerator edit event @root': known(F2, RAW_UPDATE),
+  'telegram turn/writeGrant edit event @root': known(F2, RAW_UPDATE),
+  'telegram turn/homeModerator delete formula @folder': known(F2, RAW_SYSTEM_TX),
   'run turn/homeModerator delete task @root': known(F2, RAW_SYSTEM_TX),
-  'run turn/homeModerator edit formula @folder': known(F2, RAW_UPDATE),
+  'run turn/homeModerator edit event @root': known(F2, RAW_UPDATE),
+  'run turn/writeGrant edit event @root': known(F2, RAW_UPDATE),
+  'run turn/homeModerator delete formula @folder': known(F2, RAW_SYSTEM_TX),
   'recipe turn/homeModerator delete task @root': known(F2, RAW_SYSTEM_TX),
-  'recipe turn/homeModerator edit formula @folder': known(F2, RAW_UPDATE),
+  'recipe turn/homeModerator edit event @root': known(F2, RAW_UPDATE),
+  'recipe turn/writeGrant edit event @root': known(F2, RAW_UPDATE),
+  'recipe turn/homeModerator delete formula @folder': known(F2, RAW_SYSTEM_TX),
+  'web-turn turn/homeModerator delete app @root': known(F2, RAW_SNAPSHOT),
+  'telegram turn/homeModerator delete app @root': known(F2, RAW_SNAPSHOT),
+  'team-turn turn/homeModerator delete event @folder': known(F2, RAW_SYSTEM_TX),
+  // Denies that W's assistant with no user answers in raw text.
+  'heartbeat assistant/- edit note @root': known(F2, RAW_UPDATE),
+  'heartbeat assistant/- edit formula @root': known(F2, RAW_UPDATE),
+  'heartbeat assistant/- edit formula @folder': known(F2, RAW_UPDATE),
+  'heartbeat assistant/- edit task @root': known(F2, RAW_UPDATE),
+  'heartbeat assistant/- edit task @folder': known(F2, RAW_UPDATE),
+  'heartbeat assistant/- edit event @root': known(F2, RAW_UPDATE),
+  'peer login/writeGrant edit note @root': known(F6, 'a peer cannot change its content'),
 };
 
 /**
