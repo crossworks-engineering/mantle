@@ -1,6 +1,9 @@
-# A10 #15: the cells that answer otherwise than on main, each with its named
-# kind (changeKind, a10-cache-sweep.test.ts). Every other cell of
-# a10-cache-sweep.txt answers byte for byte as recorded.
+# A10 #15: the cells that answered otherwise than on main at the move (main
+# v0.300.63 against the moved code), each the one named kind: no
+# Cache-Control on main, the gate's no-store at the move. Every other cell of
+# a10-cache-sweep.txt answered byte for byte as recorded. Kept as written at
+# the move; since fix round 1 the sweep holds a forward rule instead
+# (a10-cache-sweep.test.ts).
 # gate-default: 793 cells
 POST /api/access-keys owner: main 403 application/json cache-control=-; now cache-control=no-store
 POST /api/access-keys member: main 403 application/json cache-control=-; now cache-control=no-store

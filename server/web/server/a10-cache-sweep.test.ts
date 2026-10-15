@@ -15,10 +15,18 @@
  *
  * Recorded on main (v0.300.63) BEFORE the move, in
  * __snapshots__/a10-cache-sweep.txt (A10_CACHE_SWEEP_RECORD=1 writes it; a
- * normal run only reads it). After the move every cell must answer as
- * recorded, or be the one named change: an /api answer that had no
- * Cache-Control on main answers `no-store` now (the gate's default). The
- * changed cells are listed in __snapshots__/a10-cache-sweep-changes.txt.
+ * normal run only reads it). At the move every cell answered as recorded,
+ * or the one named change: an /api answer that had no Cache-Control on main
+ * answered `no-store` (the gate's default). Those cells are the record in
+ * __snapshots__/a10-cache-sweep-changes.txt, kept as written at the move.
+ *
+ * Since (fix round 1, M1) the sweep holds a forward rule, so a route added
+ * or changed later does not fail it for being new:
+ *
+ *  - every /api cell carries a Cache-Control header;
+ *  - every cell outside /api answers as recorded (a surface outside /api
+ *    has no default, so its answer is reviewed): from the record, or, for a
+ *    cell added since, from OUTSIDE_API_SINCE below.
  */
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -189,15 +197,15 @@ function concretePath(pattern: string): string {
   return pattern.replace(/:[A-Za-z0-9_]+\??/g, SAMPLE_ID).replace(/\*$/, 'a/b');
 }
 
-/** The one named change: an /api answer with no Cache-Control on main
- *  answers the gate's default now. */
-function changeKind(cell: string, main: string, now: string): string | null {
+/** A cell outside /api added after the record, with the answer it was
+ *  reviewed to give (`METHOD pattern cred` to `status type cache-control=`).
+ *  None yet. */
+const OUTSIDE_API_SINCE: Record<string, string> = {};
+
+/** Whether a cell (`METHOD pattern cred`) is an /api one. */
+function isApiCell(cell: string): boolean {
   const path = cell.split(' ')[1] ?? '';
-  const api = path === '/api' || path.startsWith('/api/');
-  if (api && / cache-control=-$/.test(main) && now === main.replace(/-$/, 'no-store')) {
-    return 'gate-default (no Cache-Control on main, no-store now)';
-  }
-  return null;
+  return path === '/api' || path.startsWith('/api/');
 }
 
 type Cell = { row: string; method: string; pattern: string; cred: string };
@@ -342,7 +350,7 @@ describe.skipIf(!hasManifest)('A10 #15: every /api answer carries Cache-Control'
     return out;
   }
 
-  it('answers every route as recorded on main, or the gate default', async () => {
+  it('every /api answer carries Cache-Control; every other answers as recorded', async () => {
     const now = await driveAll();
     expect(now.size).toBeGreaterThan(1000);
     if (RECORD) {
@@ -360,23 +368,21 @@ describe.skipIf(!hasManifest)('A10 #15: every /api answer carries Cache-Control'
       return;
     }
     const before = readBaseline();
-    expect([...now.keys()].sort()).toEqual([...before.keys()].sort());
-    const changed = [...now].filter(([cell, answer]) => before.get(cell) !== answer);
-    const unnamed = changed
-      .filter(([cell, answer]) => changeKind(cell, before.get(cell)!, answer) === null)
-      .map(([cell, answer]) => `${cell}: main ${before.get(cell)}; now ${answer}`);
-    expect(unnamed).toEqual([]);
-    await expect(
-      [
-        '# A10 #15: the cells that answer otherwise than on main, each with its named',
-        '# kind (changeKind, a10-cache-sweep.test.ts). Every other cell of',
-        '# a10-cache-sweep.txt answers byte for byte as recorded.',
-        `# gate-default: ${changed.length} cells`,
-        ...changed.map(
-          ([cell, answer]) => `${cell}: main ${before.get(cell)}; now ${answer.split(' ').pop()}`,
-        ),
-        '',
-      ].join('\n'),
-    ).toMatchFileSnapshot('./__snapshots__/a10-cache-sweep-changes.txt');
+    const bare = [...now]
+      .filter(([cell, answer]) => isApiCell(cell) && / cache-control=-$/.test(answer))
+      .map(([cell, answer]) => `${cell}: ${answer}`);
+    expect(bare).toEqual([]);
+    const outside = [...now].filter(([cell]) => !isApiCell(cell));
+    const unreviewed = outside
+      .filter(([cell, answer]) => (before.get(cell) ?? OUTSIDE_API_SINCE[cell]) !== answer)
+      .map(
+        ([cell, answer]) =>
+          `${cell}: recorded ${before.get(cell) ?? OUTSIDE_API_SINCE[cell] ?? '(none)'}; now ${answer}`,
+      );
+    expect(unreviewed).toEqual([]);
+    // The record holds both kinds, so a sweep that drove nothing would not
+    // pass for an empty one.
+    expect(outside.length).toBeGreaterThan(10);
+    expect(now.size - outside.length).toBeGreaterThan(1000);
   }, 1_800_000);
 });
