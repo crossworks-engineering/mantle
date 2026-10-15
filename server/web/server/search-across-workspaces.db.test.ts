@@ -13,7 +13,13 @@
  *  - an empty folder under `ws` names where its items are (`elsewhere`), and
  *    each folder counts them (`itemsElsewhere`), from the login's own
  *    workspaces and its scope only;
- *  - a link scope reads none of it.
+ *  - a link scope reads none of it;
+ *  - an API key (mtlk_) on /api/v1/search reads as its login, `ws` checked;
+ *  - an Admin user under the rollback switch (MANTLE_ADMIN_READS=system)
+ *    reads on the system pool, yet names and counts only its own
+ *    workspaces;
+ *  - a login in one workspace counts nothing elsewhere;
+ *  - the MCP `search` tool answers as before (no `workspace`, no `ws`).
  *
  * The rule is the database's: the routes read in the login's request scope,
  * so the row rules keep out what the login does not read. Nothing here is
@@ -39,6 +45,7 @@ describe.skipIf(!URL)('search across workspaces (task f26a516e)', () => {
   const mem = randomUUID(); // a member: Team and its private workspace
   const mem2 = randomUUID(); // a member: Team and Side (alone)
   const out = randomUUID(); // an outside login, alone in Outside
+  const solo = randomUUID(); // a member in Team alone
   const tag = `wsx${randomUUID().replace(/-/g, '').slice(0, 8)}`;
   let team = '';
   let admin = '';
@@ -138,7 +145,8 @@ describe.skipIf(!URL)('search across workspaces (task f26a516e)', () => {
     await x(sql`insert into auth.users (id, email, password_hash, is_owner, role, display_name) values
       (${owner}, ${email('owner')}, 'x', true, 'admin', 'Olive Owner'),
       (${mem}, ${email('mem')}, 'x', false, 'member', 'Mia Member'),
-      (${mem2}, ${email('mem2')}, 'x', false, 'member', 'Max Member')`);
+      (${mem2}, ${email('mem2')}, 'x', false, 'member', 'Max Member'),
+      (${solo}, ${email('solo')}, 'x', false, 'member', 'Sol Solo')`);
     await x(sql`insert into spaces (id, kind, login_id) values (${owner}, 'brain', ${owner})
       on conflict (id) do nothing`);
     await x(sql`select * from mantle_ws_migrate()`);
@@ -360,5 +368,145 @@ describe.skipIf(!URL)('search across workspaces (task f26a516e)', () => {
       cover: { ws: null, current: team, across: true },
     });
     expect(ours(sys.items as unknown as Json[]).length).toBe(9);
+  }, 60_000);
+  it('an API key on /api/v1/search: its login’s reads, `ws` checked, ordered and echoed', async () => {
+    const keys = await import('../lib/access-keys');
+    const minted = await keys.mintAccessKey({
+      name: `${tag} key`,
+      loginId: owner,
+      access: 'read',
+      areas: null,
+      riskyTools: [],
+      expiresAt: null,
+      createdBy: owner,
+      maxLive: 50,
+    });
+    const keyed = async (path: string) => {
+      const res = await app.request(path, {
+        headers: { authorization: `Bearer ${minted!.key}` },
+      });
+      const text = await res.text();
+      return { status: res.status, text, json: JSON.parse(text) as Json };
+    };
+    const r = await keyed(`/api/v1/search?q=${tag}&ws=${team}&limit=50`);
+    expect(r.status, r.text).toBe(200);
+    expect(r.json.ws).toBe(team);
+    const rows = r.json.results as Json[];
+    expect(new Set(ours(rows))).toEqual(new Set([id.admin, id.team, id.adminInF]));
+    expect(ours(rows)[0]).toBe(id.team);
+    const byId = new Map(rows.map((h) => [String(h.id), h]));
+    expect(byId.get(id.team)!.workspace).toEqual({ id: team, name: 'Team' });
+    expect(byId.get(id.admin)!.workspace).toEqual({ id: admin, name: 'Admin' });
+    // A workspace the key's login cannot name: 404, never a wider search.
+    for (const ws of [priv, side, outside, randomUUID()]) {
+      const refused = await keyed(`/api/v1/search?q=${tag}&ws=${ws}`);
+      expect(refused.status, refused.text).toBe(404);
+      expect(refused.text).not.toContain(tag);
+    }
+    // No ws: nothing echoed, the hits still name where they open.
+    const plain = await keyed(`/api/v1/search?q=${tag}&limit=50`);
+    expect(plain.status, plain.text).toBe(200);
+    expect('ws' in plain.json).toBe(false);
+    expect(
+      new Map((plain.json.results as Json[]).map((h) => [String(h.id), h])).get(id.admin)!
+        .workspace,
+    ).toEqual({ id: admin, name: 'Admin' });
+  }, 60_000);
+
+  it('an Admin user under the rollback switch: the system pool reads, but names and counts are its own', async () => {
+    process.env.MANTLE_ADMIN_READS = 'system';
+    try {
+      const r = await call(`/api/search?q=${tag}&ws=${team}&limit=50`, owner);
+      expect(r.status, r.text).toBe(200);
+      const rows = r.json.results as Json[];
+      // The system pool reads every test item (the pre-W6a answer) ...
+      expect(new Set(ours(rows))).toEqual(new Set(Object.keys(titles())));
+      expect(ours(rows)[0]).toBe(id.team);
+      // ... but a hit names only a workspace the Admin user is in.
+      for (const h of rows) {
+        if (!(String(h.id) in titles())) continue;
+        const want =
+          h.id === id.team
+            ? { id: team, name: 'Team' }
+            : h.id === id.admin || h.id === id.adminInF
+              ? { id: admin, name: 'Admin' }
+              : undefined;
+        expect(h.workspace, String(h.id)).toEqual(want);
+      }
+      // The folder counts and the hint: only its own Admin, though the
+      // pool reads the private, Side and Outside items there too.
+      const f = await call(`/api/tree/pages?folder=${folder}&ws=${team}`, owner);
+      expect(f.status, f.text).toBe(200);
+      expect(f.json.items).toEqual([]);
+      expect(f.json.elsewhere).toEqual([{ id: admin, name: 'Admin', count: 1 }]);
+      const root = await call(`/api/tree/pages?ws=${team}`, owner);
+      const row = (root.json.folders as Json[]).find((x) => x.id === folder)!;
+      expect(row.itemCount).toBe(0);
+      expect(row.itemsElsewhere).toBe(1);
+    } finally {
+      delete process.env.MANTLE_ADMIN_READS;
+    }
+  }, 60_000);
+
+  it('a login in one workspace: itemsElsewhere 0, and no elsewhere hint', async () => {
+    const own = await x<{ id: string }>(
+      sql`select workspace_id::text as id from workspace_users where login_id = ${solo}`,
+    );
+    expect(own.map((w) => w.id)).toEqual([team]);
+    const root = await call(`/api/tree/pages?ws=${team}`, solo);
+    expect(root.status, root.text).toBe(200);
+    const row = (root.json.folders as Json[]).find((f) => f.id === folder)!;
+    expect(row.itemCount).toBe(0);
+    expect(row.itemsElsewhere).toBe(0);
+    const r = await call(`/api/tree/pages?folder=${folder}&ws=${team}`, solo);
+    expect(r.status, r.text).toBe(200);
+    expect(r.json.items).toEqual([]);
+    expect('elsewhere' in r.json).toBe(false);
+    expect((r.json.folder as Json).itemsElsewhere).toBe(0);
+    // Without ws nothing is counted elsewhere at all.
+    const all = await call(`/api/tree/pages`, solo);
+    const plain = (all.json.folders as Json[]).find((f) => f.id === folder)!;
+    expect('itemsElsewhere' in plain).toBe(false);
+  }, 60_000);
+
+  it('the MCP search tool answers as before: no workspace on a hit, no ws', async () => {
+    const ls = await import('@mantle/mcp-core');
+    const { McpServer, InMemoryTransport } = await import('@modelcontextprotocol/server');
+    const { Client } = await import('@modelcontextprotocol/client');
+    const prepared = await ls.prepareCallerTools({
+      role: 'member',
+      anchorId: owner,
+      loginId: mem,
+      via: 'oauth',
+      write: false,
+    });
+    const server = new McpServer({ name: 'test', version: '0' });
+    ls.registerPreparedTools(server, prepared);
+    const [a, b] = InMemoryTransport.createLinkedPair();
+    const c = new Client({ name: 'ws-search', version: '0' });
+    await Promise.all([server.connect(a), c.connect(b)]);
+    try {
+      const reply = (await c.callTool({
+        name: 'search',
+        arguments: { q: tag, limit: 50 },
+      })) as { isError?: boolean; content: Array<{ type: string; text?: string }> };
+      expect(reply.isError ?? false).toBe(false);
+      const text = reply.content.map((b2) => b2.text ?? '').join('');
+      const parsed = JSON.parse(text) as unknown;
+      const hits = (Array.isArray(parsed) ? parsed : (parsed as Json).output) as Json[];
+      expect(Array.isArray(hits), text.slice(0, 200)).toBe(true);
+      // The member's reads, as every search here.
+      expect(new Set(ours(hits))).toEqual(new Set([id.team, id.priv, id.privInF]));
+      // The shape it always had: nothing of the search across.
+      for (const h of hits.filter((x) => String(x.id) in titles())) {
+        expect(Object.keys(h).sort()).toEqual(
+          ['id', 'path', 'summary', 'tags', 'title', 'type', 'updatedAt', 'url'].sort(),
+        );
+      }
+      expect(text).not.toContain('"workspace"');
+      expect(Array.isArray(parsed) || !('ws' in (parsed as Json))).toBe(true);
+    } finally {
+      await c.close();
+    }
   }, 60_000);
 });
