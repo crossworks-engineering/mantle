@@ -55,6 +55,7 @@ export async function beforeMigrations(
   const runtime = await ensureRuntimeRoles(sql, masterKey, {
     login: runtimeLogin,
     perDatabase,
+    warn: log.warn,
   });
   if (runtime === 'ok') {
     log.info(

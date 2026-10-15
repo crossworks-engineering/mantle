@@ -17,7 +17,9 @@ import {
   runtimeDeniedTables,
   runtimeRolePassword,
   runtimeRoleStatements,
+  revokeOrder,
   systemDatabaseUrl,
+  type HeldMembership,
 } from './runtime-role';
 
 const saved = { ...process.env };
@@ -174,5 +176,37 @@ describe('what the runtime role may not touch', () => {
     ]) {
       expect(Object.keys(RUNTIME_DENIED_FUNCTIONS)).toContain(fn);
     }
+  });
+});
+
+describe('the order memberships are taken back in', () => {
+  const m = (member: string, role: string, grantor: string, admin = false): HeldMembership => ({
+    member,
+    role,
+    grantor,
+    inherit: false,
+    set: false,
+    admin,
+  });
+
+  it('takes a grant passed on through ADMIN OPTION before the one it rests on', () => {
+    // postgres -> ops_a (ADMIN) -> ops_b (ADMIN) -> ops_c, and a plain one.
+    const a = m('ops_a', SYSTEM_ROLE, 'postgres', true);
+    const b = m('ops_b', SYSTEM_ROLE, 'ops_a', true);
+    const c = m('ops_c', SYSTEM_ROLE, 'ops_b');
+    const plain = m('ops_d', OWNER_ROLE, 'postgres');
+    const held = [a, plain, b, c];
+    expect(revokeOrder(held, held)).toEqual([c, b, a, plain]);
+  });
+
+  it('counts a chain through a membership that is kept, and never loops', () => {
+    // ops_a's ADMIN grant is not to be revoked here, but ops_b's rests on it.
+    const a = m('ops_a', SYSTEM_ROLE, 'postgres', true);
+    const b = m('ops_b', SYSTEM_ROLE, 'ops_a');
+    const other = m('ops_b', OWNER_ROLE, 'ops_a'); // ops_a holds no ADMIN in mantle_owner
+    expect(revokeOrder([other, b], [a, b, other])).toEqual([b, other]);
+    const x = m('x', SYSTEM_ROLE, 'y', true);
+    const y = m('y', SYSTEM_ROLE, 'x', true);
+    expect(revokeOrder([x, y], [x, y])).toHaveLength(2);
   });
 });
