@@ -30,7 +30,7 @@
  * and flags; CODE applies dates, `superseded_by` and thresholds; Jev alone
  * never retires, merges or overwrites data.
  */
-import { getApiKey, getApiKeyById } from '@mantle/api-keys';
+import { resolveProviderKey } from '@mantle/api-keys';
 import {
   bumpWorkerUsage,
   getDefaultWorker,
@@ -182,9 +182,7 @@ export async function resolveDecider(ownerId: string): Promise<Resolved> {
     const worker = await getDefaultWorker(ownerId, 'decider');
     if (worker) {
       const adapter = getDecisionAdapter(worker.provider);
-      const apiKey =
-        (worker.apiKeyId ? await getApiKeyById(worker.apiKeyId) : null) ??
-        (await getApiKey(ownerId, worker.provider));
+      const apiKey = await resolveProviderKey(ownerId, worker.provider, worker.apiKeyId);
       if (adapter && apiKey) {
         value = { worker, params: (worker.params ?? {}) as DeciderParams, adapter, apiKey };
       }

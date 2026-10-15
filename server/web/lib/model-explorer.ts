@@ -14,12 +14,20 @@
  *
  * Provider ids are the canonical `@mantle/voice` SUPPORTED_PROVIDERS ids, which
  * are also the `api_keys.service` strings — so the key lookup is a 1:1 match.
+ * The key is the one the caller picked (`keyId`, the agent form's key), else
+ * the provider's own key on file by the one lookup (findProviderKeyId: the
+ * 'default' label first, else the most recent key of that service).
  */
-import { getApiKey } from '@mantle/api-keys';
+import { findProviderKeyId, getApiKeyById } from '@mantle/api-keys';
 import { isProviderId, type ProviderId } from '@mantle/voice';
 import type { ExplorerModel, ModelSort } from '@mantle/client-types';
 import { kindFromModalities } from '@mantle/client-types/model-pools';
-import { errorMessage, NET_TIMEOUTS, timeoutSignal } from '@mantle/std';
+import {
+  NET_TIMEOUTS,
+  ProviderHttpError,
+  publicProviderErrorMessage,
+  timeoutSignal,
+} from '@mantle/std';
 
 export type { ExplorerModel, ModelSort };
 
@@ -32,7 +40,9 @@ export type ProviderModelsResult = {
   needsKey?: boolean;
   /** Provider has no usable model-list API in this explorer. */
   unsupported?: boolean;
-  /** Fetch/parse error message. */
+  /** Why the fetch failed: a fixed sentence (publicProviderErrorMessage),
+   *  never the provider's body, which can carry an account id or part of a
+   *  key. A refused key reads "The provider refused the API key." */
   error?: string;
 };
 
@@ -93,9 +103,8 @@ async function getJson(url: string, init?: RequestInit): Promise<unknown> {
   });
   if (!res.ok) {
     const body = await res.text().catch(() => '');
-    throw new Error(
-      `HTTP ${res.status} ${res.statusText}${body ? ` — ${body.slice(0, 200)}` : ''}`,
-    );
+    // The provider is named by fetchProviderModels, which knows it.
+    throw new ProviderHttpError({ provider: 'models', status: res.status, body, what: 'models' });
   }
   return res.json();
 }
@@ -399,35 +408,58 @@ const FETCHERS: Partial<Record<ProviderId, Fetcher>> = {
 
 // ── server-side caching ──────────────────────────────────────────────────────
 
-/** Cache successful fetches per provider for a short window so navigating
- *  between providers (and re-renders) doesn't hammer the upstream APIs.
- *  Single-user app, so a process-global cache keyed by provider is fine. */
+/** Cache successful fetches for a short window so navigating between
+ *  providers (and re-renders) doesn't hammer the upstream APIs. Keyed by the
+ *  provider AND the key that fetched the list: two keys of one provider can
+ *  see different catalogs (a project-scoped key, a tier), and one key's list
+ *  must not answer for the other. A keyless provider (OpenRouter's public
+ *  catalog) keeps one entry. */
 const CACHE_TTL_MS = 5 * 60 * 1000;
-const cache = new Map<ProviderId, ProviderModelsResult>();
+const cache = new Map<string, ProviderModelsResult>();
+
+/** The cache entry for `provider` fetched with key `keyId` (null: keyless). */
+export function modelCacheKey(provider: ProviderId, keyId: string | null): string {
+  return keyId ? `${provider}:${keyId}` : provider;
+}
+
+/** Test seam: forget every cached catalog. */
+export function clearModelCache(): void {
+  cache.clear();
+}
 
 /**
  * Fetch a provider's model catalog (cached). Never throws — failures and
  * missing-key/unsupported states come back on the result object so the UI can
- * render them. `force` busts the cache (the page's Refresh button).
+ * render them. `force` busts the cache (the page's Refresh button). `keyId`
+ * picks the key to list with; the caller has checked the owner holds it and
+ * that it is this provider's (GET /api/models). Without one, the provider's
+ * own key on file (findProviderKeyId).
  */
 export async function fetchProviderModels(
   ownerId: string,
   provider: ProviderId,
-  opts: { force?: boolean } = {},
+  opts: { force?: boolean; keyId?: string | null } = {},
 ): Promise<ProviderModelsResult> {
-  if (!opts.force) {
-    const hit = cache.get(provider);
-    if (hit && Date.now() - hit.fetchedAt < CACHE_TTL_MS) return hit;
-  }
-
   const fetcher = FETCHERS[provider];
   if (!fetcher) {
     return { provider, models: [], fetchedAt: Date.now(), unsupported: true };
   }
 
+  const keyId = fetcher.needsKey
+    ? (opts.keyId ?? (await findProviderKeyId(ownerId, provider)))
+    : null;
+  if (fetcher.needsKey && !keyId) {
+    return { provider, models: [], fetchedAt: Date.now(), needsKey: true };
+  }
+  const slot = modelCacheKey(provider, keyId);
+  if (!opts.force) {
+    const hit = cache.get(slot);
+    if (hit && Date.now() - hit.fetchedAt < CACHE_TTL_MS) return hit;
+  }
+
   let key: string | null = null;
-  if (fetcher.needsKey) {
-    key = await getApiKey(ownerId, provider);
+  if (keyId) {
+    key = await getApiKeyById(keyId);
     if (!key) {
       return { provider, models: [], fetchedAt: Date.now(), needsKey: true };
     }
@@ -437,14 +469,18 @@ export async function fetchProviderModels(
     const models = await fetcher.fetch(key);
     models.sort((a, b) => a.id.localeCompare(b.id));
     const result: ProviderModelsResult = { provider, models, fetchedAt: Date.now() };
-    cache.set(provider, result);
+    cache.set(slot, result);
     return result;
   } catch (err) {
+    const named =
+      err instanceof ProviderHttpError
+        ? new ProviderHttpError({ provider, status: err.status, body: err.body, what: 'models' })
+        : err;
     return {
       provider,
       models: [],
       fetchedAt: Date.now(),
-      error: errorMessage(err),
+      error: publicProviderErrorMessage(named, `model-explorer ${provider}`),
     };
   }
 }

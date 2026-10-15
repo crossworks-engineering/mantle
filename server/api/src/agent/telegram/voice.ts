@@ -15,7 +15,7 @@ import {
   type SttParams,
 } from '@mantle/db';
 import { accountById, downloadTelegramFile } from '@mantle/telegram';
-import { getApiKey, getApiKeyById } from '@mantle/api-keys';
+import { getApiKeyById, resolveProviderKey } from '@mantle/api-keys';
 import { composeAudioTagInstructions, getSttAdapter, getTtsAdapter } from '@mantle/voice';
 import { step } from '@mantle/tracing';
 import { errorMessage } from '@mantle/std';
@@ -60,7 +60,7 @@ export async function transcribeInboundVoice(args: {
         language = sttParams.language;
         maxDuration = sttParams.max_duration_seconds ?? 180;
       } else {
-        apiKey = await getApiKey(ownerId, 'openai');
+        apiKey = await resolveProviderKey(ownerId, 'openai');
       }
       if (!apiKey) {
         h.setMeta({ error: 'no openai api_key configured' });

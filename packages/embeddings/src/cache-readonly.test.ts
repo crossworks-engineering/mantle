@@ -68,6 +68,7 @@ vi.mock('@mantle/db', async (importOriginal) => {
 vi.mock('@mantle/api-keys', () => ({
   getApiKey: async () => null,
   getApiKeyById: async () => null,
+  resolveProviderKey: async () => null,
 }));
 
 vi.mock('@mantle/voice', () => ({

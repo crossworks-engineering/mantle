@@ -48,6 +48,9 @@ vi.mock('@mantle/api-keys', async (importOriginal) => {
     ...actual,
     getApiKey: async () => h.apiKeyByServiceReturn,
     getApiKeyById: async () => h.apiKeyByIdReturn,
+    // The one provider key lookup: the pinned key, else the service's own.
+    resolveProviderKey: async (_owner: string, _service: string, keyId?: string | null) =>
+      (keyId ? h.apiKeyByIdReturn : null) ?? h.apiKeyByServiceReturn,
   };
 });
 

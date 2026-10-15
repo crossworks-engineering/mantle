@@ -339,6 +339,7 @@ vi.mock('@mantle/files', () => ({
 vi.mock('@mantle/api-keys', () => ({
   getApiKey: vi.fn(async () => 'sk-bare'),
   getApiKeyById: vi.fn(async () => 'sk-by-id'),
+  resolveProviderKey: vi.fn(async () => 'sk-bare'),
 }));
 vi.mock('@mantle/voice', () => ({
   composeAudioTagInstructions: () => '',

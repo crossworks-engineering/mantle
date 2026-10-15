@@ -40,7 +40,12 @@ vi.mock('@mantle/voice', async (importOriginal) => {
 
 vi.mock('@mantle/api-keys', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@mantle/api-keys')>();
-  return { ...actual, getApiKey: async () => 'sk-test', getApiKeyById: async () => 'sk-test' };
+  return {
+    ...actual,
+    getApiKey: async () => 'sk-test',
+    getApiKeyById: async () => 'sk-test',
+    resolveProviderKey: async () => 'sk-test',
+  };
 });
 
 import { chatComplete } from './extractor';

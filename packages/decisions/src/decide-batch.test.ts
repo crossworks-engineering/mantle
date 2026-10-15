@@ -23,6 +23,7 @@ vi.mock('@mantle/db', () => ({
 vi.mock('@mantle/api-keys', () => ({
   getApiKeyById: vi.fn(async () => 'key'),
   getApiKey: vi.fn(async () => 'key'),
+  resolveProviderKey: vi.fn(async () => 'key'),
 }));
 vi.mock('@mantle/tracing', () => ({
   step: vi.fn(async (_o: unknown, fn: (h: unknown) => unknown) =>

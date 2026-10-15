@@ -18,7 +18,7 @@
  * stateless: every fresh call / turn tries the primary first again (no
  * circuit breaker).
  */
-import { getApiKey, getApiKeyById } from '@mantle/api-keys';
+import { resolveProviderKey } from '@mantle/api-keys';
 import { VAULT_PAIR_MAKER_NO_KEYS, vaultPairRunRefusal } from '@mantle/db';
 import {
   classifyChatError,
@@ -209,9 +209,7 @@ export async function resolveChatKey(
       : { ok: false, disposition: 'api_key_maker_no_keys', detail: VAULT_PAIR_MAKER_NO_KEYS };
   }
 
-  let apiKey: string | null = null;
-  if (route.apiKeyId) apiKey = await getApiKeyById(route.apiKeyId);
-  if (!apiKey) apiKey = await getApiKey(ownerId, route.provider);
+  const apiKey = await resolveProviderKey(ownerId, route.provider, route.apiKeyId);
   if (apiKey) return { ok: true, apiKey };
   if (keyless) return { ok: true, apiKey: 'local' };
 

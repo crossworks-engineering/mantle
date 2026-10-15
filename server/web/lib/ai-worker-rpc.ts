@@ -7,7 +7,7 @@
  * gate) and routes through the same adapter registry production uses, so a
  * passing test means the configured worker will work for real.
  */
-import { getApiKey, getApiKeyById } from '@mantle/api-keys';
+import { getApiKeyById, resolveProviderKey } from '@mantle/api-keys';
 import {
   getChatAdapter,
   getDecisionAdapter,
@@ -461,9 +461,7 @@ export async function testDecision(
   if (worker.kind !== 'decider') throw new Error(`worker '${worker.slug}' is not a decider`);
   const adapter = getDecisionAdapter(worker.provider);
   if (!adapter) throw new Error(`no decision adapter for provider '${worker.provider}'`);
-  const apiKey =
-    (worker.apiKeyId ? await getApiKeyById(worker.apiKeyId) : null) ??
-    (await getApiKey(userId, worker.provider));
+  const apiKey = await resolveProviderKey(userId, worker.provider, worker.apiKeyId);
   if (!apiKey) throw new Error('no API key on this worker (or for its provider)');
   const params = (worker.params ?? {}) as { zdr?: boolean; timeout_ms?: number };
   const message =

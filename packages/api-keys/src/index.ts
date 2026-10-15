@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { and, desc, eq } from 'drizzle-orm';
+import { and, asc, desc, eq, sql } from 'drizzle-orm';
 import { db, systemDb, apiKeys, type ApiKey } from '@mantle/db';
 import { open, seal } from '@mantle/crypto';
 
@@ -91,6 +91,65 @@ export async function getApiKey(
     .where(eq(apiKeys.id, row.id))
     .catch(() => {});
   return plaintext;
+}
+
+/**
+ * The id of the key a provider call uses when nothing pins one: the key
+ * labelled 'default', else the most recently used (or, never used, created)
+ * key of that service, ties broken by id so the answer is deterministic. A
+ * key added on /settings/keys keeps whatever label was typed, so a lookup of
+ * 'default' alone found nothing for it (task 698e6faf). Null: no key of that
+ * service on file.
+ */
+export async function findProviderKeyId(userId: string, service: string): Promise<string | null> {
+  const [row] = await systemDb
+    .select({ id: apiKeys.id })
+    .from(apiKeys)
+    .where(and(eq(apiKeys.userId, userId), eq(apiKeys.service, service)))
+    .orderBy(
+      sql`(${apiKeys.label} = 'default') desc`,
+      sql`coalesce(${apiKeys.lastUsed}, ${apiKeys.createdAt}) desc`,
+      desc(apiKeys.createdAt),
+      asc(apiKeys.id),
+    )
+    .limit(1);
+  return row?.id ?? null;
+}
+
+/**
+ * THE lookup of a model provider's key (chat, embeddings, workers, the
+ * model catalog): the pinned key when `keyId` names one that still opens,
+ * else {@link findProviderKeyId}'s pick. Callers hold `keyId` from a row that
+ * already passed the owner gate (an agent's, a worker's, a route's), as with
+ * {@link getApiKeyById}. A hard `getApiKey(owner, provider)` read only the
+ * 'default' label; that is pinned at none outside this package
+ * (provider-key-lookups.test.ts).
+ */
+export async function resolveProviderKey(
+  userId: string,
+  service: string,
+  keyId?: string | null,
+): Promise<string | null> {
+  if (keyId) {
+    const pinned = await getApiKeyById(keyId);
+    if (pinned) return pinned;
+  }
+  const id = await findProviderKeyId(userId, service);
+  return id ? getApiKeyById(id) : null;
+}
+
+/**
+ * The service of the key `id` when `userId` owns it, else null: the check a
+ * caller-supplied key id passes before use (/api/models?keyId=). Another
+ * owner's key and a missing one answer the same null.
+ */
+export async function ownedKeyService(userId: string, id: string): Promise<string | null> {
+  const [row] = await systemDb
+    .select({ service: apiKeys.service })
+    .from(apiKeys)
+    .where(and(eq(apiKeys.id, id), eq(apiKeys.userId, userId)))
+    .limit(1);
+  return row?.service ?? null;
 }
 
 /** Set (UPSERT) the key for (user, service, label). "Set" must be idempotent —

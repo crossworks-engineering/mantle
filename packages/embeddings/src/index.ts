@@ -35,7 +35,7 @@ import {
 } from '@mantle/db';
 // Infrastructure writes: systemDb (the admin pool) whatever the viewer, so a
 // turn under a limited role (member logins Phase 0b) still records them.
-import { getApiKey, getApiKeyById } from '@mantle/api-keys';
+import { resolveProviderKey } from '@mantle/api-keys';
 import { currentTrace, step } from '@mantle/tracing';
 // `@mantle/voice` self-registers all built-in adapters on import. The
 // embedding ones (openrouter / openai / google / mistral / cohere) come
@@ -158,8 +158,8 @@ export interface EmbeddingRoute {
   /** Per-route base URL override, or null for the adapter's own default
    *  (e.g. the `local` adapter's `MANTLE_LOCAL_EMBEDDING_URL`). */
   baseUrl: string | null;
-  /** Pinned API key id — `getApiKeyById` resolves it. Null = fall through
-   *  to `getApiKey(ownerId, provider)`; keyless providers (`local`) stay null. */
+  /** Pinned API key id, resolved by `resolveProviderKey`. Null = fall through
+   *  to the provider's own key on file; keyless providers (`local`) stay null. */
   apiKeyId: string | null;
   /** Operator-facing label for the failover UI ("Mac Ollama", "HF endpoint"). */
   label: string | null;
@@ -187,10 +187,8 @@ async function routeApiKey(
       throw new Error(`embed: ${refused}`);
     }
   }
-  let apiKey: string | null = null;
-  if (r.apiKeyId) apiKey = await getApiKeyById(r.apiKeyId);
-  if (!apiKey) apiKey = await getApiKey(ownerId, r.provider);
-  if (!apiKey && r.provider === 'local') apiKey = 'local';
+  const apiKey = await resolveProviderKey(ownerId, r.provider, r.apiKeyId);
+  if (!apiKey && r.provider === 'local') return 'local';
   return apiKey;
 }
 
