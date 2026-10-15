@@ -606,7 +606,7 @@ describe.skipIf(!URL)('the write role (arch A2b2a)', () => {
     mod: () => string[];
     login: string;
   };
-  const kinds: Kind[] = [
+  const allKinds: Kind[] = [
     {
       name: 'login(rw)',
       actor: `login:rw:${L.mem}`,
@@ -638,6 +638,13 @@ describe.skipIf(!URL)('the write role (arch A2b2a)', () => {
       login: L.out,
     },
   ];
+  // With the edit check on (pnpm test:edit-on) a contact share writes its
+  // app's data only (0294, A8 matrix F9): every write below of the contact
+  // kind is refused by that rule before the scope's, so it leaves these
+  // loops and its own case pins the refusal.
+  const editOn = process.env.MANTLE_TEST_EDIT_CHECK === 'on';
+  const contactKind = allKinds.find((k) => k.actor === 'contact:rw')!;
+  const kinds = editOn ? allKinds.filter((k) => k !== contactKind) : allKinds;
 
   /** Run `fn` in a transaction on the write role as `k`, the actor check
    *  on, then roll back. Returns fn's value, or the error's code. */
@@ -773,6 +780,37 @@ describe.skipIf(!URL)('the write role (arch A2b2a)', () => {
         return tx`update pages set doc_text = 'x' where node_id = ${other} returning node_id`;
       });
       expect(page.value?.length ?? -1, `${k.name}: ${page.message}`).toBe(0);
+    },
+  );
+
+  it.skipIf(!editOn)(
+    'contact, the edit check on: no item write, its app data only (0294, A8 F9)',
+    async () => {
+      const writes: [string, (tx: postgres.TransactionSql) => Promise<unknown>][] = [
+        ['update', (tx) => tx`update nodes set title = title || '.' where id = ${n.n1}`],
+        ['delete', (tx) => tx`delete from nodes where id = ${n.n2}`],
+        ['page', (tx) => tx`update pages set doc_text = 'x' where node_id = ${n.n1}`],
+        [
+          'fact',
+          (tx) =>
+            tx`insert into facts (owner_id, kind, content, source_node_id)
+               values (${L.owner}, 'factual', 'x', ${n.n1})`,
+        ],
+        [
+          'create',
+          (tx) =>
+            tx`insert into nodes (owner_id, type, title, path)
+               values (${L.owner}, 'note', 'x', 'notes')`,
+        ],
+      ];
+      for (const [what, fn] of writes) {
+        const r = await asKind(contactKind, async (tx) => {
+          await tx`select mantle_lock_heads(array[${n.n1}, ${n.n2}]::uuid[], 'update')`;
+          return fn(tx);
+        });
+        expect([what, r.code]).toEqual([what, '42501']);
+        expect(r.message).toMatch(/a contact share writes its app's data only/);
+      }
     },
   );
 

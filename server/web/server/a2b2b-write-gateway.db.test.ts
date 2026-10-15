@@ -303,13 +303,15 @@ describe.skipIf(!URL)('A2b2b: the login write gateway', () => {
           .returning({ id: m.nodes.id, home: m.nodes.homeWs }),
       );
     // With the edit check on (pnpm test:edit-on, arch A3a) an assistant with
-    // no user and a public link write nothing: the read-only refusal.
+    // no user and a public link write nothing: the read-only refusal; and a
+    // contact share with Can write writes its app's data only, no item
+    // (0294, A8 F9), refused with the same detail.
     const editOn = process.env.MANTLE_TEST_EDIT_CHECK === 'on';
     for (const mode of ['warn', 'on'] as const) {
       setMode(mode);
       for (const a of actors) {
         const name = `${mode} ${a.actor.kind}`;
-        if (editOn && m.writeModeOf(a.actor) === 'ro') {
+        if (editOn && (m.writeModeOf(a.actor) === 'ro' || a.actor.kind === 'contact')) {
           const ro = await m
             .runAsActor(a.actor, () =>
               m.withTurnScope(
