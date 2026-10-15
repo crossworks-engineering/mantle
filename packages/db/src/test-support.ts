@@ -371,12 +371,42 @@ export async function createEmptyScratchDatabase(
   const drop = async () => {
     const sql = postgres(adminUrl, { max: 1, onnotice: () => {} });
     try {
+      await settleDatabase(sql, name);
       await sql.unsafe(`drop database if exists "${name}" with (force)`);
     } finally {
       await sql.end();
     }
   };
   return { url, name, drop };
+}
+
+/**
+ * Wait (up to `ms`) until no session on database `name` is running anything,
+ * so the forced drop only ends idle connections.
+ *
+ * Why: a request can answer while work it started is still going (a
+ * Promise.all that rejected early leaves its other queries running; a
+ * fire-and-forget write). If closeDb() has already run, that work's next
+ * `db` access opens a NEW pool, and the new connection's first query is
+ * postgres.js's array-type lookup. A forced drop that kills it there rejects
+ * a promise nobody holds: an unhandled CONNECTION_CLOSED that fails the run
+ * though every test passed (w7e-member-scope.db.test.ts on v0.300.48). An idle
+ * connection killed by the drop rejects nothing.
+ *
+ * A session the caller may not see (no superuser) reports no state; it is not
+ * counted, so the wait never stalls on it. Past `ms` the drop forces anyway.
+ */
+export async function settleDatabase(sql: Sql, name: string, ms = 5_000): Promise<void> {
+  const until = Date.now() + ms;
+  for (;;) {
+    const [row] = await sql<{ busy: number }[]>`
+      select count(*)::int as busy from pg_stat_activity
+       where datname = ${name} and pid <> pg_backend_pid()
+         and backend_type = 'client backend'
+         and state is not null and state <> 'idle'`;
+    if (!row || row.busy === 0 || Date.now() >= until) return;
+    await new Promise((r) => setTimeout(r, 25));
+  }
 }
 
 /**
