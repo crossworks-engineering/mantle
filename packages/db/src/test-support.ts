@@ -420,7 +420,7 @@ export async function settleDatabase(sql: Sql, name: string, ms = 5_000): Promis
       warned = true;
       console.warn(
         `settleDatabase: ${name} still has ${busy.length} running quer${busy.length === 1 ? 'y' : 'ies'} at drop time (waiting up to ${ms} ms): ` +
-          busy.map((b) => `pid ${b.pid}: ${b.query.replace(/\s+/g, ' ')}`).join('; '),
+          busy.map((b) => `pid ${b.pid}: ${b.query.replace(/\s+/g, ' ').trim()}`).join('; '),
       );
     }
     if (Date.now() >= until) return;
