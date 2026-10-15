@@ -188,6 +188,7 @@ nothing could tell a refusal the caller should hear from a fault.
   | `TelegramTokenError` (`server/web/lib/agent-telegram.ts`)      | 404 a chat not found, else 400 | `code` when set                         |
   | `FireRefused` (`server/web/lib/heartbeats.ts`)                 | 403                            |                                         |
   | `PdfRendererUnavailableError` (`server/web/lib/render-pdf.ts`) | 503                            | (logged where thrown)                   |
+  | `ApprovalRefusedError` (tools pending-approval, A5 step 6d)    | 403                            |                                         |
 
   `CloneAgentError` (`server/web/lib/agents.ts`) is an `InputError`.
 

@@ -199,3 +199,14 @@ describe('an elevated call: the approval rule (A5 step 6d fix round 1)', () => {
     });
   });
 });
+
+describe('a refusal is a domain error (A10 part 2 table)', () => {
+  it('answers 403 with its message, on the web and as a tool', async () => {
+    const { domainErrorAnswer } = await import('@mantle/std');
+    expect(domainErrorAnswer(new ApprovalRefusedError(ELEVATED_APPROVER_ERROR))).toEqual({
+      status: 403,
+      body: { error: ELEVATED_APPROVER_ERROR },
+      toolText: ELEVATED_APPROVER_ERROR,
+    });
+  });
+});

@@ -104,14 +104,20 @@ describe.skipIf(!URL)('the approval of an elevated pending call (A5 step 6d fix 
       actor: { id: login, email: emailOf(login), displayName: null, isOwner: login === owner },
     };
     const route = await import('@/app/api/pending/[id]/route');
+    const { appAnswerOf } = await import('./app-error');
+    // As behind app.onError: a refusal of the rule is a domain error (403).
     const res = await m.runAsActor(m.loginActor(login, login === owner ? 'owner' : 'rw'), () =>
-      route.PATCH(
-        new Request('http://x/api/pending', {
-          method: 'PATCH',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ decision: 'approve' }),
-        }),
-        { params: Promise.resolve({ id }) },
+      appAnswerOf(
+        route.PATCH(
+          new Request('http://x/api/pending', {
+            method: 'PATCH',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ decision: 'approve' }),
+          }),
+          { params: Promise.resolve({ id }) },
+        ),
+        'http://x/api/pending',
+        'PATCH',
       ),
     );
     return { ran: res.status === 200, status: res.status, text: await res.text() };

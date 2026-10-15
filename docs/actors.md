@@ -3437,7 +3437,10 @@ path that approves gets it with no code of its own: the web's
 `packages/telegram/src/sync.ts`), and any batch that calls it.
 
 - Its asker (`login_id`) never approves it, on any path: refused
-  (`ELEVATED_SELF_APPROVAL_ERROR`; 403 on the web), and it stays pending.
+  (`ELEVATED_SELF_APPROVAL_ERROR`), and it stays pending. A refusal is
+  `ApprovalRefusedError`, a row of the domain error table (403 on the web
+  through `app.onError`; its message on MCP and Telegram), so no route
+  catches it.
 - The owner (the anchor login) approves it, and it runs with the owner's
   rights: the connector's write rule passes; a link scope, a connector the
   workspace the call was asked in does not hold and a stale mark are still
