@@ -4240,11 +4240,13 @@ scope, with the check off, warn and on. See F7.
 (10,956 cells, 6,972 run, 3,984 not applicable) the difference is only
 what was added: the Admin-homed placement (3,652 cells: 2,220 run, 1,432
 not applicable) and the contact share's 212 writes, not applicable before
-and denies now. The surface cells (fix round 4, on v0.300.58) 1,123 per check
-mode, 3,369 in all; 37 known failures in each mode (fix round 3: 1,122,
-3,366 and 41). The one added is the demoted run; the four run cells of F2
-left the list (a run of a login outside Admin has no workspace of its own
-now, and is refused cleanly). The narrowed cells, pinned: 56 runs of a
+and denies now. The surface cells (fix round 4, on v0.300.59) 1,123 per check
+mode, 3,369 in all; 6 known failures in each mode, rebased on main
+with F1 and F2 fixed (v0.300.59): 4 of F5, 2 of F6 (fix round 3: 1,122,
+3,366 and 41). The one cell added is the demoted run; the four run cells of
+F2 left the list (a run of a login outside Admin has no workspace of its
+own now, and is refused cleanly), then F1's 13 and F2's other 18, and F2's
+two Telegram app deletes moved to F5. The narrowed cells, pinned: 56 runs of a
 login outside Admin, 5 runs and 3 recipe steps of `app_delete` (the
 approval wait), 6 peer calls of `app_delete` (a risky tool), the demoted
 run, and the two contact-share deny cells. The grants panel: 3 cases (one per check
@@ -4266,21 +4268,18 @@ the list only shrinks, a listed cell that passes fails the run). The
 owner decided F1 to F3 (plan section 32): F1 and F2 are fixed on their own
 branch and leave the list when it lands; F3 is the guide's rule now.
 
-- **F1.** `/api/v1` answers 403 `member-login` to a key of a login outside
-  Admin (`server/web/lib/api-v1.ts`), where the guide says a key acts as its
-  login and only narrows it. 13 surface cells, in each mode. Decided: fix.
-- **F2.** A workspace assistant's turn other than Admin's cannot write an
-  item its user may change by hand: the web turn, the team turn, Telegram
-  and a recipe step (a run item of such a login is never made: run_plan is
-  Admin only, so its run cells are narrowed denies since fix round 4). Its turn scope holds no write mode; the
-  reply carries a raw runtime or database text ("Failed query: update
-  nodes ...", "withSystemTx: only outside a viewer scope ...", "Failed
-  query: insert into node_snapshots ..."). The same raw text answers a write
-  the turn may not make (a home Moderator's app delete in a turn, the edits
-  W's assistant with no user tries): the right answer in the wrong words. 20
-  surface cells. An approved pending call from
-  the same turn writes (the pending cells pass). Decided: fix (writes with
-  the user's rights, raw text hidden).
+- **F1** (fixed, feat/a8-findings, on main since v0.300.59). `/api/v1`
+  answered 403 `member-login` to a key of a login outside Admin, where the
+  guide says a key acts as its login and only narrows it. Its 13 surface
+  cells pass and left the list.
+- **F2** (fixed, feat/a8-findings, on main since v0.300.59). A workspace
+  assistant's turn other than Admin's could not write an item its user may
+  change by hand (the web turn, the team turn, Telegram, a recipe step), and
+  answered in raw runtime or database text. Its turn writes with its user's
+  rights now, and the raw text is masked. Its 20 surface cells pass and
+  left the list, but two: a home Moderator's `app_delete` in a Telegram
+  turn is made now, which is F5's database rule showing through (listed
+  under F5).
 - **F3.** `app_delete` is an owner-side tool. Decided (plan section 32),
   then revised by the owner on 2026-10-15: the owner and Admin users may
   delete an app (it goes to the trash); the app's home Moderator may not,
@@ -4296,10 +4295,11 @@ branch and leave the list when it lands; F3 is the guide's rule now.
 - **F5.** The Moderator of an app's home deletes the app, against F3
   revised: the database lets it, by hand and in a turn (4 grid cells), and
   so do `DELETE /api/apps/:id` (`server/web/app/api/apps/[id]/route.ts`, an
-  owner-side route) and `app_delete` over MCP (an MCP connection is an
-  owner surface to `ownerOnlyRefusal`) (2 surface cells, in each mode). In
-  a turn the same delete is refused, in raw text (F2). Listed until the
-  product change lands.
+  owner-side route), `app_delete` over MCP (an MCP connection is an owner
+  surface to `ownerOnlyRefusal`) and `app_delete` in a Telegram turn (since
+  F2's fix the turn writes with its user's rights, and the database makes
+  it) (4 surface cells, in each mode). Listed until the product change
+  lands.
 - **F6.** A peer acting as its login, Write on, may not change an item
   others read ("this item is shared, so a peer cannot change its content",
   `packages/tools/src/key-shared-content.ts`, access matrix T3), the owner's
@@ -4377,7 +4377,7 @@ branch and leave the list when it lands; F3 is the guide's rule now.
   mode read-only: the read-only mode alone refuses them, so they do not
   test the actor's own rule apart from it;
 - the heartbeat's write cells (W's assistant with no user) are all denies:
-  they pin that it writes nothing, and two of them answer in raw text (F2);
+  they pin that it writes nothing;
 - the contact-share cells with Can write on are all allows (a contact's
   only write is its app's data, and the broker has no route for another).
 

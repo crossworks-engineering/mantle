@@ -16,30 +16,6 @@ import {
   expectedAccess,
 } from './guide-oracle';
 
-/** F1. /api/v1 refuses a key of a login outside Admin: 403 `member-login`
- *  (server/web/lib/api-v1.ts: "The v1 routes past whoami are admin routes").
- *  The guide: "A key acts as the login that made it, as that login is now.
- *  Its access ... and its areas only narrow that login", and an API only key
- *  "keeps working on /api/v1". Expected: the item read; actual: 403. The
- *  plan's D3 (v1 answers as its base route) is the pending decision. */
-const F1 = 'F1 /api/v1 refuses member keys (guide: a key acts as its login)';
-
-/** F2. A raw runtime or database text in a turn's reply. A workspace
- *  assistant's turn (any workspace but Admin) cannot write an item its user
- *  may change by hand: the web turn, the team turn, Telegram and a recipe
- *  step (a run item too, but a run of a login outside Admin is never made:
- *  run_plan is Admin only, so those run cells are narrowed denies). The
- *  turn scope of such an assistant has no write path (agent-viewer.ts: only
- *  the Admin turn enters with writes), so the write
- *  reaches the workspace role and fails. The guide: "It writes only for a
- *  user who could do it by hand: a Moderator of the home, or a grant with
- *  Write on". Expected: the edit or delete made; actual: refused with a raw
- *  text ("Failed query: update nodes ...", "withSystemTx: only outside a
- *  viewer scope ..."), a crash where the mapper's words belong. The same raw
- *  text answers a write the turn may not make (a deny cell): the right
- *  answer, in the wrong words. */
-const F2 = 'F2 a workspace assistant turn cannot write (raw error text)';
-
 /** F4. An Admin user's write request runs on the system pool with its scope
  *  on the transaction (W6a M1, until A4 puts its reads in the scope:
  *  withSystemTx's systemPoolTx), where the database checks a move, a create
@@ -54,8 +30,11 @@ const F4 = 'F4 an Admin write request on the system pool: edits not held to its 
 
 /** F5. The Moderator of an app's home deletes the app: the database lets
  *  it (by hand and in a turn), and so do DELETE /api/apps/:id (an
- *  owner-side route) and app_delete over MCP (an MCP connection is an owner
- *  surface to ownerOnlyRefusal). The owner's decision of 2026-10-15 (plan
+ *  owner-side route), app_delete over MCP (an MCP connection is an owner
+ *  surface to ownerOnlyRefusal) and app_delete in a Telegram turn (a turn
+ *  writes with its user's rights since F2's fix, so the database's answer
+ *  shows there too). F1 and F2 are fixed (feat/a8-findings) and off the
+ *  list. The owner's decision of 2026-10-15 (plan
  *  v2 section 32, F3 revised): the owner and Admin users delete an app, its
  *  home Moderator may not, on any surface; the database gets the rule in a
  *  later product change. */
@@ -102,10 +81,6 @@ export type KnownFailure = {
   modes?: readonly CheckMode[];
 };
 
-const MEMBER_LOGIN = '"reason":"member-login"';
-const RAW_UPDATE = 'Failed query: update "nodes"';
-const RAW_SYSTEM_TX = 'withSystemTx: only outside a viewer scope';
-const RAW_SNAPSHOT = 'Failed query: insert into "node_snapshots"';
 const GONE = 'changed (gone), the oracle denies';
 const APP_DELETED = 'changed, the oracle denies';
 const known = (finding: string, reason: string, modes?: readonly CheckMode[]): KnownFailure =>
@@ -170,39 +145,8 @@ export const KNOWN_FAILURES: Readonly<Record<string, KnownFailure>> = {
   'turn/homeModerator delete app @folder': known(F5, GONE),
   'turn/homeModerator delete app @root': known(F5, GONE),
   // The surface cells (all three check modes unless named).
-  'api-v1 login/homeModerator read page @root': known(F1, MEMBER_LOGIN),
-  'api-v1 login/homeModerator read table @folder': known(F1, MEMBER_LOGIN),
-  'api-v1 login/readGrant read file @folder': known(F1, MEMBER_LOGIN),
-  'api-v1 login/readGrant read note @folder': known(F1, MEMBER_LOGIN),
-  'api-v1 login/readGrant read table @root': known(F1, MEMBER_LOGIN),
-  'api-v1 login/readGrant read task @folder': known(F1, MEMBER_LOGIN),
-  'api-v1 login/readGrant read task @root': known(F1, MEMBER_LOGIN),
-  'api-v1 login/writeGrant read file @root': known(F1, MEMBER_LOGIN),
-  'api-v1 login/writeGrant read note @root': known(F1, MEMBER_LOGIN),
-  'api-v1 login/writeGrant read page @folder': known(F1, MEMBER_LOGIN),
-  'api-v1 login/writeGrant read page @root': known(F1, MEMBER_LOGIN),
-  'api-v1 login/writeGrant read page @snapshot': known(F1, MEMBER_LOGIN),
-  'api-v1 login/writeGrant read task @root': known(F1, MEMBER_LOGIN),
-  'heartbeat assistant/- edit formula @folder': known(F2, RAW_UPDATE),
-  'heartbeat assistant/- edit task @root': known(F2, RAW_UPDATE),
-  'recipe turn/homeModerator edit formula @folder': known(F2, RAW_UPDATE),
-  'recipe turn/writeGrant edit event @folder': known(F2, RAW_UPDATE),
-  'team-turn turn/homeModerator delete event @root': known(F2, RAW_SYSTEM_TX),
-  'team-turn turn/homeModerator edit event @folder': known(F2, RAW_UPDATE),
-  'team-turn turn/writeGrant edit formula @root': known(F2, RAW_UPDATE),
-  'team-turn turn/writeGrant edit note @folder': known(F2, RAW_UPDATE),
-  'team-turn turn/writeGrant edit note @root': known(F2, RAW_UPDATE),
-  'telegram turn/homeModerator delete app @folder': known(F2, RAW_SNAPSHOT),
-  'telegram turn/homeModerator delete app @root': known(F2, RAW_SNAPSHOT),
-  'telegram turn/homeModerator delete formula @folder': known(F2, RAW_SYSTEM_TX),
-  'telegram turn/homeModerator delete task @root': known(F2, RAW_SYSTEM_TX),
-  'telegram turn/homeModerator edit note @root': known(F2, RAW_UPDATE),
-  'telegram turn/writeGrant edit note @folder': known(F2, RAW_UPDATE),
-  'web-turn turn/homeModerator delete event @folder': known(F2, RAW_SYSTEM_TX),
-  'web-turn turn/homeModerator edit task @root': known(F2, RAW_UPDATE),
-  'web-turn turn/writeGrant edit event @folder': known(F2, RAW_UPDATE),
-  'web-turn turn/writeGrant edit note @root': known(F2, RAW_UPDATE),
-  'web-turn turn/writeGrant edit task @folder': known(F2, RAW_UPDATE),
+  'telegram turn/homeModerator delete app @folder': known(F5, APP_DELETED),
+  'telegram turn/homeModerator delete app @root': known(F5, APP_DELETED),
   'peer login/owner edit note @admin': known(F6, 'a peer cannot change its content'),
   'peer login/writeGrant edit note @folder': known(F6, 'a peer cannot change its content'),
   'mcp-oauth login/homeModerator delete app @folder': known(F5, APP_DELETED),
