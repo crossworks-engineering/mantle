@@ -22,7 +22,7 @@ The routes past `whoami` are admin routes. A member's key gets `403` from them a
 | Method and path | Area | Does |
 | --- | --- | --- |
 | `GET /api/v1/whoami` | none | Who the key acts as, and its scope |
-| `GET /api/v1/search?q=` | Search | Search the brain |
+| `GET /api/v1/search?q=&ws=` | Search | Search the brain, across workspaces |
 | `GET /api/v1/nodes/{id}` | All areas | Read any item by id |
 | `GET`, `POST /api/v1/pages` | Pages | List, create |
 | `GET`, `PATCH /api/v1/pages/{id}` | Pages | Read, change |
@@ -44,6 +44,17 @@ The routes past `whoami` are admin routes. A member's key gets `403` from them a
 
 Add rows with `{ "rows": [{ "Name": "Alpha" }] }`: each row is cells keyed by column name. Rows land on the table's draft. Commit to publish them.
 
+## Search across workspaces
+
+`GET /api/v1/search?q=` looks in every workspace the key's login reads. Each hit names the workspace it opens in, as `workspace: { id, name }`, one of the login's own workspaces. A hit that none of them reads has no `workspace`.
+
+Add `ws=<workspace id>` to put the hits of that workspace first. It does not narrow the search. The answer echoes it as `ws`. A workspace the key's login is not a user of, or an id that is not a workspace, gets `404`.
+
+```sh
+curl -s "https://example.com/api/v1/search?q=invoice&ws=<workspace id>" \
+  -H "Authorization: Bearer mtlk_..."
+```
+
 **System > API Console** shows example bodies for the routes Jackdaw uses ([API console](04-api-console.md)).
 
 ## Errors
@@ -54,7 +65,7 @@ Add rows with `{ "rows": [{ "Name": "Alpha" }] }`: each row is cells keyed by co
 | `403` with `reason: "key-read-only"` | A read only key tried to write |
 | `403` with `reason: "key-area"` | The route is outside the key's areas |
 | `403` with `reason: "member-login"` | An admin route, and the key is not an admin's |
-| `404` | Not a `/api/v1` route, or no such item |
+| `404` | Not a `/api/v1` route, no such item, or a `ws` the login cannot name |
 | `429` | Too many requests; wait for `Retry-After` seconds |
 
 ## Calling from a browser on another origin
