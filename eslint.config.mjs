@@ -25,6 +25,7 @@ import mantleOwnerCallerPlugin from './eslint-rules/owner-caller-imports.mjs';
 import mantleNoGuardCallsPlugin from './eslint-rules/no-guard-calls.mjs';
 import mantleEgressPlugin from './eslint-rules/no-bare-fetch.mjs';
 import mantleRoutePlumbingPlugin from './eslint-rules/route-plumbing.mjs';
+import mantleKindsPlugin from './eslint-rules/no-hand-kind-lists.mjs';
 
 export default tseslint.config(
   {
@@ -284,6 +285,15 @@ export default tseslint.config(
       // The budgets that are not gates on the request are named.
       'mantle-plumbing/no-route-rate-limits': 'error',
     },
+  },
+  {
+    // A list of kinds is a filter over the kind registry (A10 #12,
+    // packages/client-types/src/kind-lists.ts), never a literal of 3 or more
+    // node types. The files that must keep one are named in the rule.
+    files: ['packages/**/*.{ts,tsx,mts,mjs,js}', 'server/**/*.{ts,tsx,mts,mjs,js}'],
+    ignores: ['**/*.test.{ts,tsx,mts,cts,js,jsx,mjs,cjs}'],
+    plugins: { 'mantle-kinds': mantleKindsPlugin },
+    rules: { 'mantle-kinds/no-hand-kind-lists': 'error' },
   },
   {
     // Tests + one-shot scripts: relax rules that only make sense for shipped code.

@@ -14,10 +14,12 @@ import type {
   TaskStatus,
 } from '@mantle/client-types';
 import type * as Db from '@mantle/db';
+import type { ContextRefKind, ExportKind, ItemKind } from '@mantle/client-types/kinds';
 import type { ContextSource } from '@mantle/tracing';
 import {
   TASK_PRIORITIES,
   TASK_STATUSES,
+  type ExportKind as ContentExportKind,
   type listMemberApps,
   type resolveMemberHomeApp,
 } from '@mantle/content';
@@ -139,5 +141,17 @@ describe('client-types mirrors have not drifted from their source of truth', () 
     expectTypeOf<
       SameUnion<Db.AssistantMessage['status'], MemberChatArchiveMessage['status']>
     >().toEqualTypeOf<true>();
+  });
+
+  /**
+   * The kind registry (A1) and the lists derived from it (A10 #12): the
+   * registry names every node_type value, the context ref kinds of @mantle/db
+   * are the registry's `contextRef` values, and content's ExportKind is the
+   * registry's `exportAs` kinds. A kind added to one side only fails here.
+   */
+  it('the kind registry matches the node_type column and its derived lists', () => {
+    expectTypeOf<SameUnion<Db.Node['type'], ItemKind>>().toEqualTypeOf<true>();
+    expectTypeOf<SameUnion<Db.ContextKind, ContextRefKind>>().toEqualTypeOf<true>();
+    expectTypeOf<SameUnion<ContentExportKind, ExportKind>>().toEqualTypeOf<true>();
   });
 });

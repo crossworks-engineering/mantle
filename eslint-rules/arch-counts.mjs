@@ -12,6 +12,8 @@
  *  - route files, 410 stubs, guard calls, and reads of the caller the
  *    pipeline answers (ownerCaller(), A4 step 3b);
  *  - TS kind lists (a list literal holding 5 or more node_type values);
+ *  - hand kind lists (A10 #12): any list literal of 3 or more node_type
+ *    values outside the kind registry, pinned at 0 outside KIND_LIST_ALLOW;
  *  - switch-over code (brainOnWorkspacesNow calls, MANTLE_ADMIN_READS);
  *  - store write API importers (the disk stores of plan section 6);
  *  - route files that read their request body directly (A10 part 2, fold
@@ -326,6 +328,63 @@ export function kindLists(text, types) {
     .filter((n) => n >= 5);
 }
 
+// ── hand kind lists (A10 #12) ───────────────────────────────────────────────
+
+/** The files that may hold a literal list of kind names, each with why. Every
+ *  other list of kinds is a filter over the kind registry
+ *  (packages/client-types/src/kinds.ts, its lists in kind-lists.ts). */
+export const KIND_LIST_ALLOW = Object.freeze({
+  'packages/db/src/schema/nodes.ts':
+    'the node_type enum: the SQL type the registry mirrors (kinds.test.ts and the db test kind-registry.db.test.ts pin them to one set)',
+});
+
+/** The string entries of a list literal `[...]` at its own level (not in a
+ *  nested list, object or call). */
+export function ownStrings(list) {
+  const out = [];
+  let depth = 0;
+  for (let i = 1; i < list.length - 1; i += 1) {
+    const c = list[i];
+    if (c === "'" || c === '"' || c === '`') {
+      let j = i + 1;
+      while (j < list.length && list[j] !== c) j += list[j] === '\\' ? 2 : 1;
+      if (depth === 0 && c !== '`') out.push(list.slice(i + 1, j));
+      i = j;
+      continue;
+    }
+    if (c === '(' || c === '[' || c === '{') depth += 1;
+    else if (c === ')' || c === ']' || c === '}') depth -= 1;
+  }
+  return out;
+}
+
+/** Each list literal of `code` (comments stripped), nested ones too: an
+ *  array literal where an expression starts (after `=`, `(`, `,`, `:`, `[`,
+ *  `!`, `?`, `=>`, `return` or a line start), so a Set's, a z.enum's and an
+ *  inline `[...].includes(` are lists, and a type (`string[]`) or an index
+ *  (`a['x']`) is not. */
+export function arrayLiterals(code) {
+  const out = [];
+  for (const m of code.matchAll(/(?:^|[=(,:[!?]|=>|\breturn)\s*\[/gm)) {
+    out.push(balanced(code, m.index + m[0].length - 1));
+  }
+  return out;
+}
+
+/** The hand kind lists of `text`: list literals whose own string entries
+ *  name 3 or more node types, node types being at least half of them (a
+ *  list of tool group slugs that happens to hold 'journal', 'email' and
+ *  'location' among a dozen others is not one). */
+export function handKindLists(text, types) {
+  return arrayLiterals(stripComments(text))
+    .map((l) => {
+      const own = ownStrings(l);
+      const hits = own.filter((s) => types.has(s)).length;
+      return hits >= 3 && hits * 2 >= own.length ? hits : 0;
+    })
+    .filter((n) => n > 0);
+}
+
 /** A regex that finds calls of any of `names`: `name(`. */
 function callRegex(names) {
   return new RegExp(`\\b(?:${names.join('|')})\\s*\\(`, 'g');
@@ -528,6 +587,8 @@ export function measure(root) {
   const toolLists = {};
   const routeLists = {};
   const kinds = {};
+  const handKinds = {};
+  const handKindsAllowed = {};
   const stores = Object.fromEntries(Object.keys(STORES).map((k) => [k, []]));
   let routeFiles = 0;
   let apiRouteFiles = 0;
@@ -566,6 +627,8 @@ export function measure(root) {
     }
     const kl = kindLists(text, types);
     if (kl.length) kinds[f] = kl.length;
+    const hk = handKindLists(text, types);
+    if (hk.length) (KIND_LIST_ALLOW[f] ? handKindsAllowed : handKinds)[f] = hk.length;
     for (const s of storesReached(text)) stores[s].push(f);
     if (isRouteFile(f)) {
       routeFiles += 1;
@@ -637,6 +700,8 @@ export function measure(root) {
       callerReads: reads,
       callerReadFiles: readFiles,
       kindLists: sum(kinds),
+      handKindLists: sum(handKinds),
+      handKindListsAllowed: sum(handKindsAllowed),
       brainOnWorkspacesCalls: bowCalls,
       brainOnWorkspacesFiles: bowFiles,
       adminReadsFiles,
@@ -656,6 +721,8 @@ export function measure(root) {
       toolLists,
       routeLists,
       kinds,
+      handKinds,
+      handKindsAllowed,
       stores,
       liveUnguardedFiles,
       bareFetch,

@@ -20,8 +20,13 @@ import {
   toolPolicyLists,
   toolPolicySwept,
   isDefinitionList,
+  KIND_LIST_ALLOW,
+  handKindLists,
+  nodeTypes,
   // @ts-expect-error: plain-JS module, no types shipped.
 } from './arch-counts.mjs';
+// @ts-expect-error: plain-JS module, no types shipped.
+import { noHandKindLists } from './no-hand-kind-lists.mjs';
 // @ts-expect-error: plain-JS module, no types shipped.
 import { RAW_ACL_PINS, rule as rawAclRule } from './no-raw-acl-columns.mjs';
 // @ts-expect-error: plain-JS module, no types shipped.
@@ -61,6 +66,8 @@ const got = measure(ROOT) as {
     toolLists: Record<string, { lists: number; entries: number }>;
     routeLists: Record<string, number>;
     stores: Record<string, string[]>;
+    handKinds: Record<string, number>;
+    handKindsAllowed: Record<string, number>;
   };
 };
 
@@ -173,6 +180,17 @@ describe('the architecture ratchets (pinned counts)', () => {
     expect(got.perFile.rateLimitFiles).toEqual([]);
     expect(got.numbers.routeRateLimitCalls).toBe(0);
     expect([...got.perFile.rateLimitAllowed].sort()).toEqual(Object.keys(RATE_LIMIT_ALLOW).sort());
+  });
+
+  it('no-hand-kind-lists (A10 #12): no literal kind list outside the registry and the named files', () => {
+    // A list of kinds is a filter over the kind registry
+    // (packages/client-types/src/kind-lists.ts). The named files still hold
+    // their list: the allow list only shrinks.
+    expect(got.perFile.handKinds).toEqual({});
+    expect(got.numbers.handKindLists).toBe(0);
+    expect(Object.keys(got.perFile.handKindsAllowed).sort()).toEqual(
+      Object.keys(KIND_LIST_ALLOW).sort(),
+    );
   });
 
   it('every live route that reads no caller is a public row (A4 exit)', async () => {
@@ -315,6 +333,35 @@ describe('the counters', () => {
   });
 });
 
+describe('the hand kind list counter (A10 #12)', () => {
+  const types = nodeTypes(ROOT) as Set<string>;
+  it('counts a literal list of 3 or more kinds: assigned, a Set, a z.enum, inline', () => {
+    expect(handKindLists("const A = ['page', 'note', 'draw'];", types)).toEqual([3]);
+    expect(handKindLists("const S = new Set(['file', 'documentation', 'sermon']);", types)).toEqual(
+      [3],
+    );
+    expect(handKindLists("z.enum(['branch', 'email', 'file', 'note'])", types)).toEqual([4]);
+    expect(handKindLists("if (!['page', 'note', 'task'].includes(t)) return;", types)).toEqual([3]);
+    expect(handKindLists("f(x, ['page', 'note', 'table'])", types)).toEqual([3]);
+  });
+
+  it('does not count two kinds, a comment, a type, prose, or a list mostly of other words', () => {
+    expect(handKindLists("const A = ['page', 'note'];", types)).toEqual([]);
+    expect(handKindLists("// ['page', 'note', 'draw']\nconst a = 1;", types)).toEqual([]);
+    expect(handKindLists("type K = 'page' | 'note' | 'draw';", types)).toEqual([]);
+    expect(handKindLists("const d = \"e.g. ['page','note','draw']\";", types)).toEqual([]);
+    expect(
+      handKindLists(
+        "const G = ['memory-core', 'files', 'notes', 'journal', 'email', 'location', 'replay', 'persona'];",
+        types,
+      ),
+    ).toEqual([]);
+    expect(
+      handKindLists("const R = [['/draw', 'draw'], ['/notes', 'note'], ['/x', 'page']];", types),
+    ).toEqual([]);
+  });
+});
+
 describe('the scoreboard pins', () => {
   it('a re-pin keeps a note while its pin holds and drops it once it came down', () => {
     const notes = { a: 'raised 1 to 2', b: 'raised 3 to 4', gone: 'no number' };
@@ -367,6 +414,25 @@ describe('the editor rules', () => {
           code: calls(pin.count + 1),
           filename: `/r/${pinned}`,
           errors: [{ messageId: 'over' }],
+        },
+      ],
+    });
+  });
+
+  it('no-hand-kind-lists: a literal kind list fails outside the named files', () => {
+    const [named] = Object.keys(KIND_LIST_ALLOW as Record<string, string>);
+    const list = "export const K = ['page', 'note', 'draw'];";
+    tester.run('no-hand-kind-lists', noHandKindLists, {
+      valid: [
+        { code: list, filename: `/r/${named}` },
+        { code: list, filename: '/r/packages/content/src/new.test.ts' },
+        { code: "export const K = ['page', 'note'];", filename: '/r/packages/content/src/new.ts' },
+      ],
+      invalid: [
+        {
+          code: list,
+          filename: '/r/packages/content/src/new.ts',
+          errors: [{ messageId: 'list' }],
         },
       ],
     });

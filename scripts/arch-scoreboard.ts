@@ -41,6 +41,8 @@ const LABELS: Record<string, string> = {
   callerReads: 'reads of the caller the pipeline answers (A4 step 3b)',
   callerReadFiles: 'route files reading the caller the pipeline answers',
   kindLists: 'TS kind lists',
+  handKindLists: 'hand kind lists outside the kind registry and the named list (A10 #12)',
+  handKindListsAllowed: 'hand kind lists in the named files (A10 #12)',
   brainOnWorkspacesCalls: 'brainOnWorkspacesNow calls',
   brainOnWorkspacesFiles: 'files calling brainOnWorkspacesNow',
   adminReadsFiles: 'files naming MANTLE_ADMIN_READS',
