@@ -4793,3 +4793,111 @@ each):
   journal `when` above 0290's. The journal test fails on any skipped number
   but 0211, and the runner refuses a never-applied migration below the
   highest applied one from 0290 on (`packages/db/README.md`).
+
+## A6b handover
+
+Work in progress on branch `feat/a6b` (worktree `.claude/worktrees/a6b`).
+The honest exit count (`asSystemExits`, eslint-rules/as-system-exits.mjs)
+is **59**, from 191 on main (v0.300.63). The pin in
+scripts/arch-scoreboard.pins.json is not lowered yet (arch:check passes and
+says "went down").
+
+**What moved, by group (exits before -> after):**
+
+- owner-preferences 59 -> 0: loadProfilePreferences and the landing read in
+  the scope; the own-login rule (0266) already shows the brain's row. One
+  named change: a member's landing read no longer makes the anchor's
+  missing profile row.
+- kind-root 21 -> 0: `mantle_kind_root_id` (the files root's id only).
+- rule-in-query 17 -> 4: whoami (both), transcribe, the chat pictures and
+  the assigned assistant run in the scope as they are; the level badge
+  (`mantle_agent_experience`), the inbox (`mantle_read_cursors`,
+  `mantle_read_cursor_mark`), the key list and revoke
+  (`mantle_access_keys_seen`, `mantle_access_key_revoke`), the pending
+  badge (`mantle_pending_count`), the private workspace flag
+  (`mantle_ws_private_for`); the app switches read the gate's answer
+  (`loginIsAdmin` deleted); the asset token is minted with the epoch the
+  guard checked (`mintAssetToken(anchor, login, epoch)`). Left: chat
+  continue, summarize, archive (model call and chat_threads writes) and
+  POST /api/access-keys (password hash). One named change: an Admin user
+  assigned an assistant of a workspace it is not in no longer sees that
+  assignment.
+- system work that never ran in a scope (13 -> 0): `systemWork(fn, reason)`
+  (packages/db viewer.ts) runs as asSystem did and refuses a workspace
+  scope (no exit): the Telegram tools, chatLoginRefusal, pairedChatOf,
+  unpairRefusedChat, loginModeratesBot, a bot's chats screen, the debug
+  read, the approval card, the login notices, the snapshot copies, a
+  login's MCP connector listing. `takenFromOf` deleted (no caller).
+- narrow reads 19 -> 0, by definers: connector state, rows, beyond Admin,
+  app holders, a login's connector rows, contact sharing dates, file names
+  taken, a Table's export link, access log names, runs' workspaces, keyword
+  statistics (`mantle_lexeme_df`), the manageable trash
+  (`mantle_deleted_apps`; `deletedAppHomes` folded into
+  `manageableDeletedApps`). Named stricter changes: a login's connector rule
+  asked in a scope for another login, an app's connector verdict in a scope
+  that does not read the app.
+- login-telegram 17 -> 3: a login's chats, the moderated chats and the
+  replay by definers (`mantle_tg_my_chats`, `mantle_tg_moderated_chats`,
+  `mantle_tg_replay`, internal `mantle_login_area`); the rest system work.
+  Left: pairing.ts (3: preview, pair, block/unpair). Named stricter changes:
+  another login's chats or replay asked in a scope; the approval card's
+  logged reason (no card was ever sent from a scope).
+
+**Migration 0293** (`0293_a6b_scope_exits.sql`, journal `when`
+1790196840000, after feat/anthropic-ws's 0292 at 1790196780000): every
+definer above, fixed search_path (pg_temp last), PUBLIC revoked, EXECUTE to
+mantle_view_user (and demo_reader); the two writes
+(`mantle_read_cursor_mark`, `mantle_access_key_revoke`) are the write
+role's (WRITE_ROLE_FUNCTIONS in access-matrix.ts), not the workspace
+role's. None is on RUNTIME_SYSTEM_FUNCTIONS (each is a viewer role's, which
+the runtime role's allowlist takes); the runtime-role test is not run yet.
+**Merge order: feat/anthropic-ws (0292) first**, or renumber; the journal
+test fails on this branch alone (the 0292 gap) until then.
+
+**Sweep:** server/web/server/a6b-exit-sweep.db.test.ts, sections
+owner-preferences, kind-root, rule-in-query, narrow-reads, telegram, each
+recorded on main (v0.300.63) in off, warn and on
+(`__snapshots__/a6b-exit-sweep.<section>.<mode>.txt`, A6B_RECORD=<section>
+to record) and every cell answering as main or a named change
+(NAMED_CHANGES, with `back`, `now` and `was`). All five pass in off, warn
+and on at 0f29a881c. The file is in vitest.actor-on.config.ts.
+
+**Known failing (unit suite, DATABASE_URL unset, at 4fa13e9 era):**
+migrations-journal (the 0292 gap, expected), and mocked parity tests that
+need the new imports or answers: packages/mcp-core mcp-call-snapshot,
+packages/tools builtins-read-scope (replay_window), dispatch-parity,
+pending-notify (the card), server/web app-broker-parity, a10-body-sweep,
+a4-guard-sweep. Not investigated yet: most mock `@mantle/db` without
+`systemWork` or read the old system-pool reads.
+
+**Next, in order:**
+
+1. Fix the failing unit tests above (add `systemWork` to their mocks, or
+   record the named changes), then the DB suites that touch the moved code
+   (w7a, w7d telegram, a6 grant sweep, access keys, files, runtime-role).
+2. client-sourced 9 (client-sourced.ts 6, app-table-exports mark 3):
+   definers `mantle_client_sourced_any/among`, `mantle_conversation_taint`
+   (+keep), `mantle_mark_created_client_sourced`, `mantle_client_sourced_gate`
+   (writeVerdict's rule in SQL), `mantle_mark_export_client_sourced`; answer
+   as on main (no extra scope rule: the guard must not loosen). Sweep first.
+3. workspace-write 5: write definers with the rules in SQL (see the A6
+   section above for each rule).
+4. Then toward 40: pairing 3, turn heartbeats 2 (needs the turn stamp's
+   login in SQL), heartbeat rows 6 (needs the firing heartbeat in a scope
+   setting), searchNodes 6. Likely to stay: agent-workspace 6, app-data 9,
+   admin-area 2, pending-approval 2, connector-call 1, connector binding 1,
+   page-refold 1, app-trash restore 1, audit-log 1, rule-in-query 4.
+5. L2 folds (not started): previewGrant vs mantle_grant_counts, searchUsers
+   vs mantle_ws_login_search, areasFor vs mantle_scope_has_area,
+   loginWsSql vs loadCtx/loginScopeFor, planWorkspaceMove/placeInFolder
+   holders.includes, visibility.ts any(f.holders), heldBySql vs
+   nodeAliasReadBy.
+6. Lower the pins (`node scripts/arch-scoreboard.ts --pin`, with notes),
+   the AS_SYSTEM_TURN_REASONS list and its viewer.test.ts pins, the
+   allowlist header's numbers, this section's prose; the full gates.
+
+Workstation (jasons@192.168.100.75): worktrees `a6b` (branch, pg port
+56281) and `a6b-main` (main 219e18ed4 plus the sweep file, port 56282),
+containers `a6b_pg`, `a6b-main_pg`; master key in /tmp/a6b-master-key;
+scripts /tmp/a6b-verify.sh, /tmp/a6b-rec.sh, /tmp/a6b-sync.sh. Clean up with
+docker rm -f -v and git worktree remove when done.
