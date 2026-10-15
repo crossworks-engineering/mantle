@@ -455,6 +455,9 @@ describe.skipIf(!DB_URL)('A8 surface cells: every way in gives the oracle’s an
     /** Whether the way in can do it; a string: it cannot, counted under
      *  that reason (no cell drops out uncounted). */
     supports: (kind: string, action: GuideAction) => boolean | string;
+    /** A deny the guide gives this way in and the oracle cannot see (it
+     *  knows no tools): the reason, else null. */
+    narrow?: (kind: string, action: GuideAction) => string | null;
     /** Cells run besides the pairwise pick: a case a finding names. */
     always?: { role: GuideRole; kind: string; placement: GuidePlacement; action: GuideAction }[];
     run: (
@@ -466,8 +469,11 @@ describe.skipIf(!DB_URL)('A8 surface cells: every way in gives the oracle’s an
   };
 
   const MCP_SURFACES = new Set<GuideSurface>(['mcp-oauth', 'mcp-key', 'peer', 'mcp-stdio']);
-  /** The builtins with no tool row (mcpOnly), read once the tools load. */
+  /** The builtins with no tool row (mcpOnly), those that wait for approval,
+   *  and a peer's risky ones, read once the tools load. */
   const mcpOnly = new Set<string>();
+  const confirmGated = new Set<string>();
+  const peerRisky = new Set<string>();
   const toolEntry = (
     surface: GuideSurface,
     actor: GuideActor,
@@ -492,7 +498,19 @@ describe.skipIf(!DB_URL)('A8 surface cells: every way in gives the oracle’s an
       if (!MCP_SURFACES.has(surface) && mcpOnly.has(tc.slug)) {
         return `no tool row: ${tc.slug} is MCP only`;
       }
+      // A recipe calls no tool that waits for approval (for anyone).
+      if (surface === 'recipe' && confirmGated.has(tc.slug)) {
+        return `no recipe step: ${tc.slug} waits for approval`;
+      }
       return true;
+    },
+    // "Linked brains": a peer calls a risky tool only when its list allows
+    // it; the fixture's peers allow none.
+    narrow: (kind, action) => {
+      const tc = toolCall(kind, action, 'x');
+      return surface === 'peer' && tc && peerRisky.has(tc.slug)
+        ? `a peer may not call ${tc.slug}: a risky tool its list does not allow`
+        : null;
     },
     run: (role, kind, action, id) => {
       const tc = toolCall(kind, action, id)!;
@@ -775,6 +793,8 @@ describe.skipIf(!DB_URL)('A8 surface cells: every way in gives the oracle’s an
           const login = fx.logins[r];
           const row = await toolRow(slug);
           const pendingIds: string[] = [];
+          const [had] = await raw<{ c: boolean }[]>`
+            select requires_confirm as c from tools where owner_id = ${fx.owner} and slug = ${slug}`;
           await raw`update tools set requires_confirm = true
                    where owner_id = ${fx.owner} and slug = ${slug}`;
           let queued: { ok: boolean; output?: unknown; error?: unknown };
@@ -816,7 +836,9 @@ describe.skipIf(!DB_URL)('A8 surface cells: every way in gives the oracle’s an
               ),
             )) as typeof queued;
           } finally {
-            await raw`update tools set requires_confirm = false
+            // As it was (a tool that waits for approval anyway stays so: a
+            // recipe in a later mode must not call it).
+            await raw`update tools set requires_confirm = ${had?.c ?? false}
                      where owner_id = ${fx.owner} and slug = ${slug}`;
           }
           // Refused at queue time (the gate's queue-time check): never queued.
@@ -908,7 +930,11 @@ describe.skipIf(!DB_URL)('A8 surface cells: every way in gives the oracle’s an
     const { sortFailures, CHECK_MODES } = await import('@mantle/db/matrix/a8-known-failures');
     // Every tool a cell calls resolves (L1): none drops out unseen.
     const slugs = ['node_read', ...Object.values(TOOL_EDIT), ...Object.values(TOOL_DELETE)];
-    for (const b of t.BUILTIN_TOOLS) if (b.mcpOnly) mcpOnly.add(b.slug);
+    for (const b of t.BUILTIN_TOOLS) {
+      if (b.mcpOnly) mcpOnly.add(b.slug);
+      if (b.requiresConfirm) confirmGated.add(b.slug);
+      if (b.policy?.peerRisky) peerRisky.add(b.slug);
+    }
     const unresolved: string[] = [];
     for (const slug of slugs) {
       if (!(await m.asSystem(() => t.resolveTool(fx.owner, slug), 'test'))) unresolved.push(slug);
@@ -976,11 +1002,16 @@ describe.skipIf(!DB_URL)('A8 surface cells: every way in gives the oracle’s an
         let pass = 0;
         let allow = 0;
         for (const c of cells) {
-          const want = o.expectedAccess(
-            { surface: e.surface, placement: c.placement, actor: c.actor },
-            c.role,
-            c.kind,
-            c.action,
+          const narrowed = e.narrow?.(c.kind, c.action) ?? null;
+          const want = (
+            narrowed
+              ? { allow: false, why: narrowed }
+              : o.expectedAccess(
+                  { surface: e.surface, placement: c.placement, actor: c.actor },
+                  c.role,
+                  c.kind,
+                  c.action,
+                )
           ) as { allow: true } | { allow: false; why: string };
           if (want.allow) allow++;
           const reads = ['read', 'list', 'search'].includes(c.action);

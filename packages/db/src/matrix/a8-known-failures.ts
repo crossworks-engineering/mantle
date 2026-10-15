@@ -68,6 +68,14 @@ const F5 = 'F5 the home Moderator deletes an app (owner and Admin users only, pl
  *  item is read by W and R, and has an open link). */
 const F6 = 'F6 a peer may not edit a shared item (a rule the guide does not name)';
 
+/** F10. app_delete refuses an Admin user's run item ("owner-side tool:
+ *  not available here": a run's caller is no owner surface to
+ *  ownerOnlyRefusal), the owner's own run too. The owner's decision of
+ *  2026-10-15 (plan s32, F3 revised): the owner and Admin users delete an
+ *  app. A recipe step cannot call it for anyone (it waits for approval),
+ *  which the cells count apart, not as a refusal. */
+const F10 = 'F10 app_delete refuses an Admin user’s run item (owner decision 2026-10-15)';
+
 /** F9. A contact share's write is named system work on the system pool
  *  (docs/actors.md: "its app's data, when the share allows it"), so the
  *  database holds a statement it sends to nothing but a snapshot copy's
@@ -174,7 +182,6 @@ export const KNOWN_FAILURES: Readonly<Record<string, KnownFailure>> = {
   'api-v1 login/writeGrant read task @root': known(F1, MEMBER_LOGIN),
   'heartbeat assistant/- edit formula @folder': known(F2, RAW_UPDATE),
   'heartbeat assistant/- edit task @root': known(F2, RAW_UPDATE),
-  'recipe turn/homeModerator delete app @root': known(F2, RAW_SNAPSHOT, ['warn', 'on']),
   'recipe turn/homeModerator edit formula @folder': known(F2, RAW_UPDATE),
   'recipe turn/writeGrant edit event @folder': known(F2, RAW_UPDATE),
   'run turn/homeModerator delete event @folder': known(F2, RAW_SYSTEM_TX),
@@ -199,6 +206,7 @@ export const KNOWN_FAILURES: Readonly<Record<string, KnownFailure>> = {
   'web-turn turn/writeGrant edit task @folder': known(F2, RAW_UPDATE),
   'peer login/owner edit note @admin': known(F6, 'a peer cannot change its content'),
   'peer login/writeGrant edit note @folder': known(F6, 'a peer cannot change its content'),
+  'run turn/admin delete app @admin': known(F10, 'owner-side tool: not available here'),
   'mcp-oauth login/homeModerator delete app @folder': known(F5, APP_DELETED),
   'web login/homeModerator delete app @folder': known(F5, APP_DELETED),
 };
