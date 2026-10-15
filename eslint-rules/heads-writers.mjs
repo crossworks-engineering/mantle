@@ -74,6 +74,10 @@ const DYNAMIC_TABLE_WRITE = /\b(insert\s+into|delete\s+from|update|merge\s+into|
 const DYNAMIC_UNSAFE_REVIEWED = new Map([
   ['packages/db/src/access-matrix.ts', 'GRANT and REVOKE statements for the limited roles'],
   ['packages/db/src/viewer-roles.ts', 'CREATE and ALTER ROLE statements'],
+  [
+    'packages/db/src/runtime-role.ts',
+    'the runtime roles (A9): CREATE and ALTER ROLE, GRANT and REVOKE, ALTER ... OWNER',
+  ],
   ['packages/db/src/init-scratch.ts', 'the scratch init SQL files'],
   ['packages/db/src/migrate.ts', 'the migration runner (migrations are out of scope)'],
   ['packages/db/src/concurrent-indexes.ts', 'CREATE and DROP INDEX CONCURRENTLY from a fixed list'],
