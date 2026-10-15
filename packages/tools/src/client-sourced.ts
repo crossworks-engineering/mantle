@@ -31,33 +31,21 @@
  * level, and an app-table export copies those rows into an admin-level brain
  * Table. Such a table is client-sourced while its app is at client level, and
  * after a client has written the app, whatever its level
- * (`clientAppExportsAmong`, client tier audit I3).
+ * (mantle_client_sourced_among, client tier audit I3).
  */
-import { and, eq, inArray, isNotNull, or, sql } from 'drizzle-orm';
-import {
-  appDatabases,
-  appTableExports,
-  archiveClientLogins,
-  CLIENT_REQUEST_SOURCE,
-  clientSourcedNodes,
-  conversationTaints,
-  db,
-  liveWorkspaceSql,
-  mayReadInSql,
-  nodes,
-  spaceItems,
-} from '@mantle/db';
-import { asSystem } from '@mantle/db/viewer';
+import { sql } from 'drizzle-orm';
+import { db } from '@mantle/db';
 
 /**
- * The client-sourced check's one system door (arch A6): what a client wrote,
- * the shares and exports that expose a row, and the client workspaces are read
- * on the system pool by the named reason 'client-sourced-check' (the rule is
- * in the query). This file and client-sourced-rules.ts go through it.
+ * The client-sourced check reads and marks by its definers (0293:
+ * mantle_client_sourced_any and _among, mantle_conversation_taint and
+ * _keep, mantle_mark_created_client_sourced; A6b: on the system pool before,
+ * 'client-sourced-check'). Each answers as the system pool did, over every
+ * row of the brain whatever the scope reads (the rule is in the query; a
+ * guard held to the scope would mark less), and refuses another brain in a
+ * scope, which every caller below takes as marked.
  */
-export function clientSourcedSystem<T>(fn: () => Promise<T>): Promise<T> {
-  return asSystem(fn, 'client-sourced-check');
-}
+const uuidArray = (ids: readonly string[]) => `{${ids.join(',')}}`;
 
 /** A turn's taint, shared by reference across the turn (and its delegated
  *  children: a child that reads client text taints the parent too). */
@@ -97,50 +85,6 @@ function batches<T>(list: readonly T[]): T[][] {
   return out;
 }
 
-/** The brain's live workspaces with a client user, as a uuid[] SQL value
- *  (workspaces W5b2: who reads an item is its grants, not its frozen
- *  level). A client user is a former client login (archive_client_logins,
- *  W8a fix round 1): there is no client role since 0272. Run as the
- *  system (every caller is inside asSystem): no level or workspace role
- *  reads the archive. */
-export function clientWsSql(ownerId: string) {
-  return sql`coalesce((
-    select array_agg(distinct w.id) from workspaces w
-      join workspace_users u on u.workspace_id = w.id
-     where w.owner_id = ${ownerId} and ${liveWorkspaceSql('w')}
-       and u.login_id in (select a.login_id from archive_client_logins a)), '{}'::uuid[])`;
-}
-
-/**
- * Which of `ids` name a brain Table exported from an app clients write
- * (client logins C6): an app a client workspace holds NOW, or one a client login has
- * written (`app_databases.client_written_at`, client tier audit I3). The
- * export copies the app's rows into the table, and the rows a client wrote
- * stay in the app's database, and so in every later export, whatever the
- * app's level becomes. So the mark is set by the level, and once a client
- * has written it holds: raising the app above client does not clear it.
- * The Table itself is also marked in `client_sourced_nodes` once it holds
- * rows clients wrote (app-table-exports.ts), so the mark outlives the link
- * and the app. Call as the system.
- */
-function clientAppExportsAmong(ownerId: string, list: readonly string[]) {
-  return db
-    .select({ id: appTableExports.tableNodeId })
-    .from(appTableExports)
-    .innerJoin(nodes, eq(nodes.id, appTableExports.appNodeId))
-    .leftJoin(appDatabases, eq(appDatabases.appNodeId, appTableExports.appNodeId))
-    .where(
-      and(
-        eq(appTableExports.ownerId, ownerId),
-        inArray(appTableExports.tableNodeId, [...list]),
-        // A client workspace holds the app now (its own grant or its
-        // folder's; workspaces W5b2: grants, not the frozen level), or a
-        // client has written it.
-        or(mayReadInSql(undefined, clientWsSql(ownerId)), isNotNull(appDatabases.clientWrittenAt)),
-      ),
-    );
-}
-
 /**
  * Whether any of `ids` names client-sourced text: a client request task of
  * this brain, a former client login (its old chat thread; listed in
@@ -151,56 +95,23 @@ function clientAppExportsAmong(ownerId: string, list: readonly string[]) {
  * exported from an app at client level or one a client wrote (C6: clients
  * write its rows). The stamp
  * outlives the client login, so an item accepted from a client's space still
- * counts after that login is deleted. As the system: the tasks
- * are admin level and the check must see them whatever the turn's level. It
- * answers yes or no and returns no content. Every id is checked, in batches.
+ * counts after that login is deleted. By its definer
+ * (mantle_client_sourced_any): the tasks are admin level and the check must
+ * see them whatever the turn reads. It answers yes or no and returns no
+ * content. Every id is checked, in batches.
  */
 export async function namesClientSourced(
   ownerId: string,
   ids: readonly string[],
 ): Promise<boolean> {
   if (ids.length === 0) return false;
-  return clientSourcedSystem(async () => {
-    for (const list of batches(ids)) {
-      const [task] = await db
-        .select({ id: nodes.id })
-        .from(nodes)
-        .where(
-          and(
-            eq(nodes.ownerId, ownerId),
-            inArray(nodes.id, list),
-            sql`${nodes.data}->>'source' = ${CLIENT_REQUEST_SOURCE}`,
-          ),
-        )
-        .limit(1);
-      if (task) return true;
-      // A former client login (its chat thread): there is no client role
-      // since 0272, so the archive it wrote is the list (W8a fix round 1).
-      const [login] = await db
-        .select({ id: archiveClientLogins.loginId })
-        .from(archiveClientLogins)
-        .where(inArray(archiveClientLogins.loginId, list))
-        .limit(1);
-      if (login) return true;
-      const [written] = await db
-        .select({ id: spaceItems.nodeId })
-        .from(spaceItems)
-        .where(and(inArray(spaceItems.nodeId, list), eq(spaceItems.authorRole, 'client')))
-        .limit(1);
-      if (written) return true;
-      const [copied] = await db
-        .select({ id: clientSourcedNodes.nodeId })
-        .from(clientSourcedNodes)
-        .where(
-          and(eq(clientSourcedNodes.ownerId, ownerId), inArray(clientSourcedNodes.nodeId, list)),
-        )
-        .limit(1);
-      if (copied) return true;
-      const [exported] = await clientAppExportsAmong(ownerId, list).limit(1);
-      if (exported) return true;
-    }
-    return false;
-  });
+  for (const list of batches(ids)) {
+    const [row] = (await db.execute(
+      sql`select "public"."mantle_client_sourced_any"(${ownerId}::uuid, ${uuidArray(list)}::uuid[]) as hit`,
+    )) as unknown as { hit: boolean }[];
+    if (row?.hit === true) return true;
+  }
+  return false;
 }
 
 /**
@@ -208,7 +119,7 @@ export async function namesClientSourced(
  * items a client wrote, nodes a marked turn created, tables exported from a
  * client-level or client-written app. For callers that must
  * leave such items out rather than mark a turn (the owner's corpus map, L4).
- * As the system, like namesClientSourced.
+ * By its definer (mantle_client_sourced_among), like namesClientSourced.
  */
 export async function clientSourcedAmong(
   ownerId: string,
@@ -216,32 +127,13 @@ export async function clientSourcedAmong(
 ): Promise<Set<string>> {
   const out = new Set<string>();
   if (ids.length === 0) return out;
-  await clientSourcedSystem(async () => {
-    for (const list of batches(ids)) {
-      const tasks = await db
-        .select({ id: nodes.id })
-        .from(nodes)
-        .where(
-          and(
-            eq(nodes.ownerId, ownerId),
-            inArray(nodes.id, list),
-            sql`${nodes.data}->>'source' = ${CLIENT_REQUEST_SOURCE}`,
-          ),
-        );
-      const written = await db
-        .select({ id: spaceItems.nodeId })
-        .from(spaceItems)
-        .where(and(inArray(spaceItems.nodeId, list), eq(spaceItems.authorRole, 'client')));
-      const copied = await db
-        .select({ id: clientSourcedNodes.nodeId })
-        .from(clientSourcedNodes)
-        .where(
-          and(eq(clientSourcedNodes.ownerId, ownerId), inArray(clientSourcedNodes.nodeId, list)),
-        );
-      const exported = await clientAppExportsAmong(ownerId, list);
-      for (const r of [...tasks, ...written, ...copied, ...exported]) out.add(r.id);
-    }
-  });
+  for (const list of batches(ids)) {
+    const rows = (await db.execute(
+      sql`select id::text as id
+            from "public"."mantle_client_sourced_among"(${ownerId}::uuid, ${uuidArray(list)}::uuid[]) as id`,
+    )) as unknown as { id: string }[];
+    for (const r of rows) out.add(r.id);
+  }
   return out;
 }
 
@@ -323,20 +215,11 @@ export function conversationTaintKey(
 export async function loadConversationTaint(ownerId: string, key: string): Promise<TurnTaint> {
   const taint: TurnTaint = { clientSourced: false, conversation: { ownerId, key } };
   try {
-    const [row] = await clientSourcedSystem(() =>
-      db
-        .select({ via: conversationTaints.via })
-        .from(conversationTaints)
-        .where(
-          and(
-            eq(conversationTaints.ownerId, ownerId),
-            eq(conversationTaints.conversationKey, key),
-            sql`${conversationTaints.taintedAt} > now() - make_interval(hours => ${CONVERSATION_TAINT_HOURS})`,
-          ),
-        )
-        .limit(1),
-    );
-    if (row) {
+    const [row] = (await db.execute(
+      sql`select "public"."mantle_conversation_taint"(${ownerId}::uuid, ${key},
+                   ${CONVERSATION_TAINT_HOURS}::int) as via`,
+    )) as unknown as { via: string | null }[];
+    if (row && row.via !== null) {
       taint.clientSourced = true;
       taint.via = `an earlier turn (${row.via})`;
       taint.carried = true;
@@ -356,14 +239,8 @@ async function keepConversationTaint(
   via: string,
 ): Promise<void> {
   try {
-    await clientSourcedSystem(() =>
-      db
-        .insert(conversationTaints)
-        .values({ ownerId: conv.ownerId, conversationKey: conv.key, via })
-        .onConflictDoUpdate({
-          target: [conversationTaints.ownerId, conversationTaints.conversationKey],
-          set: { via, taintedAt: sql`now()` },
-        }),
+    await db.execute(
+      sql`select "public"."mantle_conversation_taint_keep"(${conv.ownerId}::uuid, ${conv.key}, ${via})`,
     );
   } catch (err) {
     console.warn('[client-sourced] could not keep the conversation mark:', err);
@@ -376,7 +253,8 @@ async function keepConversationTaint(
  * Mark the nodes a call of a marked turn just created: the ids in its output
  * that name a node of this brain created within the last `withinMs` (the
  * call's own duration, measured on the database clock with a small margin).
- * Written by the tool loop as the system, never by a tool or the model.
+ * Written by the tool loop through its definer
+ * (mantle_mark_created_client_sourced), never by a tool or the model.
  * Returns how many were marked; a failure is logged, never thrown.
  */
 export async function markCreatedClientSourced(
@@ -390,27 +268,13 @@ export async function markCreatedClientSourced(
   const secs = Math.ceil(Math.max(0, withinMs) / 1000) + 2;
   let marked = 0;
   try {
-    await clientSourcedSystem(async () => {
-      for (const list of batches(ids)) {
-        const created = await db
-          .select({ id: nodes.id })
-          .from(nodes)
-          .where(
-            and(
-              eq(nodes.ownerId, ownerId),
-              inArray(nodes.id, list),
-              sql`${nodes.createdAt} >= now() - make_interval(secs => ${secs})`,
-            ),
-          );
-        if (created.length === 0) continue;
-        const rows = await db
-          .insert(clientSourcedNodes)
-          .values(created.map((c) => ({ nodeId: c.id, ownerId, via })))
-          .onConflictDoNothing()
-          .returning({ id: clientSourcedNodes.nodeId });
-        marked += rows.length;
-      }
-    });
+    for (const list of batches(ids)) {
+      const [row] = (await db.execute(
+        sql`select "public"."mantle_mark_created_client_sourced"(${ownerId}::uuid,
+                     ${uuidArray(list)}::uuid[], ${secs}::int, ${via}) as n`,
+      )) as unknown as { n: number }[];
+      marked += Number(row?.n ?? 0);
+    }
   } catch (err) {
     console.warn('[client-sourced] could not mark created nodes:', err);
   }

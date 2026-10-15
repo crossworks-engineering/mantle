@@ -86,6 +86,29 @@
 --    anchor's). In a scope, the scope's own login only.
 --    mantle_login_area(login, area) is their internal rule (packages/db
 --    loginHasArea, in SQL): no role may run it.
+-- 16. The client-sourced guard (packages/tools client-sourced.ts and
+--    client-sourced-rules.ts, packages/content app-table-exports.ts; it
+--    read and wrote on the system pool before, 'client-sourced-check' and
+--    'client-sourced-mark'): which ids are client-sourced
+--    (mantle_client_sourced_any, mantle_client_sourced_among), a
+--    conversation's mark read and kept (mantle_conversation_taint,
+--    mantle_conversation_taint_keep), the nodes a marked turn made marked
+--    (mantle_mark_created_client_sourced), an export Table marked when a
+--    client wrote its app (mantle_mark_export_client_sourced), and a marked
+--    turn's write rule (mantle_client_sourced_gate). Each answers as the
+--    system pool did, over every row of the brain whatever the scope reads:
+--    a guard held to what the scope reads would mark and hold back less. In
+--    a scope another brain is refused (an error the callers take as
+--    marked). The marks only ever hold more back, so a read scope may set
+--    them too (a turn that answers no login runs on the workspace role).
+--    mantle_client_ws and mantle_client_sourced_brain are their internal
+--    rules: no role may run them.
+-- 17. mantle_turn_heartbeats(owner, login): a turn's own active heartbeats
+--    (packages/runtime heartbeats/tick.ts: the responder's awareness block
+--    and its tool list; on the system pool in a scope before,
+--    'heartbeat-context'): the ones the login set up, NULL for the anchor
+--    login. In a scope only the scope's own login's (the login a turn
+--    answers is its scope's), and the brain's.
 --
 -- The writes (3, 4) are the write role's (WRITE_ROLE_FUNCTIONS,
 -- access-matrix.ts: applyViewerGrants grants them), not the workspace
@@ -690,6 +713,285 @@ REVOKE ALL ON FUNCTION "public"."mantle_tg_replay"(uuid, uuid, timestamptz, time
 GRANT EXECUTE ON FUNCTION "public"."mantle_tg_replay"(uuid, uuid, timestamptz, timestamptz, integer) TO "mantle_view_user";
 --> statement-breakpoint
 
+-- The client-sourced guard (16): every function below answers as the
+-- system pool did, for every id of the brain, whatever the scope reads (a
+-- guard held to what the scope reads would mark fewer turns: looser). In a
+-- scope only the brain's own: another brain is refused (an error), which
+-- the callers take as marked (fail closed).
+
+-- The brain's live workspaces with a client user (a former client login,
+-- archive_client_logins: there is no client role since 0272). Internal:
+-- no role may run it.
+CREATE OR REPLACE FUNCTION "public"."mantle_client_ws"(owner uuid)
+  RETURNS uuid[] LANGUAGE sql STABLE SECURITY DEFINER
+  SET search_path = "public", pg_temp AS $$
+  SELECT coalesce((
+    SELECT array_agg(DISTINCT w."id") FROM "public"."workspaces" w
+      JOIN "public"."workspace_users" u ON u."workspace_id" = w."id"
+     WHERE w."owner_id" = owner AND w."archived_at" IS NULL
+       AND u."login_id" IN (SELECT a."login_id" FROM "public"."archive_client_logins" a)),
+    '{}'::uuid[])
+$$;
+--> statement-breakpoint
+REVOKE ALL ON FUNCTION "public"."mantle_client_ws"(uuid) FROM PUBLIC;
+--> statement-breakpoint
+
+-- In a scope, only the brain's own (internal: no role may run it).
+CREATE OR REPLACE FUNCTION "public"."mantle_client_sourced_brain"(owner uuid, fn text)
+  RETURNS void LANGUAGE plpgsql STABLE SECURITY DEFINER
+  SET search_path = "public", pg_temp AS $$
+BEGIN
+  IF "public"."mantle_scope_active"() AND owner IS DISTINCT FROM "public"."mantle_brain_id"() THEN
+    RAISE EXCEPTION '%: only the scope''s own brain', fn USING ERRCODE = '42501';
+  END IF;
+END
+$$;
+--> statement-breakpoint
+REVOKE ALL ON FUNCTION "public"."mantle_client_sourced_brain"(uuid, text) FROM PUBLIC;
+--> statement-breakpoint
+
+-- Which of `ids` are client-sourced items: a client request task, an item
+-- a client wrote (space_items author_role 'client', in any state), a node
+-- a marked turn made (client_sourced_nodes), a Table exported from an app
+-- a client workspace holds or a client wrote.
+CREATE OR REPLACE FUNCTION "public"."mantle_client_sourced_among"(owner uuid, ids uuid[])
+  RETURNS SETOF uuid LANGUAGE plpgsql STABLE SECURITY DEFINER
+  SET search_path = "public", pg_temp AS $$
+DECLARE
+  cws uuid[];
+BEGIN
+  PERFORM "public"."mantle_client_sourced_brain"(owner, 'mantle_client_sourced_among');
+  cws := "public"."mantle_client_ws"(owner);
+  RETURN QUERY
+    SELECT n."id" FROM "public"."nodes" n
+     WHERE n."owner_id" = owner AND n."id" = ANY (ids) AND n."data" ->> 'source' = 'client-request'
+    UNION
+    SELECT s."node_id" FROM "public"."space_items" s
+     WHERE s."node_id" = ANY (ids) AND s."author_role" = 'client'
+    UNION
+    SELECT c."node_id" FROM "public"."client_sourced_nodes" c
+     WHERE c."owner_id" = owner AND c."node_id" = ANY (ids)
+    UNION
+    SELECT e."table_node_id" FROM "public"."app_table_exports" e
+      JOIN "public"."nodes" a ON a."id" = e."app_node_id"
+      LEFT JOIN "public"."app_databases" d ON d."app_node_id" = e."app_node_id"
+     WHERE e."owner_id" = owner AND e."table_node_id" = ANY (ids)
+       AND (coalesce(a."read_ws" && cws, false) OR d."client_written_at" IS NOT NULL);
+END
+$$;
+--> statement-breakpoint
+REVOKE ALL ON FUNCTION "public"."mantle_client_sourced_among"(uuid, uuid[]) FROM PUBLIC;
+--> statement-breakpoint
+GRANT EXECUTE ON FUNCTION "public"."mantle_client_sourced_among"(uuid, uuid[]) TO "mantle_view_user";
+--> statement-breakpoint
+
+-- Whether any of `ids` names client-sourced text: the items above, or a
+-- former client login (its old chat thread). Yes or no, no content.
+CREATE OR REPLACE FUNCTION "public"."mantle_client_sourced_any"(owner uuid, ids uuid[])
+  RETURNS boolean LANGUAGE plpgsql STABLE SECURITY DEFINER
+  SET search_path = "public", pg_temp AS $$
+BEGIN
+  PERFORM "public"."mantle_client_sourced_brain"(owner, 'mantle_client_sourced_any');
+  RETURN EXISTS (SELECT 1 FROM "public"."archive_client_logins" a WHERE a."login_id" = ANY (ids))
+      OR EXISTS (SELECT 1 FROM "public"."mantle_client_sourced_among"(owner, ids));
+END
+$$;
+--> statement-breakpoint
+REVOKE ALL ON FUNCTION "public"."mantle_client_sourced_any"(uuid, uuid[]) FROM PUBLIC;
+--> statement-breakpoint
+GRANT EXECUTE ON FUNCTION "public"."mantle_client_sourced_any"(uuid, uuid[]) TO "mantle_view_user";
+--> statement-breakpoint
+
+-- A conversation's mark: its reason while it was marked in the last
+-- `hours`, else NULL; and the mark kept (or renewed) from now.
+CREATE OR REPLACE FUNCTION "public"."mantle_conversation_taint"(owner uuid, conv text, within_hours integer)
+  RETURNS text LANGUAGE plpgsql STABLE SECURITY DEFINER
+  SET search_path = "public", pg_temp AS $$
+BEGIN
+  PERFORM "public"."mantle_client_sourced_brain"(owner, 'mantle_conversation_taint');
+  RETURN (SELECT t."via" FROM "public"."conversation_taints" t
+           WHERE t."owner_id" = owner AND t."conversation_key" = conv
+             AND t."tainted_at" > now() - make_interval(hours => within_hours)
+           LIMIT 1);
+END
+$$;
+--> statement-breakpoint
+REVOKE ALL ON FUNCTION "public"."mantle_conversation_taint"(uuid, text, integer) FROM PUBLIC;
+--> statement-breakpoint
+GRANT EXECUTE ON FUNCTION "public"."mantle_conversation_taint"(uuid, text, integer) TO "mantle_view_user";
+--> statement-breakpoint
+
+CREATE OR REPLACE FUNCTION "public"."mantle_conversation_taint_keep"(owner uuid, conv text, why text)
+  RETURNS void LANGUAGE plpgsql VOLATILE SECURITY DEFINER
+  SET search_path = "public", pg_temp AS $$
+BEGIN
+  PERFORM "public"."mantle_client_sourced_brain"(owner, 'mantle_conversation_taint_keep');
+  INSERT INTO "public"."conversation_taints" ("owner_id", "conversation_key", "via")
+  VALUES (owner, conv, why)
+  ON CONFLICT ("owner_id", "conversation_key")
+    DO UPDATE SET "via" = excluded."via", "tainted_at" = now();
+END
+$$;
+--> statement-breakpoint
+REVOKE ALL ON FUNCTION "public"."mantle_conversation_taint_keep"(uuid, text, text) FROM PUBLIC;
+--> statement-breakpoint
+GRANT EXECUTE ON FUNCTION "public"."mantle_conversation_taint_keep"(uuid, text, text) TO "mantle_view_user";
+--> statement-breakpoint
+
+-- The nodes of `ids` made in the last `secs` seconds, marked (a marked
+-- turn's new nodes carry its mark); how many it marked.
+CREATE OR REPLACE FUNCTION "public"."mantle_mark_created_client_sourced"(
+  owner uuid, ids uuid[], within_secs integer, why text)
+  RETURNS integer LANGUAGE plpgsql VOLATILE SECURITY DEFINER
+  SET search_path = "public", pg_temp AS $$
+DECLARE
+  marked integer;
+BEGIN
+  PERFORM "public"."mantle_client_sourced_brain"(owner, 'mantle_mark_created_client_sourced');
+  WITH made AS (
+    INSERT INTO "public"."client_sourced_nodes" ("node_id", "owner_id", "via")
+    SELECT n."id", owner, why FROM "public"."nodes" n
+     WHERE n."owner_id" = owner AND n."id" = ANY (ids)
+       AND n."created_at" >= now() - make_interval(secs => within_secs)
+    ON CONFLICT DO NOTHING
+    RETURNING 1)
+  SELECT count(*)::int INTO marked FROM made;
+  RETURN marked;
+END
+$$;
+--> statement-breakpoint
+REVOKE ALL ON FUNCTION "public"."mantle_mark_created_client_sourced"(uuid, uuid[], integer, text) FROM PUBLIC;
+--> statement-breakpoint
+GRANT EXECUTE ON FUNCTION "public"."mantle_mark_created_client_sourced"(uuid, uuid[], integer, text) TO "mantle_view_user";
+--> statement-breakpoint
+
+-- A Table that holds rows clients wrote, marked for good: only when the
+-- app it is (or was) the export of has been written by a client.
+CREATE OR REPLACE FUNCTION "public"."mantle_mark_export_client_sourced"(
+  owner uuid, app uuid, tbl uuid)
+  RETURNS void LANGUAGE plpgsql VOLATILE SECURITY DEFINER
+  SET search_path = "public", pg_temp AS $$
+BEGIN
+  PERFORM "public"."mantle_client_sourced_brain"(owner, 'mantle_mark_export_client_sourced');
+  INSERT INTO "public"."client_sourced_nodes" ("node_id", "owner_id", "via")
+  SELECT t."id", owner, 'app_table_export' FROM "public"."nodes" t
+   WHERE t."id" = tbl AND t."owner_id" = owner
+     AND EXISTS (SELECT 1 FROM "public"."nodes" a
+                   JOIN "public"."app_databases" d ON d."app_node_id" = a."id"
+                  WHERE a."id" = app AND a."owner_id" = owner AND d."client_written_at" IS NOT NULL)
+  ON CONFLICT DO NOTHING;
+END
+$$;
+--> statement-breakpoint
+REVOKE ALL ON FUNCTION "public"."mantle_mark_export_client_sourced"(uuid, uuid, uuid) FROM PUBLIC;
+--> statement-breakpoint
+GRANT EXECUTE ON FUNCTION "public"."mantle_mark_export_client_sourced"(uuid, uuid, uuid) TO "mantle_view_user";
+--> statement-breakpoint
+
+-- A marked turn's write rule (client-sourced-rules.ts writeVerdict): why
+-- the call waits, or NULL to run it. Its target items (and an app's
+-- exported Tables) must all be the brain's, none read by a client
+-- workspace or an open link; no destination folder at or above a path a
+-- client workspace reads; no assistant of a client workspace, nor a tool
+-- group (or a group holding a tool) one holds.
+CREATE OR REPLACE FUNCTION "public"."mantle_client_sourced_gate"(
+  owner uuid, want_nodes uuid[], want_apps uuid[], want_paths text[],
+  want_agents text[], want_groups text[], want_tools text[])
+  RETURNS text LANGUAGE plpgsql STABLE SECURITY DEFINER
+  SET search_path = "public", pg_temp AS $$
+DECLARE
+  cws uuid[];
+  wanted uuid[];
+  hits integer;
+  p text;
+BEGIN
+  PERFORM "public"."mantle_client_sourced_brain"(owner, 'mantle_client_sourced_gate');
+  cws := "public"."mantle_client_ws"(owner);
+  wanted := ARRAY(
+    SELECT DISTINCT v FROM unnest(
+      coalesce(want_nodes, '{}') || coalesce(want_apps, '{}')
+      || coalesce((SELECT array_agg(e."table_node_id") FROM "public"."app_table_exports" e
+                    WHERE e."owner_id" = owner AND e."app_node_id" = ANY (want_apps)), '{}')) v);
+  IF cardinality(wanted) > 0 THEN
+    SELECT count(*) INTO hits FROM "public"."nodes" n
+     WHERE n."owner_id" = owner AND n."id" = ANY (wanted);
+    IF hits < cardinality(wanted) THEN
+      RETURN 'its target is not an item of this brain';
+    END IF;
+    IF EXISTS (
+      SELECT 1 FROM "public"."nodes" n
+       WHERE n."owner_id" = owner AND n."id" = ANY (wanted)
+         AND (coalesce(n."read_ws" && cws, false)
+              OR EXISTS (
+                SELECT 1 FROM "public"."shares" s
+                 WHERE s."owner_id" = owner AND s."revoked_at" IS NULL AND s."contact_id" IS NULL
+                   AND (s."expires_at" IS NULL OR s."expires_at" > now())
+                   AND coalesce(s."settings" ->> 'mode', 'public') <> 'team'
+                   AND (s."node_id" = n."id"
+                        OR coalesce(s."settings" -> 'served', '[]'::jsonb) ? lower(n."id"::text))))) THEN
+      RETURN 'it writes into an item clients or the public read';
+    END IF;
+  END IF;
+  FOREACH p IN ARRAY coalesce(want_paths, '{}') LOOP
+    IF EXISTS (
+      SELECT 1 FROM "public"."nodes" n
+       WHERE n."owner_id" = owner AND n."type" = 'branch' AND n."path" @> p::ltree
+         AND coalesce(n."read_ws" && cws, false)) THEN
+      RETURN 'it puts something in a folder shared with clients';
+    END IF;
+  END LOOP;
+  IF cardinality(want_agents) > 0 AND EXISTS (
+    SELECT 1 FROM "public"."agents" g
+     WHERE g."owner_id" = owner AND g."slug" = ANY (want_agents) AND g."workspace_id" = ANY (cws)) THEN
+    RETURN 'it changes an agent clients talk to';
+  END IF;
+  IF (cardinality(want_groups) > 0 OR cardinality(want_tools) > 0) AND EXISTS (
+    SELECT 1 FROM "public"."tool_groups" tg
+      JOIN "public"."agents" g ON g."owner_id" = tg."owner_id" AND tg."slug" = ANY (g."tool_group_slugs")
+     WHERE tg."owner_id" = owner
+       AND ((cardinality(want_groups) > 0 AND tg."slug" = ANY (want_groups))
+            OR (cardinality(want_tools) > 0 AND tg."tool_slugs" && want_tools))
+       AND g."workspace_id" = ANY (cws)) THEN
+    RETURN 'it changes a tool group an agent clients talk to holds';
+  END IF;
+  RETURN NULL;
+END
+$$;
+--> statement-breakpoint
+REVOKE ALL ON FUNCTION "public"."mantle_client_sourced_gate"(uuid, uuid[], uuid[], text[], text[], text[], text[]) FROM PUBLIC;
+--> statement-breakpoint
+GRANT EXECUTE ON FUNCTION "public"."mantle_client_sourced_gate"(uuid, uuid[], uuid[], text[], text[], text[], text[]) TO "mantle_view_user";
+--> statement-breakpoint
+
+-- A turn's own active heartbeats (17): the ones `login` set up (NULL: the
+-- anchor login's, created_by NULL or the brain owner), their slug, name,
+-- state and surface. In a scope only the scope's own login's (its login as
+-- created_by stores it: NULL for the brain owner; mantle_login_id, the
+-- login of a scope on a viewer or the write role: the system pool with a
+-- request's write scope noted reads as the system pool, where the turn's
+-- login is its stamp's), and the brain's own; asked for another, none.
+CREATE OR REPLACE FUNCTION "public"."mantle_turn_heartbeats"(owner uuid, login uuid)
+  RETURNS TABLE ("slug" text, "name" text, "state" jsonb, "surface" jsonb)
+  LANGUAGE sql STABLE SECURITY DEFINER
+  SET search_path = "public", pg_temp AS $$
+  SELECT h."slug", h."name", h."state", h."surface" FROM "public"."heartbeats" h
+   WHERE h."owner_id" = owner AND h."status" = 'active'
+     AND CASE WHEN login IS NOT NULL AND login <> owner THEN h."created_by" = login
+              ELSE h."created_by" IS NULL OR h."created_by" = owner END
+     AND (NOT "public"."mantle_scope_active"()
+          OR (owner = "public"."mantle_brain_id"()
+              AND (CASE WHEN login IS NOT NULL AND login <> owner THEN login END)
+                  IS NOT DISTINCT FROM
+                  (CASE WHEN "public"."mantle_login_id"() IS NOT NULL
+                             AND "public"."mantle_login_id"() <> owner
+                        THEN "public"."mantle_login_id"() END)))
+$$;
+--> statement-breakpoint
+REVOKE ALL ON FUNCTION "public"."mantle_turn_heartbeats"(uuid, uuid) FROM PUBLIC;
+--> statement-breakpoint
+GRANT EXECUTE ON FUNCTION "public"."mantle_turn_heartbeats"(uuid, uuid) TO "mantle_view_user";
+--> statement-breakpoint
+
 -- The public demo's SELECT-only reader serves owner reads (as 0285, 0286, 0291).
 DO $$
 BEGIN
@@ -715,6 +1017,11 @@ BEGIN
     GRANT EXECUTE ON FUNCTION "public"."mantle_tg_my_chats"(uuid, uuid) TO demo_reader;
     GRANT EXECUTE ON FUNCTION "public"."mantle_tg_moderated_chats"(uuid, uuid) TO demo_reader;
     GRANT EXECUTE ON FUNCTION "public"."mantle_tg_replay"(uuid, uuid, timestamptz, timestamptz, integer) TO demo_reader;
+    GRANT EXECUTE ON FUNCTION "public"."mantle_client_sourced_among"(uuid, uuid[]) TO demo_reader;
+    GRANT EXECUTE ON FUNCTION "public"."mantle_client_sourced_any"(uuid, uuid[]) TO demo_reader;
+    GRANT EXECUTE ON FUNCTION "public"."mantle_conversation_taint"(uuid, text, integer) TO demo_reader;
+    GRANT EXECUTE ON FUNCTION "public"."mantle_client_sourced_gate"(uuid, uuid[], uuid[], text[], text[], text[], text[]) TO demo_reader;
+    GRANT EXECUTE ON FUNCTION "public"."mantle_turn_heartbeats"(uuid, uuid) TO demo_reader;
   END IF;
 END
 $$;

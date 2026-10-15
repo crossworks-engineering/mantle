@@ -27,9 +27,8 @@
  * unclassified write (a builtin registered elsewhere) waits too. The owner
  * approving the pending entry runs the original call.
  */
-import { and, arrayOverlaps, eq, inArray, or, sql } from 'drizzle-orm';
-import { agents, appTableExports, db, nodes, toolGroups, mayReadInSql } from '@mantle/db';
-import { clientSourcedSystem, clientWsSql } from './client-sourced';
+import { sql } from 'drizzle-orm';
+import { db } from '@mantle/db';
 import type { ClientSourcedRule, ClientSourcedWriteRule } from './client-sourced-rule';
 import { builtinPolicy, policyLowers, policyMayLower, type ToolPolicy } from './tool-policy';
 import { UUID_RE } from '@mantle/std';
@@ -63,22 +62,10 @@ export type GateTool = { slug: string; handler: unknown };
 
 export type GateVerdict = { gate: false } | { gate: true; why: string };
 
-/** Whether a client or the public reads the row's item: a client workspace
- *  holds it (its own grant or its folder's), or a live open link shows it
- *  (the link's own item, or on its served list). */
-function exposedSql(ownerId: string) {
-  // Written out in full: inside the subquery an unqualified id would name
-  // the share's own id.
-  return sql<boolean>`(
-    ${mayReadInSql(undefined, clientWsSql(ownerId))}
-    or exists (
-      select 1 from shares s
-       where s.owner_id = ${ownerId} and s.revoked_at is null and s.contact_id is null
-         and (s.expires_at is null or s.expires_at > now())
-         and coalesce(s.settings->>'mode', 'public') <> 'team'
-         and (s.node_id = "nodes"."id"
-              or coalesce(s.settings->'served', '[]'::jsonb) ? lower("nodes"."id"::text))))`;
-}
+/** A Postgres array literal of `values`, each quoted (a slug or a path may
+ *  hold a comma or a space). */
+const textArray = (values: readonly string[]) =>
+  `{${values.map((v) => `"${v.replace(/["\\]/g, (c) => `\\${c}`)}"`).join(',')}}`;
 const RUN: GateVerdict = { gate: false };
 const wait = (why: string): GateVerdict => ({ gate: true, why });
 
@@ -218,94 +205,15 @@ export async function writeVerdict(
     groupSlugs.length +
     toolSlugs.length;
   if (named === 0) return RUN;
-  return clientSourcedSystem(async (): Promise<GateVerdict> => {
-    // An app: the app itself and every brain table it exports.
-    const exported =
-      appIds.length > 0
-        ? await db
-            .select({ id: appTableExports.tableNodeId })
-            .from(appTableExports)
-            .where(
-              and(eq(appTableExports.ownerId, ownerId), inArray(appTableExports.appNodeId, appIds)),
-            )
-        : [];
-    const wanted = [
-      ...new Set([...nodeIds, ...appIds, ...exported.map((e) => e.id)].map((i) => i.toLowerCase())),
-    ];
-    if (wanted.length > 0) {
-      const rows = await db
-        .select({ id: nodes.id, exposed: exposedSql(ownerId) })
-        .from(nodes)
-        .where(and(eq(nodes.ownerId, ownerId), inArray(nodes.id, wanted)));
-      if (rows.length < wanted.length) return wait('its target is not an item of this brain');
-      // Read by a client (a workspace with a client user holds it, by its
-      // own grant or its folder's) or by the public (an open link shows it).
-      if (rows.some((r) => r.exposed === true)) {
-        return wait('it writes into an item clients or the public read');
-      }
-    }
-    for (const path of paths) {
-      // A folder at or above the destination that a client workspace reads:
-      // what lands there takes the folder's rows (S6).
-      const [shared] = await db
-        .select({ id: nodes.id })
-        .from(nodes)
-        .where(
-          and(
-            eq(nodes.ownerId, ownerId),
-            eq(nodes.type, 'branch'),
-            sql`${nodes.path} @> ${path}::ltree`,
-            mayReadInSql(undefined, clientWsSql(ownerId)),
-          ),
-        )
-        .limit(1);
-      if (shared) return wait('it puts something in a folder shared with clients');
-    }
-    // An agent a client talks to: the assistant of a workspace with a
-    // client user (agent and tool-group levels are gone, workspaces W7b).
-    if (agentSlugs.length > 0) {
-      const rows = await db
-        .select({ id: agents.id })
-        .from(agents)
-        .where(
-          and(
-            eq(agents.ownerId, ownerId),
-            inArray(agents.slug, agentSlugs),
-            sql`${agents.workspaceId} = any(${clientWsSql(ownerId)})`,
-          ),
-        )
-        .limit(1);
-      if (rows.length > 0) {
-        return wait('it changes an agent clients talk to');
-      }
-    }
-    // A tool group such an assistant holds.
-    if (groupSlugs.length > 0 || toolSlugs.length > 0) {
-      const byGroup = groupSlugs.length > 0 ? inArray(toolGroups.slug, groupSlugs) : undefined;
-      const byTool =
-        toolSlugs.length > 0 ? arrayOverlaps(toolGroups.toolSlugs, toolSlugs) : undefined;
-      const rows = await db
-        .select({ slug: toolGroups.slug })
-        .from(toolGroups)
-        .innerJoin(
-          agents,
-          and(
-            eq(agents.ownerId, toolGroups.ownerId),
-            sql`${toolGroups.slug} = any(${agents.toolGroupSlugs})`,
-          ),
-        )
-        .where(
-          and(
-            eq(toolGroups.ownerId, ownerId),
-            or(byGroup, byTool),
-            sql`${agents.workspaceId} = any(${clientWsSql(ownerId)})`,
-          ),
-        )
-        .limit(1);
-      if (rows.length > 0) {
-        return wait('it changes a tool group an agent clients talk to holds');
-      }
-    }
-    return RUN;
-  });
+  // The rule in SQL, by its definer (mantle_client_sourced_gate, 0293): the
+  // targets, an app's exported Tables, the destination folders, the
+  // assistants and tool groups, over every row of the brain whatever the
+  // turn reads (A6b: on the system pool before, 'client-sourced-check').
+  const [row] = (await db.execute(
+    sql`select "public"."mantle_client_sourced_gate"(${ownerId}::uuid,
+          ${textArray(nodeIds)}::uuid[], ${textArray(appIds)}::uuid[], ${textArray(paths)}::text[],
+          ${textArray(agentSlugs)}::text[], ${textArray(groupSlugs)}::text[],
+          ${textArray(toolSlugs)}::text[]) as why`,
+  )) as unknown as { why: string | null }[];
+  return row?.why ? wait(row.why) : RUN;
 }

@@ -10,8 +10,8 @@
  * is just the "find what's due, dispatch" outer loop.
  */
 
-import { and, asc, eq, isNotNull, isNull, lte, or, type SQL } from 'drizzle-orm';
-import { asSystem, db, heartbeats } from '@mantle/db';
+import { and, asc, eq, isNotNull, lte, sql } from 'drizzle-orm';
+import { db, heartbeats, type HeartbeatSurface } from '@mantle/db';
 import { currentTurnStamp, currentWorkspaceScope } from '@mantle/db/viewer';
 import { tickFire } from './fire';
 import { isFireInflight } from './inflight';
@@ -81,19 +81,21 @@ function turnLogin(ownerId: string): string | null {
   return login && login.toLowerCase() !== ownerId.toLowerCase() ? login : null;
 }
 
-/** The heartbeats `login` set up (W7 integration fix 2): a turn sees only
- *  its own login's, its state included, never another user's. */
-function madeBy(ownerId: string, login: string | null): SQL {
-  return login
-    ? eq(heartbeats.createdBy, login)
-    : (or(isNull(heartbeats.createdBy), eq(heartbeats.createdBy, ownerId)) as SQL);
-}
-
-/** A turn's read of its own heartbeats: in a workspace scope on the system
- *  pool by the named reason (the table is granted to no role), the rows
- *  filtered to the turn's login first (madeBy). */
-function turnHeartbeats<T>(fn: () => Promise<T>): Promise<T> {
-  return currentWorkspaceScope() ? asSystem(fn, 'heartbeat-context') : fn();
+/**
+ * The active heartbeats the turn's login set up (W7 integration fix 2): a
+ * turn sees only its own login's, its state included, never another
+ * user's. By its definer (mantle_turn_heartbeats, 0293: the heartbeats table
+ * is granted to no role; in a scope only the scope's own login's; A6b: on
+ * the system pool in a scope before, 'heartbeat-context').
+ */
+async function turnHeartbeats(
+  ownerId: string,
+  login: string | null,
+): Promise<Array<{ slug: string; name: string; state: unknown; surface: HeartbeatSurface }>> {
+  return (await db.execute(
+    sql`select slug, name, state, surface
+          from "public"."mantle_turn_heartbeats"(${ownerId}::uuid, ${login}::uuid)`,
+  )) as unknown as Array<{ slug: string; name: string; state: unknown; surface: HeartbeatSurface }>;
 }
 
 /**
@@ -114,25 +116,9 @@ export async function openHeartbeatsForSurface(
   ownerId: string,
   surface: { kind: 'telegram'; chatId: string } | { kind: 'web' },
 ): Promise<Array<{ slug: string; name: string; state: Record<string, unknown> }>> {
-  // The login first: inside the system-pool read no scope names it.
+  // The login the turn answers (its definer holds a scope to its own).
   const login = turnLogin(ownerId);
-  const rows = await turnHeartbeats(() =>
-    db
-      .select({
-        slug: heartbeats.slug,
-        name: heartbeats.name,
-        state: heartbeats.state,
-        surface: heartbeats.surface,
-      })
-      .from(heartbeats)
-      .where(
-        and(
-          eq(heartbeats.ownerId, ownerId),
-          eq(heartbeats.status, 'active'),
-          madeBy(ownerId, login),
-        ),
-      ),
-  );
+  const rows = await turnHeartbeats(ownerId, login);
 
   return rows
     .filter((r) => {
@@ -175,20 +161,9 @@ export async function hasActiveHeartbeatsOnSurface(
   // query but the row count is tiny (single-user, ≤dozens of active
   // heartbeats) — fetching surface jsonb + matching client-side is
   // simpler than encoding the jsonb match in SQL.
-  // The login first: inside the system-pool read no scope names it.
+  // The login the turn answers (its definer holds a scope to its own).
   const login = turnLogin(ownerId);
-  const rows = await turnHeartbeats(() =>
-    db
-      .select({ surface: heartbeats.surface })
-      .from(heartbeats)
-      .where(
-        and(
-          eq(heartbeats.ownerId, ownerId),
-          eq(heartbeats.status, 'active'),
-          madeBy(ownerId, login),
-        ),
-      ),
-  );
+  const rows = await turnHeartbeats(ownerId, login);
 
   for (const r of rows) {
     if (r.surface.kind !== surface.kind) continue;
