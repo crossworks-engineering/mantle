@@ -267,7 +267,7 @@ gains a streaming path that **returns the final `ChatResult` AND publishes delta
   `delta.reasoning` → `reasoning-delta`. **Tool calls stream as fragments**,
   `delta.tool_calls[].function.arguments` arrives as partial JSON; concatenate per index, parse at
   `finish_reason`. Pass `usage: { include: true }` so the final chunk still carries token counts
-  for [`recordChatUsage`](../packages/tracing/src/llm-usage.ts); otherwise cost tracking breaks.
+  for the registry's spend recording ([`spend-recording.md`](spend-recording.md)); otherwise cost tracking breaks.
 - **Anthropic** ([`anthropic-chat.ts`](../packages/voice/src/adapters/anthropic-chat.ts)): native
   `messages` streaming; `content_block_delta` text + (if enabled) thinking deltas.
 - **Fallback:** keep the one-shot path; any model/provider that won't stream degrades to a single

@@ -120,8 +120,8 @@ async function deepseekChat(opts: ChatOptions): Promise<ChatResult> {
     // DeepSeek-specific: cache hits come back as
     // usage.prompt_cache_hit_tokens (not prompt_tokens_details.cached_tokens
     // like xAI / HF sub-providers). Surface as cacheReadTokens so the
-    // trace's recordChatUsage records it under the same meta key every
-    // other adapter uses.
+    // registry's spend recording (spend.ts) records it under the same meta
+    // key every other adapter uses.
     cacheReadTokens: parsed.usage?.prompt_cache_hit_tokens,
     // DeepSeek doesn't bill a cache-write line item — automatic caching
     // amortises into the regular cache-miss tokens. cacheWriteTokens

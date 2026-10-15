@@ -99,10 +99,10 @@ over auto-saving every run (avoids cluttering the brain with throwaway lookups).
 Every research run is its own child trace (`kind='manual'`,
 `subjectKind='child_agent'`), reachable from Saskia's `invoke_agent` step
 (`meta.child_trace_id`). The Sonar spend inside `web_search` rolls into that
-trace via `captureLlmUsage`; tool handlers can attribute LLM cost since the
-cost-tracking fix (see [`memory.md`](./memory.md) / the `LlmUsageSink` in
-`@mantle/tracing`). So `/debug` "spend by agent" reflects research cost,
-attributed to the researcher (not double-counted into Saskia's turn).
+trace via `captureLlmUsage`, the raw-response reader of the one spend recorder
+([`spend-recording.md`](./spend-recording.md)): it lands on the trace and step
+in context. So `/debug` "spend by agent" reflects research cost, attributed to
+the researcher (not double-counted into Saskia's turn).
 
 ---
 
@@ -141,7 +141,7 @@ running `web_search`.
 | Citation-parse tests | [`packages/tools/src/builtins-research.test.ts`](../packages/tools/src/builtins-research.test.ts) |
 | `note_create` (Saskia's save) | [`packages/tools/src/builtins-notes.ts`](../packages/tools/src/builtins-notes.ts) |
 | Seed the agent + delegation | [`server/web/scripts/seed-agent.ts`](../server/web/scripts/seed-agent.ts) |
-| Cost attribution helper | [`packages/tracing/src/llm-usage.ts`](../packages/tracing/src/llm-usage.ts) |
+| Spend recorder | [`packages/tracing/src/spend.ts`](../packages/tracing/src/spend.ts) |
 | Delegation bridge | [`packages/runtime/src/agent/invoke-agent.ts`](../packages/runtime/src/agent/invoke-agent.ts) |
 
 ---

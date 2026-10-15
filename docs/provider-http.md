@@ -96,6 +96,16 @@ No cron or trigger was added. If a provider keeps answering 429, lower the
 caller's concurrency (the extractor count in Settings, or `--parallel` on a
 backfill); do not raise `PROVIDER_CONNECTIONS`.
 
+## Spend recording (A10 #5)
+
+Every provider call's usage (tokens, units, cost) is recorded in one place:
+the `@mantle/voice` registry hands out each adapter wrapped to record its own
+call through `recordUsage` (`@mantle/tracing`), onto the trace and step in
+context. The chat recording sits outside the retry wrapper, so a call retried
+under `withRetry` is one recording. Recording never makes a provider call: the
+cost is the provider's quoted one or the static price table. The rule, the
+usage shape, the pins and the named changes: [spend-recording.md](spend-recording.md).
+
 ## Timeouts, retries and health (A10 #10)
 
 The 2026-10 survey found 62 inline `AbortSignal.timeout(` calls with 17

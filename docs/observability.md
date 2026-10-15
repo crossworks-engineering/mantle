@@ -99,8 +99,8 @@ await step(
     // ... do step's work
     handle.setOutput({ ... });   // captured in trace_steps.output
     handle.setMeta({ ... });     // captured in trace_steps.meta
-    handle.addTokens({ input, output, cacheRead });
-    handle.addCost(microUsd);
+    // Provider spend is NOT added here: the adapter registry records each
+    // call on this step and its trace (section 4).
   }
 );
 
@@ -161,23 +161,20 @@ stringified embedding vectors.
 
 ## 4. How LLM cost + tokens get captured
 
-`packages/tracing/src/llm-usage.ts` exposes `captureLlmUsage(handle,
-result, model)`. Every site that calls OpenRouter wraps the call in
-a `step('llm_call', …)` and feeds the raw response to this helper.
-It reads `usage.promptTokens`, `usage.completionTokens`,
-`usage.cacheReadInputTokens` (camelCase via the SDK; falls back to
-snake_case for routes that don't normalise), calls
-`handle.addTokens()` + `handle.addCost()`, and sets meta so the
-trace detail UI can show "model · 14823+247 tokens".
+One recorder, one recording point: every adapter the `@mantle/voice`
+registry hands out (chat, stream, decision, embedding, vision, image,
+speech, transcription) records its own call through `recordUsage`
+(`packages/tracing/src/spend.ts`) onto the trace and the running step in
+context. No caller records by hand. The full rule, the usage shape, the
+pricing and the pins: [spend-recording.md](spend-recording.md).
 
-Cost picks `usage.cost` if the route returns it; otherwise falls
-back to a small price table in `packages/tracing/src/pricing.ts`
-keyed by OpenRouter model slug. Stored as bigint micro-USD so we
-keep integer math.
-
-`addTokens` / `addCost` bubble to the parent step *and* the trace
-totals on `finish`. The trace header shows totals without explicit
-roll-up at each level.
+Cost picks the provider's reported cost (`usage.cost` on OpenRouter) if
+there is one; otherwise the static price table in
+`packages/tracing/src/pricing.ts`. Stored as bigint micro-USD so we keep
+integer math. The step meta carries `model`, `provider`, `tokens_in`,
+`tokens_out`, `cache_read`, `cache_write`, a unit key for unit-billed calls,
+and `cost_micro_usd`, summed over the step's calls; the trace totals are
+written when it closes.
 
 ---
 
@@ -543,8 +540,9 @@ order:
 2. [`packages/tracing/src/store.ts`](../packages/tracing/src/store.ts),
    `AsyncLocalStorage` propagation, `startTrace` + `step`, the
    fire-and-forget writers.
-3. [`packages/tracing/src/llm-usage.ts`](../packages/tracing/src/llm-usage.ts),
-   how OpenRouter usage gets normalised + rolled up.
+3. [`packages/tracing/src/spend.ts`](../packages/tracing/src/spend.ts) and
+   [`packages/voice/src/adapters/spend.ts`](../packages/voice/src/adapters/spend.ts),
+   the one spend recorder and the recording point ([spend-recording.md](spend-recording.md)).
 4. [`jackdaw/app/(app)/traces/[id]/trace-detail.tsx`](../jackdaw/app/(app)/traces/%5Bid%5D/trace-detail.tsx),
    how `trace_steps` rows become a reactflow graph (`dagre` layout,
    status-driven styling).

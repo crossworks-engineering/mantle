@@ -94,7 +94,7 @@ cached 30 s, negative results too, so a brain without the worker pays one
 query per half minute); read the use's switch; look the (use, model, state,
 questions) tuple up in an in-process LRU (500 entries, 10 min); otherwise open
 one `llm_call` trace step named `decide_<use>` and call the adapter with the
-worker's `timeout_ms` (1500, clamped to 200-5,000). Success: `recordChatUsage` (same meta keys as
+worker's `timeout_ms` (1500, clamped to 200-5,000). Success: the registry records the call (same meta keys as
 every LLM step, so `/debug` spend-by-model shows Jev with no special case),
 plus `meta.use`, `meta.mode`, `meta.decision_ms`, a compact `meta.answers`
 (`"technical@0.75"`, `"2.99@0.99"`, `0.96`) and anything `summarize` adds.

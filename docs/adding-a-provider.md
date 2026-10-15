@@ -174,7 +174,7 @@ Every chat adapter MUST populate `tokensIn` + `tokensOut` on `ChatResult` when t
 - `cacheWriteTokens`, only Anthropic distinguishes this (`usage.cache_creation_input_tokens`, billed ~1.25× input).
 - `reportedCostUsd`; only OR has this (`usage.cost`, includes vendor surcharges).
 
-Direct providers leave `reportedCostUsd` undefined; the trace's `recordChatUsage` helper falls back to the static price table in `packages/tracing/src/pricing.ts`. The fallback path is fine; pricing accuracy is "best effort" outside OR.
+Direct providers leave `reportedCostUsd` undefined; the one spend recorder (the registry records every adapter's calls, [spend-recording.md](spend-recording.md)) falls back to the static price table in `packages/tracing/src/pricing.ts`. The fallback path is fine; pricing accuracy is "best effort" outside OR.
 
 ---
 
@@ -249,7 +249,7 @@ These are NOT required to ship a working provider; they're polish that improves 
 '<your-provider-or-slug>/<model>': { input: 0.000003, output: 0.000015, cacheRead: 0.0000003 },
 ```
 
-Without this, `recordChatUsage` writes `cost_micro_usd: 0` for your provider; the trace still has token counts, but the cost dashboard won't reflect spend.
+Without this, the spend recorder writes `cost_micro_usd: 0` for your provider; the trace still has token counts, but the cost dashboard won't reflect spend.
 
 **Per the user's guidance, this is optional and best-effort.** The `/models` page explorer is the canonical pricing surface; static-table pricing is just a fallback for the trace. Don't go out of your way to keep it perfectly accurate.
 

@@ -30,7 +30,8 @@
 - `trace_steps`, per step; `kind='llm_call'` rows carry the per-call detail in
   **`meta`** (jsonb) with keys: `model`, `tokens_in`, `cache_read`,
   `cache_write`, `tokens_out`, `cost_micro_usd`. (Note snake_case keys.)
-- Usage→cost mapping: `packages/tracing/src/llm-usage.ts` (reads
+- Usage→cost mapping: `llm-usage.ts` at the time, now the one recorder
+  `packages/tracing/src/spend.ts` (docs/spend-recording.md) (reads
   `cache_read_input_tokens` / `cache_creation_input_tokens` etc., computes
   `cost_micro_usd`; trusts OpenRouter's `usage.cost` when present).
 

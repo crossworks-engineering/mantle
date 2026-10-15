@@ -147,7 +147,7 @@ The chat-shaped workers each do one `adapter.chat()` call inside a trace `step`.
 | Summarizer ×2 | [`summarizer.ts`](../server/api/src/agent/summarizer.ts) | Telegram + web paths, identical swap.                                                                                                                                                              |
 | Reflector     | [`reflector.ts`](../server/api/src/agent/reflector.ts)   | Same.                                                                                                                                                                                              |
 
-Each logs when it answers via the backup (`[summarizer] summarized via backup route (…)`), and `recordChatUsage` is given `result.model || routes.primary.model` so the trace + cost dashboard attribute usage to the model that actually served.
+Each logs when it answers via the backup (`[summarizer] summarized via backup route (…)`). The registry records the call that answered ([spend-recording.md](spend-recording.md)), under the model that actually served, priced on the requested id then the served one.
 
 **Switch-back here is trivial:** there's no loop, so every invocation calls `chatWithFailover` fresh and tries the primary first. Summarize #1 fails over to cloud; summarize #2 a minute later tries local gemma again. Stateless self-heal, no bookkeeping.
 
@@ -169,16 +169,13 @@ for (let iter = 0; iter < maxIters; iter++) {
   const result = await step({ name: `${active.adapter.adapterName}_chat[…]`, … }, async (h) => {
     const chatOpts = { messages, …cacheControl, …params };
     try {
-      const r = await active.adapter.chat({ apiKey: active.apiKey, model: active.model, ...chatOpts });
-      recordChatUsage(h, r, active.model);
-      return r;
+      // The registry's adapter records its own spend (spend-recording.md).
+      return await active.adapter.chat({ apiKey: active.apiKey, model: active.model, ...chatOpts });
     } catch (err) {
       if (!args.backup || failedOver || !isChatFailover(err)) throw err;
       active = { adapter: args.backup.adapter, apiKey: args.backup.apiKey, model: args.backup.model };
       failedOver = true;                 // ← sticky: only once per turn
-      const r = await active.adapter.chat({ apiKey: active.apiKey, model: active.model, ...chatOpts });
-      recordChatUsage(h, r, active.model);
-      return r;
+      return await active.adapter.chat({ apiKey: active.apiKey, model: active.model, ...chatOpts });
     }
   });
   …
@@ -187,7 +184,7 @@ for (let iter = 0; iter < maxIters; iter++) {
 
 **Why sticky?** Once iteration 3 fails over to the backup, the loop stays on the backup for iterations 3, 4, 5… of the same turn. Flip-flopping models mid-reasoning (one paragraph from gemma, the next from Claude, the next from gemma) is worse than finishing the user's request coherently on one model. The `failedOver` flag makes failover a once-per-turn event. The **next** turn calls `runToolLoop` again and starts on the primary, that's the switch-back.
 
-The trace step name/input and `recordChatUsage` follow `active`, so `/traces` shows which model actually ran each iteration, and iterations after a failover carry `failed_over: true`.
+The trace step name/input and the recorded usage follow `active`, so `/traces` shows which model actually ran each iteration, and iterations after a failover carry `failed_over: true`.
 
 **Callers.** All four resolve the backup defensively and pass it:
 

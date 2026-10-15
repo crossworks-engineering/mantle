@@ -837,7 +837,7 @@ type OrStreamToolCallFragment = {
 /**
  * Streaming counterpart of `openrouterChat`. Sets `stream: true` (and
  * `usage: { include: true }` so the terminal chunk still carries token counts +
- * `cost` for `recordChatUsage`), iterates the SDK's `EventStream`, fires the
+ * `cost` for the registry's spend recording), iterates the SDK's `EventStream`, fires the
  * caller's `onDelta` per visible text / reasoning chunk, accumulates tool-call
  * argument FRAGMENTS by index, and resolves to the same `ChatResult` shape
  * `openrouterChat` returns. The deltas are decoration; this returned result is the
