@@ -369,8 +369,12 @@ describe('the approval re-check (A5 step 6c): the queue-time check again, where 
 
   it('a turn that answered no login: its workspace while it is live, never a Moderator seat', async () => {
     reset();
+    // A turn that answered no login ran on a surface that names none (a
+    // workspace assistant's heartbeat): one naming a login other than the
+    // owner refuses (lows round, 6c L2; pending-origin.test.ts).
     const loginless = origin({
       scope: { kind: 'assistant', loginId: null, ws: [TEAM_WS], modWs: [] },
+      surface: { kind: 'owner', via: 'heartbeat' },
     });
     expect(await recheck(loginless)).toEqual({ refused: PENDING_SCOPE_LOST_ERROR });
     h.live = [TEAM_WS];
@@ -383,6 +387,7 @@ describe('the approval re-check (A5 step 6c): the queue-time check again, where 
     reset();
     const seated = origin({
       scope: { kind: 'assistant', loginId: null, ws: [TEAM_WS], modWs: [TEAM_WS] },
+      surface: { kind: 'owner', via: 'heartbeat' },
       actor: { kind: 'assistant', agentId: AGENT },
     });
     h.assistantWs = [TEAM_WS];
@@ -401,6 +406,7 @@ describe('the approval re-check (A5 step 6c): the queue-time check again, where 
     const stamped = (actor: PendingOrigin['actor']) =>
       origin({
         scope: { kind: 'assistant', loginId: null, ws: [TEAM_WS], modWs: [TEAM_WS] },
+        surface: { kind: 'owner', via: 'heartbeat' },
         actor,
       });
     expect(

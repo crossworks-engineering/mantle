@@ -36,8 +36,15 @@ export type PendingOrigin = {
    *  Admin areas it could do. Null with no scope (the surface's rules). */
   admin: { holds: boolean; areas: string[] } | null;
   /** The surface the turn ran on: its kind, an owner path's via, the login
-   *  it names (no chat or account ids). Null: none. */
-  surface: { kind: string; via?: string; loginId?: string } | null;
+   *  it names (no chat or account ids), and a login's own MCP connection:
+   *  how it came in and whether it spends on the owner's keys (lows round,
+   *  6c L3; no key, peer or client ids, no role, no Write). Null: none. */
+  surface: {
+    kind: string;
+    via?: string;
+    loginId?: string;
+    mcp?: { via: string; ownerKeysOff?: true };
+  } | null;
   /** The turn ran in a public link's scope (A5 step 6c fix round 1): its
    *  scope is not stamped (a link's served list and its liveness are not
    *  the approval's to rebuild), so only the owner may approve it. */

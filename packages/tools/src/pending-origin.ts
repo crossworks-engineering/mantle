@@ -24,7 +24,15 @@
  * asked on (the stamp's kind and login; a Telegram chat's as an owner path
  * naming its login, the chat id not being stamped), so a handler that reads
  * its author or an owner-only rule off the surface sees the asker, never
- * the approver (the audit row names the approver on its own field). A turn
+ * the approver (the audit row names the approver on its own field). Lows
+ * round (6c L1 to L3): the surface's login is the row's asker (login_id),
+ * never the stamp's alone, and a stamp naming another login refuses the
+ * approval; a Telegram chat that named no login is an owner path that names
+ * none and is no fallback to the owner (a delegated child's, so no link is
+ * opened as the owner); a login's own MCP connection is stamped (how it came
+ * in, and whether it spends on the owner's provider keys) and restored, so an
+ * approved call of a member's MCP turn still spends nothing on the owner's
+ * keys (ownerKeysOff) and is never read as the owner's own stdio path. A turn
  * that answered no login keeps the workspaces its assistant still runs in,
  * and the Moderator seats the stamp named there; it runs as the actor the
  * turn ran as (the stamp's), never the approving path's. A turn in a public
@@ -84,15 +92,27 @@ export const PENDING_SCOPE_LOST_ERROR =
 export const PENDING_RECHECK_ERROR =
   'This call no longer passes the checks of the workspace it was asked in, so it does not run: ';
 
-/** The stamp's surface: its kind, an owner path's via, the login it names;
- *  never a chat or account id. */
+/** The refusal of an approval of a stamped call whose surface names a login
+ *  other than its asker (lows round, 6c L2): the call would run as someone
+ *  it was not asked by. */
+export const PENDING_SURFACE_LOGIN_ERROR =
+  'This call’s record names a different person than the one who asked for it, so it does not run: reject it.';
+
+/** The stamp's surface: its kind, an owner path's via, the login it names,
+ *  and a login's own MCP connection by how it came in and whether it spends
+ *  on the owner's keys (6c L3); never a chat, account, key, peer or client
+ *  id. */
 function stampSurface(surface: ToolHandlerContext['surface']): PendingOrigin['surface'] {
   if (!surface) return null;
-  const s = surface as { kind: string; via?: unknown; loginId?: unknown };
+  const s = surface as { kind: string; via?: unknown; loginId?: unknown; mcp?: unknown };
+  const mcp = s.mcp as { via?: unknown; ownerKeysOff?: unknown } | undefined;
   return {
     kind: s.kind,
     ...(typeof s.via === 'string' ? { via: s.via } : {}),
     ...(typeof s.loginId === 'string' && s.loginId !== '' ? { loginId: s.loginId } : {}),
+    ...(mcp && typeof mcp.via === 'string'
+      ? { mcp: { via: mcp.via, ...(mcp.ownerKeysOff === true ? { ownerKeysOff: true } : {}) } }
+      : {}),
   };
 }
 
@@ -162,15 +182,51 @@ function stampActor(): PendingOrigin['actor'] {
   return null;
 }
 
-/** The surface a stamped call is judged and run on: the stamp's, a
- *  Telegram chat's as an owner path naming its login (the chat id is not
- *  stamped, so no tool may send into it at approval). None: none. */
-function runSurface(stamp: PendingOrigin['surface']): ToolHandlerContext['surface'] {
+/** How a stamped MCP connection came in, as a channel names it. */
+const MCP_VIAS: ReadonlySet<string> = new Set(['oauth', 'peer', 'key']);
+
+/**
+ * The surface a stamped call is judged and run on: the stamp's, its login
+ * the row's asker (6c L2: a stamp naming another login refuses; a row with
+ * no asker keeps a stamp's login only when it is the brain owner's). A
+ * Telegram chat's is an owner path naming its login (the chat id is not
+ * stamped, so no tool may send into it at approval); one that named no
+ * login is a delegated child's path, never the owner's own (6c L1: no link
+ * is opened as the owner). A login's own MCP connection comes back with
+ * its Write off and its ownerKeysOff as stamped (6c L3). None: none.
+ */
+function runSurface(
+  ownerId: string,
+  stamp: PendingOrigin['surface'],
+  asker: string | null,
+  refuse: (message: string) => Error,
+): ToolHandlerContext['surface'] {
   if (!stamp) return undefined;
-  if (stamp.kind === 'telegram') {
-    return { kind: 'owner', via: 'pending', ...(stamp.loginId ? { loginId: stamp.loginId } : {}) };
+  const stamped = stamp.loginId ? stamp.loginId.toLowerCase() : null;
+  let loginId: string | null;
+  if (asker) {
+    if (stamped && stamped !== asker.toLowerCase()) throw refuse(PENDING_SURFACE_LOGIN_ERROR);
+    loginId = stamped ? stamp.loginId! : asker;
+  } else {
+    if (stamped && stamped !== ownerId.toLowerCase()) throw refuse(PENDING_SURFACE_LOGIN_ERROR);
+    loginId = stamp.loginId ?? null;
   }
-  return stamp as ToolHandlerContext['surface'];
+  const named = loginId ? { loginId } : {};
+  if (stamp.kind === 'telegram') {
+    return { kind: 'owner', via: loginId ? 'pending' : 'delegate', ...named };
+  }
+  const mcp =
+    stamp.mcp && MCP_VIAS.has(stamp.mcp.via)
+      ? {
+          mcp: {
+            via: stamp.mcp.via as 'oauth' | 'peer' | 'key',
+            write: false,
+            ...(stamp.mcp.ownerKeysOff ? { ownerKeysOff: true } : {}),
+          },
+        }
+      : {};
+  const { loginId: _stampLogin, mcp: _stampMcp, ...rest } = stamp;
+  return { ...rest, ...named, ...mcp } as ToolHandlerContext['surface'];
 }
 
 /** `a` met with `b`, in `a`'s order, lower case. */
@@ -187,10 +243,10 @@ function meet(a: readonly string[], b: readonly string[]): string[] {
 export async function originRunFor(
   ownerId: string,
   origin: PendingOrigin,
-  row: Pick<PendingToolCall, 'agentId'>,
+  row: Pick<PendingToolCall, 'agentId' | 'loginId'>,
   refuse: (message: string) => Error,
 ): Promise<OriginRun> {
-  const surface = runSurface(origin.surface);
+  const surface = runSurface(ownerId, origin.surface, row.loginId, refuse);
   const stamped = origin.scope;
   if (!stamped) {
     return { scope: null, enter: null, writes: false, adminCap: null, surface, narrowed: [] };

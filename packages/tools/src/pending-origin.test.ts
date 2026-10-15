@@ -33,8 +33,11 @@ vi.mock('../../db/src/client', async (importOriginal) => ({
 }));
 
 import { loginActor, runAsActor } from '@mantle/db';
+import { linkLoginId } from './builtins-share';
 import { capAdminView } from './gate-callers';
-import { pendingOriginNow } from './pending-origin';
+import { originRunFor, pendingOriginNow, PENDING_SURFACE_LOGIN_ERROR } from './pending-origin';
+import { ownerKeysOff } from './surface';
+import type { ToolHandlerContext } from './types';
 
 const LOGIN = '55555555-5555-4555-8555-555555555555';
 const TEAM = '22222222-2222-4222-8222-222222222222';
@@ -160,5 +163,113 @@ describe('the Admin view an approved call may not exceed (capAdminView)', () => 
     expect(capAdminView(view(true, ['users']), undefined)).toEqual(view(true, ['users']));
     expect(capAdminView(view(true, ['users']), null)).toEqual(view(true, ['users']));
     expect(capAdminView(null, { holds: true, areas: [] })).toBeNull();
+  });
+});
+
+/**
+ * The surface an approved call runs on (lows round, 6c L1 to L3), from a
+ * stamp with no scope (so no scope read is asked). Recorded on main first;
+ * each answer this round changed is named with its main answer:
+ *   L1 a Telegram chat that named no login: main linked as the owner, now
+ *      refused (a delegated child's path, no owner fallback);
+ *   L2 a stamp naming another login than the row's asker: main ran as the
+ *      stamp's login, now refused; a stamp naming none: main named none,
+ *      now the asker;
+ *   L3 a member's MCP turn: main dropped its connection, so the approved
+ *      call spent on the owner's keys (ownerKeysOff false) and a peer's
+ *      connection that named no login linked as the owner; now both kept.
+ */
+describe('the surface an approved stamped call runs on (lows round, 6c)', () => {
+  const OWNER = '99999999-9999-4999-8999-999999999999';
+  const OTHER = '66666666-6666-4666-8666-666666666666';
+  const refuse = (m: string) => new Error(m);
+  const runOn = async (
+    surface: ToolHandlerContext['surface'],
+    loginId: string | null,
+  ): Promise<ToolHandlerContext['surface']> => {
+    h.scope = null;
+    h.gate = null;
+    const origin = await pendingOriginNow(surface);
+    return (await originRunFor(OWNER, origin, { agentId: null, loginId }, refuse)).surface;
+  };
+  const linkAs = (surface: ToolHandlerContext['surface']) => {
+    try {
+      return linkLoginId({ ownerId: OWNER, surface });
+    } catch {
+      return 'refused';
+    }
+  };
+
+  it('L1: a Telegram chat that named no login links as no one (main: as the owner)', async () => {
+    const run = await runOn({ kind: 'telegram', telegramChatId: '1' }, null);
+    expect(run).toEqual({ kind: 'owner', via: 'delegate' });
+    expect(linkAs(run)).toBe('refused');
+    // One that named its login: that login, as before.
+    const named = await runOn({ kind: 'telegram', telegramChatId: '1', loginId: LOGIN }, LOGIN);
+    expect(named).toEqual({ kind: 'owner', via: 'pending', loginId: LOGIN });
+    expect(linkAs(named)).toBe(LOGIN);
+  });
+
+  it("L2: the surface's login is the row's asker; a stamp naming another refuses (main: ran as the stamp's)", async () => {
+    await expect(runOn({ kind: 'web', loginId: OTHER }, LOGIN)).rejects.toThrow(
+      PENDING_SURFACE_LOGIN_ERROR,
+    );
+    // A stamp naming none runs as the asker (main: named none).
+    expect(await runOn({ kind: 'web' }, LOGIN)).toEqual({ kind: 'web', loginId: LOGIN });
+    // A row with no asker: the owner's login is kept, any other refuses.
+    expect(await runOn({ kind: 'web', loginId: OWNER }, null)).toEqual({
+      kind: 'web',
+      loginId: OWNER,
+    });
+    await expect(runOn({ kind: 'web', loginId: OTHER }, null)).rejects.toThrow(
+      PENDING_SURFACE_LOGIN_ERROR,
+    );
+    // The stamp and the row agree: unchanged.
+    expect(await runOn({ kind: 'team', loginId: LOGIN }, LOGIN)).toEqual({
+      kind: 'team',
+      loginId: LOGIN,
+    });
+  });
+
+  it("L3: an approved member MCP call still spends nothing on the owner's keys (main: it did)", async () => {
+    const asked: ToolHandlerContext['surface'] = {
+      kind: 'owner',
+      via: 'mcp',
+      loginId: LOGIN,
+      mcp: { via: 'oauth', write: true, oauthClientId: 'client-1', ownerKeysOff: true },
+    };
+    expect(ownerKeysOff({ surface: asked })).toBe(true);
+    // The stamp keeps how it came in and the keys rule; no client id, no Write.
+    expect((await pendingOriginNow(asked)).surface).toEqual({
+      kind: 'owner',
+      via: 'mcp',
+      loginId: LOGIN,
+      mcp: { via: 'oauth', ownerKeysOff: true },
+    });
+    const run = await runOn(asked, LOGIN);
+    expect(run).toEqual({
+      kind: 'owner',
+      via: 'mcp',
+      loginId: LOGIN,
+      mcp: { via: 'oauth', write: false, ownerKeysOff: true },
+    });
+    expect(ownerKeysOff({ surface: run })).toBe(true);
+    // An Admin login's connection keeps spending as it did.
+    const admin = await runOn(
+      { kind: 'owner', via: 'mcp', loginId: LOGIN, mcp: { via: 'oauth', write: true } },
+      LOGIN,
+    );
+    expect(ownerKeysOff({ surface: admin })).toBe(false);
+  });
+
+  it("L3: a peer's connection that named no login is never read as the owner's own path (main: linked as the owner)", async () => {
+    const run = await runOn(
+      { kind: 'owner', via: 'mcp', mcp: { via: 'peer', write: true, peerId: 'p1' } },
+      null,
+    );
+    expect(run).toEqual({ kind: 'owner', via: 'mcp', mcp: { via: 'peer', write: false } });
+    expect(linkAs(run)).toBe('refused');
+    // The owner's own stdio connection (no channel): the owner, as before.
+    expect(linkAs(await runOn({ kind: 'owner', via: 'mcp' }, null))).toBe(OWNER);
   });
 });
