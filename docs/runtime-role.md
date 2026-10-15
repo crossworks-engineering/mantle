@@ -70,6 +70,18 @@ through it, whatever the options (`GRANT mantle_runtime TO mantle_view_user
 WITH INHERIT FALSE, SET FALSE` was enough), and `mantle_owner_role()` says
 yes to every member.
 
+Each of those revokes names its grantor and cascades. An operator's `GRANT
+mantle_system TO ops_a WITH ADMIN OPTION`, passed on by `ops_a` to `ops_b`,
+leaves a membership that rests on the first, and a plain `REVOKE` is refused
+(`2BP01`, dependent privileges exist): migrate would exit 1, and web and the
+workers, which wait on it, would not start. So migrate takes the far end of
+a chain first, and the dependents, memberships in the same role, go with
+the one they rest on. Every membership taken back is one line in the
+migrate log (`WARNING membership taken back: <role> from <member> (granted
+by <grantor>)`). A revoke that fails for any other reason is a warning too,
+never a failed migrate: the integrity row `runtime_role_lock` shows what is
+left.
+
 `CREATE` on schema `public` is taken from `PUBLIC`, so the runtime role makes
 nothing there (it cannot replace a function it could otherwise shadow).
 
@@ -107,6 +119,9 @@ rules, as the superuser did, also on a table migrate left with its old owner
 As the marker's owner it passes `mantle_owner_role()` there too. Nobody logs
 in as it, and nobody holds its rights: the runtime role is its member without
 `INHERIT` and without `SET`, and `BYPASSRLS` is never inherited.
+So `FORCE ROW LEVEL SECURITY` on a table would not bind a cascade either:
+`BYPASSRLS` passes a forced row rule too, so a rule meant to hold a cascade
+back needs another way (a trigger, or a check in the definer function).
 
 The password of `mantle_runtime` is derived from `MANTLE_MASTER_KEY`
 (HKDF, its own label), as the viewer roles' are. There is no secret to create
