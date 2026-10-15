@@ -37,6 +37,7 @@ import {
   isSystemScope,
 } from '@mantle/db';
 import { MEMBER_ITEM_KINDS, type MemberItemKind } from '@mantle/client-types/member-kinds';
+import { forAcceptedKind } from '@mantle/client-types/kind-lists';
 import {
   cellRefIds,
   clientOwnUrl,
@@ -247,64 +248,65 @@ async function acceptedItemOf(
   opts: { tabId?: string } = {},
 ): Promise<AcceptedItem | null> {
   const { row: base, snap } = found;
-  switch (base.type) {
-    case 'page':
-      return {
+  // The one switch over an accepted item's kind (A10 #12).
+  return (
+    forAcceptedKind<AcceptedRow, Promise<AcceptedItem | null>>(base, {
+      page: async () => ({
         ...base,
         type: 'page',
         doc: await redactedDoc(anchorId, loginId, snap.doc),
         // Where it sits now (folder phase 7), for a Folder index block.
         folderId: await pageFolderIdOf(anchorId, base.id),
-      };
-    case 'note':
-      return {
+      }),
+      note: async () => ({
         ...base,
         type: 'note',
         content: await redactedNote(anchorId, loginId, snap.content ?? ''),
-      };
-    case 'table': {
-      const [node] = await db
-        .select()
-        .from(nodes)
-        .where(and(eq(nodes.id, id), eq(nodes.ownerId, anchorId)))
-        .limit(1);
-      if (!node) return null;
-      // Nothing of the LIVE node an admin could have changed since (C6):
-      // the title, icon and time are the snapshot's; the extractor's
-      // summary (written from the brain's version), the description, the
-      // tags, the app link and the visibility are left out (the snapshot
-      // records none of them). Only the id, the level and createdAt stay.
-      const table = tableFromSnapshot(
-        {
-          ...node,
-          title: snap.title,
-          tags: [],
-          data: snap.icon ? { icon: snap.icon } : {},
-          updatedAt: snap.acceptedAt,
-        },
-        { storagePath: snap.tablePath, doc: snap.tableDoc },
-        { tabId: opts.tabId },
-      );
-      return {
-        ...base,
-        type: 'table',
-        table: await redactedTable(anchorId, loginId, table),
-      };
-    }
-    case 'draw': {
-      const changed = !snap.sceneSvg && !(await acceptedDrawUnchanged(anchorId, id, snap));
-      return { ...base, type: 'draw', ...(changed ? { changedByAdmin: true } : {}) };
-    }
-    case 'file': {
-      const changed = !(await acceptedFileUnchanged(anchorId, id, snap));
-      return {
-        ...base,
-        type: 'file',
-        filename: snap.fileName ?? base.title,
-        mimeType: snap.fileMime,
-        sizeBytes: snap.fileSize,
-        ...(changed ? { changedByAdmin: true } : {}),
-      };
-    }
-  }
+      }),
+      table: async () => {
+        const [node] = await db
+          .select()
+          .from(nodes)
+          .where(and(eq(nodes.id, id), eq(nodes.ownerId, anchorId)))
+          .limit(1);
+        if (!node) return null;
+        // Nothing of the LIVE node an admin could have changed since (C6):
+        // the title, icon and time are the snapshot's; the extractor's
+        // summary (written from the brain's version), the description, the
+        // tags, the app link and the visibility are left out (the snapshot
+        // records none of them). Only the id, the level and createdAt stay.
+        const table = tableFromSnapshot(
+          {
+            ...node,
+            title: snap.title,
+            tags: [],
+            data: snap.icon ? { icon: snap.icon } : {},
+            updatedAt: snap.acceptedAt,
+          },
+          { storagePath: snap.tablePath, doc: snap.tableDoc },
+          { tabId: opts.tabId },
+        );
+        return {
+          ...base,
+          type: 'table',
+          table: await redactedTable(anchorId, loginId, table),
+        };
+      },
+      draw: async () => {
+        const changed = !snap.sceneSvg && !(await acceptedDrawUnchanged(anchorId, id, snap));
+        return { ...base, type: 'draw', ...(changed ? { changedByAdmin: true } : {}) };
+      },
+      file: async () => {
+        const changed = !(await acceptedFileUnchanged(anchorId, id, snap));
+        return {
+          ...base,
+          type: 'file',
+          filename: snap.fileName ?? base.title,
+          mimeType: snap.fileMime,
+          sizeBytes: snap.fileSize,
+          ...(changed ? { changedByAdmin: true } : {}),
+        };
+      },
+    }) ?? null
+  );
 }

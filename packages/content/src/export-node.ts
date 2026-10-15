@@ -14,6 +14,8 @@
  */
 import { and, eq } from 'drizzle-orm';
 import { db, nodes } from '@mantle/db';
+import { EXPORT_FORMAT_BY_KIND } from '@mantle/client-types/kind-lists';
+import type { ExportKind as RegistryExportKind } from '@mantle/client-types/kinds';
 import { getPage } from './pages';
 import { getDrawSvg } from './draws';
 import { getNote } from './notes';
@@ -25,7 +27,8 @@ import { renderXlsx, renderXlsxWorkbook, type RenderXlsxSheet } from './render-x
 import { tableToText, tableToCsv } from './table-to-text';
 
 export type ExportFormat = 'docx' | 'xlsx' | 'md' | 'csv' | 'svg';
-export type ExportKind = 'page' | 'note' | 'table' | 'draw';
+/** The exportable kinds: the kind registry's `exportAs` field (A10 #12). */
+export type ExportKind = RegistryExportKind;
 
 /** Formats a node can be asked to download as (the caller picks). PDF is NOT
  *  here — it's rendered in server/web via headless Chromium against the live HTML
@@ -64,13 +67,9 @@ export type ResolveExportOptions = {
   format?: DocExportFormat;
 };
 
-/** The export type a node maps to, or null if it isn't an exportable kind. */
-export const EXPORTABLE_TYPES: Record<ExportKind, ExportFormat> = {
-  page: 'docx',
-  note: 'docx',
-  table: 'xlsx',
-  draw: 'svg',
-};
+/** The export type a node maps to, or null if it isn't an exportable kind:
+ *  the kind registry's `exportAs` field (A10 #12). */
+export const EXPORTABLE_TYPES: Readonly<Record<ExportKind, ExportFormat>> = EXPORT_FORMAT_BY_KIND;
 
 /** Prepend the node's title as an H1 so a Markdown download opens as a titled
  *  document — parity with the Word export, which renders a title heading. */

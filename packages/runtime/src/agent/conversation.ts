@@ -202,6 +202,7 @@ import {
 import { turnInAnchorThread, withAgentViewer } from './agent-viewer';
 import { withoutClientSourced } from '@mantle/tools/client-sourced';
 import { currentWorkspaceScope } from '@mantle/db/viewer';
+import { CORPUS_MAP_KINDS } from '@mantle/client-types/kind-lists';
 
 /** How many section-level passages to auto-pull into context (the fine-grained
  *  complement to the node-level content hits). The budget that matters is
@@ -218,10 +219,11 @@ const CHUNK_LIMIT_DEFAULT = 8;
  *  brain past the cap it's the ACTIVE corpus that stays mapped. ~300 title
  *  lines ≈ 4-7k tokens, riding a dedicated prompt-cache breakpoint. */
 const CORPUS_MAP_LIMIT_DEFAULT = 300;
-/** Node types worth mapping — the authored/ingested corpus. Emails and raw
- *  telegram messages are excluded (huge, conversational); branches are
- *  structure, not content. */
-const CORPUS_MAP_TYPES = ['page', 'table', 'file', 'note', 'task', 'app'];
+/** Node types worth mapping: the authored/ingested corpus, the kind
+ *  registry's `corpusMap` field (A10 #12). Emails and raw telegram messages
+ *  are excluded (huge, conversational); branches are structure, not
+ *  content. */
+const CORPUS_MAP_TYPES: readonly string[] = CORPUS_MAP_KINDS;
 // CHUNK_CUTOFF lives in conversation/select.ts, beside the filter that applies it.
 
 /** Preferences are tiny + high-signal ("the user prefers terse replies"); the
@@ -1622,7 +1624,7 @@ async function loadConversationContextAtLevel(args: {
     trace.lap();
     const mapWhere = and(
       eq(nodes.ownerId, ownerId),
-      sql`${nodes.type}::text = any(${pgArrayLiteral(CORPUS_MAP_TYPES)}::text[])`,
+      sql`${nodes.type}::text = any(${pgArrayLiteral([...CORPUS_MAP_TYPES])}::text[])`,
       sql`(${nodes.data}->>'origin') is distinct from 'system'`,
       sql`not (${nodes.tags} @> ARRAY['conversation-digest']::text[])`,
     );

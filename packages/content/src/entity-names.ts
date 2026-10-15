@@ -19,6 +19,7 @@
  *
  * No db / model imports, so every rule is unit-tested directly.
  */
+import { DOCUMENT_TITLE_KINDS } from '@mantle/client-types/kind-lists';
 
 // ─── Document titles ─────────────────────────────────────────────────────────
 
@@ -27,8 +28,9 @@ const TITLE_PRONE_KINDS = new Set(['project', 'event']);
 
 /** Node types whose title is the title of a document, not a thing the user
  *  does. A note or page titled "Kitchen renovation" can name a real project;
- *  an uploaded file's title names the file. */
-const DOCUMENT_NODE_TYPES = new Set(['file', 'documentation', 'sermon']);
+ *  an uploaded file's title names the file. The kind registry's
+ *  `documentTitle` field (A10 #12). */
+const DOCUMENT_NODE_TYPES: ReadonlySet<string> = new Set(DOCUMENT_TITLE_KINDS);
 
 /**
  * A comparison key for a title or a title-like entity name: file extension,

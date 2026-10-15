@@ -39,9 +39,12 @@ import {
 } from '@mantle/db';
 import { chunkDocText, clampPieces, drawSceneText, foldNoteEmbeds } from '@mantle/content';
 import { pageDocText, pageHolders } from '@mantle/content/pages';
+import { EMBEDDING_KINDS } from '@mantle/client-types/kind-lists';
+import type { EmbeddingKind } from '@mantle/client-types/kinds';
 
-type Kind = 'page' | 'note' | 'draw';
-const KINDS: readonly Kind[] = ['page', 'note', 'draw'];
+/** The kinds that embed items: the kind registry's `embeds` field (A10 #12). */
+type Kind = EmbeddingKind;
+const KINDS: readonly Kind[] = EMBEDDING_KINDS;
 
 export interface RefoldDeps {
   /** One vector per text, in order (the brain's embedder). */

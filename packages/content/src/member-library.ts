@@ -19,6 +19,7 @@ import { db, nodes, currentScope, nodeReadByWorkspace } from '@mantle/db';
 import { getNote } from './notes';
 import { getPage } from './pages/read';
 import { getTable } from './tables/read';
+import { forAcceptedKind } from '@mantle/client-types/kind-lists';
 import {
   MEMBER_ITEM_KINDS as LIBRARY_KINDS,
   isMemberItemKind as isLibraryKind,
@@ -177,31 +178,32 @@ export async function getLibraryItem(
   if (!n || !isLibraryKind(n.type)) return null;
   const base = rowOf(n);
   const d = (n.data ?? {}) as Record<string, unknown>;
-  switch (n.type) {
-    case 'page': {
-      const page = await getPage(anchorId, id);
-      // Its folder (folder phase 7), for a Folder index block set to `here`.
-      return page
-        ? { ...base, type: 'page', doc: page.doc, folderId: page.folderId ?? null }
-        : null;
-    }
-    case 'note': {
-      const note = await getNote(anchorId, id);
-      return note ? { ...base, type: 'note', content: note.content } : null;
-    }
-    case 'table': {
-      const table = await getTable(anchorId, id, { tabId: opts.tabId, unknownTabIsFirst: true });
-      return table ? { ...base, type: 'table', table } : null;
-    }
-    case 'draw':
-      return { ...base, type: 'draw' };
-    case 'file':
-      return {
+  // The one switch over an accepted item's kind (A10 #12).
+  return (
+    forAcceptedKind<typeof n, Promise<LibraryItem | null>>(n, {
+      page: async () => {
+        const page = await getPage(anchorId, id);
+        // Its folder (folder phase 7), for a Folder index block set to `here`.
+        return page
+          ? { ...base, type: 'page', doc: page.doc, folderId: page.folderId ?? null }
+          : null;
+      },
+      note: async () => {
+        const note = await getNote(anchorId, id);
+        return note ? { ...base, type: 'note', content: note.content } : null;
+      },
+      table: async () => {
+        const table = await getTable(anchorId, id, { tabId: opts.tabId, unknownTabIsFirst: true });
+        return table ? { ...base, type: 'table', table } : null;
+      },
+      draw: async () => ({ ...base, type: 'draw' }),
+      file: async () => ({
         ...base,
         type: 'file',
         filename: typeof d.filename === 'string' ? d.filename : n.title,
         mimeType: typeof d.mime_type === 'string' ? d.mime_type : null,
         sizeBytes: Number(d.size_bytes ?? 0) || null,
-      };
-  }
+      }),
+    }) ?? null
+  );
 }

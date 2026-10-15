@@ -489,6 +489,9 @@ importers:
 
   packages/mcp-core:
     dependencies:
+      '@mantle/client-types':
+        specifier: workspace:*
+        version: link:../client-types
       '@mantle/config':
         specifier: workspace:*
         version: link:../config

@@ -45,6 +45,7 @@ import {
 import { embed } from '@mantle/embeddings';
 import { effectiveBrainDepth, resolveEffectiveIndexing, metadataSpineText } from '@mantle/files';
 import { recordSkippedTrace } from '@mantle/tracing';
+import { EXTRACT_KINDS } from '@mantle/client-types/kind-lists';
 import { resolveChatKey } from '@mantle/runtime/agent';
 import { resolveExtractor } from './model';
 import { maybeAutoTableSpreadsheet } from './auto-table';
@@ -88,7 +89,9 @@ async function indexLocalOnly(
  *  leak into a prompt. */
 const HARD_SKIP_TYPES = new Set(['branch']);
 
-/** Default allowlist; per-agent override via memory_config.extract_types.
+/** Default allowlist: the kind registry's `extract` field (EXTRACT_KINDS,
+ *  @mantle/client-types/kind-lists); per-agent override via
+ *  memory_config.extract_types.
  *  `file` covers text files (.md/.txt/.json/.yaml) read via the disk
  *  fallback in readNodeBody, plus PDFs parsed through `pdf-parse`.
  *  `email` / `email_thread` cover IMAP-ingested messages — subject +
@@ -98,23 +101,7 @@ const HARD_SKIP_TYPES = new Set(['branch']);
  *  `task` and `event` are first-class content: title + body + metadata
  *  (status, due_at, starts_at, location, …) all become part of the body
  *  the extractor summarises and embeds. */
-const DEFAULT_EXTRACT_TYPES = [
-  'note',
-  'page',
-  'table',
-  'file',
-  'email',
-  'email_thread',
-  'secret',
-  'task',
-  'event',
-  'contact',
-  'documentation',
-  'journal',
-  'location',
-  'formula',
-  'draw',
-];
+const DEFAULT_EXTRACT_TYPES: readonly string[] = EXTRACT_KINDS;
 
 /** What the sequencer needs once the gate has admitted a node. */
 export type ExtractAdmission =

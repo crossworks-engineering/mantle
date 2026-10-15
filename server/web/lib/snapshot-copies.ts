@@ -39,6 +39,7 @@ import {
   createTable,
 } from '@mantle/content';
 import { copyFileById } from '@mantle/files';
+import { forAcceptedKind } from '@mantle/client-types/kind-lists';
 
 export type SnapshotCopyReport = {
   /** Homes that want a copy (snapshot = true). */
@@ -191,26 +192,25 @@ async function makeCopy(
   const { item, snap } = found;
   const title = item.title;
   return withCreateHome({ createWs: home, privateWs: null, quiet: true, stamp }, async () => {
-    switch (item.type) {
-      case 'page':
-        return (
+    // The one switch over an accepted item's kind (A10 #12).
+    const made = forAcceptedKind<Found['item'], Promise<string | null>>(item, {
+      page: async (page) =>
+        (
           await createPage(brain, {
             title,
-            doc: (item.doc ?? { type: 'doc', content: [] }) as Record<string, unknown>,
-            ...(item.icon ? { icon: item.icon } : {}),
+            doc: (page.doc ?? { type: 'doc', content: [] }) as Record<string, unknown>,
+            ...(page.icon ? { icon: page.icon } : {}),
           })
-        ).id;
-      case 'note':
-        return (await createNote(brain, { title, content: item.content })).id;
-      case 'table':
-        return (await createTable(brain, { title, data: item.table.data })).id;
-      case 'draw':
-        return (await createDraw(brain, { title, scene: withoutLinks(snap.scene) })).id;
-      case 'file': {
-        if (item.changedByAdmin) return null;
-        return copyFileUnderFreeName(brain, item.id, item.filename);
-      }
-    }
+        ).id,
+      note: async (note) => (await createNote(brain, { title, content: note.content })).id,
+      table: async (table) => (await createTable(brain, { title, data: table.table.data })).id,
+      draw: async () => (await createDraw(brain, { title, scene: withoutLinks(snap.scene) })).id,
+      file: async (file) => {
+        if (file.changedByAdmin) return null;
+        return copyFileUnderFreeName(brain, file.id, file.filename);
+      },
+    });
+    return made ?? null;
   });
 }
 

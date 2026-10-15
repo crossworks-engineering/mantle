@@ -17,6 +17,7 @@
  */
 
 import { and, eq } from 'drizzle-orm';
+import { CONTEXT_REF_KINDS, NODE_TYPE_BY_CONTEXT_REF } from '@mantle/client-types/kind-lists';
 import { db } from './client';
 import { nodeType, nodes } from './schema/nodes';
 import { emailAccounts, emails } from './schema/emails';
@@ -26,32 +27,16 @@ import { emailAccounts, emails } from './schema/emails';
 type NodeType = (typeof nodeType.enumValues)[number];
 
 /**
- * The kinds a context ref may name. Mirrors jackdaw's `CONTEXT_KINDS`
- * (`client/web/components/assistant/assistant-dock.tsx`), which is the client's
- * source of truth for the same list.
- *
- * ⚠ These are two copies of one contract, kept in step by hand. They can only be
- * merged once the ref rides the wire as a structured block rather than the prose
- * preamble the client builds today — at which point it belongs in
- * `@mantle/client-types` with the other wire types. Until then, adding a kind
- * means editing both. An unknown kind resolves to `null` rather than erroring,
- * so a jackdaw that runs ahead of its brain degrades instead of breaking.
+ * The kinds a context ref may name: the kind registry's `contextRef` field
+ * (A10 #12, `@mantle/client-types/kind-lists`), in registry order. Jackdaw's
+ * `CONTEXT_KINDS` (`client/web/components/assistant/assistant-dock.tsx`) is
+ * still a hand copy of the same list; it can read the registry's
+ * CONTEXT_REF_KINDS once the ref rides the wire as a structured block rather
+ * than the prose preamble the client builds today. An unknown kind resolves to
+ * `null` rather than erroring, so a jackdaw that runs ahead of its brain
+ * degrades instead of breaking.
  */
-export const CONTEXT_KINDS = [
-  'file',
-  'folder',
-  'page',
-  'note',
-  'table',
-  'journal',
-  'task',
-  'event',
-  'app',
-  'draw',
-  'formula',
-  'email',
-  'contact',
-] as const;
+export const CONTEXT_KINDS = CONTEXT_REF_KINDS;
 
 export type ContextKind = (typeof CONTEXT_KINDS)[number];
 
@@ -80,25 +65,14 @@ export type ResolvedContextRef = {
  * vocabularies are NOT the same: the client's `folder` is a `branch` node (the
  * generic container type used for note/journal/event/mail folders alike). Every
  * other kind happens to share its name today, but nothing enforces that, so the
- * map is written out in full.
+ * registry names each kind's context ref (`contextRef`).
  *
  * `email` is absent on purpose — its id is not a node id and it takes the lookup
  * path instead.
  */
-export const NODE_TYPE_BY_KIND: Record<Exclude<ContextKind, 'email'>, NodeType> = {
-  file: 'file',
-  folder: 'branch',
-  page: 'page',
-  note: 'note',
-  table: 'table',
-  journal: 'journal',
-  task: 'task',
-  event: 'event',
-  app: 'app',
-  draw: 'draw',
-  formula: 'formula',
-  contact: 'contact',
-};
+export const NODE_TYPE_BY_KIND = Object.fromEntries(
+  Object.entries(NODE_TYPE_BY_CONTEXT_REF).filter(([kind]) => kind !== 'email'),
+) as Readonly<Record<Exclude<ContextKind, 'email'>, NodeType>>;
 
 /**
  * Map a context ref to a node id, scoped to `ownerId`. Returns `null` for

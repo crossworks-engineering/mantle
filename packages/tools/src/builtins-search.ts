@@ -29,6 +29,7 @@ import { str, strOpt, numOpt as num } from './coerce';
 import { publicErrorMessage } from '@mantle/std';
 import { NODE_ID_PRE } from './builtins-common';
 import { surfaceHiddenNodeTypes } from './team-visibility';
+import { SEARCH_TOOL_KINDS } from '@mantle/client-types/kind-lists';
 import { ownerKeysOff } from './surface';
 
 export const search_nodes: BuiltinToolDef = {
@@ -52,25 +53,8 @@ export const search_nodes: BuiltinToolDef = {
       type: {
         type: 'string',
         description: 'node type filter',
-        enum: [
-          'branch',
-          'email',
-          'email_thread',
-          'file',
-          'note',
-          'page',
-          'sermon',
-          'contact',
-          'task',
-          'event',
-          'printer_project',
-          'telegram_message',
-          'documentation',
-          'journal',
-          'secret',
-          'formula',
-          'draw',
-        ],
+        // The kind registry's `searchTool` field (A10 #12).
+        enum: [...SEARCH_TOOL_KINDS],
       },
       tags: {
         type: 'array',

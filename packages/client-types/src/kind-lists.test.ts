@@ -2,15 +2,33 @@
  * The hand kind lists (arch plan A10 #12), RECORDED as they stood on main
  * v0.300.46, before they were derived from the kind registry (./kinds).
  *
- * Record, move, compare: this file first proves RECORDED against the
- * literals in the source, then (after the move) against the derived lists.
- * A list the code only asks membership of is compared as a set; a list
- * whose order means something says so.
+ * Record, move, compare: the first commit of A10 #12 proved RECORDED
+ * against the literals in the source (git show 12b4564ec); now each list is
+ * a filter over a registry field (./kind-lists), and this proves the derived
+ * list equals RECORDED with CHANGES applied, CHANGES naming every cell that
+ * moved. A list the code only asks membership of is compared as a set; a
+ * list whose order means something (TYPE_RANK) is compared in order.
  */
-import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-
-const ROOT = new URL('../../../', import.meta.url);
+import {
+  ACCEPTED_KINDS,
+  CONTEXT_REF_KINDS,
+  CORPUS_MAP_KINDS,
+  DOCUMENT_TITLE_KINDS,
+  EMBEDDING_KINDS,
+  EXPORT_FORMAT_BY_KIND,
+  EXTRACT_KINDS,
+  LINK_SERVE_KINDS,
+  MENTION_TARGET_KINDS,
+  NODE_TYPE_BY_CONTEXT_REF,
+  PEER_PICK_EXCLUDED_KINDS,
+  SEARCH_TOOL_KINDS,
+  acceptedRank,
+  forAcceptedKind,
+  isAcceptedKind,
+} from './kind-lists';
+import { ITEM_KINDS, ITEM_KIND_NAMES } from './kinds';
+import { MEMBER_ITEM_KINDS } from './member-kinds';
 
 /** The hand lists on main v0.300.46, by name (file, then the list). */
 export const RECORDED = {
@@ -146,104 +164,141 @@ export const RECORDED = {
   DOCUMENT_NODE_TYPES: ['file', 'documentation', 'sermon'],
 } as const;
 
-// ── reading the literals of main ────────────────────────────────────────────
+/** Every cell that moved with A10 #12, by list. `add`/`remove`: a kind
+ *  that came in or went out (a behaviour change, named); `order`: the same
+ *  set in registry order (the code asks membership only, or the order is
+ *  only how a schema prints). */
+export const CHANGES = {
+  LANDED_TYPES: {
+    add: ['email_thread', 'documentation', 'location'],
+    why:
+      'named fix: the three kinds the extractor reads that the integrity view ' +
+      'could not see. Visibility only: the extract set is unchanged.',
+  },
+  SEARCH_NODES_TYPE_ENUM: {
+    order: true,
+    why: 'the same 17 kinds in registry order: the tool schema prints them so',
+  },
+  MCP_SEARCH_TYPE_ENUM: {
+    order: true,
+    why: 'the same 17 kinds in registry order: the tool schema prints them so',
+  },
+} as const satisfies Partial<
+  Record<keyof typeof RECORDED, { add?: readonly string[]; order?: true; why: string }>
+>;
 
-function source(path: string): string {
-  return readFileSync(new URL(path, ROOT), 'utf8');
-}
+const set = (xs: readonly string[]) => [...xs].sort();
+const omit = <T extends Record<string, unknown>>(o: T, k: string) =>
+  Object.fromEntries(Object.entries(o).filter(([key]) => key !== k));
 
-/** The bracketed text from the first `open` at or after `marker`. */
-function bracketAfter(text: string, marker: string, open: '[' | '{'): string {
-  const at = text.indexOf(marker);
-  if (at < 0) throw new Error(`marker not found: ${marker}`);
-  const start = text.indexOf(open, at + marker.length - 1);
-  const close = open === '[' ? ']' : '}';
-  let depth = 0;
-  for (let i = start; i < text.length; i += 1) {
-    if (text[i] === open) depth += 1;
-    else if (text[i] === close && --depth === 0) return text.slice(start, i + 1);
-  }
-  throw new Error(`unbalanced after ${marker}`);
-}
-
-const strings = (s: string) => [...s.matchAll(/'([a-z_]+)'/g)].map((m) => m[1]);
-const pairs = (s: string) =>
-  Object.fromEntries([...s.matchAll(/(\w+):\s*'([a-z_]+)'/g)].map((m) => [m[1], m[2]]));
-const cases = (s: string) => [...s.matchAll(/case '([a-z_]+)':/g)].map((m) => m[1]);
-
-function onMain(): Record<keyof typeof RECORDED, unknown> {
-  const gates = source('server/api/src/agent/extract/gates.ts');
-  const landed = source('server/web/lib/integrity/landed.ts');
-  const conv = source('packages/runtime/src/agent/conversation.ts');
-  const ctx = source('packages/db/src/context-ref-resolve.ts');
-  const exp = source('packages/content/src/export-node.ts');
+/** Each list as the code derives it now. */
+function derived(): Record<keyof typeof RECORDED, unknown> {
+  const accepted = set(ACCEPTED_KINDS);
   return {
-    DEFAULT_EXTRACT_TYPES: strings(bracketAfter(gates, 'const DEFAULT_EXTRACT_TYPES = [', '[')),
-    LANDED_TYPES: strings(bracketAfter(landed, 'export const LANDED_TYPES = [', '[')),
-    CORPUS_MAP_TYPES: strings(bracketAfter(conv, 'const CORPUS_MAP_TYPES = [', '[')),
-    CONTEXT_KINDS: strings(bracketAfter(ctx, 'export const CONTEXT_KINDS = [', '[')),
-    NODE_TYPE_BY_KIND: pairs(bracketAfter(ctx, 'export const NODE_TYPE_BY_KIND', '{')),
-    EMBEDDING_KINDS: strings(
-      bracketAfter(
-        source('packages/content/src/embed-closure.ts'),
-        'EMBEDDING_KINDS: readonly string[] = [',
-        '[',
-      ),
-    ),
-    REFOLD_KINDS: strings(
-      bracketAfter(
-        source('server/web/lib/maintenance/refold-embeds.ts'),
-        'const KINDS: readonly Kind[] = [',
-        '[',
-      ),
-    ),
-    MENTION_TARGETS: strings(
-      bracketAfter(
-        source('server/web/app/api/mentions/search/route.ts'),
-        'inArray(nodes.type, [',
-        '[',
-      ),
-    ),
-    LINK_SERVE_KINDS: strings(
-      bracketAfter(source('packages/content/src/link-serve.ts'), 'if (![', '['),
-    ),
-    EXPORTABLE_TYPES: pairs(bracketAfter(exp, 'export const EXPORTABLE_TYPES', '{')),
-    TYPE_RANK: strings(
-      bracketAfter(source('packages/content/src/login-notices.ts'), 'const TYPE_RANK = [', '['),
-    ),
-    SWITCH_MEMBER_ACCEPTED: cases(
-      bracketAfter(source('packages/content/src/member-accepted.ts'), 'switch (base.type)', '{'),
-    ),
-    SWITCH_MEMBER_LIBRARY: cases(
-      bracketAfter(source('packages/content/src/member-library.ts'), 'switch (n.type)', '{'),
-    ),
-    SWITCH_MEMBER_SNAPSHOTS: cases(
-      bracketAfter(source('packages/content/src/member-snapshots.ts'), 'switch (node.type)', '{'),
-    ),
-    SWITCH_SNAPSHOT_COPIES: cases(
-      bracketAfter(source('server/web/lib/snapshot-copies.ts'), 'switch (item.type)', '{'),
-    ),
-    SEARCH_NODES_TYPE_ENUM: strings(
-      bracketAfter(source('packages/tools/src/builtins-search.ts'), 'enum: [', '['),
-    ),
-    MCP_SEARCH_TYPE_ENUM: strings(
-      bracketAfter(source('packages/mcp-core/src/mcp-defs.ts'), '.enum([', '['),
-    ),
-    PEER_PICKER_EXCLUDED: strings(
-      bracketAfter(source('server/web/app/api/peers/nodes/route.ts'), 'const EXCLUDED = [', '['),
-    ),
-    DOCUMENT_NODE_TYPES: strings(
-      bracketAfter(
-        source('packages/content/src/entity-names.ts'),
-        'const DOCUMENT_NODE_TYPES = new Set([',
-        '[',
-      ),
-    ),
+    DEFAULT_EXTRACT_TYPES: set(EXTRACT_KINDS),
+    LANDED_TYPES: set(EXTRACT_KINDS),
+    CORPUS_MAP_TYPES: set(CORPUS_MAP_KINDS),
+    CONTEXT_KINDS: set(CONTEXT_REF_KINDS),
+    NODE_TYPE_BY_KIND: omit(NODE_TYPE_BY_CONTEXT_REF, 'email'),
+    EMBEDDING_KINDS: set(EMBEDDING_KINDS),
+    REFOLD_KINDS: set(EMBEDDING_KINDS),
+    MENTION_TARGETS: set(MENTION_TARGET_KINDS),
+    LINK_SERVE_KINDS: set(LINK_SERVE_KINDS),
+    EXPORTABLE_TYPES: { ...EXPORT_FORMAT_BY_KIND },
+    TYPE_RANK: [...ACCEPTED_KINDS].sort((a, b) => acceptedRank(a) - acceptedRank(b)),
+    SWITCH_MEMBER_ACCEPTED: accepted,
+    SWITCH_MEMBER_LIBRARY: accepted,
+    SWITCH_MEMBER_SNAPSHOTS: accepted,
+    SWITCH_SNAPSHOT_COPIES: accepted,
+    SEARCH_NODES_TYPE_ENUM: set(SEARCH_TOOL_KINDS),
+    MCP_SEARCH_TYPE_ENUM: set(SEARCH_TOOL_KINDS),
+    PEER_PICKER_EXCLUDED: set(PEER_PICK_EXCLUDED_KINDS),
+    DOCUMENT_NODE_TYPES: set(DOCUMENT_TITLE_KINDS),
   };
 }
 
-describe('the hand kind lists, recorded on main v0.300.46', () => {
-  it('RECORDED is every list as main writes it', () => {
-    expect(onMain()).toEqual(RECORDED);
+/** RECORDED with CHANGES applied, in the shape derived() gives. */
+function expected(): Record<keyof typeof RECORDED, unknown> {
+  const out = {} as Record<keyof typeof RECORDED, unknown>;
+  for (const [name, value] of Object.entries(RECORDED) as [keyof typeof RECORDED, unknown][]) {
+    const change = (CHANGES as Partial<Record<string, { add?: readonly string[] }>>)[name];
+    if (Array.isArray(value)) {
+      const list = [...(value as string[]), ...(change?.add ?? [])];
+      out[name] = name === 'TYPE_RANK' ? list : set(list);
+    } else out[name] = value;
+  }
+  return out;
+}
+
+describe('the hand kind lists, derived from the registry', () => {
+  it('each derived list is RECORDED with CHANGES applied, and nothing else moved', () => {
+    expect(derived()).toEqual(expected());
+  });
+
+  it('CHANGES names only lists that moved', () => {
+    for (const name of Object.keys(CHANGES) as (keyof typeof CHANGES)[]) {
+      const was = RECORDED[name] as readonly string[];
+      const now = derived()[name] as readonly string[];
+      const moved = 'order' in CHANGES[name] ? true : set(was).join() !== set(now).join();
+      expect(moved, name).toBe(true);
+    }
+  });
+
+  it('the search enums keep their 17 kinds: searchable plus secret', () => {
+    expect(set(SEARCH_TOOL_KINDS)).toEqual(set(RECORDED.SEARCH_NODES_TYPE_ENUM));
+    expect(set(SEARCH_TOOL_KINDS)).toEqual(set(RECORDED.MCP_SEARCH_TYPE_ENUM));
+    const searchable = ITEM_KIND_NAMES.filter((t) => ITEM_KINDS[t].searchable);
+    expect(set(SEARCH_TOOL_KINDS)).toEqual(set([...searchable, 'secret']));
+  });
+
+  it('the extract set is not widened: LANDED_TYPES grew, DEFAULT_EXTRACT_TYPES did not', () => {
+    expect(set(EXTRACT_KINDS)).toEqual(set(RECORDED.DEFAULT_EXTRACT_TYPES));
+  });
+
+  it('the accepted kinds are the Library kinds (one list until library goes)', () => {
+    expect(set(ACCEPTED_KINDS)).toEqual(set(MEMBER_ITEM_KINDS));
+  });
+
+  it('every context ref kind names a kind (folder is a branch)', () => {
+    expect(NODE_TYPE_BY_CONTEXT_REF.folder).toBe('branch');
+    for (const [ref, t] of Object.entries(NODE_TYPE_BY_CONTEXT_REF)) {
+      if (ref !== 'folder') expect(t, ref).toBe(ref);
+    }
+  });
+});
+
+describe('forAcceptedKind', () => {
+  type Item = { type: 'page'; doc: string } | { type: 'note'; content: string };
+  const cases = {
+    page: (i: { type: string; doc?: string }) => `page:${i.doc}`,
+    note: (i: { type: string; content?: string }) => `note:${i.content}`,
+    table: () => 'table',
+    draw: () => 'draw',
+    file: () => 'file',
+  };
+
+  it('runs the case of the item kind', () => {
+    const page: Item = { type: 'page', doc: 'd' };
+    expect(forAcceptedKind(page, cases)).toBe('page:d');
+    expect(forAcceptedKind({ type: 'file' }, cases)).toBe('file');
+  });
+
+  it('answers null for a kind that is not accepted', () => {
+    expect(forAcceptedKind({ type: 'task' }, cases)).toBeNull();
+    expect(forAcceptedKind({ type: 'toString' }, cases)).toBeNull();
+    expect(isAcceptedKind('branch')).toBe(false);
+    expect(acceptedRank('task')).toBe(ACCEPTED_KINDS.length);
+  });
+
+  it('narrows a union item to the case kind', () => {
+    const note: Item = { type: 'note', content: 'c' };
+    const got = forAcceptedKind<Item, string>(note, {
+      page: (i) => i.doc,
+      note: (i) => i.content,
+      table: () => '',
+      draw: () => '',
+      file: () => '',
+    });
+    expect(got).toBe('c');
   });
 });

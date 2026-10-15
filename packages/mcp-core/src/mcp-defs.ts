@@ -25,6 +25,7 @@
 import { z } from 'zod';
 import { and, eq } from 'drizzle-orm';
 import { db, nodes } from '@mantle/db';
+import { SEARCH_TOOL_KINDS } from '@mantle/client-types/kind-lists';
 import {
   MCP_SURFACE_POLICIES,
   SEARCH_TOOLS,
@@ -170,27 +171,8 @@ const SEARCH = mcpTool({
   shape: {
     q: z.string().optional(),
     branch: z.string().optional(),
-    type: z
-      .enum([
-        'branch',
-        'email',
-        'email_thread',
-        'file',
-        'note',
-        'page',
-        'sermon',
-        'contact',
-        'secret',
-        'task',
-        'event',
-        'printer_project',
-        'telegram_message',
-        'documentation',
-        'journal',
-        'formula',
-        'draw',
-      ])
-      .optional(),
+    // The kind registry's `searchTool` field (A10 #12).
+    type: z.enum(SEARCH_TOOL_KINDS).optional(),
     tags: z.array(z.string()).optional(),
     since: z.string().datetime().optional(),
     limit: z.number().int().min(1).max(200).optional(),

@@ -15,11 +15,13 @@
  * Grant Access panel and the share pages read them.
  */
 import type { ViewerLevel } from '@mantle/db';
+import { EMBEDDING_KINDS as REGISTRY_EMBEDDING_KINDS } from '@mantle/client-types/kind-lists';
 import { markdownToDoc } from '@mantle/content-core/markdown';
 import { referencedDrawIds, referencedFileIds } from './doc-assets';
 
-/** The kinds that embed other items. */
-export const EMBEDDING_KINDS: readonly string[] = ['page', 'draw', 'note'];
+/** The kinds that embed other items: the kind registry's `embeds` field
+ *  (A10 #12). */
+export const EMBEDDING_KINDS: readonly string[] = REGISTRY_EMBEDDING_KINDS;
 
 /** What a note's markdown embeds: images, file embeds and drawings. (A
  *  `page:` link in a note is a link, not a child page.) */

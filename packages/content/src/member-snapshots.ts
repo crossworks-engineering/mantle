@@ -44,6 +44,7 @@ import { diskPathForFile } from '@mantle/files';
 import { relativeStoragePath, resolveStoragePath } from '@mantle/tabledb';
 import { copySqliteFile, SnapshotNotRecorded, stageThenFlipSnapshot } from './snapshot-broker';
 import { SNAPSHOT_OWNER } from './table-storage';
+import { forAcceptedKind } from '@mantle/client-types/kind-lists';
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
@@ -173,21 +174,23 @@ export async function writeAcceptedSnapshots(
       acceptedAt: r.acceptedAt ?? new Date(),
       pending: false,
     };
-    switch (node.type) {
-      case 'page':
+    // The one switch over an accepted item's kind (A10 #12); any other
+    // kind records nothing.
+    const recording = forAcceptedKind<typeof node, Promise<void>>(node, {
+      page: async () => {
         base.version = r.pageVersion;
         base.doc = r.pageDoc;
-        break;
-      case 'note':
+      },
+      note: async () => {
         base.content = typeof d.content === 'string' ? d.content : '';
-        break;
-      case 'draw':
+      },
+      draw: async () => {
         base.version = r.drawVersion;
         base.scene = r.scene;
         base.sceneSvg = r.sceneSvg;
         base.fileRefs = r.fileRefs;
-        break;
-      case 'table': {
+      },
+      table: async () => {
         base.version = r.tableVersion;
         if (r.storagePath) {
           const st = hooks.staged?.get(node.id);
@@ -196,9 +199,8 @@ export async function writeAcceptedSnapshots(
         } else {
           base.tableDoc = r.tableData;
         }
-        break;
-      }
-      case 'file': {
+      },
+      file: async () => {
         base.fileName =
           hooks.fileNames?.get(node.id) ||
           (typeof d.filename === 'string' && d.filename ? d.filename : node.title);
@@ -210,11 +212,10 @@ export async function writeAcceptedSnapshots(
         const abs = recorded ? null : brainFileAbs(node);
         base.fileSha256 = recorded ?? (abs ? await hashFile(abs) : null);
         base.pending = !base.fileSha256;
-        break;
-      }
-      default:
-        continue;
-    }
+      },
+    });
+    if (!recording) continue;
+    await recording;
     const { nodeId, acceptedAt, ...rest } = base;
     await tx
       .insert(acceptedSnapshots)

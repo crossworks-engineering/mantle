@@ -19,6 +19,7 @@
  */
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { defineDomainError } from '@mantle/std';
+import { LINK_SERVE_KINDS } from '@mantle/client-types/kind-lists';
 import { db, nodeEmbeds, nodes, pages, SNAPSHOT_COPY_NO_SHARE } from '@mantle/db';
 import { clientOwnUrl, docRefIds, noteRefIds } from './client-redact';
 import { clientRedactOrigins } from './client-origins';
@@ -197,7 +198,9 @@ async function serveCandidates(
       .limit(ids ? ids.length : FOLDER_SERVE_OFFER_MAX);
     return new Set(rows.map((r) => r.id.toLowerCase()));
   }
-  if (!['page', 'note', 'task', 'event', 'draw'].includes(item.type)) return new Set();
+  // The kinds whose link serves what they name or embed: the kind registry's
+  // `linkServes` field (A10 #12).
+  if (!(LINK_SERVE_KINDS as readonly string[]).includes(item.type)) return new Set();
 
   const out = new Set<string>();
   const embeds = await q

@@ -13,7 +13,11 @@
  *  - TEAM_PRIVATE_CORPUS_TYPES and TEAM_NEVER_TYPES
  *    (@mantle/content-core/profile-projections), teamHidden;
  *  - MEMBER_ITEM_KINDS and CLIENT_ITEM_KINDS (./member-kinds), library: kept
- *    one pair release, then they go with the field.
+ *    one pair release, then they go with the field;
+ *  - the lists of ./kind-lists (A10 #12): extract, corpusMap, contextRef,
+ *    embeds, mentionTarget, linkServes, exportAs, accepted, searchTool,
+ *    peerPick, documentTitle. A literal list of kind names anywhere else is
+ *    an arch count pinned at 0 (eslint-rules/arch-counts.mjs handKindLists).
  *
  * Each field holds the value the code had when the registry came in (A1).
  * Who may share or see a kind changes here only as a reviewed diff of the
@@ -78,7 +82,47 @@ export type KindSpec = {
    *  CLIENT_ITEM_KINDS too when `client`. Kept one pair release (A1), then
    *  removed with them. */
   readonly library: { readonly order: number; readonly client: boolean } | false;
+
+  // ── A10 #12: the hand kind lists, now fields (./kind-lists derives them).
+  // Each holds the value its list had on main v0.300.46 (kind-lists.test.ts
+  // RECORDED), except the changes that test names.
+
+  /** The extractor reads it by default (DEFAULT_EXTRACT_TYPES, a worker's
+   *  `target_types` overrides), and the integrity view lists it
+   *  (LANDED_TYPES). Turning this on for a kind that had it off extracts
+   *  that kind's whole corpus: a cost decision, never a tidy-up. */
+  readonly extract: boolean;
+  /** Listed by title in the responder's corpus map (CORPUS_MAP_TYPES). */
+  readonly corpusMap: boolean;
+  /** The kind a context ref names it by (the client's vocabulary,
+   *  CONTEXT_KINDS: a `branch` is a `folder`), or false. */
+  readonly contextRef: string | false;
+  /** Embeds other items (node_embeds edges: EMBEDDING_KINDS, the embed
+   *  refold). */
+  readonly embeds: boolean;
+  /** A mention chip may name it (/api/mentions/search). */
+  readonly mentionTarget: boolean;
+  /** Its public link may serve the items it names or embeds
+   *  (link-serve.ts; a folder serves its own items). */
+  readonly linkServes: boolean;
+  /** Downloads as this format by default (EXPORTABLE_TYPES), or false. */
+  readonly exportAs: KindExportFormat | false;
+  /** An accepted item: its snapshot is recorded on accept, read back,
+   *  served in the Library and copied (forAcceptedKind). `rank`: which of a
+   *  bundle's items names it, lowest first (login-notices.ts). */
+  readonly accepted: { readonly rank: number } | false;
+  /** A `type` value of the search tools (search_nodes, the MCP `search`).
+   *  Wider than `searchable` by `secret`: an agent may filter its own
+   *  secrets' metadata; the search screen offers no such filter. */
+  readonly searchTool: boolean;
+  /** Offered by the linked brain grant picker (/api/peers/nodes). */
+  readonly peerPick: boolean;
+  /** Its title names a document, not a thing the user does (entity-names). */
+  readonly documentTitle: boolean;
 };
+
+/** The formats a kind downloads as by default. */
+export type KindExportFormat = 'docx' | 'xlsx' | 'svg';
 
 const none = { content: null, v1: null } as const;
 
@@ -93,6 +137,17 @@ export const ITEM_KINDS = {
     route: { content: '/api/files/folders', v1: null },
     teamHidden: false,
     library: false,
+    extract: false,
+    corpusMap: false,
+    contextRef: 'folder',
+    embeds: false,
+    mentionTarget: false,
+    linkServes: false,
+    exportAs: false,
+    accepted: false,
+    searchTool: true,
+    peerPick: false,
+    documentTitle: false,
   },
   email: {
     class: 'admin_only',
@@ -104,6 +159,17 @@ export const ITEM_KINDS = {
     route: { content: '/api/email/messages', v1: null },
     teamHidden: 'private-corpus',
     library: false,
+    extract: true,
+    corpusMap: false,
+    contextRef: 'email',
+    embeds: false,
+    mentionTarget: false,
+    linkServes: false,
+    exportAs: false,
+    accepted: false,
+    searchTool: true,
+    peerPick: true,
+    documentTitle: false,
   },
   email_thread: {
     class: 'admin_only',
@@ -115,6 +181,17 @@ export const ITEM_KINDS = {
     route: none,
     teamHidden: 'private-corpus',
     library: false,
+    extract: true,
+    corpusMap: false,
+    contextRef: false,
+    embeds: false,
+    mentionTarget: false,
+    linkServes: false,
+    exportAs: false,
+    accepted: false,
+    searchTool: true,
+    peerPick: true,
+    documentTitle: false,
   },
   file: {
     class: 'workspace',
@@ -133,6 +210,17 @@ export const ITEM_KINDS = {
     route: { content: '/api/files/files', v1: '/api/v1/files' },
     teamHidden: false,
     library: { order: 4, client: true },
+    extract: true,
+    corpusMap: true,
+    contextRef: 'file',
+    embeds: false,
+    mentionTarget: false,
+    linkServes: false,
+    exportAs: false,
+    accepted: { rank: 4 },
+    searchTool: true,
+    peerPick: true,
+    documentTitle: true,
   },
   note: {
     class: 'workspace',
@@ -151,6 +239,17 @@ export const ITEM_KINDS = {
     route: { content: '/api/notes', v1: '/api/v1/notes' },
     teamHidden: false,
     library: { order: 1, client: true },
+    extract: true,
+    corpusMap: true,
+    contextRef: 'note',
+    embeds: true,
+    mentionTarget: true,
+    linkServes: true,
+    exportAs: 'docx',
+    accepted: { rank: 1 },
+    searchTool: true,
+    peerPick: true,
+    documentTitle: false,
   },
   sermon: {
     class: 'admin_only',
@@ -162,6 +261,17 @@ export const ITEM_KINDS = {
     route: none,
     teamHidden: false,
     library: false,
+    extract: false,
+    corpusMap: false,
+    contextRef: false,
+    embeds: false,
+    mentionTarget: false,
+    linkServes: false,
+    exportAs: false,
+    accepted: false,
+    searchTool: true,
+    peerPick: true,
+    documentTitle: true,
   },
   contact: {
     class: 'admin_only',
@@ -180,6 +290,17 @@ export const ITEM_KINDS = {
     route: { content: '/api/contacts', v1: '/api/v1/contacts' },
     teamHidden: false,
     library: false,
+    extract: true,
+    corpusMap: false,
+    contextRef: 'contact',
+    embeds: false,
+    mentionTarget: false,
+    linkServes: false,
+    exportAs: false,
+    accepted: false,
+    searchTool: true,
+    peerPick: true,
+    documentTitle: false,
   },
   secret: {
     class: 'admin_only',
@@ -198,6 +319,17 @@ export const ITEM_KINDS = {
     route: { content: '/api/secrets', v1: null },
     teamHidden: 'never',
     library: false,
+    extract: true,
+    corpusMap: false,
+    contextRef: false,
+    embeds: false,
+    mentionTarget: false,
+    linkServes: false,
+    exportAs: false,
+    accepted: false,
+    searchTool: true,
+    peerPick: false,
+    documentTitle: false,
   },
   task: {
     class: 'workspace',
@@ -216,6 +348,17 @@ export const ITEM_KINDS = {
     route: { content: '/api/tasks', v1: '/api/v1/tasks' },
     teamHidden: false,
     library: false,
+    extract: true,
+    corpusMap: true,
+    contextRef: 'task',
+    embeds: false,
+    mentionTarget: false,
+    linkServes: true,
+    exportAs: false,
+    accepted: false,
+    searchTool: true,
+    peerPick: true,
+    documentTitle: false,
   },
   event: {
     class: 'workspace',
@@ -234,6 +377,17 @@ export const ITEM_KINDS = {
     route: { content: '/api/events', v1: '/api/v1/events' },
     teamHidden: false,
     library: false,
+    extract: true,
+    corpusMap: false,
+    contextRef: 'event',
+    embeds: false,
+    mentionTarget: false,
+    linkServes: true,
+    exportAs: false,
+    accepted: false,
+    searchTool: true,
+    peerPick: true,
+    documentTitle: false,
   },
   printer_project: {
     class: 'admin_only',
@@ -245,6 +399,17 @@ export const ITEM_KINDS = {
     route: none,
     teamHidden: false,
     library: false,
+    extract: false,
+    corpusMap: false,
+    contextRef: false,
+    embeds: false,
+    mentionTarget: false,
+    linkServes: false,
+    exportAs: false,
+    accepted: false,
+    searchTool: true,
+    peerPick: true,
+    documentTitle: false,
   },
   telegram_message: {
     class: 'conversation',
@@ -256,6 +421,17 @@ export const ITEM_KINDS = {
     route: none,
     teamHidden: 'never',
     library: false,
+    extract: false,
+    corpusMap: false,
+    contextRef: false,
+    embeds: false,
+    mentionTarget: false,
+    linkServes: false,
+    exportAs: false,
+    accepted: false,
+    searchTool: true,
+    peerPick: true,
+    documentTitle: false,
   },
   page: {
     class: 'workspace',
@@ -274,6 +450,17 @@ export const ITEM_KINDS = {
     route: { content: '/api/pages', v1: '/api/v1/pages' },
     teamHidden: false,
     library: { order: 0, client: true },
+    extract: true,
+    corpusMap: true,
+    contextRef: 'page',
+    embeds: true,
+    mentionTarget: true,
+    linkServes: true,
+    exportAs: 'docx',
+    accepted: { rank: 0 },
+    searchTool: true,
+    peerPick: true,
+    documentTitle: false,
   },
   table: {
     class: 'workspace',
@@ -292,6 +479,17 @@ export const ITEM_KINDS = {
     route: { content: '/api/tables', v1: '/api/v1/tables' },
     teamHidden: false,
     library: { order: 3, client: false },
+    extract: true,
+    corpusMap: true,
+    contextRef: 'table',
+    embeds: false,
+    mentionTarget: false,
+    linkServes: false,
+    exportAs: 'xlsx',
+    accepted: { rank: 2 },
+    searchTool: false,
+    peerPick: true,
+    documentTitle: false,
   },
   mantle_peer: {
     class: 'admin_only',
@@ -303,6 +501,17 @@ export const ITEM_KINDS = {
     route: none,
     teamHidden: 'never',
     library: false,
+    extract: false,
+    corpusMap: false,
+    contextRef: false,
+    embeds: false,
+    mentionTarget: false,
+    linkServes: false,
+    exportAs: false,
+    accepted: false,
+    searchTool: false,
+    peerPick: false,
+    documentTitle: false,
   },
   documentation: {
     class: 'admin_only',
@@ -314,6 +523,17 @@ export const ITEM_KINDS = {
     route: { content: '/api/docs/reader', v1: null },
     teamHidden: false,
     library: false,
+    extract: true,
+    corpusMap: false,
+    contextRef: false,
+    embeds: false,
+    mentionTarget: false,
+    linkServes: false,
+    exportAs: false,
+    accepted: false,
+    searchTool: true,
+    peerPick: true,
+    documentTitle: true,
   },
   journal: {
     class: 'admin_only',
@@ -325,6 +545,17 @@ export const ITEM_KINDS = {
     route: { content: '/api/journal', v1: '/api/v1/journal' },
     teamHidden: 'private-corpus',
     library: false,
+    extract: true,
+    corpusMap: false,
+    contextRef: 'journal',
+    embeds: false,
+    mentionTarget: false,
+    linkServes: false,
+    exportAs: false,
+    accepted: false,
+    searchTool: true,
+    peerPick: true,
+    documentTitle: false,
   },
   location: {
     class: 'admin_only',
@@ -336,6 +567,17 @@ export const ITEM_KINDS = {
     route: none,
     teamHidden: 'never',
     library: false,
+    extract: true,
+    corpusMap: false,
+    contextRef: false,
+    embeds: false,
+    mentionTarget: false,
+    linkServes: false,
+    exportAs: false,
+    accepted: false,
+    searchTool: false,
+    peerPick: true,
+    documentTitle: false,
   },
   app: {
     class: 'workspace',
@@ -354,6 +596,17 @@ export const ITEM_KINDS = {
     route: { content: '/api/apps', v1: null },
     teamHidden: false,
     library: false,
+    extract: false,
+    corpusMap: true,
+    contextRef: 'app',
+    embeds: false,
+    mentionTarget: false,
+    linkServes: false,
+    exportAs: false,
+    accepted: false,
+    searchTool: false,
+    peerPick: true,
+    documentTitle: false,
   },
   formula: {
     class: 'workspace',
@@ -372,6 +625,17 @@ export const ITEM_KINDS = {
     route: { content: '/api/formulas', v1: null },
     teamHidden: false,
     library: false,
+    extract: true,
+    corpusMap: false,
+    contextRef: 'formula',
+    embeds: false,
+    mentionTarget: false,
+    linkServes: false,
+    exportAs: false,
+    accepted: false,
+    searchTool: true,
+    peerPick: true,
+    documentTitle: false,
   },
   draw: {
     class: 'workspace',
@@ -390,6 +654,17 @@ export const ITEM_KINDS = {
     route: { content: '/api/draws', v1: null },
     teamHidden: false,
     library: { order: 2, client: false },
+    extract: true,
+    corpusMap: false,
+    contextRef: 'draw',
+    embeds: true,
+    mentionTarget: true,
+    linkServes: true,
+    exportAs: 'svg',
+    accepted: { rank: 3 },
+    searchTool: true,
+    peerPick: true,
+    documentTitle: false,
   },
   recall: {
     class: 'workspace',
@@ -411,6 +686,17 @@ export const ITEM_KINDS = {
     route: { content: '/api/recall/maps', v1: null },
     teamHidden: false,
     library: false,
+    extract: false,
+    corpusMap: false,
+    contextRef: false,
+    embeds: false,
+    mentionTarget: false,
+    linkServes: false,
+    exportAs: false,
+    accepted: false,
+    searchTool: false,
+    peerPick: true,
+    documentTitle: false,
   },
 } as const satisfies Record<string, KindSpec>;
 
@@ -455,6 +741,19 @@ export type PeerShareKind = KindsWhere<{ peerShare: true }>;
 export type SearchableKind = KindsWhere<{ searchable: true }>;
 export type MemberLibraryKind = KindsWhere<{ library: { order: number } }>;
 export type ClientLibraryKind = KindsWhere<{ library: { client: true } }>;
+export type ExtractKind = KindsWhere<{ extract: true }>;
+export type CorpusMapKind = KindsWhere<{ corpusMap: true }>;
+export type EmbeddingKind = KindsWhere<{ embeds: true }>;
+export type MentionTargetKind = KindsWhere<{ mentionTarget: true }>;
+export type LinkServeKind = KindsWhere<{ linkServes: true }>;
+export type ExportKind = KindsWhere<{ exportAs: KindExportFormat }>;
+export type AcceptedKind = KindsWhere<{ accepted: { rank: number } }>;
+export type SearchToolKind = KindsWhere<{ searchTool: true }>;
+
+/** The context ref kinds the registry names (`folder`, `file`, ...). */
+export type ContextRefKind = {
+  [K in ItemKind]: Kinds[K]['contextRef'] extends string ? Kinds[K]['contextRef'] : never;
+}[ItemKind];
 
 /** The tree kinds the registry names (`files`, `notes`, ...). */
 export type RegistryTreeKind = {

@@ -2,6 +2,7 @@ import { NextResponse } from '@/server/http-compat';
 import { ownerCaller } from '@/lib/auth';
 import { searchEntities } from '@mantle/search';
 import { and, db, desc, eq, ilike, inArray, nodes } from '@mantle/db';
+import { MENTION_TARGET_KINDS } from '@mantle/client-types/kind-lists';
 
 /**
  * Read-only resolver for the editor's @-mention picker. Returns two kinds of
@@ -25,11 +26,12 @@ export async function GET(req: Request) {
       .where(
         and(
           eq(nodes.ownerId, user.id),
-          // Whatever a document can meaningfully point AT. `draw` qualifies:
+          // Whatever a document can meaningfully point AT (the kind registry's
+          // `mentionTarget` field, A10 #12). `draw` qualifies:
           // the edge writer only checks that the target exists and is owned by
           // the same owner, so a drawing makes a valid `references` target, and
           // "put my architecture sketch in the design doc" had no other path.
-          inArray(nodes.type, ['page', 'note', 'draw']),
+          inArray(nodes.type, [...MENTION_TARGET_KINDS]),
           ilike(nodes.title, `%${q}%`),
         ),
       )

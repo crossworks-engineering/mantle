@@ -39,6 +39,7 @@ import {
   spaces,
 } from '@mantle/db';
 import { markdownPreview } from '@mantle/content-core/markdown-to-text';
+import { acceptedRank } from '@mantle/client-types/kind-lists';
 import { chatTextsForReader } from './chat-images';
 import { loadPreferencesFor } from './profile-preferences';
 
@@ -197,12 +198,9 @@ export function chatReplyNotice(n: {
 }
 
 /** Which of a bundle's items names it: a page before a note, a table, a
- *  drawing, a file (the parts a page embeds come last). */
-const TYPE_RANK = ['page', 'note', 'table', 'draw', 'file'];
-const rank = (type: string) => {
-  const i = TYPE_RANK.indexOf(type);
-  return i < 0 ? TYPE_RANK.length : i;
-};
+ *  drawing, a file (the parts a page embeds come last). The kind registry's
+ *  `accepted.rank` (A10 #12). */
+const rank = acceptedRank;
 
 /**
  * A review result for an author: its item (or its bundle, `nodeIds`: Accept

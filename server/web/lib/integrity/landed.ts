@@ -16,6 +16,7 @@
  */
 import { db, sql, withDeadlockRetry, withNodeDeleteHeads, executeWrite } from '@mantle/db';
 import { deleteFileById } from '@mantle/files';
+import { EXTRACT_KINDS } from '@mantle/client-types/kind-lists';
 
 import { evaluateLanded } from './evaluate-landed';
 import { rowsOf } from './sql-util';
@@ -23,23 +24,13 @@ import type { LandedItem, ProbeFootprint } from '@mantle/client-types/types/inte
 
 export { evaluateLanded } from './evaluate-landed';
 
-/** The node types that represent content the user adds and that gets indexed.
- *  Telegram messages are deliberately excluded — they're unembedded by design,
- *  so they'd always read as "unindexed" noise here. */
-export const LANDED_TYPES = [
-  'note',
-  'page',
-  'task',
-  'event',
-  'contact',
-  'secret',
-  'file',
-  'email',
-  'table',
-  'journal',
-  'formula',
-  'draw',
-] as const;
+/** The node types that represent content the user adds and that gets indexed:
+ *  the kinds the extractor reads by default (the registry's `extract` field,
+ *  A10 #12), so a kind it indexes is never missing here. Telegram messages are
+ *  deliberately excluded (unembedded by design, they'd always read as
+ *  "unindexed" noise). Until A10 #12 this was a hand list that missed three
+ *  extracted kinds: email_thread, documentation and location. */
+export const LANDED_TYPES: readonly string[] = EXTRACT_KINDS;
 
 /** A run is only meaningful once it has terminated. */
 const TERMINAL = new Set(['success', 'error', 'skipped']);
