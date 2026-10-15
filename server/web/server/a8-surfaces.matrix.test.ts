@@ -1404,6 +1404,7 @@ describe.skipIf(!DB_URL)('A8 surface cells: every way in gives the oracle’s an
  *  unseen. */
 const NARROWED: Readonly<Record<string, number>> = {
   'peer: a peer may not call app_delete: a risky tool its list does not allow': 6,
+  'team-turn: the team chat calls no app_delete: an owner-side tool': 3,
   'run: run_plan is Admin only': 56,
   'run: a run item may not run app_delete: it waits for approval': 5,
   'run-demoted: its login left Admin before the item ran: fail closed': 1,
