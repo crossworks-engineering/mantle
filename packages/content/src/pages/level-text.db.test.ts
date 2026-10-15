@@ -98,7 +98,7 @@ describe.skipIf(!URL)('page text by its holders', () => {
       (${owner}, ${`lvltext-${owner.slice(0, 8)}@example.invalid`}, 'x', true, 'admin')`);
     await x(sql`insert into spaces (id, kind, login_id) values (${owner}, 'brain', ${owner})
       on conflict (id) do nothing`);
-    await x(sql`select * from mantle_ws_migrate()`);
+    await (await import('@mantle/db/test-support')).runWorkspacesSwitch();
     // A Team as a brain switched before 0286 has it (a new brain has none).
     await x(sql.raw(teamWorkspaceSql(owner)));
     const ws = await x<{ id: string; key: string }>(sql`

@@ -146,7 +146,7 @@ describe.skipIf(!URL)('the share routes on the served list', () => {
       (${adm2}, ${email('adm2')}, 'x', false, 'admin', 'Ada Admin')`);
     await x(sql`insert into spaces (id, kind, login_id) values (${owner}, 'brain', ${owner})
       on conflict (id) do nothing`);
-    await x(sql`select * from mantle_ws_migrate()`);
+    await (await import('@mantle/db/test-support')).runWorkspacesSwitch();
     // Links made before W5b2: no list yet (the fill test below).
     await node(id.oldClient, 'note', 'old client note', 'notes', 'client');
     await node(id.oldPublic, 'note', 'old public note', 'notes', 'public');

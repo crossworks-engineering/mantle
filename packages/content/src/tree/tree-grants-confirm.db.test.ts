@@ -61,7 +61,7 @@ describe.skipIf(!URL)('the tree confirm on grants', () => {
                 values (${owner}, ${`confirm-${owner.slice(0, 8)}@example.invalid`}, 'x', true, 'admin')`);
     await x(sql`insert into spaces (id, kind, login_id) values (${owner}, 'brain', ${owner})
                 on conflict (id) do nothing`);
-    await x(sql`select * from mantle_ws_migrate()`);
+    await (await import('@mantle/db/test-support')).runWorkspacesSwitch();
     admin = (
       await x<{ id: string }>(
         sql`select id::text as id from workspaces where owner_id = ${owner} and is_admin`,

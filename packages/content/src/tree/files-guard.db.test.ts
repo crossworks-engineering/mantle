@@ -56,7 +56,7 @@ describe.skipIf(!URL)('the Files visibility guards', () => {
                 values (${owner}, ${`fguard-${owner.slice(0, 8)}@example.invalid`}, 'x', true, 'admin')`);
     await x(sql`insert into spaces (id, kind, login_id) values (${owner}, 'brain', ${owner})
                 on conflict (id) do nothing`);
-    await x(sql`select * from mantle_ws_migrate()`);
+    await (await import('@mantle/db/test-support')).runWorkspacesSwitch();
     await x(sql`insert into workspaces (id, owner_id, name) values
                 (${C}, ${owner}, 'Clients'), (${T}, ${owner}, 'Internal team')`);
     await files.ensureFilesRootBranch(owner);

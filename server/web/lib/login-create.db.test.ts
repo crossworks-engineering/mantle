@@ -45,7 +45,7 @@ describe.skipIf(!URL)('a new login and its workspace rows, in one transaction', 
     create = (await import('./login-create')).insertLoginWithWorkspaces;
     await sys(sql`insert into auth.users (id, email, password_hash, role, is_owner)
       values (${owner}, ${`o-${owner.slice(0, 8)}@example.invalid`}, 'x', 'admin', true)`);
-    await sys(sql`select * from mantle_ws_migrate()`);
+    await (await import('@mantle/db/test-support')).runWorkspacesSwitch();
     const ws = await sys<{ id: string }>(
       sql`select id::text as id from workspaces where owner_id = ${owner} and is_admin`,
     );

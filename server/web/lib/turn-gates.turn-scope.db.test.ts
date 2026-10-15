@@ -94,7 +94,7 @@ describe.skipIf(!URL)('workspace turn gates (W4b fix round 1)', () => {
     });
     await x(sql`insert into tool_groups (owner_id, slug, name, tool_slugs, enabled, integration)
       values (${owner}, ${CONN}, 'Connector X', ARRAY['conn_x_do']::text[], true, ${binding}::jsonb)`);
-    await x(sql`select * from mantle_ws_migrate()`);
+    await (await import('@mantle/db/test-support')).runWorkspacesSwitch();
     const wsRows = await x<{ id: string; key: string }>(sql`
       select id::text as id, (case when is_admin then 'admin' when name = 'Team' then 'team' end) as key from workspaces where owner_id = ${owner}`);
     team = wsRows.find((r) => r.key === 'team')!.id;

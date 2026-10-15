@@ -70,7 +70,7 @@ describe.skipIf(!URL)('the withViewer shim (W5b2, R6)', () => {
     await sys(sql`insert into agents (id, owner_id, slug, name, role, audience, model, system_prompt)
       values (${helperId}, ${owner}, 'helper', 'Helper', 'custom'::agent_role, 'team', 'm', 'p')`);
     ids.helper = helperId;
-    await sys(sql`select * from mantle_ws_migrate()`);
+    await (await import('./test-support')).runWorkspacesSwitch();
     const ws = await sys<{ key: string; id: string }>(
       sql`select (case when is_admin then 'admin' when name = 'Team' then 'team' end) as key, id::text as id from workspaces where owner_id = ${owner}`,
     );

@@ -201,7 +201,7 @@ describe.skipIf(!DB_URL)('A8 cells: folder counts are the caller’s', () => {
       (${login.adminUserInHome}, ${email('h')}, 'x', false, 'admin')`);
     await x(sql`insert into spaces (id, kind, login_id) values (${owner}, 'brain', ${owner})
       on conflict (id) do nothing`);
-    await x(sql`select * from mantle_ws_migrate()`);
+    await (await import('@mantle/db/test-support')).runWorkspacesSwitch();
     await x(sql`insert into workspaces (id, owner_id, name) values
       (${ws.H}, ${owner}, ${`${tag} H`}), (${ws.S}, ${owner}, ${`${tag} S`}),
       (${ws.T}, ${owner}, ${`${tag} T`})`);

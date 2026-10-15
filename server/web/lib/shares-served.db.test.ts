@@ -120,9 +120,16 @@ describe.skipIf(!URL)('open links serve their served list on Postgres', () => {
         (${owner}, ${id.draw}, 'draw', ${token.draw}),
         (${owner}, ${id.draw2}, 'draw', ${token.draw2})`);
     // The 0262 fill, for this file's links only (others share the database).
-    await m.db.execute(sqlTag`
+    // As the superuser, as the migration ran it: the runtime role (arch A9)
+    // may not run mantle_link_served_by_levels (the app never calls it).
+    await (
+      await import('@mantle/db/test-support')
+    ).superuserExec(
+      URL!,
+      sqlTag`
       update shares set settings = settings || jsonb_build_object('served', to_jsonb(mantle_link_served_by_levels(id)))
-       where owner_id = ${owner}`);
+       where owner_id = ${owner}`,
+    );
   }, 60_000);
 
   afterAll(async () => {

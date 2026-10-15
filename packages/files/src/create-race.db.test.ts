@@ -139,7 +139,7 @@ describe.skipIf(!URL)('a same-name create race leaves one file, its bytes on dis
     await x(sqlTag`
       insert into spaces (id, kind, login_id) values (${owner}, 'brain', ${owner})
       on conflict (id) do nothing`);
-    await x(sqlTag`select * from mantle_ws_migrate()`);
+    await (await import('@mantle/db/test-support')).runWorkspacesSwitch();
     adminWs = (
       (await x(sqlTag`select id::text as id from workspaces
                        where owner_id = ${owner} and is_admin`)) as unknown as { id: string }[]

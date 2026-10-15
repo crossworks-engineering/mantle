@@ -187,7 +187,7 @@ describe.skipIf(!URL)('W7a: the Admin assistant and the Admin MCP read in their 
       (${second}, ${`${tag}-l@example.invalid`}, 'x', false, 'admin', 'Second Admin')`);
     await x(sql`insert into spaces (id, kind, login_id) values (${owner}, 'brain', ${owner})
       on conflict (id) do nothing`);
-    await x(sql`select * from mantle_ws_migrate()`);
+    await (await import('@mantle/db/test-support')).runWorkspacesSwitch();
     // A Team as a brain switched before 0286 has it (a new brain has none): the
     // logins are in more than Admin, so a turn narrows their scope.
     await x(sql.raw(teamWorkspaceSql(owner)));

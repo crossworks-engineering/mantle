@@ -85,7 +85,7 @@ describe.skipIf(!URL)('the Team assistant’s tools in its turn scope', () => {
         values (${owner}, ${g.slug}, ${g.name}, ${`{${g.toolSlugs.join(',')}}`}::text[],
                 ${MANIFEST_ADMIN_ONLY_GROUPS.includes(g.slug)})`);
     }
-    await x(sqlTag`select * from mantle_ws_migrate()`);
+    await (await import('@mantle/db/test-support')).runWorkspacesSwitch();
     const [ws] = (await x(
       sqlTag`select id::text as id from workspaces where owner_id = ${owner} and name = 'Team' and not is_admin`,
     )) as unknown as { id: string }[];

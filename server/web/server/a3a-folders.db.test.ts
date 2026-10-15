@@ -134,7 +134,7 @@ describe.skipIf(!URL)('A3a: folders with items the mover cannot read', () => {
       (${mod}, ${`${tag}-m@example.invalid`}, 'x', false, 'member', 'Moderator')`);
     await x(sql`insert into spaces (id, kind, login_id) values (${owner}, 'brain', ${owner})
       on conflict (id) do nothing`);
-    await x(sql`select * from mantle_ws_migrate()`);
+    await (await import('@mantle/db/test-support')).runWorkspacesSwitch();
     for (const [key, name] of [
       ['H', 'Home'],
       ['O', 'Other'],

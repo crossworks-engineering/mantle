@@ -185,7 +185,7 @@ describe.skipIf(!URL)('the approval of an elevated pending call (A5 step 6d fix 
       (${other}, ${emailOf(other)}, 'x', false, 'admin', 'Other')`);
     await x(sql`insert into spaces (id, kind, login_id) values (${owner}, 'brain', ${owner})
       on conflict (id) do nothing`);
-    await x(sql`select * from mantle_ws_migrate()`);
+    await (await import('@mantle/db/test-support')).runWorkspacesSwitch();
     adminWs = (
       await x<{ id: string }>(sql`select id::text from workspaces
         where owner_id = ${owner} and is_admin and archived_at is null`)

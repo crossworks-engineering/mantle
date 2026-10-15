@@ -250,7 +250,7 @@ describe.skipIf(!URL)('the Apps launcher folders for members', () => {
     await m.systemDb.execute(sqlTag`
       insert into spaces (id, kind, login_id) values (${brain}, 'brain', ${brain})
       on conflict (id) do nothing`);
-    await m.systemDb.execute(sqlTag`select * from mantle_ws_migrate()`);
+    await (await import('@mantle/db/test-support')).runWorkspacesSwitch();
     // A Team as a brain switched before 0286 has it (a new brain has none).
     await m.systemDb.execute(sqlTag.raw(teamWorkspaceSql(brain)));
     team = (

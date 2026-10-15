@@ -167,7 +167,7 @@ describe.skipIf(!URL)('grants (W5b2 part A)', () => {
       (${mem3}, ${email(mem3, 'mem')}, 'x', false, 'member', 'Moe Member')`);
     await x(sql`insert into spaces (id, kind, login_id) values (${owner}, 'brain', ${owner})
       on conflict (id) do nothing`);
-    await x(sql`select * from mantle_ws_migrate()`);
+    await (await import('@mantle/db/test-support')).runWorkspacesSwitch();
     const ws = await x<{ id: string; key: string }>(sql`
       select id::text as id, (case when is_admin then 'admin' when name = 'Team' then 'team' end) as key from workspaces where owner_id = ${owner}`);
     team = ws.find((w) => w.key === 'team')!.id;

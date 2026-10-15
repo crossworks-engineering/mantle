@@ -106,7 +106,7 @@ describe.skipIf(!URL)('an app run reads through the app (R2, H1)', () => {
     for (const key of ['teamApp', 'twoApp', 'adminApp', 'archivedApp']) {
       await sys(sqlTag`insert into apps (node_id, manifest) values (${ids[key]!}, '{}'::jsonb)`);
     }
-    await sys(sqlTag`select * from mantle_ws_migrate()`);
+    await (await import('@mantle/db/test-support')).runWorkspacesSwitch();
     const ws = (await sys(
       sqlTag`select (case when is_admin then 'admin' when name = 'Team' then 'team' end) as key, id::text as id from workspaces where owner_id = ${owner}`,
     )) as unknown as { key: string; id: string }[];

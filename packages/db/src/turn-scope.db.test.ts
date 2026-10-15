@@ -83,7 +83,7 @@ describe.skipIf(!URL)('assistant turn scope (W4b)', () => {
       (${owner}, 'email', 'e', null, 'admin', true),
       (${owner}, 'conn-team', 't', '{"mcp":{}}'::jsonb, 'team', false),
       (${owner}, 'conn-admin', 'a', '{"mcp":{}}'::jsonb, 'admin', false)`);
-    await sys(sql`select * from mantle_ws_migrate()`);
+    await (await import('./test-support')).runWorkspacesSwitch();
     const ws = await sys<{ name: string; id: string }>(
       sql`select name, id::text as id from workspaces where owner_id = ${owner}`,
     );

@@ -59,7 +59,7 @@ describe.skipIf(!URL)('W7 integration fix 3, L1: the rollback switch asks for Ad
       (${outsider}, ${`${tag}-x@example.invalid`}, 'x', false, 'admin', 'Outsider')`);
     await x(sql`insert into spaces (id, kind, login_id) values (${owner}, 'brain', ${owner})
       on conflict (id) do nothing`);
-    await x(sql`select * from mantle_ws_migrate()`);
+    await (await import('@mantle/db/test-support')).runWorkspacesSwitch();
     // A Team as a brain switched before 0286 has it (a new brain has none).
     await x(sql.raw(teamWorkspaceSql(owner)));
     const ws = await x<{ id: string; key: string | null }>(sql`

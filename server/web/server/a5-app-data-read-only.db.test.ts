@@ -105,7 +105,7 @@ describe.skipIf(!URL)('the app data reads on a read-only MCP connection (A5 step
       (${member}, ${`${tag}-m@example.invalid`}, 'x', false, 'member', 'Member')`);
     await x(sql`insert into spaces (id, kind, login_id) values (${owner}, 'brain', ${owner})
       on conflict (id) do nothing`);
-    await x(sql`select * from mantle_ws_migrate()`);
+    await (await import('@mantle/db/test-support')).runWorkspacesSwitch();
     const [row] = await x<{ id: string }>(sql`
       insert into workspaces (owner_id, name) values (${owner}, ${`${tag} Shop`}) returning id::text`);
     ws = row!.id;

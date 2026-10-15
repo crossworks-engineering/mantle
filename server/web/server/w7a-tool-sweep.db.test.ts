@@ -295,7 +295,7 @@ describe.skipIf(!URL)('W7a: the Admin assistant and the Admin MCP run in a scope
       (${mem}, ${email('mem')}, 'x', false, 'member', 'Member')`);
     await x(sql`insert into spaces (id, kind, login_id) values (${owner}, 'brain', ${owner})
       on conflict (id) do nothing`);
-    await x(sql`select * from mantle_ws_migrate()`);
+    await (await import('@mantle/db/test-support')).runWorkspacesSwitch();
     const ws = await x<{ id: string; admin: boolean; key: string | null }>(sql`
       select id::text, is_admin as admin, (case when is_admin then 'admin' when name = 'Team' then 'team' end) as key from workspaces
        where owner_id = ${owner} and archived_at is null`);

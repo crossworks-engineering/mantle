@@ -26,6 +26,7 @@ import { sql as sqlTag } from 'drizzle-orm';
 import postgres from 'postgres';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { createMigratedScratchDatabase } from './test-support';
+import { RUNTIME_ROLE } from './runtime-role';
 import type { Actor } from './actor';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
@@ -65,6 +66,12 @@ describe.skipIf(!URL)('nested system transactions (arch A2b, plan 20.2)', () => 
     // The box is strict from here: a heads lock that is not the first lock
     // fails, and so does a write without heads (new connections only).
     await sql.unsafe(`alter database "${scratch.name}" set mantle.heads_check = 'on'`);
+    // This file reads the heads check's mode and the heads held on the
+    // app's own transaction. The app never calls either, so the runtime role
+    // (arch A9) is not granted them: here, in this scratch database only.
+    await sql.unsafe(
+      `grant execute on function mantle_heads_held(boolean), mantle_heads_check_mode() to "${RUNTIME_ROLE}"`,
+    );
     process.env.DATABASE_URL = scratch.url;
     process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
     m = await import('./index');

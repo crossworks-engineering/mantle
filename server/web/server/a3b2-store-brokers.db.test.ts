@@ -256,7 +256,7 @@ describe.skipIf(!URL)('A3b part 2: the files and snapshot stores, both checks on
       (${mem}, ${`${tag}-m@example.invalid`}, 'x', false, 'member', 'Member')`);
     await x(sql`insert into spaces (id, kind, login_id) values (${owner}, 'brain', ${owner})
       on conflict (id) do nothing`);
-    await x(sql`select * from mantle_ws_migrate()`);
+    await (await import('@mantle/db/test-support')).runWorkspacesSwitch();
     for (const [key, name] of [
       ['H', 'Home'],
       ['R', 'Reads'],

@@ -177,7 +177,7 @@ describe.skipIf(!URL)('a team turn in its Team turn scope', () => {
     agentId = a!.id;
     // Live workspaces: the team page to Team, the admin items to Admin only,
     // the member a user of Team. The agent answers in Team.
-    await m.systemDb.execute(sql`select * from mantle_ws_migrate()`);
+    await (await import('@mantle/db/test-support')).runWorkspacesSwitch();
     const [t] = await admin<{ id: string }[]>`
       select id::text as id from workspaces where owner_id = ${ownerId} and name = 'Team' and not is_admin`;
     team = t!.id;
