@@ -26,7 +26,7 @@ vi.mock('@/lib/auth', async (importOriginal) => ({
 }));
 
 vi.mock('@mantle/api-keys', () => ({
-  // The fallback: no 'default' label on file, so the most recent (WORK).
+  // The fallback: no 'default' label on file, so the oldest (WORK).
   findProviderKeyId: vi.fn(async (owner: string, service: string) => {
     const hit = Object.entries(VAULT).find(([, k]) => k.owner === owner && k.service === service);
     return hit?.[0] ?? null;

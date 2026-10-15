@@ -16,7 +16,7 @@
  * are also the `api_keys.service` strings — so the key lookup is a 1:1 match.
  * The key is the one the caller picked (`keyId`, the agent form's key), else
  * the provider's own key on file by the one lookup (findProviderKeyId: the
- * 'default' label first, else the most recent key of that service).
+ * 'default' label first, else the oldest key of that service).
  */
 import { findProviderKeyId, getApiKeyById } from '@mantle/api-keys';
 import { isProviderId, type ProviderId } from '@mantle/voice';

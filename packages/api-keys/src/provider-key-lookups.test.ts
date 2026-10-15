@@ -13,6 +13,11 @@
  * (`{{secret:service/label}}`), not a provider lookup, and is not counted.
  * The files named below are the calls that remain, each with its reason; the
  * count may only go down.
+ *
+ * Second pin (fix round 1, L1): no product file outside this package picks a
+ * key by service by hand (reads `apiKeys.service` or `apiKeys.label`). Such
+ * picks had no stable order and could pin a different key than an unpinned
+ * lookup; findProviderKeyId / findProviderKeyIds are the one pick order.
  */
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
@@ -27,6 +32,12 @@ const ALLOWED: Record<string, { calls: number; reason: string }> = {
     reason:
       "the Mapbox tool key, which its own error tells the owner to save as 'mapbox' / 'default'; not a model provider",
   },
+};
+
+/** Files outside this package that may read `apiKeys.service` / `.label`. */
+const HAND_PICK_ALLOWED: Record<string, string> = {
+  'server/web/lib/maintenance/models-drift.ts':
+    "the nightly drift sweep: the oldest key per service across EVERY owner, not one owner's lookup",
 };
 
 /** Strip // and block comments (good enough for counting call sites). */
@@ -113,5 +124,24 @@ describe('provider key lookups go through resolveProviderKey', () => {
     for (const [f, n] of Object.entries(found)) {
       expect(n, `${f}: ${ALLOWED[f]!.reason}`).toBeLessThanOrEqual(ALLOWED[f]!.calls);
     }
+  });
+
+  it('no hand pick of a key by service outside this package', () => {
+    const found: string[] = [];
+    for (const f of productFiles()) {
+      let text: string;
+      try {
+        text = readFileSync(join(ROOT, f), 'utf8');
+      } catch {
+        continue;
+      }
+      if (/\bapiKeys\.(service|label)\b/.test(stripComments(text))) found.push(f);
+    }
+    expect(
+      found.filter((f) => !HAND_PICK_ALLOWED[f]),
+      'use findProviderKeyId(owner, service) or findProviderKeyIds(owner) from @mantle/api-keys',
+    ).toEqual([]);
+    // An allow-list entry that no longer matches is stale: drop it.
+    expect(Object.keys(HAND_PICK_ALLOWED).filter((f) => !found.includes(f))).toEqual([]);
   });
 });

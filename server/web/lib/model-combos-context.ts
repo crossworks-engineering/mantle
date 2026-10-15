@@ -1,5 +1,6 @@
 import { asc, eq } from 'drizzle-orm';
-import { db, curatedModels, apiKeys } from '@mantle/db';
+import { db, curatedModels } from '@mantle/db';
+import { findProviderKeyIds } from '@mantle/api-keys';
 import { listAgents } from '@/lib/agents';
 import { listAiWorkers } from '@/lib/ai-workers';
 import { MODEL_POOL_IDS } from '@/lib/model-pools';
@@ -47,16 +48,7 @@ export async function loadComboContext(ownerId: string) {
       })),
   ];
 
-  // One key per service — prefer the 'default' label, else the first seen.
-  const keyRows = await db
-    .select({ id: apiKeys.id, service: apiKeys.service, label: apiKeys.label })
-    .from(apiKeys)
-    .where(eq(apiKeys.userId, ownerId));
-  const keyIdByService = new Map<string, string>();
-  for (const k of keyRows) {
-    if (!keyIdByService.has(k.service) || k.label === 'default') {
-      keyIdByService.set(k.service, k.id);
-    }
-  }
+  // One key per service: the one an unpinned lookup uses.
+  const keyIdByService = await findProviderKeyIds(ownerId);
   return { entries, targets, keyIdByService };
 }

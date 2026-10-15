@@ -94,9 +94,21 @@ export async function getApiKey(
 }
 
 /**
+ * The order a service's keys are picked in when nothing pins one: the key
+ * labelled 'default', else the oldest, ties broken by id. Stable on purpose:
+ * it reads nothing a read changes (getApiKeyById bumps `last_used`), so a
+ * pinned run, or merely opening the picker on another key, never moves which
+ * key every unpinned lookup uses.
+ */
+const PICK_ORDER = () => [
+  sql`(${apiKeys.label} = 'default') desc`,
+  asc(apiKeys.createdAt),
+  asc(apiKeys.id),
+];
+
+/**
  * The id of the key a provider call uses when nothing pins one: the key
- * labelled 'default', else the most recently used (or, never used, created)
- * key of that service, ties broken by id so the answer is deterministic. A
+ * labelled 'default', else the oldest key of that service (ties by id). A
  * key added on /settings/keys keeps whatever label was typed, so a lookup of
  * 'default' alone found nothing for it (task 698e6faf). Null: no key of that
  * service on file.
@@ -106,14 +118,26 @@ export async function findProviderKeyId(userId: string, service: string): Promis
     .select({ id: apiKeys.id })
     .from(apiKeys)
     .where(and(eq(apiKeys.userId, userId), eq(apiKeys.service, service)))
-    .orderBy(
-      sql`(${apiKeys.label} = 'default') desc`,
-      sql`coalesce(${apiKeys.lastUsed}, ${apiKeys.createdAt}) desc`,
-      desc(apiKeys.createdAt),
-      asc(apiKeys.id),
-    )
+    .orderBy(...PICK_ORDER())
     .limit(1);
   return row?.id ?? null;
+}
+
+/**
+ * {@link findProviderKeyId} for every service the owner holds a key of, in
+ * one read: service to the id of the key an unpinned lookup would use. For
+ * callers that pin a key per service at once (the manifest seeder, the model
+ * combos).
+ */
+export async function findProviderKeyIds(userId: string): Promise<Map<string, string>> {
+  const rows = await systemDb
+    .select({ id: apiKeys.id, service: apiKeys.service })
+    .from(apiKeys)
+    .where(eq(apiKeys.userId, userId))
+    .orderBy(...PICK_ORDER());
+  const out = new Map<string, string>();
+  for (const r of rows) if (!out.has(r.service)) out.set(r.service, r.id);
+  return out;
 }
 
 /**

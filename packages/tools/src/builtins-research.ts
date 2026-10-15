@@ -39,7 +39,7 @@ import { CS } from './client-sourced-rule';
 const FALLBACK_SEARCH_MODEL = env('MANTLE_WEB_SEARCH_MODEL') || 'perplexity/sonar-pro';
 
 /** An OpenRouter key for this owner: the one provider key lookup
- *  (resolveProviderKey: the 'default' label first, else the most recent
+ *  (resolveProviderKey: the 'default' label first, else the oldest
  *  openrouter key on file). */
 export async function resolveOpenRouterKey(ownerId: string): Promise<string | null> {
   return resolveProviderKey(ownerId, 'openrouter');

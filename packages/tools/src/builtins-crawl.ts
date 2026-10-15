@@ -40,7 +40,7 @@ const KEY_HINT =
   'no firecrawl API key configured — add one at /settings/keys (service `firecrawl`; keys at https://www.firecrawl.dev). The free tier covers ~1,000 pages/month.';
 
 /** A Firecrawl key for this owner: the one key lookup by service
- *  (resolveProviderKey: the 'default' label first, else the most recent
+ *  (resolveProviderKey: the 'default' label first, else the oldest
  *  firecrawl key on file). */
 async function resolveFirecrawlKey(ownerId: string): Promise<string | null> {
   return resolveProviderKey(ownerId, 'firecrawl');

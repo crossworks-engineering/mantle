@@ -21,6 +21,7 @@
 
 import { and, eq, inArray } from 'drizzle-orm';
 import { InputError } from '@mantle/std';
+import { findProviderKeyId, findProviderKeyIds } from '@mantle/api-keys';
 import {
   db,
   agents,
@@ -28,7 +29,6 @@ import {
   skills,
   toolGroups,
   tools,
-  apiKeys,
   type AgentMemoryConfig,
   type AgentParams,
   type AiWorkerKind,
@@ -85,27 +85,17 @@ export type ApplyManifestResult = {
 };
 
 async function resolveOpenRouterKeyId(ownerId: string): Promise<string> {
-  const rows = await db
-    .select({ id: apiKeys.id, label: apiKeys.label })
-    .from(apiKeys)
-    .where(and(eq(apiKeys.userId, ownerId), eq(apiKeys.service, 'openrouter')));
-  if (rows.length === 0) {
+  const id = await findProviderKeyId(ownerId, 'openrouter');
+  if (!id) {
     throw new InputError("No 'openrouter' API key found. Add one at /settings/keys first.");
   }
-  return (rows.find((r) => r.label === 'default') ?? rows[0]!).id;
+  return id;
 }
 
-/** service → api_key id for this owner (prefers the 'default'-labelled key). */
+/** service to api_key id for this owner: the key an unpinned lookup uses
+ *  ('default' first, else the oldest). */
 async function keyIdByService(ownerId: string): Promise<Record<string, string>> {
-  const rows = await db
-    .select({ id: apiKeys.id, service: apiKeys.service, label: apiKeys.label })
-    .from(apiKeys)
-    .where(eq(apiKeys.userId, ownerId));
-  const map: Record<string, string> = {};
-  for (const k of rows) {
-    if (!(k.service in map) || k.label === 'default') map[k.service] = k.id;
-  }
-  return map;
+  return Object.fromEntries(await findProviderKeyIds(ownerId));
 }
 
 export type SeedWorkersResult = {

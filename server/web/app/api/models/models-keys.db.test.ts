@@ -6,7 +6,7 @@
  * the agent could not be switched to it. Now GET /api/models takes the
  * picked key (`keyId`, checked: the owner's AND this provider's), falls back
  * to the provider's own key on file (resolveProviderKey: 'default' first,
- * else the most recent), caches per key, and says a refused key in a fixed
+ * else the oldest), caches per key, and says a refused key in a fixed
  * sentence. The providers are a stubbed fetch: no paid API is called. Only
  * the owner check is stubbed.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run models-keys.db.test
@@ -163,19 +163,34 @@ describe.skipIf(!URL)('the model list with a key not labelled default', () => {
     expect(JSON.stringify(body)).not.toMatch(/SECRET|acct_/);
   });
 
-  it("resolveProviderKey: the pinned key, else 'default', else the most recent", async () => {
-    expect(await keys.resolveProviderKey(owner, 'anthropic', workKey)).toBe('sk-ant-work');
+  it("resolveProviderKey: the pinned key, else 'default', else the oldest", async () => {
+    // Fix the ages: the work key is the older one.
+    await exec(
+      sqlTag`update api_keys set created_at = now() - interval '2 hours' where id = ${workKey}`,
+    );
+    await exec(
+      sqlTag`update api_keys set created_at = now() - interval '1 hour' where id = ${teamKey}`,
+    );
+    expect(await keys.resolveProviderKey(owner, 'anthropic', teamKey)).toBe('sk-ant-team');
     // A pinned id that no longer opens falls back to the service's own key.
-    expect(await keys.resolveProviderKey(owner, 'anthropic', randomUUID())).toMatch(/^sk-ant-/);
+    expect(await keys.resolveProviderKey(owner, 'anthropic', randomUUID())).toBe('sk-ant-work');
     expect(await keys.resolveProviderKey(owner, 'mistral')).toBeNull();
-    // Most recently used wins among non-default keys.
+    // The oldest wins among non-default keys, and reading a key (which bumps
+    // its last_used) never moves the pick: a pinned run used to flip it.
+    expect(await keys.findProviderKeyId(owner, 'anthropic')).toBe(workKey);
+    expect(await keys.getApiKeyById(teamKey)).toBe('sk-ant-team');
     await exec(
       sqlTag`update api_keys set last_used = now() + interval '1 hour' where id = ${teamKey}`,
     );
-    expect(await keys.findProviderKeyId(owner, 'anthropic')).toBe(teamKey);
-    // A 'default' key wins over a more recent one.
+    expect(await keys.findProviderKeyId(owner, 'anthropic')).toBe(workKey);
+    expect((await keys.findProviderKeyIds(owner)).get('anthropic')).toBe(workKey);
+    // A 'default' key wins over an older one.
     const def = (await keys.setApiKey(owner, 'anthropic', 'default', 'sk-ant-default')).id;
     expect(await keys.findProviderKeyId(owner, 'anthropic')).toBe(def);
+    expect(Object.fromEntries(await keys.findProviderKeyIds(owner))).toEqual({
+      anthropic: def,
+      openai: openaiKey,
+    });
     await keys.deleteApiKey(owner, def);
   });
 

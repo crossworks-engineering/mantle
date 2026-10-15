@@ -12,7 +12,7 @@ import { fetchProviderModels } from '@/lib/model-explorer';
  * cache (the page's Refresh button). `keyId` lists with that saved key (the
  * agent form's picked key): it must be one of the owner's keys AND this
  * provider's, else 404 / 400. Without it, the provider's own key on file
- * (the 'default' label, else the most recent key of that service). Owner
+ * (the 'default' label, else the oldest key of that service). Owner
  * scoped: the key's plaintext is resolved server-side and never leaves this
  * route.
  */

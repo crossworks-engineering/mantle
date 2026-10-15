@@ -17,7 +17,8 @@
  */
 
 import { and, desc, eq } from 'drizzle-orm';
-import { db, agents, apiKeys, type AgentMemoryConfig } from '@mantle/db';
+import { db, agents, type AgentMemoryConfig } from '@mantle/db';
+import { findProviderKeyId } from '@mantle/api-keys';
 import { seedBuiltinTools } from '@mantle/tools';
 import { env } from '@mantle/config';
 
@@ -50,15 +51,11 @@ How you answer:
 - You read only — you never modify docs or save anything.`;
 
 async function resolveOpenRouterKeyId(): Promise<string> {
-  const rows = await db
-    .select({ id: apiKeys.id, label: apiKeys.label })
-    .from(apiKeys)
-    .where(and(eq(apiKeys.userId, USER_ID!), eq(apiKeys.service, 'openrouter')));
-  if (rows.length === 0) {
+  const id = await findProviderKeyId(USER_ID!, 'openrouter');
+  if (!id) {
     throw new Error("No 'openrouter' API key found. Add one at /settings/keys first.");
   }
-  const preferred = rows.find((r) => r.label === 'default') ?? rows[0]!;
-  return preferred.id;
+  return id;
 }
 
 /** Append 'docs' to one entry-point agent's delegate_to (only if missing). The

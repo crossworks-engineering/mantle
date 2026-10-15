@@ -12,6 +12,7 @@
  * there is no token spend.
  */
 
+import { asc } from 'drizzle-orm';
 import { db, apiKeys } from '@mantle/db';
 import { getApiKeyById } from '@mantle/api-keys';
 import { catalogDrift, getChatAdapter, getProvider } from '@mantle/voice';
@@ -58,11 +59,12 @@ export type ModelsDriftResult = {
 export async function runModelsDrift(): Promise<ModelsDriftResult> {
   // One key per service is enough to list models — a second key on the same
   // provider sees the same catalogue. Take the oldest, which is the most likely
-  // to still be valid.
+  // to still be valid. Across every owner on purpose (a box-wide sweep, not an
+  // owner's lookup), so not findProviderKeyId; ties broken by id.
   const rows = await db
     .select({ id: apiKeys.id, service: apiKeys.service })
     .from(apiKeys)
-    .orderBy(apiKeys.createdAt);
+    .orderBy(asc(apiKeys.createdAt), asc(apiKeys.id));
   const firstKeyByService = new Map<string, string>();
   for (const r of rows)
     if (!firstKeyByService.has(r.service)) firstKeyByService.set(r.service, r.id);
