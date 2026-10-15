@@ -1,0 +1,355 @@
+{
+  "reasons": {
+    "runs-where-asked": "The call runs in the scope it was asked in (the Team turn's, its asker's login), met with its asker's rights now. On main it ran with no scope at all on the web, Telegram and batch paths (the system pool, as its asker's login), and in the approver's own scope over MCP, where a Team connector is not held, so the owner's MCP approval failed at run.",
+    "gains-not-the-calls": "Rights the asker gained after asking (a Moderator seat elsewhere, Admin's) are not the call's: it runs in the scope it was asked in, never wider. On main it ran unscoped, or in the approver's MCP scope.",
+    "lost-workspace": "The asker left the workspace it asked in: the approval is refused before the claim (an ApprovalRefusedError, 403 on the web) and the call stays pending, run nowhere. On main it ran unscoped as its asker.",
+    "lost-moderator": "The asker lost its Moderator seat where it asked: the queue-time check run again refuses it (the connector's write rule; the item rule for the note), before the claim, and the call stays pending. On main it ran unscoped, or was claimed and then failed at run.",
+    "lost-item": "What the call names is no longer the asked scope's (the note homed in another workspace, the connector no longer a resource of the workspace): the item pre-check or the connector rule refuses it again before the claim, and it stays pending. On main it ran unscoped, or was claimed and then failed at run."
+  },
+  "cells": {
+    "adminUser|owner|web|none|connector": {
+      "now": "web 200 => approved; ran in assistant:adminUser ws team mod team as login:adminUser",
+      "why": "runs-where-asked"
+    },
+    "adminUser|owner|web|lostWorkspace|connector": {
+      "now": "web 403 The person who asked for this call no longer has the workspace it was asked in, so it does => pending; not run",
+      "why": "lost-workspace"
+    },
+    "adminUser|owner|web|lostWorkspace|note": {
+      "now": "web 403 The person who asked for this call no longer has the workspace it was asked in, so it does => pending; note unchanged",
+      "why": "lost-workspace"
+    },
+    "adminUser|owner|web|lostModerator|connector": {
+      "now": "web 403 This call no longer passes the checks of the workspace it was asked in, so it does not run => pending; not run",
+      "why": "lost-moderator"
+    },
+    "adminUser|owner|web|lostModerator|note": {
+      "now": "web 403 This call no longer passes the checks of the workspace it was asked in, so it does not run => pending; note unchanged",
+      "why": "lost-moderator"
+    },
+    "adminUser|owner|web|lostItem|connector": {
+      "now": "web 403 This call no longer passes the checks of the workspace it was asked in, so it does not run => pending; not run",
+      "why": "lost-item"
+    },
+    "adminUser|owner|web|lostItem|note": {
+      "now": "web 403 This call no longer passes the checks of the workspace it was asked in, so it does not run => pending; note unchanged",
+      "why": "lost-item"
+    },
+    "adminUser|owner|web|gained|connector": {
+      "now": "web 200 => approved; ran in assistant:adminUser ws team mod team as login:adminUser",
+      "why": "gains-not-the-calls"
+    },
+    "adminUser|owner|telegram|none|connector": {
+      "now": "telegram ok Approved & ran mcp_crm_update. => approved; ran in assistant:adminUser ws team mod team as login:adminUser",
+      "why": "runs-where-asked"
+    },
+    "adminUser|owner|telegram|lostWorkspace|connector": {
+      "now": "telegram refused The person who asked for this call no longer has the workspace it was asked in, so it does => pending; not run",
+      "why": "lost-workspace"
+    },
+    "adminUser|owner|telegram|lostWorkspace|note": {
+      "now": "telegram refused The person who asked for this call no longer has the workspace it was asked in, so it does => pending; note unchanged",
+      "why": "lost-workspace"
+    },
+    "adminUser|owner|telegram|lostModerator|connector": {
+      "now": "telegram refused This call no longer passes the checks of the workspace it was asked in, so it does not run => pending; not run",
+      "why": "lost-moderator"
+    },
+    "adminUser|owner|telegram|lostModerator|note": {
+      "now": "telegram refused This call no longer passes the checks of the workspace it was asked in, so it does not run => pending; note unchanged",
+      "why": "lost-moderator"
+    },
+    "adminUser|owner|telegram|lostItem|connector": {
+      "now": "telegram refused This call no longer passes the checks of the workspace it was asked in, so it does not run => pending; not run",
+      "why": "lost-item"
+    },
+    "adminUser|owner|telegram|lostItem|note": {
+      "now": "telegram refused This call no longer passes the checks of the workspace it was asked in, so it does not run => pending; note unchanged",
+      "why": "lost-item"
+    },
+    "adminUser|owner|telegram|gained|connector": {
+      "now": "telegram ok Approved & ran mcp_crm_update. => approved; ran in assistant:adminUser ws team mod team as login:adminUser",
+      "why": "gains-not-the-calls"
+    },
+    "adminUser|owner|batch|none|connector": {
+      "now": "batch ok => approved; ran in assistant:adminUser ws team mod team as login:adminUser",
+      "why": "runs-where-asked"
+    },
+    "adminUser|owner|batch|lostWorkspace|connector": {
+      "now": "batch throw The person who asked for this call no longer has the workspace it was asked in, so it does => pending; not run",
+      "why": "lost-workspace"
+    },
+    "adminUser|owner|batch|lostWorkspace|note": {
+      "now": "batch throw The person who asked for this call no longer has the workspace it was asked in, so it does => pending; note unchanged",
+      "why": "lost-workspace"
+    },
+    "adminUser|owner|batch|lostModerator|connector": {
+      "now": "batch throw This call no longer passes the checks of the workspace it was asked in, so it does not run => pending; not run",
+      "why": "lost-moderator"
+    },
+    "adminUser|owner|batch|lostModerator|note": {
+      "now": "batch throw This call no longer passes the checks of the workspace it was asked in, so it does not run => pending; note unchanged",
+      "why": "lost-moderator"
+    },
+    "adminUser|owner|batch|lostItem|connector": {
+      "now": "batch throw This call no longer passes the checks of the workspace it was asked in, so it does not run => pending; not run",
+      "why": "lost-item"
+    },
+    "adminUser|owner|batch|lostItem|note": {
+      "now": "batch throw This call no longer passes the checks of the workspace it was asked in, so it does not run => pending; note unchanged",
+      "why": "lost-item"
+    },
+    "adminUser|owner|batch|gained|connector": {
+      "now": "batch ok => approved; ran in assistant:adminUser ws team mod team as login:adminUser",
+      "why": "gains-not-the-calls"
+    },
+    "adminUser|self|web|none|connector": {
+      "now": "web 200 => approved; ran in assistant:adminUser ws team mod team as login:adminUser",
+      "why": "runs-where-asked"
+    },
+    "adminUser|self|web|lostWorkspace|connector": {
+      "now": "web 403 The person who asked for this call no longer has the workspace it was asked in, so it does => pending; not run",
+      "why": "lost-workspace"
+    },
+    "adminUser|self|web|lostWorkspace|note": {
+      "now": "web 403 The person who asked for this call no longer has the workspace it was asked in, so it does => pending; note unchanged",
+      "why": "lost-workspace"
+    },
+    "adminUser|self|web|lostModerator|connector": {
+      "now": "web 403 This call no longer passes the checks of the workspace it was asked in, so it does not run => pending; not run",
+      "why": "lost-moderator"
+    },
+    "adminUser|self|web|lostModerator|note": {
+      "now": "web 403 This call no longer passes the checks of the workspace it was asked in, so it does not run => pending; note unchanged",
+      "why": "lost-moderator"
+    },
+    "adminUser|self|web|lostItem|connector": {
+      "now": "web 403 This call no longer passes the checks of the workspace it was asked in, so it does not run => pending; not run",
+      "why": "lost-item"
+    },
+    "adminUser|self|web|lostItem|note": {
+      "now": "web 403 This call no longer passes the checks of the workspace it was asked in, so it does not run => pending; note unchanged",
+      "why": "lost-item"
+    },
+    "adminUser|self|web|gained|connector": {
+      "now": "web 200 => approved; ran in assistant:adminUser ws team mod team as login:adminUser",
+      "why": "gains-not-the-calls"
+    },
+    "adminUser|self|mcp|none|connector": {
+      "now": "mcp ok => approved; ran in assistant:adminUser ws team mod team as login:adminUser",
+      "why": "runs-where-asked"
+    },
+    "adminUser|self|mcp|lostModerator|connector": {
+      "now": "mcp error Error: This call no longer passes the checks of the workspace it was asked in, so it does  => pending; not run",
+      "why": "lost-moderator"
+    },
+    "adminUser|self|mcp|lostModerator|note": {
+      "now": "mcp error Error: This call no longer passes the checks of the workspace it was asked in, so it does  => pending; note unchanged",
+      "why": "lost-moderator"
+    },
+    "adminUser|self|mcp|lostItem|connector": {
+      "now": "mcp error Error: This call no longer passes the checks of the workspace it was asked in, so it does  => pending; not run",
+      "why": "lost-item"
+    },
+    "adminUser|self|mcp|lostItem|note": {
+      "now": "mcp error Error: This call no longer passes the checks of the workspace it was asked in, so it does  => pending; note unchanged",
+      "why": "lost-item"
+    },
+    "adminUser|self|mcp|gained|connector": {
+      "now": "mcp ok => approved; ran in assistant:adminUser ws team mod team as login:adminUser",
+      "why": "gains-not-the-calls"
+    },
+    "adminUser|self|telegram|none|connector": {
+      "now": "telegram ok Approved & ran mcp_crm_update. => approved; ran in assistant:adminUser ws team mod team as login:adminUser",
+      "why": "runs-where-asked"
+    },
+    "adminUser|self|telegram|lostWorkspace|connector": {
+      "now": "telegram refused The person who asked for this call no longer has the workspace it was asked in, so it does => pending; not run",
+      "why": "lost-workspace"
+    },
+    "adminUser|self|telegram|lostWorkspace|note": {
+      "now": "telegram refused The person who asked for this call no longer has the workspace it was asked in, so it does => pending; note unchanged",
+      "why": "lost-workspace"
+    },
+    "adminUser|self|telegram|lostModerator|connector": {
+      "now": "telegram refused This call no longer passes the checks of the workspace it was asked in, so it does not run => pending; not run",
+      "why": "lost-moderator"
+    },
+    "adminUser|self|telegram|lostModerator|note": {
+      "now": "telegram refused This call no longer passes the checks of the workspace it was asked in, so it does not run => pending; note unchanged",
+      "why": "lost-moderator"
+    },
+    "adminUser|self|telegram|lostItem|connector": {
+      "now": "telegram refused This call no longer passes the checks of the workspace it was asked in, so it does not run => pending; not run",
+      "why": "lost-item"
+    },
+    "adminUser|self|telegram|lostItem|note": {
+      "now": "telegram refused This call no longer passes the checks of the workspace it was asked in, so it does not run => pending; note unchanged",
+      "why": "lost-item"
+    },
+    "adminUser|self|telegram|gained|connector": {
+      "now": "telegram ok Approved & ran mcp_crm_update. => approved; ran in assistant:adminUser ws team mod team as login:adminUser",
+      "why": "gains-not-the-calls"
+    },
+    "adminUser|self|batch|none|connector": {
+      "now": "batch ok => approved; ran in assistant:adminUser ws team mod team as login:adminUser",
+      "why": "runs-where-asked"
+    },
+    "adminUser|self|batch|lostWorkspace|connector": {
+      "now": "batch throw The person who asked for this call no longer has the workspace it was asked in, so it does => pending; not run",
+      "why": "lost-workspace"
+    },
+    "adminUser|self|batch|lostWorkspace|note": {
+      "now": "batch throw The person who asked for this call no longer has the workspace it was asked in, so it does => pending; note unchanged",
+      "why": "lost-workspace"
+    },
+    "adminUser|self|batch|lostModerator|connector": {
+      "now": "batch throw This call no longer passes the checks of the workspace it was asked in, so it does not run => pending; not run",
+      "why": "lost-moderator"
+    },
+    "adminUser|self|batch|lostModerator|note": {
+      "now": "batch throw This call no longer passes the checks of the workspace it was asked in, so it does not run => pending; note unchanged",
+      "why": "lost-moderator"
+    },
+    "adminUser|self|batch|lostItem|connector": {
+      "now": "batch throw This call no longer passes the checks of the workspace it was asked in, so it does not run => pending; not run",
+      "why": "lost-item"
+    },
+    "adminUser|self|batch|lostItem|note": {
+      "now": "batch throw This call no longer passes the checks of the workspace it was asked in, so it does not run => pending; note unchanged",
+      "why": "lost-item"
+    },
+    "adminUser|self|batch|gained|connector": {
+      "now": "batch ok => approved; ran in assistant:adminUser ws team mod team as login:adminUser",
+      "why": "gains-not-the-calls"
+    },
+    "member|owner|web|none|connector": {
+      "now": "web 200 => approved; ran in assistant:member ws team mod team as login:member",
+      "why": "runs-where-asked"
+    },
+    "member|owner|web|lostWorkspace|connector": {
+      "now": "web 403 The person who asked for this call no longer has the workspace it was asked in, so it does => pending; not run",
+      "why": "lost-workspace"
+    },
+    "member|owner|web|lostWorkspace|note": {
+      "now": "web 403 The person who asked for this call no longer has the workspace it was asked in, so it does => pending; note unchanged",
+      "why": "lost-workspace"
+    },
+    "member|owner|web|lostModerator|connector": {
+      "now": "web 403 This call no longer passes the checks of the workspace it was asked in, so it does not run => pending; not run",
+      "why": "lost-moderator"
+    },
+    "member|owner|web|lostModerator|note": {
+      "now": "web 403 This call no longer passes the checks of the workspace it was asked in, so it does not run => pending; note unchanged",
+      "why": "lost-moderator"
+    },
+    "member|owner|web|lostItem|connector": {
+      "now": "web 403 This call no longer passes the checks of the workspace it was asked in, so it does not run => pending; not run",
+      "why": "lost-item"
+    },
+    "member|owner|web|lostItem|note": {
+      "now": "web 403 This call no longer passes the checks of the workspace it was asked in, so it does not run => pending; note unchanged",
+      "why": "lost-item"
+    },
+    "member|owner|web|gained|connector": {
+      "now": "web 200 => approved; ran in assistant:member ws team mod team as login:member",
+      "why": "gains-not-the-calls"
+    },
+    "member|owner|telegram|none|connector": {
+      "now": "telegram ok Approved & ran mcp_crm_update. => approved; ran in assistant:member ws team mod team as login:member",
+      "why": "runs-where-asked"
+    },
+    "member|owner|telegram|lostWorkspace|connector": {
+      "now": "telegram refused The person who asked for this call no longer has the workspace it was asked in, so it does => pending; not run",
+      "why": "lost-workspace"
+    },
+    "member|owner|telegram|lostWorkspace|note": {
+      "now": "telegram refused The person who asked for this call no longer has the workspace it was asked in, so it does => pending; note unchanged",
+      "why": "lost-workspace"
+    },
+    "member|owner|telegram|lostModerator|connector": {
+      "now": "telegram refused This call no longer passes the checks of the workspace it was asked in, so it does not run => pending; not run",
+      "why": "lost-moderator"
+    },
+    "member|owner|telegram|lostModerator|note": {
+      "now": "telegram refused This call no longer passes the checks of the workspace it was asked in, so it does not run => pending; note unchanged",
+      "why": "lost-moderator"
+    },
+    "member|owner|telegram|lostItem|connector": {
+      "now": "telegram refused This call no longer passes the checks of the workspace it was asked in, so it does not run => pending; not run",
+      "why": "lost-item"
+    },
+    "member|owner|telegram|lostItem|note": {
+      "now": "telegram refused This call no longer passes the checks of the workspace it was asked in, so it does not run => pending; note unchanged",
+      "why": "lost-item"
+    },
+    "member|owner|telegram|gained|connector": {
+      "now": "telegram ok Approved & ran mcp_crm_update. => approved; ran in assistant:member ws team mod team as login:member",
+      "why": "gains-not-the-calls"
+    },
+    "member|owner|batch|none|connector": {
+      "now": "batch ok => approved; ran in assistant:member ws team mod team as login:member",
+      "why": "runs-where-asked"
+    },
+    "member|owner|batch|lostWorkspace|connector": {
+      "now": "batch throw The person who asked for this call no longer has the workspace it was asked in, so it does => pending; not run",
+      "why": "lost-workspace"
+    },
+    "member|owner|batch|lostWorkspace|note": {
+      "now": "batch throw The person who asked for this call no longer has the workspace it was asked in, so it does => pending; note unchanged",
+      "why": "lost-workspace"
+    },
+    "member|owner|batch|lostModerator|connector": {
+      "now": "batch throw This call no longer passes the checks of the workspace it was asked in, so it does not run => pending; not run",
+      "why": "lost-moderator"
+    },
+    "member|owner|batch|lostModerator|note": {
+      "now": "batch throw This call no longer passes the checks of the workspace it was asked in, so it does not run => pending; note unchanged",
+      "why": "lost-moderator"
+    },
+    "member|owner|batch|lostItem|connector": {
+      "now": "batch throw This call no longer passes the checks of the workspace it was asked in, so it does not run => pending; not run",
+      "why": "lost-item"
+    },
+    "member|owner|batch|lostItem|note": {
+      "now": "batch throw This call no longer passes the checks of the workspace it was asked in, so it does not run => pending; note unchanged",
+      "why": "lost-item"
+    },
+    "member|owner|batch|gained|connector": {
+      "now": "batch ok => approved; ran in assistant:member ws team mod team as login:member",
+      "why": "gains-not-the-calls"
+    },
+    "member|self|batch|none|connector": {
+      "now": "batch ok => approved; ran in assistant:member ws team mod team as login:member",
+      "why": "runs-where-asked"
+    },
+    "member|self|batch|lostWorkspace|connector": {
+      "now": "batch throw The person who asked for this call no longer has the workspace it was asked in, so it does => pending; not run",
+      "why": "lost-workspace"
+    },
+    "member|self|batch|lostWorkspace|note": {
+      "now": "batch throw The person who asked for this call no longer has the workspace it was asked in, so it does => pending; note unchanged",
+      "why": "lost-workspace"
+    },
+    "member|self|batch|lostModerator|connector": {
+      "now": "batch throw This call no longer passes the checks of the workspace it was asked in, so it does not run => pending; not run",
+      "why": "lost-moderator"
+    },
+    "member|self|batch|lostModerator|note": {
+      "now": "batch throw This call no longer passes the checks of the workspace it was asked in, so it does not run => pending; note unchanged",
+      "why": "lost-moderator"
+    },
+    "member|self|batch|lostItem|connector": {
+      "now": "batch throw This call no longer passes the checks of the workspace it was asked in, so it does not run => pending; not run",
+      "why": "lost-item"
+    },
+    "member|self|batch|lostItem|note": {
+      "now": "batch throw This call no longer passes the checks of the workspace it was asked in, so it does not run => pending; note unchanged",
+      "why": "lost-item"
+    },
+    "member|self|batch|gained|connector": {
+      "now": "batch ok => approved; ran in assistant:member ws team mod team as login:member",
+      "why": "gains-not-the-calls"
+    }
+  }
+}

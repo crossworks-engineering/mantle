@@ -324,6 +324,23 @@ describe('one audit row for every tool write, on every surface (A5 step 6d)', ()
     expect(turn.rows[0]!.detail).not.toHaveProperty('approver');
   });
 
+  it('a re-checked approval names what its asker lost since it asked, only when something (A5 step 6c)', async () => {
+    const entry = ENTRIES.find((e) => e.name === 'pending approval')!;
+    const narrowed = await call(
+      { ...entry, caller: () => pendingCaller({ approver: APPROVER, narrowed: ['moderator'] }) },
+      row('audit_probe_write'),
+    );
+    expect(narrowed.rows.map((r) => r.detail)).toEqual([
+      expect.objectContaining({ approver: APPROVER, narrowed: ['moderator'] }),
+    ]);
+    const whole = await call(
+      { ...entry, caller: () => pendingCaller({ approver: APPROVER, narrowed: [] }) },
+      row('audit_probe_write'),
+    );
+    expect(whole.rows[0]!.detail).toMatchObject({ approver: APPROVER });
+    expect(whole.rows[0]!.detail).not.toHaveProperty('narrowed');
+  });
+
   it('a write whose policy says it is routine internal state (`auditRow: false`) leaves none (fix round 1)', async () => {
     for (const entry of ENTRIES) {
       const res = await call(entry, row('audit_probe_state'));

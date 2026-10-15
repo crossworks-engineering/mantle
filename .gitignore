@@ -131,3 +131,6 @@ __pycache__/
 
 # Box-local Caddy drop-ins (routes a deployment adds; never part of a release)
 infra/caddy/conf.d/*.caddy
+
+# What the approval re-check matrix answers in this tree (A5_RECHECK_RECORD=now)
+server/web/server/a5-approval-recheck.now.json
