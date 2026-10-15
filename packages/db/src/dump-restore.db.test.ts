@@ -25,6 +25,12 @@
  * that a restore of THAT loses it, so the check is known to see this kind
  * of failure.
  *
+ * Then the superuser-only steps a dump does not carry (arch A9): the tables
+ * come back owned by the restoring superuser and ts_match_vq without its
+ * LEAKPROOF flag; the migrate that follows a restore (migrator-steps.ts)
+ * hands them to mantle_owner, gives the runtime role its rights and sets
+ * the flag again.
+ *
  * pg_dump and pg_restore must be at least as new as the server, so the test
  * uses the ones inside the local Docker container that publishes the test
  * database's port (how CI and the workstation run Postgres;
@@ -46,6 +52,9 @@ import {
   findPgTools,
 } from './test-support';
 import { isCi } from './test-env-guard';
+import { afterMigrations } from './migrator-steps';
+import { ensureRuntimeRoles } from './runtime-role';
+import { tsMatchLeakproof } from './leakproof';
 
 const DB_URL = process.env.MANTLE_TEST_DATABASE_URL;
 const MIGRATIONS = join(__dirname, '..', 'migrations');
@@ -272,6 +281,43 @@ describe.skipIf(!DB_URL || (!tools && !ci))('a dump of a migrated brain restores
     const { target, errors, log } = await dumpAndRestore(['--schema-only']);
     expect(errors, log).toEqual([]);
     await expectSameCatalog(target);
+  }, 120_000);
+
+  it('the superuser-only steps run again after a restore (arch A9)', async () => {
+    const { target, errors, log } = await dumpAndRestore();
+    expect(errors, log).toEqual([]);
+    const sql = postgres(target.url, { max: 1, onnotice: () => {} });
+    const owners = () => sql<{ owner: string; n: number }[]>`
+      select pg_get_userbyid(c.relowner) as owner, count(*)::int as n
+        from pg_class c join pg_namespace n on n.oid = c.relnamespace
+       where n.nspname in ('public', 'auth') and c.relkind in ('r', 'p')
+       group by 1 order by 1`;
+    try {
+      // What a dump does not carry: pg_restore --no-owner gives every table
+      // to the superuser restoring it, and the runtime role (a cluster
+      // object) has no password in it.
+      expect((await owners()).map((o) => o.owner)).toEqual(['postgres']);
+      // The migrate that follows a restore (migrator-steps.ts).
+      const key = process.env.MANTLE_MASTER_KEY ?? 'mantle-viewer-test-key';
+      await afterMigrations(sql, await ensureRuntimeRoles(sql, key), {
+        info: () => {},
+        warn: () => {},
+      });
+      expect((await owners()).map((o) => o.owner)).toEqual(['mantle_owner']);
+      expect(await tsMatchLeakproof(sql)).toBe(true);
+      const [rights] = await sql<{ write: boolean; key: boolean; switch: boolean }[]>`
+        select has_table_privilege('mantle_runtime', 'public.nodes', 'INSERT') as write,
+               has_table_privilege('mantle_runtime', 'public.mantle_heads_key', 'SELECT') as key,
+               has_function_privilege('mantle_runtime',
+                 'public.mantle_set_actor_check(text,integer)', 'EXECUTE') as switch`;
+      expect(rights).toEqual({ write: true, key: false, switch: false });
+      // The data came back with it: the heads key's row and the items.
+      const [k] = await sql<{ n: number }[]>`select count(*)::int as n from mantle_heads_key`;
+      expect(k?.n).toBe(1);
+    } finally {
+      await sql.end();
+    }
+    expect(await rowsOf(target.url)).toEqual(await rowsOf(source!.url));
   }, 120_000);
 
   it("0204's own trigger (IS DISTINCT FROM on the ltree path) is lost on a restore: the check sees it", async () => {

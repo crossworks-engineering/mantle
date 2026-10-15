@@ -266,6 +266,8 @@ const ONE_SHOT: Record<string, string> = {
   'packages/db/src/init-scratch.ts': 'test databases',
   'packages/db/src/test-support.ts': 'tests',
   'packages/db/src/drop-viewer-logins.ts': 'operator CLI',
+  'packages/db/src/migrator-connection.ts':
+    'the workspaces switch as the migrator (arch A9): one connection at boot or the first owner, closed after',
   'server/api/src/provision.ts': 'the migrate gate (provision)',
   'packages/email/src/backfill-rfc-message-id.ts': 'operator script (maintain)',
 };

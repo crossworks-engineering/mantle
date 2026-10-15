@@ -236,11 +236,13 @@ export function runtimeRoleStatements(
 
 /** The memberships the runtime role and mantle_system may hold: any other
  *  (a hand grant of mantle_owner, say) is taken back on every run. */
-const WANTED_MEMBERSHIPS: Readonly<Record<string, readonly string[]>> = {
-  [RUNTIME_ROLE]: [SYSTEM_ROLE],
-  [OWNER_ROLE]: [SYSTEM_ROLE],
-  [SYSTEM_ROLE]: [viewerRoleName('write'), GAP_WRITER_ROLE],
-};
+function wantedMemberships(): Readonly<Record<string, readonly string[]>> {
+  return {
+    [RUNTIME_ROLE]: [SYSTEM_ROLE],
+    [OWNER_ROLE]: [SYSTEM_ROLE],
+    [SYSTEM_ROLE]: [viewerRoleName('write'), GAP_WRITER_ROLE],
+  };
+}
 
 export type RuntimeRolesOutcome = 'ok' | 'not-superuser' | 'old-server';
 
@@ -288,8 +290,9 @@ export async function ensureRuntimeRoles(
       join pg_roles r on r.oid = m.roleid
       join pg_roles u on u.oid = m.member
      where u.rolname in (${RUNTIME_ROLE}, ${SYSTEM_ROLE}, ${OWNER_ROLE})`;
+  const wanted = wantedMemberships();
   for (const { member, role } of held) {
-    if (WANTED_MEMBERSHIPS[member]?.includes(role)) continue;
+    if (wanted[member]?.includes(role)) continue;
     await withRoleRetry(() => sql.unsafe(`REVOKE "${role}" FROM "${member}"`));
   }
   return 'ok';
