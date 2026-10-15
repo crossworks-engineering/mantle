@@ -179,23 +179,27 @@ export async function upsertFile(args: {
   const isText = TEXT_EXTS.has(ext);
 
   // Make sure parent branch exists in the DB. The files root is structure
-  // (homed in Admin): looked up whatever the caller's scope holds, as
-  // ensureFilesRootBranch does (W6b); a folder below it in the caller's scope.
-  const parentQuery = () =>
-    db
-      .select({ id: nodes.id })
-      .from(nodes)
-      .where(
-        and(
-          eq(nodes.ownerId, args.ownerId),
-          eq(nodes.type, 'branch'),
-          sql`${nodes.path}::text = ${args.parentPath}`,
-        ),
-      )
-      .limit(1);
+  // (homed in Admin): its id is read whatever the caller's scope holds, by
+  // the definer ensureFilesRootBranch asks (mantle_kind_root_id, 0293; A6b:
+  // the system pool before, 'kind-root'); a folder below it in the caller's
+  // scope.
   const [parent] = args.parentPath.includes('.')
-    ? await parentQuery()
-    : await asSystem(parentQuery, 'kind-root');
+    ? await db
+        .select({ id: nodes.id })
+        .from(nodes)
+        .where(
+          and(
+            eq(nodes.ownerId, args.ownerId),
+            eq(nodes.type, 'branch'),
+            sql`${nodes.path}::text = ${args.parentPath}`,
+          ),
+        )
+        .limit(1)
+    : ((await db.execute(
+        sql`select r.id from (select "public"."mantle_kind_root_id"(${args.ownerId}::uuid,
+                                                                  ${args.parentPath}) as id) r
+             where r.id is not null`,
+      )) as unknown as { id: string }[]);
   if (!parent) {
     throw new InputError(`upsertFile: parent folder '${args.parentPath}' not found`);
   }

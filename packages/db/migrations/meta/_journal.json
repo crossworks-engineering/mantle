@@ -2045,6 +2045,13 @@
       "when": 1790196780000,
       "tag": "0292_api_key_anthropic_workspace",
       "breakpoints": true
+    },
+    {
+      "idx": 293,
+      "version": "7",
+      "when": 1790196840000,
+      "tag": "0293_a6b_scope_exits",
+      "breakpoints": true
     }
   ]
 }

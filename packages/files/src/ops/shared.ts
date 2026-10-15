@@ -8,7 +8,6 @@
 import { and, eq, sql } from 'drizzle-orm';
 import { ensureRoot, extOf, FILES_ROOT_LABEL, mimeForExt, TEXT_EXTS } from '../index';
 import {
-  asSystem,
   db,
   isWriteRefused,
   type Node,
@@ -77,26 +76,20 @@ export type FileRow = {
  * refused to make it (a read-only replica, a role with SELECT only): the read
  * then finds no files, and a write that follows fails by itself.
  */
-export async function ensureFilesRootBranch(ownerId: string): Promise<Node | null> {
-  // The root is structure, not content: read it whatever the reader's scope
-  // holds (a member's scope does not hold the Admin-homed root, W6b), so a
-  // reader that does not see it never makes it again.
-  const readRoot = () =>
-    asSystem(
-      () =>
-        db
-          .select()
-          .from(nodes)
-          .where(
-            and(
-              eq(nodes.ownerId, ownerId),
-              eq(nodes.type, 'branch'),
-              sql`${nodes.path}::text = ${FILES_ROOT_LABEL}`,
-            ),
-          )
-          .limit(1),
-      'kind-root',
-    );
+export async function ensureFilesRootBranch(ownerId: string): Promise<{ id: string } | null> {
+  // The root is structure, not content: its id is read whatever the
+  // reader's scope holds (a member's scope does not hold the Admin-homed
+  // root, W6b), so a reader that does not see it never makes it again. In
+  // the scope, by the definer that answers only that id
+  // (mantle_kind_root_id, 0293; A6b: it left for the system pool before,
+  // 'kind-root').
+  const readRoot = async (): Promise<{ id: string }[]> => {
+    const rows = (await db.execute(
+      sql`select "public"."mantle_kind_root_id"(${ownerId}::uuid, ${FILES_ROOT_LABEL}) as id`,
+    )) as unknown as { id: string | null }[];
+    const id = rows[0]?.id;
+    return id ? [{ id }] : [];
+  };
   const existing = await readRoot();
   if (existing[0]) {
     await ensureRoot();

@@ -42,8 +42,8 @@ export const AS_SYSTEM_PINS = {
   'packages/content/src/contact-share-codes.ts': { count: 1, why: ['contact-sharing'] },
   'packages/content/src/login-notices.ts': { count: 1, why: ['login-notice'] },
   'packages/content/src/tables/shared.ts': { count: 1, why: ['export-link'] },
-  'packages/files/src/ops/files.ts': { count: 2, why: ['kind-root', 'name-taken'] },
-  'packages/files/src/ops/shared.ts': { count: 1, why: ['kind-root'] },
+  'packages/files/src/ops/files.ts': { count: 1, why: ['name-taken'] },
+
   'packages/mcp-core/src/login-surface.ts': { count: 1, why: ['audit-log'] },
   'packages/runs/src/boss.ts': { count: 1, why: ['runs-scope-check'] },
   'packages/runtime/src/agent/agent-viewer.ts': { count: 1, why: ['agent-workspace'] },

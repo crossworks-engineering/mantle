@@ -58,13 +58,33 @@ vi.mock('@mantle/storage/write', async (importOriginal) => ({
 
 /**
  * Cells whose answer changed on purpose, per section: the cells a pattern
- * names, its reason, and `back`, which turns the new answer into main's
- * form; the cell must then read exactly as main recorded it.
+ * names, its reason, and either `back`, which turns the new answer into
+ * main's form (the cell must then read exactly as main recorded it), or
+ * `now`, the exact new answer (for a change `back` cannot undo: a row main
+ * made that the new code does not).
  */
 const NAMED_CHANGES: Record<
   string,
-  ReadonlyArray<{ cells: RegExp; reason: string; back: (now: string) => string }>
-> = {};
+  ReadonlyArray<{
+    cells: RegExp;
+    reason: string;
+    back?: (now: string) => string;
+    now?: string;
+  }>
+> = {
+  'owner-preferences': [
+    {
+      cells: /^missing anchor row after$/,
+      reason:
+        "a member's landing read no longer makes the anchor's missing profile row: it read the " +
+        "anchor's row on the system pool and so inserted it there; it reads in the member's scope " +
+        'now, where the insert (a gap table the member may not write for another login) is refused ' +
+        "and caught, as every other cross-login insert there is. The member's answer is the same " +
+        "(no site name either way); the anchor's row is made on the anchor's next read.",
+      now: '[]',
+    },
+  ],
+};
 
 type Json = Record<string, any>;
 
@@ -226,7 +246,8 @@ describe.skipIf(!URL)('the A6b exit sweep', () => {
       if (cur === line) continue;
       const named = (NAMED_CHANGES[name] ?? []).find((c) => c.cells.test(k));
       const value = cur.slice(cur.indexOf(' => ') + 4);
-      if (named && `${k} => ${named.back(value)}` === line) continue;
+      if (named?.back && `${k} => ${named.back(value)}` === line) continue;
+      if (named?.now !== undefined && value === named.now) continue;
       problems.push(`changed: ${line}\n     now: ${cur}`);
     }
     for (const k of now.keys()) if (!was.has(k)) problems.push(`new cell: ${k}`);
