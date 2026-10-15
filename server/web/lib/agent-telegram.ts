@@ -9,17 +9,9 @@
  * username + branch path), upsert the account's poll-state row, then write the
  * channel (token + binding) via `upsertTelegramChannel`.
  */
-import { and, desc, eq, sql } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { defineDomainError, UUID_RE } from '@mantle/std';
-import {
-  agents,
-  systemWork,
-  authUsers,
-  channels,
-  db,
-  telegramAccounts,
-  telegramChats,
-} from '@mantle/db';
+import { systemWork, authUsers, channels, db, telegramAccounts, telegramChats } from '@mantle/db';
 import {
   disableTelegramChannel,
   pairChatWithCode,

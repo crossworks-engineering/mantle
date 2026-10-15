@@ -416,6 +416,13 @@ describe.skipIf(!URL)('the A6b exit sweep', () => {
     scratch = await ts.createMigratedScratchDatabase(URL!);
     process.env.DATABASE_URL = scratch.url;
     process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
+    // The vault seals with a 32-byte key; the viewer roles' passwords come
+    // from MANTLE_MASTER_KEY, which the run may have set to the test key
+    // (CI): seal under MANTLE_MASTER_KEY_NEXT then (packages/crypto), and
+    // leave the role passwords alone.
+    if (Buffer.from(process.env.MANTLE_MASTER_KEY, 'base64').length !== 32) {
+      process.env.MANTLE_MASTER_KEY_NEXT ??= Buffer.alloc(32, 6).toString('base64');
+    }
     process.env.SESSION_SECRET = 'a6b-exit-sweep-secret-at-least-32-characters';
     process.env.MANTLE_FILES_ROOT = mkdtempSync(join(tmpdir(), 'a6b-files-'));
     delete process.env.MANTLE_ADMIN_READS;
