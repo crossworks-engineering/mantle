@@ -1127,6 +1127,28 @@ export function asSystem<T>(fn: () => Promise<T>, reason: AsSystemReason): Promi
   return runAsActor(actor, () => store.run(SYSTEM_EXIT, fn));
 }
 
+/**
+ * System-pool work that never runs in a workspace scope (arch A6b): a
+ * worker's, a boot step's, or code reached only inside another named exit
+ * (an Admin-area tool runs whole on the system pool). Such code called
+ * asSystem as a precaution, though no caller ever ran it in a scope. Outside
+ * every workspace scope this runs `fn` exactly as asSystem does (the actor
+ * system(reason), any transaction scope masked); inside one it refuses
+ * instead of leaving it, so a new caller in a scope fails at once rather
+ * than widening its reads. It is no exit: it never leaves a workspace scope.
+ */
+export function systemWork<T>(fn: () => Promise<T>, reason: AsSystemReason): Promise<T> {
+  if (active()?.ws) {
+    return Promise.reject(
+      new RuntimeFaultError(
+        `system work '${reason}' runs on the system pool only, never in a workspace scope`,
+      ),
+    );
+  }
+  const actor = systemUnder(reason, currentActor());
+  return runAsActor(actor, () => store.run(SYSTEM_EXIT, fn));
+}
+
 /** The workspace scope the nearest asSystem left (see scopeLeftForSystem). */
 const leftStore = new AsyncLocalStorage<WorkspaceScope>();
 

@@ -190,7 +190,6 @@ export {
   type LibraryKind,
   type LibraryRow,
 } from './member-library';
-export { takenFromOf } from './admin-space-taken';
 export { acceptedItemForCopy, type AcceptedItem, type AcceptedRow } from './member-accepted';
 // Paging one list merged from several sources (moved out of member-items, W8d).
 export { listSortCompare, mergeSorted, type ListSort, type PagedSource } from './list-merge';

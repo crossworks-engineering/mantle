@@ -19,7 +19,7 @@
 
 import { and, asc, eq } from 'drizzle-orm';
 import {
-  asSystem,
+  systemWork,
   currentGateScope,
   currentTurnStamp,
   db,
@@ -46,12 +46,14 @@ import { errorMessage } from '@mantle/std';
 import { CS } from './client-sourced-rule';
 
 /**
- * This file's one system door (arch A6): the bot and chat rows the Telegram
- * tools need are read on the system pool by the named reason 'login-telegram'
- * (the workspace role reads none of them). Every read below goes through it.
+ * The bot and chat rows the Telegram tools need, read on the system pool by
+ * the named reason 'login-telegram' (the workspace role reads none of them).
+ * Every tool here is an Admin-area tool that runs whole on the system pool
+ * (`systemWhole`: dispatch runs it inside the 'admin-area' exit), so these
+ * reads never run in a scope: systemWork refuses one (A6b: no exit).
  */
-function telegramLoginSystem<T>(fn: () => Promise<T>): Promise<T> {
-  return asSystem(fn, 'login-telegram');
+function telegramSystemWork<T>(fn: () => Promise<T>): Promise<T> {
+  return systemWork(fn, 'login-telegram');
 }
 
 /**
@@ -100,7 +102,7 @@ async function ownAllowedChat(
       error: `chat ${chatId} is not one of your paired chats: see yours with telegram_pending, or pair one with telegram_pair`,
     };
   }
-  const account = await telegramLoginSystem(() => accountById(chat.accountId));
+  const account = await telegramSystemWork(() => accountById(chat.accountId));
   if (!account || !account.enabled) {
     return { ok: false, error: 'no enabled telegram bot for this chat' };
   }
@@ -194,7 +196,7 @@ export const telegram_pending: BuiltinToolDef = {
       eq(telegramChats.allowlistStatus, 'allowed'),
     ];
     if (chatId) conds.push(eq(telegramChats.telegramChatId, chatId));
-    const rows = await telegramLoginSystem(() =>
+    const rows = await telegramSystemWork(() =>
       db
         .select({
           id: telegramMessages.id,
@@ -331,7 +333,7 @@ export const telegram_mark_processed: BuiltinToolDef = {
     // column. Resolved first so the UPDATE cannot touch a row of another
     // user's chat: marking it processed means their assistant never
     // answers it, and nothing anywhere errors.
-    const rows = await telegramLoginSystem(async () => {
+    const rows = await telegramSystemWork(async () => {
       const [owned] = await db
         .select({ id: telegramMessages.id })
         .from(telegramMessages)

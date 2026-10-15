@@ -30,7 +30,7 @@
  * lost (a crash between the two) is found again by its snapshot_of.
  */
 import { sql } from 'drizzle-orm';
-import { advisoryXactLock, asSystem, db, itemHomeSql, withCreateHome } from '@mantle/db';
+import { advisoryXactLock, db, itemHomeSql, systemWork, withCreateHome } from '@mantle/db';
 import {
   acceptedItemForCopy,
   createDraw,
@@ -67,7 +67,9 @@ type HomeRow = {
 export async function makeSnapshotCopies(
   opts: { dryRun?: boolean } = {},
 ): Promise<SnapshotCopyReport> {
-  return asSystem(
+  // The boot step and its script: never in a scope (A6b: systemWork, no
+  // exit).
+  return systemWork(
     () =>
       db.transaction(async (lock) => {
         await advisoryXactLock(lock, 'mantle_snapshot_copies', 'hashtext');

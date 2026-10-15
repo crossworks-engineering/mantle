@@ -226,7 +226,7 @@ describe.skipIf(!URL)('the A6b exit sweep', () => {
         : { body: form ?? JSON.stringify(body ?? {}) }),
     });
     const text = await res.text().catch(() => '');
-    let parsed: unknown = text;
+    let parsed: unknown;
     try {
       parsed = JSON.parse(text);
     } catch {

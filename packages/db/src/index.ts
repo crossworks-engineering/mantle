@@ -94,6 +94,7 @@ export {
   type ScopeArea,
   currentWorkspaceScope,
   scopeLeftForSystem,
+  systemWork,
   withoutLeftScope,
   withGateScope,
   currentGateScope,

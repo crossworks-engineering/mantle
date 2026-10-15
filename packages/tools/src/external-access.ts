@@ -48,6 +48,7 @@ import { createHash } from 'node:crypto';
 import { and, eq, sql } from 'drizzle-orm';
 import {
   asSystem,
+  systemWork,
   auditLog,
   db,
   nodes,
@@ -73,6 +74,14 @@ import type { RuntimeToolPolicy } from './runtime-policy';
  */
 function connectorBindingSystem<T>(fn: () => Promise<T>): Promise<T> {
   return asSystem(fn, 'connector-binding');
+}
+
+/** The same rows for a caller that never runs in a scope (A6b): a login's
+ *  MCP listing (/api/mcp's bearer path and a member's own MCP screen, both
+ *  on the system pool). systemWork runs it as asSystem did and refuses a
+ *  scope (no exit). */
+function connectorBindingSystemWork<T>(fn: () => Promise<T>): Promise<T> {
+  return systemWork(fn, 'connector-binding');
 }
 
 /**
@@ -643,7 +652,7 @@ export async function listLoginConnectorTools(
   ownerId: string,
   loginId: string,
 ): Promise<{ tool: Tool; readOnly: boolean; groupId: string; groupName: string }[]> {
-  const rows = await connectorBindingSystem(() =>
+  const rows = await connectorBindingSystemWork(() =>
     db
       .select({
         tool: tools,

@@ -30,7 +30,7 @@ import { and, eq, inArray, sql } from 'drizzle-orm';
 import {
   acceptedSnapshots,
   agents,
-  asSystem,
+  systemWork,
   assistantMessages,
   authUsers,
   db,
@@ -45,12 +45,12 @@ import { loadPreferencesFor } from './profile-preferences';
 import { UUID_RE } from '@mantle/std';
 
 /**
- * This file's one system door (arch A6): a login's notices are read and
- * written on the system pool by the named reason 'login-notice'. Every read
- * and write below goes through it.
+ * A login's notices are read and written on the system pool by the named
+ * reason 'login-notice'. The push worker builds them, never a scope:
+ * systemWork runs them as asSystem did and refuses a scope (A6b: no exit).
  */
 function loginNoticeSystem<T>(fn: () => Promise<T>): Promise<T> {
-  return asSystem(fn, 'login-notice');
+  return systemWork(fn, 'login-notice');
 }
 
 export const LOGIN_NOTICE_CHANNEL = 'login_notice';

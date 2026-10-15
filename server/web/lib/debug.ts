@@ -1,6 +1,6 @@
 import { and, desc, eq, ilike, inArray, isNull, or, sql } from 'drizzle-orm';
 import {
-  asSystem,
+  systemWork,
   db,
   agents,
   entities,
@@ -179,7 +179,9 @@ export async function telegramChatVisibility(
   actorLoginId: string,
 ): Promise<TelegramChatVisibility> {
   if (actorLoginId.toLowerCase() === ownerId.toLowerCase()) return { all: true };
-  const bots = await asSystem(
+  // GET /api/debug/telegram is a settings-area row, on the system pool:
+  // never in a scope (A6b: systemWork, no exit).
+  const bots = await systemWork(
     () =>
       db
         .select({ id: telegramAccounts.id })
