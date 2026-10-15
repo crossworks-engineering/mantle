@@ -1,10 +1,10 @@
 /**
  * Rate limits on the ROUTE_POLICY row (A10 #8; docs/request-plumbing.md,
- * "Rate limits"). Before, 40 limits were taken by hand: each route (or a
+ * "Rate limits"). Before, 38 limits were taken by hand: each route (or a
  * helper its handler called first) built its own bucket key, named its own
- * max and window inline, and answered its own 429 (four texts, two header
- * spellings, one with no Retry-After). A new route had no limit unless
- * someone remembered one.
+ * max and window inline, and answered its own 429 (15 texts, a text body on
+ * five routes, two header spellings, no Retry-After on two). A new route had
+ * no limit unless someone remembered one.
  *
  * Now:
  *

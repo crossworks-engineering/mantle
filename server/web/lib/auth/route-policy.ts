@@ -729,11 +729,16 @@ export function buildRouteRow(
   }
   // An alias runs its base's handler: the same method on the base pattern.
   const alias = aliasOf(m, pattern, served);
-  const gates = gatesOf(
-    `${answeredAs} ${pattern}`,
-    alias ? `${answeredAs} ${alias.slice(alias.indexOf(' ') + 1)}` : null,
-    { caller, catchAll: pattern.endsWith('*'), page },
-  );
+  // A test's stand-in rows (their handlers call the guards themselves)
+  // take no limit: none names the login the gate would count.
+  const gates =
+    opts.standIn === true
+      ? { crossSite: null, rateLimit: Object.freeze([]) }
+      : gatesOf(
+          `${answeredAs} ${pattern}`,
+          alias ? `${answeredAs} ${alias.slice(alias.indexOf(' ') + 1)}` : null,
+          { caller, catchAll: pattern.endsWith('*'), page },
+        );
   const startsAs =
     pageClass === 'render'
       ? 'http:render'

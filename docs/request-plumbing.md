@@ -1,10 +1,11 @@
-# Request plumbing: one body reader, one error answer
+# Request plumbing: one body reader, one error answer, rate limits on the row
 
 A10 part 2 (the gateway survey's folds 1 and 2; the survey is a dev-brain
-page). Two jobs every route of the HTTP tier did for itself, each folded
-behind one gateway, proved by recording every answer before the move and
-holding every answer to it after, and pinned so the scattered form cannot
-come back. Part of the actor work: [actors.md](actors.md) links here.
+page), and A10 #8 (the survey's finding 8, rate limits). Jobs every route of
+the HTTP tier did for itself, each folded behind one gateway, proved by
+recording every answer before the move and holding every answer to it
+after, and pinned so the scattered form cannot come back. Part of the actor
+work: [actors.md](actors.md) links here. Rate limits: [below](#rate-limits-a10-8).
 
 ## Fold 1: one body reader
 
@@ -430,3 +431,367 @@ tested here.
 The body sweep names one more kind: `item-fault`, the formula seed's
 `failed` list saying the fixed sentence where it said the database stand-in's
 text (6 cells). Every other cell of both sweeps answers as before.
+
+## Rate limits (A10 #8)
+
+### Before
+
+Every route that limited its callers took the limit by hand, in its own
+file or in a helper its handler called first: 38 limits, 32 limiter calls
+in 26 route files and more in nine helpers (`token-login.ts`,
+`owner-sso.ts`, `member-invites.ts`, `app-runner.ts`, `member-space.ts`,
+`push/login-routes.ts`, `workspaces.ts`, `workspace-turn.ts`, the key
+budgets). Each built its own bucket key and named its max and window
+inline, and each answered its own 429: 15 texts, a text body on five
+routes, two header spellings, no Retry-After on two (the OAuth client
+registration, the user search). A new route had no limit unless someone
+remembered one.
+
+### After
+
+- **One table of named limits** (`server/web/lib/route-limits.ts`,
+  `RATE_LIMITS`): each limit once, by name, with its bucket (the key
+  prefix, byte for byte as on main), whose key it counts (`ip`: the
+  caller's address through `clientIpKey`, an IPv6 caller by its /64;
+  `login`: the login the caller is; `brain`: one bucket, a failure
+  budget), its max and its window, and the narrowings a limit had:
+  `members` (an Admin user is not counted: the voice clips, a member's app
+  runs and bytes) and `when` (a query it applies to: the bytes of a file,
+  `?raw` or a `?thumb` other than 1, and its thumbnail, `?thumb=1`, each a
+  budget of its own; the metadata none). The store is
+  `server/web/lib/rate-limit.ts`, unchanged (a fixed window per key, in
+  memory, `MANTLE_RATE_LIMIT_SCALE` for the test stack).
+- **The row names its limits** (`ROUTE_GATES`, the same file; RouteRow
+  `rateLimit`, `server/web/lib/auth/route-policy.ts`): each row to its
+  limits by name, read into the row by `buildRouteRow`. A HEAD the GET
+  handler answers takes its GET's; an /api/v1 alias its base route's (it
+  runs that handler; `GET /api/v1/files/:id/download`, which hands the
+  bytes handler `?raw=1`, names the bytes limit itself). A row that takes a
+  login's limit must read a caller that names one (owner, member, any
+  login, chat, a byte route's reader, or a public row's login at the read),
+  and a catch-all or a page takes none: the row fails to build otherwise,
+  at boot. A test's stand-in rows take none.
+- **The gate takes them** (`server/web/server/middleware/gate.ts`,
+  `beforeHandler`), in the request slot, once the caller is answered and
+  before the handler: first the row's cross-site refusal, then its limits.
+  A login's limit counts the login the pipeline answered
+  (`answeredLimitLogin`, `server/web/lib/auth/session.ts`: a member's own
+  id where a member called an owner route, an Admin user's actor). On a
+  public row that reads its login at the read (`POST /api/auth/pair`,
+  `POST /api/auth/change-password`) the read takes the login's limit
+  (`publicLoginCaller`), where the handler took it after its read: no
+  login spends nothing, and over the limit the read throws the one 429
+  (`RouteRefusal`). A row with two limits takes both, then the failure
+  budgets (`peek`: looked at, not spent; the handler counts each failure,
+  `countRateFailure`, the invite routes' failed codes).
+- **The cross-site refusal is the row's too** (`crossSite`,
+  `refuseCrossSiteAuthPost` in `server/web/lib/auth/preflight.ts`): the
+  login-CSRF refusal of the public auth posts came first in their handlers,
+  before any limit, so a page on another site could not spend a visitor's
+  budget. The gate answers it before the limits now, on the six rows that
+  named it (sign in, sign up, invite accept, change password, the contact
+  code, and sign-out by its origin), and the handlers no longer call it.
+- **One 429** (`rateLimitedResponse`): `{ "error": "Too many requests. Try
+again later.", "code": "rate_limited", "retryAfter": N }`, with
+  `Retry-After: N` (at least 1) and `Cache-Control: no-store`. The seconds
+  are in the body too: a browser on another origin cannot read the header
+  unless it is exposed. `code` is the one the workspaces contract already
+  names (`rate_limited`); the clients branch on the status. Every limiter
+  of the tier answers it: the rows', the budgets the named route files keep
+  (below), the API key budgets (`server/web/server/middleware/access-key-gate.ts`),
+  a member's turns a minute (`server/web/lib/workspace-turn.ts`) and the member
+  stream cap (`GET /api/member/realtime`, Retry-After 30 as before).
+- **Retry-After on the daily caps.** The member chat's daily turn cap and
+  token budget (`workspace-turn.ts`, a turn and a voice clip or summary)
+  are quotas, not limits of the table, and keep their bodies (`reason:
+daily_cap` or `token_budget`, which the client reads); they say when to
+  come back now too: `Retry-After` to the next midnight UTC
+  (`secondsUntilTomorrowUtc`, `server/web/lib/member-daily-cap.ts`).
+- **Folded or gone**: `memberWriteGate` (no caller since the member space
+  routes went in W5c) and `memberBytesGate` with its file (`member-space.ts`, deleted);
+  `inviteRateLimited`, `pushEnrolLimited`, `rateLimited` (preflight.ts),
+  the app runner's `tooMany`; the user search's `WsError(429)`.
+
+### What stays named
+
+Budgets that are not a gate on the request stay where they are taken,
+each named with its reason:
+
+- in route files (`RATE_LIMIT_ALLOW`, `eslint-rules/route-plumbing.mjs`):
+  `POST /api/access-keys` (the password failure budget, taken before the
+  check and given back on a right password, and the keys made an hour,
+  counted only once the password passed), `POST /api/oauth/authorize` (the
+  consent password failure budget; its 429 is the consent page again, a
+  page, not the JSON 429), and `/api/mcp` (each MCP caller's own budget, an
+  API key's, a peer's or a login's, keyed by the bearer the route resolves
+  itself; the per-address limit before it is the row's);
+- `server/web/lib/workspace-turn.ts`: a member's 6 turns a minute counts the
+  turns QUEUED, not the requests: a retry with the same Idempotency-Key is
+  answered from the turn route's own cache and spends nothing, which a
+  gate before the handler could not keep;
+- `server/web/lib/access-keys.ts` with `server/web/server/middleware/access-key-gate.ts`:
+  an API key's budgets (per key, per login, the search's own, and the
+  failed-key budgets in their own pool), taken by the key gate for every
+  `/api/v1` request a key makes, whatever the row (and by `/api/mcp`);
+- not HTTP limits at all: the Telegram pairing attempts
+  (`packages/telegram/src/pairing.ts`, a pairing code's own count, answered
+  with the pairing refusal shape the client reads), the member stream cap
+  (`server/web/lib/member-streams.ts`, a count of open streams, not a rate),
+  the app access log's throttle (`packages/content/src/app-access-log.ts`,
+  how often a row is written) and the drawing snapshot's failure cooldown
+  (`server/web/lib/draw-snapshot.ts`, how often a render is retried);
+- other 429s that are not limits: busy (`reason: 'busy'`, the app database
+  and the package import: wait and retry), the health check passing on the
+  public MCP's own answer (`mcp-status`).
+
+### Rows with no limit
+
+No limit was added to a row that had none (that would change who gets
+refused). The rows a caller other than an Admin user reaches with no limit
+of their row are named here (`UNLIMITED_NON_OWNER_ROWS`), by how they are
+reached, and pinned by `server/web/lib/route-limits.test.ts` (here and in
+`server/web/lib/__snapshots__/route-limits-unlimited.txt`): a new one fails
+the test, so it is a decision, not an accident. Rows only an Admin user
+reaches need none. A HEAD is its GET's; a retired route's 410 stub is left
+out. `POST /api/access-keys`, `POST /api/oauth/authorize` and the MCP's
+per-caller budget are budgets of their handlers, above.
+
+<!-- UNLIMITED_NON_OWNER_ROWS start -->
+
+```
+any logins (27):
+  DELETE /api/access-keys/:id
+  DELETE /api/grants/:nodeId/:wsId
+  DELETE /api/workspaces/:id/resources/:kind/:refId
+  DELETE /api/workspaces/:id/users/:loginId
+  GET /api/access-keys
+  GET /api/grants/:nodeId
+  GET /api/grants/:nodeId/preview
+  GET /api/shell
+  GET /api/v1/whoami
+  GET /api/workspaces
+  GET /api/workspaces/:id
+  GET /api/workspaces/:id/archive-preview
+  PATCH /api/grants/:nodeId/:wsId
+  PATCH /api/workspaces/:id
+  PATCH /api/workspaces/:id/resources/:kind/:refId
+  PATCH /api/workspaces/:id/users/:loginId
+  POST /api/access-keys
+  POST /api/grants/:nodeId
+  POST /api/grants/:nodeId/:wsId/hand
+  POST /api/grants/:nodeId/:wsId/restore
+  POST /api/grants/:nodeId/embeds
+  POST /api/grants/move
+  POST /api/grants/move/preview
+  POST /api/workspaces
+  POST /api/workspaces/:id/archive
+  POST /api/workspaces/:id/resources
+  POST /api/workspaces/:id/users
+chat logins (11):
+  GET /api/assistant/conversations
+  GET /api/assistant/messages
+  GET /api/assistant/stream
+  GET /api/assistant/thread
+  GET /api/assistant/threads
+  GET /api/assistant/threads/:id
+  POST /api/assistant/read
+  POST /api/assistant/threads
+  POST /api/assistant/threads/:id/continue
+  POST /api/assistant/threads/:id/summarize
+  POST /api/assistant/turn
+frame (a frame ticket) (2):
+  GET /api/apps/:id/frame
+  GET /api/member/apps/:id/frame
+link (a share token) (2):
+  GET /s/:token/bundle/css
+  GET /s/:token/frame
+member logins (8):
+  DELETE /api/member/mcp/clients/:id
+  DELETE /api/member/push/subscriptions/:id
+  GET /api/member/home
+  GET /api/member/mcp
+  GET /api/member/push/preferences
+  GET /api/member/push/subscriptions
+  GET /api/member/realtime
+  PUT /api/member/push/preferences
+owner rows open to members (97):
+  DELETE /api/apps/:id
+  DELETE /api/apps/:id/draft
+  DELETE /api/draws/:id
+  DELETE /api/events/:id
+  DELETE /api/files/files/:id
+  DELETE /api/files/folders/:id
+  DELETE /api/formulas/:id
+  DELETE /api/notes/:id
+  DELETE /api/pages/:id
+  DELETE /api/recall/maps/:id
+  DELETE /api/recall/maps/:id/cards/:card
+  DELETE /api/tables/:id
+  DELETE /api/tasks/:id
+  DELETE /api/tree/:kind/folders/:id
+  GET /api/apps
+  GET /api/apps/:id
+  GET /api/draws
+  GET /api/draws/:id
+  GET /api/draws/:id/svg
+  GET /api/events
+  GET /api/events/:id
+  GET /api/files/files
+  GET /api/files/folders
+  GET /api/files/folders/:id
+  GET /api/formulas
+  GET /api/formulas/:id
+  GET /api/home
+  GET /api/mentions/search
+  GET /api/nodes/:id
+  GET /api/notes
+  GET /api/notes/:id
+  GET /api/pages
+  GET /api/pages/:id
+  GET /api/pages/:id/backlinks
+  GET /api/pages/:id/descendant-count
+  GET /api/recall/maps
+  GET /api/recall/maps/:id
+  GET /api/recall/maps/:id/cards/:card
+  GET /api/recall/maps/:id/revisions
+  GET /api/search
+  GET /api/tables
+  GET /api/tables/:id
+  GET /api/tables/:id/rows
+  GET /api/tasks
+  GET /api/tasks/:id
+  GET /api/tree/:kind
+  GET /api/tree/:kind/marks
+  GET /api/tree/:kind/search
+  GET /api/tree/:kind/tags
+  PATCH /api/apps/:id
+  PATCH /api/draws/:id
+  PATCH /api/events/:id
+  PATCH /api/files/files/:id
+  PATCH /api/files/folders/:id
+  PATCH /api/formulas/:id
+  PATCH /api/notes/:id
+  PATCH /api/pages/:id
+  PATCH /api/recall/maps/:id
+  PATCH /api/tables/:id
+  PATCH /api/tasks/:id
+  PATCH /api/tree/:kind/folders/:id
+  POST /api/apps
+  POST /api/apps/:id/build
+  POST /api/apps/:id/format
+  POST /api/apps/:id/publish
+  POST /api/draws
+  POST /api/draws/:id/commit
+  POST /api/draws/:id/discard-draft
+  POST /api/events
+  POST /api/files/files
+  POST /api/files/folders
+  POST /api/formulas
+  POST /api/formulas/:id/evaluate
+  POST /api/notes
+  POST /api/pages
+  POST /api/pages/:id/commit
+  POST /api/pages/:id/discard-draft
+  POST /api/pages/:id/move
+  POST /api/recall/maps
+  POST /api/recall/maps/:id/cards
+  POST /api/recall/maps/:id/cards/:card/prompt
+  POST /api/recall/maps/:id/cards/reorder
+  POST /api/recall/revisions/:id/restore
+  POST /api/tables
+  POST /api/tables/:id/commit
+  POST /api/tables/:id/discard-draft
+  POST /api/tables/:id/draft-ops
+  POST /api/tasks
+  POST /api/tree/:kind/folders
+  POST /api/tree/:kind/move
+  POST /api/tree/items/:id/opened
+  PUT /api/apps/:id/draft
+  PUT /api/draws/:id/draft
+  PUT /api/pages/:id/draft
+  PUT /api/recall/maps/:id/cards/:card
+  PUT /api/tables/:id/draft
+  PUT /api/tree/items/:id/pin
+public (no credential, or its own) (20):
+  GET /.well-known/oauth-authorization-server
+  GET /.well-known/oauth-protected-resource
+  GET /api/appearance
+  GET /api/appearance/logo
+  GET /api/auth/bootstrap-state
+  GET /api/auth/client-code
+  GET /api/auth/pair/:id
+  GET /api/auth/whoami
+  GET /api/federation/node/:id
+  GET /api/oauth/authorize
+  GET /api/version
+  GET /pair
+  POST /api/auth/client-code
+  POST /api/auth/client-code/verify
+  POST /api/auth/client-link
+  POST /api/auth/logout
+  POST /api/auth/mobile-logout
+  POST /api/federation/chunks
+  POST /api/federation/query
+  POST /api/oauth/authorize
+telegram logins (5):
+  DELETE /api/telegram/my-chats/:id
+  GET /api/telegram/moderated-chats
+  GET /api/telegram/my-chats
+  POST /api/telegram/chats/:id/block
+  POST /api/telegram/chats/:id/unpair
+```
+
+<!-- UNLIMITED_NON_OWNER_ROWS end -->
+
+### The proof
+
+`server/web/server/a10-rate-sweep.test.ts` drives every limit main took per
+request (its inventory, `SWEEP_CELLS`: 60 cells over 56 rows, each with the credential and query its limit counts) through the
+full pipeline with the clock held still: the first 429 and its whole
+answer, the window (a second before its end, and at its end), the scope
+(another address, another login of the kind, the same login from another
+address), the rows that share a bucket (the three token sign-ins, the four
+push enrol rows), and the order: what the handler checked before its limit
+on main still comes first and spends nothing (a cross-site browser
+request, no login, an Admin user where only members count, a query with
+no limit), and the invite routes' brain-wide failure caps. 246 probes,
+recorded on v0.300.44 before the move
+(`server/web/server/__snapshots__/a10-rate-sweep.txt`, written once with
+`A10_RATE_SWEEP_RECORD=1`). After the move every probe answers as recorded
+or is a named change, probe by probe, in
+`server/web/server/__snapshots__/a10-rate-sweep-changes.txt`:
+
+| Kind                        | Probes | What                                                                                                                                                                                                                                     |
+| --------------------------- | ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| one-429                     | 96     | a limit's refusal is the one 429, with the same Retry-After, where the route answered a 429 of its own; the place of the first 429, and every other answer, as on main                                                                   |
+| one-429 (Retry-After added) | 8      | the same, where main's 429 said no Retry-After (the user search)                                                                                                                                                                         |
+| counted-before-the-route    | 2      | the user search takes its limit before its own checks now (the row's, the gate's): a search the route refuses (an offset that is not a number, the Moderator check) counts toward the login's 60 a minute, where it was taken after them |
+
+A second test holds the table to the inventory, limit by limit (bucket,
+scope, max, window, members, failure budget): no row lost a limit or took
+another, and no row has one the inventory does not name.
+
+The other sweeps: the A4 guard sweeps
+(`server/web/server/__snapshots__/a4-guard-sweep.txt` and
+`a4-guard-sweep-more.txt`) run many sign-in cells back to back and so meet
+the limits; 65 cells answer the one 429 where they answered the route's
+own (the same cells as on main: the count is unchanged), every other cell
+byte for byte (checked cell by cell, the numbered answers renumber). The
+body and error sweeps start every cell on a new day and meet no limit:
+byte for byte.
+
+### The pins
+
+- Scoreboard (`scripts/arch-scoreboard.pins.json`): `routeRateLimitCalls`,
+  limiter calls in route files outside the named list, 32 on main, pinned
+  at 0; `routeRateLimitAllowed`, the named files, pinned at 3.
+  `routePolicyLists` went 16 to 17: `ROUTE_GATES` is the source of two row
+  fields, named with its reason in `eslint-rules/no-policy-name-lists.mjs`.
+- ESLint (`eslint-rules/route-plumbing.mjs`, `no-route-rate-limits`): a
+  limiter call (`rateLimit` and its forms, `rateLimitAccessKey`) in a route
+  file outside `RATE_LIMIT_ALLOW` is an error, and so is
+  `refuseCrossSiteAuthPost` in any route file (the row's `crossSite`).
+  `eslint-rules/arch-lints.test.ts` holds the count at 0 and the named list
+  to the files that still take a budget.
+- `server/web/lib/route-limits.test.ts`: every key of `ROUTE_GATES` is a
+  served row, every named limit some row's, and the list above.

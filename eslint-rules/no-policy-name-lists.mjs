@@ -27,7 +27,12 @@ export const TOOL_LIST_PINS = {
  *  A4 hand batch B fix round 1 (M2), up one in route-policy.ts, reviewed:
  *  PUBLIC_LOGIN_ROWS names the public rows that read a login, so a public
  *  login kind is read on those rows only, not on every public row (the
- *  audit's ask; ROUTE_POLICY's own check, not a policy beside it). */
+ *  audit's ask; ROUTE_POLICY's own check, not a policy beside it).
+ *  A10 #8, one in route-limits.ts, reviewed: ROUTE_GATES gives each row
+ *  its rate limits by name and its cross-site refusal, read into the row
+ *  by buildRouteRow (the source of two ROUTE_POLICY fields, as
+ *  PUBLIC_LOGIN_ROWS is of the caller check), where 38 limits were taken
+ *  by hand in the route files. */
 export const ROUTE_LIST_PINS = {
   'server/web/lib/api-v1.ts': 1,
   'server/web/lib/auth-constants.ts': 2,
@@ -36,5 +41,6 @@ export const ROUTE_LIST_PINS = {
   'server/web/lib/auth/route-policy.ts': 1,
   'server/web/lib/auth/route-scope.ts': 6,
   'server/web/lib/body-limit.ts': 1,
+  'server/web/lib/route-limits.ts': 1,
   'server/web/server/public-session-routes.ts': 1,
 };

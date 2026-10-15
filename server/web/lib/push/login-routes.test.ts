@@ -215,25 +215,10 @@ describe('subscribe', () => {
     expect(forget).toHaveBeenCalledWith(['old-routing-1']);
   });
 
-  it('limits connect and enrol per login: ten a minute, both together', async () => {
-    const { header } = bearerFor(CLIENT);
-    h.instance = { instanceToken: 't', relayInstanceId: 'iid', relayUrl: 'https://relay.example' };
-    for (let i = 0; i < 5; i += 1) {
-      expect((await loginPushSubscribe(req('POST', ENROL, header), client)).status).toBe(200);
-      expect(
-        (await loginPushConnect(req('POST', { platform: 'ios', osPushToken: 'x' }), client)).status,
-      ).toBe(200);
-    }
-    const over = await loginPushSubscribe(req('POST', ENROL, header), client);
-    expect(over.status).toBe(429);
-    expect(over.headers.get('retry-after')).toBeTruthy();
-    expect(
-      (await loginPushConnect(req('POST', { platform: 'ios', osPushToken: 'x' }), client)).status,
-    ).toBe(429);
-    // Another login is not held by it.
-    const mine = bearerFor(MEMBER);
-    expect((await loginPushSubscribe(req('POST', ENROL, mine.header), member)).status).toBe(200);
-  });
+  // The connect and enrol limit (10 a minute per login, one bucket for both)
+  // is the rows' since A10 #8 (lib/route-limits.ts pushEnrol), taken by the
+  // gate: server/web/server/a10-rate-sweep.test.ts drives it, shared across
+  // the four rows.
 
   it('refuses a body without a routing token, a key or a platform', async () => {
     const { header } = bearerFor(CLIENT);

@@ -14,7 +14,9 @@ const h = vi.hoisted(() => ({
 }));
 
 vi.mock('@/lib/workspaces-migrate', () => ({ migrateWorkspacesQuietly: async () => {} }));
-vi.mock('@mantle/db', () => ({
+vi.mock('@mantle/db', async (importOriginal) => ({
+  // The real gate pieces (the rate limit test drives the gate).
+  ...(await importOriginal<Record<string, unknown>>()),
   countUsers: async () => h.users,
   db: {
     execute: async () => {
@@ -111,7 +113,20 @@ describe('POST /api/auth/signup with a setup code configured', () => {
   });
 
   it('rate limits before the compare: the sixth try in a minute is a 429, right code or not', async () => {
-    const { POST } = await load();
+    // The row's limit, taken by the gate before the handler (A10 #8): the
+    // route driven through the gate and the loader with its real row.
+    await load();
+    const { Hono } = await import('hono');
+    const { gate } = await import('@/server/middleware/gate');
+    const { registerRoutes } = await import('@/server/route-loader');
+    const { routeManifest } = await import('@/server/route-manifest.gen');
+    const app = new Hono();
+    app.use('*', gate());
+    registerRoutes(
+      app,
+      routeManifest.filter((e) => e.pattern === '/api/auth/signup'),
+    );
+    const POST = async (req: Request) => app.request(req);
     const ip = '203.0.113.99';
     for (let i = 0; i < 5; i++) {
       const r = await POST(signup({ setupCode: 'WRONG-WRONG-WRONG-WRONG' }, ip));

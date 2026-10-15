@@ -9,6 +9,8 @@
  * a non-browser client that sends no Origin at all (the mobile app).
  *
  * No database: the guard runs first, so a refused request never reaches one.
+ * The gate answers it from the row (A10 #8), so each route is driven
+ * through the gate and the loader.
  * (client-link is gone since workspaces W5c, and the email-code sign-in
  * (client-code, client-code/verify) since W8a: each answers 410 to everyone,
  * before any guard or work.)
@@ -18,13 +20,33 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const BRAIN = 'https://brain.example.invalid';
 
 const ROUTES = [
-  ['login', () => import('./login/route')],
-  ['signup', () => import('./signup/route')],
-  ['invite/accept', () => import('./invite/accept/route')],
-  ['change-password', () => import('./change-password/route')],
+  ['login', () => routed('login')],
+  ['signup', () => routed('signup')],
+  ['invite/accept', () => routed('invite/accept')],
+  ['change-password', () => routed('change-password')],
 ] as const;
 
 type Post = (req: Request) => Promise<Response>;
+
+/**
+ * The route as the app serves it: the gate refuses a cross-site post from
+ * the row (lib/route-limits.ts ROUTE_GATES `crossSite`, A10 #8), before the
+ * row's limits and the handler, so the route is driven through the gate and
+ * the loader with its real row, not by calling its handler.
+ */
+async function routed(path: string): Promise<{ POST: Post }> {
+  const { Hono } = await import('hono');
+  const { gate } = await import('@/server/middleware/gate');
+  const { registerRoutes } = await import('@/server/route-loader');
+  const { routeManifest } = await import('@/server/route-manifest.gen');
+  const app = new Hono();
+  app.use('*', gate());
+  registerRoutes(
+    app,
+    routeManifest.filter((e) => e.pattern === `/api/auth/${path}`),
+  );
+  return { POST: async (req: Request) => app.request(req) };
+}
 
 const post = (path: string, headers: Record<string, string>, body = '{"code":"x"}') =>
   new Request(`${BRAIN}/api/auth/${path}`, {

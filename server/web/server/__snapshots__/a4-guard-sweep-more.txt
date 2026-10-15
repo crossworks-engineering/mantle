@@ -25,50 +25,49 @@ a23 404 content-type=application/json {"error":"Invite not found."}
 a24 404 content-type=application/json 
 a25 401 content-type=application/json {"error":"This invite is not valid. Ask for a new one."}
 a26 200 content-type=application/json {"ok":true} [getLoginOr401 R401 {"error":"unauthorized"} actor=system:http:no-login out=-]
-a27 429 content-type=application/json retry-after=60 {"error":"Too many login attempts. Try again in a minute."}
+a27 429 content-type=application/json cache-control=no-store retry-after=60 {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":60}
 a28 401 content-type=application/json {"error":"That code didn't work. Show a fresh one on the web app and scan again."}
-a29 429 content-type=application/json retry-after=60 {"error":"Too many attempts. Try again in a minute."}
-a30 401 content-type=application/json {"error":"unauthorized"} [getCookieUpgradeLoginOr401 R401 {"error":"unauthorized"} actor=system:http:no-login out=-]
-a31 401 content-type=application/json {"error":"unauthorized"} [getLoginOr401 R401 {"error":"unauthorized"} actor=system:rule-in-query out=-]
-a32 401 content-type=application/json  [getLoginOr401 R401 {"error":"unauthorized"} actor=system:rule-in-query out=-]
-a33 401 content-type=application/json {"error":"unauthorized"} [getReaderForAsset R401 {"error":"unauthorized"} actor=system:http:no-login out=-]
-a34 401 content-type=application/json  [getReaderForAsset R401 {"error":"unauthorized"} actor=system:http:no-login out=-]
-a35 401 content-type=application/json {"error":"unauthorized"}
-a36 401 content-type=application/json 
-a37 401 content-type=application/json {"error":"unauthorized"} [getMemberOr401 R401 {"error":"unauthorized"} actor=system:http:no-login out=-]
-a38 401 content-type=application/json  [getMemberOr401 R401 {"error":"unauthorized"} actor=system:http:no-login out=-]
-a39 401 content-type=application/json {"error":"unauthorized"} [getMemberForAsset R401 {"error":"unauthorized"} actor=system:http:no-login out=-]
-a40 401 content-type=application/json  [getMemberForAsset R401 {"error":"unauthorized"} actor=system:http:no-login out=-]
-a41 400 content-type=text/html; charset=utf-8 cache-control=no-store
-a42 400 content-type=application/json cache-control=no-store {"error":"invalid_redirect_uri","error_description":"redirect_uris is required"}
-a43 400 content-type=application/json cache-control=no-store {"error":"invalid_request","error_description":"expected application/x-www-form-urlencoded"}
-a44 401 content-type=application/json {"error":"unauthorized"} [getSessionUser ok null actor=system:http:no-login out=-]
-a45 401 content-type=application/json  [getSessionUser ok null actor=system:http:no-login out=-]
-a46 401 content-type=application/json {"error":"unauthorized"} [getOwnerOr401WithSource R401 {"error":"unauthorized"} actor=system:http:no-login out=-]
-a47 200 content-type=application/json
-a48 200 content-type=text/html; charset=utf-8 cache-control=no-store
-a49 307 location=/login [requireOwnerForRender threw RedirectError /login actor=system:http:render out=-]
-a50 404 content-type=text/plain; charset=UTF-8
-a51 404 content-type=application/json cache-control=no-store {"error":"not found"}
-a52 404 content-type=application/json cache-control=no-store 
-a53 404 content-type=text/plain;charset=UTF-8
-a54 500 content-type=text/plain; charset=UTF-8
-a55 404 content-type=application/json {"ok":false,"error":"not found"}
-a56 500 content-type=application/json {"error":"internal error"} [getOwnerOr401 ok {"actor.displayName":"admin 3333","actor.email":"admin-3333@example.invalid","actor.id":"33333333-3333-4333-8333-333333333333","actor.isOwner":true,"email":"admin-3333@example.invalid","id":"33333333-3333-4333-8333-333333333333"} actor=login:rw:33333333-3333-4333-8333-333333333333 out=system:admin-write]
-a57 500 content-type=application/json {"error":"internal error"} [getOwnerOr401 ok {"actor.displayName":"admin 5555","actor.email":"admin-5555@example.invalid","actor.id":"55555555-5555-4555-8555-555555555555","actor.isOwner":false,"email":"admin-5555@example.invalid","id":"33333333-3333-4333-8333-333333333333"} actor=login:rw:55555555-5555-4555-8555-555555555555 out=system:admin-write]
-a58 500 content-type=application/json {"error":"internal error"} [getOwnerOr401 ok {"actor.displayName":"admin 4444","actor.email":"admin-4444@example.invalid","actor.id":"44444444-4444-4444-8444-444444444444","actor.isOwner":false,"email":"admin-4444@example.invalid","id":"33333333-3333-4333-8333-333333333333"} actor=login:rw:44444444-4444-4444-8444-444444444444 out=system:admin-write]
-a59 500 content-type=application/json {"error":"internal error"} [getOwnerOr401 ok {"actor.displayName":"member 2222","actor.email":"member-2222@example.invalid","actor.id":"22222222-2222-4222-8222-222222222222","actor.isOwner":false,"email":"member-2222@example.invalid","id":"33333333-3333-4333-8333-333333333333"} actor=login:rw:22222222-2222-4222-8222-222222222222 out=user:true]
-a60 500 content-type=application/json {"error":"internal error"} [touch 00000001] [getOwnerOr401 ok {"actor.displayName":"admin 5555","actor.email":"admin-5555@example.invalid","actor.id":"55555555-5555-4555-8555-555555555555","actor.isOwner":false,"email":"admin-5555@example.invalid","id":"33333333-3333-4333-8333-333333333333"} actor=login:rw:55555555-5555-4555-8555-555555555555 out=system:admin-write]
-a61 500 content-type=application/json {"error":"internal error"} [touch 00000002] [getOwnerOr401 ok {"actor.displayName":"member 2222","actor.email":"member-2222@example.invalid","actor.id":"22222222-2222-4222-8222-222222222222","actor.isOwner":false,"email":"member-2222@example.invalid","id":"33333333-3333-4333-8333-333333333333"} actor=login:rw:22222222-2222-4222-8222-222222222222 out=user:true]
-a62 500 content-type=application/json {"error":"internal error"} [getOwnerOr401WithLogin ok {"kind":"admin","member":null,"source":"web","user.actor":{"id":"33333333-3333-4333-8333-333333333333","email":"admin-3333@example.invalid","displayName":"admin 3333","isOwner":true},"user.email":"admin-3333@example.invalid","user.id":"33333333-3333-4333-8333-333333333333"} actor=login:rw:33333333-3333-4333-8333-333333333333 out=system:admin-write]
-a63 500 content-type=application/json {"error":"internal error"} [getOwnerOr401WithLogin ok {"kind":"admin","member":null,"source":"web","user.actor":{"id":"55555555-5555-4555-8555-555555555555","email":"admin-5555@example.invalid","displayName":"admin 5555","isOwner":false},"user.email":"admin-5555@example.invalid","user.id":"33333333-3333-4333-8333-333333333333"} actor=login:rw:55555555-5555-4555-8555-555555555555 out=system:admin-write]
-a64 500 content-type=application/json {"error":"internal error"} [getOwnerOr401WithLogin ok {"kind":"admin","member":null,"source":"web","user.actor":{"id":"44444444-4444-4444-8444-444444444444","email":"admin-4444@example.invalid","displayName":"admin 4444","isOwner":false},"user.email":"admin-4444@example.invalid","user.id":"33333333-3333-4333-8333-333333333333"} actor=login:rw:44444444-4444-4444-8444-444444444444 out=system:admin-write]
-a65 500 content-type=application/json {"error":"internal error"} [getOwnerOr401WithLogin ok {"kind":"member","member.anchorId":"33333333-3333-4333-8333-333333333333","member.contactId":null,"member.displayName":"member 2222","member.email":"member-2222@example.invalid","member.loginId":"22222222-2222-4222-8222-222222222222","member.role":"member","source":"web","user.actor":{"id":"22222222-2222-4222-8222-222222222222","email":"member-2222@example.invalid","displayName":"member 2222","isOwner":false},"user.email":"member-2222@example.invalid","user.id":"33333333-3333-4333-8333-333333333333"} actor=login:rw:22222222-2222-4222-8222-222222222222 out=user:true]
-a66 500 content-type=application/json {"error":"internal error"} [touch 00000001] [getOwnerOr401WithLogin ok {"kind":"admin","member":null,"source":"mobile","user.actor":{"id":"55555555-5555-4555-8555-555555555555","email":"admin-5555@example.invalid","displayName":"admin 5555","isOwner":false},"user.email":"admin-5555@example.invalid","user.id":"33333333-3333-4333-8333-333333333333"} actor=login:rw:55555555-5555-4555-8555-555555555555 out=system:admin-write]
-a67 500 content-type=application/json {"error":"internal error"} [touch 00000002] [getOwnerOr401WithLogin ok {"kind":"member","member.anchorId":"33333333-3333-4333-8333-333333333333","member.contactId":null,"member.displayName":"member 2222","member.email":"member-2222@example.invalid","member.loginId":"22222222-2222-4222-8222-222222222222","member.role":"member","source":"mobile","user.actor":{"id":"22222222-2222-4222-8222-222222222222","email":"member-2222@example.invalid","displayName":"member 2222","isOwner":false},"user.email":"member-2222@example.invalid","user.id":"33333333-3333-4333-8333-333333333333"} actor=login:rw:22222222-2222-4222-8222-222222222222 out=user:true]
-a68 403 content-type=application/json {"error":"forbidden","reason":"item-workspace","message":"You cannot change this item in your workspaces."} [getOwnerOr401 R403 {"error":"forbidden","reason":"item-workspace","message":"You cannot change this item in your workspaces."} actor=login:rw:55555555-5555-4555-8555-555555555555 out=-]
-a69 403 content-type=application/json {"error":"forbidden","reason":"item-workspace","message":"You cannot change this item in your workspaces."} [getOwnerOr401 R403 {"error":"forbidden","reason":"item-workspace","message":"You cannot change this item in your workspaces."} actor=login:rw:44444444-4444-4444-8444-444444444444 out=-]
-a70 403 content-type=application/json {"error":"forbidden","reason":"item-workspace","message":"You cannot change this item in your workspaces."} [touch 00000001] [getOwnerOr401 R403 {"error":"forbidden","reason":"item-workspace","message":"You cannot change this item in your workspaces."} actor=login:rw:55555555-5555-4555-8555-555555555555 out=-]
+a29 401 content-type=application/json {"error":"unauthorized"} [getCookieUpgradeLoginOr401 R401 {"error":"unauthorized"} actor=system:http:no-login out=-]
+a30 401 content-type=application/json {"error":"unauthorized"} [getLoginOr401 R401 {"error":"unauthorized"} actor=system:rule-in-query out=-]
+a31 401 content-type=application/json  [getLoginOr401 R401 {"error":"unauthorized"} actor=system:rule-in-query out=-]
+a32 401 content-type=application/json {"error":"unauthorized"} [getReaderForAsset R401 {"error":"unauthorized"} actor=system:http:no-login out=-]
+a33 401 content-type=application/json  [getReaderForAsset R401 {"error":"unauthorized"} actor=system:http:no-login out=-]
+a34 401 content-type=application/json {"error":"unauthorized"}
+a35 401 content-type=application/json 
+a36 401 content-type=application/json {"error":"unauthorized"} [getMemberOr401 R401 {"error":"unauthorized"} actor=system:http:no-login out=-]
+a37 401 content-type=application/json  [getMemberOr401 R401 {"error":"unauthorized"} actor=system:http:no-login out=-]
+a38 401 content-type=application/json {"error":"unauthorized"} [getMemberForAsset R401 {"error":"unauthorized"} actor=system:http:no-login out=-]
+a39 401 content-type=application/json  [getMemberForAsset R401 {"error":"unauthorized"} actor=system:http:no-login out=-]
+a40 400 content-type=text/html; charset=utf-8 cache-control=no-store
+a41 400 content-type=application/json cache-control=no-store {"error":"invalid_redirect_uri","error_description":"redirect_uris is required"}
+a42 400 content-type=application/json cache-control=no-store {"error":"invalid_request","error_description":"expected application/x-www-form-urlencoded"}
+a43 401 content-type=application/json {"error":"unauthorized"} [getSessionUser ok null actor=system:http:no-login out=-]
+a44 401 content-type=application/json  [getSessionUser ok null actor=system:http:no-login out=-]
+a45 401 content-type=application/json {"error":"unauthorized"} [getOwnerOr401WithSource R401 {"error":"unauthorized"} actor=system:http:no-login out=-]
+a46 200 content-type=application/json
+a47 200 content-type=text/html; charset=utf-8 cache-control=no-store
+a48 307 location=/login [requireOwnerForRender threw RedirectError /login actor=system:http:render out=-]
+a49 404 content-type=text/plain; charset=UTF-8
+a50 404 content-type=application/json cache-control=no-store {"error":"not found"}
+a51 404 content-type=application/json cache-control=no-store 
+a52 404 content-type=text/plain;charset=UTF-8
+a53 500 content-type=text/plain; charset=UTF-8
+a54 404 content-type=application/json {"ok":false,"error":"not found"}
+a55 500 content-type=application/json {"error":"internal error"} [getOwnerOr401 ok {"actor.displayName":"admin 3333","actor.email":"admin-3333@example.invalid","actor.id":"33333333-3333-4333-8333-333333333333","actor.isOwner":true,"email":"admin-3333@example.invalid","id":"33333333-3333-4333-8333-333333333333"} actor=login:rw:33333333-3333-4333-8333-333333333333 out=system:admin-write]
+a56 500 content-type=application/json {"error":"internal error"} [getOwnerOr401 ok {"actor.displayName":"admin 5555","actor.email":"admin-5555@example.invalid","actor.id":"55555555-5555-4555-8555-555555555555","actor.isOwner":false,"email":"admin-5555@example.invalid","id":"33333333-3333-4333-8333-333333333333"} actor=login:rw:55555555-5555-4555-8555-555555555555 out=system:admin-write]
+a57 500 content-type=application/json {"error":"internal error"} [getOwnerOr401 ok {"actor.displayName":"admin 4444","actor.email":"admin-4444@example.invalid","actor.id":"44444444-4444-4444-8444-444444444444","actor.isOwner":false,"email":"admin-4444@example.invalid","id":"33333333-3333-4333-8333-333333333333"} actor=login:rw:44444444-4444-4444-8444-444444444444 out=system:admin-write]
+a58 500 content-type=application/json {"error":"internal error"} [getOwnerOr401 ok {"actor.displayName":"member 2222","actor.email":"member-2222@example.invalid","actor.id":"22222222-2222-4222-8222-222222222222","actor.isOwner":false,"email":"member-2222@example.invalid","id":"33333333-3333-4333-8333-333333333333"} actor=login:rw:22222222-2222-4222-8222-222222222222 out=user:true]
+a59 500 content-type=application/json {"error":"internal error"} [touch 00000001] [getOwnerOr401 ok {"actor.displayName":"admin 5555","actor.email":"admin-5555@example.invalid","actor.id":"55555555-5555-4555-8555-555555555555","actor.isOwner":false,"email":"admin-5555@example.invalid","id":"33333333-3333-4333-8333-333333333333"} actor=login:rw:55555555-5555-4555-8555-555555555555 out=system:admin-write]
+a60 500 content-type=application/json {"error":"internal error"} [touch 00000002] [getOwnerOr401 ok {"actor.displayName":"member 2222","actor.email":"member-2222@example.invalid","actor.id":"22222222-2222-4222-8222-222222222222","actor.isOwner":false,"email":"member-2222@example.invalid","id":"33333333-3333-4333-8333-333333333333"} actor=login:rw:22222222-2222-4222-8222-222222222222 out=user:true]
+a61 500 content-type=application/json {"error":"internal error"} [getOwnerOr401WithLogin ok {"kind":"admin","member":null,"source":"web","user.actor":{"id":"33333333-3333-4333-8333-333333333333","email":"admin-3333@example.invalid","displayName":"admin 3333","isOwner":true},"user.email":"admin-3333@example.invalid","user.id":"33333333-3333-4333-8333-333333333333"} actor=login:rw:33333333-3333-4333-8333-333333333333 out=system:admin-write]
+a62 500 content-type=application/json {"error":"internal error"} [getOwnerOr401WithLogin ok {"kind":"admin","member":null,"source":"web","user.actor":{"id":"55555555-5555-4555-8555-555555555555","email":"admin-5555@example.invalid","displayName":"admin 5555","isOwner":false},"user.email":"admin-5555@example.invalid","user.id":"33333333-3333-4333-8333-333333333333"} actor=login:rw:55555555-5555-4555-8555-555555555555 out=system:admin-write]
+a63 500 content-type=application/json {"error":"internal error"} [getOwnerOr401WithLogin ok {"kind":"admin","member":null,"source":"web","user.actor":{"id":"44444444-4444-4444-8444-444444444444","email":"admin-4444@example.invalid","displayName":"admin 4444","isOwner":false},"user.email":"admin-4444@example.invalid","user.id":"33333333-3333-4333-8333-333333333333"} actor=login:rw:44444444-4444-4444-8444-444444444444 out=system:admin-write]
+a64 500 content-type=application/json {"error":"internal error"} [getOwnerOr401WithLogin ok {"kind":"member","member.anchorId":"33333333-3333-4333-8333-333333333333","member.contactId":null,"member.displayName":"member 2222","member.email":"member-2222@example.invalid","member.loginId":"22222222-2222-4222-8222-222222222222","member.role":"member","source":"web","user.actor":{"id":"22222222-2222-4222-8222-222222222222","email":"member-2222@example.invalid","displayName":"member 2222","isOwner":false},"user.email":"member-2222@example.invalid","user.id":"33333333-3333-4333-8333-333333333333"} actor=login:rw:22222222-2222-4222-8222-222222222222 out=user:true]
+a65 500 content-type=application/json {"error":"internal error"} [touch 00000001] [getOwnerOr401WithLogin ok {"kind":"admin","member":null,"source":"mobile","user.actor":{"id":"55555555-5555-4555-8555-555555555555","email":"admin-5555@example.invalid","displayName":"admin 5555","isOwner":false},"user.email":"admin-5555@example.invalid","user.id":"33333333-3333-4333-8333-333333333333"} actor=login:rw:55555555-5555-4555-8555-555555555555 out=system:admin-write]
+a66 500 content-type=application/json {"error":"internal error"} [touch 00000002] [getOwnerOr401WithLogin ok {"kind":"member","member.anchorId":"33333333-3333-4333-8333-333333333333","member.contactId":null,"member.displayName":"member 2222","member.email":"member-2222@example.invalid","member.loginId":"22222222-2222-4222-8222-222222222222","member.role":"member","source":"mobile","user.actor":{"id":"22222222-2222-4222-8222-222222222222","email":"member-2222@example.invalid","displayName":"member 2222","isOwner":false},"user.email":"member-2222@example.invalid","user.id":"33333333-3333-4333-8333-333333333333"} actor=login:rw:22222222-2222-4222-8222-222222222222 out=user:true]
+a67 403 content-type=application/json {"error":"forbidden","reason":"item-workspace","message":"You cannot change this item in your workspaces."} [getOwnerOr401 R403 {"error":"forbidden","reason":"item-workspace","message":"You cannot change this item in your workspaces."} actor=login:rw:55555555-5555-4555-8555-555555555555 out=-]
+a68 403 content-type=application/json {"error":"forbidden","reason":"item-workspace","message":"You cannot change this item in your workspaces."} [getOwnerOr401 R403 {"error":"forbidden","reason":"item-workspace","message":"You cannot change this item in your workspaces."} actor=login:rw:44444444-4444-4444-8444-444444444444 out=-]
+a69 403 content-type=application/json {"error":"forbidden","reason":"item-workspace","message":"You cannot change this item in your workspaces."} [touch 00000001] [getOwnerOr401 R403 {"error":"forbidden","reason":"item-workspace","message":"You cannot change this item in your workspaces."} actor=login:rw:55555555-5555-4555-8555-555555555555 out=-]
 
 # cells that wanted a database: 391 in the first sweep; 0 still do with the reads stood in
 
@@ -261,12 +260,12 @@ POST /api/auth/pair: disabled-cookie=a2 bumped-cookie=a2 gone-cookie=a2 rotated-
 GET /api/auth/pair/:id: disabled-cookie=a2 bumped-cookie=a2 gone-cookie=a2 rotated-bearer=a2 expired-bearer=a2 key-unknown=a2 key-revoked=a2
 HEAD /api/auth/pair/:id: disabled-cookie=a4 bumped-cookie=a4 gone-cookie=a4 rotated-bearer=a4 expired-bearer=a4 key-unknown=a4 key-revoked=a4
 POST /api/auth/pair/claim: disabled-cookie=a28 bumped-cookie=a28 gone-cookie=a28 rotated-bearer=a28 expired-bearer=a28 key-unknown=a28 key-revoked=a28
-POST /api/auth/signup: disabled-cookie=a16 bumped-cookie=a16 gone-cookie=a16 rotated-bearer=a16 expired-bearer=a16 key-unknown=a29 key-revoked=a29
-POST /api/auth/sso: disabled-cookie=a30 bumped-cookie=a30 gone-cookie=a30 rotated-bearer=a30 expired-bearer=a30 key-unknown=a30 key-revoked=a30
+POST /api/auth/signup: disabled-cookie=a16 bumped-cookie=a16 gone-cookie=a16 rotated-bearer=a16 expired-bearer=a16 key-unknown=a27 key-revoked=a27
+POST /api/auth/sso: disabled-cookie=a29 bumped-cookie=a29 gone-cookie=a29 rotated-bearer=a29 expired-bearer=a29 key-unknown=a29 key-revoked=a29
 POST /api/auth/token: disabled-cookie=a27 bumped-cookie=a27 gone-cookie=a27 rotated-bearer=a27 expired-bearer=a27 key-unknown=a27 key-revoked=a27
 POST /api/auth/token/refresh: disabled-cookie=a3 bumped-cookie=a3 gone-cookie=a3 rotated-bearer=a3 expired-bearer=a3 key-unknown=a3 key-revoked=a3
-GET /api/auth/whoami: disabled-cookie=a31 bumped-cookie=a31 gone-cookie=a31 rotated-bearer=a31 expired-bearer=a31 key-unknown=a31 key-revoked=a31
-HEAD /api/auth/whoami: disabled-cookie=a32 bumped-cookie=a32 gone-cookie=a32 rotated-bearer=a32 expired-bearer=a32 key-unknown=a32 key-revoked=a32
+GET /api/auth/whoami: disabled-cookie=a30 bumped-cookie=a30 gone-cookie=a30 rotated-bearer=a30 expired-bearer=a30 key-unknown=a30 key-revoked=a30
+HEAD /api/auth/whoami: disabled-cookie=a31 bumped-cookie=a31 gone-cookie=a31 rotated-bearer=a31 expired-bearer=a31 key-unknown=a31 key-revoked=a31
 GET /api/backups: disabled-cookie=a6 bumped-cookie=a6 gone-cookie=a6 rotated-bearer=a6 expired-bearer=a6 key-unknown=a3 key-revoked=a3
 POST /api/backups: disabled-cookie=a6 bumped-cookie=a6 gone-cookie=a6 rotated-bearer=a6 expired-bearer=a6 key-unknown=a3 key-revoked=a3
 HEAD /api/backups: disabled-cookie=a7 bumped-cookie=a7 gone-cookie=a7 rotated-bearer=a7 expired-bearer=a7 key-unknown=a5 key-revoked=a5
@@ -412,8 +411,8 @@ HEAD /api/draws/:id: disabled-cookie=a7 bumped-cookie=a7 gone-cookie=a7 rotated-
 POST /api/draws/:id/commit: disabled-cookie=a6 bumped-cookie=a6 gone-cookie=a6 rotated-bearer=a6 expired-bearer=a6 key-unknown=a3 key-revoked=a3
 POST /api/draws/:id/discard-draft: disabled-cookie=a6 bumped-cookie=a6 gone-cookie=a6 rotated-bearer=a6 expired-bearer=a6 key-unknown=a3 key-revoked=a3
 PUT /api/draws/:id/draft: disabled-cookie=a6 bumped-cookie=a6 gone-cookie=a6 rotated-bearer=a6 expired-bearer=a6 key-unknown=a3 key-revoked=a3
-GET /api/draws/:id/svg: disabled-cookie=a33 bumped-cookie=a33 gone-cookie=a33 rotated-bearer=a33 expired-bearer=a33 key-unknown=a3 key-revoked=a3
-HEAD /api/draws/:id/svg: disabled-cookie=a34 bumped-cookie=a34 gone-cookie=a34 rotated-bearer=a34 expired-bearer=a34 key-unknown=a5 key-revoked=a5
+GET /api/draws/:id/svg: disabled-cookie=a32 bumped-cookie=a32 gone-cookie=a32 rotated-bearer=a32 expired-bearer=a32 key-unknown=a3 key-revoked=a3
+HEAD /api/draws/:id/svg: disabled-cookie=a33 bumped-cookie=a33 gone-cookie=a33 rotated-bearer=a33 expired-bearer=a33 key-unknown=a5 key-revoked=a5
 GET /api/email/accounts: disabled-cookie=a6 bumped-cookie=a6 gone-cookie=a6 rotated-bearer=a6 expired-bearer=a6 key-unknown=a3 key-revoked=a3
 POST /api/email/accounts: disabled-cookie=a6 bumped-cookie=a6 gone-cookie=a6 rotated-bearer=a6 expired-bearer=a6 key-unknown=a3 key-revoked=a3
 HEAD /api/email/accounts: disabled-cookie=a7 bumped-cookie=a7 gone-cookie=a7 rotated-bearer=a7 expired-bearer=a7 key-unknown=a5 key-revoked=a5
@@ -459,19 +458,19 @@ DELETE /api/events/:id: disabled-cookie=a6 bumped-cookie=a6 gone-cookie=a6 rotat
 HEAD /api/events/:id: disabled-cookie=a7 bumped-cookie=a7 gone-cookie=a7 rotated-bearer=a7 expired-bearer=a7 key-unknown=a5 key-revoked=a5
 GET /api/export/:id: disabled-cookie=a14 bumped-cookie=a14 gone-cookie=a14 rotated-bearer=a14 expired-bearer=a14 key-unknown=a3 key-revoked=a3
 HEAD /api/export/:id: disabled-cookie=a15 bumped-cookie=a15 gone-cookie=a15 rotated-bearer=a15 expired-bearer=a15 key-unknown=a5 key-revoked=a5
-POST /api/federation/chunks: disabled-cookie=a35 bumped-cookie=a35 gone-cookie=a35 rotated-bearer=a35 expired-bearer=a35 key-unknown=a35 key-revoked=a35
-GET /api/federation/node/:id: disabled-cookie=a35 bumped-cookie=a35 gone-cookie=a35 rotated-bearer=a35 expired-bearer=a35 key-unknown=a35 key-revoked=a35
-HEAD /api/federation/node/:id: disabled-cookie=a36 bumped-cookie=a36 gone-cookie=a36 rotated-bearer=a36 expired-bearer=a36 key-unknown=a36 key-revoked=a36
-POST /api/federation/query: disabled-cookie=a35 bumped-cookie=a35 gone-cookie=a35 rotated-bearer=a35 expired-bearer=a35 key-unknown=a35 key-revoked=a35
+POST /api/federation/chunks: disabled-cookie=a34 bumped-cookie=a34 gone-cookie=a34 rotated-bearer=a34 expired-bearer=a34 key-unknown=a34 key-revoked=a34
+GET /api/federation/node/:id: disabled-cookie=a34 bumped-cookie=a34 gone-cookie=a34 rotated-bearer=a34 expired-bearer=a34 key-unknown=a34 key-revoked=a34
+HEAD /api/federation/node/:id: disabled-cookie=a35 bumped-cookie=a35 gone-cookie=a35 rotated-bearer=a35 expired-bearer=a35 key-unknown=a35 key-revoked=a35
+POST /api/federation/query: disabled-cookie=a34 bumped-cookie=a34 gone-cookie=a34 rotated-bearer=a34 expired-bearer=a34 key-unknown=a34 key-revoked=a34
 GET /api/files/files: disabled-cookie=a6 bumped-cookie=a6 gone-cookie=a6 rotated-bearer=a6 expired-bearer=a6 key-unknown=a3 key-revoked=a3
 POST /api/files/files: disabled-cookie=a6 bumped-cookie=a6 gone-cookie=a6 rotated-bearer=a6 expired-bearer=a6 key-unknown=a3 key-revoked=a3
 DELETE /api/files/files: disabled-cookie=a6 bumped-cookie=a6 gone-cookie=a6 rotated-bearer=a6 expired-bearer=a6 key-unknown=a3 key-revoked=a3
 HEAD /api/files/files: disabled-cookie=a7 bumped-cookie=a7 gone-cookie=a7 rotated-bearer=a7 expired-bearer=a7 key-unknown=a5 key-revoked=a5
-GET /api/files/files/:id: disabled-cookie=a33 bumped-cookie=a33 gone-cookie=a33 rotated-bearer=a33 expired-bearer=a33 key-unknown=a3 key-revoked=a3
+GET /api/files/files/:id: disabled-cookie=a32 bumped-cookie=a32 gone-cookie=a32 rotated-bearer=a32 expired-bearer=a32 key-unknown=a3 key-revoked=a3
 POST /api/files/files/:id: disabled-cookie=a6 bumped-cookie=a6 gone-cookie=a6 rotated-bearer=a6 expired-bearer=a6 key-unknown=a3 key-revoked=a3
 PATCH /api/files/files/:id: disabled-cookie=a6 bumped-cookie=a6 gone-cookie=a6 rotated-bearer=a6 expired-bearer=a6 key-unknown=a3 key-revoked=a3
 DELETE /api/files/files/:id: disabled-cookie=a6 bumped-cookie=a6 gone-cookie=a6 rotated-bearer=a6 expired-bearer=a6 key-unknown=a3 key-revoked=a3
-HEAD /api/files/files/:id: disabled-cookie=a34 bumped-cookie=a34 gone-cookie=a34 rotated-bearer=a34 expired-bearer=a34 key-unknown=a5 key-revoked=a5
+HEAD /api/files/files/:id: disabled-cookie=a33 bumped-cookie=a33 gone-cookie=a33 rotated-bearer=a33 expired-bearer=a33 key-unknown=a5 key-revoked=a5
 GET /api/files/folders: disabled-cookie=a6 bumped-cookie=a6 gone-cookie=a6 rotated-bearer=a6 expired-bearer=a6 key-unknown=a3 key-revoked=a3
 POST /api/files/folders: disabled-cookie=a6 bumped-cookie=a6 gone-cookie=a6 rotated-bearer=a6 expired-bearer=a6 key-unknown=a3 key-revoked=a3
 HEAD /api/files/folders: disabled-cookie=a7 bumped-cookie=a7 gone-cookie=a7 rotated-bearer=a7 expired-bearer=a7 key-unknown=a5 key-revoked=a5
@@ -556,97 +555,97 @@ GET /api/mcp-settings: disabled-cookie=a6 bumped-cookie=a6 gone-cookie=a6 rotate
 PATCH /api/mcp-settings: disabled-cookie=a6 bumped-cookie=a6 gone-cookie=a6 rotated-bearer=a6 expired-bearer=a6 key-unknown=a3 key-revoked=a3
 HEAD /api/mcp-settings: disabled-cookie=a7 bumped-cookie=a7 gone-cookie=a7 rotated-bearer=a7 expired-bearer=a7 key-unknown=a5 key-revoked=a5
 POST /api/mcp-status: disabled-cookie=a6 bumped-cookie=a6 gone-cookie=a6 rotated-bearer=a6 expired-bearer=a6 key-unknown=a3 key-revoked=a3
-GET /api/member/accepted: disabled-cookie=a37 bumped-cookie=a37 gone-cookie=a37 rotated-bearer=a37 expired-bearer=a37 key-unknown=a3 key-revoked=a3
-HEAD /api/member/accepted: disabled-cookie=a38 bumped-cookie=a38 gone-cookie=a38 rotated-bearer=a38 expired-bearer=a38 key-unknown=a5 key-revoked=a5
-GET /api/member/accepted/:id: disabled-cookie=a37 bumped-cookie=a37 gone-cookie=a37 rotated-bearer=a37 expired-bearer=a37 key-unknown=a3 key-revoked=a3
-HEAD /api/member/accepted/:id: disabled-cookie=a38 bumped-cookie=a38 gone-cookie=a38 rotated-bearer=a38 expired-bearer=a38 key-unknown=a5 key-revoked=a5
-GET /api/member/apps: disabled-cookie=a37 bumped-cookie=a37 gone-cookie=a37 rotated-bearer=a37 expired-bearer=a37 key-unknown=a3 key-revoked=a3
-HEAD /api/member/apps: disabled-cookie=a38 bumped-cookie=a38 gone-cookie=a38 rotated-bearer=a38 expired-bearer=a38 key-unknown=a5 key-revoked=a5
-POST /api/member/apps/:id/db-broker: disabled-cookie=a37 bumped-cookie=a37 gone-cookie=a37 rotated-bearer=a37 expired-bearer=a37 key-unknown=a3 key-revoked=a3
+GET /api/member/accepted: disabled-cookie=a36 bumped-cookie=a36 gone-cookie=a36 rotated-bearer=a36 expired-bearer=a36 key-unknown=a3 key-revoked=a3
+HEAD /api/member/accepted: disabled-cookie=a37 bumped-cookie=a37 gone-cookie=a37 rotated-bearer=a37 expired-bearer=a37 key-unknown=a5 key-revoked=a5
+GET /api/member/accepted/:id: disabled-cookie=a36 bumped-cookie=a36 gone-cookie=a36 rotated-bearer=a36 expired-bearer=a36 key-unknown=a3 key-revoked=a3
+HEAD /api/member/accepted/:id: disabled-cookie=a37 bumped-cookie=a37 gone-cookie=a37 rotated-bearer=a37 expired-bearer=a37 key-unknown=a5 key-revoked=a5
+GET /api/member/apps: disabled-cookie=a36 bumped-cookie=a36 gone-cookie=a36 rotated-bearer=a36 expired-bearer=a36 key-unknown=a3 key-revoked=a3
+HEAD /api/member/apps: disabled-cookie=a37 bumped-cookie=a37 gone-cookie=a37 rotated-bearer=a37 expired-bearer=a37 key-unknown=a5 key-revoked=a5
+POST /api/member/apps/:id/db-broker: disabled-cookie=a36 bumped-cookie=a36 gone-cookie=a36 rotated-bearer=a36 expired-bearer=a36 key-unknown=a3 key-revoked=a3
 GET /api/member/apps/:id/frame: disabled-cookie=a11 bumped-cookie=a11 gone-cookie=a11 rotated-bearer=a11 expired-bearer=a11 key-unknown=a3 key-revoked=a3
 HEAD /api/member/apps/:id/frame: disabled-cookie=a11 bumped-cookie=a11 gone-cookie=a11 rotated-bearer=a11 expired-bearer=a11 key-unknown=a5 key-revoked=a5
-POST /api/member/apps/:id/frame-ticket: disabled-cookie=a37 bumped-cookie=a37 gone-cookie=a37 rotated-bearer=a37 expired-bearer=a37 key-unknown=a3 key-revoked=a3
-POST /api/member/apps/:id/tool-broker: disabled-cookie=a37 bumped-cookie=a37 gone-cookie=a37 rotated-bearer=a37 expired-bearer=a37 key-unknown=a3 key-revoked=a3
-GET /api/member/chat: disabled-cookie=a37 bumped-cookie=a37 gone-cookie=a37 rotated-bearer=a37 expired-bearer=a37 key-unknown=a3 key-revoked=a3
-POST /api/member/chat: disabled-cookie=a37 bumped-cookie=a37 gone-cookie=a37 rotated-bearer=a37 expired-bearer=a37 key-unknown=a3 key-revoked=a3
-HEAD /api/member/chat: disabled-cookie=a38 bumped-cookie=a38 gone-cookie=a38 rotated-bearer=a38 expired-bearer=a38 key-unknown=a5 key-revoked=a5
-POST /api/member/chat/read: disabled-cookie=a37 bumped-cookie=a37 gone-cookie=a37 rotated-bearer=a37 expired-bearer=a37 key-unknown=a3 key-revoked=a3
-GET /api/member/chat/unread: disabled-cookie=a37 bumped-cookie=a37 gone-cookie=a37 rotated-bearer=a37 expired-bearer=a37 key-unknown=a3 key-revoked=a3
-HEAD /api/member/chat/unread: disabled-cookie=a38 bumped-cookie=a38 gone-cookie=a38 rotated-bearer=a38 expired-bearer=a38 key-unknown=a5 key-revoked=a5
-GET /api/member/client-requests: disabled-cookie=a37 bumped-cookie=a37 gone-cookie=a37 rotated-bearer=a37 expired-bearer=a37 key-unknown=a3 key-revoked=a3
-HEAD /api/member/client-requests: disabled-cookie=a38 bumped-cookie=a38 gone-cookie=a38 rotated-bearer=a38 expired-bearer=a38 key-unknown=a5 key-revoked=a5
-GET /api/member/client-requests/:id: disabled-cookie=a37 bumped-cookie=a37 gone-cookie=a37 rotated-bearer=a37 expired-bearer=a37 key-unknown=a3 key-revoked=a3
-HEAD /api/member/client-requests/:id: disabled-cookie=a38 bumped-cookie=a38 gone-cookie=a38 rotated-bearer=a38 expired-bearer=a38 key-unknown=a5 key-revoked=a5
-GET /api/member/client-requests/:id/bytes: disabled-cookie=a37 bumped-cookie=a37 gone-cookie=a37 rotated-bearer=a37 expired-bearer=a37 key-unknown=a3 key-revoked=a3
-HEAD /api/member/client-requests/:id/bytes: disabled-cookie=a38 bumped-cookie=a38 gone-cookie=a38 rotated-bearer=a38 expired-bearer=a38 key-unknown=a5 key-revoked=a5
-GET /api/member/draws/:id/svg: disabled-cookie=a39 bumped-cookie=a39 gone-cookie=a39 rotated-bearer=a39 expired-bearer=a39 key-unknown=a3 key-revoked=a3
-HEAD /api/member/draws/:id/svg: disabled-cookie=a40 bumped-cookie=a40 gone-cookie=a40 rotated-bearer=a40 expired-bearer=a40 key-unknown=a5 key-revoked=a5
-GET /api/member/files/:id: disabled-cookie=a39 bumped-cookie=a39 gone-cookie=a39 rotated-bearer=a39 expired-bearer=a39 key-unknown=a3 key-revoked=a3
-HEAD /api/member/files/:id: disabled-cookie=a40 bumped-cookie=a40 gone-cookie=a40 rotated-bearer=a40 expired-bearer=a40 key-unknown=a5 key-revoked=a5
-GET /api/member/home: disabled-cookie=a37 bumped-cookie=a37 gone-cookie=a37 rotated-bearer=a37 expired-bearer=a37 key-unknown=a3 key-revoked=a3
-HEAD /api/member/home: disabled-cookie=a38 bumped-cookie=a38 gone-cookie=a38 rotated-bearer=a38 expired-bearer=a38 key-unknown=a5 key-revoked=a5
-GET /api/member/items: disabled-cookie=a37 bumped-cookie=a37 gone-cookie=a37 rotated-bearer=a37 expired-bearer=a37 key-unknown=a3 key-revoked=a3
-HEAD /api/member/items: disabled-cookie=a38 bumped-cookie=a38 gone-cookie=a38 rotated-bearer=a38 expired-bearer=a38 key-unknown=a5 key-revoked=a5
-GET /api/member/library: disabled-cookie=a37 bumped-cookie=a37 gone-cookie=a37 rotated-bearer=a37 expired-bearer=a37 key-unknown=a3 key-revoked=a3
-HEAD /api/member/library: disabled-cookie=a38 bumped-cookie=a38 gone-cookie=a38 rotated-bearer=a38 expired-bearer=a38 key-unknown=a5 key-revoked=a5
-GET /api/member/library/:id: disabled-cookie=a37 bumped-cookie=a37 gone-cookie=a37 rotated-bearer=a37 expired-bearer=a37 key-unknown=a3 key-revoked=a3
-HEAD /api/member/library/:id: disabled-cookie=a38 bumped-cookie=a38 gone-cookie=a38 rotated-bearer=a38 expired-bearer=a38 key-unknown=a5 key-revoked=a5
-GET /api/member/mcp: disabled-cookie=a37 bumped-cookie=a37 gone-cookie=a37 rotated-bearer=a37 expired-bearer=a37 key-unknown=a3 key-revoked=a3
-HEAD /api/member/mcp: disabled-cookie=a38 bumped-cookie=a38 gone-cookie=a38 rotated-bearer=a38 expired-bearer=a38 key-unknown=a5 key-revoked=a5
-DELETE /api/member/mcp/clients/:id: disabled-cookie=a37 bumped-cookie=a37 gone-cookie=a37 rotated-bearer=a37 expired-bearer=a37 key-unknown=a3 key-revoked=a3
-GET /api/member/my-apps: disabled-cookie=a37 bumped-cookie=a37 gone-cookie=a37 rotated-bearer=a37 expired-bearer=a37 key-unknown=a3 key-revoked=a3
-HEAD /api/member/my-apps: disabled-cookie=a38 bumped-cookie=a38 gone-cookie=a38 rotated-bearer=a38 expired-bearer=a38 key-unknown=a5 key-revoked=a5
-POST /api/member/my-apps/:id/delete: disabled-cookie=a37 bumped-cookie=a37 gone-cookie=a37 rotated-bearer=a37 expired-bearer=a37 key-unknown=a3 key-revoked=a3
-GET /api/member/my-apps/:id/history: disabled-cookie=a37 bumped-cookie=a37 gone-cookie=a37 rotated-bearer=a37 expired-bearer=a37 key-unknown=a3 key-revoked=a3
-HEAD /api/member/my-apps/:id/history: disabled-cookie=a38 bumped-cookie=a38 gone-cookie=a38 rotated-bearer=a38 expired-bearer=a38 key-unknown=a5 key-revoked=a5
-DELETE /api/member/my-apps/:id/history/:snapshotId: disabled-cookie=a37 bumped-cookie=a37 gone-cookie=a37 rotated-bearer=a37 expired-bearer=a37 key-unknown=a3 key-revoked=a3
-POST /api/member/my-apps/:id/recall: disabled-cookie=a37 bumped-cookie=a37 gone-cookie=a37 rotated-bearer=a37 expired-bearer=a37 key-unknown=a3 key-revoked=a3
-POST /api/member/my-apps/:id/share: disabled-cookie=a37 bumped-cookie=a37 gone-cookie=a37 rotated-bearer=a37 expired-bearer=a37 key-unknown=a3 key-revoked=a3
-POST /api/member/my-apps/:id/submit: disabled-cookie=a37 bumped-cookie=a37 gone-cookie=a37 rotated-bearer=a37 expired-bearer=a37 key-unknown=a3 key-revoked=a3
-POST /api/member/my-apps/:id/undelete: disabled-cookie=a37 bumped-cookie=a37 gone-cookie=a37 rotated-bearer=a37 expired-bearer=a37 key-unknown=a3 key-revoked=a3
-GET /api/member/my-apps/deleted: disabled-cookie=a37 bumped-cookie=a37 gone-cookie=a37 rotated-bearer=a37 expired-bearer=a37 key-unknown=a3 key-revoked=a3
-HEAD /api/member/my-apps/deleted: disabled-cookie=a38 bumped-cookie=a38 gone-cookie=a38 rotated-bearer=a38 expired-bearer=a38 key-unknown=a5 key-revoked=a5
-POST /api/member/push/connect: disabled-cookie=a37 bumped-cookie=a37 gone-cookie=a37 rotated-bearer=a37 expired-bearer=a37 key-unknown=a3 key-revoked=a3
-GET /api/member/push/preferences: disabled-cookie=a37 bumped-cookie=a37 gone-cookie=a37 rotated-bearer=a37 expired-bearer=a37 key-unknown=a3 key-revoked=a3
-PUT /api/member/push/preferences: disabled-cookie=a37 bumped-cookie=a37 gone-cookie=a37 rotated-bearer=a37 expired-bearer=a37 key-unknown=a3 key-revoked=a3
-HEAD /api/member/push/preferences: disabled-cookie=a38 bumped-cookie=a38 gone-cookie=a38 rotated-bearer=a38 expired-bearer=a38 key-unknown=a5 key-revoked=a5
-GET /api/member/push/subscriptions: disabled-cookie=a37 bumped-cookie=a37 gone-cookie=a37 rotated-bearer=a37 expired-bearer=a37 key-unknown=a3 key-revoked=a3
-POST /api/member/push/subscriptions: disabled-cookie=a37 bumped-cookie=a37 gone-cookie=a37 rotated-bearer=a37 expired-bearer=a37 key-unknown=a3 key-revoked=a3
-HEAD /api/member/push/subscriptions: disabled-cookie=a38 bumped-cookie=a38 gone-cookie=a38 rotated-bearer=a38 expired-bearer=a38 key-unknown=a5 key-revoked=a5
-DELETE /api/member/push/subscriptions/:id: disabled-cookie=a37 bumped-cookie=a37 gone-cookie=a37 rotated-bearer=a37 expired-bearer=a37 key-unknown=a3 key-revoked=a3
-GET /api/member/realtime: disabled-cookie=a37 bumped-cookie=a37 gone-cookie=a37 rotated-bearer=a37 expired-bearer=a37 key-unknown=a3 key-revoked=a3
-HEAD /api/member/realtime: disabled-cookie=a38 bumped-cookie=a38 gone-cookie=a38 rotated-bearer=a38 expired-bearer=a38 key-unknown=a5 key-revoked=a5
-GET /api/member/shell: disabled-cookie=a37 bumped-cookie=a37 gone-cookie=a37 rotated-bearer=a37 expired-bearer=a37 key-unknown=a3 key-revoked=a3
-HEAD /api/member/shell: disabled-cookie=a38 bumped-cookie=a38 gone-cookie=a38 rotated-bearer=a38 expired-bearer=a38 key-unknown=a5 key-revoked=a5
-GET /api/member/space: disabled-cookie=a37 bumped-cookie=a37 gone-cookie=a37 rotated-bearer=a37 expired-bearer=a37 key-unknown=a3 key-revoked=a3
-POST /api/member/space: disabled-cookie=a37 bumped-cookie=a37 gone-cookie=a37 rotated-bearer=a37 expired-bearer=a37 key-unknown=a3 key-revoked=a3
-HEAD /api/member/space: disabled-cookie=a38 bumped-cookie=a38 gone-cookie=a38 rotated-bearer=a38 expired-bearer=a38 key-unknown=a5 key-revoked=a5
-POST /api/member/space-files: disabled-cookie=a37 bumped-cookie=a37 gone-cookie=a37 rotated-bearer=a37 expired-bearer=a37 key-unknown=a3 key-revoked=a3
-GET /api/member/space/:id: disabled-cookie=a37 bumped-cookie=a37 gone-cookie=a37 rotated-bearer=a37 expired-bearer=a37 key-unknown=a3 key-revoked=a3
-PATCH /api/member/space/:id: disabled-cookie=a37 bumped-cookie=a37 gone-cookie=a37 rotated-bearer=a37 expired-bearer=a37 key-unknown=a3 key-revoked=a3
-DELETE /api/member/space/:id: disabled-cookie=a37 bumped-cookie=a37 gone-cookie=a37 rotated-bearer=a37 expired-bearer=a37 key-unknown=a3 key-revoked=a3
-HEAD /api/member/space/:id: disabled-cookie=a38 bumped-cookie=a38 gone-cookie=a38 rotated-bearer=a38 expired-bearer=a38 key-unknown=a5 key-revoked=a5
-GET /api/member/space/:id/bytes: disabled-cookie=a37 bumped-cookie=a37 gone-cookie=a37 rotated-bearer=a37 expired-bearer=a37 key-unknown=a3 key-revoked=a3
-HEAD /api/member/space/:id/bytes: disabled-cookie=a38 bumped-cookie=a38 gone-cookie=a38 rotated-bearer=a38 expired-bearer=a38 key-unknown=a5 key-revoked=a5
-PUT /api/member/space/:id/draft: disabled-cookie=a37 bumped-cookie=a37 gone-cookie=a37 rotated-bearer=a37 expired-bearer=a37 key-unknown=a3 key-revoked=a3
-POST /api/member/space/:id/recall: disabled-cookie=a37 bumped-cookie=a37 gone-cookie=a37 rotated-bearer=a37 expired-bearer=a37 key-unknown=a3 key-revoked=a3
-POST /api/member/space/:id/save: disabled-cookie=a37 bumped-cookie=a37 gone-cookie=a37 rotated-bearer=a37 expired-bearer=a37 key-unknown=a3 key-revoked=a3
-POST /api/member/space/:id/share: disabled-cookie=a37 bumped-cookie=a37 gone-cookie=a37 rotated-bearer=a37 expired-bearer=a37 key-unknown=a3 key-revoked=a3
-POST /api/member/space/:id/submit: disabled-cookie=a37 bumped-cookie=a37 gone-cookie=a37 rotated-bearer=a37 expired-bearer=a37 key-unknown=a3 key-revoked=a3
-GET /api/member/team-drafts: disabled-cookie=a37 bumped-cookie=a37 gone-cookie=a37 rotated-bearer=a37 expired-bearer=a37 key-unknown=a3 key-revoked=a3
-HEAD /api/member/team-drafts: disabled-cookie=a38 bumped-cookie=a38 gone-cookie=a38 rotated-bearer=a38 expired-bearer=a38 key-unknown=a5 key-revoked=a5
-GET /api/member/team-drafts/:id: disabled-cookie=a37 bumped-cookie=a37 gone-cookie=a37 rotated-bearer=a37 expired-bearer=a37 key-unknown=a3 key-revoked=a3
-HEAD /api/member/team-drafts/:id: disabled-cookie=a38 bumped-cookie=a38 gone-cookie=a38 rotated-bearer=a38 expired-bearer=a38 key-unknown=a5 key-revoked=a5
-GET /api/member/team-drafts/:id/bytes: disabled-cookie=a37 bumped-cookie=a37 gone-cookie=a37 rotated-bearer=a37 expired-bearer=a37 key-unknown=a3 key-revoked=a3
-HEAD /api/member/team-drafts/:id/bytes: disabled-cookie=a38 bumped-cookie=a38 gone-cookie=a38 rotated-bearer=a38 expired-bearer=a38 key-unknown=a5 key-revoked=a5
-GET /api/member/tree/:kind: disabled-cookie=a37 bumped-cookie=a37 gone-cookie=a37 rotated-bearer=a37 expired-bearer=a37 key-unknown=a3 key-revoked=a3
-HEAD /api/member/tree/:kind: disabled-cookie=a38 bumped-cookie=a38 gone-cookie=a38 rotated-bearer=a38 expired-bearer=a38 key-unknown=a5 key-revoked=a5
-POST /api/member/tree/:kind/folders: disabled-cookie=a37 bumped-cookie=a37 gone-cookie=a37 rotated-bearer=a37 expired-bearer=a37 key-unknown=a3 key-revoked=a3
-PATCH /api/member/tree/:kind/folders/:id: disabled-cookie=a37 bumped-cookie=a37 gone-cookie=a37 rotated-bearer=a37 expired-bearer=a37 key-unknown=a3 key-revoked=a3
-DELETE /api/member/tree/:kind/folders/:id: disabled-cookie=a37 bumped-cookie=a37 gone-cookie=a37 rotated-bearer=a37 expired-bearer=a37 key-unknown=a3 key-revoked=a3
-POST /api/member/tree/:kind/move: disabled-cookie=a37 bumped-cookie=a37 gone-cookie=a37 rotated-bearer=a37 expired-bearer=a37 key-unknown=a3 key-revoked=a3
-GET /api/member/tree/:kind/search: disabled-cookie=a37 bumped-cookie=a37 gone-cookie=a37 rotated-bearer=a37 expired-bearer=a37 key-unknown=a3 key-revoked=a3
-HEAD /api/member/tree/:kind/search: disabled-cookie=a38 bumped-cookie=a38 gone-cookie=a38 rotated-bearer=a38 expired-bearer=a38 key-unknown=a5 key-revoked=a5
+POST /api/member/apps/:id/frame-ticket: disabled-cookie=a36 bumped-cookie=a36 gone-cookie=a36 rotated-bearer=a36 expired-bearer=a36 key-unknown=a3 key-revoked=a3
+POST /api/member/apps/:id/tool-broker: disabled-cookie=a36 bumped-cookie=a36 gone-cookie=a36 rotated-bearer=a36 expired-bearer=a36 key-unknown=a3 key-revoked=a3
+GET /api/member/chat: disabled-cookie=a36 bumped-cookie=a36 gone-cookie=a36 rotated-bearer=a36 expired-bearer=a36 key-unknown=a3 key-revoked=a3
+POST /api/member/chat: disabled-cookie=a36 bumped-cookie=a36 gone-cookie=a36 rotated-bearer=a36 expired-bearer=a36 key-unknown=a3 key-revoked=a3
+HEAD /api/member/chat: disabled-cookie=a37 bumped-cookie=a37 gone-cookie=a37 rotated-bearer=a37 expired-bearer=a37 key-unknown=a5 key-revoked=a5
+POST /api/member/chat/read: disabled-cookie=a36 bumped-cookie=a36 gone-cookie=a36 rotated-bearer=a36 expired-bearer=a36 key-unknown=a3 key-revoked=a3
+GET /api/member/chat/unread: disabled-cookie=a36 bumped-cookie=a36 gone-cookie=a36 rotated-bearer=a36 expired-bearer=a36 key-unknown=a3 key-revoked=a3
+HEAD /api/member/chat/unread: disabled-cookie=a37 bumped-cookie=a37 gone-cookie=a37 rotated-bearer=a37 expired-bearer=a37 key-unknown=a5 key-revoked=a5
+GET /api/member/client-requests: disabled-cookie=a36 bumped-cookie=a36 gone-cookie=a36 rotated-bearer=a36 expired-bearer=a36 key-unknown=a3 key-revoked=a3
+HEAD /api/member/client-requests: disabled-cookie=a37 bumped-cookie=a37 gone-cookie=a37 rotated-bearer=a37 expired-bearer=a37 key-unknown=a5 key-revoked=a5
+GET /api/member/client-requests/:id: disabled-cookie=a36 bumped-cookie=a36 gone-cookie=a36 rotated-bearer=a36 expired-bearer=a36 key-unknown=a3 key-revoked=a3
+HEAD /api/member/client-requests/:id: disabled-cookie=a37 bumped-cookie=a37 gone-cookie=a37 rotated-bearer=a37 expired-bearer=a37 key-unknown=a5 key-revoked=a5
+GET /api/member/client-requests/:id/bytes: disabled-cookie=a36 bumped-cookie=a36 gone-cookie=a36 rotated-bearer=a36 expired-bearer=a36 key-unknown=a3 key-revoked=a3
+HEAD /api/member/client-requests/:id/bytes: disabled-cookie=a37 bumped-cookie=a37 gone-cookie=a37 rotated-bearer=a37 expired-bearer=a37 key-unknown=a5 key-revoked=a5
+GET /api/member/draws/:id/svg: disabled-cookie=a38 bumped-cookie=a38 gone-cookie=a38 rotated-bearer=a38 expired-bearer=a38 key-unknown=a3 key-revoked=a3
+HEAD /api/member/draws/:id/svg: disabled-cookie=a39 bumped-cookie=a39 gone-cookie=a39 rotated-bearer=a39 expired-bearer=a39 key-unknown=a5 key-revoked=a5
+GET /api/member/files/:id: disabled-cookie=a38 bumped-cookie=a38 gone-cookie=a38 rotated-bearer=a38 expired-bearer=a38 key-unknown=a3 key-revoked=a3
+HEAD /api/member/files/:id: disabled-cookie=a39 bumped-cookie=a39 gone-cookie=a39 rotated-bearer=a39 expired-bearer=a39 key-unknown=a5 key-revoked=a5
+GET /api/member/home: disabled-cookie=a36 bumped-cookie=a36 gone-cookie=a36 rotated-bearer=a36 expired-bearer=a36 key-unknown=a3 key-revoked=a3
+HEAD /api/member/home: disabled-cookie=a37 bumped-cookie=a37 gone-cookie=a37 rotated-bearer=a37 expired-bearer=a37 key-unknown=a5 key-revoked=a5
+GET /api/member/items: disabled-cookie=a36 bumped-cookie=a36 gone-cookie=a36 rotated-bearer=a36 expired-bearer=a36 key-unknown=a3 key-revoked=a3
+HEAD /api/member/items: disabled-cookie=a37 bumped-cookie=a37 gone-cookie=a37 rotated-bearer=a37 expired-bearer=a37 key-unknown=a5 key-revoked=a5
+GET /api/member/library: disabled-cookie=a36 bumped-cookie=a36 gone-cookie=a36 rotated-bearer=a36 expired-bearer=a36 key-unknown=a3 key-revoked=a3
+HEAD /api/member/library: disabled-cookie=a37 bumped-cookie=a37 gone-cookie=a37 rotated-bearer=a37 expired-bearer=a37 key-unknown=a5 key-revoked=a5
+GET /api/member/library/:id: disabled-cookie=a36 bumped-cookie=a36 gone-cookie=a36 rotated-bearer=a36 expired-bearer=a36 key-unknown=a3 key-revoked=a3
+HEAD /api/member/library/:id: disabled-cookie=a37 bumped-cookie=a37 gone-cookie=a37 rotated-bearer=a37 expired-bearer=a37 key-unknown=a5 key-revoked=a5
+GET /api/member/mcp: disabled-cookie=a36 bumped-cookie=a36 gone-cookie=a36 rotated-bearer=a36 expired-bearer=a36 key-unknown=a3 key-revoked=a3
+HEAD /api/member/mcp: disabled-cookie=a37 bumped-cookie=a37 gone-cookie=a37 rotated-bearer=a37 expired-bearer=a37 key-unknown=a5 key-revoked=a5
+DELETE /api/member/mcp/clients/:id: disabled-cookie=a36 bumped-cookie=a36 gone-cookie=a36 rotated-bearer=a36 expired-bearer=a36 key-unknown=a3 key-revoked=a3
+GET /api/member/my-apps: disabled-cookie=a36 bumped-cookie=a36 gone-cookie=a36 rotated-bearer=a36 expired-bearer=a36 key-unknown=a3 key-revoked=a3
+HEAD /api/member/my-apps: disabled-cookie=a37 bumped-cookie=a37 gone-cookie=a37 rotated-bearer=a37 expired-bearer=a37 key-unknown=a5 key-revoked=a5
+POST /api/member/my-apps/:id/delete: disabled-cookie=a36 bumped-cookie=a36 gone-cookie=a36 rotated-bearer=a36 expired-bearer=a36 key-unknown=a3 key-revoked=a3
+GET /api/member/my-apps/:id/history: disabled-cookie=a36 bumped-cookie=a36 gone-cookie=a36 rotated-bearer=a36 expired-bearer=a36 key-unknown=a3 key-revoked=a3
+HEAD /api/member/my-apps/:id/history: disabled-cookie=a37 bumped-cookie=a37 gone-cookie=a37 rotated-bearer=a37 expired-bearer=a37 key-unknown=a5 key-revoked=a5
+DELETE /api/member/my-apps/:id/history/:snapshotId: disabled-cookie=a36 bumped-cookie=a36 gone-cookie=a36 rotated-bearer=a36 expired-bearer=a36 key-unknown=a3 key-revoked=a3
+POST /api/member/my-apps/:id/recall: disabled-cookie=a36 bumped-cookie=a36 gone-cookie=a36 rotated-bearer=a36 expired-bearer=a36 key-unknown=a3 key-revoked=a3
+POST /api/member/my-apps/:id/share: disabled-cookie=a36 bumped-cookie=a36 gone-cookie=a36 rotated-bearer=a36 expired-bearer=a36 key-unknown=a3 key-revoked=a3
+POST /api/member/my-apps/:id/submit: disabled-cookie=a36 bumped-cookie=a36 gone-cookie=a36 rotated-bearer=a36 expired-bearer=a36 key-unknown=a3 key-revoked=a3
+POST /api/member/my-apps/:id/undelete: disabled-cookie=a36 bumped-cookie=a36 gone-cookie=a36 rotated-bearer=a36 expired-bearer=a36 key-unknown=a3 key-revoked=a3
+GET /api/member/my-apps/deleted: disabled-cookie=a36 bumped-cookie=a36 gone-cookie=a36 rotated-bearer=a36 expired-bearer=a36 key-unknown=a3 key-revoked=a3
+HEAD /api/member/my-apps/deleted: disabled-cookie=a37 bumped-cookie=a37 gone-cookie=a37 rotated-bearer=a37 expired-bearer=a37 key-unknown=a5 key-revoked=a5
+POST /api/member/push/connect: disabled-cookie=a36 bumped-cookie=a36 gone-cookie=a36 rotated-bearer=a36 expired-bearer=a36 key-unknown=a3 key-revoked=a3
+GET /api/member/push/preferences: disabled-cookie=a36 bumped-cookie=a36 gone-cookie=a36 rotated-bearer=a36 expired-bearer=a36 key-unknown=a3 key-revoked=a3
+PUT /api/member/push/preferences: disabled-cookie=a36 bumped-cookie=a36 gone-cookie=a36 rotated-bearer=a36 expired-bearer=a36 key-unknown=a3 key-revoked=a3
+HEAD /api/member/push/preferences: disabled-cookie=a37 bumped-cookie=a37 gone-cookie=a37 rotated-bearer=a37 expired-bearer=a37 key-unknown=a5 key-revoked=a5
+GET /api/member/push/subscriptions: disabled-cookie=a36 bumped-cookie=a36 gone-cookie=a36 rotated-bearer=a36 expired-bearer=a36 key-unknown=a3 key-revoked=a3
+POST /api/member/push/subscriptions: disabled-cookie=a36 bumped-cookie=a36 gone-cookie=a36 rotated-bearer=a36 expired-bearer=a36 key-unknown=a3 key-revoked=a3
+HEAD /api/member/push/subscriptions: disabled-cookie=a37 bumped-cookie=a37 gone-cookie=a37 rotated-bearer=a37 expired-bearer=a37 key-unknown=a5 key-revoked=a5
+DELETE /api/member/push/subscriptions/:id: disabled-cookie=a36 bumped-cookie=a36 gone-cookie=a36 rotated-bearer=a36 expired-bearer=a36 key-unknown=a3 key-revoked=a3
+GET /api/member/realtime: disabled-cookie=a36 bumped-cookie=a36 gone-cookie=a36 rotated-bearer=a36 expired-bearer=a36 key-unknown=a3 key-revoked=a3
+HEAD /api/member/realtime: disabled-cookie=a37 bumped-cookie=a37 gone-cookie=a37 rotated-bearer=a37 expired-bearer=a37 key-unknown=a5 key-revoked=a5
+GET /api/member/shell: disabled-cookie=a36 bumped-cookie=a36 gone-cookie=a36 rotated-bearer=a36 expired-bearer=a36 key-unknown=a3 key-revoked=a3
+HEAD /api/member/shell: disabled-cookie=a37 bumped-cookie=a37 gone-cookie=a37 rotated-bearer=a37 expired-bearer=a37 key-unknown=a5 key-revoked=a5
+GET /api/member/space: disabled-cookie=a36 bumped-cookie=a36 gone-cookie=a36 rotated-bearer=a36 expired-bearer=a36 key-unknown=a3 key-revoked=a3
+POST /api/member/space: disabled-cookie=a36 bumped-cookie=a36 gone-cookie=a36 rotated-bearer=a36 expired-bearer=a36 key-unknown=a3 key-revoked=a3
+HEAD /api/member/space: disabled-cookie=a37 bumped-cookie=a37 gone-cookie=a37 rotated-bearer=a37 expired-bearer=a37 key-unknown=a5 key-revoked=a5
+POST /api/member/space-files: disabled-cookie=a36 bumped-cookie=a36 gone-cookie=a36 rotated-bearer=a36 expired-bearer=a36 key-unknown=a3 key-revoked=a3
+GET /api/member/space/:id: disabled-cookie=a36 bumped-cookie=a36 gone-cookie=a36 rotated-bearer=a36 expired-bearer=a36 key-unknown=a3 key-revoked=a3
+PATCH /api/member/space/:id: disabled-cookie=a36 bumped-cookie=a36 gone-cookie=a36 rotated-bearer=a36 expired-bearer=a36 key-unknown=a3 key-revoked=a3
+DELETE /api/member/space/:id: disabled-cookie=a36 bumped-cookie=a36 gone-cookie=a36 rotated-bearer=a36 expired-bearer=a36 key-unknown=a3 key-revoked=a3
+HEAD /api/member/space/:id: disabled-cookie=a37 bumped-cookie=a37 gone-cookie=a37 rotated-bearer=a37 expired-bearer=a37 key-unknown=a5 key-revoked=a5
+GET /api/member/space/:id/bytes: disabled-cookie=a36 bumped-cookie=a36 gone-cookie=a36 rotated-bearer=a36 expired-bearer=a36 key-unknown=a3 key-revoked=a3
+HEAD /api/member/space/:id/bytes: disabled-cookie=a37 bumped-cookie=a37 gone-cookie=a37 rotated-bearer=a37 expired-bearer=a37 key-unknown=a5 key-revoked=a5
+PUT /api/member/space/:id/draft: disabled-cookie=a36 bumped-cookie=a36 gone-cookie=a36 rotated-bearer=a36 expired-bearer=a36 key-unknown=a3 key-revoked=a3
+POST /api/member/space/:id/recall: disabled-cookie=a36 bumped-cookie=a36 gone-cookie=a36 rotated-bearer=a36 expired-bearer=a36 key-unknown=a3 key-revoked=a3
+POST /api/member/space/:id/save: disabled-cookie=a36 bumped-cookie=a36 gone-cookie=a36 rotated-bearer=a36 expired-bearer=a36 key-unknown=a3 key-revoked=a3
+POST /api/member/space/:id/share: disabled-cookie=a36 bumped-cookie=a36 gone-cookie=a36 rotated-bearer=a36 expired-bearer=a36 key-unknown=a3 key-revoked=a3
+POST /api/member/space/:id/submit: disabled-cookie=a36 bumped-cookie=a36 gone-cookie=a36 rotated-bearer=a36 expired-bearer=a36 key-unknown=a3 key-revoked=a3
+GET /api/member/team-drafts: disabled-cookie=a36 bumped-cookie=a36 gone-cookie=a36 rotated-bearer=a36 expired-bearer=a36 key-unknown=a3 key-revoked=a3
+HEAD /api/member/team-drafts: disabled-cookie=a37 bumped-cookie=a37 gone-cookie=a37 rotated-bearer=a37 expired-bearer=a37 key-unknown=a5 key-revoked=a5
+GET /api/member/team-drafts/:id: disabled-cookie=a36 bumped-cookie=a36 gone-cookie=a36 rotated-bearer=a36 expired-bearer=a36 key-unknown=a3 key-revoked=a3
+HEAD /api/member/team-drafts/:id: disabled-cookie=a37 bumped-cookie=a37 gone-cookie=a37 rotated-bearer=a37 expired-bearer=a37 key-unknown=a5 key-revoked=a5
+GET /api/member/team-drafts/:id/bytes: disabled-cookie=a36 bumped-cookie=a36 gone-cookie=a36 rotated-bearer=a36 expired-bearer=a36 key-unknown=a3 key-revoked=a3
+HEAD /api/member/team-drafts/:id/bytes: disabled-cookie=a37 bumped-cookie=a37 gone-cookie=a37 rotated-bearer=a37 expired-bearer=a37 key-unknown=a5 key-revoked=a5
+GET /api/member/tree/:kind: disabled-cookie=a36 bumped-cookie=a36 gone-cookie=a36 rotated-bearer=a36 expired-bearer=a36 key-unknown=a3 key-revoked=a3
+HEAD /api/member/tree/:kind: disabled-cookie=a37 bumped-cookie=a37 gone-cookie=a37 rotated-bearer=a37 expired-bearer=a37 key-unknown=a5 key-revoked=a5
+POST /api/member/tree/:kind/folders: disabled-cookie=a36 bumped-cookie=a36 gone-cookie=a36 rotated-bearer=a36 expired-bearer=a36 key-unknown=a3 key-revoked=a3
+PATCH /api/member/tree/:kind/folders/:id: disabled-cookie=a36 bumped-cookie=a36 gone-cookie=a36 rotated-bearer=a36 expired-bearer=a36 key-unknown=a3 key-revoked=a3
+DELETE /api/member/tree/:kind/folders/:id: disabled-cookie=a36 bumped-cookie=a36 gone-cookie=a36 rotated-bearer=a36 expired-bearer=a36 key-unknown=a3 key-revoked=a3
+POST /api/member/tree/:kind/move: disabled-cookie=a36 bumped-cookie=a36 gone-cookie=a36 rotated-bearer=a36 expired-bearer=a36 key-unknown=a3 key-revoked=a3
+GET /api/member/tree/:kind/search: disabled-cookie=a36 bumped-cookie=a36 gone-cookie=a36 rotated-bearer=a36 expired-bearer=a36 key-unknown=a3 key-revoked=a3
+HEAD /api/member/tree/:kind/search: disabled-cookie=a37 bumped-cookie=a37 gone-cookie=a37 rotated-bearer=a37 expired-bearer=a37 key-unknown=a5 key-revoked=a5
 GET /api/mentions/search: disabled-cookie=a6 bumped-cookie=a6 gone-cookie=a6 rotated-bearer=a6 expired-bearer=a6 key-unknown=a3 key-revoked=a3
 HEAD /api/mentions/search: disabled-cookie=a7 bumped-cookie=a7 gone-cookie=a7 rotated-bearer=a7 expired-bearer=a7 key-unknown=a5 key-revoked=a5
 GET /api/metrics/usage: disabled-cookie=a6 bumped-cookie=a6 gone-cookie=a6 rotated-bearer=a6 expired-bearer=a6 key-unknown=a3 key-revoked=a3
@@ -707,11 +706,11 @@ GET /api/notes/:id: disabled-cookie=a6 bumped-cookie=a6 gone-cookie=a6 rotated-b
 PATCH /api/notes/:id: disabled-cookie=a6 bumped-cookie=a6 gone-cookie=a6 rotated-bearer=a6 expired-bearer=a6 key-unknown=a3 key-revoked=a3
 DELETE /api/notes/:id: disabled-cookie=a6 bumped-cookie=a6 gone-cookie=a6 rotated-bearer=a6 expired-bearer=a6 key-unknown=a3 key-revoked=a3
 HEAD /api/notes/:id: disabled-cookie=a7 bumped-cookie=a7 gone-cookie=a7 rotated-bearer=a7 expired-bearer=a7 key-unknown=a5 key-revoked=a5
-GET /api/oauth/authorize: disabled-cookie=a41 bumped-cookie=a41 gone-cookie=a41 rotated-bearer=a41 expired-bearer=a41 key-unknown=a41 key-revoked=a41
+GET /api/oauth/authorize: disabled-cookie=a40 bumped-cookie=a40 gone-cookie=a40 rotated-bearer=a40 expired-bearer=a40 key-unknown=a40 key-revoked=a40
 POST /api/oauth/authorize: disabled-cookie=a16 bumped-cookie=a16 gone-cookie=a16 rotated-bearer=a16 expired-bearer=a16 key-unknown=a16 key-revoked=a16
-HEAD /api/oauth/authorize: disabled-cookie=a41 bumped-cookie=a41 gone-cookie=a41 rotated-bearer=a41 expired-bearer=a41 key-unknown=a41 key-revoked=a41
-POST /api/oauth/register: disabled-cookie=a42 bumped-cookie=a42 gone-cookie=a42 rotated-bearer=a42 expired-bearer=a42 key-unknown=a42 key-revoked=a42
-POST /api/oauth/token: disabled-cookie=a43 bumped-cookie=a43 gone-cookie=a43 rotated-bearer=a43 expired-bearer=a43 key-unknown=a43 key-revoked=a43
+HEAD /api/oauth/authorize: disabled-cookie=a40 bumped-cookie=a40 gone-cookie=a40 rotated-bearer=a40 expired-bearer=a40 key-unknown=a40 key-revoked=a40
+POST /api/oauth/register: disabled-cookie=a41 bumped-cookie=a41 gone-cookie=a41 rotated-bearer=a41 expired-bearer=a41 key-unknown=a41 key-revoked=a41
+POST /api/oauth/token: disabled-cookie=a42 bumped-cookie=a42 gone-cookie=a42 rotated-bearer=a42 expired-bearer=a42 key-unknown=a42 key-revoked=a42
 GET /api/onboarding: disabled-cookie=a6 bumped-cookie=a6 gone-cookie=a6 rotated-bearer=a6 expired-bearer=a6 key-unknown=a3 key-revoked=a3
 POST /api/onboarding: disabled-cookie=a6 bumped-cookie=a6 gone-cookie=a6 rotated-bearer=a6 expired-bearer=a6 key-unknown=a3 key-revoked=a3
 HEAD /api/onboarding: disabled-cookie=a7 bumped-cookie=a7 gone-cookie=a7 rotated-bearer=a7 expired-bearer=a7 key-unknown=a5 key-revoked=a5
@@ -1006,9 +1005,9 @@ POST /api/tree/items/:id/opened: disabled-cookie=a6 bumped-cookie=a6 gone-cookie
 PUT /api/tree/items/:id/pin: disabled-cookie=a6 bumped-cookie=a6 gone-cookie=a6 rotated-bearer=a6 expired-bearer=a6 key-unknown=a3 key-revoked=a3
 GET /api/updates: disabled-cookie=a6 bumped-cookie=a6 gone-cookie=a6 rotated-bearer=a6 expired-bearer=a6 key-unknown=a3 key-revoked=a3
 HEAD /api/updates: disabled-cookie=a7 bumped-cookie=a7 gone-cookie=a7 rotated-bearer=a7 expired-bearer=a7 key-unknown=a5 key-revoked=a5
-GET /api/updates/check: disabled-cookie=a44 bumped-cookie=a44 gone-cookie=a44 rotated-bearer=a44 expired-bearer=a44 key-unknown=a3 key-revoked=a3
+GET /api/updates/check: disabled-cookie=a43 bumped-cookie=a43 gone-cookie=a43 rotated-bearer=a43 expired-bearer=a43 key-unknown=a3 key-revoked=a3
 POST /api/updates/check: disabled-cookie=a6 bumped-cookie=a6 gone-cookie=a6 rotated-bearer=a6 expired-bearer=a6 key-unknown=a3 key-revoked=a3
-HEAD /api/updates/check: disabled-cookie=a45 bumped-cookie=a45 gone-cookie=a45 rotated-bearer=a45 expired-bearer=a45 key-unknown=a5 key-revoked=a5
+HEAD /api/updates/check: disabled-cookie=a44 bumped-cookie=a44 gone-cookie=a44 rotated-bearer=a44 expired-bearer=a44 key-unknown=a5 key-revoked=a5
 POST /api/updates/request: disabled-cookie=a6 bumped-cookie=a6 gone-cookie=a6 rotated-bearer=a6 expired-bearer=a6 key-unknown=a3 key-revoked=a3
 GET /api/updates/status: disabled-cookie=a6 bumped-cookie=a6 gone-cookie=a6 rotated-bearer=a6 expired-bearer=a6 key-unknown=a3 key-revoked=a3
 HEAD /api/updates/status: disabled-cookie=a7 bumped-cookie=a7 gone-cookie=a7 rotated-bearer=a7 expired-bearer=a7 key-unknown=a5 key-revoked=a5
@@ -1022,7 +1021,7 @@ DELETE /api/users/:id/agent: disabled-cookie=a6 bumped-cookie=a6 gone-cookie=a6 
 GET /api/users/:id/devices: disabled-cookie=a6 bumped-cookie=a6 gone-cookie=a6 rotated-bearer=a6 expired-bearer=a6 key-unknown=a3 key-revoked=a3
 HEAD /api/users/:id/devices: disabled-cookie=a7 bumped-cookie=a7 gone-cookie=a7 rotated-bearer=a7 expired-bearer=a7 key-unknown=a5 key-revoked=a5
 DELETE /api/users/:id/devices/:jti: disabled-cookie=a6 bumped-cookie=a6 gone-cookie=a6 rotated-bearer=a6 expired-bearer=a6 key-unknown=a3 key-revoked=a3
-POST /api/users/:id/password: disabled-cookie=a46 bumped-cookie=a46 gone-cookie=a46 rotated-bearer=a46 expired-bearer=a46 key-unknown=a3 key-revoked=a3
+POST /api/users/:id/password: disabled-cookie=a45 bumped-cookie=a45 gone-cookie=a45 rotated-bearer=a45 expired-bearer=a45 key-unknown=a3 key-revoked=a3
 GET /api/v1/contacts: disabled-cookie=a6 bumped-cookie=a6 gone-cookie=a6 rotated-bearer=a6 expired-bearer=a6 key-unknown=a3 key-revoked=a3
 HEAD /api/v1/contacts: disabled-cookie=a7 bumped-cookie=a7 gone-cookie=a7 rotated-bearer=a7 expired-bearer=a7 key-unknown=a5 key-revoked=a5
 GET /api/v1/contacts/:id: disabled-cookie=a6 bumped-cookie=a6 gone-cookie=a6 rotated-bearer=a6 expired-bearer=a6 key-unknown=a3 key-revoked=a3
@@ -1033,10 +1032,10 @@ HEAD /api/v1/events: disabled-cookie=a7 bumped-cookie=a7 gone-cookie=a7 rotated-
 GET /api/v1/files: disabled-cookie=a6 bumped-cookie=a6 gone-cookie=a6 rotated-bearer=a6 expired-bearer=a6 key-unknown=a3 key-revoked=a3
 POST /api/v1/files: disabled-cookie=a6 bumped-cookie=a6 gone-cookie=a6 rotated-bearer=a6 expired-bearer=a6 key-unknown=a3 key-revoked=a3
 HEAD /api/v1/files: disabled-cookie=a7 bumped-cookie=a7 gone-cookie=a7 rotated-bearer=a7 expired-bearer=a7 key-unknown=a5 key-revoked=a5
-GET /api/v1/files/:id: disabled-cookie=a33 bumped-cookie=a33 gone-cookie=a33 rotated-bearer=a33 expired-bearer=a33 key-unknown=a3 key-revoked=a3
-HEAD /api/v1/files/:id: disabled-cookie=a34 bumped-cookie=a34 gone-cookie=a34 rotated-bearer=a34 expired-bearer=a34 key-unknown=a5 key-revoked=a5
-GET /api/v1/files/:id/download: disabled-cookie=a33 bumped-cookie=a33 gone-cookie=a33 rotated-bearer=a33 expired-bearer=a33 key-unknown=a3 key-revoked=a3
-HEAD /api/v1/files/:id/download: disabled-cookie=a34 bumped-cookie=a34 gone-cookie=a34 rotated-bearer=a34 expired-bearer=a34 key-unknown=a5 key-revoked=a5
+GET /api/v1/files/:id: disabled-cookie=a32 bumped-cookie=a32 gone-cookie=a32 rotated-bearer=a32 expired-bearer=a32 key-unknown=a3 key-revoked=a3
+HEAD /api/v1/files/:id: disabled-cookie=a33 bumped-cookie=a33 gone-cookie=a33 rotated-bearer=a33 expired-bearer=a33 key-unknown=a5 key-revoked=a5
+GET /api/v1/files/:id/download: disabled-cookie=a32 bumped-cookie=a32 gone-cookie=a32 rotated-bearer=a32 expired-bearer=a32 key-unknown=a3 key-revoked=a3
+HEAD /api/v1/files/:id/download: disabled-cookie=a33 bumped-cookie=a33 gone-cookie=a33 rotated-bearer=a33 expired-bearer=a33 key-unknown=a5 key-revoked=a5
 GET /api/v1/journal: disabled-cookie=a6 bumped-cookie=a6 gone-cookie=a6 rotated-bearer=a6 expired-bearer=a6 key-unknown=a3 key-revoked=a3
 POST /api/v1/journal: disabled-cookie=a6 bumped-cookie=a6 gone-cookie=a6 rotated-bearer=a6 expired-bearer=a6 key-unknown=a3 key-revoked=a3
 HEAD /api/v1/journal: disabled-cookie=a7 bumped-cookie=a7 gone-cookie=a7 rotated-bearer=a7 expired-bearer=a7 key-unknown=a5 key-revoked=a5
@@ -1072,8 +1071,8 @@ PATCH /api/v1/tasks/:id: disabled-cookie=a6 bumped-cookie=a6 gone-cookie=a6 rota
 HEAD /api/v1/tasks/:id: disabled-cookie=a7 bumped-cookie=a7 gone-cookie=a7 rotated-bearer=a7 expired-bearer=a7 key-unknown=a5 key-revoked=a5
 GET /api/v1/whoami: disabled-cookie=a2 bumped-cookie=a2 gone-cookie=a2 rotated-bearer=a2 expired-bearer=a2 key-unknown=a3 key-revoked=a3
 HEAD /api/v1/whoami: disabled-cookie=a4 bumped-cookie=a4 gone-cookie=a4 rotated-bearer=a4 expired-bearer=a4 key-unknown=a5 key-revoked=a5
-GET /api/version: disabled-cookie=a47 bumped-cookie=a47 gone-cookie=a47 rotated-bearer=a47 expired-bearer=a47 key-unknown=a47 key-revoked=a47
-HEAD /api/version: disabled-cookie=a47 bumped-cookie=a47 gone-cookie=a47 rotated-bearer=a47 expired-bearer=a47 key-unknown=a47 key-revoked=a47
+GET /api/version: disabled-cookie=a46 bumped-cookie=a46 gone-cookie=a46 rotated-bearer=a46 expired-bearer=a46 key-unknown=a46 key-revoked=a46
+HEAD /api/version: disabled-cookie=a46 bumped-cookie=a46 gone-cookie=a46 rotated-bearer=a46 expired-bearer=a46 key-unknown=a46 key-revoked=a46
 GET /api/workspaces: disabled-cookie=a2 bumped-cookie=a2 gone-cookie=a2 rotated-bearer=a2 expired-bearer=a2 key-unknown=a3 key-revoked=a3
 POST /api/workspaces: disabled-cookie=a2 bumped-cookie=a2 gone-cookie=a2 rotated-bearer=a2 expired-bearer=a2 key-unknown=a3 key-revoked=a3
 HEAD /api/workspaces: disabled-cookie=a4 bumped-cookie=a4 gone-cookie=a4 rotated-bearer=a4 expired-bearer=a4 key-unknown=a5 key-revoked=a5
@@ -1091,110 +1090,110 @@ PATCH /api/workspaces/:id/users/:loginId: disabled-cookie=a2 bumped-cookie=a2 go
 DELETE /api/workspaces/:id/users/:loginId: disabled-cookie=a2 bumped-cookie=a2 gone-cookie=a2 rotated-bearer=a2 expired-bearer=a2 key-unknown=a3 key-revoked=a3
 GET /api/workspaces/user-search: disabled-cookie=a2 bumped-cookie=a2 gone-cookie=a2 rotated-bearer=a2 expired-bearer=a2 key-unknown=a3 key-revoked=a3
 HEAD /api/workspaces/user-search: disabled-cookie=a4 bumped-cookie=a4 gone-cookie=a4 rotated-bearer=a4 expired-bearer=a4 key-unknown=a5 key-revoked=a5
-GET /pair: disabled-cookie=a48 bumped-cookie=a48 gone-cookie=a48 rotated-bearer=a48 expired-bearer=a48 key-unknown=a48 key-revoked=a48
-HEAD /pair: disabled-cookie=a48 bumped-cookie=a48 gone-cookie=a48 rotated-bearer=a48 expired-bearer=a48 key-unknown=a48 key-revoked=a48
-GET /print/draws/:id: disabled-cookie=a49 bumped-cookie=a49 gone-cookie=a49 rotated-bearer=a49 expired-bearer=a49 key-unknown=a3 key-revoked=a3
-HEAD /print/draws/:id: disabled-cookie=a49 bumped-cookie=a49 gone-cookie=a49 rotated-bearer=a49 expired-bearer=a49 key-unknown=a5 key-revoked=a5
-GET /print/pages/:id: disabled-cookie=a49 bumped-cookie=a49 gone-cookie=a49 rotated-bearer=a49 expired-bearer=a49 key-unknown=a3 key-revoked=a3
-HEAD /print/pages/:id: disabled-cookie=a49 bumped-cookie=a49 gone-cookie=a49 rotated-bearer=a49 expired-bearer=a49 key-unknown=a5 key-revoked=a5
-GET /render/draws/:id: disabled-cookie=a49 bumped-cookie=a49 gone-cookie=a49 rotated-bearer=a49 expired-bearer=a49 key-unknown=a3 key-revoked=a3
-HEAD /render/draws/:id: disabled-cookie=a49 bumped-cookie=a49 gone-cookie=a49 rotated-bearer=a49 expired-bearer=a49 key-unknown=a5 key-revoked=a5
-GET /s/:token: disabled-cookie=a50 bumped-cookie=a50 gone-cookie=a50 rotated-bearer=a50 expired-bearer=a50 key-unknown=a50 key-revoked=a50
-HEAD /s/:token: disabled-cookie=a50 bumped-cookie=a50 gone-cookie=a50 rotated-bearer=a50 expired-bearer=a50 key-unknown=a50 key-revoked=a50
+GET /pair: disabled-cookie=a47 bumped-cookie=a47 gone-cookie=a47 rotated-bearer=a47 expired-bearer=a47 key-unknown=a47 key-revoked=a47
+HEAD /pair: disabled-cookie=a47 bumped-cookie=a47 gone-cookie=a47 rotated-bearer=a47 expired-bearer=a47 key-unknown=a47 key-revoked=a47
+GET /print/draws/:id: disabled-cookie=a48 bumped-cookie=a48 gone-cookie=a48 rotated-bearer=a48 expired-bearer=a48 key-unknown=a3 key-revoked=a3
+HEAD /print/draws/:id: disabled-cookie=a48 bumped-cookie=a48 gone-cookie=a48 rotated-bearer=a48 expired-bearer=a48 key-unknown=a5 key-revoked=a5
+GET /print/pages/:id: disabled-cookie=a48 bumped-cookie=a48 gone-cookie=a48 rotated-bearer=a48 expired-bearer=a48 key-unknown=a3 key-revoked=a3
+HEAD /print/pages/:id: disabled-cookie=a48 bumped-cookie=a48 gone-cookie=a48 rotated-bearer=a48 expired-bearer=a48 key-unknown=a5 key-revoked=a5
+GET /render/draws/:id: disabled-cookie=a48 bumped-cookie=a48 gone-cookie=a48 rotated-bearer=a48 expired-bearer=a48 key-unknown=a3 key-revoked=a3
+HEAD /render/draws/:id: disabled-cookie=a48 bumped-cookie=a48 gone-cookie=a48 rotated-bearer=a48 expired-bearer=a48 key-unknown=a5 key-revoked=a5
+GET /s/:token: disabled-cookie=a49 bumped-cookie=a49 gone-cookie=a49 rotated-bearer=a49 expired-bearer=a49 key-unknown=a49 key-revoked=a49
+HEAD /s/:token: disabled-cookie=a49 bumped-cookie=a49 gone-cookie=a49 rotated-bearer=a49 expired-bearer=a49 key-unknown=a49 key-revoked=a49
 GET /s/:token/a/:fileId: disabled-cookie=a9 bumped-cookie=a9 gone-cookie=a9 rotated-bearer=a9 expired-bearer=a9 key-unknown=a9 key-revoked=a9
 HEAD /s/:token/a/:fileId: disabled-cookie=a9 bumped-cookie=a9 gone-cookie=a9 rotated-bearer=a9 expired-bearer=a9 key-unknown=a9 key-revoked=a9
-GET /s/:token/aggregate: disabled-cookie=a51 bumped-cookie=a51 gone-cookie=a51 rotated-bearer=a51 expired-bearer=a51 key-unknown=a51 key-revoked=a51
-HEAD /s/:token/aggregate: disabled-cookie=a52 bumped-cookie=a52 gone-cookie=a52 rotated-bearer=a52 expired-bearer=a52 key-unknown=a52 key-revoked=a52
-GET /s/:token/bundle: disabled-cookie=a53 bumped-cookie=a53 gone-cookie=a53 rotated-bearer=a53 expired-bearer=a53 key-unknown=a53 key-revoked=a53
-HEAD /s/:token/bundle: disabled-cookie=a53 bumped-cookie=a53 gone-cookie=a53 rotated-bearer=a53 expired-bearer=a53 key-unknown=a53 key-revoked=a53
-GET /s/:token/bundle/css: disabled-cookie=a53 bumped-cookie=a53 gone-cookie=a53 rotated-bearer=a53 expired-bearer=a53 key-unknown=a53 key-revoked=a53
-HEAD /s/:token/bundle/css: disabled-cookie=a53 bumped-cookie=a53 gone-cookie=a53 rotated-bearer=a53 expired-bearer=a53 key-unknown=a53 key-revoked=a53
-POST /s/:token/code: disabled-cookie=a54 bumped-cookie=a54 gone-cookie=a54 rotated-bearer=a54 expired-bearer=a54 key-unknown=a54 key-revoked=a54
-POST /s/:token/db-broker: disabled-cookie=a55 bumped-cookie=a55 gone-cookie=a55 rotated-bearer=a55 expired-bearer=a55 key-unknown=a55 key-revoked=a55
+GET /s/:token/aggregate: disabled-cookie=a50 bumped-cookie=a50 gone-cookie=a50 rotated-bearer=a50 expired-bearer=a50 key-unknown=a50 key-revoked=a50
+HEAD /s/:token/aggregate: disabled-cookie=a51 bumped-cookie=a51 gone-cookie=a51 rotated-bearer=a51 expired-bearer=a51 key-unknown=a51 key-revoked=a51
+GET /s/:token/bundle: disabled-cookie=a52 bumped-cookie=a52 gone-cookie=a52 rotated-bearer=a52 expired-bearer=a52 key-unknown=a52 key-revoked=a52
+HEAD /s/:token/bundle: disabled-cookie=a52 bumped-cookie=a52 gone-cookie=a52 rotated-bearer=a52 expired-bearer=a52 key-unknown=a52 key-revoked=a52
+GET /s/:token/bundle/css: disabled-cookie=a52 bumped-cookie=a52 gone-cookie=a52 rotated-bearer=a52 expired-bearer=a52 key-unknown=a52 key-revoked=a52
+HEAD /s/:token/bundle/css: disabled-cookie=a52 bumped-cookie=a52 gone-cookie=a52 rotated-bearer=a52 expired-bearer=a52 key-unknown=a52 key-revoked=a52
+POST /s/:token/code: disabled-cookie=a53 bumped-cookie=a53 gone-cookie=a53 rotated-bearer=a53 expired-bearer=a53 key-unknown=a53 key-revoked=a53
+POST /s/:token/db-broker: disabled-cookie=a54 bumped-cookie=a54 gone-cookie=a54 rotated-bearer=a54 expired-bearer=a54 key-unknown=a54 key-revoked=a54
 GET /s/:token/draw: disabled-cookie=a9 bumped-cookie=a9 gone-cookie=a9 rotated-bearer=a9 expired-bearer=a9 key-unknown=a9 key-revoked=a9
 HEAD /s/:token/draw: disabled-cookie=a9 bumped-cookie=a9 gone-cookie=a9 rotated-bearer=a9 expired-bearer=a9 key-unknown=a9 key-revoked=a9
 GET /s/:token/draw/:drawId: disabled-cookie=a9 bumped-cookie=a9 gone-cookie=a9 rotated-bearer=a9 expired-bearer=a9 key-unknown=a9 key-revoked=a9
 HEAD /s/:token/draw/:drawId: disabled-cookie=a9 bumped-cookie=a9 gone-cookie=a9 rotated-bearer=a9 expired-bearer=a9 key-unknown=a9 key-revoked=a9
-POST /s/:token/evaluate: disabled-cookie=a51 bumped-cookie=a51 gone-cookie=a51 rotated-bearer=a51 expired-bearer=a51 key-unknown=a51 key-revoked=a51
-GET /s/:token/frame: disabled-cookie=a53 bumped-cookie=a53 gone-cookie=a53 rotated-bearer=a53 expired-bearer=a53 key-unknown=a53 key-revoked=a53
-HEAD /s/:token/frame: disabled-cookie=a53 bumped-cookie=a53 gone-cookie=a53 rotated-bearer=a53 expired-bearer=a53 key-unknown=a53 key-revoked=a53
-POST /s/:token/frame-ticket: disabled-cookie=a53 bumped-cookie=a53 gone-cookie=a53 rotated-bearer=a53 expired-bearer=a53 key-unknown=a53 key-revoked=a53
-GET /s/:token/rows: disabled-cookie=a51 bumped-cookie=a51 gone-cookie=a51 rotated-bearer=a51 expired-bearer=a51 key-unknown=a51 key-revoked=a51
-HEAD /s/:token/rows: disabled-cookie=a52 bumped-cookie=a52 gone-cookie=a52 rotated-bearer=a52 expired-bearer=a52 key-unknown=a52 key-revoked=a52
-POST /s/:token/tool-broker: disabled-cookie=a55 bumped-cookie=a55 gone-cookie=a55 rotated-bearer=a55 expired-bearer=a55 key-unknown=a55 key-revoked=a55
-GET /s/:token/view: disabled-cookie=a51 bumped-cookie=a51 gone-cookie=a51 rotated-bearer=a51 expired-bearer=a51 key-unknown=a51 key-revoked=a51
-HEAD /s/:token/view: disabled-cookie=a52 bumped-cookie=a52 gone-cookie=a52 rotated-bearer=a52 expired-bearer=a52 key-unknown=a52 key-revoked=a52
+POST /s/:token/evaluate: disabled-cookie=a50 bumped-cookie=a50 gone-cookie=a50 rotated-bearer=a50 expired-bearer=a50 key-unknown=a50 key-revoked=a50
+GET /s/:token/frame: disabled-cookie=a52 bumped-cookie=a52 gone-cookie=a52 rotated-bearer=a52 expired-bearer=a52 key-unknown=a52 key-revoked=a52
+HEAD /s/:token/frame: disabled-cookie=a52 bumped-cookie=a52 gone-cookie=a52 rotated-bearer=a52 expired-bearer=a52 key-unknown=a52 key-revoked=a52
+POST /s/:token/frame-ticket: disabled-cookie=a52 bumped-cookie=a52 gone-cookie=a52 rotated-bearer=a52 expired-bearer=a52 key-unknown=a52 key-revoked=a52
+GET /s/:token/rows: disabled-cookie=a50 bumped-cookie=a50 gone-cookie=a50 rotated-bearer=a50 expired-bearer=a50 key-unknown=a50 key-revoked=a50
+HEAD /s/:token/rows: disabled-cookie=a51 bumped-cookie=a51 gone-cookie=a51 rotated-bearer=a51 expired-bearer=a51 key-unknown=a51 key-revoked=a51
+POST /s/:token/tool-broker: disabled-cookie=a54 bumped-cookie=a54 gone-cookie=a54 rotated-bearer=a54 expired-bearer=a54 key-unknown=a54 key-revoked=a54
+GET /s/:token/view: disabled-cookie=a50 bumped-cookie=a50 gone-cookie=a50 rotated-bearer=a50 expired-bearer=a50 key-unknown=a50 key-revoked=a50
+HEAD /s/:token/view: disabled-cookie=a51 bumped-cookie=a51 gone-cookie=a51 rotated-bearer=a51 expired-bearer=a51 key-unknown=a51 key-revoked=a51
 
 # the first sweep, its cells that wanted a database, with the reads stood in
-PATCH /api/apps/:id: owner-cookie=a56 admin-cookie=a57 limited-cookie=a58 member-cookie=a59 admin-bearer=a60 member-bearer=a61
-DELETE /api/apps/:id: owner-cookie=a56 admin-cookie=a57 limited-cookie=a58 member-cookie=a59 admin-bearer=a60 member-bearer=a61
-POST /api/apps/:id/build: owner-cookie=a56 admin-cookie=a57 limited-cookie=a58 member-cookie=a59 admin-bearer=a60 member-bearer=a61
-POST /api/apps/:id/db-broker: owner-cookie=a62 admin-cookie=a63 limited-cookie=a64 member-cookie=a65 admin-bearer=a66 member-bearer=a67
-PUT /api/apps/:id/draft: owner-cookie=a56 admin-cookie=a57 limited-cookie=a58 member-cookie=a59 admin-bearer=a60 member-bearer=a61
-DELETE /api/apps/:id/draft: owner-cookie=a56 admin-cookie=a57 limited-cookie=a58 member-cookie=a59 admin-bearer=a60 member-bearer=a61
-POST /api/apps/:id/duplicate: owner-cookie=a56 admin-cookie=a57 limited-cookie=a58 admin-bearer=a60
-POST /api/apps/:id/format: owner-cookie=a56 admin-cookie=a57 limited-cookie=a58 member-cookie=a59 admin-bearer=a60 member-bearer=a61
-POST /api/apps/:id/frame-ticket: owner-cookie=a62 admin-cookie=a63 limited-cookie=a64 member-cookie=a65 admin-bearer=a66 member-bearer=a67
-POST /api/apps/:id/opened: owner-cookie=a56 admin-cookie=a57 limited-cookie=a58 admin-bearer=a60
-POST /api/apps/:id/publish: owner-cookie=a56 admin-cookie=a57 limited-cookie=a58 member-cookie=a59 admin-bearer=a60 member-bearer=a61
-POST /api/apps/:id/snapshots: owner-cookie=a56 admin-cookie=a57 limited-cookie=a58 admin-bearer=a60
-PATCH /api/apps/:id/snapshots/:sid: owner-cookie=a56 admin-cookie=a57 limited-cookie=a58 admin-bearer=a60
-DELETE /api/apps/:id/snapshots/:sid: owner-cookie=a56 admin-cookie=a57 limited-cookie=a58 admin-bearer=a60
-POST /api/apps/:id/snapshots/:sid/restore: owner-cookie=a56 admin-cookie=a57 limited-cookie=a58 admin-bearer=a60
-POST /api/apps/:id/tool-broker: owner-cookie=a62 admin-cookie=a63 limited-cookie=a64 member-cookie=a65 admin-bearer=a66 member-bearer=a67
-DELETE /api/apps/deleted/:id: owner-cookie=a56 admin-cookie=a68 limited-cookie=a69 admin-bearer=a70
-POST /api/apps/deleted/:id/restore: owner-cookie=a56 admin-cookie=a68 limited-cookie=a69 admin-bearer=a70
-PATCH /api/draws/:id: owner-cookie=a56 admin-cookie=a57 limited-cookie=a58 member-cookie=a59 admin-bearer=a60 member-bearer=a61
-DELETE /api/draws/:id: owner-cookie=a56 admin-cookie=a57 limited-cookie=a58 member-cookie=a59 admin-bearer=a60 member-bearer=a61
-POST /api/draws/:id/commit: owner-cookie=a56 admin-cookie=a57 limited-cookie=a58 member-cookie=a59 admin-bearer=a60 member-bearer=a61
-POST /api/draws/:id/discard-draft: owner-cookie=a56 admin-cookie=a57 limited-cookie=a58 member-cookie=a59 admin-bearer=a60 member-bearer=a61
-PUT /api/draws/:id/draft: owner-cookie=a56 admin-cookie=a57 limited-cookie=a58 member-cookie=a59 admin-bearer=a60 member-bearer=a61
-PATCH /api/events/:id: owner-cookie=a56 admin-cookie=a57 limited-cookie=a58 member-cookie=a59 admin-bearer=a60 member-bearer=a61
-DELETE /api/events/:id: owner-cookie=a56 admin-cookie=a57 limited-cookie=a58 member-cookie=a59 admin-bearer=a60 member-bearer=a61
-POST /api/files/files/:id: owner-cookie=a56 admin-cookie=a57 limited-cookie=a58 admin-bearer=a60
-PATCH /api/files/files/:id: owner-cookie=a56 admin-cookie=a57 limited-cookie=a58 member-cookie=a59 admin-bearer=a60 member-bearer=a61
-DELETE /api/files/files/:id: owner-cookie=a56 admin-cookie=a57 limited-cookie=a58 member-cookie=a59 admin-bearer=a60 member-bearer=a61
-POST /api/files/folders/:id: owner-cookie=a56 admin-cookie=a57 limited-cookie=a58 admin-bearer=a60
-PATCH /api/files/folders/:id: owner-cookie=a56 admin-cookie=a57 limited-cookie=a58 member-cookie=a59 admin-bearer=a60 member-bearer=a61
-DELETE /api/files/folders/:id: owner-cookie=a56 admin-cookie=a57 limited-cookie=a58 member-cookie=a59 admin-bearer=a60 member-bearer=a61
-PATCH /api/formulas/:id: owner-cookie=a56 admin-cookie=a57 limited-cookie=a58 member-cookie=a59 admin-bearer=a60 member-bearer=a61
-DELETE /api/formulas/:id: owner-cookie=a56 admin-cookie=a57 limited-cookie=a58 member-cookie=a59 admin-bearer=a60 member-bearer=a61
-PATCH /api/notes/:id: owner-cookie=a56 admin-cookie=a57 limited-cookie=a58 member-cookie=a59 admin-bearer=a60 member-bearer=a61
-DELETE /api/notes/:id: owner-cookie=a56 admin-cookie=a57 limited-cookie=a58 member-cookie=a59 admin-bearer=a60 member-bearer=a61
-PATCH /api/pages/:id: owner-cookie=a56 admin-cookie=a57 limited-cookie=a58 member-cookie=a59 admin-bearer=a60 member-bearer=a61
-DELETE /api/pages/:id: owner-cookie=a56 admin-cookie=a57 limited-cookie=a58 member-cookie=a59 admin-bearer=a60 member-bearer=a61
-POST /api/pages/:id/commit: owner-cookie=a56 admin-cookie=a57 limited-cookie=a58 member-cookie=a59 admin-bearer=a60 member-bearer=a61
-POST /api/pages/:id/discard-draft: owner-cookie=a56 admin-cookie=a57 limited-cookie=a58 member-cookie=a59 admin-bearer=a60 member-bearer=a61
-PUT /api/pages/:id/draft: owner-cookie=a56 admin-cookie=a57 limited-cookie=a58 member-cookie=a59 admin-bearer=a60 member-bearer=a61
-POST /api/pages/:id/move: owner-cookie=a56 admin-cookie=a57 limited-cookie=a58 member-cookie=a59 admin-bearer=a60 member-bearer=a61
-PATCH /api/recall/maps/:id: owner-cookie=a56 admin-cookie=a57 limited-cookie=a58 member-cookie=a59 admin-bearer=a60 member-bearer=a61
-DELETE /api/recall/maps/:id: owner-cookie=a56 admin-cookie=a57 limited-cookie=a58 member-cookie=a59 admin-bearer=a60 member-bearer=a61
-POST /api/recall/maps/:id/cards: owner-cookie=a56 admin-cookie=a57 limited-cookie=a58 member-cookie=a59 admin-bearer=a60 member-bearer=a61
-PUT /api/recall/maps/:id/cards/:card: owner-cookie=a56 admin-cookie=a57 limited-cookie=a58 member-cookie=a59 admin-bearer=a60 member-bearer=a61
-DELETE /api/recall/maps/:id/cards/:card: owner-cookie=a56 admin-cookie=a57 limited-cookie=a58 member-cookie=a59 admin-bearer=a60 member-bearer=a61
-POST /api/recall/maps/:id/cards/:card/prompt: owner-cookie=a56 admin-cookie=a57 limited-cookie=a58 member-cookie=a59 admin-bearer=a60 member-bearer=a61
-POST /api/recall/maps/:id/cards/reorder: owner-cookie=a56 admin-cookie=a57 limited-cookie=a58 member-cookie=a59 admin-bearer=a60 member-bearer=a61
-POST /api/recall/revisions/:id/restore: owner-cookie=a56 admin-cookie=a57 limited-cookie=a58 member-cookie=a59 admin-bearer=a60 member-bearer=a61
-PATCH /api/shares/:id: owner-cookie=a56 admin-cookie=a57 limited-cookie=a58 admin-bearer=a60
-DELETE /api/shares/:id: limited-cookie=a58
-PATCH /api/tables/:id: owner-cookie=a56 admin-cookie=a57 limited-cookie=a58 member-cookie=a59 admin-bearer=a60 member-bearer=a61
-DELETE /api/tables/:id: owner-cookie=a56 admin-cookie=a57 limited-cookie=a58 member-cookie=a59 admin-bearer=a60 member-bearer=a61
-POST /api/tables/:id/commit: owner-cookie=a56 admin-cookie=a57 limited-cookie=a58 member-cookie=a59 admin-bearer=a60 member-bearer=a61
-POST /api/tables/:id/discard-draft: owner-cookie=a56 admin-cookie=a57 limited-cookie=a58 member-cookie=a59 admin-bearer=a60 member-bearer=a61
-PUT /api/tables/:id/draft: owner-cookie=a56 admin-cookie=a57 limited-cookie=a58 member-cookie=a59 admin-bearer=a60 member-bearer=a61
-POST /api/tables/:id/draft-ops: owner-cookie=a56 admin-cookie=a57 limited-cookie=a58 member-cookie=a59 admin-bearer=a60 member-bearer=a61
-POST /api/tables/:id/history: owner-cookie=a56 admin-cookie=a57 limited-cookie=a58 admin-bearer=a60
-DELETE /api/tables/:id/history/:sid: owner-cookie=a56 admin-cookie=a57 limited-cookie=a58 admin-bearer=a60
-POST /api/tables/:id/history/:sid/restore: owner-cookie=a56 admin-cookie=a57 limited-cookie=a58 admin-bearer=a60
-POST /api/tables/:id/import: owner-cookie=a56 admin-cookie=a57 limited-cookie=a58 admin-bearer=a60
-PATCH /api/tasks/:id: owner-cookie=a56 admin-cookie=a57 limited-cookie=a58 member-cookie=a59 admin-bearer=a60 member-bearer=a61
-DELETE /api/tasks/:id: owner-cookie=a56 admin-cookie=a57 limited-cookie=a58 member-cookie=a59 admin-bearer=a60 member-bearer=a61
-PATCH /api/tree/:kind/folders/:id: owner-cookie=a56 admin-cookie=a57 limited-cookie=a58 member-cookie=a59 admin-bearer=a60 member-bearer=a61
-DELETE /api/tree/:kind/folders/:id: owner-cookie=a56 admin-cookie=a57 limited-cookie=a58 member-cookie=a59 admin-bearer=a60 member-bearer=a61
-POST /api/tree/items/:id/opened: owner-cookie=a56 admin-cookie=a57 limited-cookie=a58 member-cookie=a59 admin-bearer=a60 member-bearer=a61
-PUT /api/tree/items/:id/pin: owner-cookie=a56 admin-cookie=a57 limited-cookie=a58 member-cookie=a59 admin-bearer=a60 member-bearer=a61
-PATCH /api/v1/pages/:id: owner-cookie=a56 admin-cookie=a57 limited-cookie=a58 admin-bearer=a60
-POST /api/v1/tables/:id/commit: owner-cookie=a56 admin-cookie=a57 limited-cookie=a58 admin-bearer=a60 key-write=a57
-POST /api/v1/tables/:id/rows: owner-cookie=a56 admin-cookie=a57 limited-cookie=a58 admin-bearer=a60 key-write=a57
-PATCH /api/v1/tables/:id/rows/:rowId: owner-cookie=a56 admin-cookie=a57 limited-cookie=a58 admin-bearer=a60 key-write=a57
-PATCH /api/v1/tasks/:id: owner-cookie=a56 admin-cookie=a57 limited-cookie=a58 admin-bearer=a60 key-write=a57
+PATCH /api/apps/:id: owner-cookie=a55 admin-cookie=a56 limited-cookie=a57 member-cookie=a58 admin-bearer=a59 member-bearer=a60
+DELETE /api/apps/:id: owner-cookie=a55 admin-cookie=a56 limited-cookie=a57 member-cookie=a58 admin-bearer=a59 member-bearer=a60
+POST /api/apps/:id/build: owner-cookie=a55 admin-cookie=a56 limited-cookie=a57 member-cookie=a58 admin-bearer=a59 member-bearer=a60
+POST /api/apps/:id/db-broker: owner-cookie=a61 admin-cookie=a62 limited-cookie=a63 member-cookie=a64 admin-bearer=a65 member-bearer=a66
+PUT /api/apps/:id/draft: owner-cookie=a55 admin-cookie=a56 limited-cookie=a57 member-cookie=a58 admin-bearer=a59 member-bearer=a60
+DELETE /api/apps/:id/draft: owner-cookie=a55 admin-cookie=a56 limited-cookie=a57 member-cookie=a58 admin-bearer=a59 member-bearer=a60
+POST /api/apps/:id/duplicate: owner-cookie=a55 admin-cookie=a56 limited-cookie=a57 admin-bearer=a59
+POST /api/apps/:id/format: owner-cookie=a55 admin-cookie=a56 limited-cookie=a57 member-cookie=a58 admin-bearer=a59 member-bearer=a60
+POST /api/apps/:id/frame-ticket: owner-cookie=a61 admin-cookie=a62 limited-cookie=a63 member-cookie=a64 admin-bearer=a65 member-bearer=a66
+POST /api/apps/:id/opened: owner-cookie=a55 admin-cookie=a56 limited-cookie=a57 admin-bearer=a59
+POST /api/apps/:id/publish: owner-cookie=a55 admin-cookie=a56 limited-cookie=a57 member-cookie=a58 admin-bearer=a59 member-bearer=a60
+POST /api/apps/:id/snapshots: owner-cookie=a55 admin-cookie=a56 limited-cookie=a57 admin-bearer=a59
+PATCH /api/apps/:id/snapshots/:sid: owner-cookie=a55 admin-cookie=a56 limited-cookie=a57 admin-bearer=a59
+DELETE /api/apps/:id/snapshots/:sid: owner-cookie=a55 admin-cookie=a56 limited-cookie=a57 admin-bearer=a59
+POST /api/apps/:id/snapshots/:sid/restore: owner-cookie=a55 admin-cookie=a56 limited-cookie=a57 admin-bearer=a59
+POST /api/apps/:id/tool-broker: owner-cookie=a61 admin-cookie=a62 limited-cookie=a63 member-cookie=a64 admin-bearer=a65 member-bearer=a66
+DELETE /api/apps/deleted/:id: owner-cookie=a55 admin-cookie=a67 limited-cookie=a68 admin-bearer=a69
+POST /api/apps/deleted/:id/restore: owner-cookie=a55 admin-cookie=a67 limited-cookie=a68 admin-bearer=a69
+PATCH /api/draws/:id: owner-cookie=a55 admin-cookie=a56 limited-cookie=a57 member-cookie=a58 admin-bearer=a59 member-bearer=a60
+DELETE /api/draws/:id: owner-cookie=a55 admin-cookie=a56 limited-cookie=a57 member-cookie=a58 admin-bearer=a59 member-bearer=a60
+POST /api/draws/:id/commit: owner-cookie=a55 admin-cookie=a56 limited-cookie=a57 member-cookie=a58 admin-bearer=a59 member-bearer=a60
+POST /api/draws/:id/discard-draft: owner-cookie=a55 admin-cookie=a56 limited-cookie=a57 member-cookie=a58 admin-bearer=a59 member-bearer=a60
+PUT /api/draws/:id/draft: owner-cookie=a55 admin-cookie=a56 limited-cookie=a57 member-cookie=a58 admin-bearer=a59 member-bearer=a60
+PATCH /api/events/:id: owner-cookie=a55 admin-cookie=a56 limited-cookie=a57 member-cookie=a58 admin-bearer=a59 member-bearer=a60
+DELETE /api/events/:id: owner-cookie=a55 admin-cookie=a56 limited-cookie=a57 member-cookie=a58 admin-bearer=a59 member-bearer=a60
+POST /api/files/files/:id: owner-cookie=a55 admin-cookie=a56 limited-cookie=a57 admin-bearer=a59
+PATCH /api/files/files/:id: owner-cookie=a55 admin-cookie=a56 limited-cookie=a57 member-cookie=a58 admin-bearer=a59 member-bearer=a60
+DELETE /api/files/files/:id: owner-cookie=a55 admin-cookie=a56 limited-cookie=a57 member-cookie=a58 admin-bearer=a59 member-bearer=a60
+POST /api/files/folders/:id: owner-cookie=a55 admin-cookie=a56 limited-cookie=a57 admin-bearer=a59
+PATCH /api/files/folders/:id: owner-cookie=a55 admin-cookie=a56 limited-cookie=a57 member-cookie=a58 admin-bearer=a59 member-bearer=a60
+DELETE /api/files/folders/:id: owner-cookie=a55 admin-cookie=a56 limited-cookie=a57 member-cookie=a58 admin-bearer=a59 member-bearer=a60
+PATCH /api/formulas/:id: owner-cookie=a55 admin-cookie=a56 limited-cookie=a57 member-cookie=a58 admin-bearer=a59 member-bearer=a60
+DELETE /api/formulas/:id: owner-cookie=a55 admin-cookie=a56 limited-cookie=a57 member-cookie=a58 admin-bearer=a59 member-bearer=a60
+PATCH /api/notes/:id: owner-cookie=a55 admin-cookie=a56 limited-cookie=a57 member-cookie=a58 admin-bearer=a59 member-bearer=a60
+DELETE /api/notes/:id: owner-cookie=a55 admin-cookie=a56 limited-cookie=a57 member-cookie=a58 admin-bearer=a59 member-bearer=a60
+PATCH /api/pages/:id: owner-cookie=a55 admin-cookie=a56 limited-cookie=a57 member-cookie=a58 admin-bearer=a59 member-bearer=a60
+DELETE /api/pages/:id: owner-cookie=a55 admin-cookie=a56 limited-cookie=a57 member-cookie=a58 admin-bearer=a59 member-bearer=a60
+POST /api/pages/:id/commit: owner-cookie=a55 admin-cookie=a56 limited-cookie=a57 member-cookie=a58 admin-bearer=a59 member-bearer=a60
+POST /api/pages/:id/discard-draft: owner-cookie=a55 admin-cookie=a56 limited-cookie=a57 member-cookie=a58 admin-bearer=a59 member-bearer=a60
+PUT /api/pages/:id/draft: owner-cookie=a55 admin-cookie=a56 limited-cookie=a57 member-cookie=a58 admin-bearer=a59 member-bearer=a60
+POST /api/pages/:id/move: owner-cookie=a55 admin-cookie=a56 limited-cookie=a57 member-cookie=a58 admin-bearer=a59 member-bearer=a60
+PATCH /api/recall/maps/:id: owner-cookie=a55 admin-cookie=a56 limited-cookie=a57 member-cookie=a58 admin-bearer=a59 member-bearer=a60
+DELETE /api/recall/maps/:id: owner-cookie=a55 admin-cookie=a56 limited-cookie=a57 member-cookie=a58 admin-bearer=a59 member-bearer=a60
+POST /api/recall/maps/:id/cards: owner-cookie=a55 admin-cookie=a56 limited-cookie=a57 member-cookie=a58 admin-bearer=a59 member-bearer=a60
+PUT /api/recall/maps/:id/cards/:card: owner-cookie=a55 admin-cookie=a56 limited-cookie=a57 member-cookie=a58 admin-bearer=a59 member-bearer=a60
+DELETE /api/recall/maps/:id/cards/:card: owner-cookie=a55 admin-cookie=a56 limited-cookie=a57 member-cookie=a58 admin-bearer=a59 member-bearer=a60
+POST /api/recall/maps/:id/cards/:card/prompt: owner-cookie=a55 admin-cookie=a56 limited-cookie=a57 member-cookie=a58 admin-bearer=a59 member-bearer=a60
+POST /api/recall/maps/:id/cards/reorder: owner-cookie=a55 admin-cookie=a56 limited-cookie=a57 member-cookie=a58 admin-bearer=a59 member-bearer=a60
+POST /api/recall/revisions/:id/restore: owner-cookie=a55 admin-cookie=a56 limited-cookie=a57 member-cookie=a58 admin-bearer=a59 member-bearer=a60
+PATCH /api/shares/:id: owner-cookie=a55 admin-cookie=a56 limited-cookie=a57 admin-bearer=a59
+DELETE /api/shares/:id: limited-cookie=a57
+PATCH /api/tables/:id: owner-cookie=a55 admin-cookie=a56 limited-cookie=a57 member-cookie=a58 admin-bearer=a59 member-bearer=a60
+DELETE /api/tables/:id: owner-cookie=a55 admin-cookie=a56 limited-cookie=a57 member-cookie=a58 admin-bearer=a59 member-bearer=a60
+POST /api/tables/:id/commit: owner-cookie=a55 admin-cookie=a56 limited-cookie=a57 member-cookie=a58 admin-bearer=a59 member-bearer=a60
+POST /api/tables/:id/discard-draft: owner-cookie=a55 admin-cookie=a56 limited-cookie=a57 member-cookie=a58 admin-bearer=a59 member-bearer=a60
+PUT /api/tables/:id/draft: owner-cookie=a55 admin-cookie=a56 limited-cookie=a57 member-cookie=a58 admin-bearer=a59 member-bearer=a60
+POST /api/tables/:id/draft-ops: owner-cookie=a55 admin-cookie=a56 limited-cookie=a57 member-cookie=a58 admin-bearer=a59 member-bearer=a60
+POST /api/tables/:id/history: owner-cookie=a55 admin-cookie=a56 limited-cookie=a57 admin-bearer=a59
+DELETE /api/tables/:id/history/:sid: owner-cookie=a55 admin-cookie=a56 limited-cookie=a57 admin-bearer=a59
+POST /api/tables/:id/history/:sid/restore: owner-cookie=a55 admin-cookie=a56 limited-cookie=a57 admin-bearer=a59
+POST /api/tables/:id/import: owner-cookie=a55 admin-cookie=a56 limited-cookie=a57 admin-bearer=a59
+PATCH /api/tasks/:id: owner-cookie=a55 admin-cookie=a56 limited-cookie=a57 member-cookie=a58 admin-bearer=a59 member-bearer=a60
+DELETE /api/tasks/:id: owner-cookie=a55 admin-cookie=a56 limited-cookie=a57 member-cookie=a58 admin-bearer=a59 member-bearer=a60
+PATCH /api/tree/:kind/folders/:id: owner-cookie=a55 admin-cookie=a56 limited-cookie=a57 member-cookie=a58 admin-bearer=a59 member-bearer=a60
+DELETE /api/tree/:kind/folders/:id: owner-cookie=a55 admin-cookie=a56 limited-cookie=a57 member-cookie=a58 admin-bearer=a59 member-bearer=a60
+POST /api/tree/items/:id/opened: owner-cookie=a55 admin-cookie=a56 limited-cookie=a57 member-cookie=a58 admin-bearer=a59 member-bearer=a60
+PUT /api/tree/items/:id/pin: owner-cookie=a55 admin-cookie=a56 limited-cookie=a57 member-cookie=a58 admin-bearer=a59 member-bearer=a60
+PATCH /api/v1/pages/:id: owner-cookie=a55 admin-cookie=a56 limited-cookie=a57 admin-bearer=a59
+POST /api/v1/tables/:id/commit: owner-cookie=a55 admin-cookie=a56 limited-cookie=a57 admin-bearer=a59 key-write=a56
+POST /api/v1/tables/:id/rows: owner-cookie=a55 admin-cookie=a56 limited-cookie=a57 admin-bearer=a59 key-write=a56
+PATCH /api/v1/tables/:id/rows/:rowId: owner-cookie=a55 admin-cookie=a56 limited-cookie=a57 admin-bearer=a59 key-write=a56
+PATCH /api/v1/tasks/:id: owner-cookie=a55 admin-cookie=a56 limited-cookie=a57 admin-bearer=a59 key-write=a56

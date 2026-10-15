@@ -165,6 +165,16 @@ describe('the architecture ratchets (pinned counts)', () => {
     expect([...got.perFile.errorTextAllowed].sort()).toEqual(Object.keys(ERROR_TEXT_ALLOW).sort());
   });
 
+  it('no-route-rate-limits (A10 #8): no route takes a rate limit outside the named list', async () => {
+    // A limit is the row's (server/web/lib/route-limits.ts), taken by the
+    // gate. The named files take a budget around a check of their own, and
+    // each still does.
+    const { RATE_LIMIT_ALLOW } = await import('./route-plumbing.mjs');
+    expect(got.perFile.rateLimitFiles).toEqual([]);
+    expect(got.numbers.routeRateLimitCalls).toBe(0);
+    expect([...got.perFile.rateLimitAllowed].sort()).toEqual(Object.keys(RATE_LIMIT_ALLOW).sort());
+  });
+
   it('every live route that reads no caller is a public row (A4 exit)', async () => {
     // An /api/v1 alias reads where the handler it takes reads (the count
     // follows it); what is left judges its own credential and reads no

@@ -279,6 +279,10 @@ export default tseslint.config(
       // A route never puts a caught error's text in a reply: it throws and
       // app.onError answers (fold 2). The files not yet moved are named.
       'mantle-plumbing/no-error-text-replies': 'error',
+      // A route takes no rate limit and answers no cross-site refusal of its
+      // own: both are its ROUTE_POLICY row's (A10 #8, lib/route-limits.ts).
+      // The budgets that are not gates on the request are named.
+      'mantle-plumbing/no-route-rate-limits': 'error',
     },
   },
   {

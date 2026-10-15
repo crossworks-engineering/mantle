@@ -819,11 +819,22 @@ one row; none is a 404) and points it there, one sweep removes what no row
 points at. The tables, app databases and app builds are brokered; the docs
 store writes no disk; file bytes and snapshot files are part 2.
 
-## Request plumbing (A10 part 2)
+## Request plumbing (A10 part 2, A10 #8)
 
 How a route reads its body (one reader, capped at the route's ceiling by
-the loader) and how an error becomes its answer: [request-plumbing.md](request-plumbing.md),
-with the sweep that proves each move and the pins that hold it.
+the loader), how an error becomes its answer, and its rate limits:
+[request-plumbing.md](request-plumbing.md), with the sweep that proves each
+move and the pins that hold it.
+
+The gate's order on a routed request, since A10 #8: the row's switch (its
+off answer), the login found once, `enterCall` (the key and Admin steps),
+the caller's answer (`answerRouteCaller`), then what the row checks before
+its handler (`beforeHandler`, `server/web/server/middleware/gate.ts`): the
+cross-site refusal of a public auth post (RouteRow `crossSite`) and the
+row's rate limits (RouteRow `rateLimit`, named in
+`server/web/lib/route-limits.ts`), answered with the one 429. A public row
+that reads its login at the read takes a login's limit at that read
+(`publicLoginCaller`). Then the handler.
 
 ## The one gate (A3c)
 

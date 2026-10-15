@@ -48,6 +48,8 @@ const LABELS: Record<string, string> = {
   routeBodyReadFiles: 'route files reading the request body directly (A10 part 2)',
   routeBodyReadAllowed: 'route files named to read the body another way (A10 part 2)',
   routeErrorTextFiles: "route files putting a caught error's text in a reply (A10 part 2)",
+  routeRateLimitCalls: 'rate limit calls in route files outside the named list (A10 #8)',
+  routeRateLimitAllowed: 'route files named to take a budget of their own (A10 #8)',
   routeErrorTextAllowed:
     'route files named to, each with its reason: public by design, or waiting on the client (A10 part 2)',
   store_tabledb_files: 'files reaching the tables write API (A3b)',

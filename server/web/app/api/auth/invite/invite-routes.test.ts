@@ -60,13 +60,16 @@ beforeAll(() => {
   process.env.SESSION_SECRET = SECRET;
 });
 afterAll(() => {
+  vi.useRealTimers();
   if (savedSecret === undefined) delete process.env.SESSION_SECRET;
   else process.env.SESSION_SECRET = savedSecret;
 });
 
+let day = 0;
 beforeEach(() => {
-  // A fresh module graph per test: the rate limiter's buckets start empty.
-  vi.resetModules();
+  // A fresh day per test: the rate limiter's buckets start empty.
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(new Date(Date.UTC(2030, 0, 1 + day++)));
   h.redeemed = null;
   h.redeemCalls = [];
   h.preview = null;
@@ -74,26 +77,40 @@ beforeEach(() => {
   h.lastLogin = [];
 });
 
-const accept = async (body: unknown, ip = '203.0.113.1') => {
-  const { POST } = await import('./accept/route');
-  return POST(
-    new Request('https://brain.example.invalid/api/auth/invite/accept', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-forwarded-for': ip },
-      body: JSON.stringify(body),
-    }),
+/**
+ * The invite routes as the app serves them: the gate takes their rows'
+ * limits (per address, and the brain's failed codes) before the handler
+ * (lib/route-limits.ts, A10 #8), so each is driven through the gate and the
+ * loader with its real row, built once.
+ */
+let built: import('hono').Hono | null = null;
+async function app() {
+  if (built) return built;
+  const { Hono } = await import('hono');
+  const { gate } = await import('@/server/middleware/gate');
+  const { registerRoutes } = await import('@/server/route-loader');
+  const { routeManifest } = await import('@/server/route-manifest.gen');
+  const hono = new Hono();
+  hono.use('*', gate());
+  registerRoutes(
+    hono,
+    routeManifest.filter((e) => e.pattern.startsWith('/api/auth/invite/')),
   );
-};
+  built = hono;
+  return hono;
+}
 
-const preview = async (code: string, ip = '203.0.113.1') => {
-  const { GET } = await import('./[code]/route');
-  return GET(
-    new Request(`https://brain.example.invalid/api/auth/invite/${code}`, {
-      headers: { 'x-forwarded-for': ip },
-    }),
-    { params: Promise.resolve({ code }) },
-  );
-};
+const accept = async (body: unknown, ip = '203.0.113.1') =>
+  (await app()).request('https://brain.example.invalid/api/auth/invite/accept', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-forwarded-for': ip },
+    body: JSON.stringify(body),
+  });
+
+const preview = async (code: string, ip = '203.0.113.1') =>
+  (await app()).request(`https://brain.example.invalid/api/auth/invite/${code}`, {
+    headers: { 'x-forwarded-for': ip },
+  });
 
 const GOOD = { code: 'AbCdEfGhJkMnPqRs', password: 'correct horse' };
 

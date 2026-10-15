@@ -1,6 +1,8 @@
 /**
- * Route plumbing (A10 part 2; docs/request-plumbing.md): what a route file
- * of the HTTP tier (server/web/app/**\/route.ts) does not do itself.
+ * Route plumbing (A10 part 2, A10 #8; docs/request-plumbing.md): what a
+ * route file of the HTTP tier (server/web/app/**\/route.ts) does not do
+ * itself: read its body, put a caught error's text in a reply, take a rate
+ * limit.
  *
  * no-direct-body-reads (fold 1, one body reader): a route reads its body
  * with readBody(req, Schema) or readJson(req) (server/web/lib/read-body.ts),
@@ -108,6 +110,51 @@ export const ERROR_TEXT_ALLOW = Object.freeze({
   'server/web/app/api/embedding/route.ts': OK_FALSE,
   'server/web/app/api/embedding/rebuild/route.ts': OK_FALSE,
 });
+
+/**
+ * no-route-rate-limits (A10 #8, rate limits on the ROUTE_POLICY row): a
+ * route file takes no rate limit and answers no cross-site refusal of its
+ * own. A limit is a row's (server/web/lib/route-limits.ts: a named limit in
+ * RATE_LIMITS, the row's entry in ROUTE_GATES), taken by the gate once the
+ * caller is answered and answered with the one 429; the cross-site refusal
+ * of a public auth post is the row's `crossSite`, answered by the gate
+ * before any limit. Before: 38 limits, 32 calls in 26 route files and more
+ * in the helpers their handlers called first, each with its own max,
+ * window and 429. The files that still take one are named here with the
+ * reason: a budget around a check inside the handler, not a gate on the
+ * request. The scoreboard pins both numbers (arch-counts.mjs).
+ */
+export const RATE_LIMIT_ALLOW = Object.freeze({
+  'server/web/app/api/access-keys/route.ts':
+    'a failure budget around the password check (taken before it, given back on a right password: M2 audit N2) and the keys made an hour, counted only once the password passed; neither is a gate on the request',
+  'server/web/app/api/oauth/authorize/route.ts':
+    'the consent password failure budget, taken around the password check and given back on a right one; its 429 is the consent page again, a page and not the one JSON 429',
+  'server/web/app/api/mcp/route.ts':
+    "each MCP caller's own budget (an API key's, a peer's, a login's), keyed by the bearer the route resolves itself after its own switch check; the per-address limit before it is the row's",
+});
+
+/** The limiter calls a route file must not make (lib/rate-limit.ts and the
+ *  key budgets of lib/access-keys.ts). */
+const LIMITERS = [
+  'rateLimit',
+  'rateLimitPeek',
+  'rateLimitRefund',
+  'rateLimitLogin',
+  'rateLimitLoginRefund',
+  'rateLimitFlood',
+  'rateLimitFloodPeek',
+  'rateLimitAccessKey',
+];
+const LIMITER_SET = new Set(LIMITERS);
+/** The refusal the gate answers from the row (ROUTE_GATES crossSite). */
+const ROW_REFUSALS = new Set(['refuseCrossSiteAuthPost']);
+
+/** A text heuristic of the same check, for the counts (comments already
+ *  stripped): the limiter calls in `code`. */
+export function rateLimitCalls(code) {
+  const re = new RegExp(`(?<![\\w$])(?:${LIMITERS.join('|')})\\s*\\(`, 'g');
+  return (code.match(re) ?? []).length;
+}
 
 const READERS = new Set(['json', 'text', 'formData', 'arrayBuffer', 'blob']);
 
@@ -269,9 +316,49 @@ export const noErrorTextReplies = {
   },
 };
 
+export const noRouteRateLimits = {
+  meta: {
+    type: 'problem',
+    docs: {
+      description:
+        "A route takes no rate limit and answers no cross-site refusal of its own: both are its ROUTE_POLICY row's, answered by the gate (A10 #8).",
+    },
+    messages: {
+      limit:
+        "{{what}}() in a route file: a rate limit is the row's. Name it in server/web/lib/route-limits.ts (RATE_LIMITS) and give the row it in ROUTE_GATES; the gate takes it and answers the one 429. A budget that is not a gate on the request is named with its reason in eslint-rules/route-plumbing.mjs RATE_LIMIT_ALLOW.",
+      crossSite:
+        "{{what}}() in a route file: the cross-site refusal is the row's (ROUTE_GATES crossSite, server/web/lib/route-limits.ts), answered by the gate before any limit.",
+    },
+    schema: [],
+  },
+  create(context) {
+    const file = context.filename;
+    if (!isRoutePath(file) || /\.test\.[cm]?[jt]sx?$/.test(file)) return {};
+    const allowed = !!RATE_LIMIT_ALLOW[webPath(file)];
+    return {
+      CallExpression(node) {
+        const callee = node.callee;
+        const name =
+          callee.type === 'Identifier'
+            ? callee.name
+            : callee.type === 'MemberExpression' && !callee.computed
+              ? callee.property.name
+              : null;
+        if (!name) return;
+        if (ROW_REFUSALS.has(name)) {
+          context.report({ node, messageId: 'crossSite', data: { what: name } });
+        } else if (LIMITER_SET.has(name) && !allowed) {
+          context.report({ node, messageId: 'limit', data: { what: name } });
+        }
+      },
+    };
+  },
+};
+
 export default {
   rules: {
     'no-direct-body-reads': noDirectBodyReads,
     'no-error-text-replies': noErrorTextReplies,
+    'no-route-rate-limits': noRouteRateLimits,
   },
 };

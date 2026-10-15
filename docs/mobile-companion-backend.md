@@ -419,7 +419,7 @@ address, one bucket shared with the other token logins: `mobile-login` and
     body   { email, password, deviceName? }
     200    { token, expiresIn, expiresAt, deviceId, role, loginId, brainId }
     401    { error: "Invalid email or password." }   (every failure, same line)
-    429    { error }  + Retry-After
+    429    { error, code: "rate_limited", retryAfter }  + Retry-After
 
 `role` is `admin` or `member`. The token lasts 30 days and rotates through
 `POST /api/auth/token/refresh` (below). The answer is sent with `Cache-Control: no-store`.
@@ -445,7 +445,7 @@ Every login. When it rotates, the old token dies in the same transaction.
 
     200    { token, expiresIn, expiresAt, deviceId, role, loginId, brainId }
     401    { error: "unauthorized" }
-    429    { error } + Retry-After
+    429    { error, code: "rate_limited", retryAfter } + Retry-After
 
 Every answer carries `Cache-Control: no-store`. `loginId` and `brainId` are
 v1.1, on all three 200 answers (too early, a rotation, a lost answer
@@ -568,11 +568,11 @@ enrol step).
     POST   {pushBase}/connect         { platform: "ios"|"android", osPushToken }
            200 { ticket, relayUrl }
            502 { error: "relay_unreachable" }
-           429 { error: "too_many_requests" } + Retry-After
+           429 { error, code: "rate_limited", retryAfter } + Retry-After
     POST   {pushBase}/subscriptions   { routingToken, publicKey, platform, label?, deviceId? }
            200 { id }
            400 { error: "bearer_required" }   no live device token of this login
-           429 { error: "too_many_requests" } + Retry-After
+           429 { error, code: "rate_limited", retryAfter } + Retry-After
     GET    {pushBase}/subscriptions   200 { devices: [{ id, platform, label, current }] }
     DELETE {pushBase}/subscriptions/:id   200 { ok: true } | 404 { error: "not_found" }
     GET    {pushBase}/preferences     200 { chatReplies, reviewResults }
@@ -587,7 +587,8 @@ per login and all default to true. The `comments` toggle is gone (there are no
 comment pushes): a PUT that names it is ignored like any unknown field.
 
 **Limits.** Connect and enrol share one bucket: 10 a minute per login, above
-that 429 `{ error: "too_many_requests" }` with `Retry-After`. A login holds at
+that the one 429 (`{ error, code: "rate_limited", retryAfter }` with
+`Retry-After`; the rows' limit since A10 #8, [request-plumbing.md](request-plumbing.md)). A login holds at
 most 10 push devices: the 11th enrol removes the oldest. These limits hold for
 the admin routes (`/api/push/connect`, `/api/push/subscriptions`) too.
 
