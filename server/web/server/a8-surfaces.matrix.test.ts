@@ -105,6 +105,8 @@ describe.skipIf(!DB_URL)('A8 surface cells: every way in gives the oracle’s an
   let t: typeof import('@mantle/tools');
   let ls: typeof import('@mantle/mcp-core');
   let rt: typeof import('@mantle/runtime/agent');
+  let tracing: typeof import('@mantle/tracing');
+  let ex: typeof import('../../../packages/runtime/src/agent/tool-loop/execute-call');
   let g: Grid;
   let o: Oracle;
   let runRoute: typeof import('./run-route').runRoute;
@@ -149,6 +151,8 @@ describe.skipIf(!DB_URL)('A8 surface cells: every way in gives the oracle’s an
     t = await import('@mantle/tools');
     ls = await import('@mantle/mcp-core');
     rt = await import('@mantle/runtime/agent');
+    tracing = await import('@mantle/tracing');
+    ex = await import('../../../packages/runtime/src/agent/tool-loop/execute-call');
     g = await import('@mantle/db/matrix/a8-grid');
     o = await import('@mantle/db/matrix/guide-oracle');
     runRoute = (await import('./run-route')).runRoute;
@@ -560,6 +564,80 @@ describe.skipIf(!DB_URL)('A8 surface cells: every way in gives the oracle’s an
           ),
         );
         return fromTool(res);
+      }),
+    ),
+    toolEntry('pending', 'turn', ALL, (role, slug, input) =>
+      guard(async () => {
+        // A call that waits for approval (docs/actors.md, "A pending tool
+        // call, approved"): queued in the role's assistant turn through the
+        // tool loop's own queue path (executeToolCall, its tool row set to
+        // requires_confirm for the call), then approved by the owner from
+        // no scope (approvePendingCall). It runs as the call's login as it
+        // is now, in the scope it was queued in.
+        const r = role!;
+        const ws = turnWs(r);
+        const login = fx.logins[r];
+        const row = await toolRow(slug);
+        const pendingIds: string[] = [];
+        await raw`update tools set requires_confirm = true
+                   where owner_id = ${fx.owner} and slug = ${slug}`;
+        let queued: { ok: boolean; output?: unknown; error?: unknown };
+        try {
+          queued = (await m.runAsActor(loginActor(r), () =>
+            rt.withAgentScope(
+              { id: agentOf[ws], ownerId: fx.owner, workspaceId: ws },
+              () =>
+                tracing.startTrace(
+                  {
+                    kind: 'responder_turn',
+                    ownerId: fx.owner,
+                    agentId: agentOf[ws]!,
+                    loginId: login,
+                  },
+                  () =>
+                    ex.executeToolCall({
+                      args: {
+                        ownerId: fx.owner,
+                        agentId: agentOf[ws],
+                        agentSlug: `${fx.tag}-pending`,
+                        surface: { kind: isAdminUser(r) ? 'web' : 'team', loginId: login },
+                      } as never,
+                      slug,
+                      call: {
+                        id: `a8-${randomUUID()}`,
+                        function: { name: slug, arguments: JSON.stringify(input) },
+                      },
+                      tool: { ...row, requiresConfirm: true } as never,
+                      input,
+                      argParseError: null,
+                      argValidation: null,
+                      argValidationMode: 'off',
+                      lastUserMessage: undefined,
+                      pendingIds,
+                    }),
+                ),
+              { loginId: login },
+            ),
+          )) as typeof queued;
+        } finally {
+          await raw`update tools set requires_confirm = false
+                     where owner_id = ${fx.owner} and slug = ${slug}`;
+        }
+        // Refused at queue time (the gate's queue-time check): never queued.
+        if (pendingIds.length !== 1) return fromTool(queued as never);
+        const done = await m.runAsActor(m.loginActor(fx.owner, 'owner'), () =>
+          t.approvePendingCall(fx.owner, pendingIds[0]!, { approverLoginId: fx.owner }),
+        );
+        const [p] = await raw<{ status: string; error: string | null; result: unknown }[]>`
+          select status, error, result from pending_tool_calls where id = ${pendingIds[0]!}`;
+        const ok = p?.status === 'approved';
+        return {
+          ok: ok && !p?.error,
+          text: `${p?.status ?? 'gone'} ${p?.error ?? ''} ${JSON.stringify(p?.result ?? done ?? '')}`.slice(
+            0,
+            2000,
+          ),
+        };
       }),
     ),
     {
