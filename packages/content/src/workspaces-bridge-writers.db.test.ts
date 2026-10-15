@@ -95,8 +95,10 @@ describe.skipIf(!URL)('writers with the bridge off hold their heads (heads check
     admin = ws.find((w) => w.name === 'Admin')!.id;
     team = ws.find((w) => w.name === 'Team')!.id;
     // The check ON for this database: a writer without its heads is refused.
-    await m.systemDb.execute(
-      sqlTag.raw(`alter database "${scratch.name}" set mantle.heads_check = 'on'`),
+    // As the superuser: the app's pool may be the runtime role (arch A9).
+    await ts.superuserExec(
+      scratch.url,
+      `alter database "${scratch.name}" set mantle.heads_check = 'on'`,
     );
   }, 180_000);
 

@@ -96,6 +96,10 @@ describe.skipIf(!URL)('MCP writes and read-path writes as the login (A5 step 4, 
   const adminAgent = `${tag}-assistant`;
   const suiteMode = process.env.MANTLE_ACTOR_CHECK;
 
+  /** A fixture only the superuser may run (a box mode, a table, a trigger):
+   *  the app's pool may log in as the runtime role (arch A9). */
+  const su = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
+    (await import('@mantle/db/test-support')).superuserExec<T>(scratch!.url, q);
   const x = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
     (await m.systemDb.execute(q)) as unknown as T[];
 
@@ -322,8 +326,8 @@ describe.skipIf(!URL)('MCP writes and read-path writes as the login (A5 step 4, 
 
     // The box's checks on, as an operator switches them, and this process's.
     process.env.MANTLE_ACTOR_CHECK = 'on';
-    await x(sql`select mantle_set_actor_check('on')`);
-    await x(sql`select mantle_set_edit_check('on')`);
+    await su(sql`select mantle_set_actor_check('on')`);
+    await su(sql`select mantle_set_edit_check('on')`);
     m.takeActorMisses();
   }, 240_000);
 

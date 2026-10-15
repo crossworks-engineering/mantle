@@ -142,6 +142,17 @@ jobs:
           RUNS_TEST_DATABASE_URL: ${{ env.CI_DATABASE_URL }}
         run: pnpm test:edit-on
 
+      # The db package's suites and the write gateway's again with the app's
+      # pools on the runtime role (workspaces arch A9, docs/runtime-role.md),
+      # as on a box after its roll. The whole set runs on the workstation
+      # (pnpm test:runtime-role); this keeps the role's rights in step with
+      # the code on every push.
+      - name: Test (runtime role)
+        env:
+          MANTLE_TEST_DATABASE_URL: ${{ env.CI_DATABASE_URL }}
+          RUNS_TEST_DATABASE_URL: ${{ env.CI_DATABASE_URL }}
+        run: pnpm test:runtime-role packages/db/src server/web/server/a2b2b-write-gateway server/web/lib/grants
+
       # The real edge/webpack gate. Runs without a DB, same as the image build.
       - name: Build (server/web)
         run: pnpm -C server/web build

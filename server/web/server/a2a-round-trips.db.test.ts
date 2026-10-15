@@ -279,6 +279,10 @@ describe.skipIf(!DB_URL)('A2a: the actor check adds no round trip when off', () 
   const agentSlug = `${tag}-admin`;
   let saves = 0;
 
+  /** A fixture only the superuser may run (a box mode, a table, a trigger):
+   *  the app's pool may log in as the runtime role (arch A9). */
+  const su = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
+    (await import('@mantle/db/test-support')).superuserExec<T>(scratch!.url, q);
   const x = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
     (await m.systemDb.execute(q)) as unknown as T[];
 
@@ -599,12 +603,12 @@ describe.skipIf(!DB_URL)('A2a: the actor check adds no round trip when off', () 
       // write role (on), the rest in warn.
       const mode = p === 'member page save' ? 'on' : 'warn';
       const before = await measure(p, mode);
-      await x(sql`select mantle_set_edit_check('on')`);
+      await su(sql`select mantle_set_edit_check('on')`);
       let after: Awaited<ReturnType<typeof measure>>;
       try {
         after = await measure(p, mode);
       } finally {
-        await x(sql`select mantle_set_edit_check('off')`);
+        await su(sql`select mantle_set_edit_check('off')`);
       }
       const a = tally(before.statements.map(norm));
       const b = tally(after.statements.map(norm));

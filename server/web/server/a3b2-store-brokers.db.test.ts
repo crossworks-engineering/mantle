@@ -112,6 +112,10 @@ describe.skipIf(!URL)('A3b part 2: the files and snapshot stores, both checks on
   let O = '';
   const TOP = 'files.a3b2';
 
+  /** A fixture only the superuser may run (a box mode, a table, a trigger):
+   *  the app's pool may log in as the runtime role (arch A9). */
+  const su = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
+    (await import('@mantle/db/test-support')).superuserExec<T>(scratch!.url, q);
   const x = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
     (await m.systemDb.execute(q)) as unknown as T[];
   const sys = <T>(fn: () => Promise<T>) => m.runAsSystem('test:a3b2', fn) as Promise<T>;
@@ -159,7 +163,7 @@ describe.skipIf(!URL)('A3b part 2: the files and snapshot stores, both checks on
   };
   const setChecks = async (mode: 'on' | 'off') => {
     process.env.MANTLE_ACTOR_CHECK = mode;
-    await x(sql`select mantle_set_edit_check(${mode})`);
+    await su(sql`select mantle_set_edit_check(${mode})`);
   };
   const row = async (id: string) =>
     (
@@ -271,8 +275,8 @@ describe.skipIf(!URL)('A3b part 2: the files and snapshot stores, both checks on
                  where w.id = u.workspace_id and w.name = 'Team' and not w.is_admin and u.login_id = ${mem}`);
     // A commit that fails after the work (this scratch database only): a
     // deferred trigger on the stores' rows, armed by a row in a3b2_fail.
-    await x(sql`create table a3b2_fail (on_ boolean)`);
-    await x(
+    await su(sql`create table a3b2_fail (on_ boolean)`);
+    await su(
       sql.raw(`create function a3b2_fail_commit() returns trigger language plpgsql
         security definer set search_path = public as $$
         begin
@@ -281,7 +285,7 @@ describe.skipIf(!URL)('A3b part 2: the files and snapshot stores, both checks on
         end $$`),
     );
     for (const t of ['nodes', 'node_snapshots']) {
-      await x(
+      await su(
         sql.raw(`create constraint trigger a3b2_fail_commit after insert or update on ${t}
           deferrable initially deferred for each row execute function a3b2_fail_commit()`),
       );

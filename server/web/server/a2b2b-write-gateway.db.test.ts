@@ -70,6 +70,10 @@ describe.skipIf(!URL)('A2b2b: the login write gateway', () => {
   const roNote = randomUUID();
   const teamNote = randomUUID();
 
+  /** A fixture only the superuser may run (a box mode, a table, a trigger):
+   *  the app's pool may log in as the runtime role (arch A9). */
+  const su = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
+    (await import('@mantle/db/test-support')).superuserExec<T>(scratch!.url, q);
   const x = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
     (await m.systemDb.execute(q)) as unknown as T[];
   const email = (who: string) => `${tag}-${who}@example.invalid`;
@@ -159,13 +163,13 @@ describe.skipIf(!URL)('A2b2b: the login write gateway', () => {
     team = ws.find((w) => w.key === 'team')!.id;
     adminWs = ws.find((w) => w.key === 'admin')!.id;
     // Which role sent each write to nodes (this scratch database only).
-    await x(sql`create table a2b2b_seen (id bigserial primary key, who text not null, op text)`);
-    await x(
+    await su(sql`create table a2b2b_seen (id bigserial primary key, who text not null, op text)`);
+    await su(
       sql.raw(`create function a2b2b_seen_trg() returns trigger language plpgsql
       security definer set search_path = public as $$
       begin insert into a2b2b_seen (who, op) values (session_user, tg_op); return null; end $$`),
     );
-    await x(sql`create trigger zz_a2b2b_seen after insert or update or delete on nodes
+    await su(sql`create trigger zz_a2b2b_seen after insert or update or delete on nodes
       for each statement execute function a2b2b_seen_trg()`);
     const tokens = await import('../lib/auth/tokens');
     cookieOf = (id) => `mantle_session=${tokens.buildSessionCookie(id).value}`;

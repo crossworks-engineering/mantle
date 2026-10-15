@@ -24,6 +24,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { asMigrator } from '@mantle/db/test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -149,7 +150,8 @@ describe.skipIf(!URL)('the lowering guard, end to end', () => {
     // An open link serves the linked page: the public reads it. The team
     // pages keep a team level (frozen, set under the named test bypass) only
     // for the access_set check below.
-    await admin.begin(async (tx) => {
+    // As the migrator: the bypass is not the app's (arch A9).
+    await asMigrator(URL!, async (tx) => {
       await tx`select mantle_heads_bypass('test fixture')`;
       await tx`update nodes set audience = 'team' where id in ${tx([ids.teamPage, ids.otherTeamPage])}`;
     });

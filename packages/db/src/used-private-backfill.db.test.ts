@@ -15,7 +15,7 @@ import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { createScratchDatabaseBefore } from './test-support';
+import { asMigrator, createScratchDatabaseBefore } from './test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -78,11 +78,10 @@ describe.skipIf(!URL)('0182 used_private backfill', () => {
     unsafe: (q: string) => Promise<Row[]>;
   };
   async function pastFreeze(fn: (tx: Tx) => Promise<unknown>): Promise<void> {
-    await (
-      admin as unknown as { begin: (f: (tx: Tx) => Promise<unknown>) => Promise<unknown> }
-    ).begin(async (tx) => {
+    // As the superuser: the app's pool may be the runtime role (arch A9).
+    await asMigrator(scratch!.url, async (tx) => {
       await tx`set local session_replication_role = replica`;
-      await fn(tx);
+      await fn(tx as unknown as Tx);
     });
   }
 

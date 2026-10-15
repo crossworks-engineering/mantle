@@ -22,6 +22,10 @@ describe.skipIf(!URL)('a new login and its workspace rows, in one transaction', 
   const owner = randomUUID();
   let admin = '';
 
+  /** A fixture only the superuser may run (a box mode, a table, a trigger):
+   *  the app's pool may log in as the runtime role (arch A9). */
+  const su = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
+    (await import('@mantle/db/test-support')).superuserExec<T>(scratch!.url, q);
   const sys = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
     (await m.systemDb.execute(q)) as unknown as T[];
   const row = (id: string, email: string, role: 'admin' | 'member') => ({
@@ -52,7 +56,7 @@ describe.skipIf(!URL)('a new login and its workspace rows, in one transaction', 
     ).toEqual([]);
     // The bridge fails for a login whose email marks it: after its insert,
     // inside the same transaction.
-    await sys(sql`create function test_bridge_fails() returns trigger language plpgsql as $$
+    await su(sql`create function test_bridge_fails() returns trigger language plpgsql as $$
       begin
         if exists (select 1 from auth.users u
                     where u.id = new.login_id and u.email like 'bridge-fails-%') then
@@ -60,7 +64,7 @@ describe.skipIf(!URL)('a new login and its workspace rows, in one transaction', 
         end if;
         return new;
       end $$`);
-    await sys(sql`create trigger zz_test_bridge_fails before insert on workspace_users
+    await su(sql`create trigger zz_test_bridge_fails before insert on workspace_users
       for each row execute function test_bridge_fails()`);
   }, 180_000);
 
