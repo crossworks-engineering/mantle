@@ -568,8 +568,7 @@ describe.skipIf(!DB_URL)('the approval re-check (A5 step 6c): the recorded matri
     expect(pendingIds).toHaveLength(1);
     expect(await approve('batch', id.owner, pendingIds[0]!)).toBe('batch ok');
     const [app] = await x<{ author: string | null }>(
-      sql`select author_login_id::text as author from apps
-          where owner_id = ${id.owner} and title = ${title}`,
+      sql`select author_login_id::text as author from apps where title = ${title}`,
     );
     expect(app?.author).toBe(id.adminUser);
   }, 120_000);

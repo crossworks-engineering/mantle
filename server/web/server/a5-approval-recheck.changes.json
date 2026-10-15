@@ -1,10 +1,10 @@
 {
   "reasons": {
-    "runs-where-asked": "The call runs in the scope it was asked in (the Team turn's, its asker's login), met with its asker's rights now. On main it ran with no scope at all on the web, Telegram and batch paths (the system pool, as its asker's login), and in the approver's own scope over MCP, where a Team connector is not held, so the owner's MCP approval failed at run.",
-    "gains-not-the-calls": "Rights the asker gained after asking (a Moderator seat elsewhere, Admin's) are not the call's: it runs in the scope it was asked in, never wider. On main it ran unscoped, or in the approver's MCP scope.",
-    "lost-workspace": "The asker left the workspace it asked in: the approval is refused before the claim (an ApprovalRefusedError, 403 on the web) and the call stays pending, run nowhere. On main it ran unscoped as its asker.",
-    "lost-moderator": "The asker lost its Moderator seat where it asked: the queue-time check run again refuses it (the connector's write rule; the item rule for the note), before the claim, and the call stays pending. On main it ran unscoped, or was claimed and then failed at run.",
-    "lost-item": "What the call names is no longer the asked scope's (the note homed in another workspace, the connector no longer a resource of the workspace): the item pre-check or the connector rule refuses it again before the claim, and it stays pending. On main it ran unscoped, or was claimed and then failed at run."
+    "runs-where-asked": "The call runs in the scope it was asked in (the Team turn's, its asker's login), met with its asker's rights now. On main it ran with no scope at all on the web, Telegram and batch paths (the system pool, as its asker's login), and in the approver's own scope over MCP, where a Team connector is not held and the Team note is not read, so the owner's MCP approval was claimed and then failed at run. Since fix round 1 the owner's MCP approval reads the row on the system pool, so it is judged and runs where it was asked too.",
+    "gains-not-the-calls": "Rights the asker gained after asking (a Moderator seat elsewhere, Admin's) are not the call's: it runs in the scope it was asked in, never wider. On main it ran unscoped, or in the approver's MCP scope (the owner's, where it was claimed and then failed at run).",
+    "lost-workspace": "The asker left the workspace it asked in: the approval is refused before the claim (an ApprovalRefusedError, 403 on the web, an error over MCP) and the call stays pending, run nowhere. On main it ran unscoped as its asker, or over MCP was claimed in the approver's scope and failed at run. Since fix round 1 this holds over MCP too: the row is read on the system pool, where the approver's own scope (its own MCP, an asker that left) would read nothing.",
+    "lost-moderator": "The asker lost its Moderator seat where it asked: the queue-time check run again refuses it (the connector's write rule; the item rule for the note), before the claim, and the call stays pending. On main it ran unscoped, or was claimed and then failed at run (over MCP, in the approver's scope).",
+    "lost-item": "What the call names is no longer the asked scope's (the note homed in another workspace, the connector no longer a resource of the workspace): the item pre-check or the connector rule refuses it again before the claim, and it stays pending. On main it ran unscoped, or was claimed and then failed at run (over MCP, in the approver's scope)."
   },
   "cells": {
     "adminUser|owner|web|none|connector": {
@@ -37,6 +37,46 @@
     },
     "adminUser|owner|web|gained|connector": {
       "now": "web 200 => approved; ran in assistant:adminUser ws team mod team as login:adminUser",
+      "why": "gains-not-the-calls"
+    },
+    "adminUser|owner|mcp|none|connector": {
+      "now": "mcp ok => approved; ran in assistant:adminUser ws team mod team as login:adminUser",
+      "why": "runs-where-asked"
+    },
+    "adminUser|owner|mcp|none|note": {
+      "now": "mcp ok => approved; note changed",
+      "why": "runs-where-asked"
+    },
+    "adminUser|owner|mcp|lostWorkspace|connector": {
+      "now": "mcp error Error: The person who asked for this call no longer has the workspace it was asked in, so  => pending; not run",
+      "why": "lost-workspace"
+    },
+    "adminUser|owner|mcp|lostWorkspace|note": {
+      "now": "mcp error Error: The person who asked for this call no longer has the workspace it was asked in, so  => pending; note unchanged",
+      "why": "lost-workspace"
+    },
+    "adminUser|owner|mcp|lostModerator|connector": {
+      "now": "mcp error Error: This call no longer passes the checks of the workspace it was asked in, so it does  => pending; not run",
+      "why": "lost-moderator"
+    },
+    "adminUser|owner|mcp|lostModerator|note": {
+      "now": "mcp error Error: This call no longer passes the checks of the workspace it was asked in, so it does  => pending; note unchanged",
+      "why": "lost-moderator"
+    },
+    "adminUser|owner|mcp|lostItem|connector": {
+      "now": "mcp error Error: This call no longer passes the checks of the workspace it was asked in, so it does  => pending; not run",
+      "why": "lost-item"
+    },
+    "adminUser|owner|mcp|lostItem|note": {
+      "now": "mcp error Error: This call no longer passes the checks of the workspace it was asked in, so it does  => pending; note unchanged",
+      "why": "lost-item"
+    },
+    "adminUser|owner|mcp|gained|connector": {
+      "now": "mcp ok => approved; ran in assistant:adminUser ws team mod team as login:adminUser",
+      "why": "gains-not-the-calls"
+    },
+    "adminUser|owner|mcp|gained|note": {
+      "now": "mcp ok => approved; note changed",
       "why": "gains-not-the-calls"
     },
     "adminUser|owner|telegram|none|connector": {
@@ -138,6 +178,14 @@
     "adminUser|self|mcp|none|connector": {
       "now": "mcp ok => approved; ran in assistant:adminUser ws team mod team as login:adminUser",
       "why": "runs-where-asked"
+    },
+    "adminUser|self|mcp|lostWorkspace|connector": {
+      "now": "mcp error Error: The person who asked for this call no longer has the workspace it was asked in, so  => pending; not run",
+      "why": "lost-workspace"
+    },
+    "adminUser|self|mcp|lostWorkspace|note": {
+      "now": "mcp error Error: The person who asked for this call no longer has the workspace it was asked in, so  => pending; note unchanged",
+      "why": "lost-workspace"
     },
     "adminUser|self|mcp|lostModerator|connector": {
       "now": "mcp error Error: This call no longer passes the checks of the workspace it was asked in, so it does  => pending; not run",
@@ -253,6 +301,46 @@
     },
     "member|owner|web|gained|connector": {
       "now": "web 200 => approved; ran in assistant:member ws team mod team as login:member",
+      "why": "gains-not-the-calls"
+    },
+    "member|owner|mcp|none|connector": {
+      "now": "mcp ok => approved; ran in assistant:member ws team mod team as login:member",
+      "why": "runs-where-asked"
+    },
+    "member|owner|mcp|none|note": {
+      "now": "mcp ok => approved; note changed",
+      "why": "runs-where-asked"
+    },
+    "member|owner|mcp|lostWorkspace|connector": {
+      "now": "mcp error Error: The person who asked for this call no longer has the workspace it was asked in, so  => pending; not run",
+      "why": "lost-workspace"
+    },
+    "member|owner|mcp|lostWorkspace|note": {
+      "now": "mcp error Error: The person who asked for this call no longer has the workspace it was asked in, so  => pending; note unchanged",
+      "why": "lost-workspace"
+    },
+    "member|owner|mcp|lostModerator|connector": {
+      "now": "mcp error Error: This call no longer passes the checks of the workspace it was asked in, so it does  => pending; not run",
+      "why": "lost-moderator"
+    },
+    "member|owner|mcp|lostModerator|note": {
+      "now": "mcp error Error: This call no longer passes the checks of the workspace it was asked in, so it does  => pending; note unchanged",
+      "why": "lost-moderator"
+    },
+    "member|owner|mcp|lostItem|connector": {
+      "now": "mcp error Error: This call no longer passes the checks of the workspace it was asked in, so it does  => pending; not run",
+      "why": "lost-item"
+    },
+    "member|owner|mcp|lostItem|note": {
+      "now": "mcp error Error: This call no longer passes the checks of the workspace it was asked in, so it does  => pending; note unchanged",
+      "why": "lost-item"
+    },
+    "member|owner|mcp|gained|connector": {
+      "now": "mcp ok => approved; ran in assistant:member ws team mod team as login:member",
+      "why": "gains-not-the-calls"
+    },
+    "member|owner|mcp|gained|note": {
+      "now": "mcp ok => approved; note changed",
       "why": "gains-not-the-calls"
     },
     "member|owner|telegram|none|connector": {
