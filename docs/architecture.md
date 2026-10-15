@@ -931,7 +931,14 @@ api_keys (
 
 Exposed as:
 
-- `getApiKey(userId, service, label?)`, decrypts and returns plaintext.
+- `getApiKey(userId, service, label?)`, decrypts and returns plaintext
+  for one named label (a `{{secret:service/label}}` reference).
+- `resolveProviderKey(userId, service, keyId?)`, THE lookup of a model
+  provider's key: the pinned key id, else the `default` label, else the
+  most recently used key of that service. A hard `getApiKey(owner,
+  provider)` read `default` only and missed any key saved under another
+  label; it is pinned out of product code by
+  `packages/api-keys/src/provider-key-lookups.test.ts`.
 - `setApiKey`, `rotateApiKey`, `deleteApiKey`, `listApiKeys` (returns
   masked view).
 

@@ -883,8 +883,8 @@ embed(ownerId, text) → embedBatch → embedMultimodal
    ├─ getEmbeddingAdapter(config.provider)  — registry lookup
    ├─ adapter.acceptsInput per input        — text/multimodal guard
    ├─ embedding_cache lookup by (model, content_hash)
-   ├─ for misses: apiKey via getApiKeyById(apiKeyId) or
-   │     getApiKey(ownerId, provider) fallback
+   ├─ for misses: apiKey via resolveProviderKey(ownerId, provider,
+   │     apiKeyId): the pinned key, else the provider's own key on file
    └─ adapter.embed({apiKey, model, input, dimensions: 768})
 ```
 

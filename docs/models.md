@@ -22,7 +22,7 @@ supported provider so you can compare pricing/context/capabilities in one place.
 | Concern | Where |
 |---|---|
 | Per-provider fetch + parse + cache | [`server/web/lib/model-explorer.ts`](../server/web/lib/model-explorer.ts) |
-| API route (`GET /api/models?provider=&refresh=1`) | [`server/web/app/api/models/route.ts`](../server/web/app/api/models/route.ts) |
+| API route (`GET /api/models?provider=&keyId=&refresh=1`) | [`server/web/app/api/models/route.ts`](../server/web/app/api/models/route.ts) |
 | Server page (`?provider=` → SSR fetch) | [`jackdaw/app/(app)/models/page.tsx`](../jackdaw/app/(app)/models/page.tsx) |
 | Master-detail UI + raw-JSON pane | [`jackdaw/app/(app)/models/models-client.tsx`](../jackdaw/app/(app)/models/models-client.tsx) |
 | Nav entry (Review group) | [`jackdaw/components/layout/sidebar-nav.tsx`](../jackdaw/components/layout/sidebar-nav.tsx) |
@@ -50,9 +50,18 @@ columns are best-effort and the raw pane always shows everything.
 
 ## Notes
 
-- **Caching:** successful fetches are cached per provider for 5 minutes
-  (process-global; single-user app). The header **Refresh** button busts it
-  (`?refresh=1`).
+- **Which key:** `keyId` (the agent form's picked key) lists with that key;
+  it must be one of the owner's keys and this provider's, else 404 (another
+  owner's key reads as missing) or 400. Without it, the provider's own key on
+  file (`findProviderKeyId`: the `default` label, else the most recently used
+  key of that service). A key saved on /settings/keys under any other label
+  used to answer `needsKey`, so the agent form listed no models for it.
+- **Errors:** a provider's refusal is a fixed sentence from
+  `publicProviderErrorMessage` (a 401 reads "The provider refused the API
+  key. (anthropic, HTTP 401)"), never the provider's body.
+- **Caching:** successful fetches are cached per provider AND key for 5
+  minutes (process-global); a keyless catalog (OpenRouter) keeps one entry.
+  The header **Refresh** button busts it (`?refresh=1`).
 - **Pricing units:** OpenRouter prices are USD/token → shown as USD per 1M
   (input/output); other priced dimensions (image, web_search, cache) surface
   verbatim under "Other pricing". xAI's integer prices are shown as-is to avoid
