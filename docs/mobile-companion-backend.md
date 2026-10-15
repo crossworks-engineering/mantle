@@ -259,6 +259,13 @@ supersededBy?}]}` — `summary` from `data.summary` when present, `url` via
 supersededBy?}` (`heading` is nullable; `supersededBy {id, title, url}`
   carries the living successor, same as nodes mode, v0.148.1).
   `type`/`tags` are ignored in this mode.
+- **Workspaces** (task f26a516e): the search looks in every workspace the
+  caller reads (the row rules of its scope). `ws` (the switcher's
+  workspace) narrows nothing: the hits it reads come first, `ws` is echoed,
+  and every hit names the workspace it opens in, `workspace {id, name}`
+  (`SearchNodeHit`, `SearchChunkHit` in
+  `packages/client-types/src/dto/workspace-hits.ts`). A `ws` the caller may
+  not name is 404, as on the lists.
 - **Client contract:** results are relevance-ranked, NOT date-sorted (use
   the list endpoints for time-windowed queries); treat `supersededBy` as
   "show the successor"; expect FTS-quality results when the embedding
@@ -364,7 +371,7 @@ bytes) answer every signed-in login 410 code gone.
   build **27** (`MOBILE_MIN_WORKSPACE_BUILD`, server/web/lib/mobile-build.ts);
   builds up to 26 are Admin only.
 - **"Update the app" (HTTP 426).** `{ error, reason: "update-app",
-  minBuild: 27 }`, never a vague error, in two places:
+minBuild: 27 }`, never a vague error, in two places:
   `POST /api/auth/mobile-login` with a member's right password (it was 403
   `member-login`; still no token, still the one 401 for a wrong password),
   and `POST /api/auth/pair/claim` of a member's code without the header at or
@@ -379,7 +386,7 @@ bytes) answer every signed-in login 410 code gone.
   as before, from any build. The answer's shape is unchanged.
 - **whoami** (`AuthWhoami` in `@mantle/client-types`) also answers
   `workspaces` (the `/api/shell` list: `{ id, name, isAdmin, moderator,
-  private? }`), `areas` (the login's Admin areas, `[]` outside the Admin
+private? }`), `areas` (the login's Admin areas, `[]` outside the Admin
   workspace) and `isOwner` (the brain's anchor login). The same builder as
   `/api/shell` (server/web/lib/login-workspaces.ts), so the drawer's switcher
   needs no second call.
@@ -549,14 +556,14 @@ own workspaces. Every other route answers 403 with `reason` =
 **Who gets what (the targeting rule).** A push goes only to devices of the
 login it concerns, and only while the token that enrolled the device is live.
 
-| Event                                    | Goes to                                                                                                                                        |
-| ---------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| Owner assistant message                  | Devices of active ADMIN logins. If the agent is assigned to one login, only that login's devices.                                              |
-| Approval waiting                         | Devices of active admin logins.                                                                                                                |
-| "Needs you" (provider outage, parked)    | Devices of active admin logins.                                                                                                                |
-| Reply in a member's chat                 | Devices of that ONE login.                                                                                                                     |
-| Review result on an item                 | Devices of the item's author.                                                                                                                  |
-| Comment on an item                       | Nobody: the brain has no comments since 2026-10-09, so no comment push is sent.                                                                |
+| Event                                 | Goes to                                                                                           |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| Owner assistant message               | Devices of active ADMIN logins. If the agent is assigned to one login, only that login's devices. |
+| Approval waiting                      | Devices of active admin logins.                                                                   |
+| "Needs you" (provider outage, parked) | Devices of active admin logins.                                                                   |
+| Reply in a member's chat              | Devices of that ONE login.                                                                        |
+| Review result on an item              | Devices of the item's author.                                                                     |
+| Comment on an item                    | Nobody: the brain has no comments since 2026-10-09, so no comment push is sent.                   |
 
 A member device never gets an owner teaser. A device whose token was
 revoked, expired or rotated away without the app gets nothing.
@@ -650,10 +657,10 @@ An owner assistant reply to an admin's device:
 An approval (`/pending`) and a "needs you" notice gain the same two fields
 and nothing else.
 
-| kind      | t (title)                                                                       | b (body)                                                                                                        | deepLink                                                                       | extra                                              |
-| --------- | ------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ | -------------------------------------------------- |
-| `chat`    | the agent's name; for an admin's note the brain's site name, else `New message` | the reply, pictures removed, 140 chars (`New message` when it is a picture only)                                | `/portal/chat`                                                                 |                                                    |
-| `review`  | `Accepted`, `Returned`, or `With an admin`                                      | the item's title; for `Accepted`, the title it was accepted under                                               | `/portal/items/<id>`, or `/portal/items` when taken                            | `itemId`, `state`: `accepted`, `returned`, `taken` |
+| kind     | t (title)                                                                       | b (body)                                                                         | deepLink                                            | extra                                              |
+| -------- | ------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- | --------------------------------------------------- | -------------------------------------------------- |
+| `chat`   | the agent's name; for an admin's note the brain's site name, else `New message` | the reply, pictures removed, 140 chars (`New message` when it is a picture only) | `/portal/chat`                                      |                                                    |
+| `review` | `Accepted`, `Returned`, or `With an admin`                                      | the item's title; for `Accepted`, the title it was accepted under                | `/portal/items/<id>`, or `/portal/items` when taken | `itemId`, `state`: `accepted`, `returned`, `taken` |
 
 The `comment` kind is no longer sent (the brain has no comments since
 2026-10-09), and no `review` push is sent now either: review went in

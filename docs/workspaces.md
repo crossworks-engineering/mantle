@@ -149,6 +149,30 @@ On the wire: `GET /api/home?ws=<id>` answers the landing page (no `ws`:
 all my workspaces), and `PATCH /api/workspaces/:id` with `landingAppId`
 sets it (`null`: the Built-in home).
 
+## Search and the switcher
+
+The switcher narrows the lists, not search (task f26a516e).
+
+- **Search** (the search palette, and a search in the Pages, Files and
+  other item lists) looks in every workspace the user reads. Hits from the
+  current workspace come first. A hit from another workspace carries a
+  small tag with that workspace's name; opening it switches to that
+  workspace and opens the item in one step.
+- **Only what the user reads.** The search runs in the user's own scope,
+  so the row rules decide what it finds, as on every read: nothing of a
+  workspace the user is not in is shown or counted. An Admin user searches
+  the workspaces they are in, never a user's private workspace.
+- **An empty list** says when the same folder holds items in another of
+  the user's workspaces ("2 items in Admin"), with a link that switches
+  there.
+- A hit opens in the current workspace when that reads it, else in the
+  item's home when the user is in it, else in the first of the user's
+  workspaces that reads it, by name.
+
+On the wire: `GET /api/search?ws=<id>` and
+`GET /api/tree/:kind/search?q=&ws=<id>&across=1` (folder-tree.md); a
+folder page asked with `ws` carries `elsewhere`.
+
 ## Items and grants
 
 Open an item and use **Grant Access**. The panel lists the item's home and

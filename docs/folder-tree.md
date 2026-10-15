@@ -78,6 +78,25 @@ The tree's filter menu narrows the same search: `ws=` (a workspace id) and
 together with any `q`. A filtered search lists items only; it is a
 question about items, not about where they sit. (The `level=` filter went
 with the levels in W5b2.)
+
+**A search across workspaces** (task f26a516e): with a term and
+`across=1`, `ws=` narrows nothing. The search covers every workspace the
+caller reads, the items `ws` reads come first (each part by name; the
+cursor carries the part), the folders that match come too unless a tag
+narrows, and each item names the workspace it opens in (`workspace`, a
+`HitWorkspace`). The answer echoes `across: true`; a brain before it
+narrows as above, and its items carry no `workspace`. An empty `q` ignores
+`across`. What the caller reads is decided by the row rules of its scope,
+never by the route: `parseReadCover` in `server/web/lib/list-workspaces.ts`
+only says whether `ws` narrows or orders.
+
+**Items in another workspace.** Asked with `ws=`, each folder of a page
+also counts `itemsElsewhere`: its items that the caller's other
+workspaces read and `ws` does not (not in `itemCount`). The first page of
+a folder where `ws` reads no item names them in `elsewhere`
+(`[{id, name, count}]`, most first), so a client can say "2 items in
+Admin" and offer the switch. Both count only the caller's own workspaces
+and only what its scope reads.
 `GET /api/tree/:kind/tags` lists the tags on the kind's items, most used
 first (at most 40), leaving out the tag every item of the kind carries by
 default (every file is tagged `file`).
