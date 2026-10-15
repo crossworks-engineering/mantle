@@ -3729,6 +3729,8 @@ Toolsmith's group tools). Its shape (`PendingOrigin`, version 1):
 | `writes`  | the turn scope wrote as an Admin turn does                                                               |
 | `admin`   | the Admin view it had: `holds` (Admin) and `areas` (the Admin areas it could do)                         |
 | `surface` | the surface it ran on: `kind`, an owner path's `via`, the `loginId` it names (no chat or account id)     |
+| `link`    | the turn ran in a public link's scope (its scope is then not stamped: see fix round 1)                   |
+| `actor`   | the actor the turn ran as (an assistant's, a login's, the system's), for a row that names no asker       |
 
 A row queued before 0288, or by no turn (a run's question or budget pause,
 the dev console's test row), has none: it is approved by **the legacy rule**,
@@ -3740,10 +3742,19 @@ Telegram tap, a batch, with no code of its own), for every row that is not
 elevated and carries a stamp, before the row is claimed
 (`originApproval`, `packages/tools/src/pending-approval.ts`):
 
+0. The row is read on the system pool (`pendingCallToDecide`,
+   `packages/db/src/pending-elevated.ts`), not in the approving path's
+   scope, whose row rule (0254) shows a login only its own rows of the
+   workspaces it holds now: the owner's MCP, an Admin assistant's turn and
+   an asker who left the workspace would read nothing, and the call would
+   go unjudged (fix round 1). Who may decide it is `deciderFilter`'s rule,
+   applied to the row read (`decidesRow`); a login that may not decide it
+   judges nothing, and its claim matches nothing.
 1. The scope is the stamp met with the asker's rights now (`originRunFor`):
    its workspaces are the stamp's the asker still holds (`loginScopeFor`;
    a turn that answered no login, a workspace assistant's heartbeat: the
-   stamp's that are still live), its Moderator workspaces the same. A right
+   stamp's its assistant still runs in, while live, and the Moderator seats
+   the stamp named there), its Moderator workspaces the same. A right
    the asker gained since (another workspace, a Moderator seat) is not the
    call's: it never runs wider than where it was asked. No workspace left:
    refused (`PENDING_SCOPE_LOST_ERROR`).
@@ -3751,11 +3762,14 @@ elevated and carries a stamp, before the row is claimed
    (`capAdminView` in `gateCallerFor`, off the approval's `adminCap`).
 3. In that scope (`withOriginScope`: a named exit, `pending-approval`, from
    the approving path's scope, straight into the asked one), as the call's
-   actor (its asker as it is now; a row with no asker the approving path's),
+   actor (its asker as it is now; a row with no asker the actor its turn
+   ran as, the stamp's, never the approving path's),
    the queue-time check runs again (`approvalCallRefusal`, the same steps
    `turnCallRefusal` ran: the gate's steps 3 to 5, the narrowers, the
    pre-run checks with the item pre-check and the queue's reference rule),
-   for the call's arguments and the surface it was asked on, with the
+   for the call's arguments and the surface it was asked on (a Telegram
+   chat's as an owner path naming its login: the chat id is not stamped),
+   with the
    caller dispatch then runs it as (`pendingCaller`, its approver, the cap,
    what was narrowed).
 4. A refusal throws `ApprovalRefusedError` (the domain error table: 403 on
@@ -3765,7 +3779,16 @@ elevated and carries a stamp, before the row is claimed
    the approver), the asker's rights may come back, and an approver can
    reject it. Marking it refused would decide for the approver.
 5. Passed, the row is claimed as before (`deciderFilter`: who decides is
-   unchanged) and the call runs in the same scope as the same actor. An
+   unchanged) and the call runs in the same scope as the same actor, on
+   the surface it was judged on: a handler that reads its author or an
+   owner-only rule off the surface (`ownerSurfaceLoginId`, `isOwnerSurface`:
+   `app_create`'s author, a share's, a workspace listing's login) sees the
+   asker, never the approver, who is named on the caller (the audit row's
+   `approver`). A stamped call whose tool is gone or disabled is refused
+   before the claim (`PENDING_NO_TOOL_ERROR`), never run by the legacy rule;
+   one claimed without being judged (decided between the read and the
+   claim) is put back, pending, and refused (`PENDING_NOT_RECHECKED_ERROR`).
+   An
    approved call of a login is that login's write request in the asked
    scope: it writes as a login's mutating request does there (the login
    write gateway, the scope on its transactions, the database's checks
@@ -3810,22 +3833,53 @@ who does not: its connector write is elevated) x 3 approvers (the owner, the
 asker, another Admin user) x 4 paths x 5 rights (none, lost workspace, lost
 Moderator, lost item, gained) x 2 tools (a connector write, `note_update`):
 360 cells, recorded on main first
-(`a5-approval-recheck.main.json`). 86 changed, each named with its reason in
+(`a5-approval-recheck.main.json`; recorded again on main 7ba1afc95 in fix
+round 1, byte-identical). 108 changed, each named with its reason in
 `a5-approval-recheck.changes.json`:
 
-| reason                | cells | what changed                                                                                                                                                        |
-| --------------------- | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `runs-where-asked`    | 11    | runs in the asked Team turn scope as its asker, not unscoped or in the approver's MCP scope (where the owner's MCP approval of a Team connector call failed at run) |
-| `gains-not-the-calls` | 11    | the same, with rights gained since: still only the asked scope                                                                                                      |
-| `lost-workspace`      | 20    | refused before the claim, left pending (main ran it unscoped)                                                                                                       |
-| `lost-moderator`      | 22    | refused by the connector write rule or the item rule again, left pending                                                                                            |
-| `lost-item`           | 22    | refused by the item pre-check or the connector rule again, left pending                                                                                             |
+| reason                | cells | what changed                                                                                                                                                                   |
+| --------------------- | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `runs-where-asked`    | 15    | runs in the asked Team turn scope as its asker, not unscoped or in the approver's MCP scope (where the owner's MCP approval of a Team call was claimed and then failed at run) |
+| `gains-not-the-calls` | 15    | the same, with rights gained since: still only the asked scope                                                                                                                 |
+| `lost-workspace`      | 26    | refused before the claim, left pending (main ran it unscoped, or over MCP claimed it in the approver's scope)                                                                  |
+| `lost-moderator`      | 26    | refused by the connector write rule or the item rule again, left pending                                                                                                       |
+| `lost-item`           | 26    | refused by the item pre-check or the connector rule again, left pending                                                                                                        |
+
+Fix round 1 added 22 of them, all on MCP: the first record left the owner's
+MCP approvals (`adminUser|owner|mcp|*`, `member|owner|mcp|*`) and an Admin
+user's own MCP approval after it left Team (`adminUser|self|mcp|lostWorkspace|*`)
+as on main, because the row was read in the approver's scope, which hid it.
+Read on the system pool now, the owner's MCP approval runs the call in the
+asked Team scope (none, gained) or refuses it before the claim (lost
+workspace, Moderator seat, item); the Admin user's is refused (lost
+workspace). Two more tests on a real database: the owner's MCP approval of a
+member's call after the member left Team, while Admin holds the connector
+with Write, is refused and left pending (it ran in the owner's scope before
+the fix); an approved `app_create` names its asker as the app's author, not
+its approver.
 
 Every elevated cell is unchanged (6d's rule), and so is every cell where
 the approver may not decide the call. The rule itself, without a database:
 `packages/tools/src/pending-approval.test.ts` (through the real gate),
 `pending-origin.test.ts` (the stamp, the cap), `pending.test.ts` (before the
 claim, left pending, the legacy rule, the reject rule).
+
+**Fix round 1, the lows.**
+
+- A row with no asker runs as the actor its turn ran as (the stamp's
+  `actor`; none stamped: the asking assistant), never the approving path's.
+- A turn that answered no login keeps, at approval, the workspaces its
+  assistant still runs in (`assistantWorkspaceIds`: the assistant's
+  workspace now, while live) and the Moderator seats the stamp named there,
+  rather than losing every seat; an assistant moved to another workspace
+  loses the scope (refused).
+- A turn in a public link's scope is stamped with no scope and `link: true`.
+  The approval does not rebuild a link's scope: that needs its share (is it
+  still live?) and its served list as they are now, which the row does not
+  hold. So only the owner may approve such a call
+  (`PENDING_LINK_OWNER_ERROR`), and it runs in no scope, as before the
+  stamp. The rule is the approval's own, not left to `deciderFilter` (a
+  link's row names no asker, so any scope with no login could decide it).
 
 **What is left.**
 
