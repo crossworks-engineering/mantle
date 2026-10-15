@@ -44,7 +44,7 @@ import { createAppTableExport, removeAppTableExport } from '@mantle/content/app-
 import { appDbSeed } from '@mantle/content/app-db-write';
 import {
   AppTrashRefusedError,
-  deletedAppHomes,
+  manageableDeletedApps,
   listDeletedApps,
   restoreDeletedApp,
 } from '@mantle/content/app-trash';
@@ -83,7 +83,6 @@ import { and as andWhere, eq as eqWhere, sql as sqlTag } from 'drizzle-orm';
 import {
   asSystem,
   db as scopedDb,
-  loginScopeFor,
   nodes as nodesTable,
   scopeHoldsAdmin,
   withCreateHome,
@@ -1472,29 +1471,20 @@ const app_snapshot_delete: BuiltinToolDef = {
 
 /**
  * In a workspace scope, the deleted apps the caller may manage, by id, with
- * the workspace each was homed in (W7b fix round 1): a deleted app's rows
- * are gone, so the scope's row rule hides its snapshots (0265), and the
- * trash is read on the system pool by the named reason 'app-trash', ONLY
- * for these: a home the caller moderates (mantle_may_manage), or, for a
- * snapshot that names no home (taken before W6a), the brain's anchor
- * login. Outside a workspace scope: null (the trash as before).
- *
- * The anchor's own chat (W7 integration fix 2): its turn scope holds only
- * Admin, so it would miss the apps of the other workspaces it moderates;
- * for the anchor the homes are those of its full login scope. Anyone else
- * keeps the scope it runs in.
+ * the workspace each was homed in (W7b fix round 1), and their trash rows:
+ * a home the caller moderates (mantle_may_manage; for the brain's anchor
+ * login, every workspace it moderates: its own chat's turn scope holds only
+ * Admin, W7 integration fix 2), or, for a snapshot that names no home
+ * (taken before W6a), the anchor login. By their definer
+ * (manageableDeletedApps, 0293; A6b: read on the system pool before,
+ * 'app-trash'). Outside a workspace scope: null (the trash as before).
  */
-async function manageableDeletedApps(ownerId: string): Promise<Map<string, string | null> | null> {
-  const scope = currentWorkspaceScope();
-  if (!scope) return null;
-  const anchor = scope.loginId !== null && scope.loginId.toLowerCase() === ownerId.toLowerCase();
-  const mod = new Set(anchor ? (await loginScopeFor(scope.loginId!)).modWs : scope.modWs);
-  const all = await appTrashSystem(() => deletedAppHomes(ownerId));
-  const out = new Map<string, string | null>();
-  for (const [id, home] of all) {
-    if (home ? mod.has(home) : scope.loginId === ownerId) out.set(id.toLowerCase(), home);
-  }
-  return out;
+async function manageableDeleted(ownerId: string): Promise<{
+  homes: Map<string, string | null>;
+  apps: Awaited<ReturnType<typeof listDeletedApps>>;
+} | null> {
+  if (!currentWorkspaceScope()) return null;
+  return manageableDeletedApps(ownerId);
 }
 
 const app_deleted_list: BuiltinToolDef = {
@@ -1509,10 +1499,8 @@ const app_deleted_list: BuiltinToolDef = {
     const refused = ownerOnlyRefusal(ctx);
     if (refused) return refused;
     try {
-      const homes = await manageableDeletedApps(ctx.ownerId);
-      const deleted = homes
-        ? (await appTrashSystem(() => listDeletedApps(ctx.ownerId))).filter((d) => homes.has(d.id))
-        : await listDeletedApps(ctx.ownerId);
+      const manageable = await manageableDeleted(ctx.ownerId);
+      const deleted = manageable ? manageable.apps : await listDeletedApps(ctx.ownerId);
       ctx.step?.setOutput({ count: deleted.length });
       return { ok: true, output: { apps: deleted } };
     } catch (err) {
@@ -1548,7 +1536,7 @@ const app_undelete: BuiltinToolDef = {
     const id = str(input.id).trim();
     if (!id) return { ok: false, error: 'id is required' };
     try {
-      const homes = await manageableDeletedApps(ctx.ownerId);
+      const homes = (await manageableDeleted(ctx.ownerId))?.homes ?? null;
       const restore = () => restoreDeletedApp(ctx.ownerId, id, { actor: historyActor(ctx) });
       let app: Awaited<ReturnType<typeof restoreDeletedApp>>;
       if (!homes) {

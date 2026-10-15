@@ -36,7 +36,6 @@ import {
 import { derivedCountsOf, type DerivedCounts } from '../derived-counts';
 import { deleteThumbnailsFor } from '../thumbnail';
 import {
-  asSystem,
   assertNotSnapshotCopy,
   brokerLockTx,
   currentCreateHome,
@@ -1304,29 +1303,21 @@ export class FileNameTakenError extends ConflictError {
 }
 
 /**
- * Whether a file in `parentPath` has `filename` (ignoring case), asked on
- * the system pool whatever the caller's scope: its id, whether it is a
- * folded member file and whether its name is exactly `filename`, never its
- * content (asSystem 'name-taken': structure). The exact match first, then a
- * tree file before a folded one.
+ * Whether a file in `parentPath` has `filename` (ignoring case), asked
+ * whatever the caller's scope: its id, whether it is a folded member file
+ * and whether its name is exactly `filename`, never its content
+ * (structure). The exact match first, then a tree file before a folded one.
+ * By its definer (mantle_file_name_taken, 0293; A6b: on the system pool
+ * before, 'name-taken').
  */
 export async function fileNameTaken(
   ownerId: string,
   parentPath: string,
   filename: string,
 ): Promise<{ id: string; folded: boolean; exact: boolean } | null> {
-  const rows = (await asSystem(
-    () =>
-      db.execute(sql`
-        select n.id::text as id, coalesce(n.data ? 'space_file', false) as folded,
-               coalesce(n.data->>'filename' = ${filename}, false) as exact
-          from nodes n
-         where n.owner_id = ${ownerId} and n.type = 'file'
-           and n.path::text = ${parentPath}
-           and (lower(n.data->>'filename') = lower(${filename}) or lower(n.slug) = lower(${filename}))
-         order by exact desc, folded, n.id
-         limit 1`),
-    'name-taken',
+  const rows = (await db.execute(
+    sql`select id::text as id, folded, exact
+          from "public"."mantle_file_name_taken"(${ownerId}::uuid, ${parentPath}, ${filename})`,
   )) as unknown as { id: string; folded: boolean; exact: boolean }[];
   return rows[0] ?? null;
 }

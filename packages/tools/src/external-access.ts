@@ -51,16 +51,11 @@ import {
   systemWork,
   auditLog,
   db,
-  nodes,
   toolGroups,
   tools,
-  workspaceResources,
-  workspaces,
-  workspaceUsers,
   type Tool,
   type ToolHandler,
   type ToolExternalAccess,
-  itemHoldersSql,
 } from '@mantle/db';
 import type { ToolExternalAccessDTO } from '@mantle/client-types';
 import { resolveTool } from './resolve';
@@ -82,16 +77,6 @@ function connectorBindingSystem<T>(fn: () => Promise<T>): Promise<T> {
  *  scope (no exit). */
 function connectorBindingSystemWork<T>(fn: () => Promise<T>): Promise<T> {
   return systemWork(fn, 'connector-binding');
-}
-
-/**
- * The workspace resources door (arch A6): which workspaces hold a connector,
- * and a login's or an app's workspaces, are read on the system pool by the
- * named reason 'workspace-resources' (the rule is in the query). Every such
- * read below goes through it.
- */
-function workspaceResourcesSystem<T>(fn: () => Promise<T>): Promise<T> {
-  return asSystem(fn, 'workspace-resources');
 }
 
 /** The handler kinds an admin may open to external access. */
@@ -318,22 +303,15 @@ export async function connectorGroupOf(
 ): Promise<{ id: string; slug: string; usable: boolean } | null> {
   const h = tool.handler as ToolHandler;
   if (h.kind !== 'mcp') return null;
-  // As the system: a limited scope's row security may hide the group, and
-  // the rule is in the code below.
-  const [g] = await connectorBindingSystem(() =>
-    db
-      .select({
-        id: toolGroups.id,
-        slug: toolGroups.slug,
-        enabled: toolGroups.enabled,
-        integration: toolGroups.integration,
-      })
-      .from(toolGroups)
-      .where(and(eq(toolGroups.ownerId, ownerId), eq(toolGroups.slug, h.group)))
-      .limit(1),
-  );
+  // By its definer (mantle_connector_state, 0293): a limited scope's row
+  // security may hide the group, and the caller needs only its state, never
+  // its binding (A6b: the whole row on the system pool before).
+  const [g] = (await db.execute(
+    sql`select id::text as id, slug, usable
+          from "public"."mantle_connector_state"(${ownerId}::uuid, ${h.group})`,
+  )) as unknown as { id: string; slug: string; usable: boolean }[];
   if (!g) return null;
-  return { id: g.id, slug: g.slug, usable: g.enabled === true && !!g.integration?.mcp };
+  return { id: g.id, slug: g.slug, usable: g.usable === true };
 }
 
 /**
@@ -360,8 +338,9 @@ const uuidArray = (ids: readonly string[]) => `{${ids.join(',')}}`;
 /**
  * A connector as a workspace resource (workspaces plan section 6, W4b): the
  * rows that put the connector group `groupSlug` on any of `wsIds` (live,
- * unarchived workspaces of the brain), with their Write tick. Read as the
- * system: the rule is in the query.
+ * unarchived workspaces of the brain), with their Write tick. By its
+ * definer (mantle_connector_rows, 0293: the rule is in the query; A6b: on
+ * the system pool before, 'workspace-resources').
  */
 export async function connectorResources(
   ownerId: string,
@@ -369,21 +348,11 @@ export async function connectorResources(
   wsIds: readonly string[],
 ): Promise<{ workspaceId: string; write: boolean }[]> {
   if (wsIds.length === 0) return [];
-  return workspaceResourcesSystem(() =>
-    db
-      .select({ workspaceId: workspaceResources.workspaceId, write: workspaceResources.write })
-      .from(workspaceResources)
-      .innerJoin(workspaces, eq(workspaces.id, workspaceResources.workspaceId))
-      .where(
-        and(
-          eq(workspaceResources.type, 'connector'),
-          eq(workspaceResources.refId, groupSlug),
-          eq(workspaces.ownerId, ownerId),
-          sql`${workspaces.archivedAt} is null`,
-          sql`${workspaceResources.workspaceId} = any(${uuidArray(wsIds)}::uuid[])`,
-        ),
-      ),
-  );
+  return (await db.execute(
+    sql`select workspace_id::text as "workspaceId", write
+          from "public"."mantle_connector_rows"(${ownerId}::uuid, ${groupSlug},
+                                                 ${uuidArray(wsIds)}::uuid[])`,
+  )) as unknown as { workspaceId: string; write: boolean }[];
 }
 
 /**
@@ -406,21 +375,11 @@ async function connectorBeyondAdmin(
   ownerId: string,
   groupSlug: string,
 ): Promise<{ write: boolean } | null> {
-  const [row] = await workspaceResourcesSystem(() =>
-    db
-      .select({ write: sql<boolean>`bool_or(${workspaceResources.write})` })
-      .from(workspaceResources)
-      .innerJoin(workspaces, eq(workspaces.id, workspaceResources.workspaceId))
-      .where(
-        and(
-          eq(workspaceResources.type, 'connector'),
-          eq(workspaceResources.refId, groupSlug),
-          eq(workspaces.ownerId, ownerId),
-          eq(workspaces.isAdmin, false),
-          sql`${workspaces.archivedAt} is null`,
-        ),
-      ),
-  );
+  // By its definer (mantle_connector_beyond_admin, 0293; A6b: on the system
+  // pool before, 'workspace-resources').
+  const [row] = (await db.execute(
+    sql`select "public"."mantle_connector_beyond_admin"(${ownerId}::uuid, ${groupSlug}) as write`,
+  )) as unknown as { write: boolean | null }[];
   return row && row.write !== null ? { write: row.write === true } : null;
 }
 
@@ -437,13 +396,11 @@ export async function appConnectorRefused(
   groupSlug: string,
   write: boolean,
 ): Promise<string | null> {
-  const [app] = await workspaceResourcesSystem(() =>
-    db
-      .select({ holders: itemHoldersSql() })
-      .from(nodes)
-      .where(and(eq(nodes.ownerId, ownerId), eq(nodes.id, appId), eq(nodes.type, 'app')))
-      .limit(1),
-  );
+  // The workspaces holding the app, by its definer (mantle_app_holders,
+  // 0293: an app the scope reads; A6b: on the system pool before).
+  const [app] = (await db.execute(
+    sql`select "public"."mantle_app_holders"(${ownerId}::uuid, ${appId}::uuid)::text[] as holders`,
+  )) as unknown as { holders: string[] | null }[];
   const holders = [...new Set(app?.holders ?? [])];
   if (holders.length === 0) {
     return 'This app is in no workspace, so connector tools do not run from it.';
@@ -480,40 +437,27 @@ export async function loginConnectorRule(
   ownerId: string,
   loginId: string,
 ): Promise<LoginConnectorRule> {
-  const mine = await workspaceResourcesSystem(() =>
-    db
-      .select({ workspaceId: workspaceUsers.workspaceId, moderator: workspaceUsers.moderator })
-      .from(workspaceUsers)
-      .innerJoin(workspaces, eq(workspaces.id, workspaceUsers.workspaceId))
-      .where(
-        and(
-          eq(workspaceUsers.loginId, loginId),
-          eq(workspaces.ownerId, ownerId),
-          sql`${workspaces.archivedAt} is null`,
-        ),
-      ),
-  );
+  // The login's live workspaces and the connectors each holds, by their
+  // definer (mantle_login_connector_rows, 0293: in a scope, the scope's own
+  // login only; A6b: two reads on the system pool before).
+  const rows = (await db.execute(
+    sql`select workspace_id::text as "workspaceId", moderator, slug, write
+          from "public"."mantle_login_connector_rows"(${ownerId}::uuid, ${loginId}::uuid)`,
+  )) as unknown as {
+    workspaceId: string;
+    moderator: boolean;
+    slug: string | null;
+    write: boolean | null;
+  }[];
+  const mine = [...new Map(rows.map((r) => [r.workspaceId, r])).values()];
   if (mine.length === 0) {
     return () =>
       'You are not a user of any workspace on this brain, so connector tools do not run for you.';
   }
   // Every connector resource of the login's workspaces (live, unarchived
   // ones of this brain: `mine` holds no other).
-  const wsIds = mine.map((r) => r.workspaceId);
-  const held = await workspaceResourcesSystem(() =>
-    db
-      .select({
-        workspaceId: workspaceResources.workspaceId,
-        slug: workspaceResources.refId,
-        write: workspaceResources.write,
-      })
-      .from(workspaceResources)
-      .where(
-        and(
-          eq(workspaceResources.type, 'connector'),
-          sql`${workspaceResources.workspaceId} = any(${uuidArray(wsIds)}::uuid[])`,
-        ),
-      ),
+  const held = rows.flatMap((r) =>
+    r.slug === null ? [] : [{ workspaceId: r.workspaceId, slug: r.slug, write: r.write === true }],
   );
   const moderated = new Set(mine.filter((r) => r.moderator).map((r) => r.workspaceId));
   return (groupSlug, write) => {

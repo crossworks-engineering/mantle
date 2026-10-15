@@ -45,7 +45,7 @@
  * call. Pure selection is split out so it unit-tests without a DB.
  */
 import { sql, type AnyColumn, type SQL } from 'drizzle-orm';
-import { asSystem, db } from '@mantle/db';
+import { db } from '@mantle/db';
 
 /** Most terms kept for the OR query. Long enough to cover a paragraph's
  *  distinctive words; short enough that the match set stays small. */
@@ -197,76 +197,28 @@ export function lexemesToTsqueryText(lexemes: readonly string[]): string {
  * null for the uncounted. A lexeme holding a backslash is left uncounted: the
  * in-SQL quoting below only doubles quotes.
  *
- * On the system pool, by its named reason, in any scope (W7a): the
- * frequencies are the vocabulary's, table-wide by design, and Postgres hides
- * `pg_stats` of a table under row security from every role that does not
- * bypass it, so in a workspace scope every lexeme read as untracked and was
- * counted under the row rule (10 ms on a dev copy, 46 ms on a large one, per
- * query). The query returns numbers for the caller's own query terms only,
- * never a row; the search itself runs in the caller's scope.
+ * Table-wide in any scope (W7a), by a definer (A6b): the frequencies are
+ * the vocabulary's, table-wide by design, and Postgres hides `pg_stats` of a
+ * table under row security from every role that does not bypass it, so in a
+ * workspace scope every lexeme read as untracked and was counted under the
+ * row rule (10 ms on a dev copy, 46 ms on a large one, per query). The
+ * definer returns numbers for the caller's own query terms only, never a
+ * row; the search itself runs in the caller's scope.
  */
 async function lexemeFrequencies(
   text: string,
   table: 'content_chunks' | 'nodes',
 ): Promise<LexemeDf[]> {
-  // `table` is one of two literals (the type), so raw is safe here.
-  const tbl = sql.raw(`"${table}"`);
   // Residual signal (W7a audit L4, accepted): the document frequencies are
   // the whole table's, so which of the caller's terms the keyword arm ORs
   // can shift with what other workspaces hold: a faint existence signal by
-  // count for the caller's own terms, never a row.
-  const rows = (await asSystem(
-    () =>
-      db.execute(sql`
-    with lex as (
-      select distinct unnest(tsvector_to_array(to_tsvector('english', ${text}))) as lexeme
-    ),
-    col as (
-      select most_common_elems::text::text[] as elems, most_common_elem_freqs as freqs
-      from pg_stats
-      where schemaname = current_schema() and tablename = ${table} and attname = 'search_tsv'
-    ),
-    stats as (
-      select unnest(elems) as lexeme, unnest(freqs[1:array_length(elems, 1)]) as freq from col
-    ),
-    tracked as (
-      select lex.lexeme, max(s.freq)::float8 as freq
-      from lex left join stats s on s.lexeme = lex.lexeme
-      group by lex.lexeme
-    ),
-    todo as (
-      select lexeme,
-             row_number() over (order by (lexeme ~ '[0-9]') desc, length(lexeme) desc, lexeme) as rn
-      from tracked where freq is null and strpos(lexeme, chr(92)) = 0
-    ),
-    total as (
-      select greatest(reltuples, 1)::float8 as n from pg_class
-      where oid = to_regclass(quote_ident(current_schema()) || '.' || ${table})
-    ),
-    counted as (
-      select t.lexeme, t.freq,
-        case when d.rn <= ${COUNT_LEXEMES} then (
-          select count(*)::float8 from (
-            select 1 from ${tbl} c
-            where c.search_tsv @@ (chr(39) || replace(t.lexeme, chr(39), chr(39) || chr(39)) || chr(39))::tsquery
-            limit ${COUNT_CAP}
-          ) hits
-        ) end as hits
-      from tracked t left join todo d on d.lexeme = t.lexeme
-    )
-    select k.lexeme as lexeme,
-      case
-        when k.freq is not null then k.freq * coalesce((select n from total), 1)
-        else k.hits
-      end as rows,
-      case
-        when k.freq is not null then k.freq
-        when k.hits is not null then k.hits / coalesce((select n from total), 1)
-        else coalesce((select freqs[array_length(elems, 1) + 1] from col), ${KEYWORD_DF_CEILING})::float8
-      end as df
-    from counted k
-  `),
-    'lexeme-stats',
+  // count for the caller's own terms, never a row. By its definer
+  // (mantle_lexeme_df, 0293: pg_stats and the capped counts, numbers only;
+  // A6b: on the system pool before, 'lexeme-stats').
+  const rows = (await db.execute(
+    sql`select lexeme, rows, df
+          from "public"."mantle_lexeme_df"(${text}, ${table}, ${COUNT_LEXEMES}::int,
+                                            ${COUNT_CAP}::int, ${KEYWORD_DF_CEILING}::float8)`,
   )) as unknown as Array<{ lexeme: string; df: number | string; rows: number | string | null }>;
   return rows.map((r) => ({
     lexeme: r.lexeme,

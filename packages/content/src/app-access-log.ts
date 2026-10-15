@@ -28,8 +28,8 @@
  * APP_ERROR_LOG_PER_DAY a day; and the reaper keeps errors
  * APP_ERROR_LOG_RETENTION_DAYS, at most APP_ERROR_LOG_KEEP_PER_APP per app.
  */
-import { and, desc, eq, gte, inArray, sql } from 'drizzle-orm';
-import { asSystem, db, systemDb, appAccessLog, authUsers, nodes } from '@mantle/db';
+import { and, desc, eq, gte, sql } from 'drizzle-orm';
+import { db, systemDb, appAccessLog, nodes, wsArraySql } from '@mantle/db';
 
 export type AppAccessKind = 'auth' | 'tool' | 'db' | 'error';
 
@@ -236,7 +236,10 @@ export async function listAppAccess(
     )
     .orderBy(desc(appAccessLog.createdAt))
     .limit(limit);
-  const names = await actorNames(rows.map((r) => r.actorId));
+  const names = await actorNames(
+    appNodeId,
+    rows.map((r) => r.actorId),
+  );
   return rows.map((r) => ({
     id: r.id,
     contactId: r.contactId,
@@ -254,25 +257,20 @@ export async function listAppAccess(
 
 /** The names of the logins on access rows the caller already read: the
  *  display name, else the email's local part. Login rows are never granted
- *  to the workspace role, so in a scope (an Admin user, the Admin assistant,
- *  W7a) they are read on the system pool by the named reason, for exactly
- *  these ids. */
-async function actorNames(ids: readonly (string | null)[]): Promise<Map<string, string>> {
+ *  to the workspace role: by their definer (mantle_access_log_names, 0293),
+ *  for these ids only where they are actors on the app's access log (in a
+ *  scope, of an app it reads; A6b: on the system pool before,
+ *  'login-names'). */
+async function actorNames(
+  appNodeId: string,
+  ids: readonly (string | null)[],
+): Promise<Map<string, string>> {
   const wanted = [...new Set(ids.filter((id): id is string => id !== null))];
   if (wanted.length === 0) return new Map();
-  const rows = await asSystem(
-    () =>
-      db
-        .select({
-          id: authUsers.id,
-          name: sql<
-            string | null
-          >`coalesce(nullif(trim(${authUsers.displayName}), ''), split_part(${authUsers.email}, '@', 1))`,
-        })
-        .from(authUsers)
-        .where(inArray(authUsers.id, wanted)),
-    'login-names',
-  );
+  const rows = (await db.execute(
+    sql`select id::text as id, name
+          from "public"."mantle_access_log_names"(${appNodeId}::uuid, ${wsArraySql(wanted)})`,
+  )) as unknown as { id: string; name: string | null }[];
   return new Map(rows.filter((r) => r.name).map((r) => [r.id, r.name!]));
 }
 

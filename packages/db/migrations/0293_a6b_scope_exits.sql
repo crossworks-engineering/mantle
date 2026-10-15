@@ -41,6 +41,39 @@
 -- 6. mantle_ws_private_for(ws, login): whether `ws` is `login`'s own private
 --    workspace (the shell's switcher marks it); in a scope only the scope's
 --    own login.
+-- 7. The connector reads (packages/tools external-access.ts): a
+--    connector's state (mantle_connector_state: its id and whether it is
+--    usable, never its binding or OAuth config), which live workspaces of
+--    `ws` hold it with their Write tick (mantle_connector_rows), whether a
+--    live workspace beyond Admin holds it (mantle_connector_beyond_admin),
+--    the workspaces holding an app (mantle_app_holders: an app the scope
+--    reads), and one login's live workspaces with the connectors each holds
+--    (mantle_login_connector_rows: in a scope, the scope's own login only).
+-- 8. mantle_contact_sharing(owner, ids): the code dates of the contacts
+--    with sharing on (contact_share_codes, never the code): the caller read
+--    the contacts, the id list is the rule (as on the system pool); in a
+--    scope only the brain's.
+-- 9. mantle_file_name_taken(owner, parent, name): a file in `parent` with
+--    that name (ignoring case): its id, whether it is a folded member file,
+--    whether the name is exact. Structure, never content; in a scope only
+--    the brain's.
+-- 10. mantle_table_app_link(table): the app a Table is the export of (in a
+--    scope, of a Table the scope reads).
+-- 11. mantle_access_log_names(app, ids): the names of logins that are
+--    actors on the access log of an app (in a scope, an app the scope
+--    reads): the display name, else the email's local part.
+-- 12. mantle_runs_workspaces(run_ids, item_ids): the workspace each named
+--    run is stamped with (a run item's run), so a scope that queues jobs can
+--    be checked to carry them. Workspace ids only.
+-- 13. mantle_lexeme_df(text, tbl, count_lexemes, count_cap): the document
+--    frequency of the caller's own query terms in `nodes` or
+--    `content_chunks` (pg_stats, hidden from a role under row security,
+--    else a capped count): numbers for the caller's terms, never a row.
+-- 14. mantle_deleted_apps(owner): each deleted app's newest pre_delete
+--    snapshot (no code: its meta, its data file, whether it is held), with
+--    its home. In a scope only the apps the scope may manage: a home among
+--    the scope's Moderator workspaces (the anchor login: its Moderator
+--    seats in every live workspace), or no home and the anchor login.
 --
 -- The writes (3, 4) are the write role's (WRITE_ROLE_FUNCTIONS,
 -- access-matrix.ts: applyViewerGrants grants them), not the workspace
@@ -251,6 +284,295 @@ REVOKE ALL ON FUNCTION "public"."mantle_ws_private_for"(uuid, uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION "public"."mantle_ws_private_for"(uuid, uuid) TO "mantle_view_user";
 --> statement-breakpoint
 
+CREATE OR REPLACE FUNCTION "public"."mantle_connector_state"(owner uuid, slug text)
+  RETURNS TABLE ("id" uuid, "slug" text, "usable" boolean)
+  LANGUAGE sql STABLE SECURITY DEFINER
+  SET search_path = "public", pg_temp AS $$
+  SELECT g."id", g."slug", (g."enabled" AND coalesce(g."integration" ? 'mcp', false))
+    FROM "public"."tool_groups" g
+   WHERE g."owner_id" = owner AND g."slug" = mantle_connector_state.slug
+     AND (NOT "public"."mantle_scope_active"() OR owner = "public"."mantle_brain_id"())
+   LIMIT 1
+$$;
+--> statement-breakpoint
+REVOKE ALL ON FUNCTION "public"."mantle_connector_state"(uuid, text) FROM PUBLIC;
+--> statement-breakpoint
+GRANT EXECUTE ON FUNCTION "public"."mantle_connector_state"(uuid, text) TO "mantle_view_user";
+--> statement-breakpoint
+
+CREATE OR REPLACE FUNCTION "public"."mantle_connector_rows"(owner uuid, slug text, ws uuid[])
+  RETURNS TABLE ("workspace_id" uuid, "write" boolean)
+  LANGUAGE sql STABLE SECURITY DEFINER
+  SET search_path = "public", pg_temp AS $$
+  SELECT r."workspace_id", r."write"
+    FROM "public"."workspace_resources" r
+    JOIN "public"."workspaces" w ON w."id" = r."workspace_id"
+   WHERE r."type" = 'connector' AND r."ref_id" = slug AND w."owner_id" = owner
+     AND w."archived_at" IS NULL AND r."workspace_id" = ANY (ws)
+     AND (NOT "public"."mantle_scope_active"() OR owner = "public"."mantle_brain_id"())
+$$;
+--> statement-breakpoint
+REVOKE ALL ON FUNCTION "public"."mantle_connector_rows"(uuid, text, uuid[]) FROM PUBLIC;
+--> statement-breakpoint
+GRANT EXECUTE ON FUNCTION "public"."mantle_connector_rows"(uuid, text, uuid[]) TO "mantle_view_user";
+--> statement-breakpoint
+
+-- NULL when no live workspace beyond Admin holds the connector, else
+-- whether one of them has its Write on.
+CREATE OR REPLACE FUNCTION "public"."mantle_connector_beyond_admin"(owner uuid, slug text)
+  RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER
+  SET search_path = "public", pg_temp AS $$
+  SELECT bool_or(r."write")
+    FROM "public"."workspace_resources" r
+    JOIN "public"."workspaces" w ON w."id" = r."workspace_id"
+   WHERE r."type" = 'connector' AND r."ref_id" = slug AND w."owner_id" = owner
+     AND NOT w."is_admin" AND w."archived_at" IS NULL
+     AND (NOT "public"."mantle_scope_active"() OR owner = "public"."mantle_brain_id"())
+$$;
+--> statement-breakpoint
+REVOKE ALL ON FUNCTION "public"."mantle_connector_beyond_admin"(uuid, text) FROM PUBLIC;
+--> statement-breakpoint
+GRANT EXECUTE ON FUNCTION "public"."mantle_connector_beyond_admin"(uuid, text) TO "mantle_view_user";
+--> statement-breakpoint
+
+CREATE OR REPLACE FUNCTION "public"."mantle_app_holders"(owner uuid, app uuid)
+  RETURNS uuid[] LANGUAGE sql STABLE SECURITY DEFINER
+  SET search_path = "public", pg_temp AS $$
+  SELECT n."read_ws" FROM "public"."nodes" n
+   WHERE n."owner_id" = owner AND n."id" = app AND n."type" = 'app'
+     AND (NOT "public"."mantle_scope_active"()
+          OR (owner = "public"."mantle_brain_id"()
+              AND n."read_ws" && "public"."mantle_scope_ws"()
+              AND (n."login_id" IS NULL OR n."login_id" = "public"."mantle_scope_login_id"())))
+   LIMIT 1
+$$;
+--> statement-breakpoint
+REVOKE ALL ON FUNCTION "public"."mantle_app_holders"(uuid, uuid) FROM PUBLIC;
+--> statement-breakpoint
+GRANT EXECUTE ON FUNCTION "public"."mantle_app_holders"(uuid, uuid) TO "mantle_view_user";
+--> statement-breakpoint
+
+-- One row per live workspace of the login (slug and write NULL when it
+-- holds no connector), and one per connector it holds.
+CREATE OR REPLACE FUNCTION "public"."mantle_login_connector_rows"(owner uuid, login uuid)
+  RETURNS TABLE ("workspace_id" uuid, "moderator" boolean, "slug" text, "write" boolean)
+  LANGUAGE sql STABLE SECURITY DEFINER
+  SET search_path = "public", pg_temp AS $$
+  SELECT u."workspace_id", u."moderator", r."ref_id", r."write"
+    FROM "public"."workspace_users" u
+    JOIN "public"."workspaces" w ON w."id" = u."workspace_id"
+    LEFT JOIN "public"."workspace_resources" r
+      ON r."workspace_id" = u."workspace_id" AND r."type" = 'connector'
+   WHERE u."login_id" = login AND w."owner_id" = owner AND w."archived_at" IS NULL
+     AND (NOT "public"."mantle_scope_active"()
+          OR (login = "public"."mantle_scope_login_id"() AND owner = "public"."mantle_brain_id"()))
+$$;
+--> statement-breakpoint
+REVOKE ALL ON FUNCTION "public"."mantle_login_connector_rows"(uuid, uuid) FROM PUBLIC;
+--> statement-breakpoint
+GRANT EXECUTE ON FUNCTION "public"."mantle_login_connector_rows"(uuid, uuid) TO "mantle_view_user";
+--> statement-breakpoint
+
+CREATE OR REPLACE FUNCTION "public"."mantle_contact_sharing"(owner uuid, ids uuid[])
+  RETURNS TABLE ("contact_id" uuid, "created_at" timestamptz, "rotated_at" timestamptz,
+                 "last_used_at" timestamptz, "locked_until" timestamptz)
+  LANGUAGE sql STABLE SECURITY DEFINER
+  SET search_path = "public", pg_temp AS $$
+  SELECT c."contact_id", c."created_at", c."rotated_at", c."last_used_at", c."locked_until"
+    FROM "public"."contact_share_codes" c
+   WHERE c."owner_id" = owner AND c."contact_id" = ANY (ids) AND c."code_hash" IS NOT NULL
+     AND (NOT "public"."mantle_scope_active"() OR owner = "public"."mantle_brain_id"())
+$$;
+--> statement-breakpoint
+REVOKE ALL ON FUNCTION "public"."mantle_contact_sharing"(uuid, uuid[]) FROM PUBLIC;
+--> statement-breakpoint
+GRANT EXECUTE ON FUNCTION "public"."mantle_contact_sharing"(uuid, uuid[]) TO "mantle_view_user";
+--> statement-breakpoint
+
+CREATE OR REPLACE FUNCTION "public"."mantle_file_name_taken"(owner uuid, parent text, name text)
+  RETURNS TABLE ("id" uuid, "folded" boolean, "exact" boolean)
+  LANGUAGE sql STABLE SECURITY DEFINER
+  SET search_path = "public", pg_temp AS $$
+  SELECT n."id", coalesce(n."data" ? 'space_file', false),
+         coalesce(n."data" ->> 'filename' = name, false) AS exact
+    FROM "public"."nodes" n
+   WHERE n."owner_id" = owner AND n."type" = 'file' AND n."path"::text = parent
+     AND (lower(n."data" ->> 'filename') = lower(name) OR lower(n."slug") = lower(name))
+     AND (NOT "public"."mantle_scope_active"() OR owner = "public"."mantle_brain_id"())
+   ORDER BY exact DESC, coalesce(n."data" ? 'space_file', false), n."id"
+   LIMIT 1
+$$;
+--> statement-breakpoint
+REVOKE ALL ON FUNCTION "public"."mantle_file_name_taken"(uuid, text, text) FROM PUBLIC;
+--> statement-breakpoint
+GRANT EXECUTE ON FUNCTION "public"."mantle_file_name_taken"(uuid, text, text) TO "mantle_view_user";
+--> statement-breakpoint
+
+CREATE OR REPLACE FUNCTION "public"."mantle_table_app_link"(tbl uuid)
+  RETURNS uuid LANGUAGE sql STABLE SECURITY DEFINER
+  SET search_path = "public", pg_temp AS $$
+  SELECT e."app_node_id" FROM "public"."app_table_exports" e
+   WHERE e."table_node_id" = tbl
+     AND (NOT "public"."mantle_scope_active"()
+          OR EXISTS (SELECT 1 FROM "public"."nodes" n
+                      WHERE n."id" = tbl AND n."owner_id" = "public"."mantle_brain_id"()
+                        AND n."read_ws" && "public"."mantle_scope_ws"()
+                        AND (n."login_id" IS NULL
+                             OR n."login_id" = "public"."mantle_scope_login_id"())))
+   LIMIT 1
+$$;
+--> statement-breakpoint
+REVOKE ALL ON FUNCTION "public"."mantle_table_app_link"(uuid) FROM PUBLIC;
+--> statement-breakpoint
+GRANT EXECUTE ON FUNCTION "public"."mantle_table_app_link"(uuid) TO "mantle_view_user";
+--> statement-breakpoint
+
+CREATE OR REPLACE FUNCTION "public"."mantle_access_log_names"(app uuid, ids uuid[])
+  RETURNS TABLE ("id" uuid, "name" text)
+  LANGUAGE sql STABLE SECURITY DEFINER
+  SET search_path = "public", pg_temp AS $$
+  SELECT l."id", coalesce(nullif(trim(l."display_name"), ''), split_part(l."email", '@', 1))
+    FROM "auth"."users" l
+   WHERE l."id" = ANY (ids)
+     AND EXISTS (SELECT 1 FROM "public"."app_access_log" a
+                  WHERE a."app_node_id" = app AND a."actor_id" = l."id")
+     AND (NOT "public"."mantle_scope_active"()
+          OR EXISTS (SELECT 1 FROM "public"."nodes" n
+                      WHERE n."id" = app AND n."owner_id" = "public"."mantle_brain_id"()
+                        AND n."read_ws" && "public"."mantle_scope_ws"()
+                        AND (n."login_id" IS NULL
+                             OR n."login_id" = "public"."mantle_scope_login_id"())))
+$$;
+--> statement-breakpoint
+REVOKE ALL ON FUNCTION "public"."mantle_access_log_names"(uuid, uuid[]) FROM PUBLIC;
+--> statement-breakpoint
+GRANT EXECUTE ON FUNCTION "public"."mantle_access_log_names"(uuid, uuid[]) TO "mantle_view_user";
+--> statement-breakpoint
+
+CREATE OR REPLACE FUNCTION "public"."mantle_runs_workspaces"(run_ids uuid[], item_ids uuid[])
+  RETURNS TABLE ("workspace_id" uuid)
+  LANGUAGE sql STABLE SECURITY DEFINER
+  SET search_path = "public", pg_temp AS $$
+  SELECT r."workspace_id" FROM "public"."runs" r
+   WHERE r."id" = ANY (run_ids)
+      OR r."id" IN (SELECT i."run_id" FROM "public"."run_items" i WHERE i."id" = ANY (item_ids))
+$$;
+--> statement-breakpoint
+REVOKE ALL ON FUNCTION "public"."mantle_runs_workspaces"(uuid[], uuid[]) FROM PUBLIC;
+--> statement-breakpoint
+GRANT EXECUTE ON FUNCTION "public"."mantle_runs_workspaces"(uuid[], uuid[]) TO "mantle_view_user";
+--> statement-breakpoint
+
+CREATE OR REPLACE FUNCTION "public"."mantle_lexeme_df"(
+  query text, tbl text, count_lexemes integer, count_cap integer, df_ceiling float8)
+  RETURNS TABLE ("lexeme" text, "rows" float8, "df" float8)
+  LANGUAGE plpgsql STABLE SECURITY DEFINER
+  SET search_path = "public", pg_temp AS $$
+BEGIN
+  IF tbl NOT IN ('nodes', 'content_chunks') THEN
+    RAISE EXCEPTION 'mantle_lexeme_df: nodes or content_chunks only' USING ERRCODE = '22023';
+  END IF;
+  RETURN QUERY EXECUTE format($q$
+    with lex as (
+      select distinct unnest(tsvector_to_array(to_tsvector('english', $1))) as lexeme
+    ),
+    col as (
+      select most_common_elems::text::text[] as elems, most_common_elem_freqs as freqs
+      from pg_stats
+      where schemaname = 'public' and tablename = %L and attname = 'search_tsv'
+    ),
+    stats as (
+      select unnest(elems) as lexeme, unnest(freqs[1:array_length(elems, 1)]) as freq from col
+    ),
+    tracked as (
+      select lex.lexeme, max(s.freq)::float8 as freq
+      from lex left join stats s on s.lexeme = lex.lexeme
+      group by lex.lexeme
+    ),
+    todo as (
+      select t.lexeme,
+             row_number() over (order by (t.lexeme ~ '[0-9]') desc, length(t.lexeme) desc, t.lexeme) as rn
+      from tracked t where t.freq is null and strpos(t.lexeme, chr(92)) = 0
+    ),
+    total as (
+      select greatest(reltuples, 1)::float8 as n from pg_class
+      where oid = to_regclass('public.' || %L)
+    ),
+    counted as (
+      select t.lexeme, t.freq,
+        case when d.rn <= $2 then (
+          select count(*)::float8 from (
+            select 1 from public.%I c
+            where c.search_tsv @@ (chr(39) || replace(t.lexeme, chr(39), chr(39) || chr(39)) || chr(39))::tsquery
+            limit $3
+          ) hits
+        ) end as hits
+      from tracked t left join todo d on d.lexeme = t.lexeme
+    )
+    select k.lexeme::text,
+      (case
+        when k.freq is not null then k.freq * coalesce((select n from total), 1)
+        else k.hits
+      end)::float8,
+      (case
+        when k.freq is not null then k.freq
+        when k.hits is not null then k.hits / coalesce((select n from total), 1)
+        else coalesce((select freqs[array_length(elems, 1) + 1] from col), $4)::float8
+      end)::float8
+    from counted k
+  $q$, tbl, tbl, tbl) USING query, count_lexemes, count_cap, df_ceiling;
+END
+$$;
+--> statement-breakpoint
+REVOKE ALL ON FUNCTION "public"."mantle_lexeme_df"(text, text, integer, integer, float8) FROM PUBLIC;
+--> statement-breakpoint
+GRANT EXECUTE ON FUNCTION "public"."mantle_lexeme_df"(text, text, integer, integer, float8) TO "mantle_view_user";
+--> statement-breakpoint
+
+CREATE OR REPLACE FUNCTION "public"."mantle_deleted_apps"(owner uuid)
+  RETURNS TABLE ("id" uuid, "home" text, "snapshot_id" uuid, "seq" integer, "created_at" timestamptz,
+                 "meta" jsonb, "db_path" text, "db_bytes" bigint, "schema_version" integer,
+                 "held" boolean)
+  LANGUAGE sql STABLE SECURITY DEFINER
+  SET search_path = "public", pg_temp AS $$
+  WITH last AS (
+    SELECT DISTINCT ON (s."node_id") s.*
+      FROM "public"."node_snapshots" s
+     WHERE s."owner_id" = owner AND s."node_kind" = 'app' AND s."trigger" = 'pre_delete'
+       AND NOT EXISTS (SELECT 1 FROM "public"."nodes" n WHERE n."id" = s."node_id")
+     ORDER BY s."node_id", s."seq" DESC
+  ), homed AS (
+    -- The home as the snapshot keeps it (item-acl.ts snapshotHomeSql).
+    SELECT l.*, nullif(l."code" -> 'meta' ->> 'homeWs', '') AS home
+      FROM last l
+  ), me AS (
+    SELECT "public"."mantle_scope_login_id"() AS login,
+           "public"."mantle_scope_login_id"() = "public"."mantle_brain_id"() AS anchor
+  ), mods AS (
+    -- The anchor's every live Moderator seat; anyone else the scope's own.
+    SELECT CASE WHEN (SELECT anchor FROM me)
+                THEN coalesce((SELECT array_agg(u."workspace_id")
+                                 FROM "public"."workspace_users" u
+                                 JOIN "public"."workspaces" w ON w."id" = u."workspace_id"
+                                WHERE u."login_id" = (SELECT login FROM me) AND u."moderator"
+                                  AND w."archived_at" IS NULL), '{}'::uuid[])
+                ELSE "public"."mantle_scope_mod_ws"() END AS ws
+  )
+  SELECT h."node_id", h.home, h."id", h."seq", h."created_at",
+         jsonb_build_object('meta', h."code" -> 'meta'), h."db_path", h."db_bytes"::bigint,
+         h."schema_version", coalesce((h."code" -> 'meta' ->> 'keepForOwner')::boolean, false)
+    FROM homed h
+   WHERE NOT "public"."mantle_scope_active"()
+      OR (owner = "public"."mantle_brain_id"()
+          AND CASE WHEN h.home IS NOT NULL THEN h.home = ANY ((SELECT ws FROM mods)::text[])
+                   ELSE coalesce((SELECT anchor FROM me), false) END)
+$$;
+--> statement-breakpoint
+REVOKE ALL ON FUNCTION "public"."mantle_deleted_apps"(uuid) FROM PUBLIC;
+--> statement-breakpoint
+GRANT EXECUTE ON FUNCTION "public"."mantle_deleted_apps"(uuid) TO "mantle_view_user";
+--> statement-breakpoint
+
 -- The public demo's SELECT-only reader serves owner reads (as 0285, 0286, 0291).
 DO $$
 BEGIN
@@ -261,6 +583,18 @@ BEGIN
     GRANT EXECUTE ON FUNCTION "public"."mantle_access_keys_seen"(uuid, integer) TO demo_reader;
     GRANT EXECUTE ON FUNCTION "public"."mantle_pending_count"(uuid) TO demo_reader;
     GRANT EXECUTE ON FUNCTION "public"."mantle_ws_private_for"(uuid, uuid) TO demo_reader;
+    GRANT EXECUTE ON FUNCTION "public"."mantle_connector_state"(uuid, text)" TO demo_reader;
+    GRANT EXECUTE ON FUNCTION "public"."mantle_connector_rows"(uuid, text, uuid[])" TO demo_reader;
+    GRANT EXECUTE ON FUNCTION "public"."mantle_connector_beyond_admin"(uuid, text)" TO demo_reader;
+    GRANT EXECUTE ON FUNCTION "public"."mantle_app_holders"(uuid, uuid)" TO demo_reader;
+    GRANT EXECUTE ON FUNCTION "public"."mantle_login_connector_rows"(uuid, uuid)" TO demo_reader;
+    GRANT EXECUTE ON FUNCTION "public"."mantle_contact_sharing"(uuid, uuid[])" TO demo_reader;
+    GRANT EXECUTE ON FUNCTION "public"."mantle_file_name_taken"(uuid, text, text)" TO demo_reader;
+    GRANT EXECUTE ON FUNCTION "public"."mantle_table_app_link"(uuid)" TO demo_reader;
+    GRANT EXECUTE ON FUNCTION "public"."mantle_access_log_names"(uuid, uuid[])" TO demo_reader;
+    GRANT EXECUTE ON FUNCTION "public"."mantle_runs_workspaces"(uuid[], uuid[])" TO demo_reader;
+    GRANT EXECUTE ON FUNCTION "public"."mantle_lexeme_df"(text, text, integer, integer, float8)" TO demo_reader;
+    GRANT EXECUTE ON FUNCTION "public"."mantle_deleted_apps"(uuid)" TO demo_reader;
   END IF;
 END
 $$;

@@ -8,7 +8,6 @@
  */
 import { eq, sql } from 'drizzle-orm';
 import {
-  asSystem,
   assertNotSnapshotCopy,
   currentSpaceScope,
   db,
@@ -93,11 +92,15 @@ export async function assertTableNotAppBound(tableNodeId: string): Promise<void>
   // fail, and inside a space transaction even a caught failure aborts it.
   if (currentSpaceScope()) return;
   // The export registry is the system's (no workspace role reads it): asked
-  // on the system pool, yes or no, so a member's own table write or delete
-  // is checked rather than failing on the grant (W6b fix round 2). The
-  // app's name below is read in the caller's scope.
-  const link = await asSystem(() => appExportLinkOf(tableNodeId), 'export-link');
-  if (!link) return;
+  // by its definer, which app a Table the scope reads exports (0293,
+  // mantle_table_app_link; A6b: on the system pool before, 'export-link'),
+  // so a member's own table write or delete is checked rather than failing
+  // on the grant (W6b fix round 2). The app's name below is read in the
+  // caller's scope.
+  const [link] = (await db.execute(
+    sql`select "public"."mantle_table_app_link"(${tableNodeId}::uuid)::text as "appNodeId"`,
+  )) as unknown as { appNodeId: string | null }[];
+  if (!link?.appNodeId) return;
   const [app] = await db
     .select({ title: nodes.title })
     .from(nodes)

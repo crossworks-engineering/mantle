@@ -11,7 +11,7 @@
  */
 import * as path from 'node:path';
 import { and, eq, sql } from 'drizzle-orm';
-import { db, nodeSnapshots, nodes, snapshotHomeSql, type AppSnapshotCode } from '@mantle/db';
+import { db, nodeSnapshots, nodes, type AppSnapshotCode } from '@mantle/db';
 import {
   createApp,
   restoreAppDraft,
@@ -91,30 +91,21 @@ async function deletedRows(ownerId: string, appId?: string): Promise<DeletedRow[
   return rows;
 }
 
-/**
- * Each deleted app's home workspace, from its newest pre_delete snapshot
- * (meta.homeWs since W6a fix round 1; null for a snapshot taken before):
- * ids and homes only, no code. A scope decides from it which deleted apps
- * its caller may manage before any of them is read (W7b fix round 1).
- */
-export async function deletedAppHomes(ownerId: string): Promise<Map<string, string | null>> {
-  const rows = (await db.execute(sql`
-    select distinct on (s.node_id) s.node_id::text as id,
-           ${snapshotHomeSql('s')} as home
-      from node_snapshots s
-     where s.owner_id = ${ownerId} and s.node_kind = 'app' and s.trigger = 'pre_delete'
-       and not exists (select 1 from nodes n where n.id = s.node_id)
-     order by s.node_id, s.seq desc`)) as unknown as { id: string; home: string | null }[];
-  return new Map(rows.map((r) => [r.id, r.home]));
-}
-
 const purgeAfterOf = (deletedAt: Date) =>
   new Date(deletedAt.getTime() + APP_TRASH_DAYS * 24 * 60 * 60 * 1000);
 
 /** The owner's recently deleted apps, newest first. */
 export async function listDeletedApps(ownerId: string): Promise<DeletedApp[]> {
+  return deletedAppsOf(await deletedRows(ownerId));
+}
+
+/** Snapshot rows as the trash lists them: name, look, when, until when,
+ *  its data; the purged ones left out, newest first. */
+function deletedAppsOf(
+  rows: Pick<DeletedRow, 'node_id' | 'held' | 'created_at' | 'code' | 'db_path' | 'db_bytes'>[],
+): DeletedApp[] {
   const now = Date.now();
-  return (await deletedRows(ownerId))
+  return rows
     .map((r) => {
       const deletedAt = new Date(r.created_at);
       const meta = r.code?.meta;
@@ -131,6 +122,32 @@ export async function listDeletedApps(ownerId: string): Promise<DeletedApp[]> {
     })
     .filter((d) => d.purgeAfter === null || new Date(d.purgeAfter).getTime() > now)
     .sort((a, b) => b.deletedAt.localeCompare(a.deletedAt));
+}
+
+/**
+ * The deleted apps the caller may manage, with each one's home (W7b fix
+ * round 1), by their definer (mantle_deleted_apps, 0293): a deleted app's
+ * rows are gone, so a scope's row rule hides its snapshots (0265). In a
+ * workspace scope only those homed in a workspace the scope moderates (the
+ * anchor login: every workspace it moderates), or with no home for the
+ * anchor login; with no scope, every one. A6b: the tools read the whole
+ * trash on the system pool before ('app-trash') and filtered it here.
+ */
+export async function manageableDeletedApps(ownerId: string): Promise<{
+  homes: Map<string, string | null>;
+  apps: DeletedApp[];
+}> {
+  const rows = (await db.execute(
+    sql`select id::text as node_id, home, created_at, meta as code, db_path, db_bytes, held
+          from "public"."mantle_deleted_apps"(${ownerId}::uuid)`,
+  )) as unknown as (Pick<
+    DeletedRow,
+    'node_id' | 'held' | 'created_at' | 'code' | 'db_path' | 'db_bytes'
+  > & { home: string | null })[];
+  return {
+    homes: new Map(rows.map((r) => [r.node_id.toLowerCase(), r.home])),
+    apps: deletedAppsOf(rows),
+  };
 }
 
 /** Whether a member ever wrote this app's code (a history row by a member,

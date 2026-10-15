@@ -22,7 +22,7 @@ import { RUN_RESUME_QUEUE, RUN_TOOL_QUEUE, RUN_WORKER_QUEUE } from './queues';
 import { env } from '@mantle/config';
 import { assertNoViewer, currentWorkspaceScope } from '@mantle/db/viewer';
 import { sql } from 'drizzle-orm';
-import { asSystem, db } from '@mantle/db';
+import { db } from '@mantle/db';
 
 let bossPromise: Promise<PgBoss> | null = null;
 
@@ -115,7 +115,10 @@ export async function enqueueRunJobs(actions: readonly PostCommitAction[]): Prom
 }
 
 /** Throws unless every run the jobs name is stamped with a workspace of the
- *  current scope (read as the system: the rule is in the query). */
+ *  current scope. The runs' workspaces by their definer
+ *  (mantle_runs_workspaces, 0293: workspace ids only; the scope's row rule
+ *  would hide another login's run and a run with none, which this must
+ *  see to refuse; A6b: on the system pool before, 'runs-scope-check'). */
 export async function assertRunsCarryScope(
   jobs: readonly Exclude<PostCommitAction, { type: 'pending_created' }>[],
 ): Promise<void> {
@@ -124,13 +127,9 @@ export async function assertRunsCarryScope(
   const itemIds = jobs.flatMap((j) => (j.type === 'dispatch' ? [j.itemId] : []));
   const runIds = jobs.flatMap((j) => (j.type === 'resume' ? [j.runId] : []));
   const list = (ids: string[]) => `{${ids.join(',')}}`;
-  const rows = (await asSystem(
-    () =>
-      db.execute(sql`
-      select r.workspace_id::text as ws from runs r
-       where r.id = any(${list(runIds)}::uuid[])
-          or r.id in (select i.run_id from run_items i where i.id = any(${list(itemIds)}::uuid[]))`),
-    'runs-scope-check',
+  const rows = (await db.execute(
+    sql`select workspace_id::text as ws
+          from "public"."mantle_runs_workspaces"(${list(runIds)}::uuid[], ${list(itemIds)}::uuid[])`,
   )) as unknown as { ws: string | null }[];
   const inScope = new Set(scope.ws);
   if (rows.length === 0 || rows.some((r) => !r.ws || !inScope.has(r.ws))) {

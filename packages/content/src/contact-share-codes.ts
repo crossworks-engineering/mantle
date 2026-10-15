@@ -28,7 +28,7 @@
  */
 import { createHmac, hkdfSync, randomBytes, timingSafeEqual } from 'node:crypto';
 import { and, count, eq, gt, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
-import { asSystem, contactShareCodes, db, nodes, shareAccessLog, shares } from '@mantle/db';
+import { contactShareCodes, db, nodes, shareAccessLog, shares, wsArraySql } from '@mantle/db';
 import { env } from '@mantle/config';
 
 export const CONTACT_CODE_LENGTH = 8;
@@ -142,28 +142,30 @@ export async function contactSharingByContact(
   const out = new Map<string, ContactSharingStatus>();
   if (contactIds.length === 0) return out;
   // The codes table is never granted to the workspace role: the status of
-  // contacts the caller already read (the id list is the rule), read on
-  // the system pool by its named reason in a scope (W7a).
-  const rows = await asSystem(
-    () =>
-      db
-        .select({
-          contactId: contactShareCodes.contactId,
-          createdAt: contactShareCodes.createdAt,
-          rotatedAt: contactShareCodes.rotatedAt,
-          lastUsedAt: contactShareCodes.lastUsedAt,
-          lockedUntil: contactShareCodes.lockedUntil,
-        })
-        .from(contactShareCodes)
-        .where(
-          and(
-            eq(contactShareCodes.ownerId, ownerId),
-            inArray(contactShareCodes.contactId, [...contactIds]),
-            isNotNull(contactShareCodes.codeHash),
-          ),
-        ),
-    'contact-sharing',
-  );
+  // contacts the caller already read (the id list is the rule), by its
+  // definer (mantle_contact_sharing, 0293: the dates, never the code; A6b:
+  // on the system pool before, 'contact-sharing').
+  const at = (v: Date | string | null) => (v === null ? null : new Date(v));
+  const rows = (
+    (await db.execute(
+      sql`select contact_id::text as "contactId", created_at as "createdAt",
+                 rotated_at as "rotatedAt", last_used_at as "lastUsedAt",
+                 locked_until as "lockedUntil"
+            from "public"."mantle_contact_sharing"(${ownerId}::uuid, ${wsArraySql(contactIds)})`,
+    )) as unknown as {
+      contactId: string;
+      createdAt: Date | string;
+      rotatedAt: Date | string | null;
+      lastUsedAt: Date | string | null;
+      lockedUntil: Date | string | null;
+    }[]
+  ).map((r) => ({
+    contactId: r.contactId,
+    createdAt: new Date(r.createdAt),
+    rotatedAt: at(r.rotatedAt),
+    lastUsedAt: at(r.lastUsedAt),
+    lockedUntil: at(r.lockedUntil),
+  }));
   if (rows.length === 0) return out;
   const counts = await db
     .select({ contactId: shares.contactId, n: count() })

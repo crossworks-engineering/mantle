@@ -656,7 +656,9 @@ describe.skipIf(!URL)('the A6 grant sweep', () => {
         );
       }
     }
-    cell(`apps.deletedHomes`, await trash.deletedAppHomes(L.owner));
+    // The homes of the trash on the system pool (A6b: deletedAppHomes folded
+    // into manageableDeletedApps, its definer, which answers every one there).
+    cell(`apps.deletedHomes`, (await trash.manageableDeletedApps(L.owner)).homes);
   });
 
   it('records the tree visibility diffs', async () => {
