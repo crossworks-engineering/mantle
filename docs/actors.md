@@ -4314,15 +4314,17 @@ panel's (whose TypeScript the claimed seat lets through). See F7.
 
 **Counts** (F5 withdrawn, plan section 34): the grid 14,608 cells, 9,404
 run (2,093 allow, 7,311 deny, of which 66 are the pinned guide-silent
-denies), 9,048 pass, 356 known failures, 5,204 not applicable (fix rounds 3
-and 4: 2,089 allow, 9,044 pass, 360 known; the home Moderator's 4 app
-deletes are allowed now). Against fix round 1 (10,956 cells, 6,972 run,
+denies), 9,296 pass, 108 known failures (F4), 5,204 not applicable
+(feat/f9-contact: F9's 248 cells pass now, from 9,048 pass and 356 known;
+fix rounds 3 and 4: 2,089 allow, 9,044 pass, 360 known; the home
+Moderator's 4 app deletes are allowed now). Against fix round 1 (10,956 cells, 6,972 run,
 3,984 not applicable) the difference is only what was added: the
 Admin-homed placement (3,652 cells: 2,220 run, 1,432 not applicable) and
 the contact share's 212 writes, not applicable before and denies now. The
-surface cells 1,126 per check mode, 3,378 in all; 2 known failures in each
-mode, both F6 (fix round 4, on v0.300.59: 1,123, 3,369 and 6, 4 of them
-F5's; fix round 3: 1,122, 3,366 and 41). The three cells added are the home
+surface cells 1,126 per check mode, 3,378 in all; no known failure
+(feat/f9-contact: F6's 2 in each mode pass, the oracle reading the guide's
+rule for a key or a peer; fix round 4, on v0.300.59: 1,123, 3,369 and 6, 4
+of them F5's; fix round 3: 1,122, 3,366 and 41). The three cells added are the home
 Moderator's app delete at its kind's root on the web and over MCP and in
 the team chat, run whatever the pick; the demoted run came in fix round 4.
 The four run cells of F2 left the list (a run of a login outside Admin has
