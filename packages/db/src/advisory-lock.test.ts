@@ -1,13 +1,13 @@
 import { PgDialect } from 'drizzle-orm/pg-core';
 import { describe, expect, it } from 'vitest';
-import { advisoryXactLock, tryAdvisoryXactLock } from './advisory-lock';
+import { advisoryXactLock, tryAdvisoryXactLock, type AdvisoryLockExec } from './advisory-lock';
 
 /** The query a lock sends, rendered as Postgres receives it. */
-async function sent(take: (tx: { execute: (q: never) => Promise<unknown> }) => Promise<unknown>) {
+async function sent(take: (tx: AdvisoryLockExec) => Promise<unknown>) {
   const out: Array<{ sql: string; params: unknown[] }> = [];
   const dialect = new PgDialect();
   await take({
-    execute: async (q: never) => {
+    execute: async (q) => {
       const { sql, params } = dialect.sqlToQuery(q);
       out.push({ sql, params });
       return [{ locked: true }];
