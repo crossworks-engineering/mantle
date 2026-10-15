@@ -89,6 +89,7 @@ const I = {
   gone: id(216),
 } as const;
 type ItemKey = keyof typeof I;
+const SHARE = id(301);
 
 describe.skipIf(!URL)('the A6 grant sweep', () => {
   type Ts = typeof import('@mantle/db/test-support');
@@ -303,8 +304,9 @@ describe.skipIf(!URL)('the A6 grant sweep', () => {
     await app('aAdmin', I.aAdmin, 'Admin app');
     await x(sql`insert into node_embeds (from_id, to_id) values
       (${I.pg}, ${I.nR}), (${I.pg}, ${I.nP}), (${I.pg}, ${I.aQ})`);
-    await x(sql`insert into shares (owner_id, node_id, node_type, token, settings)
-      values (${L.owner}, ${I.pg}, 'page', 'a6-sweep-link', ${JSON.stringify({ served: [I.nP] })}::jsonb)`);
+    names.set(SHARE, 'share:pg');
+    await x(sql`insert into shares (id, owner_id, node_id, node_type, token, settings)
+      values (${SHARE}, ${L.owner}, ${I.pg}, 'page', 'a6-sweep-link', ${JSON.stringify({ served: [I.nP] })}::jsonb)`);
     // A deleted app: its last snapshot names its home (P).
     names.set(I.gone, 'gone');
     await x(sql`insert into node_snapshots (owner_id, node_id, node_kind, seq, trigger, actor, code)
@@ -312,12 +314,12 @@ describe.skipIf(!URL)('the A6 grant sweep', () => {
               ${JSON.stringify({ meta: { title: 'gone app', homeWs: W.P } })}::jsonb)`);
 
     // The world, as recorded: memberships and every item's grant rows.
-    cell(
-      'world members',
+    const members = norm(
       await x(sql`select workspace_id::text as ws, login_id::text as login, moderator, limits
                     from workspace_users u join workspaces w on w.id = u.workspace_id
-                   where w.owner_id = ${L.owner} order by 1, 2`),
-    );
+                   where w.owner_id = ${L.owner}`),
+    ) as Json[];
+    cell('world members', members.map((r) => JSON.stringify(r)).sort());
     for (const k of Object.keys(I) as ItemKey[]) {
       if (k === 'gone') continue;
       cell(`world grants ${k}`, await grantRows(I[k]));
