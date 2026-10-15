@@ -17,16 +17,15 @@
  *  - route: as the product runs it, POST /api/grants/:id and
  *    /api/grants/move through createApp. The grants routes are any-login
  *    rows (lib/auth/any-login-routes.ts): the gate enters the member's
- *    scope, and grantsRoute leaves it by name (inRuleInQuery,
- *    lib/auth/rule-in-query.ts: asSystem 'rule-in-query'), so the definers
- *    see no scope to hold the change to;
+ *    scope, and the panel's writes run in it (A6: before A6 grantsRoute
+ *    left it by name, so the definers saw no scope to hold the change to);
  *  - scope: the same panel call in the member's own mutating request scope
  *    (the gate's enterLoginScope for a member's write: its seats, writes
- *    on), where the definers do hold it to the scope. The panel cannot run
- *    there today (its first read, the Admin workspace's row, is hidden from
- *    a member's scope: 409 "not set up"), so that read is answered too.
- * The answers are pinned as found; docs/actors.md, "A8 matrix", reports
- * them.
+ *    on). Before A6 the panel could not run there (its first read, the
+ *    Admin workspace's row, was hidden from a member's scope: 409 "not set
+ *    up"), so that read is answered too where the scope hides it; since A6
+ *    it is a definer (mantle_ws_admin_id) and the scope reads it.
+ * The answers are pinned; docs/actors.md, "A8 matrix", reports them (F7).
  *
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm test:matrix
  */
@@ -55,7 +54,9 @@ vi.mock('@mantle/db', async (importOriginal) => {
       return '';
     }
   };
-  // loadCtx's two statements: the Admin workspace, the caller's seats.
+  // loadCtx's two statements: the Admin workspace (before A6 a plain read
+  // a member's scope hid; a definer since, which this no longer matches),
+  // the caller's seats.
   const ADMIN_READ = /select id from workspaces where owner_id = \$1 and is_admin/;
   const SEATS_READ = /join workspace_users u on u\.workspace_id = w\.id and u\.login_id/;
   type Row = { id: string; name: string; is_admin: boolean; moderator: boolean };
@@ -220,7 +221,16 @@ describe.skipIf(!DB_URL)('A8: the grants panel’s database rule under a wrong T
           const control = await attempt(change, via, false);
           expect(control.outcome, `${via} ${change} control: ${control.by}`).toBe('refused');
           expect(control.by, `${via} ${change} control`).toMatch(/403|moved\\*":0/);
-          seen[`${via} ${change}`] = await attempt(change, via, true);
+          const lied = await attempt(change, via, true);
+          // Refused by the database, not by the panel's TypeScript (which
+          // the claimed seat lets through): the route answers the one
+          // refusal mapper's item-workspace 403, the scope throws 42501.
+          if (lied.outcome === 'refused') {
+            expect(lied.by, `${via} ${change}: the database's refusal`).toMatch(
+              via === 'route' ? /"status":403.*item-workspace/ : /^thrown 42501 /,
+            );
+          }
+          seen[`${via} ${change}`] = lied;
         }
       }
       // The misses logged (warn's staged refusals), taken here so they are
@@ -244,31 +254,34 @@ describe.skipIf(!DB_URL)('A8: the grants panel’s database rule under a wrong T
 });
 
 /**
- * What the database does today with the wrong TypeScript decision (A8 fix
- * rounds 1 and 2, finding F7 in docs/actors.md):
- *  - route, the product's path: made in every mode. grantsRoute leaves the
- *    member's scope by name (inRuleInQuery), so mantle_grant_change and
- *    mantle_grant_move_home run with no scope and hold nothing
- *    (mantle_grant_refuses asks for an active scope): the panel's rules are
- *    TypeScript only;
- *  - scope: refused (42501) with the check off and on; made in warn by the
- *    write role's own pass, its refusals staged (the 3 misses below: warn
- *    logs them and lets the statement through). No rerun is involved (a
- *    gap's rerun in warn would be unchecked, on the system pool:
- *    onLoginWritePool in packages/db/src/client.ts), and the panel's
- *    "permission denied for table node_embeds" comes after the change is
- *    made. So warn holds less here than off; the product fix
- *    (mantle_grant_refuses through the staged mantle_scoped_write_refuses,
- *    0279) is the A6 branch's.
+ * What the database does with the wrong TypeScript decision (finding F7 in
+ * docs/actors.md, fixed by A6): refused on both paths in every mode.
+ *  - route, the product's path: the panel's writes run in the member's
+ *    scope (A6 F7 a), so mantle_grant_change and mantle_grant_move_home
+ *    hold the change to it, and the one refusal mapper answers 403
+ *    item-workspace. Before A6: made in every mode (grantsRoute left the
+ *    scope by name, inRuleInQuery, and mantle_grant_refuses asked for an
+ *    active scope);
+ *  - scope: refused (42501) in every mode: mantle_grant_refuses (0291)
+ *    refuses whenever a scope is set, warn included (A6 F7 b). Before A6:
+ *    refused with the check off and on, made in warn (the write role's own
+ *    pass staged its refusals).
  */
-const ROUTE_MADE = { 'route add': 'made', 'route move': 'made' } as const;
+const REFUSED = {
+  'route add': 'refused',
+  'route move': 'refused',
+  'scope add': 'refused',
+  'scope move': 'refused',
+} as const;
 const EXPECTED: Record<'off' | 'warn' | 'on', Record<string, 'made' | 'refused'>> = {
-  off: { ...ROUTE_MADE, 'scope add': 'refused', 'scope move': 'refused' },
-  warn: { ...ROUTE_MADE, 'scope add': 'made', 'scope move': 'made' },
-  on: { ...ROUTE_MADE, 'scope add': 'refused', 'scope move': 'refused' },
+  off: REFUSED,
+  warn: REFUSED,
+  on: REFUSED,
 };
 
 /** The misses a run of the cases above logs: in warn, the database's own
- *  "refused when the check is on" for the scope path's add, its move and
- *  the move's workspace event (warn logs the refusal and lets it through). */
-const MISSES: Record<'off' | 'warn' | 'on', number> = { off: 0, warn: 3, on: 0 };
+ *  "refused when the check is on" for each refused add and move, on the
+ *  route and in the scope (warn still reports the miss; it refuses too since
+ *  A6). Before A6: 3, the scope path's add, its move and the move's
+ *  workspace event, all made. */
+const MISSES: Record<'off' | 'warn' | 'on', number> = { off: 0, warn: 4, on: 0 };

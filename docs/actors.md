@@ -4240,7 +4240,10 @@ The test makes that decision wrong on purpose (the panel's read of the
 caller's seats answers a Moderator seat of H the member does not hold) and
 asks whether the database still refuses an add to T and a move to T, by
 the route as the product runs it and in the member's own mutating request
-scope, with the check off, warn and on. See F7.
+scope, with the check off, warn and on. It does on both, in every mode,
+since A6: the route answers the refusal mapper's 403 item-workspace and the
+scope throws 42501, each asserted as the database's refusal and not the
+panel's (whose TypeScript the claimed seat lets through). See F7.
 
 **Counts** (F5 withdrawn, plan section 34): the grid 14,608 cells, 9,404
 run (2,093 allow, 7,311 deny, of which 66 are the pinned guide-silent
@@ -4262,7 +4265,8 @@ outside Admin, 5 runs and 3 recipe steps of `app_delete` (the approval
 wait), 6 peer calls of `app_delete` (a risky tool), 3 team chat calls of
 `app_delete` (an owner-side tool: the team chat calls none, for everyone),
 the demoted run, and the two contact-share deny cells. The grants panel: 3
-cases (one per check mode), pinned as found.
+cases (one per check mode), every change refused, 4 misses in warn (A6,
+rebased on v0.300.62: F7 fixed; the grid and the surface cells unchanged).
 
 **Not applicable** cells are counted and named in the run's summary: a kind
 with no draft, no app data, or no snapshot copy; a snapshot copy and an
@@ -4314,7 +4318,13 @@ branch and leave the list when it lands; F3 is the guide's rule now.
   `packages/tools/src/key-shared-content.ts`, access matrix T3), the owner's
   own Admin-homed note with an open link included. The guide's "Linked
   brains" names no such rule. 2 surface cells.
-- **F7** (the grants panel test, pinned there, not a cell of the list). By
+- **F7** (fixed, feat/a6-grants; the grants panel test, pinned there, not
+  a cell of the list). A6 runs the panel's writes in the caller's scope,
+  `mantle_grant_refuses` (0291) refuses whenever a scope is set, in every
+  check mode, and the panel's reads run in a member's scope: the route and
+  the scope path now refuse the add and the move in off, warn and on (warn
+  reports the 4 misses and refuses). What follows is what the test found
+  before A6. By
   the route, as the product runs it, the database makes the add and the
   move in every mode. The gate enters the member's scope, and `grantsRoute`
   leaves it by name (`inRuleInQuery`, `lib/auth/rule-in-query.ts`: asSystem
@@ -4625,6 +4635,11 @@ scope is set, in every mode (the miss is still reported); the sweep's
 `F7 b` cell proves it in warn, on and off (and fails with 0279's version).
 (c) The panel could not run in a member's scope (the Admin workspace's row
 hidden, `node_embeds` unreadable): it does now, by the definers above.
+The A8 matrix pins it (`a8-grants-panel.matrix.test.ts`, on v0.300.62): by
+the route and in the member's scope the add and the move the panel's
+TypeScript wrongly allows are refused by the database in off, warn and on;
+the grid's and the surface cells' answers did not move (356 and 2 per mode
+known failures, none fixed, none new).
 
 **The sweep after round 2.** The sweep runs the panel and the workspace
 list as their routes run them (a request slot: a read and a member's write
