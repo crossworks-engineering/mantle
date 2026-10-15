@@ -26,7 +26,10 @@
  *    the named files (route-plumbing.mjs RATE_LIMIT_ALLOW);
  *  - the provider HTTP copies (A10 #10): inline deadlines, hand abort
  *    timers, private withTimeout copies, Retry-After reads and sleeping
- *    retry loops, outside and inside the named lists (provider-http.mjs).
+ *    retry loops, outside and inside the named lists (provider-http.mjs);
+ *  - the app brokers (A10 #9): hand calls of the export sync outside the
+ *    one write path and the named files, and the files holding app tool
+ *    broker logic outside the one broker (app-broker.mjs).
  *
  * Comment lines never count. Product files only: packages/, server/,
  * scripts/; no tests, migrations, archive or build folders (a route segment
@@ -45,6 +48,12 @@ import {
   rateLimitCalls,
 } from './route-plumbing.mjs';
 import { PROVIDER_HTTP_PATTERNS } from './provider-http.mjs';
+import {
+  EXPORT_SYNC_ALLOW,
+  EXPORT_SYNC_HOME,
+  appToolBrokerLogic,
+  exportSyncCalls,
+} from './app-broker.mjs';
 
 /** Whether the counts read `path` (repo-relative). */
 export function isCounted(path) {
@@ -709,6 +718,9 @@ export function measure(root) {
   const rateLimitFiles = [];
   const rateLimitAllowed = [];
   let rateLimitCallsOutside = 0;
+  const exportSync = {};
+  const exportSyncAllowed = {};
+  const brokerLogic = {};
   const providerHttp = Object.fromEntries(
     Object.keys(PROVIDER_HTTP_PATTERNS).map((k) => [k, { outside: {}, allowed: {} }]),
   );
@@ -784,6 +796,12 @@ export function measure(root) {
       if (n) bareFetch[f] = n;
     }
     const plain = stripComments(text);
+    if (f !== EXPORT_SYNC_HOME) {
+      const n = exportSyncCalls(plain);
+      if (n) (Object.hasOwn(EXPORT_SYNC_ALLOW, f) ? exportSyncAllowed : exportSync)[f] = n;
+    }
+    const logic = appToolBrokerLogic(plain, f);
+    if (logic) brokerLogic[f] = logic;
     for (const [k, { count, allowed }] of Object.entries(PROVIDER_HTTP_PATTERNS)) {
       const n = count(plain);
       if (n) providerHttp[k][Object.hasOwn(allowed, f) ? 'allowed' : 'outside'][f] = n;
@@ -826,6 +844,9 @@ export function measure(root) {
       routeErrorTextAllowed: errorTextAllowed.length,
       routeRateLimitCalls: rateLimitCallsOutside,
       routeRateLimitAllowed: rateLimitAllowed.length,
+      handExportSyncCalls: sum(exportSync),
+      handExportSyncAllowed: Object.keys(exportSyncAllowed).length,
+      appToolBrokerLogicFiles: Object.keys(brokerLogic).length,
       ...Object.fromEntries(
         Object.entries(providerHttp).flatMap(([k, v]) => [
           [`http_${k}`, sum(v.outside)],
@@ -853,6 +874,9 @@ export function measure(root) {
       errorTextAllowed,
       rateLimitFiles,
       rateLimitAllowed,
+      exportSync,
+      exportSyncAllowed,
+      brokerLogic,
       providerHttp,
     },
   };

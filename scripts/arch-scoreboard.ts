@@ -54,6 +54,9 @@ const LABELS: Record<string, string> = {
   routeErrorTextFiles: "route files putting a caught error's text in a reply (A10 part 2)",
   routeRateLimitCalls: 'rate limit calls in route files outside the named list (A10 #8)',
   routeRateLimitAllowed: 'route files named to take a budget of their own (A10 #8)',
+  handExportSyncCalls: 'hand export sync calls outside the app DB write path (A10 #9)',
+  handExportSyncAllowed: 'files named to schedule the export sync by hand (A10 #9)',
+  appToolBrokerLogicFiles: 'files holding app tool broker logic outside the one broker (A10 #9)',
   routeErrorTextAllowed:
     'route files named to, each with its reason: public by design, or waiting on the client (A10 part 2)',
   store_tabledb_files: 'files reaching the tables write API (A3b)',

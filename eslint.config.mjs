@@ -26,6 +26,7 @@ import mantleNoGuardCallsPlugin from './eslint-rules/no-guard-calls.mjs';
 import mantleEgressPlugin from './eslint-rules/no-bare-fetch.mjs';
 import mantleRoutePlumbingPlugin from './eslint-rules/route-plumbing.mjs';
 import mantleKindsPlugin from './eslint-rules/no-hand-kind-lists.mjs';
+import mantleAppBrokerPlugin from './eslint-rules/app-broker.mjs';
 import mantleProviderHttpPlugin from './eslint-rules/provider-http.mjs';
 import mantleRolesPlugin from './eslint-rules/no-hand-role-lists.mjs';
 
@@ -315,6 +316,20 @@ export default tseslint.config(
     ignores: ['**/*.test.{ts,tsx,mts,cts,js,jsx,mjs,cjs}'],
     plugins: { 'mantle-kinds': mantleKindsPlugin },
     rules: { 'mantle-kinds/no-hand-kind-lists': 'error' },
+  },
+  {
+    // A running app's calls go through once (A10 #9): a write schedules its
+    // exports' sync on the one write path (@mantle/content/app-db-write), and
+    // a tool call is parsed, judged and dispatched in the one broker
+    // (server/web/lib/app-tool-broker.ts). The files that must schedule the
+    // sync by hand are named in the rule.
+    files: ['packages/**/*.{ts,tsx,mts,mjs,js}', 'server/**/*.{ts,tsx,mts,mjs,js}'],
+    ignores: ['**/*.test.{ts,tsx,mts,cts,js,jsx,mjs,cjs}'],
+    plugins: { 'mantle-app-broker': mantleAppBrokerPlugin },
+    rules: {
+      'mantle-app-broker/no-hand-export-sync': 'error',
+      'mantle-app-broker/no-app-broker-logic': 'error',
+    },
   },
   {
     // A role, area or actor name list is read from its source (A10 #13,

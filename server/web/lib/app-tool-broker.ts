@@ -318,8 +318,10 @@ export async function runAppToolBroker(
       surface: run.surface,
       caller: appBrokerCaller(run.surface, verdict),
     });
-  const actsFor = await run.actsFor();
-  const result = await system(() => (actsFor ? withViewer(actsFor, dispatch) : dispatch()));
+  const scope = { actsFor: await run.actsFor() };
+  const result = await system(() =>
+    scope.actsFor ? withViewer(scope.actsFor, dispatch) : dispatch(),
+  );
   if (!result.ok) logError(result.error, 200);
   return NextResponse.json(result);
 }

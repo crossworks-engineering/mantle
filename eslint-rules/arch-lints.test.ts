@@ -32,6 +32,14 @@ import {
 import { noHandKindLists } from './no-hand-kind-lists.mjs';
 // @ts-expect-error: plain-JS module, no types shipped.
 import { noHandRoleLists } from './no-hand-role-lists.mjs';
+import {
+  EXPORT_SYNC_ALLOW,
+  appToolBrokerLogic,
+  exportSyncCalls,
+  noAppBrokerLogic,
+  noHandExportSync,
+  // @ts-expect-error: plain-JS module, no types shipped.
+} from './app-broker.mjs';
 // @ts-expect-error: plain-JS module, no types shipped.
 import { RAW_ACL_PINS, rule as rawAclRule } from './no-raw-acl-columns.mjs';
 // @ts-expect-error: plain-JS module, no types shipped.
@@ -75,6 +83,9 @@ const got = measure(ROOT) as {
     handKindsAllowed: Record<string, number>;
     handRoles: Record<string, number>;
     handRolesAllowed: Record<string, number>;
+    exportSync: Record<string, number>;
+    exportSyncAllowed: Record<string, number>;
+    brokerLogic: Record<string, number>;
   };
 };
 
@@ -187,6 +198,24 @@ describe('the architecture ratchets (pinned counts)', () => {
     expect(got.perFile.rateLimitFiles).toEqual([]);
     expect(got.numbers.routeRateLimitCalls).toBe(0);
     expect([...got.perFile.rateLimitAllowed].sort()).toEqual(Object.keys(RATE_LIMIT_ALLOW).sort());
+  });
+
+  it('no-hand-export-sync (A10 #9): no export sync outside the app DB write path and the named files', () => {
+    // A write schedules its exports' sync on the one write path
+    // (packages/content/src/app-db-write.ts). The named files still
+    // schedule it: the list only shrinks.
+    expect(got.perFile.exportSync).toEqual({});
+    expect(got.numbers.handExportSyncCalls).toBe(0);
+    expect(Object.keys(got.perFile.exportSyncAllowed).sort()).toEqual(
+      Object.keys(EXPORT_SYNC_ALLOW).sort(),
+    );
+  });
+
+  it('no-app-broker-logic (A10 #9): app tool broker logic lives in the one broker only', () => {
+    // The owner route, a member's run and the link route are configs of
+    // runAppToolBroker (server/web/lib/app-tool-broker.ts).
+    expect(got.perFile.brokerLogic).toEqual({});
+    expect(got.numbers.appToolBrokerLogicFiles).toBe(0);
   });
 
   it('no-hand-kind-lists (A10 #12): no literal kind list outside the registry and the named files', () => {
@@ -378,6 +407,36 @@ describe('the hand kind list counter (A10 #12)', () => {
   });
 });
 
+describe('the app broker counters (A10 #9)', () => {
+  it('count export sync calls, not the definition', () => {
+    expect(
+      exportSyncCalls('scheduleAppTableExportSync(o, a);\nscheduleAppTableExportSync (o, b);'),
+    ).toBe(2);
+    expect(exportSyncCalls('export function scheduleAppTableExportSync(o: string) {}')).toBe(0);
+    expect(exportSyncCalls("import { scheduleAppTableExportSync } from 'x';")).toBe(0);
+  });
+
+  it('count broker steps in server/ outside the broker, and a broker route parsing or dispatching', () => {
+    const route = 'server/web/app/api/apps/[id]/tool-broker/route.ts';
+    expect(
+      appToolBrokerLogic('const v = await appToolVerdict(l, o, d, s);', 'server/web/lib/x.ts'),
+    ).toBe(1);
+    expect(
+      appToolBrokerLogic(
+        'const v = await appToolVerdict(l, o, d, s);',
+        'server/web/lib/app-tool-broker.ts',
+      ),
+    ).toBe(0);
+    expect(
+      appToolBrokerLogic('const v = await appToolVerdict(l, o, d, s);', 'packages/tools/src/x.ts'),
+    ).toBe(0);
+    expect(appToolBrokerLogic('const b = Body.safeParse(await readJson(req));', route)).toBe(2);
+    expect(appToolBrokerLogic('return dispatchTool(t, i, c);', route)).toBe(1);
+    expect(appToolBrokerLogic('return runAppToolBroker(req, { via: "owner" });', route)).toBe(0);
+    expect(appToolBrokerLogic('return dispatchTool(t, i, c);', 'server/web/lib/x.ts')).toBe(0);
+  });
+});
+
 describe('the hand role list counter (A10 #13)', () => {
   const sets = roleNameSets(ROOT) as Record<string, { values: Set<string>; min: number }>;
   const concepts = (text: string, path = 'packages/x/src/y.ts') =>
@@ -486,6 +545,46 @@ describe('the editor rules', () => {
           code: calls(pin.count + 1),
           filename: `/r/${pinned}`,
           errors: [{ messageId: 'over' }],
+        },
+      ],
+    });
+  });
+
+  it('no-hand-export-sync: a hand export sync fails outside the write path and the named files', () => {
+    const [named] = Object.keys(EXPORT_SYNC_ALLOW as Record<string, string>);
+    const call = 'scheduleAppTableExportSync(o, a);';
+    tester.run('no-hand-export-sync', noHandExportSync, {
+      valid: [
+        { code: call, filename: '/r/packages/content/src/app-db-write.ts' },
+        { code: call, filename: `/r/${named}` },
+        { code: call, filename: '/r/packages/tools/src/new.test.ts' },
+      ],
+      invalid: [
+        { code: call, filename: '/r/packages/tools/src/new.ts', errors: [{ messageId: 'call' }] },
+      ],
+    });
+  });
+
+  it('no-app-broker-logic: a verdict step outside the broker, or a broker route that parses, fails', () => {
+    tester.run('no-app-broker-logic', noAppBrokerLogic, {
+      valid: [
+        { code: 'appToolVerdict(l, o, d, s);', filename: '/r/server/web/lib/app-tool-broker.ts' },
+        {
+          code: 'export const POST = (req, c) => runAppToolBroker(req, c);',
+          filename: '/r/server/web/app/s/[token]/tool-broker/route.ts',
+        },
+        { code: 'appToolVerdict(l, o, d, s);', filename: '/r/packages/tools/src/new.ts' },
+      ],
+      invalid: [
+        {
+          code: 'appToolVerdict(l, o, d, s);',
+          filename: '/r/server/web/lib/new.ts',
+          errors: [{ messageId: 'logic' }],
+        },
+        {
+          code: 'const b = await readJson(req);',
+          filename: '/r/server/web/app/s/[token]/tool-broker/route.ts',
+          errors: [{ messageId: 'logic' }],
         },
       ],
     });
