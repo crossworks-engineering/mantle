@@ -45,9 +45,9 @@
  *    (spend-recording.mjs);
  *  - small helpers copied back (A10 #15): UUID regex copies, the hand
  *    error-to-message idiom, dedupeTags copies, signal handlers, advisory
- *    locks, hand TTL age checks and literal Cache-Control values, outside
- *    and inside the named lists; console calls outside scripts, the hand
- *    `archived_at is null` and the files that set Cache-Control, pinned
+ *    locks, hand TTL age checks and Cache-Control values not from the table,
+ *    outside and inside the named lists; console calls outside scripts, a
+ *    hand live workspace and the files that set Cache-Control, pinned
  *    down only (std-helpers.mjs).
  *
  * Comment lines never count. Product files only: packages/, server/,
@@ -902,7 +902,7 @@ export function measure(root) {
       if (n) spend[k][Object.hasOwn(allowed, f) ? 'allowed' : 'outside'][f] = n;
     }
     for (const [k, { count, allowed }] of Object.entries(STD_HELPER_PATTERNS)) {
-      const n = count(plain);
+      const n = count(plain, f);
       if (n) stdHelpers[k][Object.hasOwn(allowed, f) ? 'allowed' : 'outside'][f] = n;
     }
     if (!isScript(f)) {

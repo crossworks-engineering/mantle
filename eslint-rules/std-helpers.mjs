@@ -11,26 +11,32 @@
  *    fixed text), or cannot import std;
  *  - dedupeTagsCopy: a `function dedupeTags` (12 before): @mantle/content
  *    tags.ts;
- *  - signalHandler: a SIGINT or SIGTERM handler (3 before):
- *    onShutdown (@mantle/std/shutdown), with its exit deadline;
+ *  - signalHandler: a SIGINT or SIGTERM listener on any receiver, the
+ *    event a string or a name bound to one (3 before; read from the syntax
+ *    tree): onShutdown (@mantle/std/shutdown), with its exit deadline;
  *  - advisoryLock: an advisory lock in SQL (11 before): advisoryXactLock
  *    and tryAdvisoryXactLock (@mantle/db advisory-lock.ts), each site's key
  *    and hash as on main;
- *  - ttlAgeCheck: a hand TTL cache's age check (`now - hit.at < TTL`, an
- *    `expiresAt > now`; 16 before): TtlCache (@mantle/std);
- *  - cacheControlLiteral: a literal Cache-Control value: CACHE_CONTROL
- *    (server/web/lib/cache-control.ts), and no-store is the /api default.
+ *  - ttlAgeCheck: a hand TTL cache's age check (`<clock> - <stamp>` against
+ *    a TTL-ish bound or with a cache stamp, an `expiresAt` against the
+ *    clock; 16 before; read from the syntax tree): TtlCache (@mantle/std);
+ *  - cacheControlLiteral: a Cache-Control value not from CACHE_CONTROL
+ *    (server/web/lib/cache-control.ts), however the header is set (a call,
+ *    an object key, a [name, value] pair, an index assignment; read from the
+ *    syntax tree); no-store is the /api default.
  *
  * Three counts have no list: they are pinned and may only go down
  * (scripts/arch-scoreboard.pins.json): console calls outside scripts (moved
- * to log(scope) file by file as files are touched), the hand
- * `archived_at is null` (liveWorkspaceSql, @mantle/db), and the files that
- * set Cache-Control at all.
+ * to log(scope) file by file as files are touched), a live workspace
+ * spelled by hand (`archived_at is null` in SQL, `isNull(workspaces.
+ * archivedAt)` in drizzle: liveWorkspace and its twins, @mantle/db), and the
+ * files that set Cache-Control at all.
  *
  * std-helpers.test.ts holds each list to exactly the files that still have
  * the pattern, each with a reason. The rules are the editor's early warning:
  * a file outside a list is flagged.
  */
+import ts from 'typescript';
 import { repoPathOf, stripComments } from './arch-counts.mjs';
 
 /** @typedef {Record<string, string>} AllowList file -> why */
@@ -202,6 +208,12 @@ export const TTL_AGE_CHECK_ALLOWED = {
     "a token held for the provider's own lifetime, on a clock each call passes in",
   'packages/tracing/src/model-context.ts':
     'the one OpenRouter catalog: refreshed past its TTL, the last good rows kept on a failure',
+  'packages/content/src/app-broker.ts':
+    "a restore marker file's age on disk (its mtime), shared by every process: not an in-process cache",
+  'packages/files/src/thumbnail.ts':
+    "a failure marker file's age on disk (its mtime), shared by every process: not an in-process cache",
+  'server/web/lib/updates.ts':
+    "one slot whose age runs from the check's own stamp (taken before the fetch, and served to the page), its TTL chosen by the answer",
 };
 
 /** @type {AllowList} */
@@ -225,10 +237,125 @@ export function dedupeTagsCopies(code) {
   return (code.match(/\bfunction\s+dedupeTags\s*\(/g) ?? []).length;
 }
 
-/** SIGINT / SIGTERM handlers in `code`. */
-export function signalHandlers(code) {
-  return (code.match(/\b(?:process|proc)\.(?:on|once)\(\s*(?:['"]SIG[A-Z]+['"]|signal\b)/g) ?? [])
-    .length;
+// ── the AST counts (fix round 1, L2): a respelling does not hide a site ──
+
+/** @param {string} code @param {string} [path] */
+function parse(code, path = 'x.ts') {
+  return ts.createSourceFile(
+    path,
+    code,
+    ts.ScriptTarget.Latest,
+    true,
+    path.endsWith('.tsx') || path.endsWith('.jsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS,
+  );
+}
+
+/** Each node of `sf`, depth first. */
+function walk(node, visit) {
+  visit(node);
+  ts.forEachChild(node, (child) => walk(child, visit));
+}
+
+/** Through parentheses, `as`, `satisfies` and `!`. */
+function unwrap(node) {
+  let n = node;
+  while (
+    n &&
+    (ts.isParenthesizedExpression(n) ||
+      ts.isAsExpression(n) ||
+      ts.isSatisfiesExpression(n) ||
+      ts.isNonNullExpression(n) ||
+      ts.isTypeAssertionExpression(n))
+  ) {
+    n = n.expression;
+  }
+  return n;
+}
+
+/** The text of a string literal (or a template with no substitution). */
+function literalText(node) {
+  const n = unwrap(node);
+  return n && (ts.isStringLiteral(n) || ts.isNoSubstitutionTemplateLiteral(n)) ? n.text : null;
+}
+
+/** Every binding of a name in the file to the expression it is bound from:
+ *  a variable's initializer, a for-of's iterable, and a callback parameter's
+ *  array (`[...].forEach((x) => ...)`). */
+function bindingsOf(sf) {
+  /** @type {Map<string, import('typescript').Node[]>} */
+  const out = new Map();
+  const add = (name, from) => {
+    if (!from) return;
+    const list = out.get(name) ?? [];
+    list.push(from);
+    out.set(name, list);
+  };
+  walk(sf, (n) => {
+    if (ts.isVariableDeclaration(n) && ts.isIdentifier(n.name)) {
+      const loop = n.parent?.parent;
+      if (loop && ts.isForOfStatement(loop)) add(n.name.text, loop.expression);
+      else add(n.name.text, n.initializer);
+    }
+    if (ts.isParameter(n) && ts.isIdentifier(n.name)) {
+      const fn = n.parent;
+      const call = fn?.parent;
+      if (
+        call &&
+        ts.isCallExpression(call) &&
+        ts.isPropertyAccessExpression(call.expression) &&
+        call.arguments.includes(fn)
+      ) {
+        add(n.name.text, call.expression.expression);
+      }
+    }
+  });
+  return out;
+}
+
+const SIGNAL = /^SIG(?:INT|TERM)$/;
+const LISTEN = new Set(['on', 'once', 'addListener', 'prependListener', 'prependOnceListener']);
+
+/** Whether `node` (or what a name in it is bound from, a level or two deep)
+ *  holds a SIGINT or SIGTERM string. */
+function namesSignal(node, bindings, depth = 0) {
+  let found = false;
+  const look = (n) => {
+    if (found) return;
+    const text = literalText(n);
+    if (text !== null && SIGNAL.test(text)) {
+      found = true;
+      return;
+    }
+    if (ts.isIdentifier(n) && depth < 3) {
+      for (const from of bindings.get(n.text) ?? []) {
+        if (namesSignal(from, bindings, depth + 1)) {
+          found = true;
+          return;
+        }
+      }
+    }
+    ts.forEachChild(n, look);
+  };
+  look(node);
+  return found;
+}
+
+/** SIGINT / SIGTERM handlers in `code`: a listener (`on`, `once`,
+ *  `addListener`, `prepend…`) on any receiver whose event is SIGINT or
+ *  SIGTERM, spelled as a string or through a name bound to one (a const, a
+ *  for-of over a list, a forEach callback's parameter). */
+export function signalHandlers(code, path) {
+  if (!/SIG(?:INT|TERM)/.test(code)) return 0;
+  const sf = parse(code, path);
+  const bindings = bindingsOf(sf);
+  let n = 0;
+  walk(sf, (node) => {
+    if (!ts.isCallExpression(node) || !ts.isPropertyAccessExpression(node.expression)) return;
+    if (!LISTEN.has(node.expression.name.text)) return;
+    const event = node.arguments[0];
+    if (event && namesSignal(event, bindings)) n += 1;
+  });
+  return n;
 }
 
 /** Advisory lock functions called in SQL in `code`. */
@@ -237,21 +364,139 @@ export function advisoryLocks(code) {
     .length;
 }
 
-/** Hand TTL age checks in `code`: an entry's stamp against a constant. */
-export function ttlAgeChecks(code) {
-  const age =
-    /(?:\bDate\.now\(\)|\bnow(?:\(\))?|this\.now\(\))\s*-\s*(?:(?:\w+\.)+(?:at|fetchedAt|cachedAt)|\w*FetchedAt)\b\s*[<>]=?/g;
-  const expiry = /\.expiresAt\s*>\s*(?:Date\.now\(\)|now\(\)|now\b)/g;
-  return (code.match(age) ?? []).length + (code.match(expiry) ?? []).length;
+const COMPARE = new Set([
+  ts.SyntaxKind.LessThanToken,
+  ts.SyntaxKind.LessThanEqualsToken,
+  ts.SyntaxKind.GreaterThanToken,
+  ts.SyntaxKind.GreaterThanEqualsToken,
+]);
+/** A TTL-ish bound: the constant a cache's age is held to. */
+const TTL_BOUND = /ttl|max_?age|stale|fresh|cache|backoff|expir|lifetime/i;
+/** A cache entry's stamp. */
+const STAMP =
+  /(?:\.at|(?:^|\.)(?:fetched|cached|stored|loaded|checked)At|(?:^|\.)\w+(?:Fetched|Cached|Stored|Loaded|Checked)At)$/;
+
+/** A clock read: Date.now(), now(), this.now(), performance.now(), `now`. */
+function isNow(node) {
+  const n = unwrap(node);
+  if (!n) return false;
+  if (ts.isIdentifier(n)) return n.text === 'now';
+  if (!ts.isCallExpression(n) || n.arguments.length) return false;
+  const callee = n.expression;
+  if (ts.isIdentifier(callee)) return callee.text === 'now';
+  return ts.isPropertyAccessExpression(callee) && callee.name.text === 'now';
 }
 
-/** Literal Cache-Control values in `code`: a header key with a string. */
-export function cacheControlLiterals(code) {
-  return (
-    code.match(
-      /['"]cache-control['"]\s*:\s*['"`]|\.(?:header|set)\(\s*['"]cache-control['"]\s*,\s*['"`]/gi,
-    ) ?? []
-  ).length;
+/** Hand TTL age checks in `code`: an age (`<clock> - <stamp>`) compared with
+ *  a TTL-ish bound (a name with ttl, max age, stale, fresh, cache, backoff,
+ *  expiry or lifetime in it) or a cache entry's stamp (`.at`, `fetchedAt`,
+ *  `cachedAt`, ...) against any bound; and an `expiresAt` against the
+ *  clock. Not seen (the limit): an age kept in a variable first and
+ *  compared later, a stamp and a bound both named otherwise. */
+export function ttlAgeChecks(code, path) {
+  if (!/now/.test(code)) return 0;
+  const sf = parse(code, path);
+  let n = 0;
+  walk(sf, (node) => {
+    if (!ts.isBinaryExpression(node) || !COMPARE.has(node.operatorToken.kind)) return;
+    const left = unwrap(node.left);
+    const right = unwrap(node.right);
+    for (const [age, bound] of [
+      [left, right],
+      [right, left],
+    ]) {
+      if (
+        ts.isBinaryExpression(age) &&
+        age.operatorToken.kind === ts.SyntaxKind.MinusToken &&
+        isNow(age.left)
+      ) {
+        const stamp = unwrap(age.right).getText(sf);
+        if (STAMP.test(stamp) || TTL_BOUND.test(bound.getText(sf))) {
+          n += 1;
+          return;
+        }
+      }
+      if (/(?:^|\.)expiresAt$/.test(age.getText(sf)) && isNow(bound)) {
+        n += 1;
+        return;
+      }
+    }
+  });
+  return n;
+}
+
+const SET_HEADER = new Set(['set', 'append', 'header', 'setHeader']);
+
+/** Whether `node` is a Cache-Control value from the one table: a
+ *  CACHE_CONTROL member, API_CACHE_DEFAULT, a cacheHeaders() call, a choice
+ *  between such, or a name bound to one. */
+function fromTable(node, bindings, depth = 0) {
+  const n = unwrap(node);
+  if (!n) return false;
+  if (
+    (ts.isPropertyAccessExpression(n) || ts.isElementAccessExpression(n)) &&
+    ts.isIdentifier(n.expression) &&
+    n.expression.text === 'CACHE_CONTROL'
+  ) {
+    return true;
+  }
+  if (ts.isIdentifier(n)) {
+    if (n.text === 'API_CACHE_DEFAULT') return true;
+    const from = bindings.get(n.text) ?? [];
+    return depth < 3 && from.length > 0 && from.every((f) => fromTable(f, bindings, depth + 1));
+  }
+  if (ts.isCallExpression(n) && ts.isIdentifier(n.expression)) {
+    return n.expression.text === 'cacheHeaders';
+  }
+  if (ts.isConditionalExpression(n)) {
+    return fromTable(n.whenTrue, bindings, depth) && fromTable(n.whenFalse, bindings, depth);
+  }
+  return false;
+}
+
+const isCacheControl = (node) => literalText(node)?.toLowerCase() === 'cache-control';
+
+/** Cache-Control values in `code` that are not from CACHE_CONTROL: the header
+ *  set through a call (`headers.set`, `append`, Hono's `c.header`, node's
+ *  `setHeader`), an object literal key, a `[name, value]` pair (new
+ *  Headers([...]), a list of entries) or an index assignment, whose value is
+ *  anything else (a literal, a parameter, a template). */
+export function cacheControlLiterals(code, path) {
+  if (!/cache-control/i.test(code)) return 0;
+  const sf = parse(code, path);
+  const bindings = bindingsOf(sf);
+  let n = 0;
+  const check = (value) => {
+    if (value && !fromTable(value, bindings)) n += 1;
+  };
+  walk(sf, (node) => {
+    if (
+      ts.isCallExpression(node) &&
+      ts.isPropertyAccessExpression(node.expression) &&
+      SET_HEADER.has(node.expression.name.text) &&
+      node.arguments.length >= 2 &&
+      isCacheControl(node.arguments[0])
+    ) {
+      check(node.arguments[1]);
+    } else if (ts.isPropertyAssignment(node)) {
+      const key = ts.isComputedPropertyName(node.name) ? node.name.expression : node.name;
+      if (isCacheControl(key)) check(node.initializer);
+    } else if (
+      ts.isArrayLiteralExpression(node) &&
+      node.elements.length === 2 &&
+      isCacheControl(node.elements[0])
+    ) {
+      check(node.elements[1]);
+    } else if (
+      ts.isBinaryExpression(node) &&
+      node.operatorToken.kind === ts.SyntaxKind.EqualsToken &&
+      ts.isElementAccessExpression(unwrap(node.left)) &&
+      isCacheControl(unwrap(node.left).argumentExpression)
+    ) {
+      check(node.right);
+    }
+  });
+  return n;
 }
 
 /** Console calls in `code`. */
@@ -317,7 +562,7 @@ function ruleFor(key) {
       if (!path || Object.hasOwn(allowed, path)) return {};
       return {
         Program(node) {
-          if (count(stripComments(context.sourceCode.getText())) > 0) {
+          if (count(stripComments(context.sourceCode.getText()), path) > 0) {
             context.report({ node, messageId: 'over' });
           }
         },

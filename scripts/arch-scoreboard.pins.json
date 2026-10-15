@@ -76,7 +76,7 @@
   "std_advisoryLock": 0,
   "std_advisoryLock_allowed": 5,
   "std_ttlAgeCheck": 0,
-  "std_ttlAgeCheck_allowed": 6,
+  "std_ttlAgeCheck_allowed": 9,
   "std_cacheControlLiteral": 0,
   "std_cacheControlLiteral_allowed": 0,
   "consoleCalls": 473,

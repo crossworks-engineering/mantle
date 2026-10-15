@@ -72,4 +72,42 @@ describe('small helpers copied back (A10 #15)', () => {
       });
     });
   }
+
+  // Fix round 1, L2: the signal, Cache-Control and TTL counts read the
+  // syntax tree, so a site respelled (another receiver, a name bound to the
+  // value, another way to set the header) is still counted.
+  const respelled: Array<[string, string, number]> = [
+    ['signalHandler', "process.on('SIGTERM', h)", 1],
+    ['signalHandler', "emitter.addListener('SIGINT', h)", 1],
+    ['signalHandler', "const S = 'SIGTERM'; p.once(S, h)", 1],
+    ['signalHandler', "for (const s of ['SIGINT', 'SIGTERM']) self.on(s, h)", 1],
+    ['signalHandler', "['SIGINT', 'SIGTERM'].forEach((sig) => p.prependListener(sig, h))", 1],
+    ['signalHandler', "process.on('exit', h); child.kill('SIGTERM')", 0],
+    ['cacheControlLiteral', "res.headers.set('Cache-Control', 'no-store')", 1],
+    ['cacheControlLiteral', "h.append('cache-control', value)", 1],
+    ['cacheControlLiteral', "c.header('Cache-Control', `max-age=${n}`)", 1],
+    ['cacheControlLiteral', "res.setHeader('Cache-Control', 'no-store')", 1],
+    ['cacheControlLiteral', "const h = { ['cache-control']: x }", 1],
+    ['cacheControlLiteral', "new Headers([['Cache-Control', 'no-store']])", 1],
+    ['cacheControlLiteral', "headers['Cache-Control'] = 'no-store'", 1],
+    ['cacheControlLiteral', "const v = 'no-store'; c.header('Cache-Control', v)", 1],
+    ['cacheControlLiteral', "c.header('Cache-Control', CACHE_CONTROL.none)", 0],
+    [
+      'cacheControlLiteral',
+      "const h = { 'Cache-Control': ok ? CACHE_CONTROL.none : CACHE_CONTROL.revalidate }",
+      0,
+    ],
+    ['cacheControlLiteral', "const v = API_CACHE_DEFAULT; h.set('cache-control', v)", 0],
+    ['cacheControlLiteral', "const h = new Headers(cacheHeaders('none'))", 0],
+    ['ttlAgeCheck', 'if (Date.now() - entry.loadedAt < MAX_AGE) use(entry);', 1],
+    ['ttlAgeCheck', 'if (now() - row.stamp >= CACHE_TTL) drop(row);', 1],
+    ['ttlAgeCheck', 'if (CACHE_MS > performance.now() - x.when) use(x);', 1],
+    ['ttlAgeCheck', 'if (tok.expiresAt > Date.now()) use(tok);', 1],
+    ['ttlAgeCheck', 'if (now - at <= ARRIVAL_WINDOW_MS) keep(a);', 0],
+  ];
+  for (const [key, code, want] of respelled) {
+    it(`${key} counts ${want} in: ${code}`, () => {
+      expect(PATTERNS[key]!.count(code)).toBe(want);
+    });
+  }
 });

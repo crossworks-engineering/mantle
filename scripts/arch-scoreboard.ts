@@ -106,8 +106,8 @@ const LABELS: Record<string, string> = {
   std_advisoryLock_allowed: 'advisory locks in SQL named (the helper, share, tests) (A10 #15)',
   std_ttlAgeCheck: 'hand TTL cache age checks outside TtlCache and the named list (A10 #15)',
   std_ttlAgeCheck_allowed: 'hand TTL cache age checks named (A10 #15)',
-  std_cacheControlLiteral: 'literal Cache-Control values outside CACHE_CONTROL (A10 #15)',
-  std_cacheControlLiteral_allowed: 'literal Cache-Control values named (A10 #15)',
+  std_cacheControlLiteral: 'Cache-Control values not from CACHE_CONTROL (A10 #15)',
+  std_cacheControlLiteral_allowed: 'Cache-Control values not from CACHE_CONTROL, named (A10 #15)',
   consoleCalls:
     'console calls outside scripts (down only; log(scope) as files are touched) (A10 #15)',
   archivedAtIsNull:
