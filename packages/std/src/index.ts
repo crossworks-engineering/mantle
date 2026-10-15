@@ -16,12 +16,7 @@
  */
 import { DATABASE_ERROR_PUBLIC, mapAccessError } from './access-error';
 import { domainErrorAnswer } from './domain-errors';
-import {
-  PROVIDER_ERROR_PUBLIC,
-  classifyProviderError,
-  isProviderHttpFailure,
-  providerFailureShape,
-} from './provider-error';
+import { isProviderHttpFailure, providerFailureText } from './provider-error';
 
 let dbErrorWatch: () => { texts: string[]; errors: unknown[] } | undefined = () => undefined;
 
@@ -156,13 +151,10 @@ export function publicErrorMessage(err: unknown, where: string): string {
 export function publicProviderErrorMessage(err: unknown, where: string): string {
   if (isDatabaseError(err)) return publicErrorMessage(err, where);
   const domain = domainErrorAnswer(err);
-  const cls = domain ? null : classifyProviderError(err);
-  const shape = domain || cls ? null : providerFailureShape(err);
-  if (!domain && !cls && !shape) return publicErrorMessage(err, where);
+  const text = domain ? domain.toolText : providerFailureText(err);
+  if (text === null) return publicErrorMessage(err, where);
   console.error(`[${where}] failed:`, err);
-  if (domain) return domain.toolText;
-  if (cls) return cls.status ? `${cls.reason} (HTTP ${cls.status})` : cls.reason;
-  return shape!.status ? `${PROVIDER_ERROR_PUBLIC} (HTTP ${shape!.status})` : PROVIDER_ERROR_PUBLIC;
+  return text;
 }
 
 /**
@@ -277,6 +269,7 @@ export {
   providerErrorPublicText,
   providerErrorStatus,
   providerFailureShape,
+  providerFailureText,
   retryDecision,
   type ProviderErrorClass,
   type ProviderErrorCode,

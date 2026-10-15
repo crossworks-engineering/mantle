@@ -375,6 +375,35 @@ describe('web_search', () => {
     expect(errorOf(await webSearch.handler({ query: 'q' }, ctx))).toBe('429 rate limited');
   });
 
+  // A10 #10 fix round 2: OpenRouter's SDK error carries the upstream body and
+  // metadata; the model hears the fixed sentence, the log keeps the detail.
+  it("never puts the SDK error's body or metadata in the tool text", async () => {
+    const SECRET = 'sk-or-v1-0123456789abcdef org=acme-private';
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.mocked(getApiKey).mockResolvedValue('sk');
+    for (const [tool, status, up] of [
+      [webSearch, 403, 'Your input was flagged by moderation'],
+      [webSearchPro, 429, 'Rate limit exceeded'],
+    ] as const) {
+      h.send.mockRejectedValue(
+        Object.assign(new Error(`API error occurred: ${up} ${SECRET}`), {
+          statusCode: status,
+          body: JSON.stringify({ error: { message: up, metadata: { raw: SECRET } } }),
+        }),
+      );
+      const error = errorOf(await tool.handler({ query: 'q' }, ctx));
+      expect(error).not.toContain('acme-private');
+      expect(error).not.toContain('sk-or-v1');
+      expect(error).toBe(
+        status === 429
+          ? 'The provider limits the request rate. (HTTP 429)'
+          : 'The model provider answered with an error. (HTTP 403)',
+      );
+    }
+    expect(log).toHaveBeenCalled();
+    log.mockRestore();
+  });
+
   it('reports an empty answer rather than an ok with nothing in it', async () => {
     vi.mocked(getApiKey).mockResolvedValue('sk');
     h.send.mockResolvedValue({ choices: [{ message: { content: '' } }] });

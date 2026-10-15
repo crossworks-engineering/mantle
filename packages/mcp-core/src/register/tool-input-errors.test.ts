@@ -16,7 +16,12 @@ vi.mock('@mantle/db', async (importOriginal) => ({
 }));
 
 import { z } from 'zod';
-import { DATABASE_ERROR_PUBLIC, databaseErrorPublic, errorMessage } from '@mantle/std';
+import {
+  DATABASE_ERROR_PUBLIC,
+  ProviderHttpError,
+  databaseErrorPublic,
+  errorMessage,
+} from '@mantle/std';
 import { registerBuiltin, type BuiltinToolDef } from '@mantle/tools';
 import { makeRegisterContext } from './context';
 import { registerGatedTool } from '../gated-tools';
@@ -38,6 +43,23 @@ function registered(handler: Handler): Handler {
   });
   return cb!;
 }
+
+describe('MCP tool errors from a model provider (A10 #10 fix round 2)', () => {
+  it("a provider's HTTP failure is its fixed sentence, never the provider's body", async () => {
+    const SECRET = 'sk-or-v1-0123456789abcdef org=acme-private';
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const res = (await registered(async () => {
+      throw new ProviderHttpError({ provider: 'openai', status: 401, body: SECRET });
+    })({ q: 'x' }, {})) as { isError: boolean; content: Array<{ text: string }> };
+    expect(res.isError).toBe(true);
+    expect(res.content[0]!.text).toBe(
+      'Error: The provider refused the API key. (openai, HTTP 401)',
+    );
+    expect(JSON.stringify(res)).not.toContain('acme-private');
+    expect(spy).toHaveBeenCalled();
+    spy.mockRestore();
+  });
+});
 
 describe('MCP tool errors from the database', () => {
   it('a drizzle error with a Postgres cause comes back generic, never its text', async () => {

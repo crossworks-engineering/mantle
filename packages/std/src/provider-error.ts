@@ -140,21 +140,47 @@ export function isProviderHttpFailure(err: unknown): boolean {
  * The status of a provider failure the classifier does not name, when it is
  * one by its shape (A10 #10 fix round 2): a numeric `status` or `statusCode`
  * on the error or a cause, the adapters' message prefix, or a body that did
- * not parse (V8's SyntaxError quotes the body). Null: not provider shaped,
- * the error is the caller's own.
+ * not parse (V8's SyntaxError quotes the body). `body` is the first body on
+ * the chain. Null: not provider shaped, the error is the caller's own.
  */
-export function providerFailureShape(err: unknown): { status?: number } | null {
+export function providerFailureShape(err: unknown): { status?: number; body?: string } | null {
   const chain = errorChain(err);
+  const body = chain
+    .map((e) => (e as { body?: unknown }).body)
+    .find((b): b is string => typeof b === 'string');
+  const withBody = <T extends object>(o: T) => (body !== undefined ? { ...o, body } : o);
   for (const e of chain) {
     const o = e as { status?: unknown; statusCode?: unknown };
-    if (typeof o.status === 'number') return { status: o.status };
-    if (typeof o.statusCode === 'number') return { status: o.statusCode };
+    if (typeof o.status === 'number') return withBody({ status: o.status });
+    if (typeof o.statusCode === 'number') return withBody({ status: o.statusCode });
   }
-  if (isProviderHttpFailure(err)) return {};
+  if (isProviderHttpFailure(err)) return withBody({});
   const scraped = providerErrorStatus(err);
-  if (scraped !== undefined) return { status: scraped };
+  if (scraped !== undefined) return withBody({ status: scraped });
   if (chain.some((e) => e instanceof SyntaxError)) return {};
   return null;
+}
+
+/**
+ * The fixed sentence a member or the model hears for a provider failure, or
+ * null when `err` is none (A10 #10 fix round 2): the classifier's class; else,
+ * for one provider shaped ({@link providerFailureShape}), the class its
+ * status names (an SDK keeps it as `statusCode`, which the classifier, and so
+ * failover, does not read: it is read here for the text only), else
+ * PROVIDER_ERROR_PUBLIC, with the status when known. Never the message.
+ */
+export function providerFailureText(err: unknown): string | null {
+  const cls = classifyProviderError(err);
+  if (cls) return cls.status ? `${cls.reason} (HTTP ${cls.status})` : cls.reason;
+  const shape = providerFailureShape(err);
+  if (!shape) return null;
+  if (shape.status === undefined) return PROVIDER_ERROR_PUBLIC;
+  const byStatus = classifyProviderError({
+    status: shape.status,
+    message: String((err as { message?: unknown } | null)?.message ?? ''),
+    body: shape.body ?? '',
+  });
+  return `${byStatus ? byStatus.reason : PROVIDER_ERROR_PUBLIC} (HTTP ${shape.status})`;
 }
 
 // ── the status reader ───────────────────────────────────────────────────────

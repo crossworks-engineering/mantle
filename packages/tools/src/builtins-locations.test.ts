@@ -144,4 +144,20 @@ describe('route_map', () => {
     expect(res.ok).toBe(false);
     if (!res.ok) expect(res.error).toContain('422');
   });
+
+  // A10 #10 fix round 2: the deadline (timeoutSignal) raises a TimeoutError,
+  // not the AbortError the hand timer did; both read as the timeout.
+  it.each(['TimeoutError', 'AbortError'])('says the request timed out on a %s', async (name) => {
+    getApiKey.mockResolvedValue('pk.SECRET-KEY');
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        throw new DOMException('The operation timed out.', name);
+      }),
+    );
+
+    const res = await route_map.handler(baseInput, ctx);
+
+    expect(res).toEqual({ ok: false, error: 'static map request timed out' });
+  });
 });

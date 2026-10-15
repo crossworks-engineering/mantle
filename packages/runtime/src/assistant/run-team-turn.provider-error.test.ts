@@ -14,6 +14,8 @@ const SECRET = 'sk-or-v1-0123456789abcdef org=acme-private';
 const h = vi.hoisted(() => ({
   outcomes: [] as Record<string, unknown>[],
   events: [] as unknown[][],
+  /** What the loop throws (default: a ProviderHttpError). */
+  throws: null as (() => Error) | null,
 }));
 vi.mock('@mantle/db', async (importOriginal) => {
   const actual = await importOriginal<Record<string, unknown>>();
@@ -100,6 +102,7 @@ vi.mock('@mantle/tracing', async (importOriginal) => ({
 vi.mock('./responder-loop', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   runResponderLoop: vi.fn(async () => {
+    if (h.throws) throw h.throws();
     throw new ProviderHttpError({
       provider: 'openrouter',
       status: 401,
@@ -114,6 +117,7 @@ import { runTeamTurn } from './run-team-turn';
 beforeEach(() => {
   h.outcomes = [];
   h.events = [];
+  h.throws = null;
 });
 
 describe('runTeamTurn: a provider error', () => {
@@ -134,6 +138,32 @@ describe('runTeamTurn: a provider error', () => {
     const errorEvents = h.events.filter((e) => e[2] === 'error');
     expect(errorEvents.length).toBeGreaterThan(0);
     expect(JSON.stringify(errorEvents)).not.toContain('sk-or-v1');
+    expect(JSON.stringify(errorEvents)).not.toContain('acme-private');
+  });
+
+  // A10 #10 fix round 2: OpenRouter's 400 that is not about the model (and a
+  // 403 moderation refusal, a 413) is a class the classifier does not name;
+  // its message carries the upstream text and metadata.
+  it('a provider failure the classifier does not name is the fixed sentence too', async () => {
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+    h.throws = () =>
+      new Error(`openrouter-chat 400 on test/model: prompt too long metadata=${SECRET}`, {
+        cause: Object.assign(new Error('Provider returned error'), {
+          statusCode: 400,
+          body: SECRET,
+        }),
+      });
+    await runTeamTurn('owner-1', 'second question', {
+      loginId: 'login-1',
+      channel: 'web',
+      streamId: 'stream-1',
+    }).catch(() => {});
+    log.mockRestore();
+    const failed = h.outcomes.find((o) => o.status === 'failed');
+    expect(String(failed!.error)).toBe('The model provider answered with an error. (HTTP 400)');
+    expect(JSON.stringify(h.outcomes)).not.toContain('acme-private');
+    const errorEvents = h.events.filter((e) => e[2] === 'error');
+    expect(errorEvents.length).toBeGreaterThan(0);
     expect(JSON.stringify(errorEvents)).not.toContain('acme-private');
   });
 });
