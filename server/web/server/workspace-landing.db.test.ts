@@ -228,7 +228,11 @@ describe.skipIf(!URL)('workspace landing pages (task d78e7bde)', () => {
     );
     const run = async () => {
       for (const stmt of readFileSync(file, 'utf8').split('--> statement-breakpoint')) {
-        if (stmt.replace(/--.*$/gm, '').trim()) await x(sql.raw(stmt));
+        // As the migrator runs it (DDL): the app's pool may be the runtime
+        // role (arch A9).
+        if (stmt.replace(/--.*$/gm, '').trim()) {
+          await (await import('@mantle/db/test-support')).superuserExec(scratch!.url, stmt);
+        }
       }
     };
     await run();

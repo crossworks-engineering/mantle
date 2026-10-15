@@ -35,8 +35,16 @@ Code: `packages/db/src/runtime-role.ts` (the roles, the rights, the URL),
   named heads-check bypass), the actor setters (`mantle_set_actor`,
   `mantle_operator_actor`: packages/db sets the actor with `set_config`, the
   `actor-setters-in-db-only` lint) and the schema-changing steps
-  (`mantle_write_role_sync_table`, the workspaces switch). The same list is
-  taken from `PUBLIC` and from every viewer role;
+  (`mantle_write_role_sync_table`, `mantle_ws_ddl_retry`,
+  `mantle_ws_switch_off`, `mantle_ws_migrate_locked`). The same list is
+  taken from `PUBLIC` and from every viewer role. `mantle_ws_migrate()`
+  stays open: on a brain already on workspaces it does nothing, and before
+  that it is the switch the app runs at boot anyway, with no statement of the
+  caller's in it;
+- `USAGE` on schema `pgboss` and `SELECT` on its tables, read only: the
+  extract backlog and the integrity page count its jobs. pgboss:init makes
+  the schema after the first migrate, so a fresh box gets these at its next
+  migrate (until then those counts read as unknown);
 - membership in `mantle_system` (inherit and set), and nothing else: a hand
   grant is taken back at the next migrate.
 

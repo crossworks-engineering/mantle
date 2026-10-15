@@ -18,7 +18,7 @@
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/search/src/scope.db.test.ts
  */
 import { randomUUID } from 'node:crypto';
-import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, onTestFinished } from 'vitest';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -333,6 +333,11 @@ describe.skipIf(!URL)('W3: chunks follow their node; small scopes search exactly
   });
 
   it('ensureConcurrentIndexes builds a missing index and rebuilds an INVALID one', async () => {
+    // The migrator's step, as the superuser: the app's pool may be the
+    // runtime role (arch A9), which makes no table and no index.
+    const { superuserClient } = await import('@mantle/db/test-support');
+    const admin = superuserClient(URL!) as unknown as Admin;
+    onTestFinished(() => (admin as unknown as { end: () => Promise<void> }).end());
     const t = `${tag}_cix`;
     await admin.unsafe(`create table public.${t} (a int)`);
     try {

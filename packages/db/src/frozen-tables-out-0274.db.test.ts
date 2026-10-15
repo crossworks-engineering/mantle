@@ -180,9 +180,12 @@ describe.skipIf(!URL)('0274: the frozen tables, archived and dropped', () => {
   });
 
   it('the archives are read by the admin pool only', async () => {
+    // The admin pool: the superuser, or its runtime role and the owner
+    // (arch A9). No limited role.
     const grants = await sql<{ n: number }[]>`
       select count(*)::int as n from information_schema.role_table_grants
        where table_schema = 'public' and grantee <> current_user
+         and grantee not in ('mantle_runtime', 'mantle_owner')
          and table_name in ('archive_team_read_cursors', 'archive_team_notifications',
                             'archive_login_chat_read_cursors', 'archive_client_report_acks',
                             'archive_client_quota_refusals')`;

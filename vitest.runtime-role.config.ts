@@ -4,11 +4,18 @@ import base from './vitest.config';
 /**
  * The database suites with the app's pools on the runtime role (workspaces
  * arch A9, docs/runtime-role.md): MANTLE_DB_RUNTIME_ROLE=1, so the system
- * pool and the LISTEN connections log in as mantle_runtime (its password
- * from MANTLE_MASTER_KEY, the role made by the global setup), while each
+ * pool and the LISTEN connections log in as mantle_runtime, while each
  * test's own fixtures keep the superuser URL. What a box runs after its
  * roll. `pnpm test:runtime-role`.
+ *
+ * The role's password comes from MANTLE_MASTER_KEY, so the whole run (the
+ * global setup that sets it, and every test file) needs one key: set here,
+ * before the global setup runs, when the caller has none. A 32-byte key,
+ * because files that seal with the vault keep it (they only set a key of
+ * their own when there is none).
  */
+process.env.MANTLE_MASTER_KEY ??= Buffer.alloc(32, 9).toString('base64');
+
 export default defineConfig({
   ...base,
   test: {
@@ -17,7 +24,7 @@ export default defineConfig({
     env: {
       ...base.test?.env,
       MANTLE_DB_RUNTIME_ROLE: '1',
-      MANTLE_MASTER_KEY: process.env.MANTLE_MASTER_KEY ?? 'mantle-viewer-test-key',
+      MANTLE_MASTER_KEY: process.env.MANTLE_MASTER_KEY,
     },
   },
 });

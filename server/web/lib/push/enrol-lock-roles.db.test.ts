@@ -49,6 +49,7 @@ describe.skipIf(!URL_ADMIN)('enrol and refresh locks under a role that is not a 
   const rotated = randomUUID();
   const successor = randomUUID();
   let savedUrl: string | undefined;
+  let savedRuntime: string | undefined;
 
   const roleUrl = (role: string) => {
     const u = new URL(URL_ADMIN!);
@@ -82,6 +83,10 @@ describe.skipIf(!URL_ADMIN)('enrol and refresh locks under a role that is not a 
     }
 
     savedUrl = process.env.DATABASE_URL;
+    // The app's pools log in as this role, as written: not the runtime
+    // role (arch A9), whatever the run's switch says.
+    savedRuntime = process.env.MANTLE_DB_RUNTIME_ROLE;
+    process.env.MANTLE_DB_RUNTIME_ROLE = '';
     process.env.DATABASE_URL = roleUrl(writer);
     process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
     m = await import('@mantle/db');
@@ -94,6 +99,8 @@ describe.skipIf(!URL_ADMIN)('enrol and refresh locks under a role that is not a 
     await reader?.end({ timeout: 5 });
     if (savedUrl === undefined) delete process.env.DATABASE_URL;
     else process.env.DATABASE_URL = savedUrl;
+    if (savedRuntime === undefined) delete process.env.MANTLE_DB_RUNTIME_ROLE;
+    else process.env.MANTLE_DB_RUNTIME_ROLE = savedRuntime;
     if (!admin) return;
     await admin`delete from push_subscriptions where login_id = ${login}`;
     await admin`delete from mobile_tokens where user_id = ${login}`;
