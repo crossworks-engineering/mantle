@@ -67,6 +67,11 @@ export const RUNTIME_ROLES = [OWNER_ROLE, SYSTEM_ROLE, RUNTIME_ROLE] as const;
 /** The function whose owner mantle_owner_role() asks about (0241, 0290). */
 export const ACL_MARKER_FUNCTION = 'public.mantle_acl_internal()';
 
+/** The derivation guards' owner test (0241). 0290 made it ask for MEMBER;
+ *  before that it asked for USAGE, which the runtime role (a member without
+ *  INHERIT) never passes: every write guard would refuse the system pool. */
+export const OWNER_ROLE_FUNCTION = 'public.mantle_owner_role()';
+
 /** The marker's body, as 0241 made it: migrate makes it again when it is
  *  missing or not this (ensureAclMarker). */
 const ACL_MARKER_BODY = `
@@ -221,7 +226,12 @@ export const DB_ROLE_SQL = `
  * The integrity row runtime_role_lock (server/web/lib/integrity/audit.ts):
  * one row (id, kind, detail) when mantle_runtime is no longer the lock it
  * was made as, none when it is (or does not exist: a box before A9). Here,
- * beside the roles it names.
+ * beside the roles it names. Also what the lock leans on: the marker present
+ * and mantle_owner's, mantle_owner_role() the MEMBER version of 0290 (a
+ * skipped 0290 shows here), and no role but mantle_runtime (and a
+ * superuser, a member of every role) a member of mantle_owner, directly or
+ * through another role: mantle_owner_role() says yes to every such member.
+ * afterMigrations logs every row as a warning.
  */
 export const RUNTIME_LOCK_SQL = `
   SELECT '${RUNTIME_ROLE}' AS id, 'lock broken' AS kind, x.detail AS detail
@@ -250,9 +260,26 @@ export const RUNTIME_LOCK_SQL = `
             AND coalesce((SELECT pg_get_userbyid(p.proowner) FROM pg_catalog.pg_proc p
                            WHERE p.oid = to_regprocedure('${ACL_MARKER_FUNCTION}')), '')
                 <> '${OWNER_ROLE}'
-           THEN '${ACL_MARKER_FUNCTION} missing or not ${OWNER_ROLE}''s' END) AS detail
+           THEN '${ACL_MARKER_FUNCTION} missing or not ${OWNER_ROLE}''s' END,
+      CASE WHEN EXISTS (SELECT 1 FROM pg_catalog.pg_proc p
+                         WHERE p.oid = to_regprocedure('${OWNER_ROLE_FUNCTION}')
+                           AND position('''MEMBER''' IN upper(p.prosrc)) = 0)
+           THEN '${OWNER_ROLE_FUNCTION} is not the MEMBER version (migration 0290 not applied): ' ||
+                'every write guard refuses ${RUNTIME_ROLE}' END,
+      (SELECT 'other members of ${OWNER_ROLE}: ' || string_agg(o.rolname, ', ' ORDER BY o.rolname)
+         FROM pg_catalog.pg_roles o
+        WHERE to_regrole('${OWNER_ROLE}') IS NOT NULL AND NOT o.rolsuper
+          AND o.rolname NOT IN ('${OWNER_ROLE}', '${RUNTIME_ROLE}')
+          AND pg_has_role(o.oid, to_regrole('${OWNER_ROLE}'), 'MEMBER'))) AS detail
     FROM pg_catalog.pg_roles r WHERE r.rolname = '${RUNTIME_ROLE}') x
   WHERE x.detail <> ''`;
+
+/** What the integrity row runtime_role_lock says now: its details, none
+ *  when the lock is whole (afterMigrations logs each). */
+export async function runtimeLockDetails(sql: Sql): Promise<string[]> {
+  const rows = (await sql.unsafe(RUNTIME_LOCK_SQL)) as unknown as { detail: string }[];
+  return rows.map((r) => r.detail);
+}
 
 /** runtime: the runtime role, not a superuser and owning nothing (what A9
  *  wants); superuser: the box before its roll; other: anything else. */
@@ -290,9 +317,12 @@ export type Membership = {
 };
 
 /**
- * Every membership the three roles may hold, with its options: any other
- * (a hand grant of mantle_owner with INHERIT, say), or one of these with
- * other options, is taken back on every run.
+ * Every membership the three roles may hold, and every one held in them,
+ * with its options: any other (a hand grant of mantle_owner with INHERIT,
+ * say, or of mantle_runtime to another role), or one of these with other
+ * options, is taken back on every run. A member of mantle_runtime is a
+ * member of mantle_owner through it, whatever the options, and
+ * mantle_owner_role() (0290, MEMBER) says yes to it.
  *
  *  - runtime in mantle_owner: neither INHERIT nor SET. Membership only,
  *    which mantle_owner_role() asks (0290), and none of the owner's rights:
@@ -315,10 +345,21 @@ export function wantedMemberships(): readonly Membership[] {
 
 /** The attributes of each role. Pure. */
 function roleAttrs(role: string, password: string | null): string {
+  // NOINHERIT: a membership granted without options (a hand GRANT) then
+  // defaults to INHERIT FALSE; migrate takes it back all the same.
   if (role === RUNTIME_ROLE) {
     return password
-      ? `LOGIN NOSUPERUSER BYPASSRLS NOCREATEDB NOCREATEROLE INHERIT NOREPLICATION PASSWORD '${password}'`
-      : `NOLOGIN NOSUPERUSER BYPASSRLS NOCREATEDB NOCREATEROLE INHERIT NOREPLICATION PASSWORD NULL`;
+      ? `LOGIN NOSUPERUSER BYPASSRLS NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION PASSWORD '${password}'`
+      : `NOLOGIN NOSUPERUSER BYPASSRLS NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION PASSWORD NULL`;
+  }
+  // The owner runs a foreign key's check and cascade, and the triggers a
+  // cascade fires, as the superuser did: past the row rules, on its own
+  // tables and on one migrate left with its old owner (ownTables, busy).
+  // Nobody logs in as it, and nobody holds its rights: the runtime role is
+  // its member without INHERIT and without SET, and BYPASSRLS is never
+  // inherited anyway.
+  if (role === OWNER_ROLE) {
+    return `NOLOGIN NOSUPERUSER BYPASSRLS NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION PASSWORD NULL`;
   }
   return `NOLOGIN ${LOCK_ATTRS} PASSWORD NULL`;
 }
@@ -355,7 +396,8 @@ export type RuntimeRolesOutcome = 'ok' | 'not-superuser' | 'old-server';
 
 /**
  * Make the three roles and their memberships (runtimeRoleStatements), and
- * take back any other membership they hold, or one with other options. The
+ * take back any other membership they hold or another role holds in them,
+ * or one with other options. The
  * runtime role logs in only when `login` (migrate: MANTLE_DB_RUNTIME_ROLE
  * on), with a master key and outside per-database mode; otherwise it is
  * NOLOGIN with no password, so switching the switch off closes the login at
@@ -394,7 +436,8 @@ export async function ensureRuntimeRoles(
     opts.login && masterKey && !opts.perDatabase ? runtimeRolePassword(masterKey) : null;
   // Wrong memberships first, so the GRANTs below land on a clean slate (a
   // membership is one row per grantor: a GRANT does not change another
-  // grantor's row).
+  // grantor's row). Both ways: what the three hold, and what any role holds
+  // in them (wantedMemberships names no member outside the three).
   const held = await sql<
     {
       member: string;
@@ -411,7 +454,8 @@ export async function ensureRuntimeRoles(
       join pg_roles r on r.oid = m.roleid
       join pg_roles u on u.oid = m.member
       join pg_roles g on g.oid = m.grantor
-     where u.rolname = any(${[...RUNTIME_ROLES]}::text[])`;
+     where u.rolname = any(${[...RUNTIME_ROLES]}::text[])
+        or r.rolname = any(${[...RUNTIME_ROLES]}::text[])`;
   const wanted = wantedMemberships();
   for (const h of held) {
     const w = wanted.find((x) => x.member === h.member && x.role === h.role);
@@ -468,8 +512,11 @@ function isConcurrentUpdate(err: unknown): boolean {
  * and each change goes on its own with the same short wait, tried three
  * times. A table still busy then is left for the next migrate (`busy`).
  * Ownership is not the runtime role's lock (it never owns anything, whoever
- * does), so a table left behind is untidy, not a hole. A sequence a column
- * owns (serial, identity) moves with its table. Needs a superuser.
+ * does), and mantle_owner, which runs a foreign key's cascade and the
+ * triggers it fires, holds every right on such a table (applyRuntimeGrants)
+ * and BYPASSRLS, so it reads there what it reads on its own: a table left
+ * behind is untidy, not a hole. A sequence a column owns (serial, identity)
+ * moves with its table. Needs a superuser.
  */
 export async function ownTables(sql: Sql): Promise<OwnOutcome> {
   const out: OwnOutcome = { owned: [], failed: [] };

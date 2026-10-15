@@ -19,7 +19,10 @@
  *
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/db/src/runtime-role.db.test.ts
  */
-import { randomUUID } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import postgres from 'postgres';
 import { createMigratedScratchDatabase, ensureTestAnchor } from './test-support';
@@ -29,6 +32,7 @@ import {
   APP_SCHEMAS,
   DB_ROLE_SQL,
   OWNER_ROLE,
+  OWNER_ROLE_FUNCTION,
   RUNTIME_DENIED_FUNCTIONS,
   RUNTIME_LOCK_SQL,
   RUNTIME_ROLE,
@@ -49,6 +53,7 @@ import { GAP_WRITER_ROLE } from './access-matrix';
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 const KEY = process.env.MANTLE_MASTER_KEY ?? 'mantle-viewer-test-key';
 const DENIED = '42501';
+const MIGRATIONS = join(dirname(fileURLToPath(import.meta.url)), '..', 'migrations');
 
 /** DDL in a function body: what a SECURITY DEFINER function the runtime
  *  role may run must not do on its behalf. */
@@ -101,10 +106,16 @@ describe.skipIf(!URL)('the runtime role is not the owner (arch A9)', () => {
     const [row] = (await rt.unsafe(DB_ROLE_SQL)) as unknown as DbRoleRow[];
     expect(row).toEqual({ user: RUNTIME_ROLE, superuser: false, bypassrls: true, owns: 0 });
     expect(dbRoleMode(row!)).toBe('runtime');
-    const [attrs] = await admin<{ cr: boolean; cd: boolean; repl: boolean }[]>`
-      select rolcreaterole as cr, rolcreatedb as cd, rolreplication as repl
+    const [attrs] = await admin<{ cr: boolean; cd: boolean; repl: boolean; inh: boolean }[]>`
+      select rolcreaterole as cr, rolcreatedb as cd, rolreplication as repl, rolinherit as inh
         from pg_roles where rolname = ${RUNTIME_ROLE}`;
-    expect(attrs).toEqual({ cr: false, cd: false, repl: false });
+    // NOINHERIT: a hand GRANT without options does not default to INHERIT.
+    expect(attrs).toEqual({ cr: false, cd: false, repl: false, inh: false });
+    // The owner bypasses the row rules (a cascade runs as it); it never logs in.
+    const [owner] = await admin<{ login: boolean; bypass: boolean; su: boolean }[]>`
+      select rolcanlogin as login, rolbypassrls as bypass, rolsuper as su
+        from pg_roles where rolname = ${OWNER_ROLE}`;
+    expect(owner).toEqual({ login: false, bypass: true, su: false });
   });
 
   it('cannot disable a trigger or a row rule', async () => {
@@ -457,6 +468,124 @@ describe.skipIf(!URL)('the runtime role is not the owner (arch A9)', () => {
       await reader.end();
     }
     expect((await ownTables(admin)).owned).toEqual(['actor_check_misses']);
+  });
+
+  it('takes back every membership held in the three roles, and the integrity row names one', async () => {
+    // A role of its own (cluster-wide, so never a pool role another file
+    // logs in as), a member of mantle_runtime with neither INHERIT nor SET:
+    // through it a member of mantle_owner, and mantle_owner_role() (0290,
+    // MEMBER) said yes to it.
+    const probe = `a9_probe_${randomBytes(4).toString('hex')}`;
+    const held = `${probe}_held`;
+    await admin.unsafe(`CREATE ROLE "${probe}" NOLOGIN`);
+    await admin.unsafe(`CREATE ROLE "${held}" NOLOGIN`);
+    try {
+      await admin.unsafe(`GRANT ${RUNTIME_ROLE} TO "${probe}" WITH INHERIT FALSE, SET FALSE`);
+      await admin.unsafe(`GRANT ${SYSTEM_ROLE} TO "${probe}" WITH INHERIT FALSE, SET TRUE`);
+      // And a hand GRANT to the runtime role without options: NOINHERIT
+      // makes it INHERIT FALSE.
+      await admin.unsafe(`GRANT "${held}" TO ${RUNTIME_ROLE}`);
+      const asProbe = () =>
+        admin.begin(async (tx) => {
+          await tx.unsafe(`set local role "${probe}"`);
+          const [r] = await tx<{ ok: boolean }[]>`select mantle_owner_role() as ok`;
+          return r?.ok;
+        });
+      expect(await asProbe()).toBe(true);
+      const [inh] = await admin<{ inherit: boolean }[]>`
+        select m.inherit_option as inherit from pg_auth_members m
+         where m.roleid = to_regrole(${held}) and m.member = to_regrole(${RUNTIME_ROLE})`;
+      expect(inh?.inherit).toBe(false);
+      const broken = (await admin.unsafe(RUNTIME_LOCK_SQL)) as unknown as { detail: string }[];
+      expect(broken[0]?.detail).toContain(`other members of ${OWNER_ROLE}: ${probe}`);
+      // migrate (beforeMigrations) takes them back, both ways.
+      expect(await ensureRuntimeRoles(admin, KEY, { login: true })).toBe('ok');
+      const left = await admin<{ role: string; member: string }[]>`
+        select r.rolname as role, u.rolname as member from pg_auth_members m
+          join pg_roles r on r.oid = m.roleid join pg_roles u on u.oid = m.member
+         where r.rolname = any(${[probe, held]}::text[])
+            or u.rolname = any(${[probe, held]}::text[])`;
+      expect(left).toEqual([]);
+      expect(await asProbe()).toBe(false);
+      expect(await admin.unsafe(RUNTIME_LOCK_SQL)).toEqual([]);
+      // Who is a member of mantle_owner now: the runtime role, and no other
+      // role that is not a superuser.
+      const members = await admin<{ name: string }[]>`
+        select rolname as name from pg_roles
+         where not rolsuper and rolname <> ${OWNER_ROLE}
+           and pg_has_role(oid, to_regrole(${OWNER_ROLE}), 'MEMBER') order by 1`;
+      expect(members.map((m) => m.name)).toEqual([RUNTIME_ROLE]);
+    } finally {
+      await admin.unsafe(`DROP ROLE IF EXISTS "${probe}", "${held}"`);
+    }
+  });
+
+  it('a mantle_owner_role() from before 0290 shows: the integrity row and a migrate warning', async () => {
+    const restore = readFileSync(join(MIGRATIONS, '0290_owner_role_member.sql'), 'utf8');
+    // 0241's version: USAGE, which the runtime role (no INHERIT) never passes.
+    await admin.unsafe(`
+      CREATE OR REPLACE FUNCTION ${OWNER_ROLE_FUNCTION}
+        RETURNS boolean LANGUAGE sql STABLE AS $$
+        SELECT pg_has_role(current_user,
+                           (SELECT p.proowner FROM pg_proc p
+                             WHERE p.oid = 'public.mantle_acl_internal()'::regprocedure),
+                           'USAGE')
+      $$`);
+    try {
+      const [ok] = (await asRuntime('select mantle_owner_role() as ok')) as { ok: boolean }[];
+      expect(ok?.ok).toBe(false);
+      const broken = (await admin.unsafe(RUNTIME_LOCK_SQL)) as unknown as { detail: string }[];
+      expect(broken).toHaveLength(1);
+      expect(broken[0]?.detail).toMatch(/not the MEMBER version \(migration 0290 not applied\)/);
+      const warned: string[] = [];
+      await afterMigrations(admin, 'ok', { info: () => {}, warn: (l) => warned.push(l) });
+      expect(warned.filter((l) => /0290 not applied/.test(l))).toHaveLength(1);
+    } finally {
+      await admin.unsafe(restore);
+    }
+    const [ok] = (await asRuntime('select mantle_owner_role() as ok')) as { ok: boolean }[];
+    expect(ok?.ok).toBe(true);
+    expect(await admin.unsafe(RUNTIME_LOCK_SQL)).toEqual([]);
+  });
+
+  it('a table left with its old owner: a cascade as mantle_owner still reads past the row rules', async () => {
+    // What a busy table left behind (ownTables) meets: the triggers a
+    // cascade fires run as mantle_owner, which does not own this table.
+    // BYPASSRLS on the owner: it reads what it read as the superuser.
+    const [before] = await admin<{ n: number; rls: boolean }[]>`
+      select (select count(*)::int from public.spaces) as n,
+             (select relrowsecurity from pg_class where oid = 'public.spaces'::regclass) as rls`;
+    expect(before?.rls).toBe(true);
+    expect(before?.n).toBeGreaterThan(0);
+    await admin.unsafe(`ALTER TABLE public.spaces OWNER TO postgres`);
+    try {
+      await admin.unsafe(`GRANT ALL ON public.spaces TO ${OWNER_ROLE}`);
+      const seen = await admin.begin(async (tx) => {
+        await tx.unsafe(`set local role ${OWNER_ROLE}`);
+        const [r] = await tx<{ n: number }[]>`select count(*)::int as n from public.spaces`;
+        return r?.n;
+      });
+      expect(seen).toBe(before?.n);
+      // The runtime role, logged in as itself, gains nothing by it: it
+      // cannot become the owner, holds none of its rights (the heads key,
+      // which the owner may read), and BYPASSRLS is never inherited.
+      for (const stmt of [
+        `SET ROLE ${OWNER_ROLE}`,
+        'select * from public.mantle_heads_key',
+        `SET LOCAL ROLE ${SYSTEM_ROLE}; SET LOCAL ROLE ${OWNER_ROLE}`,
+        `SET LOCAL ROLE ${SYSTEM_ROLE}; select count(*) from public.spaces`,
+      ]) {
+        await expect(asRuntime(stmt), stmt).rejects.toMatchObject({ code: DENIED });
+      }
+      const [rights] = await admin<{ usage: boolean; set: boolean; key: boolean }[]>`
+        select pg_has_role(${RUNTIME_ROLE}, ${OWNER_ROLE}, 'USAGE') as usage,
+               pg_has_role(${RUNTIME_ROLE}, ${OWNER_ROLE}, 'SET') as set,
+               has_table_privilege(${RUNTIME_ROLE}, 'public.mantle_heads_key', 'SELECT') as key`;
+      expect(rights).toEqual({ usage: false, set: false, key: false });
+    } finally {
+      expect((await ownTables(admin)).owned).toEqual(['spaces']);
+    }
+    expect(await admin.unsafe(RUNTIME_LOCK_SQL)).toEqual([]);
   });
 
   it('migrate makes a missing or changed marker again, and the write guards work', async () => {

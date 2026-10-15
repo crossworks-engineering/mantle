@@ -45,6 +45,7 @@ describe('the runtime role statements', () => {
       'BYPASSRLS',
       'NOCREATEDB',
       'NOCREATEROLE',
+      'NOINHERIT',
       'NOREPLICATION',
     ]) {
       expect(r).toContain(attr);
@@ -52,14 +53,17 @@ describe('the runtime role statements', () => {
     expect(r).toContain(`PASSWORD 'pw_1-x'`);
   });
 
-  it('the owner and the marker never log in and bypass nothing', () => {
+  it('the owner and mantle_system never log in; only the owner bypasses the row rules', () => {
     for (const name of [OWNER_ROLE, SYSTEM_ROLE]) {
       const r = role(name);
       expect(r).toContain('NOLOGIN');
       expect(r).toContain('NOSUPERUSER');
-      expect(r).toContain('NOBYPASSRLS');
+      expect(r).toContain('NOINHERIT');
       expect(r).toContain('PASSWORD NULL');
     }
+    // A foreign key's cascade runs as the owner, as it ran as the superuser.
+    expect(role(OWNER_ROLE)).toMatch(/ BYPASSRLS /);
+    expect(role(SYSTEM_ROLE)).toContain('NOBYPASSRLS');
   });
 
   it('no password: the runtime role exists without a login; an existing role is altered', () => {
