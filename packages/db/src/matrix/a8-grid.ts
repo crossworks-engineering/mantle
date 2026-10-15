@@ -82,6 +82,8 @@ const CONTENT: Readonly<Record<string, { table: string; column: string }>> = {
 
 export type A8Item = {
   id: string;
+  /** Its title (a public link's view names the item by it). */
+  title: string;
   /** Its folder (placement folder), else null. */
   folder: string | null;
   /** Where a new item of the kind is made beside it (create). */
@@ -298,6 +300,7 @@ export async function makeA8Item(
   const snapshotOf = placement === 'snapshot' ? (copyOf ?? fx.items[kind]?.root?.id) : undefined;
   const id = randomUUID();
   const token = `zq${randomUUID().replace(/-/g, '').slice(0, 12)}`;
+  const title = `${fx.tag} ${kind} ${placement} ${id.slice(0, 8)}`;
   const data = { rank: 'a0', ...(snapshotOf ? { snapshot_of: snapshotOf } : {}) };
   const O = fx.owner;
   await sql.begin(async (tx) => {
@@ -306,7 +309,7 @@ export async function makeA8Item(
     }
     await tx`select mantle_lock_heads(array[${parent}]::uuid[], 'share')`;
     await tx`insert into nodes (id, owner_id, type, title, path, data)
-             values (${id}, ${O}, ${kind}, ${`${fx.tag} ${kind} ${placement}`}, ${path}::ltree,
+             values (${id}, ${O}, ${kind}, ${title}, ${path}::ltree,
                      ${sql.json(data)})`;
   });
   if (placement === 'root') await grantByHand(sql, fx, id);
@@ -333,7 +336,7 @@ export async function makeA8Item(
                values (${`${fx.tag}-${randomUUID()}`}, ${O}, ${id}, ${kind})`;
     }
   });
-  return { id, token, folder: placement === 'folder' ? f.id : null, parent, parentPath };
+  return { id, title, token, folder: placement === 'folder' ? f.id : null, parent, parentPath };
 }
 
 // ── cells ───────────────────────────────────────────────────────────────────
@@ -712,7 +715,12 @@ function landingId(fx: A8Fixture, c: A8Cell, lands: string | undefined): string 
 }
 
 /** Whether an allowed write made the change its action names. */
-export function effectMade(fx: A8Fixture, c: A8Cell, want: GuideAnswer, state: string): string | null {
+export function effectMade(
+  fx: A8Fixture,
+  c: A8Cell,
+  want: GuideAnswer,
+  state: string,
+): string | null {
   if (c.action === 'delete') return state === 'gone' ? null : 'not deleted';
   const p = JSON.parse(state) as { home: string; read: string[]; write: string[] };
   switch (c.action) {

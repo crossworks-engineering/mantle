@@ -595,12 +595,12 @@ describe.skipIf(!DB_URL)('A8 surface cells: every way in gives the oracle’s an
     out: Outcome,
     before: string,
     after: string,
-    id: string,
+    item: { id: string; title: string },
   ): string | null => {
     const generic = out.thrown || (out.status ?? 0) >= 500 || (!out.ok && GENERIC.test(out.text));
     if (generic) return `a crash, not a deny: ${out.status ?? ''} ${out.text.slice(0, 160)}`;
     if (cell.action === 'read') {
-      const seen = out.ok && out.text.includes(id);
+      const seen = out.ok && (out.text.includes(item.id) || out.text.includes(item.title));
       if (want.allow && !seen)
         return `not read, the oracle allows: ${out.status ?? ''} ${out.text.slice(0, 160)}`;
       if (!want.allow && out.ok) return `read, the oracle denies: ${out.text.slice(0, 100)}`;
@@ -673,7 +673,7 @@ describe.skipIf(!DB_URL)('A8 surface cells: every way in gives the oracle’s an
         const after = await probe();
         const name = `${e.surface} ${g.cellName(c)}`;
         const why =
-          judge(c, want, out, before, after, item.id) ??
+          judge(c, want, out, before, after, item) ??
           (misses.length ? `actor miss: ${JSON.stringify(misses).slice(0, 160)}` : null);
         if (why) failures.set(name, why);
         else pass++;
