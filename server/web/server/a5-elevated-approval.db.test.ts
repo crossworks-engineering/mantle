@@ -283,6 +283,27 @@ describe.skipIf(!URL)('the approval of an elevated pending call (A5 step 6d fix 
     });
   }
 
+  it('who may reject it (A5 step 6c, L3): whoever may approve it, and its asker; nobody else', async () => {
+    const { rejectPendingCall } = t;
+    const reject = (login: string, id: string) =>
+      m.runAsActor(m.loginActor(login, login === owner ? 'owner' : 'rw'), () =>
+        rejectPendingCall(owner, id, login),
+      );
+    // An Admin user with write rights on the connector there: rejected.
+    const byMod = await queue();
+    expect(await reject(mod, byMod)).toMatchObject({ status: 'rejected' });
+    expect((await statusOf(byMod)).s).toBe('rejected');
+    // An Admin user without them: not found, still pending.
+    const byOther = await queue();
+    expect(await reject(other, byOther)).toBeNull();
+    expect((await statusOf(byOther)).s).toBe('pending');
+    // Its asker withdraws its own call; the owner rejects any.
+    const byAsker = await queue();
+    expect(await reject(asker, byAsker)).toMatchObject({ status: 'rejected' });
+    expect(await reject(owner, byOther)).toMatchObject({ status: 'rejected' });
+    expect(h.remote).toEqual([]);
+  });
+
   it("a call that is not elevated keeps main's rule: its asker approves its own", async () => {
     const id = (
       await x<{ id: string }>(sql`insert into pending_tool_calls
