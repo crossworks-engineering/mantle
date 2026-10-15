@@ -14,11 +14,11 @@
  * its workspaces hold), and a named workspace narrows it further to what
  * that workspace reads (nodeReadByWorkspace). The client keeps the pick; the
  * brain holds none. The site name is the brain's brand, the anchor's
- * preference, which no login's scope reads: it is read by the named door
- * ('owner-preferences'), the brand only, as GET /api/shell answers the same
- * site name to every login.
+ * preference: every login's scope reads the brain's profile row (the
+ * own-login rule, 0266), as GET /api/shell answers the same site name to
+ * every login.
  */
-import { asSystem, withViewer } from '@mantle/db';
+import { withViewer } from '@mantle/db';
 import {
   libraryCounts,
   listLibrary,
@@ -59,7 +59,7 @@ export async function workspaceHome(
   who: LandingCaller,
   ws: string | null,
 ): Promise<WorkspaceHomeData<HubData>> {
-  const prefs = await asSystem(() => loadProfilePreferences(who.anchorId), 'owner-preferences');
+  const prefs = await loadProfilePreferences(who.anchorId);
   return withViewer({ login: who.loginId }, async () => {
     const appId = ws ? await workspaceLandingAppId(who.anchorId, ws) : null;
     const [homeApp, pages, counts, apps] = await Promise.all([

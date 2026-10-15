@@ -58,40 +58,23 @@ import { and, eq, sql } from 'drizzle-orm';
 import { InputError } from '@mantle/std';
 import { APP_OPENS_MAX } from '@mantle/client-types/app-nav';
 import { profileFlag } from '@mantle/client-types/profile-flags';
-import {
-  asSystem,
-  currentWorkspaceScope,
-  db,
-  profiles,
-  resolveSingleOwnerId,
-  scopeHoldsAdmin,
-  type ConversationChannel,
-} from '@mantle/db';
+import { db, profiles, resolveSingleOwnerId, type ConversationChannel } from '@mantle/db';
 
 /** Read prefs jsonb and project to typed shape. Missing keys fall
  *  back to DEFAULT_PREFERENCES. Auto-creates the profile row on
  *  first access. */
 export async function loadProfilePreferences(userId: string): Promise<ProfilePreferences> {
-  const read = () =>
-    db
-      .select({ preferences: profiles.preferences })
-      .from(profiles)
-      .where(eq(profiles.userId, userId))
-      .limit(1);
-  // A profile row is its own login's (the workspace role's own-login rule).
-  // The Admin assistant answering another Admin user (W7a) still works with
-  // the brain owner's preferences (time zone, purpose, house style), as it
-  // did on the system pool: read by the named reason in a scope that holds
-  // Admin, for the brain owner's (the anchor login's) row only (W7a fix
-  // round 1, L2): never another user's.
-  const scope = currentWorkspaceScope();
-  const [row] =
-    scope &&
-    scope.loginId !== userId &&
-    userId === (await resolveSingleOwnerId()) &&
-    (await scopeHoldsAdmin())
-      ? await asSystem(read, 'owner-preferences')
-      : await read();
+  // A profile row is its own login's, the brain's (the anchor's: time
+  // zone, site name, house style) or, in a scope that holds Admin, any
+  // login's: the workspace role's own-login rule (0266) shows exactly those,
+  // so every read is in the caller's scope (A6b: the Admin assistant
+  // answering another Admin user reads the anchor's row there, where it
+  // left for the system pool before, 'owner-preferences').
+  const [row] = await db
+    .select({ preferences: profiles.preferences })
+    .from(profiles)
+    .where(eq(profiles.userId, userId))
+    .limit(1);
   if (!row) {
     // First time we've touched this user — insert with defaults so
     // future updates have a row to UPDATE. Best-effort; if another

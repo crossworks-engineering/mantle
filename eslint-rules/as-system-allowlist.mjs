@@ -41,7 +41,6 @@ export const AS_SYSTEM_PINS = {
   'packages/content/src/app-table-exports.ts': { count: 1, why: ['client-sourced-mark'] },
   'packages/content/src/contact-share-codes.ts': { count: 1, why: ['contact-sharing'] },
   'packages/content/src/login-notices.ts': { count: 1, why: ['login-notice'] },
-  'packages/content/src/profile-preferences.ts': { count: 1, why: ['owner-preferences'] },
   'packages/content/src/tables/shared.ts': { count: 1, why: ['export-link'] },
   'packages/files/src/ops/files.ts': { count: 2, why: ['kind-root', 'name-taken'] },
   'packages/files/src/ops/shared.ts': { count: 1, why: ['kind-root'] },
@@ -81,7 +80,6 @@ export const AS_SYSTEM_PINS = {
   // A6 round 2: the grants panel reads in the caller's scope; the page
   // refold after a change is its one exit (pageRefoldSystem).
   'server/web/lib/grants.ts': { count: 1, why: ['page-refold'] },
-  'server/web/lib/landing.ts': { count: 1, why: ['owner-preferences'] },
   'server/web/lib/snapshot-copies.ts': { count: 1, why: ['snapshot-copies'] },
   // A6 round 2: the workspace screens read in the caller's scope; a login's
   // own workspace change writes through one door (workspaceWriteSystem).
