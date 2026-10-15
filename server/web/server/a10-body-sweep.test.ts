@@ -226,6 +226,15 @@ function chunked(bytes: number): ReadableStream<Uint8Array> {
   });
 }
 
+/** The jackdaw tag this build is paired with (client-pair.tag at the repo
+ *  root, read by lib/updates.ts) moves with every pair bump; POST
+ *  /api/updates/check names it. The sweep holds the answer's shape, not the
+ *  pair of the day, so the tag is stood in by a fixed placeholder (a null tag
+ *  stays null, and still differs from the record). */
+const PAIRED_TAG = /"pairedTag":"v\d+\.\d+\.\d+[^"]*"/g;
+const pairedTagStandIn = (answer: string) =>
+  answer.replace(PAIRED_TAG, '"pairedTag":"<client-pair.tag>"');
+
 /** The one 400 a body that is not JSON answers (lib/read-body.ts). */
 const BAD_JSON = '400 application/json {"error":"invalid JSON"}';
 
@@ -418,7 +427,7 @@ describe.skipIf(!hasManifest)('A10 part 2 fold 1: every write route reads its bo
       const text = await res.text();
       parts.push(text.length > 400 ? `${text.slice(0, 400)}…(${text.length})` : text);
     }
-    return parts.join(' ');
+    return pairedTagStandIn(parts.join(' '));
   }
 
   /** The valid bodies: found at the read (record mode), else as kept. */
