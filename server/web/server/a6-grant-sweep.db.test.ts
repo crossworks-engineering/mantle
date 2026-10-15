@@ -188,11 +188,15 @@ describe.skipIf(!URL)('the A6 grant sweep', () => {
                            values (${nid}, ${ws}, ${write})
                            on conflict (node_id, workspace_id) do update set write = excluded.write`);
     });
+  /** The item's grant rows, ordered by their workspace's name here (the
+   *  Admin and private ids differ on every run). */
   const grantRows = async (nid: string) =>
-    x<{ ws: string; write: boolean; home: boolean; via: string | null; excluded: boolean }>(
-      sql`select workspace_id::text as ws, write, is_home as home, via_folder_id::text as via, excluded
-            from item_grants where node_id = ${nid} order by workspace_id`,
-    );
+    (
+      await x<{ ws: string; write: boolean; home: boolean; via: string | null; excluded: boolean }>(
+        sql`select workspace_id::text as ws, write, is_home as home, via_folder_id::text as via, excluded
+              from item_grants where node_id = ${nid}`,
+      )
+    ).sort((a, b) => ((names.get(a.ws) ?? a.ws) < (names.get(b.ws) ?? b.ws) ? -1 : 1));
   const green = JSON.stringify({
     storageKey: 'apps/x.js',
     sha256: 'x',
