@@ -49,13 +49,15 @@ const CreateBody = AppMetaFields.extend({
 });
 
 export async function POST(req: Request) {
-  const user = ownerCaller();
+  // The owner and whether the login is an Admin user: the gate's answer for
+  // this request (it read the login's row; A6b: read again on the system
+  // pool before).
+  const caller = ownerCallerWithLogin();
+  const user = caller.user;
   const body = await readBody(req, CreateBody);
   // A member's or a client's app (W6b fix round 1, M2): at team rules (the
   // author ceiling) and its author named, as the member app tools make it.
-  // Whether the login is an Admin user: the gate's answer for this request
-  // (it read the login's row; A6b: read again on the system pool before).
-  const admin = ownerCallerWithLogin().kind === 'admin';
+  const admin = caller.kind === 'admin';
   const app = await createApp(user.id, {
     title: body.name,
     ...body,

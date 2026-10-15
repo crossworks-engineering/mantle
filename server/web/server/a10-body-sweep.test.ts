@@ -139,17 +139,25 @@ vi.mock('@mantle/db', async (importOriginal) => {
     get: (t, k) => {
       if (k === 'select') return () => none;
       if (k === 'execute') {
-        return async () => [
-          {
-            id: '11111111-1111-4111-8111-111111111111',
-            type: 'page',
-            edit: true,
-            manage: true,
-            copy: false,
-            home: null,
-            held: false,
-          },
-        ];
+        return async (stmt: { queryChunks?: unknown[] }) => {
+          // The files root's id by its definer (A6b: mantle_kind_root_id)
+          // was read on the system pool on main, which wants a database
+          // here: it throws as that read did.
+          if (JSON.stringify(stmt?.queryChunks ?? []).includes('mantle_kind_root_id')) {
+            throw new Error('DATABASE_URL must be set');
+          }
+          return [
+            {
+              id: '11111111-1111-4111-8111-111111111111',
+              type: 'page',
+              edit: true,
+              manage: true,
+              copy: false,
+              home: null,
+              held: false,
+            },
+          ];
+        };
       }
       return Reflect.get(t, k);
     },

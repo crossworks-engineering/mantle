@@ -56,7 +56,10 @@ const PatchBody = z.object({
 });
 
 export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const user = ownerCaller();
+  // The owner and the login's kind: the gate's answer for this request (A6b:
+  // the login's row was read again on the system pool before).
+  const caller = ownerCallerWithLogin();
+  const user = caller.user;
   const { id } = await ctx.params;
   const body = await readBody(req, PatchBody);
   const { name, trustTools, ...rest } = body;
@@ -65,9 +68,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   // author ceiling, its MCP access or the informational flag.
   if (
     (trustTools !== undefined || rest.mcpAccess !== undefined || rest.dataReadOnly !== undefined) &&
-    // The gate's answer for this request (A6b: the login's row was read
-    // again on the system pool before).
-    ownerCallerWithLogin().kind !== 'admin'
+    caller.kind !== 'admin'
   ) {
     return NextResponse.json(
       {

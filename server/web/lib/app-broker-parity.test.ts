@@ -131,6 +131,15 @@ vi.mock('@mantle/db', async (importOriginal) => {
       },
     ],
   };
+  // The reads by their definers (A6b), answered from the same rows: the
+  // connector's state from the group row; an app's holders as the group
+  // row answered them on main (none).
+  const execute = async (stmt: { queryChunks?: unknown[] }) => {
+    const text = JSON.stringify(stmt.queryChunks ?? []);
+    if (text.includes('mantle_connector_state')) return [{ slug: 'conn', usable: true }];
+    if (text.includes('mantle_app_holders')) return [{ holders: null }];
+    throw new Error(`unexpected statement in the parity mock: ${text.slice(0, 200)}`);
+  };
   /** The scope withViewer enters, and the actor it binds (scopeActor). */
   const viewerScope = (actsFor: Record<string, unknown>) => {
     if ('link' in actsFor) return { kind: 'link', loginId: null, ws: [], modWs: [] };
@@ -141,7 +150,7 @@ vi.mock('@mantle/db', async (importOriginal) => {
   };
   return {
     ...real,
-    db: chain,
+    db: { ...chain, execute },
     withViewer: async (actsFor: Record<string, unknown>, fn: () => Promise<unknown>) => {
       h.viewers.push(actsFor);
       const prev = h.scope;

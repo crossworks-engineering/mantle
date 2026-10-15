@@ -39,6 +39,7 @@ vi.mock('@mantle/db', () => {
         ),
     },
     asSystem: (fn: () => Promise<unknown>) => fn(),
+    systemWork: (fn: () => Promise<unknown>) => fn(),
     executeWrite: async () => {},
     loginHasArea: async (login: string) => {
       h.asked.push(login);

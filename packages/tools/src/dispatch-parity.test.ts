@@ -110,7 +110,14 @@ vi.mock('@mantle/db', async (importOriginal) => {
       },
     ],
   };
-  return { ...(await importOriginal<Record<string, unknown>>()), db: chain };
+  // The connector's state by its definer (A6b: mantle_connector_state):
+  // the same fixture row, as its state.
+  const execute = async (stmt: { queryChunks?: unknown[] }) => {
+    const text = JSON.stringify(stmt.queryChunks ?? []);
+    if (text.includes('mantle_connector_state')) return [{ slug: 'conn', usable: true }];
+    throw new Error(`unexpected statement in the parity mock: ${text.slice(0, 200)}`);
+  };
+  return { ...(await importOriginal<Record<string, unknown>>()), db: { ...chain, execute } };
 });
 vi.mock('@mantle/api-keys', () => ({ getApiKey: async () => null }));
 vi.mock('./preconditions', async (importOriginal) => ({

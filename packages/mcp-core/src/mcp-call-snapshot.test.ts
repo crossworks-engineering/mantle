@@ -109,8 +109,17 @@ vi.mock('../../db/src/client', async (importOriginal) => {
       Promise.resolve(rowsFor(table)).then(ok, bad);
     return q;
   };
+  // A read by its definer (A6b): the connector's state from the same row.
+  const execute = async (stmt: { queryChunks?: unknown[] }) => {
+    const text = JSON.stringify(stmt.queryChunks ?? []);
+    if (text.includes('mantle_connector_state')) {
+      return [{ id: 'g1', slug: 'mcp-crm', usable: true }];
+    }
+    throw new Error(`unexpected statement in the snapshot mock: ${text.slice(0, 200)}`);
+  };
   const fakeDb = {
     select: () => chain(),
+    execute,
     insert: (t: unknown) => ({
       values: (values: unknown) => {
         st.inserts.push({ table: nameOf(t), values });

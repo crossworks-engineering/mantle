@@ -36,7 +36,13 @@ vi.mock('@mantle/db', async (importOriginal) => {
     then: (res: (v: unknown) => void, rej?: (e: unknown) => void) =>
       Promise.resolve(selectQueue.shift() ?? []).then(res, rej),
   };
-  const fake = { ...actual.db, select: vi.fn(() => chain) };
+  // A read by a definer (A6b: mantle_tg_replay) passes the owner as an
+  // argument: its statement is captured like a WHERE clause.
+  const execute = vi.fn(async (stmt: unknown) => {
+    whereArgs.push(stmt);
+    return [];
+  });
+  const fake = { ...actual.db, select: vi.fn(() => chain), execute };
   return { ...actual, db: fake, systemDb: fake };
 });
 
