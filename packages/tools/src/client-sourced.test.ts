@@ -16,25 +16,27 @@ const h = vi.hoisted(() => ({
 }));
 vi.mock('@mantle/db', async (importOriginal) => {
   const actual = await importOriginal<Record<string, unknown>>();
-  const chain = {
-    from: () => chain,
-    innerJoin: () => chain,
-    leftJoin: () => chain,
-    where: () => chain,
-    limit: async () => {
+  // The check and the mark by their definers (A6b, 0293): one question per
+  // batch of ids (mantle_client_sourced_any), the mark kept by its own.
+  const execute = async (stmt: { queryChunks?: unknown[] }) => {
+    const text = JSON.stringify(stmt.queryChunks ?? []);
+    if (text.includes('mantle_client_sourced_any')) {
       h.queries++;
       if (h.throws) throw new Error('db down');
-      return h.hit || h.queries === h.hitOnQuery ? [{ id: 'x' }] : [];
-    },
+      return [{ hit: h.hit || h.queries === h.hitOnQuery }];
+    }
+    if (text.includes('mantle_conversation_taint_keep')) {
+      // The bound values: the chunks that are not the statement's text.
+      const [ownerId, conversationKey, via] = (stmt.queryChunks ?? []).filter(
+        (c) => typeof c !== 'object' || c === null,
+      );
+      h.kept.push({ ownerId, conversationKey, via });
+      return [];
+    }
+    if (text.includes('mantle_conversation_taint')) return [{ via: null }];
+    throw new Error(`unexpected statement: ${text.slice(0, 200)}`);
   };
-  const insert = () => ({
-    values: (row: Record<string, unknown>) => ({
-      onConflictDoUpdate: async () => {
-        h.kept.push(row);
-      },
-    }),
-  });
-  return { ...actual, db: { select: () => chain, insert } };
+  return { ...actual, db: { execute } };
 });
 
 import {
@@ -105,18 +107,18 @@ describe('namesClientSourced checks every id, in batches (L8)', () => {
     { length: ID_BATCH * 2 + 5 },
     (_, i) => `00000000-0000-4000-8000-${String(i).padStart(12, '0')}`,
   );
-  it('asks every batch: five questions each, three batches', async () => {
+  it('asks every batch: one question each (its definer, A6b), three batches', async () => {
     h.hit = false;
     h.throws = false;
     h.queries = 0;
     h.hitOnQuery = 0;
     expect(await namesClientSourced('o', ids)).toBe(false);
-    expect(h.queries).toBe(15);
+    expect(h.queries).toBe(3);
   });
   it('a client request in the LAST batch is found', async () => {
     h.queries = 0;
-    // Query 11 is the first question of the third batch (ids past 2000).
-    h.hitOnQuery = 11;
+    // Query 3 is the third batch's question (ids past 2000).
+    h.hitOnQuery = 3;
     expect(await namesClientSourced('o', ids)).toBe(true);
     h.hitOnQuery = 0;
   });
