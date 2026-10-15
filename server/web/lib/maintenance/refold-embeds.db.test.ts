@@ -23,7 +23,7 @@
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run server/web/lib/maintenance/refold-embeds.db.test.ts
  */
 import { randomUUID } from 'node:crypto';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, onTestFinished } from 'vitest';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -118,12 +118,7 @@ describe.skipIf(!URL)('W2: a page without its embed finds none of its words', ()
     m = await import('@mantle/db');
     refold = await import('./refold-embeds');
     const { ensureTestAnchor } = await import('@mantle/db/test-support');
-    // The superuser: the fixture starts pg-boss, grants and sets roles (the
-    // app's pool may log in as the runtime role, arch A9).
-    admin = (await import('postgres')).default(URL!, {
-      max: 3,
-      onnotice: () => {},
-    }) as unknown as Admin;
+    admin = (m.systemDb as unknown as { $client: Admin }).$client;
     await m.ensureViewerRoles(admin, process.env.MANTLE_MASTER_KEY);
     anchor = await ensureTestAnchor(admin);
     await admin`insert into auth.users (id, email, password_hash, role)
@@ -198,7 +193,6 @@ describe.skipIf(!URL)('W2: a page without its embed finds none of its words', ()
     await admin`delete from spaces where login_id = ${member}`;
     await admin`delete from auth.users where id = ${member}`;
     await m?.closeDb();
-    await (admin as unknown as { end?: () => Promise<void> } | undefined)?.end?.();
   });
 
   // The control: the old rows hold the embed's words in every derived store
@@ -361,6 +355,11 @@ describe.skipIf(!URL)('W2: a page without its embed finds none of its words', ()
   });
 
   it('no limited role reads node_mixed_summaries', async () => {
+    // As the superuser, which may become each role and grant (the app's pool
+    // may log in as the runtime role, arch A9).
+    const { superuserClient } = await import('@mantle/db/test-support');
+    const admin = superuserClient(URL!) as unknown as Admin;
+    onTestFinished(() => (admin as unknown as { end: () => Promise<void> }).end());
     for (const role of [
       'mantle_view_team',
       'mantle_view_client',
