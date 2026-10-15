@@ -20,6 +20,12 @@ const h = vi.hoisted(() => ({
   ran: new Set<string>(),
 }));
 
+// No database here: the Moderator seat a turn holds is not taken away
+// (moderator-seat.ts reads it; a8-findings.db.test.ts takes one away).
+vi.mock('./moderator-seat', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./moderator-seat')>()),
+  moderatorSeatLost: async () => false,
+}));
 vi.mock('../../db/src/viewer', async (importOriginal) => {
   const real = await importOriginal<typeof import('../../db/src/viewer')>();
   return {

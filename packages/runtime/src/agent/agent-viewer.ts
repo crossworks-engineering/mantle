@@ -425,7 +425,8 @@ export async function withAgentScope<T>(
   // It writes for its user with that user's rights, in its own workspace
   // only (plan v2 4.2, the A8 finding F2): the scope is this one workspace,
   // and the user's Moderator seat there, never a seat elsewhere. With no
-  // user it only reads (turnScopeWrites).
+  // user it only reads (turnScopeWrites). The seat is read again before
+  // each write call (@mantle/tools moderator-seat.ts, fix round 1, L5).
   const scope = { kind: 'assistant' as const, loginId, ws: [wsId], modWs };
   return withTurnScope(scope, fn, { writes: turnScopeWrites(scope, false) });
 }
@@ -495,7 +496,9 @@ export function surfaceLoginId(surface: unknown): string | null {
  * login_id, stamped at write; NULL = Admin). A worker calls this before its
  * first query for the run: the Admin workspace in a turn scope of Admin
  * (W7a; the run's login, else the owner), any other workspace in a turn
- * scope of it, read only unless the run's login moderates there. A run with
+ * scope of it that writes with the run's login's rights there (its seat and
+ * grants in that workspace; turnScopeWrites, the A8 finding F2) and only
+ * reads when the run names no login. A run with
  * no workspace is the Admin assistant's (NULL = Admin): the brain's Admin
  * workspace. MANTLE_ADMIN_READS=system, or a brain not on workspaces: the
  * system pool, as before.

@@ -5,7 +5,10 @@
  * after the Admin step and before the create home: a refused call never
  * makes a private workspace (owner decision, A3c audit).
  *
- *  - `item-precheck`: a built-in's declared preconditions (a uniform
+ *  - `item-precheck`: first, for a write call of a turn or a run item in
+ *    an assistant turn scope that holds a Moderator seat, the seat read
+ *    again (moderator-seat.ts, A8 fix
+ *    round 1, L5); then a built-in's declared preconditions (a uniform
  *    teaching error for an id that names a missing or wrong-type node),
  *    then the items its write names (toolItemWriteRefusal: the item
  *    routes' rule), in that order, as dispatch asked them before step 3a.
@@ -31,6 +34,7 @@ import { editCheckRefusalError, errorMessage } from '@mantle/std';
 import { checkToolPreconditions } from './preconditions';
 import { builtinItems, createFolderRefusal, toolItemWriteRefusalOf } from './item-write-gate';
 import { keySharedContentRefusal } from './key-shared-content';
+import { MODERATOR_SEAT_CHANGED, moderatorSeatLost } from './moderator-seat';
 import { tableBuiltin } from './tool-policy';
 import type { ToolHandlerContext } from './types';
 
@@ -45,6 +49,9 @@ export type PreRunContext = Readonly<{
    *  edit check refuses is the database's, as before it ran through
    *  dispatch, never the pre-check's words as a 400. */
   entry?: 'api-v1';
+  /** A turn's or a run item's call (dispatch): a write asks its Moderator
+   *  seat again first (moderator-seat.ts, A8 fix round 1, L5). */
+  seat?: true;
   /** Asked before a call is queued for approval (turnCallRefusal, A5 step
    *  6a, carried round-2 LOW-1): a reference by slug or path that names
    *  nothing the queuing scope reads is refused, never queued. */
@@ -71,10 +78,15 @@ function builtinOf(ref: PolicyRef): { handler: string; slug: string } | null {
 }
 
 /** A builtin's preconditions, then the items its write names. */
-export const itemPrecheck: PreRunCheck = async (caller, _policy, ref, call) => {
+export const itemPrecheck: PreRunCheck = async (caller, policy, ref, call) => {
+  const ctx = contextOf(call.context);
+  // A turn's write whose Moderator seat was taken away since the turn began
+  // (L5): refused, never written with the seat the scope still carries.
+  if (ctx?.seat && !ctx.queue && policy.effect === 'write' && (await moderatorSeatLost())) {
+    return MODERATOR_SEAT_CHANGED;
+  }
   const builtin = builtinOf(ref);
   if (!builtin) return null;
-  const ctx = contextOf(call.context);
   // No owner, no check: dispatch always names one.
   if (!ctx) return null;
   const input = call.args ?? {};

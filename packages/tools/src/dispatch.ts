@@ -233,6 +233,12 @@ function brokerVerdictFor(caller: ToolCaller, tool: Tool): AppBrokerVerdict {
   return Object.freeze({ ok: false, status: 403, reason: APP_VERDICT_MISSING_ERROR });
 }
 
+/** A turn's or a run item's call asks its Moderator seat again before a
+ *  write (gate-prerun.ts, the A8 fix round 1, L5). */
+function seatContext(caller: ToolCaller): { seat?: true } {
+  return caller.entry === 'turn' || caller.entry === 'run' ? { seat: true } : {};
+}
+
 /** The entries whose call's text goes to a model (and from it to a
  *  person): an assistant turn, a run item, an approved pending call. */
 const MODEL_ENTRIES: ReadonlySet<ToolCaller['entry']> = new Set(['turn', 'run', 'pending']);
@@ -342,6 +348,7 @@ async function dispatchGated(
             // A /api/v1 route answers an item refusal as the database's
             // (gate-prerun.ts, A5 step 4 fix round 2).
             ...(caller.entry === 'api-v1' ? { entry: 'api-v1' } : {}),
+            ...seatContext(caller),
           },
         },
       );
@@ -379,7 +386,14 @@ async function dispatchGated(
     },
     // The call's arguments, for the surface's own check (an MCP connector
     // row's, A5 step 4); the registered pre-run checks read no runtime row.
-    { args, context: { ownerId: ctx.ownerId, ...(ctx.surface ? { surface: ctx.surface } : {}) } },
+    {
+      args,
+      context: {
+        ownerId: ctx.ownerId,
+        ...(ctx.surface ? { surface: ctx.surface } : {}),
+        ...seatContext(caller),
+      },
+    },
   );
   if (thrown) throw (thrown as { err: unknown }).err;
   if (!res.ok) {
