@@ -91,10 +91,7 @@ export async function rejectElevatedPendingCall(
  *  what a pending call asked by a turn that answered no login (a workspace
  *  assistant's heartbeat) still reads at approval. Only names: it grants
  *  nothing. */
-export async function liveWorkspaceIds(
-  ownerId: string,
-  ids: readonly string[],
-): Promise<string[]> {
+export async function liveWorkspaceIds(ownerId: string, ids: readonly string[]): Promise<string[]> {
   if (ids.length === 0) return [];
   const rows = await systemDb
     .select({ id: workspaces.id })
