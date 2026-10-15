@@ -65,7 +65,10 @@ export const RUNTIME_ERROR_PUBLIC =
  * a wrapper that repeats one (a recipe step's "failed: ...") is caught too.
  */
 const RUNTIME_FAULT_RES: readonly RegExp[] = [
-  /\b(?:withSystemTx|runInSystemTx|runInWorkspaceTx|runInViewerScope|runInTurnScope|withTurnScope|withViewer|withScope|enterRequestScope|executeWrite):/,
+  // The guards' own prefix ("withSystemTx: ...", "runInTurnScope: ...",
+  // "withViewer: ...", "enterRequestScope: ..."), by its shape.
+  /\b(?:with|runIn|enter)[A-Z][A-Za-z]*(?:Tx|Scope|Viewer):/,
+  /\bexecuteWrite:/,
   /A scoped query ran outside its turn scope/,
   /\bSQLSTATE\b/,
   /DrizzleQueryError|drizzle-orm/,

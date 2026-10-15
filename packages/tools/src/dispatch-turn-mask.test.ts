@@ -69,7 +69,10 @@ const CALLS: Array<[string, Pick<ToolHandlerContext, 'surface' | 'caller'>]> = [
     { surface: { kind: 'web', loginId: 'l1' }, caller: turnCaller() },
   ],
   ['a team turn', { surface: { kind: 'team', loginId: 'l1' }, caller: turnCaller() }],
-  ['a Telegram turn', { surface: { kind: 'telegram', loginId: 'l1' }, caller: turnCaller() }],
+  [
+    'a Telegram turn',
+    { surface: { kind: 'telegram', telegramChatId: '1', loginId: 'l1' }, caller: turnCaller() },
+  ],
   ['a run item', { caller: runCaller() }],
   ['an approved pending call', { caller: pendingCaller() }],
 ];

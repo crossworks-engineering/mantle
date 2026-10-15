@@ -3,6 +3,7 @@
 # other probe of a10-rate-sweep.txt answers byte for byte as recorded.
 # one-429: 96 probes
 # one-429 (Retry-After added): 8 probes
+# a8-f1-member-on-v1: 32 probes
 # counted-before-the-route: 2 probes
 POST /api/auth/login none auth:login count (ip 10/60s) [one-429]
   main first 429 at 11; #10 401; over 429 application/json retry-after=60 cache-control=- {"error":"Too many login attempts. Try again in a minute."}
@@ -202,6 +203,102 @@ HEAD /api/files/files/:id?thumb=1 member member-thumbs count (login 60/60s membe
 HEAD /api/files/files/:id?thumb=1 member member-thumbs window [one-429]
   main 59s: 429 application/json retry-after=1 cache-control=- ; 60s: 404
   now  59s: 429 application/json retry-after=1 cache-control=no-store ; 60s: 404
+GET /api/v1/files/:id?raw=1 member member-bytes count (login 240/60s members) [a8-f1-member-on-v1]
+  main first 429 at 0; #240 403; over -
+  now  first 429 at 241; #240 404; over 429 application/json retry-after=60 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":60}
+GET /api/v1/files/:id?raw=1 member member-bytes window [a8-f1-member-on-v1]
+  main 59s: 403 application/json retry-after=- cache-control=- {"error":"forbidden","reason":"member-login","message":"Not available to member logins."}; 60s: 403
+  now  59s: 429 application/json retry-after=1 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":1}; 60s: 404
+GET /api/v1/files/:id?raw=1 member member-bytes scope [a8-f1-member-on-v1]
+  main other address 403; other login 403; other login, other address 403
+  now  other address 429; other login 404; other login, other address 404
+GET /api/v1/files/:id?raw=1 member member-bytes order: no login [a8-f1-member-on-v1]
+  main first 429 at 0; answer 401; then 403
+  now  first 429 at 0; answer 401; then 404
+GET /api/v1/files/:id?raw=1 member member-bytes order: an Admin user [a8-f1-member-on-v1]
+  main first 429 at 0; then 403
+  now  first 429 at 0; then 404
+GET /api/v1/files/:id?raw=1 member member-bytes order: no limit for '' [a8-f1-member-on-v1]
+  main first 429 at 0; then 403
+  now  first 429 at 0; then 404
+HEAD /api/v1/files/:id?raw=1 member member-bytes count (login 240/60s members) [a8-f1-member-on-v1]
+  main first 429 at 0; #240 403; over -
+  now  first 429 at 241; #240 404; over 429 application/json retry-after=60 cache-control=no-store 
+HEAD /api/v1/files/:id?raw=1 member member-bytes window [a8-f1-member-on-v1]
+  main 59s: 403 application/json retry-after=- cache-control=- ; 60s: 403
+  now  59s: 429 application/json retry-after=1 cache-control=no-store ; 60s: 404
+HEAD /api/v1/files/:id?raw=1 member member-bytes scope [a8-f1-member-on-v1]
+  main other address 403; other login 403; other login, other address 403
+  now  other address 429; other login 404; other login, other address 404
+HEAD /api/v1/files/:id?raw=1 member member-bytes order: no login [a8-f1-member-on-v1]
+  main first 429 at 0; answer 401; then 403
+  now  first 429 at 0; answer 401; then 404
+HEAD /api/v1/files/:id?raw=1 member member-bytes order: an Admin user [a8-f1-member-on-v1]
+  main first 429 at 0; then 403
+  now  first 429 at 0; then 404
+HEAD /api/v1/files/:id?raw=1 member member-bytes order: no limit for '' [a8-f1-member-on-v1]
+  main first 429 at 0; then 403
+  now  first 429 at 0; then 404
+GET /api/v1/files/:id?thumb=1 member member-thumbs count (login 60/60s members) [a8-f1-member-on-v1]
+  main first 429 at 0; #60 403; over -
+  now  first 429 at 61; #60 404; over 429 application/json retry-after=60 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":60}
+GET /api/v1/files/:id?thumb=1 member member-thumbs window [a8-f1-member-on-v1]
+  main 59s: 403 application/json retry-after=- cache-control=- {"error":"forbidden","reason":"member-login","message":"Not available to member logins."}; 60s: 403
+  now  59s: 429 application/json retry-after=1 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":1}; 60s: 404
+GET /api/v1/files/:id?thumb=1 member member-thumbs scope [a8-f1-member-on-v1]
+  main other address 403; other login 403; other login, other address 403
+  now  other address 429; other login 404; other login, other address 404
+GET /api/v1/files/:id?thumb=1 member member-thumbs order: no login [a8-f1-member-on-v1]
+  main first 429 at 0; answer 401; then 403
+  now  first 429 at 0; answer 401; then 404
+GET /api/v1/files/:id?thumb=1 member member-thumbs order: an Admin user [a8-f1-member-on-v1]
+  main first 429 at 0; then 403
+  now  first 429 at 0; then 404
+HEAD /api/v1/files/:id?thumb=1 member member-thumbs count (login 60/60s members) [a8-f1-member-on-v1]
+  main first 429 at 0; #60 403; over -
+  now  first 429 at 61; #60 404; over 429 application/json retry-after=60 cache-control=no-store 
+HEAD /api/v1/files/:id?thumb=1 member member-thumbs window [a8-f1-member-on-v1]
+  main 59s: 403 application/json retry-after=- cache-control=- ; 60s: 403
+  now  59s: 429 application/json retry-after=1 cache-control=no-store ; 60s: 404
+HEAD /api/v1/files/:id?thumb=1 member member-thumbs scope [a8-f1-member-on-v1]
+  main other address 403; other login 403; other login, other address 403
+  now  other address 429; other login 404; other login, other address 404
+HEAD /api/v1/files/:id?thumb=1 member member-thumbs order: no login [a8-f1-member-on-v1]
+  main first 429 at 0; answer 401; then 403
+  now  first 429 at 0; answer 401; then 404
+HEAD /api/v1/files/:id?thumb=1 member member-thumbs order: an Admin user [a8-f1-member-on-v1]
+  main first 429 at 0; then 403
+  now  first 429 at 0; then 404
+GET /api/v1/files/:id/download member member-bytes count (login 240/60s members) [a8-f1-member-on-v1]
+  main first 429 at 0; #240 403; over -
+  now  first 429 at 241; #240 404; over 429 application/json retry-after=60 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":60}
+GET /api/v1/files/:id/download member member-bytes window [a8-f1-member-on-v1]
+  main 59s: 403 application/json retry-after=- cache-control=- {"error":"forbidden","reason":"member-login","message":"Not available to member logins."}; 60s: 403
+  now  59s: 429 application/json retry-after=1 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":1}; 60s: 404
+GET /api/v1/files/:id/download member member-bytes scope [a8-f1-member-on-v1]
+  main other address 403; other login 403; other login, other address 403
+  now  other address 429; other login 404; other login, other address 404
+GET /api/v1/files/:id/download member member-bytes order: no login [a8-f1-member-on-v1]
+  main first 429 at 0; answer 401; then 403
+  now  first 429 at 0; answer 401; then 404
+GET /api/v1/files/:id/download member member-bytes order: an Admin user [a8-f1-member-on-v1]
+  main first 429 at 0; then 403
+  now  first 429 at 0; then 404
+HEAD /api/v1/files/:id/download member member-bytes count (login 240/60s members) [a8-f1-member-on-v1]
+  main first 429 at 0; #240 403; over -
+  now  first 429 at 241; #240 404; over 429 application/json retry-after=60 cache-control=no-store 
+HEAD /api/v1/files/:id/download member member-bytes window [a8-f1-member-on-v1]
+  main 59s: 403 application/json retry-after=- cache-control=- ; 60s: 403
+  now  59s: 429 application/json retry-after=1 cache-control=no-store ; 60s: 404
+HEAD /api/v1/files/:id/download member member-bytes scope [a8-f1-member-on-v1]
+  main other address 403; other login 403; other login, other address 403
+  now  other address 429; other login 404; other login, other address 404
+HEAD /api/v1/files/:id/download member member-bytes order: no login [a8-f1-member-on-v1]
+  main first 429 at 0; answer 401; then 403
+  now  first 429 at 0; answer 401; then 404
+HEAD /api/v1/files/:id/download member member-bytes order: an Admin user [a8-f1-member-on-v1]
+  main first 429 at 0; then 403
+  now  first 429 at 0; then 404
 GET /api/workspaces/user-search?q=sweep owner ws-user-search count (login 60/60s) [one-429 (Retry-After added)]
   main first 429 at 61; #60 200; over 429 application/json retry-after=- cache-control=- {"error":"Too many searches. Wait a minute and try again.","code":"rate_limited"}
   now  first 429 at 61; #60 200; over 429 application/json retry-after=60 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":60}

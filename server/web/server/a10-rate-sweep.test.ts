@@ -872,5 +872,18 @@ function changeKind(probe: string, main: string, now: string): string | null {
   ) {
     return 'counted-before-the-route';
   }
+  // The A8 finding F1 (owner decision a, D3): a member reaches a v1 row as
+  // its base route answers it. Main refused it there (403 member-login,
+  // before any count); now the base route's member limit counts it, and
+  // the item is the route's own answer (a 404 for the probe's id).
+  if (
+    probe.includes(' /api/v1/') &&
+    probe.includes(' member ') &&
+    main.includes(' 403') &&
+    !/ (?:2\d\d|404)\b/.test(main) &&
+    !now.includes(' 403')
+  ) {
+    return 'a8-f1-member-on-v1';
+  }
   return null;
 }

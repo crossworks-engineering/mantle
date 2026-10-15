@@ -53,7 +53,7 @@ member logins (8):
   GET /api/member/push/subscriptions
   GET /api/member/realtime
   PUT /api/member/push/preferences
-owner rows open to members (97):
+owner rows open to members (118):
   DELETE /api/apps/:id
   DELETE /api/apps/:id/draft
   DELETE /api/draws/:id
@@ -103,6 +103,19 @@ owner rows open to members (97):
   GET /api/tree/:kind/marks
   GET /api/tree/:kind/search
   GET /api/tree/:kind/tags
+  GET /api/v1/events
+  GET /api/v1/files
+  GET /api/v1/nodes/:id
+  GET /api/v1/notes
+  GET /api/v1/notes/:id
+  GET /api/v1/pages
+  GET /api/v1/pages/:id
+  GET /api/v1/search
+  GET /api/v1/tables
+  GET /api/v1/tables/:id
+  GET /api/v1/tables/:id/rows
+  GET /api/v1/tasks
+  GET /api/v1/tasks/:id
   PATCH /api/apps/:id
   PATCH /api/draws/:id
   PATCH /api/events/:id
@@ -115,6 +128,8 @@ owner rows open to members (97):
   PATCH /api/tables/:id
   PATCH /api/tasks/:id
   PATCH /api/tree/:kind/folders/:id
+  PATCH /api/v1/pages/:id
+  PATCH /api/v1/tasks/:id
   POST /api/apps
   POST /api/apps/:id/build
   POST /api/apps/:id/format
@@ -145,6 +160,12 @@ owner rows open to members (97):
   POST /api/tree/:kind/folders
   POST /api/tree/:kind/move
   POST /api/tree/items/:id/opened
+  POST /api/v1/events
+  POST /api/v1/files
+  POST /api/v1/notes
+  POST /api/v1/pages
+  POST /api/v1/tables/:id/commit
+  POST /api/v1/tasks
   PUT /api/apps/:id/draft
   PUT /api/draws/:id/draft
   PUT /api/pages/:id/draft
