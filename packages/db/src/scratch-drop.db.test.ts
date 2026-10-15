@@ -16,6 +16,18 @@ import { createEmptyScratchDatabase, pollUntil, settleDatabase } from './test-su
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
+/** Runs `fn` with console.warn silenced and returns what it was called with
+ *  (copied before the restore: mockRestore clears the recorded calls). */
+async function warnsOf(fn: () => Promise<unknown>): Promise<unknown[][]> {
+  const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+  try {
+    await fn();
+    return [...warn.mock.calls];
+  } finally {
+    warn.mockRestore();
+  }
+}
+
 describe.skipIf(!URL)('scratch drop waits for work in flight', () => {
   const active = async (admin: postgres.Sql, name: string) => {
     const [row] = await admin<{ n: number }[]>`
@@ -33,20 +45,15 @@ describe.skipIf(!URL)('scratch drop waits for work in flight', () => {
       await Promise.all([sql`select 1`.execute(), sql`select 2`.execute()]);
       const running = sql<{ n: number }[]>`select pg_sleep(0.4), 7 as n`.execute();
       await pollUntil(() => active(admin, scratch.name), { what: 'the sleep to start' });
-      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
       const t0 = Date.now();
-      try {
-        await scratch.drop();
-      } finally {
-        warn.mockRestore();
-      }
+      const warned = await warnsOf(() => scratch.drop());
       const [row] = await running;
       expect(row?.n).toBe(7);
       expect(Date.now() - t0).toBeGreaterThanOrEqual(150);
       // The leak stays visible: one warning, naming the database, the pid and
       // the start of the query it waited on.
-      expect(warn).toHaveBeenCalledTimes(1);
-      const said = String(warn.mock.calls[0]?.[0]);
+      expect(warned).toHaveLength(1);
+      const said = String(warned[0]?.[0]);
       expect(said).toContain(scratch.name);
       expect(said).toMatch(/pid \d+: select pg_sleep\(0\.4\)/);
       const [gone] = await admin<{ n: number }[]>`
@@ -73,15 +80,10 @@ describe.skipIf(!URL)('scratch drop waits for work in flight', () => {
         return (row?.n ?? 0) > 0;
       };
       await pollUntil(idleTx, { what: 'the session to sit idle in its transaction' });
-      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
       const t0 = Date.now();
-      try {
-        await settleDatabase(admin, scratch.name);
-      } finally {
-        warn.mockRestore();
-      }
+      const warned = await warnsOf(() => settleDatabase(admin, scratch.name));
       expect(Date.now() - t0).toBeLessThan(1_000);
-      expect(warn).not.toHaveBeenCalled();
+      expect(warned).toEqual([]);
       await scratch.drop();
     } finally {
       await sql.end({ timeout: 0 });
@@ -97,9 +99,13 @@ describe.skipIf(!URL)('scratch drop waits for work in flight', () => {
       const stuck = sql`select pg_sleep(30)`.execute().catch((e: unknown) => e);
       await pollUntil(() => active(admin, scratch.name), { what: 'the sleep to start' });
       const t0 = Date.now();
-      await settleDatabase(admin, scratch.name, 200);
-      expect(Date.now() - t0).toBeLessThan(5_000);
-      await scratch.drop();
+      const warned = await warnsOf(async () => {
+        await settleDatabase(admin, scratch.name, 200);
+        expect(Date.now() - t0).toBeLessThan(5_000);
+        await scratch.drop();
+      });
+      // Once per wait: this one, then drop()'s own.
+      expect(warned).toHaveLength(2);
       // The forced drop ended it: rejected, and caught above.
       expect(await stuck).toBeInstanceOf(Error);
     } finally {
