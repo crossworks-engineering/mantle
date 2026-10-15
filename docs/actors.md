@@ -4070,9 +4070,10 @@ Without it every file skips, and the run says so in a banner ("A8 MATRIX
 SKIPPED"), so a local `pnpm verify` with no test database does not read as
 a pass (CI refuses to start without it). Each file makes its own scratch
 database. On the workstation the whole run, the scratch databases
-included, takes 2 to 3 minutes with `--maxWorkers=3` (the grid's cells 10
-to 25 seconds over 4 workers, `MANTLE_MATRIX_WORKERS`; the surface cells 70
-to 120 seconds over the three check modes). CI runs it as its own step.
+included, takes 1 to 3 minutes with `--maxWorkers=3` (the grid's cells 10
+to 25 seconds over 4 workers, `MANTLE_MATRIX_WORKERS`; the surface cells 60
+to 120 seconds over the three check modes; fix round 1 took 25 seconds in
+all, with one mode and three placements). CI runs it as its own step.
 
 **The oracle** is `expectedAccess(context, role, kind, action)` in
 `packages/db/src/matrix/guide-oracle.ts`. It imports nothing: no kind
