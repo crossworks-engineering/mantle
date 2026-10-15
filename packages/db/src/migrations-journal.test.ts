@@ -97,11 +97,17 @@ describe('migrations journal', () => {
   it('no slot is skipped: a later-added lower number would never run (W7 integration fix 2)', () => {
     // migrate.ts skips an entry whose `when` is at or below the highest one
     // applied, so a gap filled later is skipped on every box that rolled
-    // past it. 0211 is the one historical gap, never to be filled.
+    // past it. 0211 is the one historical gap, never to be filled. 0290 is
+    // reserved (arch A9, the runtime role fix) and lands on main before
+    // 0291 (A6 round 2): this branch alone holds the gap until then, and no
+    // box takes 0291 without 0290 first.
     const idxs = new Set(journal.entries.map((e) => e.idx));
     const last = Math.max(...idxs);
+    const reserved = idxs.has(291) ? [290] : [];
     const gaps: number[] = [];
-    for (let i = 0; i <= last; i++) if (!idxs.has(i) && i !== 211) gaps.push(i);
+    for (let i = 0; i <= last; i++) {
+      if (!idxs.has(i) && i !== 211 && !reserved.includes(i)) gaps.push(i);
+    }
     expect(gaps).toEqual([]);
   });
 

@@ -139,6 +139,22 @@ const DEFINERS_THE_WRITE_ROLE_RUNS: Readonly<Record<string, string>> = {
     'whether any of the workspaces is shared (not Admin, private or Former user), only one the scope names',
   'mantle_ws_any_holder(uuid[])':
     'whether any of the workspaces is a live holder beyond Admin, only one the scope names: a yes or no',
+  // A6 round 2 (0291): the Grant Access panel and the workspace screens read
+  // in the caller's scope; each answers what the scope may know only.
+  'mantle_item_grants(uuid)':
+    'an item’s grant rows, only for an item the scope reads; a removed row of a workspace outside it only for a manager or the users area',
+  'mantle_grant_counts(uuid,uuid,uuid,uuid[])':
+    'a grant change’s counts, only for the change’s own rule (manage, or a Moderator of the workspace)',
+  'mantle_item_embeds(uuid)':
+    'what an item embeds (and its drawings embed), only for an item the scope reads',
+  'mantle_ws_seen(uuid)':
+    'the workspaces the scope’s own login sees: its live ones, every one for the users area',
+  'mantle_ws_people(uuid)': 'a workspace’s users, for a user of it or the users area',
+  'mantle_ws_resource_rows(uuid)': 'a workspace’s resources, for a user of it or the users area',
+  'mantle_ws_item_counts(uuid)':
+    'a workspace’s homes, grants and removed rows, for a Moderator of it or the users area',
+  'mantle_ws_login_search(text,integer,integer)':
+    'logins by name or email: the users area, or a Moderator with 3 characters, 10 at most, the first page',
 };
 
 /** Rolls a cell's transaction back after its checks. */

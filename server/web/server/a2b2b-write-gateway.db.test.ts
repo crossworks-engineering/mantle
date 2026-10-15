@@ -470,13 +470,15 @@ describe.skipIf(!URL)('A2b2b: the login write gateway', () => {
     await homeIn(item, team);
     const move = (to: string) => (tx: postgres.TransactionSql) =>
       tx`select mantle_grant_move_home(${item}::uuid, ${to}::uuid, false, ${mem}::uuid)`;
-    // Not a Moderator of the new home (mem only reads Ro): refused in on;
-    // warn reports it and runs it.
+    // Not a Moderator of the new home (mem only reads Ro): refused in on,
+    // and in warn too since A6 round 2 (0291, A8 matrix F7 b: a grant change
+    // the rule refuses is refused in every mode); warn still reports it.
     const roOn = await asWriter(mem, 'on', [item], move(ro));
     expect(roOn.code).toBe('42501');
     expect(roOn.message).toBe('not allowed to grant to that workspace');
     const roWarn = await asWriter(mem, 'warn', [item], move(ro));
-    expect(roWarn.code, roWarn.message).toBeUndefined();
+    expect(roWarn.code).toBe('42501');
+    expect(roWarn.message).toBe('not allowed to grant to that workspace');
     expect(roWarn.notices.join('\n')).toMatch(/a home move, not a Moderator of the workspace/);
     // Not a manager of the old home: mem only reads Ro.
     const inRo = randomUUID();
