@@ -4067,8 +4067,8 @@ written from the guide alone.
 **Run it.** `pnpm test:matrix` with `MANTLE_TEST_DATABASE_URL` set
 (`vitest.matrix.config.ts`; the other configs leave `*.matrix.test.ts` out).
 Each file makes its own scratch database. On the workstation the whole run,
-the scratch databases included, takes about 20 seconds (the grid's cells
-about 7, over 4 workers, `MANTLE_MATRIX_WORKERS`). CI runs it as its own
+the scratch databases included, takes 20 to 40 seconds (the grid's cells
+7 to 13, over 4 workers, `MANTLE_MATRIX_WORKERS`). CI runs it as its own
 step.
 
 **The oracle** is `expectedAccess(context, role, kind, action)` in
