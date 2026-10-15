@@ -15,9 +15,12 @@
  * count may only go down.
  *
  * Second pin (fix round 1, L1): no product file outside this package picks a
- * key by service by hand (reads `apiKeys.service` or `apiKeys.label`). Such
- * picks had no stable order and could pin a different key than an unpinned
- * lookup; findProviderKeyId / findProviderKeyIds are the one pick order.
+ * key by service by hand: reads `apiKeys.service` or `apiKeys.label` over db,
+ * prefers a `.label === 'default'` row, or takes `keys.find((k) => k.service
+ * === x)` from a listing (fix round 2). Such picks had no stable order and
+ * could pin a different key than an unpinned lookup; findProviderKeyId /
+ * findProviderKeyIds are the one pick order. A find that also matches a
+ * label (`k.service === s && k.label === l`) is a named secret, not a pick.
  */
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
@@ -39,6 +42,17 @@ const HAND_PICK_ALLOWED: Record<string, string> = {
   'server/web/lib/maintenance/models-drift.ts':
     "the nightly drift sweep: the oldest key per service across EVERY owner, not one owner's lookup",
 };
+
+/** A hand pick of a key by service, in comment-stripped code. */
+const HAND_PICK_RES: RegExp[] = [
+  /\bapiKeys\.(service|label)\b/,
+  /\.label\s*===\s*['"`]default['"`]/,
+  /\.find\(\s*\(?\s*(\w+)\s*\)?\s*=>\s*\1\.service\s*===\s*[^&|)]+\)/,
+];
+
+function isHandPick(code: string): boolean {
+  return HAND_PICK_RES.some((re) => re.test(code));
+}
 
 /** Strip // and block comments (good enough for counting call sites). */
 function stripComments(text: string): string {
@@ -126,6 +140,22 @@ describe('provider key lookups go through resolveProviderKey', () => {
     }
   });
 
+  it('counts the hand-pick patterns', () => {
+    const picks = [
+      'db.select().from(apiKeys).where(eq(apiKeys.service, s))',
+      "for (const k of keys) if (k.label === 'default') map[k.service] = k.id;",
+      'const key = keys.find((k) => k.service === other);',
+      "const key = (await listApiKeys(u)).find(k => k.service === 'custom');",
+    ];
+    const notPicks = [
+      'const hit = rows.find((k) => k.service === groupSlug && k.label === label);',
+      "keys.some((k) => k.service === 'sandboxd' && k.label === 'proxy')",
+      'const id = await findProviderKeyId(owner, service);',
+    ];
+    expect(picks.map(isHandPick)).toEqual(picks.map(() => true));
+    expect(notPicks.map(isHandPick)).toEqual(notPicks.map(() => false));
+  });
+
   it('no hand pick of a key by service outside this package', () => {
     const found: string[] = [];
     for (const f of productFiles()) {
@@ -135,7 +165,7 @@ describe('provider key lookups go through resolveProviderKey', () => {
       } catch {
         continue;
       }
-      if (/\bapiKeys\.(service|label)\b/.test(stripComments(text))) found.push(f);
+      if (isHandPick(stripComments(text))) found.push(f);
     }
     expect(
       found.filter((f) => !HAND_PICK_ALLOWED[f]),
