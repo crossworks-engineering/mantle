@@ -4210,7 +4210,9 @@ peer call one only when its list allows it, and the fixture's peers allow
 none), a tool that waits for approval (`app_delete`) in a recipe step
 (`classifyRecipeStepTool`: a recipe calls none) or a run item (the
 executor refuses it before dispatch, "Confirm-gated tools never run
-headless"), and every run cell of a login outside Admin ("run_plan is
+headless"), an owner-side tool (`app_delete`, `ownerOnly`) in the team
+chat (it calls none, for everyone: "owner-side tool: not available here"),
+and every run cell of a login outside Admin ("run_plan is
 Admin only": `run_plan` is adminOnly, and the executor refuses a planning
 agent outside Admin, `below_admin`, so such a login's only run is one with
 no workspace, Admin's, and `withRunScope` refuses it: "not a user of the
@@ -4236,23 +4238,27 @@ asks whether the database still refuses an add to T and a move to T, by
 the route as the product runs it and in the member's own mutating request
 scope, with the check off, warn and on. See F7.
 
-**Counts**: the grid (fix round 3, unchanged in round 4) 14,608 cells, 9,404 run
-(2,089 allow, 7,315 deny, of which 66 are the pinned guide-silent denies),
-9,044 pass, 360 known failures, 5,204 not applicable. Against fix round 1
-(10,956 cells, 6,972 run, 3,984 not applicable) the difference is only
-what was added: the Admin-homed placement (3,652 cells: 2,220 run, 1,432
-not applicable) and the contact share's 212 writes, not applicable before
-and denies now. The surface cells (fix round 4, on v0.300.59) 1,123 per check
-mode, 3,369 in all; 6 known failures in each mode, rebased on main
-with F1 and F2 fixed (v0.300.59): 4 of F5, 2 of F6 (fix round 3: 1,122,
-3,366 and 41). The one cell added is the demoted run; the four run cells of
-F2 left the list (a run of a login outside Admin has no workspace of its
-own now, and is refused cleanly), then F1's 13 and F2's other 18, and F2's
-two Telegram app deletes moved to F5. The narrowed cells, pinned: 56 runs of a
-login outside Admin, 5 runs and 3 recipe steps of `app_delete` (the
-approval wait), 6 peer calls of `app_delete` (a risky tool), the demoted
-run, and the two contact-share deny cells. The grants panel: 3 cases (one per check
-mode), pinned as found.
+**Counts** (F5 withdrawn, plan section 34): the grid 14,608 cells, 9,404
+run (2,093 allow, 7,311 deny, of which 66 are the pinned guide-silent
+denies), 9,048 pass, 356 known failures, 5,204 not applicable (fix rounds 3
+and 4: 2,089 allow, 9,044 pass, 360 known; the home Moderator's 4 app
+deletes are allowed now). Against fix round 1 (10,956 cells, 6,972 run,
+3,984 not applicable) the difference is only what was added: the
+Admin-homed placement (3,652 cells: 2,220 run, 1,432 not applicable) and
+the contact share's 212 writes, not applicable before and denies now. The
+surface cells 1,126 per check mode, 3,378 in all; 2 known failures in each
+mode, both F6 (fix round 4, on v0.300.59: 1,123, 3,369 and 6, 4 of them
+F5's; fix round 3: 1,122, 3,366 and 41). The three cells added are the home
+Moderator's app delete at its kind's root on the web and over MCP and in
+the team chat, run whatever the pick; the demoted run came in fix round 4.
+The four run cells of F2 left the list (a run of a login outside Admin has
+no workspace of its own now, and is refused cleanly), then F1's 13 and F2's
+other 18, and F5's 4. The narrowed cells, pinned: 56 runs of a login
+outside Admin, 5 runs and 3 recipe steps of `app_delete` (the approval
+wait), 6 peer calls of `app_delete` (a risky tool), 3 team chat calls of
+`app_delete` (an owner-side tool: the team chat calls none, for everyone),
+the demoted run, and the two contact-share deny cells. The grants panel: 3
+cases (one per check mode), pinned as found.
 
 **Not applicable** cells are counted and named in the run's summary: a kind
 with no draft, no app data, or no snapshot copy; a snapshot copy and an
