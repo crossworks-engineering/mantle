@@ -36,6 +36,7 @@
 import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
 import {
   db,
+  executeAsMigrator,
   agents,
   assistantMessages,
   channels,
@@ -291,10 +292,12 @@ async function main() {
   // in finally. If this process is hard-killed between disable and enable, the
   // trigger stays disabled — re-enable manually with:
   //   ALTER TABLE assistant_messages ENABLE TRIGGER assistant_messages_summarize_due_trg;
+  // DDL, so on the migrator's connection (executeAsMigrator): the runtime
+  // role (MANTLE_DB_RUNTIME_ROLE, arch A9) owns no table and cannot.
   let disabled = false;
   try {
     if (toInsert.length > 0) {
-      await db.execute(
+      await executeAsMigrator(
         sql`alter table assistant_messages disable trigger ${sql.raw(SUMMARIZE_TRIGGER)}`,
       );
       disabled = true;
@@ -316,7 +319,7 @@ async function main() {
     if (rekeys.length > 0) console.log(`✓ re-keyed ${rekeys.length} digests`);
   } finally {
     if (disabled) {
-      await db.execute(
+      await executeAsMigrator(
         sql`alter table assistant_messages enable trigger ${sql.raw(SUMMARIZE_TRIGGER)}`,
       );
       console.log('✓ re-enabled summarize trigger');
