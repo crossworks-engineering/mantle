@@ -35,6 +35,7 @@
  *
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run server/web/server/a5-approval-recheck.db.test.ts
  *   A5_RECHECK_RECORD=main …   writes a5-approval-recheck.main.json (on main only)
+ *   A5_RECHECK_RECORD=now …    writes a5-approval-recheck.now.json (to name changes)
  */
 import { randomUUID } from 'node:crypto';
 import { readFileSync, writeFileSync } from 'node:fs';
@@ -46,7 +47,9 @@ import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 const DB_URL = process.env.MANTLE_TEST_DATABASE_URL;
-const RECORD = process.env.A5_RECHECK_RECORD === 'main';
+/** `main`: write the main file (on main only); `now`: write what this tree
+ *  answers beside it, to name the changes from (never checked in). */
+const RECORD = process.env.A5_RECHECK_RECORD;
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const MAIN_FILE = path.join(HERE, 'a5-approval-recheck.main.json');
 const CHANGES_FILE = path.join(HERE, 'a5-approval-recheck.changes.json');
@@ -468,8 +471,9 @@ describe.skipIf(!DB_URL)('the approval re-check (A5 step 6c): the recorded matri
         }
       }
     }
-    if (RECORD) {
-      writeFileSync(MAIN_FILE, `${JSON.stringify(table, null, 2)}\n`);
+    if (RECORD === 'main' || RECORD === 'now') {
+      const file = RECORD === 'main' ? MAIN_FILE : MAIN_FILE.replace('.main.', '.now.');
+      writeFileSync(file, `${JSON.stringify(table, null, 2)}\n`);
       return;
     }
     const main = JSON.parse(readFileSync(MAIN_FILE, 'utf8')) as Record<string, string>;
