@@ -406,6 +406,16 @@ export async function createEmptyScratchDatabase(
  * 10 s default hookTimeout, which bills this wait when the drop runs in an
  * afterAll: a longer wait, or a slower drop after it, fails the hook.
  */
+/** The start of a query as settleDatabase's warning prints it: one line, a
+ *  `password '...'` literal (CREATE/ALTER ROLE) masked, case-insensitively,
+ *  even when the 80-character cut lands inside it (no closing quote). */
+export function quotedQueryStart(query: string): string {
+  return query
+    .replace(/password\s+'[^']*'?/gi, "password '***'")
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 export async function settleDatabase(sql: Sql, name: string, ms = 5_000): Promise<void> {
   const until = Date.now() + ms;
   let warned = false;
@@ -420,7 +430,7 @@ export async function settleDatabase(sql: Sql, name: string, ms = 5_000): Promis
       warned = true;
       console.warn(
         `settleDatabase: ${name} still has ${busy.length} running quer${busy.length === 1 ? 'y' : 'ies'} at drop time (waiting up to ${ms} ms): ` +
-          busy.map((b) => `pid ${b.pid}: ${b.query.replace(/\s+/g, ' ').trim()}`).join('; '),
+          busy.map((b) => `pid ${b.pid}: ${quotedQueryStart(b.query)}`).join('; '),
       );
     }
     if (Date.now() >= until) return;

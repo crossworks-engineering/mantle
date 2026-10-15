@@ -12,7 +12,12 @@
  */
 import { describe, expect, it, vi } from 'vitest';
 import postgres from 'postgres';
-import { createEmptyScratchDatabase, pollUntil, settleDatabase } from './test-support';
+import {
+  createEmptyScratchDatabase,
+  pollUntil,
+  quotedQueryStart,
+  settleDatabase,
+} from './test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -27,6 +32,16 @@ async function warnsOf(fn: () => Promise<unknown>): Promise<unknown[][]> {
     warn.mockRestore();
   }
 }
+
+describe('the warning masks a password literal in the query it quotes', () => {
+  it('masks it whatever the case, and when the cut lands inside it', () => {
+    expect(quotedQueryStart("ALTER ROLE r WITH PASSWORD  'hunter2' login")).toBe(
+      "ALTER ROLE r WITH password '***' login",
+    );
+    expect(quotedQueryStart("create role r password 'hunt")).toBe("create role r password '***'");
+    expect(quotedQueryStart('select  1\n from t')).toBe('select 1 from t');
+  });
+});
 
 describe.skipIf(!URL)('scratch drop waits for work in flight', () => {
   const active = async (admin: postgres.Sql, name: string) => {
@@ -59,6 +74,27 @@ describe.skipIf(!URL)('scratch drop waits for work in flight', () => {
       const [gone] = await admin<{ n: number }[]>`
         select count(*)::int as n from pg_database where datname = ${scratch.name}`;
       expect(gone?.n).toBe(0);
+    } finally {
+      await sql.end({ timeout: 0 });
+      await admin.end();
+    }
+  });
+
+  it("the warning never prints a running query's password literal", async () => {
+    const scratch = await createEmptyScratchDatabase(URL!);
+    const admin = postgres(URL!, { max: 1, onnotice: () => {} });
+    const sql = postgres(scratch.url, { max: 1, onnotice: () => {} });
+    try {
+      // A comment stands in for a CREATE ROLE's literal: pg_stat_activity
+      // shows the query text as sent, comments included.
+      const running = sql.unsafe("select pg_sleep(0.4) /* PASSWORD 'hunter2' */").execute();
+      await pollUntil(() => active(admin, scratch.name), { what: 'the sleep to start' });
+      const warned = await warnsOf(() => scratch.drop());
+      await running;
+      expect(warned).toHaveLength(1);
+      const said = String(warned[0]?.[0]);
+      expect(said).not.toContain('hunter2');
+      expect(said).toContain("password '***'");
     } finally {
       await sql.end({ timeout: 0 });
       await admin.end();
