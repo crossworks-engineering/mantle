@@ -10,12 +10,11 @@
  * the guarded step: a key acts only as the login that made it.
  */
 import { NextResponse } from '@/server/http-compat';
-import { and, eq, isNull } from 'drizzle-orm';
+import { sql } from 'drizzle-orm';
 import { z } from 'zod';
-import { accessKeys, db } from '@mantle/db';
+import { db } from '@mantle/db';
 import { forgetRequestLogins, loginCaller, type AnyLogin } from '@/lib/auth';
 import { auditFireAndForget, requestMeta } from '@/lib/audit';
-import { inRuleInQuery } from '@/lib/auth/rule-in-query';
 
 const Params = z.object({ id: z.string().uuid() });
 
@@ -24,22 +23,18 @@ type Ctx = { params: Promise<{ id: string }> };
 async function handleDELETE(login: AnyLogin, ctx: Ctx) {
   const params = Params.safeParse(await ctx.params);
   if (!params.success) return NextResponse.json({ error: 'Invalid id.' }, { status: 400 });
-  const [row] = await db
-    .update(accessKeys)
-    .set({ revokedAt: new Date(), revokedBy: login.loginId })
-    .where(
-      and(
-        eq(accessKeys.id, params.data.id),
-        isNull(accessKeys.revokedAt),
-        ...(login.kind === 'admin' ? [] : [eq(accessKeys.loginId, login.loginId)]),
-      ),
-    )
-    .returning({
-      id: accessKeys.id,
-      keyPrefix: accessKeys.keyPrefix,
-      name: accessKeys.name,
-      loginId: accessKeys.loginId,
-    });
+  // By its definer (mantle_access_key_revoke, 0293): the login's own live
+  // key, any live key for an Admin user; the workspace and write roles hold
+  // no right on the keys (A6b: on the system pool before, 'rule-in-query').
+  // A write: its own transaction (a member's on the write role, an Admin
+  // user's on the system pool with its scope set).
+  const [row] = await db.transaction(
+    async (tx) =>
+      (await tx.execute(
+        sql`select id::text as id, key_prefix as "keyPrefix", name, login_id::text as "loginId"
+              from "public"."mantle_access_key_revoke"(${params.data.id}::uuid, ${login.loginId}::uuid)`,
+      )) as unknown as { id: string; keyPrefix: string; name: string; loginId: string }[],
+  );
   if (!row) return NextResponse.json({ error: 'not found' }, { status: 404 });
   // A later guard read in this request finds the login row afresh (A4 step
   // 3a audit L1), not the key: findKeyLogin reads the gate's grant and never
@@ -63,9 +58,9 @@ async function handleDELETE(login: AnyLogin, ctx: Ctx) {
   return NextResponse.json({ ok: true });
 }
 
-/** The login the pipeline answered, read before the exit: the body runs on
- *  the system pool by name (A4 hand batch A). */
+/** The login the pipeline answered (A4 hand batch A); the handler runs
+ *  where the request runs. */
 export async function DELETE(_req: Request, ctx: Ctx) {
   const login = loginCaller();
-  return inRuleInQuery(() => handleDELETE(login, ctx));
+  return handleDELETE(login, ctx);
 }

@@ -4,7 +4,7 @@
  * approve/reject lifecycle and the post-approval dispatch.
  */
 
-import { and, desc, eq, isNull, type SQL } from 'drizzle-orm';
+import { and, desc, eq, isNull, sql, type SQL } from 'drizzle-orm';
 import {
   db,
   pendingToolCalls,
@@ -118,12 +118,15 @@ export async function listPendingCalls(
   return rows.map(toSummary);
 }
 
+/** The brain's pending approvals, every login's (the shell's badge, a
+ *  push's count), by its definer (mantle_pending_count, 0293): on the system
+ *  pool, and in a scope that holds Admin (A6b: the shell left the scope for
+ *  it before, 'rule-in-query'); 0 in any other scope. */
 export async function countPending(ownerId: string): Promise<number> {
-  const rows = await db
-    .select({ id: pendingToolCalls.id })
-    .from(pendingToolCalls)
-    .where(and(eq(pendingToolCalls.ownerId, ownerId), eq(pendingToolCalls.status, 'pending')));
-  return rows.length;
+  const [row] = (await db.execute(
+    sql`select "public"."mantle_pending_count"(${ownerId}::uuid) as n`,
+  )) as unknown as { n: number }[];
+  return row?.n ?? 0;
 }
 
 export async function getPendingCall(ownerId: string, id: string): Promise<PendingSummary | null> {

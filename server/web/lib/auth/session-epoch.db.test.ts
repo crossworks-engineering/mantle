@@ -258,11 +258,13 @@ describe.skipIf(!URL)('session epoch: ending a login’s sessions', () => {
     const { mintAssetToken, endLoginSessions } = await import('./session');
     const file = (at: string) =>
       call(`/api/member/files/not-a-uuid?at=${encodeURIComponent(at)}`).then((r) => r.status);
-    const at = await mintAssetToken(anchor, member);
+    // Minted with the epoch the guard checked (the shell passes the
+    // request's AnyLogin.sessionEpoch).
+    const at = mintAssetToken(anchor, member, await epochOf(member));
     expect(await file(at)).toBe(410);
     await endLoginSessions(member);
     expect(await file(at)).toBe(401);
-    expect(await file(await mintAssetToken(anchor, member))).toBe(410);
+    expect(await file(mintAssetToken(anchor, member, await epochOf(member)))).toBe(410);
   });
 
   it('an admin password reset ends the target’s sessions', async () => {

@@ -2,7 +2,6 @@ import { NextResponse } from '@/server/http-compat';
 import type { AuthWhoami } from '@mantle/client-types';
 import { publicLoginCaller, unauthorizedRefusal } from '@/lib/auth';
 import { brainIdField } from '@/lib/brain-identity';
-import { inRuleInQuery } from '@/lib/auth/rule-in-query';
 import { loginWorkspaces } from '@/lib/login-workspaces';
 
 /**
@@ -26,9 +25,10 @@ import { loginWorkspaces } from '@/lib/login-workspaces';
  * only while the database is behind the code (lib/brain-identity.ts).
  *
  * A public row (the gate lets every request in): the login is the one the
- * pipeline answers at the read (publicLoginCaller, A4 hand batch B), read
- * inside the exit as the guard was, so the whole handler still leaves the
- * request scope by name (asSystem 'rule-in-query').
+ * pipeline answers at the read (publicLoginCaller, A4 hand batch B). A
+ * public row enters no workspace scope (the login's own rows, on the system
+ * pool, 'login-self'), so the handler runs where the request runs (A6b: its
+ * 'rule-in-query' exit left no scope).
  */
 const ROUTES = {
   admin: { shell: '/api/shell', pushBase: '/api/push' },
@@ -36,20 +36,18 @@ const ROUTES = {
 } as const;
 
 export async function GET() {
-  return inRuleInQuery(async () => {
-    const login = await publicLoginCaller();
-    if (!login) return unauthorizedRefusal();
-    const displayName =
-      login.kind === 'admin' ? login.user.actor.displayName : login.member.displayName;
-    const body: AuthWhoami = {
-      role: login.kind,
-      loginId: login.loginId,
-      email: login.email,
-      displayName: displayName ?? null,
-      ...ROUTES[login.kind],
-      ...(await brainIdField()),
-      ...(await loginWorkspaces('whoami', login)),
-    };
-    return NextResponse.json(body);
-  });
+  const login = await publicLoginCaller();
+  if (!login) return unauthorizedRefusal();
+  const displayName =
+    login.kind === 'admin' ? login.user.actor.displayName : login.member.displayName;
+  const body: AuthWhoami = {
+    role: login.kind,
+    loginId: login.loginId,
+    email: login.email,
+    displayName: displayName ?? null,
+    ...ROUTES[login.kind],
+    ...(await brainIdField()),
+    ...(await loginWorkspaces('whoami', login)),
+  };
+  return NextResponse.json(body);
 }

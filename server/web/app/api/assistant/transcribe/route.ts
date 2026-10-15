@@ -26,7 +26,6 @@ import { getDefaultWorker } from '@mantle/db';
 import { getApiKeyById } from '@mantle/api-keys';
 import { getSttAdapter, type SttDispatcher } from '@mantle/voice';
 import { errorMessage } from '@mantle/std';
-import { inRuleInQuery } from '@/lib/auth/rule-in-query';
 
 export async function POST(req: Request) {
   // A member's clips: the gate took the row's limit (lib/route-limits.ts
@@ -53,9 +52,11 @@ export async function POST(req: Request) {
   const mimeType = file.type && file.type.length > 0 ? file.type : 'audio/webm';
   const language = (formData.get('language') as string | null) ?? undefined;
 
-  // The brain's STT worker and its key: system configuration the workspace
-  // role does not read.
-  const worker = await inRuleInQuery(() => getDefaultWorker(login.ownerId, 'stt'));
+  // The brain's STT worker: every scope reads ai_workers (no row rule:
+  // configuration, as the turn loop reads it). Its key is read by
+  // @mantle/api-keys on the system pool itself, the one module that holds
+  // the sealed keys (A6b: both left the scope by 'rule-in-query' before).
+  const worker = await getDefaultWorker(login.ownerId, 'stt');
   if (!worker?.apiKeyId) {
     return NextResponse.json(
       {
@@ -66,7 +67,7 @@ export async function POST(req: Request) {
     );
   }
   const keyId = worker.apiKeyId;
-  const apiKey = (await inRuleInQuery(() => getApiKeyById(keyId)))?.apiKey;
+  const apiKey = (await getApiKeyById(keyId))?.apiKey;
   if (!apiKey) {
     return NextResponse.json(
       { error: `STT worker '${worker.slug}' api_key could not be decrypted.` },

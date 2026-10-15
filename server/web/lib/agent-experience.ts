@@ -1,5 +1,5 @@
-import { and, eq, inArray, isNotNull, or, sql } from 'drizzle-orm';
-import { db, assistantMessages, notSuperseded, traces } from '@mantle/db';
+import { sql } from 'drizzle-orm';
+import { db, wsArraySql } from '@mantle/db';
 import type { AgentExperienceComponentsDTO, AgentExperienceDTO } from '@mantle/client-types';
 
 /**
@@ -63,66 +63,32 @@ export function zeroExperience(): AgentExperienceDTO {
 }
 
 /**
- * Experience for the owner's agents, keyed by agent id. Two grouped queries
- * regardless of agent count. Agents with no recorded work are absent — callers
- * default them with `zeroExperience()`. Pass `agentIds` to scope the scan when
- * only one agent matters (the assistant thread bundle).
+ * Experience for the owner's agents, keyed by agent id. One definer
+ * (mantle_agent_experience, 0293) counts it everywhere: on the system pool
+ * every assistant's, in a scope only for a scope that holds Admin and the
+ * assistants it reads (the chat bundle's badge; A6b: it left the scope by
+ * 'rule-in-query' before). Agents with no recorded work are absent: callers
+ * default them with `zeroExperience()`. Pass `agentIds` to scope the scan
+ * when only one agent matters (the assistant thread bundle).
  */
 export async function computeAgentExperience(
   ownerId: string,
   agentIds?: string[],
 ): Promise<Map<string, AgentExperienceDTO>> {
   if (agentIds && agentIds.length === 0) return new Map();
-  const scope = agentIds ? inArray(assistantMessages.agentId, agentIds) : undefined;
-  const traceScope = agentIds ? inArray(traces.agentId, agentIds) : undefined;
-
-  const [turnRows, traceRows] = await Promise.all([
-    db
-      .select({
-        agentId: assistantMessages.agentId,
-        turns: sql<number>`count(*)::int`,
-        // jsonb_typeof guard: one hand-imported row with a non-numeric
-        // `succeeded` must not turn the whole agents screen into a 500 via a
-        // cast error — count it as 0 instead.
-        toolSuccesses: sql<number>`coalesce(sum(case when jsonb_typeof(${assistantMessages.data}->'toolStats'->'succeeded') = 'number' then (${assistantMessages.data}->'toolStats'->>'succeeded')::int else 0 end), 0)::int`,
-      })
-      .from(assistantMessages)
-      .where(
-        and(
-          eq(assistantMessages.ownerId, ownerId),
-          eq(assistantMessages.direction, 'outbound'),
-          // Completed replies only — a failed or still-pending turn is not
-          // work "handled", and the traces half already requires success.
-          eq(assistantMessages.status, 'complete'),
-          isNotNull(assistantMessages.agentId),
-          notSuperseded(),
-          scope,
-        ),
-      )
-      .groupBy(assistantMessages.agentId),
-    db
-      .select({
-        agentId: traces.agentId,
-        delegations: sql<number>`count(*) filter (where ${traces.kind} = 'manual' and ${traces.subjectKind} = 'child_agent')::int`,
-        heartbeats: sql<number>`count(*) filter (where ${traces.kind} = 'heartbeat_fire')::int`,
-      })
-      .from(traces)
-      .where(
-        and(
-          eq(traces.ownerId, ownerId),
-          eq(traces.status, 'success'),
-          isNotNull(traces.agentId),
-          or(
-            eq(traces.kind, 'heartbeat_fire'),
-            and(eq(traces.kind, 'manual'), eq(traces.subjectKind, 'child_agent')),
-          ),
-          traceScope,
-        ),
-      )
-      .groupBy(traces.agentId),
-  ]);
-
-  return mergeComponentRows(turnRows, traceRows);
+  const rows = (await db.execute(
+    sql`select agent_id::text as "agentId", turns, tool_successes as "toolSuccesses",
+               delegations, heartbeats
+          from "public"."mantle_agent_experience"(${ownerId}::uuid,
+               ${agentIds ? wsArraySql(agentIds) : sql`null::uuid[]`})`,
+  )) as unknown as {
+    agentId: string;
+    turns: number;
+    toolSuccesses: number;
+    delegations: number;
+    heartbeats: number;
+  }[];
+  return mergeComponentRows(rows, rows);
 }
 
 /** Merge the two grouped result sets into per-agent experience. Pure — split

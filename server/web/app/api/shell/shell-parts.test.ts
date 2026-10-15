@@ -71,7 +71,12 @@ vi.mock('@/lib/auth', async () => {
       }
       return member;
     },
-    mintAssetToken: async (anchorId: string, loginId: string, opts?: { ttlSeconds?: number }) => {
+    mintAssetToken: (
+      anchorId: string,
+      loginId: string,
+      _epoch: number,
+      opts?: { ttlSeconds?: number },
+    ) => {
       boom('asset token');
       h.minted.push({ anchorId, loginId, ttlSeconds: opts?.ttlSeconds });
       return 'asset-token';

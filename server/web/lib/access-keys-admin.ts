@@ -2,8 +2,8 @@
  * The list side of inbound API keys (plan page 1e62e204): what the
  * Settings > API access screen shows. Never the secret, never its hash.
  */
-import { and, desc, eq, gt, inArray, isNull, not, or } from 'drizzle-orm';
-import { accessKeys, authUsers, db, type AccessKey } from '@mantle/db';
+import { sql } from 'drizzle-orm';
+import { db, type AccessKey } from '@mantle/db';
 import type { AccessKeyStatus, AccessKeyView } from '@mantle/client-types';
 import type { AccessKeyAccess, AccessKeyArea, AccessKeyRole } from './access-keys';
 
@@ -26,43 +26,89 @@ export function accessKeyStatus(
 const ENDED_LIST_LIMIT = 200;
 
 /** Keys newest first, with their login and maker: one login's (`loginId`),
- *  or every key (null, an admin's view). Every live key, then the newest
- *  ended ones. */
+ *  or every key (null, an Admin user's view). Every live key, then the
+ *  newest ended ones. By their definer (mantle_access_keys_seen, 0293): the
+ *  workspace role reads neither the keys nor a login's email; in a scope
+ *  only the scope's own login's keys, or every key for an Admin user (A6b:
+ *  on the system pool before, 'rule-in-query'). Never the key's hash. */
 export async function listAccessKeys(loginId: string | null): Promise<AccessKeyView[]> {
-  const mine = loginId ? eq(accessKeys.loginId, loginId) : undefined;
-  const now = new Date();
-  const live = and(
-    isNull(accessKeys.revokedAt),
-    or(isNull(accessKeys.expiresAt), gt(accessKeys.expiresAt, now)),
+  const rows = (await db.execute(
+    sql`select * from "public"."mantle_access_keys_seen"(${loginId}::uuid, ${ENDED_LIST_LIMIT})`,
+  )) as unknown as {
+    id: string;
+    name: string;
+    key_prefix: string;
+    login_id: string;
+    access: string;
+    areas: string[] | null;
+    risky_tools: string[];
+    expires_at: Date | string | null;
+    created_by: string | null;
+    created_at: Date | string;
+    last_used_at: Date | string | null;
+    last_used_ip: string | null;
+    revoked_at: Date | string | null;
+    login_email: string | null;
+    login_name: string | null;
+    login_role: string | null;
+    maker_email: string | null;
+  }[];
+  const at = (v: Date | string | null) => (v === null ? null : new Date(v));
+  const logins = new Map<
+    string,
+    { email: string | null; displayName: string | null; role?: string }
+  >();
+  for (const r of rows) {
+    logins.set(r.login_id, {
+      email: r.login_email,
+      displayName: r.login_name,
+      ...(r.login_role ? { role: r.login_role } : {}),
+    });
+    if (r.created_by && !logins.has(r.created_by)) {
+      logins.set(r.created_by, { email: r.maker_email, displayName: null });
+    }
+  }
+  const now = Date.now();
+  return rows.map((r) =>
+    accessKeyView(
+      {
+        id: r.id,
+        name: r.name,
+        keyPrefix: r.key_prefix,
+        loginId: r.login_id,
+        access: r.access,
+        areas: r.areas,
+        riskyTools: r.risky_tools,
+        expiresAt: at(r.expires_at),
+        createdBy: r.created_by,
+        createdAt: new Date(r.created_at),
+        lastUsedAt: at(r.last_used_at),
+        lastUsedIp: r.last_used_ip,
+        revokedAt: at(r.revoked_at),
+      },
+      logins,
+      now,
+    ),
   );
-  const [liveRows, endedRows] = await Promise.all([
-    db.select().from(accessKeys).where(and(mine, live)).orderBy(desc(accessKeys.createdAt)),
-    db
-      .select()
-      .from(accessKeys)
-      .where(and(mine, not(live!)))
-      .orderBy(desc(accessKeys.createdAt))
-      .limit(ENDED_LIST_LIMIT),
-  ]);
-  const rows = [...liveRows, ...endedRows];
-  const ids = [...new Set(rows.flatMap((r) => [r.loginId, ...(r.createdBy ? [r.createdBy] : [])]))];
-  const logins = ids.length
-    ? await db
-        .select({
-          id: authUsers.id,
-          email: authUsers.email,
-          displayName: authUsers.displayName,
-          role: authUsers.role,
-        })
-        .from(authUsers)
-        .where(inArray(authUsers.id, ids))
-    : [];
-  const byId = new Map(logins.map((l) => [l.id, l]));
-  return rows.map((r) => accessKeyView(r, byId, now.getTime()));
 }
 
 export function accessKeyView(
-  r: AccessKey,
+  r: Pick<
+    AccessKey,
+    | 'id'
+    | 'name'
+    | 'keyPrefix'
+    | 'loginId'
+    | 'access'
+    | 'areas'
+    | 'riskyTools'
+    | 'expiresAt'
+    | 'createdBy'
+    | 'createdAt'
+    | 'lastUsedAt'
+    | 'lastUsedIp'
+    | 'revokedAt'
+  >,
   logins: Map<string, { email: string | null; displayName: string | null; role?: string }>,
   now = Date.now(),
 ): AccessKeyView {

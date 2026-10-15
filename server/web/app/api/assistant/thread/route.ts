@@ -6,7 +6,6 @@ import { openChatThread } from '@mantle/db';
 import { getAssignedAgentSummary } from '@/lib/agents';
 import { chatThreadRow, threadRange } from '@/lib/chat-threads';
 import { getAgentExperience } from '@/lib/agent-experience';
-import { inRuleInQuery } from '@/lib/auth/rule-in-query';
 
 /**
  * GET /api/assistant/thread[?agent=<slug>][&withMessages=0]: the /assistant
@@ -33,7 +32,9 @@ export async function GET(req: Request) {
   const [agents, agent, assigned] = await Promise.all([
     listChatAgents(login),
     resolveChatAgent(login, slug),
-    isAdmin ? inRuleInQuery(() => getAssignedAgentSummary(login.ownerId, login.loginId)) : null,
+    // The login's own assigned assistant: agents of its workspaces (or none),
+    // read in its scope (A6b: on the system pool before, 'rule-in-query').
+    isAdmin ? getAssignedAgentSummary(login.ownerId, login.loginId) : null,
   ]);
   const open = agent ? await openChatThread(login.ownerId, agent.id, login.loginId) : null;
   const [messages, experience, thread] = await Promise.all([
@@ -41,7 +42,9 @@ export async function GET(req: Request) {
       ? recentAssistantMessages(login.ownerId, agent.id, login.loginId, 100, threadRange(open))
       : [],
     // The header shows the active agent's level badge (an Admin user's view).
-    agent && isAdmin ? inRuleInQuery(() => getAgentExperience(login.ownerId, agent.id)) : null,
+    // Counted over every login's turns by its definer, in the scope
+    // (mantle_agent_experience, 0293; A6b: on the system pool before).
+    agent && isAdmin ? getAgentExperience(login.ownerId, agent.id) : null,
     open ? chatThreadRow(login.ownerId, open) : null,
   ]);
   const agentOut = agent

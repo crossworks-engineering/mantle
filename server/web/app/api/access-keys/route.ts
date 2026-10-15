@@ -221,11 +221,13 @@ async function handlePOST(login: AnyLogin, req: Request) {
   );
 }
 
-// The login the pipeline answered (any login), read before the exit: the
-// body runs on the system pool by name (A4 hand batch A).
+// The login the pipeline answered (any login; A4 hand batch A). The list
+// runs where the request runs, by its definer (listAccessKeys). Making a key
+// still leaves the scope by name: its password check reads the login's hash
+// and the new key's row is written on the system pool.
 export async function GET() {
   const login = loginCaller();
-  return inRuleInQuery(() => handleGET(login));
+  return handleGET(login);
 }
 
 export async function POST(req: Request) {

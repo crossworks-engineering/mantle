@@ -11,7 +11,6 @@ import { READER_TREE_KINDS, TREE_LIVE_KINDS } from '@mantle/content/tree';
 import { shellFeatures } from '@/lib/features';
 import { loginWorkspaces } from '@/lib/login-workspaces';
 import { workspaceCaller } from '@/lib/workspaces';
-import { inRuleInQuery } from '@/lib/auth/rule-in-query';
 
 type Prefs = Awaited<ReturnType<typeof loadPreferencesFor>>;
 
@@ -82,10 +81,11 @@ async function handleGET(login: AnyLogin) {
   const assetToken = await shellPart(
     'shell',
     'asset token',
-    () =>
+    async () =>
       mintAssetToken(
         anchorId,
         loginId,
+        login.sessionEpoch,
         login.kind === 'admin' ? {} : { ttlSeconds: SHORT_ASSET_TOKEN_TTL_SECONDS },
       ),
     undefined,
@@ -148,9 +148,13 @@ async function handleGET(login: AnyLogin) {
   return NextResponse.json(body);
 }
 
-/** The login the pipeline answered (any login), read before the exit: the
- *  body runs on the system pool by name (A4 hand batch A). */
+/** The login the pipeline answered (any login; A4 hand batch A). The
+ *  handler runs where the request runs, the login's scope for a read (A6b:
+ *  the whole body left it by 'rule-in-query' before): the brand and the
+ *  login's own preferences by the own-login rule, the pending count and the
+ *  private workspace by their definers (0293), the asset token from the
+ *  epoch the guard checked. */
 export async function GET() {
   const login = loginCaller();
-  return inRuleInQuery(() => handleGET(login));
+  return handleGET(login);
 }

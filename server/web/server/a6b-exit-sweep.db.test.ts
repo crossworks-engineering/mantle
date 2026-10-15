@@ -110,7 +110,7 @@ describe.skipIf(!URL)('the A6b exit sweep', () => {
   let content: typeof import('@mantle/content');
   let files: typeof import('@mantle/files');
   let rt: typeof import('@mantle/runtime/agent');
-  let app: { request: (path: string, init?: RequestInit) => Promise<Response> };
+  let app: { request: (path: string, init?: RequestInit) => Response | Promise<Response> };
   let cookieOf: (login: string) => string;
   let adminWs = '';
 

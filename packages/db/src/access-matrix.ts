@@ -798,6 +798,10 @@ export const WRITE_ROLE_FUNCTIONS: Readonly<Record<string, string>> = {
     'a folder’s rename or move (0282): every row below it, those the scope does not read too',
   'public.mantle_subtree_refuse_hidden(uuid,ltree)':
     'a folder move or delete refused when it holds rows the scope does not read (0282, the 409)',
+  'public.mantle_read_cursor_mark(uuid,uuid,uuid,timestamp with time zone)':
+    'the login’s own chat read cursor (0293): the role holds no right on assistant_read_cursors',
+  'public.mantle_access_key_revoke(uuid,uuid)':
+    'the login’s own API key revoked, any for an Admin user (0293): the role holds no right on access_keys',
 };
 
 /** The GRANT statements for the write role. Pure. It reads exactly what the

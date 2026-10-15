@@ -98,7 +98,6 @@ import {
 } from './tokens';
 import { env } from '@mantle/config';
 import { isLoginRole, type LoginRole } from '@mantle/client-types/role-names';
-import { inRuleInQuery } from './rule-in-query';
 
 /**
  * Fresh install? (empty `auth.users`). Drives the login screen's
@@ -2072,13 +2071,6 @@ export async function adminLoginActive(loginId: string): Promise<boolean> {
   return !!row && row.role === 'admin' && loginUsable(row);
 }
 
-/** Whether `loginId` (the request's own login) is an Admin user, read on
- *  the system pool: a member's request scope does not read auth.users (W6b
- *  fix round 1, the admin-only app switches). Its own row only. */
-export async function loginIsAdmin(loginId: string): Promise<boolean> {
-  return inRuleInQuery(() => adminLoginActive(loginId));
-}
-
 /** When the calling request's session cookie expires (ms since epoch), or
  *  null without one. */
 export async function sessionCookieExpiryMs(): Promise<number | null> {
@@ -2682,19 +2674,17 @@ export async function presentRotatedToken(
   return { kind: 'reuse' };
 }
 
-/** The login's session epoch now (0 for an unknown login: whatever is minted
- *  with it fails the row check anyway). */
-export async function loginSessionEpoch(loginId: string): Promise<number> {
-  return (await loadLoginRow(loginId))?.sessionEpoch ?? 0;
-}
-
 /** An `?at=` asset token for the anchor's bytes, minted for the login
- *  `loginId` and signed with that login's current session epoch. `ttlSeconds`
- *  shortens it (a member's: SHORT_ASSET_TOKEN_TTL_SECONDS). */
-export async function mintAssetToken(
+ *  `loginId` and signed with `sessionEpoch`: the epoch the request's own
+ *  credential was checked at (AnyLogin.sessionEpoch), read with the login's
+ *  row by the session guard (A6b: the row was read again on the system pool
+ *  before, which no scope reads). `ttlSeconds` shortens it (a member's:
+ *  SHORT_ASSET_TOKEN_TTL_SECONDS). */
+export function mintAssetToken(
   anchorId: string,
   loginId: string,
+  sessionEpoch: number,
   opts: { ttlSeconds?: number } = {},
-): Promise<string> {
-  return buildAssetToken(anchorId, loginId, await loginSessionEpoch(loginId), opts.ttlSeconds);
+): string {
+  return buildAssetToken(anchorId, loginId, sessionEpoch, opts.ttlSeconds);
 }

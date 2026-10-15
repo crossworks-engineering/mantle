@@ -1,6 +1,5 @@
 import { and, desc, eq, gt, inArray, sql } from 'drizzle-orm';
-import { db, agents, assistantMessages, assistantReadCursors, type AgentAvatar } from '@mantle/db';
-import { inRuleInQuery } from '@/lib/auth/rule-in-query';
+import { db, agents, assistantMessages, type AgentAvatar } from '@mantle/db';
 
 /** Roles that hold a back-and-forth chat (mirrors listAssistantAgents). */
 const CHATTABLE_ROLES = ['assistant', 'responder', 'custom'] as const;
@@ -20,45 +19,35 @@ export type ConversationSummary = {
   unreadCount: number;
 };
 
-/** This login's read cursors, keyed by agentId (per login since 0269). */
+/** This login's read cursors, keyed by agentId (per login since 0269). The
+ *  login's own rows, by their definer (mantle_read_cursors, 0293: the
+ *  workspace role holds no grant on the table; A6b: on the system pool
+ *  before, 'rule-in-query'). */
 export async function getReadCursors(ownerId: string, loginId: string): Promise<Map<string, Date>> {
-  // The cursors are the login's own rows, which this query names; the
-  // workspace role has no grant on them.
-  const rows = await inRuleInQuery(() =>
-    db
-      .select({
-        agentId: assistantReadCursors.agentId,
-        lastReadAt: assistantReadCursors.lastReadAt,
-      })
-      .from(assistantReadCursors)
-      .where(
-        and(eq(assistantReadCursors.ownerId, ownerId), eq(assistantReadCursors.loginId, loginId)),
-      ),
-  );
-  return new Map(rows.map((r) => [r.agentId, r.lastReadAt]));
+  const rows = (await db.execute(
+    sql`select agent_id::text as "agentId", last_read_at as "lastReadAt"
+          from "public"."mantle_read_cursors"(${ownerId}::uuid, ${loginId}::uuid)`,
+  )) as unknown as { agentId: string; lastReadAt: Date | string }[];
+  return new Map(rows.map((r) => [r.agentId, new Date(r.lastReadAt)]));
 }
 
-/** Mark a login's thread with an agent read up to [at] (default now). Upsert. */
+/** Mark a login's thread with an agent read up to [at] (default now). Upsert,
+ *  by its definer (mantle_read_cursor_mark, 0293): the login's own cursor,
+ *  for an assistant its scope reads. A write: in its own transaction (a
+ *  member's on the write role, an Admin user's on the system pool with its
+ *  scope set). */
 export async function markAssistantRead(
   ownerId: string,
   agentId: string,
   loginId: string,
   at: Date = new Date(),
 ): Promise<Date> {
-  // The login's own cursor row, named here; the system pool writes it.
-  await inRuleInQuery(() =>
-    db
-      .insert(assistantReadCursors)
-      .values({ ownerId, agentId, loginId, lastReadAt: at })
-      .onConflictDoUpdate({
-        target: [
-          assistantReadCursors.ownerId,
-          assistantReadCursors.agentId,
-          assistantReadCursors.loginId,
-        ],
-        set: { lastReadAt: at },
-      }),
-  );
+  await db.transaction(async (tx) => {
+    await tx.execute(
+      sql`select "public"."mantle_read_cursor_mark"(${ownerId}::uuid, ${agentId}::uuid,
+                                                    ${loginId}::uuid, ${at.toISOString()}::timestamptz)`,
+    );
+  });
   return at;
 }
 

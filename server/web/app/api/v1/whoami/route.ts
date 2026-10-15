@@ -2,7 +2,6 @@ import { NextResponse } from '@/server/http-compat';
 import { loginCaller, type AnyLogin } from '@/lib/auth';
 import { getRequestContext } from '@/server/request-context';
 import type { ApiV1Whoami } from '@mantle/client-types';
-import { inRuleInQuery } from '@/lib/auth/rule-in-query';
 
 /**
  * GET /api/v1/whoami (public API v1): who the credential acts as, and, for
@@ -30,8 +29,10 @@ async function handleGET(login: AnyLogin) {
   } satisfies ApiV1Whoami);
 }
 
-/** The login the pipeline answered, read before the exit (A4 hand batch A). */
+/** The login the pipeline answered (A4 hand batch A). Nothing here reads
+ *  the database: it runs where the request runs (A6b: it left the scope
+ *  whole before, 'rule-in-query', for no read). */
 export async function GET() {
   const login = loginCaller();
-  return inRuleInQuery(() => handleGET(login));
+  return handleGET(login);
 }

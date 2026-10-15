@@ -372,9 +372,10 @@ export async function shellWorkspaces(caller: WsCaller): Promise<ShellWorkspaces
       }
     >(
       db,
+      // Whether a workspace is the login's own private one, by its definer
+      // (mantle_ws_private_for, 0293): no role reads private_workspaces.
       sql`select w.id, w.name, w.is_admin, u.moderator, ${WS_LOOK_COLUMNS},
-                 exists (select 1 from private_workspaces p
-                          where p.workspace_id = w.id and p.login_id = ${caller.loginId}) as private
+                 "public"."mantle_ws_private_for"(w.id, ${caller.loginId}::uuid) as private
             from workspaces w
             join workspace_users u on u.workspace_id = w.id and u.login_id = ${caller.loginId}
            where w.owner_id = ${caller.anchorId} and ${liveWorkspaceSql('w')}

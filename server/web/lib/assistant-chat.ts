@@ -27,7 +27,6 @@ import { chatTextsForReader, workspaceAssistants, type WorkspaceAssistant } from
 import type { AssistantAgentOption } from '@mantle/client-types';
 import type { ChatLogin } from './auth';
 import { listAssistantAgents, resolveAgentForActor } from './assistant';
-import { inRuleInQuery } from '@/lib/auth/rule-in-query';
 
 export type ChatAgent = Agent & { turnEngine: 'owner' | 'workspace' };
 
@@ -130,21 +129,21 @@ export async function chatAgentIds(login: ChatLogin): Promise<string[] | undefin
  * logins C6): for a login that is not an Admin user every picture in a text
  * points at its own routes, and only at an item it may read; never at an
  * admin route or an outside address. An Admin user's messages are as stored.
- * The image lookup runs in the reader's own scope (chatImagesFor), entered
- * from the system pool as that helper expects.
+ * The image lookup runs in the reader's own scope (chatImagesFor): the
+ * request already runs in it (a member's chat routes read in its scope), so
+ * the helper's own scope adds nothing (A6b: it left the scope by
+ * 'rule-in-query' only to enter the same one again).
  */
 export async function messagesForReader<T extends { text: string }>(
   login: ChatLogin,
   messages: T[],
 ): Promise<T[]> {
   if (login.kind === 'admin' || messages.length === 0) return messages;
-  const texts = await inRuleInQuery(() =>
-    chatTextsForReader(
-      login.ownerId,
-      'team',
-      login.loginId,
-      messages.map((m) => m.text),
-    ),
+  const texts = await chatTextsForReader(
+    login.ownerId,
+    'team',
+    login.loginId,
+    messages.map((m) => m.text),
   );
   return messages.map((m, i) => ({ ...m, text: texts[i] ?? '' }));
 }

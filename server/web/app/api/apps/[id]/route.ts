@@ -10,7 +10,7 @@ import { NextResponse } from '@/server/http-compat';
 import { cappedOne } from '@/lib/list-workspaces';
 import { z } from 'zod';
 import { APP_ICON_MAX, APP_TINTS } from '@mantle/client-types/app-nav';
-import { loginIsAdmin, ownerCaller } from '@/lib/auth';
+import { ownerCaller, ownerCallerWithLogin } from '@/lib/auth';
 import { APP_DESCRIPTION_MAX } from '@/lib/app-meta';
 import {
   getApp,
@@ -65,7 +65,9 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   // author ceiling, its MCP access or the informational flag.
   if (
     (trustTools !== undefined || rest.mcpAccess !== undefined || rest.dataReadOnly !== undefined) &&
-    !(await loginIsAdmin(user.actor.id))
+    // The gate's answer for this request (A6b: the login's row was read
+    // again on the system pool before).
+    ownerCallerWithLogin().kind !== 'admin'
   ) {
     return NextResponse.json(
       {
