@@ -83,6 +83,8 @@ const NAMED_CHANGES: Record<
     reason: string;
     back?: (now: string) => string;
     now?: string;
+    /** What main's answer must have been for the change to hold. */
+    was?: RegExp;
   }>
 > = {
   'owner-preferences': [
@@ -135,6 +137,33 @@ const NAMED_CHANGES: Record<
         'Stricter, never looser.',
       now: JSON.stringify({
         ok: 'This app is in no workspace, so connector tools do not run from it.',
+      }),
+    },
+  ],
+  telegram: [
+    {
+      cells: /^(listMyTelegramChats|listModeratedTelegramChats) \w+ (read|write|turn):/,
+      reason:
+        "a login's own chats and its moderated chats asked in a scope for ANOTHER login answer " +
+        'none: their definers hold the scope to its own login (mantle_tg_my_chats, ' +
+        "mantle_tg_moderated_chats). The routes ask for the request's own login. Stricter, " +
+        'never looser.',
+      now: JSON.stringify({ ok: [] }),
+    },
+    {
+      cells: /^notifyPendingCreated \w+ (read|write|turn):/,
+      reason:
+        "the approval card never left a workspace scope (the bot's row was refused there, so " +
+        "no card was sent: main's `sent` is empty in every scoped cell); it is system work now " +
+        'and refused at its first read, so the logged reason differs. No card either way; the ' +
+        'in-app badge is unchanged.',
+      was: /"sent":\[\]/,
+      now: JSON.stringify({
+        done: {},
+        sent: [],
+        errors: [
+          "[pending:notify] Telegram approval push failed (in-app /pending still has it): system work 'login-telegram' runs on the system pool only, never in a workspace scope",
+        ],
       }),
     },
   ],
@@ -319,8 +348,9 @@ describe.skipIf(!URL)('the A6b exit sweep', () => {
       if (cur === line) continue;
       const named = (NAMED_CHANGES[name] ?? []).find((c) => c.cells.test(k));
       const value = cur.slice(cur.indexOf(' => ') + 4);
-      if (named?.back && `${k} => ${named.back(value)}` === line) continue;
-      if (named?.now !== undefined && value === named.now) continue;
+      const wasOk = !named?.was || named.was.test(line);
+      if (named?.back && wasOk && `${k} => ${named.back(value)}` === line) continue;
+      if (named?.now !== undefined && wasOk && value === named.now) continue;
       problems.push(`changed: ${line}\n     now: ${cur}`);
     }
     for (const k of now.keys()) if (!was.has(k)) problems.push(`new cell: ${k}`);
