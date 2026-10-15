@@ -144,8 +144,98 @@ All three are in `DEFAULT_EXTRACT_TYPES` in
   needs to find the row by its date.
 
 Every meaningful edit (title, body, status, priority, due, starts_at,
-…) clears `summary` / `summary_model` / `summary_at` / `entities` and
-fires `pg_notify('node_ingested', id)` so the extractor re-runs.
+…) re-indexes the item through `markContentChanged`, which clears
+`summary` / `summary_model` / `summary_at` / `entities` with the vector and
+announces it on `node_ingested` so the extractor re-runs. A note's title
+only re-embeds. What every kind's fields re-index is the table in the next
+section.
+
+---
+
+## 3a. Re-index after a write (every kind)
+
+One call re-indexes an item after a write (workspaces arch A10 #7):
+`markContentChanged(tx, node, changedFields)` in
+`packages/db/src/content-changed.ts`. The service calls it inside the
+write's own transaction, after the write, naming the fields it changed
+(`changedFields` compares old and new by value, so a save that sends a
+field back unchanged changes nothing). The kind registry's `indexed` field
+(`packages/client-types/src/kinds.ts`) says what each field feeds, and the
+most work any changed field asks for is done once:
+
+| Work      | What the reset leaves                                          | What the extractor does                                                                                                                                                                     | Cost                                               |
+| --------- | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- |
+| `embed`   | the vector cleared, the summary and the completion marker kept | `embed_only` step (`server/api/src/agent/extract/gates.ts`): the vector from the title and the kept summary; a table reuses its summary in the model step and rebuilds its profile passages | one embedding on the local embedder, no model call |
+| `extract` | the vector and the four summary keys cleared                   | the whole pass: summary, vector, passages, facts, entities                                                                                                                                  | one model call                                     |
+| none      | nothing                                                        | nothing (not announced)                                                                                                                                                                     | nothing                                            |
+
+There is no summary-only pass: the summary and the facts come from one
+model call.
+
+The announcement is a `pg_notify` on the write's transaction, so it is
+delivered when the write commits and dropped when it rolls back. A
+personal-space write and a quiet create are never announced. A re-signal of
+an item nothing changed (the `extract_reindex` tool, the OCR re-scan, the
+docs re-index) is `resignalNode`. Nothing else announces an item, clears its
+vector or drops its summary by hand: `eslint-rules/no-hand-reindex.mjs`
+refuses it, and the scoreboard pins `reindexNotifyCalls`,
+`reindexEmbeddingResets` and `reindexSummaryClears` at 0 outside the files
+it names with their reason (the gateway, the Recall prompt vectors, three
+hand-run operator backfills).
+
+**The indexed fields.** A field not listed for a kind feeds no index.
+
+| Kind          | `extract`                                                   | `embed`                                     | No re-index                                            |
+| ------------- | ----------------------------------------------------------- | ------------------------------------------- | ------------------------------------------------------ |
+| note          | content                                                     | title                                       | tags                                                   |
+| page          | doc (a commit, or a doc written through PATCH)              | title                                       | look (icon, visibility, width), tags                   |
+| table         | schema (a commit that changed the shape, or the first)      | title, cells (a commit that kept the shape) | look, tags                                             |
+| draw          | scene (a commit)                                            | title                                       | look (icon, visibility, description), tags             |
+| journal       | body                                                        | title                                       | kind, entry_date, tags                                 |
+| formula       | spec                                                        | title                                       | tags                                                   |
+| location      | body, address                                               | title                                       | coordinates, source, tags                              |
+| file          | content (new bytes), indexing (the mode flips)              | title (a rename)                            | tags                                                   |
+| task          | title, body, status, priority, due_at, todos, reviewed      |                                             | archived_at, rank, tags                                |
+| event         | title, body, starts_at, ends_at, location                   |                                             | recur, remind, timezone, tags                          |
+| contact       | first_name, last_name, company, emails, description         |                                             | country_code, cell, tags                               |
+| secret        | title, description, kind, tags                              |                                             | sealed (the note and fields never reach the extractor) |
+| documentation | content (a docs sync)                                       |                                             |                                                        |
+| app           | source (a publish, a restore, an install with a live build) |                                             |                                                        |
+
+A task's or an event's title stays `extract`: the title is part of the body
+their summary reads. A secret's tags stay `extract`: its index is its
+metadata alone. Turning a field to `extract` makes every save of it a model
+call: a cost decision, never a tidy-up.
+
+**What A10 #7 changed** (each cell named in
+`server/web/server/a10-content-changed.changes.json`, the matrix recorded on
+main in `a10-content-changed.main.json`):
+
+- A rename re-embeds a note, a journal entry, a formula, a location, a
+  drawing, a page, a table and a file (before: nothing, so search and recall
+  kept the old title). Cost per rename: one local embedding, no model call.
+- A save that sends an event's, a location's, a secret's or a formula's
+  fields back unchanged re-indexes nothing (before: a model pass per save).
+- The page PATCH `reindex: false` flag is accepted and ignored: a doc
+  written through PATCH is indexed like a commit. It once left the index on
+  the old doc and pointed at a `POST .../reindex` route that never existed;
+  no client sends it.
+- A file whose indexing mode flips drops its summary and vector at once, so
+  a file turned name-only stops answering from its content now. Same work
+  as before: one extractor pass.
+- A reused summary (a table's cell commit or new title) keeps the relation
+  edges its own pass made; the extractor used to rebuild them from an empty
+  list and drop them.
+
+**The boot drain stays.** The extractor's boot drain and periodic sweep
+(`server/api/src/agent/runtime.ts`) re-queue recently written items with no
+vector. Before A10 #7 every one of the 23 hand notify calls ran after its
+write had committed, on its own connection, best effort (a failed notify was
+only logged): a crash or a failed notify between the two left an item reset
+and unannounced, and only the drain found it. That window is closed (the
+announcement commits with the write). The drain is still the net for
+announcements sent while the agent was down (a docs sync at web boot during
+a roll, a calendar sync) and for migrations that clear vectors in bulk.
 
 ---
 
@@ -190,11 +280,11 @@ section under `/settings/agents` and the next tick will drain the backlog.
 The assistant in Claude Desktop can drive all three end-to-end via
 the new tools (server/mcp/src/server.ts):
 
-| Surface | Tools                                                                                                          |
-| ------- | -------------------------------------------------------------------------------------------------------------- |
-| notes   | `note_list`, `note_get`, `note_create`, `note_update`, `note_delete`                                           |
-| tasks   | `task_list`, `task_get`, `task_create`, `task_update`, `task_delete` |
-| events  | `event_list`, `event_get`, `event_create`, `event_update`, `event_delete`                                      |
+| Surface | Tools                                                                     |
+| ------- | ------------------------------------------------------------------------- |
+| notes   | `note_list`, `note_get`, `note_create`, `note_update`, `note_delete`      |
+| tasks   | `task_list`, `task_get`, `task_create`, `task_update`, `task_delete`      |
+| events  | `event_list`, `event_get`, `event_create`, `event_update`, `event_delete` |
 
 Typical flows the assistant can now do without any custom plumbing:
 
