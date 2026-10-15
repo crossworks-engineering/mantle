@@ -393,18 +393,37 @@ export async function createEmptyScratchDatabase(
  * though every test passed (w7e-member-scope.db.test.ts on v0.300.48). An idle
  * connection killed by the drop rejects nothing.
  *
- * A session the caller may not see (no superuser) reports no state; it is not
- * counted, so the wait never stalls on it. Past `ms` the drop forces anyway.
+ * Only `state = 'active'` counts as busy: an `idle in transaction` session
+ * is waiting on its client, not running, so waiting on it would only cost
+ * the full timeout. A session the caller may not see (no superuser) reports
+ * no state and is not counted, so the wait never stalls on it either.
+ *
+ * On the first busy poll it warns with the database name, each busy pid and
+ * the start of its query, so a test that leaks work past its own end stays
+ * visible rather than being quietly absorbed by this wait.
+ *
+ * Past `ms` the drop forces anyway. The 5 s default sits inside vitest's
+ * 10 s default hookTimeout, which bills this wait when the drop runs in an
+ * afterAll: a longer wait, or a slower drop after it, fails the hook.
  */
 export async function settleDatabase(sql: Sql, name: string, ms = 5_000): Promise<void> {
   const until = Date.now() + ms;
+  let warned = false;
   for (;;) {
-    const [row] = await sql<{ busy: number }[]>`
-      select count(*)::int as busy from pg_stat_activity
+    const busy = await sql<{ pid: number; query: string }[]>`
+      select pid, left(query, 80) as query from pg_stat_activity
        where datname = ${name} and pid <> pg_backend_pid()
          and backend_type = 'client backend'
-         and state is not null and state <> 'idle'`;
-    if (!row || row.busy === 0 || Date.now() >= until) return;
+         and state = 'active'`;
+    if (busy.length === 0) return;
+    if (!warned) {
+      warned = true;
+      console.warn(
+        `settleDatabase: ${name} still has ${busy.length} running quer${busy.length === 1 ? 'y' : 'ies'} at drop time (waiting up to ${ms} ms): ` +
+          busy.map((b) => `pid ${b.pid}: ${b.query.replace(/\s+/g, ' ')}`).join('; '),
+      );
+    }
+    if (Date.now() >= until) return;
     await new Promise((r) => setTimeout(r, 25));
   }
 }
