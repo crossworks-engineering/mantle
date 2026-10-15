@@ -4165,12 +4165,18 @@ The pick is stable: the candidates are taken in the order of a hash of
 their own name and the surface's name (so two ways in with the same
 candidates spread over other combinations), first fit, never in the
 registry's or the tool list's order, so a new kind or tool adds the cells
-its new pairs need and leaves the others as they were. A finding's own
+its new pairs need and leaves the others as they were. A decision's own
 case runs whatever the pick (each Admin user's delete of an app homed in
-Admin, on the web and over MCP: F8). Every tool slug a cell calls must
-resolve, but the MCP-only ones (`note_delete`), whose cells on a turn, a
-run, a recipe and a heartbeat are counted under their own reason; the
-not-applicable counts are pinned by reason.
+Admin, on the web and over MCP: F3 revised). Every tool slug a cell calls
+must resolve, but the MCP-only ones (`note_delete`), whose cells on a
+turn, a run, a recipe and a heartbeat are counted under their own reason;
+so are a recipe's cells of a tool that waits for approval (`app_delete`:
+a recipe calls none, for anyone). A peer's cell of a risky tool
+(`peerRisky`) is a deny the oracle cannot see, since it knows no tools:
+"Linked brains" lets a peer call one only when its list allows it, and
+the fixture's peers allow none. The pending cells set a tool to wait for
+approval for their call and leave it as it was. The not-applicable counts
+are pinned by reason.
 
 **The grants panel's database rule** (`server/web/server/a8-grants-panel.matrix.test.ts`):
 the panel (`server/web/lib/grants.ts`) decides in TypeScript, then calls
@@ -4182,14 +4188,14 @@ the route as the product runs it and in the member's own mutating request
 scope, with the check off, warn and on. See F7.
 
 **Counts** (fix round 2, on v0.300.54): the grid 14,608 cells, 9,404 run
-(2,086 allow, 7,318 deny, of which 66 are the pinned guide-silent denies),
-9,041 pass, 363 known failures, 5,204 not applicable. Against fix round 1
+(2,089 allow, 7,315 deny, of which 66 are the pinned guide-silent denies),
+9,044 pass, 360 known failures, 5,204 not applicable. Against fix round 1
 (10,956 cells, 6,972 run, 3,984 not applicable) the difference is only
 what was added: the Admin-homed placement (3,652 cells: 2,220 run, 1,432
 not applicable) and the contact share's 212 writes, not applicable before
-and denies now. The surface cells 1,120 per check mode, 3,360 in all; 43
-known failures with the check off, 45 in warn and in on. The grants panel:
-3 cases (one per check mode), pinned as found.
+and denies now. The surface cells 1,120 per check mode, 3,360 in all; 42
+known failures in each mode. The grants panel: 3 cases (one per check
+mode), pinned as found.
 
 **Not applicable** cells are counted and named in the run's summary: a kind
 with no draft, no app data, or no snapshot copy; a snapshot copy and an
@@ -4217,23 +4223,29 @@ branch and leave the list when it lands; F3 is the guide's rule now.
   nodes ...", "withSystemTx: only outside a viewer scope ...", "Failed
   query: insert into node_snapshots ..."). The same raw text answers a write
   the turn may not make (a home Moderator's app delete in a turn, the edits
-  W's assistant with no user tries): the right answer in the wrong words. 25
-  surface cells (one of them, a recipe's app delete, in warn and on only:
-  with the check off it is refused in words). An approved pending call from
+  W's assistant with no user tries): the right answer in the wrong words. 24
+  surface cells. An approved pending call from
   the same turn writes (the pending cells pass). Decided: fix (writes with
   the user's rights, raw text hidden).
-- **F3.** `app_delete` is an owner-side tool. Decided: an app's delete stays
-  owner-only; the oracle follows the decision (no longer a failure).
+- **F3.** `app_delete` is an owner-side tool. Decided (plan section 32),
+  then revised by the owner on 2026-10-15: the owner and Admin users may
+  delete an app (it goes to the trash); the app's home Moderator may not,
+  on any surface (the app, MCP, web chat, team chat). The oracle follows
+  the decision and cites it; the database gets the rule in a later product
+  change.
 - **F4.** An Admin user's write request on the system pool: the database
   checks a move, a create in a folder, a delete and a grant change against
   the scope on the transaction, and nothing else, so an edit, a draft edit,
   a public link and an app's data write of an item outside Admin are made.
   Only the gate's TypeScript (`itemWriteGate`) holds them. 108 grid cells
   (`login@system`). The same writes on the write role are refused.
-- **F5.** The database lets the Moderator of an app's home delete the app,
-  by hand and in a turn, and so an Admin user an app homed in Admin (on the
-  write role, in the Admin turn and on the system pool); only the owner-side
-  tool holds the owner-only rule. 7 grid cells.
+- **F5.** The Moderator of an app's home deletes the app, against F3
+  revised: the database lets it, by hand and in a turn (4 grid cells), and
+  so do `DELETE /api/apps/:id` (`server/web/app/api/apps/[id]/route.ts`, an
+  owner-side route) and `app_delete` over MCP (an MCP connection is an
+  owner surface to `ownerOnlyRefusal`) (2 surface cells, in each mode). In
+  a turn the same delete is refused, in raw text (F2). Listed until the
+  product change lands.
 - **F6.** A peer acting as its login, Write on, may not change an item
   others read ("this item is shared, so a peer cannot change its content",
   `packages/tools/src/key-shared-content.ts`, access matrix T3), the owner's
@@ -4257,15 +4269,10 @@ branch and leave the list when it lands; F3 is the guide's rule now.
   A6 branch. The panel cannot run in that scope today: its first read, the
   Admin workspace's row, is hidden from a member's scope (409 "not set up"),
   and its answer reads `node_embeds`, which the scope may not.
-- **F8.** An app's delete by a login other than the owner, against the
-  owner-only decision (F3): `DELETE /api/apps/:id`
-  (`server/web/app/api/apps/[id]/route.ts`, an owner-side route) trashes it
-  for any Admin user and for the app's home Moderator; `app_delete` over
-  MCP does the same (an MCP connection is an owner surface to
-  `ownerOnlyRefusal`); and in warn and on, an Admin user's recipe step in
-  the Admin turn (with the check off it is refused). 5 surface cells. Asked
-  of the owner: may an Admin user delete an app? If yes, the oracle changes
-  and the decision is cited there.
+- **F8** (withdrawn). `DELETE /api/apps/:id` lets an Admin user trash an
+  app: allowed by the owner's decision of 2026-10-15 (F3 revised), so no
+  longer a failure; the cells of each Admin user's delete of an app homed in
+  Admin run on the web and over MCP and pass.
 - **F9.** A contact share's write is named system work on the system pool,
   so the database holds a statement it sends to nothing but a snapshot
   copy's read-only rule: an edit, a draft, a delete, a move, a grant change,
@@ -4273,6 +4280,10 @@ branch and leave the list when it lands; F3 is the guide's rule now.
   by sending nothing but its app's data (the contact-share surface cells
   pass: Can write off refuses the app's data, on writes it). The guide: a
   contact share writes only its app's data. 248 grid cells.
+- **F10.** `app_delete` refuses an Admin user's run item ("owner-side
+  tool: not available here": a run's caller is no owner surface to
+  `ownerOnlyRefusal`), the owner's own run too, where F3 revised lets the
+  owner and Admin users delete an app. 1 surface cell, in each mode.
 
 **The guide is silent** where the owner should decide:
 
@@ -4284,8 +4295,9 @@ branch and leave the list when it lands; F3 is the guide's rule now.
   cells;
 - snapshot copies: docs/workspaces.md does not describe them; the oracle
   reads docs/update-prod.md;
-- an app's delete: owner-only by the plan's section 32 until the guide
-  carries the rule; whether an Admin user may delete one (F8) is asked;
+- an app's delete: the owner's and the Admin users' by the owner's
+  decision of 2026-10-15 (plan section 32, F3 revised) until the guide
+  carries the rule;
 - F6's rule for a key or a peer and a shared item.
 
 **Cells that check little** (they pass, and say less than their count):
