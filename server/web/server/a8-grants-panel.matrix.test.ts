@@ -243,24 +243,21 @@ describe.skipIf(!DB_URL)('A8: the grants panel’s database rule under a wrong T
   }
 });
 
-/** What the database does today with the wrong TypeScript decision. */
+/**
+ * What the database does today with the wrong TypeScript decision (A8 fix
+ * round 1, finding F7 in docs/actors.md):
+ *  - route, the product's path: made in every mode. The any-login row runs
+ *    the panel on the system pool with no scope, so mantle_grant_change and
+ *    mantle_grant_move_home hold nothing (mantle_grant_refuses asks for an
+ *    active scope): the panel's rules are TypeScript only;
+ *  - scope: refused (42501) with the check off and on; made in warn, where
+ *    the write role's refusal is staged and the checked rerun on the system
+ *    pool lets it through with a gap logged (warn's design), so warn holds
+ *    less here than off.
+ */
+const ROUTE_MADE = { 'route add': 'made', 'route move': 'made' } as const;
 const EXPECTED: Record<'off' | 'warn' | 'on', Record<string, 'made' | 'refused'>> = {
-  off: {
-    'route add': 'refused',
-    'route move': 'refused',
-    'scope add': 'refused',
-    'scope move': 'refused',
-  },
-  warn: {
-    'route add': 'refused',
-    'route move': 'refused',
-    'scope add': 'refused',
-    'scope move': 'refused',
-  },
-  on: {
-    'route add': 'refused',
-    'route move': 'refused',
-    'scope add': 'refused',
-    'scope move': 'refused',
-  },
+  off: { ...ROUTE_MADE, 'scope add': 'refused', 'scope move': 'refused' },
+  warn: { ...ROUTE_MADE, 'scope add': 'made', 'scope move': 'made' },
+  on: { ...ROUTE_MADE, 'scope add': 'refused', 'scope move': 'refused' },
 };
