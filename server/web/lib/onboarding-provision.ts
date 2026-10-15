@@ -1,5 +1,5 @@
 import { db, agents, eq, and } from '@mantle/db';
-import { listApiKeys } from '@mantle/api-keys';
+import { findProviderKeyIds } from '@mantle/api-keys';
 import {
   buildPersonaPrompt,
   DEFAULT_PERSONA_NAMES,
@@ -77,14 +77,10 @@ async function seedSpecialistStack(ownerId: string): Promise<string[]> {
   }
 }
 
+/** The key each service's pin names: the one an unpinned lookup would use
+ *  ('default', else the oldest), so a pin never differs from it. */
 async function keyIdByService(ownerId: string): Promise<Record<string, string>> {
-  const keys = await listApiKeys(ownerId);
-  const map: Record<string, string> = {};
-  // Prefer the 'default' label; fall back to the first of each service.
-  for (const k of keys) {
-    if (!(k.service in map) || k.label === 'default') map[k.service] = k.id;
-  }
-  return map;
+  return Object.fromEntries(await findProviderKeyIds(ownerId));
 }
 
 /**

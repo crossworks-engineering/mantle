@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { suggestBackupRoute } from './embedding-backup';
 
-const keys = [
-  { id: 'k-or', service: 'openrouter' },
-  { id: 'k-oa', service: 'openai' },
-];
+const keys = new Map([
+  ['openrouter', 'k-or'],
+  ['openai', 'k-oa'],
+]);
 
 describe('suggestBackupRoute', () => {
   it('OpenAI direct with no backup: the same model on OpenRouter (the 2026-10-04 case)', () => {
@@ -36,7 +36,7 @@ describe('suggestBackupRoute', () => {
       backupEnabled: false,
     };
     expect(suggestBackupRoute({ ...base, backupEnabled: true }, keys)).toBeNull();
-    expect(suggestBackupRoute(base, [{ id: 'k-oa', service: 'openai' }])).toBeNull();
+    expect(suggestBackupRoute(base, new Map([['openai', 'k-oa']]))).toBeNull();
     expect(
       suggestBackupRoute(
         { ...base, model: 'embeddinggemma:latest', primaryProvider: 'local' },

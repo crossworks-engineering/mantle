@@ -4,7 +4,7 @@ import { db, sql } from '@mantle/db';
 import { bucketStatus } from '@mantle/storage';
 import { tikaVersion } from '@mantle/files';
 import { loadPreferencesFor, savePreferencesFor, isPurposeArchetype } from '@mantle/content';
-import { setApiKey, listApiKeys } from '@mantle/api-keys';
+import { setApiKey, listApiKeys, findProviderKeyId, findProviderKeyIds } from '@mantle/api-keys';
 import {
   resolveEmbeddingConfig,
   probeEmbeddingRoute,
@@ -255,17 +255,17 @@ export async function runInfraChecks(browserHost: string | null): Promise<Sanity
 
 export async function runSanityChecks(userId: string): Promise<SanityCheck[]> {
   const checks: SanityCheck[] = [];
-  const keys = await listApiKeys(userId);
-  const byService = new Map(keys.map((k) => [k.service, k] as const));
+  // The key per service an unpinned lookup would use ('default', else the oldest).
+  const keyIds = await findProviderKeyIds(userId);
 
-  const orKey = byService.get('openrouter');
-  if (orKey) {
-    const t = await probeApiKey(orKey.id, 'openrouter');
+  const orKeyId = keyIds.get('openrouter');
+  if (orKeyId) {
+    const t = await probeApiKey(orKeyId, 'openrouter');
     checks.push({ label: 'OpenRouter (chat, images)', ok: t.ok, detail: t.message });
   }
-  const xaiKey = byService.get('xai');
-  if (xaiKey) {
-    const t = await probeApiKey(xaiKey.id, 'xai');
+  const xaiKeyId = keyIds.get('xai');
+  if (xaiKeyId) {
+    const t = await probeApiKey(xaiKeyId, 'xai');
     checks.push({ label: 'xAI (voice: speak + transcribe)', ok: t.ok, detail: t.message });
   }
 
@@ -461,7 +461,7 @@ export async function saveModels(
       return { ok: false as const, message: 'Enter your Azure OpenAI endpoint (an https:// URL).' };
     }
     const azureKey = String(input.azureKey ?? '').trim();
-    const existingCustom = (await listApiKeys(userId)).find((k) => k.service === 'custom');
+    const existingCustom = await findProviderKeyId(userId, 'custom');
     if (!azureKey && !existingCustom) {
       return { ok: false as const, message: 'Paste your Azure OpenAI API key.' };
     }
@@ -527,7 +527,7 @@ export async function saveEmbedding(
     if (!test.ok) return { saved: true, configured: false, test };
     keyId = row.id;
   } else {
-    const existing = (await listApiKeys(userId)).find((k) => k.service === provider);
+    const existing = await findProviderKeyId(userId, provider);
     if (!existing) {
       return {
         saved: false,
@@ -540,7 +540,7 @@ export async function saveEmbedding(
         },
       };
     }
-    keyId = existing.id;
+    keyId = existing;
   }
 
   try {
@@ -614,7 +614,7 @@ async function defaultEmbeddingBackup(
 ): Promise<{ provider: string; apiKeyId: string; label: string } | null> {
   const suggestion = suggestBackupRoute(
     { model, primaryProvider: provider, backupEnabled: false },
-    await listApiKeys(userId),
+    await findProviderKeyIds(userId),
   );
   if (!suggestion) return null;
   try {
@@ -631,9 +631,8 @@ async function defaultEmbeddingBackup(
 }
 
 export async function testKey(userId: string, service: string): Promise<KeyTest> {
-  const keys = await listApiKeys(userId);
-  const key = keys.find((k) => k.service === service);
-  if (!key) {
+  const keyId = await findProviderKeyId(userId, service);
+  if (!keyId) {
     return {
       ok: false,
       message: 'No key saved for this provider yet.',
@@ -641,7 +640,7 @@ export async function testKey(userId: string, service: string): Promise<KeyTest>
       adapter: '',
     };
   }
-  return probeApiKey(key.id, service);
+  return probeApiKey(keyId, service);
 }
 
 /** `configuredBy`: the login running the step (null for the anchor); it

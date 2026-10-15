@@ -37,6 +37,13 @@ vi.mock('@mantle/content', () => ({
 vi.mock('@mantle/api-keys', () => ({
   setApiKey: async (_u: string, service: string) => ({ id: `key-${service}` }),
   listApiKeys: async () => h.keys,
+  findProviderKeyId: async (_u: string, service: string) =>
+    h.keys.find((k) => k.service === service)?.id ?? null,
+  findProviderKeyIds: async () => {
+    const out = new Map<string, string>();
+    for (const k of h.keys) if (!out.has(k.service)) out.set(k.service, k.id);
+    return out;
+  },
 }));
 vi.mock('@mantle/embeddings', () => ({
   resolveEmbeddingConfig: async () => ({}),

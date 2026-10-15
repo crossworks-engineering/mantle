@@ -23,10 +23,12 @@ const OPENAI_EMBED_RE = /^(?:openai\/)?text-embedding-3-(?:large|small)$/;
  * adapters take the same slug (the OpenAI one drops an `openai/` prefix), so
  * the backup needs no second model. Null when a backup is set, the model is
  * not an OpenAI one, or no key for the other provider is saved.
+ * `keyIdByService` is findProviderKeyIds' map (@mantle/api-keys), so the
+ * suggested key is the one an unpinned lookup of that provider would use.
  */
 export function suggestBackupRoute(
   config: Pick<EmbeddingConfigRow, 'model' | 'primaryProvider' | 'backupEnabled'> | null,
-  keys: ReadonlyArray<{ id: string; service: string }>,
+  keyIdByService: ReadonlyMap<string, string>,
 ): BackupSuggestion | null {
   if (!config || config.backupEnabled) return null;
   if (!OPENAI_EMBED_RE.test(config.model)) return null;
@@ -37,18 +39,18 @@ export function suggestBackupRoute(
         ? 'openai'
         : null;
   if (!other) return null;
-  const key = keys.find((k) => k.service === other);
-  if (!key) return null;
+  const keyId = keyIdByService.get(other);
+  if (!keyId) return null;
   return other === 'openrouter'
     ? {
         provider: 'openrouter',
-        apiKeyId: key.id,
+        apiKeyId: keyId,
         label: 'OpenRouter',
         why: 'OpenRouter serves the same OpenAI model with the same vectors, on your saved OpenRouter key.',
       }
     : {
         provider: 'openai',
-        apiKeyId: key.id,
+        apiKeyId: keyId,
         label: 'OpenAI',
         why: 'OpenAI direct serves the same model with the same vectors, on your saved OpenAI key.',
       };

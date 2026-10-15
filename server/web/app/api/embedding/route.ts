@@ -1,5 +1,6 @@
 import { NextResponse } from '@/server/http-compat';
 import { listApiKeys } from '@/lib/api-keys';
+import { findProviderKeyIds } from '@mantle/api-keys';
 import { EMBEDDING_DIMS, getEmbeddingConfig, upsertEmbeddingConfig } from '@/lib/embedding-config';
 import { suggestBackupRoute } from '@/lib/embedding-backup';
 import { EXTRACTION_CONCURRENCY_MAX } from '@mantle/embeddings';
@@ -15,14 +16,15 @@ import { readJson } from '@/lib/read-body';
  *  alerts, and a same-model backup route to add when none is set. */
 export async function GET() {
   const user = ownerCaller();
-  const [config, keys, alerts] = await Promise.all([
+  const [config, keys, keyIds, alerts] = await Promise.all([
     getEmbeddingConfig(user.id),
     listApiKeys(user.id),
+    findProviderKeyIds(user.id),
     loadProviderAlerts(user.id),
   ]);
   return NextResponse.json({
     alerts,
-    suggestBackup: suggestBackupRoute(config, keys),
+    suggestBackup: suggestBackupRoute(config, keyIds),
     config: config
       ? {
           model: config.model,
@@ -118,8 +120,11 @@ export async function POST(req: Request) {
     // No backup route: say which same-model one the brain could add (the
     // form offers it). A save also tells the agent to probe and recover
     // (upsertEmbeddingConfig).
-    const [saved, keys] = await Promise.all([getEmbeddingConfig(user.id), listApiKeys(user.id)]);
-    return NextResponse.json({ ok: true, model, suggestBackup: suggestBackupRoute(saved, keys) });
+    const [saved, keyIds] = await Promise.all([
+      getEmbeddingConfig(user.id),
+      findProviderKeyIds(user.id),
+    ]);
+    return NextResponse.json({ ok: true, model, suggestBackup: suggestBackupRoute(saved, keyIds) });
   } catch (err) {
     return NextResponse.json({
       ok: false,
