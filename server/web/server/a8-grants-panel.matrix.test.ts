@@ -16,8 +16,10 @@
  * seats: TypeScript refuses, the database is not reached):
  *  - route: as the product runs it, POST /api/grants/:id and
  *    /api/grants/move through createApp. The grants routes are any-login
- *    rows (lib/auth/any-login-routes.ts): the request runs on the system
- *    pool with no scope, so the definers see no scope to hold the change to;
+ *    rows (lib/auth/any-login-routes.ts): the gate enters the member's
+ *    scope, and grantsRoute leaves it by name (inRuleInQuery,
+ *    lib/auth/rule-in-query.ts: asSystem 'rule-in-query'), so the definers
+ *    see no scope to hold the change to;
  *  - scope: the same panel call in the member's own mutating request scope
  *    (the gate's enterLoginScope for a member's write: its seats, writes
  *    on), where the definers do hold it to the scope. The panel cannot run
@@ -243,15 +245,21 @@ describe.skipIf(!DB_URL)('A8: the grants panel’s database rule under a wrong T
 
 /**
  * What the database does today with the wrong TypeScript decision (A8 fix
- * round 1, finding F7 in docs/actors.md):
- *  - route, the product's path: made in every mode. The any-login row runs
- *    the panel on the system pool with no scope, so mantle_grant_change and
- *    mantle_grant_move_home hold nothing (mantle_grant_refuses asks for an
- *    active scope): the panel's rules are TypeScript only;
- *  - scope: refused (42501) with the check off and on; made in warn, where
- *    the write role's refusal is staged and the checked rerun on the system
- *    pool lets it through with a gap logged (warn's design), so warn holds
- *    less here than off.
+ * rounds 1 and 2, finding F7 in docs/actors.md):
+ *  - route, the product's path: made in every mode. grantsRoute leaves the
+ *    member's scope by name (inRuleInQuery), so mantle_grant_change and
+ *    mantle_grant_move_home run with no scope and hold nothing
+ *    (mantle_grant_refuses asks for an active scope): the panel's rules are
+ *    TypeScript only;
+ *  - scope: refused (42501) with the check off and on; made in warn by the
+ *    write role's own pass, its refusals staged (the 3 misses below: warn
+ *    logs them and lets the statement through). No rerun is involved (a
+ *    gap's rerun in warn would be unchecked, on the system pool:
+ *    onLoginWritePool in packages/db/src/client.ts), and the panel's
+ *    "permission denied for table node_embeds" comes after the change is
+ *    made. So warn holds less here than off; the product fix
+ *    (mantle_grant_refuses through the staged mantle_scoped_write_refuses,
+ *    0279) is the A6 branch's.
  */
 const ROUTE_MADE = { 'route add': 'made', 'route move': 'made' } as const;
 const EXPECTED: Record<'off' | 'warn' | 'on', Record<string, 'made' | 'refused'>> = {

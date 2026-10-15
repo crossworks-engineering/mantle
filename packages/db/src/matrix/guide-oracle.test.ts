@@ -6,6 +6,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   APP_DELETE_OWNER_ONLY,
+  CONTACT_WRITES_APP_DATA_ONLY,
   GUIDE_ACTIONS,
   GUIDE_ROLES,
   GUIDE_SILENT_PINNED,
@@ -127,5 +128,38 @@ describe('the A8 oracle', () => {
       allow: false,
       why: GUIDE_SILENT_PINNED,
     });
+  });
+
+  it('an item homed in Admin: its users read and change it, nobody else reads it', () => {
+    for (const role of ['owner', 'admin'] as const) {
+      expect(expectedAccess(at('admin'), role, 'note', 'read')).toEqual(allow);
+      expect(expectedAccess(at('admin'), role, 'page', 'edit')).toEqual(allow);
+      expect(expectedAccess(at('admin', 'turn'), role, 'note', 'edit')).toEqual(allow);
+      // "Move it ... Moderator of H and Moderator of T": no Admin user moderates T.
+      expect(expectedAccess(at('admin'), role, 'note', 'move')).toMatchObject(denied);
+    }
+    for (const role of ['homeModerator', 'writeGrant', 'readGrant', 'outsider'] as const) {
+      expect(expectedAccess(at('admin'), role, 'note', 'read')).toMatchObject(denied);
+      expect(expectedAccess(at('admin'), role, 'note', 'edit')).toMatchObject(denied);
+    }
+    expect(expectedAccess(at('admin', 'login-ro'), 'owner', 'note', 'edit')).toMatchObject(denied);
+    expect(expectedAccess(at('admin', 'assistant'), null, 'note', 'read')).toMatchObject(denied);
+    // F3: only the owner deletes an app, Admin-homed too.
+    expect(expectedAccess(at('admin'), 'owner', 'app', 'delete')).toEqual(allow);
+    expect(expectedAccess(at('admin'), 'admin', 'app', 'delete')).toEqual({
+      allow: false,
+      why: APP_DELETE_OWNER_ONLY,
+    });
+    expect(expectedAccess(at('admin'), 'owner', 'note', 'grantRemove')).toHaveProperty('na');
+  });
+
+  it("a contact share with Can write writes its app's data, and nothing else", () => {
+    expect(expectedAccess(at('root', 'contact-rw'), null, 'app', 'appData')).toEqual(allow);
+    for (const action of ['edit', 'delete', 'move', 'grantAdd', 'link', 'create'] as const) {
+      expect(expectedAccess(at('root', 'contact-rw'), null, 'note', action)).toEqual({
+        allow: false,
+        why: CONTACT_WRITES_APP_DATA_ONLY,
+      });
+    }
   });
 });
