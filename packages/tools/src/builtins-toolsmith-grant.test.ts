@@ -517,7 +517,15 @@ describe('tool_group_ensure on a group an assistant of another workspace holds (
       toolSlug: 'tool_group_ensure',
       args: input,
       // The scope the asking turn ran in (A5 step 6c): none here.
-      origin: { v: 1, scope: null, enter: null, writes: false, admin: null, surface: null },
+      origin: {
+        v: 1,
+        scope: null,
+        enter: null,
+        writes: false,
+        admin: null,
+        surface: null,
+        actor: { kind: 'system', reason: 'test' },
+      },
     });
     expect(notifyPendingCreated).toHaveBeenCalledWith(
       expect.objectContaining({ pendingId: 'p1', toolSlug: 'tool_group_ensure' }),
@@ -685,7 +693,15 @@ describe('agent_grant_tool_group', () => {
       toolSlug: 'agent_grant_tool_group',
       args: { agent_slug: 'responder', group_slug: 'geo-tools' },
       // The scope the asking turn ran in (A5 step 6c): none here.
-      origin: { v: 1, scope: null, enter: null, writes: false, admin: null, surface: null },
+      origin: {
+        v: 1,
+        scope: null,
+        enter: null,
+        writes: false,
+        admin: null,
+        surface: null,
+        actor: { kind: 'system', reason: 'test' },
+      },
     });
     expect(notifyPendingCreated).toHaveBeenCalledWith({
       ownerId: 'o1',
