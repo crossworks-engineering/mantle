@@ -2138,13 +2138,19 @@ function systemPoolTx<T>(fn: (tx: PostgresJsDatabase<typeof schema>) => Promise<
   // An Admin user's write request (W6a fix round 1, M1): the login's scope
   // on the transaction, so the database checks moves (0241/0245), creates in
   // a folder and deletes (0266) against its workspaces. mantle.login_id is
-  // left unset: the 0250 stamp would otherwise mark trace, run and chat rows
-  // made in the same transaction as this login's, which nothing asks for.
+  // left unset: the 0250 and 0269 stamps would otherwise mark trace, run,
+  // chat and digest rows made in the same transaction as this login's, and
+  // 0279's audit rows would name it, which nothing asks for. The login goes
+  // in mantle.scope_login instead (arch A6 fix round 1, M1), which only the
+  // scope's checks read (mantle_scope_login_id, 0291: the 0291 definers'
+  // per-login item gate and mantle_scope_has_area), never a stamp or a row
+  // rule, so the scope's checks answer for this login as in its own scope.
   const writeScope = requestWriteScope();
   const settings = writeScope
     ? [
         uuidArrayLiteral(writeScope.ws, 'write scope ws'),
         uuidArrayLiteral(writeScope.modWs, 'write scope modWs'),
+        checkedUuidOrEmpty(writeScope.loginId),
       ]
     : null;
   // Where a create lands (W6b): the database's default home reads these.
@@ -2162,7 +2168,8 @@ function systemPoolTx<T>(fn: (tx: PostgresJsDatabase<typeof schema>) => Promise<
         if (settings) {
           await tx.execute(
             sqlTag`select set_config('mantle.ws', ${settings[0]}, true),
-                          set_config('mantle.mod_ws', ${settings[1]}, true)`,
+                          set_config('mantle.mod_ws', ${settings[1]}, true),
+                          set_config('mantle.scope_login', ${settings[2]}, true)`,
           );
         }
         if (homeSettings) {

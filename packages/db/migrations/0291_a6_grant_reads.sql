@@ -59,8 +59,47 @@
 --    the user search: the users area, any term, any page; a Moderator of a
 --    workspace, at least 3 characters, 10 at most, the first page only.
 --
+-- 9. mantle_scope_login_id(): the scope's login for the scope's checks
+--    (A6 fix round 1, M1). In a scope on a viewer or the write role it is
+--    mantle.login_id. On the system pool with a request's write scope set
+--    (systemPoolTx: an Admin user's write, a member's write with the check
+--    off), mantle.login_id stays unset (the 0250 and 0269 stamps and 0279's
+--    audit rows read it), so the login rides in mantle.scope_login, which
+--    only this function reads. Read by the per-login item gate of the
+--    definers below (a per-login item, nodes.login_id: a chat summary note,
+--    a Telegram attachment, is its own login's only) and by
+--    mantle_scope_has_area (0256, redefined here on it), so an Admin user's
+--    write on the system pool holds its areas as in its own scope.
+--
 -- No table, no row, no trigger and no LLM work changes. Re-runnable:
 -- CREATE OR REPLACE only.
+
+CREATE OR REPLACE FUNCTION "public"."mantle_scope_login_id"()
+  RETURNS uuid LANGUAGE sql STABLE PARALLEL SAFE AS $$
+  SELECT coalesce("public"."mantle_login_id"(),
+                  nullif(current_setting('mantle.scope_login', true), '')::uuid)
+$$;
+--> statement-breakpoint
+-- 0256's rule, the same text but for the login it reads: the scope's
+-- (mantle_scope_login_id), so the system pool with a write scope set
+-- answers for that scope's login as its own scope does.
+CREATE OR REPLACE FUNCTION "public"."mantle_scope_has_area"(area text)
+  RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER
+  SET search_path = "public", pg_temp AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM "public"."workspaces" w
+      JOIN "public"."workspace_users" u
+        ON u."workspace_id" = w."id" AND u."login_id" = "public"."mantle_scope_login_id"()
+     WHERE w."is_admin" AND w."archived_at" IS NULL
+       AND w."id" = ANY ("public"."mantle_scope_ws"())
+       AND area IN ('settings', 'users', 'assistants', 'connectors', 'keys')
+       AND coalesce(u."limits" -> 'areas' ->> area, '') <> 'false')
+$$;
+--> statement-breakpoint
+REVOKE EXECUTE ON FUNCTION "public"."mantle_scope_has_area"(text) FROM PUBLIC;
+--> statement-breakpoint
+GRANT EXECUTE ON FUNCTION "public"."mantle_scope_has_area"(text) TO mantle_view_user;
+--> statement-breakpoint
 
 CREATE OR REPLACE FUNCTION "public"."mantle_grant_refuses"(ok boolean, what text, message text)
   RETURNS void LANGUAGE plpgsql VOLATILE
@@ -94,7 +133,7 @@ CREATE OR REPLACE FUNCTION "public"."mantle_item_grants"(node uuid)
      WHERE n."id" = node AND n."owner_id" = "public"."mantle_brain_id"()
        AND (NOT "public"."mantle_scope_active"()
             OR (n."read_ws" && "public"."mantle_scope_ws"()
-                AND (n."login_id" IS NULL OR n."login_id" = "public"."mantle_login_id"())))
+                AND (n."login_id" IS NULL OR n."login_id" = "public"."mantle_scope_login_id"())))
   )
   SELECT g."workspace_id", w."name", g."write", g."is_home", g."via_folder_id", g."excluded",
          w."archived_at" IS NOT NULL,
@@ -129,7 +168,7 @@ CREATE OR REPLACE FUNCTION "public"."mantle_grant_counts"(
      WHERE n."id" = node AND n."owner_id" = "public"."mantle_brain_id"()
        AND (NOT "public"."mantle_scope_active"()
             OR (n."read_ws" && "public"."mantle_scope_ws"()
-                AND (n."login_id" IS NULL OR n."login_id" = "public"."mantle_login_id"())
+                AND (n."login_id" IS NULL OR n."login_id" = "public"."mantle_scope_login_id"())
                 AND (add_ws IS NULL
                      OR (coalesce("public"."mantle_may_manage"(n."home_ws"), false)
                          AND add_ws = ANY ("public"."mantle_scope_mod_ws"())))
@@ -224,7 +263,7 @@ CREATE OR REPLACE FUNCTION "public"."mantle_item_embeds"(node uuid)
      WHERE n."id" = node AND n."owner_id" = "public"."mantle_brain_id"()
        AND (NOT "public"."mantle_scope_active"()
             OR (n."read_ws" && "public"."mantle_scope_ws"()
-                AND (n."login_id" IS NULL OR n."login_id" = "public"."mantle_login_id"())))
+                AND (n."login_id" IS NULL OR n."login_id" = "public"."mantle_scope_login_id"())))
   ),
   direct AS (
     SELECT e."to_id", t."type" FROM i
@@ -275,7 +314,7 @@ CREATE OR REPLACE FUNCTION "public"."mantle_ws_seen"(login uuid)
        LIMIT 1) app ON true
    WHERE w."owner_id" = "public"."mantle_brain_id"()
      AND (NOT "public"."mantle_scope_active"()
-          OR (login = "public"."mantle_login_id"()
+          OR (login = "public"."mantle_scope_login_id"()
               AND ("public"."mantle_scope_has_area"('users')
                    OR (me."login_id" IS NOT NULL AND w."archived_at" IS NULL))))
 $$;

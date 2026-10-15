@@ -31,6 +31,14 @@
  * (NAMED_CHANGES below, each with its reason), whose new answer is in
  * __snapshots__/a6-grant-sweep-changes.txt.
  *
+ * Per-login items (A6 fix round 1, M1): an item with nodes.login_id set (a
+ * chat summary note, a Telegram attachment) is its own login's only. Each
+ * login's own per-login note and page, through the panel, its previews,
+ * three writes and the embeds write, are recorded apart
+ * (__snapshots__/a6-grant-sweep-per-login.txt), on main through main's one
+ * exit (A6_GRANT_HARNESS=main A6_GRANT_RECORD_PER_LOGIN=1, the test filtered
+ * to "per-login"), and must answer as main in warn, on and off.
+ *
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run server/web/server/a6-grant-sweep.db.test.ts
  */
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
@@ -44,6 +52,11 @@ const RECORD = process.env.A6_GRANT_RECORD === '1';
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SNAP = join(HERE, '__snapshots__', 'a6-grant-sweep.txt');
 const CHANGES = join(HERE, '__snapshots__', 'a6-grant-sweep-changes.txt');
+const PER_LOGIN_SNAP = join(HERE, '__snapshots__', 'a6-grant-sweep-per-login.txt');
+const RECORD_PER_LOGIN = RECORD || process.env.A6_GRANT_RECORD_PER_LOGIN === '1';
+/** main's harness: the grants library through its one exit, as main's
+ *  route ran it (recording the per-login cells on main). */
+const MAIN_HARNESS = process.env.A6_GRANT_HARNESS === 'main';
 
 vi.mock('@/lib/audit', () => ({
   auditFireAndForget: () => undefined,
@@ -126,6 +139,7 @@ describe.skipIf(!URL)('the A6 grant sweep', () => {
   let trash: typeof import('@mantle/content/app-trash');
   let tools: typeof import('@mantle/tools');
   let search: typeof import('@mantle/search');
+  let rq: typeof import('@/lib/auth/rule-in-query');
 
   const names = new Map<string, string>();
   let fresh = 1000;
@@ -271,6 +285,7 @@ describe.skipIf(!URL)('the A6 grant sweep', () => {
     trash = await import('@mantle/content/app-trash');
     tools = await import('@mantle/tools');
     search = await import('@mantle/search');
+    rq = await import('@/lib/auth/rule-in-query');
 
     for (const [k, v] of Object.entries(L)) names.set(v, `login:${k}`);
     for (const [k, v] of Object.entries(W)) names.set(v, `ws:${k}`);
@@ -743,6 +758,92 @@ describe.skipIf(!URL)('the A6 grant sweep', () => {
     }
     expect(await grantRows(nid)).toEqual(before);
     m.takeActorMisses();
+  });
+
+  it('per-login items: each login’s own answers as main recorded, in every check mode (A6 fix round 1, M1)', async () => {
+    // Before the fix an Admin user's write (the system pool with its scope
+    // set) and a member's write with the check off read no grant row of
+    // the login's own per-login item: mantle.login_id is unset there, so
+    // the 0291 definers' per-login gate hid it (404 not_granted).
+    const W2 = ws();
+    const plan: Record<LoginKey, { home: string; g: string; h: string }> = {
+      owner: { home: W.P, g: W.Q, h: W.R },
+      adminAll: { home: W2.Admin, g: W.Q, h: W.R },
+      adminNoUsers: { home: W2.Admin, g: W.Q, h: W.R },
+      modP: { home: W.P, g: W.Q, h: W.R },
+      modQR: { home: W.Q, g: W.P, h: W.R },
+      userQ: { home: W.Q, g: W.P, h: W.R },
+      outsider: { home: W.P, g: W.Q, h: W.R },
+    };
+    const plCells: string[] = [];
+    const pc = (key: string, v: unknown) => plCells.push(`${key} => ${JSON.stringify(norm(v))}`);
+    let n = 0;
+    /** A fresh item of `who`'s own (nodes.login_id), homed and granted as
+     *  its plan says. */
+    const own = async (who: LoginKey, type: 'note' | 'page' = 'note') => {
+      const nid = id(5000 + ++n);
+      names.set(nid, `pl${n}`);
+      await x(sql`insert into nodes (id, owner_id, type, title, path, login_id)
+                  values (${nid}, ${L.owner}, ${type}::node_type, ${`per-login ${n}`},
+                          ${type === 'page' ? 'pages' : 'notes'}::ltree, ${L[who]})`);
+      await homeIn(nid, plan[who].home);
+      await grant(nid, plan[who].g);
+      return nid;
+    };
+    const as = <T>(who: LoginKey, write: boolean, fn: () => Promise<T>): Promise<T> =>
+      MAIN_HARNESS ? rq.inRuleInQuery(fn) : grantsAs(who, write, fn);
+    for (const who of LOGINS) {
+      const c = callerOf(who);
+      const p = plan[who];
+      const base = await own(who);
+      pc(`perLogin.get ${who}`, await answer(() => as(who, false, () => g.getGrants(c, base))));
+      pc(
+        `perLogin.preview ${who} add=h`,
+        await answer(() => as(who, false, () => g.previewGrant(c, base, p.h, null))),
+      );
+      pc(
+        `perLogin.preview ${who} remove=g`,
+        await answer(() => as(who, false, () => g.previewGrant(c, base, null, p.g))),
+      );
+      const ops: Array<[string, (nid: string) => Promise<unknown>]> = [
+        ['write g on', (nid) => g.patchGrant(c, nid, p.g, { write: true })],
+        ['remove g', (nid) => g.removeGrant(c, nid, p.g, false)],
+        ['add h', (nid) => g.addGrant(c, nid, { wsId: p.h })],
+      ];
+      for (const [label, op] of ops) {
+        const nid = await own(who);
+        const res = await answer(() => as(who, true, () => op(nid)));
+        pc(`perLogin.write ${who} ${label}`, { res, rows: await grantRows(nid) });
+      }
+      // The embeds write: the login's own page embedding its own note.
+      const pageId = await own(who, 'page');
+      const embedded = await own(who);
+      await x(sql`insert into node_embeds (from_id, to_id) values (${pageId}, ${embedded})`);
+      const res = await answer(() =>
+        as(who, true, () => g.grantEmbeds(c, pageId, { wsIds: [p.h], confirm: true })),
+      );
+      pc(`perLogin.embeds ${who} add h`, {
+        res,
+        page: await grantRows(pageId),
+        note: await grantRows(embedded),
+      });
+    }
+    const text = `${plCells.join('\n')}\n`;
+    if (RECORD_PER_LOGIN) {
+      writeFileSync(PER_LOGIN_SNAP, text);
+      return;
+    }
+    expect(existsSync(PER_LOGIN_SNAP)).toBe(true);
+    const want = readFileSync(PER_LOGIN_SNAP, 'utf8').split('\n').filter(Boolean);
+    const got = plCells;
+    expect(got.map((l) => l.slice(0, l.indexOf(' => ')))).toEqual(
+      want.map((l) => l.slice(0, l.indexOf(' => '))),
+    );
+    const differ = got
+      .map((l, i) => [l, want[i]!] as const)
+      .filter(([a, b]) => a !== b)
+      .map(([a, b]) => `now:  ${a}\nmain: ${b}`);
+    expect(differ).toEqual([]);
   });
 
   it('answers as recorded on main, or as a named change', () => {
