@@ -17,6 +17,15 @@
  *  Every refusal is words of the mapper, never the database's or the
  *  runtime's own text (Failed query, withSystemTx, SQLSTATE, a stack).
  *
+ *  Fix round 1: F1's ?ws= on a v1 create (L3), HEAD and a read-only key;
+ *  an Admin user's key on a shared page outside its scope (L4); each turn
+ *  enters its scope as the tool loop does for its surface (a web chat names
+ *  its signed-in login as an owner surface, never a `loginId` the test
+ *  passes); a Moderator seat taken away during a turn (L5); a queued call
+ *  of a workspace turn approved by someone else, and an elevated one its
+ *  asker never approves (plan section 31). `pnpm test:edit-on` runs this
+ *  file with the actor check and the edit check on too.
+ *
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run server/web/server/a8-findings.db.test.ts
  */
 import { randomUUID } from 'node:crypto';
@@ -28,6 +37,18 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { ITEM_KINDS } from '@mantle/client-types/kinds';
 
 const DB_URL = process.env.MANTLE_TEST_DATABASE_URL;
+
+/** The connector's remote calls (the approval cells). */
+const remote = vi.hoisted(() => ({ calls: [] as string[] }));
+vi.mock('../../../packages/tools/src/mcp-client', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  mcpCallRemoteTool: vi.fn(
+    async (_o: string, _g: string, _m: unknown, tool: string, input: Record<string, unknown>) => {
+      remote.calls.push(`${tool} ${JSON.stringify(input)}`);
+      return { text: '{"updated":true}', secrets: [] };
+    },
+  ),
+}));
 
 const VEC = Array.from({ length: 768 }, (_, i) => (i === 0 ? 1 : 0));
 vi.mock('@mantle/embeddings', async (importOriginal) => ({
@@ -50,15 +71,26 @@ describe.skipIf(!DB_URL)('A8 findings: the owner’s decisions F1 and F2', () =>
   let t: typeof import('@mantle/tools');
   let rt: typeof import('@mantle/runtime/agent');
   let runRoute: typeof import('./run-route').runRoute;
+  let tracing: typeof import('@mantle/tracing');
+  let ex: typeof import('../../../packages/runtime/src/agent/tool-loop/execute-call');
   let dir = '';
   const tag = `a8f${randomUUID().slice(0, 6)}`;
-  const L = { owner: randomUUID(), mod: randomUUID(), user: randomUUID() };
+  const L = {
+    owner: randomUUID(),
+    mod: randomUUID(),
+    user: randomUUID(),
+    // Fix round 1: another plain user of W, and an Admin user in no other
+    // workspace.
+    user2: randomUUID(),
+    admin: randomUUID(),
+  };
   type Who = 'mod' | 'user';
+  const CONNECTOR = 'mcp_crm_update';
   const ws = { admin: '', W: '', H: '' };
   const agentW = randomUUID();
   const rootOf: Record<string, { id: string; path: string }> = {};
   let folderF = '';
-  const keyOf: Partial<Record<'owner' | Who, string>> = {};
+  const keyOf: Partial<Record<'owner' | 'admin' | 'modRead' | Who, string>> = {};
   const recorded: string[] = [];
 
   const rootPath = (kind: string) =>
@@ -128,14 +160,17 @@ describe.skipIf(!DB_URL)('A8 findings: the owner’s decisions F1 and F2', () =>
     t = await import('@mantle/tools');
     rt = await import('@mantle/runtime/agent');
     runRoute = (await import('./run-route')).runRoute;
+    tracing = await import('@mantle/tracing');
+    ex = await import('../../../packages/runtime/src/agent/tool-loop/execute-call');
     raw = postgres(scratch.url, { max: 2, prepare: false, onnotice: () => {} });
 
     // The anchor, a Moderator of W and of H (its H seat is outside the
     // assistant's workspace), and a plain user of W.
     for (const [who, id] of Object.entries(L)) {
+      const role = who === 'owner' || who === 'admin' ? 'admin' : 'member';
       await raw`insert into auth.users (id, email, password_hash, is_owner, role, display_name)
         values (${id}, ${`${tag}-${who}@example.invalid`}, 'x', ${who === 'owner'},
-                ${who === 'owner' ? 'admin' : 'member'}, ${who})`;
+                ${role}, ${who})`;
     }
     await raw`insert into spaces (id, kind, login_id) values (${L.owner}, 'brain', ${L.owner})
               on conflict (id) do nothing`;
@@ -152,10 +187,15 @@ describe.skipIf(!DB_URL)('A8 findings: the owner’s decisions F1 and F2', () =>
     }
     await raw`delete from workspace_users u using workspaces w
                where w.id = u.workspace_id and not w.is_admin
-                 and u.login_id in (${L.mod}, ${L.user})`;
+                 and u.login_id in (${L.mod}, ${L.user}, ${L.user2}, ${L.admin})`;
     await raw`insert into workspace_users (workspace_id, login_id, moderator) values
-      (${ws.W}, ${L.mod}, true), (${ws.H}, ${L.mod}, true), (${ws.W}, ${L.user}, false)`;
-    for (const who of ['mod', 'user'] as const) {
+      (${ws.W}, ${L.mod}, true), (${ws.H}, ${L.mod}, true), (${ws.W}, ${L.user}, false),
+      (${ws.W}, ${L.user2}, false)`;
+    // The Admin user: in Admin, no Moderator there, in no other workspace.
+    await raw`insert into workspace_users (workspace_id, login_id, moderator)
+      values (${ws.admin}, ${L.admin}, false)
+      on conflict (workspace_id, login_id) do update set moderator = false`;
+    for (const who of ['mod', 'user', 'user2'] as const) {
       await raw`select mantle_ws_private_workspace(${L[who]}::uuid)`;
     }
     await raw`insert into agents (id, owner_id, slug, name, model, system_prompt, role, workspace_id)
@@ -190,18 +230,31 @@ describe.skipIf(!DB_URL)('A8 findings: the owner’s decisions F1 and F2', () =>
     });
     await raw`select mantle_set_actor_check('warn')`;
     await m.asSystem(() => t.seedBuiltinTools(L.owner), 'test');
+    // A connector W holds with its Write on (the approval cells): a write
+    // that waits for approval (requires_confirm).
+    await raw`insert into tool_groups (owner_id, slug, name, tool_slugs, integration, enabled)
+      values (${L.owner}, 'crm', 'CRM', ${`{${CONNECTOR}}`}::text[],
+              ${raw.json({ mcp: { url: 'https://crm.example.test/mcp' } })}, true)`;
+    await raw`insert into tools (owner_id, slug, name, description, input_schema, handler,
+                                 requires_confirm, enabled)
+      values (${L.owner}, ${CONNECTOR}, 'CRM update', 'Update a CRM record.',
+              ${raw.json({ type: 'object', properties: { id: { type: 'string' } } })},
+              ${raw.json({ kind: 'mcp', group: 'crm', toolName: 'update' })}, true, true)`;
+    await raw`insert into workspace_resources (workspace_id, type, ref_id, write)
+      values (${ws.W}, 'connector', 'crm', true)`;
     const keys = await import('../lib/access-keys');
-    for (const who of ['owner', 'mod', 'user'] as const) {
+    for (const who of ['owner', 'mod', 'user', 'admin', 'modRead'] as const) {
+      const login = who === 'modRead' ? L.mod : L[who];
       const minted = await m.asSystem(
         () =>
           keys.mintAccessKey({
             name: `${tag} ${who}`,
-            loginId: L[who],
-            access: 'read_write',
+            loginId: login,
+            access: who === 'modRead' ? 'read' : 'read_write',
             areas: null,
             riskyTools: [],
             expiresAt: new Date(Date.now() + 30 * 86_400_000),
-            createdBy: L[who],
+            createdBy: login,
             maxLive: 50,
           }),
         'test',
@@ -368,24 +421,38 @@ describe.skipIf(!DB_URL)('A8 findings: the owner’s decisions F1 and F2', () =>
     return tools.get(slug)!;
   };
 
-  /** One tool call in `who`'s turn with the assistant of W, on `surface`. */
+  /** The surface a turn of `login` names, as its chat does. */
+  const surfaceOf = (surface: Surface, login: string) =>
+    surface === 'team-turn'
+      ? { kind: 'team', loginId: login }
+      : surface === 'telegram'
+        ? { kind: 'telegram', telegramChatId: '1', loginId: login }
+        : { kind: 'web', loginId: login };
+
+  /** One tool call in `who`'s turn with the assistant of W, on `surface`.
+   *  A turn enters its scope as the tool loop does (runToolLoop): the
+   *  login the surface names (a team or Telegram chat's), or a web chat's
+   *  signed-in login as an owner surface (fix round 1, finding 8: never a
+   *  login the test hands it). `before` runs in the turn, first. */
   const inTurn = async (
     surface: Surface,
-    who: Who,
+    who: Who | 'owner',
     slug: string,
     input: Record<string, unknown>,
+    before?: () => Promise<void>,
   ): Promise<Outcome> => {
     const login = L[who];
-    const actor = m.loginActor(login, 'rw');
+    const actor = m.loginActor(login, who === 'owner' ? 'owner' : 'rw');
     try {
       if (surface === 'run') {
         const res = await m.runAsActor(actor, () =>
-          rt.withRunScope({ workspaceId: ws.W, loginId: login, ownerId: L.owner }, async () =>
-            t.dispatchTool(await toolRow(slug), input, {
+          rt.withRunScope({ workspaceId: ws.W, loginId: login, ownerId: L.owner }, async () => {
+            await before?.();
+            return t.dispatchTool(await toolRow(slug), input, {
               ownerId: L.owner,
               caller: t.runCaller(),
-            }),
-          ),
+            });
+          }),
         );
         return { ok: res.ok, text: res.ok ? JSON.stringify(res.output ?? '') : String(res.error) };
       }
@@ -397,17 +464,19 @@ describe.skipIf(!DB_URL)('A8 findings: the owner’s decisions F1 and F2', () =>
               inputSchema: { type: 'object', properties: {} },
             } as never)
           : await toolRow(slug);
-      const kind = surface === 'team-turn' ? 'team' : surface === 'telegram' ? 'telegram' : 'web';
+      const surf = surfaceOf(surface, login);
       const res = await m.runAsActor(actor, () =>
         rt.withAgentScope(
-          { id: agentW, ownerId: L.owner, workspaceId: ws.W },
-          () =>
-            t.dispatchTool(tool, surface === 'recipe' ? {} : input, {
+          { id: agentW, ownerId: L.owner, workspaceId: ws.W, role: 'responder' },
+          async () => {
+            await before?.();
+            return t.dispatchTool(tool, surface === 'recipe' ? {} : input, {
               ownerId: L.owner,
-              surface: { kind, loginId: login } as never,
+              surface: surf as never,
               caller: t.turnCaller(),
-            }),
-          { loginId: login },
+            });
+          },
+          { loginId: rt.surfaceLoginId(surf), ownerLoginId: rt.ownerSurfaceLogin(surf) },
         ),
       );
       return { ok: res.ok, text: res.ok ? JSON.stringify(res.output ?? '') : String(res.error) };
@@ -531,7 +600,37 @@ describe.skipIf(!DB_URL)('A8 findings: the owner’s decisions F1 and F2', () =>
           failures.push(`${c('create task')}: landed in ${row.home}`);
         }
       }
+      // L5: the Moderator's seat in W taken away during the turn, before
+      // its write: refused in the seat's words, nothing written.
+      if (surface !== 'recipe') {
+        const seat = await makeItem('task', ws.W);
+        await check(
+          `${surface} mod edit task homed in W, seat taken away during the turn`,
+          false,
+          () =>
+            inTurn(surface, 'mod', 'task_update', { id: seat, title: `${tag} e5` }, async () => {
+              await raw`update workspace_users set moderator = false
+                         where workspace_id = ${ws.W} and login_id = ${L.mod}`;
+            }),
+          [seat],
+        );
+        await raw`update workspace_users set moderator = true
+                   where workspace_id = ${ws.W} and login_id = ${L.mod}`;
+        const said = recorded[recorded.length - 1] ?? '';
+        if (!said.includes(t.MODERATOR_SEAT_CHANGED.slice(0, 40))) {
+          failures.push(`${surface} seat taken away: ${said}`);
+        }
+      }
     }
+    // A web chat whose login is no user of W (the owner here): its turn
+    // answers no login and only reads, as before.
+    const ownerWeb = await makeItem('task', ws.W);
+    await check(
+      'web-turn owner (no user of W) edit task homed in W',
+      false,
+      () => inTurn('web-turn', 'owner', 'task_update', { id: ownerWeb, title: `${tag} e6` }),
+      [ownerWeb],
+    );
     expect(failures).toEqual([]);
   }, 900_000);
 
@@ -569,4 +668,209 @@ describe.skipIf(!DB_URL)('A8 findings: the owner’s decisions F1 and F2', () =>
     }
     expect(failures).toEqual([]);
   }, 300_000);
+  // ── Fix round 1: F1's ?ws=, HEAD, a read-only key; L4 ───────────────────
+
+  it('F1 fix round 1: a v1 create reads ?ws= as its base; HEAD; a read-only key; L4', async () => {
+    const failures: string[] = [];
+    const homeOf = async (title: string) =>
+      (
+        await raw<{ home: string | null }[]>`
+          select home_ws::text as home from nodes where title = ${title}`
+      )[0]?.home ?? null;
+    // ?ws= (L3): each key, the v1 create and its base, with and without it.
+    const sides: Array<[string, string | { key: string }, string | { key: string }, string]> = [
+      ['mod', { key: keyOf.mod! }, L.mod, ws.W],
+      ['user', { key: keyOf.user! }, L.user, ws.W],
+      ['owner', { key: keyOf.owner! }, L.owner, ws.admin],
+    ];
+    for (const [who, key, session, target] of sides) {
+      for (const [v1, base] of [
+        ['/api/v1/tasks', '/api/tasks'],
+        ['/api/v1/notes', '/api/notes'],
+      ] as const) {
+        for (const q of [`?ws=${target}`, '']) {
+          const t1 = `${tag} ws ${who} v1 ${randomUUID().slice(0, 6)}`;
+          const t2 = `${tag} ws ${who} base ${randomUUID().slice(0, 6)}`;
+          const a = await http(key, 'POST', `${v1}${q}`, { title: t1 });
+          const b = await http(session, 'POST', `${base}${q}`, { title: t2 });
+          const [ha, hb] = [await homeOf(t1), await homeOf(t2)];
+          const cell = `api-v1 ${who} POST ${v1}${q ? '?ws=' : ''}`;
+          note(
+            `${cell} -> ${ha === ws.W ? 'W' : ha === ws.admin ? 'admin' : ha ? 'private' : '-'}`,
+            a,
+          );
+          if (a.status !== b.status || ha !== hb) {
+            failures.push(`${cell}: v1 ${a.status} ${ha}, base ${b.status} ${hb}`);
+          }
+          if (who === 'mod' && q && ha !== ws.W) failures.push(`${cell}: landed in ${ha}`);
+          if (RAW.test(a.text)) failures.push(`${cell}: raw text`);
+        }
+      }
+    }
+    // HEAD: a member key on a v1 row answers as the base row's HEAD.
+    for (const who of ['mod', 'user'] as const) {
+      const viaKey = await makeItem('note', ws.W);
+      const viaBase = await makeItem('note', ws.W);
+      for (const [v1, base] of [
+        [`/api/v1/notes/${viaKey}`, `/api/notes/${viaBase}`],
+        ['/api/v1/tasks', '/api/tasks'],
+        ['/api/v1/contacts', '/api/contacts'],
+      ] as const) {
+        const a = await http({ key: keyOf[who]! }, 'HEAD', v1);
+        const b = await http(L[who], 'HEAD', base);
+        note(`api-v1 ${who} HEAD ${v1.replace(viaKey, ':id')}`, a);
+        if (a.status !== b.status)
+          failures.push(`${who} HEAD ${v1}: v1 ${a.status}, base ${b.status}`);
+      }
+    }
+    // A read-only key of a member: reads, never writes.
+    const read = await http({ key: keyOf.modRead! }, 'GET', '/api/v1/notes');
+    note('api-v1 mod read-only key GET /api/v1/notes', read);
+    if (read.status !== 200) failures.push(`read-only key read: ${read.status}`);
+    const write = await http({ key: keyOf.modRead! }, 'POST', '/api/v1/notes', {
+      title: `${tag} read only`,
+    });
+    note('api-v1 mod read-only key POST /api/v1/notes', write);
+    if (write.status !== 403 || !write.text.includes('key-read-only')) {
+      failures.push(`read-only key write: ${write.status} ${write.text}`);
+    }
+    // L4: an Admin user's key on a shared page outside its scope is the item
+    // gate's 404, before the key's shared-content rule reads it; a shared
+    // page it reads still meets the rule.
+    const doc = { doc: { type: 'doc', content: [] } };
+    const outside = await makeItem('page', ws.H, [{ ws: ws.W, write: false }]);
+    const inside = await makeItem('page', ws.admin, [{ ws: ws.W, write: false }]);
+    for (const [cell, id, want] of [
+      ['a shared page outside its scope', outside, 404],
+      ['a shared page it reads', inside, 403],
+    ] as const) {
+      const r = await http({ key: keyOf.admin! }, 'PATCH', `/api/v1/pages/${id}`, doc);
+      note(`api-v1 admin PATCH /api/v1/pages/:id doc, ${cell}`, r);
+      if (r.status !== want) failures.push(`admin key PATCH doc, ${cell}: ${r.status} ${r.text}`);
+    }
+    expect(failures).toEqual([]);
+  }, 600_000);
+
+  // ── Approval: a workspace turn's queued call (plan section 31) ─────────
+
+  it('approval: another approver runs a workspace turn’s queued call; an asker never approves an elevated one', async () => {
+    const failures: string[] = [];
+    await raw`update tools set requires_confirm = true
+               where owner_id = ${L.owner} and slug = 'task_update'`;
+    try {
+      /** Queue `slug` for `who` in a team turn with W's assistant, through
+       *  the tool loop's own queue path. The pending row's id, or null. */
+      const queue = async (who: Who, slug: string, input: Record<string, unknown>) => {
+        const login = L[who];
+        const row = await m.asSystem(() => t.resolveTool(L.owner, slug), 'test');
+        const surface = { kind: 'team', loginId: login };
+        const pendingIds: string[] = [];
+        const res = await m.runAsActor(m.loginActor(login, 'rw'), () =>
+          rt.withAgentScope(
+            { id: agentW, ownerId: L.owner, workspaceId: ws.W, role: 'responder' },
+            () =>
+              tracing.startTrace(
+                { kind: 'responder_turn', ownerId: L.owner, agentId: agentW, loginId: login },
+                () =>
+                  ex.executeToolCall({
+                    args: {
+                      ownerId: L.owner,
+                      agentId: agentW,
+                      agentSlug: `${tag}-w`,
+                      surface,
+                    } as never,
+                    slug,
+                    call: { id: `call-${randomUUID()}`, function: { name: slug, arguments: '{}' } },
+                    tool: row!,
+                    input,
+                    argParseError: null,
+                    argValidation: null,
+                    argValidationMode: 'off',
+                    lastUserMessage: undefined,
+                    pendingIds,
+                  }),
+              ),
+            { loginId: rt.surfaceLoginId(surface), ownerLoginId: rt.ownerSurfaceLogin(surface) },
+          ),
+        );
+        if (pendingIds.length !== 1) {
+          failures.push(`queue ${who} ${slug}: not queued: ${JSON.stringify(res).slice(0, 160)}`);
+          return null;
+        }
+        return pendingIds[0]!;
+      };
+      const statusOf = async (id: string) =>
+        (
+          await raw<{ s: string }[]>`select status::text as s from pending_tool_calls
+                                     where id = ${id}`
+        )[0]?.s ?? 'gone';
+      /** `approver` approves `id` (the batch path: approvePendingCall). */
+      const approve = async (approver: 'owner' | 'mod' | 'user' | 'user2', id: string) => {
+        const login = L[approver];
+        try {
+          const row = await m.runAsActor(
+            m.loginActor(login, approver === 'owner' ? 'owner' : 'rw'),
+            () => t.approvePendingCall(L.owner, id, { approverLoginId: login }),
+          );
+          return { ok: !!row, text: row ? 'approved' : 'not found' };
+        } catch (err) {
+          return { ok: false, text: err instanceof Error ? err.message : String(err) };
+        }
+      };
+
+      // A call that is not elevated: its asker's write in W, approved by
+      // the owner (not its asker), runs in the scope it was asked in.
+      for (const [who, id] of [
+        ['mod', await makeItem('task', ws.W)],
+        ['user', await makeItem('task', ws.H, [{ ws: ws.W, write: true }])],
+      ] as const) {
+        const before = await probe(id);
+        const pending = await queue(who, 'task_update', { id, title: `${tag} approved ${who}` });
+        if (!pending) continue;
+        const out = await approve('owner', pending);
+        note(`approval ${who} task_update, the owner approves`, out);
+        if (!out.ok || (await probe(id)) === before) {
+          failures.push(`${who} task_update approved by the owner: did not write: ${out.text}`);
+        }
+        if (RAW.test(out.text)) failures.push(`${who} task_update approval: raw text`);
+      }
+
+      // An elevated call (a plain user's connector write): its asker never
+      // approves it; another user approves it only with its own connector
+      // write rights in W (the Moderator, the connector's Write on); the
+      // owner always.
+      const cells: Array<['user' | 'user2' | 'mod' | 'owner', boolean]> = [
+        ['user', false],
+        ['user2', false],
+        ['mod', true],
+      ];
+      const elevated = await queue('user', CONNECTOR, { id: 'c-1' });
+      if (elevated) {
+        for (const [approver, runs] of cells) {
+          const calls = remote.calls.length;
+          const out = await approve(approver, elevated);
+          note(`approval user ${CONNECTOR} (elevated), ${approver} approves`, out);
+          const ran = remote.calls.length > calls;
+          const status = await statusOf(elevated);
+          if (ran !== runs) failures.push(`elevated, ${approver}: ran ${ran}, want ${runs}`);
+          if (!runs && status !== 'pending') {
+            failures.push(`elevated, ${approver}: left ${status}, want pending`);
+          }
+          if (RAW.test(out.text)) failures.push(`elevated, ${approver}: raw text`);
+        }
+      }
+      const byOwner = await queue('user', CONNECTOR, { id: 'c-2' });
+      if (byOwner) {
+        const calls = remote.calls.length;
+        const out = await approve('owner', byOwner);
+        note(`approval user ${CONNECTOR} (elevated), owner approves`, out);
+        if (remote.calls.length === calls)
+          failures.push(`elevated, owner: did not run: ${out.text}`);
+      }
+    } finally {
+      await raw`update tools set requires_confirm = false
+                 where owner_id = ${L.owner} and slug = 'task_update'`;
+    }
+    expect(failures).toEqual([]);
+  }, 600_000);
 });

@@ -252,6 +252,7 @@ export { builtinToolGatePolicy, builtinToolRef, mcpBuiltinToolRef } from './tool
 export { turnCallRefusal, turnListedTools } from './turn-listing';
 export { CONNECTOR_ELEVATED_REASON, type ElevatedApproval } from './connector-scope';
 export { registerPreRunChecks } from './gate-prerun';
+export { MODERATOR_SEAT_CHANGED, moderatorSeatLost } from './moderator-seat';
 export { contentToolTarget, keySharedContentRefusal, type KeyOrPeer } from './key-shared-content';
 export { othersCanRead } from './shared-item';
 export { maskToolDatabaseErrors, thrownToolDatabaseError } from './tool-error-mask';
