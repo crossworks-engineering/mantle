@@ -22,6 +22,7 @@
     "migrate": "tsx --env-file-if-exists=../../server/web/.env.local src/migrate.ts",
     "studio": "node --env-file-if-exists=../../server/web/.env.local --import tsx node_modules/drizzle-kit/bin.cjs studio",
     "init-scratch": "tsx src/init-scratch.ts",
+    "oracle:answers": "tsx src/matrix/oracle-answers-cli.ts",
     "drop-viewer-logins": "tsx --env-file-if-exists=../../server/web/.env.local src/drop-viewer-logins.ts"
   },
   "dependencies": {
