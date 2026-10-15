@@ -40,7 +40,6 @@ import type {
   ChatStreamSink,
 } from './types';
 import { ChatHttpError, parseRetryAfterMs } from './retry';
-import { chatAbortSignal } from './sse';
 import type { DiscoveryResult } from '../discover';
 import {
   extractOpenAICompatToolCalls,
@@ -106,15 +105,19 @@ async function customChat(opts: ChatOptions): Promise<ChatResult> {
     ...(o.extra ?? {}),
   };
 
-  const res = await providerFetch(`${url}/chat/completions`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${opts.apiKey}`,
-      'content-type': 'application/json',
+  const res = await providerFetch(
+    `${url}/chat/completions`,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${opts.apiKey}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify(body),
+      signal: o.signal,
     },
-    body: JSON.stringify(body),
-    signal: chatAbortSignal(o.signal, PROVIDER_TIMEOUTS.chatRelay),
-  });
+    { timeoutMs: PROVIDER_TIMEOUTS.chatRelay },
+  );
   if (!res.ok) {
     const errBody = await res.text().catch(() => '');
     throw new ChatHttpError({

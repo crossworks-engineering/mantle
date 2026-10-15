@@ -30,9 +30,15 @@ import type {
   ChatToolCall,
 } from './types';
 import { ChatHttpError, parseRetryAfterMs } from './retry';
-import { STREAM_IDLE_TIMEOUT_MS, readSSE, safeDelta, streamAbort } from './sse';
+import {
+  STREAM_CONNECT_TIMEOUT_MS,
+  STREAM_IDLE_TIMEOUT_MS,
+  readSSE,
+  safeDelta,
+  streamAbort,
+} from './sse';
 import { StreamingThinkScrubber } from './think-scrubber';
-import { providerFetch } from './provider-fetch';
+import { providerFetch, type ProviderFetchOptions } from './provider-fetch';
 
 // ─── Wire types ──────────────────────────────────────────────────────────────
 
@@ -275,8 +281,8 @@ export type OpenAICompatStreamConfig = {
   provider: string;
   bodyExtra?: Record<string, unknown>;
   /** Override the fetch implementation (e.g. the local adapter's `tailnetFetch`
-   *  to reach a NAT'd box). Defaults to global `fetch`. */
-  fetchImpl?: typeof fetch;
+   *  to reach a NAT'd box). Defaults to {@link providerFetch}. */
+  fetchImpl?: (url: string, init?: RequestInit, opts?: ProviderFetchOptions) => Promise<Response>;
   /** How long headers may take to arrive, in ms. Defaults to
    *  {@link STREAM_CONNECT_TIMEOUT_MS} (60s), which suits a hosted provider that
    *  answers in under a second. A self-hosted server loading a cold model into
@@ -333,14 +339,21 @@ export async function streamOpenAICompatChat(
   // Stopped before we even sent — don't spend the request.
   if (opts.signal?.aborted) return { text: '', model: opts.model };
 
-  const abort = streamAbort(opts.signal, cfg.connectMs);
+  const connectMs = cfg.connectMs ?? STREAM_CONNECT_TIMEOUT_MS;
+  const abort = streamAbort(opts.signal, connectMs);
   const doFetch = cfg.fetchImpl ?? providerFetch;
-  const res = await doFetch(cfg.url, {
-    method: 'POST',
-    headers: cfg.headers,
-    body: JSON.stringify(body),
-    signal: abort.signal,
-  });
+  // The deadline is stated to providerFetch too, scoped to the headers: a
+  // stream's answer is open-ended, and the idle guard below bounds the body.
+  const res = await doFetch(
+    cfg.url,
+    {
+      method: 'POST',
+      headers: cfg.headers,
+      body: JSON.stringify(body),
+      signal: abort.signal,
+    },
+    { timeoutMs: connectMs, timeoutScope: 'headers' },
+  );
   abort.connected();
   if (!res.ok || !res.body) {
     const errBody = await res.text().catch(() => '');

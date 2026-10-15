@@ -25,7 +25,6 @@ import type {
   ChatStreamSink,
 } from './types';
 import { ChatHttpError, parseRetryAfterMs } from './retry';
-import { chatAbortSignal } from './sse';
 import type { DiscoveryResult } from '../discover';
 import {
   extractOpenAICompatToolCalls,
@@ -80,15 +79,19 @@ async function localChat(opts: ChatOptions): Promise<ChatResult> {
   // OFF refuses fast (fed to the failover layer); a hang hits this timeout.
   // `viaTailnet` routes through the Tailscale proxy to reach a NAT'd host.
   const doFetch = opts.viaTailnet ? tailnetFetch : providerFetch;
-  const res = await doFetch(`${baseUrl(opts.baseUrl)}/chat/completions`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${opts.apiKey || 'local'}`,
-      'content-type': 'application/json',
+  const res = await doFetch(
+    `${baseUrl(opts.baseUrl)}/chat/completions`,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${opts.apiKey || 'local'}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify(body),
+      signal: opts.signal,
     },
-    body: JSON.stringify(body),
-    signal: chatAbortSignal(opts.signal, LOCAL_TIMEOUT_MS),
-  });
+    { timeoutMs: LOCAL_TIMEOUT_MS },
+  );
   if (!res.ok) {
     const errBody = await res.text().catch(() => '');
     throw new ChatHttpError({
@@ -155,7 +158,7 @@ function localChatStream(opts: ChatOptions, onDelta: ChatStreamSink): Promise<Ch
       },
       provider: 'local',
       connectMs: LOCAL_TIMEOUT_MS,
-      ...(opts.viaTailnet ? { fetchImpl: tailnetFetch as typeof fetch } : {}),
+      ...(opts.viaTailnet ? { fetchImpl: tailnetFetch } : {}),
     },
     onDelta,
   );

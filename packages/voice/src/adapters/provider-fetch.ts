@@ -17,14 +17,20 @@
  * at most {@link PROVIDER_CONNECTIONS} connections per origin. The cap is a
  * ceiling, not a driver: callers still decide how many requests they send.
  *
- * Deadlines (A10 #10): every call has one. The caller names it
- * (`{ timeoutMs: PROVIDER_TIMEOUTS.discover }`, @mantle/std timeouts.ts);
- * a call that names none gets `PROVIDER_TIMEOUTS.default` (180 s). It covers
- * the whole exchange of an ordinary answer, and only the headers of an event
- * stream (`text/event-stream`, or `timeoutScope: 'headers'`), so a long
- * healthy stream is never cut: the stream's own idle guard (sse.ts) bounds
- * it after that. Before, a call with no signal waited on undici's defaults
- * only (300 s for the headers, 300 s of body silence, no total).
+ * Deadlines (A10 #10): the caller names one
+ * (`{ timeoutMs: PROVIDER_TIMEOUTS.discover }`, @mantle/std timeouts.ts).
+ * A call that names none AND brings no signal of its own gets
+ * `PROVIDER_TIMEOUTS.default` (180 s). A call that brings its own signal (an
+ * `init.signal`, or a Request, which always carries one) and names no
+ * deadline gets no default: its signal is its deadline, and a default could
+ * only ever cut it SHORTER than the caller asked (fix round 1: a 300 s local
+ * model call cut at 180 s, retried, then failed over to a paid cloud route).
+ * The deadline covers the whole exchange of an ordinary answer, and only the
+ * headers of a stream: every stream call says so (`timeoutScope: 'headers'`),
+ * and an answer typed `text/event-stream` is treated the same as a fallback,
+ * so a long healthy stream is never cut: the stream's own idle guard (sse.ts)
+ * bounds it after that. Before, a call with no signal waited on undici's
+ * defaults only (300 s for the headers, 300 s of body silence, no total).
  *
  * `undici` is Node-only (it pulls in node:net) and the `@mantle/voice` barrel
  * reaches browser bundles, so it is loaded lazily. The server runs as ESM,
@@ -49,6 +55,7 @@ const NATIVE_FETCH = globalThis.fetch;
 let undiciModule: Undici | null | undefined; // undefined = not tried; null = unavailable
 let agent: UndiciAgent | null | undefined;
 let testConnect: { ca: string } | undefined;
+let defaultTimeoutMs: number = PROVIDER_TIMEOUTS.default;
 
 /** The `undici` package, or null where it cannot load (a browser bundle). */
 export function loadUndici(): Undici | null {
@@ -87,13 +94,16 @@ export function providerDispatcher(): UndiciAgent | null {
 
 /** A provider call's deadline. */
 export type ProviderFetchOptions = {
-  /** Abort after this many ms (name it from PROVIDER_TIMEOUTS). Default
-   *  PROVIDER_TIMEOUTS.default. */
+  /** Abort after this many ms (name it from PROVIDER_TIMEOUTS). Default:
+   *  PROVIDER_TIMEOUTS.default, but only for a call that brings no signal of
+   *  its own; a caller's signal is never cut shorter by a default. */
   timeoutMs?: number;
   /**
    * What the deadline covers. `exchange`: the headers and the body. `headers`:
-   * the first byte only (a stream). `auto` (default): the exchange, unless the
-   * answer is an event stream, then the headers only.
+   * the headers only; every stream call passes it, whatever the answer's
+   * content type (ndjson, plain text). `auto` (default): the exchange, unless
+   * the answer is typed `text/event-stream` (the fallback for a stream call
+   * that does not say), then the headers only.
    */
   timeoutScope?: 'exchange' | 'headers' | 'auto';
 };
@@ -114,7 +124,20 @@ export async function fetchVia(
   opts?: ProviderFetchOptions,
 ): Promise<Response> {
   if (globalThis.fetch !== NATIVE_FETCH) return globalThis.fetch(input, init);
-  const ms = opts?.timeoutMs ?? PROVIDER_TIMEOUTS.default;
+  const own = [init?.signal, input instanceof Request ? input.signal : null].filter(
+    (s): s is AbortSignal => !!s,
+  );
+  // The caller's own signal and no named deadline: that signal IS the
+  // deadline. A default here could only cut it shorter than asked.
+  const ms = opts?.timeoutMs ?? (own.length ? undefined : defaultTimeoutMs);
+  // The built-in RequestInit type has no `dispatcher`; the runtime accepts it.
+  const withDispatcher = (signal: AbortSignal | undefined) =>
+    ({
+      ...init,
+      ...(signal ? { signal } : {}),
+      ...(dispatcher ? { dispatcher } : {}),
+    }) as RequestInit;
+  if (ms === undefined) return NATIVE_FETCH(input, withDispatcher(undefined));
   const scope = opts?.timeoutScope ?? 'auto';
   const deadline = new AbortController();
   const timer = setTimeout(
@@ -125,15 +148,10 @@ export async function fetchVia(
     ms,
   );
   (timer as { unref?: () => void }).unref?.();
-  const own = [init?.signal, input instanceof Request ? input.signal : null].filter(
-    (s): s is AbortSignal => !!s,
-  );
   const signal = own.length ? AbortSignal.any([...own, deadline.signal]) : deadline.signal;
-  // The built-in RequestInit type has no `dispatcher`; the runtime accepts it.
-  const next = { ...init, signal, ...(dispatcher ? { dispatcher } : {}) } as RequestInit;
   let res: Response;
   try {
-    res = await NATIVE_FETCH(input, next);
+    res = await NATIVE_FETCH(input, withDispatcher(signal));
   } catch (err) {
     clearTimeout(timer);
     throw err;
@@ -159,4 +177,13 @@ export function _resetProviderDispatcher(ca?: string): void {
   void agent?.close().catch(() => {});
   agent = undefined;
   testConnect = ca ? { ca } : undefined;
+}
+
+/**
+ * Test seam: a stand-in for `PROVIDER_TIMEOUTS.default` (no argument puts the
+ * real one back), so a test can show what the default does and does not cut
+ * without waiting three minutes.
+ */
+export function _setProviderDefaultTimeout(ms?: number): void {
+  defaultTimeoutMs = ms ?? PROVIDER_TIMEOUTS.default;
 }

@@ -29,7 +29,6 @@ import type {
   ChatStreamSink,
 } from './types';
 import { ChatHttpError, parseRetryAfterMs } from './retry';
-import { chatAbortSignal } from './sse';
 import type { DiscoveryResult } from '../discover';
 import { COPILOT_BASE_URL, COPILOT_CHAT_MODELS } from '../catalogs/copilot';
 import {
@@ -97,15 +96,19 @@ async function copilotChat(opts: ChatOptions): Promise<ChatResult> {
   };
 
   return withCopilotAuth(opts.apiKey, async (token) => {
-    const res = await providerFetch(`${COPILOT_BASE_URL}/chat/completions`, {
-      method: 'POST',
-      headers: copilotHeaders({
-        Authorization: `Bearer ${token}`,
-        'content-type': 'application/json',
-      }),
-      body: JSON.stringify(body),
-      signal: chatAbortSignal(o.signal, PROVIDER_TIMEOUTS.chatRelay),
-    });
+    const res = await providerFetch(
+      `${COPILOT_BASE_URL}/chat/completions`,
+      {
+        method: 'POST',
+        headers: copilotHeaders({
+          Authorization: `Bearer ${token}`,
+          'content-type': 'application/json',
+        }),
+        body: JSON.stringify(body),
+        signal: o.signal,
+      },
+      { timeoutMs: PROVIDER_TIMEOUTS.chatRelay },
+    );
     if (!res.ok) {
       const errBody = await res.text().catch(() => '');
       throw new ChatHttpError({

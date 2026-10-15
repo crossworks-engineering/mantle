@@ -31,8 +31,8 @@ import type {
 } from './types';
 import { ChatHttpError, parseRetryAfterMs } from './retry';
 import {
+  STREAM_CONNECT_TIMEOUT_MS,
   STREAM_IDLE_TIMEOUT_MS,
-  chatAbortSignal,
   readSSE,
   routeBase,
   safeDelta,
@@ -561,8 +561,9 @@ async function googleChat(opts: ChatOptions): Promise<ChatResult> {
         'content-type': 'application/json',
       },
       body: JSON.stringify(body),
-      signal: chatAbortSignal(opts.signal, PROVIDER_TIMEOUTS.chat),
+      signal: opts.signal,
     },
+    { timeoutMs: PROVIDER_TIMEOUTS.chat },
   );
   if (!res.ok) {
     const errBody = await res.text().catch(() => '');
@@ -675,6 +676,7 @@ async function googleChatStream(opts: ChatOptions, onDelta: ChatStreamSink): Pro
       body: JSON.stringify(body),
       signal: abort.signal,
     },
+    { timeoutMs: STREAM_CONNECT_TIMEOUT_MS, timeoutScope: 'headers' },
   );
   abort.connected();
   if (!res.ok || !res.body) {

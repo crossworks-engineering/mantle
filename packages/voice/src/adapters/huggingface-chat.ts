@@ -34,7 +34,6 @@ import type {
   ChatStreamSink,
 } from './types';
 import { ChatHttpError, parseRetryAfterMs } from './retry';
-import { chatAbortSignal } from './sse';
 import type { DiscoveryResult } from '../discover';
 import {
   HUGGINGFACE_BASE_URL,
@@ -103,15 +102,19 @@ async function hfChat(opts: ChatOptions): Promise<ChatResult> {
     ...(typeof opts.topP === 'number' ? { top_p: opts.topP } : {}),
   };
 
-  const res = await providerFetch(`${HUGGINGFACE_BASE_URL}/chat/completions`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${opts.apiKey}`,
-      'content-type': 'application/json',
+  const res = await providerFetch(
+    `${HUGGINGFACE_BASE_URL}/chat/completions`,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${opts.apiKey}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify(body),
+      signal: opts.signal,
     },
-    body: JSON.stringify(body),
-    signal: chatAbortSignal(opts.signal, PROVIDER_TIMEOUTS.chat),
-  });
+    { timeoutMs: PROVIDER_TIMEOUTS.chat },
+  );
   if (!res.ok) {
     const errBody = await res.text().catch(() => '');
     throw new ChatHttpError({

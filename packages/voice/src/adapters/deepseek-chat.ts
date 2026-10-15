@@ -32,7 +32,6 @@ import type {
   ChatStreamSink,
 } from './types';
 import { ChatHttpError, parseRetryAfterMs } from './retry';
-import { chatAbortSignal } from './sse';
 import type { DiscoveryResult } from '../discover';
 import { DEEPSEEK_BASE_URL, DEEPSEEK_CHAT_MODELS } from '../catalogs/deepseek';
 import {
@@ -82,15 +81,19 @@ async function deepseekChat(opts: ChatOptions): Promise<ChatResult> {
     ...(opts.extra ?? {}),
   };
 
-  const res = await providerFetch(`${DEEPSEEK_BASE_URL}/chat/completions`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${opts.apiKey}`,
-      'content-type': 'application/json',
+  const res = await providerFetch(
+    `${DEEPSEEK_BASE_URL}/chat/completions`,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${opts.apiKey}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify(body),
+      signal: opts.signal,
     },
-    body: JSON.stringify(body),
-    signal: chatAbortSignal(opts.signal, PROVIDER_TIMEOUTS.chat),
-  });
+    { timeoutMs: PROVIDER_TIMEOUTS.chat },
+  );
   if (!res.ok) {
     const errBody = await res.text().catch(() => '');
     throw new ChatHttpError({

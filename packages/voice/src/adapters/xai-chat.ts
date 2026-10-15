@@ -28,7 +28,6 @@ import type {
   ChatStreamSink,
 } from './types';
 import { ChatHttpError, parseRetryAfterMs } from './retry';
-import { chatAbortSignal } from './sse';
 import type { DiscoveryResult } from '../discover';
 import { XAI_BASE_URL, XAI_CHAT_MODELS } from '../catalogs/xai';
 import {
@@ -73,16 +72,20 @@ async function xaiChat(opts: ChatOptions): Promise<ChatResult> {
     ...(opts.extra ?? {}),
   };
 
-  const res = await providerFetch(`${XAI_BASE_URL}/chat/completions`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${opts.apiKey}`,
-      'content-type': 'application/json',
-      ...convIdHeader(opts),
+  const res = await providerFetch(
+    `${XAI_BASE_URL}/chat/completions`,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${opts.apiKey}`,
+        'content-type': 'application/json',
+        ...convIdHeader(opts),
+      },
+      body: JSON.stringify(body),
+      signal: opts.signal,
     },
-    body: JSON.stringify(body),
-    signal: chatAbortSignal(opts.signal, PROVIDER_TIMEOUTS.chat),
-  });
+    { timeoutMs: PROVIDER_TIMEOUTS.chat },
+  );
   if (!res.ok) {
     const errBody = await res.text().catch(() => '');
     throw new ChatHttpError({
