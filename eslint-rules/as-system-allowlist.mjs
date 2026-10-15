@@ -34,18 +34,15 @@ import { asSystemSites, isCounted, repoPathOf, pinnedRule } from './arch-counts.
  * say where the code CAN leave the scope; the honest number is the exits,
  * every use of a function holding a site (A6 fix round 1, L1:
  * as-system-exits.mjs, asSystemExits in scripts/arch-scoreboard.pins.json).
+ *
+ * A6b (docs/actors.md): 21 sites in 18 files. The reads that left the scope
+ * for one answer read it in the scope (the own-login rule) or by a narrow
+ * definer (migration 0293); the code that never ran in a scope says so with
+ * systemWork (no exit: it refuses a workspace scope).
  */
 export const AS_SYSTEM_PINS = {
-  'packages/content/src/admin-space-taken.ts': { count: 1, why: ['space-taken-authors'] },
-  'packages/content/src/app-access-log.ts': { count: 1, why: ['login-names'] },
   'packages/content/src/app-table-exports.ts': { count: 1, why: ['client-sourced-mark'] },
-  'packages/content/src/contact-share-codes.ts': { count: 1, why: ['contact-sharing'] },
-  'packages/content/src/login-notices.ts': { count: 1, why: ['login-notice'] },
-  'packages/content/src/tables/shared.ts': { count: 1, why: ['export-link'] },
-  'packages/files/src/ops/files.ts': { count: 1, why: ['name-taken'] },
-
   'packages/mcp-core/src/login-surface.ts': { count: 1, why: ['audit-log'] },
-  'packages/runs/src/boss.ts': { count: 1, why: ['runs-scope-check'] },
   'packages/runtime/src/agent/agent-viewer.ts': { count: 1, why: ['agent-workspace'] },
   'packages/runtime/src/heartbeats/tick.ts': { count: 1, why: ['heartbeat-context'] },
   'packages/runtime/src/heartbeats/tools.ts': {
@@ -53,34 +50,24 @@ export const AS_SYSTEM_PINS = {
     why: ['admin-area', 'heartbeat-own-row'],
   },
   'packages/search/src/index.ts': { count: 1, why: ['keyword-candidates'] },
-  'packages/search/src/keyword-query.ts': { count: 1, why: ['lexeme-stats'] },
-  'packages/telegram/src/chat-login.ts': { count: 1, why: ['login-telegram'] },
   'packages/telegram/src/pairing.ts': { count: 1, why: ['login-telegram'] },
   'packages/tools/src/admin-gate.ts': { count: 1, why: ['admin-area'] },
   'packages/tools/src/builtins-app-data.ts': { count: 1, why: ['app-data'] },
   'packages/tools/src/builtins-apps.ts': { count: 1, why: ['app-trash'] },
-  'packages/tools/src/builtins-replay.ts': { count: 1, why: ['login-telegram'] },
-  'packages/tools/src/builtins-telegram.ts': { count: 1, why: ['login-telegram'] },
   'packages/tools/src/client-sourced.ts': { count: 1, why: ['client-sourced-check'] },
   'packages/tools/src/dispatch.ts': { count: 1, why: ['connector-call'] },
-  // Two doors since A6 (connector-binding: the tool group row, dispatch.ts
-  // reads it through connectorGroupRow; workspace-resources).
-  'packages/tools/src/external-access.ts': {
-    count: 2,
-    why: ['connector-binding', 'workspace-resources'],
-  },
-  'packages/tools/src/pending-notify.ts': { count: 1, why: ['login-telegram'] },
+  // One door since A6b (connector-binding: the tool group row, dispatch.ts
+  // reads it through connectorGroupRow); the workspace resources and a
+  // connector's state read by their definers (0293).
+  'packages/tools/src/external-access.ts': { count: 1, why: ['connector-binding'] },
   // The approval re-check (A5 step 6c): leaves the approving path's scope
   // only to enter the scope the call was asked in.
   'packages/tools/src/pending-origin.ts': { count: 1, why: ['pending-approval'] },
-  'server/web/lib/agent-telegram.ts': { count: 1, why: ['login-telegram'] },
   'server/web/lib/app-runner.ts': { count: 1, why: ['app-data'] },
   'server/web/lib/auth/rule-in-query.ts': { count: 1, why: ['rule-in-query'] },
-  'server/web/lib/debug.ts': { count: 1, why: ['login-telegram'] },
   // A6 round 2: the grants panel reads in the caller's scope; the page
   // refold after a change is its one exit (pageRefoldSystem).
   'server/web/lib/grants.ts': { count: 1, why: ['page-refold'] },
-  'server/web/lib/snapshot-copies.ts': { count: 1, why: ['snapshot-copies'] },
   // A6 round 2: the workspace screens read in the caller's scope; a login's
   // own workspace change writes through one door (workspaceWriteSystem).
   'server/web/lib/workspaces.ts': { count: 1, why: ['workspace-write'] },

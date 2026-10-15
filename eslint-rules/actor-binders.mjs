@@ -41,7 +41,9 @@ export const ACTOR_BINDER_PINS = {
   // The one ordered gate (arch A3c): step 3 binds the actor the policy
   // implies, once per call.
   'packages/db/src/gate.ts': 1,
-  'packages/db/src/viewer.ts': 8,
+  // 9 since arch A6b: systemWork, system work that refuses a workspace scope,
+  // binds system(reason) as asSystem does.
+  'packages/db/src/viewer.ts': 9,
   'packages/files/src/docs.ts': 1,
   'packages/files/src/ops/shared.ts': 1,
   'packages/runtime/src/heartbeats/fire.ts': 2,
