@@ -33,6 +33,9 @@ vi.mock('@mantle/embeddings', async (importOriginal) => ({
 vi.mock('@mantle/api-keys', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   getApiKeyById: vi.fn(async () => 'sk-fake'),
+  // The delegated child's chat key (resolveChatKey) reads through the one
+  // provider key lookup, which the real module would decrypt.
+  resolveProviderKey: vi.fn(async () => 'sk-fake'),
 }));
 vi.mock('@mantle/voice', async (importOriginal) => {
   const actual = await importOriginal<Record<string, unknown>>();
