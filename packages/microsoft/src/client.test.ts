@@ -199,6 +199,44 @@ describe('graphFetchRaw', () => {
   });
 });
 
+// Recorded before A10 #10 folded the loop into @mantle/std withRetry.
+describe('graphFetchRaw backoff pins (A10 #10)', () => {
+  async function gaps(responses: Response[]): Promise<{ gaps: number[]; err: unknown }> {
+    vi.useFakeTimers();
+    const at: number[] = [];
+    let i = 0;
+    fetchMock.mockImplementation(async () => {
+      at.push(Date.now());
+      return responses[Math.min(i++, responses.length - 1)]!;
+    });
+    try {
+      const p = graphFetchRaw('https://graph.microsoft.com/v1.0/x', 'tok').then(
+        () => null,
+        (e: unknown) => e,
+      );
+      await vi.runAllTimersAsync();
+      const err = await p;
+      return { gaps: at.slice(1).map((t, n) => t - at[n]!), err };
+    } finally {
+      vi.useRealTimers();
+    }
+  }
+  const tooMany = (ra?: string) =>
+    jsonResponse('slow', { status: 429, headers: ra === undefined ? {} : { 'retry-after': ra } });
+
+  it('doubles from 1 s without a Retry-After, four times, then throws the 429', async () => {
+    const r = await gaps([tooMany()]);
+    expect(r.gaps).toEqual([1_000, 2_000, 4_000, 8_000]);
+    expect(r.err).toMatchObject({ status: 429 });
+  });
+
+  it('waits the Retry-After seconds when the header gives a positive number', async () => {
+    const r = await gaps([tooMany('3'), tooMany('0'), tooMany('nonsense'), jsonResponse({})]);
+    expect(r.gaps).toEqual([3_000, 2_000, 4_000]);
+    expect(r.err).toBeNull();
+  });
+});
+
 describe('the Graph host pin', () => {
   it('refuses a nextLink or any URL off graph.microsoft.com, before any request', async () => {
     fetchMock.mockResolvedValueOnce(

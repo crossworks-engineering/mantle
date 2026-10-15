@@ -64,3 +64,31 @@ describe('withRateLimitBackoff', () => {
     expect(sleep).not.toHaveBeenCalled();
   });
 });
+
+// Recorded before A10 #10 folded the loop into @mantle/std withRetry.
+describe('withRateLimitBackoff pins (A10 #10)', () => {
+  it('waits 2, 4, 8, 16 s plus up to a quarter of jitter', async () => {
+    const random = vi.spyOn(Math, 'random').mockReturnValue(0.5);
+    try {
+      const sleep = vi.fn(async (_ms: number) => {});
+      const call = vi.fn(async () => {
+        throw rateLimited();
+      });
+      await expect(withRateLimitBackoff(call, sleep)).rejects.toThrow(/429/);
+      expect(sleep.mock.calls.map((c) => c[0])).toEqual([2_250, 4_500, 9_000, 18_000]);
+    } finally {
+      random.mockRestore();
+    }
+  });
+
+  it('retries a 429 carried as a status field too', async () => {
+    const sleep = vi.fn(async (_ms: number) => {});
+    let calls = 0;
+    const out = await withRateLimitBackoff(async () => {
+      if (++calls < 2) throw Object.assign(new Error('x'), { status: 429 });
+      return 'ok';
+    }, sleep);
+    expect(out).toBe('ok');
+    expect(sleep).toHaveBeenCalledTimes(1);
+  });
+});

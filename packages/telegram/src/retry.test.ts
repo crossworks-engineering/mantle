@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { Bot, GrammyError } from 'grammy';
 import { installTelegramRetry, telegramRetryAfterMs, withTelegramRetry } from './retry';
 
@@ -39,6 +39,33 @@ describe('telegram 429 handling', () => {
         throw new Error('boom');
       }),
     ).rejects.toThrow('boom');
+  });
+});
+
+// Recorded before A10 #10 folded the loop into @mantle/std withRetry.
+describe('withTelegramRetry pins (A10 #10)', () => {
+  it('waits retry_after (1 s without one, at most 30 s), three times, then throws', async () => {
+    vi.useFakeTimers();
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const at: number[] = [];
+      const errs = [tooMany(2), tooMany(), tooMany(999), tooMany(1)];
+      const p = withTelegramRetry(async () => {
+        at.push(Date.now());
+        throw errs[at.length - 1];
+      }).then(
+        () => null,
+        (e: unknown) => e,
+      );
+      await vi.runAllTimersAsync();
+      const err = await p;
+      expect(err).toBe(errs[3]);
+      expect(at.slice(1).map((t, n) => t - at[n]!)).toEqual([2_000, 1_000, 30_000]);
+      expect(warn).toHaveBeenCalledTimes(3);
+    } finally {
+      warn.mockRestore();
+      vi.useRealTimers();
+    }
   });
 });
 

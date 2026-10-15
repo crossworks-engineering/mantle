@@ -708,6 +708,35 @@ describe('openrouter-chat empty-body retry', () => {
     }
   });
 
+  // Pinned before A10 #10 folded this loop into @mantle/std withRetry.
+  it('waits a full-jitter 500 ms doubling between empty-body retries', async () => {
+    vi.useFakeTimers();
+    const random = vi.spyOn(Math, 'random').mockReturnValue(0.5);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const at: number[] = [];
+      mockSendImpl = async () => {
+        at.push(Date.now());
+        throw new SyntaxError('Unexpected end of JSON input');
+      };
+      const p = openrouterChatAdapter.chat({
+        apiKey: 'sk-test',
+        model: 'anthropic/claude-sonnet-4.6',
+        messages: [{ role: 'user', content: 'hi' }],
+        maxRetries: 3,
+      });
+      const assertion = expect(p).rejects.toThrow(/empty or truncated response/);
+      await vi.advanceTimersByTimeAsync(30_000);
+      await assertion;
+      expect(at.slice(1).map((t, i) => t - at[i]!)).toEqual([250, 500, 1000]);
+      expect(warn).toHaveBeenCalledTimes(3);
+    } finally {
+      random.mockRestore();
+      warn.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
   it('does NOT retry a complete-but-malformed JSON body (only end-of-input)', async () => {
     mockSendImpl = async () => {
       // A genuine parse bug, not a truncated body — must surface immediately.

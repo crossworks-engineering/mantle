@@ -46,6 +46,25 @@ describe('parseRetryAfterMs', () => {
   });
 });
 
+// Recorded before A10 #10 made this the one Retry-After parser (@mantle/std).
+describe('parseRetryAfterMs pins (A10 #10)', () => {
+  const h = (v: string) => new Headers({ 'retry-after': v });
+  it('reads seconds (fractions too), clamps a negative to 0, and reads an HTTP date', () => {
+    expect(parseRetryAfterMs(h('0'))).toBe(0);
+    expect(parseRetryAfterMs(h('1.5'))).toBe(1_500);
+    expect(parseRetryAfterMs(h('-3'))).toBe(0);
+    expect(parseRetryAfterMs(h('soon'))).toBeUndefined();
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date('2026-10-15T00:00:00Z'));
+      expect(parseRetryAfterMs(h('Thu, 15 Oct 2026 00:00:05 GMT'))).toBe(5_000);
+      expect(parseRetryAfterMs(h('Wed, 14 Oct 2026 23:59:00 GMT'))).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
 describe('classifyChatError', () => {
   it('retries retryable HTTP statuses', () => {
     for (const s of [408, 409, 425, 429, 500, 502, 503, 504]) {
@@ -301,5 +320,85 @@ describe('withChatRetry chatStream', () => {
   it('leaves chatStream undefined when the adapter has none', () => {
     const a = withChatRetry(dispatcherFrom(async () => RESULT));
     expect(a.chatStream).toBeUndefined();
+  });
+});
+
+// Recorded against the hand loop before A10 #10 folded it into @mantle/std
+// withRetry: the attempt count, the delay before each retry, which errors
+// retry and how Retry-After is honoured. The fold must keep these green.
+describe('withChatRetry pins (A10 #10)', () => {
+  async function run(errors: unknown[], opts: Partial<ChatOptions> = {}) {
+    vi.useFakeTimers();
+    const random = vi.spyOn(Math, 'random').mockReturnValue(0.5);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const at: number[] = [];
+    try {
+      const d = withChatRetry(
+        dispatcherFrom(async () => {
+          at.push(Date.now());
+          const e = errors[at.length - 1];
+          if (e) throw e;
+          return RESULT;
+        }),
+      );
+      const p = d.chat({ ...OPTS, ...opts }).then(
+        (r) => ({ ok: r as ChatResult | null, err: null as unknown }),
+        (e: unknown) => ({ ok: null, err: e }),
+      );
+      await vi.runAllTimersAsync();
+      const out = await p;
+      return {
+        ...out,
+        calls: at.length,
+        gaps: at.slice(1).map((t, i) => t - at[i]!),
+        warns: warn.mock.calls.map((c) => String(c[0])),
+      };
+    } finally {
+      random.mockRestore();
+      warn.mockRestore();
+      vi.useRealTimers();
+    }
+  }
+  const http = (status: number, retryAfterMs?: number) =>
+    new ChatHttpError({ provider: 'anthropic', status, retryAfterMs });
+
+  it('full jitter over a 500 ms doubling, capped at 8 s', async () => {
+    const r = await run(
+      Array.from({ length: 6 }, () => http(503)),
+      { maxRetries: 6 },
+    );
+    expect(r.ok).toBe(RESULT);
+    expect(r.calls).toBe(7);
+    expect(r.gaps).toEqual([250, 500, 1000, 2000, 4000, 4000]);
+  });
+
+  it('two retries by default, then the last error stands', async () => {
+    const r = await run([http(503), http(502), http(500)]);
+    expect(r.calls).toBe(3);
+    expect(r.err).toBeInstanceOf(ChatHttpError);
+    expect((r.err as ChatHttpError).status).toBe(500);
+  });
+
+  it('a Retry-After wins over the backoff, capped at 30 s', async () => {
+    const r = await run([http(429, 45_000), http(429, 1_200)]);
+    expect(r.ok).toBe(RESULT);
+    expect(r.gaps).toEqual([30_000, 1_200]);
+  });
+
+  it('retries exactly 408, 409, 425, 429, 500, 502, 503, 504', async () => {
+    for (const s of [408, 409, 425, 429, 500, 502, 503, 504]) {
+      expect((await run([http(s)])).calls, String(s)).toBe(2);
+    }
+    for (const s of [400, 401, 402, 403, 404, 422, 501, 505]) {
+      expect((await run([http(s)])).calls, String(s)).toBe(1);
+    }
+  });
+
+  it('logs one warning per retry naming the attempt and the delay', async () => {
+    const r = await run([http(503)]);
+    expect(r.warns).toHaveLength(1);
+    expect(r.warns[0]).toContain('anthropic-chat test-model');
+    expect(r.warns[0]).toContain('HTTP 503');
+    expect(r.warns[0]).toContain('retry 1/2 in 250ms');
   });
 });

@@ -209,6 +209,36 @@ describe('parseTikaBytes: Tika 4 backpressure', () => {
   });
 });
 
+// Recorded before A10 #10 folded the wait into @mantle/std.
+describe('parseTikaBytes: backpressure wait pins (A10 #10)', () => {
+  it('waits the Retry-After seconds, at most 5 s, 1 s without one', async () => {
+    vi.useFakeTimers();
+    try {
+      const at: number[] = [];
+      const answers: FakeResponse[] = [
+        { ok: false, status: 429, text: '{}', retryAfter: '2' },
+        { ok: false, status: 429, text: '{}', retryAfter: '10' },
+        { ok: false, status: 429, text: '{}' },
+        { ok: true, text: 'served' },
+      ];
+      let i = 0;
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async () => {
+          at.push(Date.now());
+          return fakeResponse(answers[Math.min(i++, answers.length - 1)]!);
+        }),
+      );
+      const p = parseTikaBytes(Buffer.from('x'));
+      for (let n = 0; n < 10; n += 1) await vi.advanceTimersByTimeAsync(1_000);
+      await expect(p).resolves.toBe('served');
+      expect(at.slice(1).map((t, n) => t - at[n]!)).toEqual([2_000, 5_000, 1_000]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
 describe('parseTikaBytes — never-throws contract', () => {
   it("returns '' on a non-2xx response", async () => {
     mockFetch({ ok: false, status: 500, text: 'Server Error' });
