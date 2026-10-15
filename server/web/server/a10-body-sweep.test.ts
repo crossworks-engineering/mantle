@@ -343,30 +343,26 @@ function changeKind(cell: string, main: string, now: string): string | null {
 type Cell = { row: string; method: string; pattern: string; cred: string };
 
 describe.skipIf(!hasManifest)('A10 part 2 fold 1: every write route reads its body', () => {
-  const saved = {
-    secret: process.env.SESSION_SECRET,
-    db: process.env.DATABASE_URL,
-    cors: process.env.MANTLE_API_CORS_ORIGINS,
-    detached: process.env.MANTLE_DETACHED_DEV,
-    masterKey: process.env.MANTLE_MASTER_KEY,
-    tailscaleSock: process.env.MANTLE_TAILSCALE_SOCK,
-  };
   const realFetch = globalThis.fetch;
   let app: import('hono').Hono;
   const cells: Cell[] = [];
   const creds: Record<string, Record<string, string>> = {};
 
   beforeAll(async () => {
-    process.env.SESSION_SECRET = 'a10-body-sweep-secret-that-is-at-least-32-chars';
-    delete process.env.DATABASE_URL;
-    delete process.env.MANTLE_API_CORS_ORIGINS;
-    delete process.env.MANTLE_DETACHED_DEV;
+    // vi.stubEnv records each value it replaces; afterAll's vi.unstubAllEnvs
+    // puts every one back (or unsets it, if it was unset).
+    vi.stubEnv('SESSION_SECRET', 'a10-body-sweep-secret-that-is-at-least-32-chars');
+    vi.stubEnv('DATABASE_URL', undefined);
+    vi.stubEnv('MANTLE_API_CORS_ORIGINS', undefined);
+    vi.stubEnv('MANTLE_DETACHED_DEV', undefined);
     // The answers were recorded on a host with neither: no master key (the
-    // pdf-passwords cells answer "MANTLE_MASTER_KEY is not set") and no
+    // pdf-passwords cells answer "MANTLE_MASTER_KEY is not set"; seal() takes
+    // MANTLE_MASTER_KEY_NEXT first, so that is cleared too) and no
     // tailscaled (network/deactivate answers "no tailscaled socket"). A host
     // with either (the workstation runs tailscaled) answered otherwise.
-    delete process.env.MANTLE_MASTER_KEY;
-    process.env.MANTLE_TAILSCALE_SOCK = '/nonexistent/a10-sweep/tailscaled.sock';
+    vi.stubEnv('MANTLE_MASTER_KEY', undefined);
+    vi.stubEnv('MANTLE_MASTER_KEY_NEXT', undefined);
+    vi.stubEnv('MANTLE_TAILSCALE_SOCK', '/nonexistent/a10-sweep/tailscaled.sock');
     globalThis.fetch = (async () => {
       throw new Error('sweep: no network');
     }) as typeof fetch;
@@ -408,17 +404,7 @@ describe.skipIf(!hasManifest)('A10 part 2 fold 1: every write route reads its bo
   afterAll(() => {
     globalThis.fetch = realFetch;
     vi.useRealTimers();
-    for (const [k, v] of [
-      ['SESSION_SECRET', saved.secret],
-      ['DATABASE_URL', saved.db],
-      ['MANTLE_API_CORS_ORIGINS', saved.cors],
-      ['MANTLE_DETACHED_DEV', saved.detached],
-      ['MANTLE_MASTER_KEY', saved.masterKey],
-      ['MANTLE_TAILSCALE_SOCK', saved.tailscaleSock],
-    ] as const) {
-      if (v === undefined) delete process.env[k];
-      else process.env[k] = v;
-    }
+    vi.unstubAllEnvs();
   });
 
   async function send(
