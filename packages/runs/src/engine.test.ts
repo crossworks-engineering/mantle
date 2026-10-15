@@ -150,6 +150,7 @@ describe.skipIf(!ADMIN_URL)('runs engine (DB-backed)', () => {
       login_id uuid,
       elevated jsonb,
       client_sourced jsonb,
+      origin jsonb,
       created_at timestamptz NOT NULL DEFAULT now(),
       updated_at timestamptz NOT NULL DEFAULT now()
     )`);
