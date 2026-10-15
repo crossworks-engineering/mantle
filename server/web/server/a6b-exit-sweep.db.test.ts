@@ -187,6 +187,38 @@ const NAMED_CHANGES: Record<
       }),
     },
   ],
+  'client-sourced': [
+    {
+      cells: /^namesClientSourced other brain (read|write|turn):/,
+      reason:
+        "the check asked in a scope for ANOTHER brain's ids is refused: its definer " +
+        "(mantle_client_sourced_any) answers only the scope's own brain. Every caller passes its " +
+        'own brain, and a refusal marks the turn (taintFromText fails closed). It answered for ' +
+        'any brain on the system pool before. Stricter, never looser.',
+      was: /=> \{"ok":true\}$/,
+      back: (now) =>
+        now.startsWith(
+          '{"refused":{"name":"Error","status":null,"code":null,"message":"Failed query: select \\"public\\".\\"mantle_client_sourced_any\\"',
+        )
+          ? '{"ok":true}'
+          : now,
+    },
+    {
+      cells: /^loadConversationTaint other brain (read|write|turn):/,
+      reason:
+        "another brain's conversation mark asked in a scope is refused by its definer " +
+        "(mantle_conversation_taint: the scope's own brain only), and a failed read marks the " +
+        'turn (fail closed). It read any brain on the system pool before. Stricter, never looser.',
+      now: JSON.stringify({
+        ok: {
+          clientSourced: true,
+          conversation: { ownerId: 'brain:other', key: 'a6b:marked' },
+          via: 'the conversation check failed',
+          carried: true,
+        },
+      }),
+    },
+  ],
 };
 
 type Json = Record<string, any>;
@@ -1428,6 +1460,63 @@ describe.skipIf(!URL)('the A6b exit sweep', () => {
             tick.hasActiveHeartbeatsOnSurface(L.owner, surface),
           );
         }
+      }
+    });
+  });
+
+  // ── workspace-create: a login makes a workspace (the route and the
+  //    library in each request context) ──────────────────────────────────
+  it('workspace-create', async () => {
+    const wsLib = await import('../lib/workspaces');
+    const callerOf = (who: LoginKey) =>
+      ({
+        kind: isAdmin(who) ? 'admin' : 'member',
+        loginId: L[who],
+        anchorId: L.owner,
+        user: null,
+      }) as Parameters<typeof wsLib.createWorkspace>[0];
+    /** The workspace made under `name`: its row, its users, its events,
+     *  named for the cells. */
+    const made = async (name: string, label: string) => {
+      const ws = await x<{ id: string; created_by: string | null; description: string }>(
+        sql`select id::text as id, created_by::text as created_by, description
+              from workspaces where owner_id = ${L.owner} and name = ${name} order by created_at`,
+      );
+      ws.forEach((w, i) => names.set(w.id, `ws:${label}${i ? `#${i}` : ''}`));
+      const ids = ws.map((w) => w.id);
+      return {
+        ws: ws.map(({ created_by, description }) => ({ created_by, description })),
+        users: ids.length
+          ? await x(sql`select login_id::text as login, moderator, added_by::text as added_by
+                          from workspace_users where workspace_id = any(${`{${ids.join(',')}}`}::uuid[])
+                         order by 1`)
+          : [],
+        events: ids.length
+          ? await x(sql`select actor_id::text as actor, action, subject from workspace_events
+                         where workspace_id = any(${`{${ids.join(',')}}`}::uuid[]) order by at`)
+          : [],
+      };
+    };
+    await section('workspace-create', async (cell) => {
+      for (const who of LOGINS) {
+        const name = `a6b-new-${who}`;
+        const res = await http(who, 'POST', '/api/workspaces', { name, description: 'd' });
+        const rows = await made(name, `new-${who}`);
+        cell(`POST /api/workspaces ${who}`, { res, rows });
+        cell(
+          `POST /api/workspaces Admin ${who}`,
+          await http(who, 'POST', '/api/workspaces', { name: 'Admin' }),
+        );
+      }
+      for (const [ctx, run] of CONTEXTS) {
+        const who = /^(read|write):(\w+)$/.exec(ctx)?.[2] as LoginKey | undefined;
+        if (!who) continue;
+        const name = `a6b-lib-${ctx}`;
+        const res = await answer(() =>
+          run(() => wsLib.createWorkspace(callerOf(who), { name, description: 'lib' })),
+        );
+        const rows = await made(name, `lib-${ctx}`);
+        cell(`createWorkspace ${ctx}`, { res, rows });
       }
     });
   });
