@@ -452,7 +452,9 @@ describe.skipIf(!DB_URL)('A8 surface cells: every way in gives the oracle’s an
     surface: GuideSurface;
     actor: GuideActor;
     roles: (GuideRole | null)[];
-    supports: (kind: string, action: GuideAction) => boolean;
+    /** Whether the way in can do it; a string: it cannot, counted under
+     *  that reason (no cell drops out uncounted). */
+    supports: (kind: string, action: GuideAction) => boolean | string;
     run: (
       role: GuideRole | null,
       kind: string,
@@ -461,6 +463,9 @@ describe.skipIf(!DB_URL)('A8 surface cells: every way in gives the oracle’s an
     ) => Promise<Outcome>;
   };
 
+  const MCP_SURFACES = new Set<GuideSurface>(['mcp-oauth', 'mcp-key', 'peer', 'mcp-stdio']);
+  /** The builtins with no tool row (mcpOnly), read once the tools load. */
+  const mcpOnly = new Set<string>();
   const toolEntry = (
     surface: GuideSurface,
     actor: GuideActor,
@@ -476,7 +481,17 @@ describe.skipIf(!DB_URL)('A8 surface cells: every way in gives the oracle’s an
     roles,
     // Every slug resolves (the test asserts it first), so a cell drops out
     // only where the kind's action has no tool.
-    supports: (kind, action) => toolCall(kind, action, 'x') !== null,
+    // An assistant, a run and a recipe call the brain's tool rows, and an
+    // MCP-only tool has none (the test pins which slugs resolve); the MCP
+    // surface lists its own definitions.
+    supports: (kind, action) => {
+      const tc = toolCall(kind, action, 'x');
+      if (!tc) return false;
+      if (!MCP_SURFACES.has(surface) && mcpOnly.has(tc.slug)) {
+        return `no tool row: ${tc.slug} is MCP only`;
+      }
+      return true;
+    },
     run: (role, kind, action, id) => {
       const tc = toolCall(kind, action, id)!;
       return call(role, tc.slug, tc.input);
@@ -874,11 +889,17 @@ describe.skipIf(!DB_URL)('A8 surface cells: every way in gives the oracle’s an
     const { sortFailures, CHECK_MODES } = await import('@mantle/db/matrix/a8-known-failures');
     // Every tool a cell calls resolves (L1): none drops out unseen.
     const slugs = ['node_read', ...Object.values(TOOL_EDIT), ...Object.values(TOOL_DELETE)];
-    const missing: string[] = [];
+    for (const b of t.BUILTIN_TOOLS) if (b.mcpOnly) mcpOnly.add(b.slug);
+    const unresolved: string[] = [];
     for (const slug of slugs) {
-      if (!(await m.asSystem(() => t.resolveTool(fx.owner, slug), 'test'))) missing.push(slug);
+      if (!(await m.asSystem(() => t.resolveTool(fx.owner, slug), 'test'))) unresolved.push(slug);
     }
-    expect(missing, 'tool slugs the brain does not resolve').toEqual([]);
+    // A slug with no row is an MCP-only tool, and only that (its cells on a
+    // turn, a run, a recipe and a heartbeat are counted, not run).
+    expect(unresolved.sort(), 'tool slugs with no tool row').toEqual(
+      slugs.filter((x) => mcpOnly.has(x)).sort(),
+    );
+    expect(unresolved, 'the MCP-only tools a cell calls').toEqual(['note_delete']);
 
     // The cells of each way in: picked once, run in each mode.
     type Cell = import('@mantle/db/matrix/a8-grid').A8Cell;
@@ -891,7 +912,12 @@ describe.skipIf(!DB_URL)('A8 surface cells: every way in gives the oracle’s an
         for (const kind of kinds) {
           for (const placement of o.GUIDE_PLACEMENTS) {
             for (const action of o.GUIDE_ACTIONS) {
-              if (!e.supports(kind, action)) continue;
+              const can = e.supports(kind, action);
+              if (can === false) continue;
+              if (typeof can === 'string') {
+                naBy[can] = (naBy[can] ?? 0) + 1;
+                continue;
+              }
               const want = o.expectedAccess(
                 { surface: e.surface, placement, actor: e.actor },
                 role,
@@ -908,7 +934,6 @@ describe.skipIf(!DB_URL)('A8 surface cells: every way in gives the oracle’s an
       }
       plan.push({ e, cells: g.pairwise(candidates, e.surface), candidates: candidates.length, na });
     }
-    expect(naBy, 'the surface cells not applicable, by reason').toEqual(NOT_APPLICABLE);
 
     const lines: string[] = [];
     const unexpected: string[] = [];
@@ -983,6 +1008,7 @@ describe.skipIf(!DB_URL)('A8 surface cells: every way in gives the oracle’s an
     );
     expect(unexpected, 'surface cells that fail and are not known failures').toEqual([]);
     expect(fixed, 'known failures that pass now: take them off the list').toEqual([]);
+    expect(naBy, 'the surface cells not applicable, by reason').toEqual(NOT_APPLICABLE);
   }, 1_800_000);
 });
 

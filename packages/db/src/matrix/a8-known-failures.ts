@@ -9,7 +9,12 @@
  * on a failure not listed, and on a listed one that passes (the list only
  * shrinks). docs/actors.md, "A8 matrix", names each finding.
  */
-import { GUIDE_WORKSPACE_KINDS, expectedAccess } from './guide-oracle';
+import {
+  GUIDE_ACTIONS,
+  GUIDE_PLACEMENTS,
+  GUIDE_WORKSPACE_KINDS,
+  expectedAccess,
+} from './guide-oracle';
 
 /** F1. /api/v1 refuses a key of a login outside Admin: 403 `member-login`
  *  (server/web/lib/api-v1.ts: "The v1 routes past whoami are admin routes").
@@ -46,9 +51,11 @@ const F2 = 'F2 a workspace assistant turn cannot write (raw error text)';
 const F4 = 'F4 an Admin write request on the system pool: edits not held to its scope';
 
 /** F5. The database lets the Moderator of an app's home delete the app (by
- *  hand and in a turn). The owner's decision (plan v2 section 32, F3): an
- *  app's delete stays owner-only; today only the owner-side tool holds it
- *  (app_delete: "owner-side tool: not available here"), not the database. */
+ *  hand and in a turn; an Admin user, a Moderator of Admin, an app homed in
+ *  Admin, on the system pool too). The owner's decision (plan v2 section
+ *  32, F3): an app's delete stays owner-only; today only the owner-side tool
+ *  holds it (app_delete: "owner-side tool: not available here"), not the
+ *  database. */
 const F5 = 'F5 the database lets the home Moderator delete an app (owner-only, plan s32)';
 
 /** F6. A peer acting as its login, Write on, may not change an item others
@@ -59,6 +66,21 @@ const F5 = 'F5 the database lets the home Moderator delete an app (owner-only, p
  *  only. A rule the product has and the guide does not name (every fixture
  *  item is read by W and R, and has an open link). */
 const F6 = 'F6 a peer may not edit a shared item (a rule the guide does not name)';
+
+/** F8. DELETE /api/apps/:id (server/web/app/api/apps/[id]/route.ts) is an
+ *  owner-side route: any Admin user trashes an app there, where the owner's
+ *  decision (plan v2 section 32, F3) makes an app's delete owner-only. Asked
+ *  of the owner: may an Admin user delete an app? */
+const F8 = 'F8 DELETE /api/apps/:id lets any Admin user trash an app (owner-only, plan s32)';
+
+/** F9. A contact share's write is named system work on the system pool
+ *  (docs/actors.md: "its app's data, when the share allows it"), so the
+ *  database holds a statement it sends to nothing but a snapshot copy's
+ *  read-only rule: an edit, a draft, a delete, a move, a grant change, a
+ *  link and a create of any item are made. Only the /s broker holds it, by
+ *  sending none but its app's data (the contact-share surface cells pass).
+ *  The guide: a contact share writes only its app's data. */
+const F9 = 'F9 a contact share’s write on the system pool: not held to its app’s data';
 
 /** The actor check modes the surface cells run in (docs/update-prod.md:
  *  off, the fleet's default; warn; on). */
@@ -108,9 +130,37 @@ function adminSystemPoolEdits(): Record<string, KnownFailure> {
   return out;
 }
 
+/** F9's cells: each write a contact share with Can write may not make,
+ *  as the oracle reads the guide, but those a snapshot copy refuses to
+ *  everyone (update-prod.md: its author may delete it). */
+function contactSystemPoolWrites(): Record<string, KnownFailure> {
+  const copyRefuses = ['edit', 'editDraft', 'move', 'grantAdd', 'link'];
+  const out: Record<string, KnownFailure> = {};
+  for (const kind of GUIDE_WORKSPACE_KINDS) {
+    for (const placement of GUIDE_PLACEMENTS) {
+      for (const action of GUIDE_ACTIONS) {
+        const want = expectedAccess(
+          { surface: 'sql', placement, actor: 'contact-rw' },
+          null,
+          kind,
+          action,
+        );
+        if ('na' in want || want.allow) continue;
+        if (placement === 'snapshot' && copyRefuses.includes(action)) continue;
+        out[`contact-rw/- ${action} ${kind} @${placement}`] = known(F9, 'changed (');
+      }
+    }
+  }
+  return out;
+}
+
 export const KNOWN_FAILURES: Readonly<Record<string, KnownFailure>> = {
   // The grid (SQL).
   ...adminSystemPoolEdits(),
+  ...contactSystemPoolWrites(),
+  'login/admin delete app @admin': known(F5, GONE),
+  'turn/admin delete app @admin': known(F5, GONE),
+  'login@system/admin delete app @admin': known(F5, GONE),
   'login/homeModerator delete app @folder': known(F5, GONE),
   'login/homeModerator delete app @root': known(F5, GONE),
   'turn/homeModerator delete app @folder': known(F5, GONE),
