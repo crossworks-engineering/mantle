@@ -188,8 +188,13 @@ describe.skipIf(!URL)('the share routes on the served list', () => {
   });
 
   it('0262: retires a live link on a client item, gives the others their list, once', async () => {
-    const steps = await x<{ step: string; n: number }>(
-      sql`select * from mantle_link_served_fill()`,
+    // The 0262 fill, as the migration ran it: as the superuser (the runtime
+    // role, arch A9, may not run it; the app never calls it).
+    const steps = await (
+      await import('@mantle/db/test-support')
+    ).superuserExec<{ step: string; n: number }>(
+      scratch!.url,
+      'select * from mantle_link_served_fill()',
     );
     expect(steps.map((s) => [s.step, Number(s.n)])).toEqual([
       ['open links on client items, retired', 1],
