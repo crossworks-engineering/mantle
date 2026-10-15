@@ -172,8 +172,10 @@ it (A2b), so a process's first writes never go out as `off` on a `warn` or
 role (`mantle_view_user`) cannot run the setter functions.
 
 This is not a secret: any role can set a `mantle.*` setting (see Known
-limits). The protection is the lint, the runtime role (A9) and the read rule
-on the write role.
+limits). The protection is the lint, the runtime role (A9,
+[runtime-role.md](runtime-role.md): not the owner, so it cannot disable the
+check's triggers or change the box mode, and it cannot run the setter
+functions either) and the read rule on the write role.
 
 ## The check
 

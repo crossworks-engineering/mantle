@@ -705,6 +705,15 @@ result has no `skip` row; one names why the brain was not switched. Time
 the switch on a copy first and give a large brain a budget, as "The switch
 at a later start" above says.
 
+## Switching a box to the runtime role (arch A9)
+
+From the release that carries A9, every migrate makes `mantle_owner`,
+`mantle_system` and `mantle_runtime`, hands the tables to `mantle_owner` and
+grants the runtime role its rights; nothing changes for the app until the box
+sets `MANTLE_DB_RUNTIME_ROLE=1` in its `.env`. Per box, with the owner's go and
+a fresh backup first: the steps, the checks and the rollback are in
+[runtime-role.md](runtime-role.md). Hand psql below stays the superuser.
+
 ## Hand psql on a box: name the operator actor (arch A2a, migration 0275)
 
 Every statement carries who it runs as (docs/actors.md). The app sets it
