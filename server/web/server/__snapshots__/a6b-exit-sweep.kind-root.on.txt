@@ -1,0 +1,84 @@
+root before => [{"n":0}]
+GET files root modP (no root) => {"status":200,"body":{"files":[]}}
+root after modP list => [{"n":1}]
+ensureFilesRootBranch system => {"ok":true}
+ensureFilesRootBranch read:owner => {"ok":true}
+ensureFilesRootBranch write:owner => {"ok":true}
+ensureFilesRootBranch read:adminAll => {"ok":true}
+ensureFilesRootBranch write:adminAll => {"ok":true}
+ensureFilesRootBranch read:adminNoUsers => {"ok":true}
+ensureFilesRootBranch write:adminNoUsers => {"ok":true}
+ensureFilesRootBranch read:modP => {"ok":true}
+ensureFilesRootBranch write:modP => {"ok":true}
+ensureFilesRootBranch read:userQ => {"ok":true}
+ensureFilesRootBranch write:userQ => {"ok":true}
+ensureFilesRootBranch read:outsider => {"ok":true}
+ensureFilesRootBranch write:outsider => {"ok":true}
+ensureFilesRootBranch turn:admin:owner => {"ok":true}
+ensureFilesRootBranch turn:admin:adminAll => {"ok":true}
+ensureFilesRootBranch turn:admin:none => {"ok":true}
+ensureFilesRootBranch turn:P:modP => {"ok":true}
+ensureFilesRootBranch turn:P:none => {"ok":true}
+ensureFilesRootBranch turn:Q:userQ => {"ok":true}
+GET files root owner => {"status":200,"body":{"files":[]}}
+POST file at root owner => {"status":200,"body":{"file":{"id":"<uuid>","parentPath":"files","title":"kr-owner.txt","filename":"kr-owner.txt","extension":"txt","mimeType":"text/plain; charset=utf-8","sizeBytes":10,"sha256":"<x>","isText":true,"summary":null,"indexing":null,"indexingApplied":null,"createdAt":"<time>","updatedAt":"<time>"}}}
+row of kr-owner.txt => [{"title":"kr-owner.txt","path":"files","held":["ws:Admin"]}]
+POST same name at root owner => {"status":409,"body":{"error":"writeFile: 'kr-owner.txt' already exists in this folder"}}
+GET files root adminAll => {"status":200,"body":{"files":[{"id":"<uuid>","parentPath":"files","title":"kr-owner.txt","filename":"kr-owner.txt","extension":"txt","mimeType":"text/plain; charset=utf-8","sizeBytes":10,"sha256":"<x>","isText":true,"summary":null,"indexing":null,"indexingApplied":null,"createdAt":"<time>","updatedAt":"<time>","mayEdit":false,"mayManage":false}]}}
+POST file at root adminAll => {"status":200,"body":{"file":{"id":"<uuid>","parentPath":"files","title":"kr-adminall.txt","filename":"kr-adminall.txt","extension":"txt","mimeType":"text/plain; charset=utf-8","sizeBytes":13,"sha256":"<x>","isText":true,"summary":null,"indexing":null,"indexingApplied":null,"createdAt":"<time>","updatedAt":"<time>"}}}
+row of kr-adminAll.txt => []
+POST same name at root adminAll => {"status":409,"body":{"error":"writeFile: 'kr-owner.txt' already exists in this folder"}}
+GET files root adminNoUsers => {"status":200,"body":{"files":[{"id":"<uuid>","parentPath":"files","title":"kr-adminall.txt","filename":"kr-adminall.txt","extension":"txt","mimeType":"text/plain; charset=utf-8","sizeBytes":13,"sha256":"<x>","isText":true,"summary":null,"indexing":null,"indexingApplied":null,"createdAt":"<time>","updatedAt":"<time>","mayEdit":false,"mayManage":false},{"id":"<uuid>","parentPath":"files","title":"kr-owner.txt","filename":"kr-owner.txt","extension":"txt","mimeType":"text/plain; charset=utf-8","sizeBytes":10,"sha256":"<x>","isText":true,"summary":null,"indexing":null,"indexingApplied":null,"createdAt":"<time>","updatedAt":"<time>","mayEdit":false,"mayManage":false}]}}
+POST file at root adminNoUsers => {"status":200,"body":{"file":{"id":"<uuid>","parentPath":"files","title":"kr-adminnousers.txt","filename":"kr-adminnousers.txt","extension":"txt","mimeType":"text/plain; charset=utf-8","sizeBytes":17,"sha256":"<x>","isText":true,"summary":null,"indexing":null,"indexingApplied":null,"createdAt":"<time>","updatedAt":"<time>"}}}
+row of kr-adminNoUsers.txt => []
+POST same name at root adminNoUsers => {"status":409,"body":{"error":"writeFile: 'kr-owner.txt' already exists in this folder"}}
+GET files root modP => {"status":200,"body":{"files":[]}}
+POST file at root modP => {"status":200,"body":{"file":{"id":"<uuid>","parentPath":"files","title":"kr-modp.txt","filename":"kr-modp.txt","extension":"txt","mimeType":"text/plain; charset=utf-8","sizeBytes":9,"sha256":"<x>","isText":true,"summary":null,"indexing":null,"indexingApplied":null,"createdAt":"<time>","updatedAt":"<time>"}}}
+row of kr-modP.txt => []
+POST same name at root modP => {"status":409,"body":{"error":"writeFile: 'kr-owner.txt' already exists in this folder"}}
+GET files root userQ => {"status":200,"body":{"files":[]}}
+POST file at root userQ => {"status":200,"body":{"file":{"id":"<uuid>","parentPath":"files","title":"kr-userq.txt","filename":"kr-userq.txt","extension":"txt","mimeType":"text/plain; charset=utf-8","sizeBytes":10,"sha256":"<x>","isText":true,"summary":null,"indexing":null,"indexingApplied":null,"createdAt":"<time>","updatedAt":"<time>"}}}
+row of kr-userQ.txt => []
+POST same name at root userQ => {"status":409,"body":{"error":"writeFile: 'kr-owner.txt' already exists in this folder"}}
+GET files root outsider => {"status":200,"body":{"files":[]}}
+POST file at root outsider => {"status":200,"body":{"file":{"id":"<uuid>","parentPath":"files","title":"kr-outsider.txt","filename":"kr-outsider.txt","extension":"txt","mimeType":"text/plain; charset=utf-8","sizeBytes":13,"sha256":"<x>","isText":true,"summary":null,"indexing":null,"indexingApplied":null,"createdAt":"<time>","updatedAt":"<time>"}}}
+row of kr-outsider.txt => [{"title":"kr-outsider.txt","path":"files","held":["<uuid>"]}]
+POST same name at root outsider => {"status":409,"body":{"error":"writeFile: 'kr-owner.txt' already exists in this folder"}}
+upsertFile root system => {"ok":{"filename":"kr-lib-1.txt","parentPath":"files"}}
+row of kr-lib-1.txt => [{"held":["ws:Admin"]}]
+upsertFile root read:owner => {"ok":{"filename":"kr-lib-2.txt","parentPath":"files"}}
+row of kr-lib-2.txt => [{"held":["ws:Admin"]}]
+upsertFile root write:owner => {"ok":{"filename":"kr-lib-3.txt","parentPath":"files"}}
+row of kr-lib-3.txt => [{"held":["ws:Admin"]}]
+upsertFile root read:adminAll => {"ok":{"filename":"kr-lib-4.txt","parentPath":"files"}}
+row of kr-lib-4.txt => [{"held":["ws:Admin"]}]
+upsertFile root write:adminAll => {"ok":{"filename":"kr-lib-5.txt","parentPath":"files"}}
+row of kr-lib-5.txt => [{"held":["ws:Admin"]}]
+upsertFile root read:adminNoUsers => {"ok":{"filename":"kr-lib-6.txt","parentPath":"files"}}
+row of kr-lib-6.txt => [{"held":["ws:Admin"]}]
+upsertFile root write:adminNoUsers => {"ok":{"filename":"kr-lib-7.txt","parentPath":"files"}}
+row of kr-lib-7.txt => [{"held":["ws:Admin"]}]
+upsertFile root read:modP => {"ok":{"filename":"kr-lib-8.txt","parentPath":"files"}}
+row of kr-lib-8.txt => [{"held":["ws:Admin"]}]
+upsertFile root write:modP => {"refused":{"name":"Error","status":null,"code":null,"message":"Failed query: insert into \"nodes\" (\"id\", \"owner_id\", \"parent_id\", \"type\", \"title\", \"slug\", \"data\", \"path\", \"tags\", \"embedding\", \"search_tsv\", \"salience\", \"superseded_by\", \"home_ws\", \"read_ws\", \"write_ws\", \"login_id\", \"derived_mixed\", \"superseded_reason\", \"created_at\", \"updated_at\") values (default, $1, default, $2, $3, $4, $5, $6, $7, default, default, default, default, default, default, default, default, default, default, default, default) on conflict (\"owner_id\",\"path\",\"slug\") where \"nodes\".\"slug\" is not null and \"nodes\".\"type\" = 'file' do nothing returning \"id\", \"owner_id\", \"parent_id\", \"type\", \"title\", \"slug\", \"data\", \"path\", \"tags\", \"embedding\", \"search_tsv\", \"salience\", \"superseded_by\", \"home_ws\", \"read_ws\", \"write_ws\", \"login_id\", \"derived_mixed\", \"superseded_reason\", \"created_at\", \"updated_at\"\nparams: login:owner,file,kr-lib-9.txt,kr-lib-9.txt,{\"filename\":\"kr-lib-9.txt\",\"extension\":\"txt\",\"mime_type\":\"text/plain; charset=utf-8\",\"size_bytes\":14,\"sha256\":\"42388576da653d25485feda49f350347a22d81c1264ef6ed29c9f5fca6c4c353\",\"content\":\"lib write:modP\"},files,{\"file\"}"}}
+row of kr-lib-9.txt => []
+upsertFile root read:userQ => {"ok":{"filename":"kr-lib-10.txt","parentPath":"files"}}
+row of kr-lib-10.txt => [{"held":["ws:Admin"]}]
+upsertFile root write:userQ => {"refused":{"name":"Error","status":null,"code":null,"message":"Failed query: insert into \"nodes\" (\"id\", \"owner_id\", \"parent_id\", \"type\", \"title\", \"slug\", \"data\", \"path\", \"tags\", \"embedding\", \"search_tsv\", \"salience\", \"superseded_by\", \"home_ws\", \"read_ws\", \"write_ws\", \"login_id\", \"derived_mixed\", \"superseded_reason\", \"created_at\", \"updated_at\") values (default, $1, default, $2, $3, $4, $5, $6, $7, default, default, default, default, default, default, default, default, default, default, default, default) on conflict (\"owner_id\",\"path\",\"slug\") where \"nodes\".\"slug\" is not null and \"nodes\".\"type\" = 'file' do nothing returning \"id\", \"owner_id\", \"parent_id\", \"type\", \"title\", \"slug\", \"data\", \"path\", \"tags\", \"embedding\", \"search_tsv\", \"salience\", \"superseded_by\", \"home_ws\", \"read_ws\", \"write_ws\", \"login_id\", \"derived_mixed\", \"superseded_reason\", \"created_at\", \"updated_at\"\nparams: login:owner,file,kr-lib-11.txt,kr-lib-11.txt,{\"filename\":\"kr-lib-11.txt\",\"extension\":\"txt\",\"mime_type\":\"text/plain; charset=utf-8\",\"size_bytes\":15,\"sha256\":\"d48c0cdf078440402a96ca3327fb69c2d226df8af544714dd05fa5192fbcaf48\",\"content\":\"lib write:userQ\"},files,{\"file\"}"}}
+row of kr-lib-11.txt => []
+upsertFile root read:outsider => {"ok":{"filename":"kr-lib-12.txt","parentPath":"files"}}
+row of kr-lib-12.txt => [{"held":["ws:Admin"]}]
+upsertFile root write:outsider => {"refused":{"name":"Error","status":null,"code":null,"message":"Failed query: insert into \"nodes\" (\"id\", \"owner_id\", \"parent_id\", \"type\", \"title\", \"slug\", \"data\", \"path\", \"tags\", \"embedding\", \"search_tsv\", \"salience\", \"superseded_by\", \"home_ws\", \"read_ws\", \"write_ws\", \"login_id\", \"derived_mixed\", \"superseded_reason\", \"created_at\", \"updated_at\") values (default, $1, default, $2, $3, $4, $5, $6, $7, default, default, default, default, default, default, default, default, default, default, default, default) on conflict (\"owner_id\",\"path\",\"slug\") where \"nodes\".\"slug\" is not null and \"nodes\".\"type\" = 'file' do nothing returning \"id\", \"owner_id\", \"parent_id\", \"type\", \"title\", \"slug\", \"data\", \"path\", \"tags\", \"embedding\", \"search_tsv\", \"salience\", \"superseded_by\", \"home_ws\", \"read_ws\", \"write_ws\", \"login_id\", \"derived_mixed\", \"superseded_reason\", \"created_at\", \"updated_at\"\nparams: login:owner,file,kr-lib-13.txt,kr-lib-13.txt,{\"filename\":\"kr-lib-13.txt\",\"extension\":\"txt\",\"mime_type\":\"text/plain; charset=utf-8\",\"size_bytes\":18,\"sha256\":\"2311d39b1d47c6646002c5a4c00b4c35695d89bc455b47f578e2726d7ecfba0a\",\"content\":\"lib write:outsider\"},files,{\"file\"}"}}
+row of kr-lib-13.txt => []
+upsertFile root turn:admin:owner => {"ok":{"filename":"kr-lib-14.txt","parentPath":"files"}}
+row of kr-lib-14.txt => [{"held":["ws:Admin"]}]
+upsertFile root turn:admin:adminAll => {"refused":{"name":"Error","status":null,"code":null,"message":"Failed query: insert into \"nodes\" (\"id\", \"owner_id\", \"parent_id\", \"type\", \"title\", \"slug\", \"data\", \"path\", \"tags\", \"embedding\", \"search_tsv\", \"salience\", \"superseded_by\", \"home_ws\", \"read_ws\", \"write_ws\", \"login_id\", \"derived_mixed\", \"superseded_reason\", \"created_at\", \"updated_at\") values (default, $1, default, $2, $3, $4, $5, $6, $7, default, default, default, default, default, default, default, default, default, default, default, default) on conflict (\"owner_id\",\"path\",\"slug\") where \"nodes\".\"slug\" is not null and \"nodes\".\"type\" = 'file' do nothing returning \"id\", \"owner_id\", \"parent_id\", \"type\", \"title\", \"slug\", \"data\", \"path\", \"tags\", \"embedding\", \"search_tsv\", \"salience\", \"superseded_by\", \"home_ws\", \"read_ws\", \"write_ws\", \"login_id\", \"derived_mixed\", \"superseded_reason\", \"created_at\", \"updated_at\"\nparams: login:owner,file,kr-lib-15.txt,kr-lib-15.txt,{\"filename\":\"kr-lib-15.txt\",\"extension\":\"txt\",\"mime_type\":\"text/plain; charset=utf-8\",\"size_bytes\":23,\"sha256\":\"e2bdeca5187e9c20d0ec7d707c06ced0f86e9862a76b21eb560d15f3abbfb237\",\"content\":\"lib turn:admin:adminAll\"},files,{\"file\"}"}}
+row of kr-lib-15.txt => []
+upsertFile root turn:admin:none => {"ok":{"filename":"kr-lib-16.txt","parentPath":"files"}}
+row of kr-lib-16.txt => [{"held":["ws:Admin"]}]
+upsertFile root turn:P:modP => {"refused":{"name":"Error","status":null,"code":null,"message":"Failed query: insert into \"nodes\" (\"id\", \"owner_id\", \"parent_id\", \"type\", \"title\", \"slug\", \"data\", \"path\", \"tags\", \"embedding\", \"search_tsv\", \"salience\", \"superseded_by\", \"home_ws\", \"read_ws\", \"write_ws\", \"login_id\", \"derived_mixed\", \"superseded_reason\", \"created_at\", \"updated_at\") values (default, $1, default, $2, $3, $4, $5, $6, $7, default, default, default, default, default, default, default, default, default, default, default, default) on conflict (\"owner_id\",\"path\",\"slug\") where \"nodes\".\"slug\" is not null and \"nodes\".\"type\" = 'file' do nothing returning \"id\", \"owner_id\", \"parent_id\", \"type\", \"title\", \"slug\", \"data\", \"path\", \"tags\", \"embedding\", \"search_tsv\", \"salience\", \"superseded_by\", \"home_ws\", \"read_ws\", \"write_ws\", \"login_id\", \"derived_mixed\", \"superseded_reason\", \"created_at\", \"updated_at\"\nparams: login:owner,file,kr-lib-17.txt,kr-lib-17.txt,{\"filename\":\"kr-lib-17.txt\",\"extension\":\"txt\",\"mime_type\":\"text/plain; charset=utf-8\",\"size_bytes\":15,\"sha256\":\"896561a45254e91ffb50cd55a21bd360d1195a712d8d5cc429f0e6a35a053a3c\",\"content\":\"lib turn:P:modP\"},files,{\"file\"}"}}
+row of kr-lib-17.txt => []
+upsertFile root turn:P:none => {"refused":{"name":"RuntimeFaultError","status":null,"code":null,"message":"withSystemTx: only outside a viewer scope and any other transaction"}}
+row of kr-lib-18.txt => []
+upsertFile root turn:Q:userQ => {"refused":{"name":"Error","status":null,"code":null,"message":"Failed query: insert into \"nodes\" (\"id\", \"owner_id\", \"parent_id\", \"type\", \"title\", \"slug\", \"data\", \"path\", \"tags\", \"embedding\", \"search_tsv\", \"salience\", \"superseded_by\", \"home_ws\", \"read_ws\", \"write_ws\", \"login_id\", \"derived_mixed\", \"superseded_reason\", \"created_at\", \"updated_at\") values (default, $1, default, $2, $3, $4, $5, $6, $7, default, default, default, default, default, default, default, default, default, default, default, default) on conflict (\"owner_id\",\"path\",\"slug\") where \"nodes\".\"slug\" is not null and \"nodes\".\"type\" = 'file' do nothing returning \"id\", \"owner_id\", \"parent_id\", \"type\", \"title\", \"slug\", \"data\", \"path\", \"tags\", \"embedding\", \"search_tsv\", \"salience\", \"superseded_by\", \"home_ws\", \"read_ws\", \"write_ws\", \"login_id\", \"derived_mixed\", \"superseded_reason\", \"created_at\", \"updated_at\"\nparams: login:owner,file,kr-lib-19.txt,kr-lib-19.txt,{\"filename\":\"kr-lib-19.txt\",\"extension\":\"txt\",\"mime_type\":\"text/plain; charset=utf-8\",\"size_bytes\":16,\"sha256\":\"a77e40711d98a7dc0f8ad989bb6665e5135547a5c40ded97a9ea0d2c9bf75f10\",\"content\":\"lib turn:Q:userQ\"},files,{\"file\"}"}}
+row of kr-lib-19.txt => []

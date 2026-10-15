@@ -1,0 +1,98 @@
+prefs system of=owner => {"ok":{"tz":"Europe/Berlin","site":"Sweep Brain","locale":"de-DE"}}
+prefs system of=adminAll => {"ok":{"tz":"Pacific/Auckland","site":null,"locale":"en-GB"}}
+prefs system of=modP => {"ok":{"tz":"Asia/Tokyo","site":"not the brand","locale":"en-GB"}}
+prefs system of=userQ => {"ok":{"tz":"America/Lima","site":null,"locale":"en-GB"}}
+prefs read:owner of=owner => {"ok":{"tz":"Europe/Berlin","site":"Sweep Brain","locale":"de-DE"}}
+prefs read:owner of=adminAll => {"ok":{"tz":"Pacific/Auckland","site":null,"locale":"en-GB"}}
+prefs read:owner of=modP => {"ok":{"tz":"Asia/Tokyo","site":"not the brand","locale":"en-GB"}}
+prefs read:owner of=userQ => {"ok":{"tz":"America/Lima","site":null,"locale":"en-GB"}}
+prefs write:owner of=owner => {"ok":{"tz":"Europe/Berlin","site":"Sweep Brain","locale":"de-DE"}}
+prefs write:owner of=adminAll => {"ok":{"tz":"Pacific/Auckland","site":null,"locale":"en-GB"}}
+prefs write:owner of=modP => {"ok":{"tz":"Asia/Tokyo","site":"not the brand","locale":"en-GB"}}
+prefs write:owner of=userQ => {"ok":{"tz":"America/Lima","site":null,"locale":"en-GB"}}
+prefs read:adminAll of=owner => {"ok":{"tz":"Europe/Berlin","site":"Sweep Brain","locale":"de-DE"}}
+prefs read:adminAll of=adminAll => {"ok":{"tz":"Pacific/Auckland","site":null,"locale":"en-GB"}}
+prefs read:adminAll of=modP => {"ok":{"tz":"Asia/Tokyo","site":"not the brand","locale":"en-GB"}}
+prefs read:adminAll of=userQ => {"ok":{"tz":"America/Lima","site":null,"locale":"en-GB"}}
+prefs write:adminAll of=owner => {"ok":{"tz":"Europe/Berlin","site":"Sweep Brain","locale":"de-DE"}}
+prefs write:adminAll of=adminAll => {"ok":{"tz":"Pacific/Auckland","site":null,"locale":"en-GB"}}
+prefs write:adminAll of=modP => {"ok":{"tz":"Asia/Tokyo","site":"not the brand","locale":"en-GB"}}
+prefs write:adminAll of=userQ => {"ok":{"tz":"America/Lima","site":null,"locale":"en-GB"}}
+prefs read:adminNoUsers of=owner => {"ok":{"tz":"Europe/Berlin","site":"Sweep Brain","locale":"de-DE"}}
+prefs read:adminNoUsers of=adminAll => {"ok":{"tz":"Pacific/Auckland","site":null,"locale":"en-GB"}}
+prefs read:adminNoUsers of=modP => {"ok":{"tz":"Asia/Tokyo","site":"not the brand","locale":"en-GB"}}
+prefs read:adminNoUsers of=userQ => {"ok":{"tz":"America/Lima","site":null,"locale":"en-GB"}}
+prefs write:adminNoUsers of=owner => {"ok":{"tz":"Europe/Berlin","site":"Sweep Brain","locale":"de-DE"}}
+prefs write:adminNoUsers of=adminAll => {"ok":{"tz":"Pacific/Auckland","site":null,"locale":"en-GB"}}
+prefs write:adminNoUsers of=modP => {"ok":{"tz":"Asia/Tokyo","site":"not the brand","locale":"en-GB"}}
+prefs write:adminNoUsers of=userQ => {"ok":{"tz":"America/Lima","site":null,"locale":"en-GB"}}
+prefs read:modP of=owner => {"ok":{"tz":"Europe/Berlin","site":"Sweep Brain","locale":"de-DE"}}
+prefs read:modP of=adminAll => {"ok":{"tz":"UTC","site":null,"locale":"en-GB"}}
+prefs read:modP of=modP => {"ok":{"tz":"Asia/Tokyo","site":"not the brand","locale":"en-GB"}}
+prefs read:modP of=userQ => {"ok":{"tz":"UTC","site":null,"locale":"en-GB"}}
+prefs write:modP of=owner => {"ok":{"tz":"Europe/Berlin","site":"Sweep Brain","locale":"de-DE"}}
+prefs write:modP of=adminAll => {"v":{"ok":{"tz":"UTC","site":null,"locale":"en-GB"}},"misses":[],"gaps":["permission denied for table profiles"]}
+prefs write:modP of=modP => {"ok":{"tz":"Asia/Tokyo","site":"not the brand","locale":"en-GB"}}
+prefs write:modP of=userQ => {"v":{"ok":{"tz":"UTC","site":null,"locale":"en-GB"}},"misses":[],"gaps":["permission denied for table profiles"]}
+prefs read:userQ of=owner => {"ok":{"tz":"Europe/Berlin","site":"Sweep Brain","locale":"de-DE"}}
+prefs read:userQ of=adminAll => {"ok":{"tz":"UTC","site":null,"locale":"en-GB"}}
+prefs read:userQ of=modP => {"ok":{"tz":"UTC","site":null,"locale":"en-GB"}}
+prefs read:userQ of=userQ => {"ok":{"tz":"America/Lima","site":null,"locale":"en-GB"}}
+prefs write:userQ of=owner => {"ok":{"tz":"Europe/Berlin","site":"Sweep Brain","locale":"de-DE"}}
+prefs write:userQ of=adminAll => {"v":{"ok":{"tz":"UTC","site":null,"locale":"en-GB"}},"misses":[],"gaps":["permission denied for table profiles"]}
+prefs write:userQ of=modP => {"v":{"ok":{"tz":"UTC","site":null,"locale":"en-GB"}},"misses":[],"gaps":["permission denied for table profiles"]}
+prefs write:userQ of=userQ => {"ok":{"tz":"America/Lima","site":null,"locale":"en-GB"}}
+prefs read:outsider of=owner => {"ok":{"tz":"Europe/Berlin","site":"Sweep Brain","locale":"de-DE"}}
+prefs read:outsider of=adminAll => {"ok":{"tz":"UTC","site":null,"locale":"en-GB"}}
+prefs read:outsider of=modP => {"ok":{"tz":"UTC","site":null,"locale":"en-GB"}}
+prefs read:outsider of=userQ => {"ok":{"tz":"UTC","site":null,"locale":"en-GB"}}
+prefs write:outsider of=owner => {"ok":{"tz":"Europe/Berlin","site":"Sweep Brain","locale":"de-DE"}}
+prefs write:outsider of=adminAll => {"v":{"ok":{"tz":"UTC","site":null,"locale":"en-GB"}},"misses":[],"gaps":["permission denied for table profiles"]}
+prefs write:outsider of=modP => {"v":{"ok":{"tz":"UTC","site":null,"locale":"en-GB"}},"misses":[],"gaps":["permission denied for table profiles"]}
+prefs write:outsider of=userQ => {"v":{"ok":{"tz":"UTC","site":null,"locale":"en-GB"}},"misses":[],"gaps":["permission denied for table profiles"]}
+prefs turn:admin:owner of=owner => {"ok":{"tz":"Europe/Berlin","site":"Sweep Brain","locale":"de-DE"}}
+prefs turn:admin:owner of=adminAll => {"ok":{"tz":"Pacific/Auckland","site":null,"locale":"en-GB"}}
+prefs turn:admin:owner of=modP => {"ok":{"tz":"Asia/Tokyo","site":"not the brand","locale":"en-GB"}}
+prefs turn:admin:owner of=userQ => {"ok":{"tz":"America/Lima","site":null,"locale":"en-GB"}}
+prefs turn:admin:adminAll of=owner => {"ok":{"tz":"Europe/Berlin","site":"Sweep Brain","locale":"de-DE"}}
+prefs turn:admin:adminAll of=adminAll => {"ok":{"tz":"Pacific/Auckland","site":null,"locale":"en-GB"}}
+prefs turn:admin:adminAll of=modP => {"ok":{"tz":"Asia/Tokyo","site":"not the brand","locale":"en-GB"}}
+prefs turn:admin:adminAll of=userQ => {"ok":{"tz":"America/Lima","site":null,"locale":"en-GB"}}
+prefs turn:admin:none of=owner => {"ok":{"tz":"Europe/Berlin","site":"Sweep Brain","locale":"de-DE"}}
+prefs turn:admin:none of=adminAll => {"ok":{"tz":"Pacific/Auckland","site":null,"locale":"en-GB"}}
+prefs turn:admin:none of=modP => {"ok":{"tz":"Asia/Tokyo","site":"not the brand","locale":"en-GB"}}
+prefs turn:admin:none of=userQ => {"ok":{"tz":"America/Lima","site":null,"locale":"en-GB"}}
+prefs turn:P:modP of=owner => {"ok":{"tz":"Europe/Berlin","site":"Sweep Brain","locale":"de-DE"}}
+prefs turn:P:modP of=adminAll => {"v":{"ok":{"tz":"UTC","site":null,"locale":"en-GB"}},"misses":[],"gaps":["permission denied for table profiles"]}
+prefs turn:P:modP of=modP => {"ok":{"tz":"Asia/Tokyo","site":"not the brand","locale":"en-GB"}}
+prefs turn:P:modP of=userQ => {"v":{"ok":{"tz":"UTC","site":null,"locale":"en-GB"}},"misses":[],"gaps":["permission denied for table profiles"]}
+prefs turn:P:none of=owner => {"ok":{"tz":"Europe/Berlin","site":"Sweep Brain","locale":"de-DE"}}
+prefs turn:P:none of=adminAll => {"ok":{"tz":"UTC","site":null,"locale":"en-GB"}}
+prefs turn:P:none of=modP => {"ok":{"tz":"UTC","site":null,"locale":"en-GB"}}
+prefs turn:P:none of=userQ => {"ok":{"tz":"UTC","site":null,"locale":"en-GB"}}
+prefs turn:Q:userQ of=owner => {"ok":{"tz":"Europe/Berlin","site":"Sweep Brain","locale":"de-DE"}}
+prefs turn:Q:userQ of=adminAll => {"v":{"ok":{"tz":"UTC","site":null,"locale":"en-GB"}},"misses":[],"gaps":["permission denied for table profiles"]}
+prefs turn:Q:userQ of=modP => {"v":{"ok":{"tz":"UTC","site":null,"locale":"en-GB"}},"misses":[],"gaps":["permission denied for table profiles"]}
+prefs turn:Q:userQ of=userQ => {"ok":{"tz":"America/Lima","site":null,"locale":"en-GB"}}
+GET /api/home owner => {"status":200,"body":{"ws":null,"homeApp":null,"hub":{"siteName":"Sweep Brain","memberName":"owner","version":"<x>","sections":[],"counts":{"page":0,"note":0,"draw":0,"table":0,"file":0},"apps":[]}}}
+GET /api/home?ws=P owner => {"status":200,"body":{"ws":"ws:P","homeApp":null,"hub":{"siteName":"Sweep Brain","memberName":"owner","version":"<x>","sections":[],"counts":{"page":0,"note":0,"draw":0,"table":0,"file":0},"apps":[]}}}
+GET /api/member/home owner => {"status":403,"body":{"error":"forbidden","reason":"admin-login","message":"This route is for member logins."}}
+GET /api/home adminAll => {"status":200,"body":{"ws":null,"homeApp":null,"hub":{"siteName":"Sweep Brain","memberName":"adminAll","version":"<x>","sections":[],"counts":{"page":0,"note":0,"draw":0,"table":0,"file":0},"apps":[]}}}
+GET /api/home?ws=P adminAll => {"status":404,"body":{"error":"Workspace not found.","code":"not_found"}}
+GET /api/member/home adminAll => {"status":403,"body":{"error":"forbidden","reason":"admin-login","message":"This route is for member logins."}}
+GET /api/home adminNoUsers => {"status":200,"body":{"ws":null,"homeApp":null,"hub":{"siteName":"Sweep Brain","memberName":"adminNoUsers","version":"<x>","sections":[],"counts":{"page":0,"note":0,"draw":0,"table":0,"file":0},"apps":[]}}}
+GET /api/home?ws=P adminNoUsers => {"status":404,"body":{"error":"Workspace not found.","code":"not_found"}}
+GET /api/member/home adminNoUsers => {"status":403,"body":{"error":"forbidden","reason":"admin-login","message":"This route is for member logins."}}
+GET /api/home modP => {"status":200,"body":{"ws":null,"homeApp":null,"hub":{"siteName":"Sweep Brain","memberName":"modP","version":"<x>","sections":[],"counts":{"page":0,"note":0,"draw":0,"table":0,"file":0},"apps":[]}}}
+GET /api/home?ws=P modP => {"status":200,"body":{"ws":"ws:P","homeApp":null,"hub":{"siteName":"Sweep Brain","memberName":"modP","version":"<x>","sections":[],"counts":{"page":0,"note":0,"draw":0,"table":0,"file":0},"apps":[]}}}
+GET /api/member/home modP => {"status":200,"body":{"homeApp":null,"hub":null}}
+GET /api/home userQ => {"status":200,"body":{"ws":null,"homeApp":null,"hub":{"siteName":"Sweep Brain","memberName":"userQ","version":"<x>","sections":[],"counts":{"page":0,"note":0,"draw":0,"table":0,"file":0},"apps":[]}}}
+GET /api/home?ws=P userQ => {"status":404,"body":{"error":"Workspace not found.","code":"not_found"}}
+GET /api/member/home userQ => {"status":200,"body":{"homeApp":null,"hub":null}}
+GET /api/home outsider => {"status":200,"body":{"ws":null,"homeApp":null,"hub":{"siteName":"Sweep Brain","memberName":"outsider","version":"<x>","sections":[],"counts":{"page":0,"note":0,"draw":0,"table":0,"file":0},"apps":[]}}}
+GET /api/home?ws=P outsider => {"status":404,"body":{"error":"Workspace not found.","code":"not_found"}}
+GET /api/member/home outsider => {"status":200,"body":{"homeApp":null,"hub":null}}
+missing GET /api/home?ws=P modP => {"status":200,"body":{"ws":"ws:P","homeApp":null,"hub":{"siteName":null,"memberName":"modP","version":"<x>","sections":[],"counts":{"page":0,"note":0,"draw":0,"table":0,"file":0},"apps":[]}}}
+missing anchor row after => [{"preferences":{"locale":"en-GB","timezone":"UTC","colorTheme":"jackdaw","houseStyle":"Never use em dashes (—). Rewrite instead: a comma, a colon, parentheses, or two sentences all carry the same break, so use whichever reads best. The character should not appear in your output at all.\n\nThe same goes for an en dash (–) used as a sentence break. En dashes inside numeric ranges (2020–2024, pages 10–14) are correct and stay, and hyphens in compound words (self-hosted, read-only) are unaffected.","avatarStyle":"lorelei","neatBackground":"{\"v\":1,\"seed\":55361,\"tone\":\"auto\",\"speed\":2}","thinkingBudget":4096}}]
+missing prefs turn:admin:adminAll of=owner => {"v":{"ok":{"tz":"UTC","site":null,"locale":"en-GB"}},"misses":[],"gaps":["permission denied for table profiles"]}
+missing anchor row after turn => [{"preferences":{"locale":"en-GB","timezone":"UTC","colorTheme":"jackdaw","houseStyle":"Never use em dashes (—). Rewrite instead: a comma, a colon, parentheses, or two sentences all carry the same break, so use whichever reads best. The character should not appear in your output at all.\n\nThe same goes for an en dash (–) used as a sentence break. En dashes inside numeric ranges (2020–2024, pages 10–14) are correct and stay, and hyphens in compound words (self-hosted, read-only) are unaffected.","avatarStyle":"lorelei","neatBackground":"{\"v\":1,\"seed\":55361,\"tone\":\"auto\",\"speed\":2}","thinkingBudget":4096}}]

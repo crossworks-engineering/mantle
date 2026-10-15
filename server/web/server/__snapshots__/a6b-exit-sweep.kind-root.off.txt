@@ -1,0 +1,84 @@
+root before => [{"n":0}]
+GET files root modP (no root) => {"status":200,"body":{"files":[]}}
+root after modP list => [{"n":1}]
+ensureFilesRootBranch system => {"ok":true}
+ensureFilesRootBranch read:owner => {"ok":true}
+ensureFilesRootBranch write:owner => {"ok":true}
+ensureFilesRootBranch read:adminAll => {"ok":true}
+ensureFilesRootBranch write:adminAll => {"ok":true}
+ensureFilesRootBranch read:adminNoUsers => {"ok":true}
+ensureFilesRootBranch write:adminNoUsers => {"ok":true}
+ensureFilesRootBranch read:modP => {"ok":true}
+ensureFilesRootBranch write:modP => {"ok":true}
+ensureFilesRootBranch read:userQ => {"ok":true}
+ensureFilesRootBranch write:userQ => {"ok":true}
+ensureFilesRootBranch read:outsider => {"ok":true}
+ensureFilesRootBranch write:outsider => {"ok":true}
+ensureFilesRootBranch turn:admin:owner => {"ok":true}
+ensureFilesRootBranch turn:admin:adminAll => {"ok":true}
+ensureFilesRootBranch turn:admin:none => {"ok":true}
+ensureFilesRootBranch turn:P:modP => {"ok":true}
+ensureFilesRootBranch turn:P:none => {"ok":true}
+ensureFilesRootBranch turn:Q:userQ => {"ok":true}
+GET files root owner => {"status":200,"body":{"files":[]}}
+POST file at root owner => {"status":200,"body":{"file":{"id":"<uuid>","parentPath":"files","title":"kr-owner.txt","filename":"kr-owner.txt","extension":"txt","mimeType":"text/plain; charset=utf-8","sizeBytes":10,"sha256":"<x>","isText":true,"summary":null,"indexing":null,"indexingApplied":null,"createdAt":"<time>","updatedAt":"<time>"}}}
+row of kr-owner.txt => [{"title":"kr-owner.txt","path":"files","held":["ws:Admin"]}]
+POST same name at root owner => {"status":409,"body":{"error":"writeFile: 'kr-owner.txt' already exists in this folder"}}
+GET files root adminAll => {"status":200,"body":{"files":[{"id":"<uuid>","parentPath":"files","title":"kr-owner.txt","filename":"kr-owner.txt","extension":"txt","mimeType":"text/plain; charset=utf-8","sizeBytes":10,"sha256":"<x>","isText":true,"summary":null,"indexing":null,"indexingApplied":null,"createdAt":"<time>","updatedAt":"<time>","mayEdit":false,"mayManage":false}]}}
+POST file at root adminAll => {"status":200,"body":{"file":{"id":"<uuid>","parentPath":"files","title":"kr-adminall.txt","filename":"kr-adminall.txt","extension":"txt","mimeType":"text/plain; charset=utf-8","sizeBytes":13,"sha256":"<x>","isText":true,"summary":null,"indexing":null,"indexingApplied":null,"createdAt":"<time>","updatedAt":"<time>"}}}
+row of kr-adminAll.txt => []
+POST same name at root adminAll => {"status":409,"body":{"error":"writeFile: 'kr-owner.txt' already exists in this folder"}}
+GET files root adminNoUsers => {"status":200,"body":{"files":[{"id":"<uuid>","parentPath":"files","title":"kr-adminall.txt","filename":"kr-adminall.txt","extension":"txt","mimeType":"text/plain; charset=utf-8","sizeBytes":13,"sha256":"<x>","isText":true,"summary":null,"indexing":null,"indexingApplied":null,"createdAt":"<time>","updatedAt":"<time>","mayEdit":false,"mayManage":false},{"id":"<uuid>","parentPath":"files","title":"kr-owner.txt","filename":"kr-owner.txt","extension":"txt","mimeType":"text/plain; charset=utf-8","sizeBytes":10,"sha256":"<x>","isText":true,"summary":null,"indexing":null,"indexingApplied":null,"createdAt":"<time>","updatedAt":"<time>","mayEdit":false,"mayManage":false}]}}
+POST file at root adminNoUsers => {"status":200,"body":{"file":{"id":"<uuid>","parentPath":"files","title":"kr-adminnousers.txt","filename":"kr-adminnousers.txt","extension":"txt","mimeType":"text/plain; charset=utf-8","sizeBytes":17,"sha256":"<x>","isText":true,"summary":null,"indexing":null,"indexingApplied":null,"createdAt":"<time>","updatedAt":"<time>"}}}
+row of kr-adminNoUsers.txt => []
+POST same name at root adminNoUsers => {"status":409,"body":{"error":"writeFile: 'kr-owner.txt' already exists in this folder"}}
+GET files root modP => {"status":200,"body":{"files":[]}}
+POST file at root modP => {"status":200,"body":{"file":{"id":"<uuid>","parentPath":"files","title":"kr-modp.txt","filename":"kr-modp.txt","extension":"txt","mimeType":"text/plain; charset=utf-8","sizeBytes":9,"sha256":"<x>","isText":true,"summary":null,"indexing":null,"indexingApplied":null,"createdAt":"<time>","updatedAt":"<time>"}}}
+row of kr-modP.txt => []
+POST same name at root modP => {"status":409,"body":{"error":"writeFile: 'kr-owner.txt' already exists in this folder"}}
+GET files root userQ => {"status":200,"body":{"files":[]}}
+POST file at root userQ => {"status":200,"body":{"file":{"id":"<uuid>","parentPath":"files","title":"kr-userq.txt","filename":"kr-userq.txt","extension":"txt","mimeType":"text/plain; charset=utf-8","sizeBytes":10,"sha256":"<x>","isText":true,"summary":null,"indexing":null,"indexingApplied":null,"createdAt":"<time>","updatedAt":"<time>"}}}
+row of kr-userQ.txt => []
+POST same name at root userQ => {"status":409,"body":{"error":"writeFile: 'kr-owner.txt' already exists in this folder"}}
+GET files root outsider => {"status":200,"body":{"files":[]}}
+POST file at root outsider => {"status":200,"body":{"file":{"id":"<uuid>","parentPath":"files","title":"kr-outsider.txt","filename":"kr-outsider.txt","extension":"txt","mimeType":"text/plain; charset=utf-8","sizeBytes":13,"sha256":"<x>","isText":true,"summary":null,"indexing":null,"indexingApplied":null,"createdAt":"<time>","updatedAt":"<time>"}}}
+row of kr-outsider.txt => [{"title":"kr-outsider.txt","path":"files","held":["<uuid>"]}]
+POST same name at root outsider => {"status":409,"body":{"error":"writeFile: 'kr-owner.txt' already exists in this folder"}}
+upsertFile root system => {"ok":{"filename":"kr-lib-1.txt","parentPath":"files"}}
+row of kr-lib-1.txt => [{"held":["ws:Admin"]}]
+upsertFile root read:owner => {"ok":{"filename":"kr-lib-2.txt","parentPath":"files"}}
+row of kr-lib-2.txt => [{"held":["ws:Admin"]}]
+upsertFile root write:owner => {"ok":{"filename":"kr-lib-3.txt","parentPath":"files"}}
+row of kr-lib-3.txt => [{"held":["ws:Admin"]}]
+upsertFile root read:adminAll => {"ok":{"filename":"kr-lib-4.txt","parentPath":"files"}}
+row of kr-lib-4.txt => [{"held":["ws:Admin"]}]
+upsertFile root write:adminAll => {"ok":{"filename":"kr-lib-5.txt","parentPath":"files"}}
+row of kr-lib-5.txt => [{"held":["ws:Admin"]}]
+upsertFile root read:adminNoUsers => {"ok":{"filename":"kr-lib-6.txt","parentPath":"files"}}
+row of kr-lib-6.txt => [{"held":["ws:Admin"]}]
+upsertFile root write:adminNoUsers => {"ok":{"filename":"kr-lib-7.txt","parentPath":"files"}}
+row of kr-lib-7.txt => [{"held":["ws:Admin"]}]
+upsertFile root read:modP => {"ok":{"filename":"kr-lib-8.txt","parentPath":"files"}}
+row of kr-lib-8.txt => [{"held":["ws:Admin"]}]
+upsertFile root write:modP => {"ok":{"filename":"kr-lib-9.txt","parentPath":"files"}}
+row of kr-lib-9.txt => [{"held":["ws:Admin"]}]
+upsertFile root read:userQ => {"ok":{"filename":"kr-lib-10.txt","parentPath":"files"}}
+row of kr-lib-10.txt => [{"held":["ws:Admin"]}]
+upsertFile root write:userQ => {"ok":{"filename":"kr-lib-11.txt","parentPath":"files"}}
+row of kr-lib-11.txt => [{"held":["ws:Admin"]}]
+upsertFile root read:outsider => {"ok":{"filename":"kr-lib-12.txt","parentPath":"files"}}
+row of kr-lib-12.txt => [{"held":["ws:Admin"]}]
+upsertFile root write:outsider => {"ok":{"filename":"kr-lib-13.txt","parentPath":"files"}}
+row of kr-lib-13.txt => [{"held":["ws:Admin"]}]
+upsertFile root turn:admin:owner => {"ok":{"filename":"kr-lib-14.txt","parentPath":"files"}}
+row of kr-lib-14.txt => [{"held":["ws:Admin"]}]
+upsertFile root turn:admin:adminAll => {"ok":{"filename":"kr-lib-15.txt","parentPath":"files"}}
+row of kr-lib-15.txt => [{"held":["ws:Admin"]}]
+upsertFile root turn:admin:none => {"ok":{"filename":"kr-lib-16.txt","parentPath":"files"}}
+row of kr-lib-16.txt => [{"held":["ws:Admin"]}]
+upsertFile root turn:P:modP => {"ok":{"filename":"kr-lib-17.txt","parentPath":"files"}}
+row of kr-lib-17.txt => [{"held":["ws:Admin"]}]
+upsertFile root turn:P:none => {"refused":{"name":"RuntimeFaultError","status":null,"code":null,"message":"withSystemTx: only outside a viewer scope and any other transaction"}}
+row of kr-lib-18.txt => []
+upsertFile root turn:Q:userQ => {"ok":{"filename":"kr-lib-19.txt","parentPath":"files"}}
+row of kr-lib-19.txt => [{"held":["ws:Admin"]}]
