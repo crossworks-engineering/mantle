@@ -4075,10 +4075,11 @@ step.
 `packages/db/src/matrix/guide-oracle.ts`. It imports nothing: no kind
 registry, no access matrix, no SQL, no gate. Each rule names the guide
 section it reads (docs/workspaces.md; docs/update-prod.md for snapshot
-copies). The context names the surface, the placement and the actor kind;
-the actor carries the narrowing (a turn: the assistant's workspace; a read
-key or a peer with Write off: read only; an assistant with no user: its
-workspace, read only). `guide-oracle.test.ts` pins it to the guide's
+copies; the plan's section 32 for an owner decision the guide does not
+carry yet). The context names the surface, the placement and the actor
+kind; the actor carries the narrowing (a turn: the assistant's workspace; a
+read key or a peer with Write off: read only; an assistant with no user:
+its workspace, read only). `guide-oracle.test.ts` pins it to the guide's
 sentences. The grid also pins the registry's workspace class and accepted
 kinds to the oracle's lists, so the two readings cannot drift apart unseen.
 
@@ -4095,12 +4096,19 @@ accepted kinds the author's snapshot copy in writeGrant's private workspace.
 3 placements x 13 actions (read, list, search, edit, edit draft, delete,
 move, add a grant, remove a grant, the Write switch, a public link, create,
 app data) x every actor kind (login, login-ro and turn for each login;
-assistant, link, contact-ro, contact-rw, peer and system once each): 10,296
-cells. Each cell is one transaction, rolled back. A read runs on the
-workspace role in the caller's scope; a write on a login of the write role
-with the caller's scope, actor and write mode, the heads first, both checks
-on; grants and home moves through the definers the write role calls;
-system work on the system pool. A cell passes only on the row effect read
+assistant, link, contact-ro, contact-rw, peer and system once each), and
+each write of the two Admin users once more as the product sends it today
+(`login@system`, below). Each cell is one transaction, rolled back. A read
+runs on the workspace role in the caller's scope; a write on a login of
+the write role with the caller's scope, actor, write mode and create home
+set by the gateway's own statement (`writeRoleSettingsSql`), the heads
+first, both checks on; grants and home moves through the definers the
+write role calls; system work on the system pool with its actor
+(`setActorSql`). An Admin user's write request runs on the system pool
+today (W6a M1, until A4 puts its reads in the scope), with the login's
+scope and create home on the transaction and no `mantle.login_id`
+(`withSystemTx`'s `systemPoolTx`): the `login@system` cells send it that
+way, built by the same helper. A cell passes only on the row effect read
 back through a probe (`a8_probe`, a definer the scratch database gets):
 allowed is the change made, refused is no change with 42501 or no row
 matched. Any other error fails the cell.
@@ -4112,49 +4120,118 @@ web (HTTP through `createApp`: item reads and deletes, the grants panel),
 `/api/v1` with the login's read-write key, MCP over OAuth, MCP with a
 read-only key through the bearer lookup, a peer acting as the login with
 Write on, stdio MCP as the owner, the web turn, the team turn, Telegram, a
-run item, a recipe step, a heartbeat (W's assistant with no user), a
-pending call queued in a turn and approved, and an open public link's view.
-Allowed is ok and the change made; refused is no change and an answer that
-is not a crash (a 5xx, a throw, a raw database or runtime text). Each
-cell's actor misses fail it.
+run item, a recipe step, a heartbeat (W's assistant with no user), the
+Admin assistant with no user (it acts for the owner: login(owner) in the
+Admin turn scope, the owner's turn to the oracle), a pending call queued in
+a turn and approved, and an open public link's view. Allowed is ok and the
+change made; refused is no change and an answer that is not a crash: a
+5xx, a throw, or a raw text in the reply (`GENERIC`: a JavaScript error, a
+query builder's or driver's "Failed query", a Postgres message or SQLSTATE
+such as 42501, a relation or a column named, row security, the runtime's
+own guards such as "withSystemTx: only outside a viewer scope", a stack
+frame). Each cell's actor misses fail it. The pick is stable: the
+candidates are taken in the order of a hash of their own name, first fit,
+never in the registry's or the tool list's order, so a new kind or tool
+adds the cells its new pairs need and leaves the others as they were.
 
-**Counts** (v0.300.52): the grid 10,296 cells, 6,478 run (1,551 allow,
-4,927 deny), all pass, 3,818 not applicable. The surface cells 750, 725
-pass, 25 known failures.
+**The grants panel's database rule** (`server/web/server/a8-grants-panel.matrix.test.ts`):
+the panel (`server/web/lib/grants.ts`) decides in TypeScript, then calls
+`mantle_grant_change` and `mantle_grant_move_home` under the item's heads.
+The test makes that decision wrong on purpose (the panel's read of the
+caller's seats answers a Moderator seat of H the member does not hold) and
+asks whether the database still refuses an add to T and a move to T, by
+the route as the product runs it and in the member's own mutating request
+scope, with the check off, warn and on. See F7.
+
+**Counts** (fix round 1, v0.300.54): the grid 10,956 cells, 6,972 run (1,569
+allow, 5,403 deny, of which 66 are the pinned guide-silent denies), 6,860
+pass, 112 known failures, 3,984 not applicable. The surface cells 966, 925
+pass, 41 known failures. The grants panel: 3 cases (one per check mode),
+pinned as found.
 
 **Not applicable** cells are counted and named in the run's summary: a kind
 with no draft, no app data, or no snapshot copy; a snapshot copy has no
 grant but its home and is no place to create in; a link, a contact share
 and a peer read through their share's own gate, not a scope (the surface
-cells check the link); a contact share writes only its app's data; and 66
-cells where the guide is silent (below).
+cells check the link); a contact share writes only its app's data.
 
-**Known failures** (`packages/db/src/matrix/a8-known-failures.ts`, by cell,
-each a finding for the owner; the list only shrinks, a listed cell that
-passes fails the run):
+**Known failures** (`packages/db/src/matrix/a8-known-failures.ts`, by cell
+and by a piece of the reason it fails with, each a finding for the owner;
+a listed cell failing for another reason fails the run like an unlisted
+one; the list only shrinks, a listed cell that passes fails the run). The
+owner decided F1 to F3 (plan section 32): F1 and F2 are fixed on their own
+branch and leave the list when it lands; F3 is the guide's rule now.
 
 - **F1.** `/api/v1` answers 403 `member-login` to a key of a login outside
   Admin (`server/web/lib/api-v1.ts`), where the guide says a key acts as its
-  login and only narrows it. 13 cells. The plan's D3 decides it.
+  login and only narrows it. 11 surface cells. Decided: fix.
 - **F2.** A workspace assistant's turn other than Admin's cannot write an
   item its user may change by hand: the web turn, the team turn, Telegram,
-  a run item and a recipe step. Its turn scope holds no write mode (named
-  under "What is left" of the approval re-check above); the reply carries a
-  raw runtime or database text ("Failed query: update nodes ...",
-  "withSystemTx: only outside a viewer scope ..."). 11 cells. An approved
-  pending call from the same turn writes (the pending cells pass).
-- **F3.** `app_delete` is an owner-side tool, so the home Moderator's
-  delete of an app from the team surface is refused; the guide's "Delete it:
-  Moderator of its home" holds for apps too. 1 cell.
+  a run item and a recipe step. Its turn scope holds no write mode; the
+  reply carries a raw runtime or database text ("Failed query: update
+  nodes ...", "withSystemTx: only outside a viewer scope ...", "Failed
+  query: insert into node_snapshots ..."). The same raw text answers a write
+  the turn may not make (a home Moderator's app delete in a turn, the edits
+  W's assistant with no user tries): the right answer in the wrong words. 29
+  surface cells. An approved pending call from the same turn writes (the
+  pending cells pass). Decided: fix (writes with the user's rights, raw
+  text hidden).
+- **F3.** `app_delete` is an owner-side tool. Decided: an app's delete stays
+  owner-only; the oracle follows the decision (no longer a failure).
+- **F4.** An Admin user's write request on the system pool: the database
+  checks a move, a create in a folder, a delete and a grant change against
+  the scope on the transaction, and nothing else, so an edit, a draft edit,
+  a public link and an app's data write of an item outside Admin are made.
+  Only the gate's TypeScript (`itemWriteGate`) holds them. 108 grid cells
+  (`login@system`). The same writes on the write role are refused.
+- **F5.** The database lets the Moderator of an app's home delete the app,
+  by hand and in a turn; only the owner-side tool holds the owner-only
+  rule. 4 grid cells.
+- **F6.** A peer acting as its login, Write on, may not change an item
+  others read ("this item is shared, so a peer cannot change its content",
+  `packages/tools/src/key-shared-content.ts`, access matrix T3). The guide's
+  "Linked brains" names no such rule. 1 surface cell.
+- **F7** (the grants panel test, pinned there, not a cell of the list). By
+  the route, as the product runs it, the database makes the add and the
+  move in every mode: the grants routes are any-login rows, so the panel
+  runs on the system pool with no scope and the definers hold nothing
+  (`mantle_grant_refuses` asks for an active scope). Its rules are
+  TypeScript only: a defence-in-depth gap for the owner. In the member's
+  own write scope the definers refuse (42501) with the check off and on,
+  and make the change in warn (the write role's refusal staged, the checked
+  rerun lets it through with 3 misses logged), so warn holds less there
+  than off. The panel cannot run in that scope today: its first read, the
+  Admin workspace's row, is hidden from a member's scope (409 "not set up"),
+  and its answer reads `node_embeds`, which the scope may not
+  (`permission denied`).
 
-**The guide is silent** where the oracle answers not applicable and the
-owner should decide:
+**The guide is silent** where the owner should decide:
 
 - whether a turn's write may use a Moderator seat outside the assistant's
   workspace (add a grant, a move, the Write switch for the Moderator of H
-  in H's turn: by hand allowed, in the turn's scope refused);
+  in H's turn: by hand allowed, in the turn's scope refused). The oracle
+  pins the narrower answer, a deny named "guide silent, pinned deny
+  pending owner", so a loosening fails until the owner decides: 66 grid
+  cells;
 - snapshot copies: docs/workspaces.md does not describe them; the oracle
-  reads docs/update-prod.md.
+  reads docs/update-prod.md;
+- an app's delete: owner-only by the plan's section 32 until the guide
+  carries the rule;
+- F6's rule for a key or a peer and a shared item.
+
+**Cells that check little** (they pass, and say less than their count):
+
+- contact-rw's app data write and every system cell run on the system pool
+  with only the actor set: no scope, so the database's scope checks do not
+  run; they pin that the write lands, not who may make it;
+- a contact share's writes other than its app's data are not applicable,
+  not run (the `/s` broker is not covered yet, below);
+- the link, peer (no Acts as) and contact-ro write cells run with write
+  mode read-only: the read-only mode alone refuses them, so they do not
+  test the actor's own rule apart from it;
+- the admin-heartbeat cells are all denies (nothing in the fixture is
+  granted to Admin): they pin that the Admin assistant with no user reaches
+  nothing outside Admin, not what it may write there.
 
 **Not covered yet:** the app brokers (owner, member, contact) and a contact
 share's `/s` reads and writes, `/print`, a peer without Acts as, an app's
