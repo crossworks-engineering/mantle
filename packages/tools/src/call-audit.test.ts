@@ -106,6 +106,12 @@ beforeAll(() => {
     ...probe('audit_probe_state', 'write', async () => ({ ok: true, output: {} })),
     policy: { effect: 'write', spends: 'none', scope: 'any', auditRow: false },
   });
+  // A routine write only on its firing heartbeat (heartbeat_update_state's
+  // policy since the lows round, 6d L5): no row unless it names a `slug`.
+  registerBuiltin({
+    ...probe('audit_probe_fire_state', 'write', async () => ({ ok: true, output: {} })),
+    policy: { effect: 'write', spends: 'none', scope: 'any', auditRow: { unlessArg: 'slug' } },
+  });
   startCallAudit({ sink: (r) => rows.push(r) });
 });
 
@@ -182,18 +188,15 @@ const ENTRIES: Array<{
 async function call(
   entry: (typeof ENTRIES)[number],
   tool: Tool,
+  args: Record<string, unknown> = {},
 ): Promise<{ ok: boolean; rows: CallAuditRow[] }> {
   rows.length = 0;
   const slug = tool.slug;
-  const res = await dispatchTool(
-    tool,
-    {},
-    {
-      ownerId: LOGIN,
-      ...(entry.surface ? { surface: entry.surface } : {}),
-      caller: entry.caller(slug),
-    },
-  );
+  const res = await dispatchTool(tool, args, {
+    ownerId: LOGIN,
+    ...(entry.surface ? { surface: entry.surface } : {}),
+    caller: entry.caller(slug),
+  });
   return { ok: res.ok, rows: [...rows] };
 }
 
@@ -257,6 +260,17 @@ describe('one audit row for every tool write, on every surface (A5 step 6d)', ()
       const res = await call(entry, row('audit_probe_fail'));
       expect(res.ok, entry.name).toBe(false);
       expect(res.rows, entry.name).toEqual([]);
+    }
+  });
+
+  it('a routine write on its firing heartbeat leaves none; one naming another by slug leaves its row (lows round, 6d L5; main: none)', async () => {
+    for (const entry of ENTRIES) {
+      const fire = await call(entry, row('audit_probe_fire_state'), { patch: {} });
+      expect(fire.ok, entry.name).toBe(true);
+      expect(fire.rows, entry.name).toEqual([]);
+      const named = await call(entry, row('audit_probe_fire_state'), { slug: 'hb', patch: {} });
+      expect(named.ok, entry.name).toBe(true);
+      expect(named.rows, entry.name).toHaveLength(entry.writeRows);
     }
   });
 
@@ -346,6 +360,17 @@ describe('one audit row for every tool write, on every surface (A5 step 6d)', ()
       const res = await call(entry, row('audit_probe_state'));
       expect(res.ok, entry.name).toBe(true);
       expect(res.rows, entry.name).toEqual([]);
+    }
+  });
+
+  it('a routine write on its firing heartbeat leaves none; one naming another by slug leaves its row (lows round, 6d L5; main: none)', async () => {
+    for (const entry of ENTRIES) {
+      const fire = await call(entry, row('audit_probe_fire_state'), { patch: {} });
+      expect(fire.ok, entry.name).toBe(true);
+      expect(fire.rows, entry.name).toEqual([]);
+      const named = await call(entry, row('audit_probe_fire_state'), { slug: 'hb', patch: {} });
+      expect(named.ok, entry.name).toBe(true);
+      expect(named.rows, entry.name).toHaveLength(entry.writeRows);
     }
   });
 

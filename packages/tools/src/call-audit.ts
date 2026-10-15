@@ -144,14 +144,20 @@ function notes(): Record<string, unknown> | null {
 
 /** Whether a call's own run is a write the row records: not a recipe row
  *  (it writes only through its steps), and not a builtin whose policy says
- *  its write is routine internal state (`auditRow: false`, A5 step 6d fix
- *  round 1: heartbeat_update_state, once per heartbeat fire). */
-function writesItself(ref: AuditedCall['ref']): boolean {
+ *  its write is routine internal state (`auditRow`, A5 step 6d fix round 1;
+ *  `{ unlessArg }` only when the call leaves that argument out, lows round
+ *  6d L5: heartbeat_update_state inside a fire, on the firing heartbeat). */
+function writesItself(call: Pick<AuditedCall, 'ref' | 'input'>): boolean {
+  const ref = call.ref;
   if (ref.kind === 'runtime-tool') {
     return (ref.row as { handler?: { kind?: unknown } } | undefined)?.handler?.kind !== 'recipe';
   }
   const builtin = builtinOf(ref);
-  return !builtin || namedToolPolicy(builtin)?.policy.auditRow !== false;
+  const skip = builtin ? namedToolPolicy(builtin)?.policy.auditRow : undefined;
+  if (skip === undefined) return true;
+  if (skip === false) return false;
+  const named = call.input.args?.[skip.unlessArg];
+  return named !== undefined && named !== null && named !== '';
 }
 
 /** The spec (one object, so registering it again is a no-op). */

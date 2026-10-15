@@ -159,11 +159,16 @@ export type ToolPolicy = Readonly<{
    *  it). */
   privateCorpus?: true;
   /** Its write is routine internal state, not a change anyone reads or
-   *  shares (heartbeat_update_state: a heartbeat's own scratch state, once
-   *  per fire): the gate's tool call audit writes no row for it (A5 step 6d
+   *  shares: the gate's tool call audit writes no row for it (A5 step 6d
    *  fix round 1, call-audit.ts), so `audit_log`, which nothing prunes, does
-   *  not grow per fire. Never on a write of content, sharing or access. */
-  auditRow?: false;
+   *  not grow per fire. `false`: never a row. `{ unlessArg }`: no row only
+   *  when the call leaves that argument out (lows round, 6d L5:
+   *  heartbeat_update_state skips its row only inside a fire, on the firing
+   *  heartbeat; a call naming a heartbeat by `slug`, as a responder turn
+   *  must, may move another login's heartbeat to its own and keeps its row).
+   *  Never on a write of content, sharing or access. The tools that carry it
+   *  are pinned (@mantle/runtime audit-row-allowlist.test.ts). */
+  auditRow?: false | Readonly<{ unlessArg: string }>;
 }>;
 
 /** The gate's policy of a builtin (plan 23.2): its effect, Admin step,

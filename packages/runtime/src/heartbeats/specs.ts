@@ -65,8 +65,11 @@ export const HEARTBEAT_SNOOZE_SPEC: HeartbeatToolSpec = {
 export const HEARTBEAT_UPDATE_STATE_SPEC: HeartbeatToolSpec = {
   slug: 'heartbeat_update_state',
   heartbeat: { reaches: 'firing', responderOrder: 0 },
-  // A heartbeat's own scratch state, written on every fire: no audit row.
-  policy: { effect: 'write', spends: 'none', scope: 'any', auditRow: false },
+  // A heartbeat's own scratch state, written on every fire: no audit row
+  // inside a fire on the firing heartbeat (no `slug`). A call naming one by
+  // slug (a responder turn must, and it may move another login's heartbeat
+  // to this login) keeps its row (lows round, 6d L5).
+  policy: { effect: 'write', spends: 'none', scope: 'any', auditRow: { unlessArg: 'slug' } },
   name: "Update a heartbeat's state",
   description:
     "JSON-merge a `patch` object into a heartbeat's `state` jsonb. Top-level keys overwrite same-named keys in the existing state; other keys are preserved. Set a key to null to remove it. Pass `slug` to target a specific heartbeat — required from a regular responder turn (look at the 'Open heartbeats' block in your system prompt to find which slug to use); optional inside a heartbeat fire (firing one is the default). Use this to track progress (e.g. {answered: ['family'], expecting_reply: false}) so the next fire knows where the skill left off.",

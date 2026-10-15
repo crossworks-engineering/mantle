@@ -70,9 +70,10 @@ export type CallAuditSpec = Readonly<{
   kinds: readonly string[];
   /** Whether `value` is a call that did its work (not a failed result). */
   succeeded: (value: unknown) => boolean;
-  /** Whether the ref's own run writes, beside the calls in it (default
-   *  yes): a recipe row writes only through its steps. */
-  writesItself?: (ref: AuditedCall['ref']) => boolean;
+  /** Whether the call's own run writes, beside the calls in it (default
+   *  yes): a recipe row writes only through its steps; a routine write of
+   *  internal state by its arguments (lows round, 6d L5). */
+  writesItself?: (call: Pick<AuditedCall, 'ref' | 'input'>) => boolean;
   /** How a nested write is named in its outer call's row. */
   label: (call: Pick<AuditedCall, 'ref' | 'input'>) => string;
   /** What a call notes for the row it is written in (its own, or its
@@ -209,7 +210,7 @@ function settle(
   const wrote =
     !threw &&
     base.policy.effect === 'write' &&
-    (a.writesItself?.(base.ref) ?? true) &&
+    (a.writesItself?.(base) ?? true) &&
     a.succeeded(base.value);
   if (!wrote && frame.nested.length === 0) return;
   const notes = { ...frame.notes, ...(a.notes?.(base) ?? {}) };
