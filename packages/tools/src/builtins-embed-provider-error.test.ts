@@ -51,7 +51,10 @@ describe('an embed that fails at the provider (A10 #10 fix round 2)', () => {
       ok: false,
       error: 'embed failed: The provider refused the API key. (openai, HTTP 403)',
     });
-    expect(logged.join('\n')).toContain('acme-private');
+    // A refused key is logged by provider and status only: its body can echo
+    // the key (model picker fix round 1, L2).
+    expect(logged.join('\n')).toContain('openai refused the key (HTTP 403)');
+    expect(logged.join('\n')).not.toContain('acme-private');
   });
 
   it('find_window says the fixed sentence', async () => {

@@ -104,7 +104,10 @@ describe("dispatch: a builtin's provider failure is the fixed sentence (A10 #10 
       const error = await call('provider_probe_embed', ctx);
       expect(error).toBe('The provider refused the API key. (openai, HTTP 401)');
       expect(error).not.toContain('sk-or-v1');
-      expect(logged.join('\n')).toContain('acme-private');
+      // A refused key is logged by provider and status only (model picker
+      // fix round 1, L2): its body can echo the key.
+      expect(logged.join('\n')).toContain('openai refused the key (HTTP 401)');
+      expect(logged.join('\n')).not.toContain('acme-private');
     });
 
     it(`${name}: an SDK's own error the classifier does not name never passes its body`, async () => {
