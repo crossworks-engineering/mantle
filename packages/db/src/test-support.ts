@@ -521,9 +521,10 @@ export async function ensureTestViewerRoles(url: string, masterKey: string): Pro
   const sql = postgres(url, { max: 1 });
   try {
     await ensureViewerRoles(sql, masterKey);
-    // And the runtime roles (arch A9): a run with MANTLE_DB_RUNTIME_ROLE=1
-    // logs its pools in as mantle_runtime, its password from this key.
-    await ensureRuntimeRoles(sql, masterKey);
+    // And the runtime roles (arch A9), with a login: a run with
+    // MANTLE_DB_RUNTIME_ROLE=1 logs its pools in as mantle_runtime, its
+    // password from this key.
+    await ensureRuntimeRoles(sql, masterKey, { login: true });
   } finally {
     await sql.end();
   }

@@ -130,11 +130,12 @@ done
 # to restore: a team-level agent sees an empty brain and a member an empty
 # space. The write role (mantle_write_user, arch A2b2a) too: its rules name it.
 # And the gap writer (mantle_gap_writer, A2b2b: a row rule on each gap table
-# names it). And the runtime roles (arch A9, packages/db/src/runtime-role.ts:
-# mantle_owner, mantle_system, mantle_runtime): the dump's grants and default
-# privileges name them. The list is the roles of
-# packages/db/src/viewer-roles.ts (POOL_ROLES and RETIRED_POOL_ROLES),
-# GAP_WRITER_ROLE (access-matrix.ts) and the three of runtime-role.ts.
+# names it). And the runtime roles (arch A9): the dump's grants and default
+# privileges name them. The source of these names is TypeScript, which a
+# shell script cannot import: packages/db/src/viewer-roles.ts (POOL_ROLES and
+# RETIRED_POOL_ROLES), GAP_WRITER_ROLE (access-matrix.ts) and RUNTIME_ROLES
+# (runtime-role.ts). packages/db/src/viewer.test.ts fails when this list and
+# those differ.
 docker exec "$CONTAINER" psql -U postgres -d postgres -v ON_ERROR_STOP=1 -q -c "
 DO \$\$
 DECLARE r text;

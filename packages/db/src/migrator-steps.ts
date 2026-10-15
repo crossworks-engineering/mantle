@@ -34,11 +34,15 @@ const consoleLog: StepLog = {
 };
 
 /** The roles, before any migration runs. Returns the runtime roles'
- *  outcome for afterMigrations. */
+ *  outcome for afterMigrations. `runtimeLogin`: MANTLE_DB_RUNTIME_ROLE as
+ *  migrate sees it (compose passes it through x-app-env): the runtime role
+ *  may log in only then, and is NOLOGIN again at the first migrate without
+ *  it. */
 export async function beforeMigrations(
   sql: Sql,
   masterKey: string | null,
   perDatabase: boolean,
+  runtimeLogin: boolean,
   log: StepLog = consoleLog,
 ): Promise<RuntimeRolesOutcome> {
   // Refuses to reset roles another brain on this cluster owns.
@@ -47,7 +51,17 @@ export async function beforeMigrations(
       '  WARNING the viewer roles not set: migrate runs as a role that may not manage roles',
     );
   }
-  const runtime = await ensureRuntimeRoles(sql, masterKey, perDatabase);
+  const runtime = await ensureRuntimeRoles(sql, masterKey, {
+    login: runtimeLogin,
+    perDatabase,
+  });
+  if (runtime === 'ok') {
+    log.info(
+      runtimeLogin && masterKey && !perDatabase
+        ? '  runtime role mantle_runtime: LOGIN (MANTLE_DB_RUNTIME_ROLE is on)'
+        : '  runtime role mantle_runtime: NOLOGIN (MANTLE_DB_RUNTIME_ROLE is off)',
+    );
+  }
   if (runtime === 'not-superuser') {
     log.warn(
       '  WARNING the runtime role (mantle_runtime) not made: migrate does not run as a superuser',
@@ -62,8 +76,8 @@ export async function beforeMigrations(
  * The grants and the superuser-only marks, after the migrations (and after
  * a restore, at the migrate that follows it). The access matrix and the
  * runtime role's rights fail the run when they fail; an ownership change a
- * busy table refused and the LEAKPROOF flag are warnings (the next run
- * tries again).
+ * busy table refused (or any other it could not make) and the LEAKPROOF
+ * flag are warnings (the next run tries again).
  */
 export async function afterMigrations(
   sql: Sql,
@@ -77,7 +91,14 @@ export async function afterMigrations(
   if (runtime === 'ok') {
     const own = await ownTables(sql);
     if (own.owned.length > 0) log.info(`  ${own.owned.length} table(s) handed to mantle_owner`);
-    for (const f of own.failed) {
+    const busy = own.failed.filter((f) => f.busy);
+    if (busy.length > 0) {
+      log.warn(
+        `  WARNING ${busy.length} table(s) busy, still with their old owner (the next migrate ` +
+          `retries; untidy, not a hole): ${busy.map((f) => f.rel).join(', ')}`,
+      );
+    }
+    for (const f of own.failed.filter((x) => !x.busy)) {
       log.warn(`  WARNING ${f.rel} still has its old owner (next run retries): ${f.error}`);
     }
     await applyRuntimeGrants(sql);

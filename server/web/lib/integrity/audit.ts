@@ -14,6 +14,7 @@
  */
 import {
   ACTOR_CHECK_DRIFT_SQL,
+  RUNTIME_LOCK_SQL,
   EDIT_CHECK_DRIFT_SQL,
   db,
   extractParkedSql,
@@ -261,24 +262,8 @@ const CHECKS: CheckDef[] = [
     key: 'runtime_role_lock',
     label: 'Runtime role holds no owner power',
     severity: 'high',
-    note: "whether mantle_runtime, the role the app's pools log in as with MANTLE_DB_RUNTIME_ROLE=1 (workspaces arch A9, docs/runtime-role.md), is still the lock it was made as: not a superuser, no CREATEROLE or CREATEDB, owning no table of public or auth, no CREATE on public, and no way to act as mantle_owner. A row names what broke: a hand GRANT or ALTER ROLE. migrate puts the role back on its next run; until then the app's pools can alter tables, disable triggers or change the check modes. No row when the role does not exist (a box before its roll).",
-    query: () => sql`
-      SELECT 'mantle_runtime' AS id, 'lock broken' AS kind, x.detail AS detail
-      FROM (
-        SELECT concat_ws('; ',
-          CASE WHEN r.rolsuper THEN 'a superuser' END,
-          CASE WHEN r.rolcreaterole THEN 'may create roles' END,
-          CASE WHEN r.rolcreatedb THEN 'may create databases' END,
-          CASE WHEN EXISTS (SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
-                             WHERE c.relowner = r.oid AND n.nspname IN ('public', 'auth'))
-               THEN 'owns tables' END,
-          CASE WHEN has_schema_privilege(r.oid, 'public', 'CREATE') THEN 'may create in public' END,
-          CASE WHEN to_regrole('mantle_owner') IS NOT NULL
-                AND (pg_has_role(r.oid, to_regrole('mantle_owner'), 'USAGE')
-                     OR pg_has_role(r.oid, to_regrole('mantle_owner'), 'SET'))
-               THEN 'acts as mantle_owner' END) AS detail
-        FROM pg_roles r WHERE r.rolname = 'mantle_runtime') x
-      WHERE x.detail <> ''`,
+    note: "whether mantle_runtime, the role the app's pools log in as with MANTLE_DB_RUNTIME_ROLE=1 (workspaces arch A9, docs/runtime-role.md), is still the lock it was made as: not a superuser, no CREATEROLE or CREATEDB, owning no table or function of public or auth, no CREATE on public, neither the rights of mantle_owner or mantle_system nor a way to become mantle_owner, and mantle_acl_internal() (the marker every write guard reads) present and mantle_owner's. A row names what broke: a hand GRANT, ALTER ROLE or ALTER FUNCTION. migrate puts the role back on its next run; until then the app's pools can alter tables, disable triggers or change the check modes. No row when the role does not exist (a box before its roll).",
+    query: () => sql`${sql.raw(RUNTIME_LOCK_SQL)}`,
   },
   {
     key: 'keyword_index_rls',

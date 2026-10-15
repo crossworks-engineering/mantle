@@ -53,7 +53,7 @@ import {
 } from './test-support';
 import { isCi } from './test-env-guard';
 import { afterMigrations } from './migrator-steps';
-import { ensureRuntimeRoles } from './runtime-role';
+import { OWNER_ROLE, RUNTIME_ROLE, ensureRuntimeRoles } from './runtime-role';
 import { tsMatchLeakproof } from './leakproof';
 
 const DB_URL = process.env.MANTLE_TEST_DATABASE_URL;
@@ -299,16 +299,16 @@ describe.skipIf(!DB_URL || (!tools && !ci))('a dump of a migrated brain restores
       expect((await owners()).map((o) => o.owner)).toEqual(['postgres']);
       // The migrate that follows a restore (migrator-steps.ts).
       const key = process.env.MANTLE_MASTER_KEY ?? 'mantle-viewer-test-key';
-      await afterMigrations(sql, await ensureRuntimeRoles(sql, key), {
+      await afterMigrations(sql, await ensureRuntimeRoles(sql, key, { login: true }), {
         info: () => {},
         warn: () => {},
       });
-      expect((await owners()).map((o) => o.owner)).toEqual(['mantle_owner']);
+      expect((await owners()).map((o) => o.owner)).toEqual([OWNER_ROLE]);
       expect(await tsMatchLeakproof(sql)).toBe(true);
       const [rights] = await sql<{ write: boolean; key: boolean; switch: boolean }[]>`
-        select has_table_privilege('mantle_runtime', 'public.nodes', 'INSERT') as write,
-               has_table_privilege('mantle_runtime', 'public.mantle_heads_key', 'SELECT') as key,
-               has_function_privilege('mantle_runtime',
+        select has_table_privilege(${RUNTIME_ROLE}, 'public.nodes', 'INSERT') as write,
+               has_table_privilege(${RUNTIME_ROLE}, 'public.mantle_heads_key', 'SELECT') as key,
+               has_function_privilege(${RUNTIME_ROLE},
                  'public.mantle_set_actor_check(text,integer)', 'EXECUTE') as switch`;
       expect(rights).toEqual({ write: true, key: false, switch: false });
       // The data came back with it: the heads key's row and the items.

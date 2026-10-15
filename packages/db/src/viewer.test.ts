@@ -6,7 +6,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { GAP_WRITER_ROLE } from './access-matrix';
-import { OWNER_ROLE, RUNTIME_ROLE, SYSTEM_ROLE } from './runtime-role';
+import { RUNTIME_ROLES } from './runtime-role';
 import {
   AS_SYSTEM_TURN_REASONS,
   asSystem,
@@ -321,9 +321,7 @@ describe('brains sharing one Postgres cluster (viewerRolePlan)', () => {
       [
         ...[...POOL_ROLES, ...RETIRED_POOL_ROLES].map((r) => viewerRoleName(r)),
         GAP_WRITER_ROLE,
-        OWNER_ROLE,
-        SYSTEM_ROLE,
-        RUNTIME_ROLE,
+        ...RUNTIME_ROLES,
       ].sort(),
     );
   });
