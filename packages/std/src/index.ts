@@ -16,7 +16,12 @@
  */
 import { DATABASE_ERROR_PUBLIC, mapAccessError } from './access-error';
 import { domainErrorAnswer } from './domain-errors';
-import { classifyProviderError } from './provider-error';
+import {
+  PROVIDER_ERROR_PUBLIC,
+  classifyProviderError,
+  isProviderHttpFailure,
+  providerFailureShape,
+} from './provider-error';
 
 let dbErrorWatch: () => { texts: string[]; errors: unknown[] } | undefined = () => undefined;
 
@@ -141,17 +146,38 @@ export function publicErrorMessage(err: unknown, where: string): string {
  * part of a key, so it never reaches a member or a model. A domain error
  * (ProviderHttpError) says its row's fixed sentence; any other error the
  * provider classifier names (an SDK's own error, a timeout, a network
- * failure) says its class's fixed sentence. Either way the detail is logged
- * under `where`, server side. Anything else is publicErrorMessage.
+ * failure) says its class's fixed sentence. A provider failure the
+ * classifier does not name (an OpenRouter 400 not about the model, a 403
+ * moderation refusal, a 413, a body that did not parse; fix round 2) says
+ * PROVIDER_ERROR_PUBLIC with its status when known, never its message.
+ * Either way the detail is logged under `where`, server side. Anything else
+ * (our own error, no provider shape) is publicErrorMessage.
  */
 export function publicProviderErrorMessage(err: unknown, where: string): string {
   if (isDatabaseError(err)) return publicErrorMessage(err, where);
   const domain = domainErrorAnswer(err);
   const cls = domain ? null : classifyProviderError(err);
-  if (!domain && !cls) return publicErrorMessage(err, where);
+  const shape = domain || cls ? null : providerFailureShape(err);
+  if (!domain && !cls && !shape) return publicErrorMessage(err, where);
   console.error(`[${where}] failed:`, err);
   if (domain) return domain.toolText;
-  return cls!.status ? `${cls!.reason} (HTTP ${cls!.status})` : cls!.reason;
+  if (cls) return cls.status ? `${cls.reason} (HTTP ${cls.status})` : cls.reason;
+  return shape!.status ? `${PROVIDER_ERROR_PUBLIC} (HTTP ${shape!.status})` : PROVIDER_ERROR_PUBLIC;
+}
+
+/**
+ * A tool's text for an error a builtin threw (the dispatcher's catch; A10 #10
+ * fix round 2). A provider's HTTP failure ({@link isProviderHttpFailure})
+ * says its fixed sentence (publicProviderErrorMessage, detail logged under
+ * `where`); a domain error says its row's text (the message, for every row
+ * but the provider's); anything else keeps errorMessage, as before, so a
+ * database error is still collected for the surface's own check.
+ */
+export function toolThrowText(err: unknown, where: string): string {
+  if (isProviderHttpFailure(err)) return publicProviderErrorMessage(err, where);
+  const domain = domainErrorAnswer(err);
+  if (domain) return domain.toolText;
+  return errorMessage(err);
 }
 
 /**
@@ -246,9 +272,11 @@ export {
   classifyProviderError,
   isAccountError,
   isEmptyJsonBodyError,
+  isProviderHttpFailure,
   isRouteDownError,
   providerErrorPublicText,
   providerErrorStatus,
+  providerFailureShape,
   retryDecision,
   type ProviderErrorClass,
   type ProviderErrorCode,

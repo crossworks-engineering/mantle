@@ -43,7 +43,7 @@ import { embedPendingRecallPrompts, recallFolderCrumbs } from '@mantle/content';
 import { embed } from '@mantle/embeddings';
 import type { BuiltinToolDef, ToolHandlerContext, ToolHandlerResult } from './types';
 import { str } from './coerce';
-import { errorMessage } from '@mantle/std';
+import { publicProviderErrorMessage } from '@mantle/std';
 import { OWNER_ONLY_ERROR, isOwnerSurface } from './surface';
 
 const MATCH_LIMIT = 3;
@@ -422,7 +422,7 @@ const recall_match: BuiltinToolDef = {
     } catch (err) {
       return {
         ok: false,
-        error: `embed failed: ${errorMessage(err)}`,
+        error: `embed failed: ${publicProviderErrorMessage(err, 'recall_match')}`,
       };
     }
 

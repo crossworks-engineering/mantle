@@ -69,7 +69,7 @@ import {
 import { spillToolResult } from '@mantle/tools';
 import { currentTrace, runDurableStep, startTrace, withDurableSteps } from '@mantle/tracing';
 import { getChatAdapter } from '@mantle/voice';
-import { errorMessage } from '@mantle/std';
+import { errorMessage, isProviderHttpFailure, publicProviderErrorMessage } from '@mantle/std';
 import { applyAgentThinking, NO_THINKING } from '@mantle/content-core/profile-projections';
 import { withRunScope } from '@mantle/runtime/agent';
 import { registerActorWorkflow, systemEntry } from './actor-workflow';
@@ -474,7 +474,13 @@ export async function runsWorkerTurnImpl(
         const msg = errorMessage(err);
         DBOS.span?.setAttribute('mantle.error', msg);
         DBOS.logger.error(`[runs_worker_turn] FAILED (item=${item.id}): ${msg}`);
-        return retryOrFail({ type: 'worker_error', message: msg, itemId: item.id });
+        // The stored result says a provider failure's fixed sentence; its
+        // body stays in the log above (A10 #10 fix round 2). Our own errors
+        // keep their text.
+        const message = isProviderHttpFailure(err)
+          ? publicProviderErrorMessage(err, 'runs_worker_turn')
+          : msg;
+        return retryOrFail({ type: 'worker_error', message, itemId: item.id });
       }
     },
   );

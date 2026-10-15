@@ -107,6 +107,56 @@ defineDomainError(ProviderHttpError, {
   toolText: (err) => providerErrorPublicText(err),
 });
 
+/** `err` and up to three causes below it (a wrapper keeps the SDK's error
+ *  as its cause: the OpenRouter chat adapter, an extractor's "embed failed"). */
+function errorChain(err: unknown): object[] {
+  const out: object[] = [];
+  let e: unknown = err;
+  for (let depth = 0; depth < 4 && e && typeof e === 'object' && !out.includes(e); depth += 1) {
+    out.push(e);
+    e = (e as { cause?: unknown }).cause;
+  }
+  return out;
+}
+
+/**
+ * True when `err` is a model provider's HTTP answer whose message carries the
+ * provider's body: a {@link ProviderHttpError}, or an SDK's own HTTP error (a
+ * numeric `statusCode` with its `body`, OpenRouter's), on the error or a
+ * cause below it (A10 #10 fix round 2). Narrow on purpose: a surface that
+ * also carries the caller's own errors (the tool dispatcher) maps only these,
+ * so a validation message or a non-provider fetch's 404 still reads as before.
+ */
+export function isProviderHttpFailure(err: unknown): boolean {
+  return errorChain(err).some(
+    (e) =>
+      e instanceof ProviderHttpError ||
+      (typeof (e as { statusCode?: unknown }).statusCode === 'number' &&
+        typeof (e as { body?: unknown }).body === 'string'),
+  );
+}
+
+/**
+ * The status of a provider failure the classifier does not name, when it is
+ * one by its shape (A10 #10 fix round 2): a numeric `status` or `statusCode`
+ * on the error or a cause, the adapters' message prefix, or a body that did
+ * not parse (V8's SyntaxError quotes the body). Null: not provider shaped,
+ * the error is the caller's own.
+ */
+export function providerFailureShape(err: unknown): { status?: number } | null {
+  const chain = errorChain(err);
+  for (const e of chain) {
+    const o = e as { status?: unknown; statusCode?: unknown };
+    if (typeof o.status === 'number') return { status: o.status };
+    if (typeof o.statusCode === 'number') return { status: o.statusCode };
+  }
+  if (isProviderHttpFailure(err)) return {};
+  const scraped = providerErrorStatus(err);
+  if (scraped !== undefined) return { status: scraped };
+  if (chain.some((e) => e instanceof SyntaxError)) return {};
+  return null;
+}
+
 // ── the status reader ───────────────────────────────────────────────────────
 
 /** The HTTP status an error carries, read from structure first, else from the

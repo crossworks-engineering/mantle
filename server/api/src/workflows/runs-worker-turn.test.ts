@@ -347,6 +347,38 @@ describe('runs worker turn — retry policy', () => {
     expect(res).toEqual({ executed: true, outcome: 'retry' });
     expect(h.requeueForRetry).toHaveBeenCalledTimes(1);
   });
+
+  // A10 #10 fix round 2: the stored result says a provider failure's fixed
+  // sentence; its body stays in the log. Our own errors keep their text.
+  it("stores a provider failure's fixed sentence, never its body", async () => {
+    const { ProviderHttpError } = await import('@mantle/std');
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+    h.loopThrows = new ProviderHttpError({
+      provider: 'openrouter',
+      status: 401,
+      body: 'sk-or-v1-0123456789abcdef org=acme-private',
+      what: 'chat',
+    });
+    fake.queue('run_items', [{ ...RUNNING_ITEM, attempt: 1, retryPolicy: { maxAttempts: 2 } }]);
+    fake.queue('runs', [{ id: 'run-1', ownerId: 'owner-1', agentId: 'responder-1' }]);
+    const res = await runsWorkerTurnImpl({ itemId: ITEM_ID });
+    err.mockRestore();
+    expect(res).toEqual({ executed: true, outcome: 'failed' });
+    const opts = h.completeItem.mock.calls[0]![1] as { failure: { message: string } };
+    expect(opts.failure.message).toBe('The provider refused the API key. (openrouter, HTTP 401)');
+    expect(JSON.stringify(h.completeItem.mock.calls)).not.toContain('acme-private');
+    // The owner's log keeps the detail.
+    expect(h.logs.some((l) => l.message.includes('acme-private'))).toBe(true);
+  });
+
+  it('stores our own error as its text, as before', async () => {
+    h.loopThrows = new Error('worker loop: tool budget exhausted');
+    fake.queue('run_items', [{ ...RUNNING_ITEM, attempt: 1, retryPolicy: { maxAttempts: 2 } }]);
+    fake.queue('runs', [{ id: 'run-1', ownerId: 'owner-1', agentId: 'responder-1' }]);
+    await runsWorkerTurnImpl({ itemId: ITEM_ID });
+    const opts = h.completeItem.mock.calls[0]![1] as { failure: { message: string } };
+    expect(opts.failure.message).toBe('worker loop: tool budget exhausted');
+  });
 });
 
 describe('runs worker turn — crash replay (final-audit F4 regression)', () => {

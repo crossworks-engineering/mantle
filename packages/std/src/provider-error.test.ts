@@ -1,9 +1,10 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { domainErrorAnswer } from './domain-errors';
-import { publicProviderErrorMessage } from './index';
+import { InputError, publicProviderErrorMessage, toolThrowText } from './index';
 import {
   ProviderHttpError,
   classifyProviderError,
+  isProviderHttpFailure,
   isRouteDownError,
   retryDecision,
 } from './provider-error';
@@ -90,5 +91,105 @@ describe('publicProviderErrorMessage (A10 #10 fix round 1)', () => {
   it('anything else keeps its own message (our own errors stay useful)', () => {
     const e = new Error('team turn: no api_key_id on agent x');
     expect(publicProviderErrorMessage(e, 'test')).toBe('team turn: no api_key_id on agent x');
+  });
+});
+
+describe('a provider failure the classifier does not name (A10 #10 fix round 2)', () => {
+  const SECRET = 'sk-or-v1-0123456789abcdef org=acme-private';
+  let logged: unknown[][] = [];
+  beforeEach(() => {
+    logged = [];
+    vi.spyOn(console, 'error').mockImplementation((...a: unknown[]) => {
+      logged.push(a);
+    });
+  });
+  afterEach(() => vi.restoreAllMocks());
+
+  /** The OpenRouter SDK's error as the chat adapter wraps it (openrouter-chat.ts). */
+  const sdkError = (status: number, upstream: string) => {
+    const inner = Object.assign(new Error('Provider returned error'), {
+      statusCode: status,
+      body: JSON.stringify({ error: { message: upstream, metadata: { raw: SECRET } } }),
+    });
+    return new Error(`openrouter-chat ${status} on some/model: ${upstream} metadata=${SECRET}`, {
+      cause: inner,
+    });
+  };
+
+  it.each([
+    [400, 'prompt is too long for this route'],
+    [403, 'Your input was flagged by moderation'],
+    [413, 'Request entity too large'],
+  ])('an OpenRouter %i says the fixed sentence and its status, never the body', (status, up) => {
+    const e = sdkError(status, up);
+    expect(classifyProviderError(e)).toBeNull();
+    const text = publicProviderErrorMessage(e, 'team-turn');
+    expect(text).toBe(`The model provider answered with an error. (HTTP ${status})`);
+    expect(text).not.toContain('acme-private');
+    expect(text).not.toContain(up);
+    // The detail is in the server log.
+    expect(JSON.stringify(logged.map((a) => String(a[1])))).toContain('acme-private');
+  });
+
+  it("the SDK's own error, unwrapped (a research tool), is the same", () => {
+    const e = Object.assign(new Error(`API error occurred: ${SECRET}`), {
+      statusCode: 413,
+      body: SECRET,
+    });
+    expect(publicProviderErrorMessage(e, 'search')).toBe(
+      'The model provider answered with an error. (HTTP 413)',
+    );
+  });
+
+  it('a body that did not parse says the fixed sentence (V8 quotes the body)', () => {
+    let parseError: unknown;
+    try {
+      JSON.parse(`<html>${SECRET}</html>`);
+    } catch (e) {
+      parseError = e;
+    }
+    const text = publicProviderErrorMessage(parseError, 'test');
+    expect(text).toBe('The model provider answered with an error.');
+  });
+});
+
+describe('toolThrowText: a builtin that throws (A10 #10 fix round 2)', () => {
+  const SECRET = 'sk-or-v1-0123456789abcdef org=acme-private';
+  beforeEach(() => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+  });
+  afterEach(() => vi.restoreAllMocks());
+
+  it('a ProviderHttpError says its fixed sentence', () => {
+    const e = new ProviderHttpError({ provider: 'openai', status: 500, body: SECRET });
+    expect(isProviderHttpFailure(e)).toBe(true);
+    expect(toolThrowText(e, 'tool read_result')).toBe(
+      'The provider has a server problem. (openai, HTTP 500)',
+    );
+  });
+
+  it('a wrapped SDK error says the fixed sentence', () => {
+    const inner = Object.assign(new Error('Provider returned error'), {
+      statusCode: 400,
+      body: SECRET,
+    });
+    const e = new Error(`openrouter-chat 400 on m: bad ${SECRET}`, { cause: inner });
+    expect(toolThrowText(e, 'tool x')).toBe('The model provider answered with an error. (HTTP 400)');
+  });
+
+  it('our own errors keep their text, as on main', () => {
+    expect(toolThrowText(new InputError('entry_date must be a valid date'), 't')).toBe(
+      'entry_date must be a valid date',
+    );
+    expect(toolThrowText(new Error('page not found: abc'), 't')).toBe('page not found: abc');
+    // A non-provider fetch's status in our own words is no provider failure.
+    expect(toolThrowText(new Error('fetch failed: 404 Not Found'), 't')).toBe(
+      'fetch failed: 404 Not Found',
+    );
+    // An error with a status but no body (a Graph error) is ours too.
+    const graph = Object.assign(new Error('no valid access token'), { status: 401 });
+    expect(toolThrowText(graph, 't')).toBe('no valid access token');
+    expect(toolThrowText(new TypeError("Cannot read properties of undefined (reading 'x')"), 't'))
+      .toBe("Cannot read properties of undefined (reading 'x')");
   });
 });

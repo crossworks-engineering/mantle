@@ -40,7 +40,7 @@ import { embed } from '@mantle/embeddings';
 import type { BuiltinToolDef, ToolHandlerContext } from './types';
 import { ownerSurfaceLoginId } from './surface';
 import { str, strOpt, numOr as num } from './coerce';
-import { errorMessage } from '@mantle/std';
+import { publicProviderErrorMessage } from '@mantle/std';
 
 // ─── pure helpers (unit-tested in builtins-replay.test.ts) ──────────────────
 
@@ -273,7 +273,7 @@ const find_window: BuiltinToolDef = {
     } catch (err) {
       return {
         ok: false,
-        error: `embed failed: ${errorMessage(err)}`,
+        error: `embed failed: ${publicProviderErrorMessage(err, 'find_window')}`,
       };
     }
     const vec = JSON.stringify(queryVec);

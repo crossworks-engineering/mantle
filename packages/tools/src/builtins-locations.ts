@@ -332,7 +332,9 @@ const route_map: BuiltinToolDef = {
       };
     } catch (err) {
       const msg =
-        err instanceof Error && err.name === 'AbortError'
+        // The deadline (timeoutSignal) raises a TimeoutError; a bare abort,
+        // AbortError (A10 #10 fix round 2).
+        err instanceof Error && (err.name === 'TimeoutError' || err.name === 'AbortError')
           ? 'static map request timed out'
           : err instanceof Error
             ? err.message

@@ -82,7 +82,7 @@ import { mcpPairing, secretRefsRunRefusal, vaultPairRunRefusal } from './secret-
 // registry, which imports every builtin) reach dispatchTool through the bridge.
 import { resolveTool, resolveTools } from './resolve';
 export { resolveTool, resolveTools };
-import { errorMessage, NET_TIMEOUTS, timeoutSignal } from '@mantle/std';
+import { errorMessage, NET_TIMEOUTS, timeoutSignal, toolThrowText } from '@mantle/std';
 
 const HTTP_TIMEOUT_MS_DEFAULT = NET_TIMEOUTS.httpTool;
 
@@ -312,7 +312,10 @@ async function dispatchGated(
             const whole = policy?.fields?.systemWhole === true && !!currentWorkspaceScope();
             return await runGated({ system: whole }, run);
           } catch (err) {
-            if (!rethrows) return { ok: false, error: errorMessage(err) };
+            // A provider's failure is its fixed sentence, never its body
+            // (logged server side; A10 #10 fix round 2); our own errors keep
+            // their text.
+            if (!rethrows) return { ok: false, error: toolThrowText(err, `tool ${tool.slug}`) };
             thrown = { err };
             return null;
           }
@@ -342,7 +345,7 @@ async function dispatchGated(
       return res.value ?? { ok: false, error: 'the tool gave no result' };
     } catch (err) {
       if (rethrows) throw err;
-      return { ok: false, error: errorMessage(err) };
+      return { ok: false, error: toolThrowText(err, `tool ${tool.slug}`) };
     }
   }
   // No runtime tool runs without a policy (arch A3c, plan section 8): one

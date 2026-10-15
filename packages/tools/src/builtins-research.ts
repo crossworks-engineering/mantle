@@ -34,7 +34,7 @@ import { captureLlmUsage } from '@mantle/tracing';
 import type { BuiltinToolDef, ToolHandlerContext, ToolHandlerResult } from './types';
 import { str, strOpt } from './coerce';
 import { env } from '@mantle/config';
-import { errorMessage } from '@mantle/std';
+import { publicProviderErrorMessage } from '@mantle/std';
 import { CS } from './client-sourced-rule';
 
 /** Last-resort model when NO search worker is configured (fresh brain before the
@@ -205,7 +205,10 @@ async function runWebSearch(
     }
     return { ok: true, output: { query, model, answer, citations } };
   } catch (err) {
-    return { ok: false, error: errorMessage(err) };
+    // OpenRouter's SDK error carries the upstream body and metadata: the
+    // model hears the fixed sentence, the detail goes to the server log
+    // (A10 #10 fix round 2).
+    return { ok: false, error: publicProviderErrorMessage(err, kind) };
   }
 }
 
