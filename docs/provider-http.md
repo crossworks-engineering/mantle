@@ -260,20 +260,41 @@ retries and the failover. That is a known gap, left for its own step.
 - Microsoft Graph and Tika honour a Retry-After given as an HTTP date (the
   shared reader); before, a date fell back to the doubling or 1 s wait.
 - A provider error that reaches a member or the model says a fixed
-  sentence (`The provider limits the request rate. (anthropic, HTTP 429)`);
-  an HTTP answer says it with status 502 or 504 (before, an opaque 500).
-  Every adapter throws `ProviderHttpError` on a non-2xx answer: chat,
-  embeddings, and since fix round 1 speech, speech to text, vision and
-  image generation (the body stays on the error, for the server log; the
-  message text is unchanged). `publicProviderErrorMessage` (@mantle/std)
-  is the text for a member's thread and turn stream, the worker tools
-  (`synthesize_speech`, `extract_from_image`, `summarize_text`,
-  `generate_image`), `video_ingest`'s transcript step and an attachment's
-  vision or document note: a domain error's fixed sentence, or the
-  classifier's fixed sentence for an SDK's own error (OpenRouter's), the
-  detail logged server side. Owner-only surfaces keep the detail where
-  they had it on main: the transcribe route for an Admin user, a settings
-  form's model discovery, the trace.
+  sentence, never the provider's body or message (a body can carry an
+  account id, an organisation name or part of a key); the detail goes to
+  the server log. An HTTP answer says it with status 502 or 504 (before,
+  an opaque 500). Every adapter throws `ProviderHttpError` on a non-2xx
+  answer: chat, embeddings, and since fix round 1 speech, speech to text,
+  vision and image generation (the body stays on the error, for the
+  server log; the message text is unchanged). The sentence
+  (`publicProviderErrorMessage`, @mantle/std) is, in order: a domain
+  error's row (`The provider limits the request rate. (anthropic, HTTP
+  429)` for a `ProviderHttpError`); the classifier's class for any other
+  error it names (`The provider refused the API key. (HTTP 403)` for
+  OpenRouter's SDK error); the class the status names when the error
+  carries one the classifier does not read (an SDK's `statusCode`); else,
+  for a provider failure no class names (an OpenRouter 400 not about the
+  model, a 403 moderation refusal, a 413, a body that did not parse),
+  `The model provider answered with an error.` with its status when known
+  (fix round 2; before, its message). An error with no provider shape (no
+  status, no body: our own) keeps its message.
+  - Model-facing: a builtin that throws (the dispatcher's catch, every
+    surface: `toolThrowText` maps only a provider's HTTP failure, a
+    `ProviderHttpError` or an SDK error with its `statusCode` and `body`,
+    so a validation message, a domain refusal or a non-provider fetch's
+    404 reads as on main); the worker tools (`synthesize_speech`,
+    `extract_from_image`, `summarize_text`, `generate_image`);
+    `video_ingest`'s transcript step; `web_search` and `web_search_pro`;
+    `recall_match` and `find_window` (`embed failed: <sentence>`); an
+    attachment's vision or document note.
+  - Member-facing: a member's thread error and the turn stream's error
+    event for a failed team turn; an MCP client (a member's or the
+    owner's) for a builtin that throws one (`thrownToolDatabaseError`).
+  - Owner-side: a run worker item's stored failure (`runs_worker_turn`)
+    says the sentence for a provider's HTTP failure, its own text
+    otherwise; the full message stays in the run's log line. Owner-only
+    surfaces keep the detail where they had it on main: the transcribe
+    route for an Admin user, a settings form's model discovery, the trace.
 - `withTimeout` rejects with a `TimeoutError` (std), message
   `<label> timed out after <n>`: a nightly sweep and a sanity check that
   run out of time now fail with that error, where before they threw a
@@ -287,10 +308,13 @@ retries and the failover. That is a known gap, left for its own step.
 - The Mapbox static image deadline (15 s) now covers the image body too;
   before, the headers only. Tika, the media sidecar and the onboarding
   probes abort with a `TimeoutError` rather than an `AbortError` (each
-  caller treats both alike).
+  caller treats both alike; `route_map` still says "static map request
+  timed out", fix round 2).
 - The chat retry log line reads `..., retry 1/2 in 250ms` (no dash).
 - The member thread's error for a failed team turn, and the stream's error
   event, say the fixed sentence for a provider failure (before, the
   provider's own text).
 - The ticker's and the Telegram poller's doubling waits are std `backoffMs`
-  (the same delays).
+  (the same delays: 1 s doubling to a 60 s cap, back to 1 s after a poll
+  that goes through; pinned by the ticker tests and
+  `server/web/workers/telegram-poll.backoff.test.ts`).
