@@ -30,7 +30,9 @@
  *               snapshot: the author's read-only snapshot copy, at its
  *                 kind's root, homed in writeGrant's private workspace
  *                 (Write off), no other grant. Only the kinds an accepted
- *                 item can be have one.
+ *                 item can be have one;
+ *               admin: an item at its kind's root homed in Admin, no other
+ *                 grant (what an Admin user keeps to the brain's managers).
  *   Actions     the 13 of the plan (section 12 A8; v1's list): read, list,
  *               search, edit content, edit draft, delete, move (H to T), add
  *               a grant (to T), remove a grant (R's), the Write switch (on
@@ -71,8 +73,8 @@ export const GUIDE_ROLES: readonly GuideRole[] = [
   'outsider',
 ];
 
-export type GuidePlacement = 'folder' | 'root' | 'snapshot';
-export const GUIDE_PLACEMENTS: readonly GuidePlacement[] = ['folder', 'root', 'snapshot'];
+export type GuidePlacement = 'folder' | 'root' | 'snapshot' | 'admin';
+export const GUIDE_PLACEMENTS: readonly GuidePlacement[] = ['folder', 'root', 'snapshot', 'admin'];
 
 export type GuideAction =
   | 'read'
@@ -146,7 +148,8 @@ export type GuideSurface =
   | 'recipe'
   | 'pending'
   | 'app-broker'
-  | 'share-link';
+  | 'share-link'
+  | 'contact-share';
 
 export type GuideContext = {
   surface: GuideSurface;
@@ -164,19 +167,31 @@ export type GuideAnswer =
 export type GuideWorkspace = 'admin' | 'H' | 'W' | 'R' | 'T' | 'O' | 'private';
 
 /**
+ * The A3a write grid's two more logins (oracle.ts expectedWrite): Admin
+ * users who are also users of W (Write on) or of R (Write off), so the
+ * rules that ask "an Admin user" meet one who reads the item. Not in
+ * GUIDE_ROLES: the A8 grid does not run them; they read the guide here so
+ * the two oracles read it once.
+ */
+export type GuideSeatRole = GuideRole | 'adminWriteGrant' | 'adminReadGrant';
+
+/**
  * Each role's workspaces and Moderator ticks in the fixture. 'private' is
  * the login's own private workspace (docs/workspaces.md, "Workspaces and
  * users": "A private workspace per user ... Nobody else is in it"; the brain
  * makes it the first time the user needs it). An Admin user has none.
  */
-const SEATS: Readonly<Record<GuideRole, { users: GuideWorkspace[]; mods: GuideWorkspace[] }>> = {
-  owner: { users: ['admin'], mods: ['admin'] },
-  admin: { users: ['admin'], mods: ['admin'] },
-  homeModerator: { users: ['H', 'R', 'T', 'private'], mods: ['H', 'R', 'T', 'private'] },
-  writeGrant: { users: ['W', 'T', 'private'], mods: ['T', 'private'] },
-  readGrant: { users: ['R', 'private'], mods: ['R', 'private'] },
-  outsider: { users: ['O', 'private'], mods: ['O', 'private'] },
-};
+const SEATS: Readonly<Record<GuideSeatRole, { users: GuideWorkspace[]; mods: GuideWorkspace[] }>> =
+  {
+    owner: { users: ['admin'], mods: ['admin'] },
+    admin: { users: ['admin'], mods: ['admin'] },
+    homeModerator: { users: ['H', 'R', 'T', 'private'], mods: ['H', 'R', 'T', 'private'] },
+    writeGrant: { users: ['W', 'T', 'private'], mods: ['T', 'private'] },
+    readGrant: { users: ['R', 'private'], mods: ['R', 'private'] },
+    outsider: { users: ['O', 'private'], mods: ['O', 'private'] },
+    adminWriteGrant: { users: ['admin', 'W'], mods: ['admin'] },
+    adminReadGrant: { users: ['admin', 'R'], mods: ['admin'] },
+  };
 
 /**
  * The workspace of the assistant a role's turn talks to: its own assistant
@@ -247,6 +262,8 @@ function grantsOf(placement: GuidePlacement): {
   // snapshot: "Its grants: one home row, Write off, in a private ...
   // workspace" (update-prod.md); writeGrant is its author.
   if (placement === 'snapshot') return { home: 'private', write: [], read: ['private'] };
+  // admin: homed in Admin, granted nowhere else.
+  if (placement === 'admin') return { home: 'admin', write: [], read: ['admin'] };
   return { home: 'H', write: ['W'], read: ['H', 'W', 'R'] };
 }
 
@@ -257,7 +274,7 @@ type Seats = { users: GuideWorkspace[]; mods: GuideWorkspace[] };
  *  user who asks is in other workspaces"). A private workspace is the
  *  role's own: the snapshot copy's is writeGrant's alone. */
 function seatsFor(
-  role: GuideRole,
+  role: GuideSeatRole,
   placement: GuidePlacement,
   narrowTo: GuideWorkspace | null,
 ): Seats {
@@ -276,8 +293,74 @@ function seatsFor(
 
 const deny = (why: string): GuideAnswer => ({ allow: false, why });
 
+/**
+ * A caller's standing on the fixture's item, as "Items and grants" reads
+ * it from its seats and the item's grants: the one reading of the guide's
+ * seat rules, which expectedAccess and the A1 and A3a oracles (oracle.ts)
+ * share.
+ */
+export type GuideStanding = {
+  /** "Read the item: to be a user of a workspace it is granted to". */
+  reads: boolean;
+  /** "Edit its content: Moderator of its home, or a grant with Write on". */
+  edits: boolean;
+  /** A Moderator of its home. */
+  homeMod: boolean;
+  /** A Moderator of workspace `w`. */
+  modOf: (w: GuideWorkspace) => boolean;
+  /** An Admin user ("Admin areas"), whatever the narrowing. */
+  admin: boolean;
+  /** The brain's owner ("The owner"). */
+  owner: boolean;
+};
+
+/** `role`'s standing on the item in `placement`, narrowed to one workspace
+ *  in a turn (`narrowTo`). */
+export function guideStanding(
+  role: GuideSeatRole,
+  placement: GuidePlacement,
+  narrowTo: GuideWorkspace | null = null,
+): GuideStanding {
+  const seats = seatsFor(role, placement, narrowTo);
+  const g = grantsOf(placement);
+  const homeMod = seats.mods.includes(g.home);
+  return {
+    reads: g.read.some((w) => seats.users.includes(w)),
+    edits: homeMod || g.write.some((w) => seats.users.includes(w)),
+    homeMod,
+    modOf: (w) => seats.mods.includes(w),
+    admin: SEATS[role].users.includes('admin'),
+    owner: role === 'owner',
+  };
+}
+
+/**
+ * The guide's rules of "Items and grants" on a standing, each the one
+ * place its sentence is read (expectedAccess and oracle.ts's expectedWrite
+ * call them): who deletes, who changes an app's code, who opens a link.
+ */
+export const GUIDE_RULES = {
+  /** "Edit its content: Moderator of its home, or a grant with Write on". */
+  edit: (s: GuideStanding) => s.edits,
+  /** "Delete it: Moderator of its home" (an app: the owner's decision,
+   *  expectedAccess's delete). */
+  delete: (s: GuideStanding) => s.homeMod,
+  /** "Apps": "Code. A Moderator of the app's home builds and edits it." */
+  appCode: (s: GuideStanding) => s.homeMod,
+  /** "Open, change or close its link: to be able to edit it (an app:
+   *  Moderator of its home)". */
+  link: (kind: string, s: GuideStanding) => (kind === 'app' ? s.homeMod : s.edits),
+  /** "Apps": "A user writes the app's data when they may edit the app". */
+  appData: (s: GuideStanding) => s.edits,
+} as const;
+
 /** The why of an app delete by anyone but the owner (plan s32, F3). */
 export const APP_DELETE_OWNER_ONLY = 'an app: only the owner deletes it (plan s32, F3)';
+
+/** The why of a contact share's write of anything but its app's data
+ *  (docs/actors.md, the actor kinds: "its app's data, when the share
+ *  allows it"). */
+export const CONTACT_WRITES_APP_DATA_ONLY = 'a contact share writes only its app’s data';
 
 /** The why of a cell where the guide is silent and the oracle pins the
  *  narrower answer (a turn's write and a Moderator seat outside its
@@ -314,6 +397,15 @@ export function expectedAccess(
     }
     if (action === 'create') return { na: 'a snapshot copy is not a place to create in' };
   }
+  if (placement === 'admin') {
+    // Homed in Admin and granted nowhere else: no grant of R to take away
+    // or to switch; it sits at its kind's root, where the root placement's
+    // create already makes an item.
+    if (action === 'grantRemove' || action === 'writeSwitch') {
+      return { na: 'an Admin-homed item holds no grant but its home' };
+    }
+    if (action === 'create') return { na: 'an Admin-homed item adds no place to create in' };
+  }
 
   const reads = READ_ACTIONS.includes(action);
 
@@ -339,10 +431,7 @@ export function expectedAccess(
       // write write nothing; a contact with Can write writes its app's
       // data only (as named system work after the share's own check).
       if (actor === 'contact-rw') {
-        if (action !== 'appData') {
-          return { na: 'a contact share writes only its app’s data (the /s broker)' };
-        }
-        return { allow: true };
+        return action === 'appData' ? { allow: true } : deny(CONTACT_WRITES_APP_DATA_ONLY);
       }
       return deny('this caller only reads');
     }
@@ -362,9 +451,8 @@ export function expectedAccess(
 
   if (!role) throw new Error(`expectedAccess: actor ${actor} needs a role`);
   const narrowTo = actor === 'turn' ? TURN_WORKSPACE[role] : null;
-  const seats = seatsFor(role, placement, narrowTo);
-  const g = grantsOf(placement);
-  const readsItem = g.read.some((w) => seats.users.includes(w));
+  const standing = guideStanding(role, placement, narrowTo);
+  const readsItem = standing.reads;
   if (reads) {
     // "Read the item: to be a user of a workspace it is granted to"; "Being
     // an Admin user is management, not reading" ("Admin areas"); "Memory
@@ -378,15 +466,10 @@ export function expectedAccess(
     return deny('a read-only caller writes nothing');
   }
 
-  if (action === 'create') return createAnswer(role, placement, seats, narrowTo);
+  if (action === 'create') return createAnswer(role, placement, narrowTo);
 
   // "An item the caller may not read answers not found".
   if (!readsItem) return deny('not found: it does not read the item');
-
-  const homeMod = seats.mods.includes(g.home);
-  const edits = homeMod || g.write.some((w) => seats.users.includes(w));
-  const modOf = (w: GuideWorkspace) => seats.mods.includes(w);
-  const owner = role === 'owner';
 
   // The guide does not say whether a turn's write may use a Moderator seat
   // outside the assistant's workspace ("It writes only for a user who could
@@ -395,13 +478,13 @@ export function expectedAccess(
   // a loosening fails until the owner decides; the report names it.
   if (narrowTo) {
     const byHand = expectedAccess({ ...context, actor: 'login' }, role, kind, action);
-    const narrowed = narrowedAnswer(placement, kind, action, { homeMod, edits, modOf, owner });
+    const narrowed = narrowedAnswer(placement, kind, action, standing);
     if ('allow' in byHand && 'allow' in narrowed && byHand.allow !== narrowed.allow) {
       return deny(GUIDE_SILENT_PINNED);
     }
     return narrowed;
   }
-  return narrowedAnswer(placement, kind, action, { homeMod, edits, modOf, owner });
+  return narrowedAnswer(placement, kind, action, standing);
 }
 
 const READ_ACTIONS: readonly GuideAction[] = ['read', 'list', 'search'];
@@ -411,13 +494,7 @@ function narrowedAnswer(
   placement: GuidePlacement,
   kind: string,
   action: GuideAction,
-  s: {
-    homeMod: boolean;
-    edits: boolean;
-    modOf: (w: GuideWorkspace) => boolean;
-    /** The brain's owner ("The owner"). */
-    owner: boolean;
-  },
+  s: GuideStanding,
 ): GuideAnswer {
   const snapshot = placement === 'snapshot';
   // update-prod.md: "A copy is read only for everyone, its author included:
@@ -429,13 +506,13 @@ function narrowedAnswer(
     case 'edit':
       // "Edit its content: Moderator of its home, or a grant with Write on".
       if (snapshot) return readOnlyCopy;
-      return s.edits ? { allow: true } : deny('may not edit it');
+      return GUIDE_RULES.edit(s) ? { allow: true } : deny('may not edit it');
     case 'editDraft':
       if (snapshot) return readOnlyCopy;
       // "Apps": "Code. A Moderator of the app's home builds and edits it."
       if (kind === 'app')
-        return s.homeMod ? { allow: true } : deny('app code: Moderator of its home');
-      return s.edits ? { allow: true } : deny('may not edit it');
+        return GUIDE_RULES.appCode(s) ? { allow: true } : deny('app code: Moderator of its home');
+      return GUIDE_RULES.edit(s) ? { allow: true } : deny('may not edit it');
     case 'delete':
       // An app: only the owner deletes it. The owner's decision on the A8
       // findings (workspaces arch plan v2, section 32, F3: app delete stays
@@ -443,7 +520,7 @@ function narrowedAnswer(
       // its home" for an app.
       if (kind === 'app') return s.owner ? { allow: true } : deny(APP_DELETE_OWNER_ONLY);
       // "Delete it: Moderator of its home" (the copy's author is one).
-      return s.homeMod ? { allow: true } : deny('not a Moderator of its home');
+      return GUIDE_RULES.delete(s) ? { allow: true } : deny('not a Moderator of its home');
     case 'move':
       // "Move it to another home (H to T): Moderator of H and Moderator of T".
       if (snapshot) return readOnlyCopy;
@@ -469,13 +546,14 @@ function narrowedAnswer(
       // "Open, change or close its link: to be able to edit it (an app:
       // Moderator of its home)".
       if (snapshot) return readOnlyCopy;
-      if (kind === 'app')
-        return s.homeMod ? { allow: true } : deny('an app’s link: Moderator of its home');
-      return s.edits ? { allow: true } : deny('may not open its link');
+      if (GUIDE_RULES.link(kind, s)) return { allow: true };
+      return deny(
+        kind === 'app' ? 'an app’s link: Moderator of its home' : 'may not open its link',
+      );
     case 'appData':
       // "Apps": "A user writes the app's data when they may edit the app"
       // (Informational is off in the fixture).
-      return s.edits ? { allow: true } : deny('may not write the app’s data');
+      return GUIDE_RULES.appData(s) ? { allow: true } : deny('may not write the app’s data');
     default:
       throw new Error(`narrowedAnswer: ${action}`);
   }
@@ -492,19 +570,16 @@ function narrowedAnswer(
 function createAnswer(
   role: GuideRole,
   placement: GuidePlacement,
-  seats: Seats,
   narrowTo: GuideWorkspace | null,
 ): GuideAnswer {
-  const admin = SEATS[role].users.includes('admin');
+  const here = guideStanding(role, placement, narrowTo);
+  const current = narrowTo && here.modOf(narrowTo) ? narrowTo : null;
   if (placement === 'folder') {
-    const g = grantsOf('folder');
-    const editsF = seats.mods.includes(g.home) || g.write.some((w) => seats.users.includes(w));
-    if (!editsF) return deny('may not edit the folder');
-    if (narrowTo && seats.mods.includes(narrowTo)) return { allow: true, lands: landing(narrowTo) };
-    return { allow: true, lands: 'H' };
+    if (!GUIDE_RULES.edit(here)) return deny('may not edit the folder');
+    return { allow: true, lands: current ? landing(current) : 'H' };
   }
-  if (narrowTo && seats.mods.includes(narrowTo)) return { allow: true, lands: landing(narrowTo) };
-  return { allow: true, lands: admin ? 'admin' : 'private' };
+  if (current) return { allow: true, lands: landing(current) };
+  return { allow: true, lands: here.admin ? 'admin' : 'private' };
 }
 
 function landing(w: GuideWorkspace): GuideLanding {

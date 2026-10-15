@@ -7,14 +7,26 @@
  *
  * A1 started it with two actions (read, create) at SQL level
  * (expectedReadCreate) and A3a added the writes (expectedWrite); A8's full
- * oracle, expectedAccess, is ./guide-oracle.ts (13 actions, 3 placements,
- * every actor kind, the surfaces). These stay for the A1 and A3a grids.
+ * oracle, expectedAccess, is ./guide-oracle.ts (13 actions, 4 placements,
+ * every actor kind, the surfaces). These stay for the A1 and A3a grids and
+ * read the guide through it: expectedReadCreate is expectedAccess's read
+ * and create, and expectedWrite takes a caller's standing and the rules of
+ * "Items and grants" from guide-oracle.ts (guideStanding, GUIDE_RULES), so
+ * the guide's seat rules and kinds are written once.
  *
  * The fixture it speaks of (sql-grid.db.test.ts builds it): every item has
  * its home in workspace H, a grant with Write on to workspace W and a grant
  * with Write off to workspace R. In a folder, the folder F carries those
  * grants and the item takes them from F. Nothing is granted to Admin or Team.
  */
+
+import {
+  GUIDE_RULES,
+  GUIDE_WORKSPACE_KINDS,
+  expectedAccess,
+  guideStanding,
+  type GuidePlacement,
+} from './guide-oracle';
 
 /** Who asks, relative to the fixture. */
 export type OracleRole =
@@ -60,57 +72,23 @@ export type OracleLanding = 'home' | 'private' | 'admin';
 export type OracleAnswer =
   { allow: true; lands?: OracleLanding } | { allow: false; why: string } | { na: string };
 
-/**
- * The kinds the guide names, by node type ("Kinds", docs/workspaces.md):
- * folders, files, notes, pages, tables, apps, formulas, drawings, tasks,
- * events and Recall maps are granted to any workspace; Telegram messages
- * are a class of their own; every other kind lives in Admin only. Written
- * out here from the guide's sentence, on purpose not taken from the
- * registry.
- */
-const GUIDE_KIND_CLASS: Readonly<Record<string, 'workspace' | 'conversation'>> = {
-  branch: 'workspace', // folders
-  file: 'workspace',
-  note: 'workspace',
-  page: 'workspace',
-  table: 'workspace',
-  app: 'workspace',
-  formula: 'workspace',
-  draw: 'workspace', // drawings
-  task: 'workspace',
-  event: 'workspace',
-  recall: 'workspace', // Recall maps
-  telegram_message: 'conversation',
-};
-
-/** The guide's class of `kind`. */
+/** The guide's class of `kind` ("Kinds", docs/workspaces.md): the
+ * workspace kinds as guide-oracle.ts lists them; Telegram messages are a
+ * class of their own; every other kind lives in Admin only. */
 export function guideKindClass(kind: string): 'workspace' | 'conversation' | 'admin_only' {
-  return GUIDE_KIND_CLASS[kind] ?? 'admin_only';
+  if (GUIDE_WORKSPACE_KINDS.includes(kind)) return 'workspace';
+  return kind === 'telegram_message' ? 'conversation' : 'admin_only';
 }
 
 /** The workspace kinds as the guide lists them. */
 export function guideWorkspaceKinds(): string[] {
-  return Object.keys(GUIDE_KIND_CLASS).filter((k) => GUIDE_KIND_CLASS[k] === 'workspace');
+  return [...GUIDE_WORKSPACE_KINDS];
 }
 
-/** Whether `role` is a user of a workspace the fixture's item is granted
- *  to ("Read the item: to be a user of a workspace it is granted to"). An
- *  Admin user reads what is granted to the workspaces they are in, like
- *  anyone ("Being an Admin user is management, not reading"): the fixture
- *  grants nothing to Admin. */
-function readsItem(role: OracleRole): boolean {
-  return role === 'homeModerator' || role === 'writeGrant' || role === 'readGrant';
-}
-
-/** "Edit its content: Moderator of its home, or a grant with Write on." */
-function editsItem(role: OracleRole): boolean {
-  return role === 'homeModerator' || role === 'writeGrant';
-}
-
-/** Whether `role` is an Admin user (the owner is one). */
-function isAdminUser(role: OracleRole): boolean {
-  return role === 'owner' || role === 'admin';
-}
+/** `role`'s standing on the fixture's item (guide-oracle.ts): the A1 and
+ *  A3a fixtures grant as the A8 fixture's root and folder placements. */
+const standingOf = (role: OracleWriteRole, placement: OraclePlacement = 'root') =>
+  guideStanding(role, placement satisfies GuidePlacement);
 
 /**
  * What the guide says `role` may do with `kind` here.
@@ -135,18 +113,20 @@ export function expectedReadCreate(
   if (guideKindClass(kind) !== 'workspace') {
     return { na: 'the grid covers the workspace kinds (A1)' };
   }
-  if (action === 'read') {
-    return readsItem(role)
-      ? { allow: true }
-      : { allow: false, why: 'not a user of a workspace the item is granted to' };
+  // A login by hand, as expectedAccess reads the guide; F's home is H.
+  const a = expectedAccess(
+    { surface: 'sql', placement: context.placement, actor: 'login' },
+    role,
+    kind,
+    action,
+  );
+  if ('na' in a || !a.allow) return a;
+  if (action === 'read') return { allow: true };
+  const lands = a.lands === 'H' ? 'home' : a.lands;
+  if (lands !== 'home' && lands !== 'private' && lands !== 'admin') {
+    throw new Error(`expectedReadCreate: ${role} lands in ${String(a.lands)}`);
   }
-  // create
-  if (context.placement === 'folder') {
-    return editsItem(role)
-      ? { allow: true, lands: 'home' }
-      : { allow: false, why: 'may not edit the folder' };
-  }
-  return { allow: true, lands: isAdminUser(role) ? 'admin' : 'private' };
+  return { allow: true, lands };
 }
 
 // ── Folder counts (task b6e4a8aa) ───────────────────────────────────────────
@@ -361,15 +341,15 @@ function actionApplies(kind: string, action: OracleWriteAction): boolean {
 }
 
 function readsForWrite(role: OracleWriteRole): boolean {
-  return role === 'adminWriteGrant' || role === 'adminReadGrant' || readsItem(role as OracleRole);
+  return standingOf(role).reads;
 }
 
 function editsForWrite(role: OracleWriteRole): boolean {
-  return role === 'adminWriteGrant' || editsItem(role as OracleRole);
+  return GUIDE_RULES.edit(standingOf(role));
 }
 
 function adminForWrite(role: OracleWriteRole): boolean {
-  return role === 'adminWriteGrant' || role === 'adminReadGrant' || isAdminUser(role as OracleRole);
+  return standingOf(role).admin;
 }
 
 /**
@@ -425,7 +405,7 @@ export function expectedWrite(
   // where it lands): here only the other actor kinds make one.
   if (action === 'create') return { na: "a login's create: expectedReadCreate (sql-grid)" };
   if (!readsForWrite(role)) return { allow: false, why: 'not found: it does not read the item' };
-  const homeMod = role === 'homeModerator';
+  const standing = standingOf(role, context.placement);
   const deny = (why: string): OracleAnswer => ({ allow: false, why });
   switch (action) {
     case 'edit':
@@ -451,17 +431,18 @@ export function expectedWrite(
       return deny('only the brain sets that value');
     case 'delete':
     case 'deleteContent':
+    case 'appDataDelete':
+      // "Delete it: Moderator of its home" (an app's delete at SQL level;
+      // the owner-only decision is expectedAccess's, F3).
+      return GUIDE_RULES.delete(standing) ? { allow: true } : deny('not a Moderator of its home');
     case 'appCode':
     case 'appCreate':
-    case 'appDataDelete':
-      return homeMod ? { allow: true } : deny('not a Moderator of its home');
+      return GUIDE_RULES.appCode(standing) ? { allow: true } : deny('not a Moderator of its home');
     case 'openLink':
-      return (kind === 'app' ? homeMod : editsForWrite(role))
-        ? { allow: true }
-        : deny('may not open its link');
+      return GUIDE_RULES.link(kind, standing) ? { allow: true } : deny('may not open its link');
     case 'closeLink':
     case 'deleteLink':
-      return (kind === 'app' ? homeMod : editsForWrite(role)) || adminForWrite(role)
+      return GUIDE_RULES.link(kind, standing) || adminForWrite(role)
         ? { allow: true }
         : deny('may not close its link');
     case 'appSwitch':

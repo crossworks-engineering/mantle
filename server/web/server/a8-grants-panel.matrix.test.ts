@@ -33,7 +33,6 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import postgres from 'postgres';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import { ITEM_KINDS, ITEM_KIND_NAMES } from '@mantle/client-types/kinds';
 
 const DB_URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -100,13 +99,6 @@ describe.skipIf(!DB_URL)('A8: the grants panel’s database rule under a wrong T
   let fx: import('@mantle/db/matrix/a8-grid').A8Fixture;
   let g: typeof import('@mantle/db/matrix/a8-grid');
   let dir = '';
-  const kinds = ITEM_KIND_NAMES.filter((k) => ITEM_KINDS[k].class === 'workspace');
-  const rootOf = (kind: string): string => {
-    if (kind === 'branch') return 'notes';
-    const tree = (ITEM_KINDS as Record<string, { tree: { root: string } | null }>)[kind]!.tree;
-    if (!tree) throw new Error(`no tree root for ${kind}`);
-    return tree.root;
-  };
 
   beforeAll(async () => {
     const ts: Ts = await import('@mantle/db/test-support');
@@ -131,7 +123,7 @@ describe.skipIf(!DB_URL)('A8: the grants panel’s database rule under a wrong T
     grants = await import('@/lib/grants');
     runRoute = (await import('./run-route')).runRoute;
     raw = postgres(scratch.url, { max: 2, prepare: false, onnotice: () => {} });
-    fx = await g.buildA8Fixture(raw, kinds, rootOf);
+    fx = await g.buildA8Fixture(raw);
     await g.installProbe(raw);
     // The box at off: each case raises the process's mode itself
     // (MANTLE_ACTOR_CHECK only makes it stricter).

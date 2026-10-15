@@ -35,6 +35,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import type postgres from 'postgres';
+import { ITEM_KINDS, ITEM_KIND_NAMES } from '@mantle/client-types/kinds';
 import { setActorSql, writeRoleSettingsSql } from '../../client';
 import {
   ASSISTANT_WORKSPACE,
@@ -56,6 +57,21 @@ import {
 
 type Sql = postgres.Sql;
 type Tx = postgres.TransactionSql;
+
+/** The registry's workspace class: the kinds the fixture makes an item of
+ *  (the grid pins them to the guide's list, GUIDE_WORKSPACE_KINDS). The one
+ *  list the grid, the surface cells and the grants panel test share. */
+export const A8_KINDS: readonly string[] = ITEM_KIND_NAMES.filter(
+  (k) => ITEM_KINDS[k].class === 'workspace',
+);
+
+/** The tree root a kind's items sit under (a folder: the notes tree). */
+export function a8RootOf(kind: string): string {
+  if (kind === 'branch') return 'notes';
+  const tree = (ITEM_KINDS as Record<string, { tree: { root: string } | null }>)[kind]?.tree;
+  if (!tree) throw new Error(`no tree root for ${kind}`);
+  return tree.root;
+}
 
 /** Rolls a cell's transaction back after its checks. */
 class Rollback extends Error {}
@@ -127,6 +143,10 @@ export type A8Fixture = {
 
 const arr = (ids: readonly string[]) => `{${ids.join(',')}}`;
 
+/** The fixture's own writes are named system work (docs/actors.md), so a
+ *  surface cell may make a fresh item with the actor check on. */
+const FIXTURE_ACTOR = setActorSql(['system:a8-fixture', 'rw', 'off']);
+
 /** The probe a cell reads its row effect with: a definer, so it sees the
  *  row whoever the cell ran as. Made in the scratch database only. */
 export async function installProbe(sql: Sql): Promise<void> {
@@ -146,7 +166,9 @@ export async function installProbe(sql: Sql): Promise<void> {
                       from recall_nodes r where r.map_id = n.id),
           'links', (select string_agg(s.token, '|' order by s.token)
                       from shares s where s.node_id = n.id and s.revoked_at is null),
-          'appdata', (select ad.size_bytes from app_databases ad where ad.app_node_id = n.id)
+          'appdata', (select ad.size_bytes from app_databases ad where ad.app_node_id = n.id),
+          'appwritten', (select ad.client_written_at is not null
+                           from app_databases ad where ad.app_node_id = n.id)
         )::text
           from nodes n
           left join pages p on p.node_id = n.id
@@ -161,15 +183,13 @@ export async function installProbe(sql: Sql): Promise<void> {
 
 /**
  * Build the fixture (guide-oracle.ts, its header) on a migrated scratch
- * database, as an operator's psql would (system work, system(test)).
- * `kinds` is the registry's workspace class, which the test pins to the
- * guide's list.
+ * database, as an operator's psql would (system work, system(test)), for
+ * every kind of A8_KINDS (the registry's workspace class, which the grid
+ * pins to the guide's list).
  */
-export async function buildA8Fixture(
-  sql: Sql,
-  kinds: readonly string[],
-  rootOf: (kind: string) => string,
-): Promise<A8Fixture> {
+export async function buildA8Fixture(sql: Sql): Promise<A8Fixture> {
+  const kinds = A8_KINDS;
+  const rootOf = a8RootOf;
   const tag = `a8${randomUUID().slice(0, 6)}`;
   const L = Object.fromEntries(GUIDE_ROLES.map((r) => [r, randomUUID()])) as Record<
     GuideRole,
@@ -264,6 +284,7 @@ export async function buildA8Fixture(
     const folderPath = `${root}.${tag}${kind.replace(/_/g, '')}f`;
     const folder = randomUUID();
     await sql.begin(async (tx) => {
+      await tx.unsafe(FIXTURE_ACTOR);
       await tx`select mantle_lock_heads(array[${rootId}]::uuid[], 'share')`;
       await tx`insert into nodes (id, owner_id, type, title, path)
                values (${folder}, ${L.owner}, 'branch', ${`${tag} F ${kind}`}, ${folderPath}::ltree)`;
@@ -271,7 +292,11 @@ export async function buildA8Fixture(
     await grantByHand(sql, fx, folder);
     fx.folders[kind] = { id: folder, path: folderPath };
     const rootItem = await makeA8Item(sql, fx, kind, 'root');
-    fx.items[kind] = { root: rootItem, folder: await makeA8Item(sql, fx, kind, 'folder') };
+    fx.items[kind] = {
+      root: rootItem,
+      folder: await makeA8Item(sql, fx, kind, 'folder'),
+      admin: await makeA8Item(sql, fx, kind, 'admin'),
+    };
     if (GUIDE_SNAPSHOT_KINDS.includes(kind)) {
       fx.items[kind]!.snapshot = await makeA8Item(sql, fx, kind, 'snapshot', rootItem.id);
     }
@@ -280,11 +305,17 @@ export async function buildA8Fixture(
 }
 
 /** The fixture's grants by hand on `id`: home H, W with Write on, R with
- *  Write off. */
-async function grantByHand(sql: Sql, fx: A8Fixture, id: string): Promise<void> {
+ *  Write off; or (`admin`) home Admin and no other grant. */
+async function grantByHand(sql: Sql, fx: A8Fixture, id: string, admin = false): Promise<void> {
   await sql.begin(async (tx) => {
+    await tx.unsafe(FIXTURE_ACTOR);
     await tx`select mantle_lock_heads(array[${id}]::uuid[], 'update')`;
     await tx`delete from item_grants where node_id = ${id} and via_folder_id is null`;
+    if (admin) {
+      await tx`insert into item_grants (node_id, workspace_id, is_home, write)
+               values (${id}, ${fx.ws.admin}, true, false)`;
+      return;
+    }
     await tx`insert into item_grants (node_id, workspace_id, is_home, write) values
       (${id}, ${fx.ws.H}, true, false), (${id}, ${fx.ws.W}, false, true),
       (${id}, ${fx.ws.R}, false, false)`;
@@ -294,8 +325,9 @@ async function grantByHand(sql: Sql, fx: A8Fixture, id: string): Promise<void> {
 /**
  * A new item of `kind` in `placement` (guide-oracle.ts, the fixture): at
  * its kind's root with the grants by hand, in the kind's folder F (it takes
- * F's grants), or the author's snapshot copy (update-prod.md, "Snapshot
- * copies": of `copyOf`, homed in writeGrant's private workspace, Write off).
+ * F's grants), the author's snapshot copy (update-prod.md, "Snapshot
+ * copies": of `copyOf`, homed in writeGrant's private workspace, Write off),
+ * or at its kind's root homed in Admin, no other grant.
  * With its content rows, its passage and, unless a copy, an open public
  * link. The surface cells make one per write cell.
  */
@@ -325,6 +357,7 @@ export async function makeA8Item(
   };
   const O = fx.owner;
   await sql.begin(async (tx) => {
+    await tx.unsafe(FIXTURE_ACTOR);
     if (snapshotOf) {
       await tx`select set_config('mantle.create_ws', ${fx.privateWs.writeGrant!}, true)`;
     }
@@ -333,8 +366,11 @@ export async function makeA8Item(
              values (${id}, ${O}, ${kind}, ${title}, ${path}::ltree,
                      ${sql.json(data)})`;
   });
-  if (placement === 'root') await grantByHand(sql, fx, id);
+  if (placement === 'root' || placement === 'admin') {
+    await grantByHand(sql, fx, id, placement === 'admin');
+  }
   await sql.begin(async (tx) => {
+    await tx.unsafe(FIXTURE_ACTOR);
     await tx`select mantle_lock_heads(array[${id}]::uuid[], 'update')`;
     if (kind === 'page') await tx`insert into pages (node_id, doc) values (${id}, '{"v":0}')`;
     if (kind === 'draw') await tx`insert into draws (node_id, scene) values (${id}, '{"v":0}')`;
@@ -846,14 +882,16 @@ function stableKey(s: string): number {
  * candidate holds is held by at least one picked cell.
  *
  * The pick is stable: the candidates are taken in the order of a hash of
- * their own name (cellName), never in the order they came in (the kind
- * registry's, the tool list's), and a candidate is picked when it holds a
+ * their own name (cellName) and `salt` (the surface's name, so two ways in
+ * with the same candidates spread over other combinations), never in the
+ * order they came in (the kind registry's, the tool list's), and a
+ * candidate is picked when it holds a
  * pair no cell picked before it holds (first fit). So a new kind or tool
  * adds the cells its new pairs need and changes the pick of an old cell
  * only where a new candidate, earlier in that order, already holds every
  * pair the old one was picked for.
  */
-export function pairwise(cells: readonly A8Cell[]): A8Cell[] {
+export function pairwise(cells: readonly A8Cell[], salt = ''): A8Cell[] {
   const dims = (c: A8Cell) => [
     `r:${c.role ?? '-'}`,
     `k:${c.kind}`,
@@ -868,7 +906,7 @@ export function pairwise(cells: readonly A8Cell[]): A8Cell[] {
     return out;
   };
   const ordered = cells
-    .map((c) => ({ c, name: cellName(c), key: stableKey(cellName(c)) }))
+    .map((c) => ({ c, name: cellName(c), key: stableKey(`${salt} ${cellName(c)}`) }))
     .sort((a, b) => a.key - b.key || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
   const covered = new Set<string>();
   const picked: A8Cell[] = [];

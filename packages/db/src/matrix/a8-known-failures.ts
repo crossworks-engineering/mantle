@@ -60,11 +60,18 @@ const F5 = 'F5 the database lets the home Moderator delete an app (owner-only, p
  *  item is read by W and R, and has an open link). */
 const F6 = 'F6 a peer may not edit a shared item (a rule the guide does not name)';
 
+/** The actor check modes the surface cells run in (docs/update-prod.md:
+ *  off, the fleet's default; warn; on). */
+export type CheckMode = 'off' | 'warn' | 'on';
+export const CHECK_MODES: readonly CheckMode[] = ['off', 'warn', 'on'];
+
 export type KnownFailure = {
   /** The finding (F1, F2, ...). */
   finding: string;
   /** A piece of the cell's failure reason, as the run prints it. */
   reason: string;
+  /** A surface cell: the modes it fails in (all three when not given). */
+  modes?: readonly CheckMode[];
 };
 
 const MEMBER_LOGIN = '"reason":"member-login"';
@@ -72,7 +79,8 @@ const RAW_UPDATE = 'Failed query: update "nodes"';
 const RAW_SYSTEM_TX = 'withSystemTx: only outside a viewer scope';
 const RAW_SNAPSHOT = 'Failed query: insert into "node_snapshots"';
 const GONE = 'changed (gone), the oracle denies';
-const known = (finding: string, reason: string): KnownFailure => ({ finding, reason });
+const known = (finding: string, reason: string, modes?: readonly CheckMode[]): KnownFailure =>
+  modes ? { finding, reason, modes } : { finding, reason };
 
 /** F4's cells: each Admin user's edit, link, draft edit and app data write
  *  of an item outside Admin (at its kind's root and in its folder; a
@@ -154,15 +162,19 @@ export const KNOWN_FAILURES: Readonly<Record<string, KnownFailure>> = {
 
 /**
  * A run's failures against the list: `grid` the SQL grid's cells (a name
- * whose first word holds a '/'), else the surface cells'. `unexpected`: a
- * failure not listed, or listed for another reason (both fail the run);
- * `fixed`: a listed cell that did not fail (take it off the list).
+ * whose first word holds a '/'), else the surface cells' in check `mode`.
+ * `unexpected`: a failure not listed (for this mode), or listed for another
+ * reason (both fail the run); `fixed`: a listed cell that did not fail
+ * (take it off the list, or off this mode).
  */
 export function sortFailures(
   failures: ReadonlyMap<string, string>,
   grid: boolean,
+  mode?: CheckMode,
 ): { unexpected: string[]; fixed: string[] } {
-  const ours = (name: string) => name.split(' ')[0]!.includes('/') === grid;
+  const ours = (name: string) =>
+    name.split(' ')[0]!.includes('/') === grid &&
+    (grid || !mode || !KNOWN_FAILURES[name]?.modes || KNOWN_FAILURES[name]!.modes!.includes(mode));
   const unexpected: string[] = [];
   for (const [name, why] of failures) {
     const k = KNOWN_FAILURES[name];
@@ -172,5 +184,6 @@ export function sortFailures(
     }
   }
   const fixed = Object.keys(KNOWN_FAILURES).filter((n) => ours(n) && !failures.has(n));
+  if (mode) return { unexpected, fixed: fixed.map((n) => `${n} (check ${mode})`) };
   return { unexpected, fixed };
 }

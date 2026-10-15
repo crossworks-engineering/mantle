@@ -23,11 +23,11 @@
  */
 import postgres from 'postgres';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { ITEM_KINDS, ITEM_KIND_NAMES } from '@mantle/client-types/kinds';
 import { ACCEPTED_KINDS } from '@mantle/client-types/kind-lists';
 import { createMigratedScratchDatabase } from '../test-support';
 import { viewerDatabaseUrl, viewerRolePassword } from '../viewer';
 import {
+  A8_KINDS,
   a8Cells,
   answerOf,
   buildA8Fixture,
@@ -37,7 +37,16 @@ import {
   type A8Cell,
   type A8Fixture,
 } from './test-support/a8-grid';
-import { GUIDE_SILENT_PINNED, GUIDE_SNAPSHOT_KINDS, GUIDE_WORKSPACE_KINDS } from './guide-oracle';
+import {
+  GUIDE_ACTIONS,
+  GUIDE_LOGIN_ACTORS,
+  GUIDE_OTHER_ACTORS,
+  GUIDE_PLACEMENTS,
+  GUIDE_ROLES,
+  GUIDE_SILENT_PINNED,
+  GUIDE_SNAPSHOT_KINDS,
+  GUIDE_WORKSPACE_KINDS,
+} from './guide-oracle';
 import { sortFailures } from './a8-known-failures';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
@@ -55,18 +64,12 @@ describe.skipIf(!URL)('A8 grid at SQL level', () => {
     if (String(n.message ?? '').startsWith('mantle actor miss: ')) misses.push(String(n.message));
   };
 
-  const kinds = ITEM_KIND_NAMES.filter((t) => ITEM_KINDS[t].class === 'workspace');
-  const rootOf = (kind: string): string => {
-    if (kind === 'branch') return 'notes';
-    const tree = (ITEM_KINDS as Record<string, { tree: { root: string } | null }>)[kind]!.tree;
-    if (!tree) throw new Error(`no tree root for ${kind}`);
-    return tree.root;
-  };
+  const kinds = A8_KINDS;
 
   beforeAll(async () => {
     scratch = await createMigratedScratchDatabase(URL!);
     sql = postgres(scratch.url, { max: 2, prepare: false, onnotice });
-    fx = await buildA8Fixture(sql, kinds, rootOf);
+    fx = await buildA8Fixture(sql);
     await installProbe(sql);
     // Both checks on, as a box that runs them (the test's own scratch
     // database; no switch in production code).
@@ -88,9 +91,12 @@ describe.skipIf(!URL)('A8 grid at SQL level', () => {
 
   it('the fixture: each item is homed and granted as the oracle says', async () => {
     for (const kind of kinds) {
-      for (const placement of ['root', 'folder', 'snapshot'] as const) {
+      for (const placement of GUIDE_PLACEMENTS) {
         const item = fx.items[kind]![placement];
-        if (!item) continue;
+        if (!item) {
+          expect(placement === 'snapshot' && !GUIDE_SNAPSHOT_KINDS.includes(kind), kind).toBe(true);
+          continue;
+        }
         const [r] = await sql<{ home: string; read: string[]; write: string[]; copy: boolean }[]>`
           select home_ws::text as home, read_ws::text[] as read, write_ws::text[] as write,
                  data ? 'snapshot_of' as copy
@@ -99,6 +105,10 @@ describe.skipIf(!URL)('A8 grid at SQL level', () => {
           expect(r!.home, kind).toBe(fx.privateWs.writeGrant);
           expect(r!.read, kind).toEqual([fx.privateWs.writeGrant]);
           expect(r!.copy, kind).toBe(true);
+        } else if (placement === 'admin') {
+          expect(r!.home, kind).toBe(fx.ws.admin);
+          expect(r!.read, kind).toEqual([fx.ws.admin]);
+          expect(r!.write, kind).toEqual([]);
         } else {
           expect(r!.home, kind).toBe(fx.ws.H);
           expect([...r!.read].sort(), kind).toEqual([fx.ws.H, fx.ws.W, fx.ws.R].sort());
@@ -164,6 +174,18 @@ describe.skipIf(!URL)('A8 grid at SQL level', () => {
     expect(fixed, 'known failures that pass now: take them off the list').toEqual([]);
     // Every write ran with its actor and both checks on: no miss.
     expect(misses).toEqual([]);
-    expect(naTotal + run.length).toBe(cells.length);
+    // No cell drops out unseen: the grid is every combination (each login
+    // actor for each role, each other actor once, an Admin user's writes
+    // once more on the system pool), and each not-applicable reason keeps
+    // its count (a change to the oracle or the fixture shows here).
+    const writes = GUIDE_ACTIONS.filter((a) => !['read', 'list', 'search'].includes(a)).length;
+    const per = GUIDE_LOGIN_ACTORS.length * GUIDE_ROLES.length + GUIDE_OTHER_ACTORS.length;
+    expect(cells.length).toBe(
+      kinds.length * GUIDE_PLACEMENTS.length * (GUIDE_ACTIONS.length * per + writes * 2),
+    );
+    expect(na).toEqual(NOT_APPLICABLE);
   }, 600_000);
 });
+
+/** The grid's not-applicable cells by reason (L1: none drops out uncounted). */
+const NOT_APPLICABLE: Readonly<Record<string, number>> = {};
