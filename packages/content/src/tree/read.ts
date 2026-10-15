@@ -7,7 +7,15 @@
  * that reader for free; the counts and pages are then what that reader sees.
  */
 import { sql, type SQL } from 'drizzle-orm';
-import { db, nodeAliasReadByWorkspace, nodeAliasScopeReads } from '@mantle/db';
+import {
+  db,
+  nodeAliasReadBy,
+  nodeAliasReadByAnyOf,
+  nodeAliasReadByWorkspace,
+  nodeAliasScopeReads,
+} from '@mantle/db';
+import type { ElsewhereCount } from '@mantle/client-types';
+import { isUuid } from '@mantle/std';
 import type {
   TreeCrumb,
   TreeFolder,
@@ -38,6 +46,9 @@ type FolderSqlRow = {
   parent_id: string | null;
   folder_count: number;
   item_count: number;
+  /** Set only when the read narrowed by a workspace and named the
+   *  caller's others (selectFolders `others`). */
+  items_elsewhere?: number | null;
 };
 
 type ItemSqlRow = {
@@ -66,6 +77,7 @@ export function treeFolderFromRow(r: FolderSqlRow): TreeFolder {
     system: data.system === true,
     folderCount: Number(r.folder_count),
     itemCount: Number(r.item_count),
+    ...(r.items_elsewhere != null ? { itemsElsewhere: Number(r.items_elsewhere) } : {}),
     // Who reads it is the caller's to ask (lib/listWorkspaces.ts).
     workspaces: [],
     hasLink: false,
@@ -107,14 +119,21 @@ function treeItemFromRow(kind: TreeKind, r: ItemSqlRow): TreeItem {
  *  per folder (W6a): under a workspace scope the planner cannot see how many
  *  items the scope holds and guesses a handful, so each per-folder count
  *  re-read every item of the scope (an Admin user: 9 ms for 12 folders,
- *  1.5 ms read once; faster on the system pool too). */
+ *  1.5 ms read once; faster on the system pool too).
+ *
+ *  `others` (with `ws`; task f26a516e): the caller's other workspaces. Each
+ *  folder then also counts the items in it that one of them reads and `ws`
+ *  does not (`itemsElsewhere`), under the same read rule, so a client can
+ *  open a folder whose items all live in another workspace and say so. */
 export async function selectFolders(
   ownerId: string,
   kind: TreeKind,
   where: SQL,
   ws?: string,
+  others?: readonly string[],
 ): Promise<TreeFolder[]> {
   const itemType = TREE_KIND_SPECS[kind].nodeType;
+  const elsewhere = ws && others ? elsewhereOf(ws, others, 'c') : null;
   const rows = (await db.execute(sql`
     with f as materialized (
       select f.id, f.path, f.title, f.data from nodes f
@@ -136,12 +155,27 @@ export async function selectFolders(
          and c.path = any(array(select path from f)) ${kindItemFilter(kind, 'c')}
          and ${nodeAliasScopeReads('c')} ${readBy(ws, 'c')}
        group by 1)
+    ${
+      elsewhere
+        ? sql`, ec as materialized (
+      select c.path as p, count(*)::int as n from nodes c
+       where c.owner_id = ${ownerId} and c.type = ${itemType}
+         and c.path = any(array(select path from f)) ${kindItemFilter(kind, 'c')}
+         and ${nodeAliasScopeReads('c')} and ${elsewhere}
+       group by 1)`
+        : sql``
+    }
     select f.id, f.path::text as path, f.title, f.data,
            (select up.id from up
              where nlevel(f.path) > 2 and up.path = subpath(f.path, 0, nlevel(f.path) - 1)
              limit 1) as parent_id,
            coalesce((select fc.n from fc where fc.p = f.path), 0) as folder_count,
-           coalesce((select ic.n from ic where ic.p = f.path), 0) as item_count
+           coalesce((select ic.n from ic where ic.p = f.path), 0) as item_count,
+           ${
+             elsewhere
+               ? sql`coalesce((select ec.n from ec where ec.p = f.path), 0)`
+               : sql`null::int`
+           } as items_elsewhere
       from f
      order by f.data->>'rank' collate "C" nulls last, lower(f.title), f.id`)) as unknown as FolderSqlRow[];
   return rows.map(treeFolderFromRow);
@@ -175,12 +209,13 @@ export async function listTreeFolders(ownerId: string, kind: TreeKind): Promise<
 }
 
 /** One folder by id, when it is a folder of `kind` below the kind's root.
- *  `ws` counts its items as selectFolders does. */
+ *  `ws` and `others` count its items as selectFolders does. */
 export async function treeFolderById(
   ownerId: string,
   kind: TreeKind,
   folderId: string,
   ws?: string,
+  others?: readonly string[],
 ): Promise<TreeFolder | null> {
   const root = TREE_KIND_SPECS[kind].root;
   const [folder] = await selectFolders(
@@ -188,6 +223,7 @@ export async function treeFolderById(
     kind,
     sql`f.id = ${folderId} and f.path <@ ${root}::ltree and nlevel(f.path) > 1`,
     ws,
+    others,
   );
   return folder ?? null;
 }
@@ -311,6 +347,8 @@ export function treePageLimit(raw: number | undefined): number {
  * not a folder of this kind. A cursor pages the items only; the folders come
  * with the first page. `ws` keeps only the items that workspace reads, in the
  * page and in the counts (the folders stay: they are the way to them).
+ * `others` (with `ws`): the caller's other workspaces, for each folder's
+ * `itemsElsewhere` (selectFolders) and the page's `elsewhere`.
  */
 export async function loadTreeFolder(
   ownerId: string,
@@ -321,17 +359,20 @@ export async function loadTreeFolder(
     sort?: TreeSort;
     limit?: number;
     ws?: string;
+    others?: readonly string[];
   } = {},
 ): Promise<TreeFolderPage | null> {
   const spec = TREE_KIND_SPECS[kind];
   const sort = opts.sort && spec.sorts.includes(opts.sort) ? opts.sort : spec.sorts[0]!;
-  const folder = opts.folderId ? await treeFolderById(ownerId, kind, opts.folderId, opts.ws) : null;
+  const folder = opts.folderId
+    ? await treeFolderById(ownerId, kind, opts.folderId, opts.ws, opts.others)
+    : null;
   if (opts.folderId && !folder) return null;
   const path = folder?.path ?? spec.root;
   const [folders, crumbs, page] = await Promise.all([
     opts.cursor
       ? Promise.resolve([] as TreeFolder[])
-      : selectFolders(ownerId, kind, sql`f.path ~ ${`${path}.*{1}`}::lquery`, opts.ws),
+      : selectFolders(ownerId, kind, sql`f.path ~ ${`${path}.*{1}`}::lquery`, opts.ws, opts.others),
     folder
       ? treeCrumbsFor(ownerId, [treeParentPath(folder.path)]).then(
           (m) => m.get(treeParentPath(folder.path)) ?? [],
@@ -347,6 +388,10 @@ export async function loadTreeFolder(
       readBy(opts.ws, 'n'),
     ),
   ]);
+  const elsewhere =
+    opts.ws && opts.others?.length && !opts.cursor && page.items.length === 0
+      ? await itemsElsewhereIn(ownerId, kind, path, opts.ws, opts.others)
+      : [];
   return {
     kind,
     folder,
@@ -355,7 +400,49 @@ export async function loadTreeFolder(
     items: page.items,
     sort,
     nextCursor: page.nextCursor,
+    ...(elsewhere.length ? { elsewhere } : {}),
   };
+}
+
+/** Of a row aliased `alias`: `ws` does not read it and one of `others`
+ *  does (task f26a516e). `ws` and `others` are checked ids (the caller's
+ *  own live workspaces, lib/list-workspaces.ts). */
+function elsewhereOf(ws: string, others: readonly string[], alias: string): SQL {
+  const ids = others.filter((id) => isUuid(id) && id !== ws);
+  return sql`not ${nodeAliasReadByWorkspace(ws, alias)} and ${nodeAliasReadByAnyOf(ids, alias)}`;
+}
+
+/**
+ * The items directly in the folder at `path` that `ws` does not read, by
+ * each of the caller's `others` that reads them, most first (task f26a516e:
+ * the hint under an empty list, "2 items in Admin"). The read rule of the
+ * caller's scope applies as on every tree read (the row rules in a
+ * workspace scope; nodeAliasScopeReads on the system pool), so an item the
+ * caller does not read is never counted, and only the named workspaces are
+ * counted. An item two of them read counts in each.
+ */
+export async function itemsElsewhereIn(
+  ownerId: string,
+  kind: TreeKind,
+  path: string,
+  ws: string,
+  others: readonly string[],
+): Promise<ElsewhereCount[]> {
+  const ids = others.filter((id) => isUuid(id) && id !== ws);
+  if (!ids.length) return [];
+  const rows = (await db.execute(sql`
+    select w.id::text as id, w.name, count(*)::int as count
+      from nodes n
+      join workspaces w on ${nodeAliasReadBy(sql`w.id`, 'n')}
+     where n.owner_id = ${ownerId} and n.type = ${TREE_KIND_SPECS[kind].nodeType}
+       and n.path = ${path}::ltree ${kindItemFilter(kind, 'n')}
+       and ${nodeAliasScopeReads('n')}
+       and not ${nodeAliasReadByWorkspace(ws, 'n')}
+       and w.id = any(${`{${ids.join(',')}}`}::uuid[])
+       and w.owner_id = ${ownerId} and w.archived_at is null
+     group by w.id, w.name
+     order by count(*) desc, lower(w.name), w.id`)) as unknown as ElsewhereCount[];
+  return rows.map((r) => ({ id: r.id, name: r.name, count: Number(r.count) }));
 }
 
 /** Only the items workspace `ws` reads (`and ...` on `alias`); every item
@@ -373,7 +460,9 @@ export function likePattern(q: string): string {
 /**
  * One page of a kind's items by name (A to Z), those whose title holds
  * `term` (all of them for an empty term). `extra` narrows further (`and ...`
- * on alias `n`).
+ * on alias `n`). `first` (a checked workspace id; task f26a516e): the items
+ * that workspace reads come first, each part by name; the cursor's key then
+ * carries the part ('0' first, '1' the rest) before the name.
  */
 export async function searchItemRows(
   ownerId: string,
@@ -382,21 +471,28 @@ export async function searchItemRows(
   cursorRaw: string | null | undefined,
   limit: number,
   extra: SQL = sql``,
+  first?: string,
 ): Promise<{ page: ItemSqlRow[]; more: boolean }> {
   const spec = TREE_KIND_SPECS[kind];
   const cursor = decodeTreeCursor(cursorRaw, 'name');
   const match = term ? sql`and n.title ilike ${likePattern(term)}` : sql``;
-  const after = cursor
-    ? sql`and (lower(n.title), n.id) > (${cursor.key}, ${cursor.id}::uuid)`
-    : sql``;
+  const part = first
+    ? sql`(case when ${nodeAliasReadByWorkspace(first, 'n')} then '0' else '1' end)`
+    : null;
+  const after = !cursor
+    ? sql``
+    : part
+      ? sql`and (${part}, lower(n.title), n.id)
+                > (${cursor.key.slice(0, 1)}, ${cursor.key.slice(1)}, ${cursor.id}::uuid)`
+      : sql`and (lower(n.title), n.id) > (${cursor.key}, ${cursor.id}::uuid)`;
   const rows = (await db.execute(sql`
     select n.id, n.path::text as path, n.title, n.data, n.updated_at,
-           lower(n.title) as sort_key
+           ${part ? sql`${part} || lower(n.title)` : sql`lower(n.title)`} as sort_key
       from nodes n
      where n.owner_id = ${ownerId} and n.type = ${spec.nodeType}
        and n.path <@ ${spec.root}::ltree ${kindItemFilter(kind, 'n')}
        ${match} ${extra} ${after}
-     order by lower(n.title), n.id
+     order by ${part ? sql`${part}, ` : sql``}lower(n.title), n.id
      limit ${limit + 1}`)) as unknown as ItemSqlRow[];
   const more = rows.length > limit;
   return { page: more ? rows.slice(0, limit) : rows, more };
@@ -409,6 +505,11 @@ export async function searchItemRows(
  * A to Z view: every item of the kind by name, and no folders. A filter
  * (workspace, tag) narrows the items and drops the folders: it is a question
  * about items.
+ *
+ * `across` with a term (task f26a516e): the workspace narrows nothing. The
+ * search covers what the caller's scope reads (the row rules, as on every
+ * read here), the items `ws` reads come first, and the folders that match
+ * come too (unless a tag narrows). `across` is echoed back.
  */
 export async function searchTree(
   ownerId: string,
@@ -421,7 +522,9 @@ export async function searchTree(
   const term = q.trim();
   const pattern = likePattern(term);
   const cursor = decodeTreeCursor(opts.cursor, 'name');
-  const filtered = opts.ws !== undefined || opts.tag !== undefined;
+  const across = opts.across === true && term !== '';
+  const narrow = across ? undefined : opts.ws;
+  const filtered = narrow !== undefined || opts.tag !== undefined;
   const folders =
     cursor || !term || filtered
       ? []
@@ -440,7 +543,8 @@ export async function searchTree(
     term,
     opts.cursor,
     limit,
-    sql`${readBy(opts.ws, 'n')} ${tag}`,
+    sql`${readBy(narrow, 'n')} ${tag}`,
+    across ? opts.ws : undefined,
   );
   const crumbs = await treeCrumbsFor(ownerId, [
     ...folders.map((f) => treeParentPath(f.path)),
@@ -455,6 +559,7 @@ export async function searchTree(
       more && last
         ? encodeTreeCursor({ sort: 'name', key: String(last.sort_key), id: last.id })
         : null,
+    ...(across ? { across: true as const } : {}),
   };
 }
 

@@ -79,6 +79,28 @@ export function nodeAliasReadByWorkspace(ws: string, alias: string): SQL {
   return sql`${ws}::uuid = any(${sql.raw(alias)}.read_ws)`;
 }
 
+/** Search across workspaces (task f26a516e): some of `ids` (checked
+ *  workspace ids, the caller's own) read the `nodes` row aliased `alias`. */
+export function nodeAliasReadByAnyOf(ids: readonly string[], alias: string): SQL {
+  if (!/^[a-z_][a-z0-9_]*$/i.test(alias)) throw new Error(`bad alias: ${alias}`);
+  const list = ids.filter((id) => UUID.test(id));
+  return sql`${sql.raw(alias)}.read_ws && ${`{${list.join(',')}}`}::uuid[]`;
+}
+
+/** The workspace `ws` (a column or value, such as `w.id`) reads the `nodes`
+ *  row aliased `alias`: an item joined to the workspaces that read it. */
+export function nodeAliasReadBy(ws: SQLWrapper, alias: string): SQL {
+  if (!/^[a-z_][a-z0-9_]*$/i.test(alias)) throw new Error(`bad alias: ${alias}`);
+  return sql`${ws} = any(${sql.raw(alias)}.read_ws)`;
+}
+
+/** The workspace `ws` (a column or value) is the home of the `nodes` row
+ *  aliased `alias`; null (never true) for an item with no home. */
+export function nodeAliasHomeIs(ws: SQLWrapper, alias: string): SQL {
+  if (!/^[a-z_][a-z0-9_]*$/i.test(alias)) throw new Error(`bad alias: ${alias}`);
+  return sql`${ws} = ${sql.raw(alias)}.home_ws`;
+}
+
 /** The same filter for a table whose rows follow an item (`nodeId`, such as
  *  recall_maps.node_id). */
 export function itemReadByWorkspace(ws: string, nodeId: SQLWrapper): SQL {

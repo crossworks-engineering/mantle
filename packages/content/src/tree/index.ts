@@ -14,6 +14,7 @@ export {
 } from './notes-auto-filed';
 export { decodeTreeCursor, encodeTreeCursor, type TreeCursor } from './cursor';
 export {
+  itemsElsewhereIn,
   listTreeFolders,
   listTreeTags,
   loadTreeFolder,

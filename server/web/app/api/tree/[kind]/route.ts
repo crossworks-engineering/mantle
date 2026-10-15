@@ -4,7 +4,7 @@ import { ownerCaller } from '@/lib/auth';
 import { TREE_SORTS } from '@mantle/client-types/tree';
 import { loadTreeFolder } from '@mantle/content/tree';
 import { ensureTreeRoot, privateRootItems, treeKindOr404 } from '@/lib/tree-route';
-import { parseWsFilter, withChips, workspaceChips } from '@/lib/list-workspaces';
+import { otherWorkspaces, parseWsFilter, withChips, workspaceChips } from '@/lib/list-workspaces';
 
 const Query = z.object({
   folder: z.string().uuid().optional(),
@@ -19,7 +19,10 @@ const Query = z.object({
  *  its subfolders and one page of its items (TreeFolderPage), each with its
  *  workspaces and link pill. No folder is the root, where the caller's own
  *  private items come first. `ws` keeps only the items that workspace reads
- *  (no private items) and is echoed back. */
+ *  (no private items) and is echoed back; each folder then also counts the
+ *  items there that only the caller's other workspaces read
+ *  (`itemsElsewhere`), and a first page with no item names them
+ *  (`elsewhere`, task f26a516e). */
 export async function GET(req: Request, ctx: { params: Promise<{ kind: string }> }) {
   const user = ownerCaller();
   const kind = await treeKindOr404(ctx);
@@ -35,6 +38,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ kind: string }>
     sort: parsed.data.sort,
     limit: parsed.data.limit,
     ws: ws ?? undefined,
+    others: ws ? await otherWorkspaces(user.id, user.actor.id, ws) : undefined,
   });
   if (!page) return NextResponse.json({ error: 'folder not found' }, { status: 404 });
   if (!page.folder && !parsed.data.cursor && !ws) {

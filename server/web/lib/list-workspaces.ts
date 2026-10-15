@@ -10,10 +10,19 @@
  *
  * One place for every list (the apps list too), so the rule is the same
  * everywhere. A workspace the caller may not name is 404, never 403.
+ *
+ * Search across workspaces (task f26a516e): `parseReadCover` is the one
+ * gateway that says what a read covers. A list narrows to the switcher's
+ * workspace; a search (GET /api/search, and a tree search asked `across`)
+ * covers every workspace the caller reads, and the switcher's workspace
+ * only orders it. What the caller reads is never decided here: the reads
+ * run in the caller's request scope, so the database's row rules keep out
+ * every item of a workspace the caller is not in. `hitWorkspaces` names
+ * where each hit opens, from the caller's own workspaces only.
  */
-import { db, sql } from '@mantle/db';
+import { db, nodeAliasHomeIs, nodeAliasReadBy, sql } from '@mantle/db';
 import { currentWorkspaceScope } from '@mantle/db/viewer';
-import type { ItemCaps, ListChips, ListWorkspace } from '@mantle/client-types';
+import type { HitWorkspace, ItemCaps, ListChips, ListWorkspace } from '@mantle/client-types';
 import { NextResponse } from '@/server/http-compat';
 import { WS_LOOK_PAIRS, workspaceLook } from '@/lib/workspace-look';
 
@@ -168,15 +177,52 @@ export async function chipped<T extends { id: string }>(
  * `?ws=` of a list (and of the landing page, /api/home): null when not
  * asked; the workspace id when the caller is a user of it (a live workspace
  * of the brain), Admin users too: an Admin user joins a workspace first
- * (logged), then picks it; else a 404 to answer as is.
+ * (logged), then picks it; else a 404 to answer as is. The list form of
+ * parseReadCover: it always narrows.
  */
 export async function parseWsFilter(
   req: Request,
   ownerId: string,
   loginId: string,
 ): Promise<string | null | Response> {
-  const raw = new URL(req.url).searchParams.get('ws');
-  if (raw === null) return null;
+  const cover = await parseReadCover(req, ownerId, loginId, 'list');
+  return cover instanceof Response ? cover : cover.ws;
+}
+
+/**
+ * What one read covers (task f26a516e).
+ *  - `ws`: narrows the read to the items that workspace reads (a list);
+ *    null narrows nothing.
+ *  - `current`: the switcher's workspace, checked as `?ws=` always was
+ *    (a workspace the caller is a user of; else 404); null when not asked.
+ *  - `across`: the read covers every workspace the caller reads; `current`
+ *    then only orders it (its own hits first).
+ */
+export type ReadCover = { ws: string | null; current: string | null; across: boolean };
+
+/**
+ * How a route reads `?ws=`:
+ *  - 'list': it narrows (every list, the landing page);
+ *  - 'search': it narrows unless the request asks `across=1` (a tree
+ *    search: the client asks across only with a term);
+ *  - 'across': it never narrows (GET /api/search, which has always looked
+ *    in every workspace the caller reads).
+ */
+export type ReadCoverMode = 'list' | 'search' | 'across';
+
+/** The one place a route turns `?ws=` (and `across`) into what its read
+ *  covers. The row rules of the caller's scope still decide what it reads. */
+export async function parseReadCover(
+  req: Request,
+  ownerId: string,
+  loginId: string,
+  mode: ReadCoverMode,
+): Promise<ReadCover | Response> {
+  const params = new URL(req.url).searchParams;
+  const asked = params.get('across');
+  const across = mode === 'across' || (mode === 'search' && (asked === '1' || asked === 'true'));
+  const raw = params.get('ws');
+  if (raw === null) return { ws: null, current: null, across };
   const notFound = () =>
     NextResponse.json({ error: 'Workspace not found.', code: 'not_found' }, { status: 404 });
   if (!UUID_RE.test(raw)) return notFound();
@@ -185,5 +231,73 @@ export async function parseWsFilter(
     select 1 as ok from (${mine(ownerId, loginId)}) me where me.id = ${ws}::uuid`)) as unknown as Array<{
     ok: number;
   }>;
-  return hit ? ws : notFound();
+  if (!hit) return notFound();
+  return { ws: across ? null : ws, current: ws, across };
+}
+
+/** The caller's own live workspaces other than `ws` (ids): where a
+ *  folder's items elsewhere are counted (TreeFolder `itemsElsewhere`,
+ *  TreeFolderPage `elsewhere`). Admin users too: only those they are in. */
+export async function otherWorkspaces(
+  ownerId: string,
+  loginId: string,
+  ws: string,
+): Promise<string[]> {
+  const rows = (await db.execute(sql`
+    select me.id::text as id from (${mine(ownerId, loginId)}) me
+     where me.id <> ${ws}::uuid`)) as unknown as Array<{ id: string }>;
+  return rows.map((r) => r.id);
+}
+
+/**
+ * Where each of `nodeIds` opens for `loginId` (HitWorkspace): a live
+ * workspace the caller is a user of that reads the item, `current` first,
+ * then the item's home, then by name. Read in the caller's scope, so an id
+ * the caller does not read gets none; an Admin user gets only the
+ * workspaces it is in (never one it would have to join first).
+ */
+export async function hitWorkspaces(
+  ownerId: string,
+  loginId: string,
+  nodeIds: readonly string[],
+  current: string | null,
+): Promise<Map<string, HitWorkspace>> {
+  const ids = [...new Set(nodeIds.filter((id) => UUID_RE.test(id)))];
+  const out = new Map<string, HitWorkspace>();
+  if (!ids.length) return out;
+  const cur = current && UUID_RE.test(current) ? current : null;
+  const rows = (await db.execute(sql`
+    with me as (${mine(ownerId, loginId)})
+    select n.id::text as id, w.id::text as ws_id, w.name
+      from nodes n
+      cross join lateral (
+        select w.id, w.name from workspaces w
+         where ${nodeAliasReadBy(sql`w.id`, 'n')} and w.id in (select me.id from me)
+         order by (w.id = ${cur}::uuid) is true desc,
+                  (${nodeAliasHomeIs(sql`w.id`, 'n')}) is true desc, lower(w.name), w.id
+         limit 1) w
+     where n.id = any(${`{${ids.join(',')}}`}::uuid[])`)) as unknown as Array<{
+    id: string;
+    ws_id: string;
+    name: string;
+  }>;
+  for (const r of rows) out.set(r.id, { id: r.ws_id, name: r.name });
+  return out;
+}
+
+/**
+ * `rows` with the switcher's workspace's own first, in their order, then
+ * the rest in theirs (a stable split; the search's ranking holds inside
+ * each part). A row whose hit opens in `current` is its own. No `current`:
+ * the rows as they are.
+ */
+export function currentFirst<T>(
+  rows: readonly T[],
+  hitOf: (row: T) => HitWorkspace | undefined,
+  current: string | null,
+): T[] {
+  if (!current) return [...rows];
+  const own = rows.filter((r) => hitOf(r)?.id === current);
+  const rest = rows.filter((r) => hitOf(r)?.id !== current);
+  return [...own, ...rest];
 }
