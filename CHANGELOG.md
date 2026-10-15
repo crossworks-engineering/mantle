@@ -4,6 +4,22 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## Unreleased: provider HTTP deadlines, retries and errors (A10 #10)
+
+- One timeout table (`PROVIDER_TIMEOUTS`, `NET_TIMEOUTS` in `@mantle/std`),
+  one retry helper, one Retry-After reader, one provider error and one local
+  model probe; the behaviour changes are listed in
+  [docs/provider-http.md](docs/provider-http.md#behaviour-changes).
+- **Contract break (minor), `@crossworks/voice-client`:** the
+  `adapters/retry` subpath is gone (`withChatRetry`, `ChatHttpError`,
+  `classifyChatError`, `parseRetryAfterMs`, `isEmptyJsonBodyError`,
+  `DEFAULT_MAX_RETRIES`), and `adapters/registry` no longer exports
+  `getChatAdapter` (it is `registeredChatAdapter` now, without the retry
+  wrapper). The retry moved onto `@mantle/std`, which this zero-dependency
+  package cannot import, so no shim is kept. Jackdaw imports none of them;
+  a server-side caller takes `getChatAdapter` from `@mantle/voice` and the
+  retry names from its `adapters/retry` (or `@mantle/std`).
+
 ## Unreleased: Team is a normal workspace; only Admin users tick Moderator
 
 - Owner decision 2026-10-13 (reverses plan Q1): the only built-in workspace
