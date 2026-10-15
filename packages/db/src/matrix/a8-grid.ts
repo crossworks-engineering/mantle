@@ -712,7 +712,7 @@ function landingId(fx: A8Fixture, c: A8Cell, lands: string | undefined): string 
 }
 
 /** Whether an allowed write made the change its action names. */
-function effectMade(fx: A8Fixture, c: A8Cell, want: GuideAnswer, state: string): string | null {
+export function effectMade(fx: A8Fixture, c: A8Cell, want: GuideAnswer, state: string): string | null {
   if (c.action === 'delete') return state === 'gone' ? null : 'not deleted';
   const p = JSON.parse(state) as { home: string; read: string[]; write: string[] };
   switch (c.action) {
@@ -762,4 +762,47 @@ function judge(fx: A8Fixture, c: A8Cell, want: GuideAnswer, got: Got | null): st
   if (!got.changed && c.action !== 'create') return 'no row changed, the oracle allows';
   if (c.action === 'create' && got.state === 'gone') return 'no row made, the oracle allows';
   return effectMade(fx, c, want, got.state);
+}
+
+// ── pairwise ────────────────────────────────────────────────────────────────
+
+/**
+ * A pairwise subset of `cells` (the surface cells, plan 12 A8): every pair
+ * of values of two dimensions (role, kind, placement, action) that some
+ * candidate holds is held by at least one picked cell. Greedy, in the
+ * candidates' order, so the same candidates give the same cells.
+ */
+export function pairwise(cells: readonly A8Cell[]): A8Cell[] {
+  const dims = (c: A8Cell) => [
+    `r:${c.role ?? '-'}`,
+    `k:${c.kind}`,
+    `p:${c.placement}`,
+    `a:${c.action}`,
+  ];
+  const pairsOf = (c: A8Cell) => {
+    const d = dims(c);
+    const out: string[] = [];
+    for (let i = 0; i < d.length; i++)
+      for (let j = i + 1; j < d.length; j++) out.push(`${d[i]}|${d[j]}`);
+    return out;
+  };
+  const open = new Set(cells.flatMap(pairsOf));
+  const picked: A8Cell[] = [];
+  const left = [...cells];
+  while (open.size) {
+    let best = -1;
+    let gain = 0;
+    left.forEach((c, i) => {
+      const g = pairsOf(c).filter((p) => open.has(p)).length;
+      if (g > gain) {
+        gain = g;
+        best = i;
+      }
+    });
+    if (best < 0) break;
+    const [c] = left.splice(best, 1);
+    picked.push(c!);
+    for (const p of pairsOf(c!)) open.delete(p);
+  }
+  return picked;
 }
