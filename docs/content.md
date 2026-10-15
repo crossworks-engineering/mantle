@@ -186,10 +186,11 @@ the row holds:
 
 - with a summary (with the completion marker, or an item extracted before
   the marker existed): the vector from the title and that summary;
-- a table keeping its summary: admitted at once, before the cost guard and
-  the key pre-flight, and the model step reuses the summary and rebuilds its
-  profile passages (no model call, so no key or chat adapter is needed: a
-  rename on a box whose cloud extractor key is missing still gets its vector);
+- a table keeping its summary: admitted before the key pre-flight, and the
+  model step reuses the summary and rebuilds its profile passages (no model
+  call, so no key or chat adapter is needed: a rename on a box whose cloud
+  extractor key is missing still gets its vector); one that no workspace with
+  an assistant reads gets the cost guard's local index instead, as before;
 - with no summary, on an item indexed before (a terminal skip, such as a page
   too short to summarise, a completed pass, or a vector the reset cleared,
   which the stamp records as `index_work_had_vector`): the vector from the
@@ -202,10 +203,16 @@ An `extract` stamp is never downgraded: a rename that lands while a content
 change still waits for its pass keeps `extract`, so the new content is still
 summarised. The extractor drops the stamp when it has done the work (the
 summary write, the re-embed, a terminal skip, the local index), and only the
-stamp the job read when it loaded the row: a content change that lands while
-a job ends in a terminal skip keeps its `extract` stamp for its own job. (A
-second `extract` stamp over the one the job read cannot be told apart and is
-dropped; that change's own job still runs its whole pass.) The re-embed lands
+stamp the job read: a content change that lands while a job ends in a
+terminal skip keeps its `extract` stamp for its own job. (A second `extract`
+stamp over the one the job read cannot be told apart and is dropped; that
+change's own job still runs its whole pass.) The summary write reads the
+stamp in the same select as the row version (xmin) its write is guarded on,
+not when the job was admitted: a content change that commits while the body
+is read lands before that select, the write then answers it, and the
+change's own job skips as already extracted, as before the stamp. The gate
+never skips an `extract` stamp as already extracted, whatever else the row
+holds; the pass it runs drops the stamp, so the next notify skips. The re-embed lands
 only while the row still has the title and the summary it was made from, so a
 job for an older title never writes over a newer rename. A table's cell
 commit is `cells` (`embed`) only when the table has a summary to keep; a
