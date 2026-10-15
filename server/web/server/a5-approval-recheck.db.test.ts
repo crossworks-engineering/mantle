@@ -176,9 +176,9 @@ describe.skipIf(!DB_URL)('the approval re-check (A5 step 6c): the recorded matri
         { loginId: login },
       ),
     );
-    expect(res.ok, JSON.stringify(res)).toBe(true);
-    expect(pendingIds, JSON.stringify(res)).toHaveLength(1);
-    return pendingIds[0]!;
+    // A call the queue-time check refuses is never queued: the cell says so.
+    if (!res.ok || pendingIds.length !== 1) return { refused: short(JSON.stringify(res)) };
+    return { pending: pendingIds[0]! };
   };
 
   /** Put every right back as the matrix starts it. */
@@ -412,7 +412,13 @@ describe.skipIf(!DB_URL)('the approval re-check (A5 step 6c): the recorded matri
             for (const tool of TOOLS) {
               n += 1;
               await reset();
-              const pending = await queue(asker, tool, String(n));
+              const queued = await queue(asker, tool, String(n));
+              const key = `${asker}|${approver}|${via}|${right}|${tool}`;
+              if (queued.pending === undefined) {
+                table[key] = `queue refused: ${queued.refused}`;
+                continue;
+              }
+              const pending = queued.pending;
               await change(asker, right, tool);
               h.remote = [];
               const before = tool === 'note' ? await noteBody() : null;
@@ -427,7 +433,7 @@ describe.skipIf(!DB_URL)('the approval re-check (A5 step 6c): the recorded matri
                   : (await noteBody()) !== before
                     ? 'note changed'
                     : 'note unchanged';
-              table[`${asker}|${approver}|${via}|${right}|${tool}`] =
+              table[key] =
                 `${answer} => ${row!.s}${row!.error ? ` (${short(row!.error)})` : ''}; ${ran}`;
               // Leave nothing pending for the next cell's approver.
               await x(sql`update pending_tool_calls set status = 'expired'
