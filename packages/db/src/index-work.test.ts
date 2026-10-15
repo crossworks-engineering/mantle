@@ -11,6 +11,8 @@ import {
   dropIndexWork,
   hasSummary,
   hasSummarySql,
+  indexWorkSql,
+  parseIndexWork,
   readIndexWork,
   stampHadVector,
   stampIndexWork,
@@ -44,6 +46,16 @@ describe('reading the stamp', () => {
     expect(readIndexWork({ index_work: 'extract' })).toBe('extract');
     expect(readIndexWork({ index_work: 'later' })).toBeNull();
     expect(readIndexWork(null)).toBeNull();
+  });
+
+  it('reads the stamp in SQL as text, for the select that reads the row version (round 3, M1)', () => {
+    const q = render(sql`select ${indexWorkSql(sql`d`)} as w`);
+    expect(q.sql).toBe('select d->>$1::text as w');
+    expect(q.params).toEqual(['index_work']);
+    expect(parseIndexWork('extract')).toBe('extract');
+    expect(parseIndexWork('embed')).toBe('embed');
+    expect(parseIndexWork(null)).toBeNull();
+    expect(parseIndexWork(undefined)).toBeNull();
   });
 
   it('had a vector: only with an embed stamp', () => {

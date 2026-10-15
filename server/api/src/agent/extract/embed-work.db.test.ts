@@ -34,6 +34,17 @@
  *  - L6: a terminal skip drops only the stamp its job saw: a content
  *    change's 'extract' stamp that landed meanwhile survives.
  *
+ * Fix round 3:
+ *
+ *  - M1: a content change that commits while the body loads (after
+ *    admission, before the row version is read) sets an 'extract' stamp the
+ *    job's guarded write now drops (it reads the stamp with the version), so
+ *    the edit's own job skips as on main and a later rename costs 0 calls;
+ *    an 'extract' stamp on a row that looks extracted runs one pass, never a
+ *    loop;
+ *  - L1: a table keeping its summary that no assistant workspace reads is
+ *    indexed locally, as on main (no summary_model rewrite, 0 calls).
+ *
  * The embedder is a stub that gives each distinct text its own vector, so
  * the test can tell which text a stored vector came from. A migrated scratch
  * database, dropped after.
@@ -56,6 +67,10 @@ const h = vi.hoisted(() => ({
   duringEmbed: null as null | (() => Promise<void>),
   /** The worker's key resolves (false: a misconfigured cloud key, L5). */
   keyOk: true,
+  /** Runs once, after the next body load (the round 3 M1 race). */
+  afterLoad: null as null | (() => Promise<void>),
+  /** The LLM-work cost guard passes (false: round 3 L1). */
+  llmAllowed: true,
 }));
 
 /** One vector per distinct text: a one-hot at the text's first-seen index. */
@@ -128,7 +143,22 @@ vi.mock('@mantle/runtime/agent', async (importOriginal) => {
 // workspace with an assistant reads it; this scratch brain has no assistant.
 vi.mock('@mantle/db', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@mantle/db')>();
-  return { ...actual, llmWorkAllowed: async () => true };
+  return { ...actual, llmWorkAllowed: async () => h.llmAllowed };
+});
+// The body load, then the hook: a write that commits after admission read
+// the row and before the extractor reads its version.
+vi.mock('./load-body', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./load-body')>();
+  return {
+    ...actual,
+    loadExtractableBody: async (...args: Parameters<typeof actual.loadExtractableBody>) => {
+      const res = await actual.loadExtractableBody(...args);
+      const hook = h.afterLoad;
+      h.afterLoad = null;
+      if (hook) await hook();
+      return res;
+    },
+  };
 });
 vi.mock('./auto-table', () => ({ maybeAutoTableSpreadsheet: async () => undefined }));
 vi.mock('./images', async (importOriginal) => {
@@ -217,6 +247,8 @@ describe.skipIf(!URL)('an embed stamp is never a model call (A10 #7 fix round 1)
     h.modelCalls = 0;
     h.duringEmbed = null;
     h.keyOk = true;
+    h.afterLoad = null;
+    h.llmAllowed = true;
   });
 
   const LONG = 'Pump overhaul plan for the north site';
@@ -516,5 +548,79 @@ describe.skipIf(!URL)('an embed stamp is never a model call (A10 #7 fix round 1)
     await stampExtractSkipped(page.id, 'body_too_short', 'extract');
     r = await row(page.id);
     expect(r.work).toBeNull();
+  });
+  it('round 3 M1: a content change during the body load: its stamp is dropped by the guarded write, the edit job skips as on main, a later rename costs 0 model calls', async () => {
+    const note = await c.createNote(owner, {
+      title: 'Seal note',
+      content: 'The north pump needs a new seal before winter starts.',
+    });
+    // Admitted with no stamp and no vector: a first pass.
+    await x(sql`update nodes set embedding = null,
+        data = data - 'index_work' - 'index_work_had_vector' where id = ${note.id}`);
+    expect((await row(note.id)).work).toBeNull();
+    // The edit commits after admission read the row, before the version read.
+    h.afterLoad = async () => {
+      await c.updateNote(owner, note.id, {
+        content: 'The north pump seal was replaced in October and passed its test.',
+      });
+      expect((await row(note.id)).work).toBe('extract');
+    };
+    await extractNode(note.id, owner);
+    let r = await row(note.id);
+    expect(h.modelCalls).toBe(1);
+    expect(r.summary).toBe('A summary the model wrote.');
+    expect(r.vec).not.toBeNull();
+    // Before round 3 the 'extract' stamp stayed here for good.
+    expect(r.work).toBeNull();
+
+    // The edit's own job: already extracted, as on main (no second call).
+    await extractNode(note.id, owner);
+    expect(h.modelCalls).toBe(1);
+    expect(await lastDisposition(note.id)).toBe('already_extracted');
+
+    // A later rename: an embed stamp, re-embedded from the kept summary.
+    await c.updateNote(owner, note.id, { title: 'Seal replaced' });
+    expect((await row(note.id)).work).toBe('embed');
+    await extractNode(note.id, owner);
+    r = await row(note.id);
+    expect(h.modelCalls).toBe(1);
+    expect(await lastDisposition(note.id)).toBe('embed_only');
+    expect(textOf(r.vec)).toBe('Seal replaced\n\nA summary the model wrote.');
+    expect(r.work).toBeNull();
+  });
+
+  it('round 3 M1: an extract stamp on a row that looks extracted runs one pass, then skips (no loop)', async () => {
+    const note = await c.createNote(owner, { title: 'Stuck note', content: 'Gasket swap due.' });
+    await indexed(note.id, { marker: true });
+    await x(sql`update nodes set data = data || '{"index_work":"extract"}'::jsonb
+      where id = ${note.id}`);
+    await extractNode(note.id, owner);
+    expect(h.modelCalls).toBe(1);
+    expect((await row(note.id)).work).toBeNull();
+    await extractNode(note.id, owner);
+    await extractNode(note.id, owner);
+    expect(h.modelCalls).toBe(1);
+    expect(await lastDisposition(note.id)).toBe('already_extracted');
+  });
+
+  it('round 3 L1: a table keeping its summary that no assistant workspace reads is indexed locally, as on main (0 model calls)', async () => {
+    h.llmAllowed = false;
+    const table = await c.createTable(owner, { title: 'Pressures' });
+    await indexed(table.id, { marker: true });
+    await c.updateTable(owner, table.id, { title: 'Pressures by week' });
+    expect((await row(table.id)).work).toBe('embed');
+    await extractNode(table.id, owner);
+
+    const r = await row(table.id);
+    expect(h.modelCalls).toBe(0);
+    expect(await lastDisposition(table.id)).toBe('no_assistant_workspace');
+    expect(r.vec).not.toBeNull();
+    expect(r.summary).toBe('Pump overhaul notes.');
+    expect(r.work).toBeNull();
+    const [d] = await x<{ applied: string | null; model: string | null }>(sql`
+      select data->>'indexing_applied' as applied, data->>'summary_model' as model
+        from nodes where id = ${table.id}`);
+    expect(d?.applied).toBe('local');
+    expect(d?.model).toBe('m');
   });
 });

@@ -424,7 +424,7 @@ describe('admitForExtraction: a re-embed only (A10 #7)', () => {
     expect(h.readNodeBodyLocal).not.toHaveBeenCalled();
   });
 
-  it('admits a table keeping its summary before the cost guard and the key pre-flight (L5)', async () => {
+  it('admits a table keeping its summary before the key pre-flight (L5)', async () => {
     // The model step reuses the summary: no model call, so no key. A
     // misconfigured cloud worker key must not leave the renamed table with
     // no vector.
@@ -434,8 +434,23 @@ describe('admitForExtraction: a re-embed only (A10 #7)', () => {
     expect(res.proceed).toBe(true);
     expect(h.embed).not.toHaveBeenCalled();
     expect(h.resolveChatKey).not.toHaveBeenCalled();
-    expect(h.llmWorkAllowed).not.toHaveBeenCalled();
+    expect(h.llmWorkAllowed).toHaveBeenCalledTimes(1);
     expect(h.recordSkippedTrace).not.toHaveBeenCalled();
+  });
+
+  it('round 3 L1: a table keeping its summary that no assistant workspace reads is indexed locally, as on main', async () => {
+    h.llmWorkAllowed.mockResolvedValue(false);
+    h.selectQueue.push([node({ type: 'table', data: kept, embedding: null })]);
+    const res = await admitForExtraction('n1', 'o1');
+    expect(res.proceed).toBe(false);
+    expect(disposition()).toBe('no_assistant_workspace');
+    expect(h.writeRetrievalChunks).toHaveBeenCalledTimes(1);
+    expect(h.embed).toHaveBeenCalledTimes(1);
+    expect(h.resolveChatKey).not.toHaveBeenCalled();
+    // One guard read, not one per branch.
+    expect(h.llmWorkAllowed).toHaveBeenCalledTimes(1);
+    expect(writtenJson()).toContain('"indexing_applied":"local"');
+    expect(writtenJson()).not.toContain('summary_model');
   });
 
   it('M3: an EMPTY summary is no summary: a rename embeds locally and the guard reads it the same way', async () => {
@@ -500,6 +515,28 @@ describe('admitForExtraction: a re-embed only (A10 #7)', () => {
     ]);
     expect((await admitForExtraction('n1', 'o1')).proceed).toBe(true);
     expect(h.embed).not.toHaveBeenCalled();
+  });
+
+  it('round 3 M1: never skips an extract stamp as already extracted, whatever else the row holds', async () => {
+    // Defence in depth: a summary, a vector and the marker with an 'extract'
+    // stamp is a content change still waiting. The pass drops the stamp.
+    h.selectQueue.push([
+      node({
+        data: { summary: 's', extract_completed_at: 'x', index_work: 'extract' },
+        embedding: [0.5],
+      }),
+    ]);
+    expect((await admitForExtraction('n1', 'o1')).proceed).toBe(true);
+    expect(h.recordSkippedTrace).not.toHaveBeenCalled();
+    // An 'embed' stamp on such a row is not a content change: skipped.
+    h.selectQueue.push([
+      node({
+        data: { summary: 's', extract_completed_at: 'x', index_work: 'embed' },
+        embedding: [0.5],
+      }),
+    ]);
+    expect((await admitForExtraction('n1', 'o1')).proceed).toBe(false);
+    expect(disposition()).toBe('already_extracted');
   });
 
   it('runs the whole pass for a vectorless item with no stamp (as before A10 #7)', async () => {
