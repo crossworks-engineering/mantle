@@ -42,7 +42,11 @@ export async function beforeMigrations(
   log: StepLog = consoleLog,
 ): Promise<RuntimeRolesOutcome> {
   // Refuses to reset roles another brain on this cluster owns.
-  await ensureViewerRoles(sql, masterKey, perDatabase);
+  if ((await ensureViewerRoles(sql, masterKey, perDatabase)) === 'not-permitted') {
+    log.warn(
+      '  WARNING the viewer roles not set: migrate runs as a role that may not manage roles',
+    );
+  }
   const runtime = await ensureRuntimeRoles(sql, masterKey, perDatabase);
   if (runtime === 'not-superuser') {
     log.warn(

@@ -296,7 +296,13 @@ export async function ensureViewerRoles(
   sql: ReturnType<typeof postgres>,
   masterKey: string | null,
   perDatabase = false,
-): Promise<void> {
+): Promise<'ok' | 'not-permitted'> {
+  // A caller that may not manage roles (the runtime role, arch A9, or any
+  // non-superuser without CREATEROLE) changes nothing: the migrator, as the
+  // superuser, keeps them (migrator-steps.ts warns when it cannot).
+  const [may] = await sql<{ ok: boolean }[]>`
+    select rolsuper or rolcreaterole as ok from pg_roles where rolname = current_user`;
+  if (!may?.ok) return 'not-permitted';
   const [current] = await sql<{ database: string }[]>`select current_database() as database`;
   const database = current!.database;
   const roles = await sql<{ rolname: string; note: string | null }[]>`
@@ -334,6 +340,7 @@ export async function ensureViewerRoles(
       );
     }
   }
+  return 'ok';
 }
 
 /** Two processes setting the same (cluster-wide) role at once make Postgres
