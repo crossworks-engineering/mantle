@@ -213,9 +213,8 @@ describe.skipIf(!URL)('the A6 grant sweep', () => {
     process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
     process.env.SESSION_SECRET ??= 'a6-grant-sweep-secret-at-least-32-characters';
     m = await import('@mantle/db');
-    const admin = (m.systemDb as unknown as { $client: Parameters<typeof m.ensureViewerRoles>[0] })
-      .$client;
-    await m.ensureViewerRoles(admin, process.env.MANTLE_MASTER_KEY);
+    // The viewer roles are the cluster's (made by the base migrate); the
+    // scratch database holds their grants (createMigratedScratchDatabase).
     g = await import('@/lib/grants');
     lw = await import('@/lib/list-workspaces');
     wsLib = await import('@/lib/workspaces');
