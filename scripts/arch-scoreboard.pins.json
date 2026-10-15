@@ -19,6 +19,8 @@
   "kindLists": 1,
   "handKindLists": 0,
   "handKindListsAllowed": 1,
+  "handRoleLists": 0,
+  "handRoleListsAllowed": 6,
   "brainOnWorkspacesCalls": 12,
   "brainOnWorkspacesFiles": 7,
   "adminReadsFiles": 2,

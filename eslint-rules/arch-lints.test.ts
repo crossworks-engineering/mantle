@@ -23,10 +23,15 @@ import {
   KIND_LIST_ALLOW,
   handKindLists,
   nodeTypes,
+  ROLE_NAME_SOURCES,
+  handRoleLists,
+  roleNameSets,
   // @ts-expect-error: plain-JS module, no types shipped.
 } from './arch-counts.mjs';
 // @ts-expect-error: plain-JS module, no types shipped.
 import { noHandKindLists } from './no-hand-kind-lists.mjs';
+// @ts-expect-error: plain-JS module, no types shipped.
+import { noHandRoleLists } from './no-hand-role-lists.mjs';
 // @ts-expect-error: plain-JS module, no types shipped.
 import { RAW_ACL_PINS, rule as rawAclRule } from './no-raw-acl-columns.mjs';
 // @ts-expect-error: plain-JS module, no types shipped.
@@ -68,6 +73,8 @@ const got = measure(ROOT) as {
     stores: Record<string, string[]>;
     handKinds: Record<string, number>;
     handKindsAllowed: Record<string, number>;
+    handRoles: Record<string, number>;
+    handRolesAllowed: Record<string, number>;
   };
 };
 
@@ -191,6 +198,15 @@ describe('the architecture ratchets (pinned counts)', () => {
     expect(Object.keys(got.perFile.handKindsAllowed).sort()).toEqual(
       Object.keys(KIND_LIST_ALLOW).sort(),
     );
+  });
+
+  it('no-hand-role-lists (A10 #13): no role, area or actor name list outside its source', () => {
+    // Each list is written once, in its source file (ROLE_NAME_SOURCES);
+    // every other copy imports it (docs/actors.md, "Role and area names").
+    expect(got.perFile.handRoles).toEqual({});
+    expect(got.numbers.handRoleLists).toBe(0);
+    const files = (Object.values(ROLE_NAME_SOURCES) as { file: string }[]).map((s) => s.file);
+    expect(Object.keys(got.perFile.handRolesAllowed).sort()).toEqual([...new Set(files)].sort());
   });
 
   it('every live route that reads no caller is a public row (A4 exit)', async () => {
@@ -362,6 +378,62 @@ describe('the hand kind list counter (A10 #12)', () => {
   });
 });
 
+describe('the hand role list counter (A10 #13)', () => {
+  const sets = roleNameSets(ROOT) as Record<string, { values: Set<string>; min: number }>;
+  const concepts = (text: string, path = 'packages/x/src/y.ts') =>
+    (handRoleLists(text, sets, path) as { concept: string; allowed: boolean }[])
+      .filter((r) => !r.allowed)
+      .map((r) => r.concept);
+
+  it('reads every source', () => {
+    expect(Object.keys(sets).sort()).toEqual(Object.keys(ROLE_NAME_SOURCES).sort());
+    expect([...sets.loginRole!.values]).toEqual(['admin', 'member']);
+  });
+
+  it('counts a list, a Set, a z.enum, a union and a comparison chain of one concept', () => {
+    expect(concepts("const R = ['admin', 'member'];")).toEqual(['loginRole']);
+    expect(concepts("const S = new Set(['member', 'admin']);")).toEqual(['loginRole']);
+    expect(concepts("role: z.enum(['admin', 'member']).optional(),")).toEqual(['loginRole']);
+    expect(concepts("type R = 'admin' | 'member' | null;")).toEqual(['loginRole']);
+    expect(concepts("return v === 'admin' || v === 'member';")).toEqual(['loginRole']);
+    expect(concepts("typeof r === 'string' && r !== 'admin' && r !== 'member'")).toEqual([
+      'loginRole',
+    ]);
+    expect(concepts("if (\n  t.role !== 'admin' &&\n  t.role !== 'member'\n) {}")).toEqual([
+      'loginRole',
+    ]);
+    expect(concepts("type A = 'settings' | 'users' | 'keys';")).toEqual(['workspaceArea']);
+    expect(concepts("actor: 'owner' | 'agent' | 'mcp' | 'system' | 'member';")).toEqual([
+      'historyActor',
+    ]);
+    expect(concepts("kind: 'owner' | 'agent';")).toEqual(['recallActor']);
+    expect(concepts("const L = ['public', 'client', 'team', 'admin'] as const;")).toEqual([
+      'accessLevel',
+    ]);
+  });
+
+  it('does not count one name, another concept, a superset, a subset below min, or a comment', () => {
+    expect(concepts("if (role === 'admin') return;")).toEqual([]);
+    expect(concepts("const k = r === 'admin' ? 1 : r === 'member' ? 2 : 3;")).toEqual([]);
+    expect(concepts("type V = 'admin' | 'member' | 'client' | 'contact' | 'public';")).toEqual([]);
+    expect(concepts("type C = 'owner' | 'member' | 'agent' | 'client';")).toEqual([]);
+    expect(concepts("type L = 'admin' | 'team';")).toEqual([]);
+    expect(concepts("const F = ['files', 'tables', 'pages', 'notes'];")).toEqual([]);
+    expect(concepts("// type R = 'admin' | 'member';\nconst a = 1;")).toEqual([]);
+  });
+
+  it('allows a list in its own source file only', () => {
+    const src = (ROLE_NAME_SOURCES as Record<string, { file: string }>).loginRole!.file;
+    expect(concepts("export const LOGIN_ROLES = ['admin', 'member'] as const;", src)).toEqual([]);
+    expect(
+      concepts(
+        "const A = ['settings', 'users', 'assistants'];",
+        (ROLE_NAME_SOURCES as Record<string, { file: string }>).loginRole!.file,
+      ),
+    ).toEqual(['workspaceArea']);
+  });
+});
+
 describe('the scoreboard pins', () => {
   it('a re-pin keeps a note while its pin holds and drops it once it came down', () => {
     const notes = { a: 'raised 1 to 2', b: 'raised 3 to 4', gone: 'no number' };
@@ -432,6 +504,26 @@ describe('the editor rules', () => {
         {
           code: list,
           filename: '/r/packages/content/src/new.ts',
+          errors: [{ messageId: 'list' }],
+        },
+      ],
+    });
+  });
+
+  it('no-hand-role-lists: a hand role list fails outside its source file', () => {
+    const src = (ROLE_NAME_SOURCES as Record<string, { file: string }>).loginRole!.file;
+    const list = "export const R = ['admin', 'member'];";
+    tester.run('no-hand-role-lists', noHandRoleLists, {
+      valid: [
+        { code: list, filename: `/r/${src}` },
+        { code: list, filename: '/r/packages/content/src/new.test.ts' },
+        { code: "if (r === 'admin') x();", filename: '/r/packages/content/src/new.ts' },
+      ],
+      invalid: [
+        { code: list, filename: '/r/packages/content/src/new.ts', errors: [{ messageId: 'list' }] },
+        {
+          code: "const ok = (v) => v === 'admin' || v === 'member';",
+          filename: '/r/server/web/lib/new.ts',
           errors: [{ messageId: 'list' }],
         },
       ],

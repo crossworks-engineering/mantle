@@ -4,10 +4,10 @@ import { WORKSPACE_AREAS } from '@mantle/client-types/dto/workspaces';
 import { areasFromLimits } from './workspaces';
 
 /** scopeHasArea (packages/db) and the workspace screens (W5a) name the same
- *  areas: one list in two packages that cannot import each other. */
+ *  areas: since A10 #13 one list, SCOPE_AREAS is WORKSPACE_AREAS. */
 describe('scope areas', () => {
-  it('equal the workspace areas', () => {
-    expect([...SCOPE_AREAS].sort()).toEqual([...WORKSPACE_AREAS].sort());
+  it('equal the workspace areas, in order', () => {
+    expect([...SCOPE_AREAS]).toEqual([...WORKSPACE_AREAS]);
   });
 
   it('switch an area off with false or "false", as SQL does (audit L5)', () => {

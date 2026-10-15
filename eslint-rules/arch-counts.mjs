@@ -14,6 +14,9 @@
  *  - TS kind lists (a list literal holding 5 or more node_type values);
  *  - hand kind lists (A10 #12): any list literal of 3 or more node_type
  *    values outside the kind registry, pinned at 0 outside KIND_LIST_ALLOW;
+ *  - hand role lists (A10 #13): a list literal, string union or comparison
+ *    chain of role, area or actor names outside its source file
+ *    (ROLE_NAME_SOURCES), pinned at 0;
  *  - switch-over code (brainOnWorkspacesNow calls, MANTLE_ADMIN_READS);
  *  - store write API importers (the disk stores of plan section 6);
  *  - route files that read their request body directly (A10 part 2, fold
@@ -389,6 +392,95 @@ export function handKindLists(text, types) {
     .filter((n) => n > 0);
 }
 
+// ── hand role lists (A10 #13) ───────────────────────────────────────────────
+
+/** The source of each name list (role, area and actor names): the file and
+ *  the `export const NAME = [` list in it. A literal list, a string union
+ *  or a comparison chain whose own strings are all names of one concept,
+ *  `min` or more of them (a negative `min` counts back from the whole
+ *  list), is a hand copy of it anywhere but its source file
+ *  (docs/actors.md, "Role and area names"). */
+export const ROLE_NAME_SOURCES = Object.freeze({
+  loginRole: { file: 'packages/client-types/src/role-names.ts', list: 'LOGIN_ROLES', min: 2 },
+  historyActor: {
+    file: 'packages/client-types/src/role-names.ts',
+    list: 'HISTORY_ACTORS',
+    min: 3,
+  },
+  recallActor: {
+    file: 'packages/client-types/src/role-names.ts',
+    list: 'RECALL_ACTOR_KINDS',
+    min: 2,
+  },
+  workspaceArea: {
+    file: 'packages/client-types/src/dto/workspaces.ts',
+    list: 'WORKSPACE_AREAS',
+    min: 3,
+  },
+  accessLevel: { file: 'packages/client-types/src/dto/access.ts', list: 'ACCESS_LEVELS', min: 3 },
+  // The key areas are ordinary words (pages, notes, files): a subset is
+  // often a list of something else, so only a near-whole copy counts.
+  keyArea: {
+    file: 'packages/client-types/src/dto/access-keys.ts',
+    list: 'ACCESS_KEY_AREAS',
+    min: -1,
+  },
+});
+
+/** Each concept's names and the count that makes a copy, read from the
+ *  source files of `root` (a missing source names nothing). */
+export function roleNameSets(root) {
+  const out = {};
+  for (const [concept, src] of Object.entries(ROLE_NAME_SOURCES)) {
+    const text = readRepoFile(root, src.file) ?? '';
+    const at = text.indexOf(`export const ${src.list} = [`);
+    if (at < 0) continue;
+    const values = new Set(ownStrings(balanced(text, text.indexOf('[', at))));
+    const min = src.min < 0 ? values.size + src.min : src.min;
+    out[concept] = { values, min: Math.max(2, Math.min(min, values.size)), file: src.file };
+  }
+  return out;
+}
+
+/** A string literal union: two or more quoted strings joined by `|` (a
+ *  `null` or `undefined` member is not a name). */
+const STRING_UNION = /'[\w-]+'(?:\s*\|\s*(?:'[\w-]+'|null|undefined))+/g;
+
+/** A comparison chain on one subject: `x === 'a' || x === 'b'`. */
+const COMPARE_CHAIN = /([\w$.]+)\s*[!=]==\s*'[\w-]+'(?:\s*(?:\|\||&&)\s*\1\s*[!=]==\s*'[\w-]+')+/g;
+
+/** A `typeof x === 'string'` test: a type, not a name (blanked before the
+ *  chains are read, so `typeof r === 'string' && r !== 'admin' && r !==
+ *  'member'` is the chain of two roles it is). */
+const TYPEOF_TEST = /typeof\s+[\w$.]+\s*[!=]==\s*'[\w-]+'/g;
+
+/** The name lists of `text` (comments stripped): the own strings of each
+ *  list literal, string union and comparison chain. */
+export function nameLists(text) {
+  const code = stripComments(text).replace(TYPEOF_TEST, (m) => ' '.repeat(m.length));
+  const quotedIn = (t) => [...t.matchAll(/'([\w-]+)'/g)].map((m) => m[1]);
+  return [
+    ...arrayLiterals(code).map(ownStrings),
+    ...[...code.matchAll(STRING_UNION)].map((m) => quotedIn(m[0])),
+    ...[...code.matchAll(COMPARE_CHAIN)].map((m) => quotedIn(m[0])),
+  ];
+}
+
+/** The hand role lists of `text` at repo path `path`: { concept, n } for
+ *  each list whose own strings are all names of one concept, at least its
+ *  `min`. A list in its concept's source file is `allowed`. */
+export function handRoleLists(text, sets, path = '') {
+  const out = [];
+  for (const own of nameLists(text)) {
+    for (const [concept, set] of Object.entries(sets)) {
+      if (own.length >= set.min && own.every((v) => set.values.has(v))) {
+        out.push({ concept, n: own.length, allowed: path === set.file });
+      }
+    }
+  }
+  return out;
+}
+
 /** A regex that finds calls of any of `names`: `name(`. */
 function callRegex(names) {
   return new RegExp(`\\b(?:${names.join('|')})\\s*\\(`, 'g');
@@ -586,6 +678,7 @@ export function measure(root) {
   const files = countedFiles(root);
   const slugs = builtinSlugs(root, files);
   const types = nodeTypes(root);
+  const roleSets = roleNameSets(root);
   const asSystem = {};
   const rawAcl = {};
   const toolLists = {};
@@ -593,6 +686,8 @@ export function measure(root) {
   const kinds = {};
   const handKinds = {};
   const handKindsAllowed = {};
+  const handRoles = {};
+  const handRolesAllowed = {};
   const stores = Object.fromEntries(Object.keys(STORES).map((k) => [k, []]));
   let routeFiles = 0;
   let apiRouteFiles = 0;
@@ -636,6 +731,10 @@ export function measure(root) {
     if (kl.length) kinds[f] = kl.length;
     const hk = handKindLists(text, types);
     if (hk.length) (KIND_LIST_ALLOW[f] ? handKindsAllowed : handKinds)[f] = hk.length;
+    for (const r of handRoleLists(text, roleSets, f)) {
+      const into = r.allowed ? handRolesAllowed : handRoles;
+      into[f] = (into[f] ?? 0) + 1;
+    }
     for (const s of storesReached(text)) stores[s].push(f);
     if (isRouteFile(f)) {
       routeFiles += 1;
@@ -714,6 +813,8 @@ export function measure(root) {
       kindLists: sum(kinds),
       handKindLists: sum(handKinds),
       handKindListsAllowed: sum(handKindsAllowed),
+      handRoleLists: sum(handRoles),
+      handRoleListsAllowed: sum(handRolesAllowed),
       brainOnWorkspacesCalls: bowCalls,
       brainOnWorkspacesFiles: bowFiles,
       adminReadsFiles,
@@ -741,6 +842,8 @@ export function measure(root) {
       kinds,
       handKinds,
       handKindsAllowed,
+      handRoles,
+      handRolesAllowed,
       stores,
       liveUnguardedFiles,
       bareFetch,

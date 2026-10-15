@@ -43,6 +43,8 @@ const LABELS: Record<string, string> = {
   kindLists: 'TS kind lists',
   handKindLists: 'hand kind lists outside the kind registry and the named list (A10 #12)',
   handKindListsAllowed: 'hand kind lists in the named files (A10 #12)',
+  handRoleLists: 'hand role, area and actor name lists outside their source (A10 #13)',
+  handRoleListsAllowed: 'role, area and actor name lists in their source files (A10 #13)',
   brainOnWorkspacesCalls: 'brainOnWorkspacesNow calls',
   brainOnWorkspacesFiles: 'files calling brainOnWorkspacesNow',
   adminReadsFiles: 'files naming MANTLE_ADMIN_READS',

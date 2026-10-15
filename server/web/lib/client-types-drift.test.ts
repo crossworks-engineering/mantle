@@ -1,4 +1,4 @@
-import { describe, expectTypeOf, it } from 'vitest';
+import { describe, expect, expectTypeOf, it } from 'vitest';
 import type {
   AiWorkerKind,
   AppManifest,
@@ -14,15 +14,46 @@ import type {
   TaskStatus,
 } from '@mantle/client-types';
 import type * as Db from '@mantle/db';
+import type {
+  AccessKeyArea,
+  AccessKeyRole,
+  AccessLevel,
+  AppRow,
+  AuthWhoami,
+  HistoryActor,
+  LoginKind,
+  LoginRole,
+  RecallActorKind,
+  ShellRole,
+  WorkspaceArea,
+} from '@mantle/client-types';
+import { ACCESS_LEVELS } from '@mantle/client-types/dto/access';
+import { ACCESS_KEY_AREAS as CONTRACT_KEY_AREAS } from '@mantle/client-types/dto/access-keys';
+import { WORKSPACE_AREAS } from '@mantle/client-types/dto/workspaces';
+import {
+  HISTORY_ACTORS,
+  LOGIN_ROLES,
+  RECALL_ACTOR_KINDS,
+} from '@mantle/client-types/role-names';
+import { SCOPE_AREAS, VIEWER_LEVELS } from '@mantle/db/viewer';
+import { KEY_AREAS, type KeyArea } from '@mantle/mcp-core/key-scope';
+import type { McpLoginRole } from '@mantle/mcp-core';
+import type { LoginMcpChannel } from '@mantle/tools';
 import type { ContextRefKind, ExportKind, ItemKind } from '@mantle/client-types/kinds';
 import type { ContextSource } from '@mantle/tracing';
 import {
   TASK_PRIORITIES,
   TASK_STATUSES,
+  type AppHistoryActor,
+  type McpDataRole,
+  type RecallActor,
   type ExportKind as ContentExportKind,
   type listMemberApps,
   type resolveMemberHomeApp,
 } from '@mantle/content';
+import type { AccessKeyRole as ServerAccessKeyRole } from './access-keys';
+import { ACCESS_KEY_AREAS } from './access-keys';
+import type { WsCaller } from './workspaces';
 
 /**
  * Drift pins for the hand-copied types in @mantle/client-types.
@@ -153,5 +184,70 @@ describe('client-types mirrors have not drifted from their source of truth', () 
     expectTypeOf<SameUnion<Db.Node['type'], ItemKind>>().toEqualTypeOf<true>();
     expectTypeOf<SameUnion<Db.ContextKind, ContextRefKind>>().toEqualTypeOf<true>();
     expectTypeOf<SameUnion<ContentExportKind, ExportKind>>().toEqualTypeOf<true>();
+  });
+
+  /**
+   * Role and area names (A10 #13): every alias of the login roles, the
+   * Admin areas, the history and recall actors, the access levels and the
+   * key areas is its source's union. An alias written by hand again (and
+   * then left behind when a role is added) fails here, and the lint
+   * no-hand-role-lists fails it first.
+   */
+  it('the role, area and actor aliases are their sources', () => {
+    expectTypeOf<SameUnion<(typeof LOGIN_ROLES)[number], LoginRole>>().toEqualTypeOf<true>();
+    expectTypeOf<SameUnion<LoginRole, Db.LoginRole>>().toEqualTypeOf<true>();
+    expectTypeOf<SameUnion<LoginRole, Db.AuthUser['role']>>().toEqualTypeOf<true>();
+    expectTypeOf<SameUnion<LoginRole, LoginKind>>().toEqualTypeOf<true>();
+    expectTypeOf<SameUnion<LoginRole, ShellRole>>().toEqualTypeOf<true>();
+    expectTypeOf<SameUnion<LoginRole, AccessKeyRole>>().toEqualTypeOf<true>();
+    expectTypeOf<SameUnion<LoginRole, ServerAccessKeyRole>>().toEqualTypeOf<true>();
+    expectTypeOf<SameUnion<LoginRole, AuthWhoami['role']>>().toEqualTypeOf<true>();
+    expectTypeOf<SameUnion<LoginRole, McpLoginRole>>().toEqualTypeOf<true>();
+    expectTypeOf<SameUnion<LoginRole, McpDataRole>>().toEqualTypeOf<true>();
+    expectTypeOf<
+      SameUnion<LoginRole, NonNullable<LoginMcpChannel['role']>>
+    >().toEqualTypeOf<true>();
+    expectTypeOf<SameUnion<LoginRole, WsCaller['kind']>>().toEqualTypeOf<true>();
+    expectTypeOf<SameUnion<WorkspaceArea, Db.ScopeArea>>().toEqualTypeOf<true>();
+    expectTypeOf<SameUnion<HistoryActor, AppHistoryActor>>().toEqualTypeOf<true>();
+    expectTypeOf<SameUnion<HistoryActor, Db.NodeSnapshot['actor']>>().toEqualTypeOf<true>();
+    expectTypeOf<
+      SameUnion<(typeof HISTORY_ACTORS)[number], HistoryActor>
+    >().toEqualTypeOf<true>();
+    expectTypeOf<
+      SameUnion<(typeof RECALL_ACTOR_KINDS)[number], RecallActorKind>
+    >().toEqualTypeOf<true>();
+    expectTypeOf<SameUnion<RecallActorKind, RecallActor['kind']>>().toEqualTypeOf<true>();
+    expectTypeOf<SameUnion<AccessLevel, Db.ViewerLevel>>().toEqualTypeOf<true>();
+    expectTypeOf<SameUnion<AccessKeyArea, KeyArea>>().toEqualTypeOf<true>();
+    // The app author ceiling: a level subset with its own meaning, mirrored
+    // by hand in the contract (not folded, pinned).
+    expectTypeOf<
+      SameUnion<Db.AppAuthorLevel, NonNullable<AppRow['authorLevel']>>
+    >().toEqualTypeOf<true>();
+  });
+});
+
+/**
+ * The runtime VALUES of the lists both sides of the wire read (A10 #13): the
+ * type pins above see a union, not its order, and a list's order reaches the
+ * wire (the shell's `areas`) or the screens. Each server list is its
+ * contract list, in the contract's order (the access levels reversed, on
+ * purpose: VIEWER_LEVELS is lowest first).
+ */
+describe('client-types runtime lists match the server lists', () => {
+  it('the Admin areas, the levels and the key areas', () => {
+    expect([...SCOPE_AREAS]).toEqual([...WORKSPACE_AREAS]);
+    expect([...VIEWER_LEVELS]).toEqual([...ACCESS_LEVELS].reverse());
+    expect([...KEY_AREAS]).toEqual([...CONTRACT_KEY_AREAS]);
+    expect([...ACCESS_KEY_AREAS]).toEqual([...CONTRACT_KEY_AREAS]);
+  });
+
+  it('the contract values (jackdaw holds hand copies of some)', () => {
+    expect([...LOGIN_ROLES]).toEqual(['admin', 'member']);
+    expect([...WORKSPACE_AREAS]).toEqual(['settings', 'users', 'assistants', 'connectors', 'keys']);
+    expect([...HISTORY_ACTORS]).toEqual(['owner', 'agent', 'mcp', 'system', 'member']);
+    expect([...RECALL_ACTOR_KINDS]).toEqual(['owner', 'agent']);
+    expect([...ACCESS_LEVELS]).toEqual(['admin', 'team', 'client', 'public']);
   });
 });

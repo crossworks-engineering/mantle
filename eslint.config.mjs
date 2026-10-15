@@ -27,6 +27,7 @@ import mantleEgressPlugin from './eslint-rules/no-bare-fetch.mjs';
 import mantleRoutePlumbingPlugin from './eslint-rules/route-plumbing.mjs';
 import mantleKindsPlugin from './eslint-rules/no-hand-kind-lists.mjs';
 import mantleProviderHttpPlugin from './eslint-rules/provider-http.mjs';
+import mantleRolesPlugin from './eslint-rules/no-hand-role-lists.mjs';
 
 export default tseslint.config(
   {
@@ -314,6 +315,15 @@ export default tseslint.config(
     ignores: ['**/*.test.{ts,tsx,mts,cts,js,jsx,mjs,cjs}'],
     plugins: { 'mantle-kinds': mantleKindsPlugin },
     rules: { 'mantle-kinds/no-hand-kind-lists': 'error' },
+  },
+  {
+    // A role, area or actor name list is read from its source (A10 #13,
+    // packages/client-types/src/role-names.ts and the dto lists), never a
+    // literal list, union or comparison chain of those names.
+    files: ['packages/**/*.{ts,tsx,mts,mjs,js}', 'server/**/*.{ts,tsx,mts,mjs,js}'],
+    ignores: ['**/*.test.{ts,tsx,mts,cts,js,jsx,mjs,cjs}'],
+    plugins: { 'mantle-roles': mantleRolesPlugin },
+    rules: { 'mantle-roles/no-hand-role-lists': 'error' },
   },
   {
     // Tests + one-shot scripts: relax rules that only make sense for shipped code.
