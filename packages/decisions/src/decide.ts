@@ -40,7 +40,7 @@ import {
   type DecisionUseConfig,
 } from '@mantle/db';
 import { errorMessage, TtlCache } from '@mantle/std';
-import { step } from '@mantle/tracing';
+import { log, step } from '@mantle/tracing';
 import {
   getDecisionAdapter,
   type DecisionAnswer,
@@ -49,6 +49,8 @@ import {
 } from '@mantle/voice';
 import { CircuitBreaker } from './breaker';
 import { DecisionCache } from './cache';
+
+const logger = log('decisions');
 
 export const DEFAULTS = {
   timeoutMs: 1_500,
@@ -193,7 +195,7 @@ export async function resolveDecider(ownerId: string): Promise<Resolved> {
       }
     }
   } catch (err) {
-    console.warn(`[decisions] resolve failed for owner ${ownerId}: ${errorMessage(err)}`);
+    logger.warn(`resolve failed for owner ${ownerId}: ${errorMessage(err)}`);
     value = null;
   }
   resolved.set(ownerId, value);
@@ -231,15 +233,15 @@ export function clearDecisionCache(): void {
 
 function breakerSuccess(workerId: string): void {
   if (breaker.success(workerId)) {
-    console.info(`[decisions] decider ${workerId} answered again; breaker closed`);
+    logger.info(`decider ${workerId} answered again; breaker closed`);
   }
 }
 
 function breakerFailure(workerId: string): boolean {
   const opened = breaker.failure(workerId);
   if (opened) {
-    console.warn(
-      `[decisions] decider ${workerId} failed ${DEFAULTS.breakerFailures} times in a row; ` +
+    logger.warn(
+      `decider ${workerId} failed ${DEFAULTS.breakerFailures} times in a row; ` +
         `skipping decisions for ${DEFAULTS.breakerCooldownMs / 60_000} min`,
     );
   }

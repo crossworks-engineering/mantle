@@ -27,6 +27,7 @@ import { env } from '@mantle/config';
 import { runAsSystem, startCallAudit } from '@mantle/db';
 import { ensureGateReady } from '@mantle/tools/gate-narrowers';
 import { onShutdown } from '@mantle/std/shutdown';
+import { log } from '@mantle/tracing';
 
 /** How long pg-boss may take to finish in-flight jobs. */
 const BOSS_STOP_TIMEOUT_MS = 10_000;
@@ -88,7 +89,7 @@ function run(name: string, start: () => Promise<void>, stop: () => Promise<void>
   // A stray rejection must not take the worker down: Docker would restart it,
   // and staying up is strictly better than a restart loop.
   process.on('unhandledRejection', (reason) => {
-    console.error(`[${name}] unhandledRejection (kept alive):`, reason);
+    log(name).error('unhandledRejection (kept alive):', reason);
   });
 
   // The one gate (arch A3c fix round 2, M-A): every narrower registered
@@ -100,10 +101,10 @@ function run(name: string, start: () => Promise<void>, stop: () => Promise<void>
     startCallAudit();
     await start();
   })
-    .then(() => console.log(`[${name}] worker up.`))
+    .then(() => log(name).info('worker up.'))
     .catch((err) => {
       clearInterval(keepAlive);
-      console.error(`[${name}] failed to start:`, err);
+      log(name).error('failed to start:', err);
       process.exit(1);
     });
 }
@@ -118,7 +119,7 @@ function run(name: string, start: () => Promise<void>, stop: () => Promise<void>
  */
 export async function createBoss(name: string): Promise<PgBoss> {
   const boss = new PgBoss({ connectionString: databaseUrl(), schema: 'pgboss' });
-  boss.on('error', (err) => console.error(`[${name}] pg-boss:`, err));
+  boss.on('error', (err) => log(name).error('pg-boss:', err));
   await boss.start();
   return boss;
 }

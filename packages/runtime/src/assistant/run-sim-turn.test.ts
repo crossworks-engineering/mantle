@@ -51,6 +51,7 @@ vi.mock('@mantle/content', () => ({
 }));
 
 vi.mock('@mantle/tracing', () => ({
+  log: () => ({ info: () => undefined, warn: () => undefined, error: () => undefined }),
   // Run the body inline; the sim captures the trace id via currentTrace().
   startTrace: vi.fn(async (_init: unknown, fn: () => Promise<unknown>) => fn()),
   currentTrace: vi.fn(() => ({ id: 'trace-abc' })),

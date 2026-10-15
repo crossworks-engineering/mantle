@@ -38,6 +38,7 @@ vi.mock('@mantle/db/viewer', () => ({
   currentWorkspaceScope: () => null,
 }));
 vi.mock('@mantle/tracing', () => ({
+  log: () => ({ info: () => undefined, warn: () => undefined, error: () => undefined }),
   startTrace: (_o: unknown, fn: () => unknown) => fn(),
   currentTrace: () => null,
 }));

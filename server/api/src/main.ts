@@ -16,7 +16,7 @@ import { DBOS } from '@dbos-inc/dbos-sdk';
 import { registerRecallEmbedder, startProcessHeartbeat } from '@mantle/content';
 import { embedBatch } from '@mantle/embeddings';
 import { runTableStorageProbes } from '@mantle/tabledb';
-import { registerLogSink } from '@mantle/tracing';
+import { log, registerLogSink } from '@mantle/tracing';
 import {
   configureDBOS,
   MEMBER_TURN_QUEUE,
@@ -71,6 +71,9 @@ import { enqueueTelegramTurn } from './workflows/telegram-turn';
 import { env } from '@mantle/config';
 import { onShutdown } from '@mantle/std/shutdown';
 
+const agentLog = log('agent');
+const apiLog = log('api');
+
 // Backstop: every LISTEN handler and setInterval above already routes its
 // errors through .catch() (the reflector + heartbeat ticks even back off),
 // but a rejection that slips past should log and keep the process alive rather
@@ -78,7 +81,7 @@ import { onShutdown } from '@mantle/std/shutdown';
 // briefly dropped connections). Docker would bounce us anyway; staying up is
 // strictly better — the listeners auto-resubscribe and the next tick recovers.
 process.on('unhandledRejection', (reason) => {
-  console.error('[agent] unhandledRejection (kept alive):', reason);
+  agentLog.error('unhandledRejection (kept alive):', reason);
 });
 
 async function main(): Promise<void> {
@@ -108,8 +111,8 @@ async function main(): Promise<void> {
   void runTableStorageProbes().then((report) => {
     if (report.ok) return;
     const failed = report.results.filter((r) => !r.ok && r.required);
-    console.error(
-      `[api] TABLE-STORAGE PROBES FAILED on node ${process.version} — sqlite table storage must not be used on this image:\n` +
+    apiLog.error(
+      `TABLE-STORAGE PROBES FAILED on node ${process.version} — sqlite table storage must not be used on this image:\n` +
         failed.map((r) => `  ✗ ${r.key}: ${r.detail}`).join('\n'),
     );
   });
@@ -122,8 +125,8 @@ async function main(): Promise<void> {
         await fsp.mkdir(env('TABLE_DB_DIR')!, { recursive: true });
         await fsp.access(env('TABLE_DB_DIR')!, 2 /* W_OK */);
       } catch {
-        console.error(
-          `[api] TABLE_DB_DIR (${env('TABLE_DB_DIR')}) is not writable in the api container — ` +
+        apiLog.error(
+          `TABLE_DB_DIR (${env('TABLE_DB_DIR')}) is not writable in the api container — ` +
             `agent table edits will fail. Refresh docker-compose.yml (table-dbs must be mounted into web AND api).`,
         );
       }
@@ -140,7 +143,7 @@ async function main(): Promise<void> {
   // LISTEN for user "stop" requests so an in-flight streamed turn can be aborted
   // (server/web publishes the cancel; this process runs the turn). Best-effort.
   await startTurnCancelListener().catch((err) =>
-    console.error('[api] turn-cancel listener failed to start (Stop will no-op):', err),
+    apiLog.error('turn-cancel listener failed to start (Stop will no-op):', err),
   );
   await DBOS.launch();
   // The shared runner queue — concurrency caps total in-flight runs across all
@@ -185,9 +188,9 @@ async function main(): Promise<void> {
     log: { info: (m) => DBOS.logger.info(m), error: (m, ...rest) => console.error(m, ...rest) },
     stop: async () => {
       await stopTurnCancelListener().catch((err) =>
-        console.error('[api] stopTurnCancelListener failed:', err),
+        apiLog.error('stopTurnCancelListener failed:', err),
       );
-      await stopAgentRuntime().catch((err) => console.error('[api] stopAgentRuntime failed:', err));
+      await stopAgentRuntime().catch((err) => apiLog.error('stopAgentRuntime failed:', err));
       await DBOS.shutdown();
     },
   });
@@ -203,6 +206,6 @@ const API_EXIT_DEADLINE_MS = 45_000;
 // that forgot shows as a miss. The boot's own database work binds its own
 // (startAgentRuntime: system(boot:agent-runtime)).
 main().catch((err) => {
-  console.error('[api] fatal during boot:', err);
+  apiLog.error('fatal during boot:', err);
   process.exit(1);
 });

@@ -12,6 +12,10 @@ import { fileURLToPath } from 'node:url';
 import { loadEnvFiles } from './env';
 import { assertEnvShape, env, envNum } from '@mantle/config';
 import { onShutdown } from '@mantle/std/shutdown';
+import { log } from '@mantle/tracing';
+
+const bootLog = log('boot');
+const serverLog = log('server');
 
 const webRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
 loadEnvFiles(webRoot);
@@ -89,7 +93,7 @@ openLoginWritePool();
 void runAsSystem('boot:manifest-reconcile', () =>
   import('../lib/system-manifest/reconcile')
     .then(({ reconcileManifestOnBoot }) => reconcileManifestOnBoot())
-    .catch((err) => console.error('[boot] manifest reconcile failed:', err)),
+    .catch((err) => bootLog.error('manifest reconcile failed:', err)),
 );
 
 // A brain with no workspaces yet (a fresh install whose owner signed up
@@ -104,12 +108,12 @@ void runAsSystem('boot:migrate-workspaces', () =>
     .then(({ makeSnapshotCopies }) => makeSnapshotCopies())
     .then((r) => {
       if (r.made > 0 || r.acceptedRowsCleared > 0) {
-        console.log(
-          `[boot] snapshot copies: made ${r.made}, accepted rows cleared ${r.acceptedRowsCleared}`,
+        bootLog.info(
+          `snapshot copies: made ${r.made}, accepted rows cleared ${r.acceptedRowsCleared}`,
         );
       }
     })
-    .catch((err) => console.error('[boot] workspaces migration failed:', err)),
+    .catch((err) => bootLog.error('workspaces migration failed:', err)),
 );
 
 // App table exports a restart left unsynced (apps plan D8): their debounce
@@ -118,9 +122,9 @@ void runAsSystem('boot:app-table-exports', () =>
   import('@mantle/content/app-table-exports')
     .then(({ resumeDirtyAppTableExports }) => resumeDirtyAppTableExports())
     .then((n) => {
-      if (n > 0) console.log(`[boot] resumed the table export sync of ${n} app(s)`);
+      if (n > 0) bootLog.info(`resumed the table export sync of ${n} app(s)`);
     })
-    .catch((err) => console.error('[boot] app table export resume failed:', err)),
+    .catch((err) => bootLog.error('app table export resume failed:', err)),
 );
 
 const app = await createApp();
@@ -137,7 +141,7 @@ const hostname = env('HOST') || '0.0.0.0';
 // by `user.id` crashed. Found live on dev, 2026-09-26. Pinned by
 // server-globals.test.ts.
 const server = serve({ fetch: app.fetch, port, hostname, overrideGlobalObjects: false }, (info) => {
-  console.log(`[server] mantle server/web (hono) listening on http://${hostname}:${info.port}`);
+  serverLog.info(`mantle server/web (hono) listening on http://${hostname}:${info.port}`);
 });
 
 // Compose sends SIGTERM on stop/update — close the listener, let in-flight
@@ -161,8 +165,8 @@ onShutdown({
 // already contained by app.onError, anything reaching here is a background
 // task, and killing live SSE streams over it is the worse failure.
 process.on('unhandledRejection', (reason) => {
-  console.error('[server] unhandled rejection (continuing):', reason);
+  serverLog.error('unhandled rejection (continuing):', reason);
 });
 process.on('uncaughtException', (err) => {
-  console.error('[server] uncaught exception (continuing):', err);
+  serverLog.error('uncaught exception (continuing):', err);
 });

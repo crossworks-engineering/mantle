@@ -26,6 +26,7 @@ vi.mock('@mantle/api-keys', () => ({
   resolveProviderKey: vi.fn(async () => 'key'),
 }));
 vi.mock('@mantle/tracing', () => ({
+  log: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn() }),
   step: vi.fn(async (_o: unknown, fn: (h: unknown) => unknown) =>
     fn({ setMeta: vi.fn(), setOutput: vi.fn(), setSkipped: vi.fn() }),
   ),

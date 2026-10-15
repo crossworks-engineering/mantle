@@ -53,11 +53,13 @@ import {
   MAX_UPLOAD_BYTES,
 } from '@mantle/files';
 import type { ToolArtifact } from '@mantle/tools';
-import { recordIngest, startTrace, step } from '@mantle/tracing';
+import { log, recordIngest, startTrace, step } from '@mantle/tracing';
 import { errorMessage, TtlCache } from '@mantle/std';
 import { firstIssue } from '@/lib/zod-issue';
 import { JSON_BODY_CEILING_BYTES } from '@/lib/body-limit';
 import { readJson } from '@/lib/read-body';
+
+const logger = log('assistant/turn');
 
 /** Human-readable over-limit error — zod's default ("Too big: expected string
  *  to have <=20000 characters") reaches real users through clients without the
@@ -150,7 +152,7 @@ async function processUpload(
       },
     });
   } catch (err) {
-    console.warn('[assistant/turn] upload save failed:', err);
+    logger.warn('upload save failed:', err);
   }
 
   // Trace the inline (live-answer) extraction so its cost + failures are
@@ -506,7 +508,7 @@ async function runTurn(
     };
   } catch (err) {
     const msg = errorMessage(err);
-    console.error('[assistant/turn]', msg);
+    logger.error(msg);
     // The failed turn's text is mostly the provider's answer: an Admin user
     // reads it (it set the provider up), a member or a client gets a fixed
     // sentence and the detail stays in the log (fix round 1, L6).

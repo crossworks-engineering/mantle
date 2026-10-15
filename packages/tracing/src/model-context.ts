@@ -17,6 +17,9 @@
  * Values are total context length (input + output).
  */
 import { errorMessage, NET_TIMEOUTS, timeoutSignal } from '@mantle/std';
+import { log } from './log';
+
+const logger = log('model-context');
 
 const FALLBACK_CONTEXT_LIMITS: Record<string, number> = {
   // Anthropic via OpenRouter — 4.x sonnet/opus default to a 1M window.
@@ -239,7 +242,7 @@ export async function refreshModelCatalog(force = false): Promise<void> {
     } catch (err) {
       // Decorative metadata — never let a failed refresh break a caller.
       lastRefreshError = errorMessage(err);
-      console.error('[model-context] live model-catalog refresh failed:', lastRefreshError);
+      logger.error('live model-catalog refresh failed:', lastRefreshError);
     } finally {
       inFlight = null;
     }

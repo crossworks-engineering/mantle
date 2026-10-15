@@ -36,7 +36,7 @@ import {
 // Infrastructure writes: systemDb (the admin pool) whatever the viewer, so a
 // turn under a limited role (member logins Phase 0b) still records them.
 import { resolveProviderKey } from '@mantle/api-keys';
-import { currentTrace, step } from '@mantle/tracing';
+import { currentTrace, log, step } from '@mantle/tracing';
 // `@mantle/voice` self-registers all built-in adapters on import. The
 // embedding ones (openrouter / openai / google / mistral / cohere) come
 // online as a side effect of touching this module. Don't tree-shake.
@@ -60,6 +60,8 @@ export {
 import { withRateLimitBackoff } from './rate-limit';
 import { isAccountError } from './provider-error';
 import { noteProviderFailure, noteProviderSuccess, tagProviderSubject } from './provider-outage';
+
+const logger = log('embeddings');
 export {
   PROVIDER_ERROR_REASONS,
   classifyProviderError,
@@ -261,8 +263,8 @@ let warnedCacheReadOnly = false;
 function warnCacheReadOnlyOnce(): void {
   if (warnedCacheReadOnly) return;
   warnedCacheReadOnly = true;
-  console.warn(
-    '[embeddings] embedding_cache is not writable (read-only database or a role ' +
+  logger.warn(
+    'embedding_cache is not writable (read-only database or a role ' +
       'without INSERT) — embeddings still compute, they just are not cached. ' +
       'Every miss will recompute; this is logged once per process.',
   );
@@ -309,8 +311,8 @@ export async function resolveEmbeddingConfig(ownerId: string): Promise<Embedding
   } catch (err) {
     // DB unreachable? Fall back gracefully — embedding still works against the
     // local default. Log so operators notice if it's a persistent state.
-    console.warn(
-      '[embeddings] resolveEmbeddingConfig: DB lookup failed, using local fallback —',
+    logger.warn(
+      'resolveEmbeddingConfig: DB lookup failed, using local fallback —',
       err instanceof Error ? err.message : err,
     );
   }
@@ -690,8 +692,8 @@ async function doEmbed(
         await fillMisses(config.primary);
       } catch (err) {
         if (config.backup && (isRouteDownError(err) || isAccountError(err))) {
-          console.warn(
-            `[embeddings] primary route '${config.primary.provider}' unavailable — failing over to ` +
+          logger.warn(
+            `primary route '${config.primary.provider}' unavailable — failing over to ` +
               `backup '${config.backup.provider}' (same model '${model}'): ` +
               errorMessage(err),
           );

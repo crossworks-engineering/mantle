@@ -41,6 +41,9 @@ import { runFilesStagedReap, summariseFilesStagedReap } from './files-staged-rea
 import { summariseStoreSweep, sweepStores } from '@mantle/content/store-sweep';
 import { reapActorMisses, summariseActorMissesReap } from './actor-misses-reap';
 import { errorMessage, NET_TIMEOUTS, withTimeout } from '@mantle/std';
+import { log } from '@mantle/tracing';
+
+const logger = log('maintenance');
 
 export interface EntitiesDedupeResult {
   auto: MergeCandidate[];
@@ -191,20 +194,18 @@ export async function runScheduledSweeps(ownerId: string): Promise<void> {
     if (!isFreeCost(task.cost)) continue; // belt-and-braces; see module header
     const sweep = SWEEPS[task.slug];
     if (!sweep) {
-      console.warn(
-        `[maintenance] schedulable task "${task.slug}" has no in-process sweep — skipped`,
-      );
+      logger.warn(`schedulable task "${task.slug}" has no in-process sweep — skipped`);
       continue;
     }
 
     try {
       if (await hasRecentCronRun(task.slug, GUARD_WINDOW_MS)) {
-        console.log(`[maintenance] ${task.slug}: ran recently — skipped`);
+        logger.info(`${task.slug}: ran recently — skipped`);
         continue;
       }
     } catch (err) {
       // Can't read the guard — treat as not due rather than risk double-firing.
-      console.error('[maintenance] cron guard read failed:', msg(err));
+      logger.error('cron guard read failed:', msg(err));
       continue;
     }
 
@@ -214,7 +215,7 @@ export async function runScheduledSweeps(ownerId: string): Promise<void> {
       runId = await recordRunStart({ slug: task.slug, source: 'cron', live: true });
       summary = await withTimeout(sweep(ownerId), SWEEP_TIMEOUT_MS, task.slug);
     } catch (err) {
-      console.error(`[maintenance] ${task.slug} failed:`, msg(err));
+      logger.error(`${task.slug} failed:`, msg(err));
       if (runId) {
         await finishRun(runId, { state: 'failed', summary: msg(err) }).catch(() => {});
       }
@@ -222,10 +223,10 @@ export async function runScheduledSweeps(ownerId: string): Promise<void> {
     }
     // Success path settles OUTSIDE the try above: a transient finishRun
     // failure must not re-mark a run that actually applied as 'failed'.
-    console.log(`[maintenance] ${task.slug}: ${summary}`);
+    logger.info(`${task.slug}: ${summary}`);
     if (runId) {
       await finishRun(runId, { state: 'done', exitCode: 0, summary }).catch((err) =>
-        console.error(`[maintenance] ${task.slug}: done, but history update failed:`, msg(err)),
+        logger.error(`${task.slug}: done, but history update failed:`, msg(err)),
       );
     }
   }
