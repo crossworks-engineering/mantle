@@ -13,13 +13,13 @@ Code: `packages/db/src/runtime-role.ts` (the roles, the rights, the URL),
 
 ## The roles
 
-| Role                                                         | Logs in                              | What it is                                                                                                                                            |
-| ------------------------------------------------------------ | ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `postgres` (the compose superuser)                           | yes                                  | the migrator: `DATABASE_URL`. migrate, pg_dump backups, pg-boss, the DBOS runner database, the workspaces switch, hand psql                           |
-| `mantle_owner`                                               | no                                   | owns every table and sequence of `public` and `auth`. migrate hands them over after the migrations                                                    |
-| `mantle_runtime`                                             | yes, when `MANTLE_DB_RUNTIME_ROLE=1` | the app's system pool and its LISTEN connections. Not a superuser, owns nothing, `BYPASSRLS`, data rights only                                        |
-| `mantle_system`                                              | no                                   | holds no right. Owns `mantle_acl_internal()` and may `SET ROLE` to the write role and the gap writer: what the system pool had by being the superuser |
-| `mantle_view_user`, `mantle_write_user`, `mantle_gap_writer` | as before                            | the scoped pools, unchanged. They lose `EXECUTE` on the setter functions (below)                                                                      |
+| Role                                                         | Logs in                              | What it is                                                                                                                            |
+| ------------------------------------------------------------ | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `postgres` (the compose superuser)                           | yes                                  | the migrator: `DATABASE_URL`. migrate, pg_dump backups, pg-boss, the DBOS runner database, the workspaces switch, hand psql           |
+| `mantle_owner`                                               | no                                   | owns every table and sequence of `public` and `auth`, and `mantle_acl_internal()`. migrate hands them over after the migrations       |
+| `mantle_runtime`                                             | yes, when `MANTLE_DB_RUNTIME_ROLE=1` | the app's system pool and its LISTEN connections. Not a superuser, owns nothing, `BYPASSRLS`, data rights only                        |
+| `mantle_system`                                              | no                                   | holds no right and owns nothing. May `SET ROLE` to the write role and the gap writer: what the system pool had by being the superuser |
+| `mantle_view_user`, `mantle_write_user`, `mantle_gap_writer` | as before                            | the scoped pools, unchanged. They lose `EXECUTE` on the setter functions (below)                                                      |
 
 `mantle_runtime` holds:
 
@@ -28,45 +28,68 @@ Code: `packages/db/src/runtime-role.ts` (the roles, the rights, the URL),
   `mantle_moved_nodes`, `mantle_bridge_pending`: only definer functions touch
   them);
 - `USAGE, SELECT, UPDATE` on every sequence there;
-- `EXECUTE` on every function there but `RUNTIME_DENIED_FUNCTIONS`: the check
-  switches (`mantle_set_actor_check`, `mantle_set_edit_check`,
-  `mantle_set_check`, the trigger switches), the heads key's primitives
-  (`mantle_heads_mac`, `mantle_heads_sig`, `mantle_heads_set` and the
-  named heads-check bypass), the actor setters (`mantle_set_actor`,
-  `mantle_operator_actor`: packages/db sets the actor with `set_config`, the
+- `EXECUTE` on an allowlist, not on every function less a denylist
+  (`runtimeFunctionAllowlist`): what `PUBLIC` or a viewer role may run, plus
+  `RUNTIME_SYSTEM_FUNCTIONS`, the few functions taken from `PUBLIC` that the
+  system pool calls itself, each listed with where it is called
+  (`mantle_actor_miss_log`, `mantle_bridge_login`, `mantle_check_box_mode`,
+  `mantle_embed_host`, `mantle_ws_attach_assistants`,
+  `mantle_ws_private_workspace`, `mantle_ws_skip_reason`). Everything else
+  taken from `PUBLIC` is out of its reach: the workspaces switch and its steps
+  (`mantle_ws_migrate`, `mantle_ws_migrate_bridged`, `mantle_ws_bridge_off`,
+  `mantle_ws_spaces_fold`, `mantle_ws_review_off`, `mantle_ws_team_normal`;
+  the app runs the switch as the migrator, `mantle_ws_migrate_locked` through
+  `executeAsMigrator`), the trigger bodies (a trigger needs no `EXECUTE` to
+  fire) and the derivation's internals. A function a new migration takes from
+  `PUBLIC` is not the runtime role's until a line in that list says why;
+  the test pins the list. Never on the list, and also taken from `PUBLIC`
+  and from every viewer role (`RUNTIME_DENIED_FUNCTIONS`): the check switches
+  (`mantle_set_actor_check`, `mantle_set_edit_check`, `mantle_set_check`, the
+  trigger switches), the heads key's primitives (`mantle_heads_mac`,
+  `mantle_heads_sig`, `mantle_heads_set` and the named heads-check bypass),
+  the actor setters (`mantle_set_actor`, `mantle_operator_actor`:
+  packages/db sets the actor with `set_config`, the
   `actor-setters-in-db-only` lint) and the schema-changing steps
   (`mantle_write_role_sync_table`, `mantle_ws_ddl_retry`,
-  `mantle_ws_switch_off`, `mantle_ws_migrate_locked`). The same list is
-  taken from `PUBLIC` and from every viewer role. `mantle_ws_migrate()`
-  stays open: on a brain already on workspaces it does nothing, and before
-  that it is the switch the app runs at boot anyway, with no statement of the
-  caller's in it;
+  `mantle_ws_switch_off`, `mantle_ws_migrate_locked`);
 - `USAGE` on schema `pgboss` and `SELECT` on its tables, read only: the
   extract backlog, the OCR rescan and the integrity page count its jobs.
   migrate makes the schema when it is missing (pg-boss installs into it), so
   the default privileges cover the tables pgboss:init makes right after;
-- membership in `mantle_system` (inherit and set), and nothing else: a hand
-  grant is taken back at the next migrate.
+- membership in `mantle_owner` without `INHERIT` and without `SET` (a
+  member that holds none of its rights and cannot become it), membership in
+  `mantle_system` with `SET` only, and nothing else: a hand grant, or one of
+  these with other options, is taken back at the next migrate.
 
 `CREATE` on schema `public` is taken from `PUBLIC`, so the runtime role makes
 nothing there (it cannot replace a function it could otherwise shadow).
 
-Why `mantle_system`: two tests in SQL were written against a superuser system
-pool. `mantle_owner_role()` (0241, the derivation's guards) asks whether
-`current_user` has the rights of the owner of `mantle_acl_internal()`: that
-function is now `mantle_system`'s, so the runtime role passes as the superuser
-did, and the write role does not. And the checked rerun (client.ts) does `SET
-LOCAL ROLE` to the write role and the gap writer, which needs a membership.
-The membership goes through `mantle_system`, never directly: 0277 and 0278
-count only a direct membership as "the write role's login", so the system pool
-is still not one, as it was not as the superuser.
+Two tests in SQL were written against a superuser system pool.
+
+- `mantle_owner_role()` (0241, the derivation's guards) asks about the owner
+  of `mantle_acl_internal()`. Since 0290 it asks for membership (`MEMBER`),
+  not for that owner's rights (`USAGE`). The marker is `mantle_owner`'s, and
+  the runtime role is its member without `INHERIT` and without `SET`, so the
+  guard says yes to the runtime role as it did to the superuser, and no to
+  the write role. The runtime role cannot drop or alter the marker, nor
+  `DROP OWNED` or `REASSIGN OWNED` for its owner: before 0290 it had to
+  inherit the owner to pass, and so could (audit M1). A marker dropped or
+  changed anyway (by hand, as the superuser) is made again by the next
+  migrate (`ensureAclMarker`), and until then the integrity row
+  `runtime_role_lock` names it.
+- The checked rerun (client.ts) does `SET LOCAL ROLE` to the write role and
+  the gap writer, which needs a membership with `SET`. It goes through
+  `mantle_system`, never directly: 0277 and 0278 count only a direct
+  membership as "the write role's login", so the system pool is still not
+  one, as it was not as the superuser. `mantle_system` owns nothing and holds
+  no right, so the runtime role gains nothing by `SET ROLE` to it.
 
 Why `mantle_owner` reaches more than its tables: Postgres runs a foreign key's
 check and its cascade (and the triggers a cascade fires) as the owner of the
 table queried. As the superuser's tables these ran as the superuser, so
 `mantle_owner` gets `USAGE` on both schemas, every right on their tables and
-`EXECUTE` on every function, and is a member of `mantle_system` (inherit, no
-set). Nobody logs in as it.
+`EXECUTE` on every function. As the marker's owner it passes
+`mantle_owner_role()` there too. Nobody logs in as it.
 
 The password of `mantle_runtime` is derived from `MANTLE_MASTER_KEY`
 (HKDF, its own label), as the viewer roles' are. There is no secret to create
@@ -74,6 +97,25 @@ or store, and migrate sets it again on every run, after a restore and after a
 master-key change. One brain per Postgres cluster: with
 `MANTLE_VIEWER_ROLES_PER_DATABASE` the role gets no login and the app refuses
 the switch.
+
+`mantle_runtime` logs in only on a box that has switched: migrate gives it
+`LOGIN` and its password when it sees `MANTLE_DB_RUNTIME_ROLE=1` (the compose
+`migrate` service gets the variable through the `x-app-env` anchor, as every
+app service does), and `NOLOGIN` with no password when it does not. So a box
+that never switches has no login it does not use, and taking the switch out
+again closes the login at the next migrate. Its log says which:
+`runtime role mantle_runtime: LOGIN (MANTLE_DB_RUNTIME_ROLE is on)` or
+`NOLOGIN (... is off)`.
+
+A statement that sets a password (the runtime role's, the viewer roles')
+runs in a transaction of its own that first sets, for that transaction only,
+`log_statement = 'none'`, `log_min_duration_statement = -1` and
+`log_min_error_statement = 'panic'`: no server log line prints its text, not
+even when it fails (a "tuple concurrently updated" retried, say). What
+remains: while it runs, `pg_stat_activity` shows the text to a superuser or a
+member of `pg_read_all_stats`, and an extension that records statements
+(`pg_stat_statements`, `pgaudit`; the compose Postgres loads none) would
+see it.
 
 ## What runs as what
 
@@ -101,10 +143,13 @@ pool logs in as mantle_runtime (arch A9 runtime role)`, or a warning that it
   logs in as the superuser and how to change that;
 - `/api/health`: `postgres.role` is `{ mode, user }`, `mode` one of `runtime`,
   `superuser`, `other`;
-- `/debug/integrity`, the row `runtime_role_lock`: a row when
-  `mantle_runtime` is no longer the lock it was made as (a superuser, a
-  CREATEROLE or CREATEDB, owning a table, CREATE on public, able to act as
-  `mantle_owner`). migrate puts it back on its next run.
+- `/debug/integrity`, the row `runtime_role_lock` (`RUNTIME_LOCK_SQL` in
+  runtime-role.ts): a row when `mantle_runtime` is no longer the lock it was
+  made as (a superuser, a CREATEROLE or CREATEDB, owning a table or a
+  function, CREATE on public, holding the rights of `mantle_owner` or
+  `mantle_system`, able to become `mantle_owner`), or when
+  `mantle_acl_internal()` is missing or not `mantle_owner`'s. migrate puts it
+  back on its next run.
 
 ## Rolling a box (W9)
 
@@ -129,7 +174,8 @@ its `.env`, and switches back by taking it out.
    docker exec mantle_pg psql -U postgres -d postgres -Atc \
      "select rolname, rolcanlogin, rolsuper, rolbypassrls from pg_roles
        where rolname in ('mantle_owner', 'mantle_runtime', 'mantle_system') order by 1"
-   # mantle_owner|f|f|f    mantle_runtime|t|f|t    mantle_system|f|f|f
+   # mantle_owner|f|f|f    mantle_runtime|f|f|t    mantle_system|f|f|f
+   # (mantle_runtime has no login until the box switches, step 2)
    docker exec mantle_pg psql -U postgres -d postgres -Atc \
      "select pg_get_userbyid(c.relowner), count(*) from pg_class c
         join pg_namespace n on n.oid = c.relnamespace
@@ -137,14 +183,21 @@ its `.env`, and switches back by taking it out.
    # mantle_owner|<every table>
    ```
 
-   A table still owned by `postgres` was busy when migrate ran (its log says
-   which): the next migrate retries. It is untidy, not a hole.
+   migrate hands the tables over while the old app may still serve, so it
+   never waits long for a lock: all in one transaction first, each lock
+   waited for at most 200 ms and the whole batch at most a second; past that
+   it lets every lock go and takes each table on its own (200 ms, three
+   tries). A table still busy then keeps its old owner and migrate goes on:
+   its log names it (`WARNING n table(s) busy`), and the next migrate tries
+   again. It is untidy, not a hole.
 
 2. **The compose change.** In the box `.env`: `MANTLE_DB_RUNTIME_ROLE=1`.
    There is no secret to create (the password is derived from
    `MANTLE_MASTER_KEY`, which the box already has). Then recreate the stack:
-   `docker compose up -d --wait`. migrate runs first and sets the role's
-   login and rights again; the app containers start with the switch on.
+   `docker compose up -d --wait`. migrate runs first, sees the switch and
+   gives the role its login (`runtime role mantle_runtime: LOGIN` in
+   `docker logs mantle_migrate`) and its rights; the app containers start
+   with the switch on.
 3. **Verify.**
 
    ```sh
@@ -169,15 +222,24 @@ its `.env`, and switches back by taking it out.
    SET LOCAL ROLE mantle_runtime;
    SELECT mantle_set_actor_check('off');  -- ERROR: permission denied for function
    ROLLBACK;
+   BEGIN;
+   SET LOCAL ROLE mantle_runtime;
+   DROP FUNCTION mantle_acl_internal();  -- ERROR: must be owner of function
+   ROLLBACK;
    ```
+
+   (`SET ROLE` from there to another role proves nothing in this session:
+   Postgres checks it against the session's login, the superuser.
+   `runtime-role.db.test.ts` logs in as `mantle_runtime` for that.)
 
    Then the app's paths: sign in, a chat turn, a note edit, a file upload, a
    page share. /debug/integrity shows no `runtime_role_lock` row.
 
 4. **Rollback.** Take the line out of `.env` (or set it to `0`) and
-   `docker compose up -d --wait`: the app logs in as `DATABASE_URL` again. No
-   data changed, so there is nothing to undo. The roles, the ownership and the
-   grants stay; the superuser ignores them. To take the ownership back as
+   `docker compose up -d --wait`: migrate sets `mantle_runtime` to `NOLOGIN`
+   again and the app logs in as `DATABASE_URL`. No data changed, so there is
+   nothing to undo. The roles, the ownership and the grants stay; the
+   superuser ignores them. To take the ownership back as
    well (never needed for the app to run):
 
    ```sql
@@ -227,8 +289,12 @@ whole after it.
 
 - `packages/db/src/runtime-role.db.test.ts`: the exit (no trigger disabled,
   no table altered, no `session_replication_role`, no `mantle.actor_check`
-  change), the heads key, the viewer roles and the setters, no definer
-  function the runtime role may run with DDL in its body, the ownership, and
-  idempotence.
+  change), the marker (no `DROP`, `ALTER` or `DROP OWNED`, also after `SET
+ROLE mantle_system`), the workspaces switch denied, the allowlist pinned
+  (the functions taken from `PUBLIC` it may run are exactly
+  `RUNTIME_SYSTEM_FUNCTIONS`), no definer function it may run reaching DDL
+  through any call its body names, the heads key, the viewer roles and the
+  setters, the ownership, a broken marker made again, the integrity row,
+  and idempotence.
 - `pnpm test:runtime-role`: the database suites with the app's pools on the
   runtime role (`vitest.runtime-role.config.ts`).
