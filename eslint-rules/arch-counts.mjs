@@ -32,7 +32,10 @@
  *    broker logic outside the one broker (app-broker.mjs);
  *  - flags and env (A10 #11): raw process.env reads, hand parses of an env
  *    value, isXEnabled definitions and hand profile boolean defaults,
- *    outside and inside the named lists (env-flags.mjs).
+ *    outside and inside the named lists (env-flags.mjs);
+ *  - hand re-index lines (A10 #7): notifyNodeIngested calls and raw
+ *    node_ingested notifies, `embedding: null` resets and summary clears,
+ *    outside markContentChanged and the files no-hand-reindex.mjs names.
  *
  * Comment lines never count. Product files only: packages/, server/,
  * scripts/; no tests, migrations, archive or build folders (a route segment
@@ -58,6 +61,7 @@ import {
   appToolBrokerLogic,
   exportSyncCalls,
 } from './app-broker.mjs';
+import { REINDEX_ALLOW, handReindex } from './no-hand-reindex.mjs';
 
 /** Whether the counts read `path` (repo-relative). */
 export function isCounted(path) {
@@ -731,6 +735,8 @@ export function measure(root) {
   const envFlags = Object.fromEntries(
     Object.keys(ENV_PATTERNS).map((k) => [k, { outside: {}, allowed: {} }]),
   );
+  const reindex = {};
+  const reindexAllowed = {};
   for (const f of files) {
     const text = readRepoFile(root, f);
     if (text === null) continue;
@@ -798,6 +804,10 @@ export function measure(root) {
       bowFiles += 1;
     }
     if (namesAdminReads(text)) adminReadsFiles += 1;
+    const ri = handReindex(text);
+    if (ri.notify || ri.embedding || ri.summary) {
+      (REINDEX_ALLOW[f] ? reindexAllowed : reindex)[f] = ri;
+    }
     if (BARE_FETCH_PACKAGES.some((p) => f.startsWith(p))) {
       const n = bareFetchSites(text);
       if (n) bareFetch[f] = n;
@@ -870,6 +880,10 @@ export function measure(root) {
           [`env_${k}_allowed`, sum(v.allowed)],
         ]),
       ),
+      reindexNotifyCalls: sum(reindex, 'notify'),
+      reindexEmbeddingResets: sum(reindex, 'embedding'),
+      reindexSummaryClears: sum(reindex, 'summary'),
+      reindexAllowedFiles: Object.keys(reindexAllowed).length,
       ...Object.fromEntries(Object.entries(stores).map(([k, v]) => [`store_${k}_files`, v.length])),
     },
     perFile: {
@@ -896,6 +910,8 @@ export function measure(root) {
       brokerLogic,
       providerHttp,
       envFlags,
+      reindex,
+      reindexAllowed,
     },
   };
 }

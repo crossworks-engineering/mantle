@@ -30,6 +30,7 @@ import mantleAppBrokerPlugin from './eslint-rules/app-broker.mjs';
 import mantleProviderHttpPlugin from './eslint-rules/provider-http.mjs';
 import mantleEnvFlagsPlugin from './eslint-rules/env-flags.mjs';
 import mantleRolesPlugin from './eslint-rules/no-hand-role-lists.mjs';
+import mantleReindexPlugin from './eslint-rules/no-hand-reindex.mjs';
 
 export default tseslint.config(
   {
@@ -359,6 +360,20 @@ export default tseslint.config(
     ignores: ['**/*.test.{ts,tsx,mts,cts,js,jsx,mjs,cjs}'],
     plugins: { 'mantle-roles': mantleRolesPlugin },
     rules: { 'mantle-roles/no-hand-role-lists': 'error' },
+  },
+  {
+    // A write re-indexes through markContentChanged (A10 #7,
+    // packages/db/src/content-changed.ts), never by a hand notify, vector
+    // reset or summary clear. The files that must keep one are named in the
+    // rule.
+    files: [
+      'packages/**/*.{ts,tsx,mts,mjs,js}',
+      'server/**/*.{ts,tsx,mts,mjs,js}',
+      'scripts/**/*.{ts,tsx,mts,mjs,js}',
+    ],
+    ignores: ['**/*.test.{ts,tsx,mts,cts,js,jsx,mjs,cjs}'],
+    plugins: { 'mantle-reindex': mantleReindexPlugin },
+    rules: { 'mantle-reindex/no-hand-reindex': 'error' },
   },
   {
     // Tests + one-shot scripts: relax rules that only make sense for shipped code.

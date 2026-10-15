@@ -86,6 +86,8 @@ const got = measure(ROOT) as {
     exportSync: Record<string, number>;
     exportSyncAllowed: Record<string, number>;
     brokerLogic: Record<string, number>;
+    reindex: Record<string, { notify: number; embedding: number; summary: number }>;
+    reindexAllowed: Record<string, { notify: number; embedding: number; summary: number }>;
   };
 };
 
@@ -238,6 +240,21 @@ describe('the architecture ratchets (pinned counts)', () => {
     expect(Object.keys(got.perFile.handRolesAllowed).sort()).toEqual([...new Set(files)].sort());
   });
 
+  it('no-hand-reindex (A10 #7): no hand re-index outside markContentChanged and the named files', async () => {
+    // A write names what it changed to markContentChanged
+    // (packages/db/src/content-changed.ts); the kind registry's `indexed`
+    // says what each field feeds. The named files still hold their line: the
+    // allow list only shrinks.
+    const { REINDEX_ALLOW } = await import('./no-hand-reindex.mjs');
+    expect(got.perFile.reindex).toEqual({});
+    expect(got.numbers.reindexNotifyCalls).toBe(0);
+    expect(got.numbers.reindexEmbeddingResets).toBe(0);
+    expect(got.numbers.reindexSummaryClears).toBe(0);
+    expect(Object.keys(got.perFile.reindexAllowed).sort()).toEqual(
+      Object.keys(REINDEX_ALLOW).sort(),
+    );
+  });
+
   it('every live route that reads no caller is a public row (A4 exit)', async () => {
     // An /api/v1 alias reads where the handler it takes reads (the count
     // follows it); what is left judges its own credential and reads no
@@ -375,6 +392,33 @@ describe('the counters', () => {
         slugs,
       ),
     ).toEqual([3]);
+  });
+});
+
+describe('the hand re-index counter (A10 #7)', () => {
+  it('counts notify calls, raw node_ingested notifies, vector resets and summary clears', async () => {
+    const { handReindex } = await import('./no-hand-reindex.mjs');
+    expect(handReindex('await notifyNodeIngested(id);')).toEqual({
+      notify: 1,
+      embedding: 0,
+      summary: 0,
+    });
+    expect(handReindex("await sql`select pg_notify('node_ingested', ${id}::text)`;").notify).toBe(1);
+    expect(handReindex('.set({ embedding: null, data })').embedding).toBe(1);
+    expect(handReindex('delete newData.summary;').summary).toBe(1);
+    expect(handReindex("sql`update nodes set data = data - 'summary'`").summary).toBe(1);
+  });
+
+  it('does not count a definition, a comment, prose, a listener or a summary_model key', async () => {
+    const { handReindex } = await import('./no-hand-reindex.mjs');
+    const none = { notify: 0, embedding: 0, summary: 0 };
+    expect(handReindex('export async function notifyNodeIngested(nodeId) {}')).toEqual(none);
+    expect(handReindex('// await notifyNodeIngested(id); embedding: null')).toEqual(none);
+    expect(handReindex("const d = \"Re-fires the pg_notify('node_ingested') signal\";")).toEqual(
+      none,
+    );
+    expect(handReindex("await sql.listen('node_ingested', cb);")).toEqual(none);
+    expect(handReindex('delete data.summary_model;')).toEqual(none);
   });
 });
 

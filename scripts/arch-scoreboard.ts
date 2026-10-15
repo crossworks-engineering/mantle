@@ -83,6 +83,10 @@ const LABELS: Record<string, string> = {
     'isXEnabled definitions named (published contracts, owner lookup) (A10 #11)',
   env_prefDefault: 'profile booleans compared with their default by hand (A10 #11)',
   env_prefDefault_allowed: 'profile boolean default checks named (A10 #11)',
+  reindexNotifyCalls: 'hand node_ingested notifies outside markContentChanged (A10 #7)',
+  reindexEmbeddingResets: 'hand embedding: null resets outside markContentChanged (A10 #7)',
+  reindexSummaryClears: 'hand summary clears outside markContentChanged (A10 #7)',
+  reindexAllowedFiles: 'files named to hold a hand re-index line, each with its reason (A10 #7)',
 };
 
 /** Numbers that may go up without failing: the route counts grow with
