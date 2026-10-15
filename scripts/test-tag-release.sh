@@ -25,12 +25,17 @@ tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 fails=0
 
-# pnpm stub: logs its args; `pnpm verify` exits $PNPM_VERIFY_RC (default 0).
+# pnpm stub: logs its args; `pnpm verify` runs $PNPM_VERIFY_SIDE (a shell
+# snippet, in the clone, standing in for another session) if set, then exits
+# $PNPM_VERIFY_RC (default 0).
 mkdir -p "$tmp/bin"
 cat >"$tmp/bin/pnpm" <<'STUB'
 #!/usr/bin/env bash
 echo "$*" >>"$PNPM_LOG"
-[ "${1:-}" = verify ] && exit "${PNPM_VERIFY_RC:-0}"
+if [ "${1:-}" = verify ]; then
+  [ -n "${PNPM_VERIFY_SIDE:-}" ] && sh -c "$PNPM_VERIFY_SIDE"
+  exit "${PNPM_VERIFY_RC:-0}"
+fi
 exit 0
 STUB
 chmod +x "$tmp/bin/pnpm"
@@ -258,6 +263,42 @@ git clone -q -b main "$tmp/origin.git" "$tmp/other" 2>/dev/null
 rm -rf "$tmp/other"
 expect "a non-fast-forward refusal says to delete the local tag" nonzero other missing head \
   "git tag -d $TAG" --
+
+# H (re-audit 2): another session lands a commit on main WHILE verify runs,
+# and that commit carries demo/. Tagging HEAD and pushing `main` by name would
+# release it unverified and unguarded. The script must refuse: no local tag,
+# and origin gets nothing (its main stays at the commit before the release).
+fresh 1.2.3
+export PNPM_VERIFY_SIDE='mkdir -p demo && echo seed >demo/seed.sh && git add demo && git commit -q -m "landed during verify"'
+expect "a commit landed on main during verify (with demo/) is neither tagged nor pushed" \
+  nonzero old missing missing "HEAD moved during the verify" --
+unset PNPM_VERIFY_SIDE
+if [ "$(git log -1 --pretty=%s)" = "landed during verify" ] &&
+  [ "$(remote_ref refs/heads/main)" = "$(git rev-parse HEAD~2)" ] &&
+  [ -z "$(git --git-dir="$tmp/origin.git" for-each-ref refs/tags)" ]; then
+  echo "ok   origin holds neither the release commit, the landed commit, nor any tag"
+else
+  echo "FAIL origin holds neither the release commit, the landed commit, nor any tag"
+  git --git-dir="$tmp/origin.git" for-each-ref | sed 's/^/     /'
+  fails=$((fails + 1))
+fi
+
+# L2 (re-audit 2): the demo/ guard fails closed. A SHA git cannot read a tree
+# for would give an empty ls-tree, which used to read as "no demo/".
+fresh 1.2.3
+# shellcheck source=lib/demo-guard.sh
+. "$(dirname "$SCRIPT")/lib/demo-guard.sh"
+bad_out="$(demo_guard 0123456789abcdef0123456789abcdef01234567 test 2>&1)"
+bad_rc=$?
+good_rc=0
+demo_guard HEAD test 2>/dev/null || good_rc=$?
+if [ "$bad_rc" != 0 ] && printf '%s\n' "$bad_out" | grep -q "cannot read a tree" && [ "$good_rc" = 0 ]; then
+  echo "ok   the demo/ guard refuses a SHA it cannot read, and passes a clean one"
+else
+  echo "FAIL the demo/ guard refuses a SHA it cannot read, and passes a clean one: bad rc=$bad_rc good rc=$good_rc"
+  printf '%s\n' "$bad_out" | sed 's/^/     /'
+  fails=$((fails + 1))
+fi
 
 printf '(bash %s)\n' "$BASH_VERSION"
 [ "$fails" = 0 ] && echo "all passed" || {

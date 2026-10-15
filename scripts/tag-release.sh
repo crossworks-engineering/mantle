@@ -26,11 +26,20 @@ set -euo pipefail
 #   4. HEAD's tree has no demo/ (scripts/lib/demo-guard.sh, the check the
 #      pre-push hook runs; the push below skips that hook)
 #   5. the tag vX.Y.Z does not already exist
-# then runs `pnpm verify` on that tree, creates the tag at HEAD only if it
-# passed, pushes main + tag together in one atomic push (the push is what cuts
-# the release: it fires release.yml and publish-contract.yml), and finally
-# asks origin, with git ls-remote, whether main and the tag are both there at
-# HEAD. It exits non-zero, saying which ref is missing, when they are not;
+# then runs `pnpm verify` on that tree, creates the tag at that commit only
+# if it passed, pushes that commit as main + the tag together in one atomic
+# push (the push is what cuts the release: it fires release.yml and
+# publish-contract.yml), and finally asks origin, with git ls-remote, whether
+# main and the tag are both there at that commit.
+#
+# "That commit" is HEAD as read ONCE, before the checks, and every step after
+# names it by SHA, never by HEAD or by the branch name. The verify runs for
+# minutes in the integrator clone, and another session can land a commit on
+# main (scripts/merge-branch.sh) while it runs. Tagging HEAD and pushing
+# `main` by name would then release that unverified, unguarded commit. So the
+# tag is made at the captured SHA, the push sends `<sha>:refs/heads/main`, and
+# when HEAD has moved by the time the verify ends the script refuses: NOT
+# tagged, NOT pushed. It exits non-zero, saying which ref is missing, when they are not;
 # when origin cannot be asked at all it says the state is unknown, with
 # ls-remote's own error; and when origin's main has moved on (the atomic push
 # refused as non-fast-forward) it says to delete the local tag. Origin's tag
@@ -100,6 +109,10 @@ if ! git diff --quiet || ! git diff --cached --quiet; then
   exit 1
 fi
 
+# The commit this run releases, read once. Every check, the tag and the push
+# below name it by SHA (see the header): HEAD can move while verify runs.
+head="$(git rev-parse HEAD)"
+
 # Assert main is not BEHIND its remote. Everything below asserts facts about
 # the LOCAL tree, all of which can be true of a stale clone — which is how
 # jackdaw v0.6.109's pair shipped a mantle tag built on a tree that reverted a
@@ -111,7 +124,7 @@ fi
 if git rev-parse --abbrev-ref --symbolic-full-name '@{u}' >/dev/null 2>&1; then
   echo "→ fetching, so a stale clone cannot tag a stale tree"
   git fetch --quiet origin || { echo "✗ git fetch failed — refusing to tag blind" >&2; exit 1; }
-  behind="$(git rev-list --count 'main..@{u}')"
+  behind="$(git rev-list --count "$head..@{u}")"
   if [ "$behind" != "0" ]; then
     echo "✗ main is $behind commit(s) BEHIND $(git rev-parse --abbrev-ref '@{u}')" >&2
     echo "  Someone released from another clone. Tagging now would publish a tree" >&2
@@ -122,15 +135,20 @@ if git rev-parse --abbrev-ref --symbolic-full-name '@{u}' >/dev/null 2>&1; then
   fi
 fi
 
-version="$(node -p "require('./package.json').version")"
-web_version="$(node -p "require('./server/web/package.json').version")"
+# Read from the captured commit, not the working tree, so the versions and
+# the subject below describe the same commit the tag lands on.
+read_version() {
+  git show "$head:$1" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>console.log(JSON.parse(s).version))'
+}
+version="$(read_version package.json)"
+web_version="$(read_version server/web/package.json)"
 if [ "$version" != "$web_version" ]; then
   echo "✗ version drift: package.json is at $version but server/web/package.json is at $web_version" >&2
   echo "  bump-version.mjs keeps these in lockstep — fix the drift before tagging" >&2
   exit 1
 fi
 
-subject="$(git log -1 --pretty=%s)"
+subject="$(git log -1 --pretty=%s "$head")"
 if [ "$subject" != "release: v$version" ]; then
   echo "✗ HEAD is not the release commit for v$version" >&2
   echo "  HEAD:     $subject" >&2
@@ -144,10 +162,10 @@ fi
 # demo/ must never reach main. The pre-push hook checks every push of main,
 # but the release push below skips the hook, so the same check runs here,
 # before the verify, so it fails in a second.
-demo_guard HEAD tag-release || exit 1
+demo_guard "$head" tag-release || exit 1
 
 tag="v$version"
-head="$(git rev-parse HEAD)"
+short="$(git rev-parse --short "$head")"
 resume=false
 if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
   if [ "$(git rev-parse "refs/tags/$tag^{commit}")" = "$head" ]; then
@@ -164,7 +182,7 @@ fi
 
 if ! $resume; then
   if $verify; then
-    echo "→ pnpm verify on $(git rev-parse --short HEAD), before the tag exists"
+    echo "→ pnpm verify on $short, before the tag exists"
     if ! pnpm verify; then
       echo >&2
       echo "✗ pnpm verify failed on the release commit: NOT tagged, NOT pushed" >&2
@@ -175,16 +193,29 @@ if ! $resume; then
   else
     echo "→ --no-verify: skipping pnpm verify"
   fi
-  git tag "$tag"
-  echo "✓ tagged $(git rev-parse --short HEAD) as $tag ($subject)"
+  # HEAD must still be the commit the checks and the verify judged. If
+  # another session landed a commit on main meanwhile, that commit carries no
+  # verify and no demo/ guard; nothing here may tag or push it, or this one
+  # over it.
+  now="$(git rev-parse HEAD)"
+  if [ "$now" != "$head" ]; then
+    echo >&2
+    echo "✗ HEAD moved during the verify: it was $short, it is now $(git rev-parse --short "$now")" >&2
+    echo "  Another session landed on main while this ran. NOT tagged, NOT pushed." >&2
+    echo "  Look at what landed (git log --oneline $short..main), cut the release" >&2
+    echo "  commit again with scripts/merge-branch.sh if it needs one, and rerun." >&2
+    exit 1
+  fi
+  git tag "$tag" "$head"
+  echo "✓ tagged $short as $tag ($subject)"
 fi
 # What origin should report for the tag: the tag ref's own object. For the
 # lightweight tag this script makes that is HEAD; for an annotated tag made by
 # hand it is the tag object, which ls-remote reports, not the commit.
 tag_obj="$(git rev-parse "refs/tags/$tag")"
-short="$(git rev-parse --short HEAD)"
 
-push_cmd="git push --atomic --no-verify origin main refs/tags/$tag"
+# The SHA, not `main`: the branch may have moved since $head was read.
+push_cmd="git push --atomic --no-verify origin $head:refs/heads/main refs/tags/$tag"
 if ! $push; then
   echo "  push withheld (--no-push); when ready, rerun this script (it resumes), or:"
   echo "    $push_cmd"
@@ -240,7 +271,7 @@ if [ "$remote_main" != "$head" ] || [ "$remote_tag" != "$tag_obj" ]; then
   fi
   moved=false
   if [ -n "$remote_main" ] && [ "$remote_main" != "$head" ] &&
-    ! git merge-base --is-ancestor "$remote_main" HEAD 2>/dev/null; then
+    ! git merge-base --is-ancestor "$remote_main" "$head" 2>/dev/null; then
     moved=true
   fi
   if [ -n "$remote_tag" ] && [ "$remote_tag" != "$tag_obj" ]; then

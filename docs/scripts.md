@@ -691,6 +691,12 @@ tree, tags only if it passed, then pushes main and the tag in one
 `git push --atomic --no-verify` and asks origin with `git ls-remote` whether
 both landed at HEAD. If either is missing it exits non-zero and names it.
 
+HEAD is read once, before the checks, and every later step names that SHA: the
+tag is made at it and the push sends `<sha>:refs/heads/main`, never `main` by
+name. If another session lands a commit on main while the verify runs, HEAD no
+longer matches and the script refuses (NOT tagged, NOT pushed), so a commit
+that skipped the verify and the demo/ guard can never ride the release push.
+
 The push skips the pre-push hook on purpose: the hook would rerun the same
 verify inside `git push`, holding the connection to GitHub idle for minutes;
 GitHub closes it, and git dies of SIGPIPE (exit 141) with one ssh line as its
@@ -702,7 +708,8 @@ made by hand without a verify; if you did not make it with this script,
 already ran on this exact commit; CI still runs on the tag.
 
 Because the push skips the hook, the hook's demo/ guard runs here too, against
-HEAD before the verify: both source `scripts/lib/demo-guard.sh`. Origin's tag
+the release SHA before the verify: both source `scripts/lib/demo-guard.sh`,
+which fails closed (a SHA it cannot read a tree for is refused). Origin's tag
 is compared with the local tag's own object id, so a hand-made annotated tag is
 judged right. When `git ls-remote` itself fails the script says the state is
 unknown and shows its error rather than calling the refs missing; when origin's
