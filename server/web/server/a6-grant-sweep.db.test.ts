@@ -297,7 +297,8 @@ describe.skipIf(!URL)('the A6 grant sweep', () => {
     }
     await x(sql`insert into spaces (id, kind, login_id) values (${L.owner}, 'brain', ${L.owner})
                 on conflict (id) do nothing`);
-    await x(sql`select * from mantle_ws_migrate()`);
+    // As the migrator runs it (the runtime role may not: arch A9).
+    await (await import('@mantle/db/test-support')).runWorkspacesSwitch(scratch!.url);
     const [adm] = await x<{ id: string }>(
       sql`select id::text as id from workspaces where owner_id = ${L.owner} and is_admin`,
     );
