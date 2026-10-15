@@ -9,6 +9,7 @@
  * on a failure not listed, and on a listed one that passes (the list only
  * shrinks). docs/actors.md, "A8 matrix", names each finding.
  */
+import { GUIDE_WORKSPACE_KINDS, expectedAccess } from './guide-oracle';
 
 /** F1. /api/v1 refuses a key of a login outside Admin: 403 `member-login`
  *  (server/web/lib/api-v1.ts: "The v1 routes past whoami are admin routes").
@@ -77,30 +78,22 @@ const known = (finding: string, reason: string): KnownFailure => ({ finding, rea
  *  of an item outside Admin (at its kind's root and in its folder; a
  *  snapshot copy refuses them all), on the system pool. */
 function adminSystemPoolEdits(): Record<string, KnownFailure> {
-  const kinds = [
-    'branch',
-    'file',
-    'note',
-    'page',
-    'table',
-    'app',
-    'formula',
-    'draw',
-    'task',
-    'event',
-    'recall',
-  ];
-  const cells = [
-    ...kinds.map((k) => `edit ${k}`),
-    ...kinds.map((k) => `link ${k}`),
-    ...['page', 'draw', 'table', 'app'].map((k) => `editDraft ${k}`),
-    'appData app',
-  ];
+  // The kinds and their actions as the oracle reads the guide (no list of
+  // kinds of its own): each one the oracle answers for the item outside Admin.
   const out: Record<string, KnownFailure> = {};
-  for (const role of ['owner', 'admin']) {
-    for (const placement of ['root', 'folder']) {
-      for (const c of cells) {
-        out[`login@system/${role} ${c} @${placement}`] = known(F4, 'changed ({');
+  for (const role of ['owner', 'admin'] as const) {
+    for (const placement of ['root', 'folder'] as const) {
+      for (const kind of GUIDE_WORKSPACE_KINDS) {
+        for (const action of ['edit', 'link', 'editDraft', 'appData'] as const) {
+          const want = expectedAccess(
+            { surface: 'sql', placement, actor: 'login' },
+            role,
+            kind,
+            action,
+          );
+          if ('na' in want) continue;
+          out[`login@system/${role} ${action} ${kind} @${placement}`] = known(F4, 'changed ({');
+        }
       }
     }
   }

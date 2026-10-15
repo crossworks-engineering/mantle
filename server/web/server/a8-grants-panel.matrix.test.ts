@@ -198,7 +198,7 @@ describe.skipIf(!DB_URL)('A8: the grants panel’s database rule under a wrong T
       : via === 'scope'
         ? { seats: [], adminWs: fx.ws.admin }
         : null;
-    let by = '';
+    let by: string;
     try {
       const res = await (via === 'route' ? byRoute(change, item.id) : inScope(change, item.id));
       by = `answered ${JSON.stringify(res).slice(0, 300)}`;
