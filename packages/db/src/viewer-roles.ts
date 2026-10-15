@@ -300,8 +300,8 @@ export async function ensureViewerRoles(
   // A caller that may not manage roles (the runtime role, arch A9, or any
   // non-superuser without CREATEROLE) changes nothing: the migrator, as the
   // superuser, keeps them (migrator-steps.ts warns when it cannot).
-  const [may] = await sql<{ ok: boolean }[]>`
-    select rolsuper or rolcreaterole as ok from pg_roles where rolname = current_user`;
+  const [may] = await sql<{ ok: boolean; su: boolean }[]>`
+    select rolsuper or rolcreaterole as ok, rolsuper as su from pg_roles where rolname = current_user`;
   if (!may?.ok) return 'not-permitted';
   const [current] = await sql<{ database: string }[]>`select current_database() as database`;
   const database = current!.database;
@@ -318,7 +318,7 @@ export async function ensureViewerRoles(
     masterKey,
     perDatabase,
   );
-  for (const stmt of plan) await withRoleRetry(() => sql.unsafe(stmt));
+  for (const stmt of plan) await runRoleStatement(sql, stmt, may.su);
 
   if (perDatabase) {
     // The databases this brain's logins can still enter: every one that
@@ -341,6 +341,36 @@ export async function ensureViewerRoles(
     }
   }
   return 'ok';
+}
+
+/**
+ * Run one role statement, retried as withRoleRetry does. One that carries a
+ * password (CREATE or ALTER ROLE ... PASSWORD '...') runs in a transaction
+ * of its own that first turns off, for that transaction only, every server
+ * log line that would print the statement's text: log_statement,
+ * log_min_duration_statement, and log_min_error_statement (so an error, a
+ * "tuple concurrently updated" retried here among them, logs no statement).
+ * Those settings are a superuser's (`superuser`): a CREATEROLE caller runs
+ * the statement as it is. What stays: pg_stat_activity shows the text while
+ * it runs, to a superuser or pg_read_all_stats (docs/runtime-role.md).
+ */
+export async function runRoleStatement(
+  sql: ReturnType<typeof postgres>,
+  stmt: string,
+  superuser: boolean,
+): Promise<void> {
+  if (!superuser || !/\bPASSWORD '/.test(stmt)) {
+    await withRoleRetry(() => sql.unsafe(stmt));
+    return;
+  }
+  await withRoleRetry(() =>
+    sql.begin(async (tx) => {
+      await tx.unsafe(`SET LOCAL log_statement = 'none'`);
+      await tx.unsafe(`SET LOCAL log_min_duration_statement = -1`);
+      await tx.unsafe(`SET LOCAL log_min_error_statement = 'panic'`);
+      await tx.unsafe(stmt);
+    }),
+  );
 }
 
 /** Two processes setting the same (cluster-wide) role at once make Postgres

@@ -51,9 +51,17 @@ describe.skipIf(!URL)('the decision trace on a real turn', () => {
     process.env.DATABASE_URL = URL;
     process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
     m = await import('@mantle/db');
-    const { ensureTestAnchor } = await import('@mantle/db/test-support');
+    const { ensureTestAnchor, superuserClient, superuserExec } =
+      await import('@mantle/db/test-support');
     admin = (m.systemDb as unknown as { $client: Admin }).$client;
-    await m.ensureViewerRoles(admin, process.env.MANTLE_MASTER_KEY);
+    // The roles as the superuser (arch A9): the app's pool may be the
+    // runtime role, which may not manage roles.
+    const su = superuserClient(URL!);
+    try {
+      expect(await m.ensureViewerRoles(su, process.env.MANTLE_MASTER_KEY)).toBe('ok');
+    } finally {
+      await su.end();
+    }
     ownerId = await ensureTestAnchor(admin);
     await admin`insert into nodes (id, owner_id, type, title, path, data, embedding, audience) values
       (${node.near}, ${ownerId}, 'page', ${`${tag} near page`}, 'pages',
@@ -76,7 +84,9 @@ describe.skipIf(!URL)('the decision trace on a real turn', () => {
       await admin`insert into content_chunks (owner_id, node_id, ordinal, text) values
         (${ownerId}, ${node.filler}, ${i}, ${`${tag} filler row ${i}`})`;
     }
-    await admin`analyze content_chunks`;
+    // As the superuser (arch A9): the runtime role owns no table, and
+    // ANALYZE skips a table its caller does not own.
+    await superuserExec(URL!, 'analyze content_chunks');
     await admin`insert into facts (id, owner_id, content, kind, source_node_id, embedding) values
       (${factId}, ${ownerId}, ${`${tag} the plan is due in May`}, 'factual', ${node.near},
        ${lit(at(0.08))}::vector)`;

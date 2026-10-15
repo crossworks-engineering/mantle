@@ -64,6 +64,7 @@ async function main() {
       sql,
       env('MANTLE_MASTER_KEY') ?? null,
       feature('viewerRolesPerDatabase'),
+      feature('dbRuntimeRole'),
     );
 
     await sql`create schema if not exists "drizzle"`;

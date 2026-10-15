@@ -21,6 +21,7 @@ import { fileURLToPath } from 'node:url';
 import postgres from 'postgres';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createScratchDatabaseBefore } from './test-support';
+import { OWNER_ROLE, RUNTIME_ROLE } from './runtime-role';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 const TAG = '0274_workspaces_frozen_tables_out';
@@ -185,7 +186,7 @@ describe.skipIf(!URL)('0274: the frozen tables, archived and dropped', () => {
     const grants = await sql<{ n: number }[]>`
       select count(*)::int as n from information_schema.role_table_grants
        where table_schema = 'public' and grantee <> current_user
-         and grantee not in ('mantle_runtime', 'mantle_owner')
+         and grantee not in (${RUNTIME_ROLE}, ${OWNER_ROLE})
          and table_name in ('archive_team_read_cursors', 'archive_team_notifications',
                             'archive_login_chat_read_cursors', 'archive_client_report_acks',
                             'archive_client_quota_refusals')`;

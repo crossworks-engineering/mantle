@@ -8,7 +8,9 @@ import {
   OWNER_ROLE,
   RUNTIME_DENIED_FUNCTIONS,
   RUNTIME_ROLE,
+  RUNTIME_SYSTEM_FUNCTIONS,
   SYSTEM_ROLE,
+  wantedMemberships,
   dbRoleMode,
   dbRoleNote,
   runtimeDatabaseUrl,
@@ -67,15 +69,24 @@ describe('the runtime role statements', () => {
     );
   });
 
-  it('the memberships: the runtime role may become the write role only through the marker', () => {
+  it('the memberships: no INHERIT anywhere; the write role only through mantle_system', () => {
+    // A member of the owner without its rights: mantle_owner_role() (0290,
+    // MEMBER) says yes, and the marker is out of reach.
     expect(stmts).toContain(
-      `GRANT "${SYSTEM_ROLE}" TO "${RUNTIME_ROLE}" WITH INHERIT TRUE, SET TRUE, ADMIN FALSE`,
+      `GRANT "${OWNER_ROLE}" TO "${RUNTIME_ROLE}" WITH INHERIT FALSE, SET FALSE, ADMIN FALSE`,
+    );
+    expect(stmts).toContain(
+      `GRANT "${SYSTEM_ROLE}" TO "${RUNTIME_ROLE}" WITH INHERIT FALSE, SET TRUE, ADMIN FALSE`,
     );
     expect(stmts).toContain(
       `GRANT "mantle_write_user" TO "${SYSTEM_ROLE}" WITH INHERIT FALSE, SET TRUE, ADMIN FALSE`,
     );
-    expect(stmts.some((s) => /GRANT "mantle_owner" TO/.test(s))).toBe(false);
+    const grants = stmts.filter((s) => s.startsWith('GRANT'));
+    expect(grants).toHaveLength(wantedMemberships().length);
+    expect(grants.some((s) => /INHERIT TRUE|ADMIN TRUE/.test(s))).toBe(false);
     expect(stmts.some((s) => /GRANT "mantle_write_user" TO "mantle_runtime"/.test(s))).toBe(false);
+    // The owner holds no membership: it owns the marker itself.
+    expect(wantedMemberships().some((m) => m.member === OWNER_ROLE)).toBe(false);
   });
 
   it('refuses a password that would need quoting', () => {
@@ -136,6 +147,18 @@ describe('the mode report', () => {
 });
 
 describe('what the runtime role may not touch', () => {
+  it('the system functions are a reviewed list, apart from the denied ones', () => {
+    for (const [fn, why] of Object.entries(RUNTIME_SYSTEM_FUNCTIONS)) {
+      expect(fn).toMatch(/^public\.mantle_[a-z_]+\(/);
+      expect(why.length, fn).toBeGreaterThan(10);
+      expect(Object.keys(RUNTIME_DENIED_FUNCTIONS)).not.toContain(fn);
+    }
+    // The workspaces switch is the migrator's (executeAsMigrator).
+    expect(Object.keys(RUNTIME_SYSTEM_FUNCTIONS).some((f) => /mantle_ws_migrate/.test(f))).toBe(
+      false,
+    );
+  });
+
   it('the heads key and the switches of the checks are on the lists', () => {
     expect(runtimeDeniedTables()).toContain('public.mantle_heads_key');
     for (const fn of [

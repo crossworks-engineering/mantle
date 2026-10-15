@@ -2,31 +2,35 @@
  * The runtime role (workspaces arch A9, plan v2 section 4.2): the app's own
  * pools stop logging in as the superuser that runs the migrations.
  *
- *  - mantle_owner (NOLOGIN) owns the app's tables and sequences. Only the
- *    migrator acts for it: migrate runs as the superuser (DATABASE_URL), and
- *    hands every table and sequence in public and auth to it after the
- *    migrations (ownTables).
- *  - mantle_runtime (LOGIN) is the system pool's login when
- *    MANTLE_DB_RUNTIME_ROLE is on (systemDatabaseUrl): not a superuser, not
- *    a table owner, BYPASSRLS (the system pool reads and writes past the row
+ *  - mantle_owner (NOLOGIN) owns the app's tables and sequences, and
+ *    mantle_acl_internal() (the marker mantle_owner_role() asks about, 0241
+ *    and 0290). Only the migrator acts for it: migrate runs as the superuser
+ *    (DATABASE_URL) and hands every table and sequence in APP_SCHEMAS, and
+ *    the marker, to it after the migrations (ownTables).
+ *  - mantle_runtime is the system pool's login when MANTLE_DB_RUNTIME_ROLE
+ *    is on (systemDatabaseUrl), and logs in only then (migrate sets LOGIN
+ *    when it sees the switch, NOLOGIN when it does not): not a superuser,
+ *    owns nothing, BYPASSRLS (the system pool reads and writes past the row
  *    rules, as it did as the superuser), and data rights only: SELECT,
- *    INSERT, UPDATE and DELETE on the tables, the sequences, EXECUTE on the
- *    functions, less RUNTIME_DENIED_FUNCTIONS and the tables the access
- *    matrix marks `runtime: 'none'`. A non-owner cannot ALTER a table or
- *    disable its triggers or row rules; a non-superuser cannot set
+ *    INSERT, UPDATE and DELETE on the tables but those the access matrix
+ *    marks `runtime: 'none'`, the sequences, and EXECUTE on an allowlist
+ *    (runtimeFunctionAllowlist: what PUBLIC or a viewer role may run, plus
+ *    RUNTIME_SYSTEM_FUNCTIONS). A non-owner cannot ALTER a table or disable
+ *    its triggers or row rules; a non-superuser cannot set
  *    session_replication_role, mark a function LEAKPROOF, or ALTER DATABASE
  *    (so not mantle.actor_check); and it cannot create anything in public
  *    (CREATE on the schema is taken from PUBLIC). Its password is derived
  *    from MANTLE_MASTER_KEY, as the viewer roles' are: nothing to store.
- *  - mantle_system (NOLOGIN) holds no right. It is the system's identity
- *    for two things the superuser had by being one: it owns
- *    mantle_acl_internal(), so mantle_owner_role() (0241: the derivation's
- *    guards) says yes to its members; and it may SET ROLE to the write role
- *    and the gap writer, the checked rerun's switches (client.ts). The
- *    runtime role is its member (INHERIT for the first, SET for the
- *    second); the write role's own membership tests (0277, 0278) count only
- *    a direct membership, so the system pool is still "not the write role's
- *    login" there, as it was as the superuser.
+ *  - The runtime role is a member of mantle_owner WITHOUT INHERIT and
+ *    WITHOUT SET: it holds none of the owner's rights and cannot become it,
+ *    and mantle_owner_role() (0290: MEMBER, not USAGE) says yes to it, as
+ *    to the superuser. So the marker that guard reads is out of its reach.
+ *  - mantle_system (NOLOGIN) holds no right and owns nothing. The runtime
+ *    role may SET ROLE to it (no INHERIT), and it may SET ROLE to the write
+ *    role and the gap writer: the checked rerun's switches (client.ts). The
+ *    write role's own membership tests (0277, 0278) count only a direct
+ *    membership, so the system pool is still "not the write role's login"
+ *    there, as it was as the superuser.
  *
  * Roles are cluster objects: a restore into a fresh cluster lacks them, so
  * migrate makes them on every run (ensureRuntimeRoles) and
@@ -40,7 +44,7 @@ import type postgres from 'postgres';
 import { env, feature } from '@mantle/config';
 import { ACCESS_MATRIX, GAP_WRITER_ROLE } from './access-matrix';
 import { viewerRoleName } from './viewer';
-import { LOCK_ATTRS, POOL_ROLES, withRoleRetry } from './viewer-roles';
+import { LOCK_ATTRS, POOL_ROLES, runRoleStatement, withRoleRetry } from './viewer-roles';
 
 type Sql = ReturnType<typeof postgres>;
 
@@ -52,8 +56,21 @@ export const SYSTEM_ROLE = 'mantle_system';
  *  partitions at run time) and drizzle (the ledger) stay the migrator's. */
 export const APP_SCHEMAS = ['public', 'auth'] as const;
 
-/** The function whose owner mantle_owner_role() asks about (0241). */
+/** APP_SCHEMAS as a SQL list of literals, for the catalog reads below. */
+export const APP_SCHEMAS_SQL = APP_SCHEMAS.map((s) => `'${s}'`).join(', ');
+
+/** The roles scripts/db-restore.sh makes before pg_restore (a test checks
+ *  the script names the same). */
+export const RUNTIME_ROLES = [OWNER_ROLE, SYSTEM_ROLE, RUNTIME_ROLE] as const;
+
+/** The function whose owner mantle_owner_role() asks about (0241, 0290). */
 export const ACL_MARKER_FUNCTION = 'public.mantle_acl_internal()';
+
+/** The marker's body, as 0241 made it: migrate makes it again when it is
+ *  missing or not this (ensureAclMarker). */
+const ACL_MARKER_BODY = `
+  SELECT coalesce(current_setting('mantle.acl_internal', true), '') = 'on'
+`;
 
 /**
  * Functions the runtime role may not EXECUTE, nor any viewer role (and
@@ -62,14 +79,10 @@ export const ACL_MARKER_FUNCTION = 'public.mantle_acl_internal()';
  * sets the actor with set_config), and the steps that change the schema.
  * Each is a migrator's or an operator's (docs/update-prod.md), never the
  * app's. A missing one (a database before its migration) is skipped.
- * runtime-role.db.test.ts also proves no SECURITY DEFINER function the
- * runtime role may run has DDL in its body.
  *
- * mantle_ws_migrate() stays open: on a brain already on workspaces it does
- * nothing, and before that it is the switch the app runs at boot anyway
- * (with no statement of the caller's in it). The app itself runs the switch
- * as the migrator (mantle_ws_migrate_locked, executeAsMigrator), which
- * holds its locks and time budget.
+ * The runtime role's own rights are an allowlist (runtimeFunctionAllowlist),
+ * so this list is not what keeps a function from it: it is what is taken
+ * from PUBLIC and the viewer roles, and what the allowlist may never hold.
  */
 export const RUNTIME_DENIED_FUNCTIONS: Readonly<Record<string, string>> = {
   'public.mantle_set_check(text,text,integer)': 'sets a check mode (ALTER DATABASE)',
@@ -88,6 +101,36 @@ export const RUNTIME_DENIED_FUNCTIONS: Readonly<Record<string, string>> = {
   'public.mantle_ws_ddl_retry(text[],text)': 'runs DDL (the workspaces switch)',
   'public.mantle_ws_switch_off()': 'drops the bridge triggers (DDL)',
   'public.mantle_ws_migrate_locked()': 'the workspaces switch (executeAsMigrator)',
+};
+
+/**
+ * The functions taken from PUBLIC (and from every viewer role) that the
+ * system pool itself calls, each with where. With what PUBLIC or a viewer
+ * role may run, this is all the runtime role may EXECUTE
+ * (runtimeFunctionAllowlist); runtime-role.db.test.ts pins that the set of
+ * such functions it may run is exactly this list, so a new one is a
+ * reviewed line here. A trigger function needs no entry: Postgres checks
+ * EXECUTE when the trigger is made, not when it fires. Everything a
+ * SECURITY DEFINER function calls runs as its owner, so it needs no entry
+ * either; an invoker function here calls none of the PUBLIC-revoked ones.
+ * The workspaces switch (mantle_ws_migrate and its steps) is not here: the
+ * app runs it as the migrator (mantle_ws_migrate_locked, executeAsMigrator).
+ */
+export const RUNTIME_SYSTEM_FUNCTIONS: Readonly<Record<string, string>> = {
+  'public.mantle_actor_miss_log(text,text,text,text)':
+    'client.ts logActorMiss: an actor check miss row, as system(actor-check)',
+  'public.mantle_bridge_login(uuid)':
+    'login-create.ts, login-update.ts, member-invites.ts: a login into its workspaces (0286)',
+  'public.mantle_check_box_mode(text)':
+    'client.ts EDIT_CHECK_DRIFT_SQL: the boot warning and the integrity row edit_check_drift',
+  'public.mantle_embed_host(uuid,public.node_type)':
+    'maintenance/refold-embeds.ts: the host text of an embedded item (0248)',
+  'public.mantle_ws_attach_assistants()':
+    'workspaces-migrate.ts attachDefaultAssistants: the default assistants at boot',
+  'public.mantle_ws_private_workspace(uuid)':
+    "client.ts: the creating login's private workspace (W6b create home)",
+  'public.mantle_ws_skip_reason()':
+    'snapshot-copies.ts and the integrity row workspaces_not_migrated',
 };
 
 /** Tables the runtime role holds no right on (the access matrix's
@@ -157,18 +200,58 @@ export type DbRoleRow = {
   user: string;
   superuser: boolean;
   bypassrls: boolean;
-  /** Tables and sequences of the app's schemas the role owns. */
+  /** Tables, sequences and functions of the app's schemas the role owns. */
   owns: number;
 };
 
 /** Who the connection is: one row, readable by any role. */
 export const DB_ROLE_SQL = `
   SELECT r.rolname AS "user", r.rolsuper AS superuser, r.rolbypassrls AS bypassrls,
-         (SELECT count(*)::int FROM pg_catalog.pg_class c
-            JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
-           WHERE c.relowner = r.oid AND n.nspname IN ('public', 'auth')
-             AND c.relkind IN ('r', 'p', 'S')) AS owns
+         ((SELECT count(*)::int FROM pg_catalog.pg_class c
+             JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+            WHERE c.relowner = r.oid AND n.nspname IN (${APP_SCHEMAS_SQL})
+              AND c.relkind IN ('r', 'p', 'S'))
+          + (SELECT count(*)::int FROM pg_catalog.pg_proc p
+               JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace
+              WHERE p.proowner = r.oid AND n.nspname IN (${APP_SCHEMAS_SQL}))) AS owns
     FROM pg_catalog.pg_roles r WHERE r.rolname = current_user`;
+
+/**
+ * The integrity row runtime_role_lock (server/web/lib/integrity/audit.ts):
+ * one row (id, kind, detail) when mantle_runtime is no longer the lock it
+ * was made as, none when it is (or does not exist: a box before A9). Here,
+ * beside the roles it names.
+ */
+export const RUNTIME_LOCK_SQL = `
+  SELECT '${RUNTIME_ROLE}' AS id, 'lock broken' AS kind, x.detail AS detail
+  FROM (
+    SELECT concat_ws('; ',
+      CASE WHEN r.rolsuper THEN 'a superuser' END,
+      CASE WHEN r.rolcreaterole THEN 'may create roles' END,
+      CASE WHEN r.rolcreatedb THEN 'may create databases' END,
+      CASE WHEN EXISTS (SELECT 1 FROM pg_catalog.pg_class c
+                          JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+                         WHERE c.relowner = r.oid AND n.nspname IN (${APP_SCHEMAS_SQL}))
+           THEN 'owns tables' END,
+      CASE WHEN EXISTS (SELECT 1 FROM pg_catalog.pg_proc p
+                          JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace
+                         WHERE p.proowner = r.oid AND n.nspname IN (${APP_SCHEMAS_SQL}))
+           THEN 'owns functions' END,
+      CASE WHEN has_schema_privilege(r.oid, 'public', 'CREATE') THEN 'may create in public' END,
+      CASE WHEN EXISTS (SELECT 1 FROM unnest(ARRAY['${OWNER_ROLE}', '${SYSTEM_ROLE}']) o(name)
+                         WHERE to_regrole(o.name) IS NOT NULL
+                           AND pg_has_role(r.oid, to_regrole(o.name), 'USAGE'))
+           THEN 'holds the rights of ${OWNER_ROLE} or ${SYSTEM_ROLE}' END,
+      CASE WHEN to_regrole('${OWNER_ROLE}') IS NOT NULL
+            AND pg_has_role(r.oid, to_regrole('${OWNER_ROLE}'), 'SET')
+           THEN 'may become ${OWNER_ROLE}' END,
+      CASE WHEN to_regrole('${OWNER_ROLE}') IS NOT NULL
+            AND coalesce((SELECT pg_get_userbyid(p.proowner) FROM pg_catalog.pg_proc p
+                           WHERE p.oid = to_regprocedure('${ACL_MARKER_FUNCTION}')), '')
+                <> '${OWNER_ROLE}'
+           THEN '${ACL_MARKER_FUNCTION} missing or not ${OWNER_ROLE}''s' END) AS detail
+    FROM pg_catalog.pg_roles r WHERE r.rolname = '${RUNTIME_ROLE}') x
+  WHERE x.detail <> ''`;
 
 /** runtime: the runtime role, not a superuser and owning nothing (what A9
  *  wants); superuser: the box before its roll; other: anything else. */
@@ -192,9 +275,41 @@ export function dbRoleNote(row: DbRoleRow, switchOn: boolean): string | null {
   }
   return (
     `[db] the system pool logs in as "${row.user}"${switchOn ? '' : ' (MANTLE_DB_RUNTIME_ROLE is off)'}` +
-    `${row.owns > 0 ? `, which owns ${row.owns} table(s)` : ''}: not the runtime role A9 wants ` +
+    `${row.owns > 0 ? `, which owns ${row.owns} table(s) or function(s)` : ''}: not the runtime role A9 wants ` +
     `(docs/runtime-role.md).`
   );
+}
+
+/** One membership: `role` granted to `member` with these options. */
+export type Membership = {
+  member: string;
+  role: string;
+  inherit: boolean;
+  set: boolean;
+};
+
+/**
+ * Every membership the three roles may hold, with its options: any other
+ * (a hand grant of mantle_owner with INHERIT, say), or one of these with
+ * other options, is taken back on every run.
+ *
+ *  - runtime in mantle_owner: neither INHERIT nor SET. Membership only,
+ *    which mantle_owner_role() asks (0290), and none of the owner's rights:
+ *    it cannot drop or alter the marker, nor DROP OWNED or REASSIGN OWNED.
+ *  - runtime in mantle_system: SET only, and mantle_system in the write
+ *    role and the gap writer: SET only. The checked rerun's SET ROLE goes
+ *    through it (Postgres 16: a chain of SET options), never directly, so
+ *    0277 and 0278 do not count the system pool as the write role's login.
+ *    mantle_system owns nothing and holds no right, so SET ROLE to it gains
+ *    nothing.
+ */
+export function wantedMemberships(): readonly Membership[] {
+  return [
+    { member: RUNTIME_ROLE, role: OWNER_ROLE, inherit: false, set: false },
+    { member: RUNTIME_ROLE, role: SYSTEM_ROLE, inherit: false, set: true },
+    { member: SYSTEM_ROLE, role: viewerRoleName('write'), inherit: false, set: true },
+    { member: SYSTEM_ROLE, role: GAP_WRITER_ROLE, inherit: false, set: true },
+  ];
 }
 
 /** The attributes of each role. Pure. */
@@ -220,49 +335,38 @@ export function runtimeRoleStatements(
     throw new Error('runtime role password is not base64url');
   }
   const out: string[] = [];
-  for (const role of [OWNER_ROLE, SYSTEM_ROLE, RUNTIME_ROLE]) {
+  for (const role of RUNTIME_ROLES) {
     const verb = existing.has(role) ? 'ALTER' : 'CREATE';
     out.push(
       `${verb} ROLE "${role}" WITH ${roleAttrs(role, role === RUNTIME_ROLE ? password : null)}`,
     );
   }
-  // The runtime role inherits mantle_system (mantle_owner_role says yes)
-  // and may SET it, and through it the write role and the gap writer.
-  out.push(`GRANT "${SYSTEM_ROLE}" TO "${RUNTIME_ROLE}" WITH INHERIT TRUE, SET TRUE, ADMIN FALSE`);
-  // The owner too, without SET: a cascade (ON DELETE CASCADE, SET NULL)
-  // runs as the owner of the table it changes, and so do the triggers it
-  // fires; as the superuser's tables they passed the owner test.
-  out.push(`GRANT "${SYSTEM_ROLE}" TO "${OWNER_ROLE}" WITH INHERIT TRUE, SET FALSE, ADMIN FALSE`);
-  for (const target of [viewerRoleName('write'), GAP_WRITER_ROLE]) {
-    out.push(`GRANT "${target}" TO "${SYSTEM_ROLE}" WITH INHERIT FALSE, SET TRUE, ADMIN FALSE`);
+  for (const m of wantedMemberships()) {
+    out.push(
+      `GRANT "${m.role}" TO "${m.member}" WITH INHERIT ${m.inherit ? 'TRUE' : 'FALSE'}, ` +
+        `SET ${m.set ? 'TRUE' : 'FALSE'}, ADMIN FALSE`,
+    );
   }
   return out;
-}
-
-/** The memberships the runtime role and mantle_system may hold: any other
- *  (a hand grant of mantle_owner, say) is taken back on every run. */
-function wantedMemberships(): Readonly<Record<string, readonly string[]>> {
-  return {
-    [RUNTIME_ROLE]: [SYSTEM_ROLE],
-    [OWNER_ROLE]: [SYSTEM_ROLE],
-    [SYSTEM_ROLE]: [viewerRoleName('write'), GAP_WRITER_ROLE],
-  };
 }
 
 export type RuntimeRolesOutcome = 'ok' | 'not-superuser' | 'old-server';
 
 /**
  * Make the three roles and their memberships (runtimeRoleStatements), and
- * take back any other membership they hold. The runtime role logs in only
- * with a master key and outside per-database mode. Needs a superuser (a
- * BYPASSRLS role is a superuser's to make): any other caller changes
- * nothing and gets 'not-superuser'. Postgres 16 or later (membership
- * options). Before the migrations: they and the grants name the roles.
+ * take back any other membership they hold, or one with other options. The
+ * runtime role logs in only when `login` (migrate: MANTLE_DB_RUNTIME_ROLE
+ * on), with a master key and outside per-database mode; otherwise it is
+ * NOLOGIN with no password, so switching the switch off closes the login at
+ * the next migrate. Needs a superuser (a BYPASSRLS role is a superuser's to
+ * make): any other caller changes nothing and gets 'not-superuser'.
+ * Postgres 16 or later (membership options). Before the migrations: they
+ * and the grants name the roles.
  */
 export async function ensureRuntimeRoles(
   sql: Sql,
   masterKey: string | null,
-  perDatabase = false,
+  opts: { login: boolean; perDatabase?: boolean },
 ): Promise<RuntimeRolesOutcome> {
   const [me] = await sql<{ su: boolean; v: number }[]>`
     select r.rolsuper as su, current_setting('server_version_num')::int as v
@@ -284,41 +388,86 @@ export async function ensureRuntimeRoles(
     );
   }
   const rows = await sql<{ rolname: string }[]>`
-    select rolname from pg_roles where rolname in (${OWNER_ROLE}, ${RUNTIME_ROLE}, ${SYSTEM_ROLE})`;
-  const password = masterKey && !perDatabase ? runtimeRolePassword(masterKey) : null;
-  for (const stmt of runtimeRoleStatements(new Set(rows.map((r) => r.rolname)), password)) {
-    await withRoleRetry(() => sql.unsafe(stmt));
-  }
-  const held = await sql<{ member: string; role: string }[]>`
-    select u.rolname as member, r.rolname as role
+    select rolname from pg_roles where rolname = any(${[...RUNTIME_ROLES]}::text[])`;
+  const password =
+    opts.login && masterKey && !opts.perDatabase ? runtimeRolePassword(masterKey) : null;
+  // Wrong memberships first, so the GRANTs below land on a clean slate (a
+  // membership is one row per grantor: a GRANT does not change another
+  // grantor's row).
+  const held = await sql<
+    {
+      member: string;
+      role: string;
+      grantor: string;
+      inherit: boolean;
+      set: boolean;
+      admin: boolean;
+    }[]
+  >`
+    select u.rolname as member, r.rolname as role, g.rolname as grantor,
+           m.inherit_option as inherit, m.set_option as set, m.admin_option as admin
       from pg_auth_members m
       join pg_roles r on r.oid = m.roleid
       join pg_roles u on u.oid = m.member
-     where u.rolname in (${RUNTIME_ROLE}, ${SYSTEM_ROLE}, ${OWNER_ROLE})`;
+      join pg_roles g on g.oid = m.grantor
+     where u.rolname = any(${[...RUNTIME_ROLES]}::text[])`;
   const wanted = wantedMemberships();
-  for (const { member, role } of held) {
-    if (wanted[member]?.includes(role)) continue;
-    await withRoleRetry(() => sql.unsafe(`REVOKE "${role}" FROM "${member}"`));
+  for (const h of held) {
+    const w = wanted.find((x) => x.member === h.member && x.role === h.role);
+    if (w && w.inherit === h.inherit && w.set === h.set && !h.admin) continue;
+    await withRoleRetry(() =>
+      sql.unsafe(`REVOKE "${h.role}" FROM "${h.member}" GRANTED BY "${h.grantor}"`),
+    );
+  }
+  for (const stmt of runtimeRoleStatements(new Set(rows.map((r) => r.rolname)), password)) {
+    await runRoleStatement(sql, stmt, true);
   }
   return 'ok';
 }
 
-/** The outcome of one ownership change (ownTables). */
-export type OwnOutcome = { owned: string[]; failed: { rel: string; error: string }[] };
+/** The outcome of one ownership change (ownTables). `busy`: left for the
+ *  next run because a lock was not to be had in time. */
+export type OwnOutcome = {
+  owned: string[];
+  failed: { rel: string; error: string; busy: boolean }[];
+};
+
+/** How long ownTables waits for one table's lock: the old app still serves
+ *  while compose's migrate runs, and every statement queued behind an
+ *  ALTER ... OWNER waits with it. */
+export const OWN_LOCK_TIMEOUT = '200ms';
+
+/** The batch's whole budget: past it, the batch gives up (rolling back,
+ *  so every lock it took is let go) and each table goes on its own. */
+const OWN_BATCH_BUDGET_MS = 1_000;
+
+/** "tuple concurrently updated": two sessions changing the same catalog
+ *  row (a GRANT on the table in another migrate or test). Idempotent, so
+ *  tried again; any other internal error is not. */
+function isConcurrentUpdate(err: unknown): boolean {
+  const e = err as { code?: string; message?: string };
+  return e?.code === 'XX000' && /tuple concurrently updated/.test(e.message ?? '');
+}
 
 /**
- * Hand every table and sequence of the app's schemas to mantle_owner, and
- * mantle_acl_internal() to mantle_system. All in one transaction first,
- * with a short lock_timeout (ALTER ... OWNER takes the table's strongest
- * lock); when a busy table fails it, each change goes on its own: a busy
- * table is tried again three times, then left with a warning for the next
- * run. Ownership is not the runtime role's lock (it never owns
- * anything, whoever does), so a table left behind is untidy, not a hole.
- * A sequence a column owns (serial, identity) moves with its table. Needs a
- * superuser.
+ * Hand every table and sequence of the app's schemas, and the marker
+ * mantle_acl_internal() (made again first when missing or changed,
+ * ensureAclMarker), to mantle_owner. Never fails the run.
+ *
+ * ALTER ... OWNER takes the table's strongest lock, and on a box this runs
+ * while the old app still serves (compose's migrate). So: all in one
+ * transaction first (a fresh database or a quiet box: one commit), each lock
+ * waited for at most OWN_LOCK_TIMEOUT and the whole batch at most
+ * OWN_BATCH_BUDGET_MS; past either it rolls back, letting every lock go,
+ * and each change goes on its own with the same short wait, tried three
+ * times. A table still busy then is left for the next migrate (`busy`).
+ * Ownership is not the runtime role's lock (it never owns anything, whoever
+ * does), so a table left behind is untidy, not a hole. A sequence a column
+ * owns (serial, identity) moves with its table. Needs a superuser.
  */
 export async function ownTables(sql: Sql): Promise<OwnOutcome> {
   const out: OwnOutcome = { owned: [], failed: [] };
+  await ensureAclMarker(sql);
   const rels = await sql<{ rel: string; kind: string }[]>`
     select c.oid::regclass::text as rel, c.relkind::text as kind
       from pg_class c join pg_namespace n on n.oid = c.relnamespace
@@ -337,48 +486,79 @@ export async function ownTables(sql: Sql): Promise<OwnOutcome> {
     for (let attempt = 1; ; attempt++) {
       try {
         await sql.begin(async (tx) => {
-          await tx`set local lock_timeout = '3s'`;
+          await tx.unsafe(`set local lock_timeout = '${OWN_LOCK_TIMEOUT}'`);
           await tx.unsafe(stmt);
         });
         out.owned.push(rel);
         return;
       } catch (err) {
-        const code = (err as { code?: string }).code;
-        if (attempt < 3 && (code === '55P03' || code === 'XX000')) continue;
-        out.failed.push({ rel, error: err instanceof Error ? err.message : String(err) });
+        const busy = (err as { code?: string }).code === '55P03';
+        if (attempt < 3 && (busy || isConcurrentUpdate(err))) {
+          await new Promise((r) => setTimeout(r, 50 * attempt + Math.random() * 50));
+          continue;
+        }
+        out.failed.push({ rel, error: err instanceof Error ? err.message : String(err), busy });
         return;
       }
     }
   };
   const alter = ({ rel, kind }: { rel: string; kind: string }) =>
     `ALTER ${kind === 'S' ? 'SEQUENCE' : 'TABLE'} ${rel} OWNER TO "${OWNER_ROLE}"`;
-  // All in one transaction first (a fresh database, a quiet box: one
-  // commit); a busy table fails it, and then each goes on its own.
+  const items = rels.map((r) => ({ rel: r.rel, stmt: alter(r) }));
+  const [marker] = await sql<{ owner: string | null }[]>`
+    select (select pg_get_userbyid(p.proowner) from pg_proc p
+             where p.oid = to_regprocedure(${ACL_MARKER_FUNCTION})) as owner`;
+  if (marker?.owner && marker.owner !== OWNER_ROLE) {
+    items.push({
+      rel: ACL_MARKER_FUNCTION,
+      stmt: `ALTER FUNCTION ${ACL_MARKER_FUNCTION} OWNER TO "${OWNER_ROLE}"`,
+    });
+  }
   let batched = false;
-  if (rels.length > 1) {
+  if (items.length > 1) {
+    const started = Date.now();
     try {
       await sql.begin(async (tx) => {
-        await tx`set local lock_timeout = '3s'`;
-        for (const r of rels) await tx.unsafe(alter(r));
+        await tx.unsafe(`set local lock_timeout = '${OWN_LOCK_TIMEOUT}'`);
+        for (const it of items) {
+          if (Date.now() - started > OWN_BATCH_BUDGET_MS) throw new Error('batch budget');
+          await tx.unsafe(it.stmt);
+        }
       });
-      out.owned.push(...rels.map((r) => r.rel));
+      out.owned.push(...items.map((it) => it.rel));
       batched = true;
     } catch {
-      // One by one below.
+      // Rolled back, every lock let go: one by one below.
     }
   }
-  if (!batched) for (const r of rels) await change(alter(r), r.rel);
-  const [marker] = await sql<{ fn: string | null; owner: string | null }[]>`
-    select to_regprocedure(${ACL_MARKER_FUNCTION})::text as fn,
-           (select pg_get_userbyid(p.proowner) from pg_proc p
-             where p.oid = to_regprocedure(${ACL_MARKER_FUNCTION})) as owner`;
-  if (marker?.fn && marker.owner !== SYSTEM_ROLE) {
-    await change(
-      `ALTER FUNCTION ${ACL_MARKER_FUNCTION} OWNER TO "${SYSTEM_ROLE}"`,
-      ACL_MARKER_FUNCTION,
-    );
-  }
+  if (!batched) for (const it of items) await change(it.stmt, it.rel);
   return out;
+}
+
+/**
+ * Make mantle_acl_internal() again, as 0241 made it, when it is missing or
+ * changed (another body, volatility, a definer, a setting): every write
+ * guard asks mantle_owner_role(), which errors without it. The superuser
+ * replaces it; ownTables then hands it to mantle_owner. A database before
+ * 0241 (no mantle_owner_role) is left alone. Returns whether it was made.
+ */
+export async function ensureAclMarker(sql: Sql): Promise<boolean> {
+  const [m] = await sql<{ ok: boolean }[]>`
+    select to_regprocedure('public.mantle_owner_role()') is null or coalesce((
+      select btrim(p.prosrc) = btrim(${ACL_MARKER_BODY})
+             and p.provolatile = 's' and p.proparallel = 's' and not p.prosecdef
+             and p.proconfig is null and p.prorettype = 'boolean'::regtype
+             and l.lanname = 'sql'
+        from pg_proc p join pg_language l on l.oid = p.prolang
+       where p.oid = to_regprocedure(${ACL_MARKER_FUNCTION})), false) as ok`;
+  if (m?.ok) return false;
+  await sql.unsafe(
+    `CREATE OR REPLACE FUNCTION ${ACL_MARKER_FUNCTION}\n` +
+      `  RETURNS boolean LANGUAGE sql STABLE PARALLEL SAFE SECURITY INVOKER AS $$${ACL_MARKER_BODY}$$`,
+  );
+  // CREATE OR REPLACE keeps what ALTER FUNCTION ... SET added: reset it.
+  await sql.unsafe(`ALTER FUNCTION ${ACL_MARKER_FUNCTION} RESET ALL`);
+  return true;
 }
 
 /** The functions of RUNTIME_DENIED_FUNCTIONS that exist here. */
@@ -388,16 +568,50 @@ async function deniedFunctionsPresent(sql: Sql): Promise<string[]> {
   return rows.map((r) => r.fn).filter((f): f is string => !!f);
 }
 
+/** The viewer roles (the scoped pools and the gap writer): what any of
+ *  them may run, the runtime role may run. */
+function viewerRoles(): string[] {
+  return [...POOL_ROLES.map((r) => viewerRoleName(r)), GAP_WRITER_ROLE];
+}
+
+/**
+ * The functions of APP_SCHEMAS the runtime role is granted EXECUTE on
+ * (it runs what PUBLIC may run anyway, as every role): every one a viewer
+ * role may run that PUBLIC may not, and RUNTIME_SYSTEM_FUNCTIONS, never one
+ * of RUNTIME_DENIED_FUNCTIONS. An allowlist: a function a migration takes
+ * from PUBLIC and gives to no viewer role is not the runtime role's until a
+ * line in RUNTIME_SYSTEM_FUNCTIONS says why. Read after the denials are
+ * taken from PUBLIC and the viewer roles.
+ */
+export async function runtimeFunctionAllowlist(sql: Sql): Promise<string[]> {
+  const rows = await sql<{ fn: string }[]>`
+    select p.oid::regprocedure::text as fn
+      from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+     where n.nspname = any(${[...APP_SCHEMAS]}::text[])
+       and not has_function_privilege('public', p.oid, 'EXECUTE')
+       and (exists (select 1 from unnest(${viewerRoles()}::text[]) v
+                     where to_regrole(v) is not null
+                       and has_function_privilege(to_regrole(v), p.oid, 'EXECUTE'))
+            or p.oid in (select to_regprocedure(x)
+                           from unnest(${Object.keys(RUNTIME_SYSTEM_FUNCTIONS)}::text[]) x))
+       and p.oid not in (select to_regprocedure(x)
+                           from unnest(${Object.keys(RUNTIME_DENIED_FUNCTIONS)}::text[]) x
+                          where to_regprocedure(x) is not null)
+     order by 1`;
+  return rows.map((r) => r.fn);
+}
+
 /**
  * The runtime role's rights in this database, made equal to the wanted set
  * on every run (as applyViewerGrants does the viewer roles'): everything it
- * holds on the app's tables and sequences is revoked, then SELECT, INSERT,
- * UPDATE and DELETE on every table but runtimeDeniedTables, USAGE, SELECT
- * and UPDATE on every sequence, EXECUTE on every function but
- * RUNTIME_DENIED_FUNCTIONS (also taken from PUBLIC and every viewer role),
- * CONNECT on the database, and default privileges so a table a later
- * migration makes is the runtime role's at once. CREATE on public is taken
- * from PUBLIC: the runtime role may make nothing there.
+ * holds on the app's tables, sequences and functions is revoked, then
+ * SELECT, INSERT, UPDATE and DELETE on every table but runtimeDeniedTables,
+ * USAGE, SELECT and UPDATE on every sequence, EXECUTE on the allowlist
+ * (runtimeFunctionAllowlist; RUNTIME_DENIED_FUNCTIONS are also taken from
+ * PUBLIC and every viewer role), CONNECT on the database, and default
+ * privileges so a table a later migration makes is the runtime role's at
+ * once. CREATE on public is taken from PUBLIC: the runtime role may make
+ * nothing there.
  *
  * And mantle_owner's: USAGE on the schemas, every right on the tables and
  * EXECUTE on every function. Nobody logs in as it, but Postgres runs a
@@ -409,7 +623,7 @@ async function deniedFunctionsPresent(sql: Sql): Promise<string[]> {
 export async function applyRuntimeGrants(sql: Sql): Promise<void> {
   const rt = `"${RUNTIME_ROLE}"`;
   const schemas = APP_SCHEMAS.join(', ');
-  const viewers = [...POOL_ROLES.map((r) => viewerRoleName(r)), GAP_WRITER_ROLE]
+  const viewers = viewerRoles()
     .map((r) => `"${r}"`)
     .join(', ');
   await withRoleRetry(() =>
@@ -434,9 +648,14 @@ export async function applyRuntimeGrants(sql: Sql): Promise<void> {
         select c.oid::regclass::text as t from pg_class c join pg_namespace n on n.oid = c.relnamespace
          where n.nspname || '.' || c.relname = any(${runtimeDeniedTables()}::text[])`;
       for (const { t } of denied) await tx.unsafe(`REVOKE ALL ON ${t} FROM ${rt}`);
-      await tx.unsafe(`GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA ${schemas} TO ${rt}`);
       for (const fn of await deniedFunctionsPresent(tx as unknown as Sql)) {
         await tx.unsafe(`REVOKE ALL ON FUNCTION ${fn} FROM PUBLIC, ${rt}, ${viewers}`);
+      }
+      // Functions: an allowlist, not every function less a denylist.
+      await tx.unsafe(`REVOKE ALL ON ALL ROUTINES IN SCHEMA ${schemas} FROM ${rt}`);
+      const allowed = await runtimeFunctionAllowlist(tx as unknown as Sql);
+      if (allowed.length > 0) {
+        await tx.unsafe(`GRANT EXECUTE ON ROUTINE ${allowed.join(', ')} TO ${rt}`);
       }
       // pg-boss's own schema (it stays the migrator's: pg-boss makes
       // partitions at run time): read only, for the queue counts the app
