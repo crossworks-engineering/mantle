@@ -95,6 +95,12 @@ jobs:
       - name: Docs paths
         run: pnpm docs:check
 
+      # Every server process links its imports the way the image starts it
+      # (scripts/boot-smoke.mjs), before a single image layer is built: the
+      # v0.300.64 images crash-looped at start with every other gate green.
+      - name: Boot smoke
+        run: pnpm boot:smoke
+
       # Replay every migration from scratch, exactly as build-check does, so
       # the drift + runs suites below run against the schema this tag ships.
       - name: Init + migrate the throwaway database

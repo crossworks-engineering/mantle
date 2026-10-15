@@ -10,7 +10,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadEnvFiles } from './env';
-import { assertEnvShape, env, envNum } from '@mantle/config';
+import { assertEnvShape, bootSmokeExit, env, envNum, isBootSmoke } from '@mantle/config';
 import { onShutdown } from '@mantle/std/shutdown';
 import { log } from '@mantle/tracing';
 
@@ -79,6 +79,25 @@ startCallAudit({
 
 const { serve } = await import('@hono/node-server');
 const { createApp } = await import('./app');
+
+// Boot smoke (scripts/boot-smoke.mjs): the import graph above is linked; load
+// what this process would load later (the app's pages, every route module the
+// manifest loads on its first hit, the boot tasks below) and exit 0 before a
+// pool, a task or a listener starts. Every literal import() below this block
+// is listed in it (boot-smoke.test.ts).
+if (isBootSmoke()) {
+  await bootSmokeExit('web', [
+    () => createApp(),
+    async () => {
+      const { routeManifest } = await import('./route-manifest.gen');
+      for (const route of routeManifest) await route.load();
+    },
+    () => import('../lib/system-manifest/reconcile'),
+    () => import('../lib/workspaces-migrate'),
+    () => import('../lib/snapshot-copies'),
+    () => import('@mantle/content/app-table-exports'),
+  ]);
+}
 
 // Boot hook (was instrumentation.ts): bring an existing brain in line with the
 // system manifest on every image update. Fire-and-forget — never delays or

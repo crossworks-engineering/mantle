@@ -21,7 +21,7 @@
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import postgres from 'postgres';
-import { env } from '@mantle/config';
+import { bootSmokeExit, env, isBootSmoke } from '@mantle/config';
 
 function systemDbUrl(): string {
   const explicit = env('DBOS_SYSTEM_DATABASE_URL');
@@ -34,6 +34,8 @@ function systemDbUrl(): string {
 }
 
 async function main(): Promise<void> {
+  // Boot smoke (scripts/boot-smoke.mjs): imports linked; exit 0 before any I/O.
+  if (isBootSmoke()) await bootSmokeExit('provision');
   const sysUrl = new URL(systemDbUrl());
   const dbName = sysUrl.pathname.replace(/^\//, '');
   if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(dbName)) {

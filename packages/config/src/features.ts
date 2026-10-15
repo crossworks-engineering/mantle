@@ -98,6 +98,11 @@ export const FEATURES = {
     default: false,
     doc: 'the crash-test harness in server/api',
   },
+  bootSmoke: {
+    env: 'MANTLE_BOOT_SMOKE',
+    default: false,
+    doc: 'import-only boot: each process entry exits 0 once its import graph links (scripts/boot-smoke.mjs)',
+  },
   // Environment switch whose default the caller knows.
   mcpTerminal: {
     env: 'MANTLE_MCP_TERMINAL',

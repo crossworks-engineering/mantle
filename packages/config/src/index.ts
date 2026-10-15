@@ -71,6 +71,7 @@ export type KnownEnvName =
   | 'MANTLE_API_TOKEN'
   | 'MANTLE_APP_RUNTIME_MANIFEST'
   | 'MANTLE_BACKUP_DIR'
+  | 'MANTLE_BOOT_SMOKE'
   | 'MANTLE_BUILD_TIME'
   | 'MANTLE_CLIENT_ORIGIN'
   | 'MANTLE_COMPOSE_FILE'
@@ -268,6 +269,7 @@ export const INTERNAL_ENV: Partial<Record<KnownEnvName, string>> = {
   MANTLE_MCP_DIR: 'script: where the dev MCP bridge finds server/mcp',
   MANTLE_DEV_EMAIL: 'script: display email for the detached dev session',
   MANTLE_CRASH_TEST: 'script: the crash-test harness in server/api',
+  MANTLE_BOOT_SMOKE: 'script: the import-only boot of scripts/boot-smoke.mjs',
   CRASH_MARKER: 'script: the crash-test harness in server/api',
   CRASH_POINT: 'script: the crash-test harness in server/api',
   CRASH_TEST_SHAPE: 'script: the crash-test harness in server/api',
@@ -367,3 +369,4 @@ export * from './services';
 export * from './parse';
 export * from './numbers';
 export * from './features';
+export * from './boot-smoke';

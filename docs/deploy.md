@@ -234,6 +234,25 @@ is fine but harder to roll back from.
 > `DOCKERHUB_TOKEN` repo secrets. See [`self-hosting.md`](./self-hosting.md)
 > § "cutting a release".
 
+### Boot smoke
+
+`pnpm boot:smoke` ([`scripts/boot-smoke.mjs`](../scripts/boot-smoke.mjs))
+starts every service compose runs on the server image (web through the image
+`CMD`, api, every worker, the four migrate steps) with its own `command:`,
+from the repo root as the image does, under `MANTLE_BOOT_SMOKE=1`. Each entry
+links its imports, loads what it would load lazily (the web: every route
+module and its boot tasks), prints `[boot-smoke] linked: <name>` and exits 0
+before it opens a pool, a listener or a queue
+([`packages/config/src/boot-smoke.ts`](../packages/config/src/boot-smoke.ts)).
+No database, no network, about ten seconds. It runs in `pnpm verify`, in
+build-check and in the release guard before any image is built. It exists
+because v0.300.64 crash-looped every server process at start (a package
+without `"type": "module"`, loaded by tsx as CommonJS, lost the names its
+barrel re-exported) while typecheck, tests and the build were green;
+`eslint-rules/boot-smoke.test.ts` now also requires `"type": "module"` in
+every `packages/*` and `server/*` package. sandboxd is skipped (standalone,
+no workspace imports).
+
 ---
 
 ## 3. First deploy + data migration (VPS)

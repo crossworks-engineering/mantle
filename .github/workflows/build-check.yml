@@ -98,6 +98,14 @@ jobs:
       - name: Architecture counts
         run: pnpm arch:check
 
+      # Boot every server process the way the image does (each compose
+      # service's own command, through tsx) up to the point where its import
+      # graph links, then exit (scripts/boot-smoke.mjs). v0.300.64 shipped a
+      # server that could not start although typecheck, tests and the build
+      # passed. No database, no network; seconds.
+      - name: Boot smoke
+        run: pnpm boot:smoke
+
       # Replay every migration from scratch. This is the only place the full
       # 0000→latest path runs (boxes only ever apply the increment), so a
       # migration that cannot replay, or is missing from the journal, fails

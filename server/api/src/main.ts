@@ -25,7 +25,7 @@ import {
   runnerConcurrency,
   runsTurnConcurrency,
 } from './config';
-import { assertEnvShape } from '@mantle/config';
+import { assertEnvShape, bootSmokeExit, isBootSmoke } from '@mantle/config';
 import { openLoginWritePool, startCallAudit } from '@mantle/db';
 import { ensureGateReady } from '@mantle/tools/gate-narrowers';
 import { RUNS_TURN_QUEUE } from '@mantle/runs';
@@ -90,6 +90,9 @@ async function main(): Promise<void> {
   // of a turn.
   // gate-boot.test.ts pins this call in every process entry.
   ensureGateReady();
+  // Boot smoke (scripts/boot-smoke.mjs): every import above linked and the
+  // gate is ready; exit 0 before a pool, a listener or DBOS starts.
+  if (isBootSmoke()) await bootSmokeExit('api');
   // One audit row for every tool write (A5 step 6d, @mantle/db call-audit.ts): Telegram,
   // heartbeat, team and worker turns, runs.
   startCallAudit();

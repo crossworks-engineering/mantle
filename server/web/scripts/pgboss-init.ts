@@ -18,7 +18,10 @@
  */
 
 import { PgBoss } from 'pg-boss';
-import { env } from '@mantle/config';
+import { bootSmokeExit, env, isBootSmoke } from '@mantle/config';
+
+// Boot smoke (scripts/boot-smoke.mjs): imports linked; exit 0 before any I/O.
+if (isBootSmoke()) await bootSmokeExit('pgboss-init');
 
 const url = env('DATABASE_URL');
 if (!url) {

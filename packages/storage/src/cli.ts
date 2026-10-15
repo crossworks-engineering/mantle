@@ -20,7 +20,7 @@
  */
 
 import { S3Client } from '@aws-sdk/client-s3';
-import { env } from '@mantle/config';
+import { bootSmokeExit, env, isBootSmoke } from '@mantle/config';
 import { clientConfig, copyMissingFrom, ensureBucket, verifyObjects } from './index';
 
 const WAIT_MS = 60_000;
@@ -92,6 +92,9 @@ async function copyFrom(): Promise<void> {
   );
   if (r.bad.length > 0) process.exit(1);
 }
+
+// Boot smoke (scripts/boot-smoke.mjs): imports linked; exit 0 before any I/O.
+if (isBootSmoke()) await bootSmokeExit(`objectstore:${process.argv[2] ?? ''}`);
 
 const cmd = process.argv[2];
 const run =

@@ -23,7 +23,7 @@
  */
 import { PgBoss } from 'pg-boss';
 import { startProcessHeartbeat } from '@mantle/content';
-import { env } from '@mantle/config';
+import { bootSmokeExit, env, isBootSmoke } from '@mantle/config';
 import { runAsSystem, startCallAudit } from '@mantle/db';
 import { ensureGateReady } from '@mantle/tools/gate-narrowers';
 import { onShutdown } from '@mantle/std/shutdown';
@@ -97,6 +97,9 @@ function run(name: string, start: () => Promise<void>, stop: () => Promise<void>
   // gate-boot.test.ts).
   startWorkerAs(name, async () => {
     ensureGateReady();
+    // Boot smoke (scripts/boot-smoke.mjs): the worker's imports linked and the
+    // gate is ready; exit 0 before the heartbeat, a pool or a queue starts.
+    if (isBootSmoke()) await bootSmokeExit(`worker:${name}`);
     // One audit row for every tool write (A5 step 6d, @mantle/db call-audit.ts).
     startCallAudit();
     await start();

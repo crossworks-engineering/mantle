@@ -59,13 +59,15 @@
 import { readFileSync } from 'node:fs';
 import { readMigrationFiles } from 'drizzle-orm/migrator';
 import postgres from 'postgres';
-import { env, feature } from '@mantle/config';
+import { bootSmokeExit, env, feature, isBootSmoke } from '@mantle/config';
 import { applyJournal } from './migrate-runner';
 import type { JournalEntry } from './migrate-plan';
 import { CONCURRENT_INDEXES, ensureConcurrentIndexes } from './concurrent-indexes';
 import { afterMigrations, beforeMigrations } from './migrator-steps';
 
 async function main() {
+  // Boot smoke (scripts/boot-smoke.mjs): imports linked; exit 0 before any I/O.
+  if (isBootSmoke()) await bootSmokeExit('migrate');
   const url = env('DATABASE_URL');
   if (!url) throw new Error('DATABASE_URL must be set');
   const sql = postgres(url, { max: 1, prepare: false });
