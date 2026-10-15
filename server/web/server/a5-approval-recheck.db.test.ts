@@ -68,7 +68,12 @@ vi.mock('../../../packages/tools/src/mcp-client', async (importOriginal) => ({
   mcpCallRemoteTool: vi.fn(async () => {
     const viewer = await import('@mantle/db/viewer');
     const db = await import('@mantle/db');
-    h.remote.push({ scope: viewer.currentWorkspaceScope(), actor: db.currentActor() });
+    // The remote call runs on the system pool (asSystem 'connector-call'):
+    // the scope it left, and the actor the gate bound for the call.
+    h.remote.push({
+      scope: viewer.scopeLeftForSystem() ?? viewer.currentWorkspaceScope(),
+      actor: db.currentCaller()?.actor ?? null,
+    });
     return { text: '{"updated":true}', secrets: [] };
   }),
 }));
