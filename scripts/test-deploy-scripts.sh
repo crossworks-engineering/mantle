@@ -1051,6 +1051,11 @@ case "$1" in
   logs)
     echo "[server] booting"
     echo "SyntaxError: The requested module '@mantle/voice-client' does not provide an export named 'x'"
+    echo "[db] connect failed: postgres://mantle:pgpass123@db:5432/mantle"
+    echo "Error: [config] environment is malformed:"
+    echo "  - SESSION_SECRET must be at least 32 characters"
+    echo "[crypto] MANTLE_MASTER_KEY not found"
+    echo "[proxy] 401 for Authorization: Bearer tok_bearer_456"
     echo "[config] MANTLE_API_TOKEN=abc123 leaked"
     echo "Node.js v26.11.1"
     exit 0 ;;
@@ -1174,8 +1179,14 @@ roll_box unhealthy
 FAKE_HEALTH=unhealthy roll_sh --ssh fakebox v8
 check "web never healthy: exit 1 with a loud banner" sh -c "test '$rc' = 1 && grep -q 'WEB NOT HEALTHY on fakebox' '$RS/out' && grep -q 'Nothing was rolled back' '$RS/out'"
 check "web never healthy: prints its log tail" grep -q "does not provide an export named" "$RS/out"
-check "web never healthy: a line naming a token is left out, and counted" \
-  sh -c "! grep -q abc123 '$RS/out' && grep -q '1 line(s) left out' '$RS/out'"
+check "web never healthy: a postgres URL prints with its credentials masked" \
+  sh -c "! grep -q pgpass123 '$RS/out' && grep -qF 'connect failed: postgres://[redacted]@db:5432/mantle' '$RS/out'"
+check "web never healthy: env-shape errors print whole" \
+  sh -c "grep -qF -- '- SESSION_SECRET must be at least 32 characters' '$RS/out' && grep -qF 'MANTLE_MASTER_KEY not found' '$RS/out' && grep -qF 'environment is malformed:' '$RS/out'"
+check "web never healthy: a bearer header prints with its value masked" \
+  sh -c "! grep -q tok_bearer_456 '$RS/out' && grep -qF '401 for Authorization: [redacted]' '$RS/out'"
+check "web never healthy: a KEY=value line prints with its value masked" \
+  sh -c "! grep -q abc123 '$RS/out' && grep -qF 'MANTLE_API_TOKEN=[redacted] leaked' '$RS/out'"
 check "web never healthy: no rollback requested" sh -c "test \$(grep -c alpine '$RS/calls') = 1"
 
 roll_box notok

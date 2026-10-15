@@ -436,10 +436,23 @@ fi
 # ── 6. health ────────────────────────────────────────────────────────────────
 # A web that never comes up is the worst roll outcome (v0.300.64: every server
 # process crash-looped at start on an import error), so say it loudly and show
-# why: the tail of its own log, minus any line that could carry a secret.
-SECRET_WORDS='key|token|passw|secret|bearer|authori|cookie'
+# why: the tail of its own log, every line of it, with secret VALUES masked
+# (dropping whole lines hid the very lines that explain a boot failure, like
+# "SESSION_SECRET must be at least 32 characters", and still let a URL with a
+# password through). Masked: URL credentials (scheme://user:pass@ ->
+# scheme://[redacted]@), the rest of an Authorization or Cookie header, the
+# word after "Bearer", and the value after a name holding key, token,
+# secret, passw..., authorization, cookie or bearer and then = or :
+# (case-insensitive). perl, not sed: BSD sed has no case-insensitive flag.
+REDACT_PERL='
+s{://[^/\s\@]+\@}{://[redacted]\@}g;
+s{\b((?:proxy-)?authorization|(?:set-)?cookie)(\s*[=:]\s*).*}{$1$2\[redacted\]}gi;
+s{\b(bearer)\s+[^\s,;\x22\x27]+}{$1 \[redacted\]}gi;
+s{((?:key|token|secret|passw[a-z]*|authorization|cookie|bearer)[^=:\n]*[=:]\s*)(?:\x22[^\x22]*\x22|\x27[^\x27]*\x27|[^\s,;]+)}{$1\[redacted\]}gi;
+'
+redact_secrets() { perl -pe "$REDACT_PERL"; }
 web_not_healthy() { # <last health status>
-  local logs total kept
+  local logs
   printf '\n!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n' >&2
   printf '!!  WEB NOT HEALTHY on %s %ss after the roll to %s (last: %s).\n' \
     "$SSH_ALIAS" "$HEALTH_TIMEOUT" "$TAG" "${1:-unknown}" >&2
@@ -450,14 +463,12 @@ web_not_healthy() { # <last health status>
   logs=$(rsh "docker logs --tail 20 mantle_web 2>&1" 2>/dev/null) || logs=""
   if [ -z "$logs" ]; then
     printf '(could not read the mantle_web log on %s)\n' "$SSH_ALIAS" >&2
+  elif ! command -v perl >/dev/null 2>&1; then
+    printf '(perl not found: the log cannot be masked, so it is not shown; read it on the box:\n' >&2
+    printf '  ssh %s docker logs --tail 20 mantle_web)\n' "$SSH_ALIAS" >&2
   else
-    total=$(printf '%s\n' "$logs" | grep -c '' || true)
-    kept=$(printf '%s\n' "$logs" | grep -ciEv "$SECRET_WORDS" || true)
-    printf 'last %s line(s) of the mantle_web log:\n' "$total" >&2
-    printf '%s\n' "$logs" | grep -iEv "$SECRET_WORDS" | sed 's/^/    /' >&2 || true
-    [ "$kept" -eq "$total" ] \
-      || printf '    (%s line(s) left out: they name a key, token, password or secret)\n' \
-        "$((total - kept))" >&2
+    printf 'last lines of the mantle_web log (secret values masked):\n' >&2
+    printf '%s\n' "$logs" | redact_secrets | sed 's/^/    /' >&2 || true
   fi
   exit 1
 }

@@ -106,8 +106,12 @@ What it does, in order:
    request), then requires `"ok":true`.
 6. Waits for `mantle_web` healthy. If it never is, it stops with exit 1, a
    banner saying the box is down, and the last 20 lines of the `mantle_web`
-   log (a line naming a key, token, password or secret is left out and
-   counted). Nothing is rolled back automatically.
+   log, every line, with secret values masked: URL credentials
+   (`://[redacted]@`), Authorization and Cookie header values, the word after
+   `Bearer`, and the value after a name holding key, token, secret, passw...
+   and then `=` or `:`. Lines that explain the failure ("SESSION_SECRET must
+   be at least 32 characters") print whole. Nothing is rolled back
+   automatically.
 7. Counts again: **any drop in apps, sandboxes or app-db files stops with exit
    3** and a banner. Roll nothing else; the pre-roll backup is the way back.
 8. Prints `/api/version`.
