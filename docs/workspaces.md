@@ -189,7 +189,7 @@ every workspace it is granted to, each with a Write switch.
 | Open, change or close its link   | to be able to edit it (an app: Moderator of its home) |
 | Close any public link            | to be an Admin user with the users area               |
 | Share it with one contact        | to be an Admin user (its home is not checked)         |
-| Delete it                        | Moderator of its home                                 |
+| Delete it                        | Moderator of its home (an app: see Apps)              |
 | Move it to another home (H to T) | Moderator of H and Moderator of T                     |
 
 - A Moderator of a workspace that is not the item's home edits the item
@@ -334,10 +334,15 @@ A key acts as the login that made it, as that login is now. Its access
   with the keys area.
 - A password change, **Sign out everywhere**, an admin's End sessions and
   disabling the login end its keys.
+- **On `/api/v1`** a route answers a key as the route it stands for in the
+  app answers the key's login: a login outside Admin reads and changes
+  there what it may in its workspaces (the item routes), and the routes
+  for Admin only (contacts, the journal, table row writes) refuse it.
 - **API only.** A member key made before every login had MCP was made for
   `/api/v1`. The move to one MCP surface marked it `api_only`: it keeps
-  working on `/api/v1`, and `/api/mcp` refuses it. A key made since is
-  never API only. Make a new key for MCP.
+  working on `/api/v1`, with the same rights as any key of its login there,
+  and `/api/mcp` refuses it. A key made since is never API only. Make a new
+  key for MCP.
 
 **Linked brains** (peers, [federation.md](./federation.md)). A peer with
 **Acts as** gets the MCP surface as that login, as the login is now. Its
@@ -390,6 +395,11 @@ chat belongs to one user. Details: [telegram.md](./telegram.md).
 An app is an item: it has a home and grants like a page.
 
 - **Code.** A Moderator of the app's home builds and edits it.
+- **Delete.** A Moderator of the app's home deletes it in the app, over
+  MCP or in a chat on the web; it then waits in Recently deleted until the
+  owner deletes it for good. An assistant answering a user in the team
+  chat never deletes an app: `app_delete` is an owner-side tool, refused
+  there for every user, a Moderator of the app's home too.
 - **Data.** A user writes the app's data when they may edit the app: a
   Moderator of its home, or a grant with Write on. While **Informational**
   is on, nobody outside Admin writes the app's data.

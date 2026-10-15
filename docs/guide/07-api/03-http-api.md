@@ -17,7 +17,7 @@ A key acts as the login that made it, limited to its access and areas. A login t
 
 ## Routes
 
-The routes past `whoami` are admin routes. A member's key gets `403` from them and uses MCP instead.
+A route answers a key as the login it acts as, as the same route in the app does. A key of a login outside the Admin workspace reads and changes, in that login's workspaces, what the login may there: the item routes (search, pages, notes, tasks, tables and their commit, files, events). Contacts, the journal and the table row writes are for logins in the Admin workspace: any other login's key gets `403` with `reason: "member-login"` from them.
 
 | Method and path | Area | Does |
 | --- | --- | --- |
@@ -64,7 +64,7 @@ curl -s "https://example.com/api/v1/search?q=invoice&ws=<workspace id>" \
 | `401` | No key, a wrong key, or a revoked or expired one |
 | `403` with `reason: "key-read-only"` | A read only key tried to write |
 | `403` with `reason: "key-area"` | The route is outside the key's areas |
-| `403` with `reason: "member-login"` | An admin route, and the key is not an admin's |
+| `403` with `reason: "member-login"` | A route for logins in the Admin workspace, and the key's login is not one |
 | `404` | Not a `/api/v1` route, no such item, or a `ws` the login cannot name |
 | `429` | Too many requests; wait for `Retry-After` seconds |
 
