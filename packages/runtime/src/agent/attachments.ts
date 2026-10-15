@@ -30,7 +30,7 @@ import {
 } from '@mantle/files';
 import { DEFAULT_VISION_DESCRIBE_PROMPT, getVisionAdapter } from '@mantle/voice';
 import { fallbackCostMicroUsd, recordStepUsage, step } from '@mantle/tracing';
-import { errorMessage } from '@mantle/std';
+import { errorMessage, publicProviderErrorMessage } from '@mantle/std';
 
 /** Max chars of parsed document text folded into a responder prompt. The full
  *  text is persisted + indexed by the extractor; the turn only needs a slice. */
@@ -135,7 +135,7 @@ export async function runVisionWorker(opts: {
     return {
       ran: false,
       text: '',
-      note: `Vision worker failed: ${errorMessage(err)}`,
+      note: `Vision worker failed: ${publicProviderErrorMessage(err, 'vision-worker')}`,
       model: worker.model,
     };
   }
@@ -233,7 +233,7 @@ export async function runDocumentWorker(opts: {
     return {
       ran: false,
       text: '',
-      note: `Document worker failed: ${errorMessage(err)}`,
+      note: `Document worker failed: ${publicProviderErrorMessage(err, 'document-worker')}`,
       model: worker.model,
     };
   }
