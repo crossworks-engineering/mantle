@@ -27,7 +27,6 @@ import { contactCodeRequired, gateShare } from '@/lib/contact-share-gate';
 import { getAppRuntime, recordAppAccess, recordShareAccess } from '@mantle/content';
 import { appDbExec, appDbQuery, markAppClientWritten } from '@mantle/content/app-broker';
 import { scheduleAppTableExportSync } from '@mantle/content/app-table-exports';
-import { clientIpKey, rateLimit } from '@/lib/rate-limit';
 
 import { AppDbBody, appDbBodyError, appDbErrorResponse } from '@/lib/app-db-broker-body';
 import { readJson } from '@/lib/read-body';
@@ -37,16 +36,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ token: string 
 
   // Generous — a running app is query-chatty — but bounded, like the other
   // /s/[token] surfaces: this endpoint executes SQL for strangers.
-  const { ok, retryAfterSec } = rateLimit(`share-db-broker:${clientIpKey(req)}`, {
-    max: 300,
-    windowMs: 60_000,
-  });
-  if (!ok) {
-    return NextResponse.json(
-      { ok: false, error: 'too many requests' },
-      { status: 429, headers: { 'retry-after': String(retryAfterSec) } },
-    );
-  }
+  // The gate took the row's per-address limit (lib/route-limits.ts shareDbBroker).
 
   const gate = await gateShare(req, token);
   if (gate.kind === 'code') return contactCodeRequired(gate.share);

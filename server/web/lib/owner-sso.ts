@@ -42,10 +42,9 @@ import {
   unauthorizedRefusal,
   type CookieUpgradeLogin,
 } from './auth';
-import { isTrustedOrigin, rateLimited } from './auth/preflight';
+import { isTrustedOrigin } from './auth/preflight';
 import { secureCookies } from './auth-constants';
 import { auditFireAndForget, requestMetaFrom } from './audit';
-import { clientIpKey, rateLimit } from './rate-limit';
 
 /** See the mint below for why this is days, not the password login's year. */
 export const OWNER_SSO_COOKIE_TTL_SECONDS = 7 * 24 * 60 * 60;
@@ -53,19 +52,15 @@ export const OWNER_SSO_COOKIE_TTL_SECONDS = 7 * 24 * 60 * 60;
 /**
  * `upgradeLogin`: the route's read of the login the pipeline answers
  * (cookieUpgradeCaller(), A4 hand batch B: what getCookieUpgradeLoginOr401
- * answers, null where it refused), run here, after the throttle and the
- * origin check, where the guard was called: a throttled or foreign caller
- * pays no lookup, stamps no device and writes no audit row.
+ * answers, null where it refused), run here, after the throttle (the
+ * gate's, before the handler: lib/route-limits.ts ownerSso) and the origin
+ * check, where the guard was called: a throttled or foreign caller pays no
+ * lookup, stamps no device and writes no audit row.
  */
 export async function handleOwnerSso(
   req: Request,
   upgradeLogin: () => Promise<CookieUpgradeLogin | null>,
 ): Promise<NextResponse> {
-  const denied = rateLimited(
-    rateLimit(`owner-sso:ip:${clientIpKey(req)}`, { max: 30, windowMs: 60_000 }),
-  );
-  if (denied) return denied;
-
   if (!isTrustedOrigin(req)) {
     return NextResponse.json({ ok: false, error: 'invalid origin' }, { status: 403 });
   }

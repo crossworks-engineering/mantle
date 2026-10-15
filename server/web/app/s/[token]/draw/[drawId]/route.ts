@@ -1,7 +1,6 @@
 import { contactCodeRequired, gateShare } from '@/lib/contact-share-gate';
 import { isEmbeddedDrawAllowed } from '@/lib/shares';
 import { getDrawSvg } from '@mantle/content';
-import { clientIpKey, rateLimit } from '@/lib/rate-limit';
 
 /**
  * A drawing EMBEDDED in a shared page or note, as an image.
@@ -30,16 +29,7 @@ export async function GET(
 ) {
   const { token, drawId } = await params;
 
-  const { ok, retryAfterSec } = rateLimit(`share-draw-embed:${clientIpKey(req)}`, {
-    max: 240,
-    windowMs: 60_000,
-  });
-  if (!ok) {
-    return new Response('Too many requests', {
-      status: 429,
-      headers: { 'retry-after': String(retryAfterSec), 'cache-control': 'no-store' },
-    });
-  }
+  // The gate took the row's per-address limit (lib/route-limits.ts shareDrawEmbed).
 
   const gate = await gateShare(req, token);
   if (gate.kind === 'code') return contactCodeRequired(gate.share);

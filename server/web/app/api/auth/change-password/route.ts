@@ -9,9 +9,7 @@ import {
 } from '@/lib/auth';
 import { ownCookieOpts, ownLiveDeviceJti } from '@/lib/auth/own-device';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
-import { rateLimit } from '@/lib/rate-limit';
 import { firstIssue } from '@/lib/zod-issue';
-import { refuseCrossSiteAuthPost } from '@/lib/auth/preflight';
 import { readJson } from '@/lib/read-body';
 
 const ChangePasswordBody = z
@@ -25,11 +23,12 @@ const ChangePasswordBody = z
   });
 
 export async function POST(req: Request) {
-  const refused = refuseCrossSiteAuthPost(req);
-  if (refused) return refused;
   // Every login changes its own password. A public row: the login the
-  // pipeline answers at this read, after the cross-site refusal (A4 hand
-  // batch B), as the guard was called here.
+  // pipeline answers at this read, after the gate's cross-site refusal (A4
+  // hand batch B; lib/route-limits.ts ROUTE_GATES), as the guard was called
+  // here. The read takes the row's per-login limit (authChangePassword, 5
+  // an hour: a hijacked cookie must not pin bcrypt) and throws the one 429
+  // over it.
   const login = await publicLoginCaller();
   if (!login) {
     return NextResponse.json({ error: 'Not signed in.' }, { status: 401 });
@@ -37,23 +36,6 @@ export async function POST(req: Request) {
   // The LOGIN's own credential — always the login, never the anchor
   // (a co-admin changing "their" password must not rewrite the anchor's).
   const actorId = login.loginId;
-
-  // Throttle even with a valid session — a hijacked cookie should not
-  // be able to pin bcrypt CPU. 5/hour per user comfortably fits any
-  // honest workflow.
-  const limit = rateLimit(`auth:change-password:${actorId}`, {
-    max: 5,
-    windowMs: 60 * 60 * 1000,
-  });
-  if (!limit.ok) {
-    return NextResponse.json(
-      { error: 'Too many password change attempts. Try again later.' },
-      {
-        status: 429,
-        headers: { 'Retry-After': String(limit.retryAfterSec) },
-      },
-    );
-  }
 
   const raw = (await readJson(req)) ?? {};
   const parsed = ChangePasswordBody.safeParse(raw);

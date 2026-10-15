@@ -6,7 +6,6 @@ import { loadShareView, recordShareView } from '@/lib/shares';
 import { renderPageDoc } from '@/lib/render-page-doc';
 import { recordShareAccess } from '@mantle/content';
 import { loadFolderListing } from '@/components/share/folder-presenter';
-import { clientIpKey, rateLimit } from '@/lib/rate-limit';
 
 /**
  * The share view as JSON, for a client that renders the presenter itself (no
@@ -33,19 +32,7 @@ function notFound() {
 export async function GET(req: Request, ctx: { params: Promise<{ token: string }> }) {
   const { token } = await ctx.params;
 
-  const { ok, retryAfterSec } = rateLimit(`share-view:${clientIpKey(req)}`, {
-    max: 120,
-    windowMs: 60_000,
-  });
-  if (!ok) {
-    return NextResponse.json(
-      { error: 'too many requests' },
-      {
-        status: 429,
-        headers: { 'retry-after': String(retryAfterSec), 'cache-control': 'no-store' },
-      },
-    );
-  }
+  // The gate took the row's per-address limit (lib/route-limits.ts shareView).
 
   const gate = await gateShare(req, token);
   if (gate.kind === 'code') return contactCodeRequired(gate.share);

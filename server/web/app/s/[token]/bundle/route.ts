@@ -10,22 +10,12 @@ import { Readable } from 'node:stream';
 import { ReadableStream as NodeReadableStream } from 'node:stream/web';
 import { getApp } from '@mantle/content';
 import { getContent } from '@mantle/storage';
-import { clientIpKey, rateLimit } from '@/lib/rate-limit';
 
 export async function GET(req: Request, ctx: { params: Promise<{ token: string }> }) {
   const { token } = await ctx.params;
 
   // The bundle streams from storage; cap fetches like the other share assets.
-  const { ok, retryAfterSec } = rateLimit(`share-bundle:${clientIpKey(req)}`, {
-    max: 30,
-    windowMs: 60_000,
-  });
-  if (!ok) {
-    return new NextResponse('too many requests', {
-      status: 429,
-      headers: { 'retry-after': String(retryAfterSec) },
-    });
-  }
+  // The gate took the row's per-address limit (lib/route-limits.ts shareBundle).
 
   const gate = await gateShare(req, token);
   if (gate.kind === 'code') return contactCodeRequired(gate.share);

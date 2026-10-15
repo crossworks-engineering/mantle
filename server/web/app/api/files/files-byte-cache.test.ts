@@ -38,10 +38,6 @@ vi.mock('@/lib/auth', async (importOriginal) => ({
   })),
   memberAssetCaller: vi.fn(() => memberCaller),
 }));
-vi.mock('@/lib/member-space', async (importOriginal) => ({
-  ...(await importOriginal<Record<string, unknown>>()),
-  memberBytesGate: vi.fn(() => null),
-}));
 vi.mock('@mantle/db', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   withViewer: vi.fn(async (_o: unknown, fn: () => Promise<unknown>) => fn()),

@@ -74,7 +74,6 @@ import { inRuleInQuery } from '@/lib/auth/rule-in-query';
 import type { AnyLogin, SessionUser } from '@/lib/auth';
 import { auditFireAndForget, requestMeta } from '@/lib/audit';
 import { applyLoginChange, loadLoginTarget } from '@/lib/login-update';
-import { rateLimit } from '@/lib/rate-limit';
 import { lookOfRow, WS_LOOK_COLUMNS, type LookRow } from '@/lib/workspace-look';
 import { readJson } from '@/lib/read-body';
 import { defineDomainError } from '@mantle/std';
@@ -83,7 +82,7 @@ import { defineDomainError } from '@mantle/std';
 
 export class WsError extends Error {
   constructor(
-    readonly status: 400 | 403 | 404 | 409 | 429,
+    readonly status: 400 | 403 | 404 | 409,
     readonly code: WorkspaceErrorCode,
     message: string,
   ) {
@@ -1201,7 +1200,9 @@ export const USER_SEARCH_PAGE = 50;
  *  name, for a Moderator of any workspace or an Admin user. A non-Admin
  *  Moderator needs 3 characters and gets 10 at most, no paging; an Admin
  *  user any query, in pages of 50 (`offset`), so they can list everyone.
- *  Disabled logins are left out. */
+ *  Disabled logins are left out. 60 searches a minute per login: the row's
+ *  limit, taken by the gate before the route (lib/route-limits.ts
+ *  wsUserSearch). */
 export async function searchUsers(
   caller: WsCaller,
   q: string,
@@ -1229,10 +1230,6 @@ export async function searchUsers(
   const term = q.trim();
   if (!admin && term.length < 3) {
     throw new WsError(400, 'query_too_short', 'Type at least 3 characters of a name or email.');
-  }
-  const limit = rateLimit(`ws-user-search:${caller.loginId}`, { max: 60, windowMs: 60_000 });
-  if (!limit.ok) {
-    throw new WsError(429, 'rate_limited', 'Too many searches. Wait a minute and try again.');
   }
   const like = `%${term.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
   const hits = await rows<{ id: string; name: string | null; email: string }>(

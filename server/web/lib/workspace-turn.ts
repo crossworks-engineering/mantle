@@ -6,7 +6,10 @@
  * (GET /api/assistant/thread, or the conversation stream).
  *
  * The limits the member chat route had stay, for every login that is not an
- * Admin user: 6 messages a minute, and the daily turn cap and token budget
+ * Admin user: 6 messages a minute (taken here, not by the row: it counts
+ * the turns queued, so a retry with the same key, answered from the turn
+ * route's own cache, spends nothing; named in docs/request-plumbing.md,
+ * "Rate limits"), and the daily turn cap and token budget
  * checked when the turn is QUEUED against the member turn ledger (audit F09),
  * so turns waiting on the queue count. A retry with the same Idempotency-Key
  * is the same turn; the key with new text is a 409. The login is baked into
@@ -25,8 +28,14 @@ import { errorMessage } from '@mantle/std';
 import type { ChatLogin } from './auth';
 import type { ChatAgent } from './assistant-chat';
 import { getDbosClient } from './dbos-client';
-import { MEMBER_DAILY_CAP, MEMBER_DAILY_TOKENS, startOfTodayUtc } from './member-daily-cap';
+import {
+  MEMBER_DAILY_CAP,
+  MEMBER_DAILY_TOKENS,
+  secondsUntilTomorrowUtc,
+  startOfTodayUtc,
+} from './member-daily-cap';
 import { rateLimit } from './rate-limit';
+import { rateLimitedAnswer } from './route-limits';
 
 export type WorkspaceTurnResult = { status: number; body: unknown; headers?: HeadersInit };
 
@@ -49,13 +58,9 @@ export async function queueWorkspaceTurn(o: {
   const limited = login.kind !== 'admin';
   if (limited) {
     const gate = rateLimit(`member-turn:${loginId}`, { max: 6, windowMs: 60_000 });
-    if (!gate.ok) {
-      return {
-        status: 429,
-        body: { error: 'too many messages, give me a moment' },
-        headers: { 'Retry-After': String(gate.retryAfterSec) },
-      };
-    }
+    // The one 429 (lib/route-limits.ts), kept by the turn route for a
+    // retry with the same key, as it kept the answer before.
+    if (!gate.ok) return rateLimitedAnswer(gate.retryAfterSec);
   }
   const key = o.idempotencyKey?.slice(0, 64) || null;
   const turnId = `ws-${loginId}.${key ?? randomUUID()}`;
@@ -87,6 +92,7 @@ export async function queueWorkspaceTurn(o: {
                 : 'daily usage limit reached for the chat. Try again tomorrow, or ask an admin to raise it.',
             reason: claim.reason,
           },
+          headers: { 'Retry-After': String(secondsUntilTomorrowUtc()) },
         };
       }
       fresh = claim.fresh;
@@ -185,7 +191,7 @@ export async function claimMemberChatWork(
           : 'daily usage limit reached for the chat. Try again tomorrow, or ask an admin to raise it.',
       reason: claim.reason,
     },
-    { status: 429 },
+    { status: 429, headers: { 'Retry-After': String(secondsUntilTomorrowUtc()) } },
   );
 }
 

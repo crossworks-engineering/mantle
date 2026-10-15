@@ -3,7 +3,6 @@ import { NextResponse } from '@/server/http-compat';
 import { and, eq } from 'drizzle-orm';
 import { db, nodes, tables } from '@mantle/db';
 import { queryRowsWindow, resolveStoragePath } from '@mantle/tabledb';
-import { clientIpKey, rateLimit } from '@/lib/rate-limit';
 
 /**
  * Row window for a SHARED table — the public counterpart of
@@ -23,19 +22,7 @@ function notFound() {
 export async function GET(req: Request, ctx: { params: Promise<{ token: string }> }) {
   const { token } = await ctx.params;
 
-  const { ok, retryAfterSec } = rateLimit(`share-rows:${clientIpKey(req)}`, {
-    max: 120,
-    windowMs: 60_000,
-  });
-  if (!ok) {
-    return NextResponse.json(
-      { error: 'too many requests' },
-      {
-        status: 429,
-        headers: { 'retry-after': String(retryAfterSec), 'cache-control': 'no-store' },
-      },
-    );
-  }
+  // The gate took the row's per-address limit (lib/route-limits.ts shareRows).
 
   const gate = await gateShare(req, token);
   if (gate.kind === 'code') return contactCodeRequired(gate.share);

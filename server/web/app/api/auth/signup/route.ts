@@ -4,8 +4,6 @@ import { countUsers } from '@mantle/db';
 import { buildSessionCookie, SESSION_COOKIE_NAME } from '@/lib/auth';
 import { secureCookies } from '@/lib/auth-constants';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
-import { clientIpKey, rateLimit } from '@/lib/rate-limit';
-import { refuseCrossSiteAuthPost } from '@/lib/auth/preflight';
 import { createFirstOwner } from '@/lib/auth/first-owner';
 import { setupCodeConfigured, setupCodeMatches } from '@/lib/auth/setup-code';
 import { readJson } from '@/lib/read-body';
@@ -31,19 +29,9 @@ const SignupBody = z.object({
 });
 
 export async function POST(req: Request) {
-  const refused = refuseCrossSiteAuthPost(req);
-  if (refused) return refused;
-  // Rate limit before the setup-code compare and the (intentionally slow)
-  // bcrypt hash.
-  const ip = clientIpKey(req);
-  const limit = rateLimit(`auth:signup:${ip}`, { max: 5, windowMs: 60_000 });
-  if (!limit.ok) {
-    return NextResponse.json(
-      { error: 'Too many attempts. Try again in a minute.' },
-      { status: 429, headers: { 'Retry-After': String(limit.retryAfterSec) } },
-    );
-  }
-
+  // The gate refused a cross-site post and took the row's limit first
+  // (lib/route-limits.ts ROUTE_GATES: authSignup), before the setup-code
+  // compare and the (intentionally slow) bcrypt hash.
   // Single-user: signup is only available on a fresh install.
   if ((await countUsers()) > 0) {
     return NextResponse.json(

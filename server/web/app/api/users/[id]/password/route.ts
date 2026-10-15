@@ -10,7 +10,6 @@ import {
 } from '@/lib/auth';
 import { ownCookieOpts, ownLiveDeviceJti } from '@/lib/auth/own-device';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
-import { rateLimit } from '@/lib/rate-limit';
 import { readJson } from '@/lib/read-body';
 
 const IdParams = z.object({ id: z.string().uuid() });
@@ -27,20 +26,10 @@ const Body = z.object({ newPassword: z.string().min(8).max(1024) });
  * bound to that token (access matrix T14), never a fresh year.
  */
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
+  // Throttled per acting login, bcrypt being deliberately slow: the gate
+  // took the row's limit (lib/route-limits.ts passwordReset).
   const auth = ownerCallerWithSource();
   const { user, source } = auth;
-
-  // Throttle per acting login — bcrypt is deliberately slow.
-  const limit = rateLimit(`users:password-reset:${user.actor.id}`, {
-    max: 10,
-    windowMs: 60 * 60 * 1000,
-  });
-  if (!limit.ok) {
-    return NextResponse.json(
-      { error: 'Too many password resets. Try again later.' },
-      { status: 429, headers: { 'Retry-After': String(limit.retryAfterSec) } },
-    );
-  }
 
   const idParsed = IdParams.safeParse(await ctx.params);
   if (!idParsed.success) return NextResponse.json({ error: 'Invalid user id.' }, { status: 400 });

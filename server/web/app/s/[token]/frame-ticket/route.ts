@@ -10,22 +10,12 @@ import { NextResponse } from '@/server/http-compat';
 import { contactCodeRequired, gateShare } from '@/lib/contact-share-gate';
 import { buildAppFrameTicket } from '@/lib/auth';
 import { getAppRuntime } from '@mantle/content';
-import { clientIpKey, rateLimit } from '@/lib/rate-limit';
 
 export async function POST(req: Request, ctx: { params: Promise<{ token: string }> }) {
   const { token } = await ctx.params;
 
   // One ticket per frame load; a burst beyond this is a token-mint loop.
-  const { ok, retryAfterSec } = rateLimit(`share-frame-ticket:${clientIpKey(req)}`, {
-    max: 30,
-    windowMs: 60_000,
-  });
-  if (!ok) {
-    return new NextResponse('too many requests', {
-      status: 429,
-      headers: { 'retry-after': String(retryAfterSec) },
-    });
-  }
+  // The gate took the row's per-address limit (lib/route-limits.ts shareFrameTicket).
 
   const gate = await gateShare(req, token);
   if (gate.kind === 'code') return contactCodeRequired(gate.share);

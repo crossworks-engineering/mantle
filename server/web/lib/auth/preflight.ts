@@ -1,35 +1,17 @@
 /**
  * Shared preflight for the unauthenticated credential-exchange endpoints:
- * the share token exchange (`/s/<token>/auth`) and the SSO handoff
- * (`/api/auth/sso`). (The team-code `/api/team/auth` and `/api/team/sso` were
- * retired in member logins Phase 6.)
+ * the origin checks of the SSO handoff (`/api/auth/sso`) and the login-CSRF
+ * refusal of the public auth posts. (The team-code `/api/team/auth` and
+ * `/api/team/sso` were retired in member logins Phase 6.)
  *
- * Both accept a short secret from a caller who has not authenticated yet, so
- * both throttle before doing any work and answer a throttled caller
- * identically. What they must NOT share is the policy: each keeps its own
- * bucket names and caps, because a per-share exchange and a brain-level SSO
- * upgrade have genuinely different budgets.
+ * Their throttles are rows' limits now (A10 #8): each its own named limit
+ * (lib/route-limits.ts RATE_LIMITS), taken by the gate before the handler
+ * and answered with the one 429. The cross-site refusal is the gate's too,
+ * on the rows that name it (ROUTE_GATES `crossSite`), before any limit.
  */
 import { NextResponse } from '../../server/http-compat';
-import type { RateLimitResult } from '../rate-limit';
 import { requestOrigin } from '../auth-constants';
 import { env } from '@mantle/config';
-
-/**
- * The shared 429 when any of `gates` is exhausted, else null — so a caller
- * reads as `if (const denied = rateLimited(a, b)) return denied`.
- *
- * `Retry-After` is the longest window across the gates: a caller who waits out
- * the shortest one would only be refused again by the next.
- */
-export function rateLimited(...gates: RateLimitResult[]): NextResponse | null {
-  if (gates.every((g) => g.ok)) return null;
-  const retryAfterSec = Math.max(...gates.map((g) => g.retryAfterSec));
-  return NextResponse.json(
-    { ok: false, error: 'too many attempts — try again shortly' },
-    { status: 429, headers: { 'Retry-After': String(retryAfterSec) } },
-  );
-}
 
 /**
  * Login-CSRF hardening for the SSO handoffs: when a browser sends `Origin` it
@@ -67,9 +49,11 @@ function isJsonContentType(req: Request): boolean {
 
 /**
  * Login-CSRF guard for the public /api/auth POSTs that take a JSON body and
- * set or use the session cookie (client logins audit B15): client-link,
- * client-code, client-code/verify, login, signup, invite/accept and
- * change-password. Call it first, before any limiter or lookup.
+ * set or use the session cookie (client logins audit B15): login, signup,
+ * invite/accept, change-password, the contact code (/s/:token/code), and
+ * sign-out by its origin. The gate calls it for the rows that name it
+ * (lib/route-limits.ts ROUTE_GATES `crossSite`), first, before any limiter
+ * or lookup.
  *
  *  - 415 unless the body is declared JSON. A cross-site HTML form can send
  *    only urlencoded, multipart or text/plain; JSON needs a CORS preflight,

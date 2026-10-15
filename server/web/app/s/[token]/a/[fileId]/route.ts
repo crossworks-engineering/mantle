@@ -2,7 +2,6 @@ import { contactCodeRequired, gateShare } from '@/lib/contact-share-gate';
 import { isAssetAllowed } from '@/lib/shares';
 import { recordShareAccess } from '@mantle/content';
 import { readFileById } from '@/lib/files';
-import { clientIpKey, rateLimit } from '@/lib/rate-limit';
 import { safeDownloadHeaders } from '@mantle/client-types/lib/safe-download';
 
 /**
@@ -25,16 +24,7 @@ export async function GET(
 ) {
   const { token, fileId } = await params;
 
-  const { ok, retryAfterSec } = rateLimit(`share-asset:${clientIpKey(req)}`, {
-    max: 240,
-    windowMs: 60_000,
-  });
-  if (!ok) {
-    return new Response('Too many requests', {
-      status: 429,
-      headers: { 'retry-after': String(retryAfterSec), 'cache-control': 'no-store' },
-    });
-  }
+  // The gate took the row's per-address limit (lib/route-limits.ts shareAsset).
 
   const gate = await gateShare(req, token);
   if (gate.kind === 'code') return contactCodeRequired(gate.share);

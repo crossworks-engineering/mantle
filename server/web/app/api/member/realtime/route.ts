@@ -1,7 +1,7 @@
-import { NextResponse } from '@/server/http-compat';
 import { memberCaller, memberLoginActive, sessionCookieExpiryMs } from '@/lib/auth';
 import { sseResponse } from '@/lib/sse';
 import { memberStreamLifetimeMs, takeMemberStream } from '@/lib/member-streams';
+import { rateLimitedResponse } from '@/lib/route-limits';
 
 /**
  * GET /api/member/realtime : Server-Sent Events for a MEMBER (member logins
@@ -20,12 +20,8 @@ export async function GET(req: Request): Promise<Response> {
 
   const maxLifetimeMs = memberStreamLifetimeMs(await sessionCookieExpiryMs());
   const release = takeMemberStream(member.loginId);
-  if (!release) {
-    return NextResponse.json(
-      { error: 'Too many open live connections.', reason: 'rate-limit' },
-      { status: 429, headers: { 'retry-after': '30' } },
-    );
-  }
+  // A cap on open streams, not a rate: the one 429 all the same (A10 #8).
+  if (!release) return rateLimitedResponse(30);
   return sseResponse(req, {
     subscribe: async () => () => {},
     onPing: () => memberLoginActive(member.loginId),

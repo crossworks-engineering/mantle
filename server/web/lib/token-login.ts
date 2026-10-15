@@ -4,7 +4,6 @@ import { z } from 'zod';
 import { db, authUsers, mobileTokens, eq, sql } from '@mantle/db';
 import { buildMobileToken, loginWithPassword } from '@/lib/auth';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
-import { clientIpKey, rateLimit } from '@/lib/rate-limit';
 import { AUTH_BODY_CEILING_BYTES } from '@/lib/body-limit';
 import { brainIdField } from '@/lib/brain-identity';
 import { updateTheAppResponse } from '@/lib/mobile-build';
@@ -60,18 +59,10 @@ export async function handleTokenLogin(
     withRole?: boolean;
   },
 ): Promise<NextResponse> {
-  // Rate limit by client IP before bcrypt so a flood can't pin CPU. One shared
-  // bucket across both token routes — a flood can't double its budget by
-  // alternating endpoints.
-  // Per address, an IPv6 caller by its /64 (as the code routes count).
-  const limit = rateLimit(`auth:token-login:${clientIpKey(req)}`, { max: 10, windowMs: 60_000 });
-  if (!limit.ok) {
-    return NextResponse.json(
-      { error: 'Too many login attempts. Try again in a minute.' },
-      { status: 429, headers: { 'Retry-After': String(limit.retryAfterSec) } },
-    );
-  }
-
+  // The gate took the row's limit before bcrypt (lib/route-limits.ts:
+  // authTokenLogin, one bucket for the three token routes, so a flood cannot
+  // double its budget by alternating them; per address, an IPv6 caller by
+  // its /64).
   const raw = (await readJson(req, { maxBytes: AUTH_BODY_CEILING_BYTES })) ?? {};
   const parsed = Body.safeParse(raw);
   if (!parsed.success) {

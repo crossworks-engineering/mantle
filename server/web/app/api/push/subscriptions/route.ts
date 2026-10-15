@@ -7,14 +7,13 @@
 
 import { type NextRequest, NextResponse } from '@/server/http-compat';
 import { ownerCaller } from '@/lib/auth';
-import { callerTokenId, pushEnrolLimited } from '@/lib/push/login-routes';
+import { callerTokenId } from '@/lib/push/login-routes';
 import { forgetRelayDevices, insertSubscription, listAdminDeviceList } from '@/lib/push/store';
 import { readJson } from '@/lib/read-body';
 
 export async function POST(req: NextRequest) {
+  // The gate took the row's per-login limit (lib/route-limits.ts pushEnrol).
   const owner = ownerCaller();
-  const limited = pushEnrolLimited(owner.actor.id);
-  if (limited) return limited;
   // The phone app always signs in with a device token, and a device is
   // pushed to only while that token is live: an enrol with no bearer of this
   // login (a browser session) would make a device nothing can revoke.

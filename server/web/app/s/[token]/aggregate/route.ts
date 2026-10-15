@@ -4,7 +4,6 @@ import { and, eq } from 'drizzle-orm';
 import { db, nodes, tables } from '@mantle/db';
 import { aggregateWindow, resolveStoragePath } from '@mantle/tabledb';
 import { AGGREGATE_KINDS, type AggregateKind } from '@mantle/content';
-import { clientIpKey, rateLimit } from '@/lib/rate-limit';
 
 /**
  * One footer total for a SHARED table, computed over the whole tab.
@@ -37,19 +36,7 @@ function notFound() {
 export async function GET(req: Request, ctx: { params: Promise<{ token: string }> }) {
   const { token } = await ctx.params;
 
-  const { ok, retryAfterSec } = rateLimit(`share-aggregate:${clientIpKey(req)}`, {
-    max: 120,
-    windowMs: 60_000,
-  });
-  if (!ok) {
-    return NextResponse.json(
-      { error: 'too many requests' },
-      {
-        status: 429,
-        headers: { 'retry-after': String(retryAfterSec), 'cache-control': 'no-store' },
-      },
-    );
-  }
+  // The gate took the row's per-address limit (lib/route-limits.ts shareAggregate).
 
   const gate = await gateShare(req, token);
   if (gate.kind === 'code') return contactCodeRequired(gate.share);

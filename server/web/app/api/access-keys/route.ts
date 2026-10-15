@@ -49,6 +49,7 @@ import { requireArea } from '@/lib/workspaces';
 import { listAccessKeys } from '@/lib/access-keys-admin';
 import { notifyKeyMade } from '@/lib/access-keys-notify';
 import { rateLimitLogin, rateLimitLoginRefund } from '@/lib/rate-limit';
+import { rateLimitedResponse } from '@/lib/route-limits';
 import { auditFireAndForget, requestMeta } from '@/lib/audit';
 import type { AccessKeyCreated, AccessKeyList } from '@mantle/client-types';
 import { inRuleInQuery } from '@/lib/auth/rule-in-query';
@@ -133,15 +134,13 @@ async function handlePOST(login: AnyLogin, req: Request) {
   }
   // Every try is counted BEFORE the password is checked, so parallel
   // guesses cannot all pass a peek (M2 audit N2); a right password gives
-  // its token back, so making several keys is not guessing.
+  // its token back, so making several keys is not guessing. A failure
+  // budget taken around the password check, not a route gate: named in
+  // eslint-rules/route-plumbing.mjs RATE_LIMIT_ALLOW, answered with the one
+  // 429.
   const bucket = `akey-pw:${login.loginId}`;
   const tries = rateLimitLogin(bucket, PASSWORD_RATE);
-  if (!tries.ok) {
-    return NextResponse.json(
-      { error: 'Too many tries. Wait a minute, then try again.' },
-      { status: 429, headers: { 'Retry-After': String(tries.retryAfterSec) } },
-    );
-  }
+  if (!tries.ok) return rateLimitedResponse(tries.retryAfterSec);
   if (!body.password || !(await verifyPassword(login.loginId, body.password))) {
     return NextResponse.json(
       { error: 'Type your password to make a key.', reason: 'password' },
@@ -150,13 +149,9 @@ async function handlePOST(login: AnyLogin, req: Request) {
   }
   rateLimitLoginRefund(bucket);
 
+  // Counted only once the password passed: the keys made, not the tries.
   const made = rateLimitLogin(`akey-create:${login.loginId}`, CREATE_RATE);
-  if (!made.ok) {
-    return NextResponse.json(
-      { error: 'You made many keys this hour. Wait, then try again.' },
-      { status: 429, headers: { 'Retry-After': String(made.retryAfterSec) } },
-    );
-  }
+  if (!made.ok) return rateLimitedResponse(made.retryAfterSec);
 
   const expiresAt = expiryFromDays(
     body.expiresInDays === undefined && maxDays !== null

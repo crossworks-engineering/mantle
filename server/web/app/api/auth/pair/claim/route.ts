@@ -2,7 +2,6 @@ import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { db, authUsers, eq, sql } from '@mantle/db';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
-import { clientIpKey, rateLimit } from '@/lib/rate-limit';
 import { claimPairCode } from '@/lib/pair-code';
 import { brainIdField } from '@/lib/brain-identity';
 import { isWorkspaceMobileBuild, updateTheAppResponse } from '@/lib/mobile-build';
@@ -30,15 +29,7 @@ const CLAIM_FAILED_MESSAGE =
   "That code didn't work. Show a fresh one on the web app and scan again.";
 
 export async function POST(req: Request) {
-  const ip = clientIpKey(req);
-  const limit = rateLimit(`auth:pair-claim:${ip}`, { max: 10, windowMs: 60_000 });
-  if (!limit.ok) {
-    return NextResponse.json(
-      { error: 'Too many attempts. Try again in a minute.' },
-      { status: 429, headers: { 'Retry-After': String(limit.retryAfterSec) } },
-    );
-  }
-
+  // The row's limit (lib/route-limits.ts: authPairClaim) is the gate's.
   const raw = (await readJson(req)) ?? {};
   const parsed = Body.safeParse(raw);
   if (!parsed.success) {

@@ -3,17 +3,15 @@
  * so the invite page can greet the person before they set a password
  * (MemberInvitePreview). Only an invite code previews (team codes are
  * retired, migration 0178). Any code that cannot be redeemed is the same
- * 404. Rate limited per IP, and for the whole brain on failed codes
- * (lib/member-invites.ts).
+ * 404. Rate limited per IP, and for the whole brain on failed codes (the
+ * row's limits, taken by the gate: lib/member-invites.ts).
  */
 import { NextResponse } from '@/server/http-compat';
 import { loadPreferencesFor, previewMemberInvite } from '@mantle/content';
 import type { MemberInvitePreview } from '@mantle/client-types';
-import { inviteFailed, inviteRateLimited } from '@/lib/member-invites';
+import { inviteFailed } from '@/lib/member-invites';
 
-export async function GET(req: Request, ctx: { params: Promise<{ code: string }> }) {
-  const limited = inviteRateLimited(req, 'preview');
-  if (limited) return limited;
+export async function GET(_req: Request, ctx: { params: Promise<{ code: string }> }) {
   const { code } = await ctx.params;
   const invite = typeof code === 'string' ? await previewMemberInvite(code) : null;
   if (!invite) {

@@ -1,12 +1,11 @@
 /**
  * RFC 7591 — OAuth 2.0 Dynamic Client Registration. The paste-the-URL connector
  * flow needs this: claude.ai POSTs its redirect URIs and gets back a client_id.
- * Public clients only (PKCE, no secret issued). Public endpoint; rate-limited in
- * the route layer (Phase 4).
+ * Public clients only (PKCE, no secret issued). Public endpoint; rate-limited
+ * per address by the gate (the row's limit, lib/route-limits.ts).
  */
 import { NextResponse } from '@/server/http-compat';
 import { isAllowedRedirectUri, isRemoteMcpEnabled, registerClient } from '@/lib/mcp-oauth';
-import { clientIpKey, rateLimit } from '@/lib/rate-limit';
 import { readJson } from '@/lib/read-body';
 
 function error(status: number, error: string, description?: string) {
@@ -17,8 +16,8 @@ function error(status: number, error: string, description?: string) {
 }
 
 export async function POST(req: Request) {
-  const limit = rateLimit(`oauth:register:${clientIpKey(req)}`, { max: 10, windowMs: 60_000 });
-  if (!limit.ok) return error(429, 'rate_limited');
+  // The gate took the row's per-address limit (lib/route-limits.ts
+  // oauthRegister).
   // Don't let clients register against a box that hasn't opted in.
   if (!(await isRemoteMcpEnabled())) return error(404, 'not_found');
 

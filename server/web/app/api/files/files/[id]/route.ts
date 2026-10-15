@@ -2,7 +2,6 @@ import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { cappedOne } from '@/lib/list-workspaces';
 import { ownerCaller, readerAssetCaller } from '@/lib/auth';
-import { memberBytesGate } from '@/lib/member-space';
 import {
   deleteFileById,
   fileById,
@@ -47,14 +46,11 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
   // (cookie/bearer) still wins. Every login since W7e: a member reads the
   // detail AND the bytes of a file in its own scope (MEMBER_OPEN_READS); a
   // file it does not read is a 404.
+  // A member's bytes are rate limited per login (the file and its
+  // thumbnail each a budget of their own): the gate took the row's limits
+  // (lib/route-limits.ts memberBytes, memberThumbs).
   const reader = readerAssetCaller();
   const user = reader.user;
-  // A member's bytes are rate limited per login, as on the member routes.
-  const bytesAsked = new URL(_req.url).searchParams;
-  if (reader.member && (bytesAsked.has('raw') || bytesAsked.has('thumb'))) {
-    const limited = memberBytesGate(_req, reader.member);
-    if (limited) return limited;
-  }
   const idParsed = IdParams.safeParse(await ctx.params);
   if (!idParsed.success) {
     return NextResponse.json({ error: 'invalid id' }, { status: 400 });

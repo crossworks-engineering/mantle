@@ -21,7 +21,6 @@
 import { z } from 'zod';
 import { contactCodeRequired, gateShare } from '@/lib/contact-share-gate';
 import { NextResponse } from '@/server/http-compat';
-import { clientIpKey, rateLimit } from '@/lib/rate-limit';
 import { withViewer } from '@mantle/db';
 import { liveServedIds } from '@/lib/shares';
 import { getAppRuntime, recordAppAccess, recordShareAccess } from '@mantle/content';
@@ -42,16 +41,7 @@ const Body = z.object({
 export async function POST(req: Request, ctx: { params: Promise<{ token: string }> }) {
   const { token } = await ctx.params;
 
-  const { ok, retryAfterSec } = rateLimit(`share-tool-broker:${clientIpKey(req)}`, {
-    max: 60,
-    windowMs: 60_000,
-  });
-  if (!ok) {
-    return NextResponse.json(
-      { ok: false, error: 'too many requests' },
-      { status: 429, headers: { 'retry-after': String(retryAfterSec) } },
-    );
-  }
+  // The gate took the row's per-address limit (lib/route-limits.ts shareToolBroker).
 
   const gate = await gateShare(req, token);
   if (gate.kind === 'code') return contactCodeRequired(gate.share);

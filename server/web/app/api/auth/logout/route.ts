@@ -2,7 +2,6 @@ import { NextResponse } from '@/server/http-compat';
 import { SESSION_COOKIE_NAME, endLoginSessions, publicLoginCaller } from '@/lib/auth';
 import { secureCookies } from '@/lib/auth-constants';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
-import { refuseCrossSiteAuthPost } from '@/lib/auth/preflight';
 import { readJson } from '@/lib/read-body';
 
 /**
@@ -16,9 +15,9 @@ import { readJson } from '@/lib/read-body';
  * must stop working when it signs out, not when the token expires.
  */
 export async function POST(req: Request) {
-  // Origin only: the body is optional (a plain sign-out sends none).
-  const refused = refuseCrossSiteAuthPost(req, { json: false });
-  if (refused) return refused;
+  // The gate refused a cross-site post first, by its origin only: the body
+  // is optional (a plain sign-out sends none; lib/route-limits.ts
+  // ROUTE_GATES).
   // A body that is not JSON (a form post, a stray byte) reads as none, as
   // on main: sign-out still clears the cookie (fix round 1, L4).
   const body = (await readJson(req, { empty: null, invalid: null })) as {

@@ -5,7 +5,8 @@
  * the stdio server exposes, from the shared builder (`@mantle/mcp-core`), so the
  * two transports never drift.
  *
- * Gating, in order: (1) per-IP rate limit, so a public surface can't be flooded;
+ * Gating, in order: (1) per-IP rate limit, so a public surface can't be flooded
+ * (the row's, taken by the gate: lib/route-limits.ts mcp);
  * (2) the box-level enable flag — when the owner hasn't opted in, the endpoint
  * 404s and is effectively invisible; (3) OAuth — an absent/invalid access token
  * gets a 401 carrying `WWW-Authenticate: Bearer resource_metadata=…` (RFC 9728)
@@ -33,13 +34,14 @@ import {
 import { isRemoteMcpEnabled, wwwAuthenticateHeader } from '@/lib/mcp-oauth';
 import { auditMcpKeyCall, resolveMcpCaller } from '@/lib/mcp-auth';
 import { isSubscriptionListen, mcpHttpHandler } from '@/lib/mcp-http';
-import { clientIpKey, rateLimit } from '@/lib/rate-limit';
+import { rateLimit } from '@/lib/rate-limit';
+import { rateLimitedResponse } from '@/lib/route-limits';
 import { rateLimitAccessKey } from '@/lib/access-keys';
 
-// Generous — the MCP client makes one HTTP request per tool call, so this must
-// clear normal bursty tool traffic while still capping a flood.
-const RATE = { max: 300, windowMs: 60_000 };
-/** Per login, so one login's client cannot use up the box's budget. */
+/** Per login, so one login's client cannot use up the box's budget. Taken
+ *  here, once the bearer is resolved (the caller is this route's own
+ *  check): named in eslint-rules/route-plumbing.mjs RATE_LIMIT_ALLOW. The
+ *  per-address limit before it is the row's (lib/route-limits.ts mcp). */
 const LOGIN_RATE = { max: 300, windowMs: 60_000 };
 
 function unauthorized(): Response {
@@ -60,16 +62,8 @@ function notFound(): Response {
 }
 
 async function handler(req: Request): Promise<Response> {
-  // Keyed on the /64 for IPv6 (M2 audit N1): rotating addresses inside
-  // one /64 buys no fresh budget.
-  const limit = rateLimit(`mcp:${clientIpKey(req)}`, RATE);
-  if (!limit.ok) {
-    return new Response(JSON.stringify({ error: 'rate_limited' }), {
-      status: 429,
-      headers: { 'content-type': 'application/json', 'Retry-After': String(limit.retryAfterSec) },
-    });
-  }
-
+  // The gate took the row's per-address limit (keyed on the /64 for IPv6,
+  // M2 audit N1: rotating addresses inside one /64 buys no fresh budget).
   if (!(await isRemoteMcpEnabled())) return notFound();
 
   // An endless SSE stream per request, uncapped (lib/mcp-http.ts): refused.
@@ -87,15 +81,7 @@ async function handler(req: Request): Promise<Response> {
   const perLogin = caller.keyId
     ? rateLimitAccessKey({ id: caller.keyId, loginId: caller.loginId }, 'mcp')
     : rateLimit(`mcp-login:${caller.peerId ?? caller.loginId}`, LOGIN_RATE);
-  if (!perLogin.ok) {
-    return new Response(JSON.stringify({ error: 'rate_limited' }), {
-      status: 429,
-      headers: {
-        'content-type': 'application/json',
-        'Retry-After': String(perLogin.retryAfterSec),
-      },
-    });
-  }
+  if (!perLogin.ok) return rateLimitedResponse(perLogin.retryAfterSec);
   // What the login's scope may list, its private workspace and its
   // connector tools, resolved here, so the server factory below registers
   // synchronously.

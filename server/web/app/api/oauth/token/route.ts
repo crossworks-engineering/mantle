@@ -2,7 +2,8 @@
  * OAuth 2.1 token endpoint. Exchanges a PKCE-protected authorization code for an
  * access (+ refresh) token, and rotates refresh tokens. Public clients only
  * (token_endpoint_auth_method=none) — PKCE is the client proof. Standard
- * application/x-www-form-urlencoded request. Public endpoint; rate-limited later.
+ * application/x-www-form-urlencoded request. Public endpoint; rate-limited per
+ * address by the gate (the row's limit, lib/route-limits.ts).
  *
  * Gated on the box's MCP switch like every other connector endpoint (access
  * matrix T10): while it is off, no code is exchanged and no refresh mints a
@@ -16,7 +17,6 @@ import {
   refreshAccessToken,
   type TokenResponse,
 } from '@/lib/mcp-oauth';
-import { clientIpKey, rateLimit } from '@/lib/rate-limit';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
 
 function oauthError(error: string, description?: string, status = 400) {
@@ -67,8 +67,8 @@ function auditGrant(
 }
 
 export async function POST(req: Request) {
-  const limit = rateLimit(`oauth:token:${clientIpKey(req)}`, { max: 30, windowMs: 60_000 });
-  if (!limit.ok) return oauthError('rate_limited', undefined, 429);
+  // The gate took the row's per-address limit (lib/route-limits.ts
+  // oauthToken).
   // The box's switch off: the connector is invisible, as on /api/mcp,
   // /authorize and /register. A refresh must not keep a grant alive.
   if (!(await isRemoteMcpEnabled())) return oauthError('not_found', undefined, 404);

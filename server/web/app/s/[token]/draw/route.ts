@@ -1,7 +1,6 @@
 import { contactCodeRequired, gateShare } from '@/lib/contact-share-gate';
 import { isDrawServable } from '@/lib/shares';
 import { getDrawSvg } from '@mantle/content';
-import { clientIpKey, rateLimit } from '@/lib/rate-limit';
 
 /**
  * The committed SVG snapshot of a shared drawing, as its own image response.
@@ -29,16 +28,7 @@ function notFound() {
 export async function GET(req: Request, { params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
 
-  const { ok, retryAfterSec } = rateLimit(`share-draw:${clientIpKey(req)}`, {
-    max: 240,
-    windowMs: 60_000,
-  });
-  if (!ok) {
-    return new Response('Too many requests', {
-      status: 429,
-      headers: { 'retry-after': String(retryAfterSec), 'cache-control': 'no-store' },
-    });
-  }
+  // The gate took the row's per-address limit (lib/route-limits.ts shareDraw).
 
   const gate = await gateShare(req, token);
   if (gate.kind === 'code') return contactCodeRequired(gate.share);

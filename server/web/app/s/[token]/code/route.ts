@@ -8,7 +8,8 @@
  * link) is the same 401 after the same work (checkContactShareCode).
  *
  * Limits: per address (an IPv4 address or an IPv6 /64) 10 a minute and 30
- * an hour; per share 10 failures an hour; per contact 30 failures a day,
+ * an hour (the row's, taken by the gate after its cross-site refusal:
+ * lib/route-limits.ts contactCode, contactCodeHour); per share 10 failures an hour; per contact 30 failures a day,
  * then a 24-hour lock, an audit row and an admin notice in "Needs you". The
  * share and contact counters live in the database, so a restart or a second
  * web process does not reset them. The attacker needs the 128-bit link
@@ -23,9 +24,7 @@ import { z } from 'zod';
 import { checkContactShareCode, resolveActiveShareRowByToken } from '@mantle/content';
 import { setContactVisitorCookie } from '@/lib/contact-share-gate';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
-import { rateLimited, refuseCrossSiteAuthPost } from '@/lib/auth/preflight';
 import { AUTH_BODY_CEILING_BYTES } from '@/lib/body-limit';
-import { clientIpKey, rateLimit } from '@/lib/rate-limit';
 import { readJson } from '@/lib/read-body';
 
 const Body = z.object({ code: z.string().max(64) });
@@ -41,16 +40,7 @@ function invalid() {
 }
 
 export async function POST(req: Request, ctx: { params: Promise<{ token: string }> }) {
-  const refused = refuseCrossSiteAuthPost(req);
-  if (refused) return refused;
   const { token } = await ctx.params;
-
-  const ip = clientIpKey(req);
-  const denied = rateLimited(
-    rateLimit(`contact-code:ip:${ip}`, { max: 10, windowMs: 60_000 }),
-    rateLimit(`contact-code:ip-hour:${ip}`, { max: 30, windowMs: 60 * 60_000 }),
-  );
-  if (denied) return denied;
 
   const parsed = Body.safeParse(
     await readJson(req, { empty: null, maxBytes: AUTH_BODY_CEILING_BYTES }),

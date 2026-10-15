@@ -12,7 +12,6 @@ import { NextResponse } from '@/server/http-compat';
 import { bearerFrom, verifyMobileToken } from '@/lib/auth';
 import { loadBearerToken } from '@/lib/auth/login-row';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
-import { rateLimit } from '@/lib/rate-limit';
 import { readJsonNoNul } from '@/lib/strip-nul';
 import { connectDevice, parseConnectBody } from './connect';
 import { sanitizeLoginPushPrefs } from './preferences-sanitize';
@@ -34,19 +33,6 @@ export type LoginPushCaller = {
 
 const invalidBody = () => NextResponse.json({ error: 'invalid_body' }, { status: 400 });
 
-/** Connect and enrol are once-per-install steps: 10 a minute per login is
- *  far above any real use and stops a login filling the device list or
- *  minting tickets in a loop. One bucket for both. */
-export function pushEnrolLimited(loginId: string): Response | null {
-  const gate = rateLimit(`push-enrol:${loginId}`, { max: 10, windowMs: 60_000 });
-  return gate.ok
-    ? null
-    : NextResponse.json(
-        { error: 'too_many_requests' },
-        { status: 429, headers: { 'Retry-After': String(gate.retryAfterSec) } },
-      );
-}
-
 /**
  * The device token the request carries, when it is a live token of THIS
  * login. The session may have resolved from a cookie while the header holds
@@ -64,8 +50,9 @@ export async function callerTokenId(req: Request, loginId: string): Promise<stri
 
 /** POST {pushBase}/connect { platform, osPushToken } -> { ticket, relayUrl }. */
 export async function loginPushConnect(req: Request, caller: LoginPushCaller): Promise<Response> {
-  const limited = pushEnrolLimited(caller.loginId);
-  if (limited) return limited;
+  // Connect and enrol are once-per-install steps: the gate took the row's
+  // limit (lib/route-limits.ts pushEnrol: 10 a minute per login, one bucket
+  // for both, the admin routes too).
   const body = parseConnectBody(await readJsonNoNul(req));
   if (!body) return invalidBody();
   // A member may switch the brain's push link on.
@@ -95,8 +82,7 @@ export async function loginPushConnect(req: Request, caller: LoginPushCaller): P
 
 /** POST {pushBase}/subscriptions: store the device the app just enrolled. */
 export async function loginPushSubscribe(req: Request, caller: LoginPushCaller): Promise<Response> {
-  const limited = pushEnrolLimited(caller.loginId);
-  if (limited) return limited;
+  // The row's limit (pushEnrol) is the gate's.
   const tokenId = await callerTokenId(req, caller.loginId);
   if (!tokenId) return NextResponse.json({ error: 'bearer_required' }, { status: 400 });
   const body = ((await readJsonNoNul(req)) ?? {}) as Record<string, unknown>;

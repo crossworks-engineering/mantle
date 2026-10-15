@@ -42,6 +42,7 @@ import { env } from '@mantle/config';
 import { registerPolicySource, systemActor, type GatePolicy, type PolicyRef } from '@mantle/db';
 import type { AccessKeyArea, AccessKeyGrant } from '../access-keys';
 import { API_V1_ROUTES, keyMayCall, type KeyRoute } from '../api-v1';
+import { RATE_LIMITS, ROUTE_GATES, type RateLimitName } from '../route-limits';
 import type { RouteSwitch } from './route-switches';
 import { getRequestContext } from '../../server/request-context';
 import { isAssetPath, isPublicPath, isRenderAssetPath } from '../auth-constants';
@@ -366,6 +367,16 @@ export type RouteRow = Readonly<{
    *  the gate answers the route's own off answer before the login's
    *  (routeSwitchedOff). Null: always served. */
   switch: RouteSwitch | null;
+  /** The login-CSRF refusal the gate answers before the row's limits and
+   *  its handler (refuseCrossSiteAuthPost; route-limits.ts ROUTE_GATES): a
+   *  public auth post that sets or uses the session cookie. Null: none. */
+  crossSite: 'json' | 'origin' | null;
+  /** The row's rate limits, by name (route-limits.ts RATE_LIMITS; A10 #8),
+   *  taken by the gate once the caller is answered, or, on a public row
+   *  that reads its login at the read, a login's limit when the handler
+   *  reads it. Answered with the one 429 (rateLimitedResponse). Empty:
+   *  none. */
+  rateLimit: readonly RateLimitName[];
   /** The system reason a public route that writes runs as (plan 7, 20.3),
    *  null on every other row (it runs as its caller). A4 step 3a names the
    *  actor each runs as today: the request slot's first actor,
@@ -421,6 +432,48 @@ function aliasOf(method: string, pattern: string, served: (key: string) => boole
     : pattern.replace('/api/v1/', '/api/');
   const key = `${method} ${base}`;
   return served(key) ? key : null;
+}
+
+/**
+ * The caller kinds whose answer names the login a login limit counts
+ * (session.ts answeredLimitLogin): the guards answered before the handler,
+ * and the public login read at the read (its limit is taken there).
+ */
+const LIMIT_LOGIN_CALLERS: ReadonlySet<RouteCaller> = new Set([
+  'owner',
+  'member',
+  'login',
+  'chat',
+  'readerAsset',
+  'publicLogin',
+]);
+
+/**
+ * What the gate checks of `key`'s request before its handler (route-limits.ts
+ * ROUTE_GATES): the row's own entry, or, for an /api/v1 alias, its base
+ * route's (it runs that handler); checked against the row (the scope of
+ * each limit needs a caller that names it, a catch-all or a page takes
+ * none).
+ */
+function gatesOf(
+  key: string,
+  alias: string | null,
+  row: Readonly<{ caller: RouteCaller | null; catchAll: boolean; page: boolean }>,
+) {
+  const gates = ROUTE_GATES.get(key) ?? (alias ? ROUTE_GATES.get(alias) : undefined) ?? {};
+  const rateLimit = gates.rateLimit ?? [];
+  if ((rateLimit.length || gates.crossSite) && (row.catchAll || row.page)) {
+    throw new Error(`ROUTE_POLICY: ${key} is a catch-all or a page: the gate checks nothing first`);
+  }
+  for (const name of rateLimit) {
+    const spec = RATE_LIMITS[name];
+    if (spec.per === 'login' && !(row.caller && LIMIT_LOGIN_CALLERS.has(row.caller))) {
+      throw new Error(
+        `ROUTE_POLICY: ${key} takes the login limit ${name}, but reads no caller that names a login`,
+      );
+    }
+  }
+  return { crossSite: gates.crossSite ?? null, rateLimit: Object.freeze([...rateLimit]) };
 }
 
 /** The class of the login's own things (route-scope.ts `self`). */
@@ -674,6 +727,13 @@ export function buildRouteRow(
   if (caller && pattern.endsWith('*')) {
     throw new Error(`ROUTE_POLICY: ${key} is a catch-all: it keeps its guard (hand batch)`);
   }
+  // An alias runs its base's handler: the same method on the base pattern.
+  const alias = aliasOf(m, pattern, served);
+  const gates = gatesOf(
+    `${answeredAs} ${pattern}`,
+    alias ? `${answeredAs} ${alias.slice(alias.indexOf(' ') + 1)}` : null,
+    { caller, catchAll: pattern.endsWith('*'), page },
+  );
   const startsAs =
     pageClass === 'render'
       ? 'http:render'
@@ -699,13 +759,15 @@ export function buildRouteRow(
     ...(pattern.startsWith('/api/v1/') && v1
       ? { keyArea: v1.area, keySelf: v1.self === true }
       : {}),
-    aliasOf: aliasOf(m, pattern, served),
+    aliasOf: alias,
     cors: linkCors(pattern),
     renderCookie: m === 'GET' && (cls === 'render' || isRenderAssetPath(path)),
     page,
     caller,
     gone,
     switch: routeSwitch,
+    crossSite: gates.crossSite,
+    rateLimit: gates.rateLimit,
     startsAs,
     actor: isPublic && effect === 'write' ? startsAs : null,
   });

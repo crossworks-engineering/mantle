@@ -81,6 +81,7 @@ import {
   type RouteRow,
 } from './route-policy';
 import { auditsAsWrite } from './route-scope';
+import { takeRouteLimits, type LimitLogin } from '../route-limits';
 import {
   SESSION_COOKIE_NAME,
   buildAssetToken,
@@ -1023,7 +1024,10 @@ type PipelineAnswer =
   | Readonly<{ caller: 'readerAsset'; reader: AssetReader }>
   | Readonly<{ caller: 'memberAsset'; member: MemberCaller }>
   | Readonly<{ caller: 'frame'; ticket: AppFrameTicket | null }>
-  | Readonly<{ caller: 'publicLogin'; atRead: AtRead<AnyLogin | NextResponse, { audit: boolean }> }>
+  | Readonly<{
+      caller: 'publicLogin';
+      atRead: AtRead<AnyLogin | NextResponse | RouteRefusal, { audit: boolean }>;
+    }>
   | Readonly<{ caller: 'cookieUpgrade'; atRead: AtRead<CookieUpgradeLogin | NextResponse, null> }>
   | Readonly<{ caller: 'ownerAtRead'; atRead: AtRead<SessionUser | NextResponse, null> }>;
 
@@ -1107,6 +1111,43 @@ export async function answerRouteCaller(row: RouteRow): Promise<NextResponse | n
   return null;
 }
 
+/** The scope of the limits taken at a public row's read: the login's. */
+const LOGIN_SCOPE: ReadonlySet<'login'> = new Set(['login']);
+
+/**
+ * The login a row's login limit counts (route-limits.ts; A10 #8), from the
+ * answer the pipeline gave (answerRouteCaller): the owner guard's login (a
+ * member's own id where a member called, as the app runner counted it; an
+ * Admin user's actor), the member, the any-login and chat logins, a byte
+ * route's reader. Null where the answer names none (no answer yet, a kind
+ * answered at the read, which takes its limit there).
+ */
+export function answeredLimitLogin(): LimitLogin | null {
+  const answer = boundLogins(currentCaller())?.answer;
+  switch (answer?.caller) {
+    case 'owner': {
+      const { owner } = answer;
+      return owner.member
+        ? { loginId: owner.member.loginId, member: true }
+        : { loginId: owner.user.actor.id, member: false };
+    }
+    case 'member':
+      return { loginId: answer.member.loginId, member: true };
+    case 'login':
+      return { loginId: answer.login.loginId, member: answer.login.kind === 'member' };
+    case 'chat':
+      return { loginId: answer.chat.loginId, member: answer.chat.kind === 'member' };
+    case 'readerAsset': {
+      const { reader } = answer;
+      return reader.member
+        ? { loginId: reader.member.loginId, member: true }
+        : { loginId: reader.user.actor.id, member: false };
+    }
+    default:
+      return null;
+  }
+}
+
 /** The request a byte route's handler is handed (the asset guards read its
  *  `?at=` token, its path and its method): the request as sent, or as the
  *  route file hands it on (route-policy.ts ASSET_QUERY_AS_HANDED). */
@@ -1178,7 +1219,25 @@ async function guardAnswer(row: RouteRow): Promise<PipelineAnswer | NextResponse
       return { caller, ticket: frameTicketOf(req) };
     }
     case 'publicLogin':
-      return { caller, atRead: new AtRead((opts) => getLoginOr401(opts)) };
+      // A login limit of the row (route-limits.ts) is taken here, at the
+      // read, where the handler took it after its read before (A10 #8): no
+      // login spends nothing, and what the handler checked first still
+      // comes first. Over the limit, the read throws the one 429.
+      return {
+        caller,
+        atRead: new AtRead(async (opts) => {
+          const login = await getLoginOr401(opts);
+          if (login instanceof NextResponse || !row.rateLimit.length) return login;
+          const req = getRequestContext()?.req;
+          if (!req) throw new Error(`answerRouteCaller: ${row.key} has no request`);
+          const over = takeRouteLimits(row.rateLimit, {
+            req,
+            login: { loginId: login.loginId, member: login.kind === 'member' },
+            scopes: LOGIN_SCOPE,
+          });
+          return over ? new RouteRefusal(over) : login;
+        }),
+      };
     case 'cookieUpgrade':
       return { caller, atRead: new AtRead(() => getCookieUpgradeLoginOr401()) };
     case 'ownerAtRead':
@@ -1343,6 +1402,9 @@ export function frameTicketCaller(): AppFrameTicket | null {
 export async function publicLoginCaller(opts: { audit?: boolean } = {}): Promise<AnyLogin | null> {
   const atRead = pipelineAnswer('publicLoginCaller', 'publicLogin').atRead;
   const got = await atRead.take({ audit: opts.audit === true });
+  // Over the row's login limit (A10 #8): the one 429, answered by the app
+  // as the handler's 429 was returned.
+  if (got instanceof RouteRefusal) throw got;
   return got instanceof NextResponse ? null : { ...got };
 }
 

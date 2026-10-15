@@ -1,5 +1,4 @@
-import { NextResponse } from '@/server/http-compat';
-import { clientIpKey, rateLimit, rateLimitPeek } from '@/lib/rate-limit';
+import { countRateFailure } from '@/lib/route-limits';
 
 /**
  * Shared bits of the member invite routes (member logins, Phase 6): the
@@ -22,42 +21,16 @@ import { clientIpKey, rateLimit, rateLimitPeek } from '@/lib/rate-limit';
  * rate of guesses finds one. It trips only when at least 12 addresses (the
  * accept) or 20 (the preview) keep failing at their full per-IP rate within
  * one minute, and then only for the rest of that minute.
+ *
+ * Both are limits of the routes' rows (lib/route-limits.ts: invitePreview
+ * and invitePreviewFailures, inviteAccept and inviteAcceptFailures, 30 and
+ * 10 a minute per address, 600 and 120 failed codes a minute for the
+ * brain), taken by the gate before the handler; the handler counts each
+ * failed code here.
  */
-export const INVITE_LIMITS = {
-  preview: { perIp: 30, globalFailures: 600 },
-  accept: { perIp: 10, globalFailures: 120 },
-} as const;
-
-const WINDOW_MS = 60_000;
-
-function tooMany(retryAfterSec: number): Response {
-  return NextResponse.json(
-    { error: 'Too many attempts. Try again in a minute.' },
-    { status: 429, headers: { 'Retry-After': String(retryAfterSec) } },
-  );
-}
-
-/** A 429 when the caller's address is over its cap, or the brain has seen
- *  too many failed codes this minute; else null. Call before any work. */
-export function inviteRateLimited(req: Request, kind: keyof typeof INVITE_LIMITS): Response | null {
-  const caps = INVITE_LIMITS[kind];
-  const ip = rateLimit(`auth:invite-${kind}:${clientIpKey(req)}`, {
-    max: caps.perIp,
-    windowMs: WINDOW_MS,
-  });
-  if (!ip.ok) return tooMany(ip.retryAfterSec);
-  const all = rateLimitPeek(`auth:invite-${kind}:failed`, {
-    max: caps.globalFailures,
-    windowMs: WINDOW_MS,
-  });
-  return all.ok ? null : tooMany(all.retryAfterSec);
-}
 
 /** Count one failed code (an unknown, used, revoked or expired code, or a
  *  malformed request) toward the brain-wide cap. */
-export function inviteFailed(kind: keyof typeof INVITE_LIMITS): void {
-  rateLimit(`auth:invite-${kind}:failed`, {
-    max: INVITE_LIMITS[kind].globalFailures,
-    windowMs: WINDOW_MS,
-  });
+export function inviteFailed(kind: 'preview' | 'accept'): void {
+  countRateFailure(kind === 'preview' ? 'invitePreviewFailures' : 'inviteAcceptFailures');
 }

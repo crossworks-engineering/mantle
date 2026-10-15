@@ -3,8 +3,6 @@ import { z } from 'zod';
 import { db, authUsers, eq, sql } from '@mantle/db';
 import { authenticatePassword, setSessionCookie } from '@/lib/auth';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
-import { clientIpKey, rateLimit } from '@/lib/rate-limit';
-import { refuseCrossSiteAuthPost } from '@/lib/auth/preflight';
 import { readJson } from '@/lib/read-body';
 
 const LoginBody = z.object({
@@ -18,23 +16,9 @@ const LoginBody = z.object({
 const AUTH_FAILED_MESSAGE = 'Invalid email or password.';
 
 export async function POST(req: Request) {
-  const refused = refuseCrossSiteAuthPost(req);
-  if (refused) return refused;
-  // Rate limit by client IP before bcrypt so a flood doesn't pin CPU.
-  // 10/min comfortably fits a user mistyping a password a few times;
-  // it's brutal for credential stuffing.
-  const ip = clientIpKey(req);
-  const limit = rateLimit(`auth:login:${ip}`, { max: 10, windowMs: 60_000 });
-  if (!limit.ok) {
-    return NextResponse.json(
-      { error: 'Too many login attempts. Try again in a minute.' },
-      {
-        status: 429,
-        headers: { 'Retry-After': String(limit.retryAfterSec) },
-      },
-    );
-  }
-
+  // The gate refused a cross-site post and took the row's limit first
+  // (lib/route-limits.ts ROUTE_GATES: authLogin, 10 a minute per address,
+  // before bcrypt so a flood cannot pin the CPU).
   const raw = (await readJson(req)) ?? {};
   const parsed = LoginBody.safeParse(raw);
   if (!parsed.success) {
@@ -44,8 +28,8 @@ export async function POST(req: Request) {
   const email = parsed.data.email.trim().toLowerCase();
   const login = await authenticatePassword(email, parsed.data.password);
   if (!login) {
-    // No actor id — the attempted email may not even exist. The 10/min/IP rate
-    // limit above caps how fast this can grow the trail.
+    // No actor id — the attempted email may not even exist. The row's
+    // per-address limit caps how fast this can grow the trail.
     auditFireAndForget({
       actorEmail: email,
       action: 'auth.login_failed',

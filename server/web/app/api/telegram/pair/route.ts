@@ -31,7 +31,6 @@ import {
   pairingRefusalStatus,
   previewMyTelegramChat,
 } from '@/lib/agent-telegram';
-import { rateLimit } from '@/lib/rate-limit';
 import { readJson } from '@/lib/read-body';
 
 const Body = z
@@ -50,14 +49,9 @@ const Body = z
   });
 
 export async function POST(req: Request) {
+  // The gate took the row's per-login limit (lib/route-limits.ts
+  // telegramPair).
   const login = chatLoginCaller();
-  const gate = rateLimit(`telegram-pair:${login.loginId}`, { max: 10, windowMs: 60_000 });
-  if (!gate.ok) {
-    return NextResponse.json(
-      { error: 'too many tries, wait a moment.', code: 'too_many_attempts' },
-      { status: 429, headers: { 'Retry-After': String(gate.retryAfterSec) } },
-    );
-  }
   const parsed = Body.safeParse(await readJson(req));
   if (!parsed.success) {
     return NextResponse.json(

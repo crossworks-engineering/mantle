@@ -58,16 +58,8 @@ import {
 } from '@/lib/app-db-broker-body';
 import { renderAppFrame } from '@/lib/app-frame';
 import { memberAppOr404, memberName } from '@/lib/member-apps';
-import { rateLimit } from '@/lib/rate-limit';
 import { JSON_BODY_CEILING_BYTES } from '@/lib/body-limit';
 import { readJson } from '@/lib/read-body';
-
-function tooMany(retryAfterSec: number): NextResponse {
-  return NextResponse.json(
-    { ok: false, error: 'too many requests' },
-    { status: 429, headers: { 'retry-after': String(retryAfterSec) } },
-  );
-}
 
 /**
  * The seconds-lived frame ticket for a member's run (POST frame-ticket). It
@@ -75,9 +67,8 @@ function tooMany(retryAfterSec: number): NextResponse {
  * re-checks the login; the owner frame's draft path refuses it.
  */
 export async function memberFrameTicket(member: MemberCaller, id: string): Promise<Response> {
-  // One ticket per frame load; a burst beyond this is a token-mint loop.
-  const gate = rateLimit(`member-frame-ticket:${member.loginId}`, { max: 30, windowMs: 60_000 });
-  if (!gate.ok) return tooMany(gate.retryAfterSec);
+  // One ticket per frame load; a burst beyond this is a token-mint loop:
+  // the gate took the row's limit (lib/route-limits.ts memberFrameTicket).
   const app = await memberAppOr404(member.anchorId, id, member.loginId);
   if (app instanceof Response) return app;
   recordAppAccess({
@@ -146,9 +137,8 @@ export async function memberDbBroker(
   member: MemberCaller,
   id: string,
 ): Promise<Response> {
-  // Generous (a running app is query-chatty) but bounded.
-  const gate = rateLimit(`member-db-broker:${member.loginId}`, { max: 300, windowMs: 60_000 });
-  if (!gate.ok) return tooMany(gate.retryAfterSec);
+  // Generous (a running app is query-chatty) but bounded: the gate took
+  // the row's limit (lib/route-limits.ts memberDbBroker).
   const parsed = AppDbBody.safeParse(
     (await readJson(req, { empty: null, maxBytes: JSON_BODY_CEILING_BYTES })) ?? {},
   );
@@ -229,8 +219,7 @@ export async function memberToolBroker(
   member: MemberCaller,
   id: string,
 ): Promise<Response> {
-  const gate = rateLimit(`member-tool-broker:${member.loginId}`, { max: 60, windowMs: 60_000 });
-  if (!gate.ok) return tooMany(gate.retryAfterSec);
+  // The gate took the row's limit (lib/route-limits.ts memberToolBroker).
   const parsed = ToolBody.safeParse(
     (await readJson(req, { empty: null, maxBytes: JSON_BODY_CEILING_BYTES })) ?? {},
   );

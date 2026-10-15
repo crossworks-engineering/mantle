@@ -7,13 +7,11 @@
 import { type NextRequest, NextResponse } from '@/server/http-compat';
 import { ownerCaller } from '@/lib/auth';
 import { connectDevice, parseConnectBody } from '@/lib/push/connect';
-import { pushEnrolLimited } from '@/lib/push/login-routes';
 import { readJson } from '@/lib/read-body';
 
 export async function POST(req: NextRequest) {
-  const owner = ownerCaller();
-  const limited = pushEnrolLimited(owner.actor.id);
-  if (limited) return limited;
+  // The gate took the row's per-login limit (lib/route-limits.ts pushEnrol).
+  ownerCaller();
 
   const body = parseConnectBody(await readJson(req, { empty: null }));
   if (!body) return NextResponse.json({ error: 'invalid_body' }, { status: 400 });

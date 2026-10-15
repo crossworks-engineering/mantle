@@ -21,7 +21,6 @@
 
 import { NextResponse } from '@/server/http-compat';
 import { chatLoginCaller } from '@/lib/auth';
-import { rateLimit } from '@/lib/rate-limit';
 import { claimMemberChatWork } from '@/lib/workspace-turn';
 import { asSystem, getDefaultWorker } from '@mantle/db';
 import { getApiKeyById } from '@mantle/api-keys';
@@ -29,16 +28,9 @@ import { getSttAdapter, type SttDispatcher } from '@mantle/voice';
 import { errorMessage } from '@mantle/std';
 
 export async function POST(req: Request) {
+  // A member's clips: the gate took the row's limit (lib/route-limits.ts
+  // chatTranscribe; an Admin user is not limited).
   const login = chatLoginCaller();
-  if (login.kind !== 'admin') {
-    const gate = rateLimit(`chat-transcribe:${login.loginId}`, { max: 6, windowMs: 60_000 });
-    if (!gate.ok) {
-      return NextResponse.json(
-        { error: 'too many voice clips, give me a moment' },
-        { status: 429, headers: { 'Retry-After': String(gate.retryAfterSec) } },
-      );
-    }
-  }
 
   // Multipart only — base64 in JSON would be wasteful for >100KB
   // audio blobs, and the FormData API handles streaming uploads.

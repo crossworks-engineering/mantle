@@ -32,3 +32,11 @@ export function startOfTodayUtc(): Date {
   const now = new Date();
   return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
 }
+
+/** Seconds until the daily budget opens again (the next midnight UTC), at
+ *  least 1: the Retry-After of a daily-cap 429 (A10 #8: every 429 says
+ *  when to come back). */
+export function secondsUntilTomorrowUtc(): number {
+  const next = startOfTodayUtc().getTime() + 24 * 60 * 60 * 1000;
+  return Math.max(1, Math.ceil((next - Date.now()) / 1000));
+}

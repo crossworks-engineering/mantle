@@ -10,12 +10,16 @@ import {
 import { isAccessKey, type AccessKeyGrant } from '../../lib/access-keys';
 import { bodyCeilingFor, bodyTooLargeResponse, declaredOver } from '../../lib/body-limit';
 import {
+  ANSWERED_AT_READ,
+  assetQueryAsHanded,
   registerRouteSource,
   routeRef,
   routeSwitchedOff,
   spellsPattern,
   type RouteRow,
 } from '../../lib/auth/route-policy';
+import { refuseCrossSiteAuthPost } from '../../lib/auth/preflight';
+import { takeRouteLimits, type RateLimitScope } from '../../lib/route-limits';
 import { runWithRequestContext, type RequestContext } from '../request-context';
 import { servedRoute, type ServedRoute } from '../route-loader';
 import { gateAccessKey } from './access-key-gate';
@@ -34,6 +38,7 @@ import {
 } from '@mantle/db';
 import {
   RouteLoginError,
+  answeredLimitLogin,
   answerRouteCaller,
   enterRouteLogin,
   resolveHttpLogin,
@@ -199,6 +204,37 @@ function httpCaller(
   };
 }
 
+/** The limit scopes the gate takes: every one, but a login's on a row
+ *  whose caller is answered at the read (that read takes it). */
+const ALL_SCOPES: ReadonlySet<RateLimitScope> = new Set(['ip', 'login', 'brain']);
+const NO_LOGIN_SCOPES: ReadonlySet<RateLimitScope> = new Set(['ip', 'brain']);
+
+/**
+ * What a row checks of its request before the handler (route-limits.ts
+ * ROUTE_GATES; A10 #8), in the gate's request slot, once the caller is
+ * answered: the cross-site refusal of a public auth post first (no page on
+ * another site spends a visitor's budget), then the row's rate limits, with
+ * the one 429. A login's limit counts the login the pipeline answered
+ * (answeredLimitLogin); on a row answered at the read the read takes it
+ * (session.ts publicLoginCaller). A byte row's query is the one its handler
+ * is handed (assetQueryAsHanded).
+ */
+function beforeHandler(row: RouteRow, req: Request): Response | null {
+  if (row.crossSite) {
+    const refused = refuseCrossSiteAuthPost(req, { json: row.crossSite === 'json' });
+    if (refused) return refused;
+  }
+  if (!row.rateLimit.length) return null;
+  const handed = assetQueryAsHanded(row);
+  const atRead = row.caller !== null && ANSWERED_AT_READ.has(row.caller);
+  return takeRouteLimits(row.rateLimit, {
+    req,
+    ...(handed !== null ? { query: new URLSearchParams(handed) } : {}),
+    login: atRead ? null : answeredLimitLogin(),
+    scopes: atRead ? NO_LOGIN_SCOPES : ALL_SCOPES,
+  });
+}
+
 /**
  * The request's ROUTE_POLICY row: its route's row for the method, or null
  * (no route answers, or the route answers the method only with its 405).
@@ -351,6 +387,13 @@ function gateHandler(): MiddlewareHandler {
               ctx.callerError = { error };
             }
             if (refused) return refused;
+            // What the row checks before its handler (A10 #8), once the
+            // caller is answered: the cross-site refusal, then its limits.
+            // Not where the answer threw: the handler does not run.
+            if (!ctx.callerError) {
+              const held = beforeHandler(row, req);
+              if (held) return held;
+            }
             await next();
             // Nothing took it (no handler of the manifest answered):
             // thrown here, never dropped.

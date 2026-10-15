@@ -3,7 +3,6 @@ import { NextResponse } from '@/server/http-compat';
 import { evaluateSpec, parseFormulaSpec, type FormulaValue } from '@mantle/content';
 import { and, eq } from 'drizzle-orm';
 import { db, nodes } from '@mantle/db';
-import { clientIpKey, rateLimit } from '@/lib/rate-limit';
 import { readJson } from '@/lib/read-body';
 
 /**
@@ -43,19 +42,7 @@ function notFound() {
 export async function POST(req: Request, ctx: { params: Promise<{ token: string }> }) {
   const { token } = await ctx.params;
 
-  const { ok: allowed, retryAfterSec } = rateLimit(`share-evaluate:${clientIpKey(req)}`, {
-    max: 60,
-    windowMs: 60_000,
-  });
-  if (!allowed) {
-    return NextResponse.json(
-      { error: 'too many requests' },
-      {
-        status: 429,
-        headers: { 'retry-after': String(retryAfterSec), 'cache-control': 'no-store' },
-      },
-    );
-  }
+  // The gate took the row's per-address limit (lib/route-limits.ts shareEvaluate).
 
   const gate = await gateShare(req, token);
   if (gate.kind === 'code') return contactCodeRequired(gate.share);

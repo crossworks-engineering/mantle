@@ -12,6 +12,7 @@ import {
 import { requestMetaFrom } from '../../lib/audit';
 import { keyOnRow, type RouteRow } from '../../lib/auth/route-policy';
 import { clientIp, clientIpKey } from '../../lib/rate-limit';
+import { rateLimitedResponse } from '../../lib/route-limits';
 
 /**
  * The gate's answer to an `mtlk_` bearer (inbound API keys, plan page
@@ -115,12 +116,8 @@ function outOfScope(reason: string): Response {
   );
 }
 
+/** A key over its budget (lib/access-keys.ts: per key, per login, the
+ *  search's own): the one 429 (A10 #8). */
 function tooMany(retryAfterSec: number): Response {
-  return Response.json(
-    { error: 'rate_limited' },
-    {
-      status: 429,
-      headers: { 'Cache-Control': 'no-store', 'Retry-After': String(retryAfterSec) },
-    },
-  );
+  return rateLimitedResponse(retryAfterSec);
 }

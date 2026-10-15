@@ -11,7 +11,6 @@ import {
   type UnusedSuccessor,
 } from '@/lib/auth';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
-import { clientIpKey, rateLimit } from '@/lib/rate-limit';
 import { brainIdField } from '@/lib/brain-identity';
 
 /**
@@ -106,15 +105,8 @@ async function answerSuccessorAgain(
 }
 
 export async function POST(req: Request) {
-  // Per address, an IPv6 caller by its /64 (as the code routes count).
-  const limit = rateLimit(`auth:token-refresh:${clientIpKey(req)}`, { max: 30, windowMs: 60_000 });
-  if (!limit.ok) {
-    return NextResponse.json(
-      { error: 'Too many refresh attempts. Try again in a minute.' },
-      { status: 429, headers: { 'Retry-After': String(limit.retryAfterSec) } },
-    );
-  }
-
+  // The gate took the row's limit (lib/route-limits.ts: authTokenRefresh,
+  // per address, an IPv6 caller by its /64).
   const token = bearer(req);
   const claims = token ? verifyMobileToken(token) : null;
   if (!token || !claims) return unauthorized();

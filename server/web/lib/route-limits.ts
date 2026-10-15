@@ -1,0 +1,338 @@
+/**
+ * Rate limits on the ROUTE_POLICY row (A10 #8; docs/request-plumbing.md,
+ * "Rate limits"). Before, 40 limits were taken by hand: each route (or a
+ * helper its handler called first) built its own bucket key, named its own
+ * max and window inline, and answered its own 429 (four texts, two header
+ * spellings, one with no Retry-After). A new route had no limit unless
+ * someone remembered one.
+ *
+ * Now:
+ *
+ *  - RATE_LIMITS: every named limit, once: its bucket (the key prefix, as on
+ *    main), whose key it counts (the caller's address, its login, or the
+ *    whole brain), its max and its window, and the narrowings a limit had
+ *    (members only; a query it applies to).
+ *  - ROUTE_GATES: what the gate checks of a request before its handler, by
+ *    row: the cross-site refusal (refuseCrossSiteAuthPost, which comes
+ *    before any limit) and the named limits. buildRouteRow reads it into
+ *    the row's `crossSite` and `rateLimit` (an /api/v1 alias takes its base
+ *    route's, as it runs the base's handler).
+ *  - takeRouteLimits: the gate takes a row's limits once the caller is
+ *    answered (gate.ts), or, on a public row that reads its login at the
+ *    read, when the handler reads it (session.ts publicLoginCaller): where
+ *    the handler took them before, so what came first still does.
+ *  - rateLimitedResponse: the one 429. One body text, one header spelling,
+ *    always Retry-After.
+ *
+ * The bucket store is lib/rate-limit.ts, unchanged: a fixed window per key,
+ * in memory.
+ */
+import { NextResponse } from '../server/http-compat';
+import { clientIpKey, rateLimit, rateLimitPeek, type RateLimitResult } from './rate-limit';
+
+/** Whose key a limit counts: the caller's address (clientIpKey, an IPv6
+ *  caller by its /64), the login the caller is, or the whole brain (one
+ *  bucket: a failure budget). */
+export type RateLimitScope = 'ip' | 'login' | 'brain';
+
+export type RateLimitSpec = Readonly<{
+  /** The bucket's key prefix: the key is `bucket:<address or login id>`,
+   *  or the bucket itself for the brain. As on main, byte for byte. */
+  bucket: string;
+  per: RateLimitScope;
+  max: number;
+  windowMs: number;
+  /** Only a member login counts: an Admin user is not limited. */
+  members?: true;
+  /** Only a request whose query this says (the bytes routes: the bytes or
+   *  the thumbnail, never the metadata). `says` is for the docs. */
+  when?: Readonly<{ says: string; test: (query: URLSearchParams) => boolean }>;
+  /** A failure budget: looked at on the way in (a 429 once it is spent),
+   *  counted by the handler on each failure (countRateFailure). */
+  peek?: true;
+}>;
+
+const MIN = 60_000;
+const HOUR = 60 * MIN;
+
+const perIp = (bucket: string, max: number, windowMs = MIN): RateLimitSpec => ({
+  bucket,
+  per: 'ip',
+  max,
+  windowMs,
+});
+const perLogin = (bucket: string, max: number, windowMs = MIN): RateLimitSpec => ({
+  bucket,
+  per: 'login',
+  max,
+  windowMs,
+});
+const perMember = (bucket: string, max: number, windowMs = MIN): RateLimitSpec => ({
+  ...perLogin(bucket, max, windowMs),
+  members: true,
+});
+const failures = (bucket: string, max: number): RateLimitSpec => ({
+  bucket,
+  per: 'brain',
+  max,
+  windowMs: MIN,
+  peek: true,
+});
+
+/** The bytes of a file (`?raw`, or a `?thumb` that is not 1), or its
+ *  thumbnail (`?thumb=1`): each its own budget; the metadata none. */
+const BYTES_ASKED = {
+  says: 'the bytes are asked (?raw, or ?thumb other than 1)',
+  test: (q: URLSearchParams) => (q.has('raw') || q.has('thumb')) && q.get('thumb') !== '1',
+};
+const THUMB_ASKED = {
+  says: 'a thumbnail is asked (?thumb=1)',
+  test: (q: URLSearchParams) => q.get('thumb') === '1',
+};
+
+/**
+ * Every named limit. Sized for people, each with the reason it was given
+ * where it was taken by hand: before bcrypt (the sign-ins), a code oracle
+ * (pairing, invites, contact codes), a mint loop (tickets, pairing codes,
+ * push enrolment), a query or a model call a stranger can trigger (the /s
+ * brokers, the MCP, voice clips), a slow statement (the user search).
+ */
+export const RATE_LIMITS = {
+  // Sign in, per address: before bcrypt, so a flood cannot pin the CPU.
+  authLogin: perIp('auth:login', 10),
+  authSignup: perIp('auth:signup', 5),
+  authPairClaim: perIp('auth:pair-claim', 10),
+  authTokenRefresh: perIp('auth:token-refresh', 30),
+  /** One bucket for the three token sign-ins: alternating them buys
+   *  nothing. */
+  authTokenLogin: perIp('auth:token-login', 10),
+  ownerSso: perIp('owner-sso:ip', 30),
+  /** The invite routes are code oracles: every request counts per address,
+   *  and the brain's failed codes count toward a cap of their own (a guard
+   *  against a distributed flood: member-invites.ts). */
+  invitePreview: perIp('auth:invite-preview', 30),
+  invitePreviewFailures: failures('auth:invite-preview:failed', 600),
+  inviteAccept: perIp('auth:invite-accept', 10),
+  inviteAcceptFailures: failures('auth:invite-accept:failed', 120),
+  // Sign in, per login (a public row's login, taken at the read).
+  authPairIssue: perLogin('auth:pair-issue', 10),
+  authChangePassword: perLogin('auth:change-password', 5, HOUR),
+  // The remote MCP and its OAuth server, per address. Each MCP caller also
+  // has a budget of its own, which the route takes once it has resolved
+  // the bearer (app/api/mcp/route.ts, named in route-plumbing.mjs).
+  mcp: perIp('mcp', 300),
+  oauthRegister: perIp('oauth:register', 10),
+  oauthToken: perIp('oauth:token', 30),
+  // Per login, once the caller is answered.
+  telegramPair: perLogin('telegram-pair', 10),
+  /** A member's voice clips (an Admin user's are not limited). */
+  chatTranscribe: perMember('chat-transcribe', 6),
+  passwordReset: perLogin('users:password-reset', 10, HOUR),
+  /** Connect and enrol are once-per-install steps: one bucket for both,
+   *  the admin and the member routes alike. */
+  pushEnrol: perLogin('push-enrol', 10),
+  // A member's run of an app (an Admin user's is not limited).
+  memberFrameTicket: perMember('member-frame-ticket', 30),
+  memberDbBroker: perMember('member-db-broker', 300),
+  memberToolBroker: perMember('member-tool-broker', 60),
+  // A member's bytes of a file: a thumbnail may decode an image.
+  memberBytes: { ...perMember('member-bytes', 240), when: BYTES_ASKED },
+  memberThumbs: { ...perMember('member-thumbs', 60), when: THUMB_ASKED },
+  wsUserSearch: perLogin('ws-user-search', 60),
+  // The /s link routes, per address: a stranger's requests.
+  shareAggregate: perIp('share-aggregate', 120),
+  shareBundle: perIp('share-bundle', 30),
+  contactCode: perIp('contact-code:ip', 10),
+  contactCodeHour: perIp('contact-code:ip-hour', 30, HOUR),
+  shareDbBroker: perIp('share-db-broker', 300),
+  shareDraw: perIp('share-draw', 240),
+  shareDrawEmbed: perIp('share-draw-embed', 240),
+  shareEvaluate: perIp('share-evaluate', 60),
+  shareFrameTicket: perIp('share-frame-ticket', 30),
+  shareRows: perIp('share-rows', 120),
+  shareToolBroker: perIp('share-tool-broker', 60),
+  shareView: perIp('share-view', 120),
+  shareAsset: perIp('share-asset', 240),
+} as const satisfies Record<string, RateLimitSpec>;
+
+export type RateLimitName = keyof typeof RATE_LIMITS;
+
+/** Whether `name` is a named limit. */
+export function isRateLimitName(name: string): name is RateLimitName {
+  return Object.hasOwn(RATE_LIMITS, name);
+}
+
+/** What the gate checks of a request before its handler, on one row. */
+export type RouteGates = Readonly<{
+  /** The login-CSRF refusal of the public auth posts
+   *  (refuseCrossSiteAuthPost): 'json' also refuses a body not declared
+   *  JSON, 'origin' checks the origin only (sign-out). Before any limit,
+   *  so a page on another site cannot spend a visitor's budget. */
+  crossSite?: 'json' | 'origin';
+  /** The named limits, taken in this order: every take, then the failure
+   *  budgets. */
+  rateLimit?: readonly RateLimitName[];
+}>;
+
+/**
+ * ROUTE_GATES: each row (`METHOD pattern`) to what the gate checks before
+ * its handler. A HEAD the GET handler answers takes its GET's; an /api/v1
+ * alias its base route's. route-policy.test.ts holds every key to a served
+ * row. A row that is reachable by a caller that is not an Admin user and
+ * has no limit is named in the docs and pinned (route-limits.test.ts), so a
+ * new one is a decision.
+ */
+export const ROUTE_GATES: ReadonlyMap<string, RouteGates> = new Map<string, RouteGates>([
+  ['POST /api/auth/login', { crossSite: 'json', rateLimit: ['authLogin'] }],
+  ['POST /api/auth/signup', { crossSite: 'json', rateLimit: ['authSignup'] }],
+  ['POST /api/auth/logout', { crossSite: 'origin' }],
+  ['POST /api/auth/change-password', { crossSite: 'json', rateLimit: ['authChangePassword'] }],
+  ['POST /api/auth/pair', { rateLimit: ['authPairIssue'] }],
+  ['POST /api/auth/pair/claim', { rateLimit: ['authPairClaim'] }],
+  ['POST /api/auth/token/refresh', { rateLimit: ['authTokenRefresh'] }],
+  ['POST /api/auth/token', { rateLimit: ['authTokenLogin'] }],
+  ['POST /api/auth/mobile-login', { rateLimit: ['authTokenLogin'] }],
+  ['POST /api/auth/device-login', { rateLimit: ['authTokenLogin'] }],
+  ['POST /api/auth/sso', { rateLimit: ['ownerSso'] }],
+  ['GET /api/auth/invite/:code', { rateLimit: ['invitePreview', 'invitePreviewFailures'] }],
+  [
+    'POST /api/auth/invite/accept',
+    { crossSite: 'json', rateLimit: ['inviteAccept', 'inviteAcceptFailures'] },
+  ],
+  ['GET /api/mcp', { rateLimit: ['mcp'] }],
+  ['POST /api/mcp', { rateLimit: ['mcp'] }],
+  ['DELETE /api/mcp', { rateLimit: ['mcp'] }],
+  ['POST /api/oauth/register', { rateLimit: ['oauthRegister'] }],
+  ['POST /api/oauth/token', { rateLimit: ['oauthToken'] }],
+  ['POST /api/telegram/pair', { rateLimit: ['telegramPair'] }],
+  ['POST /api/assistant/transcribe', { rateLimit: ['chatTranscribe'] }],
+  ['POST /api/users/:id/password', { rateLimit: ['passwordReset'] }],
+  ['POST /api/push/connect', { rateLimit: ['pushEnrol'] }],
+  ['POST /api/push/subscriptions', { rateLimit: ['pushEnrol'] }],
+  ['POST /api/member/push/connect', { rateLimit: ['pushEnrol'] }],
+  ['POST /api/member/push/subscriptions', { rateLimit: ['pushEnrol'] }],
+  ['POST /api/apps/:id/frame-ticket', { rateLimit: ['memberFrameTicket'] }],
+  ['POST /api/apps/:id/db-broker', { rateLimit: ['memberDbBroker'] }],
+  ['POST /api/apps/:id/tool-broker', { rateLimit: ['memberToolBroker'] }],
+  ['GET /api/files/files/:id', { rateLimit: ['memberBytes', 'memberThumbs'] }],
+  // Runs the bytes handler with `?raw=1` (route-policy.ts V1_DOWNLOAD_QUERY):
+  // the bytes, never the thumbnail.
+  ['GET /api/v1/files/:id/download', { rateLimit: ['memberBytes'] }],
+  ['GET /api/workspaces/user-search', { rateLimit: ['wsUserSearch'] }],
+  ['GET /s/:token/aggregate', { rateLimit: ['shareAggregate'] }],
+  ['GET /s/:token/bundle', { rateLimit: ['shareBundle'] }],
+  ['POST /s/:token/code', { crossSite: 'json', rateLimit: ['contactCode', 'contactCodeHour'] }],
+  ['POST /s/:token/db-broker', { rateLimit: ['shareDbBroker'] }],
+  ['GET /s/:token/draw', { rateLimit: ['shareDraw'] }],
+  ['GET /s/:token/draw/:drawId', { rateLimit: ['shareDrawEmbed'] }],
+  ['POST /s/:token/evaluate', { rateLimit: ['shareEvaluate'] }],
+  ['POST /s/:token/frame-ticket', { rateLimit: ['shareFrameTicket'] }],
+  ['GET /s/:token/rows', { rateLimit: ['shareRows'] }],
+  ['POST /s/:token/tool-broker', { rateLimit: ['shareToolBroker'] }],
+  ['GET /s/:token/view', { rateLimit: ['shareView'] }],
+  ['GET /s/:token/a/:fileId', { rateLimit: ['shareAsset'] }],
+]);
+
+/** The one 429's text: what a person reads, whatever the limit. */
+export const RATE_LIMITED_TEXT = 'Too many requests. Try again later.';
+
+/**
+ * The one 429 (A10 #8): `{ error, code: 'rate_limited', retryAfter }`, with
+ * `Retry-After` (seconds, at least 1) and `Cache-Control: no-store`. The
+ * seconds are in the body too: a browser on another origin cannot read the
+ * header unless it is exposed. Every limit of this tier answers it, the
+ * row's and the ones a handler still takes (route-plumbing.mjs
+ * RATE_LIMIT_ALLOW), except the OAuth consent page, which answers a page.
+ */
+export function rateLimitedResponse(retryAfterSec: number): NextResponse {
+  const a = rateLimitedAnswer(retryAfterSec);
+  return NextResponse.json(a.body, { status: a.status, headers: a.headers });
+}
+
+/** The one 429 as its parts, for an answer that is built later (a chat
+ *  turn's, which the turn route keeps for a retry with the same key). */
+export function rateLimitedAnswer(retryAfterSec: number) {
+  const sec = Math.max(1, Math.ceil(retryAfterSec));
+  return {
+    status: 429 as const,
+    body: { error: RATE_LIMITED_TEXT, code: 'rate_limited' as const, retryAfter: sec },
+    headers: { 'Retry-After': String(sec), 'Cache-Control': 'no-store' },
+  };
+}
+
+/** Who a login limit counts: the login the caller is, and whether it is a
+ *  member (an Admin user is not counted by a members-only limit). */
+export type LimitLogin = Readonly<{ loginId: string; member: boolean }>;
+
+/** The key of `spec` for this request, or null when it does not count it
+ *  (an Admin user on a members-only limit, a query it does not apply to). */
+function keyOf(
+  spec: RateLimitSpec,
+  req: Request,
+  query: URLSearchParams,
+  login: LimitLogin | null,
+) {
+  if (spec.when && !spec.when.test(query)) return null;
+  switch (spec.per) {
+    case 'ip':
+      return `${spec.bucket}:${clientIpKey(req)}`;
+    case 'brain':
+      return spec.bucket;
+    case 'login':
+      // Fail closed: a row takes a login limit only where its caller names
+      // one (route-policy.ts gatesOf).
+      if (!login)
+        throw new Error(`takeRouteLimits: ${spec.bucket} counts a login, and none is named`);
+      if (spec.members && !login.member) return null;
+      return `${spec.bucket}:${login.loginId}`;
+  }
+}
+
+/**
+ * Take a row's limits (`names`, the row's `rateLimit`) whose scope is in
+ * `scopes`: every take, then every failure budget. The one 429 when any is
+ * over, else null. A take refused answers with the longest Retry-After of
+ * all the takes (a caller who waits out the shortest is only refused by the
+ * next: the rule the contact code's two limits had); a spent failure budget
+ * with its own. `query`: the query the handler is handed (an /api/v1 row
+ * may hand another than the one sent).
+ */
+export function takeRouteLimits(
+  names: readonly RateLimitName[],
+  o: Readonly<{
+    req: Request;
+    query?: URLSearchParams;
+    login: LimitLogin | null;
+    scopes: ReadonlySet<RateLimitScope>;
+  }>,
+): NextResponse | null {
+  const query = o.query ?? new URL(o.req.url).searchParams;
+  const takes: RateLimitResult[] = [];
+  const peeks: Array<[RateLimitSpec, string]> = [];
+  for (const name of names) {
+    const spec: RateLimitSpec = RATE_LIMITS[name];
+    if (!o.scopes.has(spec.per)) continue;
+    const key = keyOf(spec, o.req, query, o.login);
+    if (key === null) continue;
+    if (spec.peek) peeks.push([spec, key]);
+    else takes.push(rateLimit(key, spec));
+  }
+  if (takes.some((t) => !t.ok)) {
+    return rateLimitedResponse(Math.max(...takes.map((t) => t.retryAfterSec)));
+  }
+  for (const [spec, key] of peeks) {
+    const seen = rateLimitPeek(key, spec);
+    if (!seen.ok) return rateLimitedResponse(seen.retryAfterSec);
+  }
+  return null;
+}
+
+/** Count one failure toward a failure budget (a `peek` limit: the brain's
+ *  failed invite codes). */
+export function countRateFailure(name: RateLimitName): void {
+  const spec: RateLimitSpec = RATE_LIMITS[name];
+  if (!spec.peek || spec.per !== 'brain') {
+    throw new Error(`countRateFailure: ${name} is not a failure budget of the brain`);
+  }
+  rateLimit(spec.bucket, spec);
+}

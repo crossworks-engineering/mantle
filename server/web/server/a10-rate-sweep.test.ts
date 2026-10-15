@@ -494,6 +494,111 @@ describe.skipIf(!hasManifest)('A10 #8: every route limit answers as recorded on 
     const before = readBaseline();
     expect([...now.keys()].sort()).toEqual([...before.keys()].sort());
     const changed = [...now].filter(([p, a]) => before.get(p) !== a);
-    expect(changed.map(([p, a]) => `${p}: main ${before.get(p)}; now ${a}`)).toEqual([]);
+    const unnamed = changed
+      .filter(([p, a]) => changeKind(p, before.get(p)!, a) === null)
+      .map(([p, a]) => `${p}: main ${before.get(p)}; now ${a}`);
+    expect(unnamed).toEqual([]);
+    const kinds = new Map<string, number>();
+    for (const [p, a] of changed) {
+      const k = changeKind(p, before.get(p)!, a)!;
+      kinds.set(k, (kinds.get(k) ?? 0) + 1);
+    }
+    await expect(
+      [
+        '# A10 #8: the probes that answer otherwise than on main, each with its named',
+        '# kind (changeKind, a10-rate-sweep.test.ts), its answer on main and now. Every',
+        '# other probe of a10-rate-sweep.txt answers byte for byte as recorded.',
+        ...[...kinds].map(([k, n]) => `# ${k}: ${n} probes`),
+        ...changed.flatMap(([p, a]) => [
+          `${p} [${changeKind(p, before.get(p)!, a)}]`,
+          `  main ${before.get(p)}`,
+          `  now  ${a}`,
+        ]),
+        '',
+      ].join('\n'),
+    ).toMatchFileSnapshot('./__snapshots__/a10-rate-sweep-changes.txt');
   }, 1_800_000);
+
+  it('holds the row table to the limits recorded on main, limit by limit', async () => {
+    // Every limited row of the inventory carries the same limits, and no
+    // row of the policy carries one the inventory does not name.
+    const { routeManifest } = await import('./route-manifest.gen');
+    const { buildRoutePolicy } = await import('../lib/auth/route-policy');
+    const { RATE_LIMITS } = await import('../lib/route-limits');
+    const policy = buildRoutePolicy(routeManifest);
+    const spec = (n: keyof typeof RATE_LIMITS) => {
+      const l: import('../lib/route-limits').RateLimitSpec = RATE_LIMITS[n];
+      return {
+        bucket: l.bucket,
+        scope: l.per,
+        max: l.max,
+        windowMs: l.windowMs,
+        ...(l.members ? { members: true } : {}),
+        ...(l.peek ? { peek: true } : {}),
+      };
+    };
+    const byRow = new Map<string, SweepLimit[]>();
+    for (const c of SWEEP_CELLS) {
+      const have = byRow.get(c.row) ?? [];
+      for (const l of c.limits) if (!have.some((h) => h.bucket === l.bucket)) have.push(l);
+      byRow.set(c.row, have);
+    }
+    const sortB = (xs: object[]) =>
+      [...xs].sort((a, b) => ((a as SweepLimit).bucket < (b as SweepLimit).bucket ? -1 : 1));
+    for (const [row, limits] of byRow) {
+      const r = policy.get(row);
+      expect(r, row).toBeDefined();
+      expect(sortB(r!.rateLimit.map(spec)), row).toEqual(sortB(limits.map((l) => ({ ...l }))));
+    }
+    const extra = [...policy.values()]
+      .filter((r) => r.rateLimit.length > 0 && !byRow.has(r.key))
+      .map((r) => r.key);
+    expect(extra).toEqual([]);
+  });
 });
+
+/** The one 429 (lib/route-limits.ts rateLimitedResponse), as `answer`
+ *  writes it: R its Retry-After; a HEAD's body is empty. */
+const ONE_429 =
+  /429 application\/json retry-after=(\d+) cache-control=no-store (?:\{"error":"Too many requests\. Try again later\.","code":"rate_limited","retryAfter":(\d+)\})?/g;
+/** Any 429 answer on main, up to where the probe's text goes on. */
+const MAIN_429 = /429 \S+ retry-after=(\S+) cache-control=\S+ .*?(?=; \d+s: |$)/g;
+
+/**
+ * The named changes, by probe and its answer now (null: none names it, and
+ * the test fails):
+ *
+ *  - one-429: a limit's refusal is the one 429 (status 429, the same
+ *    Retry-After, JSON `{ error, code, retryAfter }`, Cache-Control
+ *    no-store), where each route answered a 429 of its own (four texts, a
+ *    text body on three /s routes, two header spellings, no Cache-Control
+ *    on most); every other part of the probe as on main;
+ *  - one-429 (Retry-After added): the same, where main's 429 had no
+ *    Retry-After (the user search's);
+ *  - counted-before-the-route: the user search takes its limit before its
+ *    own checks (the row's, the gate's), so a request the route refuses
+ *    (an offset that is not a number, a Moderator check) counts toward the
+ *    login's 60 a minute, where it was taken after them.
+ */
+function changeKind(probe: string, main: string, now: string): string | null {
+  const nowOk = [...now.matchAll(ONE_429)].every((m) => !m[2] || m[1] === m[2]);
+  const mark = (x: string, re: RegExp, keep: boolean) =>
+    x.replace(re, (_all, r: string) => `<429 retry-after=${keep ? r : '?'}>`);
+  if (nowOk && now.includes('429 ')) {
+    if (mark(main, MAIN_429, true) === mark(now, ONE_429, true)) return 'one-429';
+    if (
+      main.includes('retry-after=-') &&
+      mark(main, MAIN_429, false) === mark(now, ONE_429, false)
+    ) {
+      return 'one-429 (Retry-After added)';
+    }
+  }
+  if (
+    probe.includes('ws-user-search order: refused by the route') &&
+    main === 'first 429 at 0; answer 400; then 200' &&
+    now === 'first 429 at 61; answer 429; then 429'
+  ) {
+    return 'counted-before-the-route';
+  }
+  return null;
+}

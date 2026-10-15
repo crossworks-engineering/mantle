@@ -1,6 +1,5 @@
 import { NextResponse } from '@/server/http-compat';
 import { publicLoginCaller, unauthorizedRefusal } from '@/lib/auth';
-import { rateLimit } from '@/lib/rate-limit';
 import { publicBaseUrl } from '@mantle/content';
 import { issuePairCode, pairPayloadUrl, PAIR_CODE_TTL_SEC } from '@/lib/pair-code';
 
@@ -23,16 +22,10 @@ export async function POST() {
   // With the generic api.write row an Admin user's write writes (and any
   // login's with a key: the gate refuses a key here). A public row: the
   // login the pipeline answers at this read (A4 hand batch B).
+  // The read takes the row's per-login limit (lib/route-limits.ts:
+  // authPairIssue) and throws the one 429 over it.
   const login = await publicLoginCaller({ audit: true });
   if (!login) return unauthorizedRefusal();
-
-  const limit = rateLimit(`auth:pair-issue:${login.loginId}`, { max: 10, windowMs: 60_000 });
-  if (!limit.ok) {
-    return NextResponse.json(
-      { error: 'Too many codes. Try again in a minute.' },
-      { status: 429, headers: { 'Retry-After': String(limit.retryAfterSec) } },
-    );
-  }
 
   const issued = await issuePairCode(login.loginId);
   return NextResponse.json(
