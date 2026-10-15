@@ -4,6 +4,19 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## Unreleased: direct providers list their models in the picker
+
+- A model provider's key is looked up through one helper
+  (`resolveProviderKey` in `@mantle/api-keys`): the pinned key, else the key
+  labelled default, else the oldest key of that service. A key added on
+  /settings/keys under its own label now lists its models in the agent
+  form, and chat backup routes, embedding routes, the decider and the speech
+  fallback find it.
+- A pinned key that is deleted or no longer opens now falls back to the
+  oldest key of that service, not only to the key labelled default.
+- Onboarding, the manifest seeder, the model combos and the embedding backup
+  suggestion pin the same key an unpinned lookup would use.
+
 ## Unreleased: provider HTTP deadlines, retries and errors (A10 #10)
 
 - One timeout table (`PROVIDER_TIMEOUTS`, `NET_TIMEOUTS` in `@mantle/std`),
