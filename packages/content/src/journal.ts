@@ -62,6 +62,7 @@ export {
 import type { JournalRow } from '@mantle/client-types';
 import { asKindRootRepair } from './kind-root';
 import { InputError } from '@mantle/std';
+import { dedupeTags } from './tags';
 export type { JournalRow };
 
 /**
@@ -487,17 +488,4 @@ export async function deleteJournal(ownerId: string, id: string): Promise<boolea
     withNodeDeleteHeads([id], (tx) => tx.delete(nodes).where(eq(nodes.id, id))),
   );
   return true;
-}
-
-function dedupeTags(tags: string[]): string[] {
-  const out: string[] = [];
-  const seen = new Set<string>();
-  for (const raw of tags) {
-    const t = raw.trim().toLowerCase();
-    if (!t || t.length > 40 || seen.has(t)) continue;
-    seen.add(t);
-    out.push(t);
-    if (out.length >= 20) break;
-  }
-  return out;
 }

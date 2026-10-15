@@ -31,6 +31,7 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import { sql } from 'drizzle-orm';
 import { runAsActor, systemActor, type Actor } from './actor';
 import { afterOuterCommit, systemDb } from './client';
+import { UUID_RE } from '@mantle/std';
 
 /** One finished call, as the gate saw it (the caller bound, its ref and
  *  policy, the call's input, the value `fn` gave back). */
@@ -227,8 +228,6 @@ function settle(
   const parts = a.describe(call);
   if (parts) writeRow(call, parts);
 }
-
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** Who writes a tool call's row. */
 const AUDIT_ACTOR = systemActor('audit:tool-call');

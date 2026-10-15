@@ -23,6 +23,7 @@ import { resolveChatRoutes } from '@mantle/runtime/agent';
 import { type ExtractedFact, type ExtractorOutput } from '../extractor-parse';
 import { CLASSIFIER_PROMPT_TEMPLATE } from './prompts';
 import { chatComplete } from './model';
+import { errorMessage } from '@mantle/std';
 
 /** Top-K near-neighbours considered when classifying a candidate fact. */
 const CLASSIFIER_NEIGHBOURS = 3;
@@ -246,7 +247,7 @@ export async function processFacts(
     // for this node were never written and (pre-completion-marker)
     // never would be.
     throw new Error(
-      `extractor: fact embed batch failed for node ${node.id}: ${err instanceof Error ? err.message : err}`,
+      `extractor: fact embed batch failed for node ${node.id}: ${errorMessage(err)}`,
       { cause: err },
     );
   }

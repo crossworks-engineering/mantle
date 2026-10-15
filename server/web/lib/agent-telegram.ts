@@ -10,7 +10,7 @@
  * channel (token + binding) via `upsertTelegramChannel`.
  */
 import { and, desc, eq } from 'drizzle-orm';
-import { defineDomainError } from '@mantle/std';
+import { defineDomainError, UUID_RE } from '@mantle/std';
 import {
   agents,
   asSystem,
@@ -514,7 +514,7 @@ export async function moderateTelegramChatResponse(
   rawId: string,
   action: 'block' | 'unpair',
 ): Promise<{ status: number; body: Record<string, unknown> }> {
-  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(rawId)) {
+  if (!UUID_RE.test(rawId)) {
     return { status: 400, body: { error: 'Invalid id.' } };
   }
   const refused = await moderateTelegramChat({

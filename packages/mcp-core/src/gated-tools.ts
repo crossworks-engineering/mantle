@@ -119,6 +119,7 @@ export type McpToolEntry =
 // An MCP reply that refuses the call (its own module: no import cycle with
 // gate-policy.ts).
 export { refusalReply } from './refusal-reply';
+import { errorMessage } from '@mantle/std';
 
 // ── response hygiene ─────────────────────────────────────────────────────────
 // MCP tool results are serialised straight into the model's context, so they
@@ -327,7 +328,7 @@ export function registerGatedTool(
       if (text !== null) return refusalReply(text);
       // A connector row's own error is its reply's text, as it always was.
       if (entry.kind === 'connector' && !(err instanceof ConnectorCheckThrow)) {
-        return refusalReply(err instanceof Error ? err.message : String(err));
+        return refusalReply(errorMessage(err));
       }
       throw inner;
     }

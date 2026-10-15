@@ -7,6 +7,7 @@
  */
 import { eq, sql } from 'drizzle-orm';
 import { db, isHeadsCheckError, nodes, executeWrite, extractParkedStamp } from '@mantle/db';
+import { errorMessage } from '@mantle/std';
 
 /** The parking queue; /debug/integrity lists what waits on it. */
 export const HEADS_DEAD_QUEUE = 'mantle.extract.heads';
@@ -33,16 +34,14 @@ export async function parkHeadsFailure(
   },
 ): Promise<boolean> {
   if (!isHeadsCheckError(err)) return false;
-  const error = (err instanceof Error ? err.message : String(err)).slice(0, 500);
+  const error = errorMessage(err).slice(0, 500);
   // The stamp first: it is the record that keeps the drains away, so a
   // missing queue never lets the job complete with nothing parked.
   await deps.stamp(nodeId);
   if (deps.park) await deps.park({ nodeId, at: new Date().toISOString(), error });
   await deps
     .alert()
-    .catch((e) =>
-      deps.log(`node ${nodeId}: parked-alert notify failed: ${e instanceof Error ? e.message : e}`),
-    );
+    .catch((e) => deps.log(`node ${nodeId}: parked-alert notify failed: ${errorMessage(e)}`));
   deps.log(
     `node ${nodeId}: heads check refused a write; parked${deps.park ? ` on ${HEADS_DEAD_QUEUE}` : ' (stamp only, no queue)'}, not retried`,
   );

@@ -30,8 +30,7 @@ import { and, eq, inArray, isNull } from 'drizzle-orm';
 import { createHomeFallback, db, loginScopeFor } from './client';
 import { workspaces, workspaceUsers } from './schema/index';
 import { currentWorkspaceScope, type CreateHome } from './viewer';
-
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+import { UUID_RE } from '@mantle/std';
 
 /** The workspace a call asks its creates to land in. */
 export type CreateAsk =

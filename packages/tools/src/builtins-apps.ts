@@ -76,7 +76,7 @@ import { resolveTool } from './resolve';
 import { appToolWarnings } from './app-tool-level';
 import type { BuiltinToolDef, ToolPrecondition } from './types';
 import { str, strArr } from './coerce';
-import { errorMessage } from '@mantle/std';
+import { errorMessage, UUID_RE } from '@mantle/std';
 import { isOwnerSurface, OWNER_ONLY_ERROR, ownerSurfaceLoginId } from './surface';
 import { currentWorkspaceScope, currentScope } from '@mantle/db/viewer';
 import { and as andWhere, eq as eqWhere, sql as sqlTag } from 'drizzle-orm';
@@ -1948,8 +1948,6 @@ function withAuthorCeiling(def: BuiltinToolDef): BuiltinToolDef {
     },
   };
 }
-
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export const APP_TOOLS: BuiltinToolDef[] = [
   app_create,

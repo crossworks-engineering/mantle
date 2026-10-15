@@ -17,10 +17,9 @@ import { sql, type SQL, type SQLWrapper } from 'drizzle-orm';
 import { nodes } from './schema/nodes';
 import { currentGateScope, currentWorkspaceScope, requestWriteScope } from './viewer';
 import { currentActor } from './actor';
+import { UUID_RE } from '@mantle/std';
 
 type Exec = { execute: (q: ReturnType<typeof sql>) => Promise<unknown> };
-
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** The read rule on a nodes row aliased `alias` (see scopeReadsNodes). The
  *  scope functions sit in sub-selects, as in the row rules: read once per
@@ -29,7 +28,7 @@ function scopeReads(alias = 'n'): SQL {
   if (!/^[a-z_][a-z0-9_]*$/i.test(alias)) throw new Error(`bad alias: ${alias}`);
   const a = sql.raw(alias);
   const scope = requestWriteScope();
-  const ws = scope ? scope.ws.filter((id) => UUID.test(id)) : null;
+  const ws = scope ? scope.ws.filter((id) => UUID_RE.test(id)) : null;
   return ws
     ? sql`${a}.read_ws && ${`{${ws.join(',')}}`}::uuid[]`
     : sql`(not (select "public"."mantle_scope_active"())
@@ -55,7 +54,7 @@ export function scopeReadsItem(nodeId: SQLWrapper): SQL {
 }
 
 export async function scopeReadsNodes(tx: Exec, ids: readonly string[]): Promise<Set<string>> {
-  const list = [...new Set(ids)].filter((id) => UUID.test(id));
+  const list = [...new Set(ids)].filter((id) => UUID_RE.test(id));
   if (list.length === 0) return new Set();
   const rows = (await tx.execute(sql`
     select n.id::text as id from "public"."nodes" n
@@ -83,7 +82,7 @@ export function nodeAliasReadByWorkspace(ws: string, alias: string): SQL {
  *  workspace ids, the caller's own) read the `nodes` row aliased `alias`. */
 export function nodeAliasReadByAnyOf(ids: readonly string[], alias: string): SQL {
   if (!/^[a-z_][a-z0-9_]*$/i.test(alias)) throw new Error(`bad alias: ${alias}`);
-  const list = ids.filter((id) => UUID.test(id));
+  const list = ids.filter((id) => UUID_RE.test(id));
   return sql`${sql.raw(alias)}.read_ws && ${`{${list.join(',')}}`}::uuid[]`;
 }
 
@@ -129,7 +128,7 @@ export function itemReadByWorkspace(ws: string, nodeId: SQLWrapper): SQL {
 export async function scopeLacksAdmin(tx: Exec): Promise<boolean> {
   const scope = requestWriteScope() ?? currentWorkspaceScope() ?? currentGateScope();
   if (scope) {
-    const ws = scope.ws.filter((id) => UUID.test(id));
+    const ws = scope.ws.filter((id) => UUID_RE.test(id));
     if (ws.length === 0) return true;
     const rows = (await tx.execute(sql`
       select exists (select 1 from "public"."workspaces" w

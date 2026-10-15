@@ -78,6 +78,11 @@ describe('projectAppNav (tolerant read)', () => {
     const nav = projectAppNav({ entries: [app(1), app(1), null, { kind: 'x', id: id(2) }] })!;
     expect(nav).toEqual({ rev: 0, entries: [app(1)] });
   });
+  it('reads an id in either case as its lower case (A10 #15: the regex reads either case)', () => {
+    const lower = '0000000a-0000-4000-8000-00000000000b';
+    const nav = projectAppNav({ entries: [{ kind: 'app', id: lower.toUpperCase() }] });
+    expect(nav).toEqual({ rev: 0, entries: [{ kind: 'app', id: lower }] });
+  });
   it('is undefined for garbage', () => {
     expect(projectAppNav(null)).toBeUndefined();
     expect(projectAppNav({ entries: 'no' })).toBeUndefined();

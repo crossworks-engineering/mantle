@@ -34,6 +34,7 @@ import { loadProfilePreferences } from '../profile-preferences';
 import { ranksAfter } from '../rank';
 import { NodeOpRefusal, createNodeFolder, ensureKindRoot } from './node-ops';
 import { unlessWriteRefused } from './refused-write';
+import { UUID_RE } from '@mantle/std';
 
 const APPS_ROOT = 'apps';
 /** A claim older than this is a crashed run; the next read takes over. */
@@ -76,8 +77,6 @@ async function markAppNavMoved(ownerId: string): Promise<void> {
                   || jsonb_build_object('appNavMigratedAt', ${new Date().toISOString()}::text)
      where owner_id = ${ownerId} and type = 'branch' and path = ${APPS_ROOT}::ltree`);
 }
-
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** An existing apps folder with this id (a rerun after a crash), its path;
  *  '' when the id is taken by something else or is not a UUID at all. */

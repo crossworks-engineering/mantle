@@ -23,7 +23,8 @@ import {
 } from '@mantle/db';
 import { ensureBlockIds, repairTableRows } from '@mantle/content-core/block-ids';
 import type { PageVisibility, PageWidth } from '@mantle/client-types';
-import { EMPTY_DOC, dedupeTags, detailOf, type PageDetail } from './shared';
+import { EMPTY_DOC, detailOf, type PageDetail } from './shared';
+import { dedupeTags } from '../tags';
 import { pageDocText, pageHolders } from './level-text';
 
 // ── Draft concurrency control (audit item #3) ────────────────────────────────

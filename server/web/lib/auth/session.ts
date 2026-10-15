@@ -47,7 +47,7 @@ import {
   type GateCaller,
   type RequestScopeMode,
 } from '@mantle/db';
-import { AccessError, mapAccessError } from '@mantle/std';
+import { AccessError, mapAccessError, UUID_RE } from '@mantle/std';
 import {
   loadAnchorId,
   loadBearerToken,
@@ -1779,8 +1779,6 @@ async function adminRouteGate(loginId: string): Promise<NextResponse | null> {
   return null;
 }
 
-const ITEM_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
 /** The item id a path segment names: the segment decoded, the value the
  *  handler gets (Hono decodes the path and its params before routing), so
  *  an encoded id is checked as the id it names. Null when the segment does
@@ -1792,7 +1790,7 @@ function itemIdOf(segment: string): string | null {
   } catch {
     return null;
   }
-  return ITEM_ID_RE.test(id) ? id : null;
+  return UUID_RE.test(id) ? id : null;
 }
 
 /**

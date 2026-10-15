@@ -33,6 +33,7 @@ import {
   withNodeInsertHeads,
 } from '@mantle/db';
 import { asKindRootRepair } from './kind-root';
+import { dedupeTags } from './tags';
 
 export const LOCATIONS_ROOT_LABEL = 'locations';
 
@@ -354,17 +355,4 @@ export async function findNearbyLocations(
   }
   out.sort((a, b) => a.distanceMeters - b.distanceMeters);
   return out.slice(0, limit);
-}
-
-function dedupeTags(tags: string[]): string[] {
-  const out: string[] = [];
-  const seen = new Set<string>();
-  for (const raw of tags) {
-    const t = raw.trim().toLowerCase();
-    if (!t || t.length > 40 || seen.has(t)) continue;
-    seen.add(t);
-    out.push(t);
-    if (out.length >= 20) break;
-  }
-  return out;
 }

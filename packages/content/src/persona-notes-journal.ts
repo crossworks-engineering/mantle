@@ -33,6 +33,7 @@ import {
   type RuleReconciler,
   type RuleRetire,
 } from './rule-reconcile';
+import { errorMessage } from '@mantle/std';
 
 /** Key of the plan inside the review page's `nodes.data`. */
 export const PLAN_DATA_KEY = 'persona_notes_plan';
@@ -623,9 +624,7 @@ async function judgeNewRules(
     );
     return judgement ? { judgement, pairs, rules } : null;
   } catch (err) {
-    console.warn(
-      `[rule-reconcile] ${agentSlug}: skipped (${err instanceof Error ? err.message : String(err)})`,
-    );
+    console.warn(`[rule-reconcile] ${agentSlug}: skipped (${errorMessage(err)})`);
     return null;
   }
 }

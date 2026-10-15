@@ -42,7 +42,7 @@
 import { hkdfSync } from 'node:crypto';
 import type postgres from 'postgres';
 import { env, feature } from '@mantle/config';
-import { backoffMs, withRetry } from '@mantle/std';
+import { backoffMs, errorMessage, withRetry } from '@mantle/std';
 import { ACCESS_MATRIX, GAP_WRITER_ROLE } from './access-matrix';
 import { viewerRoleName } from './viewer';
 import { LOCK_ATTRS, POOL_ROLES, runRoleStatement, withRoleRetry } from './viewer-roles';
@@ -503,7 +503,7 @@ export async function takeBackMemberships(
     } catch (err) {
       warn(
         `  WARNING could not take back ${h.role} from ${h.member} (granted by ${h.grantor}): ` +
-          `${err instanceof Error ? err.message : String(err)}; ` +
+          `${errorMessage(err)}; ` +
           'the integrity row runtime_role_lock shows what is left',
       );
     }
@@ -646,7 +646,7 @@ export async function ownTables(sql: Sql): Promise<OwnOutcome> {
     } catch (err) {
       out.failed.push({
         rel,
-        error: err instanceof Error ? err.message : String(err),
+        error: errorMessage(err),
         busy: isBusy(err),
       });
     }

@@ -39,7 +39,7 @@ import {
   type SummarizerParams,
 } from '@mantle/db';
 import { recordSkippedTrace, startTrace, step } from '@mantle/tracing';
-import { backgroundFence } from '@mantle/std';
+import { backgroundFence, errorMessage } from '@mantle/std';
 import { NOTES_ASSISTANT_PATH, ensureNotesAssistantFolder } from '@mantle/content/tree';
 import { digestEmbedText, embedBatch } from '@mantle/embeddings';
 import {
@@ -410,7 +410,7 @@ async function summarizeThread(o: {
       } catch (err) {
         console.warn(
           '[summarizer] digest embed failed — inserting without embeddings ' +
-            `(run backfill:digest-embeddings to heal): ${err instanceof Error ? err.message : err}`,
+            `(run backfill:digest-embeddings to heal): ${errorMessage(err)}`,
         );
       }
 

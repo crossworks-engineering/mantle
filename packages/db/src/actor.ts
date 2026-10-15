@@ -23,7 +23,7 @@
  */
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { env } from '@mantle/config';
-import { RuntimeFaultError } from '@mantle/std';
+import { RuntimeFaultError, UUID_RE } from '@mantle/std';
 import { systemDbCallerOf } from './viewer';
 
 export type WriteMode = 'rw' | 'ro';
@@ -37,8 +37,6 @@ export type Actor =
    *  area route, an asSystem in its request) stays read only (systemUnder). */
   | { kind: 'system'; reason: string; mode?: 'ro' }
   | { kind: 'peer'; peerId: string | null };
-
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** A system reason: lower case, `:` between parts (worker:extract,
  *  repair:page-block-ids). The same pattern as mantle_set_actor's. */

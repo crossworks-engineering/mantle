@@ -27,6 +27,7 @@
  */
 import { sql } from 'drizzle-orm';
 import { adminUserSql, db, holderReadsSql, nodes, sharedWorkspacesSql } from '@mantle/db';
+import { UUID_RE } from '@mantle/std';
 
 /** What `by` says on each workspace_events row the clear writes. */
 export const CLEAR_TICKS_BY = 'ws:clear-member-ticks';
@@ -101,8 +102,6 @@ export type ClearTicksResult =
       /** A member tick kept so the workspace keeps a Moderator (0 or 1). */
       keptForLastModerator: number;
     };
-
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
  * Clear the Moderator tick of every user of one workspace who is not an

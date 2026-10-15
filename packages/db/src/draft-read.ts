@@ -2,8 +2,7 @@ import { sql, type SQL } from 'drizzle-orm';
 import type { AnyPgColumn } from 'drizzle-orm/pg-core';
 import { nodes } from './schema/index';
 import { currentWorkspaceScope, readsDrafts } from './viewer';
-
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+import { UUID_RE } from '@mantle/std';
 
 /** A uuid[] parameter of the scope's workspaces. */
 function wsParam(ids: readonly string[]): SQL {

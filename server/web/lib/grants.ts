@@ -72,7 +72,7 @@ import {
 import { appDbTableDetails } from '@mantle/content/app-broker';
 import { refoldPageTexts } from '@mantle/content/pages';
 import { moveTreeItems, notifyTreeChanged } from '@mantle/content/tree';
-import { defineDomainError, publicErrorMessage } from '@mantle/std';
+import { defineDomainError, publicErrorMessage, UUID_RE } from '@mantle/std';
 import type { AnyLogin } from '@/lib/auth';
 import { areasFor, workspaceCaller, type WsCaller } from '@/lib/workspaces';
 
@@ -129,8 +129,6 @@ export async function grantsRoute(
   const out = await fn(workspaceCaller(login));
   return NextResponse.json(out, { status: okStatus });
 }
-
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** A path id that is not a uuid names nothing: 404. */
 export function itemId(id: string): string {

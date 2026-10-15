@@ -25,6 +25,7 @@ import { db, itemWriteRefusal, nodes } from '@mantle/db';
 import { journalKindSql } from './journal';
 import { journalLearnedSql, journalLiveSql } from './identity-context';
 import { supersedeNode } from './supersede';
+import { errorMessage } from '@mantle/std';
 
 /** Kinds a learned rule can have (gaps, context and logs are not rules). */
 const RULE_KINDS = ['identity', 'goal', 'preference', 'lesson', 'expectation'] as const;
@@ -255,9 +256,7 @@ export async function applyRetires(
       onApplied?.(r);
     } catch (err) {
       errors++;
-      console.warn(
-        `[rule-reconcile] could not supersede ${r.olderId}: ${err instanceof Error ? err.message : String(err)}`,
-      );
+      console.warn(`[rule-reconcile] could not supersede ${r.olderId}: ${errorMessage(err)}`);
     }
   }
   return errors;

@@ -40,7 +40,7 @@ import {
 } from './actor';
 import { hkdfSync } from 'node:crypto';
 import { env } from '@mantle/config';
-import { RuntimeFaultError } from '@mantle/std';
+import { RuntimeFaultError, UUID_RE } from '@mantle/std';
 import { ACCESS_LEVELS, type AccessLevel } from '@mantle/client-types/dto/access';
 import { WORKSPACE_AREAS, type WorkspaceArea } from '@mantle/client-types/dto/workspaces';
 
@@ -326,8 +326,6 @@ export async function afterCommit(fn: () => unknown): Promise<void> {
 export function afterRollback(fn: () => unknown): void {
   active()?.hooks?.rollback.push(fn);
 }
-
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const store = new AsyncLocalStorage<Scope>();
 

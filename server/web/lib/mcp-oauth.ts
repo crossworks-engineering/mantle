@@ -26,6 +26,7 @@ import {
 } from '@mantle/db';
 import { loadProfilePreferences, publicBaseUrl } from '@mantle/content';
 import { feature } from '@mantle/config';
+import { UUID_RE } from '@mantle/std';
 
 export const ACCESS_TTL_SEC = 60 * 60; // 1 hour
 export const REFRESH_TTL_SEC = 60 * 60 * 24 * 30; // 30 days
@@ -135,10 +136,8 @@ export async function registerClient(input: {
 /** Client ids are uuids (the registry's primary key). Anything else is an
  *  unknown client, answered before the query: Postgres would refuse a
  *  non-uuid with 22P02, which surfaced as a 500 (F31). */
-const CLIENT_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
 export async function getClient(clientId: string): Promise<OAuthClient | null> {
-  if (!CLIENT_ID_RE.test(clientId)) return null;
+  if (!UUID_RE.test(clientId)) return null;
   const [row] = await db.select().from(oauthClients).where(eq(oauthClients.id, clientId)).limit(1);
   return row ?? null;
 }

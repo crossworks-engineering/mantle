@@ -77,7 +77,7 @@ import { auditFireAndForget, requestMeta } from '@/lib/audit';
 import { applyLoginChange, loadLoginTarget } from '@/lib/login-update';
 import { lookOfRow, WS_LOOK_COLUMNS, type LookRow } from '@/lib/workspace-look';
 import { readJson } from '@/lib/read-body';
-import { defineDomainError } from '@mantle/std';
+import { defineDomainError, UUID_RE } from '@mantle/std';
 
 // ── Errors and the caller ────────────────────────────────────────────────────
 
@@ -180,8 +180,6 @@ export async function wsBody<T>(
   }
   return parsed.data;
 }
-
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** A path id that is not a uuid names nothing: 404 (the database would
  *  refuse the cast). */

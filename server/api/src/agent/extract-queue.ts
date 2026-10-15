@@ -83,6 +83,7 @@ import { probeExtractionModel } from './extract/model.js';
 import { ProviderCircuit } from './provider-circuit.js';
 import { envNum } from '@mantle/config';
 import { assertNoViewer } from '@mantle/db/viewer';
+import { errorMessage } from '@mantle/std';
 
 const EXTRACT_QUEUE = 'mantle.extract';
 const DEAD_LETTER_QUEUE = 'mantle.extract.dead';
@@ -338,9 +339,7 @@ async function handleExtractJob([job]: { data: ExtractJob }[]): Promise<void> {
     // confirm probe must not hold this job's failure back from pg-boss.
     void circuit
       ?.onJobError(err)
-      .catch((e) =>
-        console.error('[extract-queue] circuit:', e instanceof Error ? e.message : String(e)),
-      );
+      .catch((e) => console.error('[extract-queue] circuit:', errorMessage(e)));
     throw err;
   }
 }

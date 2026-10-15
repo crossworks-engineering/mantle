@@ -196,6 +196,7 @@ import {
 import type { EventRow } from '@mantle/client-types';
 import { asKindRootRepair } from './kind-root';
 import { InputError } from '@mantle/std';
+import { dedupeTags } from './tags';
 export type { EventRow };
 
 export async function createEvent(ownerId: string, input: CreateEventInput): Promise<EventRow> {
@@ -700,17 +701,4 @@ export async function deleteAllExternalEvents(
     ),
   );
   return rows.length;
-}
-
-function dedupeTags(tags: string[]): string[] {
-  const out: string[] = [];
-  const seen = new Set<string>();
-  for (const raw of tags) {
-    const t = raw.trim().toLowerCase();
-    if (!t || t.length > 40 || seen.has(t)) continue;
-    seen.add(t);
-    out.push(t);
-    if (out.length >= 20) break;
-  }
-  return out;
 }

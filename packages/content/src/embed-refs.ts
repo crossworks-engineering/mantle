@@ -27,6 +27,7 @@
  */
 import { markdownToDoc } from '@mantle/content-core/markdown';
 import { DRAW_HREF, MEDIA_HREF, MENTION_HREF, PAGE_HREF } from '@mantle/content-core/markdown-refs';
+import { UUID_RE } from '@mantle/std';
 
 /** `ids`: uuids to check against the space and the Library. `refused`: what
  *  may never be saved, whatever the database says. `embeds`: the ids among
@@ -43,7 +44,6 @@ export type EmbedRefs = { ids: string[]; refused: string[]; embeds: string[] };
  *  one (client-redact.ts); the member save rule does not. */
 export type OwnUrl = (url: string) => string | null;
 
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const UUID_ANY = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
 /** C0 and C1 controls, DEL and whitespace. A browser's URL parser drops tabs
  *  and newlines anywhere in a URL and controls and spaces at its ends, so a
@@ -70,7 +70,7 @@ class Collector {
   /** `embed`: the id renders inside the item (see EmbedRefs). */
   id(v: unknown, embed = false): void {
     if (typeof v !== 'string' || !v) return;
-    if (!UUID.test(v)) {
+    if (!UUID_RE.test(v)) {
       this.refused.add(v);
       return;
     }

@@ -48,7 +48,7 @@ import {
 import { createAppSnapshot } from '@mantle/content/app-snapshots';
 import { appDbWrite } from '@mantle/content/app-db-write';
 import { stripLiterals } from '@mantle/tabledb';
-import { errorMessage } from '@mantle/std';
+import { errorMessage, UUID_RE } from '@mantle/std';
 import type {
   BuiltinToolDef,
   LoginMcpChannel,
@@ -71,8 +71,6 @@ const NO_LOGIN =
 
 const NOT_FOUND =
   'No such app on your MCP connection: it may not exist, it may not be shared with you, or its MCP access is off. List the apps you can reach with app_data_list.';
-
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** An app data read's provisioning (its database's registry row, its
  *  declared schema, its viewer salt) as the named read-path write

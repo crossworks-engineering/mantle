@@ -56,6 +56,7 @@ import {
   snapshotOf,
   type AcceptedSnapshot,
 } from './member-snapshots';
+import { UUID_RE } from '@mantle/std';
 
 export type AcceptedRow = {
   id: string;
@@ -115,9 +116,7 @@ async function authorReadable(
   loginId: string,
   ids: readonly string[],
 ): Promise<Map<string, string>> {
-  const wanted = [...new Set(ids.map((i) => i.toLowerCase()))].filter((i) =>
-    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(i),
-  );
+  const wanted = [...new Set(ids.map((i) => i.toLowerCase()))].filter((i) => UUID_RE.test(i));
   const out = new Map<string, string>();
   if (!wanted.length) return out;
   const brain = await withViewer({ login: loginId }, async () => {

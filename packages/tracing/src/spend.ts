@@ -26,6 +26,7 @@
 
 import { attributeUsage } from './store';
 import { fallbackCostMicroUsd } from './pricing';
+import { errorMessage } from '@mantle/std';
 
 /** What kind of provider call it was. */
 export type SpendCapability =
@@ -120,7 +121,7 @@ export function recordUsage(u: ProviderUsage): number {
     attributeUsage({ tokens, costMicroUsd, meta });
     return costMicroUsd;
   } catch (err) {
-    console.error(`[tracing] record usage: ${err instanceof Error ? err.message : String(err)}`);
+    console.error(`[tracing] record usage: ${errorMessage(err)}`);
     return 0;
   }
 }

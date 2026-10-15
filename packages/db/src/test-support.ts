@@ -66,6 +66,7 @@ import {
   RUNTIME_ROLE,
   RUNTIME_ROLES,
 } from './runtime-role';
+import { errorMessage, UUID_RE } from '@mantle/std';
 
 type Sql = postgres.Sql;
 
@@ -99,7 +100,7 @@ export async function ensureTestAnchor(sql: Sql): Promise<string> {
  * client's raw text (`sql.raw`, `sql.unsafe`).
  */
 export function teamWorkspaceSql(owner: string): string {
-  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(owner)) {
+  if (!UUID_RE.test(owner)) {
     throw new Error(`teamWorkspaceSql: not a uuid: ${owner}`);
   }
   return `
@@ -346,7 +347,7 @@ async function createDatabase(adminUrl: string, name: string): Promise<void> {
         await sql.unsafe(`create database "${name}"`);
         return;
       } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
+        const msg = errorMessage(err);
         if (attempt >= 10 || !/being accessed by other users/.test(msg)) throw err;
         await new Promise((r) => setTimeout(r, 200 * attempt));
       }

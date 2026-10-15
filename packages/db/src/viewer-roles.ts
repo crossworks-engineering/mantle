@@ -24,6 +24,7 @@ import {
   type PoolRole,
   type RetiredPoolRole,
 } from './viewer';
+import { errorMessage } from '@mantle/std';
 
 /** The LOGIN roles: the workspace role (workspaces W1), which sees what the
  *  workspaces of its transaction's scope hold, and the write role
@@ -381,7 +382,7 @@ export async function withRoleRetry<T>(fn: () => Promise<T>): Promise<T> {
     try {
       return await fn();
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
+      const msg = errorMessage(err);
       if (attempt >= 12 || !/tuple concurrently updated/.test(msg)) throw err;
       // Jittered: colliding callers retrying in step collide again (48
       // parallel test files hit five attempts of fixed backoff).

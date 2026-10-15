@@ -42,6 +42,7 @@ import { markdownPreview } from '@mantle/content-core/markdown-to-text';
 import { acceptedRank } from '@mantle/client-types/kind-lists';
 import { chatTextsForReader } from './chat-images';
 import { loadPreferencesFor } from './profile-preferences';
+import { UUID_RE } from '@mantle/std';
 
 /**
  * This file's one system door (arch A6): a login's notices are read and
@@ -70,7 +71,6 @@ export type LoginNotice =
   | { kind: 'chat'; loginId: string; id: string }
   | { kind: 'review'; loginId: string; id: string; state: ReviewNoticeState };
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const isId = (v: unknown): v is string => typeof v === 'string' && UUID_RE.test(v);
 
 /** Parse a NOTIFY payload; null when it is not one of ours. */

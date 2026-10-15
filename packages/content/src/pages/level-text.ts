@@ -34,12 +34,11 @@ import {
 } from '../client-redact';
 import { clientRedactOrigins } from '../client-origins';
 import { pageRefs, type OwnUrl } from '../embed-refs';
+import { UUID_RE } from '@mantle/std';
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 /** The pool, or a caller's transaction. */
 export type LevelTextDb = typeof db | Tx;
-
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** The titles of the owner's items among `ids` that are in `served`. Keys
  *  lower-case. */
@@ -52,7 +51,7 @@ async function servedTitles(
   const wanted = [
     ...new Set(
       ids
-        .filter((i) => UUID.test(i))
+        .filter((i) => UUID_RE.test(i))
         .map((i) => i.toLowerCase())
         .filter((i) => served.has(i)),
     ),
@@ -126,7 +125,7 @@ function uuidArray(ids: readonly string[]) {
 /** The workspaces that hold `pageId` (its read_ws). Empty for a page no
  *  workspace holds (a personal space's page) or one that is gone. */
 export async function pageHolders(pageId: string, q: LevelTextDb = db): Promise<string[]> {
-  if (!UUID.test(pageId)) return [];
+  if (!UUID_RE.test(pageId)) return [];
   const [row] = (await q.execute(sql`
     select ${itemHoldersTextSql('n')} as ws
       from nodes n where n.id = ${pageId}::uuid`)) as unknown as Array<{ ws: string }>;
@@ -134,7 +133,7 @@ export async function pageHolders(pageId: string, q: LevelTextDb = db): Promise<
 }
 
 function wsList(ws: string | null | undefined): string[] {
-  return ws ? ws.split(',').filter((w) => UUID.test(w)) : [];
+  return ws ? ws.split(',').filter((w) => UUID_RE.test(w)) : [];
 }
 
 /** The view of a page held by `holders`, for the ids its doc names. */
@@ -145,7 +144,7 @@ async function holderView(
   ownUrl: OwnUrl,
   q: LevelTextDb,
 ): Promise<HolderView> {
-  const wanted = [...new Set(ids.filter((i) => UUID.test(i)).map((i) => i.toLowerCase()))];
+  const wanted = [...new Set(ids.filter((i) => UUID_RE.test(i)).map((i) => i.toLowerCase()))];
   const held = new Map<string, string>();
   if (wanted.length) {
     const rows = await q
@@ -224,7 +223,7 @@ export async function pageDocText(
   doc: unknown,
   q: LevelTextDb = db,
 ): Promise<string> {
-  const ws = holders.filter((h) => UUID.test(h));
+  const ws = holders.filter((h) => UUID_RE.test(h));
   if (!ws.length || !doc || typeof doc !== 'object') {
     return docToText(doc, { embedMarkers: true });
   }
@@ -249,7 +248,7 @@ export async function refoldPageTexts(
   changedIds: readonly string[],
   q: LevelTextDb = db,
 ): Promise<number> {
-  const ids = [...new Set(changedIds.filter((i) => UUID.test(i)).map((i) => i.toLowerCase()))];
+  const ids = [...new Set(changedIds.filter((i) => UUID_RE.test(i)).map((i) => i.toLowerCase()))];
   if (!ids.length) return 0;
   const names = sql.join(
     ids.map((id) => sql`${pages.doc}::text ilike ${`%${id}%`}`),

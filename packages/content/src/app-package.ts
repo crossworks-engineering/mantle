@@ -34,7 +34,7 @@ import {
   type AppManifest,
   type AppSource,
 } from '@mantle/db';
-import { defineDomainError } from '@mantle/std';
+import { defineDomainError, errorMessage } from '@mantle/std';
 import type { AppDetail, AppTint } from '@mantle/client-types';
 import {
   AppSourceLimitError,
@@ -462,7 +462,7 @@ export async function openAppPackage(bytes: Buffer | Uint8Array): Promise<Opened
           await adoptAppDbFile(raw, clean);
         } catch (err) {
           throw new AppPackageError(
-            `${DATA_ENTRY} is not a sound SQLite database: ${err instanceof Error ? err.message : String(err)}`,
+            `${DATA_ENTRY} is not a sound SQLite database: ${errorMessage(err)}`,
           );
         }
         if ((await stat(clean)).size > appSqlMaxDbBytes()) {

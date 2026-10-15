@@ -27,7 +27,9 @@ import {
   type AppTint,
 } from '@mantle/client-types/app-nav';
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+/** Either case, as @mantle/std's UUID_RE (this published package takes no
+ *  dependency): asId lower-cases before it tests, so an id reads as before. */
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const LUCIDE_NAME_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
 function asId(raw: unknown): string | undefined {

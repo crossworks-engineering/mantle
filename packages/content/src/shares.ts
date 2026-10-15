@@ -26,7 +26,7 @@ import {
 import type { ShareMode } from '@mantle/client-types';
 import { kindSpecOf, kindsWhere, type PublicLinkKind } from '@mantle/client-types/kinds';
 import { env } from '@mantle/config';
-import { defineDomainError } from '@mantle/std';
+import { defineDomainError, UUID_RE } from '@mantle/std';
 
 export type { ShareMode };
 
@@ -132,8 +132,6 @@ defineDomainError(ShareInputError, {
       ? { error: 'Item not found.', code: 'not_found' }
       : { error: e.message, code: 'not_shareable' },
 });
-
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** The served list a share's settings hold: lower-case node ids, in order,
  *  no repeats. */

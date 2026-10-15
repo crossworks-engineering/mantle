@@ -29,8 +29,7 @@ import {
 } from '@mantle/db';
 import { currentToolCaller, mcpVia } from './gate-callers';
 import { namedToolPolicy } from './tool-policy';
-
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+import { UUID_RE } from '@mantle/std';
 
 /** The most item ids and nested writes a row names. */
 const MAX_IDS = 20;

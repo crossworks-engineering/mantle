@@ -42,6 +42,7 @@ import { acceptSceneSvg, EXCALIDRAW_ENGINE } from './scene-svg';
 import { evaluateDraftRev } from './pages';
 import { drawSceneText } from './draw-scene-text';
 import { asKindRootRepair } from './kind-root';
+import { dedupeTags } from './tags';
 
 export const DRAWS_ROOT_LABEL = 'draw';
 
@@ -809,17 +810,4 @@ export async function deleteDraw(ownerId: string, id: string): Promise<boolean> 
     (tx) => tx.delete(nodes).where(eq(nodes.id, id)),
   );
   return true;
-}
-
-function dedupeTags(tags: string[]): string[] {
-  const out: string[] = [];
-  const seen = new Set<string>();
-  for (const raw of tags) {
-    const t = raw.trim().toLowerCase();
-    if (!t || t.length > 40 || seen.has(t)) continue;
-    seen.add(t);
-    out.push(t);
-    if (out.length >= 20) break;
-  }
-  return out;
 }

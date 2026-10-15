@@ -18,6 +18,7 @@
  */
 import { and, gte, inArray, or, sql } from 'drizzle-orm';
 import { db, nodes, workspaces, itemHomeSql } from '@mantle/db';
+import { UUID_RE } from '@mantle/std';
 
 /*
  * The create tools that make an item of a workspace kind take `workspace`
@@ -50,8 +51,6 @@ const WORKSPACE_ARG_SCHEMA = {
   description:
     'Optional: the id or name of a workspace you moderate to put the new item in (see workspaces_list). Without it the item lands in the folder’s workspace, else in your own private one; the reply says where.',
 } as const;
-
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** The Standard Schema a registered tool's `inputSchema` is (tool-input.ts). */
 type StandardLike = {

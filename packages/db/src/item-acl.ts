@@ -25,9 +25,9 @@
 import { sql, type SQL } from 'drizzle-orm';
 import { facts } from './schema/facts';
 import { nodes } from './schema/nodes';
+import { UUID_RE } from '@mantle/std';
 
 const ALIAS_RE = /^[a-z_][a-z0-9_]*$/i;
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 type AclColumn = 'home_ws' | 'read_ws' | 'write_ws';
 

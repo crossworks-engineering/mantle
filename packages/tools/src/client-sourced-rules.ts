@@ -32,6 +32,7 @@ import { agents, appTableExports, db, nodes, toolGroups, mayReadInSql } from '@m
 import { clientSourcedSystem, clientWsSql } from './client-sourced';
 import type { ClientSourcedRule, ClientSourcedWriteRule } from './client-sourced-rule';
 import { builtinPolicy, policyLowers, policyMayLower, type ToolPolicy } from './tool-policy';
+import { UUID_RE } from '@mantle/std';
 
 type Input = Record<string, unknown>;
 
@@ -61,8 +62,6 @@ export function writeRuleOf(policy: ToolPolicy | null | undefined): WriteRule | 
 export type GateTool = { slug: string; handler: unknown };
 
 export type GateVerdict = { gate: false } | { gate: true; why: string };
-
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** Whether a client or the public reads the row's item: a client workspace
  *  holds it (its own grant or its folder's), or a live open link shows it

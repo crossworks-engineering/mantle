@@ -21,7 +21,8 @@ import {
 } from '@mantle/db';
 import { pageDocText, pageHolders } from './level-text';
 import { guardNewPageIn } from '../tree/page-guard';
-import { EMPTY_DOC, PAGES_ROOT_LABEL, dedupeTags, detailOf, type PageDetail } from './shared';
+import { EMPTY_DOC, PAGES_ROOT_LABEL, detailOf, type PageDetail } from './shared';
+import { dedupeTags } from '../tags';
 import { asKindRootRepair } from '../kind-root';
 
 function rootRow(ownerId: string) {

@@ -42,6 +42,7 @@ import { CLIENT_PRIVATE_LABEL } from '@mantle/client-types/dto/client';
 import { docToMarkdown } from '@mantle/content-core/doc-to-markdown';
 import { markdownToDoc } from '@mantle/content-core/markdown';
 import { cellRefs, noteRefs, pageRefs, sceneRefs, type EmbedRefs, type OwnUrl } from './embed-refs';
+import { UUID_RE } from '@mantle/std';
 
 type PMMark = { type?: string; attrs?: Record<string, unknown> };
 type PMNode = {
@@ -52,7 +53,6 @@ type PMNode = {
   text?: string;
 };
 
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 /** Attributes that hold a node id, on any node type (as embed-refs.ts). */
 const ID_ATTRS = ['nodeId', 'drawId', 'pageId'] as const;
 /** Block types whose content may be empty; any other container that loses
@@ -154,7 +154,7 @@ function mentionReadable(attrs: Record<string, unknown>, readable: ReadonlySet<s
   return (
     attrs.ref === 'node' &&
     typeof id === 'string' &&
-    UUID.test(id) &&
+    UUID_RE.test(id) &&
     readable.has(id.toLowerCase())
   );
 }
@@ -167,7 +167,7 @@ function embedHidden(n: PMNode, readable: ReadonlySet<string>, ownUrl: OwnUrl): 
   for (const k of ID_ATTRS) {
     const v = a[k];
     if (typeof v !== 'string' || !v) continue;
-    if (!UUID.test(v) || !readable.has(v.toLowerCase())) return true;
+    if (!UUID_RE.test(v) || !readable.has(v.toLowerCase())) return true;
   }
   return namesHidden(
     pageRefs({ type: 'embed', attrs: { src: a.src, href: a.href } }, ownUrl),

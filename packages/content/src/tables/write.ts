@@ -48,12 +48,12 @@ import {
   TABLES_ROOT_LABEL,
   TAB_NAME,
   assertTableNotAppBound,
-  dedupeTags,
   detailOf,
   docsOf,
   ensureRoot,
   tabsFromStats,
 } from './shared';
+import { dedupeTags } from '../tags';
 
 export type CreateTableInput = {
   title: string;

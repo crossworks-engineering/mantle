@@ -34,8 +34,7 @@ import type { HitWorkspace, ItemCaps, ListChips, ListWorkspace } from '@mantle/c
 import type { TreeSearchCover } from '@mantle/content/tree';
 import { NextResponse } from '@/server/http-compat';
 import { WS_LOOK_PAIRS, workspaceLook } from '@/lib/workspace-look';
-
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+import { UUID_RE } from '@mantle/std';
 
 /** No workspace and no link: a row the lookup did not find (a private row). */
 const NONE: ListChips = { workspaces: [], hasLink: false, mayEdit: false, mayManage: false };

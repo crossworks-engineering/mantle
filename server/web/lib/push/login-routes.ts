@@ -23,6 +23,7 @@ import {
   listOwnDevices,
   updateLoginPushPrefs,
 } from './store';
+import { UUID_RE } from '@mantle/std';
 
 export type LoginPushCaller = {
   role: 'member';
@@ -131,8 +132,6 @@ export async function loginPushDevices(req: Request, caller: LoginPushCaller): P
     })),
   });
 }
-
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** DELETE {pushBase}/subscriptions/:id: unpair one of the caller's devices. */
 export async function loginPushUnpair(caller: LoginPushCaller, id: string): Promise<Response> {

@@ -38,7 +38,7 @@ import { NOTES_ASSISTANT_PATH, ensureNotesAssistantFolder } from '@mantle/conten
 import { digestEmbedText, embedBatch } from '@mantle/embeddings';
 import { startTrace, step } from '@mantle/tracing';
 import { chatWithFailover, resolveChatKey, resolveChatRoutes } from './chat-failover';
-import { backgroundFence, defineDomainError } from '@mantle/std';
+import { backgroundFence, defineDomainError, errorMessage } from '@mantle/std';
 import { buildChatMessages, flattenChatMessagesForAdapter } from './messages';
 
 /** A reply is still running in this chat: archiving now would split it. */
@@ -230,7 +230,7 @@ export async function archiveAgentChat(o: {
   if (!result.archived) return result;
   const archived = await summarizeChatThread(ownerId, result.archived.id, loginId).catch((err) => {
     console.warn(
-      `[chat-archive] summary failed, thread kept with a plain title: ${err instanceof Error ? err.message : err}`,
+      `[chat-archive] summary failed, thread kept with a plain title: ${errorMessage(err)}`,
     );
     return null;
   });
@@ -375,7 +375,7 @@ export async function summarizeChatThread(
         vec = (await embedBatch(ownerId, [digestEmbedText(title, summary)]))[0] ?? null;
       } catch (err) {
         console.warn(
-          `[chat-archive] summary embed failed, note kept without one: ${err instanceof Error ? err.message : err}`,
+          `[chat-archive] summary embed failed, note kept without one: ${errorMessage(err)}`,
         );
       }
 

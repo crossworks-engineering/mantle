@@ -18,8 +18,8 @@ import {
   emailAttachmentSql,
   nodes,
 } from '@mantle/db';
+import { UUID_RE } from '@mantle/std';
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const PATH_RE = /^[A-Za-z0-9_]+(\.[A-Za-z0-9_]+)*$/;
 
 /** Of `ids`, the ones that are this owner's email attachments, or items made

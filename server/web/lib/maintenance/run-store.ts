@@ -16,6 +16,7 @@ import { dirname, join, resolve } from 'node:path';
 import type { MaintenanceTask } from './registry';
 import type { MaintenanceRunView, RunState } from '@mantle/client-types/types/maintenance';
 import { finishRun, recordRunStart } from './history';
+import { errorMessage } from '@mantle/std';
 
 const MAX_LINES = 2000;
 const RUN_TIMEOUT_MS = 30 * 60 * 1000;
@@ -146,7 +147,7 @@ export function startRun(
       stdio: ['ignore', 'pipe', 'pipe'],
     });
   } catch (err) {
-    return { ok: false, error: `failed to spawn: ${err instanceof Error ? err.message : err}` };
+    return { ok: false, error: `failed to spawn: ${errorMessage(err)}` };
   }
 
   run.child = child;

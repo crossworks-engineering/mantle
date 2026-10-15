@@ -19,6 +19,7 @@
 import { sql } from 'drizzle-orm';
 import { db } from './client';
 import { currentWorkspaceScope } from './viewer';
+import { UUID_RE } from '@mantle/std';
 
 /** What a write needs of an item. */
 export type ItemNeed = 'read' | 'edit' | 'manage';
@@ -39,7 +40,6 @@ export function itemNoRightError(id: string, need: ItemNeed): string {
 export const READ_ONLY_COPY_ERROR =
   'This is a read-only copy of an accepted item: nobody changes it. Its author may delete it.';
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 /** What Postgres reads as a uuid besides the canonical form: braces, and a
  *  hyphen after any group of four digits, or none. */
 const LOOSE_UUID_RE = /^\{?[0-9a-f]{4}(?:-?[0-9a-f]{4}){7}\}?$/i;

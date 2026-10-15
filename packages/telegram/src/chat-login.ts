@@ -24,6 +24,7 @@
  */
 import { and, desc, eq, sql } from 'drizzle-orm';
 import { asSystem, db, loginHasArea, telegramChats } from '@mantle/db';
+import { UUID_RE } from '@mantle/std';
 
 /**
  * This file's one system door (arch A6): a Telegram chat's login, its bot and
@@ -45,9 +46,6 @@ export const TELEGRAM_UNPAIRED_REPLY =
 
 /** The `code` a pairing refusal carries, so a screen can tell it apart. */
 export const TELEGRAM_NOT_A_USER_CODE = 'not_a_workspace_user';
-
-/** Whether `s` looks like a uuid (a login id), so a bad value never reaches SQL. */
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
  * Whether `loginId` may use a chat on bot `accountId` (with responder

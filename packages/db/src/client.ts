@@ -76,7 +76,7 @@ import {
 } from './actor';
 import { reserveLease, withLease, type Lease } from './reserved';
 import { withMigratorConnection } from './migrator-connection';
-import { errorMessage, RuntimeFaultError } from '@mantle/std';
+import { errorMessage, RuntimeFaultError, UUID_RE } from '@mantle/std';
 import { BusyError, permissionGapOf } from './pg-error';
 import {
   GAP_WRITER_ROLE,
@@ -1986,8 +1986,6 @@ function getDb(): PostgresJsDatabase<typeof schema> {
   if (inTurnScope()) return getTurnScopedDb();
   return getAdminDb();
 }
-
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** A nested system transaction that cannot reuse the open one (arch A2b,
  *  plan 20.2): another actor or create home, a second nested call while one

@@ -9,7 +9,7 @@
  * order are plain row data for every kind.
  */
 import { and, eq, sql } from 'drizzle-orm';
-import { defineDomainError, publicErrorMessage } from '@mantle/std';
+import { defineDomainError, errorMessage, publicErrorMessage } from '@mantle/std';
 import { BUSY_MESSAGE, db, isBusy, isScopeWriteRefusal, nodes, executeWrite } from '@mantle/db';
 import {
   createFolder as createFilesFolder,
@@ -166,7 +166,7 @@ function refusingError(err: unknown): never {
   // The database refused it under the caller's workspaces (W6a fix round 1):
   // the HTTP layer answers 403 item-workspace, never the SQL.
   if (isScopeWriteRefusal(err)) throw err;
-  const message = err instanceof Error ? err.message : String(err);
+  const message = errorMessage(err);
   throw new TreeError(/already exists|unique/i.test(message) ? 'conflict' : 'invalid', message);
 }
 

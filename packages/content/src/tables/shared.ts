@@ -266,17 +266,3 @@ async function insertRoot(tx: Pick<typeof db, 'insert'>, ownerId: string): Promi
       where: sql`${nodes.type} = 'branch'`,
     });
 }
-
-/** Normalise a tag list for storage: trimmed, lowercased, deduped, bounded. */
-export function dedupeTags(tags: string[]): string[] {
-  const out: string[] = [];
-  const seen = new Set<string>();
-  for (const raw of tags) {
-    const t = raw.trim().toLowerCase();
-    if (!t || t.length > 40 || seen.has(t)) continue;
-    seen.add(t);
-    out.push(t);
-    if (out.length >= 20) break;
-  }
-  return out;
-}

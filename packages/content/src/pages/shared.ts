@@ -1,7 +1,7 @@
 /**
  * Pages · shared spine — the row/detail shapes every other pages module
  * returns, plus the two tiny pure helpers (`rowOf`, `detailOf`) that build
- * them and the tag normaliser both write paths use.
+ * them. The tag normaliser is the content package's one (../tags.ts).
  *
  * Deliberately dependency-light: it imports the DB row TYPE, never a query.
  * That is what keeps the seam acyclic — read/tree/draft/structure/embed all
@@ -74,19 +74,4 @@ export function detailOf(
     draft,
     ...(extra.draftRev !== undefined ? { draftRev: extra.draftRev } : {}),
   };
-}
-
-/** Normalise a tag list for storage: trimmed, lowercased, deduped, and
- *  bounded (40 chars each, 20 tags) so a bad write can't grow the row. */
-export function dedupeTags(tags: string[]): string[] {
-  const out: string[] = [];
-  const seen = new Set<string>();
-  for (const raw of tags) {
-    const t = raw.trim().toLowerCase();
-    if (!t || t.length > 40 || seen.has(t)) continue;
-    seen.add(t);
-    out.push(t);
-    if (out.length >= 20) break;
-  }
-  return out;
 }

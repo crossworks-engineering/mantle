@@ -35,6 +35,7 @@ import type { TaskRow, TaskStatus, TaskPriority, TaskTodo } from '@mantle/client
 import { isValidRank } from './rank';
 import { TASK_STATUSES, statusBeforeDoneOf } from './task-status';
 import { asKindRootRepair } from './kind-root';
+import { dedupeTags } from './tags';
 export type { TaskRow, TaskStatus, TaskPriority, TaskTodo };
 
 // ltree root label for the Tasks branch. Existing brains were re-pathed to it by
@@ -390,17 +391,4 @@ export async function deleteTask(ownerId: string, id: string): Promise<boolean> 
     withNodeDeleteHeads([id], (tx) => tx.delete(nodes).where(eq(nodes.id, id))),
   );
   return true;
-}
-
-function dedupeTags(tags: string[]): string[] {
-  const out: string[] = [];
-  const seen = new Set<string>();
-  for (const raw of tags) {
-    const t = raw.trim().toLowerCase();
-    if (!t || t.length > 40 || seen.has(t)) continue;
-    seen.add(t);
-    out.push(t);
-    if (out.length >= 20) break;
-  }
-  return out;
 }

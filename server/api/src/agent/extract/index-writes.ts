@@ -38,6 +38,7 @@ import {
   isSpreadsheetTitle,
 } from '@mantle/content';
 import { EntityMention } from './entities';
+import { errorMessage } from '@mantle/std';
 
 /**
  * For a file-backed table node, build the PROFILE-ONLY retrieval chunks (L1
@@ -151,7 +152,7 @@ export async function writeContentIndex(
     // embedder outages land in the DLQ, which is re-driven on restart
     // and surfaced by /debug/integrity.
     throw new Error(
-      `extractor: embed failed for node ${node.id} — retrying instead of half-indexing: ${err instanceof Error ? err.message : err}`,
+      `extractor: embed failed for node ${node.id} — retrying instead of half-indexing: ${errorMessage(err)}`,
       { cause: err },
     );
   }

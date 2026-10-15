@@ -9,6 +9,7 @@
     ".": "./src/index.ts",
     "./notes": "./src/notes.ts",
     "./tasks": "./src/tasks.ts",
+    "./tags": "./src/tags.ts",
     "./rank": "./src/rank.ts",
     "./events": "./src/events.ts",
     "./journal": "./src/journal.ts",

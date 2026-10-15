@@ -35,6 +35,7 @@ import {
   type Node,
 } from '@mantle/db';
 import { seal, open } from '@mantle/crypto';
+import { dedupeTags } from '@mantle/content/tags';
 
 /** ltree root label for all secrets. Mirrors the `files` root convention
  *  but is NOT host-mirrored — secrets stay in Postgres only. */
@@ -404,17 +405,4 @@ function sanitiseFields(fields: SecretField[]): SecretField[] {
     }))
     .filter((f) => f.label.length > 0 || f.value.length > 0)
     .slice(0, 32);
-}
-
-function dedupeTags(tags: string[]): string[] {
-  const out: string[] = [];
-  const seen = new Set<string>();
-  for (const raw of tags) {
-    const t = raw.trim().toLowerCase();
-    if (!t || t.length > 40 || seen.has(t)) continue;
-    seen.add(t);
-    out.push(t);
-    if (out.length >= 20) break;
-  }
-  return out;
 }

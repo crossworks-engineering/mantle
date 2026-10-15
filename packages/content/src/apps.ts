@@ -47,6 +47,7 @@ import { codeHash, insertNodeSnapshot } from './node-snapshot-rows';
 import type { AppRow, AppDetail, AppTint, HistoryActor } from '@mantle/client-types';
 import { projectAppIcon, projectAppTint } from '@mantle/content-core/app-nav';
 import { asKindRootRepair } from './kind-root';
+import { dedupeTags } from './tags';
 export type { AppRow, AppDetail };
 
 export const APPS_ROOT_LABEL = 'apps';
@@ -1294,17 +1295,4 @@ async function ownsApp(ownerId: string, id: string): Promise<boolean> {
     .where(and(eq(nodes.id, id), eq(nodes.ownerId, ownerId), eq(nodes.type, 'app')))
     .limit(1);
   return !!row;
-}
-
-function dedupeTags(tags: string[]): string[] {
-  const out: string[] = [];
-  const seen = new Set<string>();
-  for (const raw of tags) {
-    const t = raw.trim().toLowerCase();
-    if (!t || t.length > 40 || seen.has(t)) continue;
-    seen.add(t);
-    out.push(t);
-    if (out.length >= 20) break;
-  }
-  return out;
 }
