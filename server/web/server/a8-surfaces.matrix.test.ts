@@ -562,6 +562,30 @@ describe.skipIf(!DB_URL)('A8 surface cells: every way in gives the oracle’s an
         return fromTool(res);
       }),
     ),
+    {
+      // An open public link: its view as JSON, through the gate's /s row
+      // (the share gate judges the token). The kinds that may carry one.
+      surface: 'share-link',
+      actor: 'link',
+      roles: [null],
+      supports: (kind, action) =>
+        action === 'read' &&
+        (ITEM_KINDS as Record<string, { publicLink: boolean | string }>)[kind]!.publicLink === true,
+      run: (_role, _kind, _action, id) =>
+        guard(async () => {
+          const [s] = await raw<{ token: string }[]>`
+            select token from shares where node_id = ${id} and revoked_at is null limit 1`;
+          if (!s) return { ok: false, text: 'no open link' };
+          const res = await runRoute(null, 'GET', `/s/${s.token}/view`, undefined, {
+            headers: { 'x-forwarded-for': `10.9.${Math.floor(Math.random() * 250)}.1` },
+          });
+          return {
+            ok: res.status < 300,
+            status: res.status,
+            text: (await res.text()).slice(0, 4000),
+          };
+        }),
+    },
   ];
 
   /** Judge one cell's outcome against the oracle and the row effect. */
