@@ -105,6 +105,8 @@ function diff<T>(pins: Record<string, T>, found: Record<string, T>, show = Strin
 describe('the architecture ratchets (pinned counts)', () => {
   it('no-raw-acl-columns: raw ACL reads outside packages/db, file by file', () => {
     expect(diff(RAW_ACL_PINS, got.perFile.rawAcl)).toEqual([]);
+    // A6: none left, and none may come back (plan v2 exit: 0).
+    expect(RAW_ACL_PINS).toEqual({});
   });
 
   it('as-system-allowlist: asSystem call sites and their reasons, file by file', () => {
@@ -403,7 +405,9 @@ describe('the hand re-index counter (A10 #7)', () => {
       embedding: 0,
       summary: 0,
     });
-    expect(handReindex("await sql`select pg_notify('node_ingested', ${id}::text)`;").notify).toBe(1);
+    expect(handReindex("await sql`select pg_notify('node_ingested', ${id}::text)`;").notify).toBe(
+      1,
+    );
     expect(handReindex('.set({ embedding: null, data })').embedding).toBe(1);
     expect(handReindex('delete newData.summary;').summary).toBe(1);
     expect(handReindex("sql`update nodes set data = data - 'summary'`").summary).toBe(1);
@@ -414,7 +418,7 @@ describe('the hand re-index counter (A10 #7)', () => {
     const none = { notify: 0, embedding: 0, summary: 0 };
     expect(handReindex('export async function notifyNodeIngested(nodeId) {}')).toEqual(none);
     expect(handReindex('// await notifyNodeIngested(id); embedding: null')).toEqual(none);
-    expect(handReindex("const d = \"Re-fires the pg_notify('node_ingested') signal\";")).toEqual(
+    expect(handReindex('const d = "Re-fires the pg_notify(\'node_ingested\') signal";')).toEqual(
       none,
     );
     expect(handReindex("await sql.listen('node_ingested', cb);")).toEqual(none);
