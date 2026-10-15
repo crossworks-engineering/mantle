@@ -5,7 +5,6 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
-  APP_DELETE_ADMIN_ONLY,
   CONTACT_WRITES_APP_DATA_ONLY,
   GUIDE_ACTIONS,
   GUIDE_ROLES,
@@ -107,16 +106,18 @@ describe('the A8 oracle', () => {
     expect(expectedAccess(at('root', 'contact-rw'), null, 'app', 'appData')).toEqual(allow);
   });
 
-  it('an app: the owner and Admin users delete it (owner decision 2026-10-15), never its home Moderator', () => {
+  it('an app: its home Moderator, Admin users and the owner delete it (owner decision 2026-10-15, plan s34: an archive)', () => {
     expect(expectedAccess(at('root'), 'homeModerator', 'note', 'delete')).toEqual(allow);
-    expect(expectedAccess(at('root', 'turn'), 'homeModerator', 'app', 'delete')).toEqual({
-      allow: false,
-      why: APP_DELETE_ADMIN_ONLY,
-    });
-    expect(expectedAccess(at('root'), 'homeModerator', 'app', 'delete')).toEqual({
-      allow: false,
-      why: APP_DELETE_ADMIN_ONLY,
-    });
+    expect(expectedAccess(at('root'), 'homeModerator', 'app', 'delete')).toEqual(allow);
+    expect(expectedAccess(at('folder'), 'homeModerator', 'app', 'delete')).toEqual(allow);
+    expect(expectedAccess(at('root', 'turn'), 'homeModerator', 'app', 'delete')).toEqual(allow);
+    for (const role of ['writeGrant', 'readGrant'] as const) {
+      expect(expectedAccess(at('root'), role, 'app', 'delete')).toEqual({
+        allow: false,
+        why: 'not a Moderator of its home',
+      });
+    }
+    expect(expectedAccess(at('root'), 'outsider', 'app', 'delete')).toMatchObject(denied);
   });
 
   it('"It reads only its workspace\'s items": a turn narrows to the assistant\'s workspace', () => {
@@ -148,7 +149,7 @@ describe('the A8 oracle', () => {
     }
     expect(expectedAccess(at('admin', 'login-ro'), 'owner', 'note', 'edit')).toMatchObject(denied);
     expect(expectedAccess(at('admin', 'assistant'), null, 'note', 'read')).toMatchObject(denied);
-    // F3 revised (owner decision 2026-10-15): Admin users delete an app.
+    // Admin users delete an app (owner decision 2026-10-15, plan s34).
     expect(expectedAccess(at('admin'), 'owner', 'app', 'delete')).toEqual(allow);
     expect(expectedAccess(at('admin'), 'admin', 'app', 'delete')).toEqual(allow);
     expect(expectedAccess(at('admin', 'turn'), 'admin', 'app', 'delete')).toEqual(allow);

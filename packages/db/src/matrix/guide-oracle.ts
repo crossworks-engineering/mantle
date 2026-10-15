@@ -359,7 +359,7 @@ export function guideStanding(
 export const GUIDE_RULES = {
   /** "Edit its content: Moderator of its home, or a grant with Write on". */
   edit: (s: GuideStanding) => s.edits,
-  /** "Delete it: Moderator of its home" (an app: the owner's decision,
+  /** "Delete it: Moderator of its home" (an app: Admin users too,
    *  expectedAccess's delete). */
   delete: (s: GuideStanding) => s.homeMod,
   /** "Apps": "Code. A Moderator of the app's home builds and edits it." */
@@ -370,10 +370,6 @@ export const GUIDE_RULES = {
   /** "Apps": "A user writes the app's data when they may edit the app". */
   appData: (s: GuideStanding) => s.edits,
 } as const;
-
-/** The why of an app delete by anyone but the owner (plan s32, F3). */
-export const APP_DELETE_ADMIN_ONLY =
-  'an app: the owner and Admin users delete it (owner decision 2026-10-15, plan s32 F3 revised)';
 
 /** The why of a contact share's write of anything but its app's data
  *  (docs/actors.md, the actor kinds: "its app's data, when the share
@@ -532,12 +528,13 @@ function narrowedAnswer(
         return GUIDE_RULES.appCode(s) ? { allow: true } : deny('app code: Moderator of its home');
       return GUIDE_RULES.edit(s) ? { allow: true } : deny('may not edit it');
     case 'delete':
-      // An app: the owner and Admin users delete it (to the trash); its
-      // home Moderator may not, on any surface. The owner's decision of
-      // 2026-10-15 (workspaces arch plan v2, section 32, F3 revised; the
-      // guide gets the rule), over "Delete it: Moderator of its home" for an
-      // app. In a turn the Admin user's seat is the Admin assistant's.
-      if (kind === 'app') return s.admin ? { allow: true } : deny(APP_DELETE_ADMIN_ONLY);
+      // An app: its home Moderator, Admin users and the owner delete it. A
+      // delete is an archive: the app goes to Recently deleted with a
+      // snapshot, and only the owner deletes it for good. The owner's
+      // decision of 2026-10-15 (workspaces arch plan v2, section 34: delete
+      // is an archive; it reverses the rule set earlier that day). In a turn the Admin user's
+      // seat is the Admin assistant's.
+      if (kind === 'app' && s.admin) return { allow: true };
       // "Delete it: Moderator of its home" (the copy's author is one).
       return GUIDE_RULES.delete(s) ? { allow: true } : deny('not a Moderator of its home');
     case 'move':

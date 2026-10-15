@@ -29,7 +29,7 @@ const PINNED: Readonly<Record<(typeof ORACLES)[number], { inputs: number; sha256
   },
   a8: {
     inputs: 314_496,
-    sha256: '1ce2b4459a15e933f4a4b9c9b8055623de95f2aee2842156d6a1e5563faa38e3',
+    sha256: 'b3839094a3544be9f5bb2749218d1b45f153f40cedfb864c44db6a08c85652fe',
   },
 };
 

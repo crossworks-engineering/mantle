@@ -417,7 +417,8 @@ export function registerPreparedTools(
   registerMantleTools(server, caller.anchorId, {
     transport: opts.transport ?? 'http',
     // A peer an admin did not register for the anchor names no login to the
-    // builtins: its app_delete is held for the owner (W6b fix round 3, M-1).
+    // builtins: an app its app_delete sends to Recently deleted waits there
+    // for the owner, who alone deletes it for good (W6b fix round 3, M-1).
     ...(caller.via === 'peer' && adminRole && !caller.peerByOwner
       ? {}
       : { loginId: caller.loginId }),
