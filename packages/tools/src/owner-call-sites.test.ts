@@ -105,8 +105,10 @@ const SITES: Record<string, Site> = {
     calls: 1,
     // The Telegram chat only when the fire answers the anchor (W7
     // integration fix 3, F1: telegramChat is null for any other login).
+    // The surface is heartbeats/surface.ts heartbeatSurface (A8 fix round
+    // 4), its answers pinned by surface.test.ts.
     surface:
-      /: telegramChat && pairedTelegram\s*\? \{\s*kind: 'telegram',\s*telegramChatId: telegramChat,[^}]*accountId: pairedTelegram\.accountId,\s*\}\s*: \{ kind: 'web' \}/,
+      /surface: heartbeatSurface\(\{\s*scoped,\s*adminAssistant,\s*telegramChat,\s*pairedTelegram,\s*\}\)/,
     scope: 'call',
     why: "the owner's heartbeat, on its telegram or web surface",
   },

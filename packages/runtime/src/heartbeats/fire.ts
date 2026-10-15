@@ -67,6 +67,7 @@ import { buildHeartbeatPrompt, HEARTBEAT_DATA_BOUNDARY } from './prompt';
 import { runWithInflightLock } from './inflight';
 // A cycle (tools.ts imports forceFire from here): read at call time only.
 import { heartbeatControlSlugs } from './tools';
+import { heartbeatSurface } from './surface';
 import { errorMessage, publicProviderErrorMessage } from '@mantle/std';
 import {
   AgentWorkspaceError,
@@ -513,17 +514,12 @@ async function fireAs(hb: Heartbeat, opts: FireOpts & { skipGates: boolean }): P
                 tools,
                 // A workspace assistant's fire is not the owner's channel: a
                 // team surface with no login (read only, private reads off).
-                surface:
-                  scoped && !adminAssistant
-                    ? { kind: 'team', privateReads: false }
-                    : telegramChat && pairedTelegram
-                      ? {
-                          kind: 'telegram',
-                          telegramChatId: telegramChat,
-                          // The chat's own bot (W7d fix round 1, L7).
-                          accountId: pairedTelegram.accountId,
-                        }
-                      : { kind: 'web' },
+                surface: heartbeatSurface({
+                  scoped,
+                  adminAssistant,
+                  telegramChat,
+                  pairedTelegram,
+                }),
               }),
             ),
         );
