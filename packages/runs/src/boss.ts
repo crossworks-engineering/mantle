@@ -22,7 +22,7 @@ import { RUN_RESUME_QUEUE, RUN_TOOL_QUEUE, RUN_WORKER_QUEUE } from './queues';
 import { env } from '@mantle/config';
 import { assertNoViewer, currentWorkspaceScope } from '@mantle/db/viewer';
 import { sql } from 'drizzle-orm';
-import { db } from '@mantle/db';
+import { db, wsArraySql } from '@mantle/db';
 
 let bossPromise: Promise<PgBoss> | null = null;
 
@@ -126,10 +126,9 @@ export async function assertRunsCarryScope(
   if (!scope || jobs.length === 0) return;
   const itemIds = jobs.flatMap((j) => (j.type === 'dispatch' ? [j.itemId] : []));
   const runIds = jobs.flatMap((j) => (j.type === 'resume' ? [j.runId] : []));
-  const list = (ids: string[]) => `{${ids.join(',')}}`;
   const rows = (await db.execute(
     sql`select workspace_id::text as ws
-          from "public"."mantle_runs_workspaces"(${list(runIds)}::uuid[], ${list(itemIds)}::uuid[])`,
+          from "public"."mantle_runs_workspaces"(${wsArraySql(runIds)}, ${wsArraySql(itemIds)})`,
   )) as unknown as { ws: string | null }[];
   const inScope = new Set(scope.ws);
   if (rows.length === 0 || rows.some((r) => !r.ws || !inScope.has(r.ws))) {

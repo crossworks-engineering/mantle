@@ -34,7 +34,7 @@
  * (mantle_client_sourced_among, client tier audit I3).
  */
 import { sql } from 'drizzle-orm';
-import { db } from '@mantle/db';
+import { db, wsArraySql } from '@mantle/db';
 
 /**
  * The client-sourced check reads and marks by its definers (0293:
@@ -43,9 +43,9 @@ import { db } from '@mantle/db';
  * 'client-sourced-check'). Each answers as the system pool did, over every
  * row of the brain whatever the scope reads (the rule is in the query; a
  * guard held to the scope would mark less), for the owner it is asked
- * about, with no extra scope rule.
+ * about, with no extra scope rule. Their id lists are uuid[] parameters,
+ * each id checked (wsArraySql).
  */
-const uuidArray = (ids: readonly string[]) => `{${ids.join(',')}}`;
 
 /** A turn's taint, shared by reference across the turn (and its delegated
  *  children: a child that reads client text taints the parent too). */
@@ -107,7 +107,7 @@ export async function namesClientSourced(
   if (ids.length === 0) return false;
   for (const list of batches(ids)) {
     const [row] = (await db.execute(
-      sql`select "public"."mantle_client_sourced_any"(${ownerId}::uuid, ${uuidArray(list)}::uuid[]) as hit`,
+      sql`select "public"."mantle_client_sourced_any"(${ownerId}::uuid, ${wsArraySql(list)}) as hit`,
     )) as unknown as { hit: boolean }[];
     if (row?.hit === true) return true;
   }
@@ -130,7 +130,7 @@ export async function clientSourcedAmong(
   for (const list of batches(ids)) {
     const rows = (await db.execute(
       sql`select id::text as id
-            from "public"."mantle_client_sourced_among"(${ownerId}::uuid, ${uuidArray(list)}::uuid[]) as id`,
+            from "public"."mantle_client_sourced_among"(${ownerId}::uuid, ${wsArraySql(list)}) as id`,
     )) as unknown as { id: string }[];
     for (const r of rows) out.add(r.id);
   }
@@ -271,7 +271,7 @@ export async function markCreatedClientSourced(
     for (const list of batches(ids)) {
       const [row] = (await db.execute(
         sql`select "public"."mantle_mark_created_client_sourced"(${ownerId}::uuid,
-                     ${uuidArray(list)}::uuid[], ${secs}::int, ${via}) as n`,
+                     ${wsArraySql(list)}, ${secs}::int, ${via}) as n`,
       )) as unknown as { n: number }[];
       marked += Number(row?.n ?? 0);
     }

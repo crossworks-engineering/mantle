@@ -28,7 +28,7 @@
  * approving the pending entry runs the original call.
  */
 import { sql } from 'drizzle-orm';
-import { db } from '@mantle/db';
+import { db, wsArraySql } from '@mantle/db';
 import type { ClientSourcedRule, ClientSourcedWriteRule } from './client-sourced-rule';
 import { builtinPolicy, policyLowers, policyMayLower, type ToolPolicy } from './tool-policy';
 import { UUID_RE } from '@mantle/std';
@@ -211,7 +211,7 @@ export async function writeVerdict(
   // turn reads (A6b: on the system pool before, 'client-sourced-check').
   const [row] = (await db.execute(
     sql`select "public"."mantle_client_sourced_gate"(${ownerId}::uuid,
-          ${textArray(nodeIds)}::uuid[], ${textArray(appIds)}::uuid[], ${textArray(paths)}::text[],
+          ${wsArraySql(nodeIds)}, ${wsArraySql(appIds)}, ${textArray(paths)}::text[],
           ${textArray(agentSlugs)}::text[], ${textArray(groupSlugs)}::text[],
           ${textArray(toolSlugs)}::text[]) as why`,
   )) as unknown as { why: string | null }[];
