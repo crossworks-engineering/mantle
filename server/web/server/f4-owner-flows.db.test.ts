@@ -1330,7 +1330,11 @@ describe.skipIf(!DB_URL)('F4 fix round 1: the owner’s management flows on the 
           t.dispatchTool(
             toolRow(def),
             { file_id: src2, delete_derived: true },
-            { ownerId: L.owner, surface: { kind: 'web' as const, loginId: L.owner } },
+            {
+              caller: t.turnCaller(),
+              ownerId: L.owner,
+              surface: { kind: 'web' as const, loginId: L.owner },
+            },
           ),
         { ownerLoginId: L.owner },
       );
@@ -1413,8 +1417,8 @@ describe.skipIf(!DB_URL)('F4 fix round 1: the owner’s management flows on the 
         exclude: ws.other,
       });
       const parent = await folder(`${tag}${mode}mpar`);
-      await rehome(parent.id, ws.other);
       const mine = await folder(label, parent.path);
+      await rehome(parent.id, ws.other);
       await rehome(mine.id, ws.other);
       const move = await call(
         `${mode} member move onto hidden`,
@@ -1515,6 +1519,12 @@ describe.skipIf(!DB_URL)('F4 fix round 1: the owner’s management flows on the 
       });
       expect(snap.status, snap.text).toBe(201);
       const sid = ((snap.json.snapshot ?? snap.json) as { id: string }).id;
+      // A draft to publish, made while the owner manages the app.
+      const draft = await call(`${mode} m3 draft`, L.owner, 'PUT', `/api/apps/${app}/draft`, {
+        entry: 'index.tsx',
+        files: { 'index.tsx': 'export default function App() { return null; }' },
+      });
+      expect(draft.status, draft.text).toBe(200);
       // The owner edits the app (Write through Admin) but does not manage it.
       await rehome(app, ws.other, { admin: 'write' });
       const [before] = await raw<{ d: unknown; b: unknown; m: unknown; t: string }[]>`
@@ -1557,7 +1567,11 @@ describe.skipIf(!DB_URL)('F4 fix round 1: the owner’s management flows on the 
           t.dispatchTool(
             toolRow(def),
             { id: app, snapshot_id: sid, mode: 'code', discard_draft: true },
-            { ownerId: L.owner, surface: { kind: 'web' as const, loginId: L.owner } },
+            {
+              caller: t.turnCaller(),
+              ownerId: L.owner,
+              surface: { kind: 'web' as const, loginId: L.owner },
+            },
           ),
         { ownerLoginId: L.owner },
       );
@@ -1579,7 +1593,11 @@ describe.skipIf(!DB_URL)('F4 fix round 1: the owner’s management flows on the 
           t.dispatchTool(
             toolRow(def),
             { id: app, snapshot_id: sid, mode: 'data' },
-            { ownerId: L.owner, surface: { kind: 'web' as const, loginId: L.owner } },
+            {
+              caller: t.turnCaller(),
+              ownerId: L.owner,
+              surface: { kind: 'web' as const, loginId: L.owner },
+            },
           ),
         { ownerLoginId: L.owner },
       );
