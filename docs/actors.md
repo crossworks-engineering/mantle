@@ -5161,7 +5161,12 @@ exists with a test and is on on every box of the release. Branch
 `feat/precheck-delete`, built on main v0.300.75, parked until the fleet's
 actor check and edit check are on.
 
-**Result: no entry deleted.** "On on every box" is needed but not enough:
+**Since part 1 (branch `feat/precheck-remove`, below): 72 of the 101 tool
+entries are gone, 29 kept with their reasons; the 27 HTTP entries wait on
+blocker 1.** The rest of this section up to "Part 1" is the parked
+branch's finding, kept as it was.
+
+**Result (the parked branch): no entry deleted.** "On on every box" is needed but not enough:
 the per-table edit checks fire only for a write on the write role
 (`mantle_write_user`), and three ways in wrote on the system pool with the
 pre-check as their only edit check, in every mode, on alike. Deleting any
@@ -5260,6 +5265,204 @@ up without a reviewed raise): `itemPrecheckTools` 101 (every policy
 `server/web/lib/auth/route-scope.ts`: `ITEM_WRITE_PREFIXES` 16,
 `ITEM_REF_PREFIXES` 3, `ITEM_READ_WRITES` 7, `ITEM_MANAGE_WRITES` 1). The
 exits of 6b and step 4 are both 0.
+
+### Part 1: the tool entries go, and the checks' floor
+
+Branch `feat/precheck-remove`, on main v0.300.81. Ships only once every box
+of the fleet runs both checks `on` (the floor below raises a box that does
+not at its roll).
+
+**Why the tool entries could go now.** The pre-check ran only where a
+workspace scope is active (`toolItemWriteRefusalOf` answers null outside
+one), and every way in that holds one writes on the write role since
+v0.300.80 (blocker 2): an assistant turn with writes (web, team, Telegram,
+an Admin heartbeat), MCP (OAuth, key, linked brain, stdio), a run item, a
+stamped approval (it runs where it was asked, A5 step 6c), a non-Admin
+key's `/api/v1` request. The others hold no scope, so the pre-check asked
+nothing there before either: an Admin user's HTTP request (blocker 1's
+system pool; its `/api/v1` table rows routes meet the HTTP item gate
+first), an owner app's broker call at admin rules, the dev console, an
+unstamped approval. A workspace assistant with no user turns read only,
+and a team-rules app runs no write builtin (memberAppToolVerdict refuses
+every `effect: 'write'` before its group is read), so their writes never
+reach a table.
+
+**The proof** (`server/web/server/precheck-removal.db.test.ts`, also in
+`pnpm test:edit-on`): every removed builtin, as a member (a Moderator of
+H, a user of R and of W) and as the owner, on its MCP surface and for one
+tool per family in an assistant turn, on four placements of a fresh item
+(may manage it; may edit, not manage; reads it, may not edit; does not read
+it), both checks on, each run twice: with the pre-check (`was`) and with it
+bypassed (`now`). A refused cell leaves the item as it was (its rows,
+content rows, links, grants and history; the tables and files stores on
+disk: bytes, mtime, the list); an allowed one makes its write. Recorded on
+the code before the removal (`was` the pre-check's words, every refusal
+also the database's or the handler's with it bypassed); since the removal
+the bypass changes nothing, and the file pins that `was` answers as `now`.
+
+**Removed, by family** (one commit each; the check that refuses each, and
+its second reason):
+
+| Family (entries)         | Tools                                                                                                                                                                             | The database's check                                                                                                                          | Second reason, proven                                                                                                          |
+| ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| node edits (6)           | note, task, event, formula, contact, journal `_update`                                                                                                                            | write check 0278 (nodes UPDATE, edit)                                                                                                         | none: one statement, nothing outside Postgres                                                                                  |
+| node deletes (6)         | the same kinds' `_delete`                                                                                                                                                         | delete check 0266 (manage)                                                                                                                    | none: a hard DELETE, nothing before it                                                                                         |
+| reads and grants (2)     | process_extraction, access_set                                                                                                                                                    | row security (its precondition reads the item in the scope); access_set writes nothing                                                        | the read need: the precondition is the read, in the scope                                                                      |
+| link closes (2)          | node_unshare, page_unshare                                                                                                                                                        | the handler's own rule (closeLink: assertMayLink, mayCloseAnyLink), and link_close (0280)                                                     | the handler asks first; a key or a peer is refused there                                                                       |
+| tree folder (1)          | tree_folder_update                                                                                                                                                                | 0278 for a look change; mantle_subtree_rewrite (0282, manage) for a rename or a move, and the move check                                      | none                                                                                                                           |
+| page lifecycle (8)       | page_update, _update_draft, _commit, _discard_draft, _replace_from_file, _mention, _delete, _move                                                                                 | 0278 (nodes, pages), 0266, the move check                                                                                                     | none: the file of page_replace_from_file is only read                                                                          |
+| Recall (10)              | recall_card_put, _card_delete, _map_update, _map_publish, _cards_reorder, _map_set_slug, _card_set_slug, _prompt_confirm, _revision_restore, _map_delete                          | the Recall edit checks (0280, edit of the map); the map's DELETE (0266)                                                                       | none: no store outside Postgres                                                                                                |
+| tables (20)              | the op tools, table_update, table_commit, table_delete, the three snapshot tools                                                                                                  | 0278 at the tables broker's checked statement (an in-place batch's first statement, or a staged revision's flip); node_snapshots (0280); 0266 | the store: the A3b broker rule (docs/store-brokers.md); the test compares the workbook files                                   |
+| Files (8 + 3 MCP)        | file_rename, folder_rename, folder_describe, file_set_indexing, folder_set_indexing, file_move, folder_move, folder_delete; MCP's own folder_describe, folder_rename, file_rename | 0278, 0282, 0266, the move check                                                                                                              | the store: the files broker's flip (the disk follows the checked row, put back on a refusal); the test compares the files root |
+| app code and history (6) | app_file_write, app_file_delete, app_source_set, app_tools_set, app_snapshot_create, app_snapshot_delete                                                                          | the apps edit check (0280, D4: manage of the app's home, stricter than the pre-check's edit); node_snapshots (0280)                           | none for the code (one statement); the snapshot copy is staged and removed on a refusal                                        |
+
+**Kept (29), each with why** (the doc's rule: an entry goes only when its
+second reason is proven):
+
+- **A side effect before the checked statement:** app_build (the bundle is
+  stored in the object store before the flip), app_db_seed (the app's
+  directory is made before the registry row), app_db_schema_set and
+  app_delete (a committed pre_schema or pre_delete snapshot, and
+  app_delete's keepForOwner mark on the system pool, before the refused
+  write), app_snapshot_restore (the restore marker, the drain and a staged
+  revision before the checked flip; a full restore's data step may land
+  before its code step is refused), app_update (its node update commits
+  before the manifest write the database may refuse), file_delete (with
+  `delete_derived` its derived items are reaped before the file's own
+  checked DELETE), journal_resolve_gap (the answer entry is made before the
+  gap's checked UPDATE), page_split and page_extract_section (their child
+  pages are made before the source's checked write), tree_folder_delete
+  (the Files kind lifts the children out before the folder's checked
+  DELETE), tree_item_move (the pre-check refuses the whole list; the
+  database refuses item by item, so some would move).
+- **A write the database does not check:** app_table_export_set and
+  app_table_export_remove (`app_table_exports` is a write-role gap table:
+  nothing asks of the app), content_supersede (a read-only snapshot copy's
+  guard does not watch `superseded_by`, `superseded_reason`, `salience`).
+- **A read need:** app_duplicate and app_export (appCopy: the database asks
+  no read of the source app, nor the edit `with_data` needs).
+- **The answer:** the block tools (page_blocks_apply and the five
+  page_block_* tools: on a page with a draft, a scope that may not edit it
+  reads no draft, so its edit answers a draft conflict, "changed since you
+  read it", where the pre-check refused), app_publish (a scope that may not
+  read the draft finds nothing staged and answers `published: true`,
+  writing nothing), node_share and page_share (an existing link is
+  returned with no write, so only the pre-check stands there, and the
+  handler asks the login's workspaces, not the turn's), the page_from_*
+  conversions (the source's supersede is swallowed: the page would be made
+  and the source left; the whole call is refused today). The test pins the
+  block tools' and app_publish's answers (its "kept" cells).
+
+**Changed answers** (each recorded by the test; no refused write is made
+by any of them):
+
+- A scope that reads the item and may not make the write: "You cannot
+  change this item in your workspaces (<id>): ask for Write on it, or a
+  Moderator of its workspace." (a delete or a move: "... deleting or moving
+  it is for a Moderator of its workspace.") is now the mapper's words for
+  the database's refusal, "You cannot change this item in your
+  workspaces." (the id and the hint go). On MCP's hand-written renames:
+  "file_rename failed: ..." / "folder_rename failed: ...". The HTTP routes
+  are untouched (their own item gate).
+- MCP's hand-written folder_describe, folder_rename and file_rename on an
+  item the scope does not read: "Item <id> is not in your workspaces:
+  ..." -> "folder not found" / "file not found"; node_unshare (no
+  precondition): -> "not found (or not one you may read)". Every other
+  removed tool answered the precondition's "not found" before and after.
+- node_unshare and page_unshare, a scope that reads the item and may not
+  edit it: -> the handler's "Only someone who may edit this item may open
+  or close its link.".
+- access_set: -> its own "Brain items have no sharing level any more: ...",
+  as for every caller.
+- An unconfirmed page_move into a folder that adds readers, by a scope that
+  may not move the page: was refused; now asks to confirm (naming the
+  workspaces the destination adds, the caller's own), then the database
+  refuses the confirmed move.
+- **Queue time** (turnCallRefusal; A5 step 6a and step 5 fix round 2): a
+  call of a removed tool that needs approval is no longer refused before
+  it is queued when the asking scope may not make it (a Recall map named
+  by a slug it does not read, a workspace heartbeat's delete of an item
+  only Admin may change). It queues; its approval checks it again where it
+  was asked (A5 step 6c), passes (nothing left to ask), and runs there,
+  where the database or the tool refuses it: the call ends failed and
+  nothing is written. A kept tool (a share) is still refused before it is
+  queued (`packages/tools/src/turn-listing.test.ts`).
+- With the checks below `on` (an emergency only, the floor below), a
+  removed tool's write the database would refuse is made: warn logs it as
+  an actor miss (`edit:` or the write check's), off makes it silently.
+
+**Found, unchanged:** the author ceiling (withAuthorCeiling,
+lowerToTeamRules) lowers a member's app to team rules when the member may
+EDIT it, before the code write the database refuses unless it may MANAGE
+it (D4): a Write grant leaves the app at team rules and its code as it
+was. So with the pre-check too (the test pins it as a partial write).
+
+**The one gateway.** What is left of the machinery serves the kept entries
+from one place: the gate's pre-run check (`packages/tools/src/gate-prerun.ts`
+`itemPrecheck`) is the only caller of `toolItemWriteRefusalOf`. The app
+code tools' own second ask (withAuthorCeiling) went (the gate asked first,
+and lowerToTeamRules asks the edit itself), the hand-written MCP tools'
+own asks with their entries, and `toolItemWriteRefusal`, `read()`,
+`closeLinkTargets`, `treeFolderUpdateTargets`, `recallMap` and
+`recallRevisionTargets` with their last users. The queue-time folder rule
+(createFolderRefusal, `createsIn`) stays: it names a create's folder, not
+an item.
+
+**The checks' floor (the guard; migration 0298).** Once the pre-checks are
+gone, a check lowered at runtime leaves a tool's write unchecked. The
+shape chosen, and why:
+
+- **Lowering needs a reason, in the database.** `mantle_set_check` (and
+  `mantle_set_actor_check`, `mantle_set_edit_check`) take a fourth
+  argument, the reason, and refuse to lower a check (on to warn or off,
+  warn to off) without one: 42501, nothing changed. With one, the lowering
+  is a WARNING in the Postgres log and a record in the database setting
+  `mantle.check_lowered` (`mantle_check_lowered()`: when, which check,
+  from, to, the session user, the reason), cleared once both checks are on
+  again. The setters were already superuser-only (operator-only); the
+  reason makes it explicit and the record makes it logged where every
+  process and the integrity page read it. Raising needs no reason. A bare
+  `ALTER DATABASE` can still lower a setting (a superuser can do
+  anything): it leaves no record, so the next migrate raises it again.
+- **Every process says so.** While a check is below on, each app process
+  logs one `[db] SECURITY:` line (`packages/db/src/check-floor.ts`, read at
+  a pool's start and on its minute timer, said again only when it
+  changes) naming the check, the record or its absence, and the statement
+  that puts it back; the integrity row `check_floor` shows it.
+- **Migrate raises a box below on with no record** (a new database, a
+  restore, a bare ALTER DATABASE), the actor check first, on a box only
+  (the image's `NODE_ENV=production`: CI and test databases keep the
+  modes their runs set). Never fatal: a switch that cannot take its locks
+  is a warning. This keeps a fresh install and a restore from starting
+  looser than main (where the pre-checks stood in every mode).
+- **Not a refusal to boot.** An emergency lowering must keep the box
+  serving (that is why it is lowered), and a refusal to boot in warn or
+  off would also have refused a restore before its migrate and a
+  development database. The record plus the loud line plus the raise at
+  migrate are the guard.
+
+The restore runbook (`docs/update-prod.md`, "The checks' floor", and
+`scripts/db-restore.sh`'s messages): after a restore the stack's migrate
+sets both checks on; nothing to set by hand. Tests: the setter's rule
+(`packages/db/src/edit-check.db.test.ts`, "the floor (0298)"), the raise
+at migrate (`packages/db/src/check-floor.db.test.ts`), the line
+(`check-floor.test.ts`). Every test call that lowers a check passes the
+reason `'test'`.
+
+**Pins.** `itemPrecheckTools` 101 -> 29 (`scripts/arch-scoreboard.pins.json`,
+with its note), lowered family by family. `itemPrecheckRoutes` 27,
+unchanged (blocker 1). `consoleCalls` 474 -> 475: the floor's one line
+(packages/db cannot use @mantle/tracing). eslint `arch-lints.test.ts`
+reads the resolvers left. `item-write-gate.test.ts` names the 69 builtins
+the database checks (`DATABASE_CHECKED`) with each check, and fails if
+one declares items again. Re-recorded on purpose: the dispatch parity
+hashes of the 56 removed tools whose stubbed cases reached the pre-check,
+and the MCP call snapshot's page_update and file_rename cells on the
+refused item (the handler runs; the database refuses it on a box).
+
+**What is left (part 2):** the 27 HTTP entries, after blocker 1 (F4); then
+the kept tool entries, each by removing its second reason (a side effect
+moved after its checked statement, a check added, the answer fixed).
 
 ## Remove the switch-over code (A7)
 

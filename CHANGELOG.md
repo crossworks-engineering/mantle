@@ -4,6 +4,26 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## Unreleased: the tools' item pre-checks go (A5 step 6b, part 1)
+
+- **Deploy note:** roll this release only on a box whose actor check and
+  edit check are both `on` (`scripts/arch-scoreboard-box.sh <alias>`). Its
+  migrate raises a box below on with no recorded lowering to on.
+- **The checks' floor (migration 0298):** lowering a check needs a reason
+  (`select mantle_set_edit_check('warn', 50, 'why');`); without one the
+  setter refuses and changes nothing. A lowering is logged (the Postgres
+  log, `mantle_check_lowered()`, a `[db] SECURITY:` line in every process,
+  the integrity row `check_floor`). After a restore the stack's migrate
+  sets both checks on. docs/update-prod.md, "The checks' floor".
+- 72 of the 101 tool item pre-checks go: the database refuses the same
+  writes itself with both checks on (docs/actors.md, "Pre-check
+  deletion"). A tool refused for an item it reads and may not change now
+  says "You cannot change this item in your workspaces." (the id and the
+  hint go). A call that needs approval and names an item the asking scope
+  may not change queues now, and its approval fails where it was asked,
+  writing nothing. 29 tool entries and the 27 HTTP ones stay, each named
+  with its reason.
+
 ## Unreleased: A7, the switch-over code goes
 
 - **Deploy note:** a brain that is not on workspaces does not start: the
