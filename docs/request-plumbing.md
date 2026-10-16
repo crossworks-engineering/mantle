@@ -7,6 +7,8 @@ recording every answer before the move and holding every answer to it
 after, and pinned so the scattered form cannot come back. Part of the actor
 work: [actors.md](actors.md) links here. Rate limits: [below](#rate-limits-a10-8).
 The app tool broker (A10 #9, finding 9): [below](#app-tool-broker-a10-9).
+The audit lows of part 2 and #8 (path params, dates, paths, key ids, the
+machine 429): [below](#the-lows-of-part-2-and-8).
 
 ## Fold 1: one body reader
 
@@ -498,7 +500,9 @@ again later.", "code": "rate_limited", "retryAfter": N }`, with
   `Retry-After: N` (at least 1) and `Cache-Control: no-store`. The seconds
   are in the body too: a browser on another origin cannot read the header
   unless it is exposed. `code` is the one the workspaces contract already
-  names (`rate_limited`); the clients branch on the status. Every limiter
+  names (`rate_limited`); the clients branch on the status. A machine's
+  limit (the remote MCP, the OAuth server, an API key's budget) answers it
+  in its machine shape since the lows below: `error` stays the code. Every limiter
   of the tier answers it: the rows', the budgets the named route files keep
   (below), the API key budgets (`server/web/server/middleware/access-key-gate.ts`),
   a member's turns a minute (`server/web/lib/workspace-turn.ts`) and the member
@@ -853,15 +857,15 @@ rules (409 `reason: 'confirm'`, apps audit S1), the dispatch through the
 one gate as the app's broker (`appBrokerCaller`) in the run's scope, the
 logs and the answer (the tool's result as it is). Each route is a config:
 
-| Field | owner | member | contact |
-| --- | --- | --- | --- |
-| `via` | `'owner'` | `'member'` | `'contact'` |
-| `ownerId` | the anchor | the anchor | the share's owner |
-| who | `runner`: the admin login | `runner`: the member login | `share`: the share and its contact |
-| `maxBytes` | none (the `/api/apps` ceiling) | `JSON_BODY_CEILING_BYTES` | none (the `/s` ceiling) |
-| `app` | `getAppRuntime` | `memberAppOr404` (its own 404) | `getAppRuntime`, published build only |
-| rules | `appToolLevel('admin', holders, author)` | team rules | `contactAppToolVerdict` |
-| scope | web as system work at admin rules, else the app's scope | the app's scope, inside `system` (`asSystem` `'app-data'`) | `served`: the link's served items |
+| Field      | owner                                                   | member                                                     | contact                               |
+| ---------- | ------------------------------------------------------- | ---------------------------------------------------------- | ------------------------------------- |
+| `via`      | `'owner'`                                               | `'member'`                                                 | `'contact'`                           |
+| `ownerId`  | the anchor                                              | the anchor                                                 | the share's owner                     |
+| who        | `runner`: the admin login                               | `runner`: the member login                                 | `share`: the share and its contact    |
+| `maxBytes` | none (the `/api/apps` ceiling)                          | `JSON_BODY_CEILING_BYTES`                                  | none (the `/s` ceiling)               |
+| `app`      | `getAppRuntime`                                         | `memberAppOr404` (its own 404)                             | `getAppRuntime`, published build only |
+| rules      | `appToolLevel('admin', holders, author)`                | team rules                                                 | `contactAppToolVerdict`               |
+| scope      | web as system work at admin rules, else the app's scope | the app's scope, inside `system` (`asSystem` `'app-data'`) | `served`: the link's served items     |
 
 The link route still answers its own refusals first (the code gate, a
 share that is not an app's, an open link), then hands over. Rate limits
@@ -883,12 +887,12 @@ whole call).
 
 ### Named changes
 
-| Cell | Before | After |
-| --- | --- | --- |
-| owner, admin rules: an allowed call (read, write, a failing tool, an 8 MB body) | no Activity row | Activity row (`via: 'owner'`) |
-| owner, any rules: a refused call (not declared, a missing tool) | error row only | Activity row (`refused`) and the error row |
-| owner: a confirmation that expired or does not match | error row only | Activity row (`refused`) and the error row |
-| contact link: a refused call, a missing tool, a failing tool | Activity row and trail only | the error row too (`via: 'contact'`, the share and the contact) |
+| Cell                                                                            | Before                      | After                                                           |
+| ------------------------------------------------------------------------------- | --------------------------- | --------------------------------------------------------------- |
+| owner, admin rules: an allowed call (read, write, a failing tool, an 8 MB body) | no Activity row             | Activity row (`via: 'owner'`)                                   |
+| owner, any rules: a refused call (not declared, a missing tool)                 | error row only              | Activity row (`refused`) and the error row                      |
+| owner: a confirmation that expired or does not match                            | error row only              | Activity row (`refused`) and the error row                      |
+| contact link: a refused call, a missing tool, a failing tool                    | Activity row and trail only | the error row too (`via: 'contact'`, the share and the contact) |
 
 Nothing else changed: every status, body, verdict, refusal, surface, gate
 caller and scope is as main answered, and every db broker schedules the
@@ -931,3 +935,84 @@ wrote.
 - `packages/tools/src/dispatch-entries.test.ts` and
   `packages/tools/src/owner-call-sites.test.ts` name the broker as the one
   app entry and pin the surface it passes (`run.surface`).
+
+## The lows of part 2 and #8
+
+An audit's low findings on the two folds and the rate limits, each fixed
+behind the gateway that owns the job. Every changed answer is named:
+`server/web/server/a10-lows.db.test.ts` records 59 cells on main against a
+real database (`__snapshots__/a10-lows.main.txt`) and holds each to its
+recorded answer or its named change; the unit sweeps name theirs in their
+changes files.
+
+- **Path params (part 2 #1).** A route file declares what its segments
+  must be, beside its handlers (`server/web/lib/route-params.ts`):
+
+      export const routeParams = { id: 'uuid' } as const satisfies RouteParams;
+
+  The route loader reads it once the module is loaded and the caller is
+  answered, and a segment the schema refuses is the one 404
+  (`{ "error": "not found" }`) before the handler, its body or the
+  database see it. Before, an [id] that was not a uuid reached the
+  database, whose uuid cast was the opaque 500 (a hand catch said it as a
+  400 with the SQL before fold 2). Declared on every route under
+  `/api/events/[id]`, `/api/journal/[id]`, `/api/contacts/[id]`,
+  `/api/heartbeats/[id]`, `/api/tables/[id]` and `/api/formulas/[id]`; an
+  `/api/v1` alias re-exports its base's `routeParams` with its handlers
+  (pinned by `route-params.test.ts`). An item write route on a brain on
+  workspaces still answers the item write gate's own 404 first
+  (`{ "ok": false, "error": "not found" }`, `lib/auth/session.ts`), as on
+  main. Named: 25 cells 500 to 404, and `POST /api/formulas/:id/evaluate`
+  404 with `formula '<id>' not found` to the gateway's 404. The Studio
+  prose history takes its entity id in the query or the body, not the
+  path: `lib/studio/prompt-versions.ts` answers one that is not a uuid as
+  no history (`GET`, 200 with no versions) and no entity (save and revert,
+  400), where each was the opaque 500.
+
+- **A heartbeat's earliestAt (part 2 #2)** is an ISO date-time with Z or
+  an offset (`z.string().datetime({ offset: true })`, what the settings
+  form sends): any other string was an Invalid Date the database refused
+  as the opaque 500; it is the schema's 400 now. Stricter than main for a
+  string `new Date()` read but no ISO date-time (a bare date): named.
+- **A Files destination that is no path (part 2 #3).** The visibility
+  confirm (`packages/content/src/tree/visibility.ts`) cast the destination
+  to ltree before the write could refuse it. It asks the database's own
+  parser first (`pg_input_is_valid`, exact for every label a path may
+  hold); a path that is none names no folder, the confirm passes it, and
+  the write refuses it with its own 400 ("no folder at ..."). Named: a file
+  or folder moved or copied, and a new file, into such a path, 500 to 400.
+- **A key id the vault has no key for (part 2 #3).** `inputOnMissingRef`
+  (`@mantle/db`, beside `conflictOnUnique`) answers a violation of a
+  foreign key it is given by name as an InputError (400) with that key's
+  words; any other violation stays a fault. The agent and AI worker
+  create and update routes give it their key and worker references
+  (`ROUTE_KEY_REFS`, `server/web/lib/model-route-pair.ts`). Named: six
+  cells 500 to 400.
+- **The OpenAPI connector's create race (part 2 #3).** Two creates that
+  both pass the "already exists" check: the insert that loses answers the
+  check's words as a ConflictError (409) through `conflictOnUnique`, not
+  the opaque 500 (`packages/tools/src/openapi-create-race.test.ts`).
+- **The profile photo (part 2 #4).** The route's own refusal of a declared
+  body over twice the cap could never answer: the gate refuses the same
+  size first with the one 413. Removed; a file under the ceiling but over
+  the cap still gets the route's own words.
+- **The 413's words (part 2 #6)** say KB below 1 MB: "at most 64 KB" on
+  the sign-in routes and the contact code, where they said "at most 0 MB".
+  Named in the body sweep (`ceiling-in-kb`, 8 cells).
+- **Test support out of the answer (part 2 #7).** `appAnswerOf` moved from
+  `server/web/server/app-error.ts` to `server/web/server/test-support.ts`.
+- **The machine 429 (#8 L1).** The OAuth server, the remote MCP and the
+  API key gate answered `{ "error": "rate_limited" }` before #8, and an
+  OAuth client reads `error` as the RFC 6749 code. Their 429 keeps it now:
+  `{ "error": "rate_limited", "code": "rate_limited", "message": "Too many
+requests. Try again later.", "retryAfter": N }` (`machine: true` on the
+  `mcp`, `oauthRegister` and `oauthToken` limits; the MCP route's
+  per-caller budget and the key gate pass the shape). Named: the rate
+  sweep's `machine-429` (12 probes) and the guard sweep's three
+  `POST /api/oauth/register` cells that met the limit.
+- **The bare reader on push connect (#8 L4)** is commented: it is there
+  for the route manifest, which gives the row its caller and so its
+  per-login limit.
+- **Sign-out's cross-site row (#8 L5)** is driven through the gate and
+  the loader in `auth-post-guard.test.ts`: 403 for a cross-site browser
+  post whatever its body, 200 for its own callers.

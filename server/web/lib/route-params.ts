@@ -17,7 +17,6 @@
  * route-params.test.ts).
  */
 import { isUuid } from '@mantle/std';
-import { CACHE_CONTROL } from './cache-control';
 
 /** What a segment can be held to. */
 export const ROUTE_PARAM_KINDS = { uuid: isUuid } as const;
@@ -30,12 +29,10 @@ export type RouteParams = Readonly<Record<string, RouteParamKind>>;
 /** The name of the export a route file declares its params by. */
 export const ROUTE_PARAMS_EXPORT = 'routeParams';
 
-/** The one answer for a segment the schema refuses. */
+/** The one answer for a segment the schema refuses (the gate gives it
+ *  `Cache-Control: no-store`, as every /api answer that names none). */
 function notFound(): Response {
-  return Response.json(
-    { error: 'not found' },
-    { status: 404, headers: { 'Cache-Control': CACHE_CONTROL.none } },
-  );
+  return Response.json({ error: 'not found' }, { status: 404 });
 }
 
 /**

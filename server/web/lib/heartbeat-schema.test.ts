@@ -22,10 +22,9 @@ describe('earliestAt', () => {
       '2026-10-20T10:00:00+02:00',
       null,
     ]) {
-      expect(CreateHeartbeatBody.safeParse({ ...CREATE, earliestAt }).success, earliestAt).toBe(
-        true,
-      );
-      expect(UpdateHeartbeatBody.safeParse({ earliestAt }).success, earliestAt).toBe(true);
+      const label = String(earliestAt);
+      expect(CreateHeartbeatBody.safeParse({ ...CREATE, earliestAt }).success, label).toBe(true);
+      expect(UpdateHeartbeatBody.safeParse({ earliestAt }).success, label).toBe(true);
     }
     const parsed = UpdateHeartbeatBody.parse({ earliestAt: '2026-10-20T08:00:00.000Z' });
     expect(toUpdateInput(parsed).earliestAt?.toISOString()).toBe('2026-10-20T08:00:00.000Z');

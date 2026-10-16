@@ -335,7 +335,9 @@ export function takeRouteLimits(
   const query = o.query ?? new URL(o.req.url).searchParams;
   const takes: RateLimitResult[] = [];
   const peeks: Array<[RateLimitSpec, string]> = [];
-  const shape: RateLimitedShape = names.some((n) => (RATE_LIMITS[n] as RateLimitSpec).machine) ? 'machine' : 'person';
+  const shape: RateLimitedShape = names.some((n) => (RATE_LIMITS[n] as RateLimitSpec).machine)
+    ? 'machine'
+    : 'person';
   for (const name of names) {
     const spec: RateLimitSpec = RATE_LIMITS[name];
     if (!o.scopes.has(spec.per)) continue;

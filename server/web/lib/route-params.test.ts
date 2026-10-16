@@ -30,7 +30,6 @@ describe('routeParamsRefusal', () => {
       const res = routeParamsRefusal({ id: 'uuid' }, '/api/x/:id', { id });
       expect(res?.status, id).toBe(404);
       expect(await res!.json()).toEqual({ error: 'not found' });
-      expect(res!.headers.get('cache-control')).toBe('no-store');
     }
   });
 

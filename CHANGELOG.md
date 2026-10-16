@@ -23,6 +23,19 @@ deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
 ## Unreleased: boot smoke; every package is an ES module
 
+- **A10 lows (HTTP answers).** An [id] that is not a uuid on the event,
+  journal, contact, heartbeat, table and formula routes (and their
+  `/api/v1` aliases) is a 404 `{ "error": "not found" }` from the route
+  loader's params schema (`routeParams`), where it was the opaque 500. A
+  heartbeat's `earliestAt` must be an ISO date-time (Z or an offset); a
+  Files move, copy or new file into a path that is no folder path, and an
+  agent or AI worker naming a key id or TTS worker that is not there, are
+  the caller's 400; a losing OpenAPI connector create is a 409. The 429 of
+  the OAuth server, the remote MCP and the API key gate keeps
+  `error: "rate_limited"` (the text moves to `message`). A ceiling under
+  1 MB is said in KB in the 413. Every change is named in
+  `docs/request-plumbing.md` ("The lows of part 2 and #8").
+
 - **`pnpm boot:smoke`** starts every server process the way the image does
   (each compose service's own command, web through the image CMD, plus the
   stdio MCP server) up to the point where its imports link, then exits; no
@@ -95,7 +108,6 @@ deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
   plus id normalization, no table of models). The dashboard's context bars
   use the same helper (`contextWindowFor`) over the same cached model list,
   so the agent form and the dashboard show one number.
-
 
 ## Unreleased: direct providers list their models in the picker
 
@@ -507,7 +519,7 @@ go to the stack directory's owner, as the pre-roll backup's do.
 - **Routes** (admin logins): `GET /api/services` (state, plain descriptions
   with download size and memory, the small-box warning, the current run),
   `GET /api/services/status` (progress), `POST /api/services/:name
-  { enable }`, audited as `service.toggle`. A switch is refused while a roll
+{ enable }`, audited as `service.toggle`. A switch is refused while a roll
   runs, and a roll while a switch runs. The brain offers the switch only
   when the updater advertises the verb.
 - docs/services.md (new); sandboxes.md, video-ingest.md and self-hosting.md
@@ -654,7 +666,7 @@ docs/conversation.md section 6c.
 - **Continue from this** seeds the new chat with the archived thread's
   summary, writing the summary first when it is missing.
 - **Routes:** `GET/POST /api/assistant/threads`, `GET
-  /api/assistant/threads/:id`, `POST …/:id/continue` and `…/:id/summarize`.
+/api/assistant/threads/:id`, `POST …/:id/continue` and `…/:id/summarize`.
   `/thread` and `/messages` answer the open thread only
   (`messages?thread=<id>` pages an archived one).
 - Deleting an agent removes its archive notes with the digests.
@@ -730,7 +742,7 @@ only.
   short, media, encrypted PDF, missing bytes, a digest, an empty Telegram
   turn) kept no embedding, so the boot drain and every provider recovery
   queued it again. Such skips now stamp `data.extract_skipped = { reason, at
-  }`, and the drain leaves the node alone while the stamp is newer than its
+}`, and the drain leaves the node alone while the stamp is newer than its
   `updated_at`. An edit makes the stamp stale; a successful pass removes
   it. `pnpm maintain extract-skip-stamp` (dry run; `--apply`) stamps the old
   loops in plain SQL.
@@ -756,7 +768,7 @@ Fixing the account did not move the backlog until a restart.
   the extract queue and probes at 5, 10, 20, 40 minutes, then hourly. When a
   probe works the queue resumes, dead letters are re-driven and unextracted
   nodes swept, with no restart. A settings save or **Try again** (`POST
-  /api/embedding/recover`) probes at once. The boot line says PAUSED while
+/api/embedding/recover`) probes at once. The boot line says PAUSED while
   the circuit holds the queue.
 - **Same-model backup:** Settings suggests OpenRouter for OpenAI direct and
   the reverse; onboarding sets it when the key is saved. The OpenAI adapter
@@ -765,7 +777,7 @@ Fixing the account did not move the backlog until a restart.
 ## 0.237.13: box-maintain.sh, and a bounded chunk-windows backfill
 
 - **`scripts/box-maintain.sh <box> <task> [args]`** runs a long `pnpm
-  maintain` task in a throwaway sibling of `mantle_web` (same image and
+maintain` task in a throwaway sibling of `mantle_web` (same image and
   network, the web env through a pipe, its own memory limit, `--rm`, a
   mode-600 log file). It refuses a second run on the box. `--status`,
   `--logs`, `--follow`, `--stop`. `pnpm maintain` now always ends with one
@@ -960,10 +972,10 @@ public address belonged to whoever reached it first.
   is unclaimed, and `--setup-code` prints it again. Signup needs it while no
   account exists and a code is set (403 `reason: 'setup-code'`, audited).
   Unset changes nothing. `bootstrap-state` answers `{ firstRun,
-  setupCodeRequired }`. Contract: `BootstrapStateDTO`, `SignupBody`,
+setupCodeRequired }`. Contract: `BootstrapStateDTO`, `SignupBody`,
   `SignupRefusedReason`.
 - **The terminal wizard.** `scripts/onboard.sh` (box wrapper) and `pnpm -C
-  server/web onboard` walk the wizard's own steps (`lib/onboarding-steps.ts`,
+server/web onboard` walk the wizard's own steps (`lib/onboarding-steps.ts`,
   now shared with the onboarding route) with a default for every prompt,
   resumable either way with a GUI client. Secrets come hidden or on stdin,
   never in argv. `onboard.sh` ships with the release scripts, and the
@@ -1162,7 +1174,7 @@ An app's code AND its data can now be put back
   marker beside the file: every broker and the SQL child answer busy (429)
   for the few seconds the swap takes.
 - **Routes:** `GET/POST /api/apps/:id/snapshots`, `GET/PATCH/DELETE
-  …/snapshots/:sid`, `…/restore`, `…/download` (the `.sqlite` copy).
+…/snapshots/:sid`, `…/restore`, `…/download` (the `.sqlite` copy).
 - **Tools:** `app_snapshot_create`, `app_snapshot_list` (group `apps`);
   `app_snapshot_restore`, `app_snapshot_delete` (group `app-admin`, both
   confirm-gated).
@@ -1326,7 +1338,7 @@ the team (docs/sharing.md section 4b). The item's level never changes.
   `client_written_at` marked). Never brain tools. A "Shared with you" menu
   on the view links the contact's other live shares.
 - **Owner API.** `POST /api/contacts/:id/sharing`, `GET` and `DELETE
-  /api/contacts/:id/shares` (the "Shared" tab, Revoke all),
+/api/contacts/:id/shares` (the "Shared" tab, Revoke all),
   `POST /api/shares/contacts`, `PATCH /api/shares/:id { canWrite }`;
   `DELETE /api/shares/:id` on a contact share changes no level.
   `contactShares` on the access view and `access_get`; Shared links name
@@ -1336,7 +1348,7 @@ the team (docs/sharing.md section 4b). The item's level never changes.
   old client links, comments visibility, app share mode) skip them.
 - **Contract** (`@mantle/client-types`): `dto/contact-shares.ts`,
   `AccessNodeView.contactShares`, `SharedLinkRow.contactId/contactName/
-  canWrite`, `NeedsYou.sharing`; `ContactRow.sharing` in content-core.
+canWrite`, `NeedsYou.sharing`; `ContactRow.sharing` in content-core.
 - **Races and the trail (audit fix round).** A share create locks the
   contact's code row before its sharing-on check, so a switch off running
   at the same time cannot leave a live share; Enable from off revokes any
@@ -1420,7 +1432,7 @@ never lost the trigger.
   maintenance worker runs, the nightly `share-drift` sweep had already
   bounded a stale level to about a day; its run history shows whether a box
   was hit. To check a box: `select count(*) from pg_trigger where tgname =
-  'nodes_share_refresh_after'` (1 is right). A "lock timeout" on 0212 in a
+'nodes_share_refresh_after'` (1 is right). A "lock timeout" on 0212 in a
   roll means a long transaction held `nodes`: run the roll again.
 - **`scripts/db-restore.sh`** checks every trigger the dump lists
   (`pg_restore --list`) and exits 2, without "Restore complete", when one is
@@ -1869,7 +1881,7 @@ UI 7 of 10; no Blockers). Migrations 0195, 0196, 0197.
 ## 0.232.341: memory benchmark experiments
 
 - **Benchmark runs can change retrieval limits.** `bench:memory
-  --memory-config='{"chunk_limit":20}'` runs with the retrieval limits a
+--memory-config='{"chunk_limit":20}'` runs with the retrieval limits a
   real brain's agent carries, so a setting that scores better can be applied
   to a brain as it is.
 - **The benchmark's answer prompt may infer.** The default answer prompt now
@@ -2093,7 +2105,7 @@ docs/client-logins.md.
 ## 0.232.330: memory benchmarks, and entities no longer lost to a race
 
 - **A benchmark harness for the whole memory path.** `pnpm -C server/api
-  bench:memory` runs LoCoMo and LongMemEval through the real brain: each
+bench:memory` runs LoCoMo and LongMemEval through the real brain: each
   conversation goes into its own scratch database as dated notes, the
   shipped extractor processes them, the responder's retrieval answers each
   question, and the published judges grade it. Manual runs only, with a cost
@@ -2133,8 +2145,7 @@ now (C2, C2b), so the old links retire (decision 4 A).
   (`linkLevels`).
 - **Shared links** (Team admin) lists the retired client links, without a
   token: title, level now, views, last view, retired date.
-- From C2b: `GET /api/auth/client-code` fails closed (codes off, never a
-  500) when the sender cannot be read; the code routes join the public
+- From C2b: `GET /api/auth/client-code` fails closed (codes off, never a 500) when the sender cannot be read; the code routes join the public
   session sweep.
 
 ## 0.232.327: keyword search finds the rare words in a chat question
@@ -2159,8 +2170,8 @@ now (C2, C2b), so the old links retire (decision 4 A).
   shows only when the brain sends codes; otherwise the page says to ask the
   admin for a sign-in link. /login has a quiet line for clients. Team admin
   > Clients has a "Sign-in codes by email" card: pick the sender (or none),
-  see the sent folders kept out of the brain, and a banner when the daily
-  limit is reached.
+  > see the sent folders kept out of the brain, and a banner when the daily
+  > limit is reached.
 
 ## 0.232.325: client email codes, asking again
 
@@ -2372,7 +2383,7 @@ with an open link.
   old client link off keeps the item at client. `/api/shares/all` shows each
   link's level. Contract type `ShareRetiredReason`, `SharedLinkRow`.
 - **"What clients see"** (`GET /api/access/client-report`, `POST
-  /api/access/client-report/ack`, table `client_report_acks`): every item
+/api/access/client-report/ack`, table `client_report_acks`): every item
   at client level, its old link and views, the addresses a page was
   emailed to, and the team or admin items it names. Adding a client (C2)
   waits until an admin acknowledges it. Contract types `ClientReport*`.
@@ -3127,8 +3138,6 @@ and the disk-sync watcher now stores dropped media instead of silently
 ignoring it — never transcribing on its own; transcription is only ever the
 explicit tool.
 
-
-
 SheetJS (`xlsx`) read every spreadsheet that entered the brain. It has not
 published to npm since 0.18.5, and that release carries a prototype-pollution
 and a ReDoS advisory — both reachable, because the code parses bytes a user
@@ -3385,7 +3394,7 @@ Every other field on that DTO describes the SHARE. This one describes the thing
 shared, and it is carried because for an event the two are not interchangeable.
 The `/team` section cards show `updatedAt` — right for a note or a table, and
 useless for an event. A member scanning what is coming up needs when it
-*happens*; an event edited this morning has no business sorting above one that
+_happens_; an event edited this morning has no business sorting above one that
 starts tomorrow.
 
 The row query already selected `nodes.data`; the mapper simply read `icon` and
@@ -3395,7 +3404,7 @@ type, so a client pinned to an older server still parses the payload.
 ## 0.231.0: the share presenters learn which shell they are in (branch feat/team-presenter-chrome)
 
 Every presenter in `@mantle/share-ui` was written for one surface: the
-anonymous public `/s` page, where the presenter *is* the page. `/team` then
+anonymous public `/s` page, where the presenter _is_ the page. `/team` then
 reused them inside a master-detail pane, and two of those choices became wrong
 at once.
 
@@ -3416,8 +3425,8 @@ means the surrounding shell already owns the title and the padding, so the
 presenter drops its hero title, tightens the vertical rhythm, and stops
 centring.
 
-⚠ `'embedded'` is **not** a synonym for full-bleed. It means *the shell owns
-the chrome*; what to do with the width is still the content's call. A table, a
+⚠ `'embedded'` is **not** a synonym for full-bleed. It means _the shell owns
+the chrome_; what to do with the width is still the content's call. A table, a
 media viewer and a file row all get better as they get wider, so they span the
 pane. A note does not — a 2000px line is unreadable in anyone's pane — so prose
 keeps its measure and simply stops being centred under a title it no longer
@@ -3496,7 +3505,7 @@ which is exactly why it stayed hidden.
 Also: `GET /api/assistant/thread` takes `?withMessages=0`, returning the agent
 picker list and the resolved active agent without the 100-message thread. The
 mobile companion needs both at launch — it holds no agent cookie, so the
-server's resolution *is* its default, and that resolution is what now respects
+server's resolution _is_ its default, and that resolution is what now respects
 `agents.assigned_user_id` — but it pages its own history from the local cache,
 so the thread was fetched and dropped on every cold start. Opt-out, so every
 existing caller is untouched.
@@ -3606,8 +3615,8 @@ matching how these vendors number releases rather than how decimals sort.
 ## 0.223.3: An assistant that answers to its own name (branch feat/agent-name-token)
 
 **A copied assistant introduced itself as the one it was copied from.** Give a
-login its own assistant called Tommy and his prompt still opened *"You are Mira
-— a specialist assistant to a Risk-Based Inspection team"*, because cloning
+login its own assistant called Tommy and his prompt still opened _"You are Mira
+— a specialist assistant to a Risk-Based Inspection team"_, because cloning
 copies the prompt verbatim and the name lived in the prose. Caught on a live
 box the day per-login assistants shipped.
 
@@ -3669,7 +3678,7 @@ skills, tool groups and delegation all come across, so it can reach the shared
 specialists from its first turn. Three things deliberately don't:
 
 - **Persona notes.** What an assistant learned about the person it was talking
-  to is about *that* person. A copy starts with none.
+  to is about _that_ person. A copy starts with none.
 - **Telegram.** A bot binding is a row against the old agent id, so a copy has
   no transport and no credentials — by construction, not by filtering.
 - **Rank.** A copy sits one priority below its source. Headless callers (event
@@ -3717,7 +3726,7 @@ paragraph before the image, putting a blank line above every picture.
 
 Three edges, decided rather than left to chance:
 
-- **Shown twice.** A reply that writes the image inline *and* calls `show_image`
+- **Shown twice.** A reply that writes the image inline _and_ calls `show_image`
   for the same file used to show it in both places. The reply's own placement
   wins; the strip copy is dropped at finalize. Mechanical, not prompt-only,
   because a confused model doing both is exactly the case a prompt misses.
@@ -3777,8 +3786,8 @@ change.
 **The chat worker's "Test" button did not test what production runs.** It read
 `api_key_id` directly, took the adapter and called `.chat()` — reproducing
 neither of the two things chat routing actually does. So it lied in both
-directions: a keyless `local` worker failed its test with *no api_key
-configured* while working perfectly in production, and a worker whose primary
+directions: a keyless `local` worker failed its test with _no api_key
+configured_ while working perfectly in production, and a worker whose primary
 was down but whose backup was healthy also failed, though every real caller
 would have been served. It now goes through `resolveChatRoutes` +
 `chatWithFailover` — the production path — and reports which route answered, so
@@ -3850,7 +3859,7 @@ the workstation passed and the deployed demo failed.
 ## 0.216.7: Adding a Microsoft scope quietly killed every older account (branch claude/sharepoint-auth-directory-listing-d78be4)
 
 **A connected Microsoft account had a shelf life measured from the last time we
-edited a constant.** Every token refresh asked Azure for the app's *current*
+edited a constant.** Every token refresh asked Azure for the app's _current_
 scope list, but on the refresh leg Azure only honours scopes the user actually
 consented to — anything beyond that set is not a widened grant, it's a rejected
 request. So the day `Mail.Send` joined the list, every account connected before
@@ -3865,13 +3874,13 @@ code-exchange legs still ask for everything, because that is where consent is
 actually given.
 
 **The failure was also invisible from both ends.** Server-side, the refresh
-error was recorded onto `ms_accounts.last_sync_error` *inside* the transaction
+error was recorded onto `ms_accounts.last_sync_error` _inside_ the transaction
 it then aborted by rethrowing — the write rolled back with everything else, so
 an account that had been failing for a fortnight still read as healthy. It is
 now written after the transaction unwinds. Client-side, a token failure threw a
 plain `Error` with no status, so the drive browser's "reconnect the account"
-branch never fired and the folder picker said only *Could not list the folder.
-Try again* — advice that could never work. `invalid_grant` now carries a 401,
+branch never fired and the folder picker said only _Could not list the folder.
+Try again_ — advice that could never work. `invalid_grant` now carries a 401,
 which is the branch that tells the truth, and the browse route logs the
 underlying Graph error instead of swallowing it.
 
@@ -3880,7 +3889,7 @@ underlying Graph error instead of swallowing it.
 **Every parser in the stack was text-only, so a diagram in a Word file or a
 screenshot in a PDF manual was dropped on the floor** — invisible to recall and
 to display alike. Some answers cannot be described, only shown: a screenshot of
-a settings screen *is* the answer to "how do I configure this". Documents now
+a settings screen _is_ the answer to "how do I configure this". Documents now
 give their pictures up.
 
 `extractEmbeddedImages` mirrors the text path's three tiers — docx through
@@ -3890,7 +3899,7 @@ Tika's `/unpack/all`, a capability that container always had and we had never
 called. Extracted pictures become ordinary image files under
 `files/extracted-images/<document>/`, which is what keeps the change small: the
 extractor already indexes images (vision describe plus OCR, which reads the
-labels *inside* a screenshot), and Pages already embeds a stored image by node
+labels _inside_ a screenshot), and Pages already embeds a stored image by node
 id.
 
 **Reading order is the feature, not a detail.** A manual's screenshots are only
@@ -3914,7 +3923,7 @@ carries a hundred images — logos, bullets, one icon per slide — and describi
 them all would be a hundred LLM calls. Pulling bytes out is free and always
 happens; only survivors of deterministic filters (container, pixel dimensions,
 byte floor, duplicate collapse, thirty per document) are worth a vision call.
-The byte floor is deliberately *low*: flat line art compresses to about 2 KB, and
+The byte floor is deliberately _low_: flat line art compresses to about 2 KB, and
 an initial 8 KB floor rejected precisely the diagrams this exists for. Pixel
 dimensions do the real filtering.
 
@@ -3942,7 +3951,7 @@ dry-run by default. The documents themselves are free: the image pass sits ahead
 of the extractor's already-extracted guard, so no text, summary or embedding
 work re-runs.
 
-Fixed while here: `upsertFile` reset a file's title to its filename on *every*
+Fixed while here: `upsertFile` reset a file's title to its filename on _every_
 upsert, so any deliberately-titled file silently reverted on re-ingest.
 
 ## 0.213.1: The rest of the "all good" over a dead brain (branches feat/healthcheck, feat/sanity-services, feat/test-timeouts)
@@ -4216,7 +4225,7 @@ stays a Next.js app, untouched.
   compose adoption, per-box smoke checklist, the pg17-era notes, rollback).
 - **The runtime moves to Node 26** (`26.5.0`, V8 14.6) — base image
   `node:26-slim`, `engines: node >=26`, `.nvmrc` and CI matched. Node 26 is the
-  *current* line, not yet LTS; it promotes around Oct 2026, so until then this
+  _current_ line, not yet LTS; it promotes around Oct 2026, so until then this
   pin rides ahead of LTS deliberately, for the V8 and stream performance work.
   Nothing in the application tree needed changing: the only native/wasm
   dependencies (`@napi-rs/canvas`, `libsodium-wrappers`) are N-API/wasm and
@@ -4323,7 +4332,7 @@ fallback is deprecated.
 
 **Postgres 18 is the default; Tika and Chromium bumped.** The bundled database moves
 to PostgreSQL 18 (pgvector `pg18` = PG 18.4 + pgvector 0.8.5) — fresh installs come
-up on 18 directly. Postgres 17 → 18 is a *major* upgrade for an existing box (it
+up on 18 directly. Postgres 17 → 18 is a _major_ upgrade for an existing box (it
 needs a dump/restore, not a tag swap), so the image is env-gated via
 `POSTGRES_IMAGE_TAG` (default `pg18`; pin `pg17` to defer), and the service now sets
 `PGDATA=/var/lib/postgresql/data` — the pg18 images moved the default data path and
@@ -4347,7 +4356,7 @@ degrades the column to plain text with values intact.
 
 A reference column **always stores as text** — the engine maps `reference →
 select` at every storage / read / filter boundary via `storageType()`. (An
-earlier cut of v2.2 explored per-column reference *modes* — a checkbox variant
+earlier cut of v2.2 explored per-column reference _modes_ — a checkbox variant
 and a deferred multi — but they were removed before release: the checkbox mode
 was flaky and the mode machinery widened the type surface for no user-visible
 gain. A linked column now has exactly one behavior.)
@@ -4478,7 +4487,7 @@ recognition from the hub. Full notes: `docs/_changelog/0.120.0.md`.
 ## v0.119.1 — 2026-07-07
 
 **See what the validator sees.** v0.119.0's argument validation ships in
-warn mode — recording what it *would* correct while changing nothing. The
+warn mode — recording what it _would_ correct while changing nothing. The
 new **`/debug` → Tool validation** tab makes that telemetry readable without
 SQL: the box's active mode (with what it means and how to flip it), flagged
 calls per tool over a selectable window (repairs / unknown keys /
@@ -4491,14 +4500,14 @@ the page says so, so an empty tab means "nothing flagged", not "no data".
 ## v0.119.0 — 2026-07-07
 
 **Tool calls stop being a wild card.** Until now, most of what kept an
-agent's tool use correct was *prose* — descriptions asking the model to pass
+agent's tool use correct was _prose_ — descriptions asking the model to pass
 the right types, call things in the right order, and report honestly. This
 release moves those rules into enforced machinery, end to end (the full
 architecture: [docs/tool-reliability.md](docs/tool-reliability.md)):
 
 - **Every call is validated against the tool's own schema.** Harmless drift
   is repaired automatically (`"42"`→`42`, a bare value where a list belongs,
-  stringified JSON); real violations produce *teaching errors* that name the
+  stringified JSON); real violations produce _teaching errors_ that name the
   field, what was expected, what arrived, and the closest valid alternative
   ("did you mean 'limit'?"), so the model fixes itself in one retry. Ships in
   **warn mode** (telemetry only, zero behaviour change); flip
@@ -4527,7 +4536,7 @@ architecture: [docs/tool-reliability.md](docs/tool-reliability.md)):
   per-tool in Settings → Tools).
 - **Wrong-id calls teach instead of confusing.** Pages/tables tools check
   their ids up front and say exactly what's wrong — including the case no
-  handler used to catch: "that id is a *note*, not a page."
+  handler used to catch: "that id is a _note_, not a page."
 - **Multi-block page edits are atomic.** New `page_blocks_apply` applies up
   to 50 block edits in one all-or-nothing call (one draft save; any failure
   aborts with the failing op named). The half-edited-draft failure mode from
@@ -4550,7 +4559,7 @@ as the fresh-install fallback), so upgrades propagate everywhere again.
 exposed a chain of agent-editing failures, all fixed here:
 
 - **Write batches are atomic.** The tool-loop's volume caps (40 calls/turn,
-  15/tool) used to trip *mid-batch* — a 10-delete batch got cut at 1-of-10 and
+  15/tool) used to trip _mid-batch_ — a 10-delete batch got cut at 1-of-10 and
   left the draft half-edited. Caps now enforce at batch boundaries: a batch
   that starts under its caps always completes; when the budget ends the turn,
   the model is told explicitly so it reports what's done vs what remains.
@@ -4574,7 +4583,7 @@ exposed a chain of agent-editing failures, all fixed here:
 Contacts you mint team tokens for) get their own chat at **/team**: they enter
 their token once and can ask the brain anything it knows — project history,
 documents, decisions — with attachments and live streaming, in a private
-thread that remembers them. What they *can't* do is change anything: the team
+thread that remembers them. What they _can't_ do is change anything: the team
 responder is strictly read-only, and any "please update / fix / add this"
 becomes a **request** in your review queue, where you (or a specialist) act on
 it and send the reply straight back into their thread.
@@ -4612,8 +4621,8 @@ itself is updating it — those now proceed without stalls or the occasional
 
 **Your assistant can read your apps' data.** If a mini-app keeps its own
 database — a tracker, an inventory, a log — you can now just ask about it in
-chat: *"how many open items in my tracker app?"*, *"what's in the inventory
-table?"*. The assistant discovers which apps have data and reads it directly to
+chat: _"how many open items in my tracker app?"_, _"what's in the inventory
+table?"_. The assistant discovers which apps have data and reads it directly to
 answer. It's **read-only** — the assistant can look but never change an app's
 data — and it works across all your apps with no setup. (Apps with clearly named
 tables and columns are the easiest for it to answer from.)
@@ -4630,7 +4639,7 @@ standard backup from now on.
 ## v0.115.1 — 2026-07-04
 
 **Shared apps got safer, and gained an activity log.** Public app links are now
-strictly limited to the app's *own* data — they can no longer reach your notes,
+strictly limited to the app's _own_ data — they can no longer reach your notes,
 email, or other brain tools, so a "public" app can never become a window into
 your private information. Team-shared apps stay full-featured for the people you
 name, and every open, tool call, and data write is logged on the app's Activity
