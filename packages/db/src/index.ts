@@ -124,7 +124,6 @@ export {
   enterRequestScope,
   noteRequestSystem,
   setRequestActor,
-  noteRequestWriteScope,
   requestWriteScope,
   noteRequestCreateHome,
   withCreateHome,

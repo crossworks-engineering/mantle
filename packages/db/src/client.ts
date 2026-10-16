@@ -46,7 +46,6 @@ import {
   currentCreateHome,
   currentSystemTx,
   requestScopeMemo,
-  loginWriteScope,
   type CreateHome,
   type SystemTxNest,
   type TxHooks,
@@ -900,11 +899,10 @@ type LoginWriteRoute = {
  *    one process). Off is the rollout switch: today's path, no statement
  *    and no round trip added;
  *  - the actor is a login, an assistant, a link or a contact;
- *  - the write carries a scope its reads use too (loginWriteScope: a
- *    login's mutating request scope, an Admin turn; not an Admin user's
- *    write request, whose reads are unscoped). asSystem masks it, and a
- *    named repair or an Admin area route binds a system actor: both stay
- *    on the system pool.
+ *  - the write carries a scope its reads use too (requestWriteScope: a
+ *    login's mutating request scope, an Admin user's too since F4, an
+ *    Admin turn). asSystem masks it, and a named repair or an Admin area
+ *    route binds a system actor: both stay on the system pool.
  */
 function loginWriteRoute(): LoginWriteRoute | null {
   if (!loginWritePoolOpen()) return null;
@@ -912,7 +910,7 @@ function loginWriteRoute(): LoginWriteRoute | null {
   if (!params) return null;
   const actor = currentActor();
   if (!actor || !WRITE_ROLE_ACTORS.has(actor.kind)) return null;
-  const scope = loginWriteScope();
+  const scope = requestWriteScope();
   if (!scope) return null;
   const home = currentCreateHome();
   const writeScope = writeScopeWithPrivate(scope, home);
@@ -2159,9 +2157,11 @@ export async function withSystemTx<T>(
 
 /** A system transaction as before A2b2b, on the system pool. */
 function systemPoolTx<T>(fn: (tx: PostgresJsDatabase<typeof schema>) => Promise<T>): Promise<T> {
-  // An Admin user's write request (W6a fix round 1, M1): the login's scope
-  // on the transaction, so the database checks moves (0241/0245), creates in
-  // a folder and deletes (0266) against its workspaces. mantle.login_id is
+  // A login's write request on the system pool (the actor check off, or no
+  // write pool in this process; W6a fix round 1, M1, every login's since
+  // F4): the login's scope on the transaction, so the database checks moves
+  // (0241/0245), creates in a folder and deletes (0266) against its
+  // workspaces, as before the write role. mantle.login_id is
   // left unset: the 0250 and 0269 stamps would otherwise mark trace, run,
   // chat and digest rows made in the same transaction as this login's, and
   // 0279's audit rows would name it, which nothing asks for. The login goes

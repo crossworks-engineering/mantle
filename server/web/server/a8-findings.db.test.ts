@@ -735,10 +735,10 @@ describe.skipIf(!DB_URL)('A8 findings: the owner’s decisions F1 and F2', () =>
     }
     // L4: an Admin user's key meets the page route's item gate before the
     // key's shared-content rule reads the page: a shared page outside its
-    // scope gets the base route's answer to that login (an Admin user may
-    // add itself to any workspace: 403 item-workspace, "Add yourself to it
-    // first"), never key-shared-item; a shared page it may change still
-    // meets the rule.
+    // scope gets the base route's answer to that login (the 404 of an item
+    // it does not read, since F4; 403 item-workspace, "Add yourself to it
+    // first", before), never key-shared-item; a shared page it may change
+    // still meets the rule.
     const doc = { doc: { type: 'doc', content: [] } };
     const outside = await makeItem('page', ws.H, [{ ws: ws.W, write: false }]);
     const viaKey = await http({ key: keyOf.admin! }, 'PATCH', `/api/v1/pages/${outside}`, doc);

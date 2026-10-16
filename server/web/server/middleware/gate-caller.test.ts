@@ -329,7 +329,8 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
     const ID = '11111111-1111-4111-8111-111111111111';
     const may = (edit: boolean, manage = edit) => [{ edit, manage, copy: false }];
     // What the item-write check finds, each case: the statements' answers
-    // in order. No row: not in the login's scope; then whether it exists.
+    // in order. No row: not in the login's scope (a 404 for every login
+    // since F4; an Admin user's check asked whether it exists before).
     const items: Record<string, unknown[][]> = {
       'may-edit': [may(true)],
       'may-not': [may(false)],
@@ -391,7 +392,6 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
     const met = [...seenAnswers].join('\n');
     // Every answer of the write path was met, the same through both.
     expect(met).toContain('You cannot change this item in your workspaces.');
-    expect(met).toContain('This item is in a workspace you are not in. Add yourself to it first.');
     expect(met).toContain('read-only copy');
     expect(met).toMatch(/^404 \{"ok":false,"error":"not found"\}$/m);
     expect(met).toMatch(/^403 .*"reason":"workspace"/m);
@@ -521,7 +521,6 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
     const met = [...seenAnswers].join('\n');
     // Every answer of these write paths was met, the same through both.
     expect(met).toContain('You cannot change this item in your workspaces.');
-    expect(met).toContain('Add yourself to it first.');
     expect(met).toContain('read-only copy');
     expect(met).toContain('only the owner deletes it for good');
     expect(met).toMatch(/^404 \{"ok":false,"error":"not found"\}$/m);

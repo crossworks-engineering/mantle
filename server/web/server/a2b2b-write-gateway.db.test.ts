@@ -251,13 +251,27 @@ describe.skipIf(!URL)('A2b2b: the login write gateway', () => {
     expect(who.filter((w) => WRITER.test(w))).toEqual([]);
   });
 
-  it('an Admin user’s write request stays on the system pool (its reads are unscoped)', async () => {
-    const who = await writersOf(async () => {
-      const r = await call('/api/notes', owner, 'POST', { title: `${tag} admin note` });
+  it('an Admin user’s write request runs on the write role too (F4: its reads in its scope)', async () => {
+    // Before F4 it stayed on the system pool, its reads unscoped; it enters
+    // its request scope now (session.ts enterLoginWrite), as a member's.
+    for (const mode of ['warn', 'on'] as const) {
+      setMode(mode);
+      const who = await writersOf(async () => {
+        const r = await call('/api/notes', owner, 'POST', { title: `${tag} ${mode} admin note` });
+        expect(r.status, r.text.slice(0, 200)).toBe(201);
+      });
+      expect(
+        who.some((w) => WRITER.test(w)),
+        `${mode}: ${who.join(',')}`,
+      ).toBe(true);
+    }
+    setMode('off');
+    const off = await writersOf(async () => {
+      const r = await call('/api/notes', owner, 'POST', { title: `${tag} off admin note` });
       expect(r.status, r.text.slice(0, 200)).toBe(201);
     });
-    expect(who.length).toBeGreaterThan(0);
-    expect(who.filter((w) => WRITER.test(w))).toEqual([]);
+    expect(off.length).toBeGreaterThan(0);
+    expect(off.filter((w) => WRITER.test(w))).toEqual([]);
   });
 
   it('what only the database refuses: warn reports and runs it, on refuses it (a scope-write refusal, 403)', async () => {

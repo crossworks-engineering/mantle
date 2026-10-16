@@ -199,12 +199,12 @@ describe.skipIf(!URL)('W6b fix round 2', () => {
       expect(await rowOf(id)).toBeUndefined();
     }
     // The owner, through the routes: the workspace rule holds for it as for
-    // any Admin user (a private workspace's item is refused until it joins
-    // that workspace); joined as its Moderator, it deletes the copies.
+    // any Admin user (a private workspace's item is not found until it
+    // joins that workspace: a 404 since F4, 403 item-workspace before);
+    // joined as its Moderator, it deletes the copies.
     const o = await copies('o');
     const before = await call(`/api/tables/${o.table}`, owner, 'DELETE');
-    expect(before.status, before.text.slice(0, 200)).toBe(403);
-    expect(before.json.reason).toBe('item-workspace');
+    expect(before.status, before.text.slice(0, 200)).toBe(404);
     await x(sql`insert into workspace_users (workspace_id, login_id, moderator)
                 values (${priv}, ${owner}, true)`);
     for (const [p, id] of [
