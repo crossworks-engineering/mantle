@@ -1036,6 +1036,162 @@ and its 108 known failures left `a8-known-failures.ts`.
   request and every read today. The in-app badge and /pending still have
   it. Listed as an open item, not changed here.
 
+### F4 fix round 1
+
+The audit of F4 found owner flows that broke on the write role (warn and
+on): the contact-sharing family and the entity merge read or wrote tables
+no workspace scope reads, or rows outside the user's workspaces. Fixed,
+each through the full pipeline as the owner in warn and in on
+(`server/web/server/f4-owner-flows.db.test.ts`, in `pnpm test:edit-on`):
+
+- **Admin acts on the system pool, by name** (`ADMIN_ACT_WRITES`,
+  `server/web/lib/auth/route-scope.ts`; the guard's `ADMIN_ACT`, which sets
+  no scope at all, neither on the reads nor on the transactions): POST
+  `/api/contacts/:id/sharing` (enable, regenerate, disable:
+  `contact_share_codes` is granted to no workspace role), POST
+  `/api/shares/contacts` (the code rows locked FOR SHARE; the item read
+  whatever its home, as docs/workspaces.md says: "Share it with one
+  contact: to be an Admin user, its home is not checked"), DELETE
+  `/api/contacts/:id/shares` (Revoke all: every live share of the
+  contact), POST `/api/entities/merge` (the entity graph is Admin's, 0265;
+  every fact of the duplicate moves, `facts.entity_id` is ON DELETE SET
+  NULL). And a contact share's change, PATCH `/api/shares/:id` of a share
+  that names a contact ("Can write" on an app's), in `itemWriteGate`. Only
+  an Admin user reaches them: none is in `MEMBER_OPEN_WRITES`
+  (`route-scope.test.ts` pins both).
+- **The backfill's mail accounts by a definer** (migration 0299,
+  `mantle_mail_backfill_accounts`): ids and providers of the enabled
+  accounts, in a scope only for one that holds Admin. Adding a contact or
+  an address queued no backfill in any mode (the read was refused in the
+  scope and the error swallowed), nor from an assistant's contact tools.
+- **One 404 for a missing or a hidden share, revision or deleted app**
+  (`itemWriteGate`), for every login.
+- **Every Admin user is a Moderator of Admin, always** (owner decision):
+  `setModerator` and `addUser` refuse to clear it there (409
+  `admin_workspace`), the login bridge sets it when a login becomes an
+  admin, and migration 0298 ticked every Admin user who was not, one
+  `workspace_events` row each. jackdaw's Moderator switch on the Admin
+  workspace is still editable (`client/web/app/(app)/settings/workspaces/
+workspace-screen.tsx` UserRow, `canChangeUser` in
+  `client/web/lib/workspaces.ts`): the brain's 409 is its answer until
+  jackdaw greys it.
+- The `ADMIN_ACT` comment (it sets no scope on the transaction), the
+  guide's "Add yourself" note and the mapper's comment.
+
+**Changed answers** (against this branch's head before the round; each a
+fix, an existence leak closed, or named where it widens):
+
+- The four Admin acts above, warn and on: 200 and made (before: a 500 on
+  `contact_share_codes`; a merge in warn detached the facts of items
+  outside the scope, in on refused). This is main's answer before F4.
+- POST `/api/shares/contacts` of an item outside the user's workspaces: the
+  share is made (before, on this branch: 400 "item not found"), as on main
+  and as the guide says.
+- PATCH `/api/shares/:id` of a contact share by an Admin user, for an
+  item outside its workspaces or an app whose home it does not moderate:
+  made (before: 404, or 403 for an app; on main a 403). **Wider than
+  main**, deliberately: a contact share is the Admin user's to make and
+  to change.
+- POST `/api/contacts`, PATCH `/api/contacts/:id` with a new address: the
+  backfill is queued again (before: none, every mode).
+- An Admin user without the users area: DELETE `/api/shares/<id no row
+has>` 404 `{"ok":false,"error":"not found"}` (before: 200
+  `{"ok":false}`); PATCH `/api/shares/<id no row has>` and a Recall revision
+  id no row has, the same 404 (before: the handler's own 404 bodies).
+- The trash of deleted apps, every login: an id with no snapshot, an app
+  homed where the login moderates nothing, or one with no home for a
+  login other than the owner, 404 `{"ok":false,"error":"not found"}`
+  (before: the handler's 404 `{"error":"not found"}`, or 403 "You cannot
+  change this item in your workspaces."); a held app (deleted by someone
+  other than the owner) is the 403 "only the owner deletes it for good"
+  for a Moderator of its home only, 404 for anyone else (before: the 403
+  for every login). Restoring a live app's id: 404 (before: 409 "not
+  deleted").
+- PATCH `/api/workspaces/:admin/users/:login` `{ moderator: false }`: 409
+  `admin_workspace` (before: 200, the tick cleared); POST
+  `/api/workspaces/:admin/users` with `moderator: false`: 409 (before: an
+  Admin user with no Moderator seat).
+
+### F4 handover
+
+Fix round 1 stopped at a safe point: the audit's H1, H2, M1, M2, L1, L2,
+L4 and the owner decision are done and tested; the surveys of every other
+Admin write route on the write role found more, listed here for the next
+round. The rule the owner set for all of them: brain-wide bookkeeping
+(cascades, subtree work, re-indexing, history and its pruning, budgets,
+export syncs, provisioning) runs as a named system step or a definer
+after the item check, never in the caller's scope; prefer one gateway
+over per-site fixes. Each needs an owner test in warn and in on.
+
+Files, tables, formulas:
+
+1. POST `/api/tables/:id/commit` (and a restore with commit, an import's
+   later commit): `historyWritable()` (`packages/content/src/
+table-snapshots.ts`) is `isSystemScope()`, false for an Admin user now,
+   so a commit keeps no history row and a restore's note is lost, silently.
+   Widened alone, `pruneTableCommitSnapshots` then deletes `node_snapshots`
+   on the view role outside a transaction: permission denied after the
+   commit landed. Fix both (members have had no table history since W6b).
+2. POST `/api/files/files/:id` and POST `/api/files/folders/:id` (copy):
+   `storageBytesForNode` (`files.ts`) answers null outside the system
+   scope: an email attachment's copy is a 400, a folder copy stops
+   partway.
+3. DELETE `/api/files/files` (bulk): `countDerivedFromFile` and
+   `drawsReferencingFile` (`files.ts`) read in the scope, so derived items
+   and drawings it does not read are missed (orphans, broken drawings);
+   with cascade, `reapDerivedFromFile` (`derived.ts`) the same.
+4. DELETE `/api/files/files` (bulk): ids the scope does not read or manage
+   come back not found and `bulkDeleteFiles` reports nothing; body ids
+   never pass `itemWriteGate`. Must refuse or report, never skip silently.
+5. (suspect) POST `/api/files/folders/:id`: `branchAt` (`move-copy.ts`)
+   misses a hidden folder of the same name, then `nodes_branch_owner_path_uq`
+   is a 500 (was a 400): `conflictOnUnique` or a definer.
+6. (suspect) the folder copy's subtree read leaves hidden children out; a
+   readable file under a hidden subfolder fails mid-copy; the caps count
+   scope rows only.
+7. (suspect) PATCH `/api/files/folders/:id` `{ indexing }`: `indexing.ts`
+   queues again only the files the scope reads: hidden files keep their
+   content index after a switch to name only (privacy). Must queue all.
+8. (low) the formula library seed duplicates (`formulas.ts`); the table
+   history budget counts the scope only (`table-snapshots.ts`).
+
+Apps:
+
+9. POST `/api/apps/:id/db-broker` (exec, the Admin branch) and POST
+   `/api/apps/:id/snapshots/:sid/restore` (data or full):
+   `scheduleAppTableExportSync` (`app-table-exports.ts`) runs its sync on
+   a timer in the request's scope (runAsSystem swaps only the actor):
+   `app_table_exports` is denied, swallowed, the linked Table stays stale
+   until a restart. The member path wraps `asSystem('app-data')`. Fix in
+   the scheduler, for every caller.
+10. The snapshot budget (`APP_SNAPSHOT_MAX_MB`, `app-snapshots.ts`) counts
+    the scope only; must be brain-wide.
+11. (suspect) db-broker, the Admin branch: an Admin user who only reads an
+    app is refused in on (`app-broker.ts` bumpWriteSeq and applySchema,
+    `app-viewer.ts` the salt on `app_databases`), probably a 500. Decide:
+    data writes follow ADMIN_DATA_ACCESS; registry, schema and salt are
+    system bookkeeping; never a 500.
+12. (suspect) a snapshot restore of code or full, and POST
+    `/api/apps/import` with an existing app id: the gate asks edit, the
+    database manage for code columns: refused in on, the import partly
+    applied (its pre_import snapshot committed first; no item check, no
+    `:id`). Align the gate with the database and check the target first.
+13. (low) a duplicate drops the source's draft when the Admin user reads
+    but cannot edit (`app-package.ts`).
+
+Recall:
+
+14. `mapSlugsTaken` (`recall-native.ts`) reads `recall_maps` in the scope:
+    `createRecallMap`, `updateRecallMap`'s slug change and a revision
+    restore of a slug change meet a hidden map's slug as 23505, a 500 (a
+    create should suffix, an update answer 409 `slug_taken`), and a hidden
+    map's former slug as free (two maps answer to one slug). A definer
+    that answers taken or not brain-wide, and `conflictOnUnique` for 23505.
+
+Listed, no change needed: PATCH `/api/contacts/:id`'s `shareCount` counts
+only the shares the scope reads (pre-existing); deleting a file synced from
+OneDrive answers 500 on `ms_drive_items` (pre-existing, every mode).
+
 ## Request plumbing (A10 part 2, A10 #8, A10 #9)
 
 How a route reads its body (one reader, capped at the route's ceiling by

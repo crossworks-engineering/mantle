@@ -26,7 +26,7 @@
  *    app are the same 404 for an Admin user.
  *  - A member never reaches a contact-sharing route.
  *
- * `pnpm test:edit-on` and `pnpm test:runtime-role` run this file too.
+ * `pnpm test:edit-on` runs this file too.
  *
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run server/web/server/f4-owner-flows.db.test.ts
  */
