@@ -1218,7 +1218,12 @@ closed leak):
   the brain's copies fill APP_SNAPSHOT_MAX_MB, some of items the caller
   does not read: 409 (reason `budget` for an app's) (before: 201).
 - POST `/api/files/files/:id` (copy) of an email attachment by an Admin
-  user: 201 (before: 400 "copyFileById: file not found").
+  user: 201 (before: 400 "copyFileById: file not found"). The same rule
+  (a scope that holds Admin) lets an Admin turn (the Admin assistant, the
+  Admin MCP surface) read an attachment's bytes; in its scope it read none
+  (a key's T4 guard, key-email-guard.ts, is unchanged).
+- The formula seed's brain-wide presence check runs inside each seed's own
+  try: a fault there marks that seed `failed`, as a fault creating it does.
 - DELETE `/api/files/files`: 200 `{ deleted, hasDerived, refused }` where
   `refused` names each id not deleted: `not_found` (no such file, or one
   the scope does not read), `forbidden` (read, not managed), `in_drawing`
