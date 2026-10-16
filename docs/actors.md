@@ -5765,8 +5765,8 @@ exists with a test and is on on every box of the release. Branch
 actor check and edit check are on.
 
 **Since part 1 (branch `feat/precheck-remove`, below): 72 of the 101 tool
-entries are gone, 29 kept with their reasons; the 27 HTTP entries wait on
-blocker 1.** The rest of this section up to "Part 1" is the parked
+entries are gone, 29 kept with their reasons; the 27 HTTP entries are
+next (blocker 1 is closed by F4, merged into this branch at v0.300.82).** The rest of this section up to "Part 1" is the parked
 branch's finding, kept as it was.
 
 **Result (the parked branch): no entry deleted.** "On on every box" is needed but not enough:
@@ -6008,11 +6008,13 @@ by any of them):
   removed tool's write the database would refuse is made: warn logs it as
   an actor miss (`edit:` or the write check's), off makes it silently.
 
-**Found, unchanged:** the author ceiling (withAuthorCeiling,
-lowerToTeamRules) lowers a member's app to team rules when the member may
+**Found, fixed at the merge of F4:** the author ceiling (withAuthorCeiling,
+lowerToTeamRules) lowered a member's app to team rules when the member may
 EDIT it, before the code write the database refuses unless it may MANAGE
-it (D4): a Write grant leaves the app at team rules and its code as it
-was. So with the pre-check too (the test pins it as a partial write).
+it (D4): a Write grant left the app at team rules and its code as it
+was (part 1 pinned it as a partial write). Since the merge lowerToTeamRules
+asks manage, as F4's code writers do (lockAppRow): a caller that may only
+edit the app lowers nothing, and the cell is a plain refusal.
 
 **The one gateway.** What is left of the machinery serves the kept entries
 from one place: the gate's pre-run check (`packages/tools/src/gate-prerun.ts`
@@ -6346,6 +6348,121 @@ paragraph only (docs and format rerun on it).
 less the updater (done here): the rebase (0298 becomes 0301: rename the
 file, keep its `_check_mode_floor.sql` suffix), the 27 HTTP entries, then
 the kept 29.
+
+### Pre-check removal handover (the merge of F4, 2026-10-17)
+
+Branch `feat/precheck-remove`. Main v0.300.82 (F4, c7acc88ff) was MERGED
+in (`git merge --no-ff`, one merge commit), not rebased: 45 branch commits
+over 28 of main's, most conflicts in the same few files, and the branch is
+pushed; a merge resolves each once. Main stays fast-forwardable to the
+branch head.
+
+**Conflicts and how each was resolved:**
+
+- **Migrations.** F4 holds 0298 to 0300; this branch's 0298 shared main's
+  0298 `when` (1790197200000), so a box at main would have skipped the
+  floor silently (the runner treats a same `when` as applied). Renamed
+  `0301_check_mode_floor.sql` (the suffix roll.sh and the updater read is
+  kept), journal idx 301, `when` 1790197380000 (0300's plus one minute),
+  its comment "above 0300's". Every "0298" that meant the floor is "0301"
+  (check-floor*.ts, client.ts, migrate.ts, runtime-role.ts, audit.ts,
+  a8-known-failures.ts, edit-check.db.test.ts, db-restore.sh and its test,
+  the deploy harness, compose, Dockerfile, .env.example, the three CI
+  workflows, CHANGELOG, docs/edit-check.md, docs/update-prod.md, this
+  file's floor paragraphs; F4's 0298 left as it is). Proof:
+  `packages/db/src/check-floor-renumber.db.test.ts`: a database at main's
+  0300 (every migration before 0301 applied and in the ledger), then the
+  real runner (`applyJournal`) over the real files and journal applies
+  0301 and only it, with no warning, and the floor's function appears; a
+  plan with 0301 stamped at 0300's `when` has no pending and no gap (the
+  hazard, pinned).
+- **docs/update-prod.md:** both sections kept, F4's first (its release),
+  then "The checks' floor (migration 0301, ...)".
+- **builtins-apps.ts:** the removed app code tools (app_file_write,
+  app_file_delete, app_source_set, app_tools_set) stay without an entry
+  (F4's lockAppRow asks manage first, and the database's D4); the kept
+  ones take F4's needs in the `legacyItemPrecheck` shape: app_build and
+  app_db_schema_set `manage` (side-effect-before-check), app_publish
+  `manage` (answer-worse), app_snapshot_restore `appRestoreTargets`
+  (side-effect-before-check). **lowerToTeamRules asks MANAGE** (was edit).
+  `toolItemWriteRefusal` stays gone (F4's withAuthorCeiling called it).
+- **item-write-gate.ts:** F4's `appRestoreTargets` kept;
+  `treeFolderUpdateTargets` stays gone (no user).
+- **files/write.ts:** `folder_set_indexing` has no pre-check entry; F4's
+  handler check stays (`setIndexingMode`: `assertItemRight` manage, in
+  every mode). `item-write-gate.test.ts` names it (and the four app code
+  tools) with `manage` and that check.
+- **`assertItemRight`:** one, F4's (`packages/db/src/item-rights.ts` was
+  byte for byte; it merged clean and equals main). table-snapshots.ts
+  imports it in F4's import list.
+- **a8-known-failures.ts:** F4's `login@system` cells gone (F4), P1 kept;
+  the `known()` helper F4 removed with them is back (P1 uses it).
+- **tool-policy-snapshot.test.ts:** the 29 kept entries with F4's needs
+  (app_snapshot_restore a resolver, probed).
+- **dispatch-parity.json:** the branch's hashes kept for every removed
+  tool (bypassing F4's needs changes no stubbed case of theirs); re-recorded
+  only app_publish and app_snapshot_restore, whose answers changed with
+  F4's needs: both now equal main's hashes exactly.
+- **vitest.edit-on.config.ts, item-rights.ts, db index:** merged clean,
+  equal to main (the configs) or main plus this branch's floor export.
+- **F4's own tests** (`f4-admin-write-role.db.test.ts`,
+  `f4-owner-flows.db.test.ts`) lower the checks with the floor's reason
+  (`mantle_set_*_check(mode, 50, 'test')`): their setter was refused
+  without one.
+
+**Changed answers (against the branch head d6059f121 and main c7acc88ff):**
+
+- The kept app tools ask F4's needs (app_build, app_db_schema_set,
+  app_publish manage; app_snapshot_restore code and full manage, data
+  edit): as main. A caller that may edit, not manage: refused by the
+  pre-check (was: the branch's edit pre-check passed, then F4's lockAppRow
+  or the database refused). Same words.
+- lowerToTeamRules: a member that may edit, not manage, an app no longer
+  lowers it to team rules before its refused code call (was: lowered, a
+  partial write). Narrower; nothing is written.
+- folder_set_indexing by a caller that may edit, not manage: refused
+  (F4's answer; was ok on this branch). As main.
+- **app_publish's kept reason is gone** (found): bypassed, a scope that
+  may not manage the app is now refused by F4's lockAppRow before it reads
+  the draft (was: "published: true", nothing written). The kept cell in
+  `precheck-removal.db.test.ts` records it. The entry stays this round
+  (the 29 are the next round's): it can go then.
+
+**Part 2 (the 27 HTTP entries): not started** (the owner's 60% rule).
+What the next builder needs:
+
+- The 27: `server/web/lib/auth/route-scope.ts` `ITEM_WRITE_PREFIXES` 16,
+  `ITEM_REF_PREFIXES` 3, `ITEM_READ_WRITES` 7, `ITEM_MANAGE_WRITES` 1; the
+  gate reads them per route row (`row.item`, `routeItemTarget` in
+  route-policy.ts) in `itemWriteGate` (`server/web/lib/auth/session.ts`).
+  A prefix covers every route under it: each route of a family needs its
+  cell, not only the prefix.
+- **Stay, named:** `ITEM_REF_PREFIXES` `deleted-app` (the trash runs on
+  the system pool, `ADMIN_ACT`: the TypeScript check is its only one) and
+  `share` (an Admin user's link close with the users area is `ADMIN_ACT`
+  too; the contact share's "Can write"). `ITEM_READ_WRITES` (opened marks,
+  a pin, the frame ticket, the brokers, a duplicate): the database asks no
+  read for what they write, so each needs its read moved into the handler
+  first.
+- **The answer:** with the gate, a hidden item is
+  `{"ok":false,"error":"not found"}` (404) for every login since F4;
+  bypassed, the handler answers, and its body differs per route (a
+  `{"error":"not found"}`, a 400, a 409 that names a taken name). Each
+  route's hidden cell must give a 404 that cannot be told from a missing
+  id; a route whose handler reads by body or does work before its read
+  (an upload spooled, a file on disk) keeps its entry or gets an
+  `assertItemRight` first, as the tools did in fix round A.
+- Proof style: `precheck-removal.db.test.ts` through `runRoute` (as
+  `f4-admin-write-role.db.test.ts` does), a member and an Admin user, on,
+  the four placements, the gate's target bypassed for `now`, old answer
+  recorded; lower `itemPrecheckRoutes` (27) in
+  `scripts/arch-scoreboard.pins.json` per family with its reason.
+- Suggested first families: `/api/formulas`, `/api/tasks`, `/api/events`,
+  `/api/v1/tasks` (node edits and deletes, one statement, as the tool
+  node families).
+
+**Gates at GATES_HEAD** (workstation, own pg container `pcra_pg` on
+127.0.0.1:56331, init mounted, `MANTLE_CHECK_FLOOR=keep`): GATES_LINE
 
 ## Remove the switch-over code (A7)
 

@@ -369,6 +369,9 @@ describe.skipIf(!DB_URL)(
         .replace(/\d{4}-\d\d-\d\dT[\d:.]+Z/g, 'T')
         .replace(new RegExp(UUID.source, 'g'), 'ID')
         .replace(new RegExp(`${tag}\\w*`, 'g'), 'TAG')
+        // A made-up 8-hex suffix (a map's slug, TAG-map-cdfacaba) may hold
+        // no digit: about 1 in 2,500 (a flake, 2026-10-17).
+        .replace(/(?<=-)[0-9a-f]{8}\b/g, 'H')
         .replace(/\b(?=[0-9a-f]*\d)[0-9a-f]{4,}\b/g, 'H')
         .replace(/v_[a-z0-9]{8}/g, 'V');
 
