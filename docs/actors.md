@@ -5612,6 +5612,36 @@ Branch `feat/precheck-remove`. Part 1 is done; nothing is in progress.
   at the commit before the head's two test-and-docs commits, whose changed
   tests were rerun at the head: 0). CI: build-check on the head.
 
+### Pre-check removal handover (fix round A, 2026-10-16)
+
+Branch `feat/precheck-remove`, still on main v0.300.81, not rebased (F4
+merges first). Fix round A is done; nothing is in progress. What it did:
+"Part 1 fix round A" above (CI's edit-on cause, the cheap rights read, the
+floor's `MANTLE_CHECK_FLOOR` and roll.sh step 2d, `legacyItemPrecheck`, the
+call audit's targets). Gate exit codes and the CI run are in the round's
+report.
+
+**Next round (after F4 merges), in order:**
+
+1. Rebase on main with F4. Expected conflicts, all small: `item-rights.ts`
+   (F4's own file was copied byte for byte: take F4's), `db/src/index.ts`
+   (the same two export lines), `builtins-apps.ts` (F4 raised several app
+   entries to `manage` and added `appRestoreTargets`; here they are
+   `legacyItemPrecheck` or gone: keep the field, take F4's needs),
+   `files/operator.ts`, `move-copy.ts` (F4's `nameTaken` sits after this
+   round's manage read: keep both), `tables/draft.ts`, `table-snapshots.ts`
+   (fold the second `@mantle/db` import into F4's list), `app-snapshots.ts`
+   (F4 imports `assertItemRight` in the same place), the gap test's mock,
+   `vitest.edit-on.config.ts` (main's again here), the pins file, and
+   migrations: F4 holds 0298 to 0300, so this branch's 0298 becomes 0301
+   (rename the file, its journal entry, and every "0298" in comments, docs,
+   tests and `RUNTIME_DENIED_FUNCTIONS`' reason). `CHECK_FLOOR_RELEASE` in
+   `scripts/roll.sh` must stay at or below the release that ships it.
+2. The 27 HTTP entries (blocker 1 is F4).
+3. The kept 29, each by removing its reason (`legacyItemPrecheck.reason`
+   says which kind), and the updater's own floor check
+   (`infra/updater/updater.sh`, as roll.sh step 2d).
+
 ## Remove the switch-over code (A7)
 
 Plan v2 (page fcc4aee4), "A7. Remove the switch-over code", after W9 (every
