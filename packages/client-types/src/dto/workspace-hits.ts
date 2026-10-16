@@ -15,7 +15,7 @@
  *  that reads the item. The switcher's workspace when it reads the item,
  *  else the item's home when the caller is a user of it, else the first by
  *  name. Absent when the caller is in no such workspace (a read on the
- *  system pool, a brain not on workspaces). */
+ *  system pool). */
 export type HitWorkspace = { id: string; name: string };
 
 /** What a search hit carries beside its own fields. */

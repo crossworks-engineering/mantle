@@ -28,8 +28,8 @@ import { kindsWhere, type WorkspaceKind } from '@mantle/client-types/kinds';
  *  same set as mantle_kind_class in SQL (access-matrix.db.test.ts). Tasks,
  *  events and Recall maps joined with the registry (workspaces arch A1,
  *  owner decision D1); a journal entry, an email and the other Admin-only
- *  kinds stay Admin. mantle_workspace_kind (0159) still holds the old list
- *  for an unmigrated brain until A7 drops it. */
+ *  kinds stay Admin. The old list (mantle_workspace_kind, 0159) went at
+ *  arch A7 (0295). */
 export const WORKSPACE_NODE_TYPES = kindsWhere<WorkspaceKind>((s) => s.class === 'workspace');
 
 /** What the workspace role may SELECT: nothing, the whole row, or named

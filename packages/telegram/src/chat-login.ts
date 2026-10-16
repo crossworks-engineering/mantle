@@ -13,7 +13,8 @@
  * "The workspace of the chat" is the workspace of every assistant the chat
  * runs as: the bot's own assistant and the chat's responder override, when
  * it has one. An assistant with no workspace (a helper) counts the Admin
- * workspace. A brain not on workspaces yet: only the anchor login.
+ * workspace. With no Admin workspace (the boot refuses such a brain, arch
+ * A7) a helper's chat matches no workspace and is refused.
  *
  * Moderators of the bot's workspace and Admin users with the users area may
  * block or unpair any chat of that bot, never pair it to someone else.
@@ -80,7 +81,6 @@ export async function chatLoginRefusal(args: {
         )
         select
           (select count(*) from chat_agents)::int as agents,
-          exists (select 1 from admin_ws) as on_ws,
           not exists (
             select 1 from chat_agents ca
              where not exists (
@@ -93,10 +93,9 @@ export async function chatLoginRefusal(args: {
              )
           ) as user_of_all
       `),
-  )) as unknown as { agents: number; on_ws: boolean; user_of_all: boolean }[];
+  )) as unknown as { agents: number; user_of_all: boolean }[];
   const r = rows[0];
   if (!r || r.agents === 0) return 'no_assistant';
-  if (!r.on_ws) return loginId.toLowerCase() === ownerId.toLowerCase() ? null : 'not_a_user';
   return r.user_of_all ? null : 'not_a_user';
 }
 
@@ -104,7 +103,7 @@ export async function chatLoginRefusal(args: {
  * Whether `loginId` may block or unpair any chat of bot `accountId`: a
  * Moderator of the bot's assistant's workspace (an assistant with no
  * workspace: the Admin workspace), or an Admin user whose users area is on.
- * A brain not on workspaces: the anchor login. Fails closed.
+ * Fails closed.
  */
 export async function loginModeratesBot(args: {
   ownerId: string;
@@ -122,7 +121,6 @@ export async function loginModeratesBot(args: {
              limit 1
           )
           select
-            exists (select 1 from admin_ws) as on_ws,
             exists (
               select 1
                 from telegram_accounts t
@@ -136,10 +134,9 @@ export async function loginModeratesBot(args: {
                where t.id = ${accountId}::uuid
             ) as moderates
         `),
-    )) as unknown as { on_ws: boolean; moderates: boolean }[];
+    )) as unknown as { moderates: boolean }[];
     const r = rows[0];
     if (!r) return false;
-    if (!r.on_ws) return loginId.toLowerCase() === ownerId.toLowerCase();
     if (r.moderates) return true;
     return await loginHasArea(loginId, 'users');
   } catch {

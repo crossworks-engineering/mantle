@@ -639,9 +639,8 @@ export async function updateAppMeta(
   if (input.dataReadOnly !== undefined || input.mcpAccess !== undefined) {
     // The flags alone: the informational switch writes no grant (contract
     // change 36; the member write rule ANDs it in). Under the app's head
-    // all the same: on a brain not on workspaces yet (21.9) the level
-    // bridge's apps trigger still turns the flag into the app's Team Write,
-    // and it needs that head.
+    // all the same, as before (the level bridge's apps trigger that needed
+    // it went at W5b2, 0261; a brain off workspaces, at arch A7).
     const write = (q: Pick<typeof db, 'update'>) =>
       q
         .update(apps)

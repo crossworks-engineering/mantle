@@ -5287,7 +5287,10 @@ switch-over counts are 0: `brainOnWorkspacesCalls` 12 -> 0 (files 7 -> 0),
   `no-workspaces` branch and `enabledAdminLogin`
   (`packages/runtime/src/agent/agent-viewer.ts`), the persona reconcile's
   frozen level read (`server/web/lib/system-manifest/reconcile.ts`, its
-  `level-reads` allowlist entry) and `groupsForAgent`'s switch argument.
+  `level-reads` allowlist entry), `groupsForAgent`'s switch argument, and
+  the Telegram anchor-only branch (`packages/telegram/src/chat-login.ts`:
+  `chatLoginRefusal` and `loginModeratesBot` let only the anchor login use
+  or moderate a chat on a brain with no Admin workspace).
 - `mantle_workspace_kind` (0159), by migration 0295
   (`packages/db/migrations/0295_a7_workspace_kind_gone.sql`). What still
   named it (pg_depend and a body scan; nothing in 0291, 0293 or 0294): the
@@ -5338,6 +5341,11 @@ view (140 -> 112 connections). Every other entry is byte for byte.
   an assistant on no workspace called with no login is refused on every
   brain (it ran as system work on a brain not on workspaces).
 - The 403 `level-conflict` mapping is gone; nothing threw it since W8c.
+- On a brain with no Admin workspace (one the boot now refuses), a
+  Telegram chat of a helper bot is refused for every login (`not_a_user`)
+  and the bots follow the same rule as on every brain (a Moderator of the
+  bot's workspace, or an Admin user with the users area), where the anchor
+  login alone used and moderated every chat.
 
 **Found by A7, fixed beside it (migration 0296).** Every key test now runs
 on a brain on workspaces, and three area-limited key cells answered 500:

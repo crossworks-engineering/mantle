@@ -15,9 +15,8 @@
  * Read where the caller runs: on the system pool every workspace; in a
  * workspace scope, a workspace the scope may name (one of the
  * scope's own, or any when the scope holds Admin: an Admin user's app list
- * tells the reach of an app held by a workspace they are not in). A brain
- * that is not on workspaces yet has no grants, so nothing reads as shared;
- * it fails closed.
+ * tells the reach of an app held by a workspace they are not in). With no
+ * grant nothing reads as shared: it fails closed.
  */
 import { sql, type SQL } from 'drizzle-orm';
 import { nodes } from './schema/index';

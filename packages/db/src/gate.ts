@@ -102,9 +102,10 @@ export type GateCaller = Readonly<{
   write?: boolean;
   /**
    * What the caller's scope holds of Admin (step 5), read at step 1. Null:
-   * unscoped (a process, an Admin login on a brain not on workspaces): the
-   * surface's own rules decide, as before. Absent: unknown, and a policy
-   * that names an Admin step is refused (fail closed).
+   * unscoped (a process, or an HTTP caller whose guard reads the Admin
+   * view itself): the surface's own rules decide, as before. Absent:
+   * unknown, and a policy that names an Admin step is refused (fail
+   * closed).
    */
   admin?: AdminView | null;
   /** The scope the call runs in, bound at step 3 (writes when the policy
@@ -385,9 +386,9 @@ export function adminStep(caller: GateCaller, policy: GatePolicy): void {
   const need = policy.scope;
   if (need === 'any') return;
   const view = caller.admin;
-  // Unscoped (a process, an Admin login on a brain not on workspaces): the
-  // surface's own rules decide, as before W7a. Unknown (absent): refused
-  // below, never let through.
+  // Unscoped (a process, or an HTTP caller whose guard reads the Admin
+  // view itself): the surface's own rules decide, as before W7a. Unknown
+  // (absent): refused below, never let through.
   if (view === null) return;
   if (need === 'admin-kind') {
     if (!view?.holdsAdmin) throw new AccessError('admin-kind');
