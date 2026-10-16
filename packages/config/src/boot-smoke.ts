@@ -45,6 +45,9 @@ export async function bootSmokeExit(
   lazy: ReadonlyArray<() => Promise<unknown>> = [],
 ): Promise<never> {
   for (const load of lazy) await load();
-  console.log(`${BOOT_SMOKE_MARK} ${name}${lazy.length ? ` (+${lazy.length} lazy loads)` : ''}`);
+  // Straight to stdout (the runner reads this exact line), flushed before
+  // the exit so a piped stdout cannot drop it.
+  const line = `${BOOT_SMOKE_MARK} ${name}${lazy.length ? ` (+${lazy.length} lazy loads)` : ''}\n`;
+  await new Promise<void>((resolve) => process.stdout.write(line, () => resolve()));
   process.exit(0);
 }

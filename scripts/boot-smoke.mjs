@@ -255,7 +255,7 @@ async function main() {
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   main().catch((err) => {
-    console.error('boot smoke could not run:', err instanceof Error ? err.message : err);
+    console.error('boot smoke could not run:', err);
     process.exit(1);
   });
 }
