@@ -22,8 +22,8 @@
 #      root-owned on the host), exactly as the in-app Update button would
 #   5. wait for a NEW started_at with this target and a finished_at, ok:true
 #   6. wait for mantle_web healthy; if it never is, a loud banner and the
-#      last 20 lines of its log (lines naming a key, token, password or secret
-#      left out). No automatic rollback: the operator decides.
+#      last 20 lines of its log, every line, with secret values masked. No
+#      automatic rollback: the operator decides.
 #   7. count again: ANY drop in apps, sandboxes or app-db files stops with a
 #      loud error (mini sandbox apps are never to be lost in a roll)
 #   8. print /api/version
@@ -441,14 +441,21 @@ fi
 # "SESSION_SECRET must be at least 32 characters", and still let a URL with a
 # password through). Masked: URL credentials (scheme://user:pass@ ->
 # scheme://[redacted]@), the rest of an Authorization or Cookie header, the
-# word after "Bearer", and the value after a name holding key, token,
-# secret, passw..., authorization, cookie or bearer and then = or :
-# (case-insensitive). perl, not sed: BSD sed has no case-insensitive flag.
+# word after "Bearer", a bare provider or Mantle key wherever it stands
+# (sk-ant-, sk-or-, sk-proj-, a long sk-..., mtlk_...), and the value after a
+# name holding key, token, secret, passw..., pwd, authorization, cookie or
+# bearer when the = or : comes RIGHT after that name (word characters and
+# dashes may finish it, a closing quote and spaces may follow). Anchoring the
+# name to its separator keeps the lines that explain a crash whole: a stack
+# frame (secrets.ts:44:11), a Zod "Required" next to a key path, a
+# "[token-refresh] failed: connect ECONNREFUSED". Case-insensitive; perl, not
+# sed: BSD sed has no case-insensitive flag.
 REDACT_PERL='
+s{\b(?:sk-(?:ant|or|proj)-[\w-]{8,}|sk-[A-Za-z0-9]{20,}|mtlk_\w+)}{\[redacted\]}g;
 s{://[^/\s\@]+\@}{://[redacted]\@}g;
 s{\b((?:proxy-)?authorization|(?:set-)?cookie)(\s*[=:]\s*).*}{$1$2\[redacted\]}gi;
 s{\b(bearer)\s+[^\s,;\x22\x27]+}{$1 \[redacted\]}gi;
-s{((?:key|token|secret|passw[a-z]*|authorization|cookie|bearer)[^=:\n]*[=:]\s*)(?:\x22[^\x22]*\x22|\x27[^\x27]*\x27|[^\s,;]+)}{$1\[redacted\]}gi;
+s{((?:key|token|secret|passw[a-z]*|pwd|authorization|cookie|bearer)[\w-]*\x22?\s*[=:]\s*)(?:\x22[^\x22]*\x22|\x27[^\x27]*\x27|[^\s,;]+)}{$1\[redacted\]}gi;
 '
 redact_secrets() { perl -pe "$REDACT_PERL"; }
 web_not_healthy() { # <last health status>

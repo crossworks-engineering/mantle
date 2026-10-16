@@ -1057,6 +1057,16 @@ case "$1" in
     echo "[crypto] MANTLE_MASTER_KEY not found"
     echo "[proxy] 401 for Authorization: Bearer tok_bearer_456"
     echo "[config] MANTLE_API_TOKEN=abc123 leaked"
+    echo "[llm] calling with sk-ant-api03-FakeAnt0123456789 failed"
+    echo "[llm] key sk-or-v1-FakeOr0123456789 rejected"
+    echo "[llm] openai said no to sk-proj-FakeProj0123456789"
+    echo "[llm] legacy sk-FakeLegacy0123456789abcd refused"
+    echo "[api] mtlk_FakeMtlk0123456789 revoked"
+    echo "[db] PGPWD=FakePwd0123 rejected"
+    echo "    at loadSecrets (/app/server/web/lib/secrets.ts:44:11)"
+    echo "    at file:///app/server/web/lib/token-store.js:118:7"
+    echo 'ZodError: [{"code":"invalid_type","path":["apiKey"],"message":"Required"}]'
+    echo "[token-refresh] request failed: connect ECONNREFUSED 10.0.0.5:443"
     echo "Node.js v26.11.1"
     exit 0 ;;
   run)
@@ -1187,6 +1197,18 @@ check "web never healthy: a bearer header prints with its value masked" \
   sh -c "! grep -q tok_bearer_456 '$RS/out' && grep -qF '401 for Authorization: [redacted]' '$RS/out'"
 check "web never healthy: a KEY=value line prints with its value masked" \
   sh -c "! grep -q abc123 '$RS/out' && grep -qF 'MANTLE_API_TOKEN=[redacted] leaked' '$RS/out'"
+check "web never healthy: bare key literals print masked (sk-ant, sk-or, sk-proj, long sk-, mtlk_)" \
+  sh -c "! grep -q 'Fake\(Ant\|Or\|Proj\|Legacy\|Mtlk\)0123' '$RS/out' && grep -qF 'calling with [redacted] failed' '$RS/out' && grep -qF 'key [redacted] rejected' '$RS/out' && grep -qF 'said no to [redacted]' '$RS/out' && grep -qF 'legacy [redacted] refused' '$RS/out' && grep -qF '[api] [redacted] revoked' '$RS/out'"
+check "web never healthy: a pwd name prints with its value masked" \
+  sh -c "! grep -q FakePwd0123 '$RS/out' && grep -qF 'PGPWD=[redacted] rejected' '$RS/out'"
+check "web never healthy: a stack frame through secrets.ts prints whole" \
+  grep -qF 'at loadSecrets (/app/server/web/lib/secrets.ts:44:11)' "$RS/out"
+check "web never healthy: a file:line:col through token-store.js prints whole" \
+  grep -qF 'at file:///app/server/web/lib/token-store.js:118:7' "$RS/out"
+check "web never healthy: a Zod Required next to a key path prints whole" \
+  grep -qF '"path":["apiKey"],"message":"Required"}]' "$RS/out"
+check "web never healthy: connect ECONNREFUSED after a token name prints whole" \
+  grep -qF '[token-refresh] request failed: connect ECONNREFUSED 10.0.0.5:443' "$RS/out"
 check "web never healthy: no rollback requested" sh -c "test \$(grep -c alpine '$RS/calls') = 1"
 
 roll_box notok

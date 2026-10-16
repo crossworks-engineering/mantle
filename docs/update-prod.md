@@ -108,10 +108,14 @@ What it does, in order:
    banner saying the box is down, and the last 20 lines of the `mantle_web`
    log, every line, with secret values masked: URL credentials
    (`://[redacted]@`), Authorization and Cookie header values, the word after
-   `Bearer`, and the value after a name holding key, token, secret, passw...
-   and then `=` or `:`. Lines that explain the failure ("SESSION_SECRET must
-   be at least 32 characters") print whole. Nothing is rolled back
-   automatically.
+   `Bearer`, a bare provider or Mantle key wherever it stands (`sk-ant-`,
+   `sk-or-`, `sk-proj-`, a long `sk-...`, `mtlk_...`), and the value after a
+   name holding key, token, secret, passw..., pwd, authorization, cookie or
+   bearer when `=` or `:` follows that name directly (`MANTLE_API_TOKEN=...`,
+   `"apiKey": "..."`). Lines that explain the failure print whole:
+   "SESSION_SECRET must be at least 32 characters", a stack frame like
+   `secrets.ts:44:11`, a Zod `"Required"`, `connect ECONNREFUSED`. Nothing is
+   rolled back automatically.
 7. Counts again: **any drop in apps, sandboxes or app-db files stops with exit
    3** and a banner. Roll nothing else; the pre-roll backup is the way back.
 8. Prints `/api/version`.
