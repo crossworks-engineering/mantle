@@ -1289,10 +1289,14 @@ caller's scope BEFORE it leaves it, so "the item check came first" is code:
 | `{ items, need, only: 'allowed' }` | `fn(allowed)` runs with the items that pass (possibly none): a cascade keeps the rest                                               |
 | `{ items: 'none', why }`           | a step about no item, named with its reason (an empty `why` throws)                                                                 |
 
-Inside an open transaction (a request's open write transaction, a
-`withSystemTx`, a `withScope`) the step throws (L5): it runs on a
-connection of its own, which would not see the transaction's rows and
-could wait behind its locks. Its sites (10 uses, `asSystemExits` 56 to 58):
+In a workspace scope with an open transaction (a request's open write
+transaction, a `withScope`) the step throws (L5): leaving the scope it would
+run on a connection of its own, which would not see the transaction's rows
+and could wait behind its locks. System work (no workspace scope: a worker,
+a script, a `withSystemTx`) has no scope to leave and no item check to ask:
+the step runs in place, in that transaction if there is one (a file deleted
+inside a `withSystemTx` counts its derived items and drawings there). Its
+sites (10 uses, `asSystemExits` 56 to 58):
 
 | Step               | Site                                                                | Check                                                             |
 | ------------------ | ------------------------------------------------------------------- | ----------------------------------------------------------------- |
@@ -1413,8 +1417,10 @@ here, `packages/client-types/src/dto/file-deletes.ts`, root exports):
 - PATCH `/api/shares/:id` `{ mode }` (or `{ serve }`) of a contact share by
   an Admin user, for an item outside its scope: 404 not found (before:
   the Admin act on the system pool, as `{ canWrite }` still is).
-- Inside an open transaction the step throws a runtime fault (no caller
-  does today; tested).
+- In a workspace scope with an open transaction the step throws a runtime
+  fault (no caller does today; tested). In system work it runs in place,
+  in the system transaction (before: it left for a connection of its own,
+  which did not see that transaction's rows).
 
 ### F4 handover
 
