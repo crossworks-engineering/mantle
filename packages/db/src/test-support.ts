@@ -165,6 +165,7 @@ const DEMO_READER_DEFINERS_0293 = [
   'public.mantle_conversation_taint(uuid, text, integer)',
   'public.mantle_client_sourced_gate(uuid, uuid[], uuid[], text[], text[], text[], text[])',
   'public.mantle_turn_heartbeats(uuid, uuid)',
+  'public.mantle_pending_card_route(uuid, uuid)',
 ];
 
 /**

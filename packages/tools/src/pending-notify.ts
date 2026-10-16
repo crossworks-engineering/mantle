@@ -28,26 +28,17 @@
  */
 
 import { and, desc, eq, sql } from 'drizzle-orm';
-import {
-  db,
-  executeWrite,
-  loginHasArea,
-  pendingToolCalls,
-  systemWork,
-  telegramChats,
-} from '@mantle/db';
+import { db, executeWrite, loginHasArea, systemWork, telegramChats } from '@mantle/db';
 import { accountById, sendApprovalCard } from '@mantle/telegram';
 import { loadProfilePreferences } from '@mantle/content';
 import { registerPendingCreatedNotifier } from '@mantle/runs';
 
 /**
- * The chat a pending call's card goes to, and its login, are read on the
- * system pool by the named reason 'login-telegram' (the Telegram tables are
- * granted to no role). The card never left a workspace scope: there the
- * bot's row (accountById) was refused, so no card was sent from one;
- * systemWork now refuses the card at its first read (A6b: no exit), and the
- * in-app badge still tells every login. Off a scope (the runs worker, a
- * workflow, an Admin area's tool) it reads as asSystem did.
+ * resolveApprovalChat's read (a login's paired chat) runs on the system pool
+ * by the named reason 'login-telegram' (the Telegram tables are granted to
+ * no role), for its callers off a scope; systemWork refuses a scope (A6b: no
+ * exit). The card's own route is read by its definer
+ * (mantle_pending_card_route), in a scope too.
  */
 function telegramSystemWork<T>(fn: () => Promise<T>): Promise<T> {
   return systemWork(fn, 'login-telegram');
@@ -97,24 +88,6 @@ function previewArgs(args: Record<string, unknown>): string | undefined {
   if (keys.length > 4) parts.push(`+${keys.length - 4} more`);
   const line = parts.join('\n');
   return line.length > 600 ? line.slice(0, 597) + '…' : line;
-}
-
-/**
- * Who decides a queued call, for its card (workspaces W7d): the login it
- * was queued for (pending_tool_calls.login_id), else the anchor (a call of
- * system work, or the anchor's own). An elevated call goes to the anchor
- * (A5 step 6d fix round 1): its asker may not approve it
- * (pending-approval.ts). Null when the call is gone.
- */
-async function approvalLogin(ownerId: string, pendingId: string): Promise<string | null> {
-  const [row] = await db
-    .select({ loginId: pendingToolCalls.loginId, elevated: pendingToolCalls.elevated })
-    .from(pendingToolCalls)
-    .where(and(eq(pendingToolCalls.id, pendingId), eq(pendingToolCalls.ownerId, ownerId)))
-    .limit(1);
-  if (!row) return null;
-  if (row.elevated) return ownerId;
-  return row.loginId ?? ownerId;
 }
 
 /**
@@ -178,15 +151,23 @@ export async function notifyPendingCreated(input: {
   // companion app's /pending queue (woken by the push above), so skip the
   // card to avoid notifying on two channels.
   try {
-    // The card goes to the call's own login only (W7d): its chat, its last
-    // channel.
-    const loginId = await telegramSystemWork(() => approvalLogin(input.ownerId, input.pendingId));
-    if (!loginId) return;
-    const prefs = await loadProfilePreferences(loginId);
+    // The card goes to the login that decides the call (W7d; an elevated
+    // call's to the anchor, A5 step 6d fix round 1): its chat, its last
+    // channel. Both by their definer (mantle_pending_card_route, 0293: in a
+    // scope only a call the scope's own login asked; A6b: system work
+    // before, refused in a scope). The bot's row (accountById) is read in
+    // the caller's scope, as on main.
+    const [route] = (await db.execute(
+      sql`select login_id::text as "loginId", account_id::text as "accountId",
+                 telegram_chat_id as "telegramChatId"
+            from "public"."mantle_pending_card_route"(${input.ownerId}::uuid, ${input.pendingId}::uuid)`,
+    )) as unknown as { loginId: string; accountId: string | null; telegramChatId: string | null }[];
+    if (!route) return;
+    const prefs = await loadProfilePreferences(route.loginId);
     if (prefs.reminderChannel === 'mobile') return;
 
-    const chat = await resolveApprovalChat(input.ownerId, loginId);
-    if (!chat) return;
+    if (!route.accountId || !route.telegramChatId) return;
+    const chat = { accountId: route.accountId, telegramChatId: route.telegramChatId };
     const account = await accountById(chat.accountId);
     if (!account) return;
     // A runner question is delivered as a heads-up, never as an approval

@@ -28,7 +28,16 @@ vi.mock('@mantle/db', () => {
     return self;
   };
   return {
+    // The card's route by its definer (mantle_pending_card_route): the
+    // deciding login (an elevated call's: the owner) and its chat, asked for
+    // that login (the settings area, in SQL).
     db: {
+      execute: async () => {
+        if (!h.row) return [];
+        const who = h.row.elevated ? 'owner-1' : (h.row.loginId ?? 'owner-1');
+        h.asked.push(who);
+        return [{ loginId: who, accountId: 'acct', telegramChatId: 'chat-of-the-login' }];
+      },
       select: (fields: Record<string, unknown>) =>
         chain(() =>
           'telegramChatId' in fields

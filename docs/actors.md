@@ -4797,7 +4797,8 @@ each):
 ## A6b handover
 
 Branch `feat/a6b` (worktree `.claude/worktrees/a6b`), rebased on main
-v0.300.64 (0292 is main's). The honest exit count (`asSystemExits`,
+v0.300.68 (0292 is main's; A10 #15's cache-control and liveWorkspaceSql
+taken, the guard sweeps re-recorded on it). The honest exit count (`asSystemExits`,
 eslint-rules/as-system-exits.mjs, the TypeScript parser; no wrapper hides
 an exit) is **47**, from 191 on main. The pins are lowered
 (scripts/arch-scoreboard.pins.json: exits 47, files 15, reasons 14, with
@@ -4889,7 +4890,15 @@ A6B_RECORD=<section> to record; this round's three on v0.300.63's code,
 which they share with v0.300.64) and every cell answering as main or a
 named change (NAMED_CHANGES: `back`, `now`, or `nowTest` for a refusal that
 quotes its own arguments, each with `was`). All eight pass in off, warn and
-on.
+on, on the runtime role too (the workspaces switch runs as the migrator), and
+with no master key as on CI (the vault seals under MANTLE_MASTER_KEY_NEXT
+when the run's key is the short viewer test key).
+
+_*Guard sweeps (a4-guard-sweep*.txt):_* re-recorded on v0.300.68; the only
+cells that differ from main are trace lines, never a status or a body:
+whoami's actor (`system:http:*`, no longer `system:rule-in-query`) and the
+app create and patch handlers' one reader (`getOwnerOr401WithLogin`, the
+gate's answer with the login's kind, where they read `getOwnerOr401`).
 
 **Left, and why (not moved this round):**
 

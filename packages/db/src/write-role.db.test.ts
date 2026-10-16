@@ -206,6 +206,8 @@ const DEFINERS_THE_WRITE_ROLE_RUNS: Readonly<Record<string, string>> = {
   'mantle_client_sourced_gate(uuid,uuid[],uuid[],text[],text[],text[],text[])':
     'a marked turn’s write rule: why it waits, or none',
   'mantle_turn_heartbeats(uuid,uuid)': 'the active heartbeats of the scope’s own login',
+  'mantle_pending_card_route(uuid,uuid)':
+    'where a queued call’s card goes, for a call the scope’s own login asked; never the bot’s token',
   'mantle_read_cursor_mark(uuid,uuid,uuid,timestamp with time zone)':
     WRITE_ROLE_FUNCTIONS[
       'public.mantle_read_cursor_mark(uuid,uuid,uuid,timestamp with time zone)'

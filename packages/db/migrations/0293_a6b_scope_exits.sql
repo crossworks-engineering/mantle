@@ -112,6 +112,12 @@
 --    workspace, its only user and a Moderator (server/web
 --    lib/workspaces.ts createWorkspace; on the system pool before,
 --    'workspace-write'). In a scope only the scope's own login.
+-- 19. mantle_pending_card_route(owner, pending): where a queued call's
+--    approval card goes, its deciding login and that login's chat (packages/
+--    tools pending-notify.ts; system work before, refused in a scope since
+--    A6b's first round). In a scope only a call the scope's own login asked.
+--    The send itself still needs the bot's row (accountById), which a scope
+--    does not read, as on main.
 --
 -- The writes (3, 4, 18) are the write role's (WRITE_ROLE_FUNCTIONS,
 -- access-matrix.ts: applyViewerGrants grants them), not the workspace
@@ -1010,6 +1016,43 @@ $$;
 REVOKE ALL ON FUNCTION "public"."mantle_ws_create"(uuid, uuid, text, text) FROM PUBLIC;
 --> statement-breakpoint
 
+-- Where a queued call's approval card goes (19): the login that decides it
+-- (an elevated call: the anchor, its asker may not approve it; else the
+-- login it was queued for, else the anchor) and, while that login may decide
+-- approvals (the settings area), its most recently active allowed chat. In a
+-- scope only a call the scope's own login asked (one no login asked: only
+-- for the anchor's scope or a scope with no login). Never the bot's token.
+CREATE OR REPLACE FUNCTION "public"."mantle_pending_card_route"(owner uuid, pending uuid)
+  RETURNS TABLE ("login_id" uuid, "account_id" uuid, "telegram_chat_id" text)
+  LANGUAGE sql STABLE SECURITY DEFINER
+  SET search_path = "public", pg_temp AS $$
+  WITH p AS (
+    SELECT CASE WHEN q."elevated" IS NOT NULL AND q."elevated" <> 'null'::jsonb THEN owner
+                ELSE coalesce(q."login_id", owner) END AS who
+      FROM "public"."pending_tool_calls" q
+     WHERE q."id" = pending AND q."owner_id" = owner
+       AND (NOT "public"."mantle_scope_active"()
+            OR (owner = "public"."mantle_brain_id"()
+                AND (q."login_id" = "public"."mantle_login_id"()
+                     OR (q."login_id" IS NULL
+                         AND ("public"."mantle_login_id"() IS NULL
+                              OR "public"."mantle_login_id"() = owner)))))
+  )
+  SELECT p.who, c."account_id", c."telegram_chat_id"
+    FROM p
+    LEFT JOIN LATERAL (
+      SELECT t."account_id", t."telegram_chat_id" FROM "public"."telegram_chats" t
+       WHERE t."user_id" = owner AND t."login_id" = p.who AND t."allowlist_status" = 'allowed'
+         AND "public"."mantle_login_area"(p.who, 'settings')
+       ORDER BY t."last_message_at" DESC
+       LIMIT 1) c ON true
+$$;
+--> statement-breakpoint
+REVOKE ALL ON FUNCTION "public"."mantle_pending_card_route"(uuid, uuid) FROM PUBLIC;
+--> statement-breakpoint
+GRANT EXECUTE ON FUNCTION "public"."mantle_pending_card_route"(uuid, uuid) TO "mantle_view_user";
+--> statement-breakpoint
+
 -- The public demo's SELECT-only reader serves owner reads (as 0285, 0286, 0291).
 DO $$
 BEGIN
@@ -1040,6 +1083,7 @@ BEGIN
     GRANT EXECUTE ON FUNCTION "public"."mantle_conversation_taint"(uuid, text, integer) TO demo_reader;
     GRANT EXECUTE ON FUNCTION "public"."mantle_client_sourced_gate"(uuid, uuid[], uuid[], text[], text[], text[], text[]) TO demo_reader;
     GRANT EXECUTE ON FUNCTION "public"."mantle_turn_heartbeats"(uuid, uuid) TO demo_reader;
+    GRANT EXECUTE ON FUNCTION "public"."mantle_pending_card_route"(uuid, uuid) TO demo_reader;
   END IF;
 END
 $$;
