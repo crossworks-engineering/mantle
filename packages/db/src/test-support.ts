@@ -420,6 +420,24 @@ export async function createEmptyScratchDatabase(
   return { url, name, drop };
 }
 
+/** The start of a query as settleDatabase's warning prints it: one line,
+ *  with the value after `password` masked, case-insensitively, in every form
+ *  a role or connection password is written: a quoted literal (doubled
+ *  quotes inside it, with or without a space before it), an E'...' string
+ *  (backslash escapes), a $$...$$ or $tag$...$tag$ string, and a conninfo
+ *  `password=value`. A literal the 80-character cut ends inside (no closing
+ *  quote or tag) is masked to the end. The word inside a string ('password')
+ *  is left alone. */
+export function quotedQueryStart(query: string): string {
+  return query
+    .replace(
+      /(?<!')password(?:\s*=\s*\S+|\s*(?:E'(?:[^'\\]|''|\\[\s\S])*'?|'(?:[^']|'')*'?|\$(\w*)\$[\s\S]*?(?:\$\1\$|$)))/gi,
+      (m) => (/^password\s*=/i.test(m) ? 'password=***' : "password '***'"),
+    )
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 /**
  * Wait (up to `ms`) until no session on database `name` is running anything,
  * so the forced drop only ends idle connections.
@@ -446,16 +464,6 @@ export async function createEmptyScratchDatabase(
  * 10 s default hookTimeout, which bills this wait when the drop runs in an
  * afterAll: a longer wait, or a slower drop after it, fails the hook.
  */
-/** The start of a query as settleDatabase's warning prints it: one line, a
- *  `password '...'` literal (CREATE/ALTER ROLE) masked, case-insensitively,
- *  even when the 80-character cut lands inside it (no closing quote). */
-export function quotedQueryStart(query: string): string {
-  return query
-    .replace(/password\s+'[^']*'?/gi, "password '***'")
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
 export async function settleDatabase(sql: Sql, name: string, ms = 5_000): Promise<void> {
   const until = Date.now() + ms;
   let warned = false;

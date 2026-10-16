@@ -41,6 +41,54 @@ describe('the warning masks a password literal in the query it quotes', () => {
     expect(quotedQueryStart("create role r password 'hunt")).toBe("create role r password '***'");
     expect(quotedQueryStart('select  1\n from t')).toBe('select 1 from t');
   });
+
+  it('masks a doubled quote inside the literal, not only up to it', () => {
+    expect(quotedQueryStart("alter role r password 'it''s secret' login")).toBe(
+      "alter role r password '***' login",
+    );
+    expect(quotedQueryStart("alter role r password '' login")).toBe(
+      "alter role r password '***' login",
+    );
+  });
+
+  it("masks an E'...' string, its backslash-escaped quote included", () => {
+    expect(quotedQueryStart("create role r password E'a\\'b c' login")).toBe(
+      "create role r password '***' login",
+    );
+    expect(quotedQueryStart("create role r PASSWORD e'cut\\'he")).toBe(
+      "create role r password '***'",
+    );
+  });
+
+  it('masks a literal with no space before it', () => {
+    expect(quotedQueryStart("alter role r password'hunter2' login")).toBe(
+      "alter role r password '***' login",
+    );
+  });
+
+  it('masks a dollar-quoted literal, tagged or not, closed or cut', () => {
+    expect(quotedQueryStart('alter role r password $$hun ter$$ login')).toBe(
+      "alter role r password '***' login",
+    );
+    expect(quotedQueryStart('alter role r password $pw$a$$b$pw$ login')).toBe(
+      "alter role r password '***' login",
+    );
+    expect(quotedQueryStart('alter role r password $$cut mid')).toBe(
+      "alter role r password '***'",
+    );
+  });
+
+  it('masks a conninfo password=value, case-insensitively', () => {
+    expect(quotedQueryStart("select dblink_connect('host=db Password=s3cr3t dbname=x')")).toBe(
+      "select dblink_connect('host=db password=*** dbname=x')",
+    );
+  });
+
+  it('leaves a query without a password value alone', () => {
+    expect(quotedQueryStart("show password_encryption; select 'password'")).toBe(
+      "show password_encryption; select 'password'",
+    );
+  });
 });
 
 describe.skipIf(!URL)('scratch drop waits for work in flight', () => {
