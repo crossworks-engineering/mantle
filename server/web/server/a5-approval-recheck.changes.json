@@ -4,7 +4,8 @@
     "gains-not-the-calls": "Rights the asker gained after asking (a Moderator seat elsewhere, Admin's) are not the call's: it runs in the scope it was asked in, never wider. On main it ran unscoped, or in the approver's MCP scope (the owner's, where it was claimed and then failed at run).",
     "lost-workspace": "The asker left the workspace it asked in: the approval is refused before the claim (an ApprovalRefusedError, 403 on the web, an error over MCP) and the call stays pending, run nowhere. On main it ran unscoped as its asker, or over MCP was claimed in the approver's scope and failed at run. Since fix round 1 this holds over MCP too: the row is read on the system pool, where the approver's own scope (its own MCP, an asker that left) would read nothing.",
     "lost-moderator": "The asker lost its Moderator seat where it asked: the queue-time check run again refuses it (the connector's write rule; the item rule for the note), before the claim, and the call stays pending. On main it ran unscoped, or was claimed and then failed at run (over MCP, in the approver's scope).",
-    "lost-item": "What the call names is no longer the asked scope's (the note homed in another workspace, the connector no longer a resource of the workspace): the item pre-check or the connector rule refuses it again before the claim, and it stays pending. On main it ran unscoped, or was claimed and then failed at run (over MCP, in the approver's scope)."
+    "lost-item": "What the call names is no longer the asked scope's (the note homed in another workspace, the connector no longer a resource of the workspace): the item pre-check (since the pre-check removal: the tool's precondition, which no longer finds the note in the scope) or the connector rule refuses it again before the claim, and it stays pending. On main it ran unscoped, or was claimed and then failed at run (over MCP, in the approver's scope).",
+    "pre-check-removal": "note_update's item pre-check went (docs/actors.md, \"Pre-check deletion\"): the database refuses the write itself, with both checks on, in the scope the call was asked in. A call queued by a member who may not edit the note is no longer refused before it is queued, and a call whose asker lost its Moderator seat is no longer held back before the claim: each is claimed and run where it was asked, and the database refuses it ('approved' with the database's words as its error; the note unchanged). A plain member's queued call meets each approver's own rule as any call does (an approver that may not approve it, or does not see it, leaves it pending). Nothing is written in any of these cells."
   },
   "cells": {
     "adminUser|owner|web|none|connector": {
@@ -24,8 +25,8 @@
       "why": "lost-moderator"
     },
     "adminUser|owner|web|lostModerator|note": {
-      "now": "web 403 This call no longer passes the checks of the workspace it was asked in, so it does not run => pending; note unchanged",
-      "why": "lost-moderator"
+      "now": "web 200 => approved (You cannot change this item in your workspaces.); note unchanged",
+      "why": "pre-check-removal"
     },
     "adminUser|owner|web|lostItem|connector": {
       "now": "web 403 This call no longer passes the checks of the workspace it was asked in, so it does not run => pending; not run",
@@ -60,8 +61,8 @@
       "why": "lost-moderator"
     },
     "adminUser|owner|mcp|lostModerator|note": {
-      "now": "mcp error Error: This call no longer passes the checks of the workspace it was asked in, so it does  => pending; note unchanged",
-      "why": "lost-moderator"
+      "now": "mcp ok => approved (You cannot change this item in your workspaces.); note unchanged",
+      "why": "pre-check-removal"
     },
     "adminUser|owner|mcp|lostItem|connector": {
       "now": "mcp error Error: This call no longer passes the checks of the workspace it was asked in, so it does  => pending; not run",
@@ -96,8 +97,8 @@
       "why": "lost-moderator"
     },
     "adminUser|owner|telegram|lostModerator|note": {
-      "now": "telegram refused This call no longer passes the checks of the workspace it was asked in, so it does not run => pending; note unchanged",
-      "why": "lost-moderator"
+      "now": "telegram ok Approved note_update, it ran but failed: You cannot change this item in your workspaces. => approved (You cannot change this item in your workspaces.); note unchanged",
+      "why": "pre-check-removal"
     },
     "adminUser|owner|telegram|lostItem|connector": {
       "now": "telegram refused This call no longer passes the checks of the workspace it was asked in, so it does not run => pending; not run",
@@ -128,8 +129,8 @@
       "why": "lost-moderator"
     },
     "adminUser|owner|batch|lostModerator|note": {
-      "now": "batch throw This call no longer passes the checks of the workspace it was asked in, so it does not run => pending; note unchanged",
-      "why": "lost-moderator"
+      "now": "batch ok => approved (You cannot change this item in your workspaces.); note unchanged",
+      "why": "pre-check-removal"
     },
     "adminUser|owner|batch|lostItem|connector": {
       "now": "batch throw This call no longer passes the checks of the workspace it was asked in, so it does not run => pending; not run",
@@ -160,8 +161,8 @@
       "why": "lost-moderator"
     },
     "adminUser|self|web|lostModerator|note": {
-      "now": "web 403 This call no longer passes the checks of the workspace it was asked in, so it does not run => pending; note unchanged",
-      "why": "lost-moderator"
+      "now": "web 200 => approved (You cannot change this item in your workspaces.); note unchanged",
+      "why": "pre-check-removal"
     },
     "adminUser|self|web|lostItem|connector": {
       "now": "web 403 This call no longer passes the checks of the workspace it was asked in, so it does not run => pending; not run",
@@ -192,8 +193,8 @@
       "why": "lost-moderator"
     },
     "adminUser|self|mcp|lostModerator|note": {
-      "now": "mcp error Error: This call no longer passes the checks of the workspace it was asked in, so it does  => pending; note unchanged",
-      "why": "lost-moderator"
+      "now": "mcp ok => approved (You cannot change this item in your workspaces.); note unchanged",
+      "why": "pre-check-removal"
     },
     "adminUser|self|mcp|lostItem|connector": {
       "now": "mcp error Error: This call no longer passes the checks of the workspace it was asked in, so it does  => pending; not run",
@@ -224,8 +225,8 @@
       "why": "lost-moderator"
     },
     "adminUser|self|telegram|lostModerator|note": {
-      "now": "telegram refused This call no longer passes the checks of the workspace it was asked in, so it does not run => pending; note unchanged",
-      "why": "lost-moderator"
+      "now": "telegram ok Approved note_update, it ran but failed: You cannot change this item in your workspaces. => approved (You cannot change this item in your workspaces.); note unchanged",
+      "why": "pre-check-removal"
     },
     "adminUser|self|telegram|lostItem|connector": {
       "now": "telegram refused This call no longer passes the checks of the workspace it was asked in, so it does not run => pending; not run",
@@ -256,8 +257,8 @@
       "why": "lost-moderator"
     },
     "adminUser|self|batch|lostModerator|note": {
-      "now": "batch throw This call no longer passes the checks of the workspace it was asked in, so it does not run => pending; note unchanged",
-      "why": "lost-moderator"
+      "now": "batch ok => approved (You cannot change this item in your workspaces.); note unchanged",
+      "why": "pre-check-removal"
     },
     "adminUser|self|batch|lostItem|connector": {
       "now": "batch throw This call no longer passes the checks of the workspace it was asked in, so it does not run => pending; not run",
@@ -288,8 +289,8 @@
       "why": "lost-moderator"
     },
     "member|owner|web|lostModerator|note": {
-      "now": "web 403 This call no longer passes the checks of the workspace it was asked in, so it does not run => pending; note unchanged",
-      "why": "lost-moderator"
+      "now": "web 200 => approved (You cannot change this item in your workspaces.); note unchanged",
+      "why": "pre-check-removal"
     },
     "member|owner|web|lostItem|connector": {
       "now": "web 403 This call no longer passes the checks of the workspace it was asked in, so it does not run => pending; not run",
@@ -324,8 +325,8 @@
       "why": "lost-moderator"
     },
     "member|owner|mcp|lostModerator|note": {
-      "now": "mcp error Error: This call no longer passes the checks of the workspace it was asked in, so it does  => pending; note unchanged",
-      "why": "lost-moderator"
+      "now": "mcp ok => approved (You cannot change this item in your workspaces.); note unchanged",
+      "why": "pre-check-removal"
     },
     "member|owner|mcp|lostItem|connector": {
       "now": "mcp error Error: This call no longer passes the checks of the workspace it was asked in, so it does  => pending; not run",
@@ -360,8 +361,8 @@
       "why": "lost-moderator"
     },
     "member|owner|telegram|lostModerator|note": {
-      "now": "telegram refused This call no longer passes the checks of the workspace it was asked in, so it does not run => pending; note unchanged",
-      "why": "lost-moderator"
+      "now": "telegram ok Approved note_update, it ran but failed: You cannot change this item in your workspaces. => approved (You cannot change this item in your workspaces.); note unchanged",
+      "why": "pre-check-removal"
     },
     "member|owner|telegram|lostItem|connector": {
       "now": "telegram refused This call no longer passes the checks of the workspace it was asked in, so it does not run => pending; not run",
@@ -392,8 +393,8 @@
       "why": "lost-moderator"
     },
     "member|owner|batch|lostModerator|note": {
-      "now": "batch throw This call no longer passes the checks of the workspace it was asked in, so it does not run => pending; note unchanged",
-      "why": "lost-moderator"
+      "now": "batch ok => approved (You cannot change this item in your workspaces.); note unchanged",
+      "why": "pre-check-removal"
     },
     "member|owner|batch|lostItem|connector": {
       "now": "batch throw This call no longer passes the checks of the workspace it was asked in, so it does not run => pending; not run",
@@ -424,8 +425,8 @@
       "why": "lost-moderator"
     },
     "member|self|batch|lostModerator|note": {
-      "now": "batch throw This call no longer passes the checks of the workspace it was asked in, so it does not run => pending; note unchanged",
-      "why": "lost-moderator"
+      "now": "batch ok => approved (You cannot change this item in your workspaces.); note unchanged",
+      "why": "pre-check-removal"
     },
     "member|self|batch|lostItem|connector": {
       "now": "batch throw This call no longer passes the checks of the workspace it was asked in, so it does not run => pending; not run",
@@ -438,6 +439,246 @@
     "member|self|batch|gained|connector": {
       "now": "batch ok => approved; ran in assistant:member ws team mod team as login:member",
       "why": "gains-not-the-calls"
+    },
+    "memberPlain|owner|web|none|note": {
+      "now": "web 200 => approved (You cannot change this item in your workspaces.); note unchanged",
+      "why": "pre-check-removal"
+    },
+    "memberPlain|owner|web|lostWorkspace|note": {
+      "now": "web 403 The person who asked for this call no longer has the workspace it was asked in, so it does => pending; note unchanged",
+      "why": "pre-check-removal"
+    },
+    "memberPlain|owner|web|lostModerator|note": {
+      "now": "web 200 => approved (You cannot change this item in your workspaces.); note unchanged",
+      "why": "pre-check-removal"
+    },
+    "memberPlain|owner|web|lostItem|note": {
+      "now": "web 403 This call no longer passes the checks of the workspace it was asked in, so it does not run => pending; note unchanged",
+      "why": "pre-check-removal"
+    },
+    "memberPlain|owner|web|gained|note": {
+      "now": "web 200 => approved (You cannot change this item in your workspaces.); note unchanged",
+      "why": "pre-check-removal"
+    },
+    "memberPlain|owner|mcp|none|note": {
+      "now": "mcp ok => approved (You cannot change this item in your workspaces.); note unchanged",
+      "why": "pre-check-removal"
+    },
+    "memberPlain|owner|mcp|lostWorkspace|note": {
+      "now": "mcp error Error: The person who asked for this call no longer has the workspace it was asked in, so  => pending; note unchanged",
+      "why": "pre-check-removal"
+    },
+    "memberPlain|owner|mcp|lostModerator|note": {
+      "now": "mcp ok => approved (You cannot change this item in your workspaces.); note unchanged",
+      "why": "pre-check-removal"
+    },
+    "memberPlain|owner|mcp|lostItem|note": {
+      "now": "mcp error Error: This call no longer passes the checks of the workspace it was asked in, so it does  => pending; note unchanged",
+      "why": "pre-check-removal"
+    },
+    "memberPlain|owner|mcp|gained|note": {
+      "now": "mcp ok => approved (You cannot change this item in your workspaces.); note unchanged",
+      "why": "pre-check-removal"
+    },
+    "memberPlain|owner|telegram|none|note": {
+      "now": "telegram ok Approved note_update, it ran but failed: You cannot change this item in your workspaces. => approved (You cannot change this item in your workspaces.); note unchanged",
+      "why": "pre-check-removal"
+    },
+    "memberPlain|owner|telegram|lostWorkspace|note": {
+      "now": "telegram refused The person who asked for this call no longer has the workspace it was asked in, so it does => pending; note unchanged",
+      "why": "pre-check-removal"
+    },
+    "memberPlain|owner|telegram|lostModerator|note": {
+      "now": "telegram ok Approved note_update, it ran but failed: You cannot change this item in your workspaces. => approved (You cannot change this item in your workspaces.); note unchanged",
+      "why": "pre-check-removal"
+    },
+    "memberPlain|owner|telegram|lostItem|note": {
+      "now": "telegram refused This call no longer passes the checks of the workspace it was asked in, so it does not run => pending; note unchanged",
+      "why": "pre-check-removal"
+    },
+    "memberPlain|owner|telegram|gained|note": {
+      "now": "telegram ok Approved note_update, it ran but failed: You cannot change this item in your workspaces. => approved (You cannot change this item in your workspaces.); note unchanged",
+      "why": "pre-check-removal"
+    },
+    "memberPlain|owner|batch|none|note": {
+      "now": "batch ok => approved (You cannot change this item in your workspaces.); note unchanged",
+      "why": "pre-check-removal"
+    },
+    "memberPlain|owner|batch|lostWorkspace|note": {
+      "now": "batch throw The person who asked for this call no longer has the workspace it was asked in, so it does => pending; note unchanged",
+      "why": "pre-check-removal"
+    },
+    "memberPlain|owner|batch|lostModerator|note": {
+      "now": "batch ok => approved (You cannot change this item in your workspaces.); note unchanged",
+      "why": "pre-check-removal"
+    },
+    "memberPlain|owner|batch|lostItem|note": {
+      "now": "batch throw This call no longer passes the checks of the workspace it was asked in, so it does not run => pending; note unchanged",
+      "why": "pre-check-removal"
+    },
+    "memberPlain|owner|batch|gained|note": {
+      "now": "batch ok => approved (You cannot change this item in your workspaces.); note unchanged",
+      "why": "pre-check-removal"
+    },
+    "memberPlain|self|web|none|note": {
+      "now": "web 403 forbidden => pending; note unchanged",
+      "why": "pre-check-removal"
+    },
+    "memberPlain|self|web|lostWorkspace|note": {
+      "now": "web 403 forbidden => pending; note unchanged",
+      "why": "pre-check-removal"
+    },
+    "memberPlain|self|web|lostModerator|note": {
+      "now": "web 403 forbidden => pending; note unchanged",
+      "why": "pre-check-removal"
+    },
+    "memberPlain|self|web|lostItem|note": {
+      "now": "web 403 forbidden => pending; note unchanged",
+      "why": "pre-check-removal"
+    },
+    "memberPlain|self|web|gained|note": {
+      "now": "web 403 forbidden => pending; note unchanged",
+      "why": "pre-check-removal"
+    },
+    "memberPlain|self|mcp|none|note": {
+      "now": "mcp throw Tool pending_approve not found => pending; note unchanged",
+      "why": "pre-check-removal"
+    },
+    "memberPlain|self|mcp|lostWorkspace|note": {
+      "now": "mcp throw Tool pending_approve not found => pending; note unchanged",
+      "why": "pre-check-removal"
+    },
+    "memberPlain|self|mcp|lostModerator|note": {
+      "now": "mcp throw Tool pending_approve not found => pending; note unchanged",
+      "why": "pre-check-removal"
+    },
+    "memberPlain|self|mcp|lostItem|note": {
+      "now": "mcp throw Tool pending_approve not found => pending; note unchanged",
+      "why": "pre-check-removal"
+    },
+    "memberPlain|self|mcp|gained|note": {
+      "now": "mcp throw Tool pending_approve not found => pending; note unchanged",
+      "why": "pre-check-removal"
+    },
+    "memberPlain|self|telegram|none|note": {
+      "now": "telegram refused You cannot decide approvals: ask an Admin user to. => pending; note unchanged",
+      "why": "pre-check-removal"
+    },
+    "memberPlain|self|telegram|lostWorkspace|note": {
+      "now": "telegram refused You cannot decide approvals: ask an Admin user to. => pending; note unchanged",
+      "why": "pre-check-removal"
+    },
+    "memberPlain|self|telegram|lostModerator|note": {
+      "now": "telegram refused You cannot decide approvals: ask an Admin user to. => pending; note unchanged",
+      "why": "pre-check-removal"
+    },
+    "memberPlain|self|telegram|lostItem|note": {
+      "now": "telegram refused You cannot decide approvals: ask an Admin user to. => pending; note unchanged",
+      "why": "pre-check-removal"
+    },
+    "memberPlain|self|telegram|gained|note": {
+      "now": "telegram refused You cannot decide approvals: ask an Admin user to. => pending; note unchanged",
+      "why": "pre-check-removal"
+    },
+    "memberPlain|self|batch|none|note": {
+      "now": "batch ok => approved (You cannot change this item in your workspaces.); note unchanged",
+      "why": "pre-check-removal"
+    },
+    "memberPlain|self|batch|lostWorkspace|note": {
+      "now": "batch throw The person who asked for this call no longer has the workspace it was asked in, so it does => pending; note unchanged",
+      "why": "pre-check-removal"
+    },
+    "memberPlain|self|batch|lostModerator|note": {
+      "now": "batch ok => approved (You cannot change this item in your workspaces.); note unchanged",
+      "why": "pre-check-removal"
+    },
+    "memberPlain|self|batch|lostItem|note": {
+      "now": "batch throw This call no longer passes the checks of the workspace it was asked in, so it does not run => pending; note unchanged",
+      "why": "pre-check-removal"
+    },
+    "memberPlain|self|batch|gained|note": {
+      "now": "batch ok => approved (You cannot change this item in your workspaces.); note unchanged",
+      "why": "pre-check-removal"
+    },
+    "memberPlain|other|web|none|note": {
+      "now": "web 404 pending call not found or already decided => pending; note unchanged",
+      "why": "pre-check-removal"
+    },
+    "memberPlain|other|web|lostWorkspace|note": {
+      "now": "web 404 pending call not found or already decided => pending; note unchanged",
+      "why": "pre-check-removal"
+    },
+    "memberPlain|other|web|lostModerator|note": {
+      "now": "web 404 pending call not found or already decided => pending; note unchanged",
+      "why": "pre-check-removal"
+    },
+    "memberPlain|other|web|lostItem|note": {
+      "now": "web 404 pending call not found or already decided => pending; note unchanged",
+      "why": "pre-check-removal"
+    },
+    "memberPlain|other|web|gained|note": {
+      "now": "web 404 pending call not found or already decided => pending; note unchanged",
+      "why": "pre-check-removal"
+    },
+    "memberPlain|other|mcp|none|note": {
+      "now": "mcp error Error: not found or already decided => pending; note unchanged",
+      "why": "pre-check-removal"
+    },
+    "memberPlain|other|mcp|lostWorkspace|note": {
+      "now": "mcp error Error: not found or already decided => pending; note unchanged",
+      "why": "pre-check-removal"
+    },
+    "memberPlain|other|mcp|lostModerator|note": {
+      "now": "mcp error Error: not found or already decided => pending; note unchanged",
+      "why": "pre-check-removal"
+    },
+    "memberPlain|other|mcp|lostItem|note": {
+      "now": "mcp error Error: not found or already decided => pending; note unchanged",
+      "why": "pre-check-removal"
+    },
+    "memberPlain|other|mcp|gained|note": {
+      "now": "mcp error Error: not found or already decided => pending; note unchanged",
+      "why": "pre-check-removal"
+    },
+    "memberPlain|other|telegram|none|note": {
+      "now": "telegram refused Already decided, or no longer pending. => pending; note unchanged",
+      "why": "pre-check-removal"
+    },
+    "memberPlain|other|telegram|lostWorkspace|note": {
+      "now": "telegram refused Already decided, or no longer pending. => pending; note unchanged",
+      "why": "pre-check-removal"
+    },
+    "memberPlain|other|telegram|lostModerator|note": {
+      "now": "telegram refused Already decided, or no longer pending. => pending; note unchanged",
+      "why": "pre-check-removal"
+    },
+    "memberPlain|other|telegram|lostItem|note": {
+      "now": "telegram refused Already decided, or no longer pending. => pending; note unchanged",
+      "why": "pre-check-removal"
+    },
+    "memberPlain|other|telegram|gained|note": {
+      "now": "telegram refused Already decided, or no longer pending. => pending; note unchanged",
+      "why": "pre-check-removal"
+    },
+    "memberPlain|other|batch|none|note": {
+      "now": "batch not-found => pending; note unchanged",
+      "why": "pre-check-removal"
+    },
+    "memberPlain|other|batch|lostWorkspace|note": {
+      "now": "batch not-found => pending; note unchanged",
+      "why": "pre-check-removal"
+    },
+    "memberPlain|other|batch|lostModerator|note": {
+      "now": "batch not-found => pending; note unchanged",
+      "why": "pre-check-removal"
+    },
+    "memberPlain|other|batch|lostItem|note": {
+      "now": "batch not-found => pending; note unchanged",
+      "why": "pre-check-removal"
+    },
+    "memberPlain|other|batch|gained|note": {
+      "now": "batch not-found => pending; note unchanged",
+      "why": "pre-check-removal"
     }
   }
 }
