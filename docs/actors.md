@@ -5460,6 +5460,20 @@ hashes of the 56 removed tools whose stubbed cases reached the pre-check,
 and the MCP call snapshot's page_update and file_rename cells on the
 refused item (the handler runs; the database refuses it on a box).
 
+**Tests that changed with it, each on purpose.** Six DB suites whose
+cells refused a removed tool's write in the default test mode (actor check
+warn, edit check off) run with both checks on now, as a box does:
+`a5-approval-recheck`, `a8-findings`, `w7b-mcp-surface`,
+`w7a-admin-scope`, `w7a-fix2`, `w7a-tool-sweep` (the last points every
+database-checked write at a Read-only and a private item and holds their
+state, path, page, table and links included, to what it was). The approval
+re-check names its 73 changed cells (`a5-approval-recheck.changes.json`,
+reason `pre-check-removal`: queued, or claimed, and run where asked, then
+refused by the database; no note changed in any). The A8 surface matrix
+lists P1 (`a8-known-failures.ts`): the nine pairwise cells whose tool edit
+is made below on, in off and warn only; they pass in on. The worker write
+role test drops its "pre-check in place" cell (note_update has none).
+
 **What is left (part 2):** the 27 HTTP entries, after blocker 1 (F4); then
 the kept tool entries, each by removing its second reason (a side effect
 moved after its checked statement, a check added, the answer fixed).
