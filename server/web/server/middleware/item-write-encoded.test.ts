@@ -63,7 +63,6 @@ vi.mock('@mantle/db', async (importOriginal) => {
   const dialect = new PgDialect();
   return {
     ...actual,
-    brainOnWorkspacesNow: async () => true,
     loginScopeFor: async (loginId: string) => ({ kind: 'user', loginId, ws: [], modWs: [] }),
     withViewer: async (_viewer: unknown, fn: () => unknown) => fn(),
     // Past the item check (which a skipped check reaches), a create home
@@ -95,7 +94,6 @@ describe.skipIf(!hasManifest)('the item write check reads the decoded item id', 
     process.env.SESSION_SECRET = 'item-write-encoded-secret-that-is-at-least-32-chars';
     delete process.env.MANTLE_API_CORS_ORIGINS;
     delete process.env.MANTLE_DETACHED_DEV;
-    delete process.env.MANTLE_ADMIN_READS;
     const { buildSessionCookie } = await import('../../lib/auth/tokens');
     memberCookie = `mantle_session=${buildSessionCookie(MEMBER_ID).value}`;
     adminCookie = `mantle_session=${buildSessionCookie(ADMIN_ID).value}`;

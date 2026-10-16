@@ -17,8 +17,7 @@
  * makes them (an Admin user, a member with a private workspace, a member
  * with none, a key without Search, a peer, a login in no workspace) and
  * stdio. The two connections of the switch-over (an Admin user on a brain
- * not on workspaces, and on the rollback switch) went in arch A7, recorded
- * on main before the switch-over code went. No database: every read the surface makes is answered here, by
+ * not on workspaces, and on the rollback switch) went in arch A7. No database: every read the surface makes is answered here, by
  * module path, so the same answers reach the code before and after the
  * change. The handlers of the builtins called are replaced on their
  * definitions (the one object the surface and the registry share).
@@ -27,7 +26,6 @@ import { createHash } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 const st = vi.hoisted(() => ({
-  onWorkspaces: true,
   /** loginId -> its workspaces (ws, modWs). */
   scopes: new Map<string, { ws: string[]; modWs: string[] }>(),
   /** loginId -> holds the Admin workspace. */
@@ -132,7 +130,6 @@ vi.mock('../../db/src/client', async (importOriginal) => {
   return {
     ...real,
     db: fakeDb,
-    brainOnWorkspacesNow: async () => st.onWorkspaces,
     loginScopeFor: async (loginId: string) => {
       const s = st.scopes.get(loginId) ?? { ws: [], modWs: [] };
       return { kind: 'user', loginId, ws: [...s.ws], modWs: [...s.modWs] };
@@ -410,8 +407,6 @@ function seedLogins(): void {
 type Conn = {
   label: string;
   caller: McpCaller | 'stdio';
-  onWorkspaces?: boolean;
-  rollback?: boolean;
 };
 
 const CONNECTIONS: Conn[] = [
@@ -552,9 +547,6 @@ async function connectAs(
 }
 
 async function session(conn: Conn) {
-  st.onWorkspaces = conn.onWorkspaces !== false;
-  if (conn.rollback) process.env.MANTLE_ADMIN_READS = 'system';
-  else delete process.env.MANTLE_ADMIN_READS;
   let instructions: string;
   const [serverSide, clientSide] = InMemoryTransport.createLinkedPair();
   if (conn.caller === 'stdio') {
@@ -583,41 +575,36 @@ describe('MCP calls, byte for byte (A5 step 4)', () => {
   it('every connection: instructions, tools/list, and each call', async () => {
     seedLogins();
     const out: Record<string, unknown> = {};
-    try {
-      for (const conn of CONNECTIONS) {
-        const { client, instructions } = await session(conn);
-        const { tools } = await client.listTools();
-        const calls: unknown[] = [];
-        for (const call of CALLS) {
-          st.seen = [];
-          st.inserts = [];
-          st.remote = [];
-          st.landing = [{ id: ids.PRIVATE_WS, name: 'Private' }];
-          st.connectorRefusal = call.refuse ?? null;
-          let reply: unknown;
-          try {
-            reply = await client.callTool({ name: call.name, arguments: call.args });
-          } catch (err) {
-            reply = { protocolError: err instanceof Error ? err.message : String(err) };
-          }
-          calls.push({
-            call: `${call.name} ${JSON.stringify(call.args)}${call.refuse ? ' (connector refused)' : ''}`,
-            reply,
-            handler: st.seen,
-            remote: st.remote,
-            inserts: st.inserts,
-          });
+    for (const conn of CONNECTIONS) {
+      const { client, instructions } = await session(conn);
+      const { tools } = await client.listTools();
+      const calls: unknown[] = [];
+      for (const call of CALLS) {
+        st.seen = [];
+        st.inserts = [];
+        st.remote = [];
+        st.landing = [{ id: ids.PRIVATE_WS, name: 'Private' }];
+        st.connectorRefusal = call.refuse ?? null;
+        let reply: unknown;
+        try {
+          reply = await client.callTool({ name: call.name, arguments: call.args });
+        } catch (err) {
+          reply = { protocolError: err instanceof Error ? err.message : String(err) };
         }
-        await client.close();
-        out[conn.label] = {
-          instructions,
-          tools: { count: tools.length, sha256: sha(JSON.stringify(tools)) },
-          calls,
-        };
+        calls.push({
+          call: `${call.name} ${JSON.stringify(call.args)}${call.refuse ? ' (connector refused)' : ''}`,
+          reply,
+          handler: st.seen,
+          remote: st.remote,
+          inserts: st.inserts,
+        });
       }
-    } finally {
-      delete process.env.MANTLE_ADMIN_READS;
-      st.onWorkspaces = true;
+      await client.close();
+      out[conn.label] = {
+        instructions,
+        tools: { count: tools.length, sha256: sha(JSON.stringify(tools)) },
+        calls,
+      };
     }
     expect(Object.keys(out)).toHaveLength(CONNECTIONS.length);
     await expect(`${JSON.stringify(out, null, 1)}\n`).toMatchFileSnapshot(

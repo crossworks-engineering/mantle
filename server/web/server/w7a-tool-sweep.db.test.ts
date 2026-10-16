@@ -278,7 +278,6 @@ describe.skipIf(!URL)('W7a: the Admin assistant and the Admin MCP run in a scope
     process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
     process.env.SESSION_SECRET = 'w7a-sweep-secret-at-least-32-characters!!';
     delete process.env.MANTLE_DETACHED_DEV;
-    delete process.env.MANTLE_ADMIN_READS;
     // Nothing leaves the test: every outbound request answers 503.
     vi.stubGlobal(
       'fetch',

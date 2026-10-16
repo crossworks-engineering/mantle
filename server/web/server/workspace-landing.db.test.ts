@@ -145,7 +145,6 @@ describe.skipIf(!URL)('workspace landing pages (task d78e7bde)', () => {
     process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
     process.env.SESSION_SECRET = 'workspace-landing-secret-at-least-32-characters';
     delete process.env.MANTLE_DETACHED_DEV;
-    delete process.env.MANTLE_ADMIN_READS;
     m = await import('@mantle/db');
     await x(sql`insert into auth.users (id, email, password_hash, is_owner, role, display_name) values
       (${owner}, ${email('owner')}, 'x', true, 'admin', 'Olive Owner'),
@@ -527,24 +526,6 @@ describe.skipIf(!URL)('workspace landing pages (task d78e7bde)', () => {
       await raw.end();
       await alsoIn(teamApp2, team);
       await x(sql`update workspaces set landing_app_id = ${teamApp} where id = ${team}`);
-    }
-  });
-
-  it("under the rollback switch an Admin user's landing page still reads in its own workspaces", async () => {
-    // MANTLE_ADMIN_READS=system puts an Admin user's requests on the system
-    // pool; the landing page reads through withViewer all the same.
-    expect((await setLanding(owner, adminWs, teamApp2)).status).toBe(200);
-    process.env.MANTLE_ADMIN_READS = 'system';
-    try {
-      const a = await home(owner, adminWs);
-      expect(a.status, a.text.slice(0, 200)).toBe(200);
-      expect(a.json.homeApp?.appId).toBe(teamApp2);
-      expect(tokens(a.json.hub)).toContain(adminPage);
-      expect(tokens(a.json.hub)).not.toContain(teamPage);
-      expect(tokens((await home(owner)).json.hub)).not.toContain(sidePage);
-    } finally {
-      delete process.env.MANTLE_ADMIN_READS;
-      expect((await setLanding(owner, adminWs, null)).status).toBe(200);
     }
   });
 

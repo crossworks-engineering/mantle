@@ -23,8 +23,16 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 vi.mock('@mantle/db', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   withViewer: vi.fn(async (_level: unknown, _for: unknown, fn: () => Promise<unknown>) => fn()),
-  // The owner surface's per-call scope (W7a): not on workspaces here.
-  brainOnWorkspacesNow: async () => false,
+}));
+// No database: each call runs as it is, with no scope entered (the scope
+// entry and the Admin view stood in).
+vi.mock('./mcp-scope', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  mcpScopeEntry:
+    () =>
+    <T>(_writes: boolean, fn: () => Promise<T>) =>
+      fn(),
+  mcpAdminView: async () => null,
 }));
 
 const h = vi.hoisted(() => ({
@@ -60,13 +68,17 @@ import {
   type McpCaller,
   type PreparedCallerTools,
 } from './login-surface';
-import { NOT_ON_WORKSPACES_ERROR } from './mcp-scope';
 import { ownerPeerAllows } from './policy-views.test-helper';
+import { SCOPE_AREAS } from '@mantle/db/viewer';
+
+/** A user of the Admin workspace with every area: what lists everything
+ *  (a prepared connection read no narrower). */
+const ADMIN_VIEW = { holdsAdmin: true, areas: new Set(SCOPE_AREAS) };
 
 const prepared = (caller: McpCaller): PreparedCallerTools => ({
   kind: 'owner',
   caller,
-  view: null,
+  view: ADMIN_VIEW,
   privateWs: null,
   connectors: [],
 });
@@ -153,7 +165,7 @@ describe('draw_get picture on MCP', () => {
     expect(reply.content.map((c) => c.type)).toEqual(['text', 'image']);
   });
 
-  it('member login: the one surface lists draw_get; off workspaces the call is refused', async () => {
+  it('member login: the one surface lists draw_get, never an adminOnly tool', async () => {
     const out = new Map<string, Handler>();
     const fake = {
       registerTool: (name: string, _c: unknown, handler: Handler) => void out.set(name, handler),
@@ -168,8 +180,5 @@ describe('draw_get picture on MCP', () => {
     expect(out.has('draw_get')).toBe(true);
     // An adminOnly tool is not listed for a scope without Admin.
     expect(out.has('replay_window')).toBe(false);
-    const reply = await out.get('draw_get')!({ id: ID, image: true });
-    expect(reply.content[0]!.text).toContain(NOT_ON_WORKSPACES_ERROR);
-    expect(h.readableDrawSvg).not.toHaveBeenCalled();
   });
 });

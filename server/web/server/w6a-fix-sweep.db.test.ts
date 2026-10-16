@@ -123,7 +123,6 @@ describe.skipIf(!URL)('W6a fix round 1: drafts, item writes, app-nav, marks, tra
     process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
     process.env.SESSION_SECRET = 'w6a-fix-sweep-secret-at-least-32-characters!';
     delete process.env.MANTLE_DETACHED_DEV;
-    delete process.env.MANTLE_ADMIN_READS;
     m = await import('@mantle/db');
     await x(sql`insert into auth.users (id, email, password_hash, is_owner, role, display_name) values
       (${owner}, ${email('owner')}, 'x', true, 'admin', 'Olive Owner'),

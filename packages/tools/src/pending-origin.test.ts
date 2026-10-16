@@ -9,7 +9,8 @@ import { describe, expect, it, vi } from 'vitest';
 
 const h = vi.hoisted(() => ({
   scope: null as null | Record<string, unknown>,
-  gate: null as null | Record<string, unknown>,
+  /** The workspaces loginScopeFor reads for the asker now. */
+  loginWs: [] as string[],
   mode: null as null | Record<string, unknown>,
   holds: false,
   areas: [] as string[],
@@ -20,7 +21,6 @@ vi.mock('../../db/src/viewer', async (importOriginal) => {
   return {
     ...real,
     currentWorkspaceScope: () => h.scope,
-    currentGateScope: () => h.gate,
     currentRequestMode: () => h.mode,
   };
 });
@@ -30,9 +30,15 @@ vi.mock('../../db/src/client', async (importOriginal) => ({
   scopeHasArea: async (area: string) => h.areas.includes(area),
   loginHasArea: async (_login: string, area: string) => h.areas.includes(area),
   withTurnScope: async (_s: unknown, fn: () => Promise<unknown>) => fn(),
+  loginScopeFor: async (loginId: string) => ({
+    kind: 'user',
+    loginId,
+    ws: [...h.loginWs],
+    modWs: [...h.loginWs],
+  }),
 }));
 
-import { loginActor, runAsActor } from '@mantle/db';
+import { loginActor, runAsActor, type PendingOrigin } from '@mantle/db';
 import { linkLoginId } from './builtins-share';
 import { capAdminView } from './gate-callers';
 import {
@@ -51,7 +57,6 @@ const ADMIN = '11111111-1111-4111-8111-111111111111';
 describe('the stamp a queued call carries (pendingOriginNow)', () => {
   it("a member's Team turn: its scope whole, how it held it, its surface's kind and login", async () => {
     h.scope = { kind: 'assistant', loginId: LOGIN, ws: [TEAM], modWs: [TEAM] };
-    h.gate = null;
     h.mode = null;
     h.holds = false;
     expect(
@@ -86,23 +91,34 @@ describe('the stamp a queued call carries (pendingOriginNow)', () => {
     });
   });
 
-  it("the rollback switch's gate scope: held as a gate scope", async () => {
-    h.scope = null;
-    h.gate = { kind: 'assistant', loginId: LOGIN, ws: [ADMIN], modWs: [ADMIN] };
-    h.holds = true;
-    h.areas = ['users'];
-    expect(await pendingOriginNow({ kind: 'owner', via: 'run' })).toMatchObject({
-      scope: { ws: [ADMIN], modWs: [ADMIN] },
+  it('a stamp from before arch A7 held as a gate scope runs in a turn scope at approval', async () => {
+    // The rollback switch's gate scope went in A7: a row queued under it
+    // still says `gate`, and its approval runs in the met scope as a turn
+    // scope (reads in the scope, never the system pool), with the asker's
+    // write rule.
+    h.loginWs = [ADMIN];
+    const origin = {
+      v: 1,
+      scope: { kind: 'assistant', loginId: LOGIN, ws: [ADMIN], modWs: [ADMIN] },
       enter: 'gate',
       writes: false,
       admin: { holds: true, areas: ['users'] },
       surface: { kind: 'owner', via: 'run' },
+      actor: null,
+    } as PendingOrigin;
+    const run = await originRunFor(LOGIN, origin, { agentId: null, loginId: LOGIN }, (m) => {
+      return new Error(m);
     });
+    expect(run).toMatchObject({
+      scope: { kind: 'assistant', loginId: LOGIN, ws: [ADMIN], modWs: [ADMIN] },
+      enter: 'turn',
+      writes: true,
+    });
+    h.loginWs = [];
   });
 
   it('a turn in no scope (system work): no scope, no Admin view', async () => {
     h.scope = null;
-    h.gate = null;
     expect(await pendingOriginNow(undefined)).toEqual({
       v: 1,
       scope: null,
@@ -116,7 +132,6 @@ describe('the stamp a queued call carries (pendingOriginNow)', () => {
 
   it('the actor the turn runs as, so a row with no asker runs as it (fix round 1, L5)', async () => {
     h.scope = { kind: 'assistant', loginId: null, ws: [TEAM], modWs: [] };
-    h.gate = null;
     h.mode = null;
     h.holds = false;
     const agent = '44444444-4444-4444-8444-444444444444';
@@ -136,7 +151,6 @@ describe('the stamp a queued call carries (pendingOriginNow)', () => {
 
   it("a public link's turn: no scope, marked, so only the owner approves it (fix round 1, L4)", async () => {
     h.scope = { kind: 'link', loginId: null, ws: [], modWs: [], served: ['n1'] };
-    h.gate = null;
     expect(await pendingOriginNow(undefined)).toMatchObject({
       scope: null,
       enter: null,
@@ -193,7 +207,6 @@ describe('the surface an approved stamped call runs on (lows round, 6c)', () => 
     loginId: string | null,
   ): Promise<ToolHandlerContext['surface']> => {
     h.scope = null;
-    h.gate = null;
     const origin = await pendingOriginNow(surface);
     return (await originRunFor(OWNER, origin, { agentId: null, loginId }, refuse)).surface;
   };
@@ -314,7 +327,6 @@ describe('the surface an approved stamped call runs on (lows-approvals-2)', () =
     loginId: string | null,
   ): Promise<ToolHandlerContext['surface']> => {
     h.scope = null;
-    h.gate = null;
     const origin = await pendingOriginNow(surface);
     return (await originRunFor(OWNER, origin, { agentId: null, loginId }, refuse)).surface;
   };

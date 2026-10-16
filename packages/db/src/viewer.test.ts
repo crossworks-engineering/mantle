@@ -18,10 +18,6 @@ import {
   currentScope,
   runInTurnScope,
   TurnScopeExitError,
-  levelCovers,
-  levelsMeet,
-  lowerLevel,
-  ViewerLevelConflictError,
   viewerDatabaseUrl,
   viewerLoginRoleName,
   viewerRoleName,
@@ -78,24 +74,6 @@ describe('scope basics (no level scope since W8c)', () => {
     await runInTurnScope(scopeOf(W1), async () => {
       expect(() => assertNoViewer('enqueueX')).toThrow(/enqueueX leaves this process/);
     });
-  });
-
-  it('lowerLevel: team and admin over the rest, client and public are siblings', () => {
-    // Pure helpers for code that still names a level in a value; no read is
-    // decided by them since W8c.
-    expect(lowerLevel('admin', 'team')).toBe('team');
-    expect(lowerLevel('client', 'team')).toBe('client');
-    expect(lowerLevel('team', 'public')).toBe('public');
-    expect(lowerLevel('public', 'admin')).toBe('public');
-    expect(lowerLevel('client', 'client')).toBe('client');
-    expect(() => lowerLevel('client', 'public')).toThrow(ViewerLevelConflictError);
-    expect(() => lowerLevel('public', 'client')).toThrow(ViewerLevelConflictError);
-    expect(levelsMeet('client', 'public')).toBe(false);
-    expect(levelsMeet('team', 'public')).toBe(true);
-    expect(levelCovers('client', 'public')).toBe(false);
-    expect(levelCovers('public', 'client')).toBe(false);
-    expect(levelCovers('team', 'client')).toBe(true);
-    expect(levelCovers('team', 'admin')).toBe(false);
   });
 });
 

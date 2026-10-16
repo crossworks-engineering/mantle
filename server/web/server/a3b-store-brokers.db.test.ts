@@ -178,7 +178,6 @@ describe.skipIf(!URL)('A3b: the store brokers, both checks on', () => {
     process.env.MANTLE_FILES_ROOT = path.join(dir, 'files');
     process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
     delete process.env.MANTLE_DETACHED_DEV;
-    delete process.env.MANTLE_ADMIN_READS;
     m = await import('@mantle/db');
     tablesMod = await import('@mantle/content/tables');
     broker = await import('@mantle/content/table-broker');

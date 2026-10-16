@@ -13,9 +13,15 @@ const shared = vi.hoisted(() => ({ othersCanRead: vi.fn(async () => true) }));
 vi.mock('../../../tools/src/shared-item', () => shared);
 // No database: the brain reads as not on workspaces, so the call runs as
 // is (mcp-scope.ts).
-vi.mock('@mantle/db', async (importOriginal) => ({
+// No database: each call runs as it is, with no scope entered (the scope
+// entry and the Admin view stood in).
+vi.mock('../mcp-scope', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
-  brainOnWorkspacesNow: async () => false,
+  mcpScopeEntry:
+    () =>
+    <T>(_writes: boolean, fn: () => Promise<T>) =>
+      fn(),
+  mcpAdminView: async () => null,
 }));
 
 import {

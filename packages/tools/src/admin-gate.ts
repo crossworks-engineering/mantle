@@ -23,13 +23,11 @@
  * does not say it, so it runs in the scope until it is shown not to touch
  * an item: fail closed.
  *
- * Outside any workspace scope (system work, and MANTLE_ADMIN_READS=system)
- * the gate lets everything through: the surface rules decide, as before.
+ * Outside any workspace scope (system work) the gate lets everything
+ * through: the surface rules decide, as before.
  */
 import {
   asSystem,
-  currentGateScope,
-  loginHasArea,
   currentWorkspaceScope,
   scopeHasArea,
   scopeLeftForSystem,
@@ -143,14 +141,7 @@ export function runGated<T>(gate: { system: boolean }, fn: () => Promise<T>): Pr
  * as is. Never for an item: items are read and written in the scope.
  */
 export async function areaSystem<T>(area: ScopeArea, fn: () => Promise<T>): Promise<T> {
-  if (!currentWorkspaceScope()) {
-    // Under the rollback switch the gate scope's login is asked (M6).
-    const g = currentGateScope();
-    if (g && !(g.loginId && (await loginHasArea(g.loginId, area)))) {
-      throw new Error(adminAreaError(area));
-    }
-    return fn();
-  }
+  if (!currentWorkspaceScope()) return fn();
   if (!(await scopeHasArea(area))) throw new Error(adminAreaError(area));
   return adminAreaSystem(fn);
 }
@@ -162,7 +153,7 @@ export async function areaSystem<T>(area: ScopeArea, fn: () => Promise<T>): Prom
  * workspace scope: system work, where the surface rules decide.
  */
 export function callerScope(): WorkspaceScope | null {
-  return currentWorkspaceScope() ?? scopeLeftForSystem() ?? currentGateScope();
+  return currentWorkspaceScope() ?? scopeLeftForSystem();
 }
 
 /**
@@ -176,11 +167,6 @@ export function callerScope(): WorkspaceScope | null {
 export async function callerHasArea(area: ScopeArea): Promise<boolean> {
   if (currentWorkspaceScope()) return scopeHasArea(area);
   const left = scopeLeftForSystem();
-  if (!left) {
-    // The rollback switch's gate scope (M6): the login's own areas.
-    const g = currentGateScope();
-    if (!g) return true;
-    return g.loginId ? loginHasArea(g.loginId, area) : false;
-  }
+  if (!left) return true;
   return withTurnScope(left, () => scopeHasArea(area));
 }

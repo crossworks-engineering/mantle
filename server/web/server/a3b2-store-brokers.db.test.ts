@@ -241,7 +241,6 @@ describe.skipIf(!URL)('A3b part 2: the files and snapshot stores, both checks on
     process.env.MANTLE_SPACES_ROOT = path.join(dir, 'spaces');
     process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
     delete process.env.MANTLE_DETACHED_DEV;
-    delete process.env.MANTLE_ADMIN_READS;
     m = await import('@mantle/db');
     f = await import('@mantle/files');
     content = await import('@mantle/content');

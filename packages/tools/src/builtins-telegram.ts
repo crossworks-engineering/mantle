@@ -20,7 +20,6 @@
 import { and, asc, eq } from 'drizzle-orm';
 import {
   systemWork,
-  currentGateScope,
   currentTurnStamp,
   db,
   scopeLeftForSystem,
@@ -59,8 +58,8 @@ function telegramSystemWork<T>(fn: () => Promise<T>): Promise<T> {
 /**
  * The login this call acts for (workspaces W7d): the login its surface
  * names (a web or Telegram chat, an MCP connection, an API key), else the
- * login of the scope it runs in (or the scope its system-pool work left, or
- * the rollback switch's gate scope), else the turn's stamp, else the
+ * login of the scope it runs in (or the scope its system-pool work left),
+ * else the turn's stamp, else the
  * anchor's own stdio MCP (an owner surface that names no login). Null when
  * none is known: every tool here then refuses. Never read from model
  * arguments.
@@ -68,7 +67,7 @@ function telegramSystemWork<T>(fn: () => Promise<T>): Promise<T> {
 export function telegramCallerLogin(ctx: ToolHandlerContext): string | null {
   const named = ownerSurfaceLoginId(ctx.surface);
   if (named) return named;
-  const scope = currentWorkspaceScope() ?? scopeLeftForSystem() ?? currentGateScope();
+  const scope = currentWorkspaceScope() ?? scopeLeftForSystem();
   if (scope?.loginId) return scope.loginId;
   const stamped = currentTurnStamp()?.loginId;
   if (stamped) return stamped;

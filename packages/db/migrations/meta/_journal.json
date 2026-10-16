@@ -2059,6 +2059,13 @@
       "when": 1790196960000,
       "tag": "0294_contact_rw_app_data_only",
       "breakpoints": true
+    },
+    {
+      "idx": 295,
+      "version": "7",
+      "when": 1790197020000,
+      "tag": "0295_a7_workspace_kind_gone",
+      "breakpoints": true
     }
   ]
 }

@@ -31,7 +31,6 @@ import {
   hasRequestSlot,
   loginScopeFor,
   createHomeIntent,
-  brainOnWorkspacesNow,
   withViewer,
   noteRequestSystem,
   noteRequestWriteScope,
@@ -39,8 +38,6 @@ import {
   noteRequestOwnRule,
   setRequestActor,
   loginActor,
-  adminReadsOnSystemPool as dbAdminReadsOnSystemPool,
-  loginHoldsAdmin,
   currentCaller,
   type AdminView,
   type CreateHome,
@@ -1089,7 +1086,7 @@ export class RouteRefusal extends Error {
  * guard did on the side, from the row. The owner guard
  * (getOwnerOr401WithLogin): the login's actor named (and a device token's
  * stamp), the scope entered or the system reason noted (self, area, an
- * Admin write, the rollback switch), the item a write names checked, the
+ * Admin write), the item a write names checked, the
  * create home named, the audit row of a write. The member guard
  * (getMemberOr401, A4 step 3b part 5): the member named, its scope entered
  * or its own rule noted, a key's write audited. The any-login guard
@@ -1617,11 +1614,7 @@ export async function getOwnerOr401WithLogin(): Promise<OwnerRouteLogin | NextRe
       await enterLoginScope(login.loginId, requestMode(true));
       return who;
     }
-    if (!memberOpenWrite(route) || !(await brainOnWorkspacesNow())) {
-      return loginRefused(res.kind);
-    }
-    // Never off for a non-Admin login: the rollback switch is about Admin
-    // reads (W6b fix round 1, M1).
+    if (!memberOpenWrite(route)) return loginRefused(res.kind);
     const refused = await itemWriteGate(login.loginId, route, { admin: false });
     if (refused) return refused;
     const home = await createHomeFor(login.loginId, route, true);
@@ -1638,27 +1631,6 @@ export async function getOwnerOr401WithLogin(): Promise<OwnerRouteLogin | NextRe
 }
 
 // ── The request scope (workspaces W6a, plan 2.4 and T4) ─────────────────────
-
-/**
- * The W6a rollback switch: MANTLE_ADMIN_READS=system puts an Admin user's
- * reads back on the system pool (as before W6a), and since W7a the Admin
- * assistant's turns and the Admin MCP surface too (@mantle/db). Default:
- * scoped. Plan 14 and R9: it stays on every box until B2 has run clean
- * there two weeks. Members are scoped whatever it says (plan T4).
- */
-export function adminReadsOnSystemPool(): boolean {
-  return dbAdminReadsOnSystemPool();
-}
-
-/**
- * Whether the rollback switch puts `loginId`'s reads on the system pool:
- * the switch is on and the login holds the Admin workspace now (W7
- * integration fix 3, L1), never the admin role alone (a login taken out of
- * Admin keeps its role, and stays in its scope).
- */
-async function adminReadsOnSystemPoolFor(loginId: string): Promise<boolean> {
-  return adminReadsOnSystemPool() && (await loginHoldsAdmin(loginId));
-}
 
 /** No request slot: a test calling a handler, a worker (guardRoute). */
 const OUTSIDE = 'outside';
@@ -1705,7 +1677,7 @@ async function enterLoginScope(loginId: string, mode: RequestScopeMode): Promise
 }
 
 /** Whether the login holds `area` (requireArea's rule: the Admin workspace
- *  and its limits; a brain not on workspaces: any admin). */
+ *  and its limits). */
 async function loginHoldsArea(
   loginId: string,
   area: import('@mantle/client-types').WorkspaceArea,
@@ -1719,8 +1691,8 @@ async function loginHoldsArea(
 /**
  * What an Admin login's owner request runs as (W6a): a management route
  * needs its area and runs on the system pool; the login's own things run
- * there too; a READ of brain items enters the login's scope (unless the
- * rollback switch is on); a write stays on the system pool, as before.
+ * there too; a READ of brain items enters the login's scope; a write stays
+ * on the system pool, as before.
  * Outside a request slot (a test calling a handler) nothing changes; a
  * request slot with no row is refused (guardRoute). Returns the refusal,
  * or null to go on.
@@ -1754,24 +1726,13 @@ async function adminRouteGate(loginId: string): Promise<NextResponse | null> {
     noteRequestSystem('admin-write');
     // The login's scope on the request's system transactions (fix round 1,
     // M1): the database checks moves, creates in a folder and deletes
-    // against it (withSystemTx). Off with the reads (rollback switch, a
-    // brain not on workspaces).
-    if (!(await adminReadsOnSystemPoolFor(loginId)) && (await brainOnWorkspacesNow())) {
-      noteRequestWriteScope(await loginScopeFor(loginId));
-      // A create lands in the request's workspace (?ws=) when the user
-      // moderates it (W6b); without one, as before (the folder, else Admin).
-      const home = await createHomeFor(loginId, route, false);
-      if (home instanceof NextResponse) return home;
-      noteRequestCreateHome(home);
-    }
-    return null;
-  }
-  if (await adminReadsOnSystemPoolFor(loginId)) {
-    noteRequestSystem('admin-reads-flag');
-    return null;
-  }
-  if (!(await brainOnWorkspacesNow())) {
-    noteRequestSystem('not-on-workspaces');
+    // against it (withSystemTx).
+    noteRequestWriteScope(await loginScopeFor(loginId));
+    // A create lands in the request's workspace (?ws=) when the user
+    // moderates it (W6b); without one, as before (the folder, else Admin).
+    const home = await createHomeFor(loginId, route, false);
+    if (home instanceof NextResponse) return home;
+    noteRequestCreateHome(home);
     return null;
   }
   await enterLoginScope(loginId, requestMode(true));
@@ -1802,12 +1763,10 @@ function itemIdOf(segment: string): string | null {
  * the same 404 as an id no row has, so no item's existence leaves its scope
  * (docs/workspaces.md: "not found", never "exists but no"; audit
  * 2026-10-12). The rule is the database's, asked in the login's scope; the
- * write itself then runs on the system pool as before.
- * Off on a brain not on workspaces, and for an Admin login where Admin
- * reads are off (the rollback switch); a member's write is
- * always checked (W6b fix round 1, M1). For an Admin user an id no row has
- * goes on to the handler (its own 404). A read-only snapshot copy (data.snapshot_of) is
- * never edited, by anyone; its author may still delete it (W6b fix round 1,
+ * write itself then runs on the system pool as before. For an Admin user an
+ * id no row has goes on to the handler (its own 404). A read-only snapshot
+ * copy (data.snapshot_of) is never edited, by anyone; its author may still
+ * delete it (W6b fix round 1,
  * CEO decision 2). A deleted app a login other than the brain's owner
  * deleted is purged by the owner only (CEO decision 1). The item id is
  * the decoded path segment (itemIdOf); one that is not an item id is the
@@ -1826,9 +1785,6 @@ async function itemWriteGate(
   const target = path ? routeItemTarget(route, path) : null;
   if (!target) return null;
   let need = target.need;
-  // The rollback switch restores only the read path (W7 integration fix 2,
-  // M6): an Admin user's item writes are still checked against its login.
-  if (!(await brainOnWorkspacesNow())) return null;
   // The id the handler gets. A segment that does not decode to an item id
   // is refused with the not-found answer, never skipped: the check read the
   // raw segment once, so an encoded id skipped it while the handler got
@@ -2260,15 +2216,12 @@ async function anyLoginScope(res: Resolved): Promise<NextResponse | null> {
       // scope on the request's system transactions, as an Admin user's
       // owner write has it (adminRouteGate), so the database's grant checks
       // (mantle_grant_change, 0279) run on them too. Its reads stay on the
-      // system pool, as on every Admin user's write. (A brain not on
-      // workspaces has no panel: lib/grants.ts refuses it first.)
-      if (route.pattern.startsWith('/api/grants/') && !(await adminReadsOnSystemPoolFor(loginId))) {
+      // system pool, as on every Admin user's write.
+      if (route.pattern.startsWith('/api/grants/')) {
         noteRequestWriteScope(await loginScopeFor(loginId));
       }
       return noteSystem('admin-write');
     }
-    if (await adminReadsOnSystemPoolFor(loginId)) return noteSystem('admin-reads-flag');
-    if (!(await brainOnWorkspacesNow())) return noteSystem('not-on-workspaces');
   }
   await enterLoginScope(loginId, requestMode(res.kind === 'admin'));
   return null;

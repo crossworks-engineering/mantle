@@ -6,8 +6,7 @@
  *
  *  - H1: a second Admin user talking to a helper with no workspace (the
  *    replay agent) replays and finds only its own turns and digests, never
- *    the owner's; with no login it is refused; over MCP the same, under
- *    MANTLE_ADMIN_READS=system too.
+ *    the owner's; with no login it is refused; over MCP the same.
  *  - M1: responder_turn_record over a second Admin user's MCP lands in that
  *    user's thread.
  *  - M3: a member's thread comes back with a picture it may not see escaped.
@@ -184,7 +183,6 @@ describe.skipIf(!URL)('W7c: own threads only, per role', () => {
     process.env.MANTLE_SPACES_ROOT = path.join(dir, 'spaces');
     process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
     process.env.TEAM_CHAT_DAILY_TURNS = '3';
-    delete process.env.MANTLE_ADMIN_READS;
     vi.stubGlobal(
       'fetch',
       vi.fn(async () => new Response('offline in the W7c test', { status: 503 })),
@@ -346,7 +344,6 @@ describe.skipIf(!URL)('W7c: own threads only, per role', () => {
 
   afterAll(async () => {
     vi.unstubAllGlobals();
-    delete process.env.MANTLE_ADMIN_READS;
     delete process.env.TEAM_CHAT_DAILY_TURNS;
     await m?.closeDb();
     await scratch?.drop();
@@ -386,22 +383,15 @@ describe.skipIf(!URL)('W7c: own threads only, per role', () => {
     expect(seen.find.ok).toBe(false);
   });
 
-  it('H1: over MCP (and under MANTLE_ADMIN_READS=system) a second Admin user never reads the owner’s', async () => {
-    for (const mode of ['scope', 'system'] as const) {
-      if (mode === 'system') process.env.MANTLE_ADMIN_READS = 'system';
-      try {
-        const r = await mcpCall(adminB, 'replay_window', { ...window });
-        expect(r.isError, r.text.slice(0, 200)).toBe(false);
-        expect(r.text, mode).toContain('second admin question');
-        expect(r.text, mode).not.toContain('owner secret kettle');
-        const f = await mcpCall(adminB, 'find_window', { topic: 'kettle' });
-        expect(f.isError, f.text.slice(0, 200)).toBe(false);
-        expect(f.text, mode).toContain(bDigest);
-        expect(f.text, mode).not.toContain(ownerDigest);
-      } finally {
-        delete process.env.MANTLE_ADMIN_READS;
-      }
-    }
+  it('H1: over MCP a second Admin user never reads the owner’s', async () => {
+    const r = await mcpCall(adminB, 'replay_window', { ...window });
+    expect(r.isError, r.text.slice(0, 200)).toBe(false);
+    expect(r.text).toContain('second admin question');
+    expect(r.text).not.toContain('owner secret kettle');
+    const f = await mcpCall(adminB, 'find_window', { topic: 'kettle' });
+    expect(f.isError, f.text.slice(0, 200)).toBe(false);
+    expect(f.text).toContain(bDigest);
+    expect(f.text).not.toContain(ownerDigest);
   });
 
   // ── Fix round 2, H1: the memory tools ──────────────────────────────────
@@ -466,20 +456,6 @@ describe.skipIf(!URL)('W7c: own threads only, per role', () => {
       /signed-in login/,
     );
     expect(await x(sql`select 1 from assistant_messages where text = ${text}`)).toHaveLength(0);
-  });
-
-  it('H1 (fix round 2): MANTLE_ADMIN_READS=system is the documented emergency rollback (system pool)', async () => {
-    process.env.MANTLE_ADMIN_READS = 'system';
-    try {
-      const seen = await asRemy(
-        async () => ({ scope: m.currentWorkspaceScope(), stamp: m.currentTurnStamp() }),
-        adminB,
-      );
-      expect(seen.scope).toBeNull();
-      expect(seen.stamp).toEqual({ workspaceId: null, loginId: adminB });
-    } finally {
-      delete process.env.MANTLE_ADMIN_READS;
-    }
   });
 
   // ── Fix round 2, M-a ──────────────────────────────────────────────────

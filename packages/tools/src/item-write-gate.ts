@@ -18,12 +18,10 @@
 import { and, eq } from 'drizzle-orm';
 import {
   apps,
-  currentGateScope,
   db,
   foldersReadOf,
   itemWriteRefusalOf,
   scopeHoldsAdmin,
-  withTurnScope,
   recallMaps,
   recallRevisions,
   type ItemNeed,
@@ -153,11 +151,7 @@ export async function createFolderRefusal(
   if (!param) return null;
   const raw = typeof input[param] === 'string' ? input[param].trim() : '';
   if (!raw || !raw.includes('.')) return null;
-  if (!currentWorkspaceScope()) {
-    const g = currentGateScope();
-    if (!g) return null;
-    return withTurnScope(g, () => createFolderRefusal(param, input, ownerId, makesFolders));
-  }
+  if (!currentWorkspaceScope()) return null;
   if (await scopeHoldsAdmin()) return null;
   const lookup = 'folder_list / tree_list';
   if (makesFolders && raw.startsWith('files.')) {
@@ -280,13 +274,7 @@ export async function toolItemWriteRefusalOf(
   ownerId: string,
   ctx?: Pick<ToolHandlerContext, 'surface'> & { queue?: boolean },
 ): Promise<ItemWriteRefusal | null> {
-  if (!currentWorkspaceScope()) {
-    // Under the rollback switch the login's own scope answers the check
-    // (W7 integration fix 2, M6): the switch restores only the read path.
-    const g = currentGateScope();
-    if (!g) return null;
-    return withTurnScope(g, () => toolItemWriteRefusalOf(items, input, ownerId, ctx));
-  }
+  if (!currentWorkspaceScope()) return null;
   if (!items) return null;
   const sets: { ids: string[]; need: ItemNeed; unresolved?: string }[] =
     typeof items === 'function'

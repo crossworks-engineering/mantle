@@ -17,7 +17,6 @@ import type * as Db from '@mantle/db';
 import type {
   AccessKeyArea,
   AccessKeyRole,
-  AccessLevel,
   AppRow,
   AuthWhoami,
   HistoryActor,
@@ -31,7 +30,7 @@ import { ACCESS_LEVELS } from '@mantle/client-types/dto/access';
 import { ACCESS_KEY_AREAS as CONTRACT_KEY_AREAS } from '@mantle/client-types/dto/access-keys';
 import { WORKSPACE_AREAS } from '@mantle/client-types/dto/workspaces';
 import { HISTORY_ACTORS, LOGIN_ROLES, RECALL_ACTOR_KINDS } from '@mantle/client-types/role-names';
-import { SCOPE_AREAS, VIEWER_LEVELS } from '@mantle/db/viewer';
+import { SCOPE_AREAS } from '@mantle/db/viewer';
 import { KEY_AREAS, type KeyArea } from '@mantle/mcp-core/key-scope';
 import type { McpLoginRole } from '@mantle/mcp-core';
 import type { LoginMcpChannel } from '@mantle/tools';
@@ -212,7 +211,6 @@ describe('client-types mirrors have not drifted from their source of truth', () 
       SameUnion<(typeof RECALL_ACTOR_KINDS)[number], RecallActorKind>
     >().toEqualTypeOf<true>();
     expectTypeOf<SameUnion<RecallActorKind, RecallActor['kind']>>().toEqualTypeOf<true>();
-    expectTypeOf<SameUnion<AccessLevel, Db.ViewerLevel>>().toEqualTypeOf<true>();
     expectTypeOf<SameUnion<AccessKeyArea, KeyArea>>().toEqualTypeOf<true>();
     // The app author ceiling: a level subset with its own meaning, mirrored
     // by hand in the contract (not folded, pinned).
@@ -226,13 +224,11 @@ describe('client-types mirrors have not drifted from their source of truth', () 
  * The runtime VALUES of the lists both sides of the wire read (A10 #13): the
  * type pins above see a union, not its order, and a list's order reaches the
  * wire (the shell's `areas`) or the screens. Each server list is its
- * contract list, in the contract's order (the access levels reversed, on
- * purpose: VIEWER_LEVELS is lowest first).
+ * contract list, in the contract's order.
  */
 describe('client-types runtime lists match the server lists', () => {
-  it('the Admin areas, the levels and the key areas', () => {
+  it('the Admin areas and the key areas', () => {
     expect([...SCOPE_AREAS]).toEqual([...WORKSPACE_AREAS]);
-    expect([...VIEWER_LEVELS]).toEqual([...ACCESS_LEVELS].reverse());
     expect([...KEY_AREAS]).toEqual([...CONTRACT_KEY_AREAS]);
     expect([...ACCESS_KEY_AREAS]).toEqual([...CONTRACT_KEY_AREAS]);
   });

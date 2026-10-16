@@ -32,7 +32,6 @@ vi.mock('@mantle/db', async (importOriginal) => {
   const real = await importOriginal<typeof import('@mantle/db')>();
   return {
     ...real,
-    currentGateScope: () => null,
     scopeHoldsAdmin: async () => h.holdsAdmin,
     itemWriteRefusalOf: async (ids: readonly string[], need: string) => {
       h.checked.push({ ids, need });

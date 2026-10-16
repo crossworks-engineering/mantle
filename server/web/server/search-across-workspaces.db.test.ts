@@ -15,9 +15,6 @@
  *    workspaces and its scope only;
  *  - a link scope reads none of it;
  *  - an API key (mtlk_) on /api/v1/search reads as its login, `ws` checked;
- *  - an Admin user under the rollback switch (MANTLE_ADMIN_READS=system)
- *    reads on the system pool, yet names and counts only its own
- *    workspaces;
  *  - a login in one workspace counts nothing elsewhere;
  *  - the MCP `search` tool answers as before (no `workspace`, no `ws`).
  *
@@ -140,7 +137,6 @@ describe.skipIf(!URL)('search across workspaces (task f26a516e)', () => {
     process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
     process.env.SESSION_SECRET = 'search-across-ws-secret-at-least-32-characters';
     delete process.env.MANTLE_DETACHED_DEV;
-    delete process.env.MANTLE_ADMIN_READS;
     m = await import('@mantle/db');
     await x(sql`insert into auth.users (id, email, password_hash, is_owner, role, display_name) values
       (${owner}, ${email('owner')}, 'x', true, 'admin', 'Olive Owner'),
@@ -412,41 +408,6 @@ describe.skipIf(!URL)('search across workspaces (task f26a516e)', () => {
       new Map((plain.json.results as Json[]).map((h) => [String(h.id), h])).get(id.admin)!
         .workspace,
     ).toEqual({ id: admin, name: 'Admin' });
-  }, 60_000);
-
-  it('an Admin user under the rollback switch: the system pool reads, but names and counts are its own', async () => {
-    process.env.MANTLE_ADMIN_READS = 'system';
-    try {
-      const r = await call(`/api/search?q=${tag}&ws=${team}&limit=50`, owner);
-      expect(r.status, r.text).toBe(200);
-      const rows = r.json.results as Json[];
-      // The system pool reads every test item (the pre-W6a answer) ...
-      expect(new Set(ours(rows))).toEqual(new Set(Object.keys(titles())));
-      expect(ours(rows)[0]).toBe(id.team);
-      // ... but a hit names only a workspace the Admin user is in.
-      for (const h of rows) {
-        if (!(String(h.id) in titles())) continue;
-        const want =
-          h.id === id.team
-            ? { id: team, name: 'Team' }
-            : h.id === id.admin || h.id === id.adminInF
-              ? { id: admin, name: 'Admin' }
-              : undefined;
-        expect(h.workspace, String(h.id)).toEqual(want);
-      }
-      // The folder counts and the hint: only its own Admin, though the
-      // pool reads the private, Side and Outside items there too.
-      const f = await call(`/api/tree/pages?folder=${folder}&ws=${team}`, owner);
-      expect(f.status, f.text).toBe(200);
-      expect(f.json.items).toEqual([]);
-      expect(f.json.elsewhere).toEqual([{ id: admin, name: 'Admin', count: 1 }]);
-      const root = await call(`/api/tree/pages?ws=${team}`, owner);
-      const row = (root.json.folders as Json[]).find((x) => x.id === folder)!;
-      expect(row.itemCount).toBe(0);
-      expect(row.itemsElsewhere).toBe(1);
-    } finally {
-      delete process.env.MANTLE_ADMIN_READS;
-    }
   }, 60_000);
 
   it('a login in one workspace: itemsElsewhere 0, and no elsewhere hint', async () => {

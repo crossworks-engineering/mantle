@@ -37,11 +37,6 @@ const homes = new WeakMap<WorkspaceScope, Kept>();
  * database's own create checks then decide). `creates`: the call may make
  * an item (the tool is not readOnly), the only kind that may make the
  * login's private workspace; a readOnly call uses the one it has, if any.
- *
- * Under the rollback switch (MANTLE_ADMIN_READS=system) an Admin turn runs
- * in a gate scope, not a workspace scope, so this answers null and its
- * creates follow the database's default. Accepted: the switch is temporary
- * and goes in A7.
  */
 export async function turnCreateHome(creates: boolean): Promise<CreateHome | null> {
   const scope = currentWorkspaceScope();

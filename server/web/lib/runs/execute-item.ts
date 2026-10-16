@@ -244,7 +244,7 @@ async function runResolved(
           // (read only unless the run's login moderates there); dispatch
           // refuses owner-only and adminOnly tools there. Admin or no
           // workspace: a turn scope of Admin since W7a (the run's login,
-          // else the owner); MANTLE_ADMIN_READS=system: the system pool.
+          // else the owner).
           const res = await asRunLogin(() =>
             dispatchTool(tool, input, {
               ownerId: run.ownerId,

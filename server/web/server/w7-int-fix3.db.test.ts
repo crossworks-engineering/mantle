@@ -11,12 +11,8 @@
  *  F2. heartbeat_update_state returns the state to the heartbeat's maker
  *      only; anyone else learns the keys it patched.
  *  F3. The stage poll shows the caller's own running turn only.
- *  L1. Under MANTLE_ADMIN_READS=system only a login that holds Admin goes
- *      to the system pool; an admin role outside Admin stays in its scope.
  *  L2. The traces list and the activity list show the caller's own traces
  *      (the anchor: its own and the system's).
- *  L3. Under the rollback switch heartbeat_fire answers the real caller
- *      (its maker only, W7 integration fix 4).
  *  L4. The brand writers under /api/profile need the settings area.
  *
  * Only the model, its key, Telegram and the outside hosts are faked.
@@ -180,7 +176,6 @@ describe.skipIf(!URL)('W7 integration fix 3', () => {
     process.env.MANTLE_FILES_ROOT = path.join(dir, 'files');
     process.env.MANTLE_SPACES_ROOT = path.join(dir, 'spaces');
     process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
-    delete process.env.MANTLE_ADMIN_READS;
     vi.stubGlobal(
       'fetch',
       vi.fn(async () => new Response('{"error":"offline in the W7 test"}', { status: 503 })),
@@ -226,7 +221,6 @@ describe.skipIf(!URL)('W7 integration fix 3', () => {
 
   afterAll(async () => {
     vi.unstubAllGlobals();
-    delete process.env.MANTLE_ADMIN_READS;
     await m?.closeDb();
     await scratch?.drop();
     if (dir) await rm(dir, { recursive: true, force: true });
@@ -235,7 +229,6 @@ describe.skipIf(!URL)('W7 integration fix 3', () => {
   beforeEach(async () => {
     h.session = null;
     h.sent.length = 0;
-    delete process.env.MANTLE_ADMIN_READS;
     for (const login of [maker, firer]) await setAreas(login, {});
   });
 
@@ -395,31 +388,6 @@ describe.skipIf(!URL)('W7 integration fix 3', () => {
 
   // ── L1 ─────────────────────────────────────────────────────────────────
 
-  it('L1: under the rollback switch only a login that holds Admin reads on the system pool', async () => {
-    process.env.MANTLE_ADMIN_READS = 'system';
-    try {
-      const { runMcpCall } = await import('@mantle/mcp-core');
-      const seen = (login: string) =>
-        runMcpCall(login, 'search_nodes', async () => ({
-          scope: m.currentWorkspaceScope(),
-          gate: m.currentGateScope(),
-        }));
-      // L, an Admin user: the system pool, its gate scope set.
-      expect(await seen(maker)).toMatchObject({ scope: null, gate: { loginId: maker } });
-      // O has the admin role only: it stays in its own scope (Team).
-      const o = (await seen(outsider)) as { scope: { loginId: string; ws: string[] } | null };
-      expect(o.scope).toMatchObject({ loginId: outsider });
-      expect(o.scope!.ws).toContain(teamWs);
-      expect(o.scope!.ws).not.toContain(adminWs);
-    } finally {
-      delete process.env.MANTLE_ADMIN_READS;
-    }
-    // What the session guard asks (session.ts): the Admin workspace, not the role.
-    expect(await m.loginHoldsAdmin(maker)).toBe(true);
-    expect(await m.loginHoldsAdmin(owner)).toBe(true);
-    expect(await m.loginHoldsAdmin(outsider)).toBe(false);
-  });
-
   // ── L2 ─────────────────────────────────────────────────────────────────
 
   it("L2: the traces list and the activity list show the caller's own traces", async () => {
@@ -456,35 +424,6 @@ describe.skipIf(!URL)('W7 integration fix 3', () => {
   });
 
   // ── L3 ─────────────────────────────────────────────────────────────────
-
-  it('L3: under the rollback switch heartbeat_fire answers the real caller, its maker only', async () => {
-    const tool = hbs.HEARTBEAT_TOOLS.find((d) => d.slug === 'heartbeat_fire')!;
-    process.env.MANTLE_ADMIN_READS = 'system';
-    try {
-      // An Admin login's MCP call: its gate scope names it. C fires its own
-      // heartbeat; L's is not C's to fire (W7 integration fix 4).
-      const viaGate = await newHeartbeat(`${tag}-hb-l3-gate`, agent.slug, firer);
-      const res = await m.withGateScope(await m.loginScopeFor(firer), () =>
-        tool.handler({ slug: viaGate.slug }, { ownerId: owner, surface: { kind: 'web' } }),
-      );
-      expect(res.ok, res.ok ? '' : res.error).toBe(true);
-      expect((await lastFire(viaGate.id)).by).toBe(firer);
-      const makers = await newHeartbeat(`${tag}-hb-l3-l`, agent.slug, maker);
-      const refused = await m.withGateScope(await m.loginScopeFor(firer), () =>
-        tool.handler({ slug: makers.slug }, { ownerId: owner, surface: { kind: 'web' } }),
-      );
-      expect(refused.ok).toBe(false);
-      // A turn on the system pool: its stamp names it.
-      const viaStamp = await newHeartbeat(`${tag}-hb-l3-stamp`, agent.slug, firer);
-      const res2 = await m.withTurnStamp({ workspaceId: null, loginId: firer }, () =>
-        tool.handler({ slug: viaStamp.slug }, { ownerId: owner, surface: { kind: 'web' } }),
-      );
-      expect(res2.ok, res2.ok ? '' : res2.error).toBe(true);
-      expect((await lastFire(viaStamp.id)).by).toBe(firer);
-    } finally {
-      delete process.env.MANTLE_ADMIN_READS;
-    }
-  });
 
   // ── L4 ─────────────────────────────────────────────────────────────────
 

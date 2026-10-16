@@ -89,13 +89,6 @@ async function handler(req: Request): Promise<Response> {
   // A write tool an API key calls leaves an audit row (lib/mcp-auth.ts),
   // once the call is one this caller was given (the one gate lists it).
   if (caller.keyId) await auditMcpKeyCall(req, caller, (slug) => preparedLists(prepared, slug));
-  // A refused login (a member on a brain not on workspaces): say so, rather than serve an MCP server with nothing on it.
-  if (prepared.kind === 'refused') {
-    return new Response(JSON.stringify({ error: 'no_tools', message: prepared.message }), {
-      status: 403,
-      headers: { 'content-type': 'application/json' },
-    });
-  }
 
   // Recall's tier-1 hook rides the owner's server instructions, the one
   // surface a client auto-loads besides the tool list (docs/recall.md); a

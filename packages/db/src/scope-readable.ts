@@ -15,7 +15,7 @@
  */
 import { sql, type SQL, type SQLWrapper } from 'drizzle-orm';
 import { nodes } from './schema/nodes';
-import { currentGateScope, currentWorkspaceScope, requestWriteScope } from './viewer';
+import { currentWorkspaceScope, requestWriteScope } from './viewer';
 import { currentActor } from './actor';
 import { UUID_RE } from '@mantle/std';
 
@@ -114,8 +114,7 @@ export function itemReadByWorkspace(ws: string, nodeId: SQLWrapper): SQL {
  * on the caller only, never on the items it cannot read.
  *
  *  - A scope surrounds the call (the request's write scope, the current
- *    workspace scope, the gate scope of the rollback switch, or one set on
- *    the transaction): yes unless that scope holds the Admin workspace.
+ *    workspace scope, or one set on the transaction): yes unless that scope holds the Admin workspace.
  *  - No scope seen: the next free number only for a system actor and for
  *    login(owner), which reads every item; any other actor, and none, takes
  *    the random suffix. A scope can be hidden here: inside a system
@@ -126,7 +125,7 @@ export function itemReadByWorkspace(ws: string, nodeId: SQLWrapper): SQL {
  *    A2b2 revisits it once every scoped write carries its scope.
  */
 export async function scopeLacksAdmin(tx: Exec): Promise<boolean> {
-  const scope = requestWriteScope() ?? currentWorkspaceScope() ?? currentGateScope();
+  const scope = requestWriteScope() ?? currentWorkspaceScope();
   if (scope) {
     const ws = scope.ws.filter((id) => UUID_RE.test(id));
     if (ws.length === 0) return true;

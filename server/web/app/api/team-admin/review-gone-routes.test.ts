@@ -22,16 +22,13 @@ vi.mock(
   '@/lib/auth/login-row',
   async () => (await import('@/server/run-route-stand-ins')).loginRowStandIn,
 );
-const h = vi.hoisted(() => ({ onWorkspaces: true }));
-
 vi.mock('@mantle/db', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@mantle/db')>()),
-  ...(await import('@/server/run-route-stand-ins')).dbStandIns,
-  // On a write row an Admin user's answer reads the database (the create
-  // home, the item write check of the retired app rows): there the brain
-  // is off workspaces (the rollback switch), where those reads stand
-  // aside; the stub's guard is the gate's either way.
-  brainOnWorkspacesNow: async () => h.onWorkspaces,
+  // On a write row an Admin user's answer reads the database (its write
+  // scope, the create home): stood in, as in the guard sweep; the stub's
+  // guard is the gate's either way.
+  loginScopeFor: async (loginId: string) => ({ kind: 'user', loginId, ws: [], modWs: [] }),
+  createHomeIntent: async () => ({ createWs: null, privateWs: null }),
 }));
 // The brain's owner holds every Admin area (no database to read them from).
 vi.mock('@/lib/workspaces', async (importOriginal) => ({
@@ -179,16 +176,9 @@ describe('the admin review and Team admin routes are gone (W5c)', () => {
     GONE.flatMap(([pattern, methods]) =>
       methods.map((method) => [method, pattern.replace(/:[A-Za-z]+/g, ID), pattern] as const),
     );
-  /** One request as `login`, on a brain off workspaces where the row is a
-   *  write (the stand-in above). */
-  const call = async (login: string | null, method: string, path: string, pattern: string) => {
-    h.onWorkspaces = !writeRows.has(`${method} ${pattern}`);
-    try {
-      return await runRoute(login, method, path, method === 'GET' ? undefined : {});
-    } finally {
-      h.onWorkspaces = true;
-    }
-  };
+  /** One request as `login`. */
+  const call = async (login: string | null, method: string, path: string, _pattern: string) =>
+    runRoute(login, method, path, method === 'GET' ? undefined : {});
 
   it("answers an admin 410 with code 'gone', through the pipeline", async () => {
     expect(writeRows.size).toBeGreaterThan(0);

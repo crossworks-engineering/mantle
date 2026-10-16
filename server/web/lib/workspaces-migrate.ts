@@ -21,6 +21,13 @@
  * boot: an item left without a home (one made in another transaction while
  * the migration ran) is counted by `pnpm workspaces:check`. No LLM work, no
  * extractor notify.
+ *
+ * Since arch A7 the code has no rule for a brain off workspaces (no
+ * rollback switch, no level path): the web boot refuses one
+ * (unmigratedBrainReason, server/main.ts). A box that reports "clients
+ * present" is switched by hand, as the operator notes say
+ * (docs/workspaces.md: mantle_ws_migrate_locked with
+ * mantle.ws_former_clients = 'reviewed'), then started again.
  */
 import { sql } from 'drizzle-orm';
 import { db, executeAsMigrator } from '@mantle/db';
@@ -82,6 +89,28 @@ export async function migrateWorkspacesQuietly(when: string): Promise<void> {
   } catch (err) {
     failure(when, err);
   }
+}
+
+/**
+ * Why this brain may not serve (arch A7), or null when it may: on
+ * workspaces, or a fresh install with no owner yet (it serves the signup,
+ * and its first owner switches it, lib/auth/first-owner.ts). Otherwise the
+ * reason mantle_ws_skip_reason gives ("clients present: ...", or "no
+ * workspaces yet" when the boot switch failed). Asked after the boot
+ * switch. Throws when the database cannot be read: the caller decides.
+ */
+export async function unmigratedBrainReason(): Promise<string | null> {
+  const [r] = (await db.execute(
+    sql`select "public"."mantle_ws_skip_reason"() as why`,
+  )) as unknown as { why: string | null }[];
+  const why = r?.why ?? null;
+  return why === null || why === 'no brain anchor yet' ? null : why;
+}
+
+/** The boot's refusal of an unmigrated brain: what it logs before it
+ *  exits. */
+export function unmigratedBrainRefusal(why: string): string {
+  return `[workspaces] this brain is not on workspaces (${why}), and this release has no rule for one: it does not start. Switch it by hand as docs/workspaces.md "Operator notes" says (mantle_ws_migrate_locked), then start it again.`;
 }
 
 /** Onboarding, after the manifest seed made the assistants. Never throws. */

@@ -31,10 +31,6 @@ vi.mock('@/lib/auth/login-row', async () => {
         : null,
   };
 });
-vi.mock('@mantle/db', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@mantle/db')>()),
-  ...(await import('@/server/run-route-stand-ins')).dbStandIns,
-}));
 // The switch on, one registered client, no database.
 vi.mock('@/lib/mcp-oauth', () => ({
   DEFAULT_SCOPE: 'mcp',

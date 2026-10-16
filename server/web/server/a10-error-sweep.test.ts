@@ -180,7 +180,6 @@ vi.mock('@mantle/db', async (importOriginal) => {
       return fn();
     }) as typeof real.withViewer,
     loginScopeFor: async (loginId: string) => ({ kind: 'user', loginId, ws: [], modWs: [] }),
-    brainOnWorkspacesNow: async () => true,
     createHomeIntent: async () => ({ createWs: null, privateWs: null }),
   };
 });

@@ -134,7 +134,6 @@ vi.mock('@mantle/db', async (importOriginal) => {
     ...orig,
     db: { transaction: async (fn: (t: typeof tx) => unknown) => fn(tx) },
     loginScopeFor: async (loginId: string) => ({ kind: 'user', loginId, ws: [], modWs: [] }),
-    brainOnWorkspacesNow: async () => true,
   };
 });
 vi.mock('../../lib/workspaces', async (importOriginal) => ({

@@ -1,10 +1,5 @@
 export { MANTLE_MCP_INSTRUCTIONS, buildMantleMcpServer, registerMantleTools } from './build-server';
-export {
-  NOT_ON_WORKSPACES_ERROR,
-  NO_WORKSPACE_ERROR,
-  mcpAdminView,
-  mcpScopeEntry,
-} from './mcp-scope';
+export { NO_WORKSPACE_ERROR, mcpAdminView, mcpScopeEntry } from './mcp-scope';
 export {
   ADMIN_KIND_CREATE_ERROR,
   NO_WORKSPACE_CREATE_ERROR,
@@ -23,7 +18,6 @@ export {
 export {
   MCP_NO_WORKSPACE_INSTRUCTIONS,
   MCP_WORKSPACE_INSTRUCTIONS,
-  NOT_ON_WORKSPACES_REFUSED,
   PEER_RISKY_TOOL_PREFIXES,
   mcpInstructionsFor,
   prepareCallerTools,

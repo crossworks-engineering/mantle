@@ -48,25 +48,24 @@ export { TEAM_RESPONDER_SLUG };
  * Of the groups reconcile would add, keep only those the agent may use
  * (workspaces W8c; it was the agent's level until then): an adminOnly group
  * (0254) is never added to the assistant of a workspace other than Admin,
- * nor to the team responder on no workspace (the Team assistant of a brain
- * not yet switched, whose role is custom), nor, on a brain on workspaces,
- * to a responder or assistant on no workspace: its turns never hold the
- * Admin workspace. On a brain not on workspaces such a responder is the
- * owner's own persona and keeps them all (W8 integration). Without this,
- * every image update re-added `team-read-admin` to the team responder (seen
- * on two boxes of the fleet, v0.232.265). Every other agent gets them all.
+ * nor to the team responder on no workspace (whose role is custom), nor to
+ * a responder or assistant on no workspace: its turns never hold the Admin
+ * workspace. Without this, every image update re-added `team-read-admin` to
+ * the team responder (seen on two boxes of the fleet, v0.232.265). Every
+ * other agent gets them all. The rule of a brain not on workspaces (such a
+ * responder was the owner's persona there) went in arch A7.
  */
 export function groupsForAgent(
   groups: readonly string[],
   agent: { workspace: 'admin' | 'other' | 'none'; role?: string | null; slug?: string | null },
   adminOnlyGroups: ReadonlySet<string>,
-  brainOnWorkspaces: boolean,
 ): string[] {
   const outsideAdmin =
     agent.workspace === 'other' ||
     (agent.workspace === 'none' &&
       (agent.slug === TEAM_RESPONDER_SLUG ||
-        (brainOnWorkspaces && (agent.role === 'responder' || agent.role === 'assistant'))));
+        agent.role === 'responder' ||
+        agent.role === 'assistant'));
   return outsideAdmin ? groups.filter((g) => !adminOnlyGroups.has(g)) : [...groups];
 }
 

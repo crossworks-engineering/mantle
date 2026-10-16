@@ -46,10 +46,6 @@ vi.mock('@/lib/auth/login-row', () => ({
   loadAnchorId: async () => ANCHOR,
   loadPersonalSpaceId: async () => SPACE,
 }));
-vi.mock('@mantle/db', async (orig) => ({
-  ...(await orig<typeof import('@mantle/db')>()),
-  ...(await import('@/server/run-route-stand-ins')).dbStandIns,
-}));
 
 const saved = process.env.SESSION_SECRET;
 let runRoute: typeof import('@/server/run-route').runRoute;

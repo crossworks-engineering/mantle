@@ -158,7 +158,6 @@ describe.skipIf(!URL)('W7e: member routes in the request scope, the phone contra
     process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
     process.env.SESSION_SECRET = 'w7e-member-scope-secret-at-least-32-characters';
     delete process.env.MANTLE_DETACHED_DEV;
-    delete process.env.MANTLE_ADMIN_READS;
     m = await import('@mantle/db');
     const hash = (await import('bcryptjs')).default.hashSync(PASSWORD, 4);
     await x(sql`insert into auth.users (id, email, password_hash, is_owner, role, display_name) values

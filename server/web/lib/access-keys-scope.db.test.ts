@@ -24,7 +24,16 @@
 import { randomUUID } from 'node:crypto';
 import bcrypt from 'bcryptjs';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { ensureTestAnchor } from '@mantle/db/test-support';
+import {
+  createMigratedScratchDatabase,
+  ensureTestAnchor,
+  runWorkspacesSwitch,
+} from '@mantle/db/test-support';
+import { SCOPE_AREAS } from '@mantle/db/viewer';
+
+/** A user of the Admin workspace with every area: what lists everything
+ *  (a prepared connection read no narrower). */
+const ADMIN_VIEW = { holdsAdmin: true, areas: new Set(SCOPE_AREAS) };
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -42,7 +51,6 @@ describe.skipIf(!URL)('inbound API keys: scope', () => {
   const PASSWORD = 'a long enough password';
   const admin = randomUUID();
   const member = randomUUID();
-  const all = [admin, member];
   const emailOf = (s: string) => `${tag}-${s}@example.com`;
   const nodesMade: string[] = [];
   const workspacesMade: string[] = [];
@@ -96,8 +104,14 @@ describe.skipIf(!URL)('inbound API keys: scope', () => {
       }),
     );
 
+  let scratch: Awaited<ReturnType<typeof createMigratedScratchDatabase>> | undefined;
+
   beforeAll(async () => {
-    process.env.DATABASE_URL = URL;
+    // A brain of its own, on workspaces as every brain is since arch A7: a
+    // key's call runs in its login's workspaces, which a brain off
+    // workspaces no longer skips.
+    scratch = await createMigratedScratchDatabase(URL!);
+    process.env.DATABASE_URL = scratch.url;
     process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
     process.env.SESSION_SECRET = 'access-keys-scope-db-test-secret-32-chars-plus';
     delete process.env.MANTLE_DETACHED_DEV;
@@ -110,24 +124,14 @@ describe.skipIf(!URL)('inbound API keys: scope', () => {
     await sql`insert into auth.users (id, email, password_hash, role, display_name) values
       (${admin}, ${emailOf('admin')}, ${hash}, 'admin', 'Ada Admin'),
       (${member}, ${emailOf('member')}, ${hash}, 'member', 'Mia Member')`;
+    await runWorkspacesSwitch(scratch.url);
     const { createApp } = await import('../server/app');
     app = await createApp();
   }, 120_000);
 
   afterAll(async () => {
-    if (!sql) return;
-    const keys = await sql<
-      Row[]
-    >`select id::text as id from access_keys where login_id in ${sql(all)}`;
-    const ids = keys.map((k) => String(k.id));
-    if (ids.length) await sql`delete from audit_log where detail->>'keyId' in ${sql(ids)}`;
-    await sql`delete from access_keys where login_id in ${sql(all)}`;
-    if (nodesMade.length) await sql`delete from nodes where id in ${sql(nodesMade)}`;
-    if (workspacesMade.length) {
-      await sql`delete from workspaces where id in ${sql(workspacesMade)}`;
-    }
-    await sql`delete from spaces where login_id in ${sql(all)}`;
-    await sql`delete from auth.users where id in ${sql(all)}`;
+    await m?.closeDb();
+    await scratch?.drop();
   });
 
   // ── /api/v1 ───────────────────────────────────────────────────────────────
@@ -296,7 +300,7 @@ describe.skipIf(!URL)('inbound API keys: scope', () => {
     core.registerPreparedTools(fakeServer as never, {
       kind: 'owner',
       caller: caller!,
-      view: null,
+      view: ADMIN_VIEW,
       privateWs: null,
       connectors: [],
     });

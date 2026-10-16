@@ -1,6 +1,6 @@
 /**
  * W7a: what the Admin assistant and the Admin MCP surface read in their
- * scope, and the rollback switch, on a migrated scratch database.
+ * scope, on a migrated scratch database.
  *
  *  - The Admin assistant (a turn scope of Admin) does NOT read an item that
  *    lives only in another user's private workspace (by id, by list, by its
@@ -11,8 +11,6 @@
  *    its scope's login is the anchor, its rows' stamp names no login.
  *  - The Admin MCP surface reads the login's own workspaces: an Admin user
  *    reads its own private item there, not another user's.
- *  - MANTLE_ADMIN_READS=system: both paths behave as before (the system
- *    pool, every item).
  *  - W7a fix round 1, on MCP as a second Admin login L (Admin, not a
  *    Moderator, its keys area off) and as the anchor:
  *    H1: sandbox_import, peer_file_copy and email_page (includeLink) on
@@ -160,7 +158,6 @@ describe.skipIf(!URL)('W7a: the Admin assistant and the Admin MCP read in their 
     process.env.MANTLE_FILES_ROOT = path.join(dir, 'files');
     process.env.MANTLE_SPACES_ROOT = path.join(dir, 'spaces');
     process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
-    delete process.env.MANTLE_ADMIN_READS;
     // The sandbox daemon is wired (its calls are stubbed): the sandbox
     // tools run up to the point where they would send bytes out.
     process.env.SANDBOXD_URL = 'http://sandboxd.invalid';
@@ -303,7 +300,6 @@ describe.skipIf(!URL)('W7a: the Admin assistant and the Admin MCP read in their 
 
   afterAll(async () => {
     vi.unstubAllGlobals();
-    delete process.env.MANTLE_ADMIN_READS;
     delete process.env.SANDBOXD_URL;
     delete process.env.SANDBOXD_TOKEN;
     delete process.env.MANTLE_MCP_TERMINAL;
@@ -403,26 +399,6 @@ describe.skipIf(!URL)('W7a: the Admin assistant and the Admin MCP read in their 
     expect(other.isError).toBe(true);
     const admin = await mcpCall(owner, 'node_read', { node_id: adminPage });
     expect(admin.isError, admin.text.slice(0, 200)).toBe(false);
-  });
-
-  it('MANTLE_ADMIN_READS=system: both paths read as before', async () => {
-    process.env.MANTLE_ADMIN_READS = 'system';
-    try {
-      const seen = await inAdminTurn(async () => ({
-        kind: m.currentScope().kind,
-        memberPrivate: await seesNode(privatePage),
-        stamp: m.currentTurnStamp(),
-      }));
-      expect(seen.kind).toBe('system');
-      expect(seen.memberPrivate).toBe(true);
-      expect(seen.stamp).toEqual({ workspaceId: adminWs, loginId: null });
-      expect(await rt.agentTurnScoped({ workspaceId: adminWs })).toBe(false);
-      const other = await mcpCall(owner, 'node_read', { node_id: privatePage });
-      expect(other.isError, other.text.slice(0, 200)).toBe(false);
-    } finally {
-      delete process.env.MANTLE_ADMIN_READS;
-    }
-    expect(await rt.agentTurnScoped({ workspaceId: adminWs })).toBe(true);
   });
   it('H1: area tools never read another user’s private item, nor overwrite one', async () => {
     const before = {
@@ -569,12 +545,9 @@ describe.skipIf(!URL)('W7a: the Admin assistant and the Admin MCP read in their 
       expect(res.isError, res.text).toBe(true);
       expect(res.text).toMatch(/manages the brain's settings|Tool run_terminal not found/);
       const ls = await import('@mantle/mcp-core');
-      const gated = (await ls.runMcpCall(
-        second,
-        'run_terminal',
-        async () => ({ content: [{ type: 'text' as const, text: 'ran' }] }),
-        { adminLogin: true },
-      )) as { content?: { text?: string }[] };
+      const gated = (await ls.runMcpCall(second, 'run_terminal', async () => ({
+        content: [{ type: 'text' as const, text: 'ran' }],
+      }))) as { content?: { text?: string }[] };
       expect(gated.content?.map((p) => p.text).join('')).toMatch(/manages the brain's settings/);
       expect(t.policyArea(t.builtinPolicy('run_terminal')!)).toBe('settings');
       expect(t.policyAdminOnly(t.builtinPolicy('run_terminal')!)).toBe(true);

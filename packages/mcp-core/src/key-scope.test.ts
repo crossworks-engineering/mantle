@@ -11,6 +11,11 @@ import { KEY_AREAS } from './key-scope';
 import { keyAreasAllowTool, toolKeyArea } from './mcp-policy';
 import { registerPreparedTools, type McpCaller } from './login-surface';
 import { isMcpToolReadOnly, isPeerRiskyTool } from './policy-views.test-helper';
+import { SCOPE_AREAS } from '@mantle/db/viewer';
+
+/** A user of the Admin workspace with every area: what lists everything
+ *  (a prepared connection read no narrower). */
+const ADMIN_VIEW = { holdsAdmin: true, areas: new Set(SCOPE_AREAS) };
 
 function registeredFor(caller: Partial<McpCaller>): string[] {
   const out: string[] = [];
@@ -25,7 +30,7 @@ function registeredFor(caller: Partial<McpCaller>): string[] {
       write: false,
       ...caller,
     },
-    view: null,
+    view: ADMIN_VIEW,
     privateWs: null,
     connectors: [],
   });

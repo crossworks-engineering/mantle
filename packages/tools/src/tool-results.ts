@@ -22,18 +22,15 @@
 import { randomBytes } from 'node:crypto';
 import { and, asc, eq, isNotNull, sql } from 'drizzle-orm';
 import {
-  asViewerLevel,
   currentTurnStamp,
   currentWorkspaceScope,
   db,
   isUnscoped,
-  levelCovers,
   systemDb,
   toolResults,
   toolResultChunks,
   workspaces,
   currentScope,
-  type ViewerLevel,
 } from '@mantle/db';
 // Infrastructure writes: systemDb (the admin pool) whatever the viewer, so a
 // turn under a limited role (member logins Phase 0b) still records them.
@@ -44,11 +41,12 @@ import { envNum } from '@mantle/config';
 
 /** Resolved byte thresholds for one tool-loop. */
 
-/** Outside a workspace scope the code is system work ('admin'); a
- *  workspace scope has no level and reads as the narrowest (fails closed).
- *  The level scope went in W8c. */
-function spaceOrSystemLevel(): ViewerLevel {
-  return currentScope().kind === 'system' ? 'admin' : 'public';
+/** The stored level of a spill (tool_results.viewer_level) written outside
+ *  a workspace scope: null for system work (Admin), 'public' for any other
+ *  scope, the narrowest (fails closed). The level scope went in W8c and the
+ *  level helpers in arch A7; the column keeps its values. */
+function spillLevelOutsideWorkspace(): 'public' | null {
+  return currentScope().kind === 'system' ? null : 'public';
 }
 
 export type ResultHandling = {
@@ -199,7 +197,6 @@ export async function spillToolResult(args: {
   // is team, the level the one non-Admin workspace (Team) mirrors, for the
   // level readers that remain until W6a.
   const inWorkspace = currentWorkspaceScope() !== null;
-  const level = inWorkspace ? 'team' : spaceOrSystemLevel();
   const stamp = currentTurnStamp();
   await systemDb.insert(toolResults).values({
     id: handle,
@@ -208,7 +205,7 @@ export async function spillToolResult(args: {
     toolSlug: args.toolSlug,
     content: args.content,
     bytes,
-    viewerLevel: level === 'admin' ? null : level,
+    viewerLevel: inWorkspace ? 'team' : spillLevelOutsideWorkspace(),
     ...(stamp
       ? {
           ...(stamp.workspaceId ? { workspaceId: stamp.workspaceId } : {}),
@@ -364,7 +361,9 @@ async function loadResult(
     .where(where)
     .limit(1);
   if (!row) return null;
-  if (!levelCovers(spaceOrSystemLevel(), asViewerLevel(row.viewerLevel ?? 'admin'))) return null;
+  // System work reads every spill; any other reader only a 'public' one
+  // (the rule levelCovers gave: an unknown level read as admin).
+  if (currentScope().kind !== 'system' && row.viewerLevel !== 'public') return null;
   // A level reader (not the system) never reads a spill of a non-Admin
   // workspace's turn: those are read through the workspace rule only.
   if (!isUnscoped() && row.workspaceId && row.wsIsAdmin !== true) return null;

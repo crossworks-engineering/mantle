@@ -21,9 +21,8 @@ import {
   shares,
   SNAPSHOT_COPY_NO_SHARE,
   type Share,
-  type ViewerLevel,
 } from '@mantle/db';
-import type { ShareMode } from '@mantle/client-types';
+import type { AccessLevel, ShareMode } from '@mantle/client-types';
 import { kindSpecOf, kindsWhere, type PublicLinkKind } from '@mantle/client-types/kinds';
 import { env } from '@mantle/config';
 import { defineDomainError, UUID_RE } from '@mantle/std';
@@ -77,7 +76,7 @@ export function canShareNode(node: { type: string; path: string | null }): boole
 
 /** The link the old level path (`setItemLevel`) asks for: an open one at
  *  public, none above. */
-export function shareModeForLevel(level: ViewerLevel): ShareMode | null {
+export function shareModeForLevel(level: AccessLevel): ShareMode | null {
   return level === 'public' ? 'public' : null;
 }
 
@@ -157,7 +156,7 @@ function normalizeServed(ids: readonly string[]): string[] {
 export async function applyLevelToShare(
   ownerId: string,
   nodeId: string,
-  level: ViewerLevel,
+  level: AccessLevel,
   q: ShareDb = db,
 ): Promise<ShareSummary | null> {
   const want = shareModeForLevel(level);
@@ -565,7 +564,7 @@ export type RetiredClientLinkListing = {
   nodeIcon: string | null;
   /** The level the link was retired at: always client (levels are frozen,
    *  grants decide who reads the item now). */
-  level: ViewerLevel;
+  level: AccessLevel;
   createdAt: string;
   retiredAt: string | null;
   viewCount: number;

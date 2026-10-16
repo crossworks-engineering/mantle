@@ -167,7 +167,6 @@ vi.mock('@mantle/db', async (importOriginal) => {
     db,
     withViewer: ((_actsFor, fn) => fn()) as typeof real.withViewer,
     loginScopeFor: async (loginId: string) => ({ kind: 'user', loginId, ws: [], modWs: [] }),
-    brainOnWorkspacesNow: async () => true,
     createHomeIntent: async () => ({ createWs: null, privateWs: null }),
   };
 });

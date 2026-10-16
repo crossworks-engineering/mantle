@@ -260,21 +260,6 @@ describe.skipIf(!URL)('the Team assistant’s tools in its turn scope', () => {
       scope: { kind: 'assistant', loginId: owner, ws: [adminWs!.id] },
       stamp: { workspaceId: adminWs!.id, loginId: owner },
     });
-    // The rollback switch: the system pool, with its stamp, as before W7a.
-    process.env.MANTLE_ADMIN_READS = 'system';
-    try {
-      const sys = await rt.withAgentScope(
-        persona,
-        async () => ({ scope: m.currentScope(), stamp: m.currentTurnStamp() }),
-        { loginId: owner },
-      );
-      expect(sys).toEqual({
-        scope: { kind: 'system' },
-        stamp: { workspaceId: adminWs!.id, loginId: owner },
-      });
-    } finally {
-      delete process.env.MANTLE_ADMIN_READS;
-    }
     // Inside the Team turn: a helper keeps the scope; the Admin assistant is refused.
     await rt.withAgentScope(
       teamAgent,

@@ -139,9 +139,8 @@ they switch, the landing page changes with it.
   it (by an Admin user).
 - The brain health **Dashboard** is no landing page. Admin users with the
   settings area open it from the menu.
-- The landing page always reads in the user's own workspaces, also under
-  the emergency switch (`MANTLE_ADMIN_READS=system`): an Admin user's Home
-  never shows the whole brain.
+- The landing page always reads in the user's own workspaces: an Admin
+  user's Home never shows the whole brain.
 
 A home app reads the same data through `host.hub.get()`, kept to the
 workspace: [Workspace home apps](./guide/07-api/07-member-home-apps.md).
@@ -512,30 +511,23 @@ The users of the Admin workspace manage the brain through five areas:
 Clients may come back later as ordinary workspaces, set up by hand: a
 workspace with its users in it, like any other.
 
-## The emergency switch
-
-`MANTLE_ADMIN_READS=system` in `.env` (then restart the web container) puts
-Admin users' reads, the Admin assistant and the Admin MCP surface back on
-the system pool, as before W6a and W7a.
-
-- It restores only the old read path. Every other gate stays on: the Admin
-  tool gate and each login's areas, the item write check, the sandbox
-  maker rule and the vault pairing rule.
-- It never applies to a user outside the Admin workspace.
-- On the system pool, row security no longer keeps each Admin user's chat
-  digests to that user. The Admin assistant's memory tools can read another
-  Admin user's until the switch is unset.
-- Use it only while a fix ships, then unset it.
-
 ## Operator notes
 
+- **A brain not on workspaces does not start** (arch A7). This release has
+  no rule for one: no level path and no rollback switch. After its boot
+  switch the web process asks `mantle_ws_skip_reason()`; a brain on
+  workspaces, and a fresh install with no owner yet (it serves its signup,
+  and its first owner switches it), start. Any other answer ("clients
+  present", or "no workspaces yet" when the boot switch failed) is logged
+  with the reason and the web process exits.
 - **A brain with former clients** (or client level items) is not switched
-  to workspaces at boot. It reports "clients present". `scripts/roll.sh`
-  and the updater refuse to roll such a box to v0.239.90 or later, so this
-  path is only for a box that did not come through that gate. Set its
-  workspaces up by hand first, then run the switch by hand in one
-  transaction, as the database superuser (EXECUTE on
-  `mantle_ws_migrate_locked()` is revoked from PUBLIC):
+  to workspaces at boot. It reports "clients present", and since A7 it
+  does not start until it is switched. `scripts/roll.sh` and the updater
+  refuse to roll such a box to v0.239.90 or later, so this path is only
+  for a box that did not come through that gate. Set its workspaces up by
+  hand first, then run the switch by hand in one transaction, as the
+  database superuser (EXECUTE on `mantle_ws_migrate_locked()` is revoked
+  from PUBLIC), then start the box again:
 
   ```sql
   BEGIN;

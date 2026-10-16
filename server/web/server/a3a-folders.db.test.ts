@@ -126,7 +126,6 @@ describe.skipIf(!URL)('A3a: folders with items the mover cannot read', () => {
     process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
     process.env.SESSION_SECRET = 'a3a-folders-secret-at-least-32-characters!';
     delete process.env.MANTLE_DETACHED_DEV;
-    delete process.env.MANTLE_ADMIN_READS;
     m = await import('@mantle/db');
     f = await import('@mantle/files');
     await x(sql`insert into auth.users (id, email, password_hash, is_owner, role, display_name) values

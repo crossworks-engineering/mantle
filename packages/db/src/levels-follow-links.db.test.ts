@@ -30,8 +30,14 @@ function folderStatement(owner: string): string {
   if (!/^UPDATE "public"\."nodes" c SET/.test(body)) {
     throw new Error(`0161's last statement is not the folder update: ${body.slice(0, 60)}`);
   }
+  // 0295 (arch A7) dropped mantle_workspace_kind: the statement runs with
+  // the list it answered written in, as 0295 wrote it into every rule.
+  const listed = body.replace(
+    /"public"\."mantle_workspace_kind"\(([^()]+)\)/g,
+    "$1 IN ('page', 'note', 'draw', 'table', 'file', 'branch', 'app', 'formula')",
+  );
   // Its final WHERE names the target row `c`: one more condition scopes it.
-  return `${body} AND c.owner_id = '${owner}'`;
+  return `${listed} AND c.owner_id = '${owner}'`;
 }
 
 describe.skipIf(!URL)('migration 0161: nested folders, deepest wins', () => {

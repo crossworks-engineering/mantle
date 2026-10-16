@@ -4,8 +4,8 @@
  *
  * At queue time (pendingOriginNow) the server stamps the row with the
  * asking turn's scope whole: its login, its workspaces and Moderator
- * workspaces, how the turn held it (a turn scope, or the rollback switch's
- * gate scope), whether it wrote as an Admin turn, the Admin view it had
+ * workspaces, how the turn held it (a turn scope), whether it wrote as an
+ * Admin turn, the Admin view it had
  * (Admin held, its Admin areas) and the surface it ran on. Never from model
  * arguments.
  *
@@ -53,18 +53,14 @@ import {
   asSystem,
   assistantWorkspaceIds,
   currentActor,
-  currentGateScope,
   currentRequestMode,
   liveWorkspaceIds,
-  loginHasArea,
   loginScopeFor,
   scopeHasArea,
   scopeHoldsAdmin,
   SCOPE_AREAS,
-  withGateScope,
   withoutLeftScope,
   withTurnScope,
-  withTurnStamp,
   type PendingOrigin,
   type PendingToolCall,
   type WorkspaceScope,
@@ -77,7 +73,7 @@ import type { ToolHandlerContext } from './types';
  *  it was asked on, and what the asker lost since (the audit row names it). */
 export type OriginRun = Readonly<{
   scope: WorkspaceScope | null;
-  enter: 'turn' | 'gate' | null;
+  enter: 'turn' | null;
   /** The scope is entered in write mode (a login's: see originRunFor). */
   writes: boolean;
   /** The Admin view the call may not exceed (the stamp's). */
@@ -170,37 +166,22 @@ export async function pendingOriginNow(
   surface: ToolHandlerContext['surface'],
 ): Promise<PendingOrigin> {
   const ws = currentWorkspaceScope();
-  const gate = ws ? null : currentGateScope();
-  const held = ws ?? gate;
   const base = { v: 1 as const, surface: stampSurface(surface) };
   const empty = { ...base, scope: null, enter: null, writes: false, admin: null } as const;
-  if (held?.kind === 'link') return { ...empty, link: true, actor: stampActor() };
-  if (!held) return { ...empty, actor: stampActor() };
-  let admin: PendingOrigin['admin'];
-  if (ws) {
-    const holds = await scopeHoldsAdmin();
-    admin = { holds, areas: holds ? await scopeAreas() : [] };
-  } else {
-    // The rollback switch's gate scope: the scope answers Admin, the login
-    // its own areas (gate-callers.ts readAdminView).
-    const holds = await withTurnScope(held, () => scopeHoldsAdmin());
-    const areas: string[] = [];
-    if (holds && held.loginId) {
-      for (const area of SCOPE_AREAS) if (await loginHasArea(held.loginId, area)) areas.push(area);
-    }
-    admin = { holds, areas };
-  }
+  if (ws?.kind === 'link') return { ...empty, link: true, actor: stampActor() };
+  if (!ws) return { ...empty, actor: stampActor() };
+  const holds = await scopeHoldsAdmin();
   return {
     ...base,
     scope: {
-      kind: held.kind,
-      loginId: held.loginId,
-      ws: [...held.ws],
-      modWs: [...held.modWs],
+      kind: ws.kind,
+      loginId: ws.loginId,
+      ws: [...ws.ws],
+      modWs: [...ws.modWs],
     },
-    enter: ws ? 'turn' : 'gate',
-    writes: ws ? currentRequestMode()?.writes === true : false,
-    admin,
+    enter: 'turn',
+    writes: currentRequestMode()?.writes === true,
+    admin: { holds, areas: holds ? await scopeAreas() : [] },
     actor: stampActor(),
   };
 }
@@ -323,7 +304,10 @@ export async function originRunFor(
       ws,
       modWs,
     }),
-    enter: origin.enter,
+    // A stamp from before arch A7 may say `gate` (the rollback switch's
+    // gate scope, gone): it runs in a turn scope of the met scope, as every
+    // stamp does now, never on the system pool.
+    enter: 'turn',
     // An approved call of a login is that login's write request in the
     // asked scope: it writes as a login's mutating request does there (the
     // login write gateway, the scope on its transactions, the database's
@@ -343,8 +327,7 @@ export async function originRunFor(
  * Run `fn` in the scope `run` names, whatever scope the approving path runs
  * in: it leaves that one for the system pool (`pending-approval`, a named
  * exit) and enters the asked scope at once, as the asking turn held it (a
- * turn scope, an Admin turn's with its writes; the rollback switch's gate
- * scope with its stamp). A call asked in no scope runs in none, as it was
+ * turn scope, an Admin turn's with its writes). A call asked in no scope runs in none, as it was
  * asked, and no scope the approving path left is kept for it (a turn the
  * call starts never answers the approver). `fn` binds its own actor: the
  * exit's is the system's.
@@ -353,12 +336,6 @@ export function withOriginScope<T>(run: OriginRun, fn: () => Promise<T>): Promis
   const scope = run.scope;
   const inner = (): Promise<T> => {
     if (!scope) return fn();
-    if (run.enter === 'gate') {
-      return withTurnStamp(
-        { workspaceId: scope.ws.length === 1 ? scope.ws[0]! : null, loginId: scope.loginId },
-        () => withGateScope(scope, fn),
-      );
-    }
     // `writes` is turnScopeWrites's answer (originRunFor): the asking
     // turn's own rule.
     return withTurnScope(scope, fn, run.writes ? { writes: true } : {});

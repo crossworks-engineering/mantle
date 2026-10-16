@@ -248,7 +248,6 @@ export type OriginApproval = Readonly<{
 async function adminNarrowed(run: OriginRun): Promise<string[]> {
   const cap = run.adminCap;
   if (!run.scope || !cap?.holds) return [];
-  if (run.enter === 'gate') return [];
   if (!(await scopeHoldsAdmin())) return ['admin'];
   for (const area of cap.areas) {
     if (!(await scopeHasArea(area as ScopeArea))) return ['areas'];

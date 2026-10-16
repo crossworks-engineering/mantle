@@ -637,8 +637,7 @@ export function withCatalogBlock(initial: readonly ChatMessage[], block: string)
  */
 export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
   // The agent's id and brain too (W7 integration fix): a helper answering a
-  // login looks up that login's Admin user row in THIS brain, and a brain
-  // not on workspaces must read as one ('no-workspaces'), not refuse.
+  // login looks up that login's Admin user row in THIS brain.
   return withAgentScope(
     {
       id: args.agentId ?? null,

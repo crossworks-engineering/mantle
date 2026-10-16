@@ -36,8 +36,8 @@ import {
   type GateCaller,
   type Tool,
   type ViewerFor,
-  type ViewerLevel,
 } from '@mantle/db';
+import type { AccessLevel } from '@mantle/client-types';
 import { getAppRuntime, type AppToolRules } from '@mantle/content';
 import { resolveTool } from './resolve';
 import { memberAppToolVerdict } from './member-app-tools';
@@ -166,7 +166,7 @@ export function appToolScope(
   runner: { loginId: string; name: string },
   app: AppRunFor,
 ): {
-  viewer: ViewerLevel;
+  viewer: AccessLevel;
   actsFor: ViewerFor;
   surface: NonNullable<ToolHandlerContext['surface']>;
 } {

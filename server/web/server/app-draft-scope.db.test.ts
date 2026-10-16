@@ -259,7 +259,6 @@ describe.skipIf(!URL)('app drafts under the row lock read as the caller’s scop
     process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
     process.env.SESSION_SECRET = 'app-draft-scope-secret-at-least-32-characters!!';
     delete process.env.MANTLE_DETACHED_DEV;
-    delete process.env.MANTLE_ADMIN_READS;
     vi.stubGlobal(
       'fetch',
       vi.fn(async () => new Response('offline in the app draft test', { status: 503 })),

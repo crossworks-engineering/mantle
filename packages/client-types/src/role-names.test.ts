@@ -136,11 +136,9 @@ export const RECORDED = {
   accessLevel: {
     // packages/client-types/src/dto/access.ts ACCESS_LEVELS, highest first.
     source: ['admin', 'team', 'client', 'public'],
-    copies: {
-      // Lowest first, on purpose (levelCovers reads it so): asked for
-      // membership only.
-      'packages/db/src/viewer.ts VIEWER_LEVELS': ['public', 'client', 'team', 'admin'],
-    },
+    // Its one copy (packages/db/src/viewer.ts VIEWER_LEVELS, lowest first)
+    // went with the level helpers in arch A7.
+    copies: {},
   },
   keyArea: {
     // packages/client-types/src/dto/access-keys.ts ACCESS_KEY_AREAS.

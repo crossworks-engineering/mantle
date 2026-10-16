@@ -1,9 +1,9 @@
 /**
  * The W7 integration fix 3, L1, through the real app (createApp) on a
- * migrated scratch database: under MANTLE_ADMIN_READS=system an owner
- * route's read goes to the system pool only for a login that holds the
- * Admin workspace now. A login with the admin role that was taken out of
- * Admin (a user of Team only) reads in its own scope, as every other user.
+ * migrated scratch database: each login reads what its workspaces hold. A
+ * login with the admin role that was taken out of Admin (a user of Team
+ * only) reads in its own scope, as every other user. The rollback switch
+ * case went with the switch in arch A7.
  * No owner session is made: the two logins are not the brain owner.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run server/web/server/w7-int-fix3-session.db.test.ts
  */
@@ -17,7 +17,7 @@ import { teamWorkspaceSql } from '@mantle/db/test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
-describe.skipIf(!URL)('W7 integration fix 3, L1: the rollback switch asks for Admin', () => {
+describe.skipIf(!URL)('W7 integration fix 3, L1: each login reads in its own scope', () => {
   type Ts = typeof import('@mantle/db/test-support');
   let scratch: Awaited<ReturnType<Ts['createMigratedScratchDatabase']>> | undefined;
   let m: typeof import('@mantle/db');
@@ -51,7 +51,6 @@ describe.skipIf(!URL)('W7 integration fix 3, L1: the rollback switch asks for Ad
     process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
     process.env.SESSION_SECRET = 'w7-int-fix3-session-secret-at-least-32-chars!';
     delete process.env.MANTLE_DETACHED_DEV;
-    delete process.env.MANTLE_ADMIN_READS;
     m = await import('@mantle/db');
     await x(sql`insert into auth.users (id, email, password_hash, is_owner, role, display_name) values
       (${owner}, ${`${tag}-o@example.invalid`}, 'x', true, 'admin', 'Owner'),
@@ -90,7 +89,6 @@ describe.skipIf(!URL)('W7 integration fix 3, L1: the rollback switch asks for Ad
   }, 240_000);
 
   afterAll(async () => {
-    delete process.env.MANTLE_ADMIN_READS;
     await m?.closeDb();
     await scratch?.drop();
     if (dir) await rm(dir, { recursive: true, force: true });
@@ -101,19 +99,5 @@ describe.skipIf(!URL)('W7 integration fix 3, L1: the rollback switch asks for Ad
     expect(o).toContain(pages.team);
     expect(o).not.toContain(pages.admin);
     expect(await listed(admin)).toContain(pages.admin);
-  });
-
-  it('under the switch an Admin user reads on the system pool; the admin role alone does not', async () => {
-    process.env.MANTLE_ADMIN_READS = 'system';
-    try {
-      const a = await listed(admin);
-      expect(a).toContain(pages.admin);
-      expect(a).toContain(pages.team);
-      const o = await listed(outsider);
-      expect(o).toContain(pages.team);
-      expect(o).not.toContain(pages.admin);
-    } finally {
-      delete process.env.MANTLE_ADMIN_READS;
-    }
   });
 });

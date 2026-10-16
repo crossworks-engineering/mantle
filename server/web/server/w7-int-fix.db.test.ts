@@ -16,7 +16,6 @@
  *  C1. A heartbeat on a helper or the Admin assistant answers its maker on
  *      the tick; a fire's reply goes only to the login it answered.
  *  C3. The learned lanes ride only the anchor's own thread.
- *  C4. A brain not on workspaces: a helper answering a login runs.
  *  C5. Persona notes are the anchor login's only.
  *  C7. A helper started from a scope's system-pool work answers that
  *      scope's login, and refuses a scope with none.
@@ -174,7 +173,6 @@ describe.skipIf(!URL)('W7 integration fix', () => {
     process.env.MANTLE_FILES_ROOT = path.join(dir, 'files');
     process.env.MANTLE_SPACES_ROOT = path.join(dir, 'spaces');
     process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
-    delete process.env.MANTLE_ADMIN_READS;
     h.ownerId = owner;
     vi.stubGlobal(
       'fetch',
@@ -440,42 +438,6 @@ describe.skipIf(!URL)('W7 integration fix', () => {
     const other = await prompt(second);
     expect(other).not.toContain(`${tag} likes the sea`);
     expect(other).not.toContain(`${tag} learned a lesson`);
-  });
-
-  it('C4: on a brain not on workspaces a helper answering a login runs', async () => {
-    const owner2 = randomUUID();
-    await x(sql`insert into auth.users (id, email, password_hash, is_owner, role)
-      values (${owner2}, ${`${tag}-o2@example.invalid`}, 'x', false, 'admin')`);
-    await x(sql`insert into spaces (id, kind, login_id) values (${owner2}, 'brain', ${owner2})
-      on conflict (id) do nothing`);
-    const [main] = await m.systemDb
-      .insert(m.agents)
-      .values({
-        ownerId: owner2,
-        slug: `${tag}-main2`,
-        name: 'Main',
-        model: 'fake/model',
-        provider: 'openrouter',
-        systemPrompt: 'p',
-        workspaceId: null,
-        toolGroupSlugs: [],
-      })
-      .returning();
-    const voice = await import('@mantle/voice');
-    const result = await rt.runToolLoop({
-      agentRole: null,
-      adapter: voice.getChatAdapter('openrouter')!,
-      apiKey: 'sk-fake',
-      model: 'fake/model',
-      params: {},
-      ownerId: owner2,
-      agentId: main!.id,
-      agentSlug: main!.slug,
-      initialMessages: [{ role: 'user', content: 'hello' }],
-      tools: [],
-      surface: { kind: 'web', loginId: owner2 },
-    });
-    expect(result.reply).toBe('fired, done');
   });
 
   it('C5: persona notes are the anchor login’s only', async () => {

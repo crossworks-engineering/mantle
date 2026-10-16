@@ -24,10 +24,6 @@ vi.mock(
   '@/lib/auth/login-row',
   async () => (await import('@/server/run-route-stand-ins')).loginRowStandIn,
 );
-vi.mock('@mantle/db', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@mantle/db')>()),
-  ...(await import('@/server/run-route-stand-ins')).dbStandIns,
-}));
 vi.mock('@/lib/auth', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/auth')>()),
   adminLoginActive: vi.fn(async () => h.adminActive),

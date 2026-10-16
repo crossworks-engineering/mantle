@@ -92,7 +92,6 @@ describe.skipIf(!URL)('the app data reads on a read-only MCP connection (A5 step
     process.env.DATABASE_URL = scratch.url;
     process.env.APP_DB_DIR = path.join(dir, 'apps');
     process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
-    delete process.env.MANTLE_ADMIN_READS;
     vi.stubGlobal(
       'fetch',
       vi.fn(async () => new Response('offline', { status: 503 })),

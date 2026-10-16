@@ -259,7 +259,6 @@ vi.mock('@mantle/db', async (importOriginal) => {
       sweepState.noted = JSON.stringify(home);
       real.noteRequestCreateHome(home);
     }) as typeof real.noteRequestCreateHome,
-    brainOnWorkspacesNow: async () => true,
     createHomeIntent: async () => ({ createWs: null, privateWs: null }),
   };
 });

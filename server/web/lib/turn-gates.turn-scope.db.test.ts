@@ -192,17 +192,6 @@ describe.skipIf(!URL)('workspace turn gates (W4b fix round 1)', () => {
       expect(await rt.withRunScope({ workspaceId: null }, async () => m.currentScope())).toEqual({
         kind: 'system',
       });
-      // The rollback switch: Admin on the system pool, as before W7a.
-      process.env.MANTLE_ADMIN_READS = 'system';
-      try {
-        expect(
-          await rt.withRunScope({ workspaceId: admin, loginId: owner }, async () =>
-            m.currentScope(),
-          ),
-        ).toEqual({ kind: 'system' });
-      } finally {
-        delete process.env.MANTLE_ADMIN_READS;
-      }
     });
 
     it('withAgentScope refuses a login with no user row in the workspace (L3)', async () => {

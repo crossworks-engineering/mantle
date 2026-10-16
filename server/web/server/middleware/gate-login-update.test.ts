@@ -96,7 +96,6 @@ vi.mock('@mantle/db', async (importOriginal) => {
       },
     },
     loginScopeFor: async (loginId: string) => ({ kind: 'user', loginId, ws: [], modWs: [] }),
-    brainOnWorkspacesNow: async () => true,
   };
 });
 

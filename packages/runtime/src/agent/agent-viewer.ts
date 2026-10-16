@@ -27,9 +27,7 @@
  *    login it answers moderates Admin. A turn that answers no login (a
  *    heartbeat, a run, an owner Telegram bot) acts for the owner: the
  *    anchor login's write path, and nothing more. Its rows keep their
- *    stamp (the workspace, and the login only when one asked).
- *    MANTLE_ADMIN_READS=system puts it back on the system pool with its
- *    stamp, as before W7a;
+ *    stamp (the workspace, and the login only when one asked);
  *  - an agent with no workspace (a specialist, a worker) runs INSIDE a turn
  *    scope in the caller's scope: a helper never widens it (plan 5.1).
  *    Run straight from a chat (an Admin user talking to the replay agent),
@@ -40,14 +38,8 @@
  *    that is not a user of Admin is refused. With no login asked (system
  *    work: a heartbeat, a run, a worker) a specialist or a worker does
  *    system work; a responder or an assistant on no workspace is refused
- *    on a brain on workspaces (W8 integration); a chat turn always names
- *    its login (runAssistantTurn refuses a helper without one). On a brain not on workspaces it answers an admin login on the
- *    system pool, as that login's requests run there, and reads nothing for
- *    any other login (W8c: the agent's old level no longer decides).
- *    MANTLE_ADMIN_READS=system is the emergency rollback: the helper is back
- *    on the system pool, as before W7, and the memory tools there read
- *    every login's digests (replay_window and find_window still filter by
- *    the asking login in code);
+ *    (W8 integration); a chat turn always names its login
+ *    (runAssistantTurn refuses a helper without one);
  *
  * Nested: the same workspace reuses the open scope; another workspace, or an
  * Admin assistant inside a non-Admin turn, is refused (fail closed). A turn
@@ -60,22 +52,17 @@
  * Imported from `@mantle/db/viewer` where it can be, not `@mantle/db`: a test
  * that fakes the whole `@mantle/db` module keeps the real scope.
  */
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import {
   agents,
   asSystem,
-  authUsers,
   db,
-  withGateScope,
   withTurnScope,
-  withViewer,
   workspaces,
   workspaceUsers,
   liveWorkspace,
 } from '@mantle/db';
 import {
-  adminReadsOnSystemPool,
-  currentGateScope,
   currentRequestMode,
   currentTurnStamp,
   currentWorkspaceScope,
@@ -162,31 +149,16 @@ async function agentBrain(agent: ScopedAgent): Promise<string | null> {
   return row?.ownerId ?? null;
 }
 
-/** Whether `loginId` is an enabled admin login (system pool): on a brain not
- *  on workspaces, the role is what puts a login's requests on the system
- *  pool (the session guard's 'not-on-workspaces' outcome). */
-async function enabledAdminLogin(loginId: string): Promise<boolean> {
-  const [row] = await agentWorkspaceSystem(() =>
-    db
-      .select({ role: authUsers.role })
-      .from(authUsers)
-      .where(and(eq(authUsers.id, loginId), isNull(authUsers.disabledAt)))
-      .limit(1),
-  );
-  return row?.role === 'admin';
-}
-
 /**
  * `loginId`'s user row in the live Admin workspace of brain `ownerId`
  * (system pool): its workspace and whether it moderates there. Null when
- * the login is not a user of Admin; 'no-workspaces' when the brain has no
- * Admin workspace at all (a brain not on workspaces). With no brain known,
- * the login's own Admin workspace, else null (fail closed).
+ * the login is not a user of Admin. With no brain known, the login's own
+ * Admin workspace, else null (fail closed).
  */
 async function adminUserOf(
   loginId: string,
   ownerId: string | null,
-): Promise<{ wsId: string; moderator: boolean } | 'no-workspaces' | null> {
+): Promise<{ wsId: string; moderator: boolean } | null> {
   const rows = await agentWorkspaceSystem(() =>
     db
       .select({ wsId: workspaces.id, moderator: workspaceUsers.moderator })
@@ -202,16 +174,12 @@ async function adminUserOf(
       )
       .limit(2),
   );
-  if (rows.length === 1) return rows[0]!;
-  if (rows.length > 1) return null;
-  if (ownerId && !(await adminWorkspaceOf(ownerId))) return 'no-workspaces';
-  return null;
+  return rows.length === 1 ? rows[0]! : null;
 }
 
 /**
  * Where the agent's turns run (W4b fix round 1, M2; W7a): 'admin' for the
- * Admin assistant (a turn scope of Admin, or the system pool under
- * MANTLE_ADMIN_READS=system), 'workspace' for an assistant of any other
+ * Admin assistant (a turn scope of Admin), 'workspace' for an assistant of any other
  * workspace (a turn scope of it), 'none' for an agent with no workspace (a
  * helper, in its caller's scope). A workspace that is gone or archived throws
  * AgentWorkspaceError (never read as no workspace).
@@ -225,13 +193,11 @@ export async function agentWorkspaceKind(
 
 /**
  * Whether the agent's turns run in a turn scope: an assistant of any
- * workspace, the Admin one included since W7a (not under
- * MANTLE_ADMIN_READS=system). False for an agent with no workspace.
+ * workspace, the Admin one included since W7a. False for an agent with no
+ * workspace.
  */
 export async function agentTurnScoped(agent: ScopedAgent): Promise<boolean> {
-  const kind = await agentWorkspaceKind(agent);
-  if (kind === 'admin') return !adminReadsOnSystemPool();
-  return kind === 'workspace';
+  return (await agentWorkspaceKind(agent)) !== 'none';
 }
 
 /**
@@ -286,70 +252,27 @@ export async function withAgentScope<T>(
     if (!asked) {
       // System work (a heartbeat, a run, a worker) with no login: a
       // specialist or a worker runs it on the system pool. A responder or an
-      // assistant answers people: on a brain on workspaces one on no
-      // workspace holds none, so with no login it has nothing to run in and
-      // is refused, never run as system work (W8 integration). A brain not
-      // known is read as one on workspaces (fail closed).
+      // assistant answers people: one on no workspace holds none, so with no
+      // login it has nothing to run in and is refused, never run as system
+      // work (W8 integration).
       if (agent.role === 'responder' || agent.role === 'assistant') {
-        const brain = await agentBrain(agent);
-        if (!brain || (await adminWorkspaceOf(brain))) {
-          throw new AgentWorkspaceError(
-            'This assistant is in no workspace and this call names no login: it has nothing to answer in.',
-          );
-        }
+        throw new AgentWorkspaceError(
+          'This assistant is in no workspace and this call names no login: it has nothing to answer in.',
+        );
       }
       return fn();
     }
-    const stamped = (wsId: string | null) =>
-      withTurnStamp({ workspaceId: wsId, loginId: asked }, fn);
     const admin = await adminUserOf(asked, await agentBrain(agent));
-    if (admin === 'no-workspaces') {
-      // A brain not on workspaces (W8c): an admin login's helper runs on
-      // the system pool, as that login's requests do there; any other
-      // login's reads nothing (an assistant on no workspace).
-      if (await enabledAdminLogin(asked)) return stamped(null);
-      return withTurnStamp({ workspaceId: null, loginId: asked }, () =>
-        withViewer({ agent: null }, fn),
-      );
-    }
     if (!admin) {
       throw new AgentWorkspaceError(
         'The login this turn answers is not a user of the Admin workspace.',
       );
     }
     const modWs = admin.moderator ? [admin.wsId] : [];
-    // The rollback switch puts the helper back on the system pool (an
-    // emergency switch: see the module comment), for an Admin user only,
-    // and its gates still ask that login (W7 integration fix 2, M6).
-    if (adminReadsOnSystemPool()) {
-      return withGateScope({ kind: 'assistant', loginId: asked, ws: [admin.wsId], modWs }, () =>
-        stamped(null),
-      );
-    }
     const scope = { kind: 'assistant' as const, loginId: asked, ws: [admin.wsId], modWs };
     return withTurnStamp({ workspaceId: admin.wsId, loginId: asked }, () =>
       withTurnScope(scope, fn, { writes: turnScopeWrites(scope, false) }),
     );
-  }
-  // Under MANTLE_ADMIN_READS=system the Admin assistant's own scope is a gate
-  // scope with its stamp, not a turn scope: re-entered for the same
-  // workspace (a heartbeat's caller, then its tool loop; W8 final round 2) it
-  // keeps the login already chosen, as the open turn scope does below. Read
-  // afresh it would act for the anchor, and its gates would ask the anchor.
-  // Not on an asSystem exit from a scope entered since (a narrower turn
-  // scope's tool work, W8 final round 3): the outer gate scope is still
-  // there, but the turn answers the login of the scope it left, or is
-  // refused, as below.
-  if (!open && adminReadsOnSystemPool() && scopeLeftForSystem() === null) {
-    const gate = currentGateScope();
-    if (
-      gate?.kind === 'assistant' &&
-      gate.ws.length === 1 &&
-      gate.ws[0] === wsId &&
-      currentTurnStamp()?.workspaceId === wsId
-    ) {
-      return fn();
-    }
   }
   if (open) {
     if (open.ws.length === 1 && open.ws[0] === wsId) return fn();
@@ -401,14 +324,6 @@ export async function withAgentScope<T>(
       );
     }
     const modWs = user.moderator ? [wsId] : [];
-    // The rollback switch: the system pool, with its stamp, as before W7a,
-    // for an Admin user only; the gates still ask the login the turn
-    // answers (W7 integration fix 2, M6).
-    if (adminReadsOnSystemPool()) {
-      return withTurnStamp(stamp, () =>
-        withGateScope({ kind: 'assistant', loginId: actsFor, ws: [wsId], modWs }, fn),
-      );
-    }
     // It acts for the owner when it answers no login (turnScopeWrites).
     const scope = { kind: 'assistant' as const, loginId: actsFor, ws: [wsId], modWs };
     return withTurnStamp(stamp, () =>
@@ -455,8 +370,7 @@ export async function withAgentScope<T>(
  * The login: `named` (the turn's login, else its owner surface login), else
  * the open workspace scope's (or the scope a system-pool turn left), else
  * the turn's stamp. A turn in no scope that answers no login (an owner
- * Telegram bot, system work on a brain not on workspaces) acts for the
- * owner: it is the anchor's thread. A workspace scope that answers no login
+ * Telegram bot) acts for the owner: it is the anchor's thread. A workspace scope that answers no login
  * (another workspace's assistant on a heartbeat) is not.
  */
 export function turnInAnchorThread(ownerId: string, named?: string | null): boolean {
@@ -513,10 +427,10 @@ export function surfaceLoginId(surface: unknown): string | null {
  * (W7a; the run's login, else the owner), any other workspace in a turn
  * scope of it that writes with the run's login's rights there (its seat and
  * grants in that workspace; turnScopeWrites, the A8 finding F2) and only
- * reads when the run names no login. A run with
- * no workspace is the Admin assistant's (NULL = Admin): the brain's Admin
- * workspace. MANTLE_ADMIN_READS=system, or a brain not on workspaces: the
- * system pool, as before.
+ * reads when the run names no login. A run with no workspace is the Admin
+ * assistant's (NULL = Admin): the brain's Admin workspace; a brain with no
+ * live Admin workspace refuses it (arch A7: no system-pool fallback). A run
+ * with no owner runs as system work.
  */
 export async function withRunScope<T>(
   run: { workspaceId?: string | null; loginId?: string | null; ownerId?: string | null },
@@ -524,17 +438,16 @@ export async function withRunScope<T>(
 ): Promise<T> {
   let wsId = run.workspaceId ?? null;
   if (!wsId) {
-    if (adminReadsOnSystemPool() || !run.ownerId) return fn();
+    if (!run.ownerId) return fn();
     wsId = await adminWorkspaceOf(run.ownerId);
-    if (!wsId) return fn();
+    if (!wsId) throw new AgentWorkspaceError('This brain has no live Admin workspace.');
   }
   return withAgentScope({ workspaceId: wsId }, fn, {
     loginId: run.loginId ?? null,
   });
 }
 
-/** The brain's live Admin workspace (system pool), or null on a brain not
- *  on workspaces. */
+/** The brain's live Admin workspace (system pool), or null. */
 async function adminWorkspaceOf(ownerId: string): Promise<string | null> {
   const [row] = await agentWorkspaceSystem(() =>
     db

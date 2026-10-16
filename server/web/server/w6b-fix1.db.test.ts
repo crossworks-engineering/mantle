@@ -11,7 +11,6 @@
  *    user's only (403 admin-only);
  *  - H3: an upload never lands on the bytes of a file its caller cannot read
  *    (a member, an Admin user not in the file's workspace);
- *  - M1: under MANTLE_ADMIN_READS=system a member's write is still checked;
  *  - M6: my_app_errors needs edit;
  *  - CEO decision 1: a non-owner's app delete waits for the owner (the
  *    nightly purge skips it, a purge by anyone else is refused);
@@ -167,7 +166,6 @@ describe.skipIf(!URL)('W6b fix round 1', () => {
     process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
     process.env.SESSION_SECRET = 'w6b-fix1-secret-at-least-32-characters!!';
     delete process.env.MANTLE_DETACHED_DEV;
-    delete process.env.MANTLE_ADMIN_READS;
     m = await import('@mantle/db');
     f = await import('@mantle/files');
     c = await import('@mantle/content');
@@ -198,7 +196,6 @@ describe.skipIf(!URL)('W6b fix round 1', () => {
   }, 240_000);
 
   afterAll(async () => {
-    delete process.env.MANTLE_ADMIN_READS;
     await m?.closeDb();
     await scratch?.drop();
     if (dir) await rm(dir, { recursive: true, force: true });
@@ -244,24 +241,6 @@ describe.skipIf(!URL)('W6b fix round 1', () => {
       select author_level as level, author_login_id::text as author from apps where node_id = ${oid}`);
     expect(oa).toEqual({ level: 'admin', author: null });
     expect((await call(`/api/apps/${oid}`, owner, 'PATCH', { mcpAccess: true })).status).toBe(200);
-  });
-
-  it('M1: under MANTLE_ADMIN_READS=system a member’s write is still checked', async () => {
-    const own = idOf(await call('/api/notes', mem, 'POST', { title: `${tag} m1` }), 'note');
-    process.env.MANTLE_ADMIN_READS = 'system';
-    try {
-      const r = await call(`/api/notes/${roNote}`, mem, 'PATCH', { title: 'x' });
-      expect(r.status, r.text.slice(0, 200)).toBe(403);
-      expect(r.json.reason).toBe('item-workspace');
-      expect((await call(`/api/notes/${roNote}`, mem, 'DELETE')).status).toBe(403);
-      expect((await call(`/api/notes/${own}`, mem, 'PATCH', { title: `${tag} m1b` })).status).toBe(
-        200,
-      );
-    } finally {
-      delete process.env.MANTLE_ADMIN_READS;
-    }
-    const [n] = await x<{ title: string }>(sql`select title from nodes where id = ${roNote}`);
-    expect(n!.title).toBe(`${tag} ro note`);
   });
 
   it('H3: an upload never lands on the bytes of a file its caller cannot read', async () => {

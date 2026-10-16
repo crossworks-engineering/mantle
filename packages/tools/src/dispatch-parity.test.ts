@@ -31,7 +31,6 @@ import { describe, expect, it, vi } from 'vitest';
 
 const h = vi.hoisted(() => ({
   scope: null as null | Record<string, unknown>,
-  gate: null as null | Record<string, unknown>,
   view: { holdsAdmin: false, areas: new Set<string>() },
   privateWs: null as string | null,
   member: [] as string[],
@@ -50,7 +49,6 @@ vi.mock('../../db/src/viewer', async (importOriginal) => {
   return {
     ...real,
     currentWorkspaceScope: () => h.scope ?? real.currentWorkspaceScope(),
-    currentGateScope: () => h.gate,
   };
 });
 vi.mock('../../db/src/client', async (importOriginal) => ({
@@ -60,7 +58,7 @@ vi.mock('../../db/src/client', async (importOriginal) => ({
   // No database: every Moderator seat a turn holds is held still (A8 L5).
   moderatorSeatsNow: async (_l: string, ws: readonly string[]) => [...ws],
   loginHasArea: async (_l: string, a: string) => h.view.areas.has(a),
-  // The rollback switch's gate scope: its checks run in the scope.
+  // A scope entered (a left scope's checks): they run in it.
   withTurnScope: async (s: Record<string, unknown>, fn: () => Promise<unknown>) => {
     const prev = h.scope;
     h.scope = s;
@@ -234,7 +232,6 @@ const CALLERS: readonly CallerKind[] = [
 
 /** The ambient state of one caller kind, set fresh for every call. */
 function enter(kind: CallerKind): { surface: ToolHandlerContext['surface']; login: string } {
-  h.gate = null;
   h.scope = null;
   h.privateWs = null;
   h.member = [ADMIN_WS, TEAM_WS];

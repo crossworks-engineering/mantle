@@ -353,9 +353,10 @@ describe('system manifest integrity', () => {
     const adminOnly = new Set(MANIFEST_ADMIN_ONLY_GROUPS);
     expect(groups.filter((g) => !adminOnly.has(g))).toEqual(['team-read', 'formulas-eval']);
     expect(groups.filter((g) => adminOnly.has(g))).toEqual(['team-read-admin']);
-    expect(
-      groupsForAgent(groups, { workspace: 'other', role: team.role }, adminOnly, true),
-    ).toEqual(['team-read', 'formulas-eval']);
+    expect(groupsForAgent(groups, { workspace: 'other', role: team.role }, adminOnly)).toEqual([
+      'team-read',
+      'formulas-eval',
+    ]);
   });
 
   it('the client chat is retired: no client agent or group ships, its tools are disabled (W5c)', () => {

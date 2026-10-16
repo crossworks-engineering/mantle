@@ -316,7 +316,6 @@ describe.skipIf(!URL)('W7b: one MCP surface for every login', () => {
     process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
     process.env.SESSION_SECRET = 'w7b-surface-secret-at-least-32-characters!!';
     delete process.env.MANTLE_DETACHED_DEV;
-    delete process.env.MANTLE_ADMIN_READS;
     vi.stubGlobal(
       'fetch',
       vi.fn(async () => new Response('offline in the W7b sweep', { status: 503 })),
@@ -553,12 +552,9 @@ describe.skipIf(!URL)('W7b: one MCP surface for every login', () => {
       // The keys area is off for this user: not listed, and refused if called.
       expect(listed.has('secret_create')).toBe(false);
       expect(listed.has('api_key_refs')).toBe(false);
-      const refused = await ls.runMcpCall(
-        admin2,
-        'api_key_refs',
-        async () => ({ content: [{ type: 'text' as const, text: 'ran' }] }),
-        { adminLogin: true },
-      );
+      const refused = await ls.runMcpCall(admin2, 'api_key_refs', async () => ({
+        content: [{ type: 'text' as const, text: 'ran' }],
+      }));
       expect(text(refused)).toMatch(/keys area is on/);
     } finally {
       await c.close();
@@ -715,22 +711,18 @@ describe.skipIf(!URL)('W7b: one MCP surface for every login', () => {
       ['journal_create', { body: `${tag} entry 2`, kind: 'identity' }],
     ] as const) {
       const def = t.getBuiltin(slug)!;
-      const gated = await ls.runMcpCall(mem, slug, async () => 'ran', { adminLogin: false });
+      const gated = await ls.runMcpCall(mem, slug, async () => 'ran');
       expect(gated, slug).not.toBe('ran');
-      const res = (await ls.runMcpCall(
-        mem,
-        'note_create',
-        () =>
-          m.withCreateHome({ createWs: null, privateWs: memPrivate }, () =>
-            def.handler(
-              { ...args },
-              {
-                ownerId: owner,
-                surface: { kind: 'owner', via: 'mcp', loginId: mem },
-              },
-            ),
+      const res = (await ls.runMcpCall(mem, 'note_create', () =>
+        m.withCreateHome({ createWs: null, privateWs: memPrivate }, () =>
+          def.handler(
+            { ...args },
+            {
+              ownerId: owner,
+              surface: { kind: 'owner', via: 'mcp', loginId: mem },
+            },
           ),
-        { adminLogin: false },
+        ),
       )) as { ok?: boolean; isError?: boolean };
       expect(res.ok === true, slug).toBe(false);
     }

@@ -258,7 +258,6 @@ describe.skipIf(!URL)('the approval of an elevated pending call (A5 step 6d fix 
     process.env.MANTLE_SPACES_ROOT = path.join(dir, 'spaces');
     process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
     process.env.SESSION_SECRET = 'a5-elevated-approval-secret-at-least-32-chars';
-    delete process.env.MANTLE_ADMIN_READS;
     delete process.env.MANTLE_DETACHED_DEV;
     m = await import('@mantle/db');
     t = await import('@mantle/tools');

@@ -354,7 +354,6 @@ describe.skipIf(!DB_URL)('the approval re-check (A5 step 6c): the recorded matri
     process.env.MANTLE_SPACES_ROOT = path.join(dir, 'spaces');
     process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
     process.env.SESSION_SECRET = 'a5-approval-recheck-secret-at-least-32-chars';
-    delete process.env.MANTLE_ADMIN_READS;
     delete process.env.MANTLE_DETACHED_DEV;
     vi.stubGlobal(
       'fetch',

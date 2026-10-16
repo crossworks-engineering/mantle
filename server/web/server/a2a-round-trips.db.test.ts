@@ -415,7 +415,6 @@ describe.skipIf(!DB_URL)('A2a: the actor check adds no round trip when off', () 
     process.env.MANTLE_SPACES_ROOT = path.join(dir, 'spaces');
     process.env.TABLE_DB_DIR = path.join(dir, 'tables');
     process.env.APP_DB_DIR = path.join(dir, 'apps');
-    delete process.env.MANTLE_ADMIN_READS;
     delete process.env.MANTLE_DETACHED_DEV;
     vi.stubGlobal(
       'fetch',

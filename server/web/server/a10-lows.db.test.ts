@@ -217,7 +217,6 @@ describe.skipIf(!DB_URL)('A10 lows: bad ids, dates, paths and keys answer as the
     process.env.MANTLE_SPACES_ROOT = path.join(dir, 'spaces');
     process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
     process.env.SESSION_SECRET = 'a10-lows-secret-at-least-32-characters-long';
-    delete process.env.MANTLE_ADMIN_READS;
     delete process.env.MANTLE_DETACHED_DEV;
     vi.stubGlobal(
       'fetch',

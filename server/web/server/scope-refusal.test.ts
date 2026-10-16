@@ -1,6 +1,5 @@
 /** The one mapper of a refusal to the wire (arch A3a and A3c, plan 10). */
 import { describe, expect, it } from 'vitest';
-import { ViewerLevelConflictError } from '@mantle/db/viewer';
 import { AccessError } from '@mantle/std';
 import { scopeRefusalResponse } from './scope-refusal';
 
@@ -49,24 +48,7 @@ describe('scopeRefusalResponse', () => {
   });
 });
 
-describe('a viewer level conflict (folded in from level-conflict.ts, A3c)', () => {
-  it('is a 403 with a reason code on /api, never the opaque 500', async () => {
-    const res = scopeRefusalResponse(new ViewerLevelConflictError('client', 'public'), '/api/x');
-    expect(res?.status).toBe(403);
-    expect(await res!.json()).toEqual({
-      error: 'forbidden',
-      reason: 'level-conflict',
-      message: 'This is not available at your access level.',
-    });
-  });
-
-  it('is a plain 403 on a page', async () => {
-    const res = scopeRefusalResponse(new ViewerLevelConflictError('public', 'client'), '/s/x');
-    expect(res?.status).toBe(403);
-    expect(res?.headers.get('content-type')).toBe('text/plain');
-    expect(await res!.text()).toBe('This is not available at your access level.');
-  });
-
+describe('a refusal on a page', () => {
   it('a database refusal on a page is the page own error, as before', () => {
     const err = Object.assign(new Error('not allowed to move this item'), { code: '42501' });
     expect(scopeRefusalResponse(err, '/s/x')).toBeNull();

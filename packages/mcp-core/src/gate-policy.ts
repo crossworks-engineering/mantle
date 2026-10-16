@@ -77,23 +77,16 @@ function connectionActor(loginId: string, mode: 'rw' | 'ro' | 'owner'): Actor | 
 }
 
 /**
- * The gate's caller for a prepared MCP connection (login-surface.ts), or
- * null for a refused one. Its scope's Admin view is the one the listing
- * read (null: unscoped, an Admin login on a brain not on workspaces); its
- * scope too, so a login in no workspace lists nothing (owner decision A).
- * Each call enters the login's scope as mcp-scope.ts says, and names its
- * create home by the connection's rule.
+ * The gate's caller for a prepared MCP connection (login-surface.ts). Its
+ * scope's Admin view is the one the listing read; its scope too, so a
+ * login in no workspace lists nothing (owner decision A). Each call enters
+ * the login's scope as mcp-scope.ts says, and names its create home by the
+ * connection's rule.
  */
-export function mcpGateCaller(prepared: PreparedCallerTools): GateCaller | null {
-  if (prepared.kind === 'refused') return null;
+export function mcpGateCaller(prepared: PreparedCallerTools): GateCaller {
   const { caller, view } = prepared;
-  // An Admin user: an admin role that holds the Admin workspace now (W7
-  // integration fix 3, L1; view null is a brain not on workspaces, where the
-  // role decides). Only it may go to the system pool under the rollback
-  // switch; an admin role taken out of Admin stays in its scope.
-  const adminLogin = caller.role === 'admin' && (view === null || view.holdsAdmin);
   // Outside an Admin scope with no private workspace: no home for an item.
-  const noHome = view !== null && !view.holdsAdmin && !prepared.privateWs;
+  const noHome = !view.holdsAdmin && !prepared.privateWs;
   return Object.freeze({
     actor: connectionActor(caller.loginId, caller.write ? 'rw' : 'ro'),
     via: caller.via,
@@ -103,7 +96,7 @@ export function mcpGateCaller(prepared: PreparedCallerTools): GateCaller | null 
     admin: view,
     // The scope the listing read (owner decision A: none, nothing listed).
     ...(prepared.scope ? { scope: prepared.scope } : {}),
-    enterScope: mcpScopeEntry(caller.loginId, adminLogin),
+    enterScope: mcpScopeEntry(caller.loginId),
     createFallback: { privateWs: prepared.privateWs },
     createHome: mcpCreateHomeRule(prepared.privateWs, noHome),
     facts: Object.freeze({
@@ -139,7 +132,7 @@ export function defaultMcpGate(
     via,
     loginId,
     write: true,
-    enterScope: mcpScopeEntry(loginId, true),
+    enterScope: mcpScopeEntry(loginId),
     createFallback: { privateWs: null },
     createHome: mcpCreateHomeRule(null, false),
     facts: Object.freeze({ keyAreas: null, riskyAllowed: [] }),
@@ -147,7 +140,7 @@ export function defaultMcpGate(
   return Object.freeze({
     lists: Object.freeze({ ...base, admin: null }),
     callerFor: async (policy: GatePolicy) =>
-      Object.freeze({ ...base, admin: await mcpAdminView(loginId, true, policy.scope) }),
+      Object.freeze({ ...base, admin: await mcpAdminView(loginId, policy.scope) }),
   });
 }
 
@@ -158,15 +151,13 @@ export function defaultMcpGate(
  * `fn` as the tool's body: `fn`'s value, or the refusal as the surface
  * replies it. What runInOwnerMcpScope was for the database tests of the
  * scope and the Admin step; the surface itself registers through
- * gated-tools.ts. `adminLogin`: the login is an Admin user (default yes).
+ * gated-tools.ts.
  */
 export async function runMcpCall<T>(
   loginId: string,
   name: string,
   fn: () => Promise<T>,
-  opts: { adminLogin?: boolean } = {},
 ): Promise<T | ReturnType<typeof refusalReply>> {
-  const adminLogin = opts.adminLogin !== false;
   const ref: PolicyRef = Object.freeze({ kind: 'mcp-tool', name });
   const policy = lookupPolicy(ref);
   const caller: GateCaller = Object.freeze({
@@ -174,8 +165,8 @@ export async function runMcpCall<T>(
     via: 'oauth',
     loginId,
     write: true,
-    admin: await mcpAdminView(loginId, adminLogin, policy.scope),
-    enterScope: mcpScopeEntry(loginId, adminLogin),
+    admin: await mcpAdminView(loginId, policy.scope),
+    enterScope: mcpScopeEntry(loginId),
     // The body names its own create home, as the tests' do.
     createHome: null,
     facts: Object.freeze({ keyAreas: null, riskyAllowed: [] }),

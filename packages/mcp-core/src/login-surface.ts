@@ -32,7 +32,6 @@ import {
   SCOPE_AREAS,
   asSystem,
   auditLog,
-  brainOnWorkspacesNow,
   db,
   createHomeIntent,
   gateLists,
@@ -155,34 +154,25 @@ function mcpChannel(caller: McpCaller, keysOff: boolean): LoginMcpChannel {
 
 /**
  * What the route prepares before the server registers (the MCP adapter
- * registers synchronously): refused (a login that is not an Admin user on
- * a brain not on workspaces), or the one
- * surface with what its scope may LIST, the login's private workspace (the
- * create rule's fallback) and the connector tools of its workspaces.
+ * registers synchronously): the one surface with what its scope may LIST,
+ * the login's private workspace (the create rule's fallback) and the
+ * connector tools of its workspaces.
  */
-export type PreparedCallerTools =
-  | { kind: 'refused'; caller: McpCaller; message: string }
-  | {
-      kind: 'owner';
-      caller: McpCaller;
-      /** What the scope may list; null = everything (the Admin rollback
-       *  switch, or a brain not on workspaces, for an Admin login). */
-      view: AdminGateView | null;
-      /** The login's private workspace when its scope does not hold Admin. */
-      privateWs: string | null;
-      /** The connector tools of the login's workspaces (team apps Phase 2),
-       *  listed as the gate lists them (gateLists, like any tool). */
-      connectors: Tool[];
-      /** The login's scope (A5 step 4): a login in no workspace lists no
-       *  tools at all (owner decision A). Null: unscoped (an Admin login on
-       *  a brain not on workspaces). Absent: not read (a test's prepared
-       *  connection; each call still enters the scope it reads). */
-      scope?: WorkspaceScope | null;
-    };
-
-/** The refusal for a non-Admin login on a brain not on workspaces. */
-export const NOT_ON_WORKSPACES_REFUSED =
-  'This brain is not on workspaces yet, so only an admin login has MCP tools here.';
+export type PreparedCallerTools = {
+  kind: 'owner';
+  caller: McpCaller;
+  /** What the scope may list. */
+  view: AdminGateView;
+  /** The login's private workspace when its scope does not hold Admin. */
+  privateWs: string | null;
+  /** The connector tools of the login's workspaces (team apps Phase 2),
+   *  listed as the gate lists them (gateLists, like any tool). */
+  connectors: Tool[];
+  /** The login's scope (A5 step 4): a login in no workspace lists no tools
+   *  at all (owner decision A). Absent: not read (a test's prepared
+   *  connection; each call still enters the scope it reads). */
+  scope?: WorkspaceScope;
+};
 
 /** What the scope of `loginId` may list: whether it holds Admin, and its
  *  Admin areas. Read in the scope, once per connection. */
@@ -200,33 +190,21 @@ async function gateViewFor(loginId: string): Promise<AdminGateView> {
 }
 
 export async function prepareCallerTools(caller: McpCaller): Promise<PreparedCallerTools> {
-  const admin = caller.role === 'admin';
-  const onWorkspaces = await brainOnWorkspacesNow();
-  if (!onWorkspaces && !admin) {
-    return { kind: 'refused', caller, message: NOT_ON_WORKSPACES_REFUSED };
-  }
-  // The rollback switch restores the read path only (W7 integration fix 2,
-  // M6): the listing still follows the login's areas.
-  const unscoped = admin && !onWorkspaces;
-  let view: AdminGateView | null = null;
+  const view = await gateViewFor(caller.loginId);
+  const scope = await loginScopeFor(caller.loginId);
   let privateWs: string | null = null;
-  let scope: WorkspaceScope | null = null;
-  if (!unscoped) {
-    view = await gateViewFor(caller.loginId);
-    scope = await loginScopeFor(caller.loginId);
-    // The create rule's fallback for a user outside Admin (the W6b route
-    // rule): made with the login, so only once it is in a workspace.
-    if (!view.holdsAdmin && scope.ws.length > 0) {
-      // THE create-home intent's fallback (@mantle/db createHomeIntent, arch
-      // A3c), once per connection: it makes the private workspace when
-      // there is none, and the login write gateway knows the pair from it
-      // (arch A2b2b). Each create then asks the same function with it.
-      const home = await createHomeIntent(caller.loginId, null, {
-        ownWork: true,
-        makePrivate: true,
-      });
-      privateWs = 'refused' in home ? null : home.privateWs;
-    }
+  // The create rule's fallback for a user outside Admin (the W6b route
+  // rule): made with the login, so only once it is in a workspace.
+  if (!view.holdsAdmin && scope.ws.length > 0) {
+    // THE create-home intent's fallback (@mantle/db createHomeIntent, arch
+    // A3c), once per connection: it makes the private workspace when there
+    // is none, and the login write gateway knows the pair from it (arch
+    // A2b2b). Each create then asks the same function with it.
+    const home = await createHomeIntent(caller.loginId, null, {
+      ownWork: true,
+      makePrivate: true,
+    });
+    privateWs = 'refused' in home ? null : home.privateWs;
   }
   // Connector tools (team apps Phase 2; W5b2): the connector a resource of
   // one of the login's workspaces (the call's scope checks it again, and a
@@ -264,14 +242,14 @@ export async function prepareCallerTools(caller: McpCaller): Promise<PreparedCal
 
 /** Whether the prepared surface is outside an Admin scope: nothing on it
  *  spends on the brain owner's keys (M4 lists no such tool; M-a: a listed
- *  tool skips its paid step). An unscoped Admin login (view null) is not. */
+ *  tool skips its paid step). */
 export function preparedKeysOff(prepared: PreparedCallerTools): boolean {
-  return prepared.kind === 'owner' && prepared.view !== null && !prepared.view.holdsAdmin;
+  return !prepared.view.holdsAdmin;
 }
 
 /** The ref a prepared connection lists `name` by: one of its connector
  *  rows, a hand-written MCP tool, else a builtin. */
-function listedRef(prepared: PreparedCallerTools & { kind: 'owner' }, name: string): PolicyRef {
+function listedRef(prepared: PreparedCallerTools, name: string): PolicyRef {
   const row = prepared.connectors.find((c) => c.slug === name);
   if (row) return { kind: 'runtime-tool', name, row };
   if (mcpDefinition(name)) return { kind: 'mcp-tool', name };
@@ -281,12 +259,10 @@ function listedRef(prepared: PreparedCallerTools & { kind: 'owner' }, name: stri
 /** Whether the prepared connection lists the tool `name` (the one gate's
  *  listing, gateLists, by the ref the surface registers it under): what
  *  the route's audit of a key's write calls reads (`the tools this caller
- *  was given`). A refused connection lists nothing. Registration opt-ins
- *  (the terminal, the Toolsmith writes) are not read here. */
+ *  was given`). Registration opt-ins (the terminal, the Toolsmith writes)
+ *  are not read here. */
 export function preparedLists(prepared: PreparedCallerTools, name: string): boolean {
-  if (prepared.kind === 'refused') return false;
-  const caller = mcpGateCaller(prepared);
-  return caller !== null && gateLists(caller, listedRef(prepared, name));
+  return gateLists(mcpGateCaller(prepared), listedRef(prepared, name));
 }
 
 /** One audit row per connector call a login makes over its own MCP (team
@@ -387,9 +363,8 @@ export function connectorCheck(caller: McpCaller) {
  * Register the one surface for this caller (W7b): the owner tools and the
  * connector tools of its workspaces, each listed when the one gate lists
  * it for the connection and called through it (gated-tools.ts, A5 step 4;
- * the caller: gate-policy.ts mcpGateCaller). A refused caller gets nothing
- * (the route answers 403 first); a login in no workspace lists nothing
- * (owner decision A: the server instructions say why).
+ * the caller: gate-policy.ts mcpGateCaller). A login in no workspace lists
+ * nothing (owner decision A: the server instructions say why).
  */
 export function registerPreparedTools(
   server: McpServer,
@@ -397,7 +372,6 @@ export function registerPreparedTools(
   opts: { transport?: 'stdio' | 'http' } = {},
 ): void {
   const gateCaller = mcpGateCaller(prepared);
-  if (prepared.kind === 'refused' || !gateCaller) return;
   const { caller } = prepared;
   const adminRole = caller.role === 'admin';
   // Outside an Admin scope: nothing spends on the owner's keys (M-a).

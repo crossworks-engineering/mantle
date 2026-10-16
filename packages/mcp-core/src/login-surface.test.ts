@@ -29,6 +29,11 @@ import {
   OWNER_ONLY_IN_SCOPE,
   spendsOwnerKeys,
 } from './policy-views.test-helper';
+import { SCOPE_AREAS } from '@mantle/db/viewer';
+
+/** A user of the Admin workspace with every area: what lists everything
+ *  (a prepared connection read no narrower). */
+const ADMIN_VIEW = { holdsAdmin: true, areas: new Set(SCOPE_AREAS) };
 
 /** What the surface registers: the anchor's own (no connection), or a
  *  peer's, listed through the one gate (A5 step 4). */
@@ -49,7 +54,7 @@ function registered(peer?: { write: boolean; riskyAllowed?: readonly string[] })
       write: peer.write,
       riskyAllowed: peer.riskyAllowed ?? [],
     },
-    view: null,
+    view: ADMIN_VIEW,
     privateWs: null,
     connectors: [],
   });
@@ -141,11 +146,11 @@ describe('one surface for every login (W7b): what a scope lists', () => {
   };
   const prep = (
     caller: McpCaller,
-    view: { holdsAdmin: boolean; areas: string[] } | null,
+    view: { holdsAdmin: boolean; areas: string[] },
   ): PreparedCallerTools => ({
     kind: 'owner',
     caller,
-    view: view ? { holdsAdmin: view.holdsAdmin, areas: new Set(view.areas as never[]) } : null,
+    view: { holdsAdmin: view.holdsAdmin, areas: new Set(view.areas as never[]) },
     privateWs: null,
     connectors: [],
   });
@@ -211,11 +216,6 @@ describe('one surface for every login (W7b): what a scope lists', () => {
     // App code changes are risky for a peer or a key (a published app runs them).
     expect(preparedLists(peerRw, 'app_file_write')).toBe(false);
     expect(preparedLists(peerRw, 'replay_window')).toBe(false);
-  });
-
-  it('a refused caller lists nothing', () => {
-    const refused: PreparedCallerTools = { kind: 'refused', caller: member, message: 'x' };
-    expect(preparedLists(refused, 'search')).toBe(false);
   });
 
   it('every login is told about its workspaces and where a create lands', () => {

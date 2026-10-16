@@ -36,10 +36,6 @@ vi.mock(
   '@/lib/auth/login-row',
   async () => (await import('@/server/run-route-stand-ins')).loginRowStandIn,
 );
-vi.mock('@mantle/db', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@mantle/db')>()),
-  ...(await import('@/server/run-route-stand-ins')).dbStandIns,
-}));
 
 const OWNER = '11111111-1111-4111-8111-111111111111';
 const OTHER = '99999999-9999-4999-8999-999999999999';

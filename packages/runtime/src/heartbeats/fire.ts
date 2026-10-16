@@ -157,8 +157,7 @@ const MAKER_GONE =
  * login's turn scope of Admin, so its memory tools read that login's chats
  * and digests, never another user's, the anchor's included. An assistant of
  * a workspace other than Admin answers no login (read only): nothing to
- * change. The rollback switch and a brain not on workspaces are
- * withAgentScope's (the system pool, or the level, as before).
+ * change.
  */
 function fireInLoginScope(
   hb: Heartbeat,
@@ -330,9 +329,8 @@ async function fireAs(hb: Heartbeat, opts: FireOpts & { skipGates: boolean }): P
   // answers no login), on a team surface so tool errors are filtered and
   // owner-only and adminOnly tools are refused. The Admin assistant (W7a)
   // fires in a turn scope of Admin too, acting for the owner (the anchor
-  // login), on the owner's surface; MANTLE_ADMIN_READS=system keeps it on
-  // the system pool. A workspace that is gone or archived pauses the
-  // heartbeat.
+  // login), on the owner's surface. A workspace that is gone or archived
+  // pauses the heartbeat.
   let scoped: boolean;
   let adminAssistant: boolean;
   let kind: 'admin' | 'workspace' | 'none';
@@ -498,10 +496,9 @@ async function fireAs(hb: Heartbeat, opts: FireOpts & { skipGates: boolean }): P
                 ownerId: hb.ownerId,
                 agentId: agent.id,
                 agentSlug: agent.slug,
-                // The loop re-enters the agent's workspace (withAgentScope),
-                // under MANTLE_ADMIN_READS=system too (W8 final round 2): its
-                // workspace branch handles the switch, where a responder
-                // passed as on no workspace was refused with no login.
+                // The loop re-enters the agent's workspace (withAgentScope)
+                // (W8 final round 2): a responder passed as on no workspace
+                // was refused with no login.
                 agentWorkspaceId: agent.workspaceId,
                 agentRole: agent.role,
                 agentDepth: 1,

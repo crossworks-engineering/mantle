@@ -1,16 +1,8 @@
 /**
  * W8 integration: the audit fixes on agents with no workspace, on one
- * migrated scratch database, first as a brain NOT on workspaces, then
- * switched (mantle_ws_migrate).
+ * migrated scratch database, switched (mantle_ws_migrate). The cases of a
+ * brain NOT on workspaces went with that brain's rules in arch A7.
  *
- * Not on workspaces:
- *  - C-L2: a helper asked for by a login that is not an admin reads
- *    nothing; asked for by an admin login it runs on the system pool;
- *  - C-M2: a responder on no workspace with no login still does system work;
- *  - C-M1 and C-L1: the persona reconcile reaches the responders whose
- *    frozen level was admin and gives them every persona group, an adminOnly
- *    one included; a responder of another frozen level gains nothing.
- * On workspaces:
  *  - C-M2: a responder or an assistant on no workspace with no login is
  *    refused (AgentWorkspaceError); a specialist still does system work;
  *  - C-M1: the persona reconcile reaches only the Admin workspace's
@@ -69,7 +61,6 @@ describe.skipIf(!URL)('W8 integration: agents with no workspace', () => {
     scratch = await ts.createMigratedScratchDatabase(URL!);
     process.env.DATABASE_URL = scratch.url;
     process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
-    delete process.env.MANTLE_ADMIN_READS;
     m = await import('@mantle/db');
     rt = await import('@mantle/runtime/agent');
     rec = await import('../lib/system-manifest/reconcile');
@@ -90,27 +81,6 @@ describe.skipIf(!URL)('W8 integration: agents with no workspace', () => {
   afterAll(async () => {
     await m?.closeDb();
     await scratch?.drop();
-  });
-
-  describe('a brain not on workspaces', () => {
-    it('C-L2: a helper asked for by a non-admin login reads nothing; by an admin, the system pool', async () => {
-      const helper = await agent('helper', 'custom', 'admin');
-      expect(await rt.withAgentScope(helper, readPage, { loginId: mem })).toEqual([]);
-      expect(await rt.withAgentScope(helper, readPage, { loginId: owner })).toEqual([page]);
-    });
-
-    it('C-M2: a responder on no workspace with no login still does system work', async () => {
-      const responder = await agent('lone-responder', 'responder', 'admin');
-      expect(await rt.withAgentScope(responder, readPage)).toEqual([page]);
-    });
-
-    it('C-M1, C-L1: the persona reconcile reaches the frozen-admin responders, with every group', async () => {
-      await agent('admin-persona', 'responder', 'admin');
-      await agent('team-persona', 'responder', 'team');
-      await rec.reconcilePersonaCapabilitiesByRole(owner);
-      expect(await groupsOf('admin-persona')).toEqual([...manifest.PERSONA_TOOL_GROUP_SLUGS]);
-      expect(await groupsOf('team-persona')).toEqual([]);
-    });
   });
 
   describe('switched to workspaces', () => {

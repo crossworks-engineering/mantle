@@ -22,13 +22,18 @@
 import { randomUUID } from 'node:crypto';
 import bcrypt from 'bcryptjs';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { ensureTestAnchor } from '@mantle/db/test-support';
+import {
+  createMigratedScratchDatabase,
+  ensureTestAnchor,
+  runWorkspacesSwitch,
+} from '@mantle/db/test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
 type Row = Record<string, unknown>;
 
 describe.skipIf(!URL)('session epoch: ending a login’s sessions', () => {
+  let scratch: Awaited<ReturnType<typeof createMigratedScratchDatabase>> | undefined;
   let m: typeof import('@mantle/db');
   let sql: Parameters<typeof m.ensureViewerRoles>[0];
   let app: import('hono').Hono;
@@ -37,7 +42,6 @@ describe.skipIf(!URL)('session epoch: ending a login’s sessions', () => {
   const member = randomUUID();
   const admin = randomUUID(); // the caller of the admin routes
   const demoted = randomUUID(); // an admin, demoted below
-  const logins = [member, admin, demoted];
   let anchor = '';
   const FIRST = 'first password 1';
   /** The member's password now (it changes below); the others keep FIRST. */
@@ -101,32 +105,32 @@ describe.skipIf(!URL)('session epoch: ending a login’s sessions', () => {
   };
 
   beforeAll(async () => {
-    process.env.DATABASE_URL = URL;
+    // A brain of its own, on workspaces as every brain is since arch A7: the
+    // admin routes ask the caller's Admin areas, which a brain off
+    // workspaces no longer answers by the role alone.
+    scratch = await createMigratedScratchDatabase(URL!);
+    process.env.DATABASE_URL = scratch.url;
     process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
     process.env.SESSION_SECRET = 'session-epoch-db-test-secret-at-least-32-chars';
     delete process.env.MANTLE_DETACHED_DEV;
     m = await import('@mantle/db');
     sql = (m.systemDb as unknown as { $client: typeof sql }).$client;
     tokens = await import('./tokens');
-    // A member resolves against the brain's anchor: the shared test anchor
-    // (made once, by whichever file asks first, never deleted).
+    // A member resolves against the brain's anchor: this database's own.
     anchor = await ensureTestAnchor(sql);
     const hash = bcrypt.hashSync(password, 4);
     await sql`insert into auth.users (id, email, password_hash, role) values
       (${member}, ${emailOf(member)}, ${hash}, 'member'),
       (${admin}, ${emailOf(admin)}, ${hash}, 'admin'),
       (${demoted}, ${emailOf(demoted)}, ${hash}, 'admin')`;
+    await runWorkspacesSwitch(scratch.url);
     const { createApp } = await import('../../server/app');
     app = await createApp();
   }, 120_000);
 
   afterAll(async () => {
-    if (!sql) return;
-    const all = logins;
-    await sql`delete from audit_log where actor_email like ${`${tag}%`}`;
-    await sql`delete from mobile_tokens where user_id in ${sql(all)}`;
-    await sql`delete from spaces where login_id in ${sql(all)}`;
-    await sql`delete from auth.users where id in ${sql(all)}`;
+    await m?.closeDb();
+    await scratch?.drop();
   });
 
   it('a password change ends every other session, and keeps the caller signed in', async () => {

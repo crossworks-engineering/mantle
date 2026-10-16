@@ -3,19 +3,15 @@
  * (run-route.ts; A4 step 3a). The login rows the pipeline reads come from
  * here, so the gate finds a stood-in login exactly as it finds a real one
  * (the same loadLoginRow, seeding the login's workspaces for the request
- * scope). A test file wires them in with vi.mock factories:
+ * scope). A test file wires them in with a vi.mock factory:
  *
  *     vi.mock('@/lib/auth/login-row', async () =>
  *       (await import('@/server/run-route-stand-ins')).loginRowStandIn);
- *     vi.mock('@mantle/db', async (orig) => ({
- *       ...(await orig<typeof import('@mantle/db')>()),
- *       ...(await import('@/server/run-route-stand-ins')).dbStandIns,
- *     }));
  *
  * and names its logins with standInLogin(). Test support only.
  */
-// Types only at the top: @mantle/db is often mocked with dbStandIns spread
-// in, and a value import here would wait on that mock (a cycle).
+// Types only at the top: @mantle/db is often mocked, and a value import here
+// would wait on that mock (a cycle).
 import type { LoginRole } from '@mantle/db';
 
 /** A stood-in login row, with the workspaces its scope holds. */
@@ -69,10 +65,4 @@ export const loginRowStandIn = {
   loadPersonalSpaceId: async () => null,
   loadBearerToken: async () => null,
   touchBearerToken: async () => undefined,
-};
-
-/** @mantle/db's brain-wide reads the guard asks, stood in: the brain is on
- *  workspaces. */
-export const dbStandIns = {
-  brainOnWorkspacesNow: async () => true,
 };

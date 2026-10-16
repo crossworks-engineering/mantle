@@ -5,9 +5,8 @@
  * may name (a create may name only a workspace its caller moderates).
  *
  * In a user's scope (an MCP call) the answer is the scope itself: the
- * workspaces it reads and the ones it moderates. Outside one (system work,
- * the stdio surface under MANTLE_ADMIN_READS=system) it is the login's own
- * user rows.
+ * workspaces it reads and the ones it moderates. Outside one (system work)
+ * it is the login's own user rows.
  */
 import { and, asc, eq, inArray } from 'drizzle-orm';
 import { db, workspaces, workspaceUsers, liveWorkspace } from '@mantle/db';

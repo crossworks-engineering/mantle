@@ -16,8 +16,7 @@
  *    answers 500;
  *  - no admin screen shows another user's private item: a member's private
  *    workspace item and an item of a workspace the Admin user is not in
- *    appear on no list, search or item route for the Admin user. The W6a
- *    rollback switch (MANTLE_ADMIN_READS=system) shows the pre-W6a answer.
+ *    appear on no list, search or item route for the Admin user.
  *  - drafts: an Admin user reads the draft of an item it may edit; a member
  *    never reads a draft on the owner routes.
  *
@@ -319,7 +318,6 @@ describe.skipIf(!URL)('W6a route sweep: scoped reads for every login', () => {
     );
     process.env.MANTLE_APP_RUNTIME_MANIFEST = join(runtime, 'manifest.json');
     delete process.env.MANTLE_DETACHED_DEV;
-    delete process.env.MANTLE_ADMIN_READS;
     m = await import('@mantle/db');
     const hash = (await import('bcryptjs')).default.hashSync(PASSWORD, 4);
     await x(sql`insert into auth.users (id, email, password_hash, is_owner, role, display_name) values
@@ -850,22 +848,6 @@ describe.skipIf(!URL)('W6a route sweep: scoped reads for every login', () => {
     expect((await call(`/api/notes/${adminNote}`, owner)).status).toBe(200);
   }, 300_000);
 
-  it('the rollback switch puts Admin reads back on the system pool (the pre-W6a answer)', async () => {
-    process.env.MANTLE_ADMIN_READS = 'system';
-    try {
-      const r = await call(`/api/notes/${privNote}`, owner);
-      expect(r.status).toBe(200);
-      expect(r.outcome).toEqual({ kind: 'system', why: 'admin-reads-flag' });
-      // Members stay scoped whatever it says.
-      const mr = await call(`/api/notes/${sideNote}`, mem);
-      expect(mr.status).toBe(404);
-      expect(mr.outcome?.kind).toBe('user');
-    } finally {
-      delete process.env.MANTLE_ADMIN_READS;
-    }
-    expect((await call(`/api/notes/${privNote}`, owner)).status).toBe(404);
-  });
-
   it('an Admin user writes no item homed in a workspace it is not in (S1: add yourself first)', async () => {
     // Every owner write route that names an item: the private and the Side
     // item are refused before the handler runs (nothing is written).
@@ -906,15 +888,6 @@ describe.skipIf(!URL)('W6a route sweep: scoped reads for every login', () => {
     // The member that holds the private workspace (its Moderator) writes its
     // own item through the owner route since W6b.
     expect((await call(`/api/notes/${privNote}`, mem, 'PATCH', { title: 'x' })).status).toBe(200);
-    // The rollback switch restores only the reads (W7 integration fix 2,
-    // M6): the item write check stays on under it.
-    process.env.MANTLE_ADMIN_READS = 'system';
-    try {
-      const r = await call(`/api/notes/${privNote}`, owner, 'PATCH', {});
-      expect(r.text).toContain('item-workspace');
-    } finally {
-      delete process.env.MANTLE_ADMIN_READS;
-    }
   }, 600_000);
 
   it('L2: the system-pool writes of request scopes are the pinned list', () => {

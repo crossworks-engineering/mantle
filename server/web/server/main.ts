@@ -99,41 +99,70 @@ if (isBootSmoke()) {
   ]);
 }
 
-// Boot hook (was instrumentation.ts): bring an existing brain in line with the
-// system manifest on every image update. Fire-and-forget — never delays or
-// blocks request serving; the reconcile self-guards (production-only,
-// provisioned-only, once per version, best-effort).
-// (MANTLE_PUBLIC_URL / NEXT_PUBLIC_APP_URL fallback: @mantle/config warns once.)
 // Arch A2a: each boot task runs as system(boot:<task>).
 const { runAsSystem, openLoginWritePool } = await import('@mantle/db');
 // Arch A2b2b: this process sends scoped login writes to the write role
 // (docs/actors.md; the connection ceiling counts its pool for each process
 // that opens it).
 openLoginWritePool();
+
+// A brain with no workspaces yet (a fresh install whose owner signed up
+// before this release, W5b1 audit M1): migrate it once. Skips a migrated
+// brain and one with clients (21.9) without a lock; no LLM work. Awaited
+// before the listener (arch A7): this release has no rule for a brain off
+// workspaces, so the boot refuses one (a box that reports "clients
+// present", or a switch that failed) and exits; a fresh install with no
+// owner yet serves its signup. A database the boot cannot read is not a
+// refusal: logged, as before. Detached dev has no database of its own: the
+// step runs as before, never awaited.
+// Then the authors' copies of their accepted items (W6b, plan S3): only the
+// missing ones, no LLM work, no extractor notify.
+const workspacesStep = () =>
+  runAsSystem('boot:migrate-workspaces', () =>
+    import('../lib/workspaces-migrate').then(async (wm) => {
+      await wm.migrateWorkspacesQuietly('boot');
+      const why = await wm.unmigratedBrainReason();
+      return why === null ? null : wm.unmigratedBrainRefusal(why);
+    }),
+  ).catch((err) => {
+    bootLog.error('workspaces migration failed:', err);
+    return null;
+  });
+const snapshotCopies = () =>
+  runAsSystem('boot:migrate-workspaces', () =>
+    import('../lib/snapshot-copies')
+      .then(({ makeSnapshotCopies }) => makeSnapshotCopies())
+      .then((r) => {
+        if (r.made > 0 || r.acceptedRowsCleared > 0) {
+          bootLog.info(
+            `snapshot copies: made ${r.made}, accepted rows cleared ${r.acceptedRowsCleared}`,
+          );
+        }
+      })
+      .catch((err) => bootLog.error('workspaces migration failed:', err)),
+  );
+if (isDetachedDev()) {
+  void workspacesStep().then(snapshotCopies);
+} else {
+  const unmigrated = await workspacesStep();
+  if (unmigrated) {
+    bootLog.error(unmigrated);
+    process.exit(1);
+  }
+  void snapshotCopies();
+}
+
+// Boot hook (was instrumentation.ts): bring an existing brain in line with the
+// system manifest on every image update, once the brain is known to be on
+// workspaces (arch A7: the reconcile has no rule for one that is not).
+// Fire-and-forget: never delays or blocks request serving; the reconcile
+// self-guards (production-only, provisioned-only, once per version,
+// best-effort).
+// (MANTLE_PUBLIC_URL / NEXT_PUBLIC_APP_URL fallback: @mantle/config warns once.)
 void runAsSystem('boot:manifest-reconcile', () =>
   import('../lib/system-manifest/reconcile')
     .then(({ reconcileManifestOnBoot }) => reconcileManifestOnBoot())
     .catch((err) => bootLog.error('manifest reconcile failed:', err)),
-);
-
-// A brain with no workspaces yet (a fresh install whose owner signed up
-// before this release, W5b1 audit M1): migrate it once. Skips a migrated
-// brain and one with clients (21.9) without a lock; no LLM work.
-// Then the authors' copies of their accepted items (W6b, plan S3): only the
-// missing ones, no LLM work, no extractor notify.
-void runAsSystem('boot:migrate-workspaces', () =>
-  import('../lib/workspaces-migrate')
-    .then(({ migrateWorkspacesQuietly }) => migrateWorkspacesQuietly('boot'))
-    .then(() => import('../lib/snapshot-copies'))
-    .then(({ makeSnapshotCopies }) => makeSnapshotCopies())
-    .then((r) => {
-      if (r.made > 0 || r.acceptedRowsCleared > 0) {
-        bootLog.info(
-          `snapshot copies: made ${r.made}, accepted rows cleared ${r.acceptedRowsCleared}`,
-        );
-      }
-    })
-    .catch((err) => bootLog.error('workspaces migration failed:', err)),
 );
 
 // App table exports a restart left unsynced (apps plan D8): their debounce

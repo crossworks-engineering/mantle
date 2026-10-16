@@ -147,7 +147,6 @@ describe.skipIf(!URL)('the systemWhole tools touch no item on the system pool', 
     process.env.TABLE_DB_DIR = path.join(dir, 'tables');
     process.env.APP_DB_DIR = path.join(dir, 'apps');
     process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
-    delete process.env.MANTLE_ADMIN_READS;
     process.env.SANDBOXD_URL = 'http://sandboxd.invalid';
     process.env.SANDBOXD_TOKEN = 'w7a-sweep-token';
     vi.stubGlobal(

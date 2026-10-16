@@ -191,7 +191,6 @@ describe.skipIf(!DB_URL)('A8 cells: folder counts are the caller’s', () => {
     process.env.MANTLE_SPACES_ROOT = path.join(dir, 'spaces');
     process.env.TABLE_DB_DIR = path.join(dir, 'tables');
     process.env.APP_DB_DIR = path.join(dir, 'apps');
-    delete process.env.MANTLE_ADMIN_READS;
     m = await import('@mantle/db');
     const email = (who: string) => `${tag}-${who}@example.invalid`;
     await x(sql`insert into auth.users (id, email, password_hash, is_owner, role) values

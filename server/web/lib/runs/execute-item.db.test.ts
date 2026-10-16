@@ -20,6 +20,7 @@ describe.skipIf(!URL)('a run item under the planning agent', () => {
   const tag = `xi-${randomUUID().slice(0, 8)}`;
   let agentId = '';
   const otherWs = randomUUID();
+  const adminWs = randomUUID();
   const q = (s: ReturnType<typeof sqlTag>) => m.systemDb.execute(s);
   const rows = async <T>(s: ReturnType<typeof sqlTag>) => (await q(s)) as unknown as T[];
 
@@ -33,6 +34,13 @@ describe.skipIf(!URL)('a run item under the planning agent', () => {
     await q(sqlTag`insert into auth.users (id, email, password_hash, role)
       values (${anchor}, ${`${tag}@example.invalid`}, 'x', 'admin')`);
     await q(sqlTag`insert into spaces (id, kind, login_id) values (${anchor}, 'brain', ${anchor})`);
+    // Its Admin workspace, the owner a Moderator user of it: a run with no
+    // workspace re-enters Admin (withRunScope), and since arch A7 a brain
+    // with no live Admin workspace is refused, never run on the system pool.
+    await q(sqlTag`insert into workspaces (id, owner_id, name, is_admin)
+      values (${adminWs}, ${anchor}, 'Admin', true)`);
+    await q(sqlTag`insert into workspace_users (workspace_id, login_id, moderator)
+      values (${adminWs}, ${anchor}, true)`);
     for (const slug of ['tool_group_ensure', 'note_list']) {
       await q(sqlTag`
         insert into tools (owner_id, slug, name, description, handler, input_schema)
@@ -73,7 +81,7 @@ describe.skipIf(!URL)('a run item under the planning agent', () => {
     await q(sqlTag`delete from pending_tool_calls where owner_id = ${anchor}`);
     await q(sqlTag`delete from runs where owner_id = ${anchor}`);
     await q(sqlTag`delete from agents where owner_id = ${anchor}`);
-    await q(sqlTag`delete from workspaces where id = ${otherWs}`);
+    await q(sqlTag`delete from workspaces where id in (${otherWs}, ${adminWs})`);
     await q(sqlTag`delete from tool_groups where owner_id = ${anchor}`);
     await q(sqlTag`delete from tools where owner_id = ${anchor}`);
     await q(sqlTag`delete from spaces where login_id = ${anchor}`);

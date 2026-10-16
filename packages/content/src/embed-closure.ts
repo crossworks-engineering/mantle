@@ -14,7 +14,7 @@
  * link). The database keeps the edges (node_embeds, migration 0208); the
  * Grant Access panel and the share pages read them.
  */
-import type { ViewerLevel } from '@mantle/db';
+import type { AccessLevel } from '@mantle/client-types';
 import { EMBEDDING_KINDS as REGISTRY_EMBEDDING_KINDS } from '@mantle/client-types/kind-lists';
 import { markdownToDoc } from '@mantle/content-core/markdown';
 import { referencedDrawIds, referencedFileIds } from './doc-assets';
@@ -69,6 +69,6 @@ export type LoweredItem = {
   id: string;
   type: string;
   title: string;
-  from: ViewerLevel;
-  to: ViewerLevel;
+  from: AccessLevel;
+  to: AccessLevel;
 };

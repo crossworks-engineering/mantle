@@ -506,7 +506,6 @@ describe.skipIf(!URL)('the A6b exit sweep', () => {
     }
     process.env.SESSION_SECRET = 'a6b-exit-sweep-secret-at-least-32-characters';
     process.env.MANTLE_FILES_ROOT = mkdtempSync(join(tmpdir(), 'a6b-files-'));
-    delete process.env.MANTLE_ADMIN_READS;
     delete process.env.MANTLE_DETACHED_DEV;
     m = await import('@mantle/db');
     content = await import('@mantle/content');

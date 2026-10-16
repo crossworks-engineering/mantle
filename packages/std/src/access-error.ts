@@ -236,15 +236,6 @@ export function isHiddenRowsRefusal(err: unknown): boolean {
   return !!pg && pg.code === '42501' && pg.detail === 'hidden_rows';
 }
 
-/** A viewer level conflict (@mantle/db viewer.ts, ViewerLevelConflictError):
- *  known by its code, never by instanceof (a second copy of the db module
- *  must not turn the refusal into a 500). */
-export function isLevelConflict(err: unknown): boolean {
-  return (
-    err instanceof Error && (err as Error & { code?: unknown }).code === 'viewer-level-conflict'
-  );
-}
-
 // ── The one mapper ──────────────────────────────────────────────────────────
 
 /** An HTTP answer: the status and the JSON body. */
@@ -253,7 +244,7 @@ export type AccessHttp = { status: number; body: Record<string, unknown> };
 /** What a refusal is on every surface. */
 export type AccessRefusal = {
   /** The gate's kind, or what the database or the scope refused. */
-  kind: AccessKind | 'database' | 'level-conflict';
+  kind: AccessKind | 'database';
   /** The stable code (plan 10). */
   code: string;
   /** The HTTP answer, as today. Null: the HTTP layer does not answer it as
@@ -262,9 +253,6 @@ export type AccessRefusal = {
   /** What a tool says, as today. */
   toolText: string;
 };
-
-/** The words of the level conflict's 403. */
-export const LEVEL_CONFLICT_MESSAGE = 'This is not available at your access level.';
 
 /** The HTTP body of a gate refusal: the bodies the routes send today. */
 function gateHttp(err: AccessError): AccessHttp {
@@ -464,17 +452,6 @@ export function mapAccessError(err: unknown): AccessRefusal | null {
       return { kind: e.kind, code: GATE_CODES[e.kind], http: gateHttp(e), toolText: e.message };
     }
     e = (e as { cause?: unknown }).cause;
-  }
-  if (isLevelConflict(err)) {
-    return {
-      kind: 'level-conflict',
-      code: 'level_conflict',
-      http: {
-        status: 403,
-        body: { error: 'forbidden', reason: 'level-conflict', message: LEVEL_CONFLICT_MESSAGE },
-      },
-      toolText: (err as Error).message,
-    };
   }
   return databaseRefusal(err);
 }

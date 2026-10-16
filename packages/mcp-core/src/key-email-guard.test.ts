@@ -13,9 +13,15 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 // The owner surface enters the login's scope per call (W7a, mcp-scope.ts):
 // no database here, so the brain reads as not on workspaces and the call
 // runs as is.
-vi.mock('@mantle/db', async (importOriginal) => ({
+// No database: each call runs as it is, with no scope entered (the scope
+// entry and the Admin view stood in).
+vi.mock('./mcp-scope', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
-  brainOnWorkspacesNow: async () => false,
+  mcpScopeEntry:
+    () =>
+    <T>(_writes: boolean, fn: () => Promise<T>) =>
+      fn(),
+  mcpAdminView: async () => null,
 }));
 
 const MAIL = '33333333-3333-4333-8333-333333333333';
@@ -45,6 +51,11 @@ vi.mock('@mantle/files', async (importOriginal) => ({
 import { KEY_EMAIL_REFUSAL, keyEmailGuard } from './key-email-guard';
 import { keyAreasReachEmail } from './key-scope';
 import { registerPreparedTools, type McpCaller } from './login-surface';
+import { SCOPE_AREAS } from '@mantle/db/viewer';
+
+/** A user of the Admin workspace with every area: what lists everything
+ *  (a prepared connection read no narrower). */
+const ADMIN_VIEW = { holdsAdmin: true, areas: new Set(SCOPE_AREAS) };
 
 type Cb = (
   args: Record<string, unknown>,
@@ -70,7 +81,7 @@ function toolsFor(areas: readonly string[] | null): Map<string, Cb> {
   registerPreparedTools(fakeServer as never, {
     kind: 'owner',
     caller,
-    view: null,
+    view: ADMIN_VIEW,
     privateWs: null,
     connectors: [],
   });

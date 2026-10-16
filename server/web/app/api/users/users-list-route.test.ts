@@ -45,7 +45,6 @@ vi.mock('@mantle/db', async (importOriginal) => {
   };
   return {
     ...(await importOriginal<typeof import('@mantle/db')>()),
-    ...(await import('@/server/run-route-stand-ins')).dbStandIns,
     db: { select: () => chain },
   };
 });

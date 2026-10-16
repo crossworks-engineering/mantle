@@ -165,7 +165,6 @@ describe.skipIf(!URL)('W7a fix round 3', () => {
     process.env.MANTLE_FILES_ROOT = path.join(dir, 'files');
     process.env.MANTLE_SPACES_ROOT = path.join(dir, 'spaces');
     process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
-    delete process.env.MANTLE_ADMIN_READS;
     process.env.SANDBOXD_URL = 'http://sandboxd.invalid';
     process.env.SANDBOXD_TOKEN = 'w7a-sandboxd-token';
     vi.stubGlobal(

@@ -14,7 +14,6 @@
  *      list of a group restamps its grantees' heartbeats.
  *  M3. A copy or export of an app with its data needs an edit on it.
  *  M5. The anchor fires a Team assistant's heartbeat from its chat: it fires.
- *  M6. Under MANTLE_ADMIN_READS=system the gates still ask the login.
  *  Lows: a turn's open heartbeats are its own login's; a login decides only
  *  its own pending calls; a manifest reset turns the backup off; the
  *  anchor's chat sees the trash of every workspace it moderates.
@@ -74,7 +73,6 @@ describe.skipIf(!URL)('W7 integration fix 2', () => {
   let scratch: Awaited<ReturnType<Ts['createMigratedScratchDatabase']>> | undefined;
   let m: typeof import('@mantle/db');
   let t: typeof import('@mantle/tools');
-  let rt: typeof import('@mantle/runtime/agent');
   let hbs: typeof import('@mantle/runtime/heartbeats');
   let dir = '';
   const owner = randomUUID(); // the anchor
@@ -192,14 +190,12 @@ describe.skipIf(!URL)('W7 integration fix 2', () => {
     process.env.MANTLE_FILES_ROOT = path.join(dir, 'files');
     process.env.MANTLE_SPACES_ROOT = path.join(dir, 'spaces');
     process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
-    delete process.env.MANTLE_ADMIN_READS;
     vi.stubGlobal(
       'fetch',
       vi.fn(async () => new Response('{"error":"offline in the W7 test"}', { status: 503 })),
     );
     m = await import('@mantle/db');
     t = await import('@mantle/tools');
-    rt = await import('@mantle/runtime/agent');
     hbs = await import('@mantle/runtime/heartbeats');
     await x(sql`insert into auth.users (id, email, password_hash, is_owner, role, display_name) values
       (${owner}, ${`${tag}-o@example.invalid`}, 'x', true, 'admin', 'Owner'),
@@ -234,7 +230,6 @@ describe.skipIf(!URL)('W7 integration fix 2', () => {
 
   afterAll(async () => {
     vi.unstubAllGlobals();
-    delete process.env.MANTLE_ADMIN_READS;
     await m?.closeDb();
     await scratch?.drop();
     if (dir) await rm(dir, { recursive: true, force: true });
@@ -243,7 +238,6 @@ describe.skipIf(!URL)('W7 integration fix 2', () => {
   beforeEach(async () => {
     h.session = null;
     h.scope = null;
-    delete process.env.MANTLE_ADMIN_READS;
     for (const login of [maker, firer]) await setAreas(login, {});
   });
 
@@ -400,58 +394,6 @@ describe.skipIf(!URL)('W7 integration fix 2', () => {
   });
 
   // ── M6 ─────────────────────────────────────────────────────────────────
-
-  it('M6: under the rollback switch the gates still ask the login', async () => {
-    process.env.MANTLE_ADMIN_READS = 'system';
-    try {
-      // A login outside Admin is refused on the Admin assistant and a helper.
-      await expect(rt.withAgentScope(agent, async () => 1, { loginId: member })).rejects.toThrow(
-        /not a user of the Admin workspace/,
-      );
-      const helper = { id: null, ownerId: owner, workspaceId: null };
-      await expect(
-        rt.withAgentScope(helper, async () => 1, { ownerLoginId: member }),
-      ).rejects.toThrow(/not a user of the Admin workspace/);
-      // The Admin assistant answering an Admin user runs, its gate scope set.
-      const seen = await rt.withAgentScope(agent, async () => m.currentGateScope(), {
-        ownerLoginId: maker,
-      });
-      expect(seen).toMatchObject({ loginId: maker, ws: [adminWs] });
-
-      // The Admin tool gate and the areas, over MCP.
-      await setAreas(maker, { settings: false });
-      const { runMcpCall } = await import('@mantle/mcp-core');
-      let ran = false;
-      const refused = (await runMcpCall(maker, 'run_terminal', async () => {
-        ran = true;
-        return 'ran';
-      })) as { isError?: boolean };
-      expect(ran).toBe(false);
-      expect(refused.isError).toBe(true);
-
-      // The item write check: L is no Moderator of Admin.
-      const page = randomUUID();
-      await x(sql`insert into nodes (id, owner_id, type, title, path)
-                  values (${page}, ${owner}, 'page', ${`${tag} page`}, 'pages')`);
-      await x(sql`insert into item_grants (node_id, workspace_id, write, is_home)
-                  values (${page}, ${adminWs}, false, true) on conflict do nothing`);
-      const write = await runMcpCall(maker, 'page_update', () =>
-        t.toolItemWriteRefusal(t.builtinItems('page_update'), { id: page }, owner),
-      );
-      expect(typeof write === 'string' ? write : JSON.stringify(write)).toMatch(/\S/);
-      expect(write).not.toBeNull();
-
-      // The sandbox maker rule.
-      const box = randomUUID();
-      await x(sql`insert into sandboxes (id, owner_id, name, image)
-                  values (${box}, ${owner}, ${`${tag}-box`}, 'img')`);
-      const { sandboxForLogin } = await import('@/lib/sandboxd');
-      expect(await sandboxForLogin({ id: owner, actor: { id: maker } }, box)).toBeNull();
-      expect(await sandboxForLogin({ id: owner, actor: { id: owner } }, box)).not.toBeNull();
-    } finally {
-      delete process.env.MANTLE_ADMIN_READS;
-    }
-  });
 
   // ── Lows ───────────────────────────────────────────────────────────────
 

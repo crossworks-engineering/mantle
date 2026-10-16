@@ -114,7 +114,6 @@ describe.skipIf(!URL)('W6b fix round 5', () => {
     process.env.MANTLE_MASTER_KEY_NEXT = randomBytes(32).toString('base64');
     process.env.SESSION_SECRET = 'w6b-fix5-secret-at-least-32-characters!!';
     delete process.env.MANTLE_DETACHED_DEV;
-    delete process.env.MANTLE_ADMIN_READS;
     m = await import('@mantle/db');
     c = await import('@mantle/content');
     await x(sql`insert into auth.users (id, email, password_hash, is_owner, role, display_name) values

@@ -19,8 +19,6 @@ import type { HeartbeatDTO } from '@mantle/client-types';
 import { defineDomainError } from '@mantle/std';
 import { and, asc, desc, eq } from 'drizzle-orm';
 import {
-  adminReadsOnSystemPool,
-  brainOnWorkspacesNow,
   db,
   heartbeats,
   loginScopeFor,
@@ -189,9 +187,7 @@ export const FIRE_MAKER_ONLY =
  * maker, as the tick does. A maker other than the brain owner fires in its
  * own scope, as the heartbeat_fire tool does (the fire's tool resolution and
  * turn answer that login, with its rights); the brain owner fires in its
- * own scope too (the engine's fireInLoginScope). Under the rollback switch and on
- * a brain not on workspaces the engine's scope rules apply, the fire still
- * answering its maker.
+ * own scope too (the engine's fireInLoginScope).
  */
 export async function fireOptsFor(
   ownerId: string,
@@ -203,7 +199,6 @@ export async function fireOptsFor(
     throw new FireRefused(FIRE_MAKER_ONLY);
   }
   if (!firer) return { answeredBy: null };
-  if (adminReadsOnSystemPool() || !(await brainOnWorkspacesNow())) return { answeredBy: firer };
   const scope = await loginScopeFor(loginId);
   if (scope.ws.length === 0) {
     throw new FireRefused('This login is a user of no workspace, so it fires nothing.');

@@ -20,10 +20,6 @@ vi.mock(
   '@/lib/auth/login-row',
   async () => (await import('@/server/run-route-stand-ins')).loginRowStandIn,
 );
-vi.mock('@mantle/db', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@mantle/db')>()),
-  ...(await import('@/server/run-route-stand-ins')).dbStandIns,
-}));
 
 vi.mock('@mantle/content', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@mantle/content')>()),

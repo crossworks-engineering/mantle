@@ -131,7 +131,9 @@ describe.skipIf(!URL)('0273: the old pool roles lose their policies and rights',
   });
 
   it('takes every policy and right of the old pool roles, and keeps the rest', async () => {
-    await scratch.migrateRest();
+    // Up to arch A7, whose 0295 drops mantle_workspace_kind (kept here by
+    // 0273 for the switch of a brain not on workspaces).
+    await scratch.migrateRest('0295_a7_workspace_kind_gone');
     expect(await oldPolicies()).toBe(0);
     expect(await oldRights()).toBe(0);
     expect(await userPolicies()).toBe(userPoliciesBefore);

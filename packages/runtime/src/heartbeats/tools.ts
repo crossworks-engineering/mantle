@@ -44,7 +44,6 @@ import {
   type Heartbeat,
 } from '@mantle/db';
 import {
-  currentGateScope,
   currentRequestMode,
   currentTurnStamp,
   currentWorkspaceScope,
@@ -92,15 +91,12 @@ async function heartbeatRow<T>(fn: () => Promise<T>): Promise<T> {
  * heartbeat_fires.answered_by store it (W7 integration fix 2, H1): the login
  * of the caller's scope (or of the scope its area work left for the system
  * pool), else the login its owner surface names; null for the brain owner
- * (the anchor login) and for a call that names none (the anchor's stdio MCP,
- * a brain not on workspaces). Under the rollback switch
- * (MANTLE_ADMIN_READS=system) the call runs on the system pool with no
- * workspace scope: the login is its gate scope's (withGateScope: an Admin
- * login's MCP call, the Admin assistant), else its turn stamp's (W7
+ * (the anchor login) and for a call that names none (the anchor's stdio
+ * MCP). With no workspace scope the login is its turn stamp's (W7
  * integration fix 3, L3), so heartbeat_fire still answers the real caller.
  */
 function callerLogin(ctx: Pick<ToolHandlerContext, 'ownerId' | 'surface'>): string | null {
-  const scope = currentWorkspaceScope() ?? scopeLeftForSystem() ?? currentGateScope();
+  const scope = currentWorkspaceScope() ?? scopeLeftForSystem();
   const login = scope
     ? scope.loginId
     : (currentTurnStamp()?.loginId ?? ownerSurfaceLoginId(ctx.surface));
@@ -277,9 +273,7 @@ const heartbeat_update_state: BuiltinToolDef = {
     // as this login, never as the anchor. The state is its maker's only (W7
     // integration fix 3, F1/F2): a heartbeat that moves to this login starts
     // again from {} plus this patch, never from the old maker's keys. The
-    // login is the caller's (callerLogin, W7 integration fix 4): under the
-    // rollback switch a call has no workspace scope, and its gate scope or
-    // turn stamp still names it, so the heartbeat moves and its state clears.
+    // login is the caller's (callerLogin, W7 integration fix 4).
     const login = target.via === 'slug' ? callerLogin(ctx) : null;
     const moves = !!login && !sameLogin(ctx.ownerId, login, target.hb.createdBy);
     const maker = login ? { createdBy: login } : {};

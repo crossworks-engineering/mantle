@@ -23,8 +23,8 @@
  *
  * The tier levels (admin, team, client, public) decide no read (workspaces
  * W8c): the level roles are retired (viewer-roles.ts RETIRED_POOL_ROLES) and
- * hold no grant and no policy (migration 0273). The level helpers below stay
- * only for the code that still names a level in a value.
+ * hold no grant and no policy (migration 0273). Their helpers went in arch
+ * A7.
  */
 import { AsyncLocalStorage } from 'node:async_hooks';
 import {
@@ -41,69 +41,7 @@ import {
 import { hkdfSync } from 'node:crypto';
 import { env } from '@mantle/config';
 import { RuntimeFaultError, UUID_RE } from '@mantle/std';
-import { ACCESS_LEVELS, type AccessLevel } from '@mantle/client-types/dto/access';
 import { WORKSPACE_AREAS, type WorkspaceArea } from '@mantle/client-types/dto/workspaces';
-
-/** The four tier levels, lowest first: ACCESS_LEVELS (@mantle/client-types,
- *  highest first) reversed (A10 #13). Since client logins C1 (decision 3)
- *  client and public are siblings under team: `levelCovers` is that rule,
- *  `lowerLevel` builds on it. No read is decided by them (W8c). */
-export const VIEWER_LEVELS: readonly AccessLevel[] = [...ACCESS_LEVELS].reverse();
-export type ViewerLevel = AccessLevel;
-
-/**
- * Whether a caller at `viewer` reads what sits at `level`: admin reads all,
- * team reads team, client and public, client reads client only, public
- * reads public only (mantle_viewer_audiences() in migration 0187).
- */
-export function levelCovers(viewer: ViewerLevel, level: ViewerLevel): boolean {
-  if (viewer === level || viewer === 'admin') return true;
-  return viewer === 'team' && level !== 'admin';
-}
-
-/**
- * A scope at one level asked to run at another that it does not cover and
- * that does not cover it: a client scope meeting public, or a public scope
- * meeting client. There is no common level (neither role reads the other's
- * items), so the work is refused instead of widened.
- */
-export class ViewerLevelConflictError extends Error {
-  readonly code = 'viewer-level-conflict';
-  constructor(
-    readonly current: ViewerLevel,
-    readonly requested: ViewerLevel,
-  ) {
-    super(
-      `A ${current}-level caller cannot run ${requested}-level work: ` +
-        'client and public read different items and neither covers the other.',
-    );
-    this.name = 'ViewerLevelConflictError';
-  }
-}
-
-/** Whether two levels have a common level (every pair but client with
- *  public). */
-export function levelsMeet(a: ViewerLevel, b: ViewerLevel): boolean {
-  return levelCovers(a, b) || levelCovers(b, a);
-}
-
-/** The lower of two levels: the one the other covers. Throws
- *  ViewerLevelConflictError for client with public (fail closed: never
- *  widened to either). */
-export function lowerLevel(a: ViewerLevel, b: ViewerLevel): ViewerLevel {
-  if (levelCovers(a, b)) return b;
-  if (levelCovers(b, a)) return a;
-  throw new ViewerLevelConflictError(a, b);
-}
-
-export function isViewerLevel(v: unknown): v is ViewerLevel {
-  return typeof v === 'string' && (VIEWER_LEVELS as readonly string[]).includes(v);
-}
-
-/** A stored level as a level: anything unknown reads as admin (fail closed). */
-export function asViewerLevel(v: unknown): ViewerLevel {
-  return isViewerLevel(v) ? v : 'admin';
-}
 
 /**
  * A personal-space scope (member logins Phase 2, plan section 2b): the code
@@ -218,7 +156,7 @@ export type RequestOutcome =
   | { kind: 'own-rule'; loginId: string }
   | {
       kind: 'system';
-      why: 'area' | 'admin-write' | 'admin-reads-flag' | 'login-self' | 'not-on-workspaces';
+      why: 'area' | 'admin-write' | 'login-self';
     };
 
 type RequestSlot = {
@@ -590,16 +528,6 @@ export function currentRequestOutcome(): RequestOutcome | null {
  *  go to the system pool as a mutating request's do. */
 export function currentRequestMode(): RequestScopeMode | null {
   return active()?.request ?? null;
-}
-
-/**
- * The W6a and W7a rollback switch: MANTLE_ADMIN_READS=system puts an Admin
- * user's reads (its requests, the Admin assistant's turns and the Admin MCP
- * surface) back on the system pool, as before W6a. Default: scoped. Members
- * and clients are scoped whatever it says (plan T4).
- */
-export function adminReadsOnSystemPool(): boolean {
-  return (env('MANTLE_ADMIN_READS') ?? '').trim().toLowerCase() === 'system';
 }
 
 /** What the current code runs as (see CurrentScope). Never 'system' inside
@@ -1139,30 +1067,6 @@ export function scopeLeftForSystem(): WorkspaceScope | null {
  */
 export function withoutLeftScope<T>(fn: () => Promise<T>): Promise<T> {
   return leftStore.exit(fn);
-}
-
-/** The gate scope of the rollback switch (see withGateScope). */
-const gateStore = new AsyncLocalStorage<WorkspaceScope>();
-
-/**
- * Run `fn` on the system pool with `scope` as its GATE scope (W7 integration
- * fix 2, M6). The rollback switch (MANTLE_ADMIN_READS=system) restores only
- * the old read path: an Admin login's MCP call, the Admin assistant and an
- * admin-level helper read on the system pool again, but the gates still ask
- * the login it acts for: the Admin tool gate and the area checks, the item
- * write check, the sandbox maker rule and the vault pairing rule
- * (@mantle/tools admin-gate.ts callerScope, currentGateScope). No row is
- * read in this scope; it only answers those checks.
- */
-export function withGateScope<T>(scope: WorkspaceScope, fn: () => Promise<T>): Promise<T> {
-  return gateStore.run(scope, fn);
-}
-
-/** The gate scope the current system-pool work runs under (withGateScope),
- *  or null: inside any workspace scope entered since, null. */
-export function currentGateScope(): WorkspaceScope | null {
-  if (active()?.ws) return null;
-  return gateStore.getStore() ?? null;
 }
 
 /**

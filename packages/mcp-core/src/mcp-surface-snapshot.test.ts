@@ -93,8 +93,8 @@ function connectorRows(): { tool: Tool; readOnly: boolean }[] {
  *  credential and scope, with the connectors prepareCallerTools keeps. */
 function preparedMatrix(): PreparedCallerTools[] {
   // The unscoped connection (an Admin login on a brain not on workspaces)
-  // goes with the switch-over code in arch A7: recorded on main without it.
-  const views: (AdminGateView | null)[] = [
+  // went with the switch-over code in arch A7.
+  const views: AdminGateView[] = [
     { holdsAdmin: false, areas: new Set<ScopeArea>() },
     { holdsAdmin: true, areas: new Set<ScopeArea>(AREAS) },
     { holdsAdmin: true, areas: new Set<ScopeArea>(['settings']) },
@@ -127,7 +127,7 @@ function preparedMatrix(): PreparedCallerTools[] {
 
 const label = (p: PreparedCallerTools) =>
   p.kind === 'owner'
-    ? `${p.caller.role}/${p.caller.via}/${p.caller.write ? 'rw' : 'ro'}/${JSON.stringify(p.caller.areas ?? null)}/${JSON.stringify(p.caller.riskyAllowed ?? [])}/${p.view ? `${p.view.holdsAdmin}:${[...p.view.areas].join(',')}` : 'unscoped'}`
+    ? `${p.caller.role}/${p.caller.via}/${p.caller.write ? 'rw' : 'ro'}/${JSON.stringify(p.caller.areas ?? null)}/${JSON.stringify(p.caller.riskyAllowed ?? [])}/${p.view.holdsAdmin}:${[...p.view.areas].join(',')}`
     : 'refused';
 
 /** tools/list over the real SDK, for a server `register` fills. */

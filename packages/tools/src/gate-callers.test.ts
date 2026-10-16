@@ -48,7 +48,6 @@ vi.mock('../../db/src/viewer', async (importOriginal) => {
   return {
     ...real,
     currentWorkspaceScope: () => h.scope ?? real.currentWorkspaceScope(),
-    currentGateScope: () => null,
   };
 });
 vi.mock('../../db/src/client', async (importOriginal) => ({

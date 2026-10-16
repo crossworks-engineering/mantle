@@ -97,7 +97,6 @@ vi.mock('@mantle/db', async (importOriginal) => {
     withViewer: ((_actsFor, fn) => fn()) as typeof real.withViewer,
     createHomeIntent: (async () => counts.home) as unknown as typeof real.createHomeIntent,
     loginScopeFor: async (loginId: string) => ({ kind: 'user', loginId, ws: [], modWs: [] }),
-    brainOnWorkspacesNow: async () => true,
   };
 });
 vi.mock('../../lib/workspaces', async (importOriginal) => ({

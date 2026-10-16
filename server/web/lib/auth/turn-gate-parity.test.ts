@@ -91,14 +91,11 @@ vi.mock('../../../../packages/db/src/create-home', () => ({
 }));
 
 import {
-  currentGateScope,
   currentWorkspaceScope,
   gateCheck,
   loginActor,
-  loginHasArea,
   scopeHasArea,
   scopeHoldsAdmin,
-  withTurnScope,
   runAsActor,
   withCreateHome,
   type GateCaller,
@@ -143,17 +140,9 @@ async function adminToolGate(
   const policy = BUILTIN_TOOLS.find((d) => d.slug === (opts.ref ?? slug))!.policy;
   const adminOnly = policyAdminOnly(policy);
   const area = policyArea(policy);
-  if (!currentWorkspaceScope()) {
-    const g = currentGateScope();
-    if (!g) return { system: false };
-    if ((adminOnly || area) && !(await withTurnScope(g, () => scopeHoldsAdmin()))) {
-      return { refused: ADMIN_ONLY_ERROR };
-    }
-    if (area && !(g.loginId && (await loginHasArea(g.loginId, area)))) {
-      return { refused: adminAreaError(area) };
-    }
-    return { system: false };
-  }
+  // Outside a workspace scope the surface rules decide (the rollback
+  // switch's gate scope went in arch A7).
+  if (!currentWorkspaceScope()) return { system: false };
   if ((adminOnly || area) && !(await scopeHoldsAdmin())) return { refused: ADMIN_ONLY_ERROR };
   if (!area) return { system: false };
   if (!(await scopeHasArea(area))) return { refused: adminAreaError(area) };

@@ -65,10 +65,11 @@ describe('level-reads sweep', () => {
     expect(countLevelReads(glue("const c = 'inherited_' + 'level';"))).toBe(1);
   });
 
-  it('holds only the files where the word means something else, and the one frozen read until W10', () => {
+  it('holds only the files where the word means something else', () => {
     // W8c took every level read out of the code; the W8 integration kept one,
-    // for a brain not on workspaces only, until W10 drops the columns.
-    const frozen = ['server/web/lib/system-manifest/reconcile.ts'];
+    // for a brain not on workspaces only, which arch A7 took out with that
+    // brain's rules: no frozen read is left.
+    const frozen: string[] = [];
     for (const [f, e] of Object.entries(ALLOW)) {
       expect(e.phase, f).toBe('keep');
       if (frozen.includes(f)) {

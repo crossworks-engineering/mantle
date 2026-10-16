@@ -31,11 +31,18 @@ const h = vi.hoisted(() => ({
     integration: { mcp: { url: 'https://crm.example.test/mcp' } },
   },
 }));
+// No database: each call runs as it is, with no scope entered (the scope
+// entry and the Admin view stood in).
+vi.mock('./mcp-scope', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  mcpScopeEntry:
+    () =>
+    <T>(_writes: boolean, fn: () => Promise<T>) =>
+      fn(),
+  mcpAdminView: async () => null,
+}));
 vi.mock('@mantle/db', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@mantle/db')>()),
-  // No database: the brain reads as not on workspaces, so the connection
-  // is unscoped (mcp-scope.ts).
-  brainOnWorkspacesNow: async () => false,
   // The connector's binding and its remote call; the call's audit row is
   // best effort, never read here.
   asSystem: vi.fn(async (_fn: unknown, reason?: string) => {
@@ -48,6 +55,11 @@ vi.mock('@mantle/db', async (importOriginal) => ({
 import type { Tool } from '@mantle/db';
 import { externalAccessToolSig } from '@mantle/tools';
 import { connectorCheck, registerPreparedTools, type McpCaller } from './login-surface';
+import { SCOPE_AREAS } from '@mantle/db/viewer';
+
+/** A user of the Admin workspace with every area: what lists everything
+ *  (a prepared connection read no narrower). */
+const ADMIN_VIEW = { holdsAdmin: true, areas: new Set(SCOPE_AREAS) };
 
 const list = {
   slug: 'mcp_crm_contacts_list',
@@ -108,7 +120,7 @@ describe('end to end: an unscoped read-only key or peer calls a marked connector
           areas: null,
           ...(via === 'peer' ? { peerByOwner: true } : {}),
         },
-        view: null,
+        view: ADMIN_VIEW,
         privateWs: null,
         connectors: [marked],
       } as never,
@@ -159,7 +171,7 @@ describe("a connector call leaves its own mcp.connector row, never the gate's to
         {
           kind: 'owner',
           caller: { ...caller('oauth', true), areas: null },
-          view: null,
+          view: ADMIN_VIEW,
           privateWs: null,
           connectors: [list],
         } as never,

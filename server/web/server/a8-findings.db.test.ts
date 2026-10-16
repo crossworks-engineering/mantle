@@ -150,7 +150,6 @@ describe.skipIf(!DB_URL)('A8 findings: the owner’s decisions F1 and F2', () =>
     process.env.MANTLE_SPACES_ROOT = path.join(dir, 'spaces');
     process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
     process.env.SESSION_SECRET = 'a8-findings-secret-at-least-32-characters-long';
-    delete process.env.MANTLE_ADMIN_READS;
     delete process.env.MANTLE_DETACHED_DEV;
     vi.stubGlobal(
       'fetch',

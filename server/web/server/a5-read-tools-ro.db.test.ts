@@ -339,7 +339,6 @@ describe.skipIf(!URL)('every read builtin runs read only through the brokers (A5
     process.env.MANTLE_SPACES_ROOT = path.join(dir, 'spaces');
     process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
     delete process.env.MANTLE_DETACHED_DEV;
-    delete process.env.MANTLE_ADMIN_READS;
     // Nothing leaves the test: every outbound request answers 503.
     vi.stubGlobal(
       'fetch',

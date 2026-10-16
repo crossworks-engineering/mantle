@@ -159,7 +159,6 @@ describe.skipIf(!URL)('W7 integration fix 4', () => {
     process.env.MANTLE_FILES_ROOT = path.join(dir, 'files');
     process.env.MANTLE_SPACES_ROOT = path.join(dir, 'spaces');
     process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
-    delete process.env.MANTLE_ADMIN_READS;
     vi.stubGlobal(
       'fetch',
       vi.fn(async () => new Response('{"error":"offline in the W7 test"}', { status: 503 })),
@@ -200,7 +199,6 @@ describe.skipIf(!URL)('W7 integration fix 4', () => {
 
   afterAll(async () => {
     vi.unstubAllGlobals();
-    delete process.env.MANTLE_ADMIN_READS;
     await m?.closeDb();
     await scratch?.drop();
     if (dir) await rm(dir, { recursive: true, force: true });
@@ -209,7 +207,6 @@ describe.skipIf(!URL)('W7 integration fix 4', () => {
   beforeEach(() => {
     h.session = null;
     h.scope = null;
-    delete process.env.MANTLE_ADMIN_READS;
   });
 
   // ── F2 ─────────────────────────────────────────────────────────────────
@@ -319,29 +316,6 @@ describe.skipIf(!URL)('W7 integration fix 4', () => {
   });
 
   // ── F3 ─────────────────────────────────────────────────────────────────
-
-  it("F3: under the rollback switch another login's state patch moves the heartbeat and clears its state", async () => {
-    const tool = hbs.HEARTBEAT_TOOLS.find((d) => d.slug === 'heartbeat_update_state')!;
-    const hb = await newHeartbeat(`${tag}-hb-upd`, agent.slug, maker);
-    process.env.MANTLE_ADMIN_READS = 'system';
-    try {
-      const res = await m.withGateScope(await m.loginScopeFor(other), () =>
-        tool.handler(
-          { slug: hb.slug, patch: { c: 3 } },
-          { ownerId: owner, surface: { kind: 'web' } },
-        ),
-      );
-      expect(res.ok, res.ok ? '' : res.error).toBe(true);
-      // C is the maker now: it reads back its own patch, never L's keys.
-      expect((res as { output: { state?: unknown } }).output.state).toEqual({ c: 3 });
-    } finally {
-      delete process.env.MANTLE_ADMIN_READS;
-    }
-    const [row] = await x<{ by: string | null; state: Record<string, unknown> }>(
-      sql`select created_by::text as by, state from heartbeats where id = ${hb.id}`,
-    );
-    expect(row).toEqual({ by: other, state: { c: 3 } });
-  });
 
   // ── F4 ─────────────────────────────────────────────────────────────────
 

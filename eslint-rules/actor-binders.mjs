@@ -72,7 +72,9 @@ export const ACTOR_BINDER_PINS = {
   'server/web/lib/journey.ts': 1,
   'server/web/lib/realtime.ts': 2,
   'server/web/lib/runs/execute-item.ts': 1,
-  'server/web/server/main.ts': 3,
+  // A7: the workspaces step (awaited, the boot refuses a brain off
+  // workspaces) and the snapshot copies run as two binder calls.
+  'server/web/server/main.ts': 4,
   // The gate's own slot, and a page's (the /s page, a render page: A4 step
   // 2, moved here from server/pages/share.tsx and print.ts).
   'server/web/server/middleware/gate.ts': 2,

@@ -85,7 +85,6 @@ describe.skipIf(!URL)("2a: a HEAD answers as its GET on the login lists' rows", 
     process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
     process.env.SESSION_SECRET = 'a4-head-logins-secret-at-least-32-chars!';
     delete process.env.MANTLE_DETACHED_DEV;
-    delete process.env.MANTLE_ADMIN_READS;
     // No network from a handler body (a provider, a release check).
     vi.stubGlobal(
       'fetch',

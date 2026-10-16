@@ -177,7 +177,6 @@ describe.skipIf(!URL)('A1 D1: tasks, events, formulas and Recall maps on HTTP', 
     process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
     process.env.SESSION_SECRET = 'a1-d1-routes-secret-at-least-32-chars!!';
     delete process.env.MANTLE_DETACHED_DEV;
-    delete process.env.MANTLE_ADMIN_READS;
     m = await import('@mantle/db');
     const seed = (await import('@mantle/content-core/formula-seed')).FORMULA_SEED[0]!;
     formulaSpec = seed.spec as Json;

@@ -12,9 +12,8 @@
  *
  * Asked in the scope only: an item the scope does not read answers "not in
  * your workspaces", whether it exists or not, so no item's existence leaves
- * the scope. Outside a workspace scope (system work, MANTLE_ADMIN_READS
- * =system, a brain not on workspaces) nothing is checked: the surface rules
- * decide, as before.
+ * the scope. Outside a workspace scope (system work) nothing is checked:
+ * the surface rules decide, as before.
  */
 import { sql } from 'drizzle-orm';
 import { db } from './client';

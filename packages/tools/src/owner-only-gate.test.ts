@@ -262,10 +262,11 @@ const TEAM_KIND_ALLOWED: Record<string, string[]> = {
   // App data on a login's own MCP (team apps Phase 1): a member on a team
   // surface, only with the MCP connection stamped.
   'builtins-app-data.ts': ["if (s?.kind === 'team' && s.loginId && s.mcp) {"],
-  // A connector call below the owner runs at the level its surface names;
-  // a member's call by the login's workspace rule (W5b2).
+  // A connector call below the owner runs for whom its surface names (a
+  // login or a link; the level helpers went in arch A7); a member's call by
+  // the login's workspace rule (W5b2).
   'dispatch.ts': [
-    "s?.kind === 'team' ? 'team' : s?.kind === 'contact' ? 'public' : null;",
+    "return s?.kind === 'team' ? 'login' : s?.kind === 'contact' ? 'link' : null;",
     "if (s?.kind === 'team' && s.loginId) {",
   ],
   // read_result binds a member's turn to its own spills.

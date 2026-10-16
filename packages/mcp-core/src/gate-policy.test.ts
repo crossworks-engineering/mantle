@@ -15,7 +15,6 @@ import { describe, expect, it, vi } from 'vitest';
 // database (the scope entry is the gate's step 3, pinned elsewhere).
 vi.mock('@mantle/db', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
-  brainOnWorkspacesNow: async () => true,
   loginScopeFor: async (loginId: string) => ({
     kind: 'user',
     loginId,
@@ -65,8 +64,8 @@ const AREAS: ScopeArea[] = ['settings', 'users', 'assistants', 'connectors', 'ke
 /** A matrix of connections: each login kind, credential and scope. */
 function preparedMatrix(): PreparedCallerTools[] {
   // The unscoped connection (an Admin login on a brain not on workspaces)
-  // goes with the switch-over code in arch A7: recorded on main without it.
-  const views: (AdminGateView | null)[] = [
+  // went with the switch-over code in arch A7.
+  const views: AdminGateView[] = [
     { holdsAdmin: false, areas: new Set<ScopeArea>() },
     { holdsAdmin: true, areas: new Set<ScopeArea>(AREAS) },
     { holdsAdmin: true, areas: new Set<ScopeArea>(['settings']) },
@@ -95,7 +94,7 @@ function preparedMatrix(): PreparedCallerTools[] {
 
 const label = (p: PreparedCallerTools) =>
   p.kind === 'owner'
-    ? `${p.caller.role}/${p.caller.via}/${p.caller.write ? 'rw' : 'ro'}/${JSON.stringify(p.caller.areas ?? null)}/${JSON.stringify(p.caller.riskyAllowed ?? [])}/${p.view ? `${p.view.holdsAdmin}:${[...p.view.areas].join(',')}` : 'unscoped'}`
+    ? `${p.caller.role}/${p.caller.via}/${p.caller.write ? 'rw' : 'ro'}/${JSON.stringify(p.caller.areas ?? null)}/${JSON.stringify(p.caller.riskyAllowed ?? [])}/${p.view.holdsAdmin}:${[...p.view.areas].join(',')}`
     : 'refused';
 
 describe('the MCP tool policy', () => {
@@ -115,16 +114,6 @@ describe('the MCP tool policy', () => {
     expect(mcpToolPolicy({ kind: 'mcp-tool', name: 'no_such_tool' })).toBeNull();
     // A connector's tool is a runtime row, never an mcp-tool entry.
     expect(mcpToolPolicy({ kind: 'mcp-tool', name: 'mcp_crm_contacts_list' })).toBeNull();
-  });
-
-  it('a refused connection has no gate caller', () => {
-    expect(
-      mcpGateCaller({
-        kind: 'refused',
-        caller: { role: 'member', anchorId: 'a', loginId: LOGIN, via: 'oauth', write: true },
-        message: 'no',
-      }),
-    ).toBeNull();
   });
 });
 
@@ -146,7 +135,7 @@ describe('what the surface registers is what the gate lists (A5 step 4)', () => 
     expect(names.length).toBeGreaterThan(200);
     let cells = 0;
     for (const p of preparedMatrix()) {
-      const caller = mcpGateCaller(p)!;
+      const caller = mcpGateCaller(p);
       const listed = new Set(registeredFor(p));
       for (const slug of names) {
         const lists = gateLists(caller, refOf(slug));
@@ -184,7 +173,7 @@ describe('what the surface registers is what the gate lists (A5 step 4)', () => 
         [marked, true],
       ] as const) {
         const withRow = { ...p, connectors: [row] };
-        const caller = mcpGateCaller(withRow)!;
+        const caller = mcpGateCaller(withRow);
         // What prepareCallerTools kept, then registerPreparedTools listed,
         // before A5 step 4: the row when it reads or the connection writes,
         // and only for an all-areas key (a connector is in no key area).
@@ -224,7 +213,7 @@ describe('calling through the gate equals listing', () => {
   it('the call runs exactly when the listing shows it, with the listing refusal', async () => {
     const names = registered();
     for (const p of preparedMatrix()) {
-      const caller = mcpGateCaller(p)!;
+      const caller = mcpGateCaller(p);
       for (const slug of names) {
         const ref: PolicyRef = { kind: 'mcp-tool', name: slug };
         const listed = gateCheck(caller, ref);

@@ -5,9 +5,8 @@
  * (ToolHandlerContext.caller); dispatch builds the gate caller of each call
  * from it and from the state the call runs in, which every entry has set
  * already: the actor bound at its entry, the scope it entered (a turn's
- * withAgentScope, a run's withRunScope, a pending approval's request), the
- * rollback switch's gate scope. So a caller sets no scope of its own: a turn
- * is never entered twice.
+ * withAgentScope, a run's withRunScope, a pending approval's request). So a
+ * caller sets no scope of its own: a turn is never entered twice.
  *
  *  - turnCaller: an assistant turn (the tool loop: the web and Telegram
  *    turns, heartbeats, invoke_agent's child, the run workflows' turns).
@@ -35,8 +34,7 @@
  *    check refuses its item writes: low round, LOW-2);
  *  - the Admin view the call's Admin step reads (adminToolGate's reads,
  *    unchanged): in a workspace scope, whether it holds Admin and the area
- *    asked; in the rollback switch's gate scope, the login's own; outside
- *    any, unscoped (null: the surface rules decide). Read only when the
+ *    asked; outside any, unscoped (null: the surface rules decide). Read only when the
  *    policy names an Admin step, and on every call, as adminToolGate read
  *    it: an area turned off mid-turn refuses the turn's next call (low
  *    round, LOW-1). Only whether the scope holds Admin is kept per scope,
@@ -52,11 +50,8 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import {
   currentActor,
-  currentGateScope,
-  loginHasArea,
   scopeHasArea,
   scopeHoldsAdmin,
-  withTurnScope,
   type AdminView,
   type CallerVia,
   type CreateAsk,
@@ -275,26 +270,13 @@ function turnHomeRule(scope: WorkspaceScope): CreateHomeRule {
  *  reads): whether it holds Admin, and `area` when it may do it. */
 async function readAdminView(
   ws: WorkspaceScope | null,
-  gate: WorkspaceScope | null,
   area: ScopeArea | null,
 ): Promise<AdminView | null> {
-  if (ws) {
-    const holdsAdmin = await scopeHoldsAdmin();
-    const areas = new Set<string>();
-    if (holdsAdmin && area && (await scopeHasArea(area))) areas.add(area);
-    return { holdsAdmin, areas };
-  }
-  if (gate) {
-    // The rollback switch's gate scope (W7 integration fix 2, M6): the
-    // scope answers Admin, the login its own areas.
-    const holdsAdmin = await withTurnScope(gate, () => scopeHoldsAdmin());
-    const areas = new Set<string>();
-    if (holdsAdmin && area && gate.loginId && (await loginHasArea(gate.loginId, area))) {
-      areas.add(area);
-    }
-    return { holdsAdmin, areas };
-  }
-  return null;
+  if (!ws) return null;
+  const holdsAdmin = await scopeHoldsAdmin();
+  const areas = new Set<string>();
+  if (holdsAdmin && area && (await scopeHasArea(area))) areas.add(area);
+  return { holdsAdmin, areas };
 }
 
 /** `view` no wider than `cap` (A5 step 6c): an approved call's Admin view
@@ -345,7 +327,6 @@ export async function gateCallerFor(
     return caller.gate;
   }
   const ws = currentWorkspaceScope();
-  const gate = ws ? null : currentGateScope();
   // No actor bound is a bug at the entry: the call runs with none, as it
   // did before step 3a (never a system actor that may write).
   const actor = currentActor();
@@ -357,7 +338,7 @@ export async function gateCallerFor(
   let admin: AdminView | null | undefined;
   if (need !== 'any') {
     const area = typeof need === 'object' ? (need.area as ScopeArea) : null;
-    admin = capAdminView(await readAdminView(ws, gate, area), caller.approval?.adminCap);
+    admin = capAdminView(await readAdminView(ws, area), caller.approval?.adminCap);
   }
   const turnScope = ws?.kind === 'assistant' && ws.loginId ? ws : null;
   // A connector row in a workspace scope: what the connector narrower
@@ -378,7 +359,7 @@ export async function gateCallerFor(
   return {
     actor,
     via: caller.via,
-    loginId: ws?.loginId ?? gate?.loginId ?? null,
+    loginId: ws?.loginId ?? null,
     ...(admin !== undefined ? { admin } : {}),
     createHome: builtin && turnScope ? turnHomeRule(turnScope) : null,
     ...(Object.keys(facts).length > 0 ? { facts } : {}),

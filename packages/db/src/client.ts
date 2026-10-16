@@ -2427,8 +2427,7 @@ const holdsAdmin = new WeakMap<WorkspaceScope, Promise<boolean>>();
 
 /**
  * Whether the current code may do Admin-workspace work (plan 5.4, adminOnly):
- * unscoped system work (the owner's paths, and the Admin assistant and the
- * Admin MCP surface under MANTLE_ADMIN_READS=system) yes; a workspace scope when it holds
+ * unscoped system work (the owner's paths) yes; a workspace scope when it holds
  * the Admin workspace (asked of the database once per scope). Fails closed:
  * an error reads as no.
  */
@@ -2487,16 +2486,12 @@ export async function scopeHasArea(area: ScopeArea): Promise<boolean> {
 
 /**
  * Whether `loginId` is a user of this brain's live Admin workspace now, its
- * login enabled (W7 integration fix 3, L1): what the rollback switch
- * (MANTLE_ADMIN_READS=system) asks before it puts a login's reads on the
- * system pool, never the admin role alone (a login taken out of Admin keeps
- * its role). A brain not on workspaces: yes (the role decides, as before).
- * Fails closed. Admin pool.
+ * login enabled (W7 integration fix 3, L1), never the admin role alone (a
+ * login taken out of Admin keeps its role). Fails closed. Admin pool.
  */
 export async function loginHoldsAdmin(loginId: string): Promise<boolean> {
   if (!UUID_RE.test(loginId)) return false;
   try {
-    if (!(await brainOnWorkspacesNow())) return true;
     const rows = (await getAdminDb().execute(
       sqlTag`select exists (
                select 1 from workspaces w
@@ -2515,13 +2510,12 @@ export async function loginHoldsAdmin(loginId: string): Promise<boolean> {
  * for a login other than the current caller (W7a fix round 3: the maker of
  * an API tool, when the tool's secret refs resolve at run time). The rule
  * of mantle_scope_has_area and areasFor: a live login that is a user of the
- * brain's live Admin workspace whose limits leave the area on. A brain not
- * on workspaces keeps today's rule (any admin: yes). Fails closed.
+ * brain's live Admin workspace whose limits leave the area on. Fails
+ * closed.
  */
 export async function loginHasArea(loginId: string, area: ScopeArea): Promise<boolean> {
   if (!SCOPE_AREAS.includes(area) || !UUID_RE.test(loginId)) return false;
   try {
-    if (!(await brainOnWorkspacesNow())) return true;
     const rows = (await getAdminDb().execute(
       sqlTag`select exists (
                select 1 from workspaces w
@@ -3022,25 +3016,6 @@ function writeScopeWithPrivate(scope: WorkspaceScope, home: CreateHome | null): 
     ws: [...new Set([...scope.ws, priv])],
     modWs: [...new Set([...scope.modWs, priv])],
   };
-}
-
-let brainOnWorkspaces = false;
-
-/**
- * Whether this brain is on workspaces: it has an Admin workspace (the
- * workspaces migration ran). A brain the migration skipped (a box with
- * client logins, set up by hand first, plan 21.9) keeps today's rule for an
- * Admin user: reads on the system pool, as before W6a. Read on the system
- * pool; a yes is kept for the life of the process (no box goes back).
- */
-export async function brainOnWorkspacesNow(): Promise<boolean> {
-  if (brainOnWorkspaces) return true;
-  const rows = (await getAdminDb().execute(
-    sqlTag`select exists (select 1 from workspaces
-                           where owner_id = mantle_brain_id() and is_admin) as on`,
-  )) as unknown as { on: boolean }[];
-  brainOnWorkspaces = rows[0]?.on === true;
-  return brainOnWorkspaces;
 }
 
 /** The live workspaces beyond Admin an app run reads through (AppRunFor):

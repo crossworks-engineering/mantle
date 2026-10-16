@@ -130,7 +130,6 @@ describe.skipIf(!URL)('W6b fix round 3', () => {
     process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
     process.env.SESSION_SECRET = 'w6b-fix3-secret-at-least-32-characters!!';
     delete process.env.MANTLE_DETACHED_DEV;
-    delete process.env.MANTLE_ADMIN_READS;
     m = await import('@mantle/db');
     f = await import('@mantle/files');
     c = await import('@mantle/content');

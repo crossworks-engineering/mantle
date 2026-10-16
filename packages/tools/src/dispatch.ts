@@ -14,10 +14,8 @@ import {
   currentActor,
   enterCall,
   type GateCaller,
-  lowerLevel,
   type Tool,
   type ToolHandler,
-  type ViewerLevel,
 } from '@mantle/db';
 import { currentWorkspaceScope, currentScope } from '@mantle/db/viewer';
 import {
@@ -431,23 +429,16 @@ function dispatchRuntime(
  *  matches web_fetch's MAX_TEXT_CAP; the same class of egress. */
 const MCP_RESULT_TEXT_CAP = 80_000;
 
-/** The level a non-owner call runs at: the viewer scope, lowered to what its
- *  surface names (an admin-level agent serving a member is still a member's
- *  call). Null for the owner's own paths. */
-function nonOwnerRunLevel(ctx: ToolHandlerContext): ViewerLevel | null {
+/** Who a non-owner call outside a workspace scope runs for (its callers
+ *  return first inside one): `login` for a login's surface (a member's) in
+ *  system work, `link` for a contact link or any scope that is not system
+ *  work (fails closed), null for the owner's own paths (system work on no
+ *  such surface). The tier levels went in W8c and their helpers in arch A7:
+ *  this is the answer the level rule gave (team, public, none). */
+function nonOwnerRun(ctx: ToolHandlerContext): 'login' | 'link' | null {
   const s = ctx.surface;
-  const bySurface: ViewerLevel | null =
-    s?.kind === 'team' ? 'team' : s?.kind === 'contact' ? 'public' : null;
-  // Outside a workspace scope (its callers return first inside one): system
-  // work (the level scope went in W8c).
-  const viewer: ViewerLevel = currentScope().kind === 'system' ? 'admin' : 'public';
-  if (!bySurface) return viewer === 'admin' ? null : viewer;
-  try {
-    return lowerLevel(viewer, bySurface);
-  } catch {
-    // client with public: no common level, nothing passes.
-    return 'public';
-  }
+  if (currentScope().kind !== 'system') return 'link';
+  return s?.kind === 'team' ? 'login' : s?.kind === 'contact' ? 'link' : null;
 }
 
 /**
@@ -542,11 +533,11 @@ async function connectorCallRefused(
 ): Promise<string | null> {
   // A workspace scope: connectorScopeRefused decides.
   if (currentWorkspaceScope()) return null;
-  const run = nonOwnerRunLevel(ctx);
+  const run = nonOwnerRun(ctx);
   if (!run) return null;
   const { mark } = connectorToolPolicy(tool).fields;
   if (mark === 'stale') return connectorMarkRefusal(mark, tool, input);
-  if (run === 'public' && mark === 'write') {
+  if (run === 'link' && mark === 'write') {
     return 'On a shared link only connector tools an admin marked read-only run; this one can change data.';
   }
   const marked = connectorMarkRefusal(mark, tool, input);

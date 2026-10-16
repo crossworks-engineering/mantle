@@ -163,10 +163,6 @@ vi.mock('@mantle/db', () => {
     withDeadlockRetry: async (fn: () => unknown) => fn(),
     // The R6 shim, with no database: the scope is faked away and fn runs.
     withViewer: async (_for: unknown, fn: () => unknown) => fn(),
-    // The agent scope's own lookups (agent-viewer.ts): no Admin workspace,
-    // a brain not on workspaces, so the helper answering the anchor (a
-    // Telegram turn names it, W7 integration fix) runs through withViewer
-    // above (W8c: no level decides it).
     asSystem: async () => [],
     agents: table('agents'),
     toolGroups: table('toolGroups'),
@@ -182,6 +178,15 @@ vi.mock('@mantle/db', () => {
     bumpWorkerUsage: vi.fn(async () => {}),
   };
 });
+
+// The agent's scope (agent-viewer.ts withAgentScope) needs the brain's
+// workspaces, which this file has no database for: the turn runs in it as
+// stood in (the scope itself is proven in agent-viewer's own tests). Since
+// arch A7 there is no fallback for a brain not on workspaces to lean on.
+vi.mock('../../../../packages/runtime/src/agent/agent-viewer', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  withAgentViewer: (_a: unknown, fn: () => Promise<unknown>) => fn(),
+}));
 
 // ── Telegram HTTP boundary ────────────────────────────────────────────────
 vi.mock('@mantle/telegram', () => ({

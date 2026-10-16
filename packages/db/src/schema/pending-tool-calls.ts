@@ -27,8 +27,9 @@ export type PendingOrigin = {
     ws: string[];
     modWs: string[];
   } | null;
-  /** How the turn held it: a turn scope (`turn`), or the rollback switch's
-   *  gate scope on the system pool (`gate`, MANTLE_ADMIN_READS=system). */
+  /** How the turn held it: a turn scope (`turn`). `gate` is a stamp from
+   *  before arch A7 (the rollback switch's gate scope, gone): its approval
+   *  runs in a turn scope too (@mantle/tools pending-origin.ts). */
   enter: 'turn' | 'gate' | null;
   /** The turn scope wrote as an Admin turn does (its request mode). */
   writes: boolean;
