@@ -19,6 +19,7 @@ import { guardFileCopyTo, guardFileTo } from '@mantle/content/tree';
 import { callerMayReadEmail } from '@/lib/api-v1';
 import { readJson } from '@/lib/read-body';
 import { CACHE_CONTROL } from '@/lib/cache-control';
+import type { FileCascadeDeleteResponse } from '@mantle/client-types';
 
 const IdParams = z.object({ id: z.string().uuid() });
 /** A file's raw bytes are read in the login's scope (W7e): never stored. */
@@ -278,7 +279,15 @@ export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string 
       }
       return NextResponse.json({ error: 'not found' }, { status: 404 });
     }
-    return NextResponse.json({ ok: true, reaped: res.reaped, skipped: res.skipped });
+    // `kept`: derived items the caller may not delete, left in place (F4
+    // fix round 3, H1): a count, never a name.
+    const body: FileCascadeDeleteResponse = {
+      ok: true,
+      reaped: res.reaped,
+      skipped: res.skipped,
+      kept: res.kept,
+    };
+    return NextResponse.json(body);
   }
   const res = await deleteFileById({ ownerId: user.id, fileId: idParsed.data.id });
   if (!res.ok) {

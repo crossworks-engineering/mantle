@@ -12,7 +12,6 @@ import { z } from 'zod';
 import { ownerCaller } from '@/lib/auth';
 import { restoreAppSnapshot } from '@mantle/content/app-snapshots';
 import { readBody } from '@/lib/read-body';
-import { assertItemRight } from '@/lib/item-check';
 
 const Body = z.object({
   mode: z.enum(['code', 'data', 'full']),
@@ -24,11 +23,10 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string; si
   const { id, sid } = await ctx.params;
   const body = await readBody(req, Body);
   // The code is the app's Moderators' (apps' code columns need manage, D4):
-  // a restore of the code (code, full) is checked for that first, before
-  // the snapshot of the current state is taken (F4 fix round 2: the gate
-  // asks edit, a restore's own; the database refused the code's write
-  // after that snapshot had committed, a partial restore).
-  if (body.mode !== 'data') await assertItemRight(id, 'manage');
+  // restoreAppSnapshot asks it for a restore of the code (code, full)
+  // before anything is written, on this route and on the tool alike (F4 fix
+  // round 3, M3; the gate asks edit, a data restore's own). Its refusal is
+  // the edit check's (404, or 403 item-workspace).
   // AppRestoreDraftError (reason 'draft') and AppSnapshotRefusedError
   // (reason 'no-data') answer 409 by the one table (A10 part 2).
   const result = await restoreAppSnapshot(user.id, id, sid, {

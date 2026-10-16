@@ -14,7 +14,6 @@
  */
 
 export {
-  countDerivedFromFile,
   describeDerivedCounts,
   reapDerivedFromFile,
   deleteFileWithDerived,

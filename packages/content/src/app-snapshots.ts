@@ -24,6 +24,7 @@ import { and, desc, eq, gte, isNotNull, sql } from 'drizzle-orm';
 import {
   appDatabases,
   apps,
+  assertItemRight,
   db,
   inFlipTransaction,
   nodeSnapshots,
@@ -754,6 +755,25 @@ function sameTools(a: string[] | undefined, b: string[] | undefined): boolean {
 }
 
 /**
+ * The one door before an app's code is replaced (F4 fix round 3, M3): a
+ * restore of its code (mode code or full) and an import over it. The code
+ * is the app's home Moderators' (D4: APP_CODE_COLUMNS need manage), so the
+ * caller's manage of the app is asked here, in its scope, BEFORE the undo
+ * snapshot (`pre_restore`, `pre_import`) is taken: a caller that may only
+ * edit the app writes nothing, on the route and on a tool or MCP alike (a
+ * refusal after the snapshot had committed was a partial restore). Throws
+ * the edit check's refusal (the 404 or the 403 item-workspace).
+ */
+export async function snapshotBeforeCodeChange(
+  ownerId: string,
+  appId: string,
+  opts: Parameters<typeof createAppSnapshot>[2] & { trigger: 'pre_restore' | 'pre_import' },
+): Promise<AppSnapshot | null> {
+  await assertItemRight(appId, 'manage');
+  return createAppSnapshot(ownerId, appId, opts);
+}
+
+/**
  * Restore an app from an entry on its history line (`mode`: code into the
  * draft, the data, or both live). Takes a `pre_restore` snapshot first.
  * Refuses (AppSnapshotRefusedError) a data restore from a version, which
@@ -780,6 +800,10 @@ export async function restoreAppSnapshot(
   const actor = opts.actor ?? 'owner';
   const wantsData = mode === 'data' || mode === 'full';
   const wantsCode = mode === 'code' || mode === 'full';
+  // The code is the app's Moderators' (D4): asked first, before any refusal
+  // of the entry and before the undo snapshot (snapshotBeforeCodeChange asks
+  // it again there). A data restore is the data's (edit, the caller's door).
+  if (wantsCode) await assertItemRight(appId, 'manage');
   if (wantsData && !snap.hasData) {
     throw new AppSnapshotRefusedError(
       `v${snap.seq} holds no data (it is ${snap.kind === 'version' ? 'a version: the code a publish made live' : 'a snapshot of an app that had no database yet'}); restore its code, or pick a snapshot with data`,
@@ -803,7 +827,7 @@ export async function restoreAppSnapshot(
   // does not commit, and prunes the automatic snapshots. A lost live file is
   // what a data restore is for: the undo keeps the code then (apps audit
   // 2026-10-02, item 4).
-  const undo = await createAppSnapshot(ownerId, appId, {
+  const undo = await (wantsCode ? snapshotBeforeCodeChange : createAppSnapshot)(ownerId, appId, {
     trigger: 'pre_restore',
     actor,
     actorLoginId: opts.actorLoginId ?? null,

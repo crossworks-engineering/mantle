@@ -19,6 +19,7 @@
 import { randomUUID } from 'node:crypto';
 import { and, asc, desc, eq, ilike, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
 import {
+  assertItemRight,
   db,
   nodeReadByWorkspace,
   oneRow,
@@ -614,6 +615,10 @@ export async function updateAppMeta(
     .where(and(eq(nodes.id, id), eq(nodes.ownerId, ownerId), eq(nodes.type, 'app')))
     .limit(1);
   if (!node) return null;
+  // The description lives on the manifest, the app's code (D4): its door
+  // (lockAppRow) asks manage, so ask it before anything below is written
+  // (F4 fix round 3, M3: no name changed with a description refused).
+  if (input.description !== undefined) await assertItemRight(id, 'manage');
   const newData = { ...((node.data ?? {}) as Record<string, unknown>) };
   if (input.icon !== undefined) {
     const icon = projectAppIcon(input.icon);
@@ -684,9 +689,22 @@ export async function updateAppMeta(
 
 type DbTx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
-/** The app's sidecar row, locked FOR UPDATE until the transaction ends;
- *  null when the app is missing or not this owner's. */
-async function lockAppRow(tx: DbTx, ownerId: string, id: string) {
+/**
+ * The app's sidecar row, locked FOR UPDATE until the transaction ends;
+ * null when the app is missing or not this owner's.
+ *
+ * The one door of a write to an app's code (F4 fix round 3, M3): every
+ * writer of the code columns (D4: APP_CODE_COLUMNS, the draft, the manifest,
+ * a build, a publish) locks the row here, and the caller's manage of the
+ * app is asked first, in its scope (assertItemRight: the edit check's
+ * refusal, the 404 or the 403 item-workspace), so an editor who does not
+ * manage the app writes no code on any path (a route, a tool, MCP), as the
+ * database refuses it in on. `newApp`: the code of an app this call just
+ * made (installAppCode: a duplicate, an import), whose create home rule
+ * decided it.
+ */
+async function lockAppRow(tx: DbTx, ownerId: string, id: string, opts: { newApp?: true } = {}) {
+  if (!opts.newApp) await assertItemRight(id, 'manage');
   const [row] = await tx
     .select({
       source: apps.source,
@@ -883,6 +901,9 @@ export async function setDraftBuild(
     store?: () => Promise<void>;
   } = {},
 ): Promise<boolean | 'stale'> {
+  // The code's door asked before the stage too (F4 fix round 3, M3): a
+  // refused build stores no bundle (lockAppRow asks it again under the lock).
+  await assertItemRight(id, 'manage');
   if (opts.store) await opts.store();
   const done = await db.transaction(async (tx) => {
     const app = await lockAppRow(tx, ownerId, id);
@@ -910,12 +931,17 @@ export async function setDraftBuild(
 
 export async function discardDraft(ownerId: string, id: string): Promise<boolean> {
   if (!(await ownsApp(ownerId, id))) return false;
-  await db
-    .update(apps)
-    .set({ draftSource: null, draftUpdatedAt: null, draftBuild: null, restoredFromSeq: null })
-    .where(eq(apps.nodeId, id));
-  void notifyAppNavChanged(ownerId);
-  return true;
+  // The code's door (lockAppRow: manage of the app, F4 fix round 3, M3).
+  const done = await db.transaction(async (tx) => {
+    if (!(await lockAppRow(tx, ownerId, id))) return false;
+    await tx
+      .update(apps)
+      .set({ draftSource: null, draftUpdatedAt: null, draftBuild: null, restoredFromSeq: null })
+      .where(eq(apps.nodeId, id));
+    return true;
+  });
+  if (done) void notifyAppNavChanged(ownerId);
+  return done;
 }
 
 export class NoGreenBuildError extends Error {
@@ -1189,7 +1215,7 @@ export async function installAppCode(
 ): Promise<boolean> {
   const live = code.publishedBuild?.ok ? code.publishedBuild : null;
   const done = await db.transaction(async (tx) => {
-    const app = await lockAppRow(tx, ownerId, id);
+    const app = await lockAppRow(tx, ownerId, id, { newApp: true });
     if (!app) return false;
     await tx
       .update(apps)

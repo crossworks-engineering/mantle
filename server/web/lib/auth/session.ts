@@ -65,6 +65,7 @@ import { lockOauthActor } from '../oauth-lock';
 import { auditPeersUnbound, unbindPeersActingAs } from '../peer-unbind';
 import { isAccessKey, lockLoginKeys } from '../access-keys';
 import { getRequestContext } from '../../server/request-context';
+import { readBodyCapped } from '../body-limit';
 import { bearerFromHeader } from './request';
 import {
   anyLoginRow,
@@ -1740,9 +1741,10 @@ async function adminRouteGate(loginId: string): Promise<NextResponse | null> {
  *    contact's sharing, sharing with contacts, Revoke all of a contact's
  *    shares, an entity merge): every Admin user's, on tables no workspace
  *    scope reads or over rows outside the user's workspaces;
- *  - a change of a contact share (PATCH /api/shares/:id of a share that
- *    names a contact: "Can write" on an app's) by an Admin user, as making
- *    one; itemWriteGate's answer (F4 fix round 1).
+ *  - the "Can write" change of a contact share (PATCH /api/shares/:id
+ *    `{ canWrite }` of a share that names a contact) by an Admin user, as
+ *    making one; itemWriteGate's answer (F4 fix round 1; keyed on the body
+ *    since round 3, L2).
  */
 const ADMIN_ACT = 'admin-act';
 
@@ -1913,11 +1915,19 @@ async function itemWriteGate(
               from shares s left join nodes n on n.id = s.node_id
              where s.id = ${id}`,
       )) as unknown as { id: string | null; type: string | null; contact: boolean }[];
-      // A contact share's change ("Can write" on an app's) by an Admin user:
-      // an Admin act (ADMIN_ACT), as making one is (POST
-      // /api/shares/contacts: sharing with a contact needs only an Admin
-      // user, its home is not checked; docs/workspaces.md).
-      if (opts.admin && method.toUpperCase() === 'PATCH' && r[0]?.contact === true) {
+      // A contact share's "Can write" (on an app's) by an Admin user: an
+      // Admin act (ADMIN_ACT), as making one is (POST /api/shares/contacts:
+      // sharing with a contact needs only an Admin user, its home is not
+      // checked; docs/workspaces.md). Keyed on the change the body asks
+      // (F4 fix round 3, L2), not on the share naming a contact: any other
+      // change of the share (its mode, its served list) is the link's,
+      // checked against its item below.
+      if (
+        opts.admin &&
+        method.toUpperCase() === 'PATCH' &&
+        r[0]?.contact === true &&
+        (await asksCanWrite())
+      ) {
         return ADMIN_ACT;
       }
       nodeId = r[0]?.id ?? null;
@@ -1969,6 +1979,30 @@ async function itemWriteGate(
     },
     { status: 403 },
   );
+}
+
+/** What the PATCH /api/shares/:id body is read to, at most (its changes
+ *  are a mode, a flag or a served list). */
+const SHARE_PATCH_PEEK_BYTES = 64 * 1024;
+
+/**
+ * Whether the request's body is a share's "Can write" change, as the
+ * handler reads it (PATCH /api/shares/:id: its body schema tries `mode`
+ * first, then `canWrite`): a boolean `canWrite` and no string `mode`. Read
+ * from a clone, capped, so the handler reads the body itself; a body that
+ * is not JSON is no such change (the handler answers it).
+ */
+async function asksCanWrite(): Promise<boolean> {
+  const req = getRequestContext()?.req;
+  if (!req) return false;
+  try {
+    const body = JSON.parse(await readBodyCapped(req.clone(), SHARE_PATCH_PEEK_BYTES)) as unknown;
+    if (typeof body !== 'object' || body === null || Array.isArray(body)) return false;
+    const b = body as Record<string, unknown>;
+    return typeof b.canWrite === 'boolean' && typeof b.mode !== 'string';
+  } catch {
+    return false;
+  }
 }
 
 /**

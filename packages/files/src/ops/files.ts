@@ -642,7 +642,7 @@ async function storageBytesForNode(nodeId: string): Promise<Buffer | null> {
   // file node first (readFileById, openFileById: the item check); the
   // attachment row and its object are the named system step.
   if (!isSystemScope() && !(await scopeHoldsAdmin())) return null;
-  return systemStep('attachment-bytes', async () => {
+  return systemStep('attachment-bytes', { items: [nodeId], need: 'read' }, async () => {
     const [attachment] = await db
       .select({ storageKey: emailAttachments.storageKey })
       .from(emailAttachments)
@@ -753,17 +753,19 @@ export async function openFileById(args: {
  * Count the nodes ingest derived from this file (extracted images,
  * auto-imported tables, pages/notes/tables from the *_from_file tools) —
  * everything whose `data.sourceFileId` points here. One GROUP BY, served by
- * the partial index from migration 0141. Re-exported by `@mantle/content`'s
- * derived module, whose `reapDerivedFromFile` is the matching delete.
+ * the partial index from migration 0141. Module-private since F4 fix round
+ * 3 (M2): deleteFileById's has_derived refusal is its one caller;
+ * `@mantle/content`'s `reapDerivedFromFile` is the matching delete.
  */
-export async function countDerivedFromFile(args: {
+async function countDerivedFromFile(args: {
   ownerId: string;
   fileId: string;
 }): Promise<DerivedCounts> {
   // Every derived item, brain-wide (F4 fix round 2): one the caller's scope
   // does not read is stranded by the file's delete all the same. Numbers
-  // only, by the named system step; the caller read the file first.
-  const rows = await systemStep('derived-items', () =>
+  // only, by the named system step, after the file's manage check (the
+  // step's own).
+  const rows = await systemStep('derived-items', { items: [args.fileId], need: 'manage' }, () =>
     db
       .select({ kind: sql<string>`${nodes.type}::text`, n: sql<number>`count(*)::int` })
       .from(nodes)
@@ -778,16 +780,19 @@ export async function countDerivedFromFile(args: {
 /** Drawings whose `file_refs` still map some BinaryFile to this file node.
  *  jsonb_each_text because the keys are Excalidraw's ids, so the file node id
  *  is a VALUE in the map, not a key. */
-export async function drawsReferencingFile(
+async function drawsReferencingFile(
   ownerId: string,
   fileId: string,
 ): Promise<{ drawings: { id: string; title: string }[]; hidden: number }> {
   // Every drawing that places the image, brain-wide (F4 fix round 2): one
   // the caller's scope does not read breaks all the same (and reads the
   // working draft only where the scope may edit). Found by the named
-  // system step; only the ones the caller's scope reads are named back,
-  // the others counted.
-  const all = await systemStep('derived-items', () => drawingsPlacing(ownerId, fileId));
+  // system step after the file's manage check (the step's own: only a
+  // delete asks this); only the ones the caller's scope reads are named
+  // back, the others counted.
+  const all = await systemStep('derived-items', { items: [fileId], need: 'manage' }, () =>
+    drawingsPlacing(ownerId, fileId),
+  );
   if (all.length === 0 || isSystemScope()) return { drawings: all, hidden: 0 };
   const seen = new Set(
     (
@@ -853,6 +858,56 @@ async function drawingsPlacing(
   return rows;
 }
 
+/** Why a file may not be deleted whatever the caller confirms, or null:
+ *  an email attachment, or an image a drawing places. */
+export type FileDeleteBlock =
+  | { reason: 'attachment' }
+  | {
+      reason: 'in_drawing';
+      /** The drawings placing it that the caller reads. */
+      drawings: { id: string; title: string }[];
+      /** How many more place it that the caller does not read, when any. */
+      hiddenDrawings?: number;
+    };
+
+/**
+ * The refusals of a file's delete that no confirm resolves (F4 fix round 3,
+ * L1: one place for deleteFileById and the confirmed cascade, which asks it
+ * BEFORE its irreversible reap). Asked after the file's manage check (the
+ * drawings' step asks it again).
+ */
+export async function fileDeleteBlock(
+  ownerId: string,
+  fileId: string,
+): Promise<FileDeleteBlock | null> {
+  // Block deletion of a file that's an email attachment: email_attachments
+  // .file_node_id is ON DELETE RESTRICT, so a bare delete would raise an FK
+  // violation and surface as a 500. Return a clean refusal the caller can show
+  // instead — the bytes are owned by the email; delete it from there.
+  const [attachment] = await db
+    .select({ id: emailAttachments.id })
+    .from(emailAttachments)
+    .where(eq(emailAttachments.fileNodeId, fileId))
+    .limit(1);
+  if (attachment) return { reason: 'attachment' };
+  // Block deletion of an image a drawing still places on its canvas. There is
+  // no FK to lean on: `draws.file_refs` is a jsonb map (BinaryFile id → file
+  // node id), so a bare delete used to succeed and leave the drawing quietly
+  // broken — the canvas lost the image on next open while the committed
+  // snapshot kept showing it, because exportToSvg inlines image bytes. Two
+  // surfaces disagreeing forever, with no error anywhere. Refuse instead, and
+  // name the drawings so the caller can say where to remove it.
+  const inDrawings = await drawsReferencingFile(ownerId, fileId);
+  if (inDrawings.drawings.length + inDrawings.hidden > 0) {
+    return {
+      reason: 'in_drawing',
+      drawings: inDrawings.drawings,
+      ...(inDrawings.hidden > 0 ? { hiddenDrawings: inDrawings.hidden } : {}),
+    };
+  }
+  return null;
+}
+
 export async function deleteFileById(args: {
   ownerId: string;
   fileId: string;
@@ -886,32 +941,8 @@ export async function deleteFileById(args: {
   if ((await itemWriteVerdicts([node.id], 'manage')).get(node.id) !== 'ok') {
     return { ok: false, reason: 'not_found' };
   }
-  // Block deletion of a file that's an email attachment: email_attachments
-  // .file_node_id is ON DELETE RESTRICT, so a bare delete would raise an FK
-  // violation and surface as a 500. Return a clean refusal the caller can show
-  // instead — the bytes are owned by the email; delete it from there.
-  const [attachment] = await db
-    .select({ id: emailAttachments.id })
-    .from(emailAttachments)
-    .where(eq(emailAttachments.fileNodeId, node.id))
-    .limit(1);
-  if (attachment) return { ok: false, reason: 'attachment' };
-  // Block deletion of an image a drawing still places on its canvas. There is
-  // no FK to lean on: `draws.file_refs` is a jsonb map (BinaryFile id → file
-  // node id), so a bare delete used to succeed and leave the drawing quietly
-  // broken — the canvas lost the image on next open while the committed
-  // snapshot kept showing it, because exportToSvg inlines image bytes. Two
-  // surfaces disagreeing forever, with no error anywhere. Refuse instead, and
-  // name the drawings so the caller can say where to remove it.
-  const inDrawings = await drawsReferencingFile(args.ownerId, node.id);
-  if (inDrawings.drawings.length + inDrawings.hidden > 0) {
-    return {
-      ok: false,
-      reason: 'in_drawing',
-      drawings: inDrawings.drawings,
-      ...(inDrawings.hidden > 0 ? { hiddenDrawings: inDrawings.hidden } : {}),
-    };
-  }
+  const blocked = await fileDeleteBlock(args.ownerId, node.id);
+  if (blocked) return { ok: false, ...blocked };
   // Refuse when ingest derived nodes from this file and the caller hasn't
   // opted in: a bare delete would strand them (data.sourceFileId is JSONB —
   // no FK cascade reaches them). The refusal carries counts so the caller can

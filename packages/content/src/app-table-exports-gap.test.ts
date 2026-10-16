@@ -72,7 +72,11 @@ vi.mock('@mantle/db', () => {
   };
   // The named system step (F4 fix round 2): the export bookkeeping leaves
   // the writer's scope; here it only runs.
-  const systemStep = (_step: string, fn: () => Promise<unknown>) => fn();
+  const systemStep = (
+    _step: string,
+    _items: unknown,
+    fn: (allowed: string[]) => Promise<unknown>,
+  ) => fn([]);
   return {
     db: { select, update, insert },
     nodes,

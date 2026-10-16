@@ -14,6 +14,8 @@
 --       left out: a new map's slug, a slug change, a revision restore;
 --     - 'formula-spec': a formula whose spec id is `name` (the formula
 --       library's seed: present is present, whoever reads it).
+--    A folder's path is compared as an ltree (the unique index's column,
+--    F4 fix round 3, L4): a name that is not a path is the caller's fault.
 --    Any other `what` answers no. Not held to the rows the scope reads: its
 --    whole point is a name a row the caller cannot read holds (as
 --    mantle_file_name_taken, 0293). In a scope only the brain's own.
@@ -39,7 +41,7 @@ CREATE OR REPLACE FUNCTION "public"."mantle_name_taken"(what text, owner uuid, n
      AND CASE what
        WHEN 'folder' THEN EXISTS (
          SELECT 1 FROM "public"."nodes" n
-          WHERE n."owner_id" = owner AND n."type" = 'branch' AND n."path"::text = name)
+          WHERE n."owner_id" = owner AND n."type" = 'branch' AND n."path" = name::ltree)
        WHEN 'recall-slug' THEN EXISTS (
          SELECT 1 FROM "public"."recall_maps" m
           WHERE m."owner_id" = owner

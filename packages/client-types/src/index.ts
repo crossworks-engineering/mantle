@@ -105,6 +105,15 @@ export type {
   MemberInviteState,
 } from './dto/member-invites';
 export type { MemberMcpClient, MemberMcpConnector, MemberMcpView } from './dto/member-mcp';
+export type {
+  BulkDeleteCascadeResponse,
+  BulkDeleteFilesResponse,
+  BulkDeleteRefusal,
+  FileCascadeDeleteResponse,
+  FileDeleteRefusalReason,
+  FileDerivedCounts,
+} from './dto/file-deletes';
+
 export type { MemberItemKind, ClientItemKind, ClientItemFilter } from './member-kinds';
 export type {
   LoginKind,

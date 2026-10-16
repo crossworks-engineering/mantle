@@ -386,22 +386,22 @@ const AREAS: Record<string, string> = {
  *  (its behaviour is pinned below). */
 const ITEMS: Record<string, readonly { param: string; need: string }[] | 'resolver'> = {
   access_set: [{ param: 'node_id', need: 'manage' }],
-  app_build: [{ param: 'id', need: 'edit' }],
-  app_db_schema_set: [{ param: 'id', need: 'edit' }],
+  app_build: [{ param: 'id', need: 'manage' }],
+  app_db_schema_set: [{ param: 'id', need: 'manage' }],
   app_db_seed: [{ param: 'id', need: 'edit' }],
   app_delete: [{ param: 'id', need: 'manage' }],
   app_duplicate: 'resolver',
   app_export: 'resolver',
-  app_file_delete: [{ param: 'id', need: 'edit' }],
-  app_file_write: [{ param: 'id', need: 'edit' }],
-  app_publish: [{ param: 'id', need: 'edit' }],
+  app_file_delete: [{ param: 'id', need: 'manage' }],
+  app_file_write: [{ param: 'id', need: 'manage' }],
+  app_publish: [{ param: 'id', need: 'manage' }],
   app_snapshot_create: [{ param: 'id', need: 'edit' }],
   app_snapshot_delete: [{ param: 'id', need: 'edit' }],
-  app_snapshot_restore: [{ param: 'id', need: 'edit' }],
-  app_source_set: [{ param: 'id', need: 'edit' }],
+  app_snapshot_restore: 'resolver',
+  app_source_set: [{ param: 'id', need: 'manage' }],
   app_table_export_remove: [{ param: 'id', need: 'edit' }],
   app_table_export_set: [{ param: 'id', need: 'edit' }],
-  app_tools_set: [{ param: 'id', need: 'edit' }],
+  app_tools_set: [{ param: 'id', need: 'manage' }],
   app_update: [{ param: 'id', need: 'edit' }],
   contact_delete: [{ param: 'id', need: 'manage' }],
   contact_update: [{ param: 'id', need: 'edit' }],
@@ -416,7 +416,7 @@ const ITEMS: Record<string, readonly { param: string; need: string }[] | 'resolv
   folder_describe: [{ param: 'folder_id', need: 'edit' }],
   folder_move: [{ param: 'folder_id', need: 'manage' }],
   folder_rename: [{ param: 'folder_id', need: 'edit' }],
-  folder_set_indexing: [{ param: 'folder_id', need: 'edit' }],
+  folder_set_indexing: [{ param: 'folder_id', need: 'manage' }],
   formula_delete: [{ param: 'id', need: 'manage' }],
   formula_update: [{ param: 'id', need: 'edit' }],
   journal_delete: [{ param: 'id', need: 'manage' }],
@@ -616,6 +616,18 @@ describe('every @mantle/tools access list equals its literal (A5 step 1)', () =>
     }
     // A revision by an id that is not one.
     expect(await resolve('recall_revision_restore', { revision_id: 'nope' })).toEqual([]);
+    // An app restore (F4 fix round 3, M3): the code is the app's
+    // Moderators' (code, full), the data alone an editor's.
+    expect(await resolve('app_snapshot_restore', { id: 'a', mode: 'code' })).toEqual([
+      { ids: ['a'], need: 'manage' },
+    ]);
+    expect(await resolve('app_snapshot_restore', { id: 'a', mode: 'full' })).toEqual([
+      { ids: ['a'], need: 'manage' },
+    ]);
+    expect(await resolve('app_snapshot_restore', { id: 'a', mode: 'data' })).toEqual([
+      { ids: ['a'], need: 'edit' },
+    ]);
+    expect(await resolve('app_snapshot_restore', {})).toEqual([]);
     // Every resolver is probed above.
     const probed = new Set([
       'page_unshare',
@@ -636,6 +648,7 @@ describe('every @mantle/tools access list equals its literal (A5 step 1)', () =>
       'recall_map_publish',
       'recall_map_delete',
       'recall_revision_restore',
+      'app_snapshot_restore',
     ]);
     expect(
       Object.keys(ITEMS)

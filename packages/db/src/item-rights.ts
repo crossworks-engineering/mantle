@@ -18,7 +18,7 @@
 import { sql } from 'drizzle-orm';
 import { db } from './client';
 import { currentWorkspaceScope } from './viewer';
-import { UUID_RE } from '@mantle/std';
+import { editCheckRefusalError, UUID_RE } from '@mantle/std';
 
 /** What a write needs of an item. */
 export type ItemNeed = 'read' | 'edit' | 'manage';
@@ -93,6 +93,23 @@ export async function itemWriteRefusalOf(
     if (verdict === 'no_edit') return { message: itemNoRightError(id, need), detail: 'no_edit' };
   }
   return null;
+}
+
+/**
+ * The item check of a library write (F4 fix rounds 2 and 3): throws unless
+ * the caller's scope may `need` item `id`, as the database's edit check
+ * raises it (editCheckRefusalError), so the one mapper answers it: an item
+ * the scope does not read the 404, one it reads but may not change the 403
+ * item-workspace (a tool: its error). Asked before anything is written. For
+ * a write whose need depends on its body (an app restore's mode) or whose
+ * route names no item (an import over an app), and for the gateways that
+ * must not trust their callers (an app build, restore and import; a
+ * folder's indexing switch; the named system step). System work is not
+ * checked.
+ */
+export async function assertItemRight(id: string, need: ItemNeed): Promise<void> {
+  const refused = await itemWriteRefusalOf([id], need);
+  if (refused) throw editCheckRefusalError(refused.detail ?? 'no_read');
 }
 
 type ScopeRights = { edit: boolean; manage: boolean; copy: boolean };

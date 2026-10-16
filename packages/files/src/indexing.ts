@@ -21,8 +21,16 @@
  * denormalisation to stay correct — the next pass just resolves again.
  */
 
-import { and, eq, sql } from 'drizzle-orm';
-import { db, markContentChanged, nodes, systemStep, type Node } from '@mantle/db';
+import { and, eq, inArray, sql } from 'drizzle-orm';
+import {
+  assertItemRight,
+  db,
+  itemWriteVerdicts,
+  markContentChanged,
+  nodes,
+  systemStep,
+  type Node,
+} from '@mantle/db';
 import { InputError } from '@mantle/std';
 
 export type IndexingMode = 'full' | 'metadata';
@@ -101,9 +109,26 @@ export function metadataSpineText(node: Pick<Node, 'title' | 'path' | 'tags' | '
 }
 
 /**
- * Set the indexing flag on one file or folder node, then queue re-extraction
- * for every file whose EFFECTIVE mode this changes. Returns how many were
- * queued.
+ * Set the indexing flag on one file or folder node, then reset the index of
+ * every file whose EFFECTIVE mode this changes and queue its re-extraction.
+ * Returns how many of those files the caller reads were queued.
+ *
+ * Who may switch (F4 fix round 3, M1): a folder's switch is the manage of
+ * the folder (its home's Moderators: it reaches every file under it); a
+ * file's is the edit of the file. Asked here, in the caller's scope, before
+ * the flag changes (assertItemRight), and again by the named step.
+ *
+ * What it reaches (M1, the owner's decision):
+ *  - a switch that REMOVES content indexing (the file's effective mode
+ *    turns metadata, name only) reaches every file under the folder, ones
+ *    the caller's scope does not read included: their content index is
+ *    reset (privacy; no LLM call: a spine and a local embedding);
+ *  - a switch that ADDS content indexing (effective full) re-queues only
+ *    the files the caller's scope reads (cost safety: no LLM spend on files
+ *    the caller cannot see); a hidden file picks the mode up at its next
+ *    extraction, which resolves the mode then;
+ *  - `requeued` counts only the files the caller reads, so no hidden file's
+ *    existence is told.
  *
  * The queueing goes through the ordinary extract pipeline (markContentChanged
  * → pg-boss), one job per file — never a burst loop. The metadata direction
@@ -134,6 +159,9 @@ export async function setIndexingMode(args: {
       `setIndexingMode: '${target.type}' nodes don't carry an indexing flag — only files and folders do`,
     );
   }
+  const need = target.type === 'branch' ? 'manage' : 'edit';
+  // Before the flag changes: a refusal writes nothing.
+  await assertItemRight(target.id, need);
 
   const data = { ...((target.data ?? {}) as Record<string, unknown>) };
   if (args.mode === 'inherit') delete data.indexing;
@@ -145,66 +173,88 @@ export async function setIndexingMode(args: {
     .returning();
   if (!updated) throw new Error('setIndexingMode: update returned no row');
 
-  // Affected files: the node itself, or every file under the folder's subtree
-  // (`<@` descendant-or-equal — file paths are their parent folder's path).
-  // Every one, brain-wide, by the named system step after the flag's change
-  // (the item check: F4 fix round 2): a file the caller's scope does not
-  // read under a folder turned name only must shed its content index too,
-  // or it keeps answering from its content (it was left as it was).
-  const requeued = await systemStep('reindex', async () => {
-    const affected =
-      target.type === 'file'
-        ? [updated]
-        : await db
-            .select()
-            .from(nodes)
-            .where(
-              and(
-                eq(nodes.ownerId, args.ownerId),
-                eq(nodes.type, 'file'),
-                sql`${nodes.path} <@ ${target.path}::ltree`,
-              ),
-            );
-    return reconcileFiles(args.ownerId, affected);
+  if (target.type === 'file') {
+    const requeued = await reconcileFilesIndexing(args.ownerId, [updated], 'edit');
+    return { node: updated, requeued };
+  }
+  // Every file under the folder's subtree (`<@` descendant-or-equal: file
+  // paths are their parent folder's path), brain-wide, found by the named
+  // step after the folder's check: ids only.
+  const under = await systemStep('reindex', { items: [target.id], need }, async () =>
+    (
+      await db
+        .select({ id: nodes.id })
+        .from(nodes)
+        .where(
+          and(
+            eq(nodes.ownerId, args.ownerId),
+            eq(nodes.type, 'file'),
+            sql`${nodes.path} <@ ${target.path}::ltree`,
+          ),
+        )
+    ).map((r) => r.id),
+  );
+  // The ones the caller's scope reads, asked there.
+  const verdicts = await itemWriteVerdicts(under, 'read');
+  const readable = new Set(under.filter((id) => verdicts.get(id) === 'ok'));
+  const requeued = await systemStep('reindex', { items: [target.id], need }, async () => {
+    const files =
+      under.length === 0 ? [] : await db.select().from(nodes).where(inArray(nodes.id, under));
+    return reconcileFiles(args.ownerId, files, readable);
   });
   return { node: updated, requeued };
 }
 
 /**
- * Re-queue extraction for every file whose LAST-APPLIED indexing mode no
- * longer matches its effective one. Shared by the flag toggle above and by
- * MOVES — a file dragged into a name-only gallery must shed its content
- * index, and one dragged out must gain it, exactly as if the flag had been
- * flipped. Resets the file's index through markContentChanged (the summary
- * and the vector go, so the already_extracted guard cannot swallow the
- * re-run) and notifies through the ordinary queue, one job per file. Files
- * already indexed the right way are untouched.
+ * Reset the index of every file in `files` whose LAST-APPLIED indexing mode
+ * no longer matches its effective one, after a MOVE (a file dragged into a
+ * name-only gallery must shed its content index, one dragged out must gain
+ * it, exactly as if the flag had been flipped) or a file's own switch. The
+ * named step (F4 fix round 3, M2: the checked door, so no caller skips the
+ * check): each file must be one the caller's scope reads (`need`: read for
+ * a move, whose files the caller moved; edit for a file's own switch); the
+ * step reads each file's whole folder chain, folders the caller's scope
+ * does not read included. Returns how many were queued.
  */
 export async function reconcileFilesIndexing(
   ownerId: string,
   files: readonly Node[],
+  need: 'read' | 'edit' = 'read',
 ): Promise<number> {
-  // The named system step (F4 fix round 2): each file's effective mode reads
-  // its whole folder chain, folders the caller's scope does not read
-  // included, and its index reset is the brain's bookkeeping after the move
-  // the caller made.
-  return systemStep('reindex', () => reconcileFiles(ownerId, files));
+  if (files.length === 0) return 0;
+  return systemStep('reindex', { items: files.map((f) => f.id), need }, async (allowed) => {
+    // Every file passed (the step refuses otherwise): each is the caller's.
+    return reconcileFiles(ownerId, files, new Set(allowed));
+  });
 }
 
-/** reconcileFilesIndexing's body, on the system pool. */
-async function reconcileFiles(ownerId: string, files: readonly Node[]): Promise<number> {
+/**
+ * The reset of each of `files` whose effective mode changed, on the system
+ * pool. `readable`: the files the caller reads. A file turned name only is
+ * reset whoever reads it (its content must stop answering); a file turned
+ * full is queued only when the caller reads it (M1: no LLM spend on a
+ * hidden file; its next extraction resolves the mode). Counts the readable
+ * ones only.
+ */
+async function reconcileFiles(
+  ownerId: string,
+  files: readonly Node[],
+  readable: ReadonlySet<string>,
+): Promise<number> {
   let requeued = 0;
   for (const f of files) {
     const fData = (f.data ?? {}) as Record<string, unknown>;
     const { effective } = await resolveEffectiveIndexing(ownerId, f);
     const applied = fData.indexing_applied === 'metadata' ? 'metadata' : 'full';
     if (effective === applied) continue; // already indexed the right way
+    const seen = readable.has(f.id);
+    if (effective === 'full' && !seen) continue; // picked up at its next extraction
     // The mode changed: the index again (the kind registry's `indexed`). The
     // reset drops the summary and the vector now, so a file turned name-only
     // stops answering from its content at once rather than when the re-run
     // lands; announced when this transaction commits.
     await db.transaction((tx) => markContentChanged(tx, { id: f.id, type: 'file' }, ['indexing']));
-    requeued++;
+    if (seen) requeued++;
   }
   return requeued;
 }

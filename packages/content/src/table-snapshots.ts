@@ -193,10 +193,10 @@ export async function recordCommitSnapshot(
  *  2, store_tombstones). */
 export async function pruneTableCommitSnapshots(tableId: string): Promise<void> {
   // The table's whole history line, brain-wide bookkeeping after the commit
-  // (the commit was the item check): the named system step, never the
-  // caller's scope (whose view role has no delete, and which may not read
-  // every row of a line: F4 fix round 2).
-  await systemStep('table-history', () =>
+  // (the commit was the item check; the step asks the table's edit again):
+  // the named system step, never the caller's scope (whose view role has no
+  // delete, and which may not read every row of a line: F4 fix round 2).
+  await systemStep('table-history', { items: [tableId], need: 'edit' }, () =>
     pruneHistoryRows(
       tableId,
       ['commit'],

@@ -140,7 +140,7 @@ export {
   type RequestScopeMode,
   type RequestOutcome,
 } from './viewer';
-export { systemStep, type SystemStep } from './system-step';
+export { systemStep, type StepItems, type SystemStep } from './system-step';
 export { nameTaken, snapshotBytesUsed, type TakenName } from './brain-answers';
 export { ensureViewerRoles } from './viewer-roles';
 export {
@@ -423,6 +423,7 @@ export {
   wsArraySql,
 } from './item-acl';
 export {
+  assertItemRight,
   foldersReadOf,
   itemWriteRefusal,
   itemWriteRefusalOf,

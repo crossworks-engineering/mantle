@@ -35,12 +35,11 @@ import {
   MAX_APP_PATH_LEN,
 } from '@mantle/content';
 import { checkAppSchemaScript } from '@mantle/content/app-broker';
-import { createAppSnapshot } from '@mantle/content/app-snapshots';
+import { snapshotBeforeCodeChange } from '@mantle/content/app-snapshots';
 import { buildAndStageApp, resolveTool } from '@mantle/tools';
 import { recordIngest } from '@mantle/tracing';
 import { errorMessage } from '@mantle/std';
 import { readJson } from '@/lib/read-body';
-import { assertItemRight } from '@/lib/item-check';
 
 const Body = AppMetaFields.partial({ name: true }).extend({
   /** Update this app if given; otherwise create a new one (then `name` is required). */
@@ -81,11 +80,6 @@ export async function POST(req: Request) {
   if (!b.appId && !b.name) return bad('name is required when appId is omitted');
   const existing = b.appId ? await getAppRuntime(user.id, b.appId) : null;
   if (b.appId && !existing) return bad('app not found', 404);
-  // An update writes the app's code (its draft, manifest, schema): manage of
-  // the app (D4), checked before anything is written (F4 fix round 2: the
-  // route names no :id, so no gate asked it, and the database refused the
-  // code after the pre_import snapshot had committed, a partial import).
-  if (b.appId) await assertItemRight(b.appId, 'manage');
   if (b.toolSlugs) {
     const missing: string[] = [];
     for (const slug of b.toolSlugs) {
@@ -129,7 +123,12 @@ export async function POST(req: Request) {
     // part of an import that reaches the data); every push copying the
     // database filled the disk (apps audit 2026-10-02, item 11). A lost live
     // file keeps the code (item 4).
-    await createAppSnapshot(user.id, appId, {
+    // An update writes the app's code (its draft, manifest, schema): manage
+    // of the app (D4), asked by the one door before this first write (F4
+    // fix rounds 2 and 3: the route names no :id, so no gate asks it; the
+    // database refused the code after the snapshot had committed, a
+    // partial import).
+    await snapshotBeforeCodeChange(user.id, appId, {
       trigger: 'pre_import',
       actor: 'owner',
       note: 'before an import',

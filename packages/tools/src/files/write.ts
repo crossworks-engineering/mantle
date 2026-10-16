@@ -21,7 +21,7 @@ import { type BuiltinToolDef } from '../types';
 import { str, boolOpt as bool } from '../coerce';
 import { errorMessage } from '@mantle/std';
 import { FILE_ID_PRE, FOLDER_ID_PRE } from '../builtins-common';
-import { edit } from '../item-write-gate';
+import { edit, manage } from '../item-write-gate';
 import { CS } from '../client-sourced-rule';
 
 export const file_create: BuiltinToolDef = {
@@ -321,7 +321,9 @@ export const folder_set_indexing: BuiltinToolDef = {
     effect: 'write',
     spends: 'none',
     scope: 'any',
-    items: [edit('folder_id')],
+    // A folder's switch reaches every file under it: manage of the folder
+    // (F4 fix round 3, M1; setIndexingMode asks it again).
+    items: [manage('folder_id')],
     keyArea: 'files',
     clientSourced: CS.onNodes('folder_id'),
   },

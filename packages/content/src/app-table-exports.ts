@@ -527,7 +527,14 @@ export function exportSyncDelay(firstAt: number, now: number): number {
  * asSystem('app-data'); an Admin user's (in its scope since F4) did not.
  */
 function exportSyncStep<T>(fn: () => PromiseLike<T>): Promise<T> {
-  return systemStep('export-sync', () => runAsSystem(EXPORT_ACTOR, fn));
+  return systemStep(
+    'export-sync',
+    {
+      items: 'none',
+      why: "the app's linked Tables after a write to its data, which the app's data door checked (appDbWrite, D6); the debounced timer fires later, outside that request",
+    },
+    () => runAsSystem(EXPORT_ACTOR, fn),
+  );
 }
 
 export function scheduleAppTableExportSync(ownerId: string, appNodeId: string): void {
@@ -539,20 +546,18 @@ export function scheduleAppTableExportSync(ownerId: string, appNodeId: string): 
   const wait = exportSyncDelay(firstAt, Date.now());
   // The timer runs as system(app-export), whoever scheduled it (F9), and on
   // the system pool outside the scheduler's scope (exportSyncStep).
-  const timer = setTimeout(
-    () => void exportSyncStep(() => runScheduledSync(ownerId, appNodeId, key)),
-    wait,
-  );
+  const timer = setTimeout(() => void runScheduledSync(ownerId, appNodeId, key), wait);
   // Never hold a process open for a pending sync (dev servers, tests, CLIs).
   timer.unref?.();
   pending.set(key, { timer, firstAt });
 }
 
-/** The debounced sync, once due. */
+/** The debounced sync, once due: the named step, its refusal logged as a
+ *  failed sync. */
 async function runScheduledSync(ownerId: string, appNodeId: string, key: string): Promise<void> {
   try {
     pending.delete(key);
-    await syncAppTableExports(ownerId, appNodeId);
+    await exportSyncStep(() => syncAppTableExports(ownerId, appNodeId));
   } catch (err) {
     pending.delete(key);
     console.error('[app-table-exports] sync failed', appNodeId, err);

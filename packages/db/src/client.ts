@@ -1200,6 +1200,20 @@ export async function afterOuterCommit(fn: () => unknown): Promise<void> {
 }
 
 /**
+ * Whether the current code runs inside a transaction that is still open:
+ * a login write transaction (a request's db.transaction, M2) whose level
+ * has not ended, or a scope's own (withSystemTx, withScope). Work that runs
+ * on a connection of its own (the named system step, system-step.ts) would
+ * not see that transaction's rows and could wait behind its locks (F4 fix
+ * round 3, L5).
+ */
+export function inOpenTransaction(): boolean {
+  const open = openWriteTx.getStore();
+  if (open && !levelEnded(open)) return true;
+  return currentScopeTx() !== null;
+}
+
+/**
  * One short transaction on a fresh connection of the system pool, outside
  * every caller's transaction and scope (never joined to an open login write
  * transaction or a savepoint of one, whose link it would wait behind), with
