@@ -248,8 +248,8 @@ links its imports, loads what it would load lazily (the web: every route
 module and its boot tasks), prints `[boot-smoke] linked: <name>` and exits 0
 before it opens a pool, a listener or a queue
 ([`packages/config/src/boot-smoke.ts`](../packages/config/src/boot-smoke.ts)).
-No database, no network; measured 22 to 27 s on a Mac, expect 40 to 60 s on
-a CI runner. It runs in `pnpm verify`, in
+No database, no network; about 15 to 30 s on a Mac, 40 to 60 s on CI.
+It runs in `pnpm verify`, in
 build-check and in the release guard before any image is built. It exists
 because v0.300.64 crash-looped every server process at start (a package
 without `"type": "module"`, loaded by tsx as CommonJS, lost the names its

@@ -102,7 +102,8 @@ jobs:
       # service's own command, through tsx) up to the point where its import
       # graph links, then exit (scripts/boot-smoke.mjs). v0.300.64 shipped a
       # server that could not start although typecheck, tests and the build
-      # passed. No database, no network; expect 40 to 60 s here.
+      # passed. No database, no network; about 15 to 30 s on a Mac, 40 to 60 s
+      # on CI.
       - name: Boot smoke
         run: pnpm boot:smoke
 
