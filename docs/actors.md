@@ -1112,85 +1112,170 @@ has>` 404 `{"ok":false,"error":"not found"}` (before: 200
   `/api/workspaces/:admin/users` with `moderator: false`: 409 (before: an
   Admin user with no Moderator seat).
 
+### F4 fix round 2
+
+Round 1's handover listed 14 places where an Admin user's write, in its
+scope on the write role since F4, did brain-wide bookkeeping in that scope:
+it saw only the rows the scope reads, and the write role refused tables no
+scope writes. The owner's rule for all of them: the bookkeeping runs as a
+named system step or a definer after the item check, never in the caller's
+scope, and no route opens wider to members. Each fix is tested through the
+full pipeline as the owner in warn and in on, with the member cells where a
+route could widen (`server/web/server/f4-owner-flows.db.test.ts`, in
+`pnpm test:edit-on`); every new cell failed on the branch before the round
+(the answers below).
+
+**The gateways.**
+
+- **The named system step** (`systemStep(step, fn)`,
+  `packages/db/src/system-step.ts`; asSystem reason `brain-bookkeeping`,
+  pinned in `eslint-rules/as-system-allowlist.mjs`). Its contract: the
+  item check came first, the step answers numbers, yes or no, or nothing,
+  and a row goes back to the caller only once its scope reads it. Its
+  sites, by step:
+  - `table-history`: `pruneTableCommitSnapshots` (`table-snapshots.ts`),
+    after a table commit;
+  - `attachment-bytes`: `storageBytesForNode` (`packages/files`
+    `ops/files.ts`), an email attachment's bytes, for a scope that holds
+    Admin, after the file node's read;
+  - `derived-items`: `countDerivedFromFile` and `drawsReferencingFile`
+    (`ops/files.ts`), `reapDerivedFromFile` (`packages/content`
+    `derived.ts`), after the file's manage check;
+  - `reindex`: `setIndexingMode` and `reconcileFilesIndexing`
+    (`packages/files` `indexing.ts`), after the flag's change or the move;
+  - `export-sync`: `exportSyncStep` (`app-table-exports.ts`), the dirty
+    mark and the debounced sync of `scheduleAppTableExportSync`, fixed in
+    the scheduler for every caller (a timer keeps the async context it was
+    set in, and runAsSystem swaps only the actor).
+- **Two definers** (migration 0300; yes or no, or a number, never a row):
+  `mantle_name_taken(what, owner, name, except)` for a folder path
+  (`copyFolderById`, `moveFolderById`), a Recall map slug, current or
+  former (`createRecallMap` through `freeMapSlug`, `updateRecallMap`'s slug
+  change and so a revision restore of one) and a formula spec id (the
+  formula library seed); `mantle_snapshot_bytes(owner, manual_only,
+  member, login)` for the snapshot budget (`usedSnapshotBytes` in
+  `app-snapshots.ts`, `createTableSnapshot`). `conflictOnUnique` is the
+  backstop of the folder copy and of a new map (a race past the check is a
+  409, never the unique index's 500). TS: `nameTaken`, `snapshotBytesUsed`
+  (`packages/db/src/brain-answers.ts`).
+- **The item check of body ids**: `itemWriteVerdicts(ids, need)`
+  (`packages/db/src/item-rights.ts`), one verdict per id, the rule
+  `itemWriteRefusalOf` asks for one; `bulkDeleteGate` (`ops/files.ts`)
+  asks it for every id of a bulk delete, and `deleteFileById` and
+  `deleteFileWithDerived` ask it for their file before any count or reap.
+- **The item check a gate cannot judge**: `assertItemRight(id, need)`
+  (`server/web/lib/item-check.ts`), thrown as the edit check's refusal so
+  the one mapper answers it: an app restore of the code (code, full) and
+  an import over an existing app ask manage before anything is written.
+- The owner db broker's Admin branch runs its SQLite work by the app-data
+  door (`appDataSystem`, `server/web/lib/app-runner.ts`), as a member's
+  run.
+
+**The items.**
+
+1. Table history: fixed. A commit keeps the version it replaces again in
+   an Admin scope (`historyKept`: the system's and an Admin scope's
+   commits, a personal space's never; the row rides the commit, written by
+   the write role with edit of the table, A3a); the prune is the named
+   step; a restore with commit keeps its note. A member's commit keeps
+   none, as since W6b (its row would name the owner as its actor): left.
+2. An email attachment's copy: fixed (`attachment-bytes`). The download
+   (`openFileById`) reads through the same function; not tested apart.
+3. A bulk delete's derived items and drawings: fixed (`derived-items`).
+4. A bulk delete's ids: fixed. Every body id is checked first; each one
+   not deleted is in `refused` with its reason.
+5. (suspect, real: 500) A folder copy or move onto a hidden folder of its
+   name: fixed (`mantle_name_taken`, `conflictOnUnique`).
+6. (suspect, real: a 400 partway) A folder copy with a file the scope reads
+   under a subfolder it does not: fixed, the copy holds what the scope reads
+   and places. The cap counts the files the copy makes, which is right: a
+   file the scope does not read is never copied.
+7. (suspect, real: hidden files kept their content index) A folder's
+   indexing switch: fixed (`reindex`), every file under it and its whole
+   folder chain, members' switches too.
+8. The formula seed: fixed (`formula-spec`). The table history budget:
+   fixed (`mantle_snapshot_bytes`).
+9. The export sync: fixed in the scheduler (`export-sync`).
+10. The app snapshot budget: fixed (`mantle_snapshot_bytes`).
+11. (suspect, real: a 500 in on) The db broker's Admin branch for an Admin
+    user who only reads the app: fixed (the app-data door after the
+    lookup in its scope; data writes follow ADMIN_DATA_ACCESS).
+12. (suspect, real: a partial apply) An app restore of the code and an
+    import over an app: fixed (manage first).
+13. A duplicate by an Admin user who reads but cannot edit the source:
+    left, by the read rule. It copies the published code; the draft is
+    unpublished work that user may not read (`draftColumn`: drafts only
+    where the user may edit), so copying it would hand it over. The owner
+    may decide otherwise.
+14. Recall map slugs: fixed (`recall-slug`, `conflictOnUnique`).
+
+**Changed answers** (warn and on unless named; each a fix, stricter, or a
+closed leak):
+
+- POST `/api/tables/:id/commit` by an Admin user: 200 as before; a history
+  row is kept again and pruned (before: none, and a restore's note lost).
+- POST `/api/tables/:id/history` and POST `/api/apps/:id/snapshots` when
+  the brain's copies fill APP_SNAPSHOT_MAX_MB, some of items the caller
+  does not read: 409 (reason `budget` for an app's) (before: 201).
+- POST `/api/files/files/:id` (copy) of an email attachment by an Admin
+  user: 201 (before: 400 "copyFileById: file not found").
+- DELETE `/api/files/files`: 200 `{ deleted, hasDerived, refused }` where
+  `refused` names each id not deleted: `not_found` (no such file, or one
+  the scope does not read), `forbidden` (read, not managed), `in_drawing`
+  (`drawings`: the ones it reads; `hiddenDrawings`: how many more),
+  `attachment`; `hasDerived` counts every derived item. Before: a 403
+  item-workspace for the whole request once it met a file it read but could
+  not manage, after deleting the files before it; ids it did not read left
+  out silently; derived items and drawings outside the scope missed (the
+  file deleted, the items orphaned, the drawing broken). With `cascade`:
+  `refused` added, the reap brain-wide. DELETE `/api/files/files/:id` and
+  the file tools: a file only drawings outside the scope place is 409
+  `in_drawing` (before: deleted); `has_derived` counts every derived item.
+- POST `/api/files/folders/:id` (copy) onto a folder of the same name the
+  scope does not read: 400 "already exists" (before: 500); with a file the
+  scope reads under a subfolder it does not: 201, that file left out
+  (before: 400 "no folder at ..." after part of the copy was made). PATCH
+  `/api/files/folders/:id` `{ move }` onto one: 409 "already exists"
+  (before: 500).
+- PATCH `/api/files/folders/:id` `{ indexing }`: `requeued` counts the
+  files under the folder the caller does not read, and their content index
+  is reset (before: left as it was). A member's switch too: a number, no
+  name.
+- POST `/api/formulas/seed`: a seed formula present where the caller does
+  not read it is `skipped` (before: created a second time).
+- An Admin user's write to an app's data with a linked Table: the Table
+  syncs (before: stale until a restart).
+- POST `/api/apps/:id/db-broker` by an Admin user who only reads the app:
+  200 (before, on: 500 "The app's database is not available right now";
+  warn: 200, its statements with no actor).
+- POST `/api/apps/:id/snapshots/:sid/restore` `{ mode: code | full }` and
+  POST `/api/apps/import` with an `appId`, by an Admin user who may edit
+  but not manage the app: 403 item-workspace before anything is written
+  (before, on: 403 after a pre-restore or pre_import snapshot committed;
+  warn: 200, the code restored by an editor). **Stricter in warn**: the
+  manage rule (D4) is the product's.
+- POST `/api/recall/maps` whose slug a map the caller does not read holds:
+  201 with the next free slug (before: 500); PATCH
+  `/api/recall/maps/:id` `{ slug }` to such a map's current or former
+  slug, and a revision restore of one: 400 `slug_taken` (before: 200, two
+  maps answering to one slug).
+
 ### F4 handover
 
-Fix round 1 stopped at a safe point: the audit's H1, H2, M1, M2, L1, L2,
-L4 and the owner decision are done and tested; the surveys of every other
-Admin write route on the write role found more, listed here for the next
-round. The rule the owner set for all of them: brain-wide bookkeeping
-(cascades, subtree work, re-indexing, history and its pruning, budgets,
-export syncs, provisioning) runs as a named system step or a definer
-after the item check, never in the caller's scope; prefer one gateway
-over per-site fixes. Each needs an owner test in warn and in on.
+Round 2 closed the 14 items of round 1's handover (13 left by the read
+rule, above). Open, found on the way, not changed here:
 
-Files, tables, formulas:
-
-1. POST `/api/tables/:id/commit` (and a restore with commit, an import's
-   later commit): `historyWritable()` (`packages/content/src/
-table-snapshots.ts`) is `isSystemScope()`, false for an Admin user now,
-   so a commit keeps no history row and a restore's note is lost, silently.
-   Widened alone, `pruneTableCommitSnapshots` then deletes `node_snapshots`
-   on the view role outside a transaction: permission denied after the
-   commit landed. Fix both (members have had no table history since W6b).
-2. POST `/api/files/files/:id` and POST `/api/files/folders/:id` (copy):
-   `storageBytesForNode` (`files.ts`) answers null outside the system
-   scope: an email attachment's copy is a 400, a folder copy stops
-   partway.
-3. DELETE `/api/files/files` (bulk): `countDerivedFromFile` and
-   `drawsReferencingFile` (`files.ts`) read in the scope, so derived items
-   and drawings it does not read are missed (orphans, broken drawings);
-   with cascade, `reapDerivedFromFile` (`derived.ts`) the same.
-4. DELETE `/api/files/files` (bulk): ids the scope does not read or manage
-   come back not found and `bulkDeleteFiles` reports nothing; body ids
-   never pass `itemWriteGate`. Must refuse or report, never skip silently.
-5. (suspect) POST `/api/files/folders/:id`: `branchAt` (`move-copy.ts`)
-   misses a hidden folder of the same name, then `nodes_branch_owner_path_uq`
-   is a 500 (was a 400): `conflictOnUnique` or a definer.
-6. (suspect) the folder copy's subtree read leaves hidden children out; a
-   readable file under a hidden subfolder fails mid-copy; the caps count
-   scope rows only.
-7. (suspect) PATCH `/api/files/folders/:id` `{ indexing }`: `indexing.ts`
-   queues again only the files the scope reads: hidden files keep their
-   content index after a switch to name only (privacy). Must queue all.
-8. (low) the formula library seed duplicates (`formulas.ts`); the table
-   history budget counts the scope only (`table-snapshots.ts`).
-
-Apps:
-
-9. POST `/api/apps/:id/db-broker` (exec, the Admin branch) and POST
-   `/api/apps/:id/snapshots/:sid/restore` (data or full):
-   `scheduleAppTableExportSync` (`app-table-exports.ts`) runs its sync on
-   a timer in the request's scope (runAsSystem swaps only the actor):
-   `app_table_exports` is denied, swallowed, the linked Table stays stale
-   until a restart. The member path wraps `asSystem('app-data')`. Fix in
-   the scheduler, for every caller.
-10. The snapshot budget (`APP_SNAPSHOT_MAX_MB`, `app-snapshots.ts`) counts
-    the scope only; must be brain-wide.
-11. (suspect) db-broker, the Admin branch: an Admin user who only reads an
-    app is refused in on (`app-broker.ts` bumpWriteSeq and applySchema,
-    `app-viewer.ts` the salt on `app_databases`), probably a 500. Decide:
-    data writes follow ADMIN_DATA_ACCESS; registry, schema and salt are
-    system bookkeeping; never a 500.
-12. (suspect) a snapshot restore of code or full, and POST
-    `/api/apps/import` with an existing app id: the gate asks edit, the
-    database manage for code columns: refused in on, the import partly
-    applied (its pre_import snapshot committed first; no item check, no
-    `:id`). Align the gate with the database and check the target first.
-13. (low) a duplicate drops the source's draft when the Admin user reads
-    but cannot edit (`app-package.ts`).
-
-Recall:
-
-14. `mapSlugsTaken` (`recall-native.ts`) reads `recall_maps` in the scope:
-    `createRecallMap`, `updateRecallMap`'s slug change and a revision
-    restore of a slug change meet a hidden map's slug as 23505, a 500 (a
-    create should suffix, an update answer 409 `slug_taken`), and a hidden
-    map's former slug as free (two maps answer to one slug). A definer
-    that answers taken or not brain-wide, and `conflictOnUnique` for 23505.
-
-Listed, no change needed: PATCH `/api/contacts/:id`'s `shareCount` counts
-only the shares the scope reads (pre-existing); deleting a file synced from
-OneDrive answers 500 on `ms_drive_items` (pre-existing, every mode).
+- An app's code needs manage in the database (D4: `APP_CODE_COLUMNS`,
+  `draft_source` included) while the gate asks edit for PUT
+  `/api/apps/:id/draft`, its build and publish: an editor who does not
+  manage the app would be refused there in on (read from the matrix, not
+  tested here). The gate or the access matrix should say one rule.
+- A member's table commit keeps no history (none since W6b); the history
+  is the Admin users'. Whether a member's commit should keep one (named as
+  a member) is the owner's question.
+- PATCH `/api/contacts/:id`'s `shareCount` counts only the shares the scope
+  reads (pre-existing); deleting a file synced from OneDrive answers 500 on
+  `ms_drive_items` (pre-existing, every mode).
 
 ## Request plumbing (A10 part 2, A10 #8, A10 #9)
 

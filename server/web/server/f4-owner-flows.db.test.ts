@@ -910,6 +910,22 @@ describe.skipIf(!DB_URL)('F4 fix round 1: the owner’s management flows on the 
       );
       expect(clash.status, clash.text).toBe(400);
       expect(clash.text).toContain('already exists');
+      // A move of a folder of that name onto it the same (the move's answer,
+      // 409). Before: past the check in the scope.
+      const parent = await folder(`${tag}${mode}p`);
+      const mv = await folder(label, parent.path);
+      const move = await call(
+        `${mode} move onto hidden`,
+        L.owner,
+        'PATCH',
+        `/api/files/folders/${mv.id}`,
+        {
+          move: d1.path,
+          confirm: true,
+        },
+      );
+      expect(move.status, move.text).toBe(409);
+      expect(move.text).toContain('already exists');
     }, 180_000);
 
     it(`${mode}: 7, a folder turned name only re-indexes a file the scope does not read`, async () => {
