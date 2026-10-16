@@ -311,11 +311,13 @@ describe.skipIf(!URL)('W6a fix round 1: drafts, item writes, app-nav, marks, tra
       select s.code->'meta'->>'homeWs' as home from node_snapshots s
        where s.node_id = ${sideApp.id} and s.trigger = 'pre_delete'`);
     expect(snap[0]?.home).toBe(side);
+    // Not its home's Moderator: the one 404, as an app it does not read
+    // (F4 fix round 1; a 403 item-workspace before).
     const purge = await call(`/api/apps/deleted/${sideApp.id}`, owner, 'DELETE');
-    expect(purge.status, purge.text.slice(0, 200)).toBe(403);
-    expect(purge.text).toContain('item-workspace');
+    expect(purge.status, purge.text.slice(0, 200)).toBe(404);
+    expect(json(purge.text)).toEqual({ ok: false, error: 'not found' });
     const restore = await call(`/api/apps/deleted/${sideApp.id}/restore`, owner, 'POST');
-    expect(restore.status, restore.text.slice(0, 200)).toBe(403);
+    expect(restore.status, restore.text.slice(0, 200)).toBe(404);
     expect(await exists(sideApp.id)).toBe(0);
     const kept = await x<{ n: number }>(
       sql`select count(*)::int as n from node_snapshots where node_id = ${sideApp.id}`,
@@ -609,15 +611,16 @@ describe.skipIf(!URL)('W6a fix round 1: drafts, item writes, app-nav, marks, tra
     const ok = await call(`/api/apps/deleted/${stored.id}`, admin2, 'DELETE');
     expect(ok.status, ok.text.slice(0, 200)).toBe(200);
 
-    // No home stored: refused for that Admin user, both ways.
+    // No home stored: refused for that Admin user, both ways, with the one
+    // 404 (F4 fix round 1; a 403 item-workspace before).
     const old = await apps.createApp(owner, { title: `${tag} l-b old` });
     await apps.deleteApp(owner, old.id);
     await stripHome(old.id);
     const purge = await call(`/api/apps/deleted/${old.id}`, admin2, 'DELETE');
-    expect(purge.status, purge.text.slice(0, 200)).toBe(403);
-    expect(json(purge.text).reason).toBe('item-workspace');
+    expect(purge.status, purge.text.slice(0, 200)).toBe(404);
+    expect(json(purge.text)).toEqual({ ok: false, error: 'not found' });
     const restore = await call(`/api/apps/deleted/${old.id}/restore`, admin2, 'POST');
-    expect(restore.status, restore.text.slice(0, 200)).toBe(403);
+    expect(restore.status, restore.text.slice(0, 200)).toBe(404);
     expect(await exists(old.id)).toBe(0);
     // The owner restores it.
     const back = await call(`/api/apps/deleted/${old.id}/restore`, owner, 'POST');
