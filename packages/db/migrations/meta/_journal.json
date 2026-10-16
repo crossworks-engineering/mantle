@@ -2073,6 +2073,13 @@
       "when": 1790197080000,
       "tag": "0296_mail_branch_definer",
       "breakpoints": true
+    },
+    {
+      "idx": 297,
+      "version": "7",
+      "when": 1790197140000,
+      "tag": "0297_item_others_read_definer",
+      "breakpoints": true
     }
   ]
 }

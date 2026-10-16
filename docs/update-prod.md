@@ -1103,6 +1103,10 @@ workspaces nothing a user sees changes. Before the roll:
   ([workspaces.md](./workspaces.md), "Operator notes"), then roll.
 - **`MANTLE_ADMIN_READS` is gone.** A box that still sets it in `.env` is
   scoped as every box is (the value is not read); remove the line.
+- **Migration 0297** adds one definer (`mantle_item_others_read`), with no
+  lock on a table and no row change: over MCP an API key or a linked brain
+  could change the content of an item a workspace outside its login's
+  workspaces holds until it.
 - **Migration 0296** adds one definer (`mantle_mail_branch_holds`), with no
   lock on a table and no row change: an area-limited API key's lists of
   pages, notes and tables answered 500 on a brain on workspaces until it.

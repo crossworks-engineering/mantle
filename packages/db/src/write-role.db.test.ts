@@ -214,6 +214,10 @@ const DEFINERS_THE_WRITE_ROLE_RUNS: Readonly<Record<string, string>> = {
   // Files key guard read (email_accounts is no table a scope reads).
   'mantle_mail_branch_holds(uuid,text,boolean)':
     'whether a path the caller names is in one of the brain’s mail account branches: yes or no',
+  // 0297: whether others read an item, for the rule that a key or a peer
+  // never changes shared content (a scope reads only its own workspaces).
+  'mantle_item_others_read(uuid,uuid)':
+    'whether a workspace other than Admin or a live link reads an item the caller names: yes or no',
   'mantle_read_cursor_mark(uuid,uuid,uuid,timestamp with time zone)':
     WRITE_ROLE_FUNCTIONS[
       'public.mantle_read_cursor_mark(uuid,uuid,uuid,timestamp with time zone)'

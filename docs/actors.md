@@ -5360,6 +5360,20 @@ is in one of the brain's mail account branches; both checks ask it
 Changed answer: those cells 500 to their answer (200, or the key's own
 refusal).
 
+**Found by A7, fixed beside it (migration 0297).** The key-shared-content
+rule (`packages/tools/src/key-shared-content.ts`: a key or a linked brain
+never changes the content of an item others read) asked `othersCanRead`
+(`packages/tools/src/shared-item.ts`), which read `workspaces` and
+`shares` in the caller's scope. The workspace role reads only the scope's
+own workspaces, so on MCP (a key's or a peer's call runs in its login's
+scope) an item held by a workspace the login is not a user of read as held
+by nobody, and the content tool changed it (main had it too; the old test
+ran the key's MCP call unscoped). `mantle_item_others_read(owner, item)`
+answers it as a definer; the caller still reads the item's row in its scope
+first (`item-others-read-0297.db.test.ts`, `access-keys-scope.db.test.ts`
+F1). Changed answer: such a call is refused ("this item is shared"), where
+it ran. The v1 page route's doc check reads the same function.
+
 **The TypeScript item pre-checks still left** (A7 says they go here; they
 wait for the database checks to be on on every box, A4 step 4 and A5 6b):
 

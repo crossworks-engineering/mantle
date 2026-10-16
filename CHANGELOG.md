@@ -22,6 +22,11 @@ deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
   read `email_accounts` in the key's scope. Migration 0296 reads the mail
   account branches through a definer (`mantle_mail_branch_holds`); the
   Files key guard's folder check uses it too.
+- **Fix:** over MCP an API key or a linked brain could change the content
+  of an item others read when the workspace holding it was not one of the
+  key's login's workspaces (the check read only the key's own workspaces).
+  Migration 0297 answers "do others read this item" through a definer
+  (`mantle_item_others_read`); such a change is refused again.
 
 ## Unreleased: approvals, second lows round
 
