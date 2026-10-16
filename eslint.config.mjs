@@ -18,6 +18,7 @@ import mantleHeadsPlugin from './eslint-rules/heads-writers.mjs';
 import mantleLevelReadsPlugin from './eslint-rules/level-reads.mjs';
 import mantleRawAclPlugin from './eslint-rules/no-raw-acl-columns.mjs';
 import mantleAsSystemPlugin from './eslint-rules/as-system-allowlist.mjs';
+import mantleSystemWorkPlugin from './eslint-rules/system-work-allowlist.mjs';
 import mantleStoreBrokersPlugin from './eslint-rules/store-brokers.mjs';
 import mantleActorSettersPlugin from './eslint-rules/actor-setters.mjs';
 import mantleNoModelInTxPlugin from './eslint-rules/no-model-in-transaction.mjs';
@@ -215,11 +216,14 @@ export default tseslint.config(
     plugins: {
       'mantle-acl': mantleRawAclPlugin,
       'mantle-system': mantleAsSystemPlugin,
+      'mantle-system-work': mantleSystemWorkPlugin,
       'mantle-stores': mantleStoreBrokersPlugin,
     },
     rules: {
       'mantle-acl/no-raw-acl-columns': 'error',
       'mantle-system/as-system-allowlist': 'error',
+      // systemWork runs as the system: each file pinned for review (A6b).
+      'mantle-system-work/system-work-allowlist': 'error',
       // Only a store's broker reaches its write API (A3b).
       'mantle-stores/store-brokers': 'error',
     },

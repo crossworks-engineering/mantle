@@ -27,22 +27,11 @@
  * the /pending page is the source of truth regardless.
  */
 
-import { and, desc, eq, sql } from 'drizzle-orm';
-import { db, executeWrite, loginHasArea, systemWork, telegramChats } from '@mantle/db';
+import { sql } from 'drizzle-orm';
+import { db, executeWrite } from '@mantle/db';
 import { accountById, sendApprovalCard } from '@mantle/telegram';
 import { loadProfilePreferences } from '@mantle/content';
 import { registerPendingCreatedNotifier } from '@mantle/runs';
-
-/**
- * resolveApprovalChat's read (a login's paired chat) runs on the system pool
- * by the named reason 'login-telegram' (the Telegram tables are granted to
- * no role), for its callers off a scope; systemWork refuses a scope (A6b: no
- * exit). The card's own route is read by its definer
- * (mantle_pending_card_route), in a scope too.
- */
-function telegramSystemWork<T>(fn: () => Promise<T>): Promise<T> {
-  return systemWork(fn, 'login-telegram');
-}
 
 /** The Postgres channel the web realtime bridge LISTENs on for approval
  *  queue changes. Exported so notifier + listener share one string. */
@@ -88,38 +77,6 @@ function previewArgs(args: Record<string, unknown>): string | undefined {
   if (keys.length > 4) parts.push(`+${keys.length - 4} more`);
   const line = parts.join('\n');
   return line.length > 600 ? line.slice(0, 597) + '…' : line;
-}
-
-/**
- * The paired Telegram chat to send an approval card to (workspaces W7d): an
- * `allowed` chat paired to `loginId` (the call's own login), most recently
- * active first, and only while that login may decide approvals (the
- * settings area, the rule of /api/pending and of a card's tap). Null when
- * it has none or may not decide: the in-app surface still has the call.
- */
-export async function resolveApprovalChat(
-  ownerId: string,
-  loginId: string,
-): Promise<{ accountId: string; telegramChatId: string } | null> {
-  if (!(await loginHasArea(loginId, 'settings'))) return null;
-  const [chat] = await telegramSystemWork(() =>
-    db
-      .select({
-        accountId: telegramChats.accountId,
-        telegramChatId: telegramChats.telegramChatId,
-      })
-      .from(telegramChats)
-      .where(
-        and(
-          eq(telegramChats.userId, ownerId),
-          eq(telegramChats.loginId, loginId),
-          eq(telegramChats.allowlistStatus, 'allowed'),
-        ),
-      )
-      .orderBy(desc(telegramChats.lastMessageAt))
-      .limit(1),
-  );
-  return chat ?? null;
 }
 
 /**

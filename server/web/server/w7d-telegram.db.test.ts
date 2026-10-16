@@ -756,10 +756,8 @@ describe.skipIf(!URL)('W7d: Telegram per paired user', () => {
     const forAdmin2 = await pending(admin2);
     const forAnchor = await pending(null);
     const forMember = await pending(member);
-    expect(await t.resolveApprovalChat(owner, admin2)).toMatchObject({ telegramChatId: '8004' });
-    expect(await t.resolveApprovalChat(owner, owner)).toMatchObject({ telegramChatId: '8005' });
-    // A member has a paired chat but decides no approvals: no card.
-    expect(await t.resolveApprovalChat(owner, member)).toBeNull();
+    // A member has a paired chat but decides no approvals: no card (the
+    // route is mantle_pending_card_route's, 0293).
     for (const id of [forAdmin2, forAnchor, forMember]) {
       await t.notifyPendingCreated({
         ownerId: owner,

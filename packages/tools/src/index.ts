@@ -399,7 +399,6 @@ export {
 export {
   notifyPendingCreated,
   notifyPendingChanged,
-  resolveApprovalChat,
   PENDING_CHANGED_CHANNEL,
 } from './pending-notify';
 

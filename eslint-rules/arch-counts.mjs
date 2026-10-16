@@ -254,12 +254,27 @@ const AS_SYSTEM_CALL = /\basSystem\s*(?:<[^>()]*>)?\s*\(/g;
  *  (the last string argument of each call), sorted and unique. The
  *  definition and imports are not calls. */
 export function asSystemSites(text) {
+  return reasonedCallSites(text, AS_SYSTEM_CALL);
+}
+
+const SYSTEM_WORK_CALL = /\bsystemWork\s*(?:<[^>()]*>)?\s*\(/g;
+
+/** The systemWork call sites of `text` (arch A6b fix round, L2: system work
+ *  refuses any scope, and each file that runs it is pinned for review), as
+ *  asSystemSites counts asSystem's. */
+export function systemWorkSites(text) {
+  return reasonedCallSites(text, SYSTEM_WORK_CALL);
+}
+
+/** The calls `re` (global) finds in `text`, comments stripped: how many,
+ *  and the reasons they pass (each call's last string argument). */
+function reasonedCallSites(text, re) {
   const code = stripComments(text);
   const reasons = new Set();
   let count = 0;
   let m;
-  AS_SYSTEM_CALL.lastIndex = 0;
-  while ((m = AS_SYSTEM_CALL.exec(code))) {
+  re.lastIndex = 0;
+  while ((m = re.exec(code))) {
     const before = code.slice(Math.max(0, m.index - 20), m.index);
     if (/function\s+$/.test(before)) continue;
     count += 1;
@@ -799,12 +814,15 @@ export function measure(root) {
   // The texts, once: the asSystem exits read every file (as-system-exits.mjs).
   const texts = [];
   const systemDb = {};
+  const systemWork = {};
   for (const f of files) {
     const text = readRepoFile(root, f);
     if (text === null) continue;
     texts.push({ path: f, text });
     const sys = asSystemSites(text);
     if (sys.count) asSystem[f] = sys;
+    const sw = systemWorkSites(text);
+    if (sw.count) systemWork[f] = sw;
     const sd = systemDbUses(f, text);
     if (sd) systemDb[f] = sd;
     if (rawAclSwept(f)) {
@@ -998,6 +1016,7 @@ export function measure(root) {
     },
     perFile: {
       asSystem,
+      systemWork,
       asSystemExits: exitsByFile,
       asSystemHolders: exits.holders,
       asSystemExitProblems: exits.problems,

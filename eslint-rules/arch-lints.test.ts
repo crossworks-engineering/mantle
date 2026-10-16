@@ -47,6 +47,8 @@ import { RAW_ACL_PINS, rule as rawAclRule } from './no-raw-acl-columns.mjs';
 // @ts-expect-error: plain-JS module, no types shipped.
 import { AS_SYSTEM_PINS, rule as asSystemRule } from './as-system-allowlist.mjs';
 // @ts-expect-error: plain-JS module, no types shipped.
+import { SYSTEM_WORK_PINS, rule as systemWorkRule } from './system-work-allowlist.mjs';
+// @ts-expect-error: plain-JS module, no types shipped.
 import { ROUTE_LIST_PINS, TOOL_LIST_PINS } from './no-policy-name-lists.mjs';
 // @ts-expect-error: plain-JS module, no types shipped.
 import {
@@ -77,6 +79,7 @@ const got = measure(ROOT) as {
   numbers: Record<string, number>;
   perFile: {
     asSystem: Record<string, { count: number; reasons: string[] }>;
+    systemWork: Record<string, { count: number; reasons: string[] }>;
     asSystemExits: Record<string, number>;
     asSystemExitProblems: string[];
     rawAcl: Record<string, number>;
@@ -111,6 +114,21 @@ describe('the architecture ratchets (pinned counts)', () => {
     expect(diff(RAW_ACL_PINS, got.perFile.rawAcl)).toEqual([]);
     // A6: none left, and none may come back (plan v2 exit: 0).
     expect(RAW_ACL_PINS).toEqual({});
+  });
+
+  it('system-work-allowlist: systemWork call sites and their reasons, file by file', () => {
+    const pins = SYSTEM_WORK_PINS as Record<string, { count: number; why: string[] }>;
+    const counts = Object.fromEntries(
+      Object.entries(got.perFile.systemWork).map(([f, v]) => [f, v.count]),
+    );
+    const pinned = Object.fromEntries(Object.entries(pins).map(([f, v]) => [f, v.count]));
+    expect(diff(pinned, counts)).toEqual([]);
+    for (const [f, pin] of Object.entries(pins)) {
+      const reasons = got.perFile.systemWork[f]?.reasons ?? [];
+      expect(pin.why, f).toEqual(reasons);
+      expect(reasons.length, f).toBeGreaterThan(0);
+      for (const r of reasons) expect(KNOWN_AS_SYSTEM_REASONS, `${f}: ${r}`).toContain(r);
+    }
   });
 
   it('as-system-allowlist: asSystem call sites and their reasons, file by file', () => {
@@ -762,6 +780,27 @@ describe('the editor rules', () => {
         {
           code: 'const a = n.read_ws;',
           filename: '/r/packages/search/src/new.ts',
+          errors: [{ messageId: 'over' }],
+        },
+      ],
+    });
+  });
+
+  it('flag systemWork in an unpinned file, and allow a pinned file up to its pin', () => {
+    const [pinned, pin] = Object.entries(SYSTEM_WORK_PINS as Record<string, { count: number }>)[0]!;
+    const calls = (n: number) =>
+      Array.from({ length: n }, () => "systemWork(() => 1, 'x');").join('\n');
+    tester.run('system-work-allowlist', systemWorkRule, {
+      valid: [{ code: calls(pin.count), filename: `/r/${pinned}` }],
+      invalid: [
+        {
+          code: calls(1),
+          filename: '/r/packages/search/src/new.ts',
+          errors: [{ messageId: 'over' }],
+        },
+        {
+          code: calls(pin.count + 1),
+          filename: `/r/${pinned}`,
           errors: [{ messageId: 'over' }],
         },
       ],

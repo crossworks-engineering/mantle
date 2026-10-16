@@ -990,18 +990,21 @@ export const AS_SYSTEM_TURN_REASONS = [
 ] as const;
 
 /**
- * Reasons of asSystem calls that never run inside a turn or request scope
- * (arch A2a: every call names its reason). Inside a turn they count as
- * unnamed (TurnScopeExitError in tests).
+ * Reasons of work that never runs inside a turn or request scope (arch
+ * A2a: every call names its reason). Since A6b the product ones are
+ * systemWork's (it refuses any scope), no longer asSystem calls; an
+ * asSystem call inside a turn by one of them counts as unnamed
+ * (TurnScopeExitError in tests).
  *
  *  - `login-notice`: the push worker builds a login's notice (a finished
  *    chat reply, a review result) from rows of that login only
- *    (login-notices.ts).
- *  - `space-taken-authors`: who wrote the items an Admin user took from a
- *    personal space (admin-space-taken.ts), for that admin's own review
- *    list; the spaces family goes in W10.
+ *    (login-notices.ts, systemWork).
+ *  - `space-taken-authors`: no caller since A6b (takenFromOf, who wrote
+ *    the items an Admin user took from a personal space, had none and was
+ *    deleted with admin-space-taken.ts); the name is kept for the spaces
+ *    family (W10).
  *  - `snapshot-copies`: the boot step that makes the read-only copies of
- *    snapshots (snapshot-copies.ts), under its advisory lock.
+ *    snapshots (snapshot-copies.ts, systemWork), under its advisory lock.
  *  - `test`: a test's own setup, in test files only (eslint-rules/
  *    arch-lints.test.ts keeps it out of every counted file).
  */
@@ -1085,20 +1088,24 @@ export function asSystem<T>(fn: () => Promise<T>, reason: AsSystemReason): Promi
 }
 
 /**
- * System-pool work that never runs in a workspace scope (arch A6b): a
- * worker's, a boot step's, or code reached only inside another named exit
- * (an Admin-area tool runs whole on the system pool). Such code called
- * asSystem as a precaution, though no caller ever ran it in a scope. Outside
- * every workspace scope this runs `fn` exactly as asSystem does (the actor
- * system(reason), any transaction scope masked); inside one it refuses
- * instead of leaving it, so a new caller in a scope fails at once rather
- * than widening its reads. It is no exit: it never leaves a workspace scope.
+ * System-pool work that never runs in a scope (arch A6b): a worker's, a
+ * boot step's, or code reached only inside another named exit (an
+ * Admin-area tool runs whole on the system pool). Such code called asSystem
+ * as a precaution, though no caller ever ran it in a scope. On the system
+ * pool (no scope, or a system transaction's) this runs `fn` exactly as
+ * asSystem does (the actor system(reason), any transaction scope masked);
+ * inside any other scope (a workspace's, a link's, a personal space's, a
+ * request's) it refuses instead of leaving it, so a new caller in a scope
+ * fails at once rather than widening its reads. It is no exit: it never
+ * leaves a scope. Each file that calls it is pinned with its reasons
+ * (eslint-rules/system-work-allowlist.mjs): a new caller needs review.
  */
 export function systemWork<T>(fn: () => Promise<T>, reason: AsSystemReason): Promise<T> {
-  if (active()?.ws) {
+  const open = active();
+  if (open && !open.system) {
     return Promise.reject(
       new RuntimeFaultError(
-        `system work '${reason}' runs on the system pool only, never in a workspace scope`,
+        `system work '${reason}' runs on the system pool only, never in a scope`,
       ),
     );
   }
