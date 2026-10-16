@@ -1424,6 +1424,14 @@ here, `packages/client-types/src/dto/file-deletes.ts`, root exports):
 
 ### F4 handover
 
+Round 4 closed the re-audit of round 3 (L-a to L-d, the name check) and
+the owner's Admin user rule: done, nothing in progress. Gates at a78855915
+on the workstation (own pg), each exit 0: typecheck, lint, format, docs,
+arch, web build, boot:smoke, the F4 DB files (63/63), full vitest with DB,
+actor-off, actor-on, edit-on, test:matrix, test:runtime-role; CI
+build-check green. Left, not changed here: the items below, and round 4's
+own note (the database-refused `folder_create`'s log line).
+
 Round 3 closed the audit of round 2 (H1, M1 to M4, L1, L2, L4, L5): done,
 nothing in progress. Gates at ffa9755e7 on the workstation (own pg), each
 exit 0: typecheck, lint, format, docs, arch, web build, boot:smoke, the F4
