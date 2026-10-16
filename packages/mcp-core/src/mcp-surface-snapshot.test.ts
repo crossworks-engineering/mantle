@@ -92,8 +92,9 @@ function connectorRows(): { tool: Tool; readOnly: boolean }[] {
 /** The gate-policy matrix (gate-policy.test.ts): each login kind,
  *  credential and scope, with the connectors prepareCallerTools keeps. */
 function preparedMatrix(): PreparedCallerTools[] {
+  // The unscoped connection (an Admin login on a brain not on workspaces)
+  // goes with the switch-over code in arch A7: recorded on main without it.
   const views: (AdminGateView | null)[] = [
-    null,
     { holdsAdmin: false, areas: new Set<ScopeArea>() },
     { holdsAdmin: true, areas: new Set<ScopeArea>(AREAS) },
     { holdsAdmin: true, areas: new Set<ScopeArea>(['settings']) },
@@ -166,7 +167,7 @@ describe('tools/list, byte for byte (A5 step 2)', () => {
       const tools = await toolsList((s) => registerPreparedTools(s, p, { transport: 'http' }));
       out[label(p)] = { sha256: sha(JSON.stringify(tools)), names: tools.map((t) => t.name) };
     }
-    expect(Object.keys(out)).toHaveLength(140);
+    expect(Object.keys(out)).toHaveLength(112);
     await expect(`${JSON.stringify(out, null, 1)}\n`).toMatchFileSnapshot(
       './__snapshots__/tools-list.matrix.json',
     );

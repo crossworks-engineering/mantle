@@ -11,9 +11,11 @@
  *
  * The callers are the ambient state each entry dispatches in: an owner
  * turn (an Admin turn with every area), a member turn (a workspace that is
- * not Admin, a team surface), an Admin turn without an area, a turn on the
- * rollback switch (a gate scope), a run item, a pending approval from the
- * web (a user scope), work outside any scope, and a recipe step. Each case
+ * not Admin, a team surface), an Admin turn without an area, a run item, a
+ * pending approval from the web (a user scope), work outside any scope, and
+ * a recipe step. The turn on the rollback switch (a gate scope) went with
+ * the switch in arch A7: its cases were taken out of every hash, recorded
+ * on main before the switch-over code went. Each case
  * passes the entry's gate caller when the build has one (A5 step 3a:
  * turnCaller, runCaller, pendingCaller); main had none and ignores it.
  *
@@ -215,7 +217,6 @@ type CallerKind =
   | 'owner-turn'
   | 'member-turn'
   | 'admin-turn-no-area'
-  | 'rollback-turn'
   | 'run'
   | 'pending'
   | 'unscoped'
@@ -225,7 +226,6 @@ const CALLERS: readonly CallerKind[] = [
   'owner-turn',
   'member-turn',
   'admin-turn-no-area',
-  'rollback-turn',
   'run',
   'pending',
   'unscoped',
@@ -256,10 +256,6 @@ function enter(kind: CallerKind): { surface: ToolHandlerContext['surface']; logi
     case 'admin-turn-no-area':
       h.view = { holdsAdmin: true, areas: new Set() };
       h.scope = { kind: 'assistant', loginId: LOGIN, ws: [ADMIN_WS], modWs: [ADMIN_WS] };
-      return { surface: { kind: 'web', loginId: LOGIN }, login: LOGIN };
-    case 'rollback-turn':
-      h.view = { holdsAdmin: true, areas: new Set(['settings']) };
-      h.gate = { kind: 'assistant', loginId: LOGIN, ws: [ADMIN_WS], modWs: [ADMIN_WS] };
       return { surface: { kind: 'web', loginId: LOGIN }, login: LOGIN };
     case 'run':
       h.view = admin;

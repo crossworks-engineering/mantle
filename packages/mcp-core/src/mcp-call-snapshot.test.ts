@@ -15,9 +15,10 @@
  *
  * The connections are the gate-policy matrix's kinds as prepareCallerTools
  * makes them (an Admin user, a member with a private workspace, a member
- * with none, a key without Search, a peer, a login in no workspace, an
- * Admin user on a brain not on workspaces and on the rollback switch) and
- * stdio. No database: every read the surface makes is answered here, by
+ * with none, a key without Search, a peer, a login in no workspace) and
+ * stdio. The two connections of the switch-over (an Admin user on a brain
+ * not on workspaces, and on the rollback switch) went in arch A7, recorded
+ * on main before the switch-over code went. No database: every read the surface makes is answered here, by
  * module path, so the same answers reach the code before and after the
  * change. The handlers of the builtins called are replaced on their
  * definitions (the one object the surface and the registry share).
@@ -418,16 +419,6 @@ const CONNECTIONS: Conn[] = [
   {
     label: 'admin oauth rw',
     caller: { role: 'admin', anchorId: ids.OWNER, loginId: ids.ADMIN, via: 'oauth', write: true },
-  },
-  {
-    label: 'admin oauth rw, rollback switch',
-    caller: { role: 'admin', anchorId: ids.OWNER, loginId: ids.ADMIN, via: 'oauth', write: true },
-    rollback: true,
-  },
-  {
-    label: 'admin oauth rw, brain not on workspaces',
-    caller: { role: 'admin', anchorId: ids.OWNER, loginId: ids.ADMIN, via: 'oauth', write: true },
-    onWorkspaces: false,
   },
   {
     label: 'member oauth rw (private workspace)',

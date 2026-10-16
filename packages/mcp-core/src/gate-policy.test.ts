@@ -64,8 +64,9 @@ const AREAS: ScopeArea[] = ['settings', 'users', 'assistants', 'connectors', 'ke
 
 /** A matrix of connections: each login kind, credential and scope. */
 function preparedMatrix(): PreparedCallerTools[] {
+  // The unscoped connection (an Admin login on a brain not on workspaces)
+  // goes with the switch-over code in arch A7: recorded on main without it.
   const views: (AdminGateView | null)[] = [
-    null,
     { holdsAdmin: false, areas: new Set<ScopeArea>() },
     { holdsAdmin: true, areas: new Set<ScopeArea>(AREAS) },
     { holdsAdmin: true, areas: new Set<ScopeArea>(['settings']) },
