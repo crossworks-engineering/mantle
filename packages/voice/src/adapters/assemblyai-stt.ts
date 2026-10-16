@@ -117,7 +117,15 @@ async function createTranscript(
   const parsed = (await res.json()) as CreateTranscriptResponse;
   if (!parsed.id) throw new Error('assemblyai create-transcript: no id in response');
   if (parsed.status === 'error') {
-    throw new Error(`assemblyai create-transcript: ${parsed.error ?? 'unknown error'}`);
+    // A 2xx that reports a failure in the provider's words (A10 lows): a
+    // ProviderHttpError, so a member or the model hears the fixed sentence
+    // and the log keeps the words.
+    throw new ProviderHttpError({
+      provider: 'assemblyai',
+      status: res.status,
+      body: parsed.error ?? '',
+      message: `assemblyai create-transcript: ${parsed.error ?? 'unknown error'}`,
+    });
   }
   return parsed.id;
 }
@@ -144,7 +152,13 @@ async function pollUntilDone(apiKey: string, transcriptId: string): Promise<Poll
     const parsed = (await res.json()) as PollResponse;
     if (parsed.status === 'completed') return parsed;
     if (parsed.status === 'error') {
-      throw new Error(`assemblyai transcript error: ${parsed.error ?? 'unknown'}`);
+      // As create-transcript's: the provider's words stay on the error.
+      throw new ProviderHttpError({
+        provider: 'assemblyai',
+        status: res.status,
+        body: parsed.error ?? '',
+        message: `assemblyai transcript error: ${parsed.error ?? 'unknown'}`,
+      });
     }
     await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
   }

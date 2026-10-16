@@ -110,11 +110,16 @@ export const huggingfaceImageAdapter: ImageGenDispatcher = {
     if (!contentType.startsWith('image/')) {
       // HF sometimes returns a JSON error body with a 200 — the
       // server says "everything's fine" but the body is `{error:
-      // 'Model X is not deployed', ...}`. Detect and surface.
+      // 'Model X is not deployed', ...}`. Detect and surface: the body is
+      // the provider's, so it rides on a ProviderHttpError (A10 lows): the
+      // log keeps it, a member or the model hears the fixed sentence.
       const text = await res.text().catch(() => '');
-      throw new Error(
-        `huggingface-image: expected image bytes, got ${contentType}: ${text.slice(0, 300)}`,
-      );
+      throw new ProviderHttpError({
+        provider: 'huggingface',
+        status: res.status,
+        body: text,
+        message: `huggingface-image: expected image bytes, got ${contentType}: ${text.slice(0, 300)}`,
+      });
     }
     return {
       bytes: Buffer.from(await res.arrayBuffer()),

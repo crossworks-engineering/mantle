@@ -19,7 +19,7 @@
 import type { DecisionAnswer, DecisionDispatcher, DecisionOptions, DecisionResult } from './types';
 import { OPENROUTER_BASE_URL } from '../catalogs/openrouter';
 import { providerFetch } from './provider-fetch';
-import { PROVIDER_TIMEOUTS } from '@mantle/std';
+import { PROVIDER_TIMEOUTS, ProviderHttpError } from '@mantle/std';
 
 /** `${OPENROUTER_BASE_URL}` is `…/api/v1`; decisions live one level up. */
 const DECISIONS_URL = OPENROUTER_BASE_URL.replace(/\/v1\/?$/, '') + '/alpha/decisions';
@@ -122,8 +122,15 @@ export const openrouterDecisionAdapter: DecisionDispatcher = {
       json = null;
     }
     if (!res.ok) {
+      // The provider's words stay on the error (the log, the owner's trace);
+      // a member or the model hears the fixed sentence (A10 lows).
       const msg = json?.error?.message ?? text.slice(0, 300);
-      throw new Error(`openrouter-decision ${res.status}: ${msg}`);
+      throw new ProviderHttpError({
+        provider: 'openrouter',
+        status: res.status,
+        body: text,
+        message: `openrouter-decision ${res.status}: ${msg}`,
+      });
     }
     if (!json || !json.answers || typeof json.answers !== 'object') {
       throw new Error('openrouter-decision: response carried no answers');
