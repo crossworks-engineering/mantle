@@ -20,7 +20,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import * as path from 'node:path';
-import { and, desc, eq, gte, isNotNull, ne, sql } from 'drizzle-orm';
+import { and, desc, eq, gte, isNotNull, sql } from 'drizzle-orm';
 import {
   appDatabases,
   apps,
@@ -30,6 +30,7 @@ import {
   nodes,
   type AppSnapshotCode,
   itemHomeSql,
+  snapshotBytesUsed,
   snapshotHomeMeta,
 } from '@mantle/db';
 import { defineDomainError } from '@mantle/std';
@@ -262,20 +263,17 @@ async function usedSnapshotBytes(
   q: Q = db,
   memberLoginId?: string | null,
 ): Promise<number> {
-  const [row] = await q
-    .select({ n: sql<string>`coalesce(sum(${nodeSnapshots.dbBytes}), 0)::bigint` })
-    .from(nodeSnapshots)
-    .where(
-      and(
-        eq(nodeSnapshots.ownerId, ownerId),
-        eq(nodeSnapshots.trigger, 'manual'),
-        member ? eq(nodeSnapshots.actor, 'member') : ne(nodeSnapshots.actor, 'member'),
-        // A member's budget is that member's own (audit B6): a personal space
-        // has one member today, and the refusal says "your snapshots".
-        ...(member && memberLoginId ? [eq(nodeSnapshots.actorLoginId, memberLoginId)] : []),
-      ),
-    );
-  return Number(row?.n ?? 0);
+  // Brain-wide (mantle_snapshot_bytes, F4 fix round 2): the scope reads only
+  // the history of the apps it reads, so its sum was short and the budget
+  // let more through. A member's budget is that member's own (audit B6): a
+  // personal space has one member today, and the refusal says "your
+  // snapshots".
+  return snapshotBytesUsed(ownerId, {
+    manualOnly: true,
+    member,
+    loginId: member && memberLoginId ? memberLoginId : null,
+    q,
+  });
 }
 
 type SnapshotOpts = {

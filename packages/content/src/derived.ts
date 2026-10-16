@@ -18,7 +18,14 @@
  * (dangling_source_file at /debug/integrity), never silent orphans.
  */
 import { and, eq, sql } from 'drizzle-orm';
-import { db, nodes, withDeadlockRetry, withNodeDeleteHeads } from '@mantle/db';
+import {
+  db,
+  itemWriteVerdicts,
+  nodes,
+  systemStep,
+  withDeadlockRetry,
+  withNodeDeleteHeads,
+} from '@mantle/db';
 import {
   dashToLtree,
   deleteFileById,
@@ -84,6 +91,19 @@ export async function reapDerivedFromFile(
      *  neither reaped nor counted as skipped. Default: all types. */
     types?: readonly string[];
   },
+): Promise<ReapResult> {
+  // The cascade is the brain's (F4 fix round 2): every derived item, ones
+  // the caller's scope does not read included, by the named system step.
+  // Its callers checked the source file first (deleteFileWithDerived: the
+  // manage of the file; the dangling-derived script runs as the system).
+  return systemStep('derived-items', () => reapDerived(ownerId, fileId, options));
+}
+
+/** reapDerivedFromFile's body, on the system pool. */
+async function reapDerived(
+  ownerId: string,
+  fileId: string,
+  options?: { types?: readonly string[] },
 ): Promise<ReapResult> {
   const rows = await db
     .select({ id: nodes.id, type: sql<string>`${nodes.type}::text`, path: nodes.path })
@@ -163,8 +183,12 @@ export type CascadeDeleteResult =
       reason: 'not_found' | 'attachment' | 'in_drawing';
       reaped: DerivedCounts;
       skipped: number;
-      /** Populated on in_drawing so the caller can name the drawings. */
+      /** Populated on in_drawing so the caller can name the drawings (the
+       *  ones it reads). */
       drawings?: { id: string; title: string }[];
+      /** On in_drawing: how many more place it that the caller does not
+       *  read, when any (F4 fix round 2). */
+      hiddenDrawings?: number;
     };
 
 /**
@@ -177,15 +201,24 @@ export async function deleteFileWithDerived(
   ownerId: string,
   fileId: string,
 ): Promise<CascadeDeleteResult> {
+  // The item check first (F4 fix round 2): the reap below is the brain's
+  // and irreversible, so it runs only for a caller that may delete the file
+  // (its manage, in the caller's scope; system work is not checked).
+  // Refused as the delete itself refuses it: not found.
+  if ((await itemWriteVerdicts([fileId], 'manage')).get(fileId) !== 'ok') {
+    return { ok: false, reason: 'not_found', reaped: emptyDerivedCounts(), skipped: 0 };
+  }
   // Checked BEFORE reaping. deleteFileById refuses a file a drawing still
   // uses, and the reap below is irreversible — running it first would destroy
   // the derived nodes and then decline to delete the file they came from.
+  // Every drawing, brain-wide: one the caller does not read breaks too.
   const inDrawings = await drawsReferencingFile(ownerId, fileId);
-  if (inDrawings.length > 0) {
+  if (inDrawings.drawings.length + inDrawings.hidden > 0) {
     return {
       ok: false,
       reason: 'in_drawing',
-      drawings: inDrawings,
+      drawings: inDrawings.drawings,
+      ...(inDrawings.hidden > 0 ? { hiddenDrawings: inDrawings.hidden } : {}),
       reaped: emptyDerivedCounts(),
       skipped: 0,
     };

@@ -22,7 +22,7 @@
  */
 
 import { and, eq, sql } from 'drizzle-orm';
-import { db, markContentChanged, nodes, type Node } from '@mantle/db';
+import { db, markContentChanged, nodes, systemStep, type Node } from '@mantle/db';
 import { InputError } from '@mantle/std';
 
 export type IndexingMode = 'full' | 'metadata';
@@ -147,21 +147,26 @@ export async function setIndexingMode(args: {
 
   // Affected files: the node itself, or every file under the folder's subtree
   // (`<@` descendant-or-equal — file paths are their parent folder's path).
-  const affected =
-    target.type === 'file'
-      ? [updated]
-      : await db
-          .select()
-          .from(nodes)
-          .where(
-            and(
-              eq(nodes.ownerId, args.ownerId),
-              eq(nodes.type, 'file'),
-              sql`${nodes.path} <@ ${target.path}::ltree`,
-            ),
-          );
-
-  const requeued = await reconcileFilesIndexing(args.ownerId, affected);
+  // Every one, brain-wide, by the named system step after the flag's change
+  // (the item check: F4 fix round 2): a file the caller's scope does not
+  // read under a folder turned name only must shed its content index too,
+  // or it keeps answering from its content (it was left as it was).
+  const requeued = await systemStep('reindex', async () => {
+    const affected =
+      target.type === 'file'
+        ? [updated]
+        : await db
+            .select()
+            .from(nodes)
+            .where(
+              and(
+                eq(nodes.ownerId, args.ownerId),
+                eq(nodes.type, 'file'),
+                sql`${nodes.path} <@ ${target.path}::ltree`,
+              ),
+            );
+    return reconcileFiles(args.ownerId, affected);
+  });
   return { node: updated, requeued };
 }
 
@@ -179,6 +184,15 @@ export async function reconcileFilesIndexing(
   ownerId: string,
   files: readonly Node[],
 ): Promise<number> {
+  // The named system step (F4 fix round 2): each file's effective mode reads
+  // its whole folder chain, folders the caller's scope does not read
+  // included, and its index reset is the brain's bookkeeping after the move
+  // the caller made.
+  return systemStep('reindex', () => reconcileFiles(ownerId, files));
+}
+
+/** reconcileFilesIndexing's body, on the system pool. */
+async function reconcileFiles(ownerId: string, files: readonly Node[]): Promise<number> {
   let requeued = 0;
   for (const f of files) {
     const fData = (f.data ?? {}) as Record<string, unknown>;

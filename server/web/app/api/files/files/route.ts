@@ -287,14 +287,19 @@ export async function DELETE(req: Request) {
   }
   if (parsed.data.cascade) {
     const { deleteFileWithDerived } = await import('@mantle/content');
+    const { bulkDeleteGate, bulkRefusalOf } = await import('@/lib/files');
+    // Every id passes the item check first, and each one not deleted is
+    // reported (F4 fix round 2: they were left out, silently).
+    const { allowed, refused } = await bulkDeleteGate(parsed.data.ids);
     let deleted = 0;
     let reapedTotal = 0;
-    for (const id of parsed.data.ids) {
+    for (const id of allowed) {
       const res = await deleteFileWithDerived(user.id, id);
       if (res.ok) deleted++;
+      else refused.push(bulkRefusalOf(id, res));
       reapedTotal += res.reaped.total;
     }
-    return NextResponse.json({ deleted, hasDerived: [], reapedTotal });
+    return NextResponse.json({ deleted, hasDerived: [], reapedTotal, refused });
   }
   const { bulkDeleteFiles } = await import('@/lib/files');
   const res = await bulkDeleteFiles({ ownerId: user.id, fileIds: parsed.data.ids });

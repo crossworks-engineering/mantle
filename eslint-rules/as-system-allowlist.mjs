@@ -43,6 +43,12 @@ import { asSystemSites, isCounted, repoPathOf, pinnedRule } from './arch-counts.
  * definers answer as the system pool did, in the scope.
  */
 export const AS_SYSTEM_PINS = {
+  // F4 fix round 2: the named system step, the one door for the brain-wide
+  // bookkeeping a write does after its item check (systemStep: a table's
+  // history prune, an Admin scope's attachment bytes, a file's derived
+  // items and drawings, the re-index of a flag change or a move, an app's
+  // export sync). docs/actors.md, "F4 fix round 2", lists its sites.
+  'packages/db/src/system-step.ts': { count: 1, why: ['brain-bookkeeping'] },
   'packages/mcp-core/src/login-surface.ts': { count: 1, why: ['audit-log'] },
   'packages/runtime/src/agent/agent-viewer.ts': { count: 1, why: ['agent-workspace'] },
   'packages/runtime/src/heartbeats/tools.ts': {

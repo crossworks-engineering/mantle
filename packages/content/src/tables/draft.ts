@@ -64,6 +64,7 @@ import {
 } from '../table-broker';
 import { TAB_NAME, assertTableWritable, detailOf } from './shared';
 import {
+  historyKept,
   pruneTableCommitSnapshots,
   recordCommitSnapshot,
   stageCommitSnapshot,
@@ -390,6 +391,9 @@ export async function commitTable(
     throw new TableTooLargeError(commitTotalRows, MATERIALIZE_MAX);
   }
 
+  // Whether this commit keeps the version it replaces (asked once, before
+  // the staging, which runs synchronously).
+  const kept = !opts.appSync && (await historyKept());
   let flipped: { out: typeof node; staged: StagedCommit; draft: boolean } | undefined;
   try {
     for (let attempt = 1; ; attempt++) {
@@ -457,7 +461,12 @@ export async function commitTable(
               // table's sync (the app is the master).
               const history =
                 !opts.appSync && oldPublishedAbs
-                  ? stageCommitSnapshot({ ownerId, tableId: id, publishedAbs: oldPublishedAbs })
+                  ? stageCommitSnapshot({
+                      ownerId,
+                      tableId: id,
+                      publishedAbs: oldPublishedAbs,
+                      kept,
+                    })
                   : null;
               if (history) files.push(history.abs);
               const clipped = readDocClipped(abs, MATERIALIZE_MAX);

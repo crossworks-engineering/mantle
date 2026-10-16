@@ -140,6 +140,8 @@ export {
   type RequestScopeMode,
   type RequestOutcome,
 } from './viewer';
+export { systemStep, type SystemStep } from './system-step';
+export { nameTaken, snapshotBytesUsed, type TakenName } from './brain-answers';
 export { ensureViewerRoles } from './viewer-roles';
 export {
   assistantWorkspaceIds,
@@ -424,6 +426,7 @@ export {
   foldersReadOf,
   itemWriteRefusal,
   itemWriteRefusalOf,
+  itemWriteVerdicts,
   itemNotInScopeError,
   itemNoRightError,
   READ_ONLY_COPY_ERROR,

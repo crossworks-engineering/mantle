@@ -37,6 +37,8 @@ import {
   withDeadlockRetry,
   withNodeMoveHeads,
   refuseHiddenRows,
+  conflictOnUnique,
+  nameTaken,
 } from '@mantle/db';
 import { moveFile as moveFileOnDisk, renameFolder as renameFolderOnDisk } from './disk';
 import { foldedFilePath } from './space-disk';
@@ -294,7 +296,9 @@ export async function moveFolderById(args: {
     );
   }
   await assertSubtreeFits(args.ownerId, oldPath, args.destParentPath, 'moveFolderById');
-  if (await branchAt(args.ownerId, newPath)) {
+  // Brain-wide (mantle_name_taken, F4 fix round 2): a folder the caller's
+  // scope does not read holds the path all the same (its unique index).
+  if (await nameTaken('folder', args.ownerId, newPath)) {
     throw new ConflictError(
       `moveFolderById: a folder named '${label}' already exists under '${args.destParentPath}' — rename one of them first`,
     );
@@ -459,13 +463,17 @@ export async function copyFolderById(args: {
   }
   await assertSubtreeFits(args.ownerId, node.path, args.destParentPath, 'copyFolderById');
   const label = node.path.split('.').at(-1)!;
-  if (await branchAt(args.ownerId, `${args.destParentPath}.${label}`)) {
-    throw new InputError(
-      `copyFolderById: a folder named '${label}' already exists under '${args.destParentPath}' — rename one of them first`,
-    );
+  // Brain-wide (mantle_name_taken, F4 fix round 2): a folder the caller's
+  // scope does not read holds the path all the same; its unique index was a
+  // 500 here. The copy's own create is the backstop (conflictOnUnique below).
+  const taken = `a folder named '${label}' already exists under '${args.destParentPath}' — rename one of them first`;
+  if (await nameTaken('folder', args.ownerId, `${args.destParentPath}.${label}`)) {
+    throw new InputError(`copyFolderById: ${taken}`);
   }
 
-  const subtree = await db
+  // What the caller's scope reads of the subtree: a copy holds only that
+  // (a folder or file it does not read is never copied into its reach).
+  const readable = await db
     .select()
     .from(nodes)
     .where(and(eq(nodes.ownerId, args.ownerId), sql`${nodes.path} <@ ${node.path}::ltree`))
@@ -475,6 +483,22 @@ export async function copyFolderById(args: {
     // ('branch' < 'file' happens to sort right; stated explicitly so nobody
     // "simplifies" it away).
     .orderBy(sql`nlevel(${nodes.path}) asc`, sql`${nodes.type} asc`);
+  // Only what lands in a folder the copy makes (F4 fix round 2): a folder or
+  // a file the scope reads under a subfolder it does not read is left out,
+  // as the subfolder is (it failed the copy partway, a 400 after the first
+  // folders and files were made). Parents come first, so one pass places
+  // each row or leaves it out.
+  const placed = new Set<string>([node.path]);
+  const subtree = readable.filter((n) => {
+    if (n.id === node.id) return true;
+    if (n.type === 'file') return placed.has(n.path);
+    if (n.type !== 'branch') return false;
+    if (!placed.has(n.path.split('.').slice(0, -1).join('.'))) return false;
+    placed.add(n.path);
+    return true;
+  });
+  // The cap counts the files the copy makes (each re-extracts): the ones
+  // the scope reads and places.
   const fileCount = subtree.filter((n) => n.type === 'file').length;
   if (fileCount > COPY_MAX_FILES) {
     throw new InputError(
@@ -491,36 +515,40 @@ export async function copyFolderById(args: {
   let copiedFolders = 0;
   let copiedFiles = 0;
   let newRootId: string | null = null;
-  for (const n of subtree) {
-    if (n.type === 'branch') {
-      const destPath = destOf(n.path);
-      const parentPath = destPath.split('.').slice(0, -1).join('.');
-      const nData = (n.data ?? {}) as Record<string, unknown>;
-      const created = await createFolder({
-        ownerId: args.ownerId,
-        parentPath,
-        slug: destPath.split('.').at(-1)!,
-        description: typeof nData.description === 'string' ? nData.description : undefined,
-      });
-      // Carry the folder's OWN indexing flag so the copy of a name-only
-      // gallery is still a name-only gallery — set BEFORE its files copy in,
-      // so their ingest resolves the right effective mode from the start.
-      if (nData.indexing === 'metadata' || nData.indexing === 'full') {
-        await db
-          .update(nodes)
-          .set({
-            data: sql`${nodes.data} || ${JSON.stringify({ indexing: nData.indexing })}::jsonb`,
-            updatedAt: new Date(),
-          })
-          .where(eq(nodes.id, created.id));
+  // A folder made at the destination meanwhile (a race past the check
+  // above) is the same refusal, never the unique index's 500.
+  await conflictOnUnique(taken, async () => {
+    for (const n of subtree) {
+      if (n.type === 'branch') {
+        const destPath = destOf(n.path);
+        const parentPath = destPath.split('.').slice(0, -1).join('.');
+        const nData = (n.data ?? {}) as Record<string, unknown>;
+        const created = await createFolder({
+          ownerId: args.ownerId,
+          parentPath,
+          slug: destPath.split('.').at(-1)!,
+          description: typeof nData.description === 'string' ? nData.description : undefined,
+        });
+        // Carry the folder's OWN indexing flag so the copy of a name-only
+        // gallery is still a name-only gallery — set BEFORE its files copy in,
+        // so their ingest resolves the right effective mode from the start.
+        if (nData.indexing === 'metadata' || nData.indexing === 'full') {
+          await db
+            .update(nodes)
+            .set({
+              data: sql`${nodes.data} || ${JSON.stringify({ indexing: nData.indexing })}::jsonb`,
+              updatedAt: new Date(),
+            })
+            .where(eq(nodes.id, created.id));
+        }
+        if (n.id === node.id) newRootId = created.id;
+        copiedFolders++;
+      } else if (n.type === 'file') {
+        await copyFileById({ ownerId: args.ownerId, fileId: n.id, destPath: destOf(n.path) });
+        copiedFiles++;
       }
-      if (n.id === node.id) newRootId = created.id;
-      copiedFolders++;
-    } else if (n.type === 'file') {
-      await copyFileById({ ownerId: args.ownerId, fileId: n.id, destPath: destOf(n.path) });
-      copiedFiles++;
     }
-  }
+  });
 
   const folder = await folderById({ ownerId: args.ownerId, folderId: newRootId! });
   return { folder: folder!, copiedFiles, copiedFolders };

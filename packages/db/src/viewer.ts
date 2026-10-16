@@ -818,6 +818,13 @@ export function currentSystemTx(): { tx: unknown; hooks: TxHooks; nest: SystemTx
  *    transaction, on the system pool, as before arch A6; only archiving
  *    and adding a user also check them first in the scope, and removing a
  *    user reads the workspace there first (lib/workspaces.ts, arch A6).
+ *  - `brain-bookkeeping`: the named system step (system-step.ts, F4 fix
+ *    round 2): the brain-wide bookkeeping a write does after its item check
+ *    (a table's history prune, an Admin scope's email attachment bytes, a
+ *    file's derived items and drawings counted and its confirmed cascade,
+ *    the files a flag change or a move re-indexes, an app's export sync).
+ *    Each names its step; none answers the caller more than numbers, yes or
+ *    no, or rows its scope reads.
  *  - `page-refold`: after a grant change, the derived text of every page
  *    the change reaches is folded again, pages the caller may not read or
  *    edit included (lib/grants.ts, arch A6): nothing goes back to the
@@ -883,6 +890,7 @@ export const AS_SYSTEM_TURN_REASONS = [
   'pending-approval',
   'workspace-write',
   'page-refold',
+  'brain-bookkeeping',
 ] as const;
 
 /**

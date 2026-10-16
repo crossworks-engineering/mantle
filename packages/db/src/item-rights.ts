@@ -85,29 +85,71 @@ export async function itemWriteRefusalOf(
   if (loose !== undefined) return { message: itemIdNotCanonicalError(loose), detail: null };
   const list = [...new Set(trimmed.filter((i) => UUID_RE.test(i)))];
   if (list.length === 0) return null;
-  const arr = `{${list.join(',')}}`;
+  const byId = await scopeRightsOf(list);
+  for (const id of list) {
+    const verdict = verdictOf(byId.get(id), need);
+    if (verdict === 'no_read') return { message: itemNotInScopeError(id), detail: 'no_read' };
+    if (verdict === 'copy') return { message: READ_ONLY_COPY_ERROR, detail: 'no_edit' };
+    if (verdict === 'no_edit') return { message: itemNoRightError(id, need), detail: 'no_edit' };
+  }
+  return null;
+}
+
+type ScopeRights = { edit: boolean; manage: boolean; copy: boolean };
+
+/** What the current scope may do to each of `ids` (canonical uuids): an id
+ *  it does not read is absent. */
+async function scopeRightsOf(ids: readonly string[]): Promise<Map<string, ScopeRights>> {
+  const arr = `{${ids.join(',')}}`;
   const rows = (await db.execute(sql`
     select n.id::text as id,
            coalesce("public"."mantle_may_edit"(n.home_ws, n.write_ws), false) as edit,
            coalesce("public"."mantle_may_manage"(n.home_ws), false) as manage,
            coalesce(n.data ? 'snapshot_of', false) as copy
-      from nodes n where n.id = any(${arr}::uuid[])`)) as unknown as {
+      from nodes n where n.id = any(${arr}::uuid[])`)) as unknown as ({
     id: string;
-    edit: boolean;
-    manage: boolean;
-    copy: boolean;
-  }[];
-  const byId = new Map(rows.map((r) => [r.id, r]));
-  for (const id of list) {
-    const r = byId.get(id);
-    if (!r) return { message: itemNotInScopeError(id), detail: 'no_read' };
-    if (need === 'read') continue;
-    if (need === 'edit' && r.copy) return { message: READ_ONLY_COPY_ERROR, detail: 'no_edit' };
-    if (need === 'edit' ? !r.edit : !r.manage) {
-      return { message: itemNoRightError(id, need), detail: 'no_edit' };
-    }
+  } & ScopeRights)[];
+  return new Map(rows.map((r) => [r.id, r]));
+}
+
+/** One item's verdict for `need`: the scope may (ok), does not read it,
+ *  reads it but may not, or it is a read-only copy (an edit). */
+function verdictOf(
+  r: ScopeRights | undefined,
+  need: ItemNeed,
+): 'ok' | 'no_read' | 'no_edit' | 'copy' {
+  if (!r) return 'no_read';
+  if (need === 'read') return 'ok';
+  if (need === 'edit' && r.copy) return 'copy';
+  return (need === 'edit' ? r.edit : r.manage) ? 'ok' : 'no_edit';
+}
+
+/**
+ * The item check of a write whose items the BODY names (F4 fix round 2: a
+ * bulk delete), one verdict per id, as itemWriteRefusalOf asks it for one:
+ * 'ok', 'no_read' (the scope does not read it, or no row has the id: one
+ * answer, so the two cannot be told apart) or 'no_edit' (it reads it but
+ * may not make the write; a read-only copy's edit too). An id that is not a
+ * canonical uuid is 'no_read'. Outside a workspace scope (system work)
+ * every id is 'ok': the surface rules decide, as for itemWriteRefusalOf.
+ */
+export async function itemWriteVerdicts(
+  ids: readonly string[],
+  need: ItemNeed,
+): Promise<Map<string, 'ok' | 'no_read' | 'no_edit'>> {
+  const out = new Map<string, 'ok' | 'no_read' | 'no_edit'>();
+  if (!currentWorkspaceScope()) {
+    for (const id of ids) out.set(id, 'ok');
+    return out;
   }
-  return null;
+  const key = (id: string) => id.trim().toLowerCase();
+  const canonical = [...new Set(ids.map(key).filter((i) => UUID_RE.test(i)))];
+  const byId = canonical.length ? await scopeRightsOf(canonical) : new Map<string, ScopeRights>();
+  for (const id of ids) {
+    const v = UUID_RE.test(key(id)) ? verdictOf(byId.get(key(id)), need) : 'no_read';
+    out.set(id, v === 'copy' ? 'no_edit' : v);
+  }
+  return out;
 }
 
 /**

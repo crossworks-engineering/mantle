@@ -20,8 +20,8 @@
  * off the event loop (a SQL child, or an async copy).
  *
  * Not kept: app-bound tables (the app is the master, its data has its own
- * history) and commits made in a personal space or under a limited viewer
- * (the history is admin-only).
+ * history), commits made in a personal space and a member's (the history
+ * is the Admin users': historyKept).
  *
  * Server-only (node:fs): import via '@mantle/content/table-snapshots'.
  */
@@ -29,7 +29,17 @@ import { randomUUID } from 'node:crypto';
 import { existsSync, statSync } from 'node:fs';
 import * as path from 'node:path';
 import { and, desc, eq, sql } from 'drizzle-orm';
-import { db, inFlipTransaction, nodeSnapshots, nodes, StoreRefusedError, tables } from '@mantle/db';
+import {
+  db,
+  inFlipTransaction,
+  nodeSnapshots,
+  nodes,
+  scopeHoldsAdmin,
+  snapshotBytesUsed,
+  StoreRefusedError,
+  systemStep,
+  tables,
+} from '@mantle/db';
 import { currentSpaceScope, isSystemScope } from '@mantle/db/viewer';
 import { resolveStoragePath, tableDbRoot } from '@mantle/tabledb';
 import { defineDomainError } from '@mantle/std';
@@ -100,11 +110,22 @@ function snapshotAbsPath(rel: string): string {
   return abs;
 }
 
-/** History is written by the admin pool only: a personal space or a limited
- *  viewer has no grant on node_snapshots (a refused insert would fail the
- *  commit it rides). */
-function historyWritable(): boolean {
-  return isSystemScope() && currentSpaceScope() === null;
+/**
+ * Whether a commit keeps the version it replaces (asked before the commit
+ * stages its copy): the system's commits and an Admin scope's, as before
+ * F4. The history is the Admin users' (its routes are owner routes), and
+ * its row rides the commit's own transaction: on the write role
+ * node_snapshots takes it with edit of the table (A3a), the edit the commit
+ * itself needed. Not kept: a personal space's commit (frozen, no grant on
+ * node_snapshots: a refused insert would fail the commit it rides), and a
+ * member's (none since W6b; its row would name the owner as its actor).
+ * F4 fix round 2: this was isSystemScope(), false for an Admin user's
+ * commit once F4 moved it into its scope, so none kept a history row and a
+ * restore's note was lost, silently.
+ */
+export async function historyKept(): Promise<boolean> {
+  if (currentSpaceScope() !== null) return false;
+  return isSystemScope() || (await scopeHoldsAdmin());
 }
 
 type DbTx = Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -116,7 +137,8 @@ export type StagedCommitSnapshot = { id: string; rel: string; abs: string };
  * Stage the history copy of the published workbook a commit is about to
  * replace (plan 20.3: before the commit's one short transaction): a hard
  * link, else a copy, under the history folder. Null when nothing is kept:
- * no published file yet, or a commit the history does not record. The
+ * no published file yet, or a commit the history does not record
+ * (historyKept). The
  * commit removes it if its flip does not land; the row goes in with the
  * flip (recordCommitSnapshot).
  */
@@ -124,8 +146,10 @@ export function stageCommitSnapshot(opts: {
   ownerId: string;
   tableId: string;
   publishedAbs: string;
+  /** historyKept(), asked before the staging. */
+  kept: boolean;
 }): StagedCommitSnapshot | null {
-  if (!historyWritable() || !existsSync(opts.publishedAbs)) return null;
+  if (!opts.kept || !existsSync(opts.publishedAbs)) return null;
   const id = randomUUID();
   const rel = snapshotRelPath(opts.ownerId, opts.tableId, id);
   const abs = snapshotAbsPath(rel);
@@ -168,11 +192,17 @@ export async function recordCommitSnapshot(
  *  only: each row's trigger records its file for the store sweep (A3b part
  *  2, store_tombstones). */
 export async function pruneTableCommitSnapshots(tableId: string): Promise<void> {
-  await pruneHistoryRows(
-    tableId,
-    ['commit'],
-    TABLE_SNAPSHOT_COMMIT_KEEP,
-    envMbBytes('TABLE_HISTORY_MAX_MB'),
+  // The table's whole history line, brain-wide bookkeeping after the commit
+  // (the commit was the item check): the named system step, never the
+  // caller's scope (whose view role has no delete, and which may not read
+  // every row of a line: F4 fix round 2).
+  await systemStep('table-history', () =>
+    pruneHistoryRows(
+      tableId,
+      ['commit'],
+      TABLE_SNAPSHOT_COMMIT_KEEP,
+      envMbBytes('TABLE_HISTORY_MAX_MB'),
+    ),
   );
 }
 
@@ -309,11 +339,9 @@ export async function createTableSnapshot(
       'this table has no committed workbook file yet: commit it once (table_commit), then snapshot it',
     );
   }
-  const [used] = await db
-    .select({ n: sql<string>`coalesce(sum(${nodeSnapshots.dbBytes}), 0)::bigint` })
-    .from(nodeSnapshots)
-    .where(eq(nodeSnapshots.ownerId, ownerId));
-  const usedBytes = Number(used?.n ?? 0);
+  // The brain's budget, every copy counted (mantle_snapshot_bytes, 0300):
+  // the scope reads only the history of the items it reads (F4 fix round 2).
+  const usedBytes = await snapshotBytesUsed(ownerId, { manualOnly: false });
   if (usedBytes >= maxSnapshotBytes()) {
     throw new TableSnapshotRefusedError(
       `snapshots already hold ${Math.round(usedBytes / 1048576)} MB of the ${Math.round(maxSnapshotBytes() / 1048576)} MB allowed (APP_SNAPSHOT_MAX_MB): delete old ones first (table_snapshot_delete)`,

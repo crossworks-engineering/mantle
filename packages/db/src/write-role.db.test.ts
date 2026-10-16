@@ -222,6 +222,12 @@ const DEFINERS_THE_WRITE_ROLE_RUNS: Readonly<Record<string, string>> = {
   // (email_accounts is no table a scope reads).
   'mantle_mail_backfill_accounts(uuid)':
     'the brain’s enabled mail accounts, id and provider only, for a scope that holds Admin',
+  // 0300 (F4 fix round 2): brain-wide answers a write asks after its item
+  // check, yes or no or a number.
+  'mantle_name_taken(text,uuid,text,uuid)':
+    'whether a folder path, a Recall map slug or a formula spec id is taken in the brain: yes or no',
+  'mantle_snapshot_bytes(uuid,boolean,boolean,uuid)':
+    'the bytes the brain’s history copies take, for the snapshot budget: a number',
   'mantle_read_cursor_mark(uuid,uuid,uuid,timestamp with time zone)':
     WRITE_ROLE_FUNCTIONS[
       'public.mantle_read_cursor_mark(uuid,uuid,uuid,timestamp with time zone)'

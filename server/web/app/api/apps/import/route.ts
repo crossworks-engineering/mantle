@@ -40,6 +40,7 @@ import { buildAndStageApp, resolveTool } from '@mantle/tools';
 import { recordIngest } from '@mantle/tracing';
 import { errorMessage } from '@mantle/std';
 import { readJson } from '@/lib/read-body';
+import { assertItemRight } from '@/lib/item-check';
 
 const Body = AppMetaFields.partial({ name: true }).extend({
   /** Update this app if given; otherwise create a new one (then `name` is required). */
@@ -80,6 +81,11 @@ export async function POST(req: Request) {
   if (!b.appId && !b.name) return bad('name is required when appId is omitted');
   const existing = b.appId ? await getAppRuntime(user.id, b.appId) : null;
   if (b.appId && !existing) return bad('app not found', 404);
+  // An update writes the app's code (its draft, manifest, schema): manage of
+  // the app (D4), checked before anything is written (F4 fix round 2: the
+  // route names no :id, so no gate asked it, and the database refused the
+  // code after the pre_import snapshot had committed, a partial import).
+  if (b.appId) await assertItemRight(b.appId, 'manage');
   if (b.toolSlugs) {
     const missing: string[] = [];
     for (const slug of b.toolSlugs) {

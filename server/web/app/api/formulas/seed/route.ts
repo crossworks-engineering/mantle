@@ -2,6 +2,7 @@ import { NextResponse } from '@/server/http-compat';
 import { FORMULA_SEED, SEED_TAG } from '@mantle/content';
 import { ownerCaller } from '@/lib/auth';
 import { itemErrorText } from '@mantle/std';
+import { nameTaken } from '@mantle/db';
 import { createFormula, listFormulaSpecIds } from '@/lib/formulas';
 
 /**
@@ -27,7 +28,9 @@ export async function POST() {
   const failed: Array<{ slug: string; error: string }> = [];
 
   for (const seed of FORMULA_SEED) {
-    if (present.has(seed.slug)) {
+    // Present is present brain-wide (mantle_name_taken, F4 fix round 2): one
+    // in a workspace the caller's scope does not read was seeded again.
+    if (present.has(seed.slug) || (await nameTaken('formula-spec', user.id, seed.slug))) {
       skipped.push(seed.slug);
       continue;
     }

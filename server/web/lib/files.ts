@@ -22,6 +22,8 @@ export {
   deleteFileById,
   renameFileById,
   bulkDeleteFiles,
+  bulkDeleteGate,
+  bulkRefusalOf,
   listFiles,
   listRecentFiles,
   fileById,

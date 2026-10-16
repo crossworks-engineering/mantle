@@ -45,6 +45,7 @@ import {
   appDatabases,
   appTableExports,
   runAsSystem,
+  systemStep,
   type AppTableExport,
 } from '@mantle/db';
 import { importMaxRows } from '@mantle/tabledb';
@@ -312,7 +313,7 @@ const EXPORT_ACTOR = 'app-export';
  *  still runs if this fails. */
 function markExportsDirty(ownerId: string, appNodeId: string): void {
   try {
-    void runAsSystem(EXPORT_ACTOR, () =>
+    void exportSyncStep(() =>
       db
         .update(appTableExports)
         .set({
@@ -514,6 +515,21 @@ export function exportSyncDelay(firstAt: number, now: number): number {
   return Math.max(0, Math.min(SYNC_DEBOUNCE_MS, firstAt + SYNC_MAX_WAIT_MS - now));
 }
 
+/**
+ * An export's bookkeeping, for every caller of the scheduler (F4 fix round
+ * 2): the dirty mark and the debounced sync are the brain's, run as the
+ * named system step, outside the scope of the request or turn that wrote
+ * the app's data (its item check), with the actor system(app-export). A
+ * timer keeps the async context it was set in, and runAsSystem swaps only
+ * the actor, so the sync ran in the writer's scope: app_table_exports is
+ * read by no scope, the error was swallowed and the linked Table stayed
+ * stale until a restart. The member's path wrapped its write in
+ * asSystem('app-data'); an Admin user's (in its scope since F4) did not.
+ */
+function exportSyncStep<T>(fn: () => PromiseLike<T>): Promise<T> {
+  return systemStep('export-sync', () => runAsSystem(EXPORT_ACTOR, fn));
+}
+
 export function scheduleAppTableExportSync(ownerId: string, appNodeId: string): void {
   const key = `${ownerId}:${appNodeId}`;
   const existing = pending.get(key);
@@ -521,9 +537,10 @@ export function scheduleAppTableExportSync(ownerId: string, appNodeId: string): 
   if (existing) clearTimeout(existing.timer);
   const firstAt = existing?.firstAt ?? Date.now();
   const wait = exportSyncDelay(firstAt, Date.now());
-  // The timer runs as system(app-export), whoever scheduled it (F9).
+  // The timer runs as system(app-export), whoever scheduled it (F9), and on
+  // the system pool outside the scheduler's scope (exportSyncStep).
   const timer = setTimeout(
-    () => void runAsSystem(EXPORT_ACTOR, () => runScheduledSync(ownerId, appNodeId, key)),
+    () => void exportSyncStep(() => runScheduledSync(ownerId, appNodeId, key)),
     wait,
   );
   // Never hold a process open for a pending sync (dev servers, tests, CLIs).
