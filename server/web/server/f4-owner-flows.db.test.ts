@@ -1678,26 +1678,6 @@ describe.skipIf(!DB_URL)('F4 fix round 1: the owner’s management flows on the 
            and n.path = ${p}::ltree`
     )[0] ?? null;
 
-  /** An item's own grant rows, to put back as they were. */
-  type OwnGrant = { w: string; h: boolean; wr: boolean; ex: boolean };
-  const ownGrants = (id: string) =>
-    raw<OwnGrant[]>`select workspace_id::text as w, is_home as h, write as wr, excluded as ex
-      from item_grants where node_id = ${id} and via_folder_id is null`;
-  const putGrants = async (id: string, rows: readonly OwnGrant[]) => {
-    await raw.begin(async (tx) => {
-      await tx`select set_config('mantle.actor', 'system:test', true)`;
-      await tx`select mantle_lock_heads(array[${id}]::uuid[], 'update')`;
-      await tx`delete from item_grants where node_id = ${id} and via_folder_id is null`;
-      for (const r of rows) {
-        await tx`insert into item_grants (node_id, workspace_id, is_home, write, excluded)
-                 values (${id}, ${r.w}, ${r.h}, ${r.wr}, ${r.ex})
-                 on conflict (node_id, workspace_id) do update
-                   set is_home = excluded.is_home, write = excluded.write,
-                       excluded = excluded.excluded, via_folder_id = null`;
-      }
-    });
-  };
-
   const appsTitled = async (title: string) =>
     (
       await raw<{ n: number }[]>`select count(*)::int as n from nodes
@@ -1733,6 +1713,8 @@ describe.skipIf(!DB_URL)('F4 fix round 1: the owner’s management flows on the 
       const ed = await editor();
       const mine = await folder(`${tag}${mode}r4m`);
       await rehome(mine.id, ws.other);
+      // Write on for its home workspace: its plain users may file in it.
+      await grantTo(mine.id, ws.other, true);
       const readOnly = await folder(`${tag}${mode}r4r`);
       await grantTo(readOnly.id, ws.other, false);
       const member = await mcpAs(ed, 'member');
@@ -1788,13 +1770,15 @@ describe.skipIf(!DB_URL)('F4 fix round 1: the owner’s management flows on the 
         filename: `${tag}${mode}r4.mantleapp`,
         bytes: await readFile(dest),
       });
-      const before = await ownGrants(root.app.id);
+      // An Admin user who is not a Moderator of Admin (0298 ticks every
+      // one; unticked here by hand, as the 0298 test does): a new app lands
+      // in Admin, where it may create but not manage, so its code write
+      // would be refused.
+      await raw`update workspace_users set moderator = false
+        where workspace_id = ${ws.admin} and login_id = ${L.limited}`;
       try {
-        // An Admin user: the Apps folder homed where it does not moderate
-        // (Write through Admin), so a new app would land there.
-        await rehome(root.app.id, ws.other, { admin: 'write' });
-        const title = `${tag} ${mode} r4 admin import`;
-        const r = await call(`${mode} r4 admin import`, L.admin, 'POST', '/api/apps/import', {
+        const title = `${tag} ${mode} r4 import refused`;
+        const r = await call(`${mode} r4 unticked import`, L.limited, 'POST', '/api/apps/import', {
           name: title,
           entry: 'index.tsx',
           files,
@@ -1804,30 +1788,21 @@ describe.skipIf(!DB_URL)('F4 fix round 1: the owner’s management flows on the 
         expect(r.json.reason).toBe('item-workspace');
         expect(await appsTitled(title)).toBe(0);
         // The app_import tool (the package import, the import-package
-        // route's too): refused before the app is made.
-        const admin = await mcpAs(L.admin, 'admin');
+        // route's too): refused before the app is made (before: made, its
+        // build refused, then dropped).
+        const mcp = await mcpAs(L.limited, 'admin');
         try {
           const toolTitle = `${tag} ${mode} r4 tool import`;
-          const t = await admin.tool('app_import', { file_id: pkgFile.id, name: toolTitle });
+          const t = await mcp.tool('app_import', { file_id: pkgFile.id, name: toolTitle });
           expect(t.isError, t.text).toBe(true);
+          expect(t.text).toContain('cannot change');
           expect(await appsTitled(toolTitle)).toBe(0);
         } finally {
-          await admin.close();
+          await mcp.close();
         }
-        // A member: the Apps folder homed in Admin, Write for its workspace.
-        await putGrants(root.app.id, before);
-        await grantTo(root.app.id, ws.other, true);
-        const mTitle = `${tag} ${mode} r4 member import`;
-        const mr = await call(`${mode} r4 member import`, L.member, 'POST', '/api/apps/import', {
-          name: mTitle,
-          entry: 'index.tsx',
-          files,
-          build: false,
-        });
-        expect(mr.status, mr.text).toBe(403);
-        expect(await appsTitled(mTitle)).toBe(0);
       } finally {
-        await putGrants(root.app.id, before);
+        await raw`update workspace_users set moderator = true
+          where workspace_id = ${ws.admin} and login_id = ${L.limited}`;
       }
       // Where the importer manages the home: made, as before.
       const okTitle = `${tag} ${mode} r4 import ok`;

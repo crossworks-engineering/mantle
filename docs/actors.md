@@ -1443,6 +1443,10 @@ here:
   `ms_drive_items` (pre-existing, every mode).
 - A kept derived item (H1) points at a file that is gone; the
   `dangling_source_file` audit lists it, and its own delete is its home's.
+- Round 4: a `folder_create` the database refuses (a parent the caller only
+  reads) answers the caller "You cannot change this item in your
+  workspaces." but logs the insert as a database error in a tool reply
+  (pre-existing: no create pre-check for a member's MCP folder create).
 
 ### F4 fix round 4
 
@@ -1469,7 +1473,11 @@ routes by `runRoute`, the tools on the real MCP surface,
   (`assertManagesNewItemHome`, `packages/content/src/tree/visibility.ts`,
   the create home the visibility preview already names, asked with
   `mantle_may_manage`). Refused: 403 item-workspace, nothing made. App code
-  rights are not widened.
+  rights are not widened. Both paths are Admin users' (the route refuses a
+  member login, the tool is owner-only), and a new app lands in the
+  workspace the call names or the caller's private one (Admin for an Admin
+  user), each one it moderates since 0298, so the refusal is a guard: the
+  test unticks an Admin user on Admin by hand to reach it.
 - **Making or unmaking an Admin user needs the users area (owner
   decision).** On the Admin workspace an add (any `moderator`) and a
   removal ask `mayChangeAdminUsers` (`server/web/lib/workspaces.ts`): an
@@ -1493,8 +1501,8 @@ routes by `runRoute`, the tools on the real MCP surface,
   but does not manage the new folder's home: the folder is made with the
   flag, ok (before: made without it, then the tool's error). Wider by the
   owner's decision, for the new folder only.
-- POST `/api/apps/import` (no `appId`) by a login that may create in the
-  Apps folder but does not manage the workspace a new app lands in: 403
+- POST `/api/apps/import` (no `appId`) by a login that may create where a
+  new app lands but does not manage that workspace: 403
   item-workspace, no app (before: the app made, then 403 on its draft).
   `app_import` and POST `/api/apps/import-package` likewise: refused before
   the app is made (before: made, the build refused, then dropped).
