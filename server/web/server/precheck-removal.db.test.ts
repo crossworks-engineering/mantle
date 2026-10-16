@@ -19,13 +19,16 @@
  *             in X, no grant to Admin)
  *
  * Every cell runs twice on fresh items: with the TypeScript item pre-check
- * (`was`, its words) and with it bypassed (`now`: the database's refusal,
- * or the handler's own answer for an item the scope does not read). A
- * refused cell must leave the item as it was (pcr_probe: its rows, its
- * content rows, links, grants and history; the tables and files stores on
- * disk), an allowed one must make its write. Once a family's entries are
- * gone the bypass changes nothing for it: `was` and `now` agree. Every
- * answer is printed at the end; docs/actors.md names each changed one.
+ * (`was`) and with it bypassed (`now`: the database's refusal, or the
+ * handler's own answer for an item the scope does not read). A refused
+ * cell must leave the item as it was (pcr_probe: its rows, its content
+ * rows, links, grants and history; the tables and files stores on disk),
+ * an allowed one must make its write. Run on the code before the removal,
+ * `was` recorded the pre-check's words (docs/actors.md names each changed
+ * answer); every family here has lost its entries since, so the bypass
+ * changes nothing and `was` must answer as `now`. The kept cells at the end
+ * show why three of the kept entries stay. Every answer is printed at the
+ * end.
  *
  * `pnpm test:edit-on` runs this file too.
  *
@@ -350,7 +353,21 @@ describe.skipIf(!DB_URL)(
       } else {
         expect(c.now.ok, `${name}: ${c.now.text}`).toBe(true);
       }
+      // The entry is gone: bypassing the pre-check changes nothing (`was`,
+      // run with it, answers as `now`), ids and made-up names aside.
+      expect({ ok: c.was.ok, changed: c.was.changed, text: plain(c.was.text) }, name).toEqual({
+        ok: c.now.ok,
+        changed: c.now.changed,
+        text: plain(c.now.text),
+      });
     };
+    /** A reply without what each run makes up: ids, the tag, random names. */
+    const plain = (text: string) =>
+      text
+        .replace(new RegExp(UUID.source, 'g'), 'ID')
+        .replace(new RegExp(`${tag}\\w*`, 'g'), 'TAG')
+        .replace(/\b(?=[0-9a-f]*\d)[0-9a-f]{4,}\b/g, 'H')
+        .replace(/v_[a-z0-9]{8}/g, 'V');
 
     // ── makers ──────────────────────────────────────────────────────────────
 
