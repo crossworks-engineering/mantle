@@ -30,6 +30,7 @@ import { existsSync, statSync } from 'node:fs';
 import * as path from 'node:path';
 import { and, desc, eq, sql } from 'drizzle-orm';
 import { db, inFlipTransaction, nodeSnapshots, nodes, StoreRefusedError, tables } from '@mantle/db';
+import { assertItemRight } from '@mantle/db';
 import { currentSpaceScope, isSystemScope } from '@mantle/db/viewer';
 import { resolveStoragePath, tableDbRoot } from '@mantle/tabledb';
 import { defineDomainError } from '@mantle/std';
@@ -304,6 +305,9 @@ export async function createTableSnapshot(
 ): Promise<TableSnapshot | null> {
   const table = await ownedTable(ownerId, tableId);
   if (!table) return null;
+  // Edit first (the cheap rights read, pre-check removal fix round A):
+  // before the copy.
+  await assertItemRight(tableId, 'edit');
   if (!table.storagePath) {
     throw new TableSnapshotRefusedError(
       'this table has no committed workbook file yet: commit it once (table_commit), then snapshot it',
@@ -400,6 +404,9 @@ export async function restoreTableSnapshot(
 ): Promise<{ restored: TableSnapshot } | null> {
   const table = await ownedTable(ownerId, tableId);
   if (!table) return null;
+  // Edit first (the cheap rights read, pre-check removal fix round A):
+  // before the copy, and the same refusal whether a draft is there or not.
+  await assertItemRight(tableId, 'edit');
   const entry = await getEntry(ownerId, tableId, snapshotId);
   if (!entry) return null;
   await assertTableWritable(tableId);

@@ -30,12 +30,14 @@
  * show why three of the kept entries stay. Every answer is printed at the
  * end.
  *
- * `pnpm test:edit-on` runs this file too.
+ * It sets both checks on itself, so it runs in `pnpm test` only (not again
+ * in `pnpm test:edit-on`, where its 160 cells were that run's long pole and
+ * its load made other suites miss their limits on CI: fix round A).
  *
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run server/web/server/precheck-removal.db.test.ts
  */
 import { createHash, randomUUID } from 'node:crypto';
-import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -1311,6 +1313,214 @@ describe.skipIf(!DB_URL)(
         expect(c.now.text).toMatch(/changed since you read it/);
       }
     }, 120_000);
+
+    // ── fix round A: the cheap rights read first ─────────────────────────────
+    // A write whose handler answers from what the caller may not see (a
+    // folder's hidden rows or emptiness, a draft's presence, a name taken by
+    // an item it does not read), or stages a copy or takes locks first, asks
+    // the caller's right first (assertItemRight, the one gateway): a caller
+    // without it gets one answer, whatever the item holds. In on, and in
+    // warn (where the database would make the write and log a miss: the
+    // read refuses first, so no write and no miss).
+
+    /** One MCP call as `who`, and whether `id` (and the files store) changed. */
+    const callOnce = async (who: Who, slug: string, input: Record<string, unknown>, id: string) => {
+      const before = await probe(id);
+      const disk = filesDisk() + tableDisk();
+      const out = await viaMcp(who, slug, input);
+      const changed = (await probe(id)) !== before || filesDisk() + tableDisk() !== disk;
+      return { ...out, changed, plain: plain(out.text) };
+    };
+    const editCheck = async (mode: 'on' | 'warn') => {
+      await raw`select mantle_set_edit_check(${mode}, 50, 'test')`;
+    };
+    const REFUSED = /You cannot change this item in your workspaces\./;
+
+    it.each(['on', 'warn'] as const)(
+      'M1 (edit check %s): a caller that may not delete or move a folder learns nothing of what it holds',
+      async (mode) => {
+        await editCheck(mode);
+        try {
+          for (const who of BOTH) {
+            /** A folder the caller reads and may not manage, holding `what`. */
+            const folder = async (what: 'empty' | 'visible' | 'hidden' | 'untracked') => {
+              const it = await filesFolder(who, 'noEdit');
+              const at = it.extra.path!;
+              if (what === 'visible' || what === 'hidden') {
+                const file = await sys(() =>
+                  f.upsertFile({
+                    ownerId: owner,
+                    parentPath: at,
+                    filename: `${tag}-in-${n()}.bin`,
+                    bytes: Buffer.from([7, 7, 7]),
+                  }),
+                );
+                await place(who, what === 'visible' ? 'noEdit' : 'noRead')(file.id);
+              }
+              if (what === 'untracked') {
+                const d = f.diskPathForLtree(at)!;
+                mkdirSync(d, { recursive: true });
+                writeFileSync(path.join(d, `${tag}-stray.txt`), 'not tracked');
+              }
+              return it;
+            };
+            const dest = (await filesFolder(who, 'allowed')).extra.path!;
+            const answers: Record<string, string[]> = { folder_delete: [], folder_move: [] };
+            for (const what of ['empty', 'visible', 'hidden', 'untracked'] as const) {
+              for (const slug of ['folder_delete', 'folder_move'] as const) {
+                const it = await folder(what);
+                const input =
+                  slug === 'folder_delete'
+                    ? { folder_id: it.id }
+                    : { folder_id: it.id, dest_parent_path: dest, confirm: true };
+                const c = await callOnce(who, slug, input, it.id);
+                const name = `${slug} ${who} ${what} (${mode})`;
+                recorded.push(`fix-A M1 ${name}: ${c.ok ? 'ok' : 'refused'} ${c.plain}`);
+                expect(c.ok, `${name}: ${c.text}`).toBe(false);
+                expect(c.changed, `${name} changed it`).toBe(false);
+                expect(c.text, name).toMatch(REFUSED);
+                expect(c.text, name).not.toMatch(/hold|empty|on disk|track/i);
+                answers[slug]!.push(c.plain);
+              }
+            }
+            for (const [slug, got] of Object.entries(answers)) {
+              expect(new Set(got).size, `${slug} ${who}: ${got.join(' / ')}`).toBe(1);
+            }
+          }
+          expect(m.takeActorMisses()).toEqual([]);
+        } finally {
+          await editCheck('on');
+        }
+      },
+      300_000,
+    );
+
+    it.each(['on', 'warn'] as const)(
+      'drafts (edit check %s): a reader that may not edit gets one answer whether a draft is there or not',
+      async (mode) => {
+        await editCheck(mode);
+        try {
+          for (const who of BOTH) {
+            const cells: [
+              string,
+              (w: Who, p: Place) => Promise<Item>,
+              (it: Item) => Record<string, unknown>,
+            ][] = [
+              ['page_commit', page, byId],
+              ['page_commit', draftPage, byId],
+              ['table_commit', table(), byId],
+              ['table_commit', tableWithDraft, byId],
+              [
+                'table_snapshot_restore',
+                tableWithSnapshot,
+                (it) => ({ id: it.id, snapshot_id: it.extra.snapshot }),
+              ],
+              [
+                'table_snapshot_restore',
+                table(async (id) => {
+                  const out = (await sysTool('table_snapshot_create', { id })) as {
+                    snapshot: { id: string };
+                  };
+                  await sysTool('table_row_add', { table_id: id, cells: { Name: 'draft' } });
+                  return { snapshot: out.snapshot.id };
+                }),
+                (it) => ({ id: it.id, snapshot_id: it.extra.snapshot }),
+              ],
+            ];
+            const answers = new Map<string, string[]>();
+            for (const [slug, make, input] of cells) {
+              const it = await make(who, 'noEdit');
+              const c = await callOnce(who, slug, input(it), it.id);
+              const name = `${slug} ${who} (${mode})`;
+              recorded.push(`fix-A drafts ${name}: ${c.ok ? 'ok' : 'refused'} ${c.plain}`);
+              expect(c.ok, `${name}: ${c.text}`).toBe(false);
+              expect(c.changed, `${name} changed it`).toBe(false);
+              expect(c.text, name).toMatch(REFUSED);
+              answers.set(slug, [...(answers.get(slug) ?? []), c.plain]);
+            }
+            for (const [slug, got] of answers) {
+              expect(new Set(got).size, `${slug} ${who}: ${got.join(' / ')}`).toBe(1);
+            }
+          }
+          expect(m.takeActorMisses()).toEqual([]);
+        } finally {
+          await editCheck('on');
+        }
+      },
+      300_000,
+    );
+
+    it('names (edit check on): a caller that may not move or rename a file is not told a name is taken by a file it does not read', async () => {
+      for (const who of BOTH) {
+        const answers: Record<string, string[]> = { file_move: [], file_rename: [] };
+        for (const clash of [false, true]) {
+          // file_move: a file the caller may not move, to a folder of its own
+          // that holds (or not) a file of the same name the caller does not read.
+          const dest = (await filesFolder(who, 'allowed')).extra.path!;
+          const name = `${tag}-same-${n()}.bin`;
+          const file = await sys(() =>
+            f.upsertFile({
+              ownerId: owner,
+              parentPath: 'files',
+              filename: name,
+              bytes: Buffer.from([1]),
+            }),
+          );
+          await place(who, 'noEdit')(file.id);
+          if (clash) {
+            const hidden = await sys(() =>
+              f.upsertFile({
+                ownerId: owner,
+                parentPath: dest,
+                filename: name,
+                bytes: Buffer.from([2]),
+              }),
+            );
+            await place(who, 'noRead')(hidden.id);
+          }
+          const mv = await callOnce(
+            who,
+            'file_move',
+            { file_id: file.id, dest_path: dest, confirm: true },
+            file.id,
+          );
+          // file_rename: to the stem of a file it does not read in its folder.
+          const stem = `${tag}-taken-${n()}`;
+          if (clash) {
+            const hidden = await sys(() =>
+              f.upsertFile({
+                ownerId: owner,
+                parentPath: 'files',
+                filename: `${stem}.bin`,
+                bytes: Buffer.from([3]),
+              }),
+            );
+            await place(who, 'noRead')(hidden.id);
+          }
+          const rn = await callOnce(
+            who,
+            'file_rename',
+            { file_id: file.id, new_stem: stem },
+            file.id,
+          );
+          for (const [slug, c] of [
+            ['file_move', mv],
+            ['file_rename', rn],
+          ] as const) {
+            const cell = `${slug} ${who} ${clash ? 'taken' : 'free'}`;
+            recorded.push(`fix-A names ${cell}: ${c.ok ? 'ok' : 'refused'} ${c.plain}`);
+            expect(c.ok, `${cell}: ${c.text}`).toBe(false);
+            expect(c.changed, `${cell} changed it`).toBe(false);
+            expect(c.text, cell).toMatch(REFUSED);
+            expect(c.text, cell).not.toMatch(/already exists/);
+            answers[slug]!.push(c.plain.replace(/TAG-[\w.-]*/g, 'NAME'));
+          }
+        }
+        for (const [slug, got] of Object.entries(answers)) {
+          expect(new Set(got).size, `${slug} ${who}: ${got.join(' / ')}`).toBe(1);
+        }
+      }
+    }, 300_000);
 
     it('kept: a publish by a scope that may not edit the app answers published and writes nothing', async () => {
       for (const who of BOTH) {

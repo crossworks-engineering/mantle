@@ -24,6 +24,7 @@ import { and, desc, eq, gte, isNotNull, ne, sql } from 'drizzle-orm';
 import {
   appDatabases,
   apps,
+  assertItemRight,
   db,
   inFlipTransaction,
   nodeSnapshots,
@@ -490,6 +491,10 @@ export async function createAppSnapshot(
   // app's history lock): not this owner's app, a snapshot already taken
   // since, past the budget.
   if (!(await currentCode(ownerId, appId))) return null;
+  // A snapshot asked for (app_snapshot_create): edit of the app first (the
+  // cheap rights read, pre-check removal fix round A), before a copy of up
+  // to 256 MB. An automatic one rides a write its caller already asked.
+  if (trigger === 'manual') await assertItemRight(appId, 'edit');
   if (opts.onlyIfNoneSince && (await snapshotSince(db, appId, trigger, opts.onlyIfNoneSince))) {
     return null;
   }

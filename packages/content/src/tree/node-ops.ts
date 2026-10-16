@@ -10,6 +10,7 @@
  */
 import { and, eq, sql } from 'drizzle-orm';
 import {
+  assertItemRight,
   carrySpaceRows,
   db,
   nodes,
@@ -266,6 +267,9 @@ export async function renameNodeFolder(
       .where(and(eq(nodes.id, folderId), eq(nodes.ownerId, ownerId)));
     return;
   }
+  // A rename rewrites the subtree: manage first (the cheap rights read,
+  // pre-check removal fix round A), before its locks.
+  await assertItemRight(folder.id, 'manage');
   if (await branchAt(ownerId, newPath)) {
     throw new NodeOpRefusal('conflict', `a folder named '${title}' already exists here`);
   }
@@ -290,6 +294,9 @@ export async function moveNodeFolder(
   destParentPath: string,
 ): Promise<void> {
   const folder = await branchById(ownerId, folderId);
+  // Manage first (the cheap rights read, pre-check removal fix round A),
+  // before the locks.
+  await assertItemRight(folder.id, 'manage');
   if (destParentPath === folder.path || destParentPath.startsWith(`${folder.path}.`)) {
     throw new NodeOpRefusal('invalid', 'a folder cannot move inside itself');
   }

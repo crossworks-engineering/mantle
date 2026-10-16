@@ -14,6 +14,7 @@
 import { and, eq, sql } from 'drizzle-orm';
 import { InputError } from '@mantle/std';
 import {
+  assertItemRight,
   db,
   nodes,
   tables,
@@ -378,6 +379,10 @@ export async function commitTable(
     .where(and(eq(nodes.id, id), eq(nodes.ownerId, ownerId), eq(nodes.type, 'table')))
     .limit(1);
   if (!node) return null;
+  // Edit first (the cheap rights read first, pre-check removal fix round
+  // A): before the staging, and the same refusal whether a draft is there
+  // or not. An app's sync is the brain's own (the app's data door asked).
+  if (!opts.appSync) await assertItemRight(id, 'edit');
   await assertTableWritable(id, opts.appSync);
 
   const workbook = data && isWorkbook(data) ? ensureWorkbookDoc(data) : null;

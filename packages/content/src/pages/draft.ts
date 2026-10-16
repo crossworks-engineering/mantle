@@ -13,6 +13,7 @@
  */
 import { and, eq, sql } from 'drizzle-orm';
 import {
+  assertItemRight,
   changedFields,
   db,
   markContentChanged,
@@ -377,6 +378,10 @@ export async function commitPageDraft(ownerId: string, id: string): Promise<Comm
     .where(and(eq(pages.nodeId, id), eq(nodes.ownerId, ownerId), eq(nodes.type, 'page')))
     .limit(1);
   if (!row) return { ok: false, missing: true };
+  // Edit first (the cheap rights read, pre-check removal fix round A): a
+  // reader that may not edit the page gets the refusal whether a draft is
+  // there or not.
+  await assertItemRight(id, 'edit');
   if (!row.draftDoc) return { ok: false, noDraft: true };
   return commitPage(ownerId, id, row.draftDoc as Record<string, unknown>, {
     baseRev: row.draftRev,

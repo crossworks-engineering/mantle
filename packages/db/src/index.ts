@@ -423,9 +423,11 @@ export {
   wsArraySql,
 } from './item-acl';
 export {
+  assertItemRight,
   foldersReadOf,
   itemWriteRefusal,
   itemWriteRefusalOf,
+  itemWriteVerdicts,
   itemNotInScopeError,
   itemNoRightError,
   READ_ONLY_COPY_ERROR,

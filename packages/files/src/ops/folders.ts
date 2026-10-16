@@ -21,6 +21,7 @@ import {
 import {
   afterOuterCommit,
   afterOuterRollback,
+  assertItemRight,
   carrySpaceRows,
   db,
   flipThenPlace,
@@ -275,6 +276,11 @@ export async function deleteFolder(args: {
   if (!folder || folder.type !== 'branch') {
     return { ok: false, reason: 'not-found' };
   }
+  // Manage first (pre-check removal fix round A, M1): a caller that may not
+  // delete the folder learns nothing of it past that (hidden rows, its
+  // emptiness, files on disk). The cheap rights read; the database's
+  // refusal below stays the authority.
+  await assertItemRight(folder.id, 'manage');
   if (folder.path === FILES_ROOT_LABEL) {
     return { ok: false, reason: 'cannot delete the files root' };
   }

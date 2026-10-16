@@ -36,6 +36,7 @@ import {
 import { derivedCountsOf, type DerivedCounts } from '../derived-counts';
 import { deleteThumbnailsFor } from '../thumbnail';
 import {
+  assertItemRight,
   assertNotSnapshotCopy,
   brokerLockTx,
   currentCreateHome,
@@ -1191,6 +1192,10 @@ export async function renameFileById(args: {
     .where(and(eq(nodes.id, args.fileId), eq(nodes.ownerId, args.ownerId)))
     .limit(1);
   if (!node || node.type !== 'file') return null;
+  // Edit first (pre-check removal fix round A): a caller that may not rename
+  // the file learns nothing of the folder (a name taken by a file it does
+  // not read). The database's refusal stays the authority.
+  await assertItemRight(node.id, 'edit');
   const data = (node.data ?? {}) as Record<string, unknown>;
   const oldFilename = String(data.filename ?? '');
   const ext = String(data.extension ?? extOf(oldFilename));
