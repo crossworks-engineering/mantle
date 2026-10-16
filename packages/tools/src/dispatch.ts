@@ -84,7 +84,7 @@ import { mcpPairing, secretRefsRunRefusal, vaultPairRunRefusal } from './secret-
 // registry, which imports every builtin) reach dispatchTool through the bridge.
 import { resolveTool, resolveTools } from './resolve';
 export { resolveTool, resolveTools };
-import { errorMessage, NET_TIMEOUTS, publicErrorText, timeoutSignal } from '@mantle/std';
+import { errorMessage, NET_TIMEOUTS, timeoutSignal, toolThrowText } from '@mantle/std';
 
 const HTTP_TIMEOUT_MS_DEFAULT = NET_TIMEOUTS.httpTool;
 
@@ -331,8 +331,13 @@ async function dispatchGated(
             // A provider's failure is its fixed sentence, never its body
             // (logged server side; A10 #10 fix round 2; the detail on the
             // owner's trace, A10 lows); our own errors keep their text.
+            // (toolThrowText, then the exported errorMessage, which the
+            // read-only sweep observes: a5-read-tools-ro.db.test.ts.)
             if (!rethrows)
-              return { ok: false, error: publicErrorText(err, `tool ${tool.slug}`, ctx.step) };
+              return {
+                ok: false,
+                error: toolThrowText(err, `tool ${tool.slug}`, ctx.step) ?? errorMessage(err),
+              };
             thrown = { err };
             return null;
           }
@@ -363,7 +368,10 @@ async function dispatchGated(
       return res.value ?? { ok: false, error: 'the tool gave no result' };
     } catch (err) {
       if (rethrows) throw err;
-      return { ok: false, error: publicErrorText(err, `tool ${tool.slug}`, ctx.step) };
+      return {
+        ok: false,
+        error: toolThrowText(err, `tool ${tool.slug}`, ctx.step) ?? errorMessage(err),
+      };
     }
   }
   // No runtime tool runs without a policy (arch A3c, plan section 8): one
