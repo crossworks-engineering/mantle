@@ -66,8 +66,8 @@ export function noteCheckFloor(base: Sql, tag: string): void {
       const line = checkFloorWarning(rows[0] as CheckFloorRow | undefined);
       if (line === said) return;
       said = line;
+      // One loud line per change; none once both are on again.
       if (line) console.error(line);
-      else console.warn('[db] the actor check and the edit check are on again.');
     })
     .catch(() => {});
 }

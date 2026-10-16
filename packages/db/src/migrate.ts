@@ -112,7 +112,6 @@ async function main() {
     // development database keeps the mode its run sets (CI migrates the
     // database its suites switch themselves).
     if (isProduction()) await raiseCheckFloor(sql, { info: console.log, warn: console.warn });
-    else console.log('  check modes: left as they are (not a production box)');
 
     // Indexes built CONCURRENTLY, outside any transaction (workspaces W3).
     // Last, bounded, and never fatal: an index here is speed only, so a
