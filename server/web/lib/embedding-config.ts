@@ -13,6 +13,7 @@ import {
   requestProviderProbeNow,
 } from '@mantle/db';
 import { errorMessage } from '@mantle/std';
+import { log } from '@mantle/tracing';
 import { clearEmbeddingModelCache, EMBEDDING_DIMS } from '@mantle/embeddings';
 
 export { EMBEDDING_DIMS };
@@ -111,6 +112,6 @@ export async function retryProvidersAfterKeyChange(ownerId: string): Promise<voi
   try {
     await retryProvidersNow(ownerId);
   } catch (err) {
-    console.error('[keys] could not ask the provider alerts to probe:', errorMessage(err));
+    log('keys').error(`could not ask the provider alerts to probe: ${errorMessage(err)}`);
   }
 }
