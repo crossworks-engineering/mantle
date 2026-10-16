@@ -27,6 +27,12 @@ describe('compose passes the box flags to the app services', () => {
       expect(anchor).toMatch(new RegExp(`^\\s+${name}: \\$\\{${name}:-\\}$`, 'm'));
     });
   }
+  // The checks' floor at migrate (0298): raise unless the box says keep,
+  // with its reason (docs/update-prod.md, "Keep one box below on").
+  it('MANTLE_CHECK_FLOOR', () => {
+    expect(anchor).toMatch(/^\s+MANTLE_CHECK_FLOOR: \$\{MANTLE_CHECK_FLOOR:-raise\}$/m);
+    expect(anchor).toMatch(/^\s+MANTLE_CHECK_FLOOR_REASON: \$\{MANTLE_CHECK_FLOOR_REASON:-\}$/m);
+  });
 });
 
 /**
