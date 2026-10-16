@@ -359,8 +359,10 @@ retries and the failover. That is a known gap, left for its own step.
     part.`; a 400 or 422 whose body points at an argument the caller
     sent (an invalid or unsupported value, a parameter, "is required",
     "must be one of", `invalid_type`) and not at the request's own shape
-    (`tools.N`, `messages.N`, `max_tokens`) `The provider rejected the
-    request as invalid. Check the arguments (names, types, sizes) and try
+    (`tools.N`, `messages.N`, `contents.N`, `max_tokens`, in dot or
+    bracket notation since fix round 2, L-A: `tools[0].function.parameters`,
+    `messages.[1].content`, `tools[0].function_declarations[0]`) `The
+    provider rejected the request as invalid. Check the arguments (names, types, sizes) and try
     again.`; any other 400 or 422 `The model provider refused the
     request.` (fix round 1, L1: a config-side 400 is ours to fix, and a
     model told to retry it only spends calls). A person never hears the
@@ -384,8 +386,12 @@ retries and the failover. That is a known gap, left for its own step.
     provider tools call `publicProviderErrorMessage` themselves. Its pair
     `errorDetail(err)` is the detail for the log and the owner's trace:
     the message with key looking literals masked (`maskKeyLiterals`: the
-    providers' key prefixes, a `Bearer` token, a value named `api_key`,
-    `key`, `token` or `secret`), except a refused key's, which names
+    providers' key prefixes, ElevenLabs `sk_` and GitHub `gh?_` among
+    them, a `Bearer` token or Deepgram's `Token`, a value named `api_key`,
+    `key`, `token`, `secret` or `authorization`, a bare key of 32 or more
+    hex or mixed letters and digits; a literal also starts after a
+    percent escape, so `Bearer%20sk-...` is masked: fix round 2, L-B),
+    except a refused key's, which names
     provider and status only. The refusal is read on every error (fix
     round 1, M1), so a wrapper that copied an adapter's message
     (`<p> embeddings failed: 401 Unauthorized - <body>`, `<p> chat 401:

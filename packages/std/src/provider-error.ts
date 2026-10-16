@@ -94,8 +94,12 @@ export const PROVIDER_REQUEST_REASONS = {
 const ARGS_RE =
   /\b(?:invalid|unsupported|unknown|unrecognized)\s+(?:value|parameter|argument|field|enum)|\bargument|\bparameter|\bis required\b|\bmust be (?:one of|a |an |between|less|greater|at (?:least|most)|positive|non-negative)|\bnot one of\b|supported values|invalid_type/i;
 /** A 400 about the request's own shape (the tool definitions, the messages,
- *  the output budget): never the model's arguments, whatever words it uses. */
-const REQUEST_SHAPE_RE = /\btools\.\d|\bmessages\.\d|\bmax_(?:completion_)?tokens\b/i;
+ *  the output budget): never the model's arguments, whatever words it uses.
+ *  In dot or bracket notation (fix round 2, L-A): Anthropic's `tools.0`,
+ *  OpenAI's `tools[0].function.parameters` and `messages.[1].content`,
+ *  Gemini's `contents.0` and `tools[0].function_declarations[0]`. */
+const REQUEST_SHAPE_RE =
+  /\b(?:tools|messages|contents|function_declarations)(?:\.\[?|\[)\d|\bmax_(?:completion_)?tokens\b/i;
 
 /**
  * The text a person reads for a provider failure (a member's thread for a
@@ -301,22 +305,50 @@ export function providerAuthRefusal(err: unknown): { provider?: string; status: 
  * that echoes a key with a status that is no refused key's (a 400 that
  * quotes the header, a 403 moderation answer that quotes the request). By
  * the providers' own key prefixes (OpenAI, Anthropic, OpenRouter `sk-`;
- * Google `AIza`; Hugging Face `hf_`; Groq `gsk_`; xAI `xai-`; Perplexity
- * `pplx-`; Replicate `r8_`; ours `mtlk_`), a `Bearer` token, and a value
- * named `api_key`, `apikey`, `key`, `token` or `secret`. A safety net, not
- * the rule: a refused key's detail never carries its body at all.
+ * ElevenLabs `sk_`; Google `AIza`; Hugging Face `hf_`; Groq `gsk_`; xAI
+ * `xai-`; Perplexity `pplx-`; Replicate `r8_`; GitHub `ghp_`, `gho_`,
+ * `ghu_`, `ghs_`, `ghr_`; ours `mtlk_`), a `Bearer` or `Token` credential
+ * (Deepgram's scheme), a value named `api_key`, `apikey`, `key`, `token`,
+ * `secret` or `authorization` (AssemblyAI sends the bare key there), and a
+ * bare key with no prefix (Mistral, Cohere, Deepgram, AssemblyAI): a run
+ * of 32 or more hex characters, or of 32 or more letters and digits that
+ * mixes upper case, lower case and digits. A literal starts after any
+ * character that is no letter or digit, or after a percent escape, so the
+ * URL-encoded `Bearer%20sk-...` is masked too (fix round 2, L-B). A safety
+ * net, not the rule: a refused key's detail never carries its body at all.
  */
 export function maskKeyLiterals(text: string): string {
   return text
     .replace(KEY_PREFIX_RE, (_m, prefix: string) => `${prefix}[masked]`)
-    .replace(BEARER_RE, (_m, word: string) => `${word} [masked]`)
-    .replace(NAMED_SECRET_RE, (_m, name: string, sep: string) => `${name}${sep}[masked]`);
+    .replace(BEARER_RE, (_m, word: string, sep: string) => `${word}${sep}[masked]`)
+    .replace(TOKEN_RE, (_m, word: string, sep: string) => `${word}${sep}[masked]`)
+    .replace(NAMED_SECRET_RE, (_m, name: string, sep: string) => `${name}${sep}[masked]`)
+    .replace(BARE_KEY_RE, '[masked]');
 }
 
-const KEY_PREFIX_RE = /\b(sk-|AIza|hf_|gsk_|xai-|pplx-|r8_|mtlk_)[A-Za-z0-9_*.-]{6,}/g;
-const BEARER_RE = /\b(Bearer)\s+[A-Za-z0-9._~+/*-]{8,}=*/gi;
-const NAMED_SECRET_RE =
-  /\b(api[_-]?key|x-api-key|key|token|secret|access_token)(["']?\s*[:=]\s*["']?)(?!\[masked\])[^\s"',;&}]{8,}/gi;
+/** Where a literal may start: after no letter or digit, or after a `%XX`. */
+const START = String.raw`(?:(?<![A-Za-z0-9])|(?<=%[0-9A-Fa-f]{2}))`;
+const KEY_PREFIX_RE = new RegExp(
+  String.raw`${START}(sk-|sk_|AIza|hf_|gsk_|xai-|pplx-|r8_|gh[pousr]_|mtlk_)[A-Za-z0-9_*.-]{6,}`,
+  'g',
+);
+const BEARER_RE = new RegExp(String.raw`${START}(Bearer)(\s+|%20)[A-Za-z0-9._~+/*-]{8,}=*`, 'gi');
+/** Deepgram's `Token <key>`, when the credential has a digit (so "Token
+ *  validation failed" stays). */
+const TOKEN_RE = new RegExp(
+  String.raw`${START}(Token)(\s+|%20)(?=[A-Za-z._~+/-]*\d)[A-Za-z0-9._~+/-]{16,}=*`,
+  'gi',
+);
+const NAMED_SECRET_RE = new RegExp(
+  String.raw`${START}(api[_-]?key|x-api-key|key|token|secret|access_token|authorization)(["']?\s*[:=]\s*["']?)(?!\[masked\])[^\s"',;&}]{8,}`,
+  'gi',
+);
+/** A key with no prefix: 32+ hex, or 32+ letters and digits that mix upper
+ *  case, lower case and digits (Mistral, Cohere). */
+const BARE_KEY_RE = new RegExp(
+  String.raw`${START}(?:[0-9A-Fa-f]{32,}|(?=[A-Za-z0-9]*[a-z])(?=[A-Za-z0-9]*[A-Z])(?=[A-Za-z0-9]*\d)[A-Za-z0-9]{32,})(?![A-Za-z0-9])`,
+  'g',
+);
 
 /**
  * The status a copy of an adapter's message carries (a wrapper that kept the

@@ -19,6 +19,7 @@ import {
   classifyProviderError,
   isProviderHttpFailure,
   isRouteDownError,
+  providerRequestReason,
   retryDecision,
 } from './provider-error';
 
@@ -484,5 +485,96 @@ describe('the watch maps a caught provider failure (A10 lows item 4)', () => {
       throw e;
     }).catch((x: unknown) => x);
     expect(err).toBe(e);
+  });
+});
+
+describe("a 400 over the request's own shape, in bracket notation (fix round 2, L-A)", () => {
+  it.each([
+    [
+      'OpenAI tool schema',
+      `{"error":{"message":"Invalid schema for function 'get_x': 'additionalProperties' is required to be supplied and to be false.","type":"invalid_request_error","param":"tools[0].function.parameters","code":"invalid_function_parameters"}}`,
+    ],
+    [
+      'OpenAI messages, dot then bracket',
+      `{"error":{"message":"Invalid value for 'content': expected a string, got null.","type":"invalid_request_error","param":"messages.[1].content","code":null}}`,
+    ],
+    [
+      'Gemini function declarations',
+      `{"error":{"code":400,"message":"Invalid JSON payload received. Unknown name \\"foo\\" at 'tools[0].function_declarations[0].parameters': Cannot find field.","status":"INVALID_ARGUMENT"}}`,
+    ],
+    [
+      'Gemini contents',
+      `{"error":{"code":400,"message":"Invalid value at 'contents[2].parts[0]': unknown field","status":"INVALID_ARGUMENT"}}`,
+    ],
+    ['Anthropic, dot notation (unchanged)', 'tools.0.custom.input_schema: JSON schema is invalid'],
+  ])('%s says the neutral sentence', (_name, body) => {
+    expect(providerRequestReason(400, body)).toBe(PROVIDER_REQUEST_REASONS.rejected);
+  });
+
+  it('an argument the caller sent still asks for other arguments', () => {
+    expect(
+      providerRequestReason(
+        400,
+        `{"error":{"message":"Invalid value: '999x999'. Supported values are: '1024x1024'","param":"size"}}`,
+      ),
+    ).toBe(PROVIDER_REQUEST_REASONS.bad_request);
+    // A word that merely starts like a shape key is no shape.
+    expect(providerRequestReason(400, 'invalid value for parameter toolset[0]')).toBe(
+      PROVIDER_REQUEST_REASONS.bad_request,
+    );
+  });
+});
+
+describe('maskKeyLiterals: the keys fix round 1 missed (fix round 2, L-B)', () => {
+  const hex = (n: number) => 'a1b2c3d4e5f60789'.repeat(10).slice(0, n);
+  const cases: [string, string, string][] = [
+    ['ElevenLabs sk_', `xi-api-key rejected: sk_${hex(48)}`, hex(48)],
+    ['GitHub ghp_', `bad credentials ghp_AbCdEfGhIjKlMnOpQrStUvWxYz0123456789`, 'AbCdEfGhIj'],
+    ['GitHub ghu_ in JSON', `{"token":"ghu_AbCdEfGhIjKlMnOpQrStUvWxYz0123456789"}`, 'AbCdEfGhIj'],
+    ['GitHub gho_', `oauth gho_AbCdEfGhIjKlMnOpQrStUvWxYz0123456789.`, 'AbCdEfGhIj'],
+    ['Deepgram Token', `Authorization: Token ${hex(40)}`, hex(40)],
+    ['AssemblyAI authorization', `authorization: ${hex(32)}`, hex(32)],
+    ['AssemblyAI authorization in JSON', `{"authorization":"${hex(32)}"}`, hex(32)],
+    ['bare Deepgram key', `Invalid credentials: ${hex(40)}.`, hex(40)],
+    ['bare AssemblyAI key', `key ${hex(32)} is not valid`, hex(32)],
+    ['bare Mistral key', 'Incorrect API key provided: AbCdEfGhIjKlMnOpQrStUvWxYz012345.', 'AbCdEf'],
+    [
+      'bare Cohere key',
+      'invalid api token Ab12Cd34Ef56Gh78Ij90Kl12Mn34Op56Qr78St90',
+      'Ab12Cd34Ef56Gh78',
+    ],
+    [
+      'URL-encoded Bearer, OpenRouter',
+      'Authorization=Bearer%20sk-or-v1-abcdef0123456789',
+      'abcdef0123456789',
+    ],
+    ['URL-encoded Bearer, xAI', 'Authorization=Bearer%20xai-AbCdEfGhIjKlMnOp12', 'AbCdEfGh'],
+    ['URL-encoded Bearer, no prefix', 'h=Bearer%20AbCdEfGh0123456789', 'AbCdEfGh01'],
+  ];
+  it.each(cases)('%s', (_name, text, leak) => {
+    expect(maskKeyLiterals(text)).not.toContain(leak);
+    expect(maskKeyLiterals(text)).toContain('[masked]');
+  });
+
+  it('the masks keep the label and leave ordinary words alone', () => {
+    expect(maskKeyLiterals(`Authorization: Token ${hex(40)}`)).toBe(
+      'Authorization: Token [masked]',
+    );
+    expect(maskKeyLiterals(`sk_${hex(48)}`)).toBe('sk_[masked]');
+    for (const plain of [
+      'Token validation failed for this request',
+      'risk_assessment task_1234567 disk_usage',
+      'request id req_0123456789 at 2026-10-16T08:00:00Z',
+      '0a1b2c3d-4e5f-6789-0a1b-2c3d4e5f6789',
+      'Authorization header is missing',
+    ]) {
+      expect(maskKeyLiterals(plain)).toBe(plain);
+    }
+  });
+
+  it('errorDetail masks them under a status that is no refused key', () => {
+    const e = new Error(`openai chat 400: Authorization=Bearer%20sk-proj-${hex(40)} xi ${hex(32)}`);
+    expect(errorDetail(e)).not.toContain(hex(32));
+    expect(errorDetail(e)).toContain('openai chat 400');
   });
 });

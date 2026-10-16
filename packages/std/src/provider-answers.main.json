@@ -35,6 +35,30 @@
     "domain": "The model provider answered with an error. (openai, HTTP 400)",
     "reply": "openai chat 400: max_tokens: 100000 > 64000, the maximum sk-or-v1-0123456789abcdef org=acme-private"
   },
+  "phe 400 openai tools bracket": {
+    "provider": "The model provider answered with an error. (openai, HTTP 400)",
+    "thrown": "The model provider answered with an error. (openai, HTTP 400)",
+    "domain": "The model provider answered with an error. (openai, HTTP 400)",
+    "reply": "openai chat 400: {\"error\":{\"message\":\"Invalid schema for function 'f': 'additionalProperties' is required to be supplied and to be false. sk-or-v1-0123456789abcdef org=acme-private\",\"param\":\"tools[0].function.parameters\"}}"
+  },
+  "phe 400 openai messages dot bracket": {
+    "provider": "The model provider answered with an error. (openai, HTTP 400)",
+    "thrown": "The model provider answered with an error. (openai, HTTP 400)",
+    "domain": "The model provider answered with an error. (openai, HTTP 400)",
+    "reply": "openai chat 400: {\"error\":{\"message\":\"Invalid value for 'content': expected a string, got null. sk-or-v1-0123456789abcdef org=acme-private\",\"param\":\"messages.[1].content\"}}"
+  },
+  "phe 400 gemini function_declarations": {
+    "provider": "The model provider answered with an error. (google, HTTP 400)",
+    "thrown": "The model provider answered with an error. (google, HTTP 400)",
+    "domain": "The model provider answered with an error. (google, HTTP 400)",
+    "reply": "google chat 400: Invalid JSON payload received. Unknown name \"foo\" at 'tools[0].function_declarations[0].parameters': Cannot find field. sk-or-v1-0123456789abcdef org=acme-private"
+  },
+  "sdk 400 openai tools bracket": {
+    "provider": "The model provider answered with an error. (HTTP 400)",
+    "thrown": "The model provider answered with an error. (HTTP 400)",
+    "domain": null,
+    "reply": "openrouter-chat 400 on some/model: 'additionalProperties' is required in tools[0].function.parameters metadata=sk-or-v1-0123456789abcdef org=acme-private"
+  },
   "phe 400 prompt too long": {
     "provider": "The model provider answered with an error. (anthropic, HTTP 400)",
     "thrown": "The model provider answered with an error. (anthropic, HTTP 400)",

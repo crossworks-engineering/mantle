@@ -89,6 +89,24 @@ const CASES: Record<string, () => unknown> = {
   'phe 404 model': () => phe(404, SECRET),
   'phe 400 bad args': () => phe(400, `{"error":"tools.0.name: invalid ${SECRET}"}`),
   'phe 400 max_tokens': () => phe(400, `max_tokens: 100000 > 64000, the maximum ${SECRET}`),
+  'phe 400 openai tools bracket': () =>
+    phe(
+      400,
+      `{"error":{"message":"Invalid schema for function 'f': 'additionalProperties' is required to be supplied and to be false. ${SECRET}","param":"tools[0].function.parameters"}}`,
+    ),
+  'phe 400 openai messages dot bracket': () =>
+    phe(
+      400,
+      `{"error":{"message":"Invalid value for 'content': expected a string, got null. ${SECRET}","param":"messages.[1].content"}}`,
+    ),
+  'phe 400 gemini function_declarations': () =>
+    phe(
+      400,
+      `Invalid JSON payload received. Unknown name "foo" at 'tools[0].function_declarations[0].parameters': Cannot find field. ${SECRET}`,
+      'google',
+    ),
+  'sdk 400 openai tools bracket': () =>
+    sdkWrapped(400, "'additionalProperties' is required in tools[0].function.parameters"),
   'phe 400 prompt too long': () =>
     phe(400, `prompt is too long: 210000 tokens > 200000 maximum ${SECRET}`, 'anthropic'),
   'phe 400 context length': () =>

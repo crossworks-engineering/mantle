@@ -81,6 +81,109 @@
       "why": "A10 lows fix round 1 L1: a member reading a failed team turn (personProviderErrorMessage) never hears the model's \"check the arguments\": a 400/422 says the neutral sentence; main said the generic sentence"
     }
   ],
+  "phe 400 openai tools bracket": [
+    {
+      "reader": "provider",
+      "now": "The model provider refused the request. (openai, HTTP 400)",
+      "why": "A10 lows fix round 2 L-A: the request's own shape in bracket notation (OpenAI's tools[0].function.parameters) is no argument the caller sent, so a 400 over it says the neutral sentence, as tools.N did after fix round 1; main said the generic sentence"
+    },
+    {
+      "reader": "thrown",
+      "now": "The model provider refused the request. (openai, HTTP 400)",
+      "why": "A10 lows fix round 2 L-A: the request's own shape in bracket notation (OpenAI's tools[0].function.parameters) is no argument the caller sent, so a 400 over it says the neutral sentence, as tools.N did after fix round 1; main said the generic sentence"
+    },
+    {
+      "reader": "domain",
+      "now": "The model provider refused the request. (openai, HTTP 400)",
+      "why": "A10 lows fix round 2 L-A: the request's own shape in bracket notation (OpenAI's tools[0].function.parameters) is no argument the caller sent, so a 400 over it says the neutral sentence, as tools.N did after fix round 1; main said the generic sentence"
+    },
+    {
+      "reader": "reply",
+      "now": "The model provider refused the request. (openai, HTTP 400)",
+      "why": "A10 lows item 4 with fix round 2 L-A: a tool that caught a provider HTTP failure and replied errorMessage(err) now hands on its fixed sentence, the neutral one for a 400 over the request's own shape (OpenAI's tools[0].function.parameters); main handed on the body"
+    },
+    {
+      "reader": "member",
+      "now": "The model provider refused the request. (openai, HTTP 400)",
+      "why": "A10 lows fix round 1 L1 with fix round 2 L-A: a member reading a failed team turn (personProviderErrorMessage) never hears the model's \"check the arguments\": a 400 over the request's own shape (OpenAI's tools[0].function.parameters) says the neutral sentence; main said the generic sentence"
+    }
+  ],
+  "phe 400 openai messages dot bracket": [
+    {
+      "reader": "provider",
+      "now": "The model provider refused the request. (openai, HTTP 400)",
+      "why": "A10 lows fix round 2 L-A: the request's own shape in bracket notation (OpenAI's messages.[1].content) is no argument the caller sent, so a 400 over it says the neutral sentence, as tools.N did after fix round 1; main said the generic sentence"
+    },
+    {
+      "reader": "thrown",
+      "now": "The model provider refused the request. (openai, HTTP 400)",
+      "why": "A10 lows fix round 2 L-A: the request's own shape in bracket notation (OpenAI's messages.[1].content) is no argument the caller sent, so a 400 over it says the neutral sentence, as tools.N did after fix round 1; main said the generic sentence"
+    },
+    {
+      "reader": "domain",
+      "now": "The model provider refused the request. (openai, HTTP 400)",
+      "why": "A10 lows fix round 2 L-A: the request's own shape in bracket notation (OpenAI's messages.[1].content) is no argument the caller sent, so a 400 over it says the neutral sentence, as tools.N did after fix round 1; main said the generic sentence"
+    },
+    {
+      "reader": "reply",
+      "now": "The model provider refused the request. (openai, HTTP 400)",
+      "why": "A10 lows item 4 with fix round 2 L-A: a tool that caught a provider HTTP failure and replied errorMessage(err) now hands on its fixed sentence, the neutral one for a 400 over the request's own shape (OpenAI's messages.[1].content); main handed on the body"
+    },
+    {
+      "reader": "member",
+      "now": "The model provider refused the request. (openai, HTTP 400)",
+      "why": "A10 lows fix round 1 L1 with fix round 2 L-A: a member reading a failed team turn (personProviderErrorMessage) never hears the model's \"check the arguments\": a 400 over the request's own shape (OpenAI's messages.[1].content) says the neutral sentence; main said the generic sentence"
+    }
+  ],
+  "phe 400 gemini function_declarations": [
+    {
+      "reader": "provider",
+      "now": "The model provider refused the request. (google, HTTP 400)",
+      "why": "A10 lows fix round 2 L-A: the request's own shape in bracket notation (Gemini's tools[0].function_declarations[0].parameters) is no argument the caller sent, so a 400 over it says the neutral sentence, as tools.N did after fix round 1; main said the generic sentence"
+    },
+    {
+      "reader": "thrown",
+      "now": "The model provider refused the request. (google, HTTP 400)",
+      "why": "A10 lows fix round 2 L-A: the request's own shape in bracket notation (Gemini's tools[0].function_declarations[0].parameters) is no argument the caller sent, so a 400 over it says the neutral sentence, as tools.N did after fix round 1; main said the generic sentence"
+    },
+    {
+      "reader": "domain",
+      "now": "The model provider refused the request. (google, HTTP 400)",
+      "why": "A10 lows fix round 2 L-A: the request's own shape in bracket notation (Gemini's tools[0].function_declarations[0].parameters) is no argument the caller sent, so a 400 over it says the neutral sentence, as tools.N did after fix round 1; main said the generic sentence"
+    },
+    {
+      "reader": "reply",
+      "now": "The model provider refused the request. (google, HTTP 400)",
+      "why": "A10 lows item 4 with fix round 2 L-A: a tool that caught a provider HTTP failure and replied errorMessage(err) now hands on its fixed sentence, the neutral one for a 400 over the request's own shape (Gemini's tools[0].function_declarations[0].parameters); main handed on the body"
+    },
+    {
+      "reader": "member",
+      "now": "The model provider refused the request. (google, HTTP 400)",
+      "why": "A10 lows fix round 1 L1 with fix round 2 L-A: a member reading a failed team turn (personProviderErrorMessage) never hears the model's \"check the arguments\": a 400 over the request's own shape (Gemini's tools[0].function_declarations[0].parameters) says the neutral sentence; main said the generic sentence"
+    }
+  ],
+  "sdk 400 openai tools bracket": [
+    {
+      "reader": "provider",
+      "now": "The model provider refused the request. (HTTP 400)",
+      "why": "A10 lows fix round 2 L-A: the request's own shape in bracket notation (tools[0].function.parameters through OpenRouter) is no argument the caller sent, so a 400 over it says the neutral sentence, as tools.N did after fix round 1; main said the generic sentence"
+    },
+    {
+      "reader": "thrown",
+      "now": "The model provider refused the request. (HTTP 400)",
+      "why": "A10 lows fix round 2 L-A: the request's own shape in bracket notation (tools[0].function.parameters through OpenRouter) is no argument the caller sent, so a 400 over it says the neutral sentence, as tools.N did after fix round 1; main said the generic sentence"
+    },
+    {
+      "reader": "reply",
+      "now": "The model provider refused the request. (HTTP 400)",
+      "why": "A10 lows item 4 with fix round 2 L-A: a tool that caught a provider HTTP failure and replied errorMessage(err) now hands on its fixed sentence, the neutral one for a 400 over the request's own shape (tools[0].function.parameters through OpenRouter); main handed on the body"
+    },
+    {
+      "reader": "member",
+      "now": "The model provider refused the request. (HTTP 400)",
+      "why": "A10 lows fix round 1 L1 with fix round 2 L-A: a member reading a failed team turn (personProviderErrorMessage) never hears the model's \"check the arguments\": a 400 over the request's own shape (tools[0].function.parameters through OpenRouter) says the neutral sentence; main said the generic sentence"
+    }
+  ],
   "phe 400 prompt too long": [
     {
       "reader": "provider",
