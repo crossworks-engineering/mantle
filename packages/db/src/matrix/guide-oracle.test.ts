@@ -11,6 +11,7 @@ import {
   GUIDE_SILENT_PINNED,
   KEY_SHARED_CONTENT,
   expectedAccess,
+  othersRead,
   type GuideActor,
   type GuidePlacement,
 } from './guide-oracle';
@@ -181,6 +182,12 @@ describe('the A8 oracle', () => {
     // The login itself, in the app, changes it.
     expect(expectedAccess(via('web', 'root'), 'writeGrant', 'note', 'edit')).toEqual(allow);
     expect(expectedAccess(via('web', 'admin'), 'owner', 'note', 'edit')).toEqual(allow);
+    // Others read every placement but a snapshot copy: no open link, and its
+    // one grant is its author's private workspace (audit L2).
+    expect(othersRead('root')).toBe(true);
+    expect(othersRead('folder')).toBe(true);
+    expect(othersRead('admin')).toBe(true);
+    expect(othersRead('snapshot')).toBe(false);
   });
 
   it("a contact share with Can write writes its app's data, and nothing else", () => {

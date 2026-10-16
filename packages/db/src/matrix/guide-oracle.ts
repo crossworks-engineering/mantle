@@ -390,10 +390,11 @@ const KEY_OR_PEER_SURFACES: readonly GuideSurface[] = ['api-v1', 'mcp-key', 'pee
 
 /** Whether others read the fixture's item in `placement`: granted to a
  *  workspace other than Admin, or with a public link. Every item but a
- *  snapshot copy has an open link (the fixture), and a copy is homed in
- *  its author's private workspace. */
-function othersRead(placement: GuidePlacement): boolean {
-  return placement !== 'snapshot' || grantsOf(placement).read.some((w) => w !== 'admin');
+ *  snapshot copy has an open link (the fixture); a copy is granted to its
+ *  author's private workspace alone, which no one else reads. */
+export function othersRead(placement: GuidePlacement): boolean {
+  if (placement !== 'snapshot') return true;
+  return grantsOf(placement).read.some((w) => w !== 'admin' && w !== 'private');
 }
 
 /** The why of a cell where the guide is silent and the oracle pins the
