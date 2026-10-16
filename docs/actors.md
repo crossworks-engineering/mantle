@@ -5560,13 +5560,11 @@ one entry per lowered check (`mantle_check_note`, in 0298), so two
 lowerings are both on record, and an entry covers its check at its recorded
 mode or above only: a bare `ALTER DATABASE` below a recorded lowering is
 raised (the audit's floor edge). `scripts/roll.sh` step 2d refuses a roll
-to v0.300.82 or later (a lower bound for this release, as WS_SWITCH_FLOOR)
-on a box whose actor or edit check is not on, before its backup and
-request, unless its stack `.env` says `MANTLE_CHECK_FLOOR=keep`
-(`scripts/test-deploy-scripts.sh`, six cells). The updater
-(`infra/updater/updater.sh`, the in-app Update button) does not ask yet:
-docs/update-prod.md says to roll such a box with roll.sh. The runbook:
-docs/update-prod.md, "Keep one box below on, on purpose".
+to a release that ships the floor on a box whose actor or edit check is not
+on, before its backup and request, unless its stack `.env` says
+`MANTLE_CHECK_FLOOR=keep`; the in-app Update button (the updater) asks the
+same since fix round B (below), and neither names a release number. The
+runbook: docs/update-prod.md, "Keep one box below on, on purpose".
 
 **The kept entries look kept (owner concern).** The policy field is
 `legacyItemPrecheck: { need, reason }` (`packages/tools/src/tool-policy.ts`,
@@ -5653,12 +5651,80 @@ headers, rerun full vitest, edit-on and runtime-role, then wait for CI.
    `vitest.edit-on.config.ts` (main's again here), the pins file, and
    migrations: F4 holds 0298 to 0300, so this branch's 0298 becomes 0301
    (rename the file, its journal entry, and every "0298" in comments, docs,
-   tests and `RUNTIME_DENIED_FUNCTIONS`' reason). `CHECK_FLOOR_RELEASE` in
-   `scripts/roll.sh` must stay at or below the release that ships it.
+   tests and `RUNTIME_DENIED_FUNCTIONS`' reason; keep the
+   `_check_mode_floor.sql` suffix, which roll.sh and the updater read:
+   fix round B).
 2. The 27 HTTP entries (blocker 1 is F4).
 3. The kept 29, each by removing its reason (`legacyItemPrecheck.reason`
-   says which kind), and the updater's own floor check
-   (`infra/updater/updater.sh`, as roll.sh step 2d).
+   says which kind). (The updater's own floor check: done in fix round B.)
+
+### Pre-check removal handover (fix round B, 2026-10-16)
+
+Branch `feat/precheck-remove`, still on main v0.300.81, not rebased (F4
+merges first; 0298 keeps its number; the 27 HTTP entries untouched).
+
+**Done:**
+
+- **The three a3b off cells** (`a3b-store-brokers.db.test.ts` tables,
+  `a3b2-store-brokers.db.test.ts` the files store and the snapshot store).
+  With both checks off the cheap rights read refuses the write first, by
+  design: each cell now expects the edit check's refusal (`no_edit`) off
+  as on, and that nothing changed (the store's files, the row, the
+  snapshot rows and tombstones), with a comment saying why; the two file
+  headers say it too. The tables cell asks a draft save and both commits.
+  The app database and app build off cells are unchanged (those writes ask
+  no rights read). Nothing later in either file read the old result (each
+  off cell is the last of its block and makes its own item).
+- **roll.sh step 2d asks the target, not a number.** `CHECK_FLOOR_RELEASE`
+  is gone: a box below on (and not `MANTLE_CHECK_FLOOR=keep`) is refused
+  when the TARGET release ships the floor, read from the target's tag in
+  the checkout roll.sh runs from (`ROLL_RELEASE_GIT` for another): a
+  migration named `*_check_mode_floor.sql` in the tag's tree. A target it
+  cannot tell (`latest`, a tag not fetched) counts as shipping it.
+  `CHECK_FLOOR_NOT_BEFORE=0.300.82` only skips the question for a release
+  older than any that could ship it (the floor was written on v0.300.81),
+  so it stays right whatever number F4 and this branch take. The rename to
+  0301 at the rebase keeps the suffix, which is what both scripts read (a
+  harness cell pins that the migration has it). The modes SQL's heredoc is
+  `CHECK_MODES_SQL` now.
+- **The updater asks too** (`infra/updater/updater.sh`,
+  `check_floor_refusal`, after the workspaces switch and before the
+  pre-roll backup): both on goes ahead without reading anything; below on
+  (or modes it cannot read) and not keep, it pulls the target image (the
+  roll pulls it anyway) and lists `/app/packages/db/migrations`: the floor
+  there is a refusal, with the status "roll refused, nothing changed:
+  this box's checks are not both on (actor X, edit Y), and vT ships the
+  checks' floor: ..." and how to go on; no floor goes ahead and says so;
+  an image it cannot read is a refusal (fails closed). keep goes ahead,
+  loudly. The updater runs in its own container and cannot source
+  roll.sh, so the SQL is copied, pinned equal by the harness and by
+  `packages/db/src/check-floor-preflight.db.test.ts` (which also runs it:
+  the two modes on a migrated database, "off off" before 0280). The
+  running updater decides: a box whose updater predates this is not
+  stopped by its Update button on its first roll to the floor
+  (docs/update-prod.md says so; roll it with roll.sh).
+- **Harness** (`scripts/test-deploy-scripts.sh`, 475 cells on the Mac's
+  bash 3.2): roll.sh against a throwaway release repo (v0.300.85 without
+  the floor, v0.300.90 with it): refused with the floor, through without
+  it, refused for a tag the checkout lacks and for `latest`, keep, both on,
+  older than .82, garbage; the updater's check in library mode (both on
+  reads no image; floor refused; no floor through; unreadable image or
+  modes refused; keep) and in the real loop (refused with nothing changed:
+  no backup, no compose pull, no up, the request consumed; no floor and
+  both on roll).
+
+**Changed answers:** the three off cells above (a write the database would
+make with both checks off is refused: narrower, by design, named in fix
+round A). A roll by roll.sh to a release past v0.300.81 that does not ship
+the floor, on a box below on, now goes ahead (it was refused by the lower
+bound); an Update button roll to a release that ships it, on a box below on
+and not keep, is now refused (it was made, and the migrate raised the
+checks).
+
+**Next round (after F4 merges), in order:** as fix round A's list above,
+less the updater (done here): the rebase (0298 becomes 0301: rename the
+file, keep its `_check_mode_floor.sql` suffix), the 27 HTTP entries, then
+the kept 29.
 
 ## Remove the switch-over code (A7)
 
