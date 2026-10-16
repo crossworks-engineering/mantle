@@ -73,9 +73,7 @@ describe('the warning masks a password literal in the query it quotes', () => {
     expect(quotedQueryStart('alter role r password $pw$a$$b$pw$ login')).toBe(
       "alter role r password '***' login",
     );
-    expect(quotedQueryStart('alter role r password $$cut mid')).toBe(
-      "alter role r password '***'",
-    );
+    expect(quotedQueryStart('alter role r password $$cut mid')).toBe("alter role r password '***'");
   });
 
   it('masks a conninfo password=value, case-insensitively', () => {
