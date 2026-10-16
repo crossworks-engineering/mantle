@@ -4,6 +4,25 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## Unreleased: A7, the switch-over code goes
+
+- **Deploy note:** a brain that is not on workspaces does not start: the
+  web process logs the reason ("clients present", or a failed switch) and
+  exits. Every box of the fleet is on workspaces since W9. A box that is
+  not is switched by hand (docs/workspaces.md, "Operator notes"), then
+  started again.
+- **Deploy note:** `MANTLE_ADMIN_READS=system` (the W6a and W7a rollback
+  switch) is gone; a value left in `.env` is not read. Remove it.
+- Migration 0295 drops `mantle_workspace_kind`; the rules that called it
+  keep their answers (the old kind list written in).
+- A pending call queued under the rollback switch runs, when approved, in
+  the scope it was asked in, never on the system pool.
+- **Fix:** an API key limited to some areas (no Search) listed pages, notes
+  and tables with a 500 on a brain on workspaces: the email attachment rule
+  read `email_accounts` in the key's scope. Migration 0296 reads the mail
+  account branches through a definer (`mantle_mail_branch_holds`); the
+  Files key guard's folder check uses it too.
+
 ## Unreleased: approvals, second lows round
 
 - **Deploy note:** a call queued before the first approvals lows round

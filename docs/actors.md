@@ -1099,7 +1099,7 @@ enum (`z.enum(LOGIN_ROLES)`; the users routes share `LoginRoleSchema` in
 | Admin areas    | `WORKSPACE_AREAS`, `WorkspaceArea`, `isWorkspaceArea` (`packages/client-types/src/dto/workspaces.ts`) | `SCOPE_AREAS` (`packages/db/src/viewer.ts`), `adminUserSql` (`packages/db/src/admin-user.ts`), the route classes (`server/web/lib/auth/route-scope.ts`), the shell's `areas`                                                                                                              |
 | History actors | `HISTORY_ACTORS`, `HistoryActor` (`role-names.ts`)                                                    | `node_snapshots.actor`, `AppHistoryActor` (`packages/content/src/apps.ts`), `AppSnapshot.actor`, `TableSnapshot.actor`                                                                                                                                                                    |
 | Recall actors  | `RECALL_ACTOR_KINDS`, `RecallActorKind` (`role-names.ts`)                                             | `RecallActor.kind` and the revisions list (`packages/content/src/recall-native.ts`), the recall wire types                                                                                                                                                                                |
-| Access levels  | `ACCESS_LEVELS`, `AccessLevel` (`packages/client-types/src/dto/access.ts`, highest first)             | `VIEWER_LEVELS` (`packages/db/src/viewer.ts`): the same list reversed, lowest first, on purpose                                                                                                                                                                                           |
+| Access levels  | `ACCESS_LEVELS`, `AccessLevel` (`packages/client-types/src/dto/access.ts`, highest first)             | the frozen level columns' types (`AccessLevel` in `packages/content/src/shares.ts`, `embed-closure.ts`, `packages/tools/src/app-tool-level.ts`); `VIEWER_LEVELS` and the level helpers went in A7                                                                                         |
 | Key areas      | `ACCESS_KEY_AREAS`, `AccessKeyArea` (`packages/client-types/src/dto/access-keys.ts`)                  | `KEY_AREAS` (`packages/mcp-core/src/key-scope.ts`), and through it the API v1 routes and the MCP key scope                                                                                                                                                                                |
 
 The SQL CHECKs hold the same values: `users_role_ck` (migration 0272) and
@@ -1130,7 +1130,7 @@ newest migration that adds each and pins it to the source.
 - Recall actors: `db/src/schema/recall.ts:183` (the list),
   `client-types/src/types/recall.ts:114`, `content/src/recall-native.ts:75`,
   `:1473`, `:1490`.
-- Access levels: `db/src/viewer.ts:47` (`VIEWER_LEVELS`, reversed).
+- Access levels: `db/src/viewer.ts:47` (`VIEWER_LEVELS`, reversed; gone in A7).
 - Key areas: `mcp-core/src/key-scope.ts:16` (`KEY_AREAS`).
 
 **No difference between copies.** `packages/client-types/src/role-names.test.ts`
@@ -4035,7 +4035,7 @@ Toolsmith's group tools). Its shape (`PendingOrigin`, version 1):
 | field     | what                                                                                                     |
 | --------- | -------------------------------------------------------------------------------------------------------- |
 | `scope`   | the turn's scope whole: `kind`, `loginId`, `ws`, `modWs` (its Moderator set); null: the turn ran in none |
-| `enter`   | how the turn held it: `turn` (a turn scope) or `gate` (the rollback switch's gate scope)                 |
+| `enter`   | how the turn held it: `turn` (a turn scope); `gate` (the rollback switch's) runs as `turn` since A7      |
 | `writes`  | the turn scope wrote as an Admin turn does                                                               |
 | `admin`   | the Admin view it had: `holds` (Admin) and `areas` (the Admin areas it could do)                         |
 | `surface` | the surface it ran on: `kind`, an owner path's `via`, the `loginId` it names (no chat or account id)     |
@@ -5247,3 +5247,159 @@ up without a reviewed raise): `itemPrecheckTools` 101 (every policy
 `server/web/lib/auth/route-scope.ts`: `ITEM_WRITE_PREFIXES` 16,
 `ITEM_REF_PREFIXES` 3, `ITEM_READ_WRITES` 7, `ITEM_MANAGE_WRITES` 1). The
 exits of 6b and step 4 are both 0.
+
+## Remove the switch-over code (A7)
+
+Plan v2 (page fcc4aee4), "A7. Remove the switch-over code", after W9 (every
+box of the fleet on workspaces, v0.300.73 or later). The scoreboard's
+switch-over counts are 0: `brainOnWorkspacesCalls` 12 -> 0 (files 7 -> 0),
+`adminReadsFiles` 2 -> 0; and `asSystemExits` 47 -> 46 (agent-workspace
+6 -> 5).
+
+**What went:**
+
+- `brainOnWorkspacesNow` (`packages/db/src/client.ts`) and its 12 calls:
+  `listDueReminders` (`packages/content/src/events.ts`), `loginHoldsAdmin`
+  and `loginHasArea`, the MCP scope entry (`packages/mcp-core/src/mcp-scope.ts`)
+  and listing (`login-surface.ts`), the session guards
+  (`server/web/lib/auth/session.ts`: the member write, the Admin route gate,
+  the item write gate, the any-login scope), the heartbeat fire
+  (`server/web/lib/heartbeats.ts`) and the sandbox maker rule
+  (`server/web/lib/sandboxd.ts`).
+- `MANTLE_ADMIN_READS` (the W6a and W7a rollback switch): its env name, its
+  two readers (`adminReadsOnSystemPool` in `@mantle/db` and in the session
+  guards) and its gate scope (`withGateScope`, `currentGateScope` and the
+  11 places that read it: the Admin tool gate, the gate callers' Admin view,
+  the item write pre-checks' scope, the pending stamp, the heartbeat and
+  Telegram callers, the name-taken rule, the Admin assistant's re-entry).
+- The level helpers of `packages/db/src/viewer.ts`: `VIEWER_LEVELS`,
+  `ViewerLevel`, `levelCovers`, `levelsMeet`, `lowerLevel`,
+  `ViewerLevelConflictError`, `isViewerLevel`, `asViewerLevel`; the
+  level-conflict mapping (`isLevelConflict`, `LEVEL_CONFLICT_MESSAGE`, the
+  403 `level-conflict`) in `@mantle/std`. Their three readers say the same
+  answer without them: the connector rule below the owner
+  (`packages/tools/src/dispatch.ts` nonOwnerRun), the spill read
+  (`packages/tools/src/tool-results.ts`), and three types (`AccessLevel`).
+- Every rule of a brain not on workspaces: the MCP refusal
+  (`NOT_ON_WORKSPACES_ERROR`, `NOT_ON_WORKSPACES_REFUSED`, the prepared
+  `refused` kind and the 403 `no_tools` of `/api/mcp`), the session
+  outcomes `admin-reads-flag` and `not-on-workspaces`, the agent scope's
+  `no-workspaces` branch and `enabledAdminLogin`
+  (`packages/runtime/src/agent/agent-viewer.ts`), the persona reconcile's
+  frozen level read (`server/web/lib/system-manifest/reconcile.ts`, its
+  `level-reads` allowlist entry) and `groupsForAgent`'s switch argument.
+- `mantle_workspace_kind` (0159), by migration 0295
+  (`packages/db/migrations/0295_a7_workspace_kind_gone.sql`). What still
+  named it (pg_depend and a body scan; nothing in 0291, 0293 or 0294): the
+  three nodes level CHECKs, `mantle_contact_share_check` (live, on
+  `shares`), `mantle_team_reads` and `mantle_ws_reach_diff` (the manual
+  switch), `mantle_inherited_level` (read by `mantle_page_folder_id`),
+  `mantle_embedded_level`, `mantle_open_embedded` and
+  `mantle_nodes_inherit_trg`. Each is the same rule with the old list
+  written in (page, note, draw, table, file, branch, app, formula; the
+  contact share check the registry's contactShare kinds). After it the one
+  SQL kind function is `mantle_kind_class`.
+
+**The boot.** The web boot awaits its workspaces step, then asks
+`mantle_ws_skip_reason()` (`server/web/lib/workspaces-migrate.ts`
+`unmigratedBrainReason`): a brain on workspaces and a fresh install with no
+owner yet start; any other answer ("clients present", or "no workspaces yet"
+after a failed switch) is logged with the reason and the process exits. The
+manifest reconcile now runs after that check. The operator's manual switch
+of a box that reports "clients present" (docs/workspaces.md, "Operator
+notes": `mantle_ws_migrate_locked` with `mantle.ws_former_clients =
+'reviewed'`) still runs after 0295 (`workspace-kind-gone-0295.db.test.ts`).
+A database the boot cannot read is not a refusal (logged, as before);
+detached dev runs the step as before, never awaited.
+
+**Recorded on main first.** The route and guard sweeps (a4-guard-sweep,
+role, member, auth, link-render, the A10 sweeps, w6a route and fix sweeps,
+the A6 grant and A6b exit sweeps, the W7a area and tool sweeps) were run on
+main (v0.300.75) and match their committed files; they match again after
+the change. Three recorded files lost only the switch-over cases, recorded
+on main before the change (the first commit of A7): the dispatch parity
+hashes without the rollback turn, the MCP calls without the rollback and
+off-workspaces connections, and the tools/list matrix without the unscoped
+view (140 -> 112 connections). Every other entry is byte for byte.
+
+**Changed answers (each named; nothing wider):**
+
+- On a brain on workspaces (every box): none. The sweeps above prove it.
+- `MANTLE_ADMIN_READS=system` does nothing: Admin reads, the Admin
+  assistant, its helpers and the Admin MCP surface stay in their scopes.
+  The removed tests pinned the switch's answers (the pre-W6a reads, the
+  gate scope's checks, the heartbeat under the switch).
+- A brain not on workspaces does not start (it served on the old rules).
+- A pending call stamped under the rollback switch (`enter: 'gate'`) runs
+  at approval in a turn scope of its met scope (reads in the scope, its
+  Admin view checked again), never on the system pool.
+- A run with no workspace on a brain with no live Admin workspace is
+  refused (`withRunScope`), where it ran on the system pool; a responder or
+  an assistant on no workspace called with no login is refused on every
+  brain (it ran as system work on a brain not on workspaces).
+- The 403 `level-conflict` mapping is gone; nothing threw it since W8c.
+
+**Found by A7, fixed beside it (migration 0296).** Every key test now runs
+on a brain on workspaces, and three area-limited key cells answered 500:
+the email attachment rule (`emailAttachmentSql`, `packages/db/src/
+email-attachment.ts`) and the Files key guard's folder check read
+`email_accounts`, no table the workspace role reads. On every box on
+workspaces an area-limited key's list of pages, notes or tables was that
+500 (main had it too; the old tests ran the key off workspaces).
+`mantle_mail_branch_holds(owner, path, inclusive)` answers whether a path
+is in one of the brain's mail account branches; both checks ask it
+(`mail-branch-definer-0296.db.test.ts`, `access-keys-scope.db.test.ts`).
+Changed answer: those cells 500 to their answer (200, or the key's own
+refusal).
+
+**The TypeScript item pre-checks still left** (A7 says they go here; they
+wait for the database checks to be on on every box, A4 step 4 and A5 6b):
+
+- the route side: 137 ROUTE_POLICY rows with an item target
+  (`routeItemTarget`, `server/web/lib/auth/route-policy.ts`), checked by
+  `itemWriteGate` (`server/web/lib/auth/session.ts`);
+- the tool side: 98 builtins whose policy names `items`
+  (`packages/tools/src/item-write-gate.ts`, `toolItemWriteRefusal`);
+- `createFolderRefusal` (the same file), the folder of a queued create.
+
+The pinned counts and the order to unblock their deletion: "Pre-check
+deletion (A4 step 4, A5 step 6b)" above.
+
+### The 410 stubs
+
+133 route files (and the PUT of `/api/app-nav`) answer 410 through
+`server/web/lib/gone.ts`, each hit logged as `[gone] 410 <path>`. Their
+deletion is the last commit(s) of A7, on its own so it can be dropped if a
+box shows hits. Count a box's hits first, numbers only, on the box (no path,
+id or log line leaves it):
+
+```sh
+scripts/arch-scoreboard-box.sh [--since <docker duration>] <ssh-alias>
+```
+
+which runs, on the box's host:
+
+```sh
+docker logs mantle_web 2>&1 | awk -v fams="access admin app-nav apps auth client mcp-logins member team-admin" '
+  BEGIN { n = split(fams, f, " ") }
+  match($0, /\[gone\] 410 [^ ]*/) {
+    p = substr($0, RSTART + 11, RLENGTH - 11); k = 0
+    if (substr(p, 1, 5) == "/api/") {
+      s = substr(p, 6); sub(/[\/?].*/, "", s)
+      for (i = 1; i <= n; i++) if (s == f[i]) k = i
+    }
+    c[k]++
+  }
+  END { for (i = 1; i <= n; i++) printf "%d ", c[i] + 0; printf "%d\n", c[0] + 0 }'
+```
+
+It prints ten counts: the families access (5 stub files), admin (8),
+app-nav (1), apps (13), auth (3), client (29), mcp-logins (4), member (45),
+team-admin (25), then every other hit. Since the container started is one
+release (a roll restarts it). All ten 0 on every box: the stubs may go.
+
+`server/web/server/a7-gone-routes.test.ts` recorded every stub method with
+no credential, the owner's cookie and a member's (462 cells,
+`__snapshots__/a7-gone-routes.main.txt`) before the deletion; after it each
+cell answers what a path no route answers (a sibling path driven the same
+way), recorded in `__snapshots__/a7-gone-routes.changes.txt`.

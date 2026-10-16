@@ -99,12 +99,10 @@ login's rights on that item first, as the item routes do
 (`packages/tools/src/item-write-gate.ts`): an item shared with Read only is
 refused.
 
-`MANTLE_ADMIN_READS=system` puts an admin login's calls back on the system
-pool, as before W7a. It restores only the read path (W7 integration fix 2):
-the call runs under the login's gate scope (`withGateScope`), so the Admin
-tool gate and the login's areas, the item write check, the sandbox maker
-rule and the vault pairing rule still ask that login. A member's never: on
-a brain not on workspaces a member's MCP is refused.
+Every login's calls run in its own workspaces: there is no system-pool path
+for an admin login since arch A7 (the `MANTLE_ADMIN_READS=system` rollback
+switch and the rule of a brain not on workspaces are gone; such a brain
+does not start, [workspaces.md](./workspaces.md), "Operator notes").
 
 The Telegram inbox tools (`telegram_pending`, `telegram_react`,
 `telegram_edit`, `telegram_mark_processed`) answer the anchor only, and

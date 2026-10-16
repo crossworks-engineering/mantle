@@ -678,20 +678,8 @@ whole brain on the system pool:
 
 Before rolling, compare reach on a dev copy: what each Admin login and the
 Admin assistant read before and after must only lose items no Admin grant
-holds (a member's private items). If a screen or a tool breaks, set
-`MANTLE_ADMIN_READS=system` in `.env` and restart the web container: Admin
-reads, the Admin assistant and the owner MCP surface go back to the system
-pool, as before. It is an emergency switch: on the system pool row security
-no longer keeps each Admin user's chat digests and archived chat summaries
-to that user, so the memory tools of the Admin assistant and its helpers can
-read another Admin user's until it is unset again.
-
-The switch restores only the old read path. Every gate stays on under it:
-the Admin tool gate and each login's areas, the item write check (an edit,
-a delete or a move needs that login's rights on the item), the sandbox maker
-rule (a login works only in the sandboxes it made) and the vault pairing
-rule still ask the login acting. A login that is not a user of the Admin
-workspace is refused on the Admin assistant and its helpers.
+holds (a member's private items). The emergency switch this release had
+(`MANTLE_ADMIN_READS=system`) went in arch A7: see "Rolling to A7" below.
 
 ## Rolling to logins carry nothing (W8a, migration 0272)
 
@@ -1102,6 +1090,29 @@ no Team by its mark: a member's chat that names no assistant is refused
 ("Team chat isn't provisioned") and the old member home answers nothing,
 until the newer image is back. Roll forward; do not put the mark back by
 hand.
+
+## Rolling to A7: the switch-over code goes (migration 0295)
+
+Arch A7 (docs/actors.md, "Remove the switch-over code (A7)"). For a box on
+workspaces nothing a user sees changes. Before the roll:
+
+- **The box must be on workspaces.** roll.sh's preflight says "workspaces:
+  nothing stops the switch here" on such a box. A brain that is not (a box
+  that reports "clients present") no longer starts: the web process logs
+  the reason and exits. Switch it by hand first
+  ([workspaces.md](./workspaces.md), "Operator notes"), then roll.
+- **`MANTLE_ADMIN_READS` is gone.** A box that still sets it in `.env` is
+  scoped as every box is (the value is not read); remove the line.
+- **Migration 0296** adds one definer (`mantle_mail_branch_holds`), with no
+  lock on a table and no row change: an area-limited API key's lists of
+  pages, notes and tables answered 500 on a brain on workspaces until it.
+- **Migration 0295** takes the `nodes` table's ACCESS EXCLUSIVE lock once
+  (a 3 s wait, 20 tries) to make the three level CHECKs again, validating
+  the two that were valid (a scan of `nodes`), and drops
+  `mantle_workspace_kind`. No row changes; re-runnable.
+- **The 410 stubs** go in the release's last commit(s), only when every box
+  showed no hit for one release. Count them per box, numbers only (counted
+  on the box): `scripts/arch-scoreboard-box.sh <alias>`; ten counts, all 0.
 
 ## Rollback
 
