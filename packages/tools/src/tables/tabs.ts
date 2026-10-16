@@ -10,7 +10,6 @@ import { str } from '../coerce';
 import { notFound } from '../errors';
 import { errorMessage } from '@mantle/std';
 import { DRAFT_REVIEW_HINT, TABLE_ID_PRE, loadTab } from './common';
-import { edit } from '../item-write-gate';
 import { CS } from '../client-sourced-rule';
 
 export const table_tab_add: BuiltinToolDef = {
@@ -20,7 +19,6 @@ export const table_tab_add: BuiltinToolDef = {
     effect: 'write',
     spends: 'none',
     scope: 'any',
-    items: [edit('table_id')],
     keyArea: 'tables',
     clientSourced: CS.onNodes('table_id'),
   },
@@ -77,7 +75,6 @@ export const table_tab_rename: BuiltinToolDef = {
     effect: 'write',
     spends: 'none',
     scope: 'any',
-    items: [edit('table_id')],
     keyArea: 'tables',
     clientSourced: CS.onNodes('table_id'),
   },
@@ -131,7 +128,6 @@ export const table_tab_delete: BuiltinToolDef = {
     effect: 'write',
     spends: 'none',
     scope: 'any',
-    items: [edit('table_id')],
     keyArea: 'tables',
     clientSourced: CS.onNodes('table_id'),
   },

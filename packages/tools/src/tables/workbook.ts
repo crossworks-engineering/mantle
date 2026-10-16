@@ -23,7 +23,6 @@ import { notFound } from '../errors';
 import { errorMessage } from '@mantle/std';
 import { FILE_ID_PRE, TABLE_NODE_ID_PRE, colSummary } from './common';
 import { tableHistoryActor } from './history';
-import { edit, manage } from '../item-write-gate';
 import { CS } from '../client-sourced-rule';
 
 export const table_create: BuiltinToolDef = {
@@ -309,7 +308,6 @@ export const table_update: BuiltinToolDef = {
     effect: 'write',
     spends: 'none',
     scope: 'any',
-    items: [edit('id')],
     keyArea: 'tables',
     clientSourced: CS.onNodes('id'),
   },
@@ -358,7 +356,6 @@ export const table_delete: BuiltinToolDef = {
     effect: 'write',
     spends: 'none',
     scope: 'any',
-    items: [manage('id')],
     peerRisky: true,
     keyArea: 'tables',
     clientSourced: CS.onNodes('id'),
@@ -395,7 +392,6 @@ export const table_commit: BuiltinToolDef = {
     effect: 'write',
     spends: 'none',
     scope: 'any',
-    items: [edit('id')],
     keyArea: 'tables',
     clientSourced: CS.onNodes('id'),
   },

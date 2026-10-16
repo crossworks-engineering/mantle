@@ -21,7 +21,6 @@ import {
   rowExists,
   windowFile,
 } from './common';
-import { edit } from '../item-write-gate';
 import { CS } from '../client-sourced-rule';
 
 export const table_row_add: BuiltinToolDef = {
@@ -31,7 +30,6 @@ export const table_row_add: BuiltinToolDef = {
     effect: 'write',
     spends: 'none',
     scope: 'any',
-    items: [edit('table_id')],
     keyArea: 'tables',
     clientSourced: CS.onNodes('table_id'),
   },
@@ -108,7 +106,6 @@ export const table_rows_add: BuiltinToolDef = {
     effect: 'write',
     spends: 'none',
     scope: 'any',
-    items: [edit('table_id')],
     keyArea: 'tables',
     clientSourced: CS.onNodes('table_id'),
   },
@@ -193,7 +190,6 @@ export const table_rows_upsert: BuiltinToolDef = {
     effect: 'write',
     spends: 'none',
     scope: 'any',
-    items: [edit('table_id')],
     keyArea: 'tables',
     clientSourced: CS.onNodes('table_id'),
   },
@@ -417,7 +413,6 @@ export const table_row_update: BuiltinToolDef = {
     effect: 'write',
     spends: 'none',
     scope: 'any',
-    items: [edit('table_id')],
     keyArea: 'tables',
     clientSourced: CS.onNodes('table_id'),
   },
@@ -485,7 +480,6 @@ export const table_row_delete: BuiltinToolDef = {
     effect: 'write',
     spends: 'none',
     scope: 'any',
-    items: [edit('table_id')],
     keyArea: 'tables',
     clientSourced: CS.onNodes('table_id'),
   },
@@ -543,7 +537,6 @@ export const table_cell_set: BuiltinToolDef = {
     effect: 'write',
     spends: 'none',
     scope: 'any',
-    items: [edit('table_id')],
     keyArea: 'tables',
     clientSourced: CS.onNodes('table_id'),
   },

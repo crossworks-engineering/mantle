@@ -19,7 +19,6 @@ import { str } from '../coerce';
 import { notFound } from '../errors';
 import { isOwnerSurface, OWNER_ONLY_ERROR } from '../surface';
 import { TABLE_NODE_ID_PRE } from './common';
-import { edit } from '../item-write-gate';
 import { CS } from '../client-sourced-rule';
 
 const ID = { type: 'string', description: "The table's id (UUID) — from `table_list`." };
@@ -88,7 +87,6 @@ export const table_snapshot_create: BuiltinToolDef = {
     effect: 'write',
     spends: 'none',
     scope: 'any',
-    items: [edit('id')],
     keyArea: 'tables',
     clientSourced: CS.onNodes('id'),
   },
@@ -134,7 +132,6 @@ export const table_snapshot_restore: BuiltinToolDef = {
     effect: 'write',
     spends: 'none',
     scope: 'any',
-    items: [edit('id')],
     peerRisky: true,
     keyArea: 'tables',
     clientSourced: CS.onNodes('id'),
@@ -212,7 +209,6 @@ export const table_snapshot_delete: BuiltinToolDef = {
     effect: 'write',
     spends: 'none',
     scope: 'any',
-    items: [edit('id')],
     peerRisky: true,
     keyArea: 'tables',
     clientSourced: CS.onNodes('id'),

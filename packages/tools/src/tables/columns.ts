@@ -20,7 +20,6 @@ import {
 import type { BuiltinToolDef } from '../types';
 import { str, strArr } from '../coerce';
 import { TABLE_ID_PRE, TAB_HINT, editViaOps, resolveColumn, resolveRefTarget } from './common';
-import { edit } from '../item-write-gate';
 import { CS } from '../client-sourced-rule';
 
 export const table_column_add: BuiltinToolDef = {
@@ -30,7 +29,6 @@ export const table_column_add: BuiltinToolDef = {
     effect: 'write',
     spends: 'none',
     scope: 'any',
-    items: [edit('table_id')],
     keyArea: 'tables',
     clientSourced: CS.onNodes('table_id'),
   },
@@ -122,7 +120,6 @@ export const table_column_update: BuiltinToolDef = {
     effect: 'write',
     spends: 'none',
     scope: 'any',
-    items: [edit('table_id')],
     keyArea: 'tables',
     clientSourced: CS.onNodes('table_id'),
   },
@@ -227,7 +224,6 @@ export const table_column_delete: BuiltinToolDef = {
     effect: 'write',
     spends: 'none',
     scope: 'any',
-    items: [edit('table_id')],
     keyArea: 'tables',
     clientSourced: CS.onNodes('table_id'),
   },
@@ -266,7 +262,6 @@ export const table_set_aggregate: BuiltinToolDef = {
     effect: 'write',
     spends: 'none',
     scope: 'any',
-    items: [edit('table_id')],
     keyArea: 'tables',
     clientSourced: CS.onNodes('table_id'),
   },
@@ -322,7 +317,6 @@ export const table_set_view: BuiltinToolDef = {
     effect: 'write',
     spends: 'none',
     scope: 'any',
-    items: [edit('table_id')],
     keyArea: 'tables',
     clientSourced: CS.onNodes('table_id'),
   },
