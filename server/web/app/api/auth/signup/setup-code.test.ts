@@ -13,7 +13,11 @@ const h = vi.hoisted(() => ({
   audits: [] as { action: string; detail?: Record<string, unknown> }[],
 }));
 
-vi.mock('@/lib/workspaces-migrate', () => ({ migrateWorkspacesQuietly: async () => {} }));
+vi.mock('@/lib/workspaces-migrate', () => ({
+  migrateWorkspacesQuietly: async () => {},
+  unmigratedBrainReason: async () => null,
+  unmigratedBrainRefusal: (why: string) => why,
+}));
 vi.mock('@mantle/db', async (importOriginal) => ({
   // The real gate pieces (the rate limit test drives the gate).
   ...(await importOriginal<Record<string, unknown>>()),

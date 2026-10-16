@@ -5,6 +5,7 @@ import { buildSessionCookie, SESSION_COOKIE_NAME } from '@/lib/auth';
 import { secureCookies } from '@/lib/auth-constants';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
 import { createFirstOwner } from '@/lib/auth/first-owner';
+import { refuseUnswitchedBrain } from '@/lib/auth/unswitched-brain';
 import { setupCodeConfigured, setupCodeMatches } from '@/lib/auth/setup-code';
 import { readJson } from '@/lib/read-body';
 
@@ -70,6 +71,19 @@ export async function POST(req: Request) {
   }
 
   const created = await createFirstOwner(parsed.data.email, parsed.data.password);
+  if (!created.ok && created.reason === 'not-switched') {
+    // The owner exists, but the brain is not on workspaces: never served.
+    // The process stops; its restart switches the brain again at boot.
+    refuseUnswitchedBrain(created.why);
+    return NextResponse.json(
+      {
+        error:
+          'Your account was made, but the brain could not finish its setup. It is restarting to try again: wait a minute, then sign in.',
+        reason: 'not-switched',
+      },
+      { status: 503 },
+    );
+  }
   if (!created.ok) {
     return NextResponse.json(
       { error: 'An account already exists. Sign in instead.' },

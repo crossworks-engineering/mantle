@@ -8,15 +8,30 @@
  * between a caller's "no users yet" check and the insert: two concurrent
  * first-run signups with different emails cannot both land. The brain is
  * then put on workspaces (lib/workspaces-migrate.ts).
+ *
+ * Since arch A7 the code has no rule for a brain off workspaces, and the
+ * boot refuses one (server/main.ts). A fresh install starts with no owner
+ * (it may: it serves the signup), so its first owner's switch is the one
+ * that counts: when it fails (a time budget, the switch guard, a database
+ * error), the owner exists but the brain is not on workspaces. That is
+ * answered `not-switched` with the reason, never `ok`: the signup route
+ * stops the web process (refuseUnswitchedBrain, ./unswitched-brain.ts) so
+ * its restart runs the
+ * boot's switch again (and refuses to serve while that fails), and the
+ * terminal wizard stops with the reason.
  */
 import { randomUUID } from 'node:crypto';
 import { sql } from 'drizzle-orm';
 import { db, isUniqueViolation } from '@mantle/db';
-import { migrateWorkspacesQuietly } from '../workspaces-migrate';
+import { migrateWorkspacesQuietly, unmigratedBrainReason } from '../workspaces-migrate';
 import { hashLoginPassword } from './session';
 
 export type FirstOwnerResult =
-  { ok: true; id: string; email: string } | { ok: false; reason: 'exists' };
+  | { ok: true; id: string; email: string }
+  | { ok: false; reason: 'exists' }
+  /** The owner was made, but the brain is not on workspaces: `why` is
+   *  mantle_ws_skip_reason's answer. Never served (see the top). */
+  | { ok: false; reason: 'not-switched'; id: string; email: string; why: string };
 
 export async function createFirstOwner(
   rawEmail: string,
@@ -46,8 +61,12 @@ export async function createFirstOwner(
     if (isUniqueViolation(err)) return { ok: false, reason: 'exists' };
     throw err;
   }
-  // A fresh install starts on workspaces (W5b1 audit M1): Admin, Team and
-  // the bridges, with the owner in Admin. Best effort; boot tries again.
+  // A fresh install starts on workspaces (W5b1 audit M1): Admin and the
+  // bridges, with the owner in Admin. Then asked: a brain the switch left
+  // off workspaces is not served (see the top). A database that cannot be
+  // read here throws (the route answers 500, and the boot asks again).
   await migrateWorkspacesQuietly('first owner');
+  const why = await unmigratedBrainReason();
+  if (why !== null) return { ok: false, reason: 'not-switched', id, email, why };
   return { ok: true, id, email };
 }

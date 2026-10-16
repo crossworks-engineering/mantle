@@ -419,6 +419,11 @@ async function ensureOwner(o: Options, io: Io): Promise<{ id: string; email: str
     bad('The two did not match. Again.');
   }
   const created = await createFirstOwner(email, password);
+  if (!created.ok && created.reason === 'not-switched') {
+    throw new Error(
+      `Owner created (${created.email}), but the brain is not on workspaces (${created.why}). Restart the web process: its boot switches the brain again, and refuses to serve while that fails (docs/workspaces.md, "Operator notes"). Then run onboard again.`,
+    );
+  }
   if (!created.ok) throw new Error('An account appeared while this ran. Run onboard again.');
   ok(`Owner created: ${created.email}`);
   return { id: created.id, email: created.email };
