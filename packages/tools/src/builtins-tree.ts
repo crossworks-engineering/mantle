@@ -34,7 +34,7 @@ import { errorMessage } from '@mantle/std';
 import { isOwnerSurface, OWNER_ONLY_ERROR } from './surface';
 import { CONFIRM_INPUT, visibilityRefusal } from './visibility-refusal';
 import { movedAppToolWarnings } from './app-tool-level';
-import { manage, treeFolderUpdateTargets } from './item-write-gate';
+import { manage } from './item-write-gate';
 import { CS } from './client-sourced-rule';
 
 /** The kinds these tools serve: every tree kind the brain serves (the kind
@@ -209,7 +209,6 @@ export const tree_folder_update: BuiltinToolDef = {
     effect: 'write',
     spends: 'none',
     scope: 'any',
-    items: treeFolderUpdateTargets,
     clientSourced: CS.onNodes('folder_id', 'parent_id'),
   },
   ownerOnly: true,

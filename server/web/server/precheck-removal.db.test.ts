@@ -687,6 +687,22 @@ describe.skipIf(!DB_URL)(
             // A rename rewrites the paths below it: the database asks manage.
             now: { editOnly: 'refused' },
           },
+          {
+            slug: 'tree_folder_update',
+            need: 'manage',
+            who: BOTH,
+            make: async (w, p) => {
+              const dest = await notesFolder(w, 'allowed');
+              const it = await notesFolder(w, p);
+              return { id: it.id, extra: { dest: dest.id } };
+            },
+            input: (it) => ({
+              kind: 'notes',
+              folder_id: it.id,
+              parent_id: it.extra.dest,
+              confirm: true,
+            }),
+          },
         ],
       },
       {

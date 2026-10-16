@@ -169,14 +169,6 @@ export const appCopy: Resolver = async (input) => {
   return [{ ids: [id], need: row?.mcp ? 'read' : 'edit' }];
 };
 
-/** A folder update: a new parent moves the folder (Moderators of its home
- *  only), anything else edits it. */
-export const treeFolderUpdateTargets: Resolver = async (input) => {
-  const id = typeof input.folder_id === 'string' ? input.folder_id : '';
-  // A new parent moves the folder: Moderators of its home only.
-  return id ? [{ ids: [id], need: input.parent_id !== undefined ? 'manage' : 'edit' }] : [];
-};
-
 // A conversion that retires its source edits the source. The handlers
 // retire it unless supersede_source is false (pages/from.ts): an omitted
 // flag retires too (W7a fix round 2, N2).
