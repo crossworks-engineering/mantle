@@ -176,7 +176,7 @@ tag_exists_refusal() { # the refusal for a tag this run cannot resume
   echo "✗ tag $tag already exists (at $(git rev-parse --short "$tag"))" >&2
   echo "  If it points at the wrong commit, delete it first:" >&2
   echo "    git tag -d $tag        # and, if already pushed: git push origin :refs/tags/$tag" >&2
-  echo "  (a pushed tag has already fired the release workflows — check Actions)" >&2
+  echo "  (a pushed tag has already fired the release workflows: check Actions)" >&2
 }
 if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
   if [ "$(git rev-parse "refs/tags/$tag^{commit}")" = "$head" ]; then
