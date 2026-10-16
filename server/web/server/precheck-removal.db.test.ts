@@ -1538,13 +1538,17 @@ describe.skipIf(!DB_URL)(
       }
     }, 300_000);
 
-    it('kept: a publish by a scope that may not edit the app answers published and writes nothing', async () => {
+    // Since F4 (fix round 3, M3: lockAppRow asks manage before the publish)
+    // the bypassed call is refused before it reads the draft: the answer
+    // this entry was kept for ("published: true", nothing written) is gone.
+    // The entry stays this round (the kept 29 are the next round's).
+    it('kept: a publish by a scope that may not edit the app is refused, bypassed too, and writes nothing (F4)', async () => {
       for (const who of BOTH) {
         const c = await runCell('kept', KEPT_PUBLISH, who, 'noEdit', 'mcp');
         expect(c.was.text).toMatch(/You cannot change this item in your workspaces \(/);
-        expect(c.now.ok).toBe(true);
+        expect(c.now.ok).toBe(false);
         expect(c.now.changed).toBe(false);
-        expect(c.now.text).toMatch(/"published": true/);
+        expect(c.now.text).toMatch(/You cannot change this item in your workspaces\./);
       }
     }, 120_000);
   },

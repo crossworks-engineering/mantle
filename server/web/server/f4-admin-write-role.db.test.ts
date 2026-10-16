@@ -139,8 +139,8 @@ describe.skipIf(!DB_URL)('F4: an Admin user’s write request runs in its scope'
 
   /** The box's checks and the process's, together (as the matrix does). */
   const setMode = async (mode: Mode) => {
-    await raw`select mantle_set_actor_check(${mode})`;
-    await raw`select mantle_set_edit_check(${mode})`;
+    await raw`select mantle_set_actor_check(${mode}, 50, 'test')`;
+    await raw`select mantle_set_edit_check(${mode}, 50, 'test')`;
     process.env.MANTLE_ACTOR_CHECK = mode;
     actorMode.noteBoxActorCheckMode(mode);
     expect(m.actorCheckMode()).toBe(mode);
