@@ -71,6 +71,13 @@ export const PROVIDER_ERROR_PUBLIC = 'The model provider answered with an error.
  * The classifier names none of these (they say nothing about the provider:
  * no alert, no failover); the sentence is picked by the status and a pattern
  * over the body, server side, and is fixed: never the body.
+ *
+ * `bad_request` asks the model to fix its arguments, so it is said only when
+ * the body points at an argument and not at the request's own shape (fix
+ * round 1, L1): a 400 over a tool definition, the messages or max_tokens is
+ * ours to fix, and a model told to retry it would only spend calls. Any
+ * other 400 or 422 says `rejected`, and so does every one a person reads
+ * (a failed team turn: {@link personProviderText}).
  */
 export const PROVIDER_REQUEST_REASONS = {
   too_long:
@@ -79,7 +86,27 @@ export const PROVIDER_REQUEST_REASONS = {
     'The provider refused this input under its content policy. Rephrase it or leave out the flagged part.',
   bad_request:
     'The provider rejected the request as invalid. Check the arguments (names, types, sizes) and try again.',
+  rejected: 'The model provider refused the request.',
 } as const;
+
+/** A 400 body that points at an argument the caller sent (a value, a
+ *  parameter, a type), as OpenAI, Google and Anthropic word it. */
+const ARGS_RE =
+  /\b(?:invalid|unsupported|unknown|unrecognized)\s+(?:value|parameter|argument|field|enum)|\bargument|\bparameter|\bis required\b|\bmust be (?:one of|a |an |between|less|greater|at (?:least|most)|positive|non-negative)|\bnot one of\b|supported values|invalid_type/i;
+/** A 400 about the request's own shape (the tool definitions, the messages,
+ *  the output budget): never the model's arguments, whatever words it uses. */
+const REQUEST_SHAPE_RE = /\btools\.\d|\bmessages\.\d|\bmax_(?:completion_)?tokens\b/i;
+
+/**
+ * The text a person reads for a provider failure (a member's thread for a
+ * failed team turn, its stream's error event; fix round 1, L1): the model's
+ * sentence, except that the bad-arguments one, which asks for a retry with
+ * other arguments, says the neutral `rejected`. `text` is a fixed sentence
+ * already (publicProviderErrorMessage's), never provider words.
+ */
+export function personProviderText(text: string): string {
+  return text.replace(PROVIDER_REQUEST_REASONS.bad_request, PROVIDER_REQUEST_REASONS.rejected);
+}
 
 /** A provider answered 2xx but with no usable result (AssemblyAI's
  *  transcript status `error`, an answer the SDK could not validate). */
@@ -102,7 +129,9 @@ export function providerRequestReason(status: number, text: string): string | nu
   if (status === 400 || status === 422) {
     if (TOO_LONG_RE.test(text)) return PROVIDER_REQUEST_REASONS.too_long;
     if (INPUT_REFUSED_RE.test(text)) return PROVIDER_REQUEST_REASONS.refused;
-    return PROVIDER_REQUEST_REASONS.bad_request;
+    return ARGS_RE.test(text) && !REQUEST_SHAPE_RE.test(text)
+      ? PROVIDER_REQUEST_REASONS.bad_request
+      : PROVIDER_REQUEST_REASONS.rejected;
   }
   return null;
 }

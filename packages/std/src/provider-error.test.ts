@@ -6,6 +6,7 @@ import {
   errorDetail,
   maskKeyLiterals,
   errorMessage,
+  personProviderErrorMessage,
   publicErrorText,
   publicProviderErrorMessage,
   publicToolError,
@@ -132,7 +133,11 @@ describe('a provider failure the classifier does not name (A10 #10 fix round 2)'
     [400, 'prompt is too long for this route', PROVIDER_REQUEST_REASONS.too_long],
     [403, 'Your input was flagged by moderation', PROVIDER_REQUEST_REASONS.refused],
     [413, 'Request entity too large', PROVIDER_REQUEST_REASONS.too_long],
-    [400, 'tools.0.function.parameters is invalid', PROVIDER_REQUEST_REASONS.bad_request],
+    // A10 lows fix round 1, L1: a tool definition is the request's own
+    // shape, ours to fix: the neutral sentence, never "check the arguments".
+    [400, 'tools.0.function.parameters is invalid', PROVIDER_REQUEST_REASONS.rejected],
+    [400, "'size' must be one of 256x256, 1024x1024", PROVIDER_REQUEST_REASONS.bad_request],
+    [422, 'unprocessable', PROVIDER_REQUEST_REASONS.rejected],
     [418, 'I am a teapot', 'The model provider answered with an error.'],
   ])(
     'an OpenRouter %i says a fixed sentence and its status, never the body',
@@ -223,6 +228,34 @@ describe('toolThrowText: a builtin that throws (A10 #10 fix round 2)', () => {
   });
   afterEach(() => vi.restoreAllMocks());
 
+  it('a person never hears "check the arguments" (fix round 1, L1)', () => {
+    const e = new ProviderHttpError({
+      provider: 'openai',
+      status: 400,
+      body: `Invalid value for 'size': must be one of 256x256 ${SECRET}`,
+    });
+    expect(publicProviderErrorMessage(e, 'generate_image')).toBe(
+      `${PROVIDER_REQUEST_REASONS.bad_request} (openai, HTTP 400)`,
+    );
+    expect(personProviderErrorMessage(e, 'team-turn')).toBe(
+      'The model provider refused the request. (openai, HTTP 400)',
+    );
+    // Every other sentence is the model's.
+    const big = new ProviderHttpError({ provider: 'openai', status: 413, body: SECRET });
+    expect(personProviderErrorMessage(big, 'team-turn')).toBe(
+      publicProviderErrorMessage(big, 'team-turn'),
+    );
+    // A 400 over the request's own shape, whatever its words: neutral.
+    const shape = new ProviderHttpError({
+      provider: 'anthropic',
+      status: 400,
+      body: 'max_tokens: 100000 > 64000, which is the maximum allowed; parameter max_tokens',
+    });
+    expect(publicProviderErrorMessage(shape, 't')).toBe(
+      `${PROVIDER_REQUEST_REASONS.rejected} (anthropic, HTTP 400)`,
+    );
+  });
+
   it('a ProviderHttpError says its fixed sentence', () => {
     const e = new ProviderHttpError({ provider: 'openai', status: 500, body: SECRET });
     expect(isProviderHttpFailure(e)).toBe(true);
@@ -237,7 +270,7 @@ describe('toolThrowText: a builtin that throws (A10 #10 fix round 2)', () => {
       body: SECRET,
     });
     const e = new Error(`openrouter-chat 400 on m: bad ${SECRET}`, { cause: inner });
-    expect(text(e, 'tool x')).toBe(`${PROVIDER_REQUEST_REASONS.bad_request} (HTTP 400)`);
+    expect(text(e, 'tool x')).toBe(`${PROVIDER_REQUEST_REASONS.rejected} (HTTP 400)`);
   });
 
   it('our own errors keep their text, as on main', () => {
@@ -328,7 +361,7 @@ describe('an Anthropic key that names no workspace', () => {
   });
 });
 
-describe('the one gateway: publicErrorText and errorDetail (A10 lows item 4)', () => {
+describe('the catch helpers: publicErrorText and errorDetail (A10 lows item 4)', () => {
   const SECRET = 'sk-ant-api03-0123456789abcdef org=acme-private';
   beforeEach(() => {
     vi.spyOn(console, 'error').mockImplementation(() => {});

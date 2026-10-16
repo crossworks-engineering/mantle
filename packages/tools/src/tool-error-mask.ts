@@ -22,22 +22,27 @@ import {
   RUNTIME_ERROR_PUBLIC,
   publicProviderErrorMessage,
   publicToolError,
+  type StepMeta,
 } from '@mantle/std';
 import { watchDatabaseErrors } from '@mantle/std/db-watch';
 import type { ToolHandlerResult } from './types';
 
 /** Run one tool call (`where` names it in the log) with its database
- *  errors masked. */
+ *  errors masked. `step` (the call's trace step, when the surface has one)
+ *  takes a masked provider failure's detail as `error_detail` (A10 lows fix
+ *  round 1, L2). The tool loop's outer masking has none: it wraps the whole
+ *  traced call, and dispatch, inside it, masks first with the step. */
 export async function maskToolDatabaseErrors(
   where: string,
   run: () => Promise<ToolHandlerResult>,
+  step?: StepMeta,
 ): Promise<ToolHandlerResult> {
   const watched = await watchDatabaseErrors(run);
   const outcome = watched.value;
   if (!outcome.ok && typeof outcome.error === 'string') {
     return {
       ...outcome,
-      error: publicToolError(outcome.error, watched.texts, where, watched.errors),
+      error: publicToolError(outcome.error, watched.texts, where, watched.errors, step),
     };
   }
   return outcome;

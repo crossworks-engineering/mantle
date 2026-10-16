@@ -160,9 +160,10 @@ describe('runTeamTurn: a provider error', () => {
     }).catch(() => {});
     log.mockRestore();
     const failed = h.outcomes.find((o) => o.status === 'failed');
-    // A10 lows item 2: a 400 says the arguments are bad, still no body.
+    // A10 lows fix round 1, L1: a member hears the neutral sentence for a
+    // 400 (never the model's "check the arguments"), still no body.
     expect(String(failed!.error)).toBe(
-      'The provider rejected the request as invalid. Check the arguments (names, types, sizes) and try again. (HTTP 400)',
+      'The model provider refused the request. (HTTP 400)',
     );
     expect(JSON.stringify(h.outcomes)).not.toContain('acme-private');
     const errorEvents = h.events.filter((e) => e[2] === 'error');

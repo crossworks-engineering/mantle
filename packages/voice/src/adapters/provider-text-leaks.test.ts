@@ -100,7 +100,9 @@ describe('provider words stay on the error (A10 lows item 3)', () => {
     expect((err as Error).message).toBe(`openrouter-decision 400: bad state ${SECRET}`);
     const text = publicProviderErrorMessage(err, 'decide');
     expect(text).toBe(
-      'The provider rejected the request as invalid. Check the arguments (names, types, sizes) and try again. (openrouter, HTTP 400)',
+      // A10 lows fix round 1, L1: no argument named in the body, the
+      // neutral sentence.
+      'The model provider refused the request. (openrouter, HTTP 400)',
     );
   });
 

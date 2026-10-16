@@ -164,7 +164,7 @@ export async function dispatchTool(
   // or runtime text never reaches the model or the person; the tool loop
   // masks again around the whole call).
   if (mcpVia(caller) || caller.masks === true || MODEL_ENTRIES.has(caller.entry)) {
-    return maskToolDatabaseErrors(`${maskLabel(caller)} ${tool.slug}`, run);
+    return maskToolDatabaseErrors(`${maskLabel(caller)} ${tool.slug}`, run, ctx.step);
   }
   return run();
 }

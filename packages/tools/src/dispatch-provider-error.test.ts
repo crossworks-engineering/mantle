@@ -8,7 +8,7 @@
  */
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Tool } from '@mantle/db';
-import { InputError, ProviderHttpError } from '@mantle/std';
+import { InputError, ProviderHttpError, errorMessage } from '@mantle/std';
 import { dispatchTool } from './dispatch';
 import { appBrokerCaller, ownerWebCaller } from './gate-callers';
 import { ensureGateReady } from './gate-narrowers';
@@ -64,6 +64,14 @@ beforeAll(() => {
     probe('provider_probe_input', () => new InputError('entry_date must be a valid date')),
   );
   registerBuiltin(probe('provider_probe_plain', () => new Error('fetch failed: 404 Not Found')));
+  // A tool that catches a provider failure and replies errorMessage(err).
+  registerBuiltin({
+    ...probe('provider_probe_reply', () => new Error('unused')),
+    handler: async () => ({
+      ok: false,
+      error: errorMessage(new ProviderHttpError({ provider: 'openai', status: 500, body: SECRET })),
+    }),
+  });
 });
 
 let logged: string[] = [];
@@ -112,9 +120,10 @@ describe("dispatch: a builtin's provider failure is the fixed sentence (A10 #10 
 
     it(`${name}: an SDK's own error the classifier does not name never passes its body`, async () => {
       const error = await call('provider_probe_sdk', ctx);
-      // A10 lows item 2: a 400 says the arguments are bad, still no body.
+      // A10 lows fix round 1, L1: a 400 whose body points at no argument
+      // says the neutral sentence, still no body.
       expect(error).toBe(
-        'The provider rejected the request as invalid. Check the arguments (names, types, sizes) and try again. (HTTP 400)',
+        'The model provider refused the request. (HTTP 400)',
       );
       expect(error).not.toContain('acme-private');
     });
@@ -124,4 +133,27 @@ describe("dispatch: a builtin's provider failure is the fixed sentence (A10 #10 
       expect(await call('provider_probe_plain', ctx)).toBe('fetch failed: 404 Not Found');
     });
   }
+});
+
+describe("dispatch's masking keeps the detail on the owner's trace (A10 lows fix round 1, L2)", () => {
+  it('a masked call that replied a provider failure: the sentence out, error_detail on the step', async () => {
+    SLUG = 'provider_probe_reply';
+    const meta: Record<string, unknown>[] = [];
+    const surface: NonNullable<ToolHandlerContext['surface']> = {
+      kind: 'team',
+      loginId: 'l1',
+      privateReads: false,
+    };
+    const res = await dispatchTool(row(SLUG), {}, {
+      ownerId: 'o',
+      surface,
+      caller: appBrokerCaller(surface, allowed(SLUG)),
+      step: { setMeta: (m) => meta.push(m), setOutput: () => {} },
+    });
+    expect(res).toMatchObject({
+      ok: false,
+      error: 'The provider has a server problem. (openai, HTTP 500)',
+    });
+    expect(meta).toEqual([{ error_detail: 'openai call 500: sk-[masked] org=acme-private' }]);
+  });
 });

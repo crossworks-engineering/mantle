@@ -77,7 +77,7 @@ import {
   createTracePrelude,
   withTracePrelude,
 } from '@mantle/tracing';
-import { publicProviderErrorMessage } from '@mantle/std';
+import { personProviderErrorMessage } from '@mantle/std';
 import { PRIVATE_OUTPUT_TOOL_SLUGS } from '@mantle/tools';
 import { withAgentViewer } from '../agent/agent-viewer';
 
@@ -287,7 +287,7 @@ export async function runTeamTurn(
     if (!progress.inboundWritten && agentId) {
       // The member's thread and stream hear a fixed sentence for a provider
       // failure, never the provider's body (logged here, server side).
-      const publicText = publicProviderErrorMessage(err, 'team-turn');
+      const publicText = personProviderErrorMessage(err, 'team-turn');
       await runDurableStep('record_team_failed_early', async () => {
         await appendThreadMessage({
           ownerId,
@@ -547,7 +547,7 @@ async function runTeamTurnSteps(
             ctx,
           };
         } else {
-          const msg = publicProviderErrorMessage(err, 'team-turn');
+          const msg = personProviderErrorMessage(err, 'team-turn');
           await runDurableStep('fail_team_outbound', () =>
             updateThreadMessageOutcome({
               ownerId,

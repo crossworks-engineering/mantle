@@ -19,6 +19,7 @@ import { domainErrorAnswer } from './domain-errors';
 import {
   isProviderHttpFailure,
   maskKeyLiterals,
+  personProviderText,
   providerAuthRefusal,
   providerFailureText,
   serviceFailureText,
@@ -248,6 +249,16 @@ export function publicProviderErrorMessage(err: unknown, where: string, step?: S
   return text;
 }
 
+/**
+ * {@link publicProviderErrorMessage} for a text a person reads, not the
+ * model (a member's thread and stream for a failed team turn; A10 lows fix
+ * round 1, L1): the same fixed sentences, except a bad-arguments 400 says
+ * the neutral "The model provider refused the request." (personProviderText).
+ */
+export function personProviderErrorMessage(err: unknown, where: string): string {
+  return personProviderText(publicProviderErrorMessage(err, where));
+}
+
 /** A step of the owner's trace (ctx.step): where the detail of a masked
  *  error goes, for the owner's debugging. */
 export interface StepMeta {
@@ -263,13 +274,18 @@ function hasTypeError(err: unknown): boolean {
 }
 
 /**
- * THE text of a caught error for a member or the model (A10 lows, the one
- * gateway): a model provider's HTTP failure ({@link isProviderHttpFailure})
+ * The text of a caught error for a member or the model, in one call (A10
+ * lows): a model provider's HTTP failure ({@link isProviderHttpFailure})
  * says its fixed sentence (publicProviderErrorMessage, the detail logged
  * under `where` and, with `step`, kept on the owner's trace); a domain error
  * says its row's text; anything else is errorMessage, as before (a database
  * error is still collected for the surface's own check). Its pair for the
- * log and the trace is {@link errorDetail}.
+ * log and the trace is {@link errorDetail}. The helper a pinned catch
+ * converts to (provider-error-gap.test.ts); no production catch calls it
+ * yet: dispatch's catch spells out the same two steps (toolThrowText, then
+ * the exported errorMessage, which the read-only sweep observes), so it is
+ * one way among the masking and the provider tools' own calls, not the one
+ * gateway (fix round 1, L3).
  */
 export function publicErrorText(err: unknown, where: string, step?: StepMeta): string {
   if (isProviderHttpFailure(err)) return publicProviderErrorMessage(err, where, step);
@@ -335,20 +351,24 @@ export function databaseErrorPublic(err: unknown): string {
  * drizzle's "Failed query"), RUNTIME_ERROR_PUBLIC when it carries a
  * runtime fault's text (a RuntimeFaultError errorMessage gave during the
  * call, collected the same way), else unchanged: a third party's words
- * pass through. Logged in full under `where`.
+ * pass through. Logged in full under `where`. With `step` (the call's
+ * trace step, where the surface has one: dispatch's masking), a provider
+ * failure's detail lands on the owner's trace as `error_detail`
+ * (errorDetail; A10 lows fix round 1, L2).
  */
 export function publicToolError(
   text: string,
   texts: readonly string[],
   where: string,
   errors: readonly unknown[] = [],
+  step?: StepMeta,
 ): string {
   const at = texts.findIndex((t) => text.includes(t));
   if (!FAILED_QUERY_RE.test(text) && at < 0) return text;
   if (at >= 0 && isWatchedProviderFailure(errors[at])) {
     // A provider's HTTP failure a tool caught and replied with (A10 lows):
     // its fixed sentence, never the body (logged under `where`).
-    return publicProviderErrorMessage(errors[at], where);
+    return publicProviderErrorMessage(errors[at], where, step);
   }
   if (at >= 0 && !isDatabaseError(errors[at]) && isRuntimeFault(errors[at])) {
     // A runtime fault's text the reply repeats (the A8 finding F2).
@@ -434,6 +454,7 @@ export {
   isProviderHttpFailure,
   isRouteDownError,
   maskKeyLiterals,
+  personProviderText,
   providerErrorPublicText,
   providerErrorStatus,
   providerFailureShape,

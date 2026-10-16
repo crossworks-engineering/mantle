@@ -9,7 +9,11 @@
  * more of the error's own text than main's did (a looser answer).
  *
  * The readers:
- *  - `provider`: publicProviderErrorMessage (a team turn, a provider tool);
+ *  - `provider`: publicProviderErrorMessage (a provider tool, the model);
+ *  - `member`: personProviderErrorMessage (a member's thread and stream for
+ *    a failed team turn; fix round 1, L1). Not recorded on main, where a
+ *    team turn said the `provider` reader's answer: main's `provider` cell
+ *    is its baseline;
  *  - `thrown`: a builtin that throws (the dispatcher: toolThrowText, else
  *    errorMessage);
  *  - `domain`: the domain row's tool text (an HTTP answer's text), or null;
@@ -30,6 +34,7 @@ import {
   InputError,
   TimeoutError,
   errorMessage,
+  personProviderErrorMessage,
   publicProviderErrorMessage,
   publicToolError,
   toolThrowText,
@@ -180,18 +185,25 @@ const CASES: Record<string, () => unknown> = {
     Object.assign(new Error('relation "x" does not exist'), { code: '42P01', severity: 'ERROR' }),
 };
 
-type Row = { provider: string; thrown: string; domain: string | null; reply: string };
+type Row = {
+  provider: string;
+  member: string;
+  thrown: string;
+  domain: string | null;
+  reply: string;
+};
 type Changes = Record<string, { reader: keyof Row; now: string | null; why: string }[]>;
 
 async function answer(make: () => unknown): Promise<Row> {
   const provider = publicProviderErrorMessage(make(), 't');
+  const member = personProviderErrorMessage(make(), 't');
   const t = make();
   const thrown = toolThrowText(t, 't') ?? errorMessage(t);
   const domain = domainErrorAnswer(make())?.toolText ?? null;
   const r = make();
   const watched = await watchDatabaseErrors(async () => errorMessage(r));
   const reply = publicToolError(watched.value, watched.texts, 't', watched.errors);
-  return { provider, thrown, domain, reply };
+  return { provider, member, thrown, domain, reply };
 }
 
 function readJson<T>(file: string, fallback: T): T {
@@ -214,7 +226,13 @@ describe('provider answers: record, move, compare (A10 lows)', () => {
     return;
   }
 
-  const main = readJson<Record<string, Row>>(MAIN_FILE, {});
+  // Main's record, with the member reader's baseline: on main a team turn
+  // said publicProviderErrorMessage, the provider reader's answer.
+  const main = Object.fromEntries(
+    Object.entries(readJson<Record<string, Omit<Row, 'member'>>>(MAIN_FILE, {})).map(
+      ([name, row]) => [name, { ...row, member: row.provider }],
+    ),
+  ) as Record<string, Row>;
   const changes = readJson<Changes>(CHANGES_FILE, {});
 
   it('reads every recorded case, and only those', () => {
