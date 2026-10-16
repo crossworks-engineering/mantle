@@ -331,6 +331,67 @@ retries and the failover. That is a known gap, left for its own step.
   `The model provider answered with an error.` with its status when known
   (fix round 2; before, its message). An error with no provider shape (no
   status, no body: our own) keeps its message.
+  - **A10 lows: the sentence needs evidence.** Before, any numeric status,
+    any "failed NNN" in a message, any `SyntaxError` and any `TypeError`
+    read as the provider's (a `TypeError` from our own code said "The brain
+    cannot reach the provider.", a Graph 401 "The provider refused the API
+    key."). Now `providerFailureText` names a provider failure only on
+    evidence: a `ProviderHttpError` or an SDK's HTTP error on the chain, a
+    copy of an adapter's message (`<p> chat 500: `, `openrouter-chat 403
+    on `, `<p> embeddings failed: 502 Bad Gateway`, `stream error 429: `),
+    or a call that got no answer (a deadline's or abort's name, the SDK's
+    `ConnectionError`, a network code, undici's `terminated`, a network or
+    timeout word when no status says an answer came). In work that called
+    a provider, what is left still never says its text: a status says
+    `A service the brain called answered with an error. (HTTP n)`, a body
+    that did not parse `An answer could not be read: it is not valid
+    JSON.`, a `TypeError` the runtime's fixed sentence. A `TimeoutError`
+    is a timeout by its name (before, "timed out after 180 s" read as
+    HTTP 180). `providerFailureShape` stays broad for one job only: the
+    refused-key log line.
+  - **A10 lows: sentences the model can act on.** A request the provider
+    refused says why, by its status and a pattern over the body (never the
+    body): too long (a 413; a 400 or 422 that says the prompt or context
+    is too long) `The request is too long for this model. Send less at
+    once (a shorter input, fewer or smaller files) and try again.`;
+    refused (a 403 or 400 moderation answer) `The provider refused this
+    input under its content policy. Rephrase it or leave out the flagged
+    part.`; any other 400 or 422 `The provider rejected the request as
+    invalid. Check the arguments (names, types, sizes) and try again.`; a
+    2xx with no usable result (AssemblyAI's transcript `error`, an answer
+    the SDK could not validate, a Hugging Face 2xx that is no image) `The
+    provider answered without a usable result. (assemblyai)`, no HTTP 200.
+    Every changed answer is named, cell by cell, in
+    `packages/std/src/provider-answers.changes.json` (recorded on main in
+    `provider-answers.main.json`).
+  - **A10 lows: one gateway.** A catch whose text reaches a member or the
+    model says `publicErrorText(err, where, step?)` (@mantle/std): a
+    provider's HTTP failure is its sentence, a domain error its row,
+    anything else `errorMessage` as before. Its pair `errorDetail(err)` is
+    the detail for the log and the owner's trace: the message, except a
+    refused key's (provider and status only). With a `step` (ctx.step) the
+    detail lands on the owner's trace as `error_detail`: dispatch's catch,
+    the speech, vision, summary, image, web search, `recall_match` and
+    `find_window` tools; `video_ingest`'s transcript step keeps its
+    `error` meta, now `errorDetail`. `errorMessage` itself collects a
+    provider's HTTP failure while a surface watches, so the one masking
+    (`publicToolError`) answers its sentence for a tool that caught one and
+    replied `errorMessage(err)`; on every surface that masks (every turn,
+    the owner's too, an MCP connection, an app broker, `/api/v1`). The
+    named gap: 111 tool replies in @mantle/tools and @mantle/runtime still
+    say `error: errorMessage(err)` (their work calls no provider directly;
+    the masking covers them where it runs), and the owner web's own direct
+    tool calls do not mask. Pinned in
+    `packages/tools/src/provider-error-gap.test.ts`, down only. Also left:
+    OpenRouter's in-stream error with no numeric code
+    (`openrouter-chat stream error : <text>`) is still a plain `Error`;
+    changing it moves the chat failover's reading, so it waits for the
+    chat breaker step.
+  - **A10 lows: three adapters stopped carrying provider words on a plain
+    `Error`.** AssemblyAI's transcript error (create and poll, which
+    `video_ingest` hears), the OpenRouter decision endpoint's error answer
+    and a Hugging Face 2xx that is no image throw `ProviderHttpError`; the
+    message is unchanged (log scrapers, the owner's trace).
   - Model-facing: a builtin that throws (the dispatcher's catch, every
     surface: `toolThrowText` maps only a provider's HTTP failure, a
     `ProviderHttpError` or an SDK error with its `statusCode` and `body`,

@@ -21,6 +21,32 @@ deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 - The app data log of an approved call names its key, peer or OAuth client;
   an approved `app_data_write` says the approval ran with Write off.
 
+## Unreleased: provider errors say what to fix, and only for a provider (A10 lows)
+
+- A member, the model and an MCP client hear a provider's sentence only on
+  evidence of a provider failure; our own errors in work that called a
+  provider no longer read as the provider's (a `TypeError` was "The brain
+  cannot reach the provider."). A status that is no model provider's says
+  `A service the brain called answered with an error. (HTTP n)`; a body
+  that did not parse, `An answer could not be read: it is not valid JSON.`
+- A request the provider refused says why, never the body: too long, refused
+  under a content policy, or invalid arguments; a 2xx with no usable result
+  says so without "HTTP 200". Every changed answer:
+  `packages/std/src/provider-answers.changes.json`;
+  [docs/provider-http.md](docs/provider-http.md#behaviour-changes).
+- AssemblyAI's transcript error (`video_ingest`), the decision endpoint's
+  error and a Hugging Face 2xx that is no image no longer pass the
+  provider's words to a member or the model.
+- One gateway for catches: `publicErrorText` / `errorDetail` in
+  `@mantle/std`; a tool that catches a provider failure and replies its
+  `errorMessage` now hands on the sentence on every masked surface. The
+  owner's trace keeps the detail (`error_detail`).
+- A key's credential change (`POST /api/keys`, `PATCH /api/keys/:id`,
+  `POST /api/keys/:id/rotate`) asks the open provider alerts to probe now,
+  as the Admin **Try again** does, so a fixed key clears its alert and
+  resumes the extract queue without waiting. No model call; bounded by the
+  agent's circuit.
+
 ## Unreleased: boot smoke; every package is an ES module
 
 - **A10 lows (HTTP answers).** An [id] that is not a uuid on the event,
@@ -136,7 +162,9 @@ deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
   wrapper). The retry moved onto `@mantle/std`, which this zero-dependency
   package cannot import, so no shim is kept. Jackdaw imports none of them;
   a server-side caller takes `getChatAdapter` from `@mantle/voice` and the
-  retry names from its `adapters/retry` (or `@mantle/std`).
+  retry names from its `adapters/retry` (or `@mantle/std`). The
+  `contractVersion` of `/api/version` does not move: it versions the HTTP
+  wire, not a package's exports; the package version carries this break.
 
 ## Unreleased: Team is a normal workspace; only Admin users tick Moderator
 
