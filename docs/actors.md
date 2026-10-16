@@ -1424,8 +1424,12 @@ here, `packages/client-types/src/dto/file-deletes.ts`, root exports):
 
 ### F4 handover
 
-Round 3 closed the audit of round 2 (H1, M1 to M4, L1, L2, L4, L5). Open,
-not changed here:
+Round 3 closed the audit of round 2 (H1, M1 to M4, L1, L2, L4, L5): done,
+nothing in progress. Gates at ffa9755e7 on the workstation (own pg), each
+exit 0: typecheck, lint, format, docs, arch, web build, boot:smoke, the F4
+DB files (56/56), full vitest with DB, actor-off, actor-on, edit-on,
+test:matrix, test:runtime-role; CI build-check green. Left, not changed
+here:
 
 - jackdaw: the bulk delete's `refused` reasons `not_found` and
   `forbidden`, and `keptTotal` / `kept`, need its delete dialogs (a
