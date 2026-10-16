@@ -919,10 +919,11 @@ found here, unchanged on this branch:
   outside any scope, on the system pool, with no item check in TypeScript
   or in the database. Not trivially stricter (system work also runs with
   no scope), so it is listed, not changed.
-- **Other workers** (email, files, events, heartbeats run elsewhere) are
-  not known to run a login's tool writes in a workspace scope; a worker
-  that starts to must open the pool the same way, and the ceiling test
-  names it.
+- **The other workers** (email, microsoft, files, docs, events, calendar,
+  maintenance, push) run no login's tool call in a workspace scope
+  (heartbeats fire in api and web, which open the pool). A worker that
+  starts to must open the pool the same way; the ceiling test fails until
+  it is counted.
 
 ## Request plumbing (A10 part 2, A10 #8, A10 #9)
 
