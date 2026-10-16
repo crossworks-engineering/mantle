@@ -29,9 +29,10 @@
  *   - pool closed (main's shape of these three processes): the read-only
  *     edit is made, unchecked, in warn and on alike: the gap closed here.
  *   - off: the system pool, as before (no statement on the role).
- *   - the pre-check in place: every read-only edit is refused in its own
- *     words, the same answer with the pool open and closed (no changed
- *     answer where the pre-check stands).
+ *   - (the pre-check in place, the same answer pool open or closed, went
+ *     with note_update's item pre-check: the pre-check removal,
+ *     docs/actors.md "Pre-check deletion". The database's refusal above is
+ *     the answer now; the bypass switch below changes nothing for it.)
  *
  * `pnpm test:edit-on` and `pnpm test:runtime-role` run this file too.
  *
@@ -445,28 +446,6 @@ describe.skipIf(!DB_URL)(
         });
         expect(off.ok, off.text).toBe(true);
         expect(off.who.filter((w) => WRITER.test(w))).toEqual([]);
-      }, 180_000);
-
-      it(`${way}: with the pre-check in place the answer is main's, pool open or closed`, async () => {
-        for (const mode of ['off', 'warn', 'on'] as const) {
-          await setMode(mode);
-          const now = await cell(`${way} ${mode} read-only, pre-check`, way, {
-            write: false,
-            pool: true,
-            precheck: true,
-          });
-          const main = await cell(`${way} ${mode} read-only, pre-check, pool closed`, way, {
-            write: false,
-            pool: false,
-            precheck: true,
-          });
-          expect(now.ok, now.text).toBe(false);
-          expect(now.changed).toBe(false);
-          expect(now.text.replace(/[0-9a-f-]{36}/g, '<id>')).toBe(
-            main.text.replace(/[0-9a-f-]{36}/g, '<id>'),
-          );
-          expect(main.changed).toBe(false);
-        }
       }, 180_000);
     }
   },
