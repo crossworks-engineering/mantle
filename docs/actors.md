@@ -6461,8 +6461,18 @@ What the next builder needs:
   `/api/v1/tasks` (node edits and deletes, one statement, as the tool
   node families).
 
-**Gates at GATES_HEAD** (workstation, own pg container `pcra_pg` on
-127.0.0.1:56331, init mounted, `MANTLE_CHECK_FLOOR=keep`): GATES_LINE
+**Gates** (workstation, own pg container `pcra_pg` on
+127.0.0.1:56331, init mounted, `MANTLE_CHECK_FLOOR=keep`). At 3a1b9baaa: typecheck 0, lint 0, format 0,
+docs 0, arch 0, boot:smoke 0, web build 0, the deploy harness 0 (bash
+and `TEST_SH=dash`), actor-off 0, actor-on 0, test:matrix 0; full vitest,
+edit-on and test:runtime-role 1, the same three files each (F4's two, whose
+mode setter had no reason; the kept publish cell). At 11e7bc5cf (their
+fix): full vitest with DB 0, edit-on 0, test:runtime-role 0; the four
+changed DB files alone 1 on one flaky cell (a map slug's 8-hex suffix with
+no digit escaped the normalizer, about 1 in 2,500), fixed in 81a61887b.
+At the head (that fix and this text): typecheck, lint, format, docs, arch
+and the changed DB files rerun (see the report). Nothing of this round
+runs on the workstation.
 
 ## Remove the switch-over code (A7)
 
