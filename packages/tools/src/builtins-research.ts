@@ -189,7 +189,7 @@ async function runWebSearch(
     // OpenRouter's SDK error carries the upstream body and metadata: the
     // model hears the fixed sentence, the detail goes to the server log
     // (A10 #10 fix round 2).
-    return { ok: false, error: publicProviderErrorMessage(err, kind) };
+    return { ok: false, error: publicProviderErrorMessage(err, kind, ctx.step) };
   }
 }
 

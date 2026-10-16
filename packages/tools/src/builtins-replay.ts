@@ -270,7 +270,7 @@ const find_window: BuiltinToolDef = {
     } catch (err) {
       return {
         ok: false,
-        error: `embed failed: ${publicProviderErrorMessage(err, 'find_window')}`,
+        error: `embed failed: ${publicProviderErrorMessage(err, 'find_window', ctx.step)}`,
       };
     }
     const vec = JSON.stringify(queryVec);

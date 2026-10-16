@@ -59,7 +59,7 @@ import {
   transcriptWordCount,
 } from './video-transcript';
 import { envNum } from '@mantle/config';
-import { errorMessage, publicProviderErrorMessage } from '@mantle/std';
+import { errorDetail, errorMessage, publicProviderErrorMessage } from '@mantle/std';
 
 // ─── caps ──────────────────────────────────────────────────────────
 // The STT duration cap deliberately does NOT inherit the voice path's 180 s
@@ -679,7 +679,9 @@ async function transcribeStep(
         // a single untimestamped body — stated honestly in the page + notes.
         return { ok: true as const, markdown: r.text.trim() };
       } catch (err) {
-        h.setMeta({ error: errorMessage(err) });
+        // The detail for the owner's trace: a refused key's provider and
+        // status only, never its body (errorDetail, A10 lows).
+        h.setMeta({ error: errorDetail(err) });
         return {
           ok: false as const,
           // The tool text (the model reads it, a member may see it) is the

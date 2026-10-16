@@ -422,7 +422,7 @@ const recall_match: BuiltinToolDef = {
     } catch (err) {
       return {
         ok: false,
-        error: `embed failed: ${publicProviderErrorMessage(err, 'recall_match')}`,
+        error: `embed failed: ${publicProviderErrorMessage(err, 'recall_match', ctx.step)}`,
       };
     }
 

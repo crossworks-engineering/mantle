@@ -186,7 +186,7 @@ const synthesize_speech: BuiltinToolDef = {
         language: params.language,
       });
     } catch (err) {
-      return { ok: false, error: publicProviderErrorMessage(err, 'synthesize_speech') };
+      return { ok: false, error: publicProviderErrorMessage(err, 'synthesize_speech', ctx.step) };
     }
     // Same honesty split as generate_image. TTS providers diverge hard here:
     // Gemini has no speed parameter at all, ElevenLabs takes a language code
@@ -263,7 +263,7 @@ const synthesize_speech: BuiltinToolDef = {
           },
         };
       } catch (err) {
-        return { ok: false, error: publicProviderErrorMessage(err, 'synthesize_speech') };
+        return { ok: false, error: publicProviderErrorMessage(err, 'synthesize_speech', ctx.step) };
       }
     }
 
@@ -388,7 +388,10 @@ const extract_from_image: BuiltinToolDef = {
         bytes = downloaded.bytes;
         mimeType = downloaded.mimeType;
       } catch (err) {
-        return { ok: false, error: publicProviderErrorMessage(err, 'extract_from_image') };
+        return {
+          ok: false,
+          error: publicProviderErrorMessage(err, 'extract_from_image', ctx.step),
+        };
       }
     }
 
@@ -427,7 +430,7 @@ const extract_from_image: BuiltinToolDef = {
         },
       };
     } catch (err) {
-      return { ok: false, error: publicProviderErrorMessage(err, 'extract_from_image') };
+      return { ok: false, error: publicProviderErrorMessage(err, 'extract_from_image', ctx.step) };
     }
   },
 };
@@ -577,7 +580,7 @@ const summarize_text: BuiltinToolDef = {
         },
       };
     } catch (err) {
-      return { ok: false, error: publicProviderErrorMessage(err, 'summarize_text') };
+      return { ok: false, error: publicProviderErrorMessage(err, 'summarize_text', ctx.step) };
     }
   },
 };
@@ -749,7 +752,7 @@ const generate_image: BuiltinToolDef = {
         negativePrompt: get('negativePrompt'),
       });
     } catch (err) {
-      return { ok: false, error: publicProviderErrorMessage(err, 'generate_image') };
+      return { ok: false, error: publicProviderErrorMessage(err, 'generate_image', ctx.step) };
     }
 
     // The adapter gets the last word. `supports` is per-provider, but several
