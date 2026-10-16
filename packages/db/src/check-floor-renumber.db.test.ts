@@ -42,13 +42,9 @@ describe('the floor is 0301, stamped above 0300 (no `when` clash)', () => {
 
   it('a `when` clash would skip it silently (why the renumber matters)', () => {
     const migrations = journal.slice(0, at + 1).map((e) => ({ folderMillis: e.when, hash: e.tag }));
-    const ledger = journal
-      .slice(0, at)
-      .map((e) => ({ hash: `main-${e.tag}`, created_at: e.when }));
+    const ledger = journal.slice(0, at).map((e) => ({ hash: `main-${e.tag}`, created_at: e.when }));
     // As stamped: pending.
-    expect(planMigrations(migrations, journal, ledger).pending.map((m) => m.hash)).toEqual([
-      FLOOR,
-    ]);
+    expect(planMigrations(migrations, journal, ledger).pending.map((m) => m.hash)).toEqual([FLOOR]);
     // Stamped with 0300's `when` (the clash the old 0298 had with main's
     // 0298): no pending, no gap, nothing said.
     const clash = migrations.map((m, i) =>
