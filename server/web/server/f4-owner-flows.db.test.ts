@@ -575,26 +575,28 @@ describe.skipIf(!DB_URL)('F4 fix round 1: the owner’s management flows on the 
     return id;
   };
 
-  /** Home `id` in `home` (its own grants replaced), with `g`. */
+  /** Home `id` in `home` (its own grants replaced), with `g`. Upserts: a
+   *  folder's derived row for the same workspace becomes the item's own. */
   const rehome = async (id: string, home: string, g: Grants = {}) => {
+    const own = async (
+      tx: postgres.TransactionSql,
+      wsId: string,
+      cols: { home?: boolean; write?: boolean; excluded?: boolean },
+    ) => {
+      await tx`insert into item_grants (node_id, workspace_id, is_home, write, excluded)
+               values (${id}, ${wsId}, ${cols.home ?? false}, ${cols.write ?? false},
+                       ${cols.excluded ?? false})
+               on conflict (node_id, workspace_id) do update
+                 set is_home = excluded.is_home, write = excluded.write,
+                     excluded = excluded.excluded, via_folder_id = null`;
+    };
     await raw.begin(async (tx) => {
       await tx`select set_config('mantle.actor', 'system:test', true)`;
       await tx`select mantle_lock_heads(array[${id}]::uuid[], 'update')`;
-      await tx`delete from item_grants where node_id = ${id}
-                 and (via_folder_id is null or workspace_id = ${home}
-                      or workspace_id = ${g.exclude ?? home})`;
-      await tx`insert into item_grants (node_id, workspace_id, is_home, write)
-               values (${id}, ${home}, true, false)`;
-      if (g.admin && home !== ws.admin) {
-        await tx`insert into item_grants (node_id, workspace_id, is_home, write)
-                 values (${id}, ${ws.admin}, false, ${g.admin === 'write'})
-                 on conflict (node_id, workspace_id)
-                 do update set write = excluded.write, via_folder_id = null`;
-      }
-      if (g.exclude) {
-        await tx`insert into item_grants (node_id, workspace_id, excluded)
-                 values (${id}, ${g.exclude}, true)`;
-      }
+      await tx`delete from item_grants where node_id = ${id} and via_folder_id is null`;
+      await own(tx, home, { home: true });
+      if (g.admin && home !== ws.admin) await own(tx, ws.admin, { write: g.admin === 'write' });
+      if (g.exclude) await own(tx, g.exclude, { excluded: true });
     });
   };
 
@@ -1058,6 +1060,7 @@ describe.skipIf(!DB_URL)('F4 fix round 1: the owner’s management flows on the 
       const former = hidden.json.slug as string;
       const moved = await call(`${mode} map move`, L.owner, 'PATCH', `/api/recall/maps/${hid}`, {
         slug: target,
+        version: hidden.json.version,
       });
       expect(moved.status, moved.text).toBe(200);
       await rehome(hid, ws.other, { exclude: ws.admin });
@@ -1076,6 +1079,7 @@ describe.skipIf(!DB_URL)('F4 fix round 1: the owner’s management flows on the 
         `/api/recall/maps/${same.json.mapId as string}`,
         {
           slug: former,
+          version: same.json.version,
         },
       );
       expect(take.status, take.text).toBe(409);
