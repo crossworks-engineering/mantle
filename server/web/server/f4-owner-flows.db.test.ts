@@ -886,6 +886,17 @@ describe.skipIf(!DB_URL)('F4 fix round 1: the owner’s management flows on the 
         home: ws.other,
         exclude: ws.admin,
       });
+      const d2 = await folder(`${tag}${mode}d2`);
+      // Before: 400 partway ("no folder at ..."), the top file already copied.
+      const ok = await call(`${mode} copy`, L.owner, 'POST', `/api/files/folders/${src.id}`, {
+        copy_to: d2.path,
+        confirm: true,
+      });
+      expect(ok.status, ok.text).toBe(201);
+      expect(ok.json).toMatchObject({ copiedFiles: 1, copiedFolders: 1 });
+      const under = await raw<{ title: string }[]>`select title from nodes
+        where owner_id = ${L.owner} and path <@ ${`${d2.path}.${label}`}::ltree and type = 'file'`;
+      expect(under.map((r) => r.title)).toEqual(['top.txt']);
       // Before: 500 (the unique index of a folder path the scope does not read).
       const clash = await call(
         `${mode} copy onto hidden`,
@@ -899,17 +910,6 @@ describe.skipIf(!DB_URL)('F4 fix round 1: the owner’s management flows on the 
       );
       expect(clash.status, clash.text).toBe(400);
       expect(clash.text).toContain('already exists');
-      const d2 = await folder(`${tag}${mode}d2`);
-      // Before: 400 partway ("no folder at ..."), the top file already copied.
-      const ok = await call(`${mode} copy`, L.owner, 'POST', `/api/files/folders/${src.id}`, {
-        copy_to: d2.path,
-        confirm: true,
-      });
-      expect(ok.status, ok.text).toBe(201);
-      expect(ok.json).toMatchObject({ copiedFiles: 1, copiedFolders: 1 });
-      const under = await raw<{ title: string }[]>`select title from nodes
-        where owner_id = ${L.owner} and path <@ ${`${d2.path}.${label}`}::ltree and type = 'file'`;
-      expect(under.map((r) => r.title)).toEqual(['top.txt']);
     }, 180_000);
 
     it(`${mode}: 7, a folder turned name only re-indexes a file the scope does not read`, async () => {
