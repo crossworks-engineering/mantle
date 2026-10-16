@@ -38,7 +38,6 @@ import { inspect } from 'node:util';
 import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { ITEM_WORKSPACE_TOOL_TEXTS, READ_ONLY_APP_MESSAGE } from '@mantle/std';
-import { DATABASE_CHECKED } from '../../../packages/tools/src/database-checked.test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -562,14 +561,28 @@ describe.skipIf(!URL)('W7a: the Admin assistant and the Admin MCP run in a scope
 
   it('write tools on another user’s Read-only or private item are refused; nothing changes', async () => {
     const before = await otherItemsState();
-    /** What a write names: its item pre-check's targets, or, for one the
-     *  database checks since the pre-check removal (docs/actors.md), the
-     *  argument that names its item. */
+    /** A write with no item pre-check that names an item by an argument:
+     *  the database checks it (the pre-check removal, docs/actors.md), or it
+     *  only reads or copies the item. Its item's state is the proof. */
+    const ITEM_ARGS = ['id', 'node_id', 'page_id', 'table_id', 'file_id', 'folder_id'];
+    const databaseChecked = (slug: string): string | null => {
+      const def = t.getBuiltin(slug);
+      if (!def || def.readOnly || def.policy.effect !== 'write' || def.policy.items) return null;
+      const pre = (def.preconditions ?? []).find((x) => x.kind === 'node_exists');
+      const props = Object.keys(
+        ((def.inputSchema as { properties?: Record<string, unknown> }).properties ?? {}) as object,
+      );
+      const param = pre && 'param' in pre ? String(pre.param) : null;
+      return param ?? ITEM_ARGS.find((a) => props.includes(a)) ?? null;
+    };
+    /** What a write names: its item pre-check's targets, or the argument
+     *  that names the item of one the database checks. */
     const targetsOf = (slug: string): readonly { param: string; need: string }[] | null => {
       const items = t.builtinItems(slug);
       if (Array.isArray(items)) return items;
-      const db = DATABASE_CHECKED.get(slug);
-      return db?.param ? [{ param: db.param, need: db.need }] : null;
+      if (typeof items === 'function') return null;
+      const param = databaseChecked(slug);
+      return param ? [{ param, need: 'edit' }] : null;
     };
     const writes = t
       .listBuiltins()
@@ -593,7 +606,7 @@ describe.skipIf(!URL)('W7a: the Admin assistant and the Admin MCP run in a scope
       // it would change the item, in its own words or an input error the
       // tool answers first, or does nothing: the item's state, compared
       // below, is the proof.
-      if (DATABASE_CHECKED.has(slug)) return;
+      if (!t.builtinItems(slug)) return;
       if (ok || !want.test(text)) {
         notRefused.push(`${where} ${slug}: ${ok ? 'ran' : text.slice(0, 160)}`);
       }
