@@ -20,8 +20,10 @@
  *  - an app write whose row a restore moved writes neither file, and a
  *    single statement waits out a seed for about 10 s, then answers busy;
  *  - a restore's hold stops the sweep;
- *  - off (both checks off, as NATREF, Astron and prod): the same writes
- *    give today's results.
+ *  - off (both checks off, as NATREF, Astron and prod): the app writes
+ *    give today's results; a table write the database refuses is refused
+ *    the same way off as on (the cheap rights read asks in every mode:
+ *    the pre-check removal, nothing staged, nothing written).
  *
  * The docs store has no disk writer at all (the lint, arch-lints.test.ts).
  *
@@ -639,20 +641,31 @@ describe.skipIf(!URL)('A3b: the store brokers, both checks on', () => {
       }
     });
 
-    it("off (both checks off): the refused write of above gives today's result", async () => {
+    // Pre-check removal (fix round A): the table writes ask the cheap
+    // rights read (assertItemRight) in every mode, so with both checks off
+    // the refused write of above is refused as with them on, before any
+    // stage: nothing staged, nothing written, the row as it was. It was
+    // made with both checks off (a narrower answer below on, by design).
+    it('off (both checks off): the refused write of above is refused as on, before the stage', async () => {
       const t = await makeTable('off', R);
-      const rev = (await tableRow(t)).r;
+      const before = stateOf(tableRoot);
+      const row = await tableRow(t);
       await setChecks('off');
       try {
-        const saved = await inRequest(mem, () => tablesMod.saveTableDraft(owner, t, DOC('off')));
-        expect(saved).toEqual({ ok: true, draftRev: rev + 1 });
-        const read = await sys(() => tablesMod.getTable(owner, t));
-        expect(read?.draft?.rows[0]?.cells.c1).toBe('off');
-        const committed = await inRequest(mem, () => tablesMod.commitTable(owner, t));
-        expect(committed?.data.rows[0]?.cells.c1).toBe('off');
+        const writes: [string, () => Promise<unknown>][] = [
+          ['draft save', () => tablesMod.saveTableDraft(owner, t, DOC('off'))],
+          ['commit', () => tablesMod.commitTable(owner, t)],
+          ['commit a doc', () => tablesMod.commitTable(owner, t, DOC('off'))],
+        ];
+        for (const [what, write] of writes) {
+          const err = await errorOf(inRequest(mem, write));
+          expect(m.editRefusalDetail(err), `${what}: ${String(err)}`).toBe('no_edit');
+          expect(filesOf(stateOf(tableRoot)), what).toEqual(filesOf(before));
+        }
       } finally {
         await setChecks('on');
       }
+      expect(await tableRow(t)).toEqual(row);
     });
   });
 

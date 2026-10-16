@@ -26,7 +26,10 @@
  *    row and no tombstone names, only reported by the sweep;
  *  - an accepted copy is a new revision; the old one goes by its tombstone;
  *    a backup holds every copy and every history file a dumped row names;
- *  - off (both checks off, as NATREF, Astron and prod): today's results.
+ *  - off (both checks off, as NATREF, Astron and prod): the refused writes
+ *    above are refused the same way off as on (a file's rename and move,
+ *    a manual snapshot: the cheap rights read asks in every mode, the
+ *    pre-check removal), nothing written.
  *
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run server/web/server/a3b2-store-brokers.db.test.ts
  */
@@ -662,13 +665,25 @@ describe.skipIf(!URL)('A3b part 2: the files and snapshot stores, both checks on
       expect(onDisk(crash.path, 'a.bin')).toBe('old');
     });
 
-    it("off (both checks off): the refused writes of above give today's result", async () => {
+    // Pre-check removal (fix round A): a file's rename and move ask the
+    // cheap rights read (assertItemRight) in every mode, so with
+    // both checks off the refused write of above is refused as with them
+    // on: nothing under the files root changes, the row keeps its name. It
+    // was made with both checks off (a narrower answer below on, by design).
+    it('off (both checks off): the refused writes of above are refused as on', async () => {
       const ro = await folder('ro-off', R);
       const a = await file(ro.path, 'a.bin', 'one', R);
+      const before = stateOf(filesRoot);
+      const dirs = dirsOf(filesRoot);
       await setChecks('off');
-      await inRequest(mem, () => f.renameFileById({ ownerId: owner, fileId: a.id, newStem: 'b' }));
-      expect(onDisk(ro.path, 'b.bin')).toBe('one');
-      expect((await row(a.id))!.n).toBe('b.bin');
+      const err = await errorOf(
+        inRequest(mem, () => f.renameFileById({ ownerId: owner, fileId: a.id, newStem: 'b' })),
+      );
+      expect(m.editRefusalDetail(err), String(err)).toBe('no_edit');
+      expect(stateOf(filesRoot)).toEqual(before);
+      expect(dirsOf(filesRoot)).toEqual(dirs);
+      expect(onDisk(ro.path, 'a.bin')).toBe('one');
+      expect((await row(a.id))!.n).toBe('a.bin');
     });
   });
 
@@ -841,14 +856,26 @@ describe.skipIf(!URL)('A3b part 2: the files and snapshot stores, both checks on
       expect(existsSync(path.join(tableRoot, next))).toBe(true);
     });
 
-    it("off (both checks off): the refused snapshot of above gives today's result", async () => {
+    // Pre-check removal (fix round A): a manual snapshot asks the cheap
+    // rights read (assertItemRight, edit) in every mode, so with both
+    // checks off the refused snapshot of above is refused as with them on,
+    // before the stage: no copy, no row, no tombstone. It was made with
+    // both checks off (a narrower answer below on, by design).
+    it('off (both checks off): the refused snapshot of above is refused as on, before the stage', async () => {
       const app = await makeApp('snap-off', R);
+      const before = snapState();
+      const rows = await snapRows();
+      const stones = (await x(sql`select 1 from store_tombstones`)).length;
       await setChecks('off');
-      const snap = await inRequest(mem, () =>
-        snaps.createAppSnapshot(owner, app, { actor: 'member', actorLoginId: mem }),
+      const err = await errorOf(
+        inRequest(mem, () =>
+          snaps.createAppSnapshot(owner, app, { actor: 'member', actorLoginId: mem }),
+        ),
       );
-      expect(snap).not.toBeNull();
-      expect(existsSync((await snaps.appSnapshotFile(owner, app, snap!.id))!.path)).toBe(true);
+      expect(m.editRefusalDetail(err), String(err)).toBe('no_edit');
+      expect(snapState()).toEqual(before);
+      expect(await snapRows()).toBe(rows);
+      expect(await x(sql`select 1 from store_tombstones`)).toHaveLength(stones);
     });
   });
 });
