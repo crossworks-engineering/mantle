@@ -4,6 +4,23 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## Unreleased: approvals, second lows round
+
+- **Deploy note:** a call queued before the first approvals lows round
+  (v0.300.65) carries no MCP connection on its stamp, so its approval runs
+  without it, as before that round (no Write switch, no keys rule, no
+  connection ids in the app data log). Nothing to migrate: approve or reject
+  what waits, or let it expire.
+- An approved call asked on a peer's connection that named no login names
+  none either, so it opens no link as the asker its row got from its session.
+- A stamped call asked on an MCP connection by a way in the server does not
+  know is refused at approval instead of run without its connection.
+- An approved call that runs on the approval's surface (an elevated call)
+  keeps its asking connection's rule of spending nothing on the owner's
+  provider keys.
+- The app data log of an approved call names its key, peer or OAuth client;
+  an approved `app_data_write` says the approval ran with Write off.
+
 ## Unreleased: boot smoke; every package is an ES module
 
 - **`pnpm boot:smoke`** starts every server process the way the image does

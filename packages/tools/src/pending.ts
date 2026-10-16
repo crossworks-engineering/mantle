@@ -45,6 +45,7 @@ import {
 } from './pending-approval';
 import { withOriginScope } from './pending-origin';
 import { notifyPendingChanged } from './pending-notify';
+import type { ToolHandlerContext } from './types';
 import { startTrace, step } from '@mantle/tracing';
 import { errorMessage } from '@mantle/std';
 
@@ -403,7 +404,7 @@ export async function rejectPendingCall(
         queued,
         await enabledTool(ownerId, queued.toolSlug),
         decider,
-        approvalContext(ownerId, deciderLoginId),
+        approvalContext(ownerId, queued, deciderLoginId),
       ))
     ) {
       row = (await rejectElevatedPendingCall(ownerId, id)) ?? undefined;
@@ -507,7 +508,7 @@ export async function approvePendingCall(
       await enabledTool(ownerId, queued.toolSlug),
       approver,
       // The context dispatch gives the gate below (its surface).
-      approvalContext(ownerId, opts?.approverLoginId),
+      approvalContext(ownerId, queued, opts?.approverLoginId),
     );
     claimed = (await claimElevatedPendingCall(ownerId, id)) ?? undefined;
   }
@@ -609,11 +610,7 @@ export async function approvePendingCall(
               // naming the approver when the path names one.
               surface: origin
                 ? origin.run.surface
-                : {
-                    kind: 'owner',
-                    via: 'pending',
-                    ...(opts?.approverLoginId ? { loginId: opts.approverLoginId } : {}),
-                  },
+                : approvalSurface(claimed, opts?.approverLoginId),
               step: {
                 setMeta: (m) => handle.setMeta(m),
                 setOutput: (o) => handle.setOutput(o),
@@ -653,17 +650,36 @@ function runnerRow(slug: string): boolean {
   return slug === 'ask_human' || slug === RUN_BUDGET_TOOL_SLUG;
 }
 
-/** The context an approval's gate check reads (the surface dispatch gives
- *  the approved call). */
-function approvalContext(ownerId: string, approverLoginId?: string) {
+/**
+ * The surface an approved call that does not run on its asked surface (an
+ * elevated call, a row with no stamp) runs on, and the one its approval's
+ * gate check reads: one helper, so the check and the run read the same
+ * surface. An Admin user approves it, so the owner's pending path, naming
+ * the approver when the path names one. A call asked on a connection that
+ * spends nothing on the owner's provider keys (its stamp's ownerKeysOff, a
+ * member's MCP connection) keeps that rule (lows round 2, L6: main ran it
+ * spending on them).
+ */
+function approvalSurface(
+  row: Pick<PendingToolCall, 'origin'>,
+  approverLoginId?: string,
+): ToolHandlerContext['surface'] {
   return {
-    ownerId,
-    surface: {
-      kind: 'owner',
-      via: 'pending',
-      ...(approverLoginId ? { loginId: approverLoginId } : {}),
-    },
+    kind: 'owner',
+    via: 'pending',
+    ...(approverLoginId ? { loginId: approverLoginId } : {}),
+    ...(row.origin?.surface?.mcp?.ownerKeysOff === true ? { ownerKeysOff: true } : {}),
   };
+}
+
+/** The context an approval's gate check reads (the surface dispatch gives
+ *  the approved call, approvalSurface). */
+function approvalContext(
+  ownerId: string,
+  row: Pick<PendingToolCall, 'origin'>,
+  approverLoginId?: string,
+) {
+  return { ownerId, surface: approvalSurface(row, approverLoginId) };
 }
 
 /** The enabled tool row named `slug`, or null. */

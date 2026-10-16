@@ -53,7 +53,12 @@ vi.mock('@mantle/content/app-broker', async (importOriginal) => ({
   },
 }));
 
-import { app_data_query, app_data_schema } from './builtins-app-data';
+import {
+  APP_DATA_APPROVAL_WRITE_OFF,
+  app_data_query,
+  app_data_schema,
+  app_data_write,
+} from './builtins-app-data';
 
 const LOGIN = '00000000-0000-4000-8000-0000000000b1';
 const APP = '20000000-0000-4000-8000-000000000001';
@@ -99,5 +104,34 @@ describe('the app data reads name their provisioning (A5 step 4)', () => {
     // Without the name, the same system work under login(ro) is read only.
     const { systemUnder } = await import('@mantle/db');
     expect(systemUnder('app-data', ro)).toMatchObject({ mode: 'ro' });
+  });
+});
+
+/**
+ * An approved app_data_write (lows round 2, L7): the connection an approval
+ * restores has its Write off (pending-origin.ts), so the write never runs on
+ * approval; the refusal says that, not that an admin must turn Write on
+ * (main: "Your MCP connection is read-only: an admin turns Write on for your
+ * login.", whatever the login's switch was). A live connection with Write
+ * off keeps its answer.
+ */
+describe('app_data_write on an approval (lows round 2, L7)', () => {
+  it('says the approval ran with Write off', async () => {
+    const approved = {
+      ...ctx,
+      surface: { ...ctx.surface, mcp: { ...ctx.surface.mcp, approval: true as const } },
+    };
+    const r = await app_data_write.handler(
+      { app_id: APP, sql: 'insert into t values (1)' },
+      approved,
+    );
+    expect(r).toEqual({ ok: false, error: APP_DATA_APPROVAL_WRITE_OFF });
+    const live = await app_data_write.handler(
+      { app_id: APP, sql: 'insert into t values (1)' },
+      ctx,
+    );
+    expect(!live.ok && live.error).toBe(
+      'Your MCP connection is read-only: an admin turns Write on for your login.',
+    );
   });
 });

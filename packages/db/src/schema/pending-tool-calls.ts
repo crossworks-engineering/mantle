@@ -37,13 +37,20 @@ export type PendingOrigin = {
   admin: { holds: boolean; areas: string[] } | null;
   /** The surface the turn ran on: its kind, an owner path's via, the login
    *  it names (no chat or account ids), and a login's own MCP connection:
-   *  how it came in and whether it spends on the owner's keys (lows round,
-   *  6c L3; no key, peer or client ids, no role, no Write). Null: none. */
+   *  how it came in, whether it spends on the owner's keys (lows round, 6c
+   *  L3) and the key, peer or OAuth client id its app data log names (lows
+   *  round 2, L7; no role, no Write). Null: none. */
   surface: {
     kind: string;
     via?: string;
     loginId?: string;
-    mcp?: { via: string; ownerKeysOff?: true };
+    mcp?: {
+      via: string;
+      keyId?: string;
+      peerId?: string;
+      oauthClientId?: string;
+      ownerKeysOff?: true;
+    };
   } | null;
   /** The turn ran in a public link's scope (A5 step 6c fix round 1): its
    *  scope is not stamped (a link's served list and its liveness are not

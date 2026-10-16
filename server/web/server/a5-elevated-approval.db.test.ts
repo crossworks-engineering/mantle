@@ -25,6 +25,15 @@
  * owner's alone); two approvers racing (one runs); the stored result.
  * Only the model's provider, the connector's remote server and Telegram's
  * send are stood in.
+ *
+ * The second lows round (lows-approvals-2) adds: racing approvers held at a
+ * barrier after the approval rule (or the re-check) judged them, so both
+ * reach the claim (L2), for an elevated row and a stamped one; a stamped
+ * call queued by the real tool loop whose surface names another login than
+ * its asker, refused with the login error (L3); a member's MCP turn whose
+ * call, approved, still spends nothing on the owner's keys and keeps its
+ * connection's id (L3, L7), stamped or elevated (L6). The surface each
+ * approved call ran on is recorded at its dispatch.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run server/web/server/a5-elevated-approval.db.test.ts
  */
 import { randomUUID } from 'node:crypto';
@@ -41,6 +50,24 @@ const h = vi.hoisted(() => ({
   remote: [] as Array<{ tool: string; input: Record<string, unknown> }>,
   /** The approval cards sent (chat id, card). */
   cards: [] as Array<{ chat: string; card: Record<string, unknown> }>,
+  /** The surface each approved call was dispatched on. */
+  surfaces: [] as unknown[],
+  /** Racing approvers held after the rule judged them (lows round 2, L2):
+   *  each waits until `n` arrived (or 10 s), so all reach the claim. */
+  barrier: null as null | { n: number; arrived: number; release: Array<() => void> },
+  arrive: async () => {
+    const b = h.barrier;
+    if (!b) return;
+    b.arrived += 1;
+    if (b.arrived >= b.n) {
+      for (const r of b.release.splice(0)) r();
+      return;
+    }
+    await new Promise<void>((resolve) => {
+      b.release.push(resolve);
+      setTimeout(resolve, 10_000);
+    });
+  },
 }));
 
 // Telegram's send: the card a queued call pushes, recorded.
@@ -62,6 +89,37 @@ vi.mock('../../../packages/tools/src/mcp-client', async (importOriginal) => ({
   ),
 }));
 
+// The dispatch an approval runs its call through: the surface, recorded.
+vi.mock('../../../packages/tools/src/dispatch-bridge', async (importOriginal) => {
+  const real = await importOriginal<typeof import('../../../packages/tools/src/dispatch-bridge')>();
+  return {
+    ...real,
+    dispatchViaBridge: ((tool, input, ctx) => {
+      h.surfaces.push(ctx.surface);
+      return real.dispatchViaBridge(tool, input, ctx);
+    }) as typeof real.dispatchViaBridge,
+  };
+});
+// The approval rule and the re-check, each held at the barrier after it
+// judged (lows round 2, L2), so racing approvers both reach the claim.
+vi.mock('../../../packages/tools/src/pending-approval', async (importOriginal) => {
+  const real =
+    await importOriginal<typeof import('../../../packages/tools/src/pending-approval')>();
+  return {
+    ...real,
+    elevatedApproval: (async (...a: Parameters<typeof real.elevatedApproval>) => {
+      const run = await real.elevatedApproval(...a);
+      await h.arrive();
+      return run;
+    }) as typeof real.elevatedApproval,
+    originApproval: (async (...a: Parameters<typeof real.originApproval>) => {
+      const run = await real.originApproval(...a);
+      await h.arrive();
+      return run;
+    }) as typeof real.originApproval,
+  };
+});
+
 type Reply = { isError?: boolean; content?: { text?: string }[] };
 const text = (r: unknown) =>
   ((r as Reply | null)?.content ?? []).map((p) => p.text ?? '').join(' ');
@@ -81,6 +139,7 @@ describe.skipIf(!URL)('the approval of an elevated pending call (A5 step 6d fix 
   const mod = randomUUID(); // an Admin user, a Moderator of Team
   const other = randomUUID(); // an Admin user, not in Team
   const member = randomUUID(); // a member, in Team but no Moderator there
+  const memberMod = randomUUID(); // a member, a Moderator of Team, not in Admin
   const teamAgent = randomUUID();
   const emailOf = (login: string) => `${tag}-${login.slice(0, 8)}@example.invalid`;
   const SLUG = 'mcp_crm_update';
@@ -209,7 +268,8 @@ describe.skipIf(!URL)('the approval of an elevated pending call (A5 step 6d fix 
       (${asker}, ${emailOf(asker)}, 'x', false, 'admin', 'Asker'),
       (${mod}, ${emailOf(mod)}, 'x', false, 'admin', 'Mod'),
       (${other}, ${emailOf(other)}, 'x', false, 'admin', 'Other'),
-      (${member}, ${emailOf(member)}, 'x', false, 'member', 'Member')`);
+      (${member}, ${emailOf(member)}, 'x', false, 'member', 'Member'),
+      (${memberMod}, ${emailOf(memberMod)}, 'x', false, 'member', 'Member Mod')`);
     await x(sql`insert into spaces (id, kind, login_id) values (${owner}, 'brain', ${owner})
       on conflict (id) do nothing`);
     await (await import('@mantle/db/test-support')).runWorkspacesSwitch();
@@ -229,7 +289,8 @@ describe.skipIf(!URL)('the approval of an elevated pending call (A5 step 6d fix 
         on conflict (workspace_id, login_id) do update set moderator = false`);
     }
     await x(sql`insert into workspace_users (workspace_id, login_id, moderator) values
-      (${teamWs}, ${asker}, false), (${teamWs}, ${mod}, true), (${teamWs}, ${member}, false)`);
+      (${teamWs}, ${asker}, false), (${teamWs}, ${mod}, true), (${teamWs}, ${member}, false),
+      (${teamWs}, ${memberMod}, true)`);
     // Team's assistant, whose turn queues the member's call.
     await x(sql`insert into agents (id, owner_id, slug, name, model, system_prompt, role, workspace_id)
       values (${teamAgent}, ${owner}, ${`${tag}-team`}, 'Team', 'fake/model', 'p', 'responder', ${teamWs})`);
@@ -276,6 +337,8 @@ describe.skipIf(!URL)('the approval of an elevated pending call (A5 step 6d fix 
   beforeEach(async () => {
     h.remote = [];
     h.cards = [];
+    h.surfaces = [];
+    h.barrier = null;
     await x(sql`delete from audit_log`);
   });
 
@@ -383,13 +446,20 @@ describe.skipIf(!URL)('the approval of an elevated pending call (A5 step 6d fix 
     expect(h.remote).toHaveLength(3);
   });
 
+  /** `login` approves `id` on the shared approval path, as its actor. */
+  const approveAs = (login: string, id: string) =>
+    m.runAsActor(m.loginActor(login, login === owner ? 'owner' : 'rw'), () =>
+      t.approvePendingCall(owner, id, { approverLoginId: login }),
+    );
+
   it('two approvers racing: exactly one claims it and it runs once', async () => {
     const id = await queue();
-    const asLogin = (login: string) =>
-      m.runAsActor(m.loginActor(login, login === owner ? 'owner' : 'rw'), () =>
-        t.approvePendingCall(owner, id, { approverLoginId: login }),
-      );
-    const [a, b] = await Promise.all([asLogin(owner), asLogin(mod)]);
+    // Both held after the rule judged them (lows round 2, L2): both reach
+    // the claim, so the claim alone decides (before: one could finish
+    // before the other started, and the test passed without overlap).
+    h.barrier = { n: 2, arrived: 0, release: [] };
+    const [a, b] = await Promise.all([approveAs(owner, id), approveAs(mod, id)]);
+    expect(h.barrier.arrived).toBe(2);
     expect([a, b].filter((r) => r !== null)).toHaveLength(1);
     // The summary names its asker (lows round: a screen hides Approve for it).
     expect((a ?? b)!.loginId).toBe(asker);
@@ -461,6 +531,133 @@ describe.skipIf(!URL)('the approval of an elevated pending call (A5 step 6d fix 
     const r = await web(mod, id);
     expect(r.ran, r.text).toBe(true);
     expect(h.remote).toEqual([{ tool: 'update', input }]);
+  });
+
+  /** A call of the connector write queued by the real tool loop in a Team
+   *  turn of `login` (its scope's login), on `surface`; its pending id. */
+  const queueByTurn = async (login: string, surface: unknown, input: Record<string, unknown>) => {
+    const rt = await import('@mantle/runtime/agent');
+    const tracing = await import('@mantle/tracing');
+    const ex = await import('../../../packages/runtime/src/agent/tool-loop/execute-call');
+    const row = await m.asSystem(() => t.resolveTool(owner, SLUG), 'test');
+    const pendingIds: string[] = [];
+    const res = await m.runAsActor(m.loginActor(login, 'rw'), () =>
+      rt.withAgentScope(
+        { id: teamAgent, ownerId: owner, workspaceId: teamWs, role: 'responder' },
+        () =>
+          tracing.startTrace(
+            { kind: 'responder_turn', ownerId: owner, agentId: teamAgent, loginId: login },
+            () =>
+              ex.executeToolCall({
+                args: {
+                  ownerId: owner,
+                  agentId: teamAgent,
+                  agentSlug: `${tag}-team`,
+                  surface,
+                } as never,
+                slug: SLUG,
+                call: { id: `call-${randomUUID()}`, function: { name: SLUG, arguments: '{}' } },
+                tool: row!,
+                input,
+                argParseError: null,
+                argValidation: null,
+                argValidationMode: 'off',
+                lastUserMessage: undefined,
+                pendingIds,
+              }),
+          ),
+        { loginId: login },
+      ),
+    );
+    expect(pendingIds, JSON.stringify(res)).toHaveLength(1);
+    return pendingIds[0]!;
+  };
+
+  it('lows round 2, L2: two approvers racing on a stamped call, both held after the re-check: one claims it, it runs once', async () => {
+    // A Moderator of Team's own call, queued by the real tool loop: not
+    // elevated, stamped. The owner and its asker both may decide it.
+    const id = await queueByTurn(mod, { kind: 'team', loginId: mod }, { id: 'c-race' });
+    const queued = await rowOf(id);
+    expect(queued).toMatchObject({ s: 'pending', login: mod, elevated: null });
+    expect(queued.origin).toMatchObject({ surface: { kind: 'team', loginId: mod } });
+    h.barrier = { n: 2, arrived: 0, release: [] };
+    const [a, b] = await Promise.all([approveAs(owner, id), approveAs(mod, id)]);
+    expect(h.barrier.arrived).toBe(2);
+    expect([a, b].filter((r) => r !== null)).toHaveLength(1);
+    expect((await statusOf(id)).s).toBe('approved');
+    expect(h.remote).toEqual([{ tool: 'update', input: { id: 'c-race' } }]);
+    expect(await auditRows()).toHaveLength(1);
+  });
+
+  it('lows round 2, L3: a stamped call queued by the real tool loop whose surface names another login than its asker: refused with the login error, left pending, nothing ran', async () => {
+    // The stamp's surface and its row's asker agree: it runs as its asker.
+    const ok = await queueByTurn(mod, { kind: 'team', loginId: mod }, { id: 'c-agree' });
+    expect((await telegram(owner, ok)).ran).toBe(true);
+    expect(h.surfaces).toEqual([{ kind: 'team', loginId: mod }]);
+    // A turn of mod's whose surface names the member: refused on every path.
+    const id = await queueByTurn(mod, { kind: 'team', loginId: member }, { id: 'c-other' });
+    expect(await rowOf(id)).toMatchObject({ s: 'pending', login: mod, elevated: null });
+    for (const approve of Object.values(PATHS)) {
+      const r = await approve(owner, id);
+      expect(r.ran, r.text).toBe(false);
+      expect(r.text).toContain(t.PENDING_SURFACE_LOGIN_ERROR.slice(0, 40));
+      expect((await statusOf(id)).s).toBe('pending');
+    }
+    expect(h.remote).toEqual([{ tool: 'update', input: { id: 'c-agree' } }]);
+  });
+
+  /** A member's own MCP connection outside Admin, as the login surface
+   *  builds it (ownerKeysOff: it spends nothing on the owner's keys). */
+  const memberMcp = (login: string) => ({
+    kind: 'owner',
+    via: 'mcp',
+    loginId: login,
+    mcp: {
+      via: 'oauth',
+      write: true,
+      role: 'member',
+      oauthClientId: 'client-m',
+      ownerKeysOff: true,
+    },
+  });
+
+  it("lows round 2, L3 and L7: a member's MCP turn's call, approved, still spends nothing on the owner's keys and keeps its connection's id", async () => {
+    const id = await queueByTurn(memberMod, memberMcp(memberMod), { id: 'c-mcp' });
+    const queued = await rowOf(id);
+    expect(queued).toMatchObject({ s: 'pending', login: memberMod, elevated: null });
+    expect(queued.origin).toMatchObject({
+      surface: { mcp: { via: 'oauth', oauthClientId: 'client-m', ownerKeysOff: true } },
+    });
+    const r = await telegram(owner, id);
+    expect(r.ran, r.text).toBe(true);
+    expect(h.surfaces).toEqual([
+      {
+        kind: 'owner',
+        via: 'mcp',
+        loginId: memberMod,
+        mcp: {
+          via: 'oauth',
+          write: false,
+          oauthClientId: 'client-m',
+          ownerKeysOff: true,
+          approval: true,
+        },
+      },
+    ]);
+    expect(t.ownerKeysOff({ surface: h.surfaces[0] as never })).toBe(true);
+    expect(h.remote).toEqual([{ tool: 'update', input: { id: 'c-mcp' } }]);
+  });
+
+  it("lows round 2, L6: a member's MCP turn's elevated call, approved by the owner, runs on the approval's surface and still spends nothing on the owner's keys (main: it did)", async () => {
+    const id = await queueByTurn(member, memberMcp(member), { id: 'c-elev' });
+    expect((await rowOf(id)).elevated).toMatchObject({ elevated: true });
+    const r = await telegram(owner, id);
+    expect(r.ran, r.text).toBe(true);
+    expect(h.surfaces).toEqual([
+      { kind: 'owner', via: 'pending', loginId: owner, ownerKeysOff: true },
+    ]);
+    expect(t.ownerKeysOff({ surface: h.surfaces[0] as never })).toBe(true);
+    expect(h.remote).toEqual([{ tool: 'update', input: { id: 'c-elev' } }]);
   });
 
   it("a call that is not elevated keeps main's rule: its asker approves its own", async () => {

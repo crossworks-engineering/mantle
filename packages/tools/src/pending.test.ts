@@ -512,6 +512,44 @@ describe('an elevated call: the approval rule decides before the claim (A5 step 
     expect(h.actors).toEqual([{ kind: 'login', mode: 'owner', loginId: OWNER }]);
   });
 
+  it("lows round 2, L6: asked on a connection that spends nothing on the owner's keys, it runs and is judged on a surface that keeps that (main: dropped)", async () => {
+    fake.queue('pending_tool_calls', []);
+    h.elevatedRow = elevRow({
+      origin: {
+        v: 1,
+        scope: null,
+        surface: {
+          kind: 'owner',
+          via: 'mcp',
+          loginId: 'login-asker',
+          mcp: { via: 'oauth', ownerKeysOff: true },
+        },
+      },
+    });
+    fake.queue('tools', [{ slug: 'crm_update', ownerId: OWNER, enabled: true }]);
+    const caller = { entry: 'pending', via: 'process', approval: { approver: OWNER } };
+    h.elevated = vi.fn(async () => ({ caller, runAs: OWNER, owner: true }));
+    await approvePendingCall(OWNER, ROW_ID, { approverLoginId: OWNER });
+    const want = { kind: 'owner', via: 'pending', loginId: OWNER, ownerKeysOff: true };
+    const ran = (h.dispatchTool.mock.calls[0]![2] as { surface: unknown }).surface;
+    expect(ran).toEqual(want);
+    expect((h.elevated.mock.calls[0]![4] as { surface: unknown }).surface).toEqual(want);
+    const { ownerKeysOff } = await import('./surface');
+    expect(ownerKeysOff({ surface: ran as never })).toBe(true);
+  });
+
+  it('lows round 2, L6: asked anywhere else, the approval surface is as before', async () => {
+    queueElevated();
+    const caller = { entry: 'pending', via: 'process', approval: { approver: OWNER } };
+    h.elevated = vi.fn(async () => ({ caller, runAs: OWNER, owner: true }));
+    await approvePendingCall(OWNER, ROW_ID, { approverLoginId: OWNER });
+    expect((h.dispatchTool.mock.calls[0]![2] as { surface: unknown }).surface).toEqual({
+      kind: 'owner',
+      via: 'pending',
+      loginId: OWNER,
+    });
+  });
+
   it('any other call keeps its rule: run as its asker, naming the approver for its audit row', async () => {
     fake.queue('pending_tool_calls', [{ ...elevRow({ status: 'approved' }), elevated: null }]);
     fake.queue('tools', [{ slug: 'crm_update', ownerId: OWNER, enabled: true }]);

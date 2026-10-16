@@ -4042,12 +4042,14 @@ the asker had when it asked and has no more).
   asker; a row with no asker keeps a stamp's login only when it is the
   owner's. Main ran as the stamp's login.
 - 6c L3: a login's own MCP connection is stamped (how it came in, and
-  `ownerKeysOff`; no key, peer or client id, no role) and restored with its
-  Write off, so an approved call of a member's MCP turn still spends nothing
-  on the owner's provider keys, and a peer's connection that named no login
-  is never read as the owner's stdio path (`linkLoginId`). Main dropped it.
-  Pinned in `packages/tools/src/pending-origin.test.ts`, each answer recorded
-  on main first.
+  `ownerKeysOff`; no role, no Write; its key, peer or client id since the
+  second round, L7 below) and restored with its Write off, so an approved
+  call of a member's MCP turn still spends nothing on the owner's provider
+  keys, and a peer's connection that named no login is never read as the
+  owner's stdio path (`linkLoginId`), nor, since the second round (L1), as
+  the asker its row got from its session. Main dropped it. Pinned in
+  `packages/tools/src/pending-origin.test.ts`, each answer recorded on main
+  first.
 - The summary of a pending call names its asker (`loginId`), so a screen
   hides Approve on an elevated call for its asker (jackdaw: the pending card
   shows `elevated.reason` as a badge, `client_sourced` as a warning).
@@ -4059,6 +4061,52 @@ the asker had when it asked and has no more).
   it, it runs once); the stored result; a member's connector write queued by
   the real tool loop, elevated and stamped, its card routed to the owner's
   chat, never its asker's.
+
+**Lows round 2 (approvals).** Every changed answer is stricter or a clearer
+refusal; each was recorded on main first.
+
+- L1: a peer's connection that named no login (a peer an Admin login did
+  not register for the anchor, which names no login to the builtins) names
+  none at approval either, whatever asker its row got from its session, so
+  a link is refused (`linkLoginId`). Main named the asker on the surface and
+  linked as that login. The rule in full: a peer claim (`via: 'peer'`) with
+  no login on the stamp never gains one at approval.
+- L2: the racing approvers test holds both approvers at a barrier after the
+  approval rule (or the re-check) judged them, so both reach the claim and
+  the claim alone decides; a stamped row's race is added. Before, one could
+  finish before the other started.
+- L3: database cells for the stamped path
+  (`server/web/server/a5-elevated-approval.db.test.ts`): a stamped call
+  queued by the real tool loop whose surface names another login than its
+  asker is refused with `PENDING_SURFACE_LOGIN_ERROR` on every path and left
+  pending; a member's MCP turn's call, approved, runs on its connection with
+  `ownerKeysOff` and its client id (the surface recorded at dispatch).
+- L4: a stamp of an MCP connection by a way in this code does not know
+  (not `oauth`, `peer` or `key`) refuses the approval
+  (`PENDING_SURFACE_MCP_ERROR`). Main ran it with the connection dropped: no
+  Write switch, no keys rule.
+- L5: rows queued before the 6c lows round carry no `mcp` on their stamp, so
+  their approval runs without the connection, as before that round
+  (CHANGELOG deploy note). Nothing to migrate: a waiting row is decided or
+  expires.
+- L6: an approved call that does not run on its asked surface (an elevated
+  call, a row with no stamp) runs on, and its approval's gate check reads,
+  one surface (`approvalSurface` in `packages/tools/src/pending.ts`): the
+  owner's pending path naming the approver, which keeps the stamp's
+  `ownerKeysOff` (an owner surface's own `ownerKeysOff`, read by
+  `ownerKeysOff()`). Main ran a member's MCP turn's elevated call spending
+  on the owner's keys.
+- L7: the stamp keeps the connection's key, peer or OAuth client id and the
+  approval restores it, so the app data log names the connection (main:
+  dropped). The restored connection is marked `approval`, and an approved
+  `app_data_write` says it ran with Write off
+  (`APP_DATA_APPROVAL_WRITE_OFF`) instead of asking an admin to turn Write
+  on: an approval always restores the connection with its Write off.
+- L8 (jackdaw): the pending card hides Approve on an elevated call that
+  names no asker (`loginId` null) for anyone but the owner, and takes the
+  viewer as the owner only when the brain said so (`isOwner`): a brain that
+  sends none has the screen read it from the role, and an Admin user is no
+  owner for an elevated call it asked itself.
 
 **Record, move, compare.** `server/web/server/a5-approval-recheck.db.test.ts`
 queues each call through the real queue path (the tool loop's

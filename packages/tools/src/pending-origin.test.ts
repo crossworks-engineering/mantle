@@ -35,7 +35,12 @@ vi.mock('../../db/src/client', async (importOriginal) => ({
 import { loginActor, runAsActor } from '@mantle/db';
 import { linkLoginId } from './builtins-share';
 import { capAdminView } from './gate-callers';
-import { originRunFor, pendingOriginNow, PENDING_SURFACE_LOGIN_ERROR } from './pending-origin';
+import {
+  originRunFor,
+  pendingOriginNow,
+  PENDING_SURFACE_LOGIN_ERROR,
+  PENDING_SURFACE_MCP_ERROR,
+} from './pending-origin';
 import { ownerKeysOff } from './surface';
 import type { ToolHandlerContext } from './types';
 
@@ -239,19 +244,26 @@ describe('the surface an approved stamped call runs on (lows round, 6c)', () => 
       mcp: { via: 'oauth', write: true, oauthClientId: 'client-1', ownerKeysOff: true },
     };
     expect(ownerKeysOff({ surface: asked })).toBe(true);
-    // The stamp keeps how it came in and the keys rule; no client id, no Write.
+    // The stamp keeps how it came in and the keys rule, and (lows round 2,
+    // L7; main: dropped) its client id for the app data log; no Write.
     expect((await pendingOriginNow(asked)).surface).toEqual({
       kind: 'owner',
       via: 'mcp',
       loginId: LOGIN,
-      mcp: { via: 'oauth', ownerKeysOff: true },
+      mcp: { via: 'oauth', oauthClientId: 'client-1', ownerKeysOff: true },
     });
     const run = await runOn(asked, LOGIN);
     expect(run).toEqual({
       kind: 'owner',
       via: 'mcp',
       loginId: LOGIN,
-      mcp: { via: 'oauth', write: false, ownerKeysOff: true },
+      mcp: {
+        via: 'oauth',
+        write: false,
+        oauthClientId: 'client-1',
+        ownerKeysOff: true,
+        approval: true,
+      },
     });
     expect(ownerKeysOff({ surface: run })).toBe(true);
     // An Admin login's connection keeps spending as it did.
@@ -267,9 +279,116 @@ describe('the surface an approved stamped call runs on (lows round, 6c)', () => 
       { kind: 'owner', via: 'mcp', mcp: { via: 'peer', write: true, peerId: 'p1' } },
       null,
     );
-    expect(run).toEqual({ kind: 'owner', via: 'mcp', mcp: { via: 'peer', write: false } });
+    // Lows round 2, L7: its peer id kept, marked an approval's.
+    expect(run).toEqual({
+      kind: 'owner',
+      via: 'mcp',
+      mcp: { via: 'peer', write: false, peerId: 'p1', approval: true },
+    });
     expect(linkAs(run)).toBe('refused');
     // The owner's own stdio connection (no channel): the owner, as before.
     expect(linkAs(await runOn({ kind: 'owner', via: 'mcp' }, null))).toBe(OWNER);
+  });
+});
+
+/**
+ * The second lows round on approvals (lows-approvals-2), from a stamp with
+ * no scope. Recorded on main first; each answer this round changed is named
+ * with its main answer:
+ *   L1 a peer's connection that named no login, its row given an asker by
+ *      its session: main ran it naming the asker (so a link opened as that
+ *      login), now it names none and a link is refused;
+ *   L4 a stamp of an MCP connection by a way in this code does not know:
+ *      main ran it with the connection dropped (no Write switch, no keys
+ *      rule, read as an owner path naming its login), now refused;
+ *   L7 a login's own MCP connection keeps its key, peer and OAuth client id
+ *      on the stamp and at approval (the app data log names them; main
+ *      dropped them), and the restored connection says it is an approval's,
+ *      so app_data_write says why it does not run.
+ */
+describe('the surface an approved stamped call runs on (lows-approvals-2)', () => {
+  const OWNER = '99999999-9999-4999-8999-999999999999';
+  const refuse = (m: string) => new Error(m);
+  const runOn = async (
+    surface: ToolHandlerContext['surface'],
+    loginId: string | null,
+  ): Promise<ToolHandlerContext['surface']> => {
+    h.scope = null;
+    h.gate = null;
+    const origin = await pendingOriginNow(surface);
+    return (await originRunFor(OWNER, origin, { agentId: null, loginId }, refuse)).surface;
+  };
+  const linkAs = (surface: ToolHandlerContext['surface']) => {
+    try {
+      return linkLoginId({ ownerId: OWNER, surface });
+    } catch {
+      return 'refused';
+    }
+  };
+
+  it("L1: a peer's connection that named no login names none at approval, whatever asker its row has (main: linked as the asker)", async () => {
+    const run = await runOn(
+      { kind: 'owner', via: 'federation', mcp: { via: 'peer', write: true, peerId: 'p1' } },
+      LOGIN,
+    );
+    expect(run).toEqual({
+      kind: 'owner',
+      via: 'federation',
+      mcp: { via: 'peer', write: false, peerId: 'p1', approval: true },
+    });
+    expect(linkAs(run)).toBe('refused');
+    // A peer that named its login (registered by its Admin login): that
+    // login, as before.
+    const named = await runOn(
+      {
+        kind: 'owner',
+        via: 'federation',
+        loginId: LOGIN,
+        mcp: { via: 'peer', write: true, peerId: 'p1' },
+      },
+      LOGIN,
+    );
+    expect(linkAs(named)).toBe(LOGIN);
+  });
+
+  it('L4: a stamp of an MCP connection by an unknown way in refuses the approval (main: ran with the connection dropped)', async () => {
+    await expect(
+      runOn(
+        {
+          kind: 'owner',
+          via: 'mcp',
+          loginId: LOGIN,
+          mcp: { via: 'sse' as never, write: true, ownerKeysOff: true },
+        },
+        LOGIN,
+      ),
+    ).rejects.toThrow(PENDING_SURFACE_MCP_ERROR);
+  });
+
+  it("L7: the connection's key, peer and OAuth client ids are kept for the app data log (main: dropped)", async () => {
+    const asked: ToolHandlerContext['surface'] = {
+      kind: 'owner',
+      via: 'api',
+      loginId: LOGIN,
+      mcp: { via: 'key', write: true, keyId: 'key-1', role: 'member', ownerKeysOff: true },
+    };
+    expect((await pendingOriginNow(asked)).surface).toEqual({
+      kind: 'owner',
+      via: 'api',
+      loginId: LOGIN,
+      mcp: { via: 'key', keyId: 'key-1', ownerKeysOff: true },
+    });
+    const run = await runOn(asked, LOGIN);
+    expect(run).toEqual({
+      kind: 'owner',
+      via: 'api',
+      loginId: LOGIN,
+      mcp: { via: 'key', write: false, keyId: 'key-1', ownerKeysOff: true, approval: true },
+    });
+    // A stamped id that is not a string (a stamp is JSON) is not restored.
+    const origin = await pendingOriginNow(asked);
+    (origin.surface as { mcp: Record<string, unknown> }).mcp['keyId'] = 7;
+    const bad = await originRunFor(OWNER, origin, { agentId: null, loginId: LOGIN }, refuse);
+    expect((bad.surface as { mcp: Record<string, unknown> }).mcp['keyId']).toBeUndefined();
   });
 });

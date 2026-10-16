@@ -40,6 +40,14 @@
  * link's scope needs its share and its served list as they are now, which
  * the approval does not hold, so only the owner may approve such a call,
  * and it runs in no scope, as before the stamp.
+ *
+ * Second lows round (lows-approvals-2): a peer's connection that named no
+ * login names none at approval either, whatever asker its row got from its
+ * session (L1: no link is opened as that login); a stamp of an MCP
+ * connection by a way in this code does not know refuses the approval (L4);
+ * the connection's key, peer and OAuth client id are stamped and restored
+ * for the app data log, and the restored connection says it is an
+ * approval's (`approval`), so app_data_write says why it does not run (L7).
  */
 import {
   asSystem,
@@ -98,20 +106,49 @@ export const PENDING_RECHECK_ERROR =
 export const PENDING_SURFACE_LOGIN_ERROR =
   'This call’s record names a different person than the one who asked for it, so it does not run: reject it.';
 
+/** The refusal of an approval of a call stamped on a login's own MCP
+ *  connection that came in by a way this code does not know (lows round 2,
+ *  L4): its Write switch and its keys rule cannot be restored, so it does
+ *  not run rather than run without them. */
+export const PENDING_SURFACE_MCP_ERROR =
+  'This call was asked on a connection this server cannot restore, so it does not run: reject it, or ask them to ask again.';
+
+/** The ids of a login's own MCP connection the app data log names it by
+ *  (lows round 2, L7). */
+const MCP_IDS = ['keyId', 'peerId', 'oauthClientId'] as const;
+
+/** The connection ids of `mcp` that are non-empty strings, by name. */
+function mcpIds(mcp: Record<string, unknown>): { [K in (typeof MCP_IDS)[number]]?: string } {
+  const out: { [K in (typeof MCP_IDS)[number]]?: string } = {};
+  for (const k of MCP_IDS) {
+    const v = mcp[k];
+    if (typeof v === 'string' && v !== '') out[k] = v;
+  }
+  return out;
+}
+
 /** The stamp's surface: its kind, an owner path's via, the login it names,
- *  and a login's own MCP connection by how it came in and whether it spends
- *  on the owner's keys (6c L3); never a chat, account, key, peer or client
- *  id. */
+ *  and a login's own MCP connection by how it came in, whether it spends
+ *  on the owner's keys (6c L3) and the key, peer or OAuth client id its app
+ *  data log names (lows round 2, L7); never a chat or account id, a role or
+ *  its Write switch. */
 function stampSurface(surface: ToolHandlerContext['surface']): PendingOrigin['surface'] {
   if (!surface) return null;
   const s = surface as { kind: string; via?: unknown; loginId?: unknown; mcp?: unknown };
-  const mcp = s.mcp as { via?: unknown; ownerKeysOff?: unknown } | undefined;
+  const mcp = s.mcp as
+    ({ via?: unknown; ownerKeysOff?: unknown } & Record<string, unknown>) | undefined;
   return {
     kind: s.kind,
     ...(typeof s.via === 'string' ? { via: s.via } : {}),
     ...(typeof s.loginId === 'string' && s.loginId !== '' ? { loginId: s.loginId } : {}),
     ...(mcp && typeof mcp.via === 'string'
-      ? { mcp: { via: mcp.via, ...(mcp.ownerKeysOff === true ? { ownerKeysOff: true } : {}) } }
+      ? {
+          mcp: {
+            via: mcp.via,
+            ...mcpIds(mcp),
+            ...(mcp.ownerKeysOff === true ? { ownerKeysOff: true } : {}),
+          },
+        }
       : {}),
   };
 }
@@ -193,7 +230,12 @@ const MCP_VIAS: ReadonlySet<string> = new Set(['oauth', 'peer', 'key']);
  * stamped, so no tool may send into it at approval); one that named no
  * login is a delegated child's path, never the owner's own (6c L1: no link
  * is opened as the owner). A login's own MCP connection comes back with
- * its Write off and its ownerKeysOff as stamped (6c L3). None: none.
+ * its Write off, marked an approval's, with its ownerKeysOff and its ids
+ * as stamped (6c L3, lows round 2 L7); one by a way in this code does not
+ * know refuses (L4). A peer's connection that named no login (a peer an
+ * Admin login did not register for the anchor) names none here either,
+ * whatever asker its row got from its session (L1): as on the connection,
+ * no link is opened as that login. None: none.
  */
 function runSurface(
   ownerId: string,
@@ -202,11 +244,14 @@ function runSurface(
   refuse: (message: string) => Error,
 ): ToolHandlerContext['surface'] {
   if (!stamp) return undefined;
+  if (stamp.mcp && !MCP_VIAS.has(stamp.mcp.via)) throw refuse(PENDING_SURFACE_MCP_ERROR);
   const stamped = stamp.loginId ? stamp.loginId.toLowerCase() : null;
+  // A peer's connection that named no login keeps naming none (L1).
+  const peerNamedNone = !stamped && stamp.mcp?.via === 'peer';
   let loginId: string | null;
   if (asker) {
     if (stamped && stamped !== asker.toLowerCase()) throw refuse(PENDING_SURFACE_LOGIN_ERROR);
-    loginId = stamped ? stamp.loginId! : asker;
+    loginId = stamped ? stamp.loginId! : peerNamedNone ? null : asker;
   } else {
     if (stamped && stamped !== ownerId.toLowerCase()) throw refuse(PENDING_SURFACE_LOGIN_ERROR);
     loginId = stamp.loginId ?? null;
@@ -215,16 +260,17 @@ function runSurface(
   if (stamp.kind === 'telegram') {
     return { kind: 'owner', via: loginId ? 'pending' : 'delegate', ...named };
   }
-  const mcp =
-    stamp.mcp && MCP_VIAS.has(stamp.mcp.via)
-      ? {
-          mcp: {
-            via: stamp.mcp.via as 'oauth' | 'peer' | 'key',
-            write: false,
-            ...(stamp.mcp.ownerKeysOff ? { ownerKeysOff: true } : {}),
-          },
-        }
-      : {};
+  const mcp = stamp.mcp
+    ? {
+        mcp: {
+          via: stamp.mcp.via as 'oauth' | 'peer' | 'key',
+          write: false,
+          ...mcpIds(stamp.mcp as Record<string, unknown>),
+          ...(stamp.mcp.ownerKeysOff ? { ownerKeysOff: true } : {}),
+          approval: true,
+        },
+      }
+    : {};
   const { loginId: _stampLogin, mcp: _stampMcp, ...rest } = stamp;
   return { ...rest, ...named, ...mcp } as ToolHandlerContext['surface'];
 }

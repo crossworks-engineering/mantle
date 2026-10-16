@@ -52,10 +52,12 @@ export function keyOrPeerVia(
 }
 
 /** Whether this call is a direct MCP, key or peer call of a login outside
- *  an Admin scope (W7b fix round 2, M-a): it spends nothing on the brain
- *  owner's provider keys, so a tool skips its paid step. A workspace
- *  assistant's turn carries no MCP channel and keeps its own rules. */
+ *  an Admin scope (W7b fix round 2, M-a), or an approved call asked on one
+ *  (the approval's surface keeps it, lows round 2, L6): it spends nothing
+ *  on the brain owner's provider keys, so a tool skips its paid step. A
+ *  workspace assistant's turn carries no MCP channel and keeps its own
+ *  rules. */
 export function ownerKeysOff(ctx: Pick<ToolHandlerContext, 'surface'>): boolean {
   const s = ctx.surface;
-  return s?.kind === 'owner' && s.mcp?.ownerKeysOff === true;
+  return s?.kind === 'owner' && (s.mcp?.ownerKeysOff === true || s.ownerKeysOff === true);
 }

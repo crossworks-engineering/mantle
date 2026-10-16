@@ -69,6 +69,11 @@ function appDataSystem<T>(fn: () => Promise<T>): Promise<T> {
 const NO_LOGIN =
   "No one to act for: the app_data tools work on a team member's own MCP connection only.";
 
+/** The refusal of an approved app_data_write (lows round 2, L7): an
+ *  approval restores the asking connection with its Write off. */
+export const APP_DATA_APPROVAL_WRITE_OFF =
+  'An approved call runs with your MCP connection’s Write off, so app_data_write does not run on approval: run the write again on your own connection.';
+
 const NOT_FOUND =
   'No such app on your MCP connection: it may not exist, it may not be shared with you, or its MCP access is off. List the apps you can reach with app_data_list.';
 
@@ -431,11 +436,15 @@ export const app_data_write: BuiltinToolDef = {
     const who = appDataCaller(ctx);
     if (!who) return { ok: false, error: NO_LOGIN };
     // The surface offers this tool only with write on; this is the tool's
-    // own check, should a path ever offer it otherwise.
+    // own check, should a path ever offer it otherwise. An approved call
+    // runs on its connection restored with Write off (pending-origin.ts), so
+    // it never writes here, and says so (lows round 2, L7).
     if (!who.mcp.write) {
       return {
         ok: false,
-        error: 'Your MCP connection is read-only: an admin turns Write on for your login.',
+        error: who.mcp.approval
+          ? APP_DATA_APPROVAL_WRITE_OFF
+          : 'Your MCP connection is read-only: an admin turns Write on for your login.',
       };
     }
     const appId = appIdOf(input);

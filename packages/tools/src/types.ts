@@ -163,6 +163,11 @@ export type ToolHandlerContext = {
          *  this surface): how it connected and its Write switch, for the
          *  app_data_* tools. Set by the server, never from model arguments. */
         mcp?: LoginMcpChannel;
+        /** An approved call that was asked on a connection that spends
+         *  nothing on the brain owner's provider keys (lows round 2, L6):
+         *  the approval's own surface keeps that rule (ownerKeysOff). Set
+         *  by the server from the row's stamp, never from model arguments. */
+        ownerKeysOff?: true;
       };
 };
 
@@ -192,6 +197,10 @@ export type LoginMcpChannel = {
    *  listed tool with a paid step (search_chunks' passage scoring) runs
    *  its plain path. Stamped by the login surface, never from arguments. */
   ownerKeysOff?: boolean;
+  /** The connection was restored for an approved call (pending-origin.ts,
+   *  lows round 2, L7): its Write is off whatever it was when the call was
+   *  asked, so a tool that needs Write says the approval ran without it. */
+  approval?: true;
 };
 
 /** The owner paths that carry an explicit owner surface (client logins C4). */

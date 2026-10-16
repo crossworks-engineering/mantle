@@ -394,6 +394,8 @@ export {
   pendingOriginNow,
   PENDING_RECHECK_ERROR,
   PENDING_SCOPE_LOST_ERROR,
+  PENDING_SURFACE_LOGIN_ERROR,
+  PENDING_SURFACE_MCP_ERROR,
 } from './pending-origin';
 
 export {
