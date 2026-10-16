@@ -18,7 +18,6 @@ import { CONFIRM_INPUT, visibilityRefusal } from '../visibility-refusal';
 import { str } from '../coerce';
 import { errorMessage } from '@mantle/std';
 import { FILE_ID_PRE, FOLDER_ID_PRE } from '../builtins-common';
-import { manage } from '../item-write-gate';
 import { CS } from '../client-sourced-rule';
 
 export const file_move: BuiltinToolDef = {
@@ -27,7 +26,6 @@ export const file_move: BuiltinToolDef = {
     effect: 'write',
     spends: 'none',
     scope: 'any',
-    items: [manage('file_id')],
     keyArea: 'files',
     clientSourced: { ...CS.onNodes('file_id'), paths: ['dest_path'] },
   },
@@ -123,7 +121,6 @@ export const folder_move: BuiltinToolDef = {
     effect: 'write',
     spends: 'none',
     scope: 'any',
-    items: [manage('folder_id')],
     keyArea: 'files',
     clientSourced: { ...CS.onNodes('folder_id'), paths: ['dest_parent_path'] },
   },

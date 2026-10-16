@@ -104,7 +104,6 @@ export const folder_delete: BuiltinToolDef = {
     effect: 'write',
     spends: 'none',
     scope: 'any',
-    items: [manage('folder_id')],
     keyArea: 'files',
     clientSourced: CS.onNodes('folder_id'),
   },

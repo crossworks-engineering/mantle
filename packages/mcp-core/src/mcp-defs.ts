@@ -30,7 +30,6 @@ import {
   MCP_SURFACE_POLICIES,
   SEARCH_TOOLS,
   thrownToolDatabaseError,
-  toolItemWriteRefusal,
   type BuiltinToolDef,
   type McpSurfaceSlug,
   type SurfaceToolDef,
@@ -214,14 +213,9 @@ const FOLDER_DESCRIBE = mcpTool({
           isError: true,
         };
       }
-      // The folder found by its path is checked as an id is (W7a fix round
-      // 1, M2): the scope may edit it.
-      const refused = await toolItemWriteRefusal(
-        MCP_SURFACE_POLICIES.folder_describe.items,
-        { folder_id: id },
-        ownerId,
-      );
-      if (refused) return { content: [{ type: 'text', text: `Error: ${refused}` }], isError: true };
+      // The scope's edit of the folder, found by its id or its path, is the
+      // database's write check (0278): the pre-check went (docs/actors.md,
+      // "Pre-check deletion").
       const updated = await updateFolderDescription({
         ownerId: ownerId,
         folderId: id,
@@ -259,14 +253,8 @@ const FOLDER_RENAME = mcpTool({
           isError: true,
         };
       }
-      // The folder found by its path is checked as an id is (W7a fix round
-      // 1, M2): the scope may edit it.
-      const refused = await toolItemWriteRefusal(
-        MCP_SURFACE_POLICIES.folder_rename.items,
-        { folder_id: id },
-        ownerId,
-      );
-      if (refused) return { content: [{ type: 'text', text: `Error: ${refused}` }], isError: true };
+      // The rename is the database's to check (mantle_subtree_rewrite,
+      // 0282: manage of the folder's home), found by its id or its path.
       try {
         const updated = await renameFolderById({
           ownerId: ownerId,
@@ -339,12 +327,6 @@ const FILE_RENAME = mcpTool({
   handler: (ctx) => {
     const { ownerId, jsonReply } = ctx;
     return async ({ file_id, new_stem }) => {
-      const refused = await toolItemWriteRefusal(
-        MCP_SURFACE_POLICIES.file_rename.items,
-        { file_id },
-        ownerId,
-      );
-      if (refused) return { content: [{ type: 'text', text: `Error: ${refused}` }], isError: true };
       try {
         const row = await renameFileById({ ownerId: ownerId, fileId: file_id, newStem: new_stem });
         if (!row) {

@@ -21,7 +21,6 @@ import { type BuiltinToolDef } from '../types';
 import { str, boolOpt as bool } from '../coerce';
 import { errorMessage } from '@mantle/std';
 import { FILE_ID_PRE, FOLDER_ID_PRE } from '../builtins-common';
-import { edit } from '../item-write-gate';
 import { CS } from '../client-sourced-rule';
 
 export const file_create: BuiltinToolDef = {
@@ -118,7 +117,6 @@ export const file_rename: BuiltinToolDef = {
     effect: 'write',
     spends: 'none',
     scope: 'any',
-    items: [edit('file_id')],
     keyArea: 'files',
     clientSourced: CS.onNodes('file_id'),
   },
@@ -163,7 +161,6 @@ export const folder_rename: BuiltinToolDef = {
     effect: 'write',
     spends: 'none',
     scope: 'any',
-    items: [edit('folder_id')],
     keyArea: 'files',
     clientSourced: CS.onNodes('folder_id'),
   },
@@ -213,7 +210,6 @@ export const folder_describe: BuiltinToolDef = {
     effect: 'write',
     spends: 'none',
     scope: 'any',
-    items: [edit('folder_id')],
     keyArea: 'files',
     clientSourced: CS.onNodes('folder_id'),
   },
@@ -270,7 +266,6 @@ export const file_set_indexing: BuiltinToolDef = {
     effect: 'write',
     spends: 'none',
     scope: 'any',
-    items: [edit('file_id')],
     keyArea: 'files',
     clientSourced: CS.onNodes('file_id'),
   },
@@ -321,7 +316,6 @@ export const folder_set_indexing: BuiltinToolDef = {
     effect: 'write',
     spends: 'none',
     scope: 'any',
-    items: [edit('folder_id')],
     keyArea: 'files',
     clientSourced: CS.onNodes('folder_id'),
   },
