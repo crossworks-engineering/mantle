@@ -508,14 +508,12 @@ write runs:
 - the actor is a login, an assistant, a link or a contact (system work, a
   named repair, an Admin area route and a peer(share) stay on the system
   pool);
-- the write carries a scope its reads use too (`loginWriteScope` in
-  `viewer.ts`): a login's mutating request scope, or an Admin turn (the Admin
-  assistant, the Admin MCP surface). Not an Admin user's write request: its
-  reads run on the system pool, unscoped (W6a M1), so a row it read could
-  match no row on the role and its write would do nothing, silently. It stays
-  on the system pool with its scope on the transaction, as before, until A4
-  puts its reads in the scope. A login's write with no scope at all (an
-  approved call stamped with no origin scope) stays on the system pool too.
+- the write carries a scope its reads use too (`requestWriteScope` in
+  `viewer.ts`): a login's mutating request scope, an Admin user's too since
+  F4 (its reads moved into the scope with it, "Admin writes on the write
+  role (F4)" below), or an Admin turn (the Admin assistant, the Admin MCP
+  surface). A login's write with no scope at all (an approved call stamped
+  with no origin scope) stays on the system pool.
 
 On the role a transaction sets the scope (`mantle.ws`, `mod_ws`,
 `login_id`), the actor and the create home with one `SET LOCAL`
@@ -925,6 +923,118 @@ found here, unchanged on this branch:
   (heartbeats fire in api and web, which open the pool). A worker that
   starts to must open the pool the same way; the ceiling test fails until
   it is counted.
+
+## Admin writes on the write role (F4)
+
+Branch `feat/f4-admin-writes`, on main v0.300.81 (pre-check deletion
+blocker 1; A8 finding F4). Before it, the session guard let an Admin
+user's write request through on the system pool (`noteRequestWriteScope`,
+outcome `system:admin-write`): its reads ran unscoped and only its scope
+was set on the write's transactions, where the database checks a move, a
+create in a folder, a delete and a grant change, and nothing else. An
+edit, a draft edit, a public link and an app's data write of an item
+outside the user's workspaces met no database check: the TypeScript item
+pre-check (`itemWriteGate`) was the only one (the A8 `login@system` cells).
+
+**The change, at the gateway.** The guard (`server/web/lib/auth/session.ts`)
+answers every login's write request with one function, `enterLoginWrite`:
+the item the route names is checked (`itemWriteGate`), the create home
+recorded (`createHomeFor`: an Admin user without `?ws=` creates as before,
+the folder's home, else Admin), then the login's request scope is entered
+for the rest of the request, its reads and its writes, as a member's
+since W6b. `packages/db/src/viewer.ts` loses the Admin-only write scope
+(`noteRequestWriteScope`, the slot's `writeScope`); `requestWriteScope` is
+the one rule (the old `loginWriteScope` folded into it): a scope whose
+reads are scoped too. The login write gateway (`loginWriteRoute`,
+`packages/db/src/client.ts`) is otherwise unchanged: the write role while
+the actor check is warn or on, the system pool with the scope on the
+transaction while it is off. An Admin user's Admin rights are in its
+scope (the Admin workspace and its limits), so the database answers for
+them (`mantle_scope_has_admin`, `mantle_scope_has_area`). The owner is an
+Admin user here, held to its scope as every Admin user (the guide, and the
+A8 oracle's `owner` cells). The grants panel's Admin writes (`/api/grants`)
+enter the scope too (they had the scope on their transactions, their
+reads unscoped). The other any-login writes of an Admin user (its
+workspaces, access keys, chat threads and Telegram pairings: no brain
+item) stay on the system pool (`system:admin-write`), as before; so do
+the Admin area routes.
+
+**Kept on the system pool, by name** (`ADMIN_ACT`, `itemWriteGate`'s
+answer; checked there first, then `system:admin-write` with no scope):
+
+- closing any link of the brain (`DELETE /api/shares/:id`) by an Admin
+  user with the users area (docs/workspaces.md: closing only narrows; plan
+  v2, section 10): the link's item may be in a workspace the user is not
+  in, and the scope reads no link of an item it does not read (0265);
+- the trash of deleted apps (`DELETE /api/apps/deleted/:id`, `POST
+/api/apps/deleted/:id/restore`), after the manage check of the app's
+  last home: the app's row is gone, so no scope reads its snapshots (0265),
+  as the `app_undelete` tool's `app-trash` door says.
+
+Each of these keeps its TypeScript check as its only check: their
+pre-check entries (`ITEM_REF_PREFIXES` share and deleted-app) are not
+covered by this branch.
+
+**The proof** (`server/web/server/f4-admin-write-role.db.test.ts`; also in
+`pnpm test:edit-on`): real requests through the full HTTP pipeline
+(`runRoute`) as an Admin user (a Moderator of Admin, in no other
+workspace) and as the owner, on a note or a page homed in another
+workspace and granted to Admin with Write off (read-only), with Write on
+(editable), or not granted to Admin (hidden); the pre-check (the route's
+item, `routeItemTarget`) bypassed where a row says so:
+
+| Cell                                          | Answer                                                  |
+| --------------------------------------------- | ------------------------------------------------------- |
+| on, bypassed, edit and draft edit, read-only  | 403 by the database (the mapper's words), unchanged     |
+| on, bypassed, edit and draft edit, editable   | 200, made on the write role, no miss                    |
+| on, bypassed, hidden                          | 404, not written (before: found and written)            |
+| warn, bypassed, edit, read-only               | 200, made on the write role, the miss `UPDATE on nodes` |
+| off, bypassed, edit, read-only                | 200, the system pool (the rollout switch, every login)  |
+| off, warn, on, pre-check in place, read-only  | 403 "You cannot change this item in your workspaces."   |
+| off, warn, on, pre-check in place, hidden     | 404 `{"ok":false,"error":"not found"}` (before: 403)    |
+| on, a create with no `?ws=`                   | made in Admin, on the write role                        |
+| on, users area, close a link of a hidden item | 200 `{ ok: true }`, revoked (kept, `ADMIN_ACT`)         |
+
+The A8 grid's Admin write cells are `login@request` now (the write role,
+the login's scope, an Admin user's create home) and pass; `login@system`
+and its 108 known failures left `a8-known-failures.ts`.
+
+**Changed answers** (each stricter or a closed existence leak; none looser):
+
+- An Admin user's write (the owner's too) on a route naming an item its
+  scope does not read: 404 `{"ok":false,"error":"not found"}`, the answer
+  every other login gets (owner decision D2). Before: 403 `item-workspace`,
+  "This item is in a workspace you are not in. Add yourself to it first.",
+  which told the item existed. The same for an Admin user's key on
+  `/api/v1` (`PATCH /api/v1/pages/:id` of a shared page outside its scope:
+  404, was 403), for a link's change or close by an Admin user without the
+  users area, and for a snapshot copy in another login's private workspace
+  (`w6b-fix2.db.test.ts`). jackdaw shows `body.message` on a 403 and keys
+  no button on the reason (checked on jackdaw main, v0.7.15). The v1
+  changelog should say it as a fix (plan v2, section 10).
+- A write whose target the handler reads by body, outside the scope: a
+  folder made in a folder it does not read, 404 "folder not found"; a file
+  or a files folder made under a parent path it does not read, the answer
+  of a parent path no row has; a bulk delete of files it does not read
+  (`DELETE /api/files/files`), 200 `{ deleted: 0 }`; a move into a folder it
+  does not read, refused. Before: 403 `item-workspace` each.
+- warn and on: the database checks every statement of an Admin user's
+  write (an edit, a draft edit, a link, an app's data, a create). Off: as
+  before, but its reads are scoped. An Admin user who is not a Moderator of
+  Admin (the guide makes every admin login one; an untick is the only way)
+  creates into Admin with no Moderator seat there: warn makes it and logs
+  the miss, on refuses it; and on a route with no pre-check (contacts, the
+  journal) its edit of an Admin-homed item is refused in on. Before: made.
+- In an Admin user's write request a library reads what the same login's
+  read request reads (`a6b-exit-sweep.db.test.ts`, the F4 named changes):
+  a run job that names runs outside the scope is refused, the app trash
+  lists what the scope manages, an app's access log and the heartbeat
+  surface lists hold to the scope, and a queued call's Telegram card is
+  not sent (an app's tool call through the broker that waits for
+  approval): the card's route and the bot's row are read in the caller's
+  scope (A6b), which sends none from any scope, as from every member's
+  request and every read today. The in-app badge and /pending still have
+  it. Listed as an open item, not changed here.
 
 ## Request plumbing (A10 part 2, A10 #8, A10 #9)
 
@@ -4356,19 +4466,20 @@ Admin with no other grant. The fixture's own writes are named system work
 move, add a grant, remove a grant, the Write switch, a public link, create,
 app data) x every actor kind (login, login-ro and turn for each login;
 assistant, link, contact-ro, contact-rw, peer and system once each), and
-each write of the two Admin users once more as the product sends it today
-(`login@system`, below). Each cell is one transaction, rolled back. A read
+each write of the two Admin users once more as the product sends it
+(`login@request`, below; `login@system` before F4). Each cell is one transaction, rolled back. A read
 runs on the workspace role in the caller's scope; a write on a login of
 the write role with the caller's scope, actor, write mode and create home
 set by the gateway's own statement (`writeRoleSettingsSql`), the heads
 first, both checks on; grants and home moves through the definers the
 write role calls; system work, and a contact share's write (named system
 work after the share's own check), on the system pool with its actor
-(`setActorSql`). An Admin user's write request runs on the system pool
-today (W6a M1, until A4 puts its reads in the scope), with the login's
-scope and create home on the transaction and no `mantle.login_id`
-(`withSystemTx`'s `systemPoolTx`): the `login@system` cells send it that
-way, built by the same helper. A cell passes only on the row effect read
+(`setActorSql`). An Admin user's write request runs in its request scope
+on the write role since F4, with the create home an Admin user's request
+names (no private fallback): the `login@request` cells send it that way,
+built by the same helper. Before F4 it ran on the system pool with the
+login's scope and create home on the transaction and no `mantle.login_id`
+(`withSystemTx`'s `systemPoolTx`), the `login@system` cells. A cell passes only on the row effect read
 back through a probe (`a8_probe`, a definer the scratch database gets):
 allowed is the change made, refused is no change with 42501 or no row
 matched. Any other error fails the cell. The run pins the grid's size
@@ -4534,6 +4645,8 @@ branch and leave the list when it lands; F3 is the guide's rule now.
   a public link and an app's data write of an item outside Admin are made.
   Only the gate's TypeScript (`itemWriteGate`) holds them. 108 grid cells
   (`login@system`). The same writes on the write role are refused.
+  **Fixed by F4** ("Admin writes on the write role (F4)"): the request runs
+  in its scope on the write role; the cells are `login@request` and pass.
 - **F5** (withdrawn, owner decision of 2026-10-15, plan section 34). The
   home Moderator's app delete, by hand, in a turn, on the web
   (`DELETE /api/apps/:id`), over MCP and in a Telegram turn, is allowed:
@@ -5167,21 +5280,25 @@ the per-table edit checks fire only for a write on the write role
 pre-check as their only edit check, in every mode, on alike. Deleting any
 entry would have made one of them looser with both checks on.
 
-**Status of the three blockers:** 1 is open (an Admin user's HTTP write,
-F4, A4: it still blocks all 27 HTTP entries); 2 is closed by the worker
-write role (v0.300.80, "Tool writes off HTTP on the write role" above);
-3 is closed by A7 (the switch is removed). The tool entries now wait only
-on their family's second reasons below and on the fleet's checks being
-on.
+**Status of the three blockers:** all three are closed. 1 by F4 (an
+Admin user's HTTP write runs in its scope on the write role, "Admin
+writes on the write role (F4)" above); 2 by the worker write role
+(v0.300.80, "Tool writes off HTTP on the write role" above); 3 by A7 (the
+switch is removed). Every entry now waits only on its family's second
+reasons below and on the fleet's checks being on; the two Admin acts F4
+keeps on the system pool (the users area's link close, the deleted-app
+trash) keep their TypeScript check as their only one.
 
-1. **An Admin user's HTTP write** stays on the system pool
-   (`loginWriteScope`, `packages/db/src/viewer.ts`: never an Admin user's
-   write request, whose reads are unscoped). The database there checks a
-   move, a create in a folder, a delete and a grant against the scope on
-   the transaction, nothing else. Pinned: A8 finding F4,
-   `packages/db/src/matrix/a8-known-failures.ts`, the `login@system` cells
-   (an edit, a draft edit, a link and an app data write of an item outside
-   the scope are made). Blocks all 27 HTTP entries.
+1. **An Admin user's HTTP write** stayed on the system pool (its reads
+   unscoped). The database there checks a move, a create in a folder, a
+   delete and a grant against the scope on the transaction, nothing else.
+   Pinned: A8 finding F4, the `login@system` cells (an edit, a draft edit,
+   a link and an app data write of an item outside the scope were made).
+   Blocked all 27 HTTP entries. **Closed** by F4: the guard enters the
+   login's request scope (`enterLoginWrite`), reads and writes, so its
+   writes meet the database's checks on the write role in warn and on
+   (`server/web/server/f4-admin-write-role.db.test.ts`); the cells are
+   `login@request` and pass.
 2. **The processes that never open the write pool**: the runs worker
    (`server/web/workers/runs.ts`, a `tool_call` run item through
    `dispatchTool` under `withRunScope`) and the stdio MCP server
@@ -5218,8 +5335,10 @@ own proof before its entry goes):
   `app_table_export_remove` (`app_table_exports` is a write-role gap
   table), `access_set` (the grant definers).
 - **The answer**: the HTTP pre-check answers 404 for an item the scope does
-  not read. On the system pool the handler reads it, and a database
-  refusal would be a 403: the item's existence told.
+  not read. Since F4 every login's write reads in its scope, so with the
+  pre-check gone the handler finds no row and gives its own not-found (no
+  existence told); each entry's deletion names the answer its handler
+  gives, which may differ in shape from the pre-check's 404.
 
 **What each entry would cite once the paths close** (the checks exist and
 are tested in on mode today, on the write role):
@@ -5232,12 +5351,12 @@ are tested in on mode today, on the write role):
 | a Recall map, its cards and revisions | `recall_maps` edit or manage, `recall_nodes` and `recall_revisions` edit of the map              | `edit-check.db.test.ts`, `matrix/write-grid.db.test.ts`                                          |
 | an app's code, its switches, its data | `apps` manage (D4), admin (D5); `app_databases` appdata (D6)                                     | `edit-check.db.test.ts` ("an app's tool level ..."), `a5-app-data-read-only.db.test.ts`          |
 
-**The order to unblock:** (a) A4 puts an Admin user's write request on the
-write role (F4's cells pass, `a8-known-failures.ts` loses them); (b) the
-runs worker and the stdio MCP server write on the write role, or refuse a
+**The order to unblock:** (a) an Admin user's write request on the write
+role (F4's cells pass, `a8-known-failures.ts` loses them); (b) the runs
+worker and the stdio MCP server write on the write role, or refuse a
 scoped write off it, with `connection-ceiling.test.ts` changed on purpose;
-(c) A7 deletes the rollback switch. (b) and (c) are done (v0.300.80 and
-A7); (a) is left. Then entry by entry, one commit per
+(c) A7 deletes the rollback switch. All three are done ((a) by F4, (b)
+v0.300.80, (c) A7). Then entry by entry, one commit per
 entry or small family, each naming its check and test from the table and
 its changed answers.
 
