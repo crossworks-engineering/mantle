@@ -25,6 +25,13 @@
  * same order (server/web/server/a10-app-broker-sweep.test.ts names them
  * cell by cell).
  *
+ * The pre-check removal (docs/actors.md, "Pre-check deletion") re-recorded
+ * two cells: page_update on the refused item at the owner's admin rules
+ * and on the dev console. Its item pre-check went, so the stub's refusal
+ * is not reached and the handler runs. On a box neither asked it: both run
+ * as the owner with no workspace scope active (the pre-check's first
+ * test), and the database refuses that write where a scope is.
+ *
  * The entries: the shared link broker (a contact share), a member's run of
  * an app (the owner route with a member login, lib/app-runner.ts), an
  * admin's run of an app the Admin workspace alone holds (admin rules), an
@@ -628,8 +635,13 @@ describe('app broker parity (A5 step 3b)', () => {
     expect(masked).not.toContain('Failed query');
     const raw = JSON.stringify(await call('dev console', CASES[14]!));
     expect(raw).toContain('Failed query');
+    // page_update's item pre-check went (the pre-check removal: the
+    // database refuses its write on the write role; the dev console and an
+    // owner app at admin rules run as the owner on the system pool, where
+    // no workspace scope is active, so on a box the pre-check never asked
+    // there): the stubbed refusal is not reached now.
     const item = JSON.stringify(await call('dev console', CASES[3]!));
-    expect(item).toContain('item refused');
+    expect(item).toContain('"ran":"page_update"');
     const remote = JSON.stringify(await call('shared link (contact)', CASES[11]!));
     expect(remote).toContain('"remote":"http"');
     const conn = JSON.stringify(await call('member app', CASES[10]!));

@@ -1912,8 +1912,10 @@
   "an item write it may not make": {
    "status": 200,
    "body": {
-    "ok": false,
-    "error": "item refused (edit)"
+    "ok": true,
+    "output": {
+     "ran": "page_update"
+    }
    },
    "audit": [
     [
@@ -1928,22 +1930,30 @@
        "slug": "page_update"
       }
      }
-    ],
-    [
-     "app-error",
-     {
-      "ownerId": "33333333-3333-4333-8333-333333333333",
-      "appNodeId": "77777777-7777-4777-8777-777777777777",
-      "actorId": "55555555-5555-4555-8555-555555555555",
-      "source": "tool",
-      "via": "owner",
-      "slug": "page_update",
-      "message": "item refused (edit)",
-      "status": 200
-     }
     ]
    ],
-   "touches": [],
+   "touches": [
+    {
+     "ran": "page_update",
+     "input": {
+      "id": "44444444-4444-4444-8444-444444444444"
+     },
+     "actor": {
+      "kind": "login",
+      "loginId": "55555555-5555-4555-8555-555555555555"
+     },
+     "mode": "rw",
+     "scope": {
+      "kind": "user",
+      "loginId": "55555555-5555-4555-8555-555555555555",
+      "ws": [
+       "11111111-1111-4111-8111-111111111111",
+       "22222222-2222-4222-8222-222222222222"
+      ]
+     },
+     "home": null
+    }
+   ],
    "viewers": []
   },
   "a missing tool": {
@@ -3378,12 +3388,36 @@
   "an item write it may not make": {
    "status": 200,
    "body": {
-    "ok": false,
-    "error": "item refused (edit)",
+    "ok": true,
+    "output": {
+     "ran": "page_update"
+    },
+    "artifacts": [],
     "durationMs": 0
    },
    "audit": [],
-   "touches": [],
+   "touches": [
+    {
+     "ran": "page_update",
+     "input": {
+      "id": "44444444-4444-4444-8444-444444444444"
+     },
+     "actor": {
+      "kind": "login",
+      "loginId": "55555555-5555-4555-8555-555555555555"
+     },
+     "mode": "rw",
+     "scope": {
+      "kind": "user",
+      "loginId": "55555555-5555-4555-8555-555555555555",
+      "ws": [
+       "11111111-1111-4111-8111-111111111111",
+       "22222222-2222-4222-8222-222222222222"
+      ]
+     },
+     "home": null
+    }
+   ],
    "viewers": []
   },
   "a missing tool": {

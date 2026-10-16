@@ -10,16 +10,10 @@
  * In @mantle/runtime: the lowest package that sees every builtin (this
  * package's heartbeat tools are builtins too, registered at boot) and
  * heartbeats/fire.ts's egress list. No database: the resolvers' probes
- * stay off it (the recall map lookup is stubbed).
+ * stay off it.
  */
 import { fileURLToPath } from 'node:url';
-import { describe, expect, it, vi } from 'vitest';
-
-vi.mock('../../tools/src/builtins-recall-write', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../tools/src/builtins-recall-write')>()),
-  mapRef: async (_ownerId: string, ref: string) =>
-    ref === 'known' ? { id: 'map-node', version: 1, slug: 'known' } : null,
-}));
+import { describe, expect, it } from 'vitest';
 
 import {
   LOGIN_APP_DATA_TOOLS,
@@ -383,105 +377,37 @@ const AREAS: Record<string, string> = {
 
 /** ITEM_WRITE_TARGETS: each slug's targets (the argument and what the
  *  write needs of it), or 'resolver' for one worked out from the input
- *  (its behaviour is pinned below). */
+ *  (its behaviour is pinned below). The 29 entries the pre-check removal
+ *  kept (docs/actors.md, "Pre-check deletion"). */
 const ITEMS: Record<string, readonly { param: string; need: string }[] | 'resolver'> = {
-  access_set: [{ param: 'node_id', need: 'manage' }],
   app_build: [{ param: 'id', need: 'edit' }],
   app_db_schema_set: [{ param: 'id', need: 'edit' }],
   app_db_seed: [{ param: 'id', need: 'edit' }],
   app_delete: [{ param: 'id', need: 'manage' }],
   app_duplicate: 'resolver',
   app_export: 'resolver',
-  app_file_delete: [{ param: 'id', need: 'edit' }],
-  app_file_write: [{ param: 'id', need: 'edit' }],
   app_publish: [{ param: 'id', need: 'edit' }],
-  app_snapshot_create: [{ param: 'id', need: 'edit' }],
-  app_snapshot_delete: [{ param: 'id', need: 'edit' }],
   app_snapshot_restore: [{ param: 'id', need: 'edit' }],
-  app_source_set: [{ param: 'id', need: 'edit' }],
   app_table_export_remove: [{ param: 'id', need: 'edit' }],
   app_table_export_set: [{ param: 'id', need: 'edit' }],
-  app_tools_set: [{ param: 'id', need: 'edit' }],
   app_update: [{ param: 'id', need: 'edit' }],
-  contact_delete: [{ param: 'id', need: 'manage' }],
-  contact_update: [{ param: 'id', need: 'edit' }],
   content_supersede: [{ param: 'node_id', need: 'edit' }],
-  event_delete: [{ param: 'id', need: 'manage' }],
-  event_update: [{ param: 'id', need: 'edit' }],
   file_delete: [{ param: 'file_id', need: 'manage' }],
-  file_move: [{ param: 'file_id', need: 'manage' }],
-  file_rename: [{ param: 'file_id', need: 'edit' }],
-  file_set_indexing: [{ param: 'file_id', need: 'edit' }],
-  folder_delete: [{ param: 'folder_id', need: 'manage' }],
-  folder_describe: [{ param: 'folder_id', need: 'edit' }],
-  folder_move: [{ param: 'folder_id', need: 'manage' }],
-  folder_rename: [{ param: 'folder_id', need: 'edit' }],
-  folder_set_indexing: [{ param: 'folder_id', need: 'edit' }],
-  formula_delete: [{ param: 'id', need: 'manage' }],
-  formula_update: [{ param: 'id', need: 'edit' }],
-  journal_delete: [{ param: 'id', need: 'manage' }],
   journal_resolve_gap: [{ param: 'id', need: 'edit' }],
-  journal_update: [{ param: 'id', need: 'edit' }],
   node_share: [{ param: 'id', need: 'edit' }],
-  node_unshare: 'resolver',
-  note_delete: [{ param: 'id', need: 'manage' }],
-  note_update: [{ param: 'id', need: 'edit' }],
   page_block_append: [{ param: 'page_id', need: 'edit' }],
   page_block_delete: [{ param: 'page_id', need: 'edit' }],
   page_block_insert_after: [{ param: 'page_id', need: 'edit' }],
   page_block_insert_before: [{ param: 'page_id', need: 'edit' }],
   page_block_update: [{ param: 'page_id', need: 'edit' }],
   page_blocks_apply: [{ param: 'page_id', need: 'edit' }],
-  page_commit: [{ param: 'id', need: 'edit' }],
-  page_delete: [{ param: 'id', need: 'manage' }],
-  page_discard_draft: [{ param: 'id', need: 'edit' }],
   page_extract_section: [{ param: 'page_id', need: 'edit' }],
   page_from_file: 'resolver',
   page_from_note: 'resolver',
   page_from_notes: 'resolver',
-  page_mention: [{ param: 'page_id', need: 'edit' }],
-  page_move: [{ param: 'id', need: 'manage' }],
-  page_replace_from_file: [{ param: 'page_id', need: 'edit' }],
   page_share: [{ param: 'id', need: 'edit' }],
   page_split: [{ param: 'page_id', need: 'edit' }],
-  page_unshare: 'resolver',
-  page_update: [{ param: 'id', need: 'edit' }],
-  page_update_draft: [{ param: 'id', need: 'edit' }],
-  process_extraction: [{ param: 'node_id', need: 'read' }],
-  recall_card_delete: 'resolver',
-  recall_card_put: 'resolver',
-  recall_card_set_slug: 'resolver',
-  recall_cards_reorder: 'resolver',
-  recall_map_delete: 'resolver',
-  recall_map_publish: 'resolver',
-  recall_map_set_slug: 'resolver',
-  recall_map_update: 'resolver',
-  recall_prompt_confirm: 'resolver',
-  recall_revision_restore: 'resolver',
-  table_cell_set: [{ param: 'table_id', need: 'edit' }],
-  table_column_add: [{ param: 'table_id', need: 'edit' }],
-  table_column_delete: [{ param: 'table_id', need: 'edit' }],
-  table_column_update: [{ param: 'table_id', need: 'edit' }],
-  table_commit: [{ param: 'id', need: 'edit' }],
-  table_delete: [{ param: 'id', need: 'manage' }],
-  table_row_add: [{ param: 'table_id', need: 'edit' }],
-  table_row_delete: [{ param: 'table_id', need: 'edit' }],
-  table_row_update: [{ param: 'table_id', need: 'edit' }],
-  table_rows_add: [{ param: 'table_id', need: 'edit' }],
-  table_rows_upsert: [{ param: 'table_id', need: 'edit' }],
-  table_set_aggregate: [{ param: 'table_id', need: 'edit' }],
-  table_set_view: [{ param: 'table_id', need: 'edit' }],
-  table_snapshot_create: [{ param: 'id', need: 'edit' }],
-  table_snapshot_delete: [{ param: 'id', need: 'edit' }],
-  table_snapshot_restore: [{ param: 'id', need: 'edit' }],
-  table_tab_add: [{ param: 'table_id', need: 'edit' }],
-  table_tab_delete: [{ param: 'table_id', need: 'edit' }],
-  table_tab_rename: [{ param: 'table_id', need: 'edit' }],
-  table_update: [{ param: 'id', need: 'edit' }],
-  task_delete: [{ param: 'id', need: 'manage' }],
-  task_update: [{ param: 'id', need: 'edit' }],
   tree_folder_delete: [{ param: 'folder_id', need: 'manage' }],
-  tree_folder_update: 'resolver',
   tree_item_move: [{ param: 'item_ids', need: 'manage' }],
 };
 
@@ -560,19 +486,6 @@ describe('every @mantle/tools access list equals its literal (A5 step 1)', () =>
   };
 
   it('ITEM_WRITE_TARGETS: what each resolver works out', async () => {
-    // Closing a link: outside any scope, the item's edit.
-    for (const slug of ['page_unshare', 'node_unshare']) {
-      expect(await resolve(slug, { id: ' x ' })).toEqual([{ ids: ['x'], need: 'edit' }]);
-      expect(await resolve(slug, {})).toEqual([]);
-    }
-    // A folder update: a new parent is a move.
-    expect(await resolve('tree_folder_update', { folder_id: 'f' })).toEqual([
-      { ids: ['f'], need: 'edit' },
-    ]);
-    expect(await resolve('tree_folder_update', { folder_id: 'f', parent_id: null })).toEqual([
-      { ids: ['f'], need: 'manage' },
-    ]);
-    expect(await resolve('tree_folder_update', {})).toEqual([]);
     // A conversion retires its source unless told not to.
     expect(await resolve('page_from_note', { note_id: 'n' })).toEqual([
       { ids: ['n'], need: 'edit' },
@@ -597,45 +510,13 @@ describe('every @mantle/tools access list equals its literal (A5 step 1)', () =>
       ]);
       expect(await resolve(slug, { id: 'a' })).toEqual([{ ids: ['a'], need: 'edit' }]);
     }
-    // A recall map, by slug (the lookup stubbed): the delete manages.
-    for (const slug of [
-      'recall_map_update',
-      'recall_card_put',
-      'recall_card_delete',
-      'recall_cards_reorder',
-      'recall_card_set_slug',
-      'recall_map_set_slug',
-      'recall_prompt_confirm',
-      'recall_map_publish',
-      'recall_map_delete',
-    ]) {
-      const need = slug === 'recall_map_delete' ? 'manage' : 'edit';
-      expect(await resolve(slug, { map: 'known' }), slug).toEqual([{ ids: ['map-node'], need }]);
-      expect(await resolve(slug, { map: 'other' }), slug).toEqual([]);
-      expect(await resolve(slug, {}), slug).toEqual([]);
-    }
-    // A revision by an id that is not one.
-    expect(await resolve('recall_revision_restore', { revision_id: 'nope' })).toEqual([]);
     // Every resolver is probed above.
     const probed = new Set([
-      'page_unshare',
-      'node_unshare',
-      'tree_folder_update',
       'page_from_note',
       'page_from_file',
       'page_from_notes',
       'app_duplicate',
       'app_export',
-      'recall_map_update',
-      'recall_card_put',
-      'recall_card_delete',
-      'recall_cards_reorder',
-      'recall_card_set_slug',
-      'recall_map_set_slug',
-      'recall_prompt_confirm',
-      'recall_map_publish',
-      'recall_map_delete',
-      'recall_revision_restore',
     ]);
     expect(
       Object.keys(ITEMS)
