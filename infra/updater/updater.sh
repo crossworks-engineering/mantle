@@ -957,6 +957,86 @@ ws_switch_refusal() {
   return 0
 }
 
+# ── the checks' floor: both checks on before the pre-checks go ─────────────
+# From the release that removes the tools' TypeScript item pre-checks (the
+# migration named *_check_mode_floor.sql; docs/actors.md, "Pre-check
+# deletion") the database's actor and edit checks are a tool write's only
+# item check, and that release's migrate raises a check below on that no
+# recorded lowering covers (docs/update-prod.md, "The checks' floor"). A
+# roll is never how a box's checks change, so a request is refused, with
+# nothing changed, on a box whose actor or edit check is not on, unless the
+# stack .env says MANTLE_CHECK_FLOOR=keep (kept below on on purpose: its
+# migrate leaves it and records why) or the TARGET image does not ship the
+# floor. No release number is written here: the target image is pulled (the
+# roll pulls it anyway) and asked for the migration file by its name, and
+# only when the box is below on. Fails closed: a box whose modes cannot be
+# read, or a target whose image cannot be read, counts as below on and as
+# shipping the floor. The same modes SQL as scripts/roll.sh (step 2d),
+# pinned equal by packages/db/src/check-floor-preflight.db.test.ts; plain
+# SQL on the box's CURRENT schema (a box before 0280 has no
+# mantle_check_box_mode: both off). The updater that decides is the RUNNING
+# one: a box whose updater predates this check is not stopped by it on its
+# first roll to the floor; roll such a box with scripts/roll.sh.
+CKF_ERR=""
+
+check_modes_sql() {
+  cat <<'CHECK_MODES_SQL'
+select case when to_regprocedure('public.mantle_check_box_mode(text)') is null then 'off off'
+            else (xpath('/row/m/text()', query_to_xml(
+              'select public.mantle_check_box_mode(''actor_check'') || '' '' || '
+              || 'public.mantle_check_box_mode(''edit_check'') as m', false, true, '')))[1]::text
+       end;
+CHECK_MODES_SQL
+}
+
+# floor_in_image <tag>: yes when the target server image holds the floor's
+# migration, no when it does not, unknown when it cannot be pulled or read.
+floor_in_image() {
+  fi_ns=$(env_val MANTLE_IMAGE_NAMESPACE)
+  fi_img="${fi_ns:-titanwest}/mantle-server:$1"
+  # The log only: this function's stdout is its answer.
+  echo "[updater] checks' floor: reading the migrations of $fi_img" >> "$SIG/update.log"
+  docker pull "$fi_img" >> "$SIG/update.log" 2>&1 || { echo unknown; return 0; }
+  fi_cid=$(docker create "$fi_img" 2>> "$SIG/update.log") || { echo unknown; return 0; }
+  fi_tmp=$(mktemp -d 2>/dev/null) || { docker rm "$fi_cid" > /dev/null 2>&1; echo unknown; return 0; }
+  if docker cp "$fi_cid:/app/packages/db/migrations" "$fi_tmp/m" >> "$SIG/update.log" 2>&1 && [ -d "$fi_tmp/m" ]; then
+    if ls "$fi_tmp/m" 2>/dev/null | grep -q '_check_mode_floor\.sql$'; then fi_out=yes; else fi_out=no; fi
+  else
+    fi_out=unknown
+  fi
+  docker rm "$fi_cid" > /dev/null 2>&1
+  rm -rf "$fi_tmp"
+  echo "$fi_out"
+}
+
+# check_floor_refusal <tag>: 0 with CKF_ERR set when the roll must be
+# refused; 1 when it may go ahead.
+check_floor_refusal() {
+  CKF_ERR=""
+  ckf_modes=$(check_modes_sql | docker exec -i mantle_pg psql -U postgres -d postgres \
+    -v ON_ERROR_STOP=1 -At 2>/dev/null | tr -d '\r' | tr -s ' ')
+  case "$ckf_modes" in
+    on\ on) return 1 ;;
+    off\ off | off\ warn | off\ on | warn\ off | warn\ warn | warn\ on | on\ off | on\ warn)
+      ckf_what="this box's checks are not both on (actor ${ckf_modes% *}, edit ${ckf_modes#* })" ;;
+    *) ckf_what="this box's check modes could not be read (is mantle_pg up?)" ;;
+  esac
+  ckf_keep=$(env_val MANTLE_CHECK_FLOOR | tr -d '"'"'"' ' | tr '[:upper:]' '[:lower:]')
+  if [ "$ckf_keep" = keep ]; then
+    echo "[updater] ⚠ checks' floor: $ckf_what, kept on purpose (MANTLE_CHECK_FLOOR=keep in .env): the roll's migrate leaves them and records why" | tee -a "$SIG/update.log"
+    return 1
+  fi
+  case "$(floor_in_image "$1")" in
+    no)
+      echo "[updater] checks' floor: $ckf_what, and $1 does not ship the floor: not refused" | tee -a "$SIG/update.log"
+      return 1 ;;
+    yes) ckf_ships="$1 ships the checks' floor" ;;
+    *) ckf_ships="whether $1 ships the checks' floor could not be read from its image, so it counts as shipping it" ;;
+  esac
+  CKF_ERR="$ckf_what, and $ckf_ships: the tools' item pre-checks are gone there and its migrate would raise them. Turn both checks on first (docs/edit-check.md), or set MANTLE_CHECK_FLOOR=keep and MANTLE_CHECK_FLOOR_REASON in .env to keep this box below on on purpose (docs/update-prod.md, Keep one box below on, on purpose)"
+  return 0
+}
+
 # ── image prune: this product's images only ──────────────────────────────────
 # Nothing pruned images before this: each roll left a server + client pair
 # (about 3.4 GB) behind, and boxes filled at eight releases a day (dev hit 100%
@@ -1585,6 +1665,14 @@ while true; do
     if ws_switch_refusal "$TARGET"; then
       write_status error "$TARGET" "$STARTED" "$(now)" false "roll refused, nothing changed: $WSR_ERR"
       echo "[updater] ROLL REFUSED before any change: $WSR_ERR" | tee -a "$SIG/update.log"
+      write_stack_info
+      continue
+    fi
+
+    # The checks' floor: a box below on is not raised by a roll.
+    if check_floor_refusal "$TARGET"; then
+      write_status error "$TARGET" "$STARTED" "$(now)" false "roll refused, nothing changed: $CKF_ERR"
+      echo "[updater] ROLL REFUSED before any change: $CKF_ERR" | tee -a "$SIG/update.log"
       write_stack_info
       continue
     fi

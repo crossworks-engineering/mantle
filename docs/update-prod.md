@@ -1165,13 +1165,20 @@ lowering mantle.edit_check from on to warn needs a reason`, nothing
   by hand when the box is quiet. `MANTLE_CHECK_FLOOR` says what migrate
   does: `raise` (the default; the image sets it) or `keep` (below).
 - **The roll refuses a box that is not on.** `scripts/roll.sh` (step 2d)
-  refuses a roll to this release (v0.300.82 or later, `latest` too) on a box
-  whose actor or edit check is not on, before its backup and its request,
-  unless the box's stack `.env` says `MANTLE_CHECK_FLOOR=keep`. Turn the
-  checks on first (docs/edit-check.md), or keep the box below on on purpose
-  (below). `scripts/roll.sh --dry-run <box> <tag>` shows the answer and
-  changes nothing. The in-app Update button (the updater) does not ask:
-  roll a box whose checks are not on with `scripts/roll.sh`.
+  and the in-app Update button (the updater) refuse a roll to a release
+  that ships the floor on a box whose actor or edit check is not on, before
+  the backup and before anything changes, unless the box's stack `.env`
+  says `MANTLE_CHECK_FLOOR=keep`. Neither names a release number: roll.sh
+  reads the target's tag in its own checkout (a migration named
+  `*_check_mode_floor.sql` in the tag's tree), the updater pulls the
+  target image and reads its migrations. A target they cannot tell
+  (`latest`, a tag the checkout has not fetched, an image that cannot be
+  pulled) counts as shipping the floor. A box whose checks are both on is
+  never asked. Turn the checks on first (docs/edit-check.md), or keep the
+  box below on on purpose (below). `scripts/roll.sh --dry-run <box> <tag>`
+  shows the answer and changes nothing. A box whose updater is older than
+  this check is not stopped by its Update button on the first such roll:
+  roll it with `scripts/roll.sh`.
 
 ### Keep one box below on, on purpose
 

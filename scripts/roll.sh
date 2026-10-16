@@ -13,9 +13,10 @@
 #      apps (2c, team apps Phase 2) unless --ack-connector-writes, or
 #      breaks a live app's run-time schema SQL for members, clients or
 #      contacts (2c, rows only below admin) unless --ack-app-ddl; refuse a
-#      roll to the checks' floor (the pre-check removal, migration 0298) on a
-#      box whose actor or edit check is not on, unless its .env says
-#      MANTLE_CHECK_FLOOR=keep (2d)
+#      roll to a release that ships the checks' floor (the pre-check
+#      removal, *_check_mode_floor.sql in the target's tree; a target this
+#      checkout cannot tell counts as one) on a box whose actor or edit
+#      check is not on, unless its .env says MANTLE_CHECK_FLOOR=keep (2d)
 #   3. backup: scripts/db-dump.sh on the box, strict, its OWN exit status
 #      (no pipe in front of it). Skipped only when the box's updater takes
 #      its own strict pre-roll backup (see pre_roll_backup in
@@ -47,6 +48,8 @@
 # --dry-run runs steps 1 and 2 only: read-only, no backup, no request.
 #
 # ROLL_ALLOW_V1_RECALL=1 lets step 2b pass a page-built Recall map.
+# ROLL_RELEASE_GIT: the git checkout step 2d reads the target's tag from
+# (default: the one this script is in).
 #
 # Exit codes: 0 rolled and verified, 1 a step failed (nothing requested when it
 # failed before step 4), 2 usage, 3 COUNTS DROPPED after the roll.
@@ -378,28 +381,54 @@ if [ "$DDL_BELOW" -gt 0 ] || [ "$DDL_SHARED" -gt 0 ]; then
 fi
 
 # ── 2d. the checks' floor: both checks on before the pre-checks go ────────
-# From the release that removes the tools' TypeScript item pre-checks
-# (migration 0298; docs/actors.md, "Pre-check deletion") the database's actor
-# and edit checks are a tool write's only item check, and that release's
-# migrate raises a check below on that no recorded lowering covers
-# (docs/update-prod.md, "The checks' floor"). A roll is never how a box's
-# checks change: refused unless both are on already, or the box's stack .env
-# says MANTLE_CHECK_FLOOR=keep (a box kept below on on purpose: its migrate
-# leaves it and records why). CHECK_FLOOR_RELEASE is a lower bound for that
-# release, like WS_SWITCH_FLOOR. Plain SQL on the box's CURRENT schema (a box
-# before 0280 has no mantle_check_box_mode: both off), words only.
-CHECK_FLOOR_RELEASE=0.300.82
-check_floor_sql() {
-  cat <<'CHECK_FLOOR_SQL'
+# From the release that removes the tools' TypeScript item pre-checks (the
+# migration named *_check_mode_floor.sql; docs/actors.md, "Pre-check
+# deletion") the database's actor and edit checks are a tool write's only
+# item check, and that release's migrate raises a check below on that no
+# recorded lowering covers (docs/update-prod.md, "The checks' floor"). A
+# roll is never how a box's checks change: a box below on is refused unless
+# its stack .env says MANTLE_CHECK_FLOOR=keep (kept below on on purpose: its
+# migrate leaves it and records why), or the TARGET release does not ship
+# the floor. No release number is written here: whether the target ships it
+# is read from the target's own tree (its tag in this checkout, or
+# ROLL_RELEASE_GIT's), the migration file by its name. A target this
+# checkout cannot tell (`latest`, a tag not fetched) counts as shipping it.
+# CHECK_FLOOR_NOT_BEFORE only skips the question for a release older than
+# any that could ship it (the floor was written on v0.300.81). The modes are
+# plain SQL on the box's CURRENT schema (a box before 0280 has no
+# mantle_check_box_mode: both off), words only; the updater asks the same
+# SQL (infra/updater/updater.sh, check_floor_refusal), pinned equal by
+# packages/db/src/check-floor-preflight.db.test.ts.
+CHECK_FLOOR_NOT_BEFORE=0.300.82
+check_modes_sql() {
+  cat <<'CHECK_MODES_SQL'
 select case when to_regprocedure('public.mantle_check_box_mode(text)') is null then 'off off'
             else (xpath('/row/m/text()', query_to_xml(
               'select public.mantle_check_box_mode(''actor_check'') || '' '' || '
               || 'public.mantle_check_box_mode(''edit_check'') as m', false, true, '')))[1]::text
        end;
-CHECK_FLOOR_SQL
+CHECK_MODES_SQL
 }
-if tag_at_or_past "$CHECK_FLOOR_RELEASE" "$TAG"; then
-  CF=$(check_floor_sql | rsh "docker exec -i mantle_pg psql -U postgres -d postgres -v ON_ERROR_STOP=1 -At") ||
+# floor_in_release <tag>: yes when release <tag>'s tree holds the floor's
+# migration, no when it does not, unknown when this checkout has no such tag.
+floor_in_release() {
+  local git_dir=${ROLL_RELEASE_GIT:-$ROOT} ref names
+  for ref in "refs/tags/v${1#v}" "refs/tags/$1"; do
+    git -C "$git_dir" rev-parse -q --verify "$ref^{commit}" > /dev/null 2>&1 || continue
+    names=$(git -C "$git_dir" ls-tree --name-only "$ref" packages/db/migrations/ 2> /dev/null) || {
+      echo unknown
+      return 0
+    }
+    case "$names" in
+      *_check_mode_floor.sql*) echo yes ;;
+      *) echo no ;;
+    esac
+    return 0
+  done
+  echo unknown
+}
+if tag_at_or_past "$CHECK_FLOOR_NOT_BEFORE" "$TAG"; then
+  CF=$(check_modes_sql | rsh "docker exec -i mantle_pg psql -U postgres -d postgres -v ON_ERROR_STOP=1 -At") ||
     die "could not read this box's check modes"
   CF=$(printf '%s' "$CF" | tr -d '\r' | tr -s ' ')
   case "$CF" in off\ off | off\ warn | off\ on | warn\ off | warn\ warn | warn\ on | on\ off | on\ warn | on\ on) ;;
@@ -412,11 +441,17 @@ if tag_at_or_past "$CHECK_FLOOR_RELEASE" "$TAG"; then
     if [ "$CF_KEEP" = keep ]; then
       echo "checks: below on, kept on purpose (MANTLE_CHECK_FLOOR=keep in $STACK/.env): the roll's migrate leaves them and records why"
     else
-      die "this box's checks are not both on (actor $CF_ACTOR, edit $CF_EDIT). From v$CHECK_FLOOR_RELEASE the tools' item pre-checks are gone and the roll's migrate would raise them. Turn them on first (docs/edit-check.md: select mantle_set_actor_check('on'); select mantle_set_edit_check('on');), or keep this box below on on purpose: MANTLE_CHECK_FLOOR=keep and MANTLE_CHECK_FLOOR_REASON in its .env (docs/update-prod.md, \"Keep one box below on, on purpose\")."
+      CF_SHIPS=$(floor_in_release "$TAG")
+      CF_HOW="Turn them on first (docs/edit-check.md: select mantle_set_actor_check('on'); select mantle_set_edit_check('on');), or keep this box below on on purpose: MANTLE_CHECK_FLOOR=keep and MANTLE_CHECK_FLOOR_REASON in its .env (docs/update-prod.md, \"Keep one box below on, on purpose\")."
+      case "$CF_SHIPS" in
+        no) echo "checks: below on, and $TAG does not ship the checks' floor (no *_check_mode_floor.sql in its tree): not refused" ;;
+        yes) die "this box's checks are not both on (actor $CF_ACTOR, edit $CF_EDIT), and $TAG ships the checks' floor: the tools' item pre-checks are gone there and the roll's migrate would raise them. $CF_HOW" ;;
+        *) die "this box's checks are not both on (actor $CF_ACTOR, edit $CF_EDIT), and this checkout cannot tell whether $TAG ships the checks' floor (no such tag here: git fetch --tags), so it counts as shipping it. $CF_HOW" ;;
+      esac
     fi
   fi
 else
-  echo "checks: $TAG is before the checks' floor (v$CHECK_FLOOR_RELEASE); not checked"
+  echo "checks: $TAG is older than any release with the checks' floor (v$CHECK_FLOOR_NOT_BEFORE); not checked"
 fi
 
 if [ -n "$DRY" ]; then

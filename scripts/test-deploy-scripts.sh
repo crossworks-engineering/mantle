@@ -758,7 +758,14 @@ docker() {
       else return 1; fi
       return 0 ;;
     inspect) cat "$FAKE_STATE/$4" 2>/dev/null || return 1; return 0 ;;
-    exec) [ -z "${FAKE_EXEC_FAIL:-}" ] || return 1; echo "${FAKE_EXEC_OUT:-1000}"; return 0 ;;
+    exec)
+      [ -z "${FAKE_EXEC_FAIL:-}" ] || return 1
+      # The checks floor sends its SQL on stdin (-i): "<actor> <edit>".
+      if [ "$2" = -i ]; then
+        in=$(cat)
+        case "$in" in *mantle_check_box_mode*) echo "${FAKE_FLOOR:-on on}"; return 0 ;; esac
+      fi
+      echo "${FAKE_EXEC_OUT:-1000}"; return 0 ;;
     image) cat "$FAKE_STATE/images"; return 0 ;;
     rmi) grep -qxF "$2" "$FAKE_STATE/in-use" 2>/dev/null && return 1; echo "$2" >> "$FAKE_STATE/removed"; return 0 ;;
     compose)
@@ -1023,6 +1030,72 @@ check "clients, no workspaces: says why, with the counts" \
 check "clients, no workspaces: .env and compose unchanged" \
   sh -c "cmp -s '$T/stack/.env' '$T/env.before' && cmp -s '$T/stack/docker-compose.yml' '$T/compose.before'"
 check "clients, no workspaces: no backup, no pull, no up" sh -c "! grep -qE 'db-dump.sh|pull| up ' '$T/calls'"
+
+# ═════════════════════════════════════════════════════════════════════════════
+echo "updater.sh: the checks' floor refuses a box below on when the target ships it"
+# The target image's migrations: $T/img/app/packages/db/migrations (the stub
+# copies /app/... out of $FAKE_IMG). floor_img <root> yes|no|none.
+floor_img() {
+  rm -rf "$1/img/app"
+  [ "$2" = none ] && return 0
+  mkdir -p "$1/img/app/packages/db/migrations"
+  echo 'select 1;' > "$1/img/app/packages/db/migrations/0001_a.sql"
+  [ "$2" = no ] || echo 'select 1;' > "$1/img/app/packages/db/migrations/0298_check_mode_floor.sql"
+}
+ckf_probe='if check_floor_refusal v9; then printf "refused: %s" "$CKF_ERR"; else printf ok; fi'
+T="$WORK/ckf-lib"; fake_stack "$T"; mkdir -p "$T/state"
+floor_img "$T" yes
+out=$(FAKE_FLOOR="on on" roll_lib "$T" "$ckf_probe")
+check "check_floor_refusal: both on goes ahead" test "$out" = ok
+check "check_floor_refusal: both on never reads the image" sh -c "! grep -qE 'pull|create' '$T/calls'"
+FAKE_FLOOR="on warn" roll_lib "$T" "$ckf_probe" > "$T/ckf.out"
+check "check_floor_refusal: below on, a target that ships the floor: refused, and why" \
+  grep -q "^refused: this box's checks are not both on (actor on, edit warn), and v9 ships the checks' floor" "$T/ckf.out"
+check "check_floor_refusal: the image read is test/mantle-server:v9" grep -q 'docker pull test/mantle-server:v9' "$T/calls"
+floor_img "$T" no
+out=$(FAKE_FLOOR="off off" roll_lib "$T" "$ckf_probe")
+check "check_floor_refusal: below on, a target without the floor: goes ahead" test "$(printf '%s\n' "$out" | tail -n 1)" = ok
+check "check_floor_refusal: below on, no floor in the target: says so" grep -q 'v9 does not ship the floor: not refused' "$T/sig/update.log"
+floor_img "$T" none
+FAKE_FLOOR="warn on" roll_lib "$T" "$ckf_probe" > "$T/ckf.out"
+check "check_floor_refusal: below on, an image that cannot be read: refused (fails closed)" \
+  grep -q '^refused: .*could not be read from its image, so it counts as shipping it' "$T/ckf.out"
+floor_img "$T" yes
+FAKE_EXEC_FAIL=1 roll_lib "$T" "$ckf_probe" > "$T/ckf.out"
+check "check_floor_refusal: modes that cannot be read, a target with the floor: refused (fails closed)" \
+  grep -q "^refused: this box's check modes could not be read" "$T/ckf.out"
+printf 'MANTLE_CHECK_FLOOR=keep\nMANTLE_CHECK_FLOOR_REASON=an import\n' >> "$T/stack/.env"
+out=$(FAKE_FLOOR="off warn" roll_lib "$T" "$ckf_probe")
+check "check_floor_refusal: MANTLE_CHECK_FLOOR=keep goes ahead" test "$(printf '%s\n' "$out" | tail -n 1)" = ok
+check "check_floor_refusal: MANTLE_CHECK_FLOOR=keep says so loudly" grep -q 'kept on purpose (MANTLE_CHECK_FLOOR=keep in .env)' "$T/sig/update.log"
+sed -n "/<<'CHECK_MODES_SQL'/,/^CHECK_MODES_SQL\$/p" "$ROOT/scripts/roll.sh" > "$T/a.sql"
+sed -n "/<<'CHECK_MODES_SQL'/,/^CHECK_MODES_SQL\$/p" "$ROOT/infra/updater/updater.sh" > "$T/b.sql"
+check "check_floor_refusal: the SQL is there" grep -q mantle_check_box_mode "$T/a.sql"
+check "check_floor_refusal: roll.sh and the updater send the same SQL" cmp -s "$T/a.sql" "$T/b.sql"
+
+floor_case ckfbelow v9
+floor_img "$T" yes
+FAKE_TS=20260105-000000 FAKE_FLOOR="on warn" roll_loop "$T"
+check "checks below on, a target with the floor: status error, ok false" \
+  grep -q '"phase":"error","target":"v9".*"ok":false' "$T/sig/status.json"
+check "checks below on: the status says the roll was refused, and why" \
+  grep -q "roll refused, nothing changed: this box's checks are not both on (actor on, edit warn), and v9 ships the checks' floor" "$T/sig/status.json"
+check "checks below on: .env and compose unchanged" \
+  sh -c "cmp -s '$T/stack/.env' '$T/env.before' && cmp -s '$T/stack/docker-compose.yml' '$T/compose.before'"
+check "checks below on: no backup, no compose pull, no up" sh -c "! grep -qE 'db-dump.sh|compose.* pull| up ' '$T/calls'"
+check "checks below on: the request was consumed" test ! -e "$T/sig/request.json"
+
+floor_case ckfnofloor v9
+floor_img "$T" no
+FAKE_TS=20260105-000000 FAKE_FLOOR="off off" roll_loop "$T"
+check "checks below on, a target without the floor: the roll goes ahead" \
+  grep -q '"phase":"done","target":"v9".*"ok":true' "$T/sig/status.json"
+
+floor_case ckfon v9
+floor_img "$T" yes
+FAKE_TS=20260105-000000 roll_loop "$T"
+check "checks both on, a target with the floor: the roll goes ahead" \
+  grep -q '"phase":"done","target":"v9".*"ok":true' "$T/sig/status.json"
 
 # ═════════════════════════════════════════════════════════════════════════════
 echo "roll.sh: backup first, request only the target, stop on any count drop"
@@ -1481,34 +1554,60 @@ FAKE_WS="oops" roll_sh --ssh fakebox v0.239.90
 check "workspaces switch: an answer that is not three numbers stops the roll" \
   sh -c "test '$rc' = 1 && grep -q 'unexpected workspaces check' '$RS/out' && test ! -e '$RS/request.seen'"
 
+# The release tree step 2d reads (ROLL_RELEASE_GIT): v0.300.85 has no
+# checks' floor, v0.300.90 ships it (a migration named *_check_mode_floor.sql);
+# no release number is written in roll.sh.
+RG="$WORK/release-git"; mkdir -p "$RG/packages/db/migrations"
+git -C "$RG" init -q
+echo 'select 1;' > "$RG/packages/db/migrations/0001_a.sql"
+git -C "$RG" add -A
+git -C "$RG" -c user.name=t -c user.email=t@example.com -c commit.gpgsign=false commit -qm a
+git -C "$RG" tag v0.300.85
+echo 'select 1;' > "$RG/packages/db/migrations/0298_check_mode_floor.sql"
+git -C "$RG" add -A
+git -C "$RG" -c user.name=t -c user.email=t@example.com -c commit.gpgsign=false commit -qm b
+git -C "$RG" tag v0.300.90
+check "checks' floor: the floor's migration keeps the name step 2d and the updater look for" \
+  sh -c "ls '$ROOT/packages/db/migrations' | grep -q '_check_mode_floor\.sql\$'"
+
 roll_box floorlow
-FAKE_FLOOR="on warn" roll_sh --ssh fakebox v0.300.82
-check "checks' floor, a box whose edit check is warn: refused before anything" \
-  sh -c "test '$rc' = 1 && grep -q 'checks are not both on (actor on, edit warn)' '$RS/out' && ! grep -q '^db-dump' '$RS/calls' && test ! -e '$RS/request.seen'"
+FAKE_FLOOR="on warn" ROLL_RELEASE_GIT="$RG" roll_sh --ssh fakebox v0.300.90
+check "checks' floor, edit check warn, a target that ships the floor: refused before anything" \
+  sh -c "test '$rc' = 1 && grep -q 'checks are not both on (actor on, edit warn), and v0.300.90 ships the checks' '$RS/out' && ! grep -q '^db-dump' '$RS/calls' && test ! -e '$RS/request.seen'"
+
+roll_box floornofloor
+FAKE_FLOOR="on warn" ROLL_RELEASE_GIT="$RG" roll_sh --ssh fakebox v0.300.85
+check "checks' floor, edit check warn, a target past .81 without the floor: the roll goes ahead, and says so" \
+  sh -c "test '$rc' = 0 && grep -q 'v0.300.85 does not ship the checks' '$RS/out' && test -e '$RS/request.seen'"
+
+roll_box floorunknown
+FAKE_FLOOR="off on" ROLL_RELEASE_GIT="$RG" roll_sh --ssh fakebox v0.300.99
+check "checks' floor, a target this checkout has no tag for: counts as shipping it (refused)" \
+  sh -c "test '$rc' = 1 && grep -q 'cannot tell whether v0.300.99 ships' '$RS/out' && test ! -e '$RS/request.seen'"
 
 roll_box floorkeep
 printf 'MANTLE_CHECK_FLOOR=keep\nMANTLE_CHECK_FLOOR_REASON=an import\n' > "$RS/stack/.env"
-FAKE_FLOOR="off warn" roll_sh --ssh fakebox v0.300.82
+FAKE_FLOOR="off warn" ROLL_RELEASE_GIT="$RG" roll_sh --ssh fakebox v0.300.90
 check "checks' floor, a box marked keep in its .env: the roll goes ahead, and says so" \
   sh -c "test '$rc' = 0 && grep -q 'kept on purpose (MANTLE_CHECK_FLOOR=keep' '$RS/out'"
 
 roll_box floorlatest
-FAKE_FLOOR="off off" roll_sh --ssh fakebox latest
-check "checks' floor: latest counts as past it (refused)" \
+FAKE_FLOOR="off off" ROLL_RELEASE_GIT="$RG" roll_sh --ssh fakebox latest
+check "checks' floor: latest cannot be told, so counts as shipping it (refused)" \
   sh -c "test '$rc' = 1 && grep -q 'actor off, edit off' '$RS/out'"
 
 roll_box flooron
-FAKE_FLOOR="on on" roll_sh --ssh fakebox v0.300.82
+FAKE_FLOOR="on on" ROLL_RELEASE_GIT="$RG" roll_sh --ssh fakebox v0.300.90
 check "checks' floor, both on: the roll goes ahead" \
   sh -c "test '$rc' = 0 && grep -q 'checks: actor on, edit on' '$RS/out'"
 
 roll_box floorbefore
-FAKE_FLOOR="off off" roll_sh --ssh fakebox v0.300.81
-check "checks' floor: a roll to a release before it is not checked" \
-  sh -c "test '$rc' = 0 && grep -q 'v0.300.81 is before the checks' '$RS/out'"
+FAKE_FLOOR="off off" ROLL_RELEASE_GIT="$RG" roll_sh --ssh fakebox v0.300.81
+check "checks' floor: a roll to a release older than any with the floor is not checked" \
+  sh -c "test '$rc' = 0 && grep -q 'v0.300.81 is older than any release with the checks' '$RS/out'"
 
 roll_box floorgarbage
-FAKE_FLOOR="oops" roll_sh --ssh fakebox v0.300.82
+FAKE_FLOOR="oops" ROLL_RELEASE_GIT="$RG" roll_sh --ssh fakebox v0.300.90
 check "checks' floor: an answer that is not two modes stops the roll" \
   sh -c "test '$rc' = 1 && grep -q 'unexpected check modes' '$RS/out' && test ! -e '$RS/request.seen'"
 
