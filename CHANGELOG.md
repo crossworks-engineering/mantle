@@ -14,19 +14,30 @@ deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 - **Deploy note:** `MANTLE_ADMIN_READS=system` (the W6a and W7a rollback
   switch) is gone; a value left in `.env` is not read. Remove it.
 - Migration 0295 drops `mantle_workspace_kind`; the rules that called it
-  keep their answers (the old kind list written in).
+  keep their answers (the old kind list written in). The three `nodes`
+  level CHECKs are made again NOT VALID, with no scan of `nodes` under its
+  lock.
+- A fresh install whose first owner's workspaces switch fails is not
+  served: the signup answers 503 (`reason: 'not-switched'`, the account is
+  made) and the web process stops, so its restart switches the brain again
+  at boot (and refuses to serve while that fails). The terminal wizard
+  stops with the reason.
 - A pending call queued under the rollback switch runs, when approved, in
   the scope it was asked in, never on the system pool.
 - **Fix:** an API key limited to some areas (no Search) listed pages, notes
   and tables with a 500 on a brain on workspaces: the email attachment rule
   read `email_accounts` in the key's scope. Migration 0296 reads the mail
   account branches through a definer (`mantle_mail_branch_holds`); the
-  Files key guard's folder check uses it too.
+  Files key guard's folder check uses it too. In a scope it answers only
+  for a path at or under an item the scope reads (NULL, refused, for any
+  other).
 - **Fix:** over MCP an API key or a linked brain could change the content
   of an item others read when the workspace holding it was not one of the
   key's login's workspaces (the check read only the key's own workspaces).
   Migration 0297 answers "do others read this item" through a definer
-  (`mantle_item_others_read`); such a change is refused again.
+  (`mantle_item_others_read`); such a change is refused again. In a scope
+  it answers only for an item the scope reads (NULL, refused, for any
+  other).
 
 ## Unreleased: approvals, second lows round
 
@@ -77,7 +88,7 @@ deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
   a bare key of 32 or more hex or mixed letters and digits, and the
   URL-encoded `Bearer%20...`).
 - A model provider key's credential change (`POST /api/keys`, `PATCH
-  /api/keys/:id`, `POST /api/keys/:id/rotate`) asks the open provider
+/api/keys/:id`, `POST /api/keys/:id/rotate`) asks the open provider
   alerts to probe now, so a fixed key clears its alert and resumes the
   extract queue without waiting. Narrower than the Admin **Try again**:
   nothing is sent when no shown or paused alert is open (a blip is not

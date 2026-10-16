@@ -907,9 +907,10 @@ shape above until this branch.
 6b)", take this on rebase): closed. The runs worker, the stdio MCP server
 and the Telegram poller open the write pool, so their scoped tool writes
 meet the database's checks in warn and on; `connection-ceiling.test.ts`
-changed on purpose (the openers and their sizes). What stays before an
-entry goes: blocker 1 (an Admin user's HTTP write, F4, A4) and blocker 3
-(the rollback switch, A7), and each family's second reasons. Two open items
+changed on purpose (the openers and their sizes). Blocker 3 (the rollback
+switch) is closed too: A7 removed `MANTLE_ADMIN_READS` (see "A7 handover").
+What stays before an entry goes: blocker 1 (an Admin user's HTTP write,
+F4, A4), and each family's second reasons. Two open items
 found here, unchanged on this branch:
 
 - **An approval with no origin scope gets no item check.**
@@ -5162,9 +5163,16 @@ actor check and edit check are on.
 
 **Result: no entry deleted.** "On on every box" is needed but not enough:
 the per-table edit checks fire only for a write on the write role
-(`mantle_write_user`), and three ways in still write on the system pool
-with the pre-check as their only edit check, in every mode, on alike.
-Deleting any entry would make one of them looser with both checks on.
+(`mantle_write_user`), and three ways in wrote on the system pool with the
+pre-check as their only edit check, in every mode, on alike. Deleting any
+entry would have made one of them looser with both checks on.
+
+**Status of the three blockers:** 1 is open (an Admin user's HTTP write,
+F4, A4: it still blocks all 27 HTTP entries); 2 is closed by the worker
+write role (v0.300.80, "Tool writes off HTTP on the write role" above);
+3 is closed by A7 (the switch is removed). The tool entries now wait only
+on their family's second reasons below and on the fleet's checks being
+on.
 
 1. **An Admin user's HTTP write** stays on the system pool
    (`loginWriteScope`, `packages/db/src/viewer.ts`: never an Admin user's
@@ -5184,10 +5192,13 @@ Deleting any entry would make one of them looser with both checks on.
    `item-precheck` (`packages/tools/src/gate-prerun.ts`) refuses there and
    the write itself has the F4 shape. Only the run tools and
    `invoke_agent` are banned on run items (`recipe.runItem`), and none of
-   them has `items`. Blocks all 101 tool entries.
+   them has `items`. Blocked all 101 tool entries. **Closed** by the worker
+   write role (v0.300.80): the runs worker, the stdio MCP server and the
+   Telegram poller open the write pool.
 3. **The rollback switch** `MANTLE_ADMIN_READS=system`: the item check asks
    the login's gate scope (`toolItemWriteRefusalOf`), while the write has no
-   write scope and goes to the system pool. A7 removes the switch.
+   write scope and goes to the system pool. **Closed** by A7, which removed
+   the switch.
 
 Second reasons, per family, that stay once 1 to 3 close (each needs its
 own proof before its entry goes):
@@ -5225,7 +5236,8 @@ are tested in on mode today, on the write role):
 write role (F4's cells pass, `a8-known-failures.ts` loses them); (b) the
 runs worker and the stdio MCP server write on the write role, or refuse a
 scoped write off it, with `connection-ceiling.test.ts` changed on purpose;
-(c) A7 deletes the rollback switch. Then entry by entry, one commit per
+(c) A7 deletes the rollback switch. (b) and (c) are done (v0.300.80 and
+A7); (a) is left. Then entry by entry, one commit per
 entry or small family, each naming its check and test from the table and
 its changed answers.
 
@@ -5233,8 +5245,9 @@ its changed answers.
 in off or warn either, and a start guard would refuse every box in warn for
 no gain. The first commit that deletes an entry adds it: at boot
 (`ensureGateReady`, every process entry) refuse to start when
-`mantle_actor_check_mode()` or `mantle_edit_check_mode()` is not `on` or
-`MANTLE_ADMIN_READS=system` is set, with the operator's message naming
+`mantle_actor_check_mode()` or `mantle_edit_check_mode()` is not `on`
+(`MANTLE_ADMIN_READS` is gone since A7, nothing to ask), with the
+operator's message naming
 `docs/edit-check.md`.
 
 **Changed answers:** none.
@@ -5300,8 +5313,11 @@ switch-over counts are 0: `brainOnWorkspacesCalls` 12 -> 0 (files 7 -> 0),
   `mantle_embedded_level`, `mantle_open_embedded` and
   `mantle_nodes_inherit_trg`. Each is the same rule with the old list
   written in (page, note, draw, table, file, branch, app, formula; the
-  contact share check the registry's contactShare kinds). After it the one
-  SQL kind function is `mantle_kind_class`.
+  contact share check the registry's contactShare kinds). The three CHECKs
+  are made again NOT VALID and left so: a VALIDATE in the migration's one
+  transaction would scan `nodes` twice under the ACCESS EXCLUSIVE lock, and
+  the rows are proven by the old CHECKs (the same rule, dropped under that
+  lock). After it the one SQL kind function is `mantle_kind_class`.
 
 **The boot.** The web boot awaits its workspaces step, then asks
 `mantle_ws_skip_reason()` (`server/web/lib/workspaces-migrate.ts`
@@ -5313,7 +5329,18 @@ of a box that reports "clients present" (docs/workspaces.md, "Operator
 notes": `mantle_ws_migrate_locked` with `mantle.ws_former_clients =
 'reviewed'`) still runs after 0295 (`workspace-kind-gone-0295.db.test.ts`).
 A database the boot cannot read is not a refusal (logged, as before);
-detached dev runs the step as before, never awaited.
+detached dev runs the step as before, never awaited. A fresh install starts
+with no owner, so its first owner's switch is the one that counts:
+`createFirstOwner` (`server/web/lib/auth/first-owner.ts`) asks
+`unmigratedBrainReason` after it and answers `not-switched` with the reason
+when the brain is still off workspaces. The signup route then answers 503
+(`reason: 'not-switched'`, no session) and stops the web process
+(`refuseUnswitchedBrain`, `server/web/lib/auth/unswitched-brain.ts`, after
+half a second), so the restart runs the
+boot's switch again and the boot refuses to serve while it fails; the
+terminal wizard stops with the reason (`first-owner.db.test.ts`,
+`signup-role.test.ts`). Changed answer: such a signup was 200 with a
+session on an unswitched brain.
 
 **Recorded on main first.** The route and guard sweeps (a4-guard-sweep,
 role, member, auth, link-render, the A10 sweeps, w6a route and fix sweeps,
@@ -5357,6 +5384,10 @@ workspaces an area-limited key's list of pages, notes or tables was that
 `mantle_mail_branch_holds(owner, path, inclusive)` answers whether a path
 is in one of the brain's mail account branches; both checks ask it
 (`mail-branch-definer-0296.db.test.ts`, `access-keys-scope.db.test.ts`).
+In a scope it answers only for a path where the scope reads an item at or
+above it, and NULL (the refusing answer: the rule drops the row, the guard
+refuses) for every other path alike, so a scope cannot probe for the
+branch path of an account it does not read.
 Changed answer: those cells 500 to their answer (200, or the key's own
 refusal).
 
@@ -5371,7 +5402,9 @@ by nobody, and the content tool changed it (main had it too; the old test
 ran the key's MCP call unscoped). `mantle_item_others_read(owner, item)`
 answers it as a definer; the caller still reads the item's row in its scope
 first (`item-others-read-0297.db.test.ts`, `access-keys-scope.db.test.ts`
-F1). Changed answer: such a call is refused ("this item is shared"), where
+F1). In a scope it answers only for an item the scope reads, and NULL for
+any other alike (no oracle of an unread item's holders or links);
+`othersCanRead` reads NULL as "others read it", so the change is refused. Changed answer: such a call is refused ("this item is shared"), where
 it ran. The v1 page route's doc check reads the same function.
 
 **The TypeScript item pre-checks still left** (A7 says they go here; they

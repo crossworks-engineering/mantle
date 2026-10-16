@@ -300,7 +300,10 @@ the runtime role its login and rights, and marks the function again
 (`afterMigrations`). Start the stack through compose, never one app service on
 its own: with the switch on, the app cannot log in before that migrate has
 run. `packages/db/src/dump-restore.db.test.ts` proves a restored brain is
-whole after it.
+whole after it. A backup from before the brain's workspaces switch, with
+clients present, needs the manual switch ([workspaces.md](./workspaces.md),
+"Operator notes") after the restore and before boot: since A7 the web boot
+refuses a brain not on workspaces.
 
 ### Operator notes
 
