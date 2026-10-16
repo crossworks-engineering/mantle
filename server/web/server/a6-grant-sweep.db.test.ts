@@ -204,21 +204,19 @@ describe.skipIf(!URL)('the A6 grant sweep', () => {
   /**
    * The grants and workspace libraries as their routes run them since A6
    * round 2 (session.ts anyLoginScope): in a request slot, a read and a
-   * member's write in the login's own scope (a write's transactions on the
-   * write role), an Admin user's write on the system pool with the login's
-   * scope on its transactions (`write`: the route writes; a POST preview
-   * does). Recorded on main through the one exit (inRuleInQuery): every
-   * cell must answer as it did there.
+   * write in the login's own scope (a write's transactions on the write
+   * role; an Admin user's grants write too since F4, which ran on the
+   * system pool with only the login's scope on its transactions before)
+   * (`write`: the route writes; a POST preview does). Recorded on main
+   * through the one exit (inRuleInQuery): every cell must answer as it did
+   * there, but for the F4 changes the docs name.
    */
   const grantsAs = async <T>(who: LoginKey, write: boolean, fn: () => Promise<T>): Promise<T> => {
     const scope = await m.viewerScopeFor({ login: L[who] });
     return m.runInRequestSlot(async () => {
-      if (isAdmin(who) && write) m.noteRequestWriteScope(scope);
-      else {
-        expect(m.enterRequestScope(scope, { writes: write, drafts: isAdmin(who) })).toBe(true);
-        // The reads run in the scope (the workspace role), not the pool.
-        expect(m.currentRequestMode()).not.toBeNull();
-      }
+      expect(m.enterRequestScope(scope, { writes: write, drafts: isAdmin(who) })).toBe(true);
+      // The reads run in the scope (the workspace role), not the pool.
+      expect(m.currentRequestMode()).not.toBeNull();
       return fn();
     });
   };

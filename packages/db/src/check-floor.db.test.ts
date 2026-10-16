@@ -1,11 +1,11 @@
 /**
- * The checks' floor at migrate (migration 0298, check-floor.ts
+ * The checks' floor at migrate (migration 0301, check-floor.ts
  * raiseCheckFloor): a box below on with no recorded lowering is raised to
  * on; a box an operator lowered with a reason is left as it is; a bare
  * ALTER DATABASE (no record, or below the recorded mode) is raised again;
  * MANTLE_CHECK_FLOOR=keep leaves it, loudly, and records why. The SQL
  * setter's own rule (lowering needs a reason) is edit-check.db.test.ts's
- * "the floor (0298)".
+ * "the floor (0301)".
  *
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/db/src/check-floor.db.test.ts
  */
@@ -21,7 +21,7 @@ import { createMigratedScratchDatabase } from './test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
-describe.skipIf(!URL)('the checks floor at migrate (0298)', () => {
+describe.skipIf(!URL)('the checks floor at migrate (0301)', () => {
   let scratch: Awaited<ReturnType<typeof createMigratedScratchDatabase>>;
   let sql: ReturnType<typeof postgres>;
   const lines: string[] = [];

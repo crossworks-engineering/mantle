@@ -16,10 +16,13 @@
  *    as the login write gateway sends a scoped write (docs/actors.md, "The
  *    login write gateway");
  *  - an Admin user's write request twice: on the write role as above, and
- *    as the product sends it today (W6a M1, until A4 puts its reads in the
- *    scope), on the system pool with the login's scope and create home on
- *    the transaction and no mantle.login_id (withSystemTx's systemPoolTx),
- *    the `login@system` cells;
+ *    as the product sends it (since F4: the session guard enters its
+ *    request scope, enterLoginWrite), on the write role in the login's
+ *    scope with the create home an Admin user's request names (no private
+ *    fallback), the `login@request` cells. Before F4 these were the
+ *    `login@system` cells: the system pool with the scope on the
+ *    transaction and no mantle.login_id, where an edit outside the scope
+ *    was made (finding F4, the known failures);
  *  - grants and a home move through the definers the write role calls
  *    (mantle_grant_change, mantle_grant_move_home: 0279). The grants panel
  *    calls the same definers on the system pool with no scope today, its
@@ -408,20 +411,20 @@ export type A8Cell = {
   kind: string;
   placement: GuidePlacement;
   action: GuideAction;
-  /** An Admin user's write sent as the product sends it today: the system
-   *  pool with its scope on the transaction (withSystemTx). Else the grid's
-   *  own path for the actor. */
-  pool?: 'system';
+  /** An Admin user's write sent as the product sends it (since F4, its
+   *  request scope on the write role: enterLoginWrite). Else the grid's own
+   *  path for the actor. */
+  pool?: 'request';
 };
 
 export const cellName = (c: A8Cell) =>
   `${c.actor}${c.pool ? `@${c.pool}` : ''}/${c.role ?? '-'} ${c.action} ${c.kind} @${c.placement}`;
 
-/** The Admin users (their write requests run on the system pool today). */
+/** The Admin users (their write requests: the `login@request` cells). */
 const ADMIN_ROLES: readonly GuideRole[] = ['owner', 'admin'];
 
 /** Every cell: each login actor for each role, each other actor once; an
- *  Admin user's login write also on the system pool. */
+ *  Admin user's login write also as its write request runs. */
 export function a8Cells(kinds: readonly string[]): A8Cell[] {
   const out: A8Cell[] = [];
   for (const kind of kinds) {
@@ -432,7 +435,7 @@ export function a8Cells(kinds: readonly string[]): A8Cell[] {
         }
         if (!READS.includes(action)) {
           for (const role of ADMIN_ROLES) {
-            out.push({ actor: 'login', role, kind, placement, action, pool: 'system' });
+            out.push({ actor: 'login', role, kind, placement, action, pool: 'request' });
           }
         }
         for (const actor of GUIDE_OTHER_ACTORS) {
@@ -551,8 +554,12 @@ export async function runA8Cell(conns: A8Conns, fx: A8Fixture, c: A8Cell): Promi
     if (READS.includes(c.action)) {
       got = await read(conns.sys, fx, c, item, onSystem ? null : s);
     } else {
-      const path: WritePath = onSystem ? 'system' : c.pool === 'system' ? 'admin-system' : 'write';
-      got = await write(path === 'write' ? conns.w : conns.sys, fx, c, item, settingsSql(s, path));
+      const path: WritePath = onSystem
+        ? 'system'
+        : c.pool === 'request'
+          ? 'admin-request'
+          : 'write';
+      got = await write(path === 'system' ? conns.sys : conns.w, fx, c, item, settingsSql(s, path));
     }
   } catch (err) {
     if (!(err instanceof Rollback)) {
@@ -624,31 +631,28 @@ async function read(
 }
 
 /** Where a cell's write goes: the write role (the login write gateway),
- *  the system pool as system work (the actor alone), or the system pool as
- *  an Admin user's write request (the actor, the login's scope and create
- *  home, no mantle.login_id: withSystemTx's systemPoolTx). */
-type WritePath = 'write' | 'system' | 'admin-system';
+ *  the system pool as system work (the actor alone), or the write role as
+ *  an Admin user's write request (the login's request scope, and the create
+ *  home createHomeFor names an Admin user: no private fallback). */
+type WritePath = 'write' | 'system' | 'admin-request';
 
 /**
  * The one statement that sets a cell's write transaction up, built by the
  * product's own helpers so the grid cannot drift from them: the gateway's
- * writeRoleSettingsSql (scope, actor, create home) on the write role; on
- * the system pool the actor (setActorSql), and for an Admin user's write
- * request the scope and create home as systemPoolTx sets them (the same
- * names; mantle.login_id set empty, which mantle_login_id() reads as unset,
- * as systemPoolTx leaves it). Both checks on, as a box that runs them.
+ * writeRoleSettingsSql (scope, actor, create home) on the write role, for
+ * an Admin user's write request with the create home its request names (no
+ * private fallback: createHomeFor's for an Admin user); on the system pool
+ * the actor (setActorSql). Both checks on, as a box that runs them.
  */
 function settingsSql(s: Settings, path: WritePath): string {
   const params: [string, string, string] = [s.actor, s.mode, 'on'];
   if (path === 'system') return setActorSql(params);
-  const home = { createWs: s.createWs || null, privateWs: s.privateWs || null };
+  const home = {
+    createWs: s.createWs || null,
+    privateWs: path === 'admin-request' ? null : s.privateWs || null,
+  };
   return writeRoleSettingsSql(
-    {
-      kind: 'user',
-      loginId: path === 'write' && s.login ? s.login : null,
-      ws: s.ws,
-      modWs: s.mod,
-    },
+    { kind: 'user', loginId: s.login || null, ws: s.ws, modWs: s.mod },
     params,
     home,
   );

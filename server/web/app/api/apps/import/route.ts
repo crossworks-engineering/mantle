@@ -21,6 +21,7 @@ import { z } from 'zod';
 import { ownerCaller } from '@/lib/auth';
 import { AppMetaFields } from '@/lib/app-meta';
 import {
+  assertNewAppCodeRight,
   createApp,
   saveDraftSource,
   getAppRuntime,
@@ -35,7 +36,7 @@ import {
   MAX_APP_PATH_LEN,
 } from '@mantle/content';
 import { checkAppSchemaScript } from '@mantle/content/app-broker';
-import { createAppSnapshot } from '@mantle/content/app-snapshots';
+import { snapshotBeforeCodeChange } from '@mantle/content/app-snapshots';
 import { buildAndStageApp, resolveTool } from '@mantle/tools';
 import { recordIngest } from '@mantle/tracing';
 import { errorMessage } from '@mantle/std';
@@ -97,6 +98,12 @@ export async function POST(req: Request) {
     }
   }
 
+  // A new app's code is written next, which asks manage of the app (D4):
+  // asked of its create home before it is made, so a login that may
+  // create there but not manage is refused with nothing made (F4 fix round
+  // 4, L-b; before: the app made, then its draft refused).
+  if (!b.appId) await assertNewAppCodeRight(user.id);
+
   // ── create, or keep what an update replaces ──
   let appId = b.appId;
   let created = false;
@@ -123,7 +130,12 @@ export async function POST(req: Request) {
     // part of an import that reaches the data); every push copying the
     // database filled the disk (apps audit 2026-10-02, item 11). A lost live
     // file keeps the code (item 4).
-    await createAppSnapshot(user.id, appId, {
+    // An update writes the app's code (its draft, manifest, schema): manage
+    // of the app (D4), asked by the one door before this first write (F4
+    // fix rounds 2 and 3: the route names no :id, so no gate asks it; the
+    // database refused the code after the snapshot had committed, a
+    // partial import).
+    await snapshotBeforeCodeChange(user.id, appId, {
       trigger: 'pre_import',
       actor: 'owner',
       note: 'before an import',

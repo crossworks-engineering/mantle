@@ -7,6 +7,7 @@
 # ceiling-in-kb (A10 lows: a ceiling under 1 MB is said in KB): 8 cells
 # input-400 (fold 2: a refusal the caller fixes, said as a 500 on main): 1 cells
 # bad-json-400 (malformed, accepted as {} on main): 7 cells
+# item-check-first (F4 fix round 2: asked of the database, the stand-in has none): 1 cells
 # item-fault (fix round 1: a failed item says a fixed text for a fault): 6 cells
 # bad-json-400 (empty): 2 cells
 POST /api/access-keys owner malformed [bad-json-400 (malformed)]
@@ -510,6 +511,9 @@ PATCH /api/events/:id owner malformed [bad-json-400 (malformed)]
 PATCH /api/events/:id owner chunked [chunked-413]
   main 404 application/json {"error":"not found"}
   now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+DELETE /api/files/files owner valid [item-check-first (F4 fix round 2: asked of the database, the stand-in has none)]
+  main 200 application/json {"deleted":0,"hasDerived":[],"refused":[]}
+  now  500 application/json {"error":"internal error"}
 DELETE /api/files/files owner malformed [bad-json-400 (malformed)]
   main 400 application/json {"error":"ids: Invalid input: expected array, received undefined"}
   now  400 application/json {"error":"invalid JSON"}

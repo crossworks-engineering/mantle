@@ -190,7 +190,7 @@ x-app-env: &app-env
   S3_SECRET_KEY: ${S3_SECRET_KEY:?set it in .env — scripts/install.sh writes one}
   S3_FORCE_PATH_STYLE: ${S3_FORCE_PATH_STYLE:-true}
   NODE_ENV: production
-  # The checks' floor at migrate (0298): raise (the image's default) or keep,
+  # The checks' floor at migrate (0301): raise (the image's default) or keep,
   # with its reason (docs/update-prod.md, "Keep one box below on, on purpose").
   MANTLE_CHECK_FLOOR: ${MANTLE_CHECK_FLOOR:-raise}
   MANTLE_CHECK_FLOOR_REASON: ${MANTLE_CHECK_FLOOR_REASON:-}

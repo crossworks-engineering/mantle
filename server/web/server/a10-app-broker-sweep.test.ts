@@ -455,7 +455,12 @@ const OWNER_REFUSAL =
   "the owner's refused call lands its Activity row now (refused: the verdict's reason), as a member's and a contact's always did (main logged only the error row)";
 const LINK_ERROR =
   "the link's refused or failed call lands its error row now (via 'contact', the share and the contact), as the owner's and a member's always did (main logged none)";
+const ADMIN_APP_DATA_DOOR =
+  "an Admin user's run reaches its app's database on the system pool by the app-data door, after the app's lookup in its scope, as a member's run does (F4 fix round 2, item 11: in its scope since F4, an Admin user who only reads the app was refused)";
 const NAMED_CHANGES: Readonly<Record<string, string>> = {
+  'db owner-admin query': ADMIN_APP_DATA_DOOR,
+  'db owner-admin exec': ADMIN_APP_DATA_DOOR,
+  'db owner-admin exec-fails': ADMIN_APP_DATA_DOOR,
   'tool owner-admin read': OWNER_ADMIN_CALL,
   'tool owner-admin write': OWNER_ADMIN_CALL,
   'tool owner-admin tool-error': OWNER_ADMIN_CALL,

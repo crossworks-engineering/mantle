@@ -1049,8 +1049,10 @@ describe.skipIf(!DB_URL)(
             input: (it) => ({ file_id: it.id, mode: 'metadata' }),
           },
           {
+            // Manage of the folder (F4 fix round 3, M1): setIndexingMode
+            // asks it (assertItemRight) before the flag changes.
             slug: 'folder_set_indexing',
-            need: 'edit',
+            need: 'manage',
             who: BOTH,
             make: filesFolder,
             input: (it) => ({ folder_id: it.id, mode: 'metadata' }),
@@ -1104,16 +1106,14 @@ describe.skipIf(!DB_URL)(
           ] as const
         ).map(([slug, make, input]): Tool => ({
           slug,
-          need: 'edit',
+          // An app's code is a Moderator's of its home (owner decision D4;
+          // F4 fix round 3, M3: lockAppRow asks it first). The author
+          // ceiling asks manage too (lowerToTeamRules), so a caller that may
+          // only edit the app lowers nothing: no partial write.
+          need: 'manage',
           who: BOTH,
           make,
           input,
-          // An app's code is a Moderator's of its home (owner decision D4).
-          now: { editOnly: 'refused' },
-          // Before the refused code write, the author ceiling lowers a
-          // member's app to team rules (lowerToTeamRules asks edit; the
-          // database allows that lowering): with the pre-check too.
-          partial: { member: ['editOnly'] },
           ...(slug === 'app_file_write' ? { ways: ['mcp', 'turn'] as Way[] } : {}),
         })),
       },

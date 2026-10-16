@@ -380,14 +380,14 @@ const AREAS: Record<string, string> = {
  *  (its behaviour is pinned below). The 29 entries the pre-check removal
  *  kept (docs/actors.md, "Pre-check deletion"). */
 const ITEMS: Record<string, readonly { param: string; need: string }[] | 'resolver'> = {
-  app_build: [{ param: 'id', need: 'edit' }],
-  app_db_schema_set: [{ param: 'id', need: 'edit' }],
+  app_build: [{ param: 'id', need: 'manage' }],
+  app_db_schema_set: [{ param: 'id', need: 'manage' }],
   app_db_seed: [{ param: 'id', need: 'edit' }],
   app_delete: [{ param: 'id', need: 'manage' }],
   app_duplicate: 'resolver',
   app_export: 'resolver',
-  app_publish: [{ param: 'id', need: 'edit' }],
-  app_snapshot_restore: [{ param: 'id', need: 'edit' }],
+  app_publish: [{ param: 'id', need: 'manage' }],
+  app_snapshot_restore: 'resolver',
   app_table_export_remove: [{ param: 'id', need: 'edit' }],
   app_table_export_set: [{ param: 'id', need: 'edit' }],
   app_update: [{ param: 'id', need: 'edit' }],
@@ -510,6 +510,18 @@ describe('every @mantle/tools access list equals its literal (A5 step 1)', () =>
       ]);
       expect(await resolve(slug, { id: 'a' })).toEqual([{ ids: ['a'], need: 'edit' }]);
     }
+    // An app restore (F4 fix round 3, M3): the code is the app's
+    // Moderators' (code, full), the data alone an editor's.
+    expect(await resolve('app_snapshot_restore', { id: 'a', mode: 'code' })).toEqual([
+      { ids: ['a'], need: 'manage' },
+    ]);
+    expect(await resolve('app_snapshot_restore', { id: 'a', mode: 'full' })).toEqual([
+      { ids: ['a'], need: 'manage' },
+    ]);
+    expect(await resolve('app_snapshot_restore', { id: 'a', mode: 'data' })).toEqual([
+      { ids: ['a'], need: 'edit' },
+    ]);
+    expect(await resolve('app_snapshot_restore', {})).toEqual([]);
     // Every resolver is probed above.
     const probed = new Set([
       'page_from_note',
@@ -517,6 +529,7 @@ describe('every @mantle/tools access list equals its literal (A5 step 1)', () =>
       'page_from_notes',
       'app_duplicate',
       'app_export',
+      'app_snapshot_restore',
     ]);
     expect(
       Object.keys(ITEMS)

@@ -25,7 +25,7 @@
 --    mantle_check_note(setting, entry) replaces one check's entry (NULL
 --    drops it): the setter's, and migrate's under keep.
 --
--- No table lock, no row change. Re-runnable. The `when` sits above 0297's.
+-- No table lock, no row change. Re-runnable. The `when` sits above 0300's.
 SET LOCAL lock_timeout = '30s';
 --> statement-breakpoint
 CREATE OR REPLACE FUNCTION "public"."mantle_check_lowered"()

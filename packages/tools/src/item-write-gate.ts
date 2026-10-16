@@ -135,6 +135,17 @@ export const appCopy: Resolver = async (input) => {
   return [{ ids: [id], need: row?.mcp ? 'read' : 'edit' }];
 };
 
+/** An app restore from its history (F4 fix round 3, M3): its code (mode
+ *  code or full) is the app's code (D4: APP_CODE_COLUMNS), manage of the
+ *  app; its data alone (mode data) is the data's, edit. As the route asks
+ *  it (POST /api/apps/:id/snapshots/:sid/restore), and restoreAppSnapshot
+ *  asks it again before anything is written. */
+export const appRestoreTargets: Resolver = async (input) => {
+  const id = typeof input.id === 'string' ? input.id.trim() : '';
+  if (!id) return [];
+  return [{ ids: [id], need: input.mode === 'data' ? 'edit' : 'manage' }];
+};
+
 // A conversion that retires its source edits the source. The handlers
 // retire it unless supersede_source is false (pages/from.ts): an omitted
 // flag retires too (W7a fix round 2, N2).

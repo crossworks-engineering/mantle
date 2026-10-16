@@ -52,7 +52,11 @@ The workspaces a brain has:
 - **Admin**: exactly one, and the only workspace with rules of its own.
   Its users manage the brain (see "Admin areas"). It keeps its name,
   cannot be archived, and keeps at least one Moderator. An admin login is
-  its user and a Moderator there.
+  its user and a Moderator there, always (owner decision, F4 fix round 1):
+  the tick of an Admin user on Admin is never cleared (409
+  `admin_workspace`), an add to Admin is one with the tick, and removing
+  the user from Admin (the role change to member) is the only way to take
+  it away. Migration 0298 ticked every Admin user who was not.
 - **Team**: on a brain switched to workspaces before migration 0286, the
   shared workspace the switch made. Since 0286 (owner decision 2026-10-13)
   it is a normal workspace: renamed, archived and moderated like any
@@ -196,10 +200,8 @@ every workspace it is granted to, each with a Write switch.
 - For an Admin user, **Add Admin** is the first choice in the panel. It
   needs no switch of workspace for an item they manage.
 - An item the caller may not read answers "not found", never "exists
-  but no". An item the caller reads but may not change answers
-  "forbidden". (For now an Admin user still hears "Add yourself to it
-  first" for an item in a workspace they are not in, since they may add
-  themselves to any workspace.)
+  but no", for every login, Admin users included. An item the caller
+  reads but may not change answers "forbidden".
 - **Kinds.** Folders, files, notes, pages, tables, apps, formulas,
   drawings, tasks, events and Recall maps can be granted to any workspace.
   Telegram messages are a class of their own: they belong to the workspace

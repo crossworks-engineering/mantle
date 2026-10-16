@@ -30,8 +30,9 @@ export function binderSites(text) {
 export const ACTOR_BINDER_PINS = {
   // The export bookkeeping (A8 matrix F9): the dirty stamp and the
   // debounced sync's timer run as system(app-export), never the writer's
-  // actor (a contact share writes its app's data only).
-  'packages/content/src/app-table-exports.ts': 2,
+  // actor (a contact share writes its app's data only). One binder since
+  // F4 fix round 2: both go through exportSyncStep (the named system step).
+  'packages/content/src/app-table-exports.ts': 1,
   'packages/content/src/kind-root.ts': 1,
   'packages/content/src/pages/read.ts': 1,
   'packages/content/src/recall.ts': 1,

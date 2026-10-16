@@ -86,9 +86,9 @@ import {
   nodes as nodesTable,
   scopeHoldsAdmin,
   withCreateHome,
-  mayEditSql,
+  mayManageSql,
 } from '@mantle/db';
-import { appCopy, edit, manage } from './item-write-gate';
+import { appCopy, appRestoreTargets, edit, manage } from './item-write-gate';
 import { CS } from './client-sourced-rule';
 
 /**
@@ -548,7 +548,7 @@ const app_build: BuiltinToolDef = {
     effect: 'write',
     spends: 'none',
     scope: 'any',
-    legacyItemPrecheck: { need: [edit('id')], reason: 'side-effect-before-check' },
+    legacyItemPrecheck: { need: [manage('id')], reason: 'side-effect-before-check' },
     peerRisky: true,
     keyArea: 'apps',
     clientSourced: CS.onApp,
@@ -681,7 +681,7 @@ const app_db_schema_set: BuiltinToolDef = {
     effect: 'write',
     spends: 'none',
     scope: 'any',
-    legacyItemPrecheck: { need: [edit('id')], reason: 'side-effect-before-check' },
+    legacyItemPrecheck: { need: [manage('id')], reason: 'side-effect-before-check' },
     peerRisky: true,
     keyArea: 'apps',
     clientSourced: CS.onApp,
@@ -892,7 +892,7 @@ const app_publish: BuiltinToolDef = {
     spends: 'none',
     scope: 'any',
     outside: { appCode: true },
-    legacyItemPrecheck: { need: [edit('id')], reason: 'answer-worse' },
+    legacyItemPrecheck: { need: [manage('id')], reason: 'answer-worse' },
     peerRisky: true,
     keyArea: 'apps',
     clientSourced: CS.onApp,
@@ -1336,7 +1336,7 @@ const app_snapshot_restore: BuiltinToolDef = {
     spends: 'none',
     scope: 'any',
     outside: { appCode: true },
-    legacyItemPrecheck: { need: [edit('id')], reason: 'side-effect-before-check' },
+    legacyItemPrecheck: { need: appRestoreTargets, reason: 'side-effect-before-check' },
     peerRisky: true,
     keyArea: 'apps',
     clientSourced: CS.onApp,
@@ -1892,13 +1892,15 @@ async function outsideAdmin(): Promise<boolean> {
 }
 
 /** Put app `id` at team rules (the author ceiling, apps.author_level) when
- *  the caller may edit it: never lifted here, only lowered. */
+ *  the caller may manage it: never lifted here, only lowered. Manage, as
+ *  the code write asks (D4; F4 fix round 3, M3: lockAppRow): a caller that
+ *  may only edit the app changes no code, so it lowers nothing. */
 async function lowerToTeamRules(ownerId: string, id: string): Promise<void> {
   const rows = (await scopedDb.execute(
-    sqlTag`select ${mayEditSql('n')} as edit
+    sqlTag`select ${mayManageSql('n')} as manage
           from nodes n where n.id = ${id} and n.owner_id = ${ownerId} and n.type = 'app'`,
-  )) as unknown as { edit: boolean }[];
-  if (rows[0]?.edit !== true) return;
+  )) as unknown as { manage: boolean }[];
+  if (rows[0]?.manage !== true) return;
   await setAppAuthorLevel(ownerId, id, 'team');
 }
 
@@ -1912,7 +1914,7 @@ async function lowerToTeamRules(ownerId: string, id: string): Promise<void> {
  * owner's app update route lifts it). A change the caller may not make
  * lowers nothing (W7b fix round 1, H1): the one gate's item pre-check runs
  * before any handler for a code tool that keeps one, and lowerToTeamRules
- * asks the edit itself (the pre-check removal: docs/actors.md, "Pre-check
+ * asks the manage itself (the pre-check removal: docs/actors.md, "Pre-check
  * deletion"); the database then refuses a code write the caller may not
  * make (D4: a Moderator of the app's home).
  */

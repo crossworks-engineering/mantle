@@ -173,10 +173,6 @@ type RequestSlot = {
    *  system pool through `db` (insert, update, delete, a mutating request's
    *  transaction), by calling file (W6a fix round 1, L2). */
   systemWrites?: string[];
-  /** An Admin user's mutating request on the system pool (W6a fix round 1,
-   *  M1): the login's scope, which withSystemTx sets on its transactions so
-   *  the database's move, create and delete checks run. */
-  writeScope?: WorkspaceScope;
   /** Where a create in this request lands (W6b): see CreateHome. */
   createHome?: CreateHome;
 };
@@ -394,50 +390,22 @@ export function noteRequestSystem(why: Extract<RequestOutcome, { kind: 'system' 
 }
 
 /**
- * An Admin user's write request (W6a fix round 1, M1): the guard lets it
- * through on the system pool and records the login's scope here; every
- * withSystemTx in the request then sets mantle.ws and mantle.mod_ws on its
- * transaction, so the database checks a move (0241/0245), a create in a
- * folder and a delete (0266) against the user's workspaces. No-op outside a
- * slot or when the request already runs in a scope.
+ * The scope a write request is checked in, and the one a login's write runs
+ * in on the write role (arch A2b2b; the login write gateway's one rule,
+ * loginWriteRoute): the write scope of a scope whose reads are scoped too,
+ * a login's mutating request scope (W6b; an Admin user's since F4) or an
+ * Admin turn (W7a), else null. Masked by asSystem and by any other scope
+ * (their transactions are not this request's writes). Before F4 an Admin
+ * user's write request ran on the system pool with only its write scope
+ * noted (its reads unscoped), so its edits met no edit check (A8 finding
+ * F4); it now enters its request scope as every login's does.
  */
-export function noteRequestWriteScope(ws: WorkspaceScope): void {
-  const slot = requestSlots.getStore();
-  if (!slot || slot.scope) return;
-  slot.writeScope = ws;
-  slot.outcome = { kind: 'system', why: 'admin-write' };
-  if (ws.loginId) nameRequestLogin(ws.loginId);
-}
-
-/** The scope a write request is checked in, or null: an Admin user's (see
- *  noteRequestWriteScope), or a non-Admin login's mutating request, which
- *  runs in its scope (W6b). Masked by asSystem and by any other scope
- *  (their transactions are not this request's writes). */
 export function requestWriteScope(): WorkspaceScope | null {
   const s = store.getStore();
   // An Admin turn (W7a): its writes are checked in its own scope.
   if (s) return s !== SYSTEM_EXIT && s.perQuery && s.ws && s.request?.writes ? s.ws : null;
   const slot = requestSlots.getStore();
   if (!slot) return null;
-  if (slot.writeScope) return slot.writeScope;
-  return slot.scope?.ws && slot.scope.request?.writes ? slot.scope.ws : null;
-}
-
-/**
- * The scope a login's write runs in on the write role (arch A2b2b): the
- * write scope of a scope whose reads are scoped too, a login's mutating
- * request scope (W6b) or an Admin turn (W7a), else null. Never an Admin
- * user's write request (noteRequestWriteScope): its reads run on the system
- * pool, unscoped (W6a M1), so a row it read could match no row on the write
- * role and its write would do nothing, silently; it stays on the system
- * pool with its scope on the transaction (the database's create, move and
- * delete checks), as before, until its reads move into the scope.
- */
-export function loginWriteScope(): WorkspaceScope | null {
-  const s = store.getStore();
-  if (s) return s !== SYSTEM_EXIT && s.perQuery && s.ws && s.request?.writes ? s.ws : null;
-  const slot = requestSlots.getStore();
-  if (!slot || slot.writeScope) return null;
   return slot.scope?.ws && slot.scope.request?.writes ? slot.scope.ws : null;
 }
 
@@ -850,6 +818,13 @@ export function currentSystemTx(): { tx: unknown; hooks: TxHooks; nest: SystemTx
  *    transaction, on the system pool, as before arch A6; only archiving
  *    and adding a user also check them first in the scope, and removing a
  *    user reads the workspace there first (lib/workspaces.ts, arch A6).
+ *  - `brain-bookkeeping`: the named system step (system-step.ts, F4 fix
+ *    round 2): the brain-wide bookkeeping a write does after its item check
+ *    (a table's history prune, an Admin scope's email attachment bytes, a
+ *    file's derived items and drawings counted and its confirmed cascade,
+ *    the files a flag change or a move re-indexes, an app's export sync).
+ *    Each names its step; none answers the caller more than numbers, yes or
+ *    no, or rows its scope reads.
  *  - `page-refold`: after a grant change, the derived text of every page
  *    the change reaches is folded again, pages the caller may not read or
  *    edit included (lib/grants.ts, arch A6): nothing goes back to the
@@ -915,6 +890,7 @@ export const AS_SYSTEM_TURN_REASONS = [
   'pending-approval',
   'workspace-write',
   'page-refold',
+  'brain-bookkeeping',
 ] as const;
 
 /**

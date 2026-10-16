@@ -263,7 +263,7 @@ const CHECKS: CheckDef[] = [
     key: 'check_floor',
     label: 'The actor check and the edit check are on',
     severity: 'high',
-    note: "whether both of the database's checks are on (migration 0298; docs/actors.md, \"Pre-check deletion\"). The tools' TypeScript item pre-checks are gone, so below on a tool's write the database would refuse is made. Lowering a check needs an operator's reason, which this row shows; no reason recorded means a new or restored database before its migrate, or a bare ALTER DATABASE, and the next migrate raises it to on. Put it back as the superuser that runs migrations with the switch functions in docs/update-prod.md.",
+    note: "whether both of the database's checks are on (migration 0301; docs/actors.md, \"Pre-check deletion\"). The tools' TypeScript item pre-checks are gone, so below on a tool's write the database would refuse is made. Lowering a check needs an operator's reason, which this row shows; no reason recorded means a new or restored database before its migrate, or a bare ALTER DATABASE, and the next migrate raises it to on. Put it back as the superuser that runs migrations with the switch functions in docs/update-prod.md.",
     query: () => sql`
       SELECT 'actor ' || f.actor || ', edit ' || f.edit AS id, 'below on' AS kind,
              coalesce(nullif(f.lowered, ''), 'no reason recorded') AS detail

@@ -8,6 +8,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('@mantle/content', () => ({
+  assertNewAppCodeRight: vi.fn(async () => {}),
   NoGreenBuildError: class extends Error {},
   notifyAppNavChanged: vi.fn(async () => {}),
   publishApp: vi.fn(async () => ({})),
@@ -33,7 +34,7 @@ vi.mock('./resolve', () => ({
 
 import { dropUnfinishedApp, installAppPackage, openAppPackage } from '@mantle/content/app-package';
 import { checkAppSchemaScriptOnFile } from '@mantle/content/app-broker';
-import { publishApp } from '@mantle/content';
+import { assertNewAppCodeRight, publishApp } from '@mantle/content';
 import { importAppPackage } from './app-package-import';
 
 beforeEach(() => vi.clearAllMocks());
@@ -58,6 +59,20 @@ describe('importAppPackage', () => {
     // Still published: the code runs, but with no tools.
     expect(publishApp).toHaveBeenCalledOnce();
     expect(res.published).toBe(true);
+  });
+
+  it('asks manage of the create home before anything is made (F4 fix round 4, L-b)', async () => {
+    const extractData = vi.fn();
+    vi.mocked(openAppPackage).mockResolvedValueOnce({
+      pkg: { manifest: {}, code: { published: { files: {} }, draft: null }, data: {} },
+      extractData,
+    } as never);
+    vi.mocked(assertNewAppCodeRight).mockRejectedValueOnce(new Error('no manage'));
+
+    await expect(importAppPackage('o1', Buffer.from('zip'))).rejects.toThrow('no manage');
+    expect(assertNewAppCodeRight).toHaveBeenCalledWith('o1');
+    expect(extractData).not.toHaveBeenCalled();
+    expect(installAppPackage).not.toHaveBeenCalled();
   });
 
   it('drops the new app when a step after the install fails (audit, low)', async () => {

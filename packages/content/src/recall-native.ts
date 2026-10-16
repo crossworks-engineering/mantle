@@ -29,8 +29,10 @@ import { and, arrayContains, asc, count, desc, eq, inArray, isNotNull, or, sql }
 
 import {
   advisoryXactLock,
+  conflictOnUnique,
   db,
   type Db,
+  nameTaken,
   nodes,
   RECALL_REVISIONS_PER_MAP,
   recallMaps,
@@ -548,6 +550,33 @@ async function mapSlugsTaken(tx: Tx, ownerId: string, exceptMapId?: string): Pro
 }
 
 /**
+ * A free slug for a new map from `base`: picked among the slugs the
+ * caller's scope reads (`taken`), then asked brain-wide (mantle_name_taken,
+ * F4 fix round 2), a map the scope does not read included; a slug one holds
+ * is added to `taken` and the pick runs again. The answer is yes or no per
+ * slug, never the hidden map. Before, a hidden map's slug read as free: its
+ * unique index answered a 500, or a hidden map's former slug was taken
+ * again (two maps answering to one slug).
+ */
+async function freeMapSlug(
+  tx: Tx,
+  ownerId: string,
+  base: string,
+  taken: Set<string>,
+  pick: (base: string, taken: Set<string>) => string,
+): Promise<string> {
+  for (let i = 0; i < 50; i += 1) {
+    const slug = pick(base, taken);
+    if (!(await nameTaken('recall-slug', ownerId, slug, { q: tx }))) return slug;
+    taken.add(slug);
+  }
+  throw new RecallWriteError(
+    'slug_exhausted',
+    `Cannot make a unique slug from '${base}'. Give the map a more distinctive title.`,
+  );
+}
+
+/**
  * A new map, with its entry card. An agent's map is created UNPUBLISHED: it
  * serves nowhere until the owner publishes it, which is the human act that
  * makes a map exist.
@@ -577,59 +606,62 @@ export async function createRecallMap(
   const path = await resolveFolderPath(ownerId, input.folder);
 
   // Heads first (workspaces plan U1): the folder the map item lands in,
-  // before the advisory lock and the inserts.
-  const made = await withDeadlockRetry(() =>
-    withNodeInsertHeads(ownerId, [{ type: 'recall', path }], async (tx) => {
-      // Two creates with the same title at once would both pick the same free
-      // slug and the second would die on the unique index as a raw 500. One
-      // owner-scoped lock makes the slug pick and the insert one step.
-      await advisoryXactLock(tx, `recall-map-create:${ownerId}`, 'hashtext');
-      // Slugs are unique across the brain, maps the caller cannot read
-      // included. A caller whose scope lacks Admin always gets a random
-      // suffix, so its slug never tells it that a map it cannot read holds
-      // the plain one or a numbered one (A1 fix round); an Admin scope and
-      // the system count up as before.
-      const taken = await mapSlugsTaken(tx, ownerId);
-      const slug = (await scopeLacksAdmin(tx))
-        ? randomSlug(recallNativeSlug(title), taken)
-        : uniqueSlug(recallNativeSlug(title), taken);
-      const published = actor.kind === 'owner';
-      const [item] = await tx
-        .insert(nodes)
-        .values({ ownerId, type: 'recall', title, slug, path, data: { enterWhen, published } })
-        .returning({ id: nodes.id });
-      const mapId = item!.id;
-      await tx.insert(recallMaps).values({
-        id: mapId,
-        ownerId,
-        nodeId: mapId,
-        slug,
-        title,
-        enterWhen,
-        nodeCount: 1,
-        published,
-        version: 1,
-      });
-      await tx.insert(recallNodes).values({
-        ownerId,
-        mapId,
-        slug: 'start',
-        kind: 'index',
-        title,
-        bodyMd: '',
-        bodyChars: 0,
-        useWhen: '',
-        options: [],
-        rank: 0,
-        sourceVersion: 1,
-      });
-      await recordRevision(tx, ownerId, mapId, actor, { summary: 'map created' }, null, {
-        title,
-        enterWhen,
-        slug,
-      });
-      return { mapId, slug, version: 1, published };
-    }),
+  // before the advisory lock and the inserts. A slug taken meanwhile past
+  // the pick (only another brain's process could) is a 409, never the
+  // unique index's 500.
+  const made = await conflictOnUnique(`A map already answers to that slug. Try again.`, () =>
+    withDeadlockRetry(() =>
+      withNodeInsertHeads(ownerId, [{ type: 'recall', path }], async (tx) => {
+        // Two creates with the same title at once would both pick the same free
+        // slug and the second would die on the unique index as a raw 500. One
+        // owner-scoped lock makes the slug pick and the insert one step.
+        await advisoryXactLock(tx, `recall-map-create:${ownerId}`, 'hashtext');
+        // Slugs are unique across the brain, maps the caller cannot read
+        // included. A caller whose scope lacks Admin always gets a random
+        // suffix, so its slug never tells it that a map it cannot read holds
+        // the plain one or a numbered one (A1 fix round); an Admin scope and
+        // the system count up as before.
+        const taken = await mapSlugsTaken(tx, ownerId);
+        const pick = (await scopeLacksAdmin(tx)) ? randomSlug : uniqueSlug;
+        const slug = await freeMapSlug(tx, ownerId, recallNativeSlug(title), taken, pick);
+        const published = actor.kind === 'owner';
+        const [item] = await tx
+          .insert(nodes)
+          .values({ ownerId, type: 'recall', title, slug, path, data: { enterWhen, published } })
+          .returning({ id: nodes.id });
+        const mapId = item!.id;
+        await tx.insert(recallMaps).values({
+          id: mapId,
+          ownerId,
+          nodeId: mapId,
+          slug,
+          title,
+          enterWhen,
+          nodeCount: 1,
+          published,
+          version: 1,
+        });
+        await tx.insert(recallNodes).values({
+          ownerId,
+          mapId,
+          slug: 'start',
+          kind: 'index',
+          title,
+          bodyMd: '',
+          bodyChars: 0,
+          useWhen: '',
+          options: [],
+          rank: 0,
+          sourceVersion: 1,
+        });
+        await recordRevision(tx, ownerId, mapId, actor, { summary: 'map created' }, null, {
+          title,
+          enterWhen,
+          slug,
+        });
+        return { mapId, slug, version: 1, published };
+      }),
+    ),
   );
   await notifyTreeChanged(ownerId, 'recall');
   return made;
@@ -743,7 +775,10 @@ export async function updateRecallMap(
           `Changing map '${map.slug}''s slug is the owner's call: agents and skills remember it.`,
         );
       }
-      if ((await mapSlugsTaken(tx, ownerId, map.id)).has(next)) {
+      if (
+        (await mapSlugsTaken(tx, ownerId, map.id)).has(next) ||
+        (await nameTaken('recall-slug', ownerId, next, { exceptId: map.id, q: tx }))
+      ) {
         throw new RecallWriteError(
           'slug_taken',
           `Another map answers to '${next}', now or as a former slug that agents may still remember. Pick a different slug.`,

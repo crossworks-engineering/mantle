@@ -941,6 +941,18 @@ async function otherModerators(q: Exec, wid: string, loginId: string): Promise<n
   return r?.n ?? 0;
 }
 
+/** Every Admin user is a Moderator of the Admin workspace, always (owner
+ *  decision, F4 fix round 1): its tick is never cleared there, and an add
+ *  to Admin is one with the tick. To take it away, remove the user from
+ *  Admin (the role change to member). Migration 0298 ticked every Admin
+ *  user who was not. */
+const ADMIN_TICK_KEPT = () =>
+  new WsError(
+    409,
+    'admin_workspace',
+    'Every Admin user is a Moderator of the Admin workspace. Remove them from Admin to take it away.',
+  );
+
 const LAST_MOD = () =>
   new WsError(
     409,
@@ -974,6 +986,28 @@ function mayPromote(seen: Seen): void {
       403,
       'admin_only',
       'Only an Admin user can make someone a Moderator or take the tick away.',
+    );
+  }
+}
+
+/**
+ * Who changes who is an Admin user (owner decision, F4 fix round 4): an
+ * Admin user with the users area only, as for the Moderator tick
+ * (mayPromote). The ONE check of the Admin workspace's own user changes:
+ * an add there (whatever `moderator` says) makes the login an Admin user,
+ * a removal takes it away. The Users screen's role change, the login
+ * create and the invites sit under /api/users and /api/team-admin, whose
+ * route class is the same users area (route-scope.ts), so no path makes
+ * an Admin user without it. Before: an add to Admin with `moderator`
+ * omitted asked only Moderator of Admin, which every Admin user is (0298).
+ */
+function mayChangeAdminUsers(seen: Seen): void {
+  mayManageUsers(seen);
+  if (!seen.admin) {
+    throw new WsError(
+      403,
+      'admin_only',
+      'Only an Admin user who manages users can change who is an Admin user.',
     );
   }
 }
@@ -1054,7 +1088,9 @@ async function adminRoleChange(
  *  private workspaces too (S1), with or without it (mayPromote): logged
  *  with subject.self and shown as "Added by NAME on DATE". On the Admin
  *  workspace the add is the role change to admin (W5a), a Moderator there
- *  unless the add says otherwise. */
+ *  always: an add there with the tick off is refused (409 admin_workspace,
+ *  owner decision, F4 fix round 1), and any add there is an Admin user's
+ *  with the users area (mayChangeAdminUsers, F4 fix round 4). */
 export async function addUser(
   caller: WsCaller,
   id: string,
@@ -1063,7 +1099,13 @@ export async function addUser(
   // Who may add comes first (audit L1): a caller who may not manage this
   // workspace learns nothing about the login it names.
   const pre = await seeWorkspace(caller, id);
-  const gate = body.moderator === true ? mayPromote : mayManageUsers;
+  // An add to Admin is an Admin user, a Moderator there always.
+  if (pre.row.is_admin && body.moderator === false) throw ADMIN_TICK_KEPT();
+  const gate = pre.row.is_admin
+    ? mayChangeAdminUsers
+    : body.moderator === true
+      ? mayPromote
+      : mayManageUsers;
   gate(pre);
   const wid = pre.row.id;
   const target = await loginOf(db, body.loginId);
@@ -1090,9 +1132,9 @@ export async function addUser(
       { method: 'POST', path: `/api/workspaces/${wid}/users` },
       checks,
       async (tx) => {
-        // The login bridge (0251) made the row (Moderator); the tick asked
-        // for here wins. The last-Moderator guard still holds at commit.
-        const wanted = body.moderator ?? true;
+        // The login bridge (0251) made the row (Moderator); an Admin user
+        // is a Moderator of Admin always (a false tick was refused above).
+        const wanted = true;
         await tx.execute(
           sql`insert into workspace_users (workspace_id, login_id, moderator, added_by)
               values (${wid}, ${target.id}, ${wanted}, ${caller.loginId})
@@ -1119,7 +1161,8 @@ export async function addUser(
 }
 
 /** PATCH /api/workspaces/:id/users/:loginId: an Admin user ticks or
- *  clears Moderator (mayPromote). Never the last Moderator. */
+ *  clears Moderator (mayPromote). Never the last Moderator, and never an
+ *  Admin user's tick on the Admin workspace (409 admin_workspace). */
 export async function setModerator(
   caller: WsCaller,
   id: string,
@@ -1131,11 +1174,15 @@ export async function setModerator(
   // system pool: refused here, in the caller's scope, before the change
   // (arch A6; and again inside it).
   mayPromote(pre);
+  // The Admin workspace's tick is never cleared: every Admin user is a
+  // Moderator there (owner decision, F4 fix round 1).
+  if (pre.row.is_admin && !moderator) throw ADMIN_TICK_KEPT();
   const wid = pre.row.id;
   await db
     .transaction(async (tx) => {
       const seen = await seeWorkspace(caller, wid, tx, true);
       mayPromote(seen);
+      if (seen.row.is_admin && !moderator) throw ADMIN_TICK_KEPT();
       const row = UUID_RE.test(loginId) ? await userRow(tx, wid, loginId) : null;
       if (!row) throw new WsError(404, 'not_user', 'This person is not a user of this workspace.');
       if (row.moderator === moderator) return;
@@ -1183,7 +1230,8 @@ export async function removeUser(
     // Removing a Moderator takes their tick away: the same one check as
     // clearing it (owner answer Q2), or a Moderator could remove another and
     // add them back without it. Leaving stays open to anyone.
-    if (!self && row.moderator) mayPromote(seen);
+    if (!self && seen.row.is_admin) mayChangeAdminUsers(seen);
+    else if (!self && row.moderator) mayPromote(seen);
     if (row.moderator && (await otherModerators(q, wid, loginId)) === 0) throw LAST_MOD();
   };
   if (pre.row.is_admin) {

@@ -11,7 +11,9 @@ import { describe, expect, it } from 'vitest';
 import { isAnyLoginRoute } from './any-login-routes';
 import { isMemberRoute } from './member-routes';
 import {
+  ADMIN_ACT_WRITES,
   CREATE_ROUTES,
+  adminActWrite,
   MEMBER_OPEN_READS,
   MEMBER_OPEN_WRITES,
   READ_POSTS,
@@ -84,6 +86,31 @@ describe.skipIf(!hasManifest)('route scope table (W6a)', () => {
       expect(memberMayWrite('DELETE', '/api/apps/deleted/:id')).toBe(false);
       expect(memberMayWrite('POST', '/api/contacts')).toBe(false);
       expect(memberMayWrite('GET', null)).toBe(false);
+    },
+  );
+
+  it.skipIf(!hasManifest)(
+    'every Admin act (F4 fix round 1) is a served content write no member reaches',
+    async () => {
+      const { routeManifest } = await import('../../server/route-manifest.gen');
+      const served = new Set(
+        routeManifest.flatMap((e) => e.methods.map((m) => `${m} ${e.pattern}`)),
+      );
+      for (const key of ADMIN_ACT_WRITES) {
+        const [method, pattern] = key.split(' ') as [string, string];
+        expect(served.has(key), key).toBe(true);
+        expect(routeClass(pattern), key).toEqual({ kind: 'content' });
+        expect(isReadRequest(method, pattern), key).toBe(false);
+        expect(memberMayWrite(method, pattern), key).toBe(false);
+        expect(adminActWrite(method.toLowerCase(), pattern), key).toBe(true);
+      }
+      expect([...ADMIN_ACT_WRITES].sort()).toEqual([
+        'DELETE /api/contacts/:id/shares',
+        'POST /api/contacts/:id/sharing',
+        'POST /api/entities/merge',
+        'POST /api/shares/contacts',
+      ]);
+      expect(adminActWrite('PATCH', '/api/contacts/:id')).toBe(false);
     },
   );
 

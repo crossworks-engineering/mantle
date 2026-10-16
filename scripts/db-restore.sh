@@ -411,7 +411,7 @@ if [ "$HAS_ACTOR_SWITCH" = "t" ]; then
   else
     echo "▷ Check modes: mantle.actor_check is off ($SWITCHED actor check trigger(s) switched off) and"
     echo "  mantle.heads_check is at its default (warn): a dropped database keeps no setting. The"
-    echo "  migrate that runs when the stack starts raises the actor and edit checks to on (0298: a"
+    echo "  migrate that runs when the stack starts raises the actor and edit checks to on (0301: a"
     echo "  restored database records no lowering). To set them now, as this superuser:"
     echo "    SELECT mantle_set_actor_check('on');"
     echo "    ALTER DATABASE postgres SET mantle.heads_check = 'on';  -- only if the box ran it on"

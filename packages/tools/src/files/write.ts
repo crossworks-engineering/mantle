@@ -316,6 +316,9 @@ export const folder_set_indexing: BuiltinToolDef = {
     effect: 'write',
     spends: 'none',
     scope: 'any',
+    // A folder's switch reaches every file under it: manage of the folder,
+    // asked by setIndexingMode (assertItemRight, F4 fix round 3, M1) in
+    // every mode, so no pre-check entry here (pre-check removal).
     keyArea: 'files',
     clientSourced: CS.onNodes('folder_id'),
   },

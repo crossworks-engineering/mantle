@@ -80,17 +80,16 @@ export const folder_create: BuiltinToolDef = {
     const indexing = raw as 'full' | 'metadata' | undefined;
     await ensureFilesRootBranch(ctx.ownerId);
     try {
+      // The new folder's own switch follows its create rule (F4 fix round 4):
+      // the row is born with it, one act, so a refusal makes nothing and no
+      // manage is asked (the folder is empty: nothing else is touched).
       const folder = await createFolder({
         ownerId: ctx.ownerId,
         parentPath,
         slug,
         description: strOpt(input.description),
+        ...(indexing ? { indexing } : {}),
       });
-      // Applied AFTER create so the flag write and the descendant sweep share
-      // one code path with the settings toggle.
-      if (indexing) {
-        await setIndexingMode({ ownerId: ctx.ownerId, nodeId: folder.id, mode: indexing });
-      }
       return { ok: true, output: indexing ? { ...folder, indexing } : folder };
     } catch (err) {
       return { ok: false, error: `folder_create failed: ${errorMessage(err)}` };
@@ -274,9 +273,15 @@ export const file_delete: BuiltinToolDef = {
       const res = await deleteFileWithDerived(ctx.ownerId, fileId);
       if (!res.ok) return { ok: false, error: undeletableReason(res.reason, res.drawings) };
       const skipped = res.skipped > 0 ? ` (${res.skipped} derived node(s) skipped)` : '';
+      // Derived items the caller may not delete stay (F4 fix round 3, H1):
+      // a count, never a name.
+      const kept =
+        res.kept > 0
+          ? `; ${res.kept} derived item(s) in workspaces you do not manage were kept`
+          : '';
       return {
         ok: true,
-        output: `deleted, along with ${describeDerivedCounts(res.reaped)} derived from it${skipped}`,
+        output: `deleted, along with ${describeDerivedCounts(res.reaped)} derived from it${skipped}${kept}`,
       };
     }
     const res = await deleteFileById({ ownerId: ctx.ownerId, fileId });

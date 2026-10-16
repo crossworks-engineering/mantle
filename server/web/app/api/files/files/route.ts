@@ -22,6 +22,7 @@ import { conflictOnUnique } from '@mantle/db';
 import { guardNewFileIn } from '@mantle/content/tree';
 import { JSON_BODY_CEILING_BYTES } from '@/lib/body-limit';
 import { readJson } from '@/lib/read-body';
+import type { BulkDeleteCascadeResponse, BulkDeleteFilesResponse } from '@mantle/client-types';
 
 const ListQuery = z.union([
   z.object({ parent: z.string().min(1).max(500) }),
@@ -287,16 +288,35 @@ export async function DELETE(req: Request) {
   }
   if (parsed.data.cascade) {
     const { deleteFileWithDerived } = await import('@mantle/content');
+    const { bulkDeleteGate, bulkRefusalOf } = await import('@/lib/files');
+    // Every id passes the item check first, and each one not deleted is
+    // reported (F4 fix round 2: they were left out, silently).
+    const { allowed, refused } = await bulkDeleteGate(parsed.data.ids);
     let deleted = 0;
     let reapedTotal = 0;
-    for (const id of parsed.data.ids) {
+    let keptTotal = 0;
+    for (const id of allowed) {
       const res = await deleteFileWithDerived(user.id, id);
       if (res.ok) deleted++;
+      else refused.push(bulkRefusalOf(id, res));
       reapedTotal += res.reaped.total;
+      keptTotal += res.kept;
     }
-    return NextResponse.json({ deleted, hasDerived: [], reapedTotal });
+    // The contract (docs/actors.md, "F4 fix round 3"): keptTotal counts the
+    // derived items the caller may not delete, kept (F4 fix round 3, H1).
+    const body: BulkDeleteCascadeResponse = {
+      deleted,
+      hasDerived: [],
+      reapedTotal,
+      keptTotal,
+      refused,
+    };
+    return NextResponse.json(body);
   }
   const { bulkDeleteFiles } = await import('@/lib/files');
-  const res = await bulkDeleteFiles({ ownerId: user.id, fileIds: parsed.data.ids });
+  const res: BulkDeleteFilesResponse = await bulkDeleteFiles({
+    ownerId: user.id,
+    fileIds: parsed.data.ids,
+  });
   return NextResponse.json(res);
 }

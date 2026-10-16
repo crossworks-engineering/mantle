@@ -508,14 +508,12 @@ write runs:
 - the actor is a login, an assistant, a link or a contact (system work, a
   named repair, an Admin area route and a peer(share) stay on the system
   pool);
-- the write carries a scope its reads use too (`loginWriteScope` in
-  `viewer.ts`): a login's mutating request scope, or an Admin turn (the Admin
-  assistant, the Admin MCP surface). Not an Admin user's write request: its
-  reads run on the system pool, unscoped (W6a M1), so a row it read could
-  match no row on the role and its write would do nothing, silently. It stays
-  on the system pool with its scope on the transaction, as before, until A4
-  puts its reads in the scope. A login's write with no scope at all (an
-  approved call stamped with no origin scope) stays on the system pool too.
+- the write carries a scope its reads use too (`requestWriteScope` in
+  `viewer.ts`): a login's mutating request scope, an Admin user's too since
+  F4 (its reads moved into the scope with it, "Admin writes on the write
+  role (F4)" below), or an Admin turn (the Admin assistant, the Admin MCP
+  surface). A login's write with no scope at all (an approved call stamped
+  with no origin scope) stays on the system pool.
 
 On the role a transaction sets the scope (`mantle.ws`, `mod_ws`,
 `login_id`), the actor and the create home with one `SET LOCAL`
@@ -925,6 +923,608 @@ found here, unchanged on this branch:
   (heartbeats fire in api and web, which open the pool). A worker that
   starts to must open the pool the same way; the ceiling test fails until
   it is counted.
+
+## Admin writes on the write role (F4)
+
+Branch `feat/f4-admin-writes`, on main v0.300.81 (pre-check deletion
+blocker 1; A8 finding F4). Before it, the session guard let an Admin
+user's write request through on the system pool (`noteRequestWriteScope`,
+outcome `system:admin-write`): its reads ran unscoped and only its scope
+was set on the write's transactions, where the database checks a move, a
+create in a folder, a delete and a grant change, and nothing else. An
+edit, a draft edit, a public link and an app's data write of an item
+outside the user's workspaces met no database check: the TypeScript item
+pre-check (`itemWriteGate`) was the only one (the A8 `login@system` cells).
+
+**The change, at the gateway.** The guard (`server/web/lib/auth/session.ts`)
+answers every login's write request with one function, `enterLoginWrite`:
+the item the route names is checked (`itemWriteGate`), the create home
+recorded (`createHomeFor`: an Admin user without `?ws=` creates as before,
+the folder's home, else Admin), then the login's request scope is entered
+for the rest of the request, its reads and its writes, as a member's
+since W6b. `packages/db/src/viewer.ts` loses the Admin-only write scope
+(`noteRequestWriteScope`, the slot's `writeScope`); `requestWriteScope` is
+the one rule (the old `loginWriteScope` folded into it): a scope whose
+reads are scoped too. The login write gateway (`loginWriteRoute`,
+`packages/db/src/client.ts`) is otherwise unchanged: the write role while
+the actor check is warn or on, the system pool with the scope on the
+transaction while it is off. An Admin user's Admin rights are in its
+scope (the Admin workspace and its limits), so the database answers for
+them (`mantle_scope_has_admin`, `mantle_scope_has_area`). The owner is an
+Admin user here, held to its scope as every Admin user (the guide, and the
+A8 oracle's `owner` cells). The grants panel's Admin writes (`/api/grants`)
+enter the scope too (they had the scope on their transactions, their
+reads unscoped). The other any-login writes of an Admin user (its
+workspaces, access keys, chat threads and Telegram pairings: no brain
+item) stay on the system pool (`system:admin-write`), as before; so do
+the Admin area routes.
+
+**Kept on the system pool, by name** (`ADMIN_ACT`, `itemWriteGate`'s
+answer; checked there first, then `system:admin-write` with no scope):
+
+- closing any link of the brain (`DELETE /api/shares/:id`) by an Admin
+  user with the users area (docs/workspaces.md: closing only narrows; plan
+  v2, section 10): the link's item may be in a workspace the user is not
+  in, and the scope reads no link of an item it does not read (0265);
+- the trash of deleted apps (`DELETE /api/apps/deleted/:id`, `POST
+/api/apps/deleted/:id/restore`), after the manage check of the app's
+  last home: the app's row is gone, so no scope reads its snapshots (0265),
+  as the `app_undelete` tool's `app-trash` door says.
+
+Each of these keeps its TypeScript check as its only check: their
+pre-check entries (`ITEM_REF_PREFIXES` share and deleted-app) are not
+covered by this branch.
+
+**The proof** (`server/web/server/f4-admin-write-role.db.test.ts`; also in
+`pnpm test:edit-on`): real requests through the full HTTP pipeline
+(`runRoute`) as an Admin user (a Moderator of Admin, in no other
+workspace) and as the owner, on a note or a page homed in another
+workspace and granted to Admin with Write off (read-only), with Write on
+(editable), or not granted to Admin (hidden); the pre-check (the route's
+item, `routeItemTarget`) bypassed where a row says so:
+
+| Cell                                          | Answer                                                  |
+| --------------------------------------------- | ------------------------------------------------------- |
+| on, bypassed, edit and draft edit, read-only  | 403 by the database (the mapper's words), unchanged     |
+| on, bypassed, edit and draft edit, editable   | 200, made on the write role, no miss                    |
+| on, bypassed, hidden                          | 404, not written (before: found and written)            |
+| warn, bypassed, edit, read-only               | 200, made on the write role, the miss `UPDATE on nodes` |
+| off, bypassed, edit, read-only                | 200, the system pool (the rollout switch, every login)  |
+| off, warn, on, pre-check in place, read-only  | 403 "You cannot change this item in your workspaces."   |
+| off, warn, on, pre-check in place, hidden     | 404 `{"ok":false,"error":"not found"}` (before: 403)    |
+| on, a create with no `?ws=`                   | made in Admin, on the write role                        |
+| on, users area, close a link of a hidden item | 200 `{ ok: true }`, revoked (kept, `ADMIN_ACT`)         |
+
+The A8 grid's Admin write cells are `login@request` now (the write role,
+the login's scope, an Admin user's create home) and pass; `login@system`
+and its 108 known failures left `a8-known-failures.ts`.
+
+**Changed answers** (each stricter or a closed existence leak; none looser):
+
+- An Admin user's write (the owner's too) on a route naming an item its
+  scope does not read: 404 `{"ok":false,"error":"not found"}`, the answer
+  every other login gets (owner decision D2). Before: 403 `item-workspace`,
+  "This item is in a workspace you are not in. Add yourself to it first.",
+  which told the item existed. The same for an Admin user's key on
+  `/api/v1` (`PATCH /api/v1/pages/:id` of a shared page outside its scope:
+  404, was 403), for a link's change or close by an Admin user without the
+  users area, and for a snapshot copy in another login's private workspace
+  (`w6b-fix2.db.test.ts`). jackdaw shows `body.message` on a 403 and keys
+  no button on the reason (checked on jackdaw main, v0.7.15). The v1
+  changelog should say it as a fix (plan v2, section 10).
+- A write whose target the handler reads by body, outside the scope: a
+  folder made in a folder it does not read, 404 "folder not found"; a file
+  or a files folder made under a parent path it does not read, the answer
+  of a parent path no row has; a bulk delete of files it does not read
+  (`DELETE /api/files/files`), 200 `{ deleted: 0 }`; a move into a folder it
+  does not read, refused. Before: 403 `item-workspace` each.
+- warn and on: the database checks every statement of an Admin user's
+  write (an edit, a draft edit, a link, an app's data, a create). Off: as
+  before, but its reads are scoped. An Admin user who is not a Moderator of
+  Admin (the guide makes every admin login one; an untick is the only way)
+  creates into Admin with no Moderator seat there: warn makes it and logs
+  the miss, on refuses it; and on a route with no pre-check (contacts, the
+  journal) its edit of an Admin-homed item is refused in on. Before: made.
+- In an Admin user's write request a library reads what the same login's
+  read request reads (`a6b-exit-sweep.db.test.ts`, the F4 named changes):
+  a run job that names runs outside the scope is refused, the app trash
+  lists what the scope manages, an app's access log and the heartbeat
+  surface lists hold to the scope, and a queued call's Telegram card is
+  not sent (an app's tool call through the broker that waits for
+  approval): the card's route and the bot's row are read in the caller's
+  scope (A6b), which sends none from any scope, as from every member's
+  request and every read today. The in-app badge and /pending still have
+  it. Listed as an open item, not changed here.
+
+### F4 fix round 1
+
+The audit of F4 found owner flows that broke on the write role (warn and
+on): the contact-sharing family and the entity merge read or wrote tables
+no workspace scope reads, or rows outside the user's workspaces. Fixed,
+each through the full pipeline as the owner in warn and in on
+(`server/web/server/f4-owner-flows.db.test.ts`, in `pnpm test:edit-on`):
+
+- **Admin acts on the system pool, by name** (`ADMIN_ACT_WRITES`,
+  `server/web/lib/auth/route-scope.ts`; the guard's `ADMIN_ACT`, which sets
+  no scope at all, neither on the reads nor on the transactions): POST
+  `/api/contacts/:id/sharing` (enable, regenerate, disable:
+  `contact_share_codes` is granted to no workspace role), POST
+  `/api/shares/contacts` (the code rows locked FOR SHARE; the item read
+  whatever its home, as docs/workspaces.md says: "Share it with one
+  contact: to be an Admin user, its home is not checked"), DELETE
+  `/api/contacts/:id/shares` (Revoke all: every live share of the
+  contact), POST `/api/entities/merge` (the entity graph is Admin's, 0265;
+  every fact of the duplicate moves, `facts.entity_id` is ON DELETE SET
+  NULL). And a contact share's change, PATCH `/api/shares/:id` of a share
+  that names a contact ("Can write" on an app's), in `itemWriteGate`. Only
+  an Admin user reaches them: none is in `MEMBER_OPEN_WRITES`
+  (`route-scope.test.ts` pins both).
+- **The backfill's mail accounts by a definer** (migration 0299,
+  `mantle_mail_backfill_accounts`): ids and providers of the enabled
+  accounts, in a scope only for one that holds Admin. Adding a contact or
+  an address queued no backfill in any mode (the read was refused in the
+  scope and the error swallowed), nor from an assistant's contact tools.
+- **One 404 for a missing or a hidden share, revision or deleted app**
+  (`itemWriteGate`), for every login.
+- **Every Admin user is a Moderator of Admin, always** (owner decision):
+  `setModerator` and `addUser` refuse to clear it there (409
+  `admin_workspace`), the login bridge sets it when a login becomes an
+  admin, and migration 0298 ticked every Admin user who was not, one
+  `workspace_events` row each. jackdaw's Moderator switch on the Admin
+  workspace is still editable (`client/web/app/(app)/settings/workspaces/
+workspace-screen.tsx` UserRow, `canChangeUser` in
+  `client/web/lib/workspaces.ts`): the brain's 409 is its answer until
+  jackdaw greys it.
+- The `ADMIN_ACT` comment (it sets no scope on the transaction), the
+  guide's "Add yourself" note and the mapper's comment.
+
+**Changed answers** (against this branch's head before the round; each a
+fix, an existence leak closed, or named where it widens):
+
+- The four Admin acts above, warn and on: 200 and made (before: a 500 on
+  `contact_share_codes`; a merge in warn detached the facts of items
+  outside the scope, in on refused). This is main's answer before F4.
+- POST `/api/shares/contacts` of an item outside the user's workspaces: the
+  share is made (before, on this branch: 400 "item not found"), as on main
+  and as the guide says.
+- PATCH `/api/shares/:id` of a contact share by an Admin user, for an
+  item outside its workspaces or an app whose home it does not moderate:
+  made (before: 404, or 403 for an app; on main a 403). **Wider than
+  main**, deliberately: a contact share is the Admin user's to make and
+  to change.
+- POST `/api/contacts`, PATCH `/api/contacts/:id` with a new address: the
+  backfill is queued again (before: none, every mode).
+- An Admin user without the users area: DELETE `/api/shares/<id no row
+has>` 404 `{"ok":false,"error":"not found"}` (before: 200
+  `{"ok":false}`); PATCH `/api/shares/<id no row has>` and a Recall revision
+  id no row has, the same 404 (before: the handler's own 404 bodies).
+- The trash of deleted apps, every login: an id with no snapshot, an app
+  homed where the login moderates nothing, or one with no home for a
+  login other than the owner, 404 `{"ok":false,"error":"not found"}`
+  (before: the handler's 404 `{"error":"not found"}`, or 403 "You cannot
+  change this item in your workspaces."); a held app (deleted by someone
+  other than the owner) is the 403 "only the owner deletes it for good"
+  for a Moderator of its home only, 404 for anyone else (before: the 403
+  for every login). Restoring a live app's id: 404 (before: 409 "not
+  deleted").
+- PATCH `/api/workspaces/:admin/users/:login` `{ moderator: false }`: 409
+  `admin_workspace` (before: 200, the tick cleared); POST
+  `/api/workspaces/:admin/users` with `moderator: false`: 409 (before: an
+  Admin user with no Moderator seat).
+
+### F4 fix round 2
+
+Round 1's handover listed 14 places where an Admin user's write, in its
+scope on the write role since F4, did brain-wide bookkeeping in that scope:
+it saw only the rows the scope reads, and the write role refused tables no
+scope writes. The owner's rule for all of them: the bookkeeping runs as a
+named system step or a definer after the item check, never in the caller's
+scope, and no route opens wider to members. Each fix is tested through the
+full pipeline as the owner in warn and in on, with the member cells where a
+route could widen (`server/web/server/f4-owner-flows.db.test.ts`, in
+`pnpm test:edit-on`); every new cell failed on the branch before the round
+(the answers below).
+
+**The gateways.**
+
+- **The named system step** (`systemStep(step, fn)` in this round; round 3
+  gave it its item check: `systemStep(step, check, fn)`,
+  `packages/db/src/system-step.ts`; asSystem reason `brain-bookkeeping`,
+  pinned in `eslint-rules/as-system-allowlist.mjs`). Its contract: the
+  item check came first, the step answers numbers, yes or no, or nothing,
+  and a row goes back to the caller only once its scope reads it. Its
+  sites, by step:
+  - `table-history`: `pruneTableCommitSnapshots` (`table-snapshots.ts`),
+    after a table commit;
+  - `attachment-bytes`: `storageBytesForNode` (`packages/files`
+    `ops/files.ts`), an email attachment's bytes, for a scope that holds
+    Admin, after the file node's read;
+  - `derived-items`: `countDerivedFromFile` and `drawsReferencingFile`
+    (`ops/files.ts`), `reapDerivedFromFile` (`packages/content`
+    `derived.ts`), after the file's manage check;
+  - `reindex`: `setIndexingMode` and `reconcileFilesIndexing`
+    (`packages/files` `indexing.ts`), after the flag's change or the move;
+  - `export-sync`: `exportSyncStep` (`app-table-exports.ts`), the dirty
+    mark and the debounced sync of `scheduleAppTableExportSync`, fixed in
+    the scheduler for every caller (a timer keeps the async context it was
+    set in, and runAsSystem swaps only the actor).
+- **Two definers** (migration 0300; yes or no, or a number, never a row):
+  `mantle_name_taken(what, owner, name, except)` for a folder path
+  (`copyFolderById`, `moveFolderById`), a Recall map slug, current or
+  former (`createRecallMap` through `freeMapSlug`, `updateRecallMap`'s slug
+  change and so a revision restore of one) and a formula spec id (the
+  formula library seed); `mantle_snapshot_bytes(owner, manual_only,
+member, login)` for the snapshot budget (`usedSnapshotBytes` in
+  `app-snapshots.ts`, `createTableSnapshot`). `conflictOnUnique` is the
+  backstop of the folder copy and of a new map (a race past the check is a
+  409, never the unique index's 500). TS: `nameTaken`, `snapshotBytesUsed`
+  (`packages/db/src/brain-answers.ts`).
+- **The item check of body ids**: `itemWriteVerdicts(ids, need)`
+  (`packages/db/src/item-rights.ts`), one verdict per id, the rule
+  `itemWriteRefusalOf` asks for one; `bulkDeleteGate` (`ops/files.ts`)
+  asks it for every id of a bulk delete, and `deleteFileById` and
+  `deleteFileWithDerived` ask it for their file before any count or reap.
+- **The item check a gate cannot judge**: `assertItemRight(id, need)`
+  (in `server/web/lib` then; `packages/db/src/item-rights.ts` since round
+  3), thrown as the edit check's refusal so
+  the one mapper answers it: an app restore of the code (code, full) and
+  an import over an existing app ask manage before anything is written.
+- The owner db broker's Admin branch runs its SQLite work by the app-data
+  door (`appDataSystem`, `server/web/lib/app-runner.ts`), as a member's
+  run.
+
+**The items.**
+
+1. Table history: fixed. A commit keeps the version it replaces again in
+   an Admin scope (`historyKept`: the system's and an Admin scope's
+   commits, a personal space's never; the row rides the commit, written by
+   the write role with edit of the table, A3a); the prune is the named
+   step; a restore with commit keeps its note. A member's commit keeps
+   none, as since W6b (its row would name the owner as its actor): left.
+2. An email attachment's copy: fixed (`attachment-bytes`). The download
+   (`openFileById`) reads through the same function; not tested apart.
+3. A bulk delete's derived items and drawings: fixed (`derived-items`).
+4. A bulk delete's ids: fixed. Every body id is checked first; each one
+   not deleted is in `refused` with its reason.
+5. (suspect, real: 500) A folder copy or move onto a hidden folder of its
+   name: fixed (`mantle_name_taken`, `conflictOnUnique`).
+6. (suspect, real: a 400 partway) A folder copy with a file the scope reads
+   under a subfolder it does not: fixed, the copy holds what the scope reads
+   and places. The cap counts the files the copy makes, which is right: a
+   file the scope does not read is never copied.
+7. (suspect, real: hidden files kept their content index) A folder's
+   indexing switch: fixed (`reindex`), every file under it and its whole
+   folder chain, members' switches too.
+8. The formula seed: fixed (`formula-spec`). The table history budget:
+   fixed (`mantle_snapshot_bytes`).
+9. The export sync: fixed in the scheduler (`export-sync`).
+10. The app snapshot budget: fixed (`mantle_snapshot_bytes`).
+11. (suspect, real: a 500 in on) The db broker's Admin branch for an Admin
+    user who only reads the app: fixed (the app-data door after the
+    lookup in its scope; data writes follow ADMIN_DATA_ACCESS).
+12. (suspect, real: a partial apply) An app restore of the code and an
+    import over an app: fixed (manage first).
+13. A duplicate by an Admin user who reads but cannot edit the source:
+    left, by the read rule. It copies the published code; the draft is
+    unpublished work that user may not read (`draftColumn`: drafts only
+    where the user may edit), so copying it would hand it over. The owner
+    may decide otherwise.
+14. Recall map slugs: fixed (`recall-slug`, `conflictOnUnique`).
+
+**Changed answers** (warn and on unless named; each a fix, stricter, or a
+closed leak):
+
+- POST `/api/tables/:id/commit` by an Admin user: 200 as before; a history
+  row is kept again and pruned (before: none, and a restore's note lost).
+- POST `/api/tables/:id/history` and POST `/api/apps/:id/snapshots` when
+  the brain's copies fill APP_SNAPSHOT_MAX_MB, some of items the caller
+  does not read: 409 (reason `budget` for an app's) (before: 201).
+- POST `/api/files/files/:id` (copy) of an email attachment by an Admin
+  user: 201 (before: 400 "copyFileById: file not found"). The same rule
+  (a scope that holds Admin) lets an Admin turn (the Admin assistant, the
+  Admin MCP surface) read an attachment's bytes; in its scope it read none
+  (a key's T4 guard, key-email-guard.ts, is unchanged).
+- The formula seed's brain-wide presence check runs inside each seed's own
+  try: a fault there marks that seed `failed`, as a fault creating it does.
+- DELETE `/api/files/files`: 200 `{ deleted, hasDerived, refused }` where
+  `refused` names each id not deleted: `not_found` (no such file, or one
+  the scope does not read), `forbidden` (read, not managed), `in_drawing`
+  (`drawings`: the ones it reads; `hiddenDrawings`: how many more),
+  `attachment`; `hasDerived` counts every derived item. Before: a 403
+  item-workspace for the whole request once it met a file it read but could
+  not manage, after deleting the files before it; ids it did not read left
+  out silently; derived items and drawings outside the scope missed (the
+  file deleted, the items orphaned, the drawing broken). With `cascade`:
+  `refused` added, the reap brain-wide. DELETE `/api/files/files/:id` and
+  the file tools: a file only drawings outside the scope place is 409
+  `in_drawing` (before: deleted); `has_derived` counts every derived item.
+- POST `/api/files/folders/:id` (copy) onto a folder of the same name the
+  scope does not read: 400 "already exists" (before: 500); with a file the
+  scope reads under a subfolder it does not: 201, that file left out
+  (before: 400 "no folder at ..." after part of the copy was made). PATCH
+  `/api/files/folders/:id` `{ move }` onto one: 409 "already exists"
+  (before: 500).
+- PATCH `/api/files/folders/:id` `{ indexing }`: `requeued` counts the
+  files under the folder the caller does not read, and their content index
+  is reset (before: left as it was). A member's switch too: a number, no
+  name.
+- POST `/api/formulas/seed`: a seed formula present where the caller does
+  not read it is `skipped` (before: created a second time).
+- An Admin user's write to an app's data with a linked Table: the Table
+  syncs (before: stale until a restart).
+- POST `/api/apps/:id/db-broker` by an Admin user who only reads the app:
+  200 (before, on: 500 "The app's database is not available right now";
+  warn: 200, its statements with no actor).
+- POST `/api/apps/:id/snapshots/:sid/restore` `{ mode: code | full }` and
+  POST `/api/apps/import` with an `appId`, by an Admin user who may edit
+  but not manage the app: 403 item-workspace before anything is written
+  (before, on: 403 after a pre-restore or pre_import snapshot committed;
+  warn: 200, the code restored by an editor). **Stricter in warn**: the
+  manage rule (D4) is the product's.
+- POST `/api/recall/maps` whose slug a map the caller does not read holds:
+  201 with the next free slug (before: 500); PATCH
+  `/api/recall/maps/:id` `{ slug }` to such a map's current or former
+  slug, and a revision restore of one: 400 `slug_taken` (before: 200, two
+  maps answering to one slug).
+
+### F4 fix round 3
+
+The audit of round 2 (7/10) found that the system step trusted its callers:
+the confirmed cascade reaped derived items in workspaces the caller could
+not read, a folder's indexing switch was an editor's and queued LLM work
+on files the caller could not see, and an app's code was gated on edit
+where the database asks manage. The owner's rule again: brain-wide
+bookkeeping runs as the named step after the item check, and never widens
+anything for a member or an Admin user. Each fix is tested through the full
+pipeline in warn and on, as a member and as an Admin user
+(`server/web/server/f4-owner-flows.db.test.ts`, in `pnpm test:edit-on`).
+
+**The step carries its contract (M2).** `systemStep(step, check, fn)`
+(`packages/db/src/system-step.ts`): the door asks `itemWriteVerdicts` in the
+caller's scope BEFORE it leaves it, so "the item check came first" is code:
+
+| `check`                            | What the door does                                                                                                                  |
+| ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `{ items, need }`                  | every item must pass, else the edit check's refusal (404 for one the scope does not read, 403 item-workspace); an empty list throws |
+| `{ items, need, only: 'allowed' }` | `fn(allowed)` runs with the items that pass (possibly none): a cascade keeps the rest                                               |
+| `{ items: 'none', why }`           | a step about no item, named with its reason (an empty `why` throws)                                                                 |
+
+In a workspace scope with an open transaction (a request's open write
+transaction, a `withScope`) the step throws (L5): leaving the scope it would
+run on a connection of its own, which would not see the transaction's rows
+and could wait behind its locks. System work (no workspace scope: a worker,
+a script, a `withSystemTx`) has no scope to leave and no item check to ask:
+the step runs in place, in that transaction if there is one (a file deleted
+inside a `withSystemTx` counts its derived items and drawings there). Its
+sites (10 uses, `asSystemExits` 56 to 58):
+
+| Step               | Site                                                                | Check                                                             |
+| ------------------ | ------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| `table-history`    | `pruneTableCommitSnapshots` (`table-snapshots.ts`)                  | the table, edit                                                   |
+| `attachment-bytes` | `storageBytesForNode` (`packages/files` `ops/files.ts`)             | the file node, read                                               |
+| `derived-items`    | `countDerivedFromFile`, `drawsReferencingFile` (module-private now) | the file, manage                                                  |
+| `derived-items`    | `reapDerivedFromFile` (`packages/content` `derived.ts`), two steps  | the file, manage; then the derived ids, manage, `only: 'allowed'` |
+| `reindex`          | `setIndexingMode` for a folder, two steps                           | the folder, manage                                                |
+| `reindex`          | `reconcileFilesIndexing` (a move, a file's own switch)              | the files, read (a move) or edit (a switch)                       |
+| `export-sync`      | `exportSyncStep` (`app-table-exports.ts`)                           | `'none'`: after the app data door's own check                     |
+
+The wrappers that checked nothing are gone or behind the door:
+`countDerivedFromFile` and `drawsReferencingFile` are module-private (out
+of the `@mantle/files` barrel and `@mantle/content`'s re-export); the
+refusals no confirm resolves are one exported function,
+`fileDeleteBlock(owner, file)` (an attachment, a drawing), asked by
+`deleteFileById` and by the cascade; `reapDerivedFromFile` and
+`reconcileFilesIndexing` route through the checked door. A new caller of
+any of them meets the check.
+
+**The items.**
+
+- **H1, the cascade keeps what the caller may not delete.**
+  `reapDerivedFromFile` finds the derived ids brain-wide (after the file's
+  manage check), asks each one's manage in the caller's scope, reaps only
+  the ones that pass and counts the rest as `kept` (a number, never a name
+  or an id). The file is still deleted, as the caller confirmed; a kept item
+  keeps its content with a source that is gone (the `dangling_source_file`
+  audit lists it). Members and Admin users alike; system work (the
+  dangling-derived script) reaps all.
+- **L1**: `deleteFileWithDerived` asks `fileDeleteBlock` (the attachment
+  and the drawings) before any reap; the attachment was met only after it.
+- **M1, a folder's indexing switch.** It asks manage of the folder
+  (`assertItemRight` before the flag changes, the step again; the
+  `folder_set_indexing` tool's policy too). A switch that removes content
+  indexing (a file's effective mode turns name only) resets every file
+  under the folder, hidden ones included (privacy, no LLM). One that adds
+  it re-queues only the files the caller reads; a hidden file keeps its
+  index until its next extraction, which resolves the mode then (cost
+  safety). `requeued` counts the files the caller reads only. A file's own
+  switch asks edit of the file, as before; a move reconciles the files it
+  moved (the caller read them all: a folder holding rows it cannot read is
+  not moved).
+- **M3, an app's code is its Moderators' (D4), at one door.** Every writer
+  of the code columns locks the app's row through `lockAppRow`
+  (`packages/content/src/apps.ts`), which asks manage first (an app the
+  call just made, `installAppCode`, excepted: its create home decided it).
+  That covers PUT and DELETE `/api/apps/:id/draft`, the build
+  (`setDraftBuild`, and `buildAndStageApp` before it compiles, so a refused
+  build stores no bundle), publish, `setManifest` (`app_tools_set`),
+  `declareAppSchema` (`app_db_schema_set`) and the manifest's description
+  (`updateAppMeta`, asked before the name is written). A restore of the
+  code asks it in `restoreAppSnapshot` before any refusal of the entry and
+  before the undo snapshot, and an import over an app through
+  `snapshotBeforeCodeChange` (`app-snapshots.ts`), the one door before a
+  `pre_restore` of code or a `pre_import`. The tools ask manage in their
+  policy: `app_file_write`, `app_file_delete`, `app_source_set`,
+  `app_build`, `app_publish`, `app_tools_set`, `app_db_schema_set`;
+  `app_snapshot_restore` by its mode (`appRestoreTargets`: code and full
+  manage, data edit, as the route). The route gate still asks edit: the
+  HTTP pre-check lists are pinned to go down (pre-check deletion), so the
+  rule lives in the library both paths share, and the answer is the gate's
+  own (403 item-workspace, 404).
+- **L2**: a contact share's PATCH is the Admin act only for its "Can write"
+  change (a boolean `canWrite` and no `mode` in the body, read from a
+  capped clone, `asksCanWrite` in `server/web/lib/auth/session.ts`); any
+  other change of that share is the link's, checked against its item.
+- **L4**: 0299's definer is not granted to the demo's reader (edited in
+  place: 0299 and 0300 have not left this branch); `mantle_name_taken`
+  compares a folder's path as an ltree (`n.path = name::ltree`), the
+  unique index's own column.
+
+**The bulk delete's contract (M4, for jackdaw).** The types are in the
+published contract, `@crossworks/client-types` (`@mantle/client-types`
+here, `packages/client-types/src/dto/file-deletes.ts`, root exports):
+
+- `DELETE /api/files/files { ids }`: 200 `BulkDeleteFilesResponse`
+  `{ deleted, hasDerived: { fileId, derived: FileDerivedCounts }[], refused: BulkDeleteRefusal[] }`.
+- `DELETE /api/files/files { ids, cascade: true }`: 200
+  `BulkDeleteCascadeResponse` `{ deleted, hasDerived: [], reapedTotal, keptTotal, refused }`.
+- `BulkDeleteRefusal` `{ fileId, reason, drawings?, hiddenDrawings? }`,
+  `reason: FileDeleteRefusalReason`, one of `not_found` (no such file, or
+  one the scope does not read: one answer), `forbidden` (read, not
+  managed), `in_drawing` (`drawings`: the ones the caller reads;
+  `hiddenDrawings`: how many more), `attachment`.
+- `DELETE /api/files/files/:id?cascade=1`: 200
+  `FileCascadeDeleteResponse` `{ ok: true, reaped, skipped, kept }`; its
+  refusals as before (409 `attachment`, 409 `in_drawing` with the drawings
+  it reads, 404).
+- `hasDerived` and the single delete's 409 `has_derived` count every
+  derived item, ones the caller does not read included (a number).
+
+**Changed answers** (warn and on unless named; against round 2's head):
+
+- DELETE `/api/files/files/:id?cascade=1`, the bulk cascade and
+  `file_delete` with `delete_derived`, by a member or an Admin user: a
+  derived item the caller does not manage is kept, `kept` (or `keptTotal`)
+  counts it (before: reaped brain-wide). New field `kept`/`keptTotal`.
+- A cascade of an email attachment with derived items: 409 before any reap
+  (before: the derived items reaped, then the 409).
+- PATCH `/api/files/folders/:id { indexing }` and `folder_set_indexing` by
+  a caller that edits but does not manage the folder: 403 item-workspace,
+  the flag unchanged (before: switched). `requeued` counts only the files
+  the caller reads (before: hidden ones too). Turning content indexing on
+  queues no hidden file (before: it did, an LLM run each).
+- By a caller that edits but does not manage the app (every mode, so
+  stricter in warn and off; on refused it already, as a database 403 after
+  the request ran): PUT and DELETE `/api/apps/:id/draft`, POST
+  `/api/apps/:id/build`, POST `/api/apps/:id/publish`, PATCH
+  `/api/apps/:id` with a `description`: 403 item-workspace, nothing written
+  (a refused build stores no bundle); the tools `app_file_write`,
+  `app_file_delete`, `app_source_set`, `app_build`, `app_publish`,
+  `app_tools_set`, `app_db_schema_set`, `app_snapshot_restore` (code,
+  full): refused by their item check (before: edit asked); `app_update`
+  with a `description`: refused before anything is written. A restore or
+  import by any path that skipped the policy: refused before the undo
+  snapshot.
+- PATCH `/api/shares/:id` `{ mode }` (or `{ serve }`) of a contact share by
+  an Admin user, for an item outside its scope: 404 not found (before:
+  the Admin act on the system pool, as `{ canWrite }` still is).
+- In a workspace scope with an open transaction the step throws a runtime
+  fault (no caller does today; tested). In system work it runs in place,
+  in the system transaction (before: it left for a connection of its own,
+  which did not see that transaction's rows).
+
+### F4 handover
+
+Round 4 closed the re-audit of round 3 (L-a to L-d, the name check) and
+the owner's Admin user rule: done, nothing in progress. Gates at a78855915
+on the workstation (own pg), each exit 0: typecheck, lint, format, docs,
+arch, web build, boot:smoke, the F4 DB files (63/63), full vitest with DB,
+actor-off, actor-on, edit-on, test:matrix, test:runtime-role; CI
+build-check green. Left, not changed here: the items below, and round 4's
+own note (the database-refused `folder_create`'s log line).
+
+Round 3 closed the audit of round 2 (H1, M1 to M4, L1, L2, L4, L5): done,
+nothing in progress. Gates at ffa9755e7 on the workstation (own pg), each
+exit 0: typecheck, lint, format, docs, arch, web build, boot:smoke, the F4
+DB files (56/56), full vitest with DB, actor-off, actor-on, edit-on,
+test:matrix, test:runtime-role; CI build-check green. Left, not changed
+here:
+
+- jackdaw: the bulk delete's `refused` reasons `not_found` and
+  `forbidden`, and `keptTotal` / `kept`, need its delete dialogs (a
+  separate session; the contract above).
+- `folder_create` with `indexing`: decided and done in round 4 (below).
+- A member's table commit keeps no history (none since W6b); the history
+  is the Admin users'. Whether a member's commit should keep one (named as
+  a member) is the owner's question.
+- PATCH `/api/contacts/:id`'s `shareCount` counts only the shares the scope
+  reads (pre-existing); deleting a file synced from OneDrive answers 500 on
+  `ms_drive_items` (pre-existing, every mode).
+- A kept derived item (H1) points at a file that is gone; the
+  `dangling_source_file` audit lists it, and its own delete is its home's.
+- Round 4: a `folder_create` the database refuses (a parent the caller only
+  reads) answers the caller "You cannot change this item in your
+  workspaces." but logs the insert as a database error in a tool reply
+  (pre-existing: no create pre-check for a member's MCP folder create).
+
+### F4 fix round 4
+
+The re-audit of round 3 (8.5/10, no security hole) left four lows and a
+note; the owner decided two rules. Tested through the full pipeline (the
+routes by `runRoute`, the tools on the real MCP surface,
+`prepareCallerTools`) in warn and on, as a member and as an Admin user
+(`server/web/server/f4-owner-flows.db.test.ts`, in `pnpm test:edit-on`).
+
+- **L-a, a new folder's own switch follows its create rule (owner
+  decision).** `folder_create` with `indexing` hands it to `createFolder`
+  (`packages/files/src/ops/folders.ts`, the `indexing` argument), so the row
+  is born with the flag: one act, a refused create makes nothing. No
+  manage is asked: the folder is new and empty, the switch touches nothing
+  else. An existing folder's switch still asks manage (`setIndexingMode`,
+  `folder_set_indexing`, PATCH `/api/files/folders/:id`). The HTTP create
+  route takes no `indexing`.
+- **L-b, a new app's import asks manage of its create home first.** A new
+  app's code write asks manage of the app (D4), so POST `/api/apps/import`
+  without `appId`, and the package import (`importAppPackage`: the
+  `app_import` tool and POST `/api/apps/import-package`) ask
+  `assertNewAppCodeRight` (`packages/content/src/apps.ts`) before the app
+  is made: manage of the workspace the new app lands in
+  (`assertManagesNewItemHome`, `packages/content/src/tree/visibility.ts`,
+  the create home the visibility preview already names, asked with
+  `mantle_may_manage`). Refused: 403 item-workspace, nothing made. App code
+  rights are not widened. Both paths are Admin users' (the route refuses a
+  member login, the tool is owner-only), and a new app lands in the
+  workspace the call names or the caller's private one (Admin for an Admin
+  user), each one it moderates since 0298, so the refusal is a guard: the
+  test unticks an Admin user on Admin by hand to reach it.
+- **Making or unmaking an Admin user needs the users area (owner
+  decision).** On the Admin workspace an add (any `moderator`) and a
+  removal ask `mayChangeAdminUsers` (`server/web/lib/workspaces.ts`): an
+  Admin user with the users area, as the Moderator tick (`mayPromote`); else
+  403 `admin_only`. The other paths that make or unmake one sit under
+  `/api/users` (the role change, a new login) and `/api/team-admin`
+  (invites), whose route class is the same users area
+  (`server/web/lib/auth/route-scope.ts`); no tool or MCP path writes a role.
+- **L-c, L-d, the demo's reader.** 0299 and 0300 (edited in place, not
+  left this branch) grant the demo's reader nothing and revoke what an
+  earlier draft granted (`CREATE OR REPLACE` keeps grants), each guarded by
+  the role existing.
+- **The note.** `mantle_name_taken('folder', ...)` answers no for a name that
+  is not a valid path (`pg_input_is_valid` before the cast; the function is
+  plpgsql so the guard runs before the statement that casts), where it
+  raised an ltree syntax error.
+
+**Changed answers** (warn and on; against round 3's head):
+
+- `folder_create` with `indexing` by a login that may create in the parent
+  but does not manage the new folder's home: the folder is made with the
+  flag, ok (before: made without it, then the tool's error). Wider by the
+  owner's decision, for the new folder only.
+- POST `/api/apps/import` (no `appId`) by a login that may create where a
+  new app lands but does not manage that workspace: 403
+  item-workspace, no app (before: the app made, then 403 on its draft).
+  `app_import` and POST `/api/apps/import-package` likewise: refused before
+  the app is made (before: made, the build refused, then dropped).
+- POST `/api/workspaces/:admin/users` by an Admin user without the users
+  area, `moderator` omitted: 403 `admin_only`, no Admin user made (before:
+  200, the login made an Admin user). With `moderator: true` the same 403
+  (before: 403 `admin_only` with the Moderator words). DELETE
+  `/api/workspaces/:admin/users/:loginId` by one: 403 `admin_only`, worded
+  as the Admin user change (before: the same status by the Moderator rule).
+- `mantle_name_taken('folder', owner, name, ...)` with a name that is not a
+  valid path: false (before: an ltree syntax error).
+- The demo's reader may not execute `mantle_mail_backfill_accounts`,
+  `mantle_name_taken` or `mantle_snapshot_bytes` (before: granted on a
+  database that ran an earlier draft).
 
 ## Request plumbing (A10 part 2, A10 #8, A10 #9)
 
@@ -4356,19 +4956,20 @@ Admin with no other grant. The fixture's own writes are named system work
 move, add a grant, remove a grant, the Write switch, a public link, create,
 app data) x every actor kind (login, login-ro and turn for each login;
 assistant, link, contact-ro, contact-rw, peer and system once each), and
-each write of the two Admin users once more as the product sends it today
-(`login@system`, below). Each cell is one transaction, rolled back. A read
+each write of the two Admin users once more as the product sends it
+(`login@request`, below; `login@system` before F4). Each cell is one transaction, rolled back. A read
 runs on the workspace role in the caller's scope; a write on a login of
 the write role with the caller's scope, actor, write mode and create home
 set by the gateway's own statement (`writeRoleSettingsSql`), the heads
 first, both checks on; grants and home moves through the definers the
 write role calls; system work, and a contact share's write (named system
 work after the share's own check), on the system pool with its actor
-(`setActorSql`). An Admin user's write request runs on the system pool
-today (W6a M1, until A4 puts its reads in the scope), with the login's
-scope and create home on the transaction and no `mantle.login_id`
-(`withSystemTx`'s `systemPoolTx`): the `login@system` cells send it that
-way, built by the same helper. A cell passes only on the row effect read
+(`setActorSql`). An Admin user's write request runs in its request scope
+on the write role since F4, with the create home an Admin user's request
+names (no private fallback): the `login@request` cells send it that way,
+built by the same helper. Before F4 it ran on the system pool with the
+login's scope and create home on the transaction and no `mantle.login_id`
+(`withSystemTx`'s `systemPoolTx`), the `login@system` cells. A cell passes only on the row effect read
 back through a probe (`a8_probe`, a definer the scratch database gets):
 allowed is the change made, refused is no change with 42501 or no row
 matched. Any other error fails the cell. The run pins the grid's size
@@ -4534,6 +5135,8 @@ branch and leave the list when it lands; F3 is the guide's rule now.
   a public link and an app's data write of an item outside Admin are made.
   Only the gate's TypeScript (`itemWriteGate`) holds them. 108 grid cells
   (`login@system`). The same writes on the write role are refused.
+  **Fixed by F4** ("Admin writes on the write role (F4)"): the request runs
+  in its scope on the write role; the cells are `login@request` and pass.
 - **F5** (withdrawn, owner decision of 2026-10-15, plan section 34). The
   home Moderator's app delete, by hand, in a turn, on the web
   (`DELETE /api/apps/:id`), over MCP and in a Telegram turn, is allowed:
@@ -5172,21 +5775,25 @@ the per-table edit checks fire only for a write on the write role
 pre-check as their only edit check, in every mode, on alike. Deleting any
 entry would have made one of them looser with both checks on.
 
-**Status of the three blockers:** 1 is open (an Admin user's HTTP write,
-F4, A4: it still blocks all 27 HTTP entries); 2 is closed by the worker
-write role (v0.300.80, "Tool writes off HTTP on the write role" above);
-3 is closed by A7 (the switch is removed). The tool entries now wait only
-on their family's second reasons below and on the fleet's checks being
-on.
+**Status of the three blockers:** all three are closed. 1 by F4 (an
+Admin user's HTTP write runs in its scope on the write role, "Admin
+writes on the write role (F4)" above); 2 by the worker write role
+(v0.300.80, "Tool writes off HTTP on the write role" above); 3 by A7 (the
+switch is removed). Every entry now waits only on its family's second
+reasons below and on the fleet's checks being on; the two Admin acts F4
+keeps on the system pool (the users area's link close, the deleted-app
+trash) keep their TypeScript check as their only one.
 
-1. **An Admin user's HTTP write** stays on the system pool
-   (`loginWriteScope`, `packages/db/src/viewer.ts`: never an Admin user's
-   write request, whose reads are unscoped). The database there checks a
-   move, a create in a folder, a delete and a grant against the scope on
-   the transaction, nothing else. Pinned: A8 finding F4,
-   `packages/db/src/matrix/a8-known-failures.ts`, the `login@system` cells
-   (an edit, a draft edit, a link and an app data write of an item outside
-   the scope are made). Blocks all 27 HTTP entries.
+1. **An Admin user's HTTP write** stayed on the system pool (its reads
+   unscoped). The database there checks a move, a create in a folder, a
+   delete and a grant against the scope on the transaction, nothing else.
+   Pinned: A8 finding F4, the `login@system` cells (an edit, a draft edit,
+   a link and an app data write of an item outside the scope were made).
+   Blocked all 27 HTTP entries. **Closed** by F4: the guard enters the
+   login's request scope (`enterLoginWrite`), reads and writes, so its
+   writes meet the database's checks on the write role in warn and on
+   (`server/web/server/f4-admin-write-role.db.test.ts`); the cells are
+   `login@request` and pass.
 2. **The processes that never open the write pool**: the runs worker
    (`server/web/workers/runs.ts`, a `tool_call` run item through
    `dispatchTool` under `withRunScope`) and the stdio MCP server
@@ -5223,8 +5830,10 @@ own proof before its entry goes):
   `app_table_export_remove` (`app_table_exports` is a write-role gap
   table), `access_set` (the grant definers).
 - **The answer**: the HTTP pre-check answers 404 for an item the scope does
-  not read. On the system pool the handler reads it, and a database
-  refusal would be a 403: the item's existence told.
+  not read. Since F4 every login's write reads in its scope, so with the
+  pre-check gone the handler finds no row and gives its own not-found (no
+  existence told); each entry's deletion names the answer its handler
+  gives, which may differ in shape from the pre-check's 404.
 
 **What each entry would cite once the paths close** (the checks exist and
 are tested in on mode today, on the write role):
@@ -5237,12 +5846,12 @@ are tested in on mode today, on the write role):
 | a Recall map, its cards and revisions | `recall_maps` edit or manage, `recall_nodes` and `recall_revisions` edit of the map              | `edit-check.db.test.ts`, `matrix/write-grid.db.test.ts`                                          |
 | an app's code, its switches, its data | `apps` manage (D4), admin (D5); `app_databases` appdata (D6)                                     | `edit-check.db.test.ts` ("an app's tool level ..."), `a5-app-data-read-only.db.test.ts`          |
 
-**The order to unblock:** (a) A4 puts an Admin user's write request on the
-write role (F4's cells pass, `a8-known-failures.ts` loses them); (b) the
-runs worker and the stdio MCP server write on the write role, or refuse a
+**The order to unblock:** (a) an Admin user's write request on the write
+role (F4's cells pass, `a8-known-failures.ts` loses them); (b) the runs
+worker and the stdio MCP server write on the write role, or refuse a
 scoped write off it, with `connection-ceiling.test.ts` changed on purpose;
-(c) A7 deletes the rollback switch. (b) and (c) are done (v0.300.80 and
-A7); (a) is left. Then entry by entry, one commit per
+(c) A7 deletes the rollback switch. All three are done ((a) by F4, (b)
+v0.300.80, (c) A7). Then entry by entry, one commit per
 entry or small family, each naming its check and test from the table and
 its changed answers.
 
@@ -5416,7 +6025,7 @@ own asks with their entries, and `toolItemWriteRefusal`, `read()`,
 (createFolderRefusal, `createsIn`) stays: it names a create's folder, not
 an item.
 
-**The checks' floor (the guard; migration 0298).** Once the pre-checks are
+**The checks' floor (the guard; migration 0301).** Once the pre-checks are
 gone, a check lowered at runtime leaves a tool's write unchecked. The
 shape chosen, and why:
 
@@ -5456,7 +6065,7 @@ shape chosen, and why:
 The restore runbook (`docs/update-prod.md`, "The checks' floor", and
 `scripts/db-restore.sh`'s messages): after a restore the stack's migrate
 sets both checks on; nothing to set by hand. Tests: the setter's rule
-(`packages/db/src/edit-check.db.test.ts`, "the floor (0298)"), the raise
+(`packages/db/src/edit-check.db.test.ts`, "the floor (0301)"), the raise
 at migrate (`packages/db/src/check-floor.db.test.ts`), the line
 (`check-floor.test.ts`). Every test call that lowers a check passes the
 reason `'test'`.
@@ -5556,7 +6165,7 @@ and the compose env set it) raises at migrate, keep leaves the box, logs
 `[db] SECURITY:` line, and records an entry per check naming the keep and
 `MANTLE_CHECK_FLOOR_REASON` in `mantle_check_lowered()`. Any other value is
 raise, said loudly. CI's three migrate steps say keep. The record now holds
-one entry per lowered check (`mantle_check_note`, in 0298), so two
+one entry per lowered check (`mantle_check_note`, in 0301), so two
 lowerings are both on record, and an entry covers its check at its recorded
 mode or above only: a bare `ALTER DATABASE` below a recorded lowering is
 raised (the audit's floor edge). `scripts/roll.sh` step 2d refuses a roll
@@ -5588,7 +6197,7 @@ targets again.
 
 Branch `feat/precheck-remove`. Part 1 is done; nothing is in progress.
 
-- **The guard: done** (migration 0298, "The checks' floor" above): lowering
+- **The guard: done** (migration 0301, "The checks' floor" above): lowering
   a check needs a reason and is recorded; every process logs a loud line
   while a check is below on; migrate raises an unrecorded box to on (a box
   only). No refusal to boot.

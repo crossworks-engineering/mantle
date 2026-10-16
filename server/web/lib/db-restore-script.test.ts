@@ -236,7 +236,7 @@ describe('db-restore.sh', () => {
     // It says both modes are reset and how to set them again.
     expect(script).toMatch(/mantle\.actor_check is off/);
     expect(script).toMatch(/mantle\.heads_check is at its default \(warn\)/);
-    // Migrate raises both checks to on (0298); below on needs a reason.
+    // Migrate raises both checks to on (0301); below on needs a reason.
     expect(script).toMatch(/raises the actor and edit checks to on/);
     expect(script).toMatch(/SELECT mantle_set_actor_check\('on'\)/);
     expect(script).toMatch(/SELECT mantle_set_actor_check\('warn', 50, 'why'\)/);

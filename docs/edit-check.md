@@ -45,7 +45,7 @@ write calls none of them.
   triggers apart from the mode: the integrity row `edit_check_drift` and one
   warning at a pool's start (`EDIT_CHECK_DRIFT_SQL`) show it; the app never
   fixes it.
-- **The floor (migration 0298).** Since the tools' TypeScript item
+- **The floor (migration 0301).** Since the tools' TypeScript item
   pre-checks go (docs/actors.md, "Pre-check deletion"), a box runs both
   checks `on`. Lowering one needs a reason as a fourth argument
   (`mantle_set_check(setting, mode, tries, reason)`, and the two setters

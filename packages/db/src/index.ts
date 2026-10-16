@@ -125,7 +125,6 @@ export {
   enterRequestScope,
   noteRequestSystem,
   setRequestActor,
-  noteRequestWriteScope,
   requestWriteScope,
   noteRequestCreateHome,
   withCreateHome,
@@ -142,6 +141,8 @@ export {
   type RequestScopeMode,
   type RequestOutcome,
 } from './viewer';
+export { systemStep, type StepItems, type SystemStep } from './system-step';
+export { nameTaken, snapshotBytesUsed, type TakenName } from './brain-answers';
 export { ensureViewerRoles } from './viewer-roles';
 export {
   assistantWorkspaceIds,

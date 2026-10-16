@@ -119,7 +119,7 @@ jobs:
       - name: Init + migrate the throwaway database
         env:
           DATABASE_URL: ${{ env.CI_DATABASE_URL }}
-          # The checks' floor (0298) keeps this database's modes: the suites
+          # The checks' floor (0301) keeps this database's modes: the suites
           # set them themselves (a box raises: the image says raise).
           MANTLE_CHECK_FLOOR: keep
           MANTLE_CHECK_FLOOR_REASON: CI, the suites set the modes

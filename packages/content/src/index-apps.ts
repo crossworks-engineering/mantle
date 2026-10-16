@@ -76,6 +76,7 @@ export {
   listAppTags,
   getApp,
   createApp,
+  assertNewAppCodeRight,
   updateAppMeta,
   setAppAuthorLevel,
   lowerAuthorLevel,

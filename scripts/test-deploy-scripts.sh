@@ -1040,7 +1040,7 @@ floor_img() {
   [ "$2" = none ] && return 0
   mkdir -p "$1/img/app/packages/db/migrations"
   echo 'select 1;' > "$1/img/app/packages/db/migrations/0001_a.sql"
-  [ "$2" = no ] || echo 'select 1;' > "$1/img/app/packages/db/migrations/0298_check_mode_floor.sql"
+  [ "$2" = no ] || echo 'select 1;' > "$1/img/app/packages/db/migrations/0301_check_mode_floor.sql"
 }
 ckf_probe='if check_floor_refusal v9; then printf "refused: %s" "$CKF_ERR"; else printf ok; fi'
 T="$WORK/ckf-lib"; fake_stack "$T"; mkdir -p "$T/state"
@@ -1563,7 +1563,7 @@ echo 'select 1;' > "$RG/packages/db/migrations/0001_a.sql"
 git -C "$RG" add -A
 git -C "$RG" -c user.name=t -c user.email=t@example.com -c commit.gpgsign=false commit -qm a
 git -C "$RG" tag v0.300.85
-echo 'select 1;' > "$RG/packages/db/migrations/0298_check_mode_floor.sql"
+echo 'select 1;' > "$RG/packages/db/migrations/0301_check_mode_floor.sql"
 git -C "$RG" add -A
 git -C "$RG" -c user.name=t -c user.email=t@example.com -c commit.gpgsign=false commit -qm b
 git -C "$RG" tag v0.300.90

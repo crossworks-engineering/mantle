@@ -275,7 +275,12 @@ const BAD_JSON = '400 application/json {"error":"invalid JSON"}';
  *    (readJson `refuseEmpty`) answers the one 400, where the route refused
  *    it with a text of its own;
  *  - ceiling-in-kb (A10 lows, part 2 #6): the 413 of a ceiling under 1 MB
- *    says it in KB ("at most 64 KB"), where it said "at most 0 MB".
+ *    says it in KB ("at most 64 KB"), where it said "at most 0 MB";
+ *  - item-check-first (F4 fix round 2): the bulk delete's item check of
+ *    its ids asks the database by @mantle/db's own client, which the
+ *    stand-in does not reach (the real answers: f4-owner-flows.db.test.ts).
+ *    An app restore's manage check is restoreAppSnapshot's since round 3,
+ *    after the entry is found: its cell answers as main again.
  */
 /** The manifest pattern of a route file (app/api/x/[id]/route.ts). */
 function patternOf(file: string): string {
@@ -303,6 +308,13 @@ const OPAQUE = '500 application/json {"error":"internal error"}';
 function changeKind(cell: string, main: string, now: string): string | null {
   const variant = cell.slice(cell.lastIndexOf(' ') + 1);
   const moved = FOLD2_PATTERNS.has(cell.split(' ')[1] ?? '');
+  // F4 fix round 2 (item 4): a bulk delete checks every id it names first,
+  // by @mantle/db's own client (itemWriteVerdicts), which the database
+  // stand-in does not reach: its error answers the one opaque 500, where
+  // main read no row through the stand-in and answered on.
+  if (now === OPAQUE && cell.startsWith('DELETE /api/files/files ')) {
+    return 'item-check-first (F4 fix round 2: asked of the database, the stand-in has none)';
+  }
   // Fold 2 (one error answer): a plain error (the sweep's database stand-in
   // throws "DATABASE_URL must be set"; the vault has no master key) whose
   // text a route's catch put in the reply answers the one opaque 500 now.

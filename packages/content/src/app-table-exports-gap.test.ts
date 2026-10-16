@@ -75,7 +75,21 @@ vi.mock('@mantle/db', () => {
     h.actors.push(reason);
     return Promise.resolve(fn());
   };
-  return { db: { select, update, insert }, nodes, appDatabases, appTableExports, runAsSystem };
+  // The named system step (F4 fix round 2): the export bookkeeping leaves
+  // the writer's scope; here it only runs.
+  const systemStep = (
+    _step: string,
+    _items: unknown,
+    fn: (allowed: string[]) => Promise<unknown>,
+  ) => fn([]);
+  return {
+    db: { select, update, insert },
+    nodes,
+    appDatabases,
+    appTableExports,
+    runAsSystem,
+    systemStep,
+  };
 });
 vi.mock('@mantle/tabledb', () => ({ importMaxRows: () => 100_000 }));
 vi.mock('./apps', () => ({ getApp: vi.fn(async () => ({ title: 'Orders' })) }));

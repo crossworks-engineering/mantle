@@ -28,6 +28,11 @@ export default defineConfig({
       // The runs worker, the stdio MCP server and the Telegram poller on the
       // write role (pre-check deletion blocker 2).
       'server/web/server/worker-write-role.db.test.ts',
+      // An Admin user's write request on the write role (F4, pre-check
+      // deletion blocker 1).
+      'server/web/server/f4-admin-write-role.db.test.ts',
+      // F4 fix round 1: the owner's management flows on the write role.
+      'server/web/server/f4-owner-flows.db.test.ts',
     ],
     env: { ...onBase.test?.env, MANTLE_TEST_EDIT_CHECK: 'on' },
   },

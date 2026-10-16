@@ -131,7 +131,7 @@ export const RUNTIME_SYSTEM_FUNCTIONS: Readonly<Record<string, string>> = {
   'public.mantle_check_box_mode(text)':
     'client.ts EDIT_CHECK_DRIFT_SQL and CHECK_FLOOR_SQL: the boot warnings and the integrity rows',
   'public.mantle_check_lowered()':
-    'client.ts CHECK_FLOOR_SQL: the record of a check lowered below on (0298), logged loudly',
+    'client.ts CHECK_FLOOR_SQL: the record of a check lowered below on (0301), logged loudly',
   'public.mantle_embed_host(uuid,public.node_type)':
     'maintenance/refold-embeds.ts: the host text of an embedded item (0248)',
   'public.mantle_ws_attach_assistants()':

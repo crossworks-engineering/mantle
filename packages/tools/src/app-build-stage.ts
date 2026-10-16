@@ -20,6 +20,7 @@
  * or a file's with the same bytes); an unreferenced bundle costs only its
  * bytes, and the next identical build reuses it.
  */
+import { assertItemRight } from '@mantle/db';
 import { getApp, setDraftBuild, workingSource } from '@mantle/content';
 import { buildApp, loadRuntimeExports, type BuildMessage } from '@mantle/app-build';
 import { contentKey, hashBuffer } from '@mantle/storage';
@@ -38,7 +39,12 @@ const STALE_RETRIES = 2;
 
 /** Null when the app is not this owner's. A build of source that changed
  *  while it ran is not recorded (setDraftBuild 'stale'): the step builds
- *  the new source, a few times, then reports the build as not staged. */
+ *  the new source, a few times, then reports the build as not staged.
+ *
+ *  A build writes the app's code (draft_build, D4: APP_CODE_COLUMNS need
+ *  manage), so the caller's manage of the app is asked first, in its scope
+ *  (F4 fix round 3, M3), before anything compiles or is stored: a refused
+ *  build leaves no staged bundle behind. Throws the edit check's refusal. */
 export async function buildAndStageApp(
   ownerId: string,
   id: string,
@@ -46,6 +52,7 @@ export async function buildAndStageApp(
   for (let attempt = 0; ; attempt++) {
     const app = await getApp(ownerId, id);
     if (!app) return null;
+    if (attempt === 0) await assertItemRight(id, 'manage');
     const source = workingSource(app);
     const res = await buildApp(source, {
       declaredToolSlugs: app.manifest.toolSlugs ?? [],

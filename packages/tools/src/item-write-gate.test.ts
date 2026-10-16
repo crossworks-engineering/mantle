@@ -124,7 +124,8 @@ const MOVE = 'the move check (0245, 0279): manage of the item';
 const RECALL = 'the Recall edit checks (0280): edit of the map';
 const TABLES = "the write check (0278) at the tables broker's checked statement";
 const SNAPSHOTS = 'the node_snapshots edit check (0280)';
-const APP_CODE = "the apps edit check (0280, D4): manage of the app's home";
+const APP_CODE =
+  "the apps edit check (0280, D4): manage of the app's home; lockAppRow asks it first (F4 round 3, M3)";
 const SUBTREE = 'the write check (0278); a rename, mantle_subtree_rewrite (0282)';
 
 const entry = (param: string | null, need: DatabaseChecked['need'], check: string) =>
@@ -207,12 +208,15 @@ const DATABASE_CHECKED: ReadonlyMap<string, DatabaseChecked> = new Map([
   ['file_set_indexing', entry('file_id', 'edit', WRITE)],
   ['folder_rename', entry('folder_id', 'edit', SUBTREE)],
   ['folder_describe', entry('folder_id', 'edit', WRITE)],
-  ['folder_set_indexing', entry('folder_id', 'edit', WRITE)],
+  [
+    'folder_set_indexing',
+    entry('folder_id', 'manage', 'setIndexingMode asks it first (assertItemRight, F4 round 3, M1)'),
+  ],
   ['file_move', entry('file_id', 'manage', MOVE)],
   ['folder_move', entry('folder_id', 'manage', 'mantle_subtree_rewrite (0282), the move check')],
   ['folder_delete', entry('folder_id', 'manage', 'the delete check (0266), hidden rows (0282)')],
   ...(['app_file_write', 'app_file_delete', 'app_source_set', 'app_tools_set'] as const).map(
-    (slug) => [slug, entry('id', 'edit', APP_CODE)] as const,
+    (slug) => [slug, entry('id', 'manage', APP_CODE)] as const,
   ),
   ['app_snapshot_create', entry('id', 'edit', SNAPSHOTS)],
   ['app_snapshot_delete', entry('id', 'edit', SNAPSHOTS)],

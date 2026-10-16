@@ -9,22 +9,17 @@
  * on a failure not listed, and on a listed one that passes (the list only
  * shrinks). docs/actors.md, "A8 matrix", names each finding.
  */
-import { GUIDE_WORKSPACE_KINDS, expectedAccess } from './guide-oracle';
-
-/** F4. An Admin user's write request runs on the system pool with its scope
- *  on the transaction (W6a M1, until A4 puts its reads in the scope:
- *  withSystemTx's systemPoolTx), where the database checks a move, a create
- *  in a folder, a delete and a grant change against that scope, and nothing
- *  else: an edit, a draft edit, a public link and an app's data write on an
- *  item outside Admin are made (the `login@system` cells). Its rights are
- *  checked in TypeScript only (the gate's itemWriteGate). The guide: "Read
- *  the item: to be a user of a workspace it is granted to"; "Being an Admin
- *  user is management, not reading". A second line the owner may want; the
- *  same writes on the write role are refused (the `login` cells pass). */
-const F4 = 'F4 an Admin write request on the system pool: edits not held to its scope';
+// F4 (an Admin user's write request on the system pool, its edits not held
+// to its scope: the `login@system` cells, an edit, a link, a draft edit and
+// an app's data write of an item outside the user's workspaces made) left
+// the list with F4 (docs/actors.md, "Admin writes on the write role (F4)"):
+// the session guard enters an Admin user's write request in its scope, its
+// reads and its writes, and the write runs on the write role, where the
+// database refuses each such write. Its cells are the `login@request` cells
+// now, and pass.
 
 /** P1. Below on (an emergency since the pre-check removal: the checks'
- *  floor, migration 0298, docs/actors.md "Pre-check deletion"): a tool's
+ *  floor, migration 0301, docs/actors.md "Pre-check deletion"): a tool's
  *  edit of an item the scope reads and may not change is made, because its
  *  TypeScript item pre-check went and the database refuses it only with
  *  the checks on (warn logs it as a miss, off makes it silently). The same
@@ -59,38 +54,8 @@ export type KnownFailure = {
   modes?: readonly CheckMode[];
 };
 
-const known = (finding: string, reason: string, modes?: readonly CheckMode[]): KnownFailure =>
-  modes ? { finding, reason, modes } : { finding, reason };
-
-/** F4's cells: each Admin user's edit, link, draft edit and app data write
- *  of an item outside Admin (at its kind's root and in its folder; a
- *  snapshot copy refuses them all), on the system pool. */
-function adminSystemPoolEdits(): Record<string, KnownFailure> {
-  // The kinds and their actions as the oracle reads the guide (no list of
-  // kinds of its own): each one the oracle answers for the item outside Admin.
-  const out: Record<string, KnownFailure> = {};
-  for (const role of ['owner', 'admin'] as const) {
-    for (const placement of ['root', 'folder'] as const) {
-      for (const kind of GUIDE_WORKSPACE_KINDS) {
-        for (const action of ['edit', 'link', 'editDraft', 'appData'] as const) {
-          const want = expectedAccess(
-            { surface: 'sql', placement, actor: 'login' },
-            role,
-            kind,
-            action,
-          );
-          if ('na' in want) continue;
-          out[`login@system/${role} ${action} ${kind} @${placement}`] = known(F4, 'changed ({');
-        }
-      }
-    }
-  }
-  return out;
-}
-
 export const KNOWN_FAILURES: Readonly<Record<string, KnownFailure>> = {
-  // The grid (SQL).
-  ...adminSystemPoolEdits(),
+  // The grid (SQL): none since F4.
   // The surface cells (all three check modes unless named).
   ...Object.fromEntries(
     BELOW_ON_TOOL_EDITS.map((name) => [

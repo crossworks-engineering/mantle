@@ -3,7 +3,8 @@
  * logins (and the actor kinds that answer none) x every workspace kind x 3
  * placements (in a folder, not in one, a snapshot copy) x 13 actions x every
  * actor kind, and an Admin user's writes once more as the product sends them
- * today (the system pool, its scope on the transaction: `login@system`),
+ * (since F4 its request scope on the write role: `login@request`; the
+ * system pool with its scope on the transaction before, `login@system`),
  * against the oracle written from the guide (./guide-oracle.ts).
  * The fixture and one cell's run: ./test-support/a8-grid.ts.
  *
@@ -176,7 +177,7 @@ describe.skipIf(!URL)('A8 grid at SQL level', () => {
     expect(misses).toEqual([]);
     // No cell drops out unseen: the grid is every combination (each login
     // actor for each role, each other actor once, an Admin user's writes
-    // once more on the system pool), and each not-applicable reason keeps
+    // once more as its write request), and each not-applicable reason keeps
     // its count (a change to the oracle or the fixture shows here).
     const writes = GUIDE_ACTIONS.filter((a) => !['read', 'list', 'search'].includes(a)).length;
     const per = GUIDE_LOGIN_ACTORS.length * GUIDE_ROLES.length + GUIDE_OTHER_ACTORS.length;

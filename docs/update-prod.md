@@ -749,7 +749,7 @@ custom setting set with ALTER DATABASE needs a superuser; the database
 owner is not enough), connected to the brain's database:
 
 ```sql
-select mantle_set_actor_check('on');    -- off, warn, on (on since 0298)
+select mantle_set_actor_check('on');    -- off, warn, on (on since 0301)
 select mantle_actor_check_mode();
 select count(*) filter (where enabled) as enabled, count(*) as tables
   from mantle_actor_check_tables();      -- warn, on: all enabled; off: 0
@@ -793,7 +793,7 @@ log) for the same load, before and after. With the check off nothing
 changes: no new query and no new round trip.
 
 `on` refuses a statement with no actor, in the app and in the database
-(A2b). Since migration 0298 every box runs it on (below, "The checks'
+(A2b). Since migration 0301 every box runs it on (below, "The checks'
 floor"): lowering it needs a reason, `select mantle_set_actor_check('warn',
 50, 'why');`, then restart the app processes.
 
@@ -844,7 +844,7 @@ select check_name, count(*) from actor_check_misses
  where check_name = 'write-role-gap' and at > now() - interval '1 day' group by 1;
 ```
 
-Going back (an emergency only since 0298, with a reason: "The checks'
+Going back (an emergency only since 0301, with a reason: "The checks'
 floor" below) is `select mantle_set_actor_check('off', 50, 'why');` and a
 restart of the app processes: every write is on the system pool again.
 
@@ -865,7 +865,7 @@ first. Then, as the superuser that runs the migrations, connected to the
 brain's database:
 
 ```sql
-select mantle_set_edit_check('on');    -- off, warn, on (on since 0298)
+select mantle_set_edit_check('on');    -- off, warn, on (on since 0301)
 select mantle_edit_check_mode();
 select count(*) filter (where enabled) as enabled, count(*) as triggers
   from mantle_edit_check_tables();     -- warn, on: all enabled; off: 0
@@ -899,7 +899,7 @@ app's code (owner decision D4: a Moderator of the app's home does), a
 contact share made by a login that is not an Admin user. `on` refuses with
 a 403. Do not set `on` on any box before its `edit:` misses are zero, and
 never on the Pinnacle showcase box before 2026-10-16 (D4 lands after it).
-Going back (an emergency only since 0298, with a reason: "The checks'
+Going back (an emergency only since 0301, with a reason: "The checks'
 floor" below) is `select mantle_set_edit_check('warn', 50, 'why');` and a
 restart of the app processes (web, api, workers, mcp): a pooled connection keeps the
 setting it opened with, and the check reads the higher of the two until
@@ -1121,7 +1121,27 @@ workspaces nothing a user sees changes. Before the roll:
   showed no hit for one release. Count them per box, numbers only (counted
   on the box): `scripts/arch-scoreboard-box.sh <alias>`; ten counts, all 0.
 
-## The checks' floor (migration 0298, the pre-check removal)
+## Admin writes on the write role (F4, migrations 0298 and 0299)
+
+F4 (docs/actors.md, "Admin writes on the write role (F4)"): every login's
+write request, an Admin user's and the owner's included, runs in its
+workspaces on the write role while the actor check is warn or on.
+
+- **Migration 0298** ticks Moderator on the Admin workspace for every
+  Admin user who was not one (owner decision: every Admin user is a
+  Moderator of Admin, always), one `workspace_events` row each
+  (`user.moderator`, `by` "migration 0298"). Without the tick such a user's
+  edits of Admin-homed items and its creates into Admin are refused on
+  the write role. Count them on the box before the roll, numbers only:
+  `select count(*) from workspace_users u join workspaces w on w.id =
+u.workspace_id and w.is_admin join auth.users l on l.id = u.login_id and
+l.role = 'admin' where not u.moderator;` (after the roll: 0).
+- **Migration 0299** adds one definer (`mantle_mail_backfill_accounts`),
+  with no lock on a table and no row change: adding a contact, or an
+  address to one, queued no backfill of past mail in a request or an
+  assistant's turn until it.
+
+## The checks' floor (migration 0301, the pre-check removal)
 
 From this release the tools' TypeScript item pre-checks go, family by
 family (docs/actors.md, "Pre-check deletion"): the database's actor check
@@ -1214,8 +1234,9 @@ item pre-checks are gone): keep it as short as you can.
 
 - **A restore.** After `scripts/db-restore.sh` the stack's migrate sets
   both checks on; nothing to set by hand. Rolling back to an image from
-  before 0298 over a restored database leaves the checks off (that image's
+  before 0301 over a restored database leaves the checks off (that image's
   migrate does not raise them); that image still has its pre-checks.
+
 
 ## Rollback
 

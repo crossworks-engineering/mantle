@@ -105,7 +105,7 @@ async function main() {
     // their way.
     await afterMigrations(sql, runtime);
 
-    // The checks' floor (0298, check-floor.ts): a check below on that no
+    // The checks' floor (0301, check-floor.ts): a check below on that no
     // recorded lowering covers (a new database, a restore, a bare ALTER
     // DATABASE) is raised to on; one an operator lowered with a reason is
     // left, with a warning. MANTLE_CHECK_FLOOR=keep (a box kept below on on

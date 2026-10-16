@@ -122,6 +122,10 @@ describe.skipIf(!URL)('app drafts under the row lock read as the caller’s scop
     writer: randomUUID(),
   };
   const LOGINS = Object.keys(ids) as Login[];
+  /** The logins that may change an app's code (D4: a Moderator of its
+   *  home). The writer (a Write grant, no Moderator) is refused by the
+   *  code's door since F4 fix round 3 (M3), every mode: its own cell. */
+  const CODE_LOGINS = LOGINS.filter((l) => l !== 'writer');
   let adminWs = '';
   let teamWs = '';
   let projWs = '';
@@ -221,7 +225,13 @@ describe.skipIf(!URL)('app drafts under the row lock read as the caller’s scop
       expect(r.isError ?? false, `${name}: ${text(r)}`).toBe(false);
       return r;
     };
-    return { call, close: () => c.close() };
+    /** A call the tool refuses: its words. */
+    const refused = async (name: string, args: Json) => {
+      const r = (await c.callTool({ name, arguments: args })) as Reply;
+      expect(r.isError ?? false, `${name}: ${text(r)}`).toBe(true);
+      return text(r);
+    };
+    return { call, refused, close: () => c.close() };
   };
 
   /** A request to the real web app with the login's session. */
@@ -314,7 +324,42 @@ describe.skipIf(!URL)('app drafts under the row lock read as the caller’s scop
   });
 
   describe.each(MODES)('actor check $actor, edit check $edit', (modes) => {
-    it.each(LOGINS)(
+    it('the writer (a Write grant, no Moderator) changes no code, on MCP or the web (F4 fix round 3, M3)', async () => {
+      await setModes(modes);
+      const id = await appFor('writer');
+      const before = await row(id);
+      const draft = draftOf(`${tag} writer ${modes.actor} ${modes.edit}`);
+      const c = await connect('writer');
+      try {
+        // Before: edit asked, the code written (in warn a note per write).
+        for (const [name, args] of [
+          ['app_source_set', { id, ...draft }],
+          ['app_file_write', { id, path: 'lib/c.ts', content: 'export const c = 1;\n' }],
+          ['app_build', { id }],
+          ['app_publish', { id }],
+        ] as const) {
+          expect(await c.refused(name, args as Json)).not.toMatch(/Failed query|permission denied/);
+        }
+      } finally {
+        await c.close();
+      }
+      builds.done.length = 0;
+      for (const [p, method, body] of [
+        [`/api/apps/${id}/draft`, 'PUT', { ...draft, baseDraftUpdatedAt: null }],
+        [`/api/apps/${id}/draft`, 'DELETE', undefined],
+        [`/api/apps/${id}/build`, 'POST', {}],
+      ] as const) {
+        const r = await request(p, 'writer', method, body);
+        expect(r.status, `${method} ${p} ${r.text.slice(0, 300)}`).toBe(403);
+        expect(r.json.reason).toBe('item-workspace');
+      }
+      expect(builds.done).toHaveLength(0);
+      expect(await row(id)).toEqual(before);
+      // Refused before any statement: no note, in any mode.
+      expect(m.takeActorMisses()).toEqual([]);
+    }, 60_000);
+
+    it.each(CODE_LOGINS)(
       'MCP: %s writes a draft, keeps its files, builds it and publishes it',
       async (login) => {
         await setModes(modes);
@@ -350,7 +395,7 @@ describe.skipIf(!URL)('app drafts under the row lock read as the caller’s scop
       60_000,
     );
 
-    it.each(LOGINS)(
+    it.each(CODE_LOGINS)(
       'MCP: %s builds again when the source changed during the build, and records only that',
       async (login) => {
         await setModes(modes);
@@ -393,7 +438,7 @@ describe.skipIf(!URL)('app drafts under the row lock read as the caller’s scop
       60_000,
     );
 
-    it.each(LOGINS)(
+    it.each(CODE_LOGINS)(
       'web: %s saves over the stamp it read, builds the draft and commits it',
       async (login) => {
         await setModes(modes);
@@ -441,7 +486,7 @@ describe.skipIf(!URL)('app drafts under the row lock read as the caller’s scop
       60_000,
     );
 
-    it.each(LOGINS)(
+    it.each(CODE_LOGINS)(
       'the stale check still refuses a build of source that changed meanwhile (%s, MCP scope)',
       async (login) => {
         await setModes(modes);

@@ -435,3 +435,35 @@ export function itemWriteTarget(
   }
   return null;
 }
+
+/**
+ * Admin acts on the system pool (F4 fix round 1): the write routes on which
+ * an Admin user's request runs on the system pool with no scope, its reads
+ * and its transactions, after the guard's Admin check (the login is an
+ * Admin user: enterLoginWrite with admin set; a member never reaches them,
+ * none is in MEMBER_OPEN_WRITES, and they refuse it as every other owner
+ * route does). Each one's tables are ones no workspace scope reads, or its
+ * rule is the brain's and not the caller's workspaces:
+ *  - a contact's sharing (its code: contact_share_codes, never granted to
+ *    the workspace role), sharing an item with contacts (the code rows,
+ *    locked FOR SHARE, and the item read whatever its home: docs/
+ *    workspaces.md, "Share it with one contact: to be an Admin user, its
+ *    home is not checked") and Revoke all of a contact's shares (every live
+ *    share of the contact, items outside the user's workspaces included);
+ *  - merging two entities: the entity graph is Admin's (0265), and every
+ *    fact of the duplicate moves, a fact of an item outside the user's
+ *    workspaces included (facts.entity_id is ON DELETE SET NULL: a fact the
+ *    scope did not move would lose its entity when the duplicate goes).
+ */
+export const ADMIN_ACT_WRITES: ReadonlySet<string> = new Set([
+  'POST /api/contacts/:id/sharing',
+  'DELETE /api/contacts/:id/shares',
+  'POST /api/shares/contacts',
+  'POST /api/entities/merge',
+]);
+
+/** Whether an Admin user's write through `method pattern` is an Admin act
+ *  on the system pool (ADMIN_ACT_WRITES). */
+export function adminActWrite(method: string, pattern: string): boolean {
+  return ADMIN_ACT_WRITES.has(`${method.toUpperCase()} ${pattern}`);
+}

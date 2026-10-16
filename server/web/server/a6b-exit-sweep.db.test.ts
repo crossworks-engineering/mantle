@@ -104,6 +104,124 @@ const PEND_ASKER: Record<string, string | null> = {
   none: null,
 };
 
+/** Main's recorded lines of the section being compared, by cell (the F4
+ *  changes compare a write context's answer with main's read one). */
+let RECORDED = new Map<string, string>();
+
+/** The Admin logins whose write requests F4 moved into their scope. */
+const F4_ADMIN_WRITE = /(?:^| )write:(owner|adminAll|adminNoUsers)$/;
+
+/** The create miss of an Admin user who is not a Moderator of Admin, its
+ *  create landing in Admin (kind-root, rule-in-query). */
+const F4_CREATE_MISS =
+  'sql INSERT on nodes: no Moderator of the home (refused when the check is on)';
+/** An app's own row, made in the same create: the item it may not edit. */
+const F4_CREATE_APP_MISS = 'sql INSERT on apps: no edit of the item (refused when the check is on)';
+
+/**
+ * The F4 changes (docs/actors.md, "Admin writes on the write role (F4)"),
+ * in every section: an Admin user's write request enters its scope, its
+ * reads with it, as a member's does (it ran on the system pool with only
+ * its scope noted before). A library called in an Admin user's write
+ * context answers as main answered it in the same login's READ context
+ * (its reads in the same scope); the writes themselves are named below.
+ */
+const F4_CHANGES: ReadonlyArray<{
+  cells: RegExp;
+  reason: string;
+  nowTest: (now: string, k: string, was: string) => boolean;
+}> = [
+  {
+    cells: F4_ADMIN_WRITE,
+    reason:
+      "an Admin user's write context reads in its scope now: the same answer as main's read " +
+      'context of that login (its scope), never a row its scope does not read.',
+    nowTest: (now, k) => {
+      const read = RECORDED.get(k.replace(/write:(\w+)$/, 'read:$1'));
+      return read !== undefined && read.slice(read.indexOf(' => ') + 4) === now;
+    },
+  },
+  {
+    cells: /^notifyPendingCreated \S+ write:(owner|adminAll|adminNoUsers)$/,
+    reason:
+      "a queued call's Telegram card is not sent from an Admin user's write context: the card " +
+      "route and the bot's row are read in the caller's scope (A6b), which sends none from any " +
+      'scope (every read context, every member). The in-app badge and /pending still have it. ' +
+      'The errors it logs are timing (a detached send); the card is never sent.',
+    nowTest: (now) => {
+      const v = JSON.parse(now) as { sent: unknown[]; errors: string[] };
+      return (
+        v.sent.length === 0 &&
+        v.errors.every((e) => e.startsWith('[pending:notify] Telegram approval push failed'))
+      );
+    },
+  },
+  {
+    cells:
+      /^(POST file at root|upsertFile root|POST \/api\/apps) (write:)?(adminAll|adminNoUsers)$/,
+    reason:
+      "a create with no ?ws= by an Admin user who is not a Moderator of Admin (this fixture's " +
+      'adminAll and adminNoUsers) lands in Admin on the write role, where the create check ' +
+      'needs a Moderator of the home: warn makes it and logs the miss, on refuses it ' +
+      '(docs/workspaces.md: "An admin login is its user and a Moderator there"). Main made it ' +
+      'on the system pool unchecked. Off: the system pool, as main.',
+    nowTest: (now, _k, was) => {
+      const v = JSON.parse(now) as { v?: unknown; misses?: string[]; gaps?: string[] };
+      if (MODE === 'warn') {
+        return (
+          JSON.stringify(v.v) === was &&
+          (v.misses ?? []).includes(F4_CREATE_MISS) &&
+          (v.misses ?? []).every((x) => x === F4_CREATE_MISS || x === F4_CREATE_APP_MISS) &&
+          (v.gaps ?? []).length === 0
+        );
+      }
+      if (MODE !== 'on') return false;
+      // on: refused at the database. Over HTTP the mapper's 403, never the
+      // database's own words; a library call throws the database's error
+      // (the route's mapper answers it).
+      const http = v as { status?: number };
+      if (http.status !== undefined) {
+        return http.status === 403 && /item-workspace/.test(now) && !/Failed query/.test(now);
+      }
+      return /^\{"refused":/.test(now) && now.includes('insert into');
+    },
+  },
+  {
+    cells: /^row of kr-lib-\d+\.txt$/,
+    reason:
+      'on: the row of the refused create above (an Admin user who is not a Moderator of ' +
+      'Admin, upsertFile in its write context) is not made.',
+    nowTest: (now, k) => {
+      if (MODE !== 'on' || now !== '[]') return false;
+      // The context of the upsertFile cell this row belongs to (in order).
+      const ctxs = [...RECORDED.keys()]
+        .filter((x) => x.startsWith('upsertFile root '))
+        .map((x) => x.slice('upsertFile root '.length));
+      const n = Number(/kr-lib-(\d+)/.exec(k)![1]);
+      return /^write:(adminAll|adminNoUsers)$/.test(ctxs[n - 1] ?? '');
+    },
+  },
+  {
+    cells: /^GET files root adminNoUsers$/,
+    reason:
+      'on: the files root lists what main listed but for the files the create above refused ' +
+      '(an Admin user who is not a Moderator of Admin).',
+    nowTest: (now, _k, was) => {
+      if (MODE !== 'on') return false;
+      type L = { status: number; body: { files?: { filename: string }[] } };
+      const w = JSON.parse(was) as L;
+      const refused = new Set(['kr-adminall.txt', 'kr-adminnousers.txt']);
+      w.body.files = (w.body.files ?? []).filter((f) => !refused.has(f.filename));
+      return JSON.stringify(w) === now;
+    },
+  },
+];
+
+/** Cells F4 takes away in on: the cells that follow a create it refuses
+ *  there (an app the Admin user who is not a Moderator of Admin could not
+ *  make has no switch to change and no row). */
+const F4_MISSING_ON = /^(PATCH \/api\/apps\/:id mcpAccess|app row) (adminAll|adminNoUsers)$/;
+
 /**
  * Cells whose answer changed on purpose, per section: the cells a pattern
  * names, its reason, and either `back`, which turns the new answer into
@@ -373,13 +491,12 @@ describe.skipIf(!URL)('the A6b exit sweep', () => {
   // ── contexts ───────────────────────────────────────────────────────────
   const isAdmin = (who: LoginKey) => ADMINS.includes(who);
   /** A login's request, as the session guard enters it: a read and a
-   *  member's write in the login's scope (a write on the write role), an
-   *  Admin user's write on the system pool with its scope noted. */
+   *  write in the login's scope (a write on the write role; an Admin
+   *  user's too since F4, on the system pool with its scope noted before). */
   const inRequest = async <T>(who: LoginKey, write: boolean, fn: () => Promise<T>) => {
     const scope = await m.viewerScopeFor({ login: L[who] });
     return m.runInRequestSlot(async () => {
-      if (isAdmin(who) && write) m.noteRequestWriteScope(scope);
-      else m.enterRequestScope(scope, { writes: write, drafts: isAdmin(who) });
+      m.enterRequestScope(scope, { writes: write, drafts: isAdmin(who) });
       return fn();
     });
   };
@@ -470,22 +587,29 @@ describe.skipIf(!URL)('the A6b exit sweep', () => {
     expect(existsSync(path), `${path}: record it on main (A6B_RECORD=${name})`).toBe(true);
     const recorded = readFileSync(path, 'utf8').trimEnd().split('\n');
     const was = new Map(recorded.map((l) => [l.slice(0, l.indexOf(' => ')), l]));
+    RECORDED = was;
     const now = new Map(cells.map((l) => [l.slice(0, l.indexOf(' => ')), l]));
     const problems: string[] = [];
     for (const [k, line] of was) {
       const cur = now.get(k);
       if (cur === undefined) {
-        problems.push(`missing: ${k}`);
+        if (!(MODE === 'on' && F4_MISSING_ON.test(k))) problems.push(`missing: ${k}`);
         continue;
       }
       if (cur === line) continue;
-      const named = (NAMED_CHANGES[name] ?? []).find((c) => c.cells.test(k));
       const value = cur.slice(cur.indexOf(' => ') + 4);
-      const wasOk = !named?.was || named.was.test(line);
-      if (named?.back && wasOk && `${k} => ${named.back(value)}` === line) continue;
-      if (named?.now !== undefined && wasOk && value === named.now) continue;
       const wasValue = line.slice(line.indexOf(' => ') + 4);
-      if (named?.nowTest && wasOk && named.nowTest(value, k, wasValue)) continue;
+      // Every named change whose pattern holds the cell is asked (F4's
+      // apply in every section, beside the section's own).
+      const named = [...(NAMED_CHANGES[name] ?? []), ...F4_CHANGES].filter((c) => c.cells.test(k));
+      const holds = named.some((c) => {
+        const wasOk = !('was' in c) || !c.was || c.was.test(line);
+        if (!wasOk) return false;
+        if ('back' in c && c.back && `${k} => ${c.back(value)}` === line) return true;
+        if ('now' in c && c.now !== undefined && value === c.now) return true;
+        return !!c.nowTest && c.nowTest(value, k, wasValue);
+      });
+      if (holds) continue;
       problems.push(`changed: ${line}\n     now: ${cur}`);
     }
     for (const k of now.keys()) if (!was.has(k)) problems.push(`new cell: ${k}`);

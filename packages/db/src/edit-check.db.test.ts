@@ -826,7 +826,7 @@ describe.skipIf(!URL)('the edit check (arch A3a)', () => {
     await sql`select mantle_set_actor_check('off')`;
   });
 
-  it('the floor (0298): lowering a check needs a reason, is recorded and warned; raising both to on clears the record', async () => {
+  it('the floor (0301): lowering a check needs a reason, is recorded and warned; raising both to on clears the record', async () => {
     const box = async () =>
       (
         await sql<{ a: string; e: string; l: string }[]>`

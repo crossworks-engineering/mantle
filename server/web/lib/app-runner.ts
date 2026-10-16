@@ -55,9 +55,13 @@ import { readJson } from '@/lib/read-body';
 /**
  * This file's one system door (arch A6): a member's app run reaches its app's
  * database, and the tool broker's verdict reads the tool registry, on the system
- * pool by the named reason 'app-data'. Every call below goes through it.
+ * pool by the named reason 'app-data'. Every call below goes through it, and
+ * the Admin branch of the owner db broker's (F4 fix round 2: an Admin user's
+ * run, in its scope since F4, after the app's lookup there; its data writes
+ * follow ADMIN_DATA_ACCESS, the registry, schema and salt are the app's
+ * bookkeeping, as for a member's run).
  */
-function appDataSystem<T>(fn: () => Promise<T>): Promise<T> {
+export function appDataSystem<T>(fn: () => Promise<T>): Promise<T> {
   return asSystem(fn, 'app-data');
 }
 

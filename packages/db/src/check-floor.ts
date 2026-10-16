@@ -1,5 +1,5 @@
 /**
- * The check modes' floor (migration 0298; docs/actors.md, "Pre-check
+ * The check modes' floor (migration 0301; docs/actors.md, "Pre-check
  * deletion"). With the tools' TypeScript item pre-checks gone, the
  * database's actor and edit checks are the only edit check of a tool's
  * write, so a brain runs both `on`. Below on is an emergency: lowering
@@ -14,7 +14,7 @@ import type postgres from 'postgres';
 type Sql = ReturnType<typeof postgres>;
 
 /** Each check's box mode and the record of a lowering ('' when none). Any
- *  role the app runs as may read it (0298: mantle_check_lowered is on the
+ *  role the app runs as may read it (0301: mantle_check_lowered is on the
  *  runtime role's allowlist). */
 export const CHECK_FLOOR_SQL = `
   SELECT "public"."mantle_check_box_mode"('actor_check') AS actor,
@@ -58,7 +58,7 @@ export function checkFloorWarning(row: CheckFloorRow | undefined): string {
 let said = '';
 
 /** Read the floor on `base` and warn when it changed (a pool's start, then
- *  each minute). A database before 0298 answers an error: ignored. */
+ *  each minute). A database before 0301 answers an error: ignored. */
 export function noteCheckFloor(base: Sql, tag: string): void {
   base
     .unsafe(`${tag} ${CHECK_FLOOR_SQL}`)
@@ -148,7 +148,7 @@ async function readFloor(sql: Sql): Promise<CheckFloorRow | undefined> {
  * gains an entry per uncovered check naming the keep and its reason. Never
  * fatal: a switch that cannot take its locks (55P03) is a loud warning,
  * and the processes keep saying so. Needs the superuser that runs the
- * migrations; a database before 0298 is skipped.
+ * migrations; a database before 0301 is skipped.
  */
 export async function raiseCheckFloor(
   sql: Sql,

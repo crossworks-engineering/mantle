@@ -1,6 +1,6 @@
 /**
  * The processes' warning while a check is below on (check-floor.ts,
- * migration 0298): pure.
+ * migration 0301): pure.
  */
 import { describe, expect, it } from 'vitest';
 import { checkFloorWarning, loweredCovers } from './check-floor';

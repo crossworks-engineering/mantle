@@ -33,7 +33,6 @@ import {
   createHomeIntent,
   withViewer,
   noteRequestSystem,
-  noteRequestWriteScope,
   noteRequestCreateHome,
   noteRequestOwnRule,
   setRequestActor,
@@ -66,6 +65,7 @@ import { lockOauthActor } from '../oauth-lock';
 import { auditPeersUnbound, unbindPeersActingAs } from '../peer-unbind';
 import { isAccessKey, lockLoginKeys } from '../access-keys';
 import { getRequestContext } from '../../server/request-context';
+import { readBodyCapped } from '../body-limit';
 import { bearerFromHeader } from './request';
 import {
   anyLoginRow,
@@ -79,7 +79,7 @@ import {
   type RouteCaller,
   type RouteRow,
 } from './route-policy';
-import { auditsAsWrite } from './route-scope';
+import { adminActWrite, auditsAsWrite } from './route-scope';
 import { takeRouteLimits, type LimitLogin } from '../route-limits';
 import {
   SESSION_COOKIE_NAME,
@@ -1615,12 +1615,8 @@ export async function getOwnerOr401WithLogin(): Promise<OwnerRouteLogin | NextRe
       return who;
     }
     if (!memberOpenWrite(route)) return loginRefused(res.kind);
-    const refused = await itemWriteGate(login.loginId, route, { admin: false });
+    const refused = await enterLoginWrite(login.loginId, route, { admin: false });
     if (refused) return refused;
-    const home = await createHomeFor(login.loginId, route, true);
-    if (home instanceof NextResponse) return home;
-    noteRequestCreateHome(home);
-    await enterLoginScope(login.loginId, requestMode(true));
     await auditMutation(user);
     return who;
   }
@@ -1691,8 +1687,8 @@ async function loginHoldsArea(
 /**
  * What an Admin login's owner request runs as (W6a): a management route
  * needs its area and runs on the system pool; the login's own things run
- * there too; a READ of brain items enters the login's scope; a write stays
- * on the system pool, as before.
+ * there too; a read or a write of brain items enters the login's scope
+ * (a write since F4, as a member's: enterLoginWrite).
  * Outside a request slot (a test calling a handler) nothing changes; a
  * request slot with no row is refused (guardRoute). Returns the refusal,
  * or null to go on.
@@ -1720,19 +1716,72 @@ async function adminRouteGate(loginId: string): Promise<NextResponse | null> {
     noteRequestSystem('login-self');
     return null;
   }
-  if (route.effect === 'write') {
-    const refused = await itemWriteGate(loginId, route, { admin: true });
-    if (refused) return refused;
+  if (route.effect === 'write') return enterLoginWrite(loginId, route, { admin: true });
+  await enterLoginScope(loginId, requestMode(true));
+  return null;
+}
+
+/**
+ * The answer that an Admin user's write runs on the system pool with no
+ * scope at all: its reads unscoped and no scope on its transactions (an
+ * Admin user's write before F4 carried its scope on its transactions; these
+ * carry none, so the database's workspace checks do not run on them). Kept
+ * after F4 by name, each checked first (docs/actors.md, "Admin writes on
+ * the write role (F4)"):
+ *  - closing any link of the brain (DELETE /api/shares/:id) by an Admin
+ *    user with the users area (docs/workspaces.md: closing only narrows;
+ *    plan v2, section 10): the link's item may be in a workspace the user
+ *    is not in, and the scope reads no link of an item it does not read
+ *    (0265); itemWriteGate's answer;
+ *  - the trash of deleted apps (purge, restore: /api/apps/deleted/:id),
+ *    after the manage check of the app's last home: the app's row is gone,
+ *    so no scope reads its snapshots (0265), as the app_undelete tool's
+ *    'app-trash' door says; itemWriteGate's answer;
+ *  - the Admin acts of ADMIN_ACT_WRITES (route-scope.ts, F4 fix round 1: a
+ *    contact's sharing, sharing with contacts, Revoke all of a contact's
+ *    shares, an entity merge): every Admin user's, on tables no workspace
+ *    scope reads or over rows outside the user's workspaces;
+ *  - the "Can write" change of a contact share (PATCH /api/shares/:id
+ *    `{ canWrite }` of a share that names a contact) by an Admin user, as
+ *    making one; itemWriteGate's answer (F4 fix round 1; keyed on the body
+ *    since round 3, L2).
+ */
+const ADMIN_ACT = 'admin-act';
+
+/**
+ * A login's write request to brain items (W6b for a member; an Admin user's
+ * since F4, which ran on the system pool with its reads unscoped before):
+ * the item the route names is checked first (itemWriteGate), the create
+ * home recorded (createHomeFor: an Admin user without ?ws= creates as
+ * before, the folder's home else Admin; a member's private workspace is
+ * its fallback), then the request runs in the login's scope for the rest
+ * of the request, reads and writes alike: its reads on the workspace role,
+ * its writes through the login write gateway (loginWriteRoute: the write
+ * role while the actor check is warn or on, where the database's write and
+ * edit checks answer for every statement). An Admin user's Admin rights
+ * are in that scope (the Admin workspace and its limits:
+ * mantle_scope_has_admin, mantle_scope_has_area), so the database answers
+ * for them too. Returns the refusal, or null to go on.
+ */
+async function enterLoginWrite(
+  loginId: string,
+  route: RouteRow,
+  opts: { admin: boolean },
+): Promise<NextResponse | null> {
+  const verdict =
+    opts.admin && adminActWrite(route.method, route.pattern)
+      ? ADMIN_ACT
+      : await itemWriteGate(loginId, route, opts);
+  if (verdict instanceof NextResponse) return verdict;
+  // A create lands in the request's workspace (?ws=) when the login
+  // moderates it (W6b); else by the login's default home rule.
+  const home = await createHomeFor(loginId, route, !opts.admin);
+  if (home instanceof NextResponse) return home;
+  noteRequestCreateHome(home);
+  if (verdict === ADMIN_ACT) {
+    // An Admin act (ADMIN_ACT): on the system pool with no scope, neither
+    // on its reads nor on its transactions.
     noteRequestSystem('admin-write');
-    // The login's scope on the request's system transactions (fix round 1,
-    // M1): the database checks moves, creates in a folder and deletes
-    // against it (withSystemTx).
-    noteRequestWriteScope(await loginScopeFor(loginId));
-    // A create lands in the request's workspace (?ws=) when the user
-    // moderates it (W6b); without one, as before (the folder, else Admin).
-    const home = await createHomeFor(loginId, route, false);
-    if (home instanceof NextResponse) return home;
-    noteRequestCreateHome(home);
     return null;
   }
   await enterLoginScope(loginId, requestMode(true));
@@ -1758,13 +1807,14 @@ function itemIdOf(segment: string): string | null {
  * only when the login's scope may edit the item (mantle_may_edit: a Moderator of its
  * home, or a Write grant to one of its workspaces), manage it for a delete
  * or a move (mantle_may_manage), or read it for its own marks and app runs.
- * An item homed in a workspace the user is not in is refused: an Admin user
- * is told to add itself to that workspace first; a non-Admin login gets
- * the same 404 as an id no row has, so no item's existence leaves its scope
+ * An item the login's scope does not read is refused with the same 404 as
+ * an id no row has, for every login (an Admin user too since F4, owner
+ * decision D2: it was told to add itself to the item's workspace first, a
+ * 403 that told the item existed), so no item's existence leaves its scope
  * (docs/workspaces.md: "not found", never "exists but no"; audit
  * 2026-10-12). The rule is the database's, asked in the login's scope; the
- * write itself then runs on the system pool as before. For an Admin user an
- * id no row has goes on to the handler (its own 404). A read-only snapshot
+ * write itself then runs in that scope (enterLoginWrite), where the
+ * database's own checks answer again. A read-only snapshot
  * copy (data.snapshot_of) is never edited, by anyone; its author may still
  * delete it (W6b fix round 1,
  * CEO decision 2). A deleted app a login other than the brain's owner
@@ -1776,10 +1826,11 @@ async function itemWriteGate(
   loginId: string,
   route: RouteRow,
   opts: { admin: boolean },
-): Promise<NextResponse | null> {
+): Promise<NextResponse | null | typeof ADMIN_ACT> {
   const method = route.method;
-  // What a non-Admin login hears of an item it does not read, existing or
-  // not: one answer, so the two cannot be told apart (W7e, audit 2026-10-12).
+  // What a login hears of an item it does not read, existing or not: one
+  // answer, so the two cannot be told apart (W7e, audit 2026-10-12; an
+  // Admin user's too since F4).
   const notFound = () => NextResponse.json({ ok: false, error: 'not found' }, { status: 404 });
   const path = getRequestContext()?.path;
   const target = path ? routeItemTarget(route, path) : null;
@@ -1791,8 +1842,8 @@ async function itemWriteGate(
   // the decoded one and wrote.
   const id = itemIdOf(target.id);
   if (id === null) return notFound();
-  let row: { edit: boolean | null; manage: boolean | null } | undefined;
-  let readOnlyCopy = false;
+  // Set where an item's row is read (a deleted app never reaches the end).
+  let readOnlyCopy: boolean | undefined;
   if (target.ref === 'deleted-app') {
     // The app is gone: its last snapshot names the workspace it was homed
     // in (meta.homeWs since W6a fix round 1): a Moderator of that workspace
@@ -1807,13 +1858,30 @@ async function itemWriteGate(
        where s.node_id = ${id} and s.node_kind = 'app' and s.trigger = 'pre_delete'
          and not exists (select 1 from nodes n where n.id = s.node_id)
        order by s.seq desc limit 1`)) as unknown as { home: string | null; held: boolean }[];
-    if (snap.length === 0) return null;
-    const home = snap[0]!.home;
+    // An Admin user's act on the trash goes on on the system pool
+    // (ADMIN_ACT); else on into the login's scope.
+    const go = opts.admin ? ADMIN_ACT : null;
+    // Not in the trash, or in it where the login may not manage it: the
+    // one 404, for every login (F4 fix round 1: an Admin user went on to
+    // the handler's 404, and a home it does not moderate was a 403, so a
+    // deleted app's existence left its scope).
+    if (snap.length === 0) return notFound();
+    const { home, held } = snap[0]!;
+    const owner = loginId === (await getAnchorId());
+    const purge = method.toUpperCase() === 'DELETE';
     // Deleted by a login other than the brain's owner (CEO decision 1): it
     // stays in the trash until the owner purges it; a Moderator of its home
     // may still bring it back.
-    if (snap[0]!.held && method.toUpperCase() === 'DELETE') {
-      if (loginId === (await getAnchorId())) return null;
+    if (held && purge && owner) return go;
+    let may = owner && home === null;
+    if (home !== null) {
+      const manage = (await withViewer({ login: loginId }, () =>
+        db.execute(sql`select "public"."mantle_may_manage"(${home}::uuid) as manage`),
+      )) as unknown as { manage: boolean | null }[];
+      may = manage[0]?.manage === true;
+    }
+    if (!may) return notFound();
+    if (held && purge) {
       return NextResponse.json(
         {
           error: 'forbidden',
@@ -1824,35 +1892,44 @@ async function itemWriteGate(
         { status: 403 },
       );
     }
-    if (home === null) {
-      if (loginId === (await getAnchorId())) return null;
-    } else {
-      const manage = (await withViewer({ login: loginId }, () =>
-        db.execute(sql`select "public"."mantle_may_manage"(${home}::uuid) as manage`),
-      )) as unknown as { manage: boolean | null }[];
-      if (manage[0]?.manage === true) return null;
-    }
-    row = { edit: false, manage: false };
+    return go;
   } else {
     // The item the route names: the id itself, or through a share or a
     // recall revision (read on the system pool: an id, no content).
     let nodeId: string | null = id;
     if (target.ref === 'share') {
       // An Admin user with the users area may close any link of the brain
-      // (docs/workspaces.md: closing only narrows). The handler asks the
-      // area again (requireArea) before it revokes.
+      // (docs/workspaces.md: closing only narrows), on the system pool
+      // (ADMIN_ACT). The handler asks the area again (requireArea) before
+      // it revokes.
       if (
         opts.admin &&
         method.toUpperCase() === 'DELETE' &&
         (await loginHoldsArea(loginId, 'users'))
       ) {
-        return null;
+        return ADMIN_ACT;
       }
       const r = (await db.execute(
-        sql`select s.node_id::text as id, n.type::text as type
+        sql`select s.node_id::text as id, n.type::text as type,
+                   s.contact_id is not null as contact
               from shares s left join nodes n on n.id = s.node_id
              where s.id = ${id}`,
-      )) as unknown as { id: string | null; type: string | null }[];
+      )) as unknown as { id: string | null; type: string | null; contact: boolean }[];
+      // A contact share's "Can write" (on an app's) by an Admin user: an
+      // Admin act (ADMIN_ACT), as making one is (POST /api/shares/contacts:
+      // sharing with a contact needs only an Admin user, its home is not
+      // checked; docs/workspaces.md). Keyed on the change the body asks
+      // (F4 fix round 3, L2), not on the share naming a contact: any other
+      // change of the share (its mode, its served list) is the link's,
+      // checked against its item below.
+      if (
+        opts.admin &&
+        method.toUpperCase() === 'PATCH' &&
+        r[0]?.contact === true &&
+        (await asksCanWrite())
+      ) {
+        return ADMIN_ACT;
+      }
       nodeId = r[0]?.id ?? null;
       // An app's link: home Moderators only (assertMayLink, link-serve.ts).
       if (r[0]?.type === 'app') need = 'manage';
@@ -1863,33 +1940,32 @@ async function itemWriteGate(
       )) as unknown as { id: string | null }[];
       nodeId = r[0]?.id ?? null;
     }
-    if (!nodeId) return opts.admin ? null : notFound();
+    // No such share or revision: the same 404 as an item the scope does
+    // not read, for every login (an Admin user went on to the handler,
+    // whose answer told a missing id from a hidden one).
+    if (!nodeId) return notFound();
     const rows = (await withViewer({ login: loginId }, () =>
       db.execute(sql`
         select ${mayEditSql('n')} as edit, ${mayManageSql('n')} as manage,
                coalesce(n.data ? 'snapshot_of', false) as copy
           from nodes n where n.id = ${nodeId}`),
     )) as unknown as { edit: boolean | null; manage: boolean | null; copy: boolean }[];
-    row = rows[0];
+    const row = rows[0];
     if (row) {
       if (need === 'read') return null;
       // A read-only snapshot copy: deleted or filed by its home's Moderator
       // (the database keeps it in its private workspace), never edited.
-      readOnlyCopy = rows[0]!.copy === true && need === 'edit';
+      readOnlyCopy = row.copy === true && need === 'edit';
       if (!readOnlyCopy && (need === 'edit' ? row.edit === true : row.manage === true)) {
         return null;
       }
     } else {
-      // Not in the scope. A non-Admin login is told nothing about an item it
-      // does not read, whatever the write needs: the same 404 as an id no
-      // row has, answered here for both (a handler's own 404 may differ).
-      if (!opts.admin) return notFound();
-      // An Admin user may add itself to any workspace: refused with that
-      // hint when the item exists, the handler's 404 when not.
-      const seen = (await db.execute(
-        sql`select 1 from nodes where id = ${nodeId}`,
-      )) as unknown as unknown[];
-      if (seen.length === 0) return null;
+      // Not in the scope. A login is told nothing about an item it does not
+      // read, whatever the write needs: the same 404 as an id no row has,
+      // answered here for both (a handler's own 404 may differ). An Admin
+      // user too since F4 (D2): it heard "Add yourself to it first", a 403
+      // that told the item existed.
+      return notFound();
     }
   }
   return NextResponse.json(
@@ -1898,13 +1974,35 @@ async function itemWriteGate(
       reason: 'item-workspace',
       message: readOnlyCopy
         ? 'This is a read-only copy of an accepted item: nobody changes it. Its author may delete it.'
-        : row
-          ? 'You cannot change this item in your workspaces.'
-          : 'This item is in a workspace you are not in. Add yourself to it first.',
+        : 'You cannot change this item in your workspaces.',
       ...(readOnlyCopy ? { readOnly: true } : {}),
     },
     { status: 403 },
   );
+}
+
+/** What the PATCH /api/shares/:id body is read to, at most (its changes
+ *  are a mode, a flag or a served list). */
+const SHARE_PATCH_PEEK_BYTES = 64 * 1024;
+
+/**
+ * Whether the request's body is a share's "Can write" change, as the
+ * handler reads it (PATCH /api/shares/:id: its body schema tries `mode`
+ * first, then `canWrite`): a boolean `canWrite` and no string `mode`. Read
+ * from a clone, capped, so the handler reads the body itself; a body that
+ * is not JSON is no such change (the handler answers it).
+ */
+async function asksCanWrite(): Promise<boolean> {
+  const req = getRequestContext()?.req;
+  if (!req) return false;
+  try {
+    const body = JSON.parse(await readBodyCapped(req.clone(), SHARE_PATCH_PEEK_BYTES)) as unknown;
+    if (typeof body !== 'object' || body === null || Array.isArray(body)) return false;
+    const b = body as Record<string, unknown>;
+    return typeof b.canWrite === 'boolean' && typeof b.mode !== 'string';
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -2191,9 +2289,9 @@ export async function getChatLoginOr401(): Promise<ChatLogin | NextResponse> {
 /**
  * The request scope of getLoginOr401 (W6a). On an any-login route
  * (ANY_LOGIN_ROUTES: shell, workspaces, grants, access keys, whoami) every
- * login enters its scope, an Admin user's write excepted (system pool, as
- * on the owner routes; a grants write with the login's scope on its
- * transactions). The grants and workspace libraries read in the scope
+ * login enters its scope, an Admin user's write excepted (system pool: its
+ * workspaces, keys, chat threads and pairings) but for a grants write,
+ * which runs in the login's scope (F4). The grants and workspace libraries read in the scope
  * (arch A6); the shell, the access keys and whoami hold their rule in their
  * own SQL and leave the scope by name (asSystem 'rule-in-query'). Anywhere else
  * (sign-out, change password, OAuth consent: the login's own row, never
@@ -2210,21 +2308,22 @@ async function anyLoginScope(res: Resolved): Promise<NextResponse | null> {
     return null;
   }
   const loginId = res.kind === 'admin' ? res.user.actor.id : res.member.loginId;
-  if (res.kind === 'admin') {
-    if (route.effect === 'write') {
-      // The grants panel's writes (arch A6, A8 matrix F7 a): the login's
-      // scope on the request's system transactions, as an Admin user's
-      // owner write has it (adminRouteGate), so the database's grant checks
-      // (mantle_grant_change, 0279) run on them too. Its reads stay on the
-      // system pool, as on every Admin user's write.
-      if (route.pattern.startsWith('/api/grants/')) {
-        noteRequestWriteScope(await loginScopeFor(loginId));
-      }
-      return noteSystem('admin-write');
-    }
+  // An Admin user's write here stays on the system pool (its workspaces,
+  // its keys, its chat threads and Telegram pairings: no brain item), but
+  // for the grants panel's: that one runs in the login's scope, reads and
+  // writes, as every login's does (arch A6, A8 matrix F7 a; its reads moved
+  // into the scope with F4), so the database's grant checks
+  // (mantle_grant_change, 0279) answer for it on the write role.
+  if (res.kind === 'admin' && route.effect === 'write' && !isGrantsRoute(route)) {
+    return noteSystem('admin-write');
   }
   await enterLoginScope(loginId, requestMode(res.kind === 'admin'));
   return null;
+}
+
+/** The grants panel's routes (ANY_LOGIN_ROUTES, /api/grants). */
+function isGrantsRoute(route: RouteRow): boolean {
+  return route.pattern.startsWith('/api/grants/');
 }
 
 /** noteRequestSystem, then go on (null: no refusal). */

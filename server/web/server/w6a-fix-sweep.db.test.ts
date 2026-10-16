@@ -246,8 +246,9 @@ describe.skipIf(!URL)('W6a fix round 1: drafts, item writes, app-nav, marks, tra
       parentId: sideFolder,
       name: 'inner',
     });
-    expect(mk.status, mk.text.slice(0, 200)).toBe(403);
-    expect(mk.text).toContain('item-workspace');
+    // Since F4 the request reads in its scope: a folder it does not read is
+    // not found (the 403 item-workspace before, which told it existed).
+    expect(mk.status, mk.text.slice(0, 200)).toBe(404);
     const after = (
       await x<{ n: number }>(sql`select count(*)::int as n from nodes where path <@ 'notes.sidef'`)
     )[0]!.n;
@@ -262,8 +263,10 @@ describe.skipIf(!URL)('W6a fix round 1: drafts, item writes, app-nav, marks, tra
     const pathOf = async (id: string) =>
       (await x<{ p: string }>(sql`select path::text as p from nodes where id = ${id}`))[0]!.p;
     expect(await pathOf(adminNote), into.text.slice(0, 200)).toBe('notes');
+    // Refused: the folder is not found in its scope since F4 (403 before).
     expect(
-      into.status === 403 || (json(into.text).failed as unknown[] | undefined)?.length,
+      [403, 404].includes(into.status) || (json(into.text).failed as unknown[] | undefined)?.length,
+      `${into.status} ${into.text.slice(0, 200)}`,
     ).toBeTruthy();
 
     // Move a Side note out to the top: refused (may_manage its home).
@@ -275,12 +278,16 @@ describe.skipIf(!URL)('W6a fix round 1: drafts, item writes, app-nav, marks, tra
     expect(await pathOf(sideInFolder), out.text.slice(0, 200)).toBe('notes.sidef');
 
     // Delete (the item route) and bulk delete (ids in the body): refused.
-    expect((await call(`/api/notes/${sideNote}`, owner, 'DELETE')).status).toBe(403);
+    expect((await call(`/api/notes/${sideNote}`, owner, 'DELETE')).status).toBe(404);
     expect(await exists(sideNote)).toBe(1);
     const sideFile = await node('file', `${tag} side file`, 'files');
     await homeIn(sideFile, side);
     const bulk = await call('/api/files/files', owner, 'DELETE', { ids: [sideFile] });
-    expect(bulk.status, bulk.text.slice(0, 200)).toBe(403);
+    // F4: a file its scope does not read is not among what it deletes (it
+    // reads in its scope): nothing deleted, nothing said of the file (403
+    // before, which told it existed).
+    expect(bulk.status, bulk.text.slice(0, 200)).toBe(200);
+    expect(json(bulk.text).deleted).toBe(0);
     expect(await exists(sideFile)).toBe(1);
 
     // Its own workspaces: a folder, a move and a delete go through.
@@ -304,11 +311,13 @@ describe.skipIf(!URL)('W6a fix round 1: drafts, item writes, app-nav, marks, tra
       select s.code->'meta'->>'homeWs' as home from node_snapshots s
        where s.node_id = ${sideApp.id} and s.trigger = 'pre_delete'`);
     expect(snap[0]?.home).toBe(side);
+    // Not its home's Moderator: the one 404, as an app it does not read
+    // (F4 fix round 1; a 403 item-workspace before).
     const purge = await call(`/api/apps/deleted/${sideApp.id}`, owner, 'DELETE');
-    expect(purge.status, purge.text.slice(0, 200)).toBe(403);
-    expect(purge.text).toContain('item-workspace');
+    expect(purge.status, purge.text.slice(0, 200)).toBe(404);
+    expect(json(purge.text)).toEqual({ ok: false, error: 'not found' });
     const restore = await call(`/api/apps/deleted/${sideApp.id}/restore`, owner, 'POST');
-    expect(restore.status, restore.text.slice(0, 200)).toBe(403);
+    expect(restore.status, restore.text.slice(0, 200)).toBe(404);
     expect(await exists(sideApp.id)).toBe(0);
     const kept = await x<{ n: number }>(
       sql`select count(*)::int as n from node_snapshots where node_id = ${sideApp.id}`,
@@ -331,7 +340,8 @@ describe.skipIf(!URL)('W6a fix round 1: drafts, item writes, app-nav, marks, tra
       ['PATCH', `/api/v1/tasks/${task}`, { title: 'x' }],
     ] as const) {
       const r = await call(p, owner, method, body);
-      expect(r.status, `${method} ${p} ${r.text.slice(0, 120)}`).toBe(403);
+      // F4: not found (403 item-workspace before).
+      expect(r.status, `${method} ${p} ${r.text.slice(0, 120)}`).toBe(404);
     }
     const shareId = randomUUID();
     const noteForShare = await node('note', `${tag} shared side note`, 'notes');
@@ -340,10 +350,12 @@ describe.skipIf(!URL)('W6a fix round 1: drafts, item writes, app-nav, marks, tra
                 values (${shareId}, ${owner}, ${noteForShare}, 'note', ${`${tag}tok`})`);
     // Changing the link is refused; closing it is not: an Admin user with
     // the users area may close any link (docs/workspaces.md, A0).
+    // F4: the link of an item the scope does not read is not found (403
+    // before), but for the users area's close.
     const change = await call(`/api/shares/${shareId}`, owner, 'PATCH', { serve: [] });
-    expect(change.status, change.text.slice(0, 120)).toBe(403);
+    expect(change.status, change.text.slice(0, 120)).toBe(404);
     const shut = await call(`/api/shares/${shareId}`, noUsers, 'DELETE');
-    expect(shut.status, shut.text.slice(0, 120)).toBe(403);
+    expect(shut.status, shut.text.slice(0, 120)).toBe(404);
     const revoke = await call(`/api/shares/${shareId}`, owner, 'DELETE');
     expect(revoke.status, revoke.text.slice(0, 120)).toBe(200);
     expect(json(revoke.text).ok).toBe(true);
@@ -369,9 +381,9 @@ describe.skipIf(!URL)('W6a fix round 1: drafts, item writes, app-nav, marks, tra
     await grantWrite(note);
     const noteLink = await linkOn(note, 'note');
     // noUsers is no user of Ro: it may not read the note, so it may not close
-    // the link either (no users area).
+    // the link either (no users area): not found since F4 (403 before).
     const shut = await call(`/api/shares/${noteLink}`, noUsers, 'DELETE');
-    expect(shut.status, shut.text.slice(0, 120)).toBe(403);
+    expect(shut.status, shut.text.slice(0, 120)).toBe(404);
     const change = await call(`/api/shares/${noteLink}`, owner, 'PATCH', { serve: [] });
     expect(change.status, change.text.slice(0, 200)).toBe(200);
 
@@ -543,7 +555,10 @@ describe.skipIf(!URL)('W6a fix round 1: drafts, item writes, app-nav, marks, tra
     expect(gone.status, gone.text.slice(0, 200)).toBe(400);
   }, 60_000);
 
-  it('L-a: a workspace refusal on a files create answers 403 item-workspace, not 400', async () => {
+  it('L-a: a files create in a folder of a workspace it is not in is refused, telling nothing of the folder (F4)', async () => {
+    // Since F4 the request reads in its scope: the folder is not found, the
+    // answer of a parent path no row has (403 item-workspace before, which
+    // told the folder existed). Never the database's own words.
     await call('/api/files/folders', owner, 'GET');
     const folder = await node('branch', `${tag} side files`, 'files.w6af2side');
     await homeIn(folder, side);
@@ -551,8 +566,12 @@ describe.skipIf(!URL)('W6a fix round 1: drafts, item writes, app-nav, marks, tra
       parentPath: 'files.w6af2side',
       slug: 'inner',
     });
-    expect(mk.status, mk.text.slice(0, 200)).toBe(403);
-    expect(json(mk.text).reason).toBe('item-workspace');
+    const none = await call('/api/files/folders', owner, 'POST', {
+      parentPath: 'files.w6af2nosuch',
+      slug: 'inner',
+    });
+    expect(mk.status, mk.text.slice(0, 200)).toBe(none.status);
+    expect(mk.text.replace('w6af2side', 'X')).toBe(none.text.replace('w6af2nosuch', 'X'));
     expect(mk.text).not.toContain('not allowed');
     const file = await call('/api/files/files', owner, 'POST', {
       parentPath: 'files.w6af2side',
@@ -560,8 +579,15 @@ describe.skipIf(!URL)('W6a fix round 1: drafts, item writes, app-nav, marks, tra
       content: 'hello',
       confirm: true,
     });
-    expect(file.status, file.text.slice(0, 200)).toBe(403);
-    expect(json(file.text).reason).toBe('item-workspace');
+    const fileNone = await call('/api/files/files', owner, 'POST', {
+      parentPath: 'files.w6af2nosuch',
+      filename: 'note.txt',
+      content: 'hello',
+      confirm: true,
+    });
+    expect(file.status, file.text.slice(0, 200)).toBe(fileNone.status);
+    expect(file.status).toBeGreaterThanOrEqual(400);
+    expect(file.text.replace('w6af2side', 'X')).toBe(fileNone.text.replace('w6af2nosuch', 'X'));
     const made = await x<{ n: number }>(
       sql`select count(*)::int as n from nodes where path <@ 'files.w6af2side' and id <> ${folder}`,
     );
@@ -585,15 +611,16 @@ describe.skipIf(!URL)('W6a fix round 1: drafts, item writes, app-nav, marks, tra
     const ok = await call(`/api/apps/deleted/${stored.id}`, admin2, 'DELETE');
     expect(ok.status, ok.text.slice(0, 200)).toBe(200);
 
-    // No home stored: refused for that Admin user, both ways.
+    // No home stored: refused for that Admin user, both ways, with the one
+    // 404 (F4 fix round 1; a 403 item-workspace before).
     const old = await apps.createApp(owner, { title: `${tag} l-b old` });
     await apps.deleteApp(owner, old.id);
     await stripHome(old.id);
     const purge = await call(`/api/apps/deleted/${old.id}`, admin2, 'DELETE');
-    expect(purge.status, purge.text.slice(0, 200)).toBe(403);
-    expect(json(purge.text).reason).toBe('item-workspace');
+    expect(purge.status, purge.text.slice(0, 200)).toBe(404);
+    expect(json(purge.text)).toEqual({ ok: false, error: 'not found' });
     const restore = await call(`/api/apps/deleted/${old.id}/restore`, admin2, 'POST');
-    expect(restore.status, restore.text.slice(0, 200)).toBe(403);
+    expect(restore.status, restore.text.slice(0, 200)).toBe(404);
     expect(await exists(old.id)).toBe(0);
     // The owner restores it.
     const back = await call(`/api/apps/deleted/${old.id}/restore`, owner, 'POST');

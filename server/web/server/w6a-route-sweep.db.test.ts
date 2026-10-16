@@ -848,9 +848,11 @@ describe.skipIf(!URL)('W6a route sweep: scoped reads for every login', () => {
     expect((await call(`/api/notes/${adminNote}`, owner)).status).toBe(200);
   }, 300_000);
 
-  it('an Admin user writes no item homed in a workspace it is not in (S1: add yourself first)', async () => {
+  it('an Admin user writes no item homed in a workspace it is not in (S1; F4: not found)', async () => {
     // Every owner write route that names an item: the private and the Side
-    // item are refused before the handler runs (nothing is written).
+    // item are refused before the handler runs (nothing is written), with
+    // the 404 of an id no row has since F4 (D2: no existence leak; the 403
+    // "Add yourself to it first" before).
     const failures: string[] = [];
     let checked = 0;
     for (const e of manifest) {
@@ -869,7 +871,7 @@ describe.skipIf(!URL)('W6a route sweep: scoped reads for every login', () => {
           const path = parts.join('/');
           const r = await call(path, owner, method);
           checked += 1;
-          if (r.status !== 403 || !r.text.includes('"item-workspace"')) {
+          if (r.status !== 404 || r.text !== '{"ok":false,"error":"not found"}') {
             failures.push(`${method} ${e.pattern} ${r.status} ${r.text.slice(0, 120)}`);
           }
         }

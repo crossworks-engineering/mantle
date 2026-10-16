@@ -9,7 +9,7 @@ deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 - **Deploy note:** roll this release only on a box whose actor check and
   edit check are both `on` (`scripts/arch-scoreboard-box.sh <alias>`). Its
   migrate raises a box below on with no recorded lowering to on.
-- **The checks' floor (migration 0298):** lowering a check needs a reason
+- **The checks' floor (migration 0301):** lowering a check needs a reason
   (`select mantle_set_edit_check('warn', 50, 'why');`); without one the
   setter refuses and changes nothing. A lowering is logged (the Postgres
   log, `mantle_check_lowered()`, a `[db] SECURITY:` line in every process,
