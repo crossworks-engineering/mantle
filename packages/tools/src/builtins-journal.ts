@@ -263,7 +263,6 @@ const journal_update: BuiltinToolDef = {
     effect: 'write',
     spends: 'none',
     scope: 'any',
-    items: [edit('id')],
     keyArea: 'journal',
     clientSourced: CS.onNodes('id'),
   },

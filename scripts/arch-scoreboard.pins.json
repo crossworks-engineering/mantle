@@ -26,7 +26,7 @@
   "brainOnWorkspacesFiles": 0,
   "adminReadsFiles": 0,
   "readPathWrites": 10,
-  "itemPrecheckTools": 101,
+  "itemPrecheckTools": 95,
   "itemPrecheckRoutes": 27,
   "bareFetchSites": 5,
   "routeBodyReadFiles": 0,
@@ -81,7 +81,7 @@
   "std_ttlAgeCheck_allowed": 9,
   "std_cacheControlLiteral": 0,
   "std_cacheControlLiteral_allowed": 0,
-  "consoleCalls": 474,
+  "consoleCalls": 475,
   "archivedAtIsNull": 2,
   "cacheControlFiles": 44,
   "_notes": {
@@ -97,8 +97,9 @@
     "systemDbUses": "new in A6 fix round 1 (L1), pinned apart from the asSystem exits: direct uses of systemDb (the admin pool whatever the scope), every use but its declaration, imports and exports (as-system-exits.mjs systemDbUses), 70 in 20 files, the same per file as main (v0.300.55). eslint-rules/system-db-allowlist.mjs names the files that may import it.",
     "systemDbFiles": "new in A6 fix round 1 (L1): the files of systemDbUses.",
     "handKindListsAllowed": "Raised 1 to 11 in the A10 low round (F2): the count reads the syntax tree now (eslint-rules/name-lists.mjs), so a union, an object's keys, a comparison chain, a switch's shared cases and a SQL list count, where only array literals after a few tokens did. No list is new: the named files held them before. kinds.ts 1 (ITEM_KINDS, the registry itself); the access matrix 7 (guide-oracle.ts 3 and oracle.ts 1, written from the guide on purpose to check the registry; test-support/a8-grid.ts 3, the content table and columns the grid writes per kind); stage-label.ts 1 (CREATE_NOUN, keyed by tool slug nouns); contact-shares-menu.tsx 1 (KIND_ICON, lucide icons); nodes.ts 1 as before. Two new hits outside the list were fixed instead (markdown-refs.ts nodeType, refold-embeds.ts counters).",
-    "consoleCalls": "raised 473 to 474 in the tooling-tag fix round 2: settleDatabase (packages/db/src/test-support.ts) warns once, with console.warn, naming the database, pid and query a scratch drop waits on. It is a test-only helper, and packages/db cannot depend on @mantle/tracing (tracing sits above db), so the logger is not an option there.",
+    "consoleCalls": "raised 474 to 475 in the pre-check removal: the checks' floor (packages/db/src/check-floor.ts, migration 0298) says once per change, with console.error, that a check is below on (the item pre-checks are gone, so a tool write the database would refuse is made). packages/db cannot depend on @mantle/tracing, as for settleDatabase. Was raised 473 to 474 in the tooling-tag fix round 2: settleDatabase (packages/db/src/test-support.ts) warns once, with console.warn, naming the database, pid and query a scratch drop waits on. It is a test-only helper, and packages/db cannot depend on @mantle/tracing (tracing sits above db), so the logger is not an option there.",
     "rateLimitAllowed": "Was routeRateLimitAllowed (3 route files) until the A10 low round (A10 #8 L2): the count reads every file, not only route files, so the four lib files that take a limit are named too (route-limits.ts, the gate; access-keys.ts and access-key-gate.ts, the key budgets; workspace-turn.ts, the member turn budget). rateLimitCalls (was routeRateLimitCalls) stays 0.",
-    "callerReads": "raised 508 to 510 by the A6b re-pin, with no A6b change: main (v0.300.70) already measures 510 (two route reads of the pipeline's caller added on main since its last re-pin; callerReads may grow, MAY_GROW in scripts/arch-scoreboard.ts, so main's check never asked for it). Every route file reads the same count on main and on feat/a6b. Lowered 510 to 506 (files 365 to 363) in A7: the hand stubs that read the caller (access/nodes GET and PATCH, the app-nav PUT, the member frame) went with the 410 stubs (goneStubs 133 to 0, routeFiles 549 to 417)."
+    "callerReads": "raised 508 to 510 by the A6b re-pin, with no A6b change: main (v0.300.70) already measures 510 (two route reads of the pipeline's caller added on main since its last re-pin; callerReads may grow, MAY_GROW in scripts/arch-scoreboard.ts, so main's check never asked for it). Every route file reads the same count on main and on feat/a6b. Lowered 510 to 506 (files 365 to 363) in A7: the hand stubs that read the caller (access/nodes GET and PATCH, the app-nav PUT, the member frame) went with the 410 stubs (goneStubs 133 to 0, routeFiles 549 to 417).",
+    "itemPrecheckTools": "Lowered 101 to 95 in the pre-check removal (docs/actors.md, \"Pre-check deletion\"): the node edits (note, task, event, formula, contact and journal updates) are checked by the database's write check (0278) with both checks on; server/web/server/precheck-removal.db.test.ts proves each refusal."
   }
 }

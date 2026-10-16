@@ -718,6 +718,26 @@ describe.skipIf(!DB_URL)(
           { slug: 'page_discard_draft', need: 'edit', who: BOTH, make: draftPage, input: byId },
           { slug: 'page_delete', need: 'manage', who: BOTH, make: page, input: byId },
           {
+            slug: 'page_replace_from_file',
+            need: 'edit',
+            who: BOTH,
+            make: async (w, p) => {
+              // The source: a markdown file the login reads and may change.
+              const file = await sys(() =>
+                f.upsertFile({
+                  ownerId: owner,
+                  parentPath: 'files',
+                  filename: `${tag}-${n()}.md`,
+                  bytes: Buffer.from('# From a file\n\nIts paragraph.\n'),
+                }),
+              );
+              await place(w, 'allowed')(file.id);
+              const it = await page(w, p);
+              return { id: it.id, extra: { file: file.id } };
+            },
+            input: (it) => ({ page_id: it.id, file_id: it.extra.file }),
+          },
+          {
             slug: 'page_move',
             need: 'manage',
             who: BOTH,

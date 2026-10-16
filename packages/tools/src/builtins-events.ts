@@ -34,7 +34,7 @@ import type { BuiltinToolDef, ToolHandlerResult, ToolPrecondition } from './type
 import { str, strArrOpt, strOpt, numOpt as num } from './coerce';
 import { notFound } from './errors';
 import { errorMessage } from '@mantle/std';
-import { edit, manage } from './item-write-gate';
+import { manage } from './item-write-gate';
 import { CS } from './client-sourced-rule';
 
 // Shared referential precondition (checked centrally in dispatch — see
@@ -238,7 +238,6 @@ const event_update: BuiltinToolDef = {
     effect: 'write',
     spends: 'none',
     scope: 'any',
-    items: [edit('id')],
     keyArea: 'calendar',
     clientSourced: CS.onNodes('id'),
   },

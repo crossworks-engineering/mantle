@@ -34,7 +34,7 @@ import type { BuiltinToolDef, ToolPrecondition } from './types';
 import { notFound } from './errors';
 import { str, strOptTrim as strOpt, numOr as num } from './coerce';
 import { errorMessage } from '@mantle/std';
-import { edit, manage } from './item-write-gate';
+import { manage } from './item-write-gate';
 import { CS } from './client-sourced-rule';
 
 const CONTACT_ID_PRE: readonly ToolPrecondition[] = [
@@ -268,7 +268,6 @@ const contact_update: BuiltinToolDef = {
     effect: 'write',
     spends: 'none',
     scope: 'any',
-    items: [edit('id')],
     // The allowlist that gates mail out.
     peerRisky: true,
     keyArea: 'contacts',

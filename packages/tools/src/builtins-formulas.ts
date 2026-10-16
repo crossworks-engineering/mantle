@@ -33,7 +33,7 @@ import type { BuiltinToolDef, ToolPrecondition } from './types';
 import { str, strOptTrim as strOpt, numOr as num } from './coerce';
 import { notFound } from './errors';
 import { errorMessage } from '@mantle/std';
-import { edit, manage } from './item-write-gate';
+import { manage } from './item-write-gate';
 import { CS } from './client-sourced-rule';
 
 const FORMULA_ID_PRE: readonly ToolPrecondition[] = [
@@ -294,7 +294,6 @@ const formula_update: BuiltinToolDef = {
     effect: 'write',
     spends: 'none',
     scope: 'any',
-    items: [edit('id')],
     clientSourced: CS.onNodes('id'),
   },
   name: 'Update a formula',
