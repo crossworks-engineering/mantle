@@ -783,14 +783,14 @@ describe.skipIf(!DB_URL)(
           {
             slug: 'recall_map_publish',
             need: 'edit',
-            who: BOTH,
+            who: ADMIN,
             make: recall,
             input: (it) => ({ map: it.extra.map, published: true, version: it.extra.version }),
           },
           {
             slug: 'recall_cards_reorder',
             need: 'edit',
-            who: BOTH,
+            who: ADMIN,
             make: recall,
             input: (it) => ({
               map: it.extra.map,
@@ -801,7 +801,7 @@ describe.skipIf(!DB_URL)(
           {
             slug: 'recall_map_set_slug',
             need: 'edit',
-            who: BOTH,
+            who: ADMIN,
             make: recall,
             input: (it) => ({
               map: it.extra.map,
@@ -812,7 +812,7 @@ describe.skipIf(!DB_URL)(
           {
             slug: 'recall_card_set_slug',
             need: 'edit',
-            who: BOTH,
+            who: ADMIN,
             make: recall,
             input: (it) => ({
               map: it.extra.map,
@@ -822,16 +822,37 @@ describe.skipIf(!DB_URL)(
             }),
           },
           {
+            slug: 'recall_prompt_confirm',
+            need: 'edit',
+            who: ADMIN,
+            make: async (w, p) => {
+              const it = await recall(w, p);
+              await raw.begin(async (tx) => {
+                await tx`select set_config('mantle.actor', 'system:test', true)`;
+                await tx`update recall_nodes c set prompt_pending = true
+                           from recall_maps m
+                          where m.id = c.map_id and m.node_id = ${it.id} and c.slug = ${it.extra.two}`;
+              });
+              return it;
+            },
+            input: (it) => ({
+              map: it.extra.map,
+              card: it.extra.two,
+              confirm: false,
+              version: it.extra.version,
+            }),
+          },
+          {
             slug: 'recall_revision_restore',
             need: 'edit',
-            who: BOTH,
+            who: ADMIN,
             make: recall,
             input: (it) => ({ revision_id: it.extra.rev }),
           },
           {
             slug: 'recall_map_delete',
             need: 'manage',
-            who: BOTH,
+            who: ADMIN,
             make: recall,
             input: (it) => ({ map: it.extra.map, confirm: true }),
           },
