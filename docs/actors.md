@@ -4797,8 +4797,9 @@ each):
 ## A6b handover
 
 Branch `feat/a6b` (worktree `.claude/worktrees/a6b`), rebased on main
-v0.300.68 (0292 is main's; A10 #15's cache-control and liveWorkspaceSql
-taken, the guard sweeps re-recorded on it). The honest exit count (`asSystemExits`,
+v0.300.70 (0292 is main's; A10 #15's cache-control and liveWorkspaceSql
+taken, the guard sweeps re-recorded on v0.300.68; v0.300.69 and .70 touched
+only the roll and the boot smoke, so nothing was re-recorded). The honest exit count (`asSystemExits`,
 eslint-rules/as-system-exits.mjs, the TypeScript parser; no wrapper hides
 an exit) is **47**, from 191 on main. The pins are lowered
 (scripts/arch-scoreboard.pins.json: exits 47, files 15, reasons 14, with
@@ -4838,8 +4839,14 @@ each.
   (packages/db viewer.ts) runs as asSystem did and refuses a workspace
   scope (no exit): the Telegram tools, chatLoginRefusal, pairedChatOf,
   unpairRefusedChat, loginModeratesBot, a bot's chats screen, the debug
-  read, resolveApprovalChat, the login notices, the snapshot copies, a
-  login's MCP connector listing.
+  read, the login notices, the snapshot copies, a login's MCP connector
+  listing. Since the audit fix round it refuses ANY scope but the system
+  pool's own (a workspace's, a link's, a personal space's, a request's),
+  and each file that calls it is pinned with its reasons
+  (eslint-rules/system-work-allowlist.mjs: 7 sites in 7 files;
+  arch-lints.test.ts pins them exactly), so a new caller needs review.
+  resolveApprovalChat is deleted (only its test called it; the card's route
+  is mantle_pending_card_route's).
 - the narrow reads, by definers: connector state, rows, beyond Admin, app
   holders, a login's connector rows, contact sharing dates, file names
   taken, a Table's export link, access log names, runs' workspaces, keyword
@@ -4904,6 +4911,49 @@ cells that differ from main are trace lines, never a status or a body:
 whoami's actor (`system:http:*`, no longer `system:rule-in-query`) and the
 app create and patch handlers' one reader (`getOwnerOr401WithLogin`, the
 gate's answer with the login's kind, where they read `getOwnerOr401`).
+
+**Audit fix round (on v0.300.70):**
+
+- M1: the sweep's named changes held to the scope's own login accept a cell
+  only where it asks for ANOTHER login than the scope's (`asksAnotherLogin`;
+  the card's: a call the scope's own login did not ask, by the definer's own
+  rule), so a broken own-login read fails the sweep. `nowTest(now, k, was)`
+  now also gets main's answer.
+- M2: the three marks (`mantle_conversation_taint_keep`,
+  `mantle_mark_created_client_sourced`, `mantle_mark_export_client_sourced`)
+  in a scope refuse an owner other than `mantle_brain_id()`, and the
+  created-nodes window is at most a day there (a tool call's own duration; a
+  lower cap would mark less, looser). They stay granted to the workspace
+  role, on purpose, written down in 0293 item 16: each is a SELECT of the
+  definer mid-turn or mid-sync, which runs per query on the workspace role;
+  the write role is entered only for a login's own mutating write
+  (client.ts loginWriteRoute), never for a turn with no login nor a read
+  request, so on the write role only those marks would fail and a later
+  turn would hold back less.
+- L1: `mantle_connector_rows(owner, slug, ws, app)` (a fourth argument) in a
+  scope answers the scope's own workspaces, and the holders of `app` when the
+  scope reads it (appConnectorRefused passes it); `mantle_contact_sharing`
+  only contacts the scope reads (the nodes row rule, 0242);
+  `mantle_runs_workspaces` only the brain's runs. Not tightened, and why
+  (0293 items 9, 10): `mantle_file_name_taken` exists to see names the caller
+  cannot read; `mantle_table_app_link` held to readable Tables would turn
+  the guard's refusal into a pass. Named stricter cells (narrow-reads):
+  `connectorResources conn P,Q,Admin` in a scope (main's rows less those
+  outside the scope), `contactSharingByContact` in a scope (main's entries
+  less contacts the scope does not read); each checked exactly against
+  main's answer and SCOPE_FACTS (what the scope's definers see, probed per
+  context before the section).
+- L3: the four hand uuid array builders (client-sourced.ts,
+  external-access.ts, runs boss.ts, client-sourced-rules.ts's uuid arrays)
+  use the checked `wsArraySql`. Left for later: ONE helper for calling a
+  definer in place of the ~30 hand `(await db.execute(...)) as unknown as
+T[]` casts. Mechanical, but about 25 test files mock `@mantle/db` (several
+  without importOriginal), so each needs the helper added to its mock; a fold
+  of its own.
+- L4: resolveApprovalChat deleted; the stale reason comments in viewer.ts
+  (AS_SYSTEM_OTHER_REASONS: systemWork's now, space-taken-authors has no
+  caller); a `_notes` entry for the callerReads pin 508 -> 510 (main itself
+  measures 510; the count may grow; no A6b change).
 
 **Left, and why (not moved this round):**
 
