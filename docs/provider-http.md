@@ -348,7 +348,7 @@ retries and the failover. That is a known gap, left for its own step.
     JSON.`, a `TypeError` the runtime's fixed sentence. A `TimeoutError`
     is a timeout by its name (before, "timed out after 180 s" read as
     HTTP 180). `providerFailureShape` stays broad for one job only: the
-    refused-key log line.
+    refused-key reading (the log line and `errorDetail`).
   - **A10 lows: sentences the model can act on.** A request the provider
     refused says why, by its status and a pattern over the body (never the
     body): too long (a 413; a 400 or 422 that says the prompt or context
@@ -356,37 +356,61 @@ retries and the failover. That is a known gap, left for its own step.
     once (a shorter input, fewer or smaller files) and try again.`;
     refused (a 403 or 400 moderation answer) `The provider refused this
     input under its content policy. Rephrase it or leave out the flagged
-    part.`; any other 400 or 422 `The provider rejected the request as
-    invalid. Check the arguments (names, types, sizes) and try again.`; a
-    2xx with no usable result (AssemblyAI's transcript `error`, an answer
+    part.`; a 400 or 422 whose body points at an argument the caller
+    sent (an invalid or unsupported value, a parameter, "is required",
+    "must be one of", `invalid_type`) and not at the request's own shape
+    (`tools.N`, `messages.N`, `max_tokens`) `The provider rejected the
+    request as invalid. Check the arguments (names, types, sizes) and try
+    again.`; any other 400 or 422 `The model provider refused the
+    request.` (fix round 1, L1: a config-side 400 is ours to fix, and a
+    model told to retry it only spends calls). A person never hears the
+    arguments sentence: a member's thread and stream for a failed team
+    turn say `personProviderErrorMessage`, the same sentences with the
+    arguments one replaced by `The model provider refused the request.`
+    (the `member` reader of the record; its baseline on main is the
+    `provider` reader, which a team turn said then); a 2xx with no usable result (AssemblyAI's transcript `error`, an answer
     the SDK could not validate, a Hugging Face 2xx that is no image) `The
     provider answered without a usable result. (assemblyai)`, no HTTP 200.
     Every changed answer is named, cell by cell, in
     `packages/std/src/provider-answers.changes.json` (recorded on main in
     `provider-answers.main.json`).
-  - **A10 lows: one gateway.** A catch whose text reaches a member or the
-    model says `publicErrorText(err, where, step?)` (@mantle/std): a
-    provider's HTTP failure is its sentence, a domain error its row,
-    anything else `errorMessage` as before. Its pair `errorDetail(err)` is
-    the detail for the log and the owner's trace: the message, except a
-    refused key's (provider and status only). With a `step` (ctx.step) the
+  - **A10 lows: the catch helpers.** `publicErrorText(err, where, step?)`
+    (@mantle/std) is the text of a caught error for a member or the model
+    in one call: a provider's HTTP failure is its sentence, a domain error
+    its row, anything else `errorMessage` as before. It is the helper a
+    pinned catch converts to; no production catch calls it yet. Dispatch's
+    catch spells out the same two steps (`toolThrowText`, then the
+    exported `errorMessage`, which the read-only sweep observes), and the
+    provider tools call `publicProviderErrorMessage` themselves. Its pair
+    `errorDetail(err)` is the detail for the log and the owner's trace:
+    the message with key looking literals masked (`maskKeyLiterals`: the
+    providers' key prefixes, a `Bearer` token, a value named `api_key`,
+    `key`, `token` or `secret`), except a refused key's, which names
+    provider and status only. The refusal is read on every error (fix
+    round 1, M1), so a wrapper that copied an adapter's message
+    (`<p> embeddings failed: 401 Unauthorized - <body>`, `<p> chat 401:
+    Incorrect API key provided: ...`) is one too, and so is a 401 of our
+    own (a line of detail lost, never a key). With a `step` (ctx.step) the
     detail lands on the owner's trace as `error_detail`: dispatch's catch,
-    the speech, vision, summary, image, web search, `recall_match` and
-    `find_window` tools; `video_ingest`'s transcript step keeps its
-    `error` meta, now `errorDetail`. `errorMessage` itself collects a
-    provider's HTTP failure while a surface watches, so the one masking
-    (`publicToolError`) answers its sentence for a tool that caught one and
-    replied `errorMessage(err)`; on every surface that masks (every turn,
-    the owner's too, an MCP connection, an app broker, `/api/v1`). The
-    named gap: 111 tool replies in @mantle/tools and @mantle/runtime still
-    say `error: errorMessage(err)` (their work calls no provider directly;
-    the masking covers them where it runs), and the owner web's own direct
-    tool calls do not mask. Pinned in
-    `packages/tools/src/provider-error-gap.test.ts`, down only. Also left:
-    OpenRouter's in-stream error with no numeric code
-    (`openrouter-chat stream error : <text>`) is still a plain `Error`;
-    changing it moves the chat failover's reading, so it waits for the
-    chat breaker step.
+    dispatch's masking (fix round 1, L2: `maskToolDatabaseErrors(where,
+    run, ctx.step)`, so a masked owner turn keeps it too), the speech,
+    vision, summary, image, web search, `recall_match` and `find_window`
+    tools; `video_ingest`'s transcript step keeps its `error` meta, now
+    `errorDetail`. The tool loop's outer masking has no step (it wraps the
+    whole traced call; dispatch inside it masks first, with the step).
+    `errorMessage` itself collects a provider's HTTP failure while a
+    surface watches, so the one masking (`publicToolError`) answers its
+    sentence for a tool that caught one and replied `errorMessage(err)`;
+    on every surface that masks (every turn, the owner's too, an MCP
+    connection, an app broker, `/api/v1`). The named gap: 111 tool replies
+    in @mantle/tools and @mantle/runtime still say `error:
+    errorMessage(err)` (their work calls no provider directly; the masking
+    covers them where it runs), and the owner web's own direct tool calls
+    do not mask. Pinned in `packages/tools/src/provider-error-gap.test.ts`,
+    down only. Also left: OpenRouter's in-stream error with no numeric
+    code (`openrouter-chat stream error : <text>`) is still a plain
+    `Error`; changing it moves the chat failover's reading, so it waits
+    for the chat breaker step.
   - **A10 lows: three adapters stopped carrying provider words on a plain
     `Error`.** AssemblyAI's transcript error (create and poll, which
     `video_ingest` hears), the OpenRouter decision endpoint's error answer

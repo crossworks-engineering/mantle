@@ -30,22 +30,31 @@ deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
   `A service the brain called answered with an error. (HTTP n)`; a body
   that did not parse, `An answer could not be read: it is not valid JSON.`
 - A request the provider refused says why, never the body: too long, refused
-  under a content policy, or invalid arguments; a 2xx with no usable result
-  says so without "HTTP 200". Every changed answer:
+  under a content policy, or invalid arguments (only when the body points at
+  an argument and not at the request's own shape; any other 400 or 422 says
+  `The model provider refused the request.`, and so does a member's thread
+  for a failed team turn); a 2xx with no usable result says so without
+  "HTTP 200". Every changed answer:
   `packages/std/src/provider-answers.changes.json`;
   [docs/provider-http.md](docs/provider-http.md#behaviour-changes).
 - AssemblyAI's transcript error (`video_ingest`), the decision endpoint's
   error and a Hugging Face 2xx that is no image no longer pass the
   provider's words to a member or the model.
-- One gateway for catches: `publicErrorText` / `errorDetail` in
-  `@mantle/std`; a tool that catches a provider failure and replies its
-  `errorMessage` now hands on the sentence on every masked surface. The
-  owner's trace keeps the detail (`error_detail`).
-- A key's credential change (`POST /api/keys`, `PATCH /api/keys/:id`,
-  `POST /api/keys/:id/rotate`) asks the open provider alerts to probe now,
-  as the Admin **Try again** does, so a fixed key clears its alert and
-  resumes the extract queue without waiting. No model call; bounded by the
-  agent's circuit.
+- Catch helpers `publicErrorText` / `errorDetail` in `@mantle/std`; a tool
+  that catches a provider failure and replies its `errorMessage` now hands
+  on the sentence on every masked surface. The owner's trace keeps the
+  detail (`error_detail`, a masked owner turn's too), never a refused key's
+  body: a 401 or 403 names provider and status only, a copied adapter
+  message included, and any other detail has its key looking literals
+  masked.
+- A model provider key's credential change (`POST /api/keys`, `PATCH
+  /api/keys/:id`, `POST /api/keys/:id/rotate`) asks the open provider
+  alerts to probe now, so a fixed key clears its alert and resumes the
+  extract queue without waiting. Narrower than the Admin **Try again**:
+  nothing is sent when no alert is open (so a key save never re-drives a
+  dead-letter backlog), and a key that is no model provider's (a Telegram
+  token, a connector's secret) sends nothing. No model call here; bounded
+  by the agent's circuit.
 
 ## Unreleased: boot smoke; every package is an ES module
 
