@@ -5723,6 +5723,16 @@ bound); an Update button roll to a release that ships it, on a box below on
 and not keep, is now refused (it was made, and the migrate raised the
 checks).
 
+**Gates at cf5b6318e** (workstation, own pg container on its own port):
+typecheck 0, lint 0, format 0, docs 0, arch 0, boot:smoke 0, web build 0,
+the deploy harness 0 (bash and with `TEST_SH=dash`), full vitest with DB 0
+(the first run was 1 on one unhandled `CONNECTION_CLOSED` while
+`w7e-member-scope.db.test.ts` ran, a file this branch does not touch,
+every cell passed; the rerun at the same head was 0), actor-off 0,
+actor-on 0, edit-on 0, test:matrix 0, test:runtime-role 0. CI on
+cf5b6318e: success (run 38964898983). The commit after it is this
+paragraph only (docs and format rerun on it).
+
 **Next round (after F4 merges), in order:** as fix round A's list above,
 less the updater (done here): the rebase (0298 becomes 0301: rename the
 file, keep its `_check_mode_floor.sql` suffix), the 27 HTTP entries, then
