@@ -293,6 +293,9 @@ describe.skipIf(!DB_URL)(
       /** Places whose `now` differs from what the need says (the database is
        *  stricter, or the tool refuses every call). */
       now?: Partial<Record<Place, 'refused' | 'ok'>>;
+      /** A refused cell that changes the item before its refusal, as it did
+       *  with the pre-check (`was` changed too): by login, its places. */
+      partial?: Partial<Record<Who, Place[]>>;
       /** A store on disk a refused cell must leave as it was. */
       disk?: () => string;
     };
@@ -331,14 +334,16 @@ describe.skipIf(!DB_URL)(
       recorded.push(
         `${family} ${tool.slug} ${way} ${who}/${effective}\n      was ${line(was)}\n      now ${line(now)}`,
       );
-      return { was, now, wantNow };
+      const partial = tool.partial?.[who]?.includes(effective) === true;
+      return { was, now, wantNow, partial };
     };
 
     const check = (c: Awaited<ReturnType<typeof runCell>>, name: string) => {
       expect(c.now.text, name).not.toMatch(RAW);
       if (c.wantNow === 'refused') {
         expect(c.now.ok, `${name}: ${c.now.text}`).toBe(false);
-        expect(c.now.changed, `${name} changed the item`).toBe(false);
+        // A partial write is one the pre-check let through too.
+        expect(c.now.changed, `${name} changed the item`).toBe(c.partial && c.was.changed);
       } else {
         expect(c.now.ok, `${name}: ${c.now.text}`).toBe(true);
       }
@@ -397,8 +402,11 @@ describe.skipIf(!DB_URL)(
     /** A page with an open public link. */
     const linkedPage = async (who: Who, p: Place) => {
       const it = await page(who, p);
-      await raw`insert into shares (token, owner_id, node_id, node_type)
-              values (${`${tag}-${randomUUID()}`}, ${owner}, ${it.id}, 'page')`;
+      await raw.begin(async (tx) => {
+        await tx`select set_config('mantle.actor', 'system:test', true)`;
+        await tx`insert into shares (token, owner_id, node_id, node_type)
+                 values (${`${tag}-${randomUUID()}`}, ${owner}, ${it.id}, 'page')`;
+      });
       return it;
     };
     /** A notes folder (a branch under notes), placed. */
@@ -419,8 +427,23 @@ describe.skipIf(!DB_URL)(
       const [r0] = await raw<{ slug: string }[]>`
       select slug from recall_maps where (id = ${ref} or node_id = ${ref}) and owner_id = ${owner}`;
       const slug = r0!.slug;
-      await sysTool('recall_card_put', { map: slug, card: 'one', title: 'One', body: 'First.' });
-      await sysTool('recall_card_put', { map: slug, card: 'two', title: 'Two', body: 'Second.' });
+      const version = async () =>
+        (
+          await raw<{ v: number }[]>`select version as v from recall_maps
+                                     where slug = ${slug} and owner_id = ${owner}`
+        )[0]!.v;
+      for (const [card, t0] of [
+        ['one', 'One'],
+        ['two', 'Two'],
+      ] as const) {
+        await sysTool('recall_card_put', {
+          map: slug,
+          card,
+          title: t0,
+          body: `${t0}.`,
+          version: await version(),
+        });
+      }
       const [r] = await raw<{ node: string; v: number; rev: string | null }[]>`
       select m.node_id::text as node, m.version as v,
              (select v.id::text from recall_revisions v where v.map_id = m.id
@@ -813,7 +836,7 @@ describe.skipIf(!DB_URL)(
             [
               'table_rows_upsert',
               table(),
-              (it: Item) => tid(it, { key: 'Name', rows: [{ Name: 'e', Other: '5' }] }),
+              (it: Item) => tid(it, { key: ['Name'], rows: [{ Name: 'e', Other: '5' }] }),
             ],
             [
               'table_row_update',
@@ -960,7 +983,6 @@ describe.skipIf(!DB_URL)(
               }),
             ],
             ['app_tools_set', app(), (it: Item) => ({ id: it.id, tool_slugs: ['note_list'] })],
-            ['app_publish', app(), byId],
           ] as const
         ).map(([slug, make, input]): Tool => ({
           slug,
@@ -970,6 +992,10 @@ describe.skipIf(!DB_URL)(
           input,
           // An app's code is a Moderator's of its home (owner decision D4).
           now: { editOnly: 'refused' },
+          // Before the refused code write, the author ceiling lowers a
+          // member's app to team rules (lowerToTeamRules asks edit; the
+          // database allows that lowering): with the pre-check too.
+          partial: { member: ['editOnly'] },
           ...(slug === 'app_file_write' ? { ways: ['mcp', 'turn'] as Way[] } : {}),
         })),
       },
@@ -996,6 +1022,17 @@ describe.skipIf(!DB_URL)(
       who: BOTH,
       make: draftPage,
       input: (it) => ({ page_id: it.id, markdown: `${tag} appended` }),
+    };
+
+    /** Kept (docs/actors.md): a publish by a scope that may not read the
+     *  app's draft finds nothing staged and answers published, writing
+     *  nothing. */
+    const KEPT_PUBLISH: Tool = {
+      slug: 'app_publish',
+      need: 'edit',
+      who: BOTH,
+      make: app(),
+      input: byId,
     };
 
     beforeAll(async () => {
@@ -1126,6 +1163,16 @@ describe.skipIf(!DB_URL)(
         expect(c.now.ok).toBe(false);
         expect(c.now.changed).toBe(false);
         expect(c.now.text).toMatch(/changed since you read it/);
+      }
+    }, 120_000);
+
+    it('kept: a publish by a scope that may not edit the app answers published and writes nothing', async () => {
+      for (const who of BOTH) {
+        const c = await runCell('kept', KEPT_PUBLISH, who, 'noEdit', 'mcp');
+        expect(c.was.text).toMatch(/You cannot change this item in your workspaces \(/);
+        expect(c.now.ok).toBe(true);
+        expect(c.now.changed).toBe(false);
+        expect(c.now.text).toMatch(/"published": true/);
       }
     }, 120_000);
   },
