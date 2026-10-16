@@ -27,7 +27,7 @@
 -- branch, app, formula; tasks, events and Recall maps joined the workspace
 -- class in A1, never the tier model). No answer changes: the bodies are
 -- the 0294 ones but for that one call, and a CHECK is dropped and made
--- again with the same rule, then validated where the old one was.
+-- again with the same rule, NOT VALID (below: why no VALIDATE).
 -- workspace-kind-gone-0295.db.test.ts pins each against the old list, and
 -- the contact share check against the registry's contactShare kinds.
 --
@@ -276,16 +276,28 @@ $function$;
 --> statement-breakpoint
 -- The nodes level CHECKs, the same rule with the list written in. One
 -- ACCESS EXCLUSIVE lock on nodes with a short wait and a retry (as 0273),
--- then each CHECK dropped and added again NOT VALID, and validated only
--- where the old one was (0160 validated the audience one and 0208 the
--- embedded one; 0204 left the inherited one NOT VALID): a box keeps what
--- its catalog said.
+-- then each CHECK dropped and added again NOT VALID, and left NOT VALID:
+-- no VALIDATE, so no scan of nodes runs under the lock.
+--
+-- Why not validate after the lock: migrate.ts runs each migration in one
+-- transaction, and a lock is held to its commit, so a VALIDATE in this
+-- migration (even in a later statement) would scan nodes under ACCESS
+-- EXCLUSIVE, stopping every read and write of the brain for two full
+-- scans. A VALIDATE on its own (SHARE UPDATE EXCLUSIVE) would need its own
+-- transaction: a further migration or a step after the migrations, for a
+-- flag that guards nothing here. A NOT VALID CHECK guards every row written
+-- after it exactly as a valid one does; what it does not do is prove the
+-- rows already there. Those are proven: the old CHECK, the same rule, was
+-- valid where it was (0160 validated the audience one and 0208 the
+-- embedded one; 0204 left the inherited one NOT VALID) and is dropped
+-- under the same lock, so no row changed between its proof and the new
+-- CHECK. The level columns are frozen besides (0262: grants decide
+-- access). A box that wants the flag set may run VALIDATE CONSTRAINT by
+-- hand at any time: it takes SHARE UPDATE EXCLUSIVE and blocks no read or
+-- write.
 DO $$
 DECLARE
   attempt int := 0;
-  valid_audience boolean;
-  valid_embedded boolean;
-  valid_inherited boolean;
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_constraint c
                   WHERE c."conrelid" = '"public"."nodes"'::regclass
@@ -305,12 +317,6 @@ BEGIN
       PERFORM pg_sleep(0.5);
     END;
   END LOOP;
-  SELECT coalesce(bool_or(c."convalidated") FILTER (WHERE c."conname" = 'nodes_audience_kind_ck'), false),
-         coalesce(bool_or(c."convalidated") FILTER (WHERE c."conname" = 'nodes_embedded_level_ck'), false),
-         coalesce(bool_or(c."convalidated") FILTER (WHERE c."conname" = 'nodes_inherited_level_ck'), false)
-    INTO valid_audience, valid_embedded, valid_inherited
-    FROM pg_constraint c
-   WHERE c."conrelid" = '"public"."nodes"'::regclass;
   ALTER TABLE "public"."nodes" DROP CONSTRAINT IF EXISTS "nodes_audience_kind_ck";
   ALTER TABLE "public"."nodes" ADD CONSTRAINT "nodes_audience_kind_ck"
     CHECK ("audience" = 'admin' OR "type" IN ('page', 'note', 'draw', 'table', 'file', 'branch', 'app', 'formula')) NOT VALID;
@@ -322,15 +328,6 @@ BEGIN
   ALTER TABLE "public"."nodes" ADD CONSTRAINT "nodes_embedded_level_ck"
     CHECK ("embedded_level" IS NULL
            OR ("embedded_level" IN ('team', 'client') AND "type" IN ('page', 'note', 'draw', 'table', 'file', 'branch', 'app', 'formula'))) NOT VALID;
-  IF valid_audience THEN
-    ALTER TABLE "public"."nodes" VALIDATE CONSTRAINT "nodes_audience_kind_ck";
-  END IF;
-  IF valid_inherited THEN
-    ALTER TABLE "public"."nodes" VALIDATE CONSTRAINT "nodes_inherited_level_ck";
-  END IF;
-  IF valid_embedded THEN
-    ALTER TABLE "public"."nodes" VALIDATE CONSTRAINT "nodes_embedded_level_ck";
-  END IF;
 END
 $$;
 --> statement-breakpoint

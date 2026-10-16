@@ -118,7 +118,7 @@ What it does, in order:
    `mantle_session=...`). A quoted value is masked to its real closing quote,
    past escaped ones. A URL password holding a `/` or an `@` is masked whole
    (any scheme when a `user:password` pair opens it), a `--password "two
-   words"` value whole, and a PEM or PGP private key block line by line; a
+words"` value whole, and a PEM or PGP private key block line by line; a
    BEGIN that does not end its line masks only the rest of that line, and a
    block masks at most 200 key-body lines, so the stack trace after an error
    that quotes a BEGIN still prints. Each line is cut to 2000 characters
@@ -1111,9 +1111,10 @@ workspaces nothing a user sees changes. Before the roll:
   lock on a table and no row change: an area-limited API key's lists of
   pages, notes and tables answered 500 on a brain on workspaces until it.
 - **Migration 0295** takes the `nodes` table's ACCESS EXCLUSIVE lock once
-  (a 3 s wait, 20 tries) to make the three level CHECKs again, validating
-  the two that were valid (a scan of `nodes`), and drops
-  `mantle_workspace_kind`. No row changes; re-runnable.
+  (a 3 s wait, 20 tries) to make the three level CHECKs again, NOT VALID
+  (no scan of `nodes` under the lock: the old CHECKs, the same rule, proved
+  the rows), and drops `mantle_workspace_kind`. No row changes;
+  re-runnable.
 - **The 410 stubs** go in the release's last commit(s), only when every box
   showed no hit for one release. Count them per box, numbers only (counted
   on the box): `scripts/arch-scoreboard-box.sh <alias>`; ten counts, all 0.

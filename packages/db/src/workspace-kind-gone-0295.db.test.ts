@@ -5,7 +5,8 @@
  *  - the function is gone and no function body names it;
  *  - every rule that called it answers as before: mantle_team_reads over
  *    every kind and level (the bridge of the manual switch), the three
- *    nodes level CHECKs (the same kinds, validated where they were), and
+ *    nodes level CHECKs (the same kinds, NOT VALID: no scan of nodes under
+ *    the lock, and a write breaking the rule is still refused), and
  *    the contact share check (the registry's contactShare kinds, the old
  *    list without folders);
  *  - every list written in its place is the old list, nothing wider: no
@@ -135,14 +136,49 @@ describe.skipIf(!URL)('0295: mantle_workspace_kind goes, every rule that read it
     expect(await teamReads()).toBe(teamReadsBefore);
   });
 
-  it('the level CHECKs name the old kinds, validated where they were', async () => {
+  it('the level CHECKs name the old kinds, NOT VALID, and still refuse a breaking write', async () => {
     const defs = await checkDefs();
     expect(defs).toHaveLength(3);
     for (const def of defs) {
       expect(def).not.toContain('mantle_workspace_kind');
       expect(kindLists(def), def).toEqual([oldKinds]);
     }
-    expect(await valid()).toEqual(validBefore);
+    // Before: the audience and embedded CHECKs valid (0160, 0208), the
+    // inherited one not (0204). After: all NOT VALID, so 0295 ran no scan
+    // of nodes under its ACCESS EXCLUSIVE lock (the rows were proven by the
+    // old CHECK, the same rule, dropped under that lock).
+    expect(validBefore).toEqual({
+      nodes_audience_kind_ck: true,
+      nodes_embedded_level_ck: true,
+      nodes_inherited_level_ck: false,
+    });
+    expect(await valid()).toEqual({
+      nodes_audience_kind_ck: false,
+      nodes_embedded_level_ck: false,
+      nodes_inherited_level_ck: false,
+    });
+    // A NOT VALID CHECK guards every row written after it: a contact (not
+    // a workspace kind) shared beyond Admin is refused, as before.
+    const owner = randomUUID();
+    await sql`insert into auth.users (id, email, password_hash, role, is_owner)
+      values (${owner}, 'a7-ck@example.invalid', 'x', 'admin', false)`;
+    for (const [col, val, ck] of [
+      ['audience', 'team', 'nodes_audience_kind_ck'],
+      ['inherited_level', 'team', 'nodes_inherited_level_ck'],
+      ['embedded_level', 'client', 'nodes_embedded_level_ck'],
+    ] as const) {
+      await expect(
+        sql.begin((tx) =>
+          tx.unsafe(
+            `insert into nodes (id, owner_id, type, title, path, ${col})
+             values ($1, $2, 'contact', 'a7 ck', 'contacts', $3)`,
+            [randomUUID(), owner, val],
+          ),
+        ),
+        col,
+      ).rejects.toMatchObject({ code: '23514', constraint_name: ck });
+    }
+    await sql`delete from auth.users where id = ${owner}`;
   });
 
   it('every list written in a function is the old one; the contact share check is the registry’s', async () => {
