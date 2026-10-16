@@ -15,7 +15,6 @@ import type { BuiltinToolDef, ToolHandlerContext, ToolHandlerResult } from './ty
 import { strOpt } from './coerce';
 import { NODE_ID_PRE } from './builtins-common';
 import { isOwnerSurface } from './surface';
-import { manage } from './item-write-gate';
 import { lowersAccessSet } from './client-sourced';
 
 /** access_set's answer for a brain item. */
@@ -145,7 +144,6 @@ export const access_set: BuiltinToolDef = {
     effect: 'write',
     spends: 'none',
     scope: 'admin',
-    items: [manage('node_id')],
     peerRisky: true,
     lowering: lowersAccessSet,
   },

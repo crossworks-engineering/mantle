@@ -16,7 +16,7 @@ import { errorMessage } from '@mantle/std';
 import { NODE_ID_PRE } from './builtins-common';
 import { HIDDEN_NODE_ERROR, surfaceHiddenNodeTypes } from './team-visibility';
 import { isOwnerSurface } from './surface';
-import { edit, read } from './item-write-gate';
+import { edit } from './item-write-gate';
 import { CS } from './client-sourced-rule';
 
 export const brain_capacity: BuiltinToolDef = {
@@ -252,7 +252,6 @@ export const process_extraction: BuiltinToolDef = {
     effect: 'write',
     spends: 'ownerKey',
     scope: 'any',
-    items: [read('node_id')],
     clientSourced: CS.onNodes('node_id'),
   },
   name: 'Kick the extractor',
