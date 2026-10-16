@@ -126,7 +126,7 @@ describe('PATCH /api/keys/:id', () => {
     ).toBeNull();
     // Each change asks the open provider alerts to probe now (A10 lows).
     expect(h.retry).toHaveBeenCalledTimes(2);
-    expect(h.retry).toHaveBeenCalledWith(OWNER);
+    expect(h.retry).toHaveBeenCalledWith(OWNER, 'anthropic');
   });
 
   it('answers 400 for a bad body or id, 404 for no such key, and lets the store refuse', async () => {
@@ -160,6 +160,9 @@ describe('a key credential change nudges the provider alerts (A10 lows item 6)',
       }),
     );
     expect(h.retry).toHaveBeenCalledTimes(1);
+    // With the key's service: the helper itself skips a service that is no
+    // model provider (embedding-config-retry.test.ts).
+    expect(h.retry).toHaveBeenCalledWith(OWNER, 'openai');
   });
 
   it('a rotate nudges once; a key that is not there does not', async () => {
@@ -174,6 +177,7 @@ describe('a key credential change nudges the provider alerts (A10 lows item 6)',
     const ok = await POST(json('http://x', 'POST', { plaintext: 'test-not-a-key' }), ctx);
     expect(ok.status).toBe(200);
     expect(h.retry).toHaveBeenCalledTimes(1);
+    expect(h.retry).toHaveBeenCalledWith(OWNER, 'openai');
     h.rotate.mockResolvedValueOnce(null);
     const missing = await POST(json('http://x', 'POST', { plaintext: 'test-not-a-key' }), ctx);
     expect(missing.status).toBe(404);

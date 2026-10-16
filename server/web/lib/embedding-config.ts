@@ -15,6 +15,7 @@ import {
 import { errorMessage } from '@mantle/std';
 import { log } from '@mantle/tracing';
 import { clearEmbeddingModelCache, EMBEDDING_DIMS } from '@mantle/embeddings';
+import { isProviderId } from '@mantle/voice';
 
 export { EMBEDDING_DIMS };
 export type { EmbeddingConfigRow };
@@ -84,18 +85,16 @@ export async function notifyProviderRecover(ownerId: string): Promise<void> {
 }
 
 /**
- * "Try again" (A10 lows): every open provider alert probes on the agent's
- * next tick, and the agent is told at once (notifyProviderRecover). The
- * Admin "Try again" button calls it, and so does a change to a key's
- * credential (PATCH /api/keys/:id for the Anthropic workspace id, the key's
- * rotate, a key set again by POST /api/keys), so a fixed key clears its
- * alert and resumes the extract queue without waiting for the probe's
- * backoff. Cheap and bounded: one UPDATE and one NOTIFY here, no model
- * call; the agent makes one tiny probe call per open alert and recovers at
- * most once per 2 min (provider-circuit.ts), however often this is called.
- * Returns how many open alerts will probe; throws as the button always did
- * when the alerts cannot be read (a key route uses {@link
- * retryProvidersAfterKeyChange}, which never throws).
+ * The Admin "Try again" (A10 lows): every open provider alert probes on the
+ * agent's next tick, and the agent is told at once (notifyProviderRecover),
+ * whether or not an alert is open: with none open, the agent still
+ * recovers a waiting dead-letter backlog after one probe works (an owner's
+ * explicit ask). Cheap and bounded: one UPDATE and one NOTIFY here, no model
+ * call; the agent makes one tiny probe call per open alert (one in all when
+ * none is open and dead letters wait) and recovers at most once per 2 min
+ * (provider-circuit.ts), however often this is called. Returns how many open
+ * alerts will probe; throws as the button always did when the alerts cannot
+ * be read.
  */
 export async function retryProvidersNow(ownerId: string): Promise<number> {
   const probing = await requestProviderProbeNow(ownerId);
@@ -104,13 +103,25 @@ export async function retryProvidersNow(ownerId: string): Promise<number> {
 }
 
 /**
- * {@link retryProvidersNow} after a key's credential changed: best-effort,
- * logged and never thrown, because the key's own write already succeeded
- * and its answer must not turn into an error over a nudge.
+ * The nudge after a key's credential changed (POST /api/keys, PATCH
+ * /api/keys/:id for the Anthropic workspace id, the rotate): narrower than
+ * the button, because a key save is no ask to recover (A10 lows fix round
+ * 1, M2; cost safety). Only for a model provider's key (`service` is a
+ * provider id; a Telegram token, a connector's secret or a Firecrawl key
+ * never raises it), and the NOTIFY only when an alert is open: with none,
+ * nothing is sent, so the agent never re-drives a dead-letter backlog
+ * (real model calls) on a key save. Best-effort: logged and never thrown,
+ * because the key's own write already succeeded and its answer must not
+ * turn into an error over a nudge.
  */
-export async function retryProvidersAfterKeyChange(ownerId: string): Promise<void> {
+export async function retryProvidersAfterKeyChange(
+  ownerId: string,
+  service: string,
+): Promise<void> {
+  if (!isProviderId(service)) return;
   try {
-    await retryProvidersNow(ownerId);
+    const probing = await requestProviderProbeNow(ownerId);
+    if (probing > 0) await notifyProviderRecover(ownerId);
   } catch (err) {
     log('keys').error(`could not ask the provider alerts to probe: ${errorMessage(err)}`);
   }

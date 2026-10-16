@@ -26,8 +26,8 @@ const PatchBody = z.object({
 
 /** Set or clear the Anthropic workspace id on a stored key. A key of another
  *  service, or an id that could never be a header value, answers 400 with
- *  the reason (InputError from @mantle/api-keys). On success the open
- *  provider alerts probe now (retryProvidersNow, the "Try again" nudge). */
+ *  the reason (InputError from @mantle/api-keys). On success an open
+ *  provider alert probes now (retryProvidersAfterKeyChange). */
 export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const user = ownerCaller();
   const parsed = IdParams.safeParse(await ctx.params);
@@ -47,8 +47,9 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
     body.data.anthropicWorkspaceId,
   );
   if (!row) return NextResponse.json({ error: 'Not found.' }, { status: 404 });
-  // The key's credential changed: an open provider alert probes now, as the
-  // Admin "Try again" does (A10 lows), so a fixed workspace id clears it.
-  await retryProvidersAfterKeyChange(user.id);
+  // The key's credential changed: an open provider alert probes now (A10
+  // lows), so a fixed workspace id clears it. Only an Anthropic key gets
+  // here (setApiKeyAnthropicWorkspace refuses another service).
+  await retryProvidersAfterKeyChange(user.id, 'anthropic');
   return NextResponse.json(row);
 }

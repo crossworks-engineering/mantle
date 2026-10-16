@@ -72,9 +72,10 @@ export async function POST(req: Request) {
       // A save over an existing key replaces it, as a rotate does (access
       // matrix T7): a connector's marks were for the old key.
       await afterVaultKeyReplaced(user.id, row.service, row.label);
-      // A new or replaced key: an open provider alert (a refused key, no
-      // key) probes now, as the Admin "Try again" does (A10 lows).
-      await retryProvidersAfterKeyChange(user.id);
+      // A new or replaced model provider key: an open provider alert (a
+      // refused key, no key) probes now (A10 lows; no alert open, nothing
+      // is sent).
+      await retryProvidersAfterKeyChange(user.id, row.service);
       return NextResponse.json({
         id: row.id,
         service: row.service,
