@@ -4225,7 +4225,8 @@ way in, a pairwise set of (role, kind, placement, action) over what the
 surface can do (`pairwise` in `a8-grid.ts`), a fresh item per write cell:
 web (HTTP through `createApp`: item reads and deletes, the grants panel),
 `/api/v1` with the login's read-write key, MCP over OAuth, MCP with a
-read-only key through the bearer lookup, a peer acting as the login with
+read-only key through the bearer lookup, MCP with the read-write key on a
+page's and a note's content edit (`mcp-key-rw`, F6), a peer acting as the login with
 Write on, stdio MCP as the owner, the web turn, the team turn, Telegram, a
 run item (through the product's own executor, `executeRunItem` in
 `server/web/lib/runs/execute-item.ts`: a run of the login as `createRun`
@@ -4321,9 +4322,10 @@ Moderator's 4 app deletes are allowed now). Against fix round 1 (10,956 cells, 6
 3,984 not applicable) the difference is only what was added: the
 Admin-homed placement (3,652 cells: 2,220 run, 1,432 not applicable) and
 the contact share's 212 writes, not applicable before and denies now. The
-surface cells 1,126 per check mode, 3,378 in all; no known failure
+surface cells 1,155 per check mode, 3,465 in all; no known failure
 (feat/f9-contact: F6's 2 in each mode pass, the oracle reading the guide's
-rule for a key or a peer; fix round 4, on v0.300.59: 1,123, 3,369 and 6, 4
+rule for a key or a peer, and the read-write key's 29 page and note edits,
+every one a deny, pass; before them 1,126 and 3,378; fix round 4, on v0.300.59: 1,123, 3,369 and 6, 4
 of them F5's; fix round 3: 1,122, 3,366 and 41). The three cells added are the home
 Moderator's app delete at its kind's root on the web and over MCP and in
 the team chat, run whatever the pick; the demoted run came in fix round 4.
@@ -4392,7 +4394,10 @@ branch and leave the list when it lands; F3 is the guide's rule now.
   page or a note others read: granted to a workspace other than Admin, or
   with a public link or a contact share), and the oracle reads it
   (`KEY_SHARED_CONTENT`: 54 answers moved, allow to deny, on the api-v1,
-  mcp-key and peer ways in). Its 2 surface cells pass and left the list.
+  mcp-key and peer ways in). Its 2 surface cells pass and left the list,
+  and the read-write key's own cells (`mcp-key-rw`: `note_update`,
+  `page_update`, `page_update_draft`, 29 per mode) run the rule against the
+  product.
 - **F7** (fixed, feat/a6-grants; the grants panel test, pinned there, not
   a cell of the list). A6 runs the panel's writes in the caller's scope,
   `mantle_grant_refuses` (0291) refuses whenever a scope is set, in every
