@@ -4930,19 +4930,20 @@ gate's answer with the login's kind, where they read `getOwnerOr401`).
   (client.ts loginWriteRoute), never for a turn with no login nor a read
   request, so on the write role only those marks would fail and a later
   turn would hold back less.
-- L1: `mantle_connector_rows(owner, slug, ws, app)` (a fourth argument) in a
-  scope answers the scope's own workspaces, and the holders of `app` when the
-  scope reads it (appConnectorRefused passes it); `mantle_contact_sharing`
-  only contacts the scope reads (the nodes row rule, 0242);
-  `mantle_runs_workspaces` only the brain's runs. Not tightened, and why
-  (0293 items 9, 10): `mantle_file_name_taken` exists to see names the caller
-  cannot read; `mantle_table_app_link` held to readable Tables would turn
-  the guard's refusal into a pass. Named stricter cells (narrow-reads):
-  `connectorResources conn P,Q,Admin` in a scope (main's rows less those
-  outside the scope), `contactSharingByContact` in a scope (main's entries
-  less contacts the scope does not read); each checked exactly against
-  main's answer and SCOPE_FACTS (what the scope's definers see, probed per
-  context before the section).
+- L1: `mantle_contact_sharing` in a scope answers only contacts the scope
+  reads (the nodes row rule, 0242); `mantle_runs_workspaces` only the
+  brain's runs. Not tightened, and why: `mantle_connector_rows` is asked
+  for a scope the code names, not always the one it runs in (the approval
+  re-check on a login's MCP asks the asked scope's rows from the approver's
+  connection scope); held to the running scope's workspaces it refused the
+  owner's own approval (a5-elevated-approval, a5-approval-recheck: tried
+  and reverted in this round). `mantle_file_name_taken` exists to see names
+  the caller cannot read (0293 item 9); `mantle_table_app_link` held to
+  readable Tables would turn the guard's refusal into a pass (item 10).
+  Named stricter cells (narrow-reads): `contactSharingByContact` in a scope
+  (main's entries less contacts the scope does not read), checked exactly
+  against main's answer and SCOPE_FACTS (what the scope's definers see,
+  probed per context before the section).
 - L3: the four hand uuid array builders (client-sourced.ts,
   external-access.ts, runs boss.ts, client-sourced-rules.ts's uuid arrays)
   use the checked `wsArraySql`. Left for later: ONE helper for calling a

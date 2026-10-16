@@ -338,21 +338,20 @@ export async function connectorGroupRow(ownerId: string, slug: string) {
  * rows that put the connector group `groupSlug` on any of `wsIds` (live,
  * unarchived workspaces of the brain), with their Write tick. By its
  * definer (mantle_connector_rows, 0293: the rule is in the query; A6b: on
- * the system pool before, 'workspace-resources'). In a scope only the rows
- * of the scope's own workspaces, and, with `appId`, of the workspaces
- * holding that app when the scope reads it (an app's verdict).
+ * the system pool before, 'workspace-resources'). Not held to the running
+ * scope's workspaces: a caller names the scope it asks about (the approval
+ * re-check asks the asked scope's rows from the approver's scope).
  */
 export async function connectorResources(
   ownerId: string,
   groupSlug: string,
   wsIds: readonly string[],
-  appId: string | null = null,
 ): Promise<{ workspaceId: string; write: boolean }[]> {
   if (wsIds.length === 0) return [];
   return (await db.execute(
     sql`select workspace_id::text as "workspaceId", write
           from "public"."mantle_connector_rows"(${ownerId}::uuid, ${groupSlug},
-                                                 ${wsArraySql(wsIds)}, ${appId}::uuid)`,
+                                                 ${wsArraySql(wsIds)})`,
   )) as unknown as { workspaceId: string; write: boolean }[];
 }
 
@@ -406,7 +405,7 @@ export async function appConnectorRefused(
   if (holders.length === 0) {
     return 'This app is in no workspace, so connector tools do not run from it.';
   }
-  const rows = await connectorResources(ownerId, groupSlug, holders, appId);
+  const rows = await connectorResources(ownerId, groupSlug, holders);
   const held = new Map(rows.map((r) => [r.workspaceId, r.write]));
   if (!holders.every((w) => held.has(w))) {
     return 'This connector is not a resource of every workspace that holds this app, so its tools do not run from it.';

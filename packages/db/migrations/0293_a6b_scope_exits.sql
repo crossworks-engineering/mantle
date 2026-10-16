@@ -49,8 +49,8 @@
 --    the workspaces holding an app (mantle_app_holders: an app the scope
 --    reads), and one login's live workspaces with the connectors each holds
 --    (mantle_login_connector_rows: in a scope, the scope's own login only).
---    In a scope mantle_connector_rows answers the scope's own workspaces,
---    and the holders of an app the scope reads (its `app` argument).
+--    mantle_connector_rows is not held to the running scope's workspaces:
+--    its callers name the scope they ask about (see its definition).
 -- 8. mantle_contact_sharing(owner, ids): the code dates of the contacts
 --    with sharing on (contact_share_codes, never the code): the caller read
 --    the contacts, the id list is the rule (as on the system pool); in a
@@ -366,11 +366,13 @@ REVOKE ALL ON FUNCTION "public"."mantle_connector_state"(uuid, text) FROM PUBLIC
 GRANT EXECUTE ON FUNCTION "public"."mantle_connector_state"(uuid, text) TO "mantle_view_user";
 --> statement-breakpoint
 
--- In a scope only the rows of the scope's own workspaces, and of the
--- workspaces holding `app` when the scope reads that app (an app's verdict
--- needs every holder's row; mantle_app_holders already answers those
--- holders to that scope). NULL `app`: the scope's workspaces only.
-CREATE OR REPLACE FUNCTION "public"."mantle_connector_rows"(owner uuid, slug text, ws uuid[], app uuid)
+-- Not held to the scope's own workspaces: the rows are asked for a scope
+-- the code names, which need not be the one it runs in (the approval
+-- re-check on a login's MCP asks the rows of the scope the call was asked
+-- in from the approver's connection scope; a filter by the running scope
+-- refused the owner's own approval there, a5-elevated-approval). Workspace
+-- ids and a Write tick only, never a binding.
+CREATE OR REPLACE FUNCTION "public"."mantle_connector_rows"(owner uuid, slug text, ws uuid[])
   RETURNS TABLE ("workspace_id" uuid, "write" boolean)
   LANGUAGE sql STABLE SECURITY DEFINER
   SET search_path = "public", pg_temp AS $$
@@ -379,21 +381,12 @@ CREATE OR REPLACE FUNCTION "public"."mantle_connector_rows"(owner uuid, slug tex
     JOIN "public"."workspaces" w ON w."id" = r."workspace_id"
    WHERE r."type" = 'connector' AND r."ref_id" = slug AND w."owner_id" = owner
      AND w."archived_at" IS NULL AND r."workspace_id" = ANY (ws)
-     AND (NOT "public"."mantle_scope_active"()
-          OR (owner = "public"."mantle_brain_id"()
-              AND (r."workspace_id" = ANY ("public"."mantle_scope_ws"())
-                   OR EXISTS (
-                     SELECT 1 FROM "public"."nodes" a
-                      WHERE a."id" = app AND a."owner_id" = owner AND a."type" = 'app'
-                        AND a."read_ws" && "public"."mantle_scope_ws"()
-                        AND (a."login_id" IS NULL
-                             OR a."login_id" = "public"."mantle_scope_login_id"())
-                        AND r."workspace_id" = ANY (a."read_ws")))))
+     AND (NOT "public"."mantle_scope_active"() OR owner = "public"."mantle_brain_id"())
 $$;
 --> statement-breakpoint
-REVOKE ALL ON FUNCTION "public"."mantle_connector_rows"(uuid, text, uuid[], uuid) FROM PUBLIC;
+REVOKE ALL ON FUNCTION "public"."mantle_connector_rows"(uuid, text, uuid[]) FROM PUBLIC;
 --> statement-breakpoint
-GRANT EXECUTE ON FUNCTION "public"."mantle_connector_rows"(uuid, text, uuid[], uuid) TO "mantle_view_user";
+GRANT EXECUTE ON FUNCTION "public"."mantle_connector_rows"(uuid, text, uuid[]) TO "mantle_view_user";
 --> statement-breakpoint
 
 -- NULL when no live workspace beyond Admin holds the connector, else
@@ -1125,7 +1118,7 @@ BEGIN
     GRANT EXECUTE ON FUNCTION "public"."mantle_pending_count"(uuid) TO demo_reader;
     GRANT EXECUTE ON FUNCTION "public"."mantle_ws_private_for"(uuid, uuid) TO demo_reader;
     GRANT EXECUTE ON FUNCTION "public"."mantle_connector_state"(uuid, text) TO demo_reader;
-    GRANT EXECUTE ON FUNCTION "public"."mantle_connector_rows"(uuid, text, uuid[], uuid) TO demo_reader;
+    GRANT EXECUTE ON FUNCTION "public"."mantle_connector_rows"(uuid, text, uuid[]) TO demo_reader;
     GRANT EXECUTE ON FUNCTION "public"."mantle_connector_beyond_admin"(uuid, text) TO demo_reader;
     GRANT EXECUTE ON FUNCTION "public"."mantle_app_holders"(uuid, uuid) TO demo_reader;
     GRANT EXECUTE ON FUNCTION "public"."mantle_login_connector_rows"(uuid, uuid) TO demo_reader;

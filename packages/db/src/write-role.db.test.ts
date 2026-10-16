@@ -169,8 +169,8 @@ const DEFINERS_THE_WRITE_ROLE_RUNS: Readonly<Record<string, string>> = {
   'mantle_ws_private_for(uuid,uuid)': 'whether a workspace is the scope’s own login’s private one',
   'mantle_connector_state(uuid,text)':
     'a connector’s id and whether it is usable, never its binding',
-  'mantle_connector_rows(uuid,text,uuid[],uuid)':
-    'which of the scope’s live workspaces (and an app’s holders it reads) hold a connector, with their Write tick',
+  'mantle_connector_rows(uuid,text,uuid[])':
+    'which live workspaces of the brain hold a connector, with their Write tick',
   'mantle_connector_beyond_admin(uuid,text)':
     'whether a live workspace beyond Admin holds a connector (its Write tick)',
   'mantle_app_holders(uuid,uuid)': 'the workspaces holding an app the scope reads',

@@ -86,9 +86,9 @@ const asksAnotherLogin = (k: string, asked: string | null) =>
   ctxOf(k) !== 'system' && asked !== scopeLoginOf(ctxOf(k));
 
 /** What each context's scope reads, as the definers see it (filled by the
- *  narrow-reads section before its cells): whether a scope is set, its
- *  workspaces and the fixture items it reads, by name. */
-const SCOPE_FACTS = new Map<string, { active: boolean; ws: Set<string>; reads: Set<string> }>();
+ *  narrow-reads section before its cells): whether a scope is set and the
+ *  fixture items it reads, by name. */
+const SCOPE_FACTS = new Map<string, { active: boolean; reads: Set<string> }>();
 
 /** Main's answer `was` ({ok: rows}) with only the rows `keep` holds. */
 const keptOf = (was: string, keep: (row: any) => boolean) => {
@@ -189,20 +189,6 @@ const NAMED_CHANGES: Record<
               ok: 'This app is in no workspace, so connector tools do not run from it.',
             })
         );
-      },
-    },
-    {
-      cells: /^connectorResources conn P,Q,Admin (read|write|turn):\S+$/,
-      reason:
-        "a connector's workspace rows asked in a scope answer only the scope's own workspaces " +
-        '(mantle_connector_rows: r.workspace_id = ANY (mantle_scope_ws()), A6b fix round; an ' +
-        "app's verdict also reads the rows of the workspaces holding an app the scope reads). " +
-        "Every product caller asks for the scope's own workspaces (connectorScopeFacts) or an " +
-        "app's holders (appConnectorRefused), so their answers are unchanged. Stricter, never " +
-        "looser: exactly main's rows, less those of workspaces outside the scope.",
-      nowTest: (now, k, was) => {
-        const f = SCOPE_FACTS.get(ctxOf(k));
-        return !!f?.active && now === keptOf(was, (r) => f.ws.has(r.workspaceId));
       },
     },
     {
@@ -1041,16 +1027,14 @@ describe.skipIf(!URL)('the A6b exit sweep', () => {
       SCOPE_FACTS.set(
         ctx,
         await run(async () => {
-          const [s] = await x2<{ active: boolean; ws: string[] }>(
-            sql`select "public"."mantle_scope_active"() as active,
-                       coalesce("public"."mantle_scope_ws"(), '{}')::text[] as ws`,
+          const [s] = await x2<{ active: boolean }>(
+            sql`select "public"."mantle_scope_active"() as active`,
           );
           const seen = await x2<{ id: string }>(
             sql`select id::text as id from nodes where id = any(${m.wsArraySql([APP, ...C])})`,
           );
           return {
             active: s!.active === true,
-            ws: new Set(s!.ws.map(nameOf)),
             reads: new Set(seen.map((r) => nameOf(r.id))),
           };
         }),
