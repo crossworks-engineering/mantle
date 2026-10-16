@@ -69,6 +69,41 @@ vi.mock('@mantle/storage/write', async (importOriginal) => ({
   },
 }));
 
+/** The context of a cell: its key's last word (system, read:<login>,
+ *  write:<login>, turn:<workspace>:<login|none>). */
+const ctxOf = (k: string) => k.slice(k.lastIndexOf(' ') + 1);
+
+/** The login a context's scope answers, or null (the system pool, a turn
+ *  with no login). */
+const scopeLoginOf = (ctx: string): string | null => {
+  const m = /^(?:read|write):(\w+)$/.exec(ctx) ?? /^turn:\w+:(\w+)$/.exec(ctx);
+  return m && m[1] !== 'none' ? m[1]! : null;
+};
+
+/** A change held to the scope's own login holds only where the cell asks for
+ *  ANOTHER login: a broken own-login read must still fail the sweep. */
+const asksAnotherLogin = (k: string, asked: string | null) =>
+  ctxOf(k) !== 'system' && asked !== scopeLoginOf(ctxOf(k));
+
+/** What each context's scope reads, as the definers see it (filled by the
+ *  narrow-reads section before its cells): whether a scope is set, its
+ *  workspaces and the fixture items it reads, by name. */
+const SCOPE_FACTS = new Map<string, { active: boolean; ws: Set<string>; reads: Set<string> }>();
+
+/** Main's answer `was` ({ok: rows}) with only the rows `keep` holds. */
+const keptOf = (was: string, keep: (row: any) => boolean) => {
+  const v = JSON.parse(was) as { ok?: unknown[] };
+  return Array.isArray(v.ok) ? JSON.stringify({ ok: v.ok.filter(keep) }) : null;
+};
+
+/** The login a queued call of the telegram section was asked by. */
+const PEND_ASKER: Record<string, string | null> = {
+  adminAll: 'adminAll',
+  modP: 'modP',
+  elevated: 'modP',
+  none: null,
+};
+
 /**
  * Cells whose answer changed on purpose, per section: the cells a pattern
  * names, its reason, and either `back`, which turns the new answer into
@@ -83,9 +118,10 @@ const NAMED_CHANGES: Record<
     reason: string;
     back?: (now: string) => string;
     now?: string;
-    /** For a new answer that names the cell (a refusal quoting its own
-     *  arguments): whether `now` is the named change for cell `k`. */
-    nowTest?: (now: string, k: string) => boolean;
+    /** For a new answer that depends on the cell (a refusal quoting its
+     *  own arguments, a change held to who asks): whether `now` is the
+     *  named change for cell `k`, whose answer on main was `was`. */
+    nowTest?: (now: string, k: string, was: string) => boolean;
     /** What main's answer must have been for the change to hold. */
     was?: RegExp;
   }>
@@ -124,66 +160,125 @@ const NAMED_CHANGES: Record<
         '(mantle_login_connector_rows: the caller from the scope, never from an argument). Every ' +
         "product caller asks for the scope's own login (the MCP connection's pre-run check, an " +
         "app run's broker) or runs on the system pool (dispatch, the MCP listing), where it " +
-        'answers as main. Stricter, never looser.',
-      now: JSON.stringify({
-        ok: Array(3).fill(
-          'You are not a user of any workspace on this brain, so connector tools do not run for you.',
-        ),
-      }),
+        'answers as main. Stricter, never looser. Only where the cell asks for another login ' +
+        "than the scope's: the scope's own login must answer as main.",
+      nowTest: (now, k) =>
+        asksAnotherLogin(k, k.split(' ')[1]!) &&
+        now ===
+          JSON.stringify({
+            ok: Array(3).fill(
+              'You are not a user of any workspace on this brain, so connector tools do not run for you.',
+            ),
+          }),
     },
     {
-      cells: /^appConnectorRefused (read|write) (read|write|turn):/,
+      cells: /^appConnectorRefused (read|write) (read|write|turn):\S+$/,
       reason:
         "an app's connector verdict asked in a scope that does not read the app answers as for " +
         'an app in no workspace: its holders come from a definer held to the apps the scope reads ' +
         "(mantle_app_holders). The broker asks it in the app run's scope, which reads the app. " +
-        'Stricter, never looser.',
-      now: JSON.stringify({
-        ok: 'This app is in no workspace, so connector tools do not run from it.',
-      }),
+        'Stricter, never looser. Only in a scope that does not read the app (SCOPE_FACTS): a ' +
+        'scope that reads it must answer as main.',
+      nowTest: (now, k) => {
+        const f = SCOPE_FACTS.get(ctxOf(k));
+        return (
+          !!f?.active &&
+          !f.reads.has('app:nr') &&
+          now ===
+            JSON.stringify({
+              ok: 'This app is in no workspace, so connector tools do not run from it.',
+            })
+        );
+      },
+    },
+    {
+      cells: /^connectorResources conn P,Q,Admin (read|write|turn):\S+$/,
+      reason:
+        "a connector's workspace rows asked in a scope answer only the scope's own workspaces " +
+        '(mantle_connector_rows: r.workspace_id = ANY (mantle_scope_ws()), A6b fix round; an ' +
+        "app's verdict also reads the rows of the workspaces holding an app the scope reads). " +
+        "Every product caller asks for the scope's own workspaces (connectorScopeFacts) or an " +
+        "app's holders (appConnectorRefused), so their answers are unchanged. Stricter, never " +
+        "looser: exactly main's rows, less those of workspaces outside the scope.",
+      nowTest: (now, k, was) => {
+        const f = SCOPE_FACTS.get(ctxOf(k));
+        return !!f?.active && now === keptOf(was, (r) => f.ws.has(r.workspaceId));
+      },
+    },
+    {
+      cells: /^contactSharingByContact (read|write|turn):\S+$/,
+      reason:
+        "a contact's sharing dates asked in a scope answer only the contacts the scope reads " +
+        '(mantle_contact_sharing, A6b fix round). Every product caller passes contacts it read ' +
+        'in the scope first, so their answers are unchanged. Stricter, never looser: exactly ' +
+        "main's entries, less those of contacts the scope does not read.",
+      nowTest: (now, k, was) => {
+        const f = SCOPE_FACTS.get(ctxOf(k));
+        return !!f?.active && now === keptOf(was, (e) => f.reads.has(e[0]));
+      },
     },
   ],
   telegram: [
     {
-      cells: /^replay_window telegram asker=\w+ (read|write|turn):/,
+      cells: /^replay_window telegram asker=\w+ (read|write|turn):\S+$/,
       reason:
         "the replay of a login's Telegram history asked in a scope for ANOTHER asker (a surface " +
         "that names a login other than the scope's) answers none: its definer holds the scope to " +
         'its own login (mantle_tg_replay). A turn asks for its own login (its stamp, its scope). ' +
-        'Stricter, never looser.',
-      now: JSON.stringify({
-        ok: {
-          ok: true,
-          output: {
-            window: { from: '<time>', to: '<time>' },
-            surface: 'telegram',
-            count: 0,
-            truncated: false,
-            turns: [],
-          },
-        },
-      }),
+        "Stricter, never looser. Only where the asker is not the scope's own login.",
+      nowTest: (now, k) =>
+        asksAnotherLogin(k, k.split(' ')[2]!.slice('asker='.length)) &&
+        now ===
+          JSON.stringify({
+            ok: {
+              ok: true,
+              output: {
+                window: { from: '<time>', to: '<time>' },
+                surface: 'telegram',
+                count: 0,
+                truncated: false,
+                turns: [],
+              },
+            },
+          }),
     },
     {
-      cells: /^(listMyTelegramChats|listModeratedTelegramChats) \w+ (read|write|turn):/,
+      cells: /^(listMyTelegramChats|listModeratedTelegramChats) \w+ (read|write|turn):\S+$/,
       reason:
         "a login's own chats and its moderated chats asked in a scope for ANOTHER login answer " +
         'none: their definers hold the scope to its own login (mantle_tg_my_chats, ' +
         "mantle_tg_moderated_chats). The routes ask for the request's own login. Stricter, " +
-        'never looser.',
-      now: JSON.stringify({ ok: [] }),
+        "never looser. Only where the cell asks for another login than the scope's.",
+      nowTest: (now, k) =>
+        asksAnotherLogin(k, k.split(' ')[1]!) && now === JSON.stringify({ ok: [] }),
     },
     {
-      cells: /^notifyPendingCreated \w+ (read|write|turn):/,
+      cells: /^notifyPendingCreated \w+ (read|write|turn):\S+$/,
       reason:
         "the approval card never left a workspace scope (the bot's row was refused there, so " +
         "no card was sent: main's `sent` is empty in every scoped cell). Its route is read by " +
         'its definer now (mantle_pending_card_route), which in a scope answers only a call the ' +
         "scope's own login asked: for another login's call it stops before the bot's row, so " +
         "main's logged refusal (and the write role's gap it met) is not logged. No card either " +
-        'way; the in-app badge is unchanged.',
+        "way; the in-app badge is unchanged. Only for a call the scope's own login did not ask " +
+        "(one no login asked is the anchor's, or a scope's with no login): the definer's own " +
+        'rule, so an own call that answers otherwise fails the sweep.',
       was: /"sent":\[\]/,
-      now: JSON.stringify({ done: {}, sent: [], errors: [] }),
+      nowTest: (now, k) => {
+        const asker = PEND_ASKER[k.split(' ')[1]!];
+        const login = scopeLoginOf(ctxOf(k));
+        const own =
+          asker === undefined
+            ? true
+            : asker === null
+              ? login === null || login === 'owner'
+              : asker === login;
+        return (
+          ctxOf(k) !== 'system' &&
+          !own &&
+          now === JSON.stringify({ done: {}, sent: [], errors: [] })
+        );
+      },
     },
   ],
   'workspace-create': [
@@ -250,6 +345,9 @@ describe.skipIf(!URL)('the A6b exit sweep', () => {
 
   const x = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
     (await m.systemDb.execute(q)) as unknown as T[];
+  /** A statement in the context it is called in (the caller's scope). */
+  const x2 = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
+    (await m.db.execute(q)) as unknown as T[];
 
   /** A value with every known id named, unknown ids, times and secrets
    *  blanked (so a cell reads the same on every run). */
@@ -400,7 +498,8 @@ describe.skipIf(!URL)('the A6b exit sweep', () => {
       const wasOk = !named?.was || named.was.test(line);
       if (named?.back && wasOk && `${k} => ${named.back(value)}` === line) continue;
       if (named?.now !== undefined && wasOk && value === named.now) continue;
-      if (named?.nowTest && wasOk && named.nowTest(value, k)) continue;
+      const wasValue = line.slice(line.indexOf(' => ') + 4);
+      if (named?.nowTest && wasOk && named.nowTest(value, k, wasValue)) continue;
       problems.push(`changed: ${line}\n     now: ${cur}`);
     }
     for (const k of now.keys()) if (!was.has(k)) problems.push(`new cell: ${k}`);
@@ -934,6 +1033,28 @@ describe.skipIf(!URL)('the A6b exit sweep', () => {
       await x(sql`insert into node_snapshots (owner_id, node_id, node_kind, seq, trigger, actor, code, created_at)
                   values (${L.owner}, ${g}, 'app', 1, 'pre_delete', 'owner', ${JSON.stringify({ meta })}::jsonb,
                           now() - make_interval(mins => ${i}))`);
+    }
+    // What each context's scope reads, as the definers see it (SCOPE_FACTS:
+    // the named changes held to the scope check against it).
+    const nameOf = (u: string) => names.get(u.toLowerCase()) ?? u;
+    for (const [ctx, run] of CONTEXTS) {
+      SCOPE_FACTS.set(
+        ctx,
+        await run(async () => {
+          const [s] = await x2<{ active: boolean; ws: string[] }>(
+            sql`select "public"."mantle_scope_active"() as active,
+                       coalesce("public"."mantle_scope_ws"(), '{}')::text[] as ws`,
+          );
+          const seen = await x2<{ id: string }>(
+            sql`select id::text as id from nodes where id = any(${m.wsArraySql([APP, ...C])})`,
+          );
+          return {
+            active: s!.active === true,
+            ws: new Set(s!.ws.map(nameOf)),
+            reads: new Set(seen.map((r) => nameOf(r.id))),
+          };
+        }),
+      );
     }
     await section('narrow-reads', async (cell) => {
       for (const [ctx, run] of CONTEXTS) {
