@@ -5461,13 +5461,51 @@ way), recorded in `__snapshots__/a7-gone-routes.changes.txt`.
 
 ## A7 handover
 
-State of `feat/a7-switchover` (on main v0.300.78): built, every gate run on
-the head, pushed. Not merged, not tagged. Commits, in order: the record on
-main (dispatch parity, MCP calls, tools/list matrix without the switch-over
-cases); the switch-over removal (with 0295); the 0296 mail-branch definer
-fix; the A7 docs; the 410 stub record test; the Telegram anchor-only branch
-and the stale comments; the 0297 shared-item definer fix; this handover;
-the stub deletion (last, droppable on its own: nothing before it reads it).
+State of `feat/a7-switchover` (rebased on main v0.300.80, with
+feat/worker-write-role): built, the audit's fix round done, every gate run
+on the head, pushed. Not merged, not tagged. Commits, in order: the record
+on main (dispatch parity, MCP calls, tools/list matrix without the
+switch-over cases); the switch-over removal (with 0295); the 0296
+mail-branch definer fix; the A7 docs; the 410 stub record test; the
+Telegram anchor-only branch and the stale comments; the 0297 shared-item
+definer fix; the first handover; the fix round (L1, L2, L3, then the docs
+L4, L5, L7); this handover; the stub deletion (last, droppable on its own:
+nothing before it reads it; it carries L6, the tool group level test moved
+next to its routes, since the stubs' going is what left it alone).
+
+**The audit's fix round** (lows L1 to L7):
+
+- L1: 0295 makes the three nodes level CHECKs again NOT VALID and leaves
+  them so. migrate.ts holds every lock of a migration to its commit, so no
+  VALIDATE can run after the ACCESS EXCLUSIVE lock is released there; the
+  rows are proven by the old CHECKs (the same rule, dropped under the
+  lock), and a NOT VALID CHECK refuses a breaking write as before (pinned
+  per CHECK in `workspace-kind-gone-0295.db.test.ts`). Changed: the audience
+  and embedded CHECKs' `convalidated` (true to false); no answer.
+- L2: in a scope, `mantle_item_others_read` answers only for an item the
+  scope reads and `mantle_mail_branch_holds` only for a path with an item
+  the scope reads at or above it; anything else is NULL alike (no one-bit
+  oracle). NULL refuses: `othersCanRead` reads it as "others read it", the
+  Files key guard as "reaches a mail's attachments", the attachment rule
+  drops the row. Changed answers: a direct call of either definer in a
+  scope, for an item or path the scope does not read (true or false to
+  NULL); a key without the Search area naming a folder path where its scope
+  reads nothing at or above it (refused, where it went on to the tool's own
+  answer). The real callers' cells (access-keys-scope, the key email guard,
+  the attachment tests) are unchanged. Found on the way: the first 0296
+  draft compared `path` to itself (a SQL function's column names win over
+  its arguments); the argument is named by the function now.
+- L3: a first owner whose brain the switch leaves off workspaces is
+  `not-switched`; the signup answers 503 (no session) and stops the web
+  process (`server/web/lib/auth/unswitched-brain.ts`), the wizard stops
+  with the reason (`first-owner.db.test.ts`, `signup-role.test.ts`).
+  Changed answer: such a signup was 200 with a session.
+- L4: blockers 2 (worker write role, v0.300.80) and 3 (A7) of the pre-check
+  deletion are closed in "Pre-check deletion" and the worker write role
+  notes; blocker 1 (F4) is left. L5: the worker write role test no longer
+  deletes `MANTLE_ADMIN_READS`. L6: in the stub deletion (above). L7:
+  docs/runtime-role.md "After a restore" names the manual switch for a
+  pre-switch backup with clients present.
 
 **Removed:** `brainOnWorkspacesNow` (12 calls, 7 files, 0 now),
 `MANTLE_ADMIN_READS` (2 files, 0 now) and its gate scope (11 readers), the 8
@@ -5486,17 +5524,15 @@ fixes found by A7; journal `when` 1790197020000, 1790197080000 and
 run on any box.
 
 **Gates** (workstation, own worktree and pg, the head with the stubs
-deleted): typecheck, lint, format, docs, arch, boot smoke, the full vitest
-with a database, actor-off, actor-on, edit-on, test:matrix,
-test:runtime-role, the web build, the restore test, and the route and DB
-sweeps (the a4 guard, role, member, auth, link-render and A10 sweeps, w6a
-route and fix, a6 grant, a6b exit, w7a area and tool), each exit 0 but
-edit-on: one F9 cell (`f9-contact-export.db.test.ts`, the export's dirty
-stamp read before the debounced sync cleared it) failed once, then passed
-on three reruns and in the full vitest: a timing flake. Fixed
-since the last handover: the A4 row pins and the w7e member cells (from
-410 to 404) with the stubs gone, one prettier line, and access-keys-scope F1,
-which 0296 did not fix: 0297 (above, "Found by A7").
+deleted, after the fix round): typecheck, lint, format, docs, arch, boot
+smoke, the full vitest with a database, actor-on, edit-on, test:matrix,
+test:runtime-role, the web build and the restore test (db-restore-run and
+dump-restore), each exit 0 but test:runtime-role: the F9 cell
+(`f9-contact-export.db.test.ts`, the export's dirty stamp read before the
+debounced sync cleared it) failed once under the full config's load, as
+it did in the first round, then passed four reruns (runtime-role and
+edit-on, two each): the same timing flake. Lint's one warning (an unused
+directive in `contact-sharing-routes.db.test.ts`) is main's.
 
 **Left:** count each box's stub hits before the merge
 (`scripts/arch-scoreboard-box.sh`); a hit means drop the last commit. Then
