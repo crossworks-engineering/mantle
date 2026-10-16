@@ -25,6 +25,9 @@ export default defineConfig({
       'server/web/server/a8-findings.db.test.ts',
       // A8 matrix F9 (0294): a contact share's write and its export sync.
       'server/web/server/f9-contact-export.db.test.ts',
+      // The runs worker, the stdio MCP server and the Telegram poller on the
+      // write role (pre-check deletion blocker 2).
+      'server/web/server/worker-write-role.db.test.ts',
     ],
     env: { ...onBase.test?.env, MANTLE_TEST_EDIT_CHECK: 'on' },
   },
