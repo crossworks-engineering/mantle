@@ -23,7 +23,11 @@
  * dispatch decides around it is. The database is stubbed: the scope, the
  * Admin view, the create-home intent, the item rights and the
  * preconditions. One hash per tool and per runtime case is committed
- * (__snapshots__/dispatch-parity.json); a change names the tool.
+ * (__snapshots__/dispatch-parity.json); a change names the tool. The
+ * pre-check removal (docs/actors.md, "Pre-check deletion") re-recorded the
+ * 56 tools whose item pre-check went and whose cases reach it (an item the
+ * stubbed rights refuse now runs the handler: the database refuses it);
+ * every other hash stands.
  */
 import { createHash } from 'node:crypto';
 import { writeFileSync } from 'node:fs';
@@ -431,8 +435,10 @@ describe('dispatch parity with main (A5 step 3a)', () => {
   }, 120_000);
 
   it('is not vacuous: refusals, creates and system runs all occur', async () => {
-    const page = await call('member-turn', builtinRow('page_update'), { id: REFUSED_ID });
-    expect(JSON.stringify(page)).toContain('item refused');
+    // A kept item pre-check (node_share; the pre-check removal took
+    // page_update's, docs/actors.md "Pre-check deletion").
+    const share = await call('member-turn', builtinRow('node_share'), { id: REFUSED_ID });
+    expect(JSON.stringify(share)).toContain('item refused');
     const create = await call('member-turn', builtinRow('note_create'), {});
     expect(JSON.stringify(create)).toContain(PRIVATE);
     const admin = await call('member-turn', builtinRow('model_pool_list'), {});

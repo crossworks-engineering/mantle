@@ -484,12 +484,24 @@
      "content": [
       {
        "type": "text",
-       "text": "Error: You cannot change this item in your workspaces."
+       "text": "{\n  \"slug\": \"page_update\",\n  \"ran\": true\n}"
       }
-     ],
-     "isError": true
+     ]
     },
-    "handler": [],
+    "handler": [
+     {
+      "slug": "page_update",
+      "input": {
+       "id": "20000000-0000-4000-8000-000000000006",
+       "markdown": "x"
+      },
+      "surface": {
+       "kind": "owner",
+       "via": "mcp"
+      },
+      "home": null
+     }
+    ],
     "remote": [],
     "inserts": []
    },
@@ -557,7 +569,7 @@
      "content": [
       {
        "type": "text",
-       "text": "Error: You cannot change this item in your workspaces."
+       "text": "file not found"
       }
      ],
      "isError": true
@@ -1188,12 +1200,30 @@
      "content": [
       {
        "type": "text",
-       "text": "Error: You cannot change this item in your workspaces."
+       "text": "{\n  \"slug\": \"page_update\",\n  \"ran\": true\n}"
       }
-     ],
-     "isError": true
+     ]
     },
-    "handler": [],
+    "handler": [
+     {
+      "slug": "page_update",
+      "input": {
+       "id": "20000000-0000-4000-8000-000000000006",
+       "markdown": "x"
+      },
+      "surface": {
+       "kind": "owner",
+       "via": "mcp",
+       "loginId": "00000000-0000-4000-8000-0000000000a1",
+       "mcp": {
+        "via": "oauth",
+        "write": true,
+        "role": "admin"
+       }
+      },
+      "home": null
+     }
+    ],
     "remote": [],
     "inserts": []
    },
@@ -1273,7 +1303,7 @@
      "content": [
       {
        "type": "text",
-       "text": "Error: You cannot change this item in your workspaces."
+       "text": "file not found"
       }
      ],
      "isError": true
@@ -2024,12 +2054,34 @@
      "content": [
       {
        "type": "text",
-       "text": "Error: You cannot change this item in your workspaces."
+       "text": "{\n  \"slug\": \"page_update\",\n  \"ran\": true\n}"
       }
-     ],
-     "isError": true
+     ]
     },
-    "handler": [],
+    "handler": [
+     {
+      "slug": "page_update",
+      "input": {
+       "id": "20000000-0000-4000-8000-000000000006",
+       "markdown": "x"
+      },
+      "surface": {
+       "kind": "owner",
+       "via": "mcp",
+       "loginId": "00000000-0000-4000-8000-0000000000b1",
+       "mcp": {
+        "via": "oauth",
+        "write": true,
+        "role": "member",
+        "ownerKeysOff": true
+       }
+      },
+      "home": {
+       "createWs": null,
+       "privateWs": "10000000-0000-4000-8000-000000000003"
+      }
+     }
+    ],
     "remote": [],
     "inserts": []
    },
@@ -2117,7 +2169,7 @@
      "content": [
       {
        "type": "text",
-       "text": "Error: You cannot change this item in your workspaces."
+       "text": "file not found"
       }
      ],
      "isError": true
@@ -3330,12 +3382,31 @@
      "content": [
       {
        "type": "text",
-       "text": "Error: You cannot change this item in your workspaces."
+       "text": "{\n  \"slug\": \"page_update\",\n  \"ran\": true\n}"
       }
-     ],
-     "isError": true
+     ]
     },
-    "handler": [],
+    "handler": [
+     {
+      "slug": "page_update",
+      "input": {
+       "id": "20000000-0000-4000-8000-000000000006",
+       "markdown": "x"
+      },
+      "surface": {
+       "kind": "owner",
+       "via": "mcp",
+       "loginId": "00000000-0000-4000-8000-0000000000c1",
+       "mcp": {
+        "via": "oauth",
+        "write": true,
+        "role": "member",
+        "ownerKeysOff": true
+       }
+      },
+      "home": null
+     }
+    ],
     "remote": [],
     "inserts": []
    },
@@ -3417,7 +3488,7 @@
      "content": [
       {
        "type": "text",
-       "text": "Error: You cannot change this item in your workspaces."
+       "text": "file not found"
       }
      ],
      "isError": true
@@ -4091,12 +4162,35 @@
      "content": [
       {
        "type": "text",
-       "text": "Error: You cannot change this item in your workspaces."
+       "text": "{\n  \"slug\": \"page_update\",\n  \"ran\": true\n}"
       }
-     ],
-     "isError": true
+     ]
     },
-    "handler": [],
+    "handler": [
+     {
+      "slug": "page_update",
+      "input": {
+       "id": "20000000-0000-4000-8000-000000000006",
+       "markdown": "x"
+      },
+      "surface": {
+       "kind": "owner",
+       "via": "api",
+       "loginId": "00000000-0000-4000-8000-0000000000b1",
+       "mcp": {
+        "via": "key",
+        "write": true,
+        "role": "member",
+        "ownerKeysOff": true,
+        "keyId": "key-1"
+       }
+      },
+      "home": {
+       "createWs": null,
+       "privateWs": "10000000-0000-4000-8000-000000000003"
+      }
+     }
+    ],
     "remote": [],
     "inserts": []
    },
@@ -4124,7 +4218,7 @@
      "content": [
       {
        "type": "text",
-       "text": "Error: You cannot change this item in your workspaces."
+       "text": "file not found"
       }
      ],
      "isError": true
@@ -5290,12 +5384,30 @@
      "content": [
       {
        "type": "text",
-       "text": "Error: You cannot change this item in your workspaces."
+       "text": "{\n  \"slug\": \"page_update\",\n  \"ran\": true\n}"
       }
-     ],
-     "isError": true
+     ]
     },
-    "handler": [],
+    "handler": [
+     {
+      "slug": "page_update",
+      "input": {
+       "id": "20000000-0000-4000-8000-000000000006",
+       "markdown": "x"
+      },
+      "surface": {
+       "kind": "owner",
+       "via": "federation",
+       "mcp": {
+        "via": "peer",
+        "write": true,
+        "role": "admin",
+        "peerId": "peer-1"
+       }
+      },
+      "home": null
+     }
+    ],
     "remote": [],
     "inserts": []
    },
@@ -5375,7 +5487,7 @@
      "content": [
       {
        "type": "text",
-       "text": "Error: You cannot change this item in your workspaces."
+       "text": "file not found"
       }
      ],
      "isError": true
@@ -6105,12 +6217,35 @@
      "content": [
       {
        "type": "text",
-       "text": "Error: You cannot change this item in your workspaces."
+       "text": "{\n  \"slug\": \"page_update\",\n  \"ran\": true\n}"
       }
-     ],
-     "isError": true
+     ]
     },
-    "handler": [],
+    "handler": [
+     {
+      "slug": "page_update",
+      "input": {
+       "id": "20000000-0000-4000-8000-000000000006",
+       "markdown": "x"
+      },
+      "surface": {
+       "kind": "owner",
+       "via": "federation",
+       "loginId": "00000000-0000-4000-8000-0000000000b1",
+       "mcp": {
+        "via": "peer",
+        "write": true,
+        "role": "member",
+        "ownerKeysOff": true,
+        "peerId": "peer-2"
+       }
+      },
+      "home": {
+       "createWs": null,
+       "privateWs": "10000000-0000-4000-8000-000000000003"
+      }
+     }
+    ],
     "remote": [],
     "inserts": []
    },
@@ -6200,7 +6335,7 @@
      "content": [
       {
        "type": "text",
-       "text": "Error: You cannot change this item in your workspaces."
+       "text": "file not found"
       }
      ],
      "isError": true

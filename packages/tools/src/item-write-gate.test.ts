@@ -102,6 +102,121 @@ const NOT_AN_ITEM_WRITE: ReadonlyMap<string, string> = new Map([
 ]);
 
 /**
+ * The writes whose item pre-check went (docs/actors.md, "Pre-check
+ * deletion"; server/web/server/precheck-removal.db.test.ts proves each):
+ * the database refuses the same write itself, with both checks on, on the
+ * write role where the pre-check ran, and its second reason is proven. Each
+ * with the check that refuses it. Their `items` are gone; one listed here
+ * that declares them again goes from the list.
+ */
+const DATABASE_CHECKED: ReadonlyMap<string, string> = new Map([
+  ...(
+    [
+      'note_update',
+      'task_update',
+      'event_update',
+      'formula_update',
+      'contact_update',
+      'journal_update',
+      'page_update',
+      'page_update_draft',
+      'page_commit',
+      'page_discard_draft',
+      'page_replace_from_file',
+      'page_mention',
+    ] as const
+  ).map((slug) => [slug, 'the write check (0278): edit of the item'] as const),
+  ...(
+    [
+      'note_delete',
+      'task_delete',
+      'event_delete',
+      'formula_delete',
+      'contact_delete',
+      'journal_delete',
+      'page_delete',
+    ] as const
+  ).map((slug) => [slug, 'the delete check (0266): manage of the item'] as const),
+  ['page_move', 'the move check (0245, 0279): manage of the item'],
+  ['process_extraction', 'its precondition reads the item in the scope (row security)'],
+  ['access_set', 'it writes nothing (the levels went)'],
+  ['node_unshare', "the handler's own rule (closeLink), and link_close (0280)"],
+  ['page_unshare', "the handler's own rule (closeLink), and link_close (0280)"],
+  ['tree_folder_update', 'the write check (0278); a rename or move, mantle_subtree_rewrite (0282)'],
+  ...(
+    [
+      'recall_card_put',
+      'recall_card_delete',
+      'recall_map_update',
+      'recall_map_publish',
+      'recall_cards_reorder',
+      'recall_map_set_slug',
+      'recall_card_set_slug',
+      'recall_prompt_confirm',
+      'recall_revision_restore',
+    ] as const
+  ).map((slug) => [slug, 'the Recall edit checks (0280): edit of the map'] as const),
+  ['recall_map_delete', 'the delete check (0266): manage of the map'],
+  ...(
+    [
+      'table_column_add',
+      'table_column_update',
+      'table_column_delete',
+      'table_set_aggregate',
+      'table_set_view',
+      'table_row_add',
+      'table_rows_add',
+      'table_rows_upsert',
+      'table_row_update',
+      'table_row_delete',
+      'table_cell_set',
+      'table_tab_add',
+      'table_tab_rename',
+      'table_tab_delete',
+      'table_commit',
+      'table_snapshot_restore',
+    ] as const
+  ).map(
+    (slug) => [slug, "the write check (0278) at the tables broker's checked statement"] as const,
+  ),
+  ['table_update', 'the write check (0278): edit of the item'],
+  ['table_delete', 'the delete check (0266): manage of the item'],
+  ['table_snapshot_create', 'the node_snapshots edit check (0280)'],
+  ['table_snapshot_delete', 'the node_snapshots edit check (0280)'],
+  ...(
+    [
+      'file_rename',
+      'folder_rename',
+      'folder_describe',
+      'file_set_indexing',
+      'folder_set_indexing',
+    ] as const
+  ).map(
+    (slug) =>
+      [slug, 'the write check (0278); a folder rename, mantle_subtree_rewrite (0282)'] as const,
+  ),
+  ['file_move', 'the move check (0245, 0279): manage of the item'],
+  ['folder_move', 'mantle_subtree_rewrite (0282) and the move check: manage'],
+  ['folder_delete', 'the delete check (0266) after the hidden-rows rule (0282)'],
+  ...(['app_file_write', 'app_file_delete', 'app_source_set', 'app_tools_set'] as const).map(
+    (slug) => [slug, "the apps edit check (0280, D4): manage of the app's home"] as const,
+  ),
+  ['app_snapshot_create', 'the node_snapshots edit check (0280)'],
+  ['app_snapshot_delete', 'the node_snapshots edit check (0280)'],
+]);
+
+describe('the writes the database checks (the pre-check removal)', () => {
+  it('each is a builtin that declares no items now', () => {
+    expect(DATABASE_CHECKED.size).toBe(69);
+    for (const slug of DATABASE_CHECKED.keys()) {
+      const def = getBuiltin(slug);
+      expect(def, `${slug} is no builtin now: drop it`).not.toBeNull();
+      expect(def!.policy.items, `${slug} declares its items again: drop it`).toBeUndefined();
+    }
+  });
+});
+
+/**
  * The writes a workspace turn reaches (scope `any`, an owner-side tool on
  * the web and Telegram too) that name no item and create none, each with
  * why (the A8 fix round 1, L6): since F2 such a turn writes with its
@@ -133,7 +248,7 @@ describe('every write a workspace turn reaches declares its items (A8 fix round 
     const missing = reached
       .filter((d) => !d.policy.items && !d.policy.creates && !d.policy.createsIn)
       .map((d) => d.slug)
-      .filter((slug) => !WORKSPACE_TURN_NO_ITEMS.has(slug));
+      .filter((slug) => !WORKSPACE_TURN_NO_ITEMS.has(slug) && !DATABASE_CHECKED.has(slug));
     expect(missing).toEqual([]);
     // A reason for a tool that now declares its items, or is gone, goes.
     for (const slug of WORKSPACE_TURN_NO_ITEMS.keys()) {
@@ -233,7 +348,9 @@ describe('the Admin gate lists (W7a fix round 1)', () => {
       .filter((d) => !d.readOnly)
       .filter((d) => (d.preconditions ?? []).some((p) => p.kind === 'node_exists'))
       .map((d) => d.slug)
-      .filter((slug) => !builtinItems(slug) && !READS_ITS_ITEM.has(slug));
+      .filter(
+        (slug) => !builtinItems(slug) && !READS_ITS_ITEM.has(slug) && !DATABASE_CHECKED.has(slug),
+      );
     expect(missing).toEqual([]);
   });
 
@@ -263,43 +380,20 @@ describe('the Admin gate lists (W7a fix round 1)', () => {
         ).some((p) => p === 'id' || /_ids?$/.test(p)),
       )
       .map((d) => d.slug)
-      .filter((slug) => !NOT_AN_ITEM_WRITE.has(slug));
+      .filter((slug) => !NOT_AN_ITEM_WRITE.has(slug) && !DATABASE_CHECKED.has(slug));
     expect(missing).toEqual([]);
     for (const slug of NOT_AN_ITEM_WRITE.keys()) {
       expect(getBuiltin(slug), `${slug} is no builtin now: drop it from the list`).not.toBeNull();
     }
   });
 
-  it('a link needs edit to open or close; the users area closes any link (A0)', async () => {
+  it('a link needs edit to open (A0); the handler and the database close one', () => {
     for (const slug of ['page_share', 'node_share']) {
       expect(builtinItems(slug), slug).toEqual([{ param: 'id', need: 'edit' }]);
     }
     for (const slug of ['page_unshare', 'node_unshare']) {
-      const resolve = builtinItems(slug) as unknown as (
-        i: Record<string, unknown>,
-        o: string,
-        c?: { surface: Record<string, unknown> },
-      ) => Promise<{ ids: string[]; need: string }[]>;
-      const admin = { surface: { kind: 'owner' as const, via: 'mcp' as const, loginId: 'l' } };
-      area.users = false;
-      expect(await resolve({ id: 'n1' }, 'o', admin), slug).toEqual([
-        { ids: ['n1'], need: 'edit' },
-      ]);
-      area.users = true;
-      expect(await resolve({ id: 'n1' }, 'o', admin), slug).toEqual([]);
-      // A key or a linked brain never skips the check (L-e); nor a call
-      // with no surface named.
-      for (const via of ['api', 'federation'] as const) {
-        const key = { surface: { kind: 'owner' as const, via, loginId: 'l' } };
-        expect(await resolve({ id: 'n1' }, 'o', key), via).toEqual([{ ids: ['n1'], need: 'edit' }]);
-      }
-      expect(await resolve({ id: 'n1' }, 'o'), slug).toEqual([{ ids: ['n1'], need: 'edit' }]);
-      // Outside a scope the area check says yes by default: not enough (L-4).
-      area.scope = false;
-      expect(await resolve({ id: 'n1' }, 'o', admin), slug).toEqual([
-        { ids: ['n1'], need: 'edit' },
-      ]);
-      area.scope = true;
+      expect(builtinItems(slug), slug).toBeUndefined();
+      expect(DATABASE_CHECKED.has(slug), slug).toBe(true);
     }
   });
 

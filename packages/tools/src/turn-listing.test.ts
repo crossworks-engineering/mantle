@@ -270,7 +270,10 @@ describe('a call that needs approval meets the gate before it is queued (A5 step
     expect(await refusalIn(member, memberView(), builtinRow('note_create'))).toBeNull();
   });
 
-  it('a Recall map named by a slug the scope does not read is refused before it is queued (round-2 LOW-1)', async () => {
+  it('a Recall map named by a slug the scope does not read queues since the pre-check removal (was refused, round-2 LOW-1)', async () => {
+    // Its approval runs in the scope it was asked in (A5 step 6c), where the
+    // tool finds no map and writes nothing (docs/actors.md, "Pre-check
+    // deletion").
     const refused = await refusalIn(
       member,
       memberView(),
@@ -280,7 +283,7 @@ describe('a call that needs approval meets the gate before it is queued (A5 step
         map: 'secret',
       },
     );
-    expect(refused).toMatch(/^Recall map 'secret' is not one in your workspaces/);
+    expect(refused).toBeNull();
   });
 
   it('the refusal agrees with the listing for every tool, in both scopes and on both surfaces', async () => {
@@ -316,20 +319,30 @@ describe("a call that needs approval meets the gate's item pre-check before it i
   const teamSurface = { kind: 'team', privateReads: false } as never;
   const MINE = '44444444-4444-4444-8444-444444444444';
 
-  it('a workspace heartbeat outside Admin may not queue a delete or a share of an item only Admin may change', async () => {
-    for (const [slug, args] of [
-      ['page_delete', { id: h.adminItem }],
-      ['table_delete', { id: h.adminItem }],
-      ['node_share', { id: h.adminItem, level: 'public' }],
-    ] as const) {
+  it('a workspace heartbeat outside Admin may not queue a share of an item only Admin may change', async () => {
+    h.itemAsked = [];
+    const refused = await refusalIn(team, teamView(), builtinRow('node_share'), teamSurface, {
+      id: h.adminItem,
+      level: 'public',
+    });
+    // The words dispatch answers (the item pre-check's own), asked in the
+    // turn's own scope, never the approver's.
+    expect(refused).toBe(itemNoRightError(h.adminItem, 'edit'));
+    expect(h.itemAsked).toEqual([team]);
+  });
+
+  it('a delete the database checks queues since the pre-check removal (was refused here)', async () => {
+    // Its approval runs in the scope it was asked in (A5 step 6c): a
+    // workspace heartbeat's turn writes nothing there, and the delete check
+    // (0266) refuses a scope that may not manage the item (docs/actors.md,
+    // "Pre-check deletion").
+    for (const slug of ['page_delete', 'table_delete'] as const) {
       h.itemAsked = [];
-      const refused = await refusalIn(team, teamView(), builtinRow(slug), teamSurface, args);
-      // The words dispatch answers (the item pre-check's own), asked in the
-      // turn's own scope, never the approver's.
-      expect(refused, slug).toBe(
-        itemNoRightError(h.adminItem, slug === 'node_share' ? 'edit' : 'manage'),
-      );
-      expect(h.itemAsked, slug).toEqual([team]);
+      expect(
+        await refusalIn(team, teamView(), builtinRow(slug), teamSurface, { id: h.adminItem }),
+        slug,
+      ).toBeNull();
+      expect(h.itemAsked, slug).toEqual([]);
     }
   });
 

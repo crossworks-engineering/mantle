@@ -20,7 +20,11 @@
  * not on workspaces, and on the rollback switch) went in arch A7. No database: every read the surface makes is answered here, by
  * module path, so the same answers reach the code before and after the
  * change. The handlers of the builtins called are replaced on their
- * definitions (the one object the surface and the registry share).
+ * definitions (the one object the surface and the registry share). The
+ * pre-check removal (docs/actors.md, "Pre-check deletion") re-recorded the
+ * calls of a tool whose item pre-check went on the REFUSED item: its
+ * handler runs now (the database, stubbed here, refuses it on a box; the
+ * removal's own proof is server/web/server/precheck-removal.db.test.ts).
  */
 import { createHash } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -198,15 +202,11 @@ vi.mock('../../tools/src/item-write-gate', async (importOriginal) => {
   const real = await importOriginal<Record<string, unknown>>();
   return {
     ...real,
-    toolItemWriteRefusal: async (_slug: string, input: Record<string, unknown>) =>
-      Object.values(input).includes(ids.REFUSED)
-        ? 'You cannot change this item in your workspaces.'
-        : null,
-    // The same refusal with its edit check detail (A5 step 4 fix round 2:
-    // the item pre-check asks this one; only a /api/v1 route reads the
-    // detail, so every MCP answer here is the words above).
-    toolItemWriteRefusalOf: async (_slug: string, input: Record<string, unknown>) =>
-      Object.values(input).includes(ids.REFUSED)
+    // The item pre-check refuses the REFUSED item, with its edit check
+    // detail (A5 step 4 fix round 2: only a /api/v1 route reads it), for a
+    // tool that keeps its items (the pre-check removal: docs/actors.md).
+    toolItemWriteRefusalOf: async (items: unknown, input: Record<string, unknown>) =>
+      items && Object.values(input).includes(ids.REFUSED)
         ? { message: 'You cannot change this item in your workspaces.', detail: 'no_edit' }
         : null,
   };
