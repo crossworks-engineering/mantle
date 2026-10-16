@@ -48,7 +48,6 @@ import {
 import type { BuiltinToolDef, ToolHandlerContext, ToolHandlerResult } from './types';
 import { str } from './coerce';
 import { OWNER_ONLY_ERROR, isOwnerSurface } from './surface';
-import { recallMap } from './item-write-gate';
 import { CS } from './client-sourced-rule';
 
 /** The caller, for the revision log: the agent's slug in the app, 'mcp' for an
@@ -236,7 +235,6 @@ const recall_card_put: BuiltinToolDef = {
     effect: 'write',
     spends: 'none',
     scope: 'any',
-    items: recallMap('edit'),
     clientSourced: CS.always(CS.RECALL_GUIDANCE),
   },
   name: 'Write a Recall card',
@@ -331,7 +329,6 @@ const recall_card_delete: BuiltinToolDef = {
     effect: 'write',
     spends: 'none',
     scope: 'any',
-    items: recallMap('edit'),
     clientSourced: CS.always(CS.RECALL_GUIDANCE),
   },
   name: 'Delete a Recall card',
@@ -384,7 +381,6 @@ const recall_map_update: BuiltinToolDef = {
     effect: 'write',
     spends: 'none',
     scope: 'any',
-    items: recallMap('edit'),
     clientSourced: CS.always(CS.RECALL_GUIDANCE),
   },
   name: 'Update a Recall map',

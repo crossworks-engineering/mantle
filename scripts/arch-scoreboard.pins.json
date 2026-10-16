@@ -26,7 +26,7 @@
   "brainOnWorkspacesFiles": 0,
   "adminReadsFiles": 0,
   "readPathWrites": 10,
-  "itemPrecheckTools": 76,
+  "itemPrecheckTools": 66,
   "itemPrecheckRoutes": 27,
   "bareFetchSites": 5,
   "routeBodyReadFiles": 0,
@@ -100,6 +100,6 @@
     "consoleCalls": "raised 474 to 475 in the pre-check removal: the checks' floor (packages/db/src/check-floor.ts, migration 0298) says once per change, with console.error, that a check is below on (the item pre-checks are gone, so a tool write the database would refuse is made). packages/db cannot depend on @mantle/tracing, as for settleDatabase. Was raised 473 to 474 in the tooling-tag fix round 2: settleDatabase (packages/db/src/test-support.ts) warns once, with console.warn, naming the database, pid and query a scratch drop waits on. It is a test-only helper, and packages/db cannot depend on @mantle/tracing (tracing sits above db), so the logger is not an option there.",
     "rateLimitAllowed": "Was routeRateLimitAllowed (3 route files) until the A10 low round (A10 #8 L2): the count reads every file, not only route files, so the four lib files that take a limit are named too (route-limits.ts, the gate; access-keys.ts and access-key-gate.ts, the key budgets; workspace-turn.ts, the member turn budget). rateLimitCalls (was routeRateLimitCalls) stays 0.",
     "callerReads": "raised 508 to 510 by the A6b re-pin, with no A6b change: main (v0.300.70) already measures 510 (two route reads of the pipeline's caller added on main since its last re-pin; callerReads may grow, MAY_GROW in scripts/arch-scoreboard.ts, so main's check never asked for it). Every route file reads the same count on main and on feat/a6b. Lowered 510 to 506 (files 365 to 363) in A7: the hand stubs that read the caller (access/nodes GET and PATCH, the app-nav PUT, the member frame) went with the 410 stubs (goneStubs 133 to 0, routeFiles 549 to 417).",
-    "itemPrecheckTools": "Lowered 101 to 76 in the pre-check removal (docs/actors.md, \"Pre-check deletion\"): the node edits and deletes (0278, 0266), process_extraction (row security), access_set (writes nothing), the link closes (the handler's rule and link_close), tree_folder_update (0278, 0282) and the page lifecycle (pages and nodes, 0278 and 0266, and the move check); server/web/server/precheck-removal.db.test.ts proves each."
+    "itemPrecheckTools": "Lowered 101 to 66 in the pre-check removal (docs/actors.md, \"Pre-check deletion\"): the node edits and deletes (0278, 0266), process_extraction (row security), access_set (writes nothing), the link closes (the handler's rule and link_close), tree_folder_update (0278, 0282), the page lifecycle (0278, 0266, the move check) and the Recall tools (the recall_maps, recall_nodes and recall_revisions edit checks, 0280, and the delete check for a map); server/web/server/precheck-removal.db.test.ts proves each."
   }
 }

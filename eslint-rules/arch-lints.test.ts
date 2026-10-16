@@ -784,7 +784,7 @@ describe('the item pre-check counters (A4 step 4, A5 step 6b)', () => {
     expect(count("items: [manage('id'), read('x')]")).toBe(1);
     expect(count("items: [{ param: 'folder_id', need: 'edit' }]")).toBe(1);
     expect(count('items: appCopy,')).toBe(1);
-    expect(count("items: recallMap('edit'),")).toBe(1);
+    expect(count('items: pageFromNoteSource,')).toBe(1);
     expect(count("items: { type: 'string' }")).toBe(0);
     expect(count('items: f.itemCount,')).toBe(0);
     expect(count("// items: [edit('id')]")).toBe(0);

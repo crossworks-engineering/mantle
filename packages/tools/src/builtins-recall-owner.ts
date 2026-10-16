@@ -38,7 +38,6 @@ import type { BuiltinToolDef, ToolHandlerContext, ToolHandlerResult } from './ty
 import { str } from './coerce';
 import { OWNER_ONLY_ERROR, isOwnerSurface } from './surface';
 import { mapRef } from './builtins-recall-write';
-import { recallMap, recallRevisionTargets } from './item-write-gate';
 import { CS } from './client-sourced-rule';
 
 /** The owner, through an MCP client. */
@@ -224,7 +223,6 @@ const recall_prompt_confirm: BuiltinToolDef = {
     effect: 'write',
     spends: 'none',
     scope: 'admin',
-    items: recallMap('edit'),
     clientSourced: CS.always(CS.RECALL_GUIDANCE),
   },
   mcpOnly: true,
@@ -272,7 +270,6 @@ const recall_map_publish: BuiltinToolDef = {
     effect: 'write',
     spends: 'none',
     scope: 'admin',
-    items: recallMap('edit'),
     clientSourced: CS.always(CS.RECALL_GUIDANCE),
   },
   mcpOnly: true,
@@ -316,7 +313,6 @@ const recall_map_delete: BuiltinToolDef = {
     effect: 'write',
     spends: 'none',
     scope: 'admin',
-    items: recallMap('manage'),
     clientSourced: CS.always(CS.RECALL_GUIDANCE),
   },
   mcpOnly: true,
@@ -355,7 +351,6 @@ const recall_cards_reorder: BuiltinToolDef = {
     effect: 'write',
     spends: 'none',
     scope: 'admin',
-    items: recallMap('edit'),
     clientSourced: CS.always(CS.RECALL_GUIDANCE),
   },
   mcpOnly: true,
@@ -431,7 +426,6 @@ const recall_revision_restore: BuiltinToolDef = {
     effect: 'write',
     spends: 'none',
     scope: 'admin',
-    items: recallRevisionTargets,
     clientSourced: CS.always(CS.RECALL_GUIDANCE),
   },
   mcpOnly: true,
@@ -472,7 +466,6 @@ const recall_map_set_slug: BuiltinToolDef = {
     effect: 'write',
     spends: 'none',
     scope: 'admin',
-    items: recallMap('edit'),
     clientSourced: CS.always(CS.RECALL_GUIDANCE),
   },
   mcpOnly: true,
@@ -516,7 +509,6 @@ const recall_card_set_slug: BuiltinToolDef = {
     effect: 'write',
     spends: 'none',
     scope: 'admin',
-    items: recallMap('edit'),
     clientSourced: CS.always(CS.RECALL_GUIDANCE),
   },
   mcpOnly: true,

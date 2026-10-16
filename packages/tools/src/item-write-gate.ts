@@ -15,15 +15,13 @@
  * A create names no item (its folder's create check is the database's).
  * Outside a workspace scope nothing is checked: the surface rules decide.
  */
-import { and, eq } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import {
   apps,
   db,
   foldersReadOf,
   itemWriteRefusalOf,
   scopeHoldsAdmin,
-  recallMaps,
-  recallRevisions,
   type ItemNeed,
   type ItemWriteRefusal,
 } from '@mantle/db';
@@ -68,33 +66,6 @@ export function read(param: string): Target {
  *  exists or where to look for it. */
 export function refNotInScopeError(what: string, lookup: string): string {
   return `${what} is not one in your workspaces, so this call is not queued for approval: name one of yours (${lookup} lists them).`;
-}
-
-/** A recall map, by slug, former slug or id, as the recall tools take it. */
-export function recallMap(need: ItemNeed): Resolver {
-  return async (input, ownerId, ctx) => {
-    const ref = typeof input.map === 'string' ? input.map.trim() : '';
-    if (!ref) return [];
-    // Resolved in the scope: a map it does not read is the tool's own "not
-    // found" (its lookup runs in the same scope). Imported at the call: the
-    // recall tools' module defines builtins, which import this one.
-    const { mapRef } = await import('./builtins-recall-write');
-    const map = await mapRef(ownerId, ref);
-    if (map) return [{ ids: [map.id], need }];
-    // Before a call is queued for approval (A5 step 6a, carried round-2
-    // LOW-1): the approver's scope may read the map this scope does not, so
-    // a reference that names nothing here is refused now, never queued.
-    // Not in a scope that holds the Admin workspace (fix round 1, M1): it
-    // queues for an approver of the same workspace, as the folder check
-    // skips it, and a map it does not find is one a recall_map_create
-    // queued in the same plan may make; dispatch asks again when it runs.
-    if (ctx?.queue && !(await scopeHoldsAdmin())) {
-      return [
-        { ids: [], need, unresolved: refNotInScopeError(`Recall map '${ref}'`, 'recall_index') },
-      ];
-    }
-    return [];
-  };
 }
 
 /** The ltree paths of the folders on `path` below its kind's root, the
@@ -190,19 +161,6 @@ export const pageFromNotesSources: Resolver = async (input) =>
   input.supersede_source !== false && Array.isArray(input.note_ids)
     ? [{ ids: input.note_ids.filter((i): i is string => typeof i === 'string'), need: 'edit' }]
     : [];
-
-/** A recall revision's map. */
-export const recallRevisionTargets: Resolver = async (input, ownerId) => {
-  const id = typeof input.revision_id === 'string' ? input.revision_id.trim() : '';
-  if (!/^[0-9a-f-]{36}$/i.test(id)) return [];
-  const [row] = await db
-    .select({ node: recallMaps.nodeId })
-    .from(recallRevisions)
-    .innerJoin(recallMaps, eq(recallMaps.id, recallRevisions.mapId))
-    .where(and(eq(recallRevisions.id, id), eq(recallMaps.ownerId, ownerId)))
-    .limit(1);
-  return row?.node ? [{ ids: [row.node], need: 'edit' }] : [];
-};
 
 /** What a tool's write names (its policy's `items`): a target per argument,
  *  or a resolver. */
