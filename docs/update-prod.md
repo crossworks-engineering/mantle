@@ -825,7 +825,11 @@ From A2b2b on, web and api send a login's scoped writes (a member's write
 request, an Admin turn) to the write role while the box is `warn` or `on`.
 A box that is `off` runs every write as before: nothing changes there. On a
 `warn` or `on` box each of the two processes opens up to 3 connections as
-`mantle_write_user` (6 of its limit of 20) after the roll.
+`mantle_write_user` (6 of its limit of 20) after the roll. Since
+2026-10-16 the runs worker, the Telegram poller and the stdio MCP server
+send theirs there too (a run item's tool call, an approval tapped in
+Telegram, a stdio MCP call), up to 2 connections each: 10 of the 20 on a
+box, plus 2 per stdio server started on it.
 
 The first migrate with 0279 also makes the gap writer (`mantle_gap_writer`,
 NOLOGIN) and gives each gap table that has row level security a row rule

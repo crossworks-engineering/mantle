@@ -494,10 +494,13 @@ heads helper goes through it). One decision, `loginWriteRoute`, when the
 write runs:
 
 - the process opened the pool (`openLoginWritePool`): web
-  (`server/web/server/main.ts`) and api (`server/api/src/main.ts`) only.
-  Workers, the stdio MCP server and scripts keep every write on the system
-  pool. `connection-ceiling.test.ts` counts the pool for those two and fails
-  on any other caller;
+  (`server/web/server/main.ts`) and api (`server/api/src/main.ts`), 3
+  connections each; the runs worker (`server/web/workers/runs.ts`), the
+  Telegram poller (`server/web/workers/telegram-poll.ts`) and the stdio MCP
+  server (`server/mcp/src/server.ts`), 2 each (see "Tool writes off HTTP on
+  the write role"). Every other worker and the scripts keep every write on
+  the system pool. `connection-ceiling.test.ts` counts the pool for each of
+  them at its size and fails on any other caller;
 - the actor check is not off (`actorCheckMode`: the box mode read from the
   catalog, `MANTLE_ACTOR_CHECK` raises it for one process). Off is the
   rollout switch: the system pool as before, no statement and no round trip
@@ -511,8 +514,8 @@ write runs:
   reads run on the system pool, unscoped (W6a M1), so a row it read could
   match no row on the role and its write would do nothing, silently. It stays
   on the system pool with its scope on the transaction, as before, until A4
-  puts its reads in the scope. A login's write with no scope at all (a run
-  item in a worker) stays on the system pool too.
+  puts its reads in the scope. A login's write with no scope at all (an
+  approved call stamped with no origin scope) stays on the system pool too.
 
 On the role a transaction sets the scope (`mantle.ws`, `mod_ws`,
 `login_id`), the actor and the create home with one `SET LOCAL`
@@ -650,10 +653,12 @@ UPDATE`, `FOR SHARE` and kin, which need UPDATE) naming any gap table, or
 
 **Known asymmetries (2026-10-13), each until its phase:**
 
-- **Workers stay on the system pool.** The write pool opens in web and api
-  only, so the same member turn is checked when api runs it and not when a
-  worker does (a run item, a queued job): the system pool with the
-  app's checks and the 0266/0245 checks, as before A2b2b.
+- **Workers stay on the system pool** (closed for the runs worker, the
+  Telegram poller and the stdio MCP server on 2026-10-16: "Tool writes off
+  HTTP on the write role"). The write pool opened in web and api only, so
+  the same member turn was checked when api ran it and not when a worker
+  did (a run item, an approval tapped in Telegram): the system pool with
+  the app's checks and the 0266/0245 checks, as before A2b2b.
 - **Admin HTTP stays on the system pool until A4.** An Admin user's write
   request reads unscoped, so it keeps the system pool with its scope on
   the transaction: it meets only the 0266 and 0245 checks, never the write
@@ -738,6 +743,8 @@ security policy`) and `mantle_default_home`'s, so each is a 403
 - **No `RETURNING *` and no other columns on the column-limited tables.**
   A write that names one is a gap the suite fails on (`vitest.setup.ts`).
 - **Open the write pool only in web and api**: 3 each, 6 of the role's 20.
+  (2026-10-16: also the runs worker, the Telegram poller and the stdio MCP
+  server, 2 each: 10 on a box, and room for four stdio servers beside them.)
 - **Fix round 1 (2026-10-13).** H1: only a gap table's denial runs again,
   by one rule (`writeRoleGapTable`), the same in tests and on a box. M1: in
   on the rerun is checked (above). M2: writes join an open write
@@ -818,6 +825,104 @@ revision name, one short transaction checks the row as the caller (exactly
 one row; none is a 404) and points it there, one sweep removes what no row
 points at. The tables, app databases and app builds are brokered; the docs
 store writes no disk; file bytes and snapshot files are part 2.
+
+## Tool writes off HTTP on the write role (pre-check deletion blocker 2)
+
+Branch `feat/worker-write-role`, on main v0.300.75. The database's write
+and edit checks fire only for a write on the write role
+(`mantle_write_user`), and three processes ran a login's tool writes in a
+workspace scope on the system pool, where the TypeScript item pre-check
+(`item-precheck`, `packages/tools/src/gate-prerun.ts`) was the only edit
+check:
+
+- the runs worker (`server/web/workers/runs.ts`): a run item's tool call,
+  `executeRunItem` under `withRunScope` (an Admin turn scope of the run's
+  login, or its workspace's);
+- the stdio MCP server (`server/mcp/src/server.ts`): each call in the
+  anchor login's turn scope (`mcpScopeEntry`, `withTurnScope` with writes);
+- the Telegram poller (`server/web/workers/telegram-poll.ts`): an Approve
+  tap runs the parked call (`lib/telegram-approval.ts`,
+  `approvePendingCall`, `packages/tools/src/pending.ts`) in the scope it
+  was asked in (`withOriginScope`).
+
+Each now calls `openLoginWritePool({ max: 2 })` at its start, so a scoped
+write there takes the one gateway decision (`loginWriteRoute`,
+`packages/db/src/client.ts`) web and api take: the write role while the
+actor check is warn or on, the system pool while it is off. Nothing else
+changed in the gateway: the same actors, the same scopes, the same gap
+reruns, the same bounded wait (`WRITE_POOL_WAIT_MS`).
+
+**Pool sizes.** `openLoginWritePool` takes `max` (1 to `VIEWER_POOL_MAX`,
+3); the pool opens at that size on the first write on the role. web 3, api
+3, the runs worker 2, the Telegram poller 2, the stdio MCP server 2. The
+write role's `CONNECTION LIMIT` is 20 for the whole box: the box processes
+take 10 (6 on a core box, where the runs worker and the poller are off),
+and `connection-ceiling.test.ts` pins room for four stdio servers beside
+them (each a client's own process, no compose service: counted in the
+role's limit and in the headroom the ceiling leaves, as an operator's
+process). The ceiling (max_connections 450, 405 for the pools): full 349
+(was 345), MANTLE_RUNS off 309 (was 305), core 181 (unchanged). The runs
+worker counts its pool with MANTLE_RUNS off too (it opens the gateway at
+its start; no write reaches it then). A tool item batch of 5 shares the
+worker's 2 connections: each write transaction is short, and one that
+waits longer than 15 s is a busy refusal, never a hang.
+
+**MANTLE_DB_RUNTIME_ROLE.** The write pool logs in as the write role
+whether the system pool is the runtime role or the superuser; a gap's
+checked rerun runs on the system pool as before. `pnpm test:runtime-role`
+runs the proof below with the runtime role on, `vitest run` with it off.
+
+**The proof** (`server/web/server/worker-write-role.db.test.ts`; also in
+`pnpm test:edit-on`): each way in runs the product's path on a scratch
+database (a run made by `createRun` and run by `executeRunItem` as the
+worker does; `buildMantleMcpServer(owner)` over an in-memory transport as
+login(owner); a call queued in the anchor's Admin turn and approved by the
+Telegram handler), on a note homed in another workspace and granted to
+Admin with Write off (the scope reads it, may not edit it) or on (it may):
+
+| Cell (each way: run, stdio, telegram)              | Answer                                                         |
+| -------------------------------------------------- | -------------------------------------------------------------- |
+| on, pre-check bypassed, read-only note             | refused by the database, note unchanged, mapper's words        |
+| on, pre-check bypassed, editable note              | made, on the write role, no miss                               |
+| warn, pre-check bypassed, read-only note           | made on the write role, the miss `UPDATE on nodes: no edit`    |
+| warn, pre-check bypassed, editable note            | made, no miss                                                  |
+| warn and on, pool closed (main's shape), read-only | made, on the system pool, no miss: the gap this closes         |
+| off, read-only, pre-check bypassed                 | made, on the system pool (off unchanged)                       |
+| off, warn, on, pre-check in place, read-only       | refused in the pre-check's words, the same pool open or closed |
+
+**Changed answers.** With the pre-check in place: none (the last row; the
+pre-check refuses each such write first). Where the pre-check lets a write
+through and the database refuses it, in warn or on, from these three
+processes: on refuses it (a tool error in the mapper's words; before, the
+write was made), warn logs it as an actor miss (before, nothing). A write
+to a write-role gap table from these processes reruns on the system pool
+and is logged as `write-role-gap` (warn), or reruns checked (on), as in web
+and api. The test suite already ran every process with the pool open
+(`vitest.setup.ts`), so the matrix's `run` and `mcp-stdio` cells already
+answered as the boxes now do; on a box these processes answered as main's
+shape above until this branch.
+
+**Blocker 2 of the pre-check deletion** (the notes on the parked
+`feat/precheck-delete`, section "Pre-check deletion (A4 step 4, A5 step
+6b)", take this on rebase): closed. The runs worker, the stdio MCP server
+and the Telegram poller open the write pool, so their scoped tool writes
+meet the database's checks in warn and on; `connection-ceiling.test.ts`
+changed on purpose (the openers and their sizes). What stays before an
+entry goes: blocker 1 (an Admin user's HTTP write, F4, A4) and blocker 3
+(the rollback switch, A7), and each family's second reasons. Two open items
+found here, unchanged on this branch:
+
+- **An approval with no origin scope gets no item check.**
+  `toolItemWriteRefusalOf` (`packages/tools/src/item-write-gate.ts`)
+  answers null with no workspace scope and no gate scope, so a parked call
+  stamped before the origin stamp (or with none) is approved and run
+  outside any scope, on the system pool, with no item check in TypeScript
+  or in the database. Not trivially stricter (system work also runs with
+  no scope), so it is listed, not changed.
+- **Other workers** (email, files, events, heartbeats run elsewhere) are
+  not known to run a login's tool writes in a workspace scope; a worker
+  that starts to must open the pool the same way, and the ceiling test
+  names it.
 
 ## Request plumbing (A10 part 2, A10 #8, A10 #9)
 
