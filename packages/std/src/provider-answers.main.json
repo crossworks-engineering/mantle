@@ -1,0 +1,290 @@
+{
+  "phe 401 key": {
+    "provider": "The provider refused the API key. (deepgram, HTTP 401)",
+    "thrown": "The provider refused the API key. (deepgram, HTTP 401)",
+    "domain": "The provider refused the API key. (deepgram, HTTP 401)",
+    "reply": "deepgram chat 401: sk-or-v1-0123456789abcdef org=acme-private"
+  },
+  "phe 429 rate": {
+    "provider": "The provider limits the request rate. (anthropic, HTTP 429)",
+    "thrown": "The provider limits the request rate. (anthropic, HTTP 429)",
+    "domain": "The provider limits the request rate. (anthropic, HTTP 429)",
+    "reply": "anthropic chat 429: sk-or-v1-0123456789abcdef org=acme-private"
+  },
+  "phe 500 server": {
+    "provider": "The provider has a server problem. (openai, HTTP 500)",
+    "thrown": "The provider has a server problem. (openai, HTTP 500)",
+    "domain": "The provider has a server problem. (openai, HTTP 500)",
+    "reply": "openai chat 500: sk-or-v1-0123456789abcdef org=acme-private"
+  },
+  "phe 404 model": {
+    "provider": "The provider does not offer this model. (openai, HTTP 404)",
+    "thrown": "The provider does not offer this model. (openai, HTTP 404)",
+    "domain": "The provider does not offer this model. (openai, HTTP 404)",
+    "reply": "openai chat 404: sk-or-v1-0123456789abcdef org=acme-private"
+  },
+  "phe 400 bad args": {
+    "provider": "The model provider answered with an error. (openai, HTTP 400)",
+    "thrown": "The model provider answered with an error. (openai, HTTP 400)",
+    "domain": "The model provider answered with an error. (openai, HTTP 400)",
+    "reply": "openai chat 400: {\"error\":\"tools.0.name: invalid sk-or-v1-0123456789abcdef org=acme-private\"}"
+  },
+  "phe 400 max_tokens": {
+    "provider": "The model provider answered with an error. (openai, HTTP 400)",
+    "thrown": "The model provider answered with an error. (openai, HTTP 400)",
+    "domain": "The model provider answered with an error. (openai, HTTP 400)",
+    "reply": "openai chat 400: max_tokens: 100000 > 64000, the maximum sk-or-v1-0123456789abcdef org=acme-private"
+  },
+  "phe 400 prompt too long": {
+    "provider": "The model provider answered with an error. (anthropic, HTTP 400)",
+    "thrown": "The model provider answered with an error. (anthropic, HTTP 400)",
+    "domain": "The model provider answered with an error. (anthropic, HTTP 400)",
+    "reply": "anthropic chat 400: prompt is too long: 210000 tokens > 200000 maximum sk-or-v1-0123456789abcdef org=acme-private"
+  },
+  "phe 400 context length": {
+    "provider": "The model provider answered with an error. (openai, HTTP 400)",
+    "thrown": "The model provider answered with an error. (openai, HTTP 400)",
+    "domain": "The model provider answered with an error. (openai, HTTP 400)",
+    "reply": "openai chat 400: This model's maximum context length is 128000 tokens sk-or-v1-0123456789abcdef org=acme-private"
+  },
+  "phe 400 gemini token count": {
+    "provider": "The model provider answered with an error. (google, HTTP 400)",
+    "thrown": "The model provider answered with an error. (google, HTTP 400)",
+    "domain": "The model provider answered with an error. (google, HTTP 400)",
+    "reply": "google chat 400: The input token count (1200000) exceeds the maximum number of tokens allowed sk-or-v1-0123456789abcdef org=acme-private"
+  },
+  "phe 413 too large": {
+    "provider": "The model provider answered with an error. (openai, HTTP 413)",
+    "thrown": "The model provider answered with an error. (openai, HTTP 413)",
+    "domain": "The model provider answered with an error. (openai, HTTP 413)",
+    "reply": "openai chat 413: Request entity too large sk-or-v1-0123456789abcdef org=acme-private"
+  },
+  "phe 422 unprocessable": {
+    "provider": "The model provider answered with an error. (openai, HTTP 422)",
+    "thrown": "The model provider answered with an error. (openai, HTTP 422)",
+    "domain": "The model provider answered with an error. (openai, HTTP 422)",
+    "reply": "openai chat 422: unprocessable sk-or-v1-0123456789abcdef org=acme-private"
+  },
+  "phe 403 moderation": {
+    "provider": "The model provider answered with an error. (openai, HTTP 403)",
+    "thrown": "The model provider answered with an error. (openai, HTTP 403)",
+    "domain": "The model provider answered with an error. (openai, HTTP 403)",
+    "reply": "openai chat 403: Your input was flagged by moderation sk-or-v1-0123456789abcdef org=acme-private"
+  },
+  "phe 403 forbidden": {
+    "provider": "The provider refused the API key. (openai, HTTP 403)",
+    "thrown": "The provider refused the API key. (openai, HTTP 403)",
+    "domain": "The provider refused the API key. (openai, HTTP 403)",
+    "reply": "openai chat 403: sk-or-v1-0123456789abcdef org=acme-private"
+  },
+  "phe 400 anthropic workspace": {
+    "provider": "This Anthropic key is not tied to a workspace. Add or check the workspace id on the key, or use a key made inside an Anthropic workspace. (anthropic, HTTP 400)",
+    "thrown": "This Anthropic key is not tied to a workspace. Add or check the workspace id on the key, or use a key made inside an Anthropic workspace. (anthropic, HTTP 400)",
+    "domain": "This Anthropic key is not tied to a workspace. Add or check the workspace id on the key, or use a key made inside an Anthropic workspace. (anthropic, HTTP 400)",
+    "reply": "anthropic chat 400: {\"type\":\"error\",\"error\":{\"type\":\"invalid_request_error\",\"message\":\"This API key is not scoped to a workspace, so this request must include the anthropic-workspace-id header.\"}}"
+  },
+  "phe 200 transcript error": {
+    "provider": "The model provider answered with an error. (assemblyai, HTTP 200)",
+    "thrown": "The model provider answered with an error. (assemblyai, HTTP 200)",
+    "domain": "The model provider answered with an error. (assemblyai, HTTP 200)",
+    "reply": "assemblyai transcript error: Audio could not be decoded sk-or-v1-0123456789abcdef org=acme-private"
+  },
+  "phe 418 unnamed": {
+    "provider": "The model provider answered with an error. (openai, HTTP 418)",
+    "thrown": "The model provider answered with an error. (openai, HTTP 418)",
+    "domain": "The model provider answered with an error. (openai, HTTP 418)",
+    "reply": "openai chat 418: sk-or-v1-0123456789abcdef org=acme-private"
+  },
+  "wrapped phe 400 too long": {
+    "provider": "The model provider answered with an error. (anthropic, HTTP 400)",
+    "thrown": "The model provider answered with an error. (anthropic, HTTP 400)",
+    "domain": "The model provider answered with an error. (anthropic, HTTP 400)",
+    "reply": "turn failed"
+  },
+  "sdk 400 too long": {
+    "provider": "The model provider answered with an error. (HTTP 400)",
+    "thrown": "The model provider answered with an error. (HTTP 400)",
+    "domain": null,
+    "reply": "openrouter-chat 400 on some/model: prompt is too long for this route metadata=sk-or-v1-0123456789abcdef org=acme-private"
+  },
+  "sdk 400 bad args": {
+    "provider": "The model provider answered with an error. (HTTP 400)",
+    "thrown": "The model provider answered with an error. (HTTP 400)",
+    "domain": null,
+    "reply": "openrouter-chat 400 on some/model: tools.0.function.parameters is invalid metadata=sk-or-v1-0123456789abcdef org=acme-private"
+  },
+  "sdk 403 moderation": {
+    "provider": "The model provider answered with an error. (HTTP 403)",
+    "thrown": "The model provider answered with an error. (HTTP 403)",
+    "domain": null,
+    "reply": "openrouter-chat 403 on some/model: Your input was flagged by moderation metadata=sk-or-v1-0123456789abcdef org=acme-private"
+  },
+  "sdk 413 too large": {
+    "provider": "The model provider answered with an error. (HTTP 413)",
+    "thrown": "The model provider answered with an error. (HTTP 413)",
+    "domain": null,
+    "reply": "openrouter-chat 413 on some/model: Request entity too large metadata=sk-or-v1-0123456789abcdef org=acme-private"
+  },
+  "sdk 429 rate": {
+    "provider": "The provider limits the request rate. (HTTP 429)",
+    "thrown": "The provider limits the request rate. (HTTP 429)",
+    "domain": null,
+    "reply": "openrouter-chat 429 on some/model: Rate limit exceeded metadata=sk-or-v1-0123456789abcdef org=acme-private"
+  },
+  "sdk unwrapped 413": {
+    "provider": "The model provider answered with an error. (HTTP 413)",
+    "thrown": "The model provider answered with an error. (HTTP 413)",
+    "domain": null,
+    "reply": "API error occurred: sk-or-v1-0123456789abcdef org=acme-private"
+  },
+  "sdk 200 validation": {
+    "provider": "The model provider answered with an error. (HTTP 200)",
+    "thrown": "The model provider answered with an error. (HTTP 200)",
+    "domain": null,
+    "reply": "Response validation failed: sk-or-v1-0123456789abcdef org=acme-private"
+  },
+  "prose openrouter-chat 403": {
+    "provider": "The provider refused the API key. (HTTP 403)",
+    "thrown": "openrouter-chat 403 on some/model: Forbidden metadata=sk-or-v1-0123456789abcdef org=acme-private",
+    "domain": null,
+    "reply": "openrouter-chat 403 on some/model: Forbidden metadata=sk-or-v1-0123456789abcdef org=acme-private"
+  },
+  "prose anthropic chat 500": {
+    "provider": "The provider has a server problem. (HTTP 500)",
+    "thrown": "anthropic chat 500: sk-or-v1-0123456789abcdef org=acme-private",
+    "domain": null,
+    "reply": "anthropic chat 500: sk-or-v1-0123456789abcdef org=acme-private"
+  },
+  "prose embeddings failed 502": {
+    "provider": "The provider has a server problem. (HTTP 502)",
+    "thrown": "OpenAI embeddings failed: 502 Bad Gateway — sk-or-v1-0123456789abcdef org=acme-private",
+    "domain": null,
+    "reply": "OpenAI embeddings failed: 502 Bad Gateway — sk-or-v1-0123456789abcdef org=acme-private"
+  },
+  "prose stream error 429": {
+    "provider": "The provider limits the request rate. (HTTP 429)",
+    "thrown": "openrouter-chat stream error 429: Rate limited sk-or-v1-0123456789abcdef org=acme-private",
+    "domain": null,
+    "reply": "openrouter-chat stream error 429: Rate limited sk-or-v1-0123456789abcdef org=acme-private"
+  },
+  "prose fetch failed 404": {
+    "provider": "The provider does not offer this model. (HTTP 404)",
+    "thrown": "fetch failed: 404 Not Found",
+    "domain": null,
+    "reply": "fetch failed: 404 Not Found"
+  },
+  "prose download failed http 500": {
+    "provider": "The provider has a server problem. (HTTP 500)",
+    "thrown": "download failed: HTTP 500",
+    "domain": null,
+    "reply": "download failed: HTTP 500"
+  },
+  "own status 401 no body": {
+    "provider": "The provider refused the API key. (HTTP 401)",
+    "thrown": "no valid access token",
+    "domain": null,
+    "reply": "no valid access token"
+  },
+  "own status 404 no body": {
+    "provider": "The provider does not offer this model. (HTTP 404)",
+    "thrown": "page not found: abc",
+    "domain": null,
+    "reply": "page not found: abc"
+  },
+  "typeerror fetch failed": {
+    "provider": "The brain cannot reach the provider.",
+    "thrown": "fetch failed",
+    "domain": null,
+    "reply": "fetch failed"
+  },
+  "typeerror connect timeout": {
+    "provider": "The provider does not answer in time.",
+    "thrown": "fetch failed",
+    "domain": null,
+    "reply": "fetch failed"
+  },
+  "typeerror terminated": {
+    "provider": "The brain cannot reach the provider.",
+    "thrown": "terminated",
+    "domain": null,
+    "reply": "terminated"
+  },
+  "typeerror own bug": {
+    "provider": "The brain cannot reach the provider.",
+    "thrown": "Cannot read properties of undefined (reading 'x')",
+    "domain": null,
+    "reply": "Cannot read properties of undefined (reading 'x')"
+  },
+  "typeerror header value": {
+    "provider": "The brain cannot reach the provider.",
+    "thrown": "Headers.append: \"Bearer sk-or-v1-0123456789abcdef org=acme-private\n\" is an invalid header value.",
+    "domain": null,
+    "reply": "Headers.append: \"Bearer sk-or-v1-0123456789abcdef org=acme-private\n\" is an invalid header value."
+  },
+  "timeout error": {
+    "provider": "The model provider answered with an error. (HTTP 180)",
+    "thrown": "openai chat timed out after 180 s",
+    "domain": null,
+    "reply": "openai chat timed out after 180 s"
+  },
+  "abort error": {
+    "provider": "The provider does not answer in time.",
+    "thrown": "This operation was aborted",
+    "domain": null,
+    "reply": "This operation was aborted"
+  },
+  "sdk connection error": {
+    "provider": "The brain cannot reach the provider.",
+    "thrown": "Unable to make request: TypeError: fetch failed",
+    "domain": null,
+    "reply": "Unable to make request: TypeError: fetch failed"
+  },
+  "sdk request timeout": {
+    "provider": "The provider does not answer in time.",
+    "thrown": "Request timed out: TimeoutError: signal timed out",
+    "domain": null,
+    "reply": "Request timed out: TimeoutError: signal timed out"
+  },
+  "syntax error html body": {
+    "provider": "The model provider answered with an error.",
+    "thrown": "Unexpected token '<', \"<html>sk-o\"... is not valid JSON",
+    "domain": null,
+    "reply": "Unexpected token '<', \"<html>sk-o\"... is not valid JSON"
+  },
+  "syntax error empty body": {
+    "provider": "The model provider answered with an error.",
+    "thrown": "Unexpected end of JSON input",
+    "domain": null,
+    "reply": "Unexpected end of JSON input"
+  },
+  "openrouter empty response": {
+    "provider": "The provider does not answer in time.",
+    "thrown": "openrouter-chat: empty or truncated response from m after 34.0s, likely an upstream timeout or dropped connection",
+    "domain": null,
+    "reply": "openrouter-chat: empty or truncated response from m after 34.0s, likely an upstream timeout or dropped connection"
+  },
+  "no key": {
+    "provider": "No API key is set for this provider.",
+    "thrown": "no api key for provider 'openai'",
+    "domain": null,
+    "reply": "no api key for provider 'openai'"
+  },
+  "own error": {
+    "provider": "team turn: no api_key_id on agent x",
+    "thrown": "team turn: no api_key_id on agent x",
+    "domain": null,
+    "reply": "team turn: no api_key_id on agent x"
+  },
+  "input error": {
+    "provider": "entry_date must be a valid date",
+    "thrown": "entry_date must be a valid date",
+    "domain": "entry_date must be a valid date",
+    "reply": "entry_date must be a valid date"
+  },
+  "database error": {
+    "provider": "the database could not run this request (the details are in the server log)",
+    "thrown": "relation \"x\" does not exist",
+    "domain": null,
+    "reply": "the database could not run this request (the details are in the server log)"
+  }
+}
