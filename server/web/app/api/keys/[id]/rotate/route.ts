@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { ownerCaller } from '@/lib/auth';
 import { rotateApiKey } from '@/lib/api-keys';
 import { afterVaultKeyReplaced } from '@/lib/mcp-connectors';
+import { retryProvidersAfterKeyChange } from '@/lib/embedding-config';
 import { readJson } from '@/lib/read-body';
 
 const RotateBody = z.object({
@@ -26,5 +27,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   // Another key may be another account: a connector's marks were for the
   // old one (access matrix T7).
   await afterVaultKeyReplaced(user.id, row.service, row.label);
+  // A new key value: an open provider alert probes now (A10 lows).
+  await retryProvidersAfterKeyChange(user.id);
   return NextResponse.json({ id: row.id, updatedAt: row.updatedAt });
 }

@@ -1,7 +1,6 @@
 import { NextResponse } from '@/server/http-compat';
-import { requestProviderProbeNow } from '@mantle/db';
 import { loadProviderAlerts } from '@mantle/content';
-import { notifyProviderRecover } from '@/lib/embedding-config';
+import { retryProvidersNow } from '@/lib/embedding-config';
 import { ownerCaller } from '@/lib/auth';
 
 /**
@@ -24,7 +23,6 @@ export async function GET() {
  */
 export async function POST() {
   const user = ownerCaller();
-  const probing = await requestProviderProbeNow(user.id);
-  await notifyProviderRecover(user.id);
+  const probing = await retryProvidersNow(user.id);
   return NextResponse.json({ ok: true, probing });
 }

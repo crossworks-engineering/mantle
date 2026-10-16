@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { ownerCaller } from '@/lib/auth';
 import { listApiKeys, setApiKey } from '@/lib/api-keys';
 import { afterVaultKeyReplaced } from '@/lib/mcp-connectors';
+import { retryProvidersAfterKeyChange } from '@/lib/embedding-config';
 import { KNOWN_KEY_SERVICES } from '@mantle/api-keys';
 import { isMcpManagedSecretService } from '@mantle/tools';
 import { firstIssue } from '@/lib/zod-issue';
@@ -71,6 +72,9 @@ export async function POST(req: Request) {
       // A save over an existing key replaces it, as a rotate does (access
       // matrix T7): a connector's marks were for the old key.
       await afterVaultKeyReplaced(user.id, row.service, row.label);
+      // A new or replaced key: an open provider alert (a refused key, no
+      // key) probes now, as the Admin "Try again" does (A10 lows).
+      await retryProvidersAfterKeyChange(user.id);
       return NextResponse.json({
         id: row.id,
         service: row.service,

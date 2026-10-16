@@ -5,7 +5,14 @@
  * cache so a change takes effect immediately.
  */
 import { eq, sql } from 'drizzle-orm';
-import { db, type EmbeddingConfigRow, embeddingConfig, executeWrite } from '@mantle/db';
+import {
+  db,
+  type EmbeddingConfigRow,
+  embeddingConfig,
+  executeWrite,
+  requestProviderProbeNow,
+} from '@mantle/db';
+import { errorMessage } from '@mantle/std';
 import { clearEmbeddingModelCache, EMBEDDING_DIMS } from '@mantle/embeddings';
 
 export { EMBEDDING_DIMS };
@@ -72,5 +79,38 @@ export async function notifyProviderRecover(ownerId: string): Promise<void> {
     await executeWrite(sql`SELECT pg_notify('provider_recover', ${ownerId}::text)`);
   } catch {
     /* best-effort */
+  }
+}
+
+/**
+ * "Try again" (A10 lows): every open provider alert probes on the agent's
+ * next tick, and the agent is told at once (notifyProviderRecover). The
+ * Admin "Try again" button calls it, and so does a change to a key's
+ * credential (PATCH /api/keys/:id for the Anthropic workspace id, the key's
+ * rotate, a key set again by POST /api/keys), so a fixed key clears its
+ * alert and resumes the extract queue without waiting for the probe's
+ * backoff. Cheap and bounded: one UPDATE and one NOTIFY here, no model
+ * call; the agent makes one tiny probe call per open alert and recovers at
+ * most once per 2 min (provider-circuit.ts), however often this is called.
+ * Returns how many open alerts will probe; throws as the button always did
+ * when the alerts cannot be read (a key route uses {@link
+ * retryProvidersAfterKeyChange}, which never throws).
+ */
+export async function retryProvidersNow(ownerId: string): Promise<number> {
+  const probing = await requestProviderProbeNow(ownerId);
+  await notifyProviderRecover(ownerId);
+  return probing;
+}
+
+/**
+ * {@link retryProvidersNow} after a key's credential changed: best-effort,
+ * logged and never thrown, because the key's own write already succeeded
+ * and its answer must not turn into an error over a nudge.
+ */
+export async function retryProvidersAfterKeyChange(ownerId: string): Promise<void> {
+  try {
+    await retryProvidersNow(ownerId);
+  } catch (err) {
+    console.error('[keys] could not ask the provider alerts to probe:', errorMessage(err));
   }
 }

@@ -1,7 +1,8 @@
 /**
  * The Anthropic workspace id on the keys routes, without a database: GET
  * says the brain stores it (`features`), POST passes it to the store only
- * when sent, and PATCH sets or clears it on an existing key. The store's own
+ * when sent, and PATCH sets or clears it on an existing key. A credential
+ * change (POST, PATCH, rotate) sends the "Try again" nudge (A10 lows). The store's own
  * rules (anthropic only, the shape) are pinned in
  * packages/api-keys/src/anthropic-workspace.db.test.ts.
  */
@@ -14,6 +15,8 @@ const KEY_ID = '11111111-1111-4111-8111-111111111111';
 const h = vi.hoisted(() => ({
   setApiKey: vi.fn(),
   setWorkspace: vi.fn(),
+  rotate: vi.fn(),
+  retry: vi.fn(async () => {}),
 }));
 
 vi.mock('@/lib/auth', async (importOriginal) => ({
@@ -27,8 +30,12 @@ vi.mock('@/lib/api-keys', () => ({
   ]),
   setApiKey: h.setApiKey,
   setApiKeyAnthropicWorkspace: h.setWorkspace,
+  rotateApiKey: h.rotate,
   deleteApiKey: vi.fn(),
 }));
+
+// The "Try again" nudge a credential change sends (A10 lows item 6).
+vi.mock('@/lib/embedding-config', () => ({ retryProvidersAfterKeyChange: h.retry }));
 
 vi.mock('@mantle/tools', () => ({ isMcpManagedSecretService: () => false }));
 vi.mock('@/lib/mcp-connectors', () => ({ afterVaultKeyReplaced: vi.fn(async () => {}) }));
@@ -43,6 +50,8 @@ const json = (url: string, method: string, body: unknown) =>
 beforeEach(() => {
   h.setApiKey.mockReset();
   h.setWorkspace.mockReset();
+  h.rotate.mockReset();
+  h.retry.mockClear();
   h.setApiKey.mockImplementation(async (_o, service, label, _p, opts) => ({
     id: KEY_ID,
     service,
@@ -115,6 +124,9 @@ describe('PATCH /api/keys/:id', () => {
     expect(
       ((await clear.json()) as { anthropicWorkspaceId: null }).anthropicWorkspaceId,
     ).toBeNull();
+    // Each change asks the open provider alerts to probe now (A10 lows).
+    expect(h.retry).toHaveBeenCalledTimes(2);
+    expect(h.retry).toHaveBeenCalledWith(OWNER);
   });
 
   it('answers 400 for a bad body or id, 404 for no such key, and lets the store refuse', async () => {
@@ -132,5 +144,39 @@ describe('PATCH /api/keys/:id', () => {
     await expect(
       PATCH(json('http://x', 'PATCH', { anthropicWorkspaceId: 'w' }), ctx(KEY_ID)),
     ).rejects.toBe(refusal);
+    // No change, no nudge.
+    expect(h.retry).not.toHaveBeenCalled();
+  });
+});
+
+describe('a key credential change nudges the provider alerts (A10 lows item 6)', () => {
+  it('a POST that sets a key nudges once', async () => {
+    const { POST } = await import('./route');
+    await POST(
+      json('http://localhost/api/keys', 'POST', {
+        service: 'openai',
+        label: 'default',
+        plaintext: 'test-not-a-key',
+      }),
+    );
+    expect(h.retry).toHaveBeenCalledTimes(1);
+  });
+
+  it('a rotate nudges once; a key that is not there does not', async () => {
+    const { POST } = await import('./[id]/rotate/route');
+    const ctx = { params: Promise.resolve({ id: KEY_ID }) };
+    h.rotate.mockResolvedValueOnce({
+      id: KEY_ID,
+      service: 'openai',
+      label: 'default',
+      updatedAt: new Date(0),
+    });
+    const ok = await POST(json('http://x', 'POST', { plaintext: 'test-not-a-key' }), ctx);
+    expect(ok.status).toBe(200);
+    expect(h.retry).toHaveBeenCalledTimes(1);
+    h.rotate.mockResolvedValueOnce(null);
+    const missing = await POST(json('http://x', 'POST', { plaintext: 'test-not-a-key' }), ctx);
+    expect(missing.status).toBe(404);
+    expect(h.retry).toHaveBeenCalledTimes(1);
   });
 });
