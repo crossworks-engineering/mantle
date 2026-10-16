@@ -5671,9 +5671,11 @@ merges first; 0298 keeps its number; the 27 HTTP entries untouched).
   design: each cell now expects the edit check's refusal (`no_edit`) off
   as on, and that nothing changed (the store's files, the row, the
   snapshot rows and tombstones), with a comment saying why; the two file
-  headers say it too. The tables cell asks a draft save and both commits.
-  The app database and app build off cells are unchanged (those writes ask
-  no rights read). Nothing later in either file read the old result (each
+  headers say it too. In the tables cell the draft save is still made off
+  (it asks no rights read; the database refuses it in on), then both
+  commits are refused and leave the row and the disk as the save left
+  them. The app database and app build off cells are unchanged (those
+  writes ask no rights read). Nothing later in either file read the old result (each
   off cell is the last of its block and makes its own item).
 - **roll.sh step 2d asks the target, not a number.** `CHECK_FLOOR_RELEASE`
   is gone: a box below on (and not `MANTLE_CHECK_FLOOR=keep`) is refused
