@@ -378,7 +378,7 @@ services:
     logging: *default-logging
     # Deliberately NO mem_limit: an OOM-killed database is worse than a slow box.
     # max_connections sits above the code's worst case: every pool of every
-    # process at its max (about 340 on the full shape, 175 on a core). Real use
+    # process at its max (about 350 on the full shape, 180 on a core). Real use
     # is far lower (about 50 at idle), so the extra slots cost nothing until a
     # burst; an idle connection holds a few MB. connection-ceiling.test.ts
     # (packages/db) keeps the sum of the pools at or under 90% of this number.

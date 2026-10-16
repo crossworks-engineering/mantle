@@ -62,8 +62,9 @@ function retireStatement(role: string, exists = true): string {
 }
 
 /** Hard cap on connections per role, across every process of a box. The
- *  write role's is smaller: no process opens its pool before A2b2b, and it
- *  counts in the box's worst case (docs/actors.md, "A2b2b must"). */
+ *  write role's is smaller: only the processes that call openLoginWritePool
+ *  open its pool (web, api, the runs worker, the Telegram poller, the stdio
+ *  MCP server), and connection-ceiling.test.ts keeps their sum under it. */
 export const ROLE_CONNECTION_LIMIT: Readonly<Record<PoolRole, number>> = { user: 30, write: 20 };
 
 /** The attributes that make a viewer role a lock (and the gap writer:

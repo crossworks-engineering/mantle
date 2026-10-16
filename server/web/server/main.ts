@@ -107,7 +107,8 @@ if (isBootSmoke()) {
 // Arch A2a: each boot task runs as system(boot:<task>).
 const { runAsSystem, openLoginWritePool } = await import('@mantle/db');
 // Arch A2b2b: this process sends scoped login writes to the write role
-// (docs/actors.md; the connection ceiling counts its pool for web and api).
+// (docs/actors.md; the connection ceiling counts its pool for each process
+// that opens it).
 openLoginWritePool();
 void runAsSystem('boot:manifest-reconcile', () =>
   import('../lib/system-manifest/reconcile')

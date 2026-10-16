@@ -22,7 +22,14 @@
  */
 import { StdioServerTransport } from '@modelcontextprotocol/server/stdio';
 import { bootSmokeExit, isBootSmoke } from '@mantle/config';
-import { authUsers, db, resolveSingleOwnerId, runAsSystem, startCallAudit } from '@mantle/db';
+import {
+  authUsers,
+  db,
+  openLoginWritePool,
+  resolveSingleOwnerId,
+  runAsSystem,
+  startCallAudit,
+} from '@mantle/db';
 import { buildMantleMcpServer, ensureGateReady } from '@mantle/mcp-core';
 import { registerRecallEmbedder } from '@mantle/content';
 import { embedBatch } from '@mantle/embeddings';
@@ -47,6 +54,13 @@ ensureGateReady();
 if (isBootSmoke()) await bootSmokeExit('mcp-stdio');
 // One audit row for every tool write (A5 step 6d, @mantle/db call-audit.ts).
 startCallAudit();
+// Arch A2b2b: each call runs in the anchor login's turn scope (mcp-core
+// mcp-scope.ts), so its writes go to the write role as the HTTP MCP
+// surface's do, and the database's write and edit checks hold them to that
+// scope (docs/actors.md, "The login write gateway"). A small pool: one
+// client's calls, and the role's 20 connections are the whole box's
+// (connection-ceiling.test.ts).
+openLoginWritePool({ max: 2 });
 
 // Resolve the owner: ALLOWED_USER_ID when set (validated as a UUID inside
 // resolveSingleOwnerId), else the sole auth.users row — so a self-hosted setup

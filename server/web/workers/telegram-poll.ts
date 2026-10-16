@@ -20,7 +20,14 @@
  * Env loading via `--env-file-if-exists=.env.local` in package.json.
  */
 import { eq } from 'drizzle-orm';
-import { channels, db, telegramAccounts, type Channel, type TelegramAccount } from '@mantle/db';
+import {
+  channels,
+  db,
+  openLoginWritePool,
+  telegramAccounts,
+  type Channel,
+  type TelegramAccount,
+} from '@mantle/db';
 import { pollOnce, evictBot } from '@mantle/telegram';
 import { telegramApprovalHandlers } from '../lib/telegram-approval';
 import { registerRecallEmbedder } from '@mantle/content';
@@ -35,6 +42,14 @@ import { backoffMs, sleep } from '@mantle/std';
 // row keeps a null embedding: the page is there, recall_match finds nothing.
 // recall-embed-registration.test.ts pins this call. (2026-09-03 audit.)
 registerRecallEmbedder(embedBatch);
+
+// Arch A2b2b: an Approve tap runs the parked call in the scope it was asked
+// in (pending-origin.ts withOriginScope), so its writes go to the write role
+// as an approval in web does, and the database's write and edit checks hold
+// them to that scope (docs/actors.md, "The login write gateway"). A small
+// pool: one tap at a time, and the role's 20 connections are the whole
+// box's (connection-ceiling.test.ts).
+openLoginWritePool({ max: 2 });
 
 const CHANNEL_REFRESH_MS = 60_000;
 const BACKOFF_BASE_MS = 1_000;

@@ -24,7 +24,7 @@
  * container brings the engine live.
  */
 import { eq, sql } from 'drizzle-orm';
-import { db, runItems } from '@mantle/db';
+import { db, openLoginWritePool, runItems } from '@mantle/db';
 import { registerHeartbeatTools } from '@mantle/runtime/heartbeats';
 import {
   enqueueRunActionsSafe,
@@ -62,6 +62,13 @@ registerHeartbeatTools();
 // one: the worker scripts pass --env-file, so env is set before any module runs.
 // recall-embed-registration.test.ts pins this call. (2026-09-03 audit.)
 registerRecallEmbedder(embedBatch);
+
+// Arch A2b2b: a run item's tool call runs in its run's scope (withRunScope),
+// so its writes go to the write role as an api turn's do, and the database's
+// write and edit checks hold them to that scope (docs/actors.md, "The login
+// write gateway"). A small pool: tool items are short writes, and the
+// role's 20 connections are the whole box's (connection-ceiling.test.ts).
+openLoginWritePool({ max: 2 });
 
 type DispatchJob = { itemId: string };
 type ResumeJob = { runId: string; groupId: string };

@@ -104,13 +104,17 @@ declare global {
   /** This process sends scoped login writes to the write role
    *  (openLoginWritePool, arch A2b2b). */
   var __mantleLoginWritePool: boolean | undefined;
+
+  /** The write role's pool size in this process (openLoginWritePool's
+   *  `max`; VIEWER_POOL_MAX when not given). */
+  var __mantleLoginWritePoolMax: number | undefined;
 }
 
 /** Connections of a limited pool, per process and role. Small on purpose:
  *  every process of a box opens its own pools, and their sum must stay under
  *  the box's max_connections (the connection ceiling, task 29008b01).
- *  The write role's pool (getViewerDb('write')) is opened by no process
- *  until A2b2b (docs/actors.md, "A2b2b must"). */
+ *  The write role's pool (getViewerDb('write')) opens only in the processes
+ *  that call openLoginWritePool, at the size each asks for (at most this). */
 const VIEWER_POOL_MAX = 3;
 
 /**
@@ -769,7 +773,8 @@ function getViewerDb(level: PoolRole): PostgresJsDatabase<typeof schema> {
   const password = viewerRolePassword(env('MANTLE_MASTER_KEY') ?? '', level);
   const perDatabase = feature('viewerRolesPerDatabase');
   const sql = postgres(viewerDatabaseUrl(url, level, password, perDatabase), {
-    max: VIEWER_POOL_MAX,
+    // The write role's: the size this process opened it at (openLoginWritePool).
+    max: level === 'write' ? loginWritePoolMax() : VIEWER_POOL_MAX,
     prepare: false,
     // No JIT on a scoped connection (W7a): a row rule raises the planner's
     // cost estimate past jit_above_cost, so a vector search that reads 50
@@ -789,15 +794,34 @@ function getViewerDb(level: PoolRole): PostgresJsDatabase<typeof schema> {
 // ── The login write gateway (workspaces arch A2b2b, plan 20.1) ─────────────
 
 /**
- * Open the login write gateway in this process (arch A2b2b): web and api
- * only (server/web/server/main.ts, server/api/src/main.ts). The role's
- * connection limit is 20 and its pool takes VIEWER_POOL_MAX per process, so
- * every other process keeps its login writes on the system pool
- * (connection-ceiling.test.ts counts the pool for the processes that call
- * this). Tests open it in vitest.setup.ts. `false` closes it again (tests).
+ * Open the login write gateway in this process (arch A2b2b): every process
+ * that runs a login's tool or request writes in a workspace scope, so the
+ * database's write and edit checks hold them there as they do in web:
+ *
+ *  - web and api (server/web/server/main.ts, server/api/src/main.ts):
+ *    VIEWER_POOL_MAX each;
+ *  - the runs worker (server/web/workers/runs.ts: a run item's tool call,
+ *    in withRunScope) and the stdio MCP server (server/mcp/src/server.ts:
+ *    each call in the anchor login's turn scope): `max: 2` each.
+ *
+ * The role's connection limit is 20 (viewer-roles.ts), shared by every
+ * process of a box; connection-ceiling.test.ts counts the pool for each
+ * process that calls this, at the size it asks for, and fails on any other
+ * caller. `max` is read when the pool opens (the first write on the role):
+ * call this at the process's start. Tests open it in vitest.setup.ts.
  */
-export function openLoginWritePool(open = true): void {
-  globalThis.__mantleLoginWritePool = open;
+export function openLoginWritePool(opts: { max?: number } = {}): void {
+  const max = opts.max ?? VIEWER_POOL_MAX;
+  if (!Number.isInteger(max) || max < 1 || max > VIEWER_POOL_MAX) {
+    throw new Error(`openLoginWritePool: max must be 1 to ${VIEWER_POOL_MAX}`);
+  }
+  globalThis.__mantleLoginWritePool = true;
+  globalThis.__mantleLoginWritePoolMax = max;
+}
+
+/** The write role's pool size in this process (openLoginWritePool). */
+function loginWritePoolMax(): number {
+  return globalThis.__mantleLoginWritePoolMax ?? VIEWER_POOL_MAX;
 }
 
 /** Whether this process sends login writes to the write role. */
@@ -869,7 +893,8 @@ type LoginWriteRoute = {
  * The login write gateway's one decision (arch A2b2b): the settings a write
  * that runs now takes on the write role, or null for the system pool
  * (today's path, unchanged). The write role when all hold:
- *  - this process opened it (openLoginWritePool: web and api);
+ *  - this process opened it (openLoginWritePool: web, api, the runs
+ *    worker and the stdio MCP server);
  *  - the actor check is not off (the box mode read from the catalog, where
  *    a session can only make it stricter; MANTLE_ACTOR_CHECK raises it for
  *    one process). Off is the rollout switch: today's path, no statement
@@ -1455,7 +1480,7 @@ function watchTx(t: PgSql, tx: WriteTx, level: WriteTx): PgSql {
 
 // ── A bounded wait for the write pool (A2b2b fix round 1, M2) ──────────────
 
-/** How long a write waits for a write-pool connection (VIEWER_POOL_MAX per
+/** How long a write waits for a write-pool connection (openLoginWritePool's size per
  *  process) before it fails: the pool held by stuck work becomes an error,
  *  never a hang. */
 const WRITE_POOL_WAIT_MS = 15_000;

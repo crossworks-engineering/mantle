@@ -104,7 +104,7 @@ async function main(): Promise<void> {
   startProcessHeartbeat();
   // Arch A2b2b: this process sends scoped login writes (an Admin turn's) to
   // the write role (docs/actors.md; the connection ceiling counts its pool
-  // for web and api).
+  // for each process that opens it).
   openLoginWritePool();
   // Boot sanity for sqlite-native table storage: node:sqlite is experimental
   // upstream, so the engine behaviors Tables v2 relies on are re-proven on

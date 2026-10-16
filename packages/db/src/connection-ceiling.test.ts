@@ -354,26 +354,62 @@ function sizeOf(call: Call): number {
 }
 
 /** client.ts: the system pool and the limited pool (VIEWER_POOL_MAX per
- *  process and role). */
+ *  process and role; the write role's at the size each opener asks for). */
 const clientCalls = CALLS.filter((c) => c.file === CLIENT_TS && c.kind === 'postgres');
 const viewerCall = clientCalls.find((c) => /viewerDatabaseUrl\(/.test(c.args));
 const systemCall = clientCalls.find((c) => !/viewerDatabaseUrl\(/.test(c.args));
 
+/** VIEWER_POOL_MAX, read from client.ts: each limited pool's size per
+ *  process, and the most a write pool opener may ask for. */
+const VIEWER_POOL_MAX = (() => {
+  const m = code(read(CLIENT_TS)).match(/\bconst VIEWER_POOL_MAX\s*=\s*(\d+)\s*;/);
+  if (!m) throw new Error('client.ts: no VIEWER_POOL_MAX');
+  return Number(m[1]);
+})();
+
 /**
  * The processes that open the write role's pool (arch A2b2b): the entry
  * files that call openLoginWritePool, by the compose service they run.
- * Only web and api (docs/actors.md): any other caller fails the test below
- * until it is counted here.
+ * Every process that runs a login's writes in a workspace scope: web and
+ * api, the runs worker (a run item's tool call, withRunScope), the Telegram
+ * poller (an Approve tap runs the parked call in the scope it was asked in,
+ * withOriginScope) and the stdio MCP server (each call in the anchor
+ * login's turn scope). The stdio server
+ * is no compose service (null): a client (Claude Desktop, Claude Code, an
+ * operator's `docker exec`) starts it, so it counts in the role's limit as
+ * STDIO_MCP_PROCESSES of them, and in max_connections with the headroom the
+ * ceiling leaves (an operator's process). Any other caller fails the test
+ * below until it is counted here.
  */
-const WRITE_POOL_ENTRIES: Record<string, string> = {
+const WRITE_POOL_ENTRIES: Record<string, string | null> = {
   'server/web/server/main.ts': 'web',
   'server/api/src/main.ts': 'api',
+  'server/web/workers/runs.ts': 'worker_runs',
+  'server/web/workers/telegram-poll.ts': 'worker_telegram',
+  'server/mcp/src/server.ts': null,
 };
 const WRITE_POOL_OPENERS = runtimeRoots.flatMap((root) =>
   sourceFiles(join(repoRoot, root))
     .map((path) => relative(repoRoot, path))
     .filter((file) => file !== CLIENT_TS && /\bopenLoginWritePool\(/.test(code(read(file)))),
 );
+
+/** The write pool an entry opens: its one openLoginWritePool call's `max`
+ *  (a literal), else VIEWER_POOL_MAX. */
+function writePoolSizeOf(file: string): number {
+  const calls = [...code(read(file)).matchAll(/\bopenLoginWritePool\(([^)]*)\)/g)];
+  if (calls.length !== 1) throw new Error(`${file}: ${calls.length} openLoginWritePool calls`);
+  const args = calls[0]![1]!.trim();
+  if (args === '') return VIEWER_POOL_MAX;
+  const m = args.match(/^\{\s*max:\s*(\d+)\s*,?\s*\}$/);
+  if (!m) throw new Error(`${file}: openLoginWritePool(${args}): a literal { max: N } only`);
+  return Number(m[1]);
+}
+
+/** How many stdio MCP servers the write role's limit leaves room for, at
+ *  once, beside every box process that opens the pool: one per client
+ *  connected to the box (each a process of its own). */
+const STDIO_MCP_PROCESSES = 4;
 
 /** Each LOGIN role's CONNECTION LIMIT, read from the statement migrate runs. */
 const ROLE_LIMITS = POOL_ROLES.map((role) => {
@@ -421,12 +457,14 @@ function ceiling(shape: Shape): { total: number; lines: Record<string, number> }
   const lines: Record<string, number> = {};
   if (systemCall) lines['system pool'] = sizeOf(systemCall) * shape.processes.length;
   if (viewerCall) {
-    const perProcess = sizeOf(viewerCall);
-    // The write pool only in the processes that open it (A2b2b).
-    const writers = Object.values(WRITE_POOL_ENTRIES).filter((p) => shape.processes.includes(p));
+    // The write pool only in the processes that open it (A2b2b), each at
+    // its own size; the stdio MCP server is no box process (the headroom).
+    const writePool = Object.entries(WRITE_POOL_ENTRIES)
+      .filter(([, p]) => p !== null && shape.processes.includes(p))
+      .reduce((sum, [file]) => sum + writePoolSizeOf(file), 0);
     for (const { role, limit } of ROLE_LIMITS) {
-      const procs = role === 'write' ? writers.length : shape.processes.length;
-      lines[`role ${role}`] = Math.min(limit, perProcess * procs);
+      const want = role === 'write' ? writePool : VIEWER_POOL_MAX * shape.processes.length;
+      lines[`role ${role}`] = Math.min(limit, want);
     }
   }
   const workers = queueWorkers(shape.processes);
@@ -484,15 +522,35 @@ describe('Postgres connection ceiling', () => {
     expect(viewerCall).toBeDefined();
   });
 
-  it('only web and api open the write pool (A2b2b)', () => {
+  it('the write pool: web, api, the runs worker, the Telegram poller and the stdio MCP server open it (A2b2b)', () => {
     expect([...WRITE_POOL_OPENERS].sort()).toEqual(Object.keys(WRITE_POOL_ENTRIES).sort());
-    for (const p of Object.values(WRITE_POOL_ENTRIES)) expect(DB_PROCESSES).toContain(p);
-    // Each process opens VIEWER_POOL_MAX of it, under the role's limit.
+    for (const p of Object.values(WRITE_POOL_ENTRIES)) if (p) expect(DB_PROCESSES).toContain(p);
+    // The size each asks for: the HTTP processes VIEWER_POOL_MAX, the
+    // workers and the stdio server a small pool.
+    expect(
+      Object.fromEntries(Object.keys(WRITE_POOL_ENTRIES).map((f) => [f, writePoolSizeOf(f)])),
+    ).toEqual({
+      'server/web/server/main.ts': VIEWER_POOL_MAX,
+      'server/api/src/main.ts': VIEWER_POOL_MAX,
+      'server/web/workers/runs.ts': 2,
+      'server/web/workers/telegram-poll.ts': 2,
+      'server/mcp/src/server.ts': 2,
+    });
+    // Every box process that opens it, and STDIO_MCP_PROCESSES stdio servers
+    // beside them, under the role's limit.
     const write = ROLE_LIMITS.find((r) => r.role === 'write');
     expect(write).toBeDefined();
-    expect(
-      viewerCall && sizeOf(viewerCall) * Object.keys(WRITE_POOL_ENTRIES).length,
-    ).toBeLessThanOrEqual(write!.limit);
+    const box = Object.entries(WRITE_POOL_ENTRIES)
+      .filter(([, p]) => p !== null)
+      .reduce((sum, [file]) => sum + writePoolSizeOf(file), 0);
+    const stdio = writePoolSizeOf('server/mcp/src/server.ts') * STDIO_MCP_PROCESSES;
+    expect(box + stdio).toBeLessThanOrEqual(write!.limit);
+    // And the stdio servers' write connections fit the headroom the ceiling
+    // leaves on every shape (their other pools are an operator process's,
+    // as before).
+    for (const shape of SHAPES) {
+      expect(ceiling(shape).total + stdio, shape.name).toBeLessThanOrEqual(MAX_CONNECTIONS ?? 0);
+    }
   });
 
   it('the runs worker opens its boss only with MANTLE_RUNS on', () => {
