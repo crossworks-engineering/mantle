@@ -63,6 +63,17 @@ vi.mock('@mantle/embeddings', async (importOriginal) => ({
   embedBatch: vi.fn(async (_o: string, texts: unknown[]) => texts.map(() => VEC)),
 }));
 
+/** An email attachment's object (F4 fix round 2): no object store here. */
+vi.mock('@mantle/storage', async (importOriginal) => {
+  const { Readable } = await import('node:stream');
+  return {
+    ...(await importOriginal<Record<string, unknown>>()),
+    getContent: vi.fn(async (key: string) => ({
+      body: Readable.from([Buffer.from(`object ${key}`)]),
+    })),
+  };
+});
+
 /** The database's or the runtime's own words: never in a reply. */
 const RAW =
   /Failed query|withSystemTx|runInSystemTx|SQLSTATE|DrizzleQueryError|drizzle-orm|permission denied for|violates|duplicate key|does not exist|\n\s+at \S/i;
@@ -532,4 +543,589 @@ describe.skipIf(!DB_URL)('F4 fix round 1: the owner’s management flows on the 
       where node_id = any(${gone}::uuid[])`;
     expect(left[0]!.n).toBe(2);
   }, 120_000);
+
+  // ── F4 fix round 2: brain-wide bookkeeping after the item check ──────────
+
+  /** Who else reads a row: Admin by a grant of its own (Read or Write),
+   *  and a workspace its folder gives it to that is removed here (the
+   *  folder's grant excluded, as a user removes it on a subfolder). */
+  type Grants = { admin?: 'read' | 'write'; exclude?: string };
+
+  /** A row of `type` at `path` (its folder `parent` held), homed in `home`.
+   *  Raw, as the system. */
+  const rawNode = async (
+    o: {
+      type: string;
+      title: string;
+      path: string;
+      parent: string;
+      home: string;
+      data?: Record<string, unknown>;
+    } & Grants,
+  ): Promise<string> => {
+    const id = randomUUID();
+    await raw.begin(async (tx) => {
+      await tx`select set_config('mantle.actor', 'system:test', true)`;
+      await tx`select mantle_lock_heads(array[${o.parent}]::uuid[], 'share')`;
+      await tx`insert into nodes (id, owner_id, type, title, path, data)
+               values (${id}, ${L.owner}, ${o.type}, ${o.title}, ${o.path}::ltree,
+                       ${raw.json((o.data ?? {}) as never)})`;
+    });
+    await rehome(id, o.home, o);
+    return id;
+  };
+
+  /** Home `id` in `home` (its own grants replaced), with `g`. */
+  const rehome = async (id: string, home: string, g: Grants = {}) => {
+    await raw.begin(async (tx) => {
+      await tx`select set_config('mantle.actor', 'system:test', true)`;
+      await tx`select mantle_lock_heads(array[${id}]::uuid[], 'update')`;
+      await tx`delete from item_grants where node_id = ${id}
+                 and (via_folder_id is null or workspace_id = ${home}
+                      or workspace_id = ${g.exclude ?? home})`;
+      await tx`insert into item_grants (node_id, workspace_id, is_home, write)
+               values (${id}, ${home}, true, false)`;
+      if (g.admin && home !== ws.admin) {
+        await tx`insert into item_grants (node_id, workspace_id, is_home, write)
+                 values (${id}, ${ws.admin}, false, ${g.admin === 'write'})
+                 on conflict (node_id, workspace_id)
+                 do update set write = excluded.write, via_folder_id = null`;
+      }
+      if (g.exclude) {
+        await tx`insert into item_grants (node_id, workspace_id, excluded)
+                 values (${id}, ${g.exclude}, true)`;
+      }
+    });
+  };
+
+  /** A files folder the owner makes (homed in Admin), under `parentPath`. */
+  const folder = async (slug: string, parentPath = 'files') => {
+    const r = await call(`folder ${slug}`, L.owner, 'POST', '/api/files/folders', {
+      parentPath,
+      slug,
+    });
+    expect(r.status, r.text).toBeLessThan(300);
+    return r.json.folder as { id: string; path: string };
+  };
+
+  /** A text file (its bytes inline) in `dir`, homed in `home`. */
+  const textFile = (
+    dir: { id: string; path: string },
+    name: string,
+    home: string,
+    o: Grants & { data?: Record<string, unknown> } = {},
+  ) =>
+    rawNode({
+      type: 'file',
+      title: name,
+      path: dir.path,
+      parent: dir.id,
+      home,
+      ...o,
+      data: { filename: name, content: `${tag} ${name}`, ...o.data },
+    });
+
+  /** An app the owner makes (homed in Admin) with one SQLite table. */
+  const makeApp = async (name: string): Promise<string> => {
+    const r = await call(`app ${name}`, L.owner, 'POST', '/api/apps', { name: `${tag} ${name}` });
+    expect(r.status, r.text).toBe(201);
+    const id = (r.json.app as { id: string }).id;
+    const ddl = await call(`app ${name} ddl`, L.owner, 'POST', `/api/apps/${id}/db-broker`, {
+      op: 'exec',
+      sql: 'create table if not exists items (name text)',
+      params: [],
+    });
+    expect(ddl.status, ddl.text).toBe(200);
+    return id;
+  };
+
+  const snapshotRows = async (node: string, trigger?: string) =>
+    (
+      await raw<{ n: number }[]>`select count(*)::int as n from node_snapshots
+        where node_id = ${node} and (${trigger ?? null}::text is null or trigger = ${trigger ?? null})`
+    )[0]!.n;
+
+  for (const mode of ['warn', 'on'] as const) {
+    it(`${mode}: 1, a table commit keeps its history, prunes it, and a restore keeps its note`, async () => {
+      await setMode(mode);
+      const made = await call(`${mode} t create`, L.owner, 'POST', '/api/tables', {
+        title: `${tag} ${mode} history`,
+      });
+      expect(made.status, made.text).toBe(201);
+      const id = (made.json.table as { id: string }).id;
+      const col = `c${mode}`;
+      const ops = async (o: unknown[]) => {
+        const r = await call(`${mode} t ops`, L.owner, 'POST', `/api/tables/${id}/draft-ops`, {
+          ops: o,
+        });
+        expect(r.status, r.text).toBeLessThan(300);
+      };
+      const commit = async () => {
+        const r = await call(`${mode} t commit`, L.owner, 'POST', `/api/tables/${id}/commit`, {});
+        expect(r.status, r.text).toBe(200);
+      };
+      await ops([
+        { op: 'column_add', column: { id: col, name: 'Name', type: 'text' } },
+        { op: 'row_add', cells: { [col]: 'a' } },
+      ]);
+      await commit();
+      await ops([{ op: 'row_add', cells: { [col]: 'b' } }]);
+      await commit();
+      // Before: no history row for an Admin user's commit (in its scope).
+      expect(await snapshotRows(id, 'commit')).toBeGreaterThanOrEqual(1);
+      // The prune is the named step: 25 more entries come down to the keep.
+      await raw.begin(async (tx) => {
+        await tx`select set_config('mantle.actor', 'system:test', true)`;
+        for (let i = 0; i < 25; i++) {
+          await tx`insert into node_snapshots (owner_id, node_id, node_kind, seq, trigger, actor)
+                   values (${L.owner}, ${id}, 'table', ${1000 + i}, 'commit', 'owner')`;
+        }
+      });
+      await ops([{ op: 'row_add', cells: { [col]: 'c' } }]);
+      await commit();
+      expect(await snapshotRows(id, 'commit')).toBe(20);
+      // A restore with commit keeps its note on the version it replaces.
+      const [entry] = await raw<{ id: string; seq: number }[]>`
+        select id::text as id, seq from node_snapshots
+         where node_id = ${id} and trigger = 'commit' and db_path is not null
+         order by seq desc limit 1`;
+      const back = await call(
+        `${mode} t restore`,
+        L.owner,
+        'POST',
+        `/api/tables/${id}/history/${entry!.id}/restore`,
+        { commit: true, discardDraft: true },
+      );
+      expect(back.status, back.text).toBe(200);
+      const [note] = await raw<{ note: string | null }[]>`select note from node_snapshots
+        where node_id = ${id} and trigger = 'commit' order by seq desc limit 1`;
+      expect(note?.note).toBe(`replaced by restoring v${entry!.seq}`);
+    }, 180_000);
+
+    it(`${mode}: 8 and 10, the snapshot budgets count the brain's copies`, async () => {
+      await setMode(mode);
+      const hidden = await makeItem('app');
+      const app = await makeApp(`${mode} budget`);
+      const made = await call(`${mode} b table`, L.owner, 'POST', '/api/tables', {
+        title: `${tag} ${mode} budget`,
+      });
+      const table = (made.json.table as { id: string }).id;
+      const commit = await call(
+        `${mode} b commit`,
+        L.owner,
+        'POST',
+        `/api/tables/${table}/commit`,
+        {
+          data: {
+            columns: [{ id: 'c', name: 'C', type: 'text' }],
+            rows: [{ id: 'r', cells: { c: 'x' } }],
+          },
+        },
+      );
+      expect(commit.status, commit.text).toBe(200);
+      process.env.APP_SNAPSHOT_MAX_MB = '1';
+      try {
+        await raw.begin(async (tx) => {
+          await tx`select set_config('mantle.actor', 'system:test', true)`;
+          await tx`insert into node_snapshots (owner_id, node_id, node_kind, seq, trigger, actor, db_bytes)
+                   values (${L.owner}, ${hidden}, 'app', 1, 'manual', 'owner', ${2 * 1024 * 1024})`;
+        });
+        // A copy of an app the owner's scope does not read fills the budget:
+        // the scope's sum missed it (before: 201 each).
+        const a = await call(
+          `${mode} app snapshot`,
+          L.owner,
+          'POST',
+          `/api/apps/${app}/snapshots`,
+          {
+            note: 'over',
+          },
+        );
+        expect(a.status, a.text).toBe(409);
+        expect(a.json.reason).toBe('budget');
+        const t = await call(
+          `${mode} table snapshot`,
+          L.owner,
+          'POST',
+          `/api/tables/${table}/history`,
+          {
+            note: 'over',
+          },
+        );
+        expect(t.status, t.text).toBe(409);
+      } finally {
+        delete process.env.APP_SNAPSHOT_MAX_MB;
+        await raw.begin(async (tx) => {
+          await tx`select set_config('mantle.actor', 'system:test', true)`;
+          await tx`delete from node_snapshots where node_id = ${hidden}`;
+        });
+      }
+    }, 180_000);
+
+    it(`${mode}: 2, an email attachment is copied by an Admin user`, async () => {
+      await setMode(mode);
+      const dir = await folder(`${tag}${mode}att`);
+      const dest = await folder(`${tag}${mode}attdst`);
+      const att = await textFile(dir, 'invoice.pdf', ws.admin, { data: { content: undefined } });
+      await raw.begin(async (tx) => {
+        await tx`select set_config('mantle.actor', 'system:test', true)`;
+        const [mail] = await tx<{ id: string }[]>`
+          insert into emails (account_id, provider_msg_id, from_addr, internal_date)
+          values (${account}, ${`${tag}-${mode}-mail`}, 'a@example.invalid', now())
+          returning id::text as id`;
+        await tx`insert into email_attachments (email_id, file_node_id, filename, sha256, storage_key)
+                 values (${mail!.id}, ${att}, 'invoice.pdf', 'abc', ${`${tag}-${mode}-key`})`;
+      });
+      // Before: 400 "file not found" (no bytes outside the system scope).
+      const copied = await call(
+        `${mode} copy attachment`,
+        L.owner,
+        'POST',
+        `/api/files/files/${att}`,
+        {
+          copy_to: dest.path,
+          confirm: true,
+        },
+      );
+      expect(copied.status, copied.text).toBe(201);
+    }, 120_000);
+
+    it(`${mode}: 3 and 4, a bulk delete checks each id and counts the brain's derived items and drawings`, async () => {
+      await setMode(mode);
+      const dir = await folder(`${tag}${mode}bulk`);
+      const fA = await textFile(dir, 'derived.txt', ws.admin);
+      const fB = await textFile(dir, 'drawn.png', ws.admin);
+      const fC = await textFile(dir, 'hidden.txt', ws.other, { exclude: ws.admin });
+      const fD = await textFile(dir, 'readonly.txt', ws.other, { admin: 'read' });
+      const fE = await textFile(dir, 'plain.txt', ws.admin);
+      const missing = randomUUID();
+      const derived = await rawNode({
+        type: 'note',
+        title: `${tag} ${mode} derived`,
+        path: root.note.path,
+        parent: root.note.id,
+        home: ws.other,
+        data: { sourceFileId: fA },
+      });
+      const draw = await rawNode({
+        type: 'draw',
+        title: `${tag} ${mode} hidden drawing`,
+        path: root.note.path,
+        parent: root.note.id,
+        home: ws.other,
+      });
+      await raw.begin(async (tx) => {
+        await tx`select set_config('mantle.actor', 'system:test', true)`;
+        await tx`insert into draws (node_id, scene, file_refs)
+                 values (${draw}, ${raw.json({ elements: [{ fileId: 'b1', isDeleted: false }] })},
+                         ${raw.json({ b1: fB })})`;
+      });
+      // Before: 200 { deleted: 3, hasDerived: [], refused: [] }: the derived
+      // note and the drawing were missed, the rest left out silently.
+      const bulk = await call(`${mode} bulk delete`, L.owner, 'DELETE', '/api/files/files', {
+        ids: [fA, fB, fC, fD, missing, fE],
+      });
+      expect(bulk.status, bulk.text).toBe(200);
+      expect(bulk.json.deleted).toBe(1);
+      expect((bulk.json.hasDerived as { fileId: string }[]).map((h) => h.fileId)).toEqual([fA]);
+      expect(bulk.json.refused).toEqual([
+        { fileId: fC, reason: 'not_found' },
+        { fileId: fD, reason: 'forbidden' },
+        { fileId: missing, reason: 'not_found' },
+        { fileId: fB, reason: 'in_drawing', drawings: [], hiddenDrawings: 1 },
+      ]);
+      const left = await raw<{ id: string }[]>`select id::text as id from nodes
+        where id = any(${[fA, fB, fC, fD, fE]}::uuid[])`;
+      expect(left.map((r) => r.id).sort()).toEqual([fA, fB, fC, fD].sort());
+      // The confirmed cascade reaps the derived note the scope does not read.
+      const cascade = await call(`${mode} bulk cascade`, L.owner, 'DELETE', '/api/files/files', {
+        ids: [fA, fC],
+        cascade: true,
+      });
+      expect(cascade.status, cascade.text).toBe(200);
+      expect(cascade.json).toMatchObject({
+        deleted: 1,
+        reapedTotal: 1,
+        refused: [{ fileId: fC, reason: 'not_found' }],
+      });
+      expect(await raw`select 1 from nodes where id = ${derived}`).toHaveLength(0);
+    }, 180_000);
+
+    it(`${mode}: 5 and 6, a folder copy meets a hidden folder of its name and copies what it reads`, async () => {
+      await setMode(mode);
+      const src = await folder(`${tag}${mode}src`);
+      await textFile(src, 'top.txt', ws.admin);
+      const hidPath = `${src.path}.hid`;
+      const hid = await rawNode({
+        type: 'branch',
+        title: 'hid',
+        path: hidPath,
+        parent: src.id,
+        home: ws.other,
+        exclude: ws.admin,
+      });
+      // A file the owner reads, in a subfolder it does not; one it does not.
+      await textFile({ id: hid, path: hidPath }, 'seen.txt', ws.admin);
+      await textFile({ id: hid, path: hidPath }, 'unseen.txt', ws.other);
+      const label = src.path.split('.').at(-1)!;
+      const d1 = await folder(`${tag}${mode}d1`);
+      await rawNode({
+        type: 'branch',
+        title: label,
+        path: `${d1.path}.${label}`,
+        parent: d1.id,
+        home: ws.other,
+        exclude: ws.admin,
+      });
+      // Before: 500 (the unique index of a folder path the scope does not read).
+      const clash = await call(
+        `${mode} copy onto hidden`,
+        L.owner,
+        'POST',
+        `/api/files/folders/${src.id}`,
+        {
+          copy_to: d1.path,
+          confirm: true,
+        },
+      );
+      expect(clash.status, clash.text).toBe(400);
+      expect(clash.text).toContain('already exists');
+      const d2 = await folder(`${tag}${mode}d2`);
+      // Before: 400 partway ("no folder at ..."), the top file already copied.
+      const ok = await call(`${mode} copy`, L.owner, 'POST', `/api/files/folders/${src.id}`, {
+        copy_to: d2.path,
+        confirm: true,
+      });
+      expect(ok.status, ok.text).toBe(201);
+      expect(ok.json).toMatchObject({ copiedFiles: 1, copiedFolders: 1 });
+      const under = await raw<{ title: string }[]>`select title from nodes
+        where owner_id = ${L.owner} and path <@ ${`${d2.path}.${label}`}::ltree and type = 'file'`;
+      expect(under.map((r) => r.title)).toEqual(['top.txt']);
+    }, 180_000);
+
+    it(`${mode}: 7, a folder turned name only re-indexes a file the scope does not read`, async () => {
+      await setMode(mode);
+      const dir = await folder(`${tag}${mode}idx`);
+      const hidden = await textFile(dir, 'secret.txt', ws.other, {
+        exclude: ws.admin,
+        data: { summary: 'what the content said' },
+      });
+      // Before: { requeued: 0 }, the hidden file's summary kept.
+      const flip = await call(
+        `${mode} name only`,
+        L.owner,
+        'PATCH',
+        `/api/files/folders/${dir.id}`,
+        {
+          indexing: 'metadata',
+        },
+      );
+      expect(flip.status, flip.text).toBe(200);
+      expect(flip.json.requeued).toBe(1);
+      const [row] = await raw<{ s: string | null }[]>`select data->>'summary' as s from nodes
+        where id = ${hidden}`;
+      expect(row?.s).toBeNull();
+    }, 120_000);
+
+    it(`${mode}: 8, the formula seed skips a seed formula the scope does not read`, async () => {
+      await setMode(mode);
+      const { FORMULA_SEED } = await import('@mantle/content');
+      const slug = FORMULA_SEED[0]!.slug;
+      const exists = await raw`select 1 from nodes where owner_id = ${L.owner}
+        and type = 'formula' and data->'spec'->>'id' = ${slug}`;
+      if (exists.length === 0) {
+        await rawNode({
+          type: 'formula',
+          title: `${tag} hidden seed`,
+          path: root.note.path,
+          parent: root.note.id,
+          home: ws.other,
+          data: { spec: { id: slug } },
+        });
+      }
+      // Before: created again (a second formula with that spec id).
+      const seed = await call(`${mode} seed`, L.owner, 'POST', '/api/formulas/seed');
+      expect(seed.status, seed.text).toBe(200);
+      expect(seed.json.skipped).toContain(slug);
+      const [n] = await raw<{ n: number }[]>`select count(*)::int as n from nodes
+        where owner_id = ${L.owner} and type = 'formula' and data->'spec'->>'id' = ${slug}`;
+      expect(n!.n).toBe(1);
+    }, 120_000);
+
+    it(`${mode}: 9, an Admin user's app write syncs its linked Table`, async () => {
+      await setMode(mode);
+      const app = await makeApp(`${mode} export`);
+      const { createAppTableExport } = await import('@mantle/content/app-table-exports');
+      await m.runAsSystem('test', () => createAppTableExport(L.owner, app, 'items'));
+      const synced = async () =>
+        (
+          await raw<{ h: string | null }[]>`select content_hash as h from app_table_exports
+            where app_node_id = ${app}`
+        )[0]?.h ?? null;
+      const before = await synced();
+      const write = await call(`${mode} app write`, L.owner, 'POST', `/api/apps/${app}/db-broker`, {
+        op: 'exec',
+        sql: 'insert into items (name) values (?)',
+        params: ['one'],
+      });
+      expect(write.status, write.text).toBe(200);
+      // The debounced sync (15 s) runs on the system pool. Before: refused in
+      // the scope and swallowed, the Table stale.
+      let after = before;
+      for (let i = 0; i < 40 && after === before; i++) {
+        await new Promise((r) => setTimeout(r, 1000));
+        after = await synced();
+      }
+      expect(after).not.toBe(before);
+    }, 120_000);
+
+    it(`${mode}: 11, an Admin user who only reads an app writes its data`, async () => {
+      await setMode(mode);
+      const app = await makeApp(`${mode} readonly`);
+      await rehome(app, ws.other, { admin: 'read' });
+      // Before, in on: refused (the write sequence, the lazy schema, the salt).
+      const write = await call(`${mode} ro write`, L.owner, 'POST', `/api/apps/${app}/db-broker`, {
+        op: 'exec',
+        sql: 'insert into items (name) values (?)',
+        params: ['ro'],
+      });
+      expect(write.status, write.text).toBe(200);
+      const read = await call(`${mode} ro read`, L.owner, 'POST', `/api/apps/${app}/db-broker`, {
+        op: 'query',
+        sql: 'select name from items',
+        params: [],
+      });
+      expect(read.status, read.text).toBe(200);
+      expect(JSON.stringify(read.json.output)).toContain('ro');
+    }, 120_000);
+
+    it(`${mode}: 12, a code restore and an import over an app need manage, checked first`, async () => {
+      await setMode(mode);
+      const app = await makeApp(`${mode} manage`);
+      const snap = await call(`${mode} snap`, L.owner, 'POST', `/api/apps/${app}/snapshots`, {
+        note: 'one',
+      });
+      expect(snap.status, snap.text).toBe(201);
+      const sid = ((snap.json.snapshot ?? snap.json) as { id: string }).id;
+      await rehome(app, ws.other, { admin: 'write' });
+      const rows = await snapshotRows(app);
+      for (const mode2 of ['code', 'full'] as const) {
+        // Before: in on a pre-restore snapshot committed, then the code was
+        // refused; in warn the code was restored by an editor.
+        const r = await call(
+          `${mode} restore ${mode2}`,
+          L.owner,
+          'POST',
+          `/api/apps/${app}/snapshots/${sid}/restore`,
+          {
+            mode: mode2,
+            discardDraft: true,
+          },
+        );
+        expect(r.status, r.text).toBe(403);
+        expect(r.json.reason).toBe('item-workspace');
+      }
+      const imp = await call(`${mode} import over`, L.owner, 'POST', '/api/apps/import', {
+        appId: app,
+        entry: 'index.tsx',
+        files: { 'index.tsx': 'export default function App() { return null; }' },
+        build: false,
+      });
+      expect(imp.status, imp.text).toBe(403);
+      expect(await snapshotRows(app)).toBe(rows);
+      // A data restore is an editor's (the gate's edit, the data's appdata).
+      const data = await call(
+        `${mode} restore data`,
+        L.owner,
+        'POST',
+        `/api/apps/${app}/snapshots/${sid}/restore`,
+        {
+          mode: 'data',
+        },
+      );
+      expect(data.status, data.text).toBe(200);
+    }, 180_000);
+
+    it(`${mode}: 14, a Recall map's slug is free only when no map answers to it`, async () => {
+      await setMode(mode);
+      const target = `${tag}-${mode}-target`;
+      const hidden = await call(`${mode} map hidden`, L.owner, 'POST', '/api/recall/maps', {
+        title: `${tag} ${mode} former`,
+        enterWhen: 'a test',
+      });
+      expect(hidden.status, hidden.text).toBe(201);
+      const hid = hidden.json.mapId as string;
+      const former = hidden.json.slug as string;
+      const moved = await call(`${mode} map move`, L.owner, 'PATCH', `/api/recall/maps/${hid}`, {
+        slug: target,
+      });
+      expect(moved.status, moved.text).toBe(200);
+      await rehome(hid, ws.other, { exclude: ws.admin });
+      // Before: 500 (the unique index of the hidden map's slug).
+      const same = await call(`${mode} map same`, L.owner, 'POST', '/api/recall/maps', {
+        title: `${tag} ${mode} target`,
+        enterWhen: 'a test',
+      });
+      expect(same.status, same.text).toBe(201);
+      expect(same.json.slug).not.toBe(target);
+      // Before: 200, two maps answering to the hidden map's former slug.
+      const take = await call(
+        `${mode} map take former`,
+        L.owner,
+        'PATCH',
+        `/api/recall/maps/${same.json.mapId as string}`,
+        {
+          slug: former,
+        },
+      );
+      expect(take.status, take.text).toBe(409);
+      expect(take.text).toContain('slug_taken');
+    }, 120_000);
+  }
+
+  it('members: a commit keeps no history (as since W6b), a re-index reaches what it does not read, a bulk delete is not theirs', async () => {
+    await setMode('on');
+    const made = await call('member t create', L.owner, 'POST', '/api/tables', {
+      title: `${tag} member table`,
+    });
+    const id = (made.json.table as { id: string }).id;
+    const first = await call('owner t commit', L.owner, 'POST', `/api/tables/${id}/commit`, {
+      data: {
+        columns: [{ id: 'c', name: 'C', type: 'text' }],
+        rows: [{ id: 'r', cells: { c: 'x' } }],
+      },
+    });
+    expect(first.status, first.text).toBe(200);
+    await rehome(id, ws.other);
+    const rows = await snapshotRows(id, 'commit');
+    const commit = await call('member t commit', L.member, 'POST', `/api/tables/${id}/commit`, {
+      data: {
+        columns: [{ id: 'c', name: 'C', type: 'text' }],
+        rows: [{ id: 'r', cells: { c: 'y' } }],
+      },
+    });
+    expect(commit.status, commit.text).toBe(200);
+    expect(await snapshotRows(id, 'commit')).toBe(rows);
+    // A folder of the member's workspace holding a file it does not read.
+    const dir = await folder(`${tag}memidx`);
+    await rehome(dir.id, ws.other);
+    const hidden = await textFile(dir, 'admins.txt', ws.admin, {
+      exclude: ws.other,
+      data: { summary: 'admin content' },
+    });
+    const flip = await call('member name only', L.member, 'PATCH', `/api/files/folders/${dir.id}`, {
+      indexing: 'metadata',
+    });
+    expect(flip.status, flip.text).toBe(200);
+    expect(flip.json.requeued).toBe(1);
+    expect(flip.text).not.toContain('admins.txt');
+    const [row] = await raw<{ s: string | null }[]>`select data->>'summary' as s from nodes
+      where id = ${hidden}`;
+    expect(row?.s).toBeNull();
+    const bulk = await call('member bulk delete', L.member, 'DELETE', '/api/files/files', {
+      ids: [hidden],
+    });
+    expect(bulk.status, bulk.text).toBe(403);
+    expect(await raw`select 1 from nodes where id = ${hidden}`).toHaveLength(1);
+  }, 180_000);
 });
