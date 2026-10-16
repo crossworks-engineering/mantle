@@ -420,20 +420,35 @@ export async function createEmptyScratchDatabase(
   return { url, name, drop };
 }
 
+// A name standing alone in a string ('password') is skipped; one opening a
+// string ('password=...') is not. Groups: 1 the name; after `=`: 2 the
+// separator, 3 the value (conninfo quoted inside a SQL literal, E'...',
+// '...', $tag$...$tag$, bare), 4 its dollar tag; with no `=`: 5 the literal,
+// 6 its dollar tag.
+const PASSWORD_VALUE =
+  /(?!(?<=')"?password\w*"?')("?password\w*"?)(?:(\s*=\s*)(''(?=[^'\s])(?:[^'\\]|\\(?:''|[\s\S]))*(?:''|$)|E'(?:[^'\\]|''|\\[\s\S])*'?|'(?:[^'\\]|''|\\[\s\S])*'?|\$(\w*)\$[\s\S]*?(?:\$\4\$|$)|\S+)|\s*(E'(?:[^'\\]|''|\\[\s\S])*'?|'(?:[^']|'')*'?|\$(\w*)\$[\s\S]*?(?:\$\6\$|$)))/gi;
+
 /** The start of a query as settleDatabase's warning prints it: one line,
- *  with the value after `password` masked, case-insensitively, in every form
- *  a role or connection password is written: a quoted literal (doubled
- *  quotes inside it, with or without a space before it), an E'...' string
- *  (backslash escapes), a $$...$$ or $tag$...$tag$ string, and a conninfo
- *  `password=value`. A literal the 80-character cut ends inside (no closing
- *  quote or tag) is masked to the end. The word inside a string ('password')
- *  is left alone. */
+ *  with the value after a password name masked, case-insensitively. The name
+ *  is `password`, quoted or not, with any word ending (`"password"`,
+ *  `password_hash`). Masked in every form a role or connection password is
+ *  written: a quoted literal (doubled quotes inside it, with or without a
+ *  space before it), an E'...' string (backslash escapes), a $$...$$ or
+ *  $tag$...$tag$ string, and after `=`: a conninfo value, bare
+ *  (`password=value`), quoted (`password='a b'`), or quoted inside a SQL
+ *  literal (`password=''a b''`), or any of the quoted forms above
+ *  (`"password" = '...'`). A literal the 80-character cut ends inside (no
+ *  closing quote or tag) is masked to the end. The word inside a string
+ *  ('password') is left alone. */
 export function quotedQueryStart(query: string): string {
   return query
-    .replace(
-      /(?<!')password(?:\s*=\s*\S+|\s*(?:E'(?:[^'\\]|''|\\[\s\S])*'?|'(?:[^']|'')*'?|\$(\w*)\$[\s\S]*?(?:\$\1\$|$)))/gi,
-      (m) => (/^password\s*=/i.test(m) ? 'password=***' : "password '***'"),
-    )
+    .replace(PASSWORD_VALUE, (_m, name: string, eq?: string, value?: string) => {
+      const n = name.toLowerCase();
+      if (eq === undefined || value === undefined) return `${n} '***'`;
+      if (/^''[^'\s]/.test(value)) return `${n}${eq}''***''`;
+      if (/^(?:E?'|\$)/i.test(value)) return `${n}${eq}'***'`;
+      return `${n}${eq}***`;
+    })
     .replace(/\s+/g, ' ')
     .trim();
 }

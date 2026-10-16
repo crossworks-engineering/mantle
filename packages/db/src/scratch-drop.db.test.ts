@@ -82,6 +82,39 @@ describe('the warning masks a password literal in the query it quotes', () => {
     );
   });
 
+  it('masks a quoted conninfo value whole, spaces and escapes included', () => {
+    expect(quotedQueryStart("select dblink_connect('host=db password=''a b c'' dbname=x')")).toBe(
+      "select dblink_connect('host=db password=''***'' dbname=x')",
+    );
+    expect(quotedQueryStart("select dblink_connect('password=''it\\''s x'' port=5')")).toBe(
+      "select dblink_connect('password=''***'' port=5')",
+    );
+    expect(quotedQueryStart("select dblink_connect('password=s3cr3t host=db')")).toBe(
+      "select dblink_connect('password=*** host=db')",
+    );
+    expect(quotedQueryStart("conninfo host=db password='a b\\' c' dbname=x")).toBe(
+      "conninfo host=db password='***' dbname=x",
+    );
+    expect(quotedQueryStart("select dblink_connect('host=db password=''cut mid")).toBe(
+      "select dblink_connect('host=db password=''***''",
+    );
+  });
+
+  it('masks a quoted "password" column and a password_hash column', () => {
+    expect(quotedQueryStart(`update users set "password" = 'a b c' where id = 1`)).toBe(
+      `update users set "password" = '***' where id = 1`,
+    );
+    expect(quotedQueryStart("update users set password_hash = '$2b$10$ab cd' where id = 1")).toBe(
+      "update users set password_hash = '***' where id = 1",
+    );
+    expect(quotedQueryStart("update users set PASSWORD_HASH=E'x\\'y z' where id = 1")).toBe(
+      "update users set password_hash='***' where id = 1",
+    );
+    expect(quotedQueryStart("update users set password = '' where id = 1")).toBe(
+      "update users set password = '***' where id = 1",
+    );
+  });
+
   it('leaves a query without a password value alone', () => {
     expect(quotedQueryStart("show password_encryption; select 'password'")).toBe(
       "show password_encryption; select 'password'",
