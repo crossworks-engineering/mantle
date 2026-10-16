@@ -11,11 +11,10 @@
  *   - "sign out everywhere": POST /api/auth/logout {everywhere:true}, and an
  *     admin's PATCH /api/users/:id {signOut:true}.
  *
- * Probes: GET /api/member/files/not-a-uuid (a member past the gate gets
- * the stub's 410 since W8d, the handler's 400 before; no session is 401;
- * the Library route this used answers 410 since W7e) and GET /api/pending/not-a-uuid (the
- * same for an admin). The personal-space routes these used answer 410 since
- * W6b.
+ * Probes: GET /api/member/push/preferences (a member past the gate gets
+ * the handler's answer; no session is 401; the member byte stub this used
+ * went in arch A7) and GET /api/pending/not-a-uuid (the same for an
+ * admin).
  *
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run server/web/lib/auth/session-epoch.db.test.ts
  */
@@ -80,8 +79,13 @@ describe.skipIf(!URL)('session epoch: ending a login’s sessions', () => {
     Number(
       (await sql<Row[]>`select session_epoch from auth.users where id = ${id}`)[0]!.session_epoch,
     );
+  /** A member session gets past the member gate: a member route's
+   *  handler runs ('past': not the gate's 401 or 403). The member byte
+   *  route this probed (a 410 stub) went in arch A7. */
   const memberProbe = (auth: { cookie?: string; bearer?: string }) =>
-    call('/api/member/files/not-a-uuid', auth).then((r) => r.status);
+    call('/api/member/push/preferences', auth).then((r) =>
+      r.status === 401 || r.status === 403 ? r.status : 'past',
+    );
   const adminProbe = (auth: { cookie?: string; bearer?: string }) =>
     call('/api/pending/not-a-uuid', auth).then((r) => r.status);
   /** A bearer for `login`: a mobile_tokens row and its signed token. */
@@ -137,8 +141,8 @@ describe.skipIf(!URL)('session epoch: ending a login’s sessions', () => {
     const c1 = await signIn(member);
     const other = await signIn(member); // a second browser
     const phone = await bearerFor(member);
-    expect(await memberProbe({ cookie: c1 })).toBe(410);
-    expect(await memberProbe({ bearer: phone.token })).toBe(410);
+    expect(await memberProbe({ cookie: c1 })).toBe('past');
+    expect(await memberProbe({ bearer: phone.token })).toBe('past');
     const before = await epochOf(member);
 
     const next = 'second password 2';
@@ -159,7 +163,7 @@ describe.skipIf(!URL)('session epoch: ending a login’s sessions', () => {
     // The caller got a fresh cookie at the new epoch.
     const c2 = cookieFrom(res);
     expect(c2).toBeTruthy();
-    expect(await memberProbe({ cookie: c2! })).toBe(410);
+    expect(await memberProbe({ cookie: c2! })).toBe('past');
   });
 
   it('a password change from a bearer keeps that bearer and ends the rest', async () => {
@@ -175,7 +179,7 @@ describe.skipIf(!URL)('session epoch: ending a login’s sessions', () => {
     expect(res.status).toBe(200);
     password = next;
     expect(cookieFrom(res)).toBeNull();
-    expect(await memberProbe({ bearer: mine.token })).toBe(410);
+    expect(await memberProbe({ bearer: mine.token })).toBe('past');
     expect(await revoked(mine.jti)).toBe(false);
     expect(await memberProbe({ bearer: sibling.token })).toBe(401);
     expect(await memberProbe({ cookie })).toBe(401);
@@ -184,7 +188,7 @@ describe.skipIf(!URL)('session epoch: ending a login’s sessions', () => {
   it('disable then enable again: the old cookie stays dead', async () => {
     const old = await signIn(member);
     const phone = await bearerFor(member);
-    expect(await memberProbe({ cookie: old })).toBe(410);
+    expect(await memberProbe({ cookie: old })).toBe('past');
     const asAdmin = cookieAt(admin, await epochOf(admin));
 
     const off = await call(`/api/users/${member}`, {
@@ -203,7 +207,7 @@ describe.skipIf(!URL)('session epoch: ending a login’s sessions', () => {
     expect(await memberProbe({ cookie: old })).toBe(401);
     expect(await memberProbe({ bearer: phone.token })).toBe(401);
     // Signing in again works.
-    expect(await memberProbe({ cookie: await signIn(member) })).toBe(410);
+    expect(await memberProbe({ cookie: await signIn(member) })).toBe('past');
   });
 
   it('a role change ends the sessions; an unchanged role does not', async () => {
@@ -224,7 +228,7 @@ describe.skipIf(!URL)('session epoch: ending a login’s sessions', () => {
     });
     expect(res.status).toBe(200);
     expect(await memberProbe({ cookie: theirs })).toBe(401);
-    expect(await memberProbe({ cookie: await signIn(demoted) })).toBe(410);
+    expect(await memberProbe({ cookie: await signIn(demoted) })).toBe('past');
   });
 
   it('an admin can sign a login out everywhere', async () => {
@@ -255,20 +259,25 @@ describe.skipIf(!URL)('session epoch: ending a login’s sessions', () => {
     const a = await signIn(member);
     const b = await signIn(member);
     expect((await call('/api/auth/logout', { method: 'POST', cookie: a })).status).toBe(200);
-    expect(await memberProbe({ cookie: b })).toBe(410);
+    expect(await memberProbe({ cookie: b })).toBe('past');
   });
 
   it('an ?at= asset token minted before a bump fails after it', async () => {
     const { mintAssetToken, endLoginSessions } = await import('./session');
+    // The brain's byte route (every login's since W7e; the member byte
+    // route this read was a 410 stub until arch A7): past the gate is the
+    // handler's own answer for an id that names nothing, never the 401.
     const file = (at: string) =>
-      call(`/api/member/files/not-a-uuid?at=${encodeURIComponent(at)}`).then((r) => r.status);
+      call(`/api/files/files/not-a-uuid?raw=1&at=${encodeURIComponent(at)}`).then((r) =>
+        r.status === 401 ? 401 : 'past',
+      );
     // Minted with the epoch the guard checked (the shell passes the
     // request's AnyLogin.sessionEpoch).
     const at = mintAssetToken(anchor, member, await epochOf(member));
-    expect(await file(at)).toBe(410);
+    expect(await file(at)).toBe('past');
     await endLoginSessions(member);
     expect(await file(at)).toBe(401);
-    expect(await file(mintAssetToken(anchor, member, await epochOf(member)))).toBe(410);
+    expect(await file(mintAssetToken(anchor, member, await epochOf(member)))).toBe('past');
   });
 
   it('an admin password reset ends the target’s sessions', async () => {

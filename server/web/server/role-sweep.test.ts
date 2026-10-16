@@ -142,7 +142,7 @@ const IMAGE_EXT_RE = /\.(?:svg|png|jpg|jpeg|gif|webp)$/;
 
 /** Routes that authenticate with their own short-lived ticket, minted only
  *  by an admin- or member-gated route; a plain-text 401 without it. */
-const TICKET_GATED = new Set(['GET /api/apps/:id/frame', 'GET /api/member/apps/:id/frame']);
+const TICKET_GATED = new Set(['GET /api/apps/:id/frame']);
 
 // Sign out (every role) and the MCP consent page (an HTML refusal) used to
 // be allow-lists here, but both live under PUBLIC_PATHS, which the sweep
@@ -257,14 +257,15 @@ describe.skipIf(!hasManifest)('role sweep: no login for a role this code does no
   // Fast first (audit A4): the full sweeps take minutes, and a regression in
   // resolvedFor (an unknown role read as an admin) was once caught only by
   // their timeout. Each shell answers a login it cannot name with 401.
-  it('answers an UNKNOWN role and a row still marked client 401 on every shell (fast)', async () => {
+  it('answers an UNKNOWN role and a row still marked client 401 on the shell (fast)', async () => {
     for (const auth of [
       { cookie: cookieFor(UNKNOWN_ID) },
       { authorization: bearerFor(UNKNOWN_ID) },
       { cookie: cookieFor(CLIENT_ID) },
       { authorization: bearerFor(CLIENT_ID) },
     ] as Array<Record<string, string>>) {
-      for (const path of ['/api/shell', '/api/member/shell', '/api/client/shell']) {
+      // The member and client shells were 410 stubs until arch A7.
+      for (const path of ['/api/shell']) {
         const res = await app.request(path, { headers: auth });
         const body = (await res.json().catch(() => null)) as { error?: string } | null;
         expect(res.status, path).toBe(401);
@@ -406,10 +407,8 @@ describe.skipIf(!hasManifest)('role sweep: no login for a role this code does no
         `/api/attachments/${ID}`,
         `/api/export/${ID}`,
         '/api/profile/photo',
-        `/api/admin/space/${ID}/bytes`,
-        `/api/member/files/${ID}`,
-        `/api/member/draws/${ID}/svg`,
-        `/api/member/client-requests/${ID}/bytes`,
+        // The admin space, member and client request byte routes were 410
+        // stubs until arch A7.
       ]) {
         const res = await app.request(`${path}${path.includes('?') ? '&' : '?'}at=${at}`);
         expect(res.status, path).toBe(401);

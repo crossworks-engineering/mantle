@@ -57,7 +57,8 @@
 
 Client logins, their sign-in links and their emailed codes are gone
 (workspaces W8a, [client-logins.md](./client-logins.md)): every client login
-was archived, disabled and revoked, and the code routes answer 410.
+was archived, disabled and revoked, and the code routes are gone (410
+stubs until arch A7).
 
 Notes that matter to a reviewer:
 
@@ -258,7 +259,7 @@ login was archived (`archive_client_logins`), disabled, its sessions,
 device tokens, API keys and OAuth grants revoked, and its peers unbound.
 It signs in by no path, and an admin cannot enable it again. An invite or
 a new login on a former client's email is refused. The email-code sign-in
-and the client portal routes answer 410.
+and the client portal routes are gone (410 stubs until arch A7).
 
 What stays for now: the write hold on text a former client wrote (a turn
 that read it cannot widen access without the owner's approval in Pending),

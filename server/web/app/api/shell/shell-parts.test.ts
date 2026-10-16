@@ -270,34 +270,4 @@ describe('shell chrome reads never fail the shell', () => {
       await expect(shell()).rejects.toThrow(/answered no login/);
     });
   });
-
-  describe('the old member and client shells are gone (W5c)', () => {
-    const memberShell = () => import('../member/shell/route');
-    const clientShell = () => import('../client/shell/route');
-
-    it('/api/member/shell answers a member 410 code gone, an admin no 410', async () => {
-      h.role = 'member';
-      const { status, body } = await get(memberShell());
-      expect(status).toBe(410);
-      expect(body).toMatchObject({ code: 'gone' });
-      // An Admin user: the gate's 403 admin-login, before the stub.
-      h.role = 'admin';
-      await expect(get(memberShell())).rejects.toThrow(/answered no member/);
-    });
-
-    it.each(['admin', 'member'] as const)(
-      '/api/client/shell answers any login 410 code gone (W8a): an %s',
-      async (role) => {
-        h.role = role;
-        const { status, body } = await get(clientShell());
-        expect(status).toBe(410);
-        expect(body).toMatchObject({ code: 'gone' });
-      },
-    );
-
-    it('/api/client/shell never answers 410 without a login (the gate refuses first)', async () => {
-      h.gate = 'refuse';
-      await expect(get(clientShell())).rejects.toThrow(/answered no login/);
-    });
-  });
 });

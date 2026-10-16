@@ -1,9 +1,9 @@
 /**
- * The frame documents through the full pipeline (runRoute), the real route
- * files (A4 hand batch B fix round 1, L2): GET /api/apps/:id/frame and GET
- * /api/member/apps/:id/frame read the `?t=` frame ticket the gate verified
- * (frameTicketCaller), and answer each ticket as they did when they
- * verified it themselves: a valid ticket opens what it names, a ticket
+ * The frame document through the full pipeline (runRoute), the real route
+ * file (A4 hand batch B fix round 1, L2): GET /api/apps/:id/frame reads the
+ * `?t=` frame ticket the gate verified (frameTicketCaller), and answers
+ * each ticket as it did when it verified it itself (the member frame,
+ * GET /api/member/apps/:id/frame, was a 410 stub until arch A7): a valid ticket opens what it names, a ticket
  * for something else is the handler's 401, an invalid ticket or none is
  * the gate's 401 before the handler. The app's build and the frame
  * renderer are stood in; app-identity-owner and member-runner-routes call
@@ -106,29 +106,5 @@ describe('GET /api/apps/:id/frame through the pipeline', () => {
       expect(JSON.parse(res.body), String(query)).toMatchObject({ error: 'unauthorized' });
     }
     expect(h.rendered).toEqual([]);
-  });
-});
-
-describe('GET /api/member/apps/:id/frame through the pipeline', () => {
-  const path = `/api/member/apps/${APP}/frame`;
-
-  it("a valid member ticket: the route's 410, gone", async () => {
-    const res = await frame(path, ticket({ loginId: MEMBER }));
-    expect(res.status).toBe(410);
-    expect(JSON.parse(res.body)).toMatchObject({ code: 'gone' });
-  });
-
-  it("a valid ticket that is no member's for this app: the handler's 401", async () => {
-    for (const t of [ticket({ actorId: ANCHOR }), ticket({ appId: OTHER_APP, loginId: MEMBER })]) {
-      expect(await frame(path, t)).toEqual({ status: 401, body: 'frame ticket required' });
-    }
-  });
-
-  it("an invalid ticket, or none: the gate's 401, before the handler", async () => {
-    for (const query of ['t=not-a-ticket', null]) {
-      const res = await frame(path, query);
-      expect(res.status, String(query)).toBe(401);
-      expect(JSON.parse(res.body), String(query)).toMatchObject({ error: 'unauthorized' });
-    }
   });
 });

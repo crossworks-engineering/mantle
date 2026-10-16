@@ -26,7 +26,6 @@ const DISABLED_ADMIN_ID = '44444444-4444-4444-8444-444444444444';
 const ADMIN_ID = '55555555-5555-4555-8555-555555555555';
 const SPACE_ID = '66666666-6666-4666-8666-666666666666';
 const DISABLED_MEMBER_ID = '77777777-7777-4777-8777-777777777777';
-const OTHER_ANCHOR_ID = '88888888-8888-4888-8888-888888888888';
 /** A member whose sessions were ended twice (session_epoch 2, 0181). */
 const BUMPED_MEMBER_ID = '99999999-9999-4999-8999-999999999999';
 
@@ -172,10 +171,6 @@ const IMAGE_EXT_RE = /\.(?:svg|png|jpg|jpeg|gif|webp)$/;
  *  one). They answer a plain-text 401 without it. */
 const TICKET_GATED = new Set(['GET /api/apps/:id/frame']);
 
-/** The client portal's stubs (removed in W5c; the client login went in
- *  W8a): every login gets 410 code gone. */
-const isClientPortalStub = (pattern: string) => pattern.startsWith('/api/client/');
-
 function isPublic(path: string): boolean {
   return PUBLIC_PATHS.some((p) => path === p || path.startsWith(p + '/'));
 }
@@ -293,10 +288,7 @@ describe.skipIf(!hasManifest)('member sweep: a member login is refused everywher
             const refused =
               (res.status === 403 && body?.reason === 'member-login') ||
               (res.status === 401 && body?.error === 'unauthorized') ||
-              (res.status === 401 && TICKET_GATED.has(`${method} ${entry.pattern}`)) ||
-              (res.status === 410 &&
-                (body as { code?: string } | null)?.code === 'gone' &&
-                isClientPortalStub(entry.pattern));
+              (res.status === 401 && TICKET_GATED.has(`${method} ${entry.pattern}`));
             if (!refused) failures.push(`${method} ${entry.pattern} → ${res.status}`);
           } else {
             const to = res.headers.get('location') ?? '';
@@ -318,7 +310,7 @@ describe.skipIf(!hasManifest)('member sweep: a member login is refused everywher
     const headers = bearerFor(MEMBER_ID);
     for (const path of PAST_THE_GATE) {
       const res = await app.request(path, { headers });
-      expect(res.status, path).toBe(410);
+      expect(pastTheGate(res.status), `${path} ${res.status}`).toBe(true);
     }
     const who = await app.request('/api/auth/whoami', { headers });
     expect(who.status).toBe(200);
@@ -353,11 +345,10 @@ describe.skipIf(!hasManifest)('member sweep: a member login is refused everywher
     const refused = await app.request('/api/push/subscriptions', { headers });
     expect(refused.status).toBe(403);
     expect(((await refused.json()) as { reason?: string }).reason).toBe('member-login');
-    // The client portal's stubs answer every login 410 (W5c, W8a).
+    // The client portal (W5c, W8a) is no route since arch A7: a 404.
     for (const path of ['/api/client/shell', '/api/client/files/not-a-uuid']) {
       const res = await app.request(path, { headers });
-      expect(res.status, path).toBe(410);
-      expect(((await res.json()) as { code?: string }).code, path).toBe('gone');
+      expect(res.status, path).toBe(404);
     }
     // The brain's byte route serves every login in its scope since W7e: a
     // member device token gets past the gate (the handler's 400 here).
@@ -398,57 +389,13 @@ describe.skipIf(!hasManifest)('member sweep: a member login is refused everywher
     }
   });
 
-  // The positive half: a member session gets PAST the gate on member routes.
-  // These two answer a member 410 since W8d (their old guard first); the
-  // admin on the same path is stopped at the gate.
-  const PAST_THE_GATE = ['/api/member/files/not-a-uuid', '/api/member/draws/not-a-uuid/svg'];
-
-  // Removed in workspaces W5c (team drafts, client requests, member submit,
-  // recall and share): still member routes, so a member's old app reaches
-  // them, and each answers 410 `code: 'gone'`.
-  const GONE_W5C = [
-    'GET /api/member/team-drafts',
-    'GET /api/member/team-drafts/:id',
-    'GET /api/member/team-drafts/:id/bytes',
-    'GET /api/member/client-requests',
-    'GET /api/member/client-requests/:id',
-    'GET /api/member/client-requests/:id/bytes',
-    'POST /api/member/space/:id/submit',
-    'POST /api/member/space/:id/recall',
-    'POST /api/member/space/:id/share',
-    'POST /api/member/my-apps/:id/submit',
-    'POST /api/member/my-apps/:id/recall',
-    // W7c: the member chat moved to /api/assistant/* (a per-login thread).
-    'GET /api/member/chat',
-    'POST /api/member/chat',
-    'GET /api/member/chat/unread',
-    'POST /api/member/chat/read',
-    // W7e: the Library and accepted-item routes (unused since W6b).
-    'GET /api/member/library',
-    'GET /api/member/library/:id',
-    'GET /api/member/accepted',
-    'GET /api/member/accepted/:id',
-  ];
-
-  it('answers 410 code gone to a member on every route removed in W5c; an admin is still refused', async () => {
-    const { buildSessionCookie } = await import('../lib/auth/tokens');
-    const adminCookie = `${SESSION_COOKIE_NAME}=${buildSessionCookie(ADMIN_ID).value}`;
-    for (const route of GONE_W5C) {
-      expect(MEMBER_ROUTES, route).toContain(route);
-      const [method, pattern] = route.split(' ') as [string, string];
-      const path = concretePath(pattern);
-      for (const headers of [{ cookie }, bearerFor(MEMBER_ID)]) {
-        const res = await app.request(path, { method, headers });
-        const body = (await res.json().catch(() => null)) as { code?: string } | null;
-        expect(res.status, `${route} → ${res.status}`).toBe(410);
-        expect(body?.code, route).toBe('gone');
-      }
-      const asAdmin = await app.request(path, { method, headers: { cookie: adminCookie } });
-      expect([401, 403], `${route} as admin`).toContain(asAdmin.status);
-      const anon = await app.request(path, { method });
-      expect(anon.status, `${route} without a session`).toBe(401);
-    }
-  });
+  // The positive half: a member session gets PAST the gate on member routes:
+  // the handler runs (it reads the push preferences, no database here: its
+  // own error, never the gate's 401 or 403); the admin on the same path is
+  // stopped at the gate. The member routes retired over W5c to W8d (410
+  // stubs until arch A7) are pinned in a7-gone-routes.test.ts.
+  const PAST_THE_GATE = ['/api/member/push/preferences'];
+  const pastTheGate = (status: number) => status !== 401 && status !== 403;
 
   it('lets a member session through to member routes', async () => {
     const { buildSessionCookie } = await import('../lib/auth/tokens');
@@ -456,35 +403,11 @@ describe.skipIf(!hasManifest)('member sweep: a member login is refused everywher
     for (const path of PAST_THE_GATE) {
       const res = await app.request(path, { headers: { cookie } });
       const body = (await res.json().catch(() => null)) as { reason?: string } | null;
-      expect(res.status, path).toBe(410);
+      expect(pastTheGate(res.status), `${path} ${res.status}`).toBe(true);
       expect(body?.reason, path).not.toBe('member-login');
       const asAdmin = await app.request(path, { headers: { cookie: adminCookie } });
       expect([401, 403], `${path} as admin`).toContain(asAdmin.status);
     }
-  });
-
-  describe('getMemberForAsset: a member ?at= token (no session)', () => {
-    const fileWith = async (anchor: string, login: string) => {
-      const { buildAssetToken } = await import('../lib/auth/tokens');
-      const at = encodeURIComponent(buildAssetToken(anchor, login));
-      return app.request(`/api/member/files/not-a-uuid?at=${at}`);
-    };
-
-    it("is accepted for a live member of this brain's anchor", async () => {
-      expect((await fileWith(ANCHOR_ID, MEMBER_ID)).status).toBe(410);
-    });
-
-    it('is refused when minted under another anchor', async () => {
-      expect((await fileWith(OTHER_ANCHOR_ID, MEMBER_ID)).status).toBe(401);
-    });
-
-    it('is refused for a disabled member login', async () => {
-      expect((await fileWith(ANCHOR_ID, DISABLED_MEMBER_ID)).status).toBe(401);
-    });
-
-    it('is refused for an admin login', async () => {
-      expect((await fileWith(ANCHOR_ID, ADMIN_ID)).status).toBe(401);
-    });
   });
 
   it('gives a disabled login no session at all', async () => {
@@ -497,14 +420,14 @@ describe.skipIf(!hasManifest)('member sweep: a member login is refused everywher
   it('gives a disabled member login no session at all', async () => {
     const { buildSessionCookie } = await import('../lib/auth/tokens');
     const left = `${SESSION_COOKIE_NAME}=${buildSessionCookie(DISABLED_MEMBER_ID).value}`;
-    const res = await app.request('/api/member/library/not-a-uuid', { headers: { cookie: left } });
+    const res = await app.request(PAST_THE_GATE[0]!, { headers: { cookie: left } });
     expect(res.status).toBe(401);
   });
 
   // F06: a session ends when the login's epoch moves on. The cookie and the
   // `?at=` token carry the epoch they were minted at; the row is re-read.
   describe('session epoch', () => {
-    const PAST = '/api/member/files/not-a-uuid';
+    const PAST = PAST_THE_GATE[0]!;
 
     it('refuses a cookie minted before the last bump', async () => {
       const { buildSessionCookie } = await import('../lib/auth/tokens');
@@ -514,7 +437,9 @@ describe.skipIf(!hasManifest)('member sweep: a member login is refused everywher
         expect(res.status, `epoch ${epoch}`).toBe(401);
       }
       const now = `${SESSION_COOKIE_NAME}=${buildSessionCookie(BUMPED_MEMBER_ID, { epoch: 2 }).value}`;
-      expect((await app.request(PAST, { headers: { cookie: now } })).status).toBe(410);
+      expect(pastTheGate((await app.request(PAST, { headers: { cookie: now } })).status)).toBe(
+        true,
+      );
     });
 
     it('reads a cookie without the claim (minted before 0181) as epoch 0', async () => {
@@ -528,20 +453,12 @@ describe.skipIf(!hasManifest)('member sweep: a member login is refused everywher
         const sig = createHmac('sha256', process.env.SESSION_SECRET!).update(payload).digest();
         return `${SESSION_COOKIE_NAME}=${payload}.${sig.toString('base64url')}`;
       };
-      expect((await app.request(PAST, { headers: { cookie: old(MEMBER_ID) } })).status).toBe(410);
+      expect(
+        pastTheGate((await app.request(PAST, { headers: { cookie: old(MEMBER_ID) } })).status),
+      ).toBe(true);
       expect((await app.request(PAST, { headers: { cookie: old(BUMPED_MEMBER_ID) } })).status).toBe(
         401,
       );
-    });
-
-    it('refuses a member ?at= token minted before the last bump', async () => {
-      const { buildAssetToken } = await import('../lib/auth/tokens');
-      const file = (epoch: number) =>
-        app.request(
-          `/api/member/files/not-a-uuid?at=${encodeURIComponent(buildAssetToken(ANCHOR_ID, BUMPED_MEMBER_ID, epoch))}`,
-        );
-      expect((await file(0)).status).toBe(401);
-      expect((await file(2)).status).toBe(410);
     });
   });
 });

@@ -3242,9 +3242,9 @@ Since A10 #9 the three are configs of one broker,
 `server/web/lib/app-tool-broker.ts` (`runAppToolBroker`), which makes the
 call for each; see [request-plumbing.md](request-plumbing.md#app-tool-broker-a10-9).
 
-The member test broker (`server/web/app/api/apps/members/[id]/test/tool-broker/route.ts`),
-the member route (`server/web/app/api/member/apps/[id]/tool-broker/route.ts`)
-and the client route are 410 stubs: they dispatch nothing.
+The member test broker (`/api/apps/members/:id/test/tool-broker`), the
+member route (`/api/member/apps/:id/tool-broker`) and the client route were
+410 stubs that dispatched nothing; arch A7 deleted them.
 
 - **The run.** A broker passes `appBrokerCaller(surface)`
   (`packages/tools/src/gate-callers.ts`): entry `app`, via `contact` on a
@@ -5456,8 +5456,34 @@ release (a roll restarts it). All ten 0 on every box: the stubs may go.
 `server/web/server/a7-gone-routes.test.ts` recorded every stub method with
 no credential, the owner's cookie and a member's (462 cells,
 `__snapshots__/a7-gone-routes.main.txt`) before the deletion; after it each
-cell answers what a path no route answers (a sibling path driven the same
-way), recorded in `__snapshots__/a7-gone-routes.changes.txt`.
+cell answers what a sibling path of its shape answers, recorded in
+`__snapshots__/a7-gone-routes.changes.txt`.
+
+**Deleted (the last commit of A7, droppable).** 132 stub files and the PUT
+of `/api/app-nav`. The changed answers, per cell (method, path, caller):
+
+- a signed-in caller (the owner or a member): 410 (or the old guard's 403
+  or 401) to 404 `{ "error": "not found" }`, 306 cells;
+- no credential: the gate's 401 as before (150 cells), except the four
+  public sign-in stubs (`/api/auth/client-code` GET and POST, its
+  `/verify`, `/api/auth/client-link`): 410 to 404;
+- `PUT /api/app-nav`: 410 (the owner), 403 (a member) to 405
+  `method not allowed` (the path serves GET only);
+- `GET /api/apps/members`: it reaches `/api/apps/:id` with an [id] of
+  `members`; that route now declares its params (`routeParams`, uuid), so
+  it is the params gateway's 404, and so is every other GET of
+  `/api/apps/:id` with an [id] that is not a uuid (the database's 500
+  before; PATCH and DELETE answered the item write gate's 404 already).
+
+Nothing answers wider: every changed cell is a refusal (404, 405, 401).
+The guard sweep's files lost only the stub rows (every other row byte for
+byte after its answer ids are expanded: 227 route rows, 2,648 moved cells,
+936 moved write cells, 912 guard write cells), and so did the body sweep's
+(30 cells), the route limits list (5 rows) and the member, role and public
+session lists (`MEMBER_ROUTES`, `PUBLIC_SESSION_ROUTES`). Tests of the
+stubs themselves went with them. `lib/gone.ts` stays (with no stub) for a
+route retired later; so do the `gone` row kind and the `memberAsset`
+caller kind (the member `?at=` byte token), which no route reads now.
 
 ## A7 handover
 

@@ -472,7 +472,8 @@ owner's history with the Admin assistant).
   workspace other than Admin runs on the workspace turn engine
   (`server/web/lib/workspace-turn.ts`: no Journal, no "About the user", the
   member limits for a login that is not an Admin user). `/api/member/chat*`
-  and `/api/team-admin/member-chats` answer 410; the team chat tools
+  and `/api/team-admin/member-chats` answered 410 until arch A7 (no route
+  since); the team chat tools
   (`team_chat_list`, `team_chat_read`) are retired (W7b), and the old portal
   threads are history in `archive_team_messages`.
 

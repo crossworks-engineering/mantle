@@ -265,10 +265,11 @@ describe.skipIf(!URL)('W7e: member routes in the request scope, the phone contra
       null,
     );
     expect(sideByToken.status).toBe(404);
-    // The member route is gone (W8d): 410, the bytes of neither file.
+    // The member route is gone (W8d; its 410 stub went in arch A7): 404,
+    // the bytes of neither file.
     for (const id of [teamFile, sideFile]) {
       const old = await call(`/api/member/files/${id}`, mem);
-      expect(old.status).toBe(410);
+      expect(old.status).toBe(404);
       expect(old.text).not.toContain('BYTES');
     }
     // The other member reads the Side file (its workspace); an Admin user
@@ -299,9 +300,9 @@ describe.skipIf(!URL)('W7e: member routes in the request scope, the phone contra
       expect(r.text).not.toContain('side drawing');
     }
     expect((await call(`/api/draws/${sideDraw}/svg`, mem)).json).toEqual({ svg: null });
-    // The member route is gone (W8d).
+    // The member route is gone (W8d; its 410 stub went in arch A7).
     const old = await call(`/api/member/draws/${teamDraw}/svg`, mem);
-    expect(old.status).toBe(410);
+    expect(old.status).toBe(404);
     expect(old.text).not.toContain('VEVBTQ==');
   });
 
@@ -335,10 +336,11 @@ describe.skipIf(!URL)('W7e: member routes in the request scope, the phone contra
         expect(r.text).not.toContain('Side app');
       }
     }
-    // The member runner is gone (W8d): 410, no ticket.
+    // The member runner is gone (W8d; its 410 stubs went in arch A7): 404,
+    // no ticket.
     for (const route of ['frame-ticket', 'db-broker', 'tool-broker']) {
       const old = await call(`/api/member/apps/${teamApp}/${route}`, mem, 'POST', {});
-      expect(old.status, route).toBe(410);
+      expect(old.status, route).toBe(404);
       expect(old.json.ticket, route).toBeUndefined();
     }
     // An Admin user still gets the owner ticket (draft allowed, no login claim).
@@ -349,7 +351,8 @@ describe.skipIf(!URL)('W7e: member routes in the request scope, the phone contra
     expect(ownClaims?.actorId).toBe(owner);
   });
 
-  it('the member Library and accepted-item routes answer 410; the member content routes run in its scope', async () => {
+  it('the member Library and accepted-item routes are gone; the member content routes run in its scope', async () => {
+    // Their 410 stubs went in arch A7: a path no route answers, 404.
     for (const url of [
       '/api/member/library',
       `/api/member/library/${teamFile}`,
@@ -357,14 +360,13 @@ describe.skipIf(!URL)('W7e: member routes in the request scope, the phone contra
       `/api/member/accepted/${teamFile}`,
     ]) {
       const r = await call(url, mem);
-      expect(r.status, url).toBe(410);
-      expect(r.json.code).toBe('gone');
-      expect(r.outcome).toMatchObject({ kind: 'user', loginId: mem });
+      expect(r.status, url).toBe(404);
+      expect(r.json.error, url).toBe('not found');
     }
-    // The member app list is gone (W8d).
+    // The member app list is gone (W8d; its stub, A7).
     const apps = await call('/api/member/apps', mem);
-    expect(apps.status).toBe(410);
-    expect(apps.json.code).toBe('gone');
+    expect(apps.status).toBe(404);
+    expect(apps.json.error).toBe('not found');
     // The member home reads team pages and apps: in its scope too (W7e fix
     // round 1, L1). Since task d78e7bde it is the Team workspace's landing
     // page (workspaces.landing_app_id). Its own things (its push devices)

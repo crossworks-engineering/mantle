@@ -184,10 +184,6 @@ async function appMarks(
   return { pins: rows.filter((r) => r.pinned_at).map((r) => r.id), opens };
 }
 
-/** What PUT /api/app-nav answers now: the layout is the tree's. */
-export const APP_NAV_LAYOUT_RETIRED =
-  'Apps are organised as folders now; update the app to move or rename them.';
-
 /** Replace one login's pins, in order (the old PUT /api/app-nav/pins):
  *  apps named are pinned in that order, every other app unpinned. Pins of
  *  missing apps are dropped. */

@@ -161,7 +161,8 @@ describe.skipIf(!hasManifest)('route manifest auth sweep', () => {
   // and a login's Chat still read it).
   it('the removed Chat archive route is not routed', async () => {
     expect(manifest.filter((e) => e.pattern === '/api/team-admin/members')).toEqual([]);
-    expect(manifest.some((e) => e.pattern === '/api/team-admin/member-chats')).toBe(true);
+    // Its sibling stub went in arch A7 (a7-gone-routes.test.ts).
+    expect(manifest.some((e) => e.pattern === '/api/team-admin/member-chats')).toBe(false);
     const { buildSessionCookie } = await import('../lib/auth');
     const cookie = `mantle_session=${buildSessionCookie('11111111-1111-4111-8111-111111111111').value}`;
     const res = await app.request('/api/team-admin/members?contact=x', { headers: { cookie } });
@@ -211,9 +212,11 @@ describe.skipIf(!hasManifest)('route manifest auth sweep', () => {
   // Member logins Phase 7: an admin's private items. Anonymous here; a
   // member login's 403 and the admin's own space are pinned in
   // admin-space-sweep.test.ts (it stands in the login rows).
-  it('the admin private-space routes refuse a credential-less request', async () => {
-    const admin = manifest.filter((e) => e.pattern.startsWith('/api/admin/'));
-    expect(admin.map((e) => e.pattern).sort()).toEqual([
+  it('the admin private-space routes are gone (A7) and refuse a credential-less request', async () => {
+    // 410 stubs from W6b until arch A7: no route now, and the gate answers a
+    // request with no credential its 401 all the same.
+    expect(manifest.filter((e) => e.pattern.startsWith('/api/admin/'))).toEqual([]);
+    for (const pattern of [
       '/api/admin/space',
       '/api/admin/space-files',
       '/api/admin/space/:id',
@@ -222,11 +225,10 @@ describe.skipIf(!hasManifest)('route manifest auth sweep', () => {
       '/api/admin/space/:id/draft',
       '/api/admin/space/:id/give-back',
       '/api/admin/space/:id/save',
-    ]);
-    for (const entry of admin) {
-      for (const method of entry.methods.filter((m) => m !== 'OPTIONS')) {
-        const res = await app.request(concretePath(entry.pattern), { method });
-        expect(res.status, `${method} ${entry.pattern}`).toBe(401);
+    ]) {
+      for (const method of ['GET', 'POST']) {
+        const res = await app.request(concretePath(pattern), { method });
+        expect(res.status, `${method} ${pattern}`).toBe(401);
       }
     }
   });

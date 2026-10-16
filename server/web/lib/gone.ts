@@ -1,14 +1,16 @@
 /**
- * Routes removed in workspaces W5c (review, team drafts, Team admin, the
- * client portal) and after. Each one stays as a stub that answers 410
- * `{ error, code: 'gone' }`, so an old UI or an old phone app can tell the
- * person to update instead of showing a vague error.
+ * A retired route's 410 stub: it answers `{ error, code: 'gone' }`, so an
+ * old UI or an old phone app can tell the person to update instead of
+ * showing a vague error. The stubs of the routes removed in workspaces W5c
+ * to W8d (review, team drafts, Team admin, the client portal, the personal
+ * spaces, the member routes, the levels) were deleted in arch A7, once no
+ * box logged a hit for a release (scripts/arch-scoreboard-box.sh); none is
+ * left. This module stays for a route retired later.
  *
  * A stub still answers the guard its route had: without a session the gate
  * and the guard answer 401 as before, a login of another kind is refused as
  * before, and the role sweeps keep proving who reaches what. Only a caller
- * the old route served gets the 410. The client portal's stubs answer any
- * login (there is no client login since workspaces W8a).
+ * the old route served gets the 410.
  *
  * Since A4 hand batch A the gate answers that guard, not the stub: the
  * route manifest generator reads `export const GET = gone('owner')` as a
@@ -39,35 +41,6 @@ const READERS: Readonly<Record<(typeof GONE_KINDS)[GoneGuard]['reader'], () => u
 };
 
 export const GONE_MESSAGE = 'This feature was removed. Update the app.';
-
-/** The personal-space routes (Mine, my apps, an admin's private items),
- *  removed in workspaces W6b: every personal item is a brain item in its
- *  login's private workspace, read and written through the normal routes. */
-export const SPACE_FOLDED_MESSAGE =
-  'Your own items are in your private workspace now. Open them from the normal lists.';
-
-/** The member Library and accepted-item routes (/api/member/library*,
- *  /api/member/accepted*), removed in workspaces W7e: unused since W6b. */
-export const LIBRARY_GONE_MESSAGE =
-  'The Library is gone: open the items of your workspaces from the normal lists. Update the app.';
-
-/** The per-login MCP switches and static login tokens (/api/mcp-logins),
- *  removed in workspaces W7b: every login has the one MCP surface in its
- *  own workspaces. */
-export const MCP_LOGINS_GONE_MESSAGE =
-  'There is no per-login MCP switch any more: every login reaches MCP in its own workspaces. Update the app.';
-
-/** The agent and tool-group level routes (/api/access/agents/:slug,
- *  /api/access/tool-groups/:slug), removed in workspaces W7b. */
-export const LEVELS_GONE_MESSAGE =
-  'Agents and tool groups have no level any more: an assistant reads its workspace. Update the app.';
-
-/** A member's own byte and app routes (/api/member/files/:id,
- *  /api/member/draws/:id/svg, /api/member/apps*), deprecated in workspaces
- *  W7e and removed in W8d: every login reads bytes on /api/files/files/:id
- *  and /api/draws/:id/svg, and runs an app on /api/apps/:id, in its scope. */
-export const MEMBER_ROUTES_GONE_MESSAGE =
-  'This route moved: files, drawings and apps open from the normal routes. Update the app.';
 
 /** The 410 body every removed route answers. Each one is logged as
  *  `[gone] 410 <path>`, so a box's hits on retired routes can be counted

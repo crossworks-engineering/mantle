@@ -144,29 +144,6 @@ describe('sign-out refuses a cross-site browser request by its row (A10 #8 L5)',
   });
 });
 
-describe('the email-code sign-in is gone (W8a)', () => {
-  const GONE = [
-    ['client-code', () => import('./client-code/route')],
-    ['client-code/verify', () => import('./client-code/verify/route')],
-  ] as const;
-
-  it.each(GONE)('%s: 410 code gone to every caller, no cookie', async (path, load) => {
-    const POST = (await load()).POST as Post;
-    const variants: Record<string, string>[] = [
-      { 'content-type': 'application/json' },
-      { 'content-type': 'text/plain' },
-      { 'content-type': 'application/json', origin: 'https://evil.example.invalid' },
-      { 'content-type': 'application/json', origin: BRAIN, 'sec-fetch-site': 'same-origin' },
-    ];
-    for (const headers of variants) {
-      const res = await POST(post(path, headers));
-      expect(res.status, JSON.stringify(headers)).toBe(410);
-      expect(await res.json()).toMatchObject({ code: 'gone' });
-      expect(res.headers.get('set-cookie')).toBeNull();
-    }
-  });
-});
-
 describe('refuseCrossSiteAuthPost lets the real callers through', () => {
   const guard = async () => (await import('@/lib/auth/preflight')).refuseCrossSiteAuthPost;
   const json = { 'content-type': 'application/json; charset=utf-8' };

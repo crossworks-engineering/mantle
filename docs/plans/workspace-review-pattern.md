@@ -2,7 +2,7 @@
 
 > **Superseded in workspaces W5c:** review was removed (members no longer
 > submit, admins no longer approve or read "Shared by members"); items are
-> shared with Grant Access. The removed routes answer 410 `gone`. The code
+> shared with Grant Access. The removed routes answered 410 `gone` until arch A7. The code
 > this plan names (app-review-test.ts, member-items-shared.ts, the review
 > parts of member-review.ts and member-space-apps.ts) was deleted. Kept as
 > history.

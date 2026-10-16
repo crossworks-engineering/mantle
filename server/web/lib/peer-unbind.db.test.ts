@@ -116,19 +116,6 @@ describe.skipIf(!URL)('peer bindings end with the login', () => {
     expect((await peer(peers.other)).acts_as_login_id).toBe(who.anchor);
   }, 30_000);
 
-  it('W7b: the per-login MCP switch is gone (410); a key and a peer stay as they are', async () => {
-    const { PATCH } = await import('../app/api/mcp-logins/[id]/route');
-    const res = await PATCH();
-    expect(res.status).toBe(410);
-    expect(await res.json()).toMatchObject({ code: 'gone' });
-    const [k] = (await sql`select revoked_at from access_keys where id = ${key}`) as unknown as {
-      revoked_at: Date | null;
-    }[];
-    expect(k!.revoked_at).toBeNull();
-    expect((await peer(peers.client)).acts_as_login_id).toBe(client);
-    expect((await peer(peers.other)).acts_as_login_id).toBe(who.anchor);
-  }, 30_000);
-
   it('binding a peer again to the same login restores Write; another login starts closed', async () => {
     const { setPeerAccess } = await import('@mantle/content');
     const back = await setPeerAccess(who.anchor, peers.member, {

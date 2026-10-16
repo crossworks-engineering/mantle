@@ -9,7 +9,7 @@
 > workspace reads (who runs an app: [workspaces.md](workspaces.md), "Apps"
 > and "The landing page"). Designation moved too: a Moderator of the
 > workspace sets it on the workspace screen (`PATCH /api/workspaces/:id`
-> `landingAppId`); `PUT /api/team-admin/hub-app` answers 410, and the old
+> `landingAppId`); `PUT /api/team-admin/hub-app` answered 410 until arch A7, and the old
 > `teamHubAppId` pick became the Team workspace's home app (migration
 > 0276). Where this guide says `/hub`, the team token gate, the Forum link,
 > the signed team bearer, the pref or the Team-admin picker, read it as

@@ -1,156 +1,77 @@
 # what a guard write did on the side: its audit rows, the create home noted
 g1 audits=[] home=-
-g2 audits=["api.write PATCH /api/access/agents/11111111-1111-4111-8111-111111111111 33333333-3333-4333-8333-333333333333"] home=-
-g3 audits=["api.write PATCH /api/access/agents/11111111-1111-4111-8111-111111111111 55555555-5555-4555-8555-555555555555"] home=-
-g4 audits=["api.write POST /api/access/client-report/ack 33333333-3333-4333-8333-333333333333"] home=-
-g5 audits=["api.write POST /api/access/client-report/ack 55555555-5555-4555-8555-555555555555"] home=-
-g6 audits=["api.write PATCH /api/access/tool-groups/11111111-1111-4111-8111-111111111111 33333333-3333-4333-8333-333333333333"] home=-
-g7 audits=["api.write PATCH /api/access/tool-groups/11111111-1111-4111-8111-111111111111 55555555-5555-4555-8555-555555555555"] home=-
-g8 audits=["api.write POST /api/admin/space 33333333-3333-4333-8333-333333333333"] home=-
-g9 audits=["api.write POST /api/admin/space 55555555-5555-4555-8555-555555555555"] home=-
-g10 audits=["api.write POST /api/admin/space 44444444-4444-4444-8444-444444444444"] home=-
-g11 audits=["api.write POST /api/admin/space-files 33333333-3333-4333-8333-333333333333"] home=-
-g12 audits=["api.write POST /api/admin/space-files 55555555-5555-4555-8555-555555555555"] home=-
-g13 audits=["api.write POST /api/admin/space-files 44444444-4444-4444-8444-444444444444"] home=-
-g14 audits=["api.write PATCH /api/admin/space/11111111-1111-4111-8111-111111111111 33333333-3333-4333-8333-333333333333"] home=-
-g15 audits=["api.write PATCH /api/admin/space/11111111-1111-4111-8111-111111111111 55555555-5555-4555-8555-555555555555"] home=-
-g16 audits=["api.write PATCH /api/admin/space/11111111-1111-4111-8111-111111111111 44444444-4444-4444-8444-444444444444"] home=-
-g17 audits=["api.write DELETE /api/admin/space/11111111-1111-4111-8111-111111111111 33333333-3333-4333-8333-333333333333"] home=-
-g18 audits=["api.write DELETE /api/admin/space/11111111-1111-4111-8111-111111111111 55555555-5555-4555-8555-555555555555"] home=-
-g19 audits=["api.write DELETE /api/admin/space/11111111-1111-4111-8111-111111111111 44444444-4444-4444-8444-444444444444"] home=-
-g20 audits=["api.write POST /api/admin/space/11111111-1111-4111-8111-111111111111/accept 33333333-3333-4333-8333-333333333333"] home=-
-g21 audits=["api.write POST /api/admin/space/11111111-1111-4111-8111-111111111111/accept 55555555-5555-4555-8555-555555555555"] home=-
-g22 audits=["api.write POST /api/admin/space/11111111-1111-4111-8111-111111111111/accept 44444444-4444-4444-8444-444444444444"] home=-
-g23 audits=["api.write PUT /api/admin/space/11111111-1111-4111-8111-111111111111/draft 33333333-3333-4333-8333-333333333333"] home=-
-g24 audits=["api.write PUT /api/admin/space/11111111-1111-4111-8111-111111111111/draft 55555555-5555-4555-8555-555555555555"] home=-
-g25 audits=["api.write PUT /api/admin/space/11111111-1111-4111-8111-111111111111/draft 44444444-4444-4444-8444-444444444444"] home=-
-g26 audits=["api.write POST /api/admin/space/11111111-1111-4111-8111-111111111111/give-back 33333333-3333-4333-8333-333333333333"] home=-
-g27 audits=["api.write POST /api/admin/space/11111111-1111-4111-8111-111111111111/give-back 55555555-5555-4555-8555-555555555555"] home=-
-g28 audits=["api.write POST /api/admin/space/11111111-1111-4111-8111-111111111111/give-back 44444444-4444-4444-8444-444444444444"] home=-
-g29 audits=["api.write POST /api/admin/space/11111111-1111-4111-8111-111111111111/save 33333333-3333-4333-8333-333333333333"] home=-
-g30 audits=["api.write POST /api/admin/space/11111111-1111-4111-8111-111111111111/save 55555555-5555-4555-8555-555555555555"] home=-
-g31 audits=["api.write POST /api/admin/space/11111111-1111-4111-8111-111111111111/save 44444444-4444-4444-8444-444444444444"] home=-
-g32 audits=["api.write POST /api/apps/members/11111111-1111-4111-8111-111111111111/accept 33333333-3333-4333-8333-333333333333"] home={"createWs":null,"privateWs":null}
-g33 audits=["api.write POST /api/apps/members/11111111-1111-4111-8111-111111111111/accept 55555555-5555-4555-8555-555555555555"] home={"createWs":null,"privateWs":null}
-g34 audits=["api.write POST /api/apps/members/11111111-1111-4111-8111-111111111111/accept 44444444-4444-4444-8444-444444444444"] home={"createWs":null,"privateWs":null}
-g35 audits=["api.write POST /api/apps/members/11111111-1111-4111-8111-111111111111/delete 33333333-3333-4333-8333-333333333333"] home={"createWs":null,"privateWs":null}
-g36 audits=["api.write POST /api/apps/members/11111111-1111-4111-8111-111111111111/delete 55555555-5555-4555-8555-555555555555"] home={"createWs":null,"privateWs":null}
-g37 audits=["api.write POST /api/apps/members/11111111-1111-4111-8111-111111111111/delete 44444444-4444-4444-8444-444444444444"] home={"createWs":null,"privateWs":null}
-g38 audits=["api.write POST /api/apps/members/11111111-1111-4111-8111-111111111111/send-back 33333333-3333-4333-8333-333333333333"] home={"createWs":null,"privateWs":null}
-g39 audits=["api.write POST /api/apps/members/11111111-1111-4111-8111-111111111111/send-back 55555555-5555-4555-8555-555555555555"] home={"createWs":null,"privateWs":null}
-g40 audits=["api.write POST /api/apps/members/11111111-1111-4111-8111-111111111111/send-back 44444444-4444-4444-8444-444444444444"] home={"createWs":null,"privateWs":null}
-g41 audits=["api.write POST /api/apps/members/11111111-1111-4111-8111-111111111111/test 33333333-3333-4333-8333-333333333333"] home={"createWs":null,"privateWs":null}
-g42 audits=["api.write POST /api/apps/members/11111111-1111-4111-8111-111111111111/test 55555555-5555-4555-8555-555555555555"] home={"createWs":null,"privateWs":null}
-g43 audits=["api.write POST /api/apps/members/11111111-1111-4111-8111-111111111111/test 44444444-4444-4444-8444-444444444444"] home={"createWs":null,"privateWs":null}
-g44 audits=["api.write DELETE /api/apps/members/11111111-1111-4111-8111-111111111111/test 33333333-3333-4333-8333-333333333333"] home={"createWs":null,"privateWs":null}
-g45 audits=["api.write DELETE /api/apps/members/11111111-1111-4111-8111-111111111111/test 55555555-5555-4555-8555-555555555555"] home={"createWs":null,"privateWs":null}
-g46 audits=["api.write DELETE /api/apps/members/11111111-1111-4111-8111-111111111111/test 44444444-4444-4444-8444-444444444444"] home={"createWs":null,"privateWs":null}
-g47 audits=["api.write POST /api/apps/members/11111111-1111-4111-8111-111111111111/test/db-broker 33333333-3333-4333-8333-333333333333"] home={"createWs":null,"privateWs":null}
-g48 audits=["api.write POST /api/apps/members/11111111-1111-4111-8111-111111111111/test/db-broker 55555555-5555-4555-8555-555555555555"] home={"createWs":null,"privateWs":null}
-g49 audits=["api.write POST /api/apps/members/11111111-1111-4111-8111-111111111111/test/db-broker 44444444-4444-4444-8444-444444444444"] home={"createWs":null,"privateWs":null}
-g50 audits=["api.write POST /api/apps/members/11111111-1111-4111-8111-111111111111/test/frame-ticket 33333333-3333-4333-8333-333333333333"] home={"createWs":null,"privateWs":null}
-g51 audits=["api.write POST /api/apps/members/11111111-1111-4111-8111-111111111111/test/frame-ticket 55555555-5555-4555-8555-555555555555"] home={"createWs":null,"privateWs":null}
-g52 audits=["api.write POST /api/apps/members/11111111-1111-4111-8111-111111111111/test/frame-ticket 44444444-4444-4444-8444-444444444444"] home={"createWs":null,"privateWs":null}
-g53 audits=["api.write POST /api/apps/members/11111111-1111-4111-8111-111111111111/test/tool-broker 33333333-3333-4333-8333-333333333333"] home={"createWs":null,"privateWs":null}
-g54 audits=["api.write POST /api/apps/members/11111111-1111-4111-8111-111111111111/test/tool-broker 55555555-5555-4555-8555-555555555555"] home={"createWs":null,"privateWs":null}
-g55 audits=["api.write POST /api/apps/members/11111111-1111-4111-8111-111111111111/test/tool-broker 44444444-4444-4444-8444-444444444444"] home={"createWs":null,"privateWs":null}
-g56 audits=["api.write POST /api/apps/members/11111111-1111-4111-8111-111111111111/unshare 33333333-3333-4333-8333-333333333333"] home={"createWs":null,"privateWs":null}
-g57 audits=["api.write POST /api/apps/members/11111111-1111-4111-8111-111111111111/unshare 55555555-5555-4555-8555-555555555555"] home={"createWs":null,"privateWs":null}
-g58 audits=["api.write POST /api/apps/members/11111111-1111-4111-8111-111111111111/unshare 44444444-4444-4444-8444-444444444444"] home={"createWs":null,"privateWs":null}
-g59 audits=["api.write POST /api/assistant/turn 33333333-3333-4333-8333-333333333333"] home=-
-g60 audits=["api.write POST /api/assistant/turn 55555555-5555-4555-8555-555555555555"] home=-
-g61 audits=["api.write POST /api/assistant/turn 44444444-4444-4444-8444-444444444444"] home=-
-g62 audits=["api.write POST /api/assistant/turn/11111111-1111-4111-8111-111111111111/cancel 33333333-3333-4333-8333-333333333333"] home=-
-g63 audits=["api.write POST /api/assistant/turn/11111111-1111-4111-8111-111111111111/cancel 55555555-5555-4555-8555-555555555555"] home=-
-g64 audits=["api.write POST /api/assistant/turn/11111111-1111-4111-8111-111111111111/cancel 44444444-4444-4444-8444-444444444444"] home=-
-g65 audits=["api.write POST /api/auth/pair 33333333-3333-4333-8333-333333333333"] home=-
-g66 audits=["api.write POST /api/auth/pair 55555555-5555-4555-8555-555555555555"] home=-
-g67 audits=["api.write POST /api/auth/pair 44444444-4444-4444-8444-444444444444"] home=-
-g68 audits=["api.write POST /api/auth/sso 55555555-5555-4555-8555-555555555555"] home=-
-g69 audits=["api.write POST /api/dev-tools/queue-approval 33333333-3333-4333-8333-333333333333"] home=-
-g70 audits=["api.write POST /api/dev-tools/queue-approval 55555555-5555-4555-8555-555555555555"] home=-
-g71 audits=["api.write POST /api/grants/11111111-1111-4111-8111-111111111111 33333333-3333-4333-8333-333333333333"] home=-
-g72 audits=["api.write POST /api/grants/11111111-1111-4111-8111-111111111111 55555555-5555-4555-8555-555555555555"] home=-
-g73 audits=["api.write POST /api/grants/11111111-1111-4111-8111-111111111111 44444444-4444-4444-8444-444444444444"] home=-
-g74 audits=["api.write PATCH /api/grants/11111111-1111-4111-8111-111111111111/11111111-1111-4111-8111-111111111111 33333333-3333-4333-8333-333333333333"] home=-
-g75 audits=["api.write PATCH /api/grants/11111111-1111-4111-8111-111111111111/11111111-1111-4111-8111-111111111111 55555555-5555-4555-8555-555555555555"] home=-
-g76 audits=["api.write PATCH /api/grants/11111111-1111-4111-8111-111111111111/11111111-1111-4111-8111-111111111111 44444444-4444-4444-8444-444444444444"] home=-
-g77 audits=["api.write DELETE /api/grants/11111111-1111-4111-8111-111111111111/11111111-1111-4111-8111-111111111111 33333333-3333-4333-8333-333333333333"] home=-
-g78 audits=["api.write DELETE /api/grants/11111111-1111-4111-8111-111111111111/11111111-1111-4111-8111-111111111111 55555555-5555-4555-8555-555555555555"] home=-
-g79 audits=["api.write DELETE /api/grants/11111111-1111-4111-8111-111111111111/11111111-1111-4111-8111-111111111111 44444444-4444-4444-8444-444444444444"] home=-
-g80 audits=["api.write POST /api/grants/11111111-1111-4111-8111-111111111111/11111111-1111-4111-8111-111111111111/hand 33333333-3333-4333-8333-333333333333"] home=-
-g81 audits=["api.write POST /api/grants/11111111-1111-4111-8111-111111111111/11111111-1111-4111-8111-111111111111/hand 55555555-5555-4555-8555-555555555555"] home=-
-g82 audits=["api.write POST /api/grants/11111111-1111-4111-8111-111111111111/11111111-1111-4111-8111-111111111111/hand 44444444-4444-4444-8444-444444444444"] home=-
-g83 audits=["api.write POST /api/grants/11111111-1111-4111-8111-111111111111/11111111-1111-4111-8111-111111111111/restore 33333333-3333-4333-8333-333333333333"] home=-
-g84 audits=["api.write POST /api/grants/11111111-1111-4111-8111-111111111111/11111111-1111-4111-8111-111111111111/restore 55555555-5555-4555-8555-555555555555"] home=-
-g85 audits=["api.write POST /api/grants/11111111-1111-4111-8111-111111111111/11111111-1111-4111-8111-111111111111/restore 44444444-4444-4444-8444-444444444444"] home=-
-g86 audits=["api.write POST /api/grants/11111111-1111-4111-8111-111111111111/embeds 33333333-3333-4333-8333-333333333333"] home=-
-g87 audits=["api.write POST /api/grants/11111111-1111-4111-8111-111111111111/embeds 55555555-5555-4555-8555-555555555555"] home=-
-g88 audits=["api.write POST /api/grants/11111111-1111-4111-8111-111111111111/embeds 44444444-4444-4444-8444-444444444444"] home=-
-g89 audits=["api.write POST /api/grants/move 33333333-3333-4333-8333-333333333333"] home=-
-g90 audits=["api.write POST /api/grants/move 55555555-5555-4555-8555-555555555555"] home=-
-g91 audits=["api.write POST /api/grants/move 44444444-4444-4444-8444-444444444444"] home=-
-g92 audits=["api.write POST /api/grants/move/preview 33333333-3333-4333-8333-333333333333"] home=-
-g93 audits=["api.write POST /api/grants/move/preview 55555555-5555-4555-8555-555555555555"] home=-
-g94 audits=["api.write POST /api/grants/move/preview 44444444-4444-4444-8444-444444444444"] home=-
-g95 audits=["api.write PATCH /api/mcp-logins/11111111-1111-4111-8111-111111111111 33333333-3333-4333-8333-333333333333"] home=-
-g96 audits=["api.write PATCH /api/mcp-logins/11111111-1111-4111-8111-111111111111 55555555-5555-4555-8555-555555555555"] home=-
-g97 audits=["api.write POST /api/mcp-logins/11111111-1111-4111-8111-111111111111/tokens 33333333-3333-4333-8333-333333333333"] home=-
-g98 audits=["api.write POST /api/mcp-logins/11111111-1111-4111-8111-111111111111/tokens 55555555-5555-4555-8555-555555555555"] home=-
-g99 audits=["api.write DELETE /api/mcp-logins/11111111-1111-4111-8111-111111111111/tokens/11111111-1111-4111-8111-111111111111 33333333-3333-4333-8333-333333333333"] home=-
-g100 audits=["api.write DELETE /api/mcp-logins/11111111-1111-4111-8111-111111111111/tokens/11111111-1111-4111-8111-111111111111 55555555-5555-4555-8555-555555555555"] home=-
-g101 audits=["api.write PUT /api/team-admin/hub-app 33333333-3333-4333-8333-333333333333"] home=-
-g102 audits=["api.write PUT /api/team-admin/hub-app 55555555-5555-4555-8555-555555555555"] home=-
-g103 audits=["api.write DELETE /api/team-admin/hub-app 33333333-3333-4333-8333-333333333333"] home=-
-g104 audits=["api.write DELETE /api/team-admin/hub-app 55555555-5555-4555-8555-555555555555"] home=-
-g105 audits=["api.write POST /api/team-admin/member-items/11111111-1111-4111-8111-111111111111/unshare 33333333-3333-4333-8333-333333333333"] home=-
-g106 audits=["api.write POST /api/team-admin/member-items/11111111-1111-4111-8111-111111111111/unshare 55555555-5555-4555-8555-555555555555"] home=-
-g107 audits=["api.write POST /api/team-admin/notify 33333333-3333-4333-8333-333333333333"] home=-
-g108 audits=["api.write POST /api/team-admin/notify 55555555-5555-4555-8555-555555555555"] home=-
-g109 audits=["api.write POST /api/team-admin/submissions/11111111-1111-4111-8111-111111111111/accept 33333333-3333-4333-8333-333333333333"] home=-
-g110 audits=["api.write POST /api/team-admin/submissions/11111111-1111-4111-8111-111111111111/accept 55555555-5555-4555-8555-555555555555"] home=-
-g111 audits=["api.write POST /api/team-admin/submissions/11111111-1111-4111-8111-111111111111/discard 33333333-3333-4333-8333-333333333333"] home=-
-g112 audits=["api.write POST /api/team-admin/submissions/11111111-1111-4111-8111-111111111111/discard 55555555-5555-4555-8555-555555555555"] home=-
-g113 audits=["api.write POST /api/team-admin/submissions/11111111-1111-4111-8111-111111111111/return 33333333-3333-4333-8333-333333333333"] home=-
-g114 audits=["api.write POST /api/team-admin/submissions/11111111-1111-4111-8111-111111111111/return 55555555-5555-4555-8555-555555555555"] home=-
-g115 audits=["api.write POST /api/team-admin/submissions/11111111-1111-4111-8111-111111111111/take-over 33333333-3333-4333-8333-333333333333"] home=-
-g116 audits=["api.write POST /api/team-admin/submissions/11111111-1111-4111-8111-111111111111/take-over 55555555-5555-4555-8555-555555555555"] home=-
-g117 audits=["api.write POST /api/workspaces 33333333-3333-4333-8333-333333333333"] home=-
-g118 audits=["api.write POST /api/workspaces 55555555-5555-4555-8555-555555555555"] home=-
-g119 audits=["api.write POST /api/workspaces 44444444-4444-4444-8444-444444444444"] home=-
-g120 audits=["api.write PATCH /api/workspaces/11111111-1111-4111-8111-111111111111 33333333-3333-4333-8333-333333333333"] home=-
-g121 audits=["api.write PATCH /api/workspaces/11111111-1111-4111-8111-111111111111 55555555-5555-4555-8555-555555555555"] home=-
-g122 audits=["api.write PATCH /api/workspaces/11111111-1111-4111-8111-111111111111 44444444-4444-4444-8444-444444444444"] home=-
-g123 audits=["api.write POST /api/workspaces/11111111-1111-4111-8111-111111111111/archive 33333333-3333-4333-8333-333333333333"] home=-
-g124 audits=["api.write POST /api/workspaces/11111111-1111-4111-8111-111111111111/archive 55555555-5555-4555-8555-555555555555"] home=-
-g125 audits=["api.write POST /api/workspaces/11111111-1111-4111-8111-111111111111/archive 44444444-4444-4444-8444-444444444444"] home=-
-g126 audits=["api.write POST /api/workspaces/11111111-1111-4111-8111-111111111111/resources 33333333-3333-4333-8333-333333333333"] home=-
-g127 audits=["api.write POST /api/workspaces/11111111-1111-4111-8111-111111111111/resources 55555555-5555-4555-8555-555555555555"] home=-
-g128 audits=["api.write POST /api/workspaces/11111111-1111-4111-8111-111111111111/resources 44444444-4444-4444-8444-444444444444"] home=-
-g129 audits=["api.write PATCH /api/workspaces/11111111-1111-4111-8111-111111111111/resources/11111111-1111-4111-8111-111111111111/11111111-1111-4111-8111-111111111111 33333333-3333-4333-8333-333333333333"] home=-
-g130 audits=["api.write PATCH /api/workspaces/11111111-1111-4111-8111-111111111111/resources/11111111-1111-4111-8111-111111111111/11111111-1111-4111-8111-111111111111 55555555-5555-4555-8555-555555555555"] home=-
-g131 audits=["api.write PATCH /api/workspaces/11111111-1111-4111-8111-111111111111/resources/11111111-1111-4111-8111-111111111111/11111111-1111-4111-8111-111111111111 44444444-4444-4444-8444-444444444444"] home=-
-g132 audits=["api.write DELETE /api/workspaces/11111111-1111-4111-8111-111111111111/resources/11111111-1111-4111-8111-111111111111/11111111-1111-4111-8111-111111111111 33333333-3333-4333-8333-333333333333"] home=-
-g133 audits=["api.write DELETE /api/workspaces/11111111-1111-4111-8111-111111111111/resources/11111111-1111-4111-8111-111111111111/11111111-1111-4111-8111-111111111111 55555555-5555-4555-8555-555555555555"] home=-
-g134 audits=["api.write DELETE /api/workspaces/11111111-1111-4111-8111-111111111111/resources/11111111-1111-4111-8111-111111111111/11111111-1111-4111-8111-111111111111 44444444-4444-4444-8444-444444444444"] home=-
-g135 audits=["api.write POST /api/workspaces/11111111-1111-4111-8111-111111111111/users 33333333-3333-4333-8333-333333333333"] home=-
-g136 audits=["api.write POST /api/workspaces/11111111-1111-4111-8111-111111111111/users 55555555-5555-4555-8555-555555555555"] home=-
-g137 audits=["api.write POST /api/workspaces/11111111-1111-4111-8111-111111111111/users 44444444-4444-4444-8444-444444444444"] home=-
-g138 audits=["api.write PATCH /api/workspaces/11111111-1111-4111-8111-111111111111/users/11111111-1111-4111-8111-111111111111 33333333-3333-4333-8333-333333333333"] home=-
-g139 audits=["api.write PATCH /api/workspaces/11111111-1111-4111-8111-111111111111/users/11111111-1111-4111-8111-111111111111 55555555-5555-4555-8555-555555555555"] home=-
-g140 audits=["api.write PATCH /api/workspaces/11111111-1111-4111-8111-111111111111/users/11111111-1111-4111-8111-111111111111 44444444-4444-4444-8444-444444444444"] home=-
-g141 audits=["api.write DELETE /api/workspaces/11111111-1111-4111-8111-111111111111/users/11111111-1111-4111-8111-111111111111 33333333-3333-4333-8333-333333333333"] home=-
-g142 audits=["api.write DELETE /api/workspaces/11111111-1111-4111-8111-111111111111/users/11111111-1111-4111-8111-111111111111 55555555-5555-4555-8555-555555555555"] home=-
-g143 audits=["api.write DELETE /api/workspaces/11111111-1111-4111-8111-111111111111/users/11111111-1111-4111-8111-111111111111 44444444-4444-4444-8444-444444444444"] home=-
-g144 audits=["api.write PATCH /api/pages/11111111-1111-4111-8111-111111111111 33333333-3333-4333-8333-333333333333"] home={"createWs":null,"privateWs":null}
-g145 audits=["api.write PATCH /api/pages/11111111-1111-4111-8111-111111111111 55555555-5555-4555-8555-555555555555"] home={"createWs":null,"privateWs":null}
-g146 audits=["api.write PATCH /api/pages/11111111-1111-4111-8111-111111111111 44444444-4444-4444-8444-444444444444"] home={"createWs":null,"privateWs":null}
-g147 audits=["api.write PATCH /api/pages/11111111-1111-4111-8111-111111111111 22222222-2222-4222-8222-222222222222"] home={"createWs":null,"privateWs":null}
-g148 audits=["api.write PATCH /api/v1/pages/11111111-1111-4111-8111-111111111111 33333333-3333-4333-8333-333333333333"] home={"createWs":null,"privateWs":null}
-g149 audits=["api.write PATCH /api/v1/pages/11111111-1111-4111-8111-111111111111 55555555-5555-4555-8555-555555555555"] home={"createWs":null,"privateWs":null}
-g150 audits=["api.write PATCH /api/v1/pages/11111111-1111-4111-8111-111111111111 44444444-4444-4444-8444-444444444444"] home={"createWs":null,"privateWs":null}
+g2 audits=["api.write POST /api/assistant/turn 33333333-3333-4333-8333-333333333333"] home=-
+g3 audits=["api.write POST /api/assistant/turn 55555555-5555-4555-8555-555555555555"] home=-
+g4 audits=["api.write POST /api/assistant/turn 44444444-4444-4444-8444-444444444444"] home=-
+g5 audits=["api.write POST /api/assistant/turn/11111111-1111-4111-8111-111111111111/cancel 33333333-3333-4333-8333-333333333333"] home=-
+g6 audits=["api.write POST /api/assistant/turn/11111111-1111-4111-8111-111111111111/cancel 55555555-5555-4555-8555-555555555555"] home=-
+g7 audits=["api.write POST /api/assistant/turn/11111111-1111-4111-8111-111111111111/cancel 44444444-4444-4444-8444-444444444444"] home=-
+g8 audits=["api.write POST /api/auth/pair 33333333-3333-4333-8333-333333333333"] home=-
+g9 audits=["api.write POST /api/auth/pair 55555555-5555-4555-8555-555555555555"] home=-
+g10 audits=["api.write POST /api/auth/pair 44444444-4444-4444-8444-444444444444"] home=-
+g11 audits=["api.write POST /api/auth/sso 55555555-5555-4555-8555-555555555555"] home=-
+g12 audits=["api.write POST /api/dev-tools/queue-approval 33333333-3333-4333-8333-333333333333"] home=-
+g13 audits=["api.write POST /api/dev-tools/queue-approval 55555555-5555-4555-8555-555555555555"] home=-
+g14 audits=["api.write POST /api/grants/11111111-1111-4111-8111-111111111111 33333333-3333-4333-8333-333333333333"] home=-
+g15 audits=["api.write POST /api/grants/11111111-1111-4111-8111-111111111111 55555555-5555-4555-8555-555555555555"] home=-
+g16 audits=["api.write POST /api/grants/11111111-1111-4111-8111-111111111111 44444444-4444-4444-8444-444444444444"] home=-
+g17 audits=["api.write PATCH /api/grants/11111111-1111-4111-8111-111111111111/11111111-1111-4111-8111-111111111111 33333333-3333-4333-8333-333333333333"] home=-
+g18 audits=["api.write PATCH /api/grants/11111111-1111-4111-8111-111111111111/11111111-1111-4111-8111-111111111111 55555555-5555-4555-8555-555555555555"] home=-
+g19 audits=["api.write PATCH /api/grants/11111111-1111-4111-8111-111111111111/11111111-1111-4111-8111-111111111111 44444444-4444-4444-8444-444444444444"] home=-
+g20 audits=["api.write DELETE /api/grants/11111111-1111-4111-8111-111111111111/11111111-1111-4111-8111-111111111111 33333333-3333-4333-8333-333333333333"] home=-
+g21 audits=["api.write DELETE /api/grants/11111111-1111-4111-8111-111111111111/11111111-1111-4111-8111-111111111111 55555555-5555-4555-8555-555555555555"] home=-
+g22 audits=["api.write DELETE /api/grants/11111111-1111-4111-8111-111111111111/11111111-1111-4111-8111-111111111111 44444444-4444-4444-8444-444444444444"] home=-
+g23 audits=["api.write POST /api/grants/11111111-1111-4111-8111-111111111111/11111111-1111-4111-8111-111111111111/hand 33333333-3333-4333-8333-333333333333"] home=-
+g24 audits=["api.write POST /api/grants/11111111-1111-4111-8111-111111111111/11111111-1111-4111-8111-111111111111/hand 55555555-5555-4555-8555-555555555555"] home=-
+g25 audits=["api.write POST /api/grants/11111111-1111-4111-8111-111111111111/11111111-1111-4111-8111-111111111111/hand 44444444-4444-4444-8444-444444444444"] home=-
+g26 audits=["api.write POST /api/grants/11111111-1111-4111-8111-111111111111/11111111-1111-4111-8111-111111111111/restore 33333333-3333-4333-8333-333333333333"] home=-
+g27 audits=["api.write POST /api/grants/11111111-1111-4111-8111-111111111111/11111111-1111-4111-8111-111111111111/restore 55555555-5555-4555-8555-555555555555"] home=-
+g28 audits=["api.write POST /api/grants/11111111-1111-4111-8111-111111111111/11111111-1111-4111-8111-111111111111/restore 44444444-4444-4444-8444-444444444444"] home=-
+g29 audits=["api.write POST /api/grants/11111111-1111-4111-8111-111111111111/embeds 33333333-3333-4333-8333-333333333333"] home=-
+g30 audits=["api.write POST /api/grants/11111111-1111-4111-8111-111111111111/embeds 55555555-5555-4555-8555-555555555555"] home=-
+g31 audits=["api.write POST /api/grants/11111111-1111-4111-8111-111111111111/embeds 44444444-4444-4444-8444-444444444444"] home=-
+g32 audits=["api.write POST /api/grants/move 33333333-3333-4333-8333-333333333333"] home=-
+g33 audits=["api.write POST /api/grants/move 55555555-5555-4555-8555-555555555555"] home=-
+g34 audits=["api.write POST /api/grants/move 44444444-4444-4444-8444-444444444444"] home=-
+g35 audits=["api.write POST /api/grants/move/preview 33333333-3333-4333-8333-333333333333"] home=-
+g36 audits=["api.write POST /api/grants/move/preview 55555555-5555-4555-8555-555555555555"] home=-
+g37 audits=["api.write POST /api/grants/move/preview 44444444-4444-4444-8444-444444444444"] home=-
+g38 audits=["api.write POST /api/workspaces 33333333-3333-4333-8333-333333333333"] home=-
+g39 audits=["api.write POST /api/workspaces 55555555-5555-4555-8555-555555555555"] home=-
+g40 audits=["api.write POST /api/workspaces 44444444-4444-4444-8444-444444444444"] home=-
+g41 audits=["api.write PATCH /api/workspaces/11111111-1111-4111-8111-111111111111 33333333-3333-4333-8333-333333333333"] home=-
+g42 audits=["api.write PATCH /api/workspaces/11111111-1111-4111-8111-111111111111 55555555-5555-4555-8555-555555555555"] home=-
+g43 audits=["api.write PATCH /api/workspaces/11111111-1111-4111-8111-111111111111 44444444-4444-4444-8444-444444444444"] home=-
+g44 audits=["api.write POST /api/workspaces/11111111-1111-4111-8111-111111111111/archive 33333333-3333-4333-8333-333333333333"] home=-
+g45 audits=["api.write POST /api/workspaces/11111111-1111-4111-8111-111111111111/archive 55555555-5555-4555-8555-555555555555"] home=-
+g46 audits=["api.write POST /api/workspaces/11111111-1111-4111-8111-111111111111/archive 44444444-4444-4444-8444-444444444444"] home=-
+g47 audits=["api.write POST /api/workspaces/11111111-1111-4111-8111-111111111111/resources 33333333-3333-4333-8333-333333333333"] home=-
+g48 audits=["api.write POST /api/workspaces/11111111-1111-4111-8111-111111111111/resources 55555555-5555-4555-8555-555555555555"] home=-
+g49 audits=["api.write POST /api/workspaces/11111111-1111-4111-8111-111111111111/resources 44444444-4444-4444-8444-444444444444"] home=-
+g50 audits=["api.write PATCH /api/workspaces/11111111-1111-4111-8111-111111111111/resources/11111111-1111-4111-8111-111111111111/11111111-1111-4111-8111-111111111111 33333333-3333-4333-8333-333333333333"] home=-
+g51 audits=["api.write PATCH /api/workspaces/11111111-1111-4111-8111-111111111111/resources/11111111-1111-4111-8111-111111111111/11111111-1111-4111-8111-111111111111 55555555-5555-4555-8555-555555555555"] home=-
+g52 audits=["api.write PATCH /api/workspaces/11111111-1111-4111-8111-111111111111/resources/11111111-1111-4111-8111-111111111111/11111111-1111-4111-8111-111111111111 44444444-4444-4444-8444-444444444444"] home=-
+g53 audits=["api.write DELETE /api/workspaces/11111111-1111-4111-8111-111111111111/resources/11111111-1111-4111-8111-111111111111/11111111-1111-4111-8111-111111111111 33333333-3333-4333-8333-333333333333"] home=-
+g54 audits=["api.write DELETE /api/workspaces/11111111-1111-4111-8111-111111111111/resources/11111111-1111-4111-8111-111111111111/11111111-1111-4111-8111-111111111111 55555555-5555-4555-8555-555555555555"] home=-
+g55 audits=["api.write DELETE /api/workspaces/11111111-1111-4111-8111-111111111111/resources/11111111-1111-4111-8111-111111111111/11111111-1111-4111-8111-111111111111 44444444-4444-4444-8444-444444444444"] home=-
+g56 audits=["api.write POST /api/workspaces/11111111-1111-4111-8111-111111111111/users 33333333-3333-4333-8333-333333333333"] home=-
+g57 audits=["api.write POST /api/workspaces/11111111-1111-4111-8111-111111111111/users 55555555-5555-4555-8555-555555555555"] home=-
+g58 audits=["api.write POST /api/workspaces/11111111-1111-4111-8111-111111111111/users 44444444-4444-4444-8444-444444444444"] home=-
+g59 audits=["api.write PATCH /api/workspaces/11111111-1111-4111-8111-111111111111/users/11111111-1111-4111-8111-111111111111 33333333-3333-4333-8333-333333333333"] home=-
+g60 audits=["api.write PATCH /api/workspaces/11111111-1111-4111-8111-111111111111/users/11111111-1111-4111-8111-111111111111 55555555-5555-4555-8555-555555555555"] home=-
+g61 audits=["api.write PATCH /api/workspaces/11111111-1111-4111-8111-111111111111/users/11111111-1111-4111-8111-111111111111 44444444-4444-4444-8444-444444444444"] home=-
+g62 audits=["api.write DELETE /api/workspaces/11111111-1111-4111-8111-111111111111/users/11111111-1111-4111-8111-111111111111 33333333-3333-4333-8333-333333333333"] home=-
+g63 audits=["api.write DELETE /api/workspaces/11111111-1111-4111-8111-111111111111/users/11111111-1111-4111-8111-111111111111 55555555-5555-4555-8555-555555555555"] home=-
+g64 audits=["api.write DELETE /api/workspaces/11111111-1111-4111-8111-111111111111/users/11111111-1111-4111-8111-111111111111 44444444-4444-4444-8444-444444444444"] home=-
+g65 audits=["api.write PATCH /api/pages/11111111-1111-4111-8111-111111111111 33333333-3333-4333-8333-333333333333"] home={"createWs":null,"privateWs":null}
+g66 audits=["api.write PATCH /api/pages/11111111-1111-4111-8111-111111111111 55555555-5555-4555-8555-555555555555"] home={"createWs":null,"privateWs":null}
+g67 audits=["api.write PATCH /api/pages/11111111-1111-4111-8111-111111111111 44444444-4444-4444-8444-444444444444"] home={"createWs":null,"privateWs":null}
+g68 audits=["api.write PATCH /api/pages/11111111-1111-4111-8111-111111111111 22222222-2222-4222-8222-222222222222"] home={"createWs":null,"privateWs":null}
+g69 audits=["api.write PATCH /api/v1/pages/11111111-1111-4111-8111-111111111111 33333333-3333-4333-8333-333333333333"] home={"createWs":null,"privateWs":null}
+g70 audits=["api.write PATCH /api/v1/pages/11111111-1111-4111-8111-111111111111 55555555-5555-4555-8555-555555555555"] home={"createWs":null,"privateWs":null}
+g71 audits=["api.write PATCH /api/v1/pages/11111111-1111-4111-8111-111111111111 44444444-4444-4444-8444-444444444444"] home={"createWs":null,"privateWs":null}
 
-# cells of a write a guard answered (by its name; a moved one under the guard it replaced): 1290
+# cells of a write a guard answered (by its name; a moved one under the guard it replaced): 378
 first POST /api/access-keys owner-cookie getLoginOr401=g1
 first POST /api/access-keys admin-cookie getLoginOr401=g1
 first POST /api/access-keys limited-cookie getLoginOr401=g1
@@ -165,158 +86,18 @@ first DELETE /api/access-keys/:id member-cookie getLoginOr401=g1
 first DELETE /api/access-keys/:id admin-bearer getLoginOr401=g1
 first DELETE /api/access-keys/:id member-bearer getLoginOr401=g1
 first DELETE /api/access-keys/:id revoked-bearer getLoginOr401=g1
-first PATCH /api/access/agents/:slug owner-cookie getOwnerOr401=g2
-first PATCH /api/access/agents/:slug admin-cookie getOwnerOr401=g3
-first PATCH /api/access/agents/:slug limited-cookie getOwnerOr401=g1
-first PATCH /api/access/agents/:slug member-cookie getOwnerOr401=g1
-first PATCH /api/access/agents/:slug admin-bearer getOwnerOr401=g3
-first PATCH /api/access/agents/:slug member-bearer getOwnerOr401=g1
-first PATCH /api/access/agents/:slug revoked-bearer getOwnerOr401=g1
-first POST /api/access/client-report/ack owner-cookie getOwnerOr401=g4
-first POST /api/access/client-report/ack admin-cookie getOwnerOr401=g5
-first POST /api/access/client-report/ack limited-cookie getOwnerOr401=g1
-first POST /api/access/client-report/ack member-cookie getOwnerOr401=g1
-first POST /api/access/client-report/ack admin-bearer getOwnerOr401=g5
-first POST /api/access/client-report/ack member-bearer getOwnerOr401=g1
-first POST /api/access/client-report/ack revoked-bearer getOwnerOr401=g1
-first PATCH /api/access/tool-groups/:slug owner-cookie getOwnerOr401=g6
-first PATCH /api/access/tool-groups/:slug admin-cookie getOwnerOr401=g7
-first PATCH /api/access/tool-groups/:slug limited-cookie getOwnerOr401=g1
-first PATCH /api/access/tool-groups/:slug member-cookie getOwnerOr401=g1
-first PATCH /api/access/tool-groups/:slug admin-bearer getOwnerOr401=g7
-first PATCH /api/access/tool-groups/:slug member-bearer getOwnerOr401=g1
-first PATCH /api/access/tool-groups/:slug revoked-bearer getOwnerOr401=g1
-first POST /api/admin/space owner-cookie getOwnerOr401=g8
-first POST /api/admin/space admin-cookie getOwnerOr401=g9
-first POST /api/admin/space limited-cookie getOwnerOr401=g10
-first POST /api/admin/space member-cookie getOwnerOr401=g1
-first POST /api/admin/space admin-bearer getOwnerOr401=g9
-first POST /api/admin/space member-bearer getOwnerOr401=g1
-first POST /api/admin/space revoked-bearer getOwnerOr401=g1
-first POST /api/admin/space-files owner-cookie getOwnerOr401=g11
-first POST /api/admin/space-files admin-cookie getOwnerOr401=g12
-first POST /api/admin/space-files limited-cookie getOwnerOr401=g13
-first POST /api/admin/space-files member-cookie getOwnerOr401=g1
-first POST /api/admin/space-files admin-bearer getOwnerOr401=g12
-first POST /api/admin/space-files member-bearer getOwnerOr401=g1
-first POST /api/admin/space-files revoked-bearer getOwnerOr401=g1
-first PATCH /api/admin/space/:id owner-cookie getOwnerOr401=g14
-first PATCH /api/admin/space/:id admin-cookie getOwnerOr401=g15
-first PATCH /api/admin/space/:id limited-cookie getOwnerOr401=g16
-first PATCH /api/admin/space/:id member-cookie getOwnerOr401=g1
-first PATCH /api/admin/space/:id admin-bearer getOwnerOr401=g15
-first PATCH /api/admin/space/:id member-bearer getOwnerOr401=g1
-first PATCH /api/admin/space/:id revoked-bearer getOwnerOr401=g1
-first DELETE /api/admin/space/:id owner-cookie getOwnerOr401=g17
-first DELETE /api/admin/space/:id admin-cookie getOwnerOr401=g18
-first DELETE /api/admin/space/:id limited-cookie getOwnerOr401=g19
-first DELETE /api/admin/space/:id member-cookie getOwnerOr401=g1
-first DELETE /api/admin/space/:id admin-bearer getOwnerOr401=g18
-first DELETE /api/admin/space/:id member-bearer getOwnerOr401=g1
-first DELETE /api/admin/space/:id revoked-bearer getOwnerOr401=g1
-first POST /api/admin/space/:id/accept owner-cookie getOwnerOr401=g20
-first POST /api/admin/space/:id/accept admin-cookie getOwnerOr401=g21
-first POST /api/admin/space/:id/accept limited-cookie getOwnerOr401=g22
-first POST /api/admin/space/:id/accept member-cookie getOwnerOr401=g1
-first POST /api/admin/space/:id/accept admin-bearer getOwnerOr401=g21
-first POST /api/admin/space/:id/accept member-bearer getOwnerOr401=g1
-first POST /api/admin/space/:id/accept revoked-bearer getOwnerOr401=g1
-first PUT /api/admin/space/:id/draft owner-cookie getOwnerOr401=g23
-first PUT /api/admin/space/:id/draft admin-cookie getOwnerOr401=g24
-first PUT /api/admin/space/:id/draft limited-cookie getOwnerOr401=g25
-first PUT /api/admin/space/:id/draft member-cookie getOwnerOr401=g1
-first PUT /api/admin/space/:id/draft admin-bearer getOwnerOr401=g24
-first PUT /api/admin/space/:id/draft member-bearer getOwnerOr401=g1
-first PUT /api/admin/space/:id/draft revoked-bearer getOwnerOr401=g1
-first POST /api/admin/space/:id/give-back owner-cookie getOwnerOr401=g26
-first POST /api/admin/space/:id/give-back admin-cookie getOwnerOr401=g27
-first POST /api/admin/space/:id/give-back limited-cookie getOwnerOr401=g28
-first POST /api/admin/space/:id/give-back member-cookie getOwnerOr401=g1
-first POST /api/admin/space/:id/give-back admin-bearer getOwnerOr401=g27
-first POST /api/admin/space/:id/give-back member-bearer getOwnerOr401=g1
-first POST /api/admin/space/:id/give-back revoked-bearer getOwnerOr401=g1
-first POST /api/admin/space/:id/save owner-cookie getOwnerOr401=g29
-first POST /api/admin/space/:id/save admin-cookie getOwnerOr401=g30
-first POST /api/admin/space/:id/save limited-cookie getOwnerOr401=g31
-first POST /api/admin/space/:id/save member-cookie getOwnerOr401=g1
-first POST /api/admin/space/:id/save admin-bearer getOwnerOr401=g30
-first POST /api/admin/space/:id/save member-bearer getOwnerOr401=g1
-first POST /api/admin/space/:id/save revoked-bearer getOwnerOr401=g1
-first POST /api/apps/members/:id/accept owner-cookie getOwnerOr401=g32
-first POST /api/apps/members/:id/accept admin-cookie getOwnerOr401=g33
-first POST /api/apps/members/:id/accept limited-cookie getOwnerOr401=g34
-first POST /api/apps/members/:id/accept member-cookie getOwnerOr401=g1
-first POST /api/apps/members/:id/accept admin-bearer getOwnerOr401=g33
-first POST /api/apps/members/:id/accept member-bearer getOwnerOr401=g1
-first POST /api/apps/members/:id/accept revoked-bearer getOwnerOr401=g1
-first POST /api/apps/members/:id/delete owner-cookie getOwnerOr401=g35
-first POST /api/apps/members/:id/delete admin-cookie getOwnerOr401=g36
-first POST /api/apps/members/:id/delete limited-cookie getOwnerOr401=g37
-first POST /api/apps/members/:id/delete member-cookie getOwnerOr401=g1
-first POST /api/apps/members/:id/delete admin-bearer getOwnerOr401=g36
-first POST /api/apps/members/:id/delete member-bearer getOwnerOr401=g1
-first POST /api/apps/members/:id/delete revoked-bearer getOwnerOr401=g1
-first POST /api/apps/members/:id/send-back owner-cookie getOwnerOr401=g38
-first POST /api/apps/members/:id/send-back admin-cookie getOwnerOr401=g39
-first POST /api/apps/members/:id/send-back limited-cookie getOwnerOr401=g40
-first POST /api/apps/members/:id/send-back member-cookie getOwnerOr401=g1
-first POST /api/apps/members/:id/send-back admin-bearer getOwnerOr401=g39
-first POST /api/apps/members/:id/send-back member-bearer getOwnerOr401=g1
-first POST /api/apps/members/:id/send-back revoked-bearer getOwnerOr401=g1
-first POST /api/apps/members/:id/test owner-cookie getOwnerOr401=g41
-first POST /api/apps/members/:id/test admin-cookie getOwnerOr401=g42
-first POST /api/apps/members/:id/test limited-cookie getOwnerOr401=g43
-first POST /api/apps/members/:id/test member-cookie getOwnerOr401=g1
-first POST /api/apps/members/:id/test admin-bearer getOwnerOr401=g42
-first POST /api/apps/members/:id/test member-bearer getOwnerOr401=g1
-first POST /api/apps/members/:id/test revoked-bearer getOwnerOr401=g1
-first DELETE /api/apps/members/:id/test owner-cookie getOwnerOr401=g44
-first DELETE /api/apps/members/:id/test admin-cookie getOwnerOr401=g45
-first DELETE /api/apps/members/:id/test limited-cookie getOwnerOr401=g46
-first DELETE /api/apps/members/:id/test member-cookie getOwnerOr401=g1
-first DELETE /api/apps/members/:id/test admin-bearer getOwnerOr401=g45
-first DELETE /api/apps/members/:id/test member-bearer getOwnerOr401=g1
-first DELETE /api/apps/members/:id/test revoked-bearer getOwnerOr401=g1
-first POST /api/apps/members/:id/test/db-broker owner-cookie getOwnerOr401=g47
-first POST /api/apps/members/:id/test/db-broker admin-cookie getOwnerOr401=g48
-first POST /api/apps/members/:id/test/db-broker limited-cookie getOwnerOr401=g49
-first POST /api/apps/members/:id/test/db-broker member-cookie getOwnerOr401=g1
-first POST /api/apps/members/:id/test/db-broker admin-bearer getOwnerOr401=g48
-first POST /api/apps/members/:id/test/db-broker member-bearer getOwnerOr401=g1
-first POST /api/apps/members/:id/test/db-broker revoked-bearer getOwnerOr401=g1
-first POST /api/apps/members/:id/test/frame-ticket owner-cookie getOwnerOr401=g50
-first POST /api/apps/members/:id/test/frame-ticket admin-cookie getOwnerOr401=g51
-first POST /api/apps/members/:id/test/frame-ticket limited-cookie getOwnerOr401=g52
-first POST /api/apps/members/:id/test/frame-ticket member-cookie getOwnerOr401=g1
-first POST /api/apps/members/:id/test/frame-ticket admin-bearer getOwnerOr401=g51
-first POST /api/apps/members/:id/test/frame-ticket member-bearer getOwnerOr401=g1
-first POST /api/apps/members/:id/test/frame-ticket revoked-bearer getOwnerOr401=g1
-first POST /api/apps/members/:id/test/tool-broker owner-cookie getOwnerOr401=g53
-first POST /api/apps/members/:id/test/tool-broker admin-cookie getOwnerOr401=g54
-first POST /api/apps/members/:id/test/tool-broker limited-cookie getOwnerOr401=g55
-first POST /api/apps/members/:id/test/tool-broker member-cookie getOwnerOr401=g1
-first POST /api/apps/members/:id/test/tool-broker admin-bearer getOwnerOr401=g54
-first POST /api/apps/members/:id/test/tool-broker member-bearer getOwnerOr401=g1
-first POST /api/apps/members/:id/test/tool-broker revoked-bearer getOwnerOr401=g1
-first POST /api/apps/members/:id/unshare owner-cookie getOwnerOr401=g56
-first POST /api/apps/members/:id/unshare admin-cookie getOwnerOr401=g57
-first POST /api/apps/members/:id/unshare limited-cookie getOwnerOr401=g58
-first POST /api/apps/members/:id/unshare member-cookie getOwnerOr401=g1
-first POST /api/apps/members/:id/unshare admin-bearer getOwnerOr401=g57
-first POST /api/apps/members/:id/unshare member-bearer getOwnerOr401=g1
-first POST /api/apps/members/:id/unshare revoked-bearer getOwnerOr401=g1
-first POST /api/assistant/turn owner-cookie getChatLoginOr401=g59
-first POST /api/assistant/turn admin-cookie getChatLoginOr401=g60
-first POST /api/assistant/turn limited-cookie getChatLoginOr401=g61
+first POST /api/assistant/turn owner-cookie getChatLoginOr401=g2
+first POST /api/assistant/turn admin-cookie getChatLoginOr401=g3
+first POST /api/assistant/turn limited-cookie getChatLoginOr401=g4
 first POST /api/assistant/turn member-cookie getChatLoginOr401=g1
-first POST /api/assistant/turn admin-bearer getChatLoginOr401=g60
+first POST /api/assistant/turn admin-bearer getChatLoginOr401=g3
 first POST /api/assistant/turn member-bearer getChatLoginOr401=g1
 first POST /api/assistant/turn revoked-bearer getChatLoginOr401=g1
-first POST /api/assistant/turn/:turnId/cancel owner-cookie getOwnerOr401=g62
-first POST /api/assistant/turn/:turnId/cancel admin-cookie getOwnerOr401=g63
-first POST /api/assistant/turn/:turnId/cancel limited-cookie getOwnerOr401=g64
+first POST /api/assistant/turn/:turnId/cancel owner-cookie getOwnerOr401=g5
+first POST /api/assistant/turn/:turnId/cancel admin-cookie getOwnerOr401=g6
+first POST /api/assistant/turn/:turnId/cancel limited-cookie getOwnerOr401=g7
 first POST /api/assistant/turn/:turnId/cancel member-cookie getOwnerOr401=g1
-first POST /api/assistant/turn/:turnId/cancel admin-bearer getOwnerOr401=g63
+first POST /api/assistant/turn/:turnId/cancel admin-bearer getOwnerOr401=g6
 first POST /api/assistant/turn/:turnId/cancel member-bearer getOwnerOr401=g1
 first POST /api/assistant/turn/:turnId/cancel revoked-bearer getOwnerOr401=g1
 first POST /api/auth/change-password none getLoginOr401=g1
@@ -346,11 +127,11 @@ first POST /api/auth/logout key-read-area getLoginOr401=g1
 first POST /api/auth/logout key-write-area getLoginOr401=g1
 first POST /api/auth/logout key-member getLoginOr401=g1
 first POST /api/auth/pair none getLoginOr401=g1
-first POST /api/auth/pair owner-cookie getLoginOr401=g65
-first POST /api/auth/pair admin-cookie getLoginOr401=g66
-first POST /api/auth/pair limited-cookie getLoginOr401=g67
+first POST /api/auth/pair owner-cookie getLoginOr401=g8
+first POST /api/auth/pair admin-cookie getLoginOr401=g9
+first POST /api/auth/pair limited-cookie getLoginOr401=g10
 first POST /api/auth/pair member-cookie getLoginOr401=g1
-first POST /api/auth/pair admin-bearer getLoginOr401=g66
+first POST /api/auth/pair admin-bearer getLoginOr401=g9
 first POST /api/auth/pair member-bearer getLoginOr401=g1
 first POST /api/auth/pair revoked-bearer getLoginOr401=g1
 first POST /api/auth/pair key-read getLoginOr401=g1
@@ -363,7 +144,7 @@ first POST /api/auth/sso owner-cookie getCookieUpgradeLoginOr401=g1
 first POST /api/auth/sso admin-cookie getCookieUpgradeLoginOr401=g1
 first POST /api/auth/sso limited-cookie getCookieUpgradeLoginOr401=g1
 first POST /api/auth/sso member-cookie getCookieUpgradeLoginOr401=g1
-first POST /api/auth/sso admin-bearer getCookieUpgradeLoginOr401=g68
+first POST /api/auth/sso admin-bearer getCookieUpgradeLoginOr401=g11
 first POST /api/auth/sso member-bearer getCookieUpgradeLoginOr401=g1
 first POST /api/auth/sso revoked-bearer getCookieUpgradeLoginOr401=g1
 first POST /api/auth/sso key-read getCookieUpgradeLoginOr401=g1
@@ -371,377 +152,69 @@ first POST /api/auth/sso key-write getCookieUpgradeLoginOr401=g1
 first POST /api/auth/sso key-read-area getCookieUpgradeLoginOr401=g1
 first POST /api/auth/sso key-write-area getCookieUpgradeLoginOr401=g1
 first POST /api/auth/sso key-member getCookieUpgradeLoginOr401=g1
-first POST /api/client/apps/:id/db-broker owner-cookie getLoginOr401=g1
-first POST /api/client/apps/:id/db-broker admin-cookie getLoginOr401=g1
-first POST /api/client/apps/:id/db-broker limited-cookie getLoginOr401=g1
-first POST /api/client/apps/:id/db-broker member-cookie getLoginOr401=g1
-first POST /api/client/apps/:id/db-broker admin-bearer getLoginOr401=g1
-first POST /api/client/apps/:id/db-broker member-bearer getLoginOr401=g1
-first POST /api/client/apps/:id/db-broker revoked-bearer getLoginOr401=g1
-first POST /api/client/apps/:id/frame-ticket owner-cookie getLoginOr401=g1
-first POST /api/client/apps/:id/frame-ticket admin-cookie getLoginOr401=g1
-first POST /api/client/apps/:id/frame-ticket limited-cookie getLoginOr401=g1
-first POST /api/client/apps/:id/frame-ticket member-cookie getLoginOr401=g1
-first POST /api/client/apps/:id/frame-ticket admin-bearer getLoginOr401=g1
-first POST /api/client/apps/:id/frame-ticket member-bearer getLoginOr401=g1
-first POST /api/client/apps/:id/frame-ticket revoked-bearer getLoginOr401=g1
-first POST /api/client/apps/:id/tool-broker owner-cookie getLoginOr401=g1
-first POST /api/client/apps/:id/tool-broker admin-cookie getLoginOr401=g1
-first POST /api/client/apps/:id/tool-broker limited-cookie getLoginOr401=g1
-first POST /api/client/apps/:id/tool-broker member-cookie getLoginOr401=g1
-first POST /api/client/apps/:id/tool-broker admin-bearer getLoginOr401=g1
-first POST /api/client/apps/:id/tool-broker member-bearer getLoginOr401=g1
-first POST /api/client/apps/:id/tool-broker revoked-bearer getLoginOr401=g1
-first POST /api/client/chat owner-cookie getLoginOr401=g1
-first POST /api/client/chat admin-cookie getLoginOr401=g1
-first POST /api/client/chat limited-cookie getLoginOr401=g1
-first POST /api/client/chat member-cookie getLoginOr401=g1
-first POST /api/client/chat admin-bearer getLoginOr401=g1
-first POST /api/client/chat member-bearer getLoginOr401=g1
-first POST /api/client/chat revoked-bearer getLoginOr401=g1
-first POST /api/client/chat/read owner-cookie getLoginOr401=g1
-first POST /api/client/chat/read admin-cookie getLoginOr401=g1
-first POST /api/client/chat/read limited-cookie getLoginOr401=g1
-first POST /api/client/chat/read member-cookie getLoginOr401=g1
-first POST /api/client/chat/read admin-bearer getLoginOr401=g1
-first POST /api/client/chat/read member-bearer getLoginOr401=g1
-first POST /api/client/chat/read revoked-bearer getLoginOr401=g1
-first POST /api/client/push/connect owner-cookie getLoginOr401=g1
-first POST /api/client/push/connect admin-cookie getLoginOr401=g1
-first POST /api/client/push/connect limited-cookie getLoginOr401=g1
-first POST /api/client/push/connect member-cookie getLoginOr401=g1
-first POST /api/client/push/connect admin-bearer getLoginOr401=g1
-first POST /api/client/push/connect member-bearer getLoginOr401=g1
-first POST /api/client/push/connect revoked-bearer getLoginOr401=g1
-first PUT /api/client/push/preferences owner-cookie getLoginOr401=g1
-first PUT /api/client/push/preferences admin-cookie getLoginOr401=g1
-first PUT /api/client/push/preferences limited-cookie getLoginOr401=g1
-first PUT /api/client/push/preferences member-cookie getLoginOr401=g1
-first PUT /api/client/push/preferences admin-bearer getLoginOr401=g1
-first PUT /api/client/push/preferences member-bearer getLoginOr401=g1
-first PUT /api/client/push/preferences revoked-bearer getLoginOr401=g1
-first POST /api/client/push/subscriptions owner-cookie getLoginOr401=g1
-first POST /api/client/push/subscriptions admin-cookie getLoginOr401=g1
-first POST /api/client/push/subscriptions limited-cookie getLoginOr401=g1
-first POST /api/client/push/subscriptions member-cookie getLoginOr401=g1
-first POST /api/client/push/subscriptions admin-bearer getLoginOr401=g1
-first POST /api/client/push/subscriptions member-bearer getLoginOr401=g1
-first POST /api/client/push/subscriptions revoked-bearer getLoginOr401=g1
-first DELETE /api/client/push/subscriptions/:id owner-cookie getLoginOr401=g1
-first DELETE /api/client/push/subscriptions/:id admin-cookie getLoginOr401=g1
-first DELETE /api/client/push/subscriptions/:id limited-cookie getLoginOr401=g1
-first DELETE /api/client/push/subscriptions/:id member-cookie getLoginOr401=g1
-first DELETE /api/client/push/subscriptions/:id admin-bearer getLoginOr401=g1
-first DELETE /api/client/push/subscriptions/:id member-bearer getLoginOr401=g1
-first DELETE /api/client/push/subscriptions/:id revoked-bearer getLoginOr401=g1
-first POST /api/client/space owner-cookie getLoginOr401=g1
-first POST /api/client/space admin-cookie getLoginOr401=g1
-first POST /api/client/space limited-cookie getLoginOr401=g1
-first POST /api/client/space member-cookie getLoginOr401=g1
-first POST /api/client/space admin-bearer getLoginOr401=g1
-first POST /api/client/space member-bearer getLoginOr401=g1
-first POST /api/client/space revoked-bearer getLoginOr401=g1
-first POST /api/client/space-files owner-cookie getLoginOr401=g1
-first POST /api/client/space-files admin-cookie getLoginOr401=g1
-first POST /api/client/space-files limited-cookie getLoginOr401=g1
-first POST /api/client/space-files member-cookie getLoginOr401=g1
-first POST /api/client/space-files admin-bearer getLoginOr401=g1
-first POST /api/client/space-files member-bearer getLoginOr401=g1
-first POST /api/client/space-files revoked-bearer getLoginOr401=g1
-first PATCH /api/client/space/:id owner-cookie getLoginOr401=g1
-first PATCH /api/client/space/:id admin-cookie getLoginOr401=g1
-first PATCH /api/client/space/:id limited-cookie getLoginOr401=g1
-first PATCH /api/client/space/:id member-cookie getLoginOr401=g1
-first PATCH /api/client/space/:id admin-bearer getLoginOr401=g1
-first PATCH /api/client/space/:id member-bearer getLoginOr401=g1
-first PATCH /api/client/space/:id revoked-bearer getLoginOr401=g1
-first DELETE /api/client/space/:id owner-cookie getLoginOr401=g1
-first DELETE /api/client/space/:id admin-cookie getLoginOr401=g1
-first DELETE /api/client/space/:id limited-cookie getLoginOr401=g1
-first DELETE /api/client/space/:id member-cookie getLoginOr401=g1
-first DELETE /api/client/space/:id admin-bearer getLoginOr401=g1
-first DELETE /api/client/space/:id member-bearer getLoginOr401=g1
-first DELETE /api/client/space/:id revoked-bearer getLoginOr401=g1
-first PUT /api/client/space/:id/draft owner-cookie getLoginOr401=g1
-first PUT /api/client/space/:id/draft admin-cookie getLoginOr401=g1
-first PUT /api/client/space/:id/draft limited-cookie getLoginOr401=g1
-first PUT /api/client/space/:id/draft member-cookie getLoginOr401=g1
-first PUT /api/client/space/:id/draft admin-bearer getLoginOr401=g1
-first PUT /api/client/space/:id/draft member-bearer getLoginOr401=g1
-first PUT /api/client/space/:id/draft revoked-bearer getLoginOr401=g1
-first POST /api/client/space/:id/recall owner-cookie getLoginOr401=g1
-first POST /api/client/space/:id/recall admin-cookie getLoginOr401=g1
-first POST /api/client/space/:id/recall limited-cookie getLoginOr401=g1
-first POST /api/client/space/:id/recall member-cookie getLoginOr401=g1
-first POST /api/client/space/:id/recall admin-bearer getLoginOr401=g1
-first POST /api/client/space/:id/recall member-bearer getLoginOr401=g1
-first POST /api/client/space/:id/recall revoked-bearer getLoginOr401=g1
-first POST /api/client/space/:id/save owner-cookie getLoginOr401=g1
-first POST /api/client/space/:id/save admin-cookie getLoginOr401=g1
-first POST /api/client/space/:id/save limited-cookie getLoginOr401=g1
-first POST /api/client/space/:id/save member-cookie getLoginOr401=g1
-first POST /api/client/space/:id/save admin-bearer getLoginOr401=g1
-first POST /api/client/space/:id/save member-bearer getLoginOr401=g1
-first POST /api/client/space/:id/save revoked-bearer getLoginOr401=g1
-first POST /api/client/space/:id/submit owner-cookie getLoginOr401=g1
-first POST /api/client/space/:id/submit admin-cookie getLoginOr401=g1
-first POST /api/client/space/:id/submit limited-cookie getLoginOr401=g1
-first POST /api/client/space/:id/submit member-cookie getLoginOr401=g1
-first POST /api/client/space/:id/submit admin-bearer getLoginOr401=g1
-first POST /api/client/space/:id/submit member-bearer getLoginOr401=g1
-first POST /api/client/space/:id/submit revoked-bearer getLoginOr401=g1
-first POST /api/dev-tools/queue-approval owner-cookie getOwnerOr401=g69
-first POST /api/dev-tools/queue-approval admin-cookie getOwnerOr401=g70
+first POST /api/dev-tools/queue-approval owner-cookie getOwnerOr401=g12
+first POST /api/dev-tools/queue-approval admin-cookie getOwnerOr401=g13
 first POST /api/dev-tools/queue-approval limited-cookie getOwnerOr401=g1
 first POST /api/dev-tools/queue-approval member-cookie getOwnerOr401=g1
-first POST /api/dev-tools/queue-approval admin-bearer getOwnerOr401=g70
+first POST /api/dev-tools/queue-approval admin-bearer getOwnerOr401=g13
 first POST /api/dev-tools/queue-approval member-bearer getOwnerOr401=g1
 first POST /api/dev-tools/queue-approval revoked-bearer getOwnerOr401=g1
-first POST /api/grants/:nodeId owner-cookie getLoginOr401=g71
-first POST /api/grants/:nodeId admin-cookie getLoginOr401=g72
-first POST /api/grants/:nodeId limited-cookie getLoginOr401=g73
+first POST /api/grants/:nodeId owner-cookie getLoginOr401=g14
+first POST /api/grants/:nodeId admin-cookie getLoginOr401=g15
+first POST /api/grants/:nodeId limited-cookie getLoginOr401=g16
 first POST /api/grants/:nodeId member-cookie getLoginOr401=g1
-first POST /api/grants/:nodeId admin-bearer getLoginOr401=g72
+first POST /api/grants/:nodeId admin-bearer getLoginOr401=g15
 first POST /api/grants/:nodeId member-bearer getLoginOr401=g1
 first POST /api/grants/:nodeId revoked-bearer getLoginOr401=g1
-first PATCH /api/grants/:nodeId/:wsId owner-cookie getLoginOr401=g74
-first PATCH /api/grants/:nodeId/:wsId admin-cookie getLoginOr401=g75
-first PATCH /api/grants/:nodeId/:wsId limited-cookie getLoginOr401=g76
+first PATCH /api/grants/:nodeId/:wsId owner-cookie getLoginOr401=g17
+first PATCH /api/grants/:nodeId/:wsId admin-cookie getLoginOr401=g18
+first PATCH /api/grants/:nodeId/:wsId limited-cookie getLoginOr401=g19
 first PATCH /api/grants/:nodeId/:wsId member-cookie getLoginOr401=g1
-first PATCH /api/grants/:nodeId/:wsId admin-bearer getLoginOr401=g75
+first PATCH /api/grants/:nodeId/:wsId admin-bearer getLoginOr401=g18
 first PATCH /api/grants/:nodeId/:wsId member-bearer getLoginOr401=g1
 first PATCH /api/grants/:nodeId/:wsId revoked-bearer getLoginOr401=g1
-first DELETE /api/grants/:nodeId/:wsId owner-cookie getLoginOr401=g77
-first DELETE /api/grants/:nodeId/:wsId admin-cookie getLoginOr401=g78
-first DELETE /api/grants/:nodeId/:wsId limited-cookie getLoginOr401=g79
+first DELETE /api/grants/:nodeId/:wsId owner-cookie getLoginOr401=g20
+first DELETE /api/grants/:nodeId/:wsId admin-cookie getLoginOr401=g21
+first DELETE /api/grants/:nodeId/:wsId limited-cookie getLoginOr401=g22
 first DELETE /api/grants/:nodeId/:wsId member-cookie getLoginOr401=g1
-first DELETE /api/grants/:nodeId/:wsId admin-bearer getLoginOr401=g78
+first DELETE /api/grants/:nodeId/:wsId admin-bearer getLoginOr401=g21
 first DELETE /api/grants/:nodeId/:wsId member-bearer getLoginOr401=g1
 first DELETE /api/grants/:nodeId/:wsId revoked-bearer getLoginOr401=g1
-first POST /api/grants/:nodeId/:wsId/hand owner-cookie getLoginOr401=g80
-first POST /api/grants/:nodeId/:wsId/hand admin-cookie getLoginOr401=g81
-first POST /api/grants/:nodeId/:wsId/hand limited-cookie getLoginOr401=g82
+first POST /api/grants/:nodeId/:wsId/hand owner-cookie getLoginOr401=g23
+first POST /api/grants/:nodeId/:wsId/hand admin-cookie getLoginOr401=g24
+first POST /api/grants/:nodeId/:wsId/hand limited-cookie getLoginOr401=g25
 first POST /api/grants/:nodeId/:wsId/hand member-cookie getLoginOr401=g1
-first POST /api/grants/:nodeId/:wsId/hand admin-bearer getLoginOr401=g81
+first POST /api/grants/:nodeId/:wsId/hand admin-bearer getLoginOr401=g24
 first POST /api/grants/:nodeId/:wsId/hand member-bearer getLoginOr401=g1
 first POST /api/grants/:nodeId/:wsId/hand revoked-bearer getLoginOr401=g1
-first POST /api/grants/:nodeId/:wsId/restore owner-cookie getLoginOr401=g83
-first POST /api/grants/:nodeId/:wsId/restore admin-cookie getLoginOr401=g84
-first POST /api/grants/:nodeId/:wsId/restore limited-cookie getLoginOr401=g85
+first POST /api/grants/:nodeId/:wsId/restore owner-cookie getLoginOr401=g26
+first POST /api/grants/:nodeId/:wsId/restore admin-cookie getLoginOr401=g27
+first POST /api/grants/:nodeId/:wsId/restore limited-cookie getLoginOr401=g28
 first POST /api/grants/:nodeId/:wsId/restore member-cookie getLoginOr401=g1
-first POST /api/grants/:nodeId/:wsId/restore admin-bearer getLoginOr401=g84
+first POST /api/grants/:nodeId/:wsId/restore admin-bearer getLoginOr401=g27
 first POST /api/grants/:nodeId/:wsId/restore member-bearer getLoginOr401=g1
 first POST /api/grants/:nodeId/:wsId/restore revoked-bearer getLoginOr401=g1
-first POST /api/grants/:nodeId/embeds owner-cookie getLoginOr401=g86
-first POST /api/grants/:nodeId/embeds admin-cookie getLoginOr401=g87
-first POST /api/grants/:nodeId/embeds limited-cookie getLoginOr401=g88
+first POST /api/grants/:nodeId/embeds owner-cookie getLoginOr401=g29
+first POST /api/grants/:nodeId/embeds admin-cookie getLoginOr401=g30
+first POST /api/grants/:nodeId/embeds limited-cookie getLoginOr401=g31
 first POST /api/grants/:nodeId/embeds member-cookie getLoginOr401=g1
-first POST /api/grants/:nodeId/embeds admin-bearer getLoginOr401=g87
+first POST /api/grants/:nodeId/embeds admin-bearer getLoginOr401=g30
 first POST /api/grants/:nodeId/embeds member-bearer getLoginOr401=g1
 first POST /api/grants/:nodeId/embeds revoked-bearer getLoginOr401=g1
-first POST /api/grants/move owner-cookie getLoginOr401=g89
-first POST /api/grants/move admin-cookie getLoginOr401=g90
-first POST /api/grants/move limited-cookie getLoginOr401=g91
+first POST /api/grants/move owner-cookie getLoginOr401=g32
+first POST /api/grants/move admin-cookie getLoginOr401=g33
+first POST /api/grants/move limited-cookie getLoginOr401=g34
 first POST /api/grants/move member-cookie getLoginOr401=g1
-first POST /api/grants/move admin-bearer getLoginOr401=g90
+first POST /api/grants/move admin-bearer getLoginOr401=g33
 first POST /api/grants/move member-bearer getLoginOr401=g1
 first POST /api/grants/move revoked-bearer getLoginOr401=g1
-first POST /api/grants/move/preview owner-cookie getLoginOr401=g92
-first POST /api/grants/move/preview admin-cookie getLoginOr401=g93
-first POST /api/grants/move/preview limited-cookie getLoginOr401=g94
+first POST /api/grants/move/preview owner-cookie getLoginOr401=g35
+first POST /api/grants/move/preview admin-cookie getLoginOr401=g36
+first POST /api/grants/move/preview limited-cookie getLoginOr401=g37
 first POST /api/grants/move/preview member-cookie getLoginOr401=g1
-first POST /api/grants/move/preview admin-bearer getLoginOr401=g93
+first POST /api/grants/move/preview admin-bearer getLoginOr401=g36
 first POST /api/grants/move/preview member-bearer getLoginOr401=g1
 first POST /api/grants/move/preview revoked-bearer getLoginOr401=g1
-first PATCH /api/mcp-logins/:id owner-cookie getOwnerOr401=g95
-first PATCH /api/mcp-logins/:id admin-cookie getOwnerOr401=g96
-first PATCH /api/mcp-logins/:id limited-cookie getOwnerOr401=g1
-first PATCH /api/mcp-logins/:id member-cookie getOwnerOr401=g1
-first PATCH /api/mcp-logins/:id admin-bearer getOwnerOr401=g96
-first PATCH /api/mcp-logins/:id member-bearer getOwnerOr401=g1
-first PATCH /api/mcp-logins/:id revoked-bearer getOwnerOr401=g1
-first POST /api/mcp-logins/:id/tokens owner-cookie getOwnerOr401=g97
-first POST /api/mcp-logins/:id/tokens admin-cookie getOwnerOr401=g98
-first POST /api/mcp-logins/:id/tokens limited-cookie getOwnerOr401=g1
-first POST /api/mcp-logins/:id/tokens member-cookie getOwnerOr401=g1
-first POST /api/mcp-logins/:id/tokens admin-bearer getOwnerOr401=g98
-first POST /api/mcp-logins/:id/tokens member-bearer getOwnerOr401=g1
-first POST /api/mcp-logins/:id/tokens revoked-bearer getOwnerOr401=g1
-first DELETE /api/mcp-logins/:id/tokens/:tokenId owner-cookie getOwnerOr401=g99
-first DELETE /api/mcp-logins/:id/tokens/:tokenId admin-cookie getOwnerOr401=g100
-first DELETE /api/mcp-logins/:id/tokens/:tokenId limited-cookie getOwnerOr401=g1
-first DELETE /api/mcp-logins/:id/tokens/:tokenId member-cookie getOwnerOr401=g1
-first DELETE /api/mcp-logins/:id/tokens/:tokenId admin-bearer getOwnerOr401=g100
-first DELETE /api/mcp-logins/:id/tokens/:tokenId member-bearer getOwnerOr401=g1
-first DELETE /api/mcp-logins/:id/tokens/:tokenId revoked-bearer getOwnerOr401=g1
-first POST /api/member/apps/:id/db-broker owner-cookie getMemberOr401=g1
-first POST /api/member/apps/:id/db-broker admin-cookie getMemberOr401=g1
-first POST /api/member/apps/:id/db-broker limited-cookie getMemberOr401=g1
-first POST /api/member/apps/:id/db-broker member-cookie getMemberOr401=g1
-first POST /api/member/apps/:id/db-broker admin-bearer getMemberOr401=g1
-first POST /api/member/apps/:id/db-broker member-bearer getMemberOr401=g1
-first POST /api/member/apps/:id/db-broker revoked-bearer getMemberOr401=g1
-first POST /api/member/apps/:id/frame-ticket owner-cookie getMemberOr401=g1
-first POST /api/member/apps/:id/frame-ticket admin-cookie getMemberOr401=g1
-first POST /api/member/apps/:id/frame-ticket limited-cookie getMemberOr401=g1
-first POST /api/member/apps/:id/frame-ticket member-cookie getMemberOr401=g1
-first POST /api/member/apps/:id/frame-ticket admin-bearer getMemberOr401=g1
-first POST /api/member/apps/:id/frame-ticket member-bearer getMemberOr401=g1
-first POST /api/member/apps/:id/frame-ticket revoked-bearer getMemberOr401=g1
-first POST /api/member/apps/:id/tool-broker owner-cookie getMemberOr401=g1
-first POST /api/member/apps/:id/tool-broker admin-cookie getMemberOr401=g1
-first POST /api/member/apps/:id/tool-broker limited-cookie getMemberOr401=g1
-first POST /api/member/apps/:id/tool-broker member-cookie getMemberOr401=g1
-first POST /api/member/apps/:id/tool-broker admin-bearer getMemberOr401=g1
-first POST /api/member/apps/:id/tool-broker member-bearer getMemberOr401=g1
-first POST /api/member/apps/:id/tool-broker revoked-bearer getMemberOr401=g1
-first POST /api/member/chat owner-cookie getMemberOr401=g1
-first POST /api/member/chat admin-cookie getMemberOr401=g1
-first POST /api/member/chat limited-cookie getMemberOr401=g1
-first POST /api/member/chat member-cookie getMemberOr401=g1
-first POST /api/member/chat admin-bearer getMemberOr401=g1
-first POST /api/member/chat member-bearer getMemberOr401=g1
-first POST /api/member/chat revoked-bearer getMemberOr401=g1
-first POST /api/member/chat/read owner-cookie getMemberOr401=g1
-first POST /api/member/chat/read admin-cookie getMemberOr401=g1
-first POST /api/member/chat/read limited-cookie getMemberOr401=g1
-first POST /api/member/chat/read member-cookie getMemberOr401=g1
-first POST /api/member/chat/read admin-bearer getMemberOr401=g1
-first POST /api/member/chat/read member-bearer getMemberOr401=g1
-first POST /api/member/chat/read revoked-bearer getMemberOr401=g1
-first POST /api/member/my-apps/:id/delete owner-cookie getMemberOr401=g1
-first POST /api/member/my-apps/:id/delete admin-cookie getMemberOr401=g1
-first POST /api/member/my-apps/:id/delete limited-cookie getMemberOr401=g1
-first POST /api/member/my-apps/:id/delete member-cookie getMemberOr401=g1
-first POST /api/member/my-apps/:id/delete admin-bearer getMemberOr401=g1
-first POST /api/member/my-apps/:id/delete member-bearer getMemberOr401=g1
-first POST /api/member/my-apps/:id/delete revoked-bearer getMemberOr401=g1
-first DELETE /api/member/my-apps/:id/history/:snapshotId owner-cookie getMemberOr401=g1
-first DELETE /api/member/my-apps/:id/history/:snapshotId admin-cookie getMemberOr401=g1
-first DELETE /api/member/my-apps/:id/history/:snapshotId limited-cookie getMemberOr401=g1
-first DELETE /api/member/my-apps/:id/history/:snapshotId member-cookie getMemberOr401=g1
-first DELETE /api/member/my-apps/:id/history/:snapshotId admin-bearer getMemberOr401=g1
-first DELETE /api/member/my-apps/:id/history/:snapshotId member-bearer getMemberOr401=g1
-first DELETE /api/member/my-apps/:id/history/:snapshotId revoked-bearer getMemberOr401=g1
-first POST /api/member/my-apps/:id/recall owner-cookie getMemberOr401=g1
-first POST /api/member/my-apps/:id/recall admin-cookie getMemberOr401=g1
-first POST /api/member/my-apps/:id/recall limited-cookie getMemberOr401=g1
-first POST /api/member/my-apps/:id/recall member-cookie getMemberOr401=g1
-first POST /api/member/my-apps/:id/recall admin-bearer getMemberOr401=g1
-first POST /api/member/my-apps/:id/recall member-bearer getMemberOr401=g1
-first POST /api/member/my-apps/:id/recall revoked-bearer getMemberOr401=g1
-first POST /api/member/my-apps/:id/share owner-cookie getMemberOr401=g1
-first POST /api/member/my-apps/:id/share admin-cookie getMemberOr401=g1
-first POST /api/member/my-apps/:id/share limited-cookie getMemberOr401=g1
-first POST /api/member/my-apps/:id/share member-cookie getMemberOr401=g1
-first POST /api/member/my-apps/:id/share admin-bearer getMemberOr401=g1
-first POST /api/member/my-apps/:id/share member-bearer getMemberOr401=g1
-first POST /api/member/my-apps/:id/share revoked-bearer getMemberOr401=g1
-first POST /api/member/my-apps/:id/submit owner-cookie getMemberOr401=g1
-first POST /api/member/my-apps/:id/submit admin-cookie getMemberOr401=g1
-first POST /api/member/my-apps/:id/submit limited-cookie getMemberOr401=g1
-first POST /api/member/my-apps/:id/submit member-cookie getMemberOr401=g1
-first POST /api/member/my-apps/:id/submit admin-bearer getMemberOr401=g1
-first POST /api/member/my-apps/:id/submit member-bearer getMemberOr401=g1
-first POST /api/member/my-apps/:id/submit revoked-bearer getMemberOr401=g1
-first POST /api/member/my-apps/:id/undelete owner-cookie getMemberOr401=g1
-first POST /api/member/my-apps/:id/undelete admin-cookie getMemberOr401=g1
-first POST /api/member/my-apps/:id/undelete limited-cookie getMemberOr401=g1
-first POST /api/member/my-apps/:id/undelete member-cookie getMemberOr401=g1
-first POST /api/member/my-apps/:id/undelete admin-bearer getMemberOr401=g1
-first POST /api/member/my-apps/:id/undelete member-bearer getMemberOr401=g1
-first POST /api/member/my-apps/:id/undelete revoked-bearer getMemberOr401=g1
-first POST /api/member/space owner-cookie getMemberOr401=g1
-first POST /api/member/space admin-cookie getMemberOr401=g1
-first POST /api/member/space limited-cookie getMemberOr401=g1
-first POST /api/member/space member-cookie getMemberOr401=g1
-first POST /api/member/space admin-bearer getMemberOr401=g1
-first POST /api/member/space member-bearer getMemberOr401=g1
-first POST /api/member/space revoked-bearer getMemberOr401=g1
-first POST /api/member/space-files owner-cookie getMemberOr401=g1
-first POST /api/member/space-files admin-cookie getMemberOr401=g1
-first POST /api/member/space-files limited-cookie getMemberOr401=g1
-first POST /api/member/space-files member-cookie getMemberOr401=g1
-first POST /api/member/space-files admin-bearer getMemberOr401=g1
-first POST /api/member/space-files member-bearer getMemberOr401=g1
-first POST /api/member/space-files revoked-bearer getMemberOr401=g1
-first PATCH /api/member/space/:id owner-cookie getMemberOr401=g1
-first PATCH /api/member/space/:id admin-cookie getMemberOr401=g1
-first PATCH /api/member/space/:id limited-cookie getMemberOr401=g1
-first PATCH /api/member/space/:id member-cookie getMemberOr401=g1
-first PATCH /api/member/space/:id admin-bearer getMemberOr401=g1
-first PATCH /api/member/space/:id member-bearer getMemberOr401=g1
-first PATCH /api/member/space/:id revoked-bearer getMemberOr401=g1
-first DELETE /api/member/space/:id owner-cookie getMemberOr401=g1
-first DELETE /api/member/space/:id admin-cookie getMemberOr401=g1
-first DELETE /api/member/space/:id limited-cookie getMemberOr401=g1
-first DELETE /api/member/space/:id member-cookie getMemberOr401=g1
-first DELETE /api/member/space/:id admin-bearer getMemberOr401=g1
-first DELETE /api/member/space/:id member-bearer getMemberOr401=g1
-first DELETE /api/member/space/:id revoked-bearer getMemberOr401=g1
-first PUT /api/member/space/:id/draft owner-cookie getMemberOr401=g1
-first PUT /api/member/space/:id/draft admin-cookie getMemberOr401=g1
-first PUT /api/member/space/:id/draft limited-cookie getMemberOr401=g1
-first PUT /api/member/space/:id/draft member-cookie getMemberOr401=g1
-first PUT /api/member/space/:id/draft admin-bearer getMemberOr401=g1
-first PUT /api/member/space/:id/draft member-bearer getMemberOr401=g1
-first PUT /api/member/space/:id/draft revoked-bearer getMemberOr401=g1
-first POST /api/member/space/:id/recall owner-cookie getMemberOr401=g1
-first POST /api/member/space/:id/recall admin-cookie getMemberOr401=g1
-first POST /api/member/space/:id/recall limited-cookie getMemberOr401=g1
-first POST /api/member/space/:id/recall member-cookie getMemberOr401=g1
-first POST /api/member/space/:id/recall admin-bearer getMemberOr401=g1
-first POST /api/member/space/:id/recall member-bearer getMemberOr401=g1
-first POST /api/member/space/:id/recall revoked-bearer getMemberOr401=g1
-first POST /api/member/space/:id/save owner-cookie getMemberOr401=g1
-first POST /api/member/space/:id/save admin-cookie getMemberOr401=g1
-first POST /api/member/space/:id/save limited-cookie getMemberOr401=g1
-first POST /api/member/space/:id/save member-cookie getMemberOr401=g1
-first POST /api/member/space/:id/save admin-bearer getMemberOr401=g1
-first POST /api/member/space/:id/save member-bearer getMemberOr401=g1
-first POST /api/member/space/:id/save revoked-bearer getMemberOr401=g1
-first POST /api/member/space/:id/share owner-cookie getMemberOr401=g1
-first POST /api/member/space/:id/share admin-cookie getMemberOr401=g1
-first POST /api/member/space/:id/share limited-cookie getMemberOr401=g1
-first POST /api/member/space/:id/share member-cookie getMemberOr401=g1
-first POST /api/member/space/:id/share admin-bearer getMemberOr401=g1
-first POST /api/member/space/:id/share member-bearer getMemberOr401=g1
-first POST /api/member/space/:id/share revoked-bearer getMemberOr401=g1
-first POST /api/member/space/:id/submit owner-cookie getMemberOr401=g1
-first POST /api/member/space/:id/submit admin-cookie getMemberOr401=g1
-first POST /api/member/space/:id/submit limited-cookie getMemberOr401=g1
-first POST /api/member/space/:id/submit member-cookie getMemberOr401=g1
-first POST /api/member/space/:id/submit admin-bearer getMemberOr401=g1
-first POST /api/member/space/:id/submit member-bearer getMemberOr401=g1
-first POST /api/member/space/:id/submit revoked-bearer getMemberOr401=g1
-first POST /api/member/tree/:kind/folders owner-cookie getMemberOr401=g1
-first POST /api/member/tree/:kind/folders admin-cookie getMemberOr401=g1
-first POST /api/member/tree/:kind/folders limited-cookie getMemberOr401=g1
-first POST /api/member/tree/:kind/folders member-cookie getMemberOr401=g1
-first POST /api/member/tree/:kind/folders admin-bearer getMemberOr401=g1
-first POST /api/member/tree/:kind/folders member-bearer getMemberOr401=g1
-first POST /api/member/tree/:kind/folders revoked-bearer getMemberOr401=g1
-first PATCH /api/member/tree/:kind/folders/:id owner-cookie getMemberOr401=g1
-first PATCH /api/member/tree/:kind/folders/:id admin-cookie getMemberOr401=g1
-first PATCH /api/member/tree/:kind/folders/:id limited-cookie getMemberOr401=g1
-first PATCH /api/member/tree/:kind/folders/:id member-cookie getMemberOr401=g1
-first PATCH /api/member/tree/:kind/folders/:id admin-bearer getMemberOr401=g1
-first PATCH /api/member/tree/:kind/folders/:id member-bearer getMemberOr401=g1
-first PATCH /api/member/tree/:kind/folders/:id revoked-bearer getMemberOr401=g1
-first DELETE /api/member/tree/:kind/folders/:id owner-cookie getMemberOr401=g1
-first DELETE /api/member/tree/:kind/folders/:id admin-cookie getMemberOr401=g1
-first DELETE /api/member/tree/:kind/folders/:id limited-cookie getMemberOr401=g1
-first DELETE /api/member/tree/:kind/folders/:id member-cookie getMemberOr401=g1
-first DELETE /api/member/tree/:kind/folders/:id admin-bearer getMemberOr401=g1
-first DELETE /api/member/tree/:kind/folders/:id member-bearer getMemberOr401=g1
-first DELETE /api/member/tree/:kind/folders/:id revoked-bearer getMemberOr401=g1
-first POST /api/member/tree/:kind/move owner-cookie getMemberOr401=g1
-first POST /api/member/tree/:kind/move admin-cookie getMemberOr401=g1
-first POST /api/member/tree/:kind/move limited-cookie getMemberOr401=g1
-first POST /api/member/tree/:kind/move member-cookie getMemberOr401=g1
-first POST /api/member/tree/:kind/move admin-bearer getMemberOr401=g1
-first POST /api/member/tree/:kind/move member-bearer getMemberOr401=g1
-first POST /api/member/tree/:kind/move revoked-bearer getMemberOr401=g1
 first PATCH /api/pages/:id owner-cookie getOwnerOr401=g1
 first PATCH /api/pages/:id admin-cookie getOwnerOr401=g1
 first PATCH /api/pages/:id limited-cookie getOwnerOr401=g1
@@ -749,90 +222,6 @@ first PATCH /api/pages/:id member-cookie getOwnerOr401=g1
 first PATCH /api/pages/:id admin-bearer getOwnerOr401=g1
 first PATCH /api/pages/:id member-bearer getOwnerOr401=g1
 first PATCH /api/pages/:id revoked-bearer getOwnerOr401=g1
-first POST /api/team-admin/clients owner-cookie getOwnerOr401=g1
-first POST /api/team-admin/clients admin-cookie getOwnerOr401=g1
-first POST /api/team-admin/clients limited-cookie getOwnerOr401=g1
-first POST /api/team-admin/clients member-cookie getOwnerOr401=g1
-first POST /api/team-admin/clients admin-bearer getOwnerOr401=g1
-first POST /api/team-admin/clients member-bearer getOwnerOr401=g1
-first POST /api/team-admin/clients revoked-bearer getOwnerOr401=g1
-first POST /api/team-admin/clients/:id/signin-link owner-cookie getOwnerOr401=g1
-first POST /api/team-admin/clients/:id/signin-link admin-cookie getOwnerOr401=g1
-first POST /api/team-admin/clients/:id/signin-link limited-cookie getOwnerOr401=g1
-first POST /api/team-admin/clients/:id/signin-link member-cookie getOwnerOr401=g1
-first POST /api/team-admin/clients/:id/signin-link admin-bearer getOwnerOr401=g1
-first POST /api/team-admin/clients/:id/signin-link member-bearer getOwnerOr401=g1
-first POST /api/team-admin/clients/:id/signin-link revoked-bearer getOwnerOr401=g1
-first DELETE /api/team-admin/clients/:id/signin-link owner-cookie getOwnerOr401=g1
-first DELETE /api/team-admin/clients/:id/signin-link admin-cookie getOwnerOr401=g1
-first DELETE /api/team-admin/clients/:id/signin-link limited-cookie getOwnerOr401=g1
-first DELETE /api/team-admin/clients/:id/signin-link member-cookie getOwnerOr401=g1
-first DELETE /api/team-admin/clients/:id/signin-link admin-bearer getOwnerOr401=g1
-first DELETE /api/team-admin/clients/:id/signin-link member-bearer getOwnerOr401=g1
-first DELETE /api/team-admin/clients/:id/signin-link revoked-bearer getOwnerOr401=g1
-first PUT /api/team-admin/clients/signin-sender owner-cookie getOwnerOr401=g1
-first PUT /api/team-admin/clients/signin-sender admin-cookie getOwnerOr401=g1
-first PUT /api/team-admin/clients/signin-sender limited-cookie getOwnerOr401=g1
-first PUT /api/team-admin/clients/signin-sender member-cookie getOwnerOr401=g1
-first PUT /api/team-admin/clients/signin-sender admin-bearer getOwnerOr401=g1
-first PUT /api/team-admin/clients/signin-sender member-bearer getOwnerOr401=g1
-first PUT /api/team-admin/clients/signin-sender revoked-bearer getOwnerOr401=g1
-first PUT /api/team-admin/hub-app owner-cookie getOwnerOr401=g101
-first PUT /api/team-admin/hub-app admin-cookie getOwnerOr401=g102
-first PUT /api/team-admin/hub-app limited-cookie getOwnerOr401=g1
-first PUT /api/team-admin/hub-app member-cookie getOwnerOr401=g1
-first PUT /api/team-admin/hub-app admin-bearer getOwnerOr401=g102
-first PUT /api/team-admin/hub-app member-bearer getOwnerOr401=g1
-first PUT /api/team-admin/hub-app revoked-bearer getOwnerOr401=g1
-first DELETE /api/team-admin/hub-app owner-cookie getOwnerOr401=g103
-first DELETE /api/team-admin/hub-app admin-cookie getOwnerOr401=g104
-first DELETE /api/team-admin/hub-app limited-cookie getOwnerOr401=g1
-first DELETE /api/team-admin/hub-app member-cookie getOwnerOr401=g1
-first DELETE /api/team-admin/hub-app admin-bearer getOwnerOr401=g104
-first DELETE /api/team-admin/hub-app member-bearer getOwnerOr401=g1
-first DELETE /api/team-admin/hub-app revoked-bearer getOwnerOr401=g1
-first POST /api/team-admin/member-items/:id/unshare owner-cookie getOwnerOr401=g105
-first POST /api/team-admin/member-items/:id/unshare admin-cookie getOwnerOr401=g106
-first POST /api/team-admin/member-items/:id/unshare limited-cookie getOwnerOr401=g1
-first POST /api/team-admin/member-items/:id/unshare member-cookie getOwnerOr401=g1
-first POST /api/team-admin/member-items/:id/unshare admin-bearer getOwnerOr401=g106
-first POST /api/team-admin/member-items/:id/unshare member-bearer getOwnerOr401=g1
-first POST /api/team-admin/member-items/:id/unshare revoked-bearer getOwnerOr401=g1
-first POST /api/team-admin/notify owner-cookie getOwnerOr401=g107
-first POST /api/team-admin/notify admin-cookie getOwnerOr401=g108
-first POST /api/team-admin/notify limited-cookie getOwnerOr401=g1
-first POST /api/team-admin/notify member-cookie getOwnerOr401=g1
-first POST /api/team-admin/notify admin-bearer getOwnerOr401=g108
-first POST /api/team-admin/notify member-bearer getOwnerOr401=g1
-first POST /api/team-admin/notify revoked-bearer getOwnerOr401=g1
-first POST /api/team-admin/submissions/:id/accept owner-cookie getOwnerOr401=g109
-first POST /api/team-admin/submissions/:id/accept admin-cookie getOwnerOr401=g110
-first POST /api/team-admin/submissions/:id/accept limited-cookie getOwnerOr401=g1
-first POST /api/team-admin/submissions/:id/accept member-cookie getOwnerOr401=g1
-first POST /api/team-admin/submissions/:id/accept admin-bearer getOwnerOr401=g110
-first POST /api/team-admin/submissions/:id/accept member-bearer getOwnerOr401=g1
-first POST /api/team-admin/submissions/:id/accept revoked-bearer getOwnerOr401=g1
-first POST /api/team-admin/submissions/:id/discard owner-cookie getOwnerOr401=g111
-first POST /api/team-admin/submissions/:id/discard admin-cookie getOwnerOr401=g112
-first POST /api/team-admin/submissions/:id/discard limited-cookie getOwnerOr401=g1
-first POST /api/team-admin/submissions/:id/discard member-cookie getOwnerOr401=g1
-first POST /api/team-admin/submissions/:id/discard admin-bearer getOwnerOr401=g112
-first POST /api/team-admin/submissions/:id/discard member-bearer getOwnerOr401=g1
-first POST /api/team-admin/submissions/:id/discard revoked-bearer getOwnerOr401=g1
-first POST /api/team-admin/submissions/:id/return owner-cookie getOwnerOr401=g113
-first POST /api/team-admin/submissions/:id/return admin-cookie getOwnerOr401=g114
-first POST /api/team-admin/submissions/:id/return limited-cookie getOwnerOr401=g1
-first POST /api/team-admin/submissions/:id/return member-cookie getOwnerOr401=g1
-first POST /api/team-admin/submissions/:id/return admin-bearer getOwnerOr401=g114
-first POST /api/team-admin/submissions/:id/return member-bearer getOwnerOr401=g1
-first POST /api/team-admin/submissions/:id/return revoked-bearer getOwnerOr401=g1
-first POST /api/team-admin/submissions/:id/take-over owner-cookie getOwnerOr401=g115
-first POST /api/team-admin/submissions/:id/take-over admin-cookie getOwnerOr401=g116
-first POST /api/team-admin/submissions/:id/take-over limited-cookie getOwnerOr401=g1
-first POST /api/team-admin/submissions/:id/take-over member-cookie getOwnerOr401=g1
-first POST /api/team-admin/submissions/:id/take-over admin-bearer getOwnerOr401=g116
-first POST /api/team-admin/submissions/:id/take-over member-bearer getOwnerOr401=g1
-first POST /api/team-admin/submissions/:id/take-over revoked-bearer getOwnerOr401=g1
 first PATCH /api/v1/pages/:id owner-cookie getOwnerOr401=g1
 first PATCH /api/v1/pages/:id admin-cookie getOwnerOr401=g1
 first PATCH /api/v1/pages/:id limited-cookie getOwnerOr401=g1
@@ -840,67 +229,67 @@ first PATCH /api/v1/pages/:id member-cookie getOwnerOr401=g1
 first PATCH /api/v1/pages/:id admin-bearer getOwnerOr401=g1
 first PATCH /api/v1/pages/:id member-bearer getOwnerOr401=g1
 first PATCH /api/v1/pages/:id revoked-bearer getOwnerOr401=g1
-first POST /api/workspaces owner-cookie getLoginOr401=g117
-first POST /api/workspaces admin-cookie getLoginOr401=g118
-first POST /api/workspaces limited-cookie getLoginOr401=g119
+first POST /api/workspaces owner-cookie getLoginOr401=g38
+first POST /api/workspaces admin-cookie getLoginOr401=g39
+first POST /api/workspaces limited-cookie getLoginOr401=g40
 first POST /api/workspaces member-cookie getLoginOr401=g1
-first POST /api/workspaces admin-bearer getLoginOr401=g118
+first POST /api/workspaces admin-bearer getLoginOr401=g39
 first POST /api/workspaces member-bearer getLoginOr401=g1
 first POST /api/workspaces revoked-bearer getLoginOr401=g1
-first PATCH /api/workspaces/:id owner-cookie getLoginOr401=g120
-first PATCH /api/workspaces/:id admin-cookie getLoginOr401=g121
-first PATCH /api/workspaces/:id limited-cookie getLoginOr401=g122
+first PATCH /api/workspaces/:id owner-cookie getLoginOr401=g41
+first PATCH /api/workspaces/:id admin-cookie getLoginOr401=g42
+first PATCH /api/workspaces/:id limited-cookie getLoginOr401=g43
 first PATCH /api/workspaces/:id member-cookie getLoginOr401=g1
-first PATCH /api/workspaces/:id admin-bearer getLoginOr401=g121
+first PATCH /api/workspaces/:id admin-bearer getLoginOr401=g42
 first PATCH /api/workspaces/:id member-bearer getLoginOr401=g1
 first PATCH /api/workspaces/:id revoked-bearer getLoginOr401=g1
-first POST /api/workspaces/:id/archive owner-cookie getLoginOr401=g123
-first POST /api/workspaces/:id/archive admin-cookie getLoginOr401=g124
-first POST /api/workspaces/:id/archive limited-cookie getLoginOr401=g125
+first POST /api/workspaces/:id/archive owner-cookie getLoginOr401=g44
+first POST /api/workspaces/:id/archive admin-cookie getLoginOr401=g45
+first POST /api/workspaces/:id/archive limited-cookie getLoginOr401=g46
 first POST /api/workspaces/:id/archive member-cookie getLoginOr401=g1
-first POST /api/workspaces/:id/archive admin-bearer getLoginOr401=g124
+first POST /api/workspaces/:id/archive admin-bearer getLoginOr401=g45
 first POST /api/workspaces/:id/archive member-bearer getLoginOr401=g1
 first POST /api/workspaces/:id/archive revoked-bearer getLoginOr401=g1
-first POST /api/workspaces/:id/resources owner-cookie getLoginOr401=g126
-first POST /api/workspaces/:id/resources admin-cookie getLoginOr401=g127
-first POST /api/workspaces/:id/resources limited-cookie getLoginOr401=g128
+first POST /api/workspaces/:id/resources owner-cookie getLoginOr401=g47
+first POST /api/workspaces/:id/resources admin-cookie getLoginOr401=g48
+first POST /api/workspaces/:id/resources limited-cookie getLoginOr401=g49
 first POST /api/workspaces/:id/resources member-cookie getLoginOr401=g1
-first POST /api/workspaces/:id/resources admin-bearer getLoginOr401=g127
+first POST /api/workspaces/:id/resources admin-bearer getLoginOr401=g48
 first POST /api/workspaces/:id/resources member-bearer getLoginOr401=g1
 first POST /api/workspaces/:id/resources revoked-bearer getLoginOr401=g1
-first PATCH /api/workspaces/:id/resources/:kind/:refId owner-cookie getLoginOr401=g129
-first PATCH /api/workspaces/:id/resources/:kind/:refId admin-cookie getLoginOr401=g130
-first PATCH /api/workspaces/:id/resources/:kind/:refId limited-cookie getLoginOr401=g131
+first PATCH /api/workspaces/:id/resources/:kind/:refId owner-cookie getLoginOr401=g50
+first PATCH /api/workspaces/:id/resources/:kind/:refId admin-cookie getLoginOr401=g51
+first PATCH /api/workspaces/:id/resources/:kind/:refId limited-cookie getLoginOr401=g52
 first PATCH /api/workspaces/:id/resources/:kind/:refId member-cookie getLoginOr401=g1
-first PATCH /api/workspaces/:id/resources/:kind/:refId admin-bearer getLoginOr401=g130
+first PATCH /api/workspaces/:id/resources/:kind/:refId admin-bearer getLoginOr401=g51
 first PATCH /api/workspaces/:id/resources/:kind/:refId member-bearer getLoginOr401=g1
 first PATCH /api/workspaces/:id/resources/:kind/:refId revoked-bearer getLoginOr401=g1
-first DELETE /api/workspaces/:id/resources/:kind/:refId owner-cookie getLoginOr401=g132
-first DELETE /api/workspaces/:id/resources/:kind/:refId admin-cookie getLoginOr401=g133
-first DELETE /api/workspaces/:id/resources/:kind/:refId limited-cookie getLoginOr401=g134
+first DELETE /api/workspaces/:id/resources/:kind/:refId owner-cookie getLoginOr401=g53
+first DELETE /api/workspaces/:id/resources/:kind/:refId admin-cookie getLoginOr401=g54
+first DELETE /api/workspaces/:id/resources/:kind/:refId limited-cookie getLoginOr401=g55
 first DELETE /api/workspaces/:id/resources/:kind/:refId member-cookie getLoginOr401=g1
-first DELETE /api/workspaces/:id/resources/:kind/:refId admin-bearer getLoginOr401=g133
+first DELETE /api/workspaces/:id/resources/:kind/:refId admin-bearer getLoginOr401=g54
 first DELETE /api/workspaces/:id/resources/:kind/:refId member-bearer getLoginOr401=g1
 first DELETE /api/workspaces/:id/resources/:kind/:refId revoked-bearer getLoginOr401=g1
-first POST /api/workspaces/:id/users owner-cookie getLoginOr401=g135
-first POST /api/workspaces/:id/users admin-cookie getLoginOr401=g136
-first POST /api/workspaces/:id/users limited-cookie getLoginOr401=g137
+first POST /api/workspaces/:id/users owner-cookie getLoginOr401=g56
+first POST /api/workspaces/:id/users admin-cookie getLoginOr401=g57
+first POST /api/workspaces/:id/users limited-cookie getLoginOr401=g58
 first POST /api/workspaces/:id/users member-cookie getLoginOr401=g1
-first POST /api/workspaces/:id/users admin-bearer getLoginOr401=g136
+first POST /api/workspaces/:id/users admin-bearer getLoginOr401=g57
 first POST /api/workspaces/:id/users member-bearer getLoginOr401=g1
 first POST /api/workspaces/:id/users revoked-bearer getLoginOr401=g1
-first PATCH /api/workspaces/:id/users/:loginId owner-cookie getLoginOr401=g138
-first PATCH /api/workspaces/:id/users/:loginId admin-cookie getLoginOr401=g139
-first PATCH /api/workspaces/:id/users/:loginId limited-cookie getLoginOr401=g140
+first PATCH /api/workspaces/:id/users/:loginId owner-cookie getLoginOr401=g59
+first PATCH /api/workspaces/:id/users/:loginId admin-cookie getLoginOr401=g60
+first PATCH /api/workspaces/:id/users/:loginId limited-cookie getLoginOr401=g61
 first PATCH /api/workspaces/:id/users/:loginId member-cookie getLoginOr401=g1
-first PATCH /api/workspaces/:id/users/:loginId admin-bearer getLoginOr401=g139
+first PATCH /api/workspaces/:id/users/:loginId admin-bearer getLoginOr401=g60
 first PATCH /api/workspaces/:id/users/:loginId member-bearer getLoginOr401=g1
 first PATCH /api/workspaces/:id/users/:loginId revoked-bearer getLoginOr401=g1
-first DELETE /api/workspaces/:id/users/:loginId owner-cookie getLoginOr401=g141
-first DELETE /api/workspaces/:id/users/:loginId admin-cookie getLoginOr401=g142
-first DELETE /api/workspaces/:id/users/:loginId limited-cookie getLoginOr401=g143
+first DELETE /api/workspaces/:id/users/:loginId owner-cookie getLoginOr401=g62
+first DELETE /api/workspaces/:id/users/:loginId admin-cookie getLoginOr401=g63
+first DELETE /api/workspaces/:id/users/:loginId limited-cookie getLoginOr401=g64
 first DELETE /api/workspaces/:id/users/:loginId member-cookie getLoginOr401=g1
-first DELETE /api/workspaces/:id/users/:loginId admin-bearer getLoginOr401=g142
+first DELETE /api/workspaces/:id/users/:loginId admin-bearer getLoginOr401=g63
 first DELETE /api/workspaces/:id/users/:loginId member-bearer getLoginOr401=g1
 first DELETE /api/workspaces/:id/users/:loginId revoked-bearer getLoginOr401=g1
 more POST /api/access-keys disabled-cookie getLoginOr401=g1
@@ -913,106 +302,6 @@ more DELETE /api/access-keys/:id bumped-cookie getLoginOr401=g1
 more DELETE /api/access-keys/:id gone-cookie getLoginOr401=g1
 more DELETE /api/access-keys/:id rotated-bearer getLoginOr401=g1
 more DELETE /api/access-keys/:id expired-bearer getLoginOr401=g1
-more PATCH /api/access/agents/:slug disabled-cookie getOwnerOr401=g1
-more PATCH /api/access/agents/:slug bumped-cookie getOwnerOr401=g1
-more PATCH /api/access/agents/:slug gone-cookie getOwnerOr401=g1
-more PATCH /api/access/agents/:slug rotated-bearer getOwnerOr401=g1
-more PATCH /api/access/agents/:slug expired-bearer getOwnerOr401=g1
-more POST /api/access/client-report/ack disabled-cookie getOwnerOr401=g1
-more POST /api/access/client-report/ack bumped-cookie getOwnerOr401=g1
-more POST /api/access/client-report/ack gone-cookie getOwnerOr401=g1
-more POST /api/access/client-report/ack rotated-bearer getOwnerOr401=g1
-more POST /api/access/client-report/ack expired-bearer getOwnerOr401=g1
-more PATCH /api/access/tool-groups/:slug disabled-cookie getOwnerOr401=g1
-more PATCH /api/access/tool-groups/:slug bumped-cookie getOwnerOr401=g1
-more PATCH /api/access/tool-groups/:slug gone-cookie getOwnerOr401=g1
-more PATCH /api/access/tool-groups/:slug rotated-bearer getOwnerOr401=g1
-more PATCH /api/access/tool-groups/:slug expired-bearer getOwnerOr401=g1
-more POST /api/admin/space disabled-cookie getOwnerOr401=g1
-more POST /api/admin/space bumped-cookie getOwnerOr401=g1
-more POST /api/admin/space gone-cookie getOwnerOr401=g1
-more POST /api/admin/space rotated-bearer getOwnerOr401=g1
-more POST /api/admin/space expired-bearer getOwnerOr401=g1
-more POST /api/admin/space-files disabled-cookie getOwnerOr401=g1
-more POST /api/admin/space-files bumped-cookie getOwnerOr401=g1
-more POST /api/admin/space-files gone-cookie getOwnerOr401=g1
-more POST /api/admin/space-files rotated-bearer getOwnerOr401=g1
-more POST /api/admin/space-files expired-bearer getOwnerOr401=g1
-more PATCH /api/admin/space/:id disabled-cookie getOwnerOr401=g1
-more PATCH /api/admin/space/:id bumped-cookie getOwnerOr401=g1
-more PATCH /api/admin/space/:id gone-cookie getOwnerOr401=g1
-more PATCH /api/admin/space/:id rotated-bearer getOwnerOr401=g1
-more PATCH /api/admin/space/:id expired-bearer getOwnerOr401=g1
-more DELETE /api/admin/space/:id disabled-cookie getOwnerOr401=g1
-more DELETE /api/admin/space/:id bumped-cookie getOwnerOr401=g1
-more DELETE /api/admin/space/:id gone-cookie getOwnerOr401=g1
-more DELETE /api/admin/space/:id rotated-bearer getOwnerOr401=g1
-more DELETE /api/admin/space/:id expired-bearer getOwnerOr401=g1
-more POST /api/admin/space/:id/accept disabled-cookie getOwnerOr401=g1
-more POST /api/admin/space/:id/accept bumped-cookie getOwnerOr401=g1
-more POST /api/admin/space/:id/accept gone-cookie getOwnerOr401=g1
-more POST /api/admin/space/:id/accept rotated-bearer getOwnerOr401=g1
-more POST /api/admin/space/:id/accept expired-bearer getOwnerOr401=g1
-more PUT /api/admin/space/:id/draft disabled-cookie getOwnerOr401=g1
-more PUT /api/admin/space/:id/draft bumped-cookie getOwnerOr401=g1
-more PUT /api/admin/space/:id/draft gone-cookie getOwnerOr401=g1
-more PUT /api/admin/space/:id/draft rotated-bearer getOwnerOr401=g1
-more PUT /api/admin/space/:id/draft expired-bearer getOwnerOr401=g1
-more POST /api/admin/space/:id/give-back disabled-cookie getOwnerOr401=g1
-more POST /api/admin/space/:id/give-back bumped-cookie getOwnerOr401=g1
-more POST /api/admin/space/:id/give-back gone-cookie getOwnerOr401=g1
-more POST /api/admin/space/:id/give-back rotated-bearer getOwnerOr401=g1
-more POST /api/admin/space/:id/give-back expired-bearer getOwnerOr401=g1
-more POST /api/admin/space/:id/save disabled-cookie getOwnerOr401=g1
-more POST /api/admin/space/:id/save bumped-cookie getOwnerOr401=g1
-more POST /api/admin/space/:id/save gone-cookie getOwnerOr401=g1
-more POST /api/admin/space/:id/save rotated-bearer getOwnerOr401=g1
-more POST /api/admin/space/:id/save expired-bearer getOwnerOr401=g1
-more POST /api/apps/members/:id/accept disabled-cookie getOwnerOr401=g1
-more POST /api/apps/members/:id/accept bumped-cookie getOwnerOr401=g1
-more POST /api/apps/members/:id/accept gone-cookie getOwnerOr401=g1
-more POST /api/apps/members/:id/accept rotated-bearer getOwnerOr401=g1
-more POST /api/apps/members/:id/accept expired-bearer getOwnerOr401=g1
-more POST /api/apps/members/:id/delete disabled-cookie getOwnerOr401=g1
-more POST /api/apps/members/:id/delete bumped-cookie getOwnerOr401=g1
-more POST /api/apps/members/:id/delete gone-cookie getOwnerOr401=g1
-more POST /api/apps/members/:id/delete rotated-bearer getOwnerOr401=g1
-more POST /api/apps/members/:id/delete expired-bearer getOwnerOr401=g1
-more POST /api/apps/members/:id/send-back disabled-cookie getOwnerOr401=g1
-more POST /api/apps/members/:id/send-back bumped-cookie getOwnerOr401=g1
-more POST /api/apps/members/:id/send-back gone-cookie getOwnerOr401=g1
-more POST /api/apps/members/:id/send-back rotated-bearer getOwnerOr401=g1
-more POST /api/apps/members/:id/send-back expired-bearer getOwnerOr401=g1
-more POST /api/apps/members/:id/test disabled-cookie getOwnerOr401=g1
-more POST /api/apps/members/:id/test bumped-cookie getOwnerOr401=g1
-more POST /api/apps/members/:id/test gone-cookie getOwnerOr401=g1
-more POST /api/apps/members/:id/test rotated-bearer getOwnerOr401=g1
-more POST /api/apps/members/:id/test expired-bearer getOwnerOr401=g1
-more DELETE /api/apps/members/:id/test disabled-cookie getOwnerOr401=g1
-more DELETE /api/apps/members/:id/test bumped-cookie getOwnerOr401=g1
-more DELETE /api/apps/members/:id/test gone-cookie getOwnerOr401=g1
-more DELETE /api/apps/members/:id/test rotated-bearer getOwnerOr401=g1
-more DELETE /api/apps/members/:id/test expired-bearer getOwnerOr401=g1
-more POST /api/apps/members/:id/test/db-broker disabled-cookie getOwnerOr401=g1
-more POST /api/apps/members/:id/test/db-broker bumped-cookie getOwnerOr401=g1
-more POST /api/apps/members/:id/test/db-broker gone-cookie getOwnerOr401=g1
-more POST /api/apps/members/:id/test/db-broker rotated-bearer getOwnerOr401=g1
-more POST /api/apps/members/:id/test/db-broker expired-bearer getOwnerOr401=g1
-more POST /api/apps/members/:id/test/frame-ticket disabled-cookie getOwnerOr401=g1
-more POST /api/apps/members/:id/test/frame-ticket bumped-cookie getOwnerOr401=g1
-more POST /api/apps/members/:id/test/frame-ticket gone-cookie getOwnerOr401=g1
-more POST /api/apps/members/:id/test/frame-ticket rotated-bearer getOwnerOr401=g1
-more POST /api/apps/members/:id/test/frame-ticket expired-bearer getOwnerOr401=g1
-more POST /api/apps/members/:id/test/tool-broker disabled-cookie getOwnerOr401=g1
-more POST /api/apps/members/:id/test/tool-broker bumped-cookie getOwnerOr401=g1
-more POST /api/apps/members/:id/test/tool-broker gone-cookie getOwnerOr401=g1
-more POST /api/apps/members/:id/test/tool-broker rotated-bearer getOwnerOr401=g1
-more POST /api/apps/members/:id/test/tool-broker expired-bearer getOwnerOr401=g1
-more POST /api/apps/members/:id/unshare disabled-cookie getOwnerOr401=g1
-more POST /api/apps/members/:id/unshare bumped-cookie getOwnerOr401=g1
-more POST /api/apps/members/:id/unshare gone-cookie getOwnerOr401=g1
-more POST /api/apps/members/:id/unshare rotated-bearer getOwnerOr401=g1
-more POST /api/apps/members/:id/unshare expired-bearer getOwnerOr401=g1
 more POST /api/assistant/turn disabled-cookie getChatLoginOr401=g1
 more POST /api/assistant/turn bumped-cookie getChatLoginOr401=g1
 more POST /api/assistant/turn gone-cookie getChatLoginOr401=g1
@@ -1051,91 +340,6 @@ more POST /api/auth/sso rotated-bearer getCookieUpgradeLoginOr401=g1
 more POST /api/auth/sso expired-bearer getCookieUpgradeLoginOr401=g1
 more POST /api/auth/sso key-unknown getCookieUpgradeLoginOr401=g1
 more POST /api/auth/sso key-revoked getCookieUpgradeLoginOr401=g1
-more POST /api/client/apps/:id/db-broker disabled-cookie getLoginOr401=g1
-more POST /api/client/apps/:id/db-broker bumped-cookie getLoginOr401=g1
-more POST /api/client/apps/:id/db-broker gone-cookie getLoginOr401=g1
-more POST /api/client/apps/:id/db-broker rotated-bearer getLoginOr401=g1
-more POST /api/client/apps/:id/db-broker expired-bearer getLoginOr401=g1
-more POST /api/client/apps/:id/frame-ticket disabled-cookie getLoginOr401=g1
-more POST /api/client/apps/:id/frame-ticket bumped-cookie getLoginOr401=g1
-more POST /api/client/apps/:id/frame-ticket gone-cookie getLoginOr401=g1
-more POST /api/client/apps/:id/frame-ticket rotated-bearer getLoginOr401=g1
-more POST /api/client/apps/:id/frame-ticket expired-bearer getLoginOr401=g1
-more POST /api/client/apps/:id/tool-broker disabled-cookie getLoginOr401=g1
-more POST /api/client/apps/:id/tool-broker bumped-cookie getLoginOr401=g1
-more POST /api/client/apps/:id/tool-broker gone-cookie getLoginOr401=g1
-more POST /api/client/apps/:id/tool-broker rotated-bearer getLoginOr401=g1
-more POST /api/client/apps/:id/tool-broker expired-bearer getLoginOr401=g1
-more POST /api/client/chat disabled-cookie getLoginOr401=g1
-more POST /api/client/chat bumped-cookie getLoginOr401=g1
-more POST /api/client/chat gone-cookie getLoginOr401=g1
-more POST /api/client/chat rotated-bearer getLoginOr401=g1
-more POST /api/client/chat expired-bearer getLoginOr401=g1
-more POST /api/client/chat/read disabled-cookie getLoginOr401=g1
-more POST /api/client/chat/read bumped-cookie getLoginOr401=g1
-more POST /api/client/chat/read gone-cookie getLoginOr401=g1
-more POST /api/client/chat/read rotated-bearer getLoginOr401=g1
-more POST /api/client/chat/read expired-bearer getLoginOr401=g1
-more POST /api/client/push/connect disabled-cookie getLoginOr401=g1
-more POST /api/client/push/connect bumped-cookie getLoginOr401=g1
-more POST /api/client/push/connect gone-cookie getLoginOr401=g1
-more POST /api/client/push/connect rotated-bearer getLoginOr401=g1
-more POST /api/client/push/connect expired-bearer getLoginOr401=g1
-more PUT /api/client/push/preferences disabled-cookie getLoginOr401=g1
-more PUT /api/client/push/preferences bumped-cookie getLoginOr401=g1
-more PUT /api/client/push/preferences gone-cookie getLoginOr401=g1
-more PUT /api/client/push/preferences rotated-bearer getLoginOr401=g1
-more PUT /api/client/push/preferences expired-bearer getLoginOr401=g1
-more POST /api/client/push/subscriptions disabled-cookie getLoginOr401=g1
-more POST /api/client/push/subscriptions bumped-cookie getLoginOr401=g1
-more POST /api/client/push/subscriptions gone-cookie getLoginOr401=g1
-more POST /api/client/push/subscriptions rotated-bearer getLoginOr401=g1
-more POST /api/client/push/subscriptions expired-bearer getLoginOr401=g1
-more DELETE /api/client/push/subscriptions/:id disabled-cookie getLoginOr401=g1
-more DELETE /api/client/push/subscriptions/:id bumped-cookie getLoginOr401=g1
-more DELETE /api/client/push/subscriptions/:id gone-cookie getLoginOr401=g1
-more DELETE /api/client/push/subscriptions/:id rotated-bearer getLoginOr401=g1
-more DELETE /api/client/push/subscriptions/:id expired-bearer getLoginOr401=g1
-more POST /api/client/space disabled-cookie getLoginOr401=g1
-more POST /api/client/space bumped-cookie getLoginOr401=g1
-more POST /api/client/space gone-cookie getLoginOr401=g1
-more POST /api/client/space rotated-bearer getLoginOr401=g1
-more POST /api/client/space expired-bearer getLoginOr401=g1
-more POST /api/client/space-files disabled-cookie getLoginOr401=g1
-more POST /api/client/space-files bumped-cookie getLoginOr401=g1
-more POST /api/client/space-files gone-cookie getLoginOr401=g1
-more POST /api/client/space-files rotated-bearer getLoginOr401=g1
-more POST /api/client/space-files expired-bearer getLoginOr401=g1
-more PATCH /api/client/space/:id disabled-cookie getLoginOr401=g1
-more PATCH /api/client/space/:id bumped-cookie getLoginOr401=g1
-more PATCH /api/client/space/:id gone-cookie getLoginOr401=g1
-more PATCH /api/client/space/:id rotated-bearer getLoginOr401=g1
-more PATCH /api/client/space/:id expired-bearer getLoginOr401=g1
-more DELETE /api/client/space/:id disabled-cookie getLoginOr401=g1
-more DELETE /api/client/space/:id bumped-cookie getLoginOr401=g1
-more DELETE /api/client/space/:id gone-cookie getLoginOr401=g1
-more DELETE /api/client/space/:id rotated-bearer getLoginOr401=g1
-more DELETE /api/client/space/:id expired-bearer getLoginOr401=g1
-more PUT /api/client/space/:id/draft disabled-cookie getLoginOr401=g1
-more PUT /api/client/space/:id/draft bumped-cookie getLoginOr401=g1
-more PUT /api/client/space/:id/draft gone-cookie getLoginOr401=g1
-more PUT /api/client/space/:id/draft rotated-bearer getLoginOr401=g1
-more PUT /api/client/space/:id/draft expired-bearer getLoginOr401=g1
-more POST /api/client/space/:id/recall disabled-cookie getLoginOr401=g1
-more POST /api/client/space/:id/recall bumped-cookie getLoginOr401=g1
-more POST /api/client/space/:id/recall gone-cookie getLoginOr401=g1
-more POST /api/client/space/:id/recall rotated-bearer getLoginOr401=g1
-more POST /api/client/space/:id/recall expired-bearer getLoginOr401=g1
-more POST /api/client/space/:id/save disabled-cookie getLoginOr401=g1
-more POST /api/client/space/:id/save bumped-cookie getLoginOr401=g1
-more POST /api/client/space/:id/save gone-cookie getLoginOr401=g1
-more POST /api/client/space/:id/save rotated-bearer getLoginOr401=g1
-more POST /api/client/space/:id/save expired-bearer getLoginOr401=g1
-more POST /api/client/space/:id/submit disabled-cookie getLoginOr401=g1
-more POST /api/client/space/:id/submit bumped-cookie getLoginOr401=g1
-more POST /api/client/space/:id/submit gone-cookie getLoginOr401=g1
-more POST /api/client/space/:id/submit rotated-bearer getLoginOr401=g1
-more POST /api/client/space/:id/submit expired-bearer getLoginOr401=g1
 more POST /api/dev-tools/queue-approval disabled-cookie getOwnerOr401=g1
 more POST /api/dev-tools/queue-approval bumped-cookie getOwnerOr401=g1
 more POST /api/dev-tools/queue-approval gone-cookie getOwnerOr401=g1
@@ -1181,206 +385,11 @@ more POST /api/grants/move/preview bumped-cookie getLoginOr401=g1
 more POST /api/grants/move/preview gone-cookie getLoginOr401=g1
 more POST /api/grants/move/preview rotated-bearer getLoginOr401=g1
 more POST /api/grants/move/preview expired-bearer getLoginOr401=g1
-more PATCH /api/mcp-logins/:id disabled-cookie getOwnerOr401=g1
-more PATCH /api/mcp-logins/:id bumped-cookie getOwnerOr401=g1
-more PATCH /api/mcp-logins/:id gone-cookie getOwnerOr401=g1
-more PATCH /api/mcp-logins/:id rotated-bearer getOwnerOr401=g1
-more PATCH /api/mcp-logins/:id expired-bearer getOwnerOr401=g1
-more POST /api/mcp-logins/:id/tokens disabled-cookie getOwnerOr401=g1
-more POST /api/mcp-logins/:id/tokens bumped-cookie getOwnerOr401=g1
-more POST /api/mcp-logins/:id/tokens gone-cookie getOwnerOr401=g1
-more POST /api/mcp-logins/:id/tokens rotated-bearer getOwnerOr401=g1
-more POST /api/mcp-logins/:id/tokens expired-bearer getOwnerOr401=g1
-more DELETE /api/mcp-logins/:id/tokens/:tokenId disabled-cookie getOwnerOr401=g1
-more DELETE /api/mcp-logins/:id/tokens/:tokenId bumped-cookie getOwnerOr401=g1
-more DELETE /api/mcp-logins/:id/tokens/:tokenId gone-cookie getOwnerOr401=g1
-more DELETE /api/mcp-logins/:id/tokens/:tokenId rotated-bearer getOwnerOr401=g1
-more DELETE /api/mcp-logins/:id/tokens/:tokenId expired-bearer getOwnerOr401=g1
-more POST /api/member/apps/:id/db-broker disabled-cookie getMemberOr401=g1
-more POST /api/member/apps/:id/db-broker bumped-cookie getMemberOr401=g1
-more POST /api/member/apps/:id/db-broker gone-cookie getMemberOr401=g1
-more POST /api/member/apps/:id/db-broker rotated-bearer getMemberOr401=g1
-more POST /api/member/apps/:id/db-broker expired-bearer getMemberOr401=g1
-more POST /api/member/apps/:id/frame-ticket disabled-cookie getMemberOr401=g1
-more POST /api/member/apps/:id/frame-ticket bumped-cookie getMemberOr401=g1
-more POST /api/member/apps/:id/frame-ticket gone-cookie getMemberOr401=g1
-more POST /api/member/apps/:id/frame-ticket rotated-bearer getMemberOr401=g1
-more POST /api/member/apps/:id/frame-ticket expired-bearer getMemberOr401=g1
-more POST /api/member/apps/:id/tool-broker disabled-cookie getMemberOr401=g1
-more POST /api/member/apps/:id/tool-broker bumped-cookie getMemberOr401=g1
-more POST /api/member/apps/:id/tool-broker gone-cookie getMemberOr401=g1
-more POST /api/member/apps/:id/tool-broker rotated-bearer getMemberOr401=g1
-more POST /api/member/apps/:id/tool-broker expired-bearer getMemberOr401=g1
-more POST /api/member/chat disabled-cookie getMemberOr401=g1
-more POST /api/member/chat bumped-cookie getMemberOr401=g1
-more POST /api/member/chat gone-cookie getMemberOr401=g1
-more POST /api/member/chat rotated-bearer getMemberOr401=g1
-more POST /api/member/chat expired-bearer getMemberOr401=g1
-more POST /api/member/chat/read disabled-cookie getMemberOr401=g1
-more POST /api/member/chat/read bumped-cookie getMemberOr401=g1
-more POST /api/member/chat/read gone-cookie getMemberOr401=g1
-more POST /api/member/chat/read rotated-bearer getMemberOr401=g1
-more POST /api/member/chat/read expired-bearer getMemberOr401=g1
-more POST /api/member/my-apps/:id/delete disabled-cookie getMemberOr401=g1
-more POST /api/member/my-apps/:id/delete bumped-cookie getMemberOr401=g1
-more POST /api/member/my-apps/:id/delete gone-cookie getMemberOr401=g1
-more POST /api/member/my-apps/:id/delete rotated-bearer getMemberOr401=g1
-more POST /api/member/my-apps/:id/delete expired-bearer getMemberOr401=g1
-more DELETE /api/member/my-apps/:id/history/:snapshotId disabled-cookie getMemberOr401=g1
-more DELETE /api/member/my-apps/:id/history/:snapshotId bumped-cookie getMemberOr401=g1
-more DELETE /api/member/my-apps/:id/history/:snapshotId gone-cookie getMemberOr401=g1
-more DELETE /api/member/my-apps/:id/history/:snapshotId rotated-bearer getMemberOr401=g1
-more DELETE /api/member/my-apps/:id/history/:snapshotId expired-bearer getMemberOr401=g1
-more POST /api/member/my-apps/:id/recall disabled-cookie getMemberOr401=g1
-more POST /api/member/my-apps/:id/recall bumped-cookie getMemberOr401=g1
-more POST /api/member/my-apps/:id/recall gone-cookie getMemberOr401=g1
-more POST /api/member/my-apps/:id/recall rotated-bearer getMemberOr401=g1
-more POST /api/member/my-apps/:id/recall expired-bearer getMemberOr401=g1
-more POST /api/member/my-apps/:id/share disabled-cookie getMemberOr401=g1
-more POST /api/member/my-apps/:id/share bumped-cookie getMemberOr401=g1
-more POST /api/member/my-apps/:id/share gone-cookie getMemberOr401=g1
-more POST /api/member/my-apps/:id/share rotated-bearer getMemberOr401=g1
-more POST /api/member/my-apps/:id/share expired-bearer getMemberOr401=g1
-more POST /api/member/my-apps/:id/submit disabled-cookie getMemberOr401=g1
-more POST /api/member/my-apps/:id/submit bumped-cookie getMemberOr401=g1
-more POST /api/member/my-apps/:id/submit gone-cookie getMemberOr401=g1
-more POST /api/member/my-apps/:id/submit rotated-bearer getMemberOr401=g1
-more POST /api/member/my-apps/:id/submit expired-bearer getMemberOr401=g1
-more POST /api/member/my-apps/:id/undelete disabled-cookie getMemberOr401=g1
-more POST /api/member/my-apps/:id/undelete bumped-cookie getMemberOr401=g1
-more POST /api/member/my-apps/:id/undelete gone-cookie getMemberOr401=g1
-more POST /api/member/my-apps/:id/undelete rotated-bearer getMemberOr401=g1
-more POST /api/member/my-apps/:id/undelete expired-bearer getMemberOr401=g1
-more POST /api/member/space disabled-cookie getMemberOr401=g1
-more POST /api/member/space bumped-cookie getMemberOr401=g1
-more POST /api/member/space gone-cookie getMemberOr401=g1
-more POST /api/member/space rotated-bearer getMemberOr401=g1
-more POST /api/member/space expired-bearer getMemberOr401=g1
-more POST /api/member/space-files disabled-cookie getMemberOr401=g1
-more POST /api/member/space-files bumped-cookie getMemberOr401=g1
-more POST /api/member/space-files gone-cookie getMemberOr401=g1
-more POST /api/member/space-files rotated-bearer getMemberOr401=g1
-more POST /api/member/space-files expired-bearer getMemberOr401=g1
-more PATCH /api/member/space/:id disabled-cookie getMemberOr401=g1
-more PATCH /api/member/space/:id bumped-cookie getMemberOr401=g1
-more PATCH /api/member/space/:id gone-cookie getMemberOr401=g1
-more PATCH /api/member/space/:id rotated-bearer getMemberOr401=g1
-more PATCH /api/member/space/:id expired-bearer getMemberOr401=g1
-more DELETE /api/member/space/:id disabled-cookie getMemberOr401=g1
-more DELETE /api/member/space/:id bumped-cookie getMemberOr401=g1
-more DELETE /api/member/space/:id gone-cookie getMemberOr401=g1
-more DELETE /api/member/space/:id rotated-bearer getMemberOr401=g1
-more DELETE /api/member/space/:id expired-bearer getMemberOr401=g1
-more PUT /api/member/space/:id/draft disabled-cookie getMemberOr401=g1
-more PUT /api/member/space/:id/draft bumped-cookie getMemberOr401=g1
-more PUT /api/member/space/:id/draft gone-cookie getMemberOr401=g1
-more PUT /api/member/space/:id/draft rotated-bearer getMemberOr401=g1
-more PUT /api/member/space/:id/draft expired-bearer getMemberOr401=g1
-more POST /api/member/space/:id/recall disabled-cookie getMemberOr401=g1
-more POST /api/member/space/:id/recall bumped-cookie getMemberOr401=g1
-more POST /api/member/space/:id/recall gone-cookie getMemberOr401=g1
-more POST /api/member/space/:id/recall rotated-bearer getMemberOr401=g1
-more POST /api/member/space/:id/recall expired-bearer getMemberOr401=g1
-more POST /api/member/space/:id/save disabled-cookie getMemberOr401=g1
-more POST /api/member/space/:id/save bumped-cookie getMemberOr401=g1
-more POST /api/member/space/:id/save gone-cookie getMemberOr401=g1
-more POST /api/member/space/:id/save rotated-bearer getMemberOr401=g1
-more POST /api/member/space/:id/save expired-bearer getMemberOr401=g1
-more POST /api/member/space/:id/share disabled-cookie getMemberOr401=g1
-more POST /api/member/space/:id/share bumped-cookie getMemberOr401=g1
-more POST /api/member/space/:id/share gone-cookie getMemberOr401=g1
-more POST /api/member/space/:id/share rotated-bearer getMemberOr401=g1
-more POST /api/member/space/:id/share expired-bearer getMemberOr401=g1
-more POST /api/member/space/:id/submit disabled-cookie getMemberOr401=g1
-more POST /api/member/space/:id/submit bumped-cookie getMemberOr401=g1
-more POST /api/member/space/:id/submit gone-cookie getMemberOr401=g1
-more POST /api/member/space/:id/submit rotated-bearer getMemberOr401=g1
-more POST /api/member/space/:id/submit expired-bearer getMemberOr401=g1
-more POST /api/member/tree/:kind/folders disabled-cookie getMemberOr401=g1
-more POST /api/member/tree/:kind/folders bumped-cookie getMemberOr401=g1
-more POST /api/member/tree/:kind/folders gone-cookie getMemberOr401=g1
-more POST /api/member/tree/:kind/folders rotated-bearer getMemberOr401=g1
-more POST /api/member/tree/:kind/folders expired-bearer getMemberOr401=g1
-more PATCH /api/member/tree/:kind/folders/:id disabled-cookie getMemberOr401=g1
-more PATCH /api/member/tree/:kind/folders/:id bumped-cookie getMemberOr401=g1
-more PATCH /api/member/tree/:kind/folders/:id gone-cookie getMemberOr401=g1
-more PATCH /api/member/tree/:kind/folders/:id rotated-bearer getMemberOr401=g1
-more PATCH /api/member/tree/:kind/folders/:id expired-bearer getMemberOr401=g1
-more DELETE /api/member/tree/:kind/folders/:id disabled-cookie getMemberOr401=g1
-more DELETE /api/member/tree/:kind/folders/:id bumped-cookie getMemberOr401=g1
-more DELETE /api/member/tree/:kind/folders/:id gone-cookie getMemberOr401=g1
-more DELETE /api/member/tree/:kind/folders/:id rotated-bearer getMemberOr401=g1
-more DELETE /api/member/tree/:kind/folders/:id expired-bearer getMemberOr401=g1
-more POST /api/member/tree/:kind/move disabled-cookie getMemberOr401=g1
-more POST /api/member/tree/:kind/move bumped-cookie getMemberOr401=g1
-more POST /api/member/tree/:kind/move gone-cookie getMemberOr401=g1
-more POST /api/member/tree/:kind/move rotated-bearer getMemberOr401=g1
-more POST /api/member/tree/:kind/move expired-bearer getMemberOr401=g1
 more PATCH /api/pages/:id disabled-cookie getOwnerOr401=g1
 more PATCH /api/pages/:id bumped-cookie getOwnerOr401=g1
 more PATCH /api/pages/:id gone-cookie getOwnerOr401=g1
 more PATCH /api/pages/:id rotated-bearer getOwnerOr401=g1
 more PATCH /api/pages/:id expired-bearer getOwnerOr401=g1
-more POST /api/team-admin/clients disabled-cookie getOwnerOr401=g1
-more POST /api/team-admin/clients bumped-cookie getOwnerOr401=g1
-more POST /api/team-admin/clients gone-cookie getOwnerOr401=g1
-more POST /api/team-admin/clients rotated-bearer getOwnerOr401=g1
-more POST /api/team-admin/clients expired-bearer getOwnerOr401=g1
-more POST /api/team-admin/clients/:id/signin-link disabled-cookie getOwnerOr401=g1
-more POST /api/team-admin/clients/:id/signin-link bumped-cookie getOwnerOr401=g1
-more POST /api/team-admin/clients/:id/signin-link gone-cookie getOwnerOr401=g1
-more POST /api/team-admin/clients/:id/signin-link rotated-bearer getOwnerOr401=g1
-more POST /api/team-admin/clients/:id/signin-link expired-bearer getOwnerOr401=g1
-more DELETE /api/team-admin/clients/:id/signin-link disabled-cookie getOwnerOr401=g1
-more DELETE /api/team-admin/clients/:id/signin-link bumped-cookie getOwnerOr401=g1
-more DELETE /api/team-admin/clients/:id/signin-link gone-cookie getOwnerOr401=g1
-more DELETE /api/team-admin/clients/:id/signin-link rotated-bearer getOwnerOr401=g1
-more DELETE /api/team-admin/clients/:id/signin-link expired-bearer getOwnerOr401=g1
-more PUT /api/team-admin/clients/signin-sender disabled-cookie getOwnerOr401=g1
-more PUT /api/team-admin/clients/signin-sender bumped-cookie getOwnerOr401=g1
-more PUT /api/team-admin/clients/signin-sender gone-cookie getOwnerOr401=g1
-more PUT /api/team-admin/clients/signin-sender rotated-bearer getOwnerOr401=g1
-more PUT /api/team-admin/clients/signin-sender expired-bearer getOwnerOr401=g1
-more PUT /api/team-admin/hub-app disabled-cookie getOwnerOr401=g1
-more PUT /api/team-admin/hub-app bumped-cookie getOwnerOr401=g1
-more PUT /api/team-admin/hub-app gone-cookie getOwnerOr401=g1
-more PUT /api/team-admin/hub-app rotated-bearer getOwnerOr401=g1
-more PUT /api/team-admin/hub-app expired-bearer getOwnerOr401=g1
-more DELETE /api/team-admin/hub-app disabled-cookie getOwnerOr401=g1
-more DELETE /api/team-admin/hub-app bumped-cookie getOwnerOr401=g1
-more DELETE /api/team-admin/hub-app gone-cookie getOwnerOr401=g1
-more DELETE /api/team-admin/hub-app rotated-bearer getOwnerOr401=g1
-more DELETE /api/team-admin/hub-app expired-bearer getOwnerOr401=g1
-more POST /api/team-admin/member-items/:id/unshare disabled-cookie getOwnerOr401=g1
-more POST /api/team-admin/member-items/:id/unshare bumped-cookie getOwnerOr401=g1
-more POST /api/team-admin/member-items/:id/unshare gone-cookie getOwnerOr401=g1
-more POST /api/team-admin/member-items/:id/unshare rotated-bearer getOwnerOr401=g1
-more POST /api/team-admin/member-items/:id/unshare expired-bearer getOwnerOr401=g1
-more POST /api/team-admin/notify disabled-cookie getOwnerOr401=g1
-more POST /api/team-admin/notify bumped-cookie getOwnerOr401=g1
-more POST /api/team-admin/notify gone-cookie getOwnerOr401=g1
-more POST /api/team-admin/notify rotated-bearer getOwnerOr401=g1
-more POST /api/team-admin/notify expired-bearer getOwnerOr401=g1
-more POST /api/team-admin/submissions/:id/accept disabled-cookie getOwnerOr401=g1
-more POST /api/team-admin/submissions/:id/accept bumped-cookie getOwnerOr401=g1
-more POST /api/team-admin/submissions/:id/accept gone-cookie getOwnerOr401=g1
-more POST /api/team-admin/submissions/:id/accept rotated-bearer getOwnerOr401=g1
-more POST /api/team-admin/submissions/:id/accept expired-bearer getOwnerOr401=g1
-more POST /api/team-admin/submissions/:id/discard disabled-cookie getOwnerOr401=g1
-more POST /api/team-admin/submissions/:id/discard bumped-cookie getOwnerOr401=g1
-more POST /api/team-admin/submissions/:id/discard gone-cookie getOwnerOr401=g1
-more POST /api/team-admin/submissions/:id/discard rotated-bearer getOwnerOr401=g1
-more POST /api/team-admin/submissions/:id/discard expired-bearer getOwnerOr401=g1
-more POST /api/team-admin/submissions/:id/return disabled-cookie getOwnerOr401=g1
-more POST /api/team-admin/submissions/:id/return bumped-cookie getOwnerOr401=g1
-more POST /api/team-admin/submissions/:id/return gone-cookie getOwnerOr401=g1
-more POST /api/team-admin/submissions/:id/return rotated-bearer getOwnerOr401=g1
-more POST /api/team-admin/submissions/:id/return expired-bearer getOwnerOr401=g1
-more POST /api/team-admin/submissions/:id/take-over disabled-cookie getOwnerOr401=g1
-more POST /api/team-admin/submissions/:id/take-over bumped-cookie getOwnerOr401=g1
-more POST /api/team-admin/submissions/:id/take-over gone-cookie getOwnerOr401=g1
-more POST /api/team-admin/submissions/:id/take-over rotated-bearer getOwnerOr401=g1
-more POST /api/team-admin/submissions/:id/take-over expired-bearer getOwnerOr401=g1
 more PATCH /api/v1/pages/:id disabled-cookie getOwnerOr401=g1
 more PATCH /api/v1/pages/:id bumped-cookie getOwnerOr401=g1
 more PATCH /api/v1/pages/:id gone-cookie getOwnerOr401=g1
@@ -1431,13 +440,13 @@ more DELETE /api/workspaces/:id/users/:loginId bumped-cookie getLoginOr401=g1
 more DELETE /api/workspaces/:id/users/:loginId gone-cookie getLoginOr401=g1
 more DELETE /api/workspaces/:id/users/:loginId rotated-bearer getLoginOr401=g1
 more DELETE /api/workspaces/:id/users/:loginId expired-bearer getLoginOr401=g1
-again PATCH /api/pages/:id owner-cookie getOwnerOr401=g144
-again PATCH /api/pages/:id admin-cookie getOwnerOr401=g145
-again PATCH /api/pages/:id limited-cookie getOwnerOr401=g146
-again PATCH /api/pages/:id member-cookie getOwnerOr401=g147
-again PATCH /api/pages/:id admin-bearer getOwnerOr401=g145
-again PATCH /api/pages/:id member-bearer getOwnerOr401=g147
-again PATCH /api/v1/pages/:id owner-cookie getOwnerOr401=g148
-again PATCH /api/v1/pages/:id admin-cookie getOwnerOr401=g149
-again PATCH /api/v1/pages/:id limited-cookie getOwnerOr401=g150
-again PATCH /api/v1/pages/:id admin-bearer getOwnerOr401=g149
+again PATCH /api/pages/:id owner-cookie getOwnerOr401=g65
+again PATCH /api/pages/:id admin-cookie getOwnerOr401=g66
+again PATCH /api/pages/:id limited-cookie getOwnerOr401=g67
+again PATCH /api/pages/:id member-cookie getOwnerOr401=g68
+again PATCH /api/pages/:id admin-bearer getOwnerOr401=g66
+again PATCH /api/pages/:id member-bearer getOwnerOr401=g68
+again PATCH /api/v1/pages/:id owner-cookie getOwnerOr401=g69
+again PATCH /api/v1/pages/:id admin-cookie getOwnerOr401=g70
+again PATCH /api/v1/pages/:id limited-cookie getOwnerOr401=g71
+again PATCH /api/v1/pages/:id admin-bearer getOwnerOr401=g70

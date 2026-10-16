@@ -44,7 +44,7 @@ user's own thread. A member who names no assistant chats with the one of
 their oldest workspace beyond Admin that has one. It never
 reads mail or journal entries, whatever **Expose email & journal** says:
 those kinds live in the Admin workspace only. The old member chat routes
-(`/api/member/chat`, `/api/team-admin/member-chats`) answer 410.
+(`/api/member/chat`, `/api/team-admin/member-chats`) are gone.
 
 Every request re-checks the login, so a disabled or deleted login loses
 access mid-session. The routes behind this screen need a user of the Admin

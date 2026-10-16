@@ -14,10 +14,14 @@
  *
  * Now each recorded cell answers as recorded while its route is still
  * routed; a deleted route's cell is a named change: its path answers what a
- * path no route answers does (a sibling path, the same path with `-a7none`
- * on its last segment, driven the same way), and that answer is recorded
+ * sibling path of its shape does (the same path with `-a7none` on its last
+ * segment, driven the same way), or, for the one method gone from a path
+ * still routed (PUT /api/app-nav), what any method that path does not
+ * serve answers (405). That answer is recorded
  * (__snapshots__/a7-gone-routes.changes.txt): a 404 for a signed-in caller,
- * the gate's 401 for no credential off the public paths.
+ * the gate's 401 for no credential off the public paths. One deleted path
+ * reaches a dynamic route now (GET /api/apps/members: /api/apps/:id with
+ * an [id] of `members`), whose params gateway answers it the 404.
  *
  * The stub hits a box still sees are counted by scripts/arch-scoreboard-box.sh
  * (numbers only, per stub family); docs/actors.md, "Remove the switch-over
@@ -113,15 +117,17 @@ async function stubsNow(): Promise<string[]> {
   return [...out].sort();
 }
 
-/** Whether `method pattern` is routed now. */
-async function routed(key: string): Promise<boolean> {
+/** The methods `pattern` is routed for now (none: not routed). */
+async function routedMethods(pattern: string): Promise<string[]> {
   const { routeManifest } = await import('./route-manifest.gen');
-  const [method, pattern] = key.split(' ');
-  return routeManifest.some(
-    (e) =>
-      e.pattern === pattern &&
-      e.methods.map((m: string) => m.toUpperCase()).includes(method!.toUpperCase()),
-  );
+  return routeManifest
+    .filter((e) => e.pattern === pattern)
+    .flatMap((e) => e.methods.map((m: string) => m.toUpperCase()));
+}
+
+/** A write method `methods` does not hold, other than `not`. */
+function unservedMethod(methods: readonly string[], not: string): string {
+  return ['DELETE', 'PATCH', 'PUT', 'POST'].find((m) => m !== not && !methods.includes(m))!;
 }
 
 describe.skipIf(!hasManifest)('the retired routes (A7): recorded, then deleted', () => {
@@ -156,13 +162,21 @@ describe.skipIf(!hasManifest)('the retired routes (A7): recorded, then deleted',
       const [method, pattern, cred] = cell.split(' ') as [string, string, string];
       const path = concrete(pattern);
       const now = await answer(cred, method, path);
-      if (await routed(`${method} ${pattern}`)) {
+      const methods = await routedMethods(pattern);
+      if (methods.includes(method)) {
         expect(now, cell).toBe(was);
         kept += 1;
         continue;
       }
-      // Deleted: the path answers what a path no route has answers.
-      expect(now, cell).toBe(await answer(cred, method, sibling(path)));
+      // Deleted. A method gone from a path still routed for others answers
+      // as any method that path does not serve (the 405); a path gone
+      // whole answers as a sibling path of its shape (no route's 404, the
+      // gate's 401 with no credential, or a dynamic route's own answer).
+      const like =
+        methods.length > 0
+          ? await answer(cred, unservedMethod(methods, method), path)
+          : await answer(cred, method, sibling(path));
+      expect(now, cell).toBe(like);
       changes.push(`${cell}: ${was} -> ${now}`);
     }
     // Before the deletion every cell is kept; after it, every one changed.

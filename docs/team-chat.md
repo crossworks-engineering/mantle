@@ -9,8 +9,8 @@ Read [workspaces.md](./workspaces.md), "Assistants and chats", and
 
 What is left of the old team chat:
 
-- `/api/member/chat` and `/api/team-admin/member-chats` answer 410
-  `{ error, code: 'gone' }`. A member's thread is read and written through
+- `/api/member/chat` and `/api/team-admin/member-chats` answered 410
+  `{ error, code: 'gone' }` until arch A7 (no route since). A member's thread is read and written through
   `/api/assistant/*`, like every user's.
 - `team_messages` was folded into `assistant_messages` (migration 0269) and
   frozen. The old portal rows (a contact's, with no login) are history in

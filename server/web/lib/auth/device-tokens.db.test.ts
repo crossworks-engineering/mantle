@@ -7,8 +7,8 @@
  *    role in the answer); a wrong password mints nothing;
  *  - a member token reaches member routes only, and GET /api/auth/whoami
  *    tells each its shell (GET /api/shell for every login since W5c); the
- *    client portal's stubs answer every login 410 (W5c; the client login
- *    and its email-code sign-in went in W8a);
+ *    client portal (W5c; the client login and its email-code sign-in went
+ *    in W8a) is no route since arch A7 (its 410 stubs went);
  *  - every way a token ends: the device is revoked, an admin ends the
  *    sessions, the login is disabled, the session epoch moves on;
  *  - refresh rotates a token, and the push devices follow the new token;
@@ -79,8 +79,13 @@ describe.skipIf(!URL)('device tokens for an admin and a member', () => {
    *  401. */
   const alive = (auth: { cookie?: string; bearer?: string }) =>
     call('/api/shell', auth).then((r) => r.status);
+  /** A member session gets past the member gate: a member route's
+   *  handler runs ('past': not the gate's 401 or 403). The member byte
+   *  route this probed (a 410 stub) went in arch A7. */
   const memberProbe = (auth: { cookie?: string; bearer?: string }) =>
-    call('/api/member/files/not-a-uuid', auth).then((r) => r.status);
+    call('/api/member/push/preferences', auth).then((r) =>
+      r.status === 401 || r.status === 403 ? r.status : 'past',
+    );
   const deviceLogin = (email: string, password = PASSWORD, deviceName?: string) =>
     call('/api/auth/device-login', { method: 'POST', body: { email, password, deviceName } });
 
@@ -195,7 +200,7 @@ describe.skipIf(!URL)('device tokens for an admin and a member', () => {
     expect(body).toMatchObject({ role: 'member', loginId: member, expiresIn: 30 * DAY });
     expect(body.brainId).toBe(await brainId());
     const bearer = body.token as string;
-    expect(await memberProbe({ bearer })).toBe(410); // past the member gate
+    expect(await memberProbe({ bearer })).toBe('past'); // past the member gate
     // The one shell (W5c) answers a member as a member.
     const shell = await call('/api/shell', { bearer });
     expect(shell.status).toBe(200);
@@ -204,8 +209,8 @@ describe.skipIf(!URL)('device tokens for an admin and a member', () => {
     const refused = await call('/api/push/subscriptions', { bearer });
     expect(refused.status).toBe(403);
     expect((await json(refused)).reason).toBe('member-login');
-    // The client portal's stubs answer every login 410 (W8a).
-    expect((await call('/api/client/shell', { bearer })).status).toBe(410);
+    // The client portal (W8a) is no route since arch A7: a 404.
+    expect((await call('/api/client/shell', { bearer })).status).toBe(404);
     expect(await json(await call('/api/auth/whoami', { bearer }))).toEqual({
       role: 'member',
       loginId: member,
@@ -244,7 +249,7 @@ describe.skipIf(!URL)('device tokens for an admin and a member', () => {
     const value = /mantle_session=([^;]+)/.exec(upgrade.headers.get('set-cookie') ?? '')?.[1];
     expect(value).toBeTruthy();
     const cookie = `mantle_session=${value}`;
-    expect(await memberProbe({ cookie })).toBe(410);
+    expect(await memberProbe({ cookie })).toBe('past');
     // The cookie on its own is no credential for a new cookie.
     const renew = await call('/api/auth/sso', { method: 'POST', cookie });
     expect(renew.status).toBe(401);
@@ -253,7 +258,7 @@ describe.skipIf(!URL)('device tokens for an admin and a member', () => {
     await nearExpiry(signed.deviceId as string);
     const next = await json(await refresh(bearer));
     expect(next.deviceId).not.toBe(signed.deviceId);
-    expect(await memberProbe({ cookie })).toBe(410);
+    expect(await memberProbe({ cookie })).toBe('past');
     // The admin revokes the laptop: its cookie ends on the next request.
     const revoke = await call(`/api/users/${id}/devices/${next.deviceId as string}`, {
       method: 'DELETE',
@@ -277,7 +282,7 @@ describe.skipIf(!URL)('device tokens for an admin and a member', () => {
     const bound = (deviceJti: string) =>
       `mantle_session=${tokens.buildSessionCookie(id, { deviceJti, ttlSeconds: 7 * DAY }).value}`;
     // A live device: the cookie works.
-    expect(await memberProbe({ cookie: bound(await token(id)) })).toBe(410);
+    expect(await memberProbe({ cookie: bound(await token(id)) })).toBe('past');
     // The newest token of the chain has expired.
     const expired = await token(id, { expired: true });
     expect(await memberProbe({ cookie: bound(await token(id, { rotatedTo: expired })) })).toBe(401);
@@ -323,10 +328,10 @@ describe.skipIf(!URL)('device tokens for an admin and a member', () => {
     expect(fresh.maxAge).toBe(7 * DAY);
     expect(fresh.claims?.dj).toBe(tab.deviceId);
     // The tab keeps its own bearer; every other device ends.
-    expect(await memberProbe({ bearer: tab.bearer })).toBe(410);
+    expect(await memberProbe({ bearer: tab.bearer })).toBe('past');
     expect(await memberProbe({ bearer: other.token as string })).toBe(401);
     expect(await memberProbe({ cookie: tab.cookie })).toBe(401);
-    expect(await memberProbe({ cookie: fresh.cookie })).toBe(410);
+    expect(await memberProbe({ cookie: fresh.cookie })).toBe('past');
     // A revoke of the tab's device ends the new cookie with it.
     const revoke = await call(`/api/users/${id}/devices/${tab.deviceId}`, {
       method: 'DELETE',
@@ -463,7 +468,7 @@ describe.skipIf(!URL)('device tokens for an admin and a member', () => {
     });
     expect(out.status).toBe(200);
     expect(await memberProbe({ bearer: phone.token as string })).toBe(401);
-    expect(await memberProbe({ bearer: tablet.token as string })).toBe(410);
+    expect(await memberProbe({ bearer: tablet.token as string })).toBe('past');
   });
 
   // ── Refresh ─────────────────────────────────────────────────────────────
@@ -553,7 +558,7 @@ describe.skipIf(!URL)('device tokens for an admin and a member', () => {
     await call('/api/auth/mobile-logout', { method: 'POST', bearer: m3.token as string });
     expect((await refresh(m3.token as string)).status).toBe(401);
     expect(await memberProbe({ bearer: m3.token as string })).toBe(401);
-    expect(await memberProbe({ bearer: m4.token as string })).toBe(410);
+    expect(await memberProbe({ bearer: m4.token as string })).toBe('past');
     expect(await auditedSettled('auth.token_reuse', mem)).toHaveLength(0);
   });
 
@@ -563,7 +568,7 @@ describe.skipIf(!URL)('device tokens for an admin and a member', () => {
     await nearExpiry(m1.deviceId as string);
     // A thief rotates first and uses the new token.
     const m2 = await json(await refresh(m1.token as string));
-    expect(await memberProbe({ bearer: m2.token as string })).toBe(410);
+    expect(await memberProbe({ bearer: m2.token as string })).toBe('past');
     // The real phone's next call with the old token is an ordinary route.
     expect(await memberProbe({ bearer: m1.token as string })).toBe(401);
     expect(await memberProbe({ bearer: m2.token as string })).toBe(401);
@@ -573,7 +578,7 @@ describe.skipIf(!URL)('device tokens for an admin and a member', () => {
     // And once only: the old token again changes nothing.
     const fresh = await json(await deviceLogin(emailOf('reuse-route')));
     expect(await memberProbe({ bearer: m1.token as string })).toBe(401);
-    expect(await memberProbe({ bearer: fresh.token as string })).toBe(410);
+    expect(await memberProbe({ bearer: fresh.token as string })).toBe('past');
     expect(await auditedSettled('auth.token_reuse', mem)).toHaveLength(1);
   });
 
@@ -687,7 +692,7 @@ describe.skipIf(!URL)('device tokens for an admin and a member', () => {
     expect(body.role).toBe('member');
     // The old token is dead (asked before the new one is used: no reuse).
     expect(await memberProbe({ bearer: phone.token as string })).toBe(401);
-    expect(await memberProbe({ bearer: body.token as string })).toBe(410);
+    expect(await memberProbe({ bearer: body.token as string })).toBe('past');
   });
 
   // ── Dead tokens, limits, labels ─────────────────────────────────────────
@@ -776,8 +781,8 @@ describe.skipIf(!URL)('device tokens for an admin and a member', () => {
 
     const mine = await enrol('/api/member/push', mBearer, `${tag}-m1`);
     expect(mine.status).toBe(200);
-    // The client push routes answer every login 410 (W5c, W8a).
-    expect((await enrol('/api/client/push', mBearer, `${tag}-c1`)).status).toBe(410);
+    // The client push routes (W5c, W8a) are no route since arch A7: a 404.
+    expect((await enrol('/api/client/push', mBearer, `${tag}-c1`)).status).toBe(404);
     const [mRow] = await pushRows(member);
     expect(mRow).toMatchObject({ token_id: mPhone.deviceId, routing_token: `${tag}-m1` });
     const [owner] = await sql<
@@ -791,7 +796,7 @@ describe.skipIf(!URL)('device tokens for an admin and a member', () => {
       devices: [{ id: mRow!.id, platform: 'ios', label: `${tag}-m1`, current: true }],
     });
 
-    expect((await call('/api/client/push/subscriptions', { bearer: mBearer })).status).toBe(410);
+    expect((await call('/api/client/push/subscriptions', { bearer: mBearer })).status).toBe(404);
 
     // Its own toggles. The retired comments toggle is ignored like any
     // unknown field (comments are gone: access matrix T23).
@@ -953,7 +958,7 @@ describe.skipIf(!URL)('device tokens for an admin and a member', () => {
       body: { oldPassword: PASSWORD, newPassword: 'a second long password' },
     });
     expect(res.status).toBe(200);
-    expect(await memberProbe({ bearer: a.token as string })).toBe(410);
+    expect(await memberProbe({ bearer: a.token as string })).toBe('past');
     expect(await memberProbe({ bearer: b.token as string })).toBe(401);
     expect((await pushRows(id)).map((r) => r.routing_token)).toEqual([`${tag}-pwa`]);
   });
@@ -1010,12 +1015,12 @@ describe.skipIf(!URL)('device tokens for an admin and a member', () => {
     expect(left).not.toContain(oldExpired);
     // The device the reaped token enrolled went with it.
     expect(await pushRows(id)).toHaveLength(0);
-    expect(await memberProbe({ bearer: live.token as string })).toBe(410);
+    expect(await memberProbe({ bearer: live.token as string })).toBe('past');
   });
 
   // ── Unread ──────────────────────────────────────────────────────────────
 
-  it('the member chat routes answer 410 since W7c (the inbox is per thread)', async () => {
+  it('the member chat routes are gone (410 from W7c, no route since A7; the inbox is per thread)', async () => {
     const m1 = await json(await deviceLogin(emailOf('member')));
     const bearer = m1.token as string;
     // The unread count and the read cursor moved to the per-thread inbox
@@ -1026,11 +1031,10 @@ describe.skipIf(!URL)('device tokens for an admin and a member', () => {
       ['/api/member/chat', 'GET'],
     ] as const) {
       const res = await call(path, { method, bearer, ...(method === 'POST' ? { body: {} } : {}) });
-      expect(res.status, path).toBe(410);
-      expect((await json(res)).code, path).toBe('gone');
+      expect(res.status, path).toBe(404);
     }
-    // The client chat went in W5c (and the client login in W8a): its routes
-    // answer every login 410.
-    expect((await call('/api/client/chat/unread', { bearer })).status).toBe(410);
+    // The client chat went in W5c (and the client login in W8a): no route
+    // since arch A7.
+    expect((await call('/api/client/chat/unread', { bearer })).status).toBe(404);
   });
 });

@@ -38,9 +38,8 @@ chat logins (11):
   POST /api/assistant/threads/:id/continue
   POST /api/assistant/threads/:id/summarize
   POST /api/assistant/turn
-frame (a frame ticket) (2):
+frame (a frame ticket) (1):
   GET /api/apps/:id/frame
-  GET /api/member/apps/:id/frame
 link (a share token) (2):
   GET /s/:token/bundle/css
   GET /s/:token/frame
@@ -172,22 +171,18 @@ owner rows open to members (118):
   PUT /api/recall/maps/:id/cards/:card
   PUT /api/tables/:id/draft
   PUT /api/tree/items/:id/pin
-public (no credential, or its own) (20):
+public (no credential, or its own) (16):
   GET /.well-known/oauth-authorization-server
   GET /.well-known/oauth-protected-resource
   GET /api/appearance
   GET /api/appearance/logo
   GET /api/auth/bootstrap-state
-  GET /api/auth/client-code
   GET /api/auth/pair/:id
   GET /api/auth/whoami
   GET /api/federation/node/:id
   GET /api/oauth/authorize
   GET /api/version
   GET /pair
-  POST /api/auth/client-code
-  POST /api/auth/client-code/verify
-  POST /api/auth/client-link
   POST /api/auth/logout
   POST /api/auth/mobile-logout
   POST /api/federation/chunks

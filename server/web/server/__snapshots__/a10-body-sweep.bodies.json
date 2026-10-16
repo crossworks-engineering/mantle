@@ -5,7 +5,6 @@
     "areas": ["search"]
   },
   "DELETE /api/access-keys/:id": null,
-  "PATCH /api/access/nodes/:id": null,
   "POST /api/agents": {
     "slug": "sweep",
     "name": "sweep",
@@ -78,7 +77,6 @@
     "providerId": "sweep",
     "modelId": "sweep"
   },
-  "PUT /api/app-nav": null,
   "PUT /api/app-nav/pins": {
     "pins": []
   },
@@ -133,9 +131,6 @@
   },
   "POST /api/assistant/turn/:turnId/cancel": null,
   "POST /api/auth/change-password": null,
-  "POST /api/auth/client-code": null,
-  "POST /api/auth/client-code/verify": null,
-  "POST /api/auth/client-link": null,
   "POST /api/auth/device-login": {
     "email": "sweep@example.invalid",
     "password": "sweep"

@@ -21,7 +21,7 @@ carries no permission of its own. The access model as a whole:
 
 The per-login MCP switch (`mcp_login_access`, 0227) is gone: 0268 archives
 its rows in `archive_mcp_login_access` and freezes the table (an insert or a
-change of its switches is refused). `/api/mcp-logins/*` answers 410. With
+change of its switches is refused). `/api/mcp-logins/*` answered 410 until arch A7 (no route since). With
 the switch gone, no credential it had stopped comes back (W7b fix round 1):
 0268 revokes every static token; a member or client login whose MCP was off
 has its OAuth grants revoked and the peers bound to it disabled; one whose

@@ -10,31 +10,6 @@
  * session and proves each route NOT listed here refuses it.
  */
 export const MEMBER_ROUTES: readonly string[] = [
-  // Removed in W5c (410 code gone): every login reads GET /api/shell. Kept
-  // so an old app reaches the 410.
-  'GET /api/member/shell',
-  // The Library: the items the member's workspaces hold (Phase 1).
-  'GET /api/member/library',
-  'GET /api/member/library/:id',
-  // The Library as a read-only folder tree (folder sharing): items the
-  // member's workspaces hold, folders shown only on the way to them.
-  'GET /api/member/tree/:kind',
-  'GET /api/member/tree/:kind/search',
-  // The member's own folders in that tree and filing its own drafts (folder
-  // plan phase 5): only its own rows change.
-  'POST /api/member/tree/:kind/folders',
-  'PATCH /api/member/tree/:kind/folders/:id',
-  'DELETE /api/member/tree/:kind/folders/:id',
-  'POST /api/member/tree/:kind/move',
-  'GET /api/member/files/:id',
-  'GET /api/member/draws/:id/svg',
-  // The member chat: 410 since W7c (the login's own thread is read and
-  // written through /api/assistant/*, CHAT_LOGIN_ROUTES). Kept so an old
-  // app reaches the 410.
-  'GET /api/member/chat',
-  'POST /api/member/chat',
-  'GET /api/member/chat/unread',
-  'POST /api/member/chat/read',
   // Its own phone's push enrolment, device list and toggles (mobile_roles_push).
   'POST /api/member/push/connect',
   'POST /api/member/push/subscriptions',
@@ -42,70 +17,19 @@ export const MEMBER_ROUTES: readonly string[] = [
   'DELETE /api/member/push/subscriptions/:id',
   'GET /api/member/push/preferences',
   'PUT /api/member/push/preferences',
-  // The member's own space, "Mine" (Phase 2): 410 since W6b (the space is
-  // folded into the brain; lib/gone.ts). Kept so an old app reaches the 410.
-  'GET /api/member/space',
-  'POST /api/member/space',
-  'GET /api/member/space/:id',
-  'PATCH /api/member/space/:id',
-  'DELETE /api/member/space/:id',
-  'PUT /api/member/space/:id/draft',
-  'POST /api/member/space/:id/save',
-  // Share, submit and recall: removed in W5c, 410 gone (lib/gone.ts). Kept
-  // here so a member's old app reaches the 410.
-  'POST /api/member/space/:id/share',
-  'POST /api/member/space/:id/submit',
-  'POST /api/member/space/:id/recall',
-  // Files in the own space: upload, then the bytes (Phase 2, space disk root).
-  'POST /api/member/space-files',
-  'GET /api/member/space/:id/bytes',
   // Live changes to own and team-shared personal items (SSE).
   'GET /api/member/realtime',
-  // Teammates' team-shared items (Phase 2): removed in W5c, 410 gone.
-  'GET /api/member/team-drafts',
-  'GET /api/member/team-drafts/:id',
-  'GET /api/member/team-drafts/:id/bytes',
-  // Apps (Phase 4b): run only. Team level or lower, published build only.
-  'GET /api/member/apps',
-  'POST /api/member/apps/:id/frame-ticket',
-  // Ticket-authed (a sandboxed iframe sends no cookie): a member ticket only.
-  'GET /api/member/apps/:id/frame',
-  'POST /api/member/apps/:id/tool-broker',
-  'POST /api/member/apps/:id/db-broker',
-  // Apps members build (team apps Phase 3): their own and the team's, to
-  // share and read the history of; their own trash and their own snapshots
-  // to delete (access matrix N6). Building is the my_app_* tools on their
-  // own MCP. Submit and recall: removed in W5c, 410 gone.
-  'GET /api/member/my-apps',
-  'GET /api/member/my-apps/deleted',
-  'POST /api/member/my-apps/:id/share',
-  'POST /api/member/my-apps/:id/submit',
-  'POST /api/member/my-apps/:id/recall',
-  'POST /api/member/my-apps/:id/delete',
-  'POST /api/member/my-apps/:id/undelete',
-  'GET /api/member/my-apps/:id/history',
-  'DELETE /api/member/my-apps/:id/history/:snapshotId',
   // The member home: the pinned home app and what its hub.get() answers.
   'GET /api/member/home',
-  // What the member wrote and an admin accepted (Phase 4, plan 6.2): the
-  // list and the saved version, for the author only, on the admin pool with
-  // the author rule in every query (member-accepted.ts).
-  'GET /api/member/accepted',
-  'GET /api/member/accepted/:id',
-  // Everything above in ONE list (item-list alignment): each source read
-  // under its own rules, exactly as its own route reads it (member-items.ts).
-  'GET /api/member/items',
-  // Clients' submitted items (client logins C5, decision 5 B): removed in
-  // W5c, 410 gone.
-  'GET /api/member/client-requests',
-  'GET /api/member/client-requests/:id',
-  'GET /api/member/client-requests/:id/bytes',
-  // The client thread on a Library item at client level (C5, decision 8).
   // The member's own MCP screen (team apps Phase 1): the connector URL, their
   // own MCP and Write switches (read only), and their OWN connected clients,
   // one of which they may disconnect (lib/mcp-clients.ts, actor-scoped).
   'GET /api/member/mcp',
   'DELETE /api/member/mcp/clients/:id',
+  // The member routes retired over W5c to W8d (the shell, the Library and
+  // its tree, the member chat, the space, the team drafts, the member apps
+  // and frame, my apps, the accepted items and the client requests)
+  // answered 410 until arch A7, which deleted their stubs.
 ];
 
 export function isMemberRoute(method: string, pattern: string): boolean {

@@ -1,7 +1,7 @@
 /**
  * The team responder on every brain, a fresh install included. Agent and
- * tool-group levels went in workspaces W7b (frozen by 0268, their route
- * answers 410) and left the code in W8c (the seeder writes none, the
+ * tool-group levels went in workspaces W7b (frozen by 0268; their route's
+ * 410 stub went in arch A7) and left the code in W8c (the seeder writes none, the
  * reconcile reads none). What is left to hold:
  *  - a FRESH install (onboarding's applyManifest) ships the responder with
  *    `team-read`, `team-read-admin` and `formulas-eval`, and only
@@ -51,7 +51,6 @@ describe.skipIf(!URL)('team-responder opens in one step on every brain', () => {
   let seed: typeof import('./seed');
   let rec: typeof import('./reconcile');
   let content: typeof import('@mantle/content');
-  let levelRoute: typeof import('../../app/api/access/agents/[slug]/route');
   // fresh: installed with this manifest. opened: an older brain whose admin
   // opened the responder (the old open call took `team-read-admin` off it).
   const brains = { fresh: randomUUID(), opened: randomUUID() };
@@ -81,10 +80,6 @@ describe.skipIf(!URL)('team-responder opens in one step on every brain', () => {
                 values (${ws!.id as string}, ${member}, false)`;
     return ws!.id as string;
   };
-  const setLevel = (owner: string) => {
-    h.owner = owner;
-    return levelRoute.PATCH();
-  };
   // The member chat's agent with none named (lib/assistant-chat.ts and the
   // turn engine: defaultWorkspaceAssistant).
   const memberChatAgent = async (owner: string) => {
@@ -100,7 +95,6 @@ describe.skipIf(!URL)('team-responder opens in one step on every brain', () => {
     seed = await import('./seed');
     rec = await import('./reconcile');
     content = await import('@mantle/content');
-    levelRoute = await import('../../app/api/access/agents/[slug]/route');
     for (const owner of Object.values(brains)) {
       await admin`insert into auth.users (id, email, password_hash, role)
                   values (${owner}, ${`tr-${owner.slice(0, 8)}@example.invalid`}, 'x', 'admin')`;
@@ -155,11 +149,6 @@ describe.skipIf(!URL)('team-responder opens in one step on every brain', () => {
     });
     expect(await memberChatAgent(brains.fresh)).toBeNull();
   }, 120_000);
-
-  it('W7b: the level route answers 410', async () => {
-    const res = await setLevel(brains.opened);
-    expect(res.status).toBe(410);
-  });
 
   it('W8c: the reconcile never puts team-read-admin back on the Team assistant', async () => {
     const row = await agent(brains.opened, 'team-responder');

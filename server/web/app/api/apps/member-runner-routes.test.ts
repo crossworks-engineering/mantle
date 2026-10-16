@@ -626,37 +626,6 @@ describe('member frame', () => {
   });
 });
 
-describe('the removed member routes (W8d)', () => {
-  it('the member app, file and drawing routes answer 410 gone to a member', async () => {
-    const gone = [
-      await (await import('../member/apps/route')).GET(),
-      await (await import('../member/apps/[id]/tool-broker/route')).POST(),
-      await (await import('../member/apps/[id]/db-broker/route')).POST(),
-      await (await import('../member/apps/[id]/frame-ticket/route')).POST(),
-      await (await import('../member/files/[id]/route')).GET(),
-      await (await import('../member/draws/[id]/svg/route')).GET(),
-    ];
-    for (const res of gone) {
-      expect(res.status).toBe(410);
-      expect(await res.json()).toMatchObject({ code: 'gone' });
-    }
-    // Nothing ran: no lookup, no tool, no SQLite.
-    expect(h.lookups).toEqual([]);
-    expect(h.dispatched).toEqual([]);
-    expect(h.dbCalls).toEqual([]);
-  });
-
-  it('the member frame keeps its ticket guard, then answers 410 and renders nothing', async () => {
-    const memberFrame = framed((await import('../member/apps/[id]/frame/route')).GET);
-    const req = (t: string) =>
-      new Request(`http://x/api/member/apps/${APP}/frame?t=${encodeURIComponent(t)}`);
-    expect((await memberFrame(new Request('http://x/f'), params())).status).toBe(401);
-    const t = tokens.buildAppFrameTicket({ ownerId: ANCHOR, appId: APP, loginId: LOGIN });
-    expect((await memberFrame(req(t), params())).status).toBe(410);
-    expect(h.rendered).toEqual([]);
-  });
-});
-
 describe('member home', () => {
   it('gives no hub data when the Team workspace names no home app', async () => {
     const body = await (await homeRoute()).json();

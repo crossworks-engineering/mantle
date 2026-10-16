@@ -6,8 +6,8 @@
  *  - GET /api/tool-groups and GET /api/tool-groups/:id carry no `audience`
  *    (W8c: the column is frozen until W10 and nothing reads it), even for a
  *    group whose frozen column says 'team';
- *  - PATCH /api/access/tool-groups/:slug answers 410 since W7b and changes
- *    nothing.
+ *  - PATCH /api/access/tool-groups/:slug answered 410 from W7b; its stub
+ *    went in arch A7 (server/web/server/a7-gone-routes.test.ts).
  *
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run tool-group-level-routes.db.test
  */
@@ -32,7 +32,6 @@ vi.mock('@/lib/auth', async (importOriginal) => ({
   })),
 }));
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Route = (req: Request, ctx?: { params: Promise<any> }) => Promise<Response>;
 type Group = { id: string; slug: string; name: string; grantedTo?: unknown[] };
 
@@ -65,9 +64,8 @@ describe.skipIf(!URL)('the tool group level is gone from the owner API on Postgr
     process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
     m = await import('@mantle/db');
     sqlTag = (await import('drizzle-orm')).sql;
-    r.list = (await import('../../tool-groups/route')).GET as unknown as Route;
-    r.get = (await import('../../tool-groups/[id]/route')).GET as unknown as Route;
-    r.level = (await import('./[slug]/route')).PATCH as unknown as Route;
+    r.list = (await import('./route')).GET as unknown as Route;
+    r.get = (await import('./[id]/route')).GET as unknown as Route;
 
     await m.db.execute(sqlTag`
       insert into auth.users (id, email, password_hash, role) values (${owner}, ${`${tag}@example.invalid`}, 'x', 'admin')`);
@@ -103,15 +101,5 @@ describe.skipIf(!URL)('the tool group level is gone from the owner API on Postgr
     const { group } = (await res.json()) as { group: Group };
     expect(group.slug).toBe(held);
     expect(group).not.toHaveProperty('audience');
-  });
-
-  it('W7b: the level route answers 410 and changes nothing', async () => {
-    const before = await list();
-    for (const body of [{ audience: 'team' }, { audience: 'admin' }, { audience: 'owner' }]) {
-      const res = await (r.level as unknown as () => Promise<Response>)();
-      expect(res.status, JSON.stringify(body)).toBe(410);
-      expect(await res.json()).toMatchObject({ code: 'gone' });
-    }
-    expect(await list()).toEqual(before);
   });
 });

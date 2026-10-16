@@ -1,8 +1,0 @@
-import { LIBRARY_GONE_MESSAGE, gone } from '@/lib/gone';
-
-/**
- * GET /api/member/accepted/:id
- * Removed in workspaces W7e (unused since W6b): see /api/member/accepted.
- * The old guard runs first, then 410 `{ error, code: 'gone' }`.
- */
-export const GET = gone('member', LIBRARY_GONE_MESSAGE);

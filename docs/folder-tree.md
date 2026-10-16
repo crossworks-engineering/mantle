@@ -195,8 +195,8 @@ inside a folder is not kept: items follow the chosen sort, as on every kind.
 `GET /api/app-nav` still answers in its old shape, built from the rows, for
 clients from before the tree: each folder's subfolders then its apps by name,
 top-level apps left unsorted, and `rev` a digest of the layout. `PUT
-/api/app-nav` (the layout save) answers 410 with a message to update the
-app; `PUT /api/app-nav/pins` and the open counter keep working through
+/api/app-nav` (the layout save) answered 410 with a message to update the
+app until arch A7 (a 405 since: the path serves GET only); `PUT /api/app-nav/pins` and the open counter keep working through
 `item_marks`. Tree writes to apps also notify `app_nav_changed`, so an older
 client refetches.
 
@@ -205,9 +205,9 @@ client refetches.
 Apps are not a reader tree kind (`READER_TREE_KINDS`): a member RUNS an app,
 and that rule is not the Library's read rule (a green published build, never
 through an embed). So the launcher gets its folders from the list that
-already holds the rule: `GET /api/member/apps` answers `folders` next to
-`apps` (the client launcher, `GET /api/client/apps`, answers 410 since
-workspaces W5c) (`AppLauncherFolder`: id, name, icon, colour, `parentId`,
+already held the rule: `GET /api/member/apps` answered `folders` next to
+`apps` (a 410 stub from W8d, and the client launcher, `GET
+/api/client/apps`, from W5c; both deleted in arch A7) (`AppLauncherFolder`: id, name, icon, colour, `parentId`,
 `appIds`; `packages/content/src/app-folders.ts`).
 
 - **One rule.** `appLauncher(anchor, reader)` reads the apps the reader may
@@ -288,7 +288,8 @@ brain's tree from its personal space (`/api/member/tree/:kind`, its
 folders, move and search). Migration 0267 folded every personal space into
 the brain: each personal item is a brain item in its login's private
 workspace, read and written through the normal routes. The
-`/api/member/tree/*` routes answer 410 `{ error, code: 'gone' }`. What this
+`/api/member/tree/*` routes answered 410 `{ error, code: 'gone' }` until
+arch A7 deleted them. What this
 page said about the level share (phase 4) and drafts in place (phase 5) is
 in the repository history before workspaces W8f.
 

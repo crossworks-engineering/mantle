@@ -15,8 +15,8 @@ What changed for the people this page used to describe:
   (workspaces W6b, migration 0267). Their items are brain items homed
   there.
 - **Review, submit, accept, take over, team drafts and the member chat
-  routes** are removed (W5c and W7c). The removed routes answer 410
-  `{ error, code: 'gone' }`.
+  routes** are removed (W5c and W7c). The removed routes answered 410
+  `{ error, code: 'gone' }` until arch A7 deleted their stubs.
 - **Client logins** are removed (W8a): [client-logins.md](./client-logins.md).
 
 What this page said about the member role, personal spaces and review is

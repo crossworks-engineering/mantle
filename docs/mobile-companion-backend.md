@@ -4,6 +4,13 @@
 'comment'` is never sent): the brain has no comments. Chat replies and review
 > results push as before.
 
+> **Update 2026-10-16 (arch A7):** every retired route this page says answers
+> 410 `{ error, code: "gone" }` (the member and client shells, chats, bytes,
+> Library, accepted items and apps, the email-code sign-in) is deleted: its
+> path answers a signed-in caller 404 `{ "error": "not found" }`, and a
+> caller with no credential the gate's 401. A phone build that still calls
+> one shows its generic error instead of "update".
+
 _Last updated: 2026-10-02 (contract v1.1: every push names its brain and its login, for devices that hold several logins)._
 
 API + schema added to Mantle to support the **Mantle Companion** mobile app

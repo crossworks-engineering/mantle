@@ -38,6 +38,11 @@ deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
   (`mantle_item_others_read`); such a change is refused again. In a scope
   it answers only for an item the scope reads (NULL, refused, for any
   other).
+- **The 410 stubs are gone** (132 retired route files and the PUT of
+  `/api/app-nav`): their paths answer a signed-in caller 404 (`PUT
+  /api/app-nav` 405), and no credential the gate's 401 as before.
+  `GET /api/apps/:id` with an id that is not a uuid is a 404, where it was
+  a 500. Count a box's stub hits first: `scripts/arch-scoreboard-box.sh`.
 
 ## Unreleased: approvals, second lows round
 

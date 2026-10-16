@@ -10,7 +10,8 @@
  *   workspace setting since task d78e7bde; kept one release for an older
  *   client); `teamAssistant` null (no workspace is the members' since 0286)
  *
- * GET requests was removed in W5c (review-gone-routes.test.ts pins its 410).
+ * GET requests was removed in W5c (a 410 stub until arch A7,
+ * server/web/server/a7-gone-routes.test.ts).
  *
  * GET members (the Chat archive) was removed on 2026-10-09; auth-sweep.test.ts
  * pins its 404.

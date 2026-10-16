@@ -12,7 +12,7 @@ and in the item's Grant Access panel. Read
   levels were frozen by migration 0268 (W7b). Nothing reads them for
   access.
 - `GET|PATCH /api/access/nodes/:id`, folder shares and `access_set` on an
-  item are gone (410 `gone`, or refused). The shadow report and the
+  item are gone (410 `gone` until arch A7, no route since; or refused). The shadow report and the
   nightly `share-drift` sweep are gone.
 - A public link serves its item and its served list
   (`shares.settings.served`, migration 0262): [sharing.md](./sharing.md).

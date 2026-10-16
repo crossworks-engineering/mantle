@@ -146,7 +146,6 @@ export { dataAccessOf, type AppDataAccess } from './app-data-access';
 
 export {
   APP_NAV_CHANGED_CHANNEL,
-  APP_NAV_LAYOUT_RETIRED,
   listAppNavItems,
   loadAppNavView,
   notifyAppNavChanged,

@@ -1,7 +1,6 @@
 import { NextResponse } from '@/server/http-compat';
 import { ownerCaller } from '@/lib/auth';
-import { goneResponse } from '@/lib/gone';
-import { APP_NAV_LAYOUT_RETIRED, loadAppNavView } from '@mantle/content';
+import { loadAppNavView } from '@mantle/content';
 
 /**
  * /api/app-nav — the Apps sidebar in its original shape, for clients from
@@ -12,16 +11,10 @@ import { APP_NAV_LAYOUT_RETIRED, loadAppNavView } from '@mantle/content';
  * this login's pins and open counts, and every app, slim. The first read of a
  * brain moves its old layout document into the tree (tree/apps-nav.ts).
  *
- * PUT used to save the layout document. The layout is the tree's now and is
- * changed through /api/tree/apps, so a save is refused (410) with a message
- * an older client can show, rather than written somewhere nothing reads.
+ * The layout is the tree's, changed through /api/tree/apps. The old save
+ * (PUT), a 410 stub since the tree, went with the stubs in arch A7.
  */
 export async function GET() {
   const user = ownerCaller();
   return NextResponse.json(await loadAppNavView(user.id, user.actor.id));
-}
-
-export async function PUT() {
-  ownerCaller();
-  return goneResponse(APP_NAV_LAYOUT_RETIRED);
 }

@@ -16,8 +16,9 @@ else: as a user of a workspace that holds it.
   and every gate answers it as a stranger (`server/web/server/role-sweep.test.ts`).
 - Email-code sign-in. `GET`/`POST /api/auth/client-code`,
   `POST /api/auth/client-code/verify`,
-  `GET`/`PUT /api/team-admin/clients/signin-sender` and its `preview` answer
-  410 `{ error, code: 'gone' }` before any work. The sign-in code queue
+  `GET`/`PUT /api/team-admin/clients/signin-sender` and its `preview`
+  answered 410 `{ error, code: 'gone' }` before any work until arch A7,
+  which deleted their stubs (no route since: a 404). The sign-in code queue
   (`mantle.client.code`) has no worker, and the nightly code reaper is gone.
 - Every role fence that came with the client: the client session and
   device lifetimes, the client gate, the routes closed to a client, the
@@ -26,8 +27,9 @@ else: as a user of a workspace that holds it.
 - `MANTLE_CLIENT_SPACES_TOTAL_BYTES` (the client spaces took no write since
   W6b).
 
-The old `/api/client/*` routes stay as stubs that answer every signed-in
-login 410 code gone, so an old app can say "update".
+The old `/api/client/*` routes were stubs that answered every signed-in
+login 410 code gone, so an old app could say "update", until arch A7
+deleted them (no route since: a 404, the gate's 401 with no credential).
 
 ## Migration 0272
 

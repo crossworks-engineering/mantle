@@ -1,0 +1,462 @@
+DELETE /api/admin/space/:id none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+DELETE /api/admin/space/:id owner: 410 application/json {"error":"Your own items are in your private workspace now. Open them from the normal lists.","code":"gone"} -> 404 application/json {"error":"not found"}
+DELETE /api/admin/space/:id member: 403 application/json {"error":"forbidden","reason":"member-login","message":"Not available to member logins."} -> 404 application/json {"error":"not found"}
+DELETE /api/apps/members/:id/test none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+DELETE /api/apps/members/:id/test owner: 410 application/json {"error":"Member app review was removed. Members share apps with the team in the app.","code":"gone"} -> 404 application/json {"error":"not found"}
+DELETE /api/apps/members/:id/test member: 403 application/json {"error":"forbidden","reason":"member-login","message":"Not available to member logins."} -> 404 application/json {"error":"not found"}
+DELETE /api/client/push/subscriptions/:id none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+DELETE /api/client/push/subscriptions/:id owner: 410 application/json {"error":"This feature was removed. Update the app.","code":"gone"} -> 404 application/json {"error":"not found"}
+DELETE /api/client/push/subscriptions/:id member: 410 application/json {"error":"This feature was removed. Update the app.","code":"gone"} -> 404 application/json {"error":"not found"}
+DELETE /api/client/space/:id none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+DELETE /api/client/space/:id owner: 410 application/json {"error":"This feature was removed. Update the app.","code":"gone"} -> 404 application/json {"error":"not found"}
+DELETE /api/client/space/:id member: 410 application/json {"error":"This feature was removed. Update the app.","code":"gone"} -> 404 application/json {"error":"not found"}
+DELETE /api/mcp-logins/:id/tokens/:tokenId none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+DELETE /api/mcp-logins/:id/tokens/:tokenId owner: 410 application/json {"error":"There is no per-login MCP switch any more: every login reaches MCP in its own workspaces. Update the app.","code":"gone"} -> 404 application/json {"error":"not found"}
+DELETE /api/mcp-logins/:id/tokens/:tokenId member: 403 application/json {"error":"forbidden","reason":"member-login","message":"Not available to member logins."} -> 404 application/json {"error":"not found"}
+DELETE /api/member/my-apps/:id/history/:snapshotId none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+DELETE /api/member/my-apps/:id/history/:snapshotId owner: 403 application/json {"error":"forbidden","reason":"admin-login","message":"This route is for member logins."} -> 404 application/json {"error":"not found"}
+DELETE /api/member/my-apps/:id/history/:snapshotId member: 410 application/json {"error":"Your own items are in your private workspace now. Open them from the normal lists.","code":"gone"} -> 404 application/json {"error":"not found"}
+DELETE /api/member/space/:id none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+DELETE /api/member/space/:id owner: 403 application/json {"error":"forbidden","reason":"admin-login","message":"This route is for member logins."} -> 404 application/json {"error":"not found"}
+DELETE /api/member/space/:id member: 410 application/json {"error":"Your own items are in your private workspace now. Open them from the normal lists.","code":"gone"} -> 404 application/json {"error":"not found"}
+DELETE /api/member/tree/:kind/folders/:id none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+DELETE /api/member/tree/:kind/folders/:id owner: 403 application/json {"error":"forbidden","reason":"admin-login","message":"This route is for member logins."} -> 404 application/json {"error":"not found"}
+DELETE /api/member/tree/:kind/folders/:id member: 410 application/json {"error":"Your own items are in your private workspace now. Open them from the normal lists.","code":"gone"} -> 404 application/json {"error":"not found"}
+DELETE /api/team-admin/clients/:id/signin-link none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+DELETE /api/team-admin/clients/:id/signin-link owner: 410 application/json {"error":"This feature was removed. Update the app.","code":"gone"} -> 404 application/json {"error":"not found"}
+DELETE /api/team-admin/clients/:id/signin-link member: 403 application/json {"error":"forbidden","reason":"member-login","message":"Not available to member logins."} -> 404 application/json {"error":"not found"}
+DELETE /api/team-admin/hub-app none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+DELETE /api/team-admin/hub-app owner: 410 application/json {"error":"The member home app moved: each workspace sets its landing page on its own screen. Update the app.","code":"gone"} -> 404 application/json {"error":"not found"}
+DELETE /api/team-admin/hub-app member: 403 application/json {"error":"forbidden","reason":"member-login","message":"Not available to member logins."} -> 404 application/json {"error":"not found"}
+GET /api/access/client-report none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+GET /api/access/client-report owner: 410 application/json {"error":"This feature was removed. Update the app.","code":"gone"} -> 404 application/json {"error":"not found"}
+GET /api/access/client-report member: 403 application/json {"error":"forbidden","reason":"member-login","message":"Not available to member logins."} -> 404 application/json {"error":"not found"}
+GET /api/access/nodes/:id none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+GET /api/access/nodes/:id owner: 410 application/json {"error":"Sharing levels are gone. Use Grant Access.","code":"gone"} -> 404 application/json {"error":"not found"}
+GET /api/access/nodes/:id member: 403 application/json {"error":"forbidden","reason":"member-login","message":"Not available to member logins."} -> 404 application/json {"error":"not found"}
+GET /api/admin/space none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+GET /api/admin/space owner: 410 application/json {"error":"Your own items are in your private workspace now. Open them from the normal lists.","code":"gone"} -> 404 application/json {"error":"not found"}
+GET /api/admin/space member: 403 application/json {"error":"forbidden","reason":"member-login","message":"Not available to member logins."} -> 404 application/json {"error":"not found"}
+GET /api/admin/space/:id none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+GET /api/admin/space/:id owner: 410 application/json {"error":"Your own items are in your private workspace now. Open them from the normal lists.","code":"gone"} -> 404 application/json {"error":"not found"}
+GET /api/admin/space/:id member: 403 application/json {"error":"forbidden","reason":"member-login","message":"Not available to member logins."} -> 404 application/json {"error":"not found"}
+GET /api/admin/space/:id/bytes none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+GET /api/admin/space/:id/bytes owner: 410 application/json {"error":"Your own items are in your private workspace now. Open them from the normal lists.","code":"gone"} -> 404 application/json {"error":"not found"}
+GET /api/admin/space/:id/bytes member: 403 application/json {"error":"forbidden","reason":"member-login","message":"Not available to member logins."} -> 404 application/json {"error":"not found"}
+GET /api/apps/members none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+GET /api/apps/members owner: 410 application/json {"error":"Member app review was removed. Members share apps with the team in the app.","code":"gone"} -> 404 application/json {"error":"not found"}
+GET /api/apps/members member: 403 application/json {"error":"forbidden","reason":"member-login","message":"Not available to member logins."} -> 404 application/json {"error":"not found"}
+GET /api/apps/members/:id none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+GET /api/apps/members/:id owner: 410 application/json {"error":"Member app review was removed. Members share apps with the team in the app.","code":"gone"} -> 404 application/json {"error":"not found"}
+GET /api/apps/members/:id member: 403 application/json {"error":"forbidden","reason":"member-login","message":"Not available to member logins."} -> 404 application/json {"error":"not found"}
+GET /api/apps/members/:id/activity none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+GET /api/apps/members/:id/activity owner: 410 application/json {"error":"Member app review was removed. Members share apps with the team in the app.","code":"gone"} -> 404 application/json {"error":"not found"}
+GET /api/apps/members/:id/activity member: 403 application/json {"error":"forbidden","reason":"member-login","message":"Not available to member logins."} -> 404 application/json {"error":"not found"}
+GET /api/apps/members/:id/history none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+GET /api/apps/members/:id/history owner: 410 application/json {"error":"Member app review was removed. Members share apps with the team in the app.","code":"gone"} -> 404 application/json {"error":"not found"}
+GET /api/apps/members/:id/history member: 403 application/json {"error":"forbidden","reason":"member-login","message":"Not available to member logins."} -> 404 application/json {"error":"not found"}
+GET /api/apps/members/:id/test/frame none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+GET /api/apps/members/:id/test/frame owner: 410 application/json {"error":"Member app review was removed. Members share apps with the team in the app.","code":"gone"} -> 404 application/json {"error":"not found"}
+GET /api/apps/members/:id/test/frame member: 403 application/json {"error":"forbidden","reason":"member-login","message":"Not available to member logins."} -> 404 application/json {"error":"not found"}
+GET /api/auth/client-code none: 410 application/json {"error":"Email-code sign-in has ended. Sign in with your password.","code":"gone"} -> 404 application/json {"error":"not found"}
+GET /api/auth/client-code owner: 410 application/json {"error":"Email-code sign-in has ended. Sign in with your password.","code":"gone"} -> 404 application/json {"error":"not found"}
+GET /api/auth/client-code member: 410 application/json {"error":"Email-code sign-in has ended. Sign in with your password.","code":"gone"} -> 404 application/json {"error":"not found"}
+GET /api/client/accepted/:id none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+GET /api/client/accepted/:id owner: 410 application/json {"error":"This feature was removed. Update the app.","code":"gone"} -> 404 application/json {"error":"not found"}
+GET /api/client/accepted/:id member: 410 application/json {"error":"This feature was removed. Update the app.","code":"gone"} -> 404 application/json {"error":"not found"}
+GET /api/client/apps none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+GET /api/client/apps owner: 410 application/json {"error":"This feature was removed. Update the app.","code":"gone"} -> 404 application/json {"error":"not found"}
+GET /api/client/apps member: 410 application/json {"error":"This feature was removed. Update the app.","code":"gone"} -> 404 application/json {"error":"not found"}
+GET /api/client/apps/:id/frame none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+GET /api/client/apps/:id/frame owner: 410 application/json {"error":"This feature was removed. Update the app.","code":"gone"} -> 404 application/json {"error":"not found"}
+GET /api/client/apps/:id/frame member: 410 application/json {"error":"This feature was removed. Update the app.","code":"gone"} -> 404 application/json {"error":"not found"}
+GET /api/client/chat none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+GET /api/client/chat owner: 410 application/json {"error":"This feature was removed. Update the app.","code":"gone"} -> 404 application/json {"error":"not found"}
+GET /api/client/chat member: 410 application/json {"error":"This feature was removed. Update the app.","code":"gone"} -> 404 application/json {"error":"not found"}
+GET /api/client/chat/unread none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+GET /api/client/chat/unread owner: 410 application/json {"error":"This feature was removed. Update the app.","code":"gone"} -> 404 application/json {"error":"not found"}
+GET /api/client/chat/unread member: 410 application/json {"error":"This feature was removed. Update the app.","code":"gone"} -> 404 application/json {"error":"not found"}
+GET /api/client/draws/:id/svg none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+GET /api/client/draws/:id/svg owner: 410 application/json {"error":"This feature was removed. Update the app.","code":"gone"} -> 404 application/json {"error":"not found"}
+GET /api/client/draws/:id/svg member: 410 application/json {"error":"This feature was removed. Update the app.","code":"gone"} -> 404 application/json {"error":"not found"}
+GET /api/client/files/:id none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+GET /api/client/files/:id owner: 410 application/json {"error":"This feature was removed. Update the app.","code":"gone"} -> 404 application/json {"error":"not found"}
+GET /api/client/files/:id member: 410 application/json {"error":"This feature was removed. Update the app.","code":"gone"} -> 404 application/json {"error":"not found"}
+GET /api/client/items none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+GET /api/client/items owner: 410 application/json {"error":"This feature was removed. Update the app.","code":"gone"} -> 404 application/json {"error":"not found"}
+GET /api/client/items member: 410 application/json {"error":"This feature was removed. Update the app.","code":"gone"} -> 404 application/json {"error":"not found"}
+GET /api/client/push/preferences none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+GET /api/client/push/preferences owner: 410 application/json {"error":"This feature was removed. Update the app.","code":"gone"} -> 404 application/json {"error":"not found"}
+GET /api/client/push/preferences member: 410 application/json {"error":"This feature was removed. Update the app.","code":"gone"} -> 404 application/json {"error":"not found"}
+GET /api/client/push/subscriptions none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+GET /api/client/push/subscriptions owner: 410 application/json {"error":"This feature was removed. Update the app.","code":"gone"} -> 404 application/json {"error":"not found"}
+GET /api/client/push/subscriptions member: 410 application/json {"error":"This feature was removed. Update the app.","code":"gone"} -> 404 application/json {"error":"not found"}
+GET /api/client/shared none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+GET /api/client/shared owner: 410 application/json {"error":"This feature was removed. Update the app.","code":"gone"} -> 404 application/json {"error":"not found"}
+GET /api/client/shared member: 410 application/json {"error":"This feature was removed. Update the app.","code":"gone"} -> 404 application/json {"error":"not found"}
+GET /api/client/shared/:id none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+GET /api/client/shared/:id owner: 410 application/json {"error":"This feature was removed. Update the app.","code":"gone"} -> 404 application/json {"error":"not found"}
+GET /api/client/shared/:id member: 410 application/json {"error":"This feature was removed. Update the app.","code":"gone"} -> 404 application/json {"error":"not found"}
+GET /api/client/shell none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+GET /api/client/shell owner: 410 application/json {"error":"This feature was removed. Update the app.","code":"gone"} -> 404 application/json {"error":"not found"}
+GET /api/client/shell member: 410 application/json {"error":"This feature was removed. Update the app.","code":"gone"} -> 404 application/json {"error":"not found"}
+GET /api/client/space none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+GET /api/client/space owner: 410 application/json {"error":"This feature was removed. Update the app.","code":"gone"} -> 404 application/json {"error":"not found"}
+GET /api/client/space member: 410 application/json {"error":"This feature was removed. Update the app.","code":"gone"} -> 404 application/json {"error":"not found"}
+GET /api/client/space/:id none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+GET /api/client/space/:id owner: 410 application/json {"error":"This feature was removed. Update the app.","code":"gone"} -> 404 application/json {"error":"not found"}
+GET /api/client/space/:id member: 410 application/json {"error":"This feature was removed. Update the app.","code":"gone"} -> 404 application/json {"error":"not found"}
+GET /api/client/space/:id/bytes none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+GET /api/client/space/:id/bytes owner: 410 application/json {"error":"This feature was removed. Update the app.","code":"gone"} -> 404 application/json {"error":"not found"}
+GET /api/client/space/:id/bytes member: 410 application/json {"error":"This feature was removed. Update the app.","code":"gone"} -> 404 application/json {"error":"not found"}
+GET /api/client/tree/:kind none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+GET /api/client/tree/:kind owner: 410 application/json {"error":"This feature was removed. Update the app.","code":"gone"} -> 404 application/json {"error":"not found"}
+GET /api/client/tree/:kind member: 410 application/json {"error":"This feature was removed. Update the app.","code":"gone"} -> 404 application/json {"error":"not found"}
+GET /api/client/tree/:kind/search none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+GET /api/client/tree/:kind/search owner: 410 application/json {"error":"This feature was removed. Update the app.","code":"gone"} -> 404 application/json {"error":"not found"}
+GET /api/client/tree/:kind/search member: 410 application/json {"error":"This feature was removed. Update the app.","code":"gone"} -> 404 application/json {"error":"not found"}
+GET /api/mcp-logins none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+GET /api/mcp-logins owner: 410 application/json {"error":"There is no per-login MCP switch any more: every login reaches MCP in its own workspaces. Update the app.","code":"gone"} -> 404 application/json {"error":"not found"}
+GET /api/mcp-logins member: 403 application/json {"error":"forbidden","reason":"member-login","message":"Not available to member logins."} -> 404 application/json {"error":"not found"}
+GET /api/member/accepted none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+GET /api/member/accepted owner: 403 application/json {"error":"forbidden","reason":"admin-login","message":"This route is for member logins."} -> 404 application/json {"error":"not found"}
+GET /api/member/accepted member: 410 application/json {"error":"The Library is gone: open the items of your workspaces from the normal lists. Update the app.","code":"gone"} -> 404 application/json {"error":"not found"}
+GET /api/member/accepted/:id none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+GET /api/member/accepted/:id owner: 403 application/json {"error":"forbidden","reason":"admin-login","message":"This route is for member logins."} -> 404 application/json {"error":"not found"}
+GET /api/member/accepted/:id member: 410 application/json {"error":"The Library is gone: open the items of your workspaces from the normal lists. Update the app.","code":"gone"} -> 404 application/json {"error":"not found"}
+GET /api/member/apps none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+GET /api/member/apps owner: 403 application/json {"error":"forbidden","reason":"admin-login","message":"This route is for member logins."} -> 404 application/json {"error":"not found"}
+GET /api/member/apps member: 410 application/json {"error":"This route moved: files, drawings and apps open from the normal routes. Update the app.","code":"gone"} -> 404 application/json {"error":"not found"}
+GET /api/member/apps/:id/frame none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+GET /api/member/apps/:id/frame owner: 401 text/plain frame ticket required -> 404 application/json {"error":"not found"}
+GET /api/member/apps/:id/frame member: 401 text/plain frame ticket required -> 404 application/json {"error":"not found"}
+GET /api/member/chat none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+GET /api/member/chat owner: 403 application/json {"error":"forbidden","reason":"admin-login","message":"This route is for member logins."} -> 404 application/json {"error":"not found"}
+GET /api/member/chat member: 410 application/json {"error":"Chat moved to the assistant screen. Update the app.","code":"gone"} -> 404 application/json {"error":"not found"}
+GET /api/member/chat/unread none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+GET /api/member/chat/unread owner: 403 application/json {"error":"forbidden","reason":"admin-login","message":"This route is for member logins."} -> 404 application/json {"error":"not found"}
+GET /api/member/chat/unread member: 410 application/json {"error":"Chat moved to the assistant screen. Update the app.","code":"gone"} -> 404 application/json {"error":"not found"}
+GET /api/member/client-requests none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+GET /api/member/client-requests owner: 403 application/json {"error":"forbidden","reason":"admin-login","message":"This route is for member logins."} -> 404 application/json {"error":"not found"}
+GET /api/member/client-requests member: 410 application/json {"error":"This feature was removed. Update the app.","code":"gone"} -> 404 application/json {"error":"not found"}
+GET /api/member/client-requests/:id none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+GET /api/member/client-requests/:id owner: 403 application/json {"error":"forbidden","reason":"admin-login","message":"This route is for member logins."} -> 404 application/json {"error":"not found"}
+GET /api/member/client-requests/:id member: 410 application/json {"error":"This feature was removed. Update the app.","code":"gone"} -> 404 application/json {"error":"not found"}
+GET /api/member/client-requests/:id/bytes none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+GET /api/member/client-requests/:id/bytes owner: 403 application/json {"error":"forbidden","reason":"admin-login","message":"This route is for member logins."} -> 404 application/json {"error":"not found"}
+GET /api/member/client-requests/:id/bytes member: 410 application/json {"error":"This feature was removed. Update the app.","code":"gone"} -> 404 application/json {"error":"not found"}
+GET /api/member/draws/:id/svg none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+GET /api/member/draws/:id/svg owner: 401 application/json {"error":"unauthorized"} -> 404 application/json {"error":"not found"}
+GET /api/member/draws/:id/svg member: 410 application/json {"error":"This route moved: files, drawings and apps open from the normal routes. Update the app.","code":"gone"} -> 404 application/json {"error":"not found"}
+GET /api/member/files/:id none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+GET /api/member/files/:id owner: 401 application/json {"error":"unauthorized"} -> 404 application/json {"error":"not found"}
+GET /api/member/files/:id member: 410 application/json {"error":"This route moved: files, drawings and apps open from the normal routes. Update the app.","code":"gone"} -> 404 application/json {"error":"not found"}
+GET /api/member/items none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+GET /api/member/items owner: 403 application/json {"error":"forbidden","reason":"admin-login","message":"This route is for member logins."} -> 404 application/json {"error":"not found"}
+GET /api/member/items member: 410 application/json {"error":"Your own items are in your private workspace now. Open them from the normal lists.","code":"gone"} -> 404 application/json {"error":"not found"}
+GET /api/member/library none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+GET /api/member/library owner: 403 application/json {"error":"forbidden","reason":"admin-login","message":"This route is for member logins."} -> 404 application/json {"error":"not found"}
+GET /api/member/library member: 410 application/json {"error":"The Library is gone: open the items of your workspaces from the normal lists. Update the app.","code":"gone"} -> 404 application/json {"error":"not found"}
+GET /api/member/library/:id none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+GET /api/member/library/:id owner: 403 application/json {"error":"forbidden","reason":"admin-login","message":"This route is for member logins."} -> 404 application/json {"error":"not found"}
+GET /api/member/library/:id member: 410 application/json {"error":"The Library is gone: open the items of your workspaces from the normal lists. Update the app.","code":"gone"} -> 404 application/json {"error":"not found"}
+GET /api/member/my-apps none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+GET /api/member/my-apps owner: 403 application/json {"error":"forbidden","reason":"admin-login","message":"This route is for member logins."} -> 404 application/json {"error":"not found"}
+GET /api/member/my-apps member: 410 application/json {"error":"Your own items are in your private workspace now. Open them from the normal lists.","code":"gone"} -> 404 application/json {"error":"not found"}
+GET /api/member/my-apps/:id/history none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+GET /api/member/my-apps/:id/history owner: 403 application/json {"error":"forbidden","reason":"admin-login","message":"This route is for member logins."} -> 404 application/json {"error":"not found"}
+GET /api/member/my-apps/:id/history member: 410 application/json {"error":"Your own items are in your private workspace now. Open them from the normal lists.","code":"gone"} -> 404 application/json {"error":"not found"}
+GET /api/member/my-apps/deleted none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+GET /api/member/my-apps/deleted owner: 403 application/json {"error":"forbidden","reason":"admin-login","message":"This route is for member logins."} -> 404 application/json {"error":"not found"}
+GET /api/member/my-apps/deleted member: 410 application/json {"error":"Your own items are in your private workspace now. Open them from the normal lists.","code":"gone"} -> 404 application/json {"error":"not found"}
+GET /api/member/shell none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+GET /api/member/shell owner: 403 application/json {"error":"forbidden","reason":"admin-login","message":"This route is for member logins."} -> 404 application/json {"error":"not found"}
+GET /api/member/shell member: 410 application/json {"error":"This feature was removed. Update the app.","code":"gone"} -> 404 application/json {"error":"not found"}
+GET /api/member/space none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+GET /api/member/space owner: 403 application/json {"error":"forbidden","reason":"admin-login","message":"This route is for member logins."} -> 404 application/json {"error":"not found"}
+GET /api/member/space member: 410 application/json {"error":"Your own items are in your private workspace now. Open them from the normal lists.","code":"gone"} -> 404 application/json {"error":"not found"}
+GET /api/member/space/:id none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+GET /api/member/space/:id owner: 403 application/json {"error":"forbidden","reason":"admin-login","message":"This route is for member logins."} -> 404 application/json {"error":"not found"}
+GET /api/member/space/:id member: 410 application/json {"error":"Your own items are in your private workspace now. Open them from the normal lists.","code":"gone"} -> 404 application/json {"error":"not found"}
+GET /api/member/space/:id/bytes none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+GET /api/member/space/:id/bytes owner: 403 application/json {"error":"forbidden","reason":"admin-login","message":"This route is for member logins."} -> 404 application/json {"error":"not found"}
+GET /api/member/space/:id/bytes member: 410 application/json {"error":"Your own items are in your private workspace now. Open them from the normal lists.","code":"gone"} -> 404 application/json {"error":"not found"}
+GET /api/member/team-drafts none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+GET /api/member/team-drafts owner: 403 application/json {"error":"forbidden","reason":"admin-login","message":"This route is for member logins."} -> 404 application/json {"error":"not found"}
+GET /api/member/team-drafts member: 410 application/json {"error":"This feature was removed. Update the app.","code":"gone"} -> 404 application/json {"error":"not found"}
+GET /api/member/team-drafts/:id none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+GET /api/member/team-drafts/:id owner: 403 application/json {"error":"forbidden","reason":"admin-login","message":"This route is for member logins."} -> 404 application/json {"error":"not found"}
+GET /api/member/team-drafts/:id member: 410 application/json {"error":"This feature was removed. Update the app.","code":"gone"} -> 404 application/json {"error":"not found"}
+GET /api/member/team-drafts/:id/bytes none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+GET /api/member/team-drafts/:id/bytes owner: 403 application/json {"error":"forbidden","reason":"admin-login","message":"This route is for member logins."} -> 404 application/json {"error":"not found"}
+GET /api/member/team-drafts/:id/bytes member: 410 application/json {"error":"This feature was removed. Update the app.","code":"gone"} -> 404 application/json {"error":"not found"}
+GET /api/member/tree/:kind none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+GET /api/member/tree/:kind owner: 403 application/json {"error":"forbidden","reason":"admin-login","message":"This route is for member logins."} -> 404 application/json {"error":"not found"}
+GET /api/member/tree/:kind member: 410 application/json {"error":"Your own items are in your private workspace now. Open them from the normal lists.","code":"gone"} -> 404 application/json {"error":"not found"}
+GET /api/member/tree/:kind/search none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+GET /api/member/tree/:kind/search owner: 403 application/json {"error":"forbidden","reason":"admin-login","message":"This route is for member logins."} -> 404 application/json {"error":"not found"}
+GET /api/member/tree/:kind/search member: 410 application/json {"error":"Your own items are in your private workspace now. Open them from the normal lists.","code":"gone"} -> 404 application/json {"error":"not found"}
+GET /api/team-admin/clients none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+GET /api/team-admin/clients owner: 410 application/json {"error":"This feature was removed. Update the app.","code":"gone"} -> 404 application/json {"error":"not found"}
+GET /api/team-admin/clients member: 403 application/json {"error":"forbidden","reason":"member-login","message":"Not available to member logins."} -> 404 application/json {"error":"not found"}
+GET /api/team-admin/clients/signin-sender none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+GET /api/team-admin/clients/signin-sender owner: 410 application/json {"error":"Email-code sign-in has ended: there is no sign-in sender.","code":"gone"} -> 404 application/json {"error":"not found"}
+GET /api/team-admin/clients/signin-sender member: 403 application/json {"error":"forbidden","reason":"member-login","message":"Not available to member logins."} -> 404 application/json {"error":"not found"}
+GET /api/team-admin/clients/signin-sender/preview none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+GET /api/team-admin/clients/signin-sender/preview owner: 410 application/json {"error":"Email-code sign-in has ended: there is no sign-in sender.","code":"gone"} -> 404 application/json {"error":"not found"}
+GET /api/team-admin/clients/signin-sender/preview member: 403 application/json {"error":"forbidden","reason":"member-login","message":"Not available to member logins."} -> 404 application/json {"error":"not found"}
+GET /api/team-admin/clients/storage none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+GET /api/team-admin/clients/storage owner: 410 application/json {"error":"This feature was removed. Update the app.","code":"gone"} -> 404 application/json {"error":"not found"}
+GET /api/team-admin/clients/storage member: 403 application/json {"error":"forbidden","reason":"member-login","message":"Not available to member logins."} -> 404 application/json {"error":"not found"}
+GET /api/team-admin/clients/usage none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+GET /api/team-admin/clients/usage owner: 410 application/json {"error":"This feature was removed. Update the app.","code":"gone"} -> 404 application/json {"error":"not found"}
+GET /api/team-admin/clients/usage member: 403 application/json {"error":"forbidden","reason":"member-login","message":"Not available to member logins."} -> 404 application/json {"error":"not found"}
+GET /api/team-admin/member-chats none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+GET /api/team-admin/member-chats owner: 410 application/json {"error":"Each user's chats are private to that user: admins no longer read other users' chats.","code":"gone"} -> 404 application/json {"error":"not found"}
+GET /api/team-admin/member-chats member: 403 application/json {"error":"forbidden","reason":"member-login","message":"Not available to member logins."} -> 404 application/json {"error":"not found"}
+GET /api/team-admin/member-items none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+GET /api/team-admin/member-items owner: 410 application/json {"error":"Review was removed. Share items with Grant Access.","code":"gone"} -> 404 application/json {"error":"not found"}
+GET /api/team-admin/member-items member: 403 application/json {"error":"forbidden","reason":"member-login","message":"Not available to member logins."} -> 404 application/json {"error":"not found"}
+GET /api/team-admin/member-items/:id none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+GET /api/team-admin/member-items/:id owner: 410 application/json {"error":"Review was removed. Share items with Grant Access.","code":"gone"} -> 404 application/json {"error":"not found"}
+GET /api/team-admin/member-items/:id member: 403 application/json {"error":"forbidden","reason":"member-login","message":"Not available to member logins."} -> 404 application/json {"error":"not found"}
+GET /api/team-admin/member-items/:id/bytes none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+GET /api/team-admin/member-items/:id/bytes owner: 410 application/json {"error":"Review was removed. Share items with Grant Access.","code":"gone"} -> 404 application/json {"error":"not found"}
+GET /api/team-admin/member-items/:id/bytes member: 403 application/json {"error":"forbidden","reason":"member-login","message":"Not available to member logins."} -> 404 application/json {"error":"not found"}
+GET /api/team-admin/member-items/:id/svg none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+GET /api/team-admin/member-items/:id/svg owner: 410 application/json {"error":"Review was removed. Share items with Grant Access.","code":"gone"} -> 404 application/json {"error":"not found"}
+GET /api/team-admin/member-items/:id/svg member: 403 application/json {"error":"forbidden","reason":"member-login","message":"Not available to member logins."} -> 404 application/json {"error":"not found"}
+GET /api/team-admin/needs-you none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+GET /api/team-admin/needs-you owner: 410 application/json {"error":"This feature was removed. Update the app.","code":"gone"} -> 404 application/json {"error":"not found"}
+GET /api/team-admin/needs-you member: 403 application/json {"error":"forbidden","reason":"member-login","message":"Not available to member logins."} -> 404 application/json {"error":"not found"}
+GET /api/team-admin/requests none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+GET /api/team-admin/requests owner: 410 application/json {"error":"Team requests are tasks now. Open them on the Tasks board.","code":"gone"} -> 404 application/json {"error":"not found"}
+GET /api/team-admin/requests member: 403 application/json {"error":"forbidden","reason":"member-login","message":"Not available to member logins."} -> 404 application/json {"error":"not found"}
+GET /api/team-admin/submissions none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+GET /api/team-admin/submissions owner: 410 application/json {"error":"Review was removed. Share items with Grant Access.","code":"gone"} -> 404 application/json {"error":"not found"}
+GET /api/team-admin/submissions member: 403 application/json {"error":"forbidden","reason":"member-login","message":"Not available to member logins."} -> 404 application/json {"error":"not found"}
+GET /api/team-admin/submissions/:id none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+GET /api/team-admin/submissions/:id owner: 410 application/json {"error":"Review was removed. Share items with Grant Access.","code":"gone"} -> 404 application/json {"error":"not found"}
+GET /api/team-admin/submissions/:id member: 403 application/json {"error":"forbidden","reason":"member-login","message":"Not available to member logins."} -> 404 application/json {"error":"not found"}
+GET /api/team-admin/submissions/:id/bundle none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+GET /api/team-admin/submissions/:id/bundle owner: 410 application/json {"error":"Review was removed. Share items with Grant Access.","code":"gone"} -> 404 application/json {"error":"not found"}
+GET /api/team-admin/submissions/:id/bundle member: 403 application/json {"error":"forbidden","reason":"member-login","message":"Not available to member logins."} -> 404 application/json {"error":"not found"}
+GET /api/team-admin/submissions/:id/bytes none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+GET /api/team-admin/submissions/:id/bytes owner: 410 application/json {"error":"Review was removed. Share items with Grant Access.","code":"gone"} -> 404 application/json {"error":"not found"}
+GET /api/team-admin/submissions/:id/bytes member: 403 application/json {"error":"forbidden","reason":"member-login","message":"Not available to member logins."} -> 404 application/json {"error":"not found"}
+GET /api/team-admin/submissions/:id/svg none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+GET /api/team-admin/submissions/:id/svg owner: 410 application/json {"error":"Review was removed. Share items with Grant Access.","code":"gone"} -> 404 application/json {"error":"not found"}
+GET /api/team-admin/submissions/:id/svg member: 403 application/json {"error":"forbidden","reason":"member-login","message":"Not available to member logins."} -> 404 application/json {"error":"not found"}
+PATCH /api/access/agents/:slug none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+PATCH /api/access/agents/:slug owner: 410 application/json {"error":"Agents and tool groups have no level any more: an assistant reads its workspace. Update the app.","code":"gone"} -> 404 application/json {"error":"not found"}
+PATCH /api/access/agents/:slug member: 403 application/json {"error":"forbidden","reason":"member-login","message":"Not available to member logins."} -> 404 application/json {"error":"not found"}
+PATCH /api/access/nodes/:id none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+PATCH /api/access/nodes/:id owner: 410 application/json {"error":"Sharing levels are gone. Use Grant Access.","code":"gone"} -> 404 application/json {"error":"not found"}
+PATCH /api/access/nodes/:id member: 403 application/json {"error":"forbidden","reason":"member-login","message":"Not available to member logins."} -> 404 application/json {"error":"not found"}
+PATCH /api/access/tool-groups/:slug none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+PATCH /api/access/tool-groups/:slug owner: 410 application/json {"error":"Agents and tool groups have no level any more: an assistant reads its workspace. Update the app.","code":"gone"} -> 404 application/json {"error":"not found"}
+PATCH /api/access/tool-groups/:slug member: 403 application/json {"error":"forbidden","reason":"member-login","message":"Not available to member logins."} -> 404 application/json {"error":"not found"}
+PATCH /api/admin/space/:id none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+PATCH /api/admin/space/:id owner: 410 application/json {"error":"Your own items are in your private workspace now. Open them from the normal lists.","code":"gone"} -> 404 application/json {"error":"not found"}
+PATCH /api/admin/space/:id member: 403 application/json {"error":"forbidden","reason":"member-login","message":"Not available to member logins."} -> 404 application/json {"error":"not found"}
+PATCH /api/client/space/:id none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+PATCH /api/client/space/:id owner: 410 application/json {"error":"This feature was removed. Update the app.","code":"gone"} -> 404 application/json {"error":"not found"}
+PATCH /api/client/space/:id member: 410 application/json {"error":"This feature was removed. Update the app.","code":"gone"} -> 404 application/json {"error":"not found"}
+PATCH /api/mcp-logins/:id none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+PATCH /api/mcp-logins/:id owner: 410 application/json {"error":"There is no per-login MCP switch any more: every login reaches MCP in its own workspaces. Update the app.","code":"gone"} -> 404 application/json {"error":"not found"}
+PATCH /api/mcp-logins/:id member: 403 application/json {"error":"forbidden","reason":"member-login","message":"Not available to member logins."} -> 404 application/json {"error":"not found"}
+PATCH /api/member/space/:id none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+PATCH /api/member/space/:id owner: 403 application/json {"error":"forbidden","reason":"admin-login","message":"This route is for member logins."} -> 404 application/json {"error":"not found"}
+PATCH /api/member/space/:id member: 410 application/json {"error":"Your own items are in your private workspace now. Open them from the normal lists.","code":"gone"} -> 404 application/json {"error":"not found"}
+PATCH /api/member/tree/:kind/folders/:id none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+PATCH /api/member/tree/:kind/folders/:id owner: 403 application/json {"error":"forbidden","reason":"admin-login","message":"This route is for member logins."} -> 404 application/json {"error":"not found"}
+PATCH /api/member/tree/:kind/folders/:id member: 410 application/json {"error":"Your own items are in your private workspace now. Open them from the normal lists.","code":"gone"} -> 404 application/json {"error":"not found"}
+POST /api/access/client-report/ack none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+POST /api/access/client-report/ack owner: 410 application/json {"error":"This feature was removed. Update the app.","code":"gone"} -> 404 application/json {"error":"not found"}
+POST /api/access/client-report/ack member: 403 application/json {"error":"forbidden","reason":"member-login","message":"Not available to member logins."} -> 404 application/json {"error":"not found"}
+POST /api/admin/space none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+POST /api/admin/space owner: 410 application/json {"error":"Your own items are in your private workspace now. Open them from the normal lists.","code":"gone"} -> 404 application/json {"error":"not found"}
+POST /api/admin/space member: 403 application/json {"error":"forbidden","reason":"member-login","message":"Not available to member logins."} -> 404 application/json {"error":"not found"}
+POST /api/admin/space-files none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+POST /api/admin/space-files owner: 410 application/json {"error":"Your own items are in your private workspace now. Open them from the normal lists.","code":"gone"} -> 404 application/json {"error":"not found"}
+POST /api/admin/space-files member: 403 application/json {"error":"forbidden","reason":"member-login","message":"Not available to member logins."} -> 404 application/json {"error":"not found"}
+POST /api/admin/space/:id/accept none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+POST /api/admin/space/:id/accept owner: 410 application/json {"error":"Review was removed. Share items with Grant Access.","code":"gone"} -> 404 application/json {"error":"not found"}
+POST /api/admin/space/:id/accept member: 403 application/json {"error":"forbidden","reason":"member-login","message":"Not available to member logins."} -> 404 application/json {"error":"not found"}
+POST /api/admin/space/:id/give-back none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+POST /api/admin/space/:id/give-back owner: 410 application/json {"error":"Review was removed. Share items with Grant Access.","code":"gone"} -> 404 application/json {"error":"not found"}
+POST /api/admin/space/:id/give-back member: 403 application/json {"error":"forbidden","reason":"member-login","message":"Not available to member logins."} -> 404 application/json {"error":"not found"}
+POST /api/admin/space/:id/save none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+POST /api/admin/space/:id/save owner: 410 application/json {"error":"Your own items are in your private workspace now. Open them from the normal lists.","code":"gone"} -> 404 application/json {"error":"not found"}
+POST /api/admin/space/:id/save member: 403 application/json {"error":"forbidden","reason":"member-login","message":"Not available to member logins."} -> 404 application/json {"error":"not found"}
+POST /api/apps/members/:id/accept none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+POST /api/apps/members/:id/accept owner: 410 application/json {"error":"Member app review was removed. Members share apps with the team in the app.","code":"gone"} -> 404 application/json {"error":"not found"}
+POST /api/apps/members/:id/accept member: 403 application/json {"error":"forbidden","reason":"member-login","message":"Not available to member logins."} -> 404 application/json {"error":"not found"}
+POST /api/apps/members/:id/delete none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+POST /api/apps/members/:id/delete owner: 410 application/json {"error":"Member app review was removed. Members share apps with the team in the app.","code":"gone"} -> 404 application/json {"error":"not found"}
+POST /api/apps/members/:id/delete member: 403 application/json {"error":"forbidden","reason":"member-login","message":"Not available to member logins."} -> 404 application/json {"error":"not found"}
+POST /api/apps/members/:id/send-back none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+POST /api/apps/members/:id/send-back owner: 410 application/json {"error":"Member app review was removed. Members share apps with the team in the app.","code":"gone"} -> 404 application/json {"error":"not found"}
+POST /api/apps/members/:id/send-back member: 403 application/json {"error":"forbidden","reason":"member-login","message":"Not available to member logins."} -> 404 application/json {"error":"not found"}
+POST /api/apps/members/:id/test none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+POST /api/apps/members/:id/test owner: 410 application/json {"error":"Member app review was removed. Members share apps with the team in the app.","code":"gone"} -> 404 application/json {"error":"not found"}
+POST /api/apps/members/:id/test member: 403 application/json {"error":"forbidden","reason":"member-login","message":"Not available to member logins."} -> 404 application/json {"error":"not found"}
+POST /api/apps/members/:id/test/db-broker none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+POST /api/apps/members/:id/test/db-broker owner: 410 application/json {"error":"Member app review was removed. Members share apps with the team in the app.","code":"gone"} -> 404 application/json {"error":"not found"}
+POST /api/apps/members/:id/test/db-broker member: 403 application/json {"error":"forbidden","reason":"member-login","message":"Not available to member logins."} -> 404 application/json {"error":"not found"}
+POST /api/apps/members/:id/test/frame-ticket none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+POST /api/apps/members/:id/test/frame-ticket owner: 410 application/json {"error":"Member app review was removed. Members share apps with the team in the app.","code":"gone"} -> 404 application/json {"error":"not found"}
+POST /api/apps/members/:id/test/frame-ticket member: 403 application/json {"error":"forbidden","reason":"member-login","message":"Not available to member logins."} -> 404 application/json {"error":"not found"}
+POST /api/apps/members/:id/test/tool-broker none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+POST /api/apps/members/:id/test/tool-broker owner: 410 application/json {"error":"Member app review was removed. Members share apps with the team in the app.","code":"gone"} -> 404 application/json {"error":"not found"}
+POST /api/apps/members/:id/test/tool-broker member: 403 application/json {"error":"forbidden","reason":"member-login","message":"Not available to member logins."} -> 404 application/json {"error":"not found"}
+POST /api/apps/members/:id/unshare none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+POST /api/apps/members/:id/unshare owner: 410 application/json {"error":"Member app review was removed. Members share apps with the team in the app.","code":"gone"} -> 404 application/json {"error":"not found"}
+POST /api/apps/members/:id/unshare member: 403 application/json {"error":"forbidden","reason":"member-login","message":"Not available to member logins."} -> 404 application/json {"error":"not found"}
+POST /api/auth/client-code none: 410 application/json {"error":"Email-code sign-in has ended. Sign in with your password.","code":"gone"} -> 404 application/json {"error":"not found"}
+POST /api/auth/client-code owner: 410 application/json {"error":"Email-code sign-in has ended. Sign in with your password.","code":"gone"} -> 404 application/json {"error":"not found"}
+POST /api/auth/client-code member: 410 application/json {"error":"Email-code sign-in has ended. Sign in with your password.","code":"gone"} -> 404 application/json {"error":"not found"}
+POST /api/auth/client-code/verify none: 410 application/json {"error":"Email-code sign-in has ended. Sign in with your password.","code":"gone"} -> 404 application/json {"error":"not found"}
+POST /api/auth/client-code/verify owner: 410 application/json {"error":"Email-code sign-in has ended. Sign in with your password.","code":"gone"} -> 404 application/json {"error":"not found"}
+POST /api/auth/client-code/verify member: 410 application/json {"error":"Email-code sign-in has ended. Sign in with your password.","code":"gone"} -> 404 application/json {"error":"not found"}
+POST /api/auth/client-link none: 410 application/json {"error":"Sign-in links have ended. Sign in with an email code.","code":"gone"} -> 404 application/json {"error":"not found"}
+POST /api/auth/client-link owner: 410 application/json {"error":"Sign-in links have ended. Sign in with an email code.","code":"gone"} -> 404 application/json {"error":"not found"}
+POST /api/auth/client-link member: 410 application/json {"error":"Sign-in links have ended. Sign in with an email code.","code":"gone"} -> 404 application/json {"error":"not found"}
+POST /api/client/apps/:id/db-broker none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+POST /api/client/apps/:id/db-broker owner: 410 application/json {"error":"This feature was removed. Update the app.","code":"gone"} -> 404 application/json {"error":"not found"}
+POST /api/client/apps/:id/db-broker member: 410 application/json {"error":"This feature was removed. Update the app.","code":"gone"} -> 404 application/json {"error":"not found"}
+POST /api/client/apps/:id/frame-ticket none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+POST /api/client/apps/:id/frame-ticket owner: 410 application/json {"error":"This feature was removed. Update the app.","code":"gone"} -> 404 application/json {"error":"not found"}
+POST /api/client/apps/:id/frame-ticket member: 410 application/json {"error":"This feature was removed. Update the app.","code":"gone"} -> 404 application/json {"error":"not found"}
+POST /api/client/apps/:id/tool-broker none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+POST /api/client/apps/:id/tool-broker owner: 410 application/json {"error":"This feature was removed. Update the app.","code":"gone"} -> 404 application/json {"error":"not found"}
+POST /api/client/apps/:id/tool-broker member: 410 application/json {"error":"This feature was removed. Update the app.","code":"gone"} -> 404 application/json {"error":"not found"}
+POST /api/client/chat none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+POST /api/client/chat owner: 410 application/json {"error":"This feature was removed. Update the app.","code":"gone"} -> 404 application/json {"error":"not found"}
+POST /api/client/chat member: 410 application/json {"error":"This feature was removed. Update the app.","code":"gone"} -> 404 application/json {"error":"not found"}
+POST /api/client/chat/read none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+POST /api/client/chat/read owner: 410 application/json {"error":"This feature was removed. Update the app.","code":"gone"} -> 404 application/json {"error":"not found"}
+POST /api/client/chat/read member: 410 application/json {"error":"This feature was removed. Update the app.","code":"gone"} -> 404 application/json {"error":"not found"}
+POST /api/client/push/connect none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+POST /api/client/push/connect owner: 410 application/json {"error":"This feature was removed. Update the app.","code":"gone"} -> 404 application/json {"error":"not found"}
+POST /api/client/push/connect member: 410 application/json {"error":"This feature was removed. Update the app.","code":"gone"} -> 404 application/json {"error":"not found"}
+POST /api/client/push/subscriptions none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+POST /api/client/push/subscriptions owner: 410 application/json {"error":"This feature was removed. Update the app.","code":"gone"} -> 404 application/json {"error":"not found"}
+POST /api/client/push/subscriptions member: 410 application/json {"error":"This feature was removed. Update the app.","code":"gone"} -> 404 application/json {"error":"not found"}
+POST /api/client/space none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+POST /api/client/space owner: 410 application/json {"error":"This feature was removed. Update the app.","code":"gone"} -> 404 application/json {"error":"not found"}
+POST /api/client/space member: 410 application/json {"error":"This feature was removed. Update the app.","code":"gone"} -> 404 application/json {"error":"not found"}
+POST /api/client/space-files none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+POST /api/client/space-files owner: 410 application/json {"error":"This feature was removed. Update the app.","code":"gone"} -> 404 application/json {"error":"not found"}
+POST /api/client/space-files member: 410 application/json {"error":"This feature was removed. Update the app.","code":"gone"} -> 404 application/json {"error":"not found"}
+POST /api/client/space/:id/recall none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+POST /api/client/space/:id/recall owner: 410 application/json {"error":"This feature was removed. Update the app.","code":"gone"} -> 404 application/json {"error":"not found"}
+POST /api/client/space/:id/recall member: 410 application/json {"error":"This feature was removed. Update the app.","code":"gone"} -> 404 application/json {"error":"not found"}
+POST /api/client/space/:id/save none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+POST /api/client/space/:id/save owner: 410 application/json {"error":"This feature was removed. Update the app.","code":"gone"} -> 404 application/json {"error":"not found"}
+POST /api/client/space/:id/save member: 410 application/json {"error":"This feature was removed. Update the app.","code":"gone"} -> 404 application/json {"error":"not found"}
+POST /api/client/space/:id/submit none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+POST /api/client/space/:id/submit owner: 410 application/json {"error":"This feature was removed. Update the app.","code":"gone"} -> 404 application/json {"error":"not found"}
+POST /api/client/space/:id/submit member: 410 application/json {"error":"This feature was removed. Update the app.","code":"gone"} -> 404 application/json {"error":"not found"}
+POST /api/mcp-logins/:id/tokens none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+POST /api/mcp-logins/:id/tokens owner: 410 application/json {"error":"There is no per-login MCP switch any more: every login reaches MCP in its own workspaces. Update the app.","code":"gone"} -> 404 application/json {"error":"not found"}
+POST /api/mcp-logins/:id/tokens member: 403 application/json {"error":"forbidden","reason":"member-login","message":"Not available to member logins."} -> 404 application/json {"error":"not found"}
+POST /api/member/apps/:id/db-broker none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+POST /api/member/apps/:id/db-broker owner: 403 application/json {"error":"forbidden","reason":"admin-login","message":"This route is for member logins."} -> 404 application/json {"error":"not found"}
+POST /api/member/apps/:id/db-broker member: 410 application/json {"error":"This route moved: files, drawings and apps open from the normal routes. Update the app.","code":"gone"} -> 404 application/json {"error":"not found"}
+POST /api/member/apps/:id/frame-ticket none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+POST /api/member/apps/:id/frame-ticket owner: 403 application/json {"error":"forbidden","reason":"admin-login","message":"This route is for member logins."} -> 404 application/json {"error":"not found"}
+POST /api/member/apps/:id/frame-ticket member: 410 application/json {"error":"This route moved: files, drawings and apps open from the normal routes. Update the app.","code":"gone"} -> 404 application/json {"error":"not found"}
+POST /api/member/apps/:id/tool-broker none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+POST /api/member/apps/:id/tool-broker owner: 403 application/json {"error":"forbidden","reason":"admin-login","message":"This route is for member logins."} -> 404 application/json {"error":"not found"}
+POST /api/member/apps/:id/tool-broker member: 410 application/json {"error":"This route moved: files, drawings and apps open from the normal routes. Update the app.","code":"gone"} -> 404 application/json {"error":"not found"}
+POST /api/member/chat none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+POST /api/member/chat owner: 403 application/json {"error":"forbidden","reason":"admin-login","message":"This route is for member logins."} -> 404 application/json {"error":"not found"}
+POST /api/member/chat member: 410 application/json {"error":"Chat moved to the assistant screen. Update the app.","code":"gone"} -> 404 application/json {"error":"not found"}
+POST /api/member/chat/read none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+POST /api/member/chat/read owner: 403 application/json {"error":"forbidden","reason":"admin-login","message":"This route is for member logins."} -> 404 application/json {"error":"not found"}
+POST /api/member/chat/read member: 410 application/json {"error":"Chat moved to the assistant screen. Update the app.","code":"gone"} -> 404 application/json {"error":"not found"}
+POST /api/member/my-apps/:id/delete none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+POST /api/member/my-apps/:id/delete owner: 403 application/json {"error":"forbidden","reason":"admin-login","message":"This route is for member logins."} -> 404 application/json {"error":"not found"}
+POST /api/member/my-apps/:id/delete member: 410 application/json {"error":"Your own items are in your private workspace now. Open them from the normal lists.","code":"gone"} -> 404 application/json {"error":"not found"}
+POST /api/member/my-apps/:id/recall none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+POST /api/member/my-apps/:id/recall owner: 403 application/json {"error":"forbidden","reason":"admin-login","message":"This route is for member logins."} -> 404 application/json {"error":"not found"}
+POST /api/member/my-apps/:id/recall member: 410 application/json {"error":"This feature was removed. Update the app.","code":"gone"} -> 404 application/json {"error":"not found"}
+POST /api/member/my-apps/:id/share none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+POST /api/member/my-apps/:id/share owner: 403 application/json {"error":"forbidden","reason":"admin-login","message":"This route is for member logins."} -> 404 application/json {"error":"not found"}
+POST /api/member/my-apps/:id/share member: 410 application/json {"error":"Your own items are in your private workspace now. Open them from the normal lists.","code":"gone"} -> 404 application/json {"error":"not found"}
+POST /api/member/my-apps/:id/submit none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+POST /api/member/my-apps/:id/submit owner: 403 application/json {"error":"forbidden","reason":"admin-login","message":"This route is for member logins."} -> 404 application/json {"error":"not found"}
+POST /api/member/my-apps/:id/submit member: 410 application/json {"error":"This feature was removed. Update the app.","code":"gone"} -> 404 application/json {"error":"not found"}
+POST /api/member/my-apps/:id/undelete none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+POST /api/member/my-apps/:id/undelete owner: 403 application/json {"error":"forbidden","reason":"admin-login","message":"This route is for member logins."} -> 404 application/json {"error":"not found"}
+POST /api/member/my-apps/:id/undelete member: 410 application/json {"error":"Your own items are in your private workspace now. Open them from the normal lists.","code":"gone"} -> 404 application/json {"error":"not found"}
+POST /api/member/space none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+POST /api/member/space owner: 403 application/json {"error":"forbidden","reason":"admin-login","message":"This route is for member logins."} -> 404 application/json {"error":"not found"}
+POST /api/member/space member: 410 application/json {"error":"Your own items are in your private workspace now. Open them from the normal lists.","code":"gone"} -> 404 application/json {"error":"not found"}
+POST /api/member/space-files none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+POST /api/member/space-files owner: 403 application/json {"error":"forbidden","reason":"admin-login","message":"This route is for member logins."} -> 404 application/json {"error":"not found"}
+POST /api/member/space-files member: 410 application/json {"error":"Your own items are in your private workspace now. Open them from the normal lists.","code":"gone"} -> 404 application/json {"error":"not found"}
+POST /api/member/space/:id/recall none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+POST /api/member/space/:id/recall owner: 403 application/json {"error":"forbidden","reason":"admin-login","message":"This route is for member logins."} -> 404 application/json {"error":"not found"}
+POST /api/member/space/:id/recall member: 410 application/json {"error":"This feature was removed. Update the app.","code":"gone"} -> 404 application/json {"error":"not found"}
+POST /api/member/space/:id/save none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+POST /api/member/space/:id/save owner: 403 application/json {"error":"forbidden","reason":"admin-login","message":"This route is for member logins."} -> 404 application/json {"error":"not found"}
+POST /api/member/space/:id/save member: 410 application/json {"error":"Your own items are in your private workspace now. Open them from the normal lists.","code":"gone"} -> 404 application/json {"error":"not found"}
+POST /api/member/space/:id/share none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+POST /api/member/space/:id/share owner: 403 application/json {"error":"forbidden","reason":"admin-login","message":"This route is for member logins."} -> 404 application/json {"error":"not found"}
+POST /api/member/space/:id/share member: 410 application/json {"error":"This feature was removed. Update the app.","code":"gone"} -> 404 application/json {"error":"not found"}
+POST /api/member/space/:id/submit none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+POST /api/member/space/:id/submit owner: 403 application/json {"error":"forbidden","reason":"admin-login","message":"This route is for member logins."} -> 404 application/json {"error":"not found"}
+POST /api/member/space/:id/submit member: 410 application/json {"error":"This feature was removed. Update the app.","code":"gone"} -> 404 application/json {"error":"not found"}
+POST /api/member/tree/:kind/folders none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+POST /api/member/tree/:kind/folders owner: 403 application/json {"error":"forbidden","reason":"admin-login","message":"This route is for member logins."} -> 404 application/json {"error":"not found"}
+POST /api/member/tree/:kind/folders member: 410 application/json {"error":"Your own items are in your private workspace now. Open them from the normal lists.","code":"gone"} -> 404 application/json {"error":"not found"}
+POST /api/member/tree/:kind/move none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+POST /api/member/tree/:kind/move owner: 403 application/json {"error":"forbidden","reason":"admin-login","message":"This route is for member logins."} -> 404 application/json {"error":"not found"}
+POST /api/member/tree/:kind/move member: 410 application/json {"error":"Your own items are in your private workspace now. Open them from the normal lists.","code":"gone"} -> 404 application/json {"error":"not found"}
+POST /api/team-admin/clients none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+POST /api/team-admin/clients owner: 410 application/json {"error":"This feature was removed. Update the app.","code":"gone"} -> 404 application/json {"error":"not found"}
+POST /api/team-admin/clients member: 403 application/json {"error":"forbidden","reason":"member-login","message":"Not available to member logins."} -> 404 application/json {"error":"not found"}
+POST /api/team-admin/clients/:id/signin-link none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+POST /api/team-admin/clients/:id/signin-link owner: 410 application/json {"error":"This feature was removed. Update the app.","code":"gone"} -> 404 application/json {"error":"not found"}
+POST /api/team-admin/clients/:id/signin-link member: 403 application/json {"error":"forbidden","reason":"member-login","message":"Not available to member logins."} -> 404 application/json {"error":"not found"}
+POST /api/team-admin/member-items/:id/unshare none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+POST /api/team-admin/member-items/:id/unshare owner: 410 application/json {"error":"Review was removed. Share items with Grant Access.","code":"gone"} -> 404 application/json {"error":"not found"}
+POST /api/team-admin/member-items/:id/unshare member: 403 application/json {"error":"forbidden","reason":"member-login","message":"Not available to member logins."} -> 404 application/json {"error":"not found"}
+POST /api/team-admin/notify none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+POST /api/team-admin/notify owner: 410 application/json {"error":"Team requests are tasks now. Open them on the Tasks board.","code":"gone"} -> 404 application/json {"error":"not found"}
+POST /api/team-admin/notify member: 403 application/json {"error":"forbidden","reason":"member-login","message":"Not available to member logins."} -> 404 application/json {"error":"not found"}
+POST /api/team-admin/submissions/:id/accept none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+POST /api/team-admin/submissions/:id/accept owner: 410 application/json {"error":"Review was removed. Share items with Grant Access.","code":"gone"} -> 404 application/json {"error":"not found"}
+POST /api/team-admin/submissions/:id/accept member: 403 application/json {"error":"forbidden","reason":"member-login","message":"Not available to member logins."} -> 404 application/json {"error":"not found"}
+POST /api/team-admin/submissions/:id/discard none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+POST /api/team-admin/submissions/:id/discard owner: 410 application/json {"error":"Review was removed. Share items with Grant Access.","code":"gone"} -> 404 application/json {"error":"not found"}
+POST /api/team-admin/submissions/:id/discard member: 403 application/json {"error":"forbidden","reason":"member-login","message":"Not available to member logins."} -> 404 application/json {"error":"not found"}
+POST /api/team-admin/submissions/:id/return none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+POST /api/team-admin/submissions/:id/return owner: 410 application/json {"error":"Review was removed. Share items with Grant Access.","code":"gone"} -> 404 application/json {"error":"not found"}
+POST /api/team-admin/submissions/:id/return member: 403 application/json {"error":"forbidden","reason":"member-login","message":"Not available to member logins."} -> 404 application/json {"error":"not found"}
+POST /api/team-admin/submissions/:id/take-over none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+POST /api/team-admin/submissions/:id/take-over owner: 410 application/json {"error":"Review was removed. Share items with Grant Access.","code":"gone"} -> 404 application/json {"error":"not found"}
+POST /api/team-admin/submissions/:id/take-over member: 403 application/json {"error":"forbidden","reason":"member-login","message":"Not available to member logins."} -> 404 application/json {"error":"not found"}
+PUT /api/admin/space/:id/draft none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+PUT /api/admin/space/:id/draft owner: 410 application/json {"error":"Your own items are in your private workspace now. Open them from the normal lists.","code":"gone"} -> 404 application/json {"error":"not found"}
+PUT /api/admin/space/:id/draft member: 403 application/json {"error":"forbidden","reason":"member-login","message":"Not available to member logins."} -> 404 application/json {"error":"not found"}
+PUT /api/app-nav none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+PUT /api/app-nav owner: 410 application/json {"error":"Apps are organised as folders now; update the app to move or rename them.","code":"gone"} -> 405 application/json {"error":"method not allowed"}
+PUT /api/app-nav member: 403 application/json {"error":"forbidden","reason":"member-login","message":"Not available to member logins."} -> 405 application/json {"error":"method not allowed"}
+PUT /api/client/push/preferences none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+PUT /api/client/push/preferences owner: 410 application/json {"error":"This feature was removed. Update the app.","code":"gone"} -> 404 application/json {"error":"not found"}
+PUT /api/client/push/preferences member: 410 application/json {"error":"This feature was removed. Update the app.","code":"gone"} -> 404 application/json {"error":"not found"}
+PUT /api/client/space/:id/draft none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+PUT /api/client/space/:id/draft owner: 410 application/json {"error":"This feature was removed. Update the app.","code":"gone"} -> 404 application/json {"error":"not found"}
+PUT /api/client/space/:id/draft member: 410 application/json {"error":"This feature was removed. Update the app.","code":"gone"} -> 404 application/json {"error":"not found"}
+PUT /api/member/space/:id/draft none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+PUT /api/member/space/:id/draft owner: 403 application/json {"error":"forbidden","reason":"admin-login","message":"This route is for member logins."} -> 404 application/json {"error":"not found"}
+PUT /api/member/space/:id/draft member: 410 application/json {"error":"Your own items are in your private workspace now. Open them from the normal lists.","code":"gone"} -> 404 application/json {"error":"not found"}
+PUT /api/team-admin/clients/signin-sender none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+PUT /api/team-admin/clients/signin-sender owner: 410 application/json {"error":"Email-code sign-in has ended: there is no sign-in sender.","code":"gone"} -> 404 application/json {"error":"not found"}
+PUT /api/team-admin/clients/signin-sender member: 403 application/json {"error":"forbidden","reason":"member-login","message":"Not available to member logins."} -> 404 application/json {"error":"not found"}
+PUT /api/team-admin/hub-app none: 401 application/json {"error":"unauthorized"} -> 401 application/json {"error":"unauthorized"}
+PUT /api/team-admin/hub-app owner: 410 application/json {"error":"The member home app moved: each workspace sets its landing page on its own screen. Update the app.","code":"gone"} -> 404 application/json {"error":"not found"}
+PUT /api/team-admin/hub-app member: 403 application/json {"error":"forbidden","reason":"member-login","message":"Not available to member logins."} -> 404 application/json {"error":"not found"}

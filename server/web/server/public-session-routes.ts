@@ -158,33 +158,6 @@ export const PUBLIC_SESSION_ROUTES: PublicSessionRoute[] = [
     expect: { member: { status: 403 }, unknown: { status: 401 } },
   },
   {
-    // Client sign-in with a link (C2), removed in workspaces W5c: the same
-    // 410 code gone for everyone, before any work.
-    key: 'POST /api/auth/client-link',
-    path: '/api/auth/client-link',
-    init: json({}),
-    expect: { member: { status: 410 }, unknown: { status: 410 } },
-  },
-  {
-    // Email sign-in codes (C2b), removed in workspaces W8a: the same 410
-    // code gone for everyone, before any work.
-    key: 'GET /api/auth/client-code',
-    path: '/api/auth/client-code',
-    expect: { member: { status: 410 }, unknown: { status: 410 } },
-  },
-  {
-    key: 'POST /api/auth/client-code',
-    path: '/api/auth/client-code',
-    init: json({ email: 'someone@example.invalid' }),
-    expect: { member: { status: 410 }, unknown: { status: 410 } },
-  },
-  {
-    key: 'POST /api/auth/client-code/verify',
-    path: '/api/auth/client-code/verify',
-    init: json({}),
-    expect: { member: { status: 410 }, unknown: { status: 410 } },
-  },
-  {
     // Bearer rotation: authenticates by the Authorization header only, so a
     // cookie of any role rotates nothing.
     key: 'POST /api/auth/token/refresh',
