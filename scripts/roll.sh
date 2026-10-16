@@ -441,21 +441,27 @@ fi
 # "SESSION_SECRET must be at least 32 characters", and still let a URL with a
 # password through). Masked: URL credentials (scheme://user:pass@ ->
 # scheme://[redacted]@), the rest of an Authorization or Cookie header, the
-# word after "Bearer", a bare provider or Mantle key wherever it stands
-# (sk-ant-, sk-or-, sk-proj-, a long sk-..., mtlk_...), and the value after a
-# name holding key, token, secret, passw..., pwd, authorization, cookie or
-# bearer when the = or : comes RIGHT after that name (word characters and
-# dashes may finish it, a closing quote and spaces may follow). Anchoring the
-# name to its separator keeps the lines that explain a crash whole: a stack
-# frame (secrets.ts:44:11), a Zod "Required" next to a key path, a
-# "[token-refresh] failed: connect ECONNREFUSED". Case-insensitive; perl, not
-# sed: BSD sed has no case-insensitive flag.
+# word after "Bearer", a bare token wherever it stands (sk-ant-, sk-or-,
+# sk-proj-, sk-svcacct-, sk-admin-, any sk- with 20 or more characters after
+# it, mtlk_... dashes included, a JWT eyJ..., a Telegram bot token, a 64-hex
+# string), and the value after a name holding key, token, secret, passw...,
+# pwd, authorization, cookie, bearer or session (word characters and dashes
+# may finish it), or the name pass exactly (SMTP_PASS=, "pass":), when the =
+# or : comes RIGHT after that name (a closing quote and spaces may come
+# between). A quoted value is masked to its real closing quote, past escaped
+# ones. Anchoring the name to its separator keeps the lines that explain a
+# crash whole: a stack frame (secrets.ts:44:11), a Zod "Required" next to a
+# key path, a "[token-refresh] failed: connect ECONNREFUSED", "tests passed:".
+# Case-insensitive; perl, not sed: BSD sed has no case-insensitive flag.
 REDACT_PERL='
-s{\b(?:sk-(?:ant|or|proj)-[\w-]{8,}|sk-[A-Za-z0-9]{20,}|mtlk_\w+)}{\[redacted\]}g;
+s{\b(?:sk-(?:ant|or|proj|svcacct|admin)-[\w-]{8,}|sk-[A-Za-z0-9_-]{20,}|mtlk_[\w-]+|eyJ[\w-]+\.[\w-]+\.[\w-]*)}{\[redacted\]}g;
+s{(/bot)\d+:[\w-]+}{$1\[redacted\]}g;
+s{\b\d{6,}:[A-Za-z0-9_-]{30,}}{\[redacted\]}g;
+s{\b[0-9a-fA-F]{64}\b}{\[redacted\]}g;
 s{://[^/\s\@]+\@}{://[redacted]\@}g;
 s{\b((?:proxy-)?authorization|(?:set-)?cookie)(\s*[=:]\s*).*}{$1$2\[redacted\]}gi;
 s{\b(bearer)\s+[^\s,;\x22\x27]+}{$1 \[redacted\]}gi;
-s{((?:key|token|secret|passw[a-z]*|pwd|authorization|cookie|bearer)[\w-]*\x22?\s*[=:]\s*)(?:\x22[^\x22]*\x22|\x27[^\x27]*\x27|[^\s,;]+)}{$1\[redacted\]}gi;
+s{((?:(?:key|token|secret|passw[a-z]*|pwd|authorization|cookie|bearer|session)[\w-]*|pass)(?:\\?\x22|\x27)?\s*[=:]\s*)(?:\x22(?:[^\x22\\]|\\.)*\x22|\x27(?:[^\x27\\]|\\.)*\x27|[^\s,;]+)}{$1\[redacted\]}gi;
 '
 redact_secrets() { perl -pe "$REDACT_PERL"; }
 web_not_healthy() { # <last health status>

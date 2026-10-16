@@ -1063,6 +1063,18 @@ case "$1" in
     echo "[llm] legacy sk-FakeLegacy0123456789abcd refused"
     echo "[api] mtlk_FakeMtlk0123456789 revoked"
     echo "[db] PGPWD=FakePwd0123 rejected"
+    echo "[api] mtlk_AbCdEfGh_FakeMtlkDash-0123_456789 revoked"
+    echo "[llm] svc sk-svcacct-FakeSvc_acct-0123456789 refused"
+    echo "[llm] admin sk-admin-FakeAdmin0123456789 refused"
+    printf '%s\n' '[cfg] {"secret":"FakeEsc\"Tail0123","next":1}'
+    echo "[smtp] pass: FakePass0123 rejected"
+    echo "[smtp] SMTP_PASS=FakeSmtp0123 DB_PASS=FakeDbPass0123"
+    echo '[cfg] {"pass":"FakeJsonPass0123"}'
+    echo "[selftest] tests passed: 3, passing: 2"
+    echo "[tg] GET https://api.telegram.org/bot123456789:AAFakeTg0123456789abcdefghijklmnop/getUpdates failed"
+    echo "[crypto] seed 0123456789abcdef0123456789abcdef0123456789abcdeffa4e0123456789ab bad"
+    echo "[auth] eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ4In0.FakeJwtSig0123 expired"
+    echo "[auth] mantle_session=FakeSess0123 rejected"
     echo "    at loadSecrets (/app/server/web/lib/secrets.ts:44:11)"
     echo "    at file:///app/server/web/lib/token-store.js:118:7"
     echo 'ZodError: [{"code":"invalid_type","path":["apiKey"],"message":"Required"}]'
@@ -1201,6 +1213,24 @@ check "web never healthy: bare key literals print masked (sk-ant, sk-or, sk-proj
   sh -c "! grep -q 'Fake\(Ant\|Or\|Proj\|Legacy\|Mtlk\)0123' '$RS/out' && grep -qF 'calling with [redacted] failed' '$RS/out' && grep -qF 'key [redacted] rejected' '$RS/out' && grep -qF 'said no to [redacted]' '$RS/out' && grep -qF 'legacy [redacted] refused' '$RS/out' && grep -qF '[api] [redacted] revoked' '$RS/out'"
 check "web never healthy: a pwd name prints with its value masked" \
   sh -c "! grep -q FakePwd0123 '$RS/out' && grep -qF 'PGPWD=[redacted] rejected' '$RS/out'"
+check "web never healthy: an mtlk_ key with a dash prints masked to its end" \
+  sh -c "! grep -q 'FakeMtlkDash\|0123_456789' '$RS/out' && grep -qF '[api] [redacted] revoked' '$RS/out'"
+check "web never healthy: sk-svcacct- and sk-admin- keys print masked" \
+  sh -c "! grep -q 'FakeSvc\|FakeAdmin' '$RS/out' && grep -qF 'svc [redacted] refused' '$RS/out' && grep -qF 'admin [redacted] refused' '$RS/out'"
+check "web never healthy: a JSON value with an escaped quote prints masked to its real end" \
+  sh -c "! grep -q 'FakeEsc\|Tail0123' '$RS/out' && grep -qF '{\"secret\":[redacted],\"next\":1}' '$RS/out'"
+check "web never healthy: a plain pass name prints with its value masked (pass:, SMTP_PASS=, DB_PASS=, \"pass\":)" \
+  sh -c "! grep -q 'FakePass0123\|FakeSmtp0123\|FakeDbPass0123\|FakeJsonPass0123' '$RS/out' && grep -qF '[smtp] pass: [redacted] rejected' '$RS/out' && grep -qF 'SMTP_PASS=[redacted] DB_PASS=[redacted]' '$RS/out' && grep -qF '{\"pass\":[redacted]}' '$RS/out'"
+check "web never healthy: passed and passing print whole" \
+  grep -qF '[selftest] tests passed: 3, passing: 2' "$RS/out"
+check "web never healthy: a Telegram bot token in a URL prints masked" \
+  sh -c "! grep -q FakeTg0123 '$RS/out' && grep -qF 'api.telegram.org/bot[redacted]/getUpdates failed' '$RS/out'"
+check "web never healthy: a bare 64-hex string prints masked" \
+  sh -c "! grep -q 'deffa4e0123' '$RS/out' && grep -qF '[crypto] seed [redacted] bad' '$RS/out'"
+check "web never healthy: a JWT prints masked" \
+  sh -c "! grep -q 'FakeJwtSig\|eyJhbGci' '$RS/out' && grep -qF '[auth] [redacted] expired' '$RS/out'"
+check "web never healthy: a session cookie value prints masked" \
+  sh -c "! grep -q FakeSess0123 '$RS/out' && grep -qF 'mantle_session=[redacted] rejected' '$RS/out'"
 check "web never healthy: a stack frame through secrets.ts prints whole" \
   grep -qF 'at loadSecrets (/app/server/web/lib/secrets.ts:44:11)' "$RS/out"
 check "web never healthy: a file:line:col through token-store.js prints whole" \
@@ -1210,6 +1240,28 @@ check "web never healthy: a Zod Required next to a key path prints whole" \
 check "web never healthy: connect ECONNREFUSED after a token name prints whole" \
   grep -qF '[token-refresh] request failed: connect ECONNREFUSED 10.0.0.5:443' "$RS/out"
 check "web never healthy: no rollback requested" sh -c "test \$(grep -c alpine '$RS/calls') = 1"
+
+# No perl on the operator's machine: the log cannot be masked, so it is not
+# shown at all, and the operator is told where to read it. PATH is every
+# command on this PATH (node included), linked one by one, with perl left out.
+NP="$WORK/noperl-bin"; mkdir -p "$NP"
+IFS=: read -r -a path_dirs <<< "$PATH"
+for d in "${path_dirs[@]}"; do
+  [ -n "$d" ] && [ -d "$d" ] || continue
+  for f in "$d"/*; do
+    n=${f##*/}
+    case "$n" in perl*) continue ;; esac
+    if [ -x "$f" ] && [ ! -e "$NP/$n" ]; then ln -s "$f" "$NP/$n"; fi
+  done
+done
+roll_box noperl
+rc=0
+PATH="$RB:$NP" RS="$RS" ROLL_POLL_SECS=0 ROLL_TIMEOUT_SECS=5 ROLL_HEALTH_TIMEOUT_SECS=5 FAKE_HEALTH=unhealthy \
+  "$BASH" "$ROOT/scripts/roll.sh" --ssh fakebox v8 > "$RS/out" 2>&1 || rc=$?
+check "web never healthy, no perl: exit 1, the banner, and where to read the log" \
+  sh -c "test '$rc' = 1 && grep -q 'WEB NOT HEALTHY on fakebox' '$RS/out' && grep -qF '(perl not found: the log cannot be masked, so it is not shown' '$RS/out' && grep -qF 'ssh fakebox docker logs --tail 20 mantle_web' '$RS/out'"
+check "web never healthy, no perl: no log line printed at all" \
+  sh -c "! grep -q 'pgpass123\\|does not provide an export named\\|last lines of the mantle_web log' '$RS/out'"
 
 roll_box notok
 FAKE_OK=false FAKE_PHASE=error FAKE_ERR="compose up failed" roll_sh --ssh fakebox v8

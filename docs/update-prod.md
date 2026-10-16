@@ -108,14 +108,20 @@ What it does, in order:
    banner saying the box is down, and the last 20 lines of the `mantle_web`
    log, every line, with secret values masked: URL credentials
    (`://[redacted]@`), Authorization and Cookie header values, the word after
-   `Bearer`, a bare provider or Mantle key wherever it stands (`sk-ant-`,
-   `sk-or-`, `sk-proj-`, a long `sk-...`, `mtlk_...`), and the value after a
-   name holding key, token, secret, passw..., pwd, authorization, cookie or
-   bearer when `=` or `:` follows that name directly (`MANTLE_API_TOKEN=...`,
-   `"apiKey": "..."`). Lines that explain the failure print whole:
+   `Bearer`, a bare token wherever it stands (`sk-ant-`, `sk-or-`,
+   `sk-proj-`, `sk-svcacct-`, `sk-admin-`, any `sk-` with 20 or more
+   characters after it, `mtlk_...` dashes included, a JWT `eyJ...`, a
+   Telegram bot token, a 64-hex string), and the value after a name holding
+   key, token, secret, passw..., pwd, authorization, cookie, bearer or
+   session, or the name pass exactly, when `=` or `:` follows that name
+   directly (`MANTLE_API_TOKEN=...`, `SMTP_PASS=...`, `"apiKey": "..."`,
+   `mantle_session=...`). A quoted value is masked to its real closing quote,
+   past escaped ones. Lines that explain the failure print whole:
    "SESSION_SECRET must be at least 32 characters", a stack frame like
-   `secrets.ts:44:11`, a Zod `"Required"`, `connect ECONNREFUSED`. Nothing is
-   rolled back automatically.
+   `secrets.ts:44:11`, a Zod `"Required"`, `connect ECONNREFUSED`, "tests
+   passed:". Without perl on the machine running `roll.sh` the log is not
+   shown at all; the banner says how to read it on the box. Nothing is rolled
+   back automatically.
 7. Counts again: **any drop in apps, sandboxes or app-db files stops with exit
    3** and a banner. Roll nothing else; the pre-roll backup is the way back.
 8. Prints `/api/version`.

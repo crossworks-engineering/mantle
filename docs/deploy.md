@@ -243,17 +243,16 @@ plus the stdio MCP server as a client starts it (`pnpm -C server/mcp start`),
 from the repo root as the image does, under `MANTLE_BOOT_SMOKE=import-only`.
 That exact value is the only one honoured: a stray `MANTLE_BOOT_SMOKE=1` in a
 box's `.env` is ignored, so it cannot make every container exit 0 at start
-and restart forever. Each entry
-links its imports, loads what it would load lazily (the web: every route
-module and its boot tasks), prints `[boot-smoke] linked: <name>` and exits 0
-before it opens a pool, a listener or a queue
+and restart forever. Each entry links its imports, loads what it would load
+lazily (the web: every route module and its boot tasks), prints
+`[boot-smoke] linked: <name>` and exits 0 before it opens a pool, a listener
+or a queue
 ([`packages/config/src/boot-smoke.ts`](../packages/config/src/boot-smoke.ts)).
-No database, no network; about 15 to 30 s on a Mac, 40 to 60 s on CI.
-It runs in `pnpm verify`, in
-build-check and in the release guard before any image is built. It exists
-because v0.300.64 crash-looped every server process at start (a package
-without `"type": "module"`, loaded by tsx as CommonJS, lost the names its
-barrel re-exported) while typecheck, tests and the build were green.
+No database, no network; about 15 to 30 s on a Mac, 40 to 60 s on CI. It runs
+in `pnpm verify`, in build-check and in the release guard before any image is
+built. It exists because v0.300.64 crash-looped every server process at start
+(a package without `"type": "module"`, loaded by tsx as CommonJS, lost the
+names its barrel re-exported) while typecheck, tests and the build were green.
 
 What it loads: each entry's static import graph, every web route module and
 the entries' own lazy imports. What it does not load: an `await import()`
