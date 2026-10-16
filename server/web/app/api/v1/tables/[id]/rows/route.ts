@@ -12,7 +12,7 @@ import { ownerCaller } from '@/lib/auth';
 import { runBuiltinForApi } from '@/lib/api-v1-builtin';
 import { readBody } from '@/lib/read-body';
 
-export { GET } from '../../../../tables/[id]/rows/route';
+export { GET, routeParams } from '../../../../tables/[id]/rows/route';
 
 const Params = z.object({ id: z.string().uuid() });
 const Body = z.object({

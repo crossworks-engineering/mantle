@@ -2,6 +2,11 @@ import { NextResponse } from '@/server/http-compat';
 import { ownerCaller } from '@/lib/auth';
 import { fireOptsFor, getHeartbeatRow } from '@/lib/heartbeats';
 import { forceFire } from '@mantle/runtime/heartbeats';
+import type { RouteParams } from '@/lib/route-params';
+
+/** The [id] is a uuid: any other names nothing, the one 404 before the
+ *  handler (lib/route-params.ts). */
+export const routeParams = { id: 'uuid' } as const satisfies RouteParams;
 
 /**
  * Fire a heartbeat immediately, bypassing its gates (idle / quiet / cooldown) —

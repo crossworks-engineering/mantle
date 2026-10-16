@@ -12,7 +12,7 @@
  */
 
 import { and, asc, desc, eq, sql } from 'drizzle-orm';
-import { InputError } from '@mantle/std';
+import { InputError, isUuid } from '@mantle/std';
 import { db, agents, skills, aiWorkers, promptVersions, type PromptVersion } from '@mantle/db';
 import { restampHeartbeatMakers } from '@mantle/tools';
 import { PROSE_REGISTRY, type ProseEntityType } from './registry';
@@ -37,6 +37,9 @@ export async function readLiveProse(
   field: string,
 ): Promise<string | null> {
   assertField(entityType, field);
+  // An id that is not a uuid names no entity (A10 lows, part 2 #1): the
+  // caller's 400 (saveProse), not the uuid cast's opaque 500.
+  if (!isUuid(entityId)) return null;
   if (entityType === 'agent' && field === 'system_prompt') {
     const [r] = await db
       .select({ v: agents.systemPrompt })
@@ -130,6 +133,8 @@ export async function listProseVersions(
   field: string,
 ): Promise<PromptVersion[]> {
   assertField(entityType, field);
+  // An id that is not a uuid has no history (A10 lows, part 2 #1).
+  if (!isUuid(entityId)) return [];
   return db
     .select()
     .from(promptVersions)

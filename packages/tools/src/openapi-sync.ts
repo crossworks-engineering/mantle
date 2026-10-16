@@ -21,6 +21,7 @@ import { createHash } from 'node:crypto';
 import { and, eq, sql } from 'drizzle-orm';
 import {
   agents,
+  conflictOnUnique,
   db,
   toolGroups,
   tools,
@@ -538,25 +539,27 @@ export async function createOpenapiConnector(
     .from(toolGroups)
     .where(and(eq(toolGroups.ownerId, ownerId), eq(toolGroups.slug, groupSlug)))
     .limit(1);
-  if (existing) {
-    throw new InputError(
-      `connector group '${groupSlug}' already exists — update its binding or re-run sync instead of creating it again`,
-    );
-  }
+  const taken = `connector group '${groupSlug}' already exists — update its binding or re-run sync instead of creating it again`;
+  if (existing) throw new InputError(taken);
 
-  await db.insert(toolGroups).values({
-    ownerId,
-    slug: groupSlug,
-    name: input.name?.trim() || catalog?.label || `API: ${connectorSlug}`,
-    description: openapiGroupDescription({
-      specUrl: parsedBinding.value.specUrl,
-      whenToUse: catalog?.whenToUse,
+  // A create that raced this one past the check above meets the unique
+  // index: the same words as a ConflictError (409), not the opaque 500
+  // (A10 lows, part 2 #3).
+  await conflictOnUnique(taken, () =>
+    db.insert(toolGroups).values({
+      ownerId,
+      slug: groupSlug,
+      name: input.name?.trim() || catalog?.label || `API: ${connectorSlug}`,
+      description: openapiGroupDescription({
+        specUrl: parsedBinding.value.specUrl,
+        whenToUse: catalog?.whenToUse,
+      }),
+      toolSlugs: [],
+      integration: meta.value,
+      enabled: true,
+      configuredBy: input.configuredBy ?? null,
     }),
-    toolSlugs: [],
-    integration: meta.value,
-    enabled: true,
-    configuredBy: input.configuredBy ?? null,
-  });
+  );
 
   try {
     const sync = await syncOpenapiConnector(ownerId, groupSlug);

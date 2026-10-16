@@ -5,10 +5,15 @@ import { AvatarSchema } from '@/lib/avatar-schema';
 import { AgentMemoryConfigSchema } from '@/lib/agent-memory-config-schema';
 import { agentForReader, deleteAgent, updateAgent } from '@/lib/agents';
 import { AGENT_THINKING_EFFORTS } from '@mantle/content';
-import { agents, db } from '@mantle/db';
+import { agents, db, inputOnMissingRef } from '@mantle/db';
 import { and, eq } from 'drizzle-orm';
 import { firstIssue } from '@/lib/zod-issue';
-import { AGENT_ROUTES, modelRoutesRepaired, modelRoutesTouched } from '@/lib/model-route-pair';
+import {
+  AGENT_ROUTES,
+  ROUTE_KEY_REFS,
+  modelRoutesRepaired,
+  modelRoutesTouched,
+} from '@/lib/model-route-pair';
 import { toolMakerFor, vaultPairRefusalFor } from '@/lib/tools';
 import { restampHeartbeatMakers } from '@mantle/tools';
 import { readJson } from '@/lib/read-body';
@@ -110,7 +115,10 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
       configuredBy = { configuredBy: toolMakerFor(user) };
     }
   }
-  const row = await updateAgent(user.id, idParsed.data.id, { ...parsed.data, ...configuredBy });
+  // A key id the vault has no key for is the caller's 400 (A10 lows).
+  const row = await inputOnMissingRef(ROUTE_KEY_REFS.agents, () =>
+    updateAgent(user.id, idParsed.data.id, { ...parsed.data, ...configuredBy }),
+  );
   if (!row) return NextResponse.json({ error: 'Not found.' }, { status: 404 });
   // The agent's prompt (system prompt and its skills) and its granted
   // groups (their tools and usage skills) are what its heartbeats run: a

@@ -1,14 +1,19 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { ownerCaller } from '@/lib/auth';
-import { AGENT_ROUTES, modelRoutesRefusal, modelRoutesStamp } from '@/lib/model-route-pair';
+import {
+  AGENT_ROUTES,
+  ROUTE_KEY_REFS,
+  modelRoutesRefusal,
+  modelRoutesStamp,
+} from '@/lib/model-route-pair';
 import { toolMakerFor } from '@/lib/tools';
 import { restampHeartbeatMakers } from '@mantle/tools';
 import { AvatarSchema } from '@/lib/avatar-schema';
 import { AgentMemoryConfigSchema } from '@/lib/agent-memory-config-schema';
 import { agentForReader, createAgent, listAgents } from '@/lib/agents';
 import { firstIssue } from '@/lib/zod-issue';
-import { conflictOnUnique } from '@mantle/db';
+import { conflictOnUnique, inputOnMissingRef } from '@mantle/db';
 import { AGENT_THINKING_EFFORTS } from '@mantle/content-core/thinking-tiers';
 import { readJson } from '@/lib/read-body';
 
@@ -103,10 +108,13 @@ export async function POST(req: Request) {
   // (conflictOnUnique, a ConflictError); anything else answers by the one
   // table (A10 part 2): a domain error its status, a fault the opaque 500.
   return conflictOnUnique(`An agent with slug "${parsed.data.slug}" already exists.`, async () => {
-    const row = await createAgent(user.id, {
-      ...parsed.data,
-      ...modelRoutesStamp(user, null, parsed.data, AGENT_ROUTES),
-    });
+    // A key id the vault has no key for is the caller's 400 (A10 lows).
+    const row = await inputOnMissingRef(ROUTE_KEY_REFS.agents, () =>
+      createAgent(user.id, {
+        ...parsed.data,
+        ...modelRoutesStamp(user, null, parsed.data, AGENT_ROUTES),
+      }),
+    );
     // A heartbeat already bound to this slug now runs this prompt (W7a fix
     // round 4, @mantle/tools heartbeat-maker.ts).
     await restampHeartbeatMakers(user.id, toolMakerFor(user), { agentSlug: row.slug });

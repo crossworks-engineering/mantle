@@ -5,6 +5,11 @@ import { ownerCaller } from '@/lib/auth';
 import { hiddenFromKey } from '@/lib/api-v1';
 import { deleteTable, getTable, updateTable } from '@/lib/tables';
 import { readBody } from '@/lib/read-body';
+import type { RouteParams } from '@/lib/route-params';
+
+/** The [id] is a uuid: any other names nothing, the one 404 before the
+ *  handler (lib/route-params.ts). */
+export const routeParams = { id: 'uuid' } as const satisfies RouteParams;
 
 const PatchBody = z.object({
   title: z.string().min(1).max(200).optional(),

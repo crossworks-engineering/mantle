@@ -10,9 +10,13 @@ import { connectDevice, parseConnectBody } from '@/lib/push/connect';
 import { readJson } from '@/lib/read-body';
 
 export async function POST(req: NextRequest) {
-  // The owner the gate answered (read, so the row reads it: the caller
-  // the gate answers, and the login its limit counts). The gate took the
-  // row's per-login limit (lib/route-limits.ts pushEnrol).
+  // A bare read, its value unused: it is here for the route manifest only
+  // (A10 lows, #8 L4). The generator (scripts/route-callers.ts) finds the
+  // reader and gives the row its caller, 'owner', which the gate answers
+  // and whose login the row's per-login limit counts (lib/route-limits.ts
+  // pushEnrol). Without it the row reads no caller, which buildRoutePolicy
+  // refuses for a row that is not public. The handler itself needs no
+  // owner: the relay ticket is the install's, not a login's.
   ownerCaller();
 
   const body = parseConnectBody(await readJson(req, { empty: null }));

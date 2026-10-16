@@ -118,7 +118,9 @@ function outOfScope(reason: string): Response {
 }
 
 /** A key over its budget (lib/access-keys.ts: per key, per login, the
- *  search's own): the one 429 (A10 #8). */
+ *  search's own): the one 429 (A10 #8), in its machine shape: an API key's
+ *  script reads `error` as the code `rate_limited`, as before (A10 lows,
+ *  #8 L1). */
 function tooMany(retryAfterSec: number): Response {
-  return rateLimitedResponse(retryAfterSec);
+  return rateLimitedResponse(retryAfterSec, 'machine');
 }

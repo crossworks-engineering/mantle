@@ -62,7 +62,101 @@ const FAMILIES = [
  * answers as recorded on main.
  */
 const NOT_FOUND = '404 application/json {"error":"not found"}';
-const CHANGES: Readonly<Record<string, { kind: string; now: string }>> = {};
+const BAD_ID_404 = 'bad-id-404 (the params gateway: an [id] that is not a uuid names nothing)';
+/** The [id] cells that answer the gateway's 404 now (500 on main, or the
+ *  evaluate route's own 404 text). */
+const BAD_ID_CELLS = [
+  'DELETE /api/contacts/:id',
+  'DELETE /api/contacts/:id/shares',
+  'DELETE /api/heartbeats/:id',
+  'DELETE /api/journal/:id',
+  'GET /api/contacts/:id',
+  'GET /api/contacts/:id/shares',
+  'GET /api/events/:id',
+  'GET /api/formulas/:id',
+  'GET /api/heartbeats/:id',
+  'GET /api/heartbeats/:id/detail',
+  'GET /api/journal/:id',
+  'GET /api/tables/:id',
+  'GET /api/tables/:id/export',
+  'GET /api/tables/:id/history',
+  'GET /api/tables/:id/history/:sid/download',
+  'GET /api/tables/:id/rows',
+  'GET /api/v1/contacts/:id',
+  'GET /api/v1/tables/:id',
+  'GET /api/v1/tables/:id/rows',
+  'PATCH /api/contacts/:id',
+  'PATCH /api/heartbeats/:id',
+  'PATCH /api/journal/:id',
+  'POST /api/contacts/:id/sharing',
+  'POST /api/formulas/:id/evaluate',
+  'POST /api/heartbeats/:id/fire',
+  'POST /api/journal/:id/resolve',
+];
+/** The Files operation's own refusal (its text carries a dash: \u2014). */
+const NO_FOLDER = (verb: string, fix: string) =>
+  `400 application/json {"error":"${verb}: no folder at '${BAD_PATH}' \u2014 ${fix}"}`;
+const FIRST = 'create it with folder_create first';
+const CHANGES: Readonly<Record<string, { kind: string; now: string }>> = {
+  ...Object.fromEntries(
+    BAD_ID_CELLS.map((c) => [`bad-id ${c}`, { kind: BAD_ID_404, now: NOT_FOUND }]),
+  ),
+  'prose GET': {
+    kind: 'prose-no-history (an entityId that is not a uuid has no versions)',
+    now: '200 application/json {"versions":[]}',
+  },
+  'prose POST save': {
+    kind: 'prose-400 (an entityId that is not a uuid names no entity)',
+    now: '400 application/json {"error":"entity not found or not owned"}',
+  },
+  'prose POST revert': {
+    kind: 'prose-400 (an entityId that is not a uuid has no version to go back to)',
+    now: '400 application/json {"error":"version 1 not found"}',
+  },
+  'earliest POST': {
+    kind: 'earliest-400 (earliestAt is an ISO date-time)',
+    now: '400 application/json {"error":"earliestAt: Invalid ISO datetime"}',
+  },
+  'earliest PATCH': {
+    kind: 'earliest-400 (earliestAt is an ISO date-time)',
+    now: '400 application/json {"error":"earliestAt: Invalid ISO datetime"}',
+  },
+  'dest file move': {
+    kind: 'dest-400 (a path that is no ltree is no folder)',
+    now: NO_FOLDER(
+      'moveFileById',
+      'create it with folder_create, or find the right path with folder_list',
+    ),
+  },
+  'dest file copy': {
+    kind: 'dest-400 (a path that is no ltree is no folder)',
+    now: NO_FOLDER('copyFileById', FIRST),
+  },
+  'dest folder move': {
+    kind: 'dest-400 (a path that is no ltree is no folder)',
+    now: NO_FOLDER('moveFolderById', FIRST),
+  },
+  'dest folder copy': {
+    kind: 'dest-400 (a path that is no ltree is no folder)',
+    now: NO_FOLDER('copyFolderById', FIRST),
+  },
+  'key ai-worker POST': {
+    kind: 'key-400 (a key id the vault has no key for)',
+    now: '400 application/json {"error":"apiKeyId names no key in the vault."}',
+  },
+  'key ai-worker PATCH': {
+    kind: 'key-400 (a key id the vault has no key for)',
+    now: '400 application/json {"error":"apiKeyId names no key in the vault."}',
+  },
+  'key agent POST': {
+    kind: 'key-400 (a key id the vault has no key for)',
+    now: '400 application/json {"error":"apiKeyId names no key in the vault."}',
+  },
+  'key agent PATCH': {
+    kind: 'key-400 (a key id the vault has no key for)',
+    now: '400 application/json {"error":"apiKeyId names no key in the vault."}',
+  },
+};
 
 describe.skipIf(!DB_URL)('A10 lows: bad ids, dates, paths and keys answer as the caller’s', () => {
   type Ts = typeof import('@mantle/db/test-support');
@@ -310,6 +404,5 @@ describe.skipIf(!DB_URL)('A10 lows: bad ids, dates, paths and keys answer as the
     for (const [name, c] of Object.entries(CHANGES)) {
       expect(main.get(name), `${name} [${c.kind}] answers as on main`).not.toBe(c.now);
     }
-    void NOT_FOUND;
   }, 300_000);
 });

@@ -10,6 +10,11 @@ import type { ReadableStream as NodeReadableStream } from 'node:stream/web';
 import { NextResponse } from '@/server/http-compat';
 import { ownerCaller } from '@/lib/auth';
 import { tableSnapshotFile, tableTitle } from '@mantle/content/table-snapshots';
+import type { RouteParams } from '@/lib/route-params';
+
+/** The [id] is a uuid: any other names nothing, the one 404 before the
+ *  handler (lib/route-params.ts). */
+export const routeParams = { id: 'uuid' } as const satisfies RouteParams;
 
 export async function GET(_req: Request, ctx: { params: Promise<{ id: string; sid: string }> }) {
   const user = ownerCaller();

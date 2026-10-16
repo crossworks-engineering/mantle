@@ -11,6 +11,11 @@ import { existsSync } from 'node:fs';
 import { draftAbsOf } from '@mantle/content/table-storage';
 import { ownerCaller } from '@/lib/auth';
 import { hiddenFromKey } from '@/lib/api-v1';
+import type { RouteParams } from '@/lib/route-params';
+
+/** The [id] is a uuid: any other names nothing, the one 404 before the
+ *  handler (lib/route-params.ts). */
+export const routeParams = { id: 'uuid' } as const satisfies RouteParams;
 
 /**
  * Keyset page of rows for the grid's lazy-load (P3). Draft-first like every

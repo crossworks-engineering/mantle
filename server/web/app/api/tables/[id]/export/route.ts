@@ -7,6 +7,11 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { ownerCaller } from '@/lib/auth';
+import type { RouteParams } from '@/lib/route-params';
+
+/** The [id] is a uuid: any other names nothing, the one 404 before the
+ *  handler (lib/route-params.ts). */
+export const routeParams = { id: 'uuid' } as const satisfies RouteParams;
 
 /**
  * Raw .sqlite download (P3) — the workbook file IS the interchange format.

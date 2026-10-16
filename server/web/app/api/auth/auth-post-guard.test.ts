@@ -114,6 +114,36 @@ describe('JSON auth POSTs refuse a cross-site form (audit B15)', () => {
   });
 });
 
+describe('sign-out refuses a cross-site browser request by its row (A10 #8 L5)', () => {
+  // The logout row's crossSite is 'origin' (lib/route-limits.ts ROUTE_GATES):
+  // the gate refuses a cross-site browser post, whatever its body, and takes
+  // any body from the brain's own origin or a client that sends no Origin.
+  it('logout: 403 cross-site for any body, no cookie; its own callers pass', async () => {
+    const POST = (await routed('logout')).POST;
+    for (const type of ['application/json', 'text/plain']) {
+      const cross: Record<string, string>[] = [
+        { 'content-type': type, origin: 'https://evil.example.invalid' },
+        { 'content-type': type, origin: 'null', 'sec-fetch-site': 'cross-site' },
+        { 'content-type': type, 'sec-fetch-site': 'cross-site' },
+      ];
+      for (const headers of cross) {
+        const res = await POST(post('logout', headers, '{}'));
+        expect(res.status, JSON.stringify(headers)).toBe(403);
+        expect(((await res.json()) as { reason?: string }).reason).toBe('cross-site');
+        expect(res.headers.get('set-cookie')).toBeNull();
+      }
+    }
+    const own: Record<string, string>[] = [
+      { 'content-type': 'text/plain', origin: BRAIN, 'sec-fetch-site': 'same-origin' },
+      { 'content-type': 'application/json' },
+    ];
+    for (const headers of own) {
+      const res = await POST(post('logout', headers, 'x'));
+      expect(res.status, JSON.stringify(headers)).toBe(200);
+    }
+  });
+});
+
 describe('the email-code sign-in is gone (W8a)', () => {
   const GONE = [
     ['client-code', () => import('./client-code/route')],

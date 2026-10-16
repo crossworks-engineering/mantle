@@ -293,7 +293,7 @@ let ownerDb: Handler<{ id: string }>;
 let linkDb: Handler<{ token: string }>;
 let capRequestBody: typeof import('../lib/body-limit').capRequestBody;
 let bodyCeilingFor: typeof import('../lib/body-limit').bodyCeilingFor;
-let appAnswerOf: typeof import('./app-error').appAnswerOf;
+let appAnswerOf: typeof import('./test-support').appAnswerOf;
 
 beforeAll(async () => {
   process.env.SESSION_SECRET ??= 'a10-app-broker-sweep-secret-at-least-32-chars';
@@ -302,7 +302,7 @@ beforeAll(async () => {
   ownerDb = (await import('../app/api/apps/[id]/db-broker/route')).POST;
   linkDb = (await import('../app/s/[token]/db-broker/route')).POST;
   ({ capRequestBody, bodyCeilingFor } = await import('../lib/body-limit'));
-  ({ appAnswerOf } = await import('./app-error'));
+  ({ appAnswerOf } = await import('./test-support'));
 }, 60_000);
 
 // ── the cells ────────────────────────────────────────────────────────────────

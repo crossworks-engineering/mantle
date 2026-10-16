@@ -3,6 +3,11 @@ import { ownerCaller } from '@/lib/auth';
 import { toolMakerFor } from '@/lib/tools';
 import { getHeartbeat, listHeartbeatFires } from '@/lib/heartbeats';
 import { formatInProfile, loadProfilePreferences } from '@mantle/content';
+import type { RouteParams } from '@/lib/route-params';
+
+/** The [id] is a uuid: any other names nothing, the one 404 before the
+ *  handler (lib/route-params.ts). */
+export const routeParams = { id: 'uuid' } as const satisfies RouteParams;
 
 /**
  * The single-heartbeat "biography" bundle for /heartbeats/[id]: the summary,

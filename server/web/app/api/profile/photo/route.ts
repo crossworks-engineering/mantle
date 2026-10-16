@@ -44,17 +44,11 @@ import { CACHE_CONTROL } from '@/lib/cache-control';
 export async function PUT(req: Request) {
   const user = ownerCaller();
 
-  // Cheap refusal BEFORE formData() buffers the body: a Content-Length far
-  // over the cap never gets materialized. (A lying client still hits the
-  // post-parse check below.)
-  const declared = Number(req.headers.get('content-length') ?? 0);
-  if (declared > LOGO_MAX_BYTES * 2) {
-    return NextResponse.json(
-      { error: `photo must be under ${Math.floor(LOGO_MAX_BYTES / 1024)}KB — crop before upload` },
-      { status: 413 },
-    );
-  }
-
+  // A body over twice the cap never reaches here: the gate refuses a
+  // declared length over the route's ceiling (PROFILE_IMAGE_BODY_BYTES,
+  // lib/body-limit.ts) and the loader stops a longer stream there, both
+  // with the one 413. A file under the ceiling but over the cap gets this
+  // route's own words below.
   const form = await req.formData().catch(() => null);
   const file = form?.get('file');
   if (!(file instanceof File)) {

@@ -62,8 +62,10 @@ export const BUFFERED_UPLOAD_BYTES = 64 * MB;
 /** A voice clip: the speech-to-text providers take at most 25 MB. */
 export const VOICE_CLIP_BYTES = 25 * MB;
 
-/** A profile photo or brand logo: the routes refuse a declared body over
- *  twice LOGO_MAX_BYTES (512 KB) before formData(); pinned by the test. */
+/** A profile photo or brand logo: twice LOGO_MAX_BYTES (512 KB), so a file
+ *  under the routes' own cap always fits with its framing; pinned by the
+ *  test. A body over it is the gate's 413 (the photo route's own declared
+ *  check at the same size never answered, A10 lows part 2 #4). */
 export const PROFILE_IMAGE_BODY_BYTES = 1 * MB;
 
 /** The multipart routes that read their body with formData(), which buffers
@@ -169,11 +171,17 @@ export function bodyWentOver(req: Request): boolean {
   return wentOver.has(req);
 }
 
+/** A ceiling as a person reads it: MB from 1 MB up, KB below (a 64 KB
+ *  ceiling said "at most 0 MB"; A10 lows, part 2 #6). */
+export function ceilingText(maxBytes: number): string {
+  return maxBytes >= MB ? `${Math.round(maxBytes / MB)} MB` : `${Math.round(maxBytes / 1024)} KB`;
+}
+
 /** The 413 for a body over `maxBytes`. */
 export function bodyTooLargeResponse(maxBytes: number): Response {
   return Response.json(
     {
-      error: `This request is too large (at most ${Math.round(maxBytes / MB)} MB).`,
+      error: `This request is too large (at most ${ceilingText(maxBytes)}).`,
       reason: 'body-too-large',
     },
     { status: 413, headers: { 'Cache-Control': CACHE_CONTROL.none } },

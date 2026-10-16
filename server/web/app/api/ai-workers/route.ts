@@ -3,14 +3,19 @@ import { z } from 'zod';
 import type { AiWorkerParams } from '@mantle/db';
 import { clearEmbeddingModelCache } from '@mantle/embeddings';
 import { ownerCaller } from '@/lib/auth';
-import { AGENT_ROUTES, modelRoutesRefusal, modelRoutesStamp } from '@/lib/model-route-pair';
+import {
+  AGENT_ROUTES,
+  ROUTE_KEY_REFS,
+  modelRoutesRefusal,
+  modelRoutesStamp,
+} from '@/lib/model-route-pair';
 import {
   createAiWorker,
   listAiWorkers,
   openRouterModelIssue,
   toAiWorkerDTO,
 } from '@/lib/ai-workers';
-import { conflictOnUnique } from '@mantle/db';
+import { conflictOnUnique, inputOnMissingRef } from '@mantle/db';
 import { readBody } from '@/lib/read-body';
 
 const KIND = z.enum([
@@ -82,17 +87,20 @@ export async function POST(req: Request) {
     if (issue) return NextResponse.json({ error: issue }, { status: 400 });
   }
   // A slug or name taken answers 409 with this route's own text
-  // (conflictOnUnique, a ConflictError); anything else answers by the one
+  // (conflictOnUnique, a ConflictError); a key id that names no key 400
+  // (inputOnMissingRef, A10 lows); anything else answers by the one
   // table (A10 part 2): a domain error its status, a fault the opaque 500.
   return conflictOnUnique('A worker with that slug already exists.', async () => {
     const { params, ...rest } = body;
     // createAiWorker honours isDefault atomically in its own transaction.
-    const worker = await createAiWorker({
-      ownerId: user.id,
-      ...rest,
-      ...modelRoutesStamp(user, null, body, AGENT_ROUTES),
-      ...(params !== undefined ? { params: params as AiWorkerParams } : {}),
-    });
+    const worker = await inputOnMissingRef(ROUTE_KEY_REFS.aiWorkers, () =>
+      createAiWorker({
+        ownerId: user.id,
+        ...rest,
+        ...modelRoutesStamp(user, null, body, AGENT_ROUTES),
+        ...(params !== undefined ? { params: params as AiWorkerParams } : {}),
+      }),
+    );
     // Embedding model changes must drop the resolver cache NOW (next ingest/recall
     // would otherwise hit the old model for ~60s).
     if (worker.kind === 'embedding') clearEmbeddingModelCache(user.id);

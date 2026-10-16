@@ -51,6 +51,10 @@ export type RateLimitSpec = Readonly<{
   /** A failure budget: looked at on the way in (a 429 once it is spent),
    *  counted by the handler on each failure (countRateFailure). */
   peek?: true;
+  /** A machine's limit (an OAuth client, an MCP client): its 429 keeps
+   *  `error: 'rate_limited'`, the code those clients read (the machine
+   *  shape of rateLimitedAnswer; A10 lows, #8 L1). */
+  machine?: true;
 }>;
 
 const MIN = 60_000;
@@ -121,9 +125,9 @@ export const RATE_LIMITS = {
   // The remote MCP and its OAuth server, per address. Each MCP caller also
   // has a budget of its own, which the route takes once it has resolved
   // the bearer (app/api/mcp/route.ts, named in route-plumbing.mjs).
-  mcp: perIp('mcp', 300),
-  oauthRegister: perIp('oauth:register', 10),
-  oauthToken: perIp('oauth:token', 30),
+  mcp: { ...perIp('mcp', 300), machine: true },
+  oauthRegister: { ...perIp('oauth:register', 10), machine: true },
+  oauthToken: { ...perIp('oauth:token', 30), machine: true },
   // Per login, once the caller is answered.
   telegramPair: perLogin('telegram-pair', 10),
   /** A member's voice clips (an Admin user's are not limited). */
@@ -237,6 +241,11 @@ export const ROUTE_GATES: ReadonlyMap<string, RouteGates> = new Map<string, Rout
 /** The one 429's text: what a person reads, whatever the limit. */
 export const RATE_LIMITED_TEXT = 'Too many requests. Try again later.';
 
+/** Who reads a 429: a person (the text in `error`) or a machine (an OAuth
+ *  client, an MCP client, an API key's script), which reads `error` as a
+ *  code. */
+export type RateLimitedShape = 'person' | 'machine';
+
 /**
  * The one 429 (A10 #8): `{ error, code: 'rate_limited', retryAfter }`, with
  * `Retry-After` (seconds, at least 1) and `Cache-Control: no-store`. The
@@ -244,19 +253,35 @@ export const RATE_LIMITED_TEXT = 'Too many requests. Try again later.';
  * header unless it is exposed. Every limit of this tier answers it, the
  * row's and the ones a handler still takes (route-plumbing.mjs
  * RATE_LIMIT_ALLOW), except the OAuth consent page, which answers a page.
+ * A machine's 429 (`shape` 'machine': the OAuth server, the remote MCP, an
+ * API key's budget) keeps the code it had in `error`, and the text moves to
+ * `message`: `{ error: 'rate_limited', code, message, retryAfter }` (A10
+ * lows, #8 L1: an OAuth client reads `error` as the RFC 6749 code).
  */
-export function rateLimitedResponse(retryAfterSec: number): NextResponse {
-  const a = rateLimitedAnswer(retryAfterSec);
+export function rateLimitedResponse(
+  retryAfterSec: number,
+  shape: RateLimitedShape = 'person',
+): NextResponse {
+  const a = rateLimitedAnswer(retryAfterSec, shape);
   return NextResponse.json(a.body, { status: a.status, headers: a.headers });
 }
 
 /** The one 429 as its parts, for an answer that is built later (a chat
  *  turn's, which the turn route keeps for a retry with the same key). */
-export function rateLimitedAnswer(retryAfterSec: number) {
+export function rateLimitedAnswer(retryAfterSec: number, shape: RateLimitedShape = 'person') {
   const sec = Math.max(1, Math.ceil(retryAfterSec));
+  const body =
+    shape === 'machine'
+      ? {
+          error: 'rate_limited' as const,
+          code: 'rate_limited' as const,
+          message: RATE_LIMITED_TEXT,
+          retryAfter: sec,
+        }
+      : { error: RATE_LIMITED_TEXT, code: 'rate_limited' as const, retryAfter: sec };
   return {
     status: 429 as const,
-    body: { error: RATE_LIMITED_TEXT, code: 'rate_limited' as const, retryAfter: sec },
+    body,
     headers: { 'Retry-After': String(sec), 'Cache-Control': CACHE_CONTROL.none },
   };
 }
@@ -310,6 +335,7 @@ export function takeRouteLimits(
   const query = o.query ?? new URL(o.req.url).searchParams;
   const takes: RateLimitResult[] = [];
   const peeks: Array<[RateLimitSpec, string]> = [];
+  const shape: RateLimitedShape = names.some((n) => (RATE_LIMITS[n] as RateLimitSpec).machine) ? 'machine' : 'person';
   for (const name of names) {
     const spec: RateLimitSpec = RATE_LIMITS[name];
     if (!o.scopes.has(spec.per)) continue;
@@ -319,11 +345,11 @@ export function takeRouteLimits(
     else takes.push(rateLimit(key, spec));
   }
   if (takes.some((t) => !t.ok)) {
-    return rateLimitedResponse(Math.max(...takes.map((t) => t.retryAfterSec)));
+    return rateLimitedResponse(Math.max(...takes.map((t) => t.retryAfterSec)), shape);
   }
   for (const [spec, key] of peeks) {
     const seen = rateLimitPeek(key, spec);
-    if (!seen.ok) return rateLimitedResponse(seen.retryAfterSec);
+    if (!seen.ok) return rateLimitedResponse(seen.retryAfterSec, shape);
   }
   return null;
 }

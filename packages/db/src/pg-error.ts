@@ -12,7 +12,7 @@
  *
  * These helpers walk the error and up to three causes below it.
  */
-import { ConflictError, findDatabaseError } from '@mantle/std';
+import { ConflictError, InputError, findDatabaseError } from '@mantle/std';
 
 /** How deep isBusy looks for a BusyError on the cause chain. */
 const MAX_DEPTH = 4;
@@ -105,6 +105,34 @@ export async function conflictOnUnique<T>(message: string, fn: () => Promise<T>)
     return await fn();
   } catch (err) {
     if (isUniqueViolation(err)) throw new ConflictError(message, { cause: err });
+    throw err;
+  }
+}
+
+/** 23503 foreign_key_violation: the write named a row that is not there
+ *  (or a delete left a row pointing at one). */
+export function isForeignKeyViolation(err: unknown): boolean {
+  return pgErrorCode(err) === '23503';
+}
+
+/**
+ * `fn`, with a violation of one of the foreign keys `refs` names (the body
+ * named a row that is not there: a key id) as an InputError saying that
+ * key's message: 400 `{ error: message }` by its row in the one domain
+ * error table (A10 lows, part 2 #3), where it was the opaque 500. Any other
+ * violation is no typo of the caller's and stays a fault. Around a create
+ * or an update whose body names other rows.
+ */
+export async function inputOnMissingRef<T>(
+  refs: Readonly<Record<string, string>>,
+  fn: () => Promise<T>,
+): Promise<T> {
+  try {
+    return await fn();
+  } catch (err) {
+    const name = isForeignKeyViolation(err) ? pgConstraint(err) : null;
+    const message = name !== null && Object.hasOwn(refs, name) ? refs[name] : undefined;
+    if (message) throw Object.assign(new InputError(message), { cause: err });
     throw err;
   }
 }

@@ -16,6 +16,7 @@ import {
   bodyWentOver,
   capRequestBody,
 } from '../lib/body-limit';
+import { ROUTE_PARAMS_EXPORT, routeParamsRefusal } from '../lib/route-params';
 import { getRequestContext } from './request-context';
 
 /**
@@ -36,6 +37,10 @@ import { getRequestContext } from './request-context';
  * A4 step 1), built once here; the gate middleware finds them with
  * servedRoute() and runs the handler through enterCall, which opens the
  * request slot. The loader only runs the handler: it is not a second gate.
+ *
+ * A route file may declare what its path params must be (`routeParams`,
+ * lib/route-params.ts): the loader answers the one 404 for a segment the
+ * schema refuses, before the handler runs.
  *
  * The pages of server/pages (the /s page, the render surfaces) register
  * here too (registerPages, A4 step 2), each with its row: the plan's
@@ -180,6 +185,12 @@ export function registerRoutes(
           return Response.json({ error: 'method not allowed' }, { status: 405 });
         }
         if (pending) throw pending.error;
+        // The route's params schema (A10 lows, lib/route-params.ts): a
+        // segment that is not what the route file declares (an id that is
+        // not a uuid) is the one 404, before the handler, its body or the
+        // database see it.
+        const refused = routeParamsRefusal(mod[ROUTE_PARAMS_EXPORT], entry.pattern, params);
+        if (refused) return refused;
         // The one body reader (A10 part 2, fold 1): the handler's request
         // reads its body through the route's ceiling, whichever reader it
         // calls, so a chunked body that declares no length is refused at the

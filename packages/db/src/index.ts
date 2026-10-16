@@ -338,6 +338,8 @@ export {
   isCheckViolation,
   isUniqueViolation,
   conflictOnUnique,
+  isForeignKeyViolation,
+  inputOnMissingRef,
   isScopeWriteRefusal,
   editRefusalDetail,
   isHiddenRowsRefusal,

@@ -7,6 +7,8 @@ import {
   isScopeWriteRefusal,
   editRefusalDetail,
   isUniqueViolation,
+  inputOnMissingRef,
+  isForeignKeyViolation,
   pgConstraint,
   pgErrorCode,
   withBusyRetry,
@@ -272,5 +274,38 @@ describe('isBusy under a query builder (A2b2b fix round 1, M2)', () => {
       isBusy(drizzleQueryError(new BusyError('The server is busy; try again in a moment.'))),
     ).toBe(true);
     expect(isBusy(drizzleQueryError(new Error('other')))).toBe(false);
+  });
+});
+
+describe('inputOnMissingRef (A10 lows, part 2 #3)', () => {
+  const pgMissing = (constraint: string) =>
+    Object.assign(new Error(`insert violates foreign key constraint "${constraint}"`), {
+      code: '23503',
+      constraint_name: constraint,
+    });
+  const REFS = { ai_workers_api_key_id_api_keys_id_fk: 'apiKeyId names no key in the vault.' };
+
+  it('a named foreign key the write broke is the caller’s InputError, with its message', async () => {
+    const { InputError } = await import('@mantle/std');
+    const missing = drizzleQueryError(pgMissing('ai_workers_api_key_id_api_keys_id_fk'));
+    expect(isForeignKeyViolation(missing)).toBe(true);
+    const thrown = await inputOnMissingRef(REFS, () => Promise.reject(missing)).catch(
+      (e: unknown) => e,
+    );
+    expect(thrown).toBeInstanceOf(InputError);
+    expect((thrown as Error).message).toBe('apiKeyId names no key in the vault.');
+    expect((thrown as Error).cause).toBe(missing);
+  });
+
+  it('another foreign key, another error, or a prototype name stays what it was', async () => {
+    for (const err of [
+      pgMissing('agents_workspace_id_workspaces_id_fk'),
+      pgMissing('constructor'),
+      pgUnique,
+      new Error('plain'),
+    ]) {
+      expect(await inputOnMissingRef(REFS, () => Promise.reject(err)).catch((e) => e)).toBe(err);
+    }
+    expect(await inputOnMissingRef(REFS, async () => 7)).toBe(7);
   });
 });

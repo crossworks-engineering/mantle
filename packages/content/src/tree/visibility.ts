@@ -102,6 +102,18 @@ function idArray(ids: readonly string[]): SQL {
   )}]::uuid[]`;
 }
 
+/** Whether `path` is an ltree, by the database's own parser
+ *  (pg_input_is_valid: exact, whatever a label may hold). A path that is
+ *  none names no folder: its diff is NO_CHANGE and the write itself
+ *  refuses it, where the cast below was an opaque 500 (A10 lows, part 2
+ *  #3). */
+async function isPath(via: Via, path: string): Promise<boolean> {
+  const [row] = (await via.execute(
+    sql`select pg_input_is_valid(${path}, 'ltree') as ok`,
+  )) as unknown as Array<{ ok: boolean }>;
+  return row?.ok === true;
+}
+
 /** The grant rows of a folder (workspace_id, write, is_home, excluded),
  *  through the definer of 0279: the item_grants row rule hides a row of a
  *  workspace outside the scope, and the confirm names those too. */
@@ -204,13 +216,13 @@ function placedRows(ownerId: string, where: SQL, destPath: string): SQL {
 }
 
 /** Items of one kind moving into the folder at `destPath`. */
-export function moveItemsDiff(
+export async function moveItemsDiff(
   ownerId: string,
   kind: TreeKind,
   itemIds: readonly string[],
   destPath: string,
 ): Promise<VisibilityDiff> {
-  if (!itemIds.length) return Promise.resolve(NO_CHANGE);
+  if (!itemIds.length || !(await isPath(db, destPath))) return NO_CHANGE;
   const nodeType = TREE_KIND_SPECS[kind].nodeType;
   return listed(
     db,
@@ -226,13 +238,14 @@ export function moveItemsDiff(
  *  rows and drops its folder-derived rows the new parent does not give;
  *  that change reaches everything inside it, unless a folder on the way
  *  stops it. */
-export function moveFolderDiff(
+export async function moveFolderDiff(
   ownerId: string,
   folder: { id: string; path: string },
   destParentPath: string,
 ): Promise<VisibilityDiff> {
   const label = folder.path.split('.').at(-1)!;
   const newPath = `${destParentPath}.${label}`;
+  if (!(await isPath(db, newPath))) return NO_CHANGE;
   const parent = sql`mantle_parent_folder(${ownerId}::uuid, 'branch'::node_type, ${newPath}::ltree)`;
   const passes = folderPasses(parent, sql`'branch'::node_type`);
   // Between the moved folder (excluded) and the item's own folder
@@ -324,11 +337,12 @@ export async function liftDiff(
  * source do not come along. Listed: each source file whose copy would be
  * read by a workspace that does not read the source now.
  */
-export function copyDiff(
+export async function copyDiff(
   ownerId: string,
   source: { fileId: string } | { folder: { id: string; path: string } },
   destPath: string,
 ): Promise<VisibilityDiff> {
+  if (!(await isPath(db, destPath))) return NO_CHANGE;
   const which =
     'fileId' in source
       ? sql`n.id = ${source.fileId}::uuid`
@@ -359,6 +373,7 @@ export async function newItemDiff(
   destPath: string,
   title: string,
 ): Promise<VisibilityDiff> {
+  if (!(await isPath(via, destPath))) return NO_CHANGE;
   const nodeType = TREE_KIND_SPECS[kind].nodeType;
   const set = newItemSet(ownerId, nodeType, destPath);
   // Empty when the brain has no Admin workspace (as the old array(select ...)).

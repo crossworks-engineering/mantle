@@ -4,6 +4,11 @@ import { getTable, saveTableDraft } from '@/lib/tables';
 import { parseSpreadsheetToGrid } from '@mantle/files/sheet-to-grid';
 import { tableDocFromGrid } from '@mantle/content-core/table-model';
 import { errorMessage } from '@mantle/std';
+import type { RouteParams } from '@/lib/route-params';
+
+/** The [id] is a uuid: any other names nothing, the one 404 before the
+ *  handler (lib/route-params.ts). */
+export const routeParams = { id: 'uuid' } as const satisfies RouteParams;
 
 /**
  * Import a spreadsheet into this table (v2.1 P2): the workbook replaces the

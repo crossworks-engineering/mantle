@@ -4,6 +4,11 @@ import { ownerCaller } from '@/lib/auth';
 import { saveTableDraft } from '@/lib/tables';
 import type { TableDoc } from '@mantle/content-core/table-model';
 import { readJson } from '@/lib/read-body';
+import type { RouteParams } from '@/lib/route-params';
+
+/** The [id] is a uuid: any other names nothing, the one 404 before the
+ *  handler (lib/route-params.ts). */
+export const routeParams = { id: 'uuid' } as const satisfies RouteParams;
 
 const Body = z.object({
   data: z.record(z.string(), z.unknown()),

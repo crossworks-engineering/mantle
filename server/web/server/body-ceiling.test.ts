@@ -26,6 +26,7 @@ import {
   PROFILE_IMAGE_BODY_BYTES,
   VOICE_CLIP_BYTES,
   bodyCeilingFor,
+  bodyTooLargeResponse,
   bodyWentOver,
   capRequestBody,
   readBodyCapped,
@@ -146,6 +147,16 @@ describe('the body ceiling: the multipart routes (A10 part 2 fix round 1, M3)', 
     expect(PROFILE_IMAGE_BODY_BYTES).toBe(LOGO_MAX_BYTES * 2);
     // The JSON branch of the turn reads under the JSON ceiling, well inside.
     expect(JSON_BODY_CEILING_BYTES).toBeLessThan(BUFFERED_UPLOAD_BYTES);
+  });
+});
+
+describe('the body ceiling: its words (A10 lows, part 2 #6)', () => {
+  it('says KB below 1 MB and MB from there', async () => {
+    const words = async (n: number) =>
+      ((await bodyTooLargeResponse(n).json()) as { error: string }).error;
+    expect(await words(AUTH_BODY_CEILING_BYTES)).toBe('This request is too large (at most 64 KB).');
+    expect(await words(SHARE_BODY_CEILING_BYTES)).toBe('This request is too large (at most 1 MB).');
+    expect(await words(JSON_BODY_CEILING_BYTES)).toBe('This request is too large (at most 8 MB).');
   });
 });
 

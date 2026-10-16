@@ -1,6 +1,6 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
-import type { AiWorker, AiWorkerParams } from '@mantle/db';
+import { inputOnMissingRef, type AiWorker, type AiWorkerParams } from '@mantle/db';
 import { clearEmbeddingModelCache } from '@mantle/embeddings';
 import { ownerCaller } from '@/lib/auth';
 import {
@@ -12,6 +12,7 @@ import {
 } from '@/lib/ai-workers';
 import {
   AGENT_ROUTES,
+  ROUTE_KEY_REFS,
   modelRoutesRefusal,
   modelRoutesStamp,
   modelRoutesTouched,
@@ -86,11 +87,14 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
       if (issue) return NextResponse.json({ error: issue }, { status: 400 });
     }
   }
-  const worker = await updateAiWorker(user.id, idParsed.data.id, {
-    ...rest,
-    ...configuredBy,
-    ...(params !== undefined ? { params: params as AiWorkerParams } : {}),
-  });
+  // A key id the vault has no key for is the caller's 400 (A10 lows).
+  const worker = await inputOnMissingRef(ROUTE_KEY_REFS.aiWorkers, () =>
+    updateAiWorker(user.id, idParsed.data.id, {
+      ...rest,
+      ...configuredBy,
+      ...(params !== undefined ? { params: params as AiWorkerParams } : {}),
+    }),
+  );
   if (!worker) return NextResponse.json({ error: 'not found' }, { status: 404 });
   if (worker.kind === 'embedding') clearEmbeddingModelCache(user.id);
   return NextResponse.json({ worker: toAiWorkerDTO(worker) });

@@ -81,7 +81,7 @@ async function handler(req: Request): Promise<Response> {
   const perLogin = caller.keyId
     ? rateLimitAccessKey({ id: caller.keyId, loginId: caller.loginId }, 'mcp')
     : rateLimit(`mcp-login:${caller.peerId ?? caller.loginId}`, LOGIN_RATE);
-  if (!perLogin.ok) return rateLimitedResponse(perLogin.retryAfterSec);
+  if (!perLogin.ok) return rateLimitedResponse(perLogin.retryAfterSec, 'machine');
   // What the login's scope may list, its private workspace and its
   // connector tools, resolved here, so the server factory below registers
   // synchronously.
