@@ -1288,10 +1288,61 @@ check "masker: three 100k-character hostile lines (key, passw, session_ repeated
   test "$((t1 - t0))" -lt 3000
 check "masker: each hostile line is cut to 2000 characters and marked [cut]" \
   sh -c "test \$(grep -c ' \\[cut\\]\$' '$WORK/hostile.out') = 3 && test \$(awk 'length > 2006' '$WORK/hostile.out' | wc -l) = 0"
+# A BEGIN that ends its line with no END in sight: the block masks at most
+# 200 key-body lines after it, so a stuck state cannot hide the whole tail.
+perl -e 'print "-----BEGIN RSA PRIV", "ATE KEY-----\n", "QUJDRA==\n" x 250, "after the block\n"' > "$WORK/pemcap.log"
+perl -pe "$REDACT_PERL" < "$WORK/pemcap.log" > "$WORK/pemcap.out"
+check "masker: a PEM block with no END masks its BEGIN and at most 200 lines after it" \
+  sh -c "test \$(grep -cx '\\[redacted\\]' '$WORK/pemcap.out') = 201 && grep -qx 'after the block' '$WORK/pemcap.out'"
 roll_box hostile
 FAKE_LOGS="$HOSTILE" FAKE_HEALTH=unhealthy roll_sh --ssh fakebox v8
-check "web never healthy, hostile log: exit 1 and every line printed cut" \
-  sh -c "test '$rc' = 1 && test \$(grep -c ' \\[cut\\]\$' '$RS/out') = 3 && grep -q '^    session_session_' '$RS/out'"
+check "web never healthy, hostile log: exit 1 and every line printed cut, its one 2000-character token dropped as a partial" \
+  sh -c "test '$rc' = 1 && test \$(grep -cx '     \\[cut\\]' '$RS/out') = 3"
+
+# A PEM BEGIN that does not end its line, a key body run with no END, a secret
+# the 2000-character cut runs through, and a URL password holding a / under a
+# scheme outside the database list: each once swallowed or leaked. Secret
+# prefixes are split in the source so no scanner reads this file as a leak.
+M2LOG="$WORK/masker2.log"
+{
+  echo "[boot] loading GitHub App key"
+  echo "Error: GITHUB_APP_PRIVATE_KEY must start with \"-----BEGIN RSA PRIV""ATE KEY-----\""
+  echo "    at loadKey (/app/server/web/lib/github.ts:12:9)"
+  echo "SESSION_SECRET must be at least 32 characters"
+  perl -e 'print q({"level":50,"cfg":{"privateKey":"-----BEGIN PRIV), q(ATE KEY-----), q(\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASCFakeOneLine0123456789abcdefghijkl) x 50, q(\n-----END PRIV), q(ATE KEY-----\n"}}), "\n"'
+  echo "[boot] after the one-line key"
+  perl -e 'print "x" x 1970, " postgres://mantle:FakeStraddlePw0123456789@db:5432/mantle\n"'
+  perl -e 'print "x" x 1970, " c0ffee", "0123456789abcdef" x 3, "0123456789", "\n"'
+  perl -e 'print "x" x 1970, " gh", "p_FakeStraddleGhp0123456789abcdefgh refused\n"'
+  echo "[db] mssql://sa:FakeMs/sql0123@natref:1433/pcms down"
+  echo "[db] sqlserver://sa:FakeSq/l0123@natref:1433 down"
+  echo "[web] fetch https://user:FakeHt/tps0123@host/x failed"
+  echo "[web] fetch https://example.com/a/b@c failed"
+  echo "[cli] seed --password \"FakeQuoted0123 FakeQuotedTail\" --verbose"
+  echo "[keys] rk""_live_FakeRk0123456789 xo""xa-2-FakeXoxa0123 xa""pp-1-FakeXapp0123 whs""ec_FakeWhsec0123456789 glp""at-FakeGlpat0123456789 AK""IAFAKEAKIA01234567 refused"
+  echo "-----BEGIN PGP PRIV""ATE KEY BLOCK-----"
+  echo "Version: x"
+  echo "lQOYBF0FakePgp0123"
+  echo "=FakePgpSum"
+  echo "-----END PGP PRIV""ATE KEY BLOCK-----"
+  echo "[boot] done"
+} > "$M2LOG"
+roll_box masker2
+FAKE_LOGS="$M2LOG" FAKE_HEALTH=unhealthy roll_sh --ssh fakebox v8
+check "masker: a PEM BEGIN quoted mid-line masks the rest of that line only; the stack frame and the env error after it print whole" \
+  sh -c "test '$rc' = 1 && grep -qxF '    Error: GITHUB_APP_PRIVATE_KEY must start with \"[redacted]' '$RS/out' && grep -qxF '        at loadKey (/app/server/web/lib/github.ts:12:9)' '$RS/out' && grep -qxF '    SESSION_SECRET must be at least 32 characters' '$RS/out'"
+check "masker: a one-line JSON key cut before its END prints masked, and the line after it prints whole" \
+  sh -c "! grep -q 'FakeOneLine\\|MIIEvQ' '$RS/out' && grep -qxF '    {\"level\":50,\"cfg\":{\"privateKey\" [cut]' '$RS/out' && grep -qxF '    [boot] after the one-line key' '$RS/out'"
+check "masker: a postgres password, a 64-hex key and a ghp_ token the cut runs through print none of their first half" \
+  sh -c "! grep -q 'FakeStraddle\\|c0ffee\\|mantle:F' '$RS/out' && test \$(grep -cxE '    x+  \\[cut\\]' '$RS/out') = 3"
+check "masker: a user:password holding a / prints masked under mssql://, sqlserver:// and https://; a path with an @ prints whole" \
+  sh -c "! grep -q 'FakeMs\\|FakeSq\\|FakeHt\\|sql0123\\|l0123\\|tps0123' '$RS/out' && grep -qF '[db] mssql://[redacted]@natref:1433/pcms down' '$RS/out' && grep -qF '[db] sqlserver://[redacted]@natref:1433 down' '$RS/out' && grep -qF '[web] fetch https://[redacted]@host/x failed' '$RS/out' && grep -qF '[web] fetch https://example.com/a/b@c failed' '$RS/out'"
+check "masker: --password \"two words\" prints masked whole" \
+  sh -c "! grep -q 'FakeQuoted' '$RS/out' && grep -qF 'seed --password [redacted] --verbose' '$RS/out'"
+check "masker: rk_live_, xoxa-, xapp-, whsec_, glpat- and AKIA literals print masked" \
+  sh -c "! grep -q 'FakeRk\\|FakeXox\\|FakeXapp\\|FakeWhsec\\|FakeGlpat\\|FAKEAKIA' '$RS/out' && grep -qF '[keys] [redacted] [redacted] [redacted] [redacted] [redacted] [redacted] refused' '$RS/out'"
+check "masker: a PGP private key block prints as [redacted] lines, and the line after it prints whole" \
+  sh -c "! grep -q 'PGP\\|FakePgp' '$RS/out' && test \$(grep -cx '    \\[redacted\\]' '$RS/out') = 5 && grep -qxF '    [boot] done' '$RS/out'"
 
 # No perl on the operator's machine: the log cannot be masked, so it is not
 # shown at all, and the operator is told where to read it. PATH is every

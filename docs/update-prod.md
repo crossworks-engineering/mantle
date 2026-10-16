@@ -116,7 +116,15 @@ What it does, in order:
    session, or the name pass exactly, when `=` or `:` follows that name
    directly (`MANTLE_API_TOKEN=...`, `SMTP_PASS=...`, `"apiKey": "..."`,
    `mantle_session=...`). A quoted value is masked to its real closing quote,
-   past escaped ones. Lines that explain the failure print whole:
+   past escaped ones. A URL password holding a `/` or an `@` is masked whole
+   (any scheme when a `user:password` pair opens it), a `--password "two
+   words"` value whole, and a PEM or PGP private key block line by line; a
+   BEGIN that does not end its line masks only the rest of that line, and a
+   block masks at most 200 key-body lines, so the stack trace after an error
+   that quotes a BEGIN still prints. Each line is cut to 2000 characters
+   (` [cut]` marks it) and a cut line drops its last partial token, so a
+   secret the cut runs through never prints its first half. Lines that
+   explain the failure print whole:
    "SESSION_SECRET must be at least 32 characters", a stack frame like
    `secrets.ts:44:11`, a Zod `"Required"`, `connect ECONNREFUSED`, "tests
    passed:". Without perl on the machine running `roll.sh` the log is not
