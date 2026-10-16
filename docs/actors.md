@@ -5045,3 +5045,99 @@ T[]` casts. Mechanical, but about 25 test files mock `@mantle/db` (several
   vs loadCtx/loginScopeFor, planWorkspaceMove/placeInFolder
   holders.includes, visibility.ts any(f.holders), heldBySql vs
   nodeAliasReadBy.
+
+## Pre-check deletion (A4 step 4, A5 step 6b)
+
+Plan v2, sections 7 (step 4), 8 and 23.3 (step 6b): a TypeScript item
+pre-check goes, per entry, only when the database check that covers it
+exists with a test and is on on every box of the release. Branch
+`feat/precheck-delete`, built on main v0.300.75, parked until the fleet's
+actor check and edit check are on.
+
+**Result: no entry deleted.** "On on every box" is needed but not enough:
+the per-table edit checks fire only for a write on the write role
+(`mantle_write_user`), and three ways in still write on the system pool
+with the pre-check as their only edit check, in every mode, on alike.
+Deleting any entry would make one of them looser with both checks on.
+
+1. **An Admin user's HTTP write** stays on the system pool
+   (`loginWriteScope`, `packages/db/src/viewer.ts`: never an Admin user's
+   write request, whose reads are unscoped). The database there checks a
+   move, a create in a folder, a delete and a grant against the scope on
+   the transaction, nothing else. Pinned: A8 finding F4,
+   `packages/db/src/matrix/a8-known-failures.ts`, the `login@system` cells
+   (an edit, a draft edit, a link and an app data write of an item outside
+   the scope are made). Blocks all 27 HTTP entries.
+2. **The processes that never open the write pool**: the runs worker
+   (`server/web/workers/runs.ts`, a `tool_call` run item through
+   `dispatchTool` under `withRunScope`) and the stdio MCP server
+   (`server/mcp`, each call in the anchor login's scope,
+   `packages/mcp-core/src/mcp-scope.ts`). `openLoginWritePool` is called by
+   web and api only, pinned by `packages/db/src/connection-ceiling.test.ts`.
+   Both run every tool that has `items` in a workspace scope, so the gate's
+   `item-precheck` (`packages/tools/src/gate-prerun.ts`) refuses there and
+   the write itself has the F4 shape. Only the run tools and
+   `invoke_agent` are banned on run items (`recipe.runItem`), and none of
+   them has `items`. Blocks all 101 tool entries.
+3. **The rollback switch** `MANTLE_ADMIN_READS=system`: the item check asks
+   the login's gate scope (`toolItemWriteRefusalOf`), while the write has no
+   write scope and goes to the system pool. A7 removes the switch.
+
+Second reasons, per family, that stay once 1 to 3 close (each needs its
+own proof before its entry goes):
+
+- **Read needs** (`process_extraction`; `app_duplicate` and `app_export`
+  with `with_data: false`; the seven `ITEM_READ_WRITES` routes: opened
+  marks, a pin, the frame ticket, the app brokers, a duplicate): the
+  database asks no read of the item for what these write (a mark, a ticket,
+  a queued job, a copy's new rows).
+- **Stores outside Postgres** (Files: `file_rename`, `file_move`,
+  `file_delete`, `folder_rename`, `folder_move`, `folder_delete`; apps:
+  `app_file_write`, `app_file_delete`, `app_build`, `app_publish`, the
+  snapshot tools, `app_db_seed`, `app_db_schema_set`; the table tools that
+  write the workbook): a side effect on disk or in the object store must be
+  shown to follow the checked statement (the A3b brokers do for theirs).
+- **Writes that are not the write role's**: `app_table_export_set` and
+  `app_table_export_remove` (`app_table_exports` is a write-role gap
+  table), `access_set` (the grant definers).
+- **The answer**: the HTTP pre-check answers 404 for an item the scope does
+  not read. On the system pool the handler reads it, and a database
+  refusal would be a 403: the item's existence told.
+
+**What each entry would cite once the paths close** (the checks exist and
+are tested in on mode today, on the write role):
+
+| Need                                  | Database check                                                                                   | Test                                                                                             |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------ |
+| edit of a node, page, draw or table   | 0278 write check, `mantle_edit_check_*` on `nodes`, `pages`, `draws`, `tables` (`ACCESS_MATRIX`) | `matrix/write-grid.db.test.ts`, `edit-check.db.test.ts` ("on refuses each"), `pnpm test:edit-on` |
+| manage (a delete, a move)             | 0266 delete check, 0241/0245 move checks, `mantle_subtree_rewrite` (0282) for folders            | the same, and `edit-check.db.test.ts` M3 (folder rename, move, delete)                           |
+| a link, closing one                   | `shares`: `link`, `link_close`                                                                   | `edit-check.db.test.ts` ("a contact share needs an Admin user ... a public link edit")           |
+| a Recall map, its cards and revisions | `recall_maps` edit or manage, `recall_nodes` and `recall_revisions` edit of the map              | `edit-check.db.test.ts`, `matrix/write-grid.db.test.ts`                                          |
+| an app's code, its switches, its data | `apps` manage (D4), admin (D5); `app_databases` appdata (D6)                                     | `edit-check.db.test.ts` ("an app's tool level ..."), `a5-app-data-read-only.db.test.ts`          |
+
+**The order to unblock:** (a) A4 puts an Admin user's write request on the
+write role (F4's cells pass, `a8-known-failures.ts` loses them); (b) the
+runs worker and the stdio MCP server write on the write role, or refuse a
+scoped write off it, with `connection-ceiling.test.ts` changed on purpose;
+(c) A7 deletes the rollback switch. Then entry by entry, one commit per
+entry or small family, each naming its check and test from the table and
+its changed answers.
+
+**The guard.** Not added: this branch deletes nothing, so it is not looser
+in off or warn either, and a start guard would refuse every box in warn for
+no gain. The first commit that deletes an entry adds it: at boot
+(`ensureGateReady`, every process entry) refuse to start when
+`mantle_actor_check_mode()` or `mantle_edit_check_mode()` is not `on` or
+`MANTLE_ADMIN_READS=system` is set, with the operator's message naming
+`docs/edit-check.md`.
+
+**Changed answers:** none.
+
+**The pins** (`scripts/arch-scoreboard.pins.json`, counted by
+`eslint-rules/arch-counts.mjs`, run by `pnpm arch:check`; neither may go
+up without a reviewed raise): `itemPrecheckTools` 101 (every policy
+`items` value: 98 builtins and the three hand-written MCP tools in
+`mcp-surface-policies.ts`), `itemPrecheckRoutes` 27 (the four lists of
+`server/web/lib/auth/route-scope.ts`: `ITEM_WRITE_PREFIXES` 16,
+`ITEM_REF_PREFIXES` 3, `ITEM_READ_WRITES` 7, `ITEM_MANAGE_WRITES` 1). The
+exits of 6b and step 4 are both 0.
