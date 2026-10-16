@@ -15,7 +15,9 @@
  *   mcp-oauth    the one MCP surface for the login (prepareCallerTools,
  *                an OAuth connection)
  *   mcp-key      the same surface through /api/mcp's bearer lookup for the
- *                login's READ-ONLY key (resolveMcpCaller)
+ *                login's READ-ONLY key (resolveMcpCaller); and, as
+ *                mcp-key-rw, its read-write key on a page's or a note's
+ *                content edit (F6: a key changes none others read)
  *   peer         a linked brain with Acts as the login and Write on
  *                (resolveMcpCaller with its peer token)
  *   mcp-stdio    the stdio server (buildMantleMcpServer) as login(owner)
@@ -400,6 +402,21 @@ describe.skipIf(!DB_URL)('A8 surface cells: every way in gives the oracle’s an
     }
     if (action === 'delete' && TOOL_DELETE[kind]) {
       return { slug: TOOL_DELETE[kind]!, input: { id } };
+    }
+    return null;
+  };
+
+  /** A page's or a note's content edit through its tool, or null: the cells
+   *  of the read-write key (F6), the one way in that runs page edits. */
+  const contentEditCall = (kind: string, action: GuideAction, id: string) => {
+    if (action === 'edit' && kind === 'note') {
+      return { slug: 'note_update', input: { id, title: `${fx.tag} edited` } };
+    }
+    if (action === 'edit' && kind === 'page') {
+      return { slug: 'page_update', input: { id, title: `${fx.tag} edited` } };
+    }
+    if (action === 'editDraft' && kind === 'page') {
+      return { slug: 'page_update_draft', input: { id, markdown: `${fx.tag} draft` } };
     }
     return null;
   };
@@ -856,6 +873,13 @@ describe.skipIf(!DB_URL)('A8 surface cells: every way in gives the oracle’s an
     runItemCall(role, slug, input),
   );
 
+  /** A call over MCP with the login's read-write key (F6's cells). */
+  const keyRwCall = async (
+    role: GuideRole | null,
+    slug: string,
+    input: Record<string, unknown>,
+  ): Promise<Outcome> => mcpCall(await bearer(keyRw[role!]!), loginActor(role!), slug, input);
+
   const entries = async (): Promise<Entry[]> => {
     const WEB_READ_KINDS = new Set<string>(
       kinds.filter((k) => k !== 'branch' && contentRoute(k) !== null),
@@ -942,6 +966,25 @@ describe.skipIf(!DB_URL)('A8 surface cells: every way in gives the oracle’s an
       toolEntry('mcp-key', 'login-ro', ALL, async (role, slug, input) =>
         mcpCall(await bearer(keyRo[role!]!), loginActor(role!), slug, input),
       ),
+      {
+        // F6 against the product: the login's read-write key over MCP, a
+        // page's or a note's content only ("A key may not change the
+        // content of a page or a note others read"; the read-only key
+        // above writes nothing, so its cells never reach the rule).
+        ...toolEntry('mcp-key', 'login', ALL, keyRwCall),
+        label: 'mcp-key-rw',
+        supports: (kind, action) => contentEditCall(kind, action, 'x') !== null,
+        run: (role, kind, action, id) => {
+          const tc = contentEditCall(kind, action, id)!;
+          return keyRwCall(role, tc.slug, tc.input);
+        },
+        // The owner's own Admin-homed note (an open link) and a page's draft
+        // in the folder, whatever the pick.
+        always: [
+          { role: 'owner', kind: 'note', placement: 'admin', action: 'edit' },
+          { role: 'writeGrant', kind: 'page', placement: 'folder', action: 'editDraft' },
+        ],
+      },
       toolEntry('peer', 'login', ALL, async (role, slug, input) =>
         mcpCall(await bearer(peerToken[role!]!), loginActor(role!), slug, input),
       ),
