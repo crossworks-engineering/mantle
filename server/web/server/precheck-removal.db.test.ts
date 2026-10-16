@@ -352,16 +352,19 @@ describe.skipIf(!DB_URL)(
         expect(c.now.ok, `${name}: ${c.now.text}`).toBe(true);
       }
       // The entry is gone: bypassing the pre-check changes nothing (`was`,
-      // run with it, answers as `now`), ids and made-up names aside.
-      expect({ ok: c.was.ok, changed: c.was.changed, text: plain(c.was.text) }, name).toEqual({
+      // run with it, answers as `now`): the same outcome, and a refusal in
+      // the same words (ids and made-up names aside; a made item's reply
+      // carries its own times).
+      expect({ ok: c.was.ok, changed: c.was.changed }, name).toEqual({
         ok: c.now.ok,
         changed: c.now.changed,
-        text: plain(c.now.text),
       });
+      if (!c.now.ok) expect(plain(c.was.text), name).toBe(plain(c.now.text));
     };
     /** A reply without what each run makes up: ids, the tag, random names. */
     const plain = (text: string) =>
       text
+        .replace(/\d{4}-\d\d-\d\dT[\d:.]+Z/g, 'T')
         .replace(new RegExp(UUID.source, 'g'), 'ID')
         .replace(new RegExp(`${tag}\\w*`, 'g'), 'TAG')
         .replace(/\b(?=[0-9a-f]*\d)[0-9a-f]{4,}\b/g, 'H')

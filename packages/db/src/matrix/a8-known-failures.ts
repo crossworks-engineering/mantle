@@ -23,6 +23,28 @@ import { GUIDE_WORKSPACE_KINDS, expectedAccess } from './guide-oracle';
  *  same writes on the write role are refused (the `login` cells pass). */
 const F4 = 'F4 an Admin write request on the system pool: edits not held to its scope';
 
+/** P1. Below on (an emergency since the pre-check removal: the checks'
+ *  floor, migration 0298, docs/actors.md "Pre-check deletion"): a tool's
+ *  edit of an item the scope reads and may not change is made, because its
+ *  TypeScript item pre-check went and the database refuses it only with
+ *  the checks on (warn logs it as a miss, off makes it silently). The same
+ *  cells pass in `on`, the only mode a box runs in on this release. */
+const P1 = 'P1 below on: a tool edit the database refuses only when on';
+
+/** The surface cells P1 fails (the pairwise pick is stable: a8-grid.ts),
+ *  in off and in warn. */
+const BELOW_ON_TOOL_EDITS: readonly string[] = [
+  'peer login/readGrant edit formula @folder',
+  'pending turn/readGrant edit task @root',
+  'recipe turn/readGrant edit formula @root',
+  'recipe turn/readGrant edit note @folder',
+  'recipe turn/readGrant edit note @root',
+  'team-turn turn/readGrant edit note @folder',
+  'team-turn turn/readGrant edit task @folder',
+  'team-turn turn/readGrant edit task @root',
+  'web-turn turn/readGrant edit note @folder',
+];
+
 /** The actor check modes the surface cells run in (docs/update-prod.md:
  *  off, the fleet's default; warn; on). */
 export type CheckMode = 'off' | 'warn' | 'on';
@@ -69,7 +91,13 @@ function adminSystemPoolEdits(): Record<string, KnownFailure> {
 export const KNOWN_FAILURES: Readonly<Record<string, KnownFailure>> = {
   // The grid (SQL).
   ...adminSystemPoolEdits(),
-  // The surface cells (all three check modes unless named): none today.
+  // The surface cells (all three check modes unless named).
+  ...Object.fromEntries(
+    BELOW_ON_TOOL_EDITS.map((name) => [
+      name,
+      known(P1, 'changed, the oracle denies', ['off', 'warn']),
+    ]),
+  ),
 };
 
 /**

@@ -38,6 +38,7 @@ import { inspect } from 'node:util';
 import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { ITEM_WORKSPACE_TOOL_TEXTS, READ_ONLY_APP_MESSAGE } from '@mantle/std';
+import { DATABASE_CHECKED } from '../../../packages/tools/src/database-checked.test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -181,6 +182,8 @@ function typeOfSchema(s: Schema | undefined): string {
 describe.skipIf(!URL)('W7a: the Admin assistant and the Admin MCP run in a scope', () => {
   type Ts = typeof import('@mantle/db/test-support');
   let scratch: Awaited<ReturnType<Ts['createMigratedScratchDatabase']>> | undefined;
+  /** The suite's own actor check mode, put back after (checks on below). */
+  let suiteMode: string | undefined;
   let m: typeof import('@mantle/db');
   let t: typeof import('@mantle/tools');
   let rt: typeof import('@mantle/runtime/agent');
@@ -362,6 +365,16 @@ describe.skipIf(!URL)('W7a: the Admin assistant and the Admin MCP run in a scope
         'test',
       );
     }
+    // Both checks on, as every box since the pre-check removal
+    // (docs/actors.md, "Pre-check deletion"): a tool's write to an item the
+    // scope may not change is the database's to refuse now. This process's
+    // actor check on (a login's scoped write on the write role, its check
+    // on) and the scratch database's edit check on.
+    suiteMode = process.env.MANTLE_ACTOR_CHECK;
+    process.env.MANTLE_ACTOR_CHECK = 'on';
+    await (
+      await import('@mantle/db/test-support')
+    ).superuserExec(scratch!.url, "select mantle_set_edit_check('on')");
   }, 240_000);
 
   /** What must not change of the other user's items. */
@@ -387,6 +400,8 @@ describe.skipIf(!URL)('W7a: the Admin assistant and the Admin MCP run in a scope
   };
 
   afterAll(async () => {
+    if (suiteMode === undefined) delete process.env.MANTLE_ACTOR_CHECK;
+    else process.env.MANTLE_ACTOR_CHECK = suiteMode;
     vi.unstubAllGlobals();
     await m?.closeDb();
     await scratch?.drop();
@@ -540,24 +555,29 @@ describe.skipIf(!URL)('W7a: the Admin assistant and the Admin MCP run in a scope
 
   it('write tools on another user’s Read-only or private item are refused; nothing changes', async () => {
     const before = await otherItemsState();
-    const writes = t.listBuiltins().filter((d) => {
-      const targets = t.builtinItems(d.slug);
-      return Array.isArray(targets) && otherTypeFor(d.slug) !== null;
-    });
+    /** What a write names: its item pre-check's targets, or, for one the
+     *  database checks since the pre-check removal (docs/actors.md), the
+     *  argument that names its item. */
+    const targetsOf = (slug: string): readonly { param: string; need: string }[] | null => {
+      const items = t.builtinItems(slug);
+      if (Array.isArray(items)) return items;
+      const db = DATABASE_CHECKED.get(slug);
+      return db?.param ? [{ param: db.param, need: db.need }] : null;
+    };
+    const writes = t
+      .listBuiltins()
+      .filter((d) => targetsOf(d.slug) !== null && otherTypeFor(d.slug) !== null);
     /** A write that only needs to read its item (process_extraction, an
      *  app's copy) runs on a Read-only item; refused only when private. */
     const needsRead = new Set(
-      writes
-        .filter((d) =>
-          (t.builtinItems(d.slug) as readonly { need: string }[]).every((x) => x.need === 'read'),
-        )
-        .map((d) => d.slug),
+      writes.filter((d) => targetsOf(d.slug)!.every((x) => x.need === 'read')).map((d) => d.slug),
     );
     expect(writes.length).toBeGreaterThan(40);
     const argsAt = (def: { slug: string; inputSchema?: unknown }, id: string): Json => {
       const input = argsFor((def.inputSchema ?? {}) as Schema, def.slug);
-      const targets = t.builtinItems(def.slug) as readonly { param: string }[];
-      for (const { param } of targets) input[param] = param.endsWith('_ids') ? [id] : id;
+      for (const { param } of targetsOf(def.slug)!) {
+        input[param] = param.endsWith('_ids') ? [id] : id;
+      }
       return input;
     };
     const notRefused: string[] = [];

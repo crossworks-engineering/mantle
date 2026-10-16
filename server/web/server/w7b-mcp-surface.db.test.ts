@@ -146,6 +146,8 @@ const text = (r: unknown) =>
 describe.skipIf(!URL)('W7b: one MCP surface for every login', () => {
   type Ts = typeof import('@mantle/db/test-support');
   let scratch: Awaited<ReturnType<Ts['createMigratedScratchDatabase']>> | undefined;
+  /** The suite's own actor check mode, put back after (checks on below). */
+  let suiteMode: string | undefined;
   let m: typeof import('@mantle/db');
   let t: typeof import('@mantle/tools');
   let ls: typeof import('@mantle/mcp-core');
@@ -376,9 +378,21 @@ describe.skipIf(!URL)('W7b: one MCP surface for every login', () => {
     await grantRead(adminApp, teamWs);
     readOnly.set('app', adminApp);
     await noteIn(memPrivate, MARK.own);
+    // Both checks on, as every box since the pre-check removal
+    // (docs/actors.md, "Pre-check deletion"): a tool's write to an item the
+    // scope may not change is the database's to refuse now. This process's
+    // actor check on (a login's scoped write on the write role, its check
+    // on) and the scratch database's edit check on.
+    suiteMode = process.env.MANTLE_ACTOR_CHECK;
+    process.env.MANTLE_ACTOR_CHECK = 'on';
+    await (
+      await import('@mantle/db/test-support')
+    ).superuserExec(scratch!.url, "select mantle_set_edit_check('on')");
   }, 240_000);
 
   afterAll(async () => {
+    if (suiteMode === undefined) delete process.env.MANTLE_ACTOR_CHECK;
+    else process.env.MANTLE_ACTOR_CHECK = suiteMode;
     vi.unstubAllGlobals();
     await m?.closeDb();
     await scratch?.drop();
