@@ -151,6 +151,11 @@ debounced sync of the app's exported Tables,
 never the request's actor. Migrate's sync of the matrix-made triggers
 leaves both migration-made triggers alone
 (`EDIT_CHECK_MIGRATION_TRIGGERS`, `packages/db/src/access-matrix.ts`).
+Both are installed by one loop, `mantle_edit_check_item_triggers()` (0294):
+every item table gets the read-only refusal and, but `app_databases`, the
+contact share's, by `CREATE OR REPLACE TRIGGER` (a SHARE ROW EXCLUSIVE lock,
+so reads go on while it runs on a live box), then the box mode is applied.
+A migration that adds an item table calls it.
 
 ## The heads locks filter by the scope
 
