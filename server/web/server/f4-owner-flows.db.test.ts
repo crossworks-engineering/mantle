@@ -74,6 +74,21 @@ vi.mock('@mantle/storage', async (importOriginal) => {
   };
 });
 
+/** A build's staged bundle (F4 fix round 3, M3): counted, so a refused
+ *  build is seen to store nothing. */
+const puts = vi.hoisted(() => ({ n: 0 }));
+vi.mock('@mantle/storage/write', async (importOriginal) => {
+  const real = await importOriginal<Record<string, unknown>>();
+  const put = real.putContent as (...a: unknown[]) => Promise<unknown>;
+  return {
+    ...real,
+    putContent: vi.fn(async (...a: unknown[]) => {
+      puts.n += 1;
+      return put(...a);
+    }),
+  };
+});
+
 /** The database's or the runtime's own words: never in a reply. */
 const RAW =
   /Failed query|withSystemTx|runInSystemTx|SQLSTATE|DrizzleQueryError|drizzle-orm|permission denied for|violates|duplicate key|does not exist|\n\s+at \S/i;
@@ -343,6 +358,21 @@ describe.skipIf(!DB_URL)('F4 fix round 1: the owner’s management flows on the 
         { w: boolean }[]
       >`select can_write as w from shares where id = ${share!.id}`;
       expect(row?.w).toBe(true);
+      // F4 fix round 3, L2: only the "Can write" change is the Admin act; a
+      // contact share's other change (its mode) is the link's, checked
+      // against its item, which the owner's scope does not read. Before:
+      // the Admin act on the system pool, for any body.
+      const mode2 = await call(
+        `${mode} contact share mode`,
+        L.owner,
+        'PATCH',
+        `/api/shares/${share!.id}`,
+        {
+          mode: 'public',
+        },
+      );
+      expect(mode2.status, mode2.text).toBe(404);
+      expect(mode2.json).toEqual(NOT_FOUND);
       expect(await liveShares(c.id)).toBe(3);
       const all = await call(
         `${mode} revoke all`,
@@ -846,18 +876,24 @@ describe.skipIf(!DB_URL)('F4 fix round 1: the owner’s management flows on the 
       const left = await raw<{ id: string }[]>`select id::text as id from nodes
         where id = any(${[fA, fB, fC, fD, fE]}::uuid[])`;
       expect(left.map((r) => r.id).sort()).toEqual([fA, fB, fC, fD].sort());
-      // The confirmed cascade reaps the derived note the scope does not read.
+      // The confirmed cascade keeps the derived note the scope does not read
+      // (F4 fix round 3, H1: round 2 reaped it, brain-wide): a count, the
+      // file deleted.
       const cascade = await call(`${mode} bulk cascade`, L.owner, 'DELETE', '/api/files/files', {
         ids: [fA, fC],
         cascade: true,
       });
       expect(cascade.status, cascade.text).toBe(200);
-      expect(cascade.json).toMatchObject({
+      expect(cascade.json).toEqual({
         deleted: 1,
-        reapedTotal: 1,
+        hasDerived: [],
+        reapedTotal: 0,
+        keptTotal: 1,
         refused: [{ fileId: fC, reason: 'not_found' }],
       });
-      expect(await raw`select 1 from nodes where id = ${derived}`).toHaveLength(0);
+      expect(cascade.text).not.toContain(derived);
+      expect(await raw`select 1 from nodes where id = ${derived}`).toHaveLength(1);
+      expect(await raw`select 1 from nodes where id = ${fA}`).toHaveLength(0);
     }, 180_000);
 
     it(`${mode}: 5 and 6, a folder copy meets a hidden folder of its name and copies what it reads`, async () => {
@@ -935,7 +971,9 @@ describe.skipIf(!DB_URL)('F4 fix round 1: the owner’s management flows on the 
         exclude: ws.admin,
         data: { summary: 'what the content said' },
       });
-      // Before: { requeued: 0 }, the hidden file's summary kept.
+      // Before round 2: { requeued: 0 }, the hidden file's summary kept.
+      // Round 3 (M1): reset all the same, but not counted (requeued counts
+      // the files the caller reads).
       const flip = await call(
         `${mode} name only`,
         L.owner,
@@ -946,7 +984,7 @@ describe.skipIf(!DB_URL)('F4 fix round 1: the owner’s management flows on the 
         },
       );
       expect(flip.status, flip.text).toBe(200);
-      expect(flip.json.requeued).toBe(1);
+      expect(flip.json.requeued).toBe(0);
       const [row] = await raw<{ s: string | null }[]>`select data->>'summary' as s from nodes
         where id = ${hidden}`;
       expect(row?.s).toBeNull();
@@ -1145,7 +1183,8 @@ describe.skipIf(!DB_URL)('F4 fix round 1: the owner’s management flows on the 
       indexing: 'metadata',
     });
     expect(flip.status, flip.text).toBe(200);
-    expect(flip.json.requeued).toBe(1);
+    // Round 3 (M1): the hidden file is reset, not counted.
+    expect(flip.json.requeued).toBe(0);
     expect(flip.text).not.toContain('admins.txt');
     const [row] = await raw<{ s: string | null }[]>`select data->>'summary' as s from nodes
       where id = ${hidden}`;
@@ -1156,4 +1195,409 @@ describe.skipIf(!DB_URL)('F4 fix round 1: the owner’s management flows on the 
     expect(bulk.status, bulk.text).toBe(403);
     expect(await raw`select 1 from nodes where id = ${hidden}`).toHaveLength(1);
   }, 180_000);
+  // ── F4 fix round 3: the step's own item check, a cascade's kept items,
+  //    a folder's switch, an app's code ─────────────────────────────────────
+
+  /** A builtin's tool row, as the dispatcher takes it (w7a-tool-sweep). */
+  const toolRow = (def: { slug: string; inputSchema?: unknown }) =>
+    ({
+      slug: def.slug,
+      name: def.slug,
+      handler: { kind: 'builtin', ref: def.slug },
+      inputSchema: def.inputSchema ?? { type: 'object', properties: {} },
+    }) as unknown as import('@mantle/db').Tool;
+
+  /** A grant of `id` to `wsId` (Read, or Write), beside its home. */
+  const grantTo = async (id: string, wsId: string, write: boolean) => {
+    await raw.begin(async (tx) => {
+      await tx`select set_config('mantle.actor', 'system:test', true)`;
+      await tx`select mantle_lock_heads(array[${id}]::uuid[], 'update')`;
+      await tx`insert into item_grants (node_id, workspace_id, is_home, write, excluded)
+               values (${id}, ${wsId}, false, ${write}, false)
+               on conflict (node_id, workspace_id) do update
+                 set write = excluded.write, excluded = false, via_folder_id = null`;
+    });
+  };
+
+  /** A note derived from file `src`, homed in `home`. */
+  const derivedNote = (src: string, home: string, g: Grants = {}) =>
+    rawNode({
+      type: 'note',
+      title: `${tag} derived ${randomUUID().slice(0, 6)}`,
+      path: root.note.path,
+      parent: root.note.id,
+      home,
+      ...g,
+      data: { sourceFileId: src },
+    });
+
+  /** A drawing homed in `home` that places file `img` on its canvas. */
+  const drawingOf = async (img: string, home: string, g: Grants = {}) => {
+    const draw = await rawNode({
+      type: 'draw',
+      title: `${tag} drawing ${randomUUID().slice(0, 6)}`,
+      path: root.note.path,
+      parent: root.note.id,
+      home,
+      ...g,
+    });
+    await raw.begin(async (tx) => {
+      await tx`select set_config('mantle.actor', 'system:test', true)`;
+      await tx`insert into draws (node_id, scene, file_refs)
+               values (${draw}, ${raw.json({ elements: [{ fileId: 'b1', isDeleted: false }] })},
+                       ${raw.json({ b1: img })})`;
+    });
+    return draw;
+  };
+
+  const exists = async (id: string) => (await raw`select 1 from nodes where id = ${id}`).length;
+  const summaryOf = async (id: string) =>
+    (await raw<{ s: string | null }[]>`select data->>'summary' as s from nodes where id = ${id}`)[0]
+      ?.s ?? null;
+  /** A file as the extractor left it: indexed under `applied`, a summary. */
+  const indexedAs = async (id: string, applied: 'full' | 'metadata', summary: string) => {
+    await raw.begin(async (tx) => {
+      await tx`select set_config('mantle.actor', 'system:test', true)`;
+      await tx`update nodes set data = data || ${raw.json({ indexing_applied: applied, summary })}
+               where id = ${id}`;
+    });
+  };
+
+  for (const mode of ['warn', 'on'] as const) {
+    it(`${mode}: H1, a member's confirmed cascade keeps the derived items it may not delete`, async () => {
+      await setMode(mode);
+      const dir = await folder(`${tag}${mode}mcas`);
+      await rehome(dir.id, ws.other);
+      const src = await textFile(dir, 'source.txt', ws.other);
+      // One the member manages, one in Admin it does not read (a page from
+      // the file, as page_from_file makes), one it reads but may not delete.
+      const own = await derivedNote(src, ws.other);
+      const admins = await derivedNote(src, ws.admin, { exclude: ws.other });
+      const readOnly = await derivedNote(src, ws.admin, { exclude: ws.other });
+      await grantTo(readOnly, ws.other, true);
+      // The preview counts every derived item (a number, round 2).
+      const ask = await call(
+        `${mode} member delete`,
+        L.member,
+        'DELETE',
+        `/api/files/files/${src}`,
+      );
+      expect(ask.status, ask.text).toBe(409);
+      expect(ask.json).toMatchObject({ reason: 'has_derived', derived: { total: 3 } });
+      // Before (round 2): every derived item reaped, the Admin one included.
+      const yes = await call(
+        `${mode} member cascade`,
+        L.member,
+        'DELETE',
+        `/api/files/files/${src}?cascade=1`,
+      );
+      expect(yes.status, yes.text).toBe(200);
+      expect(yes.json).toMatchObject({ ok: true, skipped: 0, kept: 2, reaped: { total: 1 } });
+      expect(yes.text).not.toContain(admins);
+      expect(yes.text).not.toContain(readOnly);
+      expect(await exists(src)).toBe(0);
+      expect(await exists(own)).toBe(0);
+      expect(await exists(admins)).toBe(1);
+      expect(await exists(readOnly)).toBe(1);
+    }, 180_000);
+
+    it(`${mode}: H1, an Admin user's cascade keeps what it does not manage; the tool says so`, async () => {
+      await setMode(mode);
+      const dir = await folder(`${tag}${mode}acas`);
+      const src = await textFile(dir, 'source.txt', ws.admin);
+      const own = await derivedNote(src, ws.admin);
+      const hidden = await derivedNote(src, ws.other, { exclude: ws.admin });
+      const editable = await derivedNote(src, ws.other, { admin: 'write' });
+      const yes = await call(
+        `${mode} admin cascade`,
+        L.owner,
+        'DELETE',
+        `/api/files/files/${src}?cascade=1`,
+      );
+      expect(yes.status, yes.text).toBe(200);
+      expect(yes.json).toMatchObject({ ok: true, kept: 2, reaped: { total: 1 } });
+      expect([await exists(own), await exists(hidden), await exists(editable)]).toEqual([0, 1, 1]);
+      // The file_delete tool's confirmed cascade (delete_derived), in an
+      // Admin assistant turn: the same door, the kept items a count.
+      const src2 = await textFile(dir, 'source2.txt', ws.admin);
+      const hidden2 = await derivedNote(src2, ws.other, { exclude: ws.admin });
+      const t = await import('@mantle/tools');
+      const rt = await import('@mantle/runtime/agent');
+      const def = t.listBuiltins().find((d) => d.slug === 'file_delete')!;
+      const res = await rt.withAgentScope(
+        { workspaceId: ws.admin },
+        () =>
+          t.dispatchTool(
+            toolRow(def),
+            { file_id: src2, delete_derived: true },
+            { ownerId: L.owner, surface: { kind: 'web' as const, loginId: L.owner } },
+          ),
+        { ownerLoginId: L.owner },
+      );
+      recorded.push(`${mode} file_delete tool cascade: ${JSON.stringify(res).slice(0, 200)}`);
+      expect(res.ok, JSON.stringify(res)).toBe(true);
+      expect(JSON.stringify(res)).toContain(
+        '1 derived item(s) in workspaces you do not manage were kept',
+      );
+      expect(JSON.stringify(res)).not.toContain(hidden2);
+      expect([await exists(src2), await exists(hidden2)]).toEqual([0, 1]);
+    }, 180_000);
+
+    it(`${mode}: L1, a cascade meets an attachment or a hidden drawing before it reaps`, async () => {
+      await setMode(mode);
+      // A member's image a drawing in Admin places (the member does not read
+      // the drawing): the single delete and the cascade both refuse, and the
+      // cascade reaps nothing.
+      const dir = await folder(`${tag}${mode}mdraw`);
+      await rehome(dir.id, ws.other);
+      const img = await textFile(dir, 'pic.png', ws.other);
+      const kid = await derivedNote(img, ws.other);
+      await drawingOf(img, ws.admin, { exclude: ws.other });
+      for (const q of ['', '?cascade=1']) {
+        const r = await call(
+          `${mode} member delete drawn${q}`,
+          L.member,
+          'DELETE',
+          `/api/files/files/${img}${q}`,
+        );
+        expect(r.status, r.text).toBe(409);
+        expect(r.json).toMatchObject({ reason: 'in_drawing', drawings: [] });
+        expect(r.text).not.toContain(`${tag} drawing`);
+      }
+      expect([await exists(img), await exists(kid)]).toEqual([1, 1]);
+      // An email attachment with a derived item (as the owner): refused
+      // before the reap (before: the derived item reaped, then the
+      // attachment refused, the file left without it).
+      const adir = await folder(`${tag}${mode}l1att`);
+      const att = await textFile(adir, 'scan.pdf', ws.admin);
+      const attKid = await derivedNote(att, ws.admin);
+      const mailNode = await rawNode({
+        type: 'email',
+        title: `${tag} ${mode} l1 mail`,
+        path: root.note.path,
+        parent: root.note.id,
+        home: ws.admin,
+      });
+      await raw.begin(async (tx) => {
+        await tx`select set_config('mantle.actor', 'system:test', true)`;
+        const [mail] = await tx<{ id: string }[]>`
+          insert into emails (node_id, account_id, provider_msg_id, from_addr, internal_date)
+          values (${mailNode}, ${account}, ${`${tag}-${mode}-l1mail`}, 'a@example.invalid', now())
+          returning id::text as id`;
+        await tx`insert into email_attachments (email_id, file_node_id, filename, sha256, storage_key)
+                 values (${mail!.id}, ${att}, 'scan.pdf', 'abc', ${`${tag}-${mode}-l1key`})`;
+      });
+      const r = await call(
+        `${mode} cascade attachment`,
+        L.owner,
+        'DELETE',
+        `/api/files/files/${att}?cascade=1`,
+      );
+      expect(r.status, r.text).toBe(409);
+      expect([await exists(att), await exists(attKid)]).toEqual([1, 1]);
+    }, 180_000);
+
+    it(`${mode}: a member's folder move onto a hidden folder of its name; a copy is not a member's`, async () => {
+      await setMode(mode);
+      const dest = await folder(`${tag}${mode}mdest`);
+      await rehome(dest.id, ws.other);
+      const label = `${tag}${mode}same`.toLowerCase();
+      // A folder of the label under the destination, homed in Admin, which
+      // the member does not read.
+      await rawNode({
+        type: 'branch',
+        title: label,
+        path: `${dest.path}.${label}`,
+        parent: dest.id,
+        home: ws.admin,
+        exclude: ws.other,
+      });
+      const parent = await folder(`${tag}${mode}mpar`);
+      await rehome(parent.id, ws.other);
+      const mine = await folder(label, parent.path);
+      await rehome(mine.id, ws.other);
+      const move = await call(
+        `${mode} member move onto hidden`,
+        L.member,
+        'PATCH',
+        `/api/files/folders/${mine.id}`,
+        { move: dest.path, confirm: true },
+      );
+      expect(move.status, move.text).toBe(409);
+      expect(move.text).toContain('already exists');
+      const [row] = await raw<
+        { p: string }[]
+      >`select path::text as p from nodes where id = ${mine.id}`;
+      expect(row?.p).toBe(mine.path);
+      // POST /api/files/folders/:id (a copy) is not a member route (W6b):
+      // refused before anything is made. Its library, brain-wide, is the
+      // owner's cell above (5 and 6).
+      const copy = await call(
+        `${mode} member copy onto hidden`,
+        L.member,
+        'POST',
+        `/api/files/folders/${mine.id}`,
+        { copy_to: dest.path, confirm: true },
+      );
+      expect(copy.status, copy.text).toBe(403);
+    }, 180_000);
+
+    it(`${mode}: M1, a folder's switch is its Moderators'; name only reaches every file, full only the read ones`, async () => {
+      await setMode(mode);
+      for (const who of ['owner', 'member'] as const) {
+        const login = L[who];
+        const mine = who === 'owner' ? ws.admin : ws.other;
+        const theirs = who === 'owner' ? ws.other : ws.admin;
+        const dir = await folder(`${tag}${mode}${who}m1`);
+        await rehome(dir.id, mine);
+        const seen = await textFile(dir, 'seen.txt', mine);
+        const unseen = await textFile(dir, 'unseen.txt', theirs, { exclude: mine });
+        await indexedAs(seen, 'full', 'seen content');
+        await indexedAs(unseen, 'full', 'unseen content');
+        // Removing content indexing: both reset, the read one counted.
+        const off = await call(
+          `${mode} ${who} name only`,
+          login,
+          'PATCH',
+          `/api/files/folders/${dir.id}`,
+          {
+            indexing: 'metadata',
+          },
+        );
+        expect(off.status, off.text).toBe(200);
+        expect(off.json.requeued).toBe(1);
+        expect(off.text).not.toContain('unseen');
+        expect([await summaryOf(seen), await summaryOf(unseen)]).toEqual([null, null]);
+        // As the extractor leaves them under metadata.
+        await indexedAs(seen, 'metadata', 'seen spine');
+        await indexedAs(unseen, 'metadata', 'unseen spine');
+        // Adding it: the read one queued again, the hidden one left for its
+        // next extraction (no LLM spend on a file the caller cannot see).
+        const on = await call(
+          `${mode} ${who} full`,
+          login,
+          'PATCH',
+          `/api/files/folders/${dir.id}`,
+          {
+            indexing: 'full',
+          },
+        );
+        expect(on.status, on.text).toBe(200);
+        expect(on.json.requeued).toBe(1);
+        expect([await summaryOf(seen), await summaryOf(unseen)]).toEqual([null, 'unseen spine']);
+        // A folder the caller may edit but not manage: refused, the flag
+        // left as it was (before: switched, every file under it reached).
+        const other = await folder(`${tag}${mode}${who}m1ed`);
+        await rehome(other.id, theirs);
+        await grantTo(other.id, mine, true);
+        const no = await call(
+          `${mode} ${who} switch an edited folder`,
+          login,
+          'PATCH',
+          `/api/files/folders/${other.id}`,
+          {
+            indexing: 'metadata',
+          },
+        );
+        expect(no.status, no.text).toBe(403);
+        expect(no.json.reason).toBe('item-workspace');
+        const [flag] = await raw<{ f: string | null }[]>`select data->>'indexing' as f from nodes
+          where id = ${other.id}`;
+        expect(flag?.f ?? null).toBeNull();
+      }
+    }, 240_000);
+
+    it(`${mode}: M3, an app's code is its Moderators': draft, build, publish, restore by route and by tool`, async () => {
+      await setMode(mode);
+      const app = await makeApp(`${mode} code`);
+      const snap = await call(`${mode} m3 snap`, L.owner, 'POST', `/api/apps/${app}/snapshots`, {
+        note: 'one',
+      });
+      expect(snap.status, snap.text).toBe(201);
+      const sid = ((snap.json.snapshot ?? snap.json) as { id: string }).id;
+      // The owner edits the app (Write through Admin) but does not manage it.
+      await rehome(app, ws.other, { admin: 'write' });
+      const [before] = await raw<{ d: unknown; b: unknown; m: unknown; t: string }[]>`
+        select a.draft_source as d, a.draft_build as b, a.manifest as m, n.title as t
+          from apps a join nodes n on n.id = a.node_id where a.node_id = ${app}`;
+      const rows = await snapshotRows(app);
+      const putsBefore = puts.n;
+      // Before: edit asked, the code written in warn, the database's
+      // refusal in on.
+      for (const [method, url, body] of [
+        ['PUT', `/api/apps/${app}/draft`, { entry: 'index.tsx', files: { 'index.tsx': 'x' } }],
+        ['DELETE', `/api/apps/${app}/draft`, undefined],
+        ['POST', `/api/apps/${app}/build`, undefined],
+        ['POST', `/api/apps/${app}/publish`, undefined],
+        ['PATCH', `/api/apps/${app}`, { name: `${tag} renamed`, description: 'new words' }],
+      ] as const) {
+        const r = await call(
+          `${mode} editor ${method} ${url.split('/').at(-1)}`,
+          L.owner,
+          method,
+          url,
+          body,
+        );
+        expect(r.status, `${method} ${url} ${r.text}`).toBe(403);
+        expect(r.json.reason).toBe('item-workspace');
+      }
+      expect(puts.n).toBe(putsBefore);
+      const [after] = await raw<{ d: unknown; b: unknown; m: unknown; t: string }[]>`
+        select a.draft_source as d, a.draft_build as b, a.manifest as m, n.title as t
+          from apps a join nodes n on n.id = a.node_id where a.node_id = ${app}`;
+      expect(after).toEqual(before);
+      // The restore tool (app_snapshot_restore), in an Admin assistant
+      // turn: refused by its policy (manage for code), nothing written.
+      const t = await import('@mantle/tools');
+      const rt = await import('@mantle/runtime/agent');
+      const def = t.listBuiltins().find((d) => d.slug === 'app_snapshot_restore')!;
+      const res = await rt.withAgentScope(
+        { workspaceId: ws.admin },
+        () =>
+          t.dispatchTool(
+            toolRow(def),
+            { id: app, snapshot_id: sid, mode: 'code', discard_draft: true },
+            { ownerId: L.owner, surface: { kind: 'web' as const, loginId: L.owner } },
+          ),
+        { ownerLoginId: L.owner },
+      );
+      recorded.push(`${mode} app_snapshot_restore tool: ${JSON.stringify(res).slice(0, 200)}`);
+      expect(res.ok).toBe(false);
+      // The library behind it, past every gate (an MCP or tool path that
+      // skipped the policy): the one door refuses before the undo snapshot.
+      const { restoreAppSnapshot } = await import('@mantle/content/app-snapshots');
+      await expect(
+        m.withViewer({ login: L.owner }, () =>
+          restoreAppSnapshot(L.owner, app, sid, { mode: 'full', discardDraft: true }),
+        ),
+      ).rejects.toMatchObject({ code: '42501', detail: 'no_edit' });
+      expect(await snapshotRows(app)).toBe(rows);
+      // A data restore stays an editor's, by the tool too.
+      const data = await rt.withAgentScope(
+        { workspaceId: ws.admin },
+        () =>
+          t.dispatchTool(
+            toolRow(def),
+            { id: app, snapshot_id: sid, mode: 'data' },
+            { ownerId: L.owner, surface: { kind: 'web' as const, loginId: L.owner } },
+          ),
+        { ownerLoginId: L.owner },
+      );
+      recorded.push(
+        `${mode} app_snapshot_restore tool data: ${JSON.stringify(data).slice(0, 200)}`,
+      );
+      expect(data.ok, JSON.stringify(data)).toBe(true);
+    }, 240_000);
+  }
+
+  it('L5: the named system step refuses to run inside an open transaction', async () => {
+    await expect(
+      m.withSystemTx(() =>
+        m.systemStep('reindex', { items: 'none', why: 'a test' }, async () => 1),
+      ),
+    ).rejects.toThrow(/inside an open transaction/);
+    await expect(
+      m.systemStep('reindex', { items: 'none', why: 'a test' }, async () => 1),
+    ).resolves.toBe(1);
+  });
 });
