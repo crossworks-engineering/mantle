@@ -32,6 +32,8 @@ vi.mock('@mantle/db', () => {
   return {
     channels,
     telegramAccounts,
+    // The worker opens the write pool at its start (arch A2b2b).
+    openLoginWritePool: () => {},
     db: {
       select: () => ({
         from: (table: unknown) => ({
