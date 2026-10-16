@@ -77,11 +77,13 @@ export async function emailAttachmentFolders(
  *  move files in, which would hide them as attachments (audit C3). */
 async function pathReaches(ownerId: string, path: string): Promise<boolean> {
   // Through the definer (0296): `email_accounts` is no table a scope reads.
+  // NULL: a path where the scope reads nothing at or above it, answered
+  // alike for every such path (no probe for branch paths): refused.
   const [branch] = (await db.execute(sql`
     select "public"."mantle_mail_branch_holds"(${ownerId}, ${path}, true) as hit`)) as unknown as {
-    hit: boolean;
+    hit: boolean | null;
   }[];
-  if (branch?.hit === true) return true;
+  if (branch?.hit !== false) return true;
   // Is, or is inside: some prefix of the path is an attachments folder.
   const labels = path.split('.');
   const prefixes = labels

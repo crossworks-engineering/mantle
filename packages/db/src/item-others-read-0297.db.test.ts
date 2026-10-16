@@ -8,7 +8,10 @@
  *    definer still answers yes, where a read of `workspaces` in that scope
  *    sees no holder (the workspace role reads only the scope's own
  *    workspaces): the hole the key-shared-content rule had on MCP (arch A7,
- *    access-keys-scope F1).
+ *    access-keys-scope F1);
+ *  - in a scope, only for an item the scope reads: any other item, held,
+ *    Admin's alone or missing, is NULL alike (no one-bit oracle of its
+ *    holders or links), and NULL is the refusing answer for othersCanRead.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/db/src/item-others-read-0297.db.test.ts
  */
 import { randomUUID } from 'node:crypto';
@@ -26,6 +29,9 @@ describe.skipIf(!URL)('0297: whether others read an item, through a definer', ()
   const linked = randomUUID();
   const adminOnly = randomUUID();
   const ws = randomUUID();
+  const memberWs = randomUUID();
+  const member = randomUUID();
+  const memberItem = randomUUID();
   const tag = `ior${randomUUID().replace(/-/g, '').slice(0, 8)}`;
   const x = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
     (await m.systemDb.execute(q)) as unknown as T[];
@@ -47,6 +53,7 @@ describe.skipIf(!URL)('0297: whether others read an item, through a definer', ()
       [held, 'held'],
       [linked, 'linked'],
       [adminOnly, 'adminonly'],
+      [memberItem, 'memberitem'],
     ] as const) {
       await x(sql`insert into nodes (id, owner_id, type, title, path)
         values (${id}, ${owner}, 'note', ${`${tag} ${label}`}, ${`${tag}.${label}`}::ltree)`);
@@ -58,6 +65,20 @@ describe.skipIf(!URL)('0297: whether others read an item, through a definer', ()
     await m.withHeads([held], 'update', async (tx) => {
       await tx.execute(
         sql`insert into item_grants (node_id, workspace_id) values (${held}, ${ws})`,
+      );
+    });
+    // A member login, the one user of its own workspace, which holds
+    // `memberItem` and nothing else here.
+    await x(sql`insert into auth.users (id, email, password_hash, role, is_owner)
+      values (${member}, ${`${tag}-m@example.invalid`}, 'x', 'member', false)`);
+    await x(sql`insert into workspaces (id, owner_id, name)
+      values (${memberWs}, ${owner}, ${`${tag} member ws`})`);
+    await x(sql`delete from workspace_users where login_id = ${member}`);
+    await x(sql`insert into workspace_users (workspace_id, login_id, moderator)
+      values (${memberWs}, ${member}, false)`);
+    await m.withHeads([memberItem], 'update', async (tx) => {
+      await tx.execute(
+        sql`insert into item_grants (node_id, workspace_id) values (${memberItem}, ${memberWs})`,
       );
     });
     await x(sql`insert into shares (owner_id, node_id, node_type, token)
@@ -91,5 +112,31 @@ describe.skipIf(!URL)('0297: whether others read an item, through a definer', ()
         )) as unknown as { definer: boolean; scoped: boolean }[],
     );
     expect(row).toEqual({ definer: true, scoped: false });
+  });
+
+  it('in a scope, answers only for an item the scope reads; any other is NULL alike', async () => {
+    const asMember = await m.withViewer(
+      { login: member },
+      async () =>
+        (await m.db.execute(
+          sql`select "public"."mantle_item_others_read"(${owner}, ${memberItem}) as readable,
+                     "public"."mantle_item_others_read"(${owner}, ${held}) as held,
+                     "public"."mantle_item_others_read"(${owner}, ${linked}) as linked,
+                     "public"."mantle_item_others_read"(${owner}, ${adminOnly}) as admin_only,
+                     "public"."mantle_item_others_read"(${owner}, ${randomUUID()}) as missing,
+                     "public"."mantle_item_others_read"(${randomUUID()}, ${memberItem}) as other_owner`,
+        )) as unknown as Record<string, boolean | null>[],
+    );
+    expect(asMember[0]).toEqual({
+      readable: true,
+      held: null,
+      linked: null,
+      admin_only: null,
+      missing: null,
+      other_owner: null,
+    });
+    // Unscoped (the system pool), every answer is the one before.
+    expect(await others(owner, memberItem)).toBe(true);
+    expect(await others(owner, adminOnly)).toBe(false);
   });
 });

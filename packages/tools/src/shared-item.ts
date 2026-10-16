@@ -22,16 +22,21 @@ import { db, nodes } from '@mantle/db';
  * The holders and links are read by a definer (mantle_item_others_read,
  * 0297): in a scope the workspace role reads only the scope's own
  * workspaces, so a holder the key's login is not a user of read as no
- * holder (arch A7, access-keys-scope F1).
+ * holder (arch A7, access-keys-scope F1). In a scope the definer answers
+ * NULL for an item the scope does not read (no oracle of its holders); a
+ * row read here with a NULL answer (the system pool with a scope set) is
+ * read as others reading it: the change is refused, never let through.
  */
 export async function othersCanRead(ownerId: string, id: string): Promise<boolean> {
   if (!/^[0-9a-f-]{36}$/i.test(id)) return false;
   const [row] = await db
     .select({
-      others: sql<boolean>`"public"."mantle_item_others_read"(${nodes.ownerId}, ${nodes.id})`,
+      others: sql<
+        boolean | null
+      >`"public"."mantle_item_others_read"(${nodes.ownerId}, ${nodes.id})`,
     })
     .from(nodes)
     .where(and(eq(nodes.id, id), eq(nodes.ownerId, ownerId)))
     .limit(1);
-  return row?.others === true;
+  return row ? row.others !== false : false;
 }

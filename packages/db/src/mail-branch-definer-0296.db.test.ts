@@ -9,7 +9,10 @@
  *  - in that scope the rule still finds a file under a mail account's
  *    branch (one with no stamp and no email above it, audit B4);
  *  - the definer answers whether a path is under (or, inclusive, is) one of
- *    the owner's branches, and only the brain's own in a scope.
+ *    the owner's branches, and only the brain's own in a scope;
+ *  - in a scope, only for a path where the scope reads an item at or above
+ *    it: any other path, in a branch or not, is NULL alike (no probe for
+ *    the branch paths), and NULL is the refusing answer for its callers.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/db/src/mail-branch-definer-0296.db.test.ts
  */
 import { randomUUID } from 'node:crypto';
@@ -26,6 +29,10 @@ describe.skipIf(!URL)('0296: the mail account branches through a definer', () =>
   const file = randomUUID();
   const tag = `mb${randomUUID().replace(/-/g, '').slice(0, 8)}`;
   const branch = `inbox.${tag}`;
+  const member = randomUUID();
+  const memberWs = randomUUID();
+  const memberNote = randomUUID();
+  const memberPath = `${tag}m.docs`;
   const x = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
     (await m.systemDb.execute(q)) as unknown as T[];
   const holds = async (o: string, path: string, inclusive: boolean) =>
@@ -51,6 +58,22 @@ describe.skipIf(!URL)('0296: the mail account branches through a definer', () =>
     await x(sql`insert into nodes (id, owner_id, type, title, path)
       values (${file}, ${owner}, 'file', 'old attachment',
               ${`${branch}.m1.attachments`}::ltree)`);
+    // A member login, the one user of its own workspace, which holds one
+    // note outside any mail branch and nothing else here.
+    await x(sql`insert into auth.users (id, email, password_hash, role, is_owner)
+      values (${member}, ${`${tag}-m@example.invalid`}, 'x', 'member', false)`);
+    await x(sql`insert into workspaces (id, owner_id, name)
+      values (${memberWs}, ${owner}, ${`${tag} member ws`})`);
+    await x(sql`delete from workspace_users where login_id = ${member}`);
+    await x(sql`insert into workspace_users (workspace_id, login_id, moderator)
+      values (${memberWs}, ${member}, false)`);
+    await x(sql`insert into nodes (id, owner_id, type, title, path)
+      values (${memberNote}, ${owner}, 'note', 'member note', ${memberPath}::ltree)`);
+    await m.withHeads([memberNote], 'update', async (tx) => {
+      await tx.execute(
+        sql`insert into item_grants (node_id, workspace_id) values (${memberNote}, ${memberWs})`,
+      );
+    });
   }, 240_000);
 
   afterAll(async () => {
@@ -76,5 +99,42 @@ describe.skipIf(!URL)('0296: the mail account branches through a definer', () =>
       ).map((r) => r.id),
     );
     expect(found).toEqual([file]);
+  });
+
+  it('in a scope, answers only where the scope reads an item at or above the path', async () => {
+    const ask = (login: string) =>
+      m.withViewer(
+        { login },
+        async () =>
+          (
+            (await m.db.execute(
+              sql`select "public"."mantle_mail_branch_holds"(${owner}, ${`${branch}.m1.attachments`}, false) as in_branch,
+                       "public"."mantle_mail_branch_holds"(${owner}, ${`${branch}.m1.attachments.sub`}, true) as below_file,
+                       "public"."mantle_mail_branch_holds"(${owner}, ${`inbox.${tag}x.m1`}, true) as no_branch,
+                       "public"."mantle_mail_branch_holds"(${owner}, ${memberPath}, true) as member_folder,
+                       "public"."mantle_mail_branch_holds"(${owner}, ${`${memberPath}.new`}, true) as member_new,
+                       "public"."mantle_mail_branch_holds"(${randomUUID()}, ${memberPath}, true) as other_owner`,
+            )) as unknown as Record<string, boolean | null>[]
+          )[0],
+      );
+    // The member reads nothing in the inbox: a branch path and a path in
+    // no branch answer alike. Its own folder, and a new one under it, are
+    // answered.
+    expect(await ask(member)).toEqual({
+      in_branch: null,
+      below_file: null,
+      no_branch: null,
+      member_folder: false,
+      member_new: false,
+      other_owner: null,
+    });
+    // The owner (Admin) reads the attachment file: the answers before.
+    expect(await ask(owner)).toMatchObject({
+      in_branch: true,
+      below_file: true,
+      member_folder: false,
+      member_new: false,
+      other_owner: null,
+    });
   });
 });
