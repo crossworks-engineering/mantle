@@ -4,6 +4,7 @@ import { watchDatabaseErrors } from './db-watch';
 import {
   InputError,
   errorDetail,
+  maskKeyLiterals,
   errorMessage,
   publicErrorText,
   publicProviderErrorMessage,
@@ -339,7 +340,10 @@ describe('the one gateway: publicErrorText and errorDetail (A10 lows item 4)', (
     const meta: Record<string, unknown>[] = [];
     const text = publicErrorText(e, 'tool x', { setMeta: (m) => meta.push(m) });
     expect(text).toBe('The provider has a server problem. (openai, HTTP 500)');
-    expect(meta).toEqual([{ error_detail: e.message }]);
+    // The owner's detail, its key looking literal masked (fix round 1, M1).
+    expect(meta).toEqual([
+      { error_detail: 'openai call 500: sk-[masked] org=acme-private' },
+    ]);
   });
 
   it('a refused key: the trace names provider and status only', () => {
@@ -358,10 +362,64 @@ describe('the one gateway: publicErrorText and errorDetail (A10 lows item 4)', (
     );
     expect(publicErrorText(new InputError('bad date'), 't', step)).toBe('bad date');
     expect(meta).toEqual([]);
-    // A status with no body is no provider's (a Graph error): its detail is
-    // its message.
+    // A 401 of our own (a Graph token) reads as a refused key since fix
+    // round 1 (M1: the refusal is read on every error): a line of detail
+    // lost, never a key.
     const graph = Object.assign(new Error('no valid access token'), { status: 401 });
-    expect(errorDetail(graph)).toBe('no valid access token');
+    expect(errorDetail(graph)).toBe('provider refused the key (HTTP 401)');
+    expect(errorDetail(new Error('page not found: abc'))).toBe('page not found: abc');
+  });
+
+  describe("a refused key in a copied adapter message (fix round 1, M1)", () => {
+    const KEY = 'sk-proj-AbCdEf0123456789xyz';
+    const cases: [string, Error][] = [
+      [
+        'embeddings failed: 401',
+        new Error(`openai embeddings failed: 401 Unauthorized - {"error":"bad key ${KEY}"}`),
+      ],
+      [
+        'chat 401',
+        new Error(`openai chat 401: Incorrect API key provided: ${KEY}. You can find yours.`),
+      ],
+      ['chat 403', new Error(`anthropic chat 403: {"error":"key ${KEY} is disabled"}`)],
+      [
+        'wrapped',
+        new Error('summarize failed', {
+          cause: new Error(`openai chat 401: Incorrect API key provided: ${KEY}`),
+        }),
+      ],
+      [
+        'openrouter prose',
+        new Error(`openrouter-chat 401 on some/model: No auth credentials found ${KEY}`),
+      ],
+    ];
+    for (const [name, e] of cases) {
+      it(`${name}: the detail names the status only`, () => {
+        expect(errorDetail(e)).toMatch(/^provider refused the key \(HTTP 40[13]\)$/);
+        const meta: Record<string, unknown>[] = [];
+        publicProviderErrorMessage(e, 't', { setMeta: (m) => meta.push(m) });
+        expect(JSON.stringify(meta)).not.toContain(KEY);
+        expect(JSON.stringify(meta)).not.toContain('AbCdEf');
+      });
+    }
+  });
+
+  it('masks a key looking literal under any other status (the backstop)', () => {
+    const e = new Error(
+      'openai chat 400: header Authorization: Bearer sk-proj-AbCdEf0123456789 invalid; ' +
+        'api_key=AIzaSyA0123456789abcdefghij token: mtlk_0123456789abcdef hf_abcdefghijklmnop0123',
+    );
+    const detail = errorDetail(e);
+    for (const leak of ['AbCdEf0123', 'SyA0123', '0123456789abcdef', 'abcdefghijklmnop']) {
+      expect(detail).not.toContain(leak);
+    }
+    expect(detail).toContain('openai chat 400');
+    expect(maskKeyLiterals('task-1234567 disk-usage risk-free')).toBe(
+      'task-1234567 disk-usage risk-free',
+    );
+    expect(maskKeyLiterals('duplicate key value violates unique constraint')).toBe(
+      'duplicate key value violates unique constraint',
+    );
   });
 });
 

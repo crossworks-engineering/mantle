@@ -267,6 +267,30 @@ export function providerAuthRefusal(err: unknown): { provider?: string; status: 
 }
 
 /**
+ * Key looking literals in a text, each cut to its prefix plus `[masked]`
+ * (A10 lows fix round 1, M1): the backstop under errorDetail for a body
+ * that echoes a key with a status that is no refused key's (a 400 that
+ * quotes the header, a 403 moderation answer that quotes the request). By
+ * the providers' own key prefixes (OpenAI, Anthropic, OpenRouter `sk-`;
+ * Google `AIza`; Hugging Face `hf_`; Groq `gsk_`; xAI `xai-`; Perplexity
+ * `pplx-`; Replicate `r8_`; ours `mtlk_`), a `Bearer` token, and a value
+ * named `api_key`, `apikey`, `key`, `token` or `secret`. A safety net, not
+ * the rule: a refused key's detail never carries its body at all.
+ */
+export function maskKeyLiterals(text: string): string {
+  return text
+    .replace(KEY_PREFIX_RE, (_m, prefix: string) => `${prefix}[masked]`)
+    .replace(BEARER_RE, (_m, word: string) => `${word} [masked]`)
+    .replace(NAMED_SECRET_RE, (_m, name: string, sep: string) => `${name}${sep}[masked]`);
+}
+
+const KEY_PREFIX_RE =
+  /\b(sk-|AIza|hf_|gsk_|xai-|pplx-|r8_|mtlk_)[A-Za-z0-9_*.\-]{6,}/g;
+const BEARER_RE = /\b(Bearer)\s+[A-Za-z0-9._~+/*\-]{8,}=*/gi;
+const NAMED_SECRET_RE =
+  /\b(api[_-]?key|x-api-key|key|token|secret|access_token)(["']?\s*[:=]\s*["']?)(?!\[masked\])[^\s"',;&}]{8,}/gi;
+
+/**
  * The status a copy of an adapter's message carries (a wrapper that kept the
  * text but not the error): `<p> chat <status>: `, `openrouter-chat <status>
  * on `, `<p> embeddings failed: <status> <text> \u2014 `, `stream error

@@ -18,6 +18,7 @@ import { DATABASE_ERROR_PUBLIC, mapAccessError } from './access-error';
 import { domainErrorAnswer } from './domain-errors';
 import {
   isProviderHttpFailure,
+  maskKeyLiterals,
   providerAuthRefusal,
   providerFailureText,
   serviceFailureText,
@@ -277,17 +278,22 @@ export function publicErrorText(err: unknown, where: string, step?: StepMeta): s
 
 /**
  * The DETAIL of a caught error, for the server log and the owner's trace
- * (ctx.step setMeta): its message, except a provider's refused key, which
- * names the provider and status only (its body can echo part of the key).
- * Never for a member or the model: that is {@link publicErrorText}.
+ * (ctx.step setMeta): its message, except a refused key's, which names the
+ * provider and status only (its body can echo part of the key). The refusal
+ * is read on every error, as the log line does (A10 lows fix round 1, M1):
+ * a wrapper that copied an adapter's message (`<p> embeddings failed: 401
+ * Unauthorized - <body>`, `<p> chat 401: Incorrect API key provided: ...`)
+ * is a refused key too, though no ProviderHttpError is left on it. Broad on
+ * purpose: a 401 of our own (a Graph token) reads the same, which costs a
+ * line of detail, never a key. Any other message goes out with its key
+ * looking literals masked ({@link maskKeyLiterals}), the backstop for a key
+ * a body echoes under another status. Never for a member or the model:
+ * that is {@link publicErrorText}.
  */
 export function errorDetail(err: unknown): string {
-  if (isProviderHttpFailure(err)) {
-    const refusal = providerAuthRefusal(err);
-    if (refusal)
-      return `${refusal.provider ?? 'provider'} refused the key (HTTP ${refusal.status})`;
-  }
-  return messageOf(err);
+  const refusal = providerAuthRefusal(err);
+  if (refusal) return `${refusal.provider ?? 'provider'} refused the key (HTTP ${refusal.status})`;
+  return maskKeyLiterals(messageOf(err));
 }
 
 /** An Error's message, else the string form: errorMessage without the
@@ -427,6 +433,7 @@ export {
   isEmptyJsonBodyError,
   isProviderHttpFailure,
   isRouteDownError,
+  maskKeyLiterals,
   providerErrorPublicText,
   providerErrorStatus,
   providerFailureShape,
