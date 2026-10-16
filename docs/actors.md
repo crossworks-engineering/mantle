@@ -5615,11 +5615,29 @@ Branch `feat/precheck-remove`. Part 1 is done; nothing is in progress.
 ### Pre-check removal handover (fix round A, 2026-10-16)
 
 Branch `feat/precheck-remove`, still on main v0.300.81, not rebased (F4
-merges first). Fix round A is done; nothing is in progress. What it did:
-"Part 1 fix round A" above (CI's edit-on cause, the cheap rights read, the
-floor's `MANTLE_CHECK_FLOOR` and roll.sh step 2d, `legacyItemPrecheck`, the
-call audit's targets). Gate exit codes and the CI run are in the round's
-report.
+merges first). What fix round A did: "Part 1 fix round A" above (CI's
+edit-on cause, the cheap rights read, the floor's `MANTLE_CHECK_FLOOR` and
+roll.sh step 2d, `legacyItemPrecheck`, the call audit's targets). Handed
+over at the owner's context rule with one thing left.
+
+**Gates at 0b6b75504** (workstation, own pg): typecheck 0, lint 0, format
+0, docs 0, arch 0, boot:smoke 0, web build 0, actor-off 0, actor-on 0,
+test:matrix 0; full vitest with DB 1, edit-on 1, test:runtime-role 1, each
+the same three cells and nothing else. The deploy harness
+(`scripts/test-deploy-scripts.sh`) 0. CI on 53286144d failed (run
+38956685967), on 0b6b75504 was still running at hand over (run
+38957917674): expect the same three.
+
+**Left (do this first):** the three "off (both checks off): the refused
+write(s) of above give(s) today's result" cells of
+`server/web/server/a3b-store-brokers.db.test.ts` (tables) and
+`a3b2-store-brokers.db.test.ts` (the files store, the snapshot store) throw
+"not allowed to edit this item": with both checks off the write they expect
+to be made is now refused first by the cheap rights read (assertItemRight
+asks in every mode). That is this round's intended change (narrower below
+on, never looser; named above): change those cells to expect the refusal
+(nothing staged, nothing written) in off as in on, name it in their
+headers, rerun full vitest, edit-on and runtime-role, then wait for CI.
 
 **Next round (after F4 merges), in order:**
 
