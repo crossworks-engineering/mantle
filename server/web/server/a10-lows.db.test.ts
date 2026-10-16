@@ -140,6 +140,18 @@ const CHANGES: Readonly<Record<string, { kind: string; now: string }>> = {
     kind: 'dest-400 (a path that is no ltree is no folder)',
     now: NO_FOLDER('copyFolderById', FIRST),
   },
+  'dest new file': {
+    kind: 'dest-400 (a path that is no ltree is no folder)',
+    now: `400 application/json {"error":"upsertFile: parent folder '${BAD_PATH}' not found"}`,
+  },
+  'key ai-worker PATCH backup': {
+    kind: 'key-400 (a key id the vault has no key for)',
+    now: '400 application/json {"error":"backupApiKeyId names no key in the vault."}',
+  },
+  'key agent PATCH tts': {
+    kind: 'key-400 (a worker id that names no AI worker)',
+    now: '400 application/json {"error":"ttsWorkerId names no AI worker."}',
+  },
   'key ai-worker POST': {
     kind: 'key-400 (a key id the vault has no key for)',
     now: '400 application/json {"error":"apiKeyId names no key in the vault."}',
@@ -343,6 +355,9 @@ describe.skipIf(!DB_URL)('A10 lows: bad ids, dates, paths and keys answer as the
       await cell('key ai-worker PATCH', 'PATCH', `/api/ai-workers/${worker.worker.id}`, {
         apiKeyId: NOBODY,
       });
+      await cell('key ai-worker PATCH backup', 'PATCH', `/api/ai-workers/${worker.worker.id}`, {
+        backupApiKeyId: NOBODY,
+      });
       await cell('key agent POST', 'POST', '/api/agents', {
         slug: `${tag}-agent`,
         name: 'lows',
@@ -361,6 +376,9 @@ describe.skipIf(!DB_URL)('A10 lows: bad ids, dates, paths and keys answer as the
       });
       await cell('key agent PATCH', 'PATCH', `/api/agents/${agent.agent.id}`, {
         apiKeyId: NOBODY,
+      });
+      await cell('key agent PATCH tts', 'PATCH', `/api/agents/${agent.agent.id}`, {
+        ttsWorkerId: NOBODY,
       });
     } finally {
       quiet.mockRestore();

@@ -274,7 +274,9 @@ const BAD_JSON = '400 application/json {"error":"invalid JSON"}';
  *    route fold 2 moves;
  *  - bad-json-400 (empty): an empty body on a route that refuses one
  *    (readJson `refuseEmpty`) answers the one 400, where the route refused
- *    it with a text of its own.
+ *    it with a text of its own;
+ *  - ceiling-in-kb (A10 lows, part 2 #6): the 413 of a ceiling under 1 MB
+ *    says it in KB ("at most 64 KB"), where it said "at most 0 MB".
  */
 /** The manifest pattern of a route file (app/api/x/[id]/route.ts). */
 function patternOf(file: string): string {
@@ -333,6 +335,14 @@ function changeKind(cell: string, main: string, now: string): string | null {
   // A refusal the caller fixes, said as a 500 by a hand catch: 400 now.
   if (moved && main.startsWith('500 ') && now === `400${main.slice(3)}`) {
     return 'input-400 (fold 2: a refusal the caller fixes, said as a 500 on main)';
+  }
+  // A10 lows (part 2 #6): a ceiling under 1 MB is said in KB, where the
+  // 413 said "at most 0 MB" (the 64 KB of the sign-in routes).
+  if (
+    main.includes('(at most 0 MB).') &&
+    now === main.replace('(at most 0 MB).', '(at most 64 KB).')
+  ) {
+    return 'ceiling-in-kb (A10 lows: a ceiling under 1 MB is said in KB)';
   }
   if (
     variant === 'chunked' &&

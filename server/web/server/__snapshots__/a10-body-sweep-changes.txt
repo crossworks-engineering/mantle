@@ -4,6 +4,7 @@
 # bad-json-400 (malformed): 200 cells
 # chunked-413: 211 cells
 # opaque-500 (fold 2: a plain error, its text was the reply): 28 cells
+# ceiling-in-kb (A10 lows: a ceiling under 1 MB is said in KB): 8 cells
 # input-400 (fold 2: a refusal the caller fixes, said as a 500 on main): 1 cells
 # bad-json-400 (malformed, accepted as {} on main): 7 cells
 # item-fault (fix round 1: a failed item says a fixed text for a fault): 6 cells
@@ -242,21 +243,42 @@ POST /api/assistant/turn/:turnId/cancel owner chunked [chunked-413]
 POST /api/auth/device-login none malformed [bad-json-400 (malformed)]
   main 401 application/json {"error":"Invalid email or password."}
   now  400 application/json {"error":"invalid JSON"}
+POST /api/auth/device-login none chunked [ceiling-in-kb (A10 lows: a ceiling under 1 MB is said in KB)]
+  main 413 application/json {"error":"This request is too large (at most 0 MB).","reason":"body-too-large"}
+  now  413 application/json {"error":"This request is too large (at most 64 KB).","reason":"body-too-large"}
 POST /api/auth/invite/accept none malformed [bad-json-400 (malformed)]
   main 401 application/json {"error":"This invite is not valid. Ask for a new one."}
   now  400 application/json {"error":"invalid JSON"}
+POST /api/auth/invite/accept none chunked [ceiling-in-kb (A10 lows: a ceiling under 1 MB is said in KB)]
+  main 413 application/json {"error":"This request is too large (at most 0 MB).","reason":"body-too-large"}
+  now  413 application/json {"error":"This request is too large (at most 64 KB).","reason":"body-too-large"}
 POST /api/auth/login none malformed [bad-json-400 (malformed)]
   main 401 application/json {"error":"Invalid email or password."}
   now  400 application/json {"error":"invalid JSON"}
+POST /api/auth/login none chunked [ceiling-in-kb (A10 lows: a ceiling under 1 MB is said in KB)]
+  main 413 application/json {"error":"This request is too large (at most 0 MB).","reason":"body-too-large"}
+  now  413 application/json {"error":"This request is too large (at most 64 KB).","reason":"body-too-large"}
+POST /api/auth/logout none chunked [ceiling-in-kb (A10 lows: a ceiling under 1 MB is said in KB)]
+  main 413 application/json {"error":"This request is too large (at most 0 MB).","reason":"body-too-large"}
+  now  413 application/json {"error":"This request is too large (at most 64 KB).","reason":"body-too-large"}
 POST /api/auth/mobile-login none malformed [bad-json-400 (malformed)]
   main 401 application/json {"error":"Invalid email or password."}
   now  400 application/json {"error":"invalid JSON"}
+POST /api/auth/mobile-login none chunked [ceiling-in-kb (A10 lows: a ceiling under 1 MB is said in KB)]
+  main 413 application/json {"error":"This request is too large (at most 0 MB).","reason":"body-too-large"}
+  now  413 application/json {"error":"This request is too large (at most 64 KB).","reason":"body-too-large"}
 POST /api/auth/pair/claim none malformed [bad-json-400 (malformed)]
   main 401 application/json {"error":"That code didn't work. Show a fresh one on the web app and scan again."}
   now  400 application/json {"error":"invalid JSON"}
+POST /api/auth/pair/claim none chunked [ceiling-in-kb (A10 lows: a ceiling under 1 MB is said in KB)]
+  main 413 application/json {"error":"This request is too large (at most 0 MB).","reason":"body-too-large"}
+  now  413 application/json {"error":"This request is too large (at most 64 KB).","reason":"body-too-large"}
 POST /api/auth/token none malformed [bad-json-400 (malformed)]
   main 401 application/json {"error":"Invalid email or password."}
   now  400 application/json {"error":"invalid JSON"}
+POST /api/auth/token none chunked [ceiling-in-kb (A10 lows: a ceiling under 1 MB is said in KB)]
+  main 413 application/json {"error":"This request is too large (at most 0 MB).","reason":"body-too-large"}
+  now  413 application/json {"error":"This request is too large (at most 64 KB).","reason":"body-too-large"}
 POST /api/backups owner malformed [bad-json-400 (malformed)]
   main 400 application/json {"error":"enabled: Invalid input: expected boolean, received undefined"}
   now  400 application/json {"error":"invalid JSON"}
@@ -1373,3 +1395,6 @@ PATCH /api/workspaces/:id/users/:loginId member chunked [chunked-413]
 POST /s/:token/code none malformed [bad-json-400 (malformed)]
   main 500 text/plain Internal server error
   now  400 application/json {"error":"invalid JSON"}
+POST /s/:token/code none chunked [ceiling-in-kb (A10 lows: a ceiling under 1 MB is said in KB)]
+  main 413 application/json {"error":"This request is too large (at most 0 MB).","reason":"body-too-large"}
+  now  413 application/json {"error":"This request is too large (at most 64 KB).","reason":"body-too-large"}

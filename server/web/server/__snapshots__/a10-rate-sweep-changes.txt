@@ -1,9 +1,11 @@
 # A10 #8: the probes that answer otherwise than on main, each with its named
 # kind (changeKind, a10-rate-sweep.test.ts), its answer on main and now. Every
 # other probe of a10-rate-sweep.txt answers byte for byte as recorded.
-# one-429: 96 probes
-# one-429 (Retry-After added): 8 probes
+# one-429: 88 probes
+# machine-429: 8 probes
+# machine-429 (Retry-After added): 4 probes
 # a8-f1-member-on-v1: 32 probes
+# one-429 (Retry-After added): 4 probes
 # counted-before-the-route: 2 probes
 POST /api/auth/login none auth:login count (ip 10/60s) [one-429]
   main first 429 at 11; #10 401; over 429 application/json retry-after=60 cache-control=- {"error":"Too many login attempts. Try again in a minute."}
@@ -83,42 +85,42 @@ POST /api/auth/change-password owner auth:change-password count (login 5/3600s) 
 POST /api/auth/change-password owner auth:change-password window [one-429]
   main 3599s: 429 application/json retry-after=1 cache-control=- {"error":"Too many password change attempts. Try again later."}; 3600s: 400
   now  3599s: 429 application/json retry-after=1 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":1}; 3600s: 400
-GET /api/mcp none mcp count (ip 300/60s) [one-429]
+GET /api/mcp none mcp count (ip 300/60s) [machine-429]
   main first 429 at 301; #300 401; over 429 application/json retry-after=60 cache-control=- {"error":"rate_limited"}
-  now  first 429 at 301; #300 401; over 429 application/json retry-after=60 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":60}
-GET /api/mcp none mcp window [one-429]
+  now  first 429 at 301; #300 401; over 429 application/json retry-after=60 cache-control=no-store {"error":"rate_limited","code":"rate_limited","message":"Too many requests. Try again later.","retryAfter":60}
+GET /api/mcp none mcp window [machine-429]
   main 59s: 429 application/json retry-after=1 cache-control=- {"error":"rate_limited"}; 60s: 401
-  now  59s: 429 application/json retry-after=1 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":1}; 60s: 401
-POST /api/mcp none mcp count (ip 300/60s) [one-429]
+  now  59s: 429 application/json retry-after=1 cache-control=no-store {"error":"rate_limited","code":"rate_limited","message":"Too many requests. Try again later.","retryAfter":1}; 60s: 401
+POST /api/mcp none mcp count (ip 300/60s) [machine-429]
   main first 429 at 301; #300 401; over 429 application/json retry-after=60 cache-control=- {"error":"rate_limited"}
-  now  first 429 at 301; #300 401; over 429 application/json retry-after=60 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":60}
-POST /api/mcp none mcp window [one-429]
+  now  first 429 at 301; #300 401; over 429 application/json retry-after=60 cache-control=no-store {"error":"rate_limited","code":"rate_limited","message":"Too many requests. Try again later.","retryAfter":60}
+POST /api/mcp none mcp window [machine-429]
   main 59s: 429 application/json retry-after=1 cache-control=- {"error":"rate_limited"}; 60s: 401
-  now  59s: 429 application/json retry-after=1 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":1}; 60s: 401
-DELETE /api/mcp none mcp count (ip 300/60s) [one-429]
+  now  59s: 429 application/json retry-after=1 cache-control=no-store {"error":"rate_limited","code":"rate_limited","message":"Too many requests. Try again later.","retryAfter":1}; 60s: 401
+DELETE /api/mcp none mcp count (ip 300/60s) [machine-429]
   main first 429 at 301; #300 401; over 429 application/json retry-after=60 cache-control=- {"error":"rate_limited"}
-  now  first 429 at 301; #300 401; over 429 application/json retry-after=60 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":60}
-DELETE /api/mcp none mcp window [one-429]
+  now  first 429 at 301; #300 401; over 429 application/json retry-after=60 cache-control=no-store {"error":"rate_limited","code":"rate_limited","message":"Too many requests. Try again later.","retryAfter":60}
+DELETE /api/mcp none mcp window [machine-429]
   main 59s: 429 application/json retry-after=1 cache-control=- {"error":"rate_limited"}; 60s: 401
-  now  59s: 429 application/json retry-after=1 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":1}; 60s: 401
-HEAD /api/mcp none mcp count (ip 300/60s) [one-429]
+  now  59s: 429 application/json retry-after=1 cache-control=no-store {"error":"rate_limited","code":"rate_limited","message":"Too many requests. Try again later.","retryAfter":1}; 60s: 401
+HEAD /api/mcp none mcp count (ip 300/60s) [machine-429]
   main first 429 at 301; #300 401; over 429 application/json retry-after=60 cache-control=- 
   now  first 429 at 301; #300 401; over 429 application/json retry-after=60 cache-control=no-store 
-HEAD /api/mcp none mcp window [one-429]
+HEAD /api/mcp none mcp window [machine-429]
   main 59s: 429 application/json retry-after=1 cache-control=- ; 60s: 401
   now  59s: 429 application/json retry-after=1 cache-control=no-store ; 60s: 401
-POST /api/oauth/register none oauth:register count (ip 10/60s) [one-429 (Retry-After added)]
+POST /api/oauth/register none oauth:register count (ip 10/60s) [machine-429 (Retry-After added)]
   main first 429 at 11; #10 400; over 429 application/json retry-after=- cache-control=no-store {"error":"rate_limited"}
-  now  first 429 at 11; #10 400; over 429 application/json retry-after=60 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":60}
-POST /api/oauth/register none oauth:register window [one-429 (Retry-After added)]
+  now  first 429 at 11; #10 400; over 429 application/json retry-after=60 cache-control=no-store {"error":"rate_limited","code":"rate_limited","message":"Too many requests. Try again later.","retryAfter":60}
+POST /api/oauth/register none oauth:register window [machine-429 (Retry-After added)]
   main 59s: 429 application/json retry-after=- cache-control=no-store {"error":"rate_limited"}; 60s: 400
-  now  59s: 429 application/json retry-after=1 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":1}; 60s: 400
-POST /api/oauth/token none oauth:token count (ip 30/60s) [one-429 (Retry-After added)]
+  now  59s: 429 application/json retry-after=1 cache-control=no-store {"error":"rate_limited","code":"rate_limited","message":"Too many requests. Try again later.","retryAfter":1}; 60s: 400
+POST /api/oauth/token none oauth:token count (ip 30/60s) [machine-429 (Retry-After added)]
   main first 429 at 31; #30 400; over 429 application/json retry-after=- cache-control=no-store {"error":"rate_limited"}
-  now  first 429 at 31; #30 400; over 429 application/json retry-after=60 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":60}
-POST /api/oauth/token none oauth:token window [one-429 (Retry-After added)]
+  now  first 429 at 31; #30 400; over 429 application/json retry-after=60 cache-control=no-store {"error":"rate_limited","code":"rate_limited","message":"Too many requests. Try again later.","retryAfter":60}
+POST /api/oauth/token none oauth:token window [machine-429 (Retry-After added)]
   main 59s: 429 application/json retry-after=- cache-control=no-store {"error":"rate_limited"}; 60s: 400
-  now  59s: 429 application/json retry-after=1 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":1}; 60s: 400
+  now  59s: 429 application/json retry-after=1 cache-control=no-store {"error":"rate_limited","code":"rate_limited","message":"Too many requests. Try again later.","retryAfter":1}; 60s: 400
 POST /api/telegram/pair owner telegram-pair count (login 10/60s) [one-429]
   main first 429 at 11; #10 400; over 429 application/json retry-after=60 cache-control=- {"error":"too many tries, wait a moment.","code":"too_many_attempts"}
   now  first 429 at 11; #10 400; over 429 application/json retry-after=60 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":60}

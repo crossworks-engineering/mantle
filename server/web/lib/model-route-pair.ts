@@ -33,16 +33,17 @@ export const EMBEDDING_ROUTES: readonly RouteFields[] = [
   ['backupApiKeyId', 'backupBaseUrl', 'backupProvider'],
 ];
 
-/** The vault key ids a route row names, by their foreign keys, each with
- *  what the caller hears when the vault has no such key (inputOnMissingRef,
- *  @mantle/db; A10 lows, part 2 #3). */
+/** The rows a model route's row names, by their foreign keys (the names
+ *  the migrations gave them), each with what the caller hears when it is
+ *  not there (inputOnMissingRef, @mantle/db; A10 lows, part 2 #3). */
 export const ROUTE_KEY_REFS = {
   agents: {
-    agents_api_key_id_api_keys_id_fk: 'apiKeyId names no key in the vault.',
+    agents_api_key_id_fkey: 'apiKeyId names no key in the vault.',
     agents_backup_api_key_id_api_keys_id_fk: 'backupApiKeyId names no key in the vault.',
+    agents_tts_worker_id_fkey: 'ttsWorkerId names no AI worker.',
   },
   aiWorkers: {
-    ai_workers_api_key_id_api_keys_id_fk: 'apiKeyId names no key in the vault.',
+    ai_workers_api_key_id_fkey: 'apiKeyId names no key in the vault.',
     ai_workers_backup_api_key_id_api_keys_id_fk: 'backupApiKeyId names no key in the vault.',
   },
 } as const;

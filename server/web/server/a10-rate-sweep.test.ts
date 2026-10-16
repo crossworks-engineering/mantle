@@ -833,6 +833,10 @@ describe.skipIf(!hasManifest)('A10 #8: every route limit answers as recorded on 
  *  writes it: R its Retry-After; a HEAD's body is empty. */
 const ONE_429 =
   /429 application\/json retry-after=(\d+) cache-control=no-store (?:\{"error":"Too many requests\. Try again later\.","code":"rate_limited","retryAfter":(\d+)\})?/g;
+/** The one 429 in its machine shape (A10 lows, #8 L1): the OAuth server's
+ *  and the remote MCP's limits keep `error: 'rate_limited'`. */
+const ONE_429_MACHINE =
+  /429 application\/json retry-after=(\d+) cache-control=no-store (?:\{"error":"rate_limited","code":"rate_limited","message":"Too many requests\. Try again later\.","retryAfter":(\d+)\})?/g;
 /** Any 429 answer on main, up to where the probe's text goes on. */
 const MAIN_429 = /429 \S+ retry-after=(\S+) cache-control=\S+ .*?(?=; \d+s: |$)/g;
 
@@ -847,6 +851,10 @@ const MAIN_429 = /429 \S+ retry-after=(\S+) cache-control=\S+ .*?(?=; \d+s: |$)/
  *    on most); every other part of the probe as on main;
  *  - one-429 (Retry-After added): the same, where main's 429 had no
  *    Retry-After (the user search's);
+ *  - machine-429 (A10 lows, #8 L1): the one 429 in its machine shape on
+ *    the remote MCP's and the OAuth server's rows: `error` stays the code
+ *    `rate_limited` their clients read, the text is `message`; with
+ *    `(Retry-After added)` where main's had none;
  *  - counted-before-the-route: the user search takes its limit before its
  *    own checks (the row's, the gate's), so a request the route refuses
  *    (an offset that is not a number, a Moderator check) counts toward the
@@ -856,6 +864,19 @@ function changeKind(probe: string, main: string, now: string): string | null {
   const nowOk = [...now.matchAll(ONE_429)].every((m) => !m[2] || m[1] === m[2]);
   const mark = (x: string, re: RegExp, keep: boolean) =>
     x.replace(re, (_all, r: string) => `<429 retry-after=${keep ? r : '?'}>`);
+  if (/ (?:mcp|oauth:register|oauth:token) /.test(probe) && now.includes('429 ')) {
+    const ok = [...now.matchAll(ONE_429_MACHINE)].every((m) => !m[2] || m[1] === m[2]);
+    if (ok && mark(main, MAIN_429, true) === mark(now, ONE_429_MACHINE, true)) {
+      return 'machine-429';
+    }
+    if (
+      ok &&
+      main.includes('retry-after=-') &&
+      mark(main, MAIN_429, false) === mark(now, ONE_429_MACHINE, false)
+    ) {
+      return 'machine-429 (Retry-After added)';
+    }
+  }
   if (nowOk && now.includes('429 ')) {
     if (mark(main, MAIN_429, true) === mark(now, ONE_429, true)) return 'one-429';
     if (
