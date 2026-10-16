@@ -35,6 +35,8 @@ const PUBLIC = [
   'deleteFileByPath',
   'renameFileById',
   'bulkDeleteFiles',
+  'bulkDeleteGate',
+  'bulkRefusalOf',
   // ops/queries.ts
   'listRecentFiles',
   'listFiles',

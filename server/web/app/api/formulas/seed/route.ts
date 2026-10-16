@@ -28,13 +28,17 @@ export async function POST() {
   const failed: Array<{ slug: string; error: string }> = [];
 
   for (const seed of FORMULA_SEED) {
-    // Present is present brain-wide (mantle_name_taken, F4 fix round 2): one
-    // in a workspace the caller's scope does not read was seeded again.
-    if (present.has(seed.slug) || (await nameTaken('formula-spec', user.id, seed.slug))) {
+    if (present.has(seed.slug)) {
       skipped.push(seed.slug);
       continue;
     }
     try {
+      // Present is present brain-wide (mantle_name_taken, F4 fix round 2):
+      // one in a workspace the caller's scope does not read was seeded again.
+      if (await nameTaken('formula-spec', user.id, seed.slug)) {
+        skipped.push(seed.slug);
+        continue;
+      }
       await createFormula(user.id, { spec: seed.spec, title: seed.title, tags: [...seed.tags] });
       created.push(seed.slug);
     } catch (err) {
