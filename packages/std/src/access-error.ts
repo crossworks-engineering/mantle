@@ -410,8 +410,9 @@ function databaseRefusal(err: unknown): AccessRefusal | null {
     };
   }
   // no_edit, or no detail (the workspace checks before A3a): 403, reason
-  // item-workspace, as before (jackdaw's "Add yourself" keys on it). A tool
-  // says the same words (A5 step 5, Q3 b).
+  // item-workspace, as before (jackdaw shows the message; no button keys on
+  // the reason since the "Add yourself" answer went, F4). A tool says the
+  // same words (A5 step 5, Q3 b).
   return {
     kind: 'database',
     code: 'forbidden',

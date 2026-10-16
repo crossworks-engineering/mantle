@@ -1119,6 +1119,26 @@ workspaces nothing a user sees changes. Before the roll:
   showed no hit for one release. Count them per box, numbers only (counted
   on the box): `scripts/arch-scoreboard-box.sh <alias>`; ten counts, all 0.
 
+## Admin writes on the write role (F4, migrations 0298 and 0299)
+
+F4 (docs/actors.md, "Admin writes on the write role (F4)"): every login's
+write request, an Admin user's and the owner's included, runs in its
+workspaces on the write role while the actor check is warn or on.
+
+- **Migration 0298** ticks Moderator on the Admin workspace for every
+  Admin user who was not one (owner decision: every Admin user is a
+  Moderator of Admin, always), one `workspace_events` row each
+  (`user.moderator`, `by` "migration 0298"). Without the tick such a user's
+  edits of Admin-homed items and its creates into Admin are refused on
+  the write role. Count them on the box before the roll, numbers only:
+  `select count(*) from workspace_users u join workspaces w on w.id =
+u.workspace_id and w.is_admin join auth.users l on l.id = u.login_id and
+l.role = 'admin' where not u.moderator;` (after the roll: 0).
+- **Migration 0299** adds one definer (`mantle_mail_backfill_accounts`),
+  with no lock on a table and no row change: adding a contact, or an
+  address to one, queued no backfill of past mail in a request or an
+  assistant's turn until it.
+
 ## Rollback
 
 ```bash

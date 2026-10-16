@@ -10,8 +10,8 @@
  * implementation and no duplicated pg-boss wiring.
  */
 import { PgBoss } from 'pg-boss';
-import { and, eq } from 'drizzle-orm';
-import { db, emailAccounts } from '@mantle/db';
+import { sql } from 'drizzle-orm';
+import { db } from '@mantle/db';
 import { env } from '@mantle/config';
 
 /** Queue name — must match the email-sync worker's `BACKFILL_QUEUE`. */
@@ -44,10 +44,14 @@ async function boss(): Promise<PgBoss> {
 export async function enqueueBackfill(userId: string, target: string): Promise<void> {
   const t = target.trim();
   if (!t) return;
-  const accounts = await db
-    .select({ id: emailAccounts.id, provider: emailAccounts.provider })
-    .from(emailAccounts)
-    .where(and(eq(emailAccounts.userId, userId), eq(emailAccounts.enabled, true)));
+  // The enabled accounts, ids and providers only, by their definer
+  // (mantle_mail_backfill_accounts, 0299): no workspace scope reads
+  // email_accounts, and a contact is added in its caller's scope (a
+  // request's since F4, an assistant's turn). In a scope it answers only
+  // for one that holds Admin; on the system pool as the table read did.
+  const accounts = (await db.execute(
+    sql`select id::text as id, provider from "public"."mantle_mail_backfill_accounts"(${userId}::uuid)`,
+  )) as unknown as { id: string; provider: string }[];
   if (accounts.length === 0) return;
   const b = await boss();
   for (const a of accounts) {

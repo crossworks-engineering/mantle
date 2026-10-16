@@ -78,7 +78,7 @@ import {
   type RouteCaller,
   type RouteRow,
 } from './route-policy';
-import { auditsAsWrite } from './route-scope';
+import { adminActWrite, auditsAsWrite } from './route-scope';
 import { takeRouteLimits, type LimitLogin } from '../route-limits';
 import {
   SESSION_COOKIE_NAME,
@@ -1721,18 +1721,28 @@ async function adminRouteGate(loginId: string): Promise<NextResponse | null> {
 }
 
 /**
- * itemWriteGate's answer for the two Admin acts on an item the user's
- * scope does not read, which stay on the system pool after F4 (each checked
- * here first; docs/actors.md, "Admin writes on the write role (F4)"):
+ * The answer that an Admin user's write runs on the system pool with no
+ * scope at all: its reads unscoped and no scope on its transactions (an
+ * Admin user's write before F4 carried its scope on its transactions; these
+ * carry none, so the database's workspace checks do not run on them). Kept
+ * after F4 by name, each checked first (docs/actors.md, "Admin writes on
+ * the write role (F4)"):
  *  - closing any link of the brain (DELETE /api/shares/:id) by an Admin
  *    user with the users area (docs/workspaces.md: closing only narrows;
  *    plan v2, section 10): the link's item may be in a workspace the user
  *    is not in, and the scope reads no link of an item it does not read
- *    (0265);
+ *    (0265); itemWriteGate's answer;
  *  - the trash of deleted apps (purge, restore: /api/apps/deleted/:id),
  *    after the manage check of the app's last home: the app's row is gone,
  *    so no scope reads its snapshots (0265), as the app_undelete tool's
- *    'app-trash' door says.
+ *    'app-trash' door says; itemWriteGate's answer;
+ *  - the Admin acts of ADMIN_ACT_WRITES (route-scope.ts, F4 fix round 1: a
+ *    contact's sharing, sharing with contacts, Revoke all of a contact's
+ *    shares, an entity merge): every Admin user's, on tables no workspace
+ *    scope reads or over rows outside the user's workspaces;
+ *  - a change of a contact share (PATCH /api/shares/:id of a share that
+ *    names a contact: "Can write" on an app's) by an Admin user, as making
+ *    one; itemWriteGate's answer (F4 fix round 1).
  */
 const ADMIN_ACT = 'admin-act';
 
@@ -1756,7 +1766,10 @@ async function enterLoginWrite(
   route: RouteRow,
   opts: { admin: boolean },
 ): Promise<NextResponse | null> {
-  const verdict = await itemWriteGate(loginId, route, opts);
+  const verdict =
+    opts.admin && adminActWrite(route.method, route.pattern)
+      ? ADMIN_ACT
+      : await itemWriteGate(loginId, route, opts);
   if (verdict instanceof NextResponse) return verdict;
   // A create lands in the request's workspace (?ws=) when the login
   // moderates it (W6b); else by the login's default home rule.
@@ -1764,8 +1777,8 @@ async function enterLoginWrite(
   if (home instanceof NextResponse) return home;
   noteRequestCreateHome(home);
   if (verdict === ADMIN_ACT) {
-    // An Admin act on an item no scope reads (itemWriteGate): on the system
-    // pool, as every Admin user's write ran before F4.
+    // An Admin act (ADMIN_ACT): on the system pool with no scope, neither
+    // on its reads nor on its transactions.
     noteRequestSystem('admin-write');
     return null;
   }
@@ -1845,13 +1858,27 @@ async function itemWriteGate(
     // An Admin user's act on the trash goes on on the system pool
     // (ADMIN_ACT); else on into the login's scope.
     const go = opts.admin ? ADMIN_ACT : null;
-    if (snap.length === 0) return go;
-    const home = snap[0]!.home;
+    // Not in the trash, or in it where the login may not manage it: the
+    // one 404, for every login (F4 fix round 1: an Admin user went on to
+    // the handler's 404, and a home it does not moderate was a 403, so a
+    // deleted app's existence left its scope).
+    if (snap.length === 0) return notFound();
+    const { home, held } = snap[0]!;
+    const owner = loginId === (await getAnchorId());
+    const purge = method.toUpperCase() === 'DELETE';
     // Deleted by a login other than the brain's owner (CEO decision 1): it
     // stays in the trash until the owner purges it; a Moderator of its home
     // may still bring it back.
-    if (snap[0]!.held && method.toUpperCase() === 'DELETE') {
-      if (loginId === (await getAnchorId())) return go;
+    if (held && purge && owner) return go;
+    let may = owner && home === null;
+    if (home !== null) {
+      const manage = (await withViewer({ login: loginId }, () =>
+        db.execute(sql`select "public"."mantle_may_manage"(${home}::uuid) as manage`),
+      )) as unknown as { manage: boolean | null }[];
+      may = manage[0]?.manage === true;
+    }
+    if (!may) return notFound();
+    if (held && purge) {
       return NextResponse.json(
         {
           error: 'forbidden',
@@ -1862,14 +1889,7 @@ async function itemWriteGate(
         { status: 403 },
       );
     }
-    if (home === null) {
-      if (loginId === (await getAnchorId())) return go;
-    } else {
-      const manage = (await withViewer({ login: loginId }, () =>
-        db.execute(sql`select "public"."mantle_may_manage"(${home}::uuid) as manage`),
-      )) as unknown as { manage: boolean | null }[];
-      if (manage[0]?.manage === true) return go;
-    }
+    return go;
   } else {
     // The item the route names: the id itself, or through a share or a
     // recall revision (read on the system pool: an id, no content).
@@ -1887,10 +1907,18 @@ async function itemWriteGate(
         return ADMIN_ACT;
       }
       const r = (await db.execute(
-        sql`select s.node_id::text as id, n.type::text as type
+        sql`select s.node_id::text as id, n.type::text as type,
+                   s.contact_id is not null as contact
               from shares s left join nodes n on n.id = s.node_id
              where s.id = ${id}`,
-      )) as unknown as { id: string | null; type: string | null }[];
+      )) as unknown as { id: string | null; type: string | null; contact: boolean }[];
+      // A contact share's change ("Can write" on an app's) by an Admin user:
+      // an Admin act (ADMIN_ACT), as making one is (POST
+      // /api/shares/contacts: sharing with a contact needs only an Admin
+      // user, its home is not checked; docs/workspaces.md).
+      if (opts.admin && method.toUpperCase() === 'PATCH' && r[0]?.contact === true) {
+        return ADMIN_ACT;
+      }
       nodeId = r[0]?.id ?? null;
       // An app's link: home Moderators only (assertMayLink, link-serve.ts).
       if (r[0]?.type === 'app') need = 'manage';
@@ -1901,7 +1929,10 @@ async function itemWriteGate(
       )) as unknown as { id: string | null }[];
       nodeId = r[0]?.id ?? null;
     }
-    if (!nodeId) return opts.admin ? null : notFound();
+    // No such share or revision: the same 404 as an item the scope does
+    // not read, for every login (an Admin user went on to the handler,
+    // whose answer told a missing id from a hidden one).
+    if (!nodeId) return notFound();
     const rows = (await withViewer({ login: loginId }, () =>
       db.execute(sql`
         select ${mayEditSql('n')} as edit, ${mayManageSql('n')} as manage,

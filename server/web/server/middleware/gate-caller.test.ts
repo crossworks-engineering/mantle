@@ -437,12 +437,15 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
     };
     const revision = { ...through([{ id: ID }]), 'no-item': [[{ id: null }]] };
     // A deleted app's last snapshot: no home stored, a home its Moderator
-    // manages or not, deleted by someone other than the owner, none.
+    // manages or not, deleted by someone other than the owner (seen by a
+    // Moderator of its home or not: F4 fix round 1, the manage check comes
+    // first), none.
     const deleted: Record<string, unknown[][]> = {
       'no-home': [[{ home: null, held: false }]],
       'home-manage': [[{ home: WS, held: false }], [{ manage: true }]],
       'home-not-manage': [[{ home: WS, held: false }], [{ manage: false }]],
-      held: [[{ home: WS, held: true }]],
+      held: [[{ home: WS, held: true }], [{ manage: true }]],
+      'held-not-manage': [[{ home: WS, held: true }], [{ manage: false }]],
       'no-snapshot': [[]],
     };
     const odd = (id: string) => [

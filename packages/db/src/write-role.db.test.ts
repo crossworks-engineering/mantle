@@ -218,6 +218,10 @@ const DEFINERS_THE_WRITE_ROLE_RUNS: Readonly<Record<string, string>> = {
   // never changes shared content (a scope reads only its own workspaces).
   'mantle_item_others_read(uuid,uuid)':
     'whether a workspace other than Admin or a live link reads an item the caller names: yes or no, for an item the scope reads (NULL otherwise)',
+  // 0299: the enabled mail accounts a contact's backfill is queued for
+  // (email_accounts is no table a scope reads).
+  'mantle_mail_backfill_accounts(uuid)':
+    'the brain’s enabled mail accounts, id and provider only, for a scope that holds Admin',
   'mantle_read_cursor_mark(uuid,uuid,uuid,timestamp with time zone)':
     WRITE_ROLE_FUNCTIONS[
       'public.mantle_read_cursor_mark(uuid,uuid,uuid,timestamp with time zone)'

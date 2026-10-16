@@ -15,13 +15,13 @@ You set permissions in two places only: **Settings > Workspaces**, and the **Gra
 
 ## The workspaces you have
 
-| Workspace | Who is in it | What it is for |
-|---|---|---|
-| **Admin** | You and the other admins | Running the brain: settings, logins, workspaces, assistants, connectors, keys |
-| **Your private workspace** | Only you | Your own work. Nobody else sees it, admins included |
-| Any other | The users a Moderator or an admin adds | A team, a project, a group, a company you work with |
+| Workspace                  | Who is in it                           | What it is for                                                                |
+| -------------------------- | -------------------------------------- | ----------------------------------------------------------------------------- |
+| **Admin**                  | You and the other admins               | Running the brain: settings, logins, workspaces, assistants, connectors, keys |
+| **Your private workspace** | Only you                               | Your own work. Nobody else sees it, admins included                           |
+| Any other                  | The users a Moderator or an admin adds | A team, a project, a group, a company you work with                           |
 
-Admin is the only workspace with rules of its own: it keeps its name and cannot be archived. A brain set up before October 2026 also has a **Team** workspace; it is a workspace like any other now.
+Admin is the only workspace with rules of its own: it keeps its name, cannot be archived, and every admin is a Moderator of it, always. That tick cannot be turned off; to take it away, remove the person from Admin. A brain set up before October 2026 also has a **Team** workspace; it is a workspace like any other now.
 
 Any user may make a new workspace. They become its only user and its Moderator. Only an admin ticks **Moderator** for anyone else, or removes a Moderator from a workspace.
 
@@ -41,11 +41,11 @@ Each workspace can have one assistant. It reads only that workspace's items, and
 
 ## Add people
 
-| To add | Do this |
-|---|---|
-| A member | **Settings > Logins > Invite**. They get their private workspace only. Add them to the workspaces they need on **Settings > Workspaces**. |
-| Another admin | Add them to the Admin workspace, or **Settings > Logins > Add login** with role Admin. |
-| Someone outside your company | Make a workspace for them, add their login, and share only what they need. |
+| To add                       | Do this                                                                                                                                   |
+| ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| A member                     | **Settings > Logins > Invite**. They get their private workspace only. Add them to the workspaces they need on **Settings > Workspaces**. |
+| Another admin                | Add them to the Admin workspace, or **Settings > Logins > Add login** with role Admin.                                                    |
+| Someone outside your company | Make a workspace for them, add their login, and share only what they need.                                                                |
 
 Client logins and emailed sign-in codes are gone. A former client login stays disabled.
 
