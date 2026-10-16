@@ -5425,3 +5425,49 @@ no credential, the owner's cookie and a member's (462 cells,
 `__snapshots__/a7-gone-routes.main.txt`) before the deletion; after it each
 cell answers what a path no route answers (a sibling path driven the same
 way), recorded in `__snapshots__/a7-gone-routes.changes.txt`.
+
+## A7 handover
+
+State of `feat/a7-switchover` (on main v0.300.78): built, every gate run on
+the head, pushed. Not merged, not tagged. Commits, in order: the record on
+main (dispatch parity, MCP calls, tools/list matrix without the switch-over
+cases); the switch-over removal (with 0295); the 0296 mail-branch definer
+fix; the A7 docs; the 410 stub record test; the Telegram anchor-only branch
+and the stale comments; the 0297 shared-item definer fix; this handover;
+the stub deletion (last, droppable on its own: nothing before it reads it).
+
+**Removed:** `brainOnWorkspacesNow` (12 calls, 7 files, 0 now),
+`MANTLE_ADMIN_READS` (2 files, 0 now) and its gate scope (11 readers), the 8
+level helpers and the level-conflict mapping, every rule of a brain off
+workspaces named in "Remove the switch-over code (A7)" above (the Telegram
+anchor-only branch of `packages/telegram/src/chat-login.ts` too),
+`mantle_workspace_kind` (migration 0295), and 132 stub files plus the PUT of
+`/api/app-nav` (scoreboard goneStubs 133 to 0; the route rows 1044 to 817,
+those with a caller 981 to 759). Migrations: 0295 (A7), 0296
+(`mantle_mail_branch_holds`) and 0297 (`mantle_item_others_read`), both
+fixes found by A7; journal `when` 1790197020000, 1790197080000 and
+1790197140000, after 0294's.
+
+**Stub-hit query:** `scripts/arch-scoreboard-box.sh [--since <dur>]
+<alias>`, counted on the box, ten numbers (see "The 410 stubs" above). Not
+run on any box.
+
+**Gates** (workstation, own worktree and pg, the head with the stubs
+deleted): typecheck, lint, format, docs, arch, boot smoke, the full vitest
+with a database, actor-off, actor-on, edit-on, test:matrix,
+test:runtime-role, the web build, the restore test, and the route and DB
+sweeps (the a4 guard, role, member, auth, link-render and A10 sweeps, w6a
+route and fix, a6 grant, a6b exit, w7a area and tool), each exit 0 but
+edit-on: one F9 cell (`f9-contact-export.db.test.ts`, the export's dirty
+stamp read before the debounced sync cleared it) failed once, then passed
+on three reruns and in the full vitest: a timing flake. Fixed
+since the last handover: the A4 row pins and the w7e member cells (from
+410 to 404) with the stubs gone, one prettier line, and access-keys-scope F1,
+which 0296 did not fix: 0297 (above, "Found by A7").
+
+**Left:** count each box's stub hits before the merge
+(`scripts/arch-scoreboard-box.sh`); a hit means drop the last commit. Then
+`scripts/merge-branch.sh feat/a7-switchover` when Jason says. Jackdaw (read
+only, checked): no live call of a deleted route or field; only comments,
+its `gone-routes.ts` guard list and an e2e intercept of
+`/api/apps/members**` name them.
