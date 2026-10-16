@@ -313,9 +313,8 @@ export function maskKeyLiterals(text: string): string {
     .replace(NAMED_SECRET_RE, (_m, name: string, sep: string) => `${name}${sep}[masked]`);
 }
 
-const KEY_PREFIX_RE =
-  /\b(sk-|AIza|hf_|gsk_|xai-|pplx-|r8_|mtlk_)[A-Za-z0-9_*.\-]{6,}/g;
-const BEARER_RE = /\b(Bearer)\s+[A-Za-z0-9._~+/*\-]{8,}=*/gi;
+const KEY_PREFIX_RE = /\b(sk-|AIza|hf_|gsk_|xai-|pplx-|r8_|mtlk_)[A-Za-z0-9_*.-]{6,}/g;
+const BEARER_RE = /\b(Bearer)\s+[A-Za-z0-9._~+/*-]{8,}=*/gi;
 const NAMED_SECRET_RE =
   /\b(api[_-]?key|x-api-key|key|token|secret|access_token)(["']?\s*[:=]\s*["']?)(?!\[masked\])[^\s"',;&}]{8,}/gi;
 

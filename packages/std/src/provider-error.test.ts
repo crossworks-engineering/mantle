@@ -374,9 +374,7 @@ describe('the catch helpers: publicErrorText and errorDetail (A10 lows item 4)',
     const text = publicErrorText(e, 'tool x', { setMeta: (m) => meta.push(m) });
     expect(text).toBe('The provider has a server problem. (openai, HTTP 500)');
     // The owner's detail, its key looking literal masked (fix round 1, M1).
-    expect(meta).toEqual([
-      { error_detail: 'openai call 500: sk-[masked] org=acme-private' },
-    ]);
+    expect(meta).toEqual([{ error_detail: 'openai call 500: sk-[masked] org=acme-private' }]);
   });
 
   it('a refused key: the trace names provider and status only', () => {
@@ -403,7 +401,7 @@ describe('the catch helpers: publicErrorText and errorDetail (A10 lows item 4)',
     expect(errorDetail(new Error('page not found: abc'))).toBe('page not found: abc');
   });
 
-  describe("a refused key in a copied adapter message (fix round 1, M1)", () => {
+  describe('a refused key in a copied adapter message (fix round 1, M1)', () => {
     const KEY = 'sk-proj-AbCdEf0123456789xyz';
     const cases: [string, Error][] = [
       [

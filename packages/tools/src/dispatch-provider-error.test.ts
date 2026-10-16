@@ -122,9 +122,7 @@ describe("dispatch: a builtin's provider failure is the fixed sentence (A10 #10 
       const error = await call('provider_probe_sdk', ctx);
       // A10 lows fix round 1, L1: a 400 whose body points at no argument
       // says the neutral sentence, still no body.
-      expect(error).toBe(
-        'The model provider refused the request. (HTTP 400)',
-      );
+      expect(error).toBe('The model provider refused the request. (HTTP 400)');
       expect(error).not.toContain('acme-private');
     });
 
@@ -144,12 +142,16 @@ describe("dispatch's masking keeps the detail on the owner's trace (A10 lows fix
       loginId: 'l1',
       privateReads: false,
     };
-    const res = await dispatchTool(row(SLUG), {}, {
-      ownerId: 'o',
-      surface,
-      caller: appBrokerCaller(surface, allowed(SLUG)),
-      step: { setMeta: (m) => meta.push(m), setOutput: () => {} },
-    });
+    const res = await dispatchTool(
+      row(SLUG),
+      {},
+      {
+        ownerId: 'o',
+        surface,
+        caller: appBrokerCaller(surface, allowed(SLUG)),
+        step: { setMeta: (m) => meta.push(m), setOutput: () => {} },
+      },
+    );
     expect(res).toMatchObject({
       ok: false,
       error: 'The provider has a server problem. (openai, HTTP 500)',
