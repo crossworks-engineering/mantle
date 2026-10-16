@@ -185,6 +185,10 @@ ENTRYPOINT ["/bin/sh", "/srv/entrypoint.sh"]
 # every worker always have.
 FROM deps AS server
 ENV NODE_ENV=production
+# The checks' floor (migration 0298): migrate raises a check below on that no
+# recorded lowering covers. A box kept below on on purpose sets keep in its
+# .env (docs/update-prod.md, "Keep one box below on, on purpose").
+ENV MANTLE_CHECK_FLOOR=raise
 # pg_dump for the scheduled-backup feature (/settings/backups). Must be the
 # pgdg client — the distro default lags (bookworm shipped 15, trixie 17), and
 # pg_dump refuses servers newer than itself. The repo codename is DERIVED from

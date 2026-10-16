@@ -12,7 +12,10 @@
 #      where the roll would open connector write tools to members, clients or
 #      apps (2c, team apps Phase 2) unless --ack-connector-writes, or
 #      breaks a live app's run-time schema SQL for members, clients or
-#      contacts (2c, rows only below admin) unless --ack-app-ddl
+#      contacts (2c, rows only below admin) unless --ack-app-ddl; refuse a
+#      roll to the checks' floor (the pre-check removal, migration 0298) on a
+#      box whose actor or edit check is not on, unless its .env says
+#      MANTLE_CHECK_FLOOR=keep (2d)
 #   3. backup: scripts/db-dump.sh on the box, strict, its OWN exit status
 #      (no pipe in front of it). Skipped only when the box's updater takes
 #      its own strict pre-roll backup (see pre_roll_backup in
@@ -185,9 +188,10 @@ echo "before: apps=$APPS0 sandboxes=$SBX0 app-db files=$FILES0"
 # (the next one after v0.239.89): a release between it and the real one is
 # refused too on such a box, which only stops a roll that was safe.
 WS_SWITCH_FLOOR=0.239.90
-# 0 when <tag> is at or past the switch release, or not a release version.
-crosses_ws_switch() {
-  local v=${1#v} f=$WS_SWITCH_FLOOR x y i
+# 0 when <tag> (the second argument) is at or past release <floor> (the
+# first), or not a release version.
+tag_at_or_past() {
+  local f=$1 v=${2#v} x y i
   case "$v" in *.*.*.* | *[!0-9.]* | .* | *. | *..*) return 0 ;; *.*.*) ;; *) return 0 ;; esac
   for i in 1 2 3; do
     x=${v%%.*}; y=${f%%.*}
@@ -197,6 +201,8 @@ crosses_ws_switch() {
   done
   return 0
 }
+# 0 when <tag> is at or past the switch release, or not a release version.
+crosses_ws_switch() { tag_at_or_past "$WS_SWITCH_FLOOR" "$1"; }
 ws_switch_sql() {
   cat <<'WS_SWITCH_SQL'
 with brain as (
@@ -369,6 +375,48 @@ if [ "$DDL_BELOW" -gt 0 ] || [ "$DDL_SHARED" -gt 0 ]; then
   else
     die "$DDL_BELOW live app(s) below admin ($DDL_SHARED with a share link) run schema SQL through host.db.exec that members, clients and contacts can no longer run. Declare their schema (app_db_schema_set) first, list them with --app-ddl-ids, or pass --ack-app-ddl if Jason agreed."
   fi
+fi
+
+# ── 2d. the checks' floor: both checks on before the pre-checks go ────────
+# From the release that removes the tools' TypeScript item pre-checks
+# (migration 0298; docs/actors.md, "Pre-check deletion") the database's actor
+# and edit checks are a tool write's only item check, and that release's
+# migrate raises a check below on that no recorded lowering covers
+# (docs/update-prod.md, "The checks' floor"). A roll is never how a box's
+# checks change: refused unless both are on already, or the box's stack .env
+# says MANTLE_CHECK_FLOOR=keep (a box kept below on on purpose: its migrate
+# leaves it and records why). CHECK_FLOOR_RELEASE is a lower bound for that
+# release, like WS_SWITCH_FLOOR. Plain SQL on the box's CURRENT schema (a box
+# before 0280 has no mantle_check_box_mode: both off), words only.
+CHECK_FLOOR_RELEASE=0.300.82
+check_floor_sql() {
+  cat <<'CHECK_FLOOR_SQL'
+select case when to_regprocedure('public.mantle_check_box_mode(text)') is null then 'off off'
+            else (xpath('/row/m/text()', query_to_xml(
+              'select public.mantle_check_box_mode(''actor_check'') || '' '' || '
+              || 'public.mantle_check_box_mode(''edit_check'') as m', false, true, '')))[1]::text
+       end;
+CHECK_FLOOR_SQL
+}
+if tag_at_or_past "$CHECK_FLOOR_RELEASE" "$TAG"; then
+  CF=$(check_floor_sql | rsh "docker exec -i mantle_pg psql -U postgres -d postgres -v ON_ERROR_STOP=1 -At") ||
+    die "could not read this box's check modes"
+  CF=$(printf '%s' "$CF" | tr -d '\r' | tr -s ' ')
+  case "$CF" in off\ off | off\ warn | off\ on | warn\ off | warn\ warn | warn\ on | on\ off | on\ warn | on\ on) ;;
+    *) die "unexpected check modes: $CF" ;; esac
+  read -r CF_ACTOR CF_EDIT <<< "$CF"
+  CF_KEEP=$(rsh "sed -n 's/^MANTLE_CHECK_FLOOR=//p' '$STACK/.env' 2>/dev/null | tail -1" || true)
+  CF_KEEP=$(printf '%s' "$CF_KEEP" | tr -d '\r"'"'"' ' | tr '[:upper:]' '[:lower:]')
+  echo "checks: actor $CF_ACTOR, edit $CF_EDIT (MANTLE_CHECK_FLOOR: ${CF_KEEP:-raise})"
+  if [ "$CF_ACTOR" != on ] || [ "$CF_EDIT" != on ]; then
+    if [ "$CF_KEEP" = keep ]; then
+      echo "checks: below on, kept on purpose (MANTLE_CHECK_FLOOR=keep in $STACK/.env): the roll's migrate leaves them and records why"
+    else
+      die "this box's checks are not both on (actor $CF_ACTOR, edit $CF_EDIT). From v$CHECK_FLOOR_RELEASE the tools' item pre-checks are gone and the roll's migrate would raise them. Turn them on first (docs/edit-check.md: select mantle_set_actor_check('on'); select mantle_set_edit_check('on');), or keep this box below on on purpose: MANTLE_CHECK_FLOOR=keep and MANTLE_CHECK_FLOOR_REASON in its .env (docs/update-prod.md, \"Keep one box below on, on purpose\")."
+    fi
+  fi
+else
+  echo "checks: $TAG is before the checks' floor (v$CHECK_FLOOR_RELEASE); not checked"
 fi
 
 if [ -n "$DRY" ]; then

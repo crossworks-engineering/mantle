@@ -94,6 +94,7 @@ export const RUNTIME_DENIED_FUNCTIONS: Readonly<Record<string, string>> = {
   'public.mantle_set_check(text,text,integer,text)': 'sets a check mode (ALTER DATABASE)',
   'public.mantle_set_actor_check(text,integer,text)': 'sets mantle.actor_check',
   'public.mantle_set_edit_check(text,integer,text)': 'sets mantle.edit_check',
+  'public.mantle_check_note(text,text)': 'writes the record of a lowered check (ALTER DATABASE)',
   'public.mantle_switch_triggers(text[],boolean,integer)': 'enables or disables triggers',
   'public.mantle_actor_check_triggers(boolean,integer)': 'the actor check triggers on or off',
   'public.mantle_edit_check_triggers(boolean,integer)': 'the edit check triggers on or off',

@@ -59,12 +59,12 @@
 import { readFileSync } from 'node:fs';
 import { readMigrationFiles } from 'drizzle-orm/migrator';
 import postgres from 'postgres';
-import { bootSmokeExit, env, feature, isBootSmoke, isProduction } from '@mantle/config';
+import { bootSmokeExit, env, feature, isBootSmoke } from '@mantle/config';
 import { applyJournal } from './migrate-runner';
 import type { JournalEntry } from './migrate-plan';
 import { CONCURRENT_INDEXES, ensureConcurrentIndexes } from './concurrent-indexes';
 import { afterMigrations, beforeMigrations } from './migrator-steps';
-import { raiseCheckFloor } from './check-floor';
+import { checkFloorPolicy, raiseCheckFloor } from './check-floor';
 
 async function main() {
   // Boot smoke (scripts/boot-smoke.mjs): imports linked; exit 0 before any I/O.
@@ -105,13 +105,18 @@ async function main() {
     // their way.
     await afterMigrations(sql, runtime);
 
-    // The checks' floor (0298, check-floor.ts): a box below on with no
-    // recorded lowering (a new database, a restore, a bare ALTER DATABASE)
-    // is raised to on; one an operator lowered with a reason is left, with
-    // a warning. Never fatal. A box only (the image's NODE_ENV): a test or
-    // development database keeps the mode its run sets (CI migrates the
-    // database its suites switch themselves).
-    if (isProduction()) await raiseCheckFloor(sql, { info: console.log, warn: console.warn });
+    // The checks' floor (0298, check-floor.ts): a check below on that no
+    // recorded lowering covers (a new database, a restore, a bare ALTER
+    // DATABASE) is raised to on; one an operator lowered with a reason is
+    // left, with a warning. MANTLE_CHECK_FLOOR=keep (a box kept below on on
+    // purpose; CI and the test databases, whose suites switch the modes
+    // themselves) leaves it, loudly, and records why. Never fatal.
+    const log = { info: console.log, warn: console.warn };
+    await raiseCheckFloor(
+      sql,
+      log,
+      checkFloorPolicy(env('MANTLE_CHECK_FLOOR'), env('MANTLE_CHECK_FLOOR_REASON'), log),
+    );
 
     // Indexes built CONCURRENTLY, outside any transaction (workspaces W3).
     // Last, bounded, and never fatal: an index here is speed only, so a

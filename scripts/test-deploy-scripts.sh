@@ -1148,10 +1148,16 @@ case "$1" in
       *api/version*) echo '{"version":"fake"}' ;;
       *psql*)
         # The workspaces switch check (2a) sends its SQL on stdin, no -c:
-        # it answers "<refuse> <client logins> <client-level items>".
+        # it answers "<refuse> <client logins> <client-level items>". So
+        # does the checks' floor (2d): "<actor> <edit>".
         case "$*" in
           *" -c "*) : ;;
-          *) if grep -q bridge_key; then echo "${FAKE_WS:-0 0 0}"; fi ;;
+          *)
+            in=$(cat)
+            case "$in" in
+              *bridge_key*) echo "${FAKE_WS:-0 0 0}" ;;
+              *mantle_check_box_mode*) echo "${FAKE_FLOOR:-on on}" ;;
+            esac ;;
         esac ;;
       *) : ;;
     esac
@@ -1474,6 +1480,37 @@ roll_box wsgarbage
 FAKE_WS="oops" roll_sh --ssh fakebox v0.239.90
 check "workspaces switch: an answer that is not three numbers stops the roll" \
   sh -c "test '$rc' = 1 && grep -q 'unexpected workspaces check' '$RS/out' && test ! -e '$RS/request.seen'"
+
+roll_box floorlow
+FAKE_FLOOR="on warn" roll_sh --ssh fakebox v0.300.82
+check "checks' floor, a box whose edit check is warn: refused before anything" \
+  sh -c "test '$rc' = 1 && grep -q 'checks are not both on (actor on, edit warn)' '$RS/out' && ! grep -q '^db-dump' '$RS/calls' && test ! -e '$RS/request.seen'"
+
+roll_box floorkeep
+printf 'MANTLE_CHECK_FLOOR=keep\nMANTLE_CHECK_FLOOR_REASON=an import\n' > "$RS/stack/.env"
+FAKE_FLOOR="off warn" roll_sh --ssh fakebox v0.300.82
+check "checks' floor, a box marked keep in its .env: the roll goes ahead, and says so" \
+  sh -c "test '$rc' = 0 && grep -q 'kept on purpose (MANTLE_CHECK_FLOOR=keep' '$RS/out'"
+
+roll_box floorlatest
+FAKE_FLOOR="off off" roll_sh --ssh fakebox latest
+check "checks' floor: latest counts as past it (refused)" \
+  sh -c "test '$rc' = 1 && grep -q 'actor off, edit off' '$RS/out'"
+
+roll_box flooron
+FAKE_FLOOR="on on" roll_sh --ssh fakebox v0.300.82
+check "checks' floor, both on: the roll goes ahead" \
+  sh -c "test '$rc' = 0 && grep -q 'checks: actor on, edit on' '$RS/out'"
+
+roll_box floorbefore
+FAKE_FLOOR="off off" roll_sh --ssh fakebox v0.300.81
+check "checks' floor: a roll to a release before it is not checked" \
+  sh -c "test '$rc' = 0 && grep -q 'v0.300.81 is before the checks' '$RS/out'"
+
+roll_box floorgarbage
+FAKE_FLOOR="oops" roll_sh --ssh fakebox v0.300.82
+check "checks' floor: an answer that is not two modes stops the roll" \
+  sh -c "test '$rc' = 1 && grep -q 'unexpected check modes' '$RS/out' && test ! -e '$RS/request.seen'"
 
 # ═════════════════════════════════════════════════════════════════════════════
 echo "box-maintain.sh: a sibling container, the env through a pipe, one run per box"

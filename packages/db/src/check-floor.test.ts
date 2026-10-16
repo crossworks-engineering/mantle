@@ -3,7 +3,7 @@
  * migration 0298): pure.
  */
 import { describe, expect, it } from 'vitest';
-import { checkFloorWarning } from './check-floor';
+import { checkFloorWarning, loweredCovers } from './check-floor';
 
 describe('checkFloorWarning', () => {
   it('says nothing when both checks are on, or for no row', () => {
@@ -32,5 +32,32 @@ describe('checkFloorWarning', () => {
     expect(line).toContain(
       "select mantle_set_actor_check('on'); select mantle_set_edit_check('on');",
     );
+  });
+});
+
+describe('loweredCovers', () => {
+  const rec =
+    '2026-10-16T10:00:00Z mantle.edit_check on to warn by postgres: an import | ' +
+    '2026-10-16T10:05:00Z mantle.actor_check kept at off by postgres: MANTLE_CHECK_FLOOR=keep at migrate, x';
+  it('an entry covers its check at its recorded mode and above, never below', () => {
+    expect(loweredCovers(rec, 'edit', 'warn')).toBe(true);
+    expect(loweredCovers(rec, 'edit', 'off')).toBe(false);
+    expect(loweredCovers(rec, 'actor', 'off')).toBe(true);
+    expect(loweredCovers(rec, 'actor', 'warn')).toBe(true);
+  });
+  it('no record, or no entry for that check, covers nothing', () => {
+    expect(loweredCovers('', 'edit', 'warn')).toBe(false);
+    expect(loweredCovers(undefined, 'actor', 'off')).toBe(false);
+    expect(
+      loweredCovers('2026-10-16T10:00:00Z mantle.edit_check on to warn by p: x', 'actor', 'warn'),
+    ).toBe(false);
+    // A reason that names the other check does not cover it.
+    expect(
+      loweredCovers(
+        '2026-10-16T10:00:00Z mantle.edit_check on to off by p: 1 mantle.actor_check on to off by p',
+        'actor',
+        'off',
+      ),
+    ).toBe(false);
   });
 });
