@@ -382,8 +382,15 @@ describe.skipIf(!URL)('W7a: the Admin assistant and the Admin MCP run in a scope
     const all = `{${[...readOnly.values(), ...privateItems.values()].join(',')}}`;
     return JSON.stringify(
       await x(sql`select n.id::text, n.updated_at, n.title, n.data, n.home_ws, n.superseded_by,
-                         n.salience,
+                         n.salience, n.path::text as path,
+                         (select md5(coalesce(p.doc::text, '') || coalesce(p.draft_doc::text, ''))
+                            from pages p where p.node_id = n.id) as page,
+                         (select md5(coalesce(t.storage_path, '') || coalesce(t.draft_path, '')
+                                     || t.draft_rev::text)
+                            from tables t where t.node_id = n.id) as tbl,
                          (select count(*) from shares s where s.node_id = n.id) as shares,
+                         (select count(*) from shares s
+                           where s.node_id = n.id and s.revoked_at is null) as open_links,
                          (select count(*) from item_grants g where g.node_id = n.id) as grants
                     from nodes n where n.id = any(${all}::uuid[]) order by n.id`),
     );
@@ -582,6 +589,11 @@ describe.skipIf(!URL)('W7a: the Admin assistant and the Admin MCP run in a scope
     };
     const notRefused: string[] = [];
     const check = (where: string, slug: string, ok: boolean, text: string, want: RegExp) => {
+      // A write the database checks (the pre-check removal) is refused when
+      // it would change the item, in its own words or an input error the
+      // tool answers first, or does nothing: the item's state, compared
+      // below, is the proof.
+      if (DATABASE_CHECKED.has(slug)) return;
       if (ok || !want.test(text)) {
         notRefused.push(`${where} ${slug}: ${ok ? 'ran' : text.slice(0, 160)}`);
       }
