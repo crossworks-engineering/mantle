@@ -5287,8 +5287,8 @@ and a team-rules app runs no write builtin (memberAppToolVerdict refuses
 every `effect: 'write'` before its group is read), so their writes never
 reach a table.
 
-**The proof** (`server/web/server/precheck-removal.db.test.ts`, also in
-`pnpm test:edit-on`): every removed builtin, as a member (a Moderator of
+**The proof** (`server/web/server/precheck-removal.db.test.ts`, in
+`pnpm test`; it sets both checks itself): every removed builtin, as a member (a Moderator of
 H, a user of R and of W) and as the owner, on its MCP surface and for one
 tool per family in an assistant turn, on four placements of a fresh item
 (may manage it; may edit, not manage; reads it, may not edit; does not read
@@ -5374,10 +5374,18 @@ by any of them):
   or close its link.".
 - access_set: -> its own "Brain items have no sharing level any more: ...",
   as for every caller.
-- An unconfirmed page_move into a folder that adds readers, by a scope that
-  may not move the page: was refused; now asks to confirm (naming the
-  workspaces the destination adds, the caller's own), then the database
-  refuses the confirmed move.
+- An unconfirmed move that changes who reads the item, by a scope that may
+  not make it (page_move, file_move, folder_move, tree_folder_update's move
+  into another folder): was refused; now asks to confirm first ("this would
+  change who can see N items; repeat with confirm: true", the list naming
+  the workspaces that would start or stop reading each item: named through
+  the destination folder and the item itself, so a workspace the caller is
+  not in may be named, as for any caller who may move it), then the
+  confirmed call is refused (file_move and folder_move by the cheap rights
+  read, fix round A; page_move and tree_folder_update by the database).
+  recall_map_delete without `confirm: true`: was refused; now answers that
+  it needs `confirm: true`, then the confirmed call is refused by the
+  database.
 - **Queue time** (turnCallRefusal; A5 step 6a and step 5 fix round 2): a
   call of a removed tool that needs approval is no longer refused before
   it is queued when the asking scope may not make it (a Recall map named
@@ -5423,16 +5431,20 @@ shape chosen, and why:
   reason makes it explicit and the record makes it logged where every
   process and the integrity page read it. Raising needs no reason. A bare
   `ALTER DATABASE` can still lower a setting (a superuser can do
-  anything): it leaves no record, so the next migrate raises it again.
+  anything): it leaves no record, so the next migrate raises it again. The
+  record holds one entry per lowered check (fix round A,
+  `mantle_check_note`), and an entry covers its check at its recorded mode
+  or above only, so a bare lowering below a recorded one is raised too.
 - **Every process says so.** While a check is below on, each app process
   logs one `[db] SECURITY:` line (`packages/db/src/check-floor.ts`, read at
   a pool's start and on its minute timer, said again only when it
   changes) naming the check, the record or its absence, and the statement
   that puts it back; the integrity row `check_floor` shows it.
 - **Migrate raises a box below on with no record** (a new database, a
-  restore, a bare ALTER DATABASE), the actor check first, on a box only
-  (the image's `NODE_ENV=production`: CI and test databases keep the
-  modes their runs set). Never fatal: a switch that cannot take its locks
+  restore, a bare ALTER DATABASE), the actor check first, unless
+  `MANTLE_CHECK_FLOOR=keep` (fix round A: the switch was the image's
+  `NODE_ENV=production`; CI's throwaway database says keep, its suites set
+  the modes). Never fatal: a switch that cannot take its locks
   is a warning. This keeps a fresh install and a restore from starting
   looser than main (where the pre-checks stood in every mode).
 - **Not a refusal to boot.** An emergency lowering must keep the box
@@ -5477,6 +5489,102 @@ role test drops its "pre-check in place" cell (note_update has none).
 **What is left (part 2):** the 27 HTTP entries, after blocker 1 (F4); then
 the kept tool entries, each by removing its second reason (a side effect
 moved after its checked statement, a check added, the answer fixed).
+
+### Part 1 fix round A (2026-10-16)
+
+The audit of part 1 (7/10) asked for six things; this round does them, on
+the part 1 branch, before F4 merges (no rebase yet, 0298 keeps its number,
+the 27 HTTP entries untouched).
+
+**CI red on edit-on (run 38947764281).** Two cells missed their limits in
+`pnpm test:edit-on` only: F9's export stayed dirty after its sync, and
+app-draft-scope's forced drop outran its 10 s hook. The cause was load:
+part 1 put `precheck-removal.db.test.ts` (160 cells, 215 s of the run's
+219 s on CI) and `check-floor.db.test.ts` in the edit-on run, though both set
+both checks themselves and run in `pnpm test` already. Under it F9 read the
+gap between the sync's two statements: `last_synced_at` written, `dirty_since`
+not yet cleared. Fixed at both ends: the two files left the edit-on run
+(`vitest.edit-on.config.ts` is main's again), and the sync records itself and
+clears its mark in one statement (`app-table-exports.ts` materialize: a
+reader never sees a synced link still dirty from its own write;
+`app-table-exports-dirty.db.test.ts` has the cell).
+
+**The cheap rights read first (M1 and the lows).** A write whose handler
+answered from what the caller may not see, or did costly work first, asks
+the caller's right before anything else, through one gateway:
+`assertItemRight(id, need)` (`packages/db/src/item-rights.ts`, F4's own,
+brought over byte for byte so the rebase meets identical lines). It throws
+the edit check's own refusal (`editCheckRefusalError`), so every surface
+answers it as the database's: a tool says "You cannot change this item in
+your workspaces.", an item the scope does not read is the precondition's
+"not found" as before. In a workspace scope only (system work, and an Admin
+user's HTTP request on the system pool, ask nothing, as before). Asked in
+every mode: in warn and off, where the database would make the write, these
+calls are refused (narrower, never looser).
+
+| Site                                              | Need   | Before the read, the caller could learn (or cost)                           |
+| ------------------------------------------------- | ------ | --------------------------------------------------------------------------- |
+| folder_delete (`deleteFolder`)                    | manage | hidden rows, not empty, the untracked-file count, files root, system folder |
+| folder_move (`moveFolderById`)                    | manage | hidden rows, a name taken at the destination, the destination's existence   |
+| file_move (`moveFileById`)                        | manage | a name taken by a file it does not read, the destination's existence        |
+| file_rename (`renameFileById`)                    | edit   | a name taken in the folder                                                  |
+| page_commit (`commitPageDraft`)                   | edit   | whether a draft exists                                                      |
+| table_commit (`commitTable`, not an app's sync)   | edit   | whether a draft exists; the staging                                         |
+| table_snapshot_restore (`restoreTableSnapshot`)   | edit   | whether a draft exists, a snapshot id; the copy                             |
+| table_snapshot_create (`createTableSnapshot`)     | edit   | the brain's snapshot budget; the copy                                       |
+| app_snapshot_create (`createAppSnapshot`, manual) | edit   | the budget; a copy of up to 256 MB                                          |
+| tree_folder_update rename, move (`node-ops.ts`)   | manage | a name taken, the destination; the subtree's locks                          |
+
+Changed answers (a scope that reads the item and lacks the need; old is
+part 1's head ff0b3ff71): each of the answers in the right column, and a
+no-op move or rename of the item's own place or name (was ok, writing
+nothing), is now "You cannot change this item in your workspaces.". Where
+the database refused before, the words are the same. tree_folder_update's
+casing-only rename (an edit, 0278) and its look change are not asked.
+Pinned in `precheck-removal.db.test.ts` (fix round A cells, in on and in
+warn): folder_delete and folder_move on a Read-only folder that is empty,
+holds a visible file, holds a hidden file, or holds an untracked file on
+disk give one answer; page_commit, table_commit and table_snapshot_restore
+give one answer with and without a draft; file_move and file_rename give
+one answer whether a hidden file holds the name or not; nothing changes,
+and warn logs no miss (the read refuses before the write).
+
+**The checks' floor, the box's say (M3).** `MANTLE_CHECK_FLOOR=raise|keep`
+replaces the `NODE_ENV=production` switch: raise (the default; the image
+and the compose env set it) raises at migrate, keep leaves the box, logs
+`WARNING MANTLE_CHECK_FLOOR=keep: ... left below on, recorded:` with the
+`[db] SECURITY:` line, and records an entry per check naming the keep and
+`MANTLE_CHECK_FLOOR_REASON` in `mantle_check_lowered()`. Any other value is
+raise, said loudly. CI's three migrate steps say keep. The record now holds
+one entry per lowered check (`mantle_check_note`, in 0298), so two
+lowerings are both on record, and an entry covers its check at its recorded
+mode or above only: a bare `ALTER DATABASE` below a recorded lowering is
+raised (the audit's floor edge). `scripts/roll.sh` step 2d refuses a roll
+to v0.300.82 or later (a lower bound for this release, as WS_SWITCH_FLOOR)
+on a box whose actor or edit check is not on, before its backup and
+request, unless its stack `.env` says `MANTLE_CHECK_FLOOR=keep`
+(`scripts/test-deploy-scripts.sh`, six cells). The updater
+(`infra/updater/updater.sh`, the in-app Update button) does not ask yet:
+docs/update-prod.md says to roll such a box with roll.sh. The runbook:
+docs/update-prod.md, "Keep one box below on, on purpose".
+
+**The kept entries look kept (owner concern).** The policy field is
+`legacyItemPrecheck: { need, reason }` (`packages/tools/src/tool-policy.ts`,
+"DO NOT ADD" at the type), the reason one of `side-effect-before-check`
+(12), `db-does-not-check` (3), `read-not-asked` (2), `answer-worse` (12).
+`packages/tools/src/legacy-item-precheck.test.ts` holds the 29 slugs with
+their reasons: a new slug fails whatever the pin says. The arch counter
+counts the field (`itemPrecheckTools` still 29). `toolItemWriteRefusalOf`
+is no longer exported from `@mantle/tools` (its one caller is the gate's
+pre-run check; one DB test imports it from its file).
+
+**Found by this round, fixed beside it: the call audit lost the targets
+of the removed tools.** `call-audit.ts` named a write's items from its
+policy `items`; with 72 entries gone, a removed delete or move audited no
+target (an edit still named its output id). It now reads the kept
+pre-check's targets and every `node_exists` precondition's argument
+(`a5-call-audit.db.test.ts`, a note_delete's row names the note): main's
+targets again.
 
 ### Pre-check removal handover (part 1, 2026-10-16)
 

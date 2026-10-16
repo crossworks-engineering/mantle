@@ -1331,6 +1331,20 @@ describe.skipIf(!DB_URL)(
       const changed = (await probe(id)) !== before || filesDisk() + tableDisk() !== disk;
       return { ...out, changed, plain: plain(out.text) };
     };
+    /** An item inside a folder, hidden from `who`: the rows it takes from
+     *  the folder excluded, its home a workspace `who` does not read. */
+    const hideIn = async (id: string, who: Who) => {
+      await raw.begin(async (tx) => {
+        await tx`select set_config('mantle.actor', 'system:test', true)`;
+        await tx`select mantle_lock_heads(array[${id}]::uuid[], 'update')`;
+        await tx`update item_grants set excluded = true, is_home = false, write = false
+                  where node_id = ${id}`;
+        await tx`insert into item_grants (node_id, workspace_id, is_home, write)
+                 values (${id}, ${who === 'admin' ? ws.X : ws.O}, true, false)
+                 on conflict (node_id, workspace_id)
+                 do update set excluded = false, is_home = true, write = false, via_folder_id = null`;
+      });
+    };
     const editCheck = async (mode: 'on' | 'warn') => {
       await raw`select mantle_set_edit_check(${mode}, 50, 'test')`;
     };
@@ -1355,7 +1369,9 @@ describe.skipIf(!DB_URL)(
                     bytes: Buffer.from([7, 7, 7]),
                   }),
                 );
-                await place(who, what === 'visible' ? 'noEdit' : 'noRead')(file.id);
+                // It takes the folder's rows (the caller reads it); hidden:
+                // those rows excluded, homed where the caller reads nothing.
+                if (what === 'hidden') await hideIn(file.id, who);
               }
               if (what === 'untracked') {
                 const d = f.diskPathForLtree(at)!;

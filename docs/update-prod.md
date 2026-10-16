@@ -1151,17 +1151,60 @@ lowering mantle.edit_check from on to warn needs a reason`, nothing
   `select mantle_set_edit_check('on');` and a restart of the app
   processes. With both checks on again the record is cleared.
 
-- **Migrate raises a box below on with no record.** A new database, a
-  restore (`scripts/db-restore.sh`: a dropped database keeps no setting)
-  and a bare `ALTER DATABASE ... RESET mantle.actor_check` all leave a
-  check below on with no reason recorded: the next migrate on a box (every
-  `docker compose up`; the image's `NODE_ENV=production`, so a test or
-  development database is left as its run sets it) raises it to on, the
-  actor check first, and logs
-  `actor check: off -> on`. A box lowered with a reason is left as it is,
-  with a warning. A switch that cannot take its locks in time (`55P03`) is
-  a warning, never a failed migrate: run `select mantle_set_edit_check('on');`
-  by hand when the box is quiet.
+- **Migrate raises a check below on that no record covers.** A new
+  database, a restore (`scripts/db-restore.sh`: a dropped database keeps no
+  setting) and a bare `ALTER DATABASE ... RESET mantle.actor_check` all
+  leave a check below on with no reason recorded: the next migrate (every
+  `docker compose up`) raises it to on, the actor check first, and logs
+  `actor check: off -> on`. The record holds one entry per lowered check,
+  and an entry covers its check at the mode it recorded or above: a check
+  an operator lowered to warn with a reason is left in warn, with a warning,
+  but taken lower by hand (a bare `ALTER DATABASE` to off) it is raised
+  again. A switch that cannot take its locks in time (`55P03`) is a
+  warning, never a failed migrate: run `select mantle_set_edit_check('on');`
+  by hand when the box is quiet. `MANTLE_CHECK_FLOOR` says what migrate
+  does: `raise` (the default; the image sets it) or `keep` (below).
+- **The roll refuses a box that is not on.** `scripts/roll.sh` (step 2d)
+  refuses a roll to this release (v0.300.82 or later, `latest` too) on a box
+  whose actor or edit check is not on, before its backup and its request,
+  unless the box's stack `.env` says `MANTLE_CHECK_FLOOR=keep`. Turn the
+  checks on first (docs/edit-check.md), or keep the box below on on purpose
+  (below). `scripts/roll.sh --dry-run <box> <tag>` shows the answer and
+  changes nothing. The in-app Update button (the updater) does not ask:
+  roll a box whose checks are not on with `scripts/roll.sh`.
+
+### Keep one box below on, on purpose
+
+For a box that must stay in warn (or off) across a roll (a check that
+refuses what it must not there, until a fix ships), as the operator:
+
+1. Lower it with a reason, as above
+   (`select mantle_set_edit_check('warn', 50, 'why, ticket');`). The record
+   alone keeps it at that mode through every migrate.
+2. For a box whose database has no record (a restore, a new install) or
+   where the mode was set by hand, add to the stack's `.env`:
+
+   ```sh
+   MANTLE_CHECK_FLOOR=keep
+   MANTLE_CHECK_FLOOR_REASON=why, in a few words, and the ticket
+   ```
+
+   The next migrate leaves each check below on as it is, logs
+   `WARNING MANTLE_CHECK_FLOOR=keep: the edit check left below on, recorded:`
+   with the `[db] SECURITY:` line, and records an entry per check
+   (`mantle.edit_check kept at warn by <user>: MANTLE_CHECK_FLOOR=keep at
+migrate, <reason>`) in `mantle_check_lowered()`. `scripts/roll.sh` lets
+   the roll through and says so. Every app process keeps logging its
+   `[db] SECURITY:` line and the integrity row `check_floor` shows the
+   record, for as long as the box is below on.
+
+3. To end it: `select mantle_set_edit_check('on');` (and the actor check),
+   then take the two lines out of `.env`. A recorded entry outlives the env
+   line: removing `keep` alone does not raise a check its entry covers.
+
+Below on, a tool's write the database would refuse is made (the tools'
+item pre-checks are gone): keep it as short as you can.
+
 - **A restore.** After `scripts/db-restore.sh` the stack's migrate sets
   both checks on; nothing to set by hand. Rolling back to an image from
   before 0298 over a restored database leaves the checks off (that image's

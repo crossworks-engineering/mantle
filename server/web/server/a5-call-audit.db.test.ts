@@ -280,7 +280,8 @@ describe.skipIf(!URL)('one audit row for every tool write (A5 step 6d)', () => {
       'test',
     );
     await clear();
-    expect(await ENTRIES[0]!.run('note_delete', { id: gone.id })).toBe(true);
+    // An MCP-only tool: its output says only "deleted".
+    expect(await mcp('oauth')('note_delete', { id: gone.id })).toBe(true);
     expect(await toolRows()).toEqual([
       expect.objectContaining({
         detail: expect.objectContaining({ tool: 'note_delete', targets: [gone.id] }),
