@@ -76,12 +76,12 @@ export async function emailAttachmentFolders(
  *  email only with Search must not make an `attachments` folder there and
  *  move files in, which would hide them as attachments (audit C3). */
 async function pathReaches(ownerId: string, path: string): Promise<boolean> {
-  const branch = (await db.execute(sql`
-    select 1 as hit from email_accounts
-     where user_id = ${ownerId}
-       and (${path} = branch_path or starts_with(${path}, branch_path || '.'))
-     limit 1`)) as unknown as unknown[];
-  if (branch.length > 0) return true;
+  // Through the definer (0296): `email_accounts` is no table a scope reads.
+  const [branch] = (await db.execute(sql`
+    select "public"."mantle_mail_branch_holds"(${ownerId}, ${path}, true) as hit`)) as unknown as {
+    hit: boolean;
+  }[];
+  if (branch?.hit === true) return true;
   // Is, or is inside: some prefix of the path is an attachments folder.
   const labels = path.split('.');
   const prefixes = labels

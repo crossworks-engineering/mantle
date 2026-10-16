@@ -2066,6 +2066,13 @@
       "when": 1790197020000,
       "tag": "0295_a7_workspace_kind_gone",
       "breakpoints": true
+    },
+    {
+      "idx": 296,
+      "version": "7",
+      "when": 1790197080000,
+      "tag": "0296_mail_branch_definer",
+      "breakpoints": true
     }
   ]
 }

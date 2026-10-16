@@ -210,6 +210,10 @@ const DEFINERS_THE_WRITE_ROLE_RUNS: Readonly<Record<string, string>> = {
   'mantle_turn_heartbeats(uuid,uuid)': 'the active heartbeats of the scope’s own login',
   'mantle_pending_card_route(uuid,uuid)':
     'where a queued call’s card goes, for a call the scope’s own login asked; never the bot’s token',
+  // 0296: the mail account branches an email attachment's rule and the
+  // Files key guard read (email_accounts is no table a scope reads).
+  'mantle_mail_branch_holds(uuid,text,boolean)':
+    'whether a path the caller names is in one of the brain’s mail account branches: yes or no',
   'mantle_read_cursor_mark(uuid,uuid,uuid,timestamp with time zone)':
     WRITE_ROLE_FUNCTIONS[
       'public.mantle_read_cursor_mark(uuid,uuid,uuid,timestamp with time zone)'

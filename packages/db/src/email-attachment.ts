@@ -12,7 +12,10 @@
  * then on (access matrix T20). The account branch covers the files whose
  * emails were deleted before the stamp existed, which migration 0239
  * cannot find (audit B4): no other writer puts an `attachments` folder
- * under a mail account's branch.
+ * under a mail account's branch. The account branches are read through
+ * mantle_mail_branch_holds (0296), as `email_accounts` is no table a scope
+ * reads: a scoped read of this rule (an area-limited key's lists) answered
+ * the database's refusal before.
  *
  * An item made FROM an attachment (its `data.sourceFileId` names one) is held
  * to the same rule (emailAttachmentSql, access matrix T4).
@@ -46,10 +49,7 @@ function attachmentFileRule(c: { type: SQL; path: SQL; ownerId: SQL; data: SQL }
          where mail_parent.owner_id = ${c.ownerId}
            and mail_parent.type = 'email'
            and mail_parent.path = subpath(${c.path}, 0, nlevel(${c.path}) - 1))
-      or exists (
-        select 1 from email_accounts mail_acct
-         where mail_acct.user_id = ${c.ownerId}
-           and starts_with(${c.path}::text, mail_acct.branch_path || '.'))))`;
+      or "public"."mantle_mail_branch_holds"(${c.ownerId}, ${c.path}::text, false)))`;
 }
 
 /** The folder rule on the `nodes` row named `alias`. */
