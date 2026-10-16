@@ -31,7 +31,9 @@ deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
   that did not parse, `An answer could not be read: it is not valid JSON.`
 - A request the provider refused says why, never the body: too long, refused
   under a content policy, or invalid arguments (only when the body points at
-  an argument and not at the request's own shape; any other 400 or 422 says
+  an argument and not at the request's own shape, in dot or bracket
+  notation (`tools.0`, `tools[0].function.parameters`, `messages.[1]`,
+  `function_declarations[0]`); any other 400 or 422 says
   `The model provider refused the request.`, and so does a member's thread
   for a failed team turn); a 2xx with no usable result says so without
   "HTTP 200". Every changed answer:
@@ -46,14 +48,18 @@ deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
   detail (`error_detail`, a masked owner turn's too), never a refused key's
   body: a 401 or 403 names provider and status only, a copied adapter
   message included, and any other detail has its key looking literals
-  masked.
+  masked (the providers' prefixes including ElevenLabs `sk_` and GitHub
+  `gh?_`, `Bearer` and Deepgram's `Token`, a value named `authorization`,
+  a bare key of 32 or more hex or mixed letters and digits, and the
+  URL-encoded `Bearer%20...`).
 - A model provider key's credential change (`POST /api/keys`, `PATCH
   /api/keys/:id`, `POST /api/keys/:id/rotate`) asks the open provider
   alerts to probe now, so a fixed key clears its alert and resumes the
   extract queue without waiting. Narrower than the Admin **Try again**:
-  nothing is sent when no alert is open (so a key save never re-drives a
-  dead-letter backlog), and a key that is no model provider's (a Telegram
-  token, a connector's secret) sends nothing. No model call here; bounded
+  nothing is sent when no shown or paused alert is open (a blip is not
+  counted, so a key save never re-drives a dead-letter backlog), and a key
+  that is no model provider's (a Telegram token, a connector's secret)
+  sends nothing. No model call here; bounded
   by the agent's circuit.
 
 ## Unreleased: boot smoke; every package is an ES module

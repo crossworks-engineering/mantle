@@ -10,7 +10,7 @@
  * (one per subject per minute), so a burst of failing jobs is a handful of
  * row updates, not one per call.
  */
-import { and, eq, isNull, sql } from 'drizzle-orm';
+import { and, eq, isNull, or, sql } from 'drizzle-orm';
 import { systemDb } from './client';
 import { providerAlerts, type ProviderAlertRow } from './schema/provider-alerts';
 
@@ -154,8 +154,13 @@ export async function recordProviderProbeFailure(
     );
 }
 
-/** An admin's "Try again": every open alert probes on the agent's next tick
- *  (within 30 s). Returns how many rows it touched. */
+/** An admin's "Try again" or a key save: every open alert that is shown or
+ *  holds the queue paused probes on the agent's next tick (within 30 s).
+ *  Returns how many rows it touched. A blip (open, not yet shown, not
+ *  paused) is left alone and not counted (A10 lows fix round 2, L-C): the
+ *  agent never probes one (retries handle it), and counting it let a key
+ *  saved during a blip send the recover NOTIFY, a probe and a dead-letter
+ *  re-drive. */
 export async function requestProviderProbeNow(
   ownerId: string,
   now: Date = new Date(),
@@ -163,7 +168,13 @@ export async function requestProviderProbeNow(
   const rows = await systemDb
     .update(providerAlerts)
     .set({ nextProbeAt: now, updatedAt: now })
-    .where(and(eq(providerAlerts.ownerId, ownerId), isNull(providerAlerts.resolvedAt)))
+    .where(
+      and(
+        eq(providerAlerts.ownerId, ownerId),
+        isNull(providerAlerts.resolvedAt),
+        or(eq(providerAlerts.visible, true), eq(providerAlerts.paused, true)),
+      ),
+    )
     .returning({ subject: providerAlerts.subject });
   return rows.length;
 }

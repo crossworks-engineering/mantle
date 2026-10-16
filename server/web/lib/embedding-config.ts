@@ -85,9 +85,10 @@ export async function notifyProviderRecover(ownerId: string): Promise<void> {
 }
 
 /**
- * The Admin "Try again" (A10 lows): every open provider alert probes on the
- * agent's next tick, and the agent is told at once (notifyProviderRecover),
- * whether or not an alert is open: with none open, the agent still
+ * The Admin "Try again" (A10 lows): every shown or paused provider alert
+ * probes on the agent's next tick (a blip is left to its retries), and the
+ * agent is told at once (notifyProviderRecover), whether or not an alert
+ * is open: with none open, the agent still
  * recovers a waiting dead-letter backlog after one probe works (an owner's
  * explicit ask). Cheap and bounded: one UPDATE and one NOTIFY here, no model
  * call; the agent makes one tiny probe call per open alert (one in all when
@@ -108,9 +109,10 @@ export async function retryProvidersNow(ownerId: string): Promise<number> {
  * the button, because a key save is no ask to recover (A10 lows fix round
  * 1, M2; cost safety). Only for a model provider's key (`service` is a
  * provider id; a Telegram token, a connector's secret or a Firecrawl key
- * never raises it), and the NOTIFY only when an alert is open: with none,
- * nothing is sent, so the agent never re-drives a dead-letter backlog
- * (real model calls) on a key save. Best-effort: logged and never thrown,
+ * never raises it), and the NOTIFY only when a shown or paused alert is
+ * open (fix round 2, L-C: a blip is not counted): with none, nothing is
+ * sent, so the agent never re-drives a dead-letter backlog (real model
+ * calls) on a key save. Best-effort: logged and never thrown,
  * because the key's own write already succeeded and its answer must not
  * turn into an error over a nudge.
  */

@@ -119,6 +119,15 @@ describe.skipIf(!URL)('provider alerts: store rules and the admin event', () => 
     expect(r.failingSince.toISOString()).toBe(at(30 * MIN).toISOString());
   });
 
+  it('a blip is not asked to probe and not counted (fix round 2, L-C)', async () => {
+    // The row reopened above by a network failure: open, not shown, not paused.
+    const before = (await row('embedding'))!;
+    expect(before).toMatchObject({ visible: false, paused: false, nextProbeAt: null });
+    expect(before.resolvedAt).toBeNull();
+    expect(await m.requestProviderProbeNow(owner)).toBe(0);
+    expect((await row('embedding'))!.nextProbeAt).toBeNull();
+  });
+
   it('a transient failure shows only once it has lasted 10 min, and that tells the admins', async () => {
     expect(
       await sent(() => m.recordProviderFailure(owner, 'embedding', network, at(35 * MIN))),
