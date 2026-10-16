@@ -990,6 +990,28 @@ function mayPromote(seen: Seen): void {
   }
 }
 
+/**
+ * Who changes who is an Admin user (owner decision, F4 fix round 4): an
+ * Admin user with the users area only, as for the Moderator tick
+ * (mayPromote). The ONE check of the Admin workspace's own user changes:
+ * an add there (whatever `moderator` says) makes the login an Admin user,
+ * a removal takes it away. The Users screen's role change, the login
+ * create and the invites sit under /api/users and /api/team-admin, whose
+ * route class is the same users area (route-scope.ts), so no path makes
+ * an Admin user without it. Before: an add to Admin with `moderator`
+ * omitted asked only Moderator of Admin, which every Admin user is (0298).
+ */
+function mayChangeAdminUsers(seen: Seen): void {
+  mayManageUsers(seen);
+  if (!seen.admin) {
+    throw new WsError(
+      403,
+      'admin_only',
+      'Only an Admin user who manages users can change who is an Admin user.',
+    );
+  }
+}
+
 /** The Admin-workspace role change behind adding or removing a user there.
  *  `checks` runs first inside the change's transaction (it locks the
  *  workspace, audit L2); `inTx` last, after the login bridge. On success the
@@ -1067,7 +1089,8 @@ async function adminRoleChange(
  *  with subject.self and shown as "Added by NAME on DATE". On the Admin
  *  workspace the add is the role change to admin (W5a), a Moderator there
  *  always: an add there with the tick off is refused (409 admin_workspace,
- *  owner decision, F4 fix round 1). */
+ *  owner decision, F4 fix round 1), and any add there is an Admin user's
+ *  with the users area (mayChangeAdminUsers, F4 fix round 4). */
 export async function addUser(
   caller: WsCaller,
   id: string,
@@ -1078,7 +1101,11 @@ export async function addUser(
   const pre = await seeWorkspace(caller, id);
   // An add to Admin is an Admin user, a Moderator there always.
   if (pre.row.is_admin && body.moderator === false) throw ADMIN_TICK_KEPT();
-  const gate = body.moderator === true ? mayPromote : mayManageUsers;
+  const gate = pre.row.is_admin
+    ? mayChangeAdminUsers
+    : body.moderator === true
+      ? mayPromote
+      : mayManageUsers;
   gate(pre);
   const wid = pre.row.id;
   const target = await loginOf(db, body.loginId);
@@ -1203,7 +1230,8 @@ export async function removeUser(
     // Removing a Moderator takes their tick away: the same one check as
     // clearing it (owner answer Q2), or a Moderator could remove another and
     // add them back without it. Leaving stays open to anyone.
-    if (!self && row.moderator) mayPromote(seen);
+    if (!self && seen.row.is_admin) mayChangeAdminUsers(seen);
+    else if (!self && row.moderator) mayPromote(seen);
     if (row.moderator && (await otherModerators(q, wid, loginId)) === 0) throw LAST_MOD();
   };
   if (pre.row.is_admin) {

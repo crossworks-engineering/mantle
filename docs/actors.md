@@ -1434,10 +1434,7 @@ here:
 - jackdaw: the bulk delete's `refused` reasons `not_found` and
   `forbidden`, and `keptTotal` / `kept`, need its delete dialogs (a
   separate session; the contract above).
-- `folder_create` with `indexing` by a login that may create in a folder it
-  does not moderate: the folder is made, then the switch is refused (the
-  tool's error says so). Whether a new folder's own switch should follow
-  its create rule is the owner's question.
+- `folder_create` with `indexing`: decided and done in round 4 (below).
 - A member's table commit keeps no history (none since W6b); the history
   is the Admin users'. Whether a member's commit should keep one (named as
   a member) is the owner's question.
@@ -1446,6 +1443,72 @@ here:
   `ms_drive_items` (pre-existing, every mode).
 - A kept derived item (H1) points at a file that is gone; the
   `dangling_source_file` audit lists it, and its own delete is its home's.
+
+### F4 fix round 4
+
+The re-audit of round 3 (8.5/10, no security hole) left four lows and a
+note; the owner decided two rules. Tested through the full pipeline (the
+routes by `runRoute`, the tools on the real MCP surface,
+`prepareCallerTools`) in warn and on, as a member and as an Admin user
+(`server/web/server/f4-owner-flows.db.test.ts`, in `pnpm test:edit-on`).
+
+- **L-a, a new folder's own switch follows its create rule (owner
+  decision).** `folder_create` with `indexing` hands it to `createFolder`
+  (`packages/files/src/ops/folders.ts`, the `indexing` argument), so the row
+  is born with the flag: one act, a refused create makes nothing. No
+  manage is asked: the folder is new and empty, the switch touches nothing
+  else. An existing folder's switch still asks manage (`setIndexingMode`,
+  `folder_set_indexing`, PATCH `/api/files/folders/:id`). The HTTP create
+  route takes no `indexing`.
+- **L-b, a new app's import asks manage of its create home first.** A new
+  app's code write asks manage of the app (D4), so POST `/api/apps/import`
+  without `appId`, and the package import (`importAppPackage`: the
+  `app_import` tool and POST `/api/apps/import-package`) ask
+  `assertNewAppCodeRight` (`packages/content/src/apps.ts`) before the app
+  is made: manage of the workspace the new app lands in
+  (`assertManagesNewItemHome`, `packages/content/src/tree/visibility.ts`,
+  the create home the visibility preview already names, asked with
+  `mantle_may_manage`). Refused: 403 item-workspace, nothing made. App code
+  rights are not widened.
+- **Making or unmaking an Admin user needs the users area (owner
+  decision).** On the Admin workspace an add (any `moderator`) and a
+  removal ask `mayChangeAdminUsers` (`server/web/lib/workspaces.ts`): an
+  Admin user with the users area, as the Moderator tick (`mayPromote`); else
+  403 `admin_only`. The other paths that make or unmake one sit under
+  `/api/users` (the role change, a new login) and `/api/team-admin`
+  (invites), whose route class is the same users area
+  (`server/web/lib/auth/route-scope.ts`); no tool or MCP path writes a role.
+- **L-c, L-d, the demo's reader.** 0299 and 0300 (edited in place, not
+  left this branch) grant the demo's reader nothing and revoke what an
+  earlier draft granted (`CREATE OR REPLACE` keeps grants), each guarded by
+  the role existing.
+- **The note.** `mantle_name_taken('folder', ...)` answers no for a name that
+  is not a valid path (`pg_input_is_valid` before the cast; the function is
+  plpgsql so the guard runs before the statement that casts), where it
+  raised an ltree syntax error.
+
+**Changed answers** (warn and on; against round 3's head):
+
+- `folder_create` with `indexing` by a login that may create in the parent
+  but does not manage the new folder's home: the folder is made with the
+  flag, ok (before: made without it, then the tool's error). Wider by the
+  owner's decision, for the new folder only.
+- POST `/api/apps/import` (no `appId`) by a login that may create in the
+  Apps folder but does not manage the workspace a new app lands in: 403
+  item-workspace, no app (before: the app made, then 403 on its draft).
+  `app_import` and POST `/api/apps/import-package` likewise: refused before
+  the app is made (before: made, the build refused, then dropped).
+- POST `/api/workspaces/:admin/users` by an Admin user without the users
+  area, `moderator` omitted: 403 `admin_only`, no Admin user made (before:
+  200, the login made an Admin user). With `moderator: true` the same 403
+  (before: 403 `admin_only` with the Moderator words). DELETE
+  `/api/workspaces/:admin/users/:loginId` by one: 403 `admin_only`, worded
+  as the Admin user change (before: the same status by the Moderator rule).
+- `mantle_name_taken('folder', owner, name, ...)` with a name that is not a
+  valid path: false (before: an ltree syntax error).
+- The demo's reader may not execute `mantle_mail_backfill_accounts`,
+  `mantle_name_taken` or `mantle_snapshot_bytes` (before: granted on a
+  database that ran an earlier draft).
 
 ## Request plumbing (A10 part 2, A10 #8, A10 #9)
 

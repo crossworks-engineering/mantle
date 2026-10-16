@@ -80,17 +80,16 @@ export const folder_create: BuiltinToolDef = {
     const indexing = raw as 'full' | 'metadata' | undefined;
     await ensureFilesRootBranch(ctx.ownerId);
     try {
+      // The new folder's own switch follows its create rule (F4 fix round 4):
+      // the row is born with it, one act, so a refusal makes nothing and no
+      // manage is asked (the folder is empty: nothing else is touched).
       const folder = await createFolder({
         ownerId: ctx.ownerId,
         parentPath,
         slug,
         description: strOpt(input.description),
+        ...(indexing ? { indexing } : {}),
       });
-      // Applied AFTER create so the flag write and the descendant sweep share
-      // one code path with the settings toggle.
-      if (indexing) {
-        await setIndexingMode({ ownerId: ctx.ownerId, nodeId: folder.id, mode: indexing });
-      }
       return { ok: true, output: indexing ? { ...folder, indexing } : folder };
     } catch (err) {
       return { ok: false, error: `folder_create failed: ${errorMessage(err)}` };

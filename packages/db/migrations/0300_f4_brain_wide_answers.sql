@@ -15,7 +15,9 @@
 --     - 'formula-spec': a formula whose spec id is `name` (the formula
 --       library's seed: present is present, whoever reads it).
 --    A folder's path is compared as an ltree (the unique index's column,
---    F4 fix round 3, L4): a name that is not a path is the caller's fault.
+--    F4 fix round 3, L4); a name that is not a valid path answers no, asked
+--    with pg_input_is_valid before the cast (F4 fix round 4), so the
+--    function is plpgsql: the guard runs before the statement that casts.
 --    Any other `what` answers no. Not held to the rows the scope reads: its
 --    whole point is a name a row the caller cannot read holds (as
 --    mantle_file_name_taken, 0293). In a scope only the brain's own.
@@ -29,30 +31,45 @@
 --
 -- Every definer: a fixed search_path (pg_temp last), no right for PUBLIC,
 -- EXECUTE for the workspace role (the write and runtime roles follow it,
--- as for 0293's) and the public demo's reader when it exists.
+-- as for 0293's). Not the public demo's reader (F4 fix round 4, L-d): a
+-- read-only demo writes nothing, so asks neither. A database that ran an
+-- earlier draft of this file granted both to it; CREATE OR REPLACE keeps a
+-- function's grants, so it loses them here by name when the role exists.
 --
 -- No row changes. Re-runnable.
 SET LOCAL lock_timeout = '30s';
 --> statement-breakpoint
 CREATE OR REPLACE FUNCTION "public"."mantle_name_taken"(what text, owner uuid, name text, except_id uuid)
-  RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER
+  RETURNS boolean LANGUAGE plpgsql STABLE SECURITY DEFINER
   SET search_path = "public", pg_temp AS $$
-  SELECT (NOT "public"."mantle_scope_active"() OR owner = "public"."mantle_brain_id"())
-     AND CASE what
-       WHEN 'folder' THEN EXISTS (
-         SELECT 1 FROM "public"."nodes" n
-          WHERE n."owner_id" = owner AND n."type" = 'branch' AND n."path" = name::ltree)
-       WHEN 'recall-slug' THEN EXISTS (
-         SELECT 1 FROM "public"."recall_maps" m
-          WHERE m."owner_id" = owner
-            AND (except_id IS NULL OR m."id" <> except_id)
-            AND (m."slug" = name OR name = ANY (m."former_slugs")))
-       WHEN 'formula-spec' THEN EXISTS (
-         SELECT 1 FROM "public"."nodes" n
-          WHERE n."owner_id" = owner AND n."type" = 'formula'
-            AND n."data" -> 'spec' ->> 'id' = name)
-       ELSE false
-     END
+#variable_conflict use_variable
+BEGIN
+  IF "public"."mantle_scope_active"() AND owner IS DISTINCT FROM "public"."mantle_brain_id"() THEN
+    RETURN false;
+  END IF;
+  IF what = 'folder' THEN
+    -- Asked before the cast, in its own statement: a name that is not a
+    -- path is no folder's (no ltree syntax error).
+    IF NOT pg_input_is_valid(name, 'ltree') THEN
+      RETURN false;
+    END IF;
+    RETURN EXISTS (
+      SELECT 1 FROM "public"."nodes" n
+       WHERE n."owner_id" = owner AND n."type" = 'branch' AND n."path" = name::ltree);
+  ELSIF what = 'recall-slug' THEN
+    RETURN EXISTS (
+      SELECT 1 FROM "public"."recall_maps" m
+       WHERE m."owner_id" = owner
+         AND (except_id IS NULL OR m."id" <> except_id)
+         AND (m."slug" = name OR name = ANY (m."former_slugs")));
+  ELSIF what = 'formula-spec' THEN
+    RETURN EXISTS (
+      SELECT 1 FROM "public"."nodes" n
+       WHERE n."owner_id" = owner AND n."type" = 'formula'
+         AND n."data" -> 'spec' ->> 'id' = name);
+  END IF;
+  RETURN false;
+END
 $$;
 --> statement-breakpoint
 REVOKE ALL ON FUNCTION "public"."mantle_name_taken"(text, uuid, text, uuid) FROM PUBLIC;
@@ -78,8 +95,8 @@ GRANT EXECUTE ON FUNCTION "public"."mantle_snapshot_bytes"(uuid, boolean, boolea
 DO $$
 BEGIN
   IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'demo_reader') THEN
-    GRANT EXECUTE ON FUNCTION "public"."mantle_name_taken"(text, uuid, text, uuid) TO demo_reader;
-    GRANT EXECUTE ON FUNCTION "public"."mantle_snapshot_bytes"(uuid, boolean, boolean, uuid) TO demo_reader;
+    REVOKE EXECUTE ON FUNCTION "public"."mantle_name_taken"(text, uuid, text, uuid) FROM demo_reader;
+    REVOKE EXECUTE ON FUNCTION "public"."mantle_snapshot_bytes"(uuid, boolean, boolean, uuid) FROM demo_reader;
   END IF;
 END
 $$;

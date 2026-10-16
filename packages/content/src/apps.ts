@@ -50,6 +50,7 @@ import type { AppRow, AppDetail, AppTint, HistoryActor } from '@mantle/client-ty
 import { projectAppIcon, projectAppTint } from '@mantle/content-core/app-nav';
 import { asKindRootRepair } from './kind-root';
 import { dedupeTags } from './tags';
+import { assertManagesNewItemHome } from './tree/visibility';
 export type { AppRow, AppDetail };
 
 export const APPS_ROOT_LABEL = 'apps';
@@ -497,6 +498,19 @@ export type CreateAppInput = {
    *  non-Admin login's create (W6b fix round 1, M2). */
   authorLoginId?: string;
 };
+
+/**
+ * Asked before a NEW app is made whose code the same call then writes (an
+ * import's draft, a package's build: F4 fix round 4, L-b): that write asks
+ * manage of the app (D4, lockAppRow), so the caller must manage the create
+ * home the app lands in. Throws the edit check's 403 (item-workspace)
+ * before anything is made, rather than leaving a half-made app. Widens
+ * nothing: a login that may create there but not manage still makes no
+ * app's code. System work is not checked.
+ */
+export async function assertNewAppCodeRight(ownerId: string): Promise<void> {
+  await assertManagesNewItemHome(ownerId, 'app', APPS_ROOT_LABEL);
+}
 
 export async function createApp(ownerId: string, input: CreateAppInput): Promise<AppDetail> {
   if (!input.inSpace) await ensureRoot(ownerId);

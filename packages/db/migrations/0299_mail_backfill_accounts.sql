@@ -14,7 +14,10 @@
 -- brain's own accounts, else no row. A fixed search_path (pg_temp last),
 -- no right for PUBLIC, EXECUTE for the workspace role (the write and
 -- runtime roles follow it, as for 0293's definers). Not the public demo's
--- reader (F4 fix round 3, L4): a read-only demo queues no backfill.
+-- reader (F4 fix round 3, L4): a read-only demo queues no backfill. A
+-- database that ran this file before that edit granted it; CREATE OR
+-- REPLACE keeps a function's grants, so the demo's reader loses it here
+-- by name when the role exists (F4 fix round 4, L-c).
 --
 -- No row changes. Re-runnable. The `when` sits above 0298's.
 SET LOCAL lock_timeout = '30s';
@@ -32,3 +35,11 @@ $$;
 REVOKE ALL ON FUNCTION "public"."mantle_mail_backfill_accounts"(uuid) FROM PUBLIC;
 --> statement-breakpoint
 GRANT EXECUTE ON FUNCTION "public"."mantle_mail_backfill_accounts"(uuid) TO "mantle_view_user";
+--> statement-breakpoint
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'demo_reader') THEN
+    REVOKE EXECUTE ON FUNCTION "public"."mantle_mail_backfill_accounts"(uuid) FROM demo_reader;
+  END IF;
+END
+$$;

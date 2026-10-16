@@ -1620,4 +1620,317 @@ describe.skipIf(!DB_URL)('F4 fix round 1: the owner’s management flows on the 
     // system transaction (it sees that transaction's rows).
     await expect(m.withSystemTx(step)).resolves.toBe(1);
   });
+
+  // ── F4 fix round 4: a new folder's own switch, a new app's import, an
+  //    Admin user made or unmade, the definers' grants ───────────────────
+
+  /** One login's MCP surface (the real one: prepareCallerTools), as an
+   *  OAuth grant with write. Its replies are recorded. */
+  const mcpAs = async (loginId: string, role: 'admin' | 'member') => {
+    const ls = await import('@mantle/mcp-core');
+    const { McpServer, InMemoryTransport } = await import('@modelcontextprotocol/server');
+    const { Client } = await import('@modelcontextprotocol/client');
+    const prepared = await ls.prepareCallerTools({
+      role,
+      anchorId: L.owner,
+      loginId,
+      via: 'oauth',
+      write: true,
+    });
+    const server = new McpServer({ name: 'f4r4', version: '0' });
+    ls.registerPreparedTools(server, prepared);
+    const [a, b] = InMemoryTransport.createLinkedPair();
+    const c = new Client({ name: 'f4r4', version: '0' });
+    await Promise.all([server.connect(a), c.connect(b)]);
+    const tool = async (name: string, args: Record<string, unknown>) => {
+      const r = (await c.callTool({ name, arguments: args })) as {
+        isError?: boolean;
+        content?: { text?: string }[];
+      };
+      const text = (r.content ?? []).map((x) => x.text ?? '').join(' ');
+      recorded.push(`mcp ${role} ${name}: ${r.isError ? 'error' : 'ok'} ${text.slice(0, 160)}`);
+      expect(text, name).not.toMatch(RAW);
+      return { isError: r.isError === true, text };
+    };
+    return { tool, close: () => c.close() };
+  };
+
+  /** A member who is a user of the other workspace, not its Moderator. */
+  let editorId = '';
+  const editor = async (): Promise<string> => {
+    if (editorId) return editorId;
+    editorId = randomUUID();
+    await raw`insert into auth.users (id, email, password_hash, is_owner, role, display_name)
+      values (${editorId}, ${`${tag}-editor@example.invalid`}, 'x', false, 'member', 'editor')`;
+    await raw`insert into workspace_users (workspace_id, login_id, moderator)
+      values (${ws.other}, ${editorId}, false)`;
+    return editorId;
+  };
+
+  /** A folder at `p`: its id, its own indexing flag and its home. */
+  const folderAt = async (p: string) =>
+    (
+      await raw<{ id: string; ix: string | null; home: string | null }[]>`
+        select n.id::text as id, n.data->>'indexing' as ix,
+               (select g.workspace_id::text from item_grants g
+                 where g.node_id = n.id and g.is_home) as home
+          from nodes n where n.owner_id = ${L.owner} and n.type = 'branch'
+           and n.path = ${p}::ltree`
+    )[0] ?? null;
+
+  /** An item's own grant rows, to put back as they were. */
+  type OwnGrant = { w: string; h: boolean; wr: boolean; ex: boolean };
+  const ownGrants = (id: string) =>
+    raw<OwnGrant[]>`select workspace_id::text as w, is_home as h, write as wr, excluded as ex
+      from item_grants where node_id = ${id} and via_folder_id is null`;
+  const putGrants = async (id: string, rows: readonly OwnGrant[]) => {
+    await raw.begin(async (tx) => {
+      await tx`select set_config('mantle.actor', 'system:test', true)`;
+      await tx`select mantle_lock_heads(array[${id}]::uuid[], 'update')`;
+      await tx`delete from item_grants where node_id = ${id} and via_folder_id is null`;
+      for (const r of rows) {
+        await tx`insert into item_grants (node_id, workspace_id, is_home, write, excluded)
+                 values (${id}, ${r.w}, ${r.h}, ${r.wr}, ${r.ex})
+                 on conflict (node_id, workspace_id) do update
+                   set is_home = excluded.is_home, write = excluded.write,
+                       excluded = excluded.excluded, via_folder_id = null`;
+      }
+    });
+  };
+
+  const appsTitled = async (title: string) =>
+    (
+      await raw<{ n: number }[]>`select count(*)::int as n from nodes
+        where owner_id = ${L.owner} and type = 'app' and title = ${title}`
+    )[0]!.n;
+
+  for (const mode of ['warn', 'on'] as const) {
+    it(`${mode}: round 4, a new folder's own indexing follows its create rule, one act`, async () => {
+      await setMode(mode);
+      // An Admin user, in a folder homed in a workspace it does not
+      // moderate (Write through Admin): the folder lands there, born name
+      // only (before: made, then the switch refused).
+      const parent = await folder(`${tag}${mode}r4a`);
+      await rehome(parent.id, ws.other, { admin: 'write' });
+      const admin = await mcpAs(L.admin, 'admin');
+      try {
+        const made = await admin.tool('folder_create', {
+          parent_path: parent.path,
+          slug: 'gallery',
+          indexing: 'metadata',
+        });
+        expect(made.isError, made.text).toBe(false);
+        const row = await folderAt(`${parent.path}.gallery`);
+        expect(row).toMatchObject({ ix: 'metadata', home: ws.other });
+        // The switch of the folder that now exists is its Moderators'.
+        const flip = await admin.tool('folder_set_indexing', { folder_id: row!.id, mode: 'full' });
+        expect(flip.isError, flip.text).toBe(true);
+        expect((await folderAt(`${parent.path}.gallery`))?.ix).toBe('metadata');
+      } finally {
+        await admin.close();
+      }
+      // A member who may create in the folder but moderates nothing there.
+      const ed = await editor();
+      const mine = await folder(`${tag}${mode}r4m`);
+      await rehome(mine.id, ws.other);
+      const readOnly = await folder(`${tag}${mode}r4r`);
+      await grantTo(readOnly.id, ws.other, false);
+      const member = await mcpAs(ed, 'member');
+      try {
+        const made = await member.tool('folder_create', {
+          parent_path: mine.path,
+          slug: 'clips',
+          indexing: 'metadata',
+        });
+        expect(made.isError, made.text).toBe(false);
+        expect(await folderAt(`${mine.path}.clips`)).toMatchObject({
+          ix: 'metadata',
+          home: ws.other,
+        });
+        const flip = await member.tool('folder_set_indexing', {
+          folder_id: (await folderAt(`${mine.path}.clips`))!.id,
+          mode: 'full',
+        });
+        expect(flip.isError, flip.text).toBe(true);
+        // A folder it only reads: nothing made, the switch with it.
+        const no = await member.tool('folder_create', {
+          parent_path: readOnly.path,
+          slug: 'clips',
+          indexing: 'metadata',
+        });
+        expect(no.isError, no.text).toBe(true);
+        expect(await folderAt(`${readOnly.path}.clips`)).toBeNull();
+      } finally {
+        await member.close();
+      }
+    }, 240_000);
+
+    it(`${mode}: round 4, a new app's import asks manage of its create home before it is made`, async () => {
+      await setMode(mode);
+      const files = { 'index.tsx': 'export default function App() { return null; }' };
+      // A package to import, made while the owner manages its app.
+      const src = await call(`${mode} r4 package app`, L.owner, 'POST', '/api/apps', {
+        name: `${tag} ${mode} r4 source`,
+      });
+      expect(src.status, src.text).toBe(201);
+      const fs = await import('@mantle/files');
+      const pkgMod = await import('@mantle/content/app-package');
+      const dest = path.join(dir, `${tag}${mode}.mantleapp`);
+      expect(
+        await pkgMod.writeAppPackage(L.owner, (src.json.app as { id: string }).id, dest, {
+          withData: false,
+        }),
+      ).not.toBeNull();
+      await fs.ensureFilesRootBranch(L.owner);
+      const pkgFile = await fs.upsertFile({
+        ownerId: L.owner,
+        parentPath: 'files',
+        filename: `${tag}${mode}r4.mantleapp`,
+        bytes: await readFile(dest),
+      });
+      const before = await ownGrants(root.app.id);
+      try {
+        // An Admin user: the Apps folder homed where it does not moderate
+        // (Write through Admin), so a new app would land there.
+        await rehome(root.app.id, ws.other, { admin: 'write' });
+        const title = `${tag} ${mode} r4 admin import`;
+        const r = await call(`${mode} r4 admin import`, L.admin, 'POST', '/api/apps/import', {
+          name: title,
+          entry: 'index.tsx',
+          files,
+          build: false,
+        });
+        expect(r.status, r.text).toBe(403);
+        expect(r.json.reason).toBe('item-workspace');
+        expect(await appsTitled(title)).toBe(0);
+        // The app_import tool (the package import, the import-package
+        // route's too): refused before the app is made.
+        const admin = await mcpAs(L.admin, 'admin');
+        try {
+          const toolTitle = `${tag} ${mode} r4 tool import`;
+          const t = await admin.tool('app_import', { file_id: pkgFile.id, name: toolTitle });
+          expect(t.isError, t.text).toBe(true);
+          expect(await appsTitled(toolTitle)).toBe(0);
+        } finally {
+          await admin.close();
+        }
+        // A member: the Apps folder homed in Admin, Write for its workspace.
+        await putGrants(root.app.id, before);
+        await grantTo(root.app.id, ws.other, true);
+        const mTitle = `${tag} ${mode} r4 member import`;
+        const mr = await call(`${mode} r4 member import`, L.member, 'POST', '/api/apps/import', {
+          name: mTitle,
+          entry: 'index.tsx',
+          files,
+          build: false,
+        });
+        expect(mr.status, mr.text).toBe(403);
+        expect(await appsTitled(mTitle)).toBe(0);
+      } finally {
+        await putGrants(root.app.id, before);
+      }
+      // Where the importer manages the home: made, as before.
+      const okTitle = `${tag} ${mode} r4 import ok`;
+      const ok = await call(`${mode} r4 admin import ok`, L.admin, 'POST', '/api/apps/import', {
+        name: okTitle,
+        entry: 'index.tsx',
+        files,
+        build: false,
+      });
+      expect(ok.status, ok.text).toBe(200);
+      expect(ok.json.created).toBe(true);
+      expect(await appsTitled(okTitle)).toBe(1);
+    }, 240_000);
+
+    it(`${mode}: round 4, making or unmaking an Admin user needs the users area`, async () => {
+      await setMode(mode);
+      const fresh = randomUUID();
+      await raw`insert into auth.users (id, email, password_hash, is_owner, role, display_name)
+        values (${fresh}, ${`${tag}-${mode}-r4@example.invalid`}, 'x', false, 'member', 'r4')`;
+      const roleOf = async () =>
+        (await raw<{ role: string }[]>`select role from auth.users where id = ${fresh}`)[0]!.role;
+      const inAdmin = async () =>
+        (
+          await raw`select 1 from workspace_users
+            where workspace_id = ${ws.admin} and login_id = ${fresh}`
+        ).length;
+      const url = `/api/workspaces/${ws.admin}/users`;
+      // An Admin user without the users area: refused, tick or none
+      // (before: the add without the tick made an Admin user).
+      for (const body of [{ loginId: fresh }, { loginId: fresh, moderator: true }]) {
+        const r = await call(`${mode} limited adds to Admin`, L.limited, 'POST', url, body);
+        expect(r.status, r.text).toBe(403);
+        expect(r.json.code).toBe('admin_only');
+      }
+      // A Moderator of another workspace only: refused.
+      const mod = await call(`${mode} a Moderator adds to Admin`, L.member, 'POST', url, {
+        loginId: fresh,
+      });
+      expect([403, 404], mod.text).toContain(mod.status);
+      expect([await roleOf(), await inAdmin()]).toEqual(['member', 0]);
+      // An Admin user with it: made one.
+      const add = await call(`${mode} full Admin user adds`, L.admin, 'POST', url, {
+        loginId: fresh,
+      });
+      expect(add.status, add.text).toBe(200);
+      expect([await roleOf(), await inAdmin()]).toEqual(['admin', 1]);
+      // The removal likewise.
+      const no = await call(
+        `${mode} limited removes from Admin`,
+        L.limited,
+        'DELETE',
+        `${url}/${fresh}`,
+      );
+      expect(no.status, no.text).toBe(403);
+      expect(no.json.code).toBe('admin_only');
+      expect([await roleOf(), await inAdmin()]).toEqual(['admin', 1]);
+      const off = await call(
+        `${mode} full Admin user removes`,
+        L.admin,
+        'DELETE',
+        `${url}/${fresh}`,
+      );
+      expect(off.status, off.text).toBe(200);
+      expect([await roleOf(), await inAdmin()]).toEqual(['member', 0]);
+    }, 120_000);
+  }
+
+  it('round 4: a name that is no path is no folder; the demo reader keeps neither definer', async () => {
+    const taken = async (name: string) =>
+      (
+        await raw<{ t: boolean }[]>`select mantle_name_taken('folder', ${L.owner}::uuid, ${name},
+                                     null) as t`
+      )[0]!.t;
+    expect(await taken('not a path!')).toBe(false);
+    expect(await taken('a..b')).toBe(false);
+    expect(await taken(root.note.path)).toBe(true);
+    // A database that ran the earlier drafts of 0299 and 0300 granted the
+    // demo's reader; the files as they are now take it back.
+    class Undo extends Error {}
+    const fns = [
+      'public.mantle_mail_backfill_accounts(uuid)',
+      'public.mantle_name_taken(text,uuid,text,uuid)',
+      'public.mantle_snapshot_bytes(uuid,boolean,boolean,uuid)',
+    ];
+    await expect(
+      raw.begin(async (tx) => {
+        const had = await tx`select 1 from pg_roles where rolname = 'demo_reader'`;
+        if (had.length === 0) await tx`create role demo_reader nologin`;
+        for (const f of fns) await tx.unsafe(`grant execute on function ${f} to demo_reader`);
+        for (const f of ['0299_mail_backfill_accounts.sql', '0300_f4_brain_wide_answers.sql']) {
+          const file = path.resolve(__dirname, `../../../packages/db/migrations/${f}`);
+          for (const step of (await readFile(file, 'utf8')).split('--> statement-breakpoint')) {
+            await tx.unsafe(step);
+          }
+        }
+        for (const f of fns) {
+          const [row] = await tx.unsafe<{ p: boolean }[]>(
+            `select has_function_privilege('demo_reader', '${f}', 'execute') as p`,
+          );
+          expect(row?.p, f).toBe(false);
+        }
+        throw new Undo();
+      }),
+    ).rejects.toBeInstanceOf(Undo);
+  }, 60_000);
 });

@@ -18,6 +18,7 @@
 import { randomUUID } from 'node:crypto';
 import { rm } from 'node:fs/promises';
 import {
+  assertNewAppCodeRight,
   NoGreenBuildError,
   notifyAppNavChanged,
   publishApp,
@@ -84,6 +85,10 @@ export async function importAppPackage(
       throw new AppPackageError(`the app's schema does not run: ${errorMessage(err)}`);
     }
   }
+  // The new app's code is built (and its draft written) next, which asks
+  // manage of the app (D4): asked of its create home before anything is
+  // made (F4 fix round 4, L-b; before: made, then the build refused).
+  await assertNewAppCodeRight(ownerId);
   const data = withData ? await opened.extractData() : null;
 
   try {

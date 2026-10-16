@@ -69,6 +69,12 @@ export async function createFolder(args: {
    *  null is none). The caller validates them; this only stores them. */
   icon?: string | null;
   color?: string | null;
+  /** Its own indexing switch from the start (F4 fix round 4, the owner's
+   *  decision): the new folder's, so it follows the create rule (a login
+   *  that may create here may set it, without manage). The row is born
+   *  with it, one act: an empty folder has no file to reconcile. An
+   *  existing folder's switch is `setIndexingMode`, which asks manage. */
+  indexing?: 'full' | 'metadata';
 }): Promise<FolderRow> {
   if (!isFilesPath(args.parentPath)) {
     throw new InputError(`createFolder: parent '${args.parentPath}' is outside the files root`);
@@ -116,6 +122,7 @@ export async function createFolder(args: {
             ...(args.system ? { system: true } : {}),
             ...(args.icon ? { icon: args.icon } : {}),
             ...(args.color ? { color: args.color } : {}),
+            ...(args.indexing ? { indexing: args.indexing } : {}),
           },
           tags: [],
         })

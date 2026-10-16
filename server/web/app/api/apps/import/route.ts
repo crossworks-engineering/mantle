@@ -21,6 +21,7 @@ import { z } from 'zod';
 import { ownerCaller } from '@/lib/auth';
 import { AppMetaFields } from '@/lib/app-meta';
 import {
+  assertNewAppCodeRight,
   createApp,
   saveDraftSource,
   getAppRuntime,
@@ -96,6 +97,12 @@ export async function POST(req: Request) {
       return bad(errorMessage(err));
     }
   }
+
+  // A new app's code is written next, which asks manage of the app (D4):
+  // asked of its create home before it is made, so a login that may
+  // create there but not manage is refused with nothing made (F4 fix round
+  // 4, L-b; before: the app made, then its draft refused).
+  if (!b.appId) await assertNewAppCodeRight(user.id);
 
   // ── create, or keep what an update replaces ──
   let appId = b.appId;

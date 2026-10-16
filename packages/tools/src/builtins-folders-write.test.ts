@@ -16,9 +16,9 @@
  *  - folder_set_indexing trims the node down to id/path/title in its output.
  *    The full node row carries `data` with every flag on the folder; echoing
  *    it would leak internals into the model's context for no gain.
- *  - folder_create applies the indexing flag AFTER the create, on the id the
- *    create returned, and only when asked. Getting that order wrong means a
- *    flag on a folder that does not exist yet, or a sweep over nothing.
+ *  - folder_create hands the indexing flag to the create, so the row is born
+ *    with it (F4 fix round 4: the new folder's own switch follows its create
+ *    rule, one act), and only when asked; no switch call after it.
  *
  * The store edges are stubbed; the tools' own branching is real. The arrays
  * differ per slug: rename/describe are in FILE_TOOLS, move/copy/indexing in
@@ -178,19 +178,19 @@ describe('folder_create (operator surface)', () => {
     expect(createFolder).toHaveBeenCalledWith(expect.objectContaining({ description: undefined }));
   });
 
-  it("applies indexing: 'metadata' on the id the create returned, after the create", async () => {
+  it("hands indexing: 'metadata' to the create, one act, no switch after it", async () => {
     const res = await folderCreate.handler(
       { parent_path: 'files', slug: 'gallery', indexing: 'metadata' },
       ctx,
     );
-    expect(setIndexingMode).toHaveBeenCalledWith({
+    expect(createFolder).toHaveBeenCalledWith({
       ownerId: 'o1',
-      nodeId: FOLDER_ID,
-      mode: 'metadata',
+      parentPath: 'files',
+      slug: 'gallery',
+      description: undefined,
+      indexing: 'metadata',
     });
-    expect(vi.mocked(createFolder).mock.invocationCallOrder[0]).toBeLessThan(
-      vi.mocked(setIndexingMode).mock.invocationCallOrder[0]!,
-    );
+    expect(setIndexingMode).not.toHaveBeenCalled();
     expect(outputOf(res)).toEqual({ ...folder, indexing: 'metadata' });
   });
 

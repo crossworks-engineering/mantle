@@ -20,6 +20,7 @@
 import { sql, type SQL } from 'drizzle-orm';
 import {
   currentCreateHome,
+  currentWorkspaceScope,
   db,
   heldBySql,
   itemHoldersSql,
@@ -27,7 +28,7 @@ import {
   itemWriteRefusal,
   scopeReadsItem,
 } from '@mantle/db';
-import { defineDomainError } from '@mantle/std';
+import { defineDomainError, editCheckRefusalError } from '@mantle/std';
 import {
   TREE_KIND_SPECS,
   TREE_VISIBILITY_LIST_MAX,
@@ -391,24 +392,16 @@ export async function newItemDiff(
   return diff;
 }
 
-/**
- * Where a NEW item of `nodeType` in the folder at `destPath` will be homed,
- * and which of the folder's workspaces will read it without edit (A0 fix
- * round 3, L-c): the create home names the place (the current workspace a
- * caller moderates, else the folder's home when it may edit the folder,
- * else its private workspace; an Admin user: the folder's home, else
- * Admin), and the folder passes its rows with their Write (its home row
- * has Write off), as the insert trigger does (0261).
- */
-async function newItemHome(
+/** The SQL of a NEW item's create home (newItemHome's place): the
+ *  current workspace a caller moderates, else the folder's home when it may
+ *  edit the folder, else its private workspace (an Admin user: the folder's
+ *  home, else Admin), as the insert trigger names it (0261). */
+async function newItemHomeSql(
   via: Via,
   ownerId: string,
   nodeType: string,
   destPath: string,
-): Promise<{
-  home?: TreeWorkspaceChange['home'];
-  readOnly: NonNullable<TreeWorkspaceChange['readOnly']>;
-}> {
+): Promise<{ type: SQL; folder: SQL; home: SQL }> {
   const type = sql`${nodeType}::node_type`;
   const folder = sql`mantle_parent_folder(${ownerId}::uuid, ${type}, ${destPath}::ltree)`;
   const created = currentCreateHome();
@@ -434,6 +427,50 @@ async function newItemHome(
     ${created?.createWs ? live(sql`${created.createWs}::uuid`) : sql`null::uuid`},
     ${fallback},
     mantle_ws_admin_id(${ownerId}::uuid))`;
+  return { type, folder, home };
+}
+
+/**
+ * Asked before a create whose next write needs manage of the new item (F4
+ * fix round 4, L-b: a new app's code is its Moderators', D4): throws the
+ * edit check's 403 (item-workspace) unless the caller's scope manages the
+ * create home a NEW item of `nodeType` in the folder at `destPath` lands in,
+ * so a refusal makes nothing, not half an item. It widens nothing: the
+ * code write still asks manage of the app it made. System work (no
+ * workspace scope) is not checked.
+ */
+export async function assertManagesNewItemHome(
+  ownerId: string,
+  nodeType: string,
+  destPath: string,
+): Promise<void> {
+  if (!currentWorkspaceScope()) return;
+  const { home } = await newItemHomeSql(db, ownerId, nodeType, destPath);
+  const [row] = (await db.execute(
+    sql`select coalesce("public"."mantle_may_manage"(${home}), false) as ok`,
+  )) as unknown as Array<{ ok: boolean }>;
+  if (!row?.ok) throw editCheckRefusalError('no_edit');
+}
+
+/**
+ * Where a NEW item of `nodeType` in the folder at `destPath` will be homed,
+ * and which of the folder's workspaces will read it without edit (A0 fix
+ * round 3, L-c): the create home names the place (the current workspace a
+ * caller moderates, else the folder's home when it may edit the folder,
+ * else its private workspace; an Admin user: the folder's home, else
+ * Admin), and the folder passes its rows with their Write (its home row
+ * has Write off), as the insert trigger does (0261).
+ */
+async function newItemHome(
+  via: Via,
+  ownerId: string,
+  nodeType: string,
+  destPath: string,
+): Promise<{
+  home?: TreeWorkspaceChange['home'];
+  readOnly: NonNullable<TreeWorkspaceChange['readOnly']>;
+}> {
+  const { type, folder, home } = await newItemHomeSql(via, ownerId, nodeType, destPath);
   const [row] = (await via.execute(sql`
     with h as (select ${home} as ws)
     select (select mantle_ws_names(array[h.ws], ${folder}) -> 0 from h) as home,
