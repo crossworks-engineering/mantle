@@ -34,7 +34,6 @@ import type { BuiltinToolDef, ToolPrecondition } from './types';
 import { notFound } from './errors';
 import { str, strOptTrim as strOpt, numOr as num } from './coerce';
 import { errorMessage } from '@mantle/std';
-import { manage } from './item-write-gate';
 import { CS } from './client-sourced-rule';
 
 const CONTACT_ID_PRE: readonly ToolPrecondition[] = [
@@ -352,7 +351,6 @@ const contact_delete: BuiltinToolDef = {
     effect: 'write',
     spends: 'none',
     scope: 'any',
-    items: [manage('id')],
     peerRisky: true,
     keyArea: 'contacts',
     clientSourced: CS.onNodes('id'),

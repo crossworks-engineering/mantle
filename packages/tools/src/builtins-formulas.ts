@@ -33,7 +33,6 @@ import type { BuiltinToolDef, ToolPrecondition } from './types';
 import { str, strOptTrim as strOpt, numOr as num } from './coerce';
 import { notFound } from './errors';
 import { errorMessage } from '@mantle/std';
-import { manage } from './item-write-gate';
 import { CS } from './client-sourced-rule';
 
 const FORMULA_ID_PRE: readonly ToolPrecondition[] = [
@@ -343,7 +342,6 @@ const formula_delete: BuiltinToolDef = {
     effect: 'write',
     spends: 'none',
     scope: 'any',
-    items: [manage('id')],
     clientSourced: CS.onNodes('id'),
   },
   name: 'Delete a formula',

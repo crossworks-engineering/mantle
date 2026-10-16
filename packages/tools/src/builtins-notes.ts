@@ -26,7 +26,6 @@ import type { BuiltinToolDef, ToolPrecondition } from './types';
 import { str, strArr, strOptTrim as strOpt } from './coerce';
 import { notFound } from './errors';
 import { errorMessage } from '@mantle/std';
-import { manage } from './item-write-gate';
 import { CS } from './client-sourced-rule';
 
 // Shared referential preconditions (checked centrally in dispatch — see
@@ -467,7 +466,6 @@ export const note_delete: BuiltinToolDef = {
     effect: 'write',
     spends: 'none',
     scope: 'any',
-    items: [manage('id')],
     keyArea: 'notes',
     clientSourced: CS.onNodes('id'),
   },

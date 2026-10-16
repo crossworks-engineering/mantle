@@ -37,7 +37,7 @@ import type { BuiltinToolDef, ToolPrecondition } from './types';
 import { str, strOptTrim as strOpt, numOr as num } from './coerce';
 import { notFound } from './errors';
 import { errorMessage } from '@mantle/std';
-import { edit, manage } from './item-write-gate';
+import { edit } from './item-write-gate';
 import { CS } from './client-sourced-rule';
 
 // Shared referential precondition (checked centrally in dispatch — see
@@ -390,7 +390,6 @@ const journal_delete: BuiltinToolDef = {
     effect: 'write',
     spends: 'none',
     scope: 'any',
-    items: [manage('id')],
     peerRisky: true,
     keyArea: 'journal',
     clientSourced: CS.onNodes('id'),

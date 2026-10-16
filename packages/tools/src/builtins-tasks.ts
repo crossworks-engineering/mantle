@@ -35,7 +35,6 @@ import type { BuiltinToolDef, ToolHandlerResult, ToolPrecondition } from './type
 import { str, strArr, strArrOpt, strOpt } from './coerce';
 import { notFound } from './errors';
 import { errorMessage } from '@mantle/std';
-import { manage } from './item-write-gate';
 import { CS } from './client-sourced-rule';
 
 // Shared referential precondition (checked centrally in dispatch — see
@@ -368,7 +367,6 @@ const task_delete: BuiltinToolDef = {
     effect: 'write',
     spends: 'none',
     scope: 'any',
-    items: [manage('id')],
     keyArea: 'tasks',
     clientSourced: CS.onNodes('id'),
   },
