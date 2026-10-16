@@ -104,12 +104,14 @@ describe.skipIf(!DB_URL)(
     const makeNote = async (write: boolean): Promise<string> => {
       const id = randomUUID();
       await raw.begin(async (tx) => {
+        await tx`select set_config('mantle.actor', 'system:test', true)`;
         await tx`select mantle_lock_heads(array[${noteRoot}]::uuid[], 'share')`;
         await tx`insert into nodes (id, owner_id, type, title, path, data)
                values (${id}, ${owner}, 'note', ${`${tag} note ${id.slice(0, 8)}`},
                        'notes'::ltree, ${raw.json({ rank: 'a0' })})`;
       });
       await raw.begin(async (tx) => {
+        await tx`select set_config('mantle.actor', 'system:test', true)`;
         await tx`select mantle_lock_heads(array[${id}]::uuid[], 'update')`;
         await tx`delete from item_grants where node_id = ${id} and via_folder_id is null`;
         await tx`insert into item_grants (node_id, workspace_id, is_home, write)
@@ -196,10 +198,17 @@ describe.skipIf(!DB_URL)(
       }
     };
 
+    /** note_update waits for approval (`on`) or not, as system(test). */
+    const confirmNoteUpdate = (on: boolean) =>
+      raw.begin(async (tx) => {
+        await tx`select set_config('mantle.actor', 'system:test', true)`;
+        await tx`update tools set requires_confirm = ${on}
+               where owner_id = ${owner} and slug = 'note_update'`;
+      });
+
     /** The call queued in the anchor's Admin turn, then an Approve tap. */
     const viaTelegram = async (input: Record<string, unknown>): Promise<Outcome> => {
-      await raw`update tools set requires_confirm = true
-               where owner_id = ${owner} and slug = 'note_update'`;
+      await confirmNoteUpdate(true);
       const pendingIds: string[] = [];
       try {
         const row = await m.asSystem(() => t.resolveTool(owner, 'note_update'), 'test');
@@ -239,8 +248,7 @@ describe.skipIf(!DB_URL)(
           return { ok: false, text: `not queued: ${JSON.stringify(res).slice(0, 200)}` };
         }
       } finally {
-        await raw`update tools set requires_confirm = false
-                 where owner_id = ${owner} and slug = 'note_update'`;
+        await confirmNoteUpdate(false);
       }
       const r = await approval.telegramApprovalHandlers.onApproval!({
         ownerId: owner,
