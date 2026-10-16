@@ -26,6 +26,8 @@
   "brainOnWorkspacesFiles": 7,
   "adminReadsFiles": 2,
   "readPathWrites": 10,
+  "itemPrecheckTools": 101,
+  "itemPrecheckRoutes": 27,
   "bareFetchSites": 5,
   "routeBodyReadFiles": 0,
   "routeBodyReadAllowed": 9,

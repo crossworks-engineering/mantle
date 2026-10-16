@@ -733,6 +733,71 @@ export function readPathWrites(root) {
   return [...m[1].matchAll(/^\s*'((?:repair|backfill):[a-z0-9-]+)':/gm)].map((x) => x[1]).sort();
 }
 
+// ── item pre-checks (A4 step 4, A5 step 6b) ─────────────────────────────────
+
+/** Where the item pre-check's helpers live: the target makers (edit, manage,
+ *  read) and the resolvers a policy's `items` may name. */
+const ITEM_GATE = 'packages/tools/src/item-write-gate.ts';
+
+/** The resolvers ITEM_GATE exports: `export const x: Resolver` and
+ *  `export function x(...): Resolver`. A policy's `items` names one of
+ *  them, or a list of targets. */
+export function itemResolverNames(root) {
+  const text = readRepoFile(root, ITEM_GATE);
+  if (text === null) return [];
+  const code = stripComments(text);
+  const out = new Set();
+  for (const m of code.matchAll(/export const ([A-Za-z_$][\w$]*)\s*:\s*Resolver\b/g)) out.add(m[1]);
+  for (const m of code.matchAll(
+    /export function ([A-Za-z_$][\w$]*)\s*\([^)]*\)\s*:\s*Resolver\b/g,
+  )) {
+    out.add(m[1]);
+  }
+  return [...out].sort();
+}
+
+/** The tool item pre-checks of `text` (comments exempt): every policy
+ *  `items` value, a list of targets (edit(, manage(, read( or a literal
+ *  `{ param`) or a resolver of `resolvers`. A schema's `items:` (a JSON
+ *  schema array) is neither. */
+export function itemPrecheckToolEntries(text, resolvers) {
+  const code = stripComments(text);
+  const named = resolvers.length ? `|(?:${resolvers.join('|')})\\b` : '';
+  const re = new RegExp(
+    `\\bitems\\s*:\\s*(?:\\[\\s*(?:(?:edit|manage|read)\\s*\\(|\\{\\s*param\\s*:)${named})`,
+    'g',
+  );
+  return [...code.matchAll(re)].length;
+}
+
+/** The HTTP item pre-check lists (server/web/lib/auth/route-scope.ts,
+ *  itemWriteTarget): the item routes, the routes reached by another id, and
+ *  the read and manage exceptions. */
+export const ITEM_PRECHECK_ROUTE_FILE = 'server/web/lib/auth/route-scope.ts';
+export const ITEM_PRECHECK_ROUTE_LISTS = Object.freeze([
+  'ITEM_WRITE_PREFIXES',
+  'ITEM_REF_PREFIXES',
+  'ITEM_READ_WRITES',
+  'ITEM_MANAGE_WRITES',
+]);
+
+/** The entries of each HTTP item pre-check list, by list (a list that is
+ *  gone counts 0: the exit). */
+export function itemPrecheckRouteEntries(root) {
+  const code = stripComments(readRepoFile(root, ITEM_PRECHECK_ROUTE_FILE) ?? '');
+  const out = {};
+  for (const name of ITEM_PRECHECK_ROUTE_LISTS) {
+    const at = code.search(new RegExp(`\\bconst ${name}\\b`));
+    if (at < 0) {
+      out[name] = 0;
+      continue;
+    }
+    const list = balanced(code, code.indexOf('[', code.indexOf('=', at)));
+    out[name] = stringsIn(list).filter((s) => ROUTE_ENTRY.test(s)).length;
+  }
+  return out;
+}
+
 // ── the scoreboard ──────────────────────────────────────────────────────────
 
 /**
@@ -815,6 +880,8 @@ export function measure(root) {
   const texts = [];
   const systemDb = {};
   const systemWork = {};
+  const resolvers = itemResolverNames(root);
+  const itemPrechecks = {};
   for (const f of files) {
     const text = readRepoFile(root, f);
     if (text === null) continue;
@@ -825,6 +892,8 @@ export function measure(root) {
     if (sw.count) systemWork[f] = sw;
     const sd = systemDbUses(f, text);
     if (sd) systemDb[f] = sd;
+    const ip = itemPrecheckToolEntries(text, resolvers);
+    if (ip) itemPrechecks[f] = ip;
     if (rawAclSwept(f)) {
       const n = rawAclLines(text);
       if (n) rawAcl[f] = n;
@@ -941,6 +1010,7 @@ export function measure(root) {
   // This one number is what the plan's "at most 40" is about.
   const exits = asSystemExits(texts);
   const exitsByFile = exits.byFile;
+  const routePrechecks = itemPrecheckRouteEntries(root);
   return {
     numbers: {
       asSystemSites: sum(asSystem, 'count'),
@@ -971,6 +1041,8 @@ export function measure(root) {
       brainOnWorkspacesFiles: bowFiles,
       adminReadsFiles,
       readPathWrites: readPathWrites(root).length,
+      itemPrecheckTools: sum(itemPrechecks),
+      itemPrecheckRoutes: sum(routePrechecks),
       bareFetchSites: sum(bareFetch),
       routeBodyReadFiles: bodyReadFiles.length,
       routeBodyReadAllowed: bodyReadAllowed.length,
@@ -1022,6 +1094,8 @@ export function measure(root) {
       asSystemExitProblems: exits.problems,
       systemDb,
       rawAcl,
+      itemPrechecks,
+      routePrechecks,
       toolLists,
       routeLists,
       handKinds,

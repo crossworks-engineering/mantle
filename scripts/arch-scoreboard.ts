@@ -51,6 +51,10 @@ const LABELS: Record<string, string> = {
   brainOnWorkspacesFiles: 'files calling brainOnWorkspacesNow',
   adminReadsFiles: 'files naming MANTLE_ADMIN_READS',
   readPathWrites: 'named writes inside read paths',
+  itemPrecheckTools:
+    'tool item pre-checks: policy `items` entries (A5 step 6b; exit 0, see docs/actors.md "Pre-check deletion")',
+  itemPrecheckRoutes:
+    'HTTP item pre-check list entries in route-scope.ts (A4 step 4; exit 0, see docs/actors.md "Pre-check deletion")',
   routeBodyReadFiles: 'route files reading the request body directly (A10 part 2)',
   routeBodyReadAllowed: 'route files named to read the body another way (A10 part 2)',
   routeErrorTextFiles: "route files putting a caught error's text in a reply (A10 part 2)",

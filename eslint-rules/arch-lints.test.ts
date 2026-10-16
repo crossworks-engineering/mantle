@@ -14,6 +14,10 @@ import {
   keptNotes,
   listLiterals,
   readPathWrites,
+  itemResolverNames,
+  itemPrecheckToolEntries,
+  itemPrecheckRouteEntries,
+  ITEM_PRECHECK_ROUTE_LISTS,
   measure,
   rawAclLines,
   readRepoFile,
@@ -764,6 +768,34 @@ describe('the scoreboard pins', () => {
     const names = readPathWrites(ROOT) as string[];
     expect(names.length).toBe(got.numbers.readPathWrites);
     for (const n of names) expect(n).toMatch(/^(repair|backfill):[a-z0-9-]+$/);
+  });
+});
+
+describe('the item pre-check counters (A4 step 4, A5 step 6b)', () => {
+  const resolvers = itemResolverNames(ROOT) as string[];
+
+  it("reads the item gate's resolvers", () => {
+    expect(resolvers).toEqual(expect.arrayContaining(['closeLinkTargets', 'recallMap', 'appCopy']));
+  });
+
+  it('counts a policy items value, never a schema items', () => {
+    const count = (t: string) => itemPrecheckToolEntries(t, resolvers) as number;
+    expect(count("policy: { effect: 'write', items: [edit('id')] }")).toBe(1);
+    expect(count("items: [manage('id'), read('x')]")).toBe(1);
+    expect(count("items: [{ param: 'folder_id', need: 'edit' }]")).toBe(1);
+    expect(count('items: closeLinkTargets,')).toBe(1);
+    expect(count("items: recallMap('edit'),")).toBe(1);
+    expect(count("items: { type: 'string' }")).toBe(0);
+    expect(count('items: f.itemCount,')).toBe(0);
+    expect(count("// items: [edit('id')]")).toBe(0);
+  });
+
+  it('counts each HTTP list, and the scoreboard sums them', () => {
+    const by = itemPrecheckRouteEntries(ROOT) as Record<string, number>;
+    expect(Object.keys(by)).toEqual([...(ITEM_PRECHECK_ROUTE_LISTS as string[])]);
+    for (const n of Object.values(by)) expect(n).toBeGreaterThan(0);
+    expect(Object.values(by).reduce((a, b) => a + b, 0)).toBe(got.numbers.itemPrecheckRoutes);
+    expect(got.numbers.itemPrecheckTools).toBeGreaterThan(0);
   });
 });
 

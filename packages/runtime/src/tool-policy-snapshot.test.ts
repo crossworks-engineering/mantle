@@ -12,6 +12,7 @@
  * heartbeats/fire.ts's egress list. No database: the resolvers' probes
  * stay off it (the recall map lookup is stubbed).
  */
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('../../tools/src/builtins-recall-write', async (importOriginal) => ({
@@ -536,6 +537,20 @@ describe('every @mantle/tools access list equals its literal (A5 step 1)', () =>
     );
     expect(now).toEqual(ITEMS);
   });
+
+  it('ITEM_WRITE_TARGETS: the scoreboard counts every policy items value (A5 step 6b pin)', async () => {
+    // The static counter (eslint-rules/arch-counts.mjs, itemPrecheckTools)
+    // must see what the policies hold: a miss would read as a deletion.
+    // @ts-expect-error: plain-JS module, no types shipped.
+    const { measure } = await import('../../../eslint-rules/arch-counts.mjs');
+    const root = fileURLToPath(new URL('../../..', import.meta.url));
+    const builtins = listBuiltins().filter((d) => d.policy.items).length;
+    const mcp = Object.values(MCP_SURFACE_POLICIES).filter((p) => p.items).length;
+    expect(builtins).toBe(Object.keys(ITEMS).length);
+    expect((measure(root) as { numbers: Record<string, number> }).numbers.itemPrecheckTools).toBe(
+      builtins + mcp,
+    );
+  }, 60_000);
 
   /** A resolver's targets for `input` (no database: see each probe). */
   const resolve = (slug: string, input: Record<string, unknown>) => {
