@@ -300,6 +300,38 @@ else
   fails=$((fails + 1))
 fi
 
+# L (scripts-lows): the tag is made by someone else WHILE verify runs. git
+# tag would die with its bare "fatal: tag already exists"; the script must
+# give its own refusal with a next step, tag nothing, and push nothing.
+fresh 1.2.3
+export PNPM_VERIFY_SIDE="git tag $TAG HEAD~1"
+expect "a tag made on another commit during verify is refused with a next step" \
+  nonzero old missing obj "It was made while the verify ran" --
+unset PNPM_VERIFY_SIDE
+fresh 1.2.3
+out="$(PNPM_VERIFY_SIDE="git tag $TAG HEAD~1" "$BASH" "$SCRIPT" 2>&1)"
+if printf '%s\n' "$out" | grep -q "already exists (at" && ! printf '%s\n' "$out" | grep -q "fatal:"; then
+  echo "ok   the mid-verify tag gets the script's own message, not git's fatal"
+else
+  echo "FAIL the mid-verify tag gets the script's own message, not git's fatal"
+  printf '%s\n' "$out" | sed 's/^/     /'
+  fails=$((fails + 1))
+fi
+
+# ...and one made at HEAD by another run is refused too, then a rerun
+# resumes its push with no second verify.
+fresh 1.2.3
+export PNPM_VERIFY_SIDE="git tag $TAG HEAD"
+expect "a tag made at HEAD during verify is refused, nothing pushed" \
+  nonzero old missing head "rerun this to" --
+unset PNPM_VERIFY_SIDE
+rm -f "$PNPM_LOG"
+expect "a rerun then resumes the push of that tag" 0 head head head "resuming" --
+[ ! -f "$PNPM_LOG" ] || {
+  echo "FAIL the resume after a mid-verify tag ran pnpm verify again"
+  fails=$((fails + 1))
+}
+
 printf '(bash %s)\n' "$BASH_VERSION"
 [ "$fails" = 0 ] && echo "all passed" || {
   echo "$fails failed"

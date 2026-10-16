@@ -25,7 +25,8 @@ set -euo pipefail
 #   3. HEAD is that version's release commit (subject "release: vX.Y.Z")
 #   4. HEAD's tree has no demo/ (scripts/lib/demo-guard.sh, the check the
 #      pre-push hook runs; the push below skips that hook)
-#   5. the tag vX.Y.Z does not already exist
+#   5. the tag vX.Y.Z does not already exist (checked again just before the
+#      tag is made: another session may tag it while verify runs)
 # then runs `pnpm verify` on that tree, creates the tag at that commit only
 # if it passed, pushes that commit as main + the tag together in one atomic
 # push (the push is what cuts the release: it fires release.yml and
@@ -39,12 +40,16 @@ set -euo pipefail
 # `main` by name would then release that unverified, unguarded commit. So the
 # tag is made at the captured SHA, the push sends `<sha>:refs/heads/main`, and
 # when HEAD has moved by the time the verify ends the script refuses: NOT
-# tagged, NOT pushed. It exits non-zero, saying which ref is missing, when they are not;
-# when origin cannot be asked at all it says the state is unknown, with
-# ls-remote's own error; and when origin's main has moved on (the atomic push
-# refused as non-fast-forward) it says to delete the local tag. Origin's tag
-# is compared with the local tag's own object id, so a hand-made annotated tag
-# (whose id is not the commit's) is judged right too.
+# tagged, NOT pushed.
+#
+# After the push it exits non-zero, saying which ref is missing, when origin
+# does not have main and the tag both at that commit; when origin cannot be
+# asked at all it says the state is unknown, with ls-remote's own error; and
+# when origin refused the atomic push because it already holds other work
+# (its main has moved on, or it has a different tag of this name) it says to
+# delete the local tag. Origin's tag is compared with the local tag's own
+# object id, so a hand-made annotated tag (whose id is not the commit's) is
+# judged right too.
 #
 # Why the verify runs here and the push skips the pre-push hook: the hook ran
 # the same `pnpm verify` on the same tree, but INSIDE `git push`, after git had
@@ -167,15 +172,18 @@ demo_guard "$head" tag-release || exit 1
 tag="v$version"
 short="$(git rev-parse --short "$head")"
 resume=false
+tag_exists_refusal() { # the refusal for a tag this run cannot resume
+  echo "✗ tag $tag already exists (at $(git rev-parse --short "$tag"))" >&2
+  echo "  If it points at the wrong commit, delete it first:" >&2
+  echo "    git tag -d $tag        # and, if already pushed: git push origin :refs/tags/$tag" >&2
+  echo "  (a pushed tag has already fired the release workflows — check Actions)" >&2
+}
 if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
   if [ "$(git rev-parse "refs/tags/$tag^{commit}")" = "$head" ]; then
     resume=true
     echo "→ tag $tag already exists at HEAD: an earlier run made it and its push did not land; resuming"
   else
-    echo "✗ tag $tag already exists (at $(git rev-parse --short "$tag"))" >&2
-    echo "  If it points at the wrong commit, delete it first:" >&2
-    echo "    git tag -d $tag        # and, if already pushed: git push origin :refs/tags/$tag" >&2
-    echo "  (a pushed tag has already fired the release workflows — check Actions)" >&2
+    tag_exists_refusal
     exit 1
   fi
 fi
@@ -204,6 +212,16 @@ if ! $resume; then
     echo "  Another session landed on main while this ran. NOT tagged, NOT pushed." >&2
     echo "  Look at what landed (git log --oneline $short..main), cut the release" >&2
     echo "  commit again with scripts/merge-branch.sh if it needs one, and rerun." >&2
+    exit 1
+  fi
+  # The tag may have been made while the verify ran (another session, or a
+  # tag by hand). Say so and what to do, not git tag's bare "already exists".
+  if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
+    echo >&2
+    tag_exists_refusal
+    echo "  It was made while the verify ran: NOT tagged, NOT pushed by this run." >&2
+    echo "  If another scripts/tag-release.sh run made it at $short, rerun this to" >&2
+    echo "  resume its push; otherwise delete it as above and rerun." >&2
     exit 1
   fi
   git tag "$tag" "$head"
@@ -278,10 +296,9 @@ if [ "$remote_main" != "$head" ] || [ "$remote_tag" != "$tag_obj" ]; then
     moved=true
   fi
   if $moved; then
-    echo "  Origin has moved on: its main holds commits this clone does not (or it" >&2
-    echo "  already has a different $tag), so the atomic push was refused as" >&2
-    echo "  non-fast-forward and neither ref landed. The local $tag is on a tree" >&2
-    echo "  without that work; a rerun would only push it again. Delete it:" >&2
+    echo "  Origin has moved on: its main holds commits this clone does not, or it" >&2
+    echo "  already has a different $tag. The atomic push was refused and neither" >&2
+    echo "  ref landed; a rerun would only push the local $tag again. Delete it:" >&2
     echo "    git tag -d $tag" >&2
     echo "  then bring main up to date (git fetch origin; git log --oneline main..origin/main" >&2
     echo "  shows what is missing), cut the release commit again with" >&2
