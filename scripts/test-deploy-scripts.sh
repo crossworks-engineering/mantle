@@ -1344,6 +1344,34 @@ check "masker: rk_live_, xoxa-, xapp-, whsec_, glpat- and AKIA literals print ma
 check "masker: a PGP private key block prints as [redacted] lines, and the line after it prints whole" \
   sh -c "! grep -q 'PGP\\|FakePgp' '$RS/out' && test \$(grep -cx '    \\[redacted\\]' '$RS/out') = 5 && grep -qxF '    [boot] done' '$RS/out'"
 
+# A key in a Node-inspected object prints over several quoted lines joined by
+# +, each ending in a literal \n; once only the BEGIN line was masked and the
+# body and END printed whole. A URL with a host:port before an @ in its path
+# (an npm scope, a Vite path, /@me) once printed as [redacted]. Masker alone,
+# REDACT_PERL as lifted above.
+M3LOG="$WORK/masker3.log"
+{
+  printf '%s\n' "[boot] config {" \
+    "  privateKey: '-----BEGIN PRIV""ATE KEY-----\\n' +" \
+    "    'MIIEvQIBADANBgkqhkiG9w0BAQEFAASCFakeNode0123456789\\n' +" \
+    "    'FakeNodeTail0123==\\n' +" \
+    "    '-----END PRIV""ATE KEY-----\\n'," \
+    "  next: 1" \
+    "GET http://localhost:3000/api/users/@me 200" \
+    "GET http://web:3000/@vite/client 200" \
+    "GET http://registry:4873/@crossworks%2fclient-types 200" \
+    "GET https://www.npmjs.com:443/package/@crossworks/content-core 200" \
+    "[web] fetch https://u:FakePa/LEAK0123@h failed" \
+    "[keys] np""m_FakeNpm0123456789abcdefghijklmnopqrstu h""f_FakeHf0123456789abcdefghijklmnopqrs S""G.FakeSendGrid012345.FakeSendGridSecret0123456789abcdef refused"
+} > "$M3LOG"
+perl -pe "$REDACT_PERL" < "$M3LOG" > "$WORK/masker3.out"
+check "masker: a Node-inspected multi-line key masks its BEGIN, body and END lines, and the line after it prints whole" \
+  sh -c "! grep -q 'PRIV\\|FakeNode\\|MIIEvQ' '$WORK/masker3.out' && grep -qxF '  privateKey: [redacted]' '$WORK/masker3.out' && test \$(grep -cx '\\[redacted\\]' '$WORK/masker3.out') = 2 && grep -qxF \"[redacted]\\\\n',\" '$WORK/masker3.out' && grep -qxF '  next: 1' '$WORK/masker3.out'"
+check "masker: a host:port URL with an @ in its path prints whole; a user:password holding a / still prints masked" \
+  sh -c "grep -qxF 'GET http://localhost:3000/api/users/@me 200' '$WORK/masker3.out' && grep -qxF 'GET http://web:3000/@vite/client 200' '$WORK/masker3.out' && grep -qxF 'GET http://registry:4873/@crossworks%2fclient-types 200' '$WORK/masker3.out' && grep -qxF 'GET https://www.npmjs.com:443/package/@crossworks/content-core 200' '$WORK/masker3.out' && ! grep -q 'FakePa\\|LEAK0123' '$WORK/masker3.out' && grep -qxF '[web] fetch https://[redacted]@h failed' '$WORK/masker3.out'"
+check "masker: npm_, hf_ and SendGrid SG. literals print masked" \
+  sh -c "! grep -q 'FakeNpm\\|FakeHf\\|FakeSendGrid' '$WORK/masker3.out' && grep -qxF '[keys] [redacted] [redacted] [redacted] refused' '$WORK/masker3.out'"
+
 # No perl on the operator's machine: the log cannot be masked, so it is not
 # shown at all, and the operator is told where to read it. PATH is every
 # command on this PATH (node included), linked one by one, with perl left out.

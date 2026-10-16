@@ -450,13 +450,17 @@ fi
 # postgres, postgresql, redis, rediss, mysql, mssql, sqlserver, amqp, amqps,
 # mongodb and mongodb+srv up to the LAST @ before a space or quote, and for any
 # other scheme when a user:password pair opens it, so a password holding an
-# unencoded / or @ is masked whole; https://example.com/a/b@c has no pair and
-# prints whole), the rest of an Authorization or Cookie header, the word after
-# "Bearer", the value after --password, --token and the like (--db-password X,
+# unencoded / or @ is masked whole; https://example.com/a/b@c has no pair, and
+# a host:port (1 to 5 digits, then /, ?, # or the end) is no pair, so
+# http://localhost:3000/api/users/@me and an npm @scope path print whole),
+# the rest of an Authorization or Cookie header, the word after "Bearer", the
+# value after --password, --token and the like (--db-password X,
 # a quoted "two words" whole), a PEM or PGP private key block (its BEGIN line
-# and END line print as [redacted]; when BEGIN ends its line, the lines after
-# it that look like key body, base64, =checksum, Proc-Type:, DEK-Info:,
-# Version: and the like, print as [redacted] too, at most 200, and the first
+# and END line print as [redacted]; when BEGIN ends its line, or ends it with
+# a literal \n, a quote and a + (a key in a Node-inspected object prints as
+# quoted lines joined by +), the lines after it that look like key body,
+# base64, =checksum, Proc-Type:, DEK-Info:, Version: and the like, bare or
+# quoted that way, print as [redacted] too, at most 200, and the first
 # line that does not ends the block and is masked as any other line, so an
 # error that quotes "-----BEGIN RSA PRIVATE KEY-----" or a one-line JSON key cut
 # before its END cannot swallow the stack trace after it; a line that is
@@ -465,7 +469,8 @@ fi
 # (sk-ant-, sk-or-, sk-proj-, sk-svcacct-, sk-admin-, any sk- with 20 or more
 # characters after it, sk_live_, sk_test_, rk_live_, rk_test_, ghp_ and its
 # gho_/ghs_/ghu_/ghr_ siblings, github_pat_, xoxb-, xoxp-, xoxa- and the other
-# Slack xox?- kinds, xapp-, whsec_, glpat-, an AWS AKIA/ASIA key id, mtlk_...
+# Slack xox?- kinds, xapp-, whsec_, glpat-, npm_, hf_, a SendGrid SG.x.y key,
+# an AWS AKIA/ASIA key id, mtlk_...
 # dashes included, a JWT eyJ..., a Telegram bot token, a 64-hex string), and
 # the value after a name
 # holding key, token, secret, passw..., pwd, authorization, cookie, bearer or
@@ -482,16 +487,16 @@ fi
 # is a package variable on purpose: it carries the open block across lines.
 REDACT_PERL='
 my $cut = s{\A(.{2000}).+}{$1};
-if ($pem) { if (s{\A[\sA-Za-z0-9+/=]*-----END [A-Z ]*PRIVATE KEY(?: BLOCK)?-----}{\[redacted\]}) { $pem = 0 } elsif ($pem++ <= 200 && /\A\s*(?:[A-Za-z0-9+\/]+={0,2}|=[A-Za-z0-9+\/]+|(?:Proc-Type|DEK-Info|Version|Comment|Hash|Charset):.*)?\s*\z/) { s{.*}{\[redacted\]} } else { $pem = 0 } }
+if ($pem) { if (s{\A[\s\x22\x27A-Za-z0-9+/=]*-----END [A-Z ]*PRIVATE KEY(?: BLOCK)?-----}{\[redacted\]}) { $pem = 0 } elsif ($pem++ <= 200 && /\A\s*[\x22\x27]?(?:[A-Za-z0-9+\/]+={0,2}|=[A-Za-z0-9+\/]+|(?:Proc-Type|DEK-Info|Version|Comment|Hash|Charset):.*)?(?:\\n)?[\x22\x27]?\s*\+?\s*\z/) { s{.*}{\[redacted\]} } else { $pem = 0 } }
 s{-----BEGIN [A-Z ]*PRIVATE KEY(?: BLOCK)?-----.*?-----END [A-Z ]*PRIVATE KEY(?: BLOCK)?-----}{\[redacted\]}g;
-if (s{-----BEGIN [A-Z ]*PRIVATE KEY(?: BLOCK)?-----(.*)}{\[redacted\]}) { $pem = 1 if $1 !~ /\S/ }
+if (s{-----BEGIN [A-Z ]*PRIVATE KEY(?: BLOCK)?-----(.*)}{\[redacted\]}) { $pem = 1 if $1 =~ /\A(?:\s*|\\n[\x22\x27]\s*\+\s*)\z/ }
 s{\A(\s*)[A-Za-z0-9+/]{40,}={0,2}(\s*)\z}{$1\[redacted\]$2};
-s{\b(?:sk-(?:ant|or|proj|svcacct|admin)-[\w-]{8,}|sk-[A-Za-z0-9_-]{20,}|[sr]k_(?:live|test)_\w{8,}|gh[pousr]_\w{20,}|github_pat_\w{20,}|xox[abeoprs]-[\w-]{8,}|xapp-[\w-]{8,}|whsec_\w{8,}|glpat-[\w-]{8,}|(?:AKIA|ASIA)[0-9A-Z]{16}|mtlk_[\w-]+|eyJ[\w-]+\.[\w-]+\.[\w-]*)}{\[redacted\]}g;
+s{\b(?:sk-(?:ant|or|proj|svcacct|admin)-[\w-]{8,}|sk-[A-Za-z0-9_-]{20,}|[sr]k_(?:live|test)_\w{8,}|gh[pousr]_\w{20,}|github_pat_\w{20,}|xox[abeoprs]-[\w-]{8,}|xapp-[\w-]{8,}|whsec_\w{8,}|glpat-[\w-]{8,}|npm_[A-Za-z0-9]{30,}|hf_[A-Za-z0-9]{30,}|SG\.[\w-]{16,}\.[\w-]{16,}|(?:AKIA|ASIA)[0-9A-Z]{16}|mtlk_[\w-]+|eyJ[\w-]+\.[\w-]+\.[\w-]*)}{\[redacted\]}g;
 s{(/bot)\d+:[\w-]+}{$1\[redacted\]}g;
 s{\b\d{6,}:[A-Za-z0-9_-]{30,}}{\[redacted\]}g;
 s{\b[0-9a-fA-F]{64}\b}{\[redacted\]}g;
 s{\b((?:postgres(?:ql)?|rediss?|mysql|mssql|sqlserver|amqps?|mongodb(?:\+srv)?)://)[^\s\x22\x27]*\@}{$1\[redacted\]\@}gi;
-s{://[^/\s\@:\x22\x27]+:[^\s\x22\x27]*\@}{://[redacted]\@}g;
+s{://[^/\s\@:\x22\x27]+:(?!\d{1,5}(?:[/?#]|\z))[^\s\x22\x27]*\@}{://[redacted]\@}g;
 s{://[^/\s\@]+\@}{://[redacted]\@}g;
 s{\b((?:proxy-)?authorization|(?:set-)?cookie)(\s*[=:]\s*).*}{$1$2\[redacted\]}gi;
 s{\b(bearer)\s+[^\s,;\x22\x27]+}{$1 \[redacted\]}gi;
