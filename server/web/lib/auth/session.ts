@@ -1840,7 +1840,8 @@ async function itemWriteGate(
   // the decoded one and wrote.
   const id = itemIdOf(target.id);
   if (id === null) return notFound();
-  let readOnlyCopy = false;
+  // Set where an item's row is read (a deleted app never reaches the end).
+  let readOnlyCopy: boolean | undefined;
   if (target.ref === 'deleted-app') {
     // The app is gone: its last snapshot names the workspace it was homed
     // in (meta.homeWs since W6a fix round 1): a Moderator of that workspace
