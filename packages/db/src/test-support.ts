@@ -146,7 +146,7 @@ const DEMO_READER_DEFINERS_0293 = [
   'public.mantle_pending_count(uuid)',
   'public.mantle_ws_private_for(uuid, uuid)',
   'public.mantle_connector_state(uuid, text)',
-  'public.mantle_connector_rows(uuid, text, uuid[])',
+  'public.mantle_connector_rows(uuid, text, uuid[], uuid)',
   'public.mantle_connector_beyond_admin(uuid, text)',
   'public.mantle_app_holders(uuid, uuid)',
   'public.mantle_login_connector_rows(uuid, uuid)',

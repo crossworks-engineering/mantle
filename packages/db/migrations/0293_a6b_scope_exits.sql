@@ -49,23 +49,31 @@
 --    the workspaces holding an app (mantle_app_holders: an app the scope
 --    reads), and one login's live workspaces with the connectors each holds
 --    (mantle_login_connector_rows: in a scope, the scope's own login only).
+--    In a scope mantle_connector_rows answers the scope's own workspaces,
+--    and the holders of an app the scope reads (its `app` argument).
 -- 8. mantle_contact_sharing(owner, ids): the code dates of the contacts
 --    with sharing on (contact_share_codes, never the code): the caller read
 --    the contacts, the id list is the rule (as on the system pool); in a
---    scope only the brain's.
+--    scope only the brain's contacts the scope reads (the row rule of
+--    nodes, 0242).
 -- 9. mantle_file_name_taken(owner, parent, name): a file in `parent` with
 --    that name (ignoring case): its id, whether it is a folded member file,
 --    whether the name is exact. Structure, never content; in a scope only
---    the brain's.
+--    the brain's. Not held to the files the scope reads: its whole point is
+--    a name taken by a file the caller cannot read (a write must never land
+--    on those bytes), and the files root it asks under is Admin's.
 -- 10. mantle_table_app_link(table): the app a Table is the export of, yes
 --    or no and its id (the guard of a grid write and a delete; in a scope,
---    the brain's).
+--    the brain's). Not held to the Tables the scope reads: a NULL there
+--    would turn the guard's refusal into a pass (looser), and an Admin
+--    user's write asks it on the system pool anyway.
 -- 11. mantle_access_log_names(app, ids): the names of logins that are
 --    actors on the access log of an app (in a scope, an app the scope
 --    reads): the display name, else the email's local part.
 -- 12. mantle_runs_workspaces(run_ids, item_ids): the workspace each named
 --    run is stamped with (a run item's run), so a scope that queues jobs can
---    be checked to carry them. Workspace ids only.
+--    be checked to carry them. Workspace ids only; in a scope only the
+--    brain's runs.
 -- 13. mantle_lexeme_df(text, tbl, count_lexemes, count_cap): the document
 --    frequency of the caller's own query terms in `nodes` or
 --    `content_chunks` (pg_stats, hidden from a role under row security,
@@ -98,10 +106,24 @@
 --    turn's write rule (mantle_client_sourced_gate). Each answers as the
 --    system pool did, over every row of the brain whatever the scope reads:
 --    a guard held to what the scope reads would mark and hold back less;
---    no extra scope rule. The marks only ever hold more back, so a read
---    scope may set them too (a turn that answers no login runs on the
---    workspace role). mantle_client_ws is their internal rule: no role may
---    run it.
+--    no extra scope rule. mantle_client_ws is their internal rule: no role
+--    may run it.
+--    The three marks (mantle_conversation_taint_keep,
+--    mantle_mark_created_client_sourced, mantle_mark_export_client_sourced)
+--    write, yet are granted to the workspace role (the read role), not only
+--    the write role, and on purpose: each is called as a SELECT of the
+--    definer in the middle of a turn (the tool loop after a call, the
+--    conversation check) or of an export's sync, and a SELECT in a scope
+--    runs per query on the workspace role; the write role is entered only
+--    for a login's own mutating write with its scope (client.ts
+--    loginWriteRoute), never for a turn that answers no login (a heartbeat,
+--    a run worker, an assistant with no user) nor for a read request. On the
+--    write role only, each of those marks would fail (caught and logged), so
+--    the turn's new nodes and its conversation would go unmarked: a later
+--    turn would hold back less, looser. What a read role may do with them:
+--    mark the brain's own rows client-sourced (in a scope the owner must be
+--    the brain's: mantle_brain_id), which only ever holds more back, and the
+--    created-nodes window is at most a day in a scope.
 -- 17. mantle_turn_heartbeats(owner, login): a turn's own active heartbeats
 --    (packages/runtime heartbeats/tick.ts: the responder's awareness block
 --    and its tool list; on the system pool in a scope before,
@@ -344,7 +366,11 @@ REVOKE ALL ON FUNCTION "public"."mantle_connector_state"(uuid, text) FROM PUBLIC
 GRANT EXECUTE ON FUNCTION "public"."mantle_connector_state"(uuid, text) TO "mantle_view_user";
 --> statement-breakpoint
 
-CREATE OR REPLACE FUNCTION "public"."mantle_connector_rows"(owner uuid, slug text, ws uuid[])
+-- In a scope only the rows of the scope's own workspaces, and of the
+-- workspaces holding `app` when the scope reads that app (an app's verdict
+-- needs every holder's row; mantle_app_holders already answers those
+-- holders to that scope). NULL `app`: the scope's workspaces only.
+CREATE OR REPLACE FUNCTION "public"."mantle_connector_rows"(owner uuid, slug text, ws uuid[], app uuid)
   RETURNS TABLE ("workspace_id" uuid, "write" boolean)
   LANGUAGE sql STABLE SECURITY DEFINER
   SET search_path = "public", pg_temp AS $$
@@ -353,12 +379,21 @@ CREATE OR REPLACE FUNCTION "public"."mantle_connector_rows"(owner uuid, slug tex
     JOIN "public"."workspaces" w ON w."id" = r."workspace_id"
    WHERE r."type" = 'connector' AND r."ref_id" = slug AND w."owner_id" = owner
      AND w."archived_at" IS NULL AND r."workspace_id" = ANY (ws)
-     AND (NOT "public"."mantle_scope_active"() OR owner = "public"."mantle_brain_id"())
+     AND (NOT "public"."mantle_scope_active"()
+          OR (owner = "public"."mantle_brain_id"()
+              AND (r."workspace_id" = ANY ("public"."mantle_scope_ws"())
+                   OR EXISTS (
+                     SELECT 1 FROM "public"."nodes" a
+                      WHERE a."id" = app AND a."owner_id" = owner AND a."type" = 'app'
+                        AND a."read_ws" && "public"."mantle_scope_ws"()
+                        AND (a."login_id" IS NULL
+                             OR a."login_id" = "public"."mantle_scope_login_id"())
+                        AND r."workspace_id" = ANY (a."read_ws")))))
 $$;
 --> statement-breakpoint
-REVOKE ALL ON FUNCTION "public"."mantle_connector_rows"(uuid, text, uuid[]) FROM PUBLIC;
+REVOKE ALL ON FUNCTION "public"."mantle_connector_rows"(uuid, text, uuid[], uuid) FROM PUBLIC;
 --> statement-breakpoint
-GRANT EXECUTE ON FUNCTION "public"."mantle_connector_rows"(uuid, text, uuid[]) TO "mantle_view_user";
+GRANT EXECUTE ON FUNCTION "public"."mantle_connector_rows"(uuid, text, uuid[], uuid) TO "mantle_view_user";
 --> statement-breakpoint
 
 -- NULL when no live workspace beyond Admin holds the connector, else
@@ -425,7 +460,13 @@ CREATE OR REPLACE FUNCTION "public"."mantle_contact_sharing"(owner uuid, ids uui
   SELECT c."contact_id", c."created_at", c."rotated_at", c."last_used_at", c."locked_until"
     FROM "public"."contact_share_codes" c
    WHERE c."owner_id" = owner AND c."contact_id" = ANY (ids) AND c."code_hash" IS NOT NULL
-     AND (NOT "public"."mantle_scope_active"() OR owner = "public"."mantle_brain_id"())
+     AND (NOT "public"."mantle_scope_active"()
+          OR (owner = "public"."mantle_brain_id"()
+              AND EXISTS (
+                SELECT 1 FROM "public"."nodes" n
+                 WHERE n."id" = c."contact_id" AND n."owner_id" = owner
+                   AND n."read_ws" && "public"."mantle_scope_ws"()
+                   AND (n."login_id" IS NULL OR n."login_id" = "public"."mantle_login_id"()))))
 $$;
 --> statement-breakpoint
 REVOKE ALL ON FUNCTION "public"."mantle_contact_sharing"(uuid, uuid[]) FROM PUBLIC;
@@ -493,8 +534,9 @@ CREATE OR REPLACE FUNCTION "public"."mantle_runs_workspaces"(run_ids uuid[], ite
   LANGUAGE sql STABLE SECURITY DEFINER
   SET search_path = "public", pg_temp AS $$
   SELECT r."workspace_id" FROM "public"."runs" r
-   WHERE r."id" = ANY (run_ids)
-      OR r."id" IN (SELECT i."run_id" FROM "public"."run_items" i WHERE i."id" = ANY (item_ids))
+   WHERE (r."id" = ANY (run_ids)
+          OR r."id" IN (SELECT i."run_id" FROM "public"."run_items" i WHERE i."id" = ANY (item_ids)))
+     AND (NOT "public"."mantle_scope_active"() OR r."owner_id" = "public"."mantle_brain_id"())
 $$;
 --> statement-breakpoint
 REVOKE ALL ON FUNCTION "public"."mantle_runs_workspaces"(uuid[], uuid[]) FROM PUBLIC;
@@ -817,6 +859,10 @@ CREATE OR REPLACE FUNCTION "public"."mantle_conversation_taint_keep"(owner uuid,
   RETURNS void LANGUAGE plpgsql VOLATILE SECURITY DEFINER
   SET search_path = "public", pg_temp AS $$
 BEGIN
+  IF "public"."mantle_scope_active"() AND owner IS DISTINCT FROM "public"."mantle_brain_id"() THEN
+    RAISE EXCEPTION 'mantle_conversation_taint_keep: in a scope only the brain''s own'
+      USING ERRCODE = '42501';
+  END IF;
   INSERT INTO "public"."conversation_taints" ("owner_id", "conversation_key", "via")
   VALUES (owner, conv, why)
   ON CONFLICT ("owner_id", "conversation_key")
@@ -830,7 +876,11 @@ GRANT EXECUTE ON FUNCTION "public"."mantle_conversation_taint_keep"(uuid, text, 
 --> statement-breakpoint
 
 -- The nodes of `ids` made in the last `secs` seconds, marked (a marked
--- turn's new nodes carry its mark); how many it marked.
+-- turn's new nodes carry its mark); how many it marked. In a scope only the
+-- brain's own, and the window is at most a day: `secs` is one tool call's
+-- own duration (tool-loop.ts), so a day is above any call while a caller
+-- cannot reach back over the brain's whole history (a cap below the longest
+-- call would mark less: looser).
 CREATE OR REPLACE FUNCTION "public"."mantle_mark_created_client_sourced"(
   owner uuid, ids uuid[], within_secs integer, why text)
   RETURNS integer LANGUAGE plpgsql VOLATILE SECURITY DEFINER
@@ -838,6 +888,13 @@ CREATE OR REPLACE FUNCTION "public"."mantle_mark_created_client_sourced"(
 DECLARE
   marked integer;
 BEGIN
+  IF "public"."mantle_scope_active"() THEN
+    IF owner IS DISTINCT FROM "public"."mantle_brain_id"() THEN
+      RAISE EXCEPTION 'mantle_mark_created_client_sourced: in a scope only the brain''s own'
+        USING ERRCODE = '42501';
+    END IF;
+    within_secs := LEAST(GREATEST(coalesce(within_secs, 0), 0), 86400);
+  END IF;
   WITH made AS (
     INSERT INTO "public"."client_sourced_nodes" ("node_id", "owner_id", "via")
     SELECT n."id", owner, why FROM "public"."nodes" n
@@ -862,6 +919,10 @@ CREATE OR REPLACE FUNCTION "public"."mantle_mark_export_client_sourced"(
   RETURNS void LANGUAGE plpgsql VOLATILE SECURITY DEFINER
   SET search_path = "public", pg_temp AS $$
 BEGIN
+  IF "public"."mantle_scope_active"() AND owner IS DISTINCT FROM "public"."mantle_brain_id"() THEN
+    RAISE EXCEPTION 'mantle_mark_export_client_sourced: in a scope only the brain''s own'
+      USING ERRCODE = '42501';
+  END IF;
   INSERT INTO "public"."client_sourced_nodes" ("node_id", "owner_id", "via")
   SELECT t."id", owner, 'app_table_export' FROM "public"."nodes" t
    WHERE t."id" = tbl AND t."owner_id" = owner
@@ -1064,7 +1125,7 @@ BEGIN
     GRANT EXECUTE ON FUNCTION "public"."mantle_pending_count"(uuid) TO demo_reader;
     GRANT EXECUTE ON FUNCTION "public"."mantle_ws_private_for"(uuid, uuid) TO demo_reader;
     GRANT EXECUTE ON FUNCTION "public"."mantle_connector_state"(uuid, text) TO demo_reader;
-    GRANT EXECUTE ON FUNCTION "public"."mantle_connector_rows"(uuid, text, uuid[]) TO demo_reader;
+    GRANT EXECUTE ON FUNCTION "public"."mantle_connector_rows"(uuid, text, uuid[], uuid) TO demo_reader;
     GRANT EXECUTE ON FUNCTION "public"."mantle_connector_beyond_admin"(uuid, text) TO demo_reader;
     GRANT EXECUTE ON FUNCTION "public"."mantle_app_holders"(uuid, uuid) TO demo_reader;
     GRANT EXECUTE ON FUNCTION "public"."mantle_login_connector_rows"(uuid, uuid) TO demo_reader;

@@ -169,20 +169,22 @@ const DEFINERS_THE_WRITE_ROLE_RUNS: Readonly<Record<string, string>> = {
   'mantle_ws_private_for(uuid,uuid)': 'whether a workspace is the scope’s own login’s private one',
   'mantle_connector_state(uuid,text)':
     'a connector’s id and whether it is usable, never its binding',
-  'mantle_connector_rows(uuid,text,uuid[])':
-    'which live workspaces of the brain hold a connector, with their Write tick',
+  'mantle_connector_rows(uuid,text,uuid[],uuid)':
+    'which of the scope’s live workspaces (and an app’s holders it reads) hold a connector, with their Write tick',
   'mantle_connector_beyond_admin(uuid,text)':
     'whether a live workspace beyond Admin holds a connector (its Write tick)',
   'mantle_app_holders(uuid,uuid)': 'the workspaces holding an app the scope reads',
   'mantle_login_connector_rows(uuid,uuid)':
     'the scope’s own login’s workspaces and the connectors each holds',
-  'mantle_contact_sharing(uuid,uuid[])': 'contact sharing dates (never the code), the brain’s only',
+  'mantle_contact_sharing(uuid,uuid[])':
+    'contact sharing dates (never the code), of the contacts the scope reads',
   'mantle_file_name_taken(uuid,text,text)':
     'a file name taken in a folder (structure), the brain’s',
   'mantle_table_app_link(uuid)': 'whether a Table is an app’s export, and the app’s id',
   'mantle_access_log_names(uuid,uuid[])':
     'the names of the actors on the access log of an app the scope reads',
-  'mantle_runs_workspaces(uuid[],uuid[])': 'the workspace each named run is stamped with',
+  'mantle_runs_workspaces(uuid[],uuid[])':
+    'the workspace each named run of the brain is stamped with',
   'mantle_lexeme_df(text,text,integer,integer,double precision)':
     'the document frequency of the caller’s own query terms: numbers, never a row',
   'mantle_deleted_apps(uuid)': 'the deleted apps the scope may manage, no code',
@@ -198,11 +200,11 @@ const DEFINERS_THE_WRITE_ROLE_RUNS: Readonly<Record<string, string>> = {
   'mantle_conversation_taint(uuid,text,integer)':
     'a conversation’s mark reason, as the system pool answered it',
   'mantle_conversation_taint_keep(uuid,text,text)':
-    'a conversation’s mark kept (only ever holds more back)',
+    'a conversation’s mark kept, the brain’s (only ever holds more back; a SELECT mid-turn, so the read role: 0293 item 16)',
   'mantle_mark_created_client_sourced(uuid,uuid[],integer,text)':
-    'the nodes a marked turn just made, marked (only ever holds more back)',
+    'the nodes a marked turn just made, the brain’s, within a day (only ever holds more back; read role: 0293 item 16)',
   'mantle_mark_export_client_sourced(uuid,uuid,uuid)':
-    'an export Table marked, only when a client wrote its app',
+    'an export Table of the brain marked, only when a client wrote its app (read role: 0293 item 16)',
   'mantle_client_sourced_gate(uuid,uuid[],uuid[],text[],text[],text[],text[])':
     'a marked turn’s write rule: why it waits, or none',
   'mantle_turn_heartbeats(uuid,uuid)': 'the active heartbeats of the scope’s own login',
