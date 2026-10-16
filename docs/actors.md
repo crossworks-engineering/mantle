@@ -5478,6 +5478,32 @@ role test drops its "pre-check in place" cell (note_update has none).
 the kept tool entries, each by removing its second reason (a side effect
 moved after its checked statement, a check added, the answer fixed).
 
+### Pre-check removal handover (part 1, 2026-10-16)
+
+Branch `feat/precheck-remove`. Part 1 is done; nothing is in progress.
+
+- **The guard: done** (migration 0298, "The checks' floor" above): lowering
+  a check needs a reason and is recorded; every process logs a loud line
+  while a check is below on; migrate raises an unrecorded box to on (a box
+  only). No refusal to boot.
+- **Removed: 72 entries** (69 builtins, 3 hand-written MCP tools), one
+  commit per family: node edits 6, node deletes 6, process_extraction and
+  access_set 2, link closes 2, tree_folder_update 1, page lifecycle 8,
+  Recall 10, tables 20, Files 8 + 3 MCP, app code and history 6.
+  `itemPrecheckTools` 101 -> 29.
+- **Kept: 29**, each with its reason in "Part 1" above (a side effect
+  before the checked statement, a write the database does not check, a
+  read need, or the answer).
+- **Left:** the 27 HTTP entries after blocker 1 (F4); the 29 kept tool
+  entries, each by removing its reason.
+- **Gates** (workstation, own pg container): typecheck 0, lint 0, format 0,
+  docs 0, arch 0, web build 0, boot:smoke 0 (static ones at the head);
+  full vitest with DB 0 but for `arch-lints.test.ts` (the counted list
+  file, fixed in the next commit and rerun at the head: 0), actor-off 0,
+  actor-on 0, edit-on 0, test:matrix 0, test:runtime-role 0 (the DB suites
+  at the commit before the head's two test-and-docs commits, whose changed
+  tests were rerun at the head: 0). CI: build-check on the head.
+
 ## Remove the switch-over code (A7)
 
 Plan v2 (page fcc4aee4), "A7. Remove the switch-over code", after W9 (every
