@@ -30,9 +30,11 @@
  * no, or nothing, and a row it reads goes back to the caller only once the
  * caller's scope reads that row too (the library re-reads it there).
  *
- * Never inside an open transaction (round 3, L5): the step runs on a
- * connection of its own, which would not see the transaction's rows and
- * could wait behind its locks. It throws there (RuntimeFaultError).
+ * Never inside an open transaction of a scope (round 3, L5): the step would
+ * leave it for a connection of its own, which would not see the
+ * transaction's rows and could wait behind its locks. It throws there
+ * (RuntimeFaultError). System work (no workspace scope) has no scope to
+ * leave: the step runs in place, in its transaction if it has one.
  *
  * Each step names what it does (SystemStep), so a grep for systemStep( lists
  * every site with its why. docs/actors.md lists them.
@@ -40,7 +42,7 @@
 import { editCheckRefusalError, RuntimeFaultError } from '@mantle/std';
 import { inOpenTransaction } from './client';
 import { itemWriteVerdicts, type ItemNeed } from './item-rights';
-import { asSystem } from './viewer';
+import { asSystem, isSystemScope } from './viewer';
 
 /** What a named system step does (docs/actors.md, "F4 fix round 2"). */
 export type SystemStep =
@@ -80,33 +82,40 @@ export async function systemStep<T>(
   check: StepItems,
   fn: (allowed: readonly string[]) => Promise<T>,
 ): Promise<T> {
+  // The shape first, in every scope: a step names its items, or why none.
+  if (check.items === 'none') {
+    if (!check.why.trim()) {
+      throw new RuntimeFaultError(`system step '${step}' about no item names why`);
+    }
+  } else if (check.only !== 'allowed' && check.items.length === 0) {
+    throw new RuntimeFaultError(
+      `system step '${step}' names no item: name them, or items 'none' with why`,
+    );
+  }
+  const items = check.items === 'none' ? [] : check.items;
+  // System work (no workspace scope: a worker, a script, a system
+  // transaction) has no scope to leave and no item check to ask: the step
+  // runs where it is, in its transaction too, so it sees that
+  // transaction's rows (a file deleted inside a withSystemTx).
+  if (isSystemScope()) return fn(items);
   if (inOpenTransaction()) {
     throw new RuntimeFaultError(
       `system step '${step}' inside an open transaction: run it after the transaction`,
     );
   }
-  let allowed: readonly string[] = [];
-  if (check.items === 'none') {
-    if (!check.why.trim()) {
-      throw new RuntimeFaultError(`system step '${step}' about no item names why`);
-    }
-  } else if (check.only === 'allowed') {
+  let allowed: readonly string[] = items;
+  if (check.items !== 'none') {
     const verdicts = await itemWriteVerdicts(check.items, check.need);
-    allowed = check.items.filter((id) => verdicts.get(id) === 'ok');
-  } else {
-    if (check.items.length === 0) {
-      throw new RuntimeFaultError(
-        `system step '${step}' names no item: name them, or items 'none' with why`,
-      );
+    if (check.only === 'allowed') {
+      allowed = check.items.filter((id) => verdicts.get(id) === 'ok');
+    } else {
+      // One refusal for the first item that does not pass, as the edit
+      // check raises it (the same 404 or 403 the item's route answers).
+      for (const id of check.items) {
+        const v = verdicts.get(id);
+        if (v !== 'ok') throw editCheckRefusalError(v ?? 'no_read');
+      }
     }
-    // One refusal for the first item that does not pass, as the edit check
-    // raises it (the same 404 or 403 the item's route answers).
-    const verdicts = await itemWriteVerdicts(check.items, check.need);
-    for (const id of check.items) {
-      const v = verdicts.get(id);
-      if (v !== 'ok') throw editCheckRefusalError(v ?? 'no_read');
-    }
-    allowed = check.items;
   }
   return asSystem(() => fn(allowed), 'brain-bookkeeping');
 }

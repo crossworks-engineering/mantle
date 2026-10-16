@@ -1608,14 +1608,16 @@ describe.skipIf(!DB_URL)('F4 fix round 1: the owner’s management flows on the 
     }, 240_000);
   }
 
-  it('L5: the named system step refuses to run inside an open transaction', async () => {
-    await expect(
-      m.withSystemTx(() =>
-        m.systemStep('reindex', { items: 'none', why: 'a test' }, async () => 1),
-      ),
-    ).rejects.toThrow(/inside an open transaction/);
-    await expect(
-      m.systemStep('reindex', { items: 'none', why: 'a test' }, async () => 1),
-    ).resolves.toBe(1);
+  it('L5: the named system step refuses to leave a scope inside its open transaction', async () => {
+    const step = () => m.systemStep('reindex', { items: 'none', why: 'a test' }, async () => 1);
+    // A workspace scope's own transaction: refused, never a connection of
+    // its own beside it.
+    const scope = await m.loginScopeFor(L.owner);
+    await expect(m.withScope(scope, step)).rejects.toThrow(/inside an open transaction/);
+    // Outside one, the step runs.
+    await expect(step()).resolves.toBe(1);
+    // System work has no scope to leave: the step runs in place, in the
+    // system transaction (it sees that transaction's rows).
+    await expect(m.withSystemTx(step)).resolves.toBe(1);
   });
 });

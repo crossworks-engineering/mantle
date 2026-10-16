@@ -902,9 +902,11 @@ describe.skipIf(!URL)('A3b: the store brokers, both checks on', () => {
       const err = await errorOf(
         inRequest(mem, () => content.setDraftBuild(owner, a, ref(sha()), { store })),
       );
-      expect(m.isScopeWriteRefusal(err), String(err)).toBe(true);
-      // The stage ran before the flip (plan 20.3); no reader is pointed at it.
-      expect(store).toHaveBeenCalledTimes(1);
+      // F4 fix round 3 (M3): the code's door asks manage before the stage,
+      // so a refused build stores nothing (before: the stage ran, then the
+      // database refused the flip and no reader was pointed at it).
+      expect(err).toMatchObject({ code: '42501', detail: 'no_edit' });
+      expect(store).not.toHaveBeenCalled();
       expect(await buildOf(a)).toBe(before);
     });
 
@@ -919,20 +921,22 @@ describe.skipIf(!URL)('A3b: the store brokers, both checks on', () => {
       expect(await buildOf(a)).toBe(s);
     });
 
-    it("off (both checks off): today's result", async () => {
+    it('off (both checks off): the same refusal, by the code door (F4 fix round 3, M3)', async () => {
       const a = await makeApp('build off', R);
-      const s = sha();
+      const before = await buildOf(a);
+      const store = vi.fn(async () => {});
       await setChecks('off');
       try {
-        expect(
-          await inRequest(mem, () =>
-            content.setDraftBuild(owner, a, ref(s), { store: async () => {} }),
-          ),
-        ).toBe(true);
+        // Before: the build recorded (no database check in off).
+        const err = await errorOf(
+          inRequest(mem, () => content.setDraftBuild(owner, a, ref(sha()), { store })),
+        );
+        expect(err).toMatchObject({ code: '42501', detail: 'no_edit' });
       } finally {
         await setChecks('on');
       }
-      expect(await buildOf(a)).toBe(s);
+      expect(store).not.toHaveBeenCalled();
+      expect(await buildOf(a)).toBe(before);
     });
   });
 });
