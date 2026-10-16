@@ -129,6 +129,15 @@ export function checkFloorPolicy(
   return { policy: 'raise', reason: '' };
 }
 
+/** CHECK_FLOOR_SQL as a tagged template (the heads rule reads it). */
+async function readFloor(sql: Sql): Promise<CheckFloorRow | undefined> {
+  return (
+    await sql`SELECT "public"."mantle_check_box_mode"('actor_check') AS actor,
+                     "public"."mantle_check_box_mode"('edit_check') AS edit,
+                     "public"."mantle_check_lowered"() AS lowered`
+  )[0] as CheckFloorRow | undefined;
+}
+
 /**
  * Migrate's step (packages/db/src/migrate.ts): a check below on that the
  * record does not cover (a new database, a restore, a bare ALTER DATABASE,
@@ -148,7 +157,7 @@ export async function raiseCheckFloor(
 ): Promise<'on' | 'kept' | 'held' | 'raised' | 'failed' | 'skipped'> {
   let row: CheckFloorRow | undefined;
   try {
-    row = (await sql.unsafe(CHECK_FLOOR_SQL))[0] as CheckFloorRow | undefined;
+    row = await readFloor(sql);
   } catch {
     return 'skipped';
   }
@@ -170,7 +179,7 @@ export async function raiseCheckFloor(
           `by ${who?.u ?? 'migrate'}: MANTLE_CHECK_FLOOR=keep at migrate, ${floor.reason}`;
         await sql`select "public"."mantle_check_note"(${`${c}_check`}, ${entry})`;
       }
-      const now = (await sql.unsafe(CHECK_FLOOR_SQL))[0] as CheckFloorRow | undefined;
+      const now = await readFloor(sql);
       log.warn(
         `  WARNING MANTLE_CHECK_FLOOR=keep: ${open.map((c) => `the ${c} check`).join(' and ')} ` +
           `left below on, recorded: ${checkFloorWarning(now ?? row)}`,
