@@ -1,16 +1,15 @@
 /**
- * The edit check of a tool's write to an item (workspaces W7a fix round 1,
- * M2). An Admin turn and an Admin login's MCP call write on the system pool
- * with no scope on the statement (a typed write in a scope, @mantle/db
- * client.ts), so the database's own checks (moves, creates in a folder and
- * deletes, under withSystemTx) never saw a content edit. Every write tool
- * that names an item is listed here with what it needs of that item, and
- * the dispatcher (dispatch.ts) and the owner MCP bridge
- * (@mantle/mcp-core register/context.ts) ask the scope before the handler
- * runs: the same rule as the item routes since W6a (mantle_may_edit for a
- * content change or a link, mantle_may_manage for a delete or a move, a read
- * for a write that only needs to see the item; a read-only snapshot copy is
- * never edited). @mantle/db item-rights.ts holds the check.
+ * The item pre-check of a tool's write (workspaces W7a fix round 1, M2),
+ * for the tools that keep one (docs/actors.md, "Pre-check deletion": the
+ * pre-check removal took it from every tool whose write the database
+ * refuses itself, with both checks on, and whose second reason is proven).
+ * A kept tool's policy names, as its `items`, what its write needs of each
+ * item it names; the one gate's pre-run check (gate-prerun.ts itemPrecheck,
+ * the only caller) asks the scope before the handler runs, and before a
+ * call is queued for approval: mantle_may_edit for a content change or a
+ * link, mantle_may_manage for a delete or a move, a read for a write that
+ * only needs to see the item; a read-only snapshot copy is never edited.
+ * @mantle/db item-rights.ts holds the check.
  *
  * A create names no item (its folder's create check is the database's).
  * Outside a workspace scope nothing is checked: the surface rules decide.
@@ -53,10 +52,6 @@ export function edit(param: string): Target {
 /** The item in `param` needs a manage right (a move, a delete). */
 export function manage(param: string): Target {
   return { param, need: 'manage' };
-}
-/** The item in `param` needs to be readable. */
-export function read(param: string): Target {
-  return { param, need: 'read' };
 }
 
 /** The refusal, before a call is queued for approval, of a reference (a
@@ -188,23 +183,13 @@ function idsOf(v: unknown): string[] {
 
 /**
  * Why the current workspace scope may not make this call's write, or null
- * (no workspace scope, a tool that names no item, or a write it may make).
- * `items` is the tool's own policy's (builtinItems for a builtin row, a
- * definition's policy for an MCP tool). Run after the tool's
- * preconditions, so an id the scope cannot read gets the precondition's
- * teaching error first where the tool declares one.
+ * (no workspace scope, a tool that names no item, or a write it may make):
+ * the refusal's words and the edit check's detail (A5 step 4 fix round 2: a
+ * /api/v1 route answers it as the database's). `items` is the tool's own
+ * policy's (builtinItems). Run after the tool's preconditions, so an id the
+ * scope cannot read gets the precondition's teaching error first where the
+ * tool declares one.
  */
-export async function toolItemWriteRefusal(
-  items: ToolItems,
-  input: Record<string, unknown>,
-  ownerId: string,
-  ctx?: Pick<ToolHandlerContext, 'surface'> & { queue?: boolean },
-): Promise<string | null> {
-  return (await toolItemWriteRefusalOf(items, input, ownerId, ctx))?.message ?? null;
-}
-
-/** toolItemWriteRefusal, with the edit check's detail of the refusal (A5
- *  step 4 fix round 2: a /api/v1 route answers it as the database's). */
 export async function toolItemWriteRefusalOf(
   items: ToolItems,
   input: Record<string, unknown>,

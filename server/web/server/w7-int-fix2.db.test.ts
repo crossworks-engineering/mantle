@@ -356,7 +356,7 @@ describe.skipIf(!URL)('W7 integration fix 2', () => {
       on conflict do nothing`);
     const refusal = async (slug: string, input: Record<string, unknown>) =>
       m.withTurnScope(await m.loginScopeFor(member), () =>
-        t.toolItemWriteRefusal(t.builtinItems(slug), input, owner),
+        t.toolItemWriteRefusalOf(t.builtinItems(slug), input, owner),
       );
     for (const slug of ['app_export', 'app_duplicate']) {
       expect(await refusal(slug, { id: app }), slug).not.toBeNull();

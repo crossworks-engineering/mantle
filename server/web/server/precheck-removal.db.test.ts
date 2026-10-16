@@ -45,7 +45,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 const DB_URL = process.env.MANTLE_TEST_DATABASE_URL;
 
 /** The TypeScript item pre-check, bypassed while `on` is false (the gate's
- *  pre-run check, and a hand-written MCP tool's own call). */
+ *  pre-run check, its one caller). */
 const pre = vi.hoisted(() => ({ on: true }));
 vi.mock('../../../packages/tools/src/item-write-gate', async (importOriginal) => {
   const real = await importOriginal<typeof import('../../../packages/tools/src/item-write-gate')>();
@@ -53,8 +53,6 @@ vi.mock('../../../packages/tools/src/item-write-gate', async (importOriginal) =>
     ...real,
     toolItemWriteRefusalOf: (...args: Parameters<typeof real.toolItemWriteRefusalOf>) =>
       pre.on ? real.toolItemWriteRefusalOf(...args) : Promise.resolve(null),
-    toolItemWriteRefusal: (...args: Parameters<typeof real.toolItemWriteRefusal>) =>
-      pre.on ? real.toolItemWriteRefusal(...args) : Promise.resolve(null),
   };
 });
 

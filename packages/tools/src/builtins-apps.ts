@@ -88,7 +88,7 @@ import {
   withCreateHome,
   mayEditSql,
 } from '@mantle/db';
-import { appCopy, edit, manage, toolItemWriteRefusal } from './item-write-gate';
+import { appCopy, edit, manage } from './item-write-gate';
 import { CS } from './client-sourced-rule';
 
 /**
@@ -1909,12 +1909,12 @@ async function lowerToTeamRules(ownerId: string, id: string): Promise<void> {
  * app it makes runs its tools at team rules at most (app_create,
  * app_duplicate and app_import make it so, author named), and so does an
  * app whose code or tools it changes (lowered first, never lifted: only the
- * owner's app update route lifts it). The item write check runs before the
- * ceiling (W7b fix round 1, H1): a change the caller may not make lowers
- * nothing (dispatch and the MCP bridge ask it too). A code tool whose item
- * pre-check went (docs/actors.md, "Pre-check deletion") has no `items`
- * here: lowerToTeamRules asks the edit itself, and the database refuses
- * the code write that follows (D4: a Moderator of the app's home).
+ * owner's app update route lifts it). A change the caller may not make
+ * lowers nothing (W7b fix round 1, H1): the one gate's item pre-check runs
+ * before any handler for a code tool that keeps one, and lowerToTeamRules
+ * asks the edit itself (the pre-check removal: docs/actors.md, "Pre-check
+ * deletion"); the database then refuses a code write the caller may not
+ * make (D4: a Moderator of the app's home).
  */
 function withAuthorCeiling(def: BuiltinToolDef): BuiltinToolDef {
   // The app tools whose change reaches what the app's code or tools do:
@@ -1925,8 +1925,6 @@ function withAuthorCeiling(def: BuiltinToolDef): BuiltinToolDef {
     handler: async (input, ctx) => {
       const target = str(input.id).trim().toLowerCase();
       if (UUID_RE.test(target) && (await outsideAdmin())) {
-        const refused = await toolItemWriteRefusal(def.policy.items, input, ctx.ownerId);
-        if (refused) return { ok: false, error: refused };
         await lowerToTeamRules(ctx.ownerId, target);
       }
       return def.handler(input, ctx);

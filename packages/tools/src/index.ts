@@ -195,7 +195,7 @@ export {
   runGated,
   type AdminGateView,
 } from './admin-gate';
-export { builtinItems, toolItemWriteRefusal, type ToolItems } from './item-write-gate';
+export { builtinItems, toolItemWriteRefusalOf, type ToolItems } from './item-write-gate';
 export {
   SECRET_REFS_MAKER_NO_KEYS,
   SECRET_REFS_NEED_KEYS,

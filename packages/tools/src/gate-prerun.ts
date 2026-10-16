@@ -10,8 +10,10 @@
  *    again (moderator-seat.ts, A8 fix
  *    round 1, L5); then a built-in's declared preconditions (a uniform
  *    teaching error for an id that names a missing or wrong-type node),
- *    then the items its write names (toolItemWriteRefusal: the item
- *    routes' rule), in that order, as dispatch asked them before step 3a.
+ *    then the items its write names, for a tool that keeps its item
+ *    pre-check (toolItemWriteRefusalOf: the item routes' rule; the
+ *    pre-check removal took it from the rest, docs/actors.md), in that
+ *    order, as dispatch asked them before step 3a.
  *    A check that throws refuses in the error's words, as dispatch's catch
  *    answered. On a /api/v1 route an item the edit check refuses is
  *    thrown as the database's refusal (A5 step 4 fix round 2).
