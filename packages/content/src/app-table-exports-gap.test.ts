@@ -58,7 +58,12 @@ vi.mock('@mantle/db', () => {
     set: (v: Record<string, unknown>) => ({
       where: async () => {
         if (table.t === 'nodes') h.tableData = v.data as Record<string, unknown>;
-        if (table.t === 'exports' && h.link) h.link = { ...h.link, ...v };
+        if (table.t === 'exports' && h.link) {
+          // The sync's record clears the mark in the same statement (a SQL
+          // CASE: no write after its read here, so cleared).
+          const clear = 'lastSyncedAt' in v;
+          h.link = { ...h.link, ...v, ...(clear ? { dirtySince: null } : {}) };
+        }
       },
     }),
   });

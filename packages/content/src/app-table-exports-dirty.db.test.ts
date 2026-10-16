@@ -101,6 +101,21 @@ describe.skipIf(!URL)('app table export dirty stamp on Postgres', () => {
     expect(await dirtyOf(linkId)).toEqual(expect.any(Number));
   });
 
+  it('a sync that commits new rows records itself and clears the mark at once, unless a write came after its read', async () => {
+    const { appId, linkId } = await appWithExport('commit');
+    await broker.appDbExec(owner, appId, "INSERT INTO notes (body) VALUES ('d')", [], schema);
+    await admin`update app_table_exports set dirty_since = now(), last_write_at = now() + interval '1 hour' where id = ${linkId}`;
+    expect(await exportsMod.syncAppTableExports(owner, appId)).toMatchObject({ synced: 1 });
+    expect(await dirtyOf(linkId)).toEqual(expect.any(Number));
+    await broker.appDbExec(owner, appId, "INSERT INTO notes (body) VALUES ('e')", [], schema);
+    await admin`update app_table_exports set last_write_at = now() - interval '1 second' where id = ${linkId}`;
+    expect(await exportsMod.syncAppTableExports(owner, appId)).toMatchObject({ synced: 1 });
+    const [row] = await admin`
+      select dirty_since, last_synced_at, last_error from app_table_exports where id = ${linkId}`;
+    expect(row).toMatchObject({ dirty_since: null, last_error: null });
+    expect(row!.last_synced_at).not.toBeNull();
+  });
+
   it('a write during a sync keeps the burst dirty, though the burst began before it (audit item 7)', async () => {
     const { appId, linkId } = await appWithExport('hole');
     // The burst began an hour ago (the first write's stamp) ...

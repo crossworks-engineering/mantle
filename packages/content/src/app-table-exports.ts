@@ -263,6 +263,9 @@ async function materialize(link: AppTableExport): Promise<'synced' | 'unchanged'
     );
     if (!saved) throw new Error('linked table no longer exists');
     await commitTable(link.ownerId, link.tableNodeId, undefined, { appSync: true });
+    // The sync's record and the dirty clear in ONE statement: a reader never
+    // sees a synced link still marked dirty by this sync's own write (the
+    // F9 test read that gap under load, pre-check removal fix round A).
     await db
       .update(appTableExports)
       .set({
@@ -270,9 +273,9 @@ async function materialize(link: AppTableExport): Promise<'synced' | 'unchanged'
         lastSyncedAt: new Date(),
         lastError: null,
         updatedAt: new Date(),
+        dirtySince: dirtyAfterRead(readAt),
       })
       .where(eq(appTableExports.id, link.id));
-    await clearDirty(link.id, readAt);
     return 'synced';
   } catch (err) {
     await db
@@ -296,6 +299,14 @@ async function clearDirty(linkId: string, readAt: Date): Promise<void> {
         or(isNull(appTableExports.lastWriteAt), lte(appTableExports.lastWriteAt, readAt)),
       ),
     );
+}
+
+/** The dirty mark once a sync read the rows as of `readAt`: cleared, unless
+ *  a write came after that read (clearDirty's rule, as a column value). */
+function dirtyAfterRead(readAt: Date) {
+  return sql`case when ${appTableExports.lastWriteAt} is null
+                    or ${appTableExports.lastWriteAt} <= ${readAt.toISOString()}::timestamptz
+                  then null else ${appTableExports.dirtySince} end`;
 }
 
 /** Who the export bookkeeping runs as: the dirty stamp and the debounced

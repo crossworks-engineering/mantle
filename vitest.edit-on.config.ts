@@ -28,11 +28,6 @@ export default defineConfig({
       // The runs worker, the stdio MCP server and the Telegram poller on the
       // write role (pre-check deletion blocker 2).
       'server/web/server/worker-write-role.db.test.ts',
-      // The pre-check removal: each removed entry's refusal from the
-      // database (it sets both checks on itself, too).
-      'server/web/server/precheck-removal.db.test.ts',
-      // The checks' floor at migrate (0298).
-      'packages/db/src/check-floor.db.test.ts',
     ],
     env: { ...onBase.test?.env, MANTLE_TEST_EDIT_CHECK: 'on' },
   },
