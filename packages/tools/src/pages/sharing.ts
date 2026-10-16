@@ -21,7 +21,7 @@ import {
   SERVE_INPUT,
   serveInput,
 } from '../builtins-share';
-import { closeLinkTargets, edit } from '../item-write-gate';
+import { edit } from '../item-write-gate';
 import { CS } from '../client-sourced-rule';
 
 export const page_share: BuiltinToolDef = {
@@ -90,7 +90,6 @@ export const page_unshare: BuiltinToolDef = {
     effect: 'write',
     spends: 'none',
     scope: 'any',
-    items: closeLinkTargets,
     keyArea: 'pages',
     clientSourced: CS.free('takes a link away'),
   },

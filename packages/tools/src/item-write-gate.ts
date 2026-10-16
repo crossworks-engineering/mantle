@@ -29,14 +29,12 @@ import {
 } from '@mantle/db';
 import { currentWorkspaceScope } from '@mantle/db/viewer';
 import { clampFilesFolderPath } from '@mantle/files';
-import { callerHasArea, callerScope } from './admin-gate';
 import {
   builtinPolicy,
   type ToolItemResolver,
   type ToolItemTarget,
   type ToolPolicy,
 } from './tool-policy';
-import { keyOrPeerVia } from './surface';
 import type { ToolHandlerContext } from './types';
 
 /** One item a write names: the argument holding its id (a list for an
@@ -62,17 +60,6 @@ export function manage(param: string): Target {
 export function read(param: string): Target {
   return { param, need: 'read' };
 }
-
-/** Closing a link: edit of the item, or the users area (an Admin user may
- *  close any link of the brain; closing only narrows). */
-export const closeLinkTargets: Resolver = async (input, _ownerId, ctx) => {
-  // Only in a workspace scope (callerHasArea says yes outside any), never
-  // for an API key or a linked brain, as node_unshare's own check (A0 fix
-  // rounds 2 and 3, L-4, L-e).
-  if (ctx && !keyOrPeerVia(ctx) && callerScope() && (await callerHasArea('users'))) return [];
-  const id = typeof input.id === 'string' ? input.id.trim() : '';
-  return id ? [{ ids: [id], need: 'edit' }] : [];
-};
 
 /** The refusal, before a call is queued for approval, of a reference (a
  *  Recall map by its slug, a create's target folder by its path) the
@@ -235,7 +222,7 @@ export type ToolItems = ToolPolicy['items'];
  * rename a builtin). A5 step 6a deleted the ITEM_WRITE_TARGETS view. A
  * link (A0): opening or closing it needs edit of the item; an app's needs
  * manage, which assertMayLink asks once it knows the type (link-serve.ts);
- * an Admin user with the users area may close any link (closeLinkTargets).
+ * closing one is the handler's own rule and the database's (link_close).
  * An app copy (appCopy) and the my_app_* tools check their own app.
  */
 export function builtinItems(slug: string, ref?: string): ToolItems {

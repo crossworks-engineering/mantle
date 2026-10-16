@@ -1220,6 +1220,35 @@ describe.skipIf(!DB_URL)(
       });
     }
 
+    it('link closes: in a turn narrower than the login, the handler lets the close through and the database refuses it', async () => {
+      // The page: homed in X, Write on for W, read only for R. The member
+      // edits it through W; R's assistant reads it and may not edit it. The
+      // handler's own check (assertMayLink) asks the login's workspaces.
+      for (const slug of ['page_unshare', 'node_unshare'] as const) {
+        const tool: Tool = {
+          slug,
+          need: 'edit',
+          who: ['member'],
+          make: async () => {
+            const it = await linkedPage('member', 'allowed');
+            await grant(it.id, [
+              [ws.X, true, false],
+              [ws.W, false, true],
+              [ws.R, false, false],
+            ]);
+            return it;
+          },
+          input: byId,
+        };
+        const c = await runCell('link-closes', tool, 'member', 'noEdit', 'turn');
+        expect(c.was.ok, c.was.text).toBe(false);
+        expect(c.was.changed).toBe(false);
+        expect(c.now.ok, c.now.text).toBe(false);
+        expect(c.now.changed).toBe(false);
+        expect(c.now.text).toBe('You cannot change this item in your workspaces.');
+      }
+    }, 120_000);
+
     it('kept: a block edit of a page whose draft the scope may not edit answers a draft conflict, not the refusal', async () => {
       for (const who of BOTH) {
         const c = await runCell('kept', KEPT_BLOCKS, who, 'noEdit', 'mcp');

@@ -775,7 +775,7 @@ describe('the item pre-check counters (A4 step 4, A5 step 6b)', () => {
   const resolvers = itemResolverNames(ROOT) as string[];
 
   it("reads the item gate's resolvers", () => {
-    expect(resolvers).toEqual(expect.arrayContaining(['closeLinkTargets', 'recallMap', 'appCopy']));
+    expect(resolvers).toEqual(expect.arrayContaining(['pageFromNoteSource', 'appCopy']));
   });
 
   it('counts a policy items value, never a schema items', () => {
@@ -783,7 +783,7 @@ describe('the item pre-check counters (A4 step 4, A5 step 6b)', () => {
     expect(count("policy: { effect: 'write', items: [edit('id')] }")).toBe(1);
     expect(count("items: [manage('id'), read('x')]")).toBe(1);
     expect(count("items: [{ param: 'folder_id', need: 'edit' }]")).toBe(1);
-    expect(count('items: closeLinkTargets,')).toBe(1);
+    expect(count('items: appCopy,')).toBe(1);
     expect(count("items: recallMap('edit'),")).toBe(1);
     expect(count("items: { type: 'string' }")).toBe(0);
     expect(count('items: f.itemCount,')).toBe(0);

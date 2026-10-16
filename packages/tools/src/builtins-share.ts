@@ -24,7 +24,7 @@ import { str } from './coerce';
 import { isOwnerSurface, keyOrPeerVia, ownerSurfaceLoginId } from './surface';
 import { errorMessage } from '@mantle/std';
 import { callerHasArea, callerScope } from './admin-gate';
-import { closeLinkTargets, edit } from './item-write-gate';
+import { edit } from './item-write-gate';
 import { CS } from './client-sourced-rule';
 
 /** The `serve` input both share tools take. */
@@ -228,7 +228,6 @@ const node_unshare: BuiltinToolDef = {
     effect: 'write',
     spends: 'none',
     scope: 'any',
-    items: closeLinkTargets,
     clientSourced: CS.free('takes a link away'),
   },
   name: 'Stop sharing an item',
