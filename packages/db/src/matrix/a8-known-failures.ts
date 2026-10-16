@@ -54,6 +54,9 @@ export type KnownFailure = {
   modes?: readonly CheckMode[];
 };
 
+const known = (finding: string, reason: string, modes?: readonly CheckMode[]): KnownFailure =>
+  modes ? { finding, reason, modes } : { finding, reason };
+
 export const KNOWN_FAILURES: Readonly<Record<string, KnownFailure>> = {
   // The grid (SQL): none since F4.
   // The surface cells (all three check modes unless named).
