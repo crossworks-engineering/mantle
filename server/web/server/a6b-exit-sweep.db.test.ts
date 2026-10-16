@@ -177,17 +177,13 @@ const NAMED_CHANGES: Record<
       cells: /^notifyPendingCreated \w+ (read|write|turn):/,
       reason:
         "the approval card never left a workspace scope (the bot's row was refused there, so " +
-        "no card was sent: main's `sent` is empty in every scoped cell); it is system work now " +
-        'and refused at its first read, so the logged reason differs. No card either way; the ' +
-        'in-app badge is unchanged.',
+        "no card was sent: main's `sent` is empty in every scoped cell). Its route is read by " +
+        'its definer now (mantle_pending_card_route), which in a scope answers only a call the ' +
+        "scope's own login asked: for another login's call it stops before the bot's row, so " +
+        "main's logged refusal (and the write role's gap it met) is not logged. No card either " +
+        'way; the in-app badge is unchanged.',
       was: /"sent":\[\]/,
-      now: JSON.stringify({
-        done: {},
-        sent: [],
-        errors: [
-          "[pending:notify] Telegram approval push failed (in-app /pending still has it): system work 'login-telegram' runs on the system pool only, never in a workspace scope",
-        ],
-      }),
+      now: JSON.stringify({ done: {}, sent: [], errors: [] }),
     },
   ],
   'workspace-create': [

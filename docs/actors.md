@@ -4838,7 +4838,7 @@ each.
   (packages/db viewer.ts) runs as asSystem did and refuses a workspace
   scope (no exit): the Telegram tools, chatLoginRefusal, pairedChatOf,
   unpairRefusedChat, loginModeratesBot, a bot's chats screen, the debug
-  read, the approval card, the login notices, the snapshot copies, a
+  read, resolveApprovalChat, the login notices, the snapshot copies, a
   login's MCP connector listing.
 - the narrow reads, by definers: connector state, rows, beyond Admin, app
   holders, a login's connector rows, contact sharing dates, file names
@@ -4849,9 +4849,14 @@ each.
   that does not read the app.
 - login-telegram 17 -> 3: a login's chats, the moderated chats and the
   replay by definers (`mantle_tg_my_chats`, `mantle_tg_moderated_chats`,
-  `mantle_tg_replay`, internal `mantle_login_area`). Named stricter
-  changes: another login's chats or replay asked in a scope; the approval
-  card's logged reason.
+  `mantle_tg_replay`, internal `mantle_login_area`); a queued call's
+  approval card is routed by `mantle_pending_card_route` (the deciding
+  login and its chat; in a scope only a call the scope's own login asked),
+  so a member's elevated call routes its card to the owner (the lows
+  round's a5-elevated-approval cell); the bot's row is read as on main.
+  Named stricter changes: another login's chats or replay asked in a
+  scope; the approval card's logged reason for another login's call (no
+  card either way).
 - client-sourced 9 -> 0 (this round): the check
   (`mantle_client_sourced_any`, `mantle_client_sourced_among`), the
   conversation's mark (`mantle_conversation_taint`,
