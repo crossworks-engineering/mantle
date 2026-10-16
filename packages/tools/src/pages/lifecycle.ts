@@ -38,7 +38,6 @@ import {
   placementOutput,
   placementRefusal,
 } from './common';
-import { edit, manage } from '../item-write-gate';
 import { CS } from '../client-sourced-rule';
 
 export const page_create: BuiltinToolDef = {
@@ -134,7 +133,6 @@ export const page_replace_from_file: BuiltinToolDef = {
     effect: 'write',
     spends: 'none',
     scope: 'any',
-    items: [edit('page_id')],
     keySharedContent: true,
     clientSourced: CS.onNodes('page_id'),
   },
@@ -247,7 +245,6 @@ export const page_update: BuiltinToolDef = {
     effect: 'write',
     spends: 'none',
     scope: 'any',
-    items: [edit('id')],
     keyArea: 'pages',
     keySharedContent: true,
     clientSourced: CS.onNodes('id'),
@@ -307,7 +304,6 @@ export const page_update_draft: BuiltinToolDef = {
     effect: 'write',
     spends: 'none',
     scope: 'any',
-    items: [edit('id')],
     keyArea: 'pages',
     keySharedContent: true,
     clientSourced: CS.onNodes('id'),
@@ -413,7 +409,6 @@ export const page_commit: BuiltinToolDef = {
     effect: 'write',
     spends: 'none',
     scope: 'any',
-    items: [edit('id')],
     keyArea: 'pages',
     keySharedContent: true,
     clientSourced: CS.onNodes('id'),
@@ -485,7 +480,6 @@ export const page_discard_draft: BuiltinToolDef = {
     effect: 'write',
     spends: 'none',
     scope: 'any',
-    items: [edit('id')],
     keyArea: 'pages',
     clientSourced: CS.onNodes('id'),
   },
@@ -521,7 +515,6 @@ export const page_delete: BuiltinToolDef = {
     effect: 'write',
     spends: 'none',
     scope: 'any',
-    items: [manage('id')],
     peerRisky: true,
     keyArea: 'pages',
     clientSourced: CS.onNodes('id'),

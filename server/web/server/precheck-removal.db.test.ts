@@ -768,6 +768,24 @@ describe.skipIf(!DB_URL)(
             input: (it) => ({ id: it.id, folder_id: it.extra.dest, confirm: true }),
           },
           {
+            // Unconfirmed: a move that changes who sees the page names the
+            // workspaces it adds (the destination's, the caller's own) and
+            // waits for confirm; a scope that may not move the page hears
+            // that first now, then the database's refusal once confirmed.
+            slug: 'page_move',
+            need: 'manage',
+            who: BOTH,
+            make: async (w, p) => {
+              const pageDest = idIn(
+                await sysTool('tree_folder_create', { kind: 'pages', name: `${tag} pf ${n()}` }),
+              );
+              await place(w, 'allowed')(pageDest);
+              const it = await page(w, p);
+              return { id: it.id, extra: { dest: pageDest } };
+            },
+            input: (it) => ({ id: it.id, folder_id: it.extra.dest }),
+          },
+          {
             slug: 'page_mention',
             need: 'edit',
             who: BOTH,
@@ -1236,10 +1254,11 @@ describe.skipIf(!DB_URL)(
       });
     }
 
-    it('link closes: in a turn narrower than the login, the handler lets the close through and the database refuses it', async () => {
+    it('link closes: in a turn narrower than the login, the close is refused and the link stays open', async () => {
       // The page: homed in X, Write on for W, read only for R. The member
       // edits it through W; R's assistant reads it and may not edit it. The
-      // handler's own check (assertMayLink) asks the login's workspaces.
+      // handler's own rule (assertMayLink) answers first, in the turn's
+      // scope; the database's link_close backs it.
       for (const slug of ['page_unshare', 'node_unshare'] as const) {
         const tool: Tool = {
           slug,
@@ -1261,7 +1280,7 @@ describe.skipIf(!DB_URL)(
         expect(c.was.changed).toBe(false);
         expect(c.now.ok, c.now.text).toBe(false);
         expect(c.now.changed).toBe(false);
-        expect(c.now.text).toBe('You cannot change this item in your workspaces.');
+        expect(c.now.text).toBe('Only someone who may edit this item may open or close its link.');
       }
     }, 120_000);
 

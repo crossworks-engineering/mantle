@@ -15,7 +15,7 @@ import { errorMessage } from '@mantle/std';
 import { DRAFT_REVIEW_HINT, PAGE_ID_PRE, PAGE_NODE_ID_PRE } from './common';
 import { CONFIRM_INPUT, visibilityRefusal } from '../visibility-refusal';
 import { isOwnerSurface, OWNER_ONLY_ERROR } from '../surface';
-import { edit, manage } from '../item-write-gate';
+import { edit } from '../item-write-gate';
 import { CS } from '../client-sourced-rule';
 
 export const page_split: BuiltinToolDef = {
@@ -160,7 +160,6 @@ export const page_move: BuiltinToolDef = {
     effect: 'write',
     spends: 'none',
     scope: 'any',
-    items: [manage('id')],
     keyArea: 'pages',
     clientSourced: CS.onNodes('id', 'folder_id', 'parent_id'),
   },
@@ -264,7 +263,6 @@ export const page_mention: BuiltinToolDef = {
     effect: 'write',
     spends: 'none',
     scope: 'any',
-    items: [edit('page_id')],
     keyArea: 'pages',
     keySharedContent: true,
     clientSourced: CS.onNodes('page_id'),
