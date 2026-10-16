@@ -157,9 +157,9 @@
   },
   "prose embeddings failed 502": {
     "provider": "The provider has a server problem. (HTTP 502)",
-    "thrown": "OpenAI embeddings failed: 502 Bad Gateway — sk-or-v1-0123456789abcdef org=acme-private",
+    "thrown": "OpenAI embeddings failed: 502 Bad Gateway \u2014 sk-or-v1-0123456789abcdef org=acme-private",
     "domain": null,
-    "reply": "OpenAI embeddings failed: 502 Bad Gateway — sk-or-v1-0123456789abcdef org=acme-private"
+    "reply": "OpenAI embeddings failed: 502 Bad Gateway \u2014 sk-or-v1-0123456789abcdef org=acme-private"
   },
   "prose stream error 429": {
     "provider": "The provider limits the request rate. (HTTP 429)",

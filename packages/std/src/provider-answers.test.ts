@@ -128,7 +128,7 @@ const CASES: Record<string, () => unknown> = {
     new Error(`openrouter-chat 403 on some/model: Forbidden metadata=${SECRET}`),
   'prose anthropic chat 500': () => new Error(`anthropic chat 500: ${SECRET}`),
   'prose embeddings failed 502': () =>
-    new Error(`OpenAI embeddings failed: 502 Bad Gateway — ${SECRET}`),
+    new Error(`OpenAI embeddings failed: 502 Bad Gateway \u2014 ${SECRET}`),
   'prose stream error 429': () =>
     new Error(`openrouter-chat stream error 429: Rate limited ${SECRET}`),
   'prose fetch failed 404': () => new Error('fetch failed: 404 Not Found'),
