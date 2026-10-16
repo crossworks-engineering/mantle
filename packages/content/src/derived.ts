@@ -249,7 +249,7 @@ export async function deleteFileWithDerived(
   }
   // Every refusal no confirm resolves, BEFORE reaping (F4 fix round 3, L1:
   // the attachment's too, which deleteFileById only met after the reap).
-  // deleteFileById refuses them, and the reap below is irreversible —
+  // deleteFileById refuses them, and the reap below is irreversible:
   // running it first would destroy the derived nodes and then decline to
   // delete the file they came from. Every drawing, brain-wide: one the
   // caller does not read breaks too.

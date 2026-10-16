@@ -883,7 +883,7 @@ export async function fileDeleteBlock(
   // Block deletion of a file that's an email attachment: email_attachments
   // .file_node_id is ON DELETE RESTRICT, so a bare delete would raise an FK
   // violation and surface as a 500. Return a clean refusal the caller can show
-  // instead — the bytes are owned by the email; delete it from there.
+  // instead: the bytes are owned by the email; delete it from there.
   const [attachment] = await db
     .select({ id: emailAttachments.id })
     .from(emailAttachments)
@@ -893,7 +893,7 @@ export async function fileDeleteBlock(
   // Block deletion of an image a drawing still places on its canvas. There is
   // no FK to lean on: `draws.file_refs` is a jsonb map (BinaryFile id → file
   // node id), so a bare delete used to succeed and leave the drawing quietly
-  // broken — the canvas lost the image on next open while the committed
+  // broken: the canvas lost the image on next open while the committed
   // snapshot kept showing it, because exportToSvg inlines image bytes. Two
   // surfaces disagreeing forever, with no error anywhere. Refuse instead, and
   // name the drawings so the caller can say where to remove it.

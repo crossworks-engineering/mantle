@@ -1127,7 +1127,8 @@ route could widen (`server/web/server/f4-owner-flows.db.test.ts`, in
 
 **The gateways.**
 
-- **The named system step** (`systemStep(step, fn)`,
+- **The named system step** (`systemStep(step, fn)` in this round; round 3
+  gave it its item check: `systemStep(step, check, fn)`,
   `packages/db/src/system-step.ts`; asSystem reason `brain-bookkeeping`,
   pinned in `eslint-rules/as-system-allowlist.mjs`). Its contract: the
   item check came first, the step answers numbers, yes or no, or nothing,
@@ -1153,7 +1154,7 @@ route could widen (`server/web/server/f4-owner-flows.db.test.ts`, in
   former (`createRecallMap` through `freeMapSlug`, `updateRecallMap`'s slug
   change and so a revision restore of one) and a formula spec id (the
   formula library seed); `mantle_snapshot_bytes(owner, manual_only,
-  member, login)` for the snapshot budget (`usedSnapshotBytes` in
+member, login)` for the snapshot budget (`usedSnapshotBytes` in
   `app-snapshots.ts`, `createTableSnapshot`). `conflictOnUnique` is the
   backstop of the folder copy and of a new map (a race past the check is a
   409, never the unique index's 500). TS: `nameTaken`, `snapshotBytesUsed`
@@ -1164,7 +1165,8 @@ route could widen (`server/web/server/f4-owner-flows.db.test.ts`, in
   asks it for every id of a bulk delete, and `deleteFileById` and
   `deleteFileWithDerived` ask it for their file before any count or reap.
 - **The item check a gate cannot judge**: `assertItemRight(id, need)`
-  (`server/web/lib/item-check.ts`), thrown as the edit check's refusal so
+  (in `server/web/lib` then; `packages/db/src/item-rights.ts` since round
+  3), thrown as the edit check's refusal so
   the one mapper answers it: an app restore of the code (code, full) and
   an import over an existing app ask manage before anything is written.
 - The owner db broker's Admin branch runs its SQLite work by the app-data
@@ -1265,22 +1267,174 @@ closed leak):
   slug, and a revision restore of one: 400 `slug_taken` (before: 200, two
   maps answering to one slug).
 
+### F4 fix round 3
+
+The audit of round 2 (7/10) found that the system step trusted its callers:
+the confirmed cascade reaped derived items in workspaces the caller could
+not read, a folder's indexing switch was an editor's and queued LLM work
+on files the caller could not see, and an app's code was gated on edit
+where the database asks manage. The owner's rule again: brain-wide
+bookkeeping runs as the named step after the item check, and never widens
+anything for a member or an Admin user. Each fix is tested through the full
+pipeline in warn and on, as a member and as an Admin user
+(`server/web/server/f4-owner-flows.db.test.ts`, in `pnpm test:edit-on`).
+
+**The step carries its contract (M2).** `systemStep(step, check, fn)`
+(`packages/db/src/system-step.ts`): the door asks `itemWriteVerdicts` in the
+caller's scope BEFORE it leaves it, so "the item check came first" is code:
+
+| `check`                            | What the door does                                                                                                                  |
+| ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `{ items, need }`                  | every item must pass, else the edit check's refusal (404 for one the scope does not read, 403 item-workspace); an empty list throws |
+| `{ items, need, only: 'allowed' }` | `fn(allowed)` runs with the items that pass (possibly none): a cascade keeps the rest                                               |
+| `{ items: 'none', why }`           | a step about no item, named with its reason (an empty `why` throws)                                                                 |
+
+Inside an open transaction (a request's open write transaction, a
+`withSystemTx`, a `withScope`) the step throws (L5): it runs on a
+connection of its own, which would not see the transaction's rows and
+could wait behind its locks. Its sites (10 uses, `asSystemExits` 56 to 58):
+
+| Step               | Site                                                                | Check                                                             |
+| ------------------ | ------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| `table-history`    | `pruneTableCommitSnapshots` (`table-snapshots.ts`)                  | the table, edit                                                   |
+| `attachment-bytes` | `storageBytesForNode` (`packages/files` `ops/files.ts`)             | the file node, read                                               |
+| `derived-items`    | `countDerivedFromFile`, `drawsReferencingFile` (module-private now) | the file, manage                                                  |
+| `derived-items`    | `reapDerivedFromFile` (`packages/content` `derived.ts`), two steps  | the file, manage; then the derived ids, manage, `only: 'allowed'` |
+| `reindex`          | `setIndexingMode` for a folder, two steps                           | the folder, manage                                                |
+| `reindex`          | `reconcileFilesIndexing` (a move, a file's own switch)              | the files, read (a move) or edit (a switch)                       |
+| `export-sync`      | `exportSyncStep` (`app-table-exports.ts`)                           | `'none'`: after the app data door's own check                     |
+
+The wrappers that checked nothing are gone or behind the door:
+`countDerivedFromFile` and `drawsReferencingFile` are module-private (out
+of the `@mantle/files` barrel and `@mantle/content`'s re-export); the
+refusals no confirm resolves are one exported function,
+`fileDeleteBlock(owner, file)` (an attachment, a drawing), asked by
+`deleteFileById` and by the cascade; `reapDerivedFromFile` and
+`reconcileFilesIndexing` route through the checked door. A new caller of
+any of them meets the check.
+
+**The items.**
+
+- **H1, the cascade keeps what the caller may not delete.**
+  `reapDerivedFromFile` finds the derived ids brain-wide (after the file's
+  manage check), asks each one's manage in the caller's scope, reaps only
+  the ones that pass and counts the rest as `kept` (a number, never a name
+  or an id). The file is still deleted, as the caller confirmed; a kept item
+  keeps its content with a source that is gone (the `dangling_source_file`
+  audit lists it). Members and Admin users alike; system work (the
+  dangling-derived script) reaps all.
+- **L1**: `deleteFileWithDerived` asks `fileDeleteBlock` (the attachment
+  and the drawings) before any reap; the attachment was met only after it.
+- **M1, a folder's indexing switch.** It asks manage of the folder
+  (`assertItemRight` before the flag changes, the step again; the
+  `folder_set_indexing` tool's policy too). A switch that removes content
+  indexing (a file's effective mode turns name only) resets every file
+  under the folder, hidden ones included (privacy, no LLM). One that adds
+  it re-queues only the files the caller reads; a hidden file keeps its
+  index until its next extraction, which resolves the mode then (cost
+  safety). `requeued` counts the files the caller reads only. A file's own
+  switch asks edit of the file, as before; a move reconciles the files it
+  moved (the caller read them all: a folder holding rows it cannot read is
+  not moved).
+- **M3, an app's code is its Moderators' (D4), at one door.** Every writer
+  of the code columns locks the app's row through `lockAppRow`
+  (`packages/content/src/apps.ts`), which asks manage first (an app the
+  call just made, `installAppCode`, excepted: its create home decided it).
+  That covers PUT and DELETE `/api/apps/:id/draft`, the build
+  (`setDraftBuild`, and `buildAndStageApp` before it compiles, so a refused
+  build stores no bundle), publish, `setManifest` (`app_tools_set`),
+  `declareAppSchema` (`app_db_schema_set`) and the manifest's description
+  (`updateAppMeta`, asked before the name is written). A restore of the
+  code asks it in `restoreAppSnapshot` before any refusal of the entry and
+  before the undo snapshot, and an import over an app through
+  `snapshotBeforeCodeChange` (`app-snapshots.ts`), the one door before a
+  `pre_restore` of code or a `pre_import`. The tools ask manage in their
+  policy: `app_file_write`, `app_file_delete`, `app_source_set`,
+  `app_build`, `app_publish`, `app_tools_set`, `app_db_schema_set`;
+  `app_snapshot_restore` by its mode (`appRestoreTargets`: code and full
+  manage, data edit, as the route). The route gate still asks edit: the
+  HTTP pre-check lists are pinned to go down (pre-check deletion), so the
+  rule lives in the library both paths share, and the answer is the gate's
+  own (403 item-workspace, 404).
+- **L2**: a contact share's PATCH is the Admin act only for its "Can write"
+  change (a boolean `canWrite` and no `mode` in the body, read from a
+  capped clone, `asksCanWrite` in `server/web/lib/auth/session.ts`); any
+  other change of that share is the link's, checked against its item.
+- **L4**: 0299's definer is not granted to the demo's reader (edited in
+  place: 0299 and 0300 have not left this branch); `mantle_name_taken`
+  compares a folder's path as an ltree (`n.path = name::ltree`), the
+  unique index's own column.
+
+**The bulk delete's contract (M4, for jackdaw).** The types are in the
+published contract, `@crossworks/client-types` (`@mantle/client-types`
+here, `packages/client-types/src/dto/file-deletes.ts`, root exports):
+
+- `DELETE /api/files/files { ids }`: 200 `BulkDeleteFilesResponse`
+  `{ deleted, hasDerived: { fileId, derived: FileDerivedCounts }[], refused: BulkDeleteRefusal[] }`.
+- `DELETE /api/files/files { ids, cascade: true }`: 200
+  `BulkDeleteCascadeResponse` `{ deleted, hasDerived: [], reapedTotal, keptTotal, refused }`.
+- `BulkDeleteRefusal` `{ fileId, reason, drawings?, hiddenDrawings? }`,
+  `reason: FileDeleteRefusalReason`, one of `not_found` (no such file, or
+  one the scope does not read: one answer), `forbidden` (read, not
+  managed), `in_drawing` (`drawings`: the ones the caller reads;
+  `hiddenDrawings`: how many more), `attachment`.
+- `DELETE /api/files/files/:id?cascade=1`: 200
+  `FileCascadeDeleteResponse` `{ ok: true, reaped, skipped, kept }`; its
+  refusals as before (409 `attachment`, 409 `in_drawing` with the drawings
+  it reads, 404).
+- `hasDerived` and the single delete's 409 `has_derived` count every
+  derived item, ones the caller does not read included (a number).
+
+**Changed answers** (warn and on unless named; against round 2's head):
+
+- DELETE `/api/files/files/:id?cascade=1`, the bulk cascade and
+  `file_delete` with `delete_derived`, by a member or an Admin user: a
+  derived item the caller does not manage is kept, `kept` (or `keptTotal`)
+  counts it (before: reaped brain-wide). New field `kept`/`keptTotal`.
+- A cascade of an email attachment with derived items: 409 before any reap
+  (before: the derived items reaped, then the 409).
+- PATCH `/api/files/folders/:id { indexing }` and `folder_set_indexing` by
+  a caller that edits but does not manage the folder: 403 item-workspace,
+  the flag unchanged (before: switched). `requeued` counts only the files
+  the caller reads (before: hidden ones too). Turning content indexing on
+  queues no hidden file (before: it did, an LLM run each).
+- By a caller that edits but does not manage the app (every mode, so
+  stricter in warn and off; on refused it already, as a database 403 after
+  the request ran): PUT and DELETE `/api/apps/:id/draft`, POST
+  `/api/apps/:id/build`, POST `/api/apps/:id/publish`, PATCH
+  `/api/apps/:id` with a `description`: 403 item-workspace, nothing written
+  (a refused build stores no bundle); the tools `app_file_write`,
+  `app_file_delete`, `app_source_set`, `app_build`, `app_publish`,
+  `app_tools_set`, `app_db_schema_set`, `app_snapshot_restore` (code,
+  full): refused by their item check (before: edit asked). A restore or
+  import by any path that skipped the policy: refused before the undo
+  snapshot.
+- PATCH `/api/shares/:id` `{ mode }` (or `{ serve }`) of a contact share by
+  an Admin user, for an item outside its scope: 404 not found (before:
+  the Admin act on the system pool, as `{ canWrite }` still is).
+- Inside an open transaction the step throws a runtime fault (no caller
+  does today; tested).
+
 ### F4 handover
 
-Round 2 closed the 14 items of round 1's handover (13 left by the read
-rule, above). Open, found on the way, not changed here:
+Round 3 closed the audit of round 2 (H1, M1 to M4, L1, L2, L4, L5). Open,
+not changed here:
 
-- An app's code needs manage in the database (D4: `APP_CODE_COLUMNS`,
-  `draft_source` included) while the gate asks edit for PUT
-  `/api/apps/:id/draft`, its build and publish: an editor who does not
-  manage the app would be refused there in on (read from the matrix, not
-  tested here). The gate or the access matrix should say one rule.
+- jackdaw: the bulk delete's `refused` reasons `not_found` and
+  `forbidden`, and `keptTotal` / `kept`, need its delete dialogs (a
+  separate session; the contract above).
+- `folder_create` with `indexing` by a login that may create in a folder it
+  does not moderate: the folder is made, then the switch is refused (the
+  tool's error says so). Whether a new folder's own switch should follow
+  its create rule is the owner's question.
 - A member's table commit keeps no history (none since W6b); the history
   is the Admin users'. Whether a member's commit should keep one (named as
   a member) is the owner's question.
 - PATCH `/api/contacts/:id`'s `shareCount` counts only the shares the scope
   reads (pre-existing); deleting a file synced from OneDrive answers 500 on
   `ms_drive_items` (pre-existing, every mode).
+- A kept derived item (H1) points at a file that is gone; the
+  `dangling_source_file` audit lists it, and its own delete is its home's.
 
 ## Request plumbing (A10 part 2, A10 #8, A10 #9)
 
