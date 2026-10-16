@@ -366,7 +366,6 @@ const app_file_write: BuiltinToolDef = {
     spends: 'none',
     scope: 'any',
     outside: { appCode: true },
-    items: [edit('id')],
     peerRisky: true,
     keyArea: 'apps',
     clientSourced: CS.onApp,
@@ -424,7 +423,6 @@ const app_file_delete: BuiltinToolDef = {
     spends: 'none',
     scope: 'any',
     outside: { appCode: true },
-    items: [edit('id')],
     peerRisky: true,
     keyArea: 'apps',
     clientSourced: CS.onApp,
@@ -470,7 +468,6 @@ const app_source_set: BuiltinToolDef = {
     spends: 'none',
     scope: 'any',
     outside: { appCode: true },
-    items: [edit('id')],
     peerRisky: true,
     keyArea: 'apps',
     clientSourced: CS.onApp,
@@ -619,7 +616,6 @@ const app_tools_set: BuiltinToolDef = {
     spends: 'none',
     scope: 'any',
     outside: { appCode: true },
-    items: [edit('id')],
     peerRisky: true,
     keyArea: 'apps',
     clientSourced: CS.onApp,
@@ -1254,7 +1250,6 @@ const app_snapshot_create: BuiltinToolDef = {
     effect: 'write',
     spends: 'none',
     scope: 'any',
-    items: [edit('id')],
     peerRisky: true,
     keyArea: 'apps',
     clientSourced: CS.onApp,
@@ -1423,7 +1418,6 @@ const app_snapshot_delete: BuiltinToolDef = {
     effect: 'write',
     spends: 'none',
     scope: 'any',
-    items: [edit('id')],
     peerRisky: true,
     keyArea: 'apps',
     clientSourced: CS.onApp,
@@ -1917,7 +1911,10 @@ async function lowerToTeamRules(ownerId: string, id: string): Promise<void> {
  * app whose code or tools it changes (lowered first, never lifted: only the
  * owner's app update route lifts it). The item write check runs before the
  * ceiling (W7b fix round 1, H1): a change the caller may not make lowers
- * nothing (dispatch and the MCP bridge ask it too).
+ * nothing (dispatch and the MCP bridge ask it too). A code tool whose item
+ * pre-check went (docs/actors.md, "Pre-check deletion") has no `items`
+ * here: lowerToTeamRules asks the edit itself, and the database refuses
+ * the code write that follows (D4: a Moderator of the app's home).
  */
 function withAuthorCeiling(def: BuiltinToolDef): BuiltinToolDef {
   // The app tools whose change reaches what the app's code or tools do:
