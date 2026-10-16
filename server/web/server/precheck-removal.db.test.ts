@@ -296,6 +296,8 @@ describe.skipIf(!DB_URL)(
       /** A refused cell that changes the item before its refusal, as it did
        *  with the pre-check (`was` changed too): by login, its places. */
       partial?: Partial<Record<Who, Place[]>>;
+      /** `now` by login, over `now`. */
+      nowBy?: Partial<Record<Who, Partial<Record<Place, 'refused' | 'ok'>>>>;
       /** A store on disk a refused cell must leave as it was. */
       disk?: () => string;
     };
@@ -307,7 +309,8 @@ describe.skipIf(!DB_URL)(
     const runCell = async (family: string, tool: Tool, who: Who, p: Place, way: Way) => {
       const effective: Place = tool.adminKind ? (who === 'admin' ? 'allowed' : 'noRead') : p;
       const allowed = ALLOWED[tool.need].includes(effective);
-      const wantNow = tool.now?.[effective] ?? (allowed ? 'ok' : 'refused');
+      const wantNow =
+        tool.nowBy?.[who]?.[effective] ?? tool.now?.[effective] ?? (allowed ? 'ok' : 'refused');
       const once = async (precheck: boolean): Promise<Cell> => {
         const it = await tool.make(who, p);
         const before = await probe(it.id);
@@ -432,25 +435,28 @@ describe.skipIf(!DB_URL)(
           await raw<{ v: number }[]>`select version as v from recall_maps
                                      where slug = ${slug} and owner_id = ${owner}`
         )[0]!.v;
-      for (const [card, t0] of [
-        ['one', 'One'],
-        ['two', 'Two'],
-      ] as const) {
+      for (const t0 of ['One', 'Two']) {
         await sysTool('recall_card_put', {
           map: slug,
-          card,
           title: t0,
           body: `${t0}.`,
           version: await version(),
         });
       }
-      const [r] = await raw<{ node: string; v: number; rev: string | null }[]>`
+      const [r] = await raw<
+        { node: string; v: number; rev: string | null; one: string; two: string }[]
+      >`
       select m.node_id::text as node, m.version as v,
              (select v.id::text from recall_revisions v where v.map_id = m.id
-               order by v.created_at desc limit 1) as rev
+               order by v.created_at desc limit 1) as rev,
+             (select c.slug from recall_nodes c where c.map_id = m.id and c.title = 'One') as one,
+             (select c.slug from recall_nodes c where c.map_id = m.id and c.title = 'Two') as two
         from recall_maps m where m.slug = ${slug} and m.owner_id = ${owner}`;
       await place(who, p)(r!.node);
-      return { id: r!.node, extra: { map: slug, version: r!.v, rev: r!.rev ?? '' } };
+      return {
+        id: r!.node,
+        extra: { map: slug, version: r!.v, rev: r!.rev ?? '', one: r!.one, two: r!.two },
+      };
     };
 
     /** A table with two columns, two rows (one row id kept), placed. With
@@ -641,8 +647,25 @@ describe.skipIf(!DB_URL)(
       {
         name: 'link-closes',
         tools: [
-          { slug: 'page_unshare', need: 'edit', who: BOTH, make: linkedPage, input: byId },
-          { slug: 'node_unshare', need: 'edit', who: BOTH, make: linkedPage, input: byId },
+          // An Admin user with the users area closes any link (closing only
+          // narrows): the pre-check asks nothing of it, nor the database.
+          {
+            slug: 'page_unshare',
+            need: 'edit',
+            who: BOTH,
+            make: linkedPage,
+            input: byId,
+            nowBy: { admin: { noEdit: 'ok' } },
+          },
+          {
+            slug: 'node_unshare',
+            need: 'edit',
+            who: BOTH,
+            make: linkedPage,
+            input: byId,
+            // A link it cannot see is no link to close: closed nothing.
+            nowBy: { admin: { noEdit: 'ok', noRead: 'ok' } },
+          },
         ],
       },
       {
@@ -748,7 +771,7 @@ describe.skipIf(!DB_URL)(
             need: 'edit',
             who: BOTH,
             make: recall,
-            input: (it) => ({ map: it.extra.map, card: 'two', version: it.extra.version }),
+            input: (it) => ({ map: it.extra.map, card: it.extra.two, version: it.extra.version }),
           },
           {
             slug: 'recall_map_update',
@@ -771,7 +794,7 @@ describe.skipIf(!DB_URL)(
             make: recall,
             input: (it) => ({
               map: it.extra.map,
-              slugs: ['two', 'one'],
+              slugs: [it.extra.two, it.extra.one],
               version: it.extra.version,
             }),
           },
@@ -793,7 +816,7 @@ describe.skipIf(!DB_URL)(
             make: recall,
             input: (it) => ({
               map: it.extra.map,
-              card: 'two',
+              card: it.extra.two,
               slug: 'deux',
               version: it.extra.version,
             }),
