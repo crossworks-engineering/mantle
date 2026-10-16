@@ -354,9 +354,11 @@ describe.skipIf(!URL)('W7 integration fix 2', () => {
     await x(sql`insert into item_grants (node_id, workspace_id, write, is_home) values
       (${app}, ${adminWs}, true, true), (${app}, ${teamWs}, false, false)
       on conflict do nothing`);
+    // The gate's own check (its one caller is gate-prerun.ts; not exported).
+    const gate = await import('../../../packages/tools/src/item-write-gate');
     const refusal = async (slug: string, input: Record<string, unknown>) =>
       m.withTurnScope(await m.loginScopeFor(member), () =>
-        t.toolItemWriteRefusalOf(t.builtinItems(slug), input, owner),
+        gate.toolItemWriteRefusalOf(t.builtinItems(slug), input, owner),
       );
     for (const slug of ['app_export', 'app_duplicate']) {
       expect(await refusal(slug, { id: app }), slug).not.toBeNull();

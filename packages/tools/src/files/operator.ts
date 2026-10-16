@@ -247,7 +247,7 @@ export const file_delete: BuiltinToolDef = {
     effect: 'write',
     spends: 'none',
     scope: 'any',
-    items: [manage('file_id')],
+    legacyItemPrecheck: { need: [manage('file_id')], reason: 'side-effect-before-check' },
     keyArea: 'files',
     clientSourced: CS.onNodes('file_id'),
   },

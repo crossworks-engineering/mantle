@@ -157,9 +157,9 @@ export const pageFromNotesSources: Resolver = async (input) =>
     ? [{ ids: input.note_ids.filter((i): i is string => typeof i === 'string'), need: 'edit' }]
     : [];
 
-/** What a tool's write names (its policy's `items`): a target per argument,
- *  or a resolver. */
-export type ToolItems = ToolPolicy['items'];
+/** What a kept pre-check asks (its policy's `legacyItemPrecheck.need`): a
+ *  target per argument, or a resolver. */
+export type ToolItems = NonNullable<ToolPolicy['legacyItemPrecheck']>['need'] | undefined;
 
 /**
  * The items the write tool a row names writes to, read from the policies:
@@ -171,7 +171,10 @@ export type ToolItems = ToolPolicy['items'];
  * An app copy (appCopy) and the my_app_* tools check their own app.
  */
 export function builtinItems(slug: string, ref?: string): ToolItems {
-  return builtinPolicy(slug)?.items ?? (ref ? builtinPolicy(ref)?.items : undefined);
+  return (
+    builtinPolicy(slug)?.legacyItemPrecheck?.need ??
+    (ref ? builtinPolicy(ref)?.legacyItemPrecheck?.need : undefined)
+  );
 }
 
 /** The ids an argument holds: one id, or a list of them. */

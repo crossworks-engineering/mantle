@@ -788,6 +788,11 @@ describe('the item pre-check counters (A4 step 4, A5 step 6b)', () => {
     expect(count("items: { type: 'string' }")).toBe(0);
     expect(count('items: f.itemCount,')).toBe(0);
     expect(count("// items: [edit('id')]")).toBe(0);
+    // The kept ones, as they are written since fix round A.
+    expect(count("legacyItemPrecheck: { need: [edit('id')], reason: 'answer-worse' },")).toBe(1);
+    expect(count("legacyItemPrecheck: { need: appCopy, reason: 'read-not-asked' },")).toBe(1);
+    expect(count('legacyItemPrecheck?: LegacyItemPrecheck;')).toBe(0);
+    expect(count('p.legacyItemPrecheck?.need')).toBe(0);
   });
 
   it('counts each HTTP list, and the scoreboard sums them', () => {

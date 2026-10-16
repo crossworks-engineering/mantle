@@ -44,7 +44,7 @@ export const page_blocks_apply: BuiltinToolDef = {
     effect: 'write',
     spends: 'none',
     scope: 'any',
-    items: [edit('page_id')],
+    legacyItemPrecheck: { need: [edit('page_id')], reason: 'answer-worse' },
     keyArea: 'pages',
     keySharedContent: true,
     clientSourced: CS.onNodes('page_id'),

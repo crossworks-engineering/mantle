@@ -28,7 +28,7 @@ import {
   type CallAuditSpec,
 } from '@mantle/db';
 import { currentToolCaller, mcpVia } from './gate-callers';
-import { namedToolPolicy } from './tool-policy';
+import { namedToolPolicy, tableBuiltin } from './tool-policy';
 import { UUID_RE } from '@mantle/std';
 
 /** The most item ids and nested writes a row names. */
@@ -69,8 +69,16 @@ function targetsOf(call: AuditedCall): string[] {
   const builtin = builtinOf(call.ref);
   const policy = builtin ? namedToolPolicy(builtin)?.policy : null;
   const args = call.input.args ?? {};
-  if (policy && Array.isArray(policy.items)) {
-    for (const item of policy.items) add(args[item.param]);
+  // The item arguments: a kept pre-check's targets, and the argument a
+  // node_exists precondition reads (every tool whose pre-check the removal
+  // took names its item there: pre-check removal fix round A, so a delete
+  // or a move is still audited by its item).
+  const need = policy?.legacyItemPrecheck?.need;
+  if (Array.isArray(need)) {
+    for (const item of need) add(args[item.param]);
+  }
+  for (const pre of builtin ? (tableBuiltin(builtin)?.preconditions ?? []) : []) {
+    if (pre.kind === 'node_exists') add(args[pre.param]);
   }
   const output = (call.value as { output?: { id?: unknown } } | null)?.output;
   if (output && typeof output === 'object') add(output.id);

@@ -274,6 +274,20 @@ describe.skipIf(!URL)('one audit row for every tool write (A5 step 6d)', () => {
     ]);
   });
 
+  it('a delete names the item it deleted (its precondition argument; pre-check removal fix round A)', async () => {
+    const gone = await m.asSystem(
+      () => content.createNote(owner, { title: `${tag} to delete`, content: 'x' }),
+      'test',
+    );
+    await clear();
+    expect(await ENTRIES[0]!.run('note_delete', { id: gone.id })).toBe(true);
+    expect(await toolRows()).toEqual([
+      expect.objectContaining({
+        detail: expect.objectContaining({ tool: 'note_delete', targets: [gone.id] }),
+      }),
+    ]);
+  });
+
   it("a recipe's write step is named in the recipe's one row", async () => {
     await clear();
     const recipe = {

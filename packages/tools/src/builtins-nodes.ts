@@ -143,7 +143,7 @@ export const content_supersede: BuiltinToolDef = {
     effect: 'write',
     spends: 'none',
     scope: 'admin',
-    items: [edit('node_id')],
+    legacyItemPrecheck: { need: [edit('node_id')], reason: 'db-does-not-check' },
     clientSourced: CS.onNodes('node_id', 'superseded_by'),
   },
   ownerOnly: true,

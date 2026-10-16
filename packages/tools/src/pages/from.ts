@@ -41,7 +41,7 @@ export const page_from_file: BuiltinToolDef = {
     spends: 'none',
     scope: 'any',
     creates: 'page',
-    items: pageFromFileSource,
+    legacyItemPrecheck: { need: pageFromFileSource, reason: 'answer-worse' },
     clientSourced: { ...CS.creates(), extraNodes: CS.supersedes('file_id') },
   },
   preconditions: [...FILE_ID_PRE, ...FOLDER_ID_PRE],
@@ -202,7 +202,7 @@ export const page_from_note: BuiltinToolDef = {
     spends: 'none',
     scope: 'any',
     creates: 'page',
-    items: pageFromNoteSource,
+    legacyItemPrecheck: { need: pageFromNoteSource, reason: 'answer-worse' },
     clientSourced: {
       ...CS.creates('folder_id', 'parent_id'),
       extraNodes: CS.supersedes('note_id'),
@@ -339,7 +339,7 @@ export const page_from_notes: BuiltinToolDef = {
     spends: 'none',
     scope: 'any',
     creates: 'page',
-    items: pageFromNotesSources,
+    legacyItemPrecheck: { need: pageFromNotesSources, reason: 'answer-worse' },
     clientSourced: {
       ...CS.creates('folder_id', 'parent_id'),
       extraNodes: CS.supersedes('note_ids'),

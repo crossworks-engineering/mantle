@@ -757,6 +757,8 @@ export function itemResolverNames(root) {
 }
 
 /** The tool item pre-checks of `text` (comments exempt): every policy
+ *  `legacyItemPrecheck` (pre-check removal fix round A: the kept ones are
+ *  named so, never like a normal policy field), and the old form a policy
  *  `items` value, a list of targets (edit(, manage(, read( or a literal
  *  `{ param`) or a resolver of `resolvers`. A schema's `items:` (a JSON
  *  schema array) is neither. */
@@ -764,7 +766,8 @@ export function itemPrecheckToolEntries(text, resolvers) {
   const code = stripComments(text);
   const named = resolvers.length ? `|(?:${resolvers.join('|')})\\b` : '';
   const re = new RegExp(
-    `\\bitems\\s*:\\s*(?:\\[\\s*(?:(?:edit|manage|read)\\s*\\(|\\{\\s*param\\s*:)${named})`,
+    `\\bitems\\s*:\\s*(?:\\[\\s*(?:(?:edit|manage|read)\\s*\\(|\\{\\s*param\\s*:)${named})` +
+      `|\\blegacyItemPrecheck\\s*:\\s*\\{`,
     'g',
   );
   return [...code.matchAll(re)].length;

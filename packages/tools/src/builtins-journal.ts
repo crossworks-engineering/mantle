@@ -326,7 +326,7 @@ const journal_resolve_gap: BuiltinToolDef = {
     effect: 'write',
     spends: 'none',
     scope: 'any',
-    items: [edit('id')],
+    legacyItemPrecheck: { need: [edit('id')], reason: 'side-effect-before-check' },
     keyArea: 'journal',
     clientSourced: CS.onNodes('id'),
   },

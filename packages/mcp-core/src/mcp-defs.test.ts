@@ -11,6 +11,7 @@ import {
   MCP_SURFACE_POLICIES,
   getBuiltin,
   type McpSurfaceSlug,
+  type ToolItemTarget,
   type ToolPolicy,
 } from '@mantle/tools';
 import { registerMantleTools } from './build-server';
@@ -26,10 +27,15 @@ const ARG_NAMES: Record<string, Record<string, string>> = {};
  *  builtin's. */
 function mappedToBuiltin(slug: string, p: ToolPolicy): ToolPolicy {
   const names = ARG_NAMES[slug] ?? {};
-  if (!Array.isArray(p.items)) return p;
+  const kept = p.legacyItemPrecheck;
+  if (!kept || !Array.isArray(kept.need)) return p;
+  const need: readonly ToolItemTarget[] = kept.need;
   return {
     ...p,
-    items: p.items.map((t) => ({ ...t, param: names[t.param] ?? t.param })),
+    legacyItemPrecheck: {
+      ...kept,
+      need: need.map((t) => ({ ...t, param: names[t.param] ?? t.param })),
+    },
   };
 }
 
@@ -67,14 +73,19 @@ describe('the MCP definitions (A5 step 2)', () => {
       if (p.startsModelWork) expect(p.spends, d.slug).not.toBe('none');
       if (p.creates) expect(p.effect, d.slug).toBe('write');
       // An item a check names is one of the tool's own arguments.
-      if (Array.isArray(p.items)) {
-        for (const t of p.items) expect(Object.keys(d.shape), d.slug).toContain(t.param);
+      const need = p.legacyItemPrecheck?.need;
+      if (Array.isArray(need)) {
+        for (const t of need as readonly ToolItemTarget[]) {
+          expect(Object.keys(d.shape), d.slug).toContain(t.param);
+        }
       }
       expect(Object.isFrozen(d), d.slug).toBe(true);
       expect(Object.isFrozen(d.policy), d.slug).toBe(true);
-      if (Array.isArray(d.policy.items)) {
-        expect(Object.isFrozen(d.policy.items), d.slug).toBe(true);
-        for (const t of d.policy.items) expect(Object.isFrozen(t), d.slug).toBe(true);
+      if (Array.isArray(need)) {
+        expect(Object.isFrozen(need), d.slug).toBe(true);
+        for (const t of need as readonly ToolItemTarget[]) {
+          expect(Object.isFrozen(t), d.slug).toBe(true);
+        }
       }
     }
   });
@@ -83,11 +94,12 @@ describe('the MCP definitions (A5 step 2)', () => {
     for (const d of TWINS) {
       const builtin = getBuiltin(d.slug)!;
       expect(mappedToBuiltin(d.slug, d.policy), d.slug).toEqual(builtin.policy);
-      if (Array.isArray(builtin.policy.items)) {
+      const need = builtin.policy.legacyItemPrecheck?.need;
+      if (Array.isArray(need)) {
         const props = Object.keys(
           (builtin.inputSchema.properties ?? {}) as Record<string, unknown>,
         );
-        for (const t of builtin.policy.items) expect(props, d.slug).toContain(t.param);
+        for (const t of need as readonly ToolItemTarget[]) expect(props, d.slug).toContain(t.param);
       }
     }
   });

@@ -38,7 +38,9 @@ const areaOf = (slug: string) => {
 };
 /** The builtins whose write names items, with their targets. */
 const itemWrites = () =>
-  listBuiltins().flatMap((d) => (d.policy.items ? [[d.slug, d.policy.items] as const] : []));
+  listBuiltins().flatMap((d) =>
+    d.policy.legacyItemPrecheck?.need ? [[d.slug, d.policy.legacyItemPrecheck?.need] as const] : [],
+  );
 
 /** Writes whose node precondition names an item they only READ (a source
  *  they copy, convert, import, show or send), or a folder they create in
@@ -222,7 +224,10 @@ describe('the writes the database checks (the pre-check removal)', () => {
     for (const slug of DATABASE_CHECKED.keys()) {
       const def = getBuiltin(slug);
       expect(def, `${slug} is no builtin now: drop it`).not.toBeNull();
-      expect(def!.policy.items, `${slug} declares its items again: drop it`).toBeUndefined();
+      expect(
+        def!.policy.legacyItemPrecheck?.need,
+        `${slug} declares its items again: drop it`,
+      ).toBeUndefined();
       const param = DATABASE_CHECKED.get(slug)!.param;
       const props = Object.keys(
         ((def!.inputSchema as { properties?: Record<string, unknown> }).properties ?? {}) as object,
@@ -262,7 +267,7 @@ describe('every write a workspace turn reaches declares its items (A8 fix round 
     );
     expect(reached.length).toBeGreaterThan(50);
     const missing = reached
-      .filter((d) => !d.policy.items && !d.policy.creates && !d.policy.createsIn)
+      .filter((d) => !d.policy.legacyItemPrecheck?.need && !d.policy.creates && !d.policy.createsIn)
       .map((d) => d.slug)
       .filter((slug) => !WORKSPACE_TURN_NO_ITEMS.has(slug) && !DATABASE_CHECKED.has(slug));
     expect(missing).toEqual([]);
@@ -270,9 +275,10 @@ describe('every write a workspace turn reaches declares its items (A8 fix round 
     for (const slug of WORKSPACE_TURN_NO_ITEMS.keys()) {
       const def = getBuiltin(slug);
       expect(def, `${slug} is no builtin now: drop it`).not.toBeNull();
-      expect(!!def!.policy.items || !!def!.policy.creates, `${slug} declares now: drop it`).toBe(
-        false,
-      );
+      expect(
+        !!def!.policy.legacyItemPrecheck?.need || !!def!.policy.creates,
+        `${slug} declares now: drop it`,
+      ).toBe(false);
     }
   });
 });
@@ -389,7 +395,7 @@ describe('the Admin gate lists (W7a fix round 1)', () => {
 
   it('every write with an id argument is on the item write list or says why not', () => {
     const missing = listBuiltins()
-      .filter((d) => !d.readOnly && !d.policy.items)
+      .filter((d) => !d.readOnly && !d.policy.legacyItemPrecheck?.need)
       .filter((d) =>
         Object.keys(
           ((d.inputSchema as { properties?: Record<string, unknown> }).properties ?? {}) as object,

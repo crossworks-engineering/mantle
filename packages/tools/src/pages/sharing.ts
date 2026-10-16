@@ -30,7 +30,7 @@ export const page_share: BuiltinToolDef = {
     effect: 'write',
     spends: 'none',
     scope: 'any',
-    items: [edit('id')],
+    legacyItemPrecheck: { need: [edit('id')], reason: 'answer-worse' },
     peerRisky: true,
     keyArea: 'pages',
     lowering: 'always',

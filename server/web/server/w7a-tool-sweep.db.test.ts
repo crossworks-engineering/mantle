@@ -567,7 +567,13 @@ describe.skipIf(!URL)('W7a: the Admin assistant and the Admin MCP run in a scope
     const ITEM_ARGS = ['id', 'node_id', 'page_id', 'table_id', 'file_id', 'folder_id'];
     const databaseChecked = (slug: string): string | null => {
       const def = t.getBuiltin(slug);
-      if (!def || def.readOnly || def.policy.effect !== 'write' || def.policy.items) return null;
+      if (
+        !def ||
+        def.readOnly ||
+        def.policy.effect !== 'write' ||
+        def.policy.legacyItemPrecheck?.need
+      )
+        return null;
       const pre = (def.preconditions ?? []).find((x) => x.kind === 'node_exists');
       const props = Object.keys(
         ((def.inputSchema as { properties?: Record<string, unknown> }).properties ?? {}) as object,

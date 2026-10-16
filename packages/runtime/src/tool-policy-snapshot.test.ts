@@ -457,7 +457,7 @@ describe('every @mantle/tools access list equals its literal (A5 step 1)', () =>
   it("ITEM_WRITE_TARGETS: the slugs and each one's targets", () => {
     const now = Object.fromEntries(
       listBuiltins().flatMap((d) => {
-        const v = d.policy.items;
+        const v = d.policy.legacyItemPrecheck?.need;
         return v ? [[d.slug, typeof v === 'function' ? 'resolver' : v] as const] : [];
       }),
     );
@@ -470,8 +470,8 @@ describe('every @mantle/tools access list equals its literal (A5 step 1)', () =>
     // @ts-expect-error: plain-JS module, no types shipped.
     const { measure } = await import('../../../eslint-rules/arch-counts.mjs');
     const root = fileURLToPath(new URL('../../..', import.meta.url));
-    const builtins = listBuiltins().filter((d) => d.policy.items).length;
-    const mcp = Object.values(MCP_SURFACE_POLICIES).filter((p) => p.items).length;
+    const builtins = listBuiltins().filter((d) => d.policy.legacyItemPrecheck?.need).length;
+    const mcp = Object.values(MCP_SURFACE_POLICIES).filter((p) => p.legacyItemPrecheck).length;
     expect(builtins).toBe(Object.keys(ITEMS).length);
     expect((measure(root) as { numbers: Record<string, number> }).numbers.itemPrecheckTools).toBe(
       builtins + mcp,

@@ -60,6 +60,26 @@ export type ToolItemResolver = (
   ctx?: Pick<ToolHandlerContext, 'surface'> & { queue?: boolean },
 ) => Promise<{ ids: string[]; need: ItemNeed; unresolved?: string }[]>;
 
+/**
+ * Why a kept item pre-check stays (docs/actors.md, "Pre-check deletion",
+ * Kept): a side effect lands before the statement the database checks; the
+ * database does not check the write; the write needs a read the database
+ * does not ask; or the answer without it is worse (an oracle, a wrong
+ * success, a half-made call).
+ */
+export type LegacyPrecheckReason =
+  'side-effect-before-check' | 'db-does-not-check' | 'read-not-asked' | 'answer-worse';
+
+/**
+ * DO NOT ADD. New tools rely on the database checks; see docs/actors.md
+ * ("Pre-check deletion"). A kept TypeScript item pre-check: what it asks,
+ * and why it is not gone yet.
+ */
+export type LegacyItemPrecheck = Readonly<{
+  need: readonly ToolItemTarget[] | ToolItemResolver;
+  reason: LegacyPrecheckReason;
+}>;
+
 /** What a tool reaches outside the database. */
 export type ToolOutside = Readonly<{
   /** How it reaches out. */
@@ -118,10 +138,15 @@ export type ToolPolicy = Readonly<{
    *  the queue-time check asks the deepest folder of the path the scope
    *  reads, not the path (A5 step 6a fix round 1, M1). */
   makesFolders?: true;
-  /** Transitional (plan 8, 23.3 step 6b): the items its write names and
-   *  what it needs of each, checked before it runs (builtinItems).
-   *  Deleted per tool once the database's own edit check is on everywhere. */
-  items?: readonly ToolItemTarget[] | ToolItemResolver;
+  /**
+   * DO NOT ADD. New tools rely on the database checks; see docs/actors.md
+   * ("Pre-check deletion"). The TypeScript item pre-check a tool still
+   * carries (the gate's pre-run check, builtinItems): `need`, the items its
+   * write names and what it needs of each; `reason`, why it is not gone yet.
+   * Only the 29 tools of legacy-item-precheck.test.ts's fixed list carry
+   * one, and each goes once its reason does.
+   */
+  legacyItemPrecheck?: LegacyItemPrecheck;
   /** A key or a linked brain bound to the owner calls it only when the
    *  owner named it (the gate's peer narrower). */
   peerRisky?: true;
