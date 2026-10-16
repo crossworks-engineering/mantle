@@ -141,7 +141,7 @@ describe.skipIf(!URL)('the edit check (arch A3a)', () => {
   ];
   const editMisses = (r: Result) =>
     r.notices.filter((m) => m.startsWith('mantle actor miss: edit: '));
-  const setMode = (m: 'off' | 'warn' | 'on') => sql`select mantle_set_edit_check(${m})`;
+  const setMode = (m: 'off' | 'warn' | 'on') => sql`select mantle_set_edit_check(${m}, 50, 'test')`;
 
   beforeAll(async () => {
     scratch = await createMigratedScratchDatabase(URL!);
@@ -149,7 +149,7 @@ describe.skipIf(!URL)('the edit check (arch A3a)', () => {
     // a connection keeps the database's setting from when it opened (a test
     // config may have switched the scratch database).
     const first = postgres(scratch.url, { max: 1, prepare: false, onnotice: () => {} });
-    await first`select mantle_set_edit_check('off')`;
+    await first`select mantle_set_edit_check('off', 50, 'test')`;
     await first.end();
     const onnotice = (x: { message?: string }) => notices.push(String(x.message ?? ''));
     sql = postgres(scratch.url, { max: 2, prepare: false, onnotice });
@@ -824,6 +824,80 @@ describe.skipIf(!URL)('the edit check (arch A3a)', () => {
     // The actor check's setter takes the same (and one argument still works).
     await sql`select mantle_set_actor_check('off', 3)`;
     await sql`select mantle_set_actor_check('off')`;
+  });
+
+  it('the floor (0298): lowering a check needs a reason, is recorded and warned; raising both to on clears the record', async () => {
+    const box = async () =>
+      (
+        await sql<{ a: string; e: string; l: string }[]>`
+          select mantle_check_box_mode('actor_check') as a,
+                 mantle_check_box_mode('edit_check') as e,
+                 mantle_check_lowered() as l`
+      )[0]!;
+    const warnings: string[] = [];
+    const quiet = postgres(scratch!.url, {
+      max: 1,
+      prepare: false,
+      onnotice: (n: { message?: string; severity?: string }) => {
+        if (n.severity === 'WARNING') warnings.push(String(n.message ?? ''));
+      },
+    });
+    try {
+      // Raising needs no reason, from any mode.
+      await quiet`select mantle_set_actor_check('warn')`;
+      await quiet`select mantle_set_actor_check('on')`;
+      await quiet`select mantle_set_edit_check('on')`;
+      expect(await box()).toEqual({ a: 'on', e: 'on', l: '' });
+      // Lowering with no reason (or a blank one) is refused, nothing changed.
+      for (const q of [
+        () => quiet`select mantle_set_edit_check('warn')`,
+        () => quiet`select mantle_set_edit_check('off', 50, '  ')`,
+        () => quiet`select mantle_set_check('actor_check', 'off')`,
+      ]) {
+        await expect(q()).rejects.toMatchObject({
+          code: '42501',
+          message: expect.stringMatching(
+            /^mantle_set_check: lowering mantle\.\w+ from on to \w+ needs a reason$/,
+          ),
+          hint: expect.stringContaining('docs/update-prod.md'),
+        });
+      }
+      expect(await box()).toEqual({ a: 'on', e: 'on', l: '' });
+      expect(
+        (
+          await sql<{ n: number }[]>`
+          select count(*) filter (where not enabled)::int as n from mantle_edit_check_tables()`
+        )[0]!.n,
+      ).toBe(0);
+      // With a reason: lowered, warned (the server log) and recorded.
+      await quiet`select mantle_set_edit_check('warn', 50, 'a stuck import, ticket 7')`;
+      const after = await box();
+      expect(after).toMatchObject({ a: 'on', e: 'warn' });
+      expect(after.l).toMatch(
+        /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ mantle\.edit_check on to warn by \S+: a stuck import, ticket 7$/,
+      );
+      expect(
+        warnings.some((w) =>
+          /^mantle check lowered: mantle\.edit_check from on to warn by /.test(w),
+        ),
+      ).toBe(true);
+      // Warn to off is lowering too; the record names the latest.
+      await expect(quiet`select mantle_set_edit_check('off')`).rejects.toMatchObject({
+        code: '42501',
+      });
+      await quiet`select mantle_set_edit_check('off', 50, 'still stuck')`;
+      expect((await box()).l).toMatch(/mantle\.edit_check warn to off by \S+: still stuck$/);
+      // One check back on keeps the record; both on clears it.
+      await quiet`select mantle_set_edit_check('warn')`;
+      expect((await box()).l).not.toBe('');
+      await quiet`select mantle_set_edit_check('on')`;
+      expect(await box()).toEqual({ a: 'on', e: 'on', l: '' });
+    } finally {
+      await quiet`select mantle_set_edit_check('off', 50, 'test')`;
+      await quiet`select mantle_set_actor_check('off', 50, 'test')`;
+      await quiet.end();
+    }
+    expect(await box()).toMatchObject({ a: 'off', e: 'off' });
   });
 
   it('M3: a folder rename or move takes every row below it, those the mover cannot read too; a delete that would leave them is counted', async () => {

@@ -284,7 +284,7 @@ describe.skipIf(!DB_URL)('A8 surface cells: every way in gives the oracle’s an
     await g.installProbe(raw);
     // The box at off, the fleet's default, while the brain is set up; each
     // run of the cells sets its mode (CHECK_MODES, off to on).
-    await raw`select mantle_set_actor_check('off')`;
+    await raw`select mantle_set_actor_check('off', 50, 'test')`;
     await m.asSystem(() => t.seedBuiltinTools(fx.owner), 'test');
     // One assistant per workspace ("Assistants and chats").
     for (const [name, wsId] of Object.entries(fx.ws)) {
@@ -1359,7 +1359,7 @@ describe.skipIf(!DB_URL)('A8 surface cells: every way in gives the oracle’s an
     ).toBe(true);
     for (const mode of CHECK_MODES) {
       // The box's mode and the process's, together.
-      await raw`select mantle_set_actor_check(${mode})`;
+      await raw`select mantle_set_actor_check(${mode}, 50, 'test')`;
       process.env.MANTLE_ACTOR_CHECK = mode;
       actorMode.noteBoxActorCheckMode(mode);
       expect(m.actorCheckMode(), `the process's check mode, check ${mode}`).toBe(mode);

@@ -749,7 +749,7 @@ custom setting set with ALTER DATABASE needs a superuser; the database
 owner is not enough), connected to the brain's database:
 
 ```sql
-select mantle_set_actor_check('warn');  -- off (default), warn, on
+select mantle_set_actor_check('on');    -- off, warn, on (on since 0298)
 select mantle_actor_check_mode();
 select count(*) filter (where enabled) as enabled, count(*) as tables
   from mantle_actor_check_tables();      -- warn, on: all enabled; off: 0
@@ -793,9 +793,9 @@ log) for the same load, before and after. With the check off nothing
 changes: no new query and no new round trip.
 
 `on` refuses a statement with no actor, in the app and in the database
-(A2b). Do not set it on any box until the scaling task says so (task
-2d96f472). Going back is `select mantle_set_actor_check('off');`, then
-restart the app processes.
+(A2b). Since migration 0298 every box runs it on (below, "The checks'
+floor"): lowering it needs a reason, `select mantle_set_actor_check('warn',
+50, 'why');`, then restart the app processes.
 
 ## Rolling to the write role (arch A2b2a, migration 0278)
 
@@ -844,8 +844,9 @@ select check_name, count(*) from actor_check_misses
  where check_name = 'write-role-gap' and at > now() - interval '1 day' group by 1;
 ```
 
-Going back is `select mantle_set_actor_check('off');` and a restart of the
-app processes: every write is on the system pool again.
+Going back (an emergency only since 0298, with a reason: "The checks'
+floor" below) is `select mantle_set_actor_check('off', 50, 'why');` and a
+restart of the app processes: every write is on the system pool again.
 
 ## The edit check (arch A3a, migrations 0280 and 0281)
 
@@ -864,7 +865,7 @@ first. Then, as the superuser that runs the migrations, connected to the
 brain's database:
 
 ```sql
-select mantle_set_edit_check('warn');  -- off (default), warn, on
+select mantle_set_edit_check('on');    -- off, warn, on (on since 0298)
 select mantle_edit_check_mode();
 select count(*) filter (where enabled) as enabled, count(*) as triggers
   from mantle_edit_check_tables();     -- warn, on: all enabled; off: 0
@@ -898,8 +899,9 @@ app's code (owner decision D4: a Moderator of the app's home does), a
 contact share made by a login that is not an Admin user. `on` refuses with
 a 403. Do not set `on` on any box before its `edit:` misses are zero, and
 never on the Pinnacle showcase box before 2026-10-16 (D4 lands after it).
-Going back is `select mantle_set_edit_check('off');` and a restart of the
-app processes (web, api, workers, mcp): a pooled connection keeps the
+Going back (an emergency only since 0298, with a reason: "The checks'
+floor" below) is `select mantle_set_edit_check('warn', 50, 'why');` and a
+restart of the app processes (web, api, workers, mcp): a pooled connection keeps the
 setting it opened with, and the check reads the higher of the two until
 it is restarted.
 
@@ -1118,6 +1120,50 @@ workspaces nothing a user sees changes. Before the roll:
 - **The 410 stubs** go in the release's last commit(s), only when every box
   showed no hit for one release. Count them per box, numbers only (counted
   on the box): `scripts/arch-scoreboard-box.sh <alias>`; ten counts, all 0.
+
+## The checks' floor (migration 0298, the pre-check removal)
+
+From this release the tools' TypeScript item pre-checks go, family by
+family (docs/actors.md, "Pre-check deletion"): the database's actor check
+and edit check are then the only check of a tool's write to an item. Every
+box runs both `on`. Roll this release only on a box whose two checks are
+already on (`scripts/arch-scoreboard-box.sh <alias>` prints both, or
+`select mantle_actor_check_mode(), mantle_edit_check_mode();`: both `on`).
+A box that is not would be raised at the roll's migrate (below).
+
+- **Lowering needs a reason.** `mantle_set_actor_check`,
+  `mantle_set_edit_check` and `mantle_set_check` refuse to lower a check
+  (on to warn or off, warn to off) without one: `ERROR: mantle_set_check:
+lowering mantle.edit_check from on to warn needs a reason`, nothing
+  changed. For an emergency (a check that refuses what it must not, until a
+  fix ships), as the superuser that runs the migrations:
+
+  ```sql
+  select mantle_set_edit_check('warn', 50, 'a stuck import, task 1234');
+  select mantle_check_lowered();  -- when, which check, from, to, who, why
+  ```
+
+  The lowering is a `WARNING` in the Postgres log, the record stays in the
+  database setting `mantle.check_lowered`, every app process logs a
+  `[db] SECURITY:` line naming it at its start and within a minute of a
+  change, and the integrity row `check_floor` shows it. Below on, a tool's
+  write the database would refuse is MADE: put it back as soon as you can,
+  `select mantle_set_edit_check('on');` and a restart of the app
+  processes. With both checks on again the record is cleared.
+
+- **Migrate raises a box below on with no record.** A new database, a
+  restore (`scripts/db-restore.sh`: a dropped database keeps no setting)
+  and a bare `ALTER DATABASE ... RESET mantle.actor_check` all leave a
+  check below on with no reason recorded: the next migrate (every
+  `docker compose up`) raises it to on, the actor check first, and logs
+  `actor check: off -> on`. A box lowered with a reason is left as it is,
+  with a warning. A switch that cannot take its locks in time (`55P03`) is
+  a warning, never a failed migrate: run `select mantle_set_edit_check('on');`
+  by hand when the box is quiet.
+- **A restore.** After `scripts/db-restore.sh` the stack's migrate sets
+  both checks on; nothing to set by hand. Rolling back to an image from
+  before 0298 over a restored database leaves the checks off (that image's
+  migrate does not raise them); that image still has its pre-checks.
 
 ## Rollback
 

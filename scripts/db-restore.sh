@@ -410,10 +410,13 @@ if [ "$HAS_ACTOR_SWITCH" = "t" ]; then
     echo "    SELECT mantle_set_actor_check('off');" >&2
   else
     echo "▷ Check modes: mantle.actor_check is off ($SWITCHED actor check trigger(s) switched off) and"
-    echo "  mantle.heads_check is at its default (warn): a dropped database keeps no setting. If the"
-    echo "  dump's box ran another mode, set it again as this superuser (docs/update-prod.md):"
-    echo "    SELECT mantle_set_actor_check('warn');                  -- or 'on'"
+    echo "  mantle.heads_check is at its default (warn): a dropped database keeps no setting. The"
+    echo "  migrate that runs when the stack starts raises the actor and edit checks to on (0298: a"
+    echo "  restored database records no lowering). To set them now, as this superuser:"
+    echo "    SELECT mantle_set_actor_check('on');"
     echo "    ALTER DATABASE postgres SET mantle.heads_check = 'on';  -- only if the box ran it on"
+    echo "  Below on is for an emergency only, with a reason (docs/update-prod.md):"
+    echo "    SELECT mantle_set_actor_check('warn', 50, 'why');"
   fi
 fi
 # The edit check (arch A3a, migration 0280): the same, for its triggers.
@@ -425,8 +428,8 @@ if [ "$HAS_EDIT_SWITCH" = "t" ]; then
     echo "⚠ could not put the edit check triggers in step with the box mode: run by hand before the app starts:" >&2
     echo "    SELECT mantle_set_edit_check('off');" >&2
   else
-    echo "▷ mantle.edit_check is $EDIT_MODE ($EDIT_SWITCHED edit check trigger(s) switched to match). If the"
-    echo "  dump's box ran another mode, set it again as this superuser: SELECT mantle_set_edit_check('warn');"
+    echo "▷ mantle.edit_check is $EDIT_MODE ($EDIT_SWITCHED edit check trigger(s) switched to match). The"
+    echo "  next migrate raises it to on; to set it now, as this superuser: SELECT mantle_set_edit_check('on');"
   fi
 fi
 

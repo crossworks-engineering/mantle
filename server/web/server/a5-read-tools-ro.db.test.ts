@@ -460,7 +460,7 @@ describe.skipIf(!URL)('every read builtin runs read only through the brokers (A5
 
   /** One pass: every read builtin and the recipes through every entry. */
   const sweep = async (mode: 'on' | 'warn') => {
-    await su(sql`select mantle_set_edit_check(${mode})`);
+    await su(sql`select mantle_set_edit_check(${mode}, 50, 'test')`);
     const readOnlyWrites: Record<string, string[]> = {};
     const otherMisses: Record<string, string[]> = {};
     const stuck: string[] = [];

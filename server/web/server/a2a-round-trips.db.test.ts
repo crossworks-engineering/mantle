@@ -607,7 +607,7 @@ describe.skipIf(!DB_URL)('A2a: the actor check adds no round trip when off', () 
       try {
         after = await measure(p, mode);
       } finally {
-        await su(sql`select mantle_set_edit_check('off')`);
+        await su(sql`select mantle_set_edit_check('off', 50, 'test')`);
       }
       const a = tally(before.statements.map(norm));
       const b = tally(after.statements.map(norm));

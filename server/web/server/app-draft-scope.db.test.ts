@@ -139,8 +139,8 @@ describe.skipIf(!URL)('app drafts under the row lock read as the caller’s scop
    *  actor check (never below the box's). */
   const setModes = async (modes: Modes) => {
     process.env.MANTLE_ACTOR_CHECK = modes.actor;
-    await su(sql`select mantle_set_actor_check(${modes.actor})`);
-    await su(sql`select mantle_set_edit_check(${modes.edit})`);
+    await su(sql`select mantle_set_actor_check(${modes.actor}, 50, 'test')`);
+    await su(sql`select mantle_set_edit_check(${modes.edit}, 50, 'test')`);
   };
 
   /** The edit check's word on a Write-grant user's code change: the code

@@ -163,7 +163,7 @@ describe.skipIf(!URL)('A3b part 2: the files and snapshot stores, both checks on
   };
   const setChecks = async (mode: 'on' | 'off') => {
     process.env.MANTLE_ACTOR_CHECK = mode;
-    await su(sql`select mantle_set_edit_check(${mode})`);
+    await su(sql`select mantle_set_edit_check(${mode}, 50, 'test')`);
   };
   const row = async (id: string) =>
     (

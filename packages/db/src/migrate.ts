@@ -64,6 +64,7 @@ import { applyJournal } from './migrate-runner';
 import type { JournalEntry } from './migrate-plan';
 import { CONCURRENT_INDEXES, ensureConcurrentIndexes } from './concurrent-indexes';
 import { afterMigrations, beforeMigrations } from './migrator-steps';
+import { raiseCheckFloor } from './check-floor';
 
 async function main() {
   // Boot smoke (scripts/boot-smoke.mjs): imports linked; exit 0 before any I/O.
@@ -103,6 +104,12 @@ async function main() {
     // Before the speed-only steps below: nothing of theirs may stand in
     // their way.
     await afterMigrations(sql, runtime);
+
+    // The checks' floor (0298, check-floor.ts): a box below on with no
+    // recorded lowering (a new database, a restore, a bare ALTER DATABASE)
+    // is raised to on; one an operator lowered with a reason is left, with
+    // a warning. Never fatal.
+    await raiseCheckFloor(sql, { info: console.log, warn: console.warn });
 
     // Indexes built CONCURRENTLY, outside any transaction (workspaces W3).
     // Last, bounded, and never fatal: an index here is speed only, so a

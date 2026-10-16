@@ -75,6 +75,7 @@ import {
   type ActorMiss,
 } from './actor';
 import { reserveLease, withLease, type Lease } from './reserved';
+import { noteCheckFloor } from './check-floor';
 import { withMigratorConnection } from './migrator-connection';
 import { errorMessage, RuntimeFaultError, UUID_RE } from '@mantle/std';
 import { BusyError, permissionGapOf } from './pg-error';
@@ -257,7 +258,11 @@ export function refreshActorCheckMode(base: PgSql): void {
     for (let delay = 1_000; !(await read()) && actorModePool === base; delay *= 2) {
       await quietSleep(Math.min(delay, 30_000));
     }
-    if (actorModePool === base) warnActorCheckDrift(base);
+    if (actorModePool === base) {
+      warnActorCheckDrift(base);
+      // Below on, loudly (0298, check-floor.ts).
+      noteCheckFloor(base, ACTOR_SQL_TAG);
+    }
   };
   const first: Promise<void> = Promise.race([warm(), quietSleep(FIRST_MODE_WAIT_MS)]).finally(
     () => {
@@ -267,7 +272,10 @@ export function refreshActorCheckMode(base: PgSql): void {
   firstModeRead = first;
   const timer = setInterval(() => {
     if (actorModePool !== base) clearInterval(timer);
-    else void read();
+    else {
+      void read();
+      noteCheckFloor(base, ACTOR_SQL_TAG);
+    }
   }, 60_000);
   timer.unref();
 }

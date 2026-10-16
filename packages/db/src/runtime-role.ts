@@ -91,9 +91,9 @@ const ACL_MARKER_BODY = `
  * from PUBLIC and the viewer roles, and what the allowlist may never hold.
  */
 export const RUNTIME_DENIED_FUNCTIONS: Readonly<Record<string, string>> = {
-  'public.mantle_set_check(text,text,integer)': 'sets a check mode (ALTER DATABASE)',
-  'public.mantle_set_actor_check(text,integer)': 'sets mantle.actor_check',
-  'public.mantle_set_edit_check(text,integer)': 'sets mantle.edit_check',
+  'public.mantle_set_check(text,text,integer,text)': 'sets a check mode (ALTER DATABASE)',
+  'public.mantle_set_actor_check(text,integer,text)': 'sets mantle.actor_check',
+  'public.mantle_set_edit_check(text,integer,text)': 'sets mantle.edit_check',
   'public.mantle_switch_triggers(text[],boolean,integer)': 'enables or disables triggers',
   'public.mantle_actor_check_triggers(boolean,integer)': 'the actor check triggers on or off',
   'public.mantle_edit_check_triggers(boolean,integer)': 'the edit check triggers on or off',
@@ -128,7 +128,9 @@ export const RUNTIME_SYSTEM_FUNCTIONS: Readonly<Record<string, string>> = {
   'public.mantle_bridge_login(uuid)':
     'login-create.ts, login-update.ts, member-invites.ts: a login into its workspaces (0286)',
   'public.mantle_check_box_mode(text)':
-    'client.ts EDIT_CHECK_DRIFT_SQL: the boot warning and the integrity row edit_check_drift',
+    'client.ts EDIT_CHECK_DRIFT_SQL and CHECK_FLOOR_SQL: the boot warnings and the integrity rows',
+  'public.mantle_check_lowered()':
+    'client.ts CHECK_FLOOR_SQL: the record of a check lowered below on (0298), logged loudly',
   'public.mantle_embed_host(uuid,public.node_type)':
     'maintenance/refold-embeds.ts: the host text of an embedded item (0248)',
   'public.mantle_ws_attach_assistants()':

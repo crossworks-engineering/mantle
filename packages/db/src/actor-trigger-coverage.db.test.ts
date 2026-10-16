@@ -97,7 +97,9 @@ describe.skipIf(!URL)('the actor check trigger covers every content table (arch 
     expect(await triggerCalls()).toBe(0);
     try {
       for (const mode of ['warn', 'on', 'off', 'warn'] as const) {
-        const [r] = await sql<{ m: string }[]>`select mantle_set_actor_check(${mode}) as m`;
+        const [r] = await sql<
+          { m: string }[]
+        >`select mantle_set_actor_check(${mode}, 50, 'test') as m`;
         expect(r!.m).toBe(mode);
         const now = await state();
         expect(now.mode, mode).toBe(mode);
@@ -109,7 +111,7 @@ describe.skipIf(!URL)('the actor check trigger covers every content table (arch 
       const [n] = await sql<{ n: number }[]>`select mantle_actor_check_triggers(true) as n`;
       expect(n!.n).toBe(0);
     } finally {
-      await sql`select mantle_set_actor_check('off')`;
+      await sql`select mantle_set_actor_check('off', 50, 'test')`;
     }
     expect((await state()).enabled).toBe(0);
   });
@@ -146,10 +148,10 @@ describe.skipIf(!URL)('the actor check trigger covers every content table (arch 
       await holder.end();
     }
     try {
-      await sql`select mantle_set_actor_check('warn')`;
+      await sql`select mantle_set_actor_check('warn', 50, 'test')`;
       expect((await state()).enabled).toBe((await state()).tables.length);
     } finally {
-      await sql`select mantle_set_actor_check('off')`;
+      await sql`select mantle_set_actor_check('off', 50, 'test')`;
     }
   });
 
@@ -168,10 +170,10 @@ describe.skipIf(!URL)('the actor check trigger covers every content table (arch 
       } finally {
         await fresh.end();
       }
-      await sql`select mantle_set_actor_check('warn')`;
+      await sql`select mantle_set_actor_check('warn', 50, 'test')`;
       expect(await drift()).toEqual([]);
     } finally {
-      await sql`select mantle_set_actor_check('off')`;
+      await sql`select mantle_set_actor_check('off', 50, 'test')`;
     }
     expect(await drift()).toEqual([]);
   });
@@ -183,7 +185,7 @@ describe.skipIf(!URL)('the actor check trigger covers every content table (arch 
       });
     }
     for (const q of [
-      `select mantle_set_actor_check('off')`,
+      `select mantle_set_actor_check('off', 50, 'test')`,
       `select mantle_actor_check_triggers(false)`,
     ]) {
       await expect(

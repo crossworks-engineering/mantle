@@ -309,7 +309,7 @@ describe.skipIf(!DB_URL || (!tools && !ci))('a dump of a migrated brain restores
         select has_table_privilege(${RUNTIME_ROLE}, 'public.nodes', 'INSERT') as write,
                has_table_privilege(${RUNTIME_ROLE}, 'public.mantle_heads_key', 'SELECT') as key,
                has_function_privilege(${RUNTIME_ROLE},
-                 'public.mantle_set_actor_check(text,integer)', 'EXECUTE') as switch`;
+                 'public.mantle_set_actor_check(text,integer,text)', 'EXECUTE') as switch`;
       expect(rights).toEqual({ write: true, key: false, switch: false });
       // The data came back with it: the heads key's row and the items.
       const [k] = await sql<{ n: number }[]>`select count(*)::int as n from mantle_heads_key`;

@@ -227,7 +227,7 @@ describe.skipIf(!DB_URL)('A8 findings: the owner’s decisions F1 and F2', () =>
       await tx`insert into item_grants (node_id, workspace_id, is_home, write)
                values (${folderF}, ${ws.W}, true, false)`;
     });
-    await raw`select mantle_set_actor_check('warn')`;
+    await raw`select mantle_set_actor_check('warn', 50, 'test')`;
     await m.asSystem(() => t.seedBuiltinTools(L.owner), 'test');
     // A connector W holds with its Write on (the approval cells): a write
     // that waits for approval (requires_confirm).

@@ -45,6 +45,21 @@ write calls none of them.
   triggers apart from the mode: the integrity row `edit_check_drift` and one
   warning at a pool's start (`EDIT_CHECK_DRIFT_SQL`) show it; the app never
   fixes it.
+- **The floor (migration 0298).** Since the tools' TypeScript item
+  pre-checks go (docs/actors.md, "Pre-check deletion"), a box runs both
+  checks `on`. Lowering one needs a reason as a fourth argument
+  (`mantle_set_check(setting, mode, tries, reason)`, and the two setters
+  likewise): without it the setter refuses (42501) and changes nothing;
+  with it the lowering is a WARNING in the server log and a record,
+  `mantle_check_lowered()` (the database setting `mantle.check_lowered`:
+  when, which check, from, to, the session user, the reason), cleared once
+  both checks are on again. Every app process logs a `[db] SECURITY:` line
+  while a check is below on (`packages/db/src/check-floor.ts`, at a pool's
+  start and on its minute timer, said again only when it changes), the
+  integrity row `check_floor` shows it, and migrate raises a box below on
+  with no record (a new database, a restore, a bare ALTER DATABASE) to on.
+  Raising never needs a reason. A session can still only raise its own
+  mode (`mantle_check_mode`), as before.
 
 ## The rule, written once
 
@@ -74,19 +89,19 @@ role only and only for the operations and columns that need more than the
 write check already asks. A trigger's note (its hash) makes a migrate that
 changes nothing change no trigger; a new one follows the box mode.
 
-| Table                                          | INSERT                                             | UPDATE                                                                                                            | DELETE                                   |
-| ---------------------------------------------- | -------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- | ---------------------------------------- |
-| nodes                                          | the create rules (0266, 0278), unchanged           | edit (0278); every column but the edit columns is the brain's; an embedding only cleared; a derived key only cleared | manage (0266), unchanged                 |
-| pages, draws, tables                           | edit (0278)                                        | edit (0278)                                                                                                       | manage                                   |
-| apps                                           | manage (D4); a switch above its safe value: admin   | the code: manage (D4); the switches and the author: admin (D5); the tool level lowered to team: nothing more        | manage                                   |
-| app_databases                                  | appdata (D6)                                       | appdata (D6)                                                                                                      | manage                                   |
-| recall_maps                                    | edit                                               | edit                                                                                                              | manage                                   |
-| recall_nodes, recall_revisions                 | edit of the map                                    | edit of the map                                                                                                   | edit of the map                          |
-| shares                                         | link; a contact share: admin                       | link; closing it (revoked_at): link_close; a contact share: admin                                                 | link_close; a contact share: admin       |
-| node_snapshots                                 | edit of the item                                   | edit of the item                                                                                                  | edit of the item                         |
-| content_chunks, content_chunk_windows, facts   | the write check (0278), unchanged                  |                                                                                                                   |                                          |
-| item_grants                                    | the write check and the grant definers (0279)      |                                                                                                                   |                                          |
-| node_embeds, peer_shares, contact_share_codes, node_comments | the write role holds no right on them: system work only, refused by construction | | |
+| Table                                                        | INSERT                                                                           | UPDATE                                                                                                               | DELETE                             |
+| ------------------------------------------------------------ | -------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- | ---------------------------------- |
+| nodes                                                        | the create rules (0266, 0278), unchanged                                         | edit (0278); every column but the edit columns is the brain's; an embedding only cleared; a derived key only cleared | manage (0266), unchanged           |
+| pages, draws, tables                                         | edit (0278)                                                                      | edit (0278)                                                                                                          | manage                             |
+| apps                                                         | manage (D4); a switch above its safe value: admin                                | the code: manage (D4); the switches and the author: admin (D5); the tool level lowered to team: nothing more         | manage                             |
+| app_databases                                                | appdata (D6)                                                                     | appdata (D6)                                                                                                         | manage                             |
+| recall_maps                                                  | edit                                                                             | edit                                                                                                                 | manage                             |
+| recall_nodes, recall_revisions                               | edit of the map                                                                  | edit of the map                                                                                                      | edit of the map                    |
+| shares                                                       | link; a contact share: admin                                                     | link; closing it (revoked_at): link_close; a contact share: admin                                                    | link_close; a contact share: admin |
+| node_snapshots                                               | edit of the item                                                                 | edit of the item                                                                                                     | edit of the item                   |
+| content_chunks, content_chunk_windows, facts                 | the write check (0278), unchanged                                                |                                                                                                                      |                                    |
+| item_grants                                                  | the write check and the grant definers (0279)                                    |                                                                                                                      |                                    |
+| node_embeds, peer_shares, contact_share_codes, node_comments | the write role holds no right on them: system work only, refused by construction |                                                                                                                      |                                    |
 
 - **nodes, what only the brain sets.** A new node (INSERT) that carries a
   derived key or an embedding: in `on` they are dropped

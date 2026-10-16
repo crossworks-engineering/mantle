@@ -179,7 +179,7 @@ describe.skipIf(!URL)('the runtime role is not the owner (arch A9)', () => {
       );
       expect((rows[0] as { m: string }).m).toBe('warn');
     } finally {
-      await admin`select mantle_set_actor_check('off')`;
+      await admin`select mantle_set_actor_check('off', 50, 'test')`;
     }
   });
 

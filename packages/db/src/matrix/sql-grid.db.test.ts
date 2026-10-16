@@ -317,7 +317,7 @@ describe.skipIf(!URL)('A8 SQL grid: read and create (A1 slice)', () => {
     // The box in warn, as dev is: the actor check's triggers run only when
     // the box mode is not off (0277, A2b1 fix round 2 M1). The scratch
     // database is dropped after the file.
-    await sql`select mantle_set_actor_check('warn')`;
+    await sql`select mantle_set_actor_check('warn', 50, 'test')`;
     // The fixture's own writes (beforeAll, as an operator's psql would) are
     // not cells; the cells start with no miss.
     misses.length = 0;

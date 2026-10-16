@@ -148,7 +148,7 @@ describe.skipIf(!URL)('0277: the scoped write gate', () => {
         await fresh.end();
       }
     } finally {
-      await sql`select mantle_set_actor_check('off')`;
+      await sql`select mantle_set_actor_check('off', 50, 'test')`;
     }
   });
 

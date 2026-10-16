@@ -50,7 +50,8 @@ describe.skipIf(!URL)('the actor check (arch A2a)', () => {
   /** The box mode, set the one supported way (0277, A2b1 fix round 2 M1):
    *  the setting and the triggers together. Off disables the triggers, so
    *  a test of the SQL check sets warn or on first. */
-  const boxMode = (mode: 'off' | 'warn' | 'on') => sql`select mantle_set_actor_check(${mode})`;
+  const boxMode = (mode: 'off' | 'warn' | 'on') =>
+    sql`select mantle_set_actor_check(${mode}, 50, 'test')`;
 
   /** A write on an item table that changes no row (the statement trigger
    *  still fires). */

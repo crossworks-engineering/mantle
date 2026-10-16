@@ -160,7 +160,7 @@ describe.skipIf(!URL)('A3b: the store brokers, both checks on', () => {
   };
   const setChecks = async (mode: 'on' | 'off') => {
     process.env.MANTLE_ACTOR_CHECK = mode;
-    await su(sql`select mantle_set_edit_check(${mode})`);
+    await su(sql`select mantle_set_edit_check(${mode}, 50, 'test')`);
   };
 
   beforeAll(async () => {

@@ -129,7 +129,7 @@ describe.skipIf(!DB_URL)('A8: the grants panel’s database rule under a wrong T
     await g.installProbe(raw);
     // The box at off: each case raises the process's mode itself
     // (MANTLE_ACTOR_CHECK only makes it stricter).
-    await raw`select mantle_set_actor_check('off')`;
+    await raw`select mantle_set_actor_check('off', 50, 'test')`;
   }, 300_000);
 
   afterAll(async () => {

@@ -168,8 +168,8 @@ describe('what the runtime role may not touch', () => {
   it('the heads key and the switches of the checks are on the lists', () => {
     expect(runtimeDeniedTables()).toContain('public.mantle_heads_key');
     for (const fn of [
-      'public.mantle_set_actor_check(text,integer)',
-      'public.mantle_set_edit_check(text,integer)',
+      'public.mantle_set_actor_check(text,integer,text)',
+      'public.mantle_set_edit_check(text,integer,text)',
       'public.mantle_switch_triggers(text[],boolean,integer)',
       'public.mantle_heads_bypass(text)',
       'public.mantle_set_actor(text,text,text)',

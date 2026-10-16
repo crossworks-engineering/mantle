@@ -85,6 +85,7 @@ export {
   EDIT_CHECK_DRIFT_SQL,
   type Db,
 } from './client';
+export { CHECK_FLOOR_SQL, checkFloorWarning, type CheckFloorRow } from './check-floor';
 export {
   currentScope,
   isSystemScope,

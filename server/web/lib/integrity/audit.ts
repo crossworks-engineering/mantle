@@ -16,6 +16,7 @@ import {
   ACTOR_CHECK_DRIFT_SQL,
   RUNTIME_LOCK_SQL,
   EDIT_CHECK_DRIFT_SQL,
+  CHECK_FLOOR_SQL,
   db,
   extractParkedSql,
   GRANT_DRIFT_SQL,
@@ -257,6 +258,17 @@ const CHECKS: CheckDef[] = [
       SELECT 'mantle_edit_check' AS id, 'mode ' || d.mode AS kind,
              d.enabled::text || ' of ' || d.total::text || ' triggers enabled' AS detail
       FROM (${sql.raw(EDIT_CHECK_DRIFT_SQL)}) d`,
+  },
+  {
+    key: 'check_floor',
+    label: 'The actor check and the edit check are on',
+    severity: 'high',
+    note: "whether both of the database's checks are on (migration 0298; docs/actors.md, \"Pre-check deletion\"). The tools' TypeScript item pre-checks are gone, so below on a tool's write the database would refuse is made. Lowering a check needs an operator's reason, which this row shows; no reason recorded means a new or restored database before its migrate, or a bare ALTER DATABASE, and the next migrate raises it to on. Put it back as the superuser that runs migrations with the switch functions in docs/update-prod.md.",
+    query: () => sql`
+      SELECT 'actor ' || f.actor || ', edit ' || f.edit AS id, 'below on' AS kind,
+             coalesce(nullif(f.lowered, ''), 'no reason recorded') AS detail
+      FROM (${sql.raw(CHECK_FLOOR_SQL)}) f
+      WHERE f.actor <> 'on' OR f.edit <> 'on'`,
   },
   {
     key: 'runtime_role_lock',
