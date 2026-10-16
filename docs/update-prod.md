@@ -1154,8 +1154,10 @@ lowering mantle.edit_check from on to warn needs a reason`, nothing
 - **Migrate raises a box below on with no record.** A new database, a
   restore (`scripts/db-restore.sh`: a dropped database keeps no setting)
   and a bare `ALTER DATABASE ... RESET mantle.actor_check` all leave a
-  check below on with no reason recorded: the next migrate (every
-  `docker compose up`) raises it to on, the actor check first, and logs
+  check below on with no reason recorded: the next migrate on a box (every
+  `docker compose up`; the image's `NODE_ENV=production`, so a test or
+  development database is left as its run sets it) raises it to on, the
+  actor check first, and logs
   `actor check: off -> on`. A box lowered with a reason is left as it is,
   with a warning. A switch that cannot take its locks in time (`55P03`) is
   a warning, never a failed migrate: run `select mantle_set_edit_check('on');`

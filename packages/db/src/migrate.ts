@@ -59,7 +59,7 @@
 import { readFileSync } from 'node:fs';
 import { readMigrationFiles } from 'drizzle-orm/migrator';
 import postgres from 'postgres';
-import { bootSmokeExit, env, feature, isBootSmoke } from '@mantle/config';
+import { bootSmokeExit, env, feature, isBootSmoke, isProduction } from '@mantle/config';
 import { applyJournal } from './migrate-runner';
 import type { JournalEntry } from './migrate-plan';
 import { CONCURRENT_INDEXES, ensureConcurrentIndexes } from './concurrent-indexes';
@@ -108,8 +108,11 @@ async function main() {
     // The checks' floor (0298, check-floor.ts): a box below on with no
     // recorded lowering (a new database, a restore, a bare ALTER DATABASE)
     // is raised to on; one an operator lowered with a reason is left, with
-    // a warning. Never fatal.
-    await raiseCheckFloor(sql, { info: console.log, warn: console.warn });
+    // a warning. Never fatal. A box only (the image's NODE_ENV): a test or
+    // development database keeps the mode its run sets (CI migrates the
+    // database its suites switch themselves).
+    if (isProduction()) await raiseCheckFloor(sql, { info: console.log, warn: console.warn });
+    else console.log('  check modes: left as they are (not a production box)');
 
     // Indexes built CONCURRENTLY, outside any transaction (workspaces W3).
     // Last, bounded, and never fatal: an index here is speed only, so a
