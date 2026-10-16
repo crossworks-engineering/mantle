@@ -2,7 +2,10 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import {
   databaseErrorPublic,
   isDatabaseError,
+  isProviderHttpFailure,
   isRuntimeFault,
+  isWatchedProviderFailure,
+  publicProviderErrorMessage,
   RUNTIME_ERROR_PUBLIC,
   setDatabaseErrorWatch,
 } from './index';
@@ -17,7 +20,9 @@ setDatabaseErrorWatch(() => store.getStore());
 
 /**
  * Run `fn` (one tool call for a caller outside the server) and collect the
- * text of every database error errorMessage turned into a string during it.
+ * text of every database error errorMessage turned into a string during it
+ * (and, since the A10 lows, every runtime fault's and every model
+ * provider's HTTP failure's: publicToolError maps each to its fixed text).
  */
 export async function watchDatabaseErrors<T>(
   fn: () => Promise<T>,
@@ -32,6 +37,15 @@ export async function watchDatabaseErrors<T>(
     // by: it goes on as a generic one, logged in full.
     const text = err instanceof Error ? err.message : String(err);
     const at = texts.texts.findIndex((t) => text.includes(t));
+    if (!isDatabaseError(err) && at >= 0 && isWatchedProviderFailure(texts.errors[at])) {
+      // A provider's HTTP failure (A10 lows): one thrown as itself goes on
+      // to its own mappers (toolThrowText, the domain row); a message of
+      // our own that repeats its text goes on as its fixed sentence.
+      if (isProviderHttpFailure(err)) throw err;
+      throw new Error(publicProviderErrorMessage(texts.errors[at], 'watchDatabaseErrors'), {
+        cause: err,
+      });
+    }
     if (!isDatabaseError(err) && at >= 0 && isRuntimeFault(texts.errors[at])) {
       // Likewise a runtime fault's text (the A8 finding F2): a fixed text.
       console.error('[watchDatabaseErrors] runtime fault in a thrown message:', err);

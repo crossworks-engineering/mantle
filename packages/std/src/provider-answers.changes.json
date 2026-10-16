@@ -1,0 +1,443 @@
+{
+  "phe 401 key": [
+    {
+      "reader": "reply",
+      "now": "The provider refused the API key. (deepgram, HTTP 401)",
+      "why": "A10 lows item 4: a tool that caught a provider HTTP failure and replied errorMessage(err) now hands on its fixed sentence (errorMessage collects it, publicToolError maps it); main handed on the body"
+    }
+  ],
+  "phe 429 rate": [
+    {
+      "reader": "reply",
+      "now": "The provider limits the request rate. (anthropic, HTTP 429)",
+      "why": "A10 lows item 4: a tool that caught a provider HTTP failure and replied errorMessage(err) now hands on its fixed sentence (errorMessage collects it, publicToolError maps it); main handed on the body"
+    }
+  ],
+  "phe 500 server": [
+    {
+      "reader": "reply",
+      "now": "The provider has a server problem. (openai, HTTP 500)",
+      "why": "A10 lows item 4: a tool that caught a provider HTTP failure and replied errorMessage(err) now hands on its fixed sentence (errorMessage collects it, publicToolError maps it); main handed on the body"
+    }
+  ],
+  "phe 404 model": [
+    {
+      "reader": "reply",
+      "now": "The provider does not offer this model. (openai, HTTP 404)",
+      "why": "A10 lows item 4: a tool that caught a provider HTTP failure and replied errorMessage(err) now hands on its fixed sentence (errorMessage collects it, publicToolError maps it); main handed on the body"
+    }
+  ],
+  "phe 400 bad args": [
+    {
+      "reader": "provider",
+      "now": "The provider rejected the request as invalid. Check the arguments (names, types, sizes) and try again. (openai, HTTP 400)",
+      "why": "A10 lows item 2: a 400/422 bad request says the model should check its arguments (main: the generic sentence)"
+    },
+    {
+      "reader": "thrown",
+      "now": "The provider rejected the request as invalid. Check the arguments (names, types, sizes) and try again. (openai, HTTP 400)",
+      "why": "A10 lows item 2: a 400/422 bad request says the model should check its arguments (main: the generic sentence)"
+    },
+    {
+      "reader": "domain",
+      "now": "The provider rejected the request as invalid. Check the arguments (names, types, sizes) and try again. (openai, HTTP 400)",
+      "why": "A10 lows item 2: a 400/422 bad request says the model should check its arguments (main: the generic sentence)"
+    },
+    {
+      "reader": "reply",
+      "now": "The provider rejected the request as invalid. Check the arguments (names, types, sizes) and try again. (openai, HTTP 400)",
+      "why": "A10 lows item 4: a tool that caught a provider HTTP failure and replied errorMessage(err) now hands on its fixed sentence (errorMessage collects it, publicToolError maps it); main handed on the body"
+    }
+  ],
+  "phe 400 max_tokens": [
+    {
+      "reader": "provider",
+      "now": "The provider rejected the request as invalid. Check the arguments (names, types, sizes) and try again. (openai, HTTP 400)",
+      "why": "A10 lows item 2: a 400/422 bad request says the model should check its arguments (main: the generic sentence)"
+    },
+    {
+      "reader": "thrown",
+      "now": "The provider rejected the request as invalid. Check the arguments (names, types, sizes) and try again. (openai, HTTP 400)",
+      "why": "A10 lows item 2: a 400/422 bad request says the model should check its arguments (main: the generic sentence)"
+    },
+    {
+      "reader": "domain",
+      "now": "The provider rejected the request as invalid. Check the arguments (names, types, sizes) and try again. (openai, HTTP 400)",
+      "why": "A10 lows item 2: a 400/422 bad request says the model should check its arguments (main: the generic sentence)"
+    },
+    {
+      "reader": "reply",
+      "now": "The provider rejected the request as invalid. Check the arguments (names, types, sizes) and try again. (openai, HTTP 400)",
+      "why": "A10 lows item 4: a tool that caught a provider HTTP failure and replied errorMessage(err) now hands on its fixed sentence (errorMessage collects it, publicToolError maps it); main handed on the body"
+    }
+  ],
+  "phe 400 prompt too long": [
+    {
+      "reader": "provider",
+      "now": "The request is too long for this model. Send less at once (a shorter input, fewer or smaller files) and try again. (anthropic, HTTP 400)",
+      "why": "A10 lows item 2: a 400/413 the provider gives for an input that is too long names that, so the model can send less (main: the generic sentence)"
+    },
+    {
+      "reader": "thrown",
+      "now": "The request is too long for this model. Send less at once (a shorter input, fewer or smaller files) and try again. (anthropic, HTTP 400)",
+      "why": "A10 lows item 2: a 400/413 the provider gives for an input that is too long names that, so the model can send less (main: the generic sentence)"
+    },
+    {
+      "reader": "domain",
+      "now": "The request is too long for this model. Send less at once (a shorter input, fewer or smaller files) and try again. (anthropic, HTTP 400)",
+      "why": "A10 lows item 2: a 400/413 the provider gives for an input that is too long names that, so the model can send less (main: the generic sentence)"
+    },
+    {
+      "reader": "reply",
+      "now": "The request is too long for this model. Send less at once (a shorter input, fewer or smaller files) and try again. (anthropic, HTTP 400)",
+      "why": "A10 lows item 4: a tool that caught a provider HTTP failure and replied errorMessage(err) now hands on its fixed sentence (errorMessage collects it, publicToolError maps it); main handed on the body"
+    }
+  ],
+  "phe 400 context length": [
+    {
+      "reader": "provider",
+      "now": "The request is too long for this model. Send less at once (a shorter input, fewer or smaller files) and try again. (openai, HTTP 400)",
+      "why": "A10 lows item 2: a 400/413 the provider gives for an input that is too long names that, so the model can send less (main: the generic sentence)"
+    },
+    {
+      "reader": "thrown",
+      "now": "The request is too long for this model. Send less at once (a shorter input, fewer or smaller files) and try again. (openai, HTTP 400)",
+      "why": "A10 lows item 2: a 400/413 the provider gives for an input that is too long names that, so the model can send less (main: the generic sentence)"
+    },
+    {
+      "reader": "domain",
+      "now": "The request is too long for this model. Send less at once (a shorter input, fewer or smaller files) and try again. (openai, HTTP 400)",
+      "why": "A10 lows item 2: a 400/413 the provider gives for an input that is too long names that, so the model can send less (main: the generic sentence)"
+    },
+    {
+      "reader": "reply",
+      "now": "The request is too long for this model. Send less at once (a shorter input, fewer or smaller files) and try again. (openai, HTTP 400)",
+      "why": "A10 lows item 4: a tool that caught a provider HTTP failure and replied errorMessage(err) now hands on its fixed sentence (errorMessage collects it, publicToolError maps it); main handed on the body"
+    }
+  ],
+  "phe 400 gemini token count": [
+    {
+      "reader": "provider",
+      "now": "The request is too long for this model. Send less at once (a shorter input, fewer or smaller files) and try again. (google, HTTP 400)",
+      "why": "A10 lows item 2: a 400/413 the provider gives for an input that is too long names that, so the model can send less (main: the generic sentence)"
+    },
+    {
+      "reader": "thrown",
+      "now": "The request is too long for this model. Send less at once (a shorter input, fewer or smaller files) and try again. (google, HTTP 400)",
+      "why": "A10 lows item 2: a 400/413 the provider gives for an input that is too long names that, so the model can send less (main: the generic sentence)"
+    },
+    {
+      "reader": "domain",
+      "now": "The request is too long for this model. Send less at once (a shorter input, fewer or smaller files) and try again. (google, HTTP 400)",
+      "why": "A10 lows item 2: a 400/413 the provider gives for an input that is too long names that, so the model can send less (main: the generic sentence)"
+    },
+    {
+      "reader": "reply",
+      "now": "The request is too long for this model. Send less at once (a shorter input, fewer or smaller files) and try again. (google, HTTP 400)",
+      "why": "A10 lows item 4: a tool that caught a provider HTTP failure and replied errorMessage(err) now hands on its fixed sentence (errorMessage collects it, publicToolError maps it); main handed on the body"
+    }
+  ],
+  "phe 413 too large": [
+    {
+      "reader": "provider",
+      "now": "The request is too long for this model. Send less at once (a shorter input, fewer or smaller files) and try again. (openai, HTTP 413)",
+      "why": "A10 lows item 2: a 400/413 the provider gives for an input that is too long names that, so the model can send less (main: the generic sentence)"
+    },
+    {
+      "reader": "thrown",
+      "now": "The request is too long for this model. Send less at once (a shorter input, fewer or smaller files) and try again. (openai, HTTP 413)",
+      "why": "A10 lows item 2: a 400/413 the provider gives for an input that is too long names that, so the model can send less (main: the generic sentence)"
+    },
+    {
+      "reader": "domain",
+      "now": "The request is too long for this model. Send less at once (a shorter input, fewer or smaller files) and try again. (openai, HTTP 413)",
+      "why": "A10 lows item 2: a 400/413 the provider gives for an input that is too long names that, so the model can send less (main: the generic sentence)"
+    },
+    {
+      "reader": "reply",
+      "now": "The request is too long for this model. Send less at once (a shorter input, fewer or smaller files) and try again. (openai, HTTP 413)",
+      "why": "A10 lows item 4: a tool that caught a provider HTTP failure and replied errorMessage(err) now hands on its fixed sentence (errorMessage collects it, publicToolError maps it); main handed on the body"
+    }
+  ],
+  "phe 422 unprocessable": [
+    {
+      "reader": "provider",
+      "now": "The provider rejected the request as invalid. Check the arguments (names, types, sizes) and try again. (openai, HTTP 422)",
+      "why": "A10 lows item 2: a 400/422 bad request says the model should check its arguments (main: the generic sentence)"
+    },
+    {
+      "reader": "thrown",
+      "now": "The provider rejected the request as invalid. Check the arguments (names, types, sizes) and try again. (openai, HTTP 422)",
+      "why": "A10 lows item 2: a 400/422 bad request says the model should check its arguments (main: the generic sentence)"
+    },
+    {
+      "reader": "domain",
+      "now": "The provider rejected the request as invalid. Check the arguments (names, types, sizes) and try again. (openai, HTTP 422)",
+      "why": "A10 lows item 2: a 400/422 bad request says the model should check its arguments (main: the generic sentence)"
+    },
+    {
+      "reader": "reply",
+      "now": "The provider rejected the request as invalid. Check the arguments (names, types, sizes) and try again. (openai, HTTP 422)",
+      "why": "A10 lows item 4: a tool that caught a provider HTTP failure and replied errorMessage(err) now hands on its fixed sentence (errorMessage collects it, publicToolError maps it); main handed on the body"
+    }
+  ],
+  "phe 403 moderation": [
+    {
+      "reader": "provider",
+      "now": "The provider refused this input under its content policy. Rephrase it or leave out the flagged part. (openai, HTTP 403)",
+      "why": "A10 lows item 2: a moderation refusal says the input was refused under a content policy (main: the generic sentence)"
+    },
+    {
+      "reader": "thrown",
+      "now": "The provider refused this input under its content policy. Rephrase it or leave out the flagged part. (openai, HTTP 403)",
+      "why": "A10 lows item 2: a moderation refusal says the input was refused under a content policy (main: the generic sentence)"
+    },
+    {
+      "reader": "domain",
+      "now": "The provider refused this input under its content policy. Rephrase it or leave out the flagged part. (openai, HTTP 403)",
+      "why": "A10 lows item 2: a moderation refusal says the input was refused under a content policy (main: the generic sentence)"
+    },
+    {
+      "reader": "reply",
+      "now": "The provider refused this input under its content policy. Rephrase it or leave out the flagged part. (openai, HTTP 403)",
+      "why": "A10 lows item 4: a tool that caught a provider HTTP failure and replied errorMessage(err) now hands on its fixed sentence (errorMessage collects it, publicToolError maps it); main handed on the body"
+    }
+  ],
+  "phe 403 forbidden": [
+    {
+      "reader": "reply",
+      "now": "The provider refused the API key. (openai, HTTP 403)",
+      "why": "A10 lows item 4: a tool that caught a provider HTTP failure and replied errorMessage(err) now hands on its fixed sentence (errorMessage collects it, publicToolError maps it); main handed on the body"
+    }
+  ],
+  "phe 400 anthropic workspace": [
+    {
+      "reader": "reply",
+      "now": "This Anthropic key is not tied to a workspace. Add or check the workspace id on the key, or use a key made inside an Anthropic workspace. (anthropic, HTTP 400)",
+      "why": "A10 lows item 4: a tool that caught a provider HTTP failure and replied errorMessage(err) now hands on its fixed sentence (errorMessage collects it, publicToolError maps it); main handed on the body"
+    }
+  ],
+  "phe 200 transcript error": [
+    {
+      "reader": "provider",
+      "now": "The provider answered without a usable result. (assemblyai)",
+      "why": "A10 lows item 3: a 2xx answer with no usable result says so, without an HTTP 200 status (main: the generic sentence with (HTTP 200))"
+    },
+    {
+      "reader": "thrown",
+      "now": "The provider answered without a usable result. (assemblyai)",
+      "why": "A10 lows item 3: a 2xx answer with no usable result says so, without an HTTP 200 status (main: the generic sentence with (HTTP 200))"
+    },
+    {
+      "reader": "domain",
+      "now": "The provider answered without a usable result. (assemblyai)",
+      "why": "A10 lows item 3: a 2xx answer with no usable result says so, without an HTTP 200 status (main: the generic sentence with (HTTP 200))"
+    },
+    {
+      "reader": "reply",
+      "now": "The provider answered without a usable result. (assemblyai)",
+      "why": "A10 lows item 4: a tool that caught a provider HTTP failure and replied errorMessage(err) now hands on its fixed sentence (errorMessage collects it, publicToolError maps it); main handed on the body"
+    }
+  ],
+  "phe 418 unnamed": [
+    {
+      "reader": "reply",
+      "now": "The model provider answered with an error. (openai, HTTP 418)",
+      "why": "A10 lows item 4: a tool that caught a provider HTTP failure and replied errorMessage(err) now hands on its fixed sentence (errorMessage collects it, publicToolError maps it); main handed on the body"
+    }
+  ],
+  "wrapped phe 400 too long": [
+    {
+      "reader": "provider",
+      "now": "The request is too long for this model. Send less at once (a shorter input, fewer or smaller files) and try again. (anthropic, HTTP 400)",
+      "why": "A10 lows item 2: a 400/413 the provider gives for an input that is too long names that, so the model can send less (main: the generic sentence)"
+    },
+    {
+      "reader": "thrown",
+      "now": "The request is too long for this model. Send less at once (a shorter input, fewer or smaller files) and try again. (anthropic, HTTP 400)",
+      "why": "A10 lows item 2: a 400/413 the provider gives for an input that is too long names that, so the model can send less (main: the generic sentence)"
+    },
+    {
+      "reader": "domain",
+      "now": "The request is too long for this model. Send less at once (a shorter input, fewer or smaller files) and try again. (anthropic, HTTP 400)",
+      "why": "A10 lows item 2: a 400/413 the provider gives for an input that is too long names that, so the model can send less (main: the generic sentence)"
+    },
+    {
+      "reader": "reply",
+      "now": "The request is too long for this model. Send less at once (a shorter input, fewer or smaller files) and try again. (anthropic, HTTP 400)",
+      "why": "A10 lows item 4: a tool that caught a provider HTTP failure and replied errorMessage(err) now hands on its fixed sentence (errorMessage collects it, publicToolError maps it); main handed on the body"
+    }
+  ],
+  "sdk 400 too long": [
+    {
+      "reader": "provider",
+      "now": "The request is too long for this model. Send less at once (a shorter input, fewer or smaller files) and try again. (HTTP 400)",
+      "why": "A10 lows item 2: a 400/413 the provider gives for an input that is too long names that, so the model can send less (main: the generic sentence)"
+    },
+    {
+      "reader": "thrown",
+      "now": "The request is too long for this model. Send less at once (a shorter input, fewer or smaller files) and try again. (HTTP 400)",
+      "why": "A10 lows item 2: a 400/413 the provider gives for an input that is too long names that, so the model can send less (main: the generic sentence)"
+    },
+    {
+      "reader": "reply",
+      "now": "The request is too long for this model. Send less at once (a shorter input, fewer or smaller files) and try again. (HTTP 400)",
+      "why": "A10 lows item 4: a tool that caught a provider HTTP failure and replied errorMessage(err) now hands on its fixed sentence (errorMessage collects it, publicToolError maps it); main handed on the body"
+    }
+  ],
+  "sdk 400 bad args": [
+    {
+      "reader": "provider",
+      "now": "The provider rejected the request as invalid. Check the arguments (names, types, sizes) and try again. (HTTP 400)",
+      "why": "A10 lows item 2: a 400/422 bad request says the model should check its arguments (main: the generic sentence)"
+    },
+    {
+      "reader": "thrown",
+      "now": "The provider rejected the request as invalid. Check the arguments (names, types, sizes) and try again. (HTTP 400)",
+      "why": "A10 lows item 2: a 400/422 bad request says the model should check its arguments (main: the generic sentence)"
+    },
+    {
+      "reader": "reply",
+      "now": "The provider rejected the request as invalid. Check the arguments (names, types, sizes) and try again. (HTTP 400)",
+      "why": "A10 lows item 4: a tool that caught a provider HTTP failure and replied errorMessage(err) now hands on its fixed sentence (errorMessage collects it, publicToolError maps it); main handed on the body"
+    }
+  ],
+  "sdk 403 moderation": [
+    {
+      "reader": "provider",
+      "now": "The provider refused this input under its content policy. Rephrase it or leave out the flagged part. (HTTP 403)",
+      "why": "A10 lows item 2: a moderation refusal says the input was refused under a content policy (main: the generic sentence)"
+    },
+    {
+      "reader": "thrown",
+      "now": "The provider refused this input under its content policy. Rephrase it or leave out the flagged part. (HTTP 403)",
+      "why": "A10 lows item 2: a moderation refusal says the input was refused under a content policy (main: the generic sentence)"
+    },
+    {
+      "reader": "reply",
+      "now": "The provider refused this input under its content policy. Rephrase it or leave out the flagged part. (HTTP 403)",
+      "why": "A10 lows item 4: a tool that caught a provider HTTP failure and replied errorMessage(err) now hands on its fixed sentence (errorMessage collects it, publicToolError maps it); main handed on the body"
+    }
+  ],
+  "sdk 413 too large": [
+    {
+      "reader": "provider",
+      "now": "The request is too long for this model. Send less at once (a shorter input, fewer or smaller files) and try again. (HTTP 413)",
+      "why": "A10 lows item 2: a 400/413 the provider gives for an input that is too long names that, so the model can send less (main: the generic sentence)"
+    },
+    {
+      "reader": "thrown",
+      "now": "The request is too long for this model. Send less at once (a shorter input, fewer or smaller files) and try again. (HTTP 413)",
+      "why": "A10 lows item 2: a 400/413 the provider gives for an input that is too long names that, so the model can send less (main: the generic sentence)"
+    },
+    {
+      "reader": "reply",
+      "now": "The request is too long for this model. Send less at once (a shorter input, fewer or smaller files) and try again. (HTTP 413)",
+      "why": "A10 lows item 4: a tool that caught a provider HTTP failure and replied errorMessage(err) now hands on its fixed sentence (errorMessage collects it, publicToolError maps it); main handed on the body"
+    }
+  ],
+  "sdk 429 rate": [
+    {
+      "reader": "reply",
+      "now": "The provider limits the request rate. (HTTP 429)",
+      "why": "A10 lows item 4: a tool that caught a provider HTTP failure and replied errorMessage(err) now hands on its fixed sentence (errorMessage collects it, publicToolError maps it); main handed on the body"
+    }
+  ],
+  "sdk unwrapped 413": [
+    {
+      "reader": "provider",
+      "now": "The request is too long for this model. Send less at once (a shorter input, fewer or smaller files) and try again. (HTTP 413)",
+      "why": "A10 lows item 2: a 400/413 the provider gives for an input that is too long names that, so the model can send less (main: the generic sentence)"
+    },
+    {
+      "reader": "thrown",
+      "now": "The request is too long for this model. Send less at once (a shorter input, fewer or smaller files) and try again. (HTTP 413)",
+      "why": "A10 lows item 2: a 400/413 the provider gives for an input that is too long names that, so the model can send less (main: the generic sentence)"
+    },
+    {
+      "reader": "reply",
+      "now": "The request is too long for this model. Send less at once (a shorter input, fewer or smaller files) and try again. (HTTP 413)",
+      "why": "A10 lows item 4: a tool that caught a provider HTTP failure and replied errorMessage(err) now hands on its fixed sentence (errorMessage collects it, publicToolError maps it); main handed on the body"
+    }
+  ],
+  "sdk 200 validation": [
+    {
+      "reader": "provider",
+      "now": "The provider answered without a usable result.",
+      "why": "A10 lows item 3: a 2xx answer with no usable result says so, without an HTTP 200 status (main: the generic sentence with (HTTP 200))"
+    },
+    {
+      "reader": "thrown",
+      "now": "The provider answered without a usable result.",
+      "why": "A10 lows item 3: a 2xx answer with no usable result says so, without an HTTP 200 status (main: the generic sentence with (HTTP 200))"
+    },
+    {
+      "reader": "reply",
+      "now": "The provider answered without a usable result.",
+      "why": "A10 lows item 4: a tool that caught a provider HTTP failure and replied errorMessage(err) now hands on its fixed sentence (errorMessage collects it, publicToolError maps it); main handed on the body"
+    }
+  ],
+  "prose fetch failed 404": [
+    {
+      "reader": "provider",
+      "now": "A service the brain called answered with an error. (HTTP 404)",
+      "why": "A10 lows item 1: a status that is no model provider answer (no body, not an adapter message) no longer reads as a provider class; a neutral fixed sentence with the status"
+    }
+  ],
+  "prose download failed http 500": [
+    {
+      "reader": "provider",
+      "now": "A service the brain called answered with an error. (HTTP 500)",
+      "why": "A10 lows item 1: a status that is no model provider answer (no body, not an adapter message) no longer reads as a provider class; a neutral fixed sentence with the status"
+    }
+  ],
+  "own status 401 no body": [
+    {
+      "reader": "provider",
+      "now": "A service the brain called answered with an error. (HTTP 401)",
+      "why": "A10 lows item 1: a status that is no model provider answer (no body, not an adapter message) no longer reads as a provider class; a neutral fixed sentence with the status"
+    }
+  ],
+  "own status 404 no body": [
+    {
+      "reader": "provider",
+      "now": "A service the brain called answered with an error. (HTTP 404)",
+      "why": "A10 lows item 1: a status that is no model provider answer (no body, not an adapter message) no longer reads as a provider class; a neutral fixed sentence with the status"
+    }
+  ],
+  "typeerror own bug": [
+    {
+      "reader": "provider",
+      "now": "the server could not run this request (the details are in the server log)",
+      "why": "A10 lows item 1: a TypeError with no network words is our own fault, not an unreachable provider: the runtime fixed sentence"
+    }
+  ],
+  "typeerror header value": [
+    {
+      "reader": "provider",
+      "now": "the server could not run this request (the details are in the server log)",
+      "why": "A10 lows item 1: a TypeError with no network words is our own fault, not an unreachable provider: the runtime fixed sentence"
+    }
+  ],
+  "timeout error": [
+    {
+      "reader": "provider",
+      "now": "The provider does not answer in time.",
+      "why": "A10 lows item 1: a TimeoutError is known by its name, not by a number scraped from its message (main read 180 s as HTTP 180)"
+    }
+  ],
+  "syntax error html body": [
+    {
+      "reader": "provider",
+      "now": "An answer could not be read: it is not valid JSON.",
+      "why": "A10 lows item 1: a body that did not parse no longer blames the model provider; a neutral fixed sentence"
+    }
+  ],
+  "syntax error empty body": [
+    {
+      "reader": "provider",
+      "now": "An answer could not be read: it is not valid JSON.",
+      "why": "A10 lows item 1: a body that did not parse no longer blames the model provider; a neutral fixed sentence"
+    }
+  ]
+}

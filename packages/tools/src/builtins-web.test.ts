@@ -402,7 +402,8 @@ describe('web_search', () => {
       expect(error).toBe(
         status === 429
           ? 'The provider limits the request rate. (HTTP 429)'
-          : 'The model provider answered with an error. (HTTP 403)',
+          : // A10 lows item 2: a moderation 403 says what the model can fix.
+            'The provider refused this input under its content policy. Rephrase it or leave out the flagged part. (HTTP 403)',
       );
     }
     expect(log).toHaveBeenCalled();

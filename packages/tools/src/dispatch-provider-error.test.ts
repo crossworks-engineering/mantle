@@ -112,7 +112,10 @@ describe("dispatch: a builtin's provider failure is the fixed sentence (A10 #10 
 
     it(`${name}: an SDK's own error the classifier does not name never passes its body`, async () => {
       const error = await call('provider_probe_sdk', ctx);
-      expect(error).toBe('The model provider answered with an error. (HTTP 400)');
+      // A10 lows item 2: a 400 says the arguments are bad, still no body.
+      expect(error).toBe(
+        'The provider rejected the request as invalid. Check the arguments (names, types, sizes) and try again. (HTTP 400)',
+      );
       expect(error).not.toContain('acme-private');
     });
 

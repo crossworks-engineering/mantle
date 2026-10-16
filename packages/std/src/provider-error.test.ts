@@ -1,8 +1,19 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { domainErrorAnswer } from './domain-errors';
-import { InputError, errorMessage, publicProviderErrorMessage, toolThrowText } from './index';
+import { watchDatabaseErrors } from './db-watch';
 import {
+  InputError,
+  errorDetail,
+  errorMessage,
+  publicErrorText,
+  publicProviderErrorMessage,
+  publicToolError,
+  toolThrowText,
+} from './index';
+import {
+  PROVIDER_REQUEST_REASONS,
   ProviderHttpError,
+  UNREADABLE_ANSWER_PUBLIC,
   classifyProviderError,
   isProviderHttpFailure,
   isRouteDownError,
@@ -117,19 +128,25 @@ describe('a provider failure the classifier does not name (A10 #10 fix round 2)'
   };
 
   it.each([
-    [400, 'prompt is too long for this route'],
-    [403, 'Your input was flagged by moderation'],
-    [413, 'Request entity too large'],
-  ])('an OpenRouter %i says the fixed sentence and its status, never the body', (status, up) => {
-    const e = sdkError(status, up);
-    expect(classifyProviderError(e)).toBeNull();
-    const text = publicProviderErrorMessage(e, 'team-turn');
-    expect(text).toBe(`The model provider answered with an error. (HTTP ${status})`);
-    expect(text).not.toContain('acme-private');
-    expect(text).not.toContain(up);
-    // The detail is in the server log.
-    expect(JSON.stringify(logged.map((a) => String(a[1])))).toContain('acme-private');
-  });
+    [400, 'prompt is too long for this route', PROVIDER_REQUEST_REASONS.too_long],
+    [403, 'Your input was flagged by moderation', PROVIDER_REQUEST_REASONS.refused],
+    [413, 'Request entity too large', PROVIDER_REQUEST_REASONS.too_long],
+    [400, 'tools.0.function.parameters is invalid', PROVIDER_REQUEST_REASONS.bad_request],
+    [418, 'I am a teapot', 'The model provider answered with an error.'],
+  ])(
+    'an OpenRouter %i says a fixed sentence and its status, never the body',
+    (status, up, says) => {
+      const e = sdkError(status, up);
+      expect(classifyProviderError(e)).toBeNull();
+      const text = publicProviderErrorMessage(e, 'team-turn');
+      // A10 lows item 2: the sentence names what the model can fix.
+      expect(text).toBe(`${says} (HTTP ${status})`);
+      expect(text).not.toContain('acme-private');
+      expect(text).not.toContain(up);
+      // The detail is in the server log.
+      expect(JSON.stringify(logged.map((a) => String(a[1])))).toContain('acme-private');
+    },
+  );
 
   it("the SDK's own error, unwrapped (a research tool), is the same", () => {
     const e = Object.assign(new Error(`API error occurred: ${SECRET}`), {
@@ -137,11 +154,11 @@ describe('a provider failure the classifier does not name (A10 #10 fix round 2)'
       body: SECRET,
     });
     expect(publicProviderErrorMessage(e, 'search')).toBe(
-      'The model provider answered with an error. (HTTP 413)',
+      `${PROVIDER_REQUEST_REASONS.too_long} (HTTP 413)`,
     );
   });
 
-  it('a body that did not parse says the fixed sentence (V8 quotes the body)', () => {
+  it('a body that did not parse says a fixed sentence (V8 quotes the body)', () => {
     let parseError: unknown;
     try {
       JSON.parse(`<html>${SECRET}</html>`);
@@ -149,7 +166,8 @@ describe('a provider failure the classifier does not name (A10 #10 fix round 2)'
       parseError = e;
     }
     const text = publicProviderErrorMessage(parseError, 'test');
-    expect(text).toBe('The model provider answered with an error.');
+    // A10 lows item 1: it no longer blames the model provider.
+    expect(text).toBe(UNREADABLE_ANSWER_PUBLIC);
   });
 });
 
@@ -218,7 +236,7 @@ describe('toolThrowText: a builtin that throws (A10 #10 fix round 2)', () => {
       body: SECRET,
     });
     const e = new Error(`openrouter-chat 400 on m: bad ${SECRET}`, { cause: inner });
-    expect(text(e, 'tool x')).toBe('The model provider answered with an error. (HTTP 400)');
+    expect(text(e, 'tool x')).toBe(`${PROVIDER_REQUEST_REASONS.bad_request} (HTTP 400)`);
   });
 
   it('our own errors keep their text, as on main', () => {
@@ -306,5 +324,76 @@ describe('an Anthropic key that names no workspace', () => {
     } finally {
       spy.mockRestore();
     }
+  });
+});
+
+describe('the one gateway: publicErrorText and errorDetail (A10 lows item 4)', () => {
+  const SECRET = 'sk-ant-api03-0123456789abcdef org=acme-private';
+  beforeEach(() => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+  });
+  afterEach(() => vi.restoreAllMocks());
+
+  it("a provider's HTTP failure: the sentence out, the detail on the owner's trace", () => {
+    const e = new ProviderHttpError({ provider: 'openai', status: 500, body: SECRET });
+    const meta: Record<string, unknown>[] = [];
+    const text = publicErrorText(e, 'tool x', { setMeta: (m) => meta.push(m) });
+    expect(text).toBe('The provider has a server problem. (openai, HTTP 500)');
+    expect(meta).toEqual([{ error_detail: e.message }]);
+  });
+
+  it('a refused key: the trace names provider and status only', () => {
+    const e = new ProviderHttpError({ provider: 'anthropic', status: 401, body: SECRET });
+    expect(errorDetail(e)).toBe('anthropic refused the key (HTTP 401)');
+    const meta: Record<string, unknown>[] = [];
+    publicErrorText(e, 't', { setMeta: (m) => meta.push(m) });
+    expect(JSON.stringify(meta)).not.toContain('acme-private');
+  });
+
+  it('our own errors keep their text and leave the trace alone', () => {
+    const meta: Record<string, unknown>[] = [];
+    const step = { setMeta: (m: Record<string, unknown>) => meta.push(m) };
+    expect(publicErrorText(new Error('page not found: abc'), 't', step)).toBe(
+      'page not found: abc',
+    );
+    expect(publicErrorText(new InputError('bad date'), 't', step)).toBe('bad date');
+    expect(meta).toEqual([]);
+    // A status with no body is no provider's (a Graph error): its detail is
+    // its message.
+    const graph = Object.assign(new Error('no valid access token'), { status: 401 });
+    expect(errorDetail(graph)).toBe('no valid access token');
+  });
+});
+
+describe('the watch maps a caught provider failure (A10 lows item 4)', () => {
+  const SECRET = 'sk-or-v1-0123456789abcdef org=acme-private';
+  beforeEach(() => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+  });
+  afterEach(() => vi.restoreAllMocks());
+
+  it('a reply that repeats its text says the sentence', async () => {
+    const e = new ProviderHttpError({ provider: 'openai', status: 413, body: SECRET });
+    const w = await watchDatabaseErrors(async () => `could not index: ${errorMessage(e)}`);
+    expect(publicToolError(w.value, w.texts, 't', w.errors)).toBe(
+      `${PROVIDER_REQUEST_REASONS.too_long} (openai, HTTP 413)`,
+    );
+  });
+
+  it('a throw of our own that repeats its text goes on as the sentence', async () => {
+    const e = new ProviderHttpError({ provider: 'openai', status: 500, body: SECRET });
+    const err = await watchDatabaseErrors(async () => {
+      throw new Error(`step 2: ${errorMessage(e)}`);
+    }).catch((x: unknown) => x);
+    expect((err as Error).message).toBe('The provider has a server problem. (openai, HTTP 500)');
+  });
+
+  it('the provider error itself, rethrown, goes on as itself (its own mappers)', async () => {
+    const e = new ProviderHttpError({ provider: 'openai', status: 500, body: SECRET });
+    const err = await watchDatabaseErrors(async () => {
+      errorMessage(e);
+      throw e;
+    }).catch((x: unknown) => x);
+    expect(err).toBe(e);
   });
 });

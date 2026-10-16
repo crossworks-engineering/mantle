@@ -16,7 +16,12 @@
  */
 import { DATABASE_ERROR_PUBLIC, mapAccessError } from './access-error';
 import { domainErrorAnswer } from './domain-errors';
-import { isProviderHttpFailure, providerAuthRefusal, providerFailureText } from './provider-error';
+import {
+  isProviderHttpFailure,
+  providerAuthRefusal,
+  providerFailureText,
+  serviceFailureText,
+} from './provider-error';
 
 let dbErrorWatch: () => { texts: string[]; errors: unknown[] } | undefined = () => undefined;
 
@@ -28,11 +33,22 @@ export function setDatabaseErrorWatch(
   dbErrorWatch = get;
 }
 
-/** The message of anything thrown: an Error's message, else its string form. */
+/**
+ * The message of anything thrown: an Error's message, else its string form.
+ * The DETAIL form: for the server log, and for a caller's own words. Text
+ * for a member or the model goes through {@link publicErrorText} (or, where
+ * a surface masks, publicToolError catches a database error's, a runtime
+ * fault's or a provider's HTTP failure's text this gave: each is collected
+ * while the surface watches).
+ */
 export function errorMessage(err: unknown): string {
-  const text = err instanceof Error ? err.message : String(err);
+  const text = messageOf(err);
   const watch = dbErrorWatch();
-  if (watch && text && (isDatabaseError(err) || isRuntimeFault(err))) {
+  if (
+    watch &&
+    text &&
+    (isDatabaseError(err) || isRuntimeFault(err) || isProviderHttpFailure(err))
+  ) {
     watch.texts.push(text);
     watch.errors.push(err);
   }
@@ -205,10 +221,19 @@ export function publicErrorMessage(err: unknown, where: string): string {
  * auth refusal (401, 403): its provider and status only. Anything else
  * (our own error, no provider shape) is publicErrorMessage.
  */
-export function publicProviderErrorMessage(err: unknown, where: string): string {
+export function publicProviderErrorMessage(err: unknown, where: string, step?: StepMeta): string {
   if (isDatabaseError(err)) return publicErrorMessage(err, where);
   const domain = domainErrorAnswer(err);
-  const text = domain ? domain.toolText : providerFailureText(err);
+  // A10 lows: the provider's sentence only on evidence of a provider failure
+  // (providerFailureText); a status or a body that did not parse in work that
+  // called one says a neutral fixed sentence (serviceFailureText); a
+  // TypeError with no network words is our own bug: the runtime's text.
+  // Before, any status, any "failed NNN", any SyntaxError and any TypeError
+  // read as the provider's ("The brain cannot reach the provider.").
+  const text =
+    (domain ? domain.toolText : providerFailureText(err)) ??
+    serviceFailureText(err) ??
+    (hasTypeError(err) ? RUNTIME_ERROR_PUBLIC : null);
   if (text === null) return publicErrorMessage(err, where);
   // An auth refusal logs its provider and status only: its body can echo
   // part of the refused key (model picker fix round 1, L2).
@@ -218,7 +243,57 @@ export function publicProviderErrorMessage(err: unknown, where: string): string 
       `[${where}] failed: ${refusal.provider ?? 'provider'} refused the key (HTTP ${refusal.status})`,
     );
   } else console.error(`[${where}] failed:`, err);
+  step?.setMeta({ error_detail: errorDetail(err) });
   return text;
+}
+
+/** A step of the owner's trace (ctx.step): where the detail of a masked
+ *  error goes, for the owner's debugging. */
+export interface StepMeta {
+  setMeta(meta: Record<string, unknown>): void;
+}
+
+function hasTypeError(err: unknown): boolean {
+  for (let e: unknown = err, depth = 0; e && typeof e === 'object' && depth < 4; depth++) {
+    if (e instanceof TypeError) return true;
+    e = (e as { cause?: unknown }).cause;
+  }
+  return false;
+}
+
+/**
+ * THE text of a caught error for a member or the model (A10 lows, the one
+ * gateway): a model provider's HTTP failure ({@link isProviderHttpFailure})
+ * says its fixed sentence (publicProviderErrorMessage, the detail logged
+ * under `where` and, with `step`, kept on the owner's trace); a domain error
+ * says its row's text; anything else is errorMessage, as before (a database
+ * error is still collected for the surface's own check). Its pair for the
+ * log and the trace is {@link errorDetail}.
+ */
+export function publicErrorText(err: unknown, where: string, step?: StepMeta): string {
+  if (isProviderHttpFailure(err)) return publicProviderErrorMessage(err, where, step);
+  return domainErrorAnswer(err)?.toolText ?? errorMessage(err);
+}
+
+/**
+ * The DETAIL of a caught error, for the server log and the owner's trace
+ * (ctx.step setMeta): its message, except a provider's refused key, which
+ * names the provider and status only (its body can echo part of the key).
+ * Never for a member or the model: that is {@link publicErrorText}.
+ */
+export function errorDetail(err: unknown): string {
+  if (isProviderHttpFailure(err)) {
+    const refusal = providerAuthRefusal(err);
+    if (refusal)
+      return `${refusal.provider ?? 'provider'} refused the key (HTTP ${refusal.status})`;
+  }
+  return messageOf(err);
+}
+
+/** An Error's message, else the string form: errorMessage without the
+ *  watch, for errorDetail. */
+function messageOf(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
 }
 
 /**
@@ -230,8 +305,8 @@ export function publicProviderErrorMessage(err: unknown, where: string): string 
  * Anything else is null: the caller keeps errorMessage, as before, so a
  * database error is still collected for the surface's own check.
  */
-export function toolThrowText(err: unknown, where: string): string | null {
-  if (isProviderHttpFailure(err)) return publicProviderErrorMessage(err, where);
+export function toolThrowText(err: unknown, where: string, step?: StepMeta): string | null {
+  if (isProviderHttpFailure(err)) return publicProviderErrorMessage(err, where, step);
   return domainErrorAnswer(err)?.toolText ?? null;
 }
 
@@ -264,6 +339,11 @@ export function publicToolError(
 ): string {
   const at = texts.findIndex((t) => text.includes(t));
   if (!FAILED_QUERY_RE.test(text) && at < 0) return text;
+  if (at >= 0 && isWatchedProviderFailure(errors[at])) {
+    // A provider's HTTP failure a tool caught and replied with (A10 lows):
+    // its fixed sentence, never the body (logged under `where`).
+    return publicProviderErrorMessage(errors[at], where);
+  }
   if (at >= 0 && !isDatabaseError(errors[at]) && isRuntimeFault(errors[at])) {
     // A runtime fault's text the reply repeats (the A8 finding F2).
     console.error(`[${where}] runtime fault in a tool reply:`, text);
@@ -272,6 +352,12 @@ export function publicToolError(
   console.error(`[${where}] database error in a tool reply:`, text);
   // The error the reply carries, read by the one mapper (databaseErrorPublic).
   return at >= 0 ? databaseErrorPublic(errors[at]) : DATABASE_ERROR_PUBLIC;
+}
+
+/** An error the watch collected for being a provider's HTTP failure (and
+ *  not a database error or a runtime fault, which their own mappers read). */
+export function isWatchedProviderFailure(err: unknown): boolean {
+  return !isDatabaseError(err) && !isRuntimeFault(err) && isProviderHttpFailure(err);
 }
 
 /** Canonical UUID shape (any version, either case). Postgres accepts both
@@ -328,9 +414,13 @@ export {
 } from './http';
 export { NET_TIMEOUTS, PROVIDER_TIMEOUTS } from './timeouts';
 export {
+  PROVIDER_ANSWER_UNUSABLE,
   PROVIDER_ERROR_PUBLIC,
   PROVIDER_ERROR_REASONS,
+  PROVIDER_REQUEST_REASONS,
   ProviderHttpError,
+  SERVICE_ERROR_PUBLIC,
+  UNREADABLE_ANSWER_PUBLIC,
   RETRYABLE_STATUS,
   classifyProviderError,
   isAccountError,
@@ -341,7 +431,9 @@ export {
   providerErrorStatus,
   providerFailureShape,
   providerFailureText,
+  providerRequestReason,
   retryDecision,
+  serviceFailureText,
   type ProviderErrorClass,
   type ProviderErrorCode,
 } from './provider-error';

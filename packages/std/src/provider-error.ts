@@ -66,6 +66,61 @@ export const PROVIDER_ERROR_REASONS: Record<ProviderErrorCode, string> = {
 export const PROVIDER_ERROR_PUBLIC = 'The model provider answered with an error.';
 
 /**
+ * A provider's refusal of this one request, in words the model can act on
+ * (A10 lows): too long, refused under a content policy, or bad arguments.
+ * The classifier names none of these (they say nothing about the provider:
+ * no alert, no failover); the sentence is picked by the status and a pattern
+ * over the body, server side, and is fixed: never the body.
+ */
+export const PROVIDER_REQUEST_REASONS = {
+  too_long:
+    'The request is too long for this model. Send less at once (a shorter input, fewer or smaller files) and try again.',
+  refused:
+    'The provider refused this input under its content policy. Rephrase it or leave out the flagged part.',
+  bad_request:
+    'The provider rejected the request as invalid. Check the arguments (names, types, sizes) and try again.',
+} as const;
+
+/** A provider answered 2xx but with no usable result (AssemblyAI's
+ *  transcript status `error`, an answer the SDK could not validate). */
+export const PROVIDER_ANSWER_UNUSABLE = 'The provider answered without a usable result.';
+
+/** An input the model sent is too long (Anthropic, OpenAI, Gemini,
+ *  OpenRouter wordings; a requested max_tokens is a bad argument, not this). */
+const TOO_LONG_RE =
+  /prompt is too long|input is too long|maximum context|context (?:length|window)|too many (?:input )?tokens|input token count|exceeds the maximum number of tokens|(?:request )?entity too large|payload too large/i;
+
+/**
+ * The fixed sentence for a request the provider refused, by its status and
+ * text (message plus body, never echoed), or null for a status that is no
+ * request refusal. A 2xx is an answer with no usable result.
+ */
+export function providerRequestReason(status: number, text: string): string | null {
+  if (status >= 200 && status < 300) return PROVIDER_ANSWER_UNUSABLE;
+  if (status === 413) return PROVIDER_REQUEST_REASONS.too_long;
+  if (status === 403) return INPUT_REFUSED_RE.test(text) ? PROVIDER_REQUEST_REASONS.refused : null;
+  if (status === 400 || status === 422) {
+    if (TOO_LONG_RE.test(text)) return PROVIDER_REQUEST_REASONS.too_long;
+    if (INPUT_REFUSED_RE.test(text)) return PROVIDER_REQUEST_REASONS.refused;
+    return PROVIDER_REQUEST_REASONS.bad_request;
+  }
+  return null;
+}
+
+/** `reason` with its status (and provider) when known; a 2xx names no status. */
+function withStatus(reason: string, status?: number, provider?: string): string {
+  if (status === undefined) return provider ? `${reason} (${provider})` : reason;
+  if (status >= 200 && status < 300) return provider ? `${reason} (${provider})` : reason;
+  return provider ? `${reason} (${provider}, HTTP ${status})` : `${reason} (HTTP ${status})`;
+}
+
+/** The sentence for a provider's HTTP answer: the class, else the request
+ *  reason, else PROVIDER_ERROR_PUBLIC. `text` is read, never echoed. */
+function httpReason(cls: ProviderErrorClass | null, status: number, text: string): string {
+  return cls?.reason ?? providerRequestReason(status, text) ?? PROVIDER_ERROR_PUBLIC;
+}
+
+/**
  * A model provider answered a non-2xx status. Carries the status, the
  * provider, the parsed Retry-After and the body (for the owner's logs and
  * the classifier; never shown to a caller: the domain row below answers
@@ -106,8 +161,12 @@ export class ProviderHttpError extends Error {
 
 /** The fixed sentence a caller outside the server hears for `err`. */
 export function providerErrorPublicText(err: ProviderHttpError): string {
-  const cls = classifyProviderError(err);
-  return `${cls ? cls.reason : PROVIDER_ERROR_PUBLIC} (${err.provider}, HTTP ${err.status})`;
+  const reason = httpReason(
+    classifyProviderError(err),
+    err.status,
+    `${err.message}\n${err.body ?? ''}`,
+  );
+  return withStatus(reason, err.status, err.provider);
 }
 
 defineDomainError(ProviderHttpError, {
@@ -153,6 +212,11 @@ export function isProviderHttpFailure(err: unknown): boolean {
  * on the error or a cause, the adapters' message prefix, or a body that did
  * not parse (V8's SyntaxError quotes the body). `body` is the first body on
  * the chain. Null: not provider shaped, the error is the caller's own.
+ *
+ * Broad on purpose, and since the A10 lows only for the log
+ * ({@link providerAuthRefusal}: a refused key's log line names provider and
+ * status only, so a wrong yes costs a line of detail, never a key). The
+ * public text asks for evidence instead ({@link providerFailureText}).
  */
 export function providerFailureShape(err: unknown): { status?: number; body?: string } | null {
   const chain = errorChain(err);
@@ -203,25 +267,135 @@ export function providerAuthRefusal(err: unknown): { provider?: string; status: 
 }
 
 /**
+ * The status a copy of an adapter's message carries (a wrapper that kept the
+ * text but not the error): `<p> chat <status>: `, `openrouter-chat <status>
+ * on `, `<p> embeddings failed: <status> <text> \u2014 `, `stream error
+ * <status>: `. Narrow on purpose (A10 lows): our own "fetch failed: 404 Not
+ * Found" or "download failed: HTTP 500" is no provider's answer.
+ */
+const ADAPTER_PROSE_RE =
+  /(?:\bchat|\bfailed:?|\berror)\s+([1-5]\d\d)(?=:\s|\son\s|\s[A-Za-z][\w ]*\s\u2014\s)/i;
+
+function adapterProseStatus(err: unknown): number | undefined {
+  const m = ADAPTER_PROSE_RE.exec(String((err as { message?: unknown } | null)?.message ?? ''));
+  return m ? Number(m[1]) : undefined;
+}
+
+/** The status on the error or a cause, as an SDK or ProviderHttpError keeps it. */
+function chainStatus(err: unknown): number | undefined {
+  for (const e of errorChain(err)) {
+    const o = e as { status?: unknown; statusCode?: unknown };
+    if (typeof o.status === 'number') return o.status;
+    if (typeof o.statusCode === 'number') return o.statusCode;
+  }
+  return undefined;
+}
+
+/** Names a deadline or an aborted call goes by (ours, the platform's, the
+ *  OpenRouter SDK's). */
+const TIMEOUT_NAMES = new Set([
+  'TimeoutError',
+  'AbortError',
+  'RequestTimeoutError',
+  'RequestAbortedError',
+]);
+
+/**
+ * A provider call that never got its answer, by evidence on the error or a
+ * cause (A10 lows): a deadline's or an abort's name, a network failure's
+ * words or code, the SDK's ConnectionError, undici's `terminated` (a body
+ * cut off). A bare TypeError is no evidence: it is as likely our own bug.
+ */
+function transportFailure(err: unknown): 'timeout' | 'network' | null {
+  const chain = errorChain(err);
+  for (const e of chain) {
+    const o = e as { name?: unknown; message?: unknown; code?: unknown };
+    const name = typeof o.name === 'string' ? o.name : '';
+    if (TIMEOUT_NAMES.has(name)) return 'timeout';
+    if (name === 'ConnectionError') return 'network';
+    if (e instanceof TypeError && /^terminated$/i.test(String(o.message))) return 'network';
+    if (typeof o.code === 'string') {
+      if (TIMEOUT_RE.test(o.code)) return 'timeout';
+      if (NETWORK_RE.test(o.code) || o.code === 'UND_ERR_SOCKET') return 'network';
+    }
+  }
+  // The words only when no status says an answer came ("fetch failed: 404"
+  // got one).
+  if (chainStatus(err) !== undefined || providerErrorStatus(err) !== undefined) return null;
+  for (const e of chain) {
+    const msg = String((e as { message?: unknown }).message ?? '');
+    if (TIMEOUT_RE.test(msg)) return 'timeout';
+    if (NETWORK_RE.test(msg)) return 'network';
+  }
+  return null;
+}
+
+/**
  * The fixed sentence a member or the model hears for a provider failure, or
- * null when `err` is none (A10 #10 fix round 2): the classifier's class; else,
- * for one provider shaped ({@link providerFailureShape}), the class its
- * status names (an SDK keeps it as `statusCode`, which the classifier, and so
- * failover, does not read: it is read here for the text only), else
- * PROVIDER_ERROR_PUBLIC, with the status when known. Never the message.
+ * null when `err` is none. Since the A10 lows it asks for evidence first, so
+ * our own errors no longer read as the provider's:
+ *
+ *  - an HTTP answer: a ProviderHttpError or an SDK's own HTTP error on the
+ *    chain ({@link isProviderHttpFailure}), or a copy of an adapter's
+ *    message (the narrow prose shapes above). The classifier's class, else
+ *    the request reason ({@link providerRequestReason}: too long, refused,
+ *    bad arguments, no usable result), else PROVIDER_ERROR_PUBLIC, with the
+ *    status;
+ *  - a call that got no answer ({@link transportFailure}): the classifier's
+ *    network or timeout class, else the one the evidence names;
+ *  - our own "no API key" throw: its class.
+ *
+ * Never the message. An error with none of these is null: the caller
+ * decides (publicProviderErrorMessage says a fixed sentence for a status, a
+ * body that did not parse or a TypeError; its own text otherwise).
  */
 export function providerFailureText(err: unknown): string | null {
+  const http = isProviderHttpFailure(err);
+  const prose = http ? undefined : adapterProseStatus(err);
+  if (http || prose !== undefined) {
+    const cls = classifyProviderError(err);
+    if (cls) return withStatus(cls.reason, cls.status);
+    const status = chainStatus(err) ?? prose ?? providerErrorStatus(err);
+    if (status === undefined) return PROVIDER_ERROR_PUBLIC;
+    const body = errorChain(err)
+      .map((e) => (e as { body?: unknown }).body)
+      .find((b): b is string => typeof b === 'string');
+    const message = String((err as { message?: unknown } | null)?.message ?? '');
+    const byStatus = classifyProviderError({ status, message, body: body ?? '' });
+    return withStatus(httpReason(byStatus, status, `${message}\n${body ?? ''}`), status);
+  }
+  const transport = transportFailure(err);
+  if (transport) {
+    const cls = classifyProviderError(err);
+    if (cls && (cls.code === 'network' || cls.code === 'timeout')) return cls.reason;
+    return PROVIDER_ERROR_REASONS[transport];
+  }
   const cls = classifyProviderError(err);
-  if (cls) return cls.status ? `${cls.reason} (HTTP ${cls.status})` : cls.reason;
-  const shape = providerFailureShape(err);
-  if (!shape) return null;
-  if (shape.status === undefined) return PROVIDER_ERROR_PUBLIC;
-  const byStatus = classifyProviderError({
-    status: shape.status,
-    message: String((err as { message?: unknown } | null)?.message ?? ''),
-    body: shape.body ?? '',
-  });
-  return `${byStatus ? byStatus.reason : PROVIDER_ERROR_PUBLIC} (HTTP ${shape.status})`;
+  if (cls?.code === 'no_key') return cls.reason;
+  return null;
+}
+
+/** What a caller hears for an error that carries an HTTP status but is no
+ *  model provider's answer (A10 lows): the status, never the text. */
+export const SERVICE_ERROR_PUBLIC = 'A service the brain called answered with an error.';
+
+/** What a caller hears for a body that did not parse (V8's SyntaxError
+ *  quotes the body, so its message never goes out). */
+export const UNREADABLE_ANSWER_PUBLIC = 'An answer could not be read: it is not valid JSON.';
+
+/**
+ * The fixed sentence for an error in work that called a provider that is no
+ * provider failure by evidence but must still not say its text (A10 lows):
+ * a status on the chain or in the message (the status reader's prose) says
+ * SERVICE_ERROR_PUBLIC with it; a body that did not parse says
+ * UNREADABLE_ANSWER_PUBLIC. Null otherwise (a TypeError is the caller's:
+ * publicProviderErrorMessage treats it as a runtime fault).
+ */
+export function serviceFailureText(err: unknown): string | null {
+  const status = chainStatus(err) ?? providerErrorStatus(err);
+  if (status !== undefined) return withStatus(SERVICE_ERROR_PUBLIC, status);
+  if (errorChain(err).some((e) => e instanceof SyntaxError)) return UNREADABLE_ANSWER_PUBLIC;
+  return null;
 }
 
 // ── the status reader ───────────────────────────────────────────────────────
