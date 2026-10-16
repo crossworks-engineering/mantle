@@ -50,21 +50,41 @@ $$;
 --> statement-breakpoint
 REVOKE ALL ON FUNCTION "public"."mantle_edit_contact_stmt"() FROM PUBLIC;
 --> statement-breakpoint
-DO $$
+-- The migration-made edit check triggers of an item table, installed by one
+-- loop (the read-only refusal of 0280, section 5, and this one): a migration
+-- that adds an item table calls it, so neither trigger is left off a new
+-- table. CREATE OR REPLACE TRIGGER takes SHARE ROW EXCLUSIVE, not the
+-- ACCESS EXCLUSIVE of a DROP TRIGGER: reads go on while it runs on a live
+-- box. A replaced trigger comes back enabled, so the box mode is applied
+-- after the loop: disabled on a box that is off.
+CREATE OR REPLACE FUNCTION "public"."mantle_edit_check_item_triggers"()
+  RETURNS integer LANGUAGE plpgsql VOLATILE
+  SET search_path = "public", pg_temp AS $$
 DECLARE
   t regclass;
+  n integer := 0;
 BEGIN
+  -- Every item table but the heads rows (a heads lock is not a change).
   FOR t IN SELECT c.tbl FROM "public"."mantle_actor_check_tables"() c
-            WHERE c.tbl NOT IN ('public.node_acl_head'::regclass, 'public.app_databases'::regclass) LOOP
-    EXECUTE format('DROP TRIGGER IF EXISTS mantle_edit_check_contact ON %s', t);
+            WHERE c.tbl <> 'public.node_acl_head'::regclass LOOP
     EXECUTE format(
-      'CREATE TRIGGER mantle_edit_check_contact BEFORE INSERT OR UPDATE OR DELETE ON %s '
+      'CREATE OR REPLACE TRIGGER mantle_edit_check_ro BEFORE INSERT OR UPDATE OR DELETE ON %s '
+      'FOR EACH STATEMENT WHEN (current_setting(''mantle.write_mode'', true) = ''ro'') '
+      'EXECUTE FUNCTION "public"."mantle_edit_ro_stmt"()', t);
+    n := n + 1;
+    -- A contact share writes its app's data: app_databases is left out.
+    CONTINUE WHEN t = 'public.app_databases'::regclass;
+    EXECUTE format(
+      'CREATE OR REPLACE TRIGGER mantle_edit_check_contact BEFORE INSERT OR UPDATE OR DELETE ON %s '
       'FOR EACH STATEMENT WHEN (current_setting(''mantle.actor'', true) = ''contact:rw'') '
       'EXECUTE FUNCTION "public"."mantle_edit_contact_stmt"()', t);
+    n := n + 1;
   END LOOP;
-END $$;
---> statement-breakpoint
--- The new triggers follow the box mode: disabled on a box that is off.
-DO $$ BEGIN
   PERFORM "public"."mantle_edit_check_triggers"("public"."mantle_check_box_mode"('edit_check') <> 'off', 50);
-END $$;
+  RETURN n;
+END
+$$;
+--> statement-breakpoint
+REVOKE ALL ON FUNCTION "public"."mantle_edit_check_item_triggers"() FROM PUBLIC;
+--> statement-breakpoint
+SELECT "public"."mantle_edit_check_item_triggers"();

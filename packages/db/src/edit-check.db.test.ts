@@ -1054,6 +1054,17 @@ describe.skipIf(!URL)('the edit check (arch A3a)', () => {
       expect([r.t, r.ro]).toEqual([r.t, r.t !== 'node_acl_head']);
       expect([r.t, r.contact]).toEqual([r.t, !['node_acl_head', 'app_databases'].includes(r.t)]);
     }
+    // One loop installs both (0294): re-run, it replaces each in place, and a
+    // replaced trigger follows the box mode (off here: none left enabled).
+    const migrationMade = async () =>
+      sql<{ n: number; enabled: number }[]>`
+        select count(*)::int as n, count(*) filter (where tgenabled <> 'D')::int as enabled
+          from pg_trigger
+         where tgname in ('mantle_edit_check_ro', 'mantle_edit_check_contact')`;
+    const [was] = await migrationMade();
+    const [made] = await sql<{ n: number }[]>`select mantle_edit_check_item_triggers() as n`;
+    expect(made!.n).toBe(rows.filter((r) => r.ro).length + rows.filter((r) => r.contact).length);
+    expect((await migrationMade())[0]).toEqual({ n: was!.n, enabled: 0 });
     const [k] = await sql<{ keys: string[] }[]>`select mantle_node_derived_keys() as keys`;
     expect([...k!.keys].sort()).toEqual([...NODE_DERIVED_KEYS].sort());
     // The rule written once: the scope forms are the array forms.
