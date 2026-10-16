@@ -1049,6 +1049,8 @@ case "$1" in
     fi
     echo "${FAKE_HEALTH:-healthy}"; exit 0 ;;
   logs)
+    # FAKE_LOGS: a file whose lines stand in for the whole log tail.
+    if [ -n "${FAKE_LOGS:-}" ]; then cat "$FAKE_LOGS"; exit 0; fi
     echo "[server] booting"
     echo "SyntaxError: The requested module '@mantle/voice-client' does not provide an export named 'x'"
     echo "[db] connect failed: postgres://mantle:pgpass123@db:5432/mantle"
@@ -1080,6 +1082,21 @@ case "$1" in
     echo 'ZodError: [{"code":"invalid_type","path":["apiKey"],"message":"Required"}]'
     echo "[token-refresh] request failed: connect ECONNREFUSED 10.0.0.5:443"
     echo "Node.js v26.11.1"
+    printf '%s\n' "[db] input: 'postgres://mantle:FakeSl/ash0123@db/mantle'"
+    echo "[db] connect failed: postgres://mantle:p@FakeAt0123@db:5432/mantle"
+    echo "[redis] rediss://default:FakeRed/@is0123@cache:6380 down"
+    echo "[db] no credentials: postgres://db:5432/mantle unreachable"
+    echo "[web] fetch https://example.com/a/b@c failed"
+    printf '%s\n' '[log] {"msg":"{\"apiKey\":\"FakeDbl0123 FakeDblTail\",\"m\":1}","level":50}'
+    echo "-----BEGIN PRIV""ATE KEY-----"
+    echo "MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQFakePem0123"
+    echo "FakePemBody0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMN"
+    echo "-----END PRIV""ATE KEY-----"
+    echo "[cli] seed --password FakeCliPw0123 --token FakeCliTok0123 --verbose"
+    echo "[gh] push with gh""p_FakeGhp0123456789abcdefghijklmnopqrs refused"
+    echo "[gh] github""_pat_11FAKE0123_FakeGhPat0123456789abcdef refused"
+    echo "[stripe] sk""_live_FakeLive0123456789 and sk""_test_FakeTest0123456789 refused"
+    echo "[slack] xo""xb-1234-5678-FakeXoxb0123 and xo""xp-1234-5678-FakeXoxp0123 refused"
     exit 0 ;;
   run)
     src=""; cmd=""
@@ -1240,6 +1257,41 @@ check "web never healthy: a Zod Required next to a key path prints whole" \
 check "web never healthy: connect ECONNREFUSED after a token name prints whole" \
   grep -qF '[token-refresh] request failed: connect ECONNREFUSED 10.0.0.5:443' "$RS/out"
 check "web never healthy: no rollback requested" sh -c "test \$(grep -c alpine '$RS/calls') = 1"
+check "web never healthy: a database URL password holding a / or an @ prints masked whole" \
+  sh -c "! grep -q 'FakeSl\\|ash0123\\|FakeAt0123\\|FakeRed\\|is0123' '$RS/out' && grep -qF \"[db] input: 'postgres://[redacted]@db/mantle'\" '$RS/out' && grep -qF 'connect failed: postgres://[redacted]@db:5432/mantle' '$RS/out' && grep -qF 'rediss://[redacted]@cache:6380 down' '$RS/out'"
+check "web never healthy: URLs without credentials print whole" \
+  sh -c "grep -qF 'no credentials: postgres://db:5432/mantle unreachable' '$RS/out' && grep -qF 'fetch https://example.com/a/b@c failed' '$RS/out'"
+check "web never healthy: a JSON value inside a JSON string prints masked to its escaped closing quote" \
+  sh -c "! grep -q 'FakeDbl' '$RS/out' && grep -qF '{\"msg\":\"{\\\"apiKey\\\":[redacted],\\\"m\\\":1}\",\"level\":50}' '$RS/out'"
+check "web never healthy: a PEM private key block prints as [redacted] lines" \
+  sh -c "! grep -q 'PRIVATE KEY\\|FakePem\\|MIIEvQ' '$RS/out' && test \$(grep -cx '    \\[redacted\\]' '$RS/out') = 4"
+check "web never healthy: --password X and --token X print masked" \
+  sh -c "! grep -q 'FakeCli' '$RS/out' && grep -qF 'seed --password [redacted] --token [redacted] --verbose' '$RS/out'"
+check "web never healthy: ghp_, github_pat_, sk_live_, sk_test_, xoxb- and xoxp- literals print masked" \
+  sh -c "! grep -q 'FakeGhp\\|FakeGhPat\\|FakeLive\\|FakeTest\\|FakeXox' '$RS/out' && grep -qF 'push with [redacted] refused' '$RS/out' && grep -qF '[gh] [redacted] refused' '$RS/out' && grep -qF '[stripe] [redacted] and [redacted] refused' '$RS/out' && grep -qF '[slack] [redacted] and [redacted] refused' '$RS/out'"
+
+# A hostile line: the name rule backtracks quadratically, and on main a
+# 100k-character "keykeykey..." took minutes. Each line is cut to 2000
+# characters before masking; three such lines must take well under 3 s, timed
+# on the masker alone (REDACT_PERL lifted from roll.sh) so a slow fake roll
+# cannot hide or fake it, then run through a whole roll for the [cut] mark.
+HOSTILE="$WORK/hostile.log"
+perl -e 'print "key" x 33334, "\n", "passw" x 20000, "\n", "session_" x 12500, "\n"' > "$HOSTILE"
+REDACT_PERL=""
+eval "$(sed -n "/^REDACT_PERL='/,/^'\$/p" "$ROOT/scripts/roll.sh")"
+ms_now() { perl -MTime::HiRes=time -e 'printf "%d\n", time * 1000'; }
+t0=$(ms_now)
+perl -pe "$REDACT_PERL" < "$HOSTILE" > "$WORK/hostile.out"
+t1=$(ms_now)
+echo "  (masker on three 100k-character hostile lines: $((t1 - t0)) ms)"
+check "masker: three 100k-character hostile lines (key, passw, session_ repeated) finish in under 3 s" \
+  test "$((t1 - t0))" -lt 3000
+check "masker: each hostile line is cut to 2000 characters and marked [cut]" \
+  sh -c "test \$(grep -c ' \\[cut\\]\$' '$WORK/hostile.out') = 3 && test \$(awk 'length > 2006' '$WORK/hostile.out' | wc -l) = 0"
+roll_box hostile
+FAKE_LOGS="$HOSTILE" FAKE_HEALTH=unhealthy roll_sh --ssh fakebox v8
+check "web never healthy, hostile log: exit 1 and every line printed cut" \
+  sh -c "test '$rc' = 1 && test \$(grep -c ' \\[cut\\]\$' '$RS/out') = 3 && grep -q '^    session_session_' '$RS/out'"
 
 # No perl on the operator's machine: the log cannot be masked, so it is not
 # shown at all, and the operator is told where to read it. PATH is every

@@ -439,29 +439,50 @@ fi
 # why: the tail of its own log, every line of it, with secret VALUES masked
 # (dropping whole lines hid the very lines that explain a boot failure, like
 # "SESSION_SECRET must be at least 32 characters", and still let a URL with a
-# password through). Masked: URL credentials (scheme://user:pass@ ->
-# scheme://[redacted]@), the rest of an Authorization or Cookie header, the
-# word after "Bearer", a bare token wherever it stands (sk-ant-, sk-or-,
-# sk-proj-, sk-svcacct-, sk-admin-, any sk- with 20 or more characters after
-# it, mtlk_... dashes included, a JWT eyJ..., a Telegram bot token, a 64-hex
-# string), and the value after a name holding key, token, secret, passw...,
-# pwd, authorization, cookie, bearer or session (word characters and dashes
-# may finish it), or the name pass exactly (SMTP_PASS=, "pass":), when the =
-# or : comes RIGHT after that name (a closing quote and spaces may come
-# between). A quoted value is masked to its real closing quote, past escaped
-# ones. Anchoring the name to its separator keeps the lines that explain a
-# crash whole: a stack frame (secrets.ts:44:11), a Zod "Required" next to a
-# key path, a "[token-refresh] failed: connect ECONNREFUSED", "tests passed:".
-# Case-insensitive; perl, not sed: BSD sed has no case-insensitive flag.
+# password through). Each line is cut to 2000 characters first (" [cut]" marks
+# it): the name rule below backtracks quadratically on a hostile line, and a
+# 100k-character "keykeykey..." took minutes; cut, it takes milliseconds.
+# Masked: URL credentials (scheme://user:pass@ -> scheme://[redacted]@; for
+# postgres, postgresql, redis, rediss, mysql, amqp, amqps, mongodb and
+# mongodb+srv up to the LAST @ before a space or quote, so a password holding
+# an unencoded / or @ is masked whole), the rest of an Authorization or Cookie
+# header, the word after "Bearer", the value after --password, --token and the
+# like (--db-password X), a PEM private key block (each of its lines prints as
+# [redacted], as does a line that is nothing but a 40+ character base64 run, so
+# a log tail that starts inside a block is masked too), a bare token wherever
+# it stands (sk-ant-, sk-or-, sk-proj-, sk-svcacct-, sk-admin-, any sk- with 20
+# or more characters after it, sk_live_, sk_test_, ghp_ and its gho_/ghs_/ghu_/
+# ghr_ siblings, github_pat_, xoxb-, xoxp-, mtlk_... dashes included, a JWT
+# eyJ..., a Telegram bot token, a 64-hex string), and the value after a name
+# holding key, token, secret, passw..., pwd, authorization, cookie, bearer or
+# session (word characters and dashes may finish it), or the name pass exactly
+# (SMTP_PASS=, "pass":), when the = or : comes RIGHT after that name (a
+# closing quote and spaces may come between). A quoted value is masked to its
+# real closing quote, past escaped ones, or to the end of the line when it has
+# none (a cut line); a value quoted with escaped quotes (JSON inside a JSON
+# string: "{\"apiKey\":\"a b\"}") is masked to its closing \". Anchoring the
+# name to its separator keeps the lines that explain a crash whole: a stack
+# frame (secrets.ts:44:11), a Zod "Required" next to a key path, a
+# "[token-refresh] failed: connect ECONNREFUSED", "tests passed:".
+# Case-insensitive; perl, not sed: BSD sed has no case-insensitive flag. $pem
+# is a package variable on purpose: it carries the open block across lines.
 REDACT_PERL='
-s{\b(?:sk-(?:ant|or|proj|svcacct|admin)-[\w-]{8,}|sk-[A-Za-z0-9_-]{20,}|mtlk_[\w-]+|eyJ[\w-]+\.[\w-]+\.[\w-]*)}{\[redacted\]}g;
+my $cut = s{\A(.{2000}).+}{$1};
+if ($pem) { if (s{\A.*?-----END [A-Z ]*PRIVATE KEY-----}{\[redacted\]}) { $pem = 0 } else { s{.*}{\[redacted\]} } }
+s{-----BEGIN [A-Z ]*PRIVATE KEY-----.*?-----END [A-Z ]*PRIVATE KEY-----}{\[redacted\]}g;
+$pem = 1 if s{-----BEGIN [A-Z ]*PRIVATE KEY-----.*}{\[redacted\]};
+s{\A(\s*)[A-Za-z0-9+/]{40,}={0,2}(\s*)\z}{$1\[redacted\]$2};
+s{\b(?:sk-(?:ant|or|proj|svcacct|admin)-[\w-]{8,}|sk-[A-Za-z0-9_-]{20,}|sk_(?:live|test)_\w{8,}|gh[pousr]_\w{20,}|github_pat_\w{20,}|xox[bp]-[\w-]{8,}|mtlk_[\w-]+|eyJ[\w-]+\.[\w-]+\.[\w-]*)}{\[redacted\]}g;
 s{(/bot)\d+:[\w-]+}{$1\[redacted\]}g;
 s{\b\d{6,}:[A-Za-z0-9_-]{30,}}{\[redacted\]}g;
 s{\b[0-9a-fA-F]{64}\b}{\[redacted\]}g;
+s{\b((?:postgres(?:ql)?|rediss?|mysql|amqps?|mongodb(?:\+srv)?)://)[^\s\x22\x27]*\@}{$1\[redacted\]\@}gi;
 s{://[^/\s\@]+\@}{://[redacted]\@}g;
 s{\b((?:proxy-)?authorization|(?:set-)?cookie)(\s*[=:]\s*).*}{$1$2\[redacted\]}gi;
 s{\b(bearer)\s+[^\s,;\x22\x27]+}{$1 \[redacted\]}gi;
-s{((?:(?:key|token|secret|passw[a-z]*|pwd|authorization|cookie|bearer|session)[\w-]*|pass)(?:\\?\x22|\x27)?\s*[=:]\s*)(?:\x22(?:[^\x22\\]|\\.)*\x22|\x27(?:[^\x27\\]|\\.)*\x27|[^\s,;]+)}{$1\[redacted\]}gi;
+s{((?<![\w-])--[\w-]*?(?:passw[a-z]*|pwd|pass|token|secret|key)\s+)[^\s,;]+}{$1\[redacted\]}gi;
+s{((?:(?:key|token|secret|passw[a-z]*|pwd|authorization|cookie|bearer|session)[\w-]*+|pass)(?:\\?\x22|\x27)?\s*[=:]\s*)(?:\x22(?:[^\x22\\\n]|\\.)*+(?:\x22|$)|\x27(?:[^\x27\\\n]|\\.)*+(?:\x27|$)|\\\x22(?:[^\\\x22\n]|\\[^\\\x22\n]|\\\\(?:\\.|[^\\\x22\n]))*+(?:\\\x22|$)|[^\s,;]+)}{$1\[redacted\]}gi;
+s{(?=\n?\z)}{ [cut]} if $cut;
 '
 redact_secrets() { perl -pe "$REDACT_PERL"; }
 web_not_healthy() { # <last health status>
