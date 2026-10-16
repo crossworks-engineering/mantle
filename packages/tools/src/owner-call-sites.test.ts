@@ -57,9 +57,11 @@ const SITES: Record<string, Site> = {
     // The approving login rides along when the path names one (W6b fix
     // round 3, L-2): server-set, never from model arguments. A call
     // re-checked where it was asked runs on the surface it was asked on, as
-    // the stamp keeps it (A5 step 6c fix round 1): server-set too.
+    // the stamp keeps it (A5 step 6c fix round 1): server-set too. Any
+    // other call runs on approvalSurface (lows round 2, L6: the owner's
+    // pending path, the approver, the stamp's ownerKeysOff; pending.test.ts).
     surface:
-      /surface: origin\s*\?\s*origin\.run\.surface\s*:\s*\{\s*kind: 'owner',\s*via: 'pending',\s*\.\.\.\(opts\?\.approverLoginId \? \{ loginId: opts\.approverLoginId \} : \{\}\),?\s*\}/,
+      /surface: origin\s*\?\s*origin\.run\.surface\s*:\s*approvalSurface\(claimed, opts\?\.approverLoginId\)/,
     scope: 'call',
     why: 'an Admin user approves a pending call, on the owner surface; a re-checked call on the surface its asker asked on',
   },
