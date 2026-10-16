@@ -250,7 +250,7 @@ describe.skipIf(!DB_URL)('F4 fix round 1: the owner’s management flows on the 
       await setMode(mode);
       boss.sent.length = 0;
       const c = await makeContact(`${mode} m1`);
-      expect(c.status).toBe(200);
+      expect(c.status).toBe(201);
       expect(boss.sent.filter((j) => j.queue.endsWith('.backfill'))).toEqual([
         {
           queue: 'mantle.email.backfill',
@@ -347,14 +347,18 @@ describe.skipIf(!DB_URL)('F4 fix round 1: the owner’s management flows on the 
     it(`${mode}: H2, an entity merge moves a fact of an item the scope does not read`, async () => {
       await setMode(mode);
       const hidden = await makeItem('note');
-      const [canon] = await raw<{ id: string }[]>`insert into entities (owner_id, kind, name)
-        values (${L.owner}, 'person', ${`${tag} ${mode} Ada Lovelace`}) returning id::text as id`;
-      const [dup] = await raw<{ id: string }[]>`insert into entities (owner_id, kind, name)
-        values (${L.owner}, 'person', ${`${tag} ${mode} A. Lovelace`}) returning id::text as id`;
-      const [fact] = await raw<{ id: string }[]>`
-        insert into facts (owner_id, kind, content, source_node_id, entity_id)
-        values (${L.owner}, 'factual', ${`${tag} ${mode} a fact`}, ${hidden}, ${dup!.id})
-        returning id::text as id`;
+      const { canon, dup, fact } = await raw.begin(async (tx) => {
+        await tx`select set_config('mantle.actor', 'system:test', true)`;
+        const [c] = await tx<{ id: string }[]>`insert into entities (owner_id, kind, name)
+          values (${L.owner}, 'person', ${`${tag} ${mode} Ada Lovelace`}) returning id::text as id`;
+        const [d] = await tx<{ id: string }[]>`insert into entities (owner_id, kind, name)
+          values (${L.owner}, 'person', ${`${tag} ${mode} A. Lovelace`}) returning id::text as id`;
+        const [f] = await tx<{ id: string }[]>`
+          insert into facts (owner_id, kind, content, source_node_id, entity_id)
+          values (${L.owner}, 'factual', ${`${tag} ${mode} a fact`}, ${hidden}, ${d!.id})
+          returning id::text as id`;
+        return { canon: c, dup: d, fact: f };
+      });
       const merged = await call(`${mode} merge`, L.owner, 'POST', '/api/entities/merge', {
         canonicalId: canon!.id,
         dupId: dup!.id,
@@ -507,9 +511,12 @@ describe.skipIf(!DB_URL)('F4 fix round 1: the owner’s management flows on the 
     // a non-owner deleted (held) homed there.
     const gone = [randomUUID(), randomUUID()];
     for (const [i, g] of gone.entries()) {
-      await raw`insert into node_snapshots (owner_id, node_id, node_kind, seq, trigger, actor, code)
+      await raw.begin(async (tx) => {
+        await tx`select set_config('mantle.actor', 'system:test', true)`;
+        await tx`insert into node_snapshots (owner_id, node_id, node_kind, seq, trigger, actor, code)
         values (${L.owner}, ${g}, 'app', 1, 'pre_delete', 'owner',
                 ${raw.json({ meta: { title: `${tag} gone ${i}`, homeWs: ws.other, ...(i === 1 ? { keepForOwner: true } : {}) } })})`;
+      });
     }
     for (const id of [randomUUID(), ...gone]) {
       for (const [method, url] of [
