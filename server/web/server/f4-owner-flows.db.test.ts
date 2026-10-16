@@ -769,11 +769,18 @@ describe.skipIf(!DB_URL)('F4 fix round 1: the owner’s management flows on the 
       const dir = await folder(`${tag}${mode}att`);
       const dest = await folder(`${tag}${mode}attdst`);
       const att = await textFile(dir, 'invoice.pdf', ws.admin, { data: { content: undefined } });
+      const mailNode = await rawNode({
+        type: 'email',
+        title: `${tag} ${mode} a mail`,
+        path: root.note.path,
+        parent: root.note.id,
+        home: ws.admin,
+      });
       await raw.begin(async (tx) => {
         await tx`select set_config('mantle.actor', 'system:test', true)`;
         const [mail] = await tx<{ id: string }[]>`
-          insert into emails (account_id, provider_msg_id, from_addr, internal_date)
-          values (${account}, ${`${tag}-${mode}-mail`}, 'a@example.invalid', now())
+          insert into emails (node_id, account_id, provider_msg_id, from_addr, internal_date)
+          values (${mailNode}, ${account}, ${`${tag}-${mode}-mail`}, 'a@example.invalid', now())
           returning id::text as id`;
         await tx`insert into email_attachments (email_id, file_node_id, filename, sha256, storage_key)
                  values (${mail!.id}, ${att}, 'invoice.pdf', 'abc', ${`${tag}-${mode}-key`})`;
@@ -1082,8 +1089,9 @@ describe.skipIf(!DB_URL)('F4 fix round 1: the owner’s management flows on the 
           version: same.json.version,
         },
       );
-      expect(take.status, take.text).toBe(409);
-      expect(take.text).toContain('slug_taken');
+      // The answer a slug a map the owner reads holds gets (400 slug_taken).
+      expect(take.status, take.text).toBe(400);
+      expect(take.json.code).toBe('slug_taken');
     }, 120_000);
   }
 
