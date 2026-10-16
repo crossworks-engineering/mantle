@@ -1406,7 +1406,8 @@ here, `packages/client-types/src/dto/file-deletes.ts`, root exports):
   (a refused build stores no bundle); the tools `app_file_write`,
   `app_file_delete`, `app_source_set`, `app_build`, `app_publish`,
   `app_tools_set`, `app_db_schema_set`, `app_snapshot_restore` (code,
-  full): refused by their item check (before: edit asked). A restore or
+  full): refused by their item check (before: edit asked); `app_update`
+  with a `description`: refused before anything is written. A restore or
   import by any path that skipped the policy: refused before the undo
   snapshot.
 - PATCH `/api/shares/:id` `{ mode }` (or `{ serve }`) of a contact share by
