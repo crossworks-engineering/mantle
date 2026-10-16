@@ -1247,11 +1247,11 @@ check "web never healthy: no rollback requested" sh -c "test \$(grep -c alpine '
 NP="$WORK/noperl-bin"; mkdir -p "$NP"
 IFS=: read -r -a path_dirs <<< "$PATH"
 for d in "${path_dirs[@]}"; do
-  [ -n "$d" ] && [ -d "$d" ] || continue
+  case "$d" in /*) [ -d "$d" ] || continue ;; *) continue ;; esac
   for f in "$d"/*; do
     n=${f##*/}
     case "$n" in perl*) continue ;; esac
-    if [ -x "$f" ] && [ ! -e "$NP/$n" ]; then ln -s "$f" "$NP/$n"; fi
+    if [ -x "$f" ] && [ ! -e "$NP/$n" ] && [ ! -L "$NP/$n" ]; then ln -s "$f" "$NP/$n"; fi
   done
 done
 roll_box noperl
