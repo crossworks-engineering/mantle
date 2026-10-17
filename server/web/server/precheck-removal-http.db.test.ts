@@ -30,12 +30,14 @@
  *     `item-workspace`, the mapper's words, never the database's own) and
  *     leaves the item as it was (pch_probe: its rows, content rows, links,
  *     grants, history);
- *   - in warn, the write the database would refuse in on is made and logged
+ *   - in warn, an edit the database would refuse in on is made and logged
  *     as an actor miss (named in docs/actors.md: a box below on is an
- *     emergency, the checks' floor of migration 0301);
+ *     emergency, the checks' floor of migration 0301); a delete is refused
+ *     there too (the delete check, 0266, asks in every mode);
  *   - an item the scope does not read answers byte for byte what the random
  *     uuid answers (one 404: the refusal does not tell a hidden item from
- *     none), and is not written, in on and in warn.
+ *     none), and is not written, in on and in warn; so does an id that is
+ *     not a uuid (the route's params gateway).
  *
  * A family whose entry is gone (`removed`) also pins that the bypass
  * changes nothing: `was` answers as `now`. Every answer is printed at the
@@ -199,6 +201,9 @@ describe.skipIf(!DB_URL)('the pre-check removal, part 2: the HTTP entries', () =
     viaKey?: true;
     /** Make a fresh item for `who` placed at `p` (place it last). */
     make: (who: Who, p: Place) => Promise<string>;
+    /** In warn, a write the database refuses in on is made (logged as a
+     *  miss): an edit's. A delete's check asks in every mode. */
+    warnMade: boolean;
   };
   type Family = {
     name: string;
@@ -244,6 +249,7 @@ describe.skipIf(!DB_URL)('the pre-check removal, part 2: the HTTP entries', () =
       path: (id: string) => `${base}/${id}`,
       body: retitle,
       make,
+      warnMade: true,
       ...opts,
     },
     {
@@ -252,6 +258,7 @@ describe.skipIf(!DB_URL)('the pre-check removal, part 2: the HTTP entries', () =
       method: 'DELETE',
       path: (id: string) => `${base}/${id}`,
       make,
+      warnMade: false,
       ...opts,
     },
   ];
@@ -259,7 +266,7 @@ describe.skipIf(!DB_URL)('the pre-check removal, part 2: the HTTP entries', () =
   const FAMILIES: Family[] = [
     {
       name: 'node kinds (formulas, tasks, events, v1 tasks)',
-      removed: false,
+      removed: true,
       routes: [
         ...nodeRoutes('/api/formulas', formula),
         ...nodeRoutes('/api/tasks', task),
@@ -302,7 +309,11 @@ describe.skipIf(!DB_URL)('the pre-check removal, part 2: the HTTP entries', () =
     text
       .replace(/\d{4}-\d\d-\d\dT[\d:.]+Z/g, 'T')
       .replace(new RegExp(UUID.source, 'g'), 'ID')
-      .replace(new RegExp(`${tag}\\w*( \\w+)*`, 'g'), 'TAG');
+      .replace(new RegExp(`${tag}\\w*( \\w+)*`, 'g'), 'TAG')
+      // A made-up name: a formula spec's id (f and 8 hex, which may hold no
+      // digit), any other hex.
+      .replace(/"f[0-9a-f]{8}"/g, '"F"')
+      .replace(/\b(?=[0-9a-f]*\d)[0-9a-f]{4,}\b/g, 'H');
 
   const line = (a: Answer) =>
     `${a.status}${a.changed ? ' changed' : ''}${a.misses.length ? ` misses=${a.misses.length}` : ''}: ${a.text
@@ -405,9 +416,10 @@ describe.skipIf(!DB_URL)('the pre-check removal, part 2: the HTTP entries', () =
 
   afterAll(async () => {
     console.log(
-      ['pre-check removal (HTTP), each cell (was: the pre-check; now: bypassed):', ...recorded].join(
-        '\n  ',
-      ),
+      [
+        'pre-check removal (HTTP), each cell (was: the pre-check; now: bypassed):',
+        ...recorded,
+      ].join('\n  '),
     );
     pre.on = true;
     process.env.MANTLE_ACTOR_CHECK = 'warn';
@@ -436,6 +448,16 @@ describe.skipIf(!DB_URL)('the pre-check removal, part 2: the HTTP entries', () =
               );
               expect(noneNow.status, noneNowText).toBe(404);
               expect(noneNowText).not.toMatch(RAW);
+              // An id that is not a uuid names nothing either: the same 404.
+              const bad = await send(route, who, 'not-an-id', false);
+              const badText = await bad.text();
+              recorded.push(
+                `${family.name} | ${route.name} ${mode} ${who}/not-an-id: ${bad.status}: ${badText}`,
+              );
+              expect({ status: bad.status, text: badText }).toEqual({
+                status: noneNow.status,
+                text: noneNowText,
+              });
               for (const p of PLACES) {
                 const name = `${route.name} ${mode} ${who}/${p}`;
                 const was = await once(route, who, p, true);
@@ -455,7 +477,7 @@ describe.skipIf(!DB_URL)('the pre-check removal, part 2: the HTTP entries', () =
                   expect(now.status, `${name}: ${now.text}`).toBeLessThan(300);
                   expect(now.changed, `${name} made no write`).toBe(true);
                   expect(now.misses, name).toEqual([]);
-                } else if (mode === 'on') {
+                } else if (mode === 'on' || !route.warnMade) {
                   expect(now.status, `${name}: ${now.text}`).toBe(403);
                   expect(now.text, name).toContain('item-workspace');
                   expect(now.changed, `${name} changed the item`).toBe(false);

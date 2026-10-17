@@ -204,20 +204,17 @@ describe('itemWriteTarget (W6a, the item an Admin write touches)', () => {
     expect(itemWriteTarget('POST', '/api/shares/contacts', '/api/shares/contacts')).toBeNull();
   });
   it('fix round 1 (M1): the other workspace kinds, and items named through another row', () => {
-    expect(itemWriteTarget('DELETE', '/api/tasks/:id', `/api/tasks/${id}`)).toEqual({
-      id,
-      need: 'manage',
-      ref: 'node',
-    });
-    expect(itemWriteTarget('PATCH', '/api/v1/tasks/:id', `/api/v1/tasks/${id}`)).toEqual({
-      id,
-      need: 'edit',
-      ref: 'node',
-    });
-    expect(itemWriteTarget('PATCH', '/api/events/:id', `/api/events/${id}`)?.need).toBe('edit');
-    expect(itemWriteTarget('DELETE', '/api/formulas/:id', `/api/formulas/${id}`)?.need).toBe(
-      'manage',
-    );
+    // Formulas, tasks, events and v1 tasks name no item since the pre-check
+    // removal part 2: the database checks their writes, and the handler's
+    // scoped read answers a hidden one (docs/actors.md).
+    for (const [method, pattern] of [
+      ['DELETE', '/api/tasks/:id'],
+      ['PATCH', '/api/v1/tasks/:id'],
+      ['PATCH', '/api/events/:id'],
+      ['DELETE', '/api/formulas/:id'],
+    ] as const) {
+      expect(itemWriteTarget(method, pattern, pattern.replace(':id', id))).toBeNull();
+    }
     expect(
       itemWriteTarget(
         'POST',
@@ -422,11 +419,13 @@ describe('member route lists (A1: generated from the kind registry)', () => {
   });
 
   it('every D1 item write names its item, with edit, or manage for a delete', () => {
+    // Recall maps only: tasks, events and formulas lost their entry in the
+    // pre-check removal part 2 (the database checks them).
     const id = '00000000-0000-4000-8000-000000000001';
     const at = (p: string) => p.replace(':id', id).replace(':card', 'c1');
     for (const key of MEMBER_OPEN_WRITES) {
       const [method, pattern] = key.split(' ') as [string, string];
-      if (!/^\/api\/(tasks|events|formulas|recall)\//.test(pattern)) continue;
+      if (!/^\/api\/recall\//.test(pattern)) continue;
       if (CREATE_ROUTES.has(key)) continue;
       const t = itemWriteTarget(method, pattern, at(pattern));
       expect(t, key).not.toBeNull();

@@ -93,6 +93,18 @@ const BAD_ID_CELLS = [
   'POST /api/heartbeats/:id/fire',
   'POST /api/journal/:id/resolve',
 ];
+/** The [id] cells whose HTTP item gate went in the pre-check removal part 2
+ *  (docs/actors.md, "Pre-check removal Part 2 (HTTP)"): the params
+ *  gateway's 404 answers them now, where the gate's answered first
+ *  (`{"ok":false,"error":"not found"}`, the same status). */
+const PRECHECK_HTTP_404 =
+  'precheck-http-404 (the item gate went; the params gateway answers an [id] that is not a uuid)';
+const PRECHECK_HTTP_CELLS = [
+  'DELETE /api/events/:id',
+  'DELETE /api/formulas/:id',
+  'PATCH /api/events/:id',
+  'PATCH /api/formulas/:id',
+];
 /** The Files operation's own refusal (its text carries a dash: \u2014). */
 const NO_FOLDER = (verb: string, fix: string) =>
   `400 application/json {"error":"${verb}: no folder at '${BAD_PATH}' \u2014 ${fix}"}`;
@@ -100,6 +112,9 @@ const FIRST = 'create it with folder_create first';
 const CHANGES: Readonly<Record<string, { kind: string; now: string }>> = {
   ...Object.fromEntries(
     BAD_ID_CELLS.map((c) => [`bad-id ${c}`, { kind: BAD_ID_404, now: NOT_FOUND }]),
+  ),
+  ...Object.fromEntries(
+    PRECHECK_HTTP_CELLS.map((c) => [`bad-id ${c}`, { kind: PRECHECK_HTTP_404, now: NOT_FOUND }]),
   ),
   'prose GET': {
     kind: 'prose-no-history (an entityId that is not a uuid has no versions)',

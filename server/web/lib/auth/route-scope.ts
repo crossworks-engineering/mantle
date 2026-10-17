@@ -358,10 +358,11 @@ export const ITEM_WRITE_PREFIXES: readonly string[] = [
   '/api/v1/pages',
   '/api/v1/tables',
   // W6a fix round 1 (M1): the other workspace kinds with an item route.
-  '/api/formulas',
-  '/api/tasks',
-  '/api/events',
-  '/api/v1/tasks',
+  // Formulas, tasks, events and v1 tasks went in the pre-check removal
+  // part 2 (docs/actors.md): their edit and delete are one statement each,
+  // refused by the database's write check (0278) and delete check (0266),
+  // and the handler's read in the login's scope answers an item it does
+  // not read with the 404 of no item at all.
   '/api/recall/maps',
 ];
 
