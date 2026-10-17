@@ -6577,6 +6577,48 @@ lists.
   `deleted-app` (the trash runs on the system pool, `ADMIN_ACT`); for plan
   v3 S6.
 
+### Pre-check removal Part 2 (HTTP) handover (2026-10-17)
+
+Branch `feat/precheck-http`, head as pushed with this paragraph. Handed
+over at the owner's tool-call rule. Done: the six entries above (node
+kinds, notes, drawings), the proof file, the guard sweep re-recorded.
+
+**Gates at 646a1aa1c** (workstation, own pg container on its own port,
+init mounted, `MANTLE_CHECK_FLOOR=keep`): typecheck 0, lint 0, format 0,
+docs 0, arch 0, web build 0, boot:smoke 0, deploy harness 0; full vitest
+with DB 1 (two files, below); actor-off, actor-on, edit-on, test:matrix and
+test:runtime-role not run (stopped at the rule). At 533c2c6c6 (the node
+kinds only) full vitest with DB failed only the DB-less guard sweep, since
+re-recorded. CI on 646a1aa1c: failure (run 39027402724), five files.
+
+**Do this first:** the cells that still pin the notes and drawings gate's
+answers, each to be moved to the database's answer and named here:
+
+- `w6a-route-sweep.db.test.ts`, "a member: an open write on an id it
+  cannot read, or no row has, is the gate's one 404": the notes and
+  drawings writes now answer the handler's 404 `{"error":"not found"}`
+  (the same for an unread id and no row, which is what the cell needs),
+  and the drawing draft and commit with the sweep's empty body answer
+  their 400 before the read. Teach the cell the routes whose entry went
+  (the handler's 404, equal for both ids; a body 400 is the same for
+  both), or give those two a valid body.
+- `f4-admin-write-role.db.test.ts`, "with the pre-check in place": it
+  drives `PATCH /api/notes/:id`, which has no pre-check now (off and warn
+  make the read-only edit). Drive a page's PATCH (still gated) there.
+- CI only (passed on the workstation run): `w6b-fix1.db.test.ts`
+  (a snapshot copy's responses say it is read only: the copy's 403 now has
+  the generic words, see Changed answers), `w6b-member-writes.db.test.ts`
+  (a member's edit of an item it only reads: refused by the database only
+  with both checks on; run the cell with both on, as part 1 did), and
+  `a5-elevated-approval.db.test.ts` (two approvers racing; not touched by
+  this branch, check whether it is a flake). The workstation's full run
+  gave these three 0, so check CI's mode (the actor check from the env)
+  against the workstation's.
+
+Then rerun full vitest with DB, actor-off, actor-on, edit-on, test:matrix
+and test:runtime-role, and wait for CI; then the families of "Left" above.
+Nothing of this round runs on the workstation.
+
 ## Remove the switch-over code (A7)
 
 Plan v2 (page fcc4aee4), "A7. Remove the switch-over code", after W9 (every
