@@ -37,10 +37,10 @@ export const WORKSPACE_NODE_TYPES = kindsWhere<WorkspaceKind>((s) => s.class ===
 export type LimitedRead = 'none' | 'all' | readonly string[];
 
 /**
- * Who writes it: `content` through `db` (writes stay on the system pool with
- * their rule in the statement), `system` through `systemDb` (infrastructure
- * a scoped turn still writes: traces, spills, counters), `admin` only from
- * owner paths.
+ * Who writes it: `content` through `db` (a login's scoped write runs on the
+ * write role, where the database checks it; a system actor's on the system
+ * pool), `system` through `systemDb` (infrastructure a scoped turn still
+ * writes: traces, spills, counters), `admin` only from owner paths.
  */
 export type Writer = 'content' | 'system' | 'admin';
 

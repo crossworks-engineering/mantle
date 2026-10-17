@@ -6,8 +6,11 @@
  *  - `content`: brain items. A read (GET, HEAD, or a READ_POSTS entry)
  *    enters the login's scope for the rest of the request: the union of its
  *    workspaces, on the workspace role (mantle_view_user). An Admin user
- *    reads what is granted to the workspaces it is in, like anyone. An
- *    Admin user's write stays on the system pool, as before W6a.
+ *    reads what is granted to the workspaces it is in, like anyone. A
+ *    write, an Admin user's too, runs in the login's scope: its writes on
+ *    the write role (mantle_write_user) while the actor check is not off,
+ *    where the database checks each one. Only the Admin acts below
+ *    (ADMIN_ACT_WRITES) run on the system pool.
  *  - an area (`settings`, `users`, `assistants`, `connectors`, `keys`):
  *    management (plan 2.4). The login must hold the area (requireArea:
  *    the Admin workspace and its limits); the route then runs on the
@@ -258,15 +261,15 @@ const MEMBER_OPEN: ReadonlySet<string> = new Set(MEMBER_OPEN_READS);
  * The owner routes a non-Admin login may WRITE through since W6b (plan 15,
  * 21.8 row 7): create, edit and delete the workspace kinds (the create,
  * PATCH and DELETE routes of WORKSPACE_ITEM_PREFIXES), their drafts and
- * folders, in its own scope. The request runs in the login's scope (writes
- * on the system pool); the handler reads the item the route names in the
- * login's scope first (since the pre-check removal part 2) and the
- * database checks the write (0278, 0266) or the handler asks its right
- * (assertItemRight) before any side effect, and the rest on the request's
- * system transactions (a create into a folder, a move, a delete: 0241, 0245,
- * 0266). A create lands in the request's workspace (?ws=) when the login
- * moderates it, else in the folder it is made in when the login may edit
- * that, else in the login's private workspace (mantle_default_home).
+ * folders, in its own scope. The request runs in the login's scope (its
+ * writes on the write role while the actor check is not off); the handler
+ * reads the item the route names in the login's scope first and the
+ * database checks the write (0278, 0266, and for a create into a folder, a
+ * move and a delete 0241, 0245, 0266) or the handler asks its right
+ * (assertItemRight) before any side effect. A create lands in the
+ * request's workspace (?ws=) when the login moderates it, else in the
+ * folder it is made in when the login may edit that, else in the login's
+ * private workspace (mantle_default_home).
  * Not here: Admin-only kinds, app review and purge, bulk deletes, imports,
  * history and snapshot restores, the formula library seed. The app runner
  * routes are here since W7e (the /api/member/apps runner routes are
