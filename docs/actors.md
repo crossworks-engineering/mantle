@@ -6821,7 +6821,8 @@ typecheck 0, lint 0, format 0, docs 0, arch 0, web build 0, boot:smoke 0,
 deploy harness 0 (bash and dash), actor-off 0, actor-on 0, test:matrix 0;
 full vitest with DB 1, edit-on 1, full test:runtime-role 1, each only on
 the two DB cells above, fixed in `b50c80c85` (test files only), where those
-two files give 0 in default, edit-on and runtime-role.
+two files give 0 in default, edit-on and runtime-role. CI on `b50c80c85`:
+success (run 39040450921).
 
 **The last family: apps and tree items (9 entries) removed**
 (`itemPrecheckRoutes` 11 -> 2; `ITEM_WRITE_PREFIXES` and
@@ -6893,7 +6894,7 @@ before.
 arch, web build, boot:smoke, deploy harness, full vitest with DB after a
 base migrate, actor-off, actor-on, edit-on, test:matrix, full
 test:runtime-role) and CI on it; the DB-less unit suite passed on the Mac
-at `445b21a6d` except the sweeps re-recorded since. Then the merge into
+at the final head (840 files, exit 0). Then the merge into
 `feat/precheck-remove` (not this branch's).
 
 ## Remove the switch-over code (A7)
