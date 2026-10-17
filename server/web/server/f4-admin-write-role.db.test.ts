@@ -332,12 +332,14 @@ describe.skipIf(!DB_URL)('F4: an Admin user’s write request runs in its scope'
     expect(rw.misses).toEqual([]);
   }, 120_000);
 
-  it('off stays the system pool (the rollout switch, every login alike)', async () => {
+  it('off runs on the write role too and reports as warn (plan v3 S3: the mode never picks the pool)', async () => {
+    // Changed in S3: off was the rollout switch, the system pool unchecked.
     await setMode('off');
     const ro = await cell('off admin edit read-only', 'admin', 'edit', 'read-only', false);
     expect(ro.status, ro.text).toBe(200);
     expect(ro.changed).toBe(true);
-    expect(ro.role).toBe('system');
+    expect(ro.role).toBe('write');
+    expect(ro.misses).toContain(EDIT_MISS);
   }, 120_000);
 
   it('with the pre-check in place: a read-only edit is its 403, an item the scope does not read the 404 (no existence leak)', async () => {

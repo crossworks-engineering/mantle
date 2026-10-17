@@ -488,18 +488,20 @@ describe.skipIf(!DB_URL)('A2a: the actor check adds no round trip when off', () 
     if (dir) await rm(dir, { recursive: true, force: true });
   });
 
-  it('off sends nothing new; warn adds only the actor', async () => {
+  it('off sends nothing new but a scoped write’s SET on the write role (plan v3 S3); warn adds only the actor', async () => {
     const rows: string[] = [];
     const failures: string[] = [];
     for (const p of Object.keys(PATHS) as Path[]) {
       const off = await measure(p, 'off');
       const warn = await measure(p, 'warn');
-      // A member's write (A2b2b): on the write role in warn and on (its
-      // statements there counted), never off; on is held to warn's rules.
+      // A member's write (A2b2b): on the write role in every mode since plan
+      // v3 S3 (off was the system pool before); on is held to warn's rules.
       const on = p === 'member page save' ? await measure(p, 'on') : null;
       const off2 = await measure(p, 'off');
       if (p === 'member page save') {
-        if (off.writeRoleStatements !== 0) failures.push(`${p}: off sent to the write role`);
+        if (off.writeRoleStatements === 0) {
+          failures.push(`${p}: off sent nothing to the write role`);
+        }
         if (warn.writeRoleStatements === 0)
           failures.push(`${p}: warn sent nothing to the write role`);
         if (on!.writeRoleStatements === 0) failures.push(`${p}: on sent nothing to the write role`);
@@ -529,8 +531,13 @@ describe.skipIf(!DB_URL)('A2a: the actor check adds no round trip when off', () 
       }
       // A path whose count moved between two off runs is not settled.
       expect(off2.statements.length, `${p}: off is not stable`).toBe(off.statements.length);
-      // (1) off: no statement sets or reads the actor.
-      const actorOff = off.statements.filter((s) => ACTOR_SQL.test(s));
+      // (1) off: no statement sets or reads the actor, but the write role's
+      // one SET of a scoped write (its scope and actor, with the mode off:
+      // plan v3 S3, the mode never picks the pool), sent with the
+      // transaction's first statement.
+      const actorOff = off.statements.filter(
+        (s) => ACTOR_SQL.test(s) && !/set_config\('mantle\.ws'/.test(s),
+      );
       if (actorOff.length) failures.push(`${p}: off sent the actor: ${actorOff[0]}`);
       // (2) warn: the same statements as off, plus the actor's own.
       const own = (s: string) => ACTOR_SQL.test(s);

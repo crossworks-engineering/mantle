@@ -149,7 +149,9 @@ system work read only. A named read-path write (`READ_PATH_WRITES`,
 `packages/db/src/actor.ts`) runs as `system(<name>)`, read-write, for any
 caller. A3a named two more: a public link's view counter
 (`backfill:link-views`) and the Recall prompt embeddings a reader's
-`recall_match` heals (`backfill:recall-prompt-embeddings`).
+`recall_match` heals (`backfill:recall-prompt-embeddings`). `profiles`
+carries it, and the contact share's below, since plan v3 S3 made it an
+item table: a read-only session changes no profile row, its own included.
 
 ## A contact share writes its app's data only
 
@@ -170,7 +172,9 @@ Both are installed by one loop, `mantle_edit_check_item_triggers()` (0294):
 every item table gets the read-only refusal and, but `app_databases`, the
 contact share's, by `CREATE OR REPLACE TRIGGER` (a SHARE ROW EXCLUSIVE lock,
 so reads go on while it runs on a live box), then the box mode is applied.
-A migration that adds an item table calls it.
+A migration that adds an item table calls it, or, holding a lock on its
+table already, makes the two on that table alone (0302, profiles: the loop
+would take a lock on every item table while profiles is held).
 
 ## The heads locks filter by the scope
 
@@ -255,12 +259,11 @@ with the checks above. A secret's sealed value goes through
 cross-map options through `mantle_recall_retarget(map, old_slug,
 new_slug)`: definers that check only while a scope is set, through the edit
 check's gate, so the role still holds no right on `secrets` and never
-writes another map's cards itself. Two tables stay on
-`WRITE_ROLE_GAP_TABLES`, decided: `profiles` (a login's settings row, not an
-item; a member's turn writes the brain's row today, an owner question) and
-`app_table_exports` (no login transaction writes it; on the list, a flow
-that does keeps the checked rerun instead of a 500). The rerun mechanism
-stays.
+writes another map's cards itself. The two tables A3a left as gaps are
+write-role tables since plan v3 S3 (docs/actors.md, "Plan v3 S3"):
+`profiles` writes the login's own row, or the brain's with the Settings
+area (owner decision 2026-10-17), and `app_table_exports` is read and
+written by a manager of the app. The rerun mechanism is gone.
 
 On a box whose actor check is `warn` or `on`, the moved tables' row rules
 apply at once, with the roll, whatever the edit check: they ride the actor

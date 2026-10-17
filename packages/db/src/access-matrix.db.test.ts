@@ -308,6 +308,48 @@ describe.skipIf(!URL)('access matrix on the migrated database', () => {
     }
   });
 
+  it('profiles and app_table_exports: the write rules of plan v3 S3 (owner decision 2026-10-17)', async () => {
+    // profiles: the write role writes its own row, or the brain's with the
+    // Settings area; never every row in an Admin scope (the read rule's).
+    const writes = await sql<{ cmd: string; qual: string | null; chk: string | null }[]>`
+      select cmd, qual, with_check as chk from pg_policies
+       where schemaname = 'public' and tablename = 'profiles'
+         and 'mantle_write_user'::name = any(roles) and cmd <> 'SELECT' order by cmd`;
+    expect(writes.map((w) => w.cmd)).toEqual(['DELETE', 'INSERT', 'UPDATE']);
+    for (const w of writes) {
+      const rule = (w.cmd === 'INSERT' ? w.chk : w.qual) ?? '';
+      expect(rule, w.cmd).toContain('mantle_login_id');
+      expect(rule, w.cmd).not.toContain('mantle_scope_is_admin');
+      // Fix round 3: a delete is the login's own row only.
+      if (w.cmd === 'DELETE') {
+        expect(rule, w.cmd).not.toContain('mantle_brain_id');
+        expect(rule, w.cmd).not.toContain('mantle_scope_has_area');
+        continue;
+      }
+      expect(rule, w.cmd).toContain('mantle_brain_id');
+      expect(rule, w.cmd).toContain("mantle_scope_has_area('settings'");
+    }
+    // The read rule's subquery names its column with the table (fix round 3).
+    expect(
+      (
+        await sql<{ qual: string }[]>`
+          select qual from pg_policies where schemaname = 'public'
+             and tablename = 'app_table_exports' and cmd = 'SELECT'`
+      )[0]?.qual,
+    ).toContain('app_table_exports.app_node_id');
+    // app_table_exports: row level security on, one read rule (manage of
+    // the app), which the write role reads and writes by.
+    const [rls] = await sql<{ on: boolean }[]>`
+      select relrowsecurity as on from pg_class where oid = 'public.app_table_exports'::regclass`;
+    expect(rls?.on).toBe(true);
+    const reads = await sql<{ roles: string[]; qual: string }[]>`
+      select roles::text[] as roles, qual from pg_policies
+       where schemaname = 'public' and tablename = 'app_table_exports' and cmd = 'SELECT'`;
+    expect(reads).toHaveLength(1);
+    expect([...reads[0]!.roles].sort()).toEqual(['mantle_view_user', 'mantle_write_user']);
+    expect(reads[0]!.qual).toContain('mantle_may_manage');
+  });
+
   // Re-pinned in workspaces arch A1: the TS list is the registry's workspace
   // class, so it follows mantle_kind_class (0241). mantle_workspace_kind
   // (0159, the tier model's list) stays for unmigrated brains until A7.

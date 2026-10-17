@@ -825,6 +825,36 @@ export function keptNotes(notes, oldPins, now) {
   return out;
 }
 
+/**
+ * The write-role gap reruns (plan v3 S3, the `gapTables` pin): each role
+ * switch in counted source (`set local role X`, `set_config('role', X, ...)`,
+ * comments blanked) to a role other than the pool's own (the write role,
+ * the workspace role). Main's one was the
+ * checked rerun on a gap table as mantle_gap_writer (client.ts); S3 closed
+ * the gap tables and removed it, so 0. It counts the switch itself, not a
+ * list of tables: renaming a list or a role const does not hide a rerun,
+ * since any target but the write role counts.
+ */
+export function gapRerunCount(files) {
+  const SWITCH = /set\s+local\s+role\s+([^\s`'";)]+)|set_config\(\s*'role'\s*,\s*([^,)]+)/gi;
+  // The pool's own roles are no rerun: the write role, and the workspace
+  // role a read switches to (a test grid's reads, matrix/test-support).
+  const WRITE = /^['"]?(?:\$\{(?:WRITE|VIEW)_ROLE\}|mantle_(?:write|view)_user)['"]?$/;
+  let n = 0;
+  for (const { text } of files) {
+    for (const m of stripComments(text).matchAll(SWITCH)) {
+      const target = (m[1] ?? m[2] ?? '').trim();
+      if (!WRITE.test(target) && target.toLowerCase() !== 'none') n++;
+    }
+  }
+  return n;
+}
+
+/** The lines of one file (plan v3 section 6: dbClientLines). */
+function lineCount(root, path) {
+  return readFileSync(join(root, path), 'utf8').split('\n').length - 1;
+}
+
 /** Every repo number of plan section 3, plus the per-file maps the lints
  *  pin. */
 export function measure(root) {
@@ -1102,6 +1132,8 @@ export function measure(root) {
       actorsHistoryRefs: docQuotes.actorsHistoryRefs,
       actorsStepRefs: docQuotes.actorsStepRefs,
       docQuotesDangling: docQuotes.docQuotesDangling,
+      gapTables: gapRerunCount(texts),
+      dbClientLines: lineCount(root, 'packages/db/src/client.ts'),
     },
     perFile: {
       asSystem,

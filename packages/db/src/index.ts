@@ -425,6 +425,7 @@ export {
 } from './item-acl';
 export {
   assertItemRight,
+  assertManageOrAdmin,
   foldersReadOf,
   itemWriteRefusal,
   itemWriteRefusalOf,

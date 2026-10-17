@@ -10,7 +10,10 @@
  * 'telegram' (the reminder worker's default). See docs/reminder-delivery-routing.md.
  *
  * Owner-gated with a JSON 401 (not a redirect) so the mobile bearer client gets a
- * clean error, matching /api/push/*.
+ * clean error, matching /api/push/*. The value is the brain's row (owner.id),
+ * so a PUT is the brain owner's or an Admin user's with the settings area
+ * (brandSettingsRefusal; owner decision 2026-10-17, plan v3 S3 fix round 3):
+ * an Admin user without it gets the 403, not the database's refusal.
  */
 
 import { NextResponse } from '@/server/http-compat';
@@ -18,6 +21,7 @@ import { z } from 'zod';
 import { ownerCaller } from '@/lib/auth';
 import { loadProfilePreferences, updateProfilePreferences } from '@mantle/content';
 import { readJson } from '@/lib/read-body';
+import { brandSettingsRefusal } from '@/lib/brand-gate';
 
 export async function GET() {
   const owner = ownerCaller();
@@ -29,6 +33,8 @@ const Body = z.object({ reminderChannel: z.enum(['telegram', 'mobile']) });
 
 export async function PUT(req: Request) {
   const owner = ownerCaller();
+  const refused = await brandSettingsRefusal(owner, "The brain's reminder delivery");
+  if (refused) return refused;
   const parsed = Body.safeParse(await readJson(req));
   if (!parsed.success) {
     return NextResponse.json({ error: 'invalid input' }, { status: 400 });

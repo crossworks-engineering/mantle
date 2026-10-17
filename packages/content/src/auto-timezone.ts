@@ -32,6 +32,7 @@ import tzlookup from 'tz-lookup';
 import type { LocationPing } from './location-ping';
 import {
   isValidTimezone,
+  profileRowWritable,
   updateProfilePreferences,
   type ProfilePreferences,
 } from './profile-preferences';
@@ -95,6 +96,10 @@ export async function applyAutoTimezone(
 ): Promise<{ prefs: ProfilePreferences; switched?: { timezone: string; previous: string } }> {
   const decision = decideAutoTimezone(ping, prefs);
   if (decision.action === 'none') return { prefs };
+  // The row is the brain's on an assistant turn: a scope that may not write
+  // it (a member's turn, an Admin user's without Settings) leaves it as it
+  // is, rather than a refusal logged every turn (plan v3 S3 fix round 3).
+  if (!(await profileRowWritable(userId))) return { prefs };
   if (decision.action === 'record') {
     const updated = await updateProfilePreferences(userId, { lastAutoTimezone: decision.zone });
     return { prefs: updated };

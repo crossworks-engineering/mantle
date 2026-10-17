@@ -132,6 +132,29 @@ export async function assertItemRight(
   if (refused) throw editCheckRefusalError(refused.detail ?? 'no_read');
 }
 
+/**
+ * The item check of a row whose rule is manage of its item, an Admin scope
+ * for an item with no home (app_table_exports' read and write rule, 0302;
+ * the write check's `manage`, 0278): throws the edit check's refusal
+ * unless the current scope may, no_read for an item it does not read,
+ * no_edit with `message` for one it reads but may not manage (plan v3 S3
+ * fix round 3: an export link is asked this before anything is written).
+ * assertItemRight's manage refuses an item with no home in every scope,
+ * so it is not this. System work is not checked.
+ */
+export async function assertManageOrAdmin(id: string, message: string): Promise<void> {
+  if (!currentWorkspaceScope()) return;
+  const key = id.trim().toLowerCase();
+  if (!UUID_RE.test(key)) throw editCheckRefusalError('no_read');
+  const rows = (await db.execute(sql`
+    select case when n.home_ws is null then "public"."mantle_scope_has_admin"()
+                else coalesce("public"."mantle_may_manage"(n.home_ws), false) end as ok
+      from nodes n where n.id = ${key}::uuid`)) as unknown as { ok: boolean | null }[];
+  const row = rows[0];
+  if (!row) throw editCheckRefusalError('no_read');
+  if (row.ok !== true) throw Object.assign(editCheckRefusalError('no_edit'), { message });
+}
+
 type ScopeRights = { edit: boolean; manage: boolean; copy: boolean };
 
 /** What the current scope may do to each of `ids` (canonical uuids): an id

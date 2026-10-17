@@ -5,6 +5,7 @@ import { asSystemExits, holderProblems, systemDbUses } from './as-system-exits.m
 import { describe, expect, it } from 'vitest';
 import {
   asSystemSites,
+  gapRerunCount,
   builtinSlugs,
   countedFiles,
   guardCalls,
@@ -1057,5 +1058,21 @@ describe('the editor rules', () => {
         },
       ],
     });
+  });
+});
+
+describe('gapRerunCount (plan v3 S3 fix round 3)', () => {
+  const of = (text: string) => gapRerunCount([{ path: 'x.ts', text }]);
+  it('counts a role switch to any role but the write role, whatever its name', () => {
+    // Main's checked rerun (client.ts before S3).
+    expect(of('t.unsafe(`${ACTOR_SQL_TAG} set local role ${GAP_WRITER_ROLE}`)')).toBe(1);
+    expect(of('t.unsafe(`set local role ${RENAMED}`)')).toBe(1);
+    expect(of("select set_config('role', 'mantle_gap_writer', true)")).toBe(1);
+    // The write role, a reset, and a comment are not a rerun.
+    expect(of("select set_config('role', '${WRITE_ROLE}', true)")).toBe(0);
+    expect(of('t.unsafe(`set local role mantle_write_user`)')).toBe(0);
+    expect(of('t.unsafe(`set local role none`)')).toBe(0);
+    expect(of('await tx`set local role mantle_view_user`')).toBe(0);
+    expect(of('// set local role mantle_gap_writer')).toBe(0);
   });
 });

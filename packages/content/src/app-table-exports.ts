@@ -44,6 +44,7 @@ import {
   type AppTableExport,
   appTableExports,
   assertItemRight,
+  assertManageOrAdmin,
   db,
   nodes,
   runAsSystem,
@@ -407,6 +408,23 @@ export async function syncAppTableExports(
   return out;
 }
 
+/** The refusal of an export change by a scope that does not manage the app
+ *  (plan v3 S3 fix round 3). */
+export const APP_EXPORT_MANAGE_ERROR =
+  "You cannot change this app's exported tables: that is for a Moderator of the app's workspace (an app with no workspace: the Admin workspace).";
+
+/**
+ * The export link's own write rule, asked first (plan v3 S3 fix round 3):
+ * the scope manages the app (a Moderator of its home; an app with no home,
+ * an Admin scope), the test app_table_exports' rules make (0302). Asked
+ * before anything is created, so an editor who may edit the app but not
+ * manage it gets the refusal, not a new Table the link insert then leaves
+ * behind. System work is not checked.
+ */
+function assertManagesApp(appNodeId: string): Promise<void> {
+  return assertManageOrAdmin(appNodeId, APP_EXPORT_MANAGE_ERROR);
+}
+
 /**
  * Create (or refresh) an export link: builds the Table from the current SQLite
  * rows, marks it as an app table, and locks its grid against direct edits.
@@ -419,12 +437,13 @@ export async function createAppTableExport(
   opts: { title?: string } = {},
 ): Promise<{ export: AppTableExportInfo; tableId: string; rows: number; created: boolean }> {
   assertTableIdent(sqliteTable);
-  // The app's edit first (pre-check removal Part 3): app_table_exports is a write-role
-  // gap table (nothing in the database asks of the app), so this is the
-  // check of every way in.
+  // The app's edit first (pre-check removal Part 3), then its manage (plan
+  // v3 S3 fix round 3, the export row's own rule, 0302): both before
+  // anything is created.
   await assertItemRight(appNodeId, 'edit');
   const app = await getApp(ownerId, appNodeId);
   if (!app) throw new Error('app not found');
+  await assertManagesApp(appNodeId);
 
   const [existing] = await db
     .select()
@@ -484,6 +503,8 @@ export async function createAppTableExport(
 
 /** Dissolve a link. The Table survives as an ordinary editable table (its
  *  data is the last materialized state); returns false when no link exists.
+ *  A scope that does not manage the app is refused first (the refusal, not
+ *  "no link": its read rule hides the link from that scope).
  *  When clients wrote the app, the Table keeps the client-sourced mark
  *  (audit I3): the rows they wrote are still in it. */
 export async function removeAppTableExport(
@@ -491,8 +512,9 @@ export async function removeAppTableExport(
   appNodeId: string,
   sqliteTable: string,
 ): Promise<boolean> {
-  // As createAppTableExport: the app's edit, the only check of the link.
+  // As createAppTableExport: the app's edit (R0), then its manage (S3).
   await assertItemRight(appNodeId, 'edit');
+  await assertManagesApp(appNodeId);
   const [link] = await db
     .delete(appTableExports)
     .where(

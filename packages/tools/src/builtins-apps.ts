@@ -1234,6 +1234,8 @@ const app_table_export_remove: BuiltinToolDef = {
     const table = str(input.table).trim();
     if (!id) return { ok: false, error: 'id is required' };
     if (!table) return { ok: false, error: 'table is required' };
+    // A scope that does not manage the app: the refusal throws (fix round 3),
+    // answered by dispatch's one mapper, never "no export link".
     const removed = await removeAppTableExport(ctx.ownerId, id, table);
     if (!removed) {
       return {

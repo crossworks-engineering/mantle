@@ -58,7 +58,13 @@ import { and, eq, sql } from 'drizzle-orm';
 import { InputError } from '@mantle/std';
 import { APP_OPENS_MAX } from '@mantle/client-types/app-nav';
 import { profileFlag } from '@mantle/client-types/profile-flags';
-import { db, profiles, resolveSingleOwnerId, type ConversationChannel } from '@mantle/db';
+import {
+  currentWorkspaceScope,
+  db,
+  profiles,
+  resolveSingleOwnerId,
+  type ConversationChannel,
+} from '@mantle/db';
 
 /** Read prefs jsonb and project to typed shape. Missing keys fall
  *  back to DEFAULT_PREFERENCES. Auto-creates the profile row on
@@ -194,6 +200,31 @@ export async function loadProfilePreferences(userId: string): Promise<ProfilePre
 }
 
 /**
+ * Whether the current scope may write profile row `userId` (plan v3 S3 fix
+ * round 3): profiles' write rule (0302, 'own-login') asked as the database
+ * asks it: the scope's own login's row, or the brain's row when the scope
+ * holds the Settings area. System work (no workspace scope) may. The
+ * turn's own bookkeeping (the reminder channel, the automatic time zone)
+ * asks it first and skips the write a member's or an Admin user's turn
+ * without Settings would have refused, so no refusal is logged per turn.
+ * Fails closed.
+ */
+export async function profileRowWritable(userId: string): Promise<boolean> {
+  if (!currentWorkspaceScope()) return true;
+  try {
+    const rows = (await db.execute(sql`
+      select (${userId}::uuid = (select "public"."mantle_login_id"()))
+          or (${userId}::uuid = (select "public"."mantle_brain_id"())
+              and coalesce((select "public"."mantle_scope_has_area"('settings')), false)) as ok`)) as unknown as {
+      ok: boolean | null;
+    }[];
+    return rows[0]?.ok === true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Record the channel an inbound turn arrived on as the user's reminder
  * destination, so proactive delivery follows the surface they last used. Only
  * reminder-capable channels stick: 'telegram' and 'mobile'. 'web' (browser) and
@@ -210,6 +241,9 @@ export async function noteInboundChannel(
   channel: ConversationChannel,
 ): Promise<void> {
   if (!isReminderChannel(channel)) return;
+  // A scope that may not write the row skips it (a member's turn, an Admin
+  // user's without Settings): the database would refuse it every turn.
+  if (!(await profileRowWritable(userId))) return;
   const merge = JSON.stringify({ reminderChannel: channel });
   try {
     await db

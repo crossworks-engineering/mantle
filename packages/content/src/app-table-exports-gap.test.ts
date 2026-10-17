@@ -83,6 +83,7 @@ vi.mock('@mantle/db', () => {
     fn: (allowed: string[]) => Promise<unknown>,
   ) => fn([]);
   return {
+    assertManageOrAdmin: async () => {},
     db: { select, update, insert },
     nodes,
     appDatabases,

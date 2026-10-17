@@ -146,6 +146,9 @@ const LABELS: Record<string, string> = {
   actorsStepRefs:
     'unquoted pointers to the history by a step code: the spec path, a comma, A4 (down only; D2 takes them to 0)',
   docQuotesDangling: 'doc heading quotes naming no heading, listed (down only; docs-quotes.mjs)',
+  gapTables:
+    'write-role gap reruns (a role switch to any role but the write role; 0 since plan v3 S3)',
+  dbClientLines: 'lines of packages/db/src/client.ts (down only; plan v3 S5 splits it)',
 };
 
 /** Numbers that may go up without failing: the route counts grow with

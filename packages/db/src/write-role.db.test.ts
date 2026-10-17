@@ -32,6 +32,7 @@ import {
   syncWriteRoleRules,
   writeCheckArgs,
   writeRoleWrites,
+  writeRuleArg,
 } from './access-matrix';
 import { createMigratedScratchDatabase } from './test-support';
 import { withRoleRetry } from './viewer-roles';
@@ -411,6 +412,15 @@ describe.skipIf(!URL)('the write role (arch A2b2a)', () => {
       }
       expect(r).toEqual({ bypass: false, inherit: false, login: false });
     }
+    // Plan v3 S3: no gap table is left, so it holds nothing (the rerun that
+    // ran as it is gone; the role goes in S3 part 2).
+    const [rights] = await sql<{ n: number }[]>`
+      select count(*)::int as n from information_schema.role_table_grants
+       where grantee = 'mantle_gap_writer'`;
+    expect(rights?.n).toBe(0);
+    const rules = await sql<{ t: string }[]>`
+      select tablename as t from pg_policies where 'mantle_gap_writer'::name = any(roles)`;
+    expect(rules.map((r) => r.t)).toEqual([]);
   });
 
   it('every read rule of the workspace role names the write role, and only SELECT rules do', async () => {
@@ -423,7 +433,7 @@ describe.skipIf(!URL)('the write role (arch A2b2a)', () => {
     expect(rows.filter((r) => r.cmd !== 'SELECT').map((r) => r.t)).toEqual([]);
   });
 
-  it('each write table has exactly its three write rules, each the read rule; no other table has one', async () => {
+  it('each write table has exactly its three write rules, each the read rule or its named write rule; no other table has one', async () => {
     const rows = await sql<
       {
         t: string;
@@ -432,13 +442,17 @@ describe.skipIf(!URL)('the write role (arch A2b2a)', () => {
         roles: string[];
         same_qual: boolean;
         same_check: boolean;
+        note: string | null;
       }[]
     >`
       select p.schemaname || '.' || p.tablename as t, p.policyname as name, p.cmd,
              p.roles::text[] as roles,
              p.qual is not distinct from r.qual as same_qual,
-             p.with_check is not distinct from r.qual as same_check
+             p.with_check is not distinct from r.qual as same_check,
+             obj_description(pl.oid, 'pg_policy') as note
         from pg_policies p
+        join pg_policy pl on pl.polname = p.policyname
+             and pl.polrelid = (quote_ident(p.schemaname) || '.' || quote_ident(p.tablename))::regclass
         left join pg_policies r on r.schemaname = p.schemaname and r.tablename = p.tablename
              and r.cmd = 'SELECT' and ${VIEWER}::name = any(r.roles)
        where ${WRITER}::name = any(p.roles) and p.cmd <> 'SELECT'
@@ -447,8 +461,18 @@ describe.skipIf(!URL)('the write role (arch A2b2a)', () => {
       ['delete', 'insert', 'update'].map((op) => `${t}.${t.split('.')[1]}_write_${op}`),
     ).sort();
     expect(rows.map((r) => `${r.t}.${r.name}`)).toEqual(want);
+    const ruled = new Map(ACCESS_MATRIX.map((t) => [t.table, writeRuleArg(t)]));
     for (const r of rows) {
       expect(r.roles, r.name).toEqual([WRITER]);
+      // Plan v3 S3: a named write rule (profiles' own-login) is narrower
+      // than the read rule, and carries its note.
+      const rule = ruled.get(r.t) ?? null;
+      expect([r.note, r.name]).toEqual([rule ? `mantle:write-rule:${rule}:v1` : null, r.name]);
+      if (rule) {
+        if (r.cmd !== 'INSERT') expect([r.same_qual, r.name]).toEqual([false, r.name]);
+        if (r.cmd !== 'DELETE') expect([r.same_check, r.name]).toEqual([false, r.name]);
+        continue;
+      }
       if (r.cmd === 'INSERT') expect([r.same_check, r.name]).toEqual([true, r.name]);
       if (r.cmd === 'UPDATE')
         expect([r.same_qual, r.same_check, r.name]).toEqual([true, true, r.name]);
@@ -462,12 +486,13 @@ describe.skipIf(!URL)('the write role (arch A2b2a)', () => {
     expect(none.map((r) => r.t)).toEqual([]);
   });
 
-  it('the matrix splits the content tables in two: 17 write tables, 9 system only', () => {
+  it('the matrix splits the content tables in two: 19 write tables, 9 system only', () => {
     expect([...WRITE_ROLE_TABLES, ...WRITE_ROLE_SYSTEM_ONLY].sort()).toEqual(
       [...contentTables].sort(),
     );
-    // 12 since A2b2a; A3a moved the Recall tables, shares and node_snapshots.
-    expect(WRITE_ROLE_TABLES).toHaveLength(17);
+    // 12 since A2b2a; A3a moved the Recall tables, shares and node_snapshots;
+    // plan v3 S3 the two gap tables (profiles, app_table_exports).
+    expect(WRITE_ROLE_TABLES).toHaveLength(19);
     expect(WRITE_ROLE_SYSTEM_ONLY).toHaveLength(9);
   });
 
@@ -477,6 +502,72 @@ describe.skipIf(!URL)('the write role (arch A2b2a)', () => {
     await syncWriteRoleRules(sql);
     const after = await sql<{ oid: number }[]>`select oid::int as oid from pg_policy order by 1`;
     expect(after).toEqual(before);
+  });
+
+  it('a rollback to the image before S3 (fix round 3): the 3-argument sync and the old gap writer rules apply; the profiles triggers stay', async () => {
+    // What the image before S3 does on its migrate, in one transaction
+    // rolled back: its matrix lists profiles and app_table_exports as no
+    // write tables (the 0278 sync, 3 arguments), then its gap writer sync
+    // grants the gap writer both and makes its row rule on each.
+    class Undo extends Error {}
+    const seen: Record<string, unknown> = {};
+    await sql
+      .begin(async (tx) => {
+        await tx`select set_config('mantle.actor', 'system:test', true)`;
+        for (const t of ['public.profiles', 'public.app_table_exports']) {
+          await tx`select mantle_write_role_sync_table(${t}, false, null::text[])`;
+          await tx.unsafe(`GRANT SELECT, INSERT, UPDATE, DELETE ON ${t} TO "mantle_gap_writer"`);
+          await tx.unsafe(
+            `CREATE POLICY "${t.split('.')[1]}_gap_writer" ON ${t} AS PERMISSIVE FOR ALL ` +
+              `TO "mantle_gap_writer" USING (true) WITH CHECK (true)`,
+          );
+        }
+        seen.writeRules = await tx`
+          select tablename as t, policyname as name from pg_policies
+           where tablename in ('profiles', 'app_table_exports')
+             and ${WRITER}::name = any(roles) and cmd <> 'SELECT' order by 1, 2`;
+        seen.readRules = (
+          await tx<{ t: string }[]>`
+            select tablename as t from pg_policies
+             where tablename in ('profiles', 'app_table_exports') and cmd = 'SELECT'
+               and ${VIEWER}::name = any(roles) order by 1`
+        ).map((r) => r.t);
+        seen.triggers = (
+          await tx<{ name: string }[]>`
+            select tgname as name from pg_trigger
+             where tgrelid = 'public.profiles'::regclass and not tgisinternal
+               and tgname like 'mantle\_%' order by 1`
+        ).map((r) => r.name);
+        // The old rerun: a statement as the gap writer writes a profile row.
+        await tx`insert into profiles (user_id) values (${L.owner}::uuid) on conflict do nothing`;
+        await tx.unsafe('SET LOCAL ROLE "mantle_gap_writer"');
+        seen.rerun = (
+          await tx`update profiles set updated_at = updated_at where user_id = ${L.owner}::uuid`
+        ).count;
+        throw new Undo();
+      })
+      .catch((e: unknown) => {
+        if (!(e instanceof Undo)) throw e;
+      });
+    // The 3-argument form drops S3's write rules; the read rules stay.
+    expect(seen.writeRules).toEqual([]);
+    expect(seen.readRules).toEqual(['app_table_exports', 'profiles']);
+    // The narrower rollback: the read-only and contact refusals and the
+    // actor check stay on profiles (the image before S3 never wrote a
+    // profile in a read-only or contact session, so they refuse nothing it
+    // does).
+    expect(seen.triggers).toEqual([
+      'mantle_actor_check',
+      'mantle_edit_check_contact',
+      'mantle_edit_check_ro',
+    ]);
+    expect(seen.rerun).toBe(1);
+    // Rolled back: S3's rules are as the sync left them.
+    const [after] = await sql<{ n: number }[]>`
+      select count(*)::int as n from pg_policies
+       where tablename in ('profiles', 'app_table_exports') and cmd <> 'SELECT'
+         and ${WRITER}::name = any(roles)`;
+    expect(after?.n).toBe(6);
   });
 
   // ── Trigger functions ─────────────────────────────────────────────────────
@@ -601,10 +692,11 @@ describe.skipIf(!URL)('the write role (arch A2b2a)', () => {
            and c.confrelid = 'public.nodes'::regclass and a.attname = ${t.writeCheck.item}`;
       expect(fk!.n, `${t.table}.${t.writeCheck.item}`).toBe(1);
     }
-    // A write table with no check (neither the write check nor A3a's) is
-    // read in an Admin scope only.
+    // A write table with no check (neither the write check nor A3a's, nor
+    // a named write rule: profiles' own-login, plan v3 S3) is read in an
+    // Admin scope only.
     for (const t of ACCESS_MATRIX.filter(
-      (x) => writeRoleWrites(x) && !x.writeCheck && !x.editCheck,
+      (x) => writeRoleWrites(x) && !x.writeCheck && !x.editCheck && !writeRuleArg(x),
     )) {
       const [rule] = await sql<{ qual: string }[]>`
         select qual from pg_policies where schemaname || '.' || tablename = ${t.table}

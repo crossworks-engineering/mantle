@@ -282,5 +282,8 @@ const EXPECTED: Record<'off' | 'warn' | 'on', Record<string, 'made' | 'refused'>
  *  "refused when the check is on" for each refused add and move, on the
  *  route and in the scope (warn still reports the miss; it refuses too since
  *  A6). Before A6: 3, the scope path's add, its move and the move's
- *  workspace event, all made. */
-const MISSES: Record<'off' | 'warn' | 'on', number> = { off: 0, warn: 4, on: 0 };
+ *  workspace event, all made. Off reports the same 4 since plan v3 S3: a
+ *  scoped write runs on the write role in every mode, and off reports what
+ *  on would refuse, as warn (docs/actors.md, "Plan v3 S3", changed answer
+ *  1); before S3, 0 (the system pool). */
+const MISSES: Record<'off' | 'warn' | 'on', number> = { off: 4, warn: 4, on: 0 };

@@ -2108,6 +2108,13 @@
       "when": 1790197380000,
       "tag": "0301_check_mode_floor",
       "breakpoints": true
+    },
+    {
+      "idx": 302,
+      "version": "7",
+      "when": 1790197440000,
+      "tag": "0302_write_role_gap_tables",
+      "breakpoints": true
     }
   ]
 }
