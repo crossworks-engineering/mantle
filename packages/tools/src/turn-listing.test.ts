@@ -79,7 +79,7 @@ vi.mock('./preconditions', async (importOriginal) => ({
   checkToolPreconditions: async () => null,
 }));
 
-import { itemNoRightError, loginActor, runAsActor, type Tool } from '@mantle/db';
+import { loginActor, runAsActor, type Tool } from '@mantle/db';
 import { BUILTIN_TOOLS, ensureGateReady, turnCallRefusal, turnListedTools } from './index';
 import {
   CONNECTOR_ELEVATED_REASON,
@@ -319,16 +319,18 @@ describe("a call that needs approval meets the gate's item pre-check before it i
   const teamSurface = { kind: 'team', privateReads: false } as never;
   const MINE = '44444444-4444-4444-8444-444444444444';
 
-  it('a workspace heartbeat outside Admin may not queue a share of an item only Admin may change', async () => {
+  it('a share of an item only Admin may change queues since Part 3 (was refused here)', async () => {
+    // The pre-check removal Part 3 took node_share's kept entry: its approval
+    // runs in the scope it was asked in, and the link's own check
+    // (assertMayLink, link-serve.ts) asks that scope first (docs/actors.md,
+    // "Pre-check removal Part 3", queue time).
     h.itemAsked = [];
     const refused = await refusalIn(team, teamView(), builtinRow('node_share'), teamSurface, {
       id: h.adminItem,
       level: 'public',
     });
-    // The words dispatch answers (the item pre-check's own), asked in the
-    // turn's own scope, never the approver's.
-    expect(refused).toBe(itemNoRightError(h.adminItem, 'edit'));
-    expect(h.itemAsked).toEqual([team]);
+    expect(refused).toBeNull();
+    expect(h.itemAsked).toEqual([]);
   });
 
   it('a delete the database checks queues since the pre-check removal (was refused here)', async () => {

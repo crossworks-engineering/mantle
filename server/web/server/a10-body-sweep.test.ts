@@ -170,6 +170,20 @@ vi.mock('@mantle/db', async (importOriginal) => {
     createHomeIntent: async () => ({ createWs: null, privateWs: null }),
   };
 });
+// The library's item check (assertItemRight, @mantle/db item-rights.ts)
+// reads the scope's rights through the db package's own handle, which the
+// mock above does not reach: answered as the READS answer it (the one item
+// the login may edit and manage; pre-check removal Part 3 asks it first in
+// updateAppMeta and deleteApp). Any other id asks the real module.
+vi.mock('../../../packages/db/src/item-rights', async (importOriginal) => {
+  const real = await importOriginal<typeof import('../../../packages/db/src/item-rights')>();
+  const READ_ID = '11111111-1111-4111-8111-111111111111';
+  return {
+    ...real,
+    assertItemRight: async (id: string, need: 'read' | 'edit' | 'manage') =>
+      id === READ_ID ? undefined : real.assertItemRight(id, need),
+  };
+});
 vi.mock('../lib/workspaces', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../lib/workspaces')>()),
   requireArea: async () => true,

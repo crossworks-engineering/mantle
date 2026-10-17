@@ -288,7 +288,20 @@
      ],
      "isError": true
     },
-    "handler": [],
+    "handler": [
+     {
+      "slug": "page_split",
+      "input": {
+       "page_id": "20000000-0000-4000-8000-000000000006",
+       "by": "h1"
+      },
+      "surface": {
+       "kind": "owner",
+       "via": "mcp"
+      },
+      "home": null
+     }
+    ],
     "remote": [],
     "inserts": []
    },
@@ -986,7 +999,26 @@
      ],
      "isError": true
     },
-    "handler": [],
+    "handler": [
+     {
+      "slug": "page_split",
+      "input": {
+       "page_id": "20000000-0000-4000-8000-000000000006",
+       "by": "h1"
+      },
+      "surface": {
+       "kind": "owner",
+       "via": "mcp",
+       "loginId": "00000000-0000-4000-8000-0000000000a1",
+       "mcp": {
+        "via": "oauth",
+        "write": true,
+        "role": "admin"
+       }
+      },
+      "home": null
+     }
+    ],
     "remote": [],
     "inserts": []
    },
@@ -1828,7 +1860,30 @@
      ],
      "isError": true
     },
-    "handler": [],
+    "handler": [
+     {
+      "slug": "page_split",
+      "input": {
+       "page_id": "20000000-0000-4000-8000-000000000006",
+       "by": "h1"
+      },
+      "surface": {
+       "kind": "owner",
+       "via": "mcp",
+       "loginId": "00000000-0000-4000-8000-0000000000b1",
+       "mcp": {
+        "via": "oauth",
+        "write": true,
+        "role": "member",
+        "ownerKeysOff": true
+       }
+      },
+      "home": {
+       "createWs": null,
+       "privateWs": "10000000-0000-4000-8000-000000000003"
+      }
+     }
+    ],
     "remote": [],
     "inserts": []
    },
@@ -3968,7 +4023,31 @@
      ],
      "isError": true
     },
-    "handler": [],
+    "handler": [
+     {
+      "slug": "page_split",
+      "input": {
+       "page_id": "20000000-0000-4000-8000-000000000006",
+       "by": "h1"
+      },
+      "surface": {
+       "kind": "owner",
+       "via": "api",
+       "loginId": "00000000-0000-4000-8000-0000000000b1",
+       "mcp": {
+        "via": "key",
+        "write": true,
+        "role": "member",
+        "ownerKeysOff": true,
+        "keyId": "key-1"
+       }
+      },
+      "home": {
+       "createWs": null,
+       "privateWs": "10000000-0000-4000-8000-000000000003"
+      }
+     }
+    ],
     "remote": [],
     "inserts": []
    },
@@ -5200,7 +5279,26 @@
      ],
      "isError": true
     },
-    "handler": [],
+    "handler": [
+     {
+      "slug": "page_split",
+      "input": {
+       "page_id": "20000000-0000-4000-8000-000000000006",
+       "by": "h1"
+      },
+      "surface": {
+       "kind": "owner",
+       "via": "federation",
+       "mcp": {
+        "via": "peer",
+        "write": true,
+        "role": "admin",
+        "peerId": "peer-1"
+       }
+      },
+      "home": null
+     }
+    ],
     "remote": [],
     "inserts": []
    },
@@ -6023,7 +6121,31 @@
      ],
      "isError": true
     },
-    "handler": [],
+    "handler": [
+     {
+      "slug": "page_split",
+      "input": {
+       "page_id": "20000000-0000-4000-8000-000000000006",
+       "by": "h1"
+      },
+      "surface": {
+       "kind": "owner",
+       "via": "federation",
+       "loginId": "00000000-0000-4000-8000-0000000000b1",
+       "mcp": {
+        "via": "peer",
+        "write": true,
+        "role": "member",
+        "ownerKeysOff": true,
+        "peerId": "peer-2"
+       }
+      },
+      "home": {
+       "createWs": null,
+       "privateWs": "10000000-0000-4000-8000-000000000003"
+      }
+     }
+    ],
     "remote": [],
     "inserts": []
    },

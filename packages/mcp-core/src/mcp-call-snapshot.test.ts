@@ -21,10 +21,12 @@
  * module path, so the same answers reach the code before and after the
  * change. The handlers of the builtins called are replaced on their
  * definitions (the one object the surface and the registry share). The
- * pre-check removal (docs/actors.md, "Pre-check deletion") re-recorded the
- * calls of a tool whose item pre-check went on the REFUSED item: its
- * handler runs now (the database, stubbed here, refuses it on a box; the
- * removal's own proof is server/web/server/precheck-removal.db.test.ts).
+ * pre-check removal (docs/actors.md, "Pre-check deletion", Parts 1 and 3)
+ * re-recorded the calls of a tool whose item pre-check went on the REFUSED
+ * item: its handler runs now (the library's check or the database, stubbed
+ * here, refuses it on a box; the removal's own proof is
+ * server/web/server/precheck-removal.db.test.ts). Part 3 took the last
+ * entries, so no item pre-check is stood in here.
  */
 import { createHash } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -118,6 +120,18 @@ vi.mock('../../db/src/client', async (importOriginal) => {
     if (text.includes('mantle_connector_state')) {
       return [{ id: 'g1', slug: 'mcp-crm', usable: true }];
     }
+    // The library's item check (assertItemRight, @mantle/db item-rights.ts;
+    // pre-check removal Part 3): the scope reads every item named, and may
+    // change each but the REFUSED one.
+    if (text.includes('mantle_may_edit') && text.includes('mantle_may_manage')) {
+      const named = [
+        ...new Set(text.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g)),
+      ];
+      return named.map((id) => {
+        const may = id !== ids.REFUSED;
+        return { id, edit: may, manage: may, copy: false };
+      });
+    }
     throw new Error(`unexpected statement in the snapshot mock: ${text.slice(0, 200)}`);
   };
   const fakeDb = {
@@ -198,20 +212,6 @@ vi.mock('../../tools/src/preconditions', async (importOriginal) => {
   };
 });
 
-vi.mock('../../tools/src/item-write-gate', async (importOriginal) => {
-  const real = await importOriginal<Record<string, unknown>>();
-  return {
-    ...real,
-    // The item pre-check refuses the REFUSED item, with its edit check
-    // detail (A5 step 4 fix round 2: only a /api/v1 route reads it), for a
-    // tool that keeps its items (the pre-check removal: docs/actors.md).
-    toolItemWriteRefusalOf: async (items: unknown, input: Record<string, unknown>) =>
-      items && Object.values(input).includes(ids.REFUSED)
-        ? { message: 'You cannot change this item in your workspaces.', detail: 'no_edit' }
-        : null,
-  };
-});
-
 vi.mock('../../tools/src/shared-item', () => ({
   othersCanRead: async (_owner: string, id: string) => id === ids.SHARED,
 }));
@@ -260,6 +260,7 @@ vi.mock('../../files/src/email-attachments', async (importOriginal) => {
 import { InMemoryTransport, McpServer } from '@modelcontextprotocol/server';
 import { Client } from '@modelcontextprotocol/client';
 import {
+  assertItemRight,
   currentCreateHome,
   loginActor,
   runAsActor,
@@ -326,6 +327,8 @@ function fakeHandler(slug: string): BuiltinToolDef['handler'] {
       case 'note_create':
         return { ok: true, output: { id: ids.NEW_NOTE, title: input.title } };
       case 'page_split':
+        // splitPage asks the edit right of its source first (Part 3).
+        await assertItemRight(String(input.page_id), 'edit');
         return { ok: true, output: { page_id: ids.PAGE, pages: [{ id: ids.NEW_NOTE }] } };
       case 'draw_get':
         return {

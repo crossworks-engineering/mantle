@@ -603,13 +603,16 @@ describe.skipIf(!URL)('W7a: the Admin assistant and the Admin MCP read in their 
       })),
     );
     expect(prefs).toEqual({ owner: 'Europe/Berlin', member: 'Pacific/Auckland' });
-    // L5: a node the scope does not read is never un-superseded.
+    // L5: a node the scope does not read is never un-superseded. Since the
+    // pre-check removal Part 3 the library's item check refuses it first,
+    // with the edit check's no_read (the 404 of an item that is not there,
+    // the same for a random id), where the scoped read answered "not found".
     await x(sql`update nodes set superseded_reason = 'outdated', salience = 0.3
                  where id = ${privatePage}`);
     const before = await nodeState(privatePage);
-    await expect(inAdminTurn(() => c.unsupersedeNode(owner, privatePage), owner)).rejects.toThrow(
-      /not found/,
-    );
+    await expect(
+      inAdminTurn(() => c.unsupersedeNode(owner, privatePage), owner),
+    ).rejects.toMatchObject({ code: '42501', detail: 'no_read' });
     expect(await nodeState(privatePage)).toBe(before);
   });
 });

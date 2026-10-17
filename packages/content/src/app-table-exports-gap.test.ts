@@ -89,6 +89,8 @@ vi.mock('@mantle/db', () => {
     appTableExports,
     runAsSystem,
     systemStep,
+    // The library's edit check (Part 3): the caller here holds the app.
+    assertItemRight: async () => undefined,
   };
 });
 vi.mock('@mantle/tabledb', () => ({ importMaxRows: () => 100_000 }));

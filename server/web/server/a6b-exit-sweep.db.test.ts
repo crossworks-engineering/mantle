@@ -244,6 +244,29 @@ const NAMED_CHANGES: Record<
     was?: RegExp;
   }>
 > = {
+  'client-sourced': [
+    {
+      cells: /^removeAppTableExport (written|team) (read|write|turn):\S+$/,
+      reason:
+        'the pre-check removal Part 3 (docs/actors.md): removeAppTableExport asks the edit right ' +
+        "of the app in the caller's scope first (assertItemRight), where the tool's item " +
+        'pre-check asked it and the library asked nothing. A scope that may not edit the app ' +
+        "(its workspace P: not the owner's or modP's) is refused with the edit check's error, " +
+        'before the link is read; the system, the owner and modP answer as main. Stricter, ' +
+        'never looser (turn:P:none was refused on main too, by the delete itself).',
+      nowTest: (now, k) =>
+        !/ (read|write):(owner|modP)$| turn:P:modP$/.test(k) &&
+        now ===
+          JSON.stringify({
+            refused: {
+              name: 'Error',
+              status: null,
+              code: '42501',
+              message: 'not allowed to edit this item',
+            },
+          }),
+    },
+  ],
   'owner-preferences': [
     {
       cells: /^missing anchor row after$/,
