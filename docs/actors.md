@@ -6261,3 +6261,31 @@ server/web build`, `pnpm boot:smoke`, full vitest with DB, test:actor-off,
   (none of the last three ran: the chain was stopped), then CI. At merge:
   rebase on R0, renumber 0301 to 0302 (file, journal entry; `when`
   1790197440000 stays), lower dbClientLines if R0 moved client.ts.
+
+Handover (S3 round 2, the gates at the head):
+
+- The first full run (at `c9b3de33f`; CI run 39019385969 failed on the
+  same cells) found four failing cells, each fixed at its cause:
+  - `migrations-journal.test.ts`: 0301 alters two tables, so it locks
+    both in one statement first (`LOCK TABLE app_table_exports, profiles
+IN ACCESS EXCLUSIVE MODE`, `lock_timeout` 30s, as 0283).
+  - `edit-check.db.test.ts` coverage: profiles became an item table (the
+    actor check's trigger), so 0301 runs 0294's item trigger loop
+    (`mantle_edit_check_item_triggers()`), giving it the read-only and the
+    contact share refusals. Changed answer 7.
+  - `ops-docs.test.ts`: the access-levels restore line held a nested
+    parenthesis that cut the role list short; reworded.
+  - `a8-grants-panel.matrix.test.ts` "check off": 4 misses, as warn (was
+    0); both paths still refused. Changed answer 1.
+- Gates at `7a084b408` (workstation, Node 26, own pgvector pg18 container
+  on a free port, migrated, `--maxWorkers=3`, removed after): `pnpm -r
+typecheck` 0, `pnpm lint` 0, `pnpm format:check` 0, `pnpm docs:check` 0,
+  `pnpm arch:check` 0, `pnpm -C server/web build` 0, `pnpm boot:smoke` 0,
+  full vitest with DB 0 (1087 files, 12869 passed, 39 skipped),
+  test:actor-off 0 (1055 passed), test:actor-on 0 (345 passed),
+  test:edit-on 0 (513 passed), test:matrix 0 (7 passed), full
+  test:runtime-role 0 (254 files, 2012 passed). The commit after it
+  changes this handover only.
+- Left for the merge: rebase on R0, renumber 0301 to 0302 (file, journal
+  entry; `when` 1790197440000 stays), lower dbClientLines if R0 moved
+  client.ts.
