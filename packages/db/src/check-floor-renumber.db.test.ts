@@ -79,7 +79,7 @@ describe.skipIf(!URL)('a database at main 0300 runs the floor (0301)', () => {
     await scratch?.drop();
   });
 
-  it('the runner applies 0301 and only it', async () => {
+  it('the runner applies 0301 first, then the migrations after it (S3: 0302)', async () => {
     const fn = async () =>
       (
         await sql<
@@ -92,13 +92,13 @@ describe.skipIf(!URL)('a database at main 0300 runs the floor (0301)', () => {
       log: (l) => out.lines.push(l),
       warn: (l) => out.warnings.push(l),
     });
-    expect(applied).toBe(1);
+    expect(applied).toBe(all.length - at);
     expect(out.warnings).toEqual([]);
     expect(out.lines[0]).toContain(String(journal[at]!.when));
     expect(await fn()).toBe(1);
     const [last] = await sql<{ w: string }[]>`
       select max(created_at)::text as w from "drizzle"."__drizzle_migrations"`;
-    expect(Number(last!.w)).toBe(journal[at]!.when);
+    expect(Number(last!.w)).toBe(journal[journal.length - 1]!.when);
     // And again: nothing left.
     expect(await applyJournal(sql, all, journal, { log: () => {}, warn: () => {} })).toBe(0);
   }, 120_000);
