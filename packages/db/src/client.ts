@@ -2347,17 +2347,14 @@ export async function scopeHasArea(area: ScopeArea): Promise<boolean> {
 /**
  * Whether `loginId` is a user of this brain's live Admin workspace now, its
  * login enabled (W7 integration fix 3, L1), never the admin role alone (a
- * login taken out of Admin keeps its role). Fails closed. Admin pool.
+ * login taken out of Admin keeps its role): mantle_login_is_admin (0302).
+ * Fails closed. Admin pool.
  */
 export async function loginHoldsAdmin(loginId: string): Promise<boolean> {
   if (!UUID_RE.test(loginId)) return false;
   try {
     const rows = (await getAdminDb().execute(
-      sqlTag`select exists (
-               select 1 from workspaces w
-                 join workspace_users u on u.workspace_id = w.id and u.login_id = ${loginId}::uuid
-                 join auth.users l on l.id = u.login_id and l.disabled_at is null
-                where w.owner_id = mantle_brain_id() and w.is_admin and ${liveWorkspaceSql('w')}) as a`,
+      sqlTag`select "public"."mantle_login_is_admin"(${loginId}::uuid) as a`,
     )) as unknown as { a: boolean }[];
     return rows[0]?.a === true;
   } catch {
@@ -2368,21 +2365,14 @@ export async function loginHoldsAdmin(loginId: string): Promise<boolean> {
 /**
  * Whether login `loginId` holds Admin `area` now, asked on the system pool
  * for a login other than the current caller (W7a fix round 3: the maker of
- * an API tool, when the tool's secret refs resolve at run time). The rule
- * of mantle_scope_has_area and areasFor: a live login that is a user of the
- * brain's live Admin workspace whose limits leave the area on. Fails
- * closed.
+ * an API tool, when the tool's secret refs resolve at run time): the area
+ * rule, mantle_area_rule (0302). Fails closed.
  */
 export async function loginHasArea(loginId: string, area: ScopeArea): Promise<boolean> {
   if (!SCOPE_AREAS.includes(area) || !UUID_RE.test(loginId)) return false;
   try {
     const rows = (await getAdminDb().execute(
-      sqlTag`select exists (
-               select 1 from workspaces w
-                 join workspace_users u on u.workspace_id = w.id and u.login_id = ${loginId}::uuid
-                 join auth.users l on l.id = u.login_id and l.disabled_at is null
-                where w.owner_id = mantle_brain_id() and w.is_admin and ${liveWorkspaceSql('w')}
-                  and coalesce(u.limits -> 'areas' ->> ${area}, '') <> 'false') as a`,
+      sqlTag`select "public"."mantle_area_rule"(${loginId}::uuid, ${area}) as a`,
     )) as unknown as { a: boolean }[];
     return rows[0]?.a === true;
   } catch {

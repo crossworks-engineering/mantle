@@ -136,6 +136,13 @@ export const RUNTIME_SYSTEM_FUNCTIONS: Readonly<Record<string, string>> = {
     'client.ts CHECK_FLOOR_SQL: the record of a check lowered below on (0301), logged loudly',
   'public.mantle_embed_host(uuid,public.node_type)':
     'maintenance/refold-embeds.ts: the host text of an embedded item (0248)',
+  'public.mantle_area_rule(uuid,text)':
+    'client.ts loginHasArea: the area rule about another login (0302, S2a a0)',
+  'public.mantle_login_areas(uuid)': 'the areas the area rule gives a login (0302, S2a a0)',
+  'public.mantle_login_is_admin(uuid)':
+    'client.ts loginHoldsAdmin: a login holds Admin now (0302, S2a a0)',
+  'public.mantle_role_drift()':
+    'the box count of role drift (scripts/arch-scoreboard-box.sh; 0302, S2a a0)',
   'public.mantle_ws_attach_assistants()':
     'workspaces-migrate.ts attachDefaultAssistants: the default assistants at boot',
   'public.mantle_ws_private_workspace(uuid)':
