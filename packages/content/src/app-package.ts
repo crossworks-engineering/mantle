@@ -28,13 +28,16 @@ import { pipeline } from 'node:stream/promises';
 import JSZip from 'jszip';
 import { eq } from 'drizzle-orm';
 import {
+  type AppManifest,
+  apps,
+  type AppSource,
+  assertItemRight,
+  db,
   nodes,
   withDeadlockRetry,
   withNodeDeleteHeads,
-  type AppManifest,
-  type AppSource,
 } from '@mantle/db';
-import { defineDomainError, errorMessage } from '@mantle/std';
+import { defineDomainError, errorMessage, UUID_RE } from '@mantle/std';
 import type { AppDetail, AppTint } from '@mantle/client-types';
 import {
   AppSourceLimitError,
@@ -200,12 +203,34 @@ export function appPackageFileName(title: string): string {
  * owner's. Throws AppDbMissingError when the app's database file is lost
  * (export without the data then).
  */
+/**
+ * The item check of a copy of an app (a duplicate, an export; W7 integration
+ * fix 2, M3, moved here from the tools' pre-check in the pre-check removal
+ * Part 3), asked before anything is read or written, on every way in: the
+ * code needs a read of the app; its data (withData, on by default) the
+ * whole SQLite database every holder shares, so an edit of the app, unless
+ * the app's MCP access switch opens its data to every reader's own
+ * connection anyway. An app the scope cannot see is refused as not found.
+ * System work is not checked.
+ */
+export async function assertMayCopyApp(
+  appId: string,
+  withData: boolean | undefined,
+): Promise<void> {
+  if (withData === false) return assertItemRight(appId, 'read');
+  const [row] = UUID_RE.test(appId)
+    ? await db.select({ mcp: apps.mcpAccess }).from(apps).where(eq(apps.nodeId, appId)).limit(1)
+    : [];
+  return assertItemRight(appId, row?.mcp ? 'read' : 'edit');
+}
+
 export async function writeAppPackage(
   ownerId: string,
   appId: string,
   dest: string,
   opts: { withData?: boolean } = {},
 ): Promise<{ title: string; bytes: number; hasData: boolean } | null> {
+  await assertMayCopyApp(appId, opts.withData);
   const app = await getApp(ownerId, appId);
   if (!app) return null;
   const dataTmp = opts.withData === false ? null : await appPackageTempPath('.sqlite');
@@ -563,6 +588,7 @@ export async function duplicateApp(
     authorLoginId?: string;
   } = {},
 ): Promise<{ id: string; title: string; hasData: boolean } | null> {
+  await assertMayCopyApp(appId, opts.withData);
   const app = await getApp(ownerId, appId);
   if (!app) return null;
   // The data first: when it cannot be copied, nothing has been made yet.
