@@ -108,6 +108,7 @@ export { diffBlocks, type BlockDiff, type BlockChange } from '@mantle/content-co
 export { referencedFileIds, referencedDrawIds, referencedEmbedIds } from './doc-assets';
 
 export {
+  assertMaySupersede,
   supersedeNode,
   unsupersedeNode,
   salienceForSupersedeReason,

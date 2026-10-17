@@ -28,7 +28,7 @@
  * use it without new package dependencies.
  */
 import { and, eq } from 'drizzle-orm';
-import { db, nodes, type Node } from '@mantle/db';
+import { assertItemRight, db, type Node, nodes } from '@mantle/db';
 import { envNum } from '@mantle/config';
 
 export type SupersedeReason = 'version' | 'migrated' | 'corrected';
@@ -82,6 +82,18 @@ export type SupersedeNodeInput = {
 };
 
 /**
+ * The item check of a supersede mark or its undo (pre-check removal Part 3): the database
+ * does not watch the columns a mark writes (superseded_by, its reason, the
+ * salience) on a read-only copy, so this is the check of every way in: an
+ * edit of each item, in the caller's scope. A conversion that retires its
+ * sources (page_from_*) asks it before it makes its page. System work is
+ * not checked.
+ */
+export async function assertMaySupersede(ids: readonly string[]): Promise<void> {
+  for (const id of ids) await assertItemRight(id, 'edit');
+}
+
+/**
  * Mark a node superseded: set the lineage edge + reason and materialize the
  * salience demotion. Idempotent — re-marking updates the edge/reason in place.
  * Throws on: missing node, email/branch targets (their salience is managed
@@ -93,6 +105,7 @@ export async function supersedeNode(input: SupersedeNodeInput): Promise<Node> {
   if (successorId === input.id) {
     throw new Error('supersede: a node cannot supersede itself');
   }
+  await assertMaySupersede([input.id]);
   const [target] = await db
     .select({ id: nodes.id, type: nodes.type })
     .from(nodes)
@@ -163,6 +176,7 @@ export async function supersedeNode(input: SupersedeNodeInput): Promise<Node> {
 
 /** Undo a supersession mark: clear the edge + reason, restore full salience. */
 export async function unsupersedeNode(ownerId: string, id: string): Promise<Node> {
+  await assertMaySupersede([id]);
   // Read in the caller's scope first, as supersedeNode does (W7a fix round
   // 1, L5): the write runs on the system pool in a scope, so an id the scope
   // does not read must never be changed, nor its title returned.

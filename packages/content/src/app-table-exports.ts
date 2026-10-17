@@ -40,13 +40,14 @@
 import { createHash } from 'node:crypto';
 import { and, eq, isNotNull, isNull, lt, lte, or, sql } from 'drizzle-orm';
 import {
+  appDatabases,
+  type AppTableExport,
+  appTableExports,
+  assertItemRight,
   db,
   nodes,
-  appDatabases,
-  appTableExports,
   runAsSystem,
   systemStep,
-  type AppTableExport,
 } from '@mantle/db';
 import { importMaxRows } from '@mantle/tabledb';
 import { getApp } from './apps';
@@ -418,6 +419,10 @@ export async function createAppTableExport(
   opts: { title?: string } = {},
 ): Promise<{ export: AppTableExportInfo; tableId: string; rows: number; created: boolean }> {
   assertTableIdent(sqliteTable);
+  // The app's edit first (pre-check removal Part 3): app_table_exports is a write-role
+  // gap table (nothing in the database asks of the app), so this is the
+  // check of every way in.
+  await assertItemRight(appNodeId, 'edit');
   const app = await getApp(ownerId, appNodeId);
   if (!app) throw new Error('app not found');
 
@@ -486,6 +491,8 @@ export async function removeAppTableExport(
   appNodeId: string,
   sqliteTable: string,
 ): Promise<boolean> {
+  // As createAppTableExport: the app's edit, the only check of the link.
+  await assertItemRight(appNodeId, 'edit');
   const [link] = await db
     .delete(appTableExports)
     .where(
