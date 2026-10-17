@@ -42,6 +42,15 @@ scripts/merge-branch.sh feat/my-thing minor    # new milestone
 If the merge isn't a fast-forward, the script tells you to rebase in the
 branch's own worktree and re-run. It never tags and never pushes.
 
+Migration numbers are claimed here, at merge time, never reserved ahead:
+lanes merge out of order. Before the merge the script prints the next free
+migration number (and the journal `when` it must beat), and refuses a branch
+whose new migration has a number or a `when` at or below main's last. The
+runner treats a `when` it has already applied as applied and skips the file
+without a word, so a clash would ship a migration no box runs. On a refusal
+nothing is merged: renumber in the branch's worktree (file name, journal tag
+and idx, a `when` above main's last), keep the renumber proof test, and re-run.
+
 `pnpm version:bump` is still there for release prep directly on main
 (`pnpm version:bump 0.19.3-alpha` to set an explicit version, tag drops as
 usual), but it now **refuses to run on any other branch**: that's the

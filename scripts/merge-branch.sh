@@ -69,6 +69,88 @@ if ! mkdir "$lock" 2>/dev/null; then
 fi
 trap 'rmdir "$lock" 2>/dev/null || true' EXIT
 
+# Migration numbers are claimed here, at merge time, never ahead (lanes merge
+# out of order). Print the next free number, and refuse a branch whose new
+# migration has a number or a journal `when` at or below main's last: the
+# runner treats a `when` it has seen as applied and skips it in silence, and
+# two files with one number make the order a guess. The branch renumbers in
+# its own worktree (file name, journal tag and idx, a `when` above main's)
+# and keeps its renumber proof.
+journal=packages/db/migrations/meta/_journal.json
+mig_rc=0
+if ! git cat-file -e "main:$journal" 2>/dev/null; then
+  mig_rc=4
+else
+  mig_check="$(
+  git show "main:$journal" | node -e '
+    const fs = require("fs");
+    const { execFileSync } = require("child_process");
+    const [branch, journal] = process.argv.slice(1);
+    const main = JSON.parse(fs.readFileSync(0, "utf8")).entries ?? [];
+    let mine = [];
+    try {
+      mine = JSON.parse(
+        execFileSync("git", ["show", `${branch}:${journal}`], { encoding: "utf8" }),
+      ).entries ?? [];
+    } catch {
+      mine = [];
+    }
+    const num = (tag) => Number(/^(\d+)_/.exec(tag)?.[1] ?? NaN);
+    const lastNum = Math.max(-1, ...main.map((e) => num(e.tag)).filter((n) => !isNaN(n)));
+    const lastWhen = Math.max(0, ...main.map((e) => Number(e.when) || 0));
+    const width = Math.max(4, ...main.map((e) => /^(\d+)_/.exec(e.tag)?.[1].length ?? 0));
+    const next = String(lastNum + 1).padStart(width, "0");
+    console.log(`next free migration number: ${next} (its journal when above ${lastWhen})`);
+    const seen = new Set(main.map((e) => e.tag));
+    const bad = [];
+    for (const e of mine.filter((e) => !seen.has(e.tag))) {
+      const n = num(e.tag);
+      const w = Number(e.when) || 0;
+      if (isNaN(n) || n <= lastNum) bad.push(`${e.tag}: number at or below main\x27s last (${String(lastNum).padStart(width, "0")})`);
+      if (w <= lastWhen) bad.push(`${e.tag}: when ${w} at or below main\x27s last (${lastWhen})`);
+    }
+    // A new migration file the journal does not name is a clash too.
+    const files = (ref) =>
+      execFileSync("git", ["ls-tree", "--name-only", `${ref}:packages/db/migrations`], { encoding: "utf8" })
+        .split("\n")
+        .filter((f) => /^\d+_.*\.sql$/.test(f));
+    let branchFiles = [];
+    try {
+      branchFiles = files(branch);
+    } catch {
+      branchFiles = [];
+    }
+    const mainFiles = new Set(files("main"));
+    for (const f of branchFiles.filter((f) => !mainFiles.has(f))) {
+      if (num(f) <= lastNum && !bad.some((b) => b.startsWith(f.replace(/\.sql$/, "")))) {
+        bad.push(`${f}: number at or below main\x27s last (${String(lastNum).padStart(width, "0")})`);
+      }
+    }
+    for (const b of bad) console.log(`CLASH ${b}`);
+    process.exit(bad.length ? 3 : 0);
+  ' "$branch" "$journal"
+  )" || mig_rc=$?
+fi
+case "$mig_rc" in
+  0) printf '%s\n' "$mig_check" | sed -n 's/^next/→ next/p' ;;
+  3)
+    printf '%s\n' "$mig_check" | sed -n 's/^next/→ next/p'
+    echo "✗ $branch adds a migration that clashes with main:" >&2
+    printf '%s\n' "$mig_check" | sed -n 's/^CLASH /    /p' >&2
+    cat >&2 <<EOF
+  Renumber it in the branch's own worktree (the file name, the journal tag
+  and idx, a \`when\` above main's last), keep the renumber proof test, then
+  run this again. Nothing was merged.
+EOF
+    exit 1
+    ;;
+  4) echo "→ no migration journal on main: no migration check" ;;
+  *)
+    echo "✗ the migration check could not run (exit $mig_rc); nothing was merged" >&2
+    exit 1
+    ;;
+esac
+
 echo "→ git merge --ff-only $branch"
 if ! git merge --ff-only "$branch"; then
   cat >&2 <<EOF

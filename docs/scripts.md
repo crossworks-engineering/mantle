@@ -683,6 +683,16 @@ version files, so the numbers ride along in the same `release:` commit. A stats
 failure warns and never blocks the bump; run `pnpm readme:stats` by hand if it
 does, and `pnpm readme:stats --check` to see whether the block is stale.
 
+### `scripts/merge-branch.sh <branch> [patch|minor|major]`
+
+Lands a finished branch from any worktree, in the integrator clone: the
+migration check, an ff-only merge, then the version bump as its own
+`release:` commit on main ([versioning.md](./versioning.md)). The check
+prints the next free migration number and refuses a branch whose new
+migration's number or journal `when` is at or below main's last; nothing is
+merged on a refusal. Tests: `bash scripts/test-merge-branch.sh` (a throwaway
+integrator repo, a stub bump).
+
 ### `scripts/tag-release.sh [--no-push] [--no-verify]`
 
 Run in the integrator after `scripts/merge-branch.sh`. It asserts main's tip is
