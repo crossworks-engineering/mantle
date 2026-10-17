@@ -115,6 +115,9 @@ const F4_ADMIN_WRITE = /(?:^| )write:(owner|adminAll|adminNoUsers)$/;
  *  create landing in Admin (kind-root, rule-in-query). */
 const F4_CREATE_MISS =
   'sql INSERT on nodes: no Moderator of the home (refused when the check is on)';
+/** The cells of an Admin user's create with no ?ws= (F4: it lands in Admin). */
+const F4_ADMIN_CREATE =
+  /^(POST file at root|upsertFile root|POST \/api\/apps) (write:)?(adminAll|adminNoUsers)$/;
 /** An app's own row, made in the same create: the item it may not edit. */
 const F4_CREATE_APP_MISS = 'sql INSERT on apps: no edit of the item (refused when the check is on)';
 
@@ -184,7 +187,24 @@ const S3_CHANGES: ReadonlyArray<S3Change> = [
       const line = WARN_RECORDED.get(k);
       if (line === undefined) return false;
       const warn = line.slice(line.indexOf(' => ') + 4);
+      // F4's warn change of an Admin user's create landing in Admin (its
+      // miss logged, F4_CHANGES): main's warn line is from before F4.
+      let f4 = false;
+      try {
+        const p = JSON.parse(now) as { v?: unknown; misses?: string[]; gaps?: string[] } | null;
+        f4 =
+          F4_ADMIN_CREATE.test(k) &&
+          !!p &&
+          Array.isArray(p.misses) &&
+          p.misses.includes(F4_CREATE_MISS) &&
+          p.misses.every((x) => x === F4_CREATE_MISS || x === F4_CREATE_APP_MISS) &&
+          (p.gaps ?? []).length === 0 &&
+          JSON.stringify(p.v) === warn;
+      } catch {
+        // not JSON: no F4 form
+      }
       return (
+        f4 ||
         now === warn ||
         S3_WARN_CHANGES.some(
           (c) =>
@@ -235,8 +255,7 @@ const F4_CHANGES: ReadonlyArray<{
     },
   },
   {
-    cells:
-      /^(POST file at root|upsertFile root|POST \/api\/apps) (write:)?(adminAll|adminNoUsers)$/,
+    cells: F4_ADMIN_CREATE,
     reason:
       "a create with no ?ws= by an Admin user who is not a Moderator of Admin (this fixture's " +
       'adminAll and adminNoUsers) lands in Admin on the write role, where the create check ' +
