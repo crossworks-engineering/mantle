@@ -85,6 +85,7 @@ import {
 import { REINDEX_ALLOW, handReindex } from './no-hand-reindex.mjs';
 import { asSystemExits, systemDbUses } from './as-system-exits.mjs';
 import { nameListSites } from './name-lists.mjs';
+import { checkDocQuotes } from './docs-quotes.mjs';
 
 /** Whether the counts read `path` (repo-relative). */
 export function isCounted(path) {
@@ -1014,6 +1015,7 @@ export function measure(root) {
   const exits = asSystemExits(texts);
   const exitsByFile = exits.byFile;
   const routePrechecks = itemPrecheckRouteEntries(root);
+  const docQuotes = checkDocQuotes(root);
   return {
     numbers: {
       asSystemSites: sum(asSystem, 'count'),
@@ -1088,6 +1090,9 @@ export function measure(root) {
       consoleCalls: sum(consoleByFile),
       archivedAtIsNull: sum(archivedByFile),
       cacheControlFiles: cacheControlFiles.length,
+      actorsMdLines: docQuotes.actorsMdLines,
+      actorsHistoryRefs: docQuotes.actorsHistoryRefs,
+      docQuotesDangling: docQuotes.docQuotesDangling,
     },
     perFile: {
       asSystem,

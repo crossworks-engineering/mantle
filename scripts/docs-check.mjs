@@ -9,6 +9,13 @@
  *      disk (a trailing `:line` or `#anchor` is ignored; globs are skipped);
  *   2. relative markdown links (`[x](../docs/y.md)`, `[x](y.md#h)`) resolve.
  *
+ * And, over every tracked text file (code, SQL, scripts and the live
+ * docs): 3. a `docs/<file>.md, "Heading"` quote names a heading that exists
+ * (eslint-rules/docs-quotes.mjs). A docs/actors.md quote resolves against
+ * the spec first and its history, docs/_archive/actors-history.md, second;
+ * the ones only the history holds are counted (actorsHistoryRefs, pinned in
+ * scripts/arch-scoreboard.pins.json) until each points at the spec.
+ *
  * Why (2026-09-02 audit, gap D7): after the frontend split the docs carried
  * hundreds of paths that no longer existed, including in the doc README
  * calls "read before touching code", and eight docs pointed at a
@@ -18,6 +25,7 @@
  */
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
+import { checkDocQuotes } from '../eslint-rules/docs-quotes.mjs';
 
 const root = resolve(new URL('..', import.meta.url).pathname);
 // diagram-guides is vendored from the diagramming skill; its cross-references
@@ -79,9 +87,18 @@ for (const file of files) {
   }
 }
 
+// 3. heading quotes (the history files are skipped for 1 and 2 above and
+// read here only as the fallback target of a docs/actors.md quote)
+const quotes = checkDocQuotes(root);
+problems.push(...quotes.problems);
+
 if (problems.length) {
   console.error(`docs-check: ${problems.length} problem(s) in ${files.length} files\n`);
   for (const p of problems) console.error('  ' + p);
   process.exit(1);
 }
-console.log(`docs-check: ${files.length} files, every referenced path exists`);
+console.log(
+  `docs-check: ${files.length} files, every referenced path exists; ` +
+    `${quotes.quotes} heading quotes, each names a heading ` +
+    `(${quotes.actorsHistoryRefs} only in the actors history, ${quotes.docQuotesDangling} listed dangling)`,
+);

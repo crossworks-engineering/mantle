@@ -222,7 +222,7 @@ every workspace it is granted to, each with a Write switch.
 Every item has exactly one home workspace. The home is set when the item
 is made, and only a move changes it.
 
-Where a new item lands:
+**Where a new item lands:**
 
 1. In the current workspace, when you moderate it and it can hold the
    kind. This holds for everyone, Admin users too. On the web the current

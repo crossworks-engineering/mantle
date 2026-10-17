@@ -118,6 +118,10 @@ const LABELS: Record<string, string> = {
     "hand live workspace ('archived_at is null', isNull(workspaces.archivedAt)) outside workspace-live.ts (down only) (A10 #15)",
   cacheControlFiles:
     'files that set Cache-Control (down only; /api is no-store by default) (A10 #15)',
+  actorsMdLines: 'lines of the spec docs/actors.md (at most 350; history in docs/_archive)',
+  actorsHistoryRefs:
+    'docs/actors.md heading quotes only the history file holds (down only; D2 retargets them)',
+  docQuotesDangling: 'doc heading quotes naming no heading, listed (down only; docs-quotes.mjs)',
 };
 
 /** Numbers that may go up without failing: the route counts grow with
