@@ -7067,6 +7067,75 @@ round (typecheck, lint, format, docs, arch, web build, boot:smoke, CI).
 
 **Left:** nothing of this branch. Merge only when Jason says.
 
+### R0 integration (2026-10-17)
+
+`feat/precheck-http` (Part 2, the HTTP entries 27 to 2, d3993f3f9) merged
+into `feat/precheck-remove` (Part 3, the legacy tool entries, 6408f2dc9) in
+one merge commit, 9319e241f; both had branched from 6ad2f8525. Main had not
+moved (c7acc88ff, in both), so nothing else came in.
+
+**Conflicts and how they were resolved**
+
+- `scripts/arch-scoreboard.pins.json`: `itemPrecheckTools` 0 (Part 3) and
+  `itemPrecheckRoutes` 2 (Part 2), both notes kept.
+- This file: both sections kept, Part 2's first.
+- `precheck-removal.db.test.ts`: Part 3 removed the kept entries and their
+  cells, so Part 2's change to the kept block-edit cell went with them (the
+  merged `saveDraft` asks the edit first, the answer Part 2 pinned).
+- `api-v1-builtin.test.ts`: Part 3's library refusal cells (no gate
+  stand-in) and Part 2's route cells (the scoped read, then the route's
+  `assertItemRight`), both kept.
+- `restoreAppSnapshot` and `saveDraft`: the same check in both; Part 3's
+  place kept (before the entry is read), the comments joined.
+
+**One item check per path.** After the merge, five paths asked the same
+right twice; each now asks it once, first:
+
+- `deleteApp` asked manage twice (both parts added it): one kept, before
+  `ownsApp`.
+- PATCH `/api/apps/:id`, POST `/api/apps/:id/snapshots/:sid/restore` and
+  DELETE `/api/tree/:kind/folders/:id` asked what `updateAppMeta`,
+  `restoreAppSnapshot` and `deleteTreeFolder` now ask first: the route
+  checks are gone.
+- `commitPageDraft` asked edit, then `commitPage` asked it again: with a
+  draft, `commitPage` asks it; without one, `commitPageDraft` does.
+
+The dropped route edit checks refused a read-only snapshot copy in the
+copy's words where the library asked manage (a description edit, a code
+restore). So the one check keeps that: `assertItemRight` (and
+`itemWriteRefusalOf`) take `{ changes: true }`, a write that changes the
+item, so a copy is refused as an edit is, in the same read. A delete's
+manage leaves it unset (a copy's author may delete it).
+`precheck-removal-http.db.test.ts` (its copy cells for those routes) passed
+at the merge.
+
+**Re-recorded:** `a10-body-sweep-changes.txt` only. Part 2 recorded 41 app
+route cells as the opaque 500 (its route check reached the real database
+past the sweep's stand-in, "item-check-first ... part 2"); Part 3's
+stand-in of `assertItemRight` (the READS item may) answers them now, so
+they answer as main again, or as their body's kind (malformed, chunked: 8
+cells). The stand-in, not the code, changed; that kind is gone from the
+test. Nothing else differed: every other recording and sweep passed as
+merged.
+
+**Pins:** `itemPrecheckTools` 0, `itemPrecheckRoutes` 2.
+
+**Gates** (workstation, own pgvector pg18 container on 127.0.0.1:55931,
+init mounted, `max_connections=450`, fsync off, `MANTLE_CHECK_FLOOR=keep`,
+each gate alone, exit codes). At the merge, 9319e241f: typecheck 0, lint
+0, format 0, docs 0, arch 0, boot:smoke 0, deploy harness 0 (bash and
+dash), web build 0, full vitest with DB 1, actor-off 1 (each only the A10
+recording above), actor-on 0, edit-on 0, test:matrix 0, full
+test:runtime-role 0; the proof `precheck-removal-http.db.test.ts` 0 (308
+cells). At bc311b598 (the re-recording and the pair commit; this text
+after it): typecheck 0, lint 0, format 0, docs 0, arch 0, boot:smoke 0,
+deploy harness 0 (bash and dash), web build 0, full vitest with DB 0 (1094
+files, 13459 tests), actor-off 0, actor-on 0, edit-on 0, test:matrix 0,
+full test:runtime-role 0.
+
+**Paired** with jackdaw v0.7.18 (agent editor tabs, copy notes), its own
+commit. **Left:** the merge into main, when Jason says.
+
 ## Remove the switch-over code (A7)
 
 Plan v2 (page fcc4aee4), "A7. Remove the switch-over code", after W9 (every
