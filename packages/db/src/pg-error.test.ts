@@ -13,13 +13,7 @@ import {
   pgErrorCode,
   withBusyRetry,
 } from './pg-error';
-import {
-  ACCESS_MATRIX,
-  WRITE_ROLE_GAP_TABLES,
-  WRITE_ROLE_TABLES,
-  isWriteRoleGapTable,
-  writeRoleGapTable,
-} from './access-matrix';
+import { ACCESS_MATRIX, WRITE_ROLE_TABLES, writeRuleArg } from './access-matrix';
 
 /** The shape drizzle 0.45 throws from its query builder: no code on top. */
 function drizzleQueryError(cause: unknown): Error {
@@ -232,39 +226,17 @@ describe('isPermissionGap (arch A2b2b: a right the write role does not hold)', (
   });
 });
 
-describe('writeRoleGapTable (A2b2b fix round 1, H1: the one rule the gateway runs again by)', () => {
-  it('only "permission denied for table <t>" with <t> a gap table', () => {
-    expect(writeRoleGapTable('permission denied for table app_table_exports')).toBe(
-      'app_table_exports',
-    );
-    expect(writeRoleGapTable('permission denied for table profiles')).toBe('profiles');
-    expect(isWriteRoleGapTable('public.profiles')).toBe(true);
-    expect(isWriteRoleGapTable('auth.profiles')).toBe(false);
-    // Write tables since A3a: never a gap.
-    for (const t of ['node_snapshots', 'recall_maps', 'recall_nodes', 'shares', 'secrets']) {
-      expect(writeRoleGapTable(`permission denied for table ${t}`), t).toBeNull();
-    }
-  });
-  it('never a column, function, sequence or schema denial, nor a table off the list', () => {
-    for (const m of [
-      // A column the role may not write: Postgres names the table.
-      'permission denied for table item_grants',
-      'permission denied for table nodes',
-      'permission denied for function mantle_write_role_sync_table',
-      'permission denied for sequence node_snapshots_id_seq',
-      'permission denied for schema auth',
-      'not allowed to edit this item',
-    ]) {
-      expect(writeRoleGapTable(m), m).toBeNull();
-    }
-    expect(writeRoleGapTable(null)).toBeNull();
-  });
-  it('every gap table is a matrix table the write role does not write', () => {
-    const matrix = new Set(ACCESS_MATRIX.map((t) => t.table));
-    for (const t of Object.keys(WRITE_ROLE_GAP_TABLES)) {
-      expect(matrix.has(`public.${t}`), t).toBe(true);
-      expect(WRITE_ROLE_TABLES, t).not.toContain(`public.${t}`);
-    }
+describe('the gap tables closed (plan v3 S3)', () => {
+  it('profiles and app_table_exports are write-role tables; only profiles has a narrower write rule', () => {
+    expect(WRITE_ROLE_TABLES).toContain('public.profiles');
+    expect(WRITE_ROLE_TABLES).toContain('public.app_table_exports');
+    const ruled = ACCESS_MATRIX.filter((t) => writeRuleArg(t) !== null).map((t) => [
+      t.table,
+      writeRuleArg(t),
+    ]);
+    expect(ruled).toEqual([['public.profiles', 'own-login']]);
+    const exports = ACCESS_MATRIX.find((t) => t.table === 'public.app_table_exports');
+    expect(exports?.writeCheck).toEqual({ kind: 'manage', item: 'app_node_id' });
   });
 });
 

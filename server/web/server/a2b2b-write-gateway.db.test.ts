@@ -1,7 +1,8 @@
 /**
  * Arch A2b2b: the login write gateway (packages/db/src/client.ts). A scoped
- * login write runs on the write role (mantle_write_user) while the actor
- * check is warn or on, and on the system pool, as before, while it is off.
+ * login write runs on the write role (mantle_write_user) in every actor
+ * check mode (plan v3 S3: the mode decides refuse or report, never the
+ * pool; before S3 off ran it on the system pool).
  * Through the real app (createApp) on a migrated scratch database; which
  * role sent each write to `nodes` is read from a statement trigger that
  * records session_user (this scratch database only).
@@ -9,25 +10,25 @@
  *  - login: a member's create runs on the write role in warn and on, and
  *    lands in its private workspace (made on the first create, after the
  *    request's scope was read: the gateway adds it to the write scope);
- *  - off: the same create runs on the system pool, nothing on the role;
- *  - an Admin user's write request stays on the system pool (its reads are
- *    unscoped, W6a M1);
- *  - what the database refuses and the app would let through: warn reports
- *    it and runs it, on refuses it with a scope-write refusal (a 403);
+ *  - off: the same create runs on the write role too (S3);
+ *  - an Admin user's write request runs on the write role (F4), off too;
+ *  - what the database refuses and the app would let through: off and warn
+ *    report it and run it, on refuses it with a scope-write refusal (a 403);
  *  - assistant, link and contact actors with a write scope: on the role, a
  *    create in a workspace they moderate goes through, one with no
  *    Moderator of its home is refused; system work in the same scope stays
  *    on the system pool;
- *  - a write-role gap (a table the role holds no right on, in a
- *    transaction) runs again on the system pool and is logged; a typed or
- *    raw single write to such a table goes there up front;
+ *  - S3: profiles and app_table_exports (the two gap tables until S3) are
+ *    write-role tables: each login writes its own profile row, the brain's
+ *    only with the Settings area, a member's turn never; an export row
+ *    only a manager of the app, member-negative cells in warn and on;
  *  - grants (0279): the home move is one call (manage of the old home and a
  *    Moderator of the new one), and the role writes the derived grant
  *    columns only through the definer.
  *  - fix round 1: a column or a function denial is an error, never run
- *    again (H1); in on a gap's rerun keeps the role's checks, one commit
- *    and one commit hook (M1); a gap caught in a savepoint still reruns
- *    (L6); writes inside an open write transaction join it and the pool's
+ *    again (H1); a transaction runs once, one commit and one commit hook,
+ *    a refused item write stays refused (M1, one path since S3); writes
+ *    inside an open write transaction join it and the pool's
  *    wait is bounded (M2); the visibility confirm reads in the transaction,
  *    past the scope through the definers (M3); a grant's audit row is held
  *    to the scope (L5).
@@ -240,15 +241,18 @@ describe.skipIf(!URL)('A2b2b: the login write gateway', () => {
     }
   });
 
-  it('off: the same create runs on the system pool, nothing on the write role', async () => {
+  it('off: the same create runs on the write role too (plan v3 S3: the mode never picks the pool)', async () => {
+    // Changed in S3: before it, off ran this create on the system pool.
     setMode('off');
     let status = 0;
     const who = await writersOf(async () => {
       status = (await call('/api/notes', mem, 'POST', { title: `${tag} off note` })).status;
     });
     expect(status).toBe(201);
-    expect(who.length).toBeGreaterThan(0);
-    expect(who.filter((w) => WRITER.test(w))).toEqual([]);
+    expect(
+      who.some((w) => WRITER.test(w)),
+      who.join(','),
+    ).toBe(true);
   });
 
   it('an Admin user’s write request runs on the write role too (F4: its reads in its scope)', async () => {
@@ -265,16 +269,19 @@ describe.skipIf(!URL)('A2b2b: the login write gateway', () => {
         `${mode}: ${who.join(',')}`,
       ).toBe(true);
     }
+    // Off too since plan v3 S3 (it was the system pool before).
     setMode('off');
     const off = await writersOf(async () => {
       const r = await call('/api/notes', owner, 'POST', { title: `${tag} off admin note` });
       expect(r.status, r.text.slice(0, 200)).toBe(201);
     });
-    expect(off.length).toBeGreaterThan(0);
-    expect(off.filter((w) => WRITER.test(w))).toEqual([]);
+    expect(
+      off.some((w) => WRITER.test(w)),
+      off.join(','),
+    ).toBe(true);
   });
 
-  it('what only the database refuses: warn reports and runs it, on refuses it (a scope-write refusal, 403)', async () => {
+  it('what only the database refuses: off and warn report and run it, on refuses it (a scope-write refusal, 403)', async () => {
     // mem reads the Ro note (no Write): the app's item check would refuse
     // this edit; called past it, only the write check stands.
     const edit = (title: string) =>
@@ -285,12 +292,16 @@ describe.skipIf(!URL)('A2b2b: the login write gateway', () => {
           .where(eq(m.nodes.id, roNote))
           .returning({ id: m.nodes.id }),
       );
-    setMode('warn');
-    expect(await edit(`${tag} warn edit`)).toHaveLength(1);
-    expect(await titleOf(roNote)).toBe(`${tag} warn edit`);
-    expect(m.takeActorMisses().map((x) => x.check)).toContain(
-      'UPDATE on nodes: no edit of the item (refused when the check is on)',
-    );
+    // Off since plan v3 S3: on the write role, the check reports as warn
+    // does (0278's gate); before S3 off ran it on the system pool unseen.
+    for (const mode of ['off', 'warn'] as const) {
+      setMode(mode);
+      expect(await edit(`${tag} ${mode} edit`)).toHaveLength(1);
+      expect(await titleOf(roNote)).toBe(`${tag} ${mode} edit`);
+      expect(m.takeActorMisses().map((x) => x.check)).toContain(
+        'UPDATE on nodes: no edit of the item (refused when the check is on)',
+      );
+    }
     setMode('on');
     const err = await edit(`${tag} on edit`).then(
       () => null,
@@ -398,31 +409,179 @@ describe.skipIf(!URL)('A2b2b: the login write gateway', () => {
     expect(sys.filter((w) => WRITER.test(w))).toEqual([]);
   });
 
-  it('a write-role gap runs again on the system pool and is logged; a single write to such a table goes there up front', async () => {
-    m.takeWriteRoleGaps();
-    // A transaction that writes a table the role holds no right on.
-    await inRequest(mem, () =>
-      m.db.transaction(async (tx) => {
-        await tx.insert(m.profiles).values({ userId: mem, preferences: {} }).onConflictDoNothing();
-      }),
-    );
-    expect(m.takeWriteRoleGaps()).toEqual(['permission denied for table profiles']);
-    expect(
+  it('S3: profiles on the write role: each login writes its own row, the brain’s only with the Settings area (off, warn, on)', async () => {
+    // Owner decision 2026-10-17. Changed in S3: before it, profiles was a
+    // gap table, rerun on the system pool (warn) or as the gap writer
+    // (on), so any scoped login wrote any row.
+    const c = await import('@mantle/content');
+    const adm = randomUUID(); // an Admin user, not the anchor, with Settings
+    const admNo = randomUUID(); // an Admin user without the Settings area
+    await x(sql`insert into auth.users (id, email, password_hash, is_owner, role, display_name) values
+      (${adm}, ${email('adm')}, 'x', false, 'admin', 'Ada Admin'),
+      (${admNo}, ${email('admno')}, 'x', false, 'admin', 'Abe Admin')`);
+    await x(sql`insert into workspace_users (workspace_id, login_id, moderator, limits) values
+      (${adminWs}, ${adm}, true, '{}'::jsonb),
+      (${adminWs}, ${admNo}, true, ${JSON.stringify({ areas: { settings: false } })}::jsonb)
+      on conflict (workspace_id, login_id) do update set limits = excluded.limits`);
+    const tzOf = async (login: string) =>
       (
-        await x<{ n: number }>(sql`select count(*)::int as n from profiles where user_id = ${mem}`)
-      )[0]!.n,
-    ).toBe(1);
-    // A typed and a raw single write: decided by their table, no gap.
-    await inRequest(mem, async () => {
-      await m.db
-        .update(m.profiles)
-        .set({ preferences: { timezone: 'UTC' } })
-        .where(eq(m.profiles.userId, mem));
-      await m.executeWrite(
-        sql`update profiles set preferences = preferences where user_id = ${mem}`,
+        await x<{ tz: string | null }>(
+          sql`select preferences->>'timezone' as tz from profiles where user_id = ${login}`,
+        )
+      )[0]?.tz ?? null;
+    /** set_timezone's write (updateProfilePreferences of a row) in
+     *  `login`'s write scope: 'ok' or the error code. */
+    const setTz = (login: string, row: string, tz: string) =>
+      inRequest(login, () => c.updateProfilePreferences(row, { timezone: tz })).then(
+        () => 'ok',
+        (e: unknown) => m.pgErrorCode(e) ?? String(e),
       );
-    });
+    for (const mode of ['off', 'warn', 'on'] as const) {
+      setMode(mode);
+      m.takeWriteRoleGaps();
+      // Each login writes its own row (the anchor's own is the brain's).
+      for (const who of [mem, adm, admNo, owner]) {
+        expect(await setTz(who, who, 'Africa/Johannesburg'), `${mode} own`).toBe('ok');
+        expect(await tzOf(who)).toBe('Africa/Johannesburg');
+      }
+      // An Admin user who is not the anchor, with Settings: the brain's row.
+      expect(await setTz(adm, owner, 'Europe/Berlin'), `${mode} adm`).toBe('ok');
+      expect(await tzOf(owner)).toBe('Europe/Berlin');
+      // Without Settings, a member (a member's turn), and another login's
+      // row for anyone: refused, nothing changes.
+      expect(await setTz(admNo, owner, 'Asia/Tokyo'), `${mode} admNo`).toBe('42501');
+      expect(await setTz(mem, owner, 'Asia/Tokyo'), `${mode} member`).toBe('42501');
+      expect(await setTz(adm, mem, 'Asia/Tokyo'), `${mode} other row`).toBe('42501');
+      expect(await tzOf(owner)).toBe('Europe/Berlin');
+      expect(await tzOf(mem)).toBe('Africa/Johannesburg');
+      // No right is missing on the role: nothing noted, nothing run again.
+      expect(m.takeWriteRoleGaps(), mode).toEqual([]);
+    }
+  });
+
+  it('S3: a member’s turn calls set_timezone over its MCP: refused, the brain’s row unchanged (warn, on)', async () => {
+    const ls = await import('@mantle/mcp-core');
+    const { McpServer, InMemoryTransport } = await import('@modelcontextprotocol/server');
+    const { Client } = await import('@modelcontextprotocol/client');
+    const before = await x<{ p: unknown }>(
+      sql`select preferences as p from profiles where user_id = ${owner}`,
+    );
+    for (const mode of ['warn', 'on'] as const) {
+      setMode(mode);
+      const server = new McpServer({ name: 'test', version: '0' });
+      ls.registerPreparedTools(
+        server,
+        await ls.prepareCallerTools({
+          role: 'member',
+          anchorId: owner,
+          loginId: mem,
+          via: 'oauth',
+          write: true,
+        }),
+      );
+      const [ta, tb] = InMemoryTransport.createLinkedPair();
+      const cl = new Client({ name: 's3', version: '0' });
+      await Promise.all([server.connect(ta), cl.connect(tb)]);
+      try {
+        const out = await cl
+          .callTool({ name: 'set_timezone', arguments: { timezone: 'Asia/Tokyo' } })
+          .then(
+            (r) => (r as { isError?: boolean }).isError === true,
+            () => true,
+          );
+        expect(out, `${mode}: refused`).toBe(true);
+      } finally {
+        await cl.close();
+      }
+      expect(
+        await x<{ p: unknown }>(
+          sql`select preferences as p from profiles where user_id = ${owner}`,
+        ),
+      ).toEqual(before);
+    }
+    m.takeActorMisses();
+  });
+
+  it('S3: app_table_exports on the write role: a manager of the app writes its export row; member-negative refused (warn, on)', async () => {
+    // Changed in S3: before it, a scoped typed write of an export row went
+    // to the system pool up front (no row rule), a transaction's ran again
+    // there; now the row rule and the write check ask manage of the app.
+    const mem3 = randomUUID(); // an outsider: in no workspace of the app
+    await x(sql`insert into auth.users (id, email, password_hash, is_owner, role, display_name)
+                values (${mem3}, ${email('mem3')}, 'x', false, 'member', 'Ola Outsider')`);
+    const appId = randomUUID();
+    const tableId = randomUUID();
+    const sib = randomUUID();
+    await x(sql`insert into nodes (id, owner_id, type, title, path) values
+      (${appId}, ${owner}, 'app', ${`${tag} s3 app`}, 'apps'),
+      (${tableId}, ${owner}, 'table', ${`${tag} s3 export`}, 'tables'),
+      (${sib}, ${owner}, 'note', ${`${tag} s3 sibling`}, 'notes')`);
+    for (const id of [appId, tableId, sib]) await homeIn(id, ro);
+    // mem reads Ro (the app: a read grant) and has Write on a sibling item
+    // (Team, which it moderates, holds the sibling with Write).
+    await x(
+      sql`insert into item_grants (node_id, workspace_id, write) values (${sib}, ${team}, true)`,
+    );
+    const [row] = await x<{ id: string }>(sql`insert into app_table_exports
+      (owner_id, app_node_id, sqlite_table, table_node_id)
+      values (${owner}, ${appId}, 'tasks', ${tableId}) returning id::text as id`);
+    const exportId = row!.id;
+    const stateOf = async () =>
+      JSON.stringify(
+        await x(sql`select * from app_table_exports where app_node_id = ${appId} order by id`),
+      );
+    const update = (login: string, id: string) =>
+      inRequest(login, () =>
+        m.db
+          .update(m.appTableExports)
+          .set({ lastError: `${tag} ${login}` })
+          .where(eq(m.appTableExports.id, id))
+          .returning({ id: m.appTableExports.id }),
+      );
+    const remove = (login: string, id: string) =>
+      inRequest(login, () =>
+        m.db
+          .delete(m.appTableExports)
+          .where(eq(m.appTableExports.id, id))
+          .returning({ id: m.appTableExports.id }),
+      );
+    const insert = (login: string, app: string) =>
+      inRequest(login, () =>
+        m.db.insert(m.appTableExports).values({
+          ownerId: owner,
+          appNodeId: app,
+          sqliteTable: `${tag}_other`,
+          tableNodeId: tableId,
+        }),
+      ).then(
+        () => 'ok',
+        // The answer a caller sees (THE mapper: a scope-write refusal, 403).
+        // The database's own text differs in on (the write check of an app
+        // that exists, the row rule of one that does not), as on every
+        // write-check table.
+        (e: unknown) => `${m.pgErrorCode(e)} refusal=${m.isScopeWriteRefusal(e)}`,
+      );
+    for (const mode of ['warn', 'on'] as const) {
+      setMode(mode);
+      const before = await stateOf();
+      for (const who of [mem3, mem]) {
+        // Byte-equal to a random id's answer: the row is not there for it.
+        expect(JSON.stringify(await update(who, exportId)), `${mode} update`).toBe(
+          JSON.stringify(await update(who, randomUUID())),
+        );
+        expect(JSON.stringify(await remove(who, exportId)), `${mode} delete`).toBe(
+          JSON.stringify(await remove(who, randomUUID())),
+        );
+        const made = await insert(who, appId);
+        expect(made, `${mode} insert`).toBe('42501 refusal=true');
+        expect(made).toBe(await insert(who, randomUUID()));
+      }
+      expect(await stateOf(), mode).toBe(before);
+      // The app's Moderator (mem2 made Ro): its own export row.
+      expect(await update(mem2, exportId)).toEqual([{ id: exportId }]);
+    }
     expect(m.takeWriteRoleGaps()).toEqual([]);
+    m.takeActorMisses();
   });
 
   /** A transaction on the write role as `login` in `mode`: the scope and the
@@ -620,12 +779,13 @@ describe.skipIf(!URL)('A2b2b: the login write gateway', () => {
     ]);
   });
 
-  it('M1: in on a gap runs again checked: a refused item write stays refused, nothing commits twice', async () => {
+  it('M1 (one path since plan v3 S3): in on a transaction runs once on the role: a refused item write stays refused, one commit, one hook', async () => {
     setMode('on');
     m.takeWriteRoleGaps();
     const roTitle = await titleOf(roNote);
     const own = await noteIn(team, `${tag} m1 own`);
-    // A gap, then an item write the role refuses: refused in the rerun too.
+    // Its own profile row (a gap table until S3), then an item write the
+    // role refuses: the whole transaction is refused.
     const refused = await failure(
       inRequest(mem, () =>
         m.db.transaction(async (tx) => {
@@ -642,8 +802,8 @@ describe.skipIf(!URL)('A2b2b: the login write gateway', () => {
     );
     expect(m.isScopeWriteRefusal(refused), String(refused)).toBe(true);
     expect(await titleOf(roNote)).toBe(roTitle);
-    // A refused item write (caught in a savepoint), then a gap: the rerun
-    // refuses it again; the rest commits once.
+    // A refused item write (caught in a savepoint), then its own profile
+    // row: the rest commits once (it ran twice while profiles was a gap).
     let runs = 0;
     await inRequest(mem, () =>
       m.db.transaction(async (tx) => {
@@ -663,12 +823,12 @@ describe.skipIf(!URL)('A2b2b: the login write gateway', () => {
           .where(eq(m.nodes.id, own));
       }),
     );
-    expect(runs).toBe(2);
+    expect(runs).toBe(1);
     expect(await titleOf(roNote)).toBe(roTitle);
     expect(await titleOf(own)).toBe(`${tag} m1 own b`);
     expect(await profilesOf(mem)).toBe(1);
     // A system transaction (heads) that creates, registers a commit hook and
-    // meets a gap: one row, one hook, after the checked rerun.
+    // writes its profile row: one row, one hook.
     let hooks = 0;
     const title = `${tag} m1 once`;
     await inRequest(mem, () =>
@@ -692,13 +852,11 @@ describe.skipIf(!URL)('A2b2b: the login write gateway', () => {
       sql`select home_ws::text as home from nodes where title = ${title}`,
     );
     expect(made.map((r) => r.home)).toEqual([team]);
-    expect(m.takeWriteRoleGaps().every((g) => g === 'permission denied for table profiles')).toBe(
-      true,
-    );
+    expect(m.takeWriteRoleGaps()).toEqual([]);
     m.takeActorMisses();
   });
 
-  it('L6: a gap caught in a savepoint still runs the transaction again, and is noted', async () => {
+  it('L6 (one path since plan v3 S3): a profile write in a savepoint runs once, nothing noted', async () => {
     setMode('warn');
     m.takeWriteRoleGaps();
     await x(sql`delete from profiles where user_id = ${mem}`);
@@ -711,9 +869,9 @@ describe.skipIf(!URL)('A2b2b: the login write gateway', () => {
           .catch(() => undefined);
       }),
     );
-    expect(runs).toBe(2);
+    expect(runs).toBe(1);
     expect(await profilesOf(mem)).toBe(1);
-    expect(m.takeWriteRoleGaps()).toEqual(['permission denied for table profiles']);
+    expect(m.takeWriteRoleGaps()).toEqual([]);
   });
 
   it('M2: a write inside an open write transaction joins it; a pool of 3 never hangs', async () => {
@@ -925,25 +1083,30 @@ describe.skipIf(!URL)('A2b2b: the login write gateway', () => {
     expect(await titleOf(id)).toBe(`${tag} loop 99`);
   });
 
-  it('L2: the checked rerun writes a gap table as mantle_gap_writer, which holds no right on an item table', async () => {
+  it('L2 (plan v3 S3): mantle_gap_writer holds no right at all, the former gap tables neither', async () => {
     const sys = postgres(scratch!.url, { max: 1, prepare: false, onnotice: () => {} });
     try {
       const res = await sys
         .begin(async (tx) => {
           await tx`set local role mantle_gap_writer`;
           const [me] = await tx<{ u: string }[]>`select current_user as u`;
-          // A gap table: allowed (rolled back below).
-          await tx`insert into profiles (user_id, preferences) values (${mem2}, '{}'::jsonb)
-                   on conflict (user_id) do nothing`;
-          // An item table: no right at all.
-          const write = await tx`update nodes set title = 'x' where id = ${teamNote}`.then(
-            () => null,
-            (e: { message?: string }) => e.message ?? 'error',
+          const denied = async (q: Promise<unknown>) =>
+            q.then(
+              () => null,
+              (e: { message?: string }) => e.message ?? 'error',
+            );
+          await tx`savepoint s1`;
+          const profile = await denied(
+            tx`insert into profiles (user_id, preferences) values (${mem2}, '{}'::jsonb)
+               on conflict (user_id) do nothing`,
           );
-          throw Object.assign(new Error('rollback'), { me: me!.u, write });
+          await tx`rollback to savepoint s1`;
+          const write = await denied(tx`update nodes set title = 'x' where id = ${teamNote}`);
+          throw Object.assign(new Error('rollback'), { me: me!.u, profile, write });
         })
-        .catch((e: { me?: string; write?: string }) => e);
+        .catch((e: { me?: string; profile?: string; write?: string }) => e);
       expect(res.me).toBe('mantle_gap_writer');
+      expect(res.profile).toMatch(/^permission denied for table profiles/);
       expect(res.write).toMatch(/^permission denied for table nodes/);
     } finally {
       await sys.end();
@@ -1009,14 +1172,12 @@ describe.skipIf(!URL)('A2b2b: the login write gateway', () => {
         inRequest(mem, () =>
           m.db.transaction(async (tx) => {
             runs += 1;
-            // In on: a gap first, so the work runs again checked (the
-            // system pool's connection).
-            if (mode === 'on' && runs === 1) {
-              await tx
-                .insert(m.profiles)
-                .values({ userId: mem, preferences: {} })
-                .onConflictDoNothing();
-            }
+            // Its own profile row first (a gap table until plan v3 S3, which
+            // ran the work again checked in on): one run now in every mode.
+            await tx
+              .insert(m.profiles)
+              .values({ userId: mem, preferences: {} })
+              .onConflictDoNothing();
             await tx
               .update(m.nodes)
               .set({ title: `${tag} A outer` })
@@ -1038,7 +1199,7 @@ describe.skipIf(!URL)('A2b2b: the login write gateway', () => {
         ),
       );
       expect(err?.message).toBe('a step that is not the database');
-      expect(runs).toBe(mode === 'on' ? 2 : 1);
+      expect(runs).toBe(1);
       await sleep(500);
       // Rolled back, and nothing written after.
       expect(await titleOf(id)).toBe(before);
@@ -1110,7 +1271,7 @@ describe.skipIf(!URL)('A2b2b: the login write gateway', () => {
     expect(await titleOf(id)).toBe(`${tag} E n19`);
   });
 
-  it('B (round 3): a member’s Recall map write over MCP works in on (the map lock runs as the gap writer)', async () => {
+  it('B (round 3): a member’s Recall map write over MCP works in on (on the write role, no gap writer since S3)', async () => {
     setMode('on');
     m.takeWriteRoleGaps();
     const ls = await import('@mantle/mcp-core');
@@ -1151,7 +1312,7 @@ describe.skipIf(!URL)('A2b2b: the login write gateway', () => {
     } finally {
       await c.close();
     }
-    m.takeWriteRoleGaps();
+    expect(m.takeWriteRoleGaps()).toEqual([]);
     m.takeActorMisses();
   });
   // ── Fix round 4 ───────────────────────────────────────────────────────────

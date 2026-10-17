@@ -27,7 +27,9 @@
  *    to the superuser. So the marker that guard reads is out of its reach.
  *  - mantle_system (NOLOGIN) holds no right and owns nothing. The runtime
  *    role may SET ROLE to it (no INHERIT), and it may SET ROLE to the write
- *    role and the gap writer: the checked rerun's switches (client.ts). The
+ *    role and the gap writer: the checked rerun's switches, which plan v3
+ *    S3 deleted from client.ts (TODO(plan v3 S3 part 2, one release later):
+ *    drop both SET memberships and the gap writer role). The
  *    write role's own membership tests (0277, 0278) count only a direct
  *    membership, so the system pool is still "not the write role's login"
  *    there, as it was as the superuser.
@@ -339,6 +341,9 @@ export function wantedMemberships(): readonly Membership[] {
     { member: RUNTIME_ROLE, role: OWNER_ROLE, inherit: false, set: false },
     { member: RUNTIME_ROLE, role: SYSTEM_ROLE, inherit: false, set: true },
     { member: SYSTEM_ROLE, role: viewerRoleName('write'), inherit: false, set: true },
+    // TODO(plan v3 S3 part 2, one release later): nothing SETs these two
+    // since S3 (the checked rerun is gone); kept one release so a rollback
+    // to the image before S3 still finds them (rule 2).
     { member: SYSTEM_ROLE, role: GAP_WRITER_ROLE, inherit: false, set: true },
   ];
 }

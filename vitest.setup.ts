@@ -14,7 +14,6 @@
  */
 import { afterEach, beforeAll, beforeEach } from 'vitest';
 import { enterTestActor, takeActorMisses, takeWriteRoleGaps } from './packages/db/src/actor';
-import { writeRoleGapTable } from './packages/db/src/access-matrix';
 
 // Arch A2b2b: the suite runs the login write gateway as web and api do
 // (openLoginWritePool in packages/db/src/client.ts reads this flag), so
@@ -26,10 +25,10 @@ beforeEach(() => enterTestActor());
 
 afterEach(() => {
   // Arch A2b2b: a right the write role does not hold, met by a login write
-  // (the gateway notes every one, a caught one too). Only the gap tables
-  // may (writeRoleGapTable, the same rule the gateway runs again by): any
-  // other is a table to add to the matrix, or a bug.
-  const gaps = takeWriteRoleGaps().filter((g) => writeRoleGapTable(g) === null);
+  // (the gateway notes every one, a caught one too). None may since plan
+  // v3 S3 (no gap table is left): each is a table to add to the matrix, or
+  // a bug.
+  const gaps = takeWriteRoleGaps();
   if (gaps.length > 0) {
     throw new Error(
       `${gaps.length} login write(s) met a right the write role does not hold (arch A2b2b):\n` +

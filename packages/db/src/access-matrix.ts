@@ -63,6 +63,15 @@ export type TableAccess = {
    */
   userRule?: 'own-login';
   /**
+   * The write role's write rule where it is narrower than the read rule
+   * (plan v3 S3; mantle_write_role_sync_table's write_rule, migration
+   * S3's). 'own-login' (profiles, owner decision 2026-10-17): the login's
+   * own row, or the brain's row when the scope's login holds the Settings
+   * area (mantle_scope_has_area). Never another login's row. Absent: the
+   * write rule is the read rule.
+   */
+  writeRule?: 'own-login';
+  /**
    * What the write role must hold beyond reading the row (migration 0278,
    * mantle_write_check_trg): 'self' (the item table: edit of the item), or
    * the column naming the row's item and edit or manage of that item. A
@@ -374,10 +383,17 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   { table: 'public.skills', user: 'all', writer: 'admin' },
   { table: 'public.embedding_config', user: 'all', writer: 'admin' },
   { table: 'public.ai_workers', user: 'all', writer: 'admin' },
-  // Its own login's row and the brain's, every row only in an Admin scope
-  // (0266). Written in a login's transaction it is a write-role gap
-  // (WRITE_ROLE_GAP_TABLES, A3a's decision).
-  { table: 'public.profiles', user: 'all', userRule: 'own-login', writer: 'admin' },
+  // Read: its own login's row and the brain's, every row only in an Admin
+  // scope (0266). Write (plan v3 S3, owner decision 2026-10-17): its own
+  // row, and the brain's only for a login whose scope holds the Settings
+  // area; a member's turn never changes the brain's row.
+  {
+    table: 'public.profiles',
+    user: 'all',
+    userRule: 'own-login',
+    writeRule: 'own-login',
+    writer: 'content',
+  },
   // mantle_brain_id() reads the anchor row; nothing else of a login.
   { table: 'auth.users', user: ['id', 'is_owner', 'created_at'], writer: 'admin' },
 
@@ -533,7 +549,16 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   none('public.saved_filters'),
   none('public.heartbeats'),
   none('public.sandboxes'),
-  none('public.app_table_exports'),
+  // An app table's export row (plan v3 S3): read and written on the
+  // write role by a manager of the app (its row rule, S3's migration, and
+  // the write check), as the export tools ask; the dirty stamp and the
+  // sync stay the brain's named system step.
+  {
+    table: 'public.app_table_exports',
+    user: 'all',
+    writer: 'content',
+    writeCheck: { kind: 'manage', item: 'app_node_id' },
+  },
 
   // ── Workspaces (W1, migrations 0241 and 0242) ────────────────────────────
   // The workspace role reads the rows of the workspaces in its scope (and
@@ -706,70 +731,15 @@ export const WRITE_ROLE_SYSTEM_ONLY: readonly string[] = ACCESS_MATRIX.filter(
 ).map((t) => t.table);
 
 /**
- * Tables a login's write transaction still writes that the write role holds
- * no right on (arch A2b2b), each with where. The ONE list: the login write
- * gateway (client.ts) runs such a transaction again (a write-role gap) for
- * these tables only, and the test setup (vitest.setup.ts) fails on any
- * other denial, both through writeRoleGapTable. Any other "permission
- * denied" on the role is a bug and stays an error. A typed or a single raw
- * write to a table outside WRITE_ROLE_TABLES goes to the system pool up
- * front and is no gap.
- *
- * A3a (docs/edit-check.md) moved node_snapshots, the Recall tables and
- * shares to the write role with their checks (editCheck); a secret's sealed
- * value goes through mantle_secret_put and a renamed Recall map's cross-map
- * options through mantle_recall_retarget (0281). Two stay, decided:
- * profiles (a login's settings row, not an item: no item check applies to
- * it, and whether a member's turn should write the brain's row is the
- * owner's question) and app_table_exports (no login transaction writes it
- * today: its rows are the brain's, written top level; on the list a flow
- * that does keeps today's checked rerun instead of a 500).
- */
-export const WRITE_ROLE_GAP_TABLES: Readonly<Record<string, string>> = {
-  app_table_exports: 'an app table’s export row, with the Table it mirrors into',
-  profiles:
-    'a login’s own profile row, made on its first read in a savepoint (profile-preferences.ts)',
-};
-
-/**
- * The role a gap table's statement runs as in the checked rerun (A2b2b fix
- * round 2, L2; client.ts): NOLOGIN, no BYPASSRLS, holding rights on the gap
- * tables only (and a row rule that lets it through their row level
- * security), so a write to an item table there is impossible by
- * construction. The system pool SETs it for one statement at a time.
- * applyViewerGrants makes it and its rights from WRITE_ROLE_GAP_TABLES.
+ * The role the gap rerun ran a gap table's statement as (A2b2b fix round 2,
+ * L2). Plan v3 S3 closed the gap tables (profiles and app_table_exports are
+ * write-role tables) and deleted the rerun: nothing runs as it, and
+ * applyViewerGrants keeps it holding no right at all (syncGapWriterRights).
+ * TODO(plan v3 S3 part 2, one release later): drop the role, its runtime
+ * role membership (runtime-role.ts wantedMemberships) and the lock
+ * attributes it shares with the viewer roles (viewer-roles.ts).
  */
 export const GAP_WRITER_ROLE = 'mantle_gap_writer';
-
-/** The gap tables the write role cannot read at all (no read rule): a read
- *  that names one runs as GAP_WRITER_ROLE in the checked rerun; every other
- *  read stays the write role's. */
-export const WRITE_ROLE_GAP_UNREADABLE: readonly string[] = Object.keys(
-  WRITE_ROLE_GAP_TABLES,
-).filter((t) => {
-  const row = ACCESS_MATRIX.find((a) => a.table === `public.${t}`);
-  return !row || userReadFor(row) === 'none';
-});
-
-/** A gap table (WRITE_ROLE_GAP_TABLES) by its name, schema-qualified
- *  (`public.x`, as rawWriteTarget gives it) or not. All of them are public's. */
-export function isWriteRoleGapTable(name: string): boolean {
-  const m = /^(?:public\.)?([a-z_][a-z0-9_]*)$/.exec(name);
-  return !!m && Object.hasOwn(WRITE_ROLE_GAP_TABLES, m[1]!);
-}
-
-/**
- * The gap table a denial names, or null: only "permission denied for table
- * <t>" with <t> in WRITE_ROLE_GAP_TABLES. A column (Postgres names its
- * table: an item_grants column is not one), a function, a sequence or a
- * schema denial, and a table not on the list, are null: never run again.
- */
-export function writeRoleGapTable(denied: string | null): string | null {
-  const t = denied
-    ? /^permission denied for table "?([a-z_][a-z0-9_]*)"?$/.exec(denied)?.[1]
-    : null;
-  return t && isWriteRoleGapTable(t) ? t : null;
-}
 
 /**
  * The functions the write role may run beyond the workspace role's (whose
@@ -825,6 +795,12 @@ export function writeGrantStatements(
     out.push(`GRANT INSERT${cols}, UPDATE${cols}, DELETE ON ${quoteTable(t.table)} TO "${role}"`);
   }
   return out;
+}
+
+/** The write role's write rule key for `t` (TableAccess.writeRule), or
+ *  null for its read rule. */
+export function writeRuleArg(t: TableAccess): string | null {
+  return writeRoleWrites(t) ? (t.writeRule ?? null) : null;
 }
 
 /** The write check's arguments for `t` (mantle_write_check_trg), or null. */
@@ -1177,19 +1153,15 @@ export function gapWriterRuleLockError(table: string, cause: unknown): Error {
 }
 
 /**
- * GAP_WRITER_ROLE (A2b2b fix round 2, L2), from WRITE_ROLE_GAP_TABLES: made
- * when missing and its lock attributes set again on every pass
- * (gapWriterRoleStatement; a cluster object, like the viewer roles, so a
- * restore into a fresh cluster gets it back here); every table right
- * revoked, then SELECT, INSERT, UPDATE and DELETE on each gap table, the
- * sequences they draw from, and a permissive row rule on each gap table
- * with row level security (none other: a rule left on a table no longer
- * on the list is dropped). Each row rule change in its own short
- * transaction (lock_timeout 3 s, with retries), as syncWriteRoleRules.
+ * GAP_WRITER_ROLE, holding nothing (plan v3 S3): made when missing and its
+ * lock attributes set again on every pass (gapWriterRoleStatement; a
+ * cluster object, like the viewer roles), every table and sequence right
+ * revoked, and every row rule that names it dropped, each in its own short
+ * transaction (lock_timeout 3 s, with retries), as syncWriteRoleRules. Kept
+ * one release so a rollback to the image before S3 finds it (rule 2).
  */
 export async function syncGapWriterRights(sql: ReturnType<typeof postgres>): Promise<void> {
   const role = `"${GAP_WRITER_ROLE}"`;
-  const gap = Object.keys(WRITE_ROLE_GAP_TABLES).map((t) => `public.${t}`);
   await withRoleRetry(() =>
     sql.begin(async (tx) => {
       const [has] = await tx<{ ok: boolean }[]>`
@@ -1198,49 +1170,15 @@ export async function syncGapWriterRights(sql: ReturnType<typeof postgres>): Pro
       await tx.unsafe(gapWriterRoleStatement(!!has?.ok));
       await tx.unsafe(`REVOKE ALL ON ALL TABLES IN SCHEMA public, auth FROM ${role}`);
       await tx.unsafe(`REVOKE ALL ON ALL SEQUENCES IN SCHEMA public, auth FROM ${role}`);
-      await tx.unsafe(`GRANT USAGE ON SCHEMA public TO ${role}`);
-      const present = await tx<{ t: string }[]>`
-        select n.nspname || '.' || c.relname as t from pg_class c
-          join pg_namespace n on n.oid = c.relnamespace
-         where c.relkind in ('r', 'p') and n.nspname || '.' || c.relname = any(${gap}::text[])`;
-      for (const { t } of present) {
-        await tx.unsafe(`GRANT SELECT, INSERT, UPDATE, DELETE ON ${t} TO ${role}`);
-      }
-      const seqs = await tx<{ seq: string }[]>`
-        select distinct quote_ident(sn.nspname) || '.' || quote_ident(s.relname) as seq
-          from pg_depend d
-          join pg_class s on s.oid = d.objid and s.relkind = 'S'
-          join pg_namespace sn on sn.oid = s.relnamespace
-          join pg_class t on t.oid = d.refobjid
-          join pg_namespace tn on tn.oid = t.relnamespace
-         where d.deptype in ('a', 'i') and tn.nspname || '.' || t.relname = any(${gap}::text[])`;
-      for (const { seq } of seqs) await tx.unsafe(`GRANT USAGE ON SEQUENCE ${seq} TO ${role}`);
     }),
   );
-  // The row rules: one per gap table with row level security, none else.
-  const rules = await sql<{ t: string; rls: boolean; has: boolean; stray: boolean }[]>`
-    select n.nspname || '.' || c.relname as t, c.relrowsecurity as rls,
-           exists (select 1 from pg_policies p
-                    where p.schemaname = n.nspname and p.tablename = c.relname
-                      and p.policyname = c.relname || '_gap_writer') as has,
-           not (n.nspname || '.' || c.relname = any(${gap}::text[])) as stray
-      from pg_class c join pg_namespace n on n.oid = c.relnamespace
-     where n.nspname in ('public', 'auth') and c.relkind in ('r', 'p')
-       and (n.nspname || '.' || c.relname = any(${gap}::text[])
-            or exists (select 1 from pg_policies p
-                        where p.schemaname = n.nspname and p.tablename = c.relname
-                          and ${GAP_WRITER_ROLE}::name = any(p.roles)))`;
+  const rules = await sql<{ t: string; name: string }[]>`
+    select quote_ident(p.schemaname) || '.' || quote_ident(p.tablename) as t,
+           p.policyname as name
+      from pg_policies p
+     where p.schemaname in ('public', 'auth') and ${GAP_WRITER_ROLE}::name = any(p.roles)`;
   for (const r of rules) {
-    const name = `"${r.t.split('.')[1]}_gap_writer"`;
-    const stmt =
-      r.stray || !r.rls
-        ? r.has
-          ? `DROP POLICY ${name} ON ${r.t}`
-          : null
-        : r.has
-          ? null
-          : `CREATE POLICY ${name} ON ${r.t} AS PERMISSIVE FOR ALL TO ${role} USING (true) WITH CHECK (true)`;
-    if (!stmt) continue;
+    const stmt = `DROP POLICY "${r.name.replace(/"/g, '""')}" ON ${r.t}`;
     for (let attempt = 1; ; attempt++) {
       try {
         await withRoleRetry(() =>
@@ -1277,7 +1215,7 @@ const RETRY_CODES = new Set(['55P03', '40P01']);
  */
 export async function syncWriteRoleRules(sql: ReturnType<typeof postgres>): Promise<void> {
   const [ready] = await sql<{ ok: boolean }[]>`
-    select to_regprocedure('public.mantle_write_role_sync_table(text,boolean,text[])') is not null as ok`;
+    select to_regprocedure('public.mantle_write_role_sync_table(text,boolean,text[],text)') is not null as ok`;
   if (!ready?.ok) return;
   const byTable = new Map(ACCESS_MATRIX.map((t) => [t.table, t]));
   const others = await sql<{ t: string }[]>`
@@ -1296,12 +1234,13 @@ export async function syncWriteRoleRules(sql: ReturnType<typeof postgres>): Prom
     const t = byTable.get(table);
     const write = t ? writeRoleWrites(t) : false;
     const args = t ? writeCheckArgs(t) : null;
+    const rule = t ? writeRuleArg(t) : null;
     for (let attempt = 1; ; attempt++) {
       try {
         await withRoleRetry(() =>
           sql.begin(async (tx) => {
             await tx.unsafe(`SET LOCAL lock_timeout = '3s'`);
-            await tx`select mantle_write_role_sync_table(${table}, ${write}, ${args}::text[])`;
+            await tx`select mantle_write_role_sync_table(${table}, ${write}, ${args}::text[], ${rule}::text)`;
             await syncEditChecks(tx, table, t, write);
           }),
         );

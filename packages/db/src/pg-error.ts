@@ -72,9 +72,8 @@ export { HIDDEN_ROWS_PUBLIC as HIDDEN_ROWS_MESSAGE } from '@mantle/std';
  * A privilege the role lacks (42501 "permission denied for ..."): a table,
  * a column, a function, a sequence or a schema it holds no grant on. Never
  * a refusal a check or a row rule decided (those carry their own message).
- * The login write gateway (client.ts, arch A2b2b) notes every one, and
- * runs a write again only for a table of WRITE_ROLE_GAP_TABLES
- * (writeRoleGapTable, access-matrix.ts): any other is a bug, an error.
+ * The login write gateway (client.ts, arch A2b2b) notes every one and
+ * runs nothing again (plan v3 S3): each is a bug, an error.
  */
 export function isPermissionGap(err: unknown): boolean {
   return permissionGapOf(err) !== null;

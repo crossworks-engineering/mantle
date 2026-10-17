@@ -32,6 +32,7 @@ import {
   syncWriteRoleRules,
   writeCheckArgs,
   writeRoleWrites,
+  writeRuleArg,
 } from './access-matrix';
 import { createMigratedScratchDatabase } from './test-support';
 import { withRoleRetry } from './viewer-roles';
@@ -411,6 +412,15 @@ describe.skipIf(!URL)('the write role (arch A2b2a)', () => {
       }
       expect(r).toEqual({ bypass: false, inherit: false, login: false });
     }
+    // Plan v3 S3: no gap table is left, so it holds nothing (the rerun that
+    // ran as it is gone; the role goes in S3 part 2).
+    const [rights] = await sql<{ n: number }[]>`
+      select count(*)::int as n from information_schema.role_table_grants
+       where grantee = 'mantle_gap_writer'`;
+    expect(rights?.n).toBe(0);
+    const rules = await sql<{ t: string }[]>`
+      select tablename as t from pg_policies where 'mantle_gap_writer'::name = any(roles)`;
+    expect(rules.map((r) => r.t)).toEqual([]);
   });
 
   it('every read rule of the workspace role names the write role, and only SELECT rules do', async () => {
@@ -423,7 +433,7 @@ describe.skipIf(!URL)('the write role (arch A2b2a)', () => {
     expect(rows.filter((r) => r.cmd !== 'SELECT').map((r) => r.t)).toEqual([]);
   });
 
-  it('each write table has exactly its three write rules, each the read rule; no other table has one', async () => {
+  it('each write table has exactly its three write rules, each the read rule or its named write rule; no other table has one', async () => {
     const rows = await sql<
       {
         t: string;
@@ -432,13 +442,17 @@ describe.skipIf(!URL)('the write role (arch A2b2a)', () => {
         roles: string[];
         same_qual: boolean;
         same_check: boolean;
+        note: string | null;
       }[]
     >`
       select p.schemaname || '.' || p.tablename as t, p.policyname as name, p.cmd,
              p.roles::text[] as roles,
              p.qual is not distinct from r.qual as same_qual,
-             p.with_check is not distinct from r.qual as same_check
+             p.with_check is not distinct from r.qual as same_check,
+             obj_description(pl.oid, 'pg_policy') as note
         from pg_policies p
+        join pg_policy pl on pl.polname = p.policyname
+             and pl.polrelid = (quote_ident(p.schemaname) || '.' || quote_ident(p.tablename))::regclass
         left join pg_policies r on r.schemaname = p.schemaname and r.tablename = p.tablename
              and r.cmd = 'SELECT' and ${VIEWER}::name = any(r.roles)
        where ${WRITER}::name = any(p.roles) and p.cmd <> 'SELECT'
@@ -447,8 +461,18 @@ describe.skipIf(!URL)('the write role (arch A2b2a)', () => {
       ['delete', 'insert', 'update'].map((op) => `${t}.${t.split('.')[1]}_write_${op}`),
     ).sort();
     expect(rows.map((r) => `${r.t}.${r.name}`)).toEqual(want);
+    const ruled = new Map(ACCESS_MATRIX.map((t) => [t.table, writeRuleArg(t)]));
     for (const r of rows) {
       expect(r.roles, r.name).toEqual([WRITER]);
+      // Plan v3 S3: a named write rule (profiles' own-login) is narrower
+      // than the read rule, and carries its note.
+      const rule = ruled.get(r.t) ?? null;
+      expect([r.note, r.name]).toEqual([rule ? `mantle:write-rule:${rule}` : null, r.name]);
+      if (rule) {
+        if (r.cmd !== 'INSERT') expect([r.same_qual, r.name]).toEqual([false, r.name]);
+        if (r.cmd !== 'DELETE') expect([r.same_check, r.name]).toEqual([false, r.name]);
+        continue;
+      }
       if (r.cmd === 'INSERT') expect([r.same_check, r.name]).toEqual([true, r.name]);
       if (r.cmd === 'UPDATE')
         expect([r.same_qual, r.same_check, r.name]).toEqual([true, true, r.name]);
@@ -462,12 +486,13 @@ describe.skipIf(!URL)('the write role (arch A2b2a)', () => {
     expect(none.map((r) => r.t)).toEqual([]);
   });
 
-  it('the matrix splits the content tables in two: 17 write tables, 9 system only', () => {
+  it('the matrix splits the content tables in two: 19 write tables, 9 system only', () => {
     expect([...WRITE_ROLE_TABLES, ...WRITE_ROLE_SYSTEM_ONLY].sort()).toEqual(
       [...contentTables].sort(),
     );
-    // 12 since A2b2a; A3a moved the Recall tables, shares and node_snapshots.
-    expect(WRITE_ROLE_TABLES).toHaveLength(17);
+    // 12 since A2b2a; A3a moved the Recall tables, shares and node_snapshots;
+    // plan v3 S3 the two gap tables (profiles, app_table_exports).
+    expect(WRITE_ROLE_TABLES).toHaveLength(19);
     expect(WRITE_ROLE_SYSTEM_ONLY).toHaveLength(9);
   });
 

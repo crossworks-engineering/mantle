@@ -68,7 +68,8 @@ function retireStatement(role: string, exists = true): string {
 export const ROLE_CONNECTION_LIMIT: Readonly<Record<PoolRole, number>> = { user: 30, write: 20 };
 
 /** The attributes that make a viewer role a lock (and the gap writer:
- *  access-matrix.ts gapWriterRoleStatement). */
+ *  access-matrix.ts gapWriterRoleStatement; it holds nothing since plan v3
+ *  S3, TODO(plan v3 S3 part 2): goes one release later). */
 export const LOCK_ATTRS = `NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION`;
 
 /** The statements that bring one LOGIN role to its wanted state. Pure, so a

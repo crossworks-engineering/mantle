@@ -118,6 +118,8 @@ const LABELS: Record<string, string> = {
     "hand live workspace ('archived_at is null', isNull(workspaces.archivedAt)) outside workspace-live.ts (down only) (A10 #15)",
   cacheControlFiles:
     'files that set Cache-Control (down only; /api is no-store by default) (A10 #15)',
+  gapTables: 'write-role gap tables (WRITE_ROLE_GAP_TABLES; 0 since plan v3 S3)',
+  dbClientLines: 'lines of packages/db/src/client.ts (down only; plan v3 S5 splits it)',
 };
 
 /** Numbers that may go up without failing: the route counts grow with

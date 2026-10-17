@@ -818,6 +818,20 @@ export function keptNotes(notes, oldPins, now) {
 
 /** Every repo number of plan section 3, plus the per-file maps the lints
  *  pin. */
+/** The write-role gap tables (plan v3 S3): the keys of
+ *  WRITE_ROLE_GAP_TABLES in the access matrix, 0 once the list is gone. */
+function gapTableCount(root) {
+  const text = readFileSync(join(root, 'packages/db/src/access-matrix.ts'), 'utf8');
+  const m = /export const WRITE_ROLE_GAP_TABLES[^=]*=\s*\{([\s\S]*?)\n\};/.exec(text);
+  if (!m) return 0;
+  return [...m[1].matchAll(/^\s{2}['"]?[a-z_][a-z0-9_]*['"]?\s*:/gm)].length;
+}
+
+/** The lines of one file (plan v3 section 6: dbClientLines). */
+function lineCount(root, path) {
+  return readFileSync(join(root, path), 'utf8').split('\n').length - 1;
+}
+
 export function measure(root) {
   const files = countedFiles(root);
   const slugs = builtinSlugs(root, files);
@@ -1085,6 +1099,8 @@ export function measure(root) {
       consoleCalls: sum(consoleByFile),
       archivedAtIsNull: sum(archivedByFile),
       cacheControlFiles: cacheControlFiles.length,
+      gapTables: gapTableCount(root),
+      dbClientLines: lineCount(root, 'packages/db/src/client.ts'),
     },
     perFile: {
       asSystem,
