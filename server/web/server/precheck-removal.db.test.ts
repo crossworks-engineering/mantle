@@ -1622,6 +1622,30 @@ describe.skipIf(!DB_URL)(
       }
     }, 120_000);
 
+    it('legacy: an item the scope does not read answers as a random id, for every one of the 29', async () => {
+      const legacy = FAMILIES.find((f0) => f0.name === 'legacy')!.tools;
+      for (const tool of legacy) {
+        for (const who of tool.who) {
+          // An Admin-only kind: the member never reads it.
+          if (tool.adminKind && who === 'admin') continue;
+          const it0 = await tool.make(who, 'noRead');
+          const hidden = await viaMcp(who, tool.slug, tool.input(it0));
+          const random = randomUUID();
+          const swap = (v: unknown): unknown =>
+            v === it0.id ? random : Array.isArray(v) ? v.map(swap) : v;
+          const input = Object.fromEntries(
+            Object.entries(tool.input(it0)).map(([k, v]) => [k, swap(v)]),
+          );
+          const missing = await viaMcp(who, tool.slug, input);
+          const name = `${tool.slug} ${who}`;
+          recorded.push(`legacy hidden-vs-random ${name}: ${plain(hidden.text).slice(0, 120)}`);
+          expect(hidden.ok, `${name}: ${hidden.text}`).toBe(false);
+          expect(missing.ok, `${name}: ${missing.text}`).toBe(false);
+          expect(plain(hidden.text), name).toBe(plain(missing.text));
+        }
+      }
+    }, 300_000);
+
     it('tree_item_move: a list with one item the scope may not move moves none of them', async () => {
       for (const who of BOTH) {
         for (const precheck of [true, false]) {
