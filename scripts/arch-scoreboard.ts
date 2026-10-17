@@ -55,6 +55,27 @@ const LABELS: Record<string, string> = {
     'tool item pre-checks: policy `items` entries (A5 step 6b; exit 0, see docs/actors.md "Pre-check deletion")',
   itemPrecheckRoutes:
     'HTTP item pre-check list entries in route-scope.ts (A4 step 4; exit 0, see docs/actors.md "Pre-check deletion")',
+  requestSystemExits: 'request paths that leave the login scope for the system pool (all reasons)',
+  requestSystemExits_area: "request system exits, reason 'area' (an Admin area row)",
+  requestSystemExits_loginSelf: "request system exits, reason 'login-self' (the login's own row)",
+  requestSystemExits_adminWrite:
+    "request system exits, reason 'admin-write' (an Admin user's write)",
+  requestSystemExits_other:
+    'request system exits with any other reason, or one the count cannot read',
+  scopeHoldsAdminCalls: 'scopeHoldsAdmin calls (an Admin ask in code; done: the gates only)',
+  sqlAreaRules:
+    "SQL that decides an Admin area or user itself: functions reading the 'areas' limits, and SQL text in code",
+  workspaceTableRawWrites:
+    'raw writes to the four workspace tables in code (done: 0, definers only)',
+  workspaceTableWriterFns:
+    'SQL functions the migrations leave that write the four workspace tables (= the live catalog)',
+  setAssistantCopies: 'copies of "set the assistant of a workspace" (code and SQL)',
+  legacyPrecheckUndated: 'legacy tool item pre-checks with no owner or no end date',
+  a8Uncovered:
+    'A8 gaps: registry kinds outside the grid and not exempt, tool policies with no matrix declaration',
+  a8Exempt: 'A8 exemptions (A8_EXEMPT entries; capped at the pin, a new one needs review)',
+  rawWriteAllowlist:
+    'raw write SQL allowlist entries (eslint-rules/raw-write-allowlist.mjs; capped at the pin)',
   routeBodyReadFiles: 'route files reading the request body directly (A10 part 2)',
   routeBodyReadAllowed: 'route files named to read the body another way (A10 part 2)',
   routeErrorTextFiles: "route files putting a caught error's text in a reply (A10 part 2)",

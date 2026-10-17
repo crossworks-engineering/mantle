@@ -48,7 +48,11 @@
  *    locks, hand TTL age checks and Cache-Control values not from the table,
  *    outside and inside the named lists; console calls outside scripts, a
  *    hand live workspace and the files that set Cache-Control, pinned
- *    down only (std-helpers.mjs).
+ *    down only (std-helpers.mjs);
+ *  - the rights counts (rights-counts.mjs): request system exits by reason,
+ *    Admin asks and area rules in code and SQL, workspace table writers,
+ *    the assistant copies, undated legacy pre-checks, A8 coverage and the
+ *    capped exemption lists.
  *
  * Comment lines never count. Product files only: packages/, server/,
  * scripts/; no tests, migrations, archive or build folders (a route segment
@@ -86,6 +90,7 @@ import { REINDEX_ALLOW, handReindex } from './no-hand-reindex.mjs';
 import { asSystemExits, systemDbUses } from './as-system-exits.mjs';
 import { nameListSites } from './name-lists.mjs';
 import { checkDocQuotes } from './docs-quotes.mjs';
+import { rightsCounts } from './rights-counts.mjs';
 
 /** Whether the counts read `path` (repo-relative). */
 export function isCounted(path) {
@@ -196,7 +201,7 @@ export function stripComments(text) {
 
 /** The text from the bracket at `open` to its match (inclusive), skipping
  *  strings; the rest of the text when it never closes. */
-function balanced(text, open) {
+export function balanced(text, open) {
   const pairs = { '(': ')', '[': ']', '{': '}' };
   const stack = [];
   let quote = null;
@@ -1016,6 +1021,8 @@ export function measure(root) {
   const exitsByFile = exits.byFile;
   const routePrechecks = itemPrecheckRouteEntries(root);
   const docQuotes = checkDocQuotes(root);
+  // Who decides rights in code, and the lists that excuse it (rights-counts.mjs).
+  const rights = rightsCounts(root, texts);
   return {
     numbers: {
       asSystemSites: sum(asSystem, 'count'),
@@ -1048,6 +1055,7 @@ export function measure(root) {
       readPathWrites: readPathWrites(root).length,
       itemPrecheckTools: sum(itemPrechecks),
       itemPrecheckRoutes: sum(routePrechecks),
+      ...rights.numbers,
       bareFetchSites: sum(bareFetch),
       routeBodyReadFiles: bodyReadFiles.length,
       routeBodyReadAllowed: bodyReadAllowed.length,
@@ -1105,6 +1113,7 @@ export function measure(root) {
       rawAcl,
       itemPrechecks,
       routePrechecks,
+      rights: rights.detail,
       toolLists,
       routeLists,
       handKinds,
