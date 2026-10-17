@@ -3,8 +3,8 @@
  * binds no actor, so the DBOS dispatch loop carries none: each workflow names
  * its own here, at its entry, and runs inside it. A workflow registered
  * without this has no actor, and its statements show as misses
- * (docs/actors.md; eslint-rules/process-entries.test.ts pins that every
- * workflow file uses it).
+ * (docs/process-inventory.md; eslint-rules/process-entries.test.ts pins that
+ * every workflow file uses it).
  */
 import { DBOS } from '@dbos-inc/dbos-sdk';
 import { runAsActor, systemActor, type Actor } from '@mantle/db';

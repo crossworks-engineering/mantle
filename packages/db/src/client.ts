@@ -3129,8 +3129,9 @@ export async function viewerScopeFor(actsFor: ViewerFor): Promise<WorkspaceScope
 export const db = new Proxy({} as PostgresJsDatabase<typeof schema>, {
   get(_t, prop) {
     if (STATEMENT_PROPS.has(prop)) checkActorBound(`db.${String(prop)}`);
-    // A request scope (W6a, plan 2.3): writes stay on the system pool with
-    // their rule in the statement; reads run in the scope. A transaction is
+    // A request scope (W6a, plan 2.3): a write leaves the scope's read pool
+    // (a login's to the write role while it may route, else the system
+    // pool); reads run in the scope. A transaction is
     // a write in a mutating request, and stays in the scope in a read
     // request (a search step that needs one transaction). A raw execute
     // always runs in the scope (fix round 1, M3): a raw write says so with

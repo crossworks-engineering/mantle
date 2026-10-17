@@ -1,7 +1,7 @@
 /**
  * Who a statement runs as (workspaces arch plan v2, section 4 and 20.3;
- * A2a). Every process entry binds its actor once, at its entry (docs/actors.md
- * lists them); everything it awaits carries it. The database learns it as
+ * A2a). Every process entry binds its actor once, at its entry
+ * (docs/process-inventory.md lists them); everything it awaits carries it. The database learns it as
  * mantle.actor and mantle.write_mode, set by mantle_set_actor (migration
  * 0275) on the app's system pool only, from client.ts.
  *

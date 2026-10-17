@@ -39,8 +39,10 @@ export type LimitedRead = 'none' | 'all' | readonly string[];
 /**
  * Who writes it: `content` through `db` (a login's scoped write runs on the
  * write role, where the database checks it; a system actor's on the system
- * pool), `system` through `systemDb` (infrastructure a scoped turn still
- * writes: traces, spills, counters), `admin` only from owner paths.
+ * pool, and so does every write while the actor check is off, and a login's
+ * to the content tables of WRITE_ROLE_SYSTEM_ONLY, which the write role may
+ * not touch), `system` through `systemDb` (infrastructure a scoped turn
+ * still writes: traces, spills, counters), `admin` only from owner paths.
  */
 export type Writer = 'content' | 'system' | 'admin';
 

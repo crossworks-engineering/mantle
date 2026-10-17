@@ -10,7 +10,9 @@
  *    write, an Admin user's too, runs in the login's scope: its writes on
  *    the write role (mantle_write_user) while the actor check is not off,
  *    where the database checks each one. Only the Admin acts below
- *    (ADMIN_ACT_WRITES) run on the system pool.
+ *    (ADMIN_ACT_WRITES) and the item gate's two ADMIN_ACT returns (an Admin
+ *    user's link close, an Admin user's act on a deleted app's trash;
+ *    session.ts) run on the system pool.
  *  - an area (`settings`, `users`, `assistants`, `connectors`, `keys`):
  *    management (plan 2.4). The login must hold the area (requireArea:
  *    the Admin workspace and its limits); the route then runs on the
