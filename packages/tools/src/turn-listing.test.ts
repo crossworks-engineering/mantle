@@ -30,11 +30,11 @@ vi.mock('../../db/src/viewer', async (importOriginal) => {
     currentWorkspaceScope: () => h.scope ?? real.currentWorkspaceScope(),
   };
 });
-/** Every query answers one row, with no database (R0 fix round L2): the
- *  box's edit check is on (`m`), a link's item is no app (no `type`). */
+/** Every query answers one empty row, with no database (R0 fix round L2:
+ *  a link's item is no app). */
 const { noRows } = vi.hoisted(() => {
   const noRows: unknown = new Proxy(() => noRows, {
-    get: (_t, k) => (k === 'then' ? (ok: (v: unknown[]) => void) => ok([{ m: 'on' }]) : noRows),
+    get: (_t, k) => (k === 'then' ? (ok: (v: unknown[]) => void) => ok([{}]) : noRows),
     apply: () => noRows,
   });
   return { noRows };

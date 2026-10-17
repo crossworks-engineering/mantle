@@ -27,10 +27,12 @@
 const P1 = 'P1 below on: a tool edit the database refuses only when on';
 
 /** The surface cells P1 fails (the pairwise pick is stable: a8-grid.ts),
- *  in off and in warn. */
+ *  in off and in warn. `pending turn/readGrant edit task @root` left the
+ *  list in the R0 fix round (L2): a call that waits for approval on an item
+ *  its scope may not change is refused before it is queued, in every mode,
+ *  as the oracle answers. */
 const BELOW_ON_TOOL_EDITS: readonly string[] = [
   'peer login/readGrant edit formula @folder',
-  'pending turn/readGrant edit task @root',
   'recipe turn/readGrant edit formula @root',
   'recipe turn/readGrant edit note @folder',
   'recipe turn/readGrant edit note @root',

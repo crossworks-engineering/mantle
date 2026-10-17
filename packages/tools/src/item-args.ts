@@ -16,7 +16,7 @@
  * answer is not one answer: a list of ids (a move of several items moves
  * those it may), a Recall revision (its own lookup answers it).
  */
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { db, itemWriteRefusalOf, recallMaps, recallRevisions, scopeHoldsAdmin } from '@mantle/db';
 import { currentWorkspaceScope } from '@mantle/db/viewer';
 import { editCheckRefusalError, mapAccessError, UUID_RE } from '@mantle/std';
@@ -110,15 +110,6 @@ export async function resolvedArgTargets(
   return out;
 }
 
-/** Whether the box's edit check is on (mantle_edit_check_mode, 0280: any
- *  role may read it). */
-async function editCheckOn(): Promise<boolean> {
-  const rows = (await db.execute(
-    sql`select "public"."mantle_edit_check_mode"() as m`,
-  )) as unknown as { m: string }[];
-  return rows[0]?.m === 'on';
-}
-
 /** The run's words for an item check's refusal (the one mapper's tool text
  *  for the edit check: "not found" for an item the scope does not read,
  *  whether it exists or not; the item-workspace words for one it reads but
@@ -144,8 +135,10 @@ function runAnswer(detail: 'no_read' | 'no_edit'): string {
  *    own (`refused`: a link's), as the run answers it.
  *
  * A list argument and a Recall revision are not asked (the module comment).
- * Outside a workspace scope nothing is asked, nor an item while the box's
- * edit check is not on (warn and off make the write, as a miss).
+ * Outside a workspace scope nothing is asked. Asked in every check mode, as
+ * main's item pre-check was: on a box whose edit check is warn or off (an
+ * operator's lowering) the run would make such a write and log a miss; the
+ * queue refuses it, as main did and as the A8 oracle answers.
  */
 export async function queueItemRefusal(
   args: readonly ToolItemArg[],
@@ -171,9 +164,7 @@ export async function queueItemRefusal(
     }
     (arg.least === 'read' ? read : change).push({ id, arg });
   }
-  // The verdicts are the edit check's: a box whose check is warn or off
-  // makes the write a scope may not (a miss, logged), so nothing is asked.
-  if (change.length + read.length === 0 || !(await editCheckOn())) return null;
+  if (change.length + read.length === 0) return null;
   const answer = (n: Named, detail: 'no_read' | 'no_edit') =>
     n.arg.refused ? n.arg.refused(detail, n.id) : runAnswer(detail);
   // The library's own read (itemWriteRefusalOf, as assertItemRight asks it).

@@ -839,7 +839,9 @@ describe.skipIf(!DB_URL)('the pre-check removal, part 2: the HTTP entries', () =
       removed: true,
       routes: [
         ...nodeRoutes('/api/pages', page()),
-        nodeRoutes('/api/v1/pages', page(), { viaKey: true })[0]!,
+        // A key's PATCH asks the page's edit first (R0 fix round L1), in
+        // every mode, as main's item gate did: warn makes no write.
+        { ...nodeRoutes('/api/v1/pages', page(), { viaKey: true })[0]!, warnMade: false },
         {
           name: 'PUT /api/pages/:id/draft',
           need: 'edit',
