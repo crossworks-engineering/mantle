@@ -21,6 +21,7 @@
  */
 import { NextResponse } from '@/server/http-compat';
 import { assertItemRight, resolveSingleOwnerId } from '@mantle/db';
+import { editRefusalDetail } from '@mantle/std';
 import { othersCanRead } from '@mantle/mcp-core/shared-item';
 import { hiddenFromKey, isApiKeyRequest } from '@/lib/api-v1';
 import { ownerCallerAtRead } from '@/lib/auth';
@@ -42,7 +43,15 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   // the one mapper as the page route's), before the rules below read the
   // page, so a shared page and one that is not answer alike.
   await ownerCallerAtRead();
-  await assertItemRight(id, 'edit');
+  try {
+    await assertItemRight(id, 'edit');
+  } catch (err) {
+    // One it does not read: the 404 of none, as the page route answers it.
+    if (editRefusalDetail(err) === 'no_read') {
+      return NextResponse.json({ error: 'not found' }, { status: 404 });
+    }
+    throw err;
+  }
   const raw = await req.text();
   let body: unknown = null;
   try {

@@ -48,8 +48,18 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 const DB_URL = process.env.MANTLE_TEST_DATABASE_URL;
 
 /** Was: the TypeScript item pre-check, bypassed while `on` is false. None
- *  is left since the pre-check removal Part 3: a no-op switch now. */
+ *  is left since the pre-check removal Part 3. Since the R0 fix round (L2)
+ *  it bypasses the queue-time item check (item-args.ts queueItemRefusal),
+ *  so a queued call meets only the database, as each cell says. */
 const pre = vi.hoisted(() => ({ on: true }));
+vi.mock('../../../packages/tools/src/item-args', async (importOriginal) => {
+  const real = await importOriginal<typeof import('../../../packages/tools/src/item-args')>();
+  return {
+    ...real,
+    queueItemRefusal: (...args: Parameters<typeof real.queueItemRefusal>) =>
+      pre.on ? real.queueItemRefusal(...args) : Promise.resolve(null),
+  };
+});
 
 const VEC = Array.from({ length: 768 }, (_, i) => (i === 0 ? 1 : 0));
 vi.mock('@mantle/embeddings', async (importOriginal) => ({
