@@ -567,13 +567,7 @@ describe.skipIf(!URL)('W7a: the Admin assistant and the Admin MCP run in a scope
     const ITEM_ARGS = ['id', 'node_id', 'page_id', 'table_id', 'file_id', 'folder_id'];
     const databaseChecked = (slug: string): string | null => {
       const def = t.getBuiltin(slug);
-      if (
-        !def ||
-        def.readOnly ||
-        def.policy.effect !== 'write' ||
-        def.policy.legacyItemPrecheck?.need
-      )
-        return null;
+      if (!def || def.readOnly || def.policy.effect !== 'write') return null;
       const pre = (def.preconditions ?? []).find((x) => x.kind === 'node_exists');
       const props = Object.keys(
         ((def.inputSchema as { properties?: Record<string, unknown> }).properties ?? {}) as object,
@@ -584,9 +578,6 @@ describe.skipIf(!URL)('W7a: the Admin assistant and the Admin MCP run in a scope
     /** What a write names: its item pre-check's targets, or the argument
      *  that names the item of one the database checks. */
     const targetsOf = (slug: string): readonly { param: string; need: string }[] | null => {
-      const items = t.builtinItems(slug);
-      if (Array.isArray(items)) return items;
-      if (typeof items === 'function') return null;
       const param = databaseChecked(slug);
       return param ? [{ param, need: 'edit' }] : null;
     };
@@ -612,10 +603,9 @@ describe.skipIf(!URL)('W7a: the Admin assistant and the Admin MCP run in a scope
       // it would change the item, in its own words or an input error the
       // tool answers first, or does nothing: the item's state, compared
       // below, is the proof.
-      if (!t.builtinItems(slug)) return;
-      if (ok || !want.test(text)) {
-        notRefused.push(`${where} ${slug}: ${ok ? 'ran' : text.slice(0, 160)}`);
-      }
+      // Since the pre-check removal Part 3 every write is such a one: no
+      // tool item pre-check is left to answer in its words first.
+      void [where, slug, ok, text, want, notRefused];
     };
     // Read only: the item rights refusal. Private: not found (its
     // precondition, in the scope) or not in the workspaces.

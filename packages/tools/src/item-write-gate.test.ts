@@ -23,7 +23,6 @@ vi.mock('./admin-gate', async (importOriginal) => ({
 import { gateLists, type GateCaller } from '@mantle/db';
 // The gate's narrowers and the `tool` source (gateLists reads them).
 import './gate-narrowers';
-import { builtinItems } from './item-write-gate';
 import { getBuiltin, listBuiltins } from './registry';
 import { builtinToolGatePolicy, builtinToolRef } from './tool-gate-policy';
 import { policyAdminOnly, policyArea, policySystemWhole } from './tool-policy';
@@ -36,12 +35,6 @@ const areaOf = (slug: string) => {
   const def = getBuiltin(slug);
   return def ? policyArea(def.policy) : null;
 };
-/** The builtins whose write names items, with their targets. */
-const itemWrites = () =>
-  listBuiltins().flatMap((d) =>
-    d.policy.legacyItemPrecheck?.need ? [[d.slug, d.policy.legacyItemPrecheck?.need] as const] : [],
-  );
-
 /** Writes whose node precondition names an item they only READ (a source
  *  they copy, convert, import, show or send), or a folder they create in
  *  (the database's create check). */
@@ -127,6 +120,10 @@ const SNAPSHOTS = 'the node_snapshots edit check (0280)';
 const APP_CODE =
   "the apps edit check (0280, D4): manage of the app's home; lockAppRow asks it first (F4 round 3, M3)";
 const SUBTREE = 'the write check (0278); a rename, mantle_subtree_rewrite (0282)';
+
+/** A library's own item check (assertItemRight), asked before anything is
+ *  written (pre-check removal Part 3). */
+const lib = (where: string) => `the library asks it first (assertItemRight): ${where}`;
 
 const entry = (param: string | null, need: DatabaseChecked['need'], check: string) =>
   Object.freeze({ param, need, check });
@@ -220,18 +217,51 @@ const DATABASE_CHECKED: ReadonlyMap<string, DatabaseChecked> = new Map([
   ),
   ['app_snapshot_create', entry('id', 'edit', SNAPSHOTS)],
   ['app_snapshot_delete', entry('id', 'edit', SNAPSHOTS)],
+  // Part 3: the last 29. Each library asks the item first (assertItemRight,
+  // the one gateway), before any side effect, in every mode; the database's
+  // check backs it where there is one.
+  ['app_build', entry('id', 'manage', lib('buildAndStageApp, setDraftBuild (F4 round 3)'))],
+  ['app_db_seed', entry('id', 'edit', lib('appDbSeed'))],
+  ['app_db_schema_set', entry('id', 'manage', lib('the handler, before the trial and snapshot'))],
+  ['app_delete', entry('id', 'manage', lib('deleteApp, before the pre_delete snapshot'))],
+  ['app_snapshot_restore', entry('id', 'manage', lib('restoreAppSnapshot (data alone: edit)'))],
+  ['app_update', entry('id', 'edit', lib('updateAppMeta (a description: manage)'))],
+  ['file_delete', entry('file_id', 'manage', lib('deleteFileWithDerived; else the delete check'))],
+  ['journal_resolve_gap', entry('id', 'edit', lib('resolveGapEntry, before the answer'))],
+  ['page_split', entry('page_id', 'edit', lib('splitPage, before the children'))],
+  ['page_extract_section', entry('page_id', 'edit', lib('extractSectionToPage'))],
+  ['tree_folder_delete', entry('folder_id', 'manage', lib('deleteTreeFolder, before the lift'))],
+  ['tree_item_move', entry('item_ids', 'manage', lib('moveTreeItems: the whole list first'))],
+  ['app_table_export_set', entry('id', 'edit', lib('createAppTableExport'))],
+  ['app_table_export_remove', entry('id', 'edit', lib('removeAppTableExport'))],
+  ['content_supersede', entry('node_id', 'edit', lib('assertMaySupersede (supersede.ts)'))],
+  ['app_duplicate', entry('id', 'read', lib('assertMayCopyApp: read; the data an edit'))],
+  ['app_export', entry('id', 'read', lib('assertMayCopyApp: read; the data an edit'))],
+  ['app_publish', entry('id', 'manage', lib('lockAppRow (F4 round 3, M3)'))],
+  ['node_share', entry('id', 'edit', lib("assertMayLink: the login's and the scope's"))],
+  ['page_share', entry('id', 'edit', lib("assertMayLink: the login's and the scope's"))],
+  ...(
+    [
+      'page_block_append',
+      'page_block_delete',
+      'page_block_insert_after',
+      'page_block_insert_before',
+      'page_block_update',
+      'page_blocks_apply',
+    ] as const
+  ).map((slug) => [slug, entry('page_id', 'edit', lib('saveDraft, before the rev'))] as const),
+  ['page_from_file', entry('file_id', 'edit', lib('assertMaySupersede, before the page'))],
+  ['page_from_note', entry('note_id', 'edit', lib('assertMaySupersede, before the page'))],
+  ['page_from_notes', entry('note_ids', 'edit', lib('assertMaySupersede, before the page'))],
 ]);
 
 describe('the writes the database checks (the pre-check removal)', () => {
   it('each is a builtin that declares no items now, its item argument one of its own', () => {
-    expect(DATABASE_CHECKED.size).toBe(69);
+    // 72 entries went in Part 1 (69 builtins), the last 29 in Part 3.
+    expect(DATABASE_CHECKED.size).toBe(98);
     for (const slug of DATABASE_CHECKED.keys()) {
       const def = getBuiltin(slug);
       expect(def, `${slug} is no builtin now: drop it`).not.toBeNull();
-      expect(
-        def!.policy.legacyItemPrecheck?.need,
-        `${slug} declares its items again: drop it`,
-      ).toBeUndefined();
       const param = DATABASE_CHECKED.get(slug)!.param;
       const props = Object.keys(
         ((def!.inputSchema as { properties?: Record<string, unknown> }).properties ?? {}) as object,
@@ -271,7 +301,7 @@ describe('every write a workspace turn reaches declares its items (A8 fix round 
     );
     expect(reached.length).toBeGreaterThan(50);
     const missing = reached
-      .filter((d) => !d.policy.legacyItemPrecheck?.need && !d.policy.creates && !d.policy.createsIn)
+      .filter((d) => !d.policy.creates && !d.policy.createsIn)
       .map((d) => d.slug)
       .filter((slug) => !WORKSPACE_TURN_NO_ITEMS.has(slug) && !DATABASE_CHECKED.has(slug));
     expect(missing).toEqual([]);
@@ -279,10 +309,7 @@ describe('every write a workspace turn reaches declares its items (A8 fix round 
     for (const slug of WORKSPACE_TURN_NO_ITEMS.keys()) {
       const def = getBuiltin(slug);
       expect(def, `${slug} is no builtin now: drop it`).not.toBeNull();
-      expect(
-        !!def!.policy.legacyItemPrecheck?.need || !!def!.policy.creates,
-        `${slug} declares now: drop it`,
-      ).toBe(false);
+      expect(!!def!.policy.creates, `${slug} declares now: drop it`).toBe(false);
     }
   });
 });
@@ -292,7 +319,6 @@ describe('the Admin gate lists (W7a fix round 1)', () => {
     for (const def of systemWhole()) {
       const slug = def.slug;
       expect(areaOf(slug), slug).not.toBeNull();
-      expect(builtinItems(slug), slug).toBeUndefined();
       // A contact is an Admin-only kind: a scope that passed the area check
       // holds Admin and reads every contact, so its precondition reads
       // nothing more on the system pool.
@@ -357,49 +383,18 @@ describe('the Admin gate lists (W7a fix round 1)', () => {
     expect(lists(true, ['settings'])).toBe(true);
   });
 
-  it('every item write target names a real builtin and one of its arguments', () => {
-    for (const [slug, targets] of itemWrites()) {
-      const def = getBuiltin(slug);
-      expect(def, slug).not.toBeNull();
-      if (typeof targets === 'function') continue;
-      const props = Object.keys(
-        ((def!.inputSchema as { properties?: Record<string, unknown> }).properties ?? {}) as object,
-      );
-      for (const t of targets) expect(props, `${slug}.${t.param}`).toContain(t.param);
-    }
-  });
-
   it('every write that declares a node precondition on an item is checked or reads it', () => {
     const missing = listBuiltins()
       .filter((d) => !d.readOnly)
       .filter((d) => (d.preconditions ?? []).some((p) => p.kind === 'node_exists'))
       .map((d) => d.slug)
-      .filter(
-        (slug) => !builtinItems(slug) && !READS_ITS_ITEM.has(slug) && !DATABASE_CHECKED.has(slug),
-      );
+      .filter((slug) => !READS_ITS_ITEM.has(slug) && !DATABASE_CHECKED.has(slug));
     expect(missing).toEqual([]);
-  });
-
-  it('a conversion retires its source unless supersede_source is false (N2)', async () => {
-    const cases: Array<[string, Record<string, unknown>, string[]]> = [
-      ['page_from_note', { note_id: 'n1' }, ['n1']],
-      ['page_from_file', { file_id: 'f1' }, ['f1']],
-      ['page_from_notes', { note_ids: ['n1', 'n2'] }, ['n1', 'n2']],
-      ['page_from_note', { note_id: 'n1', supersede_source: true }, ['n1']],
-    ];
-    for (const [slug, input, ids] of cases) {
-      const resolve = builtinItems(slug) as unknown as (
-        i: Record<string, unknown>,
-        o: string,
-      ) => Promise<{ ids: string[]; need: string }[]>;
-      expect(await resolve(input, 'o'), slug).toEqual([{ ids, need: 'edit' }]);
-      expect(await resolve({ ...input, supersede_source: false }, 'o'), slug).toEqual([]);
-    }
   });
 
   it('every write with an id argument is on the item write list or says why not', () => {
     const missing = listBuiltins()
-      .filter((d) => !d.readOnly && !d.policy.legacyItemPrecheck?.need)
+      .filter((d) => !d.readOnly)
       .filter((d) =>
         Object.keys(
           ((d.inputSchema as { properties?: Record<string, unknown> }).properties ?? {}) as object,
@@ -414,28 +409,8 @@ describe('the Admin gate lists (W7a fix round 1)', () => {
   });
 
   it('a link needs edit to open (A0); the handler and the database close one', () => {
-    for (const slug of ['page_share', 'node_share']) {
-      expect(builtinItems(slug), slug).toEqual([{ param: 'id', need: 'edit' }]);
-    }
-    for (const slug of ['page_unshare', 'node_unshare']) {
-      expect(builtinItems(slug), slug).toBeUndefined();
-      expect(DATABASE_CHECKED.has(slug), slug).toBe(true);
-    }
-  });
-
-  it('a copy of an app with its data needs an edit; the code alone a read (M3)', async () => {
-    for (const slug of ['app_duplicate', 'app_export']) {
-      const resolve = builtinItems(slug) as unknown as (
-        i: Record<string, unknown>,
-        o: string,
-      ) => Promise<{ ids: string[]; need: string }[]>;
-      expect(typeof resolve, slug).toBe('function');
-      expect(await resolve({ id: 'not-a-uuid' }, 'o'), slug).toEqual([
-        { ids: ['not-a-uuid'], need: 'edit' },
-      ]);
-      expect(await resolve({ id: 'a1', with_data: false }, 'o'), slug).toEqual([
-        { ids: ['a1'], need: 'read' },
-      ]);
+    for (const slug of ['page_share', 'node_share', 'page_unshare', 'node_unshare']) {
+      expect(DATABASE_CHECKED.get(slug)?.need, slug).toBe('edit');
     }
   });
 });

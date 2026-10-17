@@ -18,7 +18,6 @@ import { describe, expect, it } from 'vitest';
 import {
   LOGIN_APP_DATA_TOOLS,
   MCP_SURFACE_POLICIES,
-  builtinItems,
   builtinPolicy,
   listBuiltins,
   memberAppRefusedName,
@@ -375,42 +374,6 @@ const AREAS: Record<string, string> = {
   worker_group_list: 'assistants',
 };
 
-/** ITEM_WRITE_TARGETS: each slug's targets (the argument and what the
- *  write needs of it), or 'resolver' for one worked out from the input
- *  (its behaviour is pinned below). The 29 entries the pre-check removal
- *  kept (docs/actors.md, "Pre-check deletion"). */
-const ITEMS: Record<string, readonly { param: string; need: string }[] | 'resolver'> = {
-  app_build: [{ param: 'id', need: 'manage' }],
-  app_db_schema_set: [{ param: 'id', need: 'manage' }],
-  app_db_seed: [{ param: 'id', need: 'edit' }],
-  app_delete: [{ param: 'id', need: 'manage' }],
-  app_duplicate: 'resolver',
-  app_export: 'resolver',
-  app_publish: [{ param: 'id', need: 'manage' }],
-  app_snapshot_restore: 'resolver',
-  app_table_export_remove: [{ param: 'id', need: 'edit' }],
-  app_table_export_set: [{ param: 'id', need: 'edit' }],
-  app_update: [{ param: 'id', need: 'edit' }],
-  content_supersede: [{ param: 'node_id', need: 'edit' }],
-  file_delete: [{ param: 'file_id', need: 'manage' }],
-  journal_resolve_gap: [{ param: 'id', need: 'edit' }],
-  node_share: [{ param: 'id', need: 'edit' }],
-  page_block_append: [{ param: 'page_id', need: 'edit' }],
-  page_block_delete: [{ param: 'page_id', need: 'edit' }],
-  page_block_insert_after: [{ param: 'page_id', need: 'edit' }],
-  page_block_insert_before: [{ param: 'page_id', need: 'edit' }],
-  page_block_update: [{ param: 'page_id', need: 'edit' }],
-  page_blocks_apply: [{ param: 'page_id', need: 'edit' }],
-  page_extract_section: [{ param: 'page_id', need: 'edit' }],
-  page_from_file: 'resolver',
-  page_from_note: 'resolver',
-  page_from_notes: 'resolver',
-  page_share: [{ param: 'id', need: 'edit' }],
-  page_split: [{ param: 'page_id', need: 'edit' }],
-  tree_folder_delete: [{ param: 'folder_id', need: 'manage' }],
-  tree_item_move: [{ param: 'item_ids', need: 'manage' }],
-};
-
 const sorted = (xs: Iterable<string>) => [...xs].sort();
 
 describe('every @mantle/tools access list equals its literal (A5 step 1)', () => {
@@ -454,89 +417,23 @@ describe('every @mantle/tools access list equals its literal (A5 step 1)', () =>
     ).toEqual(AREAS);
   });
 
-  it("ITEM_WRITE_TARGETS: the slugs and each one's targets", () => {
-    const now = Object.fromEntries(
-      listBuiltins().flatMap((d) => {
-        const v = d.policy.legacyItemPrecheck?.need;
-        return v ? [[d.slug, typeof v === 'function' ? 'resolver' : v] as const] : [];
-      }),
-    );
-    expect(now).toEqual(ITEMS);
-  });
-
-  it('ITEM_WRITE_TARGETS: the scoreboard counts every policy items value (A5 step 6b pin)', async () => {
-    // The static counter (eslint-rules/arch-counts.mjs, itemPrecheckTools)
-    // must see what the policies hold: a miss would read as a deletion.
+  it('ITEM_WRITE_TARGETS: none is left, and the scoreboard counts 0 (A5 step 6b pin)', async () => {
+    // The pre-check removal took the last 29 tool item pre-checks in Part 3
+    // (docs/actors.md): no policy declares items, and the static counter
+    // (eslint-rules/arch-counts.mjs, itemPrecheckTools, pinned at 0) would
+    // see one that came back in any of its old forms.
+    const policies = [
+      ...listBuiltins().map((d) => d.policy),
+      ...Object.values(MCP_SURFACE_POLICIES),
+    ];
+    expect(policies.filter((p) => 'items' in p || 'legacyItemPrecheck' in p)).toEqual([]);
     // @ts-expect-error: plain-JS module, no types shipped.
     const { measure } = await import('../../../eslint-rules/arch-counts.mjs');
     const root = fileURLToPath(new URL('../../..', import.meta.url));
-    const builtins = listBuiltins().filter((d) => d.policy.legacyItemPrecheck?.need).length;
-    const mcp = Object.values(MCP_SURFACE_POLICIES).filter((p) => p.legacyItemPrecheck).length;
-    expect(builtins).toBe(Object.keys(ITEMS).length);
     expect((measure(root) as { numbers: Record<string, number> }).numbers.itemPrecheckTools).toBe(
-      builtins + mcp,
+      0,
     );
   }, 60_000);
-
-  /** A resolver's targets for `input` (no database: see each probe). */
-  const resolve = (slug: string, input: Record<string, unknown>) => {
-    const r = builtinItems(slug);
-    if (typeof r !== 'function') throw new Error(`${slug} has no resolver`);
-    return r(input, 'owner-1');
-  };
-
-  it('ITEM_WRITE_TARGETS: what each resolver works out', async () => {
-    // A conversion retires its source unless told not to.
-    expect(await resolve('page_from_note', { note_id: 'n' })).toEqual([
-      { ids: ['n'], need: 'edit' },
-    ]);
-    expect(await resolve('page_from_note', { note_id: 'n', supersede_source: false })).toEqual([]);
-    expect(await resolve('page_from_file', { file_id: 'f' })).toEqual([
-      { ids: ['f'], need: 'edit' },
-    ]);
-    expect(await resolve('page_from_file', { file_id: 'f', supersede_source: false })).toEqual([]);
-    expect(await resolve('page_from_notes', { note_ids: ['a', 1, 'b'] })).toEqual([
-      { ids: ['a', 'b'], need: 'edit' },
-    ]);
-    expect(await resolve('page_from_notes', { note_ids: ['a'], supersede_source: false })).toEqual(
-      [],
-    );
-    // A copy of an app: the code alone needs a read; with its data, an
-    // app this probe cannot look up (no uuid) needs the edit.
-    for (const slug of ['app_duplicate', 'app_export']) {
-      expect(await resolve(slug, {})).toEqual([]);
-      expect(await resolve(slug, { id: 'a', with_data: false })).toEqual([
-        { ids: ['a'], need: 'read' },
-      ]);
-      expect(await resolve(slug, { id: 'a' })).toEqual([{ ids: ['a'], need: 'edit' }]);
-    }
-    // An app restore (F4 fix round 3, M3): the code is the app's
-    // Moderators' (code, full), the data alone an editor's.
-    expect(await resolve('app_snapshot_restore', { id: 'a', mode: 'code' })).toEqual([
-      { ids: ['a'], need: 'manage' },
-    ]);
-    expect(await resolve('app_snapshot_restore', { id: 'a', mode: 'full' })).toEqual([
-      { ids: ['a'], need: 'manage' },
-    ]);
-    expect(await resolve('app_snapshot_restore', { id: 'a', mode: 'data' })).toEqual([
-      { ids: ['a'], need: 'edit' },
-    ]);
-    expect(await resolve('app_snapshot_restore', {})).toEqual([]);
-    // Every resolver is probed above.
-    const probed = new Set([
-      'page_from_note',
-      'page_from_file',
-      'page_from_notes',
-      'app_duplicate',
-      'app_export',
-      'app_snapshot_restore',
-    ]);
-    expect(
-      Object.keys(ITEMS)
-        .filter((k) => ITEMS[k] === 'resolver')
-        .sort(),
-    ).toEqual([...probed].sort());
-  });
 
   it('isLoweringCall: which calls lower an item to client or public', () => {
     expect(isLoweringCall('access_set', { level: ' Client ' })).toBe(true);

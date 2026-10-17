@@ -203,17 +203,6 @@ describe('the Admin step equals adminToolGate on the turn path', () => {
     }
     expect([...differ].sort()).toEqual([...ADMIN_KIND_CREATE_TOOL_SLUGS].sort());
   });
-
-  it('every tool the item pre-check reads has a gate policy (A5 hangs the check on it)', () => {
-    const caller = turnCaller({ kind: 'assistant', loginId: LOGIN, ws: [W1], modWs: [W1] }, null);
-    for (const slug of BUILTIN_TOOLS.filter((d) => d.policy.legacyItemPrecheck?.need).map(
-      (d) => d.slug,
-    )) {
-      expect(gateCheck(caller, { kind: 'mcp-tool', name: slug })?.kind, slug).not.toBe(
-        'unclassified',
-      );
-    }
-  });
 });
 
 type Step = 'read' | 'write';

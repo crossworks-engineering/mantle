@@ -45,41 +45,6 @@ export type ToolScope =
    *  (policyAdminOnly says so; the area step asks Admin anyway). */
   | Readonly<{ area: ScopeArea; systemWhole?: true; adminOnly?: true }>;
 
-/** One item a write names: the argument holding its id (a list for an
- *  array argument) and what the write needs of it. */
-export type ToolItemTarget = Readonly<{ param: string; need: ItemNeed }>;
-
-/** The items of one call, worked out from its input (a recall map named by
- *  its slug, a move that only sometimes moves). */
-export type ToolItemResolver = (
-  input: Record<string, unknown>,
-  ownerId: string,
-  /** The caller's surface, for a rule that depends on who calls; `queue`:
-   *  asked before a call is queued for approval (A5 step 6a), where a
-   *  reference that names nothing the scope reads is refused. */
-  ctx?: Pick<ToolHandlerContext, 'surface'> & { queue?: boolean },
-) => Promise<{ ids: string[]; need: ItemNeed; unresolved?: string }[]>;
-
-/**
- * Why a kept item pre-check stays (docs/actors.md, "Pre-check deletion",
- * Kept): a side effect lands before the statement the database checks; the
- * database does not check the write; the write needs a read the database
- * does not ask; or the answer without it is worse (an oracle, a wrong
- * success, a half-made call).
- */
-export type LegacyPrecheckReason =
-  'side-effect-before-check' | 'db-does-not-check' | 'read-not-asked' | 'answer-worse';
-
-/**
- * DO NOT ADD. New tools rely on the database checks; see docs/actors.md
- * ("Pre-check deletion"). A kept TypeScript item pre-check: what it asks,
- * and why it is not gone yet.
- */
-export type LegacyItemPrecheck = Readonly<{
-  need: readonly ToolItemTarget[] | ToolItemResolver;
-  reason: LegacyPrecheckReason;
-}>;
-
 /** What a tool reaches outside the database. */
 export type ToolOutside = Readonly<{
   /** How it reaches out. */
@@ -138,15 +103,6 @@ export type ToolPolicy = Readonly<{
    *  the queue-time check asks the deepest folder of the path the scope
    *  reads, not the path (A5 step 6a fix round 1, M1). */
   makesFolders?: true;
-  /**
-   * DO NOT ADD. New tools rely on the database checks; see docs/actors.md
-   * ("Pre-check deletion"). The TypeScript item pre-check a tool still
-   * carries (the gate's pre-run check, builtinItems): `need`, the items its
-   * write names and what it needs of each; `reason`, why it is not gone yet.
-   * Only the 29 tools of legacy-item-precheck.test.ts's fixed list carry
-   * one, and each goes once its reason does.
-   */
-  legacyItemPrecheck?: LegacyItemPrecheck;
   /** A key or a linked brain bound to the owner calls it only when the
    *  owner named it (the gate's peer narrower). */
   peerRisky?: true;

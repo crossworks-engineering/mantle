@@ -34,7 +34,6 @@ import { errorMessage } from '@mantle/std';
 import { isOwnerSurface, OWNER_ONLY_ERROR } from './surface';
 import { CONFIRM_INPUT, visibilityRefusal } from './visibility-refusal';
 import { movedAppToolWarnings } from './app-tool-level';
-import { manage } from './item-write-gate';
 import { CS } from './client-sourced-rule';
 
 /** The kinds these tools serve: every tree kind the brain serves (the kind
@@ -277,7 +276,6 @@ export const tree_item_move: BuiltinToolDef = {
     effect: 'write',
     spends: 'none',
     scope: 'any',
-    legacyItemPrecheck: { need: [manage('item_ids')], reason: 'side-effect-before-check' },
     clientSourced: CS.onNodes('item_ids', 'folder_id'),
   },
   ownerOnly: true,
@@ -342,7 +340,6 @@ export const tree_folder_delete: BuiltinToolDef = {
     effect: 'write',
     spends: 'none',
     scope: 'any',
-    legacyItemPrecheck: { need: [manage('folder_id')], reason: 'side-effect-before-check' },
     clientSourced: CS.onNodes('folder_id'),
   },
   mcpOnly: true,

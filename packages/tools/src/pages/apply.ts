@@ -22,7 +22,6 @@ import { str } from '../coerce';
 import { notFound } from '../errors';
 import { errorMessage } from '@mantle/std';
 import { DRAFT_REVIEW_HINT, PAGE_ID_PRE, draftConflict, pickEditingBaseline } from './common';
-import { edit } from '../item-write-gate';
 import { CS } from '../client-sourced-rule';
 
 /** Upper bound on ops per batch — big enough for real jobs (the 47-quote
@@ -44,7 +43,6 @@ export const page_blocks_apply: BuiltinToolDef = {
     effect: 'write',
     spends: 'none',
     scope: 'any',
-    legacyItemPrecheck: { need: [edit('page_id')], reason: 'answer-worse' },
     keyArea: 'pages',
     keySharedContent: true,
     clientSourced: CS.onNodes('page_id'),

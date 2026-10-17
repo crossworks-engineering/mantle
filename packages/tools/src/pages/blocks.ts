@@ -30,7 +30,6 @@ import {
   draftConflict,
   pickEditingBaseline,
 } from './common';
-import { edit } from '../item-write-gate';
 import { CS } from '../client-sourced-rule';
 
 export const page_blocks_list: BuiltinToolDef = {
@@ -177,7 +176,6 @@ export const page_block_update: BuiltinToolDef = {
     effect: 'write',
     spends: 'none',
     scope: 'any',
-    legacyItemPrecheck: { need: [edit('page_id')], reason: 'answer-worse' },
     keyArea: 'pages',
     keySharedContent: true,
     clientSourced: CS.onNodes('page_id'),
@@ -272,7 +270,6 @@ export const page_block_insert_after: BuiltinToolDef = {
     effect: 'write',
     spends: 'none',
     scope: 'any',
-    legacyItemPrecheck: { need: [edit('page_id')], reason: 'answer-worse' },
     keyArea: 'pages',
     keySharedContent: true,
     clientSourced: CS.onNodes('page_id'),
@@ -359,7 +356,6 @@ export const page_block_insert_before: BuiltinToolDef = {
     effect: 'write',
     spends: 'none',
     scope: 'any',
-    legacyItemPrecheck: { need: [edit('page_id')], reason: 'answer-worse' },
     keyArea: 'pages',
     keySharedContent: true,
     clientSourced: CS.onNodes('page_id'),
@@ -447,7 +443,6 @@ export const page_block_append: BuiltinToolDef = {
     effect: 'write',
     spends: 'none',
     scope: 'any',
-    legacyItemPrecheck: { need: [edit('page_id')], reason: 'answer-worse' },
     keyArea: 'pages',
     keySharedContent: true,
     clientSourced: CS.onNodes('page_id'),
@@ -532,7 +527,6 @@ export const page_block_delete: BuiltinToolDef = {
     effect: 'write',
     spends: 'none',
     scope: 'any',
-    legacyItemPrecheck: { need: [edit('page_id')], reason: 'answer-worse' },
     keyArea: 'pages',
     clientSourced: CS.onNodes('page_id'),
   },

@@ -26,9 +26,10 @@
  * an allowed one must make its write. Run on the code before the removal,
  * `was` recorded the pre-check's words (docs/actors.md names each changed
  * answer); every family here has lost its entries since, so the bypass
- * changes nothing and `was` must answer as `now`. The kept cells at the end
- * show why three of the kept entries stay. Every answer is printed at the
- * end.
+ * changes nothing and `was` must answer as `now`. Since Part 3 (the
+ * `legacy` family: the last 29, each library asking the item first) no tool
+ * item pre-check is left: `was` and `now` run the same code, and the cells
+ * pin the answers. Every answer is printed at the end.
  *
  * It sets both checks on itself, so it runs in `pnpm test` only (not again
  * in `pnpm test:edit-on`, where its 160 cells were that run's long pole and
@@ -46,17 +47,10 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 const DB_URL = process.env.MANTLE_TEST_DATABASE_URL;
 
-/** The TypeScript item pre-check, bypassed while `on` is false (the gate's
- *  pre-run check, its one caller). */
+/** Was: the TypeScript item pre-check, bypassed while `on` is false. None is
+ *  left since Part 3 (the mock went with toolItemWriteRefusalOf): `was` and
+ *  `now` run the same code, so each cell pins that the answer is stable. */
 const pre = vi.hoisted(() => ({ on: true }));
-vi.mock('../../../packages/tools/src/item-write-gate', async (importOriginal) => {
-  const real = await importOriginal<typeof import('../../../packages/tools/src/item-write-gate')>();
-  return {
-    ...real,
-    toolItemWriteRefusalOf: (...args: Parameters<typeof real.toolItemWriteRefusalOf>) =>
-      pre.on ? real.toolItemWriteRefusalOf(...args) : Promise.resolve(null),
-  };
-});
 
 const VEC = Array.from({ length: 768 }, (_, i) => (i === 0 ? 1 : 0));
 vi.mock('@mantle/embeddings', async (importOriginal) => ({
@@ -194,8 +188,9 @@ describe.skipIf(!DB_URL)(
 
     /** The owner's items: a refused copy, split or conversion makes none. */
     const nodeCount = async () =>
-      (await raw<{ c: number }[]>`select count(*)::int as c from nodes where owner_id = ${owner}`)[0]!
-        .c;
+      (
+        await raw<{ c: number }[]>`select count(*)::int as c from nodes where owner_id = ${owner}`
+      )[0]!.c;
 
     /** Everything a refused write must leave as it was. */
     const probe = async (id: string) =>
@@ -1198,7 +1193,7 @@ describe.skipIf(!DB_URL)(
             who: BOTH,
             make: app(),
             input: (it) => ({ id: it.id, table: 't', rows: [{ a: 'x' }] }),
-            places: (['noRead', 'noEdit'] as const),
+            places: ['noRead', 'noEdit'] as const,
             disk: appsDisk,
           },
           {
@@ -1210,7 +1205,14 @@ describe.skipIf(!DB_URL)(
             places: ['noRead', 'noEdit', 'editOnly'],
             disk: appsDisk,
           },
-          { slug: 'app_delete', need: 'manage', who: BOTH, make: app(), input: byId, disk: appsDisk },
+          {
+            slug: 'app_delete',
+            need: 'manage',
+            who: BOTH,
+            make: app(),
+            input: byId,
+            disk: appsDisk,
+          },
           {
             slug: 'app_snapshot_restore',
             need: 'manage',
@@ -1226,7 +1228,7 @@ describe.skipIf(!DB_URL)(
             who: BOTH,
             make: app(true),
             input: (it) => ({ id: it.id, snapshot_id: it.extra.snapshot, mode: 'data' }),
-            places: (['noRead', 'noEdit'] as const),
+            places: ['noRead', 'noEdit'] as const,
             disk: appsDisk,
           },
           {
@@ -1308,7 +1310,7 @@ describe.skipIf(!DB_URL)(
             who: BOTH,
             make: app(),
             input: (it) => ({ id: it.id, table: 't' }),
-            places: (['noRead', 'noEdit'] as const),
+            places: ['noRead', 'noEdit'] as const,
             count: true,
           },
           {
@@ -1317,7 +1319,7 @@ describe.skipIf(!DB_URL)(
             who: BOTH,
             make: app(),
             input: (it) => ({ id: it.id, table: 't' }),
-            places: (['noRead', 'noEdit'] as const),
+            places: ['noRead', 'noEdit'] as const,
           },
           {
             slug: 'content_supersede',
@@ -1341,7 +1343,7 @@ describe.skipIf(!DB_URL)(
             who: BOTH,
             make: app(),
             input: byId,
-            places: (['noRead', 'noEdit'] as const),
+            places: ['noRead', 'noEdit'] as const,
             count: true,
           },
           {
@@ -1358,7 +1360,7 @@ describe.skipIf(!DB_URL)(
             who: BOTH,
             make: app(),
             input: byId,
-            places: (['noRead', 'noEdit'] as const),
+            places: ['noRead', 'noEdit'] as const,
             count: true,
           },
           // answer-worse
@@ -1400,7 +1402,11 @@ describe.skipIf(!DB_URL)(
             need: 'edit',
             who: BOTH,
             make: pageBlocks,
-            input: (it) => ({ page_id: it.id, after_block_id: it.extra.b, markdown: `${tag} after` }),
+            input: (it) => ({
+              page_id: it.id,
+              after_block_id: it.extra.b,
+              markdown: `${tag} after`,
+            }),
           },
           {
             slug: 'page_block_insert_before',
@@ -1457,27 +1463,6 @@ describe.skipIf(!DB_URL)(
         ],
       },
     ];
-
-    /** Kept (docs/actors.md): a block edit of a page whose draft the scope
-     *  may not read answers a draft conflict, not the refusal. */
-    const KEPT_BLOCKS: Tool = {
-      slug: 'page_block_append',
-      need: 'edit',
-      who: BOTH,
-      make: draftPage,
-      input: (it) => ({ page_id: it.id, markdown: `${tag} appended` }),
-    };
-
-    /** Kept (docs/actors.md): a publish by a scope that may not read the
-     *  app's draft finds nothing staged and answers published, writing
-     *  nothing. */
-    const KEPT_PUBLISH: Tool = {
-      slug: 'app_publish',
-      need: 'edit',
-      who: BOTH,
-      make: app(),
-      input: byId,
-    };
 
     beforeAll(async () => {
       const ts: Ts = await import('@mantle/db/test-support');
@@ -1656,16 +1641,6 @@ describe.skipIf(!DB_URL)(
           expect(out.ok, `${who} ${precheck}: ${out.text}`).toBe(false);
           expect(after, `${who} ${precheck}: nothing moved`).toEqual(before);
         }
-      }
-    }, 120_000);
-
-    it('kept: a block edit of a page whose draft the scope may not edit answers a draft conflict, not the refusal', async () => {
-      for (const who of BOTH) {
-        const c = await runCell('kept', KEPT_BLOCKS, who, 'noEdit', 'mcp');
-        expect(c.was.text).toMatch(/You cannot change this item in your workspaces \(/);
-        expect(c.now.ok).toBe(false);
-        expect(c.now.changed).toBe(false);
-        expect(c.now.text).toMatch(/changed since you read it/);
       }
     }, 120_000);
 
@@ -1892,19 +1867,5 @@ describe.skipIf(!DB_URL)(
         }
       }
     }, 300_000);
-
-    // Since F4 (fix round 3, M3: lockAppRow asks manage before the publish)
-    // the bypassed call is refused before it reads the draft: the answer
-    // this entry was kept for ("published: true", nothing written) is gone.
-    // The entry stays this round (the kept 29 are the next round's).
-    it('kept: a publish by a scope that may not edit the app is refused, bypassed too, and writes nothing (F4)', async () => {
-      for (const who of BOTH) {
-        const c = await runCell('kept', KEPT_PUBLISH, who, 'noEdit', 'mcp');
-        expect(c.was.text).toMatch(/You cannot change this item in your workspaces \(/);
-        expect(c.now.ok).toBe(false);
-        expect(c.now.changed).toBe(false);
-        expect(c.now.text).toMatch(/You cannot change this item in your workspaces\./);
-      }
-    }, 120_000);
   },
 );

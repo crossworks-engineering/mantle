@@ -10,13 +10,13 @@
  *    again (moderator-seat.ts, A8 fix
  *    round 1, L5); then a built-in's declared preconditions (a uniform
  *    teaching error for an id that names a missing or wrong-type node),
- *    then the items its write names, for a tool that keeps its item
- *    pre-check (toolItemWriteRefusalOf: the item routes' rule; the
- *    pre-check removal took it from the rest, docs/actors.md), in that
- *    order, as dispatch asked them before step 3a.
- *    A check that throws refuses in the error's words, as dispatch's catch
- *    answered. On a /api/v1 route an item the edit check refuses is
- *    thrown as the database's refusal (A5 step 4 fix round 2).
+ *    then, before a call is queued for approval, a create's target folder
+ *    (createFolderRefusal), in that order, as dispatch asked them before
+ *    step 3a. No tool item pre-check is left (the pre-check removal took
+ *    the last 29 in Part 3, docs/actors.md): the database's checks and the
+ *    libraries' own item check (assertItemRight) refuse a write the scope
+ *    may not make. A check that throws refuses in the error's words, as
+ *    dispatch's catch answered.
  *  - `key-shared-content`: an API key or a linked brain never changes the
  *    content of an item others can read (key-shared-content.ts), on the
  *    owner MCP surface (A5 step 4).
@@ -25,16 +25,11 @@
  * surface's `mcp-tool`: for the item pre-check only one that runs a
  * builtin) and lets every other through.
  */
-import {
-  registerPreRunCheck,
-  type ItemWriteRefusal,
-  type PolicyRef,
-  type PreRunCheck,
-} from '@mantle/db';
+import { registerPreRunCheck, type PolicyRef, type PreRunCheck } from '@mantle/db';
 import { mcpVia } from './gate-callers';
-import { editCheckRefusalError, errorMessage } from '@mantle/std';
+import { errorMessage } from '@mantle/std';
 import { checkToolPreconditions } from './preconditions';
-import { builtinItems, createFolderRefusal, toolItemWriteRefusalOf } from './item-write-gate';
+import { createFolderRefusal } from './item-write-gate';
 import { keySharedContentRefusal } from './key-shared-content';
 import { MODERATOR_SEAT_CHANGED, moderatorSeatLost } from './moderator-seat';
 import { tableBuiltin } from './tool-policy';
@@ -92,19 +87,13 @@ export const itemPrecheck: PreRunCheck = async (caller, policy, ref, call) => {
   // No owner, no check: dispatch always names one.
   if (!ctx) return null;
   const input = call.args ?? {};
-  let refused: ItemWriteRefusal | null;
   try {
     const pre = tableBuiltin(builtin.handler)?.preconditions;
     if (pre && pre.length > 0) {
       const failure = await checkToolPreconditions(pre, input, ctx.ownerId);
       if (failure && !failure.ok) return failure.error;
     }
-    const items = builtinItems(builtin.slug, builtin.handler);
-    refused = await toolItemWriteRefusalOf(items, input, ctx.ownerId, {
-      ...(ctx.surface ? { surface: ctx.surface } : {}),
-      ...(ctx.queue ? { queue: true } : {}),
-    });
-    if (!refused && ctx.queue) {
+    if (ctx.queue) {
       const policy = tableBuiltin(builtin.handler)?.policy;
       const folder = await createFolderRefusal(
         policy?.createsIn,
@@ -122,15 +111,7 @@ export const itemPrecheck: PreRunCheck = async (caller, policy, ref, call) => {
     if (mcpVia(caller) || ctx.throws === true) throw err;
     return errorMessage(err);
   }
-  if (!refused) return null;
-  // A /api/v1 route: its HTTP item gate (itemWriteGate) refuses such a
-  // write first, with its own 403 or 404; one that got past it met the
-  // database's edit check at the handler's write before the route ran
-  // through dispatch, which app.onError answers (403 item-workspace, or 404
-  // for an item the scope does not read). The same refusal, thrown, gets
-  // the same status and body from the one mapper.
-  if (ctx.entry === 'api-v1' && refused.detail) throw editCheckRefusalError(refused.detail);
-  return refused.message;
+  return null;
 };
 
 /** A key's or a peer's change to content others read. */

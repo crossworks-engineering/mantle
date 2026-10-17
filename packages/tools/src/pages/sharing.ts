@@ -21,7 +21,6 @@ import {
   SERVE_INPUT,
   serveInput,
 } from '../builtins-share';
-import { edit } from '../item-write-gate';
 import { CS } from '../client-sourced-rule';
 
 export const page_share: BuiltinToolDef = {
@@ -30,7 +29,6 @@ export const page_share: BuiltinToolDef = {
     effect: 'write',
     spends: 'none',
     scope: 'any',
-    legacyItemPrecheck: { need: [edit('id')], reason: 'answer-worse' },
     peerRisky: true,
     keyArea: 'pages',
     lowering: 'always',

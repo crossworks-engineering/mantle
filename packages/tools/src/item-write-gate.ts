@@ -1,58 +1,19 @@
 /**
- * The item pre-check of a tool's write (workspaces W7a fix round 1, M2),
- * for the tools that keep one (docs/actors.md, "Pre-check deletion": the
- * pre-check removal took it from every tool whose write the database
- * refuses itself, with both checks on, and whose second reason is proven).
- * A kept tool's policy names, as its `items`, what its write needs of each
- * item it names; the one gate's pre-run check (gate-prerun.ts itemPrecheck,
- * the only caller) asks the scope before the handler runs, and before a
- * call is queued for approval: mantle_may_edit for a content change or a
- * link, mantle_may_manage for a delete or a move, a read for a write that
- * only needs to see the item; a read-only snapshot copy is never edited.
- * @mantle/db item-rights.ts holds the check.
+ * The queue-time folder rule of a create (A5 step 6a, carried round-2
+ * LOW-1): before a call is queued for approval, a create whose target
+ * folder is named by its path is asked of the queuing scope. The one gate's
+ * pre-run check (gate-prerun.ts itemPrecheck) is its only caller.
  *
- * A create names no item (its folder's create check is the database's).
- * Outside a workspace scope nothing is checked: the surface rules decide.
+ * No tool item pre-check is left here: the pre-check removal (docs/actors.md,
+ * "Pre-check deletion", Part 1 and Part 3) took every one, each once the
+ * database's checks, or the library's own item check before any side effect
+ * (assertItemRight, @mantle/db item-rights.ts), refused the same write.
+ * A new tool relies on those and declares no item list (the arch pin
+ * itemPrecheckTools is 0).
  */
-import { eq } from 'drizzle-orm';
-import {
-  apps,
-  db,
-  foldersReadOf,
-  itemWriteRefusalOf,
-  scopeHoldsAdmin,
-  type ItemNeed,
-  type ItemWriteRefusal,
-} from '@mantle/db';
+import { foldersReadOf, scopeHoldsAdmin } from '@mantle/db';
 import { currentWorkspaceScope } from '@mantle/db/viewer';
 import { clampFilesFolderPath } from '@mantle/files';
-import {
-  builtinPolicy,
-  type ToolItemResolver,
-  type ToolItemTarget,
-  type ToolPolicy,
-} from './tool-policy';
-import type { ToolHandlerContext } from './types';
-
-/** One item a write names: the argument holding its id (a list for an
- *  array argument) and what the write needs of it. */
-type Target = ToolItemTarget;
-/** The targets of one call, worked out from its input (a recall map named by
- *  its slug, a move that only sometimes moves). */
-type Resolver = ToolItemResolver;
-
-// What a tool's policy names as its `items` (tool-policy.ts): a target per
-// argument, or one of the resolvers below. A builtin's definition imports
-// them, so this module imports no builtin.
-
-/** The item in `param` needs an edit right. */
-export function edit(param: string): Target {
-  return { param, need: 'edit' };
-}
-/** The item in `param` needs a manage right (a move, a delete). */
-export function manage(param: string): Target {
-  return { param, need: 'manage' };
-}
 
 /** The refusal, before a call is queued for approval, of a reference (a
  *  Recall map by its slug, a create's target folder by its path) the
@@ -115,113 +76,4 @@ export async function createFolderRefusal(
   }
   const read = await foldersReadOf(ownerId, [raw]);
   return read.has(raw) ? null : refNotInScopeError(`Folder ${raw}`, lookup);
-}
-
-/**
- * A copy of an app (app_duplicate, app_export; W7 integration fix 2, M3):
- * the code needs a read of the app, its data (with_data, on by default) the
- * whole SQLite database every holder shares, so an edit right on the app,
- * unless the app's MCP access switch opens its data to every reader's own
- * connection anyway. An app the scope cannot see needs the edit (fail
- * closed).
- */
-export const appCopy: Resolver = async (input) => {
-  const id = typeof input.id === 'string' ? input.id.trim() : '';
-  if (!id) return [];
-  if (input.with_data === false) return [{ ids: [id], need: 'read' }];
-  const [row] = /^[0-9a-f-]{36}$/i.test(id)
-    ? await db.select({ mcp: apps.mcpAccess }).from(apps).where(eq(apps.nodeId, id)).limit(1)
-    : [];
-  return [{ ids: [id], need: row?.mcp ? 'read' : 'edit' }];
-};
-
-/** An app restore from its history (F4 fix round 3, M3): its code (mode
- *  code or full) is the app's code (D4: APP_CODE_COLUMNS), manage of the
- *  app; its data alone (mode data) is the data's, edit. As the route asks
- *  it (POST /api/apps/:id/snapshots/:sid/restore), and restoreAppSnapshot
- *  asks it again before anything is written. */
-export const appRestoreTargets: Resolver = async (input) => {
-  const id = typeof input.id === 'string' ? input.id.trim() : '';
-  if (!id) return [];
-  return [{ ids: [id], need: input.mode === 'data' ? 'edit' : 'manage' }];
-};
-
-// A conversion that retires its source edits the source. The handlers
-// retire it unless supersede_source is false (pages/from.ts): an omitted
-// flag retires too (W7a fix round 2, N2).
-
-/** page_from_note's source note. */
-export const pageFromNoteSource: Resolver = async (input) =>
-  input.supersede_source !== false && typeof input.note_id === 'string'
-    ? [{ ids: [input.note_id], need: 'edit' }]
-    : [];
-
-/** page_from_file's source file. */
-export const pageFromFileSource: Resolver = async (input) =>
-  input.supersede_source !== false && typeof input.file_id === 'string'
-    ? [{ ids: [input.file_id], need: 'edit' }]
-    : [];
-
-/** page_from_notes' source notes. */
-export const pageFromNotesSources: Resolver = async (input) =>
-  input.supersede_source !== false && Array.isArray(input.note_ids)
-    ? [{ ids: input.note_ids.filter((i): i is string => typeof i === 'string'), need: 'edit' }]
-    : [];
-
-/** What a kept pre-check asks (its policy's `legacyItemPrecheck.need`): a
- *  target per argument, or a resolver. */
-export type ToolItems = NonNullable<ToolPolicy['legacyItemPrecheck']>['need'] | undefined;
-
-/**
- * The items the write tool a row names writes to, read from the policies:
- * the builtin the row's `slug` names, else its handler `ref`'s (a row may
- * rename a builtin). A5 step 6a deleted the ITEM_WRITE_TARGETS view. A
- * link (A0): opening or closing it needs edit of the item; an app's needs
- * manage, which assertMayLink asks once it knows the type (link-serve.ts);
- * closing one is the handler's own rule and the database's (link_close).
- * An app copy (appCopy) and the my_app_* tools check their own app.
- */
-export function builtinItems(slug: string, ref?: string): ToolItems {
-  return (
-    builtinPolicy(slug)?.legacyItemPrecheck?.need ??
-    (ref ? builtinPolicy(ref)?.legacyItemPrecheck?.need : undefined)
-  );
-}
-
-/** The ids an argument holds: one id, or a list of them. */
-function idsOf(v: unknown): string[] {
-  if (typeof v === 'string') return v.trim() ? [v] : [];
-  if (Array.isArray(v)) return v.filter((i): i is string => typeof i === 'string');
-  return [];
-}
-
-/**
- * Why the current workspace scope may not make this call's write, or null
- * (no workspace scope, a tool that names no item, or a write it may make):
- * the refusal's words and the edit check's detail (A5 step 4 fix round 2: a
- * /api/v1 route answers it as the database's). `items` is the tool's own
- * policy's (builtinItems). Run after the tool's preconditions, so an id the
- * scope cannot read gets the precondition's teaching error first where the
- * tool declares one.
- */
-export async function toolItemWriteRefusalOf(
-  items: ToolItems,
-  input: Record<string, unknown>,
-  ownerId: string,
-  ctx?: Pick<ToolHandlerContext, 'surface'> & { queue?: boolean },
-): Promise<ItemWriteRefusal | null> {
-  if (!currentWorkspaceScope()) return null;
-  if (!items) return null;
-  const sets: { ids: string[]; need: ItemNeed; unresolved?: string }[] =
-    typeof items === 'function'
-      ? await items(input, ownerId, ctx)
-      : items.map((t) => ({ ids: idsOf(input[t.param]), need: t.need }));
-  for (const set of sets) {
-    // A reference that names nothing the scope reads, asked before a call
-    // is queued (`unresolved`, A5 step 6a): the item check's not-in-scope.
-    if (set.unresolved) return { message: set.unresolved, detail: 'no_read' };
-    const refused = await itemWriteRefusalOf(set.ids, set.need);
-    if (refused) return refused;
-  }
-  return null;
 }

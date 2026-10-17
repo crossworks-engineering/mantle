@@ -354,18 +354,21 @@ describe.skipIf(!URL)('W7 integration fix 2', () => {
     await x(sql`insert into item_grants (node_id, workspace_id, write, is_home) values
       (${app}, ${adminWs}, true, true), (${app}, ${teamWs}, false, false)
       on conflict do nothing`);
-    // The gate's own check (its one caller is gate-prerun.ts; not exported).
-    const gate = await import('../../../packages/tools/src/item-write-gate');
-    const refusal = async (slug: string, input: Record<string, unknown>) =>
+    // The libraries' own check (assertMayCopyApp: the pre-check removal
+    // Part 3 moved it there from the tools' item pre-check), asked by both
+    // duplicateApp and writeAppPackage first.
+    const { assertMayCopyApp } = await import('@mantle/content/app-package');
+    const refusal = async (withData?: boolean) =>
       m.withTurnScope(await m.loginScopeFor(member), () =>
-        gate.toolItemWriteRefusalOf(t.builtinItems(slug), input, owner),
+        assertMayCopyApp(app, withData).then(
+          () => null,
+          (err: unknown) => String(err),
+        ),
       );
-    for (const slug of ['app_export', 'app_duplicate']) {
-      expect(await refusal(slug, { id: app }), slug).not.toBeNull();
-      expect(await refusal(slug, { id: app, with_data: false }), slug).toBeNull();
-    }
+    expect(await refusal()).not.toBeNull();
+    expect(await refusal(false)).toBeNull();
     await x(sql`update apps set mcp_access = true where node_id = ${app}`);
-    expect(await refusal('app_export', { id: app })).toBeNull();
+    expect(await refusal()).toBeNull();
   });
 
   // ── M5 ─────────────────────────────────────────────────────────────────

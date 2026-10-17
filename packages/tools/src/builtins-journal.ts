@@ -37,7 +37,6 @@ import type { BuiltinToolDef, ToolPrecondition } from './types';
 import { str, strOptTrim as strOpt, numOr as num } from './coerce';
 import { notFound } from './errors';
 import { errorMessage } from '@mantle/std';
-import { edit } from './item-write-gate';
 import { CS } from './client-sourced-rule';
 
 // Shared referential precondition (checked centrally in dispatch — see
@@ -326,7 +325,6 @@ const journal_resolve_gap: BuiltinToolDef = {
     effect: 'write',
     spends: 'none',
     scope: 'any',
-    legacyItemPrecheck: { need: [edit('id')], reason: 'side-effect-before-check' },
     keyArea: 'journal',
     clientSourced: CS.onNodes('id'),
   },

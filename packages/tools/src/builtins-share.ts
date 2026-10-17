@@ -24,7 +24,6 @@ import { str } from './coerce';
 import { isOwnerSurface, keyOrPeerVia, ownerSurfaceLoginId } from './surface';
 import { errorMessage } from '@mantle/std';
 import { callerHasArea, callerScope } from './admin-gate';
-import { edit } from './item-write-gate';
 import { CS } from './client-sourced-rule';
 
 /** The `serve` input both share tools take. */
@@ -116,7 +115,6 @@ const node_share: BuiltinToolDef = {
     effect: 'write',
     spends: 'none',
     scope: 'any',
-    legacyItemPrecheck: { need: [edit('id')], reason: 'answer-worse' },
     peerRisky: true,
     lowering: 'always',
   },

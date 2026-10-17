@@ -81,14 +81,14 @@ import { isOwnerSurface, OWNER_ONLY_ERROR, ownerSurfaceLoginId } from './surface
 import { currentWorkspaceScope, currentScope } from '@mantle/db/viewer';
 import { and as andWhere, eq as eqWhere, sql as sqlTag } from 'drizzle-orm';
 import {
+  assertItemRight,
   asSystem,
   db as scopedDb,
+  mayManageSql,
   nodes as nodesTable,
   scopeHoldsAdmin,
   withCreateHome,
-  mayManageSql,
 } from '@mantle/db';
-import { appCopy, appRestoreTargets, edit, manage } from './item-write-gate';
 import { CS } from './client-sourced-rule';
 
 /**
@@ -241,7 +241,6 @@ const app_update: BuiltinToolDef = {
     effect: 'write',
     spends: 'none',
     scope: 'any',
-    legacyItemPrecheck: { need: [edit('id')], reason: 'side-effect-before-check' },
     peerRisky: true,
     keyArea: 'apps',
     clientSourced: CS.onApp,
@@ -548,7 +547,6 @@ const app_build: BuiltinToolDef = {
     effect: 'write',
     spends: 'none',
     scope: 'any',
-    legacyItemPrecheck: { need: [manage('id')], reason: 'side-effect-before-check' },
     peerRisky: true,
     keyArea: 'apps',
     clientSourced: CS.onApp,
@@ -681,7 +679,6 @@ const app_db_schema_set: BuiltinToolDef = {
     effect: 'write',
     spends: 'none',
     scope: 'any',
-    legacyItemPrecheck: { need: [manage('id')], reason: 'side-effect-before-check' },
     peerRisky: true,
     keyArea: 'apps',
     clientSourced: CS.onApp,
@@ -718,6 +715,10 @@ const app_db_schema_set: BuiltinToolDef = {
     }
     const app = await getApp(ctx.ownerId, id);
     if (!app) return { ok: false, error: `app ${id} not found` };
+    // The app's manage first (pre-check removal Part 3): the schema is on the manifest,
+    // the app's code (D4), and the trial copy and the pre_schema snapshot
+    // below come before the declare's checked write (lockAppRow).
+    await assertItemRight(id, 'manage');
     // Then try it on a copy of the app's live database: once declared it runs
     // on the live file at the app's next statement, and a script that fails
     // there stops every read and write of the app (apps audit D2).
@@ -762,7 +763,6 @@ const app_db_seed: BuiltinToolDef = {
     effect: 'write',
     spends: 'none',
     scope: 'any',
-    legacyItemPrecheck: { need: [edit('id')], reason: 'side-effect-before-check' },
     peerRisky: true,
     keyArea: 'apps',
     clientSourced: CS.onApp,
@@ -892,7 +892,6 @@ const app_publish: BuiltinToolDef = {
     spends: 'none',
     scope: 'any',
     outside: { appCode: true },
-    legacyItemPrecheck: { need: [manage('id')], reason: 'answer-worse' },
     peerRisky: true,
     keyArea: 'apps',
     clientSourced: CS.onApp,
@@ -950,7 +949,6 @@ const app_delete: BuiltinToolDef = {
     effect: 'write',
     spends: 'none',
     scope: 'any',
-    legacyItemPrecheck: { need: [manage('id')], reason: 'side-effect-before-check' },
     peerRisky: true,
     keyArea: 'apps',
     clientSourced: CS.onApp,
@@ -1140,7 +1138,6 @@ const app_table_export_set: BuiltinToolDef = {
     effect: 'write',
     spends: 'none',
     scope: 'any',
-    legacyItemPrecheck: { need: [edit('id')], reason: 'db-does-not-check' },
     peerRisky: true,
     keyArea: 'apps',
     clientSourced: { ...CS.onApp, creates: true },
@@ -1201,7 +1198,6 @@ const app_table_export_remove: BuiltinToolDef = {
     effect: 'write',
     spends: 'none',
     scope: 'any',
-    legacyItemPrecheck: { need: [edit('id')], reason: 'db-does-not-check' },
     peerRisky: true,
     keyArea: 'apps',
     clientSourced: CS.onApp,
@@ -1336,7 +1332,6 @@ const app_snapshot_restore: BuiltinToolDef = {
     spends: 'none',
     scope: 'any',
     outside: { appCode: true },
-    legacyItemPrecheck: { need: appRestoreTargets, reason: 'side-effect-before-check' },
     peerRisky: true,
     keyArea: 'apps',
     clientSourced: CS.onApp,
@@ -1569,7 +1564,6 @@ const app_duplicate: BuiltinToolDef = {
     spends: 'none',
     scope: 'any',
     creates: 'app',
-    legacyItemPrecheck: { need: appCopy, reason: 'read-not-asked' },
     peerRisky: true,
     keyArea: 'apps',
     clientSourced: CS.onApp,
@@ -1632,7 +1626,6 @@ const app_export: BuiltinToolDef = {
     effect: 'write',
     spends: 'none',
     scope: 'any',
-    legacyItemPrecheck: { need: appCopy, reason: 'read-not-asked' },
     peerRisky: true,
     keyArea: 'apps',
     clientSourced: CS.onApp,

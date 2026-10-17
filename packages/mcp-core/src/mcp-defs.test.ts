@@ -1,43 +1,16 @@
 /**
  * The hand-written MCP tools as definitions (A5 step 2, mcp-defs.ts): each
  * carries a policy of the declared shape; the eleven that share a builtin's
- * name carry the builtin's policy, with the arguments its item checks name
- * mapped to the MCP twin's own; each takes its policy from the surface table
+ * name carry the builtin's policy (no item check is left to map, the
+ * pre-check removal Part 3); each takes its policy from the surface table
  * (@mantle/tools mcp-surface-policies.ts, where the Admin gate reads the two
  * responder writes); and registration reads the definitions.
  */
 import { describe, expect, it } from 'vitest';
-import {
-  MCP_SURFACE_POLICIES,
-  getBuiltin,
-  type McpSurfaceSlug,
-  type ToolItemTarget,
-  type ToolPolicy,
-} from '@mantle/tools';
+import { MCP_SURFACE_POLICIES, getBuiltin, type McpSurfaceSlug } from '@mantle/tools';
 import { registerMantleTools } from './build-server';
 import { MCP_TOOL_DEFS, mcpDefinition } from './mcp-defs';
 import { ADMIN_ONLY_TOOL_SLUGS } from './policy-views.test-helper';
-
-/** Per twin, an MCP argument name and the builtin's for the same thing,
- *  where they differ. None does today for an argument a policy names (the
- *  twins differ in what else they take: a path for a folder, an `id`). */
-const ARG_NAMES: Record<string, Record<string, string>> = {};
-
-/** `p` with its item checks' arguments renamed from the MCP twin's to the
- *  builtin's. */
-function mappedToBuiltin(slug: string, p: ToolPolicy): ToolPolicy {
-  const names = ARG_NAMES[slug] ?? {};
-  const kept = p.legacyItemPrecheck;
-  if (!kept || !Array.isArray(kept.need)) return p;
-  const need: readonly ToolItemTarget[] = kept.need;
-  return {
-    ...p,
-    legacyItemPrecheck: {
-      ...kept,
-      need: need.map((t) => ({ ...t, param: names[t.param] ?? t.param })),
-    },
-  };
-}
 
 const TWINS = MCP_TOOL_DEFS.filter((d) => getBuiltin(d.slug));
 
@@ -72,36 +45,13 @@ describe('the MCP definitions (A5 step 2)', () => {
       ).toBe(true);
       if (p.startsModelWork) expect(p.spends, d.slug).not.toBe('none');
       if (p.creates) expect(p.effect, d.slug).toBe('write');
-      // An item a check names is one of the tool's own arguments.
-      const need = p.legacyItemPrecheck?.need;
-      if (Array.isArray(need)) {
-        for (const t of need as readonly ToolItemTarget[]) {
-          expect(Object.keys(d.shape), d.slug).toContain(t.param);
-        }
-      }
       expect(Object.isFrozen(d), d.slug).toBe(true);
       expect(Object.isFrozen(d.policy), d.slug).toBe(true);
-      if (Array.isArray(need)) {
-        expect(Object.isFrozen(need), d.slug).toBe(true);
-        for (const t of need as readonly ToolItemTarget[]) {
-          expect(Object.isFrozen(t), d.slug).toBe(true);
-        }
-      }
     }
   });
 
-  it("a twin's policy is the builtin's, its arguments mapped", () => {
-    for (const d of TWINS) {
-      const builtin = getBuiltin(d.slug)!;
-      expect(mappedToBuiltin(d.slug, d.policy), d.slug).toEqual(builtin.policy);
-      const need = builtin.policy.legacyItemPrecheck?.need;
-      if (Array.isArray(need)) {
-        const props = Object.keys(
-          (builtin.inputSchema.properties ?? {}) as Record<string, unknown>,
-        );
-        for (const t of need as readonly ToolItemTarget[]) expect(props, d.slug).toContain(t.param);
-      }
-    }
+  it("a twin's policy is the builtin's", () => {
+    for (const d of TWINS) expect(d.policy, d.slug).toEqual(getBuiltin(d.slug)!.policy);
   });
 
   it('takes each policy from the surface table by name; the Admin gate holds the two responder writes', () => {

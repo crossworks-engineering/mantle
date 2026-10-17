@@ -184,7 +184,7 @@ vi.mock('./registry', async (importOriginal) => {
 import type { Tool } from '@mantle/db';
 import { loginActor, runAsActor, withCreateHome } from '@mantle/db';
 import * as tools from './index';
-import { BUILTIN_TOOLS, builtinItems, dispatchTool } from './index';
+import { BUILTIN_TOOLS, dispatchTool } from './index';
 import type { ToolHandlerContext } from './types';
 
 const OWNER = '99999999-9999-4999-8999-999999999999';
@@ -337,16 +337,12 @@ async function call(
   };
 }
 
-/** The inputs one builtin is called with: none, its item targets on a
- *  refused item and on a readable one, a failing precondition, a throw. */
-function inputsFor(slug: string): Record<string, unknown>[] {
+/** The inputs one builtin is called with: none, a failing precondition, a
+ *  throw. (Its item targets on a refused item and a readable one went with
+ *  the last tool item pre-check, pre-check removal Part 3: no builtin
+ *  declares items now.) */
+function inputsFor(_slug: string): Record<string, unknown>[] {
   const out: Record<string, unknown>[] = [{}];
-  const targets = builtinItems(slug);
-  if (Array.isArray(targets)) {
-    for (const id of [REFUSED_ID, ITEM_ID]) {
-      out.push(Object.fromEntries(targets.map((t) => [t.param, id])));
-    }
-  }
   out.push({ __pre: 'fail' });
   out.push({ __throw: true });
   return out;
@@ -435,10 +431,8 @@ describe('dispatch parity with main (A5 step 3a)', () => {
   }, 120_000);
 
   it('is not vacuous: refusals, creates and system runs all occur', async () => {
-    // A kept item pre-check (node_share; the pre-check removal took
-    // page_update's, docs/actors.md "Pre-check deletion").
-    const share = await call('member-turn', builtinRow('node_share'), { id: REFUSED_ID });
-    expect(JSON.stringify(share)).toContain('item refused');
+    // (No tool item pre-check is left to refuse here: the pre-check removal
+    // took the last, node_share's, in Part 3, docs/actors.md.)
     const create = await call('member-turn', builtinRow('note_create'), {});
     expect(JSON.stringify(create)).toContain(PRIVATE);
     const admin = await call('member-turn', builtinRow('model_pool_list'), {});

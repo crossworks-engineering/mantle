@@ -47,16 +47,9 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 const DB_URL = process.env.MANTLE_TEST_DATABASE_URL;
 
-/** The TypeScript item pre-check, bypassed while `on` is false. */
+/** Was: the TypeScript item pre-check, bypassed while `on` is false. None
+ *  is left since the pre-check removal Part 3: a no-op switch now. */
 const pre = vi.hoisted(() => ({ on: true }));
-vi.mock('../../../packages/tools/src/item-write-gate', async (importOriginal) => {
-  const real = await importOriginal<typeof import('../../../packages/tools/src/item-write-gate')>();
-  return {
-    ...real,
-    toolItemWriteRefusalOf: (...args: Parameters<typeof real.toolItemWriteRefusalOf>) =>
-      pre.on ? real.toolItemWriteRefusalOf(...args) : Promise.resolve(null),
-  };
-});
 
 const VEC = Array.from({ length: 768 }, (_, i) => (i === 0 ? 1 : 0));
 vi.mock('@mantle/embeddings', async (importOriginal) => ({

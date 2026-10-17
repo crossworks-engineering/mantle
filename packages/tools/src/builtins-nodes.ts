@@ -16,7 +16,6 @@ import { errorMessage } from '@mantle/std';
 import { NODE_ID_PRE } from './builtins-common';
 import { HIDDEN_NODE_ERROR, surfaceHiddenNodeTypes } from './team-visibility';
 import { isOwnerSurface } from './surface';
-import { edit } from './item-write-gate';
 import { CS } from './client-sourced-rule';
 
 export const brain_capacity: BuiltinToolDef = {
@@ -143,7 +142,6 @@ export const content_supersede: BuiltinToolDef = {
     effect: 'write',
     spends: 'none',
     scope: 'admin',
-    legacyItemPrecheck: { need: [edit('node_id')], reason: 'db-does-not-check' },
     clientSourced: CS.onNodes('node_id', 'superseded_by'),
   },
   ownerOnly: true,

@@ -23,7 +23,6 @@ import { str, strOpt, boolOpt as bool } from '../coerce';
 import { errorMessage } from '@mantle/std';
 import { FILE_ID_PRE, FOLDER_ID_PRE } from '../builtins-common';
 import { CONFIRM_INPUT, visibilityRefusal } from '../visibility-refusal';
-import { manage } from '../item-write-gate';
 import { CS } from '../client-sourced-rule';
 
 export const folder_create: BuiltinToolDef = {
@@ -246,7 +245,6 @@ export const file_delete: BuiltinToolDef = {
     effect: 'write',
     spends: 'none',
     scope: 'any',
-    legacyItemPrecheck: { need: [manage('file_id')], reason: 'side-effect-before-check' },
     keyArea: 'files',
     clientSourced: CS.onNodes('file_id'),
   },

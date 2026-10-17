@@ -71,12 +71,6 @@ const POLICIES = {
 } satisfies Record<string, ToolPolicy>;
 
 for (const p of Object.values(POLICIES) as ToolPolicy[]) {
-  const need = p.legacyItemPrecheck?.need;
-  if (Array.isArray(need)) {
-    need.forEach((t) => Object.freeze(t));
-    Object.freeze(need);
-  }
-  if (p.legacyItemPrecheck) Object.freeze(p.legacyItemPrecheck);
   Object.freeze(p);
 }
 

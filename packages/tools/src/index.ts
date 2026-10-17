@@ -25,11 +25,7 @@ export {
   policySystemWhole,
   policyUntrusted,
   toGatePolicy,
-  type LegacyItemPrecheck,
-  type LegacyPrecheckReason,
   type SurfaceToolDef,
-  type ToolItemResolver,
-  type ToolItemTarget,
   type ToolOutside,
   type ToolPolicy,
   type ToolScope,
@@ -197,7 +193,6 @@ export {
   runGated,
   type AdminGateView,
 } from './admin-gate';
-export { builtinItems, type ToolItems } from './item-write-gate';
 export {
   SECRET_REFS_MAKER_NO_KEYS,
   SECRET_REFS_NEED_KEYS,

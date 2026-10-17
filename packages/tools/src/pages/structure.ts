@@ -15,7 +15,6 @@ import { errorMessage } from '@mantle/std';
 import { DRAFT_REVIEW_HINT, PAGE_ID_PRE, PAGE_NODE_ID_PRE } from './common';
 import { CONFIRM_INPUT, visibilityRefusal } from '../visibility-refusal';
 import { isOwnerSurface, OWNER_ONLY_ERROR } from '../surface';
-import { edit } from '../item-write-gate';
 import { CS } from '../client-sourced-rule';
 
 export const page_split: BuiltinToolDef = {
@@ -25,7 +24,6 @@ export const page_split: BuiltinToolDef = {
     spends: 'none',
     scope: 'any',
     creates: 'page',
-    legacyItemPrecheck: { need: [edit('page_id')], reason: 'side-effect-before-check' },
     keyArea: 'pages',
     keySharedContent: true,
     clientSourced: CS.creates('page_id'),
@@ -99,7 +97,6 @@ export const page_extract_section: BuiltinToolDef = {
     spends: 'none',
     scope: 'any',
     creates: 'page',
-    legacyItemPrecheck: { need: [edit('page_id')], reason: 'side-effect-before-check' },
     keyArea: 'pages',
     keySharedContent: true,
     clientSourced: CS.creates('page_id'),

@@ -69,14 +69,10 @@ function targetsOf(call: AuditedCall): string[] {
   const builtin = builtinOf(call.ref);
   const policy = builtin ? namedToolPolicy(builtin)?.policy : null;
   const args = call.input.args ?? {};
-  // The item arguments: a kept pre-check's targets, and the argument a
-  // node_exists precondition reads (every tool whose pre-check the removal
-  // took names its item there: pre-check removal fix round A, so a delete
-  // or a move is still audited by its item).
-  const need = policy?.legacyItemPrecheck?.need;
-  if (Array.isArray(need)) {
-    for (const item of need) add(args[item.param]);
-  }
+  // The item arguments: the argument a node_exists precondition reads
+  // (every tool whose pre-check the removal took names its item there:
+  // pre-check removal fix round A, so a delete or a move is still audited
+  // by its item; the last 29 in Part 3).
   for (const pre of builtin ? (tableBuiltin(builtin)?.preconditions ?? []) : []) {
     if (pre.kind === 'node_exists') add(args[pre.param]);
   }
