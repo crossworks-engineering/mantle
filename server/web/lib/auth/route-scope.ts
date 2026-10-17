@@ -347,7 +347,8 @@ export function memberMayRead(method: string, pattern: string | null): boolean {
  */
 export const ITEM_WRITE_PREFIXES: readonly string[] = [
   '/api/pages',
-  '/api/notes',
+  // Notes went in the pre-check removal part 2 (docs/actors.md), as the
+  // node kinds below: one statement each, checked by the database.
   '/api/draws',
   '/api/tables',
   '/api/apps',

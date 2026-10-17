@@ -39,10 +39,11 @@
  *     none), and is not written, in on and in warn; so does an id that is
  *     not a uuid (the route's params gateway).
  *
- * A family whose entry is gone (`removed`) also pins that the bypass
- * changes nothing: `was` answers as `now`. Every answer is printed at the
- * end (the old answers of each family were recorded by its first run, on
- * the code before its removal).
+ * `was` is the old answer: the pre-check as the lists named it before part 2
+ * (OLD_TARGET, emulated for a removed entry). In on, `now` refuses where
+ * `was` refused and makes what `was` made (never looser); a family whose
+ * entry is gone (`removed`) pins that the lists name no item for its
+ * routes. Every answer is printed at the end, old and new.
  *
  * It sets both checks itself, so it runs in `pnpm test` only (not again in
  * `pnpm test:edit-on`).
@@ -55,20 +56,79 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import postgres from 'postgres';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { itemWriteTarget } from '../lib/auth/route-scope';
 
 const DB_URL = process.env.MANTLE_TEST_DATABASE_URL;
 
-/** The HTTP item pre-check (the item the route names), bypassed while `on`
- *  is false. */
-const pre = vi.hoisted(() => ({ on: true }));
+/**
+ * The HTTP item pre-check (the item the route names), bypassed while `on`
+ * is false. While it is on, a route whose entry part 2 removed gets the
+ * target the lists named before part 2 (`old`, OLD_TARGET below), so `was`
+ * is the old answer in every run, and the file records old and new side by
+ * side.
+ */
+type OldTarget = { id: string; need: 'read' | 'edit' | 'manage'; ref: 'node' };
+const pre = vi.hoisted(() => ({
+  on: true,
+  old: null as null | ((key: string, path: string) => OldTarget | null),
+}));
 vi.mock('../lib/auth/route-policy', async (importOriginal) => {
   const real = await importOriginal<typeof import('../lib/auth/route-policy')>();
   return {
     ...real,
     routeItemTarget: (...args: Parameters<typeof real.routeItemTarget>) =>
-      pre.on ? real.routeItemTarget(...args) : null,
+      pre.on ? (real.routeItemTarget(...args) ?? pre.old?.(args[0].key, args[1]) ?? null) : null,
   };
 });
+
+/** The lists of server/web/lib/auth/route-scope.ts before part 2 (main
+ *  v0.300.82), less ITEM_REF_PREFIXES (their entries stay or are proven by
+ *  their own cells): what itemWriteTarget named for a node route. */
+const OLD_PREFIXES: readonly string[] = [
+  '/api/pages',
+  '/api/notes',
+  '/api/draws',
+  '/api/tables',
+  '/api/apps',
+  '/api/files/files',
+  '/api/files/folders',
+  '/api/tree/:kind/folders',
+  '/api/tree/items',
+  '/api/v1/pages',
+  '/api/v1/tables',
+  '/api/formulas',
+  '/api/tasks',
+  '/api/events',
+  '/api/v1/tasks',
+  '/api/recall/maps',
+];
+const OLD_READ_WRITES: ReadonlySet<string> = new Set([
+  'POST /api/apps/:id/opened',
+  'POST /api/apps/:id/frame-ticket',
+  'POST /api/apps/:id/db-broker',
+  'POST /api/apps/:id/tool-broker',
+  'POST /api/apps/:id/duplicate',
+  'POST /api/tree/items/:id/opened',
+  'PUT /api/tree/items/:id/pin',
+]);
+const OLD_MANAGE_WRITES: ReadonlySet<string> = new Set(['POST /api/pages/:id/move']);
+function OLD_TARGET(key: string, path: string): OldTarget | null {
+  const m = key.slice(0, key.indexOf(' '));
+  const pattern = key.slice(key.indexOf(' ') + 1);
+  for (const prefix of OLD_PREFIXES) {
+    const head = `${prefix}/:id`;
+    if (pattern !== head && !pattern.startsWith(`${head}/`)) continue;
+    const id = path.split('?')[0]!.split('/')[prefix.split('/').length];
+    if (!id) return null;
+    const need = OLD_READ_WRITES.has(key)
+      ? 'read'
+      : OLD_MANAGE_WRITES.has(key) || (m === 'DELETE' && pattern === head)
+        ? 'manage'
+        : 'edit';
+    return { id, need, ref: 'node' };
+  }
+  return null;
+}
 
 const VEC = Array.from({ length: 768 }, (_, i) => (i === 0 ? 1 : 0));
 vi.mock('@mantle/embeddings', async (importOriginal) => ({
@@ -207,7 +267,7 @@ describe.skipIf(!DB_URL)('the pre-check removal, part 2: the HTTP entries', () =
   };
   type Family = {
     name: string;
-    /** Its entry is gone: the bypass changes nothing. */
+    /** Its entry is gone: the lists name no item for its routes. */
     removed: boolean;
     routes: Route[];
   };
@@ -237,6 +297,7 @@ describe.skipIf(!DB_URL)('the pre-check removal, part 2: the HTTP entries', () =
       classifications: [],
     },
   }));
+  const note = viaCreate('note_create', () => ({ title: `${tag} note ${n()}`, content: 'body' }));
   const retitle = () => ({ title: `${tag} retitled ${n()}` });
 
   /** The node kinds' edit (PATCH) and delete (DELETE): one statement each,
@@ -275,6 +336,11 @@ describe.skipIf(!DB_URL)('the pre-check removal, part 2: the HTTP entries', () =
         nodeRoutes('/api/v1/tasks', task, { viaKey: true })[0]!,
       ],
     },
+    {
+      name: 'notes',
+      removed: true,
+      routes: nodeRoutes('/api/notes', note),
+    },
   ];
 
   // ── the cells ─────────────────────────────────────────────────────────────
@@ -294,8 +360,24 @@ describe.skipIf(!DB_URL)('the pre-check removal, part 2: the HTTP entries', () =
 
   /** One cell on a fresh item: what it answered, whether the item changed,
    *  and the actor misses. */
-  const once = async (route: Route, who: Who, p: Place, precheck: boolean): Promise<Answer> => {
+  const once = async (
+    route: Route,
+    who: Who,
+    p: Place,
+    precheck: boolean,
+    copy = false,
+  ): Promise<Answer> => {
     const id = await route.make(who, p);
+    // A read-only snapshot copy of an accepted item (data.snapshot_of):
+    // nobody edits it (0267's triggers), its author may delete it.
+    if (copy) {
+      await raw.begin(async (tx) => {
+        await tx`select set_config('mantle.actor', 'system:test', true)`;
+        await tx`select mantle_lock_heads(array[${id}]::uuid[], 'update')`;
+        await tx`update nodes set data = coalesce(data, '{}'::jsonb)
+                   || jsonb_build_object('snapshot_of', ${randomUUID()}::text) where id = ${id}`;
+      });
+    }
     const before = await probe(id);
     m.takeActorMisses();
     const res = await send(route, who, id, precheck);
@@ -303,17 +385,6 @@ describe.skipIf(!DB_URL)('the pre-check removal, part 2: the HTTP entries', () =
     const misses = m.takeActorMisses().map((x) => x.check);
     return { status: res.status, text, changed: (await probe(id)) !== before, misses };
   };
-
-  /** A reply without what each run makes up. */
-  const plain = (text: string) =>
-    text
-      .replace(/\d{4}-\d\d-\d\dT[\d:.]+Z/g, 'T')
-      .replace(new RegExp(UUID.source, 'g'), 'ID')
-      .replace(new RegExp(`${tag}\\w*( \\w+)*`, 'g'), 'TAG')
-      // A made-up name: a formula spec's id (f and 8 hex, which may hold no
-      // digit), any other hex.
-      .replace(/"f[0-9a-f]{8}"/g, '"F"')
-      .replace(/\b(?=[0-9a-f]*\d)[0-9a-f]{4,}\b/g, 'H');
 
   const line = (a: Answer) =>
     `${a.status}${a.changed ? ' changed' : ''}${a.misses.length ? ` misses=${a.misses.length}` : ''}: ${a.text
@@ -412,6 +483,7 @@ describe.skipIf(!DB_URL)('the pre-check removal, part 2: the HTTP entries', () =
       $$;
       revoke all on function pch_probe(uuid) from public;`);
     m.takeActorMisses();
+    pre.old = OLD_TARGET;
   }, 300_000);
 
   afterAll(async () => {
@@ -487,20 +559,34 @@ describe.skipIf(!DB_URL)('the pre-check removal, part 2: the HTTP entries', () =
                   expect(now.changed, `${name} made no write`).toBe(true);
                   expect(now.misses.length, name).toBeGreaterThan(0);
                 }
-                if (family.removed) {
-                  // The entry is gone: the bypass changes nothing.
+                // Never looser than the pre-check in on: the same writes made,
+                // the same refused (warn: the named change above).
+                if (mode === 'on' || p === 'noRead' || !route.warnMade) {
                   expect(
-                    { status: was.status, changed: was.changed, text: plain(was.text) },
-                    name,
-                  ).toEqual({ status: now.status, changed: now.changed, text: plain(now.text) });
+                    { ok: now.status < 300, changed: now.changed },
+                    `${name}: was ${line(was)}`,
+                  ).toEqual({ ok: was.status < 300, changed: was.changed });
                 }
               }
-              if (family.removed) {
-                expect({ status: noneWas.status, text: noneWasText }).toEqual({
-                  status: noneNow.status,
-                  text: noneNowText,
-                });
+              if (route.need === 'edit') {
+                // A read-only copy the login may manage: the pre-check's
+                // read-only answer, now the database's (every mode).
+                const name = `${route.name} ${mode} ${who}/copy`;
+                const was = await once(route, who, 'allowed', true, true);
+                const now = await once(route, who, 'allowed', false, true);
+                recorded.push(
+                  `${family.name} | ${name}\n      was ${line(was)}\n      now ${line(now)}`,
+                );
+                expect(now.text, name).not.toMatch(RAW);
+                expect(now.status, `${name}: ${now.text}`).toBeGreaterThanOrEqual(400);
+                expect(now.status, `${name}: ${now.text}`).toBeLessThan(500);
+                expect(now.changed, `${name} changed the copy`).toBe(false);
+                expect(was.changed).toBe(false);
               }
+              const pattern = route.name.slice(route.name.indexOf(' ') + 1);
+              const target = itemWriteTarget(route.method, pattern, route.path(none));
+              if (family.removed) expect(target, route.name).toBeNull();
+              else expect(target, route.name).not.toBeNull();
             }, 300_000);
           }
         }
