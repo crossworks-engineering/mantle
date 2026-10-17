@@ -22,7 +22,11 @@
 --    other. The system pool and the runtime role pass row level security
 --    (owner, BYPASSRLS): the export sync and the dirty stamp (the named
 --    system step) run as before.
--- 2. mantle_write_role_sync_table(t, write, check_args, write_rule): 0278's
+-- 2. profiles is a content table now (the matrix's writer), so it gets the
+--    actor check's statement trigger (0275's mantle_actor_check, pinned by
+--    actor-trigger-coverage.db.test.ts), disabled when the box's check is
+--    off, as mantle_set_actor_check keeps every one of them.
+-- 3. mantle_write_role_sync_table(t, write, check_args, write_rule): 0278's
 --    sync with a write rule narrower than the read rule. NULL: the write
 --    rules are the table's read rule, as before. 'own-login' (profiles,
 --    owner decision 2026-10-17): the login's own row, or the brain's row
@@ -51,6 +55,18 @@ CREATE POLICY "app_table_exports_user_read" ON "public"."app_table_exports" FOR 
      WHERE a."id" = "app_node_id"
        AND CASE WHEN a."home_ws" IS NULL THEN "public"."mantle_scope_has_admin"()
                 ELSE coalesce("public"."mantle_may_manage"(a."home_ws"), false) END));
+--> statement-breakpoint
+
+DROP TRIGGER IF EXISTS "mantle_actor_check" ON "public"."profiles";
+--> statement-breakpoint
+CREATE TRIGGER "mantle_actor_check" BEFORE INSERT OR UPDATE OR DELETE ON "public"."profiles"
+  FOR EACH STATEMENT EXECUTE FUNCTION "public"."mantle_actor_check_stmt"();
+--> statement-breakpoint
+DO $$ BEGIN
+  IF "public"."mantle_actor_check_box_mode"() = 'off' THEN
+    ALTER TABLE "public"."profiles" DISABLE TRIGGER "mantle_actor_check";
+  END IF;
+END $$;
 --> statement-breakpoint
 
 CREATE OR REPLACE FUNCTION "public"."mantle_write_role_sync_table"(

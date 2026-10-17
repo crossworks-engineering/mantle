@@ -240,12 +240,11 @@ with the checks above. A secret's sealed value goes through
 cross-map options through `mantle_recall_retarget(map, old_slug,
 new_slug)`: definers that check only while a scope is set, through the edit
 check's gate, so the role still holds no right on `secrets` and never
-writes another map's cards itself. Two tables stay on
-`WRITE_ROLE_GAP_TABLES`, decided: `profiles` (a login's settings row, not an
-item; a member's turn writes the brain's row today, an owner question) and
-`app_table_exports` (no login transaction writes it; on the list, a flow
-that does keeps the checked rerun instead of a 500). The rerun mechanism
-stays.
+writes another map's cards itself. The two tables A3a left as gaps are
+write-role tables since plan v3 S3 (docs/actors.md, "Plan v3 S3"):
+`profiles` writes the login's own row, or the brain's with the Settings
+area (owner decision 2026-10-17), and `app_table_exports` is read and
+written by a manager of the app. The rerun mechanism is gone.
 
 On a box whose actor check is `warn` or `on`, the moved tables' row rules
 apply at once, with the roll, whatever the edit check: they ride the actor

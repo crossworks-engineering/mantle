@@ -193,7 +193,7 @@ describe.skipIf(!URL)('A3a: folders with items the mover cannot read', () => {
     onlyHeadsMisses();
   });
 
-  it('a Files folder holding a hidden empty subfolder: the plain delete answers 409 (the one rule, N3); off, the rule never fires (N1)', async () => {
+  it('a Files folder holding a hidden empty subfolder: the plain delete answers 409 (the one rule, N3); off the same since plan v3 S3', async () => {
     const g = await folder('files', `${tag}h`);
     const gPath = (await pathOf(g))!;
     const sub = await call('/api/tree/files/folders', mod, 'POST', {
@@ -213,12 +213,12 @@ describe.skipIf(!URL)('A3a: folders with items the mover cannot read', () => {
     // Nothing went: the hidden subfolder is still under the folder.
     expect((await pathOf(subId))!.startsWith(`${gPath}.`)).toBe(true);
     // A box whose actor check is off (round 4, L3): the database's own mode
-    // is off (MANTLE_ACTOR_CHECK can only raise it), every write runs on the
-    // system pool, and the answer is main's exactly (the same code path; the
-    // new rule's pre-check is a no-op there): the folder's own count sees
-    // the subfolder, so both deletes are refused as "not empty" (the merge
-    // delete 409, the plain route 400), never our hidden-items refusal, and
-    // nothing moves.
+    // is off (MANTLE_ACTOR_CHECK can only raise it). Since plan v3 S3 a
+    // scoped write runs on the write role there too (the mode never picks
+    // the pool), so both deletes meet the hidden-items rule as in warn: 409
+    // hidden_items, nothing moves. Changed in S3: off ran them on the system
+    // pool, where the folder's own count saw the subfolder ("not empty":
+    // the merge delete 409, the plain route 400).
     // As the superuser: the runtime role (arch A9) may not run the box mode
     // reader (the app never calls it).
     const [box] = await (
@@ -231,8 +231,7 @@ describe.skipIf(!URL)('A3a: folders with items the mover cannot read', () => {
       const subPath = (await pathOf(subId))!;
       const merged = await del('files', g);
       expect(merged.status, merged.text.slice(0, 200)).toBe(409);
-      expect(merged.text).toContain('folder is not empty');
-      expect(merged.json.code).not.toBe('hidden_items');
+      expect(merged.json.code).toBe('hidden_items');
       expect(await pathOf(g)).toBe(gPath);
       expect(await pathOf(subId)).toBe(subPath);
       // The plain Files route (deleteFolder) the same way.
@@ -246,8 +245,9 @@ describe.skipIf(!URL)('A3a: folders with items the mover cannot read', () => {
       await hide(sub2Id);
       const sub2Path = (await pathOf(sub2Id))!;
       const plain = await call(`/api/files/folders/${g2}`, mod, 'DELETE');
-      expect(plain.status, plain.text.slice(0, 200)).toBe(400);
-      expect(plain.text).toContain('folder is not empty');
+      expect(plain.status, plain.text.slice(0, 200)).toBe(409);
+      expect(plain.json.code).toBe('hidden_items');
+      expect(plain.text).not.toContain(`${tag}sub2`);
       expect(await pathOf(g2)).toBeDefined();
       expect(await pathOf(sub2Id)).toBe(sub2Path);
     } finally {

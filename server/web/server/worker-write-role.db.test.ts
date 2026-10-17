@@ -28,7 +28,7 @@
  *     write role. Warn: the read-only edit is made and logged as a miss.
  *   - pool closed (main's shape of these three processes): the read-only
  *     edit is made, unchecked, in warn and on alike: the gap closed here.
- *   - off: the system pool, as before (no statement on the role).
+ *   - off: the write role too since plan v3 S3 (its check reports, as warn).
  *   - the pre-check in place: every read-only edit is refused in its own
  *     words, the same answer with the pool open and closed (no changed
  *     answer where the pre-check stands).
@@ -424,7 +424,7 @@ describe.skipIf(!DB_URL)(
         expect(rw.misses).toEqual([]);
       }, 120_000);
 
-      it(`${way}: main's shape (the pool closed) made the read-only edit unchecked in warn and on; off stays the system pool`, async () => {
+      it(`${way}: main's shape (the pool closed) made the read-only edit unchecked in warn and on; off runs on the write role (plan v3 S3)`, async () => {
         for (const mode of ['warn', 'on'] as const) {
           await setMode(mode);
           const ro = await cell(`${way} ${mode} read-only, pool closed`, way, {
@@ -437,6 +437,8 @@ describe.skipIf(!DB_URL)(
           expect(ro.who.filter((w) => WRITER.test(w))).toEqual([]);
           expect(ro.misses).not.toContain(EDIT_MISS);
         }
+        // Changed in S3: off ran it on the system pool (the rollout switch);
+        // the write role now, its check reporting as warn does.
         await setMode('off');
         const off = await cell(`${way} off read-only`, way, {
           write: false,
@@ -444,7 +446,11 @@ describe.skipIf(!DB_URL)(
           precheck: false,
         });
         expect(off.ok, off.text).toBe(true);
-        expect(off.who.filter((w) => WRITER.test(w))).toEqual([]);
+        expect(
+          off.who.some((w) => WRITER.test(w)),
+          off.who.join(','),
+        ).toBe(true);
+        expect(off.misses).toContain(EDIT_MISS);
       }, 180_000);
 
       it(`${way}: with the pre-check in place the answer is main's, pool open or closed`, async () => {

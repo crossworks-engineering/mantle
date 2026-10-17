@@ -101,8 +101,9 @@ Two tests in SQL were written against a superuser system pool.
   `MEMBER` version (0290 skipped) refuses the runtime role at every write
   guard: the integrity row names that too, and migrate warns about it on
   every run until 0290 is in.
-- The checked rerun (client.ts) does `SET LOCAL ROLE` to the write role and
-  the gap writer, which needs a membership with `SET`. It goes through
+- The checked rerun (client.ts, gone since plan v3 S3) did `SET LOCAL ROLE`
+  to the write role and the gap writer, which needs a membership with `SET`;
+  both memberships stay one release (S3 part 2 drops them). It went through
   `mantle_system`, never directly: 0277 and 0278 count only a direct
   membership as "the write role's login", so the system pool is still not
   one, as it was not as the superuser. `mantle_system` owns nothing and holds

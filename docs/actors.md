@@ -501,10 +501,10 @@ write runs:
   the write role"). Every other worker and the scripts keep every write on
   the system pool. `connection-ceiling.test.ts` counts the pool for each of
   them at its size and fails on any other caller;
-- the actor check is not off (`actorCheckMode`: the box mode read from the
-  catalog, `MANTLE_ACTOR_CHECK` raises it for one process). Off is the
-  rollout switch: the system pool as before, no statement and no round trip
-  added (`a2a-round-trips.db.test.ts`, also against the pre-A2a counts);
+- in every actor check mode (plan v3 S3): the mode decides whether a check
+  refuses (on) or reports (off and warn, 0278's gate), never the pool. Off
+  sends the same SET as warn and on, with `mantle.actor_check` off; before
+  S3 off was the rollout switch and ran the write on the system pool;
 - the actor is a login, an assistant, a link or a contact (system work, a
   named repair, an Admin area route and a peer(share) stay on the system
   pool);
@@ -532,58 +532,14 @@ check off. Both are tagged as the actor's own for the round-trip test.
   No query on the write's path.
 - **Tables the role has no right on.** A typed write (`db.insert(table)`)
   or a single raw write to a table outside `WRITE_ROLE_TABLES` goes to the
-  system pool before it is sent. Inside a transaction a table of
-  `WRITE_ROLE_GAP_TABLES` (`access-matrix.ts`: since A3a only `profiles` and
-  `app_table_exports`, [edit-check.md](./edit-check.md)) is a "gap":
-  a statement whose target is one is never sent, and Postgres's own
-  `permission denied for table <t>` for one counts too. The transaction
-  rolls back whole (a gap the caller caught in a savepoint as well) and runs
-  once more: in warn on the system pool, as before A2b2b; in on **checked**,
-  on the system pool with `SET LOCAL ROLE mantle_write_user` and the same
-  scope, every statement as the write role (its row rules and write checks)
-  except a write whose target is a gap table, a row-locking read (`FOR
-UPDATE`, `FOR SHARE` and kin, which need UPDATE) naming any gap table, or
-  a read naming one the write role cannot read at all (`secrets`,
-  `app_table_exports`), which runs
-  as `mantle_gap_writer` (fix round 2) between `set local role` to it and
-  the write role set back. That role is NOLOGIN and holds rights on the gap
-  tables only (and a row rule that lets it through theirs), made by
-  `syncGapWriterRights` from the same list, so an item write in that window
-  is impossible by construction; a statement that needs more fails. So in
-  on no item write leaves the role's checks through a rerun; a statement
-  that needs a gap table and is neither fails. A single statement with a
-  `WITH` that writes a gap table is not seen as a gap target
-  (`rawWriteTarget` reads only a plain INSERT, UPDATE or DELETE): it is a
-  gap Postgres answers, so in warn it runs again on the system pool and in
-  on it is a 500 (fail closed; no such statement is known today). Each gap is logged as an actor
-  miss (`write-role-gap`). ONE rule decides it, `writeRoleGapTable`, used
-  by the gateway and by `vitest.setup.ts` (the suite fails on any other
-  denial). Any other denial, a column, a function, a sequence, a table off
-  the list, is a bug and stays an error (a 500). A refusal the database
-  decided (a check, a row rule) never runs again. The rerun needs a system
-  login that may SET ROLE to the write role and to `mantle_gap_writer` (a
-  superuser, as on every box today); one that may not fails loudly in on.
-- **Rollout: warn under-reports the gap flows** (fix round 2). In warn a
-  gap's rerun runs on the system pool unchecked, so for the gap flows (app
-  publish, restore, delete, app and table snapshots, Recall maps, share
-  links, `secret_create`, the profile row) warn's misses do not show what
-  on would refuse. Watch those flows on dev with the box in on before
-  another box goes on.
-- **Rollout: any other denial is a 500 in warn and in on** (fix round 1,
-  H1): a right the write role does not hold, outside the gap tables (a
-  column, a function, a table off the list), was run again on the system
-  pool before and is an error now. It is a bug to fix in the matrix or the
-  caller; the suite fails on it, a box shows it as a 500 and a
-  `write-role-gap` miss.
-- **Running a gap's flow twice is safe** (audit, 2026-10-13): of the flows
-  that meet one (app publish, restore, delete, snapshots, table snapshots,
-  Recall maps, contact share links, `secret_create`, the profile row), none
-  sends a job, a fetch, a model call or a message inside the transaction;
-  the app and table snapshots copy a file to a fresh path and delete the
-  copy when the transaction fails, so the first attempt leaves nothing; a
-  `withSystemTx`'s commit hooks of the failed attempt are dropped, its
-  rollback hooks run. The cost: each such flow runs twice while its table
-  is a gap (A3a moved all but `profiles` and `app_table_exports`).
+  system pool before it is sent. Since plan v3 S3 there is no gap table:
+  `profiles` and `app_table_exports` are write-role tables ("Plan v3 S3"
+  below), and the gap rerun (the system pool in warn, the checked rerun as
+  `mantle_gap_writer` in on) is gone. A right the write role does not hold
+  (a column, a function, a sequence, a table off the matrix) is a bug: an
+  error (a 500), logged as an actor miss (`write-role-gap`), and the suite
+  fails on any (`vitest.setup.ts`). A refusal the database decided (a
+  check, a row rule) is the caller's answer. Nothing runs again.
 - **The visibility confirm reads in the write's own transaction.**
   (`packages/content/src/tree/visibility.ts`) It names every workspace a
   change reaches, those the caller is not in too. What a scoped read
@@ -6175,3 +6131,89 @@ directive in `contact-sharing-routes.db.test.ts`) is main's.
 only, checked): no live call of a deleted route or field; only comments,
 its `gone-routes.ts` guard list and an e2e intercept of
 `/api/apps/members**` name them.
+
+## Plan v3 S3
+
+Plan v3.2 step S3, "Write role always, gap tables closed" (issue 4 part 1).
+The check mode decides refuse or report, never the pool.
+
+What changed:
+
+- `packages/db/src/client.ts`: `loginWriteRoute` routes a scoped login write
+  to the write role in every check mode, off included; the SET carries the
+  actor and `mantle.actor_check` as the mode reads (off too).
+  `loginWritesMayRoute` asks only whether the process opened the write
+  pool. Gone: the gap rerun of `onLoginWritePool` (the system pool in warn,
+  `checkedBegin` and `checkedSettingsSql` in on), `runsAsGapWriterWhenChecked`,
+  the `GAP_*` regexes and `LOCKING_READ`, `WriteRoleGapError`, the `checked`
+  and `gap` fields of a write transaction. A right the role does not hold is
+  noted (`noteWriteRoleDenial`, the `write-role-gap` miss) and stays an
+  error. 3294 lines to 3132.
+- `packages/db/src/access-matrix.ts`: `WRITE_ROLE_GAP_TABLES`,
+  `WRITE_ROLE_GAP_UNREADABLE`, `isWriteRoleGapTable` and `writeRoleGapTable`
+  are gone. `profiles` is a write table with `writeRule: 'own-login'`;
+  `app_table_exports` a write table read by all its row rule allows, with
+  the write check `manage` of `app_node_id`. `syncGapWriterRights` keeps
+  `mantle_gap_writer` holding nothing (every right revoked, every row rule
+  naming it dropped).
+- Migration 0301 (`0301_write_role_gap_tables.sql`; becomes 0302 at merge,
+  after R0's 0301, `when` 1790197440000 already above R0's): row level
+  security on `app_table_exports` and its one read rule (manage of the app:
+  a Moderator of its home, an Admin scope for an app with no home), and
+  `mantle_write_role_sync_table(t, write, check_args, write_rule)`, whose
+  `write_rule` 'own-login' makes profiles' write rules narrower than its
+  read rule (matched by a policy note, not by text). The 0278 signature
+  stays as a call with no write rule, for a rollback image. No row is
+  touched; no app, app row, app database or sandbox is removed.
+- The gap writer role (`runtime-role.ts` `wantedMemberships`,
+  `viewer-roles.ts`) stays one release, holding nothing: S3 part 2 drops it
+  and both SET memberships of `mantle_system` (TODOs in both files).
+
+The profiles policy (owner decision 2026-10-17, Outcome A):
+
+- read (unchanged, 0266): the login's own row, the brain's row, every row
+  in a scope that holds the Admin workspace;
+- write on the write role: the login's own row, or the brain's (anchor)
+  row when `mantle_scope_has_area('settings')` holds (the Admin workspace in
+  the scope, the Settings area not limited off). Never another login's row.
+- Who writes the brain's row, and what holds it there: `set_timezone`
+  (scope 'admin', `ctx.ownerId` is the anchor) and an Admin turn's
+  automatic time zone and reminder channel (`run-turn.ts`,
+  `applyAutoTimezone` and `noteInboundChannel` of `ownerId`) run on the
+  write role, so the row rule holds them; the `/api/profile/*` brand writers
+  (system pool, 'self') already ask `brandSettingsRefusal` (anchor or the
+  Settings area), `PUT /api/profile` the same for the brand keys and the
+  anchor only for the prompt keys; `/api/settings`, `/api/appearance` and
+  `/api/onboarding` are Settings-area routes. A member's turn reaches the
+  brain's row only through the first-read insert of
+  `loadProfilePreferences`, which the row rule refuses and the caller
+  catches (the answer as before).
+
+Changed answers (old vs new):
+
+1. Off (no fleet box; dev and the 7 boxes are on/on): a scoped login write
+   ran on the system pool; it runs on the write role. A write the row rules
+   refuse is refused (narrower); a write check that would refuse in on
+   reports a miss and runs, as warn. Cells: a2b2b "off: the same create runs
+   on the write role too", "an Admin user's write request runs on the write
+   role too" (its off half), "what only the database refuses: off and warn
+   report and run it".
+2. profiles, every mode: an Admin user without the Settings area who is not
+   the anchor no longer changes the brain's row from a scoped write
+   (`set_timezone`, the automatic time zone and reminder channel of an Admin
+   turn): refused (42501, a scope-write refusal); the turn's own catch logs
+   the two automatic ones and goes on. A scoped write of another login's
+   row is refused (it ran through the rerun before). Narrower. Cell: "S3:
+   profiles on the write role".
+3. app_table_exports: a scoped write of an export row needs manage of the
+   app (was: the system pool, no row rule). `app_table_export_set` and
+   `_remove` (owner-only, `edit('id')` at the gate) by an Admin user who may
+   edit the app but not manage it are refused at the database. Narrower.
+   The workspace role now reads the export rows of the apps it manages
+   (was: no grant, an error on any scoped read; every reader today reads on
+   the system pool or through `mantle_table_app_link`). Cell: "S3:
+   app_table_exports on the write role".
+4. A transaction that met a gap table ran twice (warn and on); it runs once.
+   Cells: M1, L6 and round 3 A now expect one run.
+
+Gates: see the S3 handover lines below.

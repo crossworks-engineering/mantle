@@ -119,6 +119,84 @@ const F4_CREATE_MISS =
 const F4_CREATE_APP_MISS = 'sql INSERT on apps: no edit of the item (refused when the check is on)';
 
 /**
+ * Plan v3 S3 (docs/actors.md, "Plan v3 S3"), in every section: profiles and
+ * app_table_exports are write-role tables, so a write of them is no gap.
+ *  - main's line lists the gap it ran again (warn: the system pool; on: the
+ *    checked rerun); the same answer now lists none;
+ *  - an export link removed by the library called past the tools' gate
+ *    (`app_table_export_remove` asks edit of the app first) in a scope that
+ *    does not manage the app: the row rule (manage of the app) finds no row
+ *    now, where main removed it on the system pool. The Moderators' cells
+ *    (P's) answer as main.
+ */
+const S3_GAP_TABLES = /^permission denied for table (profiles|app_table_exports)$/;
+type S3Change = {
+  cells: RegExp;
+  reason: string;
+  now?: string;
+  nowTest?: (now: string, k: string, was: string) => boolean;
+};
+const S3_WARN_CHANGES: ReadonlyArray<S3Change> = [
+  {
+    cells: /./,
+    reason: 'plan v3 S3: no gap table is left; the same answer, its gap (and the run again) gone.',
+    nowTest: (now, _k, was) => {
+      type Was = { v?: unknown; misses?: string[]; gaps?: string[] };
+      let w: Was | null;
+      try {
+        w = JSON.parse(was) as Was | null;
+      } catch {
+        return false;
+      }
+      if (!w || typeof w !== 'object' || !Array.isArray(w.gaps) || w.gaps.length === 0) {
+        return false;
+      }
+      if (!w.gaps.every((g) => S3_GAP_TABLES.test(g))) return false;
+      const misses = w.misses ?? [];
+      return now === JSON.stringify(misses.length ? { v: w.v, misses, gaps: [] } : w.v);
+    },
+  },
+  {
+    cells:
+      /^removeAppTableExport (written|team) (turn:admin:(adminAll|none|owner)|turn:Q:userQ|write:(adminAll|adminNoUsers|outsider|userQ))$/,
+    reason:
+      "plan v3 S3: an export row is the write role's with manage of the app; a scope that " +
+      'does not manage it removes nothing (the tool asks edit of the app before this).',
+    now: '{"ok":false}',
+  },
+];
+
+/** Main's warn lines of the section being compared (off only, plan v3 S3). */
+let WARN_RECORDED = new Map<string, string>();
+
+/** S3's changes, and off's: a scoped write runs on the write role in off
+ *  as in warn (the mode never picks the pool), so an off cell answers as
+ *  main's warn cell did, with S3's own changes to warn. */
+const S3_CHANGES: ReadonlyArray<S3Change> = [
+  ...S3_WARN_CHANGES,
+  {
+    cells: /./,
+    reason:
+      "plan v3 S3: off runs a scoped write on the write role, its checks reporting as warn's: " +
+      "the cell answers as main's warn cell (and S3's warn changes).",
+    nowTest: (now, k) => {
+      if (MODE !== 'off') return false;
+      const line = WARN_RECORDED.get(k);
+      if (line === undefined) return false;
+      const warn = line.slice(line.indexOf(' => ') + 4);
+      return (
+        now === warn ||
+        S3_WARN_CHANGES.some(
+          (c) =>
+            c.cells.test(k) &&
+            ((c.now !== undefined && now === c.now) || !!c.nowTest?.(now, k, warn)),
+        )
+      );
+    },
+  },
+];
+
+/**
  * The F4 changes (docs/actors.md, "Admin writes on the write role (F4)"),
  * in every section: an Admin user's write request enters its scope, its
  * reads with it, as a member's does (it ran on the system pool with only
@@ -588,6 +666,16 @@ describe.skipIf(!URL)('the A6b exit sweep', () => {
     const recorded = readFileSync(path, 'utf8').trimEnd().split('\n');
     const was = new Map(recorded.map((l) => [l.slice(0, l.indexOf(' => ')), l]));
     RECORDED = was;
+    const warnPath = join(HERE, '__snapshots__', `a6b-exit-sweep.${name}.warn.txt`);
+    WARN_RECORDED =
+      MODE === 'off' && existsSync(warnPath)
+        ? new Map(
+            readFileSync(warnPath, 'utf8')
+              .trimEnd()
+              .split('\n')
+              .map((l) => [l.slice(0, l.indexOf(' => ')), l]),
+          )
+        : new Map();
     const now = new Map(cells.map((l) => [l.slice(0, l.indexOf(' => ')), l]));
     const problems: string[] = [];
     for (const [k, line] of was) {
@@ -601,7 +689,15 @@ describe.skipIf(!URL)('the A6b exit sweep', () => {
       const wasValue = line.slice(line.indexOf(' => ') + 4);
       // Every named change whose pattern holds the cell is asked (F4's
       // apply in every section, beside the section's own).
-      const named = [...(NAMED_CHANGES[name] ?? []), ...F4_CHANGES].filter((c) => c.cells.test(k));
+      const named: ReadonlyArray<{
+        cells: RegExp;
+        back?: (now: string) => string;
+        now?: string;
+        nowTest?: (now: string, k: string, was: string) => boolean;
+        was?: RegExp;
+      }> = [...(NAMED_CHANGES[name] ?? []), ...F4_CHANGES, ...S3_CHANGES].filter((c) =>
+        c.cells.test(k),
+      );
       const holds = named.some((c) => {
         const wasOk = !('was' in c) || !c.was || c.was.test(line);
         if (!wasOk) return false;
