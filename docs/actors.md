@@ -6686,6 +6686,79 @@ entry goes, move `f4-admin-write-role`'s pre-check cell and
 app's), and when the last goes, drop them. `ITEM_MANAGE_WRITES` is gone
 (the arch lint test allows it at 0).
 
+### Pre-check removal Part 2 (HTTP) round 3 handover (2026-10-17)
+
+Branch `feat/precheck-http`, head as pushed with this paragraph. Handed
+over at the owner's tool-call rule, after the files family; the apps and
+tree items family (with the 7 `ITEM_READ_WRITES`) was not started.
+
+**Removed this round: 5 entries** (`itemPrecheckRoutes` 16 -> 11;
+`routePolicyLists` 17 -> 16 and the `route-scope.ts` lint pin 6 -> 5:
+`ITEM_WRITE_PREFIXES` holds two, apps and tree items, below the three a
+list is counted at):
+
+| Family (entries)                                                                           | Write routes                                                                                                                                                                                                                                              | The check, and what the handler does first                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| ------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| tables (2: `/api/tables`, `/api/v1/tables`)                                                | PATCH, DELETE `/:id`; PUT `/:id/draft`; POST `/:id/draft-ops`, `/:id/commit`, `/:id/discard-draft`, `/:id/import`, `/:id/history`, `/:id/history/:sid/restore`; DELETE `/:id/history/:sid`; v1: POST `/:id/commit`, `/:id/rows`, PATCH `/:id/rows/:rowId` | the edit and delete one statement each (0278, 0266); `saveTableDraft`, `applyTableOps` and `discardTableDraft` ask `assertItemRight` edit after their scoped read, before any workbook is staged (an app's sync excepted, as the commit); the import route asks it before the upload is read; `deleteTableSnapshot` reads the table in the scope and asks edit before the row goes; the v1 row routes read the table in the key's scope (`tableTitle`) and ask edit before the tool runs                                                                                                                     |
+| files and folders (3: `/api/files/files`, `/api/files/folders`, `/api/tree/:kind/folders`) | PATCH, POST (copy), DELETE `/api/files/files/:id` and `/api/files/folders/:id`; PATCH, DELETE `/api/tree/:kind/folders/:id`                                                                                                                               | a file or Files folder write reads the item in the scope first (`fileById`, `folderById`: the 404 of none) and asks the gate's right before anything is written, copied or moved on disk: a content edit edit before its bytes, a copy edit and a move manage before the guard reads the destination, a delete manage before its derived items are counted, a folder rename edit (the subtree rewrite then asks manage); a folder's description and look are one statement (0278); a tree folder's PATCH asks edit and its DELETE manage first (`assertItemRight`, before the body or its contents are read) |
+
+Each route declares its uuid param (`routeParams`; the v1 table aliases
+re-export theirs). The proof (`precheck-removal-http.db.test.ts`) gained
+both families' cells, the same style: member and Admin user, warn and on,
+four placements, a random uuid and a bad id, the copy answer, member
+negatives. New proof flags: `adminOnly` (a route that is not a member's
+write: 403 member-login for every id), `raw` (a form upload), `probeOf` (a
+copy's write is the destination folder's), `parentHidden` (below). A
+file's fixture folder is homed in a workspace no placement uses (P): a
+folder's grants reach what it holds.
+
+**Changed answers** (the old answer is `was`, printed by the test):
+
+- A table, file or Files folder the scope does not read, and an id no row
+  has: 404 `{"ok":false,"error":"not found"}` (the gate) is now the
+  handler's 404 `{"error":"not found"}`, the same for both
+  (`POST /api/tables/:id/history`: `{"error":"table not found"}`, its own
+  words). A tree folder's: the mapper's
+  `{"error":"not found","reason":"not-found","code":"not_found","message":"Not found."}`
+  (asked by `assertItemRight` first), the same for both. An id that is not
+  a uuid: the params gateway's 404 `{"error":"not found"}` on every write
+  route of both families (named in `a10-lows.db.test.ts`); the GETs of
+  `/api/files/files/:id` and `/api/files/folders/:id` give it too, where
+  they answered 400 `{"error":"invalid id"}`.
+- A scope that reads the item and may not make the write, in on: the 403
+  item-workspace gains `"code":"forbidden"`; the v1 row routes answer it
+  too (the route asks the edit), where the tool's catch would have said
+  400 with the same words. A read-only copy: the copy's words with
+  `readOnly`, as before.
+- In warn (an emergency only): a table's PATCH and a Files folder's
+  description and look by a reader are made and logged as an actor miss;
+  every other write of both families is refused in every mode, as the
+  gate refused it (the right is asked first).
+- Unchanged and named: a Files folder's rename by a login that may edit
+  and not manage it is 403 before and now (the subtree rewrite asks
+  manage; the proof's need is manage). A file's content edit where the
+  caller does not read the file's folder is the handler's 400
+  `upsertFile: parent folder ... not found` before and now (`parentHidden`
+  in the proof: the edit looks the folder up in the caller's scope; left
+  as found, a product question, not this branch's).
+
+**Moved cells**: `f4-admin-write-role`'s pre-check cell, `gate-caller.test.ts`
+and `item-write-encoded.test.ts` drive an app's write (its v1 cell dropped:
+no `/api/v1` item route keeps the gate); `w6a-route-sweep`'s S1 cell
+checks what is left (`> 0`). The guard sweeps re-recorded (the table and
+file write rows pass the guard and fail at the handler's database read,
+the same 500 for every credential).
+
+**Left (9 entries: 2 prefixes and the 7 read writes; 2 to stay):** apps
+(`/api/apps` and its five `ITEM_READ_WRITES`), tree items
+(`/api/tree/items` and its two), as the "Left" list above says; WATCH the
+app sandbox's "tool not declared" note (a tool-broker 403 with
+`ok === false`: keep that body's `ok`, and test it). When apps goes, move
+`f4-admin-write-role`'s pre-check cell, `gate-caller.test.ts` and
+`item-write-encoded.test.ts` to `share` or `deleted-app` (they stay, S6).
+
+**Gates**: below, as run at this head.
+
 ## Remove the switch-over code (A7)
 
 Plan v2 (page fcc4aee4), "A7. Remove the switch-over code", after W9 (every
