@@ -3,6 +3,10 @@
  * T1), on a real, migrated Postgres: lowering a connector through a run
  * waits in Pending like the same call made inline, a tool the agent does not
  * hold never runs, and a run with no agent fails closed (Pending too).
+ *
+ * A database of its own, whose brain (mantle_brain_id()) is this file's
+ * anchor: the run's Admin scope asks the assistants area of the brain's own
+ * Admin workspace (mantle_scope_has_area, 0302).
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run server/web/lib/runs/execute-item.db.test.ts
  */
 import { randomUUID } from 'node:crypto';
@@ -16,6 +20,7 @@ describe.skipIf(!URL)('a run item under the planning agent', () => {
   let runs: typeof import('@mantle/runs');
   let exec: typeof import('./execute-item');
   let sqlTag: typeof import('drizzle-orm').sql;
+  let scratch: { url: string; drop: () => Promise<void> } | undefined;
   const anchor = randomUUID();
   const tag = `xi-${randomUUID().slice(0, 8)}`;
   let agentId = '';
@@ -25,14 +30,15 @@ describe.skipIf(!URL)('a run item under the planning agent', () => {
   const rows = async <T>(s: ReturnType<typeof sqlTag>) => (await q(s)) as unknown as T[];
 
   beforeAll(async () => {
-    process.env.DATABASE_URL = URL;
+    scratch = await (await import('@mantle/db/test-support')).createMigratedScratchDatabase(URL!);
+    process.env.DATABASE_URL = scratch.url;
     process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
     m = await import('@mantle/db');
     runs = await import('@mantle/runs');
     exec = await import('./execute-item');
     sqlTag = (await import('drizzle-orm')).sql;
-    await q(sqlTag`insert into auth.users (id, email, password_hash, role)
-      values (${anchor}, ${`${tag}@example.invalid`}, 'x', 'admin')`);
+    await q(sqlTag`insert into auth.users (id, email, password_hash, role, is_owner)
+      values (${anchor}, ${`${tag}@example.invalid`}, 'x', 'admin', true)`);
     await q(sqlTag`insert into spaces (id, kind, login_id) values (${anchor}, 'brain', ${anchor})`);
     // Its Admin workspace, the owner a Moderator user of it: a run with no
     // workspace re-enters Admin (withRunScope), and since arch A7 a brain
@@ -78,15 +84,9 @@ describe.skipIf(!URL)('a run item under the planning agent', () => {
   }, 60_000);
 
   afterAll(async () => {
-    await q(sqlTag`delete from pending_tool_calls where owner_id = ${anchor}`);
-    await q(sqlTag`delete from runs where owner_id = ${anchor}`);
-    await q(sqlTag`delete from agents where owner_id = ${anchor}`);
-    await q(sqlTag`delete from workspaces where id in (${otherWs}, ${adminWs})`);
-    await q(sqlTag`delete from tool_groups where owner_id = ${anchor}`);
-    await q(sqlTag`delete from tools where owner_id = ${anchor}`);
-    await q(sqlTag`delete from spaces where login_id = ${anchor}`);
-    await q(sqlTag`delete from auth.users where id = ${anchor}`);
-    await m.closeDb();
+    // The database is this file's own: dropped whole.
+    await m?.closeDb();
+    await scratch?.drop();
   }, 60_000);
 
   /** Plan one tool_call item, make it ready, run it, return its row. */

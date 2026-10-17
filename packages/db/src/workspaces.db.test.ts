@@ -547,33 +547,24 @@ describe.skipIf(!URL)('workspaces W1: grants, derivation, heads and the workspac
       expect(m.isSystemScope()).toBe(false);
       expect(await m.scopeHasArea('settings')).toBe(false);
     });
+    // This file's owner is not the brain (mantle_brain_id(), the shared
+    // anchor): its Admin workspace is another brain's, and since 0302 (S2a
+    // a0, the owner test) a scope holding another brain's Admin holds no
+    // area. No box has two brains in one database. The yes cells, the
+    // limits and the Admin assistant's, run on the brain's own Admin in
+    // login-facts.db.test.ts.
     await m.withScope(
       { kind: 'user', loginId: owner, ws: [ws.admin, ws.team], modWs: [] },
       async () => {
-        expect(await m.scopeHasArea('settings')).toBe(true);
+        expect(await m.scopeHasArea('settings')).toBe(false);
       },
     );
-    // Its limits switch an area off (the rule of areasFor).
-    const [was] = await admin<{ limits: unknown }[]>`
-      select limits from workspace_users where workspace_id = ${ws.admin} and login_id = ${owner}`;
-    await admin`update workspace_users set limits = '{"areas":{"keys":false}}'::jsonb
-                 where workspace_id = ${ws.admin} and login_id = ${owner}`;
-    try {
-      await m.withScope({ kind: 'user', loginId: owner, ws: [ws.admin], modWs: [] }, async () => {
-        expect(await m.scopeHasArea('keys')).toBe(false);
-        expect(await m.scopeHasArea('users')).toBe(true);
-      });
-      // "false" as a JSON string is off too, as areasFromLimits reads it (L5).
-      await admin`update workspace_users set limits = '{"areas":{"users":"false"}}'::jsonb
-                   where workspace_id = ${ws.admin} and login_id = ${owner}`;
-      await m.withScope({ kind: 'user', loginId: owner, ws: [ws.admin], modWs: [] }, async () => {
-        expect(await m.scopeHasArea('users')).toBe(false);
-        expect(await m.scopeHasArea('keys')).toBe(true);
-      });
-    } finally {
-      await admin`update workspace_users set limits = ${JSON.stringify(was?.limits ?? {})}::jsonb
-                   where workspace_id = ${ws.admin} and login_id = ${owner}`;
-    }
+    await m.withScope(
+      { kind: 'assistant', loginId: owner, ws: [ws.admin], modWs: [] },
+      async () => {
+        expect(await m.scopeHasArea('settings')).toBe(false);
+      },
+    );
     // Not a user of Admin, an assistant answering no login, a link: no area.
     await m.withScope({ kind: 'user', loginId: userA, ws: [ws.admin], modWs: [] }, async () => {
       expect(await m.scopeHasArea('settings')).toBe(false);
@@ -581,14 +572,6 @@ describe.skipIf(!URL)('workspaces W1: grants, derivation, heads and the workspac
     await m.withScope({ kind: 'assistant', loginId: null, ws: [ws.admin], modWs: [] }, async () => {
       expect(await m.scopeHasArea('settings')).toBe(false);
     });
-    // The Admin assistant answering an Admin user (W7a): that user's areas;
-    // answering a login that is no user of Admin: none.
-    await m.withScope(
-      { kind: 'assistant', loginId: owner, ws: [ws.admin], modWs: [] },
-      async () => {
-        expect(await m.scopeHasArea('settings')).toBe(true);
-      },
-    );
     await m.withScope(
       { kind: 'assistant', loginId: userA, ws: [ws.admin], modWs: [] },
       async () => {

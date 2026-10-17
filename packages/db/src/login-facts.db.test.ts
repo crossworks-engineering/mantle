@@ -6,7 +6,7 @@
  *
  *  - mantle_login_is_admin against loginHoldsAdmin's SQL as main had it;
  *  - mantle_area_rule against loginHasArea as main had it (its TypeScript
- *    area guard, then its SQL);
+ *    area guard, then its SQL), and adminUserSql (now a call of it) too;
  *  - mantle_login_areas against loginHasArea over SCOPE_AREAS;
  *  - mantle_login_area against its 0293 text;
  *  - mantle_scope_has_area against its 0291 text, on the workspace role's
@@ -20,8 +20,8 @@
  *    Admin counts;
  *  - the catalog: no PUBLIC, viewer role, write role or gap writer may
  *    EXECUTE a login fact; the runtime role may run the four it calls;
- *  - the renumber proof: 0302 sits last with a `when` above every other,
- *    and a database at main's last migration applies it and only it.
+ *  - the renumber proof: 0302's `when` is above every one before it, and
+ *    a database at main's last migration applies it and only it.
  *
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/db/src/login-facts.db.test.ts
  */
@@ -29,6 +29,7 @@ import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import postgres from 'postgres';
+import { sql as sqlTag } from 'drizzle-orm';
 import { readMigrationFiles } from 'drizzle-orm/migrator';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { applyJournal } from './migrate-runner';
@@ -87,9 +88,9 @@ const MAIN_SCOPE_HAS_AREA = `select EXISTS (
        AND $1::text IN ('settings', 'users', 'assistants', 'connectors', 'keys')
        AND coalesce(u."limits" -> 'areas' ->> $1::text, '') <> 'false') as a`;
 
-describe('0302 sits last, its `when` above every other (renumber proof)', () => {
-  it('is the last entry, stamped above its predecessor and above S3 lane`s 1790197440000', () => {
-    expect(at).toBe(journal.length - 1);
+describe('0302 is stamped above every `when` before it (renumber proof)', () => {
+  it('is stamped above its predecessor and above the S3 lane`s 1790197440000', () => {
+    expect(at).toBeGreaterThan(0);
     expect(journal[at]!.when).toBeGreaterThan(journal[at - 1]!.when);
     expect(journal[at]!.when).toBeGreaterThan(1790197440000);
   });
@@ -204,6 +205,13 @@ describe.skipIf(!URL)('the login facts answer as the text they replace (S2a a0)'
         if (fact !== main || ts !== main) {
           diffs.push(`${k} ${area}: main ${main} fact ${fact} ts ${ts}`);
         }
+        if (area !== 'bogus') {
+          // adminUserSql (workspace-ticks.ts) is the same rule as SQL.
+          const [u] = (await m.systemDb.execute(
+            sqlTag`select ${m.adminUserSql(sqlTag`${id}::uuid`, area)} as a`,
+          )) as unknown as { a: boolean }[];
+          if (u!.a !== main) diffs.push(`${k} ${area}: main ${main} adminUserSql ${u!.a}`);
+        }
         if (main === true) want.push(area);
       }
       const areas = await one('select mantle_login_areas($1::uuid) as a', [id]);
@@ -315,6 +323,46 @@ describe.skipIf(!URL)('the login facts answer as the text they replace (S2a a0)'
     expect(await asks(L.dis)).toBe(false);
   });
 
+  it('scopeHasArea kind by kind on the brain`s own Admin (workspaces.db.test.ts`s W5b1 cell)', async () => {
+    const has = (scope: Parameters<typeof m.withScope>[0], area: string) =>
+      m.withScope(scope, () => m.scopeHasArea(area as (typeof AREAS)[number]));
+    // System work: every area, never an unknown area.
+    expect(await m.scopeHasArea('users')).toBe(true);
+    expect(await m.scopeHasArea('nope' as never)).toBe(false);
+    const user = (loginId: string, wsIds: string[]) =>
+      ({ kind: 'user', loginId, ws: wsIds, modWs: [] }) as const;
+    // A workspace scope: an area only when it holds the Admin workspace.
+    expect(await has(user(L.mem, [ws.team]), 'settings')).toBe(false);
+    expect(await has(user(L.adm, [adminWs, ws.team]), 'settings')).toBe(true);
+    expect(await has(user(brain, [adminWs]), 'settings')).toBe(true);
+    // Its limits switch an area off: false, and "false" as a JSON string.
+    expect(await has(user(L.lim, [adminWs]), 'users')).toBe(false);
+    expect(await has(user(L.lim, [adminWs]), 'keys')).toBe(false);
+    expect(await has(user(L.lim, [adminWs]), 'settings')).toBe(true);
+    expect(await has(user(L.lim, [adminWs]), 'assistants')).toBe(true);
+    // Not a user of Admin, an assistant answering no login, a link: no area.
+    expect(await has(user(L.mem, [adminWs]), 'settings')).toBe(false);
+    expect(
+      await has({ kind: 'assistant', loginId: null, ws: [adminWs], modWs: [] }, 'settings'),
+    ).toBe(false);
+    // The Admin assistant answering an Admin user: that user's areas;
+    // answering a login that is no user of Admin: none.
+    expect(
+      await has({ kind: 'assistant', loginId: L.adm, ws: [adminWs], modWs: [] }, 'settings'),
+    ).toBe(true);
+    expect(
+      await has({ kind: 'assistant', loginId: L.mem, ws: [adminWs], modWs: [] }, 'settings'),
+    ).toBe(false);
+    expect(await has({ kind: 'link', loginId: null, ws: [adminWs], modWs: [] }, 'settings')).toBe(
+      false,
+    );
+    // The named cell through the TypeScript path: a disabled Admin user in
+    // a scope still open holds no area (0302).
+    expect(await has(user(L.dis, [adminWs]), 'settings')).toBe(false);
+    // Another brain's Admin in the scope: no area (the owner test, 0302).
+    expect(await has(user(L.otherUser, [ws.otherAdmin]), 'settings')).toBe(false);
+  });
+
   it('mantle_role_drift: enabled logins only, former clients left out', async () => {
     const drift = async (tx: postgres.TransactionSql) =>
       (await tx<{ n: number }[]>`select mantle_role_drift() as n`)[0]!.n;
@@ -414,7 +462,8 @@ describe.skipIf(!URL)('a database at main`s last migration runs 0302 and only it
       )[0]!.n;
     expect(await fn()).toBe(0);
     const out = { lines: [] as string[], warnings: [] as string[] };
-    const applied = await applyJournal(sql, all, journal, {
+    // The journal up to 0302: a later migration is not this proof's.
+    const applied = await applyJournal(sql, all.slice(0, at + 1), journal.slice(0, at + 1), {
       log: (l) => out.lines.push(l),
       warn: (l) => out.warnings.push(l),
     });
