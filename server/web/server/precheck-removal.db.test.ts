@@ -1627,6 +1627,7 @@ describe.skipIf(!DB_URL)(
     for (const family of FAMILIES) {
       it(`queue time (${family.name}): refused before it is queued only as its run refuses it`, async () => {
         let refusedAtQueue = 0;
+        const mismatched: string[] = [];
         for (const tool of family.tools) {
           for (const who of tool.who) {
             for (const p of tool.adminKind ? (['allowed'] as const) : (tool.places ?? PLACES)) {
@@ -1640,12 +1641,16 @@ describe.skipIf(!DB_URL)(
               );
               if (queued === null) continue;
               refusedAtQueue += 1;
-              expect(run.ok, `${name}: queue refused "${queued}", the run did not`).toBe(false);
-              expect(plain(queued), name).toBe(plain(run.text));
+              if (run.ok || plain(queued) !== plain(run.text)) {
+                mismatched.push(
+                  `${name}: queue "${queued}", run ${run.ok ? 'ok' : `"${run.text.slice(0, 200)}"`}`,
+                );
+              }
             }
           }
         }
         recorded.push(`queue ${family.name}: ${refusedAtQueue} refused before they were queued`);
+        expect(mismatched).toEqual([]);
       }, 600_000);
     }
 

@@ -287,6 +287,8 @@ describe.skipIf(!URL)('one audit row for every tool write (A5 step 6d)', () => {
     );
   /** The targets of the one row a call left, or null when it left none. */
   const targetsOfCall = async (slug: string, input: Record<string, unknown>) => {
+    // The rows of the calls before it (each settles after its call) first.
+    await m.callAuditsSettled();
     await clear();
     const res = await turn(slug, input);
     const rows = await toolRows();
