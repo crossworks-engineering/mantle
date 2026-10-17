@@ -94,3 +94,67 @@ success; the widened runtime-role subset ran 72 files.
 - The `/ws-` filter in the CI subset is there so S2a's definer suites join
   it without another CI edit.
 - D1 takes `actorsMdLines` out of `MAY_GROW` when it moves the history out.
+
+## Fix round 1
+
+The audit at 814fe4382 rated it 8.5/10. Fixed:
+
+- MEDIUM, request system exits could hide. The counter found wrappers in
+  one file, as `function` declarations only, and skipped any
+  `noteRequestSystem(x)` whose `x` matched a wrapper's parameter name
+  anywhere in the file: an exported wrapper's calls in another file counted
+  0, and `function f(ctx, reason) { noteRequestSystem(reason) }` counted 0.
+  Now `requestSystemExits` runs the asSystem exits' AST engine
+  (`eslint-rules/as-system-exits.mjs`) with `call: 'noteRequestSystem'`
+  and `follow: 'forwarders'`: a call with a literal reason is an exit; a
+  function passing one of its parameters on as the reason (declaration,
+  arrow, method; exported or not; any parameter position) is followed to
+  its uses in any file, each with the literal reason it passes; a wrapper
+  no code calls counts its own site as unnamed; a wrapper of a wrapper is a
+  problem (`perFile.rights.requestSystemExitProblems`, asserted empty by the
+  repo test). The asSystem count keeps `follow: 'all'` and is unchanged
+  (asSystemExits 58). One engine follows wrappers for both. Unit tests for
+  both holes, the cross-file arrow and method forms, and the wrapper chain.
+- `WORKSPACE_TABLE_WRITE` and the box script's writers query read
+  `UPDATE ONLY` and `DELETE FROM ONLY` (`(?:only\s+)?`, as rawWriteTarget);
+  the SQL regex starts at a word boundary (`\m`). Proven on pg18: `UPDATE
+  ONLY workspace_users`, `delete from only public.workspace_events` match,
+  `xupdate workspaces` does not.
+- `setAssistantCopies` stays by name, marked in its pin note as a progress
+  counter only: a body check (writes workspace_resources with 'assistant')
+  finds the one-off backfills mantle_ws_attach_assistants and
+  mantle_ws_migrate_bridged, not the setter.
+- `readsAreaLimits` also reads `['areas']` and `#> / #>> '{areas,...}'`;
+  the catalog test also asserts every live function naming the `areas` key
+  is one the reader catches.
+- The box script prints `env_names_runtime_role` as the value the app
+  reads (FLAG_ON_WORDS: 1 for 1, true, yes, on in any case, quotes and
+  spaces trimmed, the last line winning; 0 for unset, empty, 0 or anything
+  else).
+- The rights-counts.mjs header points at rights-counts.test.ts.
+- `scripts/test-merge-branch.sh`: an 8th case, the lane that lost the race
+  rebased and renumbered to the number it was told (0003, a when above
+  310): it merges.
+
+Pins before and after: unchanged. requestSystemExits 5 (area 1,
+login-self 2, admin-write 2, other 0), sqlAreaRules 7,
+workspaceTableRawWrites 16, workspaceTableWriterFns 12, setAssistantCopies
+1, asSystemExits 58. Only the notes of requestSystemExits and
+setAssistantCopies changed.
+
+Gates at f9d7dd63c (the code head of this round). Mac: `pnpm -r
+typecheck` 0, `pnpm lint` 0, `pnpm format:check` 0, `pnpm docs:check` 0,
+`pnpm arch:check` 0, `pnpm -C server/web build` 0, `vitest run eslint-rules
+server/web/lib/shell-portability.test.ts` 0 (20 files, 241 tests),
+`bash scripts/test-merge-branch.sh` 0 (8/8).
+
+Workstation (own clone at f9d7dd63c, own pgvector pg18 container `p1af_pg`,
+`--maxWorkers=3`): init 0, migrate 0, `rights-catalog.db.test.ts` 0 (4/4),
+full vitest with DB 0 (1096 files, 13499 tests, 1 skipped). A first full run
+had `DATABASE_URL` exported by mistake and failed 5 cells in two suites that
+expect it unset (a4-guard-sweep, heartbeats/tools); re-run as CI runs it
+(`MANTLE_TEST_DATABASE_URL` only), green. The other DB suites (actor-off,
+actor-on, edit-on, matrix, runtime-role) were not run: this round changes
+only counters, tests and scripts, no product code. Box script dry run on
+the throwaway database: writer functions 12, the runtime role 1 for `"On"`,
+0 for `0`, empty and unset. Container, clone and unit cleaned up by name.
