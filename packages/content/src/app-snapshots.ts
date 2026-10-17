@@ -806,8 +806,10 @@ export async function restoreAppSnapshot(
   const wantsCode = mode === 'code' || mode === 'full';
   // The code is the app's Moderators' (D4): asked first, before any refusal
   // of the entry and before the undo snapshot (snapshotBeforeCodeChange asks
-  // it again there). A data restore is the data's (edit, the caller's door).
-  if (wantsCode) await assertItemRight(appId, 'manage');
+  // it again there). A data restore is the data's: edit, asked here too
+  // since the pre-check removal part 2 (the HTTP gate asked it), before the
+  // undo snapshot is staged and the file is swapped.
+  await assertItemRight(appId, wantsCode ? 'manage' : 'edit');
   if (wantsData && !snap.hasData) {
     throw new AppSnapshotRefusedError(
       `v${snap.seq} holds no data (it is ${snap.kind === 'version' ? 'a version: the code a publish made live' : 'a snapshot of an app that had no database yet'}); restore its code, or pick a snapshot with data`,

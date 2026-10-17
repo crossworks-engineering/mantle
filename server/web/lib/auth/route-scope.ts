@@ -259,10 +259,11 @@ const MEMBER_OPEN: ReadonlySet<string> = new Set(MEMBER_OPEN_READS);
  * 21.8 row 7): create, edit and delete the workspace kinds (the create,
  * PATCH and DELETE routes of WORKSPACE_ITEM_PREFIXES), their drafts and
  * folders, in its own scope. The request runs in the login's scope (writes
- * on the system pool); an item the route names is checked first
- * (itemWriteTarget: mantle_may_edit, or mantle_may_manage for a delete or a
- * move), and the database checks the rest on the request's system
- * transactions (a create into a folder, a move, a delete: 0241, 0245,
+ * on the system pool); the handler reads the item the route names in the
+ * login's scope first (since the pre-check removal part 2) and the
+ * database checks the write (0278, 0266) or the handler asks its right
+ * (assertItemRight) before any side effect, and the rest on the request's
+ * system transactions (a create into a folder, a move, a delete: 0241, 0245,
  * 0266). A create lands in the request's workspace (?ws=) when the login
  * moderates it, else in the folder it is made in when the login may edit
  * that, else in the login's private workspace (mantle_default_home).
@@ -303,7 +304,7 @@ export const MEMBER_OPEN_WRITES: readonly string[] = [
   'POST /api/apps/:id/db-broker',
   'POST /api/apps/:id/tool-broker',
   // A1 (D1): a Recall map's cards where the login may edit the map
-  // (itemWriteTarget). The owner's acts among them (a prompt confirm, a
+  // (the edit check, 0281). The owner's acts among them (a prompt confirm, a
   // reorder, a revision restore, publish, a slug change, a map delete) are
   // refused to a login outside Admin by the handler (recallActorOf: an
   // editor writes as 'agent'), as those tools are owner-only on MCP.
@@ -338,43 +339,17 @@ export function memberMayRead(method: string, pattern: string | null): boolean {
   return MEMBER_OPEN.has(`${m} ${pattern}`);
 }
 
-/**
- * The owner item routes whose write is checked against the item's
- * workspaces (W6a): the path segment right after the prefix (the `:id` of
- * the pattern) names the item. An Admin user's write still runs on the
- * system pool, but only on an item its scope may edit (plan S1: an item
- * homed in a workspace it is not in needs it to add itself first).
+/*
+ * The owner item routes whose write the HTTP gate checked against the
+ * item's workspaces (W6a, ITEM_WRITE_PREFIXES) are all gone (the pre-check
+ * removal part 2, docs/actors.md), family by family: the node kinds,
+ * notes, drawings, Recall maps, pages, tables, files and folders, and last
+ * the apps and the tree's items. Each write's handler reads its item in
+ * the caller's scope first (the 404 of none, the same for a hidden item)
+ * and the database's checks (0278, 0266, F4's lockAppRow) or the
+ * handler's assertItemRight refuse what the scope may not do, before any
+ * side effect.
  */
-export const ITEM_WRITE_PREFIXES: readonly string[] = [
-  // Pages (and /api/v1/pages) went in the pre-check removal part 2: their
-  // edit and delete are one statement each (0278, 0266), the draft save,
-  // commit and discard ask the caller's right first (assertItemRight), and
-  // the move asks manage first (assertItemRight) before the move check.
-  // Notes and drawings went in the pre-check removal part 2
-  // (docs/actors.md): the database checks their writes (a drawing's draft,
-  // commit and discard ask the caller's right first, assertItemRight).
-  // Tables (and /api/v1/tables) went in the pre-check removal part 2: an
-  // edit and a delete are one statement each (0278, 0266); the draft save,
-  // op batch, discard, import, commit and the history's snapshot, restore
-  // and delete ask the caller's edit first (assertItemRight), before any
-  // workbook is staged on disk.
-  // Files, files' folders and the tree's folders went in the pre-check
-  // removal part 2: each write reads the item in the caller's scope first
-  // (the 404 of none) and asks the item gate's right (assertItemRight)
-  // before anything is written, copied or moved on disk.
-  '/api/apps',
-  '/api/tree/items',
-  // W6a fix round 1 (M1): the other workspace kinds with an item route.
-  // Formulas, tasks, events and v1 tasks went in the pre-check removal
-  // part 2 (docs/actors.md): their edit and delete are one statement each,
-  // refused by the database's write check (0278) and delete check (0266),
-  // and the handler's read in the login's scope answers an item it does
-  // not read with the 404 of no item at all. Recall maps went too: every
-  // map and card write locks the map in the login's scope first (mapOr404:
-  // a map it does not read is map_not_found, as no map), and the edit
-  // check (0281) asks edit of the map's node for its rows, manage for its
-  // delete; a revision restore reads the revision in the scope first.
-];
 
 /**
  * Item routes whose `:id` is not the item's own id (W6a fix round 1, M1):
@@ -390,9 +365,13 @@ const ITEM_REF_PREFIXES: ReadonlyArray<readonly [string, ItemRef]> = [
   ['/api/apps/deleted', 'deleted-app'],
 ];
 
-/** Item writes that only need the item to be readable: the login's own
- *  marks, and running or copying an app (its data has its own rules). */
-const ITEM_READ_WRITES: ReadonlySet<string> = new Set([
+/** The writes that make no item (route-policy's `makesItems` is false):
+ *  the login's own marks, and running or copying an app (its data has its
+ *  own rules). They were the gate's read writes (ITEM_READ_WRITES) until
+ *  the pre-check removal part 2: the handler's scoped read of the app or
+ *  item is their read check now. A member's mark or run never makes it a
+ *  private workspace (w6b-fix1.db.test.ts). */
+export const NO_ITEM_WRITES: ReadonlySet<string> = new Set([
   'POST /api/apps/:id/opened',
   'POST /api/apps/:id/frame-ticket',
   'POST /api/apps/:id/db-broker',
@@ -409,11 +388,10 @@ export type ItemWriteNeed = 'read' | 'edit' | 'manage';
 /** The item a write request touches and what it needs, or null when the
  *  route names no item (a create, a list, a move by body). */
 export function itemWriteTarget(
-  method: string,
+  _method: string,
   pattern: string,
   path: string,
 ): { id: string; need: ItemWriteNeed; ref: ItemRef } | null {
-  const m = method.toUpperCase();
   for (const [prefix, ref] of ITEM_REF_PREFIXES) {
     const head = `${prefix}/:id`;
     if (pattern !== head && !pattern.startsWith(`${head}/`)) continue;
@@ -425,23 +403,6 @@ export function itemWriteTarget(
     // restore manage it.
     const need: ItemWriteNeed = ref === 'deleted-app' ? 'manage' : 'edit';
     return { id, need, ref };
-  }
-  for (const prefix of ITEM_WRITE_PREFIXES) {
-    const head = `${prefix}/:id`;
-    if (pattern !== head && !pattern.startsWith(`${head}/`)) continue;
-    const id = path.split('/')[prefix.split('/').length];
-    if (!id) return null;
-    const key = `${m} ${pattern}`;
-    // A delete of the item manages it: Moderators of its home
-    // (mantle_may_manage), as the grant rules say (0241). Its one move
-    // route went with the pages (ITEM_MANAGE_WRITES, pre-check removal
-    // part 2).
-    const need: ItemWriteNeed = ITEM_READ_WRITES.has(key)
-      ? 'read'
-      : m === 'DELETE' && pattern === head
-        ? 'manage'
-        : 'edit';
-    return { id, need, ref: 'node' };
   }
   return null;
 }

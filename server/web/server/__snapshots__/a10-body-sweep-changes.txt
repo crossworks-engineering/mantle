@@ -1,9 +1,10 @@
 # A10 part 2 fold 1: the cells that answer otherwise than on main, each with its
 # named kind (changeKind, a10-body-sweep.test.ts), its answer on main and now.
 # Every other cell of a10-body-sweep.txt answers byte for byte as recorded.
-# bad-json-400 (malformed): 194 cells
-# chunked-413: 205 cells
+# bad-json-400 (malformed): 190 cells
+# chunked-413: 201 cells
 # opaque-500 (fold 2: a plain error, its text was the reply): 28 cells
+# item-check-first (pre-check removal part 2: the app route asks the caller’s right first, of the database): 38 cells
 # ceiling-in-kb (A10 lows: a ceiling under 1 MB is said in KB): 8 cells
 # input-400 (fold 2: a refusal the caller fixes, said as a 500 on main): 1 cells
 # bad-json-400 (malformed, accepted as {} on main): 7 cells
@@ -144,48 +145,138 @@ PATCH /api/apps/:id owner malformed [bad-json-400 (malformed)]
 PATCH /api/apps/:id owner chunked [chunked-413]
   main 404 application/json {"error":"app not found"}
   now  413 application/json {"error":"This request is too large (at most 128 MB).","reason":"body-too-large"}
+POST /api/apps/:id/build owner valid [item-check-first (pre-check removal part 2: the app route asks the caller’s right first, of the database)]
+  main 404 application/json {"error":"app not found"}
+  now  500 application/json {"error":"internal error"}
+POST /api/apps/:id/build owner malformed [item-check-first (pre-check removal part 2: the app route asks the caller’s right first, of the database)]
+  main 404 application/json {"error":"app not found"}
+  now  500 application/json {"error":"internal error"}
+POST /api/apps/:id/build owner empty [item-check-first (pre-check removal part 2: the app route asks the caller’s right first, of the database)]
+  main 404 application/json {"error":"app not found"}
+  now  500 application/json {"error":"internal error"}
+POST /api/apps/:id/build owner nul [item-check-first (pre-check removal part 2: the app route asks the caller’s right first, of the database)]
+  main 404 application/json {"error":"app not found"}
+  now  500 application/json {"error":"internal error"}
+POST /api/apps/:id/build owner array [item-check-first (pre-check removal part 2: the app route asks the caller’s right first, of the database)]
+  main 404 application/json {"error":"app not found"}
+  now  500 application/json {"error":"internal error"}
+POST /api/apps/:id/build owner chunked [item-check-first (pre-check removal part 2: the app route asks the caller’s right first, of the database)]
+  main 404 application/json {"error":"app not found"}
+  now  500 application/json {"error":"internal error"}
 POST /api/apps/:id/db-broker owner malformed [bad-json-400 (malformed)]
   main 400 application/json {"ok":false,"error":"invalid input — op: Invalid option: expected one of \"query\"|\"exec\""}
   now  400 application/json {"error":"invalid JSON"}
 POST /api/apps/:id/db-broker owner chunked [chunked-413]
   main 400 application/json {"ok":false,"error":"invalid input — op: Invalid option: expected one of \"query\"|\"exec\""}
   now  413 application/json {"error":"This request is too large (at most 128 MB).","reason":"body-too-large"}
-PUT /api/apps/:id/draft owner malformed [bad-json-400 (malformed)]
+PUT /api/apps/:id/draft owner malformed [item-check-first (pre-check removal part 2: the app route asks the caller’s right first, of the database)]
   main 400 application/json {"error":"invalid input"}
-  now  400 application/json {"error":"invalid JSON"}
-PUT /api/apps/:id/draft owner chunked [chunked-413]
+  now  500 application/json {"error":"internal error"}
+PUT /api/apps/:id/draft owner empty [item-check-first (pre-check removal part 2: the app route asks the caller’s right first, of the database)]
   main 400 application/json {"error":"invalid input"}
-  now  413 application/json {"error":"This request is too large (at most 128 MB).","reason":"body-too-large"}
+  now  500 application/json {"error":"internal error"}
+PUT /api/apps/:id/draft owner array [item-check-first (pre-check removal part 2: the app route asks the caller’s right first, of the database)]
+  main 400 application/json {"error":"invalid input"}
+  now  500 application/json {"error":"internal error"}
+PUT /api/apps/:id/draft owner chunked [item-check-first (pre-check removal part 2: the app route asks the caller’s right first, of the database)]
+  main 400 application/json {"error":"invalid input"}
+  now  500 application/json {"error":"internal error"}
+DELETE /api/apps/:id/draft owner valid [item-check-first (pre-check removal part 2: the app route asks the caller’s right first, of the database)]
+  main 404 application/json {"error":"app not found"}
+  now  500 application/json {"error":"internal error"}
+DELETE /api/apps/:id/draft owner malformed [item-check-first (pre-check removal part 2: the app route asks the caller’s right first, of the database)]
+  main 404 application/json {"error":"app not found"}
+  now  500 application/json {"error":"internal error"}
+DELETE /api/apps/:id/draft owner empty [item-check-first (pre-check removal part 2: the app route asks the caller’s right first, of the database)]
+  main 404 application/json {"error":"app not found"}
+  now  500 application/json {"error":"internal error"}
+DELETE /api/apps/:id/draft owner nul [item-check-first (pre-check removal part 2: the app route asks the caller’s right first, of the database)]
+  main 404 application/json {"error":"app not found"}
+  now  500 application/json {"error":"internal error"}
+DELETE /api/apps/:id/draft owner array [item-check-first (pre-check removal part 2: the app route asks the caller’s right first, of the database)]
+  main 404 application/json {"error":"app not found"}
+  now  500 application/json {"error":"internal error"}
+DELETE /api/apps/:id/draft owner chunked [item-check-first (pre-check removal part 2: the app route asks the caller’s right first, of the database)]
+  main 404 application/json {"error":"app not found"}
+  now  500 application/json {"error":"internal error"}
 POST /api/apps/:id/duplicate owner malformed [bad-json-400 (malformed)]
   main 404 application/json {"error":"app not found"}
   now  400 application/json {"error":"invalid JSON"}
 POST /api/apps/:id/duplicate owner chunked [chunked-413]
   main 404 application/json {"error":"app not found"}
   now  413 application/json {"error":"This request is too large (at most 128 MB).","reason":"body-too-large"}
-POST /api/apps/:id/format owner malformed [bad-json-400 (malformed)]
+POST /api/apps/:id/format owner valid [item-check-first (pre-check removal part 2: the app route asks the caller’s right first, of the database)]
+  main 400 application/json {"error":"No formatter for .sweep files."}
+  now  500 application/json {"error":"internal error"}
+POST /api/apps/:id/format owner malformed [item-check-first (pre-check removal part 2: the app route asks the caller’s right first, of the database)]
   main 400 application/json {"error":"invalid input"}
-  now  400 application/json {"error":"invalid JSON"}
-POST /api/apps/:id/format owner chunked [chunked-413]
+  now  500 application/json {"error":"internal error"}
+POST /api/apps/:id/format owner empty [item-check-first (pre-check removal part 2: the app route asks the caller’s right first, of the database)]
   main 400 application/json {"error":"invalid input"}
-  now  413 application/json {"error":"This request is too large (at most 128 MB).","reason":"body-too-large"}
+  now  500 application/json {"error":"internal error"}
+POST /api/apps/:id/format owner nul [item-check-first (pre-check removal part 2: the app route asks the caller’s right first, of the database)]
+  main 400 application/json {"error":"No formatter for .sweep\u0000 files."}
+  now  500 application/json {"error":"internal error"}
+POST /api/apps/:id/format owner array [item-check-first (pre-check removal part 2: the app route asks the caller’s right first, of the database)]
+  main 400 application/json {"error":"invalid input"}
+  now  500 application/json {"error":"internal error"}
+POST /api/apps/:id/format owner chunked [item-check-first (pre-check removal part 2: the app route asks the caller’s right first, of the database)]
+  main 400 application/json {"error":"invalid input"}
+  now  500 application/json {"error":"internal error"}
 POST /api/apps/:id/snapshots owner malformed [bad-json-400 (malformed)]
   main 404 application/json {"error":"app not found"}
   now  400 application/json {"error":"invalid JSON"}
 POST /api/apps/:id/snapshots owner chunked [chunked-413]
   main 404 application/json {"error":"app not found"}
   now  413 application/json {"error":"This request is too large (at most 128 MB).","reason":"body-too-large"}
-PATCH /api/apps/:id/snapshots/:sid owner malformed [bad-json-400 (malformed)]
+PATCH /api/apps/:id/snapshots/:sid owner malformed [item-check-first (pre-check removal part 2: the app route asks the caller’s right first, of the database)]
   main 400 application/json {"error":"note: Invalid input: expected string, received undefined"}
-  now  400 application/json {"error":"invalid JSON"}
-PATCH /api/apps/:id/snapshots/:sid owner chunked [chunked-413]
+  now  500 application/json {"error":"internal error"}
+PATCH /api/apps/:id/snapshots/:sid owner empty [item-check-first (pre-check removal part 2: the app route asks the caller’s right first, of the database)]
   main 400 application/json {"error":"note: Invalid input: expected string, received undefined"}
-  now  413 application/json {"error":"This request is too large (at most 128 MB).","reason":"body-too-large"}
-POST /api/apps/:id/snapshots/:sid/restore owner malformed [bad-json-400 (malformed)]
+  now  500 application/json {"error":"internal error"}
+PATCH /api/apps/:id/snapshots/:sid owner array [item-check-first (pre-check removal part 2: the app route asks the caller’s right first, of the database)]
+  main 400 application/json {"error":"Invalid input: expected object, received array"}
+  now  500 application/json {"error":"internal error"}
+PATCH /api/apps/:id/snapshots/:sid owner chunked [item-check-first (pre-check removal part 2: the app route asks the caller’s right first, of the database)]
+  main 400 application/json {"error":"note: Invalid input: expected string, received undefined"}
+  now  500 application/json {"error":"internal error"}
+DELETE /api/apps/:id/snapshots/:sid owner valid [item-check-first (pre-check removal part 2: the app route asks the caller’s right first, of the database)]
+  main 404 application/json {"error":"not found"}
+  now  500 application/json {"error":"internal error"}
+DELETE /api/apps/:id/snapshots/:sid owner malformed [item-check-first (pre-check removal part 2: the app route asks the caller’s right first, of the database)]
+  main 404 application/json {"error":"not found"}
+  now  500 application/json {"error":"internal error"}
+DELETE /api/apps/:id/snapshots/:sid owner empty [item-check-first (pre-check removal part 2: the app route asks the caller’s right first, of the database)]
+  main 404 application/json {"error":"not found"}
+  now  500 application/json {"error":"internal error"}
+DELETE /api/apps/:id/snapshots/:sid owner nul [item-check-first (pre-check removal part 2: the app route asks the caller’s right first, of the database)]
+  main 404 application/json {"error":"not found"}
+  now  500 application/json {"error":"internal error"}
+DELETE /api/apps/:id/snapshots/:sid owner array [item-check-first (pre-check removal part 2: the app route asks the caller’s right first, of the database)]
+  main 404 application/json {"error":"not found"}
+  now  500 application/json {"error":"internal error"}
+DELETE /api/apps/:id/snapshots/:sid owner chunked [item-check-first (pre-check removal part 2: the app route asks the caller’s right first, of the database)]
+  main 404 application/json {"error":"not found"}
+  now  500 application/json {"error":"internal error"}
+POST /api/apps/:id/snapshots/:sid/restore owner valid [item-check-first (pre-check removal part 2: the app route asks the caller’s right first, of the database)]
+  main 404 application/json {"error":"not found"}
+  now  500 application/json {"error":"internal error"}
+POST /api/apps/:id/snapshots/:sid/restore owner malformed [item-check-first (pre-check removal part 2: the app route asks the caller’s right first, of the database)]
   main 400 application/json {"error":"mode: Invalid option: expected one of \"code\"|\"data\"|\"full\""}
-  now  400 application/json {"error":"invalid JSON"}
-POST /api/apps/:id/snapshots/:sid/restore owner chunked [chunked-413]
+  now  500 application/json {"error":"internal error"}
+POST /api/apps/:id/snapshots/:sid/restore owner empty [item-check-first (pre-check removal part 2: the app route asks the caller’s right first, of the database)]
   main 400 application/json {"error":"mode: Invalid option: expected one of \"code\"|\"data\"|\"full\""}
-  now  413 application/json {"error":"This request is too large (at most 128 MB).","reason":"body-too-large"}
+  now  500 application/json {"error":"internal error"}
+POST /api/apps/:id/snapshots/:sid/restore owner nul [item-check-first (pre-check removal part 2: the app route asks the caller’s right first, of the database)]
+  main 400 application/json {"error":"mode: Invalid option: expected one of \"code\"|\"data\"|\"full\""}
+  now  500 application/json {"error":"internal error"}
+POST /api/apps/:id/snapshots/:sid/restore owner array [item-check-first (pre-check removal part 2: the app route asks the caller’s right first, of the database)]
+  main 400 application/json {"error":"Invalid input: expected object, received array"}
+  now  500 application/json {"error":"internal error"}
+POST /api/apps/:id/snapshots/:sid/restore owner chunked [item-check-first (pre-check removal part 2: the app route asks the caller’s right first, of the database)]
+  main 400 application/json {"error":"mode: Invalid option: expected one of \"code\"|\"data\"|\"full\""}
+  now  500 application/json {"error":"internal error"}
 POST /api/apps/:id/tool-broker owner malformed [bad-json-400 (malformed)]
   main 400 application/json {"ok":false,"error":"invalid input"}
   now  400 application/json {"error":"invalid JSON"}

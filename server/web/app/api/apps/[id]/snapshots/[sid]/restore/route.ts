@@ -12,6 +12,13 @@ import { z } from 'zod';
 import { ownerCaller } from '@/lib/auth';
 import { restoreAppSnapshot } from '@mantle/content/app-snapshots';
 import { readBody } from '@/lib/read-body';
+import { assertItemRight } from '@mantle/db';
+import type { RouteParams } from '@/lib/route-params';
+
+/** The ids are uuids: any other names nothing, the params gateway's one
+ *  404 before the handler (lib/route-params.ts; the item gate answered it
+ *  until the pre-check removal part 2). */
+export const routeParams = { id: 'uuid', sid: 'uuid' } as const satisfies RouteParams;
 
 const Body = z.object({
   mode: z.enum(['code', 'data', 'full']),
@@ -21,11 +28,16 @@ const Body = z.object({
 export async function POST(req: Request, ctx: { params: Promise<{ id: string; sid: string }> }) {
   const user = ownerCaller();
   const { id, sid } = await ctx.params;
+  // The caller's edit of the app first (the pre-check removal part 2: the
+  // HTTP gate asked it): an app the scope does not read is the mapper's
+  // 404, as an id no row has; one it may not edit the 403 item-workspace (a
+  // read-only copy's words); before anything is read, built or staged.
+  await assertItemRight(id, 'edit');
   const body = await readBody(req, Body);
   // The code is the app's Moderators' (apps' code columns need manage, D4):
   // restoreAppSnapshot asks it for a restore of the code (code, full)
   // before anything is written, on this route and on the tool alike (F4 fix
-  // round 3, M3; the gate asks edit, a data restore's own). Its refusal is
+  // round 3, M3; the route asks edit above, a data restore's own). Its refusal is
   // the edit check's (404, or 403 item-workspace).
   // AppRestoreDraftError (reason 'draft') and AppSnapshotRefusedError
   // (reason 'no-data') answer 409 by the one table (A10 part 2).

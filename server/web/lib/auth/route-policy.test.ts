@@ -47,6 +47,7 @@ import {
   memberMayRead,
   memberMayWrite,
   routeClass,
+  NO_ITEM_WRITES,
 } from './route-scope';
 import {
   anyLoginRow,
@@ -162,12 +163,14 @@ describe.skipIf(!hasManifest)('ROUTE_POLICY: same answers as the lists', () => {
       for (const path of pathsOf(p)) {
         const target = itemWriteTarget(m, p, path);
         check(`${key} @${path}`, 'item', routeItemTarget(row, path), target);
-        // What requestCreatePolicy answered before A4.
+        // What requestCreatePolicy answered before A4: no item made by a
+        // delete or by a read write (the gate's ITEM_READ_WRITES until the
+        // pre-check removal part 2, NO_ITEM_WRITES since; the same seven).
         check(
           `${key} @${path}`,
           'makesItems',
           row.makesItems,
-          !(m === 'DELETE' || target?.need === 'read'),
+          !(m === 'DELETE' || target?.need === 'read' || NO_ITEM_WRITES.has(`${m} ${p}`)),
         );
         check(`${key} @${path}`, 'public', row.public, isPublicPath(path));
       }

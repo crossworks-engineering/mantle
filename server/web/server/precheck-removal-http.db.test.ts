@@ -138,6 +138,27 @@ vi.mock('@mantle/embeddings', async (importOriginal) => ({
   embedBatch: vi.fn(async (_o: string, texts: unknown[]) => texts.map(() => VEC)),
 }));
 
+// An app's build (esbuild and the runtime manifest) and the object store
+// are stood in: a build is a hash of its source, nothing is put.
+vi.mock('@mantle/app-build', async (importOriginal) => {
+  const orig = await importOriginal<typeof import('@mantle/app-build')>();
+  return {
+    ...orig,
+    loadRuntimeExports: async () => ({}),
+    buildApp: async (source: unknown) => ({
+      ok: true,
+      code: `/* ${JSON.stringify(source).length} */`,
+      errors: [],
+      warnings: [],
+      esbuildVersion: 'test',
+    }),
+  };
+});
+vi.mock('@mantle/storage/write', async (importOriginal) => {
+  const orig = await importOriginal<typeof import('@mantle/storage/write')>();
+  return { ...orig, putContent: async () => undefined };
+});
+
 /** The database's or the runtime's own words: never in a reply. */
 const RAW =
   /Failed query|withSystemTx|runInSystemTx|SQLSTATE|DrizzleQueryError|drizzle-orm|permission denied for|violates|duplicate key|does not exist|\n\s+at \S/i;
@@ -145,10 +166,11 @@ const RAW =
 type Mode = 'warn' | 'on';
 type Who = 'member' | 'admin';
 type Place = 'allowed' | 'editOnly' | 'noEdit' | 'noRead';
-type Need = 'edit' | 'manage';
+type Need = 'read' | 'edit' | 'manage';
 
 /** What a need lets each placement do. */
 const ALLOWED: Record<Need, Place[]> = {
+  read: ['allowed', 'editOnly', 'noEdit'],
   edit: ['allowed', 'editOnly'],
   manage: ['allowed'],
 };
@@ -165,6 +187,7 @@ describe.skipIf(!DB_URL)('the pre-check removal, part 2: the HTTP entries', () =
   let fl: typeof import('@mantle/files');
   let tb: typeof import('@mantle/content/tables');
   let th: typeof import('@mantle/content/table-snapshots');
+  let ap: typeof import('@mantle/content/app-snapshots');
   let actorMode: typeof import('../../../packages/db/src/actor');
   let runRoute: typeof import('./run-route').runRoute;
   let dir = '';
@@ -295,6 +318,15 @@ describe.skipIf(!DB_URL)('the pre-check removal, part 2: the HTTP entries', () =
     /** In warn, a write the database refuses in on is made (logged as a
      *  miss): an edit's. A delete's check asks in every mode. */
     warnMade: boolean;
+    /** The route asks edit first (assertItemRight), then its write asks
+     *  manage (F4's lockAppRow): its read-only copy cell runs too. */
+    askedEdit?: true;
+    /** The route writes nothing (a format): an allowed call is a 2xx that
+     *  leaves the item as it was. */
+    noWrite?: true;
+    /** A read write's answer to a login that reads the item (checked on
+     *  every readable placement, before and now). */
+    readAnswer?: (status: number, text: string) => void;
   };
   type Family = {
     name: string;
@@ -555,6 +587,61 @@ describe.skipIf(!DB_URL)('the pre-check removal, part 2: the HTTP entries', () =
     await place(who, p)(id);
     return id;
   };
+  /** An app made as the owner (one source file), with a draft when
+   *  `draft` and a manual snapshot when `snapshot` (its id kept for the
+   *  history routes), then placed. */
+  const appSource = () => ({
+    entry: 'index.tsx',
+    files: { 'index.tsx': `export default function App() { return '${tag} ${n()}'; }` },
+  });
+  const appSid = new Map<string, string>();
+  const app =
+    (opts: { draft?: true; snapshot?: true } = {}) =>
+    async (who: Who, p: Place) => {
+      const made = await sys(() =>
+        c.createApp(owner, { title: `${tag} app ${n()}`, source: appSource() }),
+      );
+      const id = made.id;
+      if (opts.draft) {
+        const d = await sys(() => c.saveDraftSource(owner, id, appSource()));
+        expect(d).not.toBe(false);
+      }
+      if (opts.snapshot) {
+        const snap = await sys(() =>
+          ap.createAppSnapshot(owner, id, { trigger: 'manual', actor: 'owner', note: tag }),
+        );
+        appSid.set(id, snap!.id);
+      }
+      await place(who, p)(id);
+      return id;
+    };
+  const sidOfApp = (id: string) => appSid.get(id) ?? randomUUID();
+  /** A route of an app, its body, and what it needs. */
+  const appRoute = (
+    name: string,
+    need: Need,
+    method: string,
+    sub: string | ((id: string) => string),
+    make: Route['make'],
+    extra: Partial<Route> = {},
+  ): Route => ({
+    name: `${method} /api/apps/:id${name}`,
+    need,
+    method,
+    path: (id) => `/api/apps/${id}${typeof sub === 'string' ? sub : sub(id)}`,
+    make,
+    warnMade: false,
+    badIdOwn: true,
+    ...extra,
+  });
+  /** The app sandbox's "tool not declared" note keys on a tool-broker 403
+   *  with `ok === false` (@crossworks/share-ui app-sandbox.tsx): an app's
+   *  call of a tool it never declared must keep that body. */
+  const undeclaredTool = (status: number, text: string) => {
+    expect(status, text).toBe(403);
+    expect(JSON.parse(text), text).toMatchObject({ ok: false });
+  };
+
   const fileRoute = (
     name: string,
     need: Need,
@@ -1007,6 +1094,99 @@ describe.skipIf(!DB_URL)('the pre-check removal, part 2: the HTTP entries', () =
         },
       ],
     },
+    {
+      // An app's edit (PATCH) is one statement (0278; its description asks
+      // manage first); its delete asks manage (assertItemRight) before the
+      // pre_delete snapshot is staged, and the delete check (0266). The
+      // build, draft save and discard, publish, format, the history's
+      // snapshot, note, delete and restore ask the caller's edit first
+      // (assertItemRight, in every mode), and the code writes manage after
+      // it (F4's lockAppRow, a restore of code). The read writes (open, the
+      // frame ticket, the app's database and tools, a duplicate, the tree's
+      // marks) read the item in the caller's scope first: a hidden one is
+      // the 404 of none, a readable one answers as before.
+      name: 'apps and tree items',
+      removed: true,
+      routes: [
+        appRoute('', 'edit', 'PATCH', '', app(), { body: retitle, warnMade: true }),
+        appRoute('', 'manage', 'DELETE', '', app()),
+        appRoute('/build', 'manage', 'POST', '/build', app({ draft: true }), { askedEdit: true }),
+        appRoute('/draft', 'manage', 'PUT', '/draft', app(), {
+          askedEdit: true,
+          body: () => appSource(),
+        }),
+        appRoute('/draft', 'manage', 'DELETE', '/draft', app({ draft: true }), {
+          askedEdit: true,
+        }),
+        appRoute('/publish', 'manage', 'POST', '/publish', app({ draft: true }), {
+          askedEdit: true,
+        }),
+        appRoute('/format', 'edit', 'POST', '/format', app(), {
+          noWrite: true,
+          body: () => ({ path: 'index.tsx', content: 'const a = 1' }),
+        }),
+        appRoute('/snapshots', 'edit', 'POST', '/snapshots', app(), {
+          adminOnly: true,
+          body: () => ({ note: `${tag} ${n()}` }),
+        }),
+        appRoute(
+          '/snapshots/:sid',
+          'edit',
+          'PATCH',
+          (id) => `/snapshots/${sidOfApp(id)}`,
+          app({ snapshot: true }),
+          { adminOnly: true, body: () => ({ note: `${tag} ${n()}` }) },
+        ),
+        appRoute(
+          '/snapshots/:sid',
+          'edit',
+          'DELETE',
+          (id) => `/snapshots/${sidOfApp(id)}`,
+          app({ snapshot: true }),
+          { adminOnly: true },
+        ),
+        appRoute(
+          '/snapshots/:sid/restore',
+          'manage',
+          'POST',
+          (id) => `/snapshots/${sidOfApp(id)}/restore`,
+          app({ snapshot: true }),
+          { adminOnly: true, askedEdit: true, body: () => ({ mode: 'code', discardDraft: true }) },
+        ),
+        appRoute('/opened', 'read', 'POST', '/opened', app(), { adminOnly: true }),
+        appRoute('/duplicate', 'read', 'POST', '/duplicate', app(), {
+          adminOnly: true,
+          body: () => ({ title: `${tag} copy ${n()}` }),
+        }),
+        appRoute('/frame-ticket', 'read', 'POST', '/frame-ticket', app()),
+        appRoute('/db-broker', 'read', 'POST', '/db-broker', app(), {
+          body: () => ({ op: 'query', sql: 'select 1 as one' }),
+        }),
+        appRoute('/tool-broker', 'read', 'POST', '/tool-broker', app(), {
+          body: () => ({ slug: 'note_list', input: {} }),
+          readAnswer: undeclaredTool,
+        }),
+        {
+          name: 'POST /api/tree/items/:id/opened',
+          need: 'read',
+          method: 'POST',
+          path: (id) => `/api/tree/items/${id}/opened`,
+          make: page(),
+          warnMade: false,
+          badIdOwn: true,
+        },
+        {
+          name: 'PUT /api/tree/items/:id/pin',
+          need: 'read',
+          method: 'PUT',
+          path: (id) => `/api/tree/items/${id}/pin`,
+          body: () => ({ pinned: true }),
+          make: page(),
+          warnMade: false,
+          badIdOwn: true,
+        },
+      ],
+    },
   ];
 
   // ── the cells ─────────────────────────────────────────────────────────────
@@ -1093,6 +1273,7 @@ describe.skipIf(!DB_URL)('the pre-check removal, part 2: the HTTP entries', () =
     fl = await import('@mantle/files');
     tb = await import('@mantle/content/tables');
     th = await import('@mantle/content/table-snapshots');
+    ap = await import('@mantle/content/app-snapshots');
     actorMode = await import('../../../packages/db/src/actor');
     runRoute = (await import('./run-route')).runRoute;
     raw = postgres(scratch.url, { max: 2, prepare: false, onnotice: () => {} });
@@ -1256,6 +1437,17 @@ describe.skipIf(!DB_URL)('the pre-check removal, part 2: the HTTP entries', () =
                   expect(now.status, `${name}: ${now.text}`).toBe(403);
                   expect(now.text, name).toMatch(/_is_owners/);
                   expect(now.changed, `${name} changed the item`).toBe(false);
+                } else if (route.need === 'read') {
+                  // A read write: the scope reads the item, so it answers as
+                  // it did with the pre-check (which let every reader by).
+                  expect(now.status, `${name}: was ${line(was)}; now ${line(now)}`).toBe(
+                    was.status,
+                  );
+                  route.readAnswer?.(now.status, now.text);
+                  route.readAnswer?.(was.status, was.text);
+                } else if (ALLOWED[route.need].includes(p) && route.noWrite) {
+                  expect(now.status, `${name}: ${now.text}`).toBeLessThan(300);
+                  expect(now.changed, `${name} changed the item`).toBe(false);
                 } else if (ALLOWED[route.need].includes(p) && route.parentHidden) {
                   expect(now.status, `${name}: ${now.text}`).toBe(400);
                   expect(now.text, name).toContain('not found');
@@ -1284,7 +1476,7 @@ describe.skipIf(!DB_URL)('the pre-check removal, part 2: the HTTP entries', () =
                 }
               }
               if (
-                route.need === 'edit' &&
+                (route.need === 'edit' || route.askedEdit) &&
                 !family.noCopy &&
                 !(who === 'member' && route.adminOnly)
               ) {

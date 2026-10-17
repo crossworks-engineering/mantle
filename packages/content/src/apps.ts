@@ -1284,6 +1284,10 @@ export async function deleteApp(
   } = {},
 ): Promise<boolean> {
   if (!(await ownsApp(ownerId, id))) return false;
+  // A delete manages the app (the pre-check removal part 2): asked before
+  // the pre_delete snapshot copies its database on disk and adds its row
+  // (the delete check, 0266, asks only at the delete itself).
+  await assertItemRight(id, 'manage');
   // Dynamic imports keep the server-only modules (node:fs, sqlite) out of the
   // content index / edge bundles.
   const broker = await import('./app-broker');

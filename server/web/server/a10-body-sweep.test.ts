@@ -330,6 +330,20 @@ function changeKind(cell: string, main: string, now: string): string | null {
   ) {
     return 'map-read-first (pre-check removal part 2: the owner act reads the map in the scope first)';
   }
+  // Pre-check removal part 2 (round 4): an app's build, draft, publish,
+  // format and history writes ask the caller's edit first
+  // (assertItemRight), of the database by @mantle/db's own client, which
+  // the stand-in does not reach: its error answers the one opaque 500,
+  // before the body, where main read no row through the stand-in (or the
+  // body) and answered on. The real answers: precheck-removal-http.db.test.ts.
+  if (
+    now === OPAQUE &&
+    /^(POST \/api\/apps\/:id\/(build|publish|format|snapshots\/:sid\/restore)|(PUT|DELETE) \/api\/apps\/:id\/draft|(PATCH|DELETE) \/api\/apps\/:id\/snapshots\/:sid) /.test(
+      cell,
+    )
+  ) {
+    return 'item-check-first (pre-check removal part 2: the app route asks the caller’s right first, of the database)';
+  }
   // Pre-check removal part 2 (round 3): a file or Files folder write, a
   // table history delete and the v1 table row routes read the item in the
   // caller's scope before the body (fileById, folderById, the table's

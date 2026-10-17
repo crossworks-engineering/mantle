@@ -40,7 +40,10 @@ export const TOOL_LIST_PINS = {
  *  Pre-check removal part 2, route-scope.ts 7 to 6: ITEM_REF_PREFIXES lost
  *  its recall-revision entry (two left, share and deleted-app); 6 to 5 in
  *  round 3: ITEM_WRITE_PREFIXES lost tables, files and folders (two left,
- *  apps and tree items). */
+ *  apps and tree items). Round 4 (the last family), still 5:
+ *  ITEM_WRITE_PREFIXES and ITEM_READ_WRITES are gone, and NO_ITEM_WRITES
+ *  names the same seven routes as ITEM_READ_WRITES did, for
+ *  route-policy's makesItems only (no item check). */
 export const ROUTE_LIST_PINS = {
   'server/web/lib/api-v1.ts': 1,
   'server/web/lib/auth-constants.ts': 2,

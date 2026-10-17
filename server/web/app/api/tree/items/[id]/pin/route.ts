@@ -4,6 +4,12 @@ import { ownerCaller } from '@/lib/auth';
 import { TREE_PINS_MAX } from '@mantle/client-types/tree';
 import { setItemPinned } from '@mantle/content/tree';
 import { readJson } from '@/lib/read-body';
+import type { RouteParams } from '@/lib/route-params';
+
+/** The ids are uuids: any other names nothing, the params gateway's one
+ *  404 before the handler (lib/route-params.ts; the item gate answered it
+ *  until the pre-check removal part 2). */
+export const routeParams = { id: 'uuid' } as const satisfies RouteParams;
 
 const Body = z.object({ pinned: z.boolean() });
 

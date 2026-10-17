@@ -2,6 +2,12 @@ import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { ownerCaller } from '@/lib/auth';
 import { recordItemOpened } from '@mantle/content/tree';
+import type { RouteParams } from '@/lib/route-params';
+
+/** The ids are uuids: any other names nothing, the params gateway's one
+ *  404 before the handler (lib/route-params.ts; the item gate answered it
+ *  until the pre-check removal part 2). */
+export const routeParams = { id: 'uuid' } as const satisfies RouteParams;
 
 /** POST /api/tree/items/:id/opened — count one open of an item by this login
  *  (Recent and Most used). 404 when it is not one of the brain's tree items. */

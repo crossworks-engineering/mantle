@@ -217,21 +217,18 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
         // Content writes (batch 3): an item write, a create, and the read
         // POST whose guard checks the item as a write.
         { pattern: '/api/notes/:id', methods: ['PATCH', 'DELETE'] },
-        // An app's: notes, pages and tables lost their item check in the
-        // pre-check removal part 2 (the database checks them).
-        { pattern: '/api/apps/:id', methods: ['PATCH', 'DELETE'] },
+        // Every item route lost its item check in the pre-check removal
+        // part 2 (the database and the handlers check them): a link's
+        // change and close (a share's, below) keep it, for plan v3 S6.
         { pattern: '/api/formulas/:id/evaluate', methods: ['POST'] },
         // More of batch 3's writes (A4 step 3b part 4, the part 3 audit):
-        // the v1 alias of a create (an API key's write), an item write that
-        // needs manage (an app's delete), an item named through a share and
-        // a deleted app's snapshot, and an app's data write (its item read:
-        // the app; D6's Informational switch is the database's, after the
-        // gate). A page's move and a Recall revision lost their item check
-        // in the pre-check removal part 2.
+        // the v1 alias of a create (an API key's write), an item named
+        // through a share and a deleted app's snapshot. A page's move, a
+        // Recall revision, an app's delete and its data write lost their
+        // item check in the pre-check removal part 2.
         { pattern: '/api/v1/notes', methods: ['POST'] },
-        { pattern: '/api/shares/:id', methods: ['DELETE'] },
+        { pattern: '/api/shares/:id', methods: ['PATCH', 'DELETE'] },
         { pattern: '/api/apps/deleted/:id', methods: ['DELETE'] },
-        { pattern: '/api/apps/:id/db-broker', methods: ['POST'] },
       ].map((e) => ({
         ...e,
         catchAll: null,
@@ -345,20 +342,22 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
       'refused-workspace': { refused: 'workspace', message: 'You are not in that workspace.' },
       'refused-invalid': { refused: 'invalid', message: 'ws is not a workspace id.' },
     };
-    // Apps: notes, pages and tables lost their item check in the
-    // pre-check removal part 2 (the database checks them); an app's write
-    // still has it.
+    // A link's change (PATCH /api/shares/:id): every item route lost its
+    // item check in the pre-check removal part 2 (the database and the
+    // handlers check them); a share keeps it (plan v3 S6). Its lookup
+    // answers first (a page's share), then the item's.
     const paths = [
-      ['PATCH', `/api/apps/${ID}`],
-      ['DELETE', `/api/apps/${ID}`],
+      ['PATCH', `/api/shares/${ID}`],
       ['POST', `/api/formulas/${ID}/evaluate`],
       // The id the handler gets is the decoded segment: an encoded item id
       // is checked as that id; one that decodes to no item id, or not at
       // all, is the not-found answer (the security fix), for every login.
-      ['PATCH', `/api/apps/${encodeURIComponent(ID).replace(/1/g, '%31')}`],
-      ['PATCH', '/api/apps/not-an-item'],
-      ['PATCH', '/api/apps/%E0%A4%A'],
+      ['PATCH', `/api/shares/${encodeURIComponent(ID).replace(/1/g, '%31')}`],
+      ['PATCH', '/api/shares/not-an-item'],
+      ['PATCH', '/api/shares/%E0%A4%A'],
     ] as const;
+    const viaShare = (path: string) => path.startsWith('/api/shares/');
+    const SHARE_LOOKUP = [{ id: ID, type: 'page', contact: false }];
     const seenAnswers = new Set<string>();
     const run = async (label: string, method: string, path: string, setup: () => void) => {
       for (const cred of creds) {
@@ -381,7 +380,7 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
       for (const [item, exec] of Object.entries(items)) {
         for (const [method, path] of paths) {
           await run(item, method, path, () => {
-            counts.exec = exec.map((r) => [...r]);
+            counts.exec = [...(viaShare(path) ? [SHARE_LOOKUP] : []), ...exec].map((r) => [...r]);
           });
         }
       }
@@ -467,10 +466,12 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
       // the not-found answer, for every login.
       for (const id of odd(ID)) cells.push([method, path(id), 'odd', cases]);
     };
-    each('DELETE', (id) => `/api/apps/${id}`, node);
+    // An app's delete and its data write lost their item check in the
+    // pre-check removal part 2: a link's change and close, and the trash,
+    // keep it (plan v3 S6).
+    each('PATCH', (id) => `/api/shares/${id}`, share);
     each('DELETE', (id) => `/api/shares/${id}`, share);
     each('DELETE', (id) => `/api/apps/deleted/${id}`, deleted);
-    each('POST', (id) => `/api/apps/${id}/db-broker`, node);
     const seenAnswers = new Set<string>();
     const compare = async (
       cell: string,
