@@ -43,7 +43,7 @@ import {
   type GateCaller,
   type RequestScopeMode,
 } from '@mantle/db';
-import { AccessError, mapAccessError, UUID_RE } from '@mantle/std';
+import { AccessError, mapAccessError, READ_ONLY_COPY_MESSAGE, UUID_RE } from '@mantle/std';
 import {
   loadAnchorId,
   loadBearerToken,
@@ -1973,7 +1973,7 @@ async function itemWriteGate(
       error: 'forbidden',
       reason: 'item-workspace',
       message: readOnlyCopy
-        ? 'This is a read-only copy of an accepted item: nobody changes it. Its author may delete it.'
+        ? READ_ONLY_COPY_MESSAGE
         : 'You cannot change this item in your workspaces.',
       ...(readOnlyCopy ? { readOnly: true } : {}),
     },

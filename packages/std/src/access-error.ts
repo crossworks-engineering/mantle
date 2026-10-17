@@ -314,6 +314,19 @@ export const READ_ONLY_APP_MESSAGE = 'This app is Informational: its data is rea
 const RO_ACTOR_MESSAGE = 'This caller only reads: it cannot change anything.';
 export const ITEM_WORKSPACE_MESSAGE = 'You cannot change this item in your workspaces.';
 
+/** The words of a refused edit of a read-only snapshot copy (W6b fix round
+ *  1): the HTTP body's message (with `readOnly: true`, which jackdaw reads)
+ *  and a tool's text. */
+export const READ_ONLY_COPY_MESSAGE =
+  'This is a read-only copy of an accepted item: nobody changes it. Its author may delete it.';
+
+/** The database's refusal of an edit of a snapshot copy (0267's triggers,
+ *  and SnapshotCopyReadOnlyError in @mantle/db, which raises its words
+ *  first). A share or a grant of a copy has its own words ("not allowed to
+ *  share this item"): the generic item-workspace answer, as before. */
+const SNAPSHOT_COPY_EDIT_REFUSAL =
+  /^not allowed to change this item: it is a read-only snapshot copy/;
+
 /** What a tool says for a CREATE the workspace checks refused (A5 step 5
  *  fix round 1, L6), by the database's message: the HTTP answer stays the
  *  item-workspace 403 (its body, byte for byte), but "You cannot change
@@ -409,6 +422,28 @@ function databaseRefusal(err: unknown): AccessRefusal | null {
       toolText: message,
     };
   }
+  // An edit of a read-only snapshot copy (pre-check removal part 2, the
+  // CEO's decision to keep its answer): the item-workspace 403 in the
+  // copy's words, with readOnly, as the session's item gate answered it
+  // before the routes' pre-checks went. The one place that says it.
+  const message = typeof pg.message === 'string' ? pg.message : '';
+  if (SNAPSHOT_COPY_EDIT_REFUSAL.test(message)) {
+    return {
+      kind: 'database',
+      code: 'forbidden',
+      http: {
+        status: 403,
+        body: {
+          error: 'forbidden',
+          reason: 'item-workspace',
+          code: 'forbidden',
+          message: READ_ONLY_COPY_MESSAGE,
+          readOnly: true,
+        },
+      },
+      toolText: READ_ONLY_COPY_MESSAGE,
+    };
+  }
   // no_edit, or no detail (the workspace checks before A3a): 403, reason
   // item-workspace, as before (jackdaw shows the message; no button keys on
   // the reason since the "Add yourself" answer went, F4). A tool says the
@@ -425,7 +460,7 @@ function databaseRefusal(err: unknown): AccessRefusal | null {
         message: ITEM_WORKSPACE_MESSAGE,
       },
     },
-    toolText: itemWorkspaceToolText(typeof pg.message === 'string' ? pg.message : ''),
+    toolText: itemWorkspaceToolText(message),
   };
 }
 

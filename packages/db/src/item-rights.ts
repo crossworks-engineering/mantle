@@ -18,7 +18,8 @@
 import { sql } from 'drizzle-orm';
 import { db } from './client';
 import { currentWorkspaceScope } from './viewer';
-import { editCheckRefusalError, UUID_RE } from '@mantle/std';
+import { editCheckRefusalError, READ_ONLY_COPY_MESSAGE, UUID_RE } from '@mantle/std';
+import { SnapshotCopyReadOnlyError } from './snapshot-copy';
 
 /** What a write needs of an item. */
 export type ItemNeed = 'read' | 'edit' | 'manage';
@@ -36,8 +37,7 @@ export function itemNoRightError(id: string, need: ItemNeed): string {
 }
 
 /** The refusal of an edit to a read-only snapshot copy. */
-export const READ_ONLY_COPY_ERROR =
-  'This is a read-only copy of an accepted item: nobody changes it. Its author may delete it.';
+export const READ_ONLY_COPY_ERROR = READ_ONLY_COPY_MESSAGE;
 
 /** What Postgres reads as a uuid besides the canonical form: braces, and a
  *  hyphen after any group of four digits, or none. */
@@ -71,6 +71,8 @@ export async function itemWriteRefusal(
 export type ItemWriteRefusal = Readonly<{
   message: string;
   detail: 'no_read' | 'no_edit' | null;
+  /** An edit of a read-only snapshot copy (detail no_edit). */
+  copy?: true;
 }>;
 
 /** itemWriteRefusal, with the edit check's detail (A5 step 4 fix round 2:
@@ -89,7 +91,9 @@ export async function itemWriteRefusalOf(
   for (const id of list) {
     const verdict = verdictOf(byId.get(id), need);
     if (verdict === 'no_read') return { message: itemNotInScopeError(id), detail: 'no_read' };
-    if (verdict === 'copy') return { message: READ_ONLY_COPY_ERROR, detail: 'no_edit' };
+    if (verdict === 'copy') {
+      return { message: READ_ONLY_COPY_ERROR, detail: 'no_edit', copy: true };
+    }
     if (verdict === 'no_edit') return { message: itemNoRightError(id, need), detail: 'no_edit' };
   }
   return null;
@@ -109,6 +113,9 @@ export async function itemWriteRefusalOf(
  */
 export async function assertItemRight(id: string, need: ItemNeed): Promise<void> {
   const refused = await itemWriteRefusalOf([id], need);
+  // A read-only snapshot copy: the database's own refusal of it (0267), so
+  // the one mapper answers it in the copy's words, with readOnly.
+  if (refused?.copy) throw new SnapshotCopyReadOnlyError();
   if (refused) throw editCheckRefusalError(refused.detail ?? 'no_read');
 }
 

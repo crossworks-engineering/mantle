@@ -56,6 +56,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import postgres from 'postgres';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { READ_ONLY_COPY_MESSAGE } from '@mantle/std';
 import { itemWriteTarget } from '../lib/auth/route-scope';
 
 const DB_URL = process.env.MANTLE_TEST_DATABASE_URL;
@@ -630,8 +631,19 @@ describe.skipIf(!DB_URL)('the pre-check removal, part 2: the HTTP entries', () =
                   `${family.name} | ${name}\n      was ${line(was)}\n      now ${line(now)}`,
                 );
                 expect(now.text, name).not.toMatch(RAW);
-                expect(now.status, `${name}: ${now.text}`).toBeGreaterThanOrEqual(400);
-                expect(now.status, `${name}: ${now.text}`).toBeLessThan(500);
+                // The copy's answer is kept (the CEO's decision, round 2):
+                // the one mapper says it in the copy's words, with readOnly
+                // (jackdaw shows its copy note by it), as the gate did.
+                expect(now.status, `${name}: ${now.text}`).toBe(403);
+                const copyBody = {
+                  error: 'forbidden',
+                  reason: 'item-workspace',
+                  message: READ_ONLY_COPY_MESSAGE,
+                  readOnly: true,
+                };
+                expect(JSON.parse(now.text), name).toEqual({ ...copyBody, code: 'forbidden' });
+                expect(was.status, `${name}: ${was.text}`).toBe(403);
+                expect(JSON.parse(was.text), name).toMatchObject(copyBody);
                 expect(now.changed, `${name} changed the copy`).toBe(false);
                 expect(was.changed).toBe(false);
               }
