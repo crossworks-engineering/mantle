@@ -121,6 +121,18 @@ describe('migrations journal', () => {
     expect(e?.when).toBeGreaterThan(1790195340000);
   });
 
+  it('S3 renumbered after R0: 0302_write_role_gap_tables follows 0301_check_mode_floor with the when it had as 0301', () => {
+    // Written as 0301 on its branch (when 1790197440000), renumbered at the
+    // rebase on R0's 0301: a box that ran the branch's 0301 records that
+    // stamp, so 0302 keeps it and the floor stays below it.
+    const es = journal.entries as unknown as Array<{ idx: number; tag: string; when: number }>;
+    const floor = es.find((x) => x.tag === '0301_check_mode_floor');
+    const s3 = es.find((x) => x.tag === '0302_write_role_gap_tables');
+    expect([floor?.idx, floor?.when]).toEqual([301, 1790197380000]);
+    expect([s3?.idx, s3?.when]).toEqual([302, 1790197440000]);
+    expect(es.some((x) => x.tag === '0301_write_role_gap_tables')).toBe(false);
+  });
+
   it('0270 runs again on a database that applied it before the folded-row repair moved in (W7 integration fix 4)', () => {
     // Fix 3 shipped 0270 with when 1790195400000; a box that applied it
     // records that stamp. The repair of a team row folded with no workspace
