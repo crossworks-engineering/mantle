@@ -347,9 +347,9 @@ export function memberMayRead(method: string, pattern: string | null): boolean {
  */
 export const ITEM_WRITE_PREFIXES: readonly string[] = [
   '/api/pages',
-  // Notes went in the pre-check removal part 2 (docs/actors.md), as the
-  // node kinds below: one statement each, checked by the database.
-  '/api/draws',
+  // Notes and drawings went in the pre-check removal part 2
+  // (docs/actors.md): the database checks their writes (a drawing's draft,
+  // commit and discard ask the caller's right first, assertItemRight).
   '/api/tables',
   '/api/apps',
   '/api/files/files',

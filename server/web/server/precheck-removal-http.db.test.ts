@@ -298,6 +298,21 @@ describe.skipIf(!DB_URL)('the pre-check removal, part 2: the HTTP entries', () =
     },
   }));
   const note = viaCreate('note_create', () => ({ title: `${tag} note ${n()}`, content: 'body' }));
+  /** A drawing, made by its create route as the owner (no draw tool makes
+   *  one), with a draft when `draft`, then placed. */
+  const scene = () => ({ elements: [], appState: { pch: n() } });
+  const drawing =
+    (draft = false) =>
+    async (who: Who, p: Place) => {
+      const res = await runRoute(owner, 'POST', '/api/draws', { title: `${tag} draw ${n()}` });
+      const id = idIn(await res.text());
+      if (draft) {
+        const d = await runRoute(owner, 'PUT', `/api/draws/${id}/draft`, { scene: scene() });
+        expect(d.status, await d.text()).toBe(200);
+      }
+      await place(who, p)(id);
+      return id;
+    };
   const retitle = () => ({ title: `${tag} retitled ${n()}` });
 
   /** The node kinds' edit (PATCH) and delete (DELETE): one statement each,
@@ -340,6 +355,42 @@ describe.skipIf(!DB_URL)('the pre-check removal, part 2: the HTTP entries', () =
       name: 'notes',
       removed: true,
       routes: nodeRoutes('/api/notes', note),
+    },
+    {
+      // The draft, commit and discard ask the caller's right first
+      // (assertItemRight, in every mode): a scope that reads the drawing and
+      // may not edit it reads no draft.
+      name: 'drawings',
+      removed: true,
+      routes: [
+        ...nodeRoutes('/api/draws', drawing()),
+        {
+          name: 'PUT /api/draws/:id/draft',
+          need: 'edit',
+          method: 'PUT',
+          path: (id) => `/api/draws/${id}/draft`,
+          body: () => ({ scene: scene() }),
+          make: drawing(),
+          warnMade: false,
+        },
+        {
+          name: 'POST /api/draws/:id/commit',
+          need: 'edit',
+          method: 'POST',
+          path: (id) => `/api/draws/${id}/commit`,
+          body: () => ({ scene: scene() }),
+          make: drawing(true),
+          warnMade: false,
+        },
+        {
+          name: 'POST /api/draws/:id/discard-draft',
+          need: 'edit',
+          method: 'POST',
+          path: (id) => `/api/draws/${id}/discard-draft`,
+          make: drawing(true),
+          warnMade: false,
+        },
+      ],
     },
   ];
 
@@ -464,6 +515,7 @@ describe.skipIf(!DB_URL)('the pre-check removal, part 2: the HTTP entries', () =
         select coalesce((select md5(concat_ws(' | ',
           row_to_json(n)::text,
           (select row_to_json(p)::text from pages p where p.node_id = i),
+          (select row_to_json(d)::text from draws d where d.node_id = i),
           (select row_to_json(t)::text from tables t where t.node_id = i),
           (select row_to_json(a)::text from apps a where a.node_id = i),
           (select row_to_json(r)::text from recall_maps r where r.node_id = i),

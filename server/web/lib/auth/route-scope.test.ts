@@ -175,8 +175,9 @@ describe('itemWriteTarget (W6a, the item an Admin write touches)', () => {
       need: 'manage',
       ref: 'node',
     });
-    // Notes name no item since the pre-check removal part 2.
+    // Notes and drawings name no item since the pre-check removal part 2.
     expect(itemWriteTarget('DELETE', '/api/notes/:id', `/api/notes/${id}`)).toBeNull();
+    expect(itemWriteTarget('PUT', '/api/draws/:id/draft', `/api/draws/${id}/draft`)).toBeNull();
     expect(itemWriteTarget('POST', '/api/pages/:id/move', `/api/pages/${id}/move`)).toEqual({
       id,
       need: 'manage',
