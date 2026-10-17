@@ -6474,6 +6474,109 @@ At the head (that fix and this text): typecheck, lint, format, docs, arch
 and the changed DB files rerun (see the report). Nothing of this round
 runs on the workstation.
 
+### Pre-check removal Part 2 (HTTP)
+
+Branch `feat/precheck-http` (from `feat/precheck-remove` at 6ad2f8525, main
+v0.300.82 with F4 merged in), in parallel with the kept tool entries
+(`feat/precheck-legacy`); both merge into `feat/precheck-remove`. This
+section and the `itemPrecheckRoutes` pin and note are this branch's own.
+
+**Removed so far: 6 of the 27 entries, one commit per family**
+(`itemPrecheckRoutes` 27 -> 21):
+
+| Family (entries)                                                              | Write routes                                                                     | The database's check, and what the handler does first                                                                                                                                                                                                                      |
+| ----------------------------------------------------------------------------- | -------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| node kinds (4: `/api/formulas`, `/api/tasks`, `/api/events`, `/api/v1/tasks`) | PATCH and DELETE `/:id` (v1: PATCH)                                              | write check 0278 (one UPDATE), delete check 0266 (one DELETE); the handler's read in the login's scope finds no hidden row                                                                                                                                                 |
+| notes (1: `/api/notes`)                                                       | PATCH and DELETE `/:id`                                                          | the same                                                                                                                                                                                                                                                                   |
+| drawings (1: `/api/draws`)                                                    | PATCH, DELETE `/:id`; PUT `/:id/draft`; POST `/:id/commit`, `/:id/discard-draft` | 0278 and 0266; the draft save, commit and discard read the draft's revision under a lock first, and a scope that reads the drawing and may not edit it reads no draft, so they ask the caller's right first (`assertItemRight` edit, after the scoped read, in every mode) |
+
+Each route that writes and lacked one now declares its uuid param
+(`routeParams`: the task, note and drawing routes, and the v1 task and
+note aliases), so an id that is not a uuid is the params gateway's 404,
+where the item gate's answered before.
+
+**The proof** (`server/web/server/precheck-removal-http.db.test.ts`, in
+`pnpm test`, beside part 1's file so the two parts never touch each
+other's cells): every write route of a removed family through runRoute,
+as a member (a Moderator of H, a user of R and W) and an Admin user (in
+Admin, a Moderator there, not the owner; an `/api/v1` route with each
+login's own API key), in on and in warn, on the four placements of a fresh
+item, a read-only snapshot copy (an edit route), an id no row has and an
+id that is not a uuid. Each cell runs twice: `was` with the pre-check as
+the lists named it before part 2 (the test emulates a removed entry's old
+target, `OLD_TARGET`, so the old answer is recorded in every run) and
+`now` with it bypassed. It pins: a hidden item's answer is byte for byte
+the answer to an id no row has, and to an id that is not a uuid (one
+404), and nothing is written; in on, `now` refuses what `was` refused and
+makes what `was` made, a refusal in the mapper's words leaves the item
+(rows, content rows, links, grants, history) as it was; in warn, an edit
+the database refuses in on is made and logged as an actor miss, a delete
+is refused (0266 asks in every mode), and the drawing writes are refused
+(the right is asked first); a removed family's routes name no item in the
+lists.
+
+**Changed answers** (the old answer is `was`, printed by the test):
+
+- An item the login's scope does not read, and an id no row has, every
+  login and mode: 404 `{"ok":false,"error":"not found"}` (the gate) is now
+  404 `{"error":"not found"}` (the handler's), the same for both.
+- An id that is not a uuid: the gate's 404 body as above is now the params
+  gateway's `{"error":"not found"}` (named in `a10-lows.db.test.ts`: the
+  bad-id PATCH and DELETE of events and formulas). The GETs of the task,
+  note and drawing routes and their v1 aliases now give that 404 too, where
+  the handler cast the id in the database (A10's opaque 500).
+- A scope that reads the item and may not make the write, in on: 403
+  `{"error":"forbidden","reason":"item-workspace","message":"You cannot change this item in your workspaces."}`
+  gains `"code":"forbidden"` (the one mapper's body for the database's
+  refusal).
+- A read-only snapshot copy's edit (by a login that may manage it): 403
+  with "This is a read-only copy of an accepted item: nobody changes it.
+  Its author may delete it." and `"readOnly":true` is now the generic 403
+  above (the database's 0267 triggers, or `assertItemRight`'s copy
+  verdict, refuse it in every mode; the words and the flag are gone, the
+  refusal is not). If a client reads `readOnly`, it needs the mapper to
+  carry the copy detail; not done here.
+- Below on (an emergency only, the checks' floor of 0301): in warn, an
+  edit (PATCH) by a scope that reads the item and may not edit it is made
+  and logged as an actor miss, where the gate refused it in every mode; a
+  delete and a drawing's draft, commit and discard stay refused. In off
+  the request runs on the system pool (F4's rollout switch).
+- The DB-less guard sweep (`a4-guard-sweep*.txt`, re-recorded): the 14
+  write rows of these families pass the guard (its audit row and create
+  home) and fail at the handler's database read; every HTTP answer is the
+  same 500. The gate's caller test drives a page's write for the item
+  check now. `a1-d1-routes.db.test.ts` runs with both checks on (a Team
+  reader's edit is the database's to refuse now).
+
+**Left (15 entries to go, 2 to stay), in the order to take them:**
+
+- `/api/recall/maps` (cards, reorder, prompt, map PATCH and DELETE) and
+  `ITEM_REF_PREFIXES` `recall-revision`: the Recall edit checks (0280);
+  check each card route reads the map in the scope first.
+- `/api/pages`, `/api/v1/pages` and `ITEM_MANAGE_WRITES` (the move): as
+  drawings (the draft, commit and discard read a draft a reader does not
+  see: `assertItemRight` first, as page_commit has since fix round A); the
+  move is the move check and `assertItemRight` manage.
+- `/api/tables`, `/api/v1/tables`: the tables broker (A3b); the import and
+  the history restore write the workbook on disk: `assertItemRight` before
+  any staging, as the table tools in fix round A.
+- `/api/files/files`, `/api/files/folders`, `/api/tree/:kind/folders`:
+  the POST to a file or folder spools an upload before any read: it needs
+  `assertItemRight` before the spool; the folder ones meet
+  `mantle_subtree_rewrite` (0282).
+- `/api/apps` and its five `ITEM_READ_WRITES` (opened, frame-ticket,
+  db-broker, tool-broker, duplicate), `/api/tree/items` and its two
+  (opened, pin): the database asks no read for what they write; each
+  needs its read moved into the handler (a scoped read that answers the
+  one 404) before its entry goes, and `makesItems` must keep its value
+  (route-policy derives it from the read need). The app writes with a side
+  effect first (build, publish, snapshots) take part 1's kept reasons.
+- **Stay, named:** `ITEM_REF_PREFIXES` `share` (an Admin user's link close
+  with the users area and a contact share's "Can write" run on the system
+  pool, `ADMIN_ACT`: the TypeScript check is their only one) and
+  `deleted-app` (the trash runs on the system pool, `ADMIN_ACT`); for plan
+  v3 S6.
+
 ## Remove the switch-over code (A7)
 
 Plan v2 (page fcc4aee4), "A7. Remove the switch-over code", after W9 (every
