@@ -626,10 +626,11 @@ describe.skipIf(!URL)('the write role (arch A2b2a)', () => {
            and c.confrelid = 'public.nodes'::regclass and a.attname = ${t.writeCheck.item}`;
       expect(fk!.n, `${t.table}.${t.writeCheck.item}`).toBe(1);
     }
-    // A write table with no check (neither the write check nor A3a's) is
-    // read in an Admin scope only.
+    // A write table with no check (neither the write check nor A3a's, nor
+    // a named write rule: profiles' own-login, plan v3 S3) is read in an
+    // Admin scope only.
     for (const t of ACCESS_MATRIX.filter(
-      (x) => writeRoleWrites(x) && !x.writeCheck && !x.editCheck,
+      (x) => writeRoleWrites(x) && !x.writeCheck && !x.editCheck && !writeRuleArg(x),
     )) {
       const [rule] = await sql<{ qual: string }[]>`
         select qual from pg_policies where schemaname || '.' || tablename = ${t.table}
