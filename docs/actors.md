@@ -6571,6 +6571,54 @@ cases named item targets were re-recorded (the cases with item ids went
 with `builtinItems`; the six resolver tools' hashes are unchanged).
 `item-write-gate.test.ts` names all 98 with each check (`DATABASE_CHECKED`).
 
+### Pre-check removal Part 3 handover (2026-10-17)
+
+Branch `feat/precheck-legacy`. Handed over at the owner's tool-call rule,
+with the code done and the full DB gates red on a list to work through.
+
+**Done:** all 29 entries removed with their library checks (above), the
+machinery gone, `itemPrecheckTools` 0, the proof file green at 3a4c63b79
+(235 cells, 0 failed), the docs.
+
+**Gates at 5e6c7ce67** (workstation, own pg container on 127.0.0.1:56347,
+init mounted, migrated, `MANTLE_CHECK_FLOOR=keep`): typecheck 0, lint 0,
+format 0, docs 0, arch 0 (Mac); web build 0, boot:smoke 0, test:matrix 0
+(at 3b077178d, the head less the counter-test fix); full vitest with DB 1
+(10 files), actor-off 1 (9), actor-on 1 (1), edit-on 1 (12),
+test:runtime-role 1 (its run overlapped the next gate run on the same
+database: rerun it alone). Many of the failures are hook timeouts (16) from
+two gate runs overlapping on one container: rerun each gate alone first.
+
+**Left (do this first), the failures that are this branch's:**
+
+- `packages/content/src/app-table-exports-gap.test.ts`: its `@mantle/db`
+  mock lacks `assertItemRight` (add it, resolving).
+- `packages/mcp-core/src/mcp-call-snapshot.test.ts`: the call snapshot
+  (its mock of `toolItemWriteRefusalOf` is gone): re-record on purpose and
+  name the changed cells.
+- `packages/tools/src/turn-listing.test.ts`, `server/web/lib/api-v1-builtin.test.ts`:
+  they stub `toolItemWriteRefusalOf` to refuse (`h.item`); the refusal now
+  comes from the library (assertItemRight) or the database: stub that, or
+  drop the cells that pinned the pre-check's queue-time refusal (a kept
+  tool was refused before it was queued: now it queues, as Part 1's).
+- `server/web/server/a6b-exit-sweep.db.test.ts` "client-sourced" (26 in
+  every mode) and `a10-body-sweep.test.ts`: read what they list; likely
+  the 29 tools' rows or a sweep keyed on the old policy field.
+- One library test expects "not found" and gets "not allowed to edit this
+  item" (a check now asked first), and `w7a-admin-scope`, `grants.db`,
+  `app-draft-scope`, `w6b-fix1`, `w6b-member-writes`, `edit-check`,
+  `sql-grid`, `write-role`, the `workspaces-*` suites in edit-on: check
+  each against main's run at the same mode before calling it this branch's
+  (the 403-for-200 group, 10, and the hook timeouts look like load).
+- Then rerun full vitest, actor-off, actor-on, edit-on, matrix and
+  runtime-role, each alone, and wait for CI (build-check runs
+  39027701645 on 3b077178d, 39029016075 on 5e6c7ce67).
+
+The workstation worktree `.claude/worktrees/pcl3` (branch ref
+`pcl3-push`) and the runners `~/pcl3-run.sh`, `~/pcl3-gates.sh` are left
+for reuse; the container is removed (recreate it: pgvector pg18, init
+mounted, `pnpm db:migrate` against it with `MANTLE_CHECK_FLOOR=keep`).
+
 ## Remove the switch-over code (A7)
 
 Plan v2 (page fcc4aee4), "A7. Remove the switch-over code", after W9 (every
