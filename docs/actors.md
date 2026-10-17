@@ -291,8 +291,8 @@ the edit check's writes (`mantle_secret_put`, `mantle_recall_retarget`).
   "The checks' floor").
 - **The runtime role**: `MANTLE_DB_RUNTIME_ROLE=1` in `.env` makes the
   system pool log in as `mantle_runtime`, which cannot disable a trigger,
-  alter a table or change a mode. Off means the app runs as the
-  superuser, and Postgres refuses nothing the code asks
+  alter a table or change a mode. Off means the system pool runs as the
+  superuser, so nothing in Postgres stops a bug there from doing either
   ([runtime-role.md](./runtime-role.md)). Every app process says which at
   start; `/api/health` shows `postgres.role`.
 - **Emergency switches**: lowering a check (with a reason, recorded and

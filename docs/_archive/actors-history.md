@@ -7515,3 +7515,57 @@ directive in `contact-sharing-routes.db.test.ts`) is main's.
 only, checked): no live call of a deleted route or field; only comments,
 its `gone-routes.ts` guard list and an e2e intercept of
 `/api/apps/members**` name them.
+
+## D1 handover (plan v3.2: docs split, history out)
+
+Branch `feat/d1-docs-split`, from main at v0.300.83 (ea671d46b).
+
+What changed:
+
+- This file is the old docs/actors.md, moved verbatim (`git mv`, its own
+  commit, so `git log --follow` reads its history). Handovers of plan
+  v3.2 are appended here.
+- docs/actors.md is the spec: the fifteen sections of plan v3.2 section
+  4.1, today's rules checked against the code, and the known limits with
+  the step that ends each. 341 lines.
+- The process inventory (the `entries` block and the entries the scan does
+  not see) moved to docs/process-inventory.md;
+  eslint-rules/process-entries.test.ts reads it there (a path change).
+- docs-check rule 3 (scripts/docs-check.mjs, eslint-rules/docs-quotes.mjs,
+  eslint-rules/docs-quotes.test.ts): a `docs/<file>.md, "Heading"` quote
+  in any tracked text file but the history (docs/_archive, docs/_changelog,
+  CHANGELOG.md) names an existing heading: a markdown heading or a bold
+  lead, by its text or a whole-word prefix, ignoring case and a section
+  number. A docs/actors.md quote resolves against the spec first and this
+  file second. 201 quotes today: 74 docs/actors.md quotes resolve only
+  here (actorsHistoryRefs), and 8 named no heading on main already
+  (DANGLING, shrink only: three in applied migrations, four docs/actors.md
+  quotes for D2, two in request-plumbing.md). The plan's "98" counted
+  every mention; the rule counts quotes of a heading. docs/workspaces.md's
+  "Where a new item lands:" became a bold lead, which two quotes name.
+- Stale headers fixed, comments only: route-scope.ts (the `content` class
+  and the member write routes: a login's write, an Admin user's too, runs
+  on the write role while the actor check is not off) and access-matrix.ts
+  (`Writer`). route-scope.ts:345 of the plan's count was the
+  ITEM_WRITE_PREFIXES header, gone with R0. The old "Every box runs off
+  or warn" lives only here now; the spec says both checks run on.
+
+Pins (scripts/arch-scoreboard.pins.json, new): actorsMdLines 350 (the
+cap; 341 today), actorsHistoryRefs 74, docQuotesDangling 8. P1a's
+actorsMdLines is this key: on its rebase it keeps this one.
+
+Gates (exit codes): pnpm -r typecheck 0, pnpm lint 0 (one warning, not
+from this branch), pnpm format:check 0 (and prettier on the eslint-rules
+files 0), pnpm docs:check 0, pnpm arch:check 0, pnpm -C server/web build
+0, unit vitest `vitest run server packages eslint-rules` with
+DATABASE_URL unset 0 (840 files passed, 255 skipped). No DB suite: no
+code beyond comments, the test's path and the scripts.
+
+For S3's rebase: its lines in the old docs/actors.md go into this file
+at the same places; a line that states a rule today goes into the spec
+section it changes.
+
+Open: D2 retargets the 74 history quotes and the four dangling
+docs/actors.md quotes to spec sections, or drops them. The brain's
+profile row split (section 6) is stated as the owner's rule and listed
+as a known limit until S3 builds it.
