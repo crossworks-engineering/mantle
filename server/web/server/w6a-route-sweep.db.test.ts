@@ -691,7 +691,10 @@ describe.skipIf(!URL)('W6a route sweep: scoped reads for every login', () => {
         if (!manages) continue;
         const path = at(await writeOnly(kind));
         manageChecked += 1;
-        const r = await call(path, mem, method);
+        // A move with no destination is the route's 400 before any read:
+        // name one (the root), so the refusal is the item's.
+        const body = e.pattern.endsWith('/:id/move') ? { folderId: null } : undefined;
+        const r = await call(path, mem, method, body);
         if (r.status !== 403 && r.status !== 404) {
           failures.push(`${method} ${e.pattern} ${r.status} ${r.text.slice(0, 120)}`);
         }
