@@ -30,6 +30,7 @@ import { defineDomainError } from '@mantle/std';
 import { LINK_SERVE_KINDS } from '@mantle/client-types/kind-lists';
 import {
   db,
+  itemWriteVerdicts,
   liveWorkspaceSql,
   mayEditInSql,
   mayManageInSql,
@@ -161,6 +162,13 @@ export async function assertMayLink(
 ): Promise<LinkRights> {
   const r = (await linkRights(ownerId, loginId, [nodeId], q)).get(nodeId.toLowerCase());
   if (!r || !r.read) throw NOT_FOUND();
+  // The current workspace scope too (pre-check removal Part 3): a turn narrower than the
+  // login (an assistant of one workspace) reads and edits only what that
+  // workspace does. Asked only where a scope is active; the same answers.
+  const inScope = (await itemWriteVerdicts([nodeId], r.type === 'app' ? 'manage' : 'edit')).get(
+    nodeId,
+  );
+  if (inScope === 'no_read') throw NOT_FOUND();
   if (!canShareNode(r)) {
     throw new ShareInputError('not-shareable', `type '${r.type}' cannot carry a link here`);
   }
@@ -169,7 +177,7 @@ export async function assertMayLink(
   if (r.snapshotCopy) {
     throw new LinkRefusedError(403, 'forbidden', SNAPSHOT_COPY_NO_SHARE);
   }
-  if (!(r.type === 'app' ? r.manage : r.edit)) {
+  if (!(r.type === 'app' ? r.manage : r.edit) || inScope === 'no_edit') {
     throw new LinkRefusedError(
       403,
       'forbidden',

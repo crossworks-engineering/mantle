@@ -224,6 +224,10 @@ export async function saveDraft(
     .where(and(eq(nodes.id, id), eq(nodes.ownerId, ownerId), eq(nodes.type, 'page')))
     .limit(1);
   if (!node) return { ok: false, missing: true };
+  // The page's edit first (pre-check removal Part 3): a caller that may not edit the
+  // page reads no draft, so its save would answer a draft conflict ("changed
+  // since you read it") where it is a refusal. Asked before the rev.
+  await assertItemRight(id, 'edit');
   // Guarantee every persisted draft carries stable block ids — the autosave
   // endpoint accepts whatever the editor sends, and an editor that doesn't
   // yet preserve the id global attr (or a programmatic write) would

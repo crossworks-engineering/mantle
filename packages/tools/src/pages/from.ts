@@ -11,6 +11,7 @@ import {
   nodeUrl,
   getNote,
   getJournal,
+  assertMaySupersede,
   supersedeNode,
 } from '@mantle/content';
 import { fileById, readFileById } from '@mantle/files';
@@ -31,7 +32,6 @@ import {
   placementOutput,
   placementRefusal,
 } from './common';
-import { pageFromFileSource, pageFromNoteSource, pageFromNotesSources } from '../item-write-gate';
 import { CS } from '../client-sourced-rule';
 
 export const page_from_file: BuiltinToolDef = {
@@ -41,7 +41,6 @@ export const page_from_file: BuiltinToolDef = {
     spends: 'none',
     scope: 'any',
     creates: 'page',
-    legacyItemPrecheck: { need: pageFromFileSource, reason: 'answer-worse' },
     clientSourced: { ...CS.creates(), extraNodes: CS.supersedes('file_id') },
   },
   preconditions: [...FILE_ID_PRE, ...FOLDER_ID_PRE],
@@ -79,6 +78,10 @@ export const page_from_file: BuiltinToolDef = {
     if (gated) return { ok: false, error: gated };
     const fileId = str(input.file_id).trim();
     if (!fileId) return { ok: false, error: 'file_id is required' };
+    // The source's edit first (pre-check removal Part 3): it is retired after the page is
+    // made (and a failed retire is only logged), so a caller that may not
+    // edit it is refused before anything is made.
+    if (input.supersede_source !== false) await assertMaySupersede([fileId]);
     const meta = await fileById({ ownerId: ctx.ownerId, fileId });
     if (!meta) return notFound('file', fileId, 'file_list / search_nodes');
     if (!meta.isText) {
@@ -202,7 +205,6 @@ export const page_from_note: BuiltinToolDef = {
     spends: 'none',
     scope: 'any',
     creates: 'page',
-    legacyItemPrecheck: { need: pageFromNoteSource, reason: 'answer-worse' },
     clientSourced: {
       ...CS.creates('folder_id', 'parent_id'),
       extraNodes: CS.supersedes('note_id'),
@@ -245,6 +247,10 @@ export const page_from_note: BuiltinToolDef = {
     const noteId = str(input.note_id).trim();
     if (!noteId) return { ok: false, error: 'note_id is required' };
 
+    // The source's edit first (pre-check removal Part 3): it is retired after the page is
+    // made (and a failed retire is only logged), so a caller that may not
+    // edit it is refused before anything is made.
+    if (input.supersede_source !== false) await assertMaySupersede([noteId]);
     const note = await getNote(ctx.ownerId, noteId);
     if (!note) {
       return {
@@ -339,7 +345,6 @@ export const page_from_notes: BuiltinToolDef = {
     spends: 'none',
     scope: 'any',
     creates: 'page',
-    legacyItemPrecheck: { need: pageFromNotesSources, reason: 'answer-worse' },
     clientSourced: {
       ...CS.creates('folder_id', 'parent_id'),
       extraNodes: CS.supersedes('note_ids'),
@@ -403,6 +408,10 @@ export const page_from_notes: BuiltinToolDef = {
 
     // Fetch all notes up front so a bad id fails the whole call cleanly rather
     // than producing a half-built page. Order is preserved from note_ids.
+    // The source's edit first (pre-check removal Part 3): it is retired after the page is
+    // made (and a failed retire is only logged), so a caller that may not
+    // edit it is refused before anything is made.
+    if (input.supersede_source !== false) await assertMaySupersede(noteIds);
     const fetched = await Promise.all(noteIds.map((id) => getNote(ctx.ownerId, id)));
     const missing = noteIds.filter((_, i) => !fetched[i]);
     if (missing.length) {
