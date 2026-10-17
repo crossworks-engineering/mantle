@@ -224,6 +224,11 @@ export async function saveDraft(
     .where(and(eq(nodes.id, id), eq(nodes.ownerId, ownerId), eq(nodes.type, 'page')))
     .limit(1);
   if (!node) return { ok: false, missing: true };
+  // The caller's right first (pre-check removal part 2): a scope that reads
+  // the page and may not edit it reads no draft, so its draft revision
+  // would answer a conflict, or the lock nothing, where the edit is the
+  // refusal. Asked in a workspace scope only.
+  await assertItemRight(id, 'edit');
   // Guarantee every persisted draft carries stable block ids — the autosave
   // endpoint accepts whatever the editor sends, and an editor that doesn't
   // yet preserve the id global attr (or a programmatic write) would
@@ -260,6 +265,8 @@ export async function discardDraft(ownerId: string, id: string): Promise<boolean
     .where(and(eq(nodes.id, id), eq(nodes.ownerId, ownerId), eq(nodes.type, 'page')))
     .limit(1);
   if (!node) return false;
+  // The caller's right first, as saveDraft asks it.
+  await assertItemRight(id, 'edit');
   await withPageLock(id, async (tx, locked) => {
     if (!locked) return;
     await tx
@@ -305,6 +312,9 @@ async function commitPageOnce(
     .where(and(eq(nodes.id, id), eq(nodes.ownerId, ownerId), eq(nodes.type, 'page')))
     .limit(1);
   if (!node) return { ok: false, missing: true };
+  // The caller's right first, as saveDraft asks it: before the doc's text
+  // is made and the draft's revision is read.
+  await assertItemRight(id, 'edit');
 
   // Guarantee the committed doc carries stable per-block ids so the
   // brain (via doc_text), Phase 2b block tools, and the editor diff

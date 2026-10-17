@@ -59,7 +59,7 @@ a57 404 content-type=application/json cache-control=no-store {"ok":false,"error"
 a58 404 content-type=application/json cache-control=no-store {"ok":false,"error":"not found"} [getOwnerOr401 R404 {"ok":false,"error":"not found"} actor=login:rw:44444444-4444-4444-8444-444444444444 out=-]
 a59 404 content-type=application/json cache-control=no-store {"ok":false,"error":"not found"} [touch 00000001] [getOwnerOr401 R404 {"ok":false,"error":"not found"} actor=login:rw:55555555-5555-4555-8555-555555555555 out=-]
 
-# cells that wanted a database: 313 in the first sweep; 0 still do with the reads stood in
+# cells that wanted a database: 223 in the first sweep; 0 still do with the reads stood in
 
 # more credentials
 GET /.well-known/oauth-authorization-server: disabled-cookie=a1 bumped-cookie=a1 gone-cookie=a1 rotated-bearer=a1 expired-bearer=a1 key-unknown=a1 key-revoked=a1
@@ -913,20 +913,6 @@ DELETE /api/files/files/:id: owner-cookie=a50 admin-cookie=a51 limited-cookie=a5
 POST /api/files/folders/:id: owner-cookie=a50 admin-cookie=a51 limited-cookie=a52 admin-bearer=a54
 PATCH /api/files/folders/:id: owner-cookie=a50 admin-cookie=a51 limited-cookie=a52 member-cookie=a53 admin-bearer=a54 member-bearer=a55
 DELETE /api/files/folders/:id: owner-cookie=a50 admin-cookie=a51 limited-cookie=a52 member-cookie=a53 admin-bearer=a54 member-bearer=a55
-PATCH /api/pages/:id: owner-cookie=a50 admin-cookie=a51 limited-cookie=a52 member-cookie=a53 admin-bearer=a54 member-bearer=a55
-DELETE /api/pages/:id: owner-cookie=a50 admin-cookie=a51 limited-cookie=a52 member-cookie=a53 admin-bearer=a54 member-bearer=a55
-POST /api/pages/:id/commit: owner-cookie=a50 admin-cookie=a51 limited-cookie=a52 member-cookie=a53 admin-bearer=a54 member-bearer=a55
-POST /api/pages/:id/discard-draft: owner-cookie=a50 admin-cookie=a51 limited-cookie=a52 member-cookie=a53 admin-bearer=a54 member-bearer=a55
-PUT /api/pages/:id/draft: owner-cookie=a50 admin-cookie=a51 limited-cookie=a52 member-cookie=a53 admin-bearer=a54 member-bearer=a55
-POST /api/pages/:id/move: owner-cookie=a50 admin-cookie=a51 limited-cookie=a52 member-cookie=a53 admin-bearer=a54 member-bearer=a55
-PATCH /api/recall/maps/:id: owner-cookie=a50 admin-cookie=a51 limited-cookie=a52 member-cookie=a53 admin-bearer=a54 member-bearer=a55
-DELETE /api/recall/maps/:id: owner-cookie=a50 admin-cookie=a51 limited-cookie=a52 member-cookie=a53 admin-bearer=a54 member-bearer=a55
-POST /api/recall/maps/:id/cards: owner-cookie=a50 admin-cookie=a51 limited-cookie=a52 member-cookie=a53 admin-bearer=a54 member-bearer=a55
-PUT /api/recall/maps/:id/cards/:card: owner-cookie=a50 admin-cookie=a51 limited-cookie=a52 member-cookie=a53 admin-bearer=a54 member-bearer=a55
-DELETE /api/recall/maps/:id/cards/:card: owner-cookie=a50 admin-cookie=a51 limited-cookie=a52 member-cookie=a53 admin-bearer=a54 member-bearer=a55
-POST /api/recall/maps/:id/cards/:card/prompt: owner-cookie=a50 admin-cookie=a51 limited-cookie=a52 member-cookie=a53 admin-bearer=a54 member-bearer=a55
-POST /api/recall/maps/:id/cards/reorder: owner-cookie=a50 admin-cookie=a51 limited-cookie=a52 member-cookie=a53 admin-bearer=a54 member-bearer=a55
-POST /api/recall/revisions/:id/restore: owner-cookie=a50 admin-cookie=a51 limited-cookie=a52 member-cookie=a53 admin-bearer=a54 member-bearer=a55
 PATCH /api/shares/:id: owner-cookie=a50 admin-cookie=a51 limited-cookie=a52 admin-bearer=a54
 DELETE /api/shares/:id: limited-cookie=a52
 PATCH /api/tables/:id: owner-cookie=a50 admin-cookie=a51 limited-cookie=a52 member-cookie=a53 admin-bearer=a54 member-bearer=a55
@@ -943,7 +929,6 @@ PATCH /api/tree/:kind/folders/:id: owner-cookie=a50 admin-cookie=a51 limited-coo
 DELETE /api/tree/:kind/folders/:id: owner-cookie=a50 admin-cookie=a51 limited-cookie=a52 member-cookie=a53 admin-bearer=a54 member-bearer=a55
 POST /api/tree/items/:id/opened: owner-cookie=a50 admin-cookie=a51 limited-cookie=a52 member-cookie=a53 admin-bearer=a54 member-bearer=a55
 PUT /api/tree/items/:id/pin: owner-cookie=a50 admin-cookie=a51 limited-cookie=a52 member-cookie=a53 admin-bearer=a54 member-bearer=a55
-PATCH /api/v1/pages/:id: owner-cookie=a50 admin-cookie=a51 limited-cookie=a52 member-cookie=a53 admin-bearer=a54 member-bearer=a55
 POST /api/v1/tables/:id/commit: owner-cookie=a50 admin-cookie=a51 limited-cookie=a52 member-cookie=a53 admin-bearer=a54 member-bearer=a55 key-write=a51 key-member=a53
 POST /api/v1/tables/:id/rows: owner-cookie=a50 admin-cookie=a51 limited-cookie=a52 admin-bearer=a54 key-write=a51
 PATCH /api/v1/tables/:id/rows/:rowId: owner-cookie=a50 admin-cookie=a51 limited-cookie=a52 admin-bearer=a54 key-write=a51

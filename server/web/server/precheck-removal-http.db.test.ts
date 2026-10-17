@@ -412,6 +412,33 @@ describe.skipIf(!DB_URL)('the pre-check removal, part 2: the HTTP entries', () =
   const ver = (id: string) => verOf.get(id) ?? 0;
   const card = (id: string, i = 0) => cardsOf.get(id)?.[i] ?? 'c1';
 
+  /** A page made by its create tool as the owner, with a draft when
+   *  `draft` (saved through its route as the owner), then placed. With
+   *  `folder`, a folder made by the owner and homed where `who` may move
+   *  the page into (its Moderator workspace), kept for the move's body. */
+  const doc = () => ({ type: 'doc', content: [], pch: n() });
+  const folderOf = new Map<string, string>();
+  const page =
+    (opts: { draft?: true; folder?: true } = {}) =>
+    async (who: Who, p: Place) => {
+      const id = idIn(await sysTool('page_create', { title: `${tag} page ${n()}` }));
+      if (opts.draft) {
+        const d = await runRoute(owner, 'PUT', `/api/pages/${id}/draft`, { doc: doc() });
+        expect(d.status, await d.text()).toBe(200);
+      }
+      if (opts.folder) {
+        const f = await runRoute(owner, 'POST', '/api/tree/pages/folders', {
+          parentId: null,
+          name: `${tag} folder ${n()}`,
+        });
+        const folder = idIn(await f.text());
+        await grant(folder, [[who === 'member' ? ws.H : ws.admin, true, false]]);
+        folderOf.set(id, folder);
+      }
+      await place(who, p)(id);
+      return id;
+    };
+
   const FAMILIES: Family[] = [
     {
       name: 'node kinds (formulas, tasks, events, v1 tasks)',
@@ -558,6 +585,54 @@ describe.skipIf(!DB_URL)('the pre-check removal, part 2: the HTTP entries', () =
           warnMade: false,
           ownerAct: 'after',
           badIdOwn: true,
+        },
+      ],
+    },
+    {
+      // A page's edit and delete are one statement each (0278, 0266; a
+      // doc's edit the pages row's check too). The draft save, commit and
+      // discard ask the caller's right first (assertItemRight edit, in
+      // every mode), as the drawings'; the move asks manage first
+      // (assertItemRight), then the database's move check.
+      name: 'pages',
+      removed: true,
+      routes: [
+        ...nodeRoutes('/api/pages', page()),
+        nodeRoutes('/api/v1/pages', page(), { viaKey: true })[0]!,
+        {
+          name: 'PUT /api/pages/:id/draft',
+          need: 'edit',
+          method: 'PUT',
+          path: (id) => `/api/pages/${id}/draft`,
+          body: () => ({ doc: doc() }),
+          make: page(),
+          warnMade: false,
+        },
+        {
+          name: 'POST /api/pages/:id/commit',
+          need: 'edit',
+          method: 'POST',
+          path: (id) => `/api/pages/${id}/commit`,
+          body: () => ({ doc: doc() }),
+          make: page({ draft: true }),
+          warnMade: false,
+        },
+        {
+          name: 'POST /api/pages/:id/discard-draft',
+          need: 'edit',
+          method: 'POST',
+          path: (id) => `/api/pages/${id}/discard-draft`,
+          make: page({ draft: true }),
+          warnMade: false,
+        },
+        {
+          name: 'POST /api/pages/:id/move',
+          need: 'manage',
+          method: 'POST',
+          path: (id) => `/api/pages/${id}/move`,
+          body: (id) => ({ folderId: folderOf.get(id) ?? randomUUID(), confirm: true }),
+          make: page({ folder: true }),
+          warnMade: false,
         },
       ],
     },

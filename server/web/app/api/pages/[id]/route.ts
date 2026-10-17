@@ -6,6 +6,12 @@ import { hiddenFromKey } from '@/lib/api-v1';
 import { deletePage, getPage, updatePage } from '@/lib/pages';
 import { firstIssue } from '@/lib/zod-issue';
 import { readJson } from '@/lib/read-body';
+import type { RouteParams } from '@/lib/route-params';
+
+/** The [id] is a uuid: any other names nothing, the one 404 before the
+ *  handler (lib/route-params.ts). Since the pre-check removal part 2 the
+ *  item gate no longer answers a bad id here (docs/actors.md). */
+export const routeParams = { id: 'uuid' } as const satisfies RouteParams;
 
 const DocSchema = z.record(z.string(), z.unknown());
 

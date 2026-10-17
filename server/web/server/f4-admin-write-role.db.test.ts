@@ -159,11 +159,15 @@ describe.skipIf(!DB_URL)('F4: an Admin user’s write request runs in its scope'
   const cell = async (
     name: string,
     who: Who,
-    what: 'edit' | 'draft',
+    what: 'edit' | 'draft' | 'gated',
     grant: Grant,
     precheck: boolean,
   ): Promise<Cell> => {
     const id = await makeItem(what === 'edit' ? 'note' : 'page', grant);
+    // 'gated': a write through a route that keeps the pre-check (a table's
+    // PATCH): the gate reads the item the route names, by its id only, and
+    // answers before any handler (pre-check removal part 2: the notes and
+    // pages entries are gone).
     const before = await stateOf(id);
     pre.on = precheck;
     m.takeActorMisses();
@@ -172,9 +176,11 @@ describe.skipIf(!DB_URL)('F4: an Admin user’s write request runs in its scope'
       res = await writersOf(() =>
         what === 'edit'
           ? runRoute(L[who], 'PATCH', `/api/notes/${id}`, { title: `${tag} edited ${name}` })
-          : runRoute(L[who], 'PUT', `/api/pages/${id}/draft`, {
-              doc: { type: 'doc', content: [], f4: name },
-            }),
+          : what === 'gated'
+            ? runRoute(L[who], 'PATCH', `/api/tables/${id}`, { title: `${tag} edited ${name}` })
+            : runRoute(L[who], 'PUT', `/api/pages/${id}/draft`, {
+                doc: { type: 'doc', content: [], f4: name },
+              }),
       );
     } finally {
       pre.on = true;
@@ -326,15 +332,15 @@ describe.skipIf(!DB_URL)('F4: an Admin user’s write request runs in its scope'
   }, 120_000);
 
   it('with the pre-check in place: a read-only edit is its 403, an item the scope does not read the 404 (no existence leak)', async () => {
-    // A page's draft save: its route keeps the pre-check (a note's PATCH
-    // lost its entry in the pre-check removal part 2, docs/actors.md).
+    // A route that keeps the pre-check (a note's and a page's lost their
+    // entry in the pre-check removal part 2, docs/actors.md).
     for (const mode of ['off', 'warn', 'on'] as const) {
       await setMode(mode);
       for (const who of ['admin', 'owner'] as const) {
         const ro = await cell(
-          `${mode} ${who} draft read-only, pre-check`,
+          `${mode} ${who} gated read-only, pre-check`,
           who,
-          'draft',
+          'gated',
           'read-only',
           true,
         );
@@ -342,9 +348,9 @@ describe.skipIf(!DB_URL)('F4: an Admin user’s write request runs in its scope'
         expect(ro.text).toContain('You cannot change this item in your workspaces.');
         expect(ro.changed).toBe(false);
         const hidden = await cell(
-          `${mode} ${who} draft hidden, pre-check`,
+          `${mode} ${who} gated hidden, pre-check`,
           who,
-          'draft',
+          'gated',
           'hidden',
           true,
         );

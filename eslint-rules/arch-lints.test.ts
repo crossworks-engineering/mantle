@@ -798,7 +798,12 @@ describe('the item pre-check counters (A4 step 4, A5 step 6b)', () => {
   it('counts each HTTP list, and the scoreboard sums them', () => {
     const by = itemPrecheckRouteEntries(ROOT) as Record<string, number>;
     expect(Object.keys(by)).toEqual([...(ITEM_PRECHECK_ROUTE_LISTS as string[])]);
-    for (const n of Object.values(by)) expect(n).toBeGreaterThan(0);
+    // A list whose last entry went is gone and counts 0 (ITEM_MANAGE_WRITES,
+    // the pre-check removal part 2); every other one holds entries.
+    for (const [name, n] of Object.entries(by)) {
+      if (name !== 'ITEM_MANAGE_WRITES') expect(n, name).toBeGreaterThan(0);
+    }
+    expect(by.ITEM_MANAGE_WRITES).toBe(0);
     expect(Object.values(by).reduce((a, b) => a + b, 0)).toBe(got.numbers.itemPrecheckRoutes);
     expect(got.numbers.itemPrecheckTools).toBeGreaterThan(0);
   });

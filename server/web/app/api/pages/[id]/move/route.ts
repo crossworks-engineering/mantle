@@ -1,11 +1,17 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { and, eq, sql } from 'drizzle-orm';
-import { db, nodes } from '@mantle/db';
+import { assertItemRight, db, nodes } from '@mantle/db';
 import { ownerCaller } from '@/lib/auth';
 import { getPage } from '@/lib/pages';
 import { moveTreeItems, notifyTreeChanged } from '@mantle/content/tree';
 import { readBody } from '@/lib/read-body';
+import type { RouteParams } from '@/lib/route-params';
+
+/** The [id] is a uuid: any other names nothing, the one 404 before the
+ *  handler (lib/route-params.ts). Since the pre-check removal part 2 the
+ *  item gate no longer answers a bad id here (docs/actors.md). */
+export const routeParams = { id: 'uuid' } as const satisfies RouteParams;
 
 /**
  * POST /api/pages/:id/move — file a page in a folder of the pages tree
@@ -53,6 +59,10 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     .where(and(eq(nodes.id, id), eq(nodes.ownerId, user.id), eq(nodes.type, 'page')))
     .limit(1);
   if (!page) return NextResponse.json({ error: 'not found' }, { status: 404 });
+  // A move manages the page: the caller's right first (pre-check removal
+  // part 2), after the scoped read above (a page it does not read is the
+  // 404 of none), then the database's move check. Asked in a scope only.
+  await assertItemRight(id, 'manage');
 
   let folderId: string | null;
   if (body.folderId !== undefined) folderId = body.folderId;

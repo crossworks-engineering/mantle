@@ -217,20 +217,19 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
         // Content writes (batch 3): an item write, a create, and the read
         // POST whose guard checks the item as a write.
         { pattern: '/api/notes/:id', methods: ['PATCH', 'DELETE'] },
-        // A page's: notes lost their item check in the pre-check removal
-        // part 2 (the database checks them).
-        { pattern: '/api/pages/:id', methods: ['PATCH', 'DELETE'] },
+        // A table's: notes and pages lost their item check in the
+        // pre-check removal part 2 (the database checks them).
+        { pattern: '/api/tables/:id', methods: ['PATCH', 'DELETE'] },
         { pattern: '/api/formulas/:id/evaluate', methods: ['POST'] },
         // More of batch 3's writes (A4 step 3b part 4, the part 3 audit):
         // the v1 alias of a create (an API key's write), an item write that
-        // needs manage, an item named through a share, a Recall revision and
+        // needs manage (a table's delete), an item named through a share and
         // a deleted app's snapshot, and an app's data write (its item read:
         // the app; D6's Informational switch is the database's, after the
-        // gate).
+        // gate). A page's move and a Recall revision lost their item check
+        // in the pre-check removal part 2.
         { pattern: '/api/v1/notes', methods: ['POST'] },
-        { pattern: '/api/pages/:id/move', methods: ['POST'] },
         { pattern: '/api/shares/:id', methods: ['DELETE'] },
-        { pattern: '/api/recall/revisions/:id/restore', methods: ['POST'] },
         { pattern: '/api/apps/deleted/:id', methods: ['DELETE'] },
         { pattern: '/api/apps/:id/db-broker', methods: ['POST'] },
       ].map((e) => ({
@@ -346,18 +345,19 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
       'refused-workspace': { refused: 'workspace', message: 'You are not in that workspace.' },
       'refused-invalid': { refused: 'invalid', message: 'ws is not a workspace id.' },
     };
-    // Pages: notes lost their item check in the pre-check removal part 2
-    // (the database checks them); a page's write still has it.
+    // Tables: notes and pages lost their item check in the pre-check
+    // removal part 2 (the database checks them); a table's write still has
+    // it.
     const paths = [
-      ['PATCH', `/api/pages/${ID}`],
-      ['DELETE', `/api/pages/${ID}`],
+      ['PATCH', `/api/tables/${ID}`],
+      ['DELETE', `/api/tables/${ID}`],
       ['POST', `/api/formulas/${ID}/evaluate`],
       // The id the handler gets is the decoded segment: an encoded item id
       // is checked as that id; one that decodes to no item id, or not at
       // all, is the not-found answer (the security fix), for every login.
-      ['PATCH', `/api/pages/${encodeURIComponent(ID).replace(/1/g, '%31')}`],
-      ['PATCH', '/api/pages/not-an-item'],
-      ['PATCH', '/api/pages/%E0%A4%A'],
+      ['PATCH', `/api/tables/${encodeURIComponent(ID).replace(/1/g, '%31')}`],
+      ['PATCH', '/api/tables/not-an-item'],
+      ['PATCH', '/api/tables/%E0%A4%A'],
     ] as const;
     const seenAnswers = new Set<string>();
     const run = async (label: string, method: string, path: string, setup: () => void) => {
@@ -428,8 +428,7 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
       'not-in-scope': [[], [{ one: 1 }]],
       'no-such-item': [[], []],
     };
-    // Through a share (an app's link needs manage) or a Recall revision:
-    // the lookup first, then the item's answers; a lookup that names no
+    // Through a share (an app's link needs manage): the lookup first, then the item's answers; a lookup that names no
     // item.
     const through = (first: unknown[]) =>
       Object.fromEntries(Object.entries(node).map(([k, v]) => [k, [first, ...v]]));
@@ -440,7 +439,6 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
       ),
       'no-item': [[{ id: null, type: null }]],
     };
-    const revision = { ...through([{ id: ID }]), 'no-item': [[{ id: null }]] };
     // A deleted app's last snapshot: no home stored, a home its Moderator
     // manages or not, deleted by someone other than the owner (seen by a
     // Moderator of its home or not: F4 fix round 1, the manage check comes
@@ -469,10 +467,8 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
       // the not-found answer, for every login.
       for (const id of odd(ID)) cells.push([method, path(id), 'odd', cases]);
     };
-    each('POST', (id) => `/api/pages/${id}/move`, node);
-    each('DELETE', (id) => `/api/pages/${id}`, node);
+    each('DELETE', (id) => `/api/tables/${id}`, node);
     each('DELETE', (id) => `/api/shares/${id}`, share);
-    each('POST', (id) => `/api/recall/revisions/${id}/restore`, revision);
     each('DELETE', (id) => `/api/apps/deleted/${id}`, deleted);
     each('POST', (id) => `/api/apps/${id}/db-broker`, node);
     const seenAnswers = new Set<string>();

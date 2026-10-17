@@ -346,7 +346,10 @@ export function memberMayRead(method: string, pattern: string | null): boolean {
  * homed in a workspace it is not in needs it to add itself first).
  */
 export const ITEM_WRITE_PREFIXES: readonly string[] = [
-  '/api/pages',
+  // Pages (and /api/v1/pages) went in the pre-check removal part 2: their
+  // edit and delete are one statement each (0278, 0266), the draft save,
+  // commit and discard ask the caller's right first (assertItemRight), and
+  // the move asks manage first (assertItemRight) before the move check.
   // Notes and drawings went in the pre-check removal part 2
   // (docs/actors.md): the database checks their writes (a drawing's draft,
   // commit and discard ask the caller's right first, assertItemRight).
@@ -356,7 +359,6 @@ export const ITEM_WRITE_PREFIXES: readonly string[] = [
   '/api/files/folders',
   '/api/tree/:kind/folders',
   '/api/tree/items',
-  '/api/v1/pages',
   '/api/v1/tables',
   // W6a fix round 1 (M1): the other workspace kinds with an item route.
   // Formulas, tasks, events and v1 tasks went in the pre-check removal
@@ -396,10 +398,6 @@ const ITEM_READ_WRITES: ReadonlySet<string> = new Set([
   'PUT /api/tree/items/:id/pin',
 ]);
 
-/** Item writes that manage the item (delete, move): Moderators of its home
- *  (mantle_may_manage), as the grant rules say (0241). */
-const ITEM_MANAGE_WRITES: ReadonlySet<string> = new Set(['POST /api/pages/:id/move']);
-
 /** What an item write needs of the item: to read it, to edit it
  *  (mantle_may_edit), or to manage it (mantle_may_manage). */
 export type ItemWriteNeed = 'read' | 'edit' | 'manage';
@@ -430,9 +428,13 @@ export function itemWriteTarget(
     const id = path.split('/')[prefix.split('/').length];
     if (!id) return null;
     const key = `${m} ${pattern}`;
+    // A delete of the item manages it: Moderators of its home
+    // (mantle_may_manage), as the grant rules say (0241). Its one move
+    // route went with the pages (ITEM_MANAGE_WRITES, pre-check removal
+    // part 2).
     const need: ItemWriteNeed = ITEM_READ_WRITES.has(key)
       ? 'read'
-      : ITEM_MANAGE_WRITES.has(key) || (m === 'DELETE' && pattern === head)
+      : m === 'DELETE' && pattern === head
         ? 'manage'
         : 'edit';
     return { id, need, ref: 'node' };
