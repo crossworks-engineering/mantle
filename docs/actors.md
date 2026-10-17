@@ -6481,18 +6481,21 @@ v0.300.82 with F4 merged in), in parallel with the kept tool entries
 (`feat/precheck-legacy`); both merge into `feat/precheck-remove`. This
 section and the `itemPrecheckRoutes` pin and note are this branch's own.
 
-**Removed so far: 6 of the 27 entries, one commit per family**
-(`itemPrecheckRoutes` 27 -> 21):
+**Removed so far: 11 of the 27 entries, one commit per family**
+(`itemPrecheckRoutes` 27 -> 16; round 1 the first three rows, round 2 the
+last two):
 
-| Family (entries)                                                              | Write routes                                                                     | The database's check, and what the handler does first                                                                                                                                                                                                                      |
-| ----------------------------------------------------------------------------- | -------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| node kinds (4: `/api/formulas`, `/api/tasks`, `/api/events`, `/api/v1/tasks`) | PATCH and DELETE `/:id` (v1: PATCH)                                              | write check 0278 (one UPDATE), delete check 0266 (one DELETE); the handler's read in the login's scope finds no hidden row                                                                                                                                                 |
-| notes (1: `/api/notes`)                                                       | PATCH and DELETE `/:id`                                                          | the same                                                                                                                                                                                                                                                                   |
-| drawings (1: `/api/draws`)                                                    | PATCH, DELETE `/:id`; PUT `/:id/draft`; POST `/:id/commit`, `/:id/discard-draft` | 0278 and 0266; the draft save, commit and discard read the draft's revision under a lock first, and a scope that reads the drawing and may not edit it reads no draft, so they ask the caller's right first (`assertItemRight` edit, after the scoped read, in every mode) |
+| Family (entries)                                                              | Write routes                                                                                                                                                       | The database's check, and what the handler does first                                                                                                                                                                                                                                                                                                                        |
+| ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| node kinds (4: `/api/formulas`, `/api/tasks`, `/api/events`, `/api/v1/tasks`) | PATCH and DELETE `/:id` (v1: PATCH)                                                                                                                                | write check 0278 (one UPDATE), delete check 0266 (one DELETE); the handler's read in the login's scope finds no hidden row                                                                                                                                                                                                                                                   |
+| notes (1: `/api/notes`)                                                       | PATCH and DELETE `/:id`                                                                                                                                            | the same                                                                                                                                                                                                                                                                                                                                                                     |
+| drawings (1: `/api/draws`)                                                    | PATCH, DELETE `/:id`; PUT `/:id/draft`; POST `/:id/commit`, `/:id/discard-draft`                                                                                   | 0278 and 0266; the draft save, commit and discard read the draft's revision under a lock first, and a scope that reads the drawing and may not edit it reads no draft, so they ask the caller's right first (`assertItemRight` edit, after the scoped read, in every mode)                                                                                                   |
+| Recall (2: `/api/recall/maps`, the `recall-revision` ref)                     | PATCH, DELETE `/:id`; POST `/:id/cards`, `/:id/cards/reorder`, `/:id/cards/:card/prompt`; PUT, DELETE `/:id/cards/:card`; POST `/api/recall/revisions/:id/restore` | every write locks the map in the login's scope first (`mapOr404`: a map it does not read is `map_not_found`, as none); the edit check (0281) asks edit of the map's node for its rows, manage for its delete (and 0266); a restore reads the revision in the scope first; the owner's acts (confirm, reorder, restore) now read the map or revision before their owner check |
+| pages (3: `/api/pages`, `/api/v1/pages`, `ITEM_MANAGE_WRITES`)                | PATCH, DELETE `/:id` (v1: PATCH); PUT `/:id/draft`; POST `/:id/commit`, `/:id/discard-draft`, `/:id/move`                                                          | 0278 and 0266; the draft save, commit and discard ask the caller's right first (`assertItemRight` edit), as the drawings'; the move asks manage first (`assertItemRight`, after its scoped read), then the move check                                                                                                                                                        |
 
 Each route that writes and lacked one now declares its uuid param
-(`routeParams`: the task, note and drawing routes, and the v1 task and
-note aliases), so an id that is not a uuid is the params gateway's 404,
+(`routeParams`: the task, note, drawing and page routes, and the v1 task,
+note and page aliases), so an id that is not a uuid is the params gateway's 404,
 where the item gate's answered before.
 
 **The proof** (`server/web/server/precheck-removal-http.db.test.ts`, in
@@ -6529,13 +6532,39 @@ lists.
   `{"error":"forbidden","reason":"item-workspace","message":"You cannot change this item in your workspaces."}`
   gains `"code":"forbidden"` (the one mapper's body for the database's
   refusal).
-- A read-only snapshot copy's edit (by a login that may manage it): 403
-  with "This is a read-only copy of an accepted item: nobody changes it.
-  Its author may delete it." and `"readOnly":true` is now the generic 403
-  above (the database's 0267 triggers, or `assertItemRight`'s copy
-  verdict, refuse it in every mode; the words and the flag are gone, the
-  refusal is not). If a client reads `readOnly`, it needs the mapper to
-  carry the copy detail; not done here.
+- A read-only snapshot copy's edit (by a login that may manage it): KEPT
+  (CEO decision, round 2). Round 1 had lost the copy's words and
+  `"readOnly":true` (jackdaw v0.7.18 shows its copy note by `readOnly`).
+  The one mapper (`@mantle/std` `mapAccessError`) now answers the
+  database's copy refusal (0267's triggers, and `SnapshotCopyReadOnlyError`,
+  which `assertItemRight` throws for a copy) as
+  `{"error":"forbidden","reason":"item-workspace","code":"forbidden","message":"This is a read-only copy of an accepted item: nobody changes it. Its author may delete it.","readOnly":true}`,
+  in every mode: the gate's body plus `code`. A tool says the copy's words
+  too. The proof pins it for notes, drawings and pages (Recall maps have
+  no copies). A share or grant of a copy keeps the generic answer.
+- The 404 body `{"ok":false,"error":"not found"}` -> `{"error":"not found"}`:
+  jackdaw (read only, checked in round 2) reads no body `ok` on these
+  routes: `apiFetch`/`apiSend` (jackdaw's web-ui `api-fetch.ts`) branch
+  on the response status and read `body.error` only, the screens test
+  `err.status === 404`, the direct fetches check `res.ok` (the Response's
+  flag). The app sandbox (`@crossworks/share-ui` `app-sandbox.tsx`)
+  passes a tool-broker or db-broker body to the frame, whose runtime
+  rejects on a falsy `ok`, the same for the new body; its "tool not
+  declared" note keys on a 403 with `ok === false` (not this 404: keep that
+  403's body when the apps entries go). No gateway needed.
+- Recall: a map or revision the scope does not read, and an id no row has,
+  answer the handler's 404 `{"error":"No Recall map '<id>'. ...","code":"map_not_found"}`
+  (`revision_not_found` for a restore), the same words for both, where the
+  gate answered `{"ok":false,"error":"not found"}`; an id that is not a uuid
+  stays the route's own `{"error":"not found"}`. A reader's write: the
+  mapper's 403 item-workspace (gains `code`). In warn the recall writes
+  are still refused (as the gate refused them). A login outside Admin
+  asking an owner's act (confirm, reorder, restore) of a map it reads: the
+  handler's 403 `*_is_owners`, as before; of one it does not read: the 404
+  (the handler now reads first; before the change it said 403 for every
+  id).
+- Pages: a hidden page and none: the handler's `{"error":"not found"}`. The
+  move of a page the scope reads and may not manage: the mapper's 403.
 - Below on (an emergency only, the checks' floor of 0301): in warn, an
   edit (PATCH) by a scope that reads the item and may not edit it is made
   and logged as an actor miss, where the gate refused it in every mode; a
@@ -6548,15 +6577,8 @@ lists.
   check now. `a1-d1-routes.db.test.ts` runs with both checks on (a Team
   reader's edit is the database's to refuse now).
 
-**Left (15 entries to go, 2 to stay), in the order to take them:**
+**Left (14 entries to go: 7 prefixes and the 7 read writes; 2 to stay), in the order to take them:**
 
-- `/api/recall/maps` (cards, reorder, prompt, map PATCH and DELETE) and
-  `ITEM_REF_PREFIXES` `recall-revision`: the Recall edit checks (0280);
-  check each card route reads the map in the scope first.
-- `/api/pages`, `/api/v1/pages` and `ITEM_MANAGE_WRITES` (the move): as
-  drawings (the draft, commit and discard read a draft a reader does not
-  see: `assertItemRight` first, as page_commit has since fix round A); the
-  move is the move check and `assertItemRight` manage.
 - `/api/tables`, `/api/v1/tables`: the tables broker (A3b); the import and
   the history restore write the workbook on disk: `assertItemRight` before
   any staging, as the table tools in fix round A.
@@ -6618,6 +6640,39 @@ answers, each to be moved to the database's answer and named here:
 Then rerun full vitest with DB, actor-off, actor-on, edit-on, test:matrix
 and test:runtime-role, and wait for CI; then the families of "Left" above.
 Nothing of this round runs on the workstation.
+
+### Pre-check removal Part 2 (HTTP) round 2 handover (2026-10-17)
+
+Branch `feat/precheck-http`, head as pushed with this paragraph. Handed
+over at the owner's tool-call rule, after the pages family.
+
+**Done this round:**
+
+- The five failing files, at their cause: `w6a-route-sweep` (a route whose
+  entry went is answered by its handler: one answer for an unread id and no
+  row, uuids read as `<id>`; the Write-grant cell finds the manage writes
+  whose entry went, a delete or a move), `f4-admin-write-role` (the
+  pre-check cell drives a route that keeps it, a table's PATCH; move it
+  again when the tables entry goes), `w6b-fix1` (the copy answer, below),
+  `w6b-member-writes` (both checks on, as `a1-d1-routes`), and
+  `a5-elevated-approval` (a flake, as the backlog said: `beforeEach` now
+  awaits `callAuditsSettled()` before it deletes the audit rows, so the
+  test before's row cannot land in the race's count).
+- The copy answer kept through the one mapper (Changed answers above).
+- The jackdaw 404 check (Changed answers above): no body `ok` is read.
+- Two families removed: Recall maps and revisions (21 -> 19), pages with
+  the move (19 -> 16), each with proof cells. `routePolicyLists` 18 -> 17
+  and the lint pin of `route-scope.ts` lists 7 -> 6 (ITEM_REF_PREFIXES
+  holds two). The guard sweeps re-recorded (the page PATCH rows pass the
+  guard now: their stale baseline cells dropped from
+  `a4-guard-sweep-guard-writes.txt`, then `-u`), the gate's caller tests
+  drive a table's write.
+
+**Left:** the families of "Left" above, from tables on. When the tables
+entry goes, move `f4-admin-write-role`'s pre-check cell and
+`gate-caller.test.ts`'s content write to a route that keeps the gate (an
+app's), and when the last goes, drop them. `ITEM_MANAGE_WRITES` is gone
+(the arch lint test allows it at 0).
 
 ## Remove the switch-over code (A7)
 
