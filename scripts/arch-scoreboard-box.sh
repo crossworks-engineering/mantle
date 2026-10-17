@@ -20,9 +20,10 @@
 #     removal event, the SQL functions writing the four workspace tables
 #     (the live catalog; scripts/arch-scoreboard.pins.json
 #     workspaceTableWriterFns is the repo's), and whether the stack's .env
-#     names MANTLE_DB_RUNTIME_ROLE (1 or 0; n/a with no stack dir).
+#     turns MANTLE_DB_RUNTIME_ROLE on (1 or 0, its value as the app reads
+#     it; n/a with no stack dir).
 #
-# Read only: docker logs, docker inspect, SELECTs and a grep -c of .env.
+# Read only: docker logs, docker inspect, SELECTs and one line of .env.
 # Name the box explicitly; there is no default and no fleet loop.
 #
 # Usage:
@@ -118,7 +119,7 @@ SQL
 writers=$(num "$(q <<'SQL' || true
 select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
  where n.nspname = 'public'
-   and p.prosrc ~* '(insert\s+into|update|delete\s+from|merge\s+into|truncate(\s+table)?)\s+("?public"?\s*\.\s*)?"?(workspaces|workspace_users|workspace_events|workspace_resources)"?($|[^a-z0-9_"])';
+   and p.prosrc ~* '\m(insert\s+into|update|delete\s+from|merge\s+into|truncate(\s+table)?)\s+(only\s+)?("?public"?\s*\.\s*)?"?(workspaces|workspace_users|workspace_events|workspace_resources)"?($|[^a-z0-9_"])';
 SQL
 )")
 if [ -z "$stack" ]; then
@@ -127,8 +128,13 @@ if [ -z "$stack" ]; then
 fi
 names_role=n/a
 if [ -n "$stack" ] && [ -f "$stack/.env" ]; then
-  names_role=$(grep -c '^MANTLE_DB_RUNTIME_ROLE=' "$stack/.env" || true)
-  [ "$names_role" -gt 1 ] 2>/dev/null && names_role=1
+  # The value as the app reads it (packages/config/src/parse.ts
+  # FLAG_ON_WORDS): 1 when on (1, true, yes, on; any case, quotes and
+  # spaces trimmed, the last line winning), 0 when unset, empty, 0 or
+  # anything else. Only the number leaves the box.
+  v=$(sed -n 's/^MANTLE_DB_RUNTIME_ROLE=//p' "$stack/.env" | tail -n 1 |
+    tr -d "\"' \t\r" | tr '[:upper:]' '[:lower:]')
+  case "$v" in 1 | true | yes | on) names_role=1 ;; *) names_role=0 ;; esac
 fi
 printf '  %-34s %s\n' role_drift "$drift"
 printf '  %-34s %s\n' brains_without_admin_workspace "$no_admin"

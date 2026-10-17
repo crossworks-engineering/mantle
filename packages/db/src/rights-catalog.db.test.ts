@@ -72,6 +72,10 @@ describe.skipIf(!URL)('the scoreboard reads the live catalog from the migrations
     const want = names(live, (f) => counts.readsAreaLimits(f.body));
     expect(want).toContain('mantle_scope_has_area');
     expect(names(read, (f) => counts.readsAreaLimits(f.body))).toEqual(want);
+    // Every live function naming the 'areas' key (`->> 'areas'`,
+    // `['areas']`, `#>> '{areas,...}'` or a form not listed yet) is one the
+    // reader catches: a new way to read the limits fails here.
+    expect(names(live, (f) => /'areas'|'\{\s*"?areas"?\s*[,}]/i.test(f.body))).toEqual(want);
   });
 
   it('finds the same set-the-assistant functions', () => {

@@ -140,6 +140,21 @@ branch first 0002_first 0000_a:100 0001_b:200 0002_first:310
 expect "a lane that lost the race is refused and told the next free number" refused \
   "next free migration number: 0003 (its journal when above 310)" -- late
 
+# The same lane, rebased onto the new main and renumbered to the number it
+# was told (0003, a when above 310): it merges. The rebase is played as its
+# result: the lane's one commit on top of main, its file and journal entry
+# moved from 0002_late:300 to 0003_late:320.
+git checkout -q late
+git reset -q --hard main
+touch packages/db/migrations/0003_late.sql
+journal 0000_a:100 0001_b:200 0002_first:310 0003_late:320 >packages/db/migrations/meta/_journal.json
+printf 'late\n' >work-late
+git add -A
+git commit -q -m "late, renumbered"
+git checkout -q main
+expect "the lane renumbered after its rebase merges" merged \
+  "next free migration number: 0003 (its journal when above 310)" -- late
+
 fresh
 branch unjournaled 0001_x 0000_a:100 0001_b:200
 expect "a new file at main's last number is refused even outside the journal" refused \

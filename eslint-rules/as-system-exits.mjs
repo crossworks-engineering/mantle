@@ -26,6 +26,13 @@
  *
  * Several sites in one holder (a conditional wrapper: two reasons, one
  * taken) are one exit per use: a use leaves the scope once.
+ *
+ * The same engine counts the request system exits (rights-counts.mjs,
+ * noteRequestSystem) with `follow: 'forwarders'`: there a site with a
+ * literal reason is an exit itself (the reason is decided there), and only
+ * a holder that passes a parameter on as the reason (a wrapper) is
+ * followed to its uses, each use with the reason it passes. One engine
+ * follows wrappers for both counts.
  */
 import ts from 'typescript';
 
@@ -74,13 +81,20 @@ function holderOf(fn) {
   return null;
 }
 
-/** The asSystem holders of one file: `{ name, kind, exported, sites,
- *  reasons }`, name null for the sites in no named function (each counts
- *  once). */
-export function asSystemHolders(path, text) {
-  if (!/\basSystem\b/.test(text)) return [];
+/** The parameter index of `fn` named `name`, or -1. */
+function paramIndex(fn, name) {
+  return (fn?.parameters ?? []).findIndex((p) => ts.isIdentifier(p.name) && p.name.text === name);
+}
+
+/** The holders of the calls of `call` (default asSystem) in one file:
+ *  `{ name, kind, exported, sites, reasons, siteList }`, name null for the
+ *  sites in no named function (each counts once). `siteList` holds each
+ *  site's literal reason (or null) and `forward`, the index of the
+ *  holder's parameter the site passes as its reason (or -1). */
+export function asSystemHolders(path, text, call = 'asSystem') {
+  if (!new RegExp(`\\b${call}\\b`).test(text)) return [];
   const sf = parse(path, text);
-  /** @type {Map<string, { name: string|null, kind: string|null, exported: boolean, sites: number, reasons: string[] }>} */
+  /** @type {Map<string, { name: string|null, kind: string|null, exported: boolean, sites: number, reasons: string[], siteList: { reason: string|null, forward: number }[] }>} */
   const out = new Map();
   // Names exported later (`export { f }`).
   const exportedLater = new Set();
@@ -93,25 +107,29 @@ export function asSystemHolders(path, text) {
     ) {
       for (const e of n.exportClause.elements) exportedLater.add((e.propertyName ?? e.name).text);
     }
-    if (
-      ts.isCallExpression(n) &&
-      ts.isIdentifier(n.expression) &&
-      n.expression.text === 'asSystem'
-    ) {
+    if (ts.isCallExpression(n) && ts.isIdentifier(n.expression) && n.expression.text === call) {
       let h = null;
+      let fn = null;
       for (let p = n.parent; p && !h; p = p.parent) {
-        if (ts.isFunctionLike(p)) h = holderOf(p);
+        if (ts.isFunctionLike(p)) {
+          h = holderOf(p);
+          if (h) fn = p;
+        }
       }
-      // The reason: the call's last argument, a string literal.
+      // The reason: the call's last argument, a string literal; or one of
+      // the holder's parameters, passed on (a wrapper).
       const last = n.arguments[n.arguments.length - 1];
       const reason = last && ts.isStringLiteralLike(last) ? last.text : null;
+      const forward = last && ts.isIdentifier(last) ? paramIndex(fn, last.text) : -1;
       if (!h) h = { name: null, kind: null, exported: false };
       const key = `${h.kind}:${h.name}`;
       const cur = out.get(key);
+      const site = { reason, forward };
       if (cur) {
         cur.sites += 1;
+        cur.siteList.push(site);
         if (reason && !cur.reasons.includes(reason)) cur.reasons.push(reason);
-      } else out.set(key, { ...h, sites: 1, reasons: reason ? [reason] : [] });
+      } else out.set(key, { ...h, sites: 1, reasons: reason ? [reason] : [], siteList: [site] });
     }
     ts.forEachChild(n, scan);
   };
@@ -140,20 +158,40 @@ function notAUse(id) {
   return false;
 }
 
-/** Uses in `sf` of `name`: as a bare name (when `bare`) and as `x.name`
- *  (when `member`). */
-function usesIn(sf, name, { bare, member }) {
-  let n = 0;
+/** The uses in `sf` of `name` (their nodes): as a bare name (when `bare`)
+ *  and as `x.name` (when `member`). */
+function useNodes(sf, name, { bare, member }) {
+  const out = [];
   const visit = (node) => {
     if (ts.isIdentifier(node) && node.text === name) {
       const p = node.parent;
-      if (member && p && ts.isPropertyAccessExpression(p) && p.name === node) n += 1;
-      else if (bare && !notAUse(node)) n += 1;
+      if (member && p && ts.isPropertyAccessExpression(p) && p.name === node) out.push(node);
+      else if (bare && !notAUse(node)) out.push(node);
     }
     ts.forEachChild(node, visit);
   };
   visit(sf);
-  return n;
+  return out;
+}
+
+/** The number of uses in `sf` of `name` (useNodes). */
+function usesIn(sf, name, opts) {
+  return useNodes(sf, name, opts).length;
+}
+
+/** The argument at `index` of the call a use makes (`f(...)`,
+ *  `x.f(...)`), or null when the use is no call (a callback, a list). */
+function useArgument(node, index) {
+  const callee = ts.isPropertyAccessExpression(node.parent) ? node.parent : node;
+  const c = callee.parent;
+  if (!c || !ts.isCallExpression(c) || c.expression !== callee) return null;
+  return c.arguments[index] ?? null;
+}
+
+/** The innermost function holding `node`, or null. */
+function enclosingFunction(node) {
+  for (let p = node.parent; p; p = p.parent) if (ts.isFunctionLike(p)) return p;
+  return null;
 }
 
 /** Whether `sf` binds `name` from elsewhere (a named import, a
@@ -207,10 +245,16 @@ function aliasOf(sf, name) {
 }
 
 /**
- * The exits of every file: `{ byFile, holders, problems }`.
- * `files`: `[{ path, text }]`, the counted files.
+ * The exits of every file: `{ byFile, byReason, holders, problems }`.
+ * `files`: `[{ path, text }]`, the counted files. `call`: the function
+ * whose calls leave the scope (asSystem). `follow`: 'all' (every holder is
+ * followed to its uses: the asSystem count) or 'forwarders' (a site with
+ * its own reason counts itself; only a holder passing a parameter on as
+ * the reason is followed, each use with the literal reason it passes:
+ * the request system exits). `byReason` keys an unreadable reason
+ * 'unnamed'; in 'all' a use takes its holder's reason when it has one.
  */
-export function asSystemExits(files) {
+export function asSystemExits(files, { call = 'asSystem', follow = 'all' } = {}) {
   const cache = new Map();
   const ast = (f) => {
     let sf = cache.get(f.path);
@@ -221,17 +265,28 @@ export function asSystemExits(files) {
     return sf;
   };
   const byFile = {};
-  const add = (path, n) => {
-    if (n) byFile[path] = (byFile[path] ?? 0) + n;
+  const byReason = {};
+  const add = (path, n, reason = null) => {
+    if (!n) return;
+    byFile[path] = (byFile[path] ?? 0) + n;
+    const r = reason ?? 'unnamed';
+    byReason[r] = (byReason[r] ?? 0) + n;
   };
   const holders = [];
   for (const f of files) {
-    for (const h of asSystemHolders(f.path, f.text)) holders.push({ ...h, path: f.path });
+    for (const h of asSystemHolders(f.path, f.text, call)) holders.push({ ...h, path: f.path });
   }
-  const problems = holderProblems(holders);
+  const problems = holderProblems(holders, call);
   for (const h of holders) {
-    if (h.name === null) {
-      add(h.path, h.sites);
+    const forwarding = h.siteList.filter((x) => x.forward >= 0);
+    const followed = follow === 'all' ? h.siteList : forwarding;
+    // In 'forwarders', a site that decides its own reason is an exit.
+    if (follow !== 'all') {
+      for (const x of h.siteList) if (x.forward < 0) add(h.path, 1, x.reason);
+    }
+    const one = h.reasons.length === 1 ? h.reasons[0] : null;
+    if (h.name === null || followed.length === 0) {
+      if (followed.length) add(h.path, followed.length, follow === 'all' ? one : null);
       h.uses = 0;
       continue;
     }
@@ -240,32 +295,56 @@ export function asSystemExits(files) {
     const perFile = new Map();
     const local =
       h.kind === 'binding'
-        ? usesIn(ast(own), h.name, { bare: true, member: false })
-        : usesIn(ast(own), h.name, { bare: false, member: true });
-    if (local) perFile.set(h.path, local);
+        ? useNodes(ast(own), h.name, { bare: true, member: false })
+        : useNodes(ast(own), h.name, { bare: false, member: true });
+    if (local.length) perFile.set(h.path, local);
     if (h.exported) {
       for (const f of files) {
         if (!word.test(f.text)) continue;
         const alias = aliasOf(ast(f), h.name);
         if (alias)
-          problems.push(`${f.path} renames the asSystem holder ${h.name} (${alias}): use its name`);
+          problems.push(`${f.path} renames the ${call} holder ${h.name} (${alias}): use its name`);
         if (f.path === h.path) continue;
         const sf = ast(f);
         const bare = bindsImported(sf, h.name);
-        const n = usesIn(sf, h.name, { bare, member: true });
-        if (n) perFile.set(f.path, n);
+        const nodes = useNodes(sf, h.name, { bare, member: true });
+        if (nodes.length) perFile.set(f.path, nodes);
       }
     }
-    h.uses = [...perFile.values()].reduce((a, b) => a + b, 0);
-    if (h.uses === 0) add(h.path, h.sites);
-    else for (const [p, n] of perFile) add(p, n);
+    h.uses = [...perFile.values()].reduce((a, b) => a + b.length, 0);
+    if (h.uses === 0) {
+      add(h.path, followed.length, follow === 'all' ? one : null);
+      continue;
+    }
+    if (follow === 'all') {
+      for (const [p, nodes] of perFile) add(p, nodes.length, one);
+      continue;
+    }
+    // A wrapper: each use passes its reason at the forwarded parameter.
+    const at = forwarding[0].forward;
+    for (const [p, nodes] of perFile) {
+      for (const node of nodes) {
+        const arg = useArgument(node, at);
+        if (arg && ts.isStringLiteralLike(arg)) {
+          add(p, 1, arg.text);
+          continue;
+        }
+        add(p, 1, null);
+        // A wrapper of a wrapper: its own uses would not be counted.
+        if (arg && ts.isIdentifier(arg) && paramIndex(enclosingFunction(node), arg.text) >= 0) {
+          problems.push(
+            `${p} passes a parameter on to the ${call} wrapper ${h.name}: call it with the reason`,
+          );
+        }
+      }
+    }
   }
-  return { byFile, holders, problems };
+  return { byFile, byReason, holders, problems };
 }
 
 /** An exported holder's name must be unique among exported holders (its
  *  uses elsewhere are found by name). */
-export function holderProblems(holders) {
+export function holderProblems(holders, call = 'asSystem') {
   const seen = new Map();
   for (const h of holders) {
     if (!h.exported || !h.name) continue;
@@ -273,7 +352,7 @@ export function holderProblems(holders) {
   }
   return [...seen]
     .filter(([, ps]) => ps.length > 1)
-    .map(([n, ps]) => `exported asSystem holder ${n} in ${ps.join(', ')}: rename one`);
+    .map(([n, ps]) => `exported ${call} holder ${n} in ${ps.join(', ')}: rename one`);
 }
 
 /**

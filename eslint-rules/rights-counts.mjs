@@ -2,11 +2,11 @@
  * The rights counts of the scoreboard (scripts/arch-scoreboard.ts): where
  * the code, not the database, still decides who may do what, and the lists
  * that excuse it. Read by eslint-rules/arch-counts.mjs measure(), pinned in
- * scripts/arch-scoreboard.pins.json, tested in arch-lints.test.ts.
+ * scripts/arch-scoreboard.pins.json, tested in rights-counts.test.ts.
  *
  *  - request system exits by reason: the request paths that leave the
  *    login's scope for the system pool (noteRequestSystem, and any wrapper
- *    that passes its reason on);
+ *    that passes its reason on, followed by as-system-exits.mjs);
  *  - scopeHoldsAdmin calls: an Admin ask outside the database's own rule;
  *  - SQL area rules: SQL that decides an Admin area by itself, in a
  *    function the migrations leave (it reads the `areas` limits) or in SQL
@@ -26,6 +26,7 @@
  * live catalog after migrate.
  */
 import { balanced, readRepoFile, stripComments } from './arch-counts.mjs';
+import { asSystemExits } from './as-system-exits.mjs';
 
 /** The four workspace tables only definers should write. */
 export const WORKSPACE_TABLES = Object.freeze([
@@ -36,10 +37,11 @@ export const WORKSPACE_TABLES = Object.freeze([
 ]);
 
 /** A write statement on one of the four workspace tables (SQL text, any
- *  quoting, with or without the public schema). */
+ *  quoting, with or without the public schema, with or without ONLY, as
+ *  rawWriteTarget in packages/db/src/client.ts reads one). */
 export const WORKSPACE_TABLE_WRITE = new RegExp(
   String.raw`\b(?:insert\s+into|update|delete\s+from|merge\s+into|truncate(?:\s+table)?)\s+` +
-    String.raw`(?:"?public"?\s*\.\s*)?"?(?:${WORKSPACE_TABLES.join('|')})"?(?![\w"])`,
+    String.raw`(?:only\s+)?(?:"?public"?\s*\.\s*)?"?(?:${WORKSPACE_TABLES.join('|')})"?(?![\w"])`,
   'gi',
 );
 
@@ -52,47 +54,20 @@ function isTestSupport(path) {
 
 const REQUEST_SYSTEM = 'noteRequestSystem';
 
-/** The functions of `code` that pass their first parameter on to
- *  noteRequestSystem (session.ts noteSystem): name -> parameter. */
-function requestSystemWrappers(code) {
-  const out = new Map();
-  const re = /\bfunction\s+(\w+)\s*\(\s*(\w+)/g;
-  for (const m of code.matchAll(re)) {
-    const open = code.indexOf('{', m.index + m[0].length);
-    if (open < 0) continue;
-    const body = balanced(code, open);
-    if (new RegExp(String.raw`\b${REQUEST_SYSTEM}\s*\(\s*${m[2]}\s*\)`).test(body)) {
-      out.set(m[1], m[2]);
-    }
-  }
-  return out;
-}
-
 /**
- * The request system exits of `text` by reason: every call of
- * noteRequestSystem or of a wrapper that passes its reason on, with a
- * literal reason. A call with any other argument counts under 'unnamed'
- * (a reason the count cannot read is still an exit). A wrapper's own
- * forwarding call is not an exit; the calls of the wrapper are.
+ * The request system exits of the counted files (`[{ path, text }]`) by
+ * reason, and the problems that would hide one. The wrapper-following
+ * engine of the asSystem exits (as-system-exits.mjs) with noteRequestSystem
+ * as its call: a call with a literal reason is an exit with that reason; a
+ * function that passes one of its parameters on as the reason (a wrapper:
+ * a declaration, an arrow, a method, exported or not) is followed to its
+ * uses in any file, each an exit with the literal reason it passes. A
+ * reason the count cannot read counts under 'unnamed' (still an exit), as
+ * does a wrapper no code calls.
  */
-export function requestSystemExits(text) {
-  const code = stripComments(text);
-  const wrappers = requestSystemWrappers(code);
-  const names = [REQUEST_SYSTEM, ...wrappers.keys()];
-  const params = new Set(wrappers.values());
-  const out = {};
-  const re = new RegExp(String.raw`\b(${names.join('|')})\s*\(`, 'g');
-  for (const m of code.matchAll(re)) {
-    if (/\bfunction\s+$/.test(code.slice(Math.max(0, m.index - 20), m.index))) continue;
-    const args = balanced(code, m.index + m[0].length - 1)
-      .slice(1, -1)
-      .trim();
-    const lit = /^(['"])([\w-]+)\1$/.exec(args);
-    if (!lit && params.has(args)) continue;
-    const reason = lit ? lit[2] : 'unnamed';
-    out[reason] = (out[reason] ?? 0) + 1;
-  }
-  return out;
+export function requestSystemExits(files) {
+  const r = asSystemExits(files, { call: REQUEST_SYSTEM, follow: 'forwarders' });
+  return { byReason: r.byReason, problems: r.problems };
 }
 
 // ── Admin asks ──────────────────────────────────────────────────────────────
@@ -168,7 +143,8 @@ export function workspaceTableRawWrites(text) {
   return sqlWrites + typed;
 }
 
-/** The TypeScript definitions of "set the assistant of a workspace". */
+/** The TypeScript definitions of "set the assistant of a workspace", by
+ *  name (a progress counter only: see isSetAssistantFn). */
 export function tsSetAssistantDefs(text) {
   const code = stripComments(text);
   return [
@@ -375,12 +351,18 @@ export function writesWorkspaceTable(body) {
 }
 
 /** Whether a function body decides an Admin area itself (reads the
- *  `areas` limits of a workspace user). */
+ *  `areas` limits of a workspace user): `-> 'areas'`, `->> 'areas'`, the
+ *  subscript `['areas']`, or a path `#> '{areas}'`, `#>> '{areas,x}'`. */
 export function readsAreaLimits(body) {
-  return /->>?\s*'areas'/i.test(body);
+  return /->>?\s*'areas'|\[\s*'areas'\s*\]|#>>?\s*'\{\s*"?areas"?\s*[,}]/i.test(body);
 }
 
-/** Whether a SQL function is a copy of "set the assistant of a workspace". */
+/** Whether a SQL function is a copy of "set the assistant of a workspace".
+ *  By name, as tsSetAssistantDefs: a progress counter only (it falls when
+ *  a named copy goes), not a guard; a copy under another name is not seen.
+ *  A body check (writes workspace_resources with 'assistant') is no better:
+ *  it finds the one-off backfills (mantle_ws_attach_assistants,
+ *  mantle_ws_migrate_bridged), not the setter. */
 export function isSetAssistantFn(name) {
   return /set_assistant/i.test(name);
 }
@@ -485,7 +467,8 @@ export function rawWriteAllowlistEntries(root) {
  * the repo root.
  */
 export function rightsCounts(root, texts) {
-  const exits = {};
+  const requestExits = requestSystemExits(texts);
+  const exits = requestExits.byReason;
   let holdsAdmin = 0;
   let tsAreaSql = 0;
   let rawWrites = 0;
@@ -494,9 +477,6 @@ export function rightsCounts(root, texts) {
   let toolsUncovered = 0;
   const exempt = [];
   for (const { path, text } of texts) {
-    for (const [reason, n] of Object.entries(requestSystemExits(text))) {
-      exits[reason] = (exits[reason] ?? 0) + n;
-    }
     holdsAdmin += scopeHoldsAdminCalls(text);
     if (!isTestSupport(path)) tsAreaSql += tsAdminRuleSql(text);
     if (!isTestSupport(path)) rawWrites += workspaceTableRawWrites(text);
@@ -531,6 +511,7 @@ export function rightsCounts(root, texts) {
     },
     detail: {
       requestSystemExits: exits,
+      requestSystemExitProblems: requestExits.problems,
       workspaceTableWriterFns: writers.map((f) => ({
         fn: `${f.schema}.${f.name}(${f.args})`,
         definer: f.definer,

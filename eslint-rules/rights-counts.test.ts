@@ -14,6 +14,7 @@ import {
   kindsOutsideGrid,
   legacyPrecheckUndated,
   migrationFunctions,
+  readsAreaLimits,
   requestSystemExits,
   rightsCounts,
   scopeHoldsAdminCalls,
@@ -28,6 +29,12 @@ import {
 const ROOT = join(__dirname, '..');
 
 describe('requestSystemExits', () => {
+  const exits = (...texts: string[]) =>
+    requestSystemExits(texts.map((text, i) => ({ path: `f${i}.ts`, text }))) as {
+      byReason: Record<string, number>;
+      problems: string[];
+    };
+
   it('counts each literal reason, through a wrapper that passes it on', () => {
     const text = `
       function noteSystem(reason: R): null {
@@ -38,7 +45,10 @@ describe('requestSystemExits', () => {
       async function b() { noteRequestSystem("login-self"); return noteSystem('admin-write'); }
       // noteRequestSystem('area') in a comment is not an exit
     `;
-    expect(requestSystemExits(text)).toEqual({ area: 1, 'login-self': 1, 'admin-write': 1 });
+    expect(exits(text)).toEqual({
+      byReason: { area: 1, 'login-self': 1, 'admin-write': 1 },
+      problems: [],
+    });
   });
 
   it('skips the definition and counts a reason it cannot read as unnamed', () => {
@@ -47,7 +57,61 @@ describe('requestSystemExits', () => {
       const r = pick();
       noteRequestSystem(r);
     `;
-    expect(requestSystemExits(text)).toEqual({ unnamed: 1 });
+    expect(exits(text).byReason).toEqual({ unnamed: 1 });
+  });
+
+  it('follows an exported wrapper into the files that call it (arrow, method)', () => {
+    const lib = `
+      export const noteArea = (ctx: C, why: W) => { noteRequestSystem(why); };
+      export function noteOther(why: W) { noteRequestSystem(why); }
+    `;
+    const user = `
+      import { noteArea, noteOther } from './lib';
+      noteArea(ctx, 'area');
+      noteArea(ctx, 'login-self');
+      noteOther('admin-write');
+    `;
+    const obj = `
+      const gate = { leave(why: W) { noteRequestSystem(why); } };
+      gate.leave('area');
+    `;
+    expect(exits(lib, user, obj)).toEqual({
+      byReason: { area: 2, 'login-self': 1, 'admin-write': 1 },
+      problems: [],
+    });
+  });
+
+  it('counts a function passing a later parameter on, called or not', () => {
+    // The earlier counter skipped any call whose argument matched a
+    // wrapper's parameter name anywhere in the file: both of these hid.
+    const wrapper = `function noteSystem(reason: R) { noteRequestSystem(reason); }`;
+    const uncalled = `
+      ${wrapper}
+      function f(ctx: C, reason: R) { noteRequestSystem(reason); }
+    `;
+    expect(exits(uncalled).byReason).toEqual({ unnamed: 2 });
+    const called = `
+      ${wrapper}
+      function f(ctx: C, reason: R) { noteRequestSystem(reason); }
+      f(ctx, 'area');
+      f(ctx, 'login-self');
+      noteSystem('admin-write');
+    `;
+    expect(exits(called).byReason).toEqual({ area: 1, 'login-self': 1, 'admin-write': 1 });
+  });
+
+  it('refuses a wrapper of a wrapper, which would hide its own callers', () => {
+    const text = `
+      function noteSystem(reason: R) { noteRequestSystem(reason); }
+      function outer(why: R) { noteSystem(why); }
+      outer('area');
+    `;
+    expect(exits(text)).toEqual({
+      byReason: { unnamed: 1 },
+      problems: [
+        'f0.ts passes a parameter on to the noteRequestSystem wrapper noteSystem: call it with the reason',
+      ],
+    });
   });
 });
 
@@ -89,11 +153,13 @@ describe('workspace table writes', () => {
       sql\`update "public"."workspace_users" set moderator = false\`;
       sql\`delete from workspace_resources where id = \${id}\`;
       sql\`update workspaces set name = \${n}\`;
+      sql\`UPDATE ONLY workspace_users SET moderator = false\`;
+      sql\`delete from only public.workspace_events where id = \${id}\`;
       await tx.insert(workspaceUsers).values(v);
       sql\`select * from workspace_users for update\`;
       sql\`update workspace_users_archive set x = 1\`;
     `;
-    expect(workspaceTableRawWrites(text)).toBe(5);
+    expect(workspaceTableRawWrites(text)).toBe(7);
   });
 
   it('reads a function body the same way', () => {
@@ -101,6 +167,15 @@ describe('workspace table writes', () => {
       true,
     );
     expect(writesWorkspaceTable('SELECT 1 FROM "public"."workspaces" FOR UPDATE')).toBe(false);
+  });
+
+  it("reads the 'areas' limits in every form", () => {
+    expect(readsAreaLimits("select u.limits -> 'areas' ->> p_area")).toBe(true);
+    expect(readsAreaLimits("select u.limits['areas'][p_area]")).toBe(true);
+    expect(readsAreaLimits("select u.limits #>> '{areas,users}'")).toBe(true);
+    expect(readsAreaLimits('select u.limits #> \'{"areas"}\'')).toBe(true);
+    expect(readsAreaLimits("select u.limits ->> 'areas_seen'")).toBe(false);
+    expect(readsAreaLimits("select u.limits #>> '{areasx}'")).toBe(false);
   });
 
   it('counts the TypeScript copies of set-the-assistant', () => {
