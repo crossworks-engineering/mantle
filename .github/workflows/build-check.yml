@@ -155,16 +155,31 @@ jobs:
           RUNS_TEST_DATABASE_URL: ${{ env.CI_DATABASE_URL }}
         run: pnpm test:edit-on
 
-      # The db package's suites and the write gateway's again with the app's
-      # pools on the runtime role (workspaces arch A9, docs/runtime-role.md),
-      # as on a box after its roll. The whole set runs on the workstation
-      # (pnpm test:runtime-role); this keeps the role's rights in step with
-      # the code on every push.
+      # The suites whose rights the plan v3 steps move, again with the app's
+      # pools on the runtime role (docs/runtime-role.md), as on a box after
+      # its roll: the db package (the access matrix rows, the write role,
+      # the catalog), the write gateway and the write-role cells, the grants,
+      # and the workspace definer tests (the workspace libraries, their
+      # ticks, the assistant attach, the landing app, and any ws-* definer
+      # suite). The whole set runs on the workstation (pnpm
+      # test:runtime-role); this keeps the role's rights in step with the
+      # code on every push.
       - name: Test (runtime role)
         env:
           MANTLE_TEST_DATABASE_URL: ${{ env.CI_DATABASE_URL }}
           RUNS_TEST_DATABASE_URL: ${{ env.CI_DATABASE_URL }}
-        run: pnpm test:runtime-role packages/db/src server/web/server/a2b2b-write-gateway server/web/lib/grants
+        run: >-
+          pnpm test:runtime-role
+          packages/db/src
+          server/web/server/a2b2b-write-gateway
+          server/web/server/f4-admin-write-role
+          server/web/server/worker-write-role
+          server/web/lib/grants
+          server/web/lib/workspace
+          server/web/lib/list-workspaces
+          server/web/server/workspace-landing
+          packages/content/src/workspaces-bridge-writers
+          /ws-
 
       # The A8 matrix (workspaces arch plan v2, section 12 A8; docs/actors.md,
       # "A8 matrix"): the SQL grid against the guide oracle and the surface

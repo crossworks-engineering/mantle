@@ -11,21 +11,41 @@
 #     first segment after /api/ of the retired routes), so only numbers come
 #     back over ssh: never a path, an id or a log line (arch A7);
 #   - the check settings: mantle.actor_check and mantle.edit_check on the
-#     database (off, warn or on; "not set" until A2a and A3a add them).
+#     database (off, warn or on; "not set" until A2a and A3a add them);
+#   - the rights counts (plan v3, rule 10), each a number counted on the
+#     box: role drift (mantle_role_drift(): enabled logins, former clients
+#     left out, whose role disagrees with Admin; n/a on a box that has no
+#     such function yet, never a guessed 0), brains without a live Admin
+#     workspace, live Admin workspaces with no assistant and no assistant
+#     removal event, the SQL functions writing the four workspace tables
+#     (the live catalog; scripts/arch-scoreboard.pins.json
+#     workspaceTableWriterFns is the repo's), and whether the stack's .env
+#     names MANTLE_DB_RUNTIME_ROLE (1 or 0; n/a with no stack dir).
 #
-# Read only: docker logs and one SELECT. Name the box explicitly; there is
-# no default and no fleet loop.
+# Read only: docker logs, docker inspect, SELECTs and a grep -c of .env.
+# Name the box explicitly; there is no default and no fleet loop.
 #
 # Usage:
-#   scripts/arch-scoreboard-box.sh [--since <duration>] <ssh-alias>
+#   scripts/arch-scoreboard-box.sh [--since <duration>] [--stack <dir>] <ssh-alias>
+#
+#   --stack  the box's stack dir (default: the updater's MANTLE_STACK_DIR)
+#   ARCH_BOX_PG=<container>  the database container (default mantle_pg; a
+#            throwaway database for a dry run)
 set -euo pipefail
 
 since=""
-if [[ "${1:-}" == "--since" ]]; then
-  since="${2:?--since needs a duration, e.g. 24h}"
-  shift 2
-fi
-host="${1:?usage: scripts/arch-scoreboard-box.sh [--since <duration>] <ssh-alias>}"
+stack=""
+while [[ "${1:-}" == --* ]]; do
+  case "$1" in
+    --since) since="${2:?--since needs a duration, e.g. 24h}"; shift 2 ;;
+    --stack) stack="${2:?--stack needs a directory}"; shift 2 ;;
+    *) echo "unknown option $1" >&2; exit 2 ;;
+  esac
+done
+host="${1:?usage: scripts/arch-scoreboard-box.sh [--since <duration>] [--stack <dir>] <ssh-alias>}"
+pg="${ARCH_BOX_PG:-mantle_pg}"
+case "$pg" in *[!A-Za-z0-9_.-]*) echo "not a container name: $pg" >&2; exit 2 ;; esac
+case "$stack" in *[!A-Za-z0-9_./-]*) echo "not a plain path: $stack" >&2; exit 2 ;; esac
 
 # The stub families, in the order the box prints its counts; the last
 # count is every other hit (no request path, or a family not listed).
@@ -60,6 +80,59 @@ done
 
 echo "== check settings on $host"
 # shellcheck disable=SC2029
-ssh -n "$host" "docker exec mantle_pg psql -U postgres -d postgres -tAc \"select
+ssh -n "$host" "docker exec $pg psql -U postgres -d postgres -tAc \"select
   'actor_check=' || coalesce(nullif(current_setting('mantle.actor_check', true), ''), 'not set'),
   'edit_check=' || coalesce(nullif(current_setting('mantle.edit_check', true), ''), 'not set')\""
+
+echo "== rights counts on $host"
+# Every query answers one integer; the role drift query runs only where its
+# function exists, so a box before it says n/a rather than 0.
+# shellcheck disable=SC2029
+ssh "$host" bash -s -- "'$pg'" "'$stack'" <<'REMOTE'
+pg="$1"
+stack="$2"
+q() { docker exec -i "$pg" psql -U postgres -d postgres -tAq -v ON_ERROR_STOP=1 2>/dev/null; }
+num() { case "$1" in '' | *[!0-9]*) echo "?" ;; *) echo "$1" ;; esac; }
+drift=n/a
+has=$(echo "select to_regprocedure('public.mantle_role_drift()') is not null;" | q || true)
+if [ "$has" = t ]; then
+  drift=$(num "$(echo 'select public.mantle_role_drift()::bigint;' | q || true)")
+fi
+no_admin=$(num "$(q <<'SQL' || true
+select count(*) from auth.users o
+ where o.is_owner
+   and not exists (select 1 from public.workspaces w
+                    where w.owner_id = o.id and w.is_admin and w.archived_at is null);
+SQL
+)")
+no_assistant=$(num "$(q <<'SQL' || true
+select count(*) from public.workspaces w
+ where w.is_admin and w.archived_at is null
+   and not exists (select 1 from public.workspace_resources r
+                    where r.workspace_id = w.id and r.type = 'assistant')
+   and not exists (select 1 from public.workspace_events e
+                    where e.workspace_id = w.id and e.action = 'resource.remove'
+                      and e.subject ->> 'kind' = 'assistant');
+SQL
+)")
+writers=$(num "$(q <<'SQL' || true
+select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+ where n.nspname = 'public'
+   and p.prosrc ~* '(insert\s+into|update|delete\s+from|merge\s+into|truncate(\s+table)?)\s+("?public"?\s*\.\s*)?"?(workspaces|workspace_users|workspace_events|workspace_resources)"?($|[^a-z0-9_"])';
+SQL
+)")
+if [ -z "$stack" ]; then
+  stack=$(docker inspect mantle_updater --format '{{range .Config.Env}}{{println .}}{{end}}' 2>/dev/null |
+    sed -n 's/^MANTLE_STACK_DIR=//p' | head -1)
+fi
+names_role=n/a
+if [ -n "$stack" ] && [ -f "$stack/.env" ]; then
+  names_role=$(grep -c '^MANTLE_DB_RUNTIME_ROLE=' "$stack/.env" || true)
+  [ "$names_role" -gt 1 ] 2>/dev/null && names_role=1
+fi
+printf '  %-34s %s\n' role_drift "$drift"
+printf '  %-34s %s\n' brains_without_admin_workspace "$no_admin"
+printf '  %-34s %s\n' admin_workspaces_without_assistant "$no_assistant"
+printf '  %-34s %s\n' workspace_table_writer_fns "$writers"
+printf '  %-34s %s\n' env_names_runtime_role "$names_role"
+REMOTE
