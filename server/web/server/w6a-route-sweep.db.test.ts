@@ -592,9 +592,10 @@ describe.skipIf(!URL)('W6a route sweep: scoped reads for every login', () => {
     // homed where the member is not, answer the same 404 before any handler.
     // A route whose pre-check went (the pre-check removal part 2,
     // docs/actors.md: itemWriteTarget names no item) is answered by its
-    // handler in the member's scope: the two ids get the same answer, the
-    // handler's 404, or a 400 for the sweep's empty body that it answers
-    // before any read.
+    // handler in the member's scope: the two ids get the same answer (each
+    // uuid in it read as <id>: Recall's map_not_found names the id), the
+    // handler's 404, a 400 for the sweep's empty body that it answers
+    // before any read, or a 403 it gives every id alike (an owner's act).
     const failures: string[] = [];
     let checked = 0;
     let handlerAnswered = 0;
@@ -621,9 +622,11 @@ describe.skipIf(!URL)('W6a route sweep: scoped reads for every login', () => {
           ];
           checked += 2;
           handlerAnswered += 1;
+          const uuids = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g;
+          const ids = (text: string) => text.replace(uuids, '<id>');
           const one =
-            (none.status === 404 && none.text === '{"error":"not found"}') || none.status === 400;
-          if (!one || unread.status !== none.status || unread.text !== none.text) {
+            [400, 403, 404].includes(none.status) && !none.text.includes('item-workspace');
+          if (!one || unread.status !== none.status || ids(unread.text) !== ids(none.text)) {
             failures.push(
               `${method} ${e.pattern} (handler) no row ${none.status} ${none.text.slice(0, 80)}; unread ${unread.status} ${unread.text.slice(0, 80)}`,
             );

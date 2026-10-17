@@ -161,6 +161,7 @@ describe.skipIf(!DB_URL)('the pre-check removal, part 2: the HTTP entries', () =
   let raw: ReturnType<typeof postgres>;
   let m: typeof import('@mantle/db');
   let t: typeof import('@mantle/tools');
+  let c: typeof import('@mantle/content');
   let actorMode: typeof import('../../../packages/db/src/actor');
   let runRoute: typeof import('./run-route').runRoute;
   let dir = '';
@@ -258,8 +259,18 @@ describe.skipIf(!DB_URL)('the pre-check removal, part 2: the HTTP entries', () =
     need: Need;
     method: string;
     path: (id: string) => string;
-    body?: () => unknown;
+    /** Its body, for the item `id` (a random uuid for none). */
+    body?: (id: string) => unknown;
     viaKey?: true;
+    /** An owner's act (Recall): the handler refuses it to a login outside
+     *  Admin (403 `*_is_owners`), 'first' before it reads the map (every id
+     *  alike), 'after' once it found the map. */
+    ownerAct?: 'first' | 'after';
+    /** An id that is not a uuid gets the route's own 404 (`{"error":"not
+     *  found"}`), where an id no row has gets the handler's, which names
+     *  the id (Recall: map_not_found). Both 404, neither tells a hidden
+     *  item from none. */
+    badIdOwn?: true;
     /** Make a fresh item for `who` placed at `p` (place it last). */
     make: (who: Who, p: Place) => Promise<string>;
     /** In warn, a write the database refuses in on is made (logged as a
@@ -270,6 +281,8 @@ describe.skipIf(!DB_URL)('the pre-check removal, part 2: the HTTP entries', () =
     name: string;
     /** Its entry is gone: the lists name no item for its routes. */
     removed: boolean;
+    /** Why no snapshot copy of it exists (its copy cell is skipped). */
+    noCopy?: string;
     routes: Route[];
   };
 
@@ -340,6 +353,64 @@ describe.skipIf(!DB_URL)('the pre-check removal, part 2: the HTTP entries', () =
     },
   ];
 
+  /** A Recall map made as the owner, with `cards` cards (the first a
+   *  prompt an agent asked for when `prompt`; edited once when `revision`,
+   *  so its log holds a card edit to restore), then placed. Its version,
+   *  card slugs and that revision are kept for the route's path and body. */
+  const verOf = new Map<string, number>();
+  const cardsOf = new Map<string, string[]>();
+  const revOf = new Map<string, string>();
+  const OWNER_ACTOR = { kind: 'owner', id: null, name: 'test' } as const;
+  const AGENT_ACTOR = { kind: 'agent', id: null, name: 'test' } as const;
+  const recallMap =
+    (opts: { cards?: number; prompt?: true; revision?: true } = {}) =>
+    async (who: Who, p: Place) => {
+      const made = await sys(() =>
+        c.createRecallMap(owner, { title: `${tag} map ${n()}`, enterWhen: 'a test' }, OWNER_ACTOR),
+      );
+      const id = made.mapId;
+      let version = made.version;
+      const slugs: string[] = [];
+      for (let i = 0; i < (opts.cards ?? 1); i += 1) {
+        const r = await sys(() =>
+          c.putRecallCard(
+            owner,
+            id,
+            null,
+            {
+              title: `${tag} card ${n()}`,
+              bodyMd: 'body',
+              ...(opts.prompt ? { prompt: true } : {}),
+            },
+            opts.prompt ? AGENT_ACTOR : OWNER_ACTOR,
+            version,
+          ),
+        );
+        version = r.version;
+        slugs.push(r.cardSlug!);
+      }
+      if (opts.revision) {
+        const r = await sys(() =>
+          c.putRecallCard(
+            owner,
+            id,
+            slugs[0]!,
+            { title: `${tag} card edited ${n()}`, bodyMd: 'edited' },
+            OWNER_ACTOR,
+            version,
+          ),
+        );
+        version = r.version;
+        revOf.set(id, (await sys(() => c.listRecallRevisions(owner, id)))[0]!.id);
+      }
+      verOf.set(id, version);
+      cardsOf.set(id, slugs);
+      await place(who, p)(id);
+      return id;
+    };
+  const ver = (id: string) => verOf.get(id) ?? 0;
+  const card = (id: string, i = 0) => cardsOf.get(id)?.[i] ?? 'c1';
+
   const FAMILIES: Family[] = [
     {
       name: 'node kinds (formulas, tasks, events, v1 tasks)',
@@ -393,18 +464,117 @@ describe.skipIf(!DB_URL)('the pre-check removal, part 2: the HTTP entries', () =
         },
       ],
     },
+    {
+      // Every map and card write locks the map in the login's scope first
+      // (mapOr404: a map it does not read is map_not_found, as none); the
+      // edit check (0281) asks edit of the map's node for its rows, manage
+      // for its delete (and the delete check, 0266, in every mode). A
+      // revision restore reads the revision in the scope first. The owner's
+      // acts are refused to a member by the handler, as before.
+      name: 'recall maps and revisions',
+      removed: true,
+      noCopy: 'no snapshot copy of a Recall map is made (only an accepted item kinds)',
+      routes: [
+        {
+          name: 'PATCH /api/recall/maps/:id',
+          need: 'edit',
+          method: 'PATCH',
+          path: (id) => `/api/recall/maps/${id}`,
+          body: (id) => ({ title: `${tag} retitled ${n()}`, version: ver(id) }),
+          make: recallMap(),
+          warnMade: true,
+          badIdOwn: true,
+        },
+        {
+          name: 'DELETE /api/recall/maps/:id',
+          need: 'manage',
+          method: 'DELETE',
+          path: (id) => `/api/recall/maps/${id}`,
+          make: recallMap(),
+          warnMade: false,
+          ownerAct: 'after',
+          badIdOwn: true,
+        },
+        {
+          name: 'POST /api/recall/maps/:id/cards',
+          need: 'edit',
+          method: 'POST',
+          path: (id) => `/api/recall/maps/${id}/cards`,
+          body: (id) => ({ title: `${tag} new card ${n()}`, bodyMd: 'new', version: ver(id) }),
+          make: recallMap(),
+          warnMade: true,
+          badIdOwn: true,
+        },
+        {
+          name: 'PUT /api/recall/maps/:id/cards/:card',
+          need: 'edit',
+          method: 'PUT',
+          path: (id) => `/api/recall/maps/${id}/cards/${card(id)}`,
+          body: (id) => ({ title: `${tag} card put ${n()}`, bodyMd: 'put', version: ver(id) }),
+          make: recallMap(),
+          warnMade: true,
+          badIdOwn: true,
+        },
+        {
+          name: 'DELETE /api/recall/maps/:id/cards/:card',
+          need: 'edit',
+          method: 'DELETE',
+          path: (id) => `/api/recall/maps/${id}/cards/${card(id)}?version=${ver(id)}`,
+          make: recallMap(),
+          warnMade: true,
+          badIdOwn: true,
+        },
+        {
+          name: 'POST /api/recall/maps/:id/cards/reorder',
+          need: 'edit',
+          method: 'POST',
+          path: (id) => `/api/recall/maps/${id}/cards/reorder`,
+          body: (id) => ({ slugs: [card(id, 1), card(id, 0)], version: ver(id) }),
+          make: recallMap({ cards: 2 }),
+          warnMade: true,
+          ownerAct: 'first',
+          badIdOwn: true,
+        },
+        {
+          name: 'POST /api/recall/maps/:id/cards/:card/prompt',
+          need: 'edit',
+          method: 'POST',
+          path: (id) => `/api/recall/maps/${id}/cards/${card(id)}/prompt`,
+          body: (id) => ({ confirm: true, version: ver(id) }),
+          make: recallMap({ prompt: true }),
+          warnMade: true,
+          ownerAct: 'first',
+          badIdOwn: true,
+        },
+        {
+          name: 'POST /api/recall/revisions/:id/restore',
+          need: 'edit',
+          method: 'POST',
+          path: (id) => `/api/recall/revisions/${revOf.get(id) ?? id}/restore`,
+          make: recallMap({ revision: true }),
+          warnMade: true,
+          ownerAct: 'first',
+          badIdOwn: true,
+        },
+      ],
+    },
   ];
 
   // ── the cells ─────────────────────────────────────────────────────────────
 
   type Answer = { status: number; text: string; changed: boolean; misses: string[] };
 
+  /** A reply with every uuid in it as <id>: a handler's 404 may name the id
+   *  it was asked (Recall's map_not_found), the same words for each. */
+  const UUID_G = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g;
+  const ids = (text: string) => text.replace(UUID_G, '<id>');
+
   /** One request as `who` on `id` (a random uuid when `id` is null). */
   const send = async (route: Route, who: Who, id: string, precheck: boolean) => {
     pre.on = precheck;
     try {
       const login = route.viaKey ? { key: keyOf[who]! } : L[who];
-      return await runRoute(login, route.method, route.path(id), route.body?.());
+      return await runRoute(login, route.method, route.path(id), route.body?.(id));
     } finally {
       pre.on = true;
     }
@@ -462,6 +632,7 @@ describe.skipIf(!DB_URL)('the pre-check removal, part 2: the HTTP entries', () =
     );
     m = await import('@mantle/db');
     t = await import('@mantle/tools');
+    c = await import('@mantle/content');
     actorMode = await import('../../../packages/db/src/actor');
     runRoute = (await import('./run-route')).runRoute;
     raw = postgres(scratch.url, { max: 2, prepare: false, onnotice: () => {} });
@@ -571,18 +742,31 @@ describe.skipIf(!DB_URL)('the pre-check removal, part 2: the HTTP entries', () =
               recorded.push(
                 `${family.name} | ${route.name} ${mode} ${who}/none\n      was ${noneWas.status}: ${noneWasText}\n      now ${noneNow.status}: ${noneNowText}`,
               );
-              expect(noneNow.status, noneNowText).toBe(404);
+              // A member asking an owner's act the handler refuses first:
+              // its 403 for every id (it tells nothing about any map).
+              const ownerFirst = who === 'member' && route.ownerAct === 'first';
+              const ownerAct = who === 'member' && route.ownerAct !== undefined;
+              expect(noneNow.status, noneNowText).toBe(ownerFirst ? 403 : 404);
               expect(noneNowText).not.toMatch(RAW);
-              // An id that is not a uuid names nothing either: the same 404.
+              // An id that is not a uuid names nothing either: the same 404
+              // (or the route's own, see badIdOwn).
               const bad = await send(route, who, 'not-an-id', false);
               const badText = await bad.text();
               recorded.push(
                 `${family.name} | ${route.name} ${mode} ${who}/not-an-id: ${bad.status}: ${badText}`,
               );
-              expect({ status: bad.status, text: badText }).toEqual({
-                status: noneNow.status,
-                text: noneNowText,
-              });
+              if (ownerFirst) expect(bad.status, badText).toBe(403);
+              else if (route.badIdOwn) {
+                expect({ status: bad.status, text: badText }).toEqual({
+                  status: 404,
+                  text: '{"error":"not found"}',
+                });
+              } else {
+                expect({ status: bad.status, text: badText }).toEqual({
+                  status: noneNow.status,
+                  text: noneNowText,
+                });
+              }
               for (const p of PLACES) {
                 const name = `${route.name} ${mode} ${who}/${p}`;
                 const was = await once(route, who, p, true);
@@ -593,10 +777,15 @@ describe.skipIf(!DB_URL)('the pre-check removal, part 2: the HTTP entries', () =
                 expect(now.text, name).not.toMatch(RAW);
                 if (p === 'noRead') {
                   // One 404: a hidden item is answered as no item at all.
-                  expect({ status: now.status, text: now.text }, name).toEqual({
+                  expect({ status: now.status, text: ids(now.text) }, name).toEqual({
                     status: noneNow.status,
-                    text: noneNowText,
+                    text: ids(noneNowText),
                   });
+                  expect(now.changed, `${name} changed the item`).toBe(false);
+                } else if (ownerAct) {
+                  // The owner's act, refused to a member by the handler.
+                  expect(now.status, `${name}: ${now.text}`).toBe(403);
+                  expect(now.text, name).toMatch(/_is_owners/);
                   expect(now.changed, `${name} changed the item`).toBe(false);
                 } else if (ALLOWED[route.need].includes(p)) {
                   expect(now.status, `${name}: ${now.text}`).toBeLessThan(300);
@@ -621,7 +810,7 @@ describe.skipIf(!DB_URL)('the pre-check removal, part 2: the HTTP entries', () =
                   ).toEqual({ ok: was.status < 300, changed: was.changed });
                 }
               }
-              if (route.need === 'edit') {
+              if (route.need === 'edit' && !family.noCopy) {
                 // A read-only copy the login may manage: the pre-check's
                 // read-only answer, now the database's (every mode).
                 const name = `${route.name} ${mode} ${who}/copy`;

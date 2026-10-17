@@ -218,20 +218,22 @@ describe('itemWriteTarget (W6a, the item an Admin write touches)', () => {
     ] as const) {
       expect(itemWriteTarget(method, pattern, pattern.replace(':id', id))).toBeNull();
     }
+    // Recall maps and their revisions too (the pre-check removal part 2):
+    // the map's lock in the login's scope and the edit check (0281).
     expect(
       itemWriteTarget(
         'POST',
         '/api/recall/maps/:id/cards/reorder',
         `/api/recall/maps/${id}/cards/reorder`,
       ),
-    ).toEqual({ id, need: 'edit', ref: 'node' });
+    ).toBeNull();
     expect(
       itemWriteTarget(
         'POST',
         '/api/recall/revisions/:id/restore',
         `/api/recall/revisions/${id}/restore`,
       ),
-    ).toEqual({ id, need: 'edit', ref: 'recall-revision' });
+    ).toBeNull();
     // A link needs edit of its item (A0; an app's link: manage, which the
     // session gate asks once it knows the item's type).
     for (const method of ['DELETE', 'PATCH']) {

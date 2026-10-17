@@ -363,8 +363,11 @@ export const ITEM_WRITE_PREFIXES: readonly string[] = [
   // part 2 (docs/actors.md): their edit and delete are one statement each,
   // refused by the database's write check (0278) and delete check (0266),
   // and the handler's read in the login's scope answers an item it does
-  // not read with the 404 of no item at all.
-  '/api/recall/maps',
+  // not read with the 404 of no item at all. Recall maps went too: every
+  // map and card write locks the map in the login's scope first (mapOr404:
+  // a map it does not read is map_not_found, as no map), and the edit
+  // check (0281) asks edit of the map's node for its rows, manage for its
+  // delete; a revision restore reads the revision in the scope first.
 ];
 
 /**
@@ -374,11 +377,10 @@ export const ITEM_WRITE_PREFIXES: readonly string[] = [
  * deleted app is gone, and its last snapshot names the workspace it was
  * homed in (meta.homeWs, the Admin workspace for a snapshot from before).
  */
-export type ItemRef = 'node' | 'share' | 'recall-revision' | 'deleted-app';
+export type ItemRef = 'node' | 'share' | 'deleted-app';
 
 const ITEM_REF_PREFIXES: ReadonlyArray<readonly [string, ItemRef]> = [
   ['/api/shares', 'share'],
-  ['/api/recall/revisions', 'recall-revision'],
   ['/api/apps/deleted', 'deleted-app'],
 ];
 
@@ -417,8 +419,8 @@ export function itemWriteTarget(
     if (!id) return null;
     // A share is a link: opening, changing and closing it needs edit of its
     // item (docs/workspaces.md; an app's link needs manage, which the gate
-    // asks once it knows the item's type). A revision restore edits the
-    // map; a deleted app's purge and restore manage it.
+    // asks once it knows the item's type). A deleted app's purge and
+    // restore manage it.
     const need: ItemWriteNeed = ref === 'deleted-app' ? 'manage' : 'edit';
     return { id, need, ref };
   }
