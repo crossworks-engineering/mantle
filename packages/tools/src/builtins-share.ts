@@ -13,6 +13,8 @@ import {
   checkServeList,
   createShare,
   getActiveShareForNode,
+  LINK_APP_NO_MANAGE_MESSAGE,
+  LINK_NO_EDIT_MESSAGE,
   LinkRefusedError,
   revokeShare,
   shareUrlForToken,
@@ -20,6 +22,9 @@ import {
   type LoweredItem,
 } from '@mantle/content';
 import type { BuiltinToolDef, ToolHandlerContext } from './types';
+import type { ToolItemArg } from './tool-policy';
+import { db, nodes } from '@mantle/db';
+import { eq } from 'drizzle-orm';
 import { str } from './coerce';
 import { isOwnerSurface, keyOrPeerVia, ownerSurfaceLoginId } from './surface';
 import { errorMessage } from '@mantle/std';
@@ -104,10 +109,31 @@ export async function openLink(
 /** A refusal as the tools word it: an item it cannot read is not found. */
 export function linkError(err: unknown): string {
   if (err instanceof LinkRefusedError) {
-    return err.code === 'not_found' ? 'not found (or not one you may read)' : err.message;
+    return err.code === 'not_found' ? LINK_NOT_FOUND_TEXT : err.message;
   }
   return errorMessage(err);
 }
+
+/** A link tool's words for an item the caller does not read. */
+const LINK_NOT_FOUND_TEXT = 'not found (or not one you may read)';
+
+/** The item a link opens on (`id`), in the link's own words when the
+ *  queue-time check refuses it (assertMayLink's: an app's link is its home
+ *  Moderators'). */
+export const LINK_ITEM_ARG: readonly ToolItemArg[] = [
+  {
+    param: 'id',
+    refused: async (detail, id) => {
+      if (detail === 'no_read') return LINK_NOT_FOUND_TEXT;
+      const [row] = await db
+        .select({ type: nodes.type })
+        .from(nodes)
+        .where(eq(nodes.id, id))
+        .limit(1);
+      return row?.type === 'app' ? LINK_APP_NO_MANAGE_MESSAGE : LINK_NO_EDIT_MESSAGE;
+    },
+  },
+];
 
 const node_share: BuiltinToolDef = {
   slug: 'node_share',
@@ -115,7 +141,7 @@ const node_share: BuiltinToolDef = {
     effect: 'write',
     spends: 'none',
     scope: 'any',
-    itemArgs: [{ param: 'id' }],
+    itemArgs: LINK_ITEM_ARG,
     peerRisky: true,
     lowering: 'always',
   },

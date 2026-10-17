@@ -51,6 +51,8 @@ export {
 
 export {
   LinkRefusedError,
+  LINK_APP_NO_MANAGE_MESSAGE,
+  LINK_NO_EDIT_MESSAGE,
   assertMayLink,
   checkServeList,
   FOLDER_SERVE_OFFER_MAX,

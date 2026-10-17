@@ -130,7 +130,9 @@ function runAnswer(detail: 'no_read' | 'no_edit'): string {
  *  - an item the scope does not read is "not found", whatever the argument
  *    needs (every write reads its item first), unless its `least` is `none`;
  *  - an item it reads but may neither edit nor manage, for an argument
- *    whose `least` is `change` (the run asks one or the other).
+ *    whose `least` is `change` (the run asks one or the other);
+ *  - each in the one mapper's words for the edit check, or the argument's
+ *    own (`refused`: a link's), as the run answers it.
  *
  * A list argument and a Recall revision are not asked (the module comment).
  * Outside a workspace scope nothing is asked.
@@ -141,8 +143,9 @@ export async function queueItemRefusal(
   ownerId: string,
 ): Promise<string | null> {
   if (args.length === 0 || !currentWorkspaceScope()) return null;
-  const change: string[] = [];
-  const read: string[] = [];
+  type Named = { id: string; arg: ToolItemArg };
+  const change: Named[] = [];
+  const read: Named[] = [];
   for (const arg of args) {
     if (arg.least === 'none' || arg.by === 'recall-revision') continue;
     if (Array.isArray(input[arg.param])) continue;
@@ -156,20 +159,24 @@ export async function queueItemRefusal(
       // Not a node id: the tool's own error answers it at run time.
       continue;
     }
-    (arg.least === 'read' ? read : change).push(id);
+    (arg.least === 'read' ? read : change).push({ id, arg });
   }
+  const answer = (n: Named, detail: 'no_read' | 'no_edit') =>
+    n.arg.refused ? n.arg.refused(detail, n.id) : runAnswer(detail);
   // The library's own read (itemWriteRefusalOf, as assertItemRight asks it).
-  for (const id of read) {
-    if ((await itemWriteRefusalOf([id], 'read'))?.detail === 'no_read') return runAnswer('no_read');
+  for (const n of read) {
+    if ((await itemWriteRefusalOf([n.id], 'read'))?.detail === 'no_read') {
+      return answer(n, 'no_read');
+    }
   }
-  for (const id of change) {
-    const edit = await itemWriteRefusalOf([id], 'edit');
+  for (const n of change) {
+    const edit = await itemWriteRefusalOf([n.id], 'edit');
     if (!edit) continue;
-    if (edit.detail === 'no_read') return runAnswer('no_read');
+    if (edit.detail === 'no_read') return answer(n, 'no_read');
     // A read-only snapshot copy: its own words at run time (a delete of it
     // may still be the copy's author's to make), so not asked here.
     if (edit.copy || edit.detail !== 'no_edit') continue;
-    if (await itemWriteRefusalOf([id], 'manage')) return runAnswer('no_edit');
+    if (await itemWriteRefusalOf([n.id], 'manage')) return answer(n, 'no_edit');
   }
   return null;
 }

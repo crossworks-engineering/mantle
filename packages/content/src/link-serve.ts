@@ -66,6 +66,13 @@ defineDomainError(LinkRefusedError, {
 
 const NOT_FOUND = () => new LinkRefusedError(404, 'not_found', 'Item not found.');
 
+/** The refusal of a link to an item the caller reads but may not edit (an
+ *  app: whose home it does not moderate). */
+export const LINK_NO_EDIT_MESSAGE =
+  'Only someone who may edit this item may open or close its link.';
+export const LINK_APP_NO_MANAGE_MESSAGE =
+  "Only a Moderator of the app's home workspace may open or close its link.";
+
 export type LinkRights = {
   id: string;
   type: string;
@@ -181,9 +188,7 @@ export async function assertMayLink(
     throw new LinkRefusedError(
       403,
       'forbidden',
-      r.type === 'app'
-        ? "Only a Moderator of the app's home workspace may open or close its link."
-        : 'Only someone who may edit this item may open or close its link.',
+      r.type === 'app' ? LINK_APP_NO_MANAGE_MESSAGE : LINK_NO_EDIT_MESSAGE,
     );
   }
   return r;

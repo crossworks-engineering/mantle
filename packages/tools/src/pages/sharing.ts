@@ -15,6 +15,7 @@ import { notFound } from '../errors';
 import { PAGE_NODE_ID_PRE } from './common';
 import {
   closeLink,
+  LINK_ITEM_ARG,
   linkError,
   linkModeRefusal,
   openLink,
@@ -29,7 +30,7 @@ export const page_share: BuiltinToolDef = {
     effect: 'write',
     spends: 'none',
     scope: 'any',
-    itemArgs: [{ param: 'id' }],
+    itemArgs: LINK_ITEM_ARG,
     peerRisky: true,
     keyArea: 'pages',
     lowering: 'always',

@@ -246,7 +246,9 @@ export const file_delete: BuiltinToolDef = {
     effect: 'write',
     spends: 'none',
     scope: 'any',
-    itemArgs: [{ param: 'file_id' }],
+    // Its run words a refusal its own way ("file not found", an
+    // attachment's or a drawing's reason first): the queue asks nothing.
+    itemArgs: [{ param: 'file_id', least: 'none' }],
     keyArea: 'files',
     clientSourced: CS.onNodes('file_id'),
   },

@@ -144,7 +144,8 @@ export const access_set: BuiltinToolDef = {
     effect: 'write',
     spends: 'none',
     scope: 'admin',
-    itemArgs: [{ param: 'node_id' }],
+    // Retired: every call answers its retirement, so the queue asks nothing.
+    itemArgs: [{ param: 'node_id', least: 'none' }],
     peerRisky: true,
     lowering: lowersAccessSet,
   },

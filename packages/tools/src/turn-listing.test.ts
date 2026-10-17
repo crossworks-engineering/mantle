@@ -30,8 +30,18 @@ vi.mock('../../db/src/viewer', async (importOriginal) => {
     currentWorkspaceScope: () => h.scope ?? real.currentWorkspaceScope(),
   };
 });
+/** A query no row answers (the link tools' item type, R0 fix round L2:
+ *  not an app), with no database. */
+const { noRows } = vi.hoisted(() => {
+  const noRows: unknown = new Proxy(() => noRows, {
+    get: (_t, k) => (k === 'then' ? (ok: (v: unknown[]) => void) => ok([]) : noRows),
+    apply: () => noRows,
+  });
+  return { noRows };
+});
 vi.mock('../../db/src/client', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../db/src/client')>()),
+  db: noRows,
   scopeHoldsAdmin: async () => h.view.holdsAdmin,
   scopeHasArea: async (a: string) => h.view.holdsAdmin && h.view.areas.has(a),
 }));
@@ -88,6 +98,7 @@ import {
   type ElevatedApproval,
 } from './connector-scope';
 import { ITEM_WORKSPACE_MESSAGE } from '@mantle/std';
+import { LINK_NO_EDIT_MESSAGE } from '@mantle/content';
 import { NO_RUNTIME_POLICY_ERROR } from './runtime-policy';
 import { OWNER_ONLY_ERROR } from './surface';
 import type { TurnListingFacts } from './turn-listing';
@@ -336,7 +347,7 @@ describe("a call that needs approval meets the gate's item pre-check before it i
       id: h.adminItem,
       level: 'public',
     });
-    expect(refused).toBe(ITEM_WORKSPACE_MESSAGE);
+    expect(refused).toBe(LINK_NO_EDIT_MESSAGE);
     expect(h.itemAsked.length).toBeGreaterThan(0);
   });
 

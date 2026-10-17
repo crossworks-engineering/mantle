@@ -69,6 +69,10 @@ export type ToolItemArg = Readonly<{
   /** The run's own words for a reference that names nothing the scope
    *  reads (a Recall map's "No Recall map"): the queue-time refusal of it. */
   missing?: (ref: string) => string;
+  /** The run's own words for a refusal of the item, where its handler
+   *  words it rather than the one mapper (a link's): by the item check's
+   *  detail, and the item (an app's link is its Moderators'). */
+  refused?: (detail: 'no_read' | 'no_edit', id: string) => string | Promise<string>;
 }>;
 
 /** What a tool reaches outside the database. */

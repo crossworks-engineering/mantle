@@ -274,17 +274,21 @@ describe.skipIf(!URL)('one audit row for every tool write (A5 step 6d)', () => {
     ]);
   });
 
-  /** A call in a web turn as the owner: its result. */
+  /** A call in a web turn as the owner: its result (an MCP-only builtin
+   *  by a row made for it, as /api/v1 makes it). */
   const turn = (slug: string, input: Record<string, unknown>) =>
-    row(slug).then((tool) =>
-      asOwner(() =>
-        t.dispatchTool(tool, input, {
-          ownerId: owner,
-          surface: WEB as never,
-          caller: t.turnCaller(),
-        }),
-      ),
-    );
+    m
+      .asSystem(() => t.resolveTool(owner, slug), 'test')
+      .then((r) => r ?? ({ slug, handler: { kind: 'builtin', ref: slug } } as never))
+      .then((tool) =>
+        asOwner(() =>
+          t.dispatchTool(tool, input, {
+            ownerId: owner,
+            surface: WEB as never,
+            caller: t.turnCaller(),
+          }),
+        ),
+      );
   /** The targets of the one row a call left, or null when it left none. */
   const targetsOfCall = async (slug: string, input: Record<string, unknown>) => {
     // The rows of the calls before it (each settles after its call) first.
