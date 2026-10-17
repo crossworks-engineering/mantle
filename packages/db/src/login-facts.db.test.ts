@@ -375,9 +375,9 @@ describe.skipIf(!URL)('the login facts answer as the text they replace (S2a a0)'
     if (rt!.on) {
       const grants = await sql<{ fn: string; ok: boolean }[]>`
         select f.fn, has_function_privilege(${RUNTIME_ROLE}, to_regprocedure(f.fn), 'EXECUTE') as ok
-          from unnest(${facts}::text[]) f(fn) order by 1`;
-      expect(grants).toEqual(
-        [...facts].sort().map((fn) => ({ fn, ok: fn !== 'public.mantle_login_area(uuid,text)' })),
+          from unnest(${facts}::text[]) f(fn)`;
+      expect(Object.fromEntries(grants.map((g) => [g.fn, g.ok]))).toEqual(
+        Object.fromEntries(facts.map((fn) => [fn, fn !== 'public.mantle_login_area(uuid,text)'])),
       );
     }
   });
