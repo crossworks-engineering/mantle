@@ -6564,6 +6564,25 @@ one item the scope may not move moves none (was and now).
   the login meets the scope's. Named for the HTTP part.
 - Unchanged where the check already answered: tree_folder_delete,
   tree_item_move, node_share (a readable item), journal_resolve_gap.
+- Library calls (round 2, from the sweeps): `removeAppTableExport` in a
+  scope that may not edit the app (on the A6B sweep: adminAll,
+  adminNoUsers, userQ, outsider, the Admin turns, turn:P:none and
+  turn:Q:userQ) is refused with the edit check's error (42501), where it
+  removed the link (turn:P:none: the delete's own refusal before); the
+  system, the owner and modP answer as before (`a6b-exit-sweep`, named in
+  its client-sourced changes). `unsupersedeNode` of a node the scope does
+  not read throws the edit check's `no_read` (a 404 through the mapper, the
+  same for a random id), where the scoped read threw "not found"
+  (`w7a-admin-scope` L5); the node is unchanged either way.
+- Recorded files: the MCP call snapshot (`mcp-calls.json`) keeps every
+  reply byte for byte; only the handler trace of `page_split` on the
+  REFUSED page changed (6 connections: the handler runs and its library
+  check refuses, the stand-in asks `assertItemRight` as `splitPage` does).
+  The v1 rows cells that pinned the gate's pre-check through a mock
+  (`api-v1-builtin.test.ts`; the pre-check of those tools went in Part 1)
+  pin the library or database refusal's exact bodies now (403
+  item-workspace, 404); the mock-only cell "a refusal with no edit check
+  detail stays the 400" went with them (nothing answers it since Part 1).
 
 **Pins.** `itemPrecheckTools` 29 -> 0. `itemPrecheckRoutes` untouched
 (the HTTP part). Dispatch parity: the 23 kept builtins whose stubbed
@@ -6589,35 +6608,41 @@ test:runtime-role 1 (its run overlapped the next gate run on the same
 database: rerun it alone). Many of the failures are hook timeouts (16) from
 two gate runs overlapping on one container: rerun each gate alone first.
 
-**Left (do this first), the failures that are this branch's:**
+**Round 2 (a fresh builder, 2026-10-17).** The known items fixed in
+dcdf72b3a (each a test that still read the removed pre-check, none a
+regression): the gap test's `@mantle/db` mock answers `assertItemRight`;
+the MCP call snapshot answers the rights read in its database stand-in
+and re-recorded (above); `turn-listing.test.ts` pins node_share queuing
+(the queue-time change above); `api-v1-builtin.test.ts` pins the library
+or database refusal; the A6B sweep names `removeAppTableExport`'s
+refusals; the A10 body sweep answers `assertItemRight` as its READS
+answer (its database stand-in does not reach the db package's own handle,
+so the check now asked first in `updateAppMeta` and `deleteApp` read as a
+500; every cell answers as recorded); `w7a-admin-scope` L5 expects the
+edit check's `no_read`.
 
-- `packages/content/src/app-table-exports-gap.test.ts`: its `@mantle/db`
-  mock lacks `assertItemRight` (add it, resolving).
-- `packages/mcp-core/src/mcp-call-snapshot.test.ts`: the call snapshot
-  (its mock of `toolItemWriteRefusalOf` is gone): re-record on purpose and
-  name the changed cells.
-- `packages/tools/src/turn-listing.test.ts`, `server/web/lib/api-v1-builtin.test.ts`:
-  they stub `toolItemWriteRefusalOf` to refuse (`h.item`); the refusal now
-  comes from the library (assertItemRight) or the database: stub that, or
-  drop the cells that pinned the pre-check's queue-time refusal (a kept
-  tool was refused before it was queued: now it queues, as Part 1's).
-- `server/web/server/a6b-exit-sweep.db.test.ts` "client-sourced" (26 in
-  every mode) and `a10-body-sweep.test.ts`: read what they list; likely
-  the 29 tools' rows or a sweep keyed on the old policy field.
-- One library test expects "not found" and gets "not allowed to edit this
-  item" (a check now asked first), and `w7a-admin-scope`, `grants.db`,
-  `app-draft-scope`, `w6b-fix1`, `w6b-member-writes`, `edit-check`,
-  `sql-grid`, `write-role`, the `workspaces-*` suites in edit-on: check
-  each against main's run at the same mode before calling it this branch's
-  (the 403-for-200 group, 10, and the hook timeouts look like load).
-- Then rerun full vitest, actor-off, actor-on, edit-on, matrix and
-  runtime-role, each alone, and wait for CI (build-check runs
-  39027701645 on 3b077178d, 39029016075 on 5e6c7ce67).
+Everything else in round 1's list was the environment, not this branch:
+the hook timeouts (a scratch database's DROP forces a checkpoint, slow on
+the workstation's busy disk; `feat/precheck-remove` at 6ad2f8525 showed
+the same nine in actor-on on the same container), "sorry, too many
+clients" (the container ran at Postgres's default 100 connections;
+compose runs 450), and the 403-for-200, `workspaces_one_admin_uq` and
+stats-dependent `resolveKeywordQuery` cells (two gate runs on one
+database). The container for the gates: pgvector pg18, init mounted,
+`-c max_connections=450 -c fsync=off -c synchronous_commit=off -c
+full_page_writes=off` (a throwaway test database), migrated with
+`MANTLE_CHECK_FLOOR=keep`, each gate run alone.
 
-The workstation worktree `.claude/worktrees/pcl3` (branch ref
-`pcl3-push`) and the runners `~/pcl3-run.sh`, `~/pcl3-gates.sh` are left
-for reuse; the container is removed (recreate it: pgvector pg18, init
-mounted, `pnpm db:migrate` against it with `MANTLE_CHECK_FLOOR=keep`).
+**Gates** (workstation, the tree of dcdf72b3a, each run alone, exit
+codes): full vitest with a database 0 (1092 files, 13105 tests), actor-off
+0, actor-on 0, edit-on 0, test:matrix 0, test:runtime-role 0 (its first run
+1: two cells of `a5-approval-recheck` and three tools of
+`w7a-tool-sweep` met "Failed query" under the full config's load and
+passed alone and in the rerun of the whole gate; a hook timeout in
+`workspaces.db`). At the final head (this text): see the report of the
+round (typecheck, lint, format, docs, arch, web build, boot:smoke, CI).
+
+**Left:** nothing of this branch. Merge only when Jason says.
 
 ## Remove the switch-over code (A7)
 
