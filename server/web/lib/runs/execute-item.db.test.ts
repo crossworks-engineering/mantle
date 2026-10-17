@@ -39,7 +39,9 @@ describe.skipIf(!URL)('a run item under the planning agent', () => {
     sqlTag = (await import('drizzle-orm')).sql;
     await q(sqlTag`insert into auth.users (id, email, password_hash, role, is_owner)
       values (${anchor}, ${`${tag}@example.invalid`}, 'x', 'admin', true)`);
-    await q(sqlTag`insert into spaces (id, kind, login_id) values (${anchor}, 'brain', ${anchor})`);
+    // The owner's brain space (the login trigger makes it for an owner).
+    await q(sqlTag`insert into spaces (id, kind, login_id) values (${anchor}, 'brain', ${anchor})
+                   on conflict (id) do nothing`);
     // Its Admin workspace, the owner a Moderator user of it: a run with no
     // workspace re-enters Admin (withRunScope), and since arch A7 a brain
     // with no live Admin workspace is refused, never run on the system pool.
