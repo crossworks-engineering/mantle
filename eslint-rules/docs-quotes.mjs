@@ -18,7 +18,8 @@
  * section or is dropped.
  *
  * Scanned: every tracked text file except the history (docs/_archive,
- * docs/_changelog, CHANGELOG.md), whose quotes name headings as they were.
+ * docs/_changelog, CHANGELOG.md), whose quotes name headings as they were,
+ * and this rule's own files.
  *
  * DANGLING names the quotes that named no heading when this check came in
  * (a heading renamed or never written; three sit in applied migrations,
@@ -48,6 +49,9 @@ export const DANGLING = [
 
 const TEXT_FILE = /\.(ts|tsx|mts|mjs|cjs|js|sql|md|sh|ya?ml|json)$/;
 const HISTORY = /^(docs\/_archive\/|docs\/_changelog\/|CHANGELOG\.md$)/;
+// This rule's own files: DANGLING and the test's fixtures are quotes that
+// name no heading on purpose.
+const SELF = new Set(['eslint-rules/docs-quotes.mjs', 'eslint-rules/docs-quotes.test.ts']);
 
 // A quote may wrap onto the next comment line: a newline, then a comment
 // marker (`*`, `//`, `#`, `--`) or none.
@@ -119,7 +123,7 @@ function trackedFiles(root) {
     maxBuffer: 64 * 1024 * 1024,
   })
     .split('\n')
-    .filter((f) => f && TEXT_FILE.test(f) && !HISTORY.test(f));
+    .filter((f) => f && TEXT_FILE.test(f) && !HISTORY.test(f) && !SELF.has(f));
 }
 
 /**
