@@ -217,6 +217,9 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
         // Content writes (batch 3): an item write, a create, and the read
         // POST whose guard checks the item as a write.
         { pattern: '/api/notes/:id', methods: ['PATCH', 'DELETE'] },
+        // A page's: notes lost their item check in the pre-check removal
+        // part 2 (the database checks them).
+        { pattern: '/api/pages/:id', methods: ['PATCH', 'DELETE'] },
         { pattern: '/api/formulas/:id/evaluate', methods: ['POST'] },
         // More of batch 3's writes (A4 step 3b part 4, the part 3 audit):
         // the v1 alias of a create (an API key's write), an item write that
@@ -343,16 +346,18 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
       'refused-workspace': { refused: 'workspace', message: 'You are not in that workspace.' },
       'refused-invalid': { refused: 'invalid', message: 'ws is not a workspace id.' },
     };
+    // Pages: notes lost their item check in the pre-check removal part 2
+    // (the database checks them); a page's write still has it.
     const paths = [
-      ['PATCH', `/api/notes/${ID}`],
-      ['DELETE', `/api/notes/${ID}`],
+      ['PATCH', `/api/pages/${ID}`],
+      ['DELETE', `/api/pages/${ID}`],
       ['POST', `/api/formulas/${ID}/evaluate`],
       // The id the handler gets is the decoded segment: an encoded item id
       // is checked as that id; one that decodes to no item id, or not at
       // all, is the not-found answer (the security fix), for every login.
-      ['PATCH', `/api/notes/${encodeURIComponent(ID).replace(/1/g, '%31')}`],
-      ['PATCH', '/api/notes/not-an-item'],
-      ['PATCH', '/api/notes/%E0%A4%A'],
+      ['PATCH', `/api/pages/${encodeURIComponent(ID).replace(/1/g, '%31')}`],
+      ['PATCH', '/api/pages/not-an-item'],
+      ['PATCH', '/api/pages/%E0%A4%A'],
     ] as const;
     const seenAnswers = new Set<string>();
     const run = async (label: string, method: string, path: string, setup: () => void) => {
@@ -465,7 +470,7 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
       for (const id of odd(ID)) cells.push([method, path(id), 'odd', cases]);
     };
     each('POST', (id) => `/api/pages/${id}/move`, node);
-    each('DELETE', (id) => `/api/notes/${id}`, node);
+    each('DELETE', (id) => `/api/pages/${id}`, node);
     each('DELETE', (id) => `/api/shares/${id}`, share);
     each('POST', (id) => `/api/recall/revisions/${id}/restore`, revision);
     each('DELETE', (id) => `/api/apps/deleted/${id}`, deleted);
