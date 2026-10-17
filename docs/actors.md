@@ -6197,7 +6197,8 @@ Changed answers (old vs new):
    reports a miss and runs, as warn. Cells: a2b2b "off: the same create runs
    on the write role too", "an Admin user's write request runs on the write
    role too" (its off half), "what only the database refuses: off and warn
-   report and run it".
+   report and run it"; the A8 grants panel matrix cell "check off" (4
+   misses, as warn; 0 before; still refused on both paths).
 2. profiles, every mode: an Admin user without the Settings area who is not
    the anchor no longer changes the brain's row from a scoped write
    (`set_timezone`, the automatic time zone and reminder channel of an Admin
