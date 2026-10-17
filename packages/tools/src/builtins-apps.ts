@@ -1713,6 +1713,8 @@ const app_export: BuiltinToolDef = {
 const app_import: BuiltinToolDef = {
   slug: 'app_import',
   policy: {
+    // Audit only: the row names it (the queue asks nothing of it).
+    itemArgs: [{ param: 'file_id', least: 'none' }],
     effect: 'write',
     spends: 'none',
     scope: 'any',

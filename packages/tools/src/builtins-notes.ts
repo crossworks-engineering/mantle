@@ -279,6 +279,8 @@ const note_update: BuiltinToolDef = {
 const note_from_file: BuiltinToolDef = {
   slug: 'note_from_file',
   policy: {
+    // Audit only: the row names it (the queue asks nothing of it).
+    itemArgs: [{ param: 'file_id', least: 'none' }],
     effect: 'write',
     spends: 'none',
     scope: 'any',
@@ -388,6 +390,8 @@ const note_from_file: BuiltinToolDef = {
 const note_from_page: BuiltinToolDef = {
   slug: 'note_from_page',
   policy: {
+    // Audit only: the row names it (the queue asks nothing of it).
+    itemArgs: [{ param: 'page_id', least: 'none' }],
     effect: 'write',
     spends: 'none',
     scope: 'any',

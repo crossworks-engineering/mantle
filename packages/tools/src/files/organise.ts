@@ -68,6 +68,8 @@ export const file_move: BuiltinToolDef = {
 export const file_copy: BuiltinToolDef = {
   slug: 'file_copy',
   policy: {
+    // Audit only: the row names it (the queue asks nothing of it).
+    itemArgs: [{ param: 'file_id', least: 'none' }],
     effect: 'write',
     spends: 'none',
     scope: 'any',
@@ -171,6 +173,8 @@ export const folder_move: BuiltinToolDef = {
 export const folder_copy: BuiltinToolDef = {
   slug: 'folder_copy',
   policy: {
+    // Audit only: the row names it (the queue asks nothing of it).
+    itemArgs: [{ param: 'folder_id', least: 'none' }],
     effect: 'write',
     spends: 'none',
     scope: 'any',

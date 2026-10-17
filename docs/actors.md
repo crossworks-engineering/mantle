@@ -7136,6 +7136,68 @@ full test:runtime-role 0.
 **Paired** with jackdaw v0.7.18 (agent editor tabs, copy notes), its own
 commit. **Left:** the merge into main, when Jason says.
 
+**Fix round (2026-10-17).** An independent audit rated R0 8/10 (no write
+allowed that main refused). Fixed:
+
+- **M1, the audit's targets.** `packages/tools/src/call-audit.ts` took a
+  row's `targets` only from `node_exists` preconditions, so the items main
+  named were lost: `tree_item_move` (`item_ids`), the Recall map tools,
+  `recall_revision_restore`, `page_from_notes` (`note_ids`), the link
+  tools, the owner MCP surface's `folder_describe`, `folder_rename` and
+  `file_rename`. Now one declaration names them: the policy's `itemArgs`
+  (`ToolItemArg` in `tool-policy.ts`: the argument, how it names its item:
+  a node id, a Recall map by slug, former slug or id, a Recall revision's
+  map; read in `item-args.ts`). Every list main had (101) is one again,
+  replayed from main's diff, and every `node_exists` argument the branch
+  named is kept (audit only). A Recall reference is resolved before the
+  call runs (`CallAuditSpec.prepare`, `@mantle/db` call-audit.ts: only for
+  a write whose row this frame writes, only while rows are written, never
+  failing the call), so a map's delete or slug change still names the
+  map's item. Cells: `a5-call-audit.db.test.ts`, one per family, allowed
+  and refused (a refused call leaves no row, as before).
+- **L1, a key's page PATCH.** `/api/v1/pages/:id` said "the item gate
+  first", but the gate had gone: a key whose login reads a page but may not
+  edit it got 403 `key-shared-item` for a shared page and 403
+  `item-workspace` for one that is not (one bit). It asks
+  `assertItemRight(id, 'edit')` after the hidden email page and before the
+  body rules; both answer 403 `item-workspace`
+  (`a8-findings.db.test.ts`).
+- **L2, the approval queue's noise.** Before a call is queued for
+  approval, the item it names is asked of the queuing scope
+  (`queueItemRefusal`, from the gate's pre-run check with `queue`), with
+  the rights read the library uses (`itemWriteRefusalOf`). It refuses only
+  what the run refuses in every case: an item the scope does not read
+  (hidden is missing), one it may neither edit nor manage (an argument the
+  run changes), a Recall map slug it does not read (not in a scope that
+  holds Admin, as main); never a list (a move moves what it may), a
+  revision, a read-only copy, or an argument marked `least: 'none'` (the
+  link closes, `access_set`, `file_delete`, the audit-only ones). The
+  answer is the run's: the one mapper's words for the edit check, a link's
+  own words (`LINK_NO_EDIT_MESSAGE`, `LINK_APP_NO_MANAGE_MESSAGE`), a map's
+  "No Recall map". Proof: `precheck-removal.db.test.ts` "queue time", per
+  family, every tool, login and placement, asks the queue and then runs the
+  call in the same turn: 360 calls refused before they would queue, each
+  refused by its run in the same words, and none the run allows.
+- **L5.** `scripts/db-restore.sh` no longer says migrate is a no-op after a
+  restore (it runs the migrations newer than the dump and the steps left to
+  it).
+
+**Changed answers** (from 1da263871): the audit row's `targets` name main's
+items again, and newly a Recall map tool's map item, a revision restore's
+map item, `page_from_note`, `page_from_file` and `page_from_notes`'s
+sources, and the link tools' item (main's resolvers named none); nothing
+the branch named is dropped. `/api/v1/pages/:id` PATCH by a key whose login
+reads but may not edit the page: 403 `item-workspace` whether shared or
+not (was `key-shared-item` when shared; main's item gate answered the
+same). Queue time: a call on an item its run refuses is refused before it
+is queued, in the run's words (was queued, approvers notified, refused at
+run); `turn-listing.test.ts` re-pins its three cells (a hidden Recall slug,
+`node_share` and `page_delete`/`table_delete` on an item only Admin may
+change) to main's refusal, in the run's words.
+
+Gates of the fix round, at its head (this text): the round's report
+(workstation, own pg18 container, each gate alone, exit codes; and CI).
+
 ## Remove the switch-over code (A7)
 
 Plan v2 (page fcc4aee4), "A7. Remove the switch-over code", after W9 (every

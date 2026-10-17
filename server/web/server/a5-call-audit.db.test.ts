@@ -327,7 +327,7 @@ describe.skipIf(!URL)('one audit row for every tool write (A5 step 6d)', () => {
       folder_id: dest,
     });
     expect(moved.ok).toBe(true);
-    expect([...moved.targets!].sort()).toEqual([a, b].sort());
+    expect([...moved.targets!].sort()).toEqual([a, b, dest].sort());
     const refused = await targetsOfCall('tree_item_move', {
       kind: 'notes',
       item_ids: [randomUUID()],

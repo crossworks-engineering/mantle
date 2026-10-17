@@ -44,6 +44,8 @@ export const page_create: BuiltinToolDef = {
   slug: 'page_create',
   usageTier: 5,
   policy: {
+    // Audit only: the row names it (the queue asks nothing of it).
+    itemArgs: [{ param: 'folder_id', least: 'none' }],
     effect: 'write',
     spends: 'none',
     scope: 'any',
@@ -133,7 +135,7 @@ export const page_replace_from_file: BuiltinToolDef = {
     effect: 'write',
     spends: 'none',
     scope: 'any',
-    itemArgs: [{ param: 'page_id' }],
+    itemArgs: [{ param: 'page_id' }, { param: 'file_id', least: 'none' }],
     keySharedContent: true,
     clientSourced: CS.onNodes('page_id'),
   },

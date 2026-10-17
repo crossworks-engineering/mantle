@@ -159,7 +159,7 @@ export const page_move: BuiltinToolDef = {
     effect: 'write',
     spends: 'none',
     scope: 'any',
-    itemArgs: [{ param: 'id' }],
+    itemArgs: [{ param: 'id' }, { param: 'folder_id', least: 'none' }],
     keyArea: 'pages',
     clientSourced: CS.onNodes('id', 'folder_id', 'parent_id'),
   },

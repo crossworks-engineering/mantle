@@ -55,6 +55,8 @@ const show_image: BuiltinToolDef = {
   slug: 'show_image',
   usageTier: 5,
   policy: {
+    // Audit only: the row names it (the queue asks nothing of it).
+    itemArgs: [{ param: 'file_id', least: 'none' }],
     effect: 'write',
     spends: 'none',
     scope: 'any',

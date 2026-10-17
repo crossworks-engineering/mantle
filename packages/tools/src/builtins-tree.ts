@@ -150,6 +150,8 @@ export const tree_folder_create: BuiltinToolDef = {
   slug: 'tree_folder_create',
   usageTier: 2,
   policy: {
+    // Audit only: the row names it (the queue asks nothing of it).
+    itemArgs: [{ param: 'parent_id', least: 'none' }],
     effect: 'write',
     spends: 'none',
     scope: 'any',
@@ -208,7 +210,7 @@ export const tree_folder_update: BuiltinToolDef = {
     effect: 'write',
     spends: 'none',
     scope: 'any',
-    itemArgs: [{ param: 'folder_id' }],
+    itemArgs: [{ param: 'folder_id' }, { param: 'parent_id', least: 'none' }],
     clientSourced: CS.onNodes('folder_id', 'parent_id'),
   },
   ownerOnly: true,
@@ -277,7 +279,7 @@ export const tree_item_move: BuiltinToolDef = {
     effect: 'write',
     spends: 'none',
     scope: 'any',
-    itemArgs: [{ param: 'item_ids' }],
+    itemArgs: [{ param: 'item_ids' }, { param: 'folder_id', least: 'none' }],
     clientSourced: CS.onNodes('item_ids', 'folder_id'),
   },
   ownerOnly: true,

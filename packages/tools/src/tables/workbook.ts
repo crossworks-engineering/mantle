@@ -113,6 +113,8 @@ export const table_from_file: BuiltinToolDef = {
   slug: 'table_from_file',
   usageTier: 5,
   policy: {
+    // Audit only: the row names it (the queue asks nothing of it).
+    itemArgs: [{ param: 'file_id', least: 'none' }],
     effect: 'write',
     spends: 'none',
     scope: 'any',

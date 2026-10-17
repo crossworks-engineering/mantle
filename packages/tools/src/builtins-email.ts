@@ -313,6 +313,8 @@ const email_send: BuiltinToolDef = {
 const email_page: BuiltinToolDef = {
   slug: 'email_page',
   policy: {
+    // Audit only: the row names it (the queue asks nothing of it).
+    itemArgs: [{ param: 'pageId', least: 'none' }],
     effect: 'write',
     spends: 'none',
     scope: { area: 'connectors' },

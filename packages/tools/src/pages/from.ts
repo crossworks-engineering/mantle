@@ -41,7 +41,10 @@ export const page_from_file: BuiltinToolDef = {
     spends: 'none',
     scope: 'any',
     creates: 'page',
-    itemArgs: [{ param: 'file_id', least: 'read' }],
+    itemArgs: [
+      { param: 'file_id', least: 'read' },
+      { param: 'folder_id', least: 'none' },
+    ],
     clientSourced: { ...CS.creates(), extraNodes: CS.supersedes('file_id') },
   },
   preconditions: [...FILE_ID_PRE, ...FOLDER_ID_PRE],
@@ -206,7 +209,10 @@ export const page_from_note: BuiltinToolDef = {
     spends: 'none',
     scope: 'any',
     creates: 'page',
-    itemArgs: [{ param: 'note_id', least: 'read' }],
+    itemArgs: [
+      { param: 'note_id', least: 'read' },
+      { param: 'folder_id', least: 'none' },
+    ],
     clientSourced: {
       ...CS.creates('folder_id', 'parent_id'),
       extraNodes: CS.supersedes('note_id'),
@@ -347,7 +353,10 @@ export const page_from_notes: BuiltinToolDef = {
     spends: 'none',
     scope: 'any',
     creates: 'page',
-    itemArgs: [{ param: 'note_ids', least: 'read' }],
+    itemArgs: [
+      { param: 'note_ids', least: 'read' },
+      { param: 'folder_id', least: 'none' },
+    ],
     clientSourced: {
       ...CS.creates('folder_id', 'parent_id'),
       extraNodes: CS.supersedes('note_ids'),
@@ -520,6 +529,8 @@ export const page_from_notes: BuiltinToolDef = {
 export const page_from_journal: BuiltinToolDef = {
   slug: 'page_from_journal',
   policy: {
+    // Audit only: the row names it (the queue asks nothing of it).
+    itemArgs: [{ param: 'folder_id', least: 'none' }],
     effect: 'write',
     spends: 'none',
     scope: 'any',
