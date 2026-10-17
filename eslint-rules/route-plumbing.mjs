@@ -58,7 +58,7 @@ export const BODY_READ_ALLOW = Object.freeze({
  * (a model provider, a connector's server, the relay, a parser of the
  * owner's own file). NOT_YET: the route answers a dialog in a shape of its
  * own, and the move needs the client (jackdaw) to read the one error
- * answer first (docs/request-plumbing.md, "Left open").
+ * answer first (docs/request-plumbing.md, "What stays named").
  */
 const MODEL_TEST =
   "PUBLIC: a test of the worker's or agent's model; the provider's own error (a quota, a model id, a key) is what the owner came to see";

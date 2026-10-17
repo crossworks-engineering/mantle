@@ -121,7 +121,9 @@ const LABELS: Record<string, string> = {
   actorsMdLines:
     'lines of the spec docs/actors.md (down only, at most 350; handovers go to docs/_archive)',
   actorsHistoryRefs:
-    'docs/actors.md heading quotes only the history file holds (down only; D2 retargets them)',
+    'heading quotes of the history: docs/actors.md ones only the history file holds, and every docs/_archive quote (down only; D2 retargets them)',
+  actorsStepRefs:
+    'unquoted pointers to the history by a step code: the spec path, a comma, A4 (down only; D2 takes them to 0)',
   docQuotesDangling: 'doc heading quotes naming no heading, listed (down only; docs-quotes.mjs)',
 };
 

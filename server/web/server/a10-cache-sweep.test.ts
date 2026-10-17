@@ -1,6 +1,6 @@
 /**
  * The cache sweep (A10 #15: the gate answers Cache-Control: no-store on /api
- * by default; docs/request-plumbing.md, "Cache-Control"). Every route of the
+ * by default; docs/std-helpers.md, "Cache-Control"). Every route of the
  * manifest and every method, driven through the full pipeline (the gate,
  * the row, the caller's answer, the handler) as each credential its row
  * admits (nobody always; the owner on a login row; a member too where the

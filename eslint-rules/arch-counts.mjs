@@ -1092,6 +1092,7 @@ export function measure(root) {
       cacheControlFiles: cacheControlFiles.length,
       actorsMdLines: docQuotes.actorsMdLines,
       actorsHistoryRefs: docQuotes.actorsHistoryRefs,
+      actorsStepRefs: docQuotes.actorsStepRefs,
       docQuotesDangling: docQuotes.docQuotesDangling,
     },
     perFile: {

@@ -2,20 +2,35 @@
  * Doc heading quotes: a `docs/<file>.md, "Heading"` quote in code, SQL,
  * scripts or a live doc must name a heading that exists. Read by
  * scripts/docs-check.mjs (which fails on a quote that names none) and by
- * arch-counts.mjs (actorsHistoryRefs, actorsMdLines).
+ * arch-counts.mjs (actorsHistoryRefs, actorsStepRefs, docQuotesDangling,
+ * actorsMdLines).
+ *
+ * The forms read: `docs/x.md, "H"`, `docs/x.md "H"`, `docs/x.md ("H")`, the
+ * comma at a line end with the quote on the next comment line, the escaped
+ * `\"H\"` of a JSON or TS string, and curly quotes (`“H”`). A colon form
+ * (`docs/x.md: "text"`) quotes the doc's words, not a heading: it is never
+ * a problem, but one that names a heading counts like any quote, so it is
+ * no way around a history ref.
  *
  * What counts as a heading: a markdown heading, or the bold lead of a
  * paragraph or list item (`**Label.** text`). A quote names one when it is
  * the heading's text or a whole-word prefix of it (headings carry a date, a
  * migration or a suffix: "Pre-check deletion" names "Pre-check deletion (A4
  * step 4)"), ignoring case, backticks and a leading section number ("4b.").
+ * A word ends at a space or a mark, never a hyphen: "Pre" names no
+ * "Pre-check ..." heading. A quote that is no heading's whole text and a
+ * prefix of two or more different headings of its doc names none: it fails
+ * as ambiguous.
  *
  * docs/actors.md is the spec; its history moved verbatim to
  * docs/_archive/actors-history.md. A docs/actors.md quote resolves against
- * the spec first and the archive second. The quotes that resolve only
- * through the archive are actorsHistoryRefs: pinned in
- * scripts/arch-scoreboard.pins.json, only down, until each points at a spec
- * section or is dropped.
+ * the spec first and the archive second. History refs (actorsHistoryRefs,
+ * pinned in scripts/arch-scoreboard.pins.json, only down) are the quotes
+ * that resolve only through the archive, and every quote of a docs/_archive/
+ * file (counted, not refused: pointing a quote at the archive by name moves
+ * no count). Step refs (actorsStepRefs, the same pins, only down; D2 takes
+ * them to 0) are the unquoted pointers to the history by a step's code:
+ * `docs/actors.md, A4 step 3b`, `(docs/actors.md, fixed by A6)`.
  *
  * Scanned: every tracked text file except the history (docs/_archive,
  * docs/_changelog, CHANGELOG.md), whose quotes name headings as they were,
@@ -35,15 +50,13 @@ export const SPEC = 'docs/actors.md';
 export const ARCHIVE = 'docs/_archive/actors-history.md';
 
 /** `file: doc, "quote"` of each quote that named no heading on main at
- *  v0.300.83. docs/actors.md's four go with D2's retarget. */
+ *  v0.300.83, less the ones fixed since. docs/actors.md's go with D2's
+ *  retarget. */
 export const DANGLING = [
   'eslint-rules/as-system-allowlist.mjs: docs/actors.md, "A6"',
-  'eslint-rules/route-plumbing.mjs: docs/request-plumbing.md, "Left open"',
   'packages/db/migrations/0213_mobile_roles_push.sql: docs/mobile-companion-backend.md, "Three roles on the phone"',
   'packages/db/migrations/0215_tool_team_apps.sql: docs/member-logins.md, "Outside tools in team apps"',
   'packages/db/migrations/0280_edit_check.sql: docs/actors.md, "A3a must"',
-  'server/web/server/a10-cache-sweep.test.ts: docs/request-plumbing.md, "Cache-Control"',
-  'server/web/server/a8-findings.db.test.ts: docs/actors.md, "A8 findings"',
   'server/web/server/a8-surfaces.matrix.test.ts: docs/actors.md, "A pending tool call, approved"',
 ];
 
@@ -56,10 +69,20 @@ const SELF = new Set(['eslint-rules/docs-quotes.mjs', 'eslint-rules/docs-quotes.
 // A quote may wrap onto the next comment line: a newline, then a comment
 // marker (`*`, `//`, `#`, `--`) or none.
 const CONT = String.raw`\n[ \t]*(?:\*(?!\/)|\/\/|#|--)?[ \t]*`;
-// `docs/x.md, "H"`, `docs/x.md "H"`, the comma at a line end, and the
-// escaped `\"H\"` of a JSON or TS string.
-const QUOTE = new RegExp(
-  String.raw`docs\/([A-Za-z0-9_./-]+\.md)(?:,[ \t]*|[ \t]+|,${CONT})\\?"((?:[^"\\\n]|${CONT})+?)\\?"`,
+const PATH = String.raw`docs\/([A-Za-z0-9_./-]+\.md)`;
+// Between the path and the quote: a comma or colon (then spaces, or the
+// line end), or spaces, each with an optional `(`; or a `(` alone. Never
+// nothing: `"docs/x.md" and "y"` is a path closing a string. A colon marks
+// the quote soft (see above).
+const SEP = String.raw`(?:(?:[,:][ \t]*|[,:]${CONT}|[ \t]+)\(?|\()`;
+// `"H"`, the escaped `\"H\"`, or curly `“H”`.
+const BODY = String.raw`(?:\\?"((?:[^"\\\n]|${CONT})+?)\\?"|“((?:[^”\n]|${CONT})+?)”)`;
+const QUOTE = new RegExp(PATH + SEP + BODY, 'g');
+// An unquoted pointer to the history by a step's code: the spec or an
+// archive file, a comma, colon or `(`, at most two lower-case words
+// ("the", "fixed by"), then a code (A4, A6b, F1, S3, R0, W7c).
+const STEP = new RegExp(
+  String.raw`docs\/(actors\.md|_archive\/[A-Za-z0-9_./-]+\.md)(?:[,:](?:[ \t]*|${CONT})|[ \t]*\([ \t]*)((?:[a-z]+[ \t]+){0,2}[A-Z]{1,2}\d+[a-z]?)(?![A-Za-z0-9])`,
   'g',
 );
 const CONT_RE = new RegExp(CONT, 'g');
@@ -94,23 +117,54 @@ export function headingsOf(text) {
   return out;
 }
 
-/** Does `quote` name one of `headings` (the text, or a whole-word prefix)? */
-export function namesHeading(headings, quote) {
+/** What `quote` names in `headings`: 'exact' (a heading's whole text),
+ *  'prefix' (a whole-word prefix of exactly one distinct heading),
+ *  'ambiguous' (a prefix of two or more), or null. A word ends at a space
+ *  or a mark, never inside a hyphenated word. */
+export function matchHeading(headings, quote) {
   const q = normHeading(quote);
-  if (!q) return false;
-  return headings.some(
-    (h) => h === q || (h.startsWith(q) && /[\s:(,.{;-]/.test(h.charAt(q.length))),
+  if (!q) return null;
+  if (headings.includes(q)) return 'exact';
+  const hits = new Set(
+    headings.filter((h) => h.startsWith(q) && /[\s:(,.{;]/.test(h.charAt(q.length))),
   );
+  if (hits.size === 0) return null;
+  return hits.size === 1 ? 'prefix' : 'ambiguous';
 }
 
-/** Every heading quote in `text`, with its 1-based line. */
+/** Does `quote` name one of `headings` (the text, or a whole-word prefix of
+ *  one heading only)? */
+export function namesHeading(headings, quote) {
+  const m = matchHeading(headings, quote);
+  return m === 'exact' || m === 'prefix';
+}
+
+const lineAt = (text, index) => text.slice(0, index).split('\n').length;
+
+/** Every heading quote in `text`, with its 1-based line; `soft` for the
+ *  colon form. */
 export function quotesIn(text) {
   const out = [];
   for (const m of text.matchAll(QUOTE)) {
+    const q = {
+      doc: `docs/${m[1]}`,
+      quote: (m[2] ?? m[3]).replace(CONT_RE, ' ').trim(),
+      line: lineAt(text, m.index),
+    };
+    if (m[0].charAt(`docs/${m[1]}`.length) === ':') q.soft = true;
+    out.push(q);
+  }
+  return out;
+}
+
+/** Every unquoted step pointer to the history in `text` (STEP). */
+export function stepRefsIn(text) {
+  const out = [];
+  for (const m of text.matchAll(STEP)) {
     out.push({
       doc: `docs/${m[1]}`,
-      quote: m[2].replace(CONT_RE, ' ').trim(),
-      line: text.slice(0, m.index).split('\n').length,
+      step: m[2].replace(/\s+/g, ' '),
+      line: lineAt(text, m.index),
     });
   }
   return out;
@@ -128,11 +182,14 @@ function trackedFiles(root) {
 
 /**
  * Check every heading quote of the repo at `root`. Returns { quotes,
- * problems, historyRefs, dangling, actorsHistoryRefs, docQuotesDangling,
- * actorsMdLines }: `problems` names each quote of no heading (or of a doc
- * that does not exist) that DANGLING does not list, and each DANGLING
- * entry that no longer dangles; `historyRefs` each docs/actors.md quote
- * that resolves only through the archive; `dangling` each listed one.
+ * problems, historyRefs, stepRefs, dangling, actorsHistoryRefs,
+ * actorsStepRefs, docQuotesDangling, actorsMdLines }: `problems` names each
+ * quote of no heading, of two or more (ambiguous), or of a doc that does not
+ * exist, that DANGLING does not list, and each DANGLING entry that no longer
+ * dangles; `historyRefs` each history ref (a docs/actors.md quote that
+ * resolves only through the archive, or any docs/_archive/ quote that
+ * resolves); `stepRefs` each unquoted step pointer; `dangling` each listed
+ * one.
  */
 export function checkDocQuotes(root, files = trackedFiles(root), allowed = DANGLING) {
   const cache = new Map();
@@ -145,6 +202,7 @@ export function checkDocQuotes(root, files = trackedFiles(root), allowed = DANGL
   };
   const problems = [];
   const historyRefs = [];
+  const stepRefs = [];
   const dangling = [];
   const listed = new Set(allowed);
   let quotes = 0;
@@ -156,21 +214,37 @@ export function checkDocQuotes(root, files = trackedFiles(root), allowed = DANGL
       continue;
     }
     if (!text.includes('docs/')) continue;
+    for (const s of stepRefsIn(text)) stepRefs.push(`${f}:${s.line}: ${s.doc}, ${s.step}`);
     for (const q of quotesIn(text)) {
-      quotes++;
       const key = `${f}: ${q.doc}, "${q.quote}"`;
       const where = `${f}:${q.line}: ${q.doc}, "${q.quote}"`;
       const hs = headings(q.doc);
-      if (hs !== null && namesHeading(hs, q.quote)) continue;
-      if (q.doc === SPEC && namesHeading(headings(ARCHIVE) ?? [], q.quote)) {
-        historyRefs.push(where);
+      let m = hs === null ? null : matchHeading(hs, q.quote);
+      let history = q.doc.startsWith('docs/_archive/');
+      if (m === null && q.doc === SPEC) {
+        m = matchHeading(headings(ARCHIVE) ?? [], q.quote);
+        history = true;
+      }
+      if (m === 'exact' || m === 'prefix') {
+        quotes++;
+        if (history) historyRefs.push(where);
         continue;
       }
+      if (q.soft) continue;
+      quotes++;
       if (listed.has(key)) {
         dangling.push(key);
         continue;
       }
-      problems.push(`${where}: ${hs === null ? 'the doc does not exist' : 'names no heading'}`);
+      problems.push(
+        `${where}: ${
+          hs === null
+            ? 'the doc does not exist'
+            : m === 'ambiguous'
+              ? 'names two or more headings by a prefix (quote one whole)'
+              : 'names no heading'
+        }`,
+      );
     }
   }
   for (const key of listed) {
@@ -186,8 +260,10 @@ export function checkDocQuotes(root, files = trackedFiles(root), allowed = DANGL
     quotes,
     problems,
     historyRefs,
+    stepRefs,
     dangling,
     actorsHistoryRefs: historyRefs.length,
+    actorsStepRefs: stepRefs.length,
     docQuotesDangling: dangling.length,
     actorsMdLines,
   };

@@ -1202,7 +1202,8 @@ describe.skipIf(!DB_URL)(
         // Part 3: the 29 kept entries, each gone once its reason was (the
         // check moved first, before any side effect, or the answer fixed).
         // Recorded on the code before the removal (docs/actors.md, "Pre-check
-        // removal Part 3"); since then `was` answers as `now`.
+        // removal Part 3 (legacy tool entries)"); since then `was` answers
+        // as `now`.
         name: 'legacy',
         tools: [
           // side-effect-before-check

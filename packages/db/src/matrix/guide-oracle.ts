@@ -7,7 +7,7 @@
  *
  * The guide is docs/workspaces.md. Each rule below names its section there
  * ("Items and grants", "The home rule", "Folders", "Assistants and chats",
- * "MCP, API keys and linked brains", "Apps"), docs/actors.md ("The actor
+ * "MCP, API keys and linked brains", "Apps"), docs/actors.md ("Actor
  * kinds") for who a statement runs as, and docs/update-prod.md ("Snapshot
  * copies (plan S3)") for the snapshot copy, which docs/workspaces.md does not
  * describe (a gap the A8 report names).

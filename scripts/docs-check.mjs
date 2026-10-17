@@ -13,8 +13,10 @@
  * docs): 3. a `docs/<file>.md, "Heading"` quote names a heading that exists
  * (eslint-rules/docs-quotes.mjs). A docs/actors.md quote resolves against
  * the spec first and its history, docs/_archive/actors-history.md, second;
- * the ones only the history holds are counted (actorsHistoryRefs, pinned in
- * scripts/arch-scoreboard.pins.json) until each points at the spec.
+ * the ones only the history holds, and every docs/_archive quote, are
+ * counted (actorsHistoryRefs, pinned in scripts/arch-scoreboard.pins.json)
+ * until each points at the spec; so are the unquoted step pointers to the
+ * history (actorsStepRefs).
  *
  * Why (2026-09-02 audit, gap D7): after the frontend split the docs carried
  * hundreds of paths that no longer existed, including in the doc README
@@ -100,5 +102,6 @@ if (problems.length) {
 console.log(
   `docs-check: ${files.length} files, every referenced path exists; ` +
     `${quotes.quotes} heading quotes, each names a heading ` +
-    `(${quotes.actorsHistoryRefs} only in the actors history, ${quotes.docQuotesDangling} listed dangling)`,
+    `(${quotes.actorsHistoryRefs} of the actors history, ${quotes.docQuotesDangling} listed dangling; ` +
+    `${quotes.actorsStepRefs} step pointers to the history)`,
 );

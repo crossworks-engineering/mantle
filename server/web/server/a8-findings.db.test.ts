@@ -2,7 +2,8 @@
  * The owner's decisions on the A8 findings (workspaces arch plan v2,
  * section 32), on a migrated scratch database, through the product's own
  * paths. Each cell prints its answer, so a run on the code before the fix
- * records the answers it changes (docs/actors.md, "A8 findings").
+ * records the answers it changes (docs/actors.md, "The owner's decisions
+ * on the A8 findings").
  *
  *  F1 (a): a key of a login outside Admin on /api/v1 answers as the v1
  *      route's base route answers that login (D3): every route family, a
