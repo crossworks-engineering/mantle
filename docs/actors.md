@@ -6787,6 +6787,115 @@ boot:smoke, deploy harness, full vitest with DB after a base migrate,
 actor-off, actor-on, edit-on, test:matrix, full test:runtime-role) and CI,
 then the apps and tree items family.
 
+### Pre-check removal Part 2 (HTTP) round 4 handover (2026-10-17)
+
+Branch `feat/precheck-http`, head as pushed with this paragraph. Handed
+over at the owner's tool-call rule, after the last family's code and its
+proof; the full gates were not run at the final head.
+
+**Safe point first (green): `b50c80c85`.** The six unit files and two DB
+cells round 3 left red, each at its cause, no test loosened:
+
+- `app/api/v1/files/[id]/route.ts` re-exports `routeParams` (the
+  `route-params.test.ts` alias rule). Changed answer, named: a v1 file GET
+  with a bad id is the params gateway's 404 `{"error":"not found"}`, behind
+  the key gate (`access-keys.db.test.ts`), where the handler said 400.
+- `api-v1-builtin.test.ts`: the v1 row routes' scoped read (`tableTitle`)
+  and `assertItemRight` are stood in; new cells pin the route's own
+  refusals (none: `{"error":"not found"}`; no_edit: 403 item-workspace;
+  a copy: the copy's words, readOnly; no_read: the mapper's 404).
+- `scope-refusal-routes.test.ts`, `files-visibility-routes.test.ts`: the
+  file and folder reads (`fileById`, `folderById`) stood in.
+- `member-sweep.test.ts`: the byte route's bad id is the params
+  gateway's 404 (after the session guard).
+- `a10-body-sweep.test.ts`: a named kind `item-read-first` (44 cells: the
+  file and folder writes, a table history delete, the v1 row routes read
+  the item before the body).
+- `a3b-store-brokers.db.test.ts`: since round 3 a table draft save asks
+  the caller's edit in every mode, so with both checks off the refused
+  save is refused as on, before the stage (it was made). Named.
+
+Gates (workstation, own pgvector pg18 container on its own port, init
+mounted, `max_connections=450`, `MANTLE_CHECK_FLOOR=keep`) at `39b84d63d`:
+typecheck 0, lint 0, format 0, docs 0, arch 0, web build 0, boot:smoke 0,
+deploy harness 0 (bash and dash), actor-off 0, actor-on 0, test:matrix 0;
+full vitest with DB 1, edit-on 1, full test:runtime-role 1, each only on
+the two DB cells above, fixed in `b50c80c85` (test files only), where those
+two files give 0 in default, edit-on and runtime-role.
+
+**The last family: apps and tree items (9 entries) removed**
+(`itemPrecheckRoutes` 11 -> 2; `ITEM_WRITE_PREFIXES` and
+`ITEM_READ_WRITES` are gone; `routePolicyLists` stays 16 and the
+`route-scope.ts` lint pin 5: `NO_ITEM_WRITES` names the same seven routes,
+for route-policy's `makesItems` only, so a member's mark or run still makes
+it no private workspace). Left: `ITEM_REF_PREFIXES` share and deleted-app,
+for plan v3 S6.
+
+| Routes                                                                                                     | What the handler does first                                                                                                                                                      |
+| ---------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| PATCH `/api/apps/:id`                                                                                      | `assertItemRight` edit (the database let an app copy's metadata change through, and in warn a reader's edit and an Admin switch: found by the proof and the A6b sweep)           |
+| DELETE `/api/apps/:id`                                                                                     | the scoped read (`ownsApp`), then `assertItemRight` manage in `deleteApp`, before the pre_delete snapshot is staged; the delete check (0266)                                     |
+| POST build; PUT, DELETE draft; POST format; PATCH, DELETE `snapshots/:sid`; POST `snapshots/:sid/restore`  | `assertItemRight` edit first; the code writes then ask manage (F4's `lockAppRow`, a code restore); a data restore asks edit in `restoreAppSnapshot` before its undo snapshot     |
+| POST publish                                                                                               | the scoped read (`getApp`), then `assertItemRight` edit before the draft is looked at (a reader is 403, not 200 "nothing to publish"), then manage                               |
+| POST snapshots                                                                                             | the scoped read (`currentCode`), then edit (as before)                                                                                                                           |
+| POST opened, frame-ticket, db-broker, tool-broker, duplicate; POST `/api/tree/items/:id/opened`, PUT `pin` | the scoped read of the app or item (`getAppRuntime`, `memberAppOr404`, `getApp`, `recordAppOpen`, `itemKind`): a hidden one is the 404 of none, a readable one answers as before |
+
+Every write route of both families declares its uuid params
+(`routeParams`, with `sid` for the snapshot routes).
+
+**Proof** (`precheck-removal-http.db.test.ts`, the family "apps and tree
+items", same style: member and Admin user, warn and on, four placements, a
+random uuid and a bad id, the copy cell for the routes that ask edit,
+member negatives; new flags: the `read` need, `askedEdit`, `noWrite`,
+`readAnswer`): passed at `6c46d2b0a` with `f4-admin-write-role`,
+`w6a-route-sweep` (334 tests, 0). At `445b21a6d`: `apps-list-chips`,
+`member-connectors.turn-scope`, `a5-read-tools-ro`, `app-draft-scope`,
+`f4-owner-flows`, `w6a-fix-sweep`, `w6b-fix1`, `w7e-member-scope` passed.
+`a6b-exit-sweep` at `53910d089`: 0 in default, actor-off, actor-on,
+edit-on and runtime-role. The tool-broker 403 the sandbox's "tool not
+declared" note keys on keeps `ok: false` (pinned: an Admin user's call of
+an undeclared tool, 403 `{"ok":false,...}`; a member's of an app with no
+published build is the runner's 404, also `ok: false`).
+
+**Changed answers** (the old answer is `was`, printed by the test):
+
+- An app or tree item the scope does not read, and an id no row has: the
+  gate's 404 `{"ok":false,"error":"not found"}` is now the handler's 404,
+  the same for both: the mapper's
+  `{"error":"not found","reason":"not-found","code":"not_found","message":"Not found."}`
+  where the route asks `assertItemRight` first; else the handler's own
+  (`{"error":"app not found"}`; the runner's `{"ok":false,"error":"app not found"}`;
+  an Admin user's frame ticket the plain-text `not found`, which jackdaw's
+  sandbox reads by status only; the tree's `{"error":"not found"}`).
+- A bad id: the params gateway's 404 `{"error":"not found"}` on every write
+  route of both families (the tree routes' handler said 400 "invalid id",
+  behind the gate's 404).
+- A scope that reads the app and may not make the write: the 403
+  item-workspace gains `"code":"forbidden"` (named in `a6b-exit-sweep`).
+  A read-only copy: the copy's words with `readOnly`, as before.
+- In warn: an app's edit by a reader is refused, as the gate refused it.
+- The DB-less sweeps re-recorded: the app and tree write rows pass the
+  guard and fail at the handler's database read (the same 500 for every
+  credential); `a10-body-sweep` names `item-check-first` (the app routes
+  that ask the caller's right first, of the database); `a10-error-sweep`
+  re-recorded (the format route reads the item now, so the forced
+  failures reach it: named kinds). The gate's caller test, the
+  encoded-id test and `f4-admin-write-role`'s pre-check cell drive a
+  link's change (`PATCH /api/shares/:id`, as an Admin user: no member
+  changes a link).
+
+**For the doc, a product question (not changed):** a file's content edit
+where the caller cannot read the file's folder answers 400 "parent folder
+not found" (`upsertFile` looks the folder up in the caller's scope), as
+before.
+
+**Left:** the full gates at the final head (typecheck, lint, format, docs,
+arch, web build, boot:smoke, deploy harness, full vitest with DB after a
+base migrate, actor-off, actor-on, edit-on, test:matrix, full
+test:runtime-role) and CI on it; the DB-less unit suite passed on the Mac
+at `445b21a6d` except the sweeps re-recorded since. Then the merge into
+`feat/precheck-remove` (not this branch's).
+
 ## Remove the switch-over code (A7)
 
 Plan v2 (page fcc4aee4), "A7. Remove the switch-over code", after W9 (every
