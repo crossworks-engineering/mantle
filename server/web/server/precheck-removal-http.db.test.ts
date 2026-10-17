@@ -162,6 +162,7 @@ describe.skipIf(!DB_URL)('the pre-check removal, part 2: the HTTP entries', () =
   let m: typeof import('@mantle/db');
   let t: typeof import('@mantle/tools');
   let c: typeof import('@mantle/content');
+  let fl: typeof import('@mantle/files');
   let tb: typeof import('@mantle/content/tables');
   let th: typeof import('@mantle/content/table-snapshots');
   let actorMode: typeof import('../../../packages/db/src/actor');
@@ -171,7 +172,10 @@ describe.skipIf(!DB_URL)('the pre-check removal, part 2: the HTTP entries', () =
   const owner = randomUUID();
   const L: Record<Who, string> = { member: randomUUID(), admin: randomUUID() };
   const keyOf: Partial<Record<Who, string>> = {};
-  const ws = { admin: '', H: '', R: '', W: '', X: '', O: '' };
+  /** A fresh API key for `who` (each /api/v1 cell its own: one key's rate
+   *  limit would refuse the later cells). */
+  let mintKey: (who: Who) => Promise<void> = async () => {};
+  const ws = { admin: '', H: '', R: '', W: '', X: '', O: '', P: '' };
   const recorded: string[] = [];
 
   // ── the fixture ───────────────────────────────────────────────────────────
@@ -279,6 +283,13 @@ describe.skipIf(!DB_URL)('the pre-check removal, part 2: the HTTP entries', () =
      *  member-login: not a member's write, MEMBER_OPEN_WRITES); the Admin
      *  user's cells pin the item answers. */
     adminOnly?: true;
+    /** The row whose probe tells the write was made, when it is not the
+     *  item (a copy: the folder it lands in). */
+    probeOf?: (id: string) => string;
+    /** The write needs the item's folder too, which no login here reads
+     *  (see `file`): an allowed write is the handler's 400 (its folder not
+     *  found), before and after, never a write. */
+    parentHidden?: true;
     /** Make a fresh item for `who` placed at `p` (place it last). */
     make: (who: Who, p: Place) => Promise<string>;
     /** In warn, a write the database refuses in on is made (logged as a
@@ -489,6 +500,96 @@ describe.skipIf(!DB_URL)('the pre-check removal, part 2: the HTTP entries', () =
       ].join('\r\n'),
     };
   };
+
+  /** A Files folder made as the owner under the files root, kept homed in
+   *  Admin until placed. */
+  const filesFolder = async () =>
+    sys(() => fl.createFolder({ ownerId: owner, parentPath: 'files', slug: `${tag}-${n()}` }));
+  /** Where `who` may put a moved or copied file or folder (a folder homed
+   *  in its Moderator workspace), kept for the route's body and probe. */
+  const destOf = new Map<string, { id: string; path: string }>();
+  const withDest = async (who: Who, id: string) => {
+    const d = await filesFolder();
+    await grant(d.id, [[who === 'member' ? ws.H : ws.admin, true, false]]);
+    destOf.set(id, { id: d.id, path: d.path });
+  };
+  const dest = (id: string) => destOf.get(id)?.path ?? 'files';
+  /** A text file made as the owner in a folder of its own (so a folder
+   *  route's grants never reach it), then placed. */
+  const file =
+    (opts: { dest?: true } = {}) =>
+    async (who: Who, p: Place) => {
+      // Its folder is homed in P (nobody's here, and no placement's): a
+      // folder's grants reach what it holds, so a folder the login reads
+      // would show it the file whatever the file's own placement.
+      const parent = await filesFolder();
+      await grant(parent.id, [[ws.P, true, false]]);
+      const made = await sys(() =>
+        fl.upsertFile({
+          ownerId: owner,
+          parentPath: parent.path,
+          filename: `${tag}-${n()}.md`,
+          bytes: Buffer.from(`# ${tag} ${n()}`),
+        }),
+      );
+      if (opts.dest) await withDest(who, made.id);
+      await place(who, p)(made.id);
+      return made.id;
+    };
+  /** A Files folder made as the owner, then placed. */
+  const folder =
+    (opts: { dest?: true } = {}) =>
+    async (who: Who, p: Place) => {
+      const made = await filesFolder();
+      if (opts.dest) await withDest(who, made.id);
+      await place(who, p)(made.id);
+      return made.id;
+    };
+  /** A pages-tree folder made by its route as the owner, then placed. */
+  const treeFolder = async (who: Who, p: Place) => {
+    const f = await runRoute(owner, 'POST', '/api/tree/pages/folders', {
+      parentId: null,
+      name: `${tag} tree ${n()}`,
+    });
+    const id = idIn(await f.text());
+    await place(who, p)(id);
+    return id;
+  };
+  const fileRoute = (
+    name: string,
+    need: Need,
+    method: string,
+    body: ((id: string) => unknown) | undefined,
+    make: Route['make'],
+    extra: Partial<Route> = {},
+  ): Route => ({
+    name: `${method} /api/files/files/:id ${name}`.trim(),
+    need,
+    method,
+    path: (id) =>
+      `/api/files/files/${id}${method === 'DELETE' && name === 'cascade' ? '?cascade=1' : ''}`,
+    ...(body ? { body } : {}),
+    make,
+    warnMade: false,
+    ...extra,
+  });
+  const folderRoute = (
+    name: string,
+    need: Need,
+    method: string,
+    body: ((id: string) => unknown) | undefined,
+    make: Route['make'],
+    extra: Partial<Route> = {},
+  ): Route => ({
+    name: `${method} /api/files/folders/:id ${name}`.trim(),
+    need,
+    method,
+    path: (id) => `/api/files/folders/${id}`,
+    ...(body ? { body } : {}),
+    make,
+    warnMade: false,
+    ...extra,
+  });
 
   const FAMILIES: Family[] = [
     {
@@ -806,6 +907,106 @@ describe.skipIf(!DB_URL)('the pre-check removal, part 2: the HTTP entries', () =
         },
       ],
     },
+    {
+      // Each write reads the file or folder in the caller's scope first (the
+      // 404 of none) and asks the item gate's right (assertItemRight: edit,
+      // manage for a move or a delete) before anything is written, copied
+      // or moved on disk; a folder's look and description are one
+      // statement each (0278). A folder's indexing switch asks manage
+      // (F4 fix round 3).
+      name: 'files and tree folders',
+      removed: true,
+      routes: [
+        fileRoute('content', 'edit', 'PATCH', () => ({ content: `# ${tag} ${n()}` }), file(), {
+          parentHidden: true,
+        }),
+        fileRoute('rename', 'edit', 'PATCH', () => ({ rename: `${tag}-renamed-${n()}` }), file()),
+        fileRoute('indexing', 'edit', 'PATCH', () => ({ indexing: 'metadata' }), file()),
+        fileRoute(
+          'move',
+          'manage',
+          'PATCH',
+          (id) => ({ move: dest(id), confirm: true }),
+          file({ dest: true }),
+        ),
+        fileRoute(
+          'copy',
+          'edit',
+          'POST',
+          (id) => ({ copy_to: dest(id), confirm: true }),
+          file({ dest: true }),
+          {
+            adminOnly: true,
+            probeOf: (id) => destOf.get(id)?.id ?? id,
+          },
+        ),
+        fileRoute('', 'manage', 'DELETE', undefined, file()),
+        fileRoute('cascade', 'manage', 'DELETE', undefined, file()),
+        folderRoute(
+          'description',
+          'edit',
+          'PATCH',
+          () => ({ description: `${tag} ${n()}` }),
+          folder(),
+          {
+            warnMade: true,
+          },
+        ),
+        folderRoute('look', 'edit', 'PATCH', () => ({ look: { color: 'red' } }), folder(), {
+          warnMade: true,
+        }),
+        folderRoute('rename', 'manage', 'PATCH', () => ({ rename: `${tag}-r-${n()}` }), folder()),
+        folderRoute('indexing', 'manage', 'PATCH', () => ({ indexing: 'metadata' }), folder()),
+        folderRoute(
+          'move',
+          'manage',
+          'PATCH',
+          (id) => ({ move: dest(id), confirm: true }),
+          folder({ dest: true }),
+        ),
+        folderRoute(
+          'copy',
+          'edit',
+          'POST',
+          (id) => ({ copy_to: dest(id), confirm: true }),
+          folder({ dest: true }),
+          {
+            adminOnly: true,
+            probeOf: (id) => destOf.get(id)?.id ?? id,
+          },
+        ),
+        folderRoute('', 'manage', 'DELETE', undefined, folder()),
+        {
+          name: 'PATCH /api/tree/:kind/folders/:id look',
+          badIdOwn: true,
+          need: 'edit',
+          method: 'PATCH',
+          path: (id) => `/api/tree/pages/folders/${id}`,
+          body: () => ({ color: 'red' }),
+          make: treeFolder,
+          warnMade: false,
+        },
+        {
+          name: 'PATCH /api/tree/:kind/folders/:id rename',
+          badIdOwn: true,
+          need: 'manage',
+          method: 'PATCH',
+          path: (id) => `/api/tree/pages/folders/${id}`,
+          body: () => ({ name: `${tag} renamed ${n()}` }),
+          make: treeFolder,
+          warnMade: false,
+        },
+        {
+          name: 'DELETE /api/tree/:kind/folders/:id',
+          badIdOwn: true,
+          need: 'manage',
+          method: 'DELETE',
+          path: (id) => `/api/tree/pages/folders/${id}?confirm=true`,
+          make: treeFolder,
+          warnMade: false,
+        },
+      ],
+    },
   ];
 
   // ── the cells ─────────────────────────────────────────────────────────────
@@ -855,12 +1056,13 @@ describe.skipIf(!DB_URL)('the pre-check removal, part 2: the HTTP entries', () =
                    || jsonb_build_object('snapshot_of', ${randomUUID()}::text) where id = ${id}`;
       });
     }
-    const before = await probe(id);
+    const probed = route.probeOf?.(id) ?? id;
+    const before = await probe(probed);
     m.takeActorMisses();
     const res = await send(route, who, id, precheck);
     const text = await res.text();
     const misses = m.takeActorMisses().map((x) => x.check);
-    return { status: res.status, text, changed: (await probe(id)) !== before, misses };
+    return { status: res.status, text, changed: (await probe(probed)) !== before, misses };
   };
 
   const line = (a: Answer) =>
@@ -888,6 +1090,7 @@ describe.skipIf(!DB_URL)('the pre-check removal, part 2: the HTTP entries', () =
     m = await import('@mantle/db');
     t = await import('@mantle/tools');
     c = await import('@mantle/content');
+    fl = await import('@mantle/files');
     tb = await import('@mantle/content/tables');
     th = await import('@mantle/content/table-snapshots');
     actorMode = await import('../../../packages/db/src/actor');
@@ -905,7 +1108,7 @@ describe.skipIf(!DB_URL)('the pre-check removal, part 2: the HTTP entries', () =
       await raw<{ id: string }[]>`select id::text as id from workspaces
                                     where owner_id = ${owner} and is_admin`
     )[0]!.id;
-    for (const key of ['H', 'R', 'W', 'X', 'O'] as const) {
+    for (const key of ['H', 'R', 'W', 'X', 'O', 'P'] as const) {
       ws[key] = (
         await raw<{ id: string }[]>`insert into workspaces (owner_id, name)
           values (${owner}, ${`${tag} ${key}`}) returning id::text as id`
@@ -920,7 +1123,7 @@ describe.skipIf(!DB_URL)('the pre-check removal, part 2: the HTTP entries', () =
       on conflict (workspace_id, login_id) do update set moderator = excluded.moderator`;
     await m.asSystem(() => t.seedBuiltinTools(owner), 'test');
     const keys = await import('../lib/access-keys');
-    for (const who of ['member', 'admin'] as const) {
+    mintKey = async (who: Who) => {
       const minted = await m.asSystem(
         () =>
           keys.mintAccessKey({
@@ -936,7 +1139,8 @@ describe.skipIf(!DB_URL)('the pre-check removal, part 2: the HTTP entries', () =
         'test',
       );
       keyOf[who] = minted!.key;
-    }
+    };
+    for (const who of ['member', 'admin'] as const) await mintKey(who);
     // The probe: a definer, so it sees the rows whoever sent the request.
     await raw.unsafe(`
       create or replace function pch_probe(i uuid) returns text
@@ -963,6 +1167,7 @@ describe.skipIf(!DB_URL)('the pre-check removal, part 2: the HTTP entries', () =
           from nodes n where n.id = i), 'gone')
       $$;
       revoke all on function pch_probe(uuid) from public;`);
+    await sys(() => fl.ensureFilesRootBranch(owner));
     m.takeActorMisses();
     pre.old = OLD_TARGET;
   }, 300_000);
@@ -990,6 +1195,7 @@ describe.skipIf(!DB_URL)('the pre-check removal, part 2: the HTTP entries', () =
           for (const who of ['member', 'admin'] as const) {
             it(`${route.name} (${route.need}) as ${who}, ${mode}: the database and the handler answer`, async () => {
               await setMode(mode);
+              if (route.viaKey) await mintKey(who);
               // An id no row has: the answer a hidden item must give.
               const none = randomUUID();
               const noneNow = await send(route, who, none, false);
@@ -1050,6 +1256,10 @@ describe.skipIf(!DB_URL)('the pre-check removal, part 2: the HTTP entries', () =
                   expect(now.status, `${name}: ${now.text}`).toBe(403);
                   expect(now.text, name).toMatch(/_is_owners/);
                   expect(now.changed, `${name} changed the item`).toBe(false);
+                } else if (ALLOWED[route.need].includes(p) && route.parentHidden) {
+                  expect(now.status, `${name}: ${now.text}`).toBe(400);
+                  expect(now.text, name).toContain('not found');
+                  expect(now.changed, `${name} changed the item`).toBe(false);
                 } else if (ALLOWED[route.need].includes(p)) {
                   expect(now.status, `${name}: ${now.text}`).toBeLessThan(300);
                   expect(now.changed, `${name} made no write`).toBe(true);
@@ -1103,7 +1313,7 @@ describe.skipIf(!DB_URL)('the pre-check removal, part 2: the HTTP entries', () =
                 expect(now.changed, `${name} changed the copy`).toBe(false);
                 expect(was.changed).toBe(false);
               }
-              const pattern = route.name.slice(route.name.indexOf(' ') + 1);
+              const pattern = route.name.split(' ')[1]!;
               const target = itemWriteTarget(route.method, pattern, route.path(none));
               if (family.removed) expect(target, route.name).toBeNull();
               else expect(target, route.name).not.toBeNull();

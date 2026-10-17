@@ -38,14 +38,16 @@ export const TOOL_LIST_PINS = {
  *  no scope (contact sharing, Revoke all, an entity merge), the guard's
  *  named exit beside the share close and the deleted-app trash.
  *  Pre-check removal part 2, route-scope.ts 7 to 6: ITEM_REF_PREFIXES lost
- *  its recall-revision entry (two left, share and deleted-app). */
+ *  its recall-revision entry (two left, share and deleted-app); 6 to 5 in
+ *  round 3: ITEM_WRITE_PREFIXES lost tables, files and folders (two left,
+ *  apps and tree items). */
 export const ROUTE_LIST_PINS = {
   'server/web/lib/api-v1.ts': 1,
   'server/web/lib/auth-constants.ts': 2,
   'server/web/lib/auth/any-login-routes.ts': 3,
   'server/web/lib/auth/member-routes.ts': 1,
   'server/web/lib/auth/route-policy.ts': 1,
-  'server/web/lib/auth/route-scope.ts': 6,
+  'server/web/lib/auth/route-scope.ts': 5,
   'server/web/lib/body-limit.ts': 1,
   'server/web/lib/route-limits.ts': 1,
   'server/web/server/public-session-routes.ts': 1,

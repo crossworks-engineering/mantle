@@ -358,10 +358,11 @@ export const ITEM_WRITE_PREFIXES: readonly string[] = [
   // op batch, discard, import, commit and the history's snapshot, restore
   // and delete ask the caller's edit first (assertItemRight), before any
   // workbook is staged on disk.
+  // Files, files' folders and the tree's folders went in the pre-check
+  // removal part 2: each write reads the item in the caller's scope first
+  // (the 404 of none) and asks the item gate's right (assertItemRight)
+  // before anything is written, copied or moved on disk.
   '/api/apps',
-  '/api/files/files',
-  '/api/files/folders',
-  '/api/tree/:kind/folders',
   '/api/tree/items',
   // W6a fix round 1 (M1): the other workspace kinds with an item route.
   // Formulas, tasks, events and v1 tasks went in the pre-check removal

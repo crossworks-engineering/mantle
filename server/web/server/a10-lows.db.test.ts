@@ -118,6 +118,15 @@ const PRECHECK_HTTP_CELLS = [
   'POST /api/v1/tables/:id/commit',
   'POST /api/v1/tables/:id/rows',
   'PUT /api/tables/:id/draft',
+  // Files, files' folders and the tree's folders (round 3).
+  'DELETE /api/files/files/:id',
+  'PATCH /api/files/files/:id',
+  'POST /api/files/files/:id',
+  'DELETE /api/files/folders/:id',
+  'PATCH /api/files/folders/:id',
+  'POST /api/files/folders/:id',
+  'DELETE /api/tree/:kind/folders/:id',
+  'PATCH /api/tree/:kind/folders/:id',
 ];
 /** The Files operation's own refusal (its text carries a dash: \u2014). */
 const NO_FOLDER = (verb: string, fix: string) =>

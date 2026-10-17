@@ -192,9 +192,11 @@ describe('itemWriteTarget (W6a, the item an Admin write touches)', () => {
       need: 'read',
       ref: 'node',
     });
+    // Files, files' folders and the tree's folders too (round 3).
     expect(
       itemWriteTarget('PATCH', '/api/tree/:kind/folders/:id', `/api/tree/pages/folders/${id}`),
-    ).toEqual({ id, need: 'edit', ref: 'node' });
+    ).toBeNull();
+    expect(itemWriteTarget('DELETE', '/api/files/files/:id', `/api/files/files/${id}`)).toBeNull();
     // Tables and their v1 alias too (the draft, ops, import and history
     // ask the caller's edit first, assertItemRight).
     expect(itemWriteTarget('PATCH', '/api/tables/:id', `/api/tables/${id}`)).toBeNull();

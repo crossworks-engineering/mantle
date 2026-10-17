@@ -1,4 +1,5 @@
 import { NextResponse } from '@/server/http-compat';
+import { assertItemRight } from '@mantle/db';
 import { z } from 'zod';
 import { ownerCaller } from '@/lib/auth';
 import { TREE_FOLDER_NAME_MAX, TREE_SHARE_LEVELS } from '@mantle/client-types/tree';
@@ -6,6 +7,12 @@ import { deleteTreeFolder, notifyTreeChanged, updateTreeFolder } from '@mantle/c
 import { LookColorBody, LookIconBody } from '@/lib/look-body';
 import { treeKindOr404 } from '@/lib/tree-route';
 import { readBody } from '@/lib/read-body';
+import type { RouteParams } from '@/lib/route-params';
+
+/** The [id] is a uuid: any other names nothing, the one 404 before the
+ *  handler (lib/route-params.ts). Since the pre-check removal part 2 the
+ *  item gate no longer answers a bad id here (docs/actors.md). */
+export const routeParams = { id: 'uuid' } as const satisfies RouteParams;
 
 type Ctx = { params: Promise<{ kind: string; id: string }> };
 
@@ -43,6 +50,11 @@ export async function PATCH(req: Request, ctx: Ctx) {
   if (kind instanceof Response) return kind;
   const id = Id.safeParse((await ctx.params).id);
   if (!id.success) return NextResponse.json({ error: 'invalid id' }, { status: 400 });
+  // The folder's edit first (pre-check removal part 2), as the item gate
+  // asked it: one the scope does not read is the 404 of none (as for an id
+  // no row has), one it reads and may not edit the edit check's 403, before
+  // the body is read. A move and a rename ask manage again below.
+  await assertItemRight(id.data, 'edit');
   const body = await readBody(req, Patch);
   const { confirm, seen, ...patch } = body;
   const folder = await updateTreeFolder(user.id, kind, id.data, patch, { confirm, seen });
@@ -60,6 +72,9 @@ export async function DELETE(req: Request, ctx: Ctx) {
   if (kind instanceof Response) return kind;
   const id = Id.safeParse((await ctx.params).id);
   if (!id.success) return NextResponse.json({ error: 'invalid id' }, { status: 400 });
+  // A delete manages the folder (pre-check removal part 2), as the item
+  // gate asked it, before what it holds is read.
+  await assertItemRight(id.data, 'manage');
   const q = new URL(req.url).searchParams;
   const confirm = q.get('confirm') === 'true';
   const seen = /^\d+$/.test(q.get('seen') ?? '') ? Number(q.get('seen')) : undefined;
