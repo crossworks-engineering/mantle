@@ -627,7 +627,12 @@ export async function updateAppMeta(
   // when the description changes too (it lives on the manifest, the app's
   // code, D4: its door lockAppRow asks manage), before anything below is
   // written (F4 fix round 3, M3: no name changed with a description refused).
-  await assertItemRight(id, input.description !== undefined ? 'manage' : 'edit');
+  // It changes the app: a read-only copy is refused in the copy's words in
+  // the same read (changes), the one check of the path since the R0
+  // integration (the route asked edit too before).
+  await assertItemRight(id, input.description !== undefined ? 'manage' : 'edit', {
+    changes: true,
+  });
   const [node] = await db
     .select()
     .from(nodes)
@@ -1284,9 +1289,11 @@ export async function deleteApp(
     deletedBy?: { loginId: string | null; owner: boolean };
   } = {},
 ): Promise<boolean> {
-  // The app's manage first (pre-check removal Part 3): the pre_delete snapshot and its
-  // keepForOwner mark commit before the node's checked DELETE, so a caller
-  // that may not delete the app leaves no history entry behind.
+  // A delete manages the app, asked first (pre-check removal parts 2 and
+  // 3, once per path since the R0 integration): the pre_delete snapshot
+  // copies its database on disk and commits its row and keepForOwner mark
+  // before the node's checked DELETE (0266 asks only at the delete itself),
+  // so a caller that may not delete the app leaves no history entry behind.
   await assertItemRight(id, 'manage');
   if (!(await ownsApp(ownerId, id))) return false;
   // Dynamic imports keep the server-only modules (node:fs, sqlite) out of the

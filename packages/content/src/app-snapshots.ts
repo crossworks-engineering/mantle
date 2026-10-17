@@ -806,8 +806,11 @@ export async function restoreAppSnapshot(
   // (edit): asked first, before the entry is read or refused and before the
   // undo snapshot (snapshotBeforeCodeChange asks the code's again there),
   // so a caller without it learns nothing of the history and writes nothing
-  // (pre-check removal Part 3).
-  await assertItemRight(appId, wantsCode ? 'manage' : 'edit');
+  // (pre-check removal Part 3). A restore changes the app: a read-only copy
+  // is refused in the copy's words in the same read (changes), as the
+  // route's own edit check refused it until the R0 integration made this
+  // the one check of the path.
+  await assertItemRight(appId, wantsCode ? 'manage' : 'edit', { changes: true });
   const snap = await getAppSnapshot(ownerId, appId, snapshotId);
   if (!snap) return null;
   if (wantsData && !snap.hasData) {

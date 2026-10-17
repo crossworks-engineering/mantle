@@ -10,6 +10,13 @@ import prettier from 'prettier';
 import { ownerCaller } from '@/lib/auth';
 import { MAX_APP_FILE_BYTES, MAX_APP_PATH_LEN } from '@mantle/content';
 import { readJson } from '@/lib/read-body';
+import { assertItemRight } from '@mantle/db';
+import type { RouteParams } from '@/lib/route-params';
+
+/** The ids are uuids: any other names nothing, the params gateway's one
+ *  404 before the handler (lib/route-params.ts; the item gate answered it
+ *  until the pre-check removal part 2). */
+export const routeParams = { id: 'uuid' } as const satisfies RouteParams;
 
 // ext → Prettier parser. Mirrors what the editor highlights; anything else is
 // refused (the button is hidden for those, but defend the endpoint too).
@@ -35,8 +42,13 @@ const Body = z.object({
   content: z.string().max(MAX_APP_FILE_BYTES),
 });
 
-export async function POST(req: Request) {
+export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
   ownerCaller();
+  const { id } = await ctx.params;
+  // The caller's edit of the app (the pre-check removal part 2: the HTTP
+  // gate asked it): this route formats the text it is sent and touches no
+  // item, but answers only a login that may edit the app, as before.
+  await assertItemRight(id, 'edit');
   const parsed = Body.safeParse(await readJson(req));
   if (!parsed.success) return NextResponse.json({ error: 'invalid input' }, { status: 400 });
 

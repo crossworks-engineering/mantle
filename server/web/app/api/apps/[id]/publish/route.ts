@@ -18,6 +18,13 @@ import { NextResponse } from '@/server/http-compat';
 import { ownerCaller } from '@/lib/auth';
 import { getApp, publishApp } from '@mantle/content';
 import { buildAndStageApp } from '@mantle/tools';
+import { assertItemRight } from '@mantle/db';
+import type { RouteParams } from '@/lib/route-params';
+
+/** The ids are uuids: any other names nothing, the params gateway's one
+ *  404 before the handler (lib/route-params.ts; the item gate answered it
+ *  until the pre-check removal part 2). */
+export const routeParams = { id: 'uuid' } as const satisfies RouteParams;
 
 export async function POST(_req: Request, ctx: { params: Promise<{ id: string }> }) {
   const user = ownerCaller();
@@ -25,6 +32,10 @@ export async function POST(_req: Request, ctx: { params: Promise<{ id: string }>
 
   const existing = await getApp(user.id, id);
   if (!existing) return NextResponse.json({ error: 'app not found' }, { status: 404 });
+  // The caller's edit (the pre-check removal part 2: the HTTP gate asked
+  // it), before the draft is looked at: a reader is refused (403
+  // item-workspace), not told "nothing to publish".
+  await assertItemRight(id, 'edit');
   // Nothing staged — committing is a no-op, and building here would leave a
   // stray artifact behind for a draft that doesn't exist.
   if (!existing.draft) return NextResponse.json({ app: existing });

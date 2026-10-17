@@ -25,7 +25,7 @@ import { hiddenFromKey, isApiKeyRequest } from '@/lib/api-v1';
 import { ownerCallerAtRead } from '@/lib/auth';
 import { PATCH as patchPage } from '../../../pages/[id]/route';
 
-export { GET } from '../../../pages/[id]/route';
+export { GET, routeParams } from '../../../pages/[id]/route';
 
 export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
   if (!isApiKeyRequest()) return patchPage(req, ctx);

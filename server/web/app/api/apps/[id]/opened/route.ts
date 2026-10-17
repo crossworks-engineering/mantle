@@ -2,6 +2,12 @@ import { NextResponse } from '@/server/http-compat';
 import { ownerCaller } from '@/lib/auth';
 import { recordAppOpen } from '@mantle/content';
 import { UUID_RE } from '@mantle/std';
+import type { RouteParams } from '@/lib/route-params';
+
+/** The ids are uuids: any other names nothing, the params gateway's one
+ *  404 before the handler (lib/route-params.ts; the item gate answered it
+ *  until the pre-check removal part 2). */
+export const routeParams = { id: 'uuid' } as const satisfies RouteParams;
 
 /**
  * POST /api/apps/:id/opened — count one open of this app by the signed-in

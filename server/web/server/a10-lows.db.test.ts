@@ -93,6 +93,41 @@ const BAD_ID_CELLS = [
   'POST /api/heartbeats/:id/fire',
   'POST /api/journal/:id/resolve',
 ];
+/** The [id] cells whose HTTP item gate went in the pre-check removal part 2
+ *  (docs/actors.md, "Pre-check removal Part 2 (HTTP)"): the params
+ *  gateway's 404 answers them now, where the gate's answered first
+ *  (`{"ok":false,"error":"not found"}`, the same status). */
+const PRECHECK_HTTP_404 =
+  'precheck-http-404 (the item gate went; the params gateway answers an [id] that is not a uuid)';
+const PRECHECK_HTTP_CELLS = [
+  'DELETE /api/events/:id',
+  'DELETE /api/formulas/:id',
+  'PATCH /api/events/:id',
+  'PATCH /api/formulas/:id',
+  // Tables and their v1 alias (round 3).
+  'DELETE /api/tables/:id',
+  'DELETE /api/tables/:id/history/:sid',
+  'PATCH /api/tables/:id',
+  'PATCH /api/v1/tables/:id/rows/:rowId',
+  'POST /api/tables/:id/commit',
+  'POST /api/tables/:id/discard-draft',
+  'POST /api/tables/:id/draft-ops',
+  'POST /api/tables/:id/history',
+  'POST /api/tables/:id/history/:sid/restore',
+  'POST /api/tables/:id/import',
+  'POST /api/v1/tables/:id/commit',
+  'POST /api/v1/tables/:id/rows',
+  'PUT /api/tables/:id/draft',
+  // Files, files' folders and the tree's folders (round 3).
+  'DELETE /api/files/files/:id',
+  'PATCH /api/files/files/:id',
+  'POST /api/files/files/:id',
+  'DELETE /api/files/folders/:id',
+  'PATCH /api/files/folders/:id',
+  'POST /api/files/folders/:id',
+  'DELETE /api/tree/:kind/folders/:id',
+  'PATCH /api/tree/:kind/folders/:id',
+];
 /** The Files operation's own refusal (its text carries a dash: \u2014). */
 const NO_FOLDER = (verb: string, fix: string) =>
   `400 application/json {"error":"${verb}: no folder at '${BAD_PATH}' \u2014 ${fix}"}`;
@@ -100,6 +135,9 @@ const FIRST = 'create it with folder_create first';
 const CHANGES: Readonly<Record<string, { kind: string; now: string }>> = {
   ...Object.fromEntries(
     BAD_ID_CELLS.map((c) => [`bad-id ${c}`, { kind: BAD_ID_404, now: NOT_FOUND }]),
+  ),
+  ...Object.fromEntries(
+    PRECHECK_HTTP_CELLS.map((c) => [`bad-id ${c}`, { kind: PRECHECK_HTTP_404, now: NOT_FOUND }]),
   ),
   'prose GET': {
     kind: 'prose-no-history (an entityId that is not a uuid has no versions)',

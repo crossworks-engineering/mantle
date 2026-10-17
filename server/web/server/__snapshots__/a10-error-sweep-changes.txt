@@ -1,9 +1,9 @@
 # A10 part 2 fold 2: the cells that answer otherwise than before the move, each
 # with its named kind (changeKind, a10-error-sweep.test.ts), its answer before and
 # now. Every other cell of a10-error-sweep.txt answers byte for byte as recorded.
-# domain-by-table: 516 cells
+# domain-by-table: 523 cells
 # opaque-500: 56 cells
-# opaque-500 (an earlier fault): 18 cells
+# opaque-500 (an earlier fault): 20 cells
 GET /api/agents tree-not-found [domain-by-table]
   before 500 application/json {"error":"internal error"}
   now    404 application/json {"error":"sweep: folder not found"}
@@ -204,6 +204,33 @@ GET /api/apps/:id/export tree-gone [domain-by-table]
   now    410 application/json {"error":"sweep: folder shares have ended","code":"gone"}
 GET /api/apps/:id/export tree-visibility [domain-by-table]
   before 500 application/json {"error":"internal error"}
+  now    409 application/json {"error":"visibility","changes":[{"workspaceId":"11111111-1111-4111-8111-111111111111","gained":1,"lost":0}],"total":1}
+POST /api/apps/:id/format plain [opaque-500 (an earlier fault)]
+  before 400 application/json {"error":"No formatter for .sweep files."}
+  now    500 application/json {"error":"internal error"}
+POST /api/apps/:id/format db [opaque-500 (an earlier fault)]
+  before 400 application/json {"error":"No formatter for .sweep files."}
+  now    500 application/json {"error":"internal error"}
+POST /api/apps/:id/format scope [domain-by-table]
+  before 400 application/json {"error":"No formatter for .sweep files."}
+  now    403 application/json {"error":"forbidden","reason":"item-workspace","code":"forbidden","message":"You cannot change this item in your workspaces."}
+POST /api/apps/:id/format busy [domain-by-table]
+  before 400 application/json {"error":"No formatter for .sweep files."}
+  now    409 application/json {"error":"Another change to this item is under way; try again in a moment."}
+POST /api/apps/:id/format tree-not-found [domain-by-table]
+  before 400 application/json {"error":"No formatter for .sweep files."}
+  now    404 application/json {"error":"sweep: folder not found"}
+POST /api/apps/:id/format tree-conflict [domain-by-table]
+  before 400 application/json {"error":"No formatter for .sweep files."}
+  now    409 application/json {"error":"sweep: a folder of that name exists"}
+POST /api/apps/:id/format tree-invalid [domain-by-table]
+  before 400 application/json {"error":"No formatter for .sweep files."}
+  now    400 application/json {"error":"sweep: not a valid name"}
+POST /api/apps/:id/format tree-gone [domain-by-table]
+  before 400 application/json {"error":"No formatter for .sweep files."}
+  now    410 application/json {"error":"sweep: folder shares have ended","code":"gone"}
+POST /api/apps/:id/format tree-visibility [domain-by-table]
+  before 400 application/json {"error":"No formatter for .sweep files."}
   now    409 application/json {"error":"visibility","changes":[{"workspaceId":"11111111-1111-4111-8111-111111111111","gained":1,"lost":0}],"total":1}
 POST /api/apps/:id/publish tree-not-found [domain-by-table]
   before 500 application/json {"error":"internal error"}

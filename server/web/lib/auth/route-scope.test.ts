@@ -165,37 +165,47 @@ describe.skipIf(!hasManifest)('route scope table (W6a)', () => {
 describe('itemWriteTarget (W6a, the item an Admin write touches)', () => {
   const id = '6f1c2a3b-0d4e-4f5a-8b6c-7d8e9f0a1b2c';
   it('names the item and what the write needs', () => {
-    expect(itemWriteTarget('PATCH', '/api/pages/:id', `/api/pages/${id}`)).toEqual({
+    // An item named through a share keeps its check (plan v3 S6): a
+    // link's change needs edit of its item (manage for an app's, asked by
+    // the gate once it knows the type), a deleted app's purge manage.
+    expect(itemWriteTarget('PATCH', '/api/shares/:id', `/api/shares/${id}`)).toEqual({
       id,
       need: 'edit',
-      ref: 'node',
+      ref: 'share',
     });
-    expect(itemWriteTarget('DELETE', '/api/notes/:id', `/api/notes/${id}`)).toEqual({
+    expect(itemWriteTarget('DELETE', '/api/apps/deleted/:id', `/api/apps/deleted/${id}`)).toEqual({
       id,
       need: 'manage',
-      ref: 'node',
+      ref: 'deleted-app',
     });
-    expect(itemWriteTarget('POST', '/api/pages/:id/move', `/api/pages/${id}/move`)).toEqual({
-      id,
-      need: 'manage',
-      ref: 'node',
-    });
-    expect(itemWriteTarget('DELETE', '/api/apps/:id/draft', `/api/apps/${id}/draft`)).toEqual({
-      id,
-      need: 'edit',
-      ref: 'node',
-    });
-    expect(itemWriteTarget('POST', '/api/apps/:id/opened', `/api/apps/${id}/opened`)).toEqual({
-      id,
-      need: 'read',
-      ref: 'node',
-    });
+    // Apps and the tree's items name no item since the pre-check removal
+    // part 2 (the last family): an app's edit and delete, its draft, and
+    // the read writes (an open, a pin) read the item in the scope first.
+    expect(itemWriteTarget('PATCH', '/api/apps/:id', `/api/apps/${id}`)).toBeNull();
+    expect(itemWriteTarget('DELETE', '/api/apps/:id', `/api/apps/${id}`)).toBeNull();
+    expect(itemWriteTarget('DELETE', '/api/apps/:id/draft', `/api/apps/${id}/draft`)).toBeNull();
+    expect(itemWriteTarget('POST', '/api/apps/:id/opened', `/api/apps/${id}/opened`)).toBeNull();
+    expect(
+      itemWriteTarget('PUT', '/api/tree/items/:id/pin', `/api/tree/items/${id}/pin`),
+    ).toBeNull();
+    // Notes and drawings name no item since the pre-check removal part 2.
+    expect(itemWriteTarget('DELETE', '/api/notes/:id', `/api/notes/${id}`)).toBeNull();
+    expect(itemWriteTarget('PUT', '/api/draws/:id/draft', `/api/draws/${id}/draft`)).toBeNull();
+    // Pages too, the move with them (ITEM_MANAGE_WRITES is gone).
+    expect(itemWriteTarget('PATCH', '/api/pages/:id', `/api/pages/${id}`)).toBeNull();
+    expect(itemWriteTarget('PATCH', '/api/v1/pages/:id', `/api/v1/pages/${id}`)).toBeNull();
+    expect(itemWriteTarget('POST', '/api/pages/:id/move', `/api/pages/${id}/move`)).toBeNull();
+    // Files, files' folders and the tree's folders too (round 3).
     expect(
       itemWriteTarget('PATCH', '/api/tree/:kind/folders/:id', `/api/tree/pages/folders/${id}`),
-    ).toEqual({ id, need: 'edit', ref: 'node' });
+    ).toBeNull();
+    expect(itemWriteTarget('DELETE', '/api/files/files/:id', `/api/files/files/${id}`)).toBeNull();
+    // Tables and their v1 alias too (the draft, ops, import and history
+    // ask the caller's edit first, assertItemRight).
+    expect(itemWriteTarget('PATCH', '/api/tables/:id', `/api/tables/${id}`)).toBeNull();
     expect(
       itemWriteTarget('PATCH', '/api/v1/tables/:id/rows/:rowId', `/api/v1/tables/${id}/rows/r1`),
-    ).toEqual({ id, need: 'edit', ref: 'node' });
+    ).toBeNull();
   });
   it('names no item for a create, a list or another prefix', () => {
     expect(itemWriteTarget('POST', '/api/pages', '/api/pages')).toBeNull();
@@ -204,34 +214,33 @@ describe('itemWriteTarget (W6a, the item an Admin write touches)', () => {
     expect(itemWriteTarget('POST', '/api/shares/contacts', '/api/shares/contacts')).toBeNull();
   });
   it('fix round 1 (M1): the other workspace kinds, and items named through another row', () => {
-    expect(itemWriteTarget('DELETE', '/api/tasks/:id', `/api/tasks/${id}`)).toEqual({
-      id,
-      need: 'manage',
-      ref: 'node',
-    });
-    expect(itemWriteTarget('PATCH', '/api/v1/tasks/:id', `/api/v1/tasks/${id}`)).toEqual({
-      id,
-      need: 'edit',
-      ref: 'node',
-    });
-    expect(itemWriteTarget('PATCH', '/api/events/:id', `/api/events/${id}`)?.need).toBe('edit');
-    expect(itemWriteTarget('DELETE', '/api/formulas/:id', `/api/formulas/${id}`)?.need).toBe(
-      'manage',
-    );
+    // Formulas, tasks, events and v1 tasks name no item since the pre-check
+    // removal part 2: the database checks their writes, and the handler's
+    // scoped read answers a hidden one (docs/actors.md).
+    for (const [method, pattern] of [
+      ['DELETE', '/api/tasks/:id'],
+      ['PATCH', '/api/v1/tasks/:id'],
+      ['PATCH', '/api/events/:id'],
+      ['DELETE', '/api/formulas/:id'],
+    ] as const) {
+      expect(itemWriteTarget(method, pattern, pattern.replace(':id', id))).toBeNull();
+    }
+    // Recall maps and their revisions too (the pre-check removal part 2):
+    // the map's lock in the login's scope and the edit check (0281).
     expect(
       itemWriteTarget(
         'POST',
         '/api/recall/maps/:id/cards/reorder',
         `/api/recall/maps/${id}/cards/reorder`,
       ),
-    ).toEqual({ id, need: 'edit', ref: 'node' });
+    ).toBeNull();
     expect(
       itemWriteTarget(
         'POST',
         '/api/recall/revisions/:id/restore',
         `/api/recall/revisions/${id}/restore`,
       ),
-    ).toEqual({ id, need: 'edit', ref: 'recall-revision' });
+    ).toBeNull();
     // A link needs edit of its item (A0; an app's link: manage, which the
     // session gate asks once it knows the item's type).
     for (const method of ['DELETE', 'PATCH']) {
@@ -421,19 +430,19 @@ describe('member route lists (A1: generated from the kind registry)', () => {
     );
   });
 
-  it('every D1 item write names its item, with edit, or manage for a delete', () => {
+  it('no D1 item write names its item: the database checks them all', () => {
+    // Tasks, events, formulas and Recall maps lost their entry in the
+    // pre-check removal part 2 (docs/actors.md).
     const id = '00000000-0000-4000-8000-000000000001';
     const at = (p: string) => p.replace(':id', id).replace(':card', 'c1');
+    let recall = 0;
     for (const key of MEMBER_OPEN_WRITES) {
       const [method, pattern] = key.split(' ') as [string, string];
-      if (!/^\/api\/(tasks|events|formulas|recall)\//.test(pattern)) continue;
+      if (!/^\/api\/(recall|tasks|events|formulas)\//.test(pattern)) continue;
       if (CREATE_ROUTES.has(key)) continue;
-      const t = itemWriteTarget(method, pattern, at(pattern));
-      expect(t, key).not.toBeNull();
-      expect(t!.id, key).toBe(id);
-      const head = pattern.split('/').slice(0, 5).join('/');
-      const isDeleteOfItem = method === 'DELETE' && /\/:id$/.test(pattern) && head === pattern;
-      expect(t!.need, key).toBe(isDeleteOfItem ? 'manage' : 'edit');
+      if (pattern.startsWith('/api/recall/')) recall += 1;
+      expect(itemWriteTarget(method, pattern, at(pattern)), key).toBeNull();
     }
+    expect(recall).toBeGreaterThan(5);
   });
 });

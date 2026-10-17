@@ -1,4 +1,5 @@
 import { NextResponse } from '@/server/http-compat';
+import { assertItemRight } from '@mantle/db';
 import { z } from 'zod';
 import { cappedOne } from '@/lib/list-workspaces';
 import { ownerCaller, readerAssetCaller } from '@/lib/auth';
@@ -20,6 +21,20 @@ import { callerMayReadEmail } from '@/lib/api-v1';
 import { readJson } from '@/lib/read-body';
 import { CACHE_CONTROL } from '@/lib/cache-control';
 import type { FileCascadeDeleteResponse } from '@mantle/client-types';
+import type { RouteParams } from '@/lib/route-params';
+
+/** The [id] is a uuid: any other names nothing, the one 404 before the
+ *  handler (lib/route-params.ts). Since the pre-check removal part 2 the
+ *  item gate no longer answers a bad id here (docs/actors.md). */
+export const routeParams = { id: 'uuid' } as const satisfies RouteParams;
+
+/** A write's first read (pre-check removal part 2): the file in the
+ *  caller's scope, the 404 of none for one it does not read (as for an id
+ *  no row has), before the body is read or anything is written. */
+async function fileOr404(ownerId: string, fileId: string) {
+  return (await fileById({ ownerId, fileId })) ?? null;
+}
+const NOT_FOUND = () => NextResponse.json({ error: 'not found' }, { status: 404 });
 
 const IdParams = z.object({ id: z.string().uuid() });
 /** A file's raw bytes are read in the login's scope (W7e): never stored. */
@@ -135,6 +150,8 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   if (!idParsed.success) {
     return NextResponse.json({ error: 'invalid id' }, { status: 400 });
   }
+  const existing = await fileOr404(user.id, idParsed.data.id);
+  if (!existing) return NOT_FOUND();
   const raw = await readJson(req);
   const parsed = PatchBody.safeParse(raw);
   if (!parsed.success) {
@@ -142,6 +159,9 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   }
 
   if ('move' in parsed.data) {
+    // A move manages the file: asked before the guard reads the
+    // destination (moveFileById asks it again).
+    await assertItemRight(existing.id, 'manage');
     await guardFileTo(user.id, idParsed.data.id, parsed.data.move, {
       confirm: parsed.data.confirm === true,
       seen: parsed.data.seen,
@@ -175,14 +195,14 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   // Content edit: load the existing row to get the filename + parent, then
   // overwrite via upsertFile (which clears the extracted summary so the
   // next extractor run re-processes the changed body).
-  const existing = await fileById({ ownerId: user.id, fileId: idParsed.data.id });
-  if (!existing) return NextResponse.json({ error: 'not found' }, { status: 404 });
   if (!existing.isText) {
     return NextResponse.json(
       { error: 'only text files (.md / .txt / .json / .yaml / .yml) can be edited in place' },
       { status: 400 },
     );
   }
+  // The edit first: before the new bytes are written.
+  await assertItemRight(existing.id, 'edit');
   const buf = Buffer.from(parsed.data.content, 'utf8');
   const file = await upsertFile({
     ownerId: user.id,
@@ -219,6 +239,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   const user = ownerCaller();
   const idParsed = IdParams.safeParse(await ctx.params);
   if (!idParsed.success) return NextResponse.json({ error: 'invalid id' }, { status: 400 });
+  if (!(await fileOr404(user.id, idParsed.data.id))) return NOT_FOUND();
   const raw = await readJson(req);
   const body = z
     .object({
@@ -232,6 +253,9 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   if (!body.success) {
     return NextResponse.json({ error: firstIssue(body.error) }, { status: 400 });
   }
+  // A copy asks the file's edit, as the item gate did, before the guard
+  // reads the destination and before any byte is copied.
+  await assertItemRight(idParsed.data.id, 'edit');
   await guardFileCopyTo(user.id, idParsed.data.id, body.data.copy_to, {
     confirm: body.data.confirm === true,
     seen: body.data.seen,
@@ -251,6 +275,11 @@ export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string 
   if (!idParsed.success) {
     return NextResponse.json({ error: 'invalid id' }, { status: 400 });
   }
+  // A delete manages the file: the 404 of none for one the scope does not
+  // read, the edit check's refusal (403) for one it reads and may not
+  // delete, before the derived items are counted or reaped.
+  if (!(await fileOr404(user.id, idParsed.data.id))) return NOT_FOUND();
+  await assertItemRight(idParsed.data.id, 'manage');
   const cascade = new URL(_req.url).searchParams.get('cascade') === '1';
   if (cascade) {
     // Confirmed cascade: reap the derived nodes first, then the source file.

@@ -18,10 +18,18 @@
 import { sql } from 'drizzle-orm';
 import { db } from './client';
 import { currentWorkspaceScope } from './viewer';
-import { editCheckRefusalError, UUID_RE } from '@mantle/std';
+import { editCheckRefusalError, READ_ONLY_COPY_MESSAGE, UUID_RE } from '@mantle/std';
+import { SnapshotCopyReadOnlyError } from './snapshot-copy';
 
 /** What a write needs of an item. */
 export type ItemNeed = 'read' | 'edit' | 'manage';
+
+/** How an item check reads its need. `changes`: the write changes the item
+ *  (a manage that writes it, an app's code or description), so a read-only
+ *  snapshot copy is refused as an edit is, in the one read; a manage that
+ *  only removes it (a delete) leaves it unset, as a copy's author may
+ *  delete it. An edit always changes the item. */
+export type ItemCheckOpts = Readonly<{ changes?: boolean }>;
 
 /** The refusal of a write to an item the scope cannot read (W6a style). */
 export function itemNotInScopeError(id: string): string {
@@ -36,8 +44,7 @@ export function itemNoRightError(id: string, need: ItemNeed): string {
 }
 
 /** The refusal of an edit to a read-only snapshot copy. */
-export const READ_ONLY_COPY_ERROR =
-  'This is a read-only copy of an accepted item: nobody changes it. Its author may delete it.';
+export const READ_ONLY_COPY_ERROR = READ_ONLY_COPY_MESSAGE;
 
 /** What Postgres reads as a uuid besides the canonical form: braces, and a
  *  hyphen after any group of four digits, or none. */
@@ -71,6 +78,8 @@ export async function itemWriteRefusal(
 export type ItemWriteRefusal = Readonly<{
   message: string;
   detail: 'no_read' | 'no_edit' | null;
+  /** An edit of a read-only snapshot copy (detail no_edit). */
+  copy?: true;
 }>;
 
 /** itemWriteRefusal, with the edit check's detail (A5 step 4 fix round 2:
@@ -78,6 +87,7 @@ export type ItemWriteRefusal = Readonly<{
 export async function itemWriteRefusalOf(
   ids: readonly string[],
   need: ItemNeed,
+  opts: ItemCheckOpts = {},
 ): Promise<ItemWriteRefusal | null> {
   if (!currentWorkspaceScope()) return null;
   const trimmed = ids.map((i) => i.trim().toLowerCase());
@@ -87,9 +97,11 @@ export async function itemWriteRefusalOf(
   if (list.length === 0) return null;
   const byId = await scopeRightsOf(list);
   for (const id of list) {
-    const verdict = verdictOf(byId.get(id), need);
+    const verdict = verdictOf(byId.get(id), need, need === 'edit' || opts.changes === true);
     if (verdict === 'no_read') return { message: itemNotInScopeError(id), detail: 'no_read' };
-    if (verdict === 'copy') return { message: READ_ONLY_COPY_ERROR, detail: 'no_edit' };
+    if (verdict === 'copy') {
+      return { message: READ_ONLY_COPY_ERROR, detail: 'no_edit', copy: true };
+    }
     if (verdict === 'no_edit') return { message: itemNoRightError(id, need), detail: 'no_edit' };
   }
   return null;
@@ -107,8 +119,15 @@ export async function itemWriteRefusalOf(
  * folder's indexing switch; the named system step). System work is not
  * checked.
  */
-export async function assertItemRight(id: string, need: ItemNeed): Promise<void> {
-  const refused = await itemWriteRefusalOf([id], need);
+export async function assertItemRight(
+  id: string,
+  need: ItemNeed,
+  opts: ItemCheckOpts = {},
+): Promise<void> {
+  const refused = await itemWriteRefusalOf([id], need, opts);
+  // A read-only snapshot copy: the database's own refusal of it (0267), so
+  // the one mapper answers it in the copy's words, with readOnly.
+  if (refused?.copy) throw new SnapshotCopyReadOnlyError();
   if (refused) throw editCheckRefusalError(refused.detail ?? 'no_read');
 }
 
@@ -134,10 +153,11 @@ async function scopeRightsOf(ids: readonly string[]): Promise<Map<string, ScopeR
 function verdictOf(
   r: ScopeRights | undefined,
   need: ItemNeed,
+  changes: boolean = need === 'edit',
 ): 'ok' | 'no_read' | 'no_edit' | 'copy' {
   if (!r) return 'no_read';
   if (need === 'read') return 'ok';
-  if (need === 'edit' && r.copy) return 'copy';
+  if (changes && r.copy) return 'copy';
   return (need === 'edit' ? r.edit : r.manage) ? 'ok' : 'no_edit';
 }
 

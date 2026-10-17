@@ -338,6 +338,10 @@ describe.skipIf(!URL)('the approval of an elevated pending call (A5 step 6d fix 
     h.cards = [];
     h.surfaces = [];
     h.barrier = null;
+    // The audit rows of the test before are written after its answer
+    // (call-audit.ts): wait for them, or one lands after this delete and is
+    // counted as the next test's (a flake on CI: two rows where one ran).
+    await m.callAuditsSettled();
     await x(sql`delete from audit_log`);
   });
 

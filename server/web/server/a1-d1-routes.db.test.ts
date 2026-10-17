@@ -55,6 +55,7 @@ describe.skipIf(!URL)('A1 D1: tasks, events, formulas and Recall maps on HTTP', 
   let app: import('hono').Hono;
   let cookieOf: (id: string) => string;
   let dir = '';
+  let suiteMode: string | undefined;
   const owner = randomUUID(); // the anchor, an Admin user
   const mod = randomUUID(); // a member: Moderator of Team
   const reader = randomUUID(); // a member: in Team, no Moderator tick
@@ -251,9 +252,21 @@ describe.skipIf(!URL)('A1 D1: tasks, events, formulas and Recall maps on HTTP', 
         adminMapSlug = r.json.slug as string;
       }
     }
+    // Both checks on, as every box since the pre-check removal part 2
+    // (docs/actors.md, "Pre-check removal Part 2 (HTTP)"): the item gate of
+    // these routes is gone, so a reader's edit is the database's to refuse
+    // (this process's actor check on: the login's write on the write role;
+    // the scratch database's edit check on).
+    suiteMode = process.env.MANTLE_ACTOR_CHECK;
+    process.env.MANTLE_ACTOR_CHECK = 'on';
+    await (
+      await import('@mantle/db/test-support')
+    ).superuserExec(scratch!.url, "select mantle_set_edit_check('on')");
   }, 240_000);
 
   afterAll(async () => {
+    if (suiteMode === undefined) delete process.env.MANTLE_ACTOR_CHECK;
+    else process.env.MANTLE_ACTOR_CHECK = suiteMode;
     await m?.closeDb();
     await scratch?.drop();
     if (dir) await rm(dir, { recursive: true, force: true });

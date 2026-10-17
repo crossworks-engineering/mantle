@@ -432,6 +432,7 @@ export {
   itemNotInScopeError,
   itemNoRightError,
   READ_ONLY_COPY_ERROR,
+  type ItemCheckOpts,
   type ItemNeed,
   type ItemWriteRefusal,
 } from './item-rights';

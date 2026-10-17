@@ -587,11 +587,18 @@ describe.skipIf(!URL)('W6a route sweep: scoped reads for every login', () => {
     expect(onItem).toBeGreaterThan(25);
   }, 900_000);
 
-  it('a member: an open write on an id it cannot read, or no row has, is the gate’s one 404', async () => {
+  it('a member: an open write on an id it cannot read, or no row has, is one 404', async () => {
     // The other half of M3: the same routes on a random id, and on an item
     // homed where the member is not, answer the same 404 before any handler.
+    // A route whose pre-check went (the pre-check removal part 2,
+    // docs/actors.md: itemWriteTarget names no item) is answered by its
+    // handler in the member's scope: the two ids get the same answer (each
+    // uuid in it read as <id>: Recall's map_not_found names the id), the
+    // handler's 404, a 400 for the sweep's empty body that it answers
+    // before any read, or a 403 it gives every id alike (an owner's act).
     const failures: string[] = [];
     let checked = 0;
+    let handlerAnswered = 0;
     for (const e of manifest) {
       if (!e.pattern.startsWith('/api/') || skipped(e.pattern)) continue;
       for (const method of e.methods) {
@@ -603,12 +610,31 @@ describe.skipIf(!URL)('W6a route sweep: scoped reads for every login', () => {
         ) {
           continue;
         }
-        for (const id of [randomUUID(), sideNote]) {
-          const path = e.pattern
+        const at = (id: string) =>
+          e.pattern
             .split('/')
             .map((seg) => (seg === ':id' ? id : seg === ':kind' ? 'notes' : seg))
             .join('/');
-          const r = await call(path, mem, method);
+        if (itemWriteTarget(method, e.pattern, at(randomUUID())) === null) {
+          const [none, unread] = [
+            await call(at(randomUUID()), mem, method),
+            await call(at(sideNote), mem, method),
+          ];
+          checked += 2;
+          handlerAnswered += 1;
+          const uuids = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g;
+          const ids = (text: string) => text.replace(uuids, '<id>');
+          const one =
+            [400, 403, 404].includes(none.status) && !none.text.includes('item-workspace');
+          if (!one || unread.status !== none.status || ids(unread.text) !== ids(none.text)) {
+            failures.push(
+              `${method} ${e.pattern} (handler) no row ${none.status} ${none.text.slice(0, 80)}; unread ${unread.status} ${unread.text.slice(0, 80)}`,
+            );
+          }
+          continue;
+        }
+        for (const id of [randomUUID(), sideNote]) {
+          const r = await call(at(id), mem, method);
           checked += 1;
           if (
             r.status !== 404 ||
@@ -624,6 +650,7 @@ describe.skipIf(!URL)('W6a route sweep: scoped reads for every login', () => {
     }
     expect(failures).toEqual([]);
     expect(checked).toBeGreaterThan(50);
+    expect(handlerAnswered).toBeGreaterThan(0);
   }, 600_000);
 
   it('a member with a Write grant only: delete and move stay refused (A0 fix round 2, L-10)', async () => {
@@ -652,10 +679,22 @@ describe.skipIf(!URL)('W6a route sweep: scoped reads for every login', () => {
             .split('/')
             .map((seg) => (seg === ':id' ? id : seg === ':kind' ? 'notes' : seg))
             .join('/');
-        if (itemWriteTarget(method, e.pattern, at(randomUUID()))?.need !== 'manage') continue;
+        // A write that manages the item: the pre-check's need, or for a route
+        // whose entry went (pre-check removal part 2) the item's delete or a
+        // move, which the database (0266, the move check) and the handler
+        // (assertItemRight manage) refuse a Write grant alone.
+        const target = itemWriteTarget(method, e.pattern, at(randomUUID()));
+        const manages = target
+          ? target.need === 'manage'
+          : (method === 'DELETE' && /^\/api\/[^:]+\/:id$/.test(e.pattern)) ||
+            e.pattern.endsWith('/:id/move');
+        if (!manages) continue;
         const path = at(await writeOnly(kind));
         manageChecked += 1;
-        const r = await call(path, mem, method);
+        // A move with no destination is the route's 400 before any read:
+        // name one (the root), so the refusal is the item's.
+        const body = e.pattern.endsWith('/:id/move') ? { folderId: null } : undefined;
+        const r = await call(path, mem, method, body);
         if (r.status !== 403 && r.status !== 404) {
           failures.push(`${method} ${e.pattern} ${r.status} ${r.text.slice(0, 120)}`);
         }
@@ -878,7 +917,12 @@ describe.skipIf(!URL)('W6a route sweep: scoped reads for every login', () => {
       }
     }
     expect(failures).toEqual([]);
-    expect(checked).toBeGreaterThan(60);
+    // Fewer with each family whose entry went in the pre-check removal part
+    // 2 (its routes name no item now; precheck-removal-http.db.test.ts
+    // proves them, the hidden item's answer equal to an id no row has):
+    // the apps and tree items went last (round 4), so no route names a node
+    // item now; the share and the deleted app are w6a-fix-sweep's.
+    expect(checked).toBe(0);
     // An item of its own workspaces it still writes, and an id no row has
     // gets the handler's answer.
     const ok = await call(`/api/notes/${adminNote}`, owner, 'PATCH', {

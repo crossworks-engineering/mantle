@@ -19,10 +19,10 @@
  *  - effect: READ_POSTS and WRITE_GETS (isReadRequest);
  *  - open, logins: MEMBER_OPEN_READS, MEMBER_OPEN_WRITES, ANY_LOGIN_ROUTES,
  *    CHAT_LOGIN_ROUTES, TELEGRAM_LOGIN_ROUTES and MEMBER_ROUTES;
- *  - creates, makesItems: CREATE_ROUTES and the item target (what
+ *  - creates, makesItems: CREATE_ROUTES and NO_ITEM_WRITES (what
  *    requestCreatePolicy read);
- *  - item: ITEM_WRITE_PREFIXES, ITEM_REF_PREFIXES, ITEM_READ_WRITES and
- *    ITEM_MANAGE_WRITES (itemWriteTarget);
+ *  - item: ITEM_REF_PREFIXES (itemWriteTarget: a share and a deleted app,
+ *    the two the pre-check removal part 2 keeps);
  *  - keyArea, aliasOf: API_V1_ROUTES and the v1 alias files.
  *
  * Step 2 adds the pages of server/pages (the /s page, class 'link'; the
@@ -53,6 +53,7 @@ import {
   itemWriteTarget,
   memberMayRead,
   memberMayWrite,
+  NO_ITEM_WRITES,
   routeClass,
   type ItemRef,
   type ItemWriteNeed,
@@ -779,7 +780,7 @@ export function buildRouteRow(
     // L3, owner decision: yes), for every key, the owner's and an Admin
     // user's too. Without ?ws= nothing changes.
     creates: CREATE_ROUTES.has(key) || (v1Base !== null && CREATE_ROUTES.has(v1Base)),
-    makesItems: !(m === 'DELETE' || target?.need === 'read'),
+    makesItems: !(m === 'DELETE' || NO_ITEM_WRITES.has(key)),
     item,
     // A v1 pattern the key table does not list has none: no key calls it
     // (api-v1.test.ts pins the table to the route files).

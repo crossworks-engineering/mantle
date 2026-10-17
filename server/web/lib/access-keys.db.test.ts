@@ -377,11 +377,15 @@ describe.skipIf(!URL)('inbound API keys', () => {
     expect(narrowed.status).toBe(403);
     expect(await json(narrowed)).toMatchObject({ reason: 'key-area' });
     // The key gate runs there as anywhere: a live key passes it (the route
-    // then answers the id it was given), a revoked one is refused by the
-    // gate itself (its key.refused row is the gate's own).
+    // then answers the id it was given: since the pre-check removal part 2
+    // the route declares its uuid param, so the params gateway's 404, which
+    // runs after the key gate, where the handler said 400 "invalid id"), a
+    // revoked one is refused by the gate itself (its key.refused row is the
+    // gate's own).
     const made = await makeKey();
     const live = await call('/api/v1/files/picture.png', { bearer: made.secret });
-    expect(live.status).toBe(400);
+    expect(live.status).toBe(404);
+    expect(await live.text()).toBe('{"error":"not found"}');
     await call(`/api/access-keys/${made.id}`, { method: 'DELETE', cookie: cookieOf(admin) });
     expect((await call('/api/v1/files/picture.png', { bearer: made.secret })).status).toBe(401);
     const refused = await audited('key.refused', made.id);

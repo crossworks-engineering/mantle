@@ -63,15 +63,8 @@ g61 audits=["api.write PATCH /api/workspaces/11111111-1111-4111-8111-11111111111
 g62 audits=["api.write DELETE /api/workspaces/11111111-1111-4111-8111-111111111111/users/11111111-1111-4111-8111-111111111111 33333333-3333-4333-8333-333333333333"] home=-
 g63 audits=["api.write DELETE /api/workspaces/11111111-1111-4111-8111-111111111111/users/11111111-1111-4111-8111-111111111111 55555555-5555-4555-8555-555555555555"] home=-
 g64 audits=["api.write DELETE /api/workspaces/11111111-1111-4111-8111-111111111111/users/11111111-1111-4111-8111-111111111111 44444444-4444-4444-8444-444444444444"] home=-
-g65 audits=["api.write PATCH /api/pages/11111111-1111-4111-8111-111111111111 33333333-3333-4333-8333-333333333333"] home={"createWs":null,"privateWs":null}
-g66 audits=["api.write PATCH /api/pages/11111111-1111-4111-8111-111111111111 55555555-5555-4555-8555-555555555555"] home={"createWs":null,"privateWs":null}
-g67 audits=["api.write PATCH /api/pages/11111111-1111-4111-8111-111111111111 44444444-4444-4444-8444-444444444444"] home={"createWs":null,"privateWs":null}
-g68 audits=["api.write PATCH /api/pages/11111111-1111-4111-8111-111111111111 22222222-2222-4222-8222-222222222222"] home={"createWs":null,"privateWs":null}
-g69 audits=["api.write PATCH /api/v1/pages/11111111-1111-4111-8111-111111111111 33333333-3333-4333-8333-333333333333"] home={"createWs":null,"privateWs":null}
-g70 audits=["api.write PATCH /api/v1/pages/11111111-1111-4111-8111-111111111111 55555555-5555-4555-8555-555555555555"] home={"createWs":null,"privateWs":null}
-g71 audits=["api.write PATCH /api/v1/pages/11111111-1111-4111-8111-111111111111 44444444-4444-4444-8444-444444444444"] home={"createWs":null,"privateWs":null}
 
-# cells of a write a guard answered (by its name; a moved one under the guard it replaced): 378
+# cells of a write a guard answered (by its name; a moved one under the guard it replaced): 344
 first POST /api/access-keys owner-cookie getLoginOr401=g1
 first POST /api/access-keys admin-cookie getLoginOr401=g1
 first POST /api/access-keys limited-cookie getLoginOr401=g1
@@ -215,20 +208,6 @@ first POST /api/grants/move/preview member-cookie getLoginOr401=g1
 first POST /api/grants/move/preview admin-bearer getLoginOr401=g36
 first POST /api/grants/move/preview member-bearer getLoginOr401=g1
 first POST /api/grants/move/preview revoked-bearer getLoginOr401=g1
-first PATCH /api/pages/:id owner-cookie getOwnerOr401=g1
-first PATCH /api/pages/:id admin-cookie getOwnerOr401=g1
-first PATCH /api/pages/:id limited-cookie getOwnerOr401=g1
-first PATCH /api/pages/:id member-cookie getOwnerOr401=g1
-first PATCH /api/pages/:id admin-bearer getOwnerOr401=g1
-first PATCH /api/pages/:id member-bearer getOwnerOr401=g1
-first PATCH /api/pages/:id revoked-bearer getOwnerOr401=g1
-first PATCH /api/v1/pages/:id owner-cookie getOwnerOr401=g1
-first PATCH /api/v1/pages/:id admin-cookie getOwnerOr401=g1
-first PATCH /api/v1/pages/:id limited-cookie getOwnerOr401=g1
-first PATCH /api/v1/pages/:id member-cookie getOwnerOr401=g1
-first PATCH /api/v1/pages/:id admin-bearer getOwnerOr401=g1
-first PATCH /api/v1/pages/:id member-bearer getOwnerOr401=g1
-first PATCH /api/v1/pages/:id revoked-bearer getOwnerOr401=g1
 first POST /api/workspaces owner-cookie getLoginOr401=g38
 first POST /api/workspaces admin-cookie getLoginOr401=g39
 first POST /api/workspaces limited-cookie getLoginOr401=g40
@@ -385,16 +364,6 @@ more POST /api/grants/move/preview bumped-cookie getLoginOr401=g1
 more POST /api/grants/move/preview gone-cookie getLoginOr401=g1
 more POST /api/grants/move/preview rotated-bearer getLoginOr401=g1
 more POST /api/grants/move/preview expired-bearer getLoginOr401=g1
-more PATCH /api/pages/:id disabled-cookie getOwnerOr401=g1
-more PATCH /api/pages/:id bumped-cookie getOwnerOr401=g1
-more PATCH /api/pages/:id gone-cookie getOwnerOr401=g1
-more PATCH /api/pages/:id rotated-bearer getOwnerOr401=g1
-more PATCH /api/pages/:id expired-bearer getOwnerOr401=g1
-more PATCH /api/v1/pages/:id disabled-cookie getOwnerOr401=g1
-more PATCH /api/v1/pages/:id bumped-cookie getOwnerOr401=g1
-more PATCH /api/v1/pages/:id gone-cookie getOwnerOr401=g1
-more PATCH /api/v1/pages/:id rotated-bearer getOwnerOr401=g1
-more PATCH /api/v1/pages/:id expired-bearer getOwnerOr401=g1
 more POST /api/workspaces disabled-cookie getLoginOr401=g1
 more POST /api/workspaces bumped-cookie getLoginOr401=g1
 more POST /api/workspaces gone-cookie getLoginOr401=g1
@@ -440,13 +409,3 @@ more DELETE /api/workspaces/:id/users/:loginId bumped-cookie getLoginOr401=g1
 more DELETE /api/workspaces/:id/users/:loginId gone-cookie getLoginOr401=g1
 more DELETE /api/workspaces/:id/users/:loginId rotated-bearer getLoginOr401=g1
 more DELETE /api/workspaces/:id/users/:loginId expired-bearer getLoginOr401=g1
-again PATCH /api/pages/:id owner-cookie getOwnerOr401=g65
-again PATCH /api/pages/:id admin-cookie getOwnerOr401=g66
-again PATCH /api/pages/:id limited-cookie getOwnerOr401=g67
-again PATCH /api/pages/:id member-cookie getOwnerOr401=g68
-again PATCH /api/pages/:id admin-bearer getOwnerOr401=g66
-again PATCH /api/pages/:id member-bearer getOwnerOr401=g68
-again PATCH /api/v1/pages/:id owner-cookie getOwnerOr401=g69
-again PATCH /api/v1/pages/:id admin-cookie getOwnerOr401=g70
-again PATCH /api/v1/pages/:id limited-cookie getOwnerOr401=g71
-again PATCH /api/v1/pages/:id admin-bearer getOwnerOr401=g70

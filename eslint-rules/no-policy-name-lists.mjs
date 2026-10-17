@@ -36,14 +36,21 @@ export const TOOL_LIST_PINS = {
  *  F4 fix round 1, one in route-scope.ts, reviewed: ADMIN_ACT_WRITES names
  *  the write routes an Admin user's request runs on the system pool with
  *  no scope (contact sharing, Revoke all, an entity merge), the guard's
- *  named exit beside the share close and the deleted-app trash. */
+ *  named exit beside the share close and the deleted-app trash.
+ *  Pre-check removal part 2, route-scope.ts 7 to 6: ITEM_REF_PREFIXES lost
+ *  its recall-revision entry (two left, share and deleted-app); 6 to 5 in
+ *  round 3: ITEM_WRITE_PREFIXES lost tables, files and folders (two left,
+ *  apps and tree items). Round 4 (the last family), still 5:
+ *  ITEM_WRITE_PREFIXES and ITEM_READ_WRITES are gone, and NO_ITEM_WRITES
+ *  names the same seven routes as ITEM_READ_WRITES did, for
+ *  route-policy's makesItems only (no item check). */
 export const ROUTE_LIST_PINS = {
   'server/web/lib/api-v1.ts': 1,
   'server/web/lib/auth-constants.ts': 2,
   'server/web/lib/auth/any-login-routes.ts': 3,
   'server/web/lib/auth/member-routes.ts': 1,
   'server/web/lib/auth/route-policy.ts': 1,
-  'server/web/lib/auth/route-scope.ts': 7,
+  'server/web/lib/auth/route-scope.ts': 5,
   'server/web/lib/body-limit.ts': 1,
   'server/web/lib/route-limits.ts': 1,
   'server/web/server/public-session-routes.ts': 1,

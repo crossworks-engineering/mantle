@@ -1,4 +1,5 @@
 import { NextResponse } from '@/server/http-compat';
+import { assertItemRight } from '@mantle/db';
 import { ownerCaller } from '@/lib/auth';
 import { getTable, saveTableDraft } from '@/lib/tables';
 import { parseSpreadsheetToGrid } from '@mantle/files/sheet-to-grid';
@@ -21,6 +22,10 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
 
   const table = await getTable(user.id, id);
   if (!table) return NextResponse.json({ error: 'not found' }, { status: 404 });
+  // The import replaces the draft: the caller's edit first (pre-check
+  // removal part 2), after the scoped read above (a table it does not read
+  // is the 404 of none), before the upload is read or parsed.
+  await assertItemRight(id, 'edit');
 
   const form = await req.formData().catch(() => null);
   const file = form?.get('file');

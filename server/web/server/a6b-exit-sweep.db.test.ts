@@ -281,6 +281,19 @@ const NAMED_CHANGES: Record<
   ],
   'rule-in-query': [
     {
+      // The pre-check removal part 2 (round 4): an app's PATCH asks the
+      // caller's edit itself (assertItemRight, in every mode) where the
+      // HTTP gate refused it; the one mapper answers the refusal, the same
+      // words with its code.
+      cells: /^PATCH \/api\/apps\/:id mcpAccess (adminAll|adminNoUsers)$/,
+      reason:
+        "an Admin user's mcpAccess switch on an app its scope may not edit is refused by the " +
+        "route's own edit check (assertItemRight) since the HTTP item gate's apps entry went; " +
+        'the 403 item-workspace is the one mapper\'s, which adds "code":"forbidden".',
+      was: /"status":403,"body":\{"error":"forbidden","reason":"item-workspace","message":"You cannot change this item in your workspaces\."\}/,
+      now: '{"status":403,"body":{"error":"forbidden","reason":"item-workspace","code":"forbidden","message":"You cannot change this item in your workspaces."}}',
+    },
+    {
       cells: /^GET \/api\/assistant\/thread adminNoUsers( agent=\w+)?$/,
       reason:
         'an Admin user assigned an assistant of a workspace it is not in no longer sees that ' +

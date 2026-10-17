@@ -9,6 +9,7 @@ import {
   AccessError,
   DATABASE_ERROR_PUBLIC,
   HIDDEN_ROWS_PUBLIC,
+  READ_ONLY_COPY_MESSAGE,
   adminAreaError,
   isAccessError,
   mapAccessError,
@@ -215,6 +216,30 @@ describe('mapAccessError: the HTTP answer', () => {
     expect(body(pgError('not allowed to move this item'))).toBe(itemWorkspace);
     expect(body(pgError('This folder holds items you cannot move.', 'hidden_rows'))).toBe(
       '{"error":"This folder holds items you cannot move.","reason":"hidden-items","code":"hidden_items"}',
+    );
+  });
+
+  it("a snapshot copy's edit says it is a read-only copy, with readOnly (pre-check removal part 2)", () => {
+    const body = (err: unknown) => JSON.stringify(mapAccessError(err)?.http?.body);
+    const copy =
+      '{"error":"forbidden","reason":"item-workspace","code":"forbidden","message":"This is a read-only copy of an accepted item: nobody changes it. Its author may delete it.","readOnly":true}';
+    // 0267's triggers, and SnapshotCopyReadOnlyError (its words, no detail).
+    expect(body(pgError('not allowed to change this item: it is a read-only snapshot copy'))).toBe(
+      copy,
+    );
+    expect(
+      mapAccessError(pgError('not allowed to change this item: it is a read-only snapshot copy'))
+        ?.toolText,
+    ).toBe(READ_ONLY_COPY_MESSAGE);
+    // A share or a grant of a copy keeps the generic answer.
+    expect(
+      body(
+        pgError(
+          'not allowed to share this item: it is a read-only snapshot copy in its private workspace',
+        ),
+      ),
+    ).toBe(
+      '{"error":"forbidden","reason":"item-workspace","code":"forbidden","message":"You cannot change this item in your workspaces."}',
     );
   });
 

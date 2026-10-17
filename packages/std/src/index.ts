@@ -162,6 +162,7 @@ export {
   isScopeWriteRefusal,
   mapAccessError,
   ITEM_WORKSPACE_MESSAGE,
+  READ_ONLY_COPY_MESSAGE,
   ITEM_WORKSPACE_TOOL_TEXTS,
   READ_ONLY_APP_MESSAGE,
   type AccessHttp,

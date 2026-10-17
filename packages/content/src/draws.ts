@@ -34,6 +34,7 @@ import {
   draftAllowed,
   draftColumn,
   isSnapshotCopy,
+  assertItemRight,
 } from '@mantle/db';
 import { sceneToText } from './scene-to-text';
 import { acceptSceneSvg, EXCALIDRAW_ENGINE } from './scene-svg';
@@ -650,6 +651,11 @@ export async function saveDrawDraft(
     .where(and(eq(nodes.id, id), eq(nodes.ownerId, ownerId), eq(nodes.type, 'draw')))
     .limit(1);
   if (!node) return { ok: false, missing: true };
+  // The caller's right first (pre-check removal part 2): a scope that reads
+  // the drawing and may not edit it reads no draft, so its draft revision
+  // would answer a conflict, or the lock nothing, where the edit is the
+  // refusal. Asked in a workspace scope only.
+  await assertItemRight(id, 'edit');
   const normalized = normalizeScene(scene);
   return withDrawLock(
     id,
@@ -688,6 +694,8 @@ export async function discardDrawDraft(ownerId: string, id: string): Promise<boo
     .where(and(eq(nodes.id, id), eq(nodes.ownerId, ownerId), eq(nodes.type, 'draw')))
     .limit(1);
   if (!node) return false;
+  // The caller's right first, as saveDrawDraft asks it.
+  await assertItemRight(id, 'edit');
   await withDrawLock(id, async (tx, locked) => {
     if (!locked) return;
     await tx
@@ -733,6 +741,9 @@ async function commitDrawOnce(
     .where(and(eq(nodes.id, id), eq(nodes.ownerId, ownerId), eq(nodes.type, 'draw')))
     .limit(1);
   if (!node) return { ok: false, missing: true };
+  // The caller's right first, as saveDrawDraft asks it: before the scene's
+  // text and picture are made and the draft's revision is read.
+  await assertItemRight(id, 'edit');
 
   const normalized = normalizeScene(scene);
   // The drawing's own words and a marker per image it places (always fold,

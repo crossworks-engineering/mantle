@@ -86,6 +86,11 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
       { status: 403 },
     );
   }
+  // The caller's edit of the app (manage with a description) is asked by
+  // updateAppMeta first, before anything is written (pre-check removal
+  // parts 2 and 3, asked once since the R0 integration): an app the scope
+  // does not read is the mapper's 404, as an id no row has; one it may not
+  // edit the 403 item-workspace (an Admin switch's included).
   let app = await updateAppMeta(user.id, id, { ...(name ? { title: name } : {}), ...rest });
   if (!app) return NextResponse.json({ error: 'app not found' }, { status: 404 });
   if (trustTools !== undefined) {

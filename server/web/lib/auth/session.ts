@@ -43,7 +43,7 @@ import {
   type GateCaller,
   type RequestScopeMode,
 } from '@mantle/db';
-import { AccessError, mapAccessError, UUID_RE } from '@mantle/std';
+import { AccessError, mapAccessError, READ_ONLY_COPY_MESSAGE, UUID_RE } from '@mantle/std';
 import {
   loadAnchorId,
   loadBearerToken,
@@ -1894,8 +1894,8 @@ async function itemWriteGate(
     }
     return go;
   } else {
-    // The item the route names: the id itself, or through a share or a
-    // recall revision (read on the system pool: an id, no content).
+    // The item the route names: the id itself, or through a share (read on
+    // the system pool: an id, no content).
     let nodeId: string | null = id;
     if (target.ref === 'share') {
       // An Admin user with the users area may close any link of the brain
@@ -1933,14 +1933,8 @@ async function itemWriteGate(
       nodeId = r[0]?.id ?? null;
       // An app's link: home Moderators only (assertMayLink, link-serve.ts).
       if (r[0]?.type === 'app') need = 'manage';
-    } else if (target.ref === 'recall-revision') {
-      const r = (await db.execute(
-        sql`select m.node_id::text as id from recall_revisions v
-              join recall_maps m on m.id = v.map_id where v.id = ${id}`,
-      )) as unknown as { id: string | null }[];
-      nodeId = r[0]?.id ?? null;
     }
-    // No such share or revision: the same 404 as an item the scope does
+    // No such share: the same 404 as an item the scope does
     // not read, for every login (an Admin user went on to the handler,
     // whose answer told a missing id from a hidden one).
     if (!nodeId) return notFound();
@@ -1973,7 +1967,7 @@ async function itemWriteGate(
       error: 'forbidden',
       reason: 'item-workspace',
       message: readOnlyCopy
-        ? 'This is a read-only copy of an accepted item: nobody changes it. Its author may delete it.'
+        ? READ_ONLY_COPY_MESSAGE
         : 'You cannot change this item in your workspaces.',
       ...(readOnlyCopy ? { readOnly: true } : {}),
     },

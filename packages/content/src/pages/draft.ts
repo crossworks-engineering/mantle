@@ -224,9 +224,11 @@ export async function saveDraft(
     .where(and(eq(nodes.id, id), eq(nodes.ownerId, ownerId), eq(nodes.type, 'page')))
     .limit(1);
   if (!node) return { ok: false, missing: true };
-  // The page's edit first (pre-check removal Part 3): a caller that may not edit the
-  // page reads no draft, so its save would answer a draft conflict ("changed
-  // since you read it") where it is a refusal. Asked before the rev.
+  // The page's edit first (pre-check removal parts 2 and 3): a caller that
+  // reads the page and may not edit it reads no draft, so its save would
+  // answer a draft conflict ("changed since you read it"), or the lock
+  // nothing, where the edit is the refusal. Asked before the rev, in a
+  // workspace scope only.
   await assertItemRight(id, 'edit');
   // Guarantee every persisted draft carries stable block ids — the autosave
   // endpoint accepts whatever the editor sends, and an editor that doesn't
@@ -264,6 +266,8 @@ export async function discardDraft(ownerId: string, id: string): Promise<boolean
     .where(and(eq(nodes.id, id), eq(nodes.ownerId, ownerId), eq(nodes.type, 'page')))
     .limit(1);
   if (!node) return false;
+  // The caller's right first, as saveDraft asks it.
+  await assertItemRight(id, 'edit');
   await withPageLock(id, async (tx, locked) => {
     if (!locked) return;
     await tx
@@ -309,6 +313,9 @@ async function commitPageOnce(
     .where(and(eq(nodes.id, id), eq(nodes.ownerId, ownerId), eq(nodes.type, 'page')))
     .limit(1);
   if (!node) return { ok: false, missing: true };
+  // The caller's right first, as saveDraft asks it: before the doc's text
+  // is made and the draft's revision is read.
+  await assertItemRight(id, 'edit');
 
   // Guarantee the committed doc carries stable per-block ids so the
   // brain (via doc_text), Phase 2b block tools, and the editor diff
@@ -382,11 +389,14 @@ export async function commitPageDraft(ownerId: string, id: string): Promise<Comm
     .where(and(eq(pages.nodeId, id), eq(nodes.ownerId, ownerId), eq(nodes.type, 'page')))
     .limit(1);
   if (!row) return { ok: false, missing: true };
-  // Edit first (the cheap rights read, pre-check removal fix round A): a
-  // reader that may not edit the page gets the refusal whether a draft is
-  // there or not.
-  await assertItemRight(id, 'edit');
-  if (!row.draftDoc) return { ok: false, noDraft: true };
+  // Edit first (pre-check removal fix round A): a reader that may not edit
+  // the page gets the refusal whether a draft is there or not. With a draft,
+  // commitPage asks it (before the doc's text is made), so it is asked once
+  // per path (R0 integration).
+  if (!row.draftDoc) {
+    await assertItemRight(id, 'edit');
+    return { ok: false, noDraft: true };
+  }
   return commitPage(ownerId, id, row.draftDoc as Record<string, unknown>, {
     baseRev: row.draftRev,
   });

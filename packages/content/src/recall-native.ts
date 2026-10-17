@@ -1331,16 +1331,20 @@ export async function reorderRecallCards(
   actor: RecallActor,
   version?: number,
 ): Promise<RecallWriteResult> {
-  // The card order is the owner's (the map's shape a reader walks), as the
-  // recall_cards_reorder tool is owner-only on MCP (workspaces arch A1).
-  if (actor.kind !== 'owner') {
-    throw new RecallWriteError(
-      'reorder_is_owners',
-      "Reordering a map's cards is the owner's act. An agent can write a card directly instead.",
-    );
-  }
   return await db.transaction(async (tx) => {
+    // The map first, in the caller's scope (pre-check removal part 2): a
+    // map it does not read is map_not_found, as none, before the act's
+    // owner check below says anything.
     const map = await mapOr404(tx, ownerId, mapId);
+    // The card order is the owner's (the map's shape a reader walks), as
+    // the recall_cards_reorder tool is owner-only on MCP (workspaces arch
+    // A1).
+    if (actor.kind !== 'owner') {
+      throw new RecallWriteError(
+        'reorder_is_owners',
+        "Reordering a map's cards is the owner's act. An agent can write a card directly instead.",
+      );
+    }
     assertVersion(map, version);
     const cards = await cardsOf(tx, map.id);
     const known = new Set(cards.map((c) => c.slug));
@@ -1400,14 +1404,16 @@ export async function confirmRecallPrompt(
   actor: RecallActor,
   version?: number,
 ): Promise<RecallWriteResult> {
-  if (actor.kind !== 'owner') {
-    throw new RecallWriteError(
-      'confirm_is_owners',
-      'Only the owner confirms a prompt. An agent can ask by writing the card with prompt: true.',
-    );
-  }
   const out = await db.transaction(async (tx) => {
+    // The map first, in the caller's scope (pre-check removal part 2), as
+    // reorderRecallCards reads it.
     const map = await mapOr404(tx, ownerId, mapId);
+    if (actor.kind !== 'owner') {
+      throw new RecallWriteError(
+        'confirm_is_owners',
+        'Only the owner confirms a prompt. An agent can ask by writing the card with prompt: true.',
+      );
+    }
     assertVersion(map, version);
     const cards = await cardsOf(tx, map.id);
     const card = cards.find((c) => c.slug === cardSlug);
@@ -1565,12 +1571,9 @@ export async function restoreRecallRevision(
   revisionId: string,
   actor: RecallActor,
 ): Promise<RecallWriteResult> {
-  if (actor.kind !== 'owner') {
-    throw new RecallWriteError(
-      'restore_is_owners',
-      "Restoring a revision is the owner's act. An agent can write a card directly instead.",
-    );
-  }
+  // The revision first, in the caller's scope (pre-check removal part 2):
+  // one of a map it does not read is revision_not_found, as none, before
+  // the act's owner check says anything.
   const [rev] = await db
     .select()
     .from(recallRevisions)
@@ -1580,6 +1583,12 @@ export async function restoreRecallRevision(
     throw new RecallWriteError(
       'revision_not_found',
       `No revision '${revisionId}'. The log keeps the last ${RECALL_REVISIONS_PER_MAP} per map, so an older one may have been pruned.`,
+    );
+  }
+  if (actor.kind !== 'owner') {
+    throw new RecallWriteError(
+      'restore_is_owners',
+      "Restoring a revision is the owner's act. An agent can write a card directly instead.",
     );
   }
   const [map] = await db

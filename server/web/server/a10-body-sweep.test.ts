@@ -329,6 +329,50 @@ function changeKind(cell: string, main: string, now: string): string | null {
   if (now === OPAQUE && cell.startsWith('DELETE /api/files/files ')) {
     return 'item-check-first (F4 fix round 2: asked of the database, the stand-in has none)';
   }
+  // Pre-check removal part 2: Recall's owner acts (a prompt confirm, a
+  // reorder, a revision restore) read the map or the revision in the
+  // caller's scope before their owner check, so a hidden one is the 404 of
+  // none. With no database the read is the opaque 500 (the stand-in), or
+  // the restore's revision_not_found (its read through the stand-in finds
+  // no row); the real answers: precheck-removal-http.db.test.ts.
+  if (
+    /^POST \/api\/recall\/(maps\/:id\/cards\/(:card\/prompt|reorder)|revisions\/:id\/restore) /.test(
+      cell,
+    ) &&
+    /_is_owners/.test(main) &&
+    (now === OPAQUE || /"code":"revision_not_found"/.test(now))
+  ) {
+    return 'map-read-first (pre-check removal part 2: the owner act reads the map in the scope first)';
+  }
+  // Pre-check removal part 2 (round 4): an app's edit, build, draft,
+  // publish, format and history writes ask the caller's edit first
+  // (assertItemRight), of the database by @mantle/db's own client, which
+  // the stand-in does not reach: its error answers the one opaque 500,
+  // before the body, where main read no row through the stand-in (or the
+  // body) and answered on. The real answers: precheck-removal-http.db.test.ts.
+  if (
+    now === OPAQUE &&
+    /^(POST \/api\/apps\/:id\/(build|publish|format|snapshots\/:sid\/restore)|(PUT|DELETE) \/api\/apps\/:id\/draft|(PATCH|DELETE) \/api\/apps\/:id\/snapshots\/:sid|PATCH \/api\/apps\/:id) /.test(
+      cell,
+    )
+  ) {
+    return 'item-check-first (pre-check removal part 2: the app route asks the caller’s right first, of the database)';
+  }
+  // Pre-check removal part 2 (round 3): a file or Files folder write, a
+  // table history delete and the v1 table row routes read the item in the
+  // caller's scope before the body (fileById, folderById, the table's
+  // scoped read, tableTitle), so the stand-in's no row is the handler's 404
+  // of none, before a body refusal or the opaque 500 main answered; the
+  // real answers: precheck-removal-http.db.test.ts.
+  if (
+    /^(POST|PATCH) \/api\/files\/files\/:id |^(POST|PATCH|DELETE) \/api\/files\/folders\/:id |^DELETE \/api\/tables\/:id\/history\/:sid |^POST \/api\/v1\/tables\/:id\/rows |^PATCH \/api\/v1\/tables\/:id\/rows\/:rowId /.test(
+      cell,
+    ) &&
+    /^(4\d\d|500) /.test(main) &&
+    now === '404 application/json {"error":"not found"}'
+  ) {
+    return 'item-read-first (pre-check removal part 2: the write reads the item in the scope before its body)';
+  }
   // Fold 2 (one error answer): a plain error (the sweep's database stand-in
   // throws "DATABASE_URL must be set"; the vault has no master key) whose
   // text a route's catch put in the reply answers the one opaque 500 now.

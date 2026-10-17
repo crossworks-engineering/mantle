@@ -801,7 +801,14 @@ describe('the item pre-check counters (A4 step 4, A5 step 6b)', () => {
   it('counts each HTTP list, and the scoreboard sums them', () => {
     const by = itemPrecheckRouteEntries(ROOT) as Record<string, number>;
     expect(Object.keys(by)).toEqual([...(ITEM_PRECHECK_ROUTE_LISTS as string[])]);
-    for (const n of Object.values(by)) expect(n).toBeGreaterThan(0);
+    // A list whose last entry went is gone and counts 0 (the pre-check
+    // removal part 2): ITEM_MANAGE_WRITES, ITEM_WRITE_PREFIXES and
+    // ITEM_READ_WRITES. ITEM_REF_PREFIXES keeps the share and the
+    // deleted app (plan v3 S6).
+    const gone = ['ITEM_MANAGE_WRITES', 'ITEM_WRITE_PREFIXES', 'ITEM_READ_WRITES'];
+    for (const [name, n] of Object.entries(by)) {
+      expect(n, name).toBe(gone.includes(name) ? 0 : 2);
+    }
     expect(Object.values(by).reduce((a, b) => a + b, 0)).toBe(got.numbers.itemPrecheckRoutes);
     // The last tool entries went in Part 3: the pin is 0.
     expect(got.numbers.itemPrecheckTools).toBe(0);

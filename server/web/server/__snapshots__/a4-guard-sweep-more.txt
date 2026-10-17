@@ -42,24 +42,16 @@ a40 404 content-type=application/json cache-control=no-store {"error":"not found
 a41 404 content-type=text/plain;charset=UTF-8
 a42 500 content-type=text/plain; charset=UTF-8
 a43 404 content-type=application/json {"ok":false,"error":"not found"}
-a44 500 content-type=application/json cache-control=no-store {"error":"internal error"} [getOwnerOr401WithLogin ok {"kind":"admin","member":null,"source":"web","user.actor":{"id":"33333333-3333-4333-8333-333333333333","email":"admin-3333@example.invalid","displayName":"admin 3333","isOwner":true},"user.email":"admin-3333@example.invalid","user.id":"33333333-3333-4333-8333-333333333333"} actor=login:rw:33333333-3333-4333-8333-333333333333 out=user:true]
-a45 500 content-type=application/json cache-control=no-store {"error":"internal error"} [getOwnerOr401WithLogin ok {"kind":"admin","member":null,"source":"web","user.actor":{"id":"55555555-5555-4555-8555-555555555555","email":"admin-5555@example.invalid","displayName":"admin 5555","isOwner":false},"user.email":"admin-5555@example.invalid","user.id":"33333333-3333-4333-8333-333333333333"} actor=login:rw:55555555-5555-4555-8555-555555555555 out=user:true]
-a46 500 content-type=application/json cache-control=no-store {"error":"internal error"} [getOwnerOr401WithLogin ok {"kind":"admin","member":null,"source":"web","user.actor":{"id":"44444444-4444-4444-8444-444444444444","email":"admin-4444@example.invalid","displayName":"admin 4444","isOwner":false},"user.email":"admin-4444@example.invalid","user.id":"33333333-3333-4333-8333-333333333333"} actor=login:rw:44444444-4444-4444-8444-444444444444 out=user:true]
-a47 500 content-type=application/json cache-control=no-store {"error":"internal error"} [getOwnerOr401WithLogin ok {"kind":"member","member.anchorId":"33333333-3333-4333-8333-333333333333","member.contactId":null,"member.displayName":"member 2222","member.email":"member-2222@example.invalid","member.loginId":"22222222-2222-4222-8222-222222222222","member.role":"member","source":"web","user.actor":{"id":"22222222-2222-4222-8222-222222222222","email":"member-2222@example.invalid","displayName":"member 2222","isOwner":false},"user.email":"member-2222@example.invalid","user.id":"33333333-3333-4333-8333-333333333333"} actor=login:rw:22222222-2222-4222-8222-222222222222 out=user:true]
-a48 500 content-type=application/json cache-control=no-store {"error":"internal error"} [touch 00000001] [getOwnerOr401WithLogin ok {"kind":"admin","member":null,"source":"mobile","user.actor":{"id":"55555555-5555-4555-8555-555555555555","email":"admin-5555@example.invalid","displayName":"admin 5555","isOwner":false},"user.email":"admin-5555@example.invalid","user.id":"33333333-3333-4333-8333-333333333333"} actor=login:rw:55555555-5555-4555-8555-555555555555 out=user:true]
-a49 500 content-type=application/json cache-control=no-store {"error":"internal error"} [touch 00000002] [getOwnerOr401WithLogin ok {"kind":"member","member.anchorId":"33333333-3333-4333-8333-333333333333","member.contactId":null,"member.displayName":"member 2222","member.email":"member-2222@example.invalid","member.loginId":"22222222-2222-4222-8222-222222222222","member.role":"member","source":"mobile","user.actor":{"id":"22222222-2222-4222-8222-222222222222","email":"member-2222@example.invalid","displayName":"member 2222","isOwner":false},"user.email":"member-2222@example.invalid","user.id":"33333333-3333-4333-8333-333333333333"} actor=login:rw:22222222-2222-4222-8222-222222222222 out=user:true]
-a50 500 content-type=application/json cache-control=no-store {"error":"internal error"} [getOwnerOr401 ok {"actor.displayName":"admin 3333","actor.email":"admin-3333@example.invalid","actor.id":"33333333-3333-4333-8333-333333333333","actor.isOwner":true,"email":"admin-3333@example.invalid","id":"33333333-3333-4333-8333-333333333333"} actor=login:rw:33333333-3333-4333-8333-333333333333 out=user:true]
-a51 500 content-type=application/json cache-control=no-store {"error":"internal error"} [getOwnerOr401 ok {"actor.displayName":"admin 5555","actor.email":"admin-5555@example.invalid","actor.id":"55555555-5555-4555-8555-555555555555","actor.isOwner":false,"email":"admin-5555@example.invalid","id":"33333333-3333-4333-8333-333333333333"} actor=login:rw:55555555-5555-4555-8555-555555555555 out=user:true]
-a52 500 content-type=application/json cache-control=no-store {"error":"internal error"} [getOwnerOr401 ok {"actor.displayName":"admin 4444","actor.email":"admin-4444@example.invalid","actor.id":"44444444-4444-4444-8444-444444444444","actor.isOwner":false,"email":"admin-4444@example.invalid","id":"33333333-3333-4333-8333-333333333333"} actor=login:rw:44444444-4444-4444-8444-444444444444 out=user:true]
-a53 500 content-type=application/json cache-control=no-store {"error":"internal error"} [getOwnerOr401 ok {"actor.displayName":"member 2222","actor.email":"member-2222@example.invalid","actor.id":"22222222-2222-4222-8222-222222222222","actor.isOwner":false,"email":"member-2222@example.invalid","id":"33333333-3333-4333-8333-333333333333"} actor=login:rw:22222222-2222-4222-8222-222222222222 out=user:true]
-a54 500 content-type=application/json cache-control=no-store {"error":"internal error"} [touch 00000001] [getOwnerOr401 ok {"actor.displayName":"admin 5555","actor.email":"admin-5555@example.invalid","actor.id":"55555555-5555-4555-8555-555555555555","actor.isOwner":false,"email":"admin-5555@example.invalid","id":"33333333-3333-4333-8333-333333333333"} actor=login:rw:55555555-5555-4555-8555-555555555555 out=user:true]
-a55 500 content-type=application/json cache-control=no-store {"error":"internal error"} [touch 00000002] [getOwnerOr401 ok {"actor.displayName":"member 2222","actor.email":"member-2222@example.invalid","actor.id":"22222222-2222-4222-8222-222222222222","actor.isOwner":false,"email":"member-2222@example.invalid","id":"33333333-3333-4333-8333-333333333333"} actor=login:rw:22222222-2222-4222-8222-222222222222 out=user:true]
-a56 500 content-type=application/json cache-control=no-store {"error":"internal error"} [getOwnerOr401 ok {"actor.displayName":"admin 3333","actor.email":"admin-3333@example.invalid","actor.id":"33333333-3333-4333-8333-333333333333","actor.isOwner":true,"email":"admin-3333@example.invalid","id":"33333333-3333-4333-8333-333333333333"} actor=login:rw:33333333-3333-4333-8333-333333333333 out=system:admin-write]
-a57 404 content-type=application/json cache-control=no-store {"ok":false,"error":"not found"} [getOwnerOr401 R404 {"ok":false,"error":"not found"} actor=login:rw:55555555-5555-4555-8555-555555555555 out=-]
-a58 404 content-type=application/json cache-control=no-store {"ok":false,"error":"not found"} [getOwnerOr401 R404 {"ok":false,"error":"not found"} actor=login:rw:44444444-4444-4444-8444-444444444444 out=-]
-a59 404 content-type=application/json cache-control=no-store {"ok":false,"error":"not found"} [touch 00000001] [getOwnerOr401 R404 {"ok":false,"error":"not found"} actor=login:rw:55555555-5555-4555-8555-555555555555 out=-]
+a44 500 content-type=application/json cache-control=no-store {"error":"internal error"} [getOwnerOr401 ok {"actor.displayName":"admin 3333","actor.email":"admin-3333@example.invalid","actor.id":"33333333-3333-4333-8333-333333333333","actor.isOwner":true,"email":"admin-3333@example.invalid","id":"33333333-3333-4333-8333-333333333333"} actor=login:rw:33333333-3333-4333-8333-333333333333 out=system:admin-write]
+a45 404 content-type=application/json cache-control=no-store {"ok":false,"error":"not found"} [getOwnerOr401 R404 {"ok":false,"error":"not found"} actor=login:rw:55555555-5555-4555-8555-555555555555 out=-]
+a46 404 content-type=application/json cache-control=no-store {"ok":false,"error":"not found"} [getOwnerOr401 R404 {"ok":false,"error":"not found"} actor=login:rw:44444444-4444-4444-8444-444444444444 out=-]
+a47 404 content-type=application/json cache-control=no-store {"ok":false,"error":"not found"} [touch 00000001] [getOwnerOr401 R404 {"ok":false,"error":"not found"} actor=login:rw:55555555-5555-4555-8555-555555555555 out=-]
+a48 500 content-type=application/json cache-control=no-store {"error":"internal error"} [getOwnerOr401 ok {"actor.displayName":"admin 3333","actor.email":"admin-3333@example.invalid","actor.id":"33333333-3333-4333-8333-333333333333","actor.isOwner":true,"email":"admin-3333@example.invalid","id":"33333333-3333-4333-8333-333333333333"} actor=login:rw:33333333-3333-4333-8333-333333333333 out=user:true]
+a49 500 content-type=application/json cache-control=no-store {"error":"internal error"} [getOwnerOr401 ok {"actor.displayName":"admin 5555","actor.email":"admin-5555@example.invalid","actor.id":"55555555-5555-4555-8555-555555555555","actor.isOwner":false,"email":"admin-5555@example.invalid","id":"33333333-3333-4333-8333-333333333333"} actor=login:rw:55555555-5555-4555-8555-555555555555 out=user:true]
+a50 500 content-type=application/json cache-control=no-store {"error":"internal error"} [getOwnerOr401 ok {"actor.displayName":"admin 4444","actor.email":"admin-4444@example.invalid","actor.id":"44444444-4444-4444-8444-444444444444","actor.isOwner":false,"email":"admin-4444@example.invalid","id":"33333333-3333-4333-8333-333333333333"} actor=login:rw:44444444-4444-4444-8444-444444444444 out=user:true]
+a51 500 content-type=application/json cache-control=no-store {"error":"internal error"} [touch 00000001] [getOwnerOr401 ok {"actor.displayName":"admin 5555","actor.email":"admin-5555@example.invalid","actor.id":"55555555-5555-4555-8555-555555555555","actor.isOwner":false,"email":"admin-5555@example.invalid","id":"33333333-3333-4333-8333-333333333333"} actor=login:rw:55555555-5555-4555-8555-555555555555 out=user:true]
 
-# cells that wanted a database: 399 in the first sweep; 0 still do with the reads stood in
+# cells that wanted a database: 13 in the first sweep; 0 still do with the reads stood in
 
 # more credentials
 GET /.well-known/oauth-authorization-server: disabled-cookie=a1 bumped-cookie=a1 gone-cookie=a1 rotated-bearer=a1 expired-bearer=a1 key-unknown=a1 key-revoked=a1
@@ -889,75 +881,7 @@ GET /s/:token/view: disabled-cookie=a40 bumped-cookie=a40 gone-cookie=a40 rotate
 HEAD /s/:token/view: disabled-cookie=a21 bumped-cookie=a21 gone-cookie=a21 rotated-bearer=a21 expired-bearer=a21 key-unknown=a21 key-revoked=a21
 
 # the first sweep, its cells that wanted a database, with the reads stood in
-PATCH /api/apps/:id: owner-cookie=a44 admin-cookie=a45 limited-cookie=a46 member-cookie=a47 admin-bearer=a48 member-bearer=a49
-DELETE /api/apps/:id: owner-cookie=a50 admin-cookie=a51 limited-cookie=a52 member-cookie=a53 admin-bearer=a54 member-bearer=a55
-POST /api/apps/:id/build: owner-cookie=a50 admin-cookie=a51 limited-cookie=a52 member-cookie=a53 admin-bearer=a54 member-bearer=a55
-POST /api/apps/:id/db-broker: owner-cookie=a44 admin-cookie=a45 limited-cookie=a46 member-cookie=a47 admin-bearer=a48 member-bearer=a49
-PUT /api/apps/:id/draft: owner-cookie=a50 admin-cookie=a51 limited-cookie=a52 member-cookie=a53 admin-bearer=a54 member-bearer=a55
-DELETE /api/apps/:id/draft: owner-cookie=a50 admin-cookie=a51 limited-cookie=a52 member-cookie=a53 admin-bearer=a54 member-bearer=a55
-POST /api/apps/:id/duplicate: owner-cookie=a50 admin-cookie=a51 limited-cookie=a52 admin-bearer=a54
-POST /api/apps/:id/format: owner-cookie=a50 admin-cookie=a51 limited-cookie=a52 member-cookie=a53 admin-bearer=a54 member-bearer=a55
-POST /api/apps/:id/frame-ticket: owner-cookie=a44 admin-cookie=a45 limited-cookie=a46 member-cookie=a47 admin-bearer=a48 member-bearer=a49
-POST /api/apps/:id/opened: owner-cookie=a50 admin-cookie=a51 limited-cookie=a52 admin-bearer=a54
-POST /api/apps/:id/publish: owner-cookie=a50 admin-cookie=a51 limited-cookie=a52 member-cookie=a53 admin-bearer=a54 member-bearer=a55
-POST /api/apps/:id/snapshots: owner-cookie=a50 admin-cookie=a51 limited-cookie=a52 admin-bearer=a54
-PATCH /api/apps/:id/snapshots/:sid: owner-cookie=a50 admin-cookie=a51 limited-cookie=a52 admin-bearer=a54
-DELETE /api/apps/:id/snapshots/:sid: owner-cookie=a50 admin-cookie=a51 limited-cookie=a52 admin-bearer=a54
-POST /api/apps/:id/snapshots/:sid/restore: owner-cookie=a50 admin-cookie=a51 limited-cookie=a52 admin-bearer=a54
-POST /api/apps/:id/tool-broker: owner-cookie=a44 admin-cookie=a45 limited-cookie=a46 member-cookie=a47 admin-bearer=a48 member-bearer=a49
-DELETE /api/apps/deleted/:id: owner-cookie=a56 admin-cookie=a57 limited-cookie=a58 admin-bearer=a59
-POST /api/apps/deleted/:id/restore: owner-cookie=a56 admin-cookie=a57 limited-cookie=a58 admin-bearer=a59
-PATCH /api/draws/:id: owner-cookie=a50 admin-cookie=a51 limited-cookie=a52 member-cookie=a53 admin-bearer=a54 member-bearer=a55
-DELETE /api/draws/:id: owner-cookie=a50 admin-cookie=a51 limited-cookie=a52 member-cookie=a53 admin-bearer=a54 member-bearer=a55
-POST /api/draws/:id/commit: owner-cookie=a50 admin-cookie=a51 limited-cookie=a52 member-cookie=a53 admin-bearer=a54 member-bearer=a55
-POST /api/draws/:id/discard-draft: owner-cookie=a50 admin-cookie=a51 limited-cookie=a52 member-cookie=a53 admin-bearer=a54 member-bearer=a55
-PUT /api/draws/:id/draft: owner-cookie=a50 admin-cookie=a51 limited-cookie=a52 member-cookie=a53 admin-bearer=a54 member-bearer=a55
-PATCH /api/events/:id: owner-cookie=a50 admin-cookie=a51 limited-cookie=a52 member-cookie=a53 admin-bearer=a54 member-bearer=a55
-DELETE /api/events/:id: owner-cookie=a50 admin-cookie=a51 limited-cookie=a52 member-cookie=a53 admin-bearer=a54 member-bearer=a55
-POST /api/files/files/:id: owner-cookie=a50 admin-cookie=a51 limited-cookie=a52 admin-bearer=a54
-PATCH /api/files/files/:id: owner-cookie=a50 admin-cookie=a51 limited-cookie=a52 member-cookie=a53 admin-bearer=a54 member-bearer=a55
-DELETE /api/files/files/:id: owner-cookie=a50 admin-cookie=a51 limited-cookie=a52 member-cookie=a53 admin-bearer=a54 member-bearer=a55
-POST /api/files/folders/:id: owner-cookie=a50 admin-cookie=a51 limited-cookie=a52 admin-bearer=a54
-PATCH /api/files/folders/:id: owner-cookie=a50 admin-cookie=a51 limited-cookie=a52 member-cookie=a53 admin-bearer=a54 member-bearer=a55
-DELETE /api/files/folders/:id: owner-cookie=a50 admin-cookie=a51 limited-cookie=a52 member-cookie=a53 admin-bearer=a54 member-bearer=a55
-PATCH /api/formulas/:id: owner-cookie=a50 admin-cookie=a51 limited-cookie=a52 member-cookie=a53 admin-bearer=a54 member-bearer=a55
-DELETE /api/formulas/:id: owner-cookie=a50 admin-cookie=a51 limited-cookie=a52 member-cookie=a53 admin-bearer=a54 member-bearer=a55
-PATCH /api/notes/:id: owner-cookie=a50 admin-cookie=a51 limited-cookie=a52 member-cookie=a53 admin-bearer=a54 member-bearer=a55
-DELETE /api/notes/:id: owner-cookie=a50 admin-cookie=a51 limited-cookie=a52 member-cookie=a53 admin-bearer=a54 member-bearer=a55
-PATCH /api/pages/:id: owner-cookie=a50 admin-cookie=a51 limited-cookie=a52 member-cookie=a53 admin-bearer=a54 member-bearer=a55
-DELETE /api/pages/:id: owner-cookie=a50 admin-cookie=a51 limited-cookie=a52 member-cookie=a53 admin-bearer=a54 member-bearer=a55
-POST /api/pages/:id/commit: owner-cookie=a50 admin-cookie=a51 limited-cookie=a52 member-cookie=a53 admin-bearer=a54 member-bearer=a55
-POST /api/pages/:id/discard-draft: owner-cookie=a50 admin-cookie=a51 limited-cookie=a52 member-cookie=a53 admin-bearer=a54 member-bearer=a55
-PUT /api/pages/:id/draft: owner-cookie=a50 admin-cookie=a51 limited-cookie=a52 member-cookie=a53 admin-bearer=a54 member-bearer=a55
-POST /api/pages/:id/move: owner-cookie=a50 admin-cookie=a51 limited-cookie=a52 member-cookie=a53 admin-bearer=a54 member-bearer=a55
-PATCH /api/recall/maps/:id: owner-cookie=a50 admin-cookie=a51 limited-cookie=a52 member-cookie=a53 admin-bearer=a54 member-bearer=a55
-DELETE /api/recall/maps/:id: owner-cookie=a50 admin-cookie=a51 limited-cookie=a52 member-cookie=a53 admin-bearer=a54 member-bearer=a55
-POST /api/recall/maps/:id/cards: owner-cookie=a50 admin-cookie=a51 limited-cookie=a52 member-cookie=a53 admin-bearer=a54 member-bearer=a55
-PUT /api/recall/maps/:id/cards/:card: owner-cookie=a50 admin-cookie=a51 limited-cookie=a52 member-cookie=a53 admin-bearer=a54 member-bearer=a55
-DELETE /api/recall/maps/:id/cards/:card: owner-cookie=a50 admin-cookie=a51 limited-cookie=a52 member-cookie=a53 admin-bearer=a54 member-bearer=a55
-POST /api/recall/maps/:id/cards/:card/prompt: owner-cookie=a50 admin-cookie=a51 limited-cookie=a52 member-cookie=a53 admin-bearer=a54 member-bearer=a55
-POST /api/recall/maps/:id/cards/reorder: owner-cookie=a50 admin-cookie=a51 limited-cookie=a52 member-cookie=a53 admin-bearer=a54 member-bearer=a55
-POST /api/recall/revisions/:id/restore: owner-cookie=a50 admin-cookie=a51 limited-cookie=a52 member-cookie=a53 admin-bearer=a54 member-bearer=a55
-PATCH /api/shares/:id: owner-cookie=a50 admin-cookie=a51 limited-cookie=a52 admin-bearer=a54
-DELETE /api/shares/:id: limited-cookie=a52
-PATCH /api/tables/:id: owner-cookie=a50 admin-cookie=a51 limited-cookie=a52 member-cookie=a53 admin-bearer=a54 member-bearer=a55
-DELETE /api/tables/:id: owner-cookie=a50 admin-cookie=a51 limited-cookie=a52 member-cookie=a53 admin-bearer=a54 member-bearer=a55
-POST /api/tables/:id/commit: owner-cookie=a50 admin-cookie=a51 limited-cookie=a52 member-cookie=a53 admin-bearer=a54 member-bearer=a55
-POST /api/tables/:id/discard-draft: owner-cookie=a50 admin-cookie=a51 limited-cookie=a52 member-cookie=a53 admin-bearer=a54 member-bearer=a55
-PUT /api/tables/:id/draft: owner-cookie=a50 admin-cookie=a51 limited-cookie=a52 member-cookie=a53 admin-bearer=a54 member-bearer=a55
-POST /api/tables/:id/draft-ops: owner-cookie=a50 admin-cookie=a51 limited-cookie=a52 member-cookie=a53 admin-bearer=a54 member-bearer=a55
-POST /api/tables/:id/history: owner-cookie=a50 admin-cookie=a51 limited-cookie=a52 admin-bearer=a54
-DELETE /api/tables/:id/history/:sid: owner-cookie=a50 admin-cookie=a51 limited-cookie=a52 admin-bearer=a54
-POST /api/tables/:id/history/:sid/restore: owner-cookie=a50 admin-cookie=a51 limited-cookie=a52 admin-bearer=a54
-POST /api/tables/:id/import: owner-cookie=a50 admin-cookie=a51 limited-cookie=a52 admin-bearer=a54
-PATCH /api/tasks/:id: owner-cookie=a50 admin-cookie=a51 limited-cookie=a52 member-cookie=a53 admin-bearer=a54 member-bearer=a55
-DELETE /api/tasks/:id: owner-cookie=a50 admin-cookie=a51 limited-cookie=a52 member-cookie=a53 admin-bearer=a54 member-bearer=a55
-PATCH /api/tree/:kind/folders/:id: owner-cookie=a50 admin-cookie=a51 limited-cookie=a52 member-cookie=a53 admin-bearer=a54 member-bearer=a55
-DELETE /api/tree/:kind/folders/:id: owner-cookie=a50 admin-cookie=a51 limited-cookie=a52 member-cookie=a53 admin-bearer=a54 member-bearer=a55
-POST /api/tree/items/:id/opened: owner-cookie=a50 admin-cookie=a51 limited-cookie=a52 member-cookie=a53 admin-bearer=a54 member-bearer=a55
-PUT /api/tree/items/:id/pin: owner-cookie=a50 admin-cookie=a51 limited-cookie=a52 member-cookie=a53 admin-bearer=a54 member-bearer=a55
-PATCH /api/v1/pages/:id: owner-cookie=a50 admin-cookie=a51 limited-cookie=a52 member-cookie=a53 admin-bearer=a54 member-bearer=a55
-POST /api/v1/tables/:id/commit: owner-cookie=a50 admin-cookie=a51 limited-cookie=a52 member-cookie=a53 admin-bearer=a54 member-bearer=a55 key-write=a51 key-member=a53
-POST /api/v1/tables/:id/rows: owner-cookie=a50 admin-cookie=a51 limited-cookie=a52 admin-bearer=a54 key-write=a51
-PATCH /api/v1/tables/:id/rows/:rowId: owner-cookie=a50 admin-cookie=a51 limited-cookie=a52 admin-bearer=a54 key-write=a51
-PATCH /api/v1/tasks/:id: owner-cookie=a50 admin-cookie=a51 limited-cookie=a52 member-cookie=a53 admin-bearer=a54 member-bearer=a55 key-write=a51 key-member=a53
+DELETE /api/apps/deleted/:id: owner-cookie=a44 admin-cookie=a45 limited-cookie=a46 admin-bearer=a47
+POST /api/apps/deleted/:id/restore: owner-cookie=a44 admin-cookie=a45 limited-cookie=a46 admin-bearer=a47
+PATCH /api/shares/:id: owner-cookie=a48 admin-cookie=a49 limited-cookie=a50 admin-bearer=a51
+DELETE /api/shares/:id: limited-cookie=a50

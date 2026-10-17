@@ -12,6 +12,13 @@ import {
   setAppSnapshotNote,
 } from '@mantle/content/app-snapshots';
 import { readBody } from '@/lib/read-body';
+import { assertItemRight } from '@mantle/db';
+import type { RouteParams } from '@/lib/route-params';
+
+/** The ids are uuids: any other names nothing, the params gateway's one
+ *  404 before the handler (lib/route-params.ts; the item gate answered it
+ *  until the pre-check removal part 2). */
+export const routeParams = { id: 'uuid', sid: 'uuid' } as const satisfies RouteParams;
 
 type Ctx = { params: Promise<{ id: string; sid: string }> };
 
@@ -29,6 +36,11 @@ const PatchBody = z.object({ note: z.string().max(500).nullable() });
 export async function PATCH(req: Request, ctx: Ctx) {
   const user = ownerCaller();
   const { id, sid } = await ctx.params;
+  // The caller's edit of the app first (the pre-check removal part 2: the
+  // HTTP gate asked it): an app the scope does not read is the mapper's
+  // 404, as an id no row has; one it may not edit the 403 item-workspace (a
+  // read-only copy's words); before anything is read, built or staged.
+  await assertItemRight(id, 'edit');
   const body = await readBody(req, PatchBody);
   const ok = await setAppSnapshotNote(user.id, id, sid, body.note);
   if (!ok) return NextResponse.json({ error: 'not found' }, { status: 404 });
@@ -38,6 +50,11 @@ export async function PATCH(req: Request, ctx: Ctx) {
 export async function DELETE(_req: Request, ctx: Ctx) {
   const user = ownerCaller();
   const { id, sid } = await ctx.params;
+  // The caller's edit of the app first (the pre-check removal part 2: the
+  // HTTP gate asked it): an app the scope does not read is the mapper's
+  // 404, as an id no row has; one it may not edit the 403 item-workspace (a
+  // read-only copy's words); before anything is read, built or staged.
+  await assertItemRight(id, 'edit');
   // A version refuses (AppSnapshotRefusedError): 409 by the one table (A10
   // part 2).
   const ok = await deleteAppSnapshot(user.id, id, sid);

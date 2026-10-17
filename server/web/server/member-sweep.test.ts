@@ -351,9 +351,14 @@ describe.skipIf(!hasManifest)('member sweep: a member login is refused everywher
       expect(res.status, path).toBe(404);
     }
     // The brain's byte route serves every login in its scope since W7e: a
-    // member device token gets past the gate (the handler's 400 here).
+    // member device token gets past the gate. Since pre-check removal part
+    // 2 the route declares its uuid param, so the bad id is the params
+    // gateway's 404 (it runs after the session guard, whose refusal would
+    // be the 401 or 403), where the handler answered 400 "invalid id".
     for (const path of ['/api/files/files/not-a-uuid?raw=1']) {
-      expect((await app.request(path, { headers })).status, path).toBe(400);
+      const res = await app.request(path, { headers });
+      expect(res.status, path).toBe(404);
+      expect(await res.text(), path).toBe('{"error":"not found"}');
     }
   });
 
