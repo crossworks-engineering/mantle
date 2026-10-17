@@ -919,8 +919,10 @@ describe.skipIf(!URL)('W6a route sweep: scoped reads for every login', () => {
     expect(failures).toEqual([]);
     // Fewer with each family whose entry went in the pre-check removal part
     // 2 (its routes name no item now; precheck-removal-http.db.test.ts
-    // proves them): tables went in round 3.
-    expect(checked).toBeGreaterThan(0);
+    // proves them, the hidden item's answer equal to an id no row has):
+    // the apps and tree items went last (round 4), so no route names a node
+    // item now; the share and the deleted app are w6a-fix-sweep's.
+    expect(checked).toBe(0);
     // An item of its own workspaces it still writes, and an id no row has
     // gets the handler's answer.
     const ok = await call(`/api/notes/${adminNote}`, owner, 'PATCH', {

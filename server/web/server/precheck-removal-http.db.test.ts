@@ -638,7 +638,9 @@ describe.skipIf(!DB_URL)('the pre-check removal, part 2: the HTTP entries', () =
    *  with `ok === false` (@crossworks/share-ui app-sandbox.tsx): an app's
    *  call of a tool it never declared must keep that body. */
   const undeclaredTool = (status: number, text: string) => {
-    expect(status, text).toBe(403);
+    // An Admin user's call is the 403; a member's, of an app with no
+    // published build (it runs only that), the runner's 404, also ok false.
+    expect([403, 404], text).toContain(status);
     expect(JSON.parse(text), text).toMatchObject({ ok: false });
   };
 
@@ -1108,7 +1110,7 @@ describe.skipIf(!DB_URL)('the pre-check removal, part 2: the HTTP entries', () =
       name: 'apps and tree items',
       removed: true,
       routes: [
-        appRoute('', 'edit', 'PATCH', '', app(), { body: retitle, warnMade: true }),
+        appRoute('', 'edit', 'PATCH', '', app(), { body: retitle }),
         appRoute('', 'manage', 'DELETE', '', app()),
         appRoute('/build', 'manage', 'POST', '/build', app({ draft: true }), { askedEdit: true }),
         appRoute('/draft', 'manage', 'PUT', '/draft', app(), {

@@ -19,6 +19,7 @@ import {
   notifyAppNavChanged,
   setAppAuthorLevel,
 } from '@mantle/content';
+import { assertItemRight } from '@mantle/db';
 import { readBody } from '@/lib/read-body';
 import type { RouteParams } from '@/lib/route-params';
 
@@ -86,6 +87,13 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
       { status: 403 },
     );
   }
+  // The caller's edit of the app first (the pre-check removal part 2: the
+  // HTTP gate asked it, in every mode): an app the scope does not read is
+  // the mapper's 404, as an id no row has; one it may not edit the 403
+  // item-workspace; a read-only copy the copy's words (the database's
+  // checks let an app copy's metadata change through, and in warn a
+  // reader's edit, an Admin switch's included).
+  await assertItemRight(id, 'edit');
   let app = await updateAppMeta(user.id, id, { ...(name ? { title: name } : {}), ...rest });
   if (!app) return NextResponse.json({ error: 'app not found' }, { status: 404 });
   if (trustTools !== undefined) {

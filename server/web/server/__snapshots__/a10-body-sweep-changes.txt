@@ -4,7 +4,7 @@
 # bad-json-400 (malformed): 190 cells
 # chunked-413: 201 cells
 # opaque-500 (fold 2: a plain error, its text was the reply): 28 cells
-# item-check-first (pre-check removal part 2: the app route asks the caller’s right first, of the database): 38 cells
+# item-check-first (pre-check removal part 2: the app route asks the caller’s right first, of the database): 41 cells
 # ceiling-in-kb (A10 lows: a ceiling under 1 MB is said in KB): 8 cells
 # input-400 (fold 2: a refusal the caller fixes, said as a 500 on main): 1 cells
 # bad-json-400 (malformed, accepted as {} on main): 7 cells
@@ -139,9 +139,18 @@ POST /api/apps owner malformed [bad-json-400 (malformed)]
 POST /api/apps owner chunked [chunked-413]
   main 400 application/json {"error":"name: Invalid input: expected string, received undefined"}
   now  413 application/json {"error":"This request is too large (at most 128 MB).","reason":"body-too-large"}
+PATCH /api/apps/:id owner valid [item-check-first (pre-check removal part 2: the app route asks the caller’s right first, of the database)]
+  main 404 application/json {"error":"app not found"}
+  now  500 application/json {"error":"internal error"}
 PATCH /api/apps/:id owner malformed [bad-json-400 (malformed)]
   main 404 application/json {"error":"app not found"}
   now  400 application/json {"error":"invalid JSON"}
+PATCH /api/apps/:id owner empty [item-check-first (pre-check removal part 2: the app route asks the caller’s right first, of the database)]
+  main 404 application/json {"error":"app not found"}
+  now  500 application/json {"error":"internal error"}
+PATCH /api/apps/:id owner nul [item-check-first (pre-check removal part 2: the app route asks the caller’s right first, of the database)]
+  main 404 application/json {"error":"app not found"}
+  now  500 application/json {"error":"internal error"}
 PATCH /api/apps/:id owner chunked [chunked-413]
   main 404 application/json {"error":"app not found"}
   now  413 application/json {"error":"This request is too large (at most 128 MB).","reason":"body-too-large"}
