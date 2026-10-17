@@ -6181,7 +6181,7 @@ runbook: docs/update-prod.md, "Keep one box below on, on purpose".
 `legacyItemPrecheck: { need, reason }` (`packages/tools/src/tool-policy.ts`,
 "DO NOT ADD" at the type), the reason one of `side-effect-before-check`
 (12), `db-does-not-check` (3), `read-not-asked` (2), `answer-worse` (12).
-`packages/tools/src/legacy-item-precheck.test.ts` holds the 29 slugs with
+The test legacy-item-precheck.test.ts (deleted in Part 3) held the 29 slugs with
 their reasons: a new slug fails whatever the pin says. The arch counter
 counts the field (`itemPrecheckTools` still 29). `toolItemWriteRefusalOf`
 is no longer exported from `@mantle/tools` (its one caller is the gate's
@@ -6473,6 +6473,103 @@ no digit escaped the normalizer, about 1 in 2,500), fixed in 81a61887b.
 At the head (that fix and this text): typecheck, lint, format, docs, arch
 and the changed DB files rerun (see the report). Nothing of this round
 runs on the workstation.
+
+### Pre-check removal Part 3 (legacy tool entries)
+
+Branch `feat/precheck-legacy`, from `feat/precheck-remove` at 6ad2f8525
+(main v0.300.82, F4, merged in). Owner decision 2026-10-16: all 29 kept
+tool entries go now. **All 29 are gone; none kept.** `itemPrecheckTools`
+29 -> 0 (`scripts/arch-scoreboard.pins.json`; the counter still sees every
+old form, so any item list that comes back fails `pnpm arch:check`).
+
+**How, by kind.** One gateway: each library asks the caller's right first
+(`assertItemRight`, F4's cheap rights read, in the caller's scope; system
+work is not checked), before any disk, object store, queue, snapshot or
+child item, in every mode (narrower below on, never looser).
+
+| Kind (entries)                | Tools                                           | The check now, where                                                                                                                                                                      |
+| ----------------------------- | ----------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| side-effect-before-check (12) | app_build                                       | F4 already: buildAndStageApp and setDraftBuild ask manage before the compile and the store                                                                                                |
+|                               | app_db_seed                                     | appDbSeed: edit, before the app's directory and file                                                                                                                                      |
+|                               | app_db_schema_set                               | the handler: manage, before the trial copy and the pre_schema snapshot (lockAppRow again at the declare)                                                                                  |
+|                               | app_delete                                      | deleteApp: manage, before the pre_delete snapshot and its keepForOwner mark                                                                                                               |
+|                               | app_snapshot_restore                            | restoreAppSnapshot: manage for code or full, edit for data, before the entry is read                                                                                                      |
+|                               | app_update                                      | updateAppMeta: edit (manage with a description), before the node update                                                                                                                   |
+|                               | file_delete                                     | F4 already: deleteFileWithDerived and deleteFileById ask manage before the reap and the counts                                                                                            |
+|                               | journal_resolve_gap                             | resolveGapEntry: edit of the gap, before the answer entry                                                                                                                                 |
+|                               | page_split, page_extract_section                | splitPage, extractSectionToPage: edit of the source, before the child pages                                                                                                               |
+|                               | tree_folder_delete                              | deleteTreeFolder: manage, before the Files lift                                                                                                                                           |
+|                               | tree_item_move                                  | moveTreeItems: the whole list (itemWriteVerdicts) before any move and before the visibility question; one it may not move refuses the call, nothing moved                                 |
+| db-does-not-check (3)         | app_table_export_set, app_table_export_remove   | createAppTableExport, removeAppTableExport: edit of the app (no migration here: plan v3 S3 makes the table a write-role one)                                                              |
+|                               | content_supersede                               | assertMaySupersede (supersede.ts) in supersedeNode and unsupersedeNode: edit                                                                                                              |
+| read-not-asked (2)            | app_duplicate, app_export                       | assertMayCopyApp (app-package.ts) in duplicateApp and writeAppPackage: read; with the data, edit unless the app's MCP switch is on                                                        |
+| answer-worse (12)             | app_publish                                     | F4 already: lockAppRow asks manage before the draft is read                                                                                                                               |
+|                               | node_share, page_share                          | assertMayLink (link-serve.ts) asks the current scope too (itemWriteVerdicts), not only the login's workspaces: a hidden item is NOT_FOUND, one it reads and may not edit the link refusal |
+|                               | the six block tools                             | saveDraft: edit, before the rev (no draft conflict for a caller that may not edit)                                                                                                        |
+|                               | page_from_file, page_from_note, page_from_notes | the handlers: assertMaySupersede of the sources (unless supersede_source is false), before the page is made                                                                               |
+
+**The machinery went:** the policy field `legacyItemPrecheck` and its
+types, `toolItemWriteRefusalOf`, `builtinItems`, the resolvers (appCopy,
+appRestoreTargets, the three page_from sources), `edit()` and `manage()`,
+the gate pre-run check's item step (the check keeps the Moderator seat,
+the preconditions and the queue-time folder rule: `item-write-gate.ts`
+holds only `createFolderRefusal` now), the call audit's item read (the
+node_exists preconditions name the targets), and the allowlist test
+`legacy-item-precheck.test.ts` (the type is gone, so nothing can add one;
+the pin at 0 catches the old `items:` forms).
+
+**The proof** (`server/web/server/precheck-removal.db.test.ts`, family
+`legacy`, plus three cells): each of the 29 as a member and an Admin user,
+on MCP (and in a turn for app_update and page_block_append), on the four
+placements (allowed ones only where the fixture can make the write: the
+build, schema, seed, export link and restore cells run on the refused
+placements), both checks on: a refused cell leaves the item, its rows, the
+apps and files stores on disk, and the owner's node count (a copy, a
+split, a conversion, an answer) as they were. Recorded first on 7974a065d
+(the entries in place: `was` the pre-check, `now` bypassed), then at the
+head (no entry: `was` and `now` the same code). Also: a hidden item
+answers byte-equal to a random id for each of the 29; tree_item_move with
+one item the scope may not move moves none (was and now).
+
+**Changed answers** (old: the pre-check's words, 7974a065d; new: the head):
+
+- A scope that reads the item and lacks the right: "You cannot change this
+  item in your workspaces (<id>): ask for Write on it, or a Moderator of
+  its workspace." (or "... deleting or moving it is for a Moderator of its
+  workspace.") is now "You cannot change this item in your workspaces." for
+  app_build, app_db_seed, app_db_schema_set, app_delete, app_publish,
+  app_snapshot_restore, app_update, app_table_export_set and _remove,
+  app_duplicate and app_export (with the data), content_supersede, the six
+  block tools, page_split, page_extract_section, page_from_note,
+  page_from_file (as Part 1's).
+- file_delete (with or without delete_derived), the same scope: now "file
+  not found" (F4's answer of deleteFileById and deleteFileWithDerived,
+  which the HTTP route shares; kept so the two agree).
+- page_share, the same scope: now "Only someone who may edit this item may
+  open or close its link." (node_share answered it already).
+- node_share on a hidden item: "Item <id> is not in your workspaces: ..."
+  -> "not found (or not one you may read)"; page_from_notes on a hidden
+  note: -> "not found". A random id answers the same.
+- The block tools on a page with a draft, a scope that may not edit it:
+  the bypassed "changed since you read it" is gone; the refusal stays.
+- Queue time: a call of one of the 29 that needs approval is no longer
+  refused before it is queued; its approval runs it where it was asked and
+  the library refuses it (as Part 1's).
+- **HTTP** (the libraries are shared; each route's own item gate answers
+  first today, so nothing a route answers changes while its HTTP entry
+  stands): once the HTTP entries go, a duplicate or an export WITH the data
+  by a scope that may read but not edit a non-MCP app is refused (the
+  tools' rule, now every way in's: narrower); a page move or tree move
+  route meets the whole-list check; a link opened by a turn narrower than
+  the login meets the scope's. Named for the HTTP part.
+- Unchanged where the check already answered: tree_folder_delete,
+  tree_item_move, node_share (a readable item), journal_resolve_gap.
+
+**Pins.** `itemPrecheckTools` 29 -> 0. `itemPrecheckRoutes` untouched
+(the HTTP part). Dispatch parity: the 23 kept builtins whose stubbed
+cases named item targets were re-recorded (the cases with item ids went
+with `builtinItems`; the six resolver tools' hashes are unchanged).
+`item-write-gate.test.ts` names all 98 with each check (`DATABASE_CHECKED`).
 
 ## Remove the switch-over code (A7)
 
