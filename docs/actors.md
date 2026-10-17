@@ -6215,5 +6215,37 @@ Changed answers (old vs new):
    app_table_exports on the write role".
 4. A transaction that met a gap table ran twice (warn and on); it runs once.
    Cells: M1, L6 and round 3 A now expect one run.
+5. Off: a folder delete over a hidden subfolder answers the hidden-items 409
+   (`hidden_items`), as warn and on do; it answered "folder is not empty"
+   (the merge delete 409, the plain Files route 400). Cell: a3a-folders
+   "off the same since plan v3 S3".
+6. Off, the a6b sweep: every off cell answers as main's warn cell (F4's and
+   S3's warn changes included); the F4 off cells, the worker write role off
+   cells and the a2a round trips off cell (the write role's one SET, no
+   round trip of its own) expect the write role.
 
-Gates: see the S3 handover lines below.
+Not changed: the HTTP brand writers (`brandSettingsRefusal`), `PUT
+/api/profile`, the Settings routes and onboarding (system pool, gated as
+the owner decision says already); a member's answers on the profile row
+(the first-read insert of the brain's row was refused and caught before
+too, now by the row rule instead of the gap path).
+
+Handover (S3 round 1, builder stopped at the 120 tool call mark):
+
+- Done: everything above, at `3d8a509b1` on `feat/v3-s3-write-role`.
+- Gates (workstation, own pg on a free port, `--maxWorkers=3`): at
+  `1b3670e86` full vitest exit 1 (9 failures), test:actor-off exit 1 (4),
+  test:actor-on exit 1 (2), each a cell this step changes; fixed in
+  `5247f36d9` and `3d8a509b1`. At `5247f36d9` the 9 changed DB files: warn
+  exit 0 (142 passed), actor-on config exit 0, actor-off config exit 1 (two
+  a6b sections), fixed in `3d8a509b1`: the a6b sweep in off exit 0. On the
+  Mac: eslint and prettier on every changed file clean, `tsc` of
+  packages/db, packages/content and server/web clean (the generated route
+  manifest aside), `node scripts/arch-scoreboard.ts --check` exit 0.
+- Left for the next round, at the final head: `pnpm -r typecheck`, `pnpm
+  lint`, `pnpm format:check`, `pnpm docs:check`, `pnpm arch:check`, `pnpm -C
+  server/web build`, `pnpm boot:smoke`, full vitest with DB, test:actor-off,
+  test:actor-on, test:edit-on, test:matrix and the full test:runtime-role
+  (none of the last three ran: the chain was stopped), then CI. At merge:
+  rebase on R0, renumber 0301 to 0302 (file, journal entry; `when`
+  1790197440000 stays), lower dbClientLines if R0 moved client.ts.
