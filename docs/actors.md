@@ -6243,8 +6243,8 @@ Handover (S3 round 1, builder stopped at the 120 tool call mark):
   packages/db, packages/content and server/web clean (the generated route
   manifest aside), `node scripts/arch-scoreboard.ts --check` exit 0.
 - Left for the next round, at the final head: `pnpm -r typecheck`, `pnpm
-  lint`, `pnpm format:check`, `pnpm docs:check`, `pnpm arch:check`, `pnpm -C
-  server/web build`, `pnpm boot:smoke`, full vitest with DB, test:actor-off,
+lint`, `pnpm format:check`, `pnpm docs:check`, `pnpm arch:check`, `pnpm -C
+server/web build`, `pnpm boot:smoke`, full vitest with DB, test:actor-off,
   test:actor-on, test:edit-on, test:matrix and the full test:runtime-role
   (none of the last three ran: the chain was stopped), then CI. At merge:
   rebase on R0, renumber 0301 to 0302 (file, journal entry; `when`
