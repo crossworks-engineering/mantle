@@ -1349,7 +1349,11 @@ describe.skipIf(!DB_URL)(
           {
             slug: 'app_export',
             need: 'read',
-            who: BOTH,
+            // The owner: a member's export lands in an auto-made exports
+            // folder its scope may not make under the Files root here (its
+            // first call answers "createFolder: parent folder 'files' not
+            // found", with and without the pre-check alike: not this check).
+            who: ADMIN,
             make: app(),
             input: (it) => ({ id: it.id, with_data: false }),
             count: true,
@@ -1370,8 +1374,11 @@ describe.skipIf(!DB_URL)(
             who: BOTH,
             make: app(),
             input: byId,
-            // No green build of the draft: the publish itself refuses.
+            // No green build of the draft: the publish itself refuses. A
+            // member that may manage the app lowers it to team rules first
+            // (the author ceiling), as with the pre-check: its own app.
             now: { allowed: 'refused' },
+            partial: { member: ['allowed'] },
           },
           { slug: 'node_share', need: 'edit', who: BOTH, make: page, input: byId },
           { slug: 'page_share', need: 'edit', who: BOTH, make: page, input: byId },

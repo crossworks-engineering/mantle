@@ -67,7 +67,6 @@ function targetsOf(call: AuditedCall): string[] {
     }
   };
   const builtin = builtinOf(call.ref);
-  const policy = builtin ? namedToolPolicy(builtin)?.policy : null;
   const args = call.input.args ?? {};
   // The item arguments: the argument a node_exists precondition reads
   // (every tool whose pre-check the removal took names its item there:

@@ -24,8 +24,8 @@
  * process (namedToolPolicy reads it).
  */
 import type { ItemKind } from '@mantle/client-types/kinds';
-import type { GatePolicy, ItemNeed, ScopeArea } from '@mantle/db';
-import type { BuiltinToolDef, ToolHandlerContext } from './types';
+import type { GatePolicy, ScopeArea } from '@mantle/db';
+import type { BuiltinToolDef } from './types';
 import type { ClientSourcedRule } from './client-sourced-rule';
 import { MCP_SURFACE_POLICIES } from './mcp-surface-policies';
 

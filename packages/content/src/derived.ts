@@ -17,7 +17,6 @@
  * failure therefore leaves the source file plus an audit-measurable count
  * (dangling_source_file at /debug/integrity), never silent orphans.
  */
-import { editCheckRefusalError } from '@mantle/std';
 import { and, eq, sql } from 'drizzle-orm';
 import {
   db,
@@ -245,11 +244,7 @@ export async function deleteFileWithDerived(
   // and irreversible, so it runs only for a caller that may delete the file
   // (its manage, in the caller's scope; system work is not checked).
   // Refused as the delete itself refuses it: not found.
-  // One the caller reads and may not delete is the edit check's refusal, as
-  // the delete without derived items answers it (pre-check removal Part 3).
-  const verdict = (await itemWriteVerdicts([fileId], 'manage')).get(fileId);
-  if (verdict === 'no_edit') throw editCheckRefusalError('no_edit');
-  if (verdict !== 'ok') {
+  if ((await itemWriteVerdicts([fileId], 'manage')).get(fileId) !== 'ok') {
     return { ok: false, reason: 'not_found', ...none };
   }
   // Every refusal no confirm resolves, BEFORE reaping (F4 fix round 3, L1:
