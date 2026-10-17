@@ -6668,6 +6668,18 @@ over at the owner's tool-call rule, after the pages family.
   `a4-guard-sweep-guard-writes.txt`, then `-u`), the gate's caller tests
   drive a table's write.
 
+**Gates** (workstation, own pgvector pg18 container on its own port, init
+mounted, `MANTLE_CHECK_FLOOR=keep` for the base migrate). At 9aa6301d4:
+typecheck 0, lint 0, format 0, docs 0, arch 0, web build 0, boot:smoke 0,
+deploy harness 0, actor-on 0, edit-on 0, test:matrix 0; full vitest with DB,
+actor-off and full test:runtime-role 1, each only on cells 30816b4ef fixes
+(item-write-encoded, the A10 body sweep, part 1's kept block edit). At
+30816b4ef (test files only since 9aa6301d4): full vitest with DB 0
+(13204 tests), actor-off 0, full test:runtime-role 0. One earlier full run
+(at 27110b6b3, beside a second suite on the same container) passed every
+test but logged one unhandled CONNECTION_CLOSED from
+`f4-owner-flows.db.test.ts`'s teardown; the later runs did not.
+
 **Left:** the families of "Left" above, from tables on. When the tables
 entry goes, move `f4-admin-write-role`'s pre-check cell and
 `gate-caller.test.ts`'s content write to a route that keeps the gate (an
