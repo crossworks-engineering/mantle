@@ -679,7 +679,16 @@ describe.skipIf(!URL)('W6a route sweep: scoped reads for every login', () => {
             .split('/')
             .map((seg) => (seg === ':id' ? id : seg === ':kind' ? 'notes' : seg))
             .join('/');
-        if (itemWriteTarget(method, e.pattern, at(randomUUID()))?.need !== 'manage') continue;
+        // A write that manages the item: the pre-check's need, or for a route
+        // whose entry went (pre-check removal part 2) the item's delete or a
+        // move, which the database (0266, the move check) and the handler
+        // (assertItemRight manage) refuse a Write grant alone.
+        const target = itemWriteTarget(method, e.pattern, at(randomUUID()));
+        const manages = target
+          ? target.need === 'manage'
+          : (method === 'DELETE' && /^\/api\/[^:]+\/:id$/.test(e.pattern)) ||
+            e.pattern.endsWith('/:id/move');
+        if (!manages) continue;
         const path = at(await writeOnly(kind));
         manageChecked += 1;
         const r = await call(path, mem, method);
