@@ -192,6 +192,11 @@ describe.skipIf(!DB_URL)(
     };
     const place = (who: Who, p: Place) => (id: string) => grant(id, grantsOf(who, p));
 
+    /** The owner's items: a refused copy, split or conversion makes none. */
+    const nodeCount = async () =>
+      (await raw<{ c: number }[]>`select count(*)::int as c from nodes where owner_id = ${owner}`)[0]!
+        .c;
+
     /** Everything a refused write must leave as it was. */
     const probe = async (id: string) =>
       (await raw<{ p: string }[]>`select pcr_probe(${id}::uuid) as p`)[0]!.p;
@@ -303,6 +308,13 @@ describe.skipIf(!DB_URL)(
       nowBy?: Partial<Record<Who, Partial<Record<Place, 'refused' | 'ok'>>>>;
       /** A store on disk a refused cell must leave as it was. */
       disk?: () => string;
+      /** The placements it runs on (all by default): an allowed write whose
+       *  success needs more than this fixture holds (a build, a schema, a
+       *  seed) runs on the refused ones only. */
+      places?: readonly Place[];
+      /** A write that makes new items (a copy, a split, a conversion): a
+       *  refused cell must make none (the owner's node count). */
+      count?: true;
     };
     type Family = { name: string; tools: Tool[] };
 
@@ -318,6 +330,7 @@ describe.skipIf(!DB_URL)(
         const it = await tool.make(who, p);
         const before = await probe(it.id);
         const diskBefore = tool.disk?.() ?? '';
+        const countBefore = tool.count ? await nodeCount() : 0;
         pre.on = precheck;
         let out: Outcome;
         try {
@@ -330,7 +343,9 @@ describe.skipIf(!DB_URL)(
           pre.on = true;
         }
         const changed =
-          (await probe(it.id)) !== before || (tool.disk ? tool.disk() !== diskBefore : false);
+          (await probe(it.id)) !== before ||
+          (tool.disk ? tool.disk() !== diskBefore : false) ||
+          (tool.count ? (await nodeCount()) !== countBefore : false);
         return { ...out, changed };
       };
       const was = await once(true);
@@ -572,6 +587,34 @@ describe.skipIf(!DB_URL)(
         await place(who, p)(id);
         return { id, extra };
       };
+
+    const appsDisk = () => diskOf(path.join(dir, 'apps'));
+    /** A page whose published blocks are named: its heading (h) and its two
+     *  paragraphs (b, c). */
+    const pageBlocks = async (who: Who, p: Place) => {
+      const it = await page(who, p);
+      const ids = (
+        await raw<{ b: string }[]>`select e->'attrs'->>'id' as b
+          from pages p, jsonb_array_elements(p.doc->'content') with ordinality as x(e, i)
+         where p.node_id = ${it.id} order by i`
+      ).map((r) => r.b);
+      return { id: it.id, extra: { h: ids[0]!, b: ids[1]!, c: ids[2]! } };
+    };
+    /** A markdown file the conversion reads. */
+    const mdFile = async (who: Who, p: Place) => {
+      const r = await sys(() =>
+        f.upsertFile({
+          ownerId: owner,
+          parentPath: 'files',
+          filename: `${tag}-${n()}.md`,
+          bytes: Buffer.from('# From a file\n\nIts paragraph.\n'),
+        }),
+      );
+      await place(who, p)(r.id);
+      return { id: r.id, extra: {} };
+    };
+    /** An open question in the Journal (Admin only). */
+    const gap = adminKind('journal_create', () => ({ body: `${tag} gap ${n()}?`, kind: 'gap' }));
 
     // ── the families ────────────────────────────────────────────────────────
 
@@ -1133,6 +1176,286 @@ describe.skipIf(!DB_URL)(
           },
         ],
       },
+      {
+        // Part 3: the 29 kept entries, each gone once its reason was (the
+        // check moved first, before any side effect, or the answer fixed).
+        // Recorded on the code before the removal (docs/actors.md, "Pre-check
+        // removal Part 3"); since then `was` answers as `now`.
+        name: 'legacy',
+        tools: [
+          // side-effect-before-check
+          {
+            slug: 'app_build',
+            need: 'manage',
+            who: BOTH,
+            make: app(),
+            input: byId,
+            places: ['noRead', 'noEdit', 'editOnly'],
+          },
+          {
+            slug: 'app_db_seed',
+            need: 'edit',
+            who: BOTH,
+            make: app(),
+            input: (it) => ({ id: it.id, table: 't', rows: [{ a: 'x' }] }),
+            places: (['noRead', 'noEdit'] as const),
+            disk: appsDisk,
+          },
+          {
+            slug: 'app_db_schema_set',
+            need: 'manage',
+            who: BOTH,
+            make: app(),
+            input: (it) => ({ id: it.id, schema_sql: 'create table if not exists t (a text);' }),
+            places: ['noRead', 'noEdit', 'editOnly'],
+            disk: appsDisk,
+          },
+          { slug: 'app_delete', need: 'manage', who: BOTH, make: app(), input: byId, disk: appsDisk },
+          {
+            slug: 'app_snapshot_restore',
+            need: 'manage',
+            who: BOTH,
+            make: app(true),
+            input: (it) => ({ id: it.id, snapshot_id: it.extra.snapshot, mode: 'code' }),
+            places: ['noRead', 'noEdit', 'editOnly'],
+            disk: appsDisk,
+          },
+          {
+            slug: 'app_snapshot_restore',
+            need: 'edit',
+            who: BOTH,
+            make: app(true),
+            input: (it) => ({ id: it.id, snapshot_id: it.extra.snapshot, mode: 'data' }),
+            places: (['noRead', 'noEdit'] as const),
+            disk: appsDisk,
+          },
+          {
+            slug: 'app_update',
+            need: 'edit',
+            who: BOTH,
+            make: app(),
+            input: (it) => ({ id: it.id, name: `${tag} renamed ${n()}` }),
+            ways: ['mcp', 'turn'],
+          },
+          {
+            slug: 'file_delete',
+            need: 'manage',
+            who: BOTH,
+            make: filesFile,
+            input: (it) => ({ file_id: it.id }),
+            disk: filesDisk,
+          },
+          {
+            slug: 'file_delete',
+            need: 'manage',
+            who: BOTH,
+            make: filesFile,
+            input: (it) => ({ file_id: it.id, delete_derived: true }),
+            disk: filesDisk,
+          },
+          {
+            slug: 'journal_resolve_gap',
+            need: 'edit',
+            who: BOTH,
+            adminKind: true,
+            make: gap,
+            input: (it) => ({ id: it.id, answer: `${tag} the answer` }),
+            count: true,
+          },
+          {
+            slug: 'page_split',
+            need: 'edit',
+            who: BOTH,
+            make: page,
+            input: (it) => ({ page_id: it.id, by: 'h1' }),
+            count: true,
+          },
+          {
+            slug: 'page_extract_section',
+            need: 'edit',
+            who: BOTH,
+            make: pageBlocks,
+            input: (it) => ({ page_id: it.id, heading_block_id: it.extra.h }),
+            count: true,
+          },
+          {
+            slug: 'tree_folder_delete',
+            need: 'manage',
+            who: BOTH,
+            make: notesFolder,
+            input: (it) => ({ kind: 'notes', folder_id: it.id, confirm: true }),
+          },
+          {
+            slug: 'tree_item_move',
+            need: 'manage',
+            who: BOTH,
+            make: async (w, p) => {
+              const dest = await notesFolder(w, 'allowed');
+              const it = await note(w, p);
+              return { id: it.id, extra: { dest: dest.id } };
+            },
+            input: (it) => ({
+              kind: 'notes',
+              item_ids: [it.id],
+              folder_id: it.extra.dest,
+              confirm: true,
+            }),
+          },
+          // db-does-not-check
+          {
+            slug: 'app_table_export_set',
+            need: 'edit',
+            who: BOTH,
+            make: app(),
+            input: (it) => ({ id: it.id, table: 't' }),
+            places: (['noRead', 'noEdit'] as const),
+            count: true,
+          },
+          {
+            slug: 'app_table_export_remove',
+            need: 'edit',
+            who: BOTH,
+            make: app(),
+            input: (it) => ({ id: it.id, table: 't' }),
+            places: (['noRead', 'noEdit'] as const),
+          },
+          {
+            slug: 'content_supersede',
+            need: 'edit',
+            who: ADMIN,
+            make: note,
+            input: (it) => ({ node_id: it.id }),
+          },
+          // read-not-asked (with_data false: a read; the data: an edit)
+          {
+            slug: 'app_duplicate',
+            need: 'read',
+            who: BOTH,
+            make: app(),
+            input: (it) => ({ id: it.id, with_data: false }),
+            count: true,
+          },
+          {
+            slug: 'app_duplicate',
+            need: 'edit',
+            who: BOTH,
+            make: app(),
+            input: byId,
+            places: (['noRead', 'noEdit'] as const),
+            count: true,
+          },
+          {
+            slug: 'app_export',
+            need: 'read',
+            who: BOTH,
+            make: app(),
+            input: (it) => ({ id: it.id, with_data: false }),
+            count: true,
+          },
+          {
+            slug: 'app_export',
+            need: 'edit',
+            who: BOTH,
+            make: app(),
+            input: byId,
+            places: (['noRead', 'noEdit'] as const),
+            count: true,
+          },
+          // answer-worse
+          {
+            slug: 'app_publish',
+            need: 'manage',
+            who: BOTH,
+            make: app(),
+            input: byId,
+            // No green build of the draft: the publish itself refuses.
+            now: { allowed: 'refused' },
+          },
+          { slug: 'node_share', need: 'edit', who: BOTH, make: page, input: byId },
+          { slug: 'page_share', need: 'edit', who: BOTH, make: page, input: byId },
+          {
+            slug: 'page_block_append',
+            need: 'edit',
+            who: BOTH,
+            make: page,
+            input: (it) => ({ page_id: it.id, markdown: `${tag} appended` }),
+            ways: ['mcp', 'turn'],
+          },
+          {
+            slug: 'page_block_append',
+            need: 'edit',
+            who: BOTH,
+            make: draftPage,
+            input: (it) => ({ page_id: it.id, markdown: `${tag} appended` }),
+          },
+          {
+            slug: 'page_block_update',
+            need: 'edit',
+            who: BOTH,
+            make: pageBlocks,
+            input: (it) => ({ page_id: it.id, block_id: it.extra.b, markdown: `${tag} updated` }),
+          },
+          {
+            slug: 'page_block_insert_after',
+            need: 'edit',
+            who: BOTH,
+            make: pageBlocks,
+            input: (it) => ({ page_id: it.id, after_block_id: it.extra.b, markdown: `${tag} after` }),
+          },
+          {
+            slug: 'page_block_insert_before',
+            need: 'edit',
+            who: BOTH,
+            make: pageBlocks,
+            input: (it) => ({
+              page_id: it.id,
+              before_block_id: it.extra.b,
+              markdown: `${tag} before`,
+            }),
+          },
+          {
+            slug: 'page_block_delete',
+            need: 'edit',
+            who: BOTH,
+            make: pageBlocks,
+            input: (it) => ({ page_id: it.id, block_id: it.extra.c }),
+          },
+          {
+            slug: 'page_blocks_apply',
+            need: 'edit',
+            who: BOTH,
+            make: pageBlocks,
+            input: (it) => ({
+              page_id: it.id,
+              ops: [{ op: 'update', block_id: it.extra.b, markdown: `${tag} applied` }],
+            }),
+          },
+          {
+            slug: 'page_from_note',
+            need: 'edit',
+            who: BOTH,
+            make: note,
+            input: (it) => ({ note_id: it.id }),
+            count: true,
+          },
+          {
+            slug: 'page_from_notes',
+            need: 'edit',
+            who: BOTH,
+            make: note,
+            input: (it) => ({ note_ids: [it.id], title: `${tag} stitched ${n()}` }),
+            count: true,
+          },
+          {
+            slug: 'page_from_file',
+            need: 'edit',
+            who: BOTH,
+            make: mdFile,
+            input: (it) => ({ file_id: it.id }),
+            count: true,
+          },
+        ],
+      },
     ];
 
     /** Kept (docs/actors.md): a block edit of a page whose draft the scope
@@ -1266,7 +1589,7 @@ describe.skipIf(!DB_URL)(
           for (const who of tool.who) {
             for (const way of tool.ways ?? ['mcp']) {
               it(`${tool.slug} (${tool.need}) as ${who} (${way}): refused by the database where the pre-check refused`, async () => {
-                for (const p of tool.adminKind ? (['allowed'] as const) : PLACES) {
+                for (const p of tool.adminKind ? (['allowed'] as const) : (tool.places ?? PLACES)) {
                   const c = await runCell(family.name, tool, who, p, way);
                   check(c, `${tool.slug} ${way} ${who}/${p}`);
                 }
@@ -1304,6 +1627,35 @@ describe.skipIf(!DB_URL)(
         expect(c.now.ok, c.now.text).toBe(false);
         expect(c.now.changed).toBe(false);
         expect(c.now.text).toBe('Only someone who may edit this item may open or close its link.');
+      }
+    }, 120_000);
+
+    it('tree_item_move: a list with one item the scope may not move moves none of them', async () => {
+      for (const who of BOTH) {
+        for (const precheck of [true, false]) {
+          const dest = await notesFolder(who, 'allowed');
+          const mine = await note(who, 'allowed');
+          const theirs = await note(who, 'noEdit');
+          const before = [await probe(mine.id), await probe(theirs.id)];
+          pre.on = precheck;
+          let out: Outcome;
+          try {
+            out = await viaMcp(who, 'tree_item_move', {
+              kind: 'notes',
+              item_ids: [mine.id, theirs.id],
+              folder_id: dest.id,
+              confirm: true,
+            });
+          } finally {
+            pre.on = true;
+          }
+          const after = [await probe(mine.id), await probe(theirs.id)];
+          recorded.push(
+            `legacy tree_item_move list ${who} ${precheck ? 'was' : 'now'}: ${out.ok ? 'ok' : 'refused'}${after[0] !== before[0] ? ' moved-mine' : ''}${after[1] !== before[1] ? ' moved-theirs' : ''}: ${plain(out.text).slice(0, 170)}`,
+          );
+          expect(out.ok, `${who} ${precheck}: ${out.text}`).toBe(false);
+          expect(after, `${who} ${precheck}: nothing moved`).toEqual(before);
+        }
       }
     }, 120_000);
 
