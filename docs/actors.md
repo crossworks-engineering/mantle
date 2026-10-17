@@ -7161,7 +7161,9 @@ allowed that main refused). Fixed:
   `item-workspace` for one that is not (one bit). It asks
   `assertItemRight(id, 'edit')` after the hidden email page and before the
   body rules; both answer 403 `item-workspace`
-  (`a8-findings.db.test.ts`).
+  (`a8-findings.db.test.ts`); one it does not read is the route's 404 of
+  none (`{"error":"not found"}`), as before. In warn it makes no write (as
+  main's item gate; `precheck-removal-http.db.test.ts` re-pins that cell).
 - **L2, the approval queue's noise.** Before a call is queued for
   approval, the item it names is asked of the queuing scope
   (`queueItemRefusal`, from the gate's pre-run check with `queue`), with
@@ -7174,9 +7176,13 @@ allowed that main refused). Fixed:
   link closes, `access_set`, `file_delete`, the audit-only ones). The
   answer is the run's: the one mapper's words for the edit check, a link's
   own words (`LINK_NO_EDIT_MESSAGE`, `LINK_APP_NO_MANAGE_MESSAGE`), a map's
-  "No Recall map". Proof: `precheck-removal.db.test.ts` "queue time", per
-  family, every tool, login and placement, asks the queue and then runs the
-  call in the same turn: 360 calls refused before they would queue, each
+  "No Recall map". It asks in every check mode, as main's item pre-check
+  did (the mode function is not the scope's to read): on a box an operator
+  lowered to warn or off the run would make such a write and log a miss;
+  the queue refuses it, as main did and as the A8 oracle answers. Proof:
+  `precheck-removal.db.test.ts` "queue time", per family, every tool,
+  login and placement (checks on), asks the queue and then runs the call
+  in the same turn: 360 calls refused before they would queue, each
   refused by its run in the same words, and none the run allows.
 - **L5.** `scripts/db-restore.sh` no longer says migrate is a no-op after a
   restore (it runs the migrations newer than the dump and the steps left to
@@ -7193,7 +7199,13 @@ same). Queue time: a call on an item its run refuses is refused before it
 is queued, in the run's words (was queued, approvers notified, refused at
 run); `turn-listing.test.ts` re-pins its three cells (a hidden Recall slug,
 `node_share` and `page_delete`/`table_delete` on an item only Admin may
-change) to main's refusal, in the run's words.
+change) to main's refusal, in the run's words. The approval re-check
+(`a5-approval-recheck.changes.json`): the 73 cells named
+`pre-check-removal` answer as before that removal again (25 a lost
+Moderator seat, refused at the re-check, `lost-moderator`; 48 a plain
+member's note edit, refused before it is queued, new reason
+`queue-item-check`). A8: `pending turn/readGrant edit task @root` passes in
+off and warn now and left P1's list (`a8-known-failures.ts`).
 
 Gates of the fix round, at its head (this text): the round's report
 (workstation, own pg18 container, each gate alone, exit codes; and CI).
