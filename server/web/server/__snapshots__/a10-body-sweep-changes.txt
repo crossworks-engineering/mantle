@@ -1,13 +1,14 @@
 # A10 part 2 fold 1: the cells that answer otherwise than on main, each with its
 # named kind (changeKind, a10-body-sweep.test.ts), its answer on main and now.
 # Every other cell of a10-body-sweep.txt answers byte for byte as recorded.
-# bad-json-400 (malformed): 200 cells
-# chunked-413: 211 cells
+# bad-json-400 (malformed): 194 cells
+# chunked-413: 205 cells
 # opaque-500 (fold 2: a plain error, its text was the reply): 28 cells
 # ceiling-in-kb (A10 lows: a ceiling under 1 MB is said in KB): 8 cells
 # input-400 (fold 2: a refusal the caller fixes, said as a 500 on main): 1 cells
 # bad-json-400 (malformed, accepted as {} on main): 7 cells
 # item-check-first (F4 fix round 2: asked of the database, the stand-in has none): 1 cells
+# item-read-first (pre-check removal part 2: the write reads the item in the scope before its body): 44 cells
 # item-fault (fix round 1: a failed item says a fixed text for a fault): 6 cells
 # bad-json-400 (empty): 2 cells
 # map-read-first (pre-check removal part 2: the owner act reads the map in the scope first): 10 cells
@@ -521,30 +522,84 @@ DELETE /api/files/files owner malformed [bad-json-400 (malformed)]
 DELETE /api/files/files owner chunked [chunked-413]
   main 400 application/json {"error":"ids: Invalid input: expected array, received undefined"}
   now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
-POST /api/files/files/:id owner malformed [bad-json-400 (malformed)]
+POST /api/files/files/:id owner valid [item-read-first (pre-check removal part 2: the write reads the item in the scope before its body)]
+  main 400 application/json {"error":"copyFileById: file not found — find the id with file_list / search_nodes"}
+  now  404 application/json {"error":"not found"}
+POST /api/files/files/:id owner malformed [item-read-first (pre-check removal part 2: the write reads the item in the scope before its body)]
   main 400 application/json {"error":"copy_to: Invalid input: expected string, received undefined"}
-  now  400 application/json {"error":"invalid JSON"}
-POST /api/files/files/:id owner chunked [chunked-413]
+  now  404 application/json {"error":"not found"}
+POST /api/files/files/:id owner empty [item-read-first (pre-check removal part 2: the write reads the item in the scope before its body)]
   main 400 application/json {"error":"copy_to: Invalid input: expected string, received undefined"}
-  now  413 application/json {"error":"This request is too large (at most 128 MB).","reason":"body-too-large"}
-PATCH /api/files/files/:id owner malformed [bad-json-400 (malformed)]
-  main 400 application/json {"error":"Invalid input"}
-  now  400 application/json {"error":"invalid JSON"}
-PATCH /api/files/files/:id owner chunked [chunked-413]
-  main 400 application/json {"error":"Invalid input"}
-  now  413 application/json {"error":"This request is too large (at most 128 MB).","reason":"body-too-large"}
-POST /api/files/folders/:id owner malformed [bad-json-400 (malformed)]
+  now  404 application/json {"error":"not found"}
+POST /api/files/files/:id owner nul [item-read-first (pre-check removal part 2: the write reads the item in the scope before its body)]
+  main 400 application/json {"error":"copyFileById: file not found — find the id with file_list / search_nodes"}
+  now  404 application/json {"error":"not found"}
+POST /api/files/files/:id owner array [item-read-first (pre-check removal part 2: the write reads the item in the scope before its body)]
+  main 400 application/json {"error":"Invalid input: expected object, received array"}
+  now  404 application/json {"error":"not found"}
+POST /api/files/files/:id owner chunked [item-read-first (pre-check removal part 2: the write reads the item in the scope before its body)]
   main 400 application/json {"error":"copy_to: Invalid input: expected string, received undefined"}
-  now  400 application/json {"error":"invalid JSON"}
-POST /api/files/folders/:id owner chunked [chunked-413]
+  now  404 application/json {"error":"not found"}
+PATCH /api/files/files/:id owner malformed [item-read-first (pre-check removal part 2: the write reads the item in the scope before its body)]
+  main 400 application/json {"error":"Invalid input"}
+  now  404 application/json {"error":"not found"}
+PATCH /api/files/files/:id owner empty [item-read-first (pre-check removal part 2: the write reads the item in the scope before its body)]
+  main 400 application/json {"error":"Invalid input"}
+  now  404 application/json {"error":"not found"}
+PATCH /api/files/files/:id owner array [item-read-first (pre-check removal part 2: the write reads the item in the scope before its body)]
+  main 400 application/json {"error":"Invalid input"}
+  now  404 application/json {"error":"not found"}
+PATCH /api/files/files/:id owner chunked [item-read-first (pre-check removal part 2: the write reads the item in the scope before its body)]
+  main 400 application/json {"error":"Invalid input"}
+  now  404 application/json {"error":"not found"}
+POST /api/files/folders/:id owner valid [item-read-first (pre-check removal part 2: the write reads the item in the scope before its body)]
+  main 400 application/json {"error":"copyFolderById: folder not found — find the id with folder_list"}
+  now  404 application/json {"error":"not found"}
+POST /api/files/folders/:id owner malformed [item-read-first (pre-check removal part 2: the write reads the item in the scope before its body)]
   main 400 application/json {"error":"copy_to: Invalid input: expected string, received undefined"}
-  now  413 application/json {"error":"This request is too large (at most 128 MB).","reason":"body-too-large"}
-PATCH /api/files/folders/:id owner malformed [bad-json-400 (malformed)]
+  now  404 application/json {"error":"not found"}
+POST /api/files/folders/:id owner empty [item-read-first (pre-check removal part 2: the write reads the item in the scope before its body)]
+  main 400 application/json {"error":"copy_to: Invalid input: expected string, received undefined"}
+  now  404 application/json {"error":"not found"}
+POST /api/files/folders/:id owner nul [item-read-first (pre-check removal part 2: the write reads the item in the scope before its body)]
+  main 400 application/json {"error":"copyFolderById: folder not found — find the id with folder_list"}
+  now  404 application/json {"error":"not found"}
+POST /api/files/folders/:id owner array [item-read-first (pre-check removal part 2: the write reads the item in the scope before its body)]
+  main 400 application/json {"error":"Invalid input: expected object, received array"}
+  now  404 application/json {"error":"not found"}
+POST /api/files/folders/:id owner chunked [item-read-first (pre-check removal part 2: the write reads the item in the scope before its body)]
+  main 400 application/json {"error":"copy_to: Invalid input: expected string, received undefined"}
+  now  404 application/json {"error":"not found"}
+PATCH /api/files/folders/:id owner malformed [item-read-first (pre-check removal part 2: the write reads the item in the scope before its body)]
   main 400 application/json {"error":"Invalid input"}
-  now  400 application/json {"error":"invalid JSON"}
-PATCH /api/files/folders/:id owner chunked [chunked-413]
+  now  404 application/json {"error":"not found"}
+PATCH /api/files/folders/:id owner empty [item-read-first (pre-check removal part 2: the write reads the item in the scope before its body)]
   main 400 application/json {"error":"Invalid input"}
-  now  413 application/json {"error":"This request is too large (at most 128 MB).","reason":"body-too-large"}
+  now  404 application/json {"error":"not found"}
+PATCH /api/files/folders/:id owner array [item-read-first (pre-check removal part 2: the write reads the item in the scope before its body)]
+  main 400 application/json {"error":"Invalid input"}
+  now  404 application/json {"error":"not found"}
+PATCH /api/files/folders/:id owner chunked [item-read-first (pre-check removal part 2: the write reads the item in the scope before its body)]
+  main 400 application/json {"error":"Invalid input"}
+  now  404 application/json {"error":"not found"}
+DELETE /api/files/folders/:id owner valid [item-read-first (pre-check removal part 2: the write reads the item in the scope before its body)]
+  main 400 application/json {"error":"not-found"}
+  now  404 application/json {"error":"not found"}
+DELETE /api/files/folders/:id owner malformed [item-read-first (pre-check removal part 2: the write reads the item in the scope before its body)]
+  main 400 application/json {"error":"not-found"}
+  now  404 application/json {"error":"not found"}
+DELETE /api/files/folders/:id owner empty [item-read-first (pre-check removal part 2: the write reads the item in the scope before its body)]
+  main 400 application/json {"error":"not-found"}
+  now  404 application/json {"error":"not found"}
+DELETE /api/files/folders/:id owner nul [item-read-first (pre-check removal part 2: the write reads the item in the scope before its body)]
+  main 400 application/json {"error":"not-found"}
+  now  404 application/json {"error":"not found"}
+DELETE /api/files/folders/:id owner array [item-read-first (pre-check removal part 2: the write reads the item in the scope before its body)]
+  main 400 application/json {"error":"not-found"}
+  now  404 application/json {"error":"not found"}
+DELETE /api/files/folders/:id owner chunked [item-read-first (pre-check removal part 2: the write reads the item in the scope before its body)]
+  main 400 application/json {"error":"not-found"}
+  now  404 application/json {"error":"not found"}
 POST /api/formulas owner malformed [bad-json-400 (malformed)]
   main 400 application/json {"error":"spec: Invalid input: expected record, received undefined"}
   now  400 application/json {"error":"invalid JSON"}
@@ -1160,6 +1215,24 @@ POST /api/tables/:id/history owner malformed [bad-json-400 (malformed)]
 POST /api/tables/:id/history owner chunked [chunked-413]
   main 404 application/json {"error":"table not found"}
   now  413 application/json {"error":"This request is too large (at most 128 MB).","reason":"body-too-large"}
+DELETE /api/tables/:id/history/:sid owner valid [item-read-first (pre-check removal part 2: the write reads the item in the scope before its body)]
+  main 500 application/json {"error":"internal error"}
+  now  404 application/json {"error":"not found"}
+DELETE /api/tables/:id/history/:sid owner malformed [item-read-first (pre-check removal part 2: the write reads the item in the scope before its body)]
+  main 500 application/json {"error":"internal error"}
+  now  404 application/json {"error":"not found"}
+DELETE /api/tables/:id/history/:sid owner empty [item-read-first (pre-check removal part 2: the write reads the item in the scope before its body)]
+  main 500 application/json {"error":"internal error"}
+  now  404 application/json {"error":"not found"}
+DELETE /api/tables/:id/history/:sid owner nul [item-read-first (pre-check removal part 2: the write reads the item in the scope before its body)]
+  main 500 application/json {"error":"internal error"}
+  now  404 application/json {"error":"not found"}
+DELETE /api/tables/:id/history/:sid owner array [item-read-first (pre-check removal part 2: the write reads the item in the scope before its body)]
+  main 500 application/json {"error":"internal error"}
+  now  404 application/json {"error":"not found"}
+DELETE /api/tables/:id/history/:sid owner chunked [item-read-first (pre-check removal part 2: the write reads the item in the scope before its body)]
+  main 500 application/json {"error":"internal error"}
+  now  404 application/json {"error":"not found"}
 POST /api/tables/:id/history/:sid/restore owner malformed [bad-json-400 (malformed)]
   main 404 application/json {"error":"not found"}
   now  400 application/json {"error":"invalid JSON"}
@@ -1331,18 +1404,42 @@ POST /api/v1/tables/:id/commit owner malformed [bad-json-400 (malformed)]
 POST /api/v1/tables/:id/commit owner chunked [chunked-413]
   main 404 application/json {"error":"not found"}
   now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
-POST /api/v1/tables/:id/rows owner malformed [bad-json-400 (malformed)]
+POST /api/v1/tables/:id/rows owner valid [item-read-first (pre-check removal part 2: the write reads the item in the scope before its body)]
+  main 400 application/json {"error":"table 11111111-1111-4111-8111-111111111111 not found — it may have been deleted or the id mistyped. Find the right id with table_list, then re-issue."}
+  now  404 application/json {"error":"not found"}
+POST /api/v1/tables/:id/rows owner malformed [item-read-first (pre-check removal part 2: the write reads the item in the scope before its body)]
   main 400 application/json {"error":"Invalid input: expected object, received null"}
-  now  400 application/json {"error":"invalid JSON"}
-POST /api/v1/tables/:id/rows owner chunked [chunked-413]
+  now  404 application/json {"error":"not found"}
+POST /api/v1/tables/:id/rows owner empty [item-read-first (pre-check removal part 2: the write reads the item in the scope before its body)]
   main 400 application/json {"error":"Invalid input: expected object, received null"}
-  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
-PATCH /api/v1/tables/:id/rows/:rowId owner malformed [bad-json-400 (malformed)]
+  now  404 application/json {"error":"not found"}
+POST /api/v1/tables/:id/rows owner nul [item-read-first (pre-check removal part 2: the write reads the item in the scope before its body)]
+  main 400 application/json {"error":"table 11111111-1111-4111-8111-111111111111 not found — it may have been deleted or the id mistyped. Find the right id with table_list, then re-issue."}
+  now  404 application/json {"error":"not found"}
+POST /api/v1/tables/:id/rows owner array [item-read-first (pre-check removal part 2: the write reads the item in the scope before its body)]
+  main 400 application/json {"error":"Invalid input: expected object, received array"}
+  now  404 application/json {"error":"not found"}
+POST /api/v1/tables/:id/rows owner chunked [item-read-first (pre-check removal part 2: the write reads the item in the scope before its body)]
   main 400 application/json {"error":"Invalid input: expected object, received null"}
-  now  400 application/json {"error":"invalid JSON"}
-PATCH /api/v1/tables/:id/rows/:rowId owner chunked [chunked-413]
+  now  404 application/json {"error":"not found"}
+PATCH /api/v1/tables/:id/rows/:rowId owner valid [item-read-first (pre-check removal part 2: the write reads the item in the scope before its body)]
+  main 400 application/json {"error":"table 11111111-1111-4111-8111-111111111111 not found — it may have been deleted or the id mistyped. Find the right id with table_list, then re-issue."}
+  now  404 application/json {"error":"not found"}
+PATCH /api/v1/tables/:id/rows/:rowId owner malformed [item-read-first (pre-check removal part 2: the write reads the item in the scope before its body)]
   main 400 application/json {"error":"Invalid input: expected object, received null"}
-  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+  now  404 application/json {"error":"not found"}
+PATCH /api/v1/tables/:id/rows/:rowId owner empty [item-read-first (pre-check removal part 2: the write reads the item in the scope before its body)]
+  main 400 application/json {"error":"Invalid input: expected object, received null"}
+  now  404 application/json {"error":"not found"}
+PATCH /api/v1/tables/:id/rows/:rowId owner nul [item-read-first (pre-check removal part 2: the write reads the item in the scope before its body)]
+  main 400 application/json {"error":"table 11111111-1111-4111-8111-111111111111 not found — it may have been deleted or the id mistyped. Find the right id with table_list, then re-issue."}
+  now  404 application/json {"error":"not found"}
+PATCH /api/v1/tables/:id/rows/:rowId owner array [item-read-first (pre-check removal part 2: the write reads the item in the scope before its body)]
+  main 400 application/json {"error":"Invalid input: expected object, received array"}
+  now  404 application/json {"error":"not found"}
+PATCH /api/v1/tables/:id/rows/:rowId owner chunked [item-read-first (pre-check removal part 2: the write reads the item in the scope before its body)]
+  main 400 application/json {"error":"Invalid input: expected object, received null"}
+  now  404 application/json {"error":"not found"}
 POST /api/v1/tasks owner malformed [bad-json-400 (malformed)]
   main 400 application/json {"error":"title: Invalid input: expected string, received undefined"}
   now  400 application/json {"error":"invalid JSON"}

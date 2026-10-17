@@ -60,6 +60,10 @@ vi.mock('@mantle/files', async (importOriginal) => ({
 vi.mock('@/lib/files', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   ensureFilesRootBranch: vi.fn(async () => {}),
+  // A file or folder write reads the item in the caller's scope first
+  // (pre-check removal part 2): stood in as one it reads.
+  fileById: vi.fn(async () => ({ id: FILE, filename: 'a.md', parentPath: 'files' })),
+  folderById: vi.fn(async () => ({ id: FOLDER })),
   upsertFile: vi.fn(async () => ({ id: FILE, filename: 'a.md', mimeType: 'text/markdown' })),
 }));
 

@@ -330,6 +330,21 @@ function changeKind(cell: string, main: string, now: string): string | null {
   ) {
     return 'map-read-first (pre-check removal part 2: the owner act reads the map in the scope first)';
   }
+  // Pre-check removal part 2 (round 3): a file or Files folder write, a
+  // table history delete and the v1 table row routes read the item in the
+  // caller's scope before the body (fileById, folderById, the table's
+  // scoped read, tableTitle), so the stand-in's no row is the handler's 404
+  // of none, before a body refusal or the opaque 500 main answered; the
+  // real answers: precheck-removal-http.db.test.ts.
+  if (
+    /^(POST|PATCH) \/api\/files\/files\/:id |^(POST|PATCH|DELETE) \/api\/files\/folders\/:id |^DELETE \/api\/tables\/:id\/history\/:sid |^POST \/api\/v1\/tables\/:id\/rows |^PATCH \/api\/v1\/tables\/:id\/rows\/:rowId /.test(
+      cell,
+    ) &&
+    /^(4\d\d|500) /.test(main) &&
+    now === '404 application/json {"error":"not found"}'
+  ) {
+    return 'item-read-first (pre-check removal part 2: the write reads the item in the scope before its body)';
+  }
   // Fold 2 (one error answer): a plain error (the sweep's database stand-in
   // throws "DATABASE_URL must be set"; the vault has no master key) whose
   // text a route's catch put in the reply answers the one opaque 500 now.

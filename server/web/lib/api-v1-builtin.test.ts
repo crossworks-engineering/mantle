@@ -11,7 +11,10 @@
  * app the HTTP item gate, itemWriteGate in lib/auth/session.ts, answers
  * such a write first with its own 403 or 404, on main and now; the
  * pre-check answers only one that got past it. This file stands the HTTP
- * gate aside to pin the pre-check's answer.)
+ * gate aside to pin the pre-check's answer.) Since pre-check removal part
+ * 2 the HTTP gate names no table route: the route reads the table in the
+ * key's scope and asks its edit (assertItemRight) before the tool runs,
+ * pinned last here.
  *
  * The routes run behind the app's own error answer (server/app-error.ts);
  * the session, the key's hidden items and the two tools' handlers are
@@ -34,7 +37,32 @@ const h = vi.hoisted(() => ({
   refuse: null as string | null,
   preFail: null as unknown,
   item: null as { message: string; detail: 'no_read' | 'no_edit' | null } | null,
+  /** The table's title in the key's scope (null: the scope does not read it). */
+  title: 'T' as string | null,
+  /** What the route's own edit check answers (null: the scope may edit). */
+  right: null as 'no_read' | 'no_edit' | 'copy' | null,
 }));
+
+// The route reads the table in the key's scope first (pre-check removal
+// part 2): stood in, a table the scope reads unless a cell says not.
+vi.mock('@mantle/content/table-snapshots', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  tableTitle: async () => h.title,
+}));
+
+// Then it asks the table's edit (assertItemRight): stood in, to throw what
+// the real one throws for each verdict.
+vi.mock('@mantle/db', async (importOriginal) => {
+  const real = await importOriginal<typeof import('@mantle/db')>();
+  const { editCheckRefusalError } = await import('@mantle/std');
+  return {
+    ...real,
+    assertItemRight: async () => {
+      if (h.right === 'copy') throw new real.SnapshotCopyReadOnlyError();
+      if (h.right) throw editCheckRefusalError(h.right);
+    },
+  };
+});
 
 // The tools' preconditions (a table id names a table) read the database:
 // stood in, to pass, or to throw what a failed lookup throws.
@@ -155,6 +183,8 @@ async function answer(
     h.refuse = null;
     h.preFail = null;
     h.item = null;
+    h.title = 'T';
+    h.right = null;
   }
 }
 
@@ -284,6 +314,56 @@ describe.each([
       const res = await answer(send, null, null, null, { message, detail: null });
       expect(res.status).toBe(400);
       expect(res.body).toEqual({ error: message });
+    });
+  },
+);
+
+/** The copy's answer through the one mapper: the gate's words, readOnly. */
+const COPY = {
+  error: 'forbidden',
+  reason: 'item-workspace',
+  code: 'forbidden',
+  message:
+    'This is a read-only copy of an accepted item: nobody changes it. Its author may delete it.',
+  readOnly: true,
+};
+
+describe.each([
+  ['POST /api/v1/tables/:id/rows', post],
+  ['PATCH /api/v1/tables/:id/rows/:rowId', patch],
+])(
+  '%s: the route reads the table in the scope and asks its edit before the tool (pre-check removal part 2)',
+  (_name, send) => {
+    // A handler that ran would answer the opaque 500: each refusal below
+    // comes before it.
+    const ran = new Error('the tool ran');
+
+    it('a table the scope does not read (or none) is the 404 of none', async () => {
+      h.title = null;
+      const res = await answer(send, ran);
+      expect(res.status).toBe(404);
+      expect(res.text).toBe('{"error":"not found"}');
+    });
+
+    it('an edit check refusal of a table it reads (no_edit) is 403 item-workspace', async () => {
+      h.right = 'no_edit';
+      const res = await answer(send, ran);
+      expect(res.status).toBe(403);
+      expect(res.body).toEqual(ITEM_WORKSPACE);
+    });
+
+    it('a read-only copy is the copy’s 403, readOnly', async () => {
+      h.right = 'copy';
+      const res = await answer(send, ran);
+      expect(res.status).toBe(403);
+      expect(res.body).toEqual(COPY);
+    });
+
+    it('a no_read verdict is the mapper’s 404', async () => {
+      h.right = 'no_read';
+      const res = await answer(send, ran);
+      expect(res.status).toBe(404);
+      expect(res.body).toEqual(NOT_FOUND);
     });
   },
 );

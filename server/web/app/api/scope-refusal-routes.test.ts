@@ -47,6 +47,10 @@ vi.mock('@/lib/formulas', async (importOriginal) => ({
 vi.mock('@/lib/files', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   ensureFilesRootBranch: async () => undefined,
+  // A file or folder write reads the item in the caller's scope first
+  // (pre-check removal part 2): stood in as one it reads, so the write runs.
+  fileById: async () => ({ id: '00000000-0000-4000-8000-0000000000aa' }),
+  folderById: async () => ({ id: '00000000-0000-4000-8000-0000000000aa' }),
   createFolder: async () => {
     throw h.fail;
   },
