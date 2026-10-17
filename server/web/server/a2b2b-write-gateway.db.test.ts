@@ -692,6 +692,9 @@ describe.skipIf(!URL)('A2b2b: the login write gateway', () => {
 
   it('S3 fix round 3: read-only callers (a read key, an assistant with no user) and their profile rows (warn, on)', async () => {
     const c = await import('@mantle/content');
+    // With the edit check on (pnpm test:edit-on) the read-only refusal on
+    // profiles (0302) refuses the read key's own row; off, nothing does.
+    const editOn = process.env.MANTLE_TEST_EDIT_CHECK === 'on';
     const rowOf = async (login: string) =>
       JSON.stringify(await x(sql`select preferences from profiles where user_id = ${login}`));
     await x(sql`insert into profiles (user_id) values (${mem}), (${owner}) on conflict do nothing`);
@@ -701,18 +704,22 @@ describe.skipIf(!URL)('A2b2b: the login write gateway', () => {
       const [memBefore, ownerBefore] = [await rowOf(mem), await rowOf(owner)];
       // A read key: login(ro), its own row, in its request scope (no write
       // scope, as the session enters a read key's) and in a write scope.
+      // The request slot names its own actor (the HTTP gate's, then the
+      // session guard's), so the key is named inside it before the scope
+      // is entered, as the session guard names a read key (session.ts
+      // nameRequestLogin); an actor bound outside the slot does not reach
+      // the write (fix round 4: it ran as login:rw).
       const scope = await m.viewerScopeFor({ login: mem });
       const asKey = (writes: boolean) =>
         m
-          .runAsActor(m.loginActor(mem, 'ro'), () =>
-            m.runInRequestSlot(async () => {
-              m.enterRequestScope(scope, { writes, drafts: false });
-              return c.updateProfilePreferences(mem, { timezone: 'Asia/Tokyo' });
-            }),
-          )
+          .runInRequestSlot(async () => {
+            m.setRequestActor(m.loginActor(mem, 'ro'));
+            m.enterRequestScope(scope, { writes, drafts: false });
+            return c.updateProfilePreferences(mem, { timezone: 'Asia/Tokyo' });
+          })
           .then(
             () => 'ok',
-            (e: unknown) => m.pgErrorCode(e) ?? String(e),
+            (e: unknown) => `${m.pgErrorCode(e) ?? String(e)} ${m.editRefusalDetail(e) ?? ''}`.trim(),
           );
       const key = await asKey(false);
       const keyMisses = m.takeActorMisses().length;
@@ -736,21 +743,22 @@ describe.skipIf(!URL)('A2b2b: the login write gateway', () => {
       const ownerChanged = (await rowOf(owner)) !== ownerBefore;
       seen.push({ mode, key, keyW, misses: keyMisses + keyWMisses + turnMisses, turn });
       expect(ownerChanged, mode).toBe(false);
-      if (mode === 'warn') expect(keyChanged).toBe(true);
+      expect(keyChanged, mode).toBe(!editOn);
     }
-    // Pinned as they answer (fix round 3; the same as main, where profiles
-    // was a gap table rerun for any caller): the read key's own row is
-    // written by the library in warn and on, its request scope with or
-    // without writes. Nothing in the database holds it while the edit
-    // check's box mode is off (this run's): the read key is held by the
-    // gates above (its requests carry no write scope, its tools are read
-    // only), and with the edit check on by the read-only refusal on
-    // profiles (0302; edit-check.db.test.ts "coverage"). The brain's row
-    // from an assistant turn with no user: the row rule refuses it in both
-    // (no login, no Settings area).
+    // Pinned as they answer (fix round 4: the key now runs as login(ro)).
+    // Edit check off: the read key's own row is written by the library in
+    // warn and on, its request scope with or without writes (as main, where
+    // profiles was a gap table rerun for any caller); nothing in the
+    // database holds it, the gates above do (its requests carry no write
+    // scope, its tools are read only). Edit check on: the read-only
+    // refusal on profiles (0302) refuses it, 42501 ro_actor, in both actor
+    // modes (the edit check's box mode decides, not the actor check's).
+    // The brain's row from an assistant turn with no user: the row rule
+    // refuses it in both (no login, no Settings area).
+    const key = editOn ? '42501 ro_actor' : 'ok';
     expect(seen).toEqual([
-      { mode: 'warn', key: 'ok', keyW: 'ok', misses: 0, turn: '42501' },
-      { mode: 'on', key: 'ok', keyW: 'ok', misses: 0, turn: '42501' },
+      { mode: 'warn', key, keyW: key, misses: 0, turn: '42501' },
+      { mode: 'on', key, keyW: key, misses: 0, turn: '42501' },
     ]);
   });
 
