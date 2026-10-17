@@ -774,12 +774,15 @@ describe('the scoreboard pins', () => {
 describe('the item pre-check counters (A4 step 4, A5 step 6b)', () => {
   const resolvers = itemResolverNames(ROOT) as string[];
 
-  it("reads the item gate's resolvers", () => {
-    expect(resolvers).toEqual(expect.arrayContaining(['pageFromNoteSource', 'appCopy']));
+  it("reads the item gate's resolvers: none is left (the pre-check removal Part 3)", () => {
+    expect(resolvers).toEqual([]);
   });
 
   it('counts a policy items value, never a schema items', () => {
-    const count = (t: string) => itemPrecheckToolEntries(t, resolvers) as number;
+    // The resolvers the last entries named (gone in Part 3): the counter
+    // still sees one by name if it is handed one.
+    const count = (t: string) =>
+      itemPrecheckToolEntries(t, [...resolvers, 'appCopy', 'pageFromNoteSource']) as number;
     expect(count("policy: { effect: 'write', items: [edit('id')] }")).toBe(1);
     expect(count("items: [manage('id'), read('x')]")).toBe(1);
     expect(count("items: [{ param: 'folder_id', need: 'edit' }]")).toBe(1);
@@ -800,7 +803,8 @@ describe('the item pre-check counters (A4 step 4, A5 step 6b)', () => {
     expect(Object.keys(by)).toEqual([...(ITEM_PRECHECK_ROUTE_LISTS as string[])]);
     for (const n of Object.values(by)) expect(n).toBeGreaterThan(0);
     expect(Object.values(by).reduce((a, b) => a + b, 0)).toBe(got.numbers.itemPrecheckRoutes);
-    expect(got.numbers.itemPrecheckTools).toBeGreaterThan(0);
+    // The last tool entries went in Part 3: the pin is 0.
+    expect(got.numbers.itemPrecheckTools).toBe(0);
   });
 });
 
