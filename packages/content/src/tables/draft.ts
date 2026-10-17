@@ -119,6 +119,10 @@ export async function applyTableOps(
     .where(and(eq(nodes.id, id), eq(nodes.ownerId, ownerId), eq(nodes.type, 'table')))
     .limit(1);
   if (!node) return null;
+  // Edit first (pre-check removal part 2), after the scoped read above (a
+  // table the scope does not read is the null of none): before a draft is
+  // staged on disk, and the same refusal whether a draft is there or not.
+  await assertItemRight(id, 'edit');
   await assertTableWritable(id);
   try {
     for (let attempt = 1; ; attempt++) {
@@ -217,6 +221,9 @@ export async function saveTableDraft(
     .where(and(eq(nodes.id, id), eq(nodes.ownerId, ownerId), eq(nodes.type, 'table')))
     .limit(1);
   if (!node) return null;
+  // Edit first, as applyTableOps asks it: before the draft is staged. An
+  // app's sync is the brain's own (the app's data door asked).
+  if (!opts.appSync) await assertItemRight(id, 'edit');
   await assertTableWritable(id, opts.appSync);
   const workbook = isWorkbook(data) ? ensureWorkbookDoc(data) : null;
   const doc = workbook ? null : ensureTableDoc(data as TableDoc);
@@ -315,6 +322,8 @@ export async function discardTableDraft(ownerId: string, id: string): Promise<bo
     .where(and(eq(nodes.id, id), eq(nodes.ownerId, ownerId), eq(nodes.type, 'table')))
     .limit(1);
   if (!row) return false;
+  // Edit first, as applyTableOps asks it.
+  await assertItemRight(id, 'edit');
   await assertTableWritable(id);
   try {
     await flipTable(id, undefined, { draftPath: null, draftData: null, draftUpdatedAt: null });

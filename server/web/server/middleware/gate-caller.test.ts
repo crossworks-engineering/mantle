@@ -217,13 +217,13 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
         // Content writes (batch 3): an item write, a create, and the read
         // POST whose guard checks the item as a write.
         { pattern: '/api/notes/:id', methods: ['PATCH', 'DELETE'] },
-        // A table's: notes and pages lost their item check in the
+        // An app's: notes, pages and tables lost their item check in the
         // pre-check removal part 2 (the database checks them).
-        { pattern: '/api/tables/:id', methods: ['PATCH', 'DELETE'] },
+        { pattern: '/api/apps/:id', methods: ['PATCH', 'DELETE'] },
         { pattern: '/api/formulas/:id/evaluate', methods: ['POST'] },
         // More of batch 3's writes (A4 step 3b part 4, the part 3 audit):
         // the v1 alias of a create (an API key's write), an item write that
-        // needs manage (a table's delete), an item named through a share and
+        // needs manage (an app's delete), an item named through a share and
         // a deleted app's snapshot, and an app's data write (its item read:
         // the app; D6's Informational switch is the database's, after the
         // gate). A page's move and a Recall revision lost their item check
@@ -345,19 +345,19 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
       'refused-workspace': { refused: 'workspace', message: 'You are not in that workspace.' },
       'refused-invalid': { refused: 'invalid', message: 'ws is not a workspace id.' },
     };
-    // Tables: notes and pages lost their item check in the pre-check
-    // removal part 2 (the database checks them); a table's write still has
-    // it.
+    // Apps: notes, pages and tables lost their item check in the
+    // pre-check removal part 2 (the database checks them); an app's write
+    // still has it.
     const paths = [
-      ['PATCH', `/api/tables/${ID}`],
-      ['DELETE', `/api/tables/${ID}`],
+      ['PATCH', `/api/apps/${ID}`],
+      ['DELETE', `/api/apps/${ID}`],
       ['POST', `/api/formulas/${ID}/evaluate`],
       // The id the handler gets is the decoded segment: an encoded item id
       // is checked as that id; one that decodes to no item id, or not at
       // all, is the not-found answer (the security fix), for every login.
-      ['PATCH', `/api/tables/${encodeURIComponent(ID).replace(/1/g, '%31')}`],
-      ['PATCH', '/api/tables/not-an-item'],
-      ['PATCH', '/api/tables/%E0%A4%A'],
+      ['PATCH', `/api/apps/${encodeURIComponent(ID).replace(/1/g, '%31')}`],
+      ['PATCH', '/api/apps/not-an-item'],
+      ['PATCH', '/api/apps/%E0%A4%A'],
     ] as const;
     const seenAnswers = new Set<string>();
     const run = async (label: string, method: string, path: string, setup: () => void) => {
@@ -467,7 +467,7 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
       // the not-found answer, for every login.
       for (const id of odd(ID)) cells.push([method, path(id), 'odd', cases]);
     };
-    each('DELETE', (id) => `/api/tables/${id}`, node);
+    each('DELETE', (id) => `/api/apps/${id}`, node);
     each('DELETE', (id) => `/api/shares/${id}`, share);
     each('DELETE', (id) => `/api/apps/deleted/${id}`, deleted);
     each('POST', (id) => `/api/apps/${id}/db-broker`, node);

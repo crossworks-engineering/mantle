@@ -162,6 +162,8 @@ describe.skipIf(!DB_URL)('the pre-check removal, part 2: the HTTP entries', () =
   let m: typeof import('@mantle/db');
   let t: typeof import('@mantle/tools');
   let c: typeof import('@mantle/content');
+  let tb: typeof import('@mantle/content/tables');
+  let th: typeof import('@mantle/content/table-snapshots');
   let actorMode: typeof import('../../../packages/db/src/actor');
   let runRoute: typeof import('./run-route').runRoute;
   let dir = '';
@@ -261,6 +263,8 @@ describe.skipIf(!DB_URL)('the pre-check removal, part 2: the HTTP entries', () =
     path: (id: string) => string;
     /** Its body, for the item `id` (a random uuid for none). */
     body?: (id: string) => unknown;
+    /** A body sent as is (a form upload), with its content type. */
+    raw?: () => { body: string; type: string };
     viaKey?: true;
     /** An owner's act (Recall): the handler refuses it to a login outside
      *  Admin (403 `*_is_owners`), 'first' before it reads the map (every id
@@ -271,6 +275,10 @@ describe.skipIf(!DB_URL)('the pre-check removal, part 2: the HTTP entries', () =
      *  the id (Recall: map_not_found). Both 404, neither tells a hidden
      *  item from none. */
     badIdOwn?: true;
+    /** Refused to a member login by the session guard for every id (403
+     *  member-login: not a member's write, MEMBER_OPEN_WRITES); the Admin
+     *  user's cells pin the item answers. */
+    adminOnly?: true;
     /** Make a fresh item for `who` placed at `p` (place it last). */
     make: (who: Who, p: Place) => Promise<string>;
     /** In warn, a write the database refuses in on is made (logged as a
@@ -438,6 +446,49 @@ describe.skipIf(!DB_URL)('the pre-check removal, part 2: the HTTP entries', () =
       await place(who, p)(id);
       return id;
     };
+
+  /** A table made as the owner (one text column `A`, one row `r1`, file
+   *  backed), with a draft when `draft` and a history entry when
+   *  `snapshot` (its id kept for the history routes), then placed. */
+  const grid = () => ({
+    columns: [{ id: 'c1', name: 'A', type: 'text' as const }],
+    rows: [{ id: 'r1', cells: { c1: `${tag} ${n()}` } }],
+  });
+  const sidOf = new Map<string, string>();
+  const table =
+    (opts: { draft?: true; snapshot?: true } = {}) =>
+    async (who: Who, p: Place) => {
+      const made = await sys(() =>
+        tb.createTable(owner, { title: `${tag} table ${n()}`, data: grid() }),
+      );
+      const id = made.id;
+      if (opts.snapshot) {
+        const snap = await sys(() => th.createTableSnapshot(owner, id, { actor: 'owner' }));
+        sidOf.set(id, snap!.id);
+      }
+      if (opts.draft) {
+        const d = await sys(() => tb.saveTableDraft(owner, id, grid()));
+        expect(d?.ok).toBe(true);
+      }
+      await place(who, p)(id);
+      return id;
+    };
+  /** A one-sheet CSV upload, as the import route reads it. */
+  const csvUpload = () => {
+    const b = `pch${n()}`;
+    return {
+      type: `multipart/form-data; boundary=${b}`,
+      body: [
+        `--${b}`,
+        'Content-Disposition: form-data; name="file"; filename="pch.csv"',
+        'Content-Type: text/csv',
+        '',
+        `A,B\n${n()},2`,
+        `--${b}--`,
+        '',
+      ].join('\r\n'),
+    };
+  };
 
   const FAMILIES: Family[] = [
     {
@@ -636,6 +687,125 @@ describe.skipIf(!DB_URL)('the pre-check removal, part 2: the HTTP entries', () =
         },
       ],
     },
+    {
+      // A table's edit and delete are one statement each (0278, 0266). Its
+      // draft save, op batch, discard, import, commit and the history's
+      // snapshot, restore and delete ask the caller's edit first
+      // (assertItemRight, in every mode), before any workbook is staged on
+      // disk. The v1 row writes run the table tools (their own gate).
+      name: 'tables',
+      removed: true,
+      routes: [
+        ...nodeRoutes('/api/tables', table()),
+        {
+          name: 'PUT /api/tables/:id/draft',
+          need: 'edit',
+          method: 'PUT',
+          path: (id) => `/api/tables/${id}/draft`,
+          body: () => ({ data: grid() }),
+          make: table(),
+          warnMade: false,
+        },
+        {
+          name: 'POST /api/tables/:id/draft-ops',
+          need: 'edit',
+          method: 'POST',
+          path: (id) => `/api/tables/${id}/draft-ops`,
+          body: () => ({ ops: [{ op: 'row_add', cells: { c1: `${tag} ${n()}` } }] }),
+          make: table(),
+          warnMade: false,
+        },
+        {
+          name: 'POST /api/tables/:id/commit',
+          need: 'edit',
+          method: 'POST',
+          path: (id) => `/api/tables/${id}/commit`,
+          body: () => ({ data: grid() }),
+          make: table(),
+          warnMade: false,
+        },
+        {
+          name: 'POST /api/tables/:id/discard-draft',
+          need: 'edit',
+          method: 'POST',
+          path: (id) => `/api/tables/${id}/discard-draft`,
+          make: table({ draft: true }),
+          warnMade: false,
+        },
+        {
+          name: 'POST /api/tables/:id/import',
+          adminOnly: true,
+          need: 'edit',
+          method: 'POST',
+          path: (id) => `/api/tables/${id}/import`,
+          raw: csvUpload,
+          make: table(),
+          warnMade: false,
+        },
+        {
+          name: 'POST /api/tables/:id/history',
+          adminOnly: true,
+          badIdOwn: true,
+          need: 'edit',
+          method: 'POST',
+          path: (id) => `/api/tables/${id}/history`,
+          body: () => ({ note: `${tag} ${n()}` }),
+          make: table(),
+          warnMade: false,
+        },
+        {
+          name: 'DELETE /api/tables/:id/history/:sid',
+          adminOnly: true,
+          need: 'edit',
+          method: 'DELETE',
+          path: (id) => `/api/tables/${id}/history/${sidOf.get(id) ?? randomUUID()}`,
+          make: table({ snapshot: true }),
+          warnMade: false,
+        },
+        {
+          name: 'POST /api/tables/:id/history/:sid/restore',
+          adminOnly: true,
+          need: 'edit',
+          method: 'POST',
+          path: (id) => `/api/tables/${id}/history/${sidOf.get(id) ?? randomUUID()}/restore`,
+          body: () => ({ discardDraft: true }),
+          make: table({ snapshot: true }),
+          warnMade: false,
+        },
+        {
+          name: 'POST /api/v1/tables/:id/commit',
+          need: 'edit',
+          method: 'POST',
+          path: (id) => `/api/v1/tables/${id}/commit`,
+          body: () => ({ data: grid() }),
+          make: table(),
+          warnMade: false,
+          viaKey: true,
+        },
+        {
+          name: 'POST /api/v1/tables/:id/rows',
+          adminOnly: true,
+          need: 'edit',
+          method: 'POST',
+          path: (id) => `/api/v1/tables/${id}/rows`,
+          body: () => ({ rows: [{ A: `${tag} ${n()}` }] }),
+          make: table(),
+          warnMade: false,
+          viaKey: true,
+        },
+        {
+          name: 'PATCH /api/v1/tables/:id/rows/:rowId',
+          adminOnly: true,
+          need: 'edit',
+          method: 'PATCH',
+          path: (id) => `/api/v1/tables/${id}/rows/r1`,
+          body: () => ({ cells: { A: `${tag} ${n()}` } }),
+          make: table(),
+          warnMade: false,
+          viaKey: true,
+        },
+      ],
+    },
   ];
 
   // ── the cells ─────────────────────────────────────────────────────────────
@@ -652,6 +822,13 @@ describe.skipIf(!DB_URL)('the pre-check removal, part 2: the HTTP entries', () =
     pre.on = precheck;
     try {
       const login = route.viaKey ? { key: keyOf[who]! } : L[who];
+      if (route.raw) {
+        const { body, type } = route.raw();
+        return await runRoute(login, route.method, route.path(id), undefined, {
+          rawBody: body,
+          headers: { 'content-type': type },
+        });
+      }
       return await runRoute(login, route.method, route.path(id), route.body?.(id));
     } finally {
       pre.on = true;
@@ -711,6 +888,8 @@ describe.skipIf(!DB_URL)('the pre-check removal, part 2: the HTTP entries', () =
     m = await import('@mantle/db');
     t = await import('@mantle/tools');
     c = await import('@mantle/content');
+    tb = await import('@mantle/content/tables');
+    th = await import('@mantle/content/table-snapshots');
     actorMode = await import('../../../packages/db/src/actor');
     runRoute = (await import('./run-route')).runRoute;
     raw = postgres(scratch.url, { max: 2, prepare: false, onnotice: () => {} });
@@ -822,7 +1001,8 @@ describe.skipIf(!DB_URL)('the pre-check removal, part 2: the HTTP entries', () =
               );
               // A member asking an owner's act the handler refuses first:
               // its 403 for every id (it tells nothing about any map).
-              const ownerFirst = who === 'member' && route.ownerAct === 'first';
+              const ownerFirst =
+                who === 'member' && (route.ownerAct === 'first' || route.adminOnly === true);
               const ownerAct = who === 'member' && route.ownerAct !== undefined;
               expect(noneNow.status, noneNowText).toBe(ownerFirst ? 403 : 404);
               expect(noneNowText).not.toMatch(RAW);
@@ -860,6 +1040,11 @@ describe.skipIf(!DB_URL)('the pre-check removal, part 2: the HTTP entries', () =
                     text: ids(noneNowText),
                   });
                   expect(now.changed, `${name} changed the item`).toBe(false);
+                } else if (who === 'member' && route.adminOnly) {
+                  // Not a member's write: the guard's 403 before any item.
+                  expect(now.status, `${name}: ${now.text}`).toBe(403);
+                  expect(now.text, name).toContain('member-login');
+                  expect(now.changed, `${name} changed the item`).toBe(false);
                 } else if (ownerAct) {
                   // The owner's act, refused to a member by the handler.
                   expect(now.status, `${name}: ${now.text}`).toBe(403);
@@ -888,7 +1073,11 @@ describe.skipIf(!DB_URL)('the pre-check removal, part 2: the HTTP entries', () =
                   ).toEqual({ ok: was.status < 300, changed: was.changed });
                 }
               }
-              if (route.need === 'edit' && !family.noCopy) {
+              if (
+                route.need === 'edit' &&
+                !family.noCopy &&
+                !(who === 'member' && route.adminOnly)
+              ) {
                 // A read-only copy the login may manage: the pre-check's
                 // read-only answer, now the database's (every mode).
                 const name = `${route.name} ${mode} ${who}/copy`;

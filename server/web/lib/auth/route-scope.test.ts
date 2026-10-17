@@ -165,12 +165,12 @@ describe.skipIf(!hasManifest)('route scope table (W6a)', () => {
 describe('itemWriteTarget (W6a, the item an Admin write touches)', () => {
   const id = '6f1c2a3b-0d4e-4f5a-8b6c-7d8e9f0a1b2c';
   it('names the item and what the write needs', () => {
-    expect(itemWriteTarget('PATCH', '/api/tables/:id', `/api/tables/${id}`)).toEqual({
+    expect(itemWriteTarget('PATCH', '/api/apps/:id', `/api/apps/${id}`)).toEqual({
       id,
       need: 'edit',
       ref: 'node',
     });
-    expect(itemWriteTarget('DELETE', '/api/tables/:id', `/api/tables/${id}`)).toEqual({
+    expect(itemWriteTarget('DELETE', '/api/apps/:id', `/api/apps/${id}`)).toEqual({
       id,
       need: 'manage',
       ref: 'node',
@@ -195,9 +195,12 @@ describe('itemWriteTarget (W6a, the item an Admin write touches)', () => {
     expect(
       itemWriteTarget('PATCH', '/api/tree/:kind/folders/:id', `/api/tree/pages/folders/${id}`),
     ).toEqual({ id, need: 'edit', ref: 'node' });
+    // Tables and their v1 alias too (the draft, ops, import and history
+    // ask the caller's edit first, assertItemRight).
+    expect(itemWriteTarget('PATCH', '/api/tables/:id', `/api/tables/${id}`)).toBeNull();
     expect(
       itemWriteTarget('PATCH', '/api/v1/tables/:id/rows/:rowId', `/api/v1/tables/${id}/rows/r1`),
-    ).toEqual({ id, need: 'edit', ref: 'node' });
+    ).toBeNull();
   });
   it('names no item for a create, a list or another prefix', () => {
     expect(itemWriteTarget('POST', '/api/pages', '/api/pages')).toBeNull();

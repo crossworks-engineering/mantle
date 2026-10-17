@@ -104,6 +104,20 @@ const PRECHECK_HTTP_CELLS = [
   'DELETE /api/formulas/:id',
   'PATCH /api/events/:id',
   'PATCH /api/formulas/:id',
+  // Tables and their v1 alias (round 3).
+  'DELETE /api/tables/:id',
+  'DELETE /api/tables/:id/history/:sid',
+  'PATCH /api/tables/:id',
+  'PATCH /api/v1/tables/:id/rows/:rowId',
+  'POST /api/tables/:id/commit',
+  'POST /api/tables/:id/discard-draft',
+  'POST /api/tables/:id/draft-ops',
+  'POST /api/tables/:id/history',
+  'POST /api/tables/:id/history/:sid/restore',
+  'POST /api/tables/:id/import',
+  'POST /api/v1/tables/:id/commit',
+  'POST /api/v1/tables/:id/rows',
+  'PUT /api/tables/:id/draft',
 ];
 /** The Files operation's own refusal (its text carries a dash: \u2014). */
 const NO_FOLDER = (verb: string, fix: string) =>

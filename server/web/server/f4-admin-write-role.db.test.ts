@@ -164,10 +164,10 @@ describe.skipIf(!DB_URL)('F4: an Admin user’s write request runs in its scope'
     precheck: boolean,
   ): Promise<Cell> => {
     const id = await makeItem(what === 'edit' ? 'note' : 'page', grant);
-    // 'gated': a write through a route that keeps the pre-check (a table's
+    // 'gated': a write through a route that keeps the pre-check (an app's
     // PATCH): the gate reads the item the route names, by its id only, and
-    // answers before any handler (pre-check removal part 2: the notes and
-    // pages entries are gone).
+    // answers before any handler (pre-check removal part 2: the notes,
+    // pages and tables entries are gone).
     const before = await stateOf(id);
     pre.on = precheck;
     m.takeActorMisses();
@@ -177,7 +177,7 @@ describe.skipIf(!DB_URL)('F4: an Admin user’s write request runs in its scope'
         what === 'edit'
           ? runRoute(L[who], 'PATCH', `/api/notes/${id}`, { title: `${tag} edited ${name}` })
           : what === 'gated'
-            ? runRoute(L[who], 'PATCH', `/api/tables/${id}`, { title: `${tag} edited ${name}` })
+            ? runRoute(L[who], 'PATCH', `/api/apps/${id}`, { title: `${tag} edited ${name}` })
             : runRoute(L[who], 'PUT', `/api/pages/${id}/draft`, {
                 doc: { type: 'doc', content: [], f4: name },
               }),
@@ -332,8 +332,8 @@ describe.skipIf(!DB_URL)('F4: an Admin user’s write request runs in its scope'
   }, 120_000);
 
   it('with the pre-check in place: a read-only edit is its 403, an item the scope does not read the 404 (no existence leak)', async () => {
-    // A route that keeps the pre-check (a note's and a page's lost their
-    // entry in the pre-check removal part 2, docs/actors.md).
+    // A route that keeps the pre-check (a note's, a page's and a table's
+    // lost their entry in the pre-check removal part 2, docs/actors.md).
     for (const mode of ['off', 'warn', 'on'] as const) {
       await setMode(mode);
       for (const who of ['admin', 'owner'] as const) {

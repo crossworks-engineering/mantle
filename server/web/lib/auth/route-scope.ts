@@ -353,13 +353,16 @@ export const ITEM_WRITE_PREFIXES: readonly string[] = [
   // Notes and drawings went in the pre-check removal part 2
   // (docs/actors.md): the database checks their writes (a drawing's draft,
   // commit and discard ask the caller's right first, assertItemRight).
-  '/api/tables',
+  // Tables (and /api/v1/tables) went in the pre-check removal part 2: an
+  // edit and a delete are one statement each (0278, 0266); the draft save,
+  // op batch, discard, import, commit and the history's snapshot, restore
+  // and delete ask the caller's edit first (assertItemRight), before any
+  // workbook is staged on disk.
   '/api/apps',
   '/api/files/files',
   '/api/files/folders',
   '/api/tree/:kind/folders',
   '/api/tree/items',
-  '/api/v1/tables',
   // W6a fix round 1 (M1): the other workspace kinds with an item route.
   // Formulas, tasks, events and v1 tasks went in the pre-check removal
   // part 2 (docs/actors.md): their edit and delete are one statement each,
