@@ -646,28 +646,28 @@ describe.skipIf(!URL)('A3b: the store brokers, both checks on', () => {
     // refused commit of above is refused as with them on, before the stage:
     // nothing staged, the row and the disk as the save left them. It was
     // made with both checks off (a narrower answer below on, by design).
-    // The draft save asks no rights read: off, it is made, as before.
-    it('off (both checks off): the refused save of above is made; the refused commit is refused as on, before the stage', async () => {
+    // Since the pre-check removal part 2 (round 3) the draft save asks it
+    // too, before any workbook is staged: off, the refused save is refused
+    // as on (it was made), and nothing is staged.
+    it('off (both checks off): the refused save and commit of above are refused as on, before the stage', async () => {
       const t = await makeTable('off', R);
-      const rev = (await tableRow(t)).r;
       await setChecks('off');
       try {
-        const saved = await inRequest(mem, () => tablesMod.saveTableDraft(owner, t, DOC('off')));
-        expect(saved).toEqual({ ok: true, draftRev: rev + 1 });
-        const read = await sys(() => tablesMod.getTable(owner, t));
-        expect(read?.draft?.rows[0]?.cells.c1).toBe('off');
         const before = stateOf(tableRoot);
         const row = await tableRow(t);
-        const commits: [string, () => Promise<unknown>][] = [
+        const writes: [string, () => Promise<unknown>][] = [
+          ['save', () => tablesMod.saveTableDraft(owner, t, DOC('off'))],
           ['commit', () => tablesMod.commitTable(owner, t)],
           ['commit a doc', () => tablesMod.commitTable(owner, t, DOC('off'))],
         ];
-        for (const [what, commit] of commits) {
-          const err = await errorOf(inRequest(mem, commit));
+        for (const [what, write] of writes) {
+          const err = await errorOf(inRequest(mem, write));
           expect(m.editRefusalDetail(err), `${what}: ${String(err)}`).toBe('no_edit');
           expect(filesOf(stateOf(tableRoot)), what).toEqual(filesOf(before));
         }
         expect(await tableRow(t)).toEqual(row);
+        const read = await sys(() => tablesMod.getTable(owner, t));
+        expect(read?.draft ?? null).toBeNull();
       } finally {
         await setChecks('on');
       }
