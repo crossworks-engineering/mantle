@@ -7550,9 +7550,11 @@ What changed:
   ITEM_WRITE_PREFIXES header, gone with R0. The old "Every box runs off
   or warn" lives only here now; the spec says both checks run on.
 
-Pins (scripts/arch-scoreboard.pins.json, new): actorsMdLines 350 (the
-cap; 341 today), actorsHistoryRefs 74, docQuotesDangling 8. P1a's
-actorsMdLines is this key: on its rebase it keeps this one.
+Pins (scripts/arch-scoreboard.pins.json, new, all down only):
+actorsMdLines 341 (the spec's size; the plan's cap is 350),
+actorsHistoryRefs 74, docQuotesDangling 8. P1a's actorsMdLines is this
+key: on its rebase it keeps this pin and drops its growth exception.
+Handovers go to docs/_archive/ (this file), never to the spec.
 
 Gates (exit codes): pnpm -r typecheck 0, pnpm lint 0 (one warning, not
 from this branch), pnpm format:check 0 (and prettier on the eslint-rules

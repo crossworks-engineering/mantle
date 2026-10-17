@@ -84,7 +84,7 @@
   "consoleCalls": 475,
   "archivedAtIsNull": 2,
   "cacheControlFiles": 44,
-  "actorsMdLines": 350,
+  "actorsMdLines": 341,
   "actorsHistoryRefs": 74,
   "docQuotesDangling": 8,
   "_notes": {
@@ -105,6 +105,6 @@
     "rateLimitAllowed": "Was routeRateLimitAllowed (3 route files) until the A10 low round (A10 #8 L2): the count reads every file, not only route files, so the four lib files that take a limit are named too (route-limits.ts, the gate; access-keys.ts and access-key-gate.ts, the key budgets; workspace-turn.ts, the member turn budget). rateLimitCalls (was routeRateLimitCalls) stays 0.",
     "callerReads": "raised 508 to 510 by the A6b re-pin, with no A6b change: main (v0.300.70) already measures 510 (two route reads of the pipeline's caller added on main since its last re-pin; callerReads may grow, MAY_GROW in scripts/arch-scoreboard.ts, so main's check never asked for it). Every route file reads the same count on main and on feat/a6b. Lowered 510 to 506 (files 365 to 363) in A7: the hand stubs that read the caller (access/nodes GET and PATCH, the app-nav PUT, the member frame) went with the 410 stubs (goneStubs 133 to 0, routeFiles 549 to 417).",
     "itemPrecheckTools": "Lowered 101 to 29 in the pre-check removal (docs/actors.md, \"Pre-check deletion\"): 72 entries whose database check refuses the same write with both checks on and whose second reason is proven (the node edits and deletes, process_extraction, access_set, the link closes, tree_folder_update, the page lifecycle, the Recall tools, the table tools, the Files tools and the three hand-written MCP ones, the app code and history tools); server/web/server/precheck-removal.db.test.ts proves each. The last 29 went in Part 3 (29 to 0, docs/actors.md \"Pre-check removal Part 3\"): each library asks the item first (assertItemRight) before any side effect, or its answer was fixed; the same test proves each. 0 now: any policy item list that comes back fails arch:check.",
-    "actorsMdLines": "New in D1 (plan v3.2): docs/actors.md is the spec, its history moved verbatim to docs/_archive/actors-history.md. Pinned at the plan's cap of 350, not at today's count, so a step that edits its spec section in its own branch (plan rule 7) has room; the spec is about 340 lines."
+    "actorsMdLines": "New in D1 (plan v3.2): docs/actors.md is the spec (at most 350 lines), down only at its size; history and every handover go to docs/_archive/ (docs/_archive/actors-history.md), never to the spec."
   }
 }
