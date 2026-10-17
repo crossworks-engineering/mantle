@@ -92,6 +92,8 @@ describe.skipIf(!URL)('W6b: members write through the owner routes', () => {
   const idOf = (r: { json: Json }, key: string) =>
     ((r.json[key] as Json | undefined)?.id ?? r.json.id) as string;
 
+  let suiteMode: string | undefined;
+
   beforeAll(async () => {
     const ts: Ts = await import('@mantle/db/test-support');
     scratch = await ts.createMigratedScratchDatabase(URL!);
@@ -134,9 +136,21 @@ describe.skipIf(!URL)('W6b: members write through the owner routes', () => {
       (${adminFolder}, ${owner}, 'branch', ${`${tag} admin folder`}, ${`pages.${tag}a`}::ltree)`);
     await homeIn(roNote, ro);
     await homeIn(teamFolder, team);
+    // Both checks on, as every box since the pre-check removal part 2
+    // (docs/actors.md, "Pre-check removal Part 2 (HTTP)"): a note's item
+    // gate is gone, so a reader's edit is the database's to refuse (this
+    // process's actor check on: the login's write on the write role; the
+    // scratch database's edit check on).
+    suiteMode = process.env.MANTLE_ACTOR_CHECK;
+    process.env.MANTLE_ACTOR_CHECK = 'on';
+    await (
+      await import('@mantle/db/test-support')
+    ).superuserExec(scratch!.url, "select mantle_set_edit_check('on')");
   }, 240_000);
 
   afterAll(async () => {
+    if (suiteMode === undefined) delete process.env.MANTLE_ACTOR_CHECK;
+    else process.env.MANTLE_ACTOR_CHECK = suiteMode;
     await m?.closeDb();
     await scratch?.drop();
     if (dir) await rm(dir, { recursive: true, force: true });

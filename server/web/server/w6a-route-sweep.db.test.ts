@@ -587,11 +587,17 @@ describe.skipIf(!URL)('W6a route sweep: scoped reads for every login', () => {
     expect(onItem).toBeGreaterThan(25);
   }, 900_000);
 
-  it('a member: an open write on an id it cannot read, or no row has, is the gate’s one 404', async () => {
+  it('a member: an open write on an id it cannot read, or no row has, is one 404', async () => {
     // The other half of M3: the same routes on a random id, and on an item
     // homed where the member is not, answer the same 404 before any handler.
+    // A route whose pre-check went (the pre-check removal part 2,
+    // docs/actors.md: itemWriteTarget names no item) is answered by its
+    // handler in the member's scope: the two ids get the same answer, the
+    // handler's 404, or a 400 for the sweep's empty body that it answers
+    // before any read.
     const failures: string[] = [];
     let checked = 0;
+    let handlerAnswered = 0;
     for (const e of manifest) {
       if (!e.pattern.startsWith('/api/') || skipped(e.pattern)) continue;
       for (const method of e.methods) {
@@ -603,12 +609,29 @@ describe.skipIf(!URL)('W6a route sweep: scoped reads for every login', () => {
         ) {
           continue;
         }
-        for (const id of [randomUUID(), sideNote]) {
-          const path = e.pattern
+        const at = (id: string) =>
+          e.pattern
             .split('/')
             .map((seg) => (seg === ':id' ? id : seg === ':kind' ? 'notes' : seg))
             .join('/');
-          const r = await call(path, mem, method);
+        if (itemWriteTarget(method, e.pattern, at(randomUUID())) === null) {
+          const [none, unread] = [
+            await call(at(randomUUID()), mem, method),
+            await call(at(sideNote), mem, method),
+          ];
+          checked += 2;
+          handlerAnswered += 1;
+          const one =
+            (none.status === 404 && none.text === '{"error":"not found"}') || none.status === 400;
+          if (!one || unread.status !== none.status || unread.text !== none.text) {
+            failures.push(
+              `${method} ${e.pattern} (handler) no row ${none.status} ${none.text.slice(0, 80)}; unread ${unread.status} ${unread.text.slice(0, 80)}`,
+            );
+          }
+          continue;
+        }
+        for (const id of [randomUUID(), sideNote]) {
+          const r = await call(at(id), mem, method);
           checked += 1;
           if (
             r.status !== 404 ||
@@ -624,6 +647,7 @@ describe.skipIf(!URL)('W6a route sweep: scoped reads for every login', () => {
     }
     expect(failures).toEqual([]);
     expect(checked).toBeGreaterThan(50);
+    expect(handlerAnswered).toBeGreaterThan(0);
   }, 600_000);
 
   it('a member with a Write grant only: delete and move stay refused (A0 fix round 2, L-10)', async () => {

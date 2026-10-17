@@ -326,13 +326,15 @@ describe.skipIf(!DB_URL)('F4: an Admin user’s write request runs in its scope'
   }, 120_000);
 
   it('with the pre-check in place: a read-only edit is its 403, an item the scope does not read the 404 (no existence leak)', async () => {
+    // A page's draft save: its route keeps the pre-check (a note's PATCH
+    // lost its entry in the pre-check removal part 2, docs/actors.md).
     for (const mode of ['off', 'warn', 'on'] as const) {
       await setMode(mode);
       for (const who of ['admin', 'owner'] as const) {
         const ro = await cell(
-          `${mode} ${who} edit read-only, pre-check`,
+          `${mode} ${who} draft read-only, pre-check`,
           who,
-          'edit',
+          'draft',
           'read-only',
           true,
         );
@@ -340,9 +342,9 @@ describe.skipIf(!DB_URL)('F4: an Admin user’s write request runs in its scope'
         expect(ro.text).toContain('You cannot change this item in your workspaces.');
         expect(ro.changed).toBe(false);
         const hidden = await cell(
-          `${mode} ${who} edit hidden, pre-check`,
+          `${mode} ${who} draft hidden, pre-check`,
           who,
-          'edit',
+          'draft',
           'hidden',
           true,
         );
