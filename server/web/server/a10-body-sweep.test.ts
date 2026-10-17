@@ -315,6 +315,21 @@ function changeKind(cell: string, main: string, now: string): string | null {
   if (now === OPAQUE && cell.startsWith('DELETE /api/files/files ')) {
     return 'item-check-first (F4 fix round 2: asked of the database, the stand-in has none)';
   }
+  // Pre-check removal part 2: Recall's owner acts (a prompt confirm, a
+  // reorder, a revision restore) read the map or the revision in the
+  // caller's scope before their owner check, so a hidden one is the 404 of
+  // none. With no database the read is the opaque 500 (the stand-in), or
+  // the restore's revision_not_found (its read through the stand-in finds
+  // no row); the real answers: precheck-removal-http.db.test.ts.
+  if (
+    /^POST \/api\/recall\/(maps\/:id\/cards\/(:card\/prompt|reorder)|revisions\/:id\/restore) /.test(
+      cell,
+    ) &&
+    /_is_owners/.test(main) &&
+    (now === OPAQUE || /"code":"revision_not_found"/.test(now))
+  ) {
+    return 'map-read-first (pre-check removal part 2: the owner act reads the map in the scope first)';
+  }
   // Fold 2 (one error answer): a plain error (the sweep's database stand-in
   // throws "DATABASE_URL must be set"; the vault has no master key) whose
   // text a route's catch put in the reply answers the one opaque 500 now.

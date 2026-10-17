@@ -1307,13 +1307,15 @@ describe.skipIf(!DB_URL)(
       }
     }, 120_000);
 
-    it('kept: a block edit of a page whose draft the scope may not edit answers a draft conflict, not the refusal', async () => {
+    it('kept: a block edit of a page whose draft the scope may not edit answers the refusal (part 2: the draft save asks the right first)', async () => {
       for (const who of BOTH) {
         const c = await runCell('kept', KEPT_BLOCKS, who, 'noEdit', 'mcp');
         expect(c.was.text).toMatch(/You cannot change this item in your workspaces \(/);
         expect(c.now.ok).toBe(false);
         expect(c.now.changed).toBe(false);
-        expect(c.now.text).toMatch(/changed since you read it/);
+        // Was a draft conflict ("changed since you read it") until the
+        // pre-check removal part 2 made saveDraft ask assertItemRight first.
+        expect(c.now.text).toMatch(/You cannot change this item in your workspaces/);
       }
     }, 120_000);
 

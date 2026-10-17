@@ -10,6 +10,7 @@
 # item-check-first (F4 fix round 2: asked of the database, the stand-in has none): 1 cells
 # item-fault (fix round 1: a failed item says a fixed text for a fault): 6 cells
 # bad-json-400 (empty): 2 cells
+# map-read-first (pre-check removal part 2: the owner act reads the map in the scope first): 10 cells
 POST /api/access-keys owner malformed [bad-json-400 (malformed)]
   main 400 application/json {"error":"Invalid input: expected object, received null"}
   now  400 application/json {"error":"invalid JSON"}
@@ -997,18 +998,48 @@ PUT /api/recall/maps/:id/cards/:card owner malformed [bad-json-400 (malformed)]
 PUT /api/recall/maps/:id/cards/:card owner chunked [chunked-413]
   main 400 application/json {"error":"title: Invalid input: expected string, received undefined"}
   now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/recall/maps/:id/cards/:card/prompt owner valid [map-read-first (pre-check removal part 2: the owner act reads the map in the scope first)]
+  main 403 application/json {"error":"Only the owner confirms a prompt. An agent can ask by writing the card with prompt: true.","code":"confirm_is_owners"}
+  now  500 application/json {"error":"internal error"}
 POST /api/recall/maps/:id/cards/:card/prompt owner malformed [bad-json-400 (malformed)]
   main 400 application/json {"error":"confirm: Invalid input: expected boolean, received undefined"}
   now  400 application/json {"error":"invalid JSON"}
+POST /api/recall/maps/:id/cards/:card/prompt owner nul [map-read-first (pre-check removal part 2: the owner act reads the map in the scope first)]
+  main 403 application/json {"error":"Only the owner confirms a prompt. An agent can ask by writing the card with prompt: true.","code":"confirm_is_owners"}
+  now  500 application/json {"error":"internal error"}
 POST /api/recall/maps/:id/cards/:card/prompt owner chunked [chunked-413]
   main 400 application/json {"error":"confirm: Invalid input: expected boolean, received undefined"}
   now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/recall/maps/:id/cards/reorder owner valid [map-read-first (pre-check removal part 2: the owner act reads the map in the scope first)]
+  main 403 application/json {"error":"Reordering a map's cards is the owner's act. An agent can write a card directly instead.","code":"reorder_is_owners"}
+  now  500 application/json {"error":"internal error"}
 POST /api/recall/maps/:id/cards/reorder owner malformed [bad-json-400 (malformed)]
   main 400 application/json {"error":"slugs: Invalid input: expected array, received undefined"}
   now  400 application/json {"error":"invalid JSON"}
+POST /api/recall/maps/:id/cards/reorder owner nul [map-read-first (pre-check removal part 2: the owner act reads the map in the scope first)]
+  main 403 application/json {"error":"Reordering a map's cards is the owner's act. An agent can write a card directly instead.","code":"reorder_is_owners"}
+  now  500 application/json {"error":"internal error"}
 POST /api/recall/maps/:id/cards/reorder owner chunked [chunked-413]
   main 400 application/json {"error":"slugs: Invalid input: expected array, received undefined"}
   now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/recall/revisions/:id/restore owner valid [map-read-first (pre-check removal part 2: the owner act reads the map in the scope first)]
+  main 403 application/json {"error":"Restoring a revision is the owner's act. An agent can write a card directly instead.","code":"restore_is_owners"}
+  now  404 application/json {"error":"No revision '11111111-1111-4111-8111-111111111111'. The log keeps the last 50 per map, so an older one may have been pruned.","code":"revision_not_found"}
+POST /api/recall/revisions/:id/restore owner malformed [map-read-first (pre-check removal part 2: the owner act reads the map in the scope first)]
+  main 403 application/json {"error":"Restoring a revision is the owner's act. An agent can write a card directly instead.","code":"restore_is_owners"}
+  now  404 application/json {"error":"No revision '11111111-1111-4111-8111-111111111111'. The log keeps the last 50 per map, so an older one may have been pruned.","code":"revision_not_found"}
+POST /api/recall/revisions/:id/restore owner empty [map-read-first (pre-check removal part 2: the owner act reads the map in the scope first)]
+  main 403 application/json {"error":"Restoring a revision is the owner's act. An agent can write a card directly instead.","code":"restore_is_owners"}
+  now  404 application/json {"error":"No revision '11111111-1111-4111-8111-111111111111'. The log keeps the last 50 per map, so an older one may have been pruned.","code":"revision_not_found"}
+POST /api/recall/revisions/:id/restore owner nul [map-read-first (pre-check removal part 2: the owner act reads the map in the scope first)]
+  main 403 application/json {"error":"Restoring a revision is the owner's act. An agent can write a card directly instead.","code":"restore_is_owners"}
+  now  404 application/json {"error":"No revision '11111111-1111-4111-8111-111111111111'. The log keeps the last 50 per map, so an older one may have been pruned.","code":"revision_not_found"}
+POST /api/recall/revisions/:id/restore owner array [map-read-first (pre-check removal part 2: the owner act reads the map in the scope first)]
+  main 403 application/json {"error":"Restoring a revision is the owner's act. An agent can write a card directly instead.","code":"restore_is_owners"}
+  now  404 application/json {"error":"No revision '11111111-1111-4111-8111-111111111111'. The log keeps the last 50 per map, so an older one may have been pruned.","code":"revision_not_found"}
+POST /api/recall/revisions/:id/restore owner chunked [map-read-first (pre-check removal part 2: the owner act reads the map in the scope first)]
+  main 403 application/json {"error":"Restoring a revision is the owner's act. An agent can write a card directly instead.","code":"restore_is_owners"}
+  now  404 application/json {"error":"No revision '11111111-1111-4111-8111-111111111111'. The log keeps the last 50 per map, so an older one may have been pruned.","code":"revision_not_found"}
 POST /api/runners/:id owner valid [opaque-500 (fold 2: a plain error, its text was the reply)]
   main 500 application/json {"error":"DATABASE_URL (or DBOS_SYSTEM_DATABASE_URL) must be set to reach the runner"}
   now  500 application/json {"error":"internal error"}
