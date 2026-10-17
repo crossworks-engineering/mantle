@@ -25,7 +25,12 @@
 -- 2. profiles is a content table now (the matrix's writer), so it gets the
 --    actor check's statement trigger (0275's mantle_actor_check, pinned by
 --    actor-trigger-coverage.db.test.ts), disabled when the box's check is
---    off, as mantle_set_actor_check keeps every one of them.
+--    off, as mantle_set_actor_check keeps every one of them. That makes it
+--    an item table (mantle_actor_check_tables), so it gets the edit check's
+--    item triggers too, by the one loop 0294 asks of a migration that adds
+--    an item table: the read-only refusal (a read-only session writes no
+--    profile row) and the contact share's (a contact share writes its app's
+--    data only), switched by the edit check's mode.
 -- 3. mantle_write_role_sync_table(t, write, check_args, write_rule): 0278's
 --    sync with a write rule narrower than the read rule. NULL: the write
 --    rules are the table's read rule, as before. 'own-login' (profiles,
@@ -44,6 +49,11 @@
 --
 -- Re-runnable.
 
+SET LOCAL lock_timeout = '30s';
+--> statement-breakpoint
+-- Both altered tables locked first, in one statement (as 0283).
+LOCK TABLE "public"."app_table_exports", "public"."profiles" IN ACCESS EXCLUSIVE MODE;
+--> statement-breakpoint
 ALTER TABLE "public"."app_table_exports" ENABLE ROW LEVEL SECURITY;
 --> statement-breakpoint
 DROP POLICY IF EXISTS "app_table_exports_user_read" ON "public"."app_table_exports";
@@ -67,6 +77,10 @@ DO $$ BEGIN
     ALTER TABLE "public"."profiles" DISABLE TRIGGER "mantle_actor_check";
   END IF;
 END $$;
+--> statement-breakpoint
+-- The edit check's item triggers on the new item table (0294's loop; it
+-- applies the edit check's box mode after).
+SELECT "public"."mantle_edit_check_item_triggers"();
 --> statement-breakpoint
 
 CREATE OR REPLACE FUNCTION "public"."mantle_write_role_sync_table"(

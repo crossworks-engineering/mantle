@@ -134,7 +134,9 @@ system work read only. A named read-path write (`READ_PATH_WRITES`,
 `packages/db/src/actor.ts`) runs as `system(<name>)`, read-write, for any
 caller. A3a named two more: a public link's view counter
 (`backfill:link-views`) and the Recall prompt embeddings a reader's
-`recall_match` heals (`backfill:recall-prompt-embeddings`).
+`recall_match` heals (`backfill:recall-prompt-embeddings`). `profiles`
+carries it, and the contact share's below, since plan v3 S3 made it an
+item table: a read-only session changes no profile row, its own included.
 
 ## A contact share writes its app's data only
 

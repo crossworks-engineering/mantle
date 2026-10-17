@@ -6211,8 +6211,10 @@ Changed answers (old vs new):
    edit the app but not manage it are refused at the database. Narrower.
    The workspace role now reads the export rows of the apps it manages
    (was: no grant, an error on any scoped read; every reader today reads on
-   the system pool or through `mantle_table_app_link`). Cell: "S3:
-   app_table_exports on the write role".
+   the system pool or through `mantle_table_app_link`). That wider read
+   (a manager reads the export rows of the app it manages) was accepted
+   by the CEO on 2026-10-17. Cell: "S3: app_table_exports on the write
+   role".
 4. A transaction that met a gap table ran twice (warn and on); it runs once.
    Cells: M1, L6 and round 3 A now expect one run.
 5. Off: a folder delete over a hidden subfolder answers the hidden-items 409
@@ -6223,6 +6225,15 @@ Changed answers (old vs new):
    S3's warn changes included); the F4 off cells, the worker write role off
    cells and the a2a round trips off cell (the write role's one SET, no
    round trip of its own) expect the write role.
+
+7. profiles is an item table now (the actor check's trigger), so 0301 runs
+   0294's item trigger loop on it: the edit check's read-only refusal and
+   the contact share's. A read-only session (a read key, an assistant with
+   no user, a public link, a peer, a contact share without Can write) and
+   a contact share with Can write change no profile row, their own
+   included: warn reports it, on refuses it (42501, `ro_actor`); off as
+   before. Narrower. Cell: edit-check.db.test.ts "coverage: every item
+   table but the heads rows has the read-only refusal".
 
 Not changed: the HTTP brand writers (`brandSettingsRefusal`), `PUT
 /api/profile`, the Settings routes and onboarding (system pool, gated as
