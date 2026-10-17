@@ -45,6 +45,32 @@ export type ToolScope =
    *  (policyAdminOnly says so; the area step asks Admin anyway). */
   | Readonly<{ area: ScopeArea; systemWhole?: true; adminOnly?: true }>;
 
+/**
+ * One argument that names an item a write touches (R0 fix round, M1 and
+ * L2): the one declaration the call audit reads for the row's `targets`
+ * and the queue-time check reads before a call is queued for approval. It
+ * decides nothing at run time: the database's checks and the libraries'
+ * own item check (assertItemRight) decide the write.
+ */
+export type ToolItemArg = Readonly<{
+  /** The argument (a list of ids for an array argument). */
+  param: string;
+  /** How it names the item: `id`, its node id (default); `recall-map`, a
+   *  Recall map by its slug, a former slug or its id; `recall-revision`, a
+   *  Recall revision's id, whose map is the item. */
+  by?: 'id' | 'recall-map' | 'recall-revision';
+  /** The least the run asks of the item in every case, so the least the
+   *  queue-time check may refuse for: `change` (default), an edit or a
+   *  manage; `read`, a source it only reads, or a write whose need depends
+   *  on its other arguments (with_data, supersede_source); `none`, a rule
+   *  that may let a call through on an item the scope does not read
+   *  (closing a link by an Admin user with the Users area). */
+  least?: 'change' | 'read' | 'none';
+  /** The run's own words for a reference that names nothing the scope
+   *  reads (a Recall map's "No Recall map"): the queue-time refusal of it. */
+  missing?: (ref: string) => string;
+}>;
+
 /** What a tool reaches outside the database. */
 export type ToolOutside = Readonly<{
   /** How it reaches out. */
@@ -103,6 +129,11 @@ export type ToolPolicy = Readonly<{
    *  the queue-time check asks the deepest folder of the path the scope
    *  reads, not the path (A5 step 6a fix round 1, M1). */
   makesFolders?: true;
+  /** The arguments that name the items its write touches (ToolItemArg):
+   *  the audit row's targets, and the queue-time check of a call that
+   *  waits for approval (a call the run would refuse is refused then, in
+   *  the run's words, never queued). */
+  itemArgs?: readonly ToolItemArg[];
   /** A key or a linked brain bound to the owner calls it only when the
    *  owner named it (the gate's peer narrower). */
   peerRisky?: true;

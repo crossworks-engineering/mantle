@@ -8,7 +8,7 @@
 #   1. docker compose pull
 #   2. docker compose up -d postgres --wait
 #   3. scripts/db-restore.sh backups/mantle-<ts>.dump
-#   4. docker compose up -d --wait               # migrate is now a no-op; app starts
+#   4. docker compose up -d --wait               # migrate runs what the dump lacks; app starts
 #
 # Members' personal-space file bytes come back in the same step: when a
 # mantle-spaces-<ts>.tgz with the dump's timestamp sits next to the dump (both
@@ -474,7 +474,7 @@ if [ "$UNEXPLAINED" -gt 0 ]; then
   echo "  The full pg_restore output is kept in $RESTORE_LOG" >&2
   exit 3
 fi
-echo "  Next:  docker compose up -d --wait    (migrate will be a no-op)"
+echo "  Next:  docker compose up -d --wait    (migrate runs the migrations newer than the dump, and the steps above left to it)"
 echo "  Don't forget the file bytes:  rsync your \$MANTLE_DATA_DIR/{files,rustfs} across too."
 echo "  Table workbooks: untar mantle-table-dbs-<ts>.tgz into \$MANTLE_DATA_DIR/table-dbs;"
 echo "  app databases: scripts/app-dbs-restore.sh after the stack is up."

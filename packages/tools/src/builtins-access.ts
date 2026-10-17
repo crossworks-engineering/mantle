@@ -144,6 +144,7 @@ export const access_set: BuiltinToolDef = {
     effect: 'write',
     spends: 'none',
     scope: 'admin',
+    itemArgs: [{ param: 'node_id' }],
     peerRisky: true,
     lowering: lowersAccessSet,
   },

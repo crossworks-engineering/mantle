@@ -279,6 +279,33 @@ describe.skipIf(!DB_URL)(
       }
     };
 
+    /** The queue-time answer to the same call in the same turn (R0 fix
+     *  round L2): what the tool loop asks before it queues a call for
+     *  approval (turnCallRefusal), null when it would queue. */
+    const queueInTurn = async (
+      who: Who,
+      p: Place,
+      slug: string,
+      input: Record<string, unknown>,
+    ): Promise<string | null> => {
+      const wsId = turnWs(who, p);
+      const row =
+        (await sys(() => t.resolveTool(owner, slug))) ??
+        ({ slug, handler: { kind: 'builtin', ref: slug } } as never);
+      const login = who === 'admin' ? owner : mem;
+      return m.runAsActor(actorOf(who), () =>
+        rt.withAgentScope(
+          { id: agentOf[wsId]!, ownerId: owner, workspaceId: wsId },
+          () =>
+            t.turnCallRefusal(row, input, {
+              ownerId: owner,
+              surface: { kind: 'web', loginId: login } as never,
+            }),
+          { loginId: login },
+        ),
+      );
+    };
+
     // ── the cells ───────────────────────────────────────────────────────────
 
     type Tool = {
@@ -1590,6 +1617,36 @@ describe.skipIf(!DB_URL)(
           }
         }
       });
+    }
+
+    // Queue time (R0 fix round L2): a call that waits for approval is
+    // refused before it is queued only where its run refuses it, in the
+    // run's words (the same turn, the same item, asked first): the check
+    // avoids asking an approver about a doomed call and decides nothing the
+    // run does not. Each family's tools, each login, each placement.
+    for (const family of FAMILIES) {
+      it(`queue time (${family.name}): refused before it is queued only as its run refuses it`, async () => {
+        let refusedAtQueue = 0;
+        for (const tool of family.tools) {
+          for (const who of tool.who) {
+            for (const p of tool.adminKind ? (['allowed'] as const) : (tool.places ?? PLACES)) {
+              const it0 = await tool.make(who, p);
+              const input = tool.input(it0);
+              const queued = await queueInTurn(who, p, tool.slug, input);
+              const run = await viaTurn(who, p, tool.slug, input);
+              const name = `${tool.slug} ${who}/${p}`;
+              recorded.push(
+                `queue ${family.name} ${name}: ${queued === null ? 'queues' : `refused: ${plain(queued).slice(0, 100)}`}; run ${run.ok ? 'ok' : `refused: ${plain(run.text).slice(0, 100)}`}`,
+              );
+              if (queued === null) continue;
+              refusedAtQueue += 1;
+              expect(run.ok, `${name}: queue refused "${queued}", the run did not`).toBe(false);
+              expect(plain(queued), name).toBe(plain(run.text));
+            }
+          }
+        }
+        recorded.push(`queue ${family.name}: ${refusedAtQueue} refused before they were queued`);
+      }, 600_000);
     }
 
     it('link closes: in a turn narrower than the login, the close is refused and the link stays open', async () => {

@@ -764,6 +764,34 @@ describe.skipIf(!DB_URL)('A8 findings: the owner’s decisions F1 and F2', () =>
         `admin key, outside: v1 ${viaKey.status} ${viaKey.text}, base ${viaBase.status}`,
       );
     }
+    // R0 fix round L1: a page the key's login reads but may not change
+    // answers alike whether others read it or not (the page's edit is asked
+    // before the shared-content rule), as the page route answers the login:
+    // the shared one no longer tells the key it is shared.
+    const readShared = await makeItem('page', ws.admin, [{ ws: ws.W, write: false }]);
+    const readOnly = await makeItem('page', ws.admin);
+    const sharedKey = await http(
+      { key: keyOf.admin! },
+      'PATCH',
+      `/api/v1/pages/${readShared}`,
+      doc,
+    );
+    const plainKey = await http({ key: keyOf.admin! }, 'PATCH', `/api/v1/pages/${readOnly}`, doc);
+    const plainBase = await http(L.admin, 'PATCH', `/api/pages/${readOnly}`, doc);
+    note('api-v1 admin PATCH /api/v1/pages/:id doc, a shared page it reads, no edit', sharedKey);
+    note('api-v1 admin PATCH /api/v1/pages/:id doc, a page it reads, no edit', plainKey);
+    const answer = (r: Outcome) =>
+      `${r.status} ${r.text.replaceAll(readShared, 'ID').replaceAll(readOnly, 'ID')}`;
+    if (
+      answer(sharedKey) !== answer(plainKey) ||
+      sharedKey.status !== 403 ||
+      sharedKey.text.includes('key-shared-item') ||
+      plainKey.status !== plainBase.status
+    ) {
+      failures.push(
+        `admin key, reads no edit: shared ${answer(sharedKey)}, not shared ${answer(plainKey)}, base ${plainBase.status}`,
+      );
+    }
     await raw`update workspace_users set moderator = true
                where workspace_id = ${ws.admin} and login_id = ${L.admin}`;
     try {

@@ -72,7 +72,7 @@ vi.mock('./external-access', async (importOriginal) => ({
 vi.mock('./builtins-recall-write', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./builtins-recall-write')>()),
   mapRef: async (_ownerId: string, ref: string) =>
-    ref === 'known' ? { id: 'map-node', version: 1, slug: 'known' } : null,
+    ref === 'known' ? { id: 'map-id', version: 1, slug: 'known', nodeId: 'map-node' } : null,
 }));
 vi.mock('./preconditions', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./preconditions')>()),
@@ -87,6 +87,7 @@ import {
   CONNECTOR_WRITE_ERROR,
   type ElevatedApproval,
 } from './connector-scope';
+import { ITEM_WORKSPACE_MESSAGE } from '@mantle/std';
 import { NO_RUNTIME_POLICY_ERROR } from './runtime-policy';
 import { OWNER_ONLY_ERROR } from './surface';
 import type { TurnListingFacts } from './turn-listing';
@@ -270,10 +271,9 @@ describe('a call that needs approval meets the gate before it is queued (A5 step
     expect(await refusalIn(member, memberView(), builtinRow('note_create'))).toBeNull();
   });
 
-  it('a Recall map named by a slug the scope does not read queues since the pre-check removal (was refused, round-2 LOW-1)', async () => {
-    // Its approval runs in the scope it was asked in (A5 step 6c), where the
-    // tool finds no map and writes nothing (docs/actors.md, "Pre-check
-    // deletion").
+  it("a Recall map named by a slug the scope does not read is refused before it is queued, in the tool's own words (R0 fix round L2; queued since the pre-check removal)", async () => {
+    // Its approval would run in the scope it was asked in (A5 step 6c),
+    // where the tool finds no map: the run's answer, now, never queued.
     const refused = await refusalIn(
       member,
       memberView(),
@@ -283,7 +283,15 @@ describe('a call that needs approval meets the gate before it is queued (A5 step
         map: 'secret',
       },
     );
-    expect(refused).toBeNull();
+    expect(refused).toBe(
+      "No Recall map 'secret'. recall_index lists the maps by slug. To start a new one, use recall_map_create.",
+    );
+    // A map it reads still queues.
+    expect(
+      await refusalIn(member, memberView(), builtinRow('recall_card_put'), undefined, {
+        map: 'known',
+      }),
+    ).toBeNull();
   });
 
   it('the refusal agrees with the listing for every tool, in both scopes and on both surfaces', async () => {
@@ -319,32 +327,30 @@ describe("a call that needs approval meets the gate's item pre-check before it i
   const teamSurface = { kind: 'team', privateReads: false } as never;
   const MINE = '44444444-4444-4444-8444-444444444444';
 
-  it('a share of an item only Admin may change queues since Part 3 (was refused here)', async () => {
-    // The pre-check removal Part 3 took node_share's kept entry: its approval
-    // runs in the scope it was asked in, and the link's own check
-    // (assertMayLink, link-serve.ts) asks that scope first (docs/actors.md,
-    // "Pre-check removal Part 3", queue time).
+  it("a share of an item only Admin may change is refused before it is queued, in the run's words (R0 fix round L2)", async () => {
+    // Its approval would run in the scope it was asked in, where the link's
+    // own check (assertMayLink, link-serve.ts) refuses it: the same answer
+    // now, asked of that scope (queueItemRefusal), never queued.
     h.itemAsked = [];
     const refused = await refusalIn(team, teamView(), builtinRow('node_share'), teamSurface, {
       id: h.adminItem,
       level: 'public',
     });
-    expect(refused).toBeNull();
-    expect(h.itemAsked).toEqual([]);
+    expect(refused).toBe(ITEM_WORKSPACE_MESSAGE);
+    expect(h.itemAsked.length).toBeGreaterThan(0);
   });
 
-  it('a delete the database checks queues since the pre-check removal (was refused here)', async () => {
-    // Its approval runs in the scope it was asked in (A5 step 6c): a
-    // workspace heartbeat's turn writes nothing there, and the delete check
-    // (0266) refuses a scope that may not manage the item (docs/actors.md,
-    // "Pre-check deletion").
+  it("a delete the scope may not make is refused before it is queued, in the run's words (R0 fix round L2)", async () => {
+    // Its approval would run in the scope it was asked in (A5 step 6c),
+    // where the delete check (0266) refuses a scope that may not manage the
+    // item: the same answer now, never queued.
     for (const slug of ['page_delete', 'table_delete'] as const) {
       h.itemAsked = [];
       expect(
         await refusalIn(team, teamView(), builtinRow(slug), teamSurface, { id: h.adminItem }),
         slug,
-      ).toBeNull();
-      expect(h.itemAsked, slug).toEqual([]);
+      ).toBe(ITEM_WORKSPACE_MESSAGE);
+      expect(h.itemAsked.length, slug).toBeGreaterThan(0);
     }
   });
 

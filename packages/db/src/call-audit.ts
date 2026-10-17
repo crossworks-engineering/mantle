@@ -53,6 +53,9 @@ export type AuditedCall = Readonly<{
   /** What the call and the writes nested in it note for its row
    *  (CallAuditSpec.notes: an approved call's approver). */
   notes: Readonly<Record<string, unknown>>;
+  /** What CallAuditSpec.prepare read before the call ran, when it read
+   *  anything (the items a Recall map's slug names, R0 fix round M1). */
+  prepared?: Readonly<Record<string, unknown>> | null;
 }>;
 
 /** What the row says beyond its actor. */
@@ -81,6 +84,16 @@ export type CallAuditSpec = Readonly<{
    *  outer call's when nested): an approved call's approver (A5 step 6d
    *  fix round 1), so the row of `pending_approve` names it too. */
   notes?: (call: Pick<AuditedCall, 'ref' | 'input' | 'caller'>) => Record<string, unknown> | null;
+  /** What a call's row needs read before the call runs, or null when
+   *  nothing (most calls: no promise, no wait): the items a write names by
+   *  a reference the database resolves (a Recall map's slug), read while
+   *  they still resolve, so a delete or a rename still names its item (R0
+   *  fix round M1). Asked only for a write whose row this frame writes
+   *  (not one nested in another call, not one its surface audits), and
+   *  only while rows are written; it never fails the call. */
+  prepare?: (
+    call: Pick<AuditedCall, 'ref' | 'input' | 'policy'>,
+  ) => Promise<Readonly<Record<string, unknown>> | null> | null;
   /** The row's method, path, detail and actor label; null: no row. */
   describe: (call: AuditedCall) => AuditRowParts | null;
 }>;
@@ -174,13 +187,15 @@ export async function inCallAuditFrame<T>(
     value: T | null,
     threw: boolean,
   ) => Omit<AuditedCall, 'wrote' | 'nested' | 'notes'> | null,
-  /** The surface writes the call's row itself (an API key's MCP call: its
-   *  route's row): the gate writes none, as markCallAudited marks it from
-   *  inside the call. */
-  opts: { audited?: boolean } = {},
+  /** `audited`: the surface writes the call's row itself (an API key's MCP
+   *  call: its route's row): the gate writes none, as markCallAudited marks
+   *  it from inside the call. `asked`: the call as asked, for the spec's
+   *  `prepare` before it runs. */
+  opts: { audited?: boolean; asked?: Pick<AuditedCall, 'ref' | 'input' | 'policy'> } = {},
 ): Promise<T> {
   const parent = frames.getStore();
   const frame: Frame = { nested: [], notes: {}, closed: false, audited: opts.audited === true };
+  const prepared = await prepareRow(parent, frame, opts.asked);
   let value: T | null = null;
   let threw = false;
   try {
@@ -193,10 +208,34 @@ export async function inCallAuditFrame<T>(
     frame.closed = true;
     try {
       const call = finish(value, threw);
-      if (call) settle(frame, parent, call, threw);
+      if (call) settle(frame, parent, prepared ? { ...call, prepared } : call, threw);
     } catch (err) {
-      console.error('[audit] a tool call audit failed:', err);
+      auditFailed('a tool call audit failed', err);
     }
+  }
+}
+
+/** An audit that failed: said on the console, never to the call. */
+function auditFailed(what: string, err: unknown): void {
+  console.error(`[audit] ${what}:`, err);
+}
+
+/** The spec's `prepare` for a call whose row this frame writes (see
+ *  CallAuditSpec.prepare), or null. */
+async function prepareRow(
+  parent: Frame | undefined,
+  frame: Frame,
+  asked: Pick<AuditedCall, 'ref' | 'input' | 'policy'> | undefined,
+): Promise<Readonly<Record<string, unknown>> | null> {
+  const a = spec;
+  if (!a?.prepare || !asked || !writing || frame.audited) return null;
+  if (asked.policy.effect !== 'write' || (parent && !parent.closed)) return null;
+  try {
+    const pending = a.prepare(asked);
+    return pending ? await pending : null;
+  } catch (err) {
+    auditFailed('a tool call audit could not read its items', err);
+    return null;
   }
 }
 

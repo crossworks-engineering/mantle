@@ -28,7 +28,8 @@ import {
   type CallAuditSpec,
 } from '@mantle/db';
 import { currentToolCaller, mcpVia } from './gate-callers';
-import { namedToolPolicy, tableBuiltin } from './tool-policy';
+import { namedToolPolicy } from './tool-policy';
+import { auditResolves, idArgTargets, itemArgsOf, resolvedArgTargets } from './item-args';
 import { UUID_RE } from '@mantle/std';
 
 /** The most item ids and nested writes a row names. */
@@ -57,8 +58,9 @@ function succeeded(value: unknown): boolean {
   return v.ok !== false && v.isError !== true;
 }
 
-/** The item ids a call named (its policy's item arguments) and made (its
- *  output's id), at most MAX_IDS. */
+/** The item ids a call named (its policy's item arguments: by id, from its
+ *  input; by a Recall reference, as `prepare` resolved them before the call
+ *  ran) and made (its output's id), at most MAX_IDS. */
 function targetsOf(call: AuditedCall): string[] {
   const out = new Set<string>();
   const add = (v: unknown) => {
@@ -68,13 +70,11 @@ function targetsOf(call: AuditedCall): string[] {
   };
   const builtin = builtinOf(call.ref);
   const args = call.input.args ?? {};
-  // The item arguments: the argument a node_exists precondition reads
-  // (every tool whose pre-check the removal took names its item there:
-  // pre-check removal fix round A, so a delete or a move is still audited
-  // by its item; the last 29 in Part 3).
-  for (const pre of builtin ? (tableBuiltin(builtin)?.preconditions ?? []) : []) {
-    if (pre.kind === 'node_exists') add(args[pre.param]);
-  }
+  // The item arguments (the policy's `itemArgs`, R0 fix round M1: the one
+  // declaration, as main's item lists named them, so a delete, a move of
+  // several items or a Recall map's change is audited by its item).
+  if (builtin) add(idArgTargets(itemArgsOf(builtin), args));
+  add((call.prepared as { targets?: unknown } | null | undefined)?.targets);
   const output = (call.value as { output?: { id?: unknown } } | null)?.output;
   if (output && typeof output === 'object') add(output.id);
   return [...out].slice(0, MAX_IDS);
@@ -162,6 +162,20 @@ function writesItself(call: Pick<AuditedCall, 'ref' | 'input'>): boolean {
   return named !== undefined && named !== null && named !== '';
 }
 
+/** Before a write runs: the items it names by a Recall reference (a map's
+ *  slug, a revision's id), resolved in the caller's scope while they still
+ *  resolve (a map's delete or slug change). Null, with no wait, for a call
+ *  that names none. */
+function prepare(
+  call: Pick<AuditedCall, 'ref' | 'input' | 'policy'>,
+): Promise<Record<string, unknown>> | null {
+  const builtin = builtinOf(call.ref);
+  const args = builtin ? itemArgsOf(builtin) : [];
+  const ownerId = call.input.context?.ownerId;
+  if (!auditResolves(args) || typeof ownerId !== 'string') return null;
+  return resolvedArgTargets(args, call.input.args ?? {}, ownerId).then((targets) => ({ targets }));
+}
+
 /** The spec (one object, so registering it again is a no-op). */
 export const TOOL_CALL_AUDIT: CallAuditSpec = Object.freeze({
   kinds: Object.freeze(['tool', 'runtime-tool', 'mcp-tool']),
@@ -169,6 +183,7 @@ export const TOOL_CALL_AUDIT: CallAuditSpec = Object.freeze({
   writesItself,
   label: (call: Pick<AuditedCall, 'ref' | 'input'>) => toolName(call.ref),
   notes,
+  prepare,
   describe,
 });
 

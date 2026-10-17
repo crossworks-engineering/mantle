@@ -11,12 +11,13 @@
  *    round 1, L5); then a built-in's declared preconditions (a uniform
  *    teaching error for an id that names a missing or wrong-type node),
  *    then, before a call is queued for approval, a create's target folder
- *    (createFolderRefusal), in that order, as dispatch asked them before
- *    step 3a. No tool item pre-check is left (the pre-check removal took
- *    the last 29 in Part 3, docs/actors.md): the database's checks and the
- *    libraries' own item check (assertItemRight) refuse a write the scope
- *    may not make. A check that throws refuses in the error's words, as
- *    dispatch's catch answered.
+ *    (createFolderRefusal) and the items the call names (queueItemRefusal,
+ *    R0 fix round L2: a call its run would refuse, in the run's words), in
+ *    that order. No tool item pre-check is left at run time (the pre-check
+ *    removal took the last 29 in Part 3, docs/actors.md): the database's
+ *    checks and the libraries' own item check (assertItemRight) refuse a
+ *    write the scope may not make. A check that throws refuses in the
+ *    error's words, as dispatch's catch answered.
  *  - `key-shared-content`: an API key or a linked brain never changes the
  *    content of an item others can read (key-shared-content.ts), on the
  *    owner MCP surface (A5 step 4).
@@ -30,6 +31,7 @@ import { mcpVia } from './gate-callers';
 import { errorMessage } from '@mantle/std';
 import { checkToolPreconditions } from './preconditions';
 import { createFolderRefusal } from './item-write-gate';
+import { itemArgsOf, queueItemRefusal } from './item-args';
 import { keySharedContentRefusal } from './key-shared-content';
 import { MODERATOR_SEAT_CHANGED, moderatorSeatLost } from './moderator-seat';
 import { tableBuiltin } from './tool-policy';
@@ -102,6 +104,12 @@ export const itemPrecheck: PreRunCheck = async (caller, policy, ref, call) => {
         policy?.makesFolders === true,
       );
       if (folder) return folder;
+      // A call its run would refuse for an item it names (R0 fix round,
+      // L2): refused now, in the run's words, never queued for an approver.
+      if (policy?.effect === 'write') {
+        const item = await queueItemRefusal(itemArgsOf(builtin.handler), input, ctx.ownerId);
+        if (item) return item;
+      }
     }
   } catch (err) {
     // An MCP call's surface answers a thrown error itself, as it always

@@ -35,6 +35,7 @@ import {
   type RecallWriteResult,
 } from '@mantle/content';
 import type { BuiltinToolDef, ToolHandlerContext, ToolHandlerResult } from './types';
+import type { ToolItemArg } from './tool-policy';
 import { str } from './coerce';
 import { OWNER_ONLY_ERROR, isOwnerSurface } from './surface';
 import { mapRef } from './builtins-recall-write';
@@ -72,6 +73,10 @@ const needVersion = (verb: string) =>
 
 const notFound = (ref: string) =>
   `No Recall map '${ref}'. recall_pending lists unpublished maps; recall_index lists published ones.`;
+
+/** The map these tools name (`map`: its slug, a former slug or its id):
+ *  the audit row's target, asked before a call is queued (ToolItemArg). */
+const MAP_ARG: readonly ToolItemArg[] = [{ param: 'map', by: 'recall-map', missing: notFound }];
 
 /** A write result as these tools answer it. */
 function written(map: string, res: RecallWriteResult, extra: Record<string, unknown> = {}) {
@@ -223,6 +228,7 @@ const recall_prompt_confirm: BuiltinToolDef = {
     effect: 'write',
     spends: 'none',
     scope: 'admin',
+    itemArgs: MAP_ARG,
     clientSourced: CS.always(CS.RECALL_GUIDANCE),
   },
   mcpOnly: true,
@@ -270,6 +276,7 @@ const recall_map_publish: BuiltinToolDef = {
     effect: 'write',
     spends: 'none',
     scope: 'admin',
+    itemArgs: MAP_ARG,
     clientSourced: CS.always(CS.RECALL_GUIDANCE),
   },
   mcpOnly: true,
@@ -313,6 +320,7 @@ const recall_map_delete: BuiltinToolDef = {
     effect: 'write',
     spends: 'none',
     scope: 'admin',
+    itemArgs: MAP_ARG,
     clientSourced: CS.always(CS.RECALL_GUIDANCE),
   },
   mcpOnly: true,
@@ -351,6 +359,7 @@ const recall_cards_reorder: BuiltinToolDef = {
     effect: 'write',
     spends: 'none',
     scope: 'admin',
+    itemArgs: MAP_ARG,
     clientSourced: CS.always(CS.RECALL_GUIDANCE),
   },
   mcpOnly: true,
@@ -426,6 +435,7 @@ const recall_revision_restore: BuiltinToolDef = {
     effect: 'write',
     spends: 'none',
     scope: 'admin',
+    itemArgs: [{ param: 'revision_id', by: 'recall-revision' }],
     clientSourced: CS.always(CS.RECALL_GUIDANCE),
   },
   mcpOnly: true,
@@ -466,6 +476,7 @@ const recall_map_set_slug: BuiltinToolDef = {
     effect: 'write',
     spends: 'none',
     scope: 'admin',
+    itemArgs: MAP_ARG,
     clientSourced: CS.always(CS.RECALL_GUIDANCE),
   },
   mcpOnly: true,
@@ -509,6 +520,7 @@ const recall_card_set_slug: BuiltinToolDef = {
     effect: 'write',
     spends: 'none',
     scope: 'admin',
+    itemArgs: MAP_ARG,
     clientSourced: CS.always(CS.RECALL_GUIDANCE),
   },
   mcpOnly: true,

@@ -267,6 +267,7 @@ const contact_update: BuiltinToolDef = {
     effect: 'write',
     spends: 'none',
     scope: 'any',
+    itemArgs: [{ param: 'id' }],
     // The allowlist that gates mail out.
     peerRisky: true,
     keyArea: 'contacts',
@@ -351,6 +352,7 @@ const contact_delete: BuiltinToolDef = {
     effect: 'write',
     spends: 'none',
     scope: 'any',
+    itemArgs: [{ param: 'id' }],
     peerRisky: true,
     keyArea: 'contacts',
     clientSourced: CS.onNodes('id'),

@@ -46,6 +46,7 @@ import {
   type RecallOptionInput,
 } from '@mantle/content';
 import type { BuiltinToolDef, ToolHandlerContext, ToolHandlerResult } from './types';
+import type { ToolItemArg } from './tool-policy';
 import { str } from './coerce';
 import { OWNER_ONLY_ERROR, isOwnerSurface } from './surface';
 import { CS } from './client-sourced-rule';
@@ -63,8 +64,13 @@ function actorOf(ctx: ToolHandlerContext): RecallActor {
 export async function mapRef(
   ownerId: string,
   ref: string,
-): Promise<{ id: string; version: number; slug: string } | null> {
-  const cols = { id: recallMaps.id, version: recallMaps.version, slug: recallMaps.slug };
+): Promise<{ id: string; version: number; slug: string; nodeId: string | null } | null> {
+  const cols = {
+    id: recallMaps.id,
+    version: recallMaps.version,
+    slug: recallMaps.slug,
+    nodeId: recallMaps.nodeId,
+  };
   const mine = and(eq(recallMaps.ownerId, ownerId), isNotNull(recallMaps.nodeId));
   const bySlug = await db
     .select(cols)
@@ -116,6 +122,10 @@ async function guard(
 
 const notFound = (ref: string) =>
   `No Recall map '${ref}'. recall_index lists the maps by slug. To start a new one, use recall_map_create.`;
+
+/** The map these tools name (`map`: its slug, a former slug or its id):
+ *  the audit row's target, asked before a call is queued (ToolItemArg). */
+const MAP_ARG: readonly ToolItemArg[] = [{ param: 'map', by: 'recall-map', missing: notFound }];
 
 /** The option shape agents send. Kept identical to what recall_open returns,
  *  so a caller can read a card's options and send them back edited. */
@@ -235,6 +245,7 @@ const recall_card_put: BuiltinToolDef = {
     effect: 'write',
     spends: 'none',
     scope: 'any',
+    itemArgs: MAP_ARG,
     clientSourced: CS.always(CS.RECALL_GUIDANCE),
   },
   name: 'Write a Recall card',
@@ -329,6 +340,7 @@ const recall_card_delete: BuiltinToolDef = {
     effect: 'write',
     spends: 'none',
     scope: 'any',
+    itemArgs: MAP_ARG,
     clientSourced: CS.always(CS.RECALL_GUIDANCE),
   },
   name: 'Delete a Recall card',
@@ -381,6 +393,7 @@ const recall_map_update: BuiltinToolDef = {
     effect: 'write',
     spends: 'none',
     scope: 'any',
+    itemArgs: MAP_ARG,
     clientSourced: CS.always(CS.RECALL_GUIDANCE),
   },
   name: 'Update a Recall map',

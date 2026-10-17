@@ -822,7 +822,7 @@ async function callSteps<T>(
           return inCallAuditFrame(
             steps,
             (res) => ({ caller: bound, ref, policy, input, value: res?.value ?? null }),
-            { audited: byRoute },
+            { audited: byRoute, asked: { ref, policy, input } },
           );
         }),
       );

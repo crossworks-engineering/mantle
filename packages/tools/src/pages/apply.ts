@@ -43,6 +43,7 @@ export const page_blocks_apply: BuiltinToolDef = {
     effect: 'write',
     spends: 'none',
     scope: 'any',
+    itemArgs: [{ param: 'page_id' }],
     keyArea: 'pages',
     keySharedContent: true,
     clientSourced: CS.onNodes('page_id'),

@@ -274,7 +274,136 @@ describe.skipIf(!URL)('one audit row for every tool write (A5 step 6d)', () => {
     ]);
   });
 
-  it('a delete names the item it deleted (its precondition argument; pre-check removal fix round A)', async () => {
+  /** A call in a web turn as the owner: its result. */
+  const turn = (slug: string, input: Record<string, unknown>) =>
+    row(slug).then((tool) =>
+      asOwner(() =>
+        t.dispatchTool(tool, input, {
+          ownerId: owner,
+          surface: WEB as never,
+          caller: t.turnCaller(),
+        }),
+      ),
+    );
+  /** The targets of the one row a call left, or null when it left none. */
+  const targetsOfCall = async (slug: string, input: Record<string, unknown>) => {
+    await clear();
+    const res = await turn(slug, input);
+    const rows = await toolRows();
+    expect(rows.length, `${slug}: ${res.ok ? 'ok' : res.error}`).toBe(res.ok ? 1 : 0);
+    return {
+      ok: res.ok,
+      output: res.ok ? (res.output as Record<string, unknown>) : null,
+      targets: rows[0] ? ((rows[0].detail.targets as string[] | undefined) ?? []) : null,
+    };
+  };
+  const newNote = async (title: string) =>
+    (
+      await m.asSystem(
+        () => content.createNote(owner, { title: `${tag} ${title}`, content: 'x' }),
+        'test',
+      )
+    ).id;
+
+  // R0 fix round M1: the items a call names come from its policy's
+  // `itemArgs`, one declaration, as main's item lists named them: a list,
+  // a Recall map by its slug (resolved before the call runs), a Recall
+  // revision's map, a conversion's sources, a link's item. A refused call
+  // leaves no row, as before.
+  it('tree_item_move names every item it moved; a refused move leaves no row', async () => {
+    const [a, b] = [await newNote('move a'), await newNote('move b')];
+    const folder = await turn('tree_folder_create', { kind: 'notes', name: `${tag} dest` });
+    expect(folder.ok, folder.ok ? '' : folder.error).toBe(true);
+    const dest = (folder as { output: { id: string } }).output.id;
+    const moved = await targetsOfCall('tree_item_move', {
+      kind: 'notes',
+      item_ids: [a, b],
+      folder_id: dest,
+    });
+    expect(moved.ok).toBe(true);
+    expect([...moved.targets!].sort()).toEqual([a, b].sort());
+    const refused = await targetsOfCall('tree_item_move', {
+      kind: 'notes',
+      item_ids: [randomUUID()],
+      folder_id: dest,
+    });
+    expect(refused).toMatchObject({ ok: false, targets: null });
+  });
+
+  it('a Recall map named by its slug is named by its item, even by a delete or a slug change; an unknown slug leaves no row', async () => {
+    const made = await turn('recall_map_create', {
+      title: `${tag} map`,
+      enter_when: 'testing the audit targets',
+    });
+    expect(made.ok, made.ok ? '' : made.error).toBe(true);
+    const out = (made as { output: { map: string; id: string; version: number } }).output;
+    const mapNode = out.id;
+    const put = await targetsOfCall('recall_card_put', {
+      map: out.map,
+      title: 'Audit card',
+      body: 'The card body.',
+    });
+    expect(put.ok).toBe(true);
+    expect(put.targets).toContain(mapNode);
+    const revisions = await turn('recall_revisions', { map: out.map });
+    const listed = (revisions as { output?: { version?: number; revisions?: { id: string }[] } })
+      .output;
+    const revision = listed?.revisions?.[0]?.id;
+    expect(revision, 'a revision of the map').toBeTruthy();
+    const version = listed?.version ?? out.version;
+    const renamed = await targetsOfCall('recall_map_set_slug', {
+      map: out.map,
+      slug: `${tag}-renamed`,
+      version,
+    });
+    expect(renamed.ok).toBe(true);
+    expect(renamed.targets).toContain(mapNode);
+    const restored = await targetsOfCall('recall_revision_restore', { revision_id: revision });
+    if (restored.ok) expect(restored.targets).toContain(mapNode);
+    const unknown = await targetsOfCall('recall_card_put', {
+      map: `${tag}-no-such-map`,
+      title: 'x',
+      body: 'x',
+    });
+    expect(unknown).toMatchObject({ ok: false, targets: null });
+    const deleted = await targetsOfCall('recall_map_delete', {
+      map: `${tag}-renamed`,
+      confirm: true,
+    });
+    expect(deleted.ok).toBe(true);
+    expect(deleted.targets).toContain(mapNode);
+  });
+
+  it('page_from_notes names its source notes and the page it made; a missing source leaves no row', async () => {
+    const [a, b] = [await newNote('source a'), await newNote('source b')];
+    const made = await targetsOfCall('page_from_notes', {
+      note_ids: [a, b],
+      title: `${tag} combined`,
+      supersede_source: false,
+    });
+    expect(made.ok).toBe(true);
+    const page = made.output!.id as string;
+    expect([...made.targets!].sort()).toEqual([a, b, page].sort());
+    const refused = await targetsOfCall('page_from_notes', {
+      note_ids: [randomUUID()],
+      title: `${tag} none`,
+    });
+    expect(refused).toMatchObject({ ok: false, targets: null });
+  });
+
+  it('node_share and node_unshare name the item; a refused share leaves no row', async () => {
+    const id = await newNote('shared');
+    const shared = await targetsOfCall('node_share', { id });
+    expect(shared.ok).toBe(true);
+    expect(shared.targets).toEqual([id]);
+    const closed = await targetsOfCall('node_unshare', { id });
+    expect(closed.ok).toBe(true);
+    expect(closed.targets).toEqual([id]);
+    const refused = await targetsOfCall('node_share', { id: randomUUID() });
+    expect(refused).toMatchObject({ ok: false, targets: null });
+  });
+
+  it('a delete names the item it deleted (its item argument; R0 fix round M1)', async () => {
     const gone = await m.asSystem(
       () => content.createNote(owner, { title: `${tag} to delete`, content: 'x' }),
       'test',
