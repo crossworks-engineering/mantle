@@ -380,6 +380,7 @@ describe.skipIf(!DB_URL)('the pre-check removal, part 2: the HTTP entries', () =
             {
               title: `${tag} card ${n()}`,
               bodyMd: 'body',
+              useWhen: 'When the pre-check removal test asks.',
               ...(opts.prompt ? { prompt: true } : {}),
             },
             opts.prompt ? AGENT_ACTOR : OWNER_ACTOR,
@@ -470,7 +471,9 @@ describe.skipIf(!DB_URL)('the pre-check removal, part 2: the HTTP entries', () =
       // edit check (0281) asks edit of the map's node for its rows, manage
       // for its delete (and the delete check, 0266, in every mode). A
       // revision restore reads the revision in the scope first. The owner's
-      // acts are refused to a member by the handler, as before.
+      // acts are refused to a member by the handler once it read the map (a
+      // hidden one is the 404 of none, as the gate answered). In warn the
+      // edit check still refuses these writes, as the gate did.
       name: 'recall maps and revisions',
       removed: true,
       noCopy: 'no snapshot copy of a Recall map is made (only an accepted item kinds)',
@@ -482,7 +485,7 @@ describe.skipIf(!DB_URL)('the pre-check removal, part 2: the HTTP entries', () =
           path: (id) => `/api/recall/maps/${id}`,
           body: (id) => ({ title: `${tag} retitled ${n()}`, version: ver(id) }),
           make: recallMap(),
-          warnMade: true,
+          warnMade: false,
           badIdOwn: true,
         },
         {
@@ -502,7 +505,7 @@ describe.skipIf(!DB_URL)('the pre-check removal, part 2: the HTTP entries', () =
           path: (id) => `/api/recall/maps/${id}/cards`,
           body: (id) => ({ title: `${tag} new card ${n()}`, bodyMd: 'new', version: ver(id) }),
           make: recallMap(),
-          warnMade: true,
+          warnMade: false,
           badIdOwn: true,
         },
         {
@@ -512,7 +515,7 @@ describe.skipIf(!DB_URL)('the pre-check removal, part 2: the HTTP entries', () =
           path: (id) => `/api/recall/maps/${id}/cards/${card(id)}`,
           body: (id) => ({ title: `${tag} card put ${n()}`, bodyMd: 'put', version: ver(id) }),
           make: recallMap(),
-          warnMade: true,
+          warnMade: false,
           badIdOwn: true,
         },
         {
@@ -521,7 +524,7 @@ describe.skipIf(!DB_URL)('the pre-check removal, part 2: the HTTP entries', () =
           method: 'DELETE',
           path: (id) => `/api/recall/maps/${id}/cards/${card(id)}?version=${ver(id)}`,
           make: recallMap(),
-          warnMade: true,
+          warnMade: false,
           badIdOwn: true,
         },
         {
@@ -531,8 +534,8 @@ describe.skipIf(!DB_URL)('the pre-check removal, part 2: the HTTP entries', () =
           path: (id) => `/api/recall/maps/${id}/cards/reorder`,
           body: (id) => ({ slugs: [card(id, 1), card(id, 0)], version: ver(id) }),
           make: recallMap({ cards: 2 }),
-          warnMade: true,
-          ownerAct: 'first',
+          warnMade: false,
+          ownerAct: 'after',
           badIdOwn: true,
         },
         {
@@ -542,8 +545,8 @@ describe.skipIf(!DB_URL)('the pre-check removal, part 2: the HTTP entries', () =
           path: (id) => `/api/recall/maps/${id}/cards/${card(id)}/prompt`,
           body: (id) => ({ confirm: true, version: ver(id) }),
           make: recallMap({ prompt: true }),
-          warnMade: true,
-          ownerAct: 'first',
+          warnMade: false,
+          ownerAct: 'after',
           badIdOwn: true,
         },
         {
@@ -552,8 +555,8 @@ describe.skipIf(!DB_URL)('the pre-check removal, part 2: the HTTP entries', () =
           method: 'POST',
           path: (id) => `/api/recall/revisions/${revOf.get(id) ?? id}/restore`,
           make: recallMap({ revision: true }),
-          warnMade: true,
-          ownerAct: 'first',
+          warnMade: false,
+          ownerAct: 'after',
           badIdOwn: true,
         },
       ],
