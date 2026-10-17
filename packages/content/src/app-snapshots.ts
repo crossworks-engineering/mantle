@@ -798,16 +798,18 @@ export async function restoreAppSnapshot(
     drainMs?: number;
   },
 ): Promise<AppRestoreResult | null> {
-  const snap = await getAppSnapshot(ownerId, appId, snapshotId);
-  if (!snap) return null;
   const { mode } = opts;
   const actor = opts.actor ?? 'owner';
   const wantsData = mode === 'data' || mode === 'full';
   const wantsCode = mode === 'code' || mode === 'full';
-  // The code is the app's Moderators' (D4): asked first, before any refusal
-  // of the entry and before the undo snapshot (snapshotBeforeCodeChange asks
-  // it again there). A data restore is the data's (edit, the caller's door).
-  if (wantsCode) await assertItemRight(appId, 'manage');
+  // The code is the app's Moderators' (D4), the data alone the data's
+  // (edit): asked first, before the entry is read or refused and before the
+  // undo snapshot (snapshotBeforeCodeChange asks the code's again there),
+  // so a caller without it learns nothing of the history and writes nothing
+  // (pre-check removal Part 3).
+  await assertItemRight(appId, wantsCode ? 'manage' : 'edit');
+  const snap = await getAppSnapshot(ownerId, appId, snapshotId);
+  if (!snap) return null;
   if (wantsData && !snap.hasData) {
     throw new AppSnapshotRefusedError(
       `v${snap.seq} holds no data (it is ${snap.kind === 'version' ? 'a version: the code a publish made live' : 'a snapshot of an app that had no database yet'}); restore its code, or pick a snapshot with data`,

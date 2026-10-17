@@ -20,6 +20,7 @@
  * Server-only (opens the app SQLite): imported as
  * `@mantle/content/app-db-write`, never from the content index.
  */
+import { assertItemRight } from '@mantle/db';
 import {
   appDbExec,
   appDbSeedRows,
@@ -63,6 +64,9 @@ export async function appDbSeed(
   opts: { replace?: boolean } = {},
   schema?: AppDbSchema,
 ): Promise<AppDbSeedResult> {
+  // The data's edit first (pre-check removal Part 3): the app's directory and its
+  // database file are made before the registry row the database checks.
+  await assertItemRight(appNodeId, 'edit');
   const res = await appDbSeedRows(ownerId, appNodeId, table, rows, opts, schema);
   scheduleAppTableExportSync(ownerId, appNodeId);
   return res;

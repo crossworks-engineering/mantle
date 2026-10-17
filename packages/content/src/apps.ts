@@ -623,16 +623,17 @@ export async function updateAppMeta(
   id: string,
   input: UpdateAppInput,
 ): Promise<AppDetail | null> {
+  // The item check first (pre-check removal Part 3): an edit of the app's node, manage
+  // when the description changes too (it lives on the manifest, the app's
+  // code, D4: its door lockAppRow asks manage), before anything below is
+  // written (F4 fix round 3, M3: no name changed with a description refused).
+  await assertItemRight(id, input.description !== undefined ? 'manage' : 'edit');
   const [node] = await db
     .select()
     .from(nodes)
     .where(and(eq(nodes.id, id), eq(nodes.ownerId, ownerId), eq(nodes.type, 'app')))
     .limit(1);
   if (!node) return null;
-  // The description lives on the manifest, the app's code (D4): its door
-  // (lockAppRow) asks manage, so ask it before anything below is written
-  // (F4 fix round 3, M3: no name changed with a description refused).
-  if (input.description !== undefined) await assertItemRight(id, 'manage');
   const newData = { ...((node.data ?? {}) as Record<string, unknown>) };
   if (input.icon !== undefined) {
     const icon = projectAppIcon(input.icon);
@@ -1283,6 +1284,10 @@ export async function deleteApp(
     deletedBy?: { loginId: string | null; owner: boolean };
   } = {},
 ): Promise<boolean> {
+  // The app's manage first (pre-check removal Part 3): the pre_delete snapshot and its
+  // keepForOwner mark commit before the node's checked DELETE, so a caller
+  // that may not delete the app leaves no history entry behind.
+  await assertItemRight(id, 'manage');
   if (!(await ownsApp(ownerId, id))) return false;
   // Dynamic imports keep the server-only modules (node:fs, sqlite) out of the
   // content index / edge bundles.

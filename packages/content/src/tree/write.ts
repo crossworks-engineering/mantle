@@ -9,8 +9,22 @@
  * order are plain row data for every kind.
  */
 import { and, eq, sql } from 'drizzle-orm';
-import { defineDomainError, errorMessage, publicErrorMessage } from '@mantle/std';
-import { BUSY_MESSAGE, db, isBusy, isScopeWriteRefusal, nodes, executeWrite } from '@mantle/db';
+import {
+  defineDomainError,
+  editCheckRefusalError,
+  errorMessage,
+  publicErrorMessage,
+} from '@mantle/std';
+import {
+  assertItemRight,
+  BUSY_MESSAGE,
+  db,
+  executeWrite,
+  isBusy,
+  isScopeWriteRefusal,
+  itemWriteVerdicts,
+  nodes,
+} from '@mantle/db';
 import {
   createFolder as createFilesFolder,
   moveFileById,
@@ -432,6 +446,10 @@ export async function deleteTreeFolder(
   opts: TreeWriteOpts = {},
 ): Promise<void> {
   opsFor(kind);
+  // The folder's manage first (pre-check removal Part 3): the Files kind lifts the
+  // children out before the folder's checked DELETE, so a caller that may
+  // not delete the folder moves nothing (and learns nothing of what it holds).
+  await assertItemRight(folderId, 'manage');
   const folder = await folderOrThrow(ownerId, kind, folderId);
   if (folder.system) {
     throw new TreeError('invalid', 'this folder is made by Mantle; it cannot be deleted');
@@ -471,6 +489,15 @@ export async function moveTreeItems(
   const ops = opsFor(kind);
   const dest = await pathOf(ownerId, kind, folderId);
   const ids = [...new Set(itemIds)];
+  // The whole list asked first (pre-check removal Part 3): each item moves on its own and
+  // the database refuses item by item, so one the caller may not move would
+  // leave the others moved. One it may not move refuses the call, nothing
+  // moved, before the visibility question (it names workspaces).
+  const verdicts = await itemWriteVerdicts(ids, 'manage');
+  for (const id of ids) {
+    const v = verdicts.get(id) ?? 'no_read';
+    if (v !== 'ok') throw editCheckRefusalError(v);
+  }
   const diff = await checkVisibility(ownerId, moveItemsDiff(ownerId, kind, ids, dest), opts);
   const result: TreeMoveResult = { moved: 0, failed: [] };
   for (const id of ids) {

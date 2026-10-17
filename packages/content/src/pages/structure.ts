@@ -15,7 +15,7 @@
  * page link card) is a link, not a parent-child bond.
  */
 import { and, eq } from 'drizzle-orm';
-import { db, entities, nodes } from '@mantle/db';
+import { assertItemRight, db, entities, nodes } from '@mantle/db';
 import { ensureBlockIds } from '@mantle/content-core/block-ids';
 import {
   splitDocByHeading,
@@ -65,6 +65,9 @@ export async function splitPage(
   pageId: string,
   opts: { by: SplitLevel; preserveIntro?: boolean; confirm?: boolean },
 ): Promise<SplitPageResult> {
+  // The source's edit first (pre-check removal Part 3): the child pages are made before
+  // the source's checked write, so a caller that may not edit it makes none.
+  await assertItemRight(pageId, 'edit');
   const page = await getPage(ownerId, pageId);
   if (!page) throw new Error(`splitPage: page ${pageId} not found`);
 
@@ -132,6 +135,8 @@ export async function extractSectionToPage(
   headingBlockId: string,
   opts: { confirm?: boolean } = {},
 ): Promise<ExtractSectionResult> {
+  // As splitPage: the source's edit before the child page is made.
+  await assertItemRight(pageId, 'edit');
   const page = await getPage(ownerId, pageId);
   if (!page) throw new Error(`extractSectionToPage: page ${pageId} not found`);
 

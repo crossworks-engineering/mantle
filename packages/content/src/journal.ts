@@ -29,11 +29,12 @@
 import { and, eq, ilike, or, sql, type SQL } from 'drizzle-orm';
 import {
   agents,
-  db,
-  nodes,
+  assertItemRight,
   changedFields,
+  db,
   markContentChanged,
   type Node,
+  nodes,
   withDeadlockRetry,
   withNodeDeleteHeads,
   withNodeInsertHeads,
@@ -440,6 +441,10 @@ export async function resolveGapEntry(
   id: string,
   input: ResolveGapInput,
 ): Promise<{ gap: JournalRow; answer: JournalRow } | null> {
+  // The gap's edit first (pre-check removal Part 3): the answer entry below is made
+  // before the gap's checked UPDATE, so a caller that may not edit the gap
+  // makes no answer.
+  await assertItemRight(id, 'edit');
   const [node] = await db
     .select()
     .from(nodes)
