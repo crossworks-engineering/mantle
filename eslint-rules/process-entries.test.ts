@@ -8,10 +8,10 @@ import { ACTOR_BINDER_PINS, binderSites } from './actor-binders.mjs';
  * The process inventory is pinned (workspaces arch plan v2, section 4.3;
  * A2a): every file that starts work on its own (a queue consumer, a worker
  * shell, a DBOS workflow, a LISTEN, an interval timer, a timeout loop, a
- * process event handler) is listed in the `entries` block of docs/actors.md,
- * kind by kind, with the actor it binds. A new one fails here until the doc
- * names it and its actor. packages/db/src is scanned too: a file there that
- * only defines a helper says so.
+ * process event handler) is listed in the `entries` block of
+ * docs/process-inventory.md, kind by kind, with the actor it binds. A new
+ * one fails here until the doc names it and its actor. packages/db/src is
+ * scanned too: a file there that only defines a helper says so.
  *
  * The kinds are text heuristics over code with comments removed:
  *
@@ -33,6 +33,8 @@ import { ACTOR_BINDER_PINS, binderSites } from './actor-binders.mjs';
  * entry is caught before its first commit.
  */
 const ROOT = join(__dirname, '..');
+/** The doc whose `entries` block lists every process entry. */
+const INVENTORY = 'docs/process-inventory.md';
 
 const DB_IMPORT = /\bimport\s+(?!type\b)[^;]*?\bfrom\s+['"]@mantle\/db['"]/;
 
@@ -97,9 +99,9 @@ function found(): string[] {
 
 /** The doc's `entries` block. */
 function pinned(): string[] {
-  const doc = readFileSync(join(ROOT, 'docs/actors.md'), 'utf8');
+  const doc = readFileSync(join(ROOT, INVENTORY), 'utf8');
   const m = /```entries\n([\s\S]*?)```/.exec(doc);
-  if (!m) throw new Error('docs/actors.md has no entries block');
+  if (!m) throw new Error(`${INVENTORY} has no entries block`);
   return m[1]!
     .split('\n')
     .map((l) => l.trim())
@@ -108,7 +110,7 @@ function pinned(): string[] {
     .sort();
 }
 
-describe('the process inventory (docs/actors.md)', () => {
+describe('the process inventory (docs/process-inventory.md)', () => {
   it('lists every file that starts work on its own, kind by kind', () => {
     const want = pinned();
     const have = found();
@@ -118,7 +120,7 @@ describe('the process inventory (docs/actors.md)', () => {
   });
 
   it('names the actor of each entry', () => {
-    const doc = readFileSync(join(ROOT, 'docs/actors.md'), 'utf8');
+    const doc = readFileSync(join(ROOT, INVENTORY), 'utf8');
     const block = /```entries\n([\s\S]*?)```/.exec(doc)![1]!;
     for (const line of block.split('\n').map((l) => l.trim())) {
       if (!line || line.startsWith('#')) continue;
