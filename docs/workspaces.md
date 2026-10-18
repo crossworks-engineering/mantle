@@ -240,6 +240,10 @@ the item landed (`landedIn`).
   it readable in H" (a grant with Write off). Other grants stay.
 - **A copy** (duplicate, page from notes, copy to) is a new item. Its home
   is where you make it, with no other grant. Share it again by hand.
+- **An export** (a Word or Excel copy, a built sheet, an app file) is a
+  new file at the top of Files, homed by the rule above, and holds only
+  what you read. An Admin user's goes to Auto-filed / Exports. The reply
+  says where it landed (`landedIn`).
 - **Parts of a source** (mail attachments, transcripts, image fragments, an
   app's table export) take their source's home and grants.
 - **Synced items with no source** (mail, Telegram, calendar, drive and disk

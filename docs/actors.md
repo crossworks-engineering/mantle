@@ -113,6 +113,8 @@ own, with the actor it binds: [process-inventory.md](./process-inventory.md)
 | add a grant to T, Write on            | Moderator of its home and of T                  |
 | remove a grant, Write off             | Moderator of its home, or of T                  |
 | open or change its link               | edit (an app: manage)                           |
+| export it into your files             | read (the copy lands in your create home)       |
+| re-run its extraction                 | edit (it spends model work)                     |
 | close any link                        | an Admin user with the users area               |
 | tick or clear Moderator               | an Admin user with the users area               |
 | share it with a contact               | an Admin user (its home is not checked)         |
@@ -120,9 +122,8 @@ own, with the actor it binds: [process-inventory.md](./process-inventory.md)
 
 The database's needs (`mantle_check_row`, `mantle_check_item`): `read`,
 `edit`, `manage`, `admin`, `appdata`, `link`, `link_close`
-([edit-check.md](./edit-check.md)). An item the caller does not read
-answers the 404 of none, as a random id; one it reads but may not
-change, 403.
+([edit-check.md](./edit-check.md)). An item the caller does not read answers
+the 404 of none, as a random id; one it reads but may not change, 403.
 
 Being an Admin user is management, not reading: it reads what is granted
 to the workspaces it is in. A scope asks its own login's area through
@@ -267,11 +268,10 @@ change and its audit row (`mantle_grant_change`, `mantle_grant_move_home`,
   `keyArea`, `keySharedContent`, `clientSourced`. The gate reads it; no
   list is keyed by tool name.
 - `itemArgs` names the items a write touches: the audit row's targets and
-  the queue-time check of a call that waits for approval; it decides
-  nothing at run time. Tool item pre-checks (policy lists): none. The
-  database decides a tool's write; the library asks `assertItemRight`
-  first only for a clear answer before a side effect (section 10). So
-  both checks run on.
+  the queue-time check of a call that waits for approval; it decides nothing
+  at run time. Tool item pre-checks (policy lists): none. The database
+  decides a tool's write; the library asks `assertItemRight` first only for
+  a clear answer before a side effect (section 10). So both checks run on.
 - An approved pending call runs in the scope it was asked in, judged
   again with its asker's rights now (`pending-approval.ts`).
 

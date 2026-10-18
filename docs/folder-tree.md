@@ -340,6 +340,13 @@ folder there is a system folder (`data.system`): its name is locked and it
 cannot be moved, because writers find it by its path. Its contents can be
 moved, renamed and deleted freely.
 
+Auto-filed is Admin only, so an export (`export_node`, `sheet_build`,
+`app_export`) asks `saveExport` (`packages/files/src/export-home.ts`) where
+it lands: Exports for the owner and an Admin user who may change that folder;
+anyone else's at the top of Files, in the home a new item takes there (its
+private workspace, or the chat's workspace it moderates). The reply names
+where it landed (`landedIn`). The export holds only what its caller reads.
+
 Brains made before Auto-filed kept these folders at the top of Files, dated by
 day. `reconcileAutoFiled` moves them in once (merging when both exist) and
 merges day folders into months; a file name taken in the month gets `-2`

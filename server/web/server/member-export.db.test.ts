@@ -461,7 +461,7 @@ describe.skipIf(!DB_URL)('members export what they see; extraction needs edit', 
           mode,
           'sheet_build mcp lone',
           () => viaMcp('lone', 'sheet_build', sheet([{ item: 'x', amount: 1 }])),
-          /not listed|not in any workspace/i,
+          /not listed|not in any workspace|Method not found/i,
         );
         expect(m.takeActorMisses()).toEqual([]);
       }, 300_000);

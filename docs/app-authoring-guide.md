@@ -437,8 +437,9 @@ code) and `droppedToolSlugs` (this brain does not have them). The cap is the app
 database cap (`APP_SQL_MAX_DB_MB`) plus the code.
 
 Agents and MCP clients do the same with tools (group `apps`):
-`app_duplicate`, `app_export` (saves the file under /files, folder
-exports, and returns its id) and `app_import` (a `file_id`, `name`,
+`app_duplicate`, `app_export` (saves the file under /files: an Admin
+user's in Auto-filed / Exports, anyone else's at the top of Files in its
+create home; returns its id and `landedIn`) and `app_import` (a `file_id`, `name`,
 `with_data`). They run for any login, in its own workspaces: the scope and
 the database's checks decide which apps (`OWNER_ONLY_IN_SCOPE` in
 `packages/tools/src/admin-gate.ts`). The turn of an assistant of a
