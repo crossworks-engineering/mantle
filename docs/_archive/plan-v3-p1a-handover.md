@@ -215,3 +215,51 @@ unit cleaned up by name.
 CI at 415b4b855:
 https://github.com/crossworks-engineering/mantle/actions/runs/39081727888
 success.
+
+## Rebase onto v0.300.84 (after D1)
+
+Rebased from ea671d46b onto main a77282728 (v0.300.84), which carries D1
+(docs/actors.md is the 350-line spec, the history is
+docs/_archive/actors-history.md, the docs-quotes rule and its four pins).
+No code change beyond the conflict resolution.
+
+Conflicts, all in the first commit (the rights counts):
+
+- `eslint-rules/arch-counts.mjs`: both imports kept (`checkDocQuotes`,
+  `rightsCounts`) and both calls in `measure()` (`docQuotes`, `rights`).
+- `scripts/arch-scoreboard.pins.json` and `scripts/arch-scoreboard.ts`
+  merged with no conflict marker but with `actorsMdLines` twice (pin,
+  note, label). Both sides' keys kept; `actorsMdLines` is D1's alone.
+
+One measurement, one pin for `actorsMdLines`: P1a's measure
+(`repoFileLines(root, 'docs/actors.md')` in `eslint-rules/rights-counts.mjs`,
+and the helper) is removed; the number comes from D1's
+`eslint-rules/docs-quotes.mjs` only. P1a's pin (7517), its note, its label
+and its `MAY_GROW` entry are dropped; D1's down-only pin at 350, its note
+and its label stay. The `actorsMdLines` lines in the sections above
+(What changed, Pins, Open items) describe the branch before this rebase;
+the open item "D1 takes it out of MAY_GROW" is done this way.
+
+Pins after the rebase, every one measured on the rebased tree: unchanged.
+The P1a counters hold their values (requestSystemExits 5, area 1,
+login-self 2, admin-write 2, other 0; scopeHoldsAdminCalls 14;
+sqlAreaRules 7; workspaceTableRawWrites 16; workspaceTableWriterFns 12;
+setAssistantCopies 1; legacyPrecheckUndated 0; a8Uncovered 207; a8Exempt
+0; rawWriteAllowlist 0). D1's: actorsMdLines 350, actorsHistoryRefs 75,
+actorsStepRefs 13, docQuotesDangling 5. P1a's files add no doc heading
+quote.
+
+Gates at the rebased code head (this note is docs only on top of it).
+Mac (DATABASE_URL unset): `pnpm -r typecheck` 0, `pnpm lint` 0 (one
+warning, an unused disable directive in a file P1a does not touch, on main
+too), `pnpm format:check` 0, `pnpm docs:check` 0 (207 heading quotes, each
+names a heading), `pnpm arch:check` 0, `vitest run eslint-rules
+server/web/lib/shell-portability.test.ts` 0 (21 files, 261 tests; D1 added
+docs-quotes.test.ts), `bash scripts/test-merge-branch.sh` 0.
+
+Workstation (own clone, own pgvector pg18 container `p1ar_pg`,
+systemd-run --user, Node 26.5.0, `--maxWorkers=3`):
+`rights-catalog.db.test.ts` 0 (4/4). Container (`-v`), clone, bundle, logs
+and unit cleaned up by name.
+
+The audit's lows stay for a later step.
