@@ -69,6 +69,12 @@ describe('noteFailOpen: one row per site and calling file, the lookup before the
     expect(rows.map((r) => r.check)).toEqual(['fail-open:typed-write', 'fail-open:raw-write']);
   });
 
+  it('no app frame on the stack: a write names its table', () => {
+    noteFailOpen('raw-write', 'login', () => null, 'public.x');
+    noteFailOpen('scope-holds-admin', '', () => null);
+    expect(rows.map((r) => r.detail)).toEqual(['unknown caller, table public.x', 'unknown caller']);
+  });
+
   it('under vitest every hit is kept with its table, before the lookup; none fails the test', () => {
     noteFailOpen('typed-write', 'login', () => 'a.ts', 'public.x');
     noteFailOpen('typed-write', 'login', () => 'a.ts', 'public.y');

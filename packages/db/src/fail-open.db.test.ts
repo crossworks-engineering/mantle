@@ -86,7 +86,11 @@ describe.skipIf(!URL)('fail-open miss rows (plan v3.2 S4a)', () => {
     const [row] = await su<{ actor: string; detail: string; source: string }[]>`
       select actor, detail, source from actor_check_misses where check_name = 'fail-open:raw-write'`;
     expect(row).toMatchObject({ actor: 'login', source: 'ts' });
-    expect(row!.detail).toMatch(/fail-open\.db\.test\.ts$/);
+    // The write runs when awaited: the stack may hold no app frame, and the
+    // table names it then.
+    expect(row!.detail).toMatch(
+      /fail-open\.db\.test\.ts$|^unknown caller, table public\.provider_alerts$/,
+    );
     expect(fo.takeFailOpenHits()).toEqual([
       { site: 'raw-write', actor: 'login', table: 'public.provider_alerts' },
       { site: 'raw-write', actor: 'login', table: 'public.provider_alerts' },

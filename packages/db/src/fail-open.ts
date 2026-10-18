@@ -65,7 +65,9 @@ export function noteFailOpen(
   const last = lastStack.get(site);
   if (last !== undefined && now - last < STACK_EVERY_MS) return;
   lastStack.set(site, now);
-  const file = caller() ?? 'unknown caller';
+  // A raw write runs when its query is awaited, often with no app frame on
+  // the stack: its table names it then.
+  const file = caller() ?? (table ? `unknown caller, table ${table}` : 'unknown caller');
   const key = `${site}\0${file}`;
   if (rowKeys.has(key)) return;
   if (rowKeys.size > 5_000) rowKeys.clear();
