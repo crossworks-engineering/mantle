@@ -474,7 +474,7 @@ describe.skipIf(!URL)('MCP writes and read-path writes as the login (A5 step 4, 
   it('a member’s write it may not make is refused, as before; nothing changes', async () => {
     const before = await x<{ title: string; path: string; data: string }>(sql`
       select title, path::text, data::text from nodes
-       where id in (${ids.roNote}, ${ids.roFolder}, ${ids.memberFolder}) order by id`);
+       where id in (${ids.roNote}, ${ids.roFolder}) order by id`);
     const c = await connect('member', member);
     try {
       const upd = await c.call('note_update', { id: ids.roNote, content: 'not allowed' });
@@ -486,21 +486,22 @@ describe.skipIf(!URL)('MCP writes and read-path writes as the login (A5 step 4, 
       });
       expect(ren.ok, ren.text).toBe(false);
       expect(ren.text).toMatch(/You cannot change this item in your workspaces/);
-      // Write without manage: the database refuses the rename (0282), as it
-      // did before step 4, in the one mapper's words, never the SQL.
+      // Write without manage renames the folder now (S11a-6a, migration
+      // 0305: the owner's rule; it was refused by 0282's manage).
       const moved = await c.call('folder_rename', {
         folder_id: ids.memberFolder,
         new_name: `${tag}-write-only`,
       });
-      expect(moved.ok, moved.text).toBe(false);
-      expect(moved.text).toMatch(/^folder_rename failed: /);
-      expect(moved.text).not.toMatch(/Failed query|params:|mantle_subtree|ltree/);
+      expect(moved.ok, moved.text).toBe(true);
+      const [renamed] = await x<{ path: string }>(sql`
+        select path::text from nodes where id = ${ids.memberFolder}`);
+      expect(renamed!.path).toContain('write_only');
     } finally {
       await c.close();
     }
     const after = await x<{ title: string; path: string; data: string }>(sql`
       select title, path::text, data::text from nodes
-       where id in (${ids.roNote}, ${ids.roFolder}, ${ids.memberFolder}) order by id`);
+       where id in (${ids.roNote}, ${ids.roFolder}) order by id`);
     expect(after).toEqual(before);
     m.takeActorMisses();
   });

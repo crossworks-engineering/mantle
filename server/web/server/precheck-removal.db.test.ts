@@ -774,8 +774,8 @@ describe.skipIf(!DB_URL)(
             who: BOTH,
             make: notesFolder,
             input: (it) => ({ kind: 'notes', folder_id: it.id, name: `${tag} renamed ${n()}` }),
-            // A rename rewrites the paths below it: the database asks manage.
-            now: { editOnly: 'refused' },
+            // A rename is an edit of the folder (S11a-6a, migration 0305): the
+            // Write grant renames it; it used to be refused (manage).
           },
           {
             slug: 'tree_folder_update',
@@ -1099,8 +1099,7 @@ describe.skipIf(!DB_URL)(
             make: filesFolder,
             input: (it) => ({ folder_id: it.id, new_name: `${tag} Renamed ${n()}` }),
             ways: ['mcp', 'turn'],
-            // A rename rewrites the paths below it: the database asks manage.
-            now: { editOnly: 'refused' },
+            // A rename is an edit of the folder (S11a-6a, migration 0305).
             disk: filesDisk,
           },
           {

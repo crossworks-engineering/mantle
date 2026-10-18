@@ -12,6 +12,7 @@
  * W1 ships the model in shadow: nothing in the product reads these tables
  * yet.
  */
+import { ltree } from './_shared';
 import { sql } from 'drizzle-orm';
 import {
   bigint,
@@ -268,6 +269,9 @@ export const mantleMovedNodes = pgTable(
     /** The owner before the move (0245): a move is exempt from the heads
      *  check only when the row was personal before AND after it. */
     oldOwner: uuid('old_owner'),
+    /** The path before the move (0305): the statement check tells a
+     *  folder's rename (the same parent) from a move by it. */
+    oldPath: ltree('old_path'),
   },
   (t) => [primaryKey({ columns: [t.xid, t.id] })],
 );

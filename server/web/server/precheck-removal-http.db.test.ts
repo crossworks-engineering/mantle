@@ -1046,7 +1046,8 @@ describe.skipIf(!DB_URL)('the pre-check removal, part 2: the HTTP entries', () =
         folderRoute('look', 'edit', 'PATCH', () => ({ look: { color: 'red' } }), folder(), {
           warnMade: true,
         }),
-        folderRoute('rename', 'manage', 'PATCH', () => ({ rename: `${tag}-r-${n()}` }), folder()),
+        // A rename is an edit of the folder (S11a-6a, migration 0305).
+        folderRoute('rename', 'edit', 'PATCH', () => ({ rename: `${tag}-r-${n()}` }), folder()),
         folderRoute('indexing', 'manage', 'PATCH', () => ({ indexing: 'metadata' }), folder()),
         folderRoute(
           'move',
@@ -1080,7 +1081,8 @@ describe.skipIf(!DB_URL)('the pre-check removal, part 2: the HTTP entries', () =
         {
           name: 'PATCH /api/tree/:kind/folders/:id rename',
           badIdOwn: true,
-          need: 'manage',
+          // A rename is an edit of the folder (S11a-6a, migration 0305).
+          need: 'edit',
           method: 'PATCH',
           path: (id) => `/api/tree/pages/folders/${id}`,
           body: () => ({ name: `${tag} renamed ${n()}` }),

@@ -962,11 +962,19 @@ describe.skipIf(!URL)('the edit check (arch A3a)', () => {
       detail: 'hidden_rows',
       message: 'This folder holds items you cannot move.',
     });
-    // A Write grant (no Moderator of the home) moves nothing.
-    expect(await move(who.member)).toMatchObject({
-      code: '42501',
-      message: 'not allowed to move this item',
-    });
+    // A Write grant (no Moderator of the home) renames it (the owner's
+    // rule, S11a-6a, migration 0305: a rename is an edit of the folder),
+    // every row with it; a move (a new parent) stays manage: refused.
+    expect(await move(who.member)).toMatchObject({ rows: 3 });
+    expect(
+      await attempt(who.member, async (tx) => {
+        await tx`select mantle_lock_subtree_heads(${folder}::uuid, array[${dest}]::uuid[])`;
+        const [r] = await tx<{ n: number }[]>`
+          select mantle_subtree_rewrite(${L.owner}, ${`notes.${tag}mv`}::ltree,
+                                        ${`notes.${tag}dst.${tag}mv`}::ltree) as n`;
+        return { count: r!.n };
+      }),
+    ).toMatchObject({ code: '42501', message: 'not allowed to move this item' });
     // A folder holding an app, moved into a folder that adds a workspace the
     // mover does not moderate (O): every app inside is held to the placement
     // rule, not only a moved app (fix round 2). Staged: off moves, on
