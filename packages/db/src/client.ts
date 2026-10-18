@@ -482,6 +482,14 @@ export function needsActorWrap(query: string): boolean {
   return true;
 }
 
+/** Whether the system pool sends `query` with the actor set: a write
+ *  (needsActorWrap), or any statement of workspace system work, a read too
+ *  (S2a a1 audit M2): a bare `select mantle_ws_...()` outside a transaction
+ *  would else go with no mantle.actor, and the definers refuse it. */
+function wrapsStatement(query: string): boolean {
+  return needsActorWrap(query) || isWorkspaceSystemActor(currentActor());
+}
+
 /** The mantle_set_actor parameters for the current actor, or null: no actor
  *  bound, or the check is off (then nothing changes). */
 function actorParams(): [string, string, string] | null {
@@ -707,7 +715,7 @@ export function actorClient(base: PgSql): PgSql {
     // that comes back after its end began keeps postgres.js from ending.
     const open = globalThis.__mantleSql === base;
     const params = open ? actorParams() : null;
-    if (params && !runsOutsideTransaction(query) && needsActorWrap(query)) {
+    if (params && !runsOutsideTransaction(query) && wrapsStatement(query)) {
       return pipelined(params, query, args, mode);
     }
     const q = base.unsafe(query, args as never[], opts as never);
@@ -726,7 +734,7 @@ export function actorClient(base: PgSql): PgSql {
           if (
             (!wait && !actorParams()) ||
             runsOutsideTransaction(query) ||
-            !needsActorWrap(query)
+            !wrapsStatement(query)
           ) {
             return target.unsafe(query, args as never[], opts as never);
           }

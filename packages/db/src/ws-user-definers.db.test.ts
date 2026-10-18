@@ -589,6 +589,30 @@ describe.skipIf(!URL)('the workspace user definers (S2a a1)', () => {
       'ws-clear-ticks',
     )) as unknown as { a: string; w: string }[];
     expect(seen[0]).toEqual({ a: CLEAR_TICKS, w: 'rw' });
+    // Outside a transaction too, a read included (S2a a1 audit M2): every
+    // statement of workspace system work goes with its actor.
+    const bare = (await m.systemWork(
+      () =>
+        m.db.execute(sqlTag`select current_setting('mantle.actor', true) as a,
+                                   current_setting('mantle.write_mode', true) as w`),
+      'ws-clear-ticks',
+    )) as unknown as { a: string; w: string }[];
+    expect(bare[0]).toEqual({ a: CLEAR_TICKS, w: 'rw' });
+    await m
+      .systemWork(
+        () =>
+          m.db.execute(
+            sqlTag`select mantle_ws_set_moderator(mantle_brain_id(), ${W}::uuid, ${L.out}::uuid, true, 'x')`,
+          ),
+        'ws-clear-ticks',
+      )
+      .then(
+        () => expect.unreachable('L.out is no user of W'),
+        (err: unknown) =>
+          expect(String((err as { cause?: Error }).cause?.message ?? err)).toMatch(
+            /mantle_ws:not_user/,
+          ),
+      );
     // And the definer takes it: a tick, then the tick cleared, both by it.
     await m
       .systemWork(
