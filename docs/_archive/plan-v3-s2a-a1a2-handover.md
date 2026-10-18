@@ -627,4 +627,15 @@ failure, the Test step, the one journal cell only (the later steps did not
 run). Once S8a merges: rebase (the journal only), then `vitest run` and
 `test:actor-off` give exit 0 with nothing else changed, and CI goes green.
 
-**After S8a (rebased on 00eb73ada, v0.300.97):** see the next section.
+## Gates after the S8a rebase
+
+At db169ab11 (rebased on 00eb73ada, v0.300.97; then only this note). On the
+Mac, `DATABASE_URL` unset: `pnpm -r typecheck` 0, `pnpm lint` 0,
+`pnpm format:check` 0, `pnpm docs:check` 0, `pnpm arch:check` 0,
+`pnpm -C server/web build` 0, `pnpm exec vitest run server packages
+eslint-rules` 0 (11052 passed). On the workstation (own container, port
+56185, `--maxWorkers=3`): full DB vitest 0 (13771 passed, 1118 files),
+`test:actor-off` 0 (1144 passed). The re-audit's runbook items (MED-1,
+LOW-1, LOW-2) are in: the revert is read from the mantle_web image while
+the newer image is up, the older tag is pinned straight after (or
+mantle_web stopped first), and 0306 and 0307 ship apart.
