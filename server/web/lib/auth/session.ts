@@ -171,10 +171,10 @@ export function loginUsable(row: Pick<LoginRow, 'disabledAt' | 'email'>): boolea
  * S8a): role admin AND a user of the brain's live Admin workspace now
  * (adminMember, mantle_login_is_admin read with the row). The role alone
  * never makes one: a role=member login inside Admin stays a member, and a
- * role=admin login outside Admin is no Admin login (no session, asset token
- * or render cookie). The one place session.ts reads the role for an Admin
- * decision; memberLoginActive and findMemberAsset keep their role read
- * until S8b.
+ * role=admin login outside Admin is no Admin login (no asset token, render
+ * cookie or frame; its areas come from the area rule, so none). Its
+ * session stays on the role until S8b (resolvedFor), as do
+ * memberLoginActive and findMemberAsset.
  */
 function adminLogin(row: Pick<LoginRow, 'role' | 'adminMember'>): boolean {
   return row.role === 'admin' && row.adminMember === true;
@@ -529,22 +529,23 @@ async function sessionUserFor(row: ActorRow): Promise<SessionUser | null> {
 }
 
 /**
- * An Admin login (adminLogin: role admin and a user of Admin) becomes a
- * SessionUser (id = the anchor), a member row a MemberCaller. Every role is
- * named: a role this code does not know is NO login (null), never an admin
- * (client logins C0: before it, every role that was not member resolved as
- * an admin). A row still marked client (none is left after migration 0272,
- * workspaces W8a) is no login either, and so is a role=admin row outside
- * Admin (S8a: none on a box with no role drift). Null too when the brain
- * has no anchor (a corrupt state).
+ * An admin row becomes a SessionUser (id = the anchor), a member row a
+ * MemberCaller. Every role is named: a role this code does not know is NO
+ * login (null), never an admin (client logins C0: before it, every role that
+ * was not member resolved as an admin). A row still marked client (none is
+ * left after migration 0272, workspaces W8a) is no login either. Null too
+ * when the brain has no anchor (a corrupt state). The session stays on the
+ * role until S8b (owner decision on S8a, 2026-10-18): a role=admin login
+ * outside Admin keeps its session and works in its own scope, but is no
+ * Admin (adminLogin: no asset token, render cookie or frame, no area).
  */
 async function resolvedFor(row: LoginRow, source: AuthSource): Promise<Resolved | null> {
-  if (adminLogin(row)) {
-    const user = await sessionUserFor(row);
-    return user ? { kind: 'admin', user, source, epoch: row.sessionEpoch } : null;
-  }
   const role: string = row.role;
   switch (role) {
+    case 'admin': {
+      const user = await sessionUserFor(row);
+      return user ? { kind: 'admin', user, source, epoch: row.sessionEpoch } : null;
+    }
     case 'member': {
       const anchorId = await getAnchorId();
       if (!anchorId) return null;

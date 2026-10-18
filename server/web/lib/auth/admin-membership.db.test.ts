@@ -5,8 +5,11 @@
  *
  * The two named narrowing cells, each next to its as-before cell:
  *  - a login with role admin outside the Admin workspace (role drift) loses
- *    its `?at=` asset token, its render cookie, its session and the frame
- *    re-check (adminLoginActive); an Admin user keeps all four;
+ *    its `?at=` asset token, its render cookie and the frame re-check
+ *    (adminLoginActive); an Admin user keeps all three. It keeps its
+ *    session (owner decision on S8a: the session stays on the role until
+ *    S8b) and works in its own scope as on main, but is not Admin: an Admin
+ *    area route refuses it;
  *  - a role=member login inside the Admin workspace is not an Admin login:
  *    it stays a member (the member gate lets it in, the owner gate refuses
  *    it as it refuses any member).
@@ -147,10 +150,18 @@ describe.skipIf(!URL)('S8a: an Admin login is role AND membership', () => {
     expect(await call(fileBytes(), { cookie: renderAt(out) })).toBe(refused);
   });
 
-  it('a role=admin login outside Admin has no session and no frame re-check', async () => {
+  it('a role=admin login outside Admin keeps its session but is not Admin', async () => {
+    // Its session, as on main: past the owner gate, as the Admin user is.
     expect(await ownerProbe(cookieAt(adm))).not.toBe(401);
-    expect(await ownerProbe(cookieAt(out))).toBe(401);
-    expect(await memberProbe(cookieAt(out))).toBe(401);
+    expect(await ownerProbe(cookieAt(out))).toBe(await ownerProbe(cookieAt(adm)));
+    // Not Admin: an Admin area route (users) refuses it, the Admin user not.
+    expect(status(await call('/api/users', { cookie: cookieAt(adm) }))).toBe(200);
+    const area = await call('/api/users', { cookie: cookieAt(out) });
+    expect(status(area)).toBe(403);
+    expect(area).toContain('"area"');
+    // No asset token, no render cookie, no frame re-check.
+    expect(status(await assetAnswer(out))).toBe(401);
+    expect(status(await call(fileBytes(), { cookie: renderAt(out) }))).toBe(401);
     expect(await session.adminLoginActive(adm)).toBe(true);
     expect(await session.adminLoginActive(out)).toBe(false);
   });
