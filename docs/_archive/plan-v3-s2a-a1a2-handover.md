@@ -502,7 +502,7 @@ finding, what changed:
   53b507b53 (v0.300.95, tree-bugs merged with `0305_folder_rename_write`,
   `when` 1790197620000) and renumbered to `0307_ws_user_definers`, `when`
   1790197740000: S8a holds 0306 (`when` 1790197680000) and merges first, so
-  the journal entry is idx 307 (the tag's number, packages/db/src/migrations-journal.test.ts); when S8a lands, its 0306 entry goes before this one (only the journal moves). Until then one unit cell is red on purpose: `migrations-journal.test.ts` "no slot is skipped" (306 is S8a's, not merged yet); idx 306 would break the cell beside it (idx equals the tag's number) instead. Every reference in this branch's lines
+  the journal entry is idx 307 (the tag's number, packages/db/src/migrations-journal.test.ts); when S8a lands, its 0306 entry goes before this one (only the journal moves). S8a merged as v0.300.97 (00eb73ada); this branch rebased onto it: the journal holds 0306 at idx 306 and this entry at idx 307, `when` 1790197740000, and both journal cells are green. That rebase's conflicts: the journal, the pins file, and one import line of server/web/lib/workspaces.ts (S8a's scopeHasArea beside this branch's pgErrorCode). Every reference in this branch's lines
   moved with it (the file, the revert file and its ledger line, `TAG`, the
   comments and pin notes; main's own 0305 lines untouched). The renumber
   proof: `when` above every `when` before it and above S8a's (a cell), a
@@ -526,13 +526,13 @@ finding, what changed:
 
 ## Pins (fix round 1)
 
-On main 53b507b53 (v0.300.95), measured value by value: `asSystemExits`
+On main 00eb73ada (v0.300.97, after S8a; first measured on v0.300.95), value by value: `asSystemExits`
 and `asSystemFull` 59 to 57 (addUser and removeUser off
 workspaceWriteSystem; main had 59 after tree-bugs' `tree-refold`),
 `asSystemFull_workspace-write` 4 to 2, `workspaceTableRawWrites` 16 to 6,
 `workspaceTableWriterFns` 12 to 18, `setAssistantCopies` 1 to 2,
 `rawWriteSqlScoped` 80 to 70, `rawWriteSqlFiles` 61 to 60,
-`historyCodeComments` 2339 to 2334, `dbClientLines` 3145 to 3196 (+51, as
+`historyCodeComments` 2334 to 2329, `dbClientLines` 3160 to 3211 (+51, as
 3142 to 3193 on v0.300.93: a1+a2's 33 and fix round 1's 18 for
 `systemPoolTxInScope`). New lint pins (eslint-rules/scope-settings.mjs,
 exact counts in arch-lints): the scope settings named in client.ts 9 and
@@ -626,3 +626,5 @@ CI at fc0384961
 failure, the Test step, the one journal cell only (the later steps did not
 run). Once S8a merges: rebase (the journal only), then `vitest run` and
 `test:actor-off` give exit 0 with nothing else changed, and CI goes green.
+
+**After S8a (rebased on 00eb73ada, v0.300.97):** see the next section.
