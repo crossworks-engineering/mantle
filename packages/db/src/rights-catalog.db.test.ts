@@ -73,10 +73,19 @@ describe.skipIf(!URL)('the scoreboard reads the live catalog from the migrations
     // S2a a0 (0304_login_facts): mantle_area_rule is the one; the others call it.
     expect(want).toEqual(['mantle_area_rule']);
     expect(names(read, (f) => counts.readsAreaLimits(f.body))).toEqual(want);
-    // Every live function naming the 'areas' key (`->> 'areas'`,
-    // `['areas']`, `#>> '{areas,...}'` or a form not listed yet) is one the
-    // reader catches: a new way to read the limits fails here.
-    expect(names(live, (f) => /'areas'|'\{\s*"?areas"?\s*[,}]/i.test(f.body))).toEqual(want);
+    // Every live function naming the 'areas' key in any spelling (`->>
+    // 'areas'`, `['areas']`, `#>> '{areas,...}'`, `$$areas$$`, `'$.areas'`,
+    // `'{"areas": ...}'`, `? 'areas'` or a form not listed yet) is one the
+    // reader catches: a new way to read the limits fails here. A column of
+    // that name (`s."areas"`, an OUT column `"areas" text[]`) is not the key.
+    const namesKey = (body: string) =>
+      /\bareas\b/i.test(
+        body
+          .replace(/--[^\n]*/g, ' ')
+          .replace(/\b\w+\s*\.\s*"areas"/gi, ' ')
+          .replace(/"areas"\s+text\s*\[\]/gi, ' '),
+      );
+    expect(names(live, (f) => namesKey(f.body))).toEqual(want);
   });
 
   it('finds the same set-the-assistant functions', () => {

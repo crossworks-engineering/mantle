@@ -73,6 +73,28 @@ const LABELS: Record<string, string> = {
   legacyPrecheckUndated: 'legacy tool item pre-checks with no owner or no end date',
   rawWriteAllowlist:
     'raw write SQL allowlist entries (eslint-rules/raw-write-allowlist.mjs; capped at the pin)',
+  sqlMembershipAsks:
+    "SQL text in code asking whether a given login is a user of a workspace (an assistant's; Admin only as a fallback): not an area rule",
+  sqlRoleReaders:
+    'SQL functions the migrations leave that read auth.users.role (= the live catalog)',
+  asSystemFull: 'asSystem exits on the full system role (every table)',
+  asSystemNarrow: 'asSystem exits on the narrow system role (may grow: a reason moved off full)',
+  systemWholeOnFull:
+    'systemWhole tools (run whole on the system pool) while admin-area routes full',
+  systemWholeTools: 'tool policies whose area scope is systemWhole',
+  adminActRoutes: "Admin acts: an Admin user's write on the system pool with no scope (ADMIN_ACT)",
+  loginKindBranches: "branches on a login's kind ('admin' or 'member'; progress counter only)",
+  loginRoleDecisionReads: "decisions on a login's role ('admin' or 'member') in code",
+  adminDecisionFlags: 'identifiers named isAdmin (progress counter only)',
+  tsAreaRules: 'TypeScript functions deciding an Admin area themselves (done: 0, SQL decides)',
+  inHandlerAreaChecks:
+    'area or Admin asks after the gate (scopeHasArea, loginHasArea, requireArea, loginHoldsAdmin)',
+  inHandlerAreaCheckFiles: 'files with an area or Admin ask after the gate',
+  loginTypeKindOrRole:
+    'of kind and role, how many the login type has (the type test login-shape.test.ts; done: 0)',
+  rawWriteSqlScoped: 'raw write SQL in packages/*/src and server/ outside the allowlist (done: 0)',
+  rawWriteSqlFiles: 'files with raw write SQL outside the allowlist',
+  historyCodeComments: 'comment lines carrying a history code (fix rounds, audit and step codes)',
   routeBodyReadFiles: 'route files reading the request body directly (A10 part 2)',
   routeBodyReadAllowed: 'route files named to read the body another way (A10 part 2)',
   routeErrorTextFiles: "route files putting a caught error's text in a reply (A10 part 2)",
@@ -160,6 +182,7 @@ const MAY_GROW = new Set([
   'goneStubs',
   'callerReads',
   'callerReadFiles',
+  'asSystemNarrow',
 ]);
 
 /** Pins a test measures and checks (not this script): --pin keeps them. */
@@ -170,14 +193,48 @@ const measured = measure(ROOT) as {
   numbers: Record<string, number>;
   perFile: {
     asSystemExitProblems?: string[];
-    rights?: { requestSystemExitProblems?: string[] };
+    rights?: { requestSystemExitProblems?: string[]; asSystemRouteProblems?: string[] };
   };
 };
 const numbers = measured.numbers;
+// The full-route exits by reason (asSystemFull_<reasons>): one pin each, so
+// a reason that moves to the narrow role, or a new one, shows by name.
+const pinnedKeys = (() => {
+  try {
+    return Object.keys(JSON.parse(readFileSync(PINS, 'utf8')) as object);
+  } catch {
+    return [];
+  }
+})();
+for (const key of [...new Set([...Object.keys(numbers), ...pinnedKeys])].sort()) {
+  if (key.startsWith('asSystemFull_')) {
+    LABELS[key] = `asSystem exits on the full role, reason ${key.slice('asSystemFull_'.length)}`;
+  }
+}
 const width = Math.max(...Object.values(LABELS).map((l) => l.length));
 for (const [key, label] of Object.entries(LABELS)) {
-  console.log(`${label.padEnd(width)}  ${numbers[key]}`);
+  console.log(`${label.padEnd(width)}  ${numbers[key] ?? 0}`);
 }
+
+// An exit the counts cannot follow (a renamed call or wrapper, a use of the
+// call that is not a call, a default-exported holder, a wrapper of a
+// wrapper, two reason parameters), a reason with no route, or a login type
+// pin the scoreboard cannot read would hide behind a pin that holds.
+const problems = [
+  ...(measured.perFile.asSystemExitProblems ?? []),
+  ...(measured.perFile.rights?.requestSystemExitProblems ?? []),
+  ...(measured.perFile.rights?.asSystemRouteProblems ?? []),
+  ...(numbers.loginTypeKindOrRole === -1
+    ? ['server/web/lib/auth/login-shape.test.ts: LOGIN_SHAPE_PIN is not readable']
+    : []),
+];
+const showProblems = () => {
+  if (!problems.length) return;
+  console.error(
+    `\nWhat the scoreboard cannot count (eslint-rules/as-system-exits.mjs, as-system-routes.mjs):`,
+  );
+  for (const p of problems) console.error(`  ${p}`);
+};
 
 if (mode === '--pin') {
   // `_notes` says why a pin went up (a reviewed raise); a re-pin keeps it
@@ -196,6 +253,8 @@ if (mode === '--pin') {
   const out = Object.keys(notes).length === 0 ? all : { ...all, _notes: notes };
   writeFileSync(PINS, `${JSON.stringify(out, null, 2)}\n`);
   console.log(`\npinned in ${PINS}`);
+  // The pins are written; what they cannot count still fails --check.
+  showProblems();
 } else if (mode === '--check') {
   const pins = JSON.parse(readFileSync(PINS, 'utf8')) as Record<string, number | undefined>;
   const up: string[] = [];
@@ -211,16 +270,7 @@ if (mode === '--pin') {
     console.log(`\nWent down (lower the pins: node scripts/arch-scoreboard.ts --pin):`);
     for (const d of down) console.log(`  ${d}`);
   }
-  // An exit the counts cannot follow (a renamed call or wrapper, a wrapper
-  // of a wrapper, two reason parameters) would hide behind a pin that holds.
-  const problems = [
-    ...(measured.perFile.asSystemExitProblems ?? []),
-    ...(measured.perFile.rights?.requestSystemExitProblems ?? []),
-  ];
-  if (problems.length) {
-    console.error(`\nExits the scoreboard cannot count (eslint-rules/as-system-exits.mjs):`);
-    for (const p of problems) console.error(`  ${p}`);
-  }
+  showProblems();
   if (up.length) {
     console.error(`\nThe architecture scoreboard went UP (plan v2, section 3):`);
     for (const u of up) console.error(`  ${u}`);

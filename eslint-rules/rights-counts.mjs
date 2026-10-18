@@ -25,7 +25,9 @@
  * live catalog after migrate.
  */
 import { balanced, readRepoFile, stripComments } from './arch-counts.mjs';
+import { adminCounts } from './admin-counts.mjs';
 import { asSystemExits } from './as-system-exits.mjs';
+import { asSystemReasons, asSystemRouteCounts, asSystemRouteMap } from './as-system-routes.mjs';
 
 /** The four workspace tables only definers should write. */
 export const WORKSPACE_TABLES = Object.freeze([
@@ -110,21 +112,51 @@ function templateLiterals(code) {
   return out;
 }
 
-/** SQL text in `text` that decides an Admin area or Admin user by itself:
- *  a template literal that reads a workspace user's `areas` limits, or
- *  that joins workspace_users to the Admin workspace and asks the login is
- *  enabled, for a login it is given (the whole "is this login an Admin
- *  user" rule). A list or a report that only shows `is_admin` is not a
- *  rule. */
+/** `t` with each CTE (`name as (...)`) that joins no workspace user blanked:
+ *  a helper such as `admin_ws as (select ... where w.is_admin)` names the
+ *  Admin workspace as a fallback, it decides nothing about the login. */
+function withoutHelperCtes(t) {
+  let out = t;
+  for (const m of t.matchAll(/\b[A-Za-z_]\w*\s+as\s+(?:(?:not\s+)?materialized\s+)?\(/gi)) {
+    const body = balanced(t, m.index + m[0].length - 1);
+    if (!/\bworkspace_users\b/.test(body)) out = out.replace(body, ' '.repeat(body.length));
+  }
+  return out;
+}
+
+/** The SQL texts (template literals) of `text` that ask about a login's
+ *  workspace users row for a login they are given (`workspace_users`,
+ *  `login_id = ${...}`, an enabled login): `{ rules, membership }`. A rule
+ *  decides an Admin area or the Admin user itself: it reads the `areas`
+ *  limits, or it holds the joined workspace to the Admin one (`is_admin`
+ *  outside a helper CTE). A membership ask holds it to another workspace
+ *  (the assistant's), the Admin one only as a fallback. A list or a report
+ *  that only shows `is_admin` is neither. */
+export function tsAdminSqlKinds(text) {
+  let rules = 0;
+  let membership = 0;
+  for (const t of templateLiterals(stripComments(text))) {
+    if (readsAreaLimits(t)) {
+      rules += 1;
+      continue;
+    }
+    if (
+      !/\bworkspace_users\b/.test(t) ||
+      !/\bdisabled_at\b/.test(t) ||
+      !/\blogin_id\s*=\s*\$\{/.test(t)
+    ) {
+      continue;
+    }
+    if (/\bis_admin\b/.test(withoutHelperCtes(t))) rules += 1;
+    else membership += 1;
+  }
+  return { rules, membership };
+}
+
+/** SQL text in `text` that decides an Admin area or Admin user by itself
+ *  (tsAdminSqlKinds rules). */
 export function tsAdminRuleSql(text) {
-  return templateLiterals(stripComments(text)).filter(
-    (t) =>
-      readsAreaLimits(t) ||
-      (/\bworkspace_users\b/.test(t) &&
-        /\bis_admin\b/.test(t) &&
-        /\bdisabled_at\b/.test(t) &&
-        /\blogin_id\s*=\s*\$\{/.test(t)),
-  ).length;
+  return tsAdminSqlKinds(text).rules;
 }
 
 // ── workspace tables ────────────────────────────────────────────────────────
@@ -349,29 +381,37 @@ export function writesWorkspaceTable(body) {
   return new RegExp(WORKSPACE_TABLE_WRITE.source, 'i').test(body);
 }
 
-/** The `areas` key as a SQL string: `'areas'` or the escape form
- *  `E'areas'`. */
-const AREAS_KEY = String.raw`(?:\bE)?'areas'`;
+/** The `areas` key as a SQL string: `'areas'`, the escape form `E'areas'`,
+ *  or a dollar quote `$$areas$$`, `$k$areas$k$`. */
+const AREAS_KEY = String.raw`(?:(?:\bE)?'areas'|\$[A-Za-z_]?\w*\$areas\$[A-Za-z_]?\w*\$)`;
 
-/** The direct reads of the `areas` key: `-> 'areas'`, `->> 'areas'`, the
- *  subscript `['areas']`, a path `#> '{areas}'`, `#>> '{areas,x}'`, or an
- *  array path `#> array['areas']`, `#>> ARRAY['areas', 'x']`. */
+/** The direct reads of the `areas` key: `-> 'areas'`, `->> 'areas'`, `->
+ *  ('areas')`, the subscript `['areas']`, a path `#> '{areas}'`, `#>>
+ *  '{areas,x}'`, an array path `#> array['areas']`, `#>> ARRAY['areas',
+ *  'x']`, the key tests `? 'areas'`, `?| array['areas']`, a containment
+ *  `@> '{"areas": ...}'` (or `<@`), and a JSON path `'$.areas'`,
+ *  `'$."areas".x'`, `@.areas`. */
 const AREAS_READ = new RegExp(
   [
-    String.raw`->>?\s*${AREAS_KEY}`,
-    String.raw`\[\s*${AREAS_KEY}\s*\]`,
-    String.raw`#>>?\s*(?:\bE)?'\{\s*"?areas"?\s*[,}]`,
+    String.raw`->>?\s*\(?\s*${AREAS_KEY}`,
+    String.raw`\[\s*\(?\s*${AREAS_KEY}\s*\)?\s*\]`,
+    String.raw`#>>?\s*(?:\bE)?(?:'|\$[A-Za-z_]?\w*\$)\{\s*"?areas"?\s*[,}]`,
     String.raw`\barray\s*\[\s*${AREAS_KEY}\s*[,\]]`,
+    String.raw`\?[|&]?\s*\(?\s*${AREAS_KEY}`,
+    String.raw`(?:@>|<@)\s*\(?\s*(?:\bE)?(?:'|\$[A-Za-z_]?\w*\$)\s*\{\s*"areas"\s*:`,
+    String.raw`[$@]\s*\.\s*"?areas\b`,
   ].join('|'),
   'i',
 );
 
 /** Whether a function body or SQL text decides an Admin area itself (reads
- *  the `areas` limits of a workspace user): AREAS_READ, or
- *  `json(b)_extract_path(_text)(x, 'areas', ...)`. */
+ *  the `areas` limits of a workspace user): AREAS_READ, or the key as an
+ *  argument of `json(b)_extract_path(_text)(x, 'areas', ...)` or of
+ *  `json(b)_build_object('areas', ...)` (a containment built to test the
+ *  limits). */
 export function readsAreaLimits(body) {
   if (AREAS_READ.test(body)) return true;
-  for (const m of body.matchAll(/\bjsonb?_extract_path(?:_text)?\s*\(/gi)) {
+  for (const m of body.matchAll(/\bjsonb?_(?:extract_path(?:_text)?|build_object)\s*\(/gi)) {
     const args = balanced(body, m.index + m[0].length - 1);
     if (new RegExp(AREAS_KEY, 'i').test(args)) return true;
   }
@@ -386,6 +426,37 @@ export function readsAreaLimits(body) {
  *  mantle_ws_migrate_bridged), not the setter. */
 export function isSetAssistantFn(name) {
   return /set_assistant/i.test(name);
+}
+
+/** SQL `body` with `--` and block comments dropped (a function body keeps
+ *  its comments in the catalog). */
+function dropSqlComments(body) {
+  return body.replace(/--[^\n]*/g, ' ').replace(/\/\*[\s\S]*?\*\//g, ' ');
+}
+
+const SQL_WORDS = new Set(
+  'where on set join left right inner full cross natural lateral using group order limit and or union returning for having offset fetch values select from window'.split(
+    ' ',
+  ),
+);
+
+/** Whether a function body reads the role column of auth.users: `x.role`
+ *  or `x."role"` for an alias `x` of auth.users (any quoting, `as` or
+ *  not), or `users.role`. */
+export function readsLoginRole(body) {
+  const b = dropSqlComments(body);
+  const aliases = new Set(['users']);
+  let named = false;
+  for (const m of b.matchAll(/\b"?auth"?\s*\.\s*"?users"?(?:\s+(?:as\s+)?"?([A-Za-z_]\w*)"?)?/gi)) {
+    named = true;
+    const a = m[1]?.toLowerCase();
+    if (a && !SQL_WORDS.has(a)) aliases.add(a);
+  }
+  if (!named) return false;
+  for (const m of b.matchAll(/\b"?([A-Za-z_]\w*)"?\s*\.\s*"?role"?(?![\w"])/gi)) {
+    if (aliases.has(m[1].toLowerCase())) return true;
+  }
+  return false;
 }
 
 // ── tool pre-checks ────────────────────────────────────────────────────────
@@ -412,17 +483,22 @@ export function rawWriteAllowlistEntries(root) {
  * Every rights count, from the counted files' texts ([{ path, text }]) and
  * the repo root.
  */
-export function rightsCounts(root, texts) {
+export function rightsCounts(root, texts, asSystem = asSystemExits(texts)) {
   const requestExits = requestSystemExits(texts);
   const exits = requestExits.byReason;
   let holdsAdmin = 0;
   let tsAreaSql = 0;
+  let tsMembership = 0;
   let rawWrites = 0;
   let tsSetAssistant = 0;
   let undated = 0;
   for (const { path, text } of texts) {
     holdsAdmin += scopeHoldsAdminCalls(text);
-    if (!isTestSupport(path)) tsAreaSql += tsAdminRuleSql(text);
+    if (!isTestSupport(path)) {
+      const k = tsAdminSqlKinds(text);
+      tsAreaSql += k.rules;
+      tsMembership += k.membership;
+    }
     if (!isTestSupport(path)) rawWrites += workspaceTableRawWrites(text);
     tsSetAssistant += tsSetAssistantDefs(text);
     undated += legacyPrecheckUndated(text);
@@ -431,6 +507,15 @@ export function rightsCounts(root, texts) {
   const writers = fns.filter((f) => writesWorkspaceTable(f.body));
   const exitTotal = Object.values(exits).reduce((a, b) => a + b, 0);
   const known = (exits.area ?? 0) + (exits['login-self'] ?? 0) + (exits['admin-write'] ?? 0);
+  const roleReaders = fns.filter((f) => readsLoginRole(f.body));
+  const admin = adminCounts(root, texts);
+  const routeMap = asSystemRouteMap(root);
+  const routes = asSystemRouteCounts(asSystem.holders, {
+    routes: routeMap.routes,
+    reasons: asSystemReasons(root),
+  });
+  const wholeOnFull =
+    routeMap.routes['admin-area'] === 'narrow' ? 0 : admin.numbers.systemWholeTools;
   return {
     numbers: {
       requestSystemExits: exitTotal,
@@ -445,8 +530,23 @@ export function rightsCounts(root, texts) {
       setAssistantCopies: tsSetAssistant + fns.filter((f) => isSetAssistantFn(f.name)).length,
       legacyPrecheckUndated: undated,
       rawWriteAllowlist: rawWriteAllowlistEntries(root),
+      sqlMembershipAsks: tsMembership,
+      sqlRoleReaders: roleReaders.length,
+      asSystemFull: routes.full,
+      asSystemNarrow: routes.narrow,
+      ...Object.fromEntries(
+        Object.entries(routes.byReason)
+          .filter(([, v]) => v.route === 'full')
+          .map(([k, v]) => [`asSystemFull_${k}`, v.exits]),
+      ),
+      systemWholeOnFull: wholeOnFull,
+      ...admin.numbers,
     },
     detail: {
+      sqlRoleReaderFns: roleReaders.map((f) => f.name),
+      asSystemRoutes: { source: routeMap.source, byReason: routes.byReason },
+      asSystemRouteProblems: routes.problems,
+      ...admin.detail,
       requestSystemExits: exits,
       requestSystemExitProblems: requestExits.problems,
       workspaceTableWriterFns: writers.map((f) => ({

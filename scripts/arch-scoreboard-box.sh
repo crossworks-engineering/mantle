@@ -136,20 +136,20 @@ SQL
 names_role=n/a
 have=0
 raw=""
-if env_dump=$(docker inspect "$web" --format '{{range .Config.Env}}{{println .}}{{end}}' 2>/dev/null); then
+if env_dump=$(docker inspect --type container "$web" --format '{{range .Config.Env}}{{println .}}{{end}}' 2>/dev/null); then
   have=1
   raw=$(printf '%s\n' "$env_dump" | sed -n 's/^MANTLE_DB_RUNTIME_ROLE=//p' | tail -n 1)
 else
   if [ -z "$stack" ]; then
-    stack=$(docker inspect mantle_updater --format '{{range .Config.Env}}{{println .}}{{end}}' 2>/dev/null |
+    stack=$(docker inspect --type container mantle_updater --format '{{range .Config.Env}}{{println .}}{{end}}' 2>/dev/null |
       sed -n 's/^MANTLE_STACK_DIR=//p' | head -1)
   fi
   if [ -n "$stack" ] && [ -f "$stack/.env" ]; then
     have=1
-    # As compose reads a .env line: the last one wins; a quoted value is
-    # what the quotes hold; an unquoted one ends at a comment (a # at its
-    # start or after a space).
-    raw=$(sed -n 's/^[[:space:]]*MANTLE_DB_RUNTIME_ROLE[[:space:]]*=//p' "$stack/.env" | tail -n 1 | tr -d '\r')
+    # As compose reads a .env line: an `export ` before the name is
+    # dropped; the last line wins; a quoted value is what the quotes hold;
+    # an unquoted one ends at a comment (a # at its start or after a space).
+    raw=$(sed -n 's/^[[:space:]]*\(export[[:space:]][[:space:]]*\)\{0,1\}MANTLE_DB_RUNTIME_ROLE[[:space:]]*=//p' "$stack/.env" | tail -n 1 | tr -d '\r')
     raw=$(printf '%s' "$raw" | sed -e 's/^[[:space:]]*//')
     case "$raw" in
       \"*) raw=$(printf '%s' "$raw" | sed -n 's/^"\([^"]*\)".*$/\1/p') ;;

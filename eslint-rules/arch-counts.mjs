@@ -52,7 +52,9 @@
  *  - the rights counts (rights-counts.mjs): request system exits by reason,
  *    Admin asks and area rules in code and SQL, workspace table writers,
  *    the assistant copies, undated legacy pre-checks, A8 coverage and the
- *    capped exemption lists.
+ *    capped exemption lists; the asSystem exits by route and the Admin
+ *    counts (as-system-routes.mjs, admin-counts.mjs);
+ *  - raw write SQL and history codes in comments (cleanup-counts.mjs).
  *
  * Comment lines never count. Product files only: packages/, server/,
  * scripts/; no tests, migrations, archive or build folders (a route segment
@@ -91,6 +93,7 @@ import { asSystemExits, systemDbUses } from './as-system-exits.mjs';
 import { nameListSites } from './name-lists.mjs';
 import { checkDocQuotes } from './docs-quotes.mjs';
 import { rightsCounts } from './rights-counts.mjs';
+import { cleanupCounts } from './cleanup-counts.mjs';
 
 /** Whether the counts read `path` (repo-relative). */
 export function isCounted(path) {
@@ -1061,7 +1064,9 @@ export function measure(root) {
   const routePrechecks = itemPrecheckRouteEntries(root);
   const docQuotes = checkDocQuotes(root);
   // Who decides rights in code, and the lists that excuse it (rights-counts.mjs).
-  const rights = rightsCounts(root, texts);
+  const rights = rightsCounts(root, texts, exits);
+  // Raw write SQL and history codes in comments (cleanup-counts.mjs).
+  const cleanup = cleanupCounts(root, texts);
   return {
     numbers: {
       asSystemSites: sum(asSystem, 'count'),
@@ -1095,6 +1100,7 @@ export function measure(root) {
       itemPrecheckTools: sum(itemPrechecks),
       itemPrecheckRoutes: sum(routePrechecks),
       ...rights.numbers,
+      ...cleanup.numbers,
       bareFetchSites: sum(bareFetch),
       routeBodyReadFiles: bodyReadFiles.length,
       routeBodyReadAllowed: bodyReadAllowed.length,
@@ -1155,6 +1161,7 @@ export function measure(root) {
       itemPrechecks,
       routePrechecks,
       rights: rights.detail,
+      cleanup: cleanup.detail,
       toolLists,
       routeLists,
       handKinds,

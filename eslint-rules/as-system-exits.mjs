@@ -17,7 +17,8 @@
  *    import, a destructured dynamic import) and every `x.name` there (a
  *    namespace import). An exported holder's name must be unique among the
  *    exported holders (holderProblems), so a use cannot be miscounted;
- *  - a method or a property function: every `x.name` in its own file.
+ *  - a method, a property function or a class field function: every
+ *    `x.name`, in any file.
  *
  * A holder no code uses (a route handler, a tool handler the dispatcher
  * calls by its table) counts its own sites. An asSystem call in no named
@@ -38,14 +39,23 @@
  * through a namespace import), as the per-file site regexes read it. The
  * call, or a followed holder, under another name (a renamed import, a
  * renaming destructure, `const n = call`, `{ n: call }`) is a problem: its
- * calls would count 0. So is a wrapper whose sites pass different
- * parameters on (its uses are read at one). `pnpm arch:check` fails on any
- * problem.
+ * calls would count 0. So is any use of the call's name that is not a
+ * call (a callback, `.call`, `.apply`, `.bind`, `Reflect.apply`, a
+ * ternary, `??`, a list, a default parameter, `id(call)`), a holder that
+ * is the default export (imported under any name), and a wrapper whose
+ * sites pass different parameters on (its uses are read at one).
+ * `pnpm arch:check` fails on any problem.
+ *
+ * A member holder (a method, a property or class field function) is
+ * followed into every file by `x.name`: an object or instance can be
+ * handed anywhere, so a use in another file counts there.
  */
 import ts from 'typescript';
 
-/** @param {string} path @param {string} text */
-function parse(path, text) {
+/** The syntax tree of one file (no type checker). Shared by the counts
+ *  that read syntax (admin-counts.mjs, cleanup-counts.mjs).
+ *  @param {string} path @param {string} text */
+export function parse(path, text) {
   return ts.createSourceFile(
     path,
     text,
@@ -85,8 +95,34 @@ function holderOf(fn) {
     if (p && ts.isPropertyAssignment(p) && ts.isIdentifier(p.name)) {
       return { name: p.name.text, kind: 'member', exported: false };
     }
+    // A class field holding a function (`run = async () => ...`): reached
+    // as `x.run`, as a method is.
+    if (p && ts.isPropertyDeclaration(p) && p.initializer && ts.isIdentifier(p.name)) {
+      return { name: p.name.text, kind: 'member', exported: false };
+    }
   }
   return null;
+}
+
+/** Whether `fn` (a function-like node) is a default export: `export
+ *  default function f() {}`, or an arrow or function expression that is
+ *  the value of `export default`. Its uses in other files import it under
+ *  any name, so they are not found by its name. */
+function isDefaultExport(fn) {
+  if (
+    ts.isFunctionDeclaration(fn) &&
+    fn.modifiers?.some((m) => m.kind === ts.SyntaxKind.DefaultKeyword)
+  ) {
+    return true;
+  }
+  let p = fn.parent;
+  while (
+    p &&
+    (ts.isParenthesizedExpression(p) || ts.isAsExpression(p) || ts.isSatisfiesExpression?.(p))
+  ) {
+    p = p.parent;
+  }
+  return !!p && ts.isExportAssignment(p);
 }
 
 /** The parameter index of `fn` named `name`, or -1. */
@@ -135,9 +171,14 @@ export function asSystemHolders(path, text, call = 'asSystem') {
   const sf = parse(path, text);
   /** @type {Map<string, { name: string|null, kind: string|null, exported: boolean, sites: number, reasons: string[], siteList: { reason: string|null, forward: number }[] }>} */
   const out = new Map();
-  // Names exported later (`export { f }`).
+  // Names exported later (`export { f }`), and the default export's name
+  // (`export default f`).
   const exportedLater = new Set();
+  const defaultNames = new Set();
   const scan = (n) => {
+    if (ts.isExportAssignment(n) && !n.isExportEquals && ts.isIdentifier(unwrap(n.expression))) {
+      defaultNames.add(unwrap(n.expression).text);
+    }
     if (
       ts.isExportDeclaration(n) &&
       !n.moduleSpecifier &&
@@ -152,8 +193,10 @@ export function asSystemHolders(path, text, call = 'asSystem') {
     if (ts.isCallExpression(n) && namesIt(n.expression, call)) {
       let h = null;
       let fn = null;
+      let dflt = false;
       for (let p = n.parent; p && !h; p = p.parent) {
         if (ts.isFunctionLike(p)) {
+          if (isDefaultExport(p)) dflt = true;
           h = holderOf(p);
           if (h) fn = p;
         }
@@ -171,7 +214,16 @@ export function asSystemHolders(path, text, call = 'asSystem') {
         cur.sites += 1;
         cur.siteList.push(site);
         if (reason && !cur.reasons.includes(reason)) cur.reasons.push(reason);
-      } else out.set(key, { ...h, sites: 1, reasons: reason ? [reason] : [], siteList: [site] });
+        if (dflt) cur.defaultExport = true;
+      } else {
+        out.set(key, {
+          ...h,
+          sites: 1,
+          reasons: reason ? [reason] : [],
+          siteList: [site],
+          defaultExport: dflt,
+        });
+      }
     }
     ts.forEachChild(n, scan);
   };
@@ -180,6 +232,8 @@ export function asSystemHolders(path, text, call = 'asSystem') {
     ...h,
     reasons: [...h.reasons].sort(),
     exported: h.exported || (h.kind === 'binding' && exportedLater.has(h.name)),
+    // A default export: other files import it under any name.
+    defaultExport: h.defaultExport || (h.kind === 'binding' && defaultNames.has(h.name)),
   }));
 }
 
@@ -315,6 +369,114 @@ function aliasesOf(sf, name, { bareName = true, member = true } = {}) {
   return found;
 }
 
+/** Whether `node` sits in a type (`typeof call`, a type argument). */
+function inType(node) {
+  for (let p = node.parent; p; p = p.parent) {
+    if (ts.isTypeNode(p)) return true;
+    if (ts.isBlock(p) || ts.isSourceFile(p)) return false;
+  }
+  return false;
+}
+
+/**
+ * The uses in `sf` of `name` (bare, or a member of that name: `x.name`,
+ * `x?.name`, `x['name']`) that are not a call of it: `[{ line, how }]`.
+ * Not uses: imports and exports (a rename is aliasesOf's), type positions,
+ * a declaration of the name (a function, variable, parameter, method,
+ * class field or property signature), a property key, a destructured
+ * binding.
+ */
+function nonCallUses(sf, name) {
+  const out = [];
+  const report = (node, how) =>
+    out.push({ line: sf.getLineAndCharacterOfPosition(node.getStart(sf)).line + 1, how });
+  const check = (id, expr) => {
+    if (inType(id)) return;
+    // Up through parentheses, casts and non-null marks.
+    let top = expr;
+    while (
+      top.parent &&
+      (ts.isParenthesizedExpression(top.parent) ||
+        ts.isAsExpression(top.parent) ||
+        ts.isNonNullExpression(top.parent) ||
+        ts.isTypeAssertionExpression?.(top.parent) ||
+        ts.isSatisfiesExpression?.(top.parent)) &&
+      top.parent.expression === top
+    ) {
+      top = top.parent;
+    }
+    const p = top.parent;
+    if (p && ts.isCallExpression(p) && p.expression === top) return;
+    // Held under another name (`const n = call`, `n = call`, `{ n: call }`):
+    // aliasesOf names it.
+    if (
+      p &&
+      ((ts.isVariableDeclaration(p) &&
+        p.initializer === top &&
+        !(ts.isIdentifier(p.name) && p.name.text === name)) ||
+        (ts.isBinaryExpression(p) &&
+          p.operatorToken.kind === ts.SyntaxKind.EqualsToken &&
+          p.right === top &&
+          !namesIt(p.left, name)) ||
+        (ts.isPropertyAssignment(p) &&
+          p.initializer === top &&
+          !(ts.isIdentifier(p.name) && p.name.text === name)))
+    ) {
+      return;
+    }
+    if (p && ts.isPropertyAccessExpression(p) && p.expression === top) {
+      report(top, `as an object (.${p.name.text})`);
+    } else if (
+      p &&
+      ts.isBinaryExpression(p) &&
+      p.left === top &&
+      p.operatorToken.kind >= ts.SyntaxKind.FirstAssignment &&
+      p.operatorToken.kind <= ts.SyntaxKind.LastAssignment
+    ) {
+      report(top, 'as an assignment target');
+    } else report(top, 'as a value');
+  };
+  const visit = (node) => {
+    if (ts.isIdentifier(node) && node.text === name) {
+      const p = node.parent;
+      const declared =
+        !p ||
+        ts.isImportSpecifier(p) ||
+        ts.isImportClause(p) ||
+        ts.isNamespaceImport(p) ||
+        ts.isExportSpecifier(p) ||
+        ((ts.isFunctionDeclaration(p) ||
+          ts.isMethodDeclaration(p) ||
+          ts.isVariableDeclaration(p) ||
+          ts.isParameter(p) ||
+          ts.isPropertyDeclaration(p) ||
+          ts.isPropertySignature(p) ||
+          ts.isMethodSignature(p) ||
+          ts.isPropertyAssignment(p) ||
+          ts.isGetAccessorDeclaration(p) ||
+          ts.isSetAccessorDeclaration(p) ||
+          ts.isEnumMember(p) ||
+          ts.isTypeAliasDeclaration(p) ||
+          ts.isInterfaceDeclaration(p)) &&
+          p.name === node) ||
+        (ts.isBindingElement(p) && (p.name === node || p.propertyName === node)) ||
+        ts.isQualifiedName(p);
+      if (!declared) {
+        check(node, ts.isPropertyAccessExpression(p) && p.name === node ? p : node);
+      }
+    } else if (
+      ts.isElementAccessExpression(node) &&
+      ts.isStringLiteralLike(node.argumentExpression) &&
+      node.argumentExpression.text === name
+    ) {
+      check(node, node);
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sf);
+  return out;
+}
+
 /**
  * The exits of every file: `{ byFile, byReason, holders, problems }`.
  * `files`: `[{ path, text }]`, the counted files. `call`: the function
@@ -348,21 +510,43 @@ export function asSystemExits(files, { call = 'asSystem', follow = 'all' } = {})
     for (const h of asSystemHolders(f.path, f.text, call)) holders.push({ ...h, path: f.path });
   }
   const problems = holderProblems(holders, call);
-  // The call itself under another name (`import { call as n }`,
-  // `const n = call`, `const n = db.call`): its calls would count 0.
+  // The call itself under another name (`import { call as n }`, a
+  // renaming destructure), or used as anything but a call (`const n =
+  // call`, a callback, `call.bind(...)`, `Reflect.apply(call, ...)`, a
+  // ternary, `??`, a list, a default parameter, `id(call)`): its calls
+  // would count 0. Imports, exports, type queries and its own
+  // declaration are not uses.
   const callWord = new RegExp(`\\b${call}\\b`);
   for (const f of files) {
     if (!callWord.test(f.text)) continue;
-    for (const alias of aliasesOf(ast(f), call)) {
+    const sf = ast(f);
+    for (const alias of aliasesOf(sf, call)) {
       problems.push(`${f.path} renames ${call} (${alias}): call it by its name`);
+    }
+    for (const use of nonCallUses(sf, call)) {
+      problems.push(`${f.path}:${use.line} uses ${call} ${use.how}: call it by its name`);
     }
   }
   for (const h of holders) {
+    if (h.defaultExport) {
+      problems.push(
+        `${h.path} ${h.name ?? 'an anonymous function'} holds ${call} and is the default export: export it by its name`,
+      );
+    }
+  }
+  for (const h of holders) {
+    // Each holder's own exits (`h.exits`), with its reasons (`h.reasons`):
+    // what a reading by reason of the asSystem exits takes.
+    h.exits = 0;
+    const addH = (path, n, reason) => {
+      add(path, n, reason);
+      h.exits += n;
+    };
     const forwarding = h.siteList.filter((x) => x.forward >= 0);
     const followed = follow === 'all' ? h.siteList : forwarding;
     // In 'forwarders', a site that decides its own reason is an exit.
     if (follow !== 'all') {
-      for (const x of h.siteList) if (x.forward < 0) add(h.path, 1, x.reason);
+      for (const x of h.siteList) if (x.forward < 0) addH(h.path, 1, x.reason);
     }
     // A wrapper passing different parameters on: its uses are read at one
     // parameter only, so a reason passed at another would not be seen.
@@ -374,7 +558,7 @@ export function asSystemExits(files, { call = 'asSystem', follow = 'all' } = {})
     }
     const one = h.reasons.length === 1 ? h.reasons[0] : null;
     if (h.name === null || followed.length === 0) {
-      if (followed.length) add(h.path, followed.length, follow === 'all' ? one : null);
+      if (followed.length) addH(h.path, followed.length, follow === 'all' ? one : null);
       h.uses = 0;
       continue;
     }
@@ -394,11 +578,14 @@ export function asSystemExits(files, { call = 'asSystem', follow = 'all' } = {})
         ? useNodes(ast(own), h.name, { bare: true, member: false })
         : useNodes(ast(own), h.name, { bare: false, member: true });
     if (local.length) perFile.set(h.path, local);
-    if (h.exported) {
+    // An exported binding, and any member (a method, a property or class
+    // field function): reached from another file by its name, `x.name`
+    // on an object or instance that file holds.
+    if (h.exported || h.kind === 'member') {
       for (const f of files) {
         if (f.path === h.path || !word.test(f.text)) continue;
         const sf = ast(f);
-        const imported = bindsImported(sf, h.name);
+        const imported = h.kind === 'binding' && bindsImported(sf, h.name);
         for (const alias of aliasesOf(sf, h.name, { bareName: imported, member: true })) {
           renamed(f.path, alias);
         }
@@ -408,11 +595,11 @@ export function asSystemExits(files, { call = 'asSystem', follow = 'all' } = {})
     }
     h.uses = [...perFile.values()].reduce((a, b) => a + b.length, 0);
     if (h.uses === 0) {
-      add(h.path, followed.length, follow === 'all' ? one : null);
+      addH(h.path, followed.length, follow === 'all' ? one : null);
       continue;
     }
     if (follow === 'all') {
-      for (const [p, nodes] of perFile) add(p, nodes.length, one);
+      for (const [p, nodes] of perFile) addH(p, nodes.length, one);
       continue;
     }
     // A wrapper: each use passes its reason at the forwarded parameter.
@@ -420,10 +607,10 @@ export function asSystemExits(files, { call = 'asSystem', follow = 'all' } = {})
       for (const node of nodes) {
         const arg = useArgument(node, at);
         if (arg && ts.isStringLiteralLike(arg)) {
-          add(p, 1, arg.text);
+          addH(p, 1, arg.text);
           continue;
         }
-        add(p, 1, null);
+        addH(p, 1, null);
         // A wrapper of a wrapper: its own uses would not be counted.
         if (arg && ts.isIdentifier(arg) && paramIndex(enclosingFunction(node), arg.text) >= 0) {
           problems.push(
