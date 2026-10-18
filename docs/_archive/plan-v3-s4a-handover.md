@@ -70,8 +70,8 @@ fail-open.db.test.ts 0 in warn and 0 with both checks on (edit-on config,
 which now includes it); full vitest with DB 1: one failure,
 recall-native.db.test.ts "M7: the embed refill", which passes 3 of 3 alone
 (timing under load; no S4a code on its path); test:runtime-role full
-config 0 (2623 passed). The actor-off, actor-on, edit-on and matrix
-configs: see the CI note and the final report.
+config 0 (2623 passed); the actor-off, actor-on, edit-on and matrix
+configs 0 each. The container, worktree and branch there are removed.
 
 ## Left
 
