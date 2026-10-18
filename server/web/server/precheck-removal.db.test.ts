@@ -715,8 +715,10 @@ describe.skipIf(!DB_URL)(
         name: 'reads-and-grants',
         tools: [
           {
+            // A re-run spends model work: edit of the item (owner decision
+            // 2026-10-18; a read before).
             slug: 'process_extraction',
-            need: 'read',
+            need: 'edit',
             who: ADMIN,
             make: note,
             input: (it) => ({ node_id: it.id }),
@@ -1377,11 +1379,10 @@ describe.skipIf(!DB_URL)(
           {
             slug: 'app_export',
             need: 'read',
-            // The owner: a member's export lands in an auto-made exports
-            // folder its scope may not make under the Files root here (its
-            // first call answers "createFolder: parent folder 'files' not
-            // found", with and without the pre-check alike: not this check).
-            who: ADMIN,
+            // A member's export lands in its create home at the Files root
+            // (saveExport; owner decision 2026-10-18), an Admin user's in
+            // Auto-filed.
+            who: BOTH,
             make: app(),
             input: (it) => ({ id: it.id, with_data: false }),
             count: true,

@@ -148,6 +148,8 @@ export {
   type AutoFiledSource,
 } from './auto-filed';
 
+export { exportFolder, saveExport, type SavedExport } from './export-home';
+
 export {
   ensureFilesRootBranch,
   createFolder,

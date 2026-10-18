@@ -14,7 +14,7 @@
  * the user wanted a table leaves them nothing to filter or add a row to.
  */
 import { buildSheet, SheetSpecError, type SheetSpec, type WorkbookSpec } from '@mantle/content';
-import { ensureAutoFiledFolder, upsertFile } from '@mantle/files';
+import { saveExport } from '@mantle/files';
 import { recordIngest } from '@mantle/tracing';
 import type { BuiltinToolDef } from './types';
 import { str } from './coerce';
@@ -182,8 +182,9 @@ const sheet_build: BuiltinToolDef = {
     }
 
     try {
-      const parentPath = await ensureAutoFiledFolder(ctx.ownerId, 'exports');
-      const file = await upsertFile({ ownerId: ctx.ownerId, parentPath, filename, bytes });
+      // Where an export lands: Auto-filed for an Admin user, else the
+      // caller's create home (saveExport).
+      const { file, landedIn } = await saveExport({ ownerId: ctx.ownerId, filename, bytes });
       ctx.step?.setOutput({ file_id: file.id, filename: file.filename });
       void recordIngest({
         source: 'agent_tool',
@@ -209,6 +210,7 @@ const sheet_build: BuiltinToolDef = {
             columns: s.columns.length,
             rows: s.rows?.length ?? 0,
           })),
+          ...(landedIn ? { landedIn } : {}),
         },
       };
     } catch (err) {

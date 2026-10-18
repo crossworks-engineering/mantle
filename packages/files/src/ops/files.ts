@@ -1483,6 +1483,19 @@ export async function callerSeesNode(id: string): Promise<boolean | null> {
   return seen ?? null;
 }
 
+/** Whether the caller may change the folder at `path` (mantle_may_edit, in
+ *  its scope: false when it cannot read it; null for the system). */
+export async function callerMayEditFolder(ownerId: string, path: string): Promise<boolean | null> {
+  const edit = await inCallerScope(async () => {
+    const rows = (await db.execute(sql`
+      select ${mayEditSql('n')} as edit from nodes n
+       where n.owner_id = ${ownerId} and n.type = 'branch' and n.path::text = ${path}
+       limit 1`)) as unknown as { edit: boolean }[];
+    return rows[0]?.edit === true;
+  });
+  return edit ?? null;
+}
+
 /** Whether the caller's scope may change item `id` (mantle_may_edit, not a
  *  snapshot copy). Asked in the caller's scope: false when it cannot read it. */
 async function mayEditNode(id: string): Promise<boolean> {

@@ -55,6 +55,12 @@ vi.mock('@mantle/files', async (orig) => ({
     parentPath: 'exports',
     sizeBytes: 10,
   })),
+  // Where an export lands, as an Admin caller's does, over the stubs above.
+  saveExport: vi.fn(async (a: { ownerId: string; filename: string; spooled?: unknown }) => {
+    const files = await import('@mantle/files');
+    const parentPath = await files.ensureAutoFiledFolder(a.ownerId, 'exports');
+    return { file: await files.upsertFile({ ...a, parentPath }), autoFiled: true, landedIn: null };
+  }),
 }));
 vi.mock('node:fs', async (orig) => ({
   ...(await orig<typeof import('node:fs')>()),

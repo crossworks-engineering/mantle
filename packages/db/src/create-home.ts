@@ -22,13 +22,15 @@
  *
  * The result is the CreateHome the system transactions set as
  * mantle.create_ws and mantle.private_ws. Nothing here grants: it names a
- * place, and the database's create checks still run. The MCP reply that
- * names where an item landed (landedIn) is the MCP surface's
- * (@mantle/mcp-core create-home.ts).
+ * place, and the database's create checks still run. Where the items a
+ * call made landed (landedIn) is read here too, for every reply that names
+ * it: an MCP create's (@mantle/mcp-core create-home.ts) and an export's
+ * (@mantle/files export-home.ts).
  */
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, eq, gte, inArray, or, sql } from 'drizzle-orm';
 import { createHomeFallback, db, loginScopeFor } from './client';
-import { workspaces, workspaceUsers } from './schema/index';
+import { itemHomeSql } from './item-acl';
+import { nodes, workspaces, workspaceUsers } from './schema/index';
 import { currentWorkspaceScope, type CreateHome } from './viewer';
 import { liveWorkspace } from './workspace-live';
 import { UUID_RE } from '@mantle/std';
@@ -153,4 +155,27 @@ async function namedWorkspace(
     };
   }
   return ws.id;
+}
+
+/** Where items `ids` landed: their home workspaces (id, name), read in the
+ *  current scope, each once. With `since`, only items made since then (a
+ *  reply that names an older item it did not make names no home for it). */
+export async function landedIn(
+  ids: readonly string[],
+  since?: Date,
+): Promise<{ id: string; name: string }[]> {
+  if (ids.length === 0) return [];
+  const rows = await db
+    .select({ id: workspaces.id, name: workspaces.name })
+    .from(nodes)
+    .innerJoin(workspaces, sql`${workspaces.id} = ${itemHomeSql()}`)
+    .where(
+      and(
+        inArray(nodes.id, [...ids]),
+        since ? or(gte(nodes.createdAt, since), sql`${nodes.createdAt} is null`) : undefined,
+      ),
+    );
+  const seen = new Map<string, string>();
+  for (const r of rows) seen.set(r.id, r.name);
+  return [...seen].map(([id, name]) => ({ id, name }));
 }

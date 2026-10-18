@@ -58,7 +58,7 @@ import {
 } from '@mantle/content/app-package';
 import { createReadStream } from 'node:fs';
 import { rm } from 'node:fs/promises';
-import { ensureAutoFiledFolder, openFileById, spoolUpload, upsertFile } from '@mantle/files';
+import { openFileById, saveExport, spoolUpload } from '@mantle/files';
 import { importAppPackage } from './app-package-import';
 import { FILE_ID_PRE } from './tables/common';
 import {
@@ -1681,7 +1681,6 @@ const app_export: BuiltinToolDef = {
       const spooled = await spoolUpload(createReadStream(tmp), {
         maxBytes: appPackageMaxBytes() + 64 * 1024 * 1024,
       });
-      const parentPath = await ensureAutoFiledFolder(ctx.ownerId, 'exports');
       const filename = `${
         written.title
           .replace(/[^\w.-]+/g, '-')
@@ -1689,7 +1688,11 @@ const app_export: BuiltinToolDef = {
           .slice(0, 60)
           .toLowerCase() || 'app'
       }.mantleapp`;
-      const file = await upsertFile({ ownerId: ctx.ownerId, parentPath, filename, spooled });
+      // Where an export lands: Auto-filed for an Admin user, else the
+      // caller's create home (saveExport). The package holds what the
+      // caller reads: writeAppPackage asks the app's read (its data an
+      // edit) and reads it in the caller's scope (no draft outside one).
+      const { file, landedIn } = await saveExport({ ownerId: ctx.ownerId, filename, spooled });
       ctx.step?.setOutput({ id, file_id: file.id, has_data: written.hasData });
       return {
         ok: true,
@@ -1700,6 +1703,7 @@ const app_export: BuiltinToolDef = {
           path: `${file.parentPath}/${file.filename}`,
           size_bytes: file.sizeBytes,
           has_data: written.hasData,
+          ...(landedIn ? { landedIn } : {}),
         },
       };
     } catch (err) {

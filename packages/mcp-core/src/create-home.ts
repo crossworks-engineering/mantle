@@ -13,11 +13,11 @@
  * gate-policy.ts mcpCreateHomeRule). What is here is the surface's own
  * shape: the `workspace` argument a create advertises and takes
  * (withWorkspaceArg), and the line a create's reply gains (withLanding,
- * run in the call's scope by gated-tools.ts). Nothing here grants: it only
- * names a place, and the database's create checks still run.
+ * run in the call's scope by gated-tools.ts, over @mantle/db landedIn).
+ * Nothing here grants: it only names a place, and the database's create
+ * checks still run.
  */
-import { and, gte, inArray, or, sql } from 'drizzle-orm';
-import { db, nodes, workspaces, itemHomeSql } from '@mantle/db';
+import { landedIn } from '@mantle/db';
 import { UUID_RE } from '@mantle/std';
 
 /*
@@ -123,22 +123,6 @@ export function replyItemIds(value: unknown): string[] {
     }
   }
   return [...out].slice(0, 100);
-}
-
-/** Where the items a call made (named in its reply, made since `since`)
- *  landed: their home workspaces, read in the caller's scope. */
-async function landedIn(ids: string[], since: Date): Promise<{ id: string; name: string }[]> {
-  if (ids.length === 0) return [];
-  const rows = await db
-    .select({ id: workspaces.id, name: workspaces.name })
-    .from(nodes)
-    .innerJoin(workspaces, sql`${workspaces.id} = ${itemHomeSql()}`)
-    .where(
-      and(inArray(nodes.id, ids), or(gte(nodes.createdAt, since), sql`${nodes.createdAt} is null`)),
-    );
-  const seen = new Map<string, string>();
-  for (const r of rows) seen.set(r.id, r.name);
-  return [...seen].map(([id, name]) => ({ id, name }));
 }
 
 type Reply = { content?: Array<{ type: string; text?: string }>; isError?: boolean };

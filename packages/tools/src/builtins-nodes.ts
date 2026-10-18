@@ -6,7 +6,16 @@
  */
 
 import { and, desc, eq, inArray, sql } from 'drizzle-orm';
-import { db, nodes, resignalNode, workspaces, heldBySql } from '@mantle/db';
+import {
+  currentWorkspaceScope,
+  db,
+  heldBySql,
+  itemWriteRefusal,
+  mayEditSql,
+  nodes,
+  resignalNode,
+  workspaces,
+} from '@mantle/db';
 import { resolveSupersededTargets } from '@mantle/search';
 import { corpusCapacity, nodeUrl, supersedeNode, unsupersedeNode } from '@mantle/content';
 import { areaSystem } from './admin-gate';
@@ -251,7 +260,8 @@ export const process_extraction: BuiltinToolDef = {
     effect: 'write',
     spends: 'ownerKey',
     scope: 'any',
-    itemArgs: [{ param: 'node_id', least: 'read' }],
+    // A re-run spends model work on the item: edit of it, not a read.
+    itemArgs: [{ param: 'node_id' }],
     clientSourced: CS.onNodes('node_id'),
   },
   name: 'Kick the extractor',
@@ -284,8 +294,9 @@ export const process_extraction: BuiltinToolDef = {
     const limit = num(input.limit, 100) ?? 100;
     if (typeof input.node_id === 'string' && input.node_id) {
       // Fire for exactly one node, no eligibility check — operator chose it.
-      // Only a node the caller reads (W7a fix round 1, L1): read in its
-      // scope first, so an id from another workspace starts no model work.
+      // Only a node the caller may change: read in its scope first, so an
+      // id from another workspace starts no model work, then its edit (a
+      // re-run spends model money on the item; a reader may not start one).
       const nodeId = input.node_id.trim();
       const [seen] = await db
         .select({ id: nodes.id })
@@ -298,6 +309,8 @@ export const process_extraction: BuiltinToolDef = {
           error: `node ${nodeId} not found: find the id with search_nodes, then re-issue.`,
         };
       }
+      const refused = await itemWriteRefusal([nodeId], 'edit');
+      if (refused) return { ok: false, error: refused };
       await resignalNode(nodeId);
       ctx.step?.setOutput({ fired: 1, node_id: input.node_id });
       return { ok: true, output: { fired: 1, node_id: input.node_id } };
@@ -315,6 +328,9 @@ export const process_extraction: BuiltinToolDef = {
       // the marked rows of a whole brain at once (cost).
       sql`not ${nodes.derivedMixed}`,
     ];
+    // In a workspace scope, only the items it may change (a re-run spends
+    // model work on each). System work sweeps the brain.
+    if (currentWorkspaceScope()) conds.push(mayEditSql());
     if (typeFilter && typeFilter.length > 0) {
       conds.push(inArray(sql`${nodes.type}::text`, typeFilter));
     }

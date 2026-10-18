@@ -151,7 +151,7 @@ const DATABASE_CHECKED: ReadonlyMap<string, DatabaseChecked> = new Map([
   ['page_move', entry('id', 'manage', MOVE)],
   [
     'process_extraction',
-    entry('node_id', 'read', 'its precondition reads the item in the scope (row security)'),
+    entry('node_id', 'edit', 'the handler asks edit first (itemWriteRefusal), before the signal'),
   ],
   ['access_set', entry('node_id', 'manage', 'it writes nothing (the levels went)')],
   [

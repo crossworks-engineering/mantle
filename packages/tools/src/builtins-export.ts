@@ -1,6 +1,7 @@
 /**
  * Export builtins — render a content node to an Office document and save it
- * under /files/auto-filed/exports. The rendering itself (and the page/note/table → format
+ * where an export lands (@mantle/files saveExport: Auto-filed / Exports for
+ * an Admin user). The rendering itself (and the page/note/table → format
  * mapping) lives in `@mantle/content`'s `resolveExport`, the same code the web
  * `/api/export/[id]` download button uses. Page images are embedded by reading
  * their bytes from the file store via the injected `loadImage` callback.
@@ -12,7 +13,7 @@
  * workers that have no browser. See docs/draw.md §9.
  */
 import { resolveExport } from '@mantle/content';
-import { ensureAutoFiledFolder, readFileById, upsertFile } from '@mantle/files';
+import { readFileById, saveExport } from '@mantle/files';
 import { recordIngest } from '@mantle/tracing';
 import type { BuiltinToolDef, ToolPrecondition } from './types';
 import { str } from './coerce';
@@ -90,10 +91,8 @@ const export_node: BuiltinToolDef = {
       : result.filename;
 
     try {
-      const parentPath = await ensureAutoFiledFolder(ctx.ownerId, 'exports');
-      const file = await upsertFile({
+      const { file, landedIn } = await saveExport({
         ownerId: ctx.ownerId,
-        parentPath,
         filename,
         bytes: result.bytes,
       });
@@ -119,6 +118,7 @@ const export_node: BuiltinToolDef = {
           format: result.format,
           kind: result.kind,
           size_bytes: file.sizeBytes,
+          ...(landedIn ? { landedIn } : {}),
         },
       };
     } catch (err) {

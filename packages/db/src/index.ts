@@ -201,6 +201,7 @@ export {
 } from './gate';
 export {
   createHomeIntent,
+  landedIn,
   type CreateAsk,
   type CreateFallback,
   type CreateHomeRefusal,

@@ -26,11 +26,27 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 
 vi.mock('@mantle/content', () => ({ resolveExport: vi.fn() }));
-vi.mock('@mantle/files', () => ({
-  ensureAutoFiledFolder: vi.fn(),
-  readFileById: vi.fn(),
-  upsertFile: vi.fn(),
-}));
+vi.mock('@mantle/files', () => {
+  const ensureAutoFiledFolder = vi.fn();
+  const upsertFile = vi.fn();
+  return {
+    ensureAutoFiledFolder,
+    readFileById: vi.fn(),
+    upsertFile,
+    // Where an export lands, as an Admin caller's does: Auto-filed's
+    // Exports folder, over the two stubs above.
+    saveExport: vi.fn(
+      async (a: { ownerId: string; filename: string; bytes?: Buffer; spooled?: unknown }) => ({
+        file: await upsertFile({
+          ...a,
+          parentPath: await ensureAutoFiledFolder(a.ownerId, 'exports'),
+        }),
+        autoFiled: true,
+        landedIn: null,
+      }),
+    ),
+  };
+});
 vi.mock('@mantle/tracing', () => ({ recordIngest: vi.fn() }));
 
 import { resolveExport } from '@mantle/content';
