@@ -260,7 +260,9 @@ describe.skipIf(!URL)('MCP writes and read-path writes as the login (A5 step 4, 
     await x(sql`insert into workspace_users (workspace_id, login_id, moderator) values
       (${projWs}, ${member}, false), (${modWs}, ${member}, true)
       on conflict (workspace_id, login_id) do update set moderator = excluded.moderator`);
-    await x(sql`select "public"."mantle_ws_private_workspace"(${member}::uuid)`);
+    await x(
+      sql`select "public"."mantle_ws_private_workspace"(set_config('mantle.scope_login', ${member}, true)::uuid)`,
+    );
     await m.asSystem(() => f.ensureFilesRootBranch(owner), 'test');
 
     ids.adminNote = await note(adminWs, 'admin note', true);

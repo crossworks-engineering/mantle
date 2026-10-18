@@ -247,7 +247,9 @@ export async function buildA8Fixture(sql: Sql): Promise<A8Fixture> {
   const privateWs: Partial<Record<GuideRole, string>> = {};
   for (const role of ['homeModerator', 'writeGrant', 'readGrant', 'outsider'] as const) {
     privateWs[role] = (
-      await sql<{ ws: string }[]>`select mantle_ws_private_workspace(${L[role]}::uuid)::text as ws`
+      await sql<
+        { ws: string }[]
+      >`select mantle_ws_private_workspace(set_config('mantle.scope_login', ${L[role]}, true)::uuid)::text as ws`
     )[0]!.ws;
   }
   const scope = {} as A8Fixture['scope'];

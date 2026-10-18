@@ -167,7 +167,7 @@ describe.skipIf(!URL)('0272: a brain not on workspaces that had a client', () =>
     await sql`update auth.users set disabled_at = null where id = ${client}`;
     try {
       const [made] = await sql<{ ws: string | null }[]>`
-        select mantle_ws_private_workspace(${client}::uuid)::text as ws`;
+        select mantle_ws_private_workspace(set_config('mantle.scope_login', ${client}, true)::uuid)::text as ws`;
       expect(made!.ws).toBeNull();
     } finally {
       await sql`update auth.users set disabled_at = now() where id = ${client}`;

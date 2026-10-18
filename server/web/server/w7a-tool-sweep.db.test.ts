@@ -310,7 +310,7 @@ describe.skipIf(!URL)('W7a: the Admin assistant and the Admin MCP run in a scope
     const c = await import('@mantle/content');
     const memWs = (
       await x<{ ws: string }>(
-        sql`select "public"."mantle_ws_private_workspace"(${mem}::uuid)::text as ws`,
+        sql`select "public"."mantle_ws_private_workspace"(set_config('mantle.scope_login', ${mem}, true)::uuid)::text as ws`,
       )
     )[0]!.ws;
     const makeAll = async (label: string): Promise<Map<string, string>> => {

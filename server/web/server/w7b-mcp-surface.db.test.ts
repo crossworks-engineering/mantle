@@ -349,7 +349,7 @@ describe.skipIf(!URL)('W7b: one MCP surface for every login', () => {
     const priv = async (login: string) =>
       (
         await x<{ ws: string }>(
-          sql`select "public"."mantle_ws_private_workspace"(${login}::uuid)::text as ws`,
+          sql`select "public"."mantle_ws_private_workspace"(set_config('mantle.scope_login', ${login}, true)::uuid)::text as ws`,
         )
       )[0]!.ws;
     memPrivate = await priv(mem);

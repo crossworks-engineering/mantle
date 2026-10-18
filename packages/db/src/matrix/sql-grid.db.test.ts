@@ -152,7 +152,9 @@ describe.skipIf(!URL)('A8 SQL grid: read and create (A1 slice)', () => {
       const priv = admin
         ? ''
         : (
-            await sql<{ ws: string }[]>`select mantle_ws_private_workspace(${id}::uuid)::text as ws`
+            await sql<
+              { ws: string }[]
+            >`select mantle_ws_private_workspace(set_config('mantle.scope_login', ${id}, true)::uuid)::text as ws`
           )[0]!.ws;
       scope[role] = {
         ws: `{${s!.ws.join(',')}}`,

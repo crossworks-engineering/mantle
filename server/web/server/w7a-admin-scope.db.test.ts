@@ -73,7 +73,7 @@ describe.skipIf(!URL)('W7a: the Admin assistant and the Admin MCP read in their 
   const privateFor = async (login: string) =>
     (
       await x<{ ws: string }>(
-        sql`select "public"."mantle_ws_private_workspace"(${login}::uuid)::text as ws`,
+        sql`select "public"."mantle_ws_private_workspace"(set_config('mantle.scope_login', ${login}, true)::uuid)::text as ws`,
       )
     )[0]!.ws;
   const inAdminTurn = <T>(fn: () => Promise<T>, loginId?: string) =>

@@ -66,7 +66,7 @@ describe.skipIf(!URL)('W6b fix round 4', () => {
   const privateFor = async (login: string) =>
     (
       await x<{ ws: string }>(
-        sql`select "public"."mantle_ws_private_workspace"(${login}::uuid)::text as ws`,
+        sql`select "public"."mantle_ws_private_workspace"(set_config('mantle.scope_login', ${login}, true)::uuid)::text as ws`,
       )
     )[0]!.ws;
   const sys = <T>(fn: () => Promise<T>) => m.asSystem(fn, 'test');

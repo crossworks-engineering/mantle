@@ -198,7 +198,7 @@ describe.skipIf(!DB_URL)('A8 findings: the owner’s decisions F1 and F2', () =>
       values (${ws.admin}, ${L.admin}, false)
       on conflict (workspace_id, login_id) do update set moderator = false`;
     for (const who of ['mod', 'user', 'user2'] as const) {
-      await raw`select mantle_ws_private_workspace(${L[who]}::uuid)`;
+      await raw`select mantle_ws_private_workspace(set_config('mantle.scope_login', ${L[who]}, true)::uuid)`;
     }
     await raw`insert into agents (id, owner_id, slug, name, model, system_prompt, role, workspace_id)
       values (${agentW}, ${L.owner}, ${`${tag}-w`}, 'W', 'fake/model', 'p', 'responder', ${ws.W})`;

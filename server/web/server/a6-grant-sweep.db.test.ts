@@ -312,7 +312,7 @@ describe.skipIf(!URL)('the A6 grant sweep', () => {
     await x(sql`update workspace_users set limits = '{"areas":{"users":false}}'::jsonb
                  where workspace_id = ${adm!.id} and login_id = ${L.adminNoUsers}`);
     const [priv] = await x<{ id: string }>(
-      sql`select mantle_ws_private_workspace(${L.modP}::uuid)::text as id`,
+      sql`select mantle_ws_private_workspace(set_config('mantle.scope_login', ${L.modP}, true)::uuid)::text as id`,
     );
     names.set(priv!.id, 'ws:privModP');
     // Any other workspace the migration made (a login's own) is named too.
