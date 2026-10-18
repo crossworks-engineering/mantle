@@ -30,6 +30,13 @@ check is on:
   write, not outside the scope, not on the gap list, and no trigger is
   missing.
 
+Not live on a box that runs both checks on (the 0301 floor, the fleet's
+state): there the database refuses the read grant's delete (node_snapshots
+delete 'edit'). It is open only on a box whose edit check was lowered (an
+operator's recorded act). The S11a tool cells ran with the edit check off
+(a8-tool-cells.matrix.test.ts sets only the actor check; test-support.ts
+leaves the edit check off unless MANTLE_TEST_EDIT_CHECK is set).
+
 So with the edit check below on, any login that reads an app deleted its
 snapshots, the owner too on an app granted to Admin read only. The S11a
 matrix runs the actor check in warn and on with the edit check at its test
@@ -49,6 +56,10 @@ trigger change: a migration and a roll-order change), so it is left for the
 owner (open items).
 
 ## The fix
+
+The fix is defense in depth: one answer in every mode, as the HTTP route
+already asked. The Write grant's delete (a folder's Write grant included) is
+allowed by the product rule (edit), as on v0.300.82.
 
 - packages/content/src/app-snapshots.ts `deleteAppSnapshot`: asks
   `assertItemRight(appId, 'edit')` first, before it reads or refuses the
@@ -221,6 +232,20 @@ Write grant and a Moderator of the app's home. The member deletes a snapshot
 it took (N6) in every mode. packages/tools/src/builtins-app-history.test.ts:
 the store's refusal fails the call, never as a missing snapshot.
 
+Judged in both states: with the edit check ON (the fleet), every one of
+the 98 tools is refused where its need says (R0's proof, in the full
+vitest run below). With the edit check OFF and the actor check on (a
+lowered box), only app_snapshot_delete was not, and it is fixed. The tools
+where the library asks nothing and only the database refuses are the 17
+of the warn sweep (both database checks lowered) plus app_snapshot_delete.
+Of the 17, an HTTP route already asks the same need before the same library
+call for two: tree_folder_update (PATCH /api/tree/[kind]/folders/[id] asks
+edit before updateTreeFolder; the tool's move needs manage) and page_update
+(PATCH /api/v1/pages/[id] asks edit). folder_describe's route asks edit
+only for a rename. The other 14 have no route that asks. Not changed in this
+branch (open item 1): each library ask needs its R0 cells (partial writes,
+the queue-time words) checked with both checks on.
+
 ## Open items (the owner's)
 
 1. The 17 tools above refuse nothing while the ACTOR check is in warn (P1,
@@ -244,4 +269,20 @@ the store's refusal fails the call, never as a missing snapshot.
 
 ## Gates
 
-See the gates section appended after the run.
+On b3a9b34c0 (the code; the commits after it change only this file),
+rebased on ab0ce298a (v0.300.86).
+
+Mac (DATABASE_URL unset): `pnpm -r typecheck` 0, `pnpm lint` 0,
+`pnpm format:check` 0, `pnpm docs:check` 0, `pnpm arch:check` 0 (no pin
+moved), `pnpm -C server/web build` 0, `pnpm exec vitest run server packages
+eslint-rules` 0 (842 files passed, 257 skipped).
+
+Workstation (own clone, own pgvector pg18 container hfsd_pg on port 55947,
+max_connections=450, migrated with MANTLE_CHECK_FLOOR=keep, one at a time,
+--maxWorkers=3): full vitest with DB 0, `test:actor-off` 0,
+`test:actor-on` 0, `test:edit-on` 0, `test:matrix` 0, full
+`test:runtime-role` 0. The probes: this test on v0.300.82 (record) 0, on
+v0.300.85 and v0.300.86 before the fix (record) showing the deletes, the R0
+proof with the edit check off on main (1 failure: app_snapshot_delete), in
+warn (43 failing tests, the 17 tools), and on this branch with the edit
+check off 0 (272 tests). Container removed with -v after each run.
