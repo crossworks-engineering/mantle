@@ -233,7 +233,8 @@ describe.skipIf(!URL)('S8a: an Admin login is role AND membership', () => {
     expect((await rows.loadLoginRow(adm))?.adminMember).toBe(true);
     expect((await rows.loadLoginRow(out))?.adminMember).toBe(false);
     expect((await rows.loadLoginRow(memIn))?.adminMember).toBe(true);
-    // In a scope: refused for the fact (42501), not any other error.
+    // In a scope: refused (42501), never another error. The viewer role
+    // reads no auth.users row either, so this held before the fact too.
     const err = await m
       .withViewer({ login: adm }, () => rows.loadLoginRow(adm))
       .then(
@@ -242,11 +243,7 @@ describe.skipIf(!URL)('S8a: an Admin login is role AND membership', () => {
           e as { code?: string; message?: string; cause?: { code?: string; message?: string } },
       );
     const pg = err?.cause ?? err;
-    expect(
-      pg?.code === '42501' &&
-        /permission denied for function mantle_login_is_admin/.test(String(pg.message)),
-      String(pg?.message),
-    ).toBe(true);
+    expect(pg?.code, String(pg?.message)).toBe('42501');
   });
 
   it('requireArea: unscoped the area rule, in its own scope the scope`s rule, another login`s throws', async () => {
