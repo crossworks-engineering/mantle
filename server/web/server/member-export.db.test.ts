@@ -90,7 +90,7 @@ describe.skipIf(!DB_URL)('members export what they see; extraction needs edit', 
   const mem2 = randomUUID();
   const adminUser = randomUUID();
   const lone = randomUUID();
-  const ws = { admin: '', H: '', R: '', O: '', U: '' };
+  const ws = { admin: '', H: '', R: '', O: '', U: '', M: '' };
   const agentOf: Record<string, string> = {};
   const recorded: string[] = [];
   const n = () => randomUUID().slice(0, 8);
@@ -302,7 +302,7 @@ describe.skipIf(!DB_URL)('members export what they see; extraction needs edit', 
       await raw<{ id: string }[]>`select id::text as id from workspaces
                                   where owner_id = ${owner} and is_admin`
     )[0]!.id;
-    for (const key of ['H', 'R', 'O', 'U'] as const) {
+    for (const key of ['H', 'R', 'O', 'U', 'M'] as const) {
       ws[key] = (
         await raw<{ id: string }[]>`insert into workspaces (owner_id, name)
           values (${owner}, ${`${tag} ${key}`}) returning id::text as id`
@@ -317,7 +317,8 @@ describe.skipIf(!DB_URL)('members export what they see; extraction needs edit', 
                and login_id in (${mem}, ${mem2}, ${adminUser}, ${lone})`;
     await raw`insert into workspace_users (workspace_id, login_id, moderator)
       values (${ws.H}, ${mem}, true), (${ws.R}, ${mem}, false), (${ws.R}, ${mem2}, false),
-             (${ws.admin}, ${adminUser}, false), (${ws.U}, ${owner}, false)`;
+             (${ws.admin}, ${adminUser}, false), (${ws.U}, ${owner}, false),
+             (${ws.M}, ${owner}, true)`;
     for (const [key, wsId] of Object.entries(ws)) {
       const id = randomUUID();
       agentOf[wsId] = id;
@@ -579,18 +580,29 @@ describe.skipIf(!DB_URL)('members export what they see; extraction needs edit', 
         expect(m.takeActorMisses()).toEqual([]);
       }, 300_000);
 
-      it('the owner in a turn of U (a user, no Moderator), and an Admin user that may not change the Files root: the top of Files', async () => {
+      it('the owner in a turn of a workspace it is not Admin in: the top of Files, or refused', async () => {
         await setMode(mode);
-        const o = await viaTurn('owner', ws.U, 'sheet_build', sheet([{ item: 'h', amount: 1 }]));
-        note1(mode, 'sheet_build turn(U) owner', o);
+        // A turn of M, which it moderates: M, at the Files root.
+        const o = await viaTurn('owner', ws.M, 'sheet_build', sheet([{ item: 'm', amount: 1 }]));
+        note1(mode, 'sheet_build turn(M) owner/moderator', o);
         expect(o.ok, o.text).toBe(true);
         const facts = await fileFacts(String(o.out.file_id), 'owner');
-        recorded.push(
-          `${mode} sheet_build turn(U) owner: path ${facts.path} home ${facts.home} ` +
-            `(admin ${ws.admin} U ${ws.U} private ${await privateWs(owner)}) landedIn ${JSON.stringify(o.out.landedIn)}`,
+        expect(facts.path, 'not Auto-filed: M does not hold Admin').toBe('files');
+        expect(facts.home).toBe(ws.M);
+        expect((o.out.landedIn as { id?: string } | undefined)?.id).toBe(ws.M);
+        // A turn of U, which it only uses: its create home is Admin, which
+        // that turn may not write. Refused by the create check; nothing made.
+        await refusedMakesNothing(
+          mode,
+          'sheet_build turn(U) owner/user',
+          () => viaTurn('owner', ws.U, 'sheet_build', sheet([{ item: 'u', amount: 1 }])),
+          /outside what your workspaces may change|cannot create items in that workspace/i,
         );
-        expect(facts.path, 'not Auto-filed: U does not hold Admin').toBe('files');
+        expect(m.takeActorMisses()).toEqual([]);
+      }, 300_000);
 
+      it('an Admin user that may not change the Files root: the top of Files', async () => {
+        await setMode(mode);
         const u = await viaMcp('adminUser', 'sheet_build', sheet([{ item: 'u', amount: 1 }]));
         note1(mode, 'sheet_build mcp adminUser (no Moderator)', u);
         expect(u.ok, u.text).toBe(true);
