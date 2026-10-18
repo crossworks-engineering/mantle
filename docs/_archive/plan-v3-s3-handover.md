@@ -281,3 +281,63 @@ typecheck` 0, `pnpm lint` 0, `pnpm format:check` 0, `pnpm docs:check` 0,
   default 0 (22 passed), actor-off 0, runtime-role 0 (11 passed; the
   deadlock did not come back). The commit after it changes this handover
   only.
+
+## Handover (S3 round 4, the re-audit at `117e8c717` (8.5/10), rebased on D1 and P1a)
+
+- Fixed:
+  - M1: the a2b2b cell "read-only callers" bound the read key with
+    `runAsActor` outside the request slot, so the slot's own actor won and
+    the write ran as `login:rw` (the auditor showed its `ok` held with the
+    edit check on). It now names the key inside the slot
+    (`setRequestActor(loginActor(mem, 'ro'))` before `enterRequestScope`,
+    as the session guard does) and writes a time zone per mode. With the
+    edit check on (`pnpm test:edit-on`) the key's own row is refused 42501
+    `ro_actor` in warn and on; with it off the write runs (the open item
+    of round 3, unchanged). The refusal happens: no product finding.
+  - L1: one place per rule. The export read rule (0302) and
+    `assertManageOrAdmin` (`item-rights.ts`) call `mantle_may_manage_home`
+    (0279), granted to `mantle_view_user` in 0302 (it lacked EXECUTE: an
+    invoker function taken from PUBLIC; the write role follows the
+    workspace role's grants, the runtime role's allowlist follows by
+    itself). Profiles' write rule is one invoker SQL function,
+    `mantle_profile_writable(user_id)` (0302, PUBLIC revoked, the
+    workspace role only), called by the INSERT and UPDATE policies and by
+    `profileRowWritable`; the policy note is `own-login:v2`. The delete
+    rule (the own row) is unchanged. Not definers, so the definer
+    allowlist (`write-role.db.test.ts`) is unchanged. Answers byte-equal:
+    the access matrix, write-role, a2b2b, a6b and edit-check cells pass in
+    every config.
+  - L2: `gapRerunCount` counts `SET ROLE x`, `SET SESSION ROLE x` and
+    `SET ROLE TO x` too, when the target reads as a role name (so a column
+    update and prose in a message are no switch). Unit test added;
+    `gapTables` stays 0.
+  - L3: `profileRowWritable` runs in a read transaction (a savepoint inside
+    an open one), reads only 42501 as no and throws the rest;
+    `noteInboundChannel` asks it inside its try (its caller does not wait).
+    Unit test `profile-row-writable.test.ts`.
+  - L4: the a6b off matcher is an explicit list (`S3_OFF_CELLS`: 15
+    kind-root cells, 2 rule-in-query cells), taken from an off run.
+- D1 (main v0.300.84): S3's rules went into the spec (sections 5, 6 and
+  15; the three S3 limits dropped), this handover moved here, the four
+  `docs/actors.md, "Plan v3 S3"` quotes point at the spec's section 5, and
+  D1's `item-rights.ts` header now says the write role in every check
+  mode. `dbClientLines` re-pinned 3140 to 3141 (D1 added one comment line
+  to `client.ts`; main 3303).
+- P1a (main v0.300.85): rebased cleanly, both sides' pins kept; 0302 and
+  its `when` 1790197440000 stay above main's last (0301).
+- Gates at `e80624bf1` (on D1; workstation, Node 26, own pgvector pg18
+  container `s3r4_pg` on port 55981, `MANTLE_CHECK_FLOOR=keep`,
+  `--maxWorkers=3`, removed after): `pnpm -r typecheck` 0, `pnpm lint` 0,
+  `pnpm format:check` 0, `pnpm docs:check` 0, `pnpm arch:check` 0,
+  `pnpm -C server/web build` 0, unit vitest 0, `pnpm boot:smoke` 0, full
+  vitest with DB 1 (13460 passed, 0 failed; one unhandled
+  `CONNECTION_CLOSED` from `w7e-member-scope.db.test.ts`, a file S3 does
+  not touch), test:actor-off 0 (1072 passed), test:actor-on 0 (349),
+  test:edit-on 0 (515), test:matrix 0 (7), full test:runtime-role 0 (2584).
+- Gates at `ffcba6b30` (rebased on P1a, main `8b3099467`; the delta is
+  counters, scripts and CI, so the static gates and the full vitest were
+  run again, not the five DB configs): `pnpm -r typecheck` 0, `pnpm lint`
+  0, `pnpm format:check` 0, `pnpm docs:check` 0, `pnpm arch:check` 0,
+  `pnpm -C server/web build` 0, unit vitest 0, full vitest with DB 0
+  (13493 passed; the `CONNECTION_CLOSED` did not come back). The commit
+  after it changes this handover only.
