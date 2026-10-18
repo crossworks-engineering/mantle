@@ -239,3 +239,10 @@ as the configs set them; the sweeps run their warn and on cells):
 CI (build-check, verify) on d5c0d20c5: failure, the 14 cells above only
 (the 13 Admin cells and the grants move):
 https://github.com/crossworks-engineering/mantle/actions/runs/39132687727
+
+**Rebase.** Rebased onto origin/main 6ad35e465 (v0.300.91, a0 merged as
+0304_login_facts). Main's one commit since the base (35861dbe9) is the
+release commit, version fields only, so the gates above stand; the commit
+hashes above are from before the rebase. After it: `pnpm arch:check` 0,
+`pnpm docs:check` 0, the journal, arch-lints and wsRefusal unit cells 0.
+0305 stays the next number (`when` 1790197620000, above 0304's).
