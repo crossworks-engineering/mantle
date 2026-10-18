@@ -146,9 +146,9 @@ export async function assertManageOrAdmin(id: string, message: string): Promise<
   if (!currentWorkspaceScope()) return;
   const key = id.trim().toLowerCase();
   if (!UUID_RE.test(key)) throw editCheckRefusalError('no_read');
+  // mantle_may_manage_home (0279): the row rule's own test (0302), one place.
   const rows = (await db.execute(sql`
-    select case when n.home_ws is null then "public"."mantle_scope_has_admin"()
-                else coalesce("public"."mantle_may_manage"(n.home_ws), false) end as ok
+    select "public"."mantle_may_manage_home"(n.home_ws) as ok
       from nodes n where n.id = ${key}::uuid`)) as unknown as { ok: boolean | null }[];
   const row = rows[0];
   if (!row) throw editCheckRefusalError('no_read');

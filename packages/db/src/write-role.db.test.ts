@@ -467,7 +467,7 @@ describe.skipIf(!URL)('the write role (arch A2b2a)', () => {
       // Plan v3 S3: a named write rule (profiles' own-login) is narrower
       // than the read rule, and carries its note.
       const rule = ruled.get(r.t) ?? null;
-      expect([r.note, r.name]).toEqual([rule ? `mantle:write-rule:${rule}:v1` : null, r.name]);
+      expect([r.note, r.name]).toEqual([rule ? `mantle:write-rule:${rule}:v2` : null, r.name]);
       if (rule) {
         if (r.cmd !== 'INSERT') expect([r.same_qual, r.name]).toEqual([false, r.name]);
         if (r.cmd !== 'DELETE') expect([r.same_check, r.name]).toEqual([false, r.name]);

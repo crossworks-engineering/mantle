@@ -61,7 +61,9 @@ import { profileFlag } from '@mantle/client-types/profile-flags';
 import {
   currentWorkspaceScope,
   db,
+  pgErrorCode,
   profiles,
+  readTransaction,
   resolveSingleOwnerId,
   type ConversationChannel,
 } from '@mantle/db';
@@ -201,26 +203,29 @@ export async function loadProfilePreferences(userId: string): Promise<ProfilePre
 
 /**
  * Whether the current scope may write profile row `userId` (plan v3 S3 fix
- * round 3): profiles' write rule (0302, 'own-login') asked as the database
- * asks it: the scope's own login's row, or the brain's row when the scope
- * holds the Settings area. System work (no workspace scope) may. The
- * turn's own bookkeeping (the reminder channel, the automatic time zone)
- * asks it first and skips the write a member's or an Admin user's turn
- * without Settings would have refused, so no refusal is logged per turn.
- * Fails closed.
+ * round 3): profiles' write rule (0302, 'own-login'), the one SQL function
+ * its policies call (mantle_profile_writable, fix round 4): the scope's own
+ * login's row, or the brain's row when the scope holds the Settings area.
+ * System work (no workspace scope) may. The turn's own bookkeeping (the
+ * reminder channel, the automatic time zone) asks it first and skips the
+ * write a member's or an Admin user's turn without Settings would have
+ * refused, so no refusal is logged per turn.
+ *
+ * A read transaction: inside an open transaction it is a savepoint of it,
+ * so a failure here cannot abort the caller's transaction. A refusal
+ * (42501: the function not granted, a database before 0302) reads as no;
+ * any other error is thrown (fix round 4, L3).
  */
 export async function profileRowWritable(userId: string): Promise<boolean> {
   if (!currentWorkspaceScope()) return true;
   try {
-    const rows = (await db.execute(sql`
-      select (${userId}::uuid = (select "public"."mantle_login_id"()))
-          or (${userId}::uuid = (select "public"."mantle_brain_id"())
-              and coalesce((select "public"."mantle_scope_has_area"('settings')), false)) as ok`)) as unknown as {
-      ok: boolean | null;
-    }[];
+    const rows = (await readTransaction((tx) =>
+      tx.execute(sql`select "public"."mantle_profile_writable"(${userId}::uuid) as ok`),
+    )) as unknown as { ok: boolean | null }[];
     return rows[0]?.ok === true;
-  } catch {
-    return false;
+  } catch (err) {
+    if (pgErrorCode(err) === '42501') return false;
+    throw err;
   }
 }
 
@@ -241,11 +246,12 @@ export async function noteInboundChannel(
   channel: ConversationChannel,
 ): Promise<void> {
   if (!isReminderChannel(channel)) return;
-  // A scope that may not write the row skips it (a member's turn, an Admin
-  // user's without Settings): the database would refuse it every turn.
-  if (!(await profileRowWritable(userId))) return;
   const merge = JSON.stringify({ reminderChannel: channel });
   try {
+    // A scope that may not write the row skips it (a member's turn, an Admin
+    // user's without Settings): the database would refuse it every turn.
+    // Inside the try: the caller does not wait for this (fire and forget).
+    if (!(await profileRowWritable(userId))) return;
     await db
       .insert(profiles)
       .values({

@@ -4,8 +4,11 @@
 -- profiles and app_table_exports become ordinary write-role tables, so the
 -- gap rerun (the system pool, or the checked rerun as mantle_gap_writer) is
 -- gone from client.ts. No row is touched; no app, app row, app database or
--- sandbox is removed. Grants come from the access matrix after the
--- migrations (applyViewerGrants), never from this file.
+-- sandbox is removed. Table grants come from the access matrix after the
+-- migrations (applyViewerGrants), never from this file; the two invoker
+-- functions the row rules call (mantle_may_manage_home, 0279, and
+-- mantle_profile_writable, below) are given to the workspace role here, as
+-- 0279 and 0293 give theirs, and the write role follows it.
 --
 -- The number was claimed at the merge (plan v3.2 rule 3): R0 landed first
 -- with 0301_check_mode_floor (`when` 1790197380000); this file is 0302
@@ -37,7 +40,9 @@
 --    owner decision 2026-10-17): the login's own row, or the brain's row
 --    when the scope's login holds the Settings area
 --    (mantle_scope_has_area: the Admin workspace in the scope, the area not
---    limited off). Never another login's row, so a member's turn
+--    limited off), written once as mantle_profile_writable(user_id), which
+--    profile-preferences.ts profileRowWritable asks too. Never another
+--    login's row, so a member's turn
 --    (set_timezone, the reminder channel, the automatic time zone) cannot
 --    change the brain's row, and neither can an Admin user without the
 --    Settings area. A delete is the login's own row only (no code deletes
@@ -60,13 +65,19 @@ ALTER TABLE "public"."app_table_exports" ENABLE ROW LEVEL SECURITY;
 --> statement-breakpoint
 DROP POLICY IF EXISTS "app_table_exports_user_read" ON "public"."app_table_exports";
 --> statement-breakpoint
+-- The rule's test is mantle_may_manage_home (0279), the one place it is
+-- written (item-rights.ts assertManageOrAdmin asks the same function). It
+-- is an invoker function taken from PUBLIC, so the workspace role is given
+-- EXECUTE (the write role follows it: applyViewerGrants gives the write
+-- role every function the workspace role may run).
+GRANT EXECUTE ON FUNCTION "public"."mantle_may_manage_home"(uuid) TO "mantle_view_user";
+--> statement-breakpoint
 CREATE POLICY "app_table_exports_user_read" ON "public"."app_table_exports" FOR SELECT
   TO mantle_view_user
   USING (EXISTS (
     SELECT 1 FROM "public"."nodes" a
      WHERE a."id" = "app_table_exports"."app_node_id"
-       AND CASE WHEN a."home_ws" IS NULL THEN "public"."mantle_scope_has_admin"()
-                ELSE coalesce("public"."mantle_may_manage"(a."home_ws"), false) END));
+       AND "public"."mantle_may_manage_home"(a."home_ws")));
 --> statement-breakpoint
 
 DROP TRIGGER IF EXISTS "mantle_actor_check" ON "public"."profiles";
@@ -98,6 +109,25 @@ DO $$ BEGIN
     ALTER TABLE "public"."profiles" DISABLE TRIGGER "mantle_edit_check_contact";
   END IF;
 END $$;
+--> statement-breakpoint
+
+-- profiles' write rule ('own-login', below), written once: the policies
+-- call it, and profile-preferences.ts profileRowWritable asks it before the
+-- turn's own writes. The login's own row, or the brain's row when the
+-- scope holds the Settings area; false (never NULL) otherwise. An invoker
+-- function, taken from PUBLIC and given to the workspace role (the write
+-- role follows it, as above).
+CREATE OR REPLACE FUNCTION "public"."mantle_profile_writable"(u uuid)
+  RETURNS boolean LANGUAGE sql STABLE
+  SET search_path = "public", pg_temp AS $$
+  SELECT coalesce(u = "public"."mantle_login_id"()
+                  OR (u = "public"."mantle_brain_id"()
+                      AND "public"."mantle_scope_has_area"('settings')), false)
+$$;
+--> statement-breakpoint
+REVOKE ALL ON FUNCTION "public"."mantle_profile_writable"(uuid) FROM PUBLIC;
+--> statement-breakpoint
+GRANT EXECUTE ON FUNCTION "public"."mantle_profile_writable"(uuid) TO "mantle_view_user";
 --> statement-breakpoint
 
 CREATE OR REPLACE FUNCTION "public"."mantle_write_role_sync_table"(
@@ -153,13 +183,12 @@ BEGIN
       note := NULL;
       del_rule := rule;
     ELSIF write_rule = 'own-login' THEN
-      rule := '("user_id" = (SELECT "public"."mantle_login_id"())) OR '
-           || '(("user_id" = (SELECT "public"."mantle_brain_id"())) '
-           || 'AND (SELECT "public"."mantle_scope_has_area"(''settings'')))';
+      rule := '"public"."mantle_profile_writable"("user_id")';
       del_rule := '("user_id" = (SELECT "public"."mantle_login_id"()))';
       -- The version in the note: a changed rule gets a new note, so a rerun
-      -- replaces the policies (matched by note, not by text).
-      note := 'mantle:write-rule:own-login:v1';
+      -- replaces the policies (matched by note, not by text). v2: the rule
+      -- is mantle_profile_writable (v1 wrote its body inline).
+      note := 'mantle:write-rule:own-login:v2';
     ELSE
       RAISE EXCEPTION 'mantle_write_role_sync_table: unknown write rule %', write_rule;
     END IF;
