@@ -126,10 +126,11 @@ The database's needs (`mantle_check_row`, `mantle_check_item`): `read`,
 the 404 of none, as a random id; one it reads but may not change, 403.
 
 Being an Admin user is management, not reading: it reads what is granted
-to the workspaces it is in. A scope asks its own login's area through
-`mantle_scope_has_area(area)`. About another login, `loginHasArea` asks it
-(the brain's live Admin workspace, an enabled login with a user row there,
-the area not switched off) and `loginHoldsAdmin` the same without an area.
+to the workspaces it is in. One SQL area rule, `mantle_area_rule` (the
+brain's live Admin workspace, an enabled login with a user row there, the
+area not off), answers `loginHasArea` and `mantle_scope_has_area` (a scope's
+own login: the rule plus "Admin in the scope"). `loginHoldsAdmin` asks
+`mantle_login_is_admin`; `mantle_login_area` adds a counted fail-open (S4).
 
 Owner rules (each holds today unless "Known limits" says otherwise):
 
@@ -326,8 +327,7 @@ Each ends in the step of plan v3.2 (2026-10-17) named.
 - The four workspace tables are written on the system pool
   (`workspace-write` exits, raw writes in `workspaces.ts` and
   `workspace-ticks.ts`); `mantle_ws_create` skips its check unscoped. S2.
-- The area rule is written in four SQL places and in TypeScript;
-  `mantle_login_area` says yes on a brain with no Admin workspace. S2a, S4.
+- `mantle_login_area` is the area rule or, with no Admin workspace, yes. S4.
 - A definer asked with no scope answers as the system pool would;
   `mantle_grant_change` and `mantle_workspace_event` then take the caller
   from their `actor` argument. S2, S7.

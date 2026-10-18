@@ -18,8 +18,12 @@
  *  - mantle_role_drift: a disabled Admin user and a former client are left
  *    out (0), a role=admin login outside Admin counts (1), a member inside
  *    Admin counts;
- *  - the catalog: no PUBLIC, viewer role, write role or gap writer may
- *    EXECUTE a login fact; the runtime role may run the four it calls;
+ *  - the catalog: no PUBLIC and no role but a superuser, mantle_runtime and
+ *    mantle_owner (so no viewer role, write role, gap writer or
+ *    mantle_system) may EXECUTE a login fact, mantle_login_area too; the
+ *    runtime role may run the four it calls, never mantle_login_area;
+ *  - mantle_login_areas(anchor) gives WORKSPACE_AREAS (client-types), so
+ *    an area TypeScript gains that the SQL lacks fails here;
  *  - the renumber proof: 0302's `when` is above every one before it, and
  *    a database at main's last migration applies it and only it.
  *
@@ -39,12 +43,15 @@ import {
   createScratchDatabaseBefore,
   ensureTestAnchor,
 } from './test-support';
-import { RUNTIME_ROLE } from './runtime-role';
+import { OWNER_ROLE, RUNTIME_ROLE, SYSTEM_ROLE } from './runtime-role';
 import { GAP_WRITER_ROLE } from './access-matrix';
+import { viewerRoleName } from './viewer';
+import { WORKSPACE_AREAS } from '@mantle/client-types/dto/workspaces';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 const DIR = join(__dirname, '..', 'migrations');
 const TAG = '0302_login_facts';
+const WRITE_ROLE = viewerRoleName('write');
 const AREAS = ['settings', 'users', 'assistants', 'connectors', 'keys'] as const;
 const ASKED = [...AREAS, 'bogus'] as const;
 
@@ -229,6 +236,14 @@ describe.skipIf(!URL)('the login facts answer as the text they replace (S2a a0)'
     expect(await m.loginHasArea('not-a-uuid', 'users')).toBe(false);
   });
 
+  it('mantle_login_areas gives the anchor every area TypeScript knows (WORKSPACE_AREAS)', async () => {
+    // The SQL's area list against client-types': an area TypeScript gains
+    // that the SQL lacks fails here (the anchor holds every area).
+    expect(await one('select mantle_login_areas($1::uuid) as a', [brain])).toEqual([
+      ...WORKSPACE_AREAS,
+    ]);
+  });
+
   it('mantle_login_area answers as its 0293 text, with and without an Admin workspace', async () => {
     const grid = async (q: (s: string, p: unknown[]) => Promise<unknown>) => {
       const diffs: string[] = [];
@@ -397,7 +412,7 @@ describe.skipIf(!URL)('the login facts answer as the text they replace (S2a a0)'
     ).toBe(1);
   });
 
-  it('catalog: no scoped role may EXECUTE a login fact; the runtime role runs the four it calls', async () => {
+  it('catalog: no role but a superuser, the runtime role and the owner role may EXECUTE a login fact; the runtime role runs the four it calls', async () => {
     const facts = [
       'public.mantle_area_rule(uuid,text)',
       'public.mantle_login_areas(uuid)',
@@ -405,20 +420,36 @@ describe.skipIf(!URL)('the login facts answer as the text they replace (S2a a0)'
       'public.mantle_role_drift()',
       'public.mantle_login_area(uuid,text)',
     ];
-    const rows = await sql<{ fn: string; definer: boolean; pub: boolean; scoped: string[] }[]>`
+    // Every role in the cluster that is not a superuser, the runtime role or
+    // the owner role: the viewer roles, the write role, the gap writer,
+    // mantle_system, any login a later step adds. PUBLIC as well.
+    const rows = await sql<{ fn: string; definer: boolean; pub: boolean; may: string[] }[]>`
       select f.fn, p.prosecdef as definer,
              has_function_privilege('public', p.oid, 'EXECUTE') as pub,
              array(select r.rolname::text from pg_roles r
-                    where (r.rolname like 'mantle\\_view\\_%' or r.rolname = ${GAP_WRITER_ROLE})
+                    where not r.rolsuper and r.rolname <> all (${[RUNTIME_ROLE, OWNER_ROLE]}::text[])
                       and has_function_privilege(r.oid, p.oid, 'EXECUTE')
-                    order by 1) as scoped
+                    order by 1) as may
         from unnest(${facts}::text[]) f(fn) join pg_proc p on p.oid = to_regprocedure(f.fn)`;
     expect(rows.map((r) => r.fn).sort()).toEqual([...facts].sort());
-    expect(rows.filter((r) => !r.definer || r.pub || r.scoped.length)).toEqual([]);
-    // There are scoped roles to ask about (the access matrix made them).
+    expect(rows.filter((r) => !r.definer || r.pub || r.may.length)).toEqual([]);
+    // The roles the cell is about are there to ask (the access matrix and
+    // migrate made them): a viewer role, the write role, the gap writer,
+    // and mantle_system where the runtime roles are made.
     const [v] = await sql<{ n: number }[]>`
       select count(*)::int as n from pg_roles where rolname like 'mantle\\_view\\_%'`;
     expect(v!.n).toBeGreaterThan(0);
+    const named = await sql<{ rolname: string }[]>`
+      select rolname::text as rolname from pg_roles
+       where not rolsuper and rolname = any (${[WRITE_ROLE, GAP_WRITER_ROLE, SYSTEM_ROLE]}::text[])
+       order by 1`;
+    const hasRuntime = (
+      await sql<{ on: boolean }[]>`
+      select to_regrole(${RUNTIME_ROLE}) is not null as on`
+    )[0]!.on;
+    expect(named.map((r) => r.rolname)).toEqual(
+      [GAP_WRITER_ROLE, WRITE_ROLE, ...(hasRuntime ? [SYSTEM_ROLE] : [])].sort(),
+    );
     const [rt] = await sql<{ on: boolean }[]>`select to_regrole(${RUNTIME_ROLE}) is not null as on`;
     if (rt!.on) {
       const grants = await sql<{ fn: string; ok: boolean }[]>`

@@ -2344,6 +2344,17 @@ export async function scopeHasArea(area: ScopeArea): Promise<boolean> {
   }
 }
 
+/** A login fact refused for a missing grant (42501) still answers no, but
+ *  says so once per process: a lost EXECUTE grant shows in the log. */
+let loginFactDeniedLogged = false;
+function loginFactFailed(err: unknown): false {
+  if (!loginFactDeniedLogged && sqlState(err) === '42501') {
+    loginFactDeniedLogged = true;
+    console.warn(`[db] a login fact was refused (42501), it answers no: ${errorMessage(err)}`);
+  }
+  return false;
+}
+
 /**
  * Whether `loginId` is a user of this brain's live Admin workspace now, its
  * login enabled (W7 integration fix 3, L1), never the admin role alone (a
@@ -2357,8 +2368,8 @@ export async function loginHoldsAdmin(loginId: string): Promise<boolean> {
       sqlTag`select "public"."mantle_login_is_admin"(${loginId}::uuid) as a`,
     )) as unknown as { a: boolean }[];
     return rows[0]?.a === true;
-  } catch {
-    return false;
+  } catch (err) {
+    return loginFactFailed(err);
   }
 }
 
@@ -2375,8 +2386,8 @@ export async function loginHasArea(loginId: string, area: ScopeArea): Promise<bo
       sqlTag`select "public"."mantle_area_rule"(${loginId}::uuid, ${area}) as a`,
     )) as unknown as { a: boolean }[];
     return rows[0]?.a === true;
-  } catch {
-    return false;
+  } catch (err) {
+    return loginFactFailed(err);
   }
 }
 
