@@ -15,13 +15,13 @@ condition to an Admin decision or moves an area ask to its SQL source.
   No request gains a query.
 - **One pair helper.** `adminLogin(row)` in
   `server/web/lib/auth/session.ts`: role admin AND `adminMember`. It is the
-  one Admin decision on the role in session.ts. Its readers: `resolvedFor`
-  (so `resolveLogin`, the cookie, the bearer and the API key login),
+  one Admin decision on the role in session.ts. Its readers:
   `findOwnerAsset` (the `?at=` asset token), `findRender` (the render
   cookie) and `adminLoginActive` (the frame re-check). `holdsArea` and
-  `loginHoldsArea` run only for a login `resolvedFor` made kind admin, so
-  they follow the same pair. `memberLoginActive` and `findMemberAsset`
-  keep their role read until S8b, as the plan says.
+  `loginHoldsArea` ask `requireArea`, whose SQL rules hold membership, so
+  a login outside Admin holds no area. The session (`resolvedFor`, so
+  `resolveLogin`) stays on the role until S8b (owner decision, below), and
+  so do `memberLoginActive` and `findMemberAsset`.
 - **Area asks** (`server/web/lib/workspaces.ts`):
   - `requireArea(caller, area)`: in a scope for the caller's own login it
     asks `mantle_scope_has_area` (`scopeHasArea`; a scope that does not
@@ -54,8 +54,8 @@ condition to an Admin decision or moves an area ask to its SQL source.
 
 ## Changed answers (narrowing only)
 
-The two named cells of the plan, plus what follows from "kind admin = role
-AND membership" at the sites the plan names. None exists on a box with
+The two named cells of the plan (section 2.2 point 7), at the gates the
+plan names. None exists on a box with
 `mantle_role_drift() = 0`; no answer widens.
 
 1. A login with role admin outside the Admin workspace (drift):
@@ -64,14 +64,9 @@ AND membership" at the sites the plan names. None exists on a box with
    - `adminLoginActive` answers false (the owner frame refuses its ticket);
    - `mantle_login_is_admin_user` answers false, so it no longer lists
      every key or revokes another login's key;
-   - **its session is no login** (cookie, bearer, API key): `resolvedFor`
-     makes kind admin only for the pair, and a role admin row is no member,
-     so it resolves as a role this code does not name. The plan names the
-     asset token and render cookie for this login; it also says
-     `resolveLogin` reads the pair. That is the narrower reading, taken as
-     the safer one. **Owner question:** if such a login should keep a
-     session as a member instead, `resolvedFor` changes one line, and that
-     is wider than this branch.
+   - it keeps its session (cookie, bearer, API key) and works in its own
+     scope, byte-equal to main; it is not Admin: an Admin area route
+     refuses it (403 `area`), as on main.
 2. A role=member login inside the Admin workspace (drift) stays a member:
    the member gate lets it in, the owner gate refuses it as any member, the
    reader byte route answers it as any member. As on main.
@@ -82,8 +77,8 @@ AND membership" at the sites the plan names. None exists on a box with
    rule's enabled check). A disabled login has no session, so no request
    reaches this.
 5. `requireArea` in a scope for another login throws. No caller does this:
-   every caller passes the request's own login, and the full DB run is
-   green.
+   every caller passes the request's own login, and the full DB run
+   shows none.
 
 ## Proof
 
@@ -138,8 +133,9 @@ reads it on the fleet before merge, with `mantle_role_drift()`.
   branch:
   - `tsAreaRules` 3 to **0** (areasOf, areasFromLimits and requireArea's
     list rule gone).
-  - `loginRoleDecisionReads` 36 to **33**; in session.ts 7 to 4. The four:
-    `adminLogin` (the pair helper), `resolvedFor`'s member case,
+  - `loginRoleDecisionReads` 36 to **34**; in session.ts 7 to 5. The five:
+    `adminLogin` (the pair helper), `resolvedFor`'s admin and member cases
+    (the session, on the role until S8b by the owner decision),
     `memberLoginActive` and `findMemberAsset` (both kept until S8b by the
     plan). The plan's "16 to 1" was measured another way at c7acc88ff; P1b
     counts 36 in 16 files.
@@ -189,36 +185,26 @@ a3b2, w6a-fix-sweep, review-off, grants, workspaces, w6b-fix3,
 app-draft-scope), which passed in the rerun but for review-off's hook
 (not this branch's file).
 
-## OPEN: one owner question (blocks DONE)
+## Owner decision (closed 2026-10-18): the session stays on the role
 
-Two existing DB tests encode main's answer for a role admin login taken
-out of Admin: it keeps a session, reads in its own scope and writes as an
-editor there; only the owner acts are refused.
+Question: a role admin login taken out of Admin, with `resolvedFor` on the
+pair, had no session (401); two existing tests encode main's answer, a
+session in its own scope (`a1-d1-routes.db.test.ts` "an Admin user keeps
+the owner acts; an admin-role login out of Admin does not";
+`w7-int-fix3-session.db.test.ts`, its `outsider`).
 
-- `server/web/server/a1-d1-routes.db.test.ts` "an Admin user keeps the
-  owner acts; an admin-role login out of Admin does not" (line ~554:
-  expects 201 for its card, gets 401);
-- `server/web/server/w7-int-fix3-session.db.test.ts` "the scoped default:
-  each reads what its workspaces hold" (its `outsider` is such a login:
-  expects 200, gets 401).
-
-With `resolvedFor` on the pair (plan: "resolveLogin ... read the same
-pair") that login is no login, so both answers change (narrower). The
-plan's named narrowing lists only the asset token and the render cookie,
-and the brief says any other changed answer is a blocker. The two
-readings cannot both hold:
-
-1. Keep the pair in `resolvedFor` (this branch now): the session goes too.
-   Name it as a third narrowing cell and move the two tests' expectations
-   (401 for that login). Narrowest; matches the plan's `resolveLogin`
-   sentence. No box has such a login while `mantle_role_drift() = 0`.
-2. Keep `resolvedFor` on the role (main's answer) and put the pair only
-   on the asset token, the render cookie, `adminLoginActive` and the SQL
-   role read. Byte-equal sessions; drops the plan's `resolveLogin` item
-   to S8c/S8b.
-
-Recommended: 1 (narrower, and the login cannot exist on a box with drift
-0). Either is a few lines: `resolvedFor` in session.ts and the two tests.
+Decision (CEO, option 2): `resolvedFor` stays on the role, so sessions are
+byte-equal to main and both tests stay as main has them. The pair gates
+only what the plan names (section 2.2 point 7): asset tokens, the render
+cookie, `adminLoginActive`, the area and Admin decisions and the SQL read
+`mantle_login_is_admin_user`. Reason: the plan names only those
+narrowings and an unnamed changed answer is a blocker; a 401 lockout of a
+signed-in user is the sharpest kind of change; S8b (membership decides,
+the role follows it) settles the session for good. The cell "a role=admin
+login outside Admin keeps its session but is not Admin"
+(`admin-membership.db.test.ts`) proves it: past the owner gate as the
+Admin user, an Admin area route (`/api/users`) refused, no asset token, no
+render cookie, `adminLoginActive` false.
 
 CI: run 39137708165 (abe3fd98e) failed on dbClientLines (fixed); run
 39139253455 (ee2779124) in progress when handed over:
