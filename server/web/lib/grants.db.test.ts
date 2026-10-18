@@ -102,6 +102,34 @@ describe.skipIf(!URL)('grants (W5b2 part A)', () => {
     move: await import('@/app/api/grants/move/route'),
     movePreview: await import('@/app/api/grants/move/preview/route'),
   });
+  /**
+   * A write runs in the login's request scope, as the gate runs every
+   * login's /api/grants write (session.ts anyLoginScope, F4; an Admin
+   * user's too, with drafts). Plan v3.2 S2a a1: the grant's audit row
+   * (mantle_workspace_event) is refused with no acting login, so a write
+   * called with no scope at all (as this file did) is refused. Reads run as
+   * before.
+   */
+  const gated = <T extends object>(mod: T): T =>
+    new Proxy(mod, {
+      get(t, k) {
+        const v = Reflect.get(t, k) as unknown;
+        if (typeof k !== 'string' || !/^(POST|PATCH|PUT|DELETE)$/.test(k)) return v;
+        if (typeof v !== 'function') return v;
+        return (...args: unknown[]) => {
+          const res = h.res as { kind: string; loginId: string };
+          return m.runInRequestSlot(async () => {
+            const scope = await m.loginScopeFor(res.loginId);
+            m.enterRequestScope(scope, { writes: true, drafts: res.kind === 'admin' });
+            return (v as (...a: unknown[]) => unknown)(...args);
+          });
+        };
+      },
+    });
+  const gatedRoutes = async () =>
+    Object.fromEntries(
+      Object.entries(await routes()).map(([k, mod]) => [k, gated(mod)]),
+    ) as Awaited<ReturnType<typeof routes>>;
   let r: Awaited<ReturnType<typeof routes>>;
 
   const get = (id: string) => call(r.one.GET(req('GET'), p({ nodeId: id })));
@@ -178,7 +206,7 @@ describe.skipIf(!URL)('grants (W5b2 part A)', () => {
       (${P}, ${owner}, true), (${P}, ${mem}, true),
       (${Q}, ${owner}, true), (${Q}, ${mem2}, true), (${Q}, ${mem}, false),
       (${R}, ${mem2}, true)`);
-    r = await routes();
+    r = await gatedRoutes();
   }, 180_000);
 
   afterAll(async () => {
