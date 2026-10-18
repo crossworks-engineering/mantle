@@ -52,8 +52,9 @@ ws, acting)`: private helpers (as above). The acting login is
   = `mantle_scope_login_id()`), or system work. `createHomeFallback` did not
   carry the login's write scope (a plain system-pool read, no settings): it
   now runs the call in a transaction of its own with `mantle.scope_login`
-  set to the login it is asked for (measured: no caller of
-  `createHomeIntent` had any setting on that statement).
+  set to the login it is asked for (measured by reading the code: the call
+  was a plain `getAdminDb().execute`, no transaction, no setting, for every
+  caller of `createHomeIntent`).
 - `mantle_workspace_event` (0279): refused with no acting login unless
   system work. Unscoped callers counted first: see "Counts" below.
 
@@ -111,7 +112,46 @@ scope; the branch merges only after a2. Every cell below fails on an Admin
 user's create, add, tick or removal (or, after one, on the state it left);
 a member's cell is green.
 
-FILLED-IN-BELOW
+`server/web/lib/workspaces.db.test.ts` (it calls the handlers itself: a
+member's call now runs in its request scope as the gate runs it; an Admin
+user's runs with no scope, as the gate's `noteSystem('admin-write')`):
+
+1. who may add whom: Moderators anyone; plain users nobody; Admin users anyone (S1)
+2. the last Moderator can be neither removed nor demoted
+3. only an Admin user ticks or clears Moderator, Team included (0286, decision 3.a)
+4. Team keeps no Admin user (0286): demoted and removed like anyone
+5. only an Admin user removes a Moderator; a plain user by a Moderator; anyone leaves (Q2)
+6. the Admin workspace: adding a user is the admin role, removing it the member role
+7. the Admin workspace: its checks run inside the role change, before the bridge (audit L2)
+8. look: colour and icon by whoever may rename it, on every list (task 5edc9149)
+   (cell 7's "back to a member" removal is refused, so its member stays an
+   Admin user and sees the workspace this cell expects hidden)
+9. the assistant is frozen once it has history (the same member, an Admin
+   user since cell 7, creates a workspace with no acting login)
+
+`server/web/server/f4-owner-flows.db.test.ts`:
+
+10. every Admin user is a Moderator of Admin: never unticked there, an add is one
+11. warn: round 4, making or unmaking an Admin user needs the users area
+12. on: round 4, making or unmaking an Admin user needs the users area
+
+`server/web/server/a6b-exit-sweep.db.test.ts`:
+
+13. workspace-create: `POST /api/workspaces` as owner, adminAll and
+    adminNoUsers answer 500 (recorded 201); the member cells are byte-equal.
+
+**Red, not a1's (a bug on main the scoped test now meets).**
+`server/web/lib/grants.db.test.ts` "move into a folder: edit the folder,
+manage the item, confirm what it adds (S6)". The file now runs each write in
+the login's request scope, as the gate runs every login's `/api/grants`
+write (F4; `a6-grant-sweep.db.test.ts` does the same): unscoped, a1's
+`mantle_workspace_event` refuses the grant's audit row. In scope, a
+successful move into a folder fails on main as well: `followShares`
+(`packages/content/src/tree/write.ts`) runs `mantle_embeds_reached` (0208,
+an invoker function reading `node_embeds`, which no scoped role reads) as a
+raw execute in the scope: `permission denied for table node_embeds`. The
+grant sweep records no successful scoped move, so main had no cell for it.
+Proposed as its own task (not fixed here).
 
 ## What a2 must do
 
@@ -142,7 +182,22 @@ FILLED-IN-BELOW
 
 ## Counts
 
-FILLED-IN-BELOW
+- Unscoped callers of `mantle_workspace_event` (the rule's count, taken
+  with the rule on, the full DB vitest run on the workstation at 9750aae23):
+  10, every one `server/web/lib/grants.db.test.ts` calling the grant
+  handlers with no request scope (a test bypass: the gate puts every login's
+  grants write in its scope). 0 from product code. After the test entered
+  the scope as the gate does: 0. Miss rows in warn on dev: not read (this
+  step touches no box and never the dev DB); the CEO reads them before the
+  merge if wanted.
+- Unscoped callers of `mantle_ws_private_workspace`: 0 in product code
+  (`createHomeFallback` sets the login now); 14 test fixtures called it as
+  the superuser with no setting, now with `mantle.scope_login` set to the
+  login in the same call.
+- The full DB vitest run at 9750aae23 (before the last two fixes): 13544
+  passed, 24 failed in 5 files: the 13 cells above, `grants.db.test.ts` 10
+  (the 10 unscoped calls, fixed by scoping the test; 1 left, the main bug
+  above) and `a10-body-sweep` 1 (setModerator's 404 read, fixed).
 
 ## Pins (a1)
 
@@ -160,4 +215,27 @@ FILLED-IN-BELOW
 
 ## Gates (a1)
 
-FILLED-IN-BELOW
+On the Mac, `DATABASE_URL` unset, at d5c0d20c5: `pnpm -r typecheck` 0,
+`pnpm lint` 0, `pnpm format:check` 0, `pnpm docs:check` 0, `pnpm arch:check`
+0, `pnpm -C server/web build` 0, `pnpm exec vitest run server packages
+eslint-rules` 0 (846 files passed, 258 skipped; 10937 tests). The first
+unit run (1) caught the a10 body sweep's four `PATCH .../users/:loginId`
+cells (setModerator had lost its read in the caller's scope), fixed.
+
+On the workstation, own clone and pg18 container (port 56073), migrated
+with `MANTLE_CHECK_FLOOR=keep`, `--maxWorkers=3`, at d5c0d20c5 (both checks
+as the configs set them; the sweeps run their warn and on cells):
+
+- `ws-user-definers.db.test.ts` 0 (alone); in every mode run below it passes.
+- Full DB vitest 1 at 9750aae23: the counts above.
+- `test:actor-off` 1: only a6b `workspace-create` (item 13).
+- `test:actor-on` 1: item 13 and the grants move (not a1's).
+- `test:edit-on` 1: items 10 to 13 and the grants move.
+- `test:runtime-role` 1: items 1 to 13 and the grants move (2635 passed).
+- `test:matrix` 0: 14608 cells, 9404 run, 9404 pass, 0 fail, 5204 not
+  applicable (as on main).
+- boot:smoke not run (no boot path changed).
+
+CI (build-check, verify) on d5c0d20c5: failure, the 14 cells above only
+(the 13 Admin cells and the grants move):
+https://github.com/crossworks-engineering/mantle/actions/runs/39132687727
