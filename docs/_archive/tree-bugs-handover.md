@@ -196,37 +196,33 @@ the code comments say "migration 0305" in `node-ops.ts`,
 
 ## Gates
 
-Rebased on main e6f75059e (v0.300.94, S4a). Exit codes on
-the rebased head, Mac (no database, DATABASE_URL unset): `pnpm -r
-typecheck` 0, `pnpm lint` 0, `pnpm format:check` 0, `pnpm docs:check` 0,
+On head d89d97a2f (rebased on main e6f75059e, v0.300.94, with the audit
+round), Mac (no database, DATABASE_URL unset): `pnpm -r typecheck` 0,
+`pnpm lint` 0, `pnpm format:check` 0, `pnpm docs:check` 0,
 `pnpm arch:check` 0, `pnpm -C server/web build` 0,
-`pnpm exec vitest run server packages eslint-rules` 0 (850 files passed,
-260 skipped; 11022 tests passed).
+`pnpm exec vitest run server packages eslint-rules` 0 (851 files passed,
+261 skipped; 11041 tests passed).
 
-Workstation (own pgvector pg18 container, `MANTLE_CHECK_FLOOR=keep`):
+Workstation, the same head, a fresh pgvector pg18 container
+(`MANTLE_CHECK_FLOOR=keep`):
 
-- `pnpm test:matrix` (`--config vitest.matrix.config.ts`) on main
-  384b64d02 first: exit 0, 4 files, 8 tests. On the branch: exit 0, 4
+- `pnpm test:matrix` (`--config vitest.matrix.config.ts`): exit 0, 4
   files, 8 tests. A8 grid 9404 run, 0 fail. Surfaces: off 8 fail (8
-  known), warn 8 (8 known), on 0. Tool cells: warn 26 fail (26 known, was
-  30), on 4 fail (4 known, was 8). 0 unexpected in both modes. The fail
-  list on the branch is main's less the four cells above (two ways in for
-  each), nothing new.
-- `server/web/server/tree-bugs.db.test.ts`: exit 0, 15 tests.
-- After CI's first run (the older suites above): `edit-check.db.test.ts`,
-  `schema-drift.test.ts`, `a5-mcp-writes-smoke.db.test.ts`,
-  `precheck-removal-http.db.test.ts`, `precheck-removal.db.test.ts` and
-  `tree-bugs.db.test.ts`: exit 0, 6 files, 594 tests (on a fresh
-  database, before the rebase; the rebase brought only main's P1b
-  counters).
-- `server/web/server/a6-grant-sweep.db.test.ts`,
-  `server/web/lib/grants.db.test.ts`, `packages/db/src/write-role.db.test.ts`,
-  `server/web/server/a3a-folders.db.test.ts`, `packages/content/src/tree/`:
-  exit 0, 15 files, 167 passed, 1 skipped.
+  known), warn 8 (8 known), on 0. Tool cells: warn 26 fail (26 known; 30
+  on main), on 4 (4 known; 8 on main). 0 unexpected in both modes. Main
+  was recorded first (384b64d02): the branch's fail list is main's less
+  the four cells of the two bugs (two ways in each), nothing new.
+- `server/web/server/tree-bugs.db.test.ts`: exit 0, 17 tests.
+- The related and the older suites whose answers moved
+  (`a6-grant-sweep`, `grants`, `write-role`, `a3a-folders`,
+  `packages/content/src/tree/`, `edit-check`, `schema-drift`,
+  `a5-mcp-writes-smoke`, `precheck-removal-http`, `precheck-removal`,
+  `pages/level-text`): exit 0, 21 files, 753 passed, 1 skipped.
 
 Pins (`scripts/arch-scoreboard.pins.json`, each with its reason):
 `asSystemExits` 58 to 59, `asSystemFull` 58 to 59 and
 `asSystemFull_brain-bookkeeping` 10 to 11 (the `tree-refold` step);
 `historyCodeComments` 2340 to 2339 (down, on v0.300.94).
 
-CI: CIURL
+CI: the run of this branch's head (see the CEO's reply; the first push's
+run was https://github.com/crossworks-engineering/mantle/actions/runs/39141017190).
