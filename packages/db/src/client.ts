@@ -2823,6 +2823,14 @@ export async function moderatorSeatsNow(
   return rows.map((r) => r.ws);
 }
 
+/** The login bound to this call: a login actor's, else the open scope's
+ *  (an assistant turn names its login), else null. */
+function boundLoginId(): string | null {
+  const actor = currentActor();
+  if (actor?.kind === 'login') return actor.loginId;
+  return currentWorkspaceScope()?.loginId?.toLowerCase() ?? null;
+}
+
 /**
  * The fallback of a login's create home (docs/workspaces.md, "Where a new
  * item lands"; W6b): for a login outside the Admin workspace (`ownWork`;
@@ -2857,13 +2865,15 @@ export async function createHomeFallback(
        where p.login_id = ${loginId}::uuid`)) as unknown as { ws: string }[];
     return { privateWs: ownPrivate(loginId, own[0]?.ws ?? null) };
   }
-  // The definer makes only the acting login's own (0305, plan v3.2 S2a a1).
-  // This read carried no write scope (a plain system-pool statement, no
-  // settings), so the login it is asked for is set as the scope's login
-  // (mantle.scope_login, which only the scope's checks read), in a
-  // transaction of its own.
+  // The definer makes only the acting login's own (0305, plan v3.2 S2a a1):
+  // the scope's login (mantle.scope_login, read by the scope's checks only)
+  // is the login bound to this call, never the one asked for (audit L1).
+  const bound = boundLoginId();
+  if (bound === null || bound !== loginId.toLowerCase()) {
+    throw new RuntimeFaultError('createHomeFallback: the login asked for is not the one bound');
+  }
   const rows = (await admin.transaction(async (tx) => {
-    await tx.execute(sqlTag`select set_config('mantle.scope_login', ${loginId}, true)`);
+    await tx.execute(sqlTag`select set_config('mantle.scope_login', ${bound}, true)`);
     return tx.execute(
       sqlTag`select "public"."mantle_ws_private_workspace"(${loginId}::uuid)::text as ws`,
     );

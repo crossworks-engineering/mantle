@@ -561,8 +561,12 @@ describe.skipIf(!URL)('the workspace user definers (S2a a1)', () => {
       (tx) => tx`select mantle_ws_private_workspace(${L.priv}::uuid)`,
     );
     expect(another).toMatchObject({ ok: false, state: '42501' });
-    // The TypeScript path (createHomeFallback): it sets mantle.scope_login.
-    const home = await m.createHomeIntent(L.priv, null, { ownWork: true, makePrivate: true });
+    // The TypeScript path (createHomeFallback): it sets mantle.scope_login
+    // to the login bound to the call, and refuses another (audit L1).
+    const ask = () => m.createHomeIntent(L.priv, null, { ownWork: true, makePrivate: true });
+    await expect(m.runAsActor(m.loginActor(L.mem), ask)).rejects.toThrow(/not the one bound/);
+    await expect(ask()).rejects.toThrow(/not the one bound/);
+    const home = await m.runAsActor(m.loginActor(L.priv), ask);
     expect('privateWs' in home && typeof home.privateWs === 'string').toBe(true);
     const [p] = await sql<{ ws: string }[]>`
       select workspace_id::text as ws from private_workspaces where login_id = ${L.priv}`;
