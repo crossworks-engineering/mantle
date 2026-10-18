@@ -19,7 +19,6 @@
 /** The session guards: each resolves the caller itself. */
 export const SESSION_GUARDS = Object.freeze([
   'getOwnerForAsset',
-  'getMemberForAsset',
   'getReaderForAsset',
   'getSessionUserWithSource',
   'getSessionUser',
@@ -44,7 +43,7 @@ export const SESSION_GUARDS = Object.freeze([
  *    user's guard (getSessionUser: any Admin user, or null) the rows open to
  *    every Admin user (route-policy.ts ADMIN_OPEN_ROWS, A4 hand batch A).
  *    A4 hand batch B: the asset guards (getOwnerForAsset,
- *    getReaderForAsset, getMemberForAsset) the byte routes; the frame
+ *    getReaderForAsset) the byte routes; the frame
  *    ticket the frame documents; and, answered at the read (`atRead`), the
  *    login a public row reads (getLoginOr401, getCookieUpgradeLoginOr401)
  *    and the owner of a row whose handler runs a key's checks first.
@@ -95,11 +94,6 @@ export const READER_ANSWERS = Object.freeze({
     caller: 'readerAsset',
     guard: 'getReaderForAsset',
     entry: 'pipeline:readerAsset',
-  }),
-  memberAssetCaller: Object.freeze({
-    caller: 'memberAsset',
-    guard: 'getMemberForAsset',
-    entry: 'pipeline:memberAsset',
   }),
   frameTicketCaller: Object.freeze({ caller: 'frame', guard: null, entry: 'pipeline:frame' }),
   publicLoginCaller: Object.freeze({

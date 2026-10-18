@@ -24,7 +24,7 @@
  */
 import { NextResponse } from '@/server/http-compat';
 import { getRequestContext } from '@/server/request-context';
-import { loginCaller, memberAssetCaller, memberCaller, ownerCaller } from '@/lib/auth';
+import { loginCaller, memberCaller, ownerCaller } from '@/lib/auth';
 import { GONE_KINDS, type GoneGuard } from './gone-kinds';
 
 export { GONE_KINDS, type GoneGuard } from './gone-kinds';
@@ -37,7 +37,6 @@ const READERS: Readonly<Record<(typeof GONE_KINDS)[GoneGuard]['reader'], () => u
   ownerCaller: () => ownerCaller(),
   memberCaller: () => memberCaller(),
   loginCaller: () => loginCaller(),
-  memberAssetCaller: () => memberAssetCaller(),
 };
 
 export const GONE_MESSAGE = 'This feature was removed. Update the app.';
@@ -57,10 +56,6 @@ export function goneResponse(error: string = GONE_MESSAGE): NextResponse {
  *
  *   export const GET = gone('member');
  *   export const POST = gone('owner', 'Review is gone. Share items with Grant Access.');
- *
- * A removed member BYTE route (`gone('member-asset')`, A4 hand batch B):
- * its old guard was getMemberForAsset (a member session, or a member `?at=`
- * asset token an <img> src carries), which the gate answers.
  */
 export function gone(kind: GoneGuard, error?: string): () => Promise<Response> {
   const read = READERS[GONE_KINDS[kind].reader];

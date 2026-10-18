@@ -77,8 +77,6 @@ export const ROUTE_PREFIXES: ReadonlyArray<readonly [string, Tag]> = [
   ['/api/health', 'self'],
   ['/api/realtime', 'self'],
   ['/api/version', 'self'],
-  // An Admin user's own private items (its personal space, until W6b).
-  ['/api/admin', 'self'],
   // The member routes (W7e): every one that reads brain items runs in the
   // login's request scope ('content'), the member home too (it reads team
   // pages and apps); its own things (its MCP clients, push devices, the live

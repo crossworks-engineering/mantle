@@ -1324,7 +1324,6 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
     type Row = {
       pattern: string;
       caller: RouteCaller;
-      gone?: boolean;
       read: () => unknown;
       guard: (req: Request) => Promise<unknown>;
     };
@@ -1360,13 +1359,6 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
         guard: (req) => session.getReaderForAsset(req),
       },
       {
-        pattern: '/api/member/files/:id',
-        caller: 'memberAsset',
-        gone: true,
-        read: () => session.memberAssetCaller(),
-        guard: (req) => session.getMemberForAsset(req),
-      },
-      {
         // The frame ticket: no guard before; the handler verified it.
         pattern: '/api/apps/:id/frame',
         caller: 'frame',
@@ -1395,7 +1387,6 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
             catchAll: null,
             catchAllOptional: false,
             ...(reads ? { reads: { GET: r.caller } } : {}),
-            ...(reads && r.gone ? { gone: ['GET'] } : {}),
             load: async () => ({ GET: handle }),
           };
         }),
@@ -1454,8 +1445,6 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
       'ownerAsset 403',
       'readerAsset 200',
       'readerAsset 401',
-      'memberAsset 200',
-      'memberAsset 401',
       'frame 200',
       'frame 401',
     ]) {
@@ -1490,7 +1479,6 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
     // Each reader throws where the pipeline gave no answer of its kind.
     expect(() => session.ownerAssetCaller()).toThrow(/answered no asset owner/);
     expect(() => session.readerAssetCaller()).toThrow(/answered no asset reader/);
-    expect(() => session.memberAssetCaller()).toThrow(/answered no asset member/);
     expect(() => session.frameTicketCaller()).toThrow(/answered no frame ticket/);
   });
 
@@ -1664,7 +1652,6 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
     expect(reads('/api/auth/sso', 'POST', 'cookieUpgrade')).toBe('cookieUpgrade');
     expect(reads('/api/attachments/:id', 'GET', 'ownerAsset')).toBe('ownerAsset');
     expect(reads('/api/files/files/:id', 'GET', 'readerAsset')).toBe('readerAsset');
-    expect(reads('/api/member/files/:id', 'GET', 'memberAsset', true)).toBe('memberAsset');
     expect(reads('/api/apps/:id/frame', 'GET', 'frame')).toBe('frame');
     expect(reads('/api/pages/:id', 'PATCH', 'ownerAtRead')).toBe('ownerAtRead');
     for (const [pattern, method, caller] of [
@@ -1674,7 +1661,6 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
       ['/api/auth/whoami', 'GET', 'ownerAsset'],
       ['/api/auth/sso', 'POST', 'ownerAtRead'],
       ['/api/shell', 'GET', 'readerAsset'],
-      ['/api/member/files/:id', 'GET', 'memberAsset'],
       ['/api/profile', 'GET', 'frame'],
       // The answer taken at the read comes after the gate's Admin step: no
       // area row reads it.
@@ -1727,8 +1713,10 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
       ['/api/notes', 'GET', 'readerAsset'],
       ['/api/v1/pages', 'GET', 'readerAsset'],
       ['/api/v1/files/:id', 'DELETE', 'readerAsset'],
-      ['/api/member/mcp', 'GET', 'memberAsset', true],
-      ['/api/member/files/:id', 'POST', 'memberAsset', true],
+      // A gone row takes its stub's kind on any list, but an asset kind
+      // still only on an asset row.
+      ['/api/profile', 'GET', 'ownerAsset', true],
+      ['/api/files/files/:id', 'POST', 'readerAsset', true],
       // A public login kind: a public row that reads no login (sign-in, the
       // /s link routes, the remote MCP, federation), or the other kind's row.
       ['/api/auth/login', 'POST', 'publicLogin'],

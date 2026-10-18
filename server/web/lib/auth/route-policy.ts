@@ -118,9 +118,7 @@ export type RouteItem = Readonly<{ need: ItemWriteNeed; ref: ItemRef; seg: numbe
  *  A4 hand batch B:
  *  - the asset answers, on the byte routes a browser-native src opens
  *    (a `?at=` asset token, the render cookie): 'ownerAsset'
- *    (getOwnerForAsset) and 'readerAsset' (getReaderForAsset) on owner rows,
- *    'memberAsset' (getMemberForAsset) on the retired member byte routes'
- *    stubs only (gone rows);
+ *    (getOwnerForAsset) and 'readerAsset' (getReaderForAsset) on owner rows;
  *  - 'frame': the `?t=` frame ticket of a sandbox frame document, verified
  *    (FRAME_ROWS), no login and never a refusal;
  *  - the answers taken at the read (ANSWERED_AT_READ): the gate binds the
@@ -140,7 +138,6 @@ export type RouteCaller =
   | 'session'
   | 'ownerAsset'
   | 'readerAsset'
-  | 'memberAsset'
   | 'frame'
   | 'publicLogin'
   | 'cookieUpgrade'
@@ -182,11 +179,9 @@ const CALLER_LOGINS: Readonly<Record<RouteCaller, ReadonlyArray<RouteLogins | nu
   // every Admin user (ADMIN_OPEN_ROWS, checked in buildRouteRow).
   session: [],
   // The asset guards serve the owner rows a byte src opens (an Admin user,
-  // and a member on the reads open to it: getReaderForAsset); the member
-  // asset guard only the retired member byte routes (gone rows).
+  // and a member on the reads open to it: getReaderForAsset).
   ownerAsset: [null, 'owner'],
   readerAsset: [null, 'owner'],
-  memberAsset: [],
   // The frame documents (FRAME_ROWS, checked in buildRouteRow).
   frame: [],
   // Public rows only (PUBLIC_CALLERS, checked in buildRouteRow).
@@ -239,11 +234,7 @@ export const OWNER_AT_READ_ROWS: ReadonlySet<string> = new Set([
 
 /** The asset caller kinds: answered from a `?at=` asset token or the render
  *  cookie as well as a login, read only on an asset row (assetRow). */
-const ASSET_CALLERS: ReadonlySet<RouteCaller> = new Set([
-  'ownerAsset',
-  'readerAsset',
-  'memberAsset',
-]);
+const ASSET_CALLERS: ReadonlySet<RouteCaller> = new Set(['ownerAsset', 'readerAsset']);
 
 /** The /api/v1 rows that run an asset row's handler: the alias of the file
  *  bytes and the download wrapper (A4 hand batch B). */
@@ -394,11 +385,6 @@ function markedPath(pattern: string): string {
   let i = 0;
   return pattern.replace(/:[A-Za-z0-9_]+\??/g, () => `{p${i++}}`).replace(/\*$/, '{rest}');
 }
-
-/** The client portal's routes, removed in workspaces W5c (and the client
- *  login with it, W8a): each is a stub that answers any login 410 gone
- *  (lib/gone.ts), about the login only. No other list names them. */
-const CLIENT_PORTAL_GONE = '/api/client/';
 
 /** The login list that opens `method pattern`; at most one does. */
 function loginsOf(method: string, pattern: string): RouteLogins | null {
@@ -674,12 +660,7 @@ export function buildRouteRow(
   const isPublic = isPublicPath(path);
   const listed: RoutePolicyClass | null = pattern.startsWith('/s/')
     ? 'link'
-    : (scope?.kind ??
-      (isPublic
-        ? 'public'
-        : classLogins || pattern.startsWith(CLIENT_PORTAL_GONE)
-          ? 'self'
-          : null));
+    : (scope?.kind ?? (isPublic ? 'public' : classLogins ? 'self' : null));
   // A page's class is its list's (registerPages). A link page is an /s
   // pattern; a render page is one no list classes, so it can never shadow
   // a route the lists know. Nothing else is mounted outside the manifest.

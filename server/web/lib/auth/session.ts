@@ -269,18 +269,6 @@ async function findRender(): Promise<{ user: SessionUser; nodeId: string } | nul
 }
 
 /**
- * The member twin of getOwnerForAsset, for the member Library's byte routes:
- * a member session, or a `?at=` token minted for a member login (the member
- * shell mints it with `act` = the login). The login is re-read, so a disabled
- * or demoted login's token stops at once. The route reads at the team level.
- */
-export async function getMemberForAsset(req: Request): Promise<MemberCaller | NextResponse> {
-  const member = await memberForAsset(req);
-  if (member instanceof NextResponse) return member;
-  return (await memberRouteScope(member.loginId)) ?? member;
-}
-
-/**
  * The byte routes of brain items for EVERY login (W7e): an Admin user as
  * getOwnerForAsset (its session, an asset token, the render cookie; `member`
  * null); a member by its session or a member `?at=` token (an <img> src
@@ -1022,7 +1010,6 @@ type PipelineAnswer =
   | Readonly<{ caller: 'session'; user: SessionUser | null }>
   | Readonly<{ caller: 'ownerAsset'; user: SessionUser }>
   | Readonly<{ caller: 'readerAsset'; reader: AssetReader }>
-  | Readonly<{ caller: 'memberAsset'; member: MemberCaller }>
   | Readonly<{ caller: 'frame'; ticket: AppFrameTicket | null }>
   | Readonly<{
       caller: 'publicLogin';
@@ -1207,10 +1194,6 @@ async function guardAnswer(row: RouteRow): Promise<PipelineAnswer | NextResponse
       const reader = await getReaderForAsset(assetRequest(row));
       return reader instanceof NextResponse ? reader : { caller, reader };
     }
-    case 'memberAsset': {
-      const member = await getMemberForAsset(assetRequest(row));
-      return member instanceof NextResponse ? member : { caller, member };
-    }
     case 'frame': {
       // The ticket only (A4 hand batch B): the handler checks it names this
       // app and that its login is still active, as it did.
@@ -1368,15 +1351,6 @@ export function readerAssetCaller(): AssetReader {
 }
 
 /**
- * The member a retired member byte route's stub was answered for (A4 hand
- * batch B, lib/gone.ts `gone('member-asset')`): what getMemberForAsset
- * answers, read from the pipeline's answer.
- */
-export function memberAssetCaller(): MemberCaller {
-  return { ...pipelineAnswer('memberAssetCaller', 'memberAsset').member };
-}
-
-/**
  * The frame ticket a sandbox frame document was opened with (A4 hand batch
  * B): the `?t=` the gate admitted, verified (verifyAppFrameTicket), or null.
  * No login is resolved for these rows; the handler checks the ticket names
@@ -1456,7 +1430,6 @@ const ANSWERED: Readonly<Record<RouteCaller, string>> = {
   session: 'session user',
   ownerAsset: 'asset owner',
   readerAsset: 'asset reader',
-  memberAsset: 'asset member',
   frame: 'frame ticket',
   publicLogin: 'public login',
   cookieUpgrade: 'cookie upgrade login',

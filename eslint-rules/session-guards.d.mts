@@ -13,7 +13,6 @@ export declare const READER_ANSWERS: Readonly<
         | 'session'
         | 'ownerAsset'
         | 'readerAsset'
-        | 'memberAsset'
         | 'frame'
         | 'publicLogin'
         | 'cookieUpgrade'

@@ -36,7 +36,6 @@ vi.mock('@/lib/auth', async (importOriginal) => ({
     user: { id: OWNER },
     member: h.member ? memberCaller : null,
   })),
-  memberAssetCaller: vi.fn(() => memberCaller),
 }));
 vi.mock('@mantle/db', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),

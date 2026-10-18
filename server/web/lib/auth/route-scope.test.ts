@@ -40,10 +40,7 @@ describe.skipIf(!hasManifest)('route scope table (W6a)', () => {
     for (const e of routeManifest) {
       if (!e.pattern.startsWith('/api/') || OWN_GATE.test(e.pattern)) continue;
       const owner = e.methods.filter(
-        (m) =>
-          !isMemberRoute(m, e.pattern) &&
-          !e.pattern.startsWith('/api/client/') &&
-          !isAnyLoginRoute(m, e.pattern),
+        (m) => !isMemberRoute(m, e.pattern) && !isAnyLoginRoute(m, e.pattern),
       );
       if (owner.length && !routeClass(e.pattern)) missing.push(e.pattern);
     }

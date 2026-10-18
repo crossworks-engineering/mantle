@@ -51,7 +51,6 @@ describe('session-guards', () => {
     // taken at the read.
     expect(READER_ANSWERS.ownerAssetCaller?.guard).toBe('getOwnerForAsset');
     expect(READER_ANSWERS.readerAssetCaller?.guard).toBe('getReaderForAsset');
-    expect(READER_ANSWERS.memberAssetCaller?.guard).toBe('getMemberForAsset');
     expect(READER_ANSWERS.publicLoginCaller).toMatchObject({
       guard: 'getLoginOr401',
       atRead: true,

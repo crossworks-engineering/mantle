@@ -109,7 +109,6 @@ vi.mock('@/lib/auth', async (importOriginal) => {
     memberCaller: vi.fn(() => member()),
     // The member byte stubs' reader (A4 hand batch B): the gate answered
     // the member asset guard.
-    memberAssetCaller: vi.fn(() => member()),
     memberLoginActive: vi.fn(async () => h.loginActive),
     // The frame documents' caller (A4 hand batch B): framed, below.
     frameTicketCaller: vi.fn(() => h.frameTicket),
