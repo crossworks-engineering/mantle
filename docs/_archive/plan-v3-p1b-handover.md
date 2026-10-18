@@ -463,3 +463,44 @@ warning on main too), `pnpm format:check` 0, `pnpm docs:check` 0,
 `pnpm -C server/web build` 0, `pnpm exec vitest run server packages
 eslint-rules` 0 (847 files passed, 259 skipped; 11012 tests passed, 2648
 skipped). No DB code changed, so no DB suite ran.
+
+## Fix round 4: the diff check at ab43fca78 (9/10), the rebase onto v0.300.92
+
+Rebased onto main at 384b64d02 (v0.300.92: S2a a0 with migration 0304,
+S11a's tool matrix). Conflicts in two files of the first commit:
+eslint-rules/rights-counts.mjs (S11a took the A8 coverage out; this
+branch's role reader kept, under main's section name) and the pins file
+(kept this branch's, then main's pin changes applied once on top:
+a8Uncovered and a8Exempt as tested pins, consoleCalls 476, dbClientLines
+3142, and their notes).
+
+### The fixes
+
+- A template is SQL text the code holds only when its static text, after
+  any leading placeholders and an opening parenthesis, starts a statement
+  (select, insert, with, set and the rest). Round 3 took any SQL word
+  anywhere, so `${'insert'} into t values (1)` and `${stmt}; select 1`
+  counted in neither key. Tests for both dodges and a write after a
+  leading tag. No repo count moved (rawSqlNonLiteral 75).
+- A history file that ends inside a fenced block is a problem (its
+  headings after the last fence would not be read). Test.
+
+### Pins moved
+
+| Key                 | Before | After | Why                                                                                                                                        |
+| ------------------- | ------ | ----- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| sqlAreaRules        | 7      | 1     | P1b meets a0: a0 left mantle_area_rule and the two Telegram asks (3); P1b classes the Telegram asks as membership asks (sqlMembershipAsks) |
+| sqlRoleReaders      | 13     | 14    | main's new code: a0's mantle_role_drift (0304) reads auth.users.role                                                                       |
+| historyCodeComments | 2322   | 2332  | main's new code, S11a's tool matrix: matrix/a8-known-failures.ts 5 to 14, tool-policy.ts 15 to 16                                          |
+
+No other pin moved; nothing measures below its pin now.
+
+### Gates (fix round 4)
+
+At dcf900bee, the code head (this section is docs only on top of it).
+Mac (DATABASE_URL unset): `pnpm -r typecheck` 0, `pnpm lint` 0 (the one
+warning on main too), `pnpm format:check` 0, `pnpm docs:check` 0,
+`pnpm arch:check` 0 (nothing below its pin), `pnpm -C server/web build` 0,
+`pnpm exec vitest run server packages eslint-rules` 0 (850 files passed,
+259 skipped; 11022 tests passed, 2658 skipped). No DB code changed, so no
+DB suite ran.
