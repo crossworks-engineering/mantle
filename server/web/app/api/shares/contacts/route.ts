@@ -13,7 +13,7 @@
  */
 import { z } from 'zod';
 import { NextResponse } from '@/server/http-compat';
-import { createContactShares } from '@mantle/content';
+import { adminCreateContactShares } from '@mantle/content';
 import type { CreateContactSharesResponse } from '@mantle/client-types';
 import { ownerCaller } from '@/lib/auth';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
@@ -29,9 +29,11 @@ export async function POST(req: Request) {
   const user = ownerCaller();
   const body = await readBody(req, Body);
   // A refused share (ContactShareRefusedError) answers 400 with its reason
-  // by the one table (A10 part 2).
-  const shares = await createContactShares(
-    user.id,
+  // by the one table (A10 part 2). An Admin act: the definer
+  // mantle_share_with_contacts checks the Admin user inside (migration
+  // 0308); the item's home is not checked, as before.
+  const shares = await adminCreateContactShares(
+    user.actor.id,
     body.nodeId,
     body.contactIds,
     body.canWrite === true,

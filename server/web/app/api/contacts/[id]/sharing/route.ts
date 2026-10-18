@@ -13,16 +13,10 @@
  */
 import { z } from 'zod';
 import { NextResponse } from '@/server/http-compat';
-import {
-  contactSharingFor,
-  disableContactSharing,
-  enableContactSharing,
-  regenerateContactCode,
-} from '@mantle/content';
+import { adminContactSharing, contactSharingFor } from '@mantle/content';
 import type { ContactSharingResponse } from '@mantle/client-types';
 import { ownerCaller } from '@/lib/auth';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
-import { getContact } from '@/lib/contacts';
 import { readJson } from '@/lib/read-body';
 import type { RouteParams } from '@/lib/route-params';
 
@@ -37,9 +31,6 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   const { id } = await ctx.params;
   const parsed = Body.safeParse(await readJson(req));
   if (!parsed.success) return NextResponse.json({ error: 'invalid action' }, { status: 400 });
-  if (!(await getContact(user.id, id))) {
-    return NextResponse.json({ error: 'not found' }, { status: 404 });
-  }
   const { action } = parsed.data;
   const audit = (what: 'enabled' | 'regenerated' | 'disabled', detail: Record<string, unknown>) =>
     auditFireAndForget({
@@ -52,10 +43,14 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
       ...requestMetaFrom(req),
     });
 
+  // An Admin act: the definer mantle_contact_sharing_set checks the Admin
+  // user and the contact inside (migration 0308).
+  const r = await adminContactSharing(user.actor.id, id, action);
+  if (r.outcome === 'not-a-contact') {
+    return NextResponse.json({ error: 'not found' }, { status: 404 });
+  }
   if (action === 'enable') {
-    const r = await enableContactSharing(user.id, id);
-    if (!r) return NextResponse.json({ error: 'not found' }, { status: 404 });
-    if ('alreadyOn' in r) {
+    if (r.outcome === 'already-on' || r.code === null) {
       return NextResponse.json(
         { error: 'Sharing is already on. Regenerate the code instead.', reason: 'already-on' },
         { status: 409 },
@@ -68,8 +63,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     } satisfies ContactSharingResponse);
   }
   if (action === 'regenerate') {
-    const r = await regenerateContactCode(user.id, id);
-    if (!r) {
+    if (r.code === null) {
       return NextResponse.json(
         { error: 'Sharing is off for this contact.', reason: 'sharing-off' },
         { status: 409 },
@@ -81,10 +75,10 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
       sharing: await contactSharingFor(user.id, id),
     } satisfies ContactSharingResponse);
   }
-  const r = await disableContactSharing(user.id, id);
-  if (r) audit('disabled', { revoked: r.revoked });
+  const off = r.outcome === 'off';
+  if (off) audit('disabled', { revoked: r.revoked });
   return NextResponse.json({
     sharing: null,
-    revoked: r?.revoked ?? 0,
+    revoked: off ? r.revoked : 0,
   } satisfies ContactSharingResponse);
 }

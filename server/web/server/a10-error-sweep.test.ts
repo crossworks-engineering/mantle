@@ -182,6 +182,12 @@ vi.mock('@mantle/db', async (importOriginal) => {
     }) as typeof real.withViewer,
     loginScopeFor: async (loginId: string) => ({ kind: 'user', loginId, ws: [], modWs: [] }),
     createHomeIntent: async () => ({ createWs: null, privateWs: null }),
+    // An Admin act's definer (migration 0308) is a use of the database: in
+    // the handler, the forced failure, as its transaction met it before.
+    adminActTx: (async (_login: string, fn: (tx: unknown) => Promise<unknown>) => {
+      if (faults.inHandler && faults.make) throw faults.make();
+      return fn(db);
+    }) as unknown as typeof real.adminActTx,
   };
 });
 vi.mock('../lib/workspaces', async (importOriginal) => ({

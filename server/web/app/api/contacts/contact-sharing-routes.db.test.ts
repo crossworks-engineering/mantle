@@ -1,7 +1,9 @@
 /**
  * The owner API of contact shares on a real, migrated Postgres (contact
  * shares, migration 0214; plan section 7). Only the owner check and the
- * audit write are stood in. Seeds its own brain and removes it.
+ * audit write are stood in. Its own scratch brain, migrated, with its owner
+ * an Admin user: the sharing acts are definers that check the Admin user in
+ * the brain's Admin workspace (migration 0308).
  *
  *  - POST /api/contacts/:id/sharing: enable answers the code once (a second
  *    enable is 409), the contact DTO carries `sharing`, regenerate answers a
@@ -18,6 +20,7 @@
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run contact-sharing-routes.db.test
  */
 import { randomUUID } from 'node:crypto';
+import postgres from 'postgres';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
@@ -54,7 +57,10 @@ type Route = (req: Request, ctx?: { params: Promise<any> }) => Promise<Response>
 
 describe.skipIf(!URL)('the contact share owner API on Postgres', () => {
   type Db = typeof import('@mantle/db');
+  type Ts = typeof import('@mantle/db/test-support');
+  let scratch: Awaited<ReturnType<Ts['createMigratedScratchDatabase']>> | undefined;
   let m: Db;
+  let raw: ReturnType<typeof postgres> | undefined;
   let sqlTag: typeof import('drizzle-orm').sql;
   const r: Record<string, Route> = {};
   const owner = randomUUID();
@@ -81,7 +87,9 @@ describe.skipIf(!URL)('the contact share owner API on Postgres', () => {
     )[0]!.a;
 
   beforeAll(async () => {
-    process.env.DATABASE_URL = URL;
+    const ts: Ts = await import('@mantle/db/test-support');
+    scratch = await ts.createMigratedScratchDatabase(URL!);
+    process.env.DATABASE_URL = scratch.url;
     process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
     m = await import('@mantle/db');
     sqlTag = (await import('drizzle-orm')).sql;
@@ -103,26 +111,30 @@ describe.skipIf(!URL)('the contact share owner API on Postgres', () => {
     r.remove = one.DELETE as unknown as Route;
     r.all = (await import('../shares/all/route')).GET as unknown as Route;
 
-    await m.db.execute(sqlTag`
-      insert into auth.users (id, email, password_hash, role) values (${owner}, ${`${tag}@example.invalid`}, 'x', 'admin')`);
-    await m.db.execute(
-      sqlTag`insert into spaces (id, kind, login_id) values (${owner}, 'brain', ${owner})`,
-    );
-    await m.db.execute(sqlTag`
-      insert into nodes (id, owner_id, type, title, path, audience, data) values
-        (${ann}, ${owner}, 'contact', ${`${tag} Ann`}, 'contacts', 'admin', '{"first_name":"Ann"}'::jsonb),
-        (${ben}, ${owner}, 'contact', ${`${tag} Ben`}, 'contacts', 'admin', '{"first_name":"Ben"}'::jsonb),
-        (${page}, ${owner}, 'page', ${`${tag} page`}, 'pages', 'team', '{}'::jsonb),
-        (${app}, ${owner}, 'app', ${`${tag} app`}, 'apps', 'admin', '{}'::jsonb)`);
+    // The brain, its Admin workspace and the items, seeded as the superuser
+    // (the migrate's function is no runtime role's; test:runtime-role runs
+    // the app's pools as that role).
+    raw = postgres(scratch.url, { max: 1, prepare: false, onnotice: () => {} });
+    await raw.begin(async (tx) => {
+      await tx`select set_config('mantle.actor', 'system:test', true)`;
+      await tx`insert into auth.users (id, email, password_hash, is_owner, role)
+               values (${owner}, ${`${tag}@example.invalid`}, 'x', true, 'admin')`;
+      await tx`insert into spaces (id, kind, login_id) values (${owner}, 'brain', ${owner})
+               on conflict (id) do nothing`;
+      await tx`select * from mantle_ws_migrate()`;
+      await tx`
+        insert into nodes (id, owner_id, type, title, path, audience, data) values
+          (${ann}, ${owner}, 'contact', ${`${tag} Ann`}, 'contacts', 'admin', '{"first_name":"Ann"}'::jsonb),
+          (${ben}, ${owner}, 'contact', ${`${tag} Ben`}, 'contacts', 'admin', '{"first_name":"Ben"}'::jsonb),
+          (${page}, ${owner}, 'page', ${`${tag} page`}, 'pages', 'team', '{}'::jsonb),
+          (${app}, ${owner}, 'app', ${`${tag} app`}, 'apps', 'admin', '{}'::jsonb)`;
+    });
   }, 60_000);
 
   afterAll(async () => {
-    await m.db.execute(sqlTag`delete from shares where owner_id = ${owner}`);
-    await m.db.execute(sqlTag`delete from contact_share_codes where owner_id = ${owner}`);
-    await m.db.execute(sqlTag`delete from nodes where owner_id = ${owner}`);
-    await m.db.execute(sqlTag`delete from spaces where id = ${owner} or login_id = ${owner}`);
-    await m.db.execute(sqlTag`delete from auth.users where id = ${owner}`);
-    await m.closeDb();
+    await raw?.end();
+    await m?.closeDb();
+    await scratch?.drop();
   }, 60_000);
 
   it('enable answers the code once; the contact shows sharing; enable again is 409', async () => {

@@ -56,6 +56,10 @@ export const SCOPE_SETTING_PINS = {
 
 /** @type {Record<string, { count: number, why: string }>} */
 export const SYSTEM_POOL_SCOPE_PINS = {
+  'packages/db/src/admin-act.ts': {
+    count: 1,
+    why: "adminActTx: an Admin act's definer (0308) asks the request's own login, on the system pool in c1",
+  },
   'packages/db/src/client.ts': {
     count: 2,
     why: 'createHomeFallback (the login only, for mantle_ws_private_workspace); systemPoolProp (withSystemPoolInWriteScope transactions)',

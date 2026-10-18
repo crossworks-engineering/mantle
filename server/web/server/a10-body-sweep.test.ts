@@ -169,6 +169,25 @@ vi.mock('@mantle/db', async (importOriginal) => {
     withViewer: ((_actsFor, fn) => fn()) as typeof real.withViewer,
     loginScopeFor: async (loginId: string) => ({ kind: 'user', loginId, ws: [], modWs: [] }),
     createHomeIntent: async () => ({ createWs: null, privateWs: null }),
+    // An Admin act's definer (migration 0308) finds no row here, as the
+    // reads above: no such contact or entity to revoke or merge. The share
+    // act wrote in a transaction on main, which wants a database: it throws
+    // as that did. Only the statement's text chunks are read.
+    adminActTx: (async (_login: string, fn: (tx: unknown) => Promise<unknown>) =>
+      fn({
+        execute: async (stmt: { queryChunks?: unknown[] }) => {
+          const text = (stmt?.queryChunks ?? [])
+            .map((c) => {
+              const v = (c as { value?: unknown } | null)?.value;
+              return Array.isArray(v) ? v.join('') : '';
+            })
+            .join(' ');
+          if (text.includes('mantle_share_with_contacts')) {
+            throw new Error('DATABASE_URL must be set');
+          }
+          return [];
+        },
+      })) as unknown as typeof real.adminActTx,
   };
 });
 // The library's item check (assertItemRight, @mantle/db item-rights.ts)
@@ -329,6 +348,18 @@ function changeKind(cell: string, main: string, now: string): string | null {
   // main read no row through the stand-in and answered on.
   if (now === OPAQUE && cell.startsWith('DELETE /api/files/files ')) {
     return 'item-check-first (F4 fix round 2: asked of the database, the stand-in has none)';
+  }
+  // The contact sharing act is a definer (migration 0308): the new code is
+  // made, keyed by MANTLE_MASTER_KEY (cleared in this sweep), before the
+  // definer answers "not a contact", where main read no contact through
+  // the stand-in first. On a box the key is always set; the real answers:
+  // s6-c1-admin-acts.db.test.ts.
+  if (
+    now === OPAQUE &&
+    cell.startsWith('POST /api/contacts/:id/sharing ') &&
+    /"not found"/.test(main)
+  ) {
+    return 'code-first (Admin act definer, 0308: the code is made before the contact is asked)';
   }
   // Pre-check removal part 2: Recall's owner acts (a prompt confirm, a
   // reorder, a revision restore) read the map or the revision in the

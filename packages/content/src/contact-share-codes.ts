@@ -111,16 +111,6 @@ function sameHash(a: string, b: string): boolean {
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
-/** Owner-scoped guard: the id is one of this owner's contact nodes. */
-async function isOwnContact(q: Tx | typeof db, ownerId: string, contactId: string) {
-  const [row] = await q
-    .select({ id: nodes.id })
-    .from(nodes)
-    .where(and(eq(nodes.id, contactId), eq(nodes.ownerId, ownerId), eq(nodes.type, 'contact')))
-    .limit(1);
-  return !!row;
-}
-
 /** A contact's sharing, as the contact DTO shows it (null: sharing off). */
 export type ContactSharingStatus = {
   /** When the current code was made (Enable or Regenerate). */
@@ -202,6 +192,54 @@ export async function contactSharingFor(
   return (await contactSharingByContact(ownerId, [contactId])).get(contactId) ?? null;
 }
 
+/** What a sharing act answers (mantle_contact_sharing_rows, 0308). */
+export type ContactSharingOutcome =
+  'not-a-contact' | 'on' | 'already-on' | 'regenerated' | 'sharing-off' | 'off' | 'was-off';
+
+export type ContactSharingAction = 'enable' | 'regenerate' | 'disable';
+
+/** One sharing act's answer: `code` is the new code (shown once) for
+ *  `on` and `regenerated`, else null; `revoked` the shares a switch off
+ *  revoked. */
+export type ContactSharingActResult = {
+  outcome: ContactSharingOutcome;
+  revoked: number;
+  code: string | null;
+};
+
+/**
+ * A sharing act's call (migration 0308): a new code and its hash for enable and
+ * regenerate, the act's row from `run` (the SQL body for an owner here, the
+ * Admin act's definer in admin-acts.ts), and the code only when the act
+ * made it. The rows are written in SQL alone (migration 0308).
+ */
+export async function contactSharingAct(
+  contactId: string,
+  action: ContactSharingAction,
+  run: (codeHash: string | null) => Promise<{ outcome: string; revoked: number }>,
+): Promise<ContactSharingActResult> {
+  const code = action === 'disable' ? null : generateContactCode();
+  const row = await run(code === null ? null : hashContactCode(contactId, code));
+  const outcome = row.outcome as ContactSharingOutcome;
+  const made = outcome === 'on' || outcome === 'regenerated';
+  return { outcome, revoked: Number(row.revoked) || 0, code: made ? code : null };
+}
+
+/** The SQL body for an owner (system work: no Admin check; the Admin act
+ *  is mantle_contact_sharing_set). */
+function ownerSharing(ownerId: string, contactId: string, action: ContactSharingAction) {
+  return contactSharingAct(contactId, action, async (codeHash) => {
+    // In a transaction: the system actor is bound on it (the actor check).
+    const rows = (await db.transaction((tx) =>
+      tx.execute(
+        sql`select outcome, revoked from mantle_contact_sharing_rows(
+              ${ownerId}::uuid, ${contactId}::uuid, ${action}, ${codeHash})`,
+      ),
+    )) as unknown as { outcome: string; revoked: number }[];
+    return rows[0]!;
+  });
+}
+
 /**
  *   { code }       a new code, shown once;
  *   { alreadyOn }  sharing was on: nothing changed (use regenerate);
@@ -212,64 +250,17 @@ export type EnableContactSharingResult = { code: string } | { alreadyOn: true } 
 /**
  * Switch sharing on. A contact that had sharing before (and was switched
  * off) gets a new code and a higher epoch, and starts with no shares (switch
- * off revoked them).
+ * off revoked them; a share that got past an older switch off is revoked in
+ * the same transaction, before the new code can open it). Two Enables at
+ * once: the second answers alreadyOn.
  */
 export async function enableContactSharing(
   ownerId: string,
   contactId: string,
-  now = new Date(),
 ): Promise<EnableContactSharingResult> {
-  return db.transaction(async (tx) => {
-    if (!(await isOwnContact(tx, ownerId, contactId))) return null;
-    const code = generateContactCode();
-    const codeHash = hashContactCode(contactId, code);
-    const [existing] = await tx
-      .select({ codeHash: contactShareCodes.codeHash })
-      .from(contactShareCodes)
-      .where(eq(contactShareCodes.contactId, contactId))
-      .for('update')
-      .limit(1);
-    if (existing?.codeHash) return { alreadyOn: true };
-    if (!existing) {
-      // Two Enables at once (a double click) both find no row to lock: the
-      // second meets the first one's row here, waits for it, and answers
-      // alreadyOn rather than a primary key error.
-      const made = await tx
-        .insert(contactShareCodes)
-        .values({ contactId, ownerId, codeHash, createdAt: now })
-        .onConflictDoNothing({ target: contactShareCodes.contactId })
-        .returning({ id: contactShareCodes.contactId });
-      if (!made.length) return { alreadyOn: true };
-    } else {
-      await tx
-        .update(contactShareCodes)
-        .set({
-          codeHash,
-          codeEpoch: sql`${contactShareCodes.codeEpoch} + 1`,
-          disabledAt: null,
-          failedAttempts: 0,
-          failedSince: null,
-          lockedUntil: null,
-          rotatedAt: now,
-        })
-        .where(eq(contactShareCodes.contactId, contactId));
-      // Enable again starts with no shares (decision 3). Switch off revoked
-      // them, and a share create waits on this row's lock, but a share that
-      // got past an older switch off is revoked here, in the same
-      // transaction, before the new code can open it.
-      await tx
-        .update(shares)
-        .set({ revokedAt: now })
-        .where(
-          and(
-            eq(shares.ownerId, ownerId),
-            eq(shares.contactId, contactId),
-            isNull(shares.revokedAt),
-          ),
-        );
-    }
-    return { code };
-  });
+  const r = await ownerSharing(ownerId, contactId, 'enable');
+  if (r.outcome === 'already-on') return { alreadyOn: true };
+  return r.code === null ? null : { code: r.code };
 }
 
 /** A new code for a contact with sharing on (the old one stops at once,
@@ -278,28 +269,9 @@ export async function enableContactSharing(
 export async function regenerateContactCode(
   ownerId: string,
   contactId: string,
-  now = new Date(),
 ): Promise<{ code: string } | null> {
-  const code = generateContactCode();
-  const rows = await db
-    .update(contactShareCodes)
-    .set({
-      codeHash: hashContactCode(contactId, code),
-      codeEpoch: sql`${contactShareCodes.codeEpoch} + 1`,
-      failedAttempts: 0,
-      failedSince: null,
-      lockedUntil: null,
-      rotatedAt: now,
-    })
-    .where(
-      and(
-        eq(contactShareCodes.contactId, contactId),
-        eq(contactShareCodes.ownerId, ownerId),
-        isNotNull(contactShareCodes.codeHash),
-      ),
-    )
-    .returning({ id: contactShareCodes.contactId });
-  return rows.length ? { code } : null;
+  const r = await ownerSharing(ownerId, contactId, 'regenerate');
+  return r.code === null ? null : { code: r.code };
 }
 
 /**
@@ -311,37 +283,9 @@ export async function regenerateContactCode(
 export async function disableContactSharing(
   ownerId: string,
   contactId: string,
-  now = new Date(),
 ): Promise<{ revoked: number } | null> {
-  return db.transaction(async (tx) => {
-    const rows = await tx
-      .update(contactShareCodes)
-      .set({
-        codeHash: null,
-        disabledAt: now,
-        codeEpoch: sql`${contactShareCodes.codeEpoch} + 1`,
-        failedAttempts: 0,
-        failedSince: null,
-        lockedUntil: null,
-      })
-      .where(
-        and(
-          eq(contactShareCodes.contactId, contactId),
-          eq(contactShareCodes.ownerId, ownerId),
-          isNotNull(contactShareCodes.codeHash),
-        ),
-      )
-      .returning({ id: contactShareCodes.contactId });
-    if (!rows.length) return null;
-    const revoked = await tx
-      .update(shares)
-      .set({ revokedAt: now })
-      .where(
-        and(eq(shares.ownerId, ownerId), eq(shares.contactId, contactId), isNull(shares.revokedAt)),
-      )
-      .returning({ id: shares.id });
-    return { revoked: revoked.length };
-  });
+  const r = await ownerSharing(ownerId, contactId, 'disable');
+  return r.outcome === 'off' ? { revoked: r.revoked } : null;
 }
 
 /** What the gate needs of a contact on every request. */

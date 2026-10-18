@@ -188,4 +188,16 @@ describe('migrations journal', () => {
       );
     }
   });
+
+  it('0308 is the Admin act definers, renumbered from 0306 with the same `when`', () => {
+    // Built as 0306 (the next free number then); S8a took 0306 and S2a
+    // a1+a2 0307 at the merge, so it is 0308, its `when` unchanged and
+    // above 0307's.
+    const es = journal.entries as unknown as Array<{ idx: number; tag: string; when: number }>;
+    const acts = es.find((x) => x.tag === '0308_admin_act_definers');
+    expect([acts?.idx, acts?.when]).toEqual([308, 1790197800000]);
+    expect(es.find((x) => x.tag === '0307_ws_user_definers')?.when).toBeLessThan(acts!.when);
+    expect(es.some((x) => x.tag === '0306_admin_act_definers')).toBe(false);
+    expect(es.filter((x) => x.idx === 306).map((x) => x.tag)).toEqual(['0306_admin_membership']);
+  });
 });

@@ -98,6 +98,19 @@ export {
 } from './contact-shares';
 
 export {
+  AdminActRefusedError,
+  adminContactSharing,
+  adminRevokeAllContactShares,
+  adminCreateContactShares,
+  adminMergeEntities,
+} from './admin-acts';
+export type {
+  ContactSharingAction,
+  ContactSharingActResult,
+  ContactSharingOutcome,
+} from './contact-share-codes';
+
+export {
   recordShareAccess,
   listShareAccess,
   reapShareAccessLog,

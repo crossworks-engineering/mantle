@@ -134,8 +134,23 @@ export const RUNTIME_SYSTEM_FUNCTIONS: Readonly<Record<string, string>> = {
     'client.ts EDIT_CHECK_DRIFT_SQL and CHECK_FLOOR_SQL: the boot warnings and the integrity rows',
   'public.mantle_check_lowered()':
     'client.ts CHECK_FLOOR_SQL: the record of a check lowered below on (0301), logged loudly',
+  'public.mantle_contact_sharing_set(uuid,text,text)':
+    "admin-acts.ts: an Admin user's switch of a contact's sharing (0308)",
+  'public.mantle_contact_sharing_rows(uuid,uuid,text,text)':
+    'contact-share-codes.ts: the same rows for an owner, system work (0308)',
+  'public.mantle_contact_shares_revoke_all(uuid)':
+    "admin-acts.ts: an Admin user's Revoke all of a contact's shares (0308)",
+  'public.mantle_contact_shares_revoke_rows(uuid,uuid)':
+    'contact-shares.ts: the same rows for an owner, system work (0308)',
   'public.mantle_embed_host(uuid,public.node_type)':
     'maintenance/refold-embeds.ts: the host text of an embedded item (0248)',
+  'public.mantle_entity_merge(uuid,uuid)': "admin-acts.ts: an Admin user's entity merge (0308)",
+  'public.mantle_entity_merge_rows(uuid,uuid,uuid)':
+    'entity-dedup.ts mergeEntities: the entities-dedupe sweep and CLI, system work (0308)',
+  'public.mantle_share_with_contacts(uuid,uuid[],text[],boolean,text[])':
+    "admin-acts.ts: an Admin user's share of an item with contacts (0308)",
+  'public.mantle_share_with_contacts_rows(uuid,uuid,uuid[],text[],boolean,text[])':
+    'contact-shares.ts: the same rows for an owner, system work (0308)',
   'public.mantle_area_rule(uuid,text)':
     'client.ts loginHasArea: the area rule about another login (0304, S2a a0)',
   'public.mantle_login_areas(uuid)': 'the areas the area rule gives a login (0304, S2a a0)',

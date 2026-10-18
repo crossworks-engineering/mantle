@@ -345,6 +345,7 @@ export {
   pgConstraint,
   pgErrorCode,
 } from './pg-error';
+export { adminActTx } from './admin-act';
 export {
   snapshotCopyOf,
   isSnapshotCopy,

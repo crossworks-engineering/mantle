@@ -11,7 +11,7 @@
  * still works for new shares). Answers `{ revoked }`.
  */
 import { NextResponse } from '@/server/http-compat';
-import { listContactSharesForAdmin, revokeAllContactShares } from '@mantle/content';
+import { adminRevokeAllContactShares, listContactSharesForAdmin } from '@mantle/content';
 import type { ContactSharesPage, ContactSharesRevokedAll } from '@mantle/client-types';
 import { ownerCaller } from '@/lib/auth';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
@@ -36,10 +36,10 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
 export async function DELETE(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const user = ownerCaller();
   const { id } = await ctx.params;
-  if (!(await getContact(user.id, id))) {
-    return NextResponse.json({ error: 'not found' }, { status: 404 });
-  }
-  const revoked = await revokeAllContactShares(user.id, id);
+  // An Admin act: the definer mantle_contact_shares_revoke_all checks the
+  // Admin user and the contact inside (migration 0308); null: not a contact.
+  const revoked = await adminRevokeAllContactShares(user.actor.id, id);
+  if (revoked === null) return NextResponse.json({ error: 'not found' }, { status: 404 });
   auditFireAndForget({
     actorId: user.actor.id,
     actorEmail: user.actor.email,

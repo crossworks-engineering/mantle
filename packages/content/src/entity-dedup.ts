@@ -20,16 +20,8 @@
  * dup) — the same machinery 0055 used, as a callable function. Pure rule
  * helpers are exported for unit testing without a DB.
  */
-import { and, eq, or, sql } from 'drizzle-orm';
-import {
-  db,
-  entities,
-  entityEdges,
-  entityMergeDismissals,
-  facts,
-  nodes,
-  type Entity,
-} from '@mantle/db';
+import { and, eq, sql } from 'drizzle-orm';
+import { db, entities, entityEdges, entityMergeDismissals, nodes, type Entity } from '@mantle/db';
 import { planPersonInitialMerges } from './entity-names';
 
 /** Order two ids so a pair is direction-agnostic (matches the dismissal store). */
@@ -317,6 +309,9 @@ export async function findDuplicateCandidates(ownerId: string): Promise<MergeCan
  * name + aliases into the canonical's aliases (so future extractions resolve
  * the variant straight to the canonical — preventing recurrence), then deletes
  * the dup. Transactional. Returns false if either id is missing / not owned.
+ * The SQL body for an owner (migration 0308): system work, the
+ * entities-dedupe sweep and CLI, no Admin check; an Admin user's merge is
+ * the Admin act mantle_entity_merge (admin-acts.ts).
  */
 export async function mergeEntities(
   ownerId: string,
@@ -324,49 +319,13 @@ export async function mergeEntities(
   dupId: string,
 ): Promise<boolean> {
   if (canonicalId === dupId) return false;
-  return db.transaction(async (tx) => {
-    const rows = await tx
-      .select()
-      .from(entities)
-      .where(
-        and(
-          eq(entities.ownerId, ownerId),
-          or(eq(entities.id, canonicalId), eq(entities.id, dupId)),
-        ),
-      );
-    const canon = rows.find((r) => r.id === canonicalId);
-    const dup = rows.find((r) => r.id === dupId);
-    if (!canon || !dup) return false;
-
-    await tx
-      .update(entityEdges)
-      .set({ sourceId: canonicalId })
-      .where(and(eq(entityEdges.ownerId, ownerId), eq(entityEdges.sourceId, dupId)));
-    await tx
-      .update(entityEdges)
-      .set({ targetId: canonicalId })
-      .where(and(eq(entityEdges.ownerId, ownerId), eq(entityEdges.targetId, dupId)));
-    await tx
-      .update(facts)
-      .set({ entityId: canonicalId })
-      .where(and(eq(facts.ownerId, ownerId), eq(facts.entityId, dupId)));
-
-    // Fold dup name + aliases into canonical (deduped, excluding the canonical's
-    // own name) so future mentions of the variant resolve here.
-    const merged = Array.from(
-      new Set(
-        [...canon.aliases, dup.name, ...dup.aliases]
-          .map((a) => a.trim())
-          .filter((a) => a && a.toLowerCase() !== canon.name.toLowerCase()),
-      ),
-    );
-    await tx
-      .update(entities)
-      .set({ aliases: merged, updatedAt: new Date() })
-      .where(eq(entities.id, canonicalId));
-    await tx.delete(entities).where(and(eq(entities.id, dupId), eq(entities.ownerId, ownerId)));
-    return true;
-  });
+  // In a transaction: the system actor is bound on it (the actor check).
+  const rows = (await db.transaction((tx) =>
+    tx.execute(
+      sql`select mantle_entity_merge_rows(${ownerId}::uuid, ${canonicalId}::uuid, ${dupId}::uuid) as ok`,
+    ),
+  )) as unknown as { ok: boolean }[];
+  return rows[0]?.ok === true;
 }
 
 /**

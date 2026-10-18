@@ -15,16 +15,9 @@
  *  - one live share per (item, contact): asking again returns it.
  */
 import { randomBytes } from 'node:crypto';
-import { and, desc, eq, gt, inArray, isNotNull, isNull, lt, or, sql } from 'drizzle-orm';
-import {
-  contactShareCodes,
-  db,
-  isSnapshotCopy,
-  nodes,
-  shares,
-  SNAPSHOT_COPY_NO_SHARE,
-} from '@mantle/db';
-import { defineDomainError } from '@mantle/std';
+import { and, desc, eq, gt, isNotNull, isNull, or, sql } from 'drizzle-orm';
+import { db, nodes, shares, SNAPSHOT_COPY_NO_SHARE } from '@mantle/db';
+import { defineDomainError, UUID_RE } from '@mantle/std';
 import { contactSharingByContact } from './contact-share-codes';
 import { kindsWhere, type ContactShareKind } from '@mantle/client-types/kinds';
 import type {
@@ -72,12 +65,88 @@ function genToken(): string {
   return randomBytes(16).toString('base64url');
 }
 
+/** One row of a share act (mantle_share_with_contacts_rows, 0308). */
+export type ContactShareActRow = {
+  share_id: string | null;
+  contact_id: string | null;
+  token: string | null;
+  refused: string | null;
+};
+
+/** The refusal a share act's `refused` names, in today's words. */
+function refusalOf(refused: string): ContactShareRefusedError {
+  if (refused === 'missing') return new ContactShareRefusedError('not-shareable', 'item not found');
+  // A read-only snapshot copy is shared with no one (W6b fix round 2,
+  // L-1; the database refuses it too).
+  if (refused === 'snapshot') {
+    return new ContactShareRefusedError('not-shareable', SNAPSHOT_COPY_NO_SHARE);
+  }
+  if (refused === 'folder') {
+    return new ContactShareRefusedError(
+      'folder',
+      'A folder cannot be shared with a contact. Share the items in it one by one.',
+    );
+  }
+  if (refused.startsWith('kind:')) {
+    return new ContactShareRefusedError(
+      'not-shareable',
+      `A ${refused.slice('kind:'.length)} cannot be shared with a contact.`,
+    );
+  }
+  if (refused === 'write-not-app') {
+    return new ContactShareRefusedError('write-not-app', 'Only an app can let a contact write.');
+  }
+  if (refused === 'not-a-contact') {
+    return new ContactShareRefusedError('not-a-contact', 'Not a contact of this brain.');
+  }
+  if (refused === 'sharing-off') {
+    return new ContactShareRefusedError(
+      'sharing-off',
+      'Sharing is off for this contact. Turn it on in Contacts first.',
+    );
+  }
+  throw new Error(`contact share: an unknown refusal ${refused}`);
+}
+
+/**
+ * A share act's call (migration 0308): the contacts each once (lower case, first
+ * seen first), a new token for each, the act's rows from `run` (the SQL
+ * body for an owner here, the Admin act's definer in admin-acts.ts), and
+ * the answer: the shares in the order asked, or the refusal. The rows are
+ * written in SQL alone (migration 0308); what only TypeScript knows comes
+ * in as arguments: the tokens and the kinds a contact share may name.
+ */
+export async function contactShareAct(
+  contactIds: readonly string[],
+  run: (args: { contacts: string; tokens: string; kinds: string }) => Promise<ContactShareActRow[]>,
+): Promise<CreatedContactShare[]> {
+  const ids = [...new Set(contactIds.map((c) => c.toLowerCase()))];
+  if (ids.length === 0) return [];
+  if (!ids.every((c) => UUID_RE.test(c))) {
+    throw new ContactShareRefusedError('not-a-contact', 'Not a contact of this brain.');
+  }
+  const rows = await run({
+    contacts: `{${ids.join(',')}}`,
+    tokens: `{${ids.map(() => genToken()).join(',')}}`,
+    kinds: `{${CONTACT_SHAREABLE_TYPES.join(',')}}`,
+  });
+  const refused = rows.find((r) => r.refused)?.refused;
+  if (refused) throw refusalOf(refused);
+  return rows.map((r) => ({
+    shareId: r.share_id!,
+    contactId: r.contact_id!,
+    path: `/s/${r.token!}`,
+  }));
+}
+
 /**
  * Share one item with each of `contactIds`. One share per contact, made or
  * found (idempotent per item and contact: an existing live share is
  * returned as it is). Refused, as a whole, for a contact with sharing off
  * or not this owner's, an item that is not a workspace kind or is a folder,
- * and `canWrite` on anything but an app. Changes no level.
+ * and `canWrite` on anything but an app. Changes no level. The SQL body for
+ * an owner (system work: no Admin check; the Admin act is
+ * mantle_share_with_contacts).
  */
 export async function createContactShares(
   ownerId: string,
@@ -85,131 +154,18 @@ export async function createContactShares(
   contactIds: readonly string[],
   canWrite = false,
 ): Promise<CreatedContactShare[]> {
-  const ids = [...new Set(contactIds.map((c) => c.toLowerCase()))];
-  if (ids.length === 0) return [];
-  return db.transaction(async (tx) => {
-    const [node] = await tx
-      .select({ id: nodes.id, type: nodes.type, data: nodes.data })
-      .from(nodes)
-      .where(and(eq(nodes.id, nodeId), eq(nodes.ownerId, ownerId)))
-      .limit(1);
-    if (!node) throw new ContactShareRefusedError('not-shareable', 'item not found');
-    // A read-only snapshot copy is shared with no one (W6b fix round 2,
-    // L-1; the database refuses it too).
-    if (isSnapshotCopy(node)) {
-      throw new ContactShareRefusedError('not-shareable', SNAPSHOT_COPY_NO_SHARE);
-    }
-    if (node.type === 'branch') {
-      throw new ContactShareRefusedError(
-        'folder',
-        'A folder cannot be shared with a contact. Share the items in it one by one.',
-      );
-    }
-    if (!CONTACT_SHAREABLE_TYPES.includes(node.type)) {
-      throw new ContactShareRefusedError(
-        'not-shareable',
-        `A ${node.type} cannot be shared with a contact.`,
-      );
-    }
-    if (canWrite && node.type !== 'app') {
-      throw new ContactShareRefusedError('write-not-app', 'Only an app can let a contact write.');
-    }
-    const contacts = await tx
-      .select({ id: nodes.id })
-      .from(nodes)
-      .where(and(eq(nodes.ownerId, ownerId), eq(nodes.type, 'contact'), inArray(nodes.id, ids)));
-    if (contacts.length !== ids.length) {
-      throw new ContactShareRefusedError('not-a-contact', 'Not a contact of this brain.');
-    }
-    // The code rows, locked FOR SHARE (in id order) before the sharing-off
-    // check. A switch off (or an Enable from off) updates the row, so it
-    // waits for this transaction, or this one waits for it and then reads
-    // the row as it left it. Without the lock a share made while a switch
-    // off ran survived it, and Enable again opened it with the new code.
-    const codeRows = await tx
-      .select({ id: contactShareCodes.contactId, on: contactShareCodes.codeHash })
-      .from(contactShareCodes)
-      .where(and(eq(contactShareCodes.ownerId, ownerId), inArray(contactShareCodes.contactId, ids)))
-      .orderBy(contactShareCodes.contactId)
-      .for('share');
-    const on = new Set(codeRows.filter((r) => r.on).map((r) => r.id));
-    if (ids.some((c) => !on.has(c))) {
-      throw new ContactShareRefusedError(
-        'sharing-off',
-        'Sharing is off for this contact. Turn it on in Contacts first.',
-      );
-    }
-    // An expired share still holds its (item, contact) slot
-    // (shares_node_contact_uq is WHERE revoked_at IS NULL): retire it first.
-    await tx
-      .update(shares)
-      .set({ revokedAt: new Date() })
-      .where(
-        and(
-          eq(shares.ownerId, ownerId),
-          eq(shares.nodeId, nodeId),
-          inArray(shares.contactId, ids),
-          isNull(shares.revokedAt),
-          lt(shares.expiresAt, new Date()),
+  return contactShareAct(
+    contactIds,
+    // In a transaction: the system actor is bound on it (the actor check).
+    async (a) =>
+      (await db.transaction((tx) =>
+        tx.execute(
+          sql`select share_id::text, contact_id::text, token, refused
+                from mantle_share_with_contacts_rows(${ownerId}::uuid, ${nodeId}::uuid,
+                       ${a.contacts}::uuid[], ${a.tokens}::text[], ${canWrite}, ${a.kinds}::text[])`,
         ),
-      );
-    const existing = await tx
-      .select({ id: shares.id, contactId: shares.contactId, token: shares.token })
-      .from(shares)
-      .where(
-        and(
-          eq(shares.ownerId, ownerId),
-          eq(shares.nodeId, nodeId),
-          inArray(shares.contactId, ids),
-          isNull(shares.revokedAt),
-        ),
-      );
-    const have = new Map(existing.map((e) => [e.contactId!, e]));
-    const missing = ids.filter((c) => !have.has(c));
-    if (missing.length) {
-      // A second identical request at the same time (a double click) meets
-      // the first one's row on shares_node_contact_uq: do nothing, then
-      // read the row it made, so both answer the same share.
-      const made = await tx
-        .insert(shares)
-        .values(
-          missing.map((contactId) => ({
-            ownerId,
-            nodeId,
-            nodeType: node.type as (typeof shares.$inferInsert)['nodeType'],
-            token: genToken(),
-            contactId,
-            canWrite,
-          })),
-        )
-        .onConflictDoNothing({
-          target: [shares.nodeId, shares.contactId],
-          where: sql`"revoked_at" is null and "contact_id" is not null`,
-        })
-        .returning({ id: shares.id, contactId: shares.contactId, token: shares.token });
-      for (const m of made) have.set(m.contactId!, m);
-      const raced = missing.filter((c) => !have.has(c));
-      if (raced.length) {
-        const found = await tx
-          .select({ id: shares.id, contactId: shares.contactId, token: shares.token })
-          .from(shares)
-          .where(
-            and(
-              eq(shares.ownerId, ownerId),
-              eq(shares.nodeId, nodeId),
-              inArray(shares.contactId, raced),
-              isNull(shares.revokedAt),
-            ),
-          );
-        for (const f of found) have.set(f.contactId!, f);
-        if (found.length !== raced.length) throw new Error('contact share: a raced row is gone');
-      }
-    }
-    return ids.map((contactId) => {
-      const s = have.get(contactId)!;
-      return { shareId: s.id, contactId, path: `/s/${s.token}` };
-    });
-  });
+      )) as unknown as ContactShareActRow[],
+  );
 }
 
 /** Set "Can write" on a live contact share of an app. False when there is
@@ -230,14 +186,18 @@ export async function setContactShareCanWrite(
 }
 
 /** Revoke every live share of one contact (the "Shared" tab's Revoke all)
- *  and answer how many. No level changes; the contact's sharing stays on. */
+ *  and answer how many (0 for a contact of another owner, as before). No
+ *  level changes; the contact's sharing stays on. The SQL body for an
+ *  owner (system work: no Admin check; the Admin act is
+ *  mantle_contact_shares_revoke_all). */
 export async function revokeAllContactShares(ownerId: string, contactId: string): Promise<number> {
-  const rows = await db
-    .update(shares)
-    .set({ revokedAt: new Date() })
-    .where(and(eq(shares.ownerId, ownerId), eq(shares.contactId, contactId), live()))
-    .returning({ id: shares.id });
-  return rows.length;
+  // In a transaction: the system actor is bound on it (the actor check).
+  const rows = (await db.transaction((tx) =>
+    tx.execute(
+      sql`select mantle_contact_shares_revoke_rows(${ownerId}::uuid, ${contactId}::uuid) as n`,
+    ),
+  )) as unknown as { n: number | null }[];
+  return rows[0]?.n ?? 0;
 }
 
 /** One item of the contact's "Shared with you" menu. */

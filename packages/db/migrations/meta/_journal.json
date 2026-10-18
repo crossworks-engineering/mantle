@@ -2150,6 +2150,13 @@
       "when": 1790197740000,
       "tag": "0307_ws_user_definers",
       "breakpoints": true
+    },
+    {
+      "idx": 308,
+      "version": "7",
+      "when": 1790197800000,
+      "tag": "0308_admin_act_definers",
+      "breakpoints": true
     }
   ]
 }

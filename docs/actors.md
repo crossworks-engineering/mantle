@@ -333,10 +333,10 @@ Each ends in the step of plan v3.2 (2026-10-17) named.
 - `mantle_login_area` is the area rule or, with no Admin workspace, yes. S4.
 - A definer asked with no scope answers as the system pool would;
   `mantle_grant_change` then takes the caller from its `actor`. S2, S7.
-- Seven Admin acts run on the system pool with no scope
-  (`ADMIN_ACT_WRITES`, the link close, the deleted-app trash, the contact
-  share's Can write), and two HTTP item checks remain (`ITEM_REF_PREFIXES`:
-  share, deleted-app). S6.
+- Seven Admin acts run on the system pool with no scope (the four of
+  `ADMIN_ACT_WRITES` call a definer that checks the Admin user since S6 c1,
+  0308), and two HTTP item checks remain (`ITEM_REF_PREFIXES`: share,
+  deleted-app). S6.
 - The system pool is the whole runtime role, not a narrow one. S7.
 - A login carries a kind and a role, and code branches on them. S8.
 - Route policy is spread over lists, not declared per route. S9.
