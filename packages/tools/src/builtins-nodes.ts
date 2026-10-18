@@ -7,10 +7,10 @@
 
 import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import {
+  assertItemRight,
   currentWorkspaceScope,
   db,
   heldBySql,
-  itemWriteRefusal,
   mayEditSql,
   nodes,
   resignalNode,
@@ -309,8 +309,8 @@ export const process_extraction: BuiltinToolDef = {
           error: `node ${nodeId} not found: find the id with search_nodes, then re-issue.`,
         };
       }
-      const refused = await itemWriteRefusal([nodeId], 'edit');
-      if (refused) return { ok: false, error: refused };
+      // The one mapper words the refusal, as the queue-time check does.
+      await assertItemRight(nodeId, 'edit');
       await resignalNode(nodeId);
       ctx.step?.setOutput({ fired: 1, node_id: input.node_id });
       return { ok: true, output: { fired: 1, node_id: input.node_id } };

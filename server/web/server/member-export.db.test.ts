@@ -81,7 +81,7 @@ describe.skipIf(!DB_URL)('members export what they see; extraction needs edit', 
   let ls: typeof import('@mantle/mcp-core');
   let rt: typeof import('@mantle/runtime/agent');
   let f: typeof import('@mantle/files');
-  let c: typeof import('@mantle/content');
+  let pack: typeof import('@mantle/content/app-package');
   let actorMode: typeof import('../../../packages/db/src/actor');
   let dir = '';
   const tag = `mexp${randomUUID().slice(0, 6)}`;
@@ -283,7 +283,7 @@ describe.skipIf(!DB_URL)('members export what they see; extraction needs edit', 
     ls = await import('@mantle/mcp-core');
     rt = await import('@mantle/runtime/agent');
     f = await import('@mantle/files');
-    c = await import('@mantle/content');
+    pack = await import('@mantle/content/app-package');
     actorMode = await import('../../../packages/db/src/actor');
     raw = postgres(scratch.url, { max: 2, prepare: false, onnotice: () => {} });
 
@@ -402,7 +402,7 @@ describe.skipIf(!DB_URL)('members export what they see; extraction needs edit', 
         const own = await privateWs(mem);
         expect(own, 'the member has a private workspace').toBeTruthy();
         const fileId = await landsFor(mode, 'app_export mcp member/read', viaMcpOut, own!);
-        const pkg = (await c.openAppPackage(await fileBytes(fileId))).pkg;
+        const pkg = (await pack.openAppPackage(await fileBytes(fileId))).pkg;
         expect(pkg.data, 'no data: the member may not edit the app').toBeNull();
         expect(pkg.code.draft, 'no draft: a member does not read drafts').toBeNull();
         expect(JSON.stringify(pkg.code.source)).not.toContain(`${tag}-draft`);

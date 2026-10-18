@@ -46,7 +46,7 @@ vi.mock('@mantle/db', async (importOriginal) => {
     ...actual,
     db: { ...actual.db, select: vi.fn(() => chain) },
     resignalNode: vi.fn(),
-    itemWriteRefusal: vi.fn(async () => null),
+    assertItemRight: vi.fn(async () => undefined),
   };
 });
 vi.mock('@mantle/search', () => ({ resolveSupersededTargets: vi.fn() }));
@@ -58,7 +58,7 @@ vi.mock('@mantle/content', () => ({
 }));
 
 import * as dbmod from '@mantle/db';
-import { itemWriteRefusal, resignalNode } from '@mantle/db';
+import { assertItemRight, resignalNode } from '@mantle/db';
 import { INGEST_TOOLS } from './builtins-nodes';
 import { checkToolPreconditions } from './preconditions';
 import type { BuiltinToolDef, ToolHandlerContext } from './types';
@@ -154,10 +154,11 @@ describe('process_extraction single node outside the scope (W7a fix round 1, L1)
 describe('process_extraction single node the caller only reads', () => {
   it('asks edit of the node and fires nothing when it is refused', async () => {
     selectRows = [{ id: NODE }];
-    vi.mocked(itemWriteRefusal).mockResolvedValueOnce('You cannot change this item');
-    const res = await extraction.handler({ node_id: NODE }, ctx);
-    expect(errorOf(res)).toBe('You cannot change this item');
-    expect(itemWriteRefusal).toHaveBeenCalledWith([NODE], 'edit');
+    vi.mocked(assertItemRight).mockRejectedValueOnce(new Error('You cannot change this item'));
+    await expect(extraction.handler({ node_id: NODE }, ctx)).rejects.toThrow(
+      'You cannot change this item',
+    );
+    expect(assertItemRight).toHaveBeenCalledWith(NODE, 'edit');
     expect(resignalNode).not.toHaveBeenCalled();
   });
 });

@@ -13,11 +13,14 @@
  *    the export there left a member with a refusal or a file it could not
  *    open.
  *
- * The reply names where the file landed (landedIn), as a create's does.
- * Nothing here grants: what the export holds is the tool's to read in the
+ * The reply names where the file landed (landedIn), as a create's does: read
+ * in the caller's scope; a turn of a workspace the caller only reads cannot
+ * read its private workspace, so there it names the call's private create
+ * home (the one place outside that scope the file can land). Nothing here
+ * grants: what the export holds is the tool's to read in the
  * caller's scope, and the database's create checks still run.
  */
-import { landedIn, scopeHoldsAdmin } from '@mantle/db';
+import { currentCreateHome, landedIn, scopeHoldsAdmin } from '@mantle/db';
 import { ensureAutoFiledFolder } from './auto-filed';
 import { discardSpooled, type SpooledUpload } from './disk';
 import { FILES_ROOT_LABEL } from './paths';
@@ -67,5 +70,14 @@ export async function saveExport(args: {
     ...(args.spooled ? { spooled: args.spooled } : { bytes: args.bytes }),
   });
   const [home] = await landedIn([file.id]);
-  return { file, autoFiled: folder.autoFiled, landedIn: home ?? null };
+  return { file, autoFiled: folder.autoFiled, landedIn: home ?? privateLanding(folder.autoFiled) };
+}
+
+/** What landedIn names for a file the caller's scope cannot read: its
+ *  private create home, when the call has one (see the module comment). */
+export const PRIVATE_LANDING_NAME = 'your private workspace (only you)';
+
+function privateLanding(autoFiled: boolean): { id: string; name: string } | null {
+  const ws = autoFiled ? null : (currentCreateHome()?.privateWs ?? null);
+  return ws ? { id: ws, name: PRIVATE_LANDING_NAME } : null;
 }
