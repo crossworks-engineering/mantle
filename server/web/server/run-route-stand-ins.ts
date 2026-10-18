@@ -23,7 +23,7 @@ export type StandInLogin = {
   displayName?: string | null;
   sessionEpoch?: number;
   disabledAt?: Date | null;
-  /** A user of the Admin workspace (S8a): an Admin login is role admin AND
+  /** A user of the Admin workspace: an Admin login is role admin AND
    *  this. Default no. */
   adminMember?: boolean;
   /** The workspaces the login is in, and the ones it moderates. */

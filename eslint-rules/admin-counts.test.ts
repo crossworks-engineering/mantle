@@ -443,10 +443,8 @@ describe('the repo', () => {
     expect(reads['server/web/lib/pair-code.ts']).toEqual(expect.arrayContaining([131]));
   });
 
-  it('finds the three TypeScript area rules in workspaces.ts', () => {
-    expect(detail.tsAreaRules).toEqual({
-      'server/web/lib/workspaces.ts': ['areasFromLimits', 'areasOf', 'requireArea'],
-    });
+  it('finds no TypeScript area rule: SQL decides (plan v3.2: areasOf, areasFromLimits and requireArea`s list rule went)', () => {
+    expect(detail.tsAreaRules).toEqual({});
   });
 
   it('classes the two Telegram asks as membership, not area rules', () => {

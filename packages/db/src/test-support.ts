@@ -92,7 +92,7 @@ export async function ensureTestAnchor(sql: Sql): Promise<string> {
 
 /**
  * Make `logins` users and Moderators of the brain's live Admin workspace,
- * with the anchor (plan v3.2 S8a: an Admin login is role admin AND a user of
+ * with the anchor (an Admin login is role admin AND a user of
  * Admin, so a test's admin login needs the row a box with no role drift
  * gives it). Makes the Admin workspace when the brain has none, as the
  * workspaces switch would. Safe when many test files ask at once. Answers

@@ -80,7 +80,7 @@ describe.skipIf(!URL)("a member's own MCP screen", () => {
       (${admin}, ${`${tag}-admin@example.com`}, 'x', 'admin', 'Ada Admin'),
       (${member}, ${`${tag}-member@example.com`}, 'x', 'member', 'Mia Member'),
       (${mate}, ${`${tag}-mate@example.com`}, 'x', 'member', 'Max Mate')`;
-    // An Admin login is role admin AND a user of Admin (S8a).
+    // An Admin login is role admin AND a user of Admin.
     await ensureAdminUsers(sql, [admin]);
     await sql`insert into oauth_clients (id, client_name, redirect_uris) values
       (${clientA}, ${`${tag} A`}, ${['https://c.example/cb']}),

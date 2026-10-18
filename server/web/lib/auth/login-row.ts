@@ -27,7 +27,7 @@ export type LoginRow = {
    *  with an older one is dead. */
   sessionEpoch: number;
   /** A user of the brain's live Admin workspace now, the login enabled
-   *  (mantle_login_is_admin, 0304), read with the row (plan v3.2 S8a): the
+   *  (mantle_login_is_admin, 0304), read with the row: the
    *  second half of an Admin login (session.ts adminLogin). */
   adminMember: boolean;
 };
@@ -43,7 +43,7 @@ export async function loadLoginRow(id: string): Promise<LoginRow | null> {
       contactId: authUsers.contactId,
       disabledAt: authUsers.disabledAt,
       sessionEpoch: authUsers.sessionEpoch,
-      // Membership of Admin with the same read (S8a): the bound id, as the
+      // Membership of Admin with the same read: the bound id, as the
       // scope columns take it.
       adminMember: sql<boolean>`"public"."mantle_login_is_admin"(${id}::uuid)`,
       // The login's workspaces with the same read (W6a fix round 1): the

@@ -1,5 +1,5 @@
 /**
- * The Admin login is role AND membership (workspaces arch plan v3.2, S8a),
+ * The Admin login is role AND membership (workspaces arch plan v3.2),
  * on a real migrated Postgres, through the real app (createApp) and the real
  * login row (loadLoginRow reads mantle_login_is_admin with the row).
  *
@@ -7,7 +7,7 @@
  *  - a login with role admin outside the Admin workspace (role drift) loses
  *    its `?at=` asset token, its render cookie and the frame re-check
  *    (adminLoginActive); an Admin user keeps all three. It keeps its
- *    session (owner decision on S8a: the session stays on the role until
+ *    session (owner decision: the session stays on the role until
  *    S8b) and works in its own scope as on main, but is not Admin: an Admin
  *    area route refuses it;
  *  - a role=member login inside the Admin workspace is not an Admin login:
@@ -107,7 +107,7 @@ describe.skipIf(!URL)('S8a: an Admin login is role AND membership', () => {
       (${adm}, ${emailOf(adm)}, ${hash}, 'admin'), (${out}, ${emailOf(out)}, ${hash}, 'admin'),
       (${memIn}, ${emailOf(memIn)}, ${hash}, 'member'), (${mem}, ${emailOf(mem)}, ${hash}, 'member')`;
     await runWorkspacesSwitch(scratch.url);
-    // The drift the S8a precondition counts (mantle_role_drift): a role=admin
+    // The drift the precondition counts (mantle_role_drift): a role=admin
     // login taken out of Admin and a role=member login put into it.
     const [a] = await sql<Row[]>`select id::text as id from workspaces
                                   where owner_id = ${anchor} and is_admin`;

@@ -150,7 +150,7 @@ describe.skipIf(!URL)('device tokens for an admin and a member', () => {
     await sql`insert into auth.users (id, email, password_hash, role, display_name)
               values (${id}, ${emailOf(name)}, ${bcrypt.hashSync(PASSWORD, 4)}, ${role}, ${name})`;
     made.push(id);
-    // An Admin login is role admin AND a user of Admin (S8a).
+    // An Admin login is role admin AND a user of Admin.
     if (role === 'admin') await ensureAdminUsers(sql, [id]);
     return id;
   };
@@ -177,7 +177,7 @@ describe.skipIf(!URL)('device tokens for an admin and a member', () => {
     await sql`insert into auth.users (id, email, password_hash, role, display_name) values
       (${admin}, ${emailOf('admin')}, ${hash}, 'admin', 'Ada Admin'),
       (${member}, ${emailOf('member')}, ${hash}, 'member', 'Mia Member')`;
-    // An Admin login is role admin AND a user of Admin (S8a).
+    // An Admin login is role admin AND a user of Admin.
     await ensureAdminUsers(sql, [admin]);
     const { createApp } = await import('../../server/app');
     app = await createApp();

@@ -1,6 +1,6 @@
 /**
  * The Admin login is role AND membership in SQL too (workspaces arch plan
- * v3.2, S8a; migration 0305_admin_membership): mantle_login_is_admin_user
+ * v3.2; migration 0305_admin_membership): mantle_login_is_admin_user
  * answers its 0293 text AND mantle_login_is_admin, on a database of its own
  * (so mantle_brain_id() is this file's anchor).
  *

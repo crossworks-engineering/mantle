@@ -112,7 +112,7 @@ describe.skipIf(!URL)('the OAuth token endpoint', () => {
     anchor = await ensureTestAnchor(sql);
     await sql`insert into auth.users (id, email, password_hash, role, display_name)
               values (${admin}, ${`${tag}-admin@example.com`}, 'x', 'admin', 'Ada Admin')`;
-    // An Admin login is role admin AND a user of Admin (S8a).
+    // An Admin login is role admin AND a user of Admin.
     await ensureAdminUsers(sql, [admin]);
     await sql`insert into oauth_clients (id, client_name, redirect_uris)
               values (${client}, ${`${tag} client`}, ${[REDIRECT]})`;

@@ -146,7 +146,7 @@ describe.skipIf(!URL)('inbound API keys', () => {
       (${member}, ${emailOf('member')}, ${hash}, 'member', 'Mia Member'),
       (${client}, ${emailOf('client')}, ${hash}, 'member', 'Cal Member'),
       (${member2}, ${emailOf('member2')}, ${hash}, 'member', 'Max Member')`;
-    // An Admin login is role admin AND a user of Admin (S8a).
+    // An Admin login is role admin AND a user of Admin.
     await ensureAdminUsers(sql, [admin, admin2]);
     // The two admins hold the Admin workspace's keys area; the members not.
     keysArea.holders.add(admin);

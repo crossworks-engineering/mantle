@@ -212,7 +212,7 @@ async function brainHasAdmin(caller: WsCaller): Promise<boolean> {
   return !!r?.id;
 }
 
-/** The Admin areas the caller holds (plan 1.4; v3.2 S8a): the area rule
+/** The Admin areas the caller holds (plan 1.4): the area rule
  *  over every area, mantle_login_areas (the strict rule: a user of the
  *  live Admin workspace, enabled, limits leaving the area on; none on a
  *  brain with no Admin workspace). It feeds the shell, grants.ts and the
@@ -222,7 +222,7 @@ export async function areasFor(caller: WsCaller): Promise<WorkspaceArea[]> {
 }
 
 /**
- * requireArea (plan 1.4; v3.2 S8a): whether the caller holds `area`. In a
+ * requireArea (plan 1.4): whether the caller holds `area`. In a
  * scope for the caller's own login, the scope's rule (mantle_scope_has_area:
  * a scope that does not hold Admin answers no); unscoped system work (an
  * area route on the system pool, until it runs in scope) asks the area rule

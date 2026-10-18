@@ -43,8 +43,7 @@ const TAG = '0268_workspaces_mcp_one_surface';
 const UNTIL = '0272_workspaces_logins_carry_nothing';
 
 /**
- * The app reads mantle_login_is_admin with every login row (plan v3.2 S8a,
- * from 0304); a brain stopped before 0272 has none, so the app code that
+ * The app reads mantle_login_is_admin with every login row (from 0304); a brain stopped before 0272 has none, so the app code that
  * runs as it is now gets 0304's, as written (its tables and
  * mantle_brain_id are there by 0268).
  */

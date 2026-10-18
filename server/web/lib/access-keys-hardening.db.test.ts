@@ -122,7 +122,7 @@ describe.skipIf(!URL)('inbound API keys: hardening', () => {
     await sql`insert into workspace_users (workspace_id, login_id, moderator)
       values (${teamWs}, ${noted}, false)`;
     // A long key needs the Admin workspace's keys area (W8a), and an Admin
-    // login is role admin AND a user of Admin (S8a): the admins are users of
+    // login is role admin AND a user of Admin : the admins are users of
     // the brain's Admin workspace, made if the brain has none.
     await ensureAdminUsers(sql, [admin, busy]);
     const { createApp } = await import('../server/app');
