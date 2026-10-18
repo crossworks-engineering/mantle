@@ -316,8 +316,10 @@ c64f78010 before the rebase: 2697, 2459, 2459). The wrapper pass and the
 tag names cost about 0.15 s.
 
 Push with `--force-with-lease` and `--no-verify` (the pre-push gate runs
-the DB suites). CI for 9f6392440:
-https://github.com/crossworks-engineering/mantle/actions/runs/39095323220
+the DB suites). CI for 9f6392440 (run 39095323220) was cancelled by the
+push of this note, as the workflow keeps one run per branch; the run of the
+head that carries this note is the one to read (the step's report names
+it).
 
 ### Open items
 
