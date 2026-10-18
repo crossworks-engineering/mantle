@@ -30,7 +30,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import bcrypt from 'bcryptjs';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import { ensureTestAnchor } from '@mantle/db/test-support';
+import { ensureAdminUsers, ensureTestAnchor } from '@mantle/db/test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -146,6 +146,8 @@ describe.skipIf(!URL)('inbound API keys', () => {
       (${member}, ${emailOf('member')}, ${hash}, 'member', 'Mia Member'),
       (${client}, ${emailOf('client')}, ${hash}, 'member', 'Cal Member'),
       (${member2}, ${emailOf('member2')}, ${hash}, 'member', 'Max Member')`;
+    // An Admin login is role admin AND a user of Admin (S8a).
+    await ensureAdminUsers(sql, [admin, admin2]);
     // The two admins hold the Admin workspace's keys area; the members not.
     keysArea.holders.add(admin);
     keysArea.holders.add(admin2);
@@ -484,11 +486,14 @@ describe.skipIf(!URL)('inbound API keys', () => {
     // whatever role it was made under.
     const kept = await makeKey({}, member2);
     await sql`update auth.users set role = 'admin' where id = ${member2}`;
+    await ensureAdminUsers(sql, [member2]);
     expect(await json(await whoami(kept.secret))).toMatchObject({
       role: 'admin',
       loginId: member2,
     });
     await sql`update auth.users set role = 'member' where id = ${member2}`;
+    await sql`delete from workspace_users u using workspaces w
+               where u.workspace_id = w.id and w.is_admin and u.login_id = ${member2}`;
     expect(await json(await whoami(kept.secret))).toMatchObject({
       role: 'member',
       loginId: member2,

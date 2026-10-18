@@ -2398,13 +2398,15 @@ export async function loginHasArea(loginId: string, area: ScopeArea): Promise<bo
  *  0304: the strict rule), on the system pool as loginHasArea. Fails closed. */
 export async function loginAreas(loginId: string): Promise<ScopeArea[]> {
   if (!UUID_RE.test(loginId)) return [];
-  return getAdminDb()
-    .execute(sqlTag`select "public"."mantle_login_areas"(${loginId}::uuid) as a`)
-    .then((r) => (r as unknown as { a: ScopeArea[] | null }[])[0]?.a ?? [])
-    .catch((err: unknown) => {
-      loginFactFailed(err);
-      return [];
-    });
+  try {
+    const rows = (await getAdminDb().execute(
+      sqlTag`select "public"."mantle_login_areas"(${loginId}::uuid) as a`,
+    )) as unknown as { a: ScopeArea[] | null }[];
+    return rows[0]?.a ?? [];
+  } catch (err) {
+    loginFactFailed(err);
+    return [];
+  }
 }
 
 /**

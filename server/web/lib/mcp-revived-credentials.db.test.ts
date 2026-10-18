@@ -42,6 +42,23 @@ const TAG = '0268_workspaces_mcp_one_surface';
 /** 0272 drops the tables and columns 0268 reads: the test stops before it. */
 const UNTIL = '0272_workspaces_logins_carry_nothing';
 
+/**
+ * The app reads mantle_login_is_admin with every login row (plan v3.2 S8a,
+ * from 0304); a brain stopped before 0272 has none, so the app code that
+ * runs as it is now gets 0304's, as written (its tables and
+ * mantle_brain_id are there by 0268).
+ */
+async function installLoginIsAdmin(q: ReturnType<typeof postgres>): Promise<void> {
+  const file = fileURLToPath(
+    new globalThis.URL('../../../packages/db/migrations/0304_login_facts.sql', import.meta.url),
+  );
+  const st = readFileSync(file, 'utf8')
+    .split('--> statement-breakpoint')
+    .find((x) => x.includes('FUNCTION "public"."mantle_login_is_admin"(login uuid)'));
+  if (!st) throw new Error('installLoginIsAdmin: 0304 has no mantle_login_is_admin');
+  await q.unsafe(st);
+}
+
 type Ts = typeof import('@mantle/db/test-support');
 const sha = (s: string) => createHash('sha256').update(s, 'utf8').digest('hex');
 
@@ -221,6 +238,7 @@ describe.skipIf(!URL)('0268: no MCP credential comes back to life (W7b fix round
       await insertPeer(label, login, 'admin');
     }
     await scratch.migrateRest(UNTIL);
+    await installLoginIsAdmin(sql);
     process.env.DATABASE_URL = scratch.url;
     process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
     process.env.SESSION_SECRET ??= 'mcp-revived-credentials-secret-32-chars!!';
@@ -481,6 +499,7 @@ describe.skipIf(!URL)('0268: the cutoff is recorded once (W7b fix round 3)', () 
     beforeKey = await insertKey('before');
     beforePeer = await insertPeer('before');
     await scratch.migrateRest(UNTIL);
+    await installLoginIsAdmin(sql);
   }, 300_000);
 
   afterAll(async () => {

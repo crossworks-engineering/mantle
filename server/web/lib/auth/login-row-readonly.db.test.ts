@@ -64,6 +64,10 @@ describe.skipIf(!URL_ADMIN)('sign-in reads on a database that refuses writes', (
     await aclChange(() => admin.unsafe(`grant usage on schema public, auth to ${role}`));
     await aclChange(() => admin.unsafe(`grant select on all tables in schema public to ${role}`));
     await aclChange(() => admin.unsafe(`grant select on all tables in schema auth to ${role}`));
+    // The login row's Admin membership (S8a): the runtime role's EXECUTE.
+    await aclChange(() =>
+      admin.unsafe(`grant execute on function public.mantle_login_is_admin(uuid) to ${role}`),
+    );
 
     const u = new URL(URL_ADMIN!);
     u.username = role;

@@ -23,7 +23,7 @@
 import { randomUUID } from 'node:crypto';
 import bcrypt from 'bcryptjs';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import { ensureTestAnchor } from '@mantle/db/test-support';
+import { ensureAdminUsers, ensureTestAnchor } from '@mantle/db/test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -150,6 +150,8 @@ describe.skipIf(!URL)('device tokens for an admin and a member', () => {
     await sql`insert into auth.users (id, email, password_hash, role, display_name)
               values (${id}, ${emailOf(name)}, ${bcrypt.hashSync(PASSWORD, 4)}, ${role}, ${name})`;
     made.push(id);
+    // An Admin login is role admin AND a user of Admin (S8a).
+    if (role === 'admin') await ensureAdminUsers(sql, [id]);
     return id;
   };
   const audited = async (action: string, actorId: string) => {
@@ -175,6 +177,8 @@ describe.skipIf(!URL)('device tokens for an admin and a member', () => {
     await sql`insert into auth.users (id, email, password_hash, role, display_name) values
       (${admin}, ${emailOf('admin')}, ${hash}, 'admin', 'Ada Admin'),
       (${member}, ${emailOf('member')}, ${hash}, 'member', 'Mia Member')`;
+    // An Admin login is role admin AND a user of Admin (S8a).
+    await ensureAdminUsers(sql, [admin]);
     const { createApp } = await import('../../server/app');
     app = await createApp();
   }, 120_000);

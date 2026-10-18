@@ -14,7 +14,7 @@
  */
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { ensureTestAnchor } from '@mantle/db/test-support';
+import { ensureAdminUsers, ensureTestAnchor } from '@mantle/db/test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -112,6 +112,8 @@ describe.skipIf(!URL)('the OAuth token endpoint', () => {
     anchor = await ensureTestAnchor(sql);
     await sql`insert into auth.users (id, email, password_hash, role, display_name)
               values (${admin}, ${`${tag}-admin@example.com`}, 'x', 'admin', 'Ada Admin')`;
+    // An Admin login is role admin AND a user of Admin (S8a).
+    await ensureAdminUsers(sql, [admin]);
     await sql`insert into oauth_clients (id, client_name, redirect_uris)
               values (${client}, ${`${tag} client`}, ${[REDIRECT]})`;
     const { createApp } = await import('../server/app');

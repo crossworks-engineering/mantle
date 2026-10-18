@@ -14,7 +14,7 @@
  */
 import { createHash, randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import { ensureTestAnchor } from '@mantle/db/test-support';
+import { ensureAdminUsers, ensureTestAnchor } from '@mantle/db/test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -80,6 +80,8 @@ describe.skipIf(!URL)("a member's own MCP screen", () => {
       (${admin}, ${`${tag}-admin@example.com`}, 'x', 'admin', 'Ada Admin'),
       (${member}, ${`${tag}-member@example.com`}, 'x', 'member', 'Mia Member'),
       (${mate}, ${`${tag}-mate@example.com`}, 'x', 'member', 'Max Mate')`;
+    // An Admin login is role admin AND a user of Admin (S8a).
+    await ensureAdminUsers(sql, [admin]);
     await sql`insert into oauth_clients (id, client_name, redirect_uris) values
       (${clientA}, ${`${tag} A`}, ${['https://c.example/cb']}),
       (${clientB}, ${`${tag} B`}, ${['https://c.example/cb']})`;

@@ -17,7 +17,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import bcrypt from 'bcryptjs';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { ensureTestAnchor } from '@mantle/db/test-support';
+import { ensureAdminUsers, ensureTestAnchor } from '@mantle/db/test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -121,14 +121,10 @@ describe.skipIf(!URL)('inbound API keys: hardening', () => {
       values (${teamWs}, 'assistant', ${madeAgent}, true)`;
     await sql`insert into workspace_users (workspace_id, login_id, moderator)
       values (${teamWs}, ${noted}, false)`;
-    // A long key needs the Admin workspace's keys area (W8a). On a brain
-    // the workspaces migration ran on, the admins become users of its Admin
-    // workspace; on one it skipped, an admin login holds every area.
-    await sql`insert into workspace_users (workspace_id, login_id, moderator)
-      select w.id, l.id, false
-        from workspaces w, unnest(${sql.array([admin, busy])}::uuid[]) as l(id)
-       where w.owner_id = ${anchor} and w.is_admin
-      on conflict do nothing`;
+    // A long key needs the Admin workspace's keys area (W8a), and an Admin
+    // login is role admin AND a user of Admin (S8a): the admins are users of
+    // the brain's Admin workspace, made if the brain has none.
+    await ensureAdminUsers(sql, [admin, busy]);
     const { createApp } = await import('../server/app');
     app = await createApp();
   }, 120_000);

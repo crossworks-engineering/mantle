@@ -91,6 +91,35 @@ export async function ensureTestAnchor(sql: Sql): Promise<string> {
 }
 
 /**
+ * Make `logins` users and Moderators of the brain's live Admin workspace,
+ * with the anchor (plan v3.2 S8a: an Admin login is role admin AND a user of
+ * Admin, so a test's admin login needs the row a box with no role drift
+ * gives it). Makes the Admin workspace when the brain has none, as the
+ * workspaces switch would. Safe when many test files ask at once. Answers
+ * the Admin workspace's id.
+ */
+export async function ensureAdminUsers(sql: Sql, logins: readonly string[]): Promise<string> {
+  const anchor = await ensureTestAnchor(sql);
+  // The live Admin workspace by its definer (0279).
+  const find = async () =>
+    (
+      await sql<{ id: string | null }[]>`select mantle_ws_admin_id(${anchor}::uuid)::text as id`
+    ).filter((r): r is { id: string } => !!r.id);
+  let [ws] = await find();
+  if (!ws) {
+    await sql`insert into workspaces (owner_id, name, is_admin)
+              values (${anchor}, 'Admin', true) on conflict do nothing`;
+    [ws] = await find();
+  }
+  if (!ws) throw new Error('ensureAdminUsers: no Admin workspace after the insert');
+  for (const login of [anchor, ...logins]) {
+    await sql`insert into workspace_users (workspace_id, login_id, moderator)
+              values (${ws.id}, ${login}, true) on conflict do nothing`;
+  }
+  return ws.id;
+}
+
+/**
  * The SQL of a Team workspace as a brain switched before migration 0286 has
  * it, for a test that needs a shared workspace beyond Admin: the live
  * non-Admin workspace named "Team" of `owner` (one the switch kept), else a
