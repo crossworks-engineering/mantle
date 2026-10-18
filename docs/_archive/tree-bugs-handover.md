@@ -79,6 +79,15 @@ on the system pool (`server/web/lib/grants.ts`, `page-refold`):
   asks read of them in the scope, then walks and folds on the system pool;
 - nothing it reads goes back to the caller.
 
+The grants panel's move into a folder (`/api/grants/move`,
+`server/web/lib/grants.ts` moveToFolder) calls the same `moveTreeItems`, so
+it had the same fault for every login (it runs in the login's scope since
+F4); the same fix covers it, and a DB cell runs it in a member's request
+scope (the S2a a1 audit found it through grants.db.test.ts).
+
+The matrix test's `ALLOWED_KNOWN_ONLY` (`a8-tool-cells.matrix.test.ts`)
+loses page_move and tree_item_move: their allowed cells pass now.
+
 The move's own rules are untouched (`moveTreeItems` still asks manage of
 every item first, the move check still asks manage and edit of the
 destination). The same follow-up serves a folder's move and a folder's
@@ -119,6 +128,9 @@ edit check together):
   folder's rename to the Write member, and a rename to the read grant's
   member; it allows the Write member's rename; the move check refuses the
   Write member's direct move;
+- the grants panel's move, in the request scope of a member: the read
+  grant's member moves nothing; the Moderator of H and T moves a note into
+  a folder homed in T (`{ moved: 1, failed: [] }`);
 - a Moderator of H and T moves a page (`page_move`) and a note
   (`tree_item_move`) from H into a folder homed in T: ok, moved, rehomed;
   the outsider, the read grant's member, the sibling Write member and the
