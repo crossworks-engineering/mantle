@@ -21,6 +21,10 @@
 #      (no pipe in front of it). Skipped only when the box's updater takes
 #      its own strict pre-roll backup (see pre_roll_backup in
 #      infra/updater/updater.sh), which it then must have done.
+#   3b. the runtime role's line: a .env with no MANTLE_DB_RUNTIME_ROLE line
+#      gets one holding the value the running mantle_web has (plan v3.2 S4a;
+#      the functions are this checkout's infra/updater/updater.sh). A failure
+#      is said and the roll goes on: nothing on the box changes its value.
 #   4. request: request.json holding only {"target": <tag>}, written into the
 #      updater's signal dir by a throwaway alpine container (the dir is
 #      root-owned on the host), exactly as the in-app Update button would
@@ -480,6 +484,20 @@ else
     die "BACKUP INCOMPLETE: a part was not backed up (see above). Nothing was requested."
   fi
   grep -q '✔ Wrote .*mantle-[0-9-]*\.dump' "$DUMP_LOG" || die "BACKUP FAILED: no Postgres dump reported. Nothing was requested."
+fi
+
+# ── 3b. the runtime role's line in .env (plan v3.2 S4a) ──────────────────────
+# The box's own updater writes it on the roll too, once it runs this release.
+# Sent from this checkout's updater.sh so the two never differ.
+RRL_FUNCS=$(sed -n -e '/^file_owner() /p' -e '/^file_mode() /p' \
+  -e '/^env_rewrite() {/,/^}/p' -e '/^persist_env() {/,/^}/p' \
+  -e '/^runtime_role_flag() {/,/^}/p' -e '/^ensure_runtime_role_line() {/,/^}/p' \
+  "$ROOT/infra/updater/updater.sh")
+if RRL_OUT=$(printf "STACK='%s'\n%s\nensure_runtime_role_line\n" "$STACK" "$RRL_FUNCS" | rsh 'sh -s' 2>&1); then
+  echo "$RRL_OUT"
+else
+  echo "$RRL_OUT"
+  echo "⚠ runtime role: the line was not written (the updater writes it on the roll once it runs this release)"
 fi
 
 # ── 4. request ───────────────────────────────────────────────────────────────

@@ -79,6 +79,7 @@ import { withMigratorConnection } from './migrator-connection';
 import { errorMessage, RuntimeFaultError, UUID_RE } from '@mantle/std';
 import { BusyError, permissionGapOf } from './pg-error';
 import { WRITE_ROLE_TABLES } from './access-matrix';
+import { noteScopedSystemWrite, noteUnscopedYes, tableNameOf } from './fail-open-sites';
 import { liveWorkspaceSql } from './workspace-live';
 
 declare global {
@@ -845,10 +846,7 @@ const WRITE_ROLE_TABLE_SET: ReadonlySet<string> = new Set(WRITE_ROLE_TABLES);
  *  any other table goes to the system pool, decided before it is sent
  *  (no failed attempt). */
 function isWriteRoleTable(table: unknown): boolean {
-  if (!is(table, PgTable)) return false;
-  return WRITE_ROLE_TABLE_SET.has(
-    `${getTableConfig(table).schema ?? 'public'}.${getTableName(table)}`,
-  );
+  return is(table, PgTable) && WRITE_ROLE_TABLE_SET.has(tableNameOf(table));
 }
 
 /** The table a single INSERT, UPDATE or DELETE writes, as `schema.table`
@@ -871,7 +869,9 @@ export function rawWriteTarget(query: string): string | null {
  *  other (arch A2b2b). */
 function typedWrite(prop: 'insert' | 'update' | 'delete', gateway: boolean): unknown {
   return (table: unknown, ...rest: unknown[]) => {
-    const handle = gateway && isWriteRoleTable(table) ? loginWriteDb() : getAdminDb();
+    const toWriteRole = gateway && isWriteRoleTable(table);
+    if (gateway && !toWriteRole) noteScopedSystemWrite('typed-write', table, WRITE_ROLE_ACTORS);
+    const handle = toWriteRole ? loginWriteDb() : getAdminDb();
     const fn = Reflect.get(handle as object, prop) as (...args: unknown[]) => unknown;
     return fn.call(handle, table, ...rest);
   };
@@ -1645,7 +1645,10 @@ function loginWriteClient(): PgSql {
     // A single write to a table the write role holds no right on goes to
     // the system pool before it is sent (no failed attempt).
     const target = rawWriteTarget(query);
-    if (target !== null && !WRITE_ROLE_TABLE_SET.has(target)) return system();
+    if (target !== null && !WRITE_ROLE_TABLE_SET.has(target)) {
+      noteScopedSystemWrite('raw-write', target, WRITE_ROLE_ACTORS);
+      return system();
+    }
     return onLoginWritePool({
       system,
       write: (route) => writeRoleStatement(route, query, args, mode),
@@ -2293,7 +2296,7 @@ const holdsAdmin = new WeakMap<WorkspaceScope, Promise<boolean>>();
  */
 export async function scopeHoldsAdmin(): Promise<boolean> {
   const scope = currentWorkspaceScope();
-  if (!scope) return isUnscoped();
+  if (!scope) return noteUnscopedYes('scope-holds-admin', isUnscoped());
   let p = holdsAdmin.get(scope);
   if (!p) {
     p = (async () => {
@@ -2326,7 +2329,7 @@ export async function scopeHasArea(area: ScopeArea): Promise<boolean> {
   const scope = currentScope();
   switch (scope.kind) {
     case 'system':
-      return true;
+      return noteUnscopedYes('scope-has-area', true);
     case 'user':
     case 'assistant': {
       if (!scope.loginId) return false;

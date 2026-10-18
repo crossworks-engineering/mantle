@@ -12,8 +12,10 @@
  * entry must bind its own. A test that expects a miss takes it with
  * takeActorMisses() before it ends.
  */
-import { afterEach, beforeAll, beforeEach } from 'vitest';
+import { appendFileSync } from 'node:fs';
+import { afterEach, beforeAll, beforeEach, expect } from 'vitest';
 import { enterTestActor, takeActorMisses, takeWriteRoleGaps } from './packages/db/src/actor';
+import { takeFailOpenHits } from './packages/db/src/fail-open';
 
 // Arch A2b2b: the suite runs the login write gateway as web and api do
 // (openLoginWritePool in packages/db/src/client.ts reads this flag), so
@@ -22,6 +24,20 @@ import { enterTestActor, takeActorMisses, takeWriteRoleGaps } from './packages/d
 
 beforeAll(() => enterTestActor());
 beforeEach(() => enterTestActor());
+
+// Plan v3.2 S4a: MANTLE_FAIL_OPEN_DUMP=<file> lists every fail-open hit of
+// the run (site, actor kind, table, test file), one JSON line each: how the
+// tables a scoped write sends to the system pool were measured
+// (docs/actors.md, "Fail-open counts"). A hit never fails a test.
+const failOpenDump = process.env.MANTLE_FAIL_OPEN_DUMP;
+if (failOpenDump) {
+  afterEach(() => {
+    const hits = takeFailOpenHits();
+    if (hits.length === 0) return;
+    const file = expect.getState().testPath ?? '?';
+    appendFileSync(failOpenDump, hits.map((h) => `${JSON.stringify({ ...h, file })}\n`).join(''));
+  });
+}
 
 afterEach(() => {
   // Arch A2b2b: a right the write role does not hold, met by a login write

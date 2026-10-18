@@ -306,15 +306,18 @@ export function dbRoleMode(row: DbRoleRow): DbRoleMode {
 export function dbRoleNote(row: DbRoleRow, switchOn: boolean): string | null {
   const mode = dbRoleMode(row);
   if (mode === 'runtime') return null;
+  // Plan v3.2 S4a: off (unset or 0) is said loudly at every start; the
+  // default stays off so no existing box flips (new installs write 1).
+  const loud = switchOn ? '' : '[db] SECURITY: MANTLE_DB_RUNTIME_ROLE is unset or 0. ';
   if (mode === 'superuser') {
     return (
-      `[db] the system pool logs in as the superuser "${row.user}": it may alter tables, ` +
+      `${loud}[db] the system pool logs in as the superuser "${row.user}": it may alter tables, ` +
       `disable triggers and change the check modes. Set MANTLE_DB_RUNTIME_ROLE=1 to run as ` +
       `${RUNTIME_ROLE} (docs/runtime-role.md).`
     );
   }
   return (
-    `[db] the system pool logs in as "${row.user}"${switchOn ? '' : ' (MANTLE_DB_RUNTIME_ROLE is off)'}` +
+    `${loud}[db] the system pool logs in as "${row.user}"${switchOn ? '' : ' (MANTLE_DB_RUNTIME_ROLE is off)'}` +
     `${row.owns > 0 ? `, which owns ${row.owns} table(s) or function(s)` : ''}: not the runtime role A9 wants ` +
     `(docs/runtime-role.md).`
   );

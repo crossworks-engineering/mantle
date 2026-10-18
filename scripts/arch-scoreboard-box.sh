@@ -22,7 +22,16 @@
 #     workspaceTableWriterFns is the repo's), and whether
 #     MANTLE_DB_RUNTIME_ROLE is on (1 or 0, as the app reads it: from
 #     mantle_web's environment, or from the stack's .env when that
-#     container is not there; n/a with neither).
+#     container is not there; n/a with neither);
+#   - the fail-open counts (plan v3.2 S4a; packages/db/src/fail-open.ts):
+#     the miss rows checked 'fail-open:<site>' since mantle_web started
+#     (all of them when it is not there), one per site and calling file,
+#     in all and per site. "Brains without an Admin workspace" above is
+#     also the count of mantle_login_area's yes with no Admin workspace and
+#     of areasOf's "migration skipped" path (server/web/lib/workspaces.ts):
+#     a brain reaches either only with no Admin workspace;
+#   - whether the stack's .env has a MANTLE_DB_RUNTIME_ROLE line at all (1
+#     or 0; the updater and roll.sh write one, S4a), n/a with no .env.
 #
 # Read only: docker logs, docker inspect, SELECTs and one line of .env.
 # Name the box explicitly; there is no default and no fleet loop.
@@ -128,6 +137,37 @@ select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    and p.prosrc ~* '\m(insert\s+into|update|delete\s+from|merge\s+into|truncate(\s+table)?)\s+(only\s+)?("?public"?\s*\.\s*)?"?(workspaces|workspace_users|workspace_events|workspace_resources)"?($|[^a-z0-9_"])';
 SQL
 )")
+# The fail-open miss rows (S4a): since the app container started, as a
+# release's 410 hits are; every row when it is not there.
+started=$(docker inspect --type container "$web" --format '{{.State.StartedAt}}' 2>/dev/null || true)
+case "$started" in *[!0-9TZ:.+-]* | '') started="" ;; esac
+fail_open=$(q <<SQL || true
+select count(*) || ' ' || count(*) filter (where check_name = 'fail-open:scope-holds-admin')
+    || ' ' || count(*) filter (where check_name = 'fail-open:scope-has-area')
+    || ' ' || count(*) filter (where check_name = 'fail-open:typed-write')
+    || ' ' || count(*) filter (where check_name = 'fail-open:raw-write')
+    || ' ' || count(*) filter (where check_name = 'fail-open:turn-exit')
+    || ' ' || count(*) filter (where check_name = 'fail-open:system-db')
+  from (select distinct check_name, detail from public.actor_check_misses
+         where check_name like 'fail-open:%'
+           and ('$started' = '' or at >= nullif('$started', '')::timestamptz)) m;
+SQL
+)
+# Whether the stack's .env has the runtime role's line at all (S4a: the
+# updater and roll.sh write one when it has none).
+env_stack="$stack"
+if [ -z "$env_stack" ]; then
+  env_stack=$(docker inspect --type container mantle_updater --format '{{range .Config.Env}}{{println .}}{{end}}' 2>/dev/null |
+    sed -n 's/^MANTLE_STACK_DIR=//p' | head -1)
+fi
+env_line=n/a
+if [ -n "$env_stack" ] && [ -f "$env_stack/.env" ]; then
+  if grep -Eq '^[[:space:]]*(export[[:space:]]+)?MANTLE_DB_RUNTIME_ROLE[[:space:]]*=' "$env_stack/.env"; then
+    env_line=1
+  else
+    env_line=0
+  fi
+fi
 # MANTLE_DB_RUNTIME_ROLE as the app reads it (packages/config/src/parse.ts
 # parseFlag): the value in the app container's environment, which is what
 # the app sees; the stack's .env only when that container is not there.
@@ -167,4 +207,10 @@ printf '  %-34s %s\n' brains_without_admin_workspace "$no_admin"
 printf '  %-34s %s\n' admin_workspaces_without_assistant "$no_assistant"
 printf '  %-34s %s\n' workspace_table_writer_fns "$writers"
 printf '  %-34s %s\n' env_names_runtime_role "$names_role"
+printf '  %-34s %s\n' env_has_runtime_role_line "$env_line"
+set -- $fail_open
+for site in all scope-holds-admin scope-has-area typed-write raw-write turn-exit system-db; do
+  printf '  %-34s %s\n' "fail_open_misses:$site" "$(num "${1:-}")"
+  shift || true
+done
 REMOTE

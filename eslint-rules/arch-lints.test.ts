@@ -5,6 +5,7 @@ import { asSystemExits, holderProblems, systemDbUses } from './as-system-exits.m
 import { describe, expect, it } from 'vitest';
 import {
   asSystemSites,
+  failOpenSiteCount,
   gapRerunCount,
   builtinSlugs,
   countedFiles,
@@ -1092,5 +1093,21 @@ describe('gapRerunCount (plan v3 S3 fix round 3)', () => {
     expect(of('await tx`SET ROLE NONE`')).toBe(0);
     expect(of('await tx`reset role`')).toBe(0);
     expect(of('// SET SESSION ROLE mantle_gap_writer')).toBe(0);
+  });
+});
+
+describe('failOpenSiteCount (plan v3.2 S4a)', () => {
+  const of = (text: string) => failOpenSiteCount([{ path: 'x.ts', text }]);
+  it('counts each call with a literal site', () => {
+    expect(of("noteUnscopedYes('scope-holds-admin');")).toBe(1);
+    expect(of("noteScopedSystemWrite('raw-write', target, KINDS);")).toBe(1);
+    expect(
+      of("noteFailOpen(\n  'turn-exit', kind, caller);\nnoteFailOpen('system-db', k, c);"),
+    ).toBe(2);
+  });
+  it('a comment, a definition or a passed-on site is no call', () => {
+    expect(of("// noteFailOpen('turn-exit', '', c)")).toBe(0);
+    expect(of('export function noteFailOpen(site: FailOpenSite): void {}')).toBe(0);
+    expect(of('noteFailOpen(site, actor.kind, failOpenCaller, table);')).toBe(0);
   });
 });

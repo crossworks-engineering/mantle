@@ -868,6 +868,14 @@ ensure MANTLE_SETUP_CODE gen_setup_code   # first-run signup gate; never rotated
 # brain. Never rotated on re-run. (The updater does the same on a roll.)
 ensure SANDBOXD_TOKEN      "gen_hex 32"
 ensure MEDIA_SIDECAR_TOKEN "gen_hex 32"
+# The runtime role (plan v3.2 S4a): a new install's app logs in as
+# mantle_runtime, not the superuser (docs/runtime-role.md). A FRESH box only,
+# and only when .env has no line: an existing box keeps what it runs with (the
+# updater and roll.sh write that value into a .env that has no line).
+if [[ $FRESH_BOX -eq 1 ]] && ! grep -qE '^[[:space:]]*(export[[:space:]]+)?MANTLE_DB_RUNTIME_ROLE[[:space:]]*=' "$ENV_FILE" 2>/dev/null; then
+  upsert MANTLE_DB_RUNTIME_ROLE 1
+  ok "MANTLE_DB_RUNTIME_ROLE=1 (the app logs in as mantle_runtime)"
+fi
 # POSTGRES_PASSWORD: generate ONLY for a genuinely fresh database. An older
 # install may have no POSTGRES_PASSWORD line yet an initialized data dir
 # (password baked in at initdb) — generating one there would break DB auth.

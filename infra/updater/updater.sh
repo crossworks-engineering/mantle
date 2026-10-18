@@ -543,6 +543,45 @@ persist_env() {
   fi
 }
 
+# ── The runtime role's line in .env (plan v3.2 S4a) ──────────────────────────
+# A new install writes MANTLE_DB_RUNTIME_ROLE=1 (scripts/install.sh); the code
+# default (features.ts) and compose's ${MANTLE_DB_RUNTIME_ROLE:-} stay off, so
+# a box that never had the line keeps running as it does. So that no later
+# default can flip such a box, a roll first writes the line a .env lacks,
+# holding the value the app runs with NOW: the running mantle_web's own
+# environment (compose or the shell may set it, not only .env; unset there is
+# 0). With no running mantle_web, .env's value, which with no line is 0. A
+# line already there is kept as it is. It prints one line saying what it
+# wrote and from where (the roll log). A failed read of the running
+# container writes nothing: a guess could flip the box. roll.sh sends these
+# same functions (from its checkout) to the box before it requests a roll.
+runtime_role_flag() { # <raw> -> 1 or 0, as the app reads a flag (parseFlag)
+  rrf=$(printf '%s' "$1" | tr -d '\r' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' | tr '[:upper:]' '[:lower:]')
+  case "$rrf" in 1|true|yes|on) echo 1 ;; *) echo 0 ;; esac
+}
+ensure_runtime_role_line() {
+  if grep -Eq '^[[:space:]]*(export[[:space:]]+)?MANTLE_DB_RUNTIME_ROLE[[:space:]]*=' "$STACK/.env" 2>/dev/null; then
+    echo "[runtime-role] .env names MANTLE_DB_RUNTIME_ROLE: kept as it is"
+    return 0
+  fi
+  if [ "$(docker inspect --type container --format '{{.State.Running}}' mantle_web 2>/dev/null)" = true ]; then
+    if ! rrl_env=$(docker exec mantle_web printenv 2>/dev/null); then
+      echo "[runtime-role] could not read mantle_web's environment: .env left without the line"
+      return 1
+    fi
+    rrl_v=$(runtime_role_flag "$(printf '%s\n' "$rrl_env" | sed -n 's/^MANTLE_DB_RUNTIME_ROLE=//p' | tail -n 1)")
+    rrl_from="the running mantle_web"
+  else
+    rrl_v=0
+    rrl_from=".env (no running mantle_web, and .env has no line)"
+  fi
+  if ! persist_env MANTLE_DB_RUNTIME_ROLE "$rrl_v"; then
+    echo "[runtime-role] could not write MANTLE_DB_RUNTIME_ROLE=$rrl_v to .env"
+    return 1
+  fi
+  echo "[runtime-role] .env had no MANTLE_DB_RUNTIME_ROLE line: wrote $rrl_v, from $rrl_from"
+}
+
 # read_paired_tag — the embedded client tag of $IMG (already pulled). Empty on
 # pre-pair images or extraction failure; sanitized against the tag whitelist
 # because it feeds persist_env and a compose pull.
@@ -1694,6 +1733,8 @@ while true; do
     # persist_env: temp-file rewrite that keeps .env's owner and mode (a bare
     # redirect from this root sidecar left it root:root 0644).
     [ "$TARGET" = latest ] || persist_env MANTLE_IMAGE_TAG "$TARGET"
+    # Before compose recreates mantle_web: the runtime role's line (S4a).
+    ensure_runtime_role_line >> "$SIG/update.log" 2>&1 || true
 
     # Refresh the (pristine) compose from the target image BEFORE `compose
     # pull`/`up`, so a release's compose-level changes — new services, mounts,

@@ -309,6 +309,13 @@ export function noteActorMiss(miss: ActorMiss): void {
   missLogger?.(miss);
 }
 
+/** Write a miss row as noteActorMiss does, with no log line and no test
+ *  record: the fail-open rows (plan v3.2 S4a), which fail-open.ts dedupes
+ *  and which never fail a test. */
+export function writeActorMissRow(miss: ActorMiss): void {
+  missLogger?.(miss);
+}
+
 /** A statement with no actor bound, refused because the check is on (A2b,
  *  plan 4.2 "Fail closed"). */
 export class ActorMissingError extends RuntimeFaultError {

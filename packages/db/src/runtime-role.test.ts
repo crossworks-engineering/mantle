@@ -147,6 +147,12 @@ describe('the mode report', () => {
     const su = { user: 'postgres', superuser: true, bypassrls: true, owns: 150 };
     expect(dbRoleMode(su)).toBe('superuser');
     expect(dbRoleNote(su, false)).toMatch(/MANTLE_DB_RUNTIME_ROLE=1/);
+    // Plan v3.2 S4a: off is said loudly; on as the superuser is not.
+    expect(dbRoleNote(su, false)).toMatch(
+      /^\[db\] SECURITY: MANTLE_DB_RUNTIME_ROLE is unset or 0\. /,
+    );
+    expect(dbRoleNote(su, true)).not.toMatch(/SECURITY/);
+    expect(dbRoleNote({ ...row, owns: 3 }, false)).toMatch(/^\[db\] SECURITY: /);
     expect(dbRoleMode({ ...row, owns: 3 })).toBe('other');
     expect(dbRoleMode({ ...row, user: 'someone' })).toBe('other');
   });

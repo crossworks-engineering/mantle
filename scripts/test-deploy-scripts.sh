@@ -222,6 +222,82 @@ check "image tag: written" grep -qx 'MANTLE_IMAGE_TAG=v3' "$T/stack/.env"
 check "image tag: mode stays 600" test "$(mode_of "$T/stack/.env")" = 600
 
 # ═════════════════════════════════════════════════════════════════════════════
+echo "updater.sh: the runtime role's line (plan v3.2 S4a)"
+# A docker that plays a running mantle_web whose environment is FAKE_WEB_ENV
+# (one NAME=value a line); FAKE_WEB=down: no running mantle_web;
+# FAKE_WEB=broken: running, but its environment cannot be read.
+RRL_DOCKER='
+docker() {
+  case "$1" in
+    inspect) [ "${FAKE_WEB:-up}" = down ] || echo true; return 0 ;;
+    exec) [ "${FAKE_WEB:-up}" = broken ] && return 1; printf "%b" "$FAKE_WEB_ENV"; return 0 ;;
+  esac
+  return 0
+}'
+rrl() { # <stack dir> <env lines> [FAKE_WEB]: run ensure_runtime_role_line; output in $T/rrl.out
+  ( umask 022; FAKE_WEB_ENV="$2" FAKE_WEB="${3:-up}" \
+    updater_run "$1" "$T/sig" "$T/img" "$RRL_DOCKER
+ensure_runtime_role_line" > "$T/rrl.out" 2>&1 ) || echo "exit $?" >> "$T/rrl.out"
+}
+T="$WORK/rrl"; fake_stack "$T"
+rrl "$T/stack" 'PATH=/bin\nMANTLE_DB_RUNTIME_ROLE=1\n'
+check "no line, the container says 1: 1 appended" grep -qx 'MANTLE_DB_RUNTIME_ROLE=1' "$T/stack/.env"
+check "no line, the container says 1: the other lines intact" grep -qx 'MANTLE_MASTER_KEY=k' "$T/stack/.env"
+check "no line, the container says 1: the log names the source" grep -q 'wrote 1, from the running mantle_web' "$T/rrl.out"
+check "append: the mode stays 600" test "$(mode_of "$T/stack/.env")" = 600
+cp "$T/stack/.env" "$T/env.after"
+rrl "$T/stack" 'PATH=/bin\nMANTLE_DB_RUNTIME_ROLE=0\n'
+check "a rerun changes nothing (the line kept, though the container now says 0)" same "$T/stack/.env" "$T/env.after"
+check "a rerun says it kept the line" grep -q 'kept as it is' "$T/rrl.out"
+
+T="$WORK/rrl0"; fake_stack "$T"; chmod 640 "$T/stack/.env"; before_owner=$(owner_of "$T/stack/.env")
+rrl "$T/stack" 'PATH=/bin\nHOME=/app\n'
+check "no line, unset in the container: 0 appended" grep -qx 'MANTLE_DB_RUNTIME_ROLE=0' "$T/stack/.env"
+check "append: an operator-chosen 640 is kept" test "$(mode_of "$T/stack/.env")" = 640
+check "append: the owner is kept" test "$(owner_of "$T/stack/.env")" = "$before_owner"
+cp "$T/stack/.env" "$T/env.after"
+rrl "$T/stack" 'PATH=/bin\nMANTLE_DB_RUNTIME_ROLE=1\n'
+check "0 kept (the container says 1 now)" same "$T/stack/.env" "$T/env.after"
+
+T="$WORK/rrl-down"; fake_stack "$T"
+rrl "$T/stack" '' down
+check "no running mantle_web: 0 appended" grep -qx 'MANTLE_DB_RUNTIME_ROLE=0' "$T/stack/.env"
+check "no running mantle_web: the log says .env" grep -q 'wrote 0, from .env' "$T/rrl.out"
+
+T="$WORK/rrl-1"; fake_stack "$T"; printf 'MANTLE_DB_RUNTIME_ROLE=1\n' >> "$T/stack/.env"; cp "$T/stack/.env" "$T/env.before"
+rrl "$T/stack" 'PATH=/bin\n'
+check "1 kept (unset in the container)" same "$T/stack/.env" "$T/env.before"
+
+T="$WORK/rrl-x"; fake_stack "$T"; printf 'export MANTLE_DB_RUNTIME_ROLE="yes"\n' >> "$T/stack/.env"; cp "$T/stack/.env" "$T/env.before"
+rrl "$T/stack" 'PATH=/bin\n'
+check "an export or quoted line is a line: kept" same "$T/stack/.env" "$T/env.before"
+
+T="$WORK/rrl-on"; fake_stack "$T"
+rrl "$T/stack" 'MANTLE_DB_RUNTIME_ROLE= On \n'
+check "the value as the app reads it: ' On ' is 1" grep -qx 'MANTLE_DB_RUNTIME_ROLE=1' "$T/stack/.env"
+
+T="$WORK/rrl-broken"; fake_stack "$T"; cp "$T/stack/.env" "$T/env.before"
+rrl "$T/stack" '' broken
+check "the running container cannot be read: nothing written" same "$T/stack/.env" "$T/env.before"
+check "the running container cannot be read: non-zero, said" sh -c "grep -q 'could not read' '$T/rrl.out' && grep -q '^exit 1' '$T/rrl.out'"
+
+T="$WORK/rrl-rw"; fake_stack "$T"; printf 'MANTLE_DB_RUNTIME_ROLE=0\n' >> "$T/stack/.env"; chmod 640 "$T/stack/.env"
+before_owner=$(owner_of "$T/stack/.env")
+( umask 022; updater_run "$T/stack" "$T/sig" "$T/img" 'persist_env MANTLE_DB_RUNTIME_ROLE 1' )
+check "rewrite through persist_env: the value changed" grep -qx 'MANTLE_DB_RUNTIME_ROLE=1' "$T/stack/.env"
+check "rewrite: one line, not two" test "$(grep -c '^MANTLE_DB_RUNTIME_ROLE=' "$T/stack/.env")" = 1
+check "rewrite: the mode stays 640" test "$(mode_of "$T/stack/.env")" = 640
+check "rewrite: the owner is kept" test "$(owner_of "$T/stack/.env")" = "$before_owner"
+
+check "the roll calls it after the image tag, before compose" sh -c "
+  a=\$(grep -n 'persist_env MANTLE_IMAGE_TAG \"\$TARGET\"' '$ROOT/infra/updater/updater.sh' | head -1 | cut -d: -f1)
+  b=\$(grep -n '^    ensure_runtime_role_line ' '$ROOT/infra/updater/updater.sh' | head -1 | cut -d: -f1)
+  c=\$(grep -n 'refresh_compose \"\$TARGET\"' '$ROOT/infra/updater/updater.sh' | head -1 | cut -d: -f1)
+  [ -n \"\$a\" ] && [ -n \"\$b\" ] && [ -n \"\$c\" ] && [ \"\$a\" -lt \"\$b\" ] && [ \"\$b\" -lt \"\$c\" ]"
+check "install.sh writes 1 on a fresh box only" sh -c "grep -q 'FRESH_BOX -eq 1 ]] && ! grep -qE' '$ROOT/scripts/install.sh' && grep -q 'upsert MANTLE_DB_RUNTIME_ROLE 1' '$ROOT/scripts/install.sh'"
+check ".env.example shows it set" grep -qx 'MANTLE_DB_RUNTIME_ROLE=1' "$ROOT/.env.example"
+
+# ═════════════════════════════════════════════════════════════════════════════
 echo "updater.sh: a .env that cannot satisfy the incoming compose refuses the swap"
 T="$WORK/compose"; fake_stack "$T"
 cat > "$T/img/docker-compose.yml" <<'YML'
@@ -1272,6 +1348,7 @@ check "happy: request.json held only the target" test "$(cat "$RS/request.seen")
 check "happy: stack dir read from the updater" grep -q "(stack $RS/stack)" "$RS/out"
 check "happy: prints /api/version" grep -q 'version: {"version":"fake"}' "$RS/out"
 check "happy: counts printed before and after" sh -c "grep -q 'before: apps=11 sandboxes=2 app-db files=7' '$RS/out' && grep -q 'after:  apps=11 sandboxes=2 app-db files=7' '$RS/out'"
+check "happy: the runtime role's line written before the request (S4a)" sh -c "grep -qx 'MANTLE_DB_RUNTIME_ROLE=0' '$RS/stack/.env' && grep -q 'wrote 0, from .env' '$RS/out'"
 
 roll_box dumpfail
 FAKE_DUMP=fail roll_sh --ssh fakebox v8

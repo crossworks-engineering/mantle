@@ -883,6 +883,22 @@ export function gapRerunCount(files) {
   return n;
 }
 
+/**
+ * The fail-open branches that are counted, not refused (plan v3.2 S4a, the
+ * `failOpenSites` pin): each call of noteFailOpen, noteUnscopedYes or
+ * noteScopedSystemWrite (packages/db/src/fail-open.ts, fail-open-sites.ts)
+ * with a literal site, comments blanked. Six at S4a: scopeHoldsAdmin,
+ * scopeHasArea, typedWrite, loginWriteClient (client.ts), the production
+ * allows of asSystem and assertSystemDbCaller (viewer.ts). S4b turns each
+ * into a refusal, so 0. A seventh fail-open branch is one more call here.
+ */
+export function failOpenSiteCount(files) {
+  const CALL = /\bnote(?:FailOpen|UnscopedYes|ScopedSystemWrite)\(\s*'[a-z-]+'/g;
+  let n = 0;
+  for (const { text } of files) n += (stripComments(text).match(CALL) ?? []).length;
+  return n;
+}
+
 /** The lines of one file (plan v3 section 6: dbClientLines). */
 function lineCount(root, path) {
   return readFileSync(join(root, path), 'utf8').split('\n').length - 1;
@@ -1172,6 +1188,7 @@ export function measure(root) {
       docQuotesDangling: docQuotes.docQuotesDangling,
       gapTables: gapRerunCount(texts),
       dbClientLines: lineCount(root, 'packages/db/src/client.ts'),
+      failOpenSites: failOpenSiteCount(texts),
     },
     perFile: {
       asSystem,

@@ -42,6 +42,7 @@ import { hkdfSync } from 'node:crypto';
 import { env } from '@mantle/config';
 import { RuntimeFaultError, UUID_RE } from '@mantle/std';
 import { WORKSPACE_AREAS, type WorkspaceArea } from '@mantle/client-types/dto/workspaces';
+import { noteFailOpen } from './fail-open';
 
 /**
  * A personal-space scope (member logins Phase 2, plan section 2b): the code
@@ -965,6 +966,10 @@ export function asSystem<T>(fn: () => Promise<T>, reason: AsSystemReason): Promi
       reason !== undefined && (AS_SYSTEM_TURN_REASONS as readonly string[]).includes(reason);
     if (!listed) {
       if (strictTurnExits()) return Promise.reject(new TurnScopeExitError(reason));
+      // Allowed in production: counted (plan v3.2 S4a; S4b throws).
+      noteFailOpen('turn-exit', active()?.ws?.kind ?? '', () =>
+        systemDbCallerOf(new Error().stack ?? ''),
+      );
       const key = `unlisted:${reason ?? ''}`;
       if (!loggedTurnExits.has(key)) {
         loggedTurnExits.add(key);
@@ -1079,6 +1084,7 @@ export function systemDbCallerOf(stack: string): string | null {
     if (
       file.endsWith('packages/db/src/viewer.ts') ||
       file.endsWith('packages/db/src/client.ts') ||
+      file.endsWith('packages/db/src/fail-open.ts') ||
       file.includes('/node_modules/') ||
       file.startsWith('node:')
     ) {
@@ -1132,6 +1138,8 @@ export function assertSystemDbCaller(stack?: string): void {
     `systemDb inside a turn scope is for the infrastructure modules of SYSTEM_DB_MODULES only; ` +
     `used from ${caller ?? 'an unknown file'}. A turn never reads past its scope on the admin pool.`;
   if (strictTurnExits()) throw new TurnScopeExitError(undefined, message);
+  // Allowed in production: counted (plan v3.2 S4a; S4b throws).
+  noteFailOpen('system-db', active()?.ws?.kind ?? '', () => caller);
   const key = `system-db:${caller ?? ''}`;
   if (!loggedTurnExits.has(key)) {
     loggedTurnExits.add(key);
