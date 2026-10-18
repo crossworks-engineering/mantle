@@ -11,7 +11,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import postgres from 'postgres';
-import { afterAll, describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it, vi } from 'vitest';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -53,8 +53,13 @@ describe.skipIf(!URL)('workspaces for a fresh install (W5b1 audit M1)', () => {
     expect((await sql`select mantle_ws_skip_reason() as r`)[0]!.r).toBe('no brain anchor yet');
 
     const { createFirstOwner } = await import('./auth/first-owner');
+    // The signup's attach runs in the new owner's own scope (0305, plan v3.2
+    // S2a a2): it must not fail (a failure is only logged).
+    const errors = vi.spyOn(console, 'error');
     const res = await createFirstOwner('owner@example.invalid', 'a long enough password 1');
     expect(res.ok).toBe(true);
+    expect(errors.mock.calls.filter((c) => String(c[0]).includes('[workspaces]'))).toEqual([]);
+    errors.mockRestore();
     const owner = (res as { id: string }).id;
 
     // A new brain has no Team workspace (owner decision 2026-10-13): the
@@ -94,6 +99,9 @@ describe.skipIf(!URL)('workspaces for a fresh install (W5b1 audit M1)', () => {
 
     // Idempotent: the boot step finds it migrated, writes nothing.
     const wm = await import('./workspaces-migrate');
+    const { systemWork } = await import('@mantle/db');
+    // The boot's form: workspace system work (systemWork, server/main.ts).
+    const boot = <T>(fn: () => Promise<T>) => systemWork(fn, 'boot:migrate-workspaces');
     const again = await wm.migrateWorkspaces();
     expect(again).toEqual([
       { section: 'skip', subject: 'workspaces', metric: 'already migrated', n: 1 },
@@ -119,7 +127,10 @@ describe.skipIf(!URL)('workspaces for a fresh install (W5b1 audit M1)', () => {
     // The persona goes on Admin. The team responder ships closed (admin
     // level): 0251 attaches it only at team level, and an admin-level
     // assistant on Team would bring admin-level tools into Team turns.
-    expect(await wm.attachDefaultAssistants()).toBe(1);
+    // Onboarding's form: in the owner's own scope (the assistants area). With
+    // no acting login and no system work it is refused (0305).
+    await expect(wm.attachDefaultAssistants()).rejects.toThrow();
+    expect(await wm.attachDefaultAssistants(owner)).toBe(1);
     expect(await assistants()).toEqual([{ key: 'admin', slug: 'persona-test' }]);
     // A brain whose admin opened it before W7b (levels are frozen since
     // 0268, so the fixture sets it past the freeze): with no Team (0286),
@@ -132,7 +143,7 @@ describe.skipIf(!URL)('workspaces for a fresh install (W5b1 audit M1)', () => {
         await tx`update agents set audience = ${level} where id = ${tr!.id}`;
       });
     await setLevel('team');
-    expect(await wm.attachDefaultAssistants()).toBe(0);
+    expect(await boot(() => wm.attachDefaultAssistants())).toBe(0);
     expect(await assistants()).toEqual([{ key: 'admin', slug: 'persona-test' }]);
     // Each attach is logged on its workspace (audit nit).
     expect(
@@ -142,7 +153,7 @@ describe.skipIf(!URL)('workspaces for a fresh install (W5b1 audit M1)', () => {
          where e.action = 'resource.add' order by 1`,
     ).toEqual([{ key: 'admin', by: 'attach' }]);
     // A boot changes nothing either.
-    await wm.migrateWorkspacesQuietly('boot');
+    await boot(() => wm.migrateWorkspacesQuietly('boot'));
     expect(await assistants()).toEqual([{ key: 'admin', slug: 'persona-test' }]);
     await setLevel('admin');
 
@@ -152,7 +163,7 @@ describe.skipIf(!URL)('workspaces for a fresh install (W5b1 audit M1)', () => {
       await tx`select mantle_lock_heads(array[${page}::uuid], 'update')`;
       await tx`delete from item_grants where node_id = ${page}`;
     });
-    await wm.migrateWorkspacesQuietly('boot');
+    await boot(() => wm.migrateWorkspacesQuietly('boot'));
     expect(
       Number((await sql`select count(*) as n from item_grants where node_id = ${page}`)[0]!.n),
     ).toBe(0);

@@ -791,6 +791,62 @@ describe.skipIf(!URL)('workspace management (W5a)', () => {
     expect(del.body.code).toBe('assistant_has_history');
   });
 
+  it('setAssistantCopies (plan v3.2 S2a a2): the TS setAssistant (PATCH) and the SQL mantle_ws_set_assistant (resources) write the same rows and answer the same', async () => {
+    const [w1, w2] = [await create(mem, 'Copies TS'), await create(mem, 'Copies SQL')];
+    const C = [randomUUID(), randomUUID(), randomUUID()];
+    await x(sql`insert into agents (id, owner_id, slug, name, model, system_prompt, role) values
+      (${C[0]}, ${owner}, 'copies-0', 'C0', 'm', 'p', 'responder'),
+      (${C[1]}, ${owner}, 'copies-1', 'C1', 'm', 'p', 'responder'),
+      (${C[2]}, ${owner}, 'copies-2', 'C2', 'm', 'p', 'assistant')`);
+    await as(owner);
+    // The rows a workspace holds, its own ids written as placeholders.
+    const state = async (ws: string, agent: string) => ({
+      res: await x(sql`select type, ref_id = ${agent} as agent, write, added_by
+                         from workspace_resources where workspace_id = ${ws}`),
+      bound: await x(sql`select workspace_id = ${ws} as here from agents where id = ${agent}`),
+      ev: (
+        await x<{ actor: string; action: string; subject: Json }>(sql`
+          select actor_id as actor, action, subject from workspace_events
+           where workspace_id = ${ws} and action like 'resource.%' order by id`)
+      ).map((e) => ({
+        ...e,
+        subject: { ...e.subject, id: e.subject.id === agent ? 'A' : e.subject.id },
+      })),
+    });
+    const ts = (body: Json) => call(r.one.PATCH(req('PATCH', body), p({ id: w1 })));
+    const sqlAdd = (id: string) =>
+      call(r.res.POST(req('POST', { kind: 'assistant', id }), p({ id: w2 })));
+    const sqlDel = (id: string) =>
+      call(r.resOne.DELETE(req('DELETE'), p({ id: w2, kind: 'assistant', refId: id })));
+    const assistantOf = (b: Json) =>
+      (b.resources as Json[]).filter((r2) => r2.kind === 'assistant').map((r2) => r2.write);
+    // Put one on, then take it off.
+    const on = [await ts({ assistantId: C[0] }), await sqlAdd(C[1]!)];
+    expect(on.map((o) => o.status)).toEqual([200, 200]);
+    expect(assistantOf(on[0]!.body)).toEqual(assistantOf(on[1]!.body));
+    expect(await state(w1, C[0]!)).toEqual(await state(w2, C[1]!));
+    const off = [await ts({ assistantId: null }), await sqlDel(C[1]!)];
+    expect(off.map((o) => o.status)).toEqual([200, 200]);
+    expect(assistantOf(off[0]!.body)).toEqual(assistantOf(off[1]!.body));
+    expect(await state(w1, C[0]!)).toEqual(await state(w2, C[1]!));
+    // The refusals, byte-equal: no such chat assistant; another workspace's.
+    const ghost = randomUUID();
+    expect(await ts({ assistantId: ghost })).toEqual(await sqlAdd(ghost));
+    await ts({ assistantId: C[2] });
+    const inUse = [await ts({ assistantId: C[2] }), await sqlAdd(C[2]!)];
+    expect(inUse[1]!.body.code).toBe('assistant_in_use');
+    expect(await call(r.one.PATCH(req('PATCH', { assistantId: C[2] }), p({ id: w2 })))).toEqual(
+      inUse[1],
+    );
+    // History: the current one stays, by either copy.
+    await sqlAdd(C[1]!);
+    await x(sql`insert into chat_threads (owner_id, agent_id, title, status) values
+      (${owner}, ${C[1]}, 't', 'open'), (${owner}, ${C[2]}, 't', 'open')`);
+    const frozen = [await ts({ assistantId: null }), await sqlDel(C[1]!)];
+    expect(frozen[0]!.body.code).toBe('assistant_has_history');
+    expect(frozen[0]).toEqual(frozen[1]);
+  });
+
   it('resources: connectors by an Admin user; Team takes one like any workspace', async () => {
     const ws = await create(mem, 'Mia tools');
     await as(mem);
