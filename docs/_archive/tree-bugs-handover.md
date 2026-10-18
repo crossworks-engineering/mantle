@@ -106,6 +106,27 @@ branch:
 | `tool:page_move mcp-oauth login/homeModerator move page @folder`         | database error (move made) | allowed, ok        |
 | `tool:tree_item_move mcp-oauth login/homeModerator move recall @folder`  | database error (move made) | allowed, ok        |
 
+The same rule changes these recorded answers in the older suites (each
+updated, each a Write grant's or editOnly member's rename, refused before,
+allowed now; a move stays refused):
+
+- `packages/db/src/edit-check.db.test.ts` M3: the Write grant's
+  `mantle_subtree_rewrite` rename moves every row (3), hidden ones too; a
+  new line keeps its move (a new parent) refused, "not allowed to move this
+  item".
+- `server/web/server/precheck-removal.db.test.ts`: `tree_folder_update`
+  rename and `folder_rename` lose `now: { editOnly: 'refused' }` (MCP and
+  turn).
+- `server/web/server/precheck-removal-http.db.test.ts`:
+  `PATCH /api/files/folders/:id` rename and `PATCH /api/tree/:kind/folders/:id`
+  rename need edit, not manage (the Files route already asked edit in
+  TypeScript; the database asked manage).
+- `server/web/server/a5-mcp-writes-smoke.db.test.ts`: the Write-only
+  member's `folder_rename` is made (it was "folder_rename failed").
+
+Also: `packages/db/src/schema/workspaces.ts` gets `old_path` on
+`mantle_moved_nodes` (the schema drift check).
+
 Beyond the matrix, one more answer of the same rule: a caller with edit of
 a folder (Write on it) but not of the folder it sits in may rename it now
 (a rename asked edit of the parent before, as a move does). The rename
