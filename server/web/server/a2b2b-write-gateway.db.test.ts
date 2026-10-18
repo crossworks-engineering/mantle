@@ -22,6 +22,10 @@
  *    write-role tables: each login writes its own profile row, the brain's
  *    only with the Settings area, a member's turn never; an export row
  *    only a manager of the app, member-negative cells in warn and on;
+ *  - hotfix S11a-7 (0303): a NEW export row by the app's Moderator, and by
+ *    the owner on an app homed in Admin, with both checks off, warn and on
+ *    (the write check's grant branch refused it in on); createAppTableExport
+ *    end to end in on;
  *  - grants (0279): the home move is one call (manage of the old home and a
  *    Moderator of the new one), and the role writes the derived grant
  *    columns only through the definer.
@@ -582,6 +586,180 @@ describe.skipIf(!URL)('A2b2b: the login write gateway', () => {
       // The app's Moderator (mem2 made Ro): its own export row.
       expect(await update(mem2, exportId)).toEqual([{ id: exportId }]);
     }
+    expect(m.takeWriteRoleGaps()).toEqual([]);
+    m.takeActorMisses();
+  });
+
+  /** Both checks' box modes, as the fleet runs them (hotfix S11a-7), and
+   *  this process's actor mode. Lowering names a reason (0301). Returns the
+   *  modes it found, for the restore. */
+  const setChecks = async (mode: Mode): Promise<{ actor: string; edit: string }> => {
+    const [was] = await su<{ actor: string; edit: string }>(
+      sql`select mantle_check_box_mode('actor_check') as actor,
+                 mantle_check_box_mode('edit_check') as edit`,
+    );
+    await su(sql`select mantle_set_actor_check(${mode}, 50, 'a2b2b S11a-7 test')`);
+    await su(sql`select mantle_set_edit_check(${mode}, 50, 'a2b2b S11a-7 test')`);
+    setMode(mode);
+    (await import('../../../packages/db/src/actor')).noteBoxActorCheckMode(mode);
+    return was!;
+  };
+  const restoreChecks = async (was: { actor: string; edit: string }) => {
+    await su(sql`select mantle_set_actor_check(${was.actor}, 50, 'a2b2b S11a-7 restore')`);
+    await su(sql`select mantle_set_edit_check(${was.edit}, 50, 'a2b2b S11a-7 restore')`);
+    (await import('../../../packages/db/src/actor')).noteBoxActorCheckMode(was.actor);
+  };
+
+  it('hotfix S11a-7: a NEW export row by a manager of the app (its Moderator; the owner on an app homed in Admin); outsider and non-manager refused (both checks off, warn, on)', async () => {
+    // Changed by 0303: before it the write check's grant branch read the
+    // row's workspace_id (an export row has none) and refused every new
+    // export row in on (42501 "not allowed to grant to that workspace"),
+    // reporting the miss in off and warn. Recorded on main (7a7608fb1)
+    // with this test: the app's Moderator and the owner `42501
+    // refusal=true` in on (no link made), ok in off and warn with the miss
+    // noted (two a mode); the outsider and the reader `42501 refusal=true`
+    // in every mode. Only the managers' on cells move (refused to ok), and
+    // their misses go; nothing else changes.
+    const mem3 = randomUUID(); // an outsider: in no workspace of the app
+    await x(sql`insert into auth.users (id, email, password_hash, is_owner, role, display_name)
+                values (${mem3}, ${email('mem3s11')}, 'x', false, 'member', 'Oona Outsider')`);
+    const appRo = randomUUID();
+    const appAdm = randomUUID();
+    await x(sql`insert into nodes (id, owner_id, type, title, path) values
+      (${appRo}, ${owner}, 'app', ${`${tag} s11a7 app ro`}, 'apps'),
+      (${appAdm}, ${owner}, 'app', ${`${tag} s11a7 app admin`}, 'apps')`);
+    await homeIn(appRo, ro);
+    await homeIn(appAdm, adminWs);
+    /** A fresh Table homed in `ws` (a link's table_node_id is unique). */
+    const tableIn = async (ws: string, name: string) => {
+      const id = randomUUID();
+      await x(sql`insert into nodes (id, owner_id, type, title, path)
+                  values (${id}, ${owner}, 'table', ${`${tag} s11a7 ${name}`}, 'tables')`);
+      await homeIn(id, ws);
+      return id;
+    };
+    const insert = (login: string, app: string, table: string, name: string) =>
+      inRequest(login, () =>
+        m.db.insert(m.appTableExports).values({
+          ownerId: owner,
+          appNodeId: app,
+          sqliteTable: name,
+          tableNodeId: table,
+        }),
+      ).then(
+        () => 'ok',
+        (e: unknown) => `${m.pgErrorCode(e)} refusal=${m.isScopeWriteRefusal(e)}`,
+      );
+    const exportMiss = (ms: { check: string; detail: string }[]) =>
+      ms.filter((mi) => /app_table_exports/.test(`${mi.check} ${mi.detail}`));
+    const answers: Record<string, string> = {};
+    const linked: Record<string, number> = {};
+    const missed: Record<string, number> = {};
+    const was = await setChecks('warn');
+    try {
+      for (const mode of ['off', 'warn', 'on'] as const) {
+        await setChecks(mode);
+        m.takeActorMisses();
+        // The managers: a new link, no miss noted (off and warn too).
+        answers[`${mode} moderator`] = await insert(
+          mem2,
+          appRo,
+          await tableIn(ro, `${mode} mod`),
+          `s11a7_${mode}_mod`,
+        );
+        answers[`${mode} owner admin`] = await insert(
+          owner,
+          appAdm,
+          await tableIn(adminWs, `${mode} own`),
+          `s11a7_${mode}_own`,
+        );
+        missed[mode] = exportMiss(m.takeActorMisses()).length;
+        // The outsider and the non-manager (reads Ro, the app's home):
+        // refused by the row rule in every mode, nothing written.
+        for (const [who, name] of [
+          [mem3, 'outsider'],
+          [mem, 'reader'],
+        ] as const) {
+          answers[`${mode} ${name}`] = await insert(
+            who,
+            appRo,
+            await tableIn(ro, `${mode} ${name}`),
+            `s11a7_${mode}_${name}`,
+          );
+        }
+        m.takeActorMisses();
+        for (const [app, name] of [
+          [appRo, 'mod'],
+          [appAdm, 'own'],
+          [appRo, 'outsider'],
+          [appRo, 'reader'],
+        ] as const) {
+          linked[`${mode} ${name}`] = (
+            await x<{ n: number }>(sql`select count(*)::int as n from app_table_exports
+              where app_node_id = ${app} and sqlite_table = ${`s11a7_${mode}_${name}`}`)
+          )[0]!.n;
+        }
+      }
+    } finally {
+      await restoreChecks(was);
+    }
+    const expected: Record<string, string> = {};
+    const rows: Record<string, number> = {};
+    for (const mode of ['off', 'warn', 'on'] as const) {
+      expected[`${mode} moderator`] = 'ok';
+      expected[`${mode} owner admin`] = 'ok';
+      expected[`${mode} outsider`] = '42501 refusal=true';
+      expected[`${mode} reader`] = '42501 refusal=true';
+      Object.assign(rows, {
+        [`${mode} mod`]: 1,
+        [`${mode} own`]: 1,
+        [`${mode} outsider`]: 0,
+        [`${mode} reader`]: 0,
+      });
+    }
+    expect(answers).toEqual(expected);
+    expect(linked).toEqual(rows);
+    // The managers' cells note no miss (off and warn too).
+    expect(missed).toEqual({ off: 0, warn: 0, on: 0 });
+    expect(m.takeWriteRoleGaps()).toEqual([]);
+    m.takeActorMisses();
+  });
+
+  it('hotfix S11a-7: createAppTableExport by the app’s Moderator with both checks on makes the Table and the link', async () => {
+    const c = await import('@mantle/content/app-table-exports');
+    // The app and its database, made by the owner (both checks at the
+    // test's default), then homed in Ro (mem2 made Ro: its Moderator).
+    const made = await call('/api/apps', owner, 'POST', { name: `${tag} s11a7 e2e` });
+    expect(made.status, made.text.slice(0, 200)).toBe(201);
+    const appId = (made.json.app as { id: string }).id;
+    const ddl = await call(`/api/apps/${appId}/db-broker`, owner, 'POST', {
+      op: 'exec',
+      sql: 'create table if not exists items (name text)',
+      params: [],
+    });
+    expect(ddl.status, ddl.text.slice(0, 200)).toBe(200);
+    await homeIn(appId, ro);
+    const was = await setChecks('on');
+    let out: Awaited<ReturnType<typeof c.createAppTableExport>> | undefined;
+    try {
+      // The new Table lands in Ro, the workspace the call names (a create
+      // home, as the tool's `workspace` gives it).
+      out = await inRequest(mem2, () =>
+        m.withCreateHome({ createWs: ro, privateWs: null }, () =>
+          c.createAppTableExport(owner, appId, 'items'),
+        ),
+      );
+    } finally {
+      await restoreChecks(was);
+    }
+    expect(out!.created).toBe(true);
+    const [table] = await x<{ type: string; home: string }>(
+      sql`select type, home_ws::text as home from nodes where id = ${out!.tableId}`,
+    );
+    expect(table).toEqual({ type: 'table', home: ro });
+    const links = await x<{ t: string }>(sql`select table_node_id::text as t
+      from app_table_exports where app_node_id = ${appId} and sqlite_table = 'items'`);
+    expect(links).toEqual([{ t: out!.tableId }]);
     expect(m.takeWriteRoleGaps()).toEqual([]);
     m.takeActorMisses();
   });
