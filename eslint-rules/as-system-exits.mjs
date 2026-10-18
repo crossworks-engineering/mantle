@@ -403,7 +403,7 @@ function inType(node) {
  * class field or property signature), a property key, a destructured
  * binding.
  */
-function nonCallUses(sf, name, { argumentOk = false } = {}) {
+export function nonCallUses(sf, name, { argumentOk = false } = {}) {
   const out = [];
   const report = (node, how) =>
     out.push({ line: sf.getLineAndCharacterOfPosition(node.getStart(sf)).line + 1, how });

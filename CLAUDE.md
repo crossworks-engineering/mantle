@@ -39,7 +39,7 @@ store, so ~seconds), and copies `.env.local`. Tear down with
   Use unique branch names; don't run a bare `git stash` while others are active
   (scope it: `git stash push -- <paths>`).
 - Each worktree has its own `.next`, so concurrent `next build`s are safe (the
-  "one build at a time" hazard only applies inside a *shared* checkout).
+  "one build at a time" hazard only applies inside a _shared_ checkout).
 - Run the dev server on a non-default port when another session holds `:3000`
   (`PORT=3100 pnpm -C server/web dev`).
 - **The dev stack belongs to the original clone, not to your worktree.** Its
@@ -97,6 +97,14 @@ test run. If you hit it, you almost certainly merged the wrong direction:
 
 ## Other guidance
 
+- **A handover heading's step code goes in the counters' list in the same
+  commit.** The headings of `docs/_archive/actors-history.md` and
+  `docs/_archive/plan-v3-*-handover.md` are read for step codes (R0, S3,
+  S11a): a code in neither `HISTORY_HEADING_CODES` nor
+  `HEADING_CODES_LEFT_OUT` (`eslint-rules/cleanup-counts.mjs`, the latter
+  with why) fails `pnpm arch:check`, so `pnpm verify` and CI go red. Add it
+  to one of them, with the handover, and re-pin `historyCodeComments` if
+  the count moves.
 - **The frontend lives in its own repo since 2026-08-13**:
   [crossworks-engineering/jackdaw](https://github.com/crossworks-engineering/jackdaw)
   (the owner UI + Electron shell + web-ui kit + UI e2e). It consumes this

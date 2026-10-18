@@ -131,6 +131,53 @@ describe('rawWriteSqlSites', () => {
     ]);
   });
 
+  it('a template with no SQL word in its static text is no literal', () => {
+    const t = [
+      'await tx.unsafe(`${stmt}`);',
+      'await tx.unsafe(`${TAG} ${STMT}`);',
+      'await tx.unsafe(`${stmt};`);',
+      'const c = sql.raw(`${alias}.${name}`);',
+      "const k = sql.raw(`array[${keys.map((x) => `'${x}'`).join(', ')}]::text[]`);",
+      'await tx.unsafe(`delete from t where id = ${id}`);',
+      'await tx.unsafe(`select * from ${table}`);',
+      'await tx.unsafe(`${TAG} insert into t values (1)`);',
+    ].join('\n');
+    expect(rawWriteSqlSites('x.ts', t)).toEqual([
+      { line: 1, why: 'non-literal' },
+      { line: 2, why: 'non-literal' },
+      { line: 3, why: 'non-literal' },
+      { line: 4, why: 'non-literal' },
+      { line: 5, why: 'non-literal' },
+      { line: 6, why: 'write' },
+      { line: 8, why: 'write' },
+    ]);
+  });
+
+  it('reads .raw on a member whose last name is a tag, and an alias of an alias', () => {
+    const t = [
+      'await this.sql.raw(stmt);',
+      'await deps.sql.raw(stmt);',
+      "await d.sqlTag['raw'](stmt);",
+      'await deps.db.raw(stmt);',
+      'const r = sql.raw;',
+      'const r2 = r;',
+      'await r2(stmt);',
+      'let r3; r3 = r2;',
+      'await r3(stmt);',
+      'const u = pg.unsafe;',
+      'const u2 = (u);',
+      "await u2('update t set a = 1');",
+    ].join('\n');
+    expect(rawWriteSqlSites('x.ts', t)).toEqual([
+      { line: 1, why: 'non-literal' },
+      { line: 2, why: 'non-literal' },
+      { line: 3, why: 'non-literal' },
+      { line: 7, why: 'non-literal' },
+      { line: 9, why: 'non-literal' },
+      { line: 12, why: 'write' },
+    ]);
+  });
+
   it('pins literal writes and non-literal text apart', () => {
     const n = cleanupCounts(ROOT, [
       {
@@ -285,6 +332,31 @@ describe('history codes in comments', () => {
     expect(headingCodeProblems(ROOT)).toEqual([]);
     const left = Object.keys(HEADING_CODES_LEFT_OUT as Record<string, string>);
     expect((HISTORY_HEADING_CODES as string[]).filter((c) => left.includes(c))).toEqual([]);
+  });
+
+  it('reads no heading inside a fenced code block', () => {
+    const root = mkdtempSync(join(tmpdir(), 'cleanup-counts-'));
+    try {
+      mkdirSync(join(root, 'docs/_archive'), { recursive: true });
+      writeFileSync(
+        join(root, 'docs/_archive/actors-history.md'),
+        [
+          '# History',
+          '```sh',
+          '# Z8 a shell comment',
+          '```',
+          '~~~~',
+          '# Z7 still code',
+          '```',
+          '# Z6 still code, a shorter or other fence closes nothing',
+          '~~~~',
+          '## Z5 a heading',
+        ].join('\n'),
+      );
+      expect([...(historyHeadingCodes(root) as Map<string, string>).keys()]).toEqual(['Z5']);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it('a heading code in neither list is a problem, and the count does not read it', () => {

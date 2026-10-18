@@ -73,9 +73,11 @@ function afterWith(sql) {
 }
 
 /** Why the static SQL `text` is a raw write ('write' or 'write-cte'), or
- *  null for a read (FOR UPDATE included) or a definer call. */
+ *  null for a read (FOR UPDATE included) or a definer call. A template's
+ *  leading placeholders (`${TAG} insert ...`, a tag comment before the
+ *  statement) are skipped. */
 export function rawWriteKind(text) {
-  const sql = dropSqlComments(text);
+  const sql = dropSqlComments(text).replace(/^\s*(?:\$1\s*)+/, '');
   if (WRITE_START.test(afterWith(sql))) return 'write';
   if (WRITE_CTE.test(sql)) return 'write-cte';
   return null;
@@ -88,11 +90,20 @@ function templateText(tpl) {
   return [tpl.head.text, ...tpl.templateSpans.map((s) => s.literal.text)].join(' $1 ');
 }
 
-/** Whether `e` is SQL text the code holds as a literal (a string, a
- *  template, or `readSql(...)`, the reviewed read). */
+/** A SQL word a statement's static text holds: a template with none
+ *  (`${stmt}`, `${a};`, `${head} ${tail}`) holds its SQL in the
+ *  placeholders, so it is no literal. */
+const SQL_WORD =
+  /\b(?:select|insert|update|delete|merge|truncate|with|values|from|where|returning|create|alter|drop|grant|revoke|set|reset|lock|copy|call|do|explain|show|begin|commit|rollback|savepoint|release|listen|notify|vacuum|analyze|refresh|comment|declare|fetch|discard|prepare|execute|deallocate|table)\b/i;
+
+/** Whether `e` is SQL text the code holds as a literal (a string, or a
+ *  template whose static text holds a SQL word), or null. */
 function literalText(e) {
   if (ts.isStringLiteralLike(e)) return e.text;
-  if (ts.isTemplateExpression(e)) return templateText(e);
+  if (ts.isTemplateExpression(e)) {
+    const statics = [e.head.text, ...e.templateSpans.map((s) => s.literal.text)].join(' ');
+    return SQL_WORD.test(dropSqlComments(statics)) ? templateText(e) : null;
+  }
   return null;
 }
 
@@ -187,41 +198,60 @@ function memberOf(e) {
 }
 
 /** Whether the member read takes SQL text: `.unsafe` on anything, `.raw`
- *  on a SQL tag (the dot or a literal key). */
+ *  on a SQL tag (the dot or a literal key): a tag's name, or a member whose
+ *  last name is one (`this.sql.raw`, `deps.sql.raw`). */
 function isTextMethod(member, tags) {
   if (member.name === 'unsafe') return true;
+  if (member.name !== 'raw') return false;
   const o = unwrapExpr(member.object);
-  return member.name === 'raw' && ts.isIdentifier(o) && tags.has(o.text);
+  if (ts.isIdentifier(o)) return tags.has(o.text);
+  const last = memberOf(o);
+  return !!last && tags.has(last.name);
 }
 
 /** The names of `sf` that hold a text method under another name: `const
- *  raw = sql.raw`, `const u = pg['unsafe'].bind(pg)`, an assignment, and a
- *  destructure (`const { raw } = sql`, `const { unsafe: u } = pg`). */
+ *  raw = sql.raw`, `const u = pg['unsafe'].bind(pg)`, an assignment, a
+ *  destructure (`const { raw } = sql`, `const { unsafe: u } = pg`), and a
+ *  name holding one of those (`const r2 = raw`), to a fixed point. */
 function textCallNames(sf, tags) {
   const names = new Set();
-  const visit = (node) => {
-    if (ts.isVariableDeclaration(node) && node.initializer) {
-      const init = memberOf(unwrapExpr(node.initializer));
-      if (ts.isIdentifier(node.name) && init && isTextMethod(init, tags)) names.add(node.name.text);
-      if (ts.isObjectBindingPattern(node.name)) {
-        const from = unwrapExpr(node.initializer);
-        for (const el of node.name.elements) {
-          const key = el.propertyName ?? el.name;
-          if (!ts.isIdentifier(key) || !ts.isIdentifier(el.name)) continue;
-          if (isTextMethod({ object: from, name: key.text }, tags)) names.add(el.name.text);
-        }
-      }
-    } else if (
-      ts.isBinaryExpression(node) &&
-      node.operatorToken.kind === ts.SyntaxKind.EqualsToken &&
-      ts.isIdentifier(node.left)
-    ) {
-      const right = memberOf(unwrapExpr(node.right));
-      if (right && isTextMethod(right, tags)) names.add(node.left.text);
-    }
-    ts.forEachChild(node, visit);
+  const holds = (e) => {
+    e = unwrapExpr(e);
+    if (ts.isIdentifier(e)) return names.has(e.text);
+    const m = memberOf(e);
+    return !!m && isTextMethod(m, tags);
   };
-  visit(sf);
+  for (let grew = true, guard = 0; grew && guard < 8; guard += 1) {
+    grew = false;
+    const add = (name) => {
+      if (!names.has(name)) {
+        names.add(name);
+        grew = true;
+      }
+    };
+    const visit = (node) => {
+      if (ts.isVariableDeclaration(node) && node.initializer) {
+        if (ts.isIdentifier(node.name) && holds(node.initializer)) add(node.name.text);
+        if (ts.isObjectBindingPattern(node.name)) {
+          const from = unwrapExpr(node.initializer);
+          for (const el of node.name.elements) {
+            const key = el.propertyName ?? el.name;
+            if (!ts.isIdentifier(key) || !ts.isIdentifier(el.name)) continue;
+            if (isTextMethod({ object: from, name: key.text }, tags)) add(el.name.text);
+          }
+        }
+      } else if (
+        ts.isBinaryExpression(node) &&
+        node.operatorToken.kind === ts.SyntaxKind.EqualsToken &&
+        ts.isIdentifier(node.left) &&
+        holds(node.right)
+      ) {
+        add(node.left.text);
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(sf);
+  }
   return names;
 }
 
@@ -231,7 +261,8 @@ function textCallNames(sf, tags) {
  * parameter that holds the tag reads the same text); `.unsafe(text)`,
  * `<tag>.raw(text)` and `.execute(text)` with literal text that is a
  * write; and `.unsafe(x)` or `<tag>.raw(x)` with text that is no literal
- * (`why: 'non-literal'`), unless wrapped in `readSql(...)`. The text
+ * (`why: 'non-literal'`; a template with no SQL word in its static text,
+ * such as `${stmt}`, is none), unless wrapped in `readSql(...)`. The text
  * methods read the same under a literal key (`pg['unsafe'](x)`) and under
  * another name (`const raw = sql.raw`, `const { unsafe } = pg`,
  * textCallNames). A tag is a SQL
@@ -375,15 +406,24 @@ function historyFiles(root) {
 
 /** The codes named in the history files' headings (docs/_archive/
  *  actors-history.md and docs/_archive/plan-v3-*-handover.md), any letter
- *  (R0, D1, S3, P1a, A2b1, A2b2b), each with the first file that names it.
+ *  (R0, D1, S3, P1a, A2b1, A2b2b), each with the first file that names it;
+ *  a `#` line in a fenced code block is no heading.
  *  Read only to check the frozen list (headingCodeProblems); the count
  *  reads HISTORY_HEADING_CODES. */
 export function historyHeadingCodes(root) {
   const codes = new Map();
   for (const file of historyFiles(root)) {
     const text = readRepoFile(root, file) ?? '';
+    // A `#` line inside a fenced block (``` or ~~~) is code, no heading.
+    let fence = null;
     for (const line of text.split('\n')) {
-      if (!/^#{1,6}\s/.test(line)) continue;
+      const f = /^ {0,3}(`{3,}|~{3,})/.exec(line);
+      if (f) {
+        if (fence === null) fence = f[1];
+        else if (f[1][0] === fence[0] && f[1].length >= fence.length) fence = null;
+        continue;
+      }
+      if (fence !== null || !/^#{1,6}\s/.test(line)) continue;
       for (const m of line.matchAll(CODE)) if (!codes.has(m[0])) codes.set(m[0], file);
     }
   }
@@ -422,8 +462,10 @@ export const HISTORY_HEADING_CODES = Object.freeze([
   'S3',
 ]);
 
-/** Heading codes that do not count by name, each with why (reviewed). Next
- *  to a provenance word a step-shaped code (A, W, F) still counts. */
+/** Heading codes that do not count by name, each with why. Next to a
+ *  provenance word a step-shaped code (A, W, F) still counts. Review-gated:
+ *  an entry here (or one taken off HISTORY_HEADING_CODES, or a stoplist
+ *  entry) lowers historyCodeComments, so it is reviewed like a pin. */
 export const HEADING_CODES_LEFT_OUT = Object.freeze({
   D1: 'plan v3.2 D1 (the spec cut) shares its label with owner decision D1 and the D findings of the apps audit, the apps plan and plan v2 (D1 to D8); no counted comment names the step, each D1 there is a decision or a finding',
 });

@@ -266,6 +266,46 @@ describe('areaAsks', () => {
     expect(ok.problems).toEqual([]);
   });
 
+  it('an ask used as anything but a call or a callback is a problem, each place once', () => {
+    const run = (text: string) =>
+      adminCounts(ROOT, [{ path: 'packages/x/src/a.ts', text }]) as {
+        numbers: Record<string, number>;
+        problems: string[];
+      };
+    for (const text of [
+      'const f = cond ? scopeHasArea : other;\nf(x);',
+      'const f = mine ?? loginHasArea;',
+      'const asks = [requireArea, other];',
+      'export default loginHoldsAdmin;',
+      'const n = scopeHasArea.length;',
+      "run(cond ? db['scopeHasArea'] : other);",
+    ]) {
+      const r = run(text);
+      expect(r.problems.length, text).toBe(1);
+      expect(r.problems[0], text).toMatch(/is used as/);
+    }
+    // A held ask is named once, not again as a value.
+    expect(run('const ask = scopeHasArea.bind(null);').problems).toHaveLength(1);
+    // A call and a callback are uses, not problems.
+    const ok = run("await scopeHasArea('a');\nlist.filter(loginHasArea);");
+    expect(ok.problems).toEqual([]);
+    expect(ok.numbers.inHandlerAreaChecks).toBe(2);
+  });
+
+  it("counts an ask by a literal key (s['scopeHasArea']) as by the dot", () => {
+    const run = (text: string) =>
+      adminCounts(ROOT, [{ path: 'packages/x/src/a.ts', text }]) as {
+        numbers: Record<string, number>;
+        problems: string[];
+      };
+    const r = run("if (await s['scopeHasArea']('users')) a();\nawait db.loginHasArea(id, 'keys');");
+    expect(r.numbers.inHandlerAreaChecks).toBe(2);
+    expect(r.problems).toEqual([]);
+    const held = run("const ask = s['requireArea'];");
+    expect(held.problems).toHaveLength(1);
+    expect(held.problems[0]).toMatch(/requireArea is held under another name/);
+  });
+
   it('an ask renamed is a problem: a renamed import, a renaming destructure', () => {
     const run = (text: string) =>
       adminCounts(ROOT, [{ path: 'packages/x/src/a.ts', text }]) as {
@@ -293,6 +333,8 @@ describe('areaAsks', () => {
       expect(r.numbers.inHandlerAreaChecks, text).toBe(0);
     }
     // The ask under its own name is none.
+    const own0 = run("import { scopeHasArea } from './session';\nscopeHasArea('a');");
+    expect(own0.problems).toEqual([]);
     const own = run(
       "import { scopeHasArea } from './session';\nconst { loginHasArea } = gate;\nscopeHasArea('a');\nloginHasArea(id, 'b');",
     );

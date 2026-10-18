@@ -25,10 +25,21 @@
  *    requireArea and loginHoldsAdmin anywhere but the gates;
  *  - the pin of the login type test (how many of `kind` and `role` the
  *    login type still has).
+ *
+ * Known limit of the area asks: only a thin wrapper (a named function
+ * whose whole body is one ask, a pure pass-through) is followed to its
+ * uses. A helper that asks once and does anything more (`needUsers()`
+ * that logs, or maps the answer, around scopeHasArea) counts as one ask
+ * wherever it is called from, so review reads a new helper.
+ *
+ * Review-gated: the lists that excuse a site (NOT_LOGIN_KIND, AREA_GATES)
+ * and the names the counts read (LOGIN_NAMES, IN_HANDLER_ASKS) lower or
+ * hide counts when edited, so a change to one is a change to review, with
+ * why, like a pin.
  */
 import ts from 'typescript';
 import { readRepoFile, stripComments } from './arch-counts.mjs';
-import { parse } from './as-system-exits.mjs';
+import { nonCallUses, parse } from './as-system-exits.mjs';
 
 /** Files the Admin counts never read: test support builds fixtures. */
 function isTestSupport(path) {
@@ -586,7 +597,9 @@ export function askWrappers(texts) {
  *  holding an ask (`const ask = scopeHasArea`, an assignment, an object
  *  property, `.bind`, `.call` or `.apply`), and an ask renamed (an import
  *  or export `as`, a renaming destructure), as as-system-exits.mjs reads
- *  a renamed asSystem. */
+ *  a renamed asSystem, and any other use that is not a call nor a
+ *  callback (a ternary, `??`, a list, a default export: its nonCallUses).
+ *  `s['scopeHasArea']` is the ask by a literal key, as `s.scopeHasArea`. */
 export function areaAsks(path, text, { problems = null, wrappers = null } = {}) {
   const names = new Set([
     ...IN_HANDLER_ASKS,
@@ -597,7 +610,29 @@ export function areaAsks(path, text, { problems = null, wrappers = null } = {}) 
   const sf = parse(path, text);
   const inside = wrappers?.bodies.get(path) ?? [];
   const out = [];
+  // Problems already named at a place (`name:line`), so the value check
+  // below names each place once.
+  const named = new Set();
+  const flag = (name, line, why) => {
+    named.add(`${name}:${line}`);
+    problems?.push(`${path}:${line}: ${name} ${why}`);
+  };
   walk(sf, (node) => {
+    // `s['scopeHasArea']`: the ask by a literal key, as `s.scopeHasArea`.
+    if (
+      ts.isElementAccessExpression(node) &&
+      ts.isStringLiteralLike(node.argumentExpression) &&
+      names.has(node.argumentExpression.text)
+    ) {
+      const name = node.argumentExpression.text;
+      for (let q = node.parent; q; q = q.parent) if (ts.isTypeNode(q)) return;
+      if (inside.some((b) => node.pos >= b.pos && node.end <= b.end)) return;
+      out.push({ name, line: lineOf(sf, node) });
+      if (problems && heldAsk(node)) {
+        flag(name, lineOf(sf, node), heldWhy(name));
+      }
+      return;
+    }
     if (!ts.isIdentifier(node) || !names.has(node.text)) return;
     const p = node.parent;
     // The ask under another name (`import { scopeHasArea as can }`, a
@@ -610,8 +645,10 @@ export function areaAsks(path, text, { problems = null, wrappers = null } = {}) 
       ts.isIdentifier(p.name) &&
       p.name.text !== node.text
     ) {
-      problems?.push(
-        `${path}:${lineOf(sf, node)}: ${node.text} is renamed (${p.name.text}), so the count misses its calls: call ${node.text} by its name`,
+      flag(
+        node.text,
+        lineOf(sf, node),
+        `is renamed (${p.name.text}), so the count misses its calls: call ${node.text} by its name`,
       );
       return;
     }
@@ -637,27 +674,51 @@ export function areaAsks(path, text, { problems = null, wrappers = null } = {}) 
     out.push({ name: node.text, line: lineOf(sf, node) });
     if (!problems) return;
     // The ask (or `db.ask`) as a value another name holds.
-    let top = node;
-    if (ts.isPropertyAccessExpression(p) && p.name === node) top = p;
-    while (top.parent && unwrap(top.parent) !== top.parent) top = top.parent;
-    const tp = top.parent;
-    const held =
-      (ts.isVariableDeclaration(tp) && tp.initializer === top) ||
-      (ts.isBinaryExpression(tp) &&
-        tp.operatorToken.kind === ts.SyntaxKind.EqualsToken &&
-        tp.right === top) ||
-      (ts.isPropertyAssignment(tp) && tp.initializer === top) ||
-      ts.isShorthandPropertyAssignment(tp) ||
-      (ts.isPropertyAccessExpression(tp) &&
-        tp.expression === top &&
-        ['bind', 'call', 'apply'].includes(tp.name.text));
-    if (held) {
-      problems.push(
-        `${path}:${lineOf(sf, node)}: ${node.text} is held under another name, so the count misses its calls: call ${node.text} where it is asked`,
-      );
+    if (heldAsk(ts.isPropertyAccessExpression(p) && p.name === node ? p : node)) {
+      flag(node.text, lineOf(sf, node), heldWhy(node.text));
     }
   });
+  // Any other use that is not a call nor a callback (a ternary, `??`, a
+  // list, a default export, `ask.length`): as-system-exits.mjs's check of
+  // the same shapes, each place once.
+  if (problems) {
+    for (const name of names) {
+      if (!text.includes(name)) continue;
+      for (const use of nonCallUses(sf, name, { argumentOk: true })) {
+        if (named.has(`${name}:${use.line}`)) continue;
+        flag(
+          name,
+          use.line,
+          `is used ${use.how}, so the count misses its calls: call ${name} where it is asked`,
+        );
+      }
+    }
+  }
   return out;
+}
+
+/** Why a held ask is a problem. */
+const heldWhy = (name) =>
+  `is held under another name, so the count misses its calls: call ${name} where it is asked`;
+
+/** Whether the ask `use` (a name, `db.ask` or `db['ask']`) is a value
+ *  another name holds: a declaration, an assignment, an object property,
+ *  or `.bind`, `.call` or `.apply` of it. */
+function heldAsk(use) {
+  let top = use;
+  while (top.parent && unwrap(top.parent) !== top.parent) top = top.parent;
+  const tp = top.parent;
+  return (
+    (ts.isVariableDeclaration(tp) && tp.initializer === top) ||
+    (ts.isBinaryExpression(tp) &&
+      tp.operatorToken.kind === ts.SyntaxKind.EqualsToken &&
+      tp.right === top) ||
+    (ts.isPropertyAssignment(tp) && tp.initializer === top) ||
+    ts.isShorthandPropertyAssignment(tp) ||
+    (ts.isPropertyAccessExpression(tp) &&
+      tp.expression === top &&
+      ['bind', 'call', 'apply'].includes(tp.name.text))
+  );
 }
 
 // ── the login type test ─────────────────────────────────────────────────────
