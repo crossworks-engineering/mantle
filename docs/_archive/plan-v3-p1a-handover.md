@@ -158,3 +158,60 @@ actor-on, edit-on, matrix, runtime-role) were not run: this round changes
 only counters, tests and scripts, no product code. Box script dry run on
 the throwaway database: writer functions 12, the runtime role 1 for `"On"`,
 0 for `0`, empty and unset. Container, clone and unit cleaned up by name.
+
+## Fix round 2
+
+The re-audit at b8e9e9b15 rated it 8/10. Fixed at 415b4b855:
+
+- MEDIUM, a member call of noteRequestSystem counted 0 (a regression of
+  round 1). The engine (`eslint-rules/as-system-exits.mjs`) now takes a
+  call of the bare name or of a member of that name (`db.noteRequestSystem`
+  through a namespace import, `x?.call`, `x['call']`), as the per-file
+  site regex already read `x.asSystem(`; the same for both counts. The call
+  under another name (a renamed import, a renaming destructure,
+  `const n = call`, `const n = db.call`, `n = call`, `{ n: call }`) is a
+  problem, and so is any followed wrapper under another name, in its own
+  file or (exported) in a file importing it. Unit tests for each form, and
+  one for an asSystem member call.
+- MEDIUM, `requestSystemExitProblems` failed nothing. The repo block of
+  `eslint-rules/rights-counts.test.ts` asserts it is `[]`, and
+  `pnpm arch:check` (`scripts/arch-scoreboard.ts --check`) now fails on
+  any entry of it or of `asSystemExitProblems` (that one was only asserted
+  in arch-lints.test.ts before). Proven: a `const x = noteRequestSystem`
+  line in session.ts makes arch:check exit 1 with the problem named.
+- LOW, `readsAreaLimits` also reads `json(b)_extract_path(_text)(...,
+  'areas', ...)` (the arguments read balanced, so a later `'areas'` outside
+  the call is not one), the array path `#> array['areas', x]` and the
+  escape string `E'areas'` in every form, in migration bodies and TS SQL
+  text alike.
+- LOW, the box script's runtime role line reads the value the app sees:
+  `MANTLE_DB_RUNTIME_ROLE` in mantle_web's environment (`docker inspect`,
+  `ARCH_BOX_WEB=<container>` for a dry run); the stack's .env only when
+  that container is not there, read as compose reads it (a quoted value is
+  what the quotes hold; an unquoted one ends at a `#` at its start or after
+  a space), then the ends trimmed (parseFlag). Numbers only.
+- LOW, a wrapper whose sites pass different parameters on is a problem
+  (its uses are read at one parameter).
+
+Pins before and after: unchanged. asSystemExits 58, requestSystemExits 5
+(area 1, login-self 2, admin-write 2, other 0), sqlAreaRules 7; problems
+`[]` for both counts. Only the requestSystemExits note changed.
+
+Gates at 415b4b855. Mac (DATABASE_URL unset): `pnpm -r typecheck` 0,
+`pnpm lint` 0, `pnpm format:check` 0, `pnpm docs:check` 0,
+`pnpm arch:check` 0, `pnpm -C server/web build` 0, `vitest run
+eslint-rules server/web/lib/shell-portability.test.ts` 0 (20 files, 250
+tests), `bash scripts/test-merge-branch.sh` 0 (8/8).
+
+Workstation (own clone at 415b4b855, own pgvector pg18 container
+`p1ag_pg`, systemd-run --user, `--maxWorkers=3`): init 0, migrate 0,
+`rights-catalog.db.test.ts` 0 (4/4). Box script dry run against
+`p1ag_pg` and throwaway containers only: writer functions 12; the runtime
+role 0 for a container value `1 # on` (the app sees that string), 1 for
+` On `; with no container, 1 for a .env `1 # on`, 0 for `o n`, 1 for
+`"on" # x`; n/a with neither. Containers (`-v`), clone, stack dir and
+unit cleaned up by name.
+
+CI at 415b4b855:
+https://github.com/crossworks-engineering/mantle/actions/runs/39081727888
+success.
