@@ -119,7 +119,7 @@ describe.skipIf(!URL)('S8a: an Admin login is role AND membership', () => {
   afterAll(async () => {
     await m?.closeDb();
     await scratch?.drop();
-  });
+  }, 120_000);
 
   it('the box count: brains without an Admin workspace is 0 (the S8a precondition)', async () => {
     // The SQL of scripts/arch-scoreboard-box.sh (no_admin), as the fleet reads it.

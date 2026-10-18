@@ -131,7 +131,7 @@ reads it on the fleet before merge, with `mantle_role_drift()`.
 
 ## Pins
 
-- `dbClientLines` 3142 to 3155: `loginAreas`, the one system-pool reader
+- `dbClientLines` 3142 to 3157: `loginAreas`, the one system-pool reader
   of `mantle_login_areas` (note appended).
 - P1b's counters are not on main yet (`feat/p1b-counters`). Measured with
   P1b's own counter code (claude/p1b-fix2-5470d3) on main and on this
@@ -162,17 +162,67 @@ Mac (unset DATABASE_URL for unit runs):
 | pnpm docs:check | 0 |
 | pnpm arch:check | 0 |
 | pnpm -C server/web build | 0 |
-| pnpm exec vitest run server packages eslint-rules | 0 |
+| pnpm exec vitest run server packages eslint-rules | 0 (at ee2779124: 10940 passed) |
 
-Workstation (throwaway worktree `s8a`, container `s8a_pg` on 56163):
+Workstation (throwaway worktree `s8a`, container `s8a_pg` on 56163, own
+setup each time, cleaned by the script):
 
-| gate | exit |
-|---|---|
-| new DB files + login-facts | GATES_DB_NEW |
-| pnpm verify (full vitest with DB, actor-off, actor-on, edit-on, matrix) | GATES_VERIFY |
-| pnpm test:runtime-role (full config) | GATES_RR |
+| run | head | exit | result |
+|---|---|---|---|
+| new DB files + login-facts | 7576170ed | 0 | 23 of 23 |
+| pnpm verify (full vitest with DB, actor-off, actor-on, edit-on, matrix) | a3db56260 | 1 | 71 failed of 13607 |
+| the 23 files that failed or were touched, again | ee2779124 | 1 | 2 failed of 349, plus 2 hook timeouts |
+| pnpm test:runtime-role (full config) | | not run | |
 
-CI: CI_URL
+The 71 at a3db56260 were: (a) a bug of this branch, `loginAreas` let a
+throw before its query escape (the a10 body sweep showed grants and
+workspace routes answering 500 for main's 404), fixed in ee2779124;
+(b) test brains that make role admin logins with no Admin workspace (the
+deleted "migration skipped" branch let them in), fixed with
+`ensureAdminUsers` (`packages/db/src/test-support.ts`) in access-keys,
+access-keys-hardening, device-tokens, mcp-oauth-grants and member-mcp;
+(c) app code on a brain stopped before 0272 (mcp-revived-credentials,
+which now installs 0304's `mantle_login_is_admin`) and a SELECT-only role
+(login-row-readonly, now granted EXECUTE as the runtime role has it);
+(d) load: "too many clients" and 10 s hook timeouts (runtime-role,
+a3b2, w6a-fix-sweep, review-off, grants, workspaces, w6b-fix3,
+app-draft-scope), which passed in the rerun but for review-off's hook
+(not this branch's file).
+
+## OPEN: one owner question (blocks DONE)
+
+Two existing DB tests encode main's answer for a role admin login taken
+out of Admin: it keeps a session, reads in its own scope and writes as an
+editor there; only the owner acts are refused.
+
+- `server/web/server/a1-d1-routes.db.test.ts` "an Admin user keeps the
+  owner acts; an admin-role login out of Admin does not" (line ~554:
+  expects 201 for its card, gets 401);
+- `server/web/server/w7-int-fix3-session.db.test.ts` "the scoped default:
+  each reads what its workspaces hold" (its `outsider` is such a login:
+  expects 200, gets 401).
+
+With `resolvedFor` on the pair (plan: "resolveLogin ... read the same
+pair") that login is no login, so both answers change (narrower). The
+plan's named narrowing lists only the asset token and the render cookie,
+and the brief says any other changed answer is a blocker. The two
+readings cannot both hold:
+
+1. Keep the pair in `resolvedFor` (this branch now): the session goes too.
+   Name it as a third narrowing cell and move the two tests' expectations
+   (401 for that login). Narrowest; matches the plan's `resolveLogin`
+   sentence. No box has such a login while `mantle_role_drift() = 0`.
+2. Keep `resolvedFor` on the role (main's answer) and put the pair only
+   on the asset token, the render cookie, `adminLoginActive` and the SQL
+   role read. Byte-equal sessions; drops the plan's `resolveLogin` item
+   to S8c/S8b.
+
+Recommended: 1 (narrower, and the login cannot exist on a box with drift
+0). Either is a few lines: `resolvedFor` in session.ts and the two tests.
+
+CI: run 39137708165 (abe3fd98e) failed on dbClientLines (fixed); run
+39139253455 (ee2779124) in progress when handed over:
+https://github.com/crossworks-engineering/mantle/actions/runs/39139253455
 
 ## Rebase notes
 
@@ -187,4 +237,4 @@ CI: CI_URL
   (file name, journal entry, the proof test's TAG and its "above" `when`).
 - `vitest.actor-on.config.ts`: one appended include line.
 
-Head: HEAD_SHA
+Head: see `git log -1 feat/s8a-admin-membership`.

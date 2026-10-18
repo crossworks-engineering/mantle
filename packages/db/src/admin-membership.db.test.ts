@@ -116,7 +116,7 @@ describe.skipIf(!URL)('mantle_login_is_admin_user is role AND membership (S8a)',
   afterAll(async () => {
     await sql?.end();
     await scratch?.drop();
-  });
+  }, 120_000);
 
   it('answers as 0293`s text AND mantle_login_is_admin: only the named cell narrows', async () => {
     const changed: string[] = [];
