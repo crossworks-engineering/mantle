@@ -1652,6 +1652,9 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
     expect(reads('/api/auth/sso', 'POST', 'cookieUpgrade')).toBe('cookieUpgrade');
     expect(reads('/api/attachments/:id', 'GET', 'ownerAsset')).toBe('ownerAsset');
     expect(reads('/api/files/files/:id', 'GET', 'readerAsset')).toBe('readerAsset');
+    // A gone row takes its stub's kind on a row no list of that kind names
+    // (callerServes `row.gone`): the member caller on an owner row.
+    expect(reads('/api/profile', 'GET', 'member', true)).toBe('member');
     expect(reads('/api/apps/:id/frame', 'GET', 'frame')).toBe('frame');
     expect(reads('/api/pages/:id', 'PATCH', 'ownerAtRead')).toBe('ownerAtRead');
     for (const [pattern, method, caller] of [
@@ -1661,6 +1664,8 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
       ['/api/auth/whoami', 'GET', 'ownerAsset'],
       ['/api/auth/sso', 'POST', 'ownerAtRead'],
       ['/api/shell', 'GET', 'readerAsset'],
+      // The same row without the stub: the member guard does not serve it.
+      ['/api/profile', 'GET', 'member'],
       ['/api/profile', 'GET', 'frame'],
       // The answer taken at the read comes after the gate's Admin step: no
       // area row reads it.

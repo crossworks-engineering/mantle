@@ -49,19 +49,14 @@ export function isAssetPath(path: string): boolean {
     // asset route means BOTH ends: getOwnerForAsset in the route AND here.
     /^\/api\/draws\/[^/]+\/svg$/.test(path) ||
     // Member Library bytes (member logins): file bytes and drawing SVGs a
-    // member may read. The routes call getMemberForAsset and read at the team
-    // level, so the token opens only what the member's level can see.
+    // member could read. No route serves these paths any more.
     path.startsWith('/api/member/files/') ||
     /^\/api\/member\/draws\/[^/]+\/svg$/.test(path) ||
-    // A member's own private file (member logins Phase 2). The member shell
-    // mints the token for exactly these <img>/download srcs. The route calls
-    // getMemberForAsset: the read runs in the space of the member the token's
-    // `act` names, so the token opens only that member's items; another
-    // member's file is a 404.
+    // A member's own private file (member logins Phase 2). No route serves
+    // this path any more.
     /^\/api\/member\/space\/[^/]+\/bytes$/.test(path) ||
-    // An admin's own private file (member logins Phase 7). The route calls
-    // getOwnerForAsset and reads the space of the login the token's `act`
-    // names, so the token opens only that admin's own items.
+    // An admin's own private file (member logins Phase 7). No route serves
+    // this path any more.
     /^\/api\/admin\/space\/[^/]+\/bytes$/.test(path)
     // The client byte routes (/api/client/files, draws, space bytes) were
     // removed in workspaces W5c: no token opens them; they answer 410 to a
