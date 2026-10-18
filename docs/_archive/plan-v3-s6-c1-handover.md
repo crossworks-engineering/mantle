@@ -141,7 +141,41 @@ Audit round 1 (8/10, fix first) folded in, rebased on 464c748df. The
 head SHA, the gates with exit codes and the CI run are in the report to the
 CEO session and listed here:
 
-GATES_PLACEHOLDER
+All on code head a96562494 (rebased on 464c748df); the commit after it
+changes this file only.
+
+Mac (DATABASE_URL unset):
+
+| Gate                                                | Exit |
+| --------------------------------------------------- | ---- |
+| `pnpm -r typecheck`                                 | 0    |
+| `pnpm lint`                                         | 0    |
+| `pnpm format:check`                                 | 0    |
+| `pnpm docs:check`                                   | 0    |
+| `pnpm arch:check`                                   | 0    |
+| `pnpm -C server/web build`                          | 0    |
+| `pnpm exec vitest run server packages eslint-rules` | 0    |
+
+Workstation (own pgvector pg18 container on 56095, its own worktree, both
+removed after; migrate with `MANTLE_CHECK_FLOOR=keep`, exit 0):
+
+| Run                           | Exit | Files                  | Tests                    |
+| ----------------------------- | ---- | ---------------------- | ------------------------ |
+| full vitest with the database | 0    | 1118 passed, 1 skipped | 13744 passed, 39 skipped |
+| `test:actor-off` config       | 0    | 126 passed             | 1145 passed, 1 skipped   |
+| `test:runtime-role` config    | 0    | 271 passed             | 2709 passed, 1 skipped   |
+
+Under the runtime role `contact-sharing-routes.db.test.ts` runs its 5
+tests (audit MED-1: before, all 5 skipped) and `s6-c1-admin-acts.db.test.ts`
+its 10.
+
+Found and fixed in this round, beyond the audit's list: the route callers'
+refusal mapping called itself (a slip in the LOW-2 change, caught by the
+body sweep before any commit was pushed); `adminActTx` now sets the scope
+through `systemPoolTxInScope`, the one hand-set scope on main since S2a
+a1+a2, its call site pinned in `eslint-rules/scope-settings.mjs`; the A10
+error sweep stands in `adminActTx` (a forced failure at the database, as
+its transaction met it before).
 
 ## Rollback
 
