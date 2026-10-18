@@ -160,3 +160,22 @@ every test (2603) and logged one unhandled `CONNECTION_CLOSED` from
 was clean (2603 passed, no error).
 
 No new pins, no migration.
+
+### Fix round 1 gates
+
+Code at ec35f773e (later commits are this file only).
+
+Mac: `pnpm -r typecheck` 0, `pnpm lint` 0, `pnpm format:check` 0,
+`pnpm docs:check` 0, `pnpm arch:check` 0, `pnpm -C server/web build` 0,
+unit `vitest run server packages eslint-rules` (no DATABASE_URL) 0 (10929
+passed). The MCP surface snapshots moved for the new tool text only
+(descriptions and their hashes).
+
+Workstation, own clone and pgvector pg18 container (port 56391,
+MANTLE_CHECK_FLOOR=keep): full vitest with DB on dd3bfc327: 13520 passed,
+5 failed, all unit cells fixed in ec35f773e (the snapshots, the word budget,
+a clock race in the new unit test). On ec35f773e: those files with
+`member-export.db.test.ts` and `precheck-removal.db.test.ts` 0 (291
+passed), `test:actor-on` 0 (349), `test:edit-on` 0 (515).
+`member-export.db.test.ts` on 64ed94267 with the new cells: 2 failed (the
+recording above), 18 passed.
