@@ -33,6 +33,8 @@ export default defineConfig({
       'server/web/server/f4-admin-write-role.db.test.ts',
       // F4 fix round 1: the owner's management flows on the write role.
       'server/web/server/f4-owner-flows.db.test.ts',
+      // Plan v3.2 S4a: the fail-open miss rows with both checks on.
+      'packages/db/src/fail-open.db.test.ts',
     ],
     env: { ...onBase.test?.env, MANTLE_TEST_EDIT_CHECK: 'on' },
   },
