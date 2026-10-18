@@ -145,6 +145,13 @@ The commit on top adds only this line.
    `vitest -u`), then the branch's code was put back and the test passes
    unchanged: no row moved.
 
+Gates on 5ee283acd (Mac, DATABASE_URL unset): `pnpm -r typecheck` 0,
+`pnpm lint` 0, `pnpm format:check` 0, `pnpm -C server/web build` 0,
+`pnpm docs:check` 0, `pnpm arch:check` 0,
+`pnpm exec vitest run server packages eslint-rules` 0 (11042 passed | 2679 skipped (13721)). CI: the
+run of the pushed head (named in the reply to the CEO session; this file
+is not edited for it, so the head stays the tested one).
+
 ### Open items
 
 - `server/web/lib/auth-constants.ts:51-65` still admits a `?at=` asset
