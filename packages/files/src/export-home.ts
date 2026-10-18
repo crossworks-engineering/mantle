@@ -3,8 +3,9 @@
  * a sheet or an app package for its caller (export_node, sheet_build,
  * app_export).
  *
- *  - The system, the owner and an Admin user who may change the Exports
- *    folder: Auto-filed / Exports / <month>, as before.
+ *  - The system, and a caller that may change the Files root and the
+ *    Exports folder (the owner, an Admin user, in a scope that reads them):
+ *    Auto-filed / Exports / <month>, as before.
  *  - Anyone else (a member, or a scope that does not hold Admin, such as a
  *    workspace assistant's turn): the Files root, so the new file takes the
  *    create home a new item takes there (the call's workspace when the
@@ -20,7 +21,7 @@
  * grants: what the export holds is the tool's to read in the
  * caller's scope, and the database's create checks still run.
  */
-import { currentCreateHome, landedIn, scopeHoldsAdmin } from '@mantle/db';
+import { currentCreateHome, landedIn } from '@mantle/db';
 import { ensureAutoFiledFolder } from './auto-filed';
 import { discardSpooled, type SpooledUpload } from './disk';
 import { FILES_ROOT_LABEL } from './paths';
@@ -31,11 +32,13 @@ import type { FileRow } from './ops/shared';
 /** The folder an export of the current caller goes into, made if missing:
  *  its ltree path, and whether it is Auto-filed. */
 export async function exportFolder(ownerId: string): Promise<{ path: string; autoFiled: boolean }> {
-  if (await scopeHoldsAdmin()) {
+  await ensureFilesRootBranch(ownerId);
+  // Auto-filed's folders are made under the Files root in the caller's
+  // scope: only a caller that may change the root may make them.
+  if ((await callerMayEditFolder(ownerId, FILES_ROOT_LABEL)) !== false) {
     const path = await ensureAutoFiledFolder(ownerId, 'exports');
     if ((await callerMayEditFolder(ownerId, path)) !== false) return { path, autoFiled: true };
   }
-  await ensureFilesRootBranch(ownerId);
   return { path: FILES_ROOT_LABEL, autoFiled: false };
 }
 
