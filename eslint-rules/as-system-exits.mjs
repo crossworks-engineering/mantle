@@ -52,17 +52,34 @@
  */
 import ts from 'typescript';
 
-/** The syntax tree of one file (no type checker). Shared by the counts
- *  that read syntax (admin-counts.mjs, cleanup-counts.mjs).
+/** The trees parse() made, by path, each with the text it was made from:
+ *  every count that reads syntax shares one tree per file. measure()
+ *  clears it when it is done (clearParseCache). */
+const trees = new Map();
+
+/** The syntax tree of one file (no type checker), parsed once per path and
+ *  text and shared by the counts that read syntax (this engine,
+ *  admin-counts.mjs, cleanup-counts.mjs).
  *  @param {string} path @param {string} text */
 export function parse(path, text) {
-  return ts.createSourceFile(
+  const hit = trees.get(path);
+  if (hit && hit.text === text) return hit.sf;
+  const sf = ts.createSourceFile(
     path,
     text,
     ts.ScriptTarget.Latest,
     true,
     path.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS,
   );
+  // Bounded for a caller that never clears it (a lint run over the repo).
+  if (trees.size >= 4000) trees.clear();
+  trees.set(path, { text, sf });
+  return sf;
+}
+
+/** Drop the shared trees (measure() calls it when it is done). */
+export function clearParseCache() {
+  trees.clear();
 }
 
 const hasExport = (node) => !!node?.modifiers?.some((m) => m.kind === ts.SyntaxKind.ExportKeyword);

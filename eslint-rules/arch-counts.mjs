@@ -89,7 +89,7 @@ import {
   exportSyncCalls,
 } from './app-broker.mjs';
 import { REINDEX_ALLOW, handReindex } from './no-hand-reindex.mjs';
-import { asSystemExits, systemDbUses } from './as-system-exits.mjs';
+import { asSystemExits, clearParseCache, systemDbUses } from './as-system-exits.mjs';
 import { nameListSites } from './name-lists.mjs';
 import { checkDocQuotes } from './docs-quotes.mjs';
 import { rightsCounts } from './rights-counts.mjs';
@@ -146,6 +146,27 @@ export function readRepoFile(root, path) {
  * comment.
  */
 export function stripComments(text) {
+  const hit = stripped.get(text);
+  if (hit !== undefined) return hit;
+  const out = stripCommentsOnce(text);
+  // Bounded for a caller that never clears it (a lint run over the repo).
+  if (stripped.size >= 4000) stripped.clear();
+  stripped.set(text, out);
+  return out;
+}
+
+/** stripComments' answers by text: every count strips each file once. The
+ *  shared syntax trees (as-system-exits.mjs parse) are the other cache;
+ *  clearCountCaches() drops both when measure() is done. */
+const stripped = new Map();
+
+/** Drop the caches the counts share (measure() calls it when it is done). */
+export function clearCountCaches() {
+  stripped.clear();
+  clearParseCache();
+}
+
+function stripCommentsOnce(text) {
   let out = '';
   let i = 0;
   let mode = 'code'; // code | block | line | ' | " | `
@@ -1067,6 +1088,8 @@ export function measure(root) {
   const rights = rightsCounts(root, texts, exits);
   // Raw write SQL and history codes in comments (cleanup-counts.mjs).
   const cleanup = cleanupCounts(root, texts);
+  // One tree and one stripped text per file served every count above.
+  clearCountCaches();
   return {
     numbers: {
       asSystemSites: sum(asSystem, 'count'),
