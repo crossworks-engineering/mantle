@@ -195,6 +195,45 @@ describe.skipIf(!URL)('S8a: an Admin login is role AND membership', () => {
     }
   });
 
+  it('the key list: a role=admin login outside Admin sees only its own keys in its scope', async () => {
+    const key = randomUUID();
+    await sql`insert into access_keys (id, name, login_id, key_prefix, key_hash, access)
+              values (${key}, ${tag}, ${mem}, ${key.replace(/-/g, '').slice(0, 8)},
+                      ${key.replace(/-/g, '')}, 'read')`;
+    const keys = await import('../access-keys-admin');
+    const ids = (list: { id: string }[]) => list.map((k) => k.id);
+    // In the login's own scope (mantle_access_keys_seen asks
+    // mantle_login_is_admin_user of the scope's login): the Admin user sees
+    // every key, the drift admin none but its own (main: every key).
+    expect(ids(await m.withViewer({ login: adm }, () => keys.listAccessKeys(null)))).toContain(key);
+    expect(ids(await m.withViewer({ login: out }, () => keys.listAccessKeys(null)))).not.toContain(
+      key,
+    );
+    // Unscoped (the system pool, no login set): the definer asks no login
+    // and answers every key, as on main; no request reaches it unscoped for
+    // a login (below).
+    expect(ids(await keys.listAccessKeys(null))).toContain(key);
+    // As the route runs (GET /api/access-keys: a login's own request).
+    const listed = async (id: string) => {
+      const answer = await call('/api/access-keys', { cookie: cookieAt(id) });
+      const body = JSON.parse(answer.slice(4)) as { keys?: { id: string }[] };
+      return { status: status(answer), ids: ids(body.keys ?? []) };
+    };
+    const a = await listed(adm);
+    const o = await listed(out);
+    expect(a.status, JSON.stringify(a)).toBe(200);
+    expect(a.ids).toContain(key);
+    expect(o.ids, JSON.stringify(o)).not.toContain(key);
+  });
+
+  it('loadLoginRow runs unscoped; in a scope it is refused, never a guess', async () => {
+    const rows = await import('./login-row');
+    expect((await rows.loadLoginRow(adm))?.adminMember).toBe(true);
+    expect((await rows.loadLoginRow(out))?.adminMember).toBe(false);
+    expect((await rows.loadLoginRow(memIn))?.adminMember).toBe(true);
+    await expect(m.withViewer({ login: adm }, () => rows.loadLoginRow(adm))).rejects.toThrow();
+  });
+
   it('requireArea: unscoped the area rule, in its own scope the scope`s rule, another login`s throws', async () => {
     // Unscoped (system work): mantle_area_rule about the login.
     expect(await ws.requireArea(caller(adm), 'users')).toBe(true);

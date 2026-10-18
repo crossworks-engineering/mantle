@@ -32,6 +32,11 @@ export type LoginRow = {
   adminMember: boolean;
 };
 
+/** Runs unscoped: every caller finds a credential's login before the
+ *  request enters a scope (the session cookie, a device or asset token,
+ *  the render cookie, an API key, a frame ticket's re-check). No viewer
+ *  or write role may EXECUTE mantle_login_is_admin, so inside a scope this
+ *  select is refused (42501) and throws: it never answers a guess. */
 export async function loadLoginRow(id: string): Promise<LoginRow | null> {
   const [row] = await db
     .select({

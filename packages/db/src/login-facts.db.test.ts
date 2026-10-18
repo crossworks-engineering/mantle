@@ -420,14 +420,16 @@ describe.skipIf(!URL)('the login facts answer as the text they replace (S2a a0)'
       'public.mantle_role_drift()',
       'public.mantle_login_area(uuid,text)',
     ];
-    // Every role in the cluster that is not a superuser, the runtime role or
-    // the owner role: the viewer roles, the write role, the gap writer,
-    // mantle_system, any login a later step adds. PUBLIC as well.
+    // Every role in the cluster that is not a superuser, the runtime role,
+    // the owner role or the public demo's reader (it runs the app's system
+    // pool there: 0305 grants it the three facts the app reads): the viewer
+    // roles, the write role, the gap writer, mantle_system, any login a
+    // later step adds. PUBLIC as well.
     const rows = await sql<{ fn: string; definer: boolean; pub: boolean; may: string[] }[]>`
       select f.fn, p.prosecdef as definer,
              has_function_privilege('public', p.oid, 'EXECUTE') as pub,
              array(select r.rolname::text from pg_roles r
-                    where not r.rolsuper and r.rolname <> all (${[RUNTIME_ROLE, OWNER_ROLE]}::text[])
+                    where not r.rolsuper and r.rolname <> all (${[RUNTIME_ROLE, OWNER_ROLE, 'demo_reader']}::text[])
                       and has_function_privilege(r.oid, p.oid, 'EXECUTE')
                     order by 1) as may
         from unnest(${facts}::text[]) f(fn) join pg_proc p on p.oid = to_regprocedure(f.fn)`;

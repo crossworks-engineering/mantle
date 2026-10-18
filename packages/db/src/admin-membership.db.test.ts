@@ -206,4 +206,32 @@ describe.skipIf(!URL)('a database at the migration before 0305 runs 0305 and onl
     });
     expect(await body()).toContain('"public"."mantle_login_is_admin"(login)');
   }, 120_000);
+
+  it('grants the public demo`s reader the three login facts, where it exists', async () => {
+    const grant = readFileSync(join(DIR, `${TAG}.sql`), 'utf8')
+      .split('--> statement-breakpoint')
+      .find((st) => st.includes('demo_reader'))!;
+    const fns = [
+      'public.mantle_login_is_admin(uuid)',
+      'public.mantle_login_areas(uuid)',
+      'public.mantle_area_rule(uuid,text)',
+    ];
+    // In a transaction rolled back after: a role is the cluster's, and no
+    // other file may meet it.
+    const got = await sql
+      .begin(async (tx) => {
+        const had = await tx`select 1 from pg_roles where rolname = 'demo_reader'`;
+        if (had.length === 0) await tx`create role demo_reader nologin`;
+        await tx.unsafe(grant);
+        const rows = await tx<{ ok: boolean }[]>`
+          select has_function_privilege('demo_reader', to_regprocedure(f), 'EXECUTE') as ok
+            from unnest(${fns}::text[]) f`;
+        throw Object.assign(new Error('rollback'), { rows });
+      })
+      .catch((err: { message: string; rows?: { ok: boolean }[] }) => {
+        if (err.message !== 'rollback') throw err;
+        return err.rows!;
+      });
+    expect(got.map((r) => r.ok)).toEqual([true, true, true]);
+  });
 });

@@ -126,11 +126,11 @@ The database's needs (`mantle_check_row`, `mantle_check_item`): `read`,
 the 404 of none, as a random id; one it reads but may not change, 403.
 
 Admin is management, not reading. An Admin login is role admin AND a user
-of the live Admin workspace (`mantle_login_is_admin`, read with the login
-row; SQL's `mantle_login_is_admin_user` is the same pair). One area rule,
-`mantle_area_rule`, answers `loginHasArea` and `loginAreas` (`areasFor`);
-`requireArea` asks `mantle_scope_has_area` in its login's own scope (the
-rule plus "Admin in the scope"), the rule unscoped, and throws otherwise.
+of the live Admin workspace (`mantle_login_is_admin`; SQL's
+`mantle_login_is_admin_user` too). `mantle_area_rule` answers `loginHasArea`
+and `areasFor`; `requireArea` asks `mantle_scope_has_area` (the rule plus
+"Admin in the scope") in its login's own scope, the rule unscoped.
+`mantle_login_area` adds a counted fail-open (S4b removes it).
 
 Owner rules (each holds today unless "Known limits" says otherwise):
 

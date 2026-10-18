@@ -320,6 +320,10 @@ async function seeWorkspace(
   lock = false,
 ): Promise<Seen> {
   const wid = wsId(id);
+  // The areas first, on the system pool (mantle_login_areas: the write role
+  // a member's transaction runs on may not EXECUTE it), so no row lock is
+  // held while that read waits for its connection.
+  const areas = await areasFor(caller);
   if (lock) {
     await q.execute(
       sql`select 1 from workspaces where id = ${wid} and owner_id = ${caller.anchorId} for update`,
@@ -327,7 +331,6 @@ async function seeWorkspace(
   }
   const [row] = await rows<WsRow>(q, wsSelect(caller, sql`w.id = ${wid}`));
   if (!row) throw NOT_FOUND();
-  const areas = await areasFor(caller);
   const admin = areas.includes('users');
   if (!admin && (!row.me_member || row.archived_at !== null)) throw NOT_FOUND();
   return { row, areas, admin, mod: row.me_member && row.me_moderator };

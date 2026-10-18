@@ -167,13 +167,13 @@ export function loginUsable(row: Pick<LoginRow, 'disabledAt' | 'email'>): boolea
 }
 
 /**
- * Whether a login row is an Admin login, the legacy kind 'admin': role admin AND a user of the brain's live Admin workspace now
- * (adminMember, mantle_login_is_admin read with the row). The role alone
- * never makes one: a role=member login inside Admin stays a member, and a
- * role=admin login outside Admin is no Admin login (no asset token, render
- * cookie or frame; its areas come from the area rule, so none). Its
- * session stays on the role until S8b (resolvedFor), as do
- * memberLoginActive and findMemberAsset.
+ * Whether a login row is an Admin login: role admin AND a user of the
+ * brain's live Admin workspace now (adminMember, mantle_login_is_admin read
+ * with the row). The role alone never makes one: a role=member login inside
+ * Admin stays a member, and a role=admin login outside Admin is no Admin
+ * login (no asset token, render cookie or frame; its areas come from the
+ * area rule, so none). The session itself (resolvedFor),
+ * memberLoginActive and findMemberAsset still read the role.
  */
 function adminLogin(row: Pick<LoginRow, 'role' | 'adminMember'>): boolean {
   return row.role === 'admin' && row.adminMember === true;
@@ -534,9 +534,9 @@ async function sessionUserFor(row: ActorRow): Promise<SessionUser | null> {
  * was not member resolved as an admin). A row still marked client (none is
  * left after migration 0272, workspaces W8a) is no login either. Null too
  * when the brain has no anchor (a corrupt state). The session stays on the
- * role until S8b (owner decision, 2026-10-18): a role=admin login
- * outside Admin keeps its session and works in its own scope, but is no
- * Admin (adminLogin: no asset token, render cookie or frame, no area).
+ * role: a role=admin login outside Admin keeps its session and works in its
+ * own scope, but is no Admin (adminLogin: no asset token, render cookie or
+ * frame, no area).
  */
 async function resolvedFor(row: LoginRow, source: AuthSource): Promise<Resolved | null> {
   const role: string = row.role;
