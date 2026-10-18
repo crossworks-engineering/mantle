@@ -322,7 +322,8 @@ export const file_set_indexing: BuiltinToolDef = {
 export const folder_set_indexing: BuiltinToolDef = {
   slug: 'folder_set_indexing',
   policy: {
-    matrix: { action: 'edit', param: 'folder_id', kinds: ['branch'] },
+    // Manage, not edit: the owner's rule (a Moderator of the folder's home).
+    matrix: { action: 'edit', param: 'folder_id', kinds: ['branch'], manage: true },
     effect: 'write',
     spends: 'none',
     scope: 'any',

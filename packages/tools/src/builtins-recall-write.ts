@@ -180,9 +180,8 @@ const OPTIONS_PROP = {
 const recall_map_create: BuiltinToolDef = {
   slug: 'recall_map_create',
   policy: {
-    matrix: {
-      none: 'a create naming no folder: it lands by the home rule (turn-create-home tests)',
-    },
+    // `folder` names a Recall folder by its crumbs (its title).
+    matrix: { action: 'create', param: 'folder', kinds: ['recall'] },
     effect: 'write',
     spends: 'none',
     scope: 'any',

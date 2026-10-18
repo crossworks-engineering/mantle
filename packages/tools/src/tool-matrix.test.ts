@@ -72,6 +72,9 @@ describe('the matrix declarations', () => {
       }
       const props = (b.inputSchema as { properties?: Record<string, unknown> }).properties ?? {};
       if (!(m.param in props)) bad.push(`${b.slug}: ${m.param} is not in its schema`);
+      if (m.dest !== undefined && !(m.dest in props)) {
+        bad.push(`${b.slug}: its dest ${m.dest} is not in its schema`);
+      }
       if (!GUIDE_ACTIONS.includes(m.action)) bad.push(`${b.slug}: ${m.action} is no guide action`);
       for (const k of m.kinds ?? []) {
         if (!ITEM_KIND_NAMES.includes(k)) bad.push(`${b.slug}: ${k} is no kind`);

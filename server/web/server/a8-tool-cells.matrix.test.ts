@@ -81,6 +81,9 @@ type Ctx = {
 const fresh = (c: Ctx) => `${c.tag} ${randomUUID().slice(0, 8)}`;
 const INPUT: Readonly<Record<string, (c: Ctx) => Record<string, unknown>>> = {
   file_create: (c) => ({ filename: `${fresh(c).replace(' ', '-')}.txt`, content: 'a8' }),
+  file_upload: (c) => ({ filename: `${fresh(c).replace(' ', '-')}.txt`, content_text: 'a8' }),
+  folder_create: (c) => ({ slug: fresh(c).replace(' ', '-') }),
+  recall_map_create: (c) => ({ title: `${c.tag} made`, enter_when: 'an A8 create' }),
   // The turn's agent may delegate to it (turnCall's agent context).
   invoke_agent: (c) => ({ agent_slug: `${c.tag}-delegate`, prompt: 'an A8 delegation' }),
   // A prompt the schema takes (three characters at least): the refused cells
@@ -105,7 +108,9 @@ const INPUT: Readonly<Record<string, (c: Ctx) => Record<string, unknown>>> = {
     version: c.version,
   }),
   recall_cards_reorder: (c) => ({ slugs: ['card'], version: c.version }),
-  recall_map_publish: (c) => ({ published: true, version: c.version }),
+  // A fresh map is published (recall_maps.published defaults to true): the
+  // cell unpublishes it, the same tool and right, so the change shows.
+  recall_map_publish: (c) => ({ published: false, version: c.version }),
   tree_folder_create: (c) => ({ kind: 'notes', name: fresh(c) }),
   tree_folder_update: (c) => ({ kind: 'notes', name: fresh(c) }),
   tree_folder_delete: () => ({ kind: 'notes' }),
@@ -151,7 +156,6 @@ const MCP_CONNECTION_ONLY: Readonly<Record<string, string>> = {
  *  names it, a8-known-failures.ts): their allowed cells run and fail as
  *  listed. A tool leaves this list when its finding is fixed. */
 const ALLOWED_KNOWN_ONLY: Readonly<Record<string, string>> = {
-  folder_set_indexing: 'S11a-6',
   page_move: 'S11a-5',
   tree_item_move: 'S11a-5',
 };
@@ -163,6 +167,22 @@ const ALLOWED_KNOWN_ONLY: Readonly<Record<string, string>> = {
 const NEW_APP_HOME: Readonly<Record<string, string>> = {
   app_import: 'a new app needs manage of its create home: the turn’s workspace',
   app_duplicate: 'a new app needs manage of its create home: the turn’s workspace',
+};
+
+/** The create cells that name a Files folder (the Files F folder: the
+ *  branch kind's F folder is in the notes tree). */
+const FILES_BRANCH_CREATE: ReadonlySet<string> = new Set(['folder_create', 'folder_copy']);
+
+/** The arguments that name their folder by its title, not its id or path:
+ *  a Recall folder by its crumbs. */
+const BY_TITLE: Readonly<Record<string, string>> = { recall_map_create: 'folder' };
+
+/** The allowed edits whose change the probe cannot see (the item's row,
+ *  its content, a seeded item's content: a8_probe, a8ContentProbe): they
+ *  pass on their ok alone, each with why. */
+const PROBE_BLIND: Readonly<Record<string, string>> = {
+  process_extraction:
+    'it re-signals the extractor (pg_notify node_ingested): no row of the item changes',
 };
 
 /** The tools the MCP surface lists for an Admin user only (a deny the
@@ -425,13 +445,20 @@ describe.skipIf(!DB_URL)(
         if (s.properties && 'confirm' in s.properties) out.confirm = true;
         return { ...out, ...(INPUT[slug]?.(c) ?? {}) };
       };
-      const argOf = (slug: string, param: string, ref: { id: string; path: string }) => {
+      type Ref = { id: string; path: string; title: string };
+      /** The form the argument names its item in (an id, a path, a title). */
+      const formOf = (slug: string, param: string, ref: Ref) =>
+        param.endsWith('_path') ? ref.path : BY_TITLE[slug] === param ? ref.title : ref.id;
+      const argOf = (slug: string, param: string, ref: Ref) => {
         const p = (
           decls.get(slug)!.inputSchema as { properties?: Record<string, { type?: string }> }
         ).properties?.[param];
         if (p?.type === 'array') return [ref.id];
-        return param.endsWith('_path') ? ref.path : ref.id;
+        return formOf(slug, param, ref);
       };
+      /** The kind whose folder F a create cell names. */
+      const folderKind = (tool: string, kind: string) =>
+        kind === 'branch' && FILES_BRANCH_CREATE.has(tool) ? 'file' : kind;
 
       const rank = { warn: 0, on: 1 } as const;
       expect(
@@ -493,21 +520,34 @@ describe.skipIf(!DB_URL)(
             total++;
             const create = cell.action === 'create';
             const reads = ['read', 'list', 'search'].includes(cell.action);
-            const seeded = await tc2.seedA8ToolItem(raw, fx, contentDeps, cell);
+            const edits = cell.action === 'edit' || cell.action === 'editDraft';
+            // A copy's destination cell: the source an item the caller
+            // reads (seeded where the tool needs content), the item the
+            // folder the copy is made in.
+            const source = cell.source
+              ? await (async () => {
+                  const placement = tc.a8ToolSourcePlacement(cell, surface);
+                  const s = await tc2.seedA8ToolItem(raw, fx, contentDeps, { ...cell, placement });
+                  const it = s ? s.item : fx.items[cell.kind]![placement]!;
+                  return {
+                    input: s?.input ?? {},
+                    ref: { id: it.id, path: it.parentPath, title: it.title },
+                  };
+                })()
+              : null;
+            const seeded = source ? null : await tc2.seedA8ToolItem(raw, fx, contentDeps, cell);
+            const folder = fx.folders[folderKind(cell.tool, cell.kind)]!;
             const item = seeded
               ? seeded.item
               : create
-                ? {
-                    id: fx.folders[cell.kind]!.id,
-                    title: '',
-                    parentPath: fx.folders[cell.kind]!.path,
-                  }
+                ? { id: folder.id, title: folder.title, parentPath: folder.path }
                 : reads
                   ? fx.items[cell.kind]![cell.placement]!
                   : await g.makeA8Item(raw, fx, cell.kind, cell.placement);
-            const ref = {
+            const ref: Ref = {
               id: item.id,
-              path: create ? fx.folders[cell.kind]!.path : item.parentPath,
+              path: create ? folder.path : item.parentPath,
+              title: item.title,
             };
             /** The brain's nodes (of the kind, or all): a refused write
              *  makes none. */
@@ -526,9 +566,12 @@ describe.skipIf(!DB_URL)(
                     const p = (
                       await raw<{ p: string }[]>`select a8_probe(${item.id}::uuid) as p`
                     )[0]!.p;
-                    // A seeded item: what its content holds, too (a8ContentProbe).
+                    // A seeded item, and any item an edit cell changes: what
+                    // its content holds, too (a8ContentProbe: its row, its
+                    // table and app rows, snapshots, cards, files on disk),
+                    // so an allowed edit's change shows.
                     const held =
-                      p === 'gone' || !seeded
+                      p === 'gone' || (!seeded && !edits)
                         ? p
                         : `${p}|${await tc2.a8ContentProbe(raw, item.id, contentDeps)}`;
                     // A write that declares a read (a copy, an import, an
@@ -548,7 +591,10 @@ describe.skipIf(!DB_URL)(
             };
             const input = {
               ...filled(cell.tool, cell.param, ctx),
-              ...(seeded?.input ?? {}),
+              ...(seeded?.input ?? source?.input ?? {}),
+              ...(source && cell.source
+                ? { [cell.source]: argOf(cell.tool, cell.source, source.ref) }
+                : {}),
               [cell.param]: argOf(cell.tool, cell.param, ref),
             };
             const call = surface === 'web-turn' ? turnCall : mcpCall;
@@ -560,9 +606,13 @@ describe.skipIf(!DB_URL)(
             let random: { out: Outcome; id: string } | null = null;
             if (!want.allow && !tc.a8ToolReads(cell, surface)) {
               const id = randomUUID();
-              const rref = { id, path: `${fx.kindRootPath[cell.kind]}.zq${id.slice(0, 8)}` };
+              const rref: Ref = {
+                id,
+                path: `${fx.kindRootPath[folderKind(cell.tool, cell.kind)]}.zq${id.slice(0, 8)}`,
+                title: `zq${id.slice(0, 8)}`,
+              };
               random = {
-                id: cell.param.endsWith('_path') ? rref.path : id,
+                id: formOf(cell.tool, cell.param, rref),
                 out: await call(role, cell.tool, {
                   ...input,
                   [cell.param]: argOf(cell.tool, cell.param, rref),
@@ -577,8 +627,9 @@ describe.skipIf(!DB_URL)(
                 out,
                 before,
                 after,
-                item: { id: cell.param.endsWith('_path') ? ref.path : item.id, title: item.title },
+                item: { id: formOf(cell.tool, cell.param, ref), title: item.title },
                 random,
+                ...(PROBE_BLIND[cell.tool] ? { blind: PROBE_BLIND[cell.tool] } : {}),
               }) ?? (misses.length ? `actor miss: ${JSON.stringify(misses).slice(0, 160)}` : null);
             if (fail) failures.set(name, fail);
             if (want.allow) {
@@ -646,9 +697,11 @@ describe.skipIf(!DB_URL)(
   },
 );
 
-/** The tool cells not applicable, by reason, over both check modes. */
+/** The tool cells not applicable, by reason, over both check modes (162
+ *  since S11a fix round 4: folder_create and file_upload, MCP only, have
+ *  their create cells, 12 cells over both modes each). */
 const NOT_APPLICABLE: Readonly<Record<string, number>> = {
-  'web-turn: no tool row (MCP only)': 138,
+  'web-turn: no tool row (MCP only)': 162,
 };
 
 /** The narrowed tool cells (a deny the oracle cannot see), by reason. */

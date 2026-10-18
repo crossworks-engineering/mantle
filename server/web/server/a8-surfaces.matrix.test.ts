@@ -51,8 +51,8 @@
  *                Can write on, and the db-broker of a read share of a kind
  *                that is no app
  *
- * Every cell runs in each actor check mode (off, the fleet's default; warn;
- * on): the box's mode (mantle_set_actor_check) and the process's
+ * Every cell runs in each actor check mode (off; warn; on, the fleet's
+ * mode): the box's mode (mantle_set_actor_check) and the process's
  * (MANTLE_ACTOR_CHECK) set together, in that order (see CHECK_MODES below).
  *
  * A cell passes only on the right row effect (the probe of the SQL grid):
@@ -238,7 +238,7 @@ describe.skipIf(!DB_URL)('A8 surface cells: every way in gives the oracle’s an
     kinds = g.A8_KINDS;
     fx = await g.buildA8Fixture(raw);
     await g.installProbe(raw);
-    // The box at off, the fleet's default, while the brain is set up; each
+    // The box at off (the lowest mode) while the brain is set up; each
     // run of the cells sets its mode (CHECK_MODES, off to on).
     await raw`select mantle_set_actor_check('off', 50, 'test')`;
     await m.asSystem(() => t.seedBuiltinTools(fx.owner), 'test');

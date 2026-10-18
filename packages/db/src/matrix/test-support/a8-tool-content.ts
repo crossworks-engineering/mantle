@@ -440,6 +440,8 @@ export const A8_TOOL_CONTENT: Readonly<
     seed: page(() => ({ heading_block_id: 'blk-h1' })),
   },
   page_commit: { needs: 'a draft of the page', seed: page(() => ({})) },
+  // A draft to discard (a fresh page has none: the discard changes nothing).
+  page_discard_draft: { needs: 'a draft of the page', seed: page(() => ({})) },
   // A page may mention itself (content pages/structure.ts: any node the
   // caller reads).
   page_mention: {
@@ -563,6 +565,39 @@ export const A8_TOOL_CONTENT: Readonly<
     },
   },
   app_build: { needs: 'the app runtime manifest', seed: async (s) => (await seedApp(s), {}) },
+  // A staged draft and its green build to publish (with neither, a publish
+  // returns early and changes nothing).
+  app_publish: {
+    needs: 'a draft of the app and its build',
+    seed: async (s) => {
+      await seedApp(s);
+      const draft = { entry: 'App.tsx', files: { 'App.tsx': `${APP_SOURCE}\n// a8 draft` } };
+      const build = {
+        storageKey: 'apps/a8-draft.js',
+        sha256: 'a8d',
+        builtAt: '2026-10-02T00:00:00Z',
+        esbuildVersion: '0',
+        bytes: 1,
+        ok: true,
+      };
+      await asFixture(s.sql, s.item.id, async (tx) => {
+        await tx`update apps set draft_source = ${tx.json(draft)}, draft_build = ${tx.json(build)}
+                 where node_id = ${s.item.id}`;
+      });
+      return {};
+    },
+  },
+  // A second card, so a reorder changes the order (one card has one order).
+  recall_cards_reorder: {
+    needs: 'a map with two cards',
+    seed: async (s) => {
+      await asFixture(s.sql, s.item.id, async (tx) => {
+        await tx`insert into recall_nodes (owner_id, map_id, slug, kind, title)
+                 values (${s.fx.owner}, ${s.item.id}, 'card-b', 'card', 'B card')`;
+      });
+      return { slugs: ['card-b', 'card'] };
+    },
+  },
   app_export: {
     needs: 'the Files root folder in the caller’s scope',
     seed: async (s) => (await seedApp(s), { with_data: false }),
@@ -705,6 +740,8 @@ export async function a8ContentProbe(sql: Sql, id: string, deps: A8ContentDeps):
         fileHash(
           disk.filename ? path.join(diskDir(deps.filesRoot, disk.path), disk.filename) : null,
         ),
+        // An app's own SQLite (a seed's rows).
+        fileHash(deps.appDbFile(id)),
       ].join(',')
     : '';
   const [r] = await sql<{ p: string }[]>`
@@ -718,7 +755,8 @@ export async function a8ContentProbe(sql: Sql, id: string, deps: A8ContentDeps):
       (select string_agg(e.sqlite_table, ',' order by e.sqlite_table) from app_table_exports e
         where e.app_node_id = ${id}),
       (select string_agg((to_jsonb(c) - 'updated_at')::text, ',' order by c.slug)
-         from recall_nodes c where c.map_id = ${id})) as p`;
+         from recall_nodes c where c.map_id = ${id}),
+      (select (to_jsonb(r) - 'updated_at')::text from recall_maps r where r.id = ${id})) as p`;
   return r?.p ?? '';
 }
 

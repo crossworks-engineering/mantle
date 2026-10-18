@@ -108,7 +108,20 @@ export type ToolOutside = Readonly<{
  * their cells from it, and server/web/server/a8-coverage.test.ts counts it.
  */
 export type ToolMatrix =
-  | Readonly<{ action: GuideAction; param: string; kinds?: readonly ItemKind[] }>
+  | Readonly<{
+      action: GuideAction;
+      param: string;
+      kinds?: readonly ItemKind[];
+      /** A copy's destination: the argument naming the folder it makes the
+       *  copy in. Its create cells run too, the source (`param`) an item
+       *  the caller reads. */
+      dest?: string;
+      /** The tool asks manage of the item (a Moderator of its home), not
+       *  the guide's edit: its cells answer the edit narrowed to the home's
+       *  Moderators (a folder's indexing switch reaches every file under
+       *  it). */
+      manage?: true;
+    }>
   | Readonly<{ none: string }>;
 
 /** A write declares its matrix (a write with none does not build); a read

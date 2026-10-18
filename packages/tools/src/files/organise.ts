@@ -71,7 +71,8 @@ export const file_move: BuiltinToolDef = {
 export const file_copy: BuiltinToolDef = {
   slug: 'file_copy',
   policy: {
-    matrix: { action: 'read', param: 'file_id', kinds: ['file'] },
+    // The source's read, and the create in its destination folder.
+    matrix: { action: 'read', param: 'file_id', kinds: ['file'], dest: 'dest_path' },
     // Audit only: the row names it (the queue asks nothing of it).
     itemArgs: [{ param: 'file_id', least: 'none' }],
     effect: 'write',
@@ -179,7 +180,8 @@ export const folder_move: BuiltinToolDef = {
 export const folder_copy: BuiltinToolDef = {
   slug: 'folder_copy',
   policy: {
-    matrix: { action: 'read', param: 'folder_id', kinds: ['branch'] },
+    // The source's read, and the create in its destination folder.
+    matrix: { action: 'read', param: 'folder_id', kinds: ['branch'], dest: 'dest_parent_path' },
     // Audit only: the row names it (the queue asks nothing of it).
     itemArgs: [{ param: 'folder_id', least: 'none' }],
     effect: 'write',

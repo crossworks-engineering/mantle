@@ -140,8 +140,8 @@ export type A8Fixture = {
   items: Record<string, Partial<Record<GuidePlacement, A8Item>>>;
   kindRoot: Record<string, string>;
   kindRootPath: Record<string, string>;
-  /** Each kind's folder F. */
-  folders: Record<string, { id: string; path: string }>;
+  /** Each kind's folder F (its title: a Recall folder is named by it). */
+  folders: Record<string, { id: string; path: string; title: string }>;
 };
 
 const arr = (ids: readonly string[]) => `{${ids.join(',')}}`;
@@ -294,7 +294,7 @@ export async function buildA8Fixture(sql: Sql): Promise<A8Fixture> {
                values (${folder}, ${L.owner}, 'branch', ${`${tag} F ${kind}`}, ${folderPath}::ltree)`;
     });
     await grantByHand(sql, fx, folder);
-    fx.folders[kind] = { id: folder, path: folderPath };
+    fx.folders[kind] = { id: folder, path: folderPath, title: `${tag} F ${kind}` };
     const rootItem = await makeA8Item(sql, fx, kind, 'root');
     fx.items[kind] = {
       root: rootItem,

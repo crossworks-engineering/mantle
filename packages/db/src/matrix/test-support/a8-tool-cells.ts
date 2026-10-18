@@ -17,7 +17,10 @@
  * row changed and no node made. A cell whose caller does not read the item
  * is also refused in the words a random uuid gets (the answer byte-equal,
  * the id aside). A tool is covered only with an allowed cell and a refused
- * one.
+ * one. A copy's destination (ToolMatrix dest) gets cells of its own: the
+ * create in the folder it names, its source an item the caller reads; a
+ * manage (ToolMatrix manage) is the edit narrowed to the item's home
+ * Moderators. An allowed edit must change what the probe sees.
  *
  * The declaration states intent only: no gate reads it. These cells run the
  * product's own paths, the turn's dispatchTool and the MCP surface, in check
@@ -77,7 +80,14 @@ export type A8ToolDecl = {
   slug: string;
   effect: 'read' | 'write';
   matrix?: Readonly<
-    { action: GuideAction; param: string; kinds?: readonly string[] } | { none: string }
+    | {
+        action: GuideAction;
+        param: string;
+        kinds?: readonly string[];
+        dest?: string;
+        manage?: true;
+      }
+    | { none: string }
   >;
   inputSchema: Record<string, unknown>;
   /** Its Admin step is not `any`: a scope that holds no Admin is refused. */
@@ -110,6 +120,13 @@ export type A8ToolCell = A8Cell & {
   /** The tool's one allowed cell picked whatever the pair pick (its own work
    *  runs at least once). */
   positive?: true;
+  /** A copy's destination cell: `param` names the folder the copy is made
+   *  in, and `source` the argument of the item copied (one the caller
+   *  reads: a8ToolSourcePlacement). */
+  source?: string;
+  /** The tool asks manage (ToolMatrix manage): the edit narrowed to the
+   *  Moderators of the item's home. */
+  manage?: true;
 };
 
 export type A8ToolPlan = {
@@ -150,8 +167,34 @@ const NEGATIVES: readonly { role: GuideRole; placement: GuidePlacement; create?:
 /** The oracle's answer for a candidate, as a login on MCP: the one the
  *  pick filters with (the not-applicable reasons do not depend on the way
  *  in for the actions a tool declares). */
-const loginAnswer = (role: GuideRole, kind: string, placement: GuidePlacement, a: GuideAction) =>
-  expectedAccess({ surface: 'mcp-oauth', placement, actor: 'login' }, role, kind, a);
+const loginAnswer = (
+  role: GuideRole,
+  kind: string,
+  placement: GuidePlacement,
+  a: GuideAction,
+  manage = false,
+) => toolAnswer('mcp-oauth', 'login', role, kind, placement, a, manage);
+
+/** The oracle's answer for a tool's action; a manage (ToolMatrix manage)
+ *  is the edit the Moderator of the item's home makes (the guide's
+ *  "Delete it: Moderator of its home" standing, delete's own answer). */
+function toolAnswer(
+  surface: GuideSurface,
+  actor: GuideActor,
+  role: GuideRole,
+  kind: string,
+  placement: GuidePlacement,
+  a: GuideAction,
+  manage: boolean,
+): GuideAnswer {
+  const at = { surface, placement, actor };
+  const want = expectedAccess(at, role, kind, a);
+  if (!manage || 'na' in want || !want.allow) return want;
+  const home = expectedAccess(at, role, kind, 'delete');
+  return 'allow' in home && home.allow
+    ? want
+    : { allow: false, why: 'manage: a Moderator of its home' };
+}
 
 /** Every tool's cells, from its declaration alone. */
 export function a8ToolPlan(
@@ -178,72 +221,23 @@ export function a8ToolPlan(
       plan.uncovered[t.slug] = `its matrix names ${m.param}, which its schema does not take`;
       continue;
     }
-    const its = (m.kinds ?? kinds).filter((k) => kinds.includes(k));
-    if (!its.length) {
-      plan.uncovered[t.slug] = `none of its kinds (${(m.kinds ?? []).join(', ')}) is in the grid`;
+    const own = cellsOf(t, m, kinds, plan.na);
+    if (typeof own === 'string') {
+      plan.uncovered[t.slug] = own;
       continue;
     }
-    const candidates: A8Cell[] = [];
-    for (const role of GUIDE_ROLES) {
-      for (const kind of its) {
-        for (const placement of GUIDE_PLACEMENTS) {
-          if (m.action === 'create' && placement !== 'folder') {
-            plan.na['a tool create names its folder: the folder placement only'] =
-              (plan.na['a tool create names its folder: the folder placement only'] ?? 0) + 1;
-            continue;
-          }
-          const want = loginAnswer(role, kind, placement, m.action);
-          if ('na' in want) {
-            plan.na[want.na] = (plan.na[want.na] ?? 0) + 1;
-            continue;
-          }
-          candidates.push({ actor: 'login', role, kind, placement, action: m.action });
-        }
-      }
-    }
-    const picked: A8ToolCell[] = candidates.map((c) => ({
-      ...c,
-      tool: t.slug,
-      param: m.param,
-      effect: t.effect,
-    }));
-    const positive = positiveCell(t, picked);
-    if (positive) positive.positive = true;
-    // The member-negatives of a write: by its effect (a copy or an import
-    // declares the read of its source and still writes), and of any action
-    // that is not a read.
-    if (t.effect === 'write' || !READS.includes(m.action)) {
-      const kind = its[0]!;
-      for (const n of NEGATIVES) {
-        if ((m.action === 'create') !== (n.create === true)) continue;
-        const want = loginAnswer(n.role, kind, n.placement, m.action);
-        if ('na' in want || ('allow' in want && want.allow)) continue;
-        const c: A8ToolCell = {
-          actor: 'login',
-          role: n.role,
-          kind,
-          placement: n.placement,
-          action: m.action,
-          tool: t.slug,
-          param: m.param,
-          effect: t.effect,
-          mandatory: true,
-        };
-        const same = picked.find((x) => cellName(x) === cellName(c));
-        if (same) same.mandatory = true;
-        else picked.push(c);
-      }
-    }
-    if (!picked.length) {
-      plan.uncovered[t.slug] = 'its declaration gives no cell the oracle answers';
-      continue;
-    }
-    if (!positive) {
-      plan.uncovered[t.slug] = 'its declaration gives no allowed cell';
+    // A copy's destination: its create cells, the source an item the
+    // caller reads.
+    const dest =
+      m.dest === undefined
+        ? []
+        : cellsOf(t, { action: 'create', param: m.dest, kinds: m.kinds }, kinds, plan.na, m.param);
+    if (typeof dest === 'string') {
+      plan.uncovered[t.slug] = `its destination ${m.dest}: ${dest}`;
       continue;
     }
     plan.covered.push(t.slug);
-    plan.cells.push(...picked);
+    plan.cells.push(...own, ...dest);
   }
   plan.cells = a8ToolPairwise(plan.cells);
   // Covered only with a refused cell among the picked (an allowed one is the
@@ -267,6 +261,82 @@ export function a8ToolPlan(
     }
   }
   return plan;
+}
+
+/** A tool's cells for one declaration (its own, or its destination's with
+ *  `source`), or why it has none. */
+function cellsOf(
+  t: A8ToolDecl,
+  m: { action: GuideAction; param: string; kinds?: readonly string[]; manage?: true },
+  kinds: readonly string[],
+  na: Record<string, number>,
+  source?: string,
+): A8ToolCell[] | string {
+  const manage = m.manage === true;
+  const extra = {
+    ...(source === undefined ? {} : { source }),
+    ...(manage ? { manage: true as const } : {}),
+  };
+  const its = (m.kinds ?? kinds).filter((k) => kinds.includes(k));
+  if (!its.length) {
+    return `none of its kinds (${(m.kinds ?? []).join(', ')}) is in the grid`;
+  }
+  const candidates: A8Cell[] = [];
+  for (const role of GUIDE_ROLES) {
+    for (const kind of its) {
+      for (const placement of GUIDE_PLACEMENTS) {
+        if (m.action === 'create' && placement !== 'folder') {
+          na['a tool create names its folder: the folder placement only'] =
+            (na['a tool create names its folder: the folder placement only'] ?? 0) + 1;
+          continue;
+        }
+        const want = loginAnswer(role, kind, placement, m.action, manage);
+        if ('na' in want) {
+          na[want.na] = (na[want.na] ?? 0) + 1;
+          continue;
+        }
+        candidates.push({ actor: 'login', role, kind, placement, action: m.action });
+      }
+    }
+  }
+  const picked: A8ToolCell[] = candidates.map((c) => ({
+    ...c,
+    tool: t.slug,
+    param: m.param,
+    effect: t.effect,
+    ...extra,
+  }));
+  const positive = positiveCell(t, picked);
+  if (positive) positive.positive = true;
+  // The member-negatives of a write: by its effect (a copy or an import
+  // declares the read of its source and still writes), and of any action
+  // that is not a read.
+  if (t.effect === 'write' || !READS.includes(m.action)) {
+    const kind = its[0]!;
+    for (const n of NEGATIVES) {
+      if ((m.action === 'create') !== (n.create === true)) continue;
+      const want = loginAnswer(n.role, kind, n.placement, m.action, manage);
+      if ('na' in want || ('allow' in want && want.allow)) continue;
+      const c: A8ToolCell = {
+        actor: 'login',
+        role: n.role,
+        kind,
+        placement: n.placement,
+        action: m.action,
+        tool: t.slug,
+        param: m.param,
+        effect: t.effect,
+        ...extra,
+        mandatory: true,
+      };
+      const same = picked.find((x) => cellName(x) === cellName(c));
+      if (same) same.mandatory = true;
+      else picked.push(c);
+    }
+  }
+  if (!picked.length) return 'its declaration gives no cell the oracle answers';
+  if (!positive) return 'its declaration gives no allowed cell';
+  return picked;
 }
 
 /**
@@ -302,7 +372,13 @@ function positiveCell(t: A8ToolDecl, cells: readonly A8ToolCell[]): A8ToolCell |
  */
 function a8ToolPairwise(cells: readonly A8ToolCell[]): A8ToolCell[] {
   const pairsOf = (c: A8ToolCell) => {
-    const d = [`t:${c.tool}`, `r:${c.role ?? '-'}`, `k:${c.kind}`, `p:${c.placement}`];
+    // A copy's destination cells pair apart from its source's.
+    const d = [
+      `t:${c.tool}${c.source ? ' dest' : ''}`,
+      `r:${c.role ?? '-'}`,
+      `k:${c.kind}`,
+      `p:${c.placement}`,
+    ];
     const out: string[] = [];
     for (let i = 0; i < d.length; i++)
       for (let j = i + 1; j < d.length; j++) out.push(`${d[i]}|${d[j]}`);
@@ -350,12 +426,27 @@ export function a8ToolNarrow(t: A8ToolDecl, surface: GuideSurface, role: GuideRo
 
 /** The oracle's answer of a tool cell on a way in. */
 export function a8ToolWant(c: A8ToolCell, surface: GuideSurface): GuideAnswer {
-  return expectedAccess(
-    { surface, placement: c.placement, actor: surfaceActor(surface) },
-    c.role,
+  return toolAnswer(
+    surface,
+    surfaceActor(surface),
+    c.role!,
     c.kind,
+    c.placement,
     c.action,
+    c.manage === true,
   );
+}
+
+/** Where a destination cell's source sits: the first placement whose item
+ *  the cell's caller reads (the root first: its item is outside the folder
+ *  the copy is made in), so a refusal is the destination's. A caller that
+ *  reads none (the outsider) gets the root's, and its refusal is the
+ *  source's: a random uuid's answer all the same. */
+export function a8ToolSourcePlacement(c: A8ToolCell, surface: GuideSurface): GuidePlacement {
+  const role = c.role!;
+  const narrowTo = surfaceActor(surface) === 'turn' ? TURN_WORKSPACE[role] : null;
+  const order: readonly GuidePlacement[] = ['root', 'folder', 'admin'];
+  return order.find((p) => guideStanding(role, p, narrowTo).reads) ?? 'root';
 }
 
 /** Whether the cell's caller reads the item (its refusal must then be a
@@ -441,6 +532,9 @@ export function judgeA8ToolCell(a: {
   after: string;
   item: { id: string; title: string };
   random: { out: A8ToolOutcome; id: string } | null;
+  /** An edit the probe cannot see (the reason): an allowed edit passes on
+   *  its ok alone. */
+  blind?: string;
 }): string | null {
   const { cell, want, out, before, after, item, random } = a;
   const changed = after !== before;
@@ -458,6 +552,11 @@ export function judgeA8ToolCell(a: {
     if (cell.action === 'delete' && after !== 'gone') return 'answered ok, not deleted';
     if (cell.action === 'create' && !changed) return 'answered ok, nothing made';
     if (cell.action === 'move' && !changed) return 'answered ok, nothing moved';
+    // An allowed edit shows in the probe (the item's row and content),
+    // unless the tool's change is one the probe cannot see (a.blind).
+    if ((cell.action === 'edit' || cell.action === 'editDraft') && !changed && !a.blind) {
+      return 'answered ok, nothing changed';
+    }
     return null;
   }
   // A caller that does not read the item gets a random uuid's answer; one

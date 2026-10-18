@@ -344,7 +344,9 @@ findings left a8-known-failures.ts, and their cells pass as the rules their
 tools declare:
 
 - S11a-3 (2 cells): app_export by a member who reads the app is allowed
-  (`read` of the app), and the file lands in the member's create home.
+  (`read` of the app): the cell checks that the call answers ok and that a
+  refused call makes no node. Where the file lands is not the cell's check;
+  member-export.db.test.ts (main) checks the landing.
 - S11a-7 (2 cells): app_table_export_set by its app's Moderator is allowed
   (`editDraft` of the app) in warn and on; the tool left `ALLOWED_KNOWN_ONLY`
   in a8-tool-cells.matrix.test.ts, so its allowed cell must pass.
@@ -379,3 +381,53 @@ the actor and the edit check together, as every box runs them; on
 
 **Gates** (Mac, on 0885e3ebe): typecheck 0, lint 0, format 0, docs 0,
 arch 0, web build 0, unit (no database) 0.
+
+## S11a fix round 4 (the CEO's re-audit of a67d29177, 2026-10-18)
+
+**Done.**
+
+- MED 1, the three false exemptions: folder_create and file_upload declare
+  the create in `parent_path` (kinds branch and file), recall_map_create
+  the create in `folder` (a Recall folder named by its title: the test's
+  `BY_TITLE`). Their cells run; none fails. a8Exempt 105 to 102.
+- LOW 2, the copy destinations: `ToolMatrix.dest` names the folder a copy
+  is made in (file_copy `dest_path`, folder_copy `dest_parent_path`). Its
+  create cells run beside the source's read cells, with the source an item
+  the caller reads (the root's first: a8ToolSourcePlacement), so a refusal
+  is the destination's. The outsider reads no source: its cell is refused
+  at the source, a random uuid's answer all the same. None fails.
+- LOW 3, an allowed edit must show: judgeA8ToolCell fails an allowed edit
+  or editDraft that changes nothing the probe sees ("answered ok, nothing
+  changed"). Every edit cell now reads the content probe too
+  (a8ContentProbe: the item's row, its table and app rows, snapshots,
+  cards, files on disk), and the content probe reads two more things: the
+  app's own SQLite file and the Recall map's row. The first run with the
+  rule found 13 tools whose allowed edit showed no change. Eight were
+  probe gaps (the item's whole row and the app's database were not read).
+  Four were cells that did nothing: app_publish on an app with no draft
+  (it returns early), recall_map_publish sending `published: true` to a
+  map that is published (also a probe gap: the map's row), recall_cards_reorder
+  on a map of one card, page_discard_draft on a page with no draft. Each is
+  seeded so its edit changes something (a draft and its green build; the
+  cell unpublishes; a second card; a draft to discard). One tool passes on
+  its ok alone (`PROBE_BLIND`, with why): process_extraction, which only re-signals the extractor.
+- LOW 4, S11a-6 split: S11a-6a, tree_folder_update's rename refused for a
+  Write grant, stays a known failure (a product bug: the owner's rule is
+  that Write allows a rename). S11a-6b, folder_set_indexing on an existing
+  folder: the owner's rule is manage, which its matrix declares now
+  (`ToolMatrix.manage`: the edit narrowed to the Moderators of the item's
+  home); its Write grant cells are refused as declared, and it left both
+  the known failures and `ALLOWED_KNOWN_ONLY`.
+- LOW 5: the round's text on S11a-3 says what the cell checks (the call
+  answers ok; the landing is member-export.db.test.ts's).
+- Info: the check mode texts no longer call off the fleet's default (the
+  fleet runs on).
+
+**New known failures:** none. **Known failures left:** P1 in warn (22),
+S11a-1 (4), S11a-5 (2), S11a-6a (2); the surface cells' P1 (8, off and
+warn).
+
+**Pins.** a8Exempt 105 to 102 (the three tools above). The tool cells'
+NOT_APPLICABLE 138 to 162 (folder_create and file_upload are MCP only:
+their 12 cells each have no turn, over both modes). NARROWED and NOT_RUN
+unchanged. The cells: 1044 of 142 tools (1016 of 139 before).

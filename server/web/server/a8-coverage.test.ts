@@ -61,8 +61,13 @@ describe('A8 coverage: every kind and tool is in a cell set or exempt', () => {
   it('every tool with a matrix action has cells, an allowed and a refused one, and each write its member-negatives', () => {
     expect(counts.plan.uncovered).toEqual({});
     for (const tool of counts.plan.covered) {
-      const positive = counts.plan.cells.filter((c) => c.tool === tool && c.positive);
-      expect(positive.length, `${tool}: its one positive cell`).toBe(1);
+      // One for its own declaration, and one for a copy's destination.
+      for (const dest of [false, true]) {
+        const ofIt = counts.plan.cells.filter((c) => c.tool === tool && !!c.source === dest);
+        if (dest && !ofIt.length) continue;
+        const positive = ofIt.filter((c) => c.positive);
+        expect(positive.length, `${tool}${dest ? ' dest' : ''}: its one positive cell`).toBe(1);
+      }
     }
     // The writes by their effect: a copy declares the read of its source.
     const writes = new Set(
@@ -124,8 +129,6 @@ const A8_EXEMPT_TOOLS: readonly string[] = [
   'entity_mentions',
   'entity_neighbors',
   'event_create',
-  'file_upload',
-  'folder_create',
   'formula_create',
   'graph_path',
   'heartbeat_complete',
@@ -153,7 +156,6 @@ const A8_EXEMPT_TOOLS: readonly string[] = [
   'pending_get',
   'pending_reject',
   'recall_eval',
-  'recall_map_create',
   'recall_revision_restore',
   'recipe_tool_create',
   'recipe_tool_test',

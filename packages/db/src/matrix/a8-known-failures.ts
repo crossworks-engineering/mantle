@@ -93,15 +93,17 @@ const MEMBER_MOVE_ERRORS: readonly string[] = [
   'tool:tree_item_move mcp-oauth login/homeModerator move recall @folder',
 ];
 
-/** S11a-6. A Write grant's member may not set a folder's indexing or rename
- *  it: the database refuses the edit ("not allowed to edit this item"),
- *  where the guide lets a Write grant edit the item. Owner's to decide
- *  (whether a folder's indexing and name are its manager's). */
-const S11A_6 = "S11a-6 a Write grant may not set a folder's indexing or rename it";
-const FOLDER_EDIT_REFUSED: readonly string[] = WAYS.flatMap((w) => [
-  `tool:folder_set_indexing ${w}/writeGrant edit branch @root`,
-  `tool:tree_folder_update ${w}/writeGrant edit branch @folder`,
-]);
+/** S11a-6a. A Write grant's member may not rename a folder
+ *  (tree_folder_update): the database refuses the edit ("not allowed to
+ *  edit this item"), where the owner's rule is that Write allows a rename.
+ *  A product bug, not S11a's to fix. S11a-6b, folder_set_indexing on an
+ *  existing folder, left the list: the owner's rule there is manage (a
+ *  Moderator of the folder's home), which its matrix declares, and its
+ *  Write grant cells are refused as declared. */
+const S11A_6A = 'S11a-6a a Write grant may not rename a folder (tree_folder_update)';
+const FOLDER_RENAME_REFUSED: readonly string[] = WAYS.map(
+  (w) => `tool:tree_folder_update ${w}/writeGrant edit branch @folder`,
+);
 
 // S11a-3, S11a-7 and S11a-8 left the list on the rebase on v0.300.90, each
 // now a rule its tool's matrix declares and its cells pass as: a member's
@@ -111,8 +113,9 @@ const FOLDER_EDIT_REFUSED: readonly string[] = WAYS.flatMap((w) => [
 // (migration 0303); process_extraction asks edit of the item (its itemArgs),
 // so the read grant's member is refused.
 
-/** The actor check modes the surface cells run in (docs/update-prod.md:
- *  off, the fleet's default; warn; on). */
+/** The actor check modes the surface cells run in (docs/update-prod.md):
+ *  off, warn and on. The fleet runs on (the actor and the edit check
+ *  both); off and warn stay for a box that lowers them. */
 export type CheckMode = 'off' | 'warn' | 'on';
 export const CHECK_MODES: readonly CheckMode[] = ['off', 'warn', 'on'];
 
@@ -147,9 +150,9 @@ export const KNOWN_FAILURES: Readonly<Record<string, KnownFailure>> = {
     ]),
   ),
   ...Object.fromEntries(
-    FOLDER_EDIT_REFUSED.map((name) => [
+    FOLDER_RENAME_REFUSED.map((name) => [
       name,
-      known(S11A_6, 'You cannot change this item in your workspaces'),
+      known(S11A_6A, 'You cannot change this item in your workspaces'),
     ]),
   ),
   // The grid (SQL): none since F4.

@@ -28,9 +28,7 @@ import { CS } from '../client-sourced-rule';
 export const folder_create: BuiltinToolDef = {
   slug: 'folder_create',
   policy: {
-    matrix: {
-      none: 'a create naming no folder: it lands by the home rule (turn-create-home tests)',
-    },
+    matrix: { action: 'create', param: 'parent_path', kinds: ['branch'] },
     effect: 'write',
     spends: 'none',
     scope: 'any',
@@ -134,9 +132,7 @@ export const folder_delete: BuiltinToolDef = {
 export const file_upload: BuiltinToolDef = {
   slug: 'file_upload',
   policy: {
-    matrix: {
-      none: 'a create naming no folder: it lands by the home rule (turn-create-home tests)',
-    },
+    matrix: { action: 'create', param: 'parent_path', kinds: ['file'] },
     effect: 'write',
     spends: 'none',
     scope: 'any',
