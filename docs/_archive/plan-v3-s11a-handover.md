@@ -261,13 +261,13 @@ a8Uncovered and a8Exempt). The audit at c54b6ad4a rated the tool cells 7/10.
 
 **Pins.**
 
-| Pin | Before | After |
-| --- | --- | --- |
-| NOT_RUN | 68 (stubbed 64, peer 4) | 84 (stubbed 68, sandbox 8, peer 8) |
-| NARROWED | 198 (app data 40, Admin MCP 102, Admin turn 46, MCP Admin only 10) | 260 (app data 44, Admin turn 70, Admin MCP 126, new app home 6, MCP Admin only 14) |
-| NOT_APPLICABLE | 134 | 138 |
-| a8Uncovered | 0 | 0 |
-| a8Exempt | 111 | 105 (94 tools, 11 kinds, by name) |
+| Pin            | Before                                                             | After                                                                              |
+| -------------- | ------------------------------------------------------------------ | ---------------------------------------------------------------------------------- |
+| NOT_RUN        | 68 (stubbed 64, peer 4)                                            | 84 (stubbed 68, sandbox 8, peer 8)                                                 |
+| NARROWED       | 198 (app data 40, Admin MCP 102, Admin turn 46, MCP Admin only 10) | 260 (app data 44, Admin turn 70, Admin MCP 126, new app home 6, MCP Admin only 14) |
+| NOT_APPLICABLE | 134                                                                | 138                                                                                |
+| a8Uncovered    | 0                                                                  | 0                                                                                  |
+| a8Exempt       | 111                                                                | 105 (94 tools, 11 kinds, by name)                                                  |
 
 The cells: 1016 of 139 tools, 3842 calls over both modes, 70 to 83 s
 (process_extraction's edit gave the MCP Admin-only narrowing 12 to 14).
@@ -332,3 +332,50 @@ answer; nothing is shown about the item. generate_image's refused cells stop
 at the missing image_gen worker before the reference images are read; a
 worker fixture (fetch stays stubbed) would take them to the read.
 process_extraction: settled by the owner (S11a-8).
+
+## S11a: the rebase on v0.300.90 (2026-10-18)
+
+**Done.** feat/s11a-tool-matrix rebased on main f970ff0cf (v0.300.90), no
+conflicts: main brought the member export (files export-home.ts: a member's
+app_export, sheet_build and export_node land where the member can see it;
+process_extraction asks edit) and the S11a-7 hotfix (migration 0303: an
+app table export is its app's managers' in every check mode). Three
+findings left a8-known-failures.ts, and their cells pass as the rules their
+tools declare:
+
+- S11a-3 (2 cells): app_export by a member who reads the app is allowed
+  (`read` of the app), and the file lands in the member's create home.
+- S11a-7 (2 cells): app_table_export_set by its app's Moderator is allowed
+  (`editDraft` of the app) in warn and on; the tool left `ALLOWED_KNOWN_ONLY`
+  in a8-tool-cells.matrix.test.ts, so its allowed cell must pass.
+- S11a-8 (2 cells): process_extraction by the read grant's member is
+  refused (`edit` of the item, as its itemArgs ask now).
+
+**Known failures left** (all as before, product code, not S11a's to fix):
+P1 in warn (22 cells: a read grant's member's edit is made where only `on`
+refuses it), S11a-1 (4 cells, an accepted limit: a hidden folder path shows
+through file_create), S11a-5 (2 cells, a bug: followShares reads
+node_embeds in a member's scope after a move), S11a-6 (4 cells, the
+owner's question: a Write grant may not set a folder's indexing or rename
+it), and the 8 P1 surface cells in off and warn.
+
+**Pins.** None moved: arch:check reports nothing up or down. The tool
+cells' counts are as in round 3 (1016 cells of 139 tools; narrowed 260, not
+run 84).
+
+**The matrix** (workstation, own pg18 container on port 56013,
+max_connections=450, migrated with MANTLE_CHECK_FLOOR=keep; the test sets
+the actor and the edit check together, as every box runs them; on
+0885e3ebe): test:matrix exit 0, 4 files, 8 tests.
+
+| Cells                | Check | Pass | Known failure                            | Unexpected |
+| -------------------- | ----- | ---- | ---------------------------------------- | ---------- |
+| tool cells (1016)    | warn  | 984  | 32 (P1 22, S11a-1 4, S11a-5 2, S11a-6 4) | 0          |
+| tool cells (1016)    | on    | 1006 | 10 (S11a-1 4, S11a-5 2, S11a-6 4)        | 0          |
+| surface cells (1155) | off   | 1147 | 8 (P1)                                   | 0          |
+| surface cells (1155) | warn  | 1147 | 8 (P1)                                   | 0          |
+| surface cells (1155) | on    | 1155 | 0                                        | 0          |
+| SQL grid (9404 run)  |       | 9404 | 0                                        | 0          |
+
+**Gates** (Mac, on 0885e3ebe): typecheck 0, lint 0, format 0, docs 0,
+arch 0, web build 0, unit (no database) 0.
