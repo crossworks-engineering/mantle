@@ -560,6 +560,12 @@ runtime_role_flag() { # <raw> -> 1 or 0, as the app reads a flag (parseFlag)
   case "$rrf" in 1|true|yes|on) echo 1 ;; *) echo 0 ;; esac
 }
 ensure_runtime_role_line() {
+  # No readable .env: say so and write nothing (an append would make a
+  # .env holding this one line).
+  if [ ! -r "$STACK/.env" ]; then
+    echo "[runtime-role] no readable .env at $STACK/.env: nothing written"
+    return 1
+  fi
   if grep -Eq '^[[:space:]]*(export[[:space:]]+)?MANTLE_DB_RUNTIME_ROLE[[:space:]]*=' "$STACK/.env" 2>/dev/null; then
     echo "[runtime-role] .env names MANTLE_DB_RUNTIME_ROLE: kept as it is"
     return 0

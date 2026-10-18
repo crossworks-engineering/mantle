@@ -311,9 +311,12 @@ export function noteActorMiss(miss: ActorMiss): void {
 
 /** Write a miss row as noteActorMiss does, with no log line and no test
  *  record: the fail-open rows (plan v3.2 S4a), which fail-open.ts dedupes
- *  and which never fail a test. */
-export function writeActorMissRow(miss: ActorMiss): void {
-  missLogger?.(miss);
+ *  and which never fail a test. False when no writer is set yet (the pool
+ *  sets it when it is made). */
+export function writeActorMissRow(miss: ActorMiss): boolean {
+  if (!missLogger) return false;
+  missLogger(miss);
+  return true;
 }
 
 /** A statement with no actor bound, refused because the check is on (A2b,

@@ -38,16 +38,25 @@ scope's kind in viewer.ts), `detail` the calling file. A raw write runs when
 its query is awaited, often with no app frame on the stack; its `detail`
 names the table then (`unknown caller, table public.x`).
 
-Cost: a hit asks one map, by site, before any stack is taken. A site takes
-at most one stack a minute, so a busy branch never pays a stack per call,
-and a second caller of the same site is still found a minute later. One row
-per site and calling file in a process; the database keeps at most 100 rows
-an hour per check.
+What it does, in order: a hit first asks a map keyed by site whether that
+site took a stack in the last 60 seconds; if it did, nothing more happens
+(no stack). Otherwise the site takes one stack, which names the calling
+file, and a second map keyed by site and file says whether that pair's row
+was written in the last hour; if not, the row is handed to the writer, and
+the pair is marked only when the writer took it (a hit before the pool has
+its writer is written by a later one). So a busy branch pays at most one
+stack a minute, a second caller of the same site is found a minute later,
+and every process that still hits writes its pair again each hour. The
+database keeps at most 100 rows an hour per check.
 
 `scripts/arch-scoreboard-box.sh <ssh-alias>` prints, numbers only:
 `fail_open_misses:all` and one count per site (the distinct site and file
-pairs since `mantle_web` started, all of them when it is not there),
-`brains_without_admin_workspace`, and `env_has_runtime_role_line`. The repo
+pairs in the last 24 hours, or since the last roll began, the updater's
+`started_at`, when that is later; not since `mantle_web` started, which a
+web-only restart would reset while the api, worker and MCP processes still
+hit), a site's count is 0 only when no process hit it in that window;
+`brains_without_admin_workspace`, and `env_has_runtime_role_line` (n/a with
+no readable `.env`). The repo
 count is the pin `failOpenSites` (`scripts/arch-scoreboard.pins.json`): the
 six calls that note a hit. S4b takes it to 0.
 
@@ -64,7 +73,8 @@ throwaway database with the actor check in warn (`vitest.config.ts`).
 S4b refuses a scoped typed or raw write to a table the write role does not
 hold, unless the table's access matrix row names
 `scopedSystemWrite: '<reason>'` (`packages/db/src/access-matrix.ts`). These
-are the tables the measurement found:
+are the tables the vitest measurement found; the box counts add what it
+cannot see (below):
 
 | Table                       | Site          | Who writes it                                                                                                                          | `scopedSystemWrite` reason (proposed) |
 | --------------------------- | ------------- | -------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------- |
@@ -78,7 +88,11 @@ Measured 2026-10-18 at the S4a branch: 146 hits, all from a login actor, in
 (`pending_tool_calls`), `w7c-chat` and `a5-mcp-writes-smoke`
 (`assistant_messages`), all under `server/web/server/`. No other table.
 
-What this run cannot see, so S4b reads the box counts before it flips: the
+So the list is vitest plus the box counts. The vitest run cannot see the
 two production allows (tests and development throw there), the two
-unscoped yes (every test binds `system(test)`), and a path no test
-reaches. One fleet release with these rows in the box counts closes that.
+unscoped yes (every test binds `system(test)`), a scoped write on a path no
+test reaches, or which table a box's raw writes name. The box counts see
+every site on real traffic but give numbers only: a site with a count above
+0 is read on that box (its `detail`, the calling file or the table) before
+S4b names or refuses it. S4b flips after one fleet release with every count
+at 0 or each row named here.

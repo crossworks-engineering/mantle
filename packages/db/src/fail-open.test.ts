@@ -30,7 +30,7 @@ let rows: FailOpenRow[] = [];
 beforeEach(() => {
   resetFailOpenForTest();
   rows = [];
-  setFailOpenWriter((hit) => rows.push(hit));
+  setFailOpenWriter((hit) => rows.push(hit) > 0);
 });
 afterEach(() => {
   vi.restoreAllMocks();
@@ -61,6 +61,29 @@ describe('noteFailOpen: one row per site and calling file, the lookup before the
     noteFailOpen('scope-has-area', 'login', again);
     expect(again).toHaveBeenCalledTimes(1);
     expect(rows.map((r) => r.detail)).toEqual(['/app/lib/a.ts', '/app/lib/b.ts']);
+  });
+
+  it('the same site and file write again after an hour (the box window)', () => {
+    let now = 1_000_000;
+    vi.spyOn(Date, 'now').mockImplementation(() => now);
+    noteFailOpen('turn-exit', 'login', () => '/app/lib/a.ts');
+    now += 30 * 60_000;
+    noteFailOpen('turn-exit', 'login', () => '/app/lib/a.ts');
+    expect(rows).toHaveLength(1);
+    now += 31 * 60_000;
+    noteFailOpen('turn-exit', 'login', () => '/app/lib/a.ts');
+    expect(rows.map((r) => r.detail)).toEqual(['/app/lib/a.ts', '/app/lib/a.ts']);
+  });
+
+  it('a hit no writer took is not marked: a later hit writes it', () => {
+    let now = 1_000_000;
+    vi.spyOn(Date, 'now').mockImplementation(() => now);
+    setFailOpenWriter(() => false); // before the pool sets its writer
+    noteFailOpen('system-db', 'login', () => '/app/lib/a.ts');
+    setFailOpenWriter((hit) => rows.push(hit) > 0);
+    now += 61_000;
+    noteFailOpen('system-db', 'login', () => '/app/lib/a.ts');
+    expect(rows).toEqual([expect.objectContaining({ detail: '/app/lib/a.ts' })]);
   });
 
   it('each site keeps its own lookup', () => {

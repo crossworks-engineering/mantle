@@ -8,8 +8,9 @@
  * Cost: a hit asks one map, by site, before any stack is taken; a site
  * takes at most one stack a minute, so a busy branch never pays a stack
  * per call and a second caller of the same site is still found later. The
- * stack gives the calling file; one row per site and calling file in a
- * process. Changes no answer: it only writes rows.
+ * stack gives the calling file; one row per site and calling file an
+ * hour in a process, marked only once a writer took it. Changes no answer:
+ * it only writes rows.
  *
  * Imports nothing from this package (viewer.ts and client.ts both call it;
  * fail-open-sites.ts holds what makes a client.ts branch a hit).
@@ -34,15 +35,20 @@ export type FailOpenRow = { source: 'ts'; check: string; actor: string; detail: 
 
 /** How long a site waits after a stack before it takes the next one. */
 const STACK_EVERY_MS = 60_000;
+/** How long a site and file wait before their row is written again, so a
+ *  process that keeps hitting keeps showing in the box count's window (as
+ *  actor.ts writes an actor miss at most once an hour per key). */
+const ROW_EVERY_MS = 3_600_000;
 
 const lastStack = new Map<FailOpenSite, number>();
-const rowKeys = new Set<string>();
-let rowWriter: ((row: FailOpenRow) => void) | null = null;
+const rowWritten = new Map<string, number>();
+let rowWriter: ((row: FailOpenRow) => boolean) | null = null;
 const testHits: { site: FailOpenSite; actor: string; table?: string }[] = [];
 
 /** fail-open-sites.ts hands the writer of miss rows here (actor.ts's, the
- *  row written later on another connection); tests hand their own. */
-export function setFailOpenWriter(fn: (row: FailOpenRow) => void): void {
+ *  row written later on another connection); tests hand their own. It
+ *  answers whether it took the row (false before the pool has a writer). */
+export function setFailOpenWriter(fn: (row: FailOpenRow) => boolean): void {
   rowWriter = fn;
 }
 
@@ -69,10 +75,13 @@ export function noteFailOpen(
   // the stack: its table names it then.
   const file = caller() ?? (table ? `unknown caller, table ${table}` : 'unknown caller');
   const key = `${site}\0${file}`;
-  if (rowKeys.has(key)) return;
-  if (rowKeys.size > 5_000) rowKeys.clear();
-  rowKeys.add(key);
-  rowWriter?.({ source: 'ts', check: `fail-open:${site}`, actor, detail: file });
+  const written = rowWritten.get(key);
+  if (written !== undefined && now - written < ROW_EVERY_MS) return;
+  // Marked only when a writer took the row: a hit before the pool exists
+  // is written by a later one.
+  if (!rowWriter?.({ source: 'ts', check: `fail-open:${site}`, actor, detail: file })) return;
+  if (rowWritten.size > 5_000) rowWritten.clear();
+  rowWritten.set(key, now);
 }
 
 /** Tests: every hit since the last call (site, actor kind, table). */
@@ -83,6 +92,6 @@ export function takeFailOpenHits(): { site: FailOpenSite; actor: string; table?:
 /** Tests: forget the lookups and the rows written (a fresh process). */
 export function resetFailOpenForTest(): void {
   lastStack.clear();
-  rowKeys.clear();
+  rowWritten.clear();
   testHits.length = 0;
 }

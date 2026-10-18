@@ -272,6 +272,29 @@ T="$WORK/rrl-x"; fake_stack "$T"; printf 'export MANTLE_DB_RUNTIME_ROLE="yes"\n'
 rrl "$T/stack" 'PATH=/bin\n'
 check "an export or quoted line is a line: kept" same "$T/stack/.env" "$T/env.before"
 
+T="$WORK/rrl-crlf"; fake_stack "$T"; printf 'MANTLE_DB_RUNTIME_ROLE=1\r\n' >> "$T/stack/.env"; cp "$T/stack/.env" "$T/env.before"
+rrl "$T/stack" 'PATH=/bin\n'
+check "a CRLF line is a line: kept" same "$T/stack/.env" "$T/env.before"
+
+T="$WORK/rrl-nonl"; fake_stack "$T"; printf 'MANTLE_IMAGE_NAMESPACE=test\nSESSION_SECRET=s' > "$T/stack/.env"
+rrl "$T/stack" 'MANTLE_DB_RUNTIME_ROLE=1\n'
+check "no trailing newline: the last line stays whole" grep -qx 'SESSION_SECRET=s' "$T/stack/.env"
+check "no trailing newline: the new line is its own" grep -qx 'MANTLE_DB_RUNTIME_ROLE=1' "$T/stack/.env"
+
+T="$WORK/rrl-comment"; fake_stack "$T"; printf '# MANTLE_DB_RUNTIME_ROLE=1\n' >> "$T/stack/.env"
+rrl "$T/stack" 'PATH=/bin\n'
+check "a commented line is no line: the running value (unset, 0) appended" grep -qx 'MANTLE_DB_RUNTIME_ROLE=0' "$T/stack/.env"
+check "a commented line is no line: the comment kept" grep -qx '# MANTLE_DB_RUNTIME_ROLE=1' "$T/stack/.env"
+
+T="$WORK/rrl-dup"; fake_stack "$T"; printf 'MANTLE_DB_RUNTIME_ROLE=0\nMANTLE_DB_RUNTIME_ROLE=1\n' >> "$T/stack/.env"; cp "$T/stack/.env" "$T/env.before"
+rrl "$T/stack" 'MANTLE_DB_RUNTIME_ROLE=1\n'
+check "duplicate lines: kept as they are" same "$T/stack/.env" "$T/env.before"
+
+T="$WORK/rrl-noenv"; fake_stack "$T"; rm -f "$T/stack/.env"
+rrl "$T/stack" 'MANTLE_DB_RUNTIME_ROLE=1\n'
+check "no .env: none created" test ! -e "$T/stack/.env"
+check "no .env: non-zero, said" sh -c "grep -q 'no readable .env' '$T/rrl.out' && grep -q '^exit 1' '$T/rrl.out'"
+
 T="$WORK/rrl-on"; fake_stack "$T"
 rrl "$T/stack" 'MANTLE_DB_RUNTIME_ROLE= On \n'
 check "the value as the app reads it: ' On ' is 1" grep -qx 'MANTLE_DB_RUNTIME_ROLE=1' "$T/stack/.env"
