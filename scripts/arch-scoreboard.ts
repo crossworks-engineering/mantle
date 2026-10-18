@@ -71,9 +71,6 @@ const LABELS: Record<string, string> = {
     'SQL functions the migrations leave that write the four workspace tables (= the live catalog)',
   setAssistantCopies: 'copies of "set the assistant of a workspace" (code and SQL)',
   legacyPrecheckUndated: 'legacy tool item pre-checks with no owner or no end date',
-  a8Uncovered:
-    'A8 gaps: registry kinds outside the grid and not exempt, tool policies with no matrix declaration',
-  a8Exempt: 'A8 exemptions (A8_EXEMPT entries; capped at the pin, a new one needs review)',
   rawWriteAllowlist:
     'raw write SQL allowlist entries (eslint-rules/raw-write-allowlist.mjs; capped at the pin)',
   routeBodyReadFiles: 'route files reading the request body directly (A10 part 2)',

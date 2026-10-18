@@ -104,10 +104,23 @@ spend); the owner may want change there.
 
 ## S11a handover (the A8 tool cells, round 2, 2026-10-18)
 
-Rebased onto main a77282728 (v0.300.84, D1 merged): round 1 and round 2
+Rebased onto main 8b3099467 (v0.300.85, D1 and P1a merged): round 1 and round 2
 squashed into one commit on the new base; the S11a notes and handovers
 moved here from the spec; the spec carries the rule in sections 12 and 13
 at 350 lines (actorsMdLines unchanged).
+
+**One A8 measurement.** P1a pinned a8Uncovered 207 and a8Exempt 0 from a
+static text count in arch-counts (eslint-rules/rights-counts.mjs: tool
+policies with no `matrix` key, registry kinds not named in a literal
+A8_EXEMPT). On this branch that count reads 11 and 0: it cannot see the
+100 `none` declarations as exemptions nor A8_EXEMPT, which is built from
+the registry by class. Kept: S11a's measure (server/web/server/a8-coverage.test.ts,
+plain vitest in CI), which runs the cell generator itself over every tool's
+policy and schema and the kinds registry: a8Uncovered 0, a8Exempt 111.
+Dropped: P1a's duplicate (its two numbers, the helpers that made them and
+their tests, its two labels in scripts/arch-scoreboard.ts, its pins and
+note); arch-scoreboard.ts keeps both sides' other keys and TESTED_PINS
+keeps the two pins on a re-pin.
 
 **Done.**
 

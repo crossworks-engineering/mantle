@@ -12,15 +12,12 @@ import { countedFiles, readRepoFile } from './arch-counts.mjs';
 // @ts-expect-error: plain-JS module, no types shipped.
 import { asSystemExits } from './as-system-exits.mjs';
 import {
-  a8ExemptKeys,
-  kindsOutsideGrid,
   legacyPrecheckUndated,
   migrationFunctions,
   readsAreaLimits,
   requestSystemExits,
   rightsCounts,
   scopeHoldsAdminCalls,
-  toolPoliciesUncovered,
   tsAdminRuleSql,
   tsSetAssistantDefs,
   workspaceTableRawWrites,
@@ -373,36 +370,6 @@ describe('legacyPrecheckUndated', () => {
         c: { legacyItemPrecheck: { param: 'id' } },
       `),
     ).toBe(2);
-  });
-});
-
-describe('A8 coverage', () => {
-  it('counts write policies and item reads with no matrix declaration', () => {
-    const text = `
-      a = { slug: 'a_b', policy: { effect: 'write', scope: 'any' } };
-      b = { slug: 'b_c', policy: { effect: 'write', matrix: { none: 'no item' } } };
-      c = { slug: 'c_d', policy: { effect: 'read', itemArgs: [{ param: 'id' }] } };
-      d = { slug: 'd_e', policy: { effect: 'read', scope: 'any' } };
-      type P = { effect: 'read' | 'write' };
-    `;
-    expect(toolPoliciesUncovered(text)).toBe(2);
-  });
-
-  it('reads the A8 exemption keys, none when there is no list', () => {
-    expect(a8ExemptKeys('const x = 1;')).toBeNull();
-    expect(
-      a8ExemptKeys(`export const A8_EXEMPT: Record<string, string> = {
-        'kind:email': 'admin only, no member right',
-        conversation: 'not an item',
-      };`),
-    ).toEqual(['kind:email', 'conversation']);
-  });
-
-  it('finds the registry kinds the grid leaves out', () => {
-    const kinds = kindsOutsideGrid(ROOT) as string[];
-    expect(kinds.length).toBeGreaterThan(0);
-    expect(kinds).not.toContain('page');
-    expect(kinds).toContain('email');
   });
 });
 

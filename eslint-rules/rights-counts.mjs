@@ -15,10 +15,9 @@
  *    functions the migrations leave that write them;
  *  - the copies of "set the assistant of a workspace";
  *  - tool item pre-checks kept as legacy entries with no owner or end date;
- *  - A8 coverage: the registry kinds outside the grid and not exempt, and
- *    the tool policies (a write, or a read taking an item) with no matrix
- *    declaration; the A8 exemptions and the raw write SQL allowlist, each
- *    capped at its pin.
+ *  - the raw write SQL allowlist, capped at its pin. (The A8 coverage,
+ *    a8Uncovered and a8Exempt, is measured by the generator itself:
+ *    server/web/server/a8-coverage.test.ts, S11a.)
  *
  * The SQL functions are read from the migrations in journal order (create,
  * replace, rename, drop, security definer), so the count needs no
@@ -389,7 +388,7 @@ export function isSetAssistantFn(name) {
   return /set_assistant/i.test(name);
 }
 
-// ── tool pre-checks and A8 coverage ─────────────────────────────────────────
+// ── tool pre-checks ────────────────────────────────────────────────────────
 
 /** Legacy tool item pre-checks in `text` with no owner or no end date. */
 export function legacyPrecheckUndated(text) {
@@ -400,81 +399,6 @@ export function legacyPrecheckUndated(text) {
     if (!/\buntil\s*:/.test(block) || !/\bowner\s*:/.test(block)) n += 1;
   }
   return n;
-}
-
-/** Files holding tool definitions whose policies A8 covers. The dynamic
- *  tool runtime policies (runtime-policy.ts) and the gate's job policies
- *  are not builtins. */
-export function toolPolicySwept(path) {
-  return (
-    (path.startsWith('packages/tools/src/') || path.startsWith('packages/runtime/src/')) &&
-    path !== 'packages/tools/src/runtime-policy.ts' &&
-    path !== 'packages/tools/src/tool-policy.ts'
-  );
-}
-
-/** The object literal around `at` (from its `{`), or null. */
-function enclosingObject(code, at) {
-  let depth = 0;
-  for (let i = at; i >= 0; i -= 1) {
-    const c = code[i];
-    if (c === '}') depth += 1;
-    else if (c === '{') {
-      if (depth === 0) return balanced(code, i);
-      depth -= 1;
-    }
-  }
-  return null;
-}
-
-/** Tool policies in `text` that A8 must cover (a write, or a read taking
- *  an item: itemArgs) and that declare no `matrix`. */
-export function toolPoliciesUncovered(text) {
-  const code = stripComments(text);
-  let n = 0;
-  for (const m of code.matchAll(/\beffect\s*:\s*'(read|write)'(?=\s*[,}])/g)) {
-    const obj = enclosingObject(code, m.index);
-    if (!obj) continue;
-    if (m[1] === 'read' && !/\bitemArgs\s*:/.test(obj)) continue;
-    if (!/\bmatrix\s*:/.test(obj)) n += 1;
-  }
-  return n;
-}
-
-/** The keys of the A8 exemption list in `text` (`A8_EXEMPT`, an object of
- *  key: reason), or null when the file has none. */
-export function a8ExemptKeys(text) {
-  const code = stripComments(text);
-  const at = code.search(/\bconst\s+A8_EXEMPT\b/);
-  if (at < 0) return null;
-  const open = code.indexOf('{', code.indexOf('=', at));
-  if (open < 0) return [];
-  const block = balanced(code, open).slice(1, -1);
-  const keys = [];
-  let depth = 0;
-  let start = 0;
-  for (let i = 0; i <= block.length; i += 1) {
-    const c = block[i];
-    if (c === '{' || c === '[' || c === '(') depth += 1;
-    if (c === '}' || c === ']' || c === ')') depth -= 1;
-    if (i === block.length || (c === ',' && depth === 0)) {
-      const k = /^\s*(?:'([^']+)'|"([^"]+)"|([\w$]+))\s*:/.exec(block.slice(start, i));
-      if (k) keys.push(k[1] ?? k[2] ?? k[3]);
-      start = i + 1;
-    }
-  }
-  return keys;
-}
-
-/** The registry kinds the A8 grid leaves out (class other than
- *  'workspace'), from packages/client-types/src/kinds.ts. */
-export function kindsOutsideGrid(root) {
-  const text = readRepoFile(root, 'packages/client-types/src/kinds.ts') ?? '';
-  const out = [];
-  for (const m of text.matchAll(/^ {2}(\w+): \{\n {4}class: '(\w+)'/gm)) {
-    if (m[2] !== 'workspace') out.push(m[1]);
-  }
-  return out;
 }
 
 /** The entries of the raw write SQL allowlist (0 until the list is made). */
@@ -496,22 +420,15 @@ export function rightsCounts(root, texts) {
   let rawWrites = 0;
   let tsSetAssistant = 0;
   let undated = 0;
-  let toolsUncovered = 0;
-  const exempt = [];
   for (const { path, text } of texts) {
     holdsAdmin += scopeHoldsAdminCalls(text);
     if (!isTestSupport(path)) tsAreaSql += tsAdminRuleSql(text);
     if (!isTestSupport(path)) rawWrites += workspaceTableRawWrites(text);
     tsSetAssistant += tsSetAssistantDefs(text);
     undated += legacyPrecheckUndated(text);
-    if (toolPolicySwept(path)) toolsUncovered += toolPoliciesUncovered(text);
-    const keys = a8ExemptKeys(text);
-    if (keys) exempt.push(...keys);
   }
   const fns = migrationFunctions(root);
   const writers = fns.filter((f) => writesWorkspaceTable(f.body));
-  const exemptKinds = new Set(exempt.map((k) => k.replace(/^kind:/, '')));
-  const kindsUncovered = kindsOutsideGrid(root).filter((k) => !exemptKinds.has(k)).length;
   const exitTotal = Object.values(exits).reduce((a, b) => a + b, 0);
   const known = (exits.area ?? 0) + (exits['login-self'] ?? 0) + (exits['admin-write'] ?? 0);
   return {
@@ -527,8 +444,6 @@ export function rightsCounts(root, texts) {
       workspaceTableWriterFns: writers.length,
       setAssistantCopies: tsSetAssistant + fns.filter((f) => isSetAssistantFn(f.name)).length,
       legacyPrecheckUndated: undated,
-      a8Uncovered: kindsUncovered + toolsUncovered,
-      a8Exempt: exempt.length,
       rawWriteAllowlist: rawWriteAllowlistEntries(root),
     },
     detail: {
