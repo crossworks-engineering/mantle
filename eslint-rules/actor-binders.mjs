@@ -73,9 +73,10 @@ export const ACTOR_BINDER_PINS = {
   'server/web/lib/journey.ts': 1,
   'server/web/lib/realtime.ts': 2,
   'server/web/lib/runs/execute-item.ts': 1,
-  // A7: the workspaces step (awaited, the boot refuses a brain off
-  // workspaces) and the snapshot copies run as two binder calls.
-  'server/web/server/main.ts': 4,
+  // A7: the snapshot copies, the manifest reconcile and the app table
+  // exports run as binder calls; the workspaces step is systemWork since
+  // plan v3.2 S2a a2 (its assistant attach is workspace system work, 0305).
+  'server/web/server/main.ts': 3,
   // The gate's own slot, and a page's (the /s page, a render page: A4 step
   // 2, moved here from server/pages/share.tsx and print.ts).
   'server/web/server/middleware/gate.ts': 2,
