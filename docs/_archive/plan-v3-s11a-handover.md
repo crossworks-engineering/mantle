@@ -431,3 +431,21 @@ warn).
 NOT_APPLICABLE 138 to 162 (folder_create and file_upload are MCP only:
 their 12 cells each have no turn, over both modes). NARROWED and NOT_RUN
 unchanged. The cells: 1044 of 142 tools (1016 of 139 before).
+
+**The matrix** (workstation, own pg18 container on port 56014,
+max_connections=450, migrated with MANTLE_CHECK_FLOOR=keep; both checks
+set together per mode; on ae19ae29a, rebased on main 6ad35e465, v0.300.91;
+the same counts on main f970ff0cf before the rebase):
+test:matrix exit 0, 4 files, 8 tests.
+
+| Cells                | Check | Pass | Known failure                             | Unexpected |
+| -------------------- | ----- | ---- | ----------------------------------------- | ---------- |
+| tool cells (1044)    | warn  | 1014 | 30 (P1 22, S11a-1 4, S11a-5 2, S11a-6a 2) | 0          |
+| tool cells (1044)    | on    | 1036 | 8 (S11a-1 4, S11a-5 2, S11a-6a 2)         | 0          |
+| surface cells (1155) | off   | 1147 | 8 (P1)                                    | 0          |
+| surface cells (1155) | warn  | 1147 | 8 (P1)                                    | 0          |
+| surface cells (1155) | on    | 1155 | 0                                         | 0          |
+| SQL grid (9404 run)  |       | 9404 | 0                                         | 0          |
+
+**Gates** (Mac, on ae19ae29a, rebased on v0.300.91): typecheck 0, lint 0, format 0, docs 0,
+arch 0, web build 0, unit (no database) 0.
