@@ -112,7 +112,9 @@ On 15e1765d6 (the code is 51710be97; the docs and pins commit on top):
 | `pnpm -C server/web build`                          | 0                              |
 | `pnpm exec vitest run server packages eslint-rules` | 0 (11022 passed, 2658 skipped) |
 
-CI: CI_PLACEHOLDER
+CI on 4a7dfe1d1 (the code, the pins and this handover with its gates): success,
+https://github.com/crossworks-engineering/mantle/actions/runs/39154830485.
+The commit on top adds only this line.
 
 ### Open items
 
