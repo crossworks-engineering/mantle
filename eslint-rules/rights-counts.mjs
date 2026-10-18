@@ -350,11 +350,33 @@ export function writesWorkspaceTable(body) {
   return new RegExp(WORKSPACE_TABLE_WRITE.source, 'i').test(body);
 }
 
-/** Whether a function body decides an Admin area itself (reads the
- *  `areas` limits of a workspace user): `-> 'areas'`, `->> 'areas'`, the
- *  subscript `['areas']`, or a path `#> '{areas}'`, `#>> '{areas,x}'`. */
+/** The `areas` key as a SQL string: `'areas'` or the escape form
+ *  `E'areas'`. */
+const AREAS_KEY = String.raw`(?:\bE)?'areas'`;
+
+/** The direct reads of the `areas` key: `-> 'areas'`, `->> 'areas'`, the
+ *  subscript `['areas']`, a path `#> '{areas}'`, `#>> '{areas,x}'`, or an
+ *  array path `#> array['areas']`, `#>> ARRAY['areas', 'x']`. */
+const AREAS_READ = new RegExp(
+  [
+    String.raw`->>?\s*${AREAS_KEY}`,
+    String.raw`\[\s*${AREAS_KEY}\s*\]`,
+    String.raw`#>>?\s*(?:\bE)?'\{\s*"?areas"?\s*[,}]`,
+    String.raw`\barray\s*\[\s*${AREAS_KEY}\s*[,\]]`,
+  ].join('|'),
+  'i',
+);
+
+/** Whether a function body or SQL text decides an Admin area itself (reads
+ *  the `areas` limits of a workspace user): AREAS_READ, or
+ *  `json(b)_extract_path(_text)(x, 'areas', ...)`. */
 export function readsAreaLimits(body) {
-  return /->>?\s*'areas'|\[\s*'areas'\s*\]|#>>?\s*'\{\s*"?areas"?\s*[,}]/i.test(body);
+  if (AREAS_READ.test(body)) return true;
+  for (const m of body.matchAll(/\bjsonb?_extract_path(?:_text)?\s*\(/gi)) {
+    const args = balanced(body, m.index + m[0].length - 1);
+    if (new RegExp(AREAS_KEY, 'i').test(args)) return true;
+  }
+  return false;
 }
 
 /** Whether a SQL function is a copy of "set the assistant of a workspace".

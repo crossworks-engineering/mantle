@@ -9,6 +9,8 @@ import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
 // @ts-expect-error: plain-JS module, no types shipped.
 import { countedFiles, readRepoFile } from './arch-counts.mjs';
+// @ts-expect-error: plain-JS module, no types shipped.
+import { asSystemExits } from './as-system-exits.mjs';
 import {
   a8ExemptKeys,
   kindsOutsideGrid,
@@ -115,6 +117,120 @@ describe('requestSystemExits', () => {
   });
 });
 
+describe('requestSystemExits: member calls and aliases (P1a fix round 2)', () => {
+  const exits = (...texts: string[]) =>
+    requestSystemExits(texts.map((text, i) => ({ path: `f${i}.ts`, text }))) as {
+      byReason: Record<string, number>;
+      problems: string[];
+    };
+
+  it('counts a member call through a namespace import, optional and subscript', () => {
+    const text = `
+      import * as db from '@mantle/db';
+      db.noteRequestSystem('area');
+      db?.noteRequestSystem('login-self');
+      db['noteRequestSystem']('admin-write');
+    `;
+    expect(exits(text)).toEqual({
+      byReason: { area: 1, 'login-self': 1, 'admin-write': 1 },
+      problems: [],
+    });
+  });
+
+  it('follows a wrapper made of a member call', () => {
+    const text = `
+      import * as db from '@mantle/db';
+      function noteSystem(reason: R) { db.noteRequestSystem(reason); }
+      noteSystem('area');
+    `;
+    expect(exits(text)).toEqual({ byReason: { area: 1 }, problems: [] });
+  });
+
+  it('refuses a renamed import of the call', () => {
+    const text = `
+      import { noteRequestSystem as n } from '@mantle/db';
+      n('area');
+    `;
+    expect(exits(text).problems).toEqual([
+      'f0.ts renames noteRequestSystem (as n): call it by its name',
+    ]);
+  });
+
+  it('refuses an alias of the call, bare or from a namespace', () => {
+    expect(exits(`const n = noteRequestSystem; n('area');`).problems).toEqual([
+      'f0.ts renames noteRequestSystem (n =): call it by its name',
+    ]);
+    expect(
+      exits(`import * as db from '@mantle/db'; const n = db.noteRequestSystem; n('area');`)
+        .problems,
+    ).toEqual(['f0.ts renames noteRequestSystem (n =): call it by its name']);
+    expect(
+      exits(`import * as db from '@mantle/db'; const { noteRequestSystem: n } = db; n('area');`)
+        .problems,
+    ).toEqual(['f0.ts renames noteRequestSystem (: n): call it by its name']);
+    expect(exits(`let n; n = noteRequestSystem; n('area');`).problems).toEqual([
+      'f0.ts renames noteRequestSystem (n =): call it by its name',
+    ]);
+    expect(exits(`const api = { leave: noteRequestSystem }; api.leave('area');`).problems).toEqual([
+      'f0.ts renames noteRequestSystem (leave:): call it by its name',
+    ]);
+  });
+
+  it('refuses a renamed import or an alias of a followed wrapper', () => {
+    const lib = `export function noteOther(why: W) { noteRequestSystem(why); }`;
+    const renamedImport = `import { noteOther as o } from './lib'; o('area');`;
+    expect(exits(lib, renamedImport).problems).toEqual([
+      'f1.ts renames the noteRequestSystem holder noteOther (as o): use its name',
+    ]);
+    const aliasElsewhere = `import { noteOther } from './lib'; const o = noteOther; o('area');`;
+    expect(exits(lib, aliasElsewhere).problems).toEqual([
+      'f1.ts renames the noteRequestSystem holder noteOther (o =): use its name',
+    ]);
+    const aliasHome = `
+      function noteSystem(reason: R) { noteRequestSystem(reason); }
+      const s = noteSystem;
+      s('area');
+    `;
+    expect(exits(aliasHome).problems).toEqual([
+      'f0.ts renames the noteRequestSystem holder noteSystem (s =): use its name',
+    ]);
+    // The same name in a file that does not import it is another function.
+    const other = `function noteOther(x: number) { return x; } const o = noteOther;`;
+    expect(exits(lib, other).problems).toEqual([]);
+  });
+
+  it('refuses a wrapper whose sites pass different parameters on', () => {
+    const text = `
+      function f(a: R, b: R, c: boolean) {
+        if (c) noteRequestSystem(a);
+        else noteRequestSystem(b);
+      }
+      f('area', 'login-self', true);
+    `;
+    expect(exits(text).problems).toEqual([
+      'f0.ts f passes different parameters on to noteRequestSystem: pass one reason parameter',
+    ]);
+    const same = `
+      function g(a: R, c: boolean) {
+        if (c) noteRequestSystem(a);
+        else noteRequestSystem(a);
+      }
+      g('area', true);
+    `;
+    expect(exits(same).problems).toEqual([]);
+  });
+
+  it('counts an asSystem member call as the site regex does', () => {
+    const r = asSystemExits([
+      {
+        path: 'f0.ts',
+        text: `import * as m from '@mantle/db'; m.asSystem(() => 1, 'test');`,
+      },
+    ]) as { byReason: Record<string, number>; problems: string[] };
+    expect(r).toMatchObject({ byReason: { test: 1 }, problems: [] });
+  });
+});
+
 describe('scopeHoldsAdminCalls', () => {
   it('counts calls, not the definition or a comment', () => {
     const text = `
@@ -176,6 +292,31 @@ describe('workspace table writes', () => {
     expect(readsAreaLimits('select u.limits #> \'{"areas"}\'')).toBe(true);
     expect(readsAreaLimits("select u.limits ->> 'areas_seen'")).toBe(false);
     expect(readsAreaLimits("select u.limits #>> '{areasx}'")).toBe(false);
+  });
+
+  it("reads the 'areas' limits through extract_path, an array path and E'' (fix round 2)", () => {
+    expect(readsAreaLimits("select jsonb_extract_path(u.limits, 'areas')")).toBe(true);
+    expect(
+      readsAreaLimits("select jsonb_extract_path_text(coalesce(u.limits, '{}'), 'areas', p_area)"),
+    ).toBe(true);
+    expect(readsAreaLimits("select JSON_EXTRACT_PATH_TEXT(u.limits, E'areas')")).toBe(true);
+    expect(readsAreaLimits("select u.limits #>> array['areas', p_area]")).toBe(true);
+    expect(readsAreaLimits("select u.limits #> ARRAY[E'areas']")).toBe(true);
+    expect(readsAreaLimits("select u.limits -> E'areas' ->> p_area")).toBe(true);
+    expect(readsAreaLimits("select u.limits['areas']")).toBe(true);
+    expect(readsAreaLimits("select jsonb_extract_path(u.limits, 'areas_seen')")).toBe(false);
+    expect(readsAreaLimits("select jsonb_extract_path(u.limits, 'x'), 'areas' as label")).toBe(
+      false,
+    );
+    expect(readsAreaLimits("select array['areas_seen']")).toBe(false);
+    // In TypeScript SQL text, the same forms are an Admin area rule.
+    expect(
+      tsAdminRuleSql(
+        "const q = sql`select jsonb_extract_path_text(wu.limits, ${k}, 'areas') from x`;",
+      ),
+    ).toBe(1);
+    expect(tsAdminRuleSql("const q = sql`select wu.limits #>> array['areas', ${a}]`;")).toBe(1);
+    expect(tsAdminRuleSql("const q = sql`select wu.limits -> E'areas'`;")).toBe(1);
   });
 
   it('counts the TypeScript copies of set-the-assistant', () => {
@@ -270,7 +411,14 @@ describe('the repo', () => {
     path,
     text: readRepoFile(ROOT, path) as string,
   }));
-  const { numbers } = rightsCounts(ROOT, texts) as { numbers: Record<string, number> };
+  const { numbers, detail } = rightsCounts(ROOT, texts) as {
+    numbers: Record<string, number>;
+    detail: { requestSystemExitProblems: string[] };
+  };
+
+  it('follows every request system exit (no renamed call or wrapper, no wrapper chain)', () => {
+    expect(detail.requestSystemExitProblems).toEqual([]);
+  });
 
   it('reads every request system exit reason', () => {
     expect(numbers.requestSystemExits_other).toBe(0);

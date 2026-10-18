@@ -33,6 +33,14 @@
  * a holder that passes a parameter on as the reason (a wrapper) is
  * followed to its uses, each use with the reason it passes. One engine
  * follows wrappers for both counts.
+ *
+ * A call is the bare name or a member of that name (`db.asSystem(...)`
+ * through a namespace import), as the per-file site regexes read it. The
+ * call, or a followed holder, under another name (a renamed import, a
+ * renaming destructure, `const n = call`, `{ n: call }`) is a problem: its
+ * calls would count 0. So is a wrapper whose sites pass different
+ * parameters on (its uses are read at one). `pnpm arch:check` fails on any
+ * problem.
  */
 import ts from 'typescript';
 
@@ -86,6 +94,37 @@ function paramIndex(fn, name) {
   return (fn?.parameters ?? []).findIndex((p) => ts.isIdentifier(p.name) && p.name.text === name);
 }
 
+/** Strip parentheses, casts and non-null marks off an expression. */
+function unwrap(e) {
+  while (
+    e &&
+    (ts.isParenthesizedExpression(e) ||
+      ts.isAsExpression(e) ||
+      ts.isNonNullExpression(e) ||
+      ts.isTypeAssertionExpression?.(e) ||
+      ts.isSatisfiesExpression?.(e))
+  ) {
+    e = e.expression;
+  }
+  return e;
+}
+
+/** Whether expression `e` names `name`: the bare name (when `bareName`), or
+ *  a member of that name (`x.name`, `x?.name`, `x['name']`, when
+ *  `member`). */
+function namesIt(e, name, { bareName = true, member = true } = {}) {
+  e = unwrap(e);
+  if (!e) return false;
+  if (ts.isIdentifier(e)) return bareName && e.text === name;
+  if (ts.isPropertyAccessExpression(e)) return member && e.name.text === name;
+  if (ts.isElementAccessExpression(e)) {
+    return (
+      member && ts.isStringLiteralLike(e.argumentExpression) && e.argumentExpression.text === name
+    );
+  }
+  return false;
+}
+
 /** The holders of the calls of `call` (default asSystem) in one file:
  *  `{ name, kind, exported, sites, reasons, siteList }`, name null for the
  *  sites in no named function (each counts once). `siteList` holds each
@@ -107,7 +146,10 @@ export function asSystemHolders(path, text, call = 'asSystem') {
     ) {
       for (const e of n.exportClause.elements) exportedLater.add((e.propertyName ?? e.name).text);
     }
-    if (ts.isCallExpression(n) && ts.isIdentifier(n.expression) && n.expression.text === call) {
+    // A call of the bare name or of a member of that name (`db.call(...)`
+    // through a namespace import, `x?.call(...)`, `x['call'](...)`), as the
+    // per-file site regexes (arch-counts.mjs) read `x.asSystem(` too.
+    if (ts.isCallExpression(n) && namesIt(n.expression, call)) {
       let h = null;
       let fn = null;
       for (let p = n.parent; p && !h; p = p.parent) {
@@ -216,19 +258,26 @@ function bindsImported(sf, name) {
   return found;
 }
 
-/** A renaming import or export of `name` in `sf` (`{ name as other }`), or
- *  null: a renamed holder's uses would not be found by its name. */
-function aliasOf(sf, name) {
-  let found = null;
+/**
+ * The aliases of `name` in `sf`, each as written (`as g`, `: g`, `g =`):
+ * its calls under another name would not be found by its name. A renaming
+ * import or export (`{ name as g }`), a renaming destructure
+ * (`{ name: g } = ...`), and a variable, assignment or object property
+ * holding it under another name (`const g = name`, `g = db.name`,
+ * `{ g: name }`). `bareName`: whether the bare name is the one meant here
+ * (its own file, or a file importing it); `member`: whether `x.name` is.
+ */
+function aliasesOf(sf, name, { bareName = true, member = true } = {}) {
+  const found = [];
+  const holds = (e) => namesIt(e, name, { bareName, member });
   const visit = (node) => {
-    if (found) return;
     if (
       (ts.isImportSpecifier(node) || ts.isExportSpecifier(node)) &&
       node.propertyName &&
       node.propertyName.text === name &&
       node.name.text !== name
     ) {
-      found = `as ${node.name.text}`;
+      found.push(`as ${node.name.text}`);
     } else if (
       ts.isBindingElement(node) &&
       node.propertyName &&
@@ -237,8 +286,30 @@ function aliasOf(sf, name) {
       ts.isIdentifier(node.name) &&
       node.name.text !== name
     ) {
-      found = `: ${node.name.text}`;
-    } else ts.forEachChild(node, visit);
+      found.push(`: ${node.name.text}`);
+    } else if (
+      ts.isVariableDeclaration(node) &&
+      ts.isIdentifier(node.name) &&
+      node.name.text !== name &&
+      node.initializer &&
+      holds(node.initializer)
+    ) {
+      found.push(`${node.name.text} =`);
+    } else if (
+      ts.isBinaryExpression(node) &&
+      node.operatorToken.kind === ts.SyntaxKind.EqualsToken &&
+      holds(node.right) &&
+      !namesIt(node.left, name)
+    ) {
+      found.push(`${node.left.getText(sf)} =`);
+    } else if (
+      ts.isPropertyAssignment(node) &&
+      !(ts.isIdentifier(node.name) && node.name.text === name) &&
+      holds(node.initializer)
+    ) {
+      found.push(`${node.name.getText(sf)}:`);
+    }
+    ts.forEachChild(node, visit);
   };
   visit(sf);
   return found;
@@ -277,12 +348,29 @@ export function asSystemExits(files, { call = 'asSystem', follow = 'all' } = {})
     for (const h of asSystemHolders(f.path, f.text, call)) holders.push({ ...h, path: f.path });
   }
   const problems = holderProblems(holders, call);
+  // The call itself under another name (`import { call as n }`,
+  // `const n = call`, `const n = db.call`): its calls would count 0.
+  const callWord = new RegExp(`\\b${call}\\b`);
+  for (const f of files) {
+    if (!callWord.test(f.text)) continue;
+    for (const alias of aliasesOf(ast(f), call)) {
+      problems.push(`${f.path} renames ${call} (${alias}): call it by its name`);
+    }
+  }
   for (const h of holders) {
     const forwarding = h.siteList.filter((x) => x.forward >= 0);
     const followed = follow === 'all' ? h.siteList : forwarding;
     // In 'forwarders', a site that decides its own reason is an exit.
     if (follow !== 'all') {
       for (const x of h.siteList) if (x.forward < 0) add(h.path, 1, x.reason);
+    }
+    // A wrapper passing different parameters on: its uses are read at one
+    // parameter only, so a reason passed at another would not be seen.
+    const at = forwarding[0]?.forward ?? -1;
+    if (follow !== 'all' && forwarding.some((x) => x.forward !== at)) {
+      problems.push(
+        `${h.path} ${h.name ?? 'top-level code'} passes different parameters on to ${call}: pass one reason parameter`,
+      );
     }
     const one = h.reasons.length === 1 ? h.reasons[0] : null;
     if (h.name === null || followed.length === 0) {
@@ -292,6 +380,14 @@ export function asSystemExits(files, { call = 'asSystem', follow = 'all' } = {})
     }
     const own = files.find((f) => f.path === h.path);
     const word = new RegExp(`\\b${h.name}\\b`);
+    const renamed = (path, alias) =>
+      problems.push(`${path} renames the ${call} holder ${h.name} (${alias}): use its name`);
+    // A followed holder under another name in its own file.
+    const ownAliases =
+      h.kind === 'binding'
+        ? aliasesOf(ast(own), h.name, { bareName: true, member: false })
+        : aliasesOf(ast(own), h.name, { bareName: false, member: true });
+    for (const alias of ownAliases) renamed(h.path, alias);
     const perFile = new Map();
     const local =
       h.kind === 'binding'
@@ -300,14 +396,13 @@ export function asSystemExits(files, { call = 'asSystem', follow = 'all' } = {})
     if (local.length) perFile.set(h.path, local);
     if (h.exported) {
       for (const f of files) {
-        if (!word.test(f.text)) continue;
-        const alias = aliasOf(ast(f), h.name);
-        if (alias)
-          problems.push(`${f.path} renames the ${call} holder ${h.name} (${alias}): use its name`);
-        if (f.path === h.path) continue;
+        if (f.path === h.path || !word.test(f.text)) continue;
         const sf = ast(f);
-        const bare = bindsImported(sf, h.name);
-        const nodes = useNodes(sf, h.name, { bare, member: true });
+        const imported = bindsImported(sf, h.name);
+        for (const alias of aliasesOf(sf, h.name, { bareName: imported, member: true })) {
+          renamed(f.path, alias);
+        }
+        const nodes = useNodes(sf, h.name, { bare: imported, member: true });
         if (nodes.length) perFile.set(f.path, nodes);
       }
     }
@@ -321,7 +416,6 @@ export function asSystemExits(files, { call = 'asSystem', follow = 'all' } = {})
       continue;
     }
     // A wrapper: each use passes its reason at the forwarded parameter.
-    const at = forwarding[0].forward;
     for (const [p, nodes] of perFile) {
       for (const node of nodes) {
         const arg = useArgument(node, at);

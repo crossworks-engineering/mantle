@@ -19,9 +19,10 @@
 #     workspace, live Admin workspaces with no assistant and no assistant
 #     removal event, the SQL functions writing the four workspace tables
 #     (the live catalog; scripts/arch-scoreboard.pins.json
-#     workspaceTableWriterFns is the repo's), and whether the stack's .env
-#     turns MANTLE_DB_RUNTIME_ROLE on (1 or 0, its value as the app reads
-#     it; n/a with no stack dir).
+#     workspaceTableWriterFns is the repo's), and whether
+#     MANTLE_DB_RUNTIME_ROLE is on (1 or 0, as the app reads it: from
+#     mantle_web's environment, or from the stack's .env when that
+#     container is not there; n/a with neither).
 #
 # Read only: docker logs, docker inspect, SELECTs and one line of .env.
 # Name the box explicitly; there is no default and no fleet loop.
@@ -32,6 +33,8 @@
 #   --stack  the box's stack dir (default: the updater's MANTLE_STACK_DIR)
 #   ARCH_BOX_PG=<container>  the database container (default mantle_pg; a
 #            throwaway database for a dry run)
+#   ARCH_BOX_WEB=<container> the app container whose environment is read
+#            (default mantle_web; a throwaway container for a dry run)
 set -euo pipefail
 
 since=""
@@ -45,7 +48,9 @@ while [[ "${1:-}" == --* ]]; do
 done
 host="${1:?usage: scripts/arch-scoreboard-box.sh [--since <duration>] [--stack <dir>] <ssh-alias>}"
 pg="${ARCH_BOX_PG:-mantle_pg}"
+web="${ARCH_BOX_WEB:-mantle_web}"
 case "$pg" in *[!A-Za-z0-9_.-]*) echo "not a container name: $pg" >&2; exit 2 ;; esac
+case "$web" in *[!A-Za-z0-9_.-]*) echo "not a container name: $web" >&2; exit 2 ;; esac
 case "$stack" in *[!A-Za-z0-9_./-]*) echo "not a plain path: $stack" >&2; exit 2 ;; esac
 
 # The stub families, in the order the box prints its counts; the last
@@ -89,9 +94,10 @@ echo "== rights counts on $host"
 # Every query answers one integer; the role drift query runs only where its
 # function exists, so a box before it says n/a rather than 0.
 # shellcheck disable=SC2029
-ssh "$host" bash -s -- "'$pg'" "'$stack'" <<'REMOTE'
+ssh "$host" bash -s -- "'$pg'" "'$stack'" "'$web'" <<'REMOTE'
 pg="$1"
 stack="$2"
+web="$3"
 q() { docker exec -i "$pg" psql -U postgres -d postgres -tAq -v ON_ERROR_STOP=1 2>/dev/null; }
 num() { case "$1" in '' | *[!0-9]*) echo "?" ;; *) echo "$1" ;; esac; }
 drift=n/a
@@ -122,18 +128,38 @@ select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    and p.prosrc ~* '\m(insert\s+into|update|delete\s+from|merge\s+into|truncate(\s+table)?)\s+(only\s+)?("?public"?\s*\.\s*)?"?(workspaces|workspace_users|workspace_events|workspace_resources)"?($|[^a-z0-9_"])';
 SQL
 )")
-if [ -z "$stack" ]; then
-  stack=$(docker inspect mantle_updater --format '{{range .Config.Env}}{{println .}}{{end}}' 2>/dev/null |
-    sed -n 's/^MANTLE_STACK_DIR=//p' | head -1)
-fi
+# MANTLE_DB_RUNTIME_ROLE as the app reads it (packages/config/src/parse.ts
+# parseFlag): the value in the app container's environment, which is what
+# the app sees; the stack's .env only when that container is not there.
+# 1 when on (1, true, yes, on; any case, the ends trimmed), 0 when unset,
+# empty, 0 or anything else. Only the number leaves the box.
 names_role=n/a
-if [ -n "$stack" ] && [ -f "$stack/.env" ]; then
-  # The value as the app reads it (packages/config/src/parse.ts
-  # FLAG_ON_WORDS): 1 when on (1, true, yes, on; any case, quotes and
-  # spaces trimmed, the last line winning), 0 when unset, empty, 0 or
-  # anything else. Only the number leaves the box.
-  v=$(sed -n 's/^MANTLE_DB_RUNTIME_ROLE=//p' "$stack/.env" | tail -n 1 |
-    tr -d "\"' \t\r" | tr '[:upper:]' '[:lower:]')
+have=0
+raw=""
+if env_dump=$(docker inspect "$web" --format '{{range .Config.Env}}{{println .}}{{end}}' 2>/dev/null); then
+  have=1
+  raw=$(printf '%s\n' "$env_dump" | sed -n 's/^MANTLE_DB_RUNTIME_ROLE=//p' | tail -n 1)
+else
+  if [ -z "$stack" ]; then
+    stack=$(docker inspect mantle_updater --format '{{range .Config.Env}}{{println .}}{{end}}' 2>/dev/null |
+      sed -n 's/^MANTLE_STACK_DIR=//p' | head -1)
+  fi
+  if [ -n "$stack" ] && [ -f "$stack/.env" ]; then
+    have=1
+    # As compose reads a .env line: the last one wins; a quoted value is
+    # what the quotes hold; an unquoted one ends at a comment (a # at its
+    # start or after a space).
+    raw=$(sed -n 's/^[[:space:]]*MANTLE_DB_RUNTIME_ROLE[[:space:]]*=//p' "$stack/.env" | tail -n 1 | tr -d '\r')
+    raw=$(printf '%s' "$raw" | sed -e 's/^[[:space:]]*//')
+    case "$raw" in
+      \"*) raw=$(printf '%s' "$raw" | sed -n 's/^"\([^"]*\)".*$/\1/p') ;;
+      \'*) raw=$(printf '%s' "$raw" | sed -n "s/^'\([^']*\)'.*\$/\1/p") ;;
+      *) raw=$(printf '%s' "$raw" | sed -e 's/^#.*$//' -e 's/[[:space:]]#.*$//') ;;
+    esac
+  fi
+fi
+if [ "$have" = 1 ]; then
+  v=$(printf '%s' "$raw" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' | tr '[:upper:]' '[:lower:]')
   case "$v" in 1 | true | yes | on) names_role=1 ;; *) names_role=0 ;; esac
 fi
 printf '  %-34s %s\n' role_drift "$drift"

@@ -163,7 +163,14 @@ const MAY_GROW = new Set([
 ]);
 
 const mode = process.argv[2] ?? '';
-const numbers = (measure(ROOT) as { numbers: Record<string, number> }).numbers;
+const measured = measure(ROOT) as {
+  numbers: Record<string, number>;
+  perFile: {
+    asSystemExitProblems?: string[];
+    rights?: { requestSystemExitProblems?: string[] };
+  };
+};
+const numbers = measured.numbers;
 const width = Math.max(...Object.values(LABELS).map((l) => l.length));
 for (const [key, label] of Object.entries(LABELS)) {
   console.log(`${label.padEnd(width)}  ${numbers[key]}`);
@@ -197,12 +204,22 @@ if (mode === '--pin') {
     console.log(`\nWent down (lower the pins: node scripts/arch-scoreboard.ts --pin):`);
     for (const d of down) console.log(`  ${d}`);
   }
+  // An exit the counts cannot follow (a renamed call or wrapper, a wrapper
+  // of a wrapper, two reason parameters) would hide behind a pin that holds.
+  const problems = [
+    ...(measured.perFile.asSystemExitProblems ?? []),
+    ...(measured.perFile.rights?.requestSystemExitProblems ?? []),
+  ];
+  if (problems.length) {
+    console.error(`\nExits the scoreboard cannot count (eslint-rules/as-system-exits.mjs):`);
+    for (const p of problems) console.error(`  ${p}`);
+  }
   if (up.length) {
     console.error(`\nThe architecture scoreboard went UP (plan v2, section 3):`);
     for (const u of up) console.error(`  ${u}`);
     console.error('Remove the new site, or raise the pin with a reason in review.');
-    process.exit(1);
   }
+  if (up.length || problems.length) process.exit(1);
 } else if (mode !== '') {
   console.error(`unknown option ${mode}: use --check or --pin`);
   process.exit(2);
