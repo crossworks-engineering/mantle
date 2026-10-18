@@ -183,18 +183,23 @@ describe.skipIf(!URL)('the workspace user definers (S2a a1)', () => {
     (ws: string, login: string | null, owner = brain) =>
     (tx: postgres.TransactionSql) =>
       tx`select mantle_ws_remove_user(${owner}::uuid, ${ws}::uuid, ${login}::uuid)`;
-  /** `q`, then the row it left for (ws, login) and the last event of ws. */
+  /** `q`, then the row it left for (ws, login) and the one event it wrote
+   *  in ws (null: none; two or more fail the cell). */
   const andAfter =
     (ws: string, login: string, q: (tx: postgres.TransactionSql) => Promise<unknown>) =>
     async (tx: postgres.TransactionSql) => {
+      const before = (
+        await tx<{ id: string }[]>`select id::text from workspace_events where workspace_id = ${ws}`
+      ).map((r) => r.id);
       await q(tx);
       const [row] = await tx<{ moderator: boolean; added_by: string | null }[]>`
         select moderator, added_by::text from workspace_users
          where workspace_id = ${ws} and login_id = ${login}`;
-      const [ev] = await tx<{ actor: string | null; action: string; subject: unknown }[]>`
+      const evs = await tx<{ actor: string | null; action: string; subject: unknown }[]>`
         select actor_id::text as actor, action, subject from workspace_events
-         where workspace_id = ${ws} order by created_at desc, id desc limit 1`;
-      return { row: row ?? null, ev: ev ?? null };
+         where workspace_id = ${ws} and id::text <> all (${before}::text[])`;
+      expect(evs.length).toBeLessThanOrEqual(1);
+      return { row: row ?? null, ev: evs[0] ?? null };
     };
   const refused = (out: Out, state: string, code: string) => {
     expect(out.ok, JSON.stringify(out)).toBe(false);
@@ -652,7 +657,7 @@ describe.skipIf(!URL)('the workspace user definers (S2a a1)', () => {
     for (const d of defs) {
       expect(d.definer, d.fn).toBe(true);
       expect(d.pub, d.fn).toBe(false);
-      expect(d.path, d.fn).toContain('search_path="public", pg_temp');
+      expect(d.path, d.fn).toContain('search_path=public, pg_temp');
     }
   });
 
