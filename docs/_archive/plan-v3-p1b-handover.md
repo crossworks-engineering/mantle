@@ -66,14 +66,14 @@ returns the new Login type.
   noteRequestSystem) that is not a call is a problem: a callback, `.call`,
   `.apply`, `.bind`, `Reflect.apply`, a ternary, `??`, a list, a default
   parameter, `id(call)`, a comma call, a shorthand property, `export
-  default`, an assignment target, a member or subscript taken as a value.
+default`, an assignment target, a member or subscript taken as a value.
   Imports, exports (a renaming one stays a problem), type positions and the
   call's own declaration are left out. The aliases keep their P1a messages.
   This covers the per-file site regex `AS_SYSTEM_CALL` (arch-counts.mjs:257)
   too: a use it cannot see as a call fails arch:check. 0 on the repo.
 - `holderOf`: a class field holding a function is a member holder; a
   default-exported holder (`export default function f`, `export default
-  () => ...`, `export default f`) is a problem.
+() => ...`, `export default f`) is a problem.
 - Member holders are followed into every file by `x.name` (and a member
   taken off its object in another file is a problem). No exit count moved:
   the repo has no member holder of asSystem or noteRequestSystem today.
@@ -95,23 +95,23 @@ returns the new Login type.
 
 ## Counters, measured on 0b939dbe8, against the plan
 
-| Key | Pin | Plan | Why different |
-|---|---|---|---|
-| asSystemFull / asSystemNarrow | 58 / 0 | 58 all full | same |
-| asSystemFull by reason | app-data 11, brain-bookkeeping 10, admin-area+heartbeat-own-row 6, keyword-candidates 6, agent-workspace 5, rule-in-query 4, workspace-write 4, login-telegram 3, admin-area 2, pending-approval 2, app-trash 1, audit-log 1, connector-binding 1, connector-call 1, page-refold 1 | by reason | heartbeatRow holds two reasons (one exit per use), so it is its own key |
-| systemWholeOnFull (systemWholeTools) | 39 (39) | 41 | the plan's grep also matched the two policy readers that spread `{ systemWhole: true }` (tool-policy.ts:208, tool-gate-policy.ts:87) |
-| adminActRoutes | 7 | 7 | same: 4 ADMIN_ACT_WRITES entries, 3 item gate answers (session.ts 1863, 1910, 1931) |
-| loginKindBranches | 52 | 33 | the plan counted `kind === 'admin'`; also `!== 'admin'` 4, `=== / !== 'member'` 10, switch cases 6; named out: AccessError kind (2), the agent's workspace kind in fire.ts (1). Progress counter only |
-| loginRoleDecisionReads | 36 in 16 files | 16 + 3 named | every role compare with 'admin' or 'member', switch cases and drizzle eq/ne; the three named (mcp-auth.ts:263, 273, pair-code.ts:131) are in it and asserted |
-| sqlRoleReaders | 13 | 6 | the plan's scan compared the role in CREATE OR REPLACE bodies; also read: mantle_ws_migrate_bridged, mantle_bridge_login, mantle_access_keys_seen, mantle_client_space_usage, mantle_space_item_author_role, mantle_space_item_client_private, mantle_ws_skip_reason |
-| adminDecisionFlags | 44 | 41 | identifiers, not lines; most are the workspace's own flag. Progress counter only |
-| tsAreaRules | 3 | 3 | same (areasOf, areasFromLimits, requireArea) |
-| inHandlerAreaChecks (files) | 20 (19) | ~25 (~18) | measured |
-| loginTypeKindOrRole | 2 | yes | the type test's pin (kind and role) |
-| rawWriteSqlScoped (files) | 142 (55) | ~136 (~51) | measured; no allowlist yet (S10 makes it) |
-| historyCodeComments | 2202 | ~878+ | comment lines: 901 by fix round, round X or audit Hn (the plan's part), 1301 by a step code next to a provenance word or named in the history headings |
-| sqlMembershipAsks | 2 | (new) | the Telegram asks |
-| sqlAreaRules | pin 7 kept, measures 5 | 4 | see below |
+| Key                                  | Pin                                                                                                                                                                                                                                                                                | Plan         | Why different                                                                                                                                                                                                                                                        |
+| ------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| asSystemFull / asSystemNarrow        | 58 / 0                                                                                                                                                                                                                                                                             | 58 all full  | same                                                                                                                                                                                                                                                                 |
+| asSystemFull by reason               | app-data 11, brain-bookkeeping 10, admin-area+heartbeat-own-row 6, keyword-candidates 6, agent-workspace 5, rule-in-query 4, workspace-write 4, login-telegram 3, admin-area 2, pending-approval 2, app-trash 1, audit-log 1, connector-binding 1, connector-call 1, page-refold 1 | by reason    | heartbeatRow holds two reasons (one exit per use), so it is its own key                                                                                                                                                                                              |
+| systemWholeOnFull (systemWholeTools) | 39 (39)                                                                                                                                                                                                                                                                            | 41           | the plan's grep also matched the two policy readers that spread `{ systemWhole: true }` (tool-policy.ts:208, tool-gate-policy.ts:87)                                                                                                                                 |
+| adminActRoutes                       | 7                                                                                                                                                                                                                                                                                  | 7            | same: 4 ADMIN_ACT_WRITES entries, 3 item gate answers (session.ts 1863, 1910, 1931)                                                                                                                                                                                  |
+| loginKindBranches                    | 52                                                                                                                                                                                                                                                                                 | 33           | the plan counted `kind === 'admin'`; also `!== 'admin'` 4, `=== / !== 'member'` 10, switch cases 6; named out: AccessError kind (2), the agent's workspace kind in fire.ts (1). Progress counter only                                                                |
+| loginRoleDecisionReads               | 36 in 16 files                                                                                                                                                                                                                                                                     | 16 + 3 named | every role compare with 'admin' or 'member', switch cases and drizzle eq/ne; the three named (mcp-auth.ts:263, 273, pair-code.ts:131) are in it and asserted                                                                                                         |
+| sqlRoleReaders                       | 13                                                                                                                                                                                                                                                                                 | 6            | the plan's scan compared the role in CREATE OR REPLACE bodies; also read: mantle_ws_migrate_bridged, mantle_bridge_login, mantle_access_keys_seen, mantle_client_space_usage, mantle_space_item_author_role, mantle_space_item_client_private, mantle_ws_skip_reason |
+| adminDecisionFlags                   | 44                                                                                                                                                                                                                                                                                 | 41           | identifiers, not lines; most are the workspace's own flag. Progress counter only                                                                                                                                                                                     |
+| tsAreaRules                          | 3                                                                                                                                                                                                                                                                                  | 3            | same (areasOf, areasFromLimits, requireArea)                                                                                                                                                                                                                         |
+| inHandlerAreaChecks (files)          | 20 (19)                                                                                                                                                                                                                                                                            | ~25 (~18)    | measured                                                                                                                                                                                                                                                             |
+| loginTypeKindOrRole                  | 2                                                                                                                                                                                                                                                                                  | yes          | the type test's pin (kind and role)                                                                                                                                                                                                                                  |
+| rawWriteSqlScoped (files)            | 142 (55)                                                                                                                                                                                                                                                                           | ~136 (~51)   | measured; no allowlist yet (S10 makes it)                                                                                                                                                                                                                            |
+| historyCodeComments                  | 2202                                                                                                                                                                                                                                                                               | ~878+        | comment lines: 901 by fix round, round X or audit Hn (the plan's part), 1301 by a step code next to a provenance word or named in the history headings                                                                                                               |
+| sqlMembershipAsks                    | 2                                                                                                                                                                                                                                                                                  | (new)        | the Telegram asks                                                                                                                                                                                                                                                    |
+| sqlAreaRules                         | pin 7 kept, measures 5                                                                                                                                                                                                                                                             | 4            | see below                                                                                                                                                                                                                                                            |
 
 ### sqlAreaRules and S2a a0
 
@@ -153,11 +153,11 @@ suites, which the Mac cannot).
 
 `measure(ROOT)` wall time on the Mac, three runs in one process:
 
-| Tree | Runs (ms) |
-|---|---|
-| main 8b3099467 | 3832, 3599, 3569 |
+| Tree                                       | Runs (ms)        |
+| ------------------------------------------ | ---------------- |
+| main 8b3099467                             | 3832, 3599, 3569 |
 | this branch, before the caches (0b939dbe8) | 4902, 4598, 4589 |
-| this branch, with the caches (c64f78010) | 2697, 2459, 2459 |
+| this branch, with the caches (c64f78010)   | 2697, 2459, 2459 |
 
 A CPU profile put most of the time in `stripComments` (each file stripped
 once per counter, about 20 times). Two shared caches now: `stripComments`
@@ -194,9 +194,9 @@ pin re-measured on the rebased tree before any fix.
 
 ### Pins moved by the rebase
 
-| Key | Before | After | Why |
-|---|---|---|---|
-| historyCodeComments | 2202 | 2206 | S3's own comment lines, left for D2: 11 added (app-table-exports.ts 3, profile-preferences.ts 3, auto-timezone.ts, item-rights.ts, builtins-apps.ts, the reminder-channel route, brand-gate.ts 1 each), 7 gone (client.ts 5, access-matrix.ts 2) |
+| Key                 | Before | After | Why                                                                                                                                                                                                                                              |
+| ------------------- | ------ | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| historyCodeComments | 2202   | 2206  | S3's own comment lines, left for D2: 11 added (app-table-exports.ts 3, profile-preferences.ts 3, auto-timezone.ts, item-rights.ts, builtins-apps.ts, the reminder-channel route, brand-gate.ts 1 each), 7 gone (client.ts 5, access-matrix.ts 2) |
 
 No other pin moved (gapTables 0, dbClientLines 3141 as main). sqlAreaRules
 still measures 5 against its pin 7 (S2a a0's key, unchanged here).
@@ -224,9 +224,9 @@ Counters a trivial edit could lower:
   than ask is not followed, so the label says progress counter past that.
 - `rawWriteSqlScoped`: any tagged template whose text writes counts,
   whatever its tag, so `const q = sql; q\`insert ...\``, a transaction
-  handle (`sql.begin(async (tx) => tx\`delete ...\`)`) and a parameter all
-  count; `<tag>.raw(x)` reads the tag's aliases and transaction handles too
-  (`sqlTagNames`). This finds packages/db/src/migrate-runner.ts:66.
+handle (`sql.begin(async (tx) => tx\`delete ...\`)`) and a parameter all
+count; `<tag>.raw(x)` reads the tag's aliases and transaction handles too
+(`sqlTagNames`). This finds packages/db/src/migrate-runner.ts:66.
 - `systemWholeTools`: packages/runtime/src/tool-policy-snapshot.test.ts
   compares the scoreboard's count with every builtin and MCP surface policy
   for which `policySystemWhole` answers true (no database). Proven: two
@@ -266,7 +266,7 @@ History codes:
   'full' is a problem (eslint-rules/as-system-routes.mjs).
 - L6: each followed holder's name gets the non-call-use check, in its file
   and in each file importing it (a member holder: its file), so `const g =
-  f.bind(null)`, `f.call(...)`, a ternary, `??` or a list are problems. A
+f.bind(null)`, `f.call(...)`, a ternary, `??` or a list are problems. A
   holder handed to a call (`list.map(f)`) stays a use counted where it
   stands, as arch-lints.test.ts has held since the asSystem exits came in.
 - L7: `loginShapePin` reads the literal only while the lines holding it to
@@ -279,12 +279,12 @@ History codes:
 
 ### Pins moved by the fixes
 
-| Key | Before | After | Why |
-|---|---|---|---|
-| historyCodeComments | 2206 | 2328 | +126 -4 lines, no comment added: the wider heading codes (S3 46, A2b2b 24, R0 9, D1 7, W5b2 7 and the rest), the narrower sheet words (A3b 12, A10 6, A4 5 among them); less the round shape (1) and the stoplist (3) |
-| rawWriteSqlScoped | 142 | 80 | the split (63 non-literal out) and +1, migrate-runner.ts:66's transaction handle |
-| rawSqlNonLiteral | (new) | 63 | the non-literal texts, pinned apart |
-| inHandlerAreaChecks | 20 | 21 | holdsKeysArea (the access-keys route) is a thin wrapper of requireArea with two uses |
+| Key                 | Before | After | Why                                                                                                                                                                                                                   |
+| ------------------- | ------ | ----- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| historyCodeComments | 2206   | 2328  | +126 -4 lines, no comment added: the wider heading codes (S3 46, A2b2b 24, R0 9, D1 7, W5b2 7 and the rest), the narrower sheet words (A3b 12, A10 6, A4 5 among them); less the round shape (1) and the stoplist (3) |
+| rawWriteSqlScoped   | 142    | 80    | the split (63 non-literal out) and +1, migrate-runner.ts:66's transaction handle                                                                                                                                      |
+| rawSqlNonLiteral    | (new)  | 63    | the non-literal texts, pinned apart                                                                                                                                                                                   |
+| inHandlerAreaChecks | 20     | 21    | holdsKeysArea (the access-keys route) is a thin wrapper of requireArea with two uses                                                                                                                                  |
 
 Unchanged: loginKindBranches 52, loginRoleDecisionReads 36,
 systemWholeTools 39, rawWriteSqlFiles 55, inHandlerAreaCheckFiles 19,
@@ -341,3 +341,62 @@ same exit codes.
   headings, or raise the pin with that reason.
 - S11a uses the A8 suite names; the stoplist keeps them out, a finding code
   after them still counts.
+
+## Fix round 2: the diff check of round 1 (8/10)
+
+Fixed on 1e9b3b175, then rebased onto main at f970ff0cf (v0.300.90: S3's
+0302, the S11a-7 hotfix 0303, member-export). No conflict.
+
+### The fixes
+
+- M1, heading codes against owner decision labels. The codes a comment
+  counts by name are frozen in a reviewed list
+  (eslint-rules/cleanup-counts.mjs HISTORY_HEADING_CODES). The headings are
+  still read, only to check the list: a heading code in neither it nor
+  HEADING_CODES_LEFT_OUT (each with why) is a problem that fails
+  arch:check, so a new handover heading never moves the count unreviewed.
+  D1 is left out: no counted comment names the step, each D1 there is
+  owner decision D1 or a D finding of the apps audit or plan. The stoplist
+  also reads an owner decision label where it stands (`owner decision D1`,
+  `the owner's decisions D4 to D6`, `owner decisions D4, D5 and D6`), so a
+  D code added to the list later still skips them. Tests: an owner
+  decision reference is not counted, the repo's heading codes are all
+  reviewed, a new heading code is a problem and the count does not read it.
+- M2, a renamed ask. An import or export `as` and a renaming destructure of
+  an IN_HANDLER_ASKS name (or a thin wrapper) is a problem, as
+  as-system-exits.mjs reads a renamed asSystem; the rename itself is no
+  ask. Tests for each form (0 on the repo).
+- Low, raw SQL by a literal key or an alias. `.unsafe` and `<tag>.raw` read
+  the same by a literal key (`pg['unsafe'](x)`, `sql['raw'](x)`) and under
+  another name (`const raw = sql.raw`, `const { unsafe } = pg`, `.bind`,
+  an assignment). Tests; no repo site moved.
+- Low, `login['role']`. The field read by a literal key counts as by the
+  dot (both fields, and the drizzle eq/ne), the smaller change. Test; no
+  repo site moved.
+
+### Pins moved
+
+| Key                 | Before | After | Why                                                                                                                                                                                                                                |
+| ------------------- | ------ | ----- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| historyCodeComments | 2328   | 2321  | M1, no comment changed: D1 left out (-5: app-broker.ts:66, contact-shares.ts:59, extract/rules.ts:3, app-db-broker-body.ts:62, route-scope.ts:311), owner decision labels stoplisted (-2: access-matrix.ts:30, route-scope.ts:210) |
+| historyCodeComments | 2321   | 2322  | the rebase, main's new code: the S3 handover's S11a-7 hotfix heading names S11a (a step, added to the frozen list), which reads the comment the hotfix added (app-snapshots.ts:637)                                                |
+
+No other pin moved by the fixes or the rebase. sqlAreaRules still
+measures 5 against its pin 7 (S2a a0's key: whichever of a0 and P1b merges
+second re-pins it to 1).
+
+### Gates (fix round 2)
+
+At 01c2469ae, the code head (this section is docs only on top of it).
+Mac (DATABASE_URL unset): `pnpm -r typecheck` 0, `pnpm lint` 0 (the one warning on main too),
+`pnpm format:check` 0, `pnpm docs:check` 0, `pnpm arch:check` 0 (prints
+sqlAreaRules 7 -> 5 as went down, as before), `pnpm -C server/web build`
+0, `pnpm exec vitest run server packages eslint-rules` 0 (847 files passed, 259 skipped; 11007 tests passed, 2648 skipped).
+No DB code changed, so no DB suite ran.
+
+### Open items (fix round 2)
+
+- Round 1's open item on handover headings is closed: a heading that names
+  a new code fails arch:check until the code is in HISTORY_HEADING_CODES
+  or HEADING_CODES_LEFT_OUT. Write a handover, then add its code to one.
+- The progress counters stay games for a reviewer, as in round 1.
