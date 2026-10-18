@@ -133,6 +133,21 @@ describe('migrations journal', () => {
     expect(es.some((x) => x.tag === '0301_write_role_gap_tables')).toBe(false);
   });
 
+  it('hotfix S11a-7: 0303_export_check_grant_branch sits between 0302 and the next branch’s stamp', () => {
+    // The login-facts branch (a0) holds 1790197560000 and is renumbered
+    // after this hotfix, so 0303 takes a `when` strictly between them.
+    const es = journal.entries as unknown as Array<{ idx: number; tag: string; when: number }>;
+    const fix = es.find((x) => x.tag === '0303_export_check_grant_branch');
+    expect([fix?.idx, fix?.when]).toEqual([303, 1790197500000]);
+    expect(fix!.when).toBeGreaterThan(1790197440000);
+    expect(fix!.when).toBeLessThan(1790197560000);
+    // The grant branch of the write check runs on grant rows only.
+    const body = readFileSync(join(dir, '0303_export_check_grant_branch.sql'), 'utf8');
+    expect(body).toContain(
+      "IF kind = 'manage' AND TG_OP IN ('INSERT', 'UPDATE') AND to_jsonb(NEW) ? 'workspace_id' THEN",
+    );
+  });
+
   it('0270 runs again on a database that applied it before the folded-row repair moved in (W7 integration fix 4)', () => {
     // Fix 3 shipped 0270 with when 1790195400000; a box that applied it
     // records that stamp. The repair of a team row folded with no workspace

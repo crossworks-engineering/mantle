@@ -341,3 +341,23 @@ typecheck` 0, `pnpm lint` 0, `pnpm format:check` 0, `pnpm docs:check` 0,
   `pnpm -C server/web build` 0, unit vitest 0, full vitest with DB 0
   (13493 passed; the `CONNECTION_CLOSED` did not come back). The commit
   after it changes this handover only.
+
+## S11a-7 (hotfix, migration 0303)
+
+A new export row was refused in `on` for every scoped caller, the app's
+Moderator and the owner on an app homed in Admin too (42501 "not allowed to
+grant to that workspace"; off and warn noted the miss "INSERT on
+app_table_exports: not a Moderator of the workspace"), so
+`app_table_export_set` made no new link once the actor check was on. The
+cause was S3 giving the table the write check `manage` of `app_node_id`:
+`mantle_write_check_trg` (0281's body) ends with a branch for `manage`
+written for grant rows, which reads the row's `workspace_id`. An export row
+has none, so the target was NULL and every INSERT failed the Moderator
+test. `0303_export_check_grant_branch` keeps 0281's body and runs that
+branch only on a row that carries a `workspace_id`; the per-row loop
+(manage of the app, an Admin scope for an app with no home), the row rule
+and the edit check still decide an export row. The matrix's two `manage`
+tables: `item_grants` (has `workspace_id`, same answers) and
+`app_table_exports`. Pinned in `a2b2b-write-gateway.db.test.ts` (both checks
+off, warn and on; `createAppTableExport` end to end in on) and
+`migrations-journal.test.ts`.
