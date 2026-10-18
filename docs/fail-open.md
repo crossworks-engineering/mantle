@@ -8,14 +8,14 @@ release with every count at 0) refuses them. The spec is
 
 ## The six sites
 
-| Site (`fail-open:<site>`) | Where                                                    | A hit when                                                                                             |
-| ------------------------- | -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| `scope-holds-admin`       | `scopeHoldsAdmin` (`packages/db/src/client.ts`)          | code outside every scope gets yes (`isUnscoped()`) and no system actor is bound                        |
-| `scope-has-area`          | `scopeHasArea`, its system case (client.ts)              | the same: a yes outside every workspace scope with no system actor bound                               |
-| `typed-write`             | `typedWrite` (client.ts)                                 | a scoped write (`db.insert`, `update`, `delete`) to a table the write role does not hold               |
-| `raw-write`               | `loginWriteClient` (client.ts)                           | a scoped raw write (`executeWrite`, a write transaction) to such a table                               |
-| `turn-exit`               | `asSystem` (`packages/db/src/viewer.ts`)                 | production lets an unlisted `asSystem` reason leave a turn scope                                       |
-| `system-db`               | `assertSystemDbCaller` (viewer.ts)                       | production lets a file outside `SYSTEM_DB_MODULES` use `systemDb` in a turn scope                      |
+| Site (`fail-open:<site>`) | Where                                           | A hit when                                                                               |
+| ------------------------- | ----------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| `scope-holds-admin`       | `scopeHoldsAdmin` (`packages/db/src/client.ts`) | code outside every scope gets yes (`isUnscoped()`) and no system actor is bound          |
+| `scope-has-area`          | `scopeHasArea`, its system case (client.ts)     | the same: a yes outside every workspace scope with no system actor bound                 |
+| `typed-write`             | `typedWrite` (client.ts)                        | a scoped write (`db.insert`, `update`, `delete`) to a table the write role does not hold |
+| `raw-write`               | `loginWriteClient` (client.ts)                  | a scoped raw write (`executeWrite`, a write transaction) to such a table                 |
+| `turn-exit`               | `asSystem` (`packages/db/src/viewer.ts`)        | production lets an unlisted `asSystem` reason leave a turn scope                         |
+| `system-db`               | `assertSystemDbCaller` (viewer.ts)              | production lets a file outside `SYSTEM_DB_MODULES` use `systemDb` in a turn scope        |
 
 System work takes the first two yes on purpose (a worker, an Admin area
 route, a named repair: each binds a system actor), so it is never counted;
@@ -66,4 +66,19 @@ hold, unless the table's access matrix row names
 `scopedSystemWrite: '<reason>'` (`packages/db/src/access-matrix.ts`). These
 are the tables the measurement found:
 
-MEASUREMENT PENDING
+| Table                       | Site          | Who writes it                                                                                                                          | `scopedSystemWrite` reason (proposed) |
+| --------------------------- | ------------- | -------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------- |
+| `public.item_marks`         | `raw-write`   | a login's own open counts and pins, keyed by its login (`packages/content/src/tree/marks.ts`, `packages/content/src/tree/apps-nav.ts`) | `'own-marks'`                         |
+| `public.pending_tool_calls` | `typed-write` | an elevated tool call queued for approval, and its status (`packages/tools/src/pending-queue.ts`, `packages/tools/src/pending.ts`)     | `'approval-queue'`                    |
+| `public.assistant_messages` | `typed-write` | the rows of a login's chat turn in the one conversation store (`packages/runtime/src/agent/conversation.ts`)                           | `'conversation-store'`                |
+
+Measured 2026-10-18 at the S4a branch: 146 hits, all from a login actor, in
+`precheck-removal-http`, `w6a-route-sweep`, `w6b-fix1` (`item_marks`),
+`w7a-tool-sweep`, `a5-elevated-approval`, `a5-approval-recheck`
+(`pending_tool_calls`), `w7c-chat` and `a5-mcp-writes-smoke`
+(`assistant_messages`), all under `server/web/server/`. No other table.
+
+What this run cannot see, so S4b reads the box counts before it flips: the
+two production allows (tests and development throw there), the two
+unscoped yes (every test binds `system(test)`), and a path no test
+reaches. One fleet release with these rows in the box counts closes that.
