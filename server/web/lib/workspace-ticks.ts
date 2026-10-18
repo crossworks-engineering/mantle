@@ -14,7 +14,10 @@
  *   Moderator tick of every user who is not an Admin user, keeps at least
  *   one Moderator, and writes the workspace_events row setModerator writes
  *   (user.moderator), with no actor and `by` naming the command. It never
- *   removes a row.
+ *   removes a row. Each clear is mantle_ws_set_moderator (0305, plan v3.2
+ *   S2a a1), the same definer the workspace screen calls, as workspace
+ *   system work (systemWork 'ws-clear-ticks': the one actor its SQL
+ *   allowlist, mantle_ws_system_work, takes from this command).
  *
  * "Admin user" is adminUserSql (@mantle/db): a live login in the brain's
  * Admin workspace holding the users area, the rule mayPromote applies to its
@@ -33,6 +36,7 @@ import {
   liveWorkspaceSql,
   nodes,
   sharedWorkspacesSql,
+  systemWork,
 } from '@mantle/db';
 import { UUID_RE } from '@mantle/std';
 
@@ -125,6 +129,11 @@ export async function clearMemberTicks(
   if (workspace !== 'former-team' && !UUID_RE.test(workspace))
     return { ok: false, reason: 'not_found' };
   const target = workspace === 'former-team' ? FORMER_TEAM_SQL : sql`${workspace}::uuid`;
+  return systemWork(() => clearTicksTx(target, apply), 'ws-clear-ticks');
+}
+
+/** clearMemberTicks' transaction, as workspace system work. */
+function clearTicksTx(target: ReturnType<typeof sql>, apply: boolean): Promise<ClearTicksResult> {
   return db.transaction(async (tx) => {
     // The workspace row first, FOR UPDATE, as every change on the
     // workspace screen takes it: a tick changed there meanwhile waits.
@@ -150,12 +159,8 @@ export async function clearMemberTicks(
     if (apply) {
       for (const login of members) {
         await tx.execute(sql`
-          update workspace_users set moderator = false
-           where workspace_id = ${ws.id} and login_id = ${login}::uuid and moderator`);
-        await tx.execute(sql`
-          insert into workspace_events (workspace_id, actor_id, action, subject)
-          values (${ws.id}, null, 'user.moderator',
-                  ${JSON.stringify({ login, moderator: false, by: CLEAR_TICKS_BY })}::jsonb)`);
+          select "public"."mantle_ws_set_moderator"(mantle_brain_id(), ${ws.id}::uuid,
+                   ${login}::uuid, false, ${CLEAR_TICKS_BY})`);
       }
     }
     return {

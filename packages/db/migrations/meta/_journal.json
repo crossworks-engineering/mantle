@@ -2143,6 +2143,13 @@
       "when": 1790197680000,
       "tag": "0306_admin_membership",
       "breakpoints": true
+    },
+    {
+      "idx": 307,
+      "version": "7",
+      "when": 1790197620000,
+      "tag": "0305_ws_user_definers",
+      "breakpoints": true
     }
   ]
 }

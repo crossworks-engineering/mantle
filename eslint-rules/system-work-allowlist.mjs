@@ -12,7 +12,7 @@
  */
 import { isCounted, pinnedRule, repoPathOf, systemWorkSites } from './arch-counts.mjs';
 
-/** @type {Record<string, { count: number, why: string[] }>} A6b: 7 sites in 7 files. */
+/** @type {Record<string, { count: number, why: string[] }>} A6b: 7 sites in 7 files; S2a a1: 8 in 8. */
 export const SYSTEM_WORK_PINS = {
   // The push worker builds a login's notice from that login's rows.
   'packages/content/src/login-notices.ts': { count: 1, why: ['login-notice'] },
@@ -28,6 +28,10 @@ export const SYSTEM_WORK_PINS = {
   'server/web/lib/debug.ts': { count: 1, why: ['login-telegram'] },
   // The boot step that makes snapshot copies, under its advisory lock.
   'server/web/lib/snapshot-copies.ts': { count: 1, why: ['snapshot-copies'] },
+  // ws:clear-member-ticks: the Moderator ticks it clears go through
+  // mantle_ws_set_moderator as workspace system work (plan v3.2 S2a a1;
+  // the SQL allowlist mantle_ws_system_work names its actor, 0305).
+  'server/web/lib/workspace-ticks.ts': { count: 1, why: ['ws-clear-ticks'] },
 };
 
 export const rule = pinnedRule({

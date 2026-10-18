@@ -237,6 +237,12 @@ const DEFINERS_THE_WRITE_ROLE_RUNS: Readonly<Record<string, string>> = {
     WRITE_ROLE_FUNCTIONS['public.mantle_access_key_revoke(uuid,uuid)']!,
   'mantle_ws_create(uuid,uuid,text,text)':
     WRITE_ROLE_FUNCTIONS['public.mantle_ws_create(uuid,uuid,text,text)']!,
+  'mantle_ws_add_user(uuid,uuid,uuid,boolean)':
+    WRITE_ROLE_FUNCTIONS['public.mantle_ws_add_user(uuid,uuid,uuid,boolean)']!,
+  'mantle_ws_set_moderator(uuid,uuid,uuid,boolean,text)':
+    WRITE_ROLE_FUNCTIONS['public.mantle_ws_set_moderator(uuid,uuid,uuid,boolean,text)']!,
+  'mantle_ws_remove_user(uuid,uuid,uuid)':
+    WRITE_ROLE_FUNCTIONS['public.mantle_ws_remove_user(uuid,uuid,uuid)']!,
 };
 
 /** Rolls a cell's transaction back after its checks. */

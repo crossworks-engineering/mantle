@@ -923,6 +923,32 @@ export const AS_SYSTEM_OTHER_REASONS = [
 export type AsSystemReason =
   (typeof AS_SYSTEM_TURN_REASONS)[number] | (typeof AS_SYSTEM_OTHER_REASONS)[number];
 
+/**
+ * The workspace system work (plan v3.2 S2a): the reasons whose actor
+ * (system:<reason>) a workspace definer takes from a caller with no acting
+ * login. The SQL allowlist (mantle_ws_system_work, migration 0305) names
+ * exactly these actors, one per real caller, each added in the release that
+ * moves its caller (at most five). Only systemWork takes one (asSystem with
+ * one fails typecheck), and systemWork refuses it inside any scope, request
+ * or system exit, so these actors are never bound inside a request or turn.
+ * eslint-rules/system-work-allowlist.mjs pins the files that pass one;
+ * eslint-rules/arch-lints.test.ts refuses the strings anywhere else.
+ *
+ *  - `ws-clear-ticks`: pnpm -C server/web ws:clear-member-ticks
+ *    (workspace-ticks.ts clearMemberTicks), S2a a1.
+ */
+export const WORKSPACE_SYSTEM_REASONS = ['ws-clear-ticks'] as const;
+
+export type WorkspaceSystemReason = (typeof WORKSPACE_SYSTEM_REASONS)[number];
+
+/** Whether `actor` is workspace system work (WORKSPACE_SYSTEM_REASONS). */
+export function isWorkspaceSystemActor(actor: Actor | null): boolean {
+  return (
+    actor?.kind === 'system' &&
+    (WORKSPACE_SYSTEM_REASONS as readonly string[]).includes(actor.reason)
+  );
+}
+
 /** asSystem was called inside a turn scope without an allowlisted reason,
  *  or systemDb used there by a module off SYSTEM_DB_MODULES (`message`). */
 export class TurnScopeExitError extends RuntimeFaultError {
@@ -1009,7 +1035,24 @@ export function asSystem<T>(fn: () => Promise<T>, reason: AsSystemReason): Promi
  * leaves a scope. Each file that calls it is pinned with its reasons
  * (eslint-rules/system-work-allowlist.mjs): a new caller needs review.
  */
-export function systemWork<T>(fn: () => Promise<T>, reason: AsSystemReason): Promise<T> {
+export function systemWork<T>(
+  fn: () => Promise<T>,
+  reason: AsSystemReason | WorkspaceSystemReason,
+): Promise<T> {
+  // Workspace system work (S2a): never inside any scope, a system exit or
+  // transaction included, nor inside a request.
+  if (
+    (WORKSPACE_SYSTEM_REASONS as readonly string[]).includes(reason) &&
+    (store.getStore() !== undefined ||
+      requestSlots.getStore() !== undefined ||
+      leftStore.getStore() !== undefined)
+  ) {
+    return Promise.reject(
+      new RuntimeFaultError(
+        `workspace system work '${reason}' runs outside every scope and request only`,
+      ),
+    );
+  }
   const open = active();
   if (open && !open.system) {
     return Promise.reject(

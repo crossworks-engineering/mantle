@@ -21,12 +21,11 @@
  *  - A Moderator of a workspace manages its users (add by search, remove a
  *    plain user) and its name, description and look (colour and icon, task
  *    5edc9149: the same rule as the name).
- *  - Only an Admin user ticks or clears Moderator (mayPromote: setModerator,
- *    an add with the tick, and removing a Moderator, owner answer Q2), on
- *    every workspace (owner decision
- *    2026-10-13). Nobody becomes a Moderator by themselves, with one
- *    exception: any login may make a workspace, and becomes its only user
- *    and a Moderator. Any login may leave one, except as its last Moderator.
+ *  - Only an Admin user ticks or clears Moderator (setModerator, an add with
+ *    the tick, and removing a Moderator, owner answer Q2), on every
+ *    workspace (owner decision 2026-10-13). Nobody becomes a Moderator by
+ *    themselves, with one exception: any login may make a workspace, and
+ *    becomes its only user and a Moderator. Any login may leave one, except as its last Moderator.
  *  - The only built-in workspace is Admin: it keeps its name, cannot be
  *    archived and keeps a Moderator. Team is a workspace like any other
  *    since 0286 (renamed, archived and moderated by the same rules).
@@ -55,6 +54,7 @@ import {
   loginAreas,
   loginHasArea,
   pgConstraint,
+  pgErrorCode,
   scopeHasArea,
   sql,
   withDeadlockRetry,
@@ -139,8 +139,11 @@ export function workspaceCaller(login: AnyLogin): WsCaller {
  *  0291, each held to the scope: the workspaces the caller sees
  *  (mantle_ws_seen), a workspace's users and resources (mantle_ws_people,
  *  mantle_ws_resource_rows), its item counts (mantle_ws_item_counts), the
- *  user search (mantle_ws_login_search). A login's own change of a
- *  workspace writes on the system pool by one door (workspaceWriteSystem). */
+ *  user search (mantle_ws_login_search). A change of a workspace's users is
+ *  a definer call in the caller's own transaction (mantle_ws_add_user,
+ *  mantle_ws_set_moderator, mantle_ws_remove_user, mantle_ws_create; 0305,
+ *  plan v3.2 S2a a1), which checks the acting login inside; the other
+ *  changes write on the system pool by one door (workspaceWriteSystem). */
 export async function wsRoute(
   login: AnyLogin,
   fn: (caller: WsCaller) => Promise<unknown>,
@@ -151,14 +154,15 @@ export async function wsRoute(
 }
 
 /** The one exit of the workspace library (arch A6): a change of a
- *  workspace (its row, its users, its events) writes on the system pool by
- *  its reason ('workspace-write'), the write role holding no right on those
- *  tables. Every change checks its rules inside the transaction, on the
- *  system pool, as before A6 (patchWorkspace only there). archiveWorkspace
- *  and addUser also check them first in the caller's scope; removeUser
- *  reads the workspace there first; createWorkspace checks the name there.
- *  An Admin user's write request runs on the system pool already
- *  (session.ts anyLoginScope); the door changes nothing there. */
+ *  workspace's row and its events (patchWorkspace, archiveWorkspace until
+ *  plan v3.2 S2b) writes on the system pool by its reason
+ *  ('workspace-write'), the write role holding no right on those tables.
+ *  Each checks its rules inside the transaction, on the system pool, as
+ *  before A6 (patchWorkspace only there); archiveWorkspace also checks them
+ *  first in the caller's scope. Never around a workspace definer: its actor
+ *  (system:workspace-write) is no system work there (0305). An Admin user's
+ *  write request runs on the system pool already (session.ts
+ *  anyLoginScope); the door changes nothing there. */
 function workspaceWriteSystem<T>(body: () => Promise<T>): Promise<T> {
   return asSystem(body, 'workspace-write');
 }
@@ -921,25 +925,93 @@ async function loginOf(q: Exec, loginId: string): Promise<LoginRow | null> {
   return r ?? null;
 }
 
-async function userRow(
-  q: Exec,
-  wid: string,
-  loginId: string,
-): Promise<{ moderator: boolean } | null> {
-  const [r] = await rows<{ moderator: boolean }>(
-    q,
-    sql`select moderator from workspace_users where workspace_id = ${wid} and login_id = ${loginId}`,
-  );
-  return r ?? null;
+// ── The definers' refusals (plan v3.2 S2a a1) ──────────────────────────────
+
+/** A definer's refusal as the WsError the route answered before the rule
+ *  moved to SQL (0305): its SQLSTATE and the code its message starts with
+ *  (`mantle_ws:<code>`), one row each. Anything else is thrown as it is (a
+ *  call with no acting login and no system work is no answer a route gives:
+ *  it is a fault). */
+const WS_REFUSALS: Readonly<Record<string, { state: string; error: () => WsError }>> = {
+  not_found: { state: 'P0002', error: NOT_FOUND },
+  user_not_found: { state: 'P0002', error: () => new WsError(404, 'not_found', 'User not found.') },
+  not_user: {
+    state: 'P0002',
+    error: () => new WsError(404, 'not_user', 'This person is not a user of this workspace.'),
+  },
+  forbidden: {
+    state: '42501',
+    error: () =>
+      new WsError(403, 'forbidden', 'Only a Moderator of this workspace can manage its users.'),
+  },
+  archived: { state: '55000', error: () => archivedError() },
+  admin_only: {
+    state: '42501',
+    error: () =>
+      new WsError(
+        403,
+        'admin_only',
+        'Only an Admin user can make someone a Moderator or take the tick away.',
+      ),
+  },
+  admin_users_only: {
+    state: '42501',
+    error: () =>
+      new WsError(
+        403,
+        'admin_only',
+        'Only an Admin user who manages users can change who is an Admin user.',
+      ),
+  },
+  admin_workspace: { state: '55000', error: () => ADMIN_TICK_KEPT() },
+  already_user: {
+    state: '55000',
+    error: () =>
+      new WsError(409, 'already_user', 'This person is already a user of this workspace.'),
+  },
+  last_moderator: { state: '55000', error: () => LAST_MOD() },
+  owner_stays_admin: {
+    state: '42501',
+    error: () =>
+      new WsError(403, 'owner_stays_admin', 'The original account always stays an Admin user.'),
+  },
+  self_demote: {
+    state: '42501',
+    error: () =>
+      new WsError(403, 'self_demote', 'You cannot remove yourself from the Admin workspace.'),
+  },
+};
+
+/** The one mapper: a definer's refusal (wsRefusal's table), the Admin
+ *  workspace's last-Moderator check at commit (lastAdminError), or null. */
+export function wsRefusal(err: unknown): WsError | null {
+  const state = pgErrorCode(err);
+  for (let e: unknown = err, d = 0; e && d < 4; d++) {
+    const m = (e as { message?: unknown }).message;
+    const code = typeof m === 'string' ? /^mantle_ws:([a-z_]+)\b/.exec(m)?.[1] : undefined;
+    const row = code ? WS_REFUSALS[code] : undefined;
+    if (row) return row.state === state ? row.error() : null;
+    e = (e as { cause?: unknown }).cause;
+  }
+  return lastAdminError(err);
 }
 
-async function otherModerators(q: Exec, wid: string, loginId: string): Promise<number> {
-  const [r] = await rows<{ n: number }>(
-    q,
-    sql`select count(*)::int as n from workspace_users
-         where workspace_id = ${wid} and moderator and login_id <> ${loginId}`,
-  );
-  return r?.n ?? 0;
+/** Call a workspace user definer (0305) in the caller's own transaction
+ *  (`q`): a member's on the write role, an Admin user's in the login's
+ *  scope (S2a a2). Never inside workspaceWriteSystem: its actor
+ *  (system:workspace-write) is no system work, so the definer refuses it. */
+async function usersDefiner(q: Exec, call: ReturnType<typeof sql>): Promise<void> {
+  try {
+    await q.execute(call);
+  } catch (err) {
+    throw wsRefusal(err) ?? err;
+  }
+}
+
+/** A login id the definer takes: the id, or NULL when it is none (the
+ *  definer answers it after who may, as the route did). */
+function loginParam(loginId: string): string | null {
+  return UUID_RE.test(loginId) ? loginId.toLowerCase() : null;
 }
 
 /** Every Admin user is a Moderator of the Admin workspace, always (owner
@@ -961,69 +1033,35 @@ const LAST_MOD = () =>
     'This is the last Moderator of the workspace. An Admin user must make another user a Moderator first.',
   );
 
-function mayManageUsers(seen: Seen): void {
-  if (!seen.mod && !seen.admin) {
-    throw new WsError(403, 'forbidden', 'Only a Moderator of this workspace can manage its users.');
-  }
-  if (seen.row.archived_at !== null) throw archivedError();
-}
-
-/**
- * Who ticks or clears Moderator (owner decision 2026-10-13): an Admin user
- * only (the users area), on every workspace, Admin included. The ONE check
- * for setModerator, an add with the tick and the removal of a Moderator
- * (owner answer Q2: a removal takes the tick away too); a Moderator of the
- * workspace still adds users without it and removes plain users. Nobody becomes a
- * Moderator by themselves: the maker of a workspace is the one exception
- * (createWorkspace), and an admin login joins Admin as one (the login
- * bridge, mantle_bridge_login). "An Admin user" here is the caller's users
- * area (areasFor); adminUserSql (@mantle/db) is the same rule as SQL, for a
- * login other than the caller (the 0286 roll's tick commands).
- */
-function mayPromote(seen: Seen): void {
-  mayManageUsers(seen);
-  if (!seen.admin) {
-    throw new WsError(
-      403,
-      'admin_only',
-      'Only an Admin user can make someone a Moderator or take the tick away.',
-    );
-  }
-}
-
 /**
  * Who changes who is an Admin user (owner decision, F4 fix round 4): an
- * Admin user with the users area only, as for the Moderator tick
- * (mayPromote). The ONE check of the Admin workspace's own user changes:
- * an add there (whatever `moderator` says) makes the login an Admin user,
- * a removal takes it away. The Users screen's role change, the login
- * create and the invites sit under /api/users and /api/team-admin, whose
- * route class is the same users area (route-scope.ts), so no path makes
- * an Admin user without it. Before: an add to Admin with `moderator`
- * omitted asked only Moderator of Admin, which every Admin user is (0298).
+ * Admin user with the users area only, as for the Moderator tick. The rule
+ * is mantle_ws_add_user's and mantle_ws_remove_user's (0305); this is the
+ * Admin add's early answer, in the caller's scope, in the order the route
+ * answered before the role change's own checks (applyLoginChange: the
+ * anchor, the caller itself) and before the login is looked up (audit L1).
+ * The Users screen's role change, the login create and the invites sit
+ * under /api/users and /api/team-admin, whose route class is the same users
+ * area (route-scope.ts), so no path makes an Admin user without it.
  */
 function mayChangeAdminUsers(seen: Seen): void {
-  mayManageUsers(seen);
-  if (!seen.admin) {
-    throw new WsError(
-      403,
-      'admin_only',
-      'Only an Admin user who manages users can change who is an Admin user.',
-    );
-  }
+  if (!seen.mod && !seen.admin) throw WS_REFUSALS.forbidden!.error();
+  if (seen.row.archived_at !== null) throw archivedError();
+  if (!seen.admin) throw WS_REFUSALS.admin_users_only!.error();
 }
 
-/** The Admin-workspace role change behind adding or removing a user there.
- *  `checks` runs first inside the change's transaction (it locks the
- *  workspace, audit L2); `inTx` last, after the login bridge. On success the
- *  user.update audit row the Users screen writes (audit M2). */
+/** The Admin-workspace role change behind adding or removing a user there,
+ *  in ONE transaction: `change` (the user definer, which checks the acting
+ *  login and locks the workspace) runs first inside it, then the role, the
+ *  login bridge (a no-op once the definer made or removed the row) and the
+ *  lockout (sessions, agent, push devices: applyLoginChange). On success
+ *  the user.update audit row the Users screen writes (audit M2). */
 async function adminRoleChange(
   caller: WsCaller,
   loginId: string,
   role: LoginRole,
   path: { method: 'POST' | 'DELETE'; path: string },
-  checks: (tx: Exec) => Promise<unknown>,
-  inTx: (tx: Exec) => Promise<void>,
+  change: (tx: Exec) => Promise<void>,
 ): Promise<void> {
   const actor = caller.user;
   if (!actor) {
@@ -1033,17 +1071,14 @@ async function adminRoleChange(
   if (!target) throw new WsError(404, 'not_found', 'User not found.');
   if (target.role === role) {
     // No role change (a row out of step with its role): only the row.
-    await db.transaction(async (tx) => {
-      await checks(tx);
-      await inTx(tx);
-    });
+    await db.transaction(async (tx) => change(tx));
     return;
   }
   // The workspace lock comes before the login row here, the other way round
   // on the Users screen: a deadlock between the two is retried whole.
   const done = await withDeadlockRetry(() =>
-    applyLoginChange(actor, target, { role }, inTx, async (tx) => {
-      await checks(tx);
+    applyLoginChange(actor, target, { role }, undefined, async (tx) => {
+      await change(tx);
     }),
   );
   if (done.ok) {
@@ -1068,13 +1103,9 @@ async function adminRoleChange(
   }
   switch (done.reason) {
     case 'owner':
-      throw new WsError(
-        403,
-        'owner_stays_admin',
-        'The original account always stays an Admin user.',
-      );
+      throw WS_REFUSALS.owner_stays_admin!.error();
     case 'self':
-      throw new WsError(403, 'self_demote', 'You cannot remove yourself from the Admin workspace.');
+      throw WS_REFUSALS.self_demote!.error();
     case 'last-admin':
       throw LAST_MOD();
     case 'role-fixed':
@@ -1086,120 +1117,68 @@ async function adminRoleChange(
 
 /** POST /api/workspaces/:id/users. A Moderator adds anyone (Q3), without
  *  the Moderator tick; an Admin user adds anyone anywhere, itself included,
- *  private workspaces too (S1), with or without it (mayPromote): logged
- *  with subject.self and shown as "Added by NAME on DATE". On the Admin
+ *  private workspaces too (S1), with or without it: logged with
+ *  subject.self and shown as "Added by NAME on DATE". On the Admin
  *  workspace the add is the role change to admin (W5a), a Moderator there
  *  always: an add there with the tick off is refused (409 admin_workspace,
  *  owner decision, F4 fix round 1), and any add there is an Admin user's
- *  with the users area (mayChangeAdminUsers, F4 fix round 4). */
+ *  with the users area (F4 fix round 4). The rule is mantle_ws_add_user's
+ *  (0305, plan v3.2 S2a a1). */
 export async function addUser(
   caller: WsCaller,
   id: string,
   body: { loginId: string; moderator?: boolean },
 ): Promise<WorkspaceDetailResponse> {
-  // Who may add comes first (audit L1): a caller who may not manage this
-  // workspace learns nothing about the login it names.
   const pre = await seeWorkspace(caller, id);
-  // An add to Admin is an Admin user, a Moderator there always.
-  if (pre.row.is_admin && body.moderator === false) throw ADMIN_TICK_KEPT();
-  const gate = pre.row.is_admin
-    ? mayChangeAdminUsers
-    : body.moderator === true
-      ? mayPromote
-      : mayManageUsers;
-  gate(pre);
   const wid = pre.row.id;
-  const target = await loginOf(db, body.loginId);
-  if (!target) throw new WsError(404, 'not_found', 'User not found.');
-  const self = target.id === caller.loginId;
-  const checks = async (q: Exec): Promise<Seen> => {
-    const seen = await seeWorkspace(caller, wid, q, true);
-    gate(seen);
-    if (await userRow(q, wid, target.id)) {
-      throw new WsError(409, 'already_user', 'This person is already a user of this workspace.');
-    }
-    return seen;
-  };
-  const subject = (moderator: boolean) => ({
-    login: target.id,
-    moderator,
-    ...(self ? { self: true } : {}),
-  });
+  const add = (moderator: boolean, login: string | null) => (q: Exec) =>
+    usersDefiner(
+      q,
+      sql`select "public"."mantle_ws_add_user"(${caller.anchorId}::uuid, ${wid}::uuid,
+                   ${login}::uuid, ${moderator})`,
+    );
   if (pre.row.is_admin) {
+    // An add to Admin is an Admin user, a Moderator there always.
+    if (body.moderator === false) throw ADMIN_TICK_KEPT();
+    mayChangeAdminUsers(pre);
+    const target = await loginOf(db, body.loginId);
+    if (!target) throw new WsError(404, 'not_found', 'User not found.');
     await adminRoleChange(
       caller,
       target.id,
       'admin',
       { method: 'POST', path: `/api/workspaces/${wid}/users` },
-      checks,
-      async (tx) => {
-        // The login bridge (0251) made the row (Moderator); an Admin user
-        // is a Moderator of Admin always (a false tick was refused above).
-        const wanted = true;
-        await tx.execute(
-          sql`insert into workspace_users (workspace_id, login_id, moderator, added_by)
-              values (${wid}, ${target.id}, ${wanted}, ${caller.loginId})
-              on conflict (workspace_id, login_id)
-              do update set moderator = excluded.moderator, added_by = excluded.added_by`,
-        );
-        await event(tx, wid, caller.loginId, 'user.add', subject(wanted));
-      },
+      add(true, target.id),
     );
     return reread(caller, wid);
   }
-  await workspaceWriteSystem(() =>
-    db.transaction(async (tx) => {
-      await checks(tx);
-      const moderator = body.moderator ?? false;
-      await tx.execute(
-        sql`insert into workspace_users (workspace_id, login_id, moderator, added_by)
-            values (${wid}, ${target.id}, ${moderator}, ${caller.loginId})`,
-      );
-      await event(tx, wid, caller.loginId, 'user.add', subject(moderator));
-    }),
-  );
+  await db.transaction(add(body.moderator ?? false, loginParam(body.loginId)));
   return reread(caller, wid);
 }
 
 /** PATCH /api/workspaces/:id/users/:loginId: an Admin user ticks or
- *  clears Moderator (mayPromote). Never the last Moderator, and never an
- *  Admin user's tick on the Admin workspace (409 admin_workspace). */
+ *  clears Moderator. Never the last Moderator, and never an Admin user's
+ *  tick on the Admin workspace (409 admin_workspace). The rule is
+ *  mantle_ws_set_moderator's (0305). */
 export async function setModerator(
   caller: WsCaller,
   id: string,
   loginId: string,
   moderator: boolean,
 ): Promise<WorkspaceDetailResponse> {
-  const pre = await seeWorkspace(caller, id);
-  // An Admin user only (the users area), whose write request runs on the
-  // system pool: refused here, in the caller's scope, before the change
-  // (arch A6; and again inside it).
-  mayPromote(pre);
-  // The Admin workspace's tick is never cleared: every Admin user is a
-  // Moderator there (owner decision, F4 fix round 1).
-  if (pre.row.is_admin && !moderator) throw ADMIN_TICK_KEPT();
-  const wid = pre.row.id;
-  await db
-    .transaction(async (tx) => {
-      const seen = await seeWorkspace(caller, wid, tx, true);
-      mayPromote(seen);
-      if (seen.row.is_admin && !moderator) throw ADMIN_TICK_KEPT();
-      const row = UUID_RE.test(loginId) ? await userRow(tx, wid, loginId) : null;
-      if (!row) throw new WsError(404, 'not_user', 'This person is not a user of this workspace.');
-      if (row.moderator === moderator) return;
-      if (!moderator && (await otherModerators(tx, wid, loginId)) === 0) throw LAST_MOD();
-      await tx.execute(
-        sql`update workspace_users set moderator = ${moderator}
-           where workspace_id = ${wid} and login_id = ${loginId}`,
-      );
-      await event(tx, wid, caller.loginId, 'user.moderator', { login: loginId, moderator });
-    })
-    .catch((err: unknown) => {
-      throw lastAdminError(err) ?? err;
-    });
+  const wid = wsId(id);
+  await db.transaction((tx) =>
+    usersDefiner(
+      tx,
+      sql`select "public"."mantle_ws_set_moderator"(${caller.anchorId}::uuid, ${wid}::uuid,
+                   ${loginParam(loginId)}::uuid, ${moderator}, null)`,
+    ),
+  );
   return reread(caller, wid);
 }
 
+/** The Admin workspace's last-Moderator check (0241, at commit), said as
+ *  the route says it. */
 function lastAdminError(err: unknown): WsError | null {
   if (!isCheckViolation(err)) return null;
   for (let e: unknown = err, d = 0; e && d < 4; d++) {
@@ -1211,9 +1190,10 @@ function lastAdminError(err: unknown): WsError | null {
 }
 
 /** DELETE /api/workspaces/:id/users/:loginId: a Moderator or an Admin user
- *  removes a plain user; only an Admin user removes a Moderator (mayPromote,
- *  owner answer Q2); anyone may leave. Never the last Moderator. On the
- *  Admin workspace it is the role change to member (W5a). */
+ *  removes a plain user; only an Admin user removes a Moderator (owner
+ *  answer Q2); anyone may leave. Never the last Moderator. On the Admin
+ *  workspace it is the role change to member (W5a). The rule is
+ *  mantle_ws_remove_user's (0305). */
 export async function removeUser(
   caller: WsCaller,
   id: string,
@@ -1222,46 +1202,22 @@ export async function removeUser(
   const pre = await seeWorkspace(caller, id);
   const wid = pre.row.id;
   const self = loginId.toLowerCase() === caller.loginId;
-  const checks = async (q: Exec): Promise<void> => {
-    const seen = await seeWorkspace(caller, wid, q, true);
-    if (!self) mayManageUsers(seen);
-    else if (seen.row.archived_at !== null) throw archivedError();
-    const row = UUID_RE.test(loginId) ? await userRow(q, wid, loginId) : null;
-    if (!row) throw new WsError(404, 'not_user', 'This person is not a user of this workspace.');
-    // Removing a Moderator takes their tick away: the same one check as
-    // clearing it (owner answer Q2), or a Moderator could remove another and
-    // add them back without it. Leaving stays open to anyone.
-    if (!self && seen.row.is_admin) mayChangeAdminUsers(seen);
-    else if (!self && row.moderator) mayPromote(seen);
-    if (row.moderator && (await otherModerators(q, wid, loginId)) === 0) throw LAST_MOD();
-  };
+  const remove = (q: Exec) =>
+    usersDefiner(
+      q,
+      sql`select "public"."mantle_ws_remove_user"(${caller.anchorId}::uuid, ${wid}::uuid,
+                   ${loginParam(loginId)}::uuid)`,
+    );
   if (pre.row.is_admin) {
     await adminRoleChange(
       caller,
       loginId,
       'member',
       { method: 'DELETE', path: `/api/workspaces/${wid}/users/${loginId}` },
-      checks,
-      async (tx) => {
-        // The login bridge (0251) removed the row; make sure, and log it.
-        await tx.execute(
-          sql`delete from workspace_users where workspace_id = ${wid} and login_id = ${loginId}`,
-        );
-        await event(tx, wid, caller.loginId, 'user.remove', { login: loginId });
-      },
+      remove,
     );
   } else {
-    await workspaceWriteSystem(() =>
-      db.transaction(async (tx) => {
-        await checks(tx);
-        await tx.execute(
-          sql`delete from workspace_users where workspace_id = ${wid} and login_id = ${loginId}`,
-        );
-        await event(tx, wid, caller.loginId, self ? 'user.leave' : 'user.remove', {
-          login: loginId,
-        });
-      }),
-    );
+    await db.transaction(remove);
   }
   // A login that left can no longer see the workspace.
   if (self && !pre.admin) return { ...(await detailAfterLeave(pre)) };

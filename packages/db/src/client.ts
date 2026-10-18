@@ -52,6 +52,7 @@ import {
   systemDbCallerOf,
   afterCommit,
   afterRollback,
+  isWorkspaceSystemActor,
 } from './viewer';
 import {
   actorCheckMode,
@@ -485,9 +486,13 @@ export function needsActorWrap(query: string): boolean {
  *  bound, or the check is off (then nothing changes). */
 function actorParams(): [string, string, string] | null {
   const mode = actorCheckMode();
-  if (mode === 'off') return null;
   const actor = currentActor();
   if (!actor) return null;
+  // Workspace system work (plan v3.2 S2a) sets its actor with the check off
+  // too: the workspace definers read mantle.actor to know it
+  // (mantle_ws_system_work, 0305), whatever the check's mode. Its mode goes
+  // as 'off', the box's own, so no check reads it.
+  if (mode === 'off' && !isWorkspaceSystemActor(actor)) return null;
   return [actorSetting(actor), writeModeOf(actor), mode];
 }
 
@@ -2844,9 +2849,17 @@ export async function createHomeFallback(
        where p.login_id = ${loginId}::uuid`)) as unknown as { ws: string }[];
     return { privateWs: ownPrivate(loginId, own[0]?.ws ?? null) };
   }
-  const rows = (await admin.execute(
-    sqlTag`select "public"."mantle_ws_private_workspace"(${loginId}::uuid)::text as ws`,
-  )) as unknown as { ws: string | null }[];
+  // The definer makes only the acting login's own (0305, plan v3.2 S2a a1).
+  // This read carried no write scope (a plain system-pool statement, no
+  // settings), so the login it is asked for is set as the scope's login
+  // (mantle.scope_login, which only the scope's checks read), in a
+  // transaction of its own.
+  const rows = (await admin.transaction(async (tx) => {
+    await tx.execute(sqlTag`select set_config('mantle.scope_login', ${loginId}, true)`);
+    return tx.execute(
+      sqlTag`select "public"."mantle_ws_private_workspace"(${loginId}::uuid)::text as ws`,
+    );
+  })) as unknown as { ws: string | null }[];
   const privateWs = ownPrivate(loginId, rows[0]?.ws ?? null);
   if (!privateWs) {
     return { refused: 'no-workspace', message: 'You have no workspace to create in yet.' };

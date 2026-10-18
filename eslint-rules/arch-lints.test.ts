@@ -65,7 +65,11 @@ import {
 } from './store-brokers.mjs';
 // @ts-expect-error: plain-JS module, no types shipped.
 import { ACTOR_SETTER_PATTERN, rule as actorSettersRule } from './actor-setters.mjs';
-import { AS_SYSTEM_OTHER_REASONS, AS_SYSTEM_TURN_REASONS } from '../packages/db/src/viewer';
+import {
+  AS_SYSTEM_OTHER_REASONS,
+  AS_SYSTEM_TURN_REASONS,
+  WORKSPACE_SYSTEM_REASONS,
+} from '../packages/db/src/viewer';
 
 /** Every reason asSystem takes (arch A2a). */
 const KNOWN_AS_SYSTEM_REASONS: readonly string[] = [
@@ -133,8 +137,42 @@ describe('the architecture ratchets (pinned counts)', () => {
       const reasons = got.perFile.systemWork[f]?.reasons ?? [];
       expect(pin.why, f).toEqual(reasons);
       expect(reasons.length, f).toBeGreaterThan(0);
-      for (const r of reasons) expect(KNOWN_AS_SYSTEM_REASONS, `${f}: ${r}`).toContain(r);
+      for (const r of reasons) {
+        expect([...KNOWN_AS_SYSTEM_REASONS, ...WORKSPACE_SYSTEM_REASONS], `${f}: ${r}`).toContain(
+          r,
+        );
+      }
     }
+  });
+
+  it('workspace system work (plan v3.2 S2a): its reasons only in pinned systemWork calls', () => {
+    // The SQL allowlist (mantle_ws_system_work, 0305) is capped at five
+    // actors (plan rule 6); each one's reason is passed to systemWork in
+    // the files system-work-allowlist.mjs pins for it, and nowhere else: no
+    // runAsSystem, systemActor or systemUnder names one, in any file.
+    const reasons = [...WORKSPACE_SYSTEM_REASONS] as string[];
+    expect(reasons.length).toBeGreaterThan(0);
+    expect(reasons.length).toBeLessThanOrEqual(5);
+    const pins = SYSTEM_WORK_PINS as Record<string, { count: number; why: string[] }>;
+    const bad: string[] = [];
+    for (const f of countedFiles(ROOT) as string[]) {
+      if (f === 'packages/db/src/viewer.ts') continue;
+      const text = readRepoFile(ROOT, f);
+      if (text === null) continue;
+      const code = stripComments(text) as string;
+      for (const r of reasons) {
+        const quote = '[\'"\\x60]';
+        const lit = new RegExp(`${quote}(?:system:)?${r}${quote}`, 'g');
+        const n = code.match(lit)?.length ?? 0;
+        const binder = new RegExp(
+          `\\b(?:runAsSystem|systemActor|systemUnder)\\(\\s*${quote}(?:system:)?${r}${quote}`,
+        );
+        if (binder.test(code)) bad.push(`${f}: binds ${r} outside systemWork`);
+        const allowed = pins[f]?.why.includes(r) ? 1 : 0;
+        if (n !== allowed) bad.push(`${f}: ${r} named ${n} times, pinned ${allowed}`);
+      }
+    }
+    expect(bad).toEqual([]);
   });
 
   it('as-system-allowlist: asSystem call sites and their reasons, file by file', () => {

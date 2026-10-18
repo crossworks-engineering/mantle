@@ -108,6 +108,8 @@ export {
   AS_SYSTEM_OTHER_REASONS,
   TurnScopeExitError,
   type AsSystemReason,
+  WORKSPACE_SYSTEM_REASONS,
+  type WorkspaceSystemReason,
   SYSTEM_DB_MODULES,
   assertSystemDbCaller,
   afterCommit,
