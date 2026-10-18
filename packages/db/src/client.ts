@@ -485,7 +485,7 @@ export function needsActorWrap(query: string): boolean {
 }
 
 /** A write (needsActorWrap), or any statement of workspace system work: its
- *  definers read mantle.actor, a bare call outside a transaction too (M2). */
+ *  definers read mantle.actor, a bare call outside a transaction too. */
 function wrapsStatement(query: string): boolean {
   return needsActorWrap(query) || isWorkspaceSystemActor(currentActor());
 }
@@ -496,7 +496,7 @@ function actorParams(): [string, string, string] | null {
   const mode = actorCheckMode();
   const actor = currentActor();
   if (!actor) return null;
-  // Workspace system work (plan v3.2 S2a) sets its actor with the check off
+  // Workspace system work sets its actor with the check off
   // too: the workspace definers read mantle.actor to know it
   // (mantle_ws_system_work, 0305), whatever the check's mode. Its mode goes
   // as 'off', the box's own, so no check reads it.
@@ -2852,9 +2852,9 @@ export async function createHomeFallback(
        where p.login_id = ${loginId}::uuid`)) as unknown as { ws: string }[];
     return { privateWs: ownPrivate(loginId, own[0]?.ws ?? null) };
   }
-  // The definer makes only the acting login's own (0305, plan v3.2 S2a a1):
+  // The definer makes only the acting login's own (0305):
   // the scope's login (mantle.scope_login, read by the scope's checks only)
-  // is the login bound to this call, never the one asked for (audit L1).
+  // is the login bound to this call, never the one asked for.
   const bound = boundLoginId();
   if (bound === null || bound !== loginId.toLowerCase()) {
     throw new RuntimeFaultError('createHomeFallback: the login asked for is not the one bound');

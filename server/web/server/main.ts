@@ -117,7 +117,7 @@ openLoginWritePool();
 // step runs as before, never awaited.
 // Then the authors' copies of their accepted items (W6b, plan S3): only the
 // missing ones, no LLM work, no extractor notify.
-// The boot's assistant attach is workspace system work (0305, plan v3.2 S2a
+// The boot's assistant attach is workspace system work (0305
 // a2: the SQL allowlist's system:boot:migrate-workspaces): systemWork.
 const workspacesStep = () =>
   systemWork(

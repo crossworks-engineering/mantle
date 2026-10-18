@@ -1,6 +1,6 @@
 /**
- * The one mapper from a workspace user definer's refusal (migration 0305,
- * plan v3.2 S2a a1) to the WsError the route answered before the rule moved
+ * The one mapper from a workspace user definer's refusal (migration 0305)
+ * to the WsError the route answered before the rule moved
  * to SQL: the SQLSTATE and the message code must both match; anything else
  * is no answer (thrown as it is, the opaque 500).
  */

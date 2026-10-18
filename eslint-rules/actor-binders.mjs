@@ -52,7 +52,7 @@ export const ACTOR_BINDER_PINS = {
   'packages/files/src/docs.ts': 1,
   'packages/files/src/ops/shared.ts': 1,
   // An MCP connection's private workspace, made as the connection's login
-  // (plan v3.2 S2a a1 audit L1: createHomeFallback makes only the bound
+  // (createHomeFallback makes only the bound
   // login's own).
   'packages/mcp-core/src/login-surface.ts': 1,
   'packages/runtime/src/heartbeats/fire.ts': 2,
@@ -79,7 +79,7 @@ export const ACTOR_BINDER_PINS = {
   'server/web/lib/runs/execute-item.ts': 1,
   // A7: the snapshot copies, the manifest reconcile and the app table
   // exports run as binder calls; the workspaces step is systemWork since
-  // plan v3.2 S2a a2 (its assistant attach is workspace system work, 0305).
+  // (its assistant attach is workspace system work, 0305).
   'server/web/server/main.ts': 3,
   // The gate's own slot, and a page's (the /s page, a render page: A4 step
   // 2, moved here from server/pages/share.tsx and print.ts).

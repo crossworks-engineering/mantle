@@ -373,11 +373,16 @@ hashes above are from before the rebase. After it: `pnpm arch:check` 0,
   workspaces step is systemWork), packages/mcp-core/src/login-surface.ts 0
   to 1 (the MCP connection makes its private workspace as its login, audit
   L1).
-- `sqlAreaRules` stays 3 (its last two are S2b b3's Telegram asks: the plan's
-  "to 1" needs them reclassified). `requestSystemExits` stays 5: the
-  `admin-write` site stays for the other any-login rows (it is counted by
-  call site, not by row). `scopeHoldsAdminCalls` stays: no workspace caller
-  calls `scopeHoldsAdmin`.
+- `sqlAreaRules` is 1 on main since P1b (the Telegram asks reclassified as
+  `sqlMembershipAsks`); this branch adds none. `requestSystemExits` stays 5:
+  the `admin-write` site stays for the other any-login rows (counted by call
+  site, not by row). `scopeHoldsAdminCalls` stays: no workspace caller calls
+  `scopeHoldsAdmin`.
+- After the rebase on P1b (v0.300.93): `asSystemExits` and `asSystemFull` 58
+  to 56, `asSystemFull_workspace-write` 4 to 2, `rawWriteSqlScoped` 80 to 70,
+  `rawWriteSqlFiles` 61 to 60, `historyCodeComments` 2332 to 2327 (the
+  branch's comments name no step code; the plan and audit codes live in this
+  file and the pin notes).
 
 ## DB tests (a2)
 
@@ -425,8 +430,9 @@ records `out=user`, was `system:admin-write`; every answer as before:
 snapshot updated) and `process-entries` (the actor-binders pin of
 server/main.ts).
 
-**Rebase.** Rebased onto origin/main 384b64d02 (v0.300.92) before a2: one
-conflict, the pins file (main's a8 pins beside a1's). Main took no migration
+**Rebase.** Rebased onto origin/main 384b64d02 (v0.300.92) before a2, and
+onto 6e49ee5b4 (v0.300.93, P1b's counters) at the end: the only conflicts
+were the pins file, taken from main and re-pinned value by value. Main took no migration
 since 0304, so 0305 stays the next number (`when` 1790197620000). The
 tree-bugs lane may take 0305 first: then this branch renumbers (file,
 journal entry, a `when` above main's last) and keeps the renumber proof.

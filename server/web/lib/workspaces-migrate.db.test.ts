@@ -53,8 +53,8 @@ describe.skipIf(!URL)('workspaces for a fresh install (W5b1 audit M1)', () => {
     expect((await sql`select mantle_ws_skip_reason() as r`)[0]!.r).toBe('no brain anchor yet');
 
     const { createFirstOwner } = await import('./auth/first-owner');
-    // The signup's attach runs in the new owner's own scope (0305, plan v3.2
-    // S2a a2): it must not fail (a failure is only logged).
+    // The signup's attach runs in the new owner's own scope (0305): it must
+    // not fail (a failure is only logged).
     const errors = vi.spyOn(console, 'error');
     const res = await createFirstOwner('owner@example.invalid', 'a long enough password 1');
     expect(res.ok).toBe(true);

@@ -415,7 +415,7 @@ const systemPoolScope = new AsyncLocalStorage<WorkspaceScope>();
 
 /**
  * Run `fn` on the system pool with the request's write scope set on each of
- * its transactions (plan v3.2 S2a a2; client.ts db reads carriedWriteScope):
+ * its transactions (client.ts db reads carriedWriteScope):
  * an Admin user's role change from the workspace screen (adminRoleChange),
  * whose request runs in its login's scope but whose writes reach tables the
  * write role holds no right on (auth.users, sessions, push devices). Its
@@ -947,7 +947,7 @@ export type AsSystemReason =
   (typeof AS_SYSTEM_TURN_REASONS)[number] | (typeof AS_SYSTEM_OTHER_REASONS)[number];
 
 /**
- * The workspace system work (plan v3.2 S2a): the reasons whose actor
+ * The workspace system work: the reasons whose actor
  * (system:<reason>) a workspace definer takes from a caller with no acting
  * login. The SQL allowlist (mantle_ws_system_work, migration 0305) names
  * exactly these actors, one per real caller, each added in the release that
@@ -958,9 +958,9 @@ export type AsSystemReason =
  * eslint-rules/arch-lints.test.ts refuses the strings anywhere else.
  *
  *  - `ws-clear-ticks`: pnpm -C server/web ws:clear-member-ticks
- *    (workspace-ticks.ts clearMemberTicks), S2a a1.
+ *    (workspace-ticks.ts clearMemberTicks).
  *  - `boot:migrate-workspaces`: the boot step (server/main.ts: the
- *    assistant attach, mantle_ws_attach_assistants), S2a a2. The first
+ *    assistant attach, mantle_ws_attach_assistants). The first
  *    owner and onboarding attach in the login's own scope instead (the
  *    assistants area), never as system work: both run inside a request.
  */
@@ -1074,7 +1074,7 @@ export function systemWork<T>(
   fn: () => Promise<T>,
   reason: AsSystemReason | WorkspaceSystemReason,
 ): Promise<T> {
-  // Workspace system work (S2a): never inside any scope, a system exit or
+  // Workspace system work: never inside any scope, a system exit or
   // transaction included, nor inside a request.
   if (
     (WORKSPACE_SYSTEM_REASONS as readonly string[]).includes(reason) &&

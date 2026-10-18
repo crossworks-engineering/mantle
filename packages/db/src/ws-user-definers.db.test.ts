@@ -1,5 +1,5 @@
 /**
- * The users of a workspace in SQL (workspaces arch plan v3.2, S2a a1;
+ * The users of a workspace in SQL (the workspaces arch plan;
  * migration 0305_ws_user_definers), on a database of its own (so
  * mantle_brain_id() is this file's anchor) that the workspaces switch made
  * live:
@@ -797,7 +797,7 @@ describe.skipIf(!URL)('the workspace user definers (S2a a1)', () => {
     );
     expect(another).toMatchObject({ ok: false, state: '42501' });
     // The TypeScript path (createHomeFallback): it sets mantle.scope_login
-    // to the login bound to the call, and refuses another (audit L1).
+    // to the login bound to the call, and refuses another.
     const ask = () => m.createHomeIntent(L.priv, null, { ownWork: true, makePrivate: true });
     await expect(m.runAsActor(m.loginActor(L.mem), ask)).rejects.toThrow(/not the one bound/);
     await expect(ask()).rejects.toThrow(/not the one bound/);
@@ -828,7 +828,7 @@ describe.skipIf(!URL)('the workspace user definers (S2a a1)', () => {
       'ws-clear-ticks',
     )) as unknown as { a: string; w: string }[];
     expect(seen[0]).toEqual({ a: CLEAR_TICKS, w: 'rw' });
-    // Outside a transaction too, a read included (S2a a1 audit M2): every
+    // Outside a transaction too, a read included: every
     // statement of workspace system work goes with its actor.
     const bare = (await m.systemWork(
       () =>

@@ -105,7 +105,7 @@ describe.skipIf(!URL)('grants (W5b2 part A)', () => {
   /**
    * A write runs in the login's request scope, as the gate runs every
    * login's /api/grants write (session.ts anyLoginScope, F4; an Admin
-   * user's too, with drafts). Plan v3.2 S2a a1: the grant's audit row
+   * user's too, with drafts). Since 0305 the grant's audit row
    * (mantle_workspace_event) is refused with no acting login, so a write
    * called with no scope at all (as this file did) is refused. Reads run as
    * before.

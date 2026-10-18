@@ -12,7 +12,7 @@
  */
 import { isCounted, pinnedRule, repoPathOf, systemWorkSites } from './arch-counts.mjs';
 
-/** @type {Record<string, { count: number, why: string[] }>} A6b: 7 sites in 7 files; S2a a1: 8 in 8; S2a a2: 9 in 9. */
+/** @type {Record<string, { count: number, why: string[] }>} A6b: 7 sites in 7 files;: 8 in 8;: 9 in 9. */
 export const SYSTEM_WORK_PINS = {
   // The push worker builds a login's notice from that login's rows.
   'packages/content/src/login-notices.ts': { count: 1, why: ['login-notice'] },
@@ -29,11 +29,11 @@ export const SYSTEM_WORK_PINS = {
   // The boot step that makes snapshot copies, under its advisory lock.
   'server/web/lib/snapshot-copies.ts': { count: 1, why: ['snapshot-copies'] },
   // ws:clear-member-ticks: the Moderator ticks it clears go through
-  // mantle_ws_set_moderator as workspace system work (plan v3.2 S2a a1;
-  // the SQL allowlist mantle_ws_system_work names its actor, 0305).
+  // mantle_ws_set_moderator as workspace system work (the SQL allowlist
+  // mantle_ws_system_work names its actor, 0305).
   'server/web/lib/workspace-ticks.ts': { count: 1, why: ['ws-clear-ticks'] },
   // The boot step: the assistant attach (mantle_ws_attach_assistants) as
-  // workspace system work (plan v3.2 S2a a2; its actor in the SQL
+  // workspace system work (its actor in the SQL
   // allowlist, 0305). Was runAsSystem with the same reason.
   'server/web/server/main.ts': { count: 1, why: ['boot:migrate-workspaces'] },
 };

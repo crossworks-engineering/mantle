@@ -203,7 +203,7 @@ export async function prepareCallerTools(caller: McpCaller): Promise<PreparedCal
     // is none, and the login write gateway knows the pair from it (arch
     // A2b2b). Each create then asks the same function with it.
     // As the connection's login (createHomeFallback makes only the bound
-    // login's own private workspace, plan v3.2 S2a a1 audit L1).
+    // login's own private workspace).
     const home = await runAsActor(loginActor(caller.loginId, caller.write ? 'rw' : 'ro'), () =>
       createHomeIntent(caller.loginId, null, { ownWork: true, makePrivate: true }),
     );

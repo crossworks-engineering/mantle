@@ -217,7 +217,7 @@ export async function provisionDefaults(
   // workspace (0286), so the team responder stays on no workspace until an
   // Admin user attaches it to one. In the scope of the login provisioning
   // (the anchor's when configuredBy is null): the attach asks it the
-  // assistants area (0305, plan v3.2 S2a a2).
+  // assistants area (0305).
   await attachDefaultAssistantsQuietly('onboarding', opts.configuredBy ?? ownerId);
 
   return { createdWorkers: created, createdAgent, skipped, seededSpecialists };

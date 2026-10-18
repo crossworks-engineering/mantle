@@ -14,8 +14,8 @@
  *   Moderator tick of every user who is not an Admin user, keeps at least
  *   one Moderator, and writes the workspace_events row setModerator writes
  *   (user.moderator), with no actor and `by` naming the command. It never
- *   removes a row. Each clear is mantle_ws_set_moderator (0305, plan v3.2
- *   S2a a1), the same definer the workspace screen calls, as workspace
+ *   removes a row. Each clear is mantle_ws_set_moderator (0305), the same
+ *   definer the workspace screen calls, as workspace
  *   system work (systemWork 'ws-clear-ticks': the one actor its SQL
  *   allowlist, mantle_ws_system_work, takes from this command).
  *

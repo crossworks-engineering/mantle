@@ -46,12 +46,12 @@ export async function migrateWorkspaces(): Promise<WsMigrateRow[]> {
 }
 
 /** Attach the default assistants where Admin or Team has none yet. Returns
- *  how many it attached. A definer (0305, plan v3.2 S2a a2): with no
+ *  how many it attached. A definer (0305): with no
  *  `loginId` it is system work (the boot, systemWork in server/main.ts);
  *  with one it runs in that login's own scope on the system pool (its
  *  workspaces and its login set, as systemPoolTx sets a write scope), where
  *  the definer asks the assistants area of it: the first owner at signup
- *  and onboarding, both inside a request (S2a a1 audit M3). */
+ *  and onboarding, both inside a request. */
 export async function attachDefaultAssistants(loginId?: string): Promise<number> {
   const call = sql`select "public"."mantle_ws_attach_assistants"() as n`;
   if (loginId === undefined) {

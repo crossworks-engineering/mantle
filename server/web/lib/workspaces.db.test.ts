@@ -130,8 +130,8 @@ describe.skipIf(!URL)('workspace management (W5a)', () => {
   /**
    * The gate's scope for a login's call (session.ts anyLoginScope): its
    * reads and writes in its own request scope, as every member's request
-   * runs since F4 and an Admin user's on /api/workspaces since plan v3.2
-   * S2a a2 (drafts for an Admin user, as requestMode gives). The workspace
+   * runs since F4 and an Admin user's on /api/workspaces since 0305
+   * (drafts for an Admin user, as requestMode gives). The workspace
    * definers act for the scope's login (0305), so a change called with no
    * scope at all is refused.
    */
