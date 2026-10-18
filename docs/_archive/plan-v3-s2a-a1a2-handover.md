@@ -159,7 +159,7 @@ Proposed as its own task (not fixed here).
 - **M2** (client.ts `wrapsStatement`): workspace system work sends EVERY
   statement with its actor, a read outside a transaction too. Before, only
   writes were wrapped outside a transaction, so a bare `select
-  mantle_ws_...()` under `systemWork('ws-clear-ticks')` went with no
+mantle_ws_...()` under `systemWork('ws-clear-ticks')` went with no
   `mantle.actor` and the definers refused it. Cell: "systemWork(ws-clear-ticks)
   sets mantle.actor ... in every check mode" now also reads the setting and
   calls a definer with `db.execute` outside a transaction.
@@ -338,3 +338,95 @@ release commit, version fields only, so the gates above stand; the commit
 hashes above are from before the rebase. After it: `pnpm arch:check` 0,
 `pnpm docs:check` 0, the journal, arch-lints and wsRefusal unit cells 0.
 0305 stays the next number (`when` 1790197620000, above 0304's).
+
+## Counts (a2)
+
+- Unscoped callers of `mantle_workspace_event` (audit L2): **0**. Taken on
+  a throwaway database on the workstation (own pg18 container, never the dev
+  DB): the full DB vitest run at 7da5c112f, both checks as the configs set
+  them (the sweeps run their warn and on cells). With the rule in place an
+  unscoped call is refused (`mantle_workspace_event: no acting login`), so
+  every such caller is a failed cell or a logged refusal: the run's log has
+  0 such refusals and 0 `mantle_ws:no_acting_login`, and its only failures
+  are the two named in "DB tests (a2)". Miss rows on dev were not read (no
+  box, never the dev DB).
+- The SQL allowlist (`mantle_ws_system_work`): 2 actors, capped at 5
+  (`system:ws-clear-ticks`, `system:boot:migrate-workspaces`).
+- Box count: `admin_workspaces_without_assistant` is already in
+  `scripts/arch-scoreboard-box.sh` (P1a); a swallowed attach failure shows
+  there as a number.
+
+## Pins (a2)
+
+- `workspaceTableRawWrites` 9 to 6 (the three resource writes are definer
+  calls; the 6 left wait for S2b).
+- `workspaceTableWriterFns` 15 to 18 (plus `mantle_ws_put_assistant` and the
+  three resource definers, minus `mantle_ws_attach_assistants`, which writes
+  through the helper now; `WRITERS` in `ws-user-definers.db.test.ts`).
+- `setAssistantCopies` 1 to 2 (TS `setAssistant` on patchWorkspace's path,
+  SQL `mantle_ws_set_assistant`), the byte-equal cell in
+  `workspaces.db.test.ts` ("setAssistantCopies").
+- `dbClientLines` 3142 (main) to 3175, the reason line in the pin's note
+  (audit L4).
+- `system-work-allowlist`: 9 sites in 9 files (server/main.ts,
+  `boot:migrate-workspaces`). `actor-binders`: server/main.ts 4 to 3 (the
+  workspaces step is systemWork), packages/mcp-core/src/login-surface.ts 0
+  to 1 (the MCP connection makes its private workspace as its login, audit
+  L1).
+- `sqlAreaRules` stays 3 (its last two are S2b b3's Telegram asks: the plan's
+  "to 1" needs them reclassified). `requestSystemExits` stays 5: the
+  `admin-write` site stays for the other any-login rows (it is counted by
+  call site, not by row). `scopeHoldsAdminCalls` stays: no workspace caller
+  calls `scopeHoldsAdmin`.
+
+## DB tests (a2)
+
+On the workstation, own worktree and pg18 container (port 56123), migrated
+with `MANTLE_CHECK_FLOOR=keep`, `--maxWorkers=3`:
+
+- Full DB vitest at 7da5c112f: 13581 passed, 2 failed: the grants move
+  (not a2's, below) and `write-role.db.test.ts`'s reviewed definer list,
+  which lacked the four resource definers (fixed at 0936927cb).
+- The 13 expected-red cells of a1 are green (workspaces.db 9, f4-owner-flows
+  3, a6b workspace-create 1), and `adminRoleChange` runs end to end (definer,
+  role, bridge, lockout: workspaces.db "the Admin workspace" cells and
+  f4-owner-flows "round 4, making or unmaking an Admin user", warn and on).
+- **The one red left, not a2's:** `grants.db.test.ts` "move into a folder"
+  (the node_embeds read in followShares, S11a-5; the tree-bugs lane fixes it
+  on main, and this branch rebases onto it).
+- The mode configs at 0936927cb (`test:actor-off`, `test:actor-on`,
+  `test:edit-on`, `test:runtime-role`: each exit 1, twice): the
+  workstation ran at load 12 to 15 (65 users), and every red file but the
+  grants move was a suite hook that timed out (`Hook timed out in 10000ms`,
+  most on a scratch database's drop) or a 500 under that load, in different
+  files each run. Each file with an assertion failure was run again alone
+  under the same config: `test:runtime-role` on a6-grant-sweep,
+  f4-admin-write-role, precheck-removal, precheck-removal-http, w6b-fix1,
+  w7a-tool-sweep, w7-int-fix, scratch-drop (8 files, 610 tests) and on
+  a1-d1-routes, search-across-workspaces, workspaces.db, access-keys-scope,
+  workspaces-review-off, access-matrix (6 files, 91 tests): exit 0 both. In
+  `test:actor-on` and `test:edit-on` the one assertion failure is the grants
+  move. `test:matrix` exit 0 (14608 cells, 9404 run, 9404 pass, 0 fail, 5204
+  not applicable, as on main; the surface and tool cells' known fails only).
+  boot:smoke not run here (it is in `pnpm verify`; the boot step changed only
+  its binder, runAsSystem to systemWork). The CEO may want the mode configs
+  once more on a quiet box.
+
+## Gates (a2)
+
+On the Mac, `DATABASE_URL` unset, at 0936927cb: `pnpm -r typecheck` 0,
+`pnpm lint` 0, `pnpm format:check` 0, `pnpm docs:check` 0, `pnpm arch:check`
+0, `pnpm -C server/web build` 0, `pnpm exec vitest run server packages
+eslint-rules` 1 (10944 passed, 2 failed: `onboarding/purpose-route.test.ts`
+timed out at 15 s while the build ran beside it; alone it passes 3 of 3, and
+it passed in the run before at 7b77957b7 plus the snapshot fix). The run
+before also caught `a4-guard-sweep` (an Admin user's `/api/workspaces` write
+records `out=user`, was `system:admin-write`; every answer as before:
+snapshot updated) and `process-entries` (the actor-binders pin of
+server/main.ts).
+
+**Rebase.** Rebased onto origin/main 384b64d02 (v0.300.92) before a2: one
+conflict, the pins file (main's a8 pins beside a1's). Main took no migration
+since 0304, so 0305 stays the next number (`when` 1790197620000). The
+tree-bugs lane may take 0305 first: then this branch renumbers (file,
+journal entry, a `when` above main's last) and keeps the renumber proof.
