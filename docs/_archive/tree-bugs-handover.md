@@ -37,7 +37,7 @@ is the write role, so they do not fire there).
   move by the row's own old and new path (never a setting a session could
   set).
 - `mantle_is_folder_rename(old_owner, old_path, new_owner, new_path, type,
-  data)`: a folder (branch), the same owner, the same parent path and
+data)`: a folder (branch), the same owner, the same parent path and
   depth, not a system folder (`data.system`). No role may run it; the two
   definers call it.
 - The move check asks `mantle_may_edit` of a renamed folder (no manage, no
@@ -99,12 +99,12 @@ Recorded on main first (the full matrix at 384b64d02 on the workstation,
 both tool modes): the only failures were the listed known ones. On the
 branch:
 
-| Cell / caller | main | branch |
-| --- | --- | --- |
-| `tool:tree_folder_update web-turn turn/writeGrant edit branch @folder` | refused | allowed (the rule) |
-| `tool:tree_folder_update mcp-oauth login/writeGrant edit branch @folder` | refused | allowed (the rule) |
-| `tool:page_move mcp-oauth login/homeModerator move page @folder` | database error (move made) | allowed, ok |
-| `tool:tree_item_move mcp-oauth login/homeModerator move recall @folder` | database error (move made) | allowed, ok |
+| Cell / caller                                                            | main                       | branch             |
+| ------------------------------------------------------------------------ | -------------------------- | ------------------ |
+| `tool:tree_folder_update web-turn turn/writeGrant edit branch @folder`   | refused                    | allowed (the rule) |
+| `tool:tree_folder_update mcp-oauth login/writeGrant edit branch @folder` | refused                    | allowed (the rule) |
+| `tool:page_move mcp-oauth login/homeModerator move page @folder`         | database error (move made) | allowed, ok        |
+| `tool:tree_item_move mcp-oauth login/homeModerator move recall @folder`  | database error (move made) | allowed, ok        |
 
 Beyond the matrix, one more answer of the same rule: a caller with edit of
 a folder (Write on it) but not of the folder it sits in may rename it now
@@ -148,4 +148,28 @@ the code comments say "migration 0305" in `node-ops.ts`,
 
 ## Gates
 
-GATES
+Exit codes. Mac (no database, DATABASE_URL unset): `pnpm -r typecheck`
+0, `pnpm lint` 0, `pnpm format:check` 0, `pnpm docs:check` 0,
+`pnpm arch:check` 0, `pnpm -C server/web build` 0,
+`pnpm exec vitest run server packages eslint-rules` 0 (846 files passed,
+259 skipped; 10940 tests passed).
+
+Workstation (own pgvector pg18 container, `MANTLE_CHECK_FLOOR=keep`):
+
+- `pnpm test:matrix` (`--config vitest.matrix.config.ts`) on main
+  384b64d02 first: exit 0, 4 files, 8 tests. On the branch: exit 0, 4
+  files, 8 tests. A8 grid 9404 run, 0 fail. Surfaces: off 8 fail (8
+  known), warn 8 (8 known), on 0. Tool cells: warn 26 fail (26 known, was
+  30), on 4 fail (4 known, was 8). 0 unexpected in both modes. The fail
+  list on the branch is main's less the four cells above (two ways in for
+  each), nothing new.
+- `server/web/server/tree-bugs.db.test.ts`: exit 0, 15 tests.
+- `server/web/server/a6-grant-sweep.db.test.ts`,
+  `server/web/lib/grants.db.test.ts`, `packages/db/src/write-role.db.test.ts`,
+  `server/web/server/a3a-folders.db.test.ts`, `packages/content/src/tree/`:
+  exit 0, 15 files, 167 passed, 1 skipped.
+
+Pins: `asSystemExits` 58 to 59 (the `tree-refold` step), with its reason in
+`scripts/arch-scoreboard.pins.json`.
+
+CI: CIURL
