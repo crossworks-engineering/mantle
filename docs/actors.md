@@ -213,7 +213,7 @@ each calling file is pinned (`eslint-rules/as-system-allowlist.mjs`).
 | login-telegram     | a login's own Telegram chats (no role holds those tables)   |
 | audit-log          | a connector call's audit row                                |
 | pending-approval   | an approved call re-enters the scope it was asked in        |
-| workspace-write    | a login's change of a workspace's row, resources, events    |
+| workspace-write    | a login's change of a workspace's row, resources and events |
 | page-refold        | the pages a grant change reaches                            |
 | brain-bookkeeping  | `systemStep`'s brain-wide counts and reaps                  |
 
@@ -247,8 +247,9 @@ contact sharing, name checks, `mantle_ws_create`); the write role's grant
 change and its audit row (`mantle_grant_change`, `mantle_grant_move_home`,
 `mantle_workspace_event`, 0279), folder subtree (`mantle_subtree_rewrite`,
 `mantle_subtree_refuse_hidden`, 0282), edit check writes
-(`mantle_secret_put`, `mantle_recall_retarget`, 0281) and a workspace's
-users (0305), which with no acting login take only `mantle_ws_system_work`.
+(`mantle_secret_put`, `mantle_recall_retarget`, 0281) and a workspace's users (0305).
+A writer of the four workspace tables refuses no acting login but system work
+(`mantle_ws_system_work`), or is named: login bridge, bridge connector, the switch, guards.
 
 ## 10. HTTP
 

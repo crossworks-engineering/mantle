@@ -21,7 +21,7 @@ Migration `0305_ws_user_definers` (journal `when` 1790197620000, above
   `AsSystemReason` are refused. PUBLIC revoked, granted to no role (the
   runtime role neither), called by the definers as their owner.
 - `mantle_ws_acting_login(fn, owner)` and `mantle_ws_user_seat(fn, owner,
-  ws, acting)`: private helpers (as above). The acting login is
+ws, acting)`: private helpers (as above). The acting login is
   `mantle_scope_login_id()`, an enabled login, on its brain (`owner` =
   `mantle_brain_id()`), never read-only (`mantle.write_mode` `ro` refused:
   a read key or a peer with Write off changes nothing). The seat locks the
