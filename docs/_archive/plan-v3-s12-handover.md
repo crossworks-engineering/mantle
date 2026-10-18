@@ -100,7 +100,19 @@ gone row and no row reading `memberAsset`.
 
 ### Gates (Mac, DATABASE_URL unset)
 
-GATES_PLACEHOLDER
+On 15e1765d6 (the code is 51710be97; the docs and pins commit on top):
+
+| Gate                                                | Exit                           |
+| --------------------------------------------------- | ------------------------------ |
+| `pnpm -r typecheck`                                 | 0                              |
+| `pnpm lint`                                         | 0                              |
+| `pnpm format:check`                                 | 0                              |
+| `pnpm docs:check`                                   | 0                              |
+| `pnpm arch:check`                                   | 0                              |
+| `pnpm -C server/web build`                          | 0                              |
+| `pnpm exec vitest run server packages eslint-rules` | 0 (11022 passed, 2658 skipped) |
+
+CI: CI_PLACEHOLDER
 
 ### Open items
 
