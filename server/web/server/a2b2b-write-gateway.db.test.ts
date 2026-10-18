@@ -710,16 +710,19 @@ describe.skipIf(!URL)('A2b2b: the login write gateway', () => {
       // nameRequestLogin); an actor bound outside the slot does not reach
       // the write (fix round 4: it ran as login:rw).
       const scope = await m.viewerScopeFor({ login: mem });
+      // A time zone per mode, so a write in on changes the row warn wrote.
+      const tz = mode === 'warn' ? 'Asia/Tokyo' : 'Europe/Oslo';
       const asKey = (writes: boolean) =>
         m
           .runInRequestSlot(async () => {
             m.setRequestActor(m.loginActor(mem, 'ro'));
             m.enterRequestScope(scope, { writes, drafts: false });
-            return c.updateProfilePreferences(mem, { timezone: 'Asia/Tokyo' });
+            return c.updateProfilePreferences(mem, { timezone: tz });
           })
           .then(
             () => 'ok',
-            (e: unknown) => `${m.pgErrorCode(e) ?? String(e)} ${m.editRefusalDetail(e) ?? ''}`.trim(),
+            (e: unknown) =>
+              `${m.pgErrorCode(e) ?? String(e)} ${m.editRefusalDetail(e) ?? ''}`.trim(),
           );
       const key = await asKey(false);
       const keyMisses = m.takeActorMisses().length;
@@ -731,7 +734,7 @@ describe.skipIf(!URL)('A2b2b: the login write gateway', () => {
         .runAsActor({ kind: 'assistant', agentId: null }, () =>
           m.withTurnScope(
             { kind: 'assistant', loginId: null, ws: [team], modWs: [] },
-            () => c.updateProfilePreferences(owner, { timezone: 'Asia/Tokyo' }),
+            () => c.updateProfilePreferences(owner, { timezone: tz }),
             { writes: true },
           ),
         )
