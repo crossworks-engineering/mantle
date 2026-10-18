@@ -28,7 +28,7 @@
  *
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run server/web/lib/auth/admin-membership.db.test.ts
  */
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import bcrypt from 'bcryptjs';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
@@ -199,7 +199,7 @@ describe.skipIf(!URL)('S8a: an Admin login is role AND membership', () => {
     const key = randomUUID();
     await sql`insert into access_keys (id, name, login_id, key_prefix, key_hash, access)
               values (${key}, ${tag}, ${mem}, ${key.replace(/-/g, '').slice(0, 8)},
-                      ${key.replace(/-/g, '')}, 'read')`;
+                      ${createHash('sha256').update(key).digest('hex')}, 'read')`;
     const keys = await import('../access-keys-admin');
     const ids = (list: { id: string }[]) => list.map((k) => k.id);
     // In the login's own scope (mantle_access_keys_seen asks

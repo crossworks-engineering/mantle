@@ -210,7 +210,7 @@ describe.skipIf(!URL)('a database at the migration before 0305 runs 0305 and onl
   it('grants the public demo`s reader the three login facts, where it exists', async () => {
     const grant = readFileSync(join(DIR, `${TAG}.sql`), 'utf8')
       .split('--> statement-breakpoint')
-      .find((st) => st.includes('demo_reader'))!;
+      .find((st) => st.includes('DO $$') && st.includes('demo_reader'))!;
     const fns = [
       'public.mantle_login_is_admin(uuid)',
       'public.mantle_login_areas(uuid)',
