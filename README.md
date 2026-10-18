@@ -260,7 +260,7 @@ provably stale, never a number someone typed once.
 ![migrations](https://img.shields.io/badge/migrations-302-336791?logo=postgresql&logoColor=white)
 ![built-in tools](https://img.shields.io/badge/built--in%20tools-295-6b4fbb)
 ![docs](https://img.shields.io/badge/docs-113%20guides-4c8eda)
-![releases](https://img.shields.io/badge/releases-599-blue)
+![releases](https://img.shields.io/badge/releases-600-blue)
 
 **Code & tests** — the suite runs on every push, DB-less, in CI. Test counts below are cases *declared*; parameterised tables (`it.each`) expand to more at run time, so the executed total is higher than the number shown.
 
@@ -268,7 +268,7 @@ provably stale, never a number someone typed once.
 | --- | --- |
 | 📐 &nbsp;TypeScript (excl. tests) | **315,036** lines in 1,792 files |
 | 🧪 &nbsp;Test suite | **10,181+** cases declared in 1,101 files |
-| ⚖️ &nbsp;Test weight | 252,154 lines — 1 for every 1.2 of source |
+| ⚖️ &nbsp;Test weight | 252,156 lines — 1 for every 1.2 of source |
 | 🗂️ &nbsp;Tracked files | 4,116 |
 | 🐘 &nbsp;SQL migrations | 302, replayed in order on every boot |
 | 📚 &nbsp;Docs | 113 engineering docs, 117 user-guide pages, 224 changelog entries (78,283 lines) |
@@ -285,10 +285,10 @@ provably stale, never a number someone typed once.
 | 💾 &nbsp;Datastores | **1** (Postgres — vectors, graph, FTS, queues, realtime, auth) |
 | 🧊 &nbsp;Idle footprint | ~2.5 GB RAM, whole stack |
 
-**Velocity** — v0.300.86, 6,197 commits and 599 releases since 2026-05-14 (157 days, ~39.5 commits/day).
+**Velocity** — v0.300.87, 6,199 commits and 600 releases since 2026-05-14 (157 days, ~39.5 commits/day).
 
 ```
-commits/week, last 23 weeks   ▁▂▂▂▁▁▂▂▂▂▂▂▂▂▂▁▂▁▁▂▆▃█   peak 1460
+commits/week, last 23 weeks   ▁▂▂▂▁▁▂▂▂▂▂▂▂▂▂▁▂▁▁▂▆▃█   peak 1448
 ```
 
 ```mermaid
@@ -296,7 +296,7 @@ pie showData title Lines of TypeScript by area
     "packages/*" : 362898
     "server/web" : 174326
     "server/api + mcp" : 23130
-    "elsewhere" : 6836
+    "elsewhere" : 6838
 ```
 
 <!-- stats:end -->
