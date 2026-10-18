@@ -260,6 +260,37 @@ This branch's migration is now `0306_admin_membership`, journal idx 306,
 for the new tag, idx and `when`, and that no `0305_admin_membership`
 entry is left. Pins re-measured on the new base (the same reasons).
 
+## Diff-check lows (with the rebase on v0.300.95)
+
+- The drift admin's key list request must answer 200 (a 500 no longer
+  passes the cell).
+- loadLoginRow in a scope: the cell asks for SQLSTATE 42501. The first
+  refusal there is the table, not the fact: a viewer role reads no
+  `auth.users` row ("permission denied for table users"), so the read
+  threw in a scope on main too; the comment says so.
+- `demo_reader` is pinned to exactly the three facts: a text check over
+  every migration (no other login fact granted to it) and, where the
+  cluster has the role, the live catalog.
+- seeWorkspace reads the areas through its transaction when that role may
+  run `mantle_login_areas` (asked with `has_function_privilege`, which never
+  fails, so it cannot abort the transaction): an Admin user's locked write
+  on the system pool takes no second connection of that pool. A member's
+  transaction (the write role, no EXECUTE) reads them on the system pool,
+  not its own pool, as before. Still before the row lock.
+- The renumber wording (0306, `0305_folder_rename_write`'s `when`) is in
+  the migration header, the proof test and this file.
+
+Gates on bf82b466b (Mac, DATABASE_URL unset): typecheck 0, lint 0,
+format:check 0, docs:check 0, arch:check 0 (pins unchanged this round;
+asSystemExits 59 as main), web build 0, unit vitest 0 (11042 passed); the
+guard sweep snapshots byte-equal to main. Workstation DB files (own
+`s8a_pg`, removed after): the 16 files this branch touches or that cover
+its paths (both admin-membership files, login-facts, tree-bugs,
+login-row-readonly, mcp-revived-credentials, access-keys,
+access-keys-hardening, device-tokens, mcp-oauth-grants, member-mcp,
+a1-d1-routes, w7-int-fix3-session, both workspaces.db files,
+w6a-route-sweep): 220 tests, then the three changed after: 28 passed.
+
 ## Rebase notes
 
 - `server/web/lib/workspaces.ts`: S2a a1+a2 edits the `@mantle/db` import
