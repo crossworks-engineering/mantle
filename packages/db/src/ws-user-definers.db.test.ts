@@ -459,9 +459,14 @@ describe.skipIf(!URL)('the workspace user definers (S2a a1)', () => {
       ],
     ];
     const allowed: string[] = [];
-    for (const actor of actors) {
+    // No setting at all (no actor, no write mode), then each actor alone.
+    const settings: Array<[string, Record<string, string>]> = [
+      ['(none)', {}],
+      ...actors.map((a): [string, Record<string, string>] => [a, asActor(a)]),
+    ];
+    for (const [actor, set] of settings) {
       for (const [name, q] of writers) {
-        const out = await run(asActor(actor), q);
+        const out = await run(set, q);
         if (out.ok || out.state !== '42501' || !/no acting login|only the acting/.test(out.msg)) {
           allowed.push(`${actor} ${name}: ${JSON.stringify(out)}`);
         }
