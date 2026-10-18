@@ -155,10 +155,8 @@ const MCP_CONNECTION_ONLY: Readonly<Record<string, string>> = {
 /** The tools whose every allowed cell is a known failure today (the finding
  *  names it, a8-known-failures.ts): their allowed cells run and fail as
  *  listed. A tool leaves this list when its finding is fixed. */
-const ALLOWED_KNOWN_ONLY: Readonly<Record<string, string>> = {
-  page_move: 'S11a-5',
-  tree_item_move: 'S11a-5',
-};
+// page_move and tree_item_move (S11a-5) left it in the tree bugs fix.
+const ALLOWED_KNOWN_ONLY: Readonly<Record<string, string>> = {};
 
 /** The tools that make a new app: a new app needs manage of its create
  *  home, and a turn's create home is the turn's workspace (the oracle

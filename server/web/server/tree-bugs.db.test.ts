@@ -19,6 +19,9 @@
  * changes, and a caller that does not read the item gets a random uuid's
  * answer, byte for byte (the id aside).
  *
+ * The grants panel's move (/api/grants/move, in the login's scope since F4)
+ * reached the same follow-up: a cell runs it in a member's request scope.
+ *
  * On a migrated scratch database, in check mode warn and on (the actor and
  * the edit check together, as the fleet runs them), through the login's MCP
  * surface (prepareCallerTools, an OAuth connection) and an assistant turn
@@ -65,6 +68,7 @@ describe.skipIf(!DB_URL)('the tree bugs: a Write rename, a cross-workspace move'
   let ls: typeof import('@mantle/mcp-core');
   let rt: typeof import('@mantle/runtime/agent');
   let f: typeof import('@mantle/files');
+  let g: typeof import('@/lib/grants');
   let actorMode: typeof import('../../../packages/db/src/actor');
   let dir = '';
   const tag = `tbug${randomUUID().slice(0, 6)}`;
@@ -109,16 +113,23 @@ describe.skipIf(!DB_URL)('the tree bugs: a Write rename, a cross-workspace move'
     await raw.begin(async (tx) => {
       await tx`select set_config('mantle.actor', 'system:test', true)`;
       await tx`select mantle_lock_heads(array[${id}]::uuid[], 'update')`;
-      // Upserts, then the rest away: a trigger may put the folder's home
-      // back the moment the last grant goes.
+      // All away, then upserts (a trigger may put the folder's home back
+      // the moment the last grant goes), one home at a time, then the rest
+      // away.
+      await tx`delete from item_grants where node_id = ${id}`;
       for (const g of grants) {
+        if (g.home) {
+          await tx`update item_grants set is_home = false
+                    where node_id = ${id} and is_home and workspace_id <> ${g.ws}`;
+        }
         await tx`insert into item_grants (node_id, workspace_id, is_home, write)
                  values (${id}, ${g.ws}, ${g.home === true}, ${g.write === true})
                  on conflict (node_id, workspace_id)
-                 do update set is_home = excluded.is_home, write = excluded.write`;
+                 do update set is_home = excluded.is_home, write = excluded.write,
+                               via_folder_id = null, excluded = false`;
       }
       await tx`delete from item_grants where node_id = ${id}
-                 and not (workspace_id = any(${grants.map((g) => g.ws)}::uuid[]))`;
+                 and not (workspace_id = any(${grants.map((x) => x.ws)}::uuid[]))`;
     });
   };
   /** The fixture's shared grants: home H, W with Write, R with Write off. */
@@ -192,6 +203,23 @@ describe.skipIf(!DB_URL)('the tree bugs: a Write rename, a cross-workspace move'
       };
     } catch (err) {
       return { ok: false, text: `THROWN ${(err as Error).message}` };
+    }
+  };
+
+  /** The grants panel's move as /api/grants/move runs it (session.ts
+   *  anyLoginScope): in a request slot, in the login's own scope, its
+   *  writes on the write role. */
+  const grantsMove = async (who: Who, body: { nodeIds: string[]; toFolderId: string }) => {
+    const scope = await m.viewerScopeFor({ login: L[who] });
+    const caller = { kind: 'member' as const, loginId: L[who], anchorId: owner, user: null };
+    try {
+      const res = await m.runInRequestSlot(async () => {
+        expect(m.enterRequestScope(scope, { writes: true, drafts: false })).toBe(true);
+        return g.moveItems(caller as never, { ...body, confirm: true });
+      });
+      return { ok: true, text: JSON.stringify(res) };
+    } catch (err) {
+      return { ok: false, text: `${(err as Error).name}: ${(err as Error).message}` };
     }
   };
 
@@ -299,6 +327,7 @@ describe.skipIf(!DB_URL)('the tree bugs: a Write rename, a cross-workspace move'
     ls = await import('@mantle/mcp-core');
     rt = await import('@mantle/runtime/agent');
     f = await import('@mantle/files');
+    g = await import('@/lib/grants');
     actorMode = await import('../../../packages/db/src/actor');
     const v = await import('@mantle/db/viewer');
     raw = postgres(scratch.url, { max: 2, prepare: false, onnotice: () => {} });
@@ -610,6 +639,30 @@ describe.skipIf(!DB_URL)('the tree bugs: a Write rename, a cross-workspace move'
         });
         note1(mode, 'tree_item_move mcp mod H to T', o2);
         expect(o2.ok, o2.text).toBe(true);
+        expect((await rowOf(item))!.path).toBe((await rowOf(nto))!.path);
+        expect(m.takeActorMisses()).toEqual([]);
+      }, 300_000);
+
+      it('S11a-5 in scope: the grants panel moves a note into a folder of another workspace', async () => {
+        await setMode(mode);
+        const nfrom = await notesFolder(`${tag} gfrom ${n()}`);
+        await grantsOn(nfrom, shared());
+        const nto = await notesFolder(`${tag} gto ${n()}`);
+        await grantsOn(nto, [{ ws: ws.T, home: true }]);
+        const item = await noteIn(nfrom);
+        await grantsOn(item, shared());
+        // The read grant's member: refused, nothing moves.
+        const before = await nodesState();
+        const no = await grantsMove('rd', { nodeIds: [item], toFolderId: nto });
+        note1(mode, 'grants move rd', no);
+        expect(no.text).not.toMatch(/could not run this request/);
+        expect(no.ok && !/"moved":0/.test(no.text), no.text).toBe(false);
+        expect(await nodesState()).toBe(before);
+        // The Moderator of H and T: moved, in its scope.
+        const o = await grantsMove('mod', { nodeIds: [item], toFolderId: nto });
+        note1(mode, 'grants move mod H to T', o);
+        expect(o.ok, o.text).toBe(true);
+        expect(JSON.parse(o.text)).toEqual({ moved: 1, failed: [] });
         expect((await rowOf(item))!.path).toBe((await rowOf(nto))!.path);
         expect(m.takeActorMisses()).toEqual([]);
       }, 300_000);
