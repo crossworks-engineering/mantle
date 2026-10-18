@@ -128,14 +128,12 @@ describe.skipIf(!URL)('workspace management (W5a)', () => {
   };
 
   /**
-   * The gate's scope for a member's call (session.ts anyLoginScope): its
+   * The gate's scope for a login's call (session.ts anyLoginScope): its
    * reads and writes in its own request scope, as every member's request
-   * runs since F4. Plan v3.2 S2a a1: the user definers act for the scope's
-   * login, so a member's change called with no scope at all (as this file
-   * did) is refused. An Admin user's call runs as before, with no scope: its
-   * writes have no acting login until S2a a2 puts them in the login's scope,
-   * so its user changes and creates are the expected red cells of a1
-   * (docs/_archive/plan-v3-s2a-a1a2-handover.md lists them).
+   * runs since F4 and an Admin user's on /api/workspaces since plan v3.2
+   * S2a a2 (drafts for an Admin user, as requestMode gives). The workspace
+   * definers act for the scope's login (0305), so a change called with no
+   * scope at all is refused.
    */
   const gated = <T extends object>(mod: T): T =>
     new Proxy(mod, {
@@ -146,10 +144,10 @@ describe.skipIf(!URL)('workspace management (W5a)', () => {
         return (...args: unknown[]) => {
           const res = h.res as { kind: string; loginId: string } | null;
           const fn = () => (v as (...a: unknown[]) => unknown)(...args);
-          if (res?.kind !== 'member') return fn();
+          if (!res) return fn();
           return m.runInRequestSlot(async () => {
             const scope = await m.loginScopeFor(res.loginId);
-            m.enterRequestScope(scope, { writes: k !== 'GET', drafts: false });
+            m.enterRequestScope(scope, { writes: k !== 'GET', drafts: res.kind === 'admin' });
             return fn();
           });
         };

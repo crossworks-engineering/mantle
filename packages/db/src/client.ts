@@ -54,6 +54,7 @@ import {
   afterRollback,
   isWorkspaceSystemActor,
   boundLoginId,
+  carriedWriteScope,
 } from './viewer';
 import {
   actorCheckMode,
@@ -2030,6 +2031,14 @@ export async function withSystemTx<T>(
   });
 }
 
+/** A write scope on a system-pool transaction (systemPoolTx, systemPoolProp):
+ *  its workspaces and login (mantle.scope_login, never mantle.login_id). */
+function writeScopeSettings(scope: WorkspaceScope) {
+  return sqlTag`select set_config('mantle.ws', ${uuidArrayLiteral(scope.ws, 'write scope ws')}, true),
+                       set_config('mantle.mod_ws', ${uuidArrayLiteral(scope.modWs, 'write scope modWs')}, true),
+                       set_config('mantle.scope_login', ${checkedUuidOrEmpty(scope.loginId)}, true)`;
+}
+
 /** A system transaction as before A2b2b, on the system pool. */
 function systemPoolTx<T>(fn: (tx: PostgresJsDatabase<typeof schema>) => Promise<T>): Promise<T> {
   // A login's write request on the system pool (no write pool in this
@@ -2045,13 +2054,6 @@ function systemPoolTx<T>(fn: (tx: PostgresJsDatabase<typeof schema>) => Promise<
   // per-login item gate and mantle_scope_has_area), never a stamp or a row
   // rule, so the scope's checks answer for this login as in its own scope.
   const writeScope = requestWriteScope();
-  const settings = writeScope
-    ? [
-        uuidArrayLiteral(writeScope.ws, 'write scope ws'),
-        uuidArrayLiteral(writeScope.modWs, 'write scope modWs'),
-        checkedUuidOrEmpty(writeScope.loginId),
-      ]
-    : null;
   // Where a create lands (W6b): the database's default home reads these.
   const home = currentCreateHome();
   const homeSettings = home
@@ -2064,13 +2066,7 @@ function systemPoolTx<T>(fn: (tx: PostgresJsDatabase<typeof schema>) => Promise<
   return openSystemTx(
     (run) =>
       getAdminDb().transaction(async (tx) => {
-        if (settings) {
-          await tx.execute(
-            sqlTag`select set_config('mantle.ws', ${settings[0]}, true),
-                          set_config('mantle.mod_ws', ${settings[1]}, true),
-                          set_config('mantle.scope_login', ${settings[2]}, true)`,
-          );
-        }
+        if (writeScope) await tx.execute(writeScopeSettings(writeScope));
         if (homeSettings) {
           await tx.execute(
             sqlTag`select set_config('mantle.create_ws', ${homeSettings[0]}, true),
@@ -3008,6 +3004,8 @@ export async function viewerScopeFor(actsFor: ViewerFor): Promise<WorkspaceScope
 export const db = new Proxy({} as PostgresJsDatabase<typeof schema>, {
   get(_t, prop) {
     if (STATEMENT_PROPS.has(prop)) checkActorBound(`db.${String(prop)}`);
+    const carried = carriedWriteScope();
+    if (carried) return systemPoolProp(carried, prop);
     // A request scope (W6a, plan 2.3): a write leaves the scope's read pool
     // (a login's to the write role while it may route, else the system
     // pool); reads run in the scope. A transaction is
@@ -3038,6 +3036,19 @@ export const db = new Proxy({} as PostgresJsDatabase<typeof schema>, {
     return Reflect.get(getDb() as object, prop);
   },
 });
+
+/** The system pool's `prop`, a transaction with `scope` set first
+ *  (withSystemPoolInWriteScope, viewer.ts). */
+function systemPoolProp(scope: WorkspaceScope, prop: string | symbol): unknown {
+  const admin = getAdminDb();
+  if (prop !== 'transaction') return Reflect.get(admin as object, prop);
+  type Tx = Parameters<Parameters<typeof admin.transaction>[0]>[0];
+  return <T>(fn: (tx: Tx) => Promise<T>) =>
+    admin.transaction(async (tx) => {
+      await tx.execute(writeScopeSettings(scope));
+      return fn(tx);
+    });
+}
 
 /**
  * Whether a raw statement writes (W6a): a leading write verb, or a write

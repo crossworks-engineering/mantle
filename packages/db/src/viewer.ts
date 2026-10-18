@@ -410,6 +410,29 @@ export function requestWriteScope(): WorkspaceScope | null {
   return slot.scope?.ws && slot.scope.request?.writes ? slot.scope.ws : null;
 }
 
+/** The request write scope withSystemPoolInWriteScope carries. */
+const systemPoolScope = new AsyncLocalStorage<WorkspaceScope>();
+
+/**
+ * Run `fn` on the system pool with the request's write scope set on each of
+ * its transactions (plan v3.2 S2a a2; client.ts db reads carriedWriteScope):
+ * an Admin user's role change from the workspace screen (adminRoleChange),
+ * whose request runs in its login's scope but whose writes reach tables the
+ * write role holds no right on (auth.users, sessions, push devices). Its
+ * reads run on the system pool; the workspace definer inside a transaction
+ * checks the scope's login. Only inside a request's write scope.
+ */
+export function withSystemPoolInWriteScope<T>(fn: () => Promise<T>): Promise<T> {
+  const scope = requestWriteScope();
+  if (!scope) return Promise.reject(new RuntimeFaultError('no request write scope to carry'));
+  return systemPoolScope.run(scope, fn);
+}
+
+/** The scope withSystemPoolInWriteScope carries now, or null. */
+export function carriedWriteScope(): WorkspaceScope | null {
+  return systemPoolScope.getStore() ?? null;
+}
+
 /** Record where this request's creates land (W6b; see CreateHome). No-op
  *  outside a slot. */
 export function noteRequestCreateHome(home: CreateHome): void {

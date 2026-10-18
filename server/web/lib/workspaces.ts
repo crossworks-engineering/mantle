@@ -60,6 +60,7 @@ import {
   sql,
   withDeadlockRetry,
   withHeads,
+  withSystemPoolInWriteScope,
 } from '@mantle/db';
 import type { AppTint } from '@mantle/client-types/app-nav';
 import type {
@@ -120,8 +121,8 @@ export type WsCaller = {
  * The caller lib/workspaces.ts and lib/grants.ts take, projected from the
  * login the pipeline answered (A4 hand batch A): the route handler reads
  * it first (loginCaller()) and passes it in. No guard and no effect: the
- * gate's any-login answer step resolved the login, entered its scope (an
- * Admin user's write: the system pool) and wrote the api.write row.
+ * gate's any-login answer step resolved the login, entered its scope and
+ * wrote the api.write row.
  */
 export function workspaceCaller(login: AnyLogin): WsCaller {
   return login.kind === 'admin'
@@ -134,17 +135,19 @@ export function workspaceCaller(login: AnyLogin): WsCaller {
  *  row in the one table (A10 part 2 fix round 1, L7); anything else is the
  *  opaque 500.
  *
- *  It runs where the gate put the request (arch A6): a login's read, and a
- *  member's write, in the login's own scope; an Admin user's write on the
- *  system pool. What a scope cannot read goes through the definers of
+ *  It runs where the gate put the request (arch A6): a login's read and
+ *  write in the login's own scope (an Admin user's write since plan v3.2
+ *  S2a a2). What a scope cannot read goes through the definers of
  *  0291, each held to the scope: the workspaces the caller sees
  *  (mantle_ws_seen), a workspace's users and resources (mantle_ws_people,
  *  mantle_ws_resource_rows), its item counts (mantle_ws_item_counts), the
  *  user search (mantle_ws_login_search). A change of a workspace's users is
  *  a definer call in the caller's own transaction (mantle_ws_add_user,
- *  mantle_ws_set_moderator, mantle_ws_remove_user, mantle_ws_create; 0305,
- *  plan v3.2 S2a a1), which checks the acting login inside; the other
- *  changes write on the system pool by one door (workspaceWriteSystem). */
+ *  mantle_ws_set_moderator, mantle_ws_remove_user, mantle_ws_create, and
+ *  the resources' mantle_ws_resource_add, _set_write, _remove; 0305, plan
+ *  v3.2 S2a), which checks the acting login inside; patchWorkspace and
+ *  archiveWorkspace write on the system pool by one door
+ *  (workspaceWriteSystem) until S2b. */
 export async function wsRoute(
   login: AnyLogin,
   fn: (caller: WsCaller) => Promise<unknown>,
@@ -161,9 +164,7 @@ export async function wsRoute(
  *  Each checks its rules inside the transaction, on the system pool, as
  *  before A6 (patchWorkspace only there); archiveWorkspace also checks them
  *  first in the caller's scope. Never around a workspace definer: its actor
- *  (system:workspace-write) is no system work there (0305). An Admin user's
- *  write request runs on the system pool already (session.ts
- *  anyLoginScope); the door changes nothing there. */
+ *  (system:workspace-write) is no system work there (0305). */
 function workspaceWriteSystem<T>(body: () => Promise<T>): Promise<T> {
   return asSystem(body, 'workspace-write');
 }
@@ -553,10 +554,10 @@ export async function createWorkspace(
   let id: string;
   try {
     // The row, the maker its only user and a Moderator, and the event, by
-    // its definer (mantle_ws_create, 0293: in a scope only the scope's own
-    // login; A6b: on the system pool before, 'workspace-write'). A write: in
-    // its own transaction (a member's on the write role, an Admin user's on
-    // the system pool with its scope set).
+    // its definer (mantle_ws_create, 0305: only the acting login's own, a
+    // disabled or read-only one refused). A write: in its own transaction,
+    // the login's scope on the write role (an Admin user's too since plan
+    // v3.2 S2a a2).
     id = await db.transaction(async (tx) => {
       const [w] = await rows<{ id: string }>(
         tx,
@@ -1099,8 +1100,15 @@ function mayChangeAdminUsers(seen: Seen): void {
  *  login and locks the workspace) runs first inside it, then the role, the
  *  login bridge (a no-op once the definer made or removed the row) and the
  *  lockout (sessions, agent, push devices: applyLoginChange). On success
- *  the user.update audit row the Users screen writes (audit M2). */
-async function adminRoleChange(
+ *  the user.update audit row the Users screen writes (audit M2). On the
+ *  system pool with the caller's write scope set on the transaction (plan
+ *  v3.2 S2a a2): the write role holds no right on the login's rows, and the
+ *  definer acts for the scope's login. */
+function adminRoleChange(...args: Parameters<typeof roleChangeOnSystemPool>): Promise<void> {
+  return withSystemPoolInWriteScope(() => roleChangeOnSystemPool(...args));
+}
+
+async function roleChangeOnSystemPool(
   caller: WsCaller,
   loginId: string,
   role: LoginRole,

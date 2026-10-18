@@ -247,9 +247,9 @@ contact sharing, name checks, `mantle_ws_create`); the write role's grant
 change and its audit row (`mantle_grant_change`, `mantle_grant_move_home`,
 `mantle_workspace_event`, 0279), folder subtree (`mantle_subtree_rewrite`,
 `mantle_subtree_refuse_hidden`, 0282), edit check writes
-(`mantle_secret_put`, `mantle_recall_retarget`, 0281) and a workspace's users (0305).
-A writer of the four workspace tables refuses no acting login but system work
-(`mantle_ws_system_work`), or is named: login bridge, bridge connector, the switch, guards.
+(`mantle_secret_put`, `mantle_recall_retarget`, 0281), a workspace's users, resources and assistant (0305).
+The 0305 writers of the four workspace tables (and the attach) refuse no acting login but system work (`mantle_ws_system_work`);
+the workspace row, landing app and archive write in TS until S2b; named: login bridge, bridge connector, the switch, guards.
 
 ## 10. HTTP
 

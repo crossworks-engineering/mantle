@@ -13,8 +13,9 @@
  * Moderator (with no Admin user among them, the member added first keeps
  * it). Never removes a row. Each change writes the workspace_events row the
  * workspace screen writes (user.moderator), with no actor and `by` naming
- * this command. Runs as system(script:ws-clear-member-ticks)
- * (docs/actors.md). Numbers only.
+ * this command, through mantle_ws_set_moderator as workspace system work
+ * (systemWork('ws-clear-ticks'), the actor system:ws-clear-ticks the SQL
+ * allowlist names; 0305, plan v3.2 S2a a1). Numbers only.
  *
  * One-shot: run it once, right after the roll. Run again, it clears every
  * tick an Admin user has set since on purpose (it cannot tell those from the

@@ -2292,22 +2292,28 @@ async function anyLoginScope(res: Resolved): Promise<NextResponse | null> {
     return null;
   }
   const loginId = res.kind === 'admin' ? res.user.actor.id : res.member.loginId;
-  // An Admin user's write here stays on the system pool (its workspaces,
-  // its keys, its chat threads and Telegram pairings: no brain item), but
-  // for the grants panel's: that one runs in the login's scope, reads and
-  // writes, as every login's does (arch A6, A8 matrix F7 a; its reads moved
-  // into the scope with F4), so the database's grant checks
-  // (mantle_grant_change, 0279) answer for it on the write role.
-  if (res.kind === 'admin' && route.effect === 'write' && !isGrantsRoute(route)) {
+  // An Admin user's write here stays on the system pool (its keys, its chat
+  // threads and Telegram pairings: no brain item), but for the grants
+  // panel's and the workspaces': those run in the login's scope, reads and
+  // writes, as every login's do (arch A6, A8 matrix F7 a; the grants' reads
+  // moved into the scope with F4), so the database's checks
+  // (mantle_grant_change, 0279; the workspace definers, 0305, plan v3.2
+  // S2a a2) answer for the acting login on the write role.
+  if (res.kind === 'admin' && route.effect === 'write' && !inLoginScopeForWrites(route)) {
     return noteSystem('admin-write');
   }
   await enterLoginScope(loginId, requestMode(res.kind === 'admin'));
   return null;
 }
 
-/** The grants panel's routes (ANY_LOGIN_ROUTES, /api/grants). */
-function isGrantsRoute(route: RouteRow): boolean {
-  return route.pattern.startsWith('/api/grants/');
+/** The any-login routes whose Admin-user writes run in the login's scope:
+ *  the grants panel's (/api/grants) and the workspaces' (/api/workspaces). */
+function inLoginScopeForWrites(route: RouteRow): boolean {
+  return (
+    route.pattern.startsWith('/api/grants/') ||
+    route.pattern === '/api/workspaces' ||
+    route.pattern.startsWith('/api/workspaces/')
+  );
 }
 
 /** noteRequestSystem, then go on (null: no refusal). */
