@@ -50,11 +50,9 @@ export async function PATCH(req: Request, ctx: Ctx) {
 export async function DELETE(_req: Request, ctx: Ctx) {
   const user = ownerCaller();
   const { id, sid } = await ctx.params;
-  // The caller's edit of the app first (the pre-check removal part 2: the
-  // HTTP gate asked it): an app the scope does not read is the mapper's
-  // 404, as an id no row has; one it may not edit the 403 item-workspace (a
-  // read-only copy's words); before anything is read, built or staged.
-  await assertItemRight(id, 'edit');
+  // deleteAppSnapshot asks the caller's edit of the app first (the one
+  // item-rights gateway): an app the scope does not read is the mapper's
+  // 404, as an id no row has; one it may not edit the 403 item-workspace.
   // A version refuses (AppSnapshotRefusedError): 409 by the one table (A10
   // part 2).
   const ok = await deleteAppSnapshot(user.id, id, sid);

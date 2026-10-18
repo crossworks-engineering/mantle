@@ -631,12 +631,21 @@ export async function setAppSnapshotNote(
 /** Delete a snapshot and its database copy. A version (what a publish made
  *  live) stays: it is the app's history. False when it is not there. The
  *  row goes now; its trigger records the copy, which the store sweep
- *  removes a grace period later (A3b part 2). */
+ *  removes a grace period later (A3b part 2).
+ *
+ *  The caller's edit of the app first, before the entry is read or
+ *  refused (the hotfix of S11a-2): the one item-rights gateway, as the tool's
+ *  pre-check asked it before R0 (`items: [edit('id')]`) and the HTTP route
+ *  did. The database's own check of the row (the edit check's trigger on
+ *  node_snapshots) refuses only while the edit check is on: below on, any
+ *  login that read the app deleted its snapshots. System work is not
+ *  checked. */
 export async function deleteAppSnapshot(
   ownerId: string,
   appId: string,
   snapshotId: string,
 ): Promise<boolean> {
+  await assertItemRight(appId, 'edit');
   const snap = await getAppSnapshot(ownerId, appId, snapshotId);
   if (!snap) return false;
   if (snap.kind === 'version') {

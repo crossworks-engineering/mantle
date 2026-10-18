@@ -76,7 +76,7 @@ import { resolveTool } from './resolve';
 import { appToolWarnings } from './app-tool-level';
 import type { BuiltinToolDef, ToolPrecondition } from './types';
 import { str, strArr } from './coerce';
-import { errorMessage, UUID_RE } from '@mantle/std';
+import { editRefusalDetail, errorMessage, UUID_RE } from '@mantle/std';
 import { isOwnerSurface, OWNER_ONLY_ERROR, ownerSurfaceLoginId } from './surface';
 import { currentWorkspaceScope, currentScope } from '@mantle/db/viewer';
 import { and as andWhere, eq as eqWhere, sql as sqlTag } from 'drizzle-orm';
@@ -84,6 +84,9 @@ import {
   assertItemRight,
   asSystem,
   db as scopedDb,
+  itemNoRightError,
+  itemNotInScopeError,
+  type ItemNeed,
   mayManageSql,
   nodes as nodesTable,
   scopeHoldsAdmin,
@@ -113,6 +116,16 @@ function ownerOnlyRefusal(
   ctx: Parameters<BuiltinToolDef['handler']>[1],
 ): { ok: false; error: string } | null {
   return isOwnerSurface(ctx.surface) ? null : { ok: false, error: OWNER_ONLY_ERROR };
+}
+
+/** The item gateway's refusal of a library write (assertItemRight) in the
+ *  words the tool's item pre-check answered before R0 (v0.300.82:
+ *  itemWriteRefusal's), or null for any other error. */
+function itemRightRefusalText(err: unknown, id: string, need: ItemNeed): string | null {
+  const detail = editRefusalDetail(err);
+  if (detail === 'no_read') return itemNotInScopeError(id.trim().toLowerCase());
+  if (detail === 'no_edit') return itemNoRightError(id.trim().toLowerCase(), need);
+  return null;
 }
 
 /** Who a history row names for a tool call: the owner's MCP client, or an
@@ -1459,6 +1472,7 @@ const app_snapshot_delete: BuiltinToolDef = {
     if (!id) return { ok: false, error: 'id is required' };
     if (!snapshotId) return { ok: false, error: 'snapshot_id is required — see app_snapshot_list' };
     try {
+      // deleteAppSnapshot asks the caller's edit of the app first.
       const ok = await deleteAppSnapshot(ctx.ownerId, id, snapshotId);
       if (!ok) {
         return {
@@ -1470,6 +1484,8 @@ const app_snapshot_delete: BuiltinToolDef = {
       return { ok: true, output: { id, deleted: snapshotId } };
     } catch (err) {
       if (err instanceof AppSnapshotRefusedError) return { ok: false, error: err.message };
+      const refused = itemRightRefusalText(err, id, 'edit');
+      if (refused) return { ok: false, error: refused };
       return { ok: false, error: errorMessage(err) };
     }
   },

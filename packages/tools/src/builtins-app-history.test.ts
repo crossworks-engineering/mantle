@@ -9,6 +9,7 @@
  * data, a draft in the way, a budget past its cap).
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { editCheckRefusalError } from '@mantle/std';
 
 vi.mock('@mantle/content/app-snapshots', () => {
   class AppSnapshotBudgetError extends Error {}
@@ -231,6 +232,17 @@ describe('app_snapshot_delete', () => {
     vi.mocked(deleteAppSnapshot).mockResolvedValueOnce(false);
     expect(errorOf(await del.handler({ id: APP, snapshot_id: SNAP }, chat))).toMatch(
       /app_snapshot_list/,
+    );
+  });
+
+  it("the store's item check refuses in the words of the pre-check before R0 (v0.300.82)", async () => {
+    vi.mocked(deleteAppSnapshot).mockRejectedValueOnce(editCheckRefusalError('no_edit'));
+    expect(errorOf(await del.handler({ id: APP, snapshot_id: SNAP }, chat))).toBe(
+      `You cannot change this item in your workspaces (${APP}): ask for Write on it, or a Moderator of its workspace.`,
+    );
+    vi.mocked(deleteAppSnapshot).mockRejectedValueOnce(editCheckRefusalError('no_read'));
+    expect(errorOf(await del.handler({ id: APP, snapshot_id: SNAP }, chat))).toBe(
+      `Item ${APP} is not in your workspaces: it is in a workspace you are not in (add yourself to it first), or there is no such item (find it with search_nodes).`,
     );
   });
 });
