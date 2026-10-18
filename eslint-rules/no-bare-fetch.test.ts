@@ -23,6 +23,9 @@ import {
  * rule flags any other use, aliases included.
  */
 const ROOT = join(__dirname, '..');
+// Measured once at load, as the other scoreboard tests do: the full measure()
+// takes longer than one test's time limit.
+const got = measure(ROOT) as { perFile: { bareFetch: Record<string, number> } };
 const tester = new RuleTester({ languageOptions: { parser: tseslint.parser } });
 const ALLOWED = BARE_FETCH_ALLOWED as Record<string, { kind: string; why: string }>;
 const CLIENT_ALLOWED = RAW_HTTP_ALLOWED as Record<string, { kind: string; why: string }>;
@@ -51,7 +54,6 @@ describe('no-bare-fetch', () => {
   });
 
   it('the scoreboard count over tools, calendar and content is the listed files there', () => {
-    const got = measure(ROOT) as { perFile: { bareFetch: Record<string, number> } };
     expect(Object.keys(got.perFile.bareFetch).sort()).toEqual(
       Object.keys(ALLOWED)
         .filter((f) => /^packages\/(tools|calendar|content)\/src\//.test(f))
