@@ -260,7 +260,7 @@ cross-map options through `mantle_recall_retarget(map, old_slug,
 new_slug)`: definers that check only while a scope is set, through the edit
 check's gate, so the role still holds no right on `secrets` and never
 writes another map's cards itself. The two tables A3a left as gaps are
-write-role tables since plan v3 S3 (docs/actors.md, "Plan v3 S3"):
+write-role tables since plan v3 S3 (docs/actors.md, "The three routes to Postgres"):
 `profiles` writes the login's own row, or the brain's with the Settings
 area (owner decision 2026-10-17), and `app_table_exports` is read and
 written by a manager of the app. The rerun mechanism is gone.

@@ -122,7 +122,8 @@ const F4_ADMIN_CREATE =
 const F4_CREATE_APP_MISS = 'sql INSERT on apps: no edit of the item (refused when the check is on)';
 
 /**
- * Plan v3 S3 (docs/actors.md, "Plan v3 S3"), in every section: profiles and
+ * Plan v3 S3 (docs/actors.md, "The three routes to Postgres"), in every
+ * section: profiles and
  * app_table_exports are write-role tables, so a write of them is no gap.
  *  - main's line lists the gap it ran again (warn: the system pool; on: the
  *    checked rerun); the same answer now lists none;

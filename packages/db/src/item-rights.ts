@@ -6,8 +6,8 @@
  * mantle_may_manage for a delete or a move (an app's link: assertMayLink), a read for a write that only needs to see
  * the item. A read-only snapshot copy (data.snapshot_of) is never edited.
  *
- * A login's typed write in a scope runs on the write role while the actor
- * check is not off, where the database checks it (client.ts, the login
+ * A login's typed write in a scope runs on the write role in every check
+ * mode (plan v3 S3), where the database checks it (client.ts, the login
  * write gateway), but only as the write runs: the tool asks it here first,
  * in the caller's scope, for a clear answer before any side effect.
  *

@@ -1,4 +1,5 @@
--- Plan v3.2 step S3 (docs/actors.md, "Plan v3 S3"): the write role always,
+-- Plan v3.2 step S3 (docs/actors.md, "The three routes to Postgres"; the
+-- handover: docs/_archive/plan-v3-s3-handover.md): the write role always,
 -- the two gap tables closed. The check mode decides refuse or report, never
 -- the pool: a login's scoped write runs on the write role in every mode, and
 -- profiles and app_table_exports become ordinary write-role tables, so the

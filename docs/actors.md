@@ -84,12 +84,13 @@ own, with the actor it binds: [process-inventory.md](./process-inventory.md)
   `SYSTEM_DB_MODULES` may import it (`eslint-rules/system-db-allowlist.mjs`).
 - The login write gateway (`loginWriteRoute`, `packages/db/src/client.ts`)
   sends a write to the write role when the actor is a login, an
-  assistant, a link or a contact and the write carries a scope. One
+  assistant, a link or a contact and the write carries a scope, in every
+  check mode: the mode decides refuse or report, never the pool. One
   `SET LOCAL` with the transaction's first statement carries the scope,
   the actor and the create home. Never a session SET.
 - A write to a table the write role holds no right on goes to the system
-  pool up front. Two tables still take a checked rerun
-  (`WRITE_ROLE_GAP_TABLES`: `profiles`, `app_table_exports`).
+  pool up front. Nothing runs again: a right the role lacks is a bug (an
+  error and a `write-role-gap` miss), a refusal is the caller's answer.
 - The scoped pools never run the setter functions. Only `packages/db`
   sets `mantle.*` settings.
 - Transactions: `withSystemTx` in an open system transaction is its
@@ -150,6 +151,11 @@ Owner rules (each holds today unless "Known limits" says otherwise):
   egress gates go with the assistants area, `teamPrivateReads` with the
   users area, any other brain-row write with the settings area. Every
   login changes its own row; house style, purpose, archetype: owner only.
+  On the write role the row rule holds it (`mantle_profile_writable`):
+  the own row, the brain's with the settings area, a delete the own only.
+- An app's export links (`app_table_exports`) are read and written with
+  manage of the app (`mantle_may_manage_home`: no home, an Admin scope);
+  a write also needs edit of the linked Table.
 - Keys, links, contacts and peers are never widened. A key or a peer acts
   as its login as it is now and only narrows it (read only, areas, risky
   tools); neither changes the content of a page or note others read. A
@@ -317,12 +323,6 @@ change and its audit row (`mantle_grant_change`, `mantle_grant_move_home`,
 
 Each ends in the step of plan v3.2 (2026-10-17) named.
 
-- Off still decides the pool: with the actor check off a login's write
-  runs on the system pool (`loginWritesMayRoute`). S3.
-- Two gap tables take a checked rerun on the system pool (`profiles`,
-  `app_table_exports`). S3.
-- The brain's profile row: today the profile route asks the settings
-  area for the brand keys only; S3 builds section 6's per-area split.
 - The four workspace tables are written on the system pool
   (`workspace-write` exits, raw writes in `workspaces.ts` and
   `workspace-ticks.ts`); `mantle_ws_create` skips its check unscoped. S2.

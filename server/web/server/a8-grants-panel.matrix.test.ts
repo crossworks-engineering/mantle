@@ -284,6 +284,6 @@ const EXPECTED: Record<'off' | 'warn' | 'on', Record<string, 'made' | 'refused'>
  *  A6). Before A6: 3, the scope path's add, its move and the move's
  *  workspace event, all made. Off reports the same 4 since plan v3 S3: a
  *  scoped write runs on the write role in every mode, and off reports what
- *  on would refuse, as warn (docs/actors.md, "Plan v3 S3", changed answer
- *  1); before S3, 0 (the system pool). */
+ *  on would refuse, as warn (docs/actors.md, "The three routes to
+ *  Postgres"; changed answer 1 of docs/_archive/plan-v3-s3-handover.md); before S3, 0 (the system pool). */
 const MISSES: Record<'off' | 'warn' | 'on', number> = { off: 4, warn: 4, on: 0 };
