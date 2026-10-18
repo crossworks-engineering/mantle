@@ -109,11 +109,16 @@ describe.skipIf(!DB_URL)('the tree bugs: a Write rename, a cross-workspace move'
     await raw.begin(async (tx) => {
       await tx`select set_config('mantle.actor', 'system:test', true)`;
       await tx`select mantle_lock_heads(array[${id}]::uuid[], 'update')`;
-      await tx`delete from item_grants where node_id = ${id}`;
+      // Upserts, then the rest away: a trigger may put the folder's home
+      // back the moment the last grant goes.
       for (const g of grants) {
         await tx`insert into item_grants (node_id, workspace_id, is_home, write)
-                 values (${id}, ${g.ws}, ${g.home === true}, ${g.write === true})`;
+                 values (${id}, ${g.ws}, ${g.home === true}, ${g.write === true})
+                 on conflict (node_id, workspace_id)
+                 do update set is_home = excluded.is_home, write = excluded.write`;
       }
+      await tx`delete from item_grants where node_id = ${id}
+                 and not (workspace_id = any(${grants.map((g) => g.ws)}::uuid[]))`;
     });
   };
   /** The fixture's shared grants: home H, W with Write, R with Write off. */
@@ -242,6 +247,14 @@ describe.skipIf(!DB_URL)('the tree bugs: a Write rename, a cross-workspace move'
       expect(o.text, name).toMatch(/cannot change|not allowed|Write|Moderator|made by Mantle/i);
     }
   };
+
+  /** Mark a folder as made by Mantle (data.system). */
+  const markSystem = (id: string) =>
+    raw.begin(async (tx) => {
+      await tx`select set_config('mantle.actor', 'system:test', true)`;
+      await tx`update nodes set data = coalesce(data, '{}'::jsonb) || '{"system": true}'::jsonb
+                where id = ${id}`;
+    });
 
   const notesFolder = async (name: string, parent?: string) =>
     idIn(
@@ -473,11 +486,7 @@ describe.skipIf(!DB_URL)('the tree bugs: a Write rename, a cross-workspace move'
         // A system folder the member has Write on: its name is fixed.
         const system = await notesFolder(`${tag} system ${n()}`);
         await grantsOn(system, shared());
-        await raw.begin(async (tx) => {
-          await tx`select set_config('mantle.actor', 'system:test', true)`;
-          await tx`update nodes set data = coalesce(data, '{}'::jsonb) || '{"system": true}'::jsonb
-                    where id = ${system}`;
-        });
+        await markSystem(system);
         await refused(mode, 'rename mcp wr system', rename('wr'), system, true);
         expect(m.takeActorMisses()).toEqual([]);
       }, 300_000);
@@ -490,8 +499,7 @@ describe.skipIf(!DB_URL)('the tree bugs: a Write rename, a cross-workspace move'
         await grantsOn(dest, shared());
         const system = await notesFolder(`${tag} sqlsys ${n()}`);
         await grantsOn(system, shared());
-        await raw`update nodes set data = coalesce(data, '{}'::jsonb) || '{"system": true}'::jsonb
-                   where id = ${system}`;
+        await markSystem(system);
         const pathOf = async (id: string) => (await rowOf(id))!.path;
         const [gp, dp, sp] = [await pathOf(g), await pathOf(dest), await pathOf(system)];
         const label = (p: string) => p.split('.').at(-1)!;
@@ -572,6 +580,7 @@ describe.skipIf(!DB_URL)('the tree bugs: a Write rename, a cross-workspace move'
           folder_id: from,
           confirm: true,
         });
+        await grantsOn(page, shared());
         // A page that embeds it, so the follow-up has a walk to make.
         const embedder = idIn(
           await sysTool('page_create', {
@@ -592,6 +601,7 @@ describe.skipIf(!DB_URL)('the tree bugs: a Write rename, a cross-workspace move'
         const nto = await notesFolder(`${tag} nto ${n()}`);
         await grantsOn(nto, [{ ws: ws.T, home: true }]);
         const item = await noteIn(nfrom);
+        await grantsOn(item, shared());
         const o2 = await viaMcp('mod', 'tree_item_move', {
           kind: 'notes',
           item_ids: [item],
@@ -619,6 +629,7 @@ describe.skipIf(!DB_URL)('the tree bugs: a Write rename, a cross-workspace move'
           { ws: ws.X, write: true },
         ]);
         const item = await noteIn(nfrom);
+        await grantsOn(item, shared());
         const move = (who: Who) => (id: string) =>
           viaMcp(who, 'tree_item_move', {
             kind: 'notes',
