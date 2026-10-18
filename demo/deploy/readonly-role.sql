@@ -84,3 +84,19 @@ begin
   end loop;
 end
 $$;
+
+-- The login facts the app's system pool runs to tell an Admin login (0306,
+-- S8a: an Admin login is role AND membership). 0306 grants them to
+-- demo_reader only when the role exists at migrate time, which it never does
+-- here (see mantle_brain_id above). Exactly these three; a box whose schema
+-- predates them skips the grant.
+do $$
+declare f text;
+begin
+  foreach f in array array['public.mantle_login_is_admin(uuid)', 'public.mantle_login_areas(uuid)', 'public.mantle_area_rule(uuid,text)'] loop
+    if to_regprocedure(f) is not null then
+      execute format('grant execute on function %s to demo_reader', f);
+    end if;
+  end loop;
+end
+$$;
