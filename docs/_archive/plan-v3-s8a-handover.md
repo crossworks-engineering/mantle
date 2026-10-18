@@ -126,64 +126,66 @@ reads it on the fleet before merge, with `mantle_role_drift()`.
 
 ## Pins
 
-- `dbClientLines` 3142 to 3157: `loginAreas`, the one system-pool reader
-  of `mantle_login_areas` (note appended).
-- P1b's counters are not on main yet (`feat/p1b-counters`). Measured with
-  P1b's own counter code (claude/p1b-fix2-5470d3) on main and on this
-  branch:
-  - `tsAreaRules` 3 to **0** (areasOf, areasFromLimits and requireArea's
-    list rule gone).
-  - `loginRoleDecisionReads` 36 to **34**; in session.ts 7 to 5. The five:
-    `adminLogin` (the pair helper), `resolvedFor`'s admin and member cases
-    (the session, on the role until S8b by the owner decision),
-    `memberLoginActive` and `findMemberAsset` (both kept until S8b by the
-    plan). The plan's "16 to 1" was measured another way at c7acc88ff; P1b
-    counts 36 in 16 files.
-  - `loginKindBranches` 52 to 51.
-  - `inHandlerAreaChecks` 21 to **23**: `requireArea` is now made of the
-    two asks the plan names (`scopeHasArea`, `loginHasArea`), and the
-    counter counts asks inside it as well as at each `requireArea` use. No
-    new ask after a gate. When P1b lands first, this pin needs 23 with that
-    reason, or P1b's counter treats `requireArea`'s body as a gate.
+Rebased on 6e49ee5b4 (v0.300.93, P1b's counters merged); every pin below
+is P1b's own count, set by hand with its reason in `_notes`:
 
-## Gates
+- `tsAreaRules` 3 to **0**: areasOf, areasFromLimits and requireArea's
+  list rule are gone (`eslint-rules/admin-counts.test.ts` now expects none).
+- `loginRoleDecisionReads` 36 to **34** (the plan said 16 to 1, measured
+  another way at c7acc88ff; P1b counts 36 in 16 files): in session.ts 7
+  to 5. Left: `adminLogin` (the pair helper), `resolvedFor`'s admin and
+  member cases (the session stays on the role by the owner decision),
+  `memberLoginActive` and `findMemberAsset` (both until S8b by the plan).
+- `loginKindBranches` 52 to **51**: areasOf's "migration skipped" branch.
+- `historyCodeComments` 2332 to **2331**; `S8a` is added to
+  HISTORY_HEADING_CODES (`eslint-rules/cleanup-counts.mjs`) for this
+  file's heading, and no new code comment names it.
+- `inHandlerAreaChecks` 21 to **23**, raised: requireArea is now made of
+  the two asks the plan names (scopeHasArea in its login's own scope,
+  loginHasArea unscoped); the counter counts the asks inside it as well as
+  each requireArea use. No new ask after a gate.
+- `dbClientLines` 3142 to **3157**, raised: `loginAreas`, the one
+  system-pool reader of `mantle_login_areas` (getAdminDb lives only in
+  client.ts).
+- `sqlRoleReaders` 14, unchanged: 0305 redefines a reader, adds none.
 
-Mac (unset DATABASE_URL for unit runs):
+## Gates (head 71af6c10e, then this handover)
+
+Mac (DATABASE_URL unset for unit runs), on the rebased head:
 
 | gate | exit |
 |---|---|
 | pnpm -r typecheck | 0 |
-| pnpm lint | 0 (1 old warning, contact-sharing-routes.db.test.ts) |
+| pnpm lint | 0 |
 | pnpm format:check | 0 |
 | pnpm docs:check | 0 |
 | pnpm arch:check | 0 |
 | pnpm -C server/web build | 0 |
-| pnpm exec vitest run server packages eslint-rules | 0 (at ee2779124: 10940 passed) |
+| pnpm exec vitest run server packages eslint-rules | 0 (11022 passed) |
 
-Workstation (throwaway worktree `s8a`, container `s8a_pg` on 56163, own
-setup each time, cleaned by the script):
+Workstation (throwaway worktree `s8a`, own `s8a_pg` on 56163, removed
+after each run):
 
-| run | head | exit | result |
-|---|---|---|---|
-| new DB files + login-facts | 7576170ed | 0 | 23 of 23 |
-| pnpm verify (full vitest with DB, actor-off, actor-on, edit-on, matrix) | a3db56260 | 1 | 71 failed of 13607 |
-| the 23 files that failed or were touched, again | ee2779124 | 1 | 2 failed of 349, plus 2 hook timeouts |
-| pnpm test:runtime-role (full config) | | not run | |
+| run | exit | result |
+|---|---|---|
+| pnpm verify (full vitest with DB, actor-off, actor-on, edit-on, matrix) | 1 | 63 failed in 15 files: hook timeouts and "too many clients" (the box runs other lanes' containers); a different set each run |
+| those 15 files alone | 0 | 506 passed |
+| the run before (c5a423b33): its 64 failing files alone, plus the 5 moved files | 0 | 948 passed |
+| pnpm test:runtime-role, full config | 0 | 2646 passed |
 
-The 71 at a3db56260 were: (a) a bug of this branch, `loginAreas` let a
-throw before its query escape (the a10 body sweep showed grants and
-workspace routes answering 500 for main's 404), fixed in ee2779124;
-(b) test brains that make role admin logins with no Admin workspace (the
-deleted "migration skipped" branch let them in), fixed with
-`ensureAdminUsers` (`packages/db/src/test-support.ts`) in access-keys,
-access-keys-hardening, device-tokens, mcp-oauth-grants and member-mcp;
-(c) app code on a brain stopped before 0272 (mcp-revived-credentials,
-which now installs 0304's `mantle_login_is_admin`) and a SELECT-only role
-(login-row-readonly, now granted EXECUTE as the runtime role has it);
-(d) load: "too many clients" and 10 s hook timeouts (runtime-role,
-a3b2, w6a-fix-sweep, review-off, grants, workspaces, w6b-fix3,
-app-draft-scope), which passed in the rerun but for review-off's hook
-(not this branch's file).
+CI (it runs the full DB suite too): green on 71af6c10e,
+https://github.com/crossworks-engineering/mantle/actions/runs/39142603872
+(c5a423b33 failed on the two things 71af6c10e fixed: the cell's probe
+route, and refold-embeds meeting the Admin workspace the helper then made
+on the shared database).
+
+What the earlier runs found, and this branch fixed: `loginAreas` letting a
+throw before its query escape (500 for main's 404 in the a10 body sweep);
+test brains making admin logins with no Admin workspace (the five files
+now run on scratch brains with `ensureAdminUsers`, so the shared database
+keeps no Admin workspace of theirs); app code on a brain stopped before
+0272 (mcp-revived-credentials installs 0304's fact); a SELECT-only role
+(login-row-readonly grants it EXECUTE, as the runtime role has).
 
 ## Owner decision (closed 2026-10-18): the session stays on the role
 
@@ -205,10 +207,6 @@ login outside Admin keeps its session but is not Admin"
 (`admin-membership.db.test.ts`) proves it: past the owner gate as the
 Admin user, an Admin area route (`/api/users`) refused, no asset token, no
 render cookie, `adminLoginActive` false.
-
-CI: run 39137708165 (abe3fd98e) failed on dbClientLines (fixed); run
-39139253455 (ee2779124) in progress when handed over:
-https://github.com/crossworks-engineering/mantle/actions/runs/39139253455
 
 ## Rebase notes
 
