@@ -289,7 +289,9 @@ its paths (both admin-membership files, login-facts, tree-bugs,
 login-row-readonly, mcp-revived-credentials, access-keys,
 access-keys-hardening, device-tokens, mcp-oauth-grants, member-mcp,
 a1-d1-routes, w7-int-fix3-session, both workspaces.db files,
-w6a-route-sweep): 220 tests, then the three changed after: 28 passed.
+w6a-route-sweep): 219 of 220 passed; the one failing cell (it asked for
+the function's message, the refusal is the table's) was fixed, and its
+three files then passed, 28 of 28.
 
 ## Rebase notes
 
