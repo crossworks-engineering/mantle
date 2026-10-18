@@ -184,3 +184,149 @@ under its 15 s limit even before the hotfix lands.
   reads it from there then, and the seed goes.
 - The spec (docs/actors.md) is unchanged: no rule changed, and it is at its
   350-line pin. S7a adds the route pick to section 8 with the map.
+
+## Fix round 1: the audit at 4080d5102 (8.5/10)
+
+Rebased onto main at ab0ce298a (v0.300.86: S3 merged, after D1 and P1a).
+The pins file conflicted on its tail (S3's gapTables and dbClientLines
+beside this branch's keys, and their notes): both sides' keys kept. Every
+pin re-measured on the rebased tree before any fix.
+
+### Pins moved by the rebase
+
+| Key | Before | After | Why |
+|---|---|---|---|
+| historyCodeComments | 2202 | 2206 | S3's own comment lines, left for D2: 11 added (app-table-exports.ts 3, profile-preferences.ts 3, auto-timezone.ts, item-rights.ts, builtins-apps.ts, the reminder-channel route, brand-gate.ts 1 each), 7 gone (client.ts 5, access-matrix.ts 2) |
+
+No other pin moved (gapTables 0, dbClientLines 3141 as main). sqlAreaRules
+still measures 5 against its pin 7 (S2a a0's key, unchanged here).
+
+### The two mediums
+
+Counters a trivial edit could lower:
+
+- `loginRoleDecisionReads` (and `loginKindBranches`, the same engine): a
+  local holding the field under another name (`const r = row.role`,
+  `const { role: r } = row`, an assignment) and a list of login names
+  asked (`['admin'].includes(row.role)`, `new Set([...]).has(...)`, a const
+  list) count now (eslint-rules/admin-counts.mjs `fieldAliases`,
+  `loginList`). A helper taking the role as a parameter still games it, so
+  both are labelled progress counters; the checks are the login type test
+  and sqlRoleReaders. The one new kind hit, a workspace's look kind in
+  server/web/lib/workspace-look.ts, is named in `NOT_LOGIN_KIND`.
+- `inHandlerAreaChecks`: a thin wrapper (a named function whose whole body
+  is one ask) is followed to its uses, in its file and, exported, where it
+  is imported, to a fixed point; the ask inside it is not counted, so
+  wrapping never lowers the count (`askWrappers`, `thinAskWrappers`). An ask
+  held under another name (`const ask = scopeHasArea`, an assignment, an
+  object property, `.bind`, `.call`, `.apply`) is a problem that fails
+  arch:check (`adminCountProblems`, 0 on the repo). A wrapper that does more
+  than ask is not followed, so the label says progress counter past that.
+- `rawWriteSqlScoped`: any tagged template whose text writes counts,
+  whatever its tag, so `const q = sql; q\`insert ...\``, a transaction
+  handle (`sql.begin(async (tx) => tx\`delete ...\`)`) and a parameter all
+  count; `<tag>.raw(x)` reads the tag's aliases and transaction handles too
+  (`sqlTagNames`). This finds packages/db/src/migrate-runner.ts:66.
+- `systemWholeTools`: packages/runtime/src/tool-policy-snapshot.test.ts
+  compares the scoreboard's count with every builtin and MCP surface policy
+  for which `policySystemWhole` answers true (no database). Proven: two
+  policies of builtins-pending.ts sharing one const made the static count
+  38 against the registry's 39 and failed the test (reverted).
+
+History codes:
+
+- `historyHeadingCodes` reads the codes with any letter and their sub-steps
+  (`[A-Z][0-9]{1,2}(?:[a-z][0-9]?)*`: R0, D1, S3, P1a, A2b1, A2b2b) from the
+  headings of docs/_archive/actors-history.md and of every
+  docs/_archive/plan-v3-*-handover.md; a comment line is matched with the
+  same pattern. Next to a provenance word only the A, W and F step shapes
+  count, as before, now with their sub-steps (A2b1).
+- The stoplist, reviewed (`HISTORY_CODE_STOPLIST`): S3 as the object store
+  (an S3 backend, S3-compatible, plain S3 calls, a bucket, an endpoint, and
+  anywhere in packages/storage); A4 as the paper size; the A8 suite's own
+  names (A8 matrix, grid, cell, cells, report, exempt, tool cells; S11a, not
+  merged yet, uses them) unless a finding code follows (`A8 matrix F9` is a
+  finding).
+- Sheet comments: only sheet, formula, cell, xlsx, excel and spreadsheet
+  make a line a sheet comment (a row, a column and a range are a database's
+  too, and hid real codes), and only a letter and a number is a cell.
+
+### The lows
+
+- L1: next to a provenance word too, a cell-shaped code on a sheet line is
+  no finding (`fix A1 in the sheet`); a sheet file's step code on a line
+  with no sheet word still is (`A10 part 2`). A4 paper is in the stoplist.
+- L2: the A8 suite names are exempt (above).
+- L3: a bare `round N` counts only closed by punctuation or a quote
+  (`(round 3, H1)`, `round 4:`, `"round 3"`) or followed by a finding code
+  (`round 1 M1`); `round 2 decimals` and `round 1 waits` do not.
+- L4: `rawWriteSqlScoped` is the literal writes; `rawSqlNonLiteral` (new,
+  pinned) is `.unsafe(x)` and `<tag>.raw(x)` of text that is no literal.
+- L5: while `AS_SYSTEM_ROUTE_SEED` is the source, a route in it other than
+  'full' is a problem (eslint-rules/as-system-routes.mjs).
+- L6: each followed holder's name gets the non-call-use check, in its file
+  and in each file importing it (a member holder: its file), so `const g =
+  f.bind(null)`, `f.call(...)`, a ternary, `??` or a list are problems. A
+  holder handed to a call (`list.map(f)`) stays a use counted where it
+  stands, as arch-lints.test.ts has held since the asSystem exits came in.
+- L7: `loginShapePin` reads the literal only while the lines holding it to
+  the type are as written (the Login type from getLoginOr401, KeysOf,
+  ShapeKeys, Has, the import, and the `Has<'kind'>; Has<'role'>`
+  annotation, whitespace aside); a loosened one answers -1, a problem.
+- L8: `rawWriteSqlFiles` and `inHandlerAreaCheckFiles` are in `MAY_GROW`
+  (a file split moves sites to more files).
+- L9 (per-package pins, D2) and L10: skipped, as briefed.
+
+### Pins moved by the fixes
+
+| Key | Before | After | Why |
+|---|---|---|---|
+| historyCodeComments | 2206 | 2328 | +126 -4 lines, no comment added: the wider heading codes (S3 46, A2b2b 24, R0 9, D1 7, W5b2 7 and the rest), the narrower sheet words (A3b 12, A10 6, A4 5 among them); less the round shape (1) and the stoplist (3) |
+| rawWriteSqlScoped | 142 | 80 | the split (63 non-literal out) and +1, migrate-runner.ts:66's transaction handle |
+| rawSqlNonLiteral | (new) | 63 | the non-literal texts, pinned apart |
+| inHandlerAreaChecks | 20 | 21 | holdsKeysArea (the access-keys route) is a thin wrapper of requireArea with two uses |
+
+Unchanged: loginKindBranches 52, loginRoleDecisionReads 36,
+systemWholeTools 39, rawWriteSqlFiles 55, inHandlerAreaCheckFiles 19,
+sqlAreaRules pin 7 (measures 5). Each moved key's note in
+scripts/arch-scoreboard.pins.json says the same.
+
+### Gates (fix round 1)
+
+At 9f6392440, the code head (this section is docs only on top of it).
+
+Mac (DATABASE_URL unset): `pnpm -r typecheck` 0, `pnpm lint` 0 (the one
+warning on main too), `pnpm format:check` 0, `pnpm -C server/web
+route-manifest` 0 then `pnpm docs:check` 0, `pnpm arch:check` 0 (prints
+sqlAreaRules 7 -> 5 as went down, as before), `pnpm -C server/web build` 0,
+`vitest run eslint-rules server/web/lib/auth/login-shape.test.ts
+server/web/lib/shell-portability.test.ts
+packages/runtime/src/tool-policy-snapshot.test.ts` 0 (26 files, 352
+tests), `bash scripts/test-merge-branch.sh` 0.
+
+Workstation (own clone `~/p1bf_clone` of the pushed branch, own pgvector
+pg18 container `p1bf_pg` on free port 55471, max_connections 450, a
+32-byte base64 master key, systemd-run --user unit `p1bf-db`, Node
+26.5.0, `--maxWorkers=3`): `role-readers-catalog.db.test.ts` 0 (3/3),
+`rights-catalog.db.test.ts` 0 (4/4). Container (`-v`) and clone removed
+by exact name; the unit was a collected one-shot.
+
+measure() on the Mac, three runs in one process: 3231, 2660, 2600 ms (at
+c64f78010 before the rebase: 2697, 2459, 2459). The wrapper pass and the
+tag names cost about 0.15 s.
+
+Push with `--force-with-lease` and `--no-verify` (the pre-push gate runs
+the DB suites). CI for 9f6392440:
+https://github.com/crossworks-engineering/mantle/actions/runs/39095323220
+
+### Open items
+
+- The progress counters (loginKindBranches, loginRoleDecisionReads,
+  adminDecisionFlags, inHandlerAreaChecks past thin wrappers) stay games
+  for a reviewer: a parameter or a wider helper hides a site.
+- historyCodeComments now counts codes from the plan v3 handovers'
+  headings: a handover heading that names a new code (a step or a finding)
+  raises it wherever the code is in a comment. Keep codes out of handover
+  headings, or raise the pin with that reason.
+- S11a uses the A8 suite names; the stoplist keeps them out, a finding code
+  after them still counts.
