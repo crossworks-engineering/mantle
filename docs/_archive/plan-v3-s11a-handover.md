@@ -204,3 +204,117 @@ test:actor-on 0, test:edit-on 0, test:matrix 0, test:runtime-role (full
 config) 0. A re-run of the full vitest is in the final report.
 
 **Left.** S11a-2 to S11a-4 for the owner; process_extraction as in round 1.
+
+## S11a handover (the A8 tool cells, round 3, 2026-10-18)
+
+Rebased onto main ab0ce298a (v0.300.86: S3, D1 and P1a merged); both sides'
+pin keys kept (S3's gapTables and dbClientLines beside a8Uncovered and
+a8Exempt). The audit at c54b6ad4a rated the tool cells 7/10.
+
+**Done.**
+
+- Both checks in each mode (H1): the tool cells set the actor check and
+  the edit check together (warn and warn, on and on), as every box runs
+  them. Before, the edit check stayed off.
+- An allowed cell for every tool (M1): the generator picks one positive
+  cell per tool whatever the pair pick (a candidate the oracle allows on
+  every way in it takes, salted by the tool's name), and a tool is covered
+  only with an allowed and a refused cell (the coverage test asks both).
+  The matrix test fails a tool that runs no allowed cell, or passes none, in
+  a mode; a tool whose allowed call needs a model, the outside, a sandbox or
+  a peer is counted in NOT_RUN instead, and a tool whose every allowed cell
+  is a known failure is named in ALLOWED_KNOWN_ONLY (it leaves when its
+  finding is fixed). New fixtures: a draft for table_commit, a committed
+  workbook for table_snapshot_create, the app's own database with an a8
+  table for app_db_seed and app_table_export_set, a fresh item per cell for
+  export_node (its export is named after the item). invoke_agent gets the
+  turn's agent context (its target agent is one the test makes);
+  generate_image a prompt of three characters or more. The model stays
+  stubbed.
+- Member-negatives for every write (M2): keyed on the tool's effect, so a
+  copy, an import or an export (which declares the read of its source) gets
+  them; a refused write of that kind must make no node (the probe adds the
+  brain's node count).
+- The moves (M3): file_move, folder_move, tree_item_move and page_move
+  declare the guide's move, the destination a folder homed in T (made once
+  per tree root, a8-tool-content.ts a8MoveTarget); sandbox_import declares
+  the read of its file, sandbox_create of its inbox folder (their allowed
+  calls need sandboxd: NOT_RUN). app_snapshot_delete declares edit, the
+  product's rule (the HTTP route's); the library's own check is the hotfix
+  branch's (feat/hotfix-snapshot-delete), not this one's.
+- The disk probe (M4): a seeded item's probe hashes its table's workbook
+  file and its draft's (with their write-ahead logs) and a file's bytes on
+  disk, so a refused write that changed a file first fails its cell.
+- One tool list (L1): server/web/server/a8-tools.list.ts, read by the
+  coverage test and the matrix test. a8Exempt is pinned by name too
+  (A8_EXEMPT_TOOLS and A8_EXEMPT_KINDS in the coverage test).
+- The no-read scan (L2) also sees `['matrix']`, `'matrix' in`, and a
+  destructuring (`{ matrix }`, `{ matrix: m }` before `=` or as a
+  parameter), comments stripped; a cell of the test checks each pattern.
+- The budget (L3): 210 s for the tool cells (about three times the 70 s they
+  take on the workstation); the CI comment says what test:matrix runs now.
+- app_import and app_duplicate through a turn (S11a-4 dropped): a new app
+  needs manage of its create home, and a turn's create home is the turn's
+  workspace, so a turn whose login is no Moderator of its workspace is
+  narrowed with that reason (6 cells).
+
+**Pins.**
+
+| Pin | Before | After |
+| --- | --- | --- |
+| NOT_RUN | 68 (stubbed 64, peer 4) | 84 (stubbed 68, sandbox 8, peer 8) |
+| NARROWED | 198 (app data 40, Admin MCP 102, Admin turn 46, MCP Admin only 10) | 258 (app data 44, Admin turn 70, Admin MCP 126, new app home 6, MCP Admin only 12) |
+| NOT_APPLICABLE | 134 | 138 |
+| a8Uncovered | 0 | 0 |
+| a8Exempt | 111 | 105 (94 tools, 11 kinds, by name) |
+
+The cells: 1015 of 139 tools, 3838 calls over both modes, 70 s.
+
+**Known failures now** (a8-known-failures.ts):
+
+- P1, warn only, 26 cells: the read grant's member's edits through a turn
+  and over MCP (formula, Recall map, card put and delete, task, note, event,
+  page, table at the root; folder_describe at the root and in a folder) and
+  app_snapshot_delete at the root and in a folder. In warn both checks
+  report and refuse nothing, so the edit is made; in on each is refused.
+  P1 did not shrink to 16: the positive cells moved the pair pick (the
+  note_update folder cells left it), and S11a-2's read grant half joined P1
+  (it passes in on).
+- S11a-1, both modes, 4 cells: as before.
+- S11a-3, both modes, 2 cells (the Home Moderator's, in a folder; the Write
+  grant's root cells are not failing in this pick): as before. sheet_build lands in the same
+  Admin-only auto-filed folder; it declares no item (no cell), so it is
+  recorded with S11a-3 as the owner's question.
+- S11a-5 (new, a bug), both modes, 2 cells: a member's move into a folder
+  of another workspace answers "the database could not run this request":
+  after the move, content tree/write.ts followShares calls
+  mantle_embeds_reached, which reads node_embeds in the caller's scope, and
+  the workspace role may not read that table (access-matrix.ts, admin pool
+  only). page_move and tree_item_move over MCP.
+- S11a-6 (new, the owner's question), both modes, 4 cells: a Write grant's
+  member may not set a Files folder's indexing (folder_set_indexing) or
+  rename a folder (tree_folder_update): the database answers "not allowed
+  to edit this item", where the guide lets a Write grant edit.
+- S11a-7 (new, a bug since 0302), both modes, 2 cells: app_table_export_set
+  is refused for its app's Moderator. The export row's write check is
+  `manage` (access-matrix.ts), whose INSERT branch asks a Moderator of the
+  row's workspace_id (mantle_write_check_trg, written for grant rows), and
+  app_table_exports has no such column: warn reports "INSERT on
+  app_table_exports: not a Moderator of the workspace", on refuses it.
+- S11a-2 and S11a-4 left the list (above).
+
+**Gates.** On the Mac (the tree of 57f6ce1c7): typecheck 0, lint 0,
+format 0, docs 0, arch 0, web build 0, unit (no database) 0. On the
+workstation, own clone and own pg18 container (s11c_pg, port 55987,
+max_connections=450, migrated with MANTLE_CHECK_FLOOR=keep), one at a time,
+on 0024b22fe (57f6ce1c7 differs only in a CI comment): full vitest with DB
+0, test:actor-off 0, test:actor-on 0, test:edit-on 0, test:matrix 0 (91 s),
+test:runtime-role (full config) 0.
+
+**Open.** invoke_agent asks nothing of `subject_node_ids` itself (the child
+reads them in the caller's scope): its refused cells now reach the invoker,
+which the test does not register, so the item and a random uuid get the same
+answer; nothing is shown about the item. generate_image's refused cells stop
+at the missing image_gen worker before the reference images are read; a
+worker fixture (fetch stays stubbed) would take them to the read.
+process_extraction as in round 1.
