@@ -253,8 +253,9 @@ const FOLDER_RENAME = mcpTool({
           isError: true,
         };
       }
-      // The rename is the database's to check (mantle_subtree_rewrite,
-      // 0282: manage of the folder's home), found by its id or its path.
+      // The rename is the database's to check (mantle_subtree_rewrite and
+      // the move check, migration 0305: Write on the folder; manage of a
+      // system folder), found by its id or its path.
       try {
         const updated = await renameFolderById({
           ownerId: ownerId,

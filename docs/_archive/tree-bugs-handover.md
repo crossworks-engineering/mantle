@@ -134,6 +134,33 @@ adds nothing to the parent; the owner's rule names only the folder. No
 other answer changes: a move, a delete, a system folder's rename, an
 indexing switch and a grant change ask what they asked.
 
+## Audit fix round (on v0.300.94)
+
+The audit of fd1a5560f (8/10, fix first):
+
+- M1: rebased on main e6f75059e (S4a); `historyCodeComments` re-measured,
+  main's `failOpenSites` kept.
+- L1: `followShares` passes its ids as one `uuid[]` parameter (the start
+  set and the walk), never a bind per id, which stops at 65,535.
+- L2: `followShares` is best effort: after the write it follows has
+  committed, a failure is logged (one helper, `bestEffortFailed`, with the
+  notify's line, so `consoleCalls` does not move) and the move is never
+  reported failed for it (the grants panel's move counted it as failed).
+- L3: the rename test reads the OLD row's system flag:
+  `mantle_moved_nodes.old_system`, set by the row trigger from OLD;
+  `mantle_is_folder_rename` takes it and the new data (a system folder
+  before or after: manage). 0305 edited in place, `when` unchanged.
+- L4 (accepted, a known limit): a Write member's rename into a name a
+  sibling it does not read already holds is refused as a name clash, so
+  the sibling's name shows.
+- L5: DB cells for a Moderator's folder move and folder delete that change
+  who holds a page: ok, and the page's text refolded (its link to an item
+  held by H alone reads "Private item" once T holds the page, and its own
+  words again once only H does).
+- Nits: the `folder_rename` comment in `packages/mcp-core/src/mcp-defs.ts`;
+  `tree-refold` in the system step table of
+  `docs/_archive/actors-history.md`; the CI line below.
+
 ## Tests
 
 `server/web/server/tree-bugs.db.test.ts` (warn and on, the actor and the
@@ -169,7 +196,7 @@ the code comments say "migration 0305" in `node-ops.ts`,
 
 ## Gates
 
-Rebased on main 6e49ee5b4 (v0.300.93, the P1b counters). Exit codes on
+Rebased on main e6f75059e (v0.300.94, S4a). Exit codes on
 the rebased head, Mac (no database, DATABASE_URL unset): `pnpm -r
 typecheck` 0, `pnpm lint` 0, `pnpm format:check` 0, `pnpm docs:check` 0,
 `pnpm arch:check` 0, `pnpm -C server/web build` 0,
@@ -200,6 +227,6 @@ Workstation (own pgvector pg18 container, `MANTLE_CHECK_FLOOR=keep`):
 Pins (`scripts/arch-scoreboard.pins.json`, each with its reason):
 `asSystemExits` 58 to 59, `asSystemFull` 58 to 59 and
 `asSystemFull_brain-bookkeeping` 10 to 11 (the `tree-refold` step);
-`historyCodeComments` 2332 to 2331 (down).
+`historyCodeComments` 2340 to 2339 (down, on v0.300.94).
 
 CI: CIURL

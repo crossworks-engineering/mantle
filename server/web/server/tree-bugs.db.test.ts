@@ -574,6 +574,17 @@ describe.skipIf(!DB_URL)('the tree bugs: a Write rename, a cross-workspace move'
             await tx`update nodes set path = ${`${dp}.${label(gp)}`}::ltree where id = ${g}`;
           }),
         ).toMatch(/^42501 not allowed to move this item/);
+        // A system folder renamed and its flag cleared in one statement is
+        // still a system folder's rename (the old row's flag): refused.
+        expect(
+          await errOf(async (tx) => {
+            await tx`select mantle_lock_heads(array[${system}]::uuid[], 'update')`;
+            await tx`update nodes set path = ${`${parent(sp)}.zz${n()}`}::ltree,
+                                      data = data - 'system'
+                      where id = ${system}`;
+          }),
+        ).toMatch(/^42501 /);
+        expect((await rowOf(system))!.path).toBe(sp);
         // A rename (the same parent) asks edit: Write on it is enough.
         expect(
           await errOf(async (tx) => {
@@ -643,6 +654,89 @@ describe.skipIf(!DB_URL)('the tree bugs: a Write rename, a cross-workspace move'
         note1(mode, 'tree_item_move mcp mod H to T', o2);
         expect(o2.ok, o2.text).toBe(true);
         expect((await rowOf(item))!.path).toBe((await rowOf(nto))!.path);
+        expect(m.takeActorMisses()).toEqual([]);
+      }, 300_000);
+
+      it("S11a-5: a member's folder move and folder delete that change who sees a page end ok and refold it", async () => {
+        await setMode(mode);
+        const pages = await import('@mantle/content/pages');
+        const docText = async (id: string) =>
+          (
+            await raw<{ t: string | null }[]>`select doc_text as t from pages where node_id = ${id}`
+          )[0]?.t ?? '';
+        // N is held by H alone: a page held by T too names it "Private item".
+        const named = idIn(
+          await sysTool('note_create', { title: `${tag} named ${n()}`, content: 'x' }),
+        );
+        await grantsOn(named, [{ ws: ws.H, home: true }]);
+        const label = `${tag}label${n()}`;
+        const linking = async () => {
+          const id = idIn(
+            await sysTool('page_create', {
+              title: `${tag} linking ${n()}`,
+              markdown: `See [${label}](/n/${named}).`,
+            }),
+          );
+          await grantsOn(id, [{ ws: ws.H, home: true }]);
+          return id;
+        };
+
+        // A folder move: H's folder into a folder homed in T.
+        const fm = await pagesFolder(`${tag} fm ${n()}`);
+        await grantsOn(fm, [{ ws: ws.H, home: true }]);
+        const dest = await pagesFolder(`${tag} fdest ${n()}`);
+        await grantsOn(dest, [{ ws: ws.T, home: true }]);
+        const p1 = await linking();
+        await sysTool('tree_item_move', {
+          kind: 'pages',
+          item_ids: [p1],
+          folder_id: fm,
+          confirm: true,
+        });
+        await sys(() => pages.refoldPageTexts(owner, [p1]));
+        expect(await docText(p1)).toContain(label);
+        const o = await viaMcp('mod', 'tree_folder_update', {
+          kind: 'pages',
+          folder_id: fm,
+          parent_id: dest,
+          confirm: true,
+        });
+        note1(mode, 'tree_folder_update mcp mod folder move H to T', o);
+        expect(o.ok, o.text).toBe(true);
+        expect((await rowOf(fm))!.path.startsWith(`${(await rowOf(dest))!.path}.`)).toBe(true);
+        const t1 = await docText(p1);
+        expect(t1, 'refolded: T holds the page, not what it links').toContain('Private item');
+        expect(t1).not.toContain(label);
+
+        // A folder delete: the page lifts out of a folder T holds.
+        const parent = await pagesFolder(`${tag} fparent ${n()}`);
+        await grantsOn(parent, [{ ws: ws.H, home: true }]);
+        const inner = idIn(
+          await sysTool('tree_folder_create', {
+            kind: 'pages',
+            name: `${tag} finner ${n()}`,
+            parent_id: parent,
+          }),
+        );
+        await grantsOn(inner, [{ ws: ws.H, home: true }, { ws: ws.T }]);
+        const p2 = await linking();
+        await sysTool('tree_item_move', {
+          kind: 'pages',
+          item_ids: [p2],
+          folder_id: inner,
+          confirm: true,
+        });
+        await sys(() => pages.refoldPageTexts(owner, [p2]));
+        expect(await docText(p2)).toContain('Private item');
+        const d = await viaMcp('mod', 'tree_folder_delete', {
+          kind: 'pages',
+          folder_id: inner,
+          confirm: true,
+        });
+        note1(mode, 'tree_folder_delete mcp mod lifts a page out of T', d);
+        expect(d.ok, d.text).toBe(true);
+        expect((await rowOf(p2))!.path).toBe((await rowOf(parent))!.path);
+        expect(await docText(p2), 'refolded: H alone holds it again').toContain(label);
         expect(m.takeActorMisses()).toEqual([]);
       }, 300_000);
 

@@ -17,10 +17,12 @@
 -- parent path and depth, and not a system folder (data.system: its name is
 -- fixed, the tree refuses it for everyone; the database keeps asking
 -- manage of it, as before):
---  1. mantle_moved_nodes notes each moved row's old path too
---     (mantle_nodes_moved_row_trg), so the statement check can tell a
---     rename from a move by the row's own old and new path, never by a
---     setting a session could set.
+--  1. mantle_moved_nodes notes each moved row's old path and whether it
+--     was a system folder (mantle_nodes_moved_row_trg, from OLD), so the
+--     statement check tells a rename from a move by the row's own old and
+--     new path, never by a setting a session could set, and one UPDATE that
+--     changes the path and clears data.system is still a system folder's
+--     (system before or after: manage).
 --  2. The move check asks edit of a renamed folder (mantle_may_edit of its
 --     home and Write grants) instead of manage, and no longer asks edit of
 --     the folder it sits in: a rename adds nothing to that folder. Every
@@ -41,14 +43,17 @@ SET LOCAL lock_timeout = '30s';
 
 ALTER TABLE "public"."mantle_moved_nodes" ADD COLUMN IF NOT EXISTS "old_path" ltree;
 --> statement-breakpoint
+ALTER TABLE "public"."mantle_moved_nodes" ADD COLUMN IF NOT EXISTS "old_system" boolean;
+--> statement-breakpoint
 
 CREATE OR REPLACE FUNCTION "public"."mantle_nodes_moved_row_trg"()
   RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER
   SET search_path = "public", pg_temp AS $$
 BEGIN
   -- A row moved twice in one statement keeps where it came from.
-  INSERT INTO "public"."mantle_moved_nodes" ("xid", "id", "old_owner", "old_path")
-    VALUES (pg_current_xact_id(), NEW."id", OLD."owner_id", OLD."path") ON CONFLICT DO NOTHING;
+  INSERT INTO "public"."mantle_moved_nodes" ("xid", "id", "old_owner", "old_path", "old_system")
+    VALUES (pg_current_xact_id(), NEW."id", OLD."owner_id", OLD."path",
+            coalesce((OLD."data" ->> 'system') = 'true', false)) ON CONFLICT DO NOTHING;
   RETURN NULL;
 END
 $$;
@@ -57,9 +62,12 @@ REVOKE EXECUTE ON FUNCTION "public"."mantle_nodes_moved_row_trg"() FROM PUBLIC;
 --> statement-breakpoint
 
 -- A folder's rename (the rule of 1 to 3 above): the same owner, the same
--- parent path and depth, not a system folder. No role may run it.
+-- parent path and depth, a folder that was no system folder and is none
+-- (`was_system`: the row before the write; `d`: its data after). No role
+-- may run it.
 CREATE OR REPLACE FUNCTION "public"."mantle_is_folder_rename"(
-  old_owner uuid, old_path ltree, new_owner uuid, new_path ltree, t "public"."node_type", d jsonb)
+  old_owner uuid, old_path ltree, new_owner uuid, new_path ltree, t "public"."node_type",
+  was_system boolean, d jsonb)
   RETURNS boolean LANGUAGE sql IMMUTABLE
   SET search_path = "public", pg_temp AS $$
   SELECT coalesce(
@@ -67,11 +75,12 @@ CREATE OR REPLACE FUNCTION "public"."mantle_is_folder_rename"(
     AND old_owner = new_owner
     AND nlevel(old_path) = nlevel(new_path)
     AND subpath(old_path, 0, nlevel(old_path) - 1) = subpath(new_path, 0, nlevel(new_path) - 1)
+    AND NOT coalesce(was_system, true)
     AND NOT coalesce((d ->> 'system') = 'true', false),
     false)
 $$;
 --> statement-breakpoint
-REVOKE ALL ON FUNCTION "public"."mantle_is_folder_rename"(uuid, ltree, uuid, ltree, "public"."node_type", jsonb) FROM PUBLIC;
+REVOKE ALL ON FUNCTION "public"."mantle_is_folder_rename"(uuid, ltree, uuid, ltree, "public"."node_type", boolean, jsonb) FROM PUBLIC;
 --> statement-breakpoint
 
 -- The move check, 0279's body with the rename branch (2 above).
@@ -94,7 +103,7 @@ BEGIN
   IF me IS NULL THEN RETURN NULL; END IF;
   WITH taken AS (
     DELETE FROM "public"."mantle_moved_nodes" t WHERE t."xid" = me
-      RETURNING t."id", t."old_owner", t."old_path"
+      RETURNING t."id", t."old_owner", t."old_path", t."old_system"
   ), classed AS (
     SELECT tk."id",
            coalesce((SELECT s."kind" = 'personal' FROM "public"."spaces" s
@@ -103,7 +112,8 @@ BEGIN
                        JOIN "public"."spaces" s ON s."id" = n."owner_id"
                       WHERE n."id" = tk."id"), false) AS is_personal,
            coalesce((SELECT "public"."mantle_is_folder_rename"(
-                              tk."old_owner", tk."old_path", n."owner_id", n."path", n."type", n."data")
+                              tk."old_owner", tk."old_path", n."owner_id", n."path", n."type",
+                              tk."old_system", n."data")
                        FROM "public"."nodes" n WHERE n."id" = tk."id"), false) AS is_rename
       FROM taken tk
   )
@@ -205,7 +215,9 @@ BEGIN
   IF "public"."mantle_caller_is_write_role"() THEN
     IF NOT "public"."mantle_scope_active"()
        OR NOT "public"."mantle_check_row"(f."home_ws", f."write_ws", f."read_ws",
-                CASE WHEN "public"."mantle_is_folder_rename"(o, old_path, o, new_path, f."type", f."data")
+                CASE WHEN "public"."mantle_is_folder_rename"(o, old_path, o, new_path, f."type",
+                                                             coalesce((f."data" ->> 'system') = 'true', false),
+                                                             f."data")
                      THEN 'edit' ELSE 'manage' END) THEN
       RAISE EXCEPTION 'not allowed to move this item' USING ERRCODE = '42501', DETAIL = 'no_edit';
     END IF;

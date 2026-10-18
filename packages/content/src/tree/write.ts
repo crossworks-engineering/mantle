@@ -83,8 +83,14 @@ export async function notifyTreeChanged(ownerId: string, kind: TreeKind): Promis
     if (kind === 'apps')
       await executeWrite(sql`SELECT pg_notify('app_nav_changed', ${ownerId}::text)`);
   } catch (err) {
-    console.error('[tree] notify failed:', err instanceof Error ? err.message : err);
+    bestEffortFailed('notify', err instanceof Error ? err.message : String(err));
   }
+}
+
+/** The one log line of this module's best-effort steps (a notify, the share
+ *  follow-up): the write they follow stands. */
+function bestEffortFailed(what: string, why: string): void {
+  console.error(`[tree] ${what} failed:`, why);
 }
 
 /** A refusal the caller can show: `not-found` (404), `conflict` (409),
@@ -298,41 +304,42 @@ async function followShares(
   ownerId: string,
   scope: { path: string } | { ids: readonly string[] },
 ): Promise<void> {
-  const where =
-    'path' in scope
-      ? sql`path <@ ${scope.path}::ltree`
-      : scope.ids.length
-        ? sql`id in (${sql.join(
-            scope.ids.map((id) => sql`${id}::uuid`),
-            sql`, `,
-          )})`
-        : sql`false`;
-  const start = (
-    (await db.execute(sql`
-      select id::text as id from nodes where owner_id = ${ownerId} and ${where}`)) as unknown as Array<{
-      id: string;
-    }>
-  ).map((r) => r.id);
-  if (!start.length) return;
-  await systemStep(
-    'tree-refold',
-    { items: start, need: 'read', only: 'allowed' },
-    async (allowed) => {
-      if (!allowed.length) return;
-      const rows = (await db.execute(sql`
-      select r.id::text as id
-        from mantle_embeds_reached(${ownerId}::uuid, array[${sql.join(
-          allowed.map((id) => sql`${id}::uuid`),
-          sql`, `,
-        )}]) r`)) as unknown as Array<{
+  // After the write committed: best effort (as a grant change's refold,
+  // grants.ts refoldAfter). A failure is logged and the write stands, so a
+  // move is never reported failed for it; the page's next save folds it.
+  try {
+    // One uuid[] parameter for any number of ids (a bind per id stops at
+    // 65,535).
+    const where =
+      'path' in scope
+        ? sql`path <@ ${scope.path}::ltree`
+        : sql`id = any(${`{${scope.ids.join(',')}}`}::uuid[])`;
+    const start = (
+      (await db.execute(sql`
+        select id::text as id from nodes where owner_id = ${ownerId} and ${where}`)) as unknown as Array<{
         id: string;
-      }>;
-      const ids = rows.map((r) => r.id);
-      for (let i = 0; i < ids.length; i += REFOLD_BATCH) {
-        await refoldPageTexts(ownerId, ids.slice(i, i + REFOLD_BATCH));
-      }
-    },
-  );
+      }>
+    ).map((r) => r.id);
+    if (!start.length) return;
+    await systemStep(
+      'tree-refold',
+      { items: start, need: 'read', only: 'allowed' },
+      async (allowed) => {
+        if (!allowed.length) return;
+        const rows = (await db.execute(sql`
+          select r.id::text as id
+            from mantle_embeds_reached(${ownerId}::uuid, ${`{${allowed.join(',')}}`}::uuid[]) r`)) as unknown as Array<{
+          id: string;
+        }>;
+        const ids = rows.map((r) => r.id);
+        for (let i = 0; i < ids.length; i += REFOLD_BATCH) {
+          await refoldPageTexts(ownerId, ids.slice(i, i + REFOLD_BATCH));
+        }
+      },
+    );
+  } catch (err) {
+    bestEffortFailed('share follow-up', publicErrorMessage(err, 'tree refold'));
+  }
 }
 
 /** Ids per refold: each names a pattern the refold matches page docs by. */

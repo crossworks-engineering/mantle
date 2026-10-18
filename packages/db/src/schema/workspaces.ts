@@ -272,6 +272,9 @@ export const mantleMovedNodes = pgTable(
     /** The path before the move (0305): the statement check tells a
      *  folder's rename (the same parent) from a move by it. */
     oldPath: ltree('old_path'),
+    /** Whether the row was a system folder before the move (0305): its
+     *  rename stays manage even when the same write clears the flag. */
+    oldSystem: boolean('old_system'),
   },
   (t) => [primaryKey({ columns: [t.xid, t.id] })],
 );

@@ -1298,15 +1298,16 @@ the step runs in place, in that transaction if there is one (a file deleted
 inside a `withSystemTx` counts its derived items and drawings there). Its
 sites (10 uses, `asSystemExits` 56 to 58):
 
-| Step               | Site                                                                | Check                                                             |
-| ------------------ | ------------------------------------------------------------------- | ----------------------------------------------------------------- |
-| `table-history`    | `pruneTableCommitSnapshots` (`table-snapshots.ts`)                  | the table, edit                                                   |
-| `attachment-bytes` | `storageBytesForNode` (`packages/files` `ops/files.ts`)             | the file node, read                                               |
-| `derived-items`    | `countDerivedFromFile`, `drawsReferencingFile` (module-private now) | the file, manage                                                  |
-| `derived-items`    | `reapDerivedFromFile` (`packages/content` `derived.ts`), two steps  | the file, manage; then the derived ids, manage, `only: 'allowed'` |
-| `reindex`          | `setIndexingMode` for a folder, two steps                           | the folder, manage                                                |
-| `reindex`          | `reconcileFilesIndexing` (a move, a file's own switch)              | the files, read (a move) or edit (a switch)                       |
-| `export-sync`      | `exportSyncStep` (`app-table-exports.ts`)                           | `'none'`: after the app data door's own check                     |
+| Step               | Site                                                                                                                                                                          | Check                                                             |
+| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| `table-history`    | `pruneTableCommitSnapshots` (`table-snapshots.ts`)                                                                                                                            | the table, edit                                                   |
+| `attachment-bytes` | `storageBytesForNode` (`packages/files` `ops/files.ts`)                                                                                                                       | the file node, read                                               |
+| `derived-items`    | `countDerivedFromFile`, `drawsReferencingFile` (module-private now)                                                                                                           | the file, manage                                                  |
+| `derived-items`    | `reapDerivedFromFile` (`packages/content` `derived.ts`), two steps                                                                                                            | the file, manage; then the derived ids, manage, `only: 'allowed'` |
+| `reindex`          | `setIndexingMode` for a folder, two steps                                                                                                                                     | the folder, manage                                                |
+| `reindex`          | `reconcileFilesIndexing` (a move, a file's own switch)                                                                                                                        | the files, read (a move) or edit (a switch)                       |
+| `export-sync`      | `exportSyncStep` (`app-table-exports.ts`)                                                                                                                                     | `'none'`: after the app data door's own check                     |
+| `tree-refold`      | `followShares` (`packages/content` `tree/write.ts`), after an item move, a folder move or a folder delete (the tree bugs fix, S11a-5; one more use, `asSystemExits` 58 to 59) | the moved items, read, `only: 'allowed'` (best effort)            |
 
 The wrappers that checked nothing are gone or behind the door:
 `countDerivedFromFile` and `drawsReferencingFile` are module-private (out
