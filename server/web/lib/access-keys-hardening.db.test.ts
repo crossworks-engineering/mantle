@@ -17,7 +17,11 @@
 import { createHash, randomUUID } from 'node:crypto';
 import bcrypt from 'bcryptjs';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { ensureAdminUsers, ensureTestAnchor } from '@mantle/db/test-support';
+import {
+  createMigratedScratchDatabase,
+  ensureAdminUsers,
+  ensureTestAnchor,
+} from '@mantle/db/test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -26,6 +30,7 @@ type Json = Record<string, unknown>;
 
 describe.skipIf(!URL)('inbound API keys: hardening', () => {
   let m: typeof import('@mantle/db');
+  let scratch: Awaited<ReturnType<typeof createMigratedScratchDatabase>> | undefined;
   let sql: Parameters<typeof m.ensureViewerRoles>[0];
   let app: import('hono').Hono;
   let tokens: typeof import('./auth/tokens');
@@ -88,7 +93,10 @@ describe.skipIf(!URL)('inbound API keys: hardening', () => {
   let teamWs: string | null = null;
 
   beforeAll(async () => {
-    process.env.DATABASE_URL = URL;
+    // A brain of its own: its Admin workspace (ensureAdminUsers) never
+    // reaches the database the other files share.
+    scratch = await createMigratedScratchDatabase(URL!);
+    process.env.DATABASE_URL = scratch.url;
     process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
     process.env.SESSION_SECRET = 'access-keys-hardening-db-test-secret-32-chars';
     delete process.env.MANTLE_DETACHED_DEV;
@@ -127,6 +135,13 @@ describe.skipIf(!URL)('inbound API keys: hardening', () => {
     await ensureAdminUsers(sql, [admin, busy]);
     const { createApp } = await import('../server/app');
     app = await createApp();
+  }, 120_000);
+
+  // Runs after the cleanup below (after-hooks run in reverse): the pools
+  // close, then the scratch brain goes.
+  afterAll(async () => {
+    await m?.closeDb();
+    await scratch?.drop();
   }, 120_000);
 
   afterAll(async () => {

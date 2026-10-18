@@ -151,9 +151,10 @@ describe.skipIf(!URL)('S8a: an Admin login is role AND membership', () => {
   });
 
   it('a role=admin login outside Admin keeps its session but is not Admin', async () => {
-    // Its session, as on main: past the owner gate, as the Admin user is.
+    // Its session, as on main: a login (no 401) on an owner route, where
+    // the Admin user gets past the gate; it is refused there as no Admin.
     expect(await ownerProbe(cookieAt(adm))).not.toBe(401);
-    expect(await ownerProbe(cookieAt(out))).toBe(await ownerProbe(cookieAt(adm)));
+    expect(await ownerProbe(cookieAt(out))).not.toBe(401);
     // Not Admin: an Admin area route (users) refuses it, the Admin user not.
     expect(status(await call('/api/users', { cookie: cookieAt(adm) }))).toBe(200);
     const area = await call('/api/users', { cookie: cookieAt(out) });

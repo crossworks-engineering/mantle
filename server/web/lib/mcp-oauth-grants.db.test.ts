@@ -14,7 +14,11 @@
  */
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { ensureAdminUsers, ensureTestAnchor } from '@mantle/db/test-support';
+import {
+  createMigratedScratchDatabase,
+  ensureAdminUsers,
+  ensureTestAnchor,
+} from '@mantle/db/test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -22,6 +26,7 @@ type Row = Record<string, unknown>;
 
 describe.skipIf(!URL)('the OAuth token endpoint', () => {
   let m: typeof import('@mantle/db');
+  let scratch: Awaited<ReturnType<typeof createMigratedScratchDatabase>> | undefined;
   let sql: Parameters<typeof m.ensureViewerRoles>[0];
   let oauth: typeof import('./mcp-oauth');
   let tokens: typeof import('./auth/tokens');
@@ -101,7 +106,10 @@ describe.skipIf(!URL)('the OAuth token endpoint', () => {
   };
 
   beforeAll(async () => {
-    process.env.DATABASE_URL = URL;
+    // A brain of its own: its Admin workspace (ensureAdminUsers) never
+    // reaches the database the other files share.
+    scratch = await createMigratedScratchDatabase(URL!);
+    process.env.DATABASE_URL = scratch.url;
     process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
     process.env.SESSION_SECRET = 'oauth-grants-db-test-secret-at-least-32-chars';
     delete process.env.MANTLE_DETACHED_DEV;
@@ -119,6 +127,13 @@ describe.skipIf(!URL)('the OAuth token endpoint', () => {
     const { createApp } = await import('../server/app');
     app = await createApp();
     wasOn = await oauth.isRemoteMcpEnabled();
+  }, 120_000);
+
+  // Runs after the cleanup below (after-hooks run in reverse): the pools
+  // close, then the scratch brain goes.
+  afterAll(async () => {
+    await m?.closeDb();
+    await scratch?.drop();
   }, 120_000);
 
   afterAll(async () => {
