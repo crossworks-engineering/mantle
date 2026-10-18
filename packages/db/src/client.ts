@@ -2394,24 +2394,14 @@ export async function loginHasArea(loginId: string, area: ScopeArea): Promise<bo
   }
 }
 
-/**
- * The Admin areas login `loginId` holds now, in SCOPE_AREAS order: the area
- * rule over every area, mantle_login_areas (0304; the strict rule, never
- * mantle_login_area's "no Admin workspace" branch). The system pool's, as
- * loginHasArea. Fails closed: none.
- */
+/** The Admin areas `loginId` holds now (mantle_login_areas, 0304: the strict
+ *  rule over SCOPE_AREAS), on the system pool as loginHasArea. Fails closed. */
 export async function loginAreas(loginId: string): Promise<ScopeArea[]> {
   if (!UUID_RE.test(loginId)) return [];
-  try {
-    const rows = (await getAdminDb().execute(
-      sqlTag`select "public"."mantle_login_areas"(${loginId}::uuid) as a`,
-    )) as unknown as { a: string[] | null }[];
-    const held = rows[0]?.a ?? [];
-    return SCOPE_AREAS.filter((area) => held.includes(area));
-  } catch (err) {
-    loginFactFailed(err);
-    return [];
-  }
+  const held = await getAdminDb()
+    .execute(sqlTag`select "public"."mantle_login_areas"(${loginId}::uuid) as a`)
+    .then((r) => (r as unknown as { a: string[] | null }[])[0]?.a ?? [], loginFactFailed);
+  return SCOPE_AREAS.filter((area) => held && held.includes(area));
 }
 
 /**
