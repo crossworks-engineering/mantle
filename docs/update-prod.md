@@ -1244,7 +1244,6 @@ item pre-checks are gone): keep it as short as you can.
   before 0301 over a restored database leaves the checks off (that image's
   migrate does not raise them); that image still has its pre-checks.
 
-
 ## Rollback
 
 ```bash
@@ -1290,6 +1289,16 @@ count(*) from tables where draft_path is not null` must be 0), and expect
   app restores made since the roll to stay where they are (the older image
   follows `storage_path` and reads them). If drafts were lost, restore the
   pre-roll backup (the dump and the table and app database archives) instead.
+
+- **Below the workspace definers (plan v3.2 S2a a1+a2, migration 0305):**
+  run its revert first, or the older image refuses every create that lands
+  in a private workspace and attaches no assistant at signup or onboarding.
+  As the superuser, in one transaction, before pinning the older tag:
+  `docker exec -i mantle_pg psql -U postgres -d postgres -v ON_ERROR_STOP=1
+-1 < packages/db/rollback/0305_ws_user_definers.revert.sql`. It puts back
+  the four functions the older image calls and takes 0305 off the ledger, so
+  the next roll forward applies it again
+  (why and the proof: the S2a a1+a2 handover in docs/_archive/).
 
 Below a floor, restore the pre-roll backup taken before the migration instead
 of pinning the tag.

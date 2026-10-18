@@ -66,12 +66,15 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 /** What an operator runs before pinning the image one release back. */
 const REVERT = join(__dirname, '..', 'rollback', `${TAG}.revert.sql`);
 
-/** The revert's statements, split as the runner splits a migration. */
-const revertStatements = (): string[] =>
+/** The revert's statements, split as the runner splits a migration
+ *  (`ledger` false: without the ledger line, for a database the runner
+ *  never stamped). */
+const revertStatements = (o: { ledger: boolean } = { ledger: true }): string[] =>
   readFileSync(REVERT, 'utf8')
     .split('--> statement-breakpoint')
     .map((st) => st.trim())
-    .filter((st) => st.replace(/^--.*$/gm, '').trim() !== '');
+    .filter((st) => st.replace(/^--.*$/gm, '').trim() !== '')
+    .filter((st) => o.ledger || !st.includes('"drizzle"."__drizzle_migrations"'));
 
 /** The four functions 0305 tightened that the older image calls. */
 const TIGHTENED = [
@@ -578,7 +581,6 @@ describe.skipIf(!URL)('the workspace user definers (S2a a1)', () => {
     // The invariants hold for system work too.
     refused(await run(sys, setMod(adminWs, L.adm, false)), '55000', 'admin_workspace');
     refused(await run(sys, setMod(ARCH, L.mod, false)), '55000', 'archived');
-    refused(await run(sys, remove(adminWs, brain)), '42501', 'owner_stays_admin');
     // write_mode 'ro', a scope open, a login set: never system work.
     refused(await run(asActor(CLEAR_TICKS, 'ro'), setMod(W, L.mem, true)), '42501', 'read_only');
     refused(
@@ -886,8 +888,10 @@ describe.skipIf(!URL)('the workspace user definers (S2a a1)', () => {
       await tx`insert into auth.users (id, email, password_hash, role, display_name)
                values (${fresh}, ${`${tag}-fresh@example.invalid`}, 'x', 'member', 'fresh')`;
     };
+    // This database has no ledger (the test support applies the migrations
+    // itself): the four functions only.
     const revert = async (tx: postgres.TransactionSql) => {
-      for (const st of revertStatements()) await tx.unsafe(st);
+      for (const st of revertStatements({ ledger: false })) await tx.unsafe(st);
     };
     const priv = async (tx: postgres.TransactionSql) =>
       (

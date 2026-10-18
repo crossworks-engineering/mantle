@@ -436,3 +436,129 @@ were the pins file, taken from main and re-pinned value by value. Main took no m
 since 0304, so 0305 stays the next number (`when` 1790197620000). The
 tree-bugs lane may take 0305 first: then this branch renumbers (file,
 journal entry, a `when` above main's last) and keeps the renumber proof.
+
+## Fix round 1 (the audit at a2165dfbe, 8/10)
+
+A fresh builder (the one before handed over at its tool-call limit). Each
+finding, what changed:
+
+- **M1, the one-image rollback:** see "Rollback" below. The revert SQL, not
+  a tolerant tightening (why: below).
+- **L1, one hand-set scope helper:** `systemPoolTxInScope(scope, fn)`
+  (packages/db client.ts) is THE system-pool transaction in a login's scope
+  set by hand, on `writeScopeSettings` (which now takes a scope with no
+  workspaces: only the login). `createHomeFallback` (the login only),
+  `attachDefaultAssistants` (workspaces-migrate.ts: its three hand-set
+  `set_config` calls are gone) and `systemPoolProp` (the
+  `withSystemPoolInWriteScope` transactions) call it.
+  `eslint-rules/scope-settings.mjs` pins where `mantle.ws`, `mantle.mod_ws`
+  and `mantle.scope_login` are named: client.ts 9 (writeScopeSettings 3,
+  the write role settings 2, the turn scope 2, withScope 2) and the matrix
+  test support 3 (superuser fixtures); any other file fails lint and
+  arch-lints.
+- **L7, the system-pool carriers pinned:** the same rule file pins every
+  call of `systemPoolTxInScope` and `withSystemPoolInWriteScope`: client.ts
+  2, workspaces-migrate.ts 1, workspaces.ts 1 (adminRoleChange). A new
+  caller fails `pnpm lint` (the editor rule) and arch-lints (exact counts)
+  until it is reviewed.
+- **L2, onboarding through provision():**
+  `server/web/server/ws-onboarding-attach.db.test.ts` posts
+  `{action: 'provision'}` to `/api/onboarding` on the real app with signed
+  cookies (in CI's runtime role subset by its `/ws-` path; with
+  `MANTLE_DB_RUNTIME_ROLE` on it checks the system pool is
+  `mantle_runtime`). **The edge, named:** an Admin user who holds the
+  settings area but NOT the assistants area runs onboarding: the step
+  answers 200, the attach is refused (`resources_admin_only`), only logged
+  (`[workspaces] onboarding: failed`), nothing is attached, and the next
+  boot's system work attaches it. With the assistants area: the persona goes
+  on Admin (no `added_by`, no event actor, `by: attach`).
+- **L3, the allowlist per definer:** `mantle_ws_system_work(fn)` takes
+  (actor, definer) pairs: `system:ws-clear-ticks` on
+  `mantle_ws_set_moderator` only, `system:boot:migrate-workspaces` on
+  `mantle_ws_attach_assistants` only. Every other definer (add and remove a
+  user, create, the private workspace, the event, the resources, the
+  assistant) takes no system work at all. Cells: each listed actor on every
+  other definer refused (the "no acting login" sweep now runs both listed
+  actors through every writer but their own pair), the fact itself per
+  definer, the attach refused for clear-ticks, the create refused for both.
+  Changed answer (narrower): `ws:clear-member-ticks` could also add a user
+  and make a workspace before; it never called either.
+- **L4:** docs/actors.md: the 0305 writers take one named actor per definer
+  with no acting login; what still writes in TS on the system pool
+  (`workspace-write`) is the workspace row, landing app, archive and the
+  PATCH assistant (known limit, S2); the `workspace-write` row says so.
+- **L6:** the setAssistantCopies cell (workspaces.db) compares PATCH
+  `{assistantId}` (TS `setAssistant`) with `mantle_ws_set_assistant`
+  itself, called in the owner's request scope as the gate opens it, its
+  refusal through `wsRefusal`, answered by the app: set, swap A for B (the
+  detach row, the unbind, both events), clear, nothing to change, no such
+  chat assistant, another workspace's (in use), history on clear and on
+  swap: rows and answers byte-equal. An id that is none: PATCH answers "Not
+  a valid id."; the SQL copy takes a uuid only, so its caller cannot pass
+  one (S2b's caller validates as PATCH does).
+- **L5, the renumber:** after tree-bugs merges (the CEO's go), below.
+
+**Changed answers the audit named (both narrower or no reader):**
+
+- An Admin user added to or removed from Admin on the workspace screen no
+  longer writes a `bridge.login` event: the definer writes the user row
+  first, so `mantle_bridge_login` finds nothing to do. No product code reads
+  `bridge.login` (`git grep -nF "'bridge.login'"`: its writers 0251, 0272,
+  0286 and `mantle_bridge_login`'s body, and one test reading it for the
+  bridge itself, `packages/db/src/workspaces-live.db.test.ts`); `user.add`
+  and `user.remove` are written as before.
+- The role-drift self-demote (an Admin user whose role drifted, removing
+  itself from Admin on the workspace screen) answers 403, was 200: the
+  definer refuses a self-removal from Admin.
+
+## Rollback
+
+**What breaks on the image one release back (N-1) with 0305 in place, and
+no revert:**
+
+- **Member creates.** N-1's `createHomeFallback` calls
+  `mantle_ws_private_workspace(login)` on the system pool with no scope
+  login; 0305 refuses it (`only the acting login's own`, 42501). Every
+  create that lands in the private workspace is refused ("You have no
+  workspace to create in yet."), an existing private workspace included
+  (the check comes first).
+- **The signup and onboarding attach.** N-1 calls
+  `mantle_ws_attach_assistants()` there with no system work actor 0305
+  takes: refused, only logged; Admin gets no assistant until the boot (the
+  boot's actor `system:boot:migrate-workspaces` is the same in N-1, so the
+  boot attach works).
+- An unscoped `mantle_ws_create` or `mantle_workspace_event`: refused (none
+  in N-1's product code; a hand call).
+- Not broken: N-1's user and resource writes are raw table writes on the
+  system pool (0305 changes no table, row, trigger or grant), and the new
+  definers are never called by N-1.
+
+**How to roll back:** before pinning the older image, as the superuser that
+runs the migrations, in one transaction:
+
+```sh
+docker exec -i mantle_pg psql -U postgres -d postgres -v ON_ERROR_STOP=1 -1 \
+  < packages/db/rollback/0305_ws_user_definers.revert.sql
+```
+
+then pin the older tag (docs/update-prod.md "Rollback"). The file puts the
+four functions back exactly as 0293, 0272, 0279 and 0260 left them (copied
+verbatim), keeps every grant (CREATE OR REPLACE), leaves the functions 0305
+added (narrower, never called by N-1), and deletes 0305's ledger row so the
+next roll forward applies 0305 again (it is re-runnable). Proved in
+`ws-user-definers.db.test.ts`: the older image's calls refused under 0305
+and working after the revert (createHomeFallback's call makes the private
+workspace; the unscoped create, event and attach run), the catalog
+(`pg_get_functiondef` and the grants of the four) equal to a database at
+0304 after the revert, the ledger row gone, and the runner applying 0305
+again. A cell also pins that the revert's ledger line names this
+migration's own `when` (so the renumber cannot leave it stale).
+
+**Why not a tightening that tolerates N-1's call shape:** N-1's calls are
+unscoped system-pool calls under ordinary actors (the request's
+`login:rw:<id>`, or an asSystem reason). Telling those apart from the new
+image's own unscoped calls would need SQL to accept exactly what the plan
+refuses ("a login actor with no scope set", every asSystem reason), or a
+marker setting that any session can set or clear: either widens the new
+image. The revert keeps the new image as narrow as audited and makes the
+rollback exact.

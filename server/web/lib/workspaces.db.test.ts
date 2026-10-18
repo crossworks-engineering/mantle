@@ -821,7 +821,7 @@ describe.skipIf(!URL)('workspace management (W5a)', () => {
       }
       const ev = await x<{ actor: string; action: string; subject: Json }>(sql`
         select actor_id as actor, action, subject from workspace_events
-         where workspace_id = ${ws} and action like 'resource.%' order by created_at, action`);
+         where workspace_id = ${ws} and action like 'resource.%' order by at, action`);
       return {
         res: res.map((r2) => ({ ...r2, ref_id: name(r2.ref_id) })),
         bound,
