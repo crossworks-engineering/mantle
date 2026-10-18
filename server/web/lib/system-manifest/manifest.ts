@@ -864,7 +864,7 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
     slug: 'export',
     name: 'Document export',
     description:
-      'Render a page/note to Word (.docx) or a table to Excel (.xlsx) and save it under /files/auto-filed/exports. Non-destructive.',
+      'Render a page/note to Word (.docx) or a table to Excel (.xlsx) and save it in Auto-filed / Exports for an Admin user, else at the top of Files. Non-destructive.',
     toolSlugs: ['export_node'],
   },
   {

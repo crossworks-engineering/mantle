@@ -41,7 +41,7 @@ const export_node: BuiltinToolDef = {
   },
   name: 'Export to Word / Excel',
   description:
-    "Render a page or note to a Word (.docx) document, or a table to an Excel (.xlsx) spreadsheet, and save it under /files/auto-filed/exports/<month>. The format is chosen automatically from the node type — pages/notes → Word, tables → Excel. Pages keep their headings, lists, tables, callouts and images; tables export typed cells (currency/number/percent/checkbox) plus the totals row. Returns the new file's id, name, and path. Use this when the user asks to download, export, or 'get a Word/Excel copy' of a page, note, or table.",
+    "Render a page or note to a Word (.docx) document, or a table to an Excel (.xlsx) spreadsheet, and save it in Auto-filed / Exports / <month> for an Admin user, else at the top of Files. A name already taken there gets a `-2` (and on) suffix. The format is chosen automatically from the node type — pages/notes → Word, tables → Excel. Pages keep their headings, lists, tables, callouts and images; tables export typed cells (currency/number/percent/checkbox) plus the totals row. Returns the new file's id, name, path and where it landed (landedIn). Use this when the user asks to download, export, or 'get a Word/Excel copy' of a page, note, or table.",
   preconditions: NODE_ID_PRE,
   inputSchema: {
     type: 'object',

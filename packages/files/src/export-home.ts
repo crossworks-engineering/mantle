@@ -14,6 +14,12 @@
  *    the export there left a member with a refusal or a file it could not
  *    open.
  *
+ * An export never goes over a file. The Files root is one folder for every
+ * workspace, so two members' exports (or one member's, twice) often share a
+ * name: a taken name takes the next free one (`q1.xlsx`, `q1-2.xlsx`, ...),
+ * the same whoever holds it, and nothing in the reply or a refusal names
+ * the file that holds it.
+ *
  * The reply names where the file landed (landedIn), as a create's does: read
  * in the caller's scope; a turn of a workspace the caller only reads cannot
  * read its private workspace, so there it names the call's private create
@@ -21,11 +27,14 @@
  * grants: what the export holds is the tool's to read in the
  * caller's scope, and the database's create checks still run.
  */
+import { promises as fsp } from 'node:fs';
 import { currentCreateHome, landedIn } from '@mantle/db';
+import { ConflictError } from '@mantle/std';
 import { ensureAutoFiledFolder } from './auto-filed';
 import { discardSpooled, type SpooledUpload } from './disk';
 import { FILES_ROOT_LABEL } from './paths';
-import { callerMayEditFolder, upsertFile } from './ops/files';
+import { sanitizeFilename } from './slug';
+import { callerMayEditFolder, fileNameTaken, upsertFile } from './ops/files';
 import { ensureFilesRootBranch } from './ops/shared';
 import type { FileRow } from './ops/shared';
 
@@ -50,30 +59,97 @@ export type SavedExport = {
   landedIn: { id: string; name: string } | null;
 };
 
+/** How many names an export tries: its own, then `-2` up to `-<this>`,
+ *  then one with a time stamp. */
+export const EXPORT_NAME_TRIES = 20;
+
+/** The names an export tries, in order (sanitized as upsertFile does): its
+ *  own, then `<stem>-2.<ext>` and on, then `<stem>-<time>.<ext>`. */
+export function exportNames(filename: string): string[] {
+  const clean = sanitizeFilename(filename);
+  // An invalid name: upsertFile refuses it with its own words.
+  if (!clean) return [filename];
+  const dot = clean.lastIndexOf('.');
+  const stem = (dot > 0 ? clean.slice(0, dot) : clean).slice(0, 160);
+  const ext = dot > 0 ? clean.slice(dot) : '';
+  const names = [clean];
+  for (let i = 2; i <= EXPORT_NAME_TRIES; i++) names.push(`${stem}-${i}${ext}`);
+  names.push(`${stem}-${Date.now().toString(36)}${ext}`);
+  return names;
+}
+
 /** Save an export for the current caller where exportFolder says. Exactly
- *  one of `bytes` / `spooled`; a spooled upload is removed when the folder
- *  cannot be made. */
+ *  one of `bytes` / `spooled`. Never over a file: a name already taken in
+ *  the folder (the caller's own export, or a file it cannot see; the Files
+ *  root is one folder for every workspace) takes the next free name
+ *  (exportNames), and the reply and its refusals read the same whoever
+ *  holds the name. A spooled upload is removed on every failure. */
 export async function saveExport(args: {
   ownerId: string;
   filename: string;
   bytes?: Buffer;
   spooled?: SpooledUpload;
 }): Promise<SavedExport> {
-  let folder: Awaited<ReturnType<typeof exportFolder>>;
+  let saved: { file: FileRow; autoFiled: boolean };
   try {
-    folder = await exportFolder(args.ownerId);
+    saved = await saveUnderFreeName(args);
   } catch (err) {
     if (args.spooled) await discardSpooled(args.spooled);
     throw err;
   }
-  const file = await upsertFile({
-    ownerId: args.ownerId,
-    parentPath: folder.path,
-    filename: args.filename,
-    ...(args.spooled ? { spooled: args.spooled } : { bytes: args.bytes }),
-  });
-  const [home] = await landedIn([file.id]);
-  return { file, autoFiled: folder.autoFiled, landedIn: home ?? privateLanding(folder.autoFiled) };
+  // The file is made: a landedIn read that fails names no workspace (as
+  // MCP's withLanding does), never fails the export.
+  let home: { id: string; name: string } | undefined;
+  try {
+    [home] = await landedIn([saved.file.id]);
+  } catch {
+    return { ...saved, landedIn: null };
+  }
+  return { ...saved, landedIn: home ?? privateLanding(saved.autoFiled) };
+}
+
+async function saveUnderFreeName(args: {
+  ownerId: string;
+  filename: string;
+  bytes?: Buffer;
+  spooled?: SpooledUpload;
+}): Promise<{ file: FileRow; autoFiled: boolean }> {
+  const folder = await exportFolder(args.ownerId);
+  for (const filename of exportNames(args.filename)) {
+    // Existence only, whatever the caller's scope (structure): a taken
+    // name is passed over before the disk, so upsertFile never meets it.
+    if (await fileNameTaken(args.ownerId, folder.path, filename)) continue;
+    try {
+      const file = await upsertFile({
+        ownerId: args.ownerId,
+        parentPath: folder.path,
+        filename,
+        ...(args.spooled ? { spooled: args.spooled } : { bytes: args.bytes }),
+      });
+      return { file, autoFiled: folder.autoFiled };
+    } catch (err) {
+      // A create that took the name in between: the next one, while the
+      // spooled bytes are still there (a lost race after staging drops them).
+      if (!(err instanceof ConflictError)) throw err;
+      if (args.spooled && !(await spoolThere(args.spooled))) throw exportNameError(args.filename);
+    }
+  }
+  throw exportNameError(args.filename);
+}
+
+/** The one refusal when no name is free: the caller's own name, nothing of
+ *  the files that hold the others. */
+function exportNameError(filename: string): ConflictError {
+  return new ConflictError(
+    `export: no free name for '${filename}' in this folder; try again with another filename`,
+  );
+}
+
+async function spoolThere(spooled: SpooledUpload): Promise<boolean> {
+  return fsp.access(spooled.tempPath).then(
+    () => true,
+    () => false,
+  );
 }
 
 /** What landedIn names for a file the caller's scope cannot read: its

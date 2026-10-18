@@ -50,7 +50,7 @@ vi.mock('@mantle/db', async (importOriginal) => ({
 }));
 
 type Mode = 'warn' | 'on';
-type Who = 'owner' | 'member' | 'lone';
+type Who = 'owner' | 'member' | 'member2' | 'adminUser' | 'lone';
 type Outcome = { ok: boolean; text: string; out: Record<string, unknown> };
 type Reply = { isError?: boolean; content?: { text?: string }[] };
 
@@ -87,6 +87,8 @@ describe.skipIf(!DB_URL)('members export what they see; extraction needs edit', 
   const tag = `mexp${randomUUID().slice(0, 6)}`;
   const owner = randomUUID();
   const mem = randomUUID();
+  const mem2 = randomUUID();
+  const adminUser = randomUUID();
   const lone = randomUUID();
   const ws = { admin: '', H: '', R: '', O: '' };
   const agentOf: Record<string, string> = {};
@@ -126,7 +128,7 @@ describe.skipIf(!DB_URL)('members export what they see; extraction needs edit', 
     });
   };
 
-  const loginOf = (who: Who) => (who === 'owner' ? owner : who === 'member' ? mem : lone);
+  const loginOf = (who: Who) => ({ owner, member: mem, member2: mem2, adminUser, lone })[who];
   const actorOf = (who: Who) =>
     who === 'owner' ? m.loginActor(owner, 'owner') : m.loginActor(loginOf(who), 'rw');
 
@@ -290,6 +292,8 @@ describe.skipIf(!DB_URL)('members export what they see; extraction needs edit', 
     await raw`insert into auth.users (id, email, password_hash, is_owner, role, display_name)
       values (${owner}, ${`${tag}-owner@example.invalid`}, 'x', true, 'admin', 'Owner'),
              (${mem}, ${`${tag}-member@example.invalid`}, 'x', false, 'member', 'Member'),
+             (${mem2}, ${`${tag}-member2@example.invalid`}, 'x', false, 'member', 'Member 2'),
+             (${adminUser}, ${`${tag}-aduser@example.invalid`}, 'x', false, 'member', 'Admin user'),
              (${lone}, ${`${tag}-lone@example.invalid`}, 'x', false, 'member', 'Lone')`;
     await raw`insert into spaces (id, kind, login_id) values (${owner}, 'brain', ${owner})
       on conflict (id) do nothing`;
@@ -306,9 +310,14 @@ describe.skipIf(!DB_URL)('members export what they see; extraction needs edit', 
     }
     await raw`delete from workspace_users u using workspaces w
                where w.id = u.workspace_id and not w.is_admin
-                 and u.login_id in (${owner}, ${mem}, ${lone})`;
+                 and u.login_id in (${owner}, ${mem}, ${mem2}, ${adminUser}, ${lone})`;
+    // An Admin user that is not its Moderator: it reads the Files root and
+    // Auto-filed, and may change neither.
+    await raw`delete from workspace_users where workspace_id = ${ws.admin}
+               and login_id in (${mem}, ${mem2}, ${adminUser}, ${lone})`;
     await raw`insert into workspace_users (workspace_id, login_id, moderator)
-      values (${ws.H}, ${mem}, true), (${ws.R}, ${mem}, false)`;
+      values (${ws.H}, ${mem}, true), (${ws.R}, ${mem}, false), (${ws.R}, ${mem2}, false),
+             (${ws.admin}, ${adminUser}, false)`;
     for (const [key, wsId] of Object.entries(ws)) {
       const id = randomUUID();
       agentOf[wsId] = id;
@@ -353,12 +362,18 @@ describe.skipIf(!DB_URL)('members export what they see; extraction needs edit', 
 
   /** An allowed member export: at the Files root, homed in `home`, read by
    *  the member, named in landedIn. */
-  const landsFor = async (mode: Mode, name: string, o: Outcome, home: string) => {
+  const landsFor = async (
+    mode: Mode,
+    name: string,
+    o: Outcome,
+    home: string,
+    who: Who = 'member',
+  ) => {
     note1(mode, name, o);
     expect(o.ok, `${name}: ${o.text}`).toBe(true);
     const fileId = String(o.out.file_id ?? '');
     expect(fileId, name).toMatch(UUID);
-    const facts = await fileFacts(fileId, 'member');
+    const facts = await fileFacts(fileId, who);
     expect(facts.path, name).toBe('files');
     expect(facts.home, name).toBe(home);
     expect(facts.seen, `${name}: the member reads its export`).toBe(true);
@@ -515,6 +530,77 @@ describe.skipIf(!DB_URL)('members export what they see; extraction needs edit', 
         expect(m.takeActorMisses()).toEqual([]);
       }, 300_000);
 
+      it('a taken name: two members, and one member twice, each export lands under a free name', async () => {
+        await setMode(mode);
+        const name = `${tag}-clash-${mode}.xlsx`;
+        const own = (await privateWs(mem))!;
+        const a = await viaMcp('member', 'sheet_build', {
+          ...sheet([{ item: 'a', amount: 1 }]),
+          filename: name,
+        });
+        const aId = await landsFor(mode, 'sheet_build mcp member clash first', a, own);
+        expect(a.out.filename).toBe(name);
+        const [aRow] = await raw<{ sha: string }[]>`
+          select data->>'sha256' as sha from nodes where id = ${aId}`;
+        // Another member, same name, at the same Files root: its own file,
+        // and nothing in the reply names the first one or where it is.
+        const b = await viaMcp('member2', 'sheet_build', {
+          ...sheet([{ item: 'b', amount: 2 }]),
+          filename: name,
+        });
+        const own2 = (await privateWs(mem2))!;
+        const bId = await landsFor(mode, 'sheet_build mcp member2 clash', b, own2, 'member2');
+        expect(bId).not.toBe(aId);
+        expect(b.out.filename).not.toBe(name);
+        for (const leak of [aId, own, 'already exists']) expect(b.text).not.toContain(leak);
+        expect((await fileFacts(aId, 'member2')).seen, 'B does not read A').toBe(false);
+        // The first member again, same name: a new file, the first untouched.
+        const again = await viaMcp('member', 'sheet_build', {
+          ...sheet([{ item: 'c', amount: 3 }]),
+          filename: name,
+        });
+        const againId = await landsFor(mode, 'sheet_build mcp member clash again', again, own);
+        expect(new Set([aId, bId, againId]).size).toBe(3);
+        const [aAfter] = await raw<{ sha: string }[]>`
+          select data->>'sha256' as sha from nodes where id = ${aId}`;
+        expect(aAfter!.sha, 'the first export is not overwritten').toBe(aRow!.sha);
+        // An app's package (spooled) twice: both land, and no spool is left.
+        const appId = await app(ws.R);
+        const p1 = await viaMcp('member', 'app_export', { id: appId, with_data: false });
+        const p2 = await viaMcp('member', 'app_export', { id: appId, with_data: false });
+        await landsFor(mode, 'app_export mcp member twice (1)', p1, own);
+        await landsFor(mode, 'app_export mcp member twice (2)', p2, own);
+        expect(p2.out.file_id).not.toBe(p1.out.file_id);
+        const spoolDir = path.join(dir, 'files', '.upload-spool');
+        const parts = existsSync(spoolDir)
+          ? readdirSync(spoolDir).filter((x) => x.endsWith('.part'))
+          : [];
+        expect(parts, 'no spooled package left').toEqual([]);
+        expect(m.takeActorMisses()).toEqual([]);
+      }, 300_000);
+
+      it('the owner in a turn of H, and an Admin user that may not change the Files root: the top of Files', async () => {
+        await setMode(mode);
+        const o = await viaTurn('owner', ws.H, 'sheet_build', sheet([{ item: 'h', amount: 1 }]));
+        note1(mode, 'sheet_build turn(H) owner', o);
+        expect(o.ok, o.text).toBe(true);
+        const facts = await fileFacts(String(o.out.file_id), 'owner');
+        recorded.push(`${mode} sheet_build turn(H) owner: path ${facts.path} home ${facts.home}`);
+        expect(facts.path, 'not Auto-filed: H does not hold Admin').toBe('files');
+        expect(facts.home).toBe(ws.H);
+        expect((o.out.landedIn as { id?: string } | undefined)?.id).toBe(ws.H);
+
+        const u = await viaMcp('adminUser', 'sheet_build', sheet([{ item: 'u', amount: 1 }]));
+        note1(mode, 'sheet_build mcp adminUser (no Moderator)', u);
+        expect(u.ok, u.text).toBe(true);
+        const uFacts = await fileFacts(String(u.out.file_id), 'adminUser');
+        recorded.push(`${mode} sheet_build mcp adminUser: path ${uFacts.path} home ${uFacts.home}`);
+        expect(uFacts.path, 'not Auto-filed: it may not change it').toBe('files');
+        expect(uFacts.home).toBe(await privateWs(adminUser));
+        expect(uFacts.seen).toBe(true);
+        expect(m.takeActorMisses()).toEqual([]);
+      }, 300_000);
+
       it('process_extraction: a reader is refused and nothing is signalled; an editor is allowed', async () => {
         await setMode(mode);
         const readOnly = await note(ws.R);
@@ -529,6 +615,16 @@ describe.skipIf(!DB_URL)('members export what they see; extraction needs edit', 
         // A sweep in that turn signals none of the items it only reads.
         const sweep = await viaTurn('member', ws.R, 'process_extraction', {});
         note1(mode, 'process_extraction turn(R) member sweep', sweep);
+        expect(sweep.ok, sweep.text).toBe(true);
+        expect(signals.ids).not.toContain(readOnly);
+        // A sweep in a turn of H (it moderates H) signals an eligible item
+        // it may change there, and still none it only reads in R.
+        const sweepable = await note(ws.H);
+        signals.ids.length = 0;
+        const sweepH = await viaTurn('member', ws.H, 'process_extraction', {});
+        note1(mode, 'process_extraction turn(H) member sweep', sweepH);
+        expect(sweepH.ok, sweepH.text).toBe(true);
+        expect(signals.ids).toContain(sweepable);
         expect(signals.ids).not.toContain(readOnly);
 
         const editable = await note(ws.H);
