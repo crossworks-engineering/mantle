@@ -321,6 +321,15 @@ push of this note, as the workflow keeps one run per branch; the run of the
 head that carries this note is the one to read (the step's report names
 it).
 
+### The second rebase
+
+CI on e0ac4a365 failed one test only: no-bare-fetch's scoreboard cell timed
+out at 15 s (measure() inside an `it()`, 17.3 s on the CI runner), the case
+the bare fetch hotfix fixes. That hotfix landed on main as v0.300.87
+(e10c740a9) while CI ran; the branch is rebased onto it (no conflict, no pin
+moved) and every Mac gate above ran again at the new code head with the
+same exit codes.
+
 ### Open items
 
 - The progress counters (loginKindBranches, loginRoleDecisionReads,
