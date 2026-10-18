@@ -397,9 +397,10 @@ cache + `extract_cost_cap_micro_usd`.
   `resolveExport()` dispatches by node type (`page`/`note` → `.docx`, `table` →
   `.xlsx`; see [`tables.md`](./tables.md)). A **Download** button in the page /
   note detail header hits `GET /api/export/[id]`; the `export_node` agent tool
-  saves in Auto-filed / Exports for an Admin user, else at the top of Files (a
-  dedicated `export` tool group granted to the persona + Pages / Ledger). OOXML opens cleanly in Word / Google Docs /
-  LibreOffice.
+  saves in Auto-filed / Exports when the caller may change it (the owner or an
+  Admin Moderator), else at the top of Files (a dedicated `export` tool group
+  granted to the persona + Pages / Ledger). OOXML opens cleanly in Word / Google
+  Docs / LibreOffice.
 
 ---
 

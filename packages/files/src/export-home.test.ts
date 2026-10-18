@@ -150,7 +150,7 @@ describe('saveExport', () => {
     expect(existsSync(s.tempPath)).toBe(false);
   });
 
-  it('a lost race after the spool was staged: the neutral refusal, no retry', async () => {
+  it('a lost race after the spool was staged: its own words, no retry', async () => {
     const s = await spool();
     h.upsertImpl = async (name) => {
       await rm(s.tempPath, { force: true });
@@ -159,7 +159,8 @@ describe('saveExport', () => {
     const err = await saveExport({ ownerId: 'o', filename: 'Q1 Pack.xlsx', spooled: s }).catch(
       (e: unknown) => e,
     );
-    expect((err as Error).message).toMatch(NEUTRAL);
+    expect(err).toBeInstanceOf(ConflictError);
+    expect((err as Error).message).toBe('export: the name was taken while saving; try again');
     expect(h.upsert).toEqual(['q1-pack.xlsx']);
   });
 

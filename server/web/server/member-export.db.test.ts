@@ -471,6 +471,30 @@ describe.skipIf(!DB_URL)('members export what they see; extraction needs edit', 
         ],
       });
 
+      it('the owner, the same name twice in Auto-filed / Exports: the second takes -2', async () => {
+        await setMode(mode);
+        const name = `${tag}-owner-twice-${mode}.xlsx`;
+        const first = await viaMcp('owner', 'sheet_build', {
+          ...sheet([{ item: 'a', amount: 1 }]),
+          filename: name,
+        });
+        note1(mode, 'sheet_build mcp owner twice (1)', first);
+        expect(first.ok, first.text).toBe(true);
+        const second = await viaMcp('owner', 'sheet_build', {
+          ...sheet([{ item: 'b', amount: 2 }]),
+          filename: name,
+        });
+        note1(mode, 'sheet_build mcp owner twice (2)', second);
+        expect(second.ok, second.text).toBe(true);
+        expect(second.out.filename).toBe(name.replace(/\.xlsx$/, '-2.xlsx'));
+        expect(second.out.file_id).not.toBe(first.out.file_id);
+        for (const o of [first, second]) {
+          const facts = await fileFacts(String(o.out.file_id), 'owner');
+          expect(facts.path).toMatch(/^files\.auto_filed\.exports\.\d{4}_\d{2}$/);
+        }
+        expect(m.takeActorMisses()).toEqual([]);
+      }, 300_000);
+
       it('sheet_build: a login in no workspace is refused and no file is made', async () => {
         await setMode(mode);
         await refusedMakesNothing(

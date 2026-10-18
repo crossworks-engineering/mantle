@@ -1654,7 +1654,7 @@ const app_export: BuiltinToolDef = {
   preconditions: APP_ID_PRE,
   name: 'Export a mini app as a file',
   description:
-    "Save an app as a `.mantleapp` file, in Auto-filed / Exports for an Admin user, else at the top of Files: its code (the draft for an Admin user only), declared tools and schema, and a copy of its data unless with_data is false. A taken name gets a `-2` suffix. Returns the file id and landedIn. Use it to move an app to another brain (`app_import` there) or to keep a copy outside its history. For a copy in this brain use `app_duplicate`. The file holds the app's data: it is readable by whoever can read the file.",
+    "Save an app as a `.mantleapp` file, in Auto-filed / Exports when the caller may change it (the owner or an Admin Moderator), else the top of Files: its code (no draft for a member), declared tools and schema, and a copy of its data unless with_data is false. A taken name gets a `-2` suffix. Returns the file id and landedIn. Use it to move an app to another brain (`app_import` there) or to keep a copy outside its history. For a copy in this brain use `app_duplicate`. The file holds the app's data: it is readable by whoever can read the file.",
   inputSchema: {
     type: 'object',
     properties: {
@@ -1688,7 +1688,7 @@ const app_export: BuiltinToolDef = {
           .slice(0, 60)
           .toLowerCase() || 'app'
       }.mantleapp`;
-      // Where an export lands: Auto-filed for an Admin user, else the
+      // Where an export lands: Auto-filed when the caller may change it, else the
       // caller's create home (saveExport). The package holds what the
       // caller reads: writeAppPackage asks the app's read (its data an
       // edit) and reads it in the caller's scope (no draft outside one).

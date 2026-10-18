@@ -234,7 +234,7 @@ export const BUILTIN_TOOLS: BuiltinToolDef[] = [
   // Reverse-geocoding / search / directions are seeded Mapbox HTTP tools.
   ...LOCATION_TOOLS,
   // Export — render a page/note to Word (.docx) or a table to Excel (.xlsx) and
-  // save it where an export lands (Auto-filed / Exports for an Admin user, else
+  // save it where an export lands (Auto-filed / Exports when the caller may change it, else
   // the top of Files: saveExport). Shares @mantle/content's resolveExport with
   // the web download button, so the assistant and the UI emit identical files.
   ...EXPORT_TOOLS,

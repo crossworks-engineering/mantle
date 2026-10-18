@@ -131,7 +131,7 @@ async function saveUnderFreeName(args: {
       // A create that took the name in between: the next one, while the
       // spooled bytes are still there (a lost race after staging drops them).
       if (!(err instanceof ConflictError)) throw err;
-      if (args.spooled && !(await spoolThere(args.spooled))) throw exportNameError(args.filename);
+      if (args.spooled && !(await spoolThere(args.spooled))) throw exportRaceError();
     }
   }
   throw exportNameError(args.filename);
@@ -143,6 +143,12 @@ function exportNameError(filename: string): ConflictError {
   return new ConflictError(
     `export: no free name for '${filename}' in this folder; try again with another filename`,
   );
+}
+
+/** A spooled package that lost a name race after it was staged: its bytes
+ *  are gone, so it cannot take the next name. Free names may remain. */
+function exportRaceError(): ConflictError {
+  return new ConflictError('export: the name was taken while saving; try again');
 }
 
 async function spoolThere(spooled: SpooledUpload): Promise<boolean> {
