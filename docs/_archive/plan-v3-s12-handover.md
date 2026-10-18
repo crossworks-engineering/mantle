@@ -1,7 +1,7 @@
 # Plan v3.2 S12: dead branches and the legacy entries (handover)
 
 The branch `feat/s12-dead-branches`, cut from main at 6e49ee5b4
-(v0.300.93). No migration, no behaviour change. The spec's rules are in
+(v0.300.93), rebased onto 53b507b53 (v0.300.95) in fix round 1. No migration, no behaviour change. The spec's rules are in
 [../actors.md](../actors.md); this file holds the step's detail.
 
 ## S12 round 0
@@ -92,7 +92,8 @@ gone row and no row reading `memberAsset`.
 
 ### Pins
 
-- `historyCodeComments` 2332 to 2328: the comments of the removed code.
+- `historyCodeComments` 2332 to 2328 on 6e49ee5b4: the comments of the
+  removed code (2339 to 2335 after the rebase, fix round 1).
 - `S12` joins `HISTORY_HEADING_CODES` (`eslint-rules/cleanup-counts.mjs`)
   with this heading; no counted comment names it, so the count is
   unchanged by it.
@@ -116,6 +117,34 @@ CI on 4a7dfe1d1 (the code, the pins and this handover with its gates): success,
 https://github.com/crossworks-engineering/mantle/actions/runs/39154830485.
 The commit on top adds only this line.
 
+## S12 fix round 1 (audit at d3074d9cd: 9/10, merge, no changed answers)
+
+1. Rebased onto 53b507b53 (v0.300.95, S4a and the tree bugs with 0305).
+   One conflict, `scripts/arch-scoreboard.pins.json`: main's version kept
+   (its tree-bugs note text and `failOpenSites` 6), then
+   `historyCodeComments` re-measured on the rebased tree: 2339 to 2335
+   ("Lowered 2339 to 2335" added to main's note). While the file was in
+   conflict, `arch:check` read `actorsHistoryRefs` as 89 (the tracked file
+   list held the conflicted file three times, once per stage); after
+   `git add` it reads 75, main's pin.
+2. A positive cell for the `row.gone ||` branch of `callerServes`
+   (`route-policy.ts`): `server/web/server/middleware/gate-caller.test.ts`
+   reads the member caller on a gone `GET /api/profile` row (served), and
+   the same row without the stub is refused. Removing the branch fails the
+   first cell.
+3. The stale comments of `server/web/lib/auth-constants.ts` (the member
+   byte paths, the member and the Admin private-file paths) no longer
+   name `getMemberForAsset` or a route: each says no route serves the path
+   any more. The paths stay (open items).
+4. The byte-equal claim is a test:
+   `server/web/lib/auth/route-policy-rows.test.ts` writes one line per row
+   of `buildRoutePolicy(routeManifest)` (key, class, scope, caller, gone)
+   and checks it against `server/web/lib/auth/__snapshots__/route-policy-rows.txt`
+   (817 rows). The file was written with main's code (the eight changed
+   source files checked out from 53b507b53, the manifest regenerated,
+   `vitest -u`), then the branch's code was put back and the test passes
+   unchanged: no row moved.
+
 ### Open items
 
 - `server/web/lib/auth-constants.ts:51-65` still admits a `?at=` asset
@@ -124,6 +153,10 @@ The commit on top adds only this line.
   `/api/admin/space/:id/bytes`), and `server/web/lib/body-limit.ts:92`
   names `/api/admin/space`. Removing them could change a token request's
   answer on those paths (the router's 404 today, the gate's 401 after),
-  so they are left for a step that may change an answer.
+  so they are left for a step that may change an answer. The same holds
+  for `server/web/server/middleware/gate.ts:93` (`MEMBER_FRAME_RE`, the
+  `?t=` frame ticket carve for `/api/member/apps/:id/frame`) and its
+  `FRAME_ROWS` entry in `server/web/lib/auth/route-policy.ts`: no route
+  file serves that path.
 - DB suites were not run: the step changes no SQL and no DB path; CI runs
   the DB subset.
