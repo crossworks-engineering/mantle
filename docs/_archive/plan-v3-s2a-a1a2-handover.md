@@ -591,3 +591,32 @@ refuses ("a login actor with no scope set", every asSystem reason), or a
 marker setting that any session can set or clear: either widens the new
 image. The revert keeps the new image as narrow as audited and makes the
 rollback exact.
+
+## Gates (fix round 1)
+
+On the Mac, `DATABASE_URL` unset, at 658c68013 (rebased, renumbered):
+`pnpm -r typecheck` 0, `pnpm lint` 0, `pnpm format:check` 0,
+`pnpm docs:check` 0, `pnpm arch:check` 0, `pnpm -C server/web build` 0,
+`pnpm exec vitest run server packages eslint-rules` 1 (11049 passed, 1
+failed: `migrations-journal.test.ts` "every journal idx matches the number
+in its tag", the idx then 306; fixed at fc0384961 by idx 307, which turns
+the cell beside it red until S8a's 0306 lands, see "Fix round 1" L5).
+
+On the workstation (own worktree and pg18 container, port 56185, migrated
+with `MANTLE_CHECK_FLOOR=keep`, `--maxWorkers=3`, one gate at a time), at
+658c68013: full DB vitest 1 (13752 passed, 2 failed: the journal cell
+above, and `refold-embeds.db.test.ts` "no limited role reads
+node_mixed_summaries" with `tuple concurrently updated`, a catalog race
+under load: alone it passes, 8 of 8, exit 0), `test:actor-off` 1 (1136
+passed, 1 failed: the journal cell), `test:actor-on` 0 (351 passed),
+`test:edit-on` 0 (521 passed), the full `test:runtime-role` 0 (2682
+passed, 268 files), `test:matrix` 0. At fc0384961: `test:actor-off` 1
+(1136 passed, 1 failed: "no slot is skipped", the one red until S8a
+lands). Every other cell of every gate is green; the grants "move into a
+folder" cell is green on the rebased tree.
+
+CI at fc0384961
+(https://github.com/crossworks-engineering/mantle/actions/runs/39161538578):
+failure, the Test step, the one journal cell only (the later steps did not
+run). Once S8a merges: rebase (the journal only), then `vitest run` and
+`test:actor-off` give exit 0 with nothing else changed, and CI goes green.
