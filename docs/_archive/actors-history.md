@@ -7571,3 +7571,57 @@ Open: D2 retargets the 74 history quotes and the four dangling
 docs/actors.md quotes to spec sections, or drops them. The brain's
 profile row split (section 6) is stated as the owner's rule and listed
 as a known limit until S3 builds it.
+
+### D1 fix round 1 (audit at d02a8d45c, 8/10)
+
+Two commits on d02a8d45c: 4387cd314 (the quote rule), 8cca28b0f (the spec
+and the stale headers).
+
+- M1, M2, L5 to L8 (the spec, docs/actors.md): section 4 names
+  `runReadPathWrite` and the file of `registerActorWorkflow`; section 5's
+  transactions bullet (a nested `withSystemTx` is a savepoint, no nested
+  write in a loop, heads in the outer call, the `no-model-in-transaction`
+  lint); section 6 the Moderator row and rule (owner decision 2026-10-13,
+  checked against `mayPromote`, `LAST_MOD`, `ADMIN_TICK_KEPT` and
+  `createWorkspace` in server/web/lib/workspaces.ts: an Admin user with the
+  users area may tick itself, so the spec says "short of the users area"),
+  an app's import and delete, snapshot copies, an existing folder's
+  indexing; section 7 `MANTLE_CHECK_FLOOR=keep`; section 8 the read-path
+  writes; section 9 the write role's definers (0279, 0281, 0282) and its
+  own EXECUTE; section 11 says the library's `assertItemRight` is the
+  clear answer first; the unscoped `actor` argument is a known limit (S2,
+  S7). The spec stays at 350 lines: wording tightened, no rule dropped.
+- M3 (eslint-rules/docs-quotes.mjs): chose to COUNT, not refuse: every
+  quote of a docs/_archive/ file is a history ref. The `("H")`, curly and
+  colon forms are read (a colon quote of a doc's words is never a
+  problem, but one naming a heading counts). Unquoted step pointers to the
+  history are their own pin, actorsStepRefs, which D2 takes to 0. Tests
+  for each rewrite in docs-quotes.test.ts.
+- L1: a word ends at a mark, never a hyphen; a prefix of two or more
+  different headings fails. Two current quotes did ("Pre-check removal
+  Part 3", in precheck-removal.db.test.ts and the itemPrecheckTools pin
+  note): both quote the whole heading now.
+- L2 to L4, L10: comments only (route-scope.ts, access-matrix.ts,
+  item-rights.ts, client.ts by text, actor.ts, actor-workflow.ts).
+- L9: route-plumbing.mjs and a10-cache-sweep.test.ts name live headings;
+  a8-findings.db.test.ts names its history heading.
+
+Pins: actorsMdLines 341 to 350 (the spec's new rules; the note says a
+raise to 350 with a reason is expected), actorsHistoryRefs 74 to 75 (the
+measure widened; +1 is the a8-findings quote that dangled), new
+actorsStepRefs 13, docQuotesDangling 8 to 5.
+
+Gates (exit codes): pnpm -r typecheck 0, pnpm lint 0 (the one warning in
+contact-sharing-routes.db.test.ts, not this branch), pnpm format:check 0,
+pnpm docs:check 0, pnpm arch:check 0, pnpm -C server/web build 0, unit
+vitest `vitest run server packages eslint-rules` with DATABASE_URL unset
+0 (840 files passed, 255 skipped). No DB suite: outside eslint-rules and
+scripts only comments and docs changed.
+
+CI: https://github.com/crossworks-engineering/mantle/actions/runs/39079870381
+(head 8cca28b0f), success.
+
+Not rebased onto S3: S3's client.ts and item-rights.ts edits meet this
+round's comment lines (client.ts, the request scope comment by
+`currentRequestMode`; item-rights.ts lines 9 to 12); keep S3's code and
+this round's wording on its rebase.
