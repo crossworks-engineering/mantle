@@ -422,7 +422,7 @@ describe.skipIf(!URL)('the login facts answer as the text they replace (S2a a0)'
     ];
     // Every role in the cluster that is not a superuser, the runtime role,
     // the owner role or the public demo's reader (it runs the app's system
-    // pool there: 0305 grants it the three facts the app reads): the viewer
+    // pool there: 0306 grants it the three facts the app reads): the viewer
     // roles, the write role, the gap writer, mantle_system, any login a
     // later step adds. PUBLIC as well.
     const rows = await sql<{ fn: string; definer: boolean; pub: boolean; may: string[] }[]>`

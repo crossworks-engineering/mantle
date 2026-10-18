@@ -38,8 +38,8 @@ condition to an Admin decision or moves an area ask to its SQL source.
   - Asks about another login (the secret ref maker, the vault pair,
     Telegram) already call `loginHasArea` = `mantle_area_rule` since a0;
     nothing to change.
-- **Migration 0305** (`0305_admin_membership`, journal `when`
-  1790197680000): `mantle_login_is_admin_user(login)` is its 0293 text,
+- **Migration 0306** (`0306_admin_membership`, journal `when`
+  1790197680000; written as 0305, renumbered on v0.300.95): `mantle_login_is_admin_user(login)` is its 0293 text,
   moved verbatim, AND `mantle_login_is_admin(login)`. Its readers,
   `mantle_access_keys_seen` and `mantle_access_key_revoke`, follow.
   `SET LOCAL lock_timeout = '30s'`, CREATE OR REPLACE only (re-runnable),
@@ -109,7 +109,7 @@ plan names. None exists on a box with
   the only changed cell is `out: true -> false`; the revoke reader's cells
   (Admin user, drift admin, drift member, no login, own key); PUBLIC has no
   EXECUTE; the renumber proof (its `when` above its predecessor and above
-  S2a a1+a2's 1790197620000; a database at the migration before it applies
+  0305_folder_rename_write's 1790197620000, no 0305 entry of its own left; a database at the migration before it applies
   it and only it; its statements again change nothing).
 
 ## Brains without an Admin workspace (the precondition count)
@@ -142,17 +142,17 @@ is P1b's own count, set by hand with its reason in `_notes`:
   member cases (the session stays on the role by the owner decision),
   `memberLoginActive` and `findMemberAsset` (both until S8b by the plan).
 - `loginKindBranches` 52 to **51**: areasOf's "migration skipped" branch.
-- `historyCodeComments` 2340 to **2339** (on v0.300.94); `S8a` is added to
+- `historyCodeComments` 2339 to **2338** (on v0.300.95); `S8a` is added to
   HISTORY_HEADING_CODES (`eslint-rules/cleanup-counts.mjs`) for this
   file's heading, and no new code comment names it.
 - `inHandlerAreaChecks` 21 to **23**, raised: requireArea is now made of
   the two asks the plan names (scopeHasArea in its login's own scope,
   loginHasArea unscoped); the counter counts the asks inside it as well as
   each requireArea use. No new ask after a gate.
-- `dbClientLines` 3145 to **3160** (on v0.300.94), raised: `loginAreas`, the one
+- `dbClientLines` 3145 to **3160** (on v0.300.95), raised: `loginAreas`, the one
   system-pool reader of `mantle_login_areas` (getAdminDb lives only in
   client.ts).
-- `sqlRoleReaders` 14, unchanged: 0305 redefines a reader, adds none.
+- `sqlRoleReaders` 14, unchanged: 0306 redefines a reader, adds none.
 
 ## Gates (head 71af6c10e, then this handover)
 
@@ -219,7 +219,7 @@ Rebased on e6f75059e (v0.300.94, S4a merged); migration kept as 0305 with
 `when` 1790197680000 (merge order: tree-bugs 0305, then S2a a1+a2; this
 branch renumbers at its merge, the proof test stays).
 
-- **M1, the public demo.** 0305 grants `demo_reader` (where the role
+- **M1, the public demo.** 0306 grants `demo_reader` (where the role
   exists, 0293's pattern) EXECUTE on `mantle_login_is_admin` (the login
   row), `mantle_login_areas` (`areasFor`) and `mantle_area_rule`
   (`requireArea` unscoped): the demo runs the app's system pool as that
@@ -252,6 +252,14 @@ branch renumbers at its merge, the proof test stays).
   fail-open line again (until S4b), within 350 lines; new product comments
   carry no step code and no decision date (they stay here).
 
+## Rebase on v0.300.95 (53b507b53)
+
+tree-bugs merged with `0305_folder_rename_write` (`when` 1790197620000).
+This branch's migration is now `0306_admin_membership`, journal idx 306,
+`when` 1790197680000 (kept, above 1790197620000). The proof test asks
+for the new tag, idx and `when`, and that no `0305_admin_membership`
+entry is left. Pins re-measured on the new base (the same reasons).
+
 ## Rebase notes
 
 - `server/web/lib/workspaces.ts`: S2a a1+a2 edits the `@mantle/db` import
@@ -261,8 +269,9 @@ branch renumbers at its merge, the proof test stays).
   first lines. A one-line import merge.
 - `packages/db/src/client.ts`: `loginAreas` sits after `loginHasArea`;
   S4a's hunks are elsewhere. Its `dbClientLines` raise adds to S4a's.
-- Migration: 0305 here and on S2a a1+a2. Whichever merges second renumbers
-  (file name, journal entry, the proof test's TAG and its "above" `when`).
+- Migration: renumbered 0305 to 0306 on v0.300.95 (tree-bugs took 0305,
+  `when` 1790197620000); it keeps `when` 1790197680000. S2a a1+a2 takes a
+  later number and `when`.
 - `vitest.actor-on.config.ts`: one appended include line.
 
 Head: see `git log -1 feat/s8a-admin-membership`.

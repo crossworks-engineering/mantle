@@ -1,6 +1,6 @@
 /**
  * The Admin login is role AND membership in SQL too (workspaces arch plan
- * v3.2; migration 0305_admin_membership): mantle_login_is_admin_user
+ * v3.2; migration 0306_admin_membership): mantle_login_is_admin_user
  * answers its 0293 text AND mantle_login_is_admin, on a database of its own
  * (so mantle_brain_id() is this file's anchor).
  *
@@ -13,8 +13,9 @@
  *    reader); an Admin user still may; a role=member login inside Admin
  *    still may not;
  *  - the grants are kept (PUBLIC has no EXECUTE);
- *  - the renumber proof: 0305's `when` is above every one before it and
- *    above S2a a1+a2's 0305_ws_user_definers (1790197620000), and a
+ *  - the renumber proof: 0306's `when` is above every one before it and
+ *    above 0305_folder_rename_write's (1790197620000), it is no longer
+ *    0305 anywhere in the journal, and a
  *    database at the migration before it applies it and only it.
  *
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/db/src/admin-membership.db.test.ts
@@ -35,7 +36,7 @@ import {
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 const DIR = join(__dirname, '..', 'migrations');
-const TAG = '0305_admin_membership';
+const TAG = '0306_admin_membership';
 
 const journal = (
   JSON.parse(readFileSync(join(DIR, 'meta', '_journal.json'), 'utf8')) as {
@@ -48,8 +49,11 @@ const at = journal.findIndex((e) => e.tag === TAG);
 const MAIN_IS_ADMIN_USER = `select EXISTS (SELECT 1 FROM "auth"."users" l
                   WHERE l."id" = $1::uuid AND l."role" = 'admin' AND l."disabled_at" IS NULL) as a`;
 
-describe('0305 is stamped above every `when` before it (renumber proof)', () => {
-  it('is stamped above its predecessor and above S2a a1+a2`s 1790197620000', () => {
+describe('0306 is stamped above every `when` before it (renumber proof)', () => {
+  it('is stamped above its predecessor and above 0305_folder_rename_write`s 1790197620000', () => {
+    expect(journal.some((e) => e.tag === '0305_admin_membership')).toBe(false);
+    expect(journal[at]!.idx).toBe(306);
+    expect(journal[at]!.when).toBe(1790197680000);
     expect(at).toBeGreaterThan(0);
     expect(journal[at]!.when).toBeGreaterThan(journal[at - 1]!.when);
     expect(journal[at]!.when).toBeGreaterThan(1790197620000);
@@ -159,7 +163,7 @@ describe.skipIf(!URL)('mantle_login_is_admin_user is role AND membership (S8a)',
   });
 });
 
-describe.skipIf(!URL)('a database at the migration before 0305 runs 0305 and only it', () => {
+describe.skipIf(!URL)('a database at the migration before 0306 runs 0306 and only it', () => {
   let scratch: Awaited<ReturnType<typeof createScratchDatabaseBefore>> | undefined;
   let sql: ReturnType<typeof postgres>;
   const all = readMigrationFiles({ migrationsFolder: DIR });
@@ -186,7 +190,7 @@ describe.skipIf(!URL)('a database at the migration before 0305 runs 0305 and onl
     await scratch?.drop();
   });
 
-  it('the runner applies 0305 and only it, and again it is a no-op', async () => {
+  it('the runner applies 0306 and only it, and again it is a no-op', async () => {
     expect(await body()).not.toContain('mantle_login_is_admin"(login)');
     const out = { lines: [] as string[], warnings: [] as string[] };
     const applied = await applyJournal(sql, all.slice(0, at + 1), journal.slice(0, at + 1), {

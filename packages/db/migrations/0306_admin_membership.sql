@@ -25,11 +25,11 @@
 -- demo/deploy/readonly-role.sql needs the same three lines. No table, row
 -- or trigger changes. Re-runnable: CREATE OR REPLACE and GRANT only.
 --
--- The number is claimed at the merge (plan v3.2 rule 3): written as 0305
--- above main's 0304_login_facts (`when` 1790197560000) and above S2a a1+a2's
--- 0305_ws_user_definers (1790197620000), with `when` 1790197680000; the
--- branch renumbers on its rebase and keeps that `when` (the renumber proof
--- is in packages/db/src/admin-membership.db.test.ts).
+-- The number was claimed at the rebase (plan v3.2 rule 3): written as 0305
+-- with `when` 1790197680000, renumbered 0306 on v0.300.95, whose
+-- 0305_folder_rename_write holds 1790197620000; it keeps its `when`, above
+-- that one (a box that ran the branch's 0305 records the same stamp). The
+-- renumber proof is in packages/db/src/admin-membership.db.test.ts.
 SET LOCAL lock_timeout = '30s';
 --> statement-breakpoint
 CREATE OR REPLACE FUNCTION "public"."mantle_login_is_admin_user"(login uuid)
