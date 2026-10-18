@@ -169,11 +169,33 @@ see it.
 `x-app-env` anchor passes it to every app service). Off, the app runs as
 `DATABASE_URL`'s role, exactly as before.
 
+New installs and the `.env` line (plan v3.2 S4a). The code default and the
+compose default stay off, so no box changes by a default. Instead:
+
+- `scripts/install.sh` writes `MANTLE_DB_RUNTIME_ROLE=1` on a fresh box (no
+  Postgres data yet) whose `.env` has no line; `.env.example` shows it set.
+- Every roll first writes the line a `.env` lacks, holding the value the app
+  runs with now (`ensure_runtime_role_line` in `infra/updater/updater.sh`,
+  through `persist_env`, which keeps the file's owner and mode): the running
+  `mantle_web`'s environment (`docker exec mantle_web printenv`; unset there
+  is 0), else 0 when no `mantle_web` runs. A line already there is kept. The
+  roll log (`update.log`) says what was written and from where. A failed
+  read of the running container writes nothing. `scripts/roll.sh` sends the
+  same functions from its checkout before it requests the roll, so a box
+  whose updater is older gets the line too.
+- `scripts/arch-scoreboard-box.sh` counts it: `env_has_runtime_role_line`
+  (the line is there) next to `env_names_runtime_role` (it is on).
+
+So a later release can turn the default on without flipping any box: every
+box that rolled once names its own value.
+
 Which mode a box runs in shows in three places:
 
 - the log of every app process at its start (production): `[db] the system
 pool logs in as mantle_runtime (arch A9 runtime role)`, or a warning that it
-  logs in as the superuser and how to change that;
+  logs in as the superuser and how to change that, which starts with
+  `[db] SECURITY: MANTLE_DB_RUNTIME_ROLE is unset or 0.` when the switch is
+  off (S4a);
 - `/api/health`: `postgres.role` is `{ mode, user }`, `mode` one of `runtime`,
   `superuser`, `other`;
 - `/debug/integrity`, the row `runtime_role_lock` (`RUNTIME_LOCK_SQL` in
