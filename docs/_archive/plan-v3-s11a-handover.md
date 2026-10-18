@@ -173,14 +173,34 @@ product code changed):
 
 **The device-tokens failure** (round 1: three cells of
 server/web/lib/auth/device-tokens.db.test.ts answered 403 under the full
-run). Not reproduced: main ea671d46b's full run passed it 30 of 30 (that
-run failed one other timing cell, first-owner.db.test.ts "stops the
-process after a short delay"), and this branch's full runs passed it 30 of 30. S11a touches no file on its path. No cause found in the test (it uses
-the shared database with its own logins; the box modes and seats it reads
-are not changed by any shared-database test file); left as an intermittent
-one, not fixed.
+run; they pass alone). Main ea671d46b's full run passed it 30 of 30 (that
+run failed a different timing cell, first-owner.db.test.ts). On this
+branch it passed in two full runs and failed in one (a8fe88d9f): two cells,
+"a refresh racing End sessions never leaves a live token" and "the devices
+follow a refreshed token, and a sign-out removes them", both where the
+test's own Admin user calls `PATCH /api/users/:id` (`signOut: true`) with
+its session cookie and the gate answers 403 (the Admin area refused). S11a
+touches nothing on that path (the session, the gate, workspaces.ts
+requireArea, client.ts). No shared-database test file changes that admin's
+seat, the brain's Admin workspace or its limits (checked: every test that
+writes workspace_users, workspaces or auth.users on the shared database
+names its own rows). Most likely the Admin area lookup under the full
+run's load: resolveHttpLogin and loginHoldsArea in server/web/lib/auth/session.ts
+answer "no area" (a 403) on any error or a missing anchor, so a transient
+failure reads as a refusal. That is product behaviour (fail closed), not a
+test bug: reported, not fixed. A task with the 403's body logged would
+settle it.
 
-**Gates.** See the commit's final report (the CEO's reply) for the exit
-codes of the run on this head.
+**Gates** (workstation, own clone, own pg18 container s11b_pg on port
+55967, max_connections=450, the test database migrated as CI does with
+MANTLE_CHECK_FLOOR=keep; head a8fe88d9f on main 8b3099467; the handover
+commit after it changes only this file): typecheck 0, lint 0, format 0,
+docs 0, arch 0, web build 0, unit (no database) 0, full vitest with DB 1
+(4 cells, none S11a's: the two device-tokens cells above,
+packages/search/src/scope.db.test.ts ensureConcurrentIndexes and
+packages/runtime/src/agent/conversation-trace.db.test.ts; the same suite on
+the previous head, df821668d's twin on a77282728, was 0), test:actor-off 0,
+test:actor-on 0, test:edit-on 0, test:matrix 0, test:runtime-role (full
+config) 0. A re-run of the full vitest is in the final report.
 
 **Left.** S11a-2 to S11a-4 for the owner; process_extraction as in round 1.
