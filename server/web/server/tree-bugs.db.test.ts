@@ -334,6 +334,9 @@ describe.skipIf(!DB_URL)('the tree bugs: a Write rename, a cross-workspace move'
     }
     await m.asSystem(() => t.seedBuiltinTools(owner), 'test');
     await sys(() => f.ensureFilesRootBranch(owner));
+    const tree = await import('@mantle/content/tree');
+    await sys(() => tree.ensureKindRoot(owner, 'notes'));
+    await sys(() => tree.ensureKindRoot(owner, 'pages'));
     m.takeActorMisses();
   }, 300_000);
 
@@ -398,7 +401,9 @@ describe.skipIf(!DB_URL)('the tree bugs: a Write rename, a cross-workspace move'
 
       it("S11a-6a: a Write grant's member renames a Files folder (folder_rename)", async () => {
         await setMode(mode);
-        const fid = idIn(await sysTool('folder_create', { slug: `${tag}-files-${n()}` }));
+        const fid = idIn(
+          await sysTool('folder_create', { parent_path: 'files', slug: `${tag}-files-${n()}` }),
+        );
         await grantsOn(fid, shared());
         const o = await viaMcp('wr', 'folder_rename', {
           folder_id: fid,
