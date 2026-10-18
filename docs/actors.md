@@ -189,6 +189,8 @@ Owner rules (each holds today unless "Known limits" says otherwise):
   `mantle_set_edit_check` (they switch the triggers with the setting), as
   the superuser that runs migrations ([update-prod.md](./update-prod.md),
   "The checks' floor").
+- **Fail-open counts** (S4a): six branches still fail open, each one miss row per site and
+  calling file; S4b refuses them ([fail-open.md](./fail-open.md), with the tables it keeps).
 
 ## 8. Exits
 
@@ -306,12 +308,12 @@ change and its audit row (`mantle_grant_change`, `mantle_grant_move_home`,
 
 ## 14. Operating a box
 
-- **The runtime role**: `MANTLE_DB_RUNTIME_ROLE=1` in `.env` makes the
-  system pool log in as `mantle_runtime`, which cannot disable a trigger,
-  alter a table or change a mode. Off, it runs as the superuser and
-  nothing in Postgres stops a bug there from doing either
-  ([runtime-role.md](./runtime-role.md)). Each app process says which at
-  start; `/api/health` shows `postgres.role`.
+- **The runtime role**: `MANTLE_DB_RUNTIME_ROLE=1` makes the system pool
+  log in as `mantle_runtime`, which cannot disable a trigger, alter a table
+  or change a mode; off, it is the superuser, said at every start
+  (`[db] SECURITY:`). A new install writes 1; a roll writes the value a box
+  runs with into a `.env` with no line (S4a, [runtime-role.md](./runtime-role.md)).
+  `/api/health` shows `postgres.role`.
 - **Modes**: both checks on (section 7). **Emergency switches**: lowering
   a check (a reason, recorded and logged) and the runtime role.
 - **Box counts** (numbers only): `scripts/arch-scoreboard-box.sh <ssh-alias>`;
@@ -340,9 +342,7 @@ Each ends in the step of plan v3.2 (2026-10-17) named.
 - Route policy is spread over lists, not declared per route. S9.
 - Scoped code still holds raw write SQL. S10.
 - The A8 matrix covers every kind and tool, not yet the routes. S11b.
-- The runtime role is off by default for a new install, and a few
-  defaults fail open in production (an unlisted exit is logged, not
-  refused). S4.
+- Six branches fail open, counted since S4a (section 7, Fail-open counts). S4.
 - Accepted, no step: any role can `set_config('mantle.actor', …)`, so the
   settings are no credential; access is never decided from them on a role
   that runs caller-shaped SQL.

@@ -28,7 +28,8 @@ beforeEach(() => enterTestActor());
 // Plan v3.2 S4a: MANTLE_FAIL_OPEN_DUMP=<file> lists every fail-open hit of
 // the run (site, actor kind, table, test file), one JSON line each: how the
 // tables a scoped write sends to the system pool were measured
-// (docs/actors.md, "Fail-open counts"). A hit never fails a test.
+// (docs/fail-open.md, "Measuring the system-pool tables"). A hit never
+// fails a test.
 const failOpenDump = process.env.MANTLE_FAIL_OPEN_DUMP;
 if (failOpenDump) {
   afterEach(() => {

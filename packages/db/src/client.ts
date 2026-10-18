@@ -1,8 +1,8 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { sql as sqlTag } from 'drizzle-orm';
-import { getTableName, is } from 'drizzle-orm';
+import { is } from 'drizzle-orm';
 import { drizzle, type PostgresJsDatabase } from 'drizzle-orm/postgres-js';
-import { PgDialect, PgTable, getTableConfig, type AnyPgColumn } from 'drizzle-orm/pg-core';
+import { PgDialect, PgTable, type AnyPgColumn } from 'drizzle-orm/pg-core';
 import type { SQL } from 'drizzle-orm';
 import postgres from 'postgres';
 import * as schema from './schema/index';
