@@ -88,9 +88,7 @@ describe.skipIf(!URL)('a database at main 0300 runs the floor (0301)', () => {
       )[0]!.n;
     expect(await fn()).toBe(0);
     const out = { lines: [] as string[], warnings: [] as string[] };
-    // The journal up to 0301: a later migration is not this proof's.
-    const upTo = all.slice(0, at + 1);
-    const applied = await applyJournal(sql, upTo, journal.slice(0, at + 1), {
+    const applied = await applyJournal(sql, all, journal, {
       log: (l) => out.lines.push(l),
       warn: (l) => out.warnings.push(l),
     });
@@ -102,8 +100,6 @@ describe.skipIf(!URL)('a database at main 0300 runs the floor (0301)', () => {
       select max(created_at)::text as w from "drizzle"."__drizzle_migrations"`;
     expect(Number(last!.w)).toBe(journal[journal.length - 1]!.when);
     // And again: nothing left.
-    expect(
-      await applyJournal(sql, upTo, journal.slice(0, at + 1), { log: () => {}, warn: () => {} }),
-    ).toBe(0);
+    expect(await applyJournal(sql, all, journal, { log: () => {}, warn: () => {} })).toBe(0);
   }, 120_000);
 });

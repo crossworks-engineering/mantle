@@ -548,7 +548,7 @@ describe.skipIf(!URL)('workspaces W1: grants, derivation, heads and the workspac
       expect(await m.scopeHasArea('settings')).toBe(false);
     });
     // This file's owner is not the brain (mantle_brain_id(), the shared
-    // anchor): its Admin workspace is another brain's, and since 0302 (S2a
+    // anchor): its Admin workspace is another brain's, and since 0304 (S2a
     // a0, the owner test) a scope holding another brain's Admin holds no
     // area. No box has two brains in one database. The yes cells, the
     // limits and the Admin assistant's, run on the brain's own Admin in

@@ -1,6 +1,6 @@
 /**
  * The login facts in SQL (workspaces arch plan v3.2, S2a a0; migration
- * 0302_login_facts): every fact answers as the text it replaces, byte for
+ * 0304_login_facts): every fact answers as the text it replaces, byte for
  * byte, on a grid of logins, areas and scopes, on a database of its own (so
  * mantle_brain_id() is this file's anchor).
  *
@@ -24,7 +24,7 @@
  *    runtime role may run the four it calls, never mantle_login_area;
  *  - mantle_login_areas(anchor) gives WORKSPACE_AREAS (client-types), so
  *    an area TypeScript gains that the SQL lacks fails here;
- *  - the renumber proof: 0302's `when` is above every one before it, and
+ *  - the renumber proof: 0304's `when` is above every one before it, and
  *    a database at main's last migration applies it and only it.
  *
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/db/src/login-facts.db.test.ts
@@ -50,7 +50,7 @@ import { WORKSPACE_AREAS } from '@mantle/client-types/dto/workspaces';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 const DIR = join(__dirname, '..', 'migrations');
-const TAG = '0302_login_facts';
+const TAG = '0304_login_facts';
 const WRITE_ROLE = viewerRoleName('write');
 const AREAS = ['settings', 'users', 'assistants', 'connectors', 'keys'] as const;
 const ASKED = [...AREAS, 'bogus'] as const;
@@ -95,11 +95,11 @@ const MAIN_SCOPE_HAS_AREA = `select EXISTS (
        AND $1::text IN ('settings', 'users', 'assistants', 'connectors', 'keys')
        AND coalesce(u."limits" -> 'areas' ->> $1::text, '') <> 'false') as a`;
 
-describe('0302 is stamped above every `when` before it (renumber proof)', () => {
-  it('is stamped above its predecessor and above the S3 lane`s 1790197440000', () => {
+describe('0304 is stamped above every `when` before it (renumber proof)', () => {
+  it('is stamped above its predecessor and above the S11a-7 hotfix`s 1790197500000', () => {
     expect(at).toBeGreaterThan(0);
     expect(journal[at]!.when).toBeGreaterThan(journal[at - 1]!.when);
-    expect(journal[at]!.when).toBeGreaterThan(1790197440000);
+    expect(journal[at]!.when).toBeGreaterThan(1790197500000);
   });
 });
 
@@ -372,9 +372,9 @@ describe.skipIf(!URL)('the login facts answer as the text they replace (S2a a0)'
       false,
     );
     // The named cell through the TypeScript path: a disabled Admin user in
-    // a scope still open holds no area (0302).
+    // a scope still open holds no area (0304).
     expect(await has(user(L.dis, [adminWs]), 'settings')).toBe(false);
-    // Another brain's Admin in the scope: no area (the owner test, 0302).
+    // Another brain's Admin in the scope: no area (the owner test, 0304).
     expect(await has(user(L.otherUser, [ws.otherAdmin]), 'settings')).toBe(false);
   });
 
@@ -462,7 +462,7 @@ describe.skipIf(!URL)('the login facts answer as the text they replace (S2a a0)'
   });
 });
 
-describe.skipIf(!URL)('a database at main`s last migration runs 0302 and only it', () => {
+describe.skipIf(!URL)('a database at main`s last migration runs 0304 and only it', () => {
   let scratch: Awaited<ReturnType<typeof createScratchDatabaseBefore>> | undefined;
   let sql: ReturnType<typeof postgres>;
   const all = readMigrationFiles({ migrationsFolder: DIR });
@@ -484,7 +484,7 @@ describe.skipIf(!URL)('a database at main`s last migration runs 0302 and only it
     await scratch?.drop();
   });
 
-  it('the runner applies 0302 and only it', async () => {
+  it('the runner applies 0304 and only it', async () => {
     const fn = async () =>
       (
         await sql<
@@ -493,7 +493,7 @@ describe.skipIf(!URL)('a database at main`s last migration runs 0302 and only it
       )[0]!.n;
     expect(await fn()).toBe(0);
     const out = { lines: [] as string[], warnings: [] as string[] };
-    // The journal up to 0302: a later migration is not this proof's.
+    // The journal up to 0304: a later migration is not this proof's.
     const applied = await applyJournal(sql, all.slice(0, at + 1), journal.slice(0, at + 1), {
       log: (l) => out.lines.push(l),
       warn: (l) => out.warnings.push(l),

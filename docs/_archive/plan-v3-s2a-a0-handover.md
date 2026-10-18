@@ -8,9 +8,9 @@ made docs/actors.md the spec, with a down-only line pin).
 
 ## What the step does
 
-Plan v3.2, S2a a0, migration 0302 (`0302_login_facts`, journal `when`
-1790197560000). Each fact about a login that an area ask or an Admin ask
-reads has one SQL source:
+Plan v3.2, S2a a0, migration 0304 (`0304_login_facts`, journal `when`
+1790197560000; written as 0302, renumbered at the rebase on v0.300.90).
+Each fact about a login that an area ask or an Admin ask reads has one SQL source:
 
 - `mantle_area_rule(login, area)`: THE area rule about a login. The
   brain's live Admin workspace, an enabled login with a user row there, a
@@ -85,10 +85,10 @@ Admin user 0, a role admin login outside Admin 1, a former client left
 out, a member inside Admin 1); the catalog cell (as round 0 wrote it: no PUBLIC,
 viewer role, write role or gap writer may EXECUTE a login fact, the
 runtime role runs the four; the cell asked the viewer roles and the gap
-writer only, fix round 1's M1 below); the renumber proof (0302's `when` above every one before it and
-above S3's 1790197440000; a database at 0301 applies 0302 and only it).
-`check-floor-renumber.db.test.ts` now runs the journal up to 0301 only (it
-applied every later migration too, so any migration after 0301 failed it).
+writer only, fix round 1's M1 below); the renumber proof (0304's `when` above every one before it and
+above the S11a-7 hotfix's 1790197500000; a database at 0303 applies 0304 and only it).
+`check-floor-renumber.db.test.ts` is main's (S3's) form: it applies every
+migration after 0301, 0304 too (`all.length - at`).
 
 **Pins:** `sqlAreaRules` is not pinned here: P1a's counter is not on main
 yet. Against P1a's counter (rights-counts.mjs on its branch, 7 on main:
@@ -99,18 +99,19 @@ function that reads the area limits is `mantle_area_rule`, and the two
 Telegram asks are left (7 minus 4: the two SQL functions now call the rule,
 the three TypeScript copies call it).
 
-**Migration number:** named 0302 here, not 0303: with 0303 and no 0302 on
-main, `migrations-journal.test.ts` ("no slot is skipped") fails the branch.
-The `when` (1790197560000, the lane's +60000) sits above S3's. Renumber at
-merge if S3 lands first: file name, journal idx and tag, the `TAG` in
-`login-facts.db.test.ts`, a `when` above the last applied; the renumber
-proof cell then says so.
+**Migration number:** claimed at the merge (plan v3.2 rule 3). Written as
+0302 (with 0303 and no 0302 on main, `migrations-journal.test.ts`, "no
+slot is skipped", fails a branch). R0 landed 0301, S3 0302 and the S11a-7
+hotfix 0303 (`when` 1790197500000), so at the rebase on v0.300.90 it is
+0304: file name, journal idx 304 and tag, the `TAG` in
+`login-facts.db.test.ts` and the renumber proof's names. The `when` stays
+1790197560000, above 0303's.
 
 **Rollback** (plan rule 2): a one-image rollback to v0.300.83 lands
-narrower or equal. Migrations are forward only: 0302's functions stay, and
+narrower or equal. Migrations are forward only: 0304's functions stay, and
 v0.300.83's migrate sees its mark above every journal entry (nothing
 pending, no gap). What remains: `mantle_scope_has_area` and
-`mantle_login_area` keep 0302's bodies (the disabled login inside an open
+`mantle_login_area` keep 0304's bodies (the disabled login inside an open
 scope stays refused; the owner test stays); `mantle_area_rule`,
 `mantle_login_areas`, `mantle_login_is_admin` and `mantle_role_drift` stay
 in the catalog, and v0.300.83's boot grants take them from the runtime role
@@ -175,23 +176,22 @@ is test, doc, log and pins only; no SQL, no answer changes.
 (`mantle_area_rule` and the two Telegram asks left; the two SQL functions
 call the rule, the three TypeScript copies are thin calls). `consoleCalls`
 475 to 476: L2's one warning. `actorsMdLines` 350, unchanged.
+At the rebase on v0.300.90: `dbClientLines` 3141 to 3142 (S3's pin, on
+main since; a0's client.ts hunks are 21 lines in and 20 out);
+`sqlAreaRules` reads 3 on the rebased tree, as pinned.
 
 - **P1a's catalog cell** (`packages/db/src/rights-catalog.db.test.ts`,
   "finds the same functions reading the 'areas' limits") asked that the
   live functions reading the limits include `mantle_scope_has_area`; after
-  0302 it calls the rule, so the cell now says the list is exactly
+  0304 it calls the rule, so the cell now says the list is exactly
   `mantle_area_rule`. The first full runtime-role run caught it (1 failed
   of 2593); one line, P1a's file.
 
 **Merge notes for the CEO.**
 
-- `packages/db/src/check-floor-renumber.db.test.ts` conflicts with S3: a0
-  cuts the journal at 0301, S3 expects every migration after 0301 to apply
-  (`all.length - at`). At merge take S3's form and drop a0's hunk; S3's
-  form already passes with 0302_login_facts after it.
-- The migration is still `0302_login_facts.sql` (`when` 1790197560000). S3
-  also has a 0302: renumber at merge (file, journal idx and tag, `TAG` in
-  `login-facts.db.test.ts`, the renumber proof's describe and `it` names).
+- Done at the rebase on v0.300.90: `check-floor-renumber.db.test.ts` is
+  S3's form (a0's hunk dropped; it passes with 0304_login_facts after it),
+  and the migration is `0304_login_facts.sql` (`when` 1790197560000).
 - The Telegram membership asks (`packages/telegram/src/chat-login.ts`, the
   two queries that read `workspace_users` with the Admin workspace as a
   helper's fallback) are not the area rule and stay as they are: they wait
@@ -218,6 +218,5 @@ test:actor-off, test:edit-on, test:matrix and boot:smoke; they passed at
 pins only. Clone, container (with its volume) and logs removed by exact
 name.
 
-**Left:** audit; the renumber at merge; the `check-floor-renumber` pick at
-merge; the Telegram asks' class in the `sqlAreaRules` counter (S2b b3); the box script reads `mantle_role_drift()` once this rolls (S8a
+**Left:** the Telegram asks' class in the `sqlAreaRules` counter (S2b b3); the box script reads `mantle_role_drift()` once this rolls (S8a
 waits for 0 on every box).

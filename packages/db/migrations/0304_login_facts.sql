@@ -44,7 +44,12 @@
 -- them): the workspace role's policy helper, and none.
 --
 -- No table, row or trigger changes. Re-runnable: CREATE OR REPLACE only.
--- The `when` sits above every `when` on main.
+--
+-- The number was claimed at the merge (plan v3.2 rule 3): R0 landed first
+-- with 0301_check_mode_floor, S3 with 0302_write_role_gap_tables and the
+-- S11a-7 hotfix with 0303_export_check_grant_branch (`when` 1790197500000);
+-- this file is 0304 with the `when` it had as 0302 (1790197560000, above
+-- 0303's).
 SET LOCAL lock_timeout = '30s';
 --> statement-breakpoint
 CREATE OR REPLACE FUNCTION "public"."mantle_area_rule"(login uuid, area text)

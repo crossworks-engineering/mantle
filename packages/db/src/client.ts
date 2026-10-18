@@ -2358,7 +2358,7 @@ function loginFactFailed(err: unknown): false {
 /**
  * Whether `loginId` is a user of this brain's live Admin workspace now, its
  * login enabled (W7 integration fix 3, L1), never the admin role alone (a
- * login taken out of Admin keeps its role): mantle_login_is_admin (0302).
+ * login taken out of Admin keeps its role): mantle_login_is_admin (0304).
  * Fails closed. Admin pool.
  */
 export async function loginHoldsAdmin(loginId: string): Promise<boolean> {
@@ -2377,7 +2377,7 @@ export async function loginHoldsAdmin(loginId: string): Promise<boolean> {
  * Whether login `loginId` holds Admin `area` now, asked on the system pool
  * for a login other than the current caller (W7a fix round 3: the maker of
  * an API tool, when the tool's secret refs resolve at run time): the area
- * rule, mantle_area_rule (0302). Fails closed.
+ * rule, mantle_area_rule (0304). Fails closed.
  */
 export async function loginHasArea(loginId: string, area: ScopeArea): Promise<boolean> {
   if (!SCOPE_AREAS.includes(area) || !UUID_RE.test(loginId)) return false;

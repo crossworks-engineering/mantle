@@ -70,7 +70,7 @@ describe.skipIf(!URL)('the scoreboard reads the live catalog from the migrations
 
   it("finds the same functions reading the 'areas' limits", () => {
     const want = names(live, (f) => counts.readsAreaLimits(f.body));
-    // S2a a0 (0302_login_facts): mantle_area_rule is the one; the others call it.
+    // S2a a0 (0304_login_facts): mantle_area_rule is the one; the others call it.
     expect(want).toEqual(['mantle_area_rule']);
     expect(names(read, (f) => counts.readsAreaLimits(f.body))).toEqual(want);
     // Every live function naming the 'areas' key (`->> 'areas'`,

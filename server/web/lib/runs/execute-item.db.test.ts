@@ -6,7 +6,7 @@
  *
  * A database of its own, whose brain (mantle_brain_id()) is this file's
  * anchor: the run's Admin scope asks the assistants area of the brain's own
- * Admin workspace (mantle_scope_has_area, 0302).
+ * Admin workspace (mantle_scope_has_area, 0304).
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run server/web/lib/runs/execute-item.db.test.ts
  */
 import { randomUUID } from 'node:crypto';
