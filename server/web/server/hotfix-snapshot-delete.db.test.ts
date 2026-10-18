@@ -13,9 +13,9 @@
  *
  * Each cell takes a fresh snapshot of a fresh app placed for the caller,
  * calls the tool on the login's own MCP surface or in an assistant turn, and
- * checks the outcome, that a refused call leaves the app's history as it
- * was, and the answer's words: those of v0.300.82 (c7acc88ff, the
- * pre-check), recorded with HFSD_RECORD=1 on that code (ids as ID).
+ * checks the outcome (v0.300.82's, c7acc88ff, recorded with HFSD_RECORD=1
+ * on that code), that a refused call leaves the app's history as it was,
+ * and the answer's words (MAIN_82).
  *
  * Callers: the owner and a second Admin user (an app in Admin: allowed; the
  * owner on an app homed elsewhere granted to Admin read only: refused), and
@@ -80,19 +80,24 @@ const CELLS: readonly { who: Who; place: Place; allowed: boolean }[] = [
 ];
 
 /**
- * v0.300.82's answer to each refused cell (c7acc88ff, the tool's pre-check
- * `items: [edit('id')]`), recorded with HFSD_RECORD=1, ids as ID: the same
- * in every check mode, the MCP surface's with its "Error: " before it. An
- * app the caller does not read is the precondition's "not found", as then.
+ * The answer to each refused cell. The outcome is v0.300.82's (c7acc88ff,
+ * the tool's pre-check `items: [edit('id')]`, recorded with HFSD_RECORD=1):
+ * refused, nothing changed, in every check mode. An app the caller does not
+ * read is the precondition's "not found", byte for byte as then. One it
+ * reads but may not change answers in the one mapper's words, as main
+ * answers it with both checks on and as the approval queue refuses it
+ * (turnCallRefusal, precheck-removal.db.test.ts "queue time"), where
+ * v0.300.82 said `You cannot change this item in your workspaces (ID): ask
+ * for Write on it, or a Moderator of its workspace.` (R0's changed answer,
+ * kept). The MCP surface's text has "Error: " before it.
  */
-const NO_EDIT_82 =
-  'You cannot change this item in your workspaces (ID): ask for Write on it, or a Moderator of its workspace.';
+const NO_EDIT = 'You cannot change this item in your workspaces.';
 const MAIN_82: Readonly<Record<string, string>> = {
-  'owner adminReadOnly': NO_EDIT_82,
+  'owner adminReadOnly': NO_EDIT,
   'member outsider':
     'app ID not found — it may have been deleted or the id mistyped. Find the right id with app_list, then re-issue.',
-  'member readGrant': NO_EDIT_82,
-  'member siblingWrite': NO_EDIT_82,
+  'member readGrant': NO_EDIT,
+  'member siblingWrite': NO_EDIT,
 };
 const main82 = (name: string, way: Way) => `${way === 'mcp' ? 'Error: ' : ''}${MAIN_82[name]}`;
 
@@ -395,7 +400,7 @@ describe.skipIf(!DB_URL)('hotfix: app_snapshot_delete asks the edit of the app',
             if (out.ok) bad.push(`${name} ${way}: deleted`);
             if (after !== before || left !== 1) bad.push(`${name} ${way}: the history changed`);
             if (plain(out.text) !== main82(name, way)) {
-              bad.push(`${name} ${way}: "${plain(out.text)}" is not main .82's`);
+              bad.push(`${name} ${way}: "${plain(out.text)}" is not the recorded answer`);
             }
           }
         }
