@@ -11,9 +11,10 @@
  *    it stays a member (the member gate lets it in, the owner gate refuses
  *    it as it refuses any member).
  *
- * Member-negative (plan rule 5): an outsider, a member, and both drift
- * logins are refused the owner asset and render routes with the answer a
- * random uuid's token gets, byte for byte.
+ * Member-negative (plan rule 5): an outsider and the drift admin are
+ * refused the asset token with the answer a random uuid's token gets, a
+ * role=member login inside Admin answers as any member, and every non-Admin
+ * render cookie as a random uuid's, byte for byte.
  *
  * The area asks (requireArea): in a scope for the caller's own login the
  * scope's rule; unscoped, the area rule about the login; in a scope for
@@ -152,10 +153,18 @@ describe.skipIf(!URL)('S8a: an Admin login is role AND membership', () => {
     expect(await session.adminLoginActive(memIn)).toBe(false);
   });
 
-  it('member-negative: every non-Admin token answers as a random uuid`s, byte for byte', async () => {
+  it('member-negative: no Admin answer for a non-Admin token, byte for byte', async () => {
+    // The byte route serves members too (getReaderForAsset: a member `?at=`
+    // token, the member's own reader): a role=member login inside Admin
+    // answers as any member, and the drift admin and an outsider as a
+    // random uuid's token.
     const random = await assetAnswer(randomUUID());
-    for (const id of [mem, memIn, out, nobody]) expect(await assetAnswer(id), id).toBe(random);
+    expect(status(random)).toBe(401);
+    for (const id of [out, nobody]) expect(await assetAnswer(id), id).toBe(random);
+    expect(await assetAnswer(memIn)).toBe(await assetAnswer(mem));
+    // The render cookie is the Admin login's only: refused for all of them.
     const randomRender = await call(fileBytes(), { cookie: renderAt(randomUUID()) });
+    expect(status(randomRender)).toBe(401);
     for (const id of [mem, memIn, out, nobody]) {
       expect(await call(fileBytes(), { cookie: renderAt(id) }), id).toBe(randomRender);
     }
