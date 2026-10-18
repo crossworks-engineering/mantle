@@ -400,3 +400,66 @@ No DB code changed, so no DB suite ran.
   a new code fails arch:check until the code is in HISTORY_HEADING_CODES
   or HEADING_CODES_LEFT_OUT. Write a handover, then add its code to one.
 - The progress counters stay games for a reviewer, as in round 1.
+
+## Fix round 3: the audit at c45671b2a (8.5/10)
+
+On c45671b2a; main had not moved (f970ff0cf), so no rebase.
+
+### The fixes
+
+- A template hid SQL from rawSqlNonLiteral: `tx.unsafe(`${stmt}`)` read as
+  a literal whose text was only a placeholder, so it counted in neither
+  key. A template whose static text holds no SQL word (only placeholders,
+  whitespace and punctuation, or a fragment such as `array[...]::text[]`)
+  is no literal now. A leading placeholder (`${TAG} insert ...`, the actor
+  tag before a statement) no longer hides a write verb either (0 on the
+  repo). Tests: a pure placeholder, placeholders with non-verb text, a real
+  literal write still a write.
+- `.raw` on a member whose last name is a tag (`this.sql.raw`,
+  `deps.sql.raw`) counts, and a name holding a text method under another
+  name is followed to a fixed point (`const r2 = r`). Tests; none on the
+  repo.
+- The area asks: any use that is neither a call nor a callback (a ternary,
+  `??`, a list, a default export, `ask.length`) is a problem, by
+  as-system-exits.mjs's nonCallUses (exported for it), each place once;
+  `s['scopeHasArea']` is the ask by a literal key. Tests; 0 on the repo.
+- The heading reader skips fenced code blocks (``` and ~~~, closed only by
+  the same fence at least as long). Test.
+
+Documented, no code:
+
+- Known limit: only a thin wrapper (a pure pass-through) is followed. A
+  single-ask helper that does more (`needUsers()` that logs or maps the
+  answer around scopeHasArea) counts once wherever it is called from
+  (eslint-rules/admin-counts.mjs, the file's doc comment).
+- Review-gated: HEADING_CODES_LEFT_OUT, HISTORY_HEADING_CODES and the
+  stoplist (cleanup-counts.mjs), NOT_LOGIN_KIND, AREA_GATES, LOGIN_NAMES
+  and IN_HANDLER_ASKS (admin-counts.mjs): an edit lowers or hides counts,
+  so it is reviewed like a pin (their doc comments say so).
+- CLAUDE.md, "Other guidance": a new handover heading's step code goes in
+  HISTORY_HEADING_CODES or HEADING_CODES_LEFT_OUT in the same commit, or
+  arch:check (and so `pnpm verify` and CI) goes red.
+
+### Pins moved
+
+| Key              | Before | After | Why                                                                                                                                                                                                                                                                                                                                      |
+| ---------------- | ------ | ----- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| rawSqlNonLiteral | 63     | 75    | the measure widened, no site added: the actor tag before a statement (check-floor.ts:63, client.ts:155, 168, 318, 3098), a column by alias (email-attachment.ts:57, item-acl.ts:41), key lists and literals built into sql.raw (content-changed.ts:64, email-attachment.ts:46, index-work.ts:37, builtins-eval.ts:95, ocr-rescan.ts:232) |
+| rawWriteSqlFiles | 55     | 61    | with it: check-floor.ts, content-changed.ts, email-attachment.ts, index-work.ts, builtins-eval.ts, ocr-rescan.ts (item-acl.ts and client.ts held sites already)                                                                                                                                                                          |
+
+The audit named 7 sites; the rule finds 12: the other five are sql.raw
+fragments built from code-held lists. builtins-eval.ts:95 puts a tag into
+raw SQL (`'{${tag}}'::text[]`); its comment says the tags are compile-time
+constants, so it is no live risk, but S10 should make it a bind or a
+literal. No other pin moved (historyCodeComments 2322, inHandlerAreaChecks
+21, sqlAreaRules pin 7, measures 5).
+
+### Gates (fix round 3)
+
+At 19d083abf, the code head (this section is docs only on top of it).
+Mac (DATABASE_URL unset): `pnpm -r typecheck` 0, `pnpm lint` 0 (the one
+warning on main too), `pnpm format:check` 0, `pnpm docs:check` 0,
+`pnpm arch:check` 0 (sqlAreaRules 7 -> 5 as went down, as before),
+`pnpm -C server/web build` 0, `pnpm exec vitest run server packages
+eslint-rules` 0 (847 files passed, 259 skipped; 11012 tests passed, 2648
+skipped). No DB code changed, so no DB suite ran.
