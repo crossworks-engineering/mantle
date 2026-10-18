@@ -127,7 +127,7 @@ not their callers).
 
 ## Gates
 
-At 0b939dbe8 (the code head; this note is docs only on top of it).
+At 0b939dbe8, and again at c64f78010 (the caches; the code head, this note is docs only on top of it) for the Mac gates below.
 
 Mac (DATABASE_URL unset): `pnpm -r typecheck` 0, `pnpm lint` 0 (one
 warning, an unused disable directive in a file this branch does not touch,
@@ -148,6 +148,28 @@ test:actor-on, test:edit-on, test:matrix, test:runtime-role) and boot:smoke.
 No product code changed; the one new non-DB test file in server/web is a
 type test. The push used `--no-verify` (the pre-push gate runs the DB
 suites, which the Mac cannot).
+
+## measure() time (CEO note: keep the counters fast)
+
+`measure(ROOT)` wall time on the Mac, three runs in one process:
+
+| Tree | Runs (ms) |
+|---|---|
+| main 8b3099467 | 3832, 3599, 3569 |
+| this branch, before the caches (0b939dbe8) | 4902, 4598, 4589 |
+| this branch, with the caches (c64f78010) | 2697, 2459, 2459 |
+
+A CPU profile put most of the time in `stripComments` (each file stripped
+once per counter, about 20 times). Two shared caches now: `stripComments`
+answers by text (eslint-rules/arch-counts.mjs), and `parse` gives one syntax
+tree per path and text (eslint-rules/as-system-exits.mjs), used by the exits
+engine, admin-counts.mjs and cleanup-counts.mjs. measure() clears both when it
+is done (`clearCountCaches`); each is bounded at 4000 entries for a caller
+that never clears. Every pinned number is the same with and without them.
+No new test calls measure() inside an `it()`: the repo blocks measure once at
+load (describe body). On this branch the slowest eslint-rules test is
+no-bare-fetch's scoreboard cell (the one the hotfix moves to load), 5.5 s,
+under its 15 s limit even before the hotfix lands.
 
 ## Open items
 
