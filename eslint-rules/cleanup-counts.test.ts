@@ -6,6 +6,8 @@
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
+  HISTORY_CODE_STOPLIST,
+  cleanupCounts,
   historyCommentLines,
   historyHeadingCodes,
   rawWriteKind,
@@ -73,6 +75,36 @@ describe('rawWriteSqlSites', () => {
     ]);
   });
 
+  it('reads a tag under any name: an alias, a transaction handle, a parameter', () => {
+    const t = [
+      'const q = sql;',
+      'await q`insert into t values (1)`;',
+      'await sql.begin(async (tx) => {',
+      '  await tx`delete from t where id = ${id}`;',
+      '});',
+      'function run(db) { return db`update t set a = 1`; }',
+      'let r; r = sql;',
+      'await r.raw(stmt);',
+      'await pg.reserve().then((c) => c`select 1`);',
+    ].join('\n');
+    expect(rawWriteSqlSites('x.ts', t)).toEqual([
+      { line: 2, why: 'write' },
+      { line: 4, why: 'write' },
+      { line: 6, why: 'write' },
+      { line: 8, why: 'non-literal' },
+    ]);
+  });
+
+  it('pins literal writes and non-literal text apart', () => {
+    const n = cleanupCounts(ROOT, [
+      {
+        path: 'packages/x/src/a.ts',
+        text: 'await sql`insert into t values (1)`;\nawait pg.unsafe(text);\nawait pg.unsafe(more);',
+      },
+    ]).numbers as Record<string, number>;
+    expect([n.rawWriteSqlScoped, n.rawSqlNonLiteral, n.rawWriteSqlFiles]).toEqual([1, 2, 1]);
+  });
+
   it('sweeps packages/*/src and server/ only', () => {
     expect(rawWriteSwept('packages/db/src/client.ts')).toBe(true);
     expect(rawWriteSwept('server/web/lib/x.ts')).toBe(true);
@@ -112,8 +144,70 @@ describe('history codes in comments', () => {
     const t = ['// the formula reads A10 first', '// cell F4 holds the sum'].join('\n');
     expect(lines(t)).toEqual([]);
     expect(lines('// F4 in the header row', 'packages/tabledb/src/x.ts')).toEqual([]);
-    // A provenance word still makes it one.
-    expect(lines('// the formula changed in A10 part 2')).toEqual([1]);
+    // Next to a provenance word too, when the line says sheet, formula or
+    // cell (a cell's step, `fix A1`, is no history code).
+    expect(lines('// the formula changed in A10 part 2')).toEqual([]);
+    expect(lines('// fix A1 in the sheet first')).toEqual([]);
+    // A sheet file's step code on a line with no sheet word is the step.
+    expect(lines('// the one error answer (A10 part 2)', 'packages/tabledb/src/x.ts')).toEqual([1]);
+    // A row, a column or a range is a database's too: no cell.
+    expect(lines('// the login row (A10 #8)')).toEqual([1]);
+    // A code that is no cell shape stays one in a sheet comment.
+    expect(lines('// the sheet export (A6b)')).toEqual([1]);
+  });
+
+  it('counts a bare round only in a finding shape', () => {
+    const t = [
+      '// round 2 decimals',
+      '// (round 3, H1)',
+      '// round 1 M1 found it',
+      '// as "F9 round 3" says, the contract',
+      '// moved here (round 2).',
+      '// the lock round 1 waits, rounds 2 to 5 do not',
+    ].join('\n');
+    expect(lines(t)).toEqual([2, 3, 4, 5]);
+  });
+
+  it('reads codes of any letter and their sub-steps', () => {
+    const wide = new Set(['R0', 'D1', 'A2b1', 'A2b2b', 'S3', 'P1a']);
+    const w = (t: string, path = 'x.ts') => historyCommentLines(path, t, wide);
+    const t = [
+      '// the edit (R0), then the manage (S3)',
+      '// D1 moved the text',
+      '// the gateway (A2b2b)',
+      '// in A2b1: one statement',
+      '// since P1a',
+      '// R2 is not a heading code',
+      '// fix A2b2 first',
+    ].join('\n');
+    expect(w(t)).toEqual([1, 2, 3, 4, 5, 7]);
+  });
+
+  it('the stoplist: S3 the store, A4 the paper, the A8 suite names', () => {
+    const wide = new Set(['S3', 'A4', 'A8']);
+    const w = (t: string, path = 'x.ts') => historyCommentLines(path, t, wide);
+    expect(
+      w(
+        [
+          '// The object store answered (any S3 backend).',
+          '// plain S3 calls, so any S3-compatible server works',
+          '// the S3 client',
+          '// an A4 paper page',
+          '// the suite, "A8 matrix", names each finding',
+          '// the A8 grid does not run them',
+          '// the export link (plan v3 S3)',
+          '// its row rule (A8 matrix F9)',
+          '// the A4 hand batch',
+        ].join('\n'),
+      ),
+    ).toEqual([7, 8, 9]);
+    expect(w('// the bucket for S3', 'x.ts')).toEqual([]);
+    expect(w('// S3 is the default', 'packages/storage/src/index.ts')).toEqual([]);
+    expect((HISTORY_CODE_STOPLIST as { code: string }[]).map((s) => s.code)).toEqual([
+      'S3',
+      'A4',
+      'A8',
+    ]);
   });
 
   it('counts each line of a block comment', () => {
@@ -121,9 +215,10 @@ describe('history codes in comments', () => {
     expect(lines(t)).toEqual([2, 3]);
   });
 
-  it("reads the codes of the history file's headings", () => {
+  it("reads the codes of the history file's headings and the plan v3 handovers'", () => {
     const got = historyHeadingCodes(ROOT) as Set<string>;
-    expect(got.has('F4')).toBe(true);
-    expect(got.has('A10')).toBe(true);
+    for (const c of ['F4', 'A10', 'R0', 'D1', 'A2b1', 'A2b2b', 'S3', 'P1a']) {
+      expect(got.has(c), c).toBe(true);
+    }
   });
 });

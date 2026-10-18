@@ -513,6 +513,7 @@ export function rightsCounts(root, texts, asSystem = asSystemExits(texts)) {
   const routes = asSystemRouteCounts(asSystem.holders, {
     routes: routeMap.routes,
     reasons: asSystemReasons(root),
+    source: routeMap.source,
   });
   const wholeOnFull =
     routeMap.routes['admin-area'] === 'narrow' ? 0 : admin.numbers.systemWholeTools;
@@ -547,6 +548,7 @@ export function rightsCounts(root, texts, asSystem = asSystemExits(texts)) {
       asSystemRoutes: { source: routeMap.source, byReason: routes.byReason },
       asSystemRouteProblems: routes.problems,
       ...admin.detail,
+      adminCountProblems: admin.problems,
       requestSystemExits: exits,
       requestSystemExitProblems: requestExits.problems,
       workspaceTableWriterFns: writers.map((f) => ({

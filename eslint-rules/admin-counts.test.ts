@@ -94,10 +94,29 @@ describe('loginFieldBranches', () => {
     expect(loginFieldBranches('x.ts', t, 'role')).toEqual([1, 2, 7]);
   });
 
+  it('reads a field held under another name, and a list of login names asked', () => {
+    const t = [
+      'const r = row.role;',
+      "if (r === 'admin') a();",
+      "if (['admin', 'member'].includes(row.role)) b();",
+      "const ADMIN = ['admin'];",
+      'if (ADMIN.includes(user.role)) c();',
+      "const { role: who } = login; if (who !== 'member') d();",
+      "if (new Set(['admin']).has(r)) e();",
+      'let q; q = row.role; switch (q) {',
+      "  case 'admin': break;",
+      '}',
+      "if (['page'].includes(row.role)) f();",
+      "const t2 = row.title; if (t2 === 'admin') g();",
+    ].join('\n');
+    expect(loginFieldBranches('x.ts', t, 'role')).toEqual([2, 3, 5, 6, 7, 9]);
+  });
+
   it('names the files whose kind is not a login kind', () => {
     expect(Object.keys(NOT_LOGIN_KIND).sort()).toEqual([
       'packages/runtime/src/heartbeats/fire.ts',
       'packages/std/src/access-error.ts',
+      'server/web/lib/workspace-look.ts',
     ]);
     const n = adminCounts(ROOT, [
       {
@@ -175,11 +194,85 @@ describe('areaAsks', () => {
     ]).numbers as Record<string, number>;
     expect([n.inHandlerAreaChecks, n.inHandlerAreaCheckFiles]).toEqual([1, 1]);
   });
+
+  it('follows a thin wrapper to its uses, in its file and where it is imported', () => {
+    const inline = [
+      "if (await requireArea(c, 'keys')) a();",
+      "if (await requireArea(c, 'keys')) b();",
+    ].join('\n');
+    const wrapped = [
+      "async function holds(c) { return requireArea(c, 'keys'); }",
+      'if (await holds(c)) a();',
+      'if (await holds(c)) b();',
+    ].join('\n');
+    const count = (texts: { path: string; text: string }[]) =>
+      (adminCounts(ROOT, texts).numbers as Record<string, number>).inHandlerAreaChecks;
+    expect(count([{ path: 'packages/x/src/a.ts', text: inline }])).toBe(2);
+    expect(count([{ path: 'packages/x/src/a.ts', text: wrapped }])).toBe(2);
+    // An exported one, and a wrapper of it, used in another file.
+    const lib = [
+      "export const canUsers = () => scopeHasArea('users');",
+      'export async function canUsers2() { return !(await canUsers()); }',
+    ].join('\n');
+    const user = [
+      "import { canUsers, canUsers2 } from './lib';",
+      'if (await canUsers()) a();',
+      'if (await canUsers2()) b();',
+      'if (await canUsers2()) c();',
+    ].join('\n');
+    expect(
+      count([
+        { path: 'packages/x/src/lib.ts', text: lib },
+        { path: 'packages/x/src/use.ts', text: user },
+      ]),
+    ).toBe(3);
+    // A function that does more than ask asks where it is.
+    const more = "async function check(c) { log(c); return requireArea(c, 'keys'); }\ncheck(c);";
+    expect(count([{ path: 'packages/x/src/a.ts', text: more }])).toBe(1);
+  });
+
+  it('an ask held under another name is a problem', () => {
+    for (const line of [
+      'const ask = scopeHasArea;',
+      'const ask = db.loginHasArea;',
+      'let ask; ask = requireArea;',
+      'const api = { ask: loginHoldsAdmin };',
+      'const api = { scopeHasArea };',
+      'const ask = scopeHasArea.bind(null);',
+      "loginHasArea.call(null, id, 'keys');",
+    ]) {
+      const r = adminCounts(ROOT, [{ path: 'packages/x/src/a.ts', text: line }]) as {
+        problems: string[];
+      };
+      expect(r.problems.length, line).toBe(1);
+      expect(r.problems[0]).toMatch(/held under another name/);
+    }
+    const ok = adminCounts(ROOT, [
+      { path: 'packages/x/src/a.ts', text: "if (await scopeHasArea('users')) a();" },
+    ]) as { problems: string[] };
+    expect(ok.problems).toEqual([]);
+  });
 });
 
 describe('the login type pin', () => {
   it('is read from the type test: kind and role today', () => {
     expect(loginShapePin(ROOT)).toBe(2);
+  });
+
+  it('is not readable once a line that holds it to the type changes', () => {
+    const text = readRepoFile(ROOT, 'server/web/lib/auth/login-shape.test.ts') as string;
+    expect(loginShapePin(ROOT, text)).toBe(2);
+    for (const [from, to] of [
+      ["{ kind: Has<'kind'>; role: Has<'role'> }", '{ kind: boolean; role: boolean }'],
+      ["{ kind: Has<'kind'>; role: Has<'role'> }", "{ kind: Has<'kind'>; role: false }"],
+      ['type Login = Exclude<', 'type Login0 = Exclude<'],
+      ['K extends ShapeKeys<Login> ? true : false', 'K extends never ? true : false'],
+      ["Exclude<keyof L, 'actor'>]: L[K]", "Exclude<keyof L, 'actor' | 'user'>]: L[K]"],
+      ["from './session'", "from './other'"],
+    ]) {
+      expect(text.includes(from), from).toBe(true);
+      expect(loginShapePin(ROOT, text.replace(from, to)), to).toBe(-1);
+    }
   });
 });
 

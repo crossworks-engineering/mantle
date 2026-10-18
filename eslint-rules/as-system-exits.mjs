@@ -610,6 +610,27 @@ export function asSystemExits(files, { call = 'asSystem', follow = 'all' } = {})
         if (nodes.length) perFile.set(f.path, nodes);
       }
     }
+    // A followed holder used as anything but a call (`const g =
+    // f.bind(null)`, a callback, `f.call(...)`, a ternary): the calls made
+    // through it would count 0, as for the call itself. In its own file and
+    // in each file that imports it by name (a member holder: its own file;
+    // elsewhere `x.name` may be another object's).
+    const holderFiles = [h.path];
+    if (h.kind === 'binding' && h.exported) {
+      for (const f of files) {
+        if (f.path !== h.path && word.test(f.text) && bindsImported(ast(f), h.name)) {
+          holderFiles.push(f.path);
+        }
+      }
+    }
+    for (const path of holderFiles) {
+      const f = files.find((x) => x.path === path);
+      for (const use of nonCallUses(ast(f), h.name)) {
+        problems.push(
+          `${path}:${use.line} uses the ${call} holder ${h.name} ${use.how}: call it by its name`,
+        );
+      }
+    }
     h.uses = [...perFile.values()].reduce((a, b) => a + b.length, 0);
     if (h.uses === 0) {
       addH(h.path, followed.length, follow === 'all' ? one : null);

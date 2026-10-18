@@ -81,19 +81,24 @@ const LABELS: Record<string, string> = {
   asSystemNarrow: 'asSystem exits on the narrow system role (may grow: a reason moved off full)',
   systemWholeOnFull:
     'systemWhole tools (run whole on the system pool) while admin-area routes full',
-  systemWholeTools: 'tool policies whose area scope is systemWhole',
+  systemWholeTools:
+    'tool policies whose area scope is systemWhole (equal to the registry: tool-policy-snapshot.test.ts)',
   adminActRoutes: "Admin acts: an Admin user's write on the system pool with no scope (ADMIN_ACT)",
   loginKindBranches: "branches on a login's kind ('admin' or 'member'; progress counter only)",
-  loginRoleDecisionReads: "decisions on a login's role ('admin' or 'member') in code",
+  loginRoleDecisionReads:
+    "decisions on a login's role ('admin' or 'member') in code (progress counter only)",
   adminDecisionFlags: 'identifiers named isAdmin (progress counter only)',
   tsAreaRules: 'TypeScript functions deciding an Admin area themselves (done: 0, SQL decides)',
   inHandlerAreaChecks:
-    'area or Admin asks after the gate (scopeHasArea, loginHasArea, requireArea, loginHoldsAdmin)',
-  inHandlerAreaCheckFiles: 'files with an area or Admin ask after the gate',
+    'area or Admin asks after the gate (scopeHasArea, loginHasArea, requireArea, loginHoldsAdmin, and thin wrappers of them; progress counter only)',
+  inHandlerAreaCheckFiles: 'files with an area or Admin ask after the gate (may grow: a split)',
   loginTypeKindOrRole:
     'of kind and role, how many the login type has (the type test login-shape.test.ts; done: 0)',
-  rawWriteSqlScoped: 'raw write SQL in packages/*/src and server/ outside the allowlist (done: 0)',
-  rawWriteSqlFiles: 'files with raw write SQL outside the allowlist',
+  rawWriteSqlScoped:
+    'literal raw write SQL in packages/*/src and server/ outside the allowlist (done: 0)',
+  rawSqlNonLiteral:
+    'raw SQL text that is no literal (.unsafe(x), sql.raw(x)) outside the allowlist (done: 0)',
+  rawWriteSqlFiles: 'files with raw write SQL outside the allowlist (may grow: a split)',
   historyCodeComments: 'comment lines carrying a history code (fix rounds, audit and step codes)',
   routeBodyReadFiles: 'route files reading the request body directly (A10 part 2)',
   routeBodyReadAllowed: 'route files named to read the body another way (A10 part 2)',
@@ -183,6 +188,10 @@ const MAY_GROW = new Set([
   'callerReads',
   'callerReadFiles',
   'asSystemNarrow',
+  // File counts of a counter pinned by itself: a file split (S5's of
+  // client.ts) moves sites to more files, not more sites.
+  'rawWriteSqlFiles',
+  'inHandlerAreaCheckFiles',
 ]);
 
 /** Pins a test measures and checks (not this script): --pin keeps them. */
@@ -193,7 +202,12 @@ const measured = measure(ROOT) as {
   numbers: Record<string, number>;
   perFile: {
     asSystemExitProblems?: string[];
-    rights?: { requestSystemExitProblems?: string[]; asSystemRouteProblems?: string[] };
+    rights?: {
+      requestSystemExitProblems?: string[];
+      asSystemRouteProblems?: string[];
+      adminCountProblems?: string[];
+    };
+    cleanup?: { problems?: string[] };
   };
 };
 const numbers = measured.numbers;
@@ -224,6 +238,8 @@ const problems = [
   ...(measured.perFile.asSystemExitProblems ?? []),
   ...(measured.perFile.rights?.requestSystemExitProblems ?? []),
   ...(measured.perFile.rights?.asSystemRouteProblems ?? []),
+  ...(measured.perFile.rights?.adminCountProblems ?? []),
+  ...(measured.perFile.cleanup?.problems ?? []),
   ...(numbers.loginTypeKindOrRole === -1
     ? ['server/web/lib/auth/login-shape.test.ts: LOGIN_SHAPE_PIN is not readable']
     : []),

@@ -43,6 +43,17 @@ const where = (pick: (p: ToolPolicy, def: BuiltinToolDef) => boolean) =>
     .filter((d) => pick(d.policy, d))
     .map((d) => d.slug);
 
+/** The scoreboard's numbers (eslint-rules/arch-counts.mjs measure()), read
+ *  once for the tests that compare the registry with them. */
+let measured: Promise<Record<string, number>> | null = null;
+const scoreboard = () =>
+  (measured ??= (async () => {
+    // @ts-expect-error: plain-JS module, no types shipped.
+    const { measure } = await import('../../../eslint-rules/arch-counts.mjs');
+    const root = fileURLToPath(new URL('../../..', import.meta.url));
+    return (measure(root) as { numbers: Record<string, number> }).numbers;
+  })());
+
 /** The retired team tools no team app calls, refused by name with no
  *  policy (member-app-tools.ts TEAM_TOOLS_REFUSED). */
 const RETIRED_TEAM_TOOLS = ['my_items_list', 'my_item_open', 'team_request_create'];
@@ -427,12 +438,20 @@ describe('every @mantle/tools access list equals its literal (A5 step 1)', () =>
       ...Object.values(MCP_SURFACE_POLICIES),
     ];
     expect(policies.filter((p) => 'items' in p || 'legacyItemPrecheck' in p)).toEqual([]);
-    // @ts-expect-error: plain-JS module, no types shipped.
-    const { measure } = await import('../../../eslint-rules/arch-counts.mjs');
-    const root = fileURLToPath(new URL('../../..', import.meta.url));
-    expect((measure(root) as { numbers: Record<string, number> }).numbers.itemPrecheckTools).toBe(
-      0,
-    );
+    expect((await scoreboard()).itemPrecheckTools).toBe(0);
+  }, 60_000);
+
+  it('systemWholeTools: the scoreboard counts every systemWhole policy the registry holds', async () => {
+    // The scoreboard reads `systemWhole: true` beside an `area` in the
+    // syntax (eslint-rules/admin-counts.mjs); the registry is what runs. A
+    // policy whose scope is a shared const, a spread or a helper's answer
+    // would count once or not at all there: here the two must agree.
+    const whole = [
+      ...listBuiltins().map((d) => d.policy),
+      ...Object.values(MCP_SURFACE_POLICIES),
+    ].filter((p) => policySystemWhole(p));
+    expect(whole.length).toBeGreaterThan(0);
+    expect((await scoreboard()).systemWholeTools).toBe(whole.length);
   }, 60_000);
 
   it('isLoweringCall: which calls lower an item to client or public', () => {

@@ -138,6 +138,27 @@ describe('holders that would hide their uses', () => {
     expect(r.problems.join('\n')).toMatch(/renames the asSystem holder save/);
   });
 
+  it('a followed holder used as anything but a call is a problem, here or where imported', () => {
+    const lib = head + "export function f() { return asSystem(g, 'audit-log'); }\n";
+    for (const line of [
+      'const g2 = f.bind(null); g2(); g2();',
+      'list.forEach(f);',
+      'f.call(null);',
+      'const pick = on ? f : other; pick();',
+    ]) {
+      const here = run('asSystem', lib + line);
+      expect(here.problems.join('\n'), line).toMatch(/uses the asSystem holder f/);
+      const there = run('asSystem', lib, `import { f } from './f0';\n${line}`);
+      expect(there.problems.join('\n'), line).toMatch(/f1\.ts:2 uses the asSystem holder f/);
+    }
+    const calls = run('asSystem', lib, "import { f } from './f0';\nf(); await f();");
+    expect(calls.problems).toEqual([]);
+    expect(calls.byFile['f1.ts']).toBe(2);
+    // A file that does not import it has its own f.
+    const own = run('asSystem', lib, 'const f = () => 1;\nlist.forEach(f);');
+    expect(own.problems).toEqual([]);
+  });
+
   it('counts each holder with its reasons', () => {
     const r = run(
       'asSystem',
@@ -200,6 +221,24 @@ describe('the exits by route', () => {
       "asSystem reason admin-area routes 'half': 'narrow' or 'full'",
       'the route map names gone, which is no asSystem reason',
     ]);
+  });
+
+  it('while the seed is the source, a route other than full is a problem', () => {
+    const routes = { 'app-data': 'narrow', 'admin-area': 'full' };
+    const r = asSystemRouteCounts([], {
+      routes,
+      reasons: ['app-data', 'admin-area'],
+      source: 'seed',
+    }) as { problems: string[] };
+    expect(r.problems).toEqual([
+      "the route seed (eslint-rules/as-system-routes.mjs) routes app-data 'narrow': the seed is all 'full'; a reason moves off the full role in packages/db/src/viewer.ts's AS_SYSTEM_ROUTE (S7a)",
+    ]);
+    const viewer = asSystemRouteCounts([], {
+      routes,
+      reasons: ['app-data', 'admin-area'],
+      source: 'packages/db/src/viewer.ts',
+    }) as { problems: string[] };
+    expect(viewer.problems).toEqual([]);
   });
 
   it('the repo: the seed routes every reason AsSystemReason admits, all full', () => {

@@ -79,10 +79,20 @@ export function asSystemRouteMap(root) {
  * reasons joined with '+', 'unnamed' when it has none the count can read:
  * `{ [key]: { route, exits } }`. A reason AsSystemReason admits with no
  * route, a route that is not 'full' or 'narrow', and a map entry for no
- * reason are problems.
+ * reason are problems. While the seed is the source (`source: 'seed'`), a
+ * route other than 'full' is one too: every exit runs full until the map in
+ * viewer.ts says otherwise, so an edit of the seed cannot lower asSystemFull.
  */
-export function asSystemRouteCounts(holders, { routes, reasons }) {
+export function asSystemRouteCounts(holders, { routes, reasons, source = VIEWER }) {
   const problems = [];
+  if (source === 'seed') {
+    for (const [r, v] of Object.entries(routes)) {
+      if (v !== 'full')
+        problems.push(
+          `the route seed (eslint-rules/as-system-routes.mjs) routes ${r} '${v}': the seed is all 'full'; a reason moves off the full role in ${VIEWER}'s AS_SYSTEM_ROUTE (S7a)`,
+        );
+    }
+  }
   for (const r of reasons) {
     if (!Object.hasOwn(routes, r))
       problems.push(`asSystem reason ${r} has no route: pick 'narrow' or 'full'`);
