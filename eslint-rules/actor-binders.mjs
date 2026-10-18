@@ -51,6 +51,10 @@ export const ACTOR_BINDER_PINS = {
   'packages/db/src/viewer.ts': 9,
   'packages/files/src/docs.ts': 1,
   'packages/files/src/ops/shared.ts': 1,
+  // An MCP connection's private workspace, made as the connection's login
+  // (plan v3.2 S2a a1 audit L1: createHomeFallback makes only the bound
+  // login's own).
+  'packages/mcp-core/src/login-surface.ts': 1,
   'packages/runtime/src/heartbeats/fire.ts': 2,
   // The app data reads' provisioning, a named read-path write (A5 step 4,
   // repair:app-db): one wrapper (provisionAppDb) that app_data_schema and

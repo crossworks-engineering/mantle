@@ -58,7 +58,7 @@
 --    system work.
 --
 -- Part a2 (the resources and the assistant):
--- 8. mantle_ws_put_assistant(fn, owner, ws, current, next, actor, by): THE
+-- 8. mantle_ws_put_assistant(fn, owner, ws, cur, nxt, actor, by): THE
 --    one SQL body that puts an assistant on a workspace or takes it off
 --    (server/web/lib/workspaces.ts setAssistant's rules, moved: the current
 --    one with history stays; a new one is a chat assistant of the brain,
@@ -461,53 +461,53 @@ $$;
 --> statement-breakpoint
 REVOKE ALL ON FUNCTION "public"."mantle_workspace_event"(uuid, uuid, text, jsonb) FROM PUBLIC;
 --> statement-breakpoint
--- 8. Put `next` on `ws` in place of `current` (either NULL). FALSE when
+-- 8. Put `nxt` on `ws` in place of `cur` (either NULL). FALSE when
 -- nothing changes. `actor` is the resource row's added_by and the events'
 -- actor; `by` goes on the add's event (the attach), else nothing.
 CREATE OR REPLACE FUNCTION "public"."mantle_ws_put_assistant"(
-  fn text, owner uuid, ws uuid, current uuid, next uuid, actor uuid, by text)
+  fn text, owner uuid, ws uuid, cur uuid, nxt uuid, actor uuid, by text)
   RETURNS boolean LANGUAGE plpgsql VOLATILE
   SET search_path = "public", pg_temp AS $$
 DECLARE
   held uuid;
 BEGIN
-  IF current IS NOT DISTINCT FROM next THEN RETURN false; END IF;
-  IF current IS NOT NULL AND "public"."mantle_agent_has_history"(current) THEN
+  IF cur IS NOT DISTINCT FROM nxt THEN RETURN false; END IF;
+  IF cur IS NOT NULL AND "public"."mantle_agent_has_history"(cur) THEN
     RAISE EXCEPTION 'mantle_ws:assistant_has_history %: the assistant has history here', fn
       USING ERRCODE = '55000';
   END IF;
-  IF next IS NOT NULL THEN
+  IF nxt IS NOT NULL THEN
     SELECT a."workspace_id" INTO held FROM "public"."agents" a
-     WHERE a."id" = next AND a."owner_id" = owner AND a."role" IN ('responder', 'assistant');
+     WHERE a."id" = nxt AND a."owner_id" = owner AND a."role" IN ('responder', 'assistant');
     IF NOT FOUND THEN
       RAISE EXCEPTION 'mantle_ws:no_assistant %: no such chat assistant', fn
         USING ERRCODE = '22023';
     END IF;
     IF EXISTS (SELECT 1 FROM "public"."workspace_resources" r
-                WHERE r."type" = 'assistant' AND r."ref_id" = next::text AND r."workspace_id" <> ws) THEN
+                WHERE r."type" = 'assistant' AND r."ref_id" = nxt::text AND r."workspace_id" <> ws) THEN
       RAISE EXCEPTION 'mantle_ws:assistant_in_use %: another workspace''s assistant', fn
         USING ERRCODE = '55000';
     END IF;
-    IF held IS NOT NULL AND held <> ws AND "public"."mantle_agent_has_history"(next) THEN
+    IF held IS NOT NULL AND held <> ws AND "public"."mantle_agent_has_history"(nxt) THEN
       RAISE EXCEPTION 'mantle_ws:assistant_has_history %: the assistant has history elsewhere', fn
         USING ERRCODE = '55000';
     END IF;
   END IF;
-  IF current IS NOT NULL THEN
+  IF cur IS NOT NULL THEN
     DELETE FROM "public"."workspace_resources" r
      WHERE r."workspace_id" = ws AND r."type" = 'assistant';
     UPDATE "public"."agents" a SET "workspace_id" = NULL
-     WHERE a."id" = current AND a."workspace_id" = ws;
+     WHERE a."id" = cur AND a."workspace_id" = ws;
     INSERT INTO "public"."workspace_events" ("workspace_id", "actor_id", "action", "subject")
-    VALUES (ws, actor, 'resource.remove', jsonb_build_object('kind', 'assistant', 'id', current));
+    VALUES (ws, actor, 'resource.remove', jsonb_build_object('kind', 'assistant', 'id', cur));
   END IF;
-  IF next IS NOT NULL THEN
+  IF nxt IS NOT NULL THEN
     -- The resource trigger (0241) writes agents.workspace_id.
     INSERT INTO "public"."workspace_resources" ("workspace_id", "type", "ref_id", "write", "added_by")
-    VALUES (ws, 'assistant', next::text, true, actor);
+    VALUES (ws, 'assistant', nxt::text, true, actor);
     INSERT INTO "public"."workspace_events" ("workspace_id", "actor_id", "action", "subject")
     VALUES (ws, actor, 'resource.add',
-            jsonb_build_object('kind', 'assistant', 'id', next)
+            jsonb_build_object('kind', 'assistant', 'id', nxt)
               || CASE WHEN by IS NULL THEN '{}'::jsonb ELSE jsonb_build_object('by', by) END);
   END IF;
   RETURN true;
@@ -623,6 +623,7 @@ CREATE OR REPLACE FUNCTION "public"."mantle_ws_resource_set_write"(
 DECLARE
   fn constant text := 'mantle_ws_resource_set_write';
   acting uuid;
+  tick boolean := coalesce(write, false);
 BEGIN
   IF kind IS NULL OR kind NOT IN ('assistant', 'connector') THEN
     RAISE EXCEPTION 'mantle_ws:no_kind %: no such resource kind', fn USING ERRCODE = 'P0002';
@@ -632,7 +633,7 @@ BEGIN
     RAISE EXCEPTION 'mantle_ws:no_write_tick %: an assistant has no Write tick', fn
       USING ERRCODE = '22023';
   END IF;
-  UPDATE "public"."workspace_resources" r SET "write" = coalesce(write, false)
+  UPDATE "public"."workspace_resources" r SET "write" = tick
    WHERE r."workspace_id" = ws AND r."type" = 'connector' AND r."ref_id" = ref;
   IF NOT FOUND THEN
     RAISE EXCEPTION 'mantle_ws:connector_not_on %: the connector is not on the workspace', fn
@@ -640,7 +641,7 @@ BEGIN
   END IF;
   INSERT INTO "public"."workspace_events" ("workspace_id", "actor_id", "action", "subject")
   VALUES (ws, acting, 'resource.update',
-          jsonb_build_object('kind', kind, 'id', ref, 'write', coalesce(write, false)));
+          jsonb_build_object('kind', kind, 'id', ref, 'write', tick));
 END
 $$;
 --> statement-breakpoint
@@ -654,19 +655,19 @@ CREATE OR REPLACE FUNCTION "public"."mantle_ws_resource_remove"(
 DECLARE
   fn constant text := 'mantle_ws_resource_remove';
   acting uuid;
-  current uuid;
+  cur uuid;
 BEGIN
   IF kind IS NULL OR kind NOT IN ('assistant', 'connector') THEN
     RAISE EXCEPTION 'mantle_ws:no_kind %: no such resource kind', fn USING ERRCODE = 'P0002';
   END IF;
   acting := "public"."mantle_ws_resource_seat"(fn, owner, ws, kind);
   IF kind = 'assistant' THEN
-    current := "public"."mantle_ws_assistant_of"(ws);
-    IF current IS NULL OR current::text <> lower(coalesce(ref, '')) THEN
+    cur := "public"."mantle_ws_assistant_of"(ws);
+    IF cur IS NULL OR cur::text <> lower(coalesce(ref, '')) THEN
       RAISE EXCEPTION 'mantle_ws:assistant_not_on %: the assistant is not on the workspace', fn
         USING ERRCODE = 'P0002';
     END IF;
-    PERFORM "public"."mantle_ws_put_assistant"(fn, owner, ws, current, NULL, acting, NULL);
+    PERFORM "public"."mantle_ws_put_assistant"(fn, owner, ws, cur, NULL, acting, NULL);
     RETURN;
   END IF;
   DELETE FROM "public"."workspace_resources" r

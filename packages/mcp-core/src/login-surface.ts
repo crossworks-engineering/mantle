@@ -35,6 +35,8 @@ import {
   db,
   createHomeIntent,
   gateLists,
+  loginActor,
+  runAsActor,
   loginScopeFor,
   scopeHasArea,
   scopeHoldsAdmin,
@@ -200,10 +202,11 @@ export async function prepareCallerTools(caller: McpCaller): Promise<PreparedCal
     // A3c), once per connection: it makes the private workspace when there
     // is none, and the login write gateway knows the pair from it (arch
     // A2b2b). Each create then asks the same function with it.
-    const home = await createHomeIntent(caller.loginId, null, {
-      ownWork: true,
-      makePrivate: true,
-    });
+    // As the connection's login (createHomeFallback makes only the bound
+    // login's own private workspace, plan v3.2 S2a a1 audit L1).
+    const home = await runAsActor(loginActor(caller.loginId, caller.write ? 'rw' : 'ro'), () =>
+      createHomeIntent(caller.loginId, null, { ownWork: true, makePrivate: true }),
+    );
     privateWs = 'refused' in home ? null : home.privateWs;
   }
   // Connector tools (team apps Phase 2; W5b2): the connector a resource of
