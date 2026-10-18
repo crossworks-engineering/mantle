@@ -159,13 +159,82 @@ function sqlTagNames(sf) {
   return tags;
 }
 
+/** `e` without parentheses, `as`, `!` and `.bind(...)`. */
+function unwrapExpr(e) {
+  for (;;) {
+    if (ts.isParenthesizedExpression(e) || ts.isAsExpression(e) || ts.isNonNullExpression(e)) {
+      e = e.expression;
+    } else if (
+      ts.isCallExpression(e) &&
+      memberOf(e.expression)?.name === 'bind' &&
+      memberOf(e.expression).object
+    ) {
+      e = memberOf(e.expression).object;
+    } else {
+      return e;
+    }
+  }
+}
+
+/** A member read: `{ object, name }` of `o.name` or `o['name']` (a literal
+ *  key), else null. */
+function memberOf(e) {
+  if (ts.isPropertyAccessExpression(e)) return { object: e.expression, name: e.name.text };
+  if (ts.isElementAccessExpression(e) && ts.isStringLiteralLike(e.argumentExpression)) {
+    return { object: e.expression, name: e.argumentExpression.text };
+  }
+  return null;
+}
+
+/** Whether the member read takes SQL text: `.unsafe` on anything, `.raw`
+ *  on a SQL tag (the dot or a literal key). */
+function isTextMethod(member, tags) {
+  if (member.name === 'unsafe') return true;
+  const o = unwrapExpr(member.object);
+  return member.name === 'raw' && ts.isIdentifier(o) && tags.has(o.text);
+}
+
+/** The names of `sf` that hold a text method under another name: `const
+ *  raw = sql.raw`, `const u = pg['unsafe'].bind(pg)`, an assignment, and a
+ *  destructure (`const { raw } = sql`, `const { unsafe: u } = pg`). */
+function textCallNames(sf, tags) {
+  const names = new Set();
+  const visit = (node) => {
+    if (ts.isVariableDeclaration(node) && node.initializer) {
+      const init = memberOf(unwrapExpr(node.initializer));
+      if (ts.isIdentifier(node.name) && init && isTextMethod(init, tags)) names.add(node.name.text);
+      if (ts.isObjectBindingPattern(node.name)) {
+        const from = unwrapExpr(node.initializer);
+        for (const el of node.name.elements) {
+          const key = el.propertyName ?? el.name;
+          if (!ts.isIdentifier(key) || !ts.isIdentifier(el.name)) continue;
+          if (isTextMethod({ object: from, name: key.text }, tags)) names.add(el.name.text);
+        }
+      }
+    } else if (
+      ts.isBinaryExpression(node) &&
+      node.operatorToken.kind === ts.SyntaxKind.EqualsToken &&
+      ts.isIdentifier(node.left)
+    ) {
+      const right = memberOf(unwrapExpr(node.right));
+      if (right && isTextMethod(right, tags)) names.add(node.left.text);
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sf);
+  return names;
+}
+
 /**
  * The raw write SQL of `text`: `[{ line, why }]`. Any tagged template whose
  * static text is a write (a tag's alias, a transaction handle or a
  * parameter that holds the tag reads the same text); `.unsafe(text)`,
  * `<tag>.raw(text)` and `.execute(text)` with literal text that is a
  * write; and `.unsafe(x)` or `<tag>.raw(x)` with text that is no literal
- * (`why: 'non-literal'`), unless wrapped in `readSql(...)`. A tag is a SQL
+ * (`why: 'non-literal'`), unless wrapped in `readSql(...)`. The text
+ * methods read the same under a literal key (`pg['unsafe'](x)`) and under
+ * another name (`const raw = sql.raw`, `const { unsafe } = pg`,
+ * textCallNames). A tag is a SQL
  * tag (SQL_TAGS) or a name holding one (sqlTagNames). `.execute(x)` of a
  * built query is not text (drizzle's execute takes the SQL a tag built,
  * which is read where it is built). Not findings: reads, definer calls
@@ -175,6 +244,7 @@ export function rawWriteSqlSites(path, text) {
   if (!/\b(?:insert|update|delete|merge|truncate|unsafe|raw)\b/i.test(text)) return [];
   const sf = parse(path, text);
   const tags = sqlTagNames(sf);
+  const textNames = textCallNames(sf, tags);
   const out = [];
   const visit = (node) => {
     if (ts.isTaggedTemplateExpression(node)) {
@@ -182,14 +252,14 @@ export function rawWriteSqlSites(path, text) {
       // write, whichever name holds the tag.
       const why = rawWriteKind(templateText(node.template));
       if (why) out.push({ line: lineOf(sf, node.getStart(sf)), why });
-    } else if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression)) {
-      const m = node.expression.name.text;
+    } else if (ts.isCallExpression(node)) {
+      const callee = unwrapExpr(node.expression);
+      const member = memberOf(callee);
+      const m = member?.name ?? null;
       const arg = node.arguments[0];
-      const textCall =
-        m === 'unsafe' ||
-        (m === 'raw' &&
-          ts.isIdentifier(node.expression.expression) &&
-          tags.has(node.expression.expression.text));
+      const textCall = member
+        ? isTextMethod(member, tags)
+        : ts.isIdentifier(callee) && textNames.has(callee.text);
       if (arg && (textCall || m === 'execute')) {
         const lit = literalText(arg);
         const wrapped =
@@ -259,12 +329,29 @@ export const HISTORY_CODE_STOPLIST = Object.freeze([
     // A finding of the suite after its name (A8 matrix F9) is history.
     line: /\bA8 (?:matrix|grid|cell|cells|report|exempt|tool cells)\b(?! [A-Z][0-9])/,
   },
+  {
+    code: 'Dn',
+    why: "an owner decision's label (owner decision D1, the owner's decisions D4 to D6), not a plan step",
+    // Read where the code stands: the words just before it, a list of
+    // labels between (`owner decisions D4, D5 and D6`).
+    before:
+      /\bowner(?:'s)? decisions?\s+(?:D[0-9]{1,2}\s*(?:,\s*|\band\s+|\bor\s+|\bto\s+|-\s*))*$/i,
+  },
 ]);
 
-/** Whether `code` on `line` is a stoplisted use (HISTORY_CODE_STOPLIST). */
-function stoplisted(code, line, path) {
+/** Whether a stoplist entry's code is `code` (`Dn`: any D and a number). */
+const stopCode = (s, code) => (s.code === 'Dn' ? /^D[0-9]{1,2}$/.test(code) : s.code === code);
+
+/** Whether `code` at `index` of `line` is a stoplisted use
+ *  (HISTORY_CODE_STOPLIST): the entry's `line` matches the line, or its
+ *  `before` the text before the code. */
+function stoplisted(code, line, path, index = 0) {
   if (code === 'S3' && /^packages\/storage\//.test(path ?? '')) return true;
-  return HISTORY_CODE_STOPLIST.some((s) => s.code === code && s.line.test(line));
+  return HISTORY_CODE_STOPLIST.some(
+    (s) =>
+      stopCode(s, code) &&
+      ((s.line && s.line.test(line)) || (s.before && s.before.test(line.slice(0, index)))),
+  );
 }
 
 /** The history files whose headings name the codes: the history of the
@@ -288,18 +375,70 @@ function historyFiles(root) {
 
 /** The codes named in the history files' headings (docs/_archive/
  *  actors-history.md and docs/_archive/plan-v3-*-handover.md), any letter
- *  (R0, D1, S3, P1a, A2b1, A2b2b): each is a finding wherever it is, but in a
- *  sheet comment (a cell) and where the stoplist says it is no step. */
+ *  (R0, D1, S3, P1a, A2b1, A2b2b), each with the first file that names it.
+ *  Read only to check the frozen list (headingCodeProblems); the count
+ *  reads HISTORY_HEADING_CODES. */
 export function historyHeadingCodes(root) {
-  const codes = new Set();
+  const codes = new Map();
   for (const file of historyFiles(root)) {
     const text = readRepoFile(root, file) ?? '';
     for (const line of text.split('\n')) {
       if (!/^#{1,6}\s/.test(line)) continue;
-      for (const m of line.matchAll(CODE)) codes.add(m[0]);
+      for (const m of line.matchAll(CODE)) if (!codes.has(m[0])) codes.set(m[0], file);
     }
   }
   return codes;
+}
+
+/**
+ * The step codes a comment holds as history wherever it names them, but in
+ * a sheet comment (a cell) and where the stoplist says it is no step:
+ * frozen and reviewed. They are the codes the history files' headings name
+ * (historyHeadingCodes) less HEADING_CODES_LEFT_OUT. A heading code in
+ * neither list is a problem that fails arch:check, so a new handover's
+ * heading never moves the count unreviewed: add its code to one of them.
+ */
+export const HISTORY_HEADING_CODES = Object.freeze([
+  'A10',
+  'A2b',
+  'A2b1',
+  'A2b2a',
+  'A2b2b',
+  'A3a',
+  'A3b',
+  'A3c',
+  'A4',
+  'A5',
+  'A6',
+  'A6b',
+  'A7',
+  'A8',
+  'F4',
+  'P1a',
+  'P1b',
+  'R0',
+  'S2a',
+  'S3',
+]);
+
+/** Heading codes that do not count by name, each with why (reviewed). Next
+ *  to a provenance word a step-shaped code (A, W, F) still counts. */
+export const HEADING_CODES_LEFT_OUT = Object.freeze({
+  D1: 'plan v3.2 D1 (the spec cut) shares its label with owner decision D1 and the D findings of the apps audit, the apps plan and plan v2 (D1 to D8); no counted comment names the step, each D1 there is a decision or a finding',
+});
+
+/** Each heading code in neither HISTORY_HEADING_CODES nor
+ *  HEADING_CODES_LEFT_OUT, with the file whose heading names it. */
+export function headingCodeProblems(root) {
+  const out = [];
+  for (const [code, file] of historyHeadingCodes(root)) {
+    if (HISTORY_HEADING_CODES.includes(code) || Object.hasOwn(HEADING_CODES_LEFT_OUT, code))
+      continue;
+    out.push(
+      `heading code ${code} (${file}) is in neither HISTORY_HEADING_CODES nor HEADING_CODES_LEFT_OUT (eslint-rules/cleanup-counts.mjs); add it to one, with why if left out`,
+    );
+  }
+  return out;
 }
 
 /** The history findings of one comment's text (its lines): the line
@@ -320,7 +459,7 @@ export function historyFindings(comment, codes, { sheet = false, path = '' } = {
     // the step).
     const sheetLine = SHEET_WORDS.test(line);
     for (const m of line.matchAll(CODE)) {
-      if (stoplisted(m[0], line, path)) continue;
+      if (stoplisted(m[0], line, path, m.index)) continue;
       const cell = CELL_SHAPE.test(m[0]);
       const before = line.slice(0, m.index);
       const after = line.slice(m.index + m[0].length);
@@ -386,7 +525,7 @@ function laneOf(path) {
 /** The cleanup counts of the counted files ([{ path, text }]). */
 export function cleanupCounts(root, texts) {
   const allowed = rawWriteAllowed(root);
-  const codes = historyHeadingCodes(root);
+  const codes = new Set(HISTORY_HEADING_CODES);
   const rawWrites = {};
   const history = {};
   for (const { path, text } of texts) {
@@ -411,6 +550,10 @@ export function cleanupCounts(root, texts) {
       rawWriteSqlFiles: Object.keys(rawWrites).length,
       historyCodeComments: total(history),
     },
-    detail: { rawWriteSql: rawWrites, historyCodeComments: history },
+    detail: {
+      rawWriteSql: rawWrites,
+      historyCodeComments: history,
+      problems: headingCodeProblems(root),
+    },
   };
 }

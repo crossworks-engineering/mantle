@@ -112,6 +112,19 @@ describe('loginFieldBranches', () => {
     expect(loginFieldBranches('x.ts', t, 'role')).toEqual([2, 3, 5, 6, 7, 9]);
   });
 
+  it("reads the field by a literal key (login['role']) as by the dot", () => {
+    const t = [
+      "if (login['role'] === 'admin') a();",
+      "if ('member' !== row?.['kind']) b();",
+      "const r = login['role']; if (r === 'member') c();",
+      "db.select().where(eq(authUsers['role'], 'admin'));",
+      "if (login['title'] === 'admin') d();",
+      "if (login[role] === 'admin') e();",
+    ].join('\n');
+    expect(loginFieldBranches('x.ts', t, 'role', { drizzle: true })).toEqual([1, 3, 4]);
+    expect(loginFieldBranches('x.ts', t, 'kind')).toEqual([2]);
+  });
+
   it('names the files whose kind is not a login kind', () => {
     expect(Object.keys(NOT_LOGIN_KIND).sort()).toEqual([
       'packages/runtime/src/heartbeats/fire.ts',
@@ -251,6 +264,40 @@ describe('areaAsks', () => {
       { path: 'packages/x/src/a.ts', text: "if (await scopeHasArea('users')) a();" },
     ]) as { problems: string[] };
     expect(ok.problems).toEqual([]);
+  });
+
+  it('an ask renamed is a problem: a renamed import, a renaming destructure', () => {
+    const run = (text: string) =>
+      adminCounts(ROOT, [{ path: 'packages/x/src/a.ts', text }]) as {
+        numbers: Record<string, number>;
+        problems: string[];
+      };
+    for (const [text, problem] of [
+      [
+        "import { scopeHasArea as can } from './session';\nif (await can('users')) a();",
+        'packages/x/src/a.ts:1: scopeHasArea is renamed (can)',
+      ],
+      [
+        "const { loginHasArea: can } = gate;\nif (await can(id, 'keys')) a();",
+        'packages/x/src/a.ts:1: loginHasArea is renamed (can)',
+      ],
+      [
+        "export { requireArea as need } from './workspaces';",
+        'packages/x/src/a.ts:1: requireArea is renamed (need)',
+      ],
+    ]) {
+      const r = run(text);
+      expect(r.problems.length, text).toBe(1);
+      expect(r.problems[0], text).toContain(problem);
+      // The rename is no ask; its calls are what the problem names.
+      expect(r.numbers.inHandlerAreaChecks, text).toBe(0);
+    }
+    // The ask under its own name is none.
+    const own = run(
+      "import { scopeHasArea } from './session';\nconst { loginHasArea } = gate;\nscopeHasArea('a');\nloginHasArea(id, 'b');",
+    );
+    expect(own.problems).toEqual([]);
+    expect(own.numbers.inHandlerAreaChecks).toBe(2);
   });
 });
 

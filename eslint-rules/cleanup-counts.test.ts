@@ -3,11 +3,16 @@
  * in comments, on small inputs. The repo numbers are pinned by
  * `pnpm arch:check`.
  */
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
+  HEADING_CODES_LEFT_OUT,
   HISTORY_CODE_STOPLIST,
+  HISTORY_HEADING_CODES,
   cleanupCounts,
+  headingCodeProblems,
   historyCommentLines,
   historyHeadingCodes,
   rawWriteKind,
@@ -92,6 +97,37 @@ describe('rawWriteSqlSites', () => {
       { line: 4, why: 'write' },
       { line: 6, why: 'write' },
       { line: 8, why: 'non-literal' },
+    ]);
+  });
+
+  it('reads a text method under a literal key or another name', () => {
+    const t = [
+      "await sql['raw'](stmt);",
+      "await pg['unsafe'](text);",
+      "await pg['unsafe']('delete from t');",
+      'const raw = sql.raw;',
+      'await raw(stmt);',
+      'const { raw: r2 } = sql;',
+      'r2(stmt);',
+      'const { unsafe } = pg;',
+      "await unsafe('update t set a = 1');",
+      'const u = pg.unsafe.bind(pg);',
+      'await u(text);',
+      'let v; v = pg["unsafe"];',
+      'await v(text);',
+      "await other['raw'](stmt);",
+      'const w = other.raw;',
+      'await w(stmt);',
+    ].join('\n');
+    expect(rawWriteSqlSites('x.ts', t)).toEqual([
+      { line: 1, why: 'non-literal' },
+      { line: 2, why: 'non-literal' },
+      { line: 3, why: 'write' },
+      { line: 5, why: 'non-literal' },
+      { line: 7, why: 'non-literal' },
+      { line: 9, why: 'write' },
+      { line: 11, why: 'non-literal' },
+      { line: 13, why: 'non-literal' },
     ]);
   });
 
@@ -207,7 +243,30 @@ describe('history codes in comments', () => {
       'S3',
       'A4',
       'A8',
+      'Dn',
     ]);
+  });
+
+  it('an owner decision label is no step code, where it stands', () => {
+    const wide = new Set(['D1', 'D4', 'D5', 'D6', 'A1']);
+    const w = (t: string) => historyCommentLines('x.ts', t, wide);
+    expect(
+      w(
+        [
+          '// joined with the registry (owner decision D1): before',
+          "// the owner's decisions D4 to D6) says",
+          '// owner decisions D4, D5 and D6',
+          '// owner decision D1 and the A1 step',
+          '// step D1 then owner decision D1',
+        ].join('\n'),
+      ),
+    ).toEqual([4, 5]);
+    // The repo's list leaves D1 out, so an owner decision there counts
+    // nothing by either path.
+    const n = cleanupCounts(ROOT, [
+      { path: 'packages/x/src/a.ts', text: '/** owner decision D1 */\n// (D1)\nconst x = 1;' },
+    ]).numbers as Record<string, number>;
+    expect(n.historyCodeComments).toBe(0);
   });
 
   it('counts each line of a block comment', () => {
@@ -216,9 +275,34 @@ describe('history codes in comments', () => {
   });
 
   it("reads the codes of the history file's headings and the plan v3 handovers'", () => {
-    const got = historyHeadingCodes(ROOT) as Set<string>;
+    const got = historyHeadingCodes(ROOT) as Map<string, string>;
     for (const c of ['F4', 'A10', 'R0', 'D1', 'A2b1', 'A2b2b', 'S3', 'P1a']) {
       expect(got.has(c), c).toBe(true);
+    }
+  });
+
+  it('counts by the frozen list: every heading code is in it or left out, none both', () => {
+    expect(headingCodeProblems(ROOT)).toEqual([]);
+    const left = Object.keys(HEADING_CODES_LEFT_OUT as Record<string, string>);
+    expect((HISTORY_HEADING_CODES as string[]).filter((c) => left.includes(c))).toEqual([]);
+  });
+
+  it('a heading code in neither list is a problem, and the count does not read it', () => {
+    const root = mkdtempSync(join(tmpdir(), 'cleanup-counts-'));
+    try {
+      mkdirSync(join(root, 'docs/_archive'), { recursive: true });
+      writeFileSync(
+        join(root, 'docs/_archive/actors-history.md'),
+        '# History\n\n## Z9 a new step\n',
+      );
+      expect(headingCodeProblems(root)).toEqual([
+        'heading code Z9 (docs/_archive/actors-history.md) is in neither HISTORY_HEADING_CODES nor HEADING_CODES_LEFT_OUT (eslint-rules/cleanup-counts.mjs); add it to one, with why if left out',
+      ]);
+      const r = cleanupCounts(root, [{ path: 'packages/x/src/a.ts', text: '// the Z9 rule' }]);
+      expect((r.numbers as Record<string, number>).historyCodeComments).toBe(0);
+      expect((r.detail as { problems: string[] }).problems).toHaveLength(1);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
     }
   });
 });

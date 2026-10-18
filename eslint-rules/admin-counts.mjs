@@ -149,12 +149,17 @@ const EQUALITY = new Set([
   ts.SyntaxKind.ExclamationEqualsToken,
 ]);
 
-/** Whether `e` reads `field` (`x.field`, `x?.field`, or a bare `field`). */
+/** Whether `e` reads `field` (`x.field`, `x?.field`, `x['field']`, or a
+ *  bare `field`). */
 function readsField(e, field) {
   e = unwrap(e);
   if (!e) return false;
   if (ts.isIdentifier(e)) return e.text === field;
   if (ts.isPropertyAccessExpression(e)) return e.name.text === field;
+  if (ts.isElementAccessExpression(e)) {
+    const k = unwrap(e.argumentExpression);
+    return !!k && ts.isStringLiteralLike(k) && k.text === field;
+  }
   return false;
 }
 
@@ -232,7 +237,8 @@ function fieldAliases(sf, field) {
  *  case of a switch on it, a membership test of a list of login names
  *  (`['admin'].includes(x.field)`, `new Set([...]).has(...)`), and
  *  (`drizzle`) `eq(x.field, 'admin')` / `ne(...)`. A local that holds the
- *  field under another name (`const r = row.role`) reads it too. Returns
+ *  field under another name (`const r = row.role`) reads it too, and the
+ *  field read by a literal key (`login['role']`) is the field. Returns
  *  their lines. */
 export function loginFieldBranches(path, text, field, { drizzle = false } = {}) {
   if (!new RegExp(String.raw`\b${field}\b`).test(text) || !/'(?:admin|member)'/.test(text)) {
@@ -278,7 +284,7 @@ export function loginFieldBranches(path, text, field, { drizzle = false } = {}) 
       ts.isIdentifier(node.expression) &&
       (node.expression.text === 'eq' || node.expression.text === 'ne') &&
       node.arguments.length === 2 &&
-      ts.isPropertyAccessExpression(unwrap(node.arguments[0])) &&
+      !ts.isIdentifier(unwrap(node.arguments[0])) &&
       readsField(node.arguments[0], field) &&
       loginName(node.arguments[1])
     ) {
@@ -578,7 +584,9 @@ export function askWrappers(texts) {
  *  so wrapping an ask never lowers the count). Returns `[{ name, line }]`.
  *  With `{ problems }`, also what would hide asks from the count: a name
  *  holding an ask (`const ask = scopeHasArea`, an assignment, an object
- *  property, `.bind`, `.call` or `.apply`). */
+ *  property, `.bind`, `.call` or `.apply`), and an ask renamed (an import
+ *  or export `as`, a renaming destructure), as as-system-exits.mjs reads
+ *  a renamed asSystem. */
 export function areaAsks(path, text, { problems = null, wrappers = null } = {}) {
   const names = new Set([
     ...IN_HANDLER_ASKS,
@@ -592,6 +600,21 @@ export function areaAsks(path, text, { problems = null, wrappers = null } = {}) 
   walk(sf, (node) => {
     if (!ts.isIdentifier(node) || !names.has(node.text)) return;
     const p = node.parent;
+    // The ask under another name (`import { scopeHasArea as can }`, a
+    // renaming export, `const { loginHasArea: can } = m`): its calls would
+    // count 0, so it is a problem, and the rename itself is no ask.
+    if (
+      p &&
+      (ts.isImportSpecifier(p) || ts.isExportSpecifier(p) || ts.isBindingElement(p)) &&
+      p.propertyName === node &&
+      ts.isIdentifier(p.name) &&
+      p.name.text !== node.text
+    ) {
+      problems?.push(
+        `${path}:${lineOf(sf, node)}: ${node.text} is renamed (${p.name.text}), so the count misses its calls: call ${node.text} by its name`,
+      );
+      return;
+    }
     if (
       !p ||
       ts.isImportSpecifier(p) ||
