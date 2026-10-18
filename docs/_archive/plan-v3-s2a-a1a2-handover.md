@@ -502,8 +502,7 @@ finding, what changed:
   53b507b53 (v0.300.95, tree-bugs merged with `0305_folder_rename_write`,
   `when` 1790197620000) and renumbered to `0307_ws_user_definers`, `when`
   1790197740000: S8a holds 0306 (`when` 1790197680000) and merges first, so
-  the journal entry is written now at idx 306 and moves to 307 when S8a's
-  rebase lands (only that line). Every reference in this branch's lines
+  the journal entry is idx 307 (the tag's number, packages/db/src/migrations-journal.test.ts); when S8a lands, its 0306 entry goes before this one (only the journal moves). Until then one unit cell is red on purpose: `migrations-journal.test.ts` "no slot is skipped" (306 is S8a's, not merged yet); idx 306 would break the cell beside it (idx equals the tag's number) instead. Every reference in this branch's lines
   moved with it (the file, the revert file and its ledger line, `TAG`, the
   comments and pin notes; main's own 0305 lines untouched). The renumber
   proof: `when` above every `when` before it and above S8a's (a cell), a
@@ -524,6 +523,22 @@ finding, what changed:
 - The role-drift self-demote (an Admin user whose role drifted, removing
   itself from Admin on the workspace screen) answers 403, was 200: the
   definer refuses a self-removal from Admin.
+
+## Pins (fix round 1)
+
+On main 53b507b53 (v0.300.95), measured value by value: `asSystemExits`
+and `asSystemFull` 59 to 57 (addUser and removeUser off
+workspaceWriteSystem; main had 59 after tree-bugs' `tree-refold`),
+`asSystemFull_workspace-write` 4 to 2, `workspaceTableRawWrites` 16 to 6,
+`workspaceTableWriterFns` 12 to 18, `setAssistantCopies` 1 to 2,
+`rawWriteSqlScoped` 80 to 70, `rawWriteSqlFiles` 61 to 60,
+`historyCodeComments` 2339 to 2334, `dbClientLines` 3145 to 3196 (+51, as
+3142 to 3193 on v0.300.93: a1+a2's 33 and fix round 1's 18 for
+`systemPoolTxInScope`). New lint pins (eslint-rules/scope-settings.mjs,
+exact counts in arch-lints): the scope settings named in client.ts 9 and
+the matrix test support 3; `systemPoolTxInScope` and
+`withSystemPoolInWriteScope` call sites: client.ts 2, workspaces-migrate.ts
+1, workspaces.ts 1.
 
 ## Rollback
 
