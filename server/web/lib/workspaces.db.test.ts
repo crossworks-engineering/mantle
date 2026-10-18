@@ -873,12 +873,12 @@ describe.skipIf(!URL)('workspace management (W5a)', () => {
     const inUse = await ts(w1, C);
     expect(inUse.body.code).toBe('assistant_in_use');
     expect(await viaSql(w2, C)).toEqual(inUse);
-    // An id that is none: PATCH answers it before any change; the SQL copy
+    // An id that is none: PATCH's body check answers it before any change; the SQL copy
     // takes a uuid only, so its caller cannot pass one (refused by the cast).
     const bad = await ts(w1, 'nope');
     expect(bad).toEqual({
       status: 400,
-      body: expect.objectContaining({ code: 'invalid', error: 'Not a valid id.' }),
+      body: { code: 'invalid', error: 'assistantId: Invalid UUID' },
     });
     await expect(
       x(sql`select mantle_ws_set_assistant(${owner}::uuid, ${w2}::uuid, ${'nope'}::uuid)`),

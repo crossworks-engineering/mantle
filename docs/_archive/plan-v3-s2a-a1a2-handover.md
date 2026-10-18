@@ -493,9 +493,9 @@ finding, what changed:
   refusal through `wsRefusal`, answered by the app: set, swap A for B (the
   detach row, the unbind, both events), clear, nothing to change, no such
   chat assistant, another workspace's (in use), history on clear and on
-  swap: rows and answers byte-equal. An id that is none: PATCH answers "Not
-  a valid id."; the SQL copy takes a uuid only, so its caller cannot pass
-  one (S2b's caller validates as PATCH does).
+  swap: rows and answers byte-equal. An id that is none: PATCH's body check answers it (400
+  invalid, "assistantId: Invalid UUID"); the SQL copy takes a uuid only, so
+  its caller cannot pass one (S2b's caller validates as PATCH does).
 - **L5, the renumber:** after tree-bugs merges (the CEO's go), below.
 
 **Changed answers the audit named (both narrower or no reader):**
