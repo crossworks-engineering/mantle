@@ -1,6 +1,6 @@
 /**
- * The content a tool cell's item holds (workspaces arch plan v3.2, S11a
- * round 2): the A8 grid's items (a8-grid.ts makeA8Item) are bare, a title
+ * The content a tool cell's item holds (workspaces arch plan v3.2, S11a):
+ * the A8 grid's items (a8-grid.ts makeA8Item) are bare, a title
  * and a passage, so an allowed call of a tool that works on what is inside
  * an item (a page's blocks, a table's rows, columns, tabs and snapshots, a
  * file's bytes, a Files folder, an app's open data or snapshot) had nothing
@@ -18,9 +18,10 @@
  * nothing above it.
  */
 import { createHash, randomUUID } from 'node:crypto';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import type postgres from 'postgres';
+import { ITEM_KINDS } from '@mantle/client-types/kinds';
 import type { GuidePlacement } from '../guide-oracle';
 import { FIXTURE_ACTOR, makeA8Item, type A8Fixture, type A8Item } from './a8-grid';
 
@@ -40,11 +41,18 @@ export type A8ContentDeps = {
   ) => { sizeBytes: number; stats: unknown; shapeHash: string };
   /** Copy a workbook file to a snapshot's storage path; its size. */
   snapshotWorkbook: (rel: string, snapshotRel: string) => number;
+  /** A table storage path (relative to TABLE_DB_DIR) as a file path. */
+  tableFile: (rel: string) => string;
   /** The workbook engine's version (tables.engine_version). */
   engineVersion: number;
   /** Write the app's package (@mantle/content writeAppPackage, as system,
    *  no data) to `dest`. */
   writeAppPackage: (appId: string, dest: string) => Promise<void>;
+  /** Where the app's own database file goes (under APP_DB_DIR). */
+  appDbFile: (appId: string) => string;
+  /** Make the app's own database with its declared schema and a row
+   *  (@mantle/content appDbSeedRows, as system). */
+  seedAppDb: (appId: string, schema: { schemaSql: string; schemaVersion: number }) => Promise<void>;
 };
 
 /** A seeded cell's item and the arguments beside the item's own. */
@@ -149,6 +157,21 @@ async function seedTable(s: Parameters<Seed>[0]): Promise<string> {
   });
   return rel;
 }
+/** A draft of the table: a copy of its workbook file as the draft's
+ *  revision (tables.draft_path: content tables/draft.ts commitTable
+ *  publishes it). */
+async function seedTableDraft(s: Parameters<Seed>[0]): Promise<void> {
+  const { sql, fx, deps, item } = s;
+  const rel = await seedTable(s);
+  const draftRel = `${fx.owner}/${item.id}.draft-a8.sqlite`;
+  deps.snapshotWorkbook(rel, draftRel);
+  await asFixture(sql, item.id, async (tx) => {
+    await tx`update tables set draft_path = ${draftRel}, draft_data = '{}'::jsonb,
+               draft_updated_at = now()
+             where node_id = ${item.id}`;
+  });
+}
+
 const table =
   (input: Record<string, unknown>) =>
   async (s: Parameters<Seed>[0]): Promise<Record<string, unknown>> => {
@@ -212,6 +235,23 @@ async function seedApp(s: Parameters<Seed>[0], open = false): Promise<void> {
                where node_id = ${item.id}`;
     }
   });
+}
+
+/** The app's own database: its manifest declares one table (a8), made with
+ *  a row (content app-broker.ts: a seed's table must exist; an export reads
+ *  it). */
+const APP_DB = { schemaSql: 'create table if not exists a8 (v integer)', schemaVersion: 1 };
+async function seedAppWithDb(s: Parameters<Seed>[0]): Promise<void> {
+  const { sql, deps, item } = s;
+  await seedApp(s);
+  // The grid's app names a database file outside the test's directory: this
+  // one's goes under APP_DB_DIR, as the product makes it.
+  await asFixture(sql, item.id, async (tx) => {
+    await tx`update apps set manifest = ${tx.json({ sqlite: APP_DB })} where node_id = ${item.id}`;
+    await tx`update app_databases set storage_path = ${deps.appDbFile(item.id)}, schema_version = 0
+             where app_node_id = ${item.id}`;
+  });
+  await deps.seedAppDb(item.id, APP_DB);
 }
 
 // ── files ───────────────────────────────────────────────────────────────────
@@ -332,6 +372,44 @@ const filesBranch = (sql: Sql, fx: A8Fixture, placement: GuidePlacement) =>
   );
 
 const fresh = (fx: A8Fixture) => `${fx.tag}-${randomUUID().slice(0, 6)}`;
+
+/** The move tools' destination: a folder at a kind's tree root homed in T,
+ *  no other grant (the guide's move, H to T: Moderator of H and of T). Made
+ *  once per tree root. */
+const targets = new Map<string, { id: string; path: string }>();
+export async function a8MoveTarget(
+  sql: Sql,
+  fx: A8Fixture,
+  kind: string,
+): Promise<{ id: string; path: string }> {
+  const rootKind = kind === 'branch' ? 'file' : kind;
+  const root = fx.kindRootPath[rootKind]!;
+  const key = `${fx.tag} ${root}`;
+  const have = targets.get(key);
+  if (have) return have;
+  const id = randomUUID();
+  const p = `${root}.${fx.tag}t`;
+  await sql.begin(async (tx) => {
+    await tx.unsafe(FIXTURE_ACTOR);
+    await tx`select mantle_lock_heads(array[${fx.kindRoot[rootKind]!}]::uuid[], 'share')`;
+    await tx`insert into nodes (id, owner_id, type, title, path)
+             values (${id}, ${fx.owner}, 'branch', ${`${fx.tag} T ${rootKind}`}, ${p}::ltree)`;
+  });
+  await sql.begin(async (tx) => {
+    await tx.unsafe(FIXTURE_ACTOR);
+    await tx`select mantle_lock_heads(array[${id}]::uuid[], 'update')`;
+    await tx`delete from item_grants where node_id = ${id} and via_folder_id is null`;
+    await tx`insert into item_grants (node_id, workspace_id, is_home, write)
+             values (${id}, ${fx.ws.T}, true, false)`;
+  });
+  const t = { id, path: p };
+  targets.set(key, t);
+  return t;
+}
+
+/** A kind's tree name (tree_item_move's `kind`). */
+const treeKindOf = (kind: string) =>
+  (ITEM_KINDS as Record<string, { tree: { kind: string } | null }>)[kind]?.tree?.kind ?? kind;
 
 /** Each tool whose cells need content: what (the not-run reason it had)
  *  and its seed. `filesBranch`: its item is a Files folder. */
@@ -543,18 +621,94 @@ export const A8_TOOL_CONTENT: Readonly<
     filesBranch: true,
     seed: async (s) => ({ dest_parent_path: `files.${s.fx.tag}drop` }),
   },
+  table_commit: { needs: 'a draft of the table', seed: async (s) => (await seedTableDraft(s), {}) },
+  table_snapshot_create: { needs: 'a committed workbook of the table', seed: table({}) },
+  app_db_seed: {
+    needs: 'the app’s own database with the a8 table',
+    seed: async (s) => (await seedAppWithDb(s), {}),
+  },
+  app_table_export_set: {
+    needs: 'the app’s own database with the a8 table',
+    seed: async (s) => (await seedAppWithDb(s), { table: 'a8' }),
+  },
+  // Its export is a file named after the item: a fresh item each cell, so
+  // no export finds the one before it.
+  export_node: { needs: 'an item no export was made of', seed: async () => ({}) },
+  // The moves: the item to a folder homed in T (a8MoveTarget).
+  file_move: {
+    needs: 'the bytes of a file and a folder homed in T',
+    seed: async (s) => (
+      await seedFile(s, 'csv'),
+      { dest_path: (await a8MoveTarget(s.sql, s.fx, 'file')).path }
+    ),
+  },
+  folder_move: {
+    needs: 'a Files folder and a folder homed in T',
+    filesBranch: true,
+    seed: async (s) => ({ dest_parent_path: (await a8MoveTarget(s.sql, s.fx, 'file')).path }),
+  },
+  tree_item_move: {
+    needs: 'a folder homed in T',
+    seed: async (s) => {
+      if (s.kind === 'file') await seedFile(s, 'csv');
+      return {
+        kind: treeKindOf(s.kind),
+        folder_id: (await a8MoveTarget(s.sql, s.fx, s.kind)).id,
+      };
+    },
+  },
+  page_move: {
+    needs: 'a folder homed in T',
+    seed: async (s) => ({ folder_id: (await a8MoveTarget(s.sql, s.fx, 'page')).id }),
+  },
+  // The sandbox tools read a file or a Files folder in the caller's scope.
+  sandbox_import: { needs: 'the bytes of a file', seed: file('csv') },
+  sandbox_create: {
+    needs: 'a Files folder (the inbox)',
+    filesBranch: true,
+    seed: async () => ({ name: `a8-${randomUUID().slice(0, 8)}` }),
+  },
 };
+
+/** The bytes of a file (and a SQLite file's write-ahead log), hashed; 'none'
+ *  when there is none. */
+function fileHash(abs: string | null): string {
+  if (!abs || !existsSync(abs)) return 'none';
+  const h = createHash('sha256').update(readFileSync(abs));
+  if (existsSync(`${abs}-wal`)) h.update(readFileSync(`${abs}-wal`));
+  return h.digest('hex').slice(0, 16);
+}
 
 /**
  * What a seeded item holds beyond the grid's probe (a8_probe reads the node,
  * its content row's doc and draft, its cards, links and app data): the
- * node's row, its table's and app's rows (the workbook file and its draft
- * are named there), its snapshots, its app's table exports and its cards
- * whole. Read as the superuser; a refused write must change none of it.
+ * node's row, its table's and app's rows, its snapshots, its app's table
+ * exports and its cards whole; and what is on disk: the table's workbook
+ * file and its draft's, and a file's bytes. Read as the superuser; a
+ * refused write must change none of it (a write that changes a file before
+ * it is refused is caught too).
  */
-export async function a8ContentProbe(sql: Sql, id: string): Promise<string> {
+export async function a8ContentProbe(sql: Sql, id: string, deps: A8ContentDeps): Promise<string> {
+  const [disk] = await sql<
+    { storage: string | null; draft: string | null; filename: string | null; path: string }[]
+  >`select t.storage_path as storage, t.draft_path as draft,
+           case when n.type = 'file' then n.data->>'filename' end as filename,
+           n.path::text as path
+      from nodes n left join tables t on t.node_id = n.id
+     where n.id = ${id}`;
+  const onDisk = disk
+    ? [
+        fileHash(disk.storage ? deps.tableFile(disk.storage) : null),
+        fileHash(disk.draft ? deps.tableFile(disk.draft) : null),
+        // A file sits at its folder's path (its node's path), on disk under
+        // that folder's directory.
+        fileHash(
+          disk.filename ? path.join(diskDir(deps.filesRoot, disk.path), disk.filename) : null,
+        ),
+      ].join(',')
+    : '';
   const [r] = await sql<{ p: string }[]>`
-    select concat_ws('|',
+    select concat_ws('|', ${onDisk}::text,
       (select (to_jsonb(n) - 'updated_at')::text from nodes n where n.id = ${id}),
       (select (to_jsonb(t) - 'updated_at' - 'draft_updated_at')::text
          from tables t where t.node_id = ${id}),

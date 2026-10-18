@@ -158,7 +158,8 @@ export const page_move: BuiltinToolDef = {
   slug: 'page_move',
   usageTier: 3,
   policy: {
-    matrix: { none: 'a move between folders: the guide oracle has no such action' },
+    // The guide's move (H to T): the destination folder's home is T.
+    matrix: { action: 'move', param: 'id', kinds: ['page'] },
     effect: 'write',
     spends: 'none',
     scope: 'any',

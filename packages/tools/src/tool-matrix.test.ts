@@ -19,6 +19,26 @@ import type { ToolPolicy } from './tool-policy';
 
 const ROOT = join(__dirname, '../../..');
 
+/** The ways code reads a policy's matrix field. A declaration
+ *  (`matrix: { ... }` in a policy literal) is none of them: its value opens a
+ *  brace, which the destructuring forms do not hold. */
+const MATRIX_READ: readonly RegExp[] = [
+  // policy.matrix, policy?.matrix, def.policy.matrix
+  /[\w)\]]\??\.matrix\b(?!\.test)/,
+  // policy['matrix'], policy?.["matrix"]
+  /\[\s*['"`]matrix['"`]\s*\]/,
+  // 'matrix' in policy
+  /['"`]matrix['"`]\s+in\b/,
+  // const { matrix } = p; const { effect, matrix: m } = p; ({ matrix }) =>;
+  // function f({ matrix }: ToolPolicy)
+  /\{[^{};]*\bmatrix\b[^{};]*\}\s*(?:=(?![=>])|\)|:\s*[A-Z])/,
+];
+
+/** The source without its comments (a comment that names the access matrix
+ *  is no read). */
+const code = (src: string) =>
+  src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:'"`])\/\/.*$/gm, '$1');
+
 describe('the matrix declarations', () => {
   it('a write policy without one does not build (the type)', () => {
     // @ts-expect-error: a write declares its matrix.
@@ -68,10 +88,41 @@ describe('the matrix declarations', () => {
       expect(ITEM_ID_PARAM.test(p), p).toBe(false);
   });
 
+  it('the read patterns see each way of reading it, and no declaration', () => {
+    const reads = [
+      'const m = def.policy.matrix;',
+      'const m = policy?.matrix;',
+      "const m = policy['matrix'];",
+      "if ('matrix' in policy) return;",
+      'const { matrix } = policy;',
+      'const { effect, matrix: m } = policy;',
+      'const f = ({ matrix }) => matrix;',
+      'function f({ matrix }: ToolPolicy) {}',
+    ];
+    for (const src of reads)
+      expect(
+        MATRIX_READ.some((re) => re.test(src)),
+        src,
+      ).toBe(true);
+    const declarations = [
+      "policy: { matrix: { none: 'names no item' }, effect: 'write' },",
+      "  matrix: { action: 'read', param: 'id', kinds: ['page'] },",
+      'matrix?: ToolMatrix;',
+      '// the matrix test',
+    ];
+    for (const src of declarations) {
+      expect(
+        MATRIX_READ.some((re) => re.test(code(src))),
+        src,
+      ).toBe(false);
+    }
+  });
+
   it('no product code reads it: the gate never asks it (not a pre-check)', () => {
-    // A read of a policy's matrix field: `.matrix` after a name. Allowed in
-    // the declaration's own module (its type), the A8 test support, and
-    // tests.
+    // A read of a policy's matrix field: `.matrix` after a name, a
+    // subscript (`['matrix']`), an `in` test, or a destructuring (`{ matrix }`
+    // or `{ matrix: m }` before `=`, or as a parameter). Allowed in the
+    // declaration's own module (its type), the A8 test support, and tests.
     const allowed = new Set([
       'packages/tools/src/tool-policy.ts',
       'packages/db/src/matrix/test-support/a8-tool-cells.ts',
@@ -86,7 +137,7 @@ describe('the matrix declarations', () => {
           const rel = relative(ROOT, p);
           if (allowed.has(rel)) continue;
           const src = readFileSync(p, 'utf8');
-          if (/[\w)\]]\??\.matrix\b(?!\.test)/.test(src)) hits.push(rel);
+          if (MATRIX_READ.some((re) => re.test(code(src)))) hits.push(rel);
         }
       }
     };

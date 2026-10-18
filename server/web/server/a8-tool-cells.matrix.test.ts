@@ -3,10 +3,13 @@
  * policy declares a matrix action, through a turn (dispatchTool in the
  * assistant's turn scope, as the turn's tool loop calls it) and the one MCP
  * surface (an OAuth connection for the login: prepareCallerTools), in check
- * modes warn and on, each cell the guide oracle's answer for the action the
- * tool declares. The cells are generated from the declarations alone
+ * modes warn and on (the actor check and the edit check both, as a box runs
+ * them: warn and warn, on and on), each cell the guide oracle's answer for
+ * the action the tool declares. The cells are generated from the declarations alone
  * (@mantle/db matrix/test-support/a8-tool-cells.ts): a pairwise pick salted
- * by each tool's name, and the member-negative cells of every write action.
+ * by each tool's name, one allowed cell of each tool whatever the pick, and
+ * the member-negative cells of every write. The tool list is the coverage
+ * test's (a8-tools.list.ts).
  * The fixture is the SQL grid's (a8-grid.ts), seeded once; a write cell gets
  * a fresh item of its kind and placement; a tool that works on what is
  * inside an item (blocks, rows, columns, tabs, snapshots, a file's bytes, a
@@ -16,9 +19,10 @@
  * A cell passes on the right outcome: allowed answers ok (a delete removes
  * the item, a create makes one); refused answers no ok, changes no row and
  * is no crash, and, for a caller that does not read the item, answers what a
- * random uuid gets (byte for byte, the id aside). An allowed cell of a tool
- * that needs a model or the outside (stubbed: cost safety) is counted and
- * not run; its refused cells run.
+ * random uuid gets (byte for byte, the id aside); a write's refusal makes
+ * no node either. An allowed cell of a tool that needs a model or the
+ * outside (stubbed: cost safety) is counted and not run; its refused cells
+ * run. Every other tool runs an allowed cell in each mode, and one passes.
  * Each cell's actor misses are its own failure. Known failures are listed
  * in a8-known-failures.ts by name (`tool:<slug> <way in> <cell>`).
  *
@@ -58,8 +62,9 @@ vi.mock('@mantle/storage/write', async (importOriginal) => ({
   },
 }));
 
-/** The time the tool cells may take, both modes (the budget cell). */
-const A8_TOOL_TIME_CEILING_MS = 40 * 60_000;
+/** The time the tool cells may take, both modes (the budget cell): about
+ *  three times the 70 s they take on the workstation. */
+const A8_TOOL_TIME_CEILING_MS = 210_000;
 
 type Reply = { isError?: boolean; content?: { text?: string }[] };
 const text = (r: unknown) =>
@@ -76,8 +81,11 @@ type Ctx = {
 const fresh = (c: Ctx) => `${c.tag} ${randomUUID().slice(0, 8)}`;
 const INPUT: Readonly<Record<string, (c: Ctx) => Record<string, unknown>>> = {
   file_create: (c) => ({ filename: `${fresh(c).replace(' ', '-')}.txt`, content: 'a8' }),
-  invoke_agent: (c) => ({ agent_slug: `${c.tag}-W`, prompt: 'a8' }),
-  generate_image: () => ({ prompt: 'a8' }),
+  // The turn's agent may delegate to it (turnCall's agent context).
+  invoke_agent: (c) => ({ agent_slug: `${c.tag}-delegate`, prompt: 'an A8 delegation' }),
+  // A prompt the schema takes (three characters at least): the refused cells
+  // reach the item read. The model stays stubbed.
+  generate_image: () => ({ prompt: 'an A8 image' }),
   event_update: (c) => ({ title: `${c.tag} edited` }),
   task_update: (c) => ({ title: `${c.tag} edited` }),
   note_update: (c) => ({ title: `${c.tag} edited` }),
@@ -126,6 +134,8 @@ const INPUT: Readonly<Record<string, (c: Ctx) => Record<string, unknown>>> = {
  *  (a8-tool-content.ts); what is left is outside the box. */
 const ALLOW_NEEDS: Readonly<Record<string, string>> = {
   peer_file_copy: 'a federated peer brain (outside the box)',
+  sandbox_import: 'a sandbox (sandboxd, outside the box)',
+  sandbox_create: 'a sandbox (sandboxd, outside the box)',
 };
 
 /** The app data tools act for a login's own MCP connection only (tools
@@ -135,6 +145,25 @@ const MCP_CONNECTION_ONLY: Readonly<Record<string, string>> = {
   app_data_schema: 'the app data tools act for a login’s own MCP connection only',
   app_data_query: 'the app data tools act for a login’s own MCP connection only',
   app_data_write: 'the app data tools act for a login’s own MCP connection only',
+};
+
+/** The tools whose every allowed cell is a known failure today (the finding
+ *  names it, a8-known-failures.ts): their allowed cells run and fail as
+ *  listed. A tool leaves this list when its finding is fixed. */
+const ALLOWED_KNOWN_ONLY: Readonly<Record<string, string>> = {
+  app_table_export_set: 'S11a-7',
+  folder_set_indexing: 'S11a-6',
+  page_move: 'S11a-5',
+  tree_item_move: 'S11a-5',
+};
+
+/** The tools that make a new app: a new app needs manage of its create
+ *  home, and a turn's create home is the turn's workspace (the oracle
+ *  answers the source's read only). A turn whose login is no Moderator of
+ *  its workspace is refused whatever the item. */
+const NEW_APP_HOME: Readonly<Record<string, string>> = {
+  app_import: 'a new app needs manage of its create home: the turn’s workspace',
+  app_duplicate: 'a new app needs manage of its create home: the turn’s workspace',
 };
 
 /** The tools the MCP surface lists for an Admin user only (a deny the
@@ -208,6 +237,7 @@ describe.skipIf(!DB_URL)(
       const tdb = await import('@mantle/tabledb');
       const { writeDocFile } = await import('@mantle/tabledb/write');
       const { writeAppPackage } = await import('@mantle/content/app-package');
+      const { appDbSeedRows } = await import('@mantle/content/app-broker');
       contentDeps = {
         filesRoot: process.env.MANTLE_FILES_ROOT!,
         writeWorkbook: (rel, wb, meta) =>
@@ -216,10 +246,17 @@ describe.skipIf(!DB_URL)(
           tdb.snapshotFile(tdb.resolveStoragePath(rel), tdb.resolveStoragePath(srel));
           return statSync(tdb.resolveStoragePath(srel)).size;
         },
+        tableFile: (rel) => tdb.resolveStoragePath(rel),
         engineVersion: tdb.ENGINE_VERSION,
         writeAppPackage: async (appId, dest) => {
           await m.runAsSystem('test:a8-tool-content', () =>
             writeAppPackage(fx.owner, appId, dest, { withData: false }),
+          );
+        },
+        appDbFile: (appId) => path.join(process.env.APP_DB_DIR!, fx.owner, `${appId}.sqlite`),
+        seedAppDb: async (appId, schema) => {
+          await m.runAsSystem('test:a8-tool-content', () =>
+            appDbSeedRows(fx.owner, appId, 'a8', [{ v: 1 }], {}, schema),
           );
         },
       };
@@ -237,6 +274,10 @@ describe.skipIf(!DB_URL)(
         values (${id}, ${fx.owner}, ${`${fx.tag}-${name}`}, ${name}, 'fake/model', 'p',
                 ${name === 'admin' ? 'assistant' : 'responder'}, ${wsId})`;
       }
+      // invoke_agent's target: an agent every turn's agent may delegate to.
+      await raw`insert into agents (id, owner_id, slug, name, model, system_prompt, role, workspace_id)
+        values (${randomUUID()}, ${fx.owner}, ${`${fx.tag}-delegate`}, 'delegate', 'fake/model',
+                'p', 'responder', ${fx.ws.admin})`;
       m.takeActorMisses();
     }, 300_000);
 
@@ -294,6 +335,13 @@ describe.skipIf(!DB_URL)(
                 ownerId: fx.owner,
                 surface: { kind: 'web', loginId: fx.logins[role] } as never,
                 caller: t.turnCaller() as never,
+                // The turn's agent, as the tool loop gives it (invoke_agent
+                // reads it): it may delegate to the test's one target.
+                agent: {
+                  slug: `${fx.tag}-${o.TURN_WORKSPACE[role]}`,
+                  depth: 1,
+                  delegateTo: [`${fx.tag}-delegate`],
+                },
               }),
             { loginId: fx.logins[role] },
           ),
@@ -346,10 +394,9 @@ describe.skipIf(!DB_URL)(
     it('each tool’s cells, through a turn and the MCP surface, in warn and on', async () => {
       const started = Date.now();
       const { sortFailures } = await import('@mantle/db/matrix/a8-known-failures');
-      const defs = [
-        ...t.BUILTIN_TOOLS,
-      ] as unknown as import('@mantle/db/matrix/a8-tool-cells').A8ToolDef[];
-      const decls = new Map(defs.map((d) => [d.slug, tc.a8ToolDecl(d)]));
+      // The coverage test's list (a8-tools.list.ts): the same plan.
+      const { a8AllTools } = await import('./a8-tools.list');
+      const decls = new Map(a8AllTools().map((d) => [d.slug, tc.a8ToolDecl(d)]));
       const plan = tc.a8ToolPlan([...decls.values()]);
       expect(plan.uncovered, 'tools with an action and no cell').toEqual({});
 
@@ -397,9 +444,15 @@ describe.skipIf(!DB_URL)(
       const skipped: Record<string, number> = {};
       const na: Record<string, number> = {};
       const narrowed: Record<string, number> = {};
+      /** Each tool's allowed cells run and passed, by mode. */
+      const allowedRuns = new Map<string, { ran: number; passed: number }>();
       let total = 0;
       for (const mode of tc.A8_TOOL_MODES) {
+        // Both checks in the mode, as every box runs them (warn and warn, on
+        // and on): the edit check is the database's refusal of an item edit
+        // the scope may not make.
         await raw`select mantle_set_actor_check(${mode}, 50, 'test')`;
+        await raw`select mantle_set_edit_check(${mode}, 50, 'test')`;
         process.env.MANTLE_ACTOR_CHECK = mode;
         actorMode.noteBoxActorCheckMode(mode);
         expect(m.actorCheckMode()).toBe(mode);
@@ -419,6 +472,9 @@ describe.skipIf(!DB_URL)(
               tc.a8ToolNarrow(decl, surface, role) ??
               (surface === 'mcp-oauth' && !isAdminUser(role) ? MCP_ADMIN_ONLY[cell.tool] : null) ??
               (surface === 'web-turn' ? MCP_CONNECTION_ONLY[cell.tool] : null) ??
+              (surface === 'web-turn' && !fx.scope[role].mod.includes(turnWs(role))
+                ? NEW_APP_HOME[cell.tool]
+                : null) ??
               null;
             const oracle = tc.a8ToolWant(cell, surface);
             if ('na' in oracle) {
@@ -454,22 +510,31 @@ describe.skipIf(!DB_URL)(
               id: item.id,
               path: create ? fx.folders[cell.kind]!.path : item.parentPath,
             };
+            /** The brain's nodes (of the kind, or all): a refused write
+             *  makes none. */
+            const nodeCount = async (kind?: string) =>
+              String(
+                (
+                  await raw<{ n: number }[]>`select count(*)::int as n from nodes
+                     where owner_id = ${fx.owner} and (${kind ?? null}::text is null
+                                                       or type = ${kind ?? null})`
+                )[0]!.n,
+              );
             const probe = async () =>
               create
-                ? String(
-                    (
-                      await raw<{ n: number }[]>`select count(*)::int as n from nodes
-                     where owner_id = ${fx.owner} and type = ${cell.kind}`
-                    )[0]!.n,
-                  )
+                ? await nodeCount(cell.kind)
                 : await (async () => {
                     const p = (
                       await raw<{ p: string }[]>`select a8_probe(${item.id}::uuid) as p`
                     )[0]!.p;
                     // A seeded item: what its content holds, too (a8ContentProbe).
-                    return p === 'gone' || !seeded
-                      ? p
-                      : `${p}|${await tc2.a8ContentProbe(raw, item.id)}`;
+                    const held =
+                      p === 'gone' || !seeded
+                        ? p
+                        : `${p}|${await tc2.a8ContentProbe(raw, item.id, contentDeps)}`;
+                    // A write that declares a read (a copy, an import, an
+                    // export): no node made either.
+                    return reads && cell.effect === 'write' ? `${held}#${await nodeCount()}` : held;
                   })();
             const ctx: Ctx = {
               tag: fx.tag,
@@ -517,6 +582,13 @@ describe.skipIf(!DB_URL)(
                 random,
               }) ?? (misses.length ? `actor miss: ${JSON.stringify(misses).slice(0, 160)}` : null);
             if (fail) failures.set(name, fail);
+            if (want.allow) {
+              const k = `${cell.tool} ${mode}`;
+              const r = allowedRuns.get(k) ?? { ran: 0, passed: 0 };
+              r.ran++;
+              if (!fail) r.passed++;
+              allowedRuns.set(k, r);
+            }
           }
         }
         const sorted = sortFailures(failures, false, mode, true);
@@ -541,6 +613,27 @@ describe.skipIf(!DB_URL)(
         ].join('\n'),
       );
       expect(unexpected, 'tool cells that fail and are not known failures').toEqual([]);
+      // Every tool's own work runs: an allowed cell in each mode, and one
+      // passes (but a tool whose allowed call needs a model, the outside or
+      // a peer: counted in NOT_RUN).
+      const noAllowed = plan.covered.flatMap((slug) => {
+        const d = decls.get(slug)!;
+        if (d.stubbed || ALLOW_NEEDS[slug]) return [];
+        return tc.A8_TOOL_MODES.flatMap((mode) => {
+          const r = allowedRuns.get(`${slug} ${mode}`);
+          if (!r?.ran) return [`${slug} (check ${mode}): no allowed cell ran`];
+          if (!r.passed && !ALLOWED_KNOWN_ONLY[slug]) {
+            return [`${slug} (check ${mode}): no allowed cell passed`];
+          }
+          if (r.passed && ALLOWED_KNOWN_ONLY[slug]) {
+            return [
+              `${slug} (check ${mode}): an allowed cell passes: take it off ALLOWED_KNOWN_ONLY`,
+            ];
+          }
+          return [];
+        });
+      });
+      expect(noAllowed, 'tools whose own work never ran or never passed').toEqual([]);
       expect(fixed, 'known failures that pass now: take them off the list').toEqual([]);
       // No cell drops out uncounted: each reason keeps its count (both modes).
       expect(na, 'the tool cells not applicable, by reason').toEqual(NOT_APPLICABLE);
@@ -556,22 +649,24 @@ describe.skipIf(!DB_URL)(
 
 /** The tool cells not applicable, by reason, over both check modes. */
 const NOT_APPLICABLE: Readonly<Record<string, number>> = {
-  'web-turn: no tool row (MCP only)': 134,
+  'web-turn: no tool row (MCP only)': 138,
 };
 
 /** The narrowed tool cells (a deny the oracle cannot see), by reason. */
 const NARROWED: Readonly<Record<string, number>> = {
-  'web-turn: the app data tools act for a login’s own MCP connection only': 40,
-  'mcp-oauth: an Admin tool: the scope holds no Admin': 102,
-  'web-turn: an Admin tool: the scope holds no Admin': 46,
-  'mcp-oauth: not on the MCP surface of a login outside Admin': 10,
+  'web-turn: the app data tools act for a login’s own MCP connection only': 44,
+  'web-turn: an Admin tool: the scope holds no Admin': 70,
+  'mcp-oauth: an Admin tool: the scope holds no Admin': 126,
+  'web-turn: a new app needs manage of its create home: the turn’s workspace': 6,
+  'mcp-oauth: not on the MCP surface of a login outside Admin': 12,
 };
 
-/** The allowed tool cells not run, by what they need (round 1: 402, the
- *  content an item holds being missing; round 2 seeds it, a8-tool-content.ts).
- *  What is left is outside the box: a model, the web or a mail server (cost
- *  safety stubs them), and a federated peer brain. */
+/** The allowed tool cells not run, by what they need: the content an item
+ *  holds is seeded (a8-tool-content.ts), so what is left is outside the box:
+ *  a model, the web or a mail server (cost safety stubs them), a sandbox
+ *  (sandboxd) and a federated peer brain. */
 const NOT_RUN: Readonly<Record<string, number>> = {
-  'an allowed call needs a model or the outside (stubbed)': 64,
-  'an allowed call needs a federated peer brain (outside the box)': 4,
+  'an allowed call needs a model or the outside (stubbed)': 68,
+  'an allowed call needs a sandbox (sandboxd, outside the box)': 8,
+  'an allowed call needs a federated peer brain (outside the box)': 8,
 };

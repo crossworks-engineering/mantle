@@ -3,13 +3,15 @@
  * routes come with S11b), no database: every registry kind is in the grid
  * or in A8_EXEMPT with a reason, and every tool is in a generated cell set
  * (a8-tool-cells.ts, from its matrix declaration) or exempt (its declaration
- * is `none`, with a reason). What is in neither is uncovered.
+ * is `none`, with a reason). What is in neither is uncovered, and so is a
+ * tool whose cells hold no allowed cell or no refused one.
  *
  * Two pins in scripts/arch-scoreboard.pins.json: a8Uncovered (only down)
- * and a8Exempt (capped at its count when S11a made it; a new exemption is
- * reviewed by the final audit and raises the cap with a note). The tool
- * cells run with a database in a8-tool-cells.matrix.test.ts; this test also
- * holds their size to a ceiling (the budget: pairwise keeps it bounded).
+ * and a8Exempt (the count of the names below; a new exemption is reviewed
+ * by the final audit, named here and raises the cap with a note). The tool
+ * cells run with a database in a8-tool-cells.matrix.test.ts, planned from
+ * the same tool list (a8-tools.list.ts); this test also holds their size to
+ * a ceiling (the budget: pairwise keeps it bounded).
  */
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -23,10 +25,8 @@ import {
   a8ToolDecl,
   a8ToolPlan,
   a8UncoveredKinds,
-  type A8ToolDef,
 } from '@mantle/db/matrix/a8-tool-cells';
-import { BUILTIN_TOOLS, MCP_SURFACE_POLICIES } from '@mantle/tools';
-import { HEARTBEAT_TOOLS } from '../../../packages/runtime/src/heartbeats/tools';
+import { a8AllTools } from './a8-tools.list';
 
 const PINS = join(__dirname, '../../../scripts/arch-scoreboard.pins.json');
 
@@ -34,20 +34,9 @@ const PINS = join(__dirname, '../../../scripts/arch-scoreboard.pins.json');
  *  adds its pairwise cells; past this the matrix run is too slow for CI. */
 const A8_TOOL_RUN_CEILING = 9000;
 
-/** Every tool: the builtins, the heartbeat tools, and the MCP surface's own
- *  (a name a builtin has is the builtin's). */
-function allTools(): A8ToolDef[] {
-  const builtins = [...BUILTIN_TOOLS, ...HEARTBEAT_TOOLS] as unknown as A8ToolDef[];
-  const names = new Set(builtins.map((b) => b.slug));
-  const own = Object.entries(MCP_SURFACE_POLICIES)
-    .filter(([slug]) => !names.has(slug))
-    .map(([slug, policy]) => ({ slug, policy }) as unknown as A8ToolDef);
-  return [...builtins, ...own];
-}
-
 /** The A8 counts S11a pins (a8Uncovered, a8Exempt), and what makes them. */
 function a8Counts() {
-  const plan = a8ToolPlan(allTools().map(a8ToolDecl));
+  const plan = a8ToolPlan(a8AllTools().map(a8ToolDecl));
   const kindsUncovered = a8UncoveredKinds();
   return {
     plan,
@@ -69,17 +58,27 @@ describe('A8 coverage: every kind and tool is in a cell set or exempt', () => {
     }
   });
 
-  it('every tool with a matrix action has cells, and each write action its member-negatives', () => {
+  it('every tool with a matrix action has cells, an allowed and a refused one, and each write its member-negatives', () => {
     expect(counts.plan.uncovered).toEqual({});
+    for (const tool of counts.plan.covered) {
+      const positive = counts.plan.cells.filter((c) => c.tool === tool && c.positive);
+      expect(positive.length, `${tool}: its one positive cell`).toBe(1);
+    }
+    // The writes by their effect: a copy declares the read of its source.
     const writes = new Set(
       counts.plan.cells
-        .filter((c) => !['read', 'list', 'search'].includes(c.action))
+        .filter((c) => c.effect === 'write' || !['read', 'list', 'search'].includes(c.action))
         .map((c) => c.tool),
     );
     for (const tool of writes) {
       const negatives = counts.plan.cells.filter((c) => c.tool === tool && c.mandatory);
       expect(negatives.length, `${tool}: its member-negative cells`).toBeGreaterThanOrEqual(2);
     }
+  });
+
+  it('the exempt tools and kinds, by name', () => {
+    expect(Object.keys(counts.plan.exempt).sort()).toEqual(A8_EXEMPT_TOOLS);
+    expect(Object.keys(A8_EXEMPT).sort()).toEqual(A8_EXEMPT_KINDS);
   });
 
   it('the pins: a8Uncovered only down, a8Exempt at its cap', () => {
@@ -96,3 +95,118 @@ describe('A8 coverage: every kind and tool is in a cell set or exempt', () => {
     expect(runs).toBeLessThanOrEqual(A8_TOOL_RUN_CEILING);
   });
 });
+
+/** The tools that declare `none` (each its reason in its policy), by name: a
+ *  new one is named here with the final audit's review line in the pins'
+ *  _notes, and a8Exempt rises with it. */
+const A8_EXEMPT_TOOLS: readonly string[] = [
+  'access_get',
+  'access_set',
+  'agent_grant_tool_group',
+  'agent_set_thinking_effort',
+  'api_docs_set',
+  'api_skill_set',
+  'api_tool_create',
+  'api_tool_delete',
+  'api_tool_test',
+  'api_tool_update',
+  'app_create',
+  'app_undelete',
+  'ask_as_responder',
+  'ask_responder',
+  'contact_create',
+  'contact_delete',
+  'contact_get',
+  'contact_update',
+  'email_get',
+  'email_send',
+  'entity_facts',
+  'entity_mentions',
+  'entity_neighbors',
+  'event_create',
+  'file_upload',
+  'folder_create',
+  'formula_create',
+  'graph_path',
+  'heartbeat_complete',
+  'heartbeat_fire',
+  'heartbeat_list',
+  'heartbeat_snooze',
+  'heartbeat_update_state',
+  'journal_create',
+  'journal_delete',
+  'journal_get',
+  'journal_resolve_gap',
+  'journal_update',
+  'location_save',
+  'model_catalog',
+  'model_pool_list',
+  'model_pool_remove',
+  'model_pool_set',
+  'note_create',
+  'openrouter_benchmarks',
+  'openrouter_rankings',
+  'openrouter_task_classes',
+  'page_from_journal',
+  'peer_call',
+  'pending_approve',
+  'pending_get',
+  'pending_reject',
+  'recall_eval',
+  'recall_map_create',
+  'recall_revision_restore',
+  'recipe_tool_create',
+  'recipe_tool_test',
+  'responder_turn_input',
+  'responder_turn_record',
+  'route_map',
+  'run_append',
+  'run_audit',
+  'run_cancel',
+  'run_plan',
+  'run_state',
+  'run_terminal',
+  'sandbox_autostart',
+  'sandbox_exec',
+  'sandbox_export',
+  'sandbox_mcp_call',
+  'sandbox_publish',
+  'sandbox_rm',
+  'sandbox_stop',
+  'secret_create',
+  'set_timezone',
+  'sheet_build',
+  'synthesize_speech',
+  'table_create',
+  'table_from_text',
+  'task_create',
+  'telegram_edit',
+  'telegram_mark_processed',
+  'telegram_pair',
+  'telegram_pending',
+  'telegram_react',
+  'telegram_send',
+  'tool_group_ensure',
+  'update_persona',
+  'web_crawl',
+  'web_fetch',
+  'web_map',
+  'web_search',
+  'web_search_pro',
+  'worker_group_ensure',
+];
+
+/** The registry kinds the grid makes no item of (A8_EXEMPT, by class). */
+const A8_EXEMPT_KINDS: readonly string[] = [
+  'contact',
+  'documentation',
+  'email',
+  'email_thread',
+  'journal',
+  'location',
+  'mantle_peer',
+  'printer_project',
+  'secret',
+  'sermon',
+  'telegram_message',
+];

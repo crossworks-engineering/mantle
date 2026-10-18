@@ -8,12 +8,16 @@
  * For each tool: its candidates are the six GUIDE_ROLES x the fixture's
  * placements x the kinds it takes (the workspace kinds of A8_KINDS), at its
  * one action; a pairwise pick of them, salted with the tool's name (so a new
- * tool adds its own cells and moves no other tool's); and, for a write
- * action, the member-negative cells whatever the pick (plan rule 5): the
- * outsider, the read grant's member, and a member with Write on a sibling
- * item (writeGrant on the Admin-homed item), each refused with no row
- * changed. A cell whose caller does not read the item is also refused in the
- * words a random uuid gets (the answer byte-equal, the id aside).
+ * tool adds its own cells and moves no other tool's); one allowed cell
+ * whatever the pick (the positive cell, so every tool's own work runs); and,
+ * for a write (its effect, whatever action it declares: a copy declares the
+ * read of its source), the member-negative cells whatever the pick (plan
+ * rule 5): the outsider, the read grant's member, and a member with Write on
+ * a sibling item (writeGrant on the Admin-homed item), each refused with no
+ * row changed and no node made. A cell whose caller does not read the item
+ * is also refused in the words a random uuid gets (the answer byte-equal,
+ * the id aside). A tool is covered only with an allowed cell and a refused
+ * one.
  *
  * The declaration states intent only: no gate reads it. These cells run the
  * product's own paths, the turn's dispatchTool and the MCP surface, in check
@@ -98,16 +102,23 @@ export const A8_TOOL_MODES = ['warn', 'on'] as const;
 export type A8ToolCell = A8Cell & {
   tool: string;
   param: string;
+  /** The tool's effect: a write's refused cell must make no node, whatever
+   *  action it declares. */
+  effect: 'read' | 'write';
   /** A member-negative cell (plan rule 5), run whatever the pick. */
   mandatory?: true;
+  /** The tool's one allowed cell picked whatever the pair pick (its own work
+   *  runs at least once). */
+  positive?: true;
 };
 
 export type A8ToolPlan = {
   cells: A8ToolCell[];
   /** The tools with cells. */
   covered: string[];
-  /** A tool that declares an action and gets no cell, or a read taking an
-   *  item id with no declaration, or a write with none: and why. */
+  /** A tool that declares an action and gets no cell, or no allowed cell
+   *  or no refused one, or a read taking an item id with no declaration, or
+   *  a write with none: and why. */
   uncovered: Record<string, string>;
   /** A tool that declares `none`: why (the a8Exempt count). */
   exempt: Record<string, string>;
@@ -190,8 +201,18 @@ export function a8ToolPlan(
         }
       }
     }
-    const picked: A8ToolCell[] = candidates.map((c) => ({ ...c, tool: t.slug, param: m.param }));
-    if (!READS.includes(m.action)) {
+    const picked: A8ToolCell[] = candidates.map((c) => ({
+      ...c,
+      tool: t.slug,
+      param: m.param,
+      effect: t.effect,
+    }));
+    const positive = positiveCell(t, picked);
+    if (positive) positive.positive = true;
+    // The member-negatives of a write: by its effect (a copy or an import
+    // declares the read of its source and still writes), and of any action
+    // that is not a read.
+    if (t.effect === 'write' || !READS.includes(m.action)) {
       const kind = its[0]!;
       for (const n of NEGATIVES) {
         if ((m.action === 'create') !== (n.create === true)) continue;
@@ -205,6 +226,7 @@ export function a8ToolPlan(
           action: m.action,
           tool: t.slug,
           param: m.param,
+          effect: t.effect,
           mandatory: true,
         };
         const same = picked.find((x) => cellName(x) === cellName(c));
@@ -216,11 +238,55 @@ export function a8ToolPlan(
       plan.uncovered[t.slug] = 'its declaration gives no cell the oracle answers';
       continue;
     }
+    if (!positive) {
+      plan.uncovered[t.slug] = 'its declaration gives no allowed cell';
+      continue;
+    }
     plan.covered.push(t.slug);
     plan.cells.push(...picked);
   }
   plan.cells = a8ToolPairwise(plan.cells);
+  // Covered only with a refused cell among the picked (an allowed one is the
+  // positive cell, picked whatever the pairs).
+  const byTool = new Map(tools.map((t) => [t.slug, t]));
+  for (const slug of [...plan.covered]) {
+    const t = byTool.get(slug)!;
+    const refused = plan.cells.some(
+      (c) =>
+        c.tool === slug &&
+        A8_TOOL_SURFACES.some(({ surface }) => {
+          if (surface === 'web-turn' && t.mcpOnly) return false;
+          const w = a8ToolWant(c, surface);
+          return !('na' in w) && (!w.allow || a8ToolNarrow(t, surface, c.role!) !== null);
+        }),
+    );
+    if (!refused) {
+      plan.uncovered[slug] = 'its picked cells hold no refused cell';
+      plan.covered = plan.covered.filter((x) => x !== slug);
+      plan.cells = plan.cells.filter((c) => c.tool !== slug);
+    }
+  }
   return plan;
+}
+
+/**
+ * The tool's positive cell: a candidate the oracle allows on every way in it
+ * takes (else on one) and no Admin step refuses, the first in the order of a
+ * hash salted by the tool's name (as the pair pick orders them). Null when
+ * the declaration allows no one.
+ */
+function positiveCell(t: A8ToolDecl, cells: readonly A8ToolCell[]): A8ToolCell | null {
+  const ways = A8_TOOL_SURFACES.filter(({ surface }) => surface !== 'web-turn' || !t.mcpOnly);
+  const allowedOn = (c: A8ToolCell) =>
+    ways.filter(({ surface }) => {
+      const w = a8ToolWant(c, surface);
+      return !('na' in w) && w.allow && a8ToolNarrow(t, surface, c.role!) === null;
+    }).length;
+  const ordered = cells
+    .map((c) => ({ c, n: allowedOn(c), key: stableKey(`${t.slug} + ${cellName(c)}`) }))
+    .filter((x) => x.n > 0)
+    .sort((a, b) => b.n - a.n || a.key - b.key);
+  return ordered[0]?.c ?? null;
 }
 
 /**
@@ -228,7 +294,8 @@ export function a8ToolPlan(
  * bounds the matrix): every pair of values of two dimensions (tool, role,
  * kind, placement) some candidate holds is held by a picked cell, and every
  * member-negative cell is picked. So each tool meets every role and every
- * placement it has an answer for, and every kind it takes. The candidates
+ * placement it has an answer for, and every kind it takes; the positive cell
+ * is picked too. The candidates
  * are taken in the order of a hash of the tool's name and the cell's (salted
  * by the tool, so a new tool adds the cells its own pairs need and moves an
  * old tool's only where it already holds a pair that cell was picked for).
@@ -246,7 +313,8 @@ function a8ToolPairwise(cells: readonly A8ToolCell[]): A8ToolCell[] {
     .map((x) => ({ ...x, key: stableKey(x.name) }))
     .sort(
       (a, b) =>
-        Number(b.c.mandatory === true) - Number(a.c.mandatory === true) ||
+        Number(b.c.mandatory === true || b.c.positive === true) -
+          Number(a.c.mandatory === true || a.c.positive === true) ||
         a.key - b.key ||
         (a.name < b.name ? -1 : a.name > b.name ? 1 : 0),
     );
@@ -254,7 +322,7 @@ function a8ToolPairwise(cells: readonly A8ToolCell[]): A8ToolCell[] {
   const picked: A8ToolCell[] = [];
   for (const { c } of ordered) {
     const pairs = pairsOf(c);
-    if (!c.mandatory && pairs.every((p) => covered.has(p))) continue;
+    if (!c.mandatory && !c.positive && pairs.every((p) => covered.has(p))) continue;
     picked.push(c);
     for (const p of pairs) covered.add(p);
   }
@@ -360,7 +428,8 @@ const normal = (text: string, id: string) => text.split(id).join('<id>');
 
 /**
  * Judge one tool cell: null when it passes, else why it fails. `before` and
- * `after` are the row probe's (a create: the count of the kind's new rows);
+ * `after` are the row probe's (a create: the count of the kind's rows; a
+ * write: the item's rows and content, and the count of the brain's nodes);
  * `random` is the same call on a random uuid, for a caller that does not
  * read the item.
  */
@@ -375,8 +444,10 @@ export function judgeA8ToolCell(a: {
 }): string | null {
   const { cell, want, out, before, after, item, random } = a;
   const changed = after !== before;
-  const reads = READS.includes(cell.action);
-  if (!reads && !want.allow && changed) {
+  // A write's refusal changes nothing and makes nothing, whatever action it
+  // declares (a copy declares the read of its source).
+  const writes = cell.effect === 'write' || !READS.includes(cell.action);
+  if (writes && !want.allow && changed) {
     return `changed, the oracle denies (${out.text.slice(0, 100)})`;
   }
   if (out.thrown || (!out.ok && A8_GENERIC.test(out.text))) {
@@ -386,6 +457,7 @@ export function judgeA8ToolCell(a: {
     if (!out.ok) return `refused, the oracle allows: ${out.text.slice(0, 160)}`;
     if (cell.action === 'delete' && after !== 'gone') return 'answered ok, not deleted';
     if (cell.action === 'create' && !changed) return 'answered ok, nothing made';
+    if (cell.action === 'move' && !changed) return 'answered ok, nothing moved';
     return null;
   }
   // A caller that does not read the item gets a random uuid's answer; one

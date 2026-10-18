@@ -141,7 +141,8 @@ export const sandbox_export: BuiltinToolDef = {
 export const sandbox_import: BuiltinToolDef = {
   slug: 'sandbox_import',
   policy: {
-    matrix: { none: 'a sandbox is not an item' },
+    // The file is read in the caller's scope; the sandbox is no item.
+    matrix: { action: 'read', param: 'file_id', kinds: ['file'] },
     // Audit only: the row names it (the queue asks nothing of it).
     itemArgs: [{ param: 'file_id', least: 'none' }],
     effect: 'write',

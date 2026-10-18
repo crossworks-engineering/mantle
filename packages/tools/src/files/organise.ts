@@ -23,7 +23,9 @@ import { CS } from '../client-sourced-rule';
 export const file_move: BuiltinToolDef = {
   slug: 'file_move',
   policy: {
-    matrix: { none: 'a move between folders: the guide oracle has no such action' },
+    // A move to another folder is the guide's move (H to T): the destination
+    // folder's home is T.
+    matrix: { action: 'move', param: 'file_id', kinds: ['file'] },
     effect: 'write',
     spends: 'none',
     scope: 'any',
@@ -123,7 +125,8 @@ export const file_copy: BuiltinToolDef = {
 export const folder_move: BuiltinToolDef = {
   slug: 'folder_move',
   policy: {
-    matrix: { none: 'a move between folders: the guide oracle has no such action' },
+    // The guide's move (H to T): the new parent's home is T.
+    matrix: { action: 'move', param: 'folder_id', kinds: ['branch'] },
     effect: 'write',
     spends: 'none',
     scope: 'any',

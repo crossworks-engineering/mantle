@@ -42,43 +42,32 @@ const BELOW_ON_TOOL_EDITS: readonly string[] = [
   'web-turn turn/readGrant edit note @folder',
 ];
 
-/** The tool cells (S11a, a8-tool-cells.matrix.test.ts) P1 fails in warn:
- *  the read grant's member's edit through a turn and over MCP is made. The
- *  same cells pass in `on`. */
+/** The tool cells (S11a, a8-tool-cells.matrix.test.ts) P1 fails in warn,
+ *  where both checks report and refuse nothing: the read grant's member's
+ *  edit through a turn and over MCP is made. The same cells pass in `on`. */
 const BELOW_ON_TOOL_CELLS: readonly string[] = [
-  'tool:formula_update web-turn turn/readGrant edit formula @root',
-  'tool:formula_update mcp-oauth login/readGrant edit formula @root',
-  'tool:recall_map_update web-turn turn/readGrant edit recall @root',
-  'tool:recall_map_update mcp-oauth login/readGrant edit recall @root',
-  'tool:recall_card_delete web-turn turn/readGrant edit recall @root',
-  'tool:recall_card_delete mcp-oauth login/readGrant edit recall @root',
-  'tool:recall_card_put web-turn turn/readGrant edit recall @root',
-  'tool:recall_card_put mcp-oauth login/readGrant edit recall @root',
-  'tool:task_update web-turn turn/readGrant edit task @root',
-  'tool:task_update mcp-oauth login/readGrant edit task @root',
-  'tool:note_update web-turn turn/readGrant edit note @root',
-  'tool:note_update mcp-oauth login/readGrant edit note @root',
-  'tool:event_update web-turn turn/readGrant edit event @root',
-  'tool:event_update mcp-oauth login/readGrant edit event @root',
-  'tool:page_update web-turn turn/readGrant edit page @root',
-  'tool:page_update mcp-oauth login/readGrant edit page @root',
-  'tool:table_update web-turn turn/readGrant edit table @root',
-  'tool:table_update mcp-oauth login/readGrant edit table @root',
-];
-const BELOW_ON_TOOL_CELLS_FOLDER: readonly string[] = [
-  'tool:note_update web-turn turn/readGrant edit note @folder',
-  'tool:note_update mcp-oauth login/readGrant edit note @folder',
-];
-/** folder_describe writes a folder's description: below on it is made (P1,
- *  the same class; the seeded item's probe reads the node's data since
- *  round 2, a8-tool-content.ts a8ContentProbe). */
-const BELOW_ON_FOLDER_DESCRIBE: readonly string[] = [
-  'tool:folder_describe mcp-oauth login/readGrant edit branch @root',
-  'tool:folder_describe mcp-oauth login/readGrant edit branch @folder',
-  // Round 2: a Files folder, so the turn reaches the edit too.
-  'tool:folder_describe web-turn turn/readGrant edit branch @root',
-  'tool:folder_describe web-turn turn/readGrant edit branch @folder',
-];
+  'formula_update edit formula @root',
+  'recall_map_update edit recall @root',
+  'recall_card_delete edit recall @root',
+  'recall_card_put edit recall @root',
+  'task_update edit task @root',
+  'note_update edit note @root',
+  'event_update edit event @root',
+  'page_update edit page @root',
+  'table_update edit table @root',
+  // A folder's description (the seeded item's probe reads the node's data).
+  'folder_describe edit branch @root',
+  'folder_describe edit branch @folder',
+  // A snapshot's delete asks edit of the app: the database refuses it on.
+  'app_snapshot_delete edit app @root',
+  'app_snapshot_delete edit app @folder',
+].flatMap((c) => {
+  const [tool, ...rest] = c.split(' ');
+  return [
+    `tool:${tool} web-turn turn/readGrant ${rest.join(' ')}`,
+    `tool:${tool} mcp-oauth login/readGrant ${rest.join(' ')}`,
+  ];
+});
 
 /** S11a-1. A hidden folder path shows to an Admin user: file_create makes
  *  the missing folders of its path (makesFolders), so a free path is made
@@ -95,38 +84,50 @@ const HIDDEN_PATH_SHOWS: readonly string[] = ['web-turn turn', 'mcp-oauth login'
 /** The two ways in of a tool cell, by name. */
 const WAYS = ['web-turn turn', 'mcp-oauth login'] as const;
 
-/** S11a-2. app_snapshot_delete deletes an app's snapshot for a caller who
- *  may not change the app's code (the oracle: a Moderator of its home): a
- *  read grant's member at the root, a Write grant's in the folder, in both
- *  modes. The content's own delete (content app-snapshots.ts
- *  deleteAppSnapshot) asks no right and the database's check lets the row
- *  go. Owner's to decide (product code, not S11a's). */
-const S11A_2 = 'S11a-2 app_snapshot_delete deletes for a caller who may not change the code';
-const SNAPSHOT_DELETE_LOOSE: readonly string[] = WAYS.flatMap((w) => [
-  `tool:app_snapshot_delete ${w}/readGrant editDraft app @root`,
-  `tool:app_snapshot_delete ${w}/writeGrant editDraft app @folder`,
-]);
-
-/** S11a-3. app_export by a member who reads the app is refused: the export
- *  is filed in the auto-filed folder (files auto-filed.ts), which is Admin
- *  only, so the member's scope has no parent folder to make it in
- *  ("parent folder 'files' not found"). Owner's to decide (where a
- *  member's export lands). */
+/** S11a-3. A member's export lands in the Admin-only auto-filed folder
+ *  (files auto-filed.ts), so the member's scope has no parent folder to make
+ *  it in ("parent folder 'files' not found"): app_export by a member who
+ *  reads the app is refused. sheet_build files its workbook there too (it
+ *  declares no item, so it has no cell). Owner's to decide (where a
+ *  member's export and built sheet land). */
 const S11A_3 = "S11a-3 app_export files a member's export in the Admin-only auto-filed folder";
-const MEMBER_EXPORT_REFUSED: readonly string[] = WAYS.flatMap((w) => [
-  `tool:app_export ${w}/writeGrant read app @root`,
-  `tool:app_export ${w}/homeModerator read app @folder`,
+const MEMBER_EXPORT_REFUSED: readonly string[] = WAYS.map(
+  (w) => `tool:app_export ${w}/homeModerator read app @folder`,
+);
+
+/** S11a-5. A member's move into a folder of another workspace answers a
+ *  database error: after the move, the tree's share follow-up (content
+ *  tree/write.ts followShares) reads node_embeds through
+ *  mantle_embeds_reached in the caller's scope, and the workspace role may
+ *  not read that table (access-matrix.ts: the admin pool only). A bug, not
+ *  S11a's to fix (product code). */
+const S11A_5 =
+  "S11a-5 a member's move to another workspace's folder: followShares reads node_embeds";
+const MEMBER_MOVE_ERRORS: readonly string[] = [
+  'tool:page_move mcp-oauth login/homeModerator move page @folder',
+  'tool:tree_item_move mcp-oauth login/homeModerator move recall @folder',
+];
+
+/** S11a-6. A Write grant's member may not set a folder's indexing or rename
+ *  it: the database refuses the edit ("not allowed to edit this item"),
+ *  where the guide lets a Write grant edit the item. Owner's to decide
+ *  (whether a folder's indexing and name are its manager's). */
+const S11A_6 = "S11a-6 a Write grant may not set a folder's indexing or rename it";
+const FOLDER_EDIT_REFUSED: readonly string[] = WAYS.flatMap((w) => [
+  `tool:folder_set_indexing ${w}/writeGrant edit branch @root`,
+  `tool:tree_folder_update ${w}/writeGrant edit branch @folder`,
 ]);
 
-/** S11a-4. app_import through a turn makes the app in the turn's workspace,
- *  and a Write grant's member is no Moderator of theirs (W): the new app is
- *  refused ("You cannot change this item in your workspaces"), where the
- *  oracle answers the file's read only. The other "from a file" tools make
- *  their item where the caller may. Owner's to decide. */
-const S11A_4 = "S11a-4 app_import through a writeGrant turn: the new app's home refuses";
-const IMPORT_HOME_REFUSED: readonly string[] = [
-  'tool:app_import web-turn turn/writeGrant read file @root',
-];
+/** S11a-7. app_table_export_set is refused for its app's Moderator: the
+ *  export row's write check is `manage` (access-matrix.ts), whose INSERT
+ *  branch asks a Moderator of the row's workspace_id (mantle_write_check_trg,
+ *  written for grant rows), and app_table_exports has no such column, so no
+ *  scoped insert passes (warn reports it, on refuses). A bug since the gap
+ *  tables closed (migration 0302), not S11a's to fix (product code). */
+const S11A_7 = 'S11a-7 app_table_export_set: the manage check asks a workspace_id the row lacks';
+const EXPORT_LINK_REFUSED: readonly string[] = WAYS.map(
+  (w) => `tool:app_table_export_set ${w}/homeModerator editDraft app @root`,
+);
 
 /** The actor check modes the surface cells run in (docs/update-prod.md:
  *  off, the fleet's default; warn; on). */
@@ -136,41 +137,50 @@ export const CHECK_MODES: readonly CheckMode[] = ['off', 'warn', 'on'];
 export type KnownFailure = {
   /** The finding (F1, F2, ...). */
   finding: string;
-  /** A piece of the cell's failure reason, as the run prints it. */
-  reason: string;
+  /** A piece of the cell's failure reason, as the run prints it (or one of
+   *  several: a cell that fails in another words in each mode). */
+  reason: string | readonly string[];
   /** A surface cell: the modes it fails in (all three when not given). */
   modes?: readonly CheckMode[];
 };
 
-const known = (finding: string, reason: string, modes?: readonly CheckMode[]): KnownFailure =>
-  modes ? { finding, reason, modes } : { finding, reason };
+const known = (
+  finding: string,
+  reason: string | readonly string[],
+  modes?: readonly CheckMode[],
+): KnownFailure => (modes ? { finding, reason, modes } : { finding, reason });
 
 export const KNOWN_FAILURES: Readonly<Record<string, KnownFailure>> = {
-  // The tool cells (S11a): P1 in warn, S11a-1 in both modes.
+  // The tool cells (S11a): P1 in warn, the findings in both modes.
   ...Object.fromEntries(
-    [...BELOW_ON_TOOL_CELLS, ...BELOW_ON_TOOL_CELLS_FOLDER].map((name) => [
-      name,
-      known(P1, 'changed, the oracle denies', ['warn']),
-    ]),
-  ),
-  ...Object.fromEntries(
-    BELOW_ON_FOLDER_DESCRIBE.map((name) => [
-      name,
-      known(P1, 'changed, the oracle denies', ['warn']),
-    ]),
+    BELOW_ON_TOOL_CELLS.map((name) => [name, known(P1, 'changed, the oracle denies', ['warn'])]),
   ),
   ...Object.fromEntries(
     HIDDEN_PATH_SHOWS.map((name) => [name, known(S11A_1, "not a random uuid's answer")]),
-  ),
-  // Round 2 (the seeded content, a8-tool-content.ts): S11a-2 to S11a-4.
-  ...Object.fromEntries(
-    SNAPSHOT_DELETE_LOOSE.map((name) => [name, known(S11A_2, 'changed, the oracle denies')]),
   ),
   ...Object.fromEntries(
     MEMBER_EXPORT_REFUSED.map((name) => [name, known(S11A_3, 'refused, the oracle allows')]),
   ),
   ...Object.fromEntries(
-    IMPORT_HOME_REFUSED.map((name) => [name, known(S11A_4, 'refused, the oracle allows')]),
+    MEMBER_MOVE_ERRORS.map((name) => [
+      name,
+      known(S11A_5, 'refused, the oracle allows: Error: the database could not run this request'),
+    ]),
+  ),
+  ...Object.fromEntries(
+    FOLDER_EDIT_REFUSED.map((name) => [
+      name,
+      known(S11A_6, 'You cannot change this item in your workspaces'),
+    ]),
+  ),
+  ...Object.fromEntries(
+    EXPORT_LINK_REFUSED.map((name) => [
+      name,
+      known(S11A_7, [
+        'INSERT on app_table_exports: not a Moderator of the workspace',
+        'You cannot change this item in your workspaces',
+      ]),
+    ]),
   ),
   // The grid (SQL): none since F4.
   // The surface cells (all three check modes unless named).
@@ -204,8 +214,10 @@ export function sortFailures(
   for (const [name, why] of failures) {
     const k = KNOWN_FAILURES[name];
     if (!k || !ours(name)) unexpected.push(`${name}: ${why}`);
-    else if (!why.includes(k.reason)) {
-      unexpected.push(`${name}: listed (${k.finding}) for "${k.reason}", fails with: ${why}`);
+    else if (!(typeof k.reason === 'string' ? [k.reason] : k.reason).some((r) => why.includes(r))) {
+      unexpected.push(
+        `${name}: listed (${k.finding}) for "${String(k.reason)}", fails with: ${why}`,
+      );
     }
   }
   const fixed = Object.keys(KNOWN_FAILURES).filter((n) => ours(n) && !failures.has(n));

@@ -182,8 +182,10 @@ jobs:
           /ws-
 
       # The A8 matrix (workspaces arch plan v2, section 12 A8; docs/actors.md,
-      # "A8 matrix"): the SQL grid against the guide oracle and the surface
-      # cells on every way in. Under a minute on the workstation.
+      # "A8 matrix"): the SQL grid against the guide oracle, the surface
+      # cells on every way in, and the tool cells (each tool through a turn
+      # and the MCP surface, in warn and on). About 90 s on the workstation,
+      # the tool cells 70 s of it.
       - name: Test (matrix)
         env:
           MANTLE_TEST_DATABASE_URL: ${{ env.CI_DATABASE_URL }}

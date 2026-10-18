@@ -1461,7 +1461,9 @@ const app_snapshot_restore: BuiltinToolDef = {
 const app_snapshot_delete: BuiltinToolDef = {
   slug: 'app_snapshot_delete',
   policy: {
-    matrix: { action: 'editDraft', param: 'id', kinds: ['app'] },
+    // A snapshot's delete asks edit of the app, as the HTTP route does (not
+    // the app's code).
+    matrix: { action: 'edit', param: 'id', kinds: ['app'] },
     effect: 'write',
     spends: 'none',
     scope: 'any',

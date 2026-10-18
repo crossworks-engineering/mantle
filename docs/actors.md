@@ -284,9 +284,9 @@ change and its audit row (`mantle_grant_change`, `mantle_grant_move_home`,
   route, the gate refuses one with no row.
 - **A tool**: a `ToolPolicy` (typecheck fails without one); a write
   declares its `clientSourced` rule (unset, a client-sourced call waits),
-  its `itemArgs` and its A8 `matrix` (action and argument, or `none` and
-  why; an id-taking read too), read by no gate: the A8 tool cells are made
-  from it; `a8-coverage.test.ts` pins `a8Uncovered` 0 and `a8Exempt` 111.
+  `itemArgs` and A8 `matrix` (action and argument, or `none` and why; an
+  id-taking read too), read by no gate: the tool cells (one allowed, one
+  refused at least); `a8-coverage.test.ts` pins `a8Uncovered` 0, `a8Exempt` 105.
 - **A table**: a row in `packages/db/src/access-matrix.ts` (with none no
   scoped role may touch it); an item table gets the actor trigger
   (`actor-trigger-coverage.db.test.ts`).

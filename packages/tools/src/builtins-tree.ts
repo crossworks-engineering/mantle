@@ -25,7 +25,7 @@ import {
   type TreeFolderPatch,
 } from '@mantle/content/tree';
 import { TREE_KIND_SPECS, TREE_MAX_DEPTH, type TreeKind } from '@mantle/client-types/tree';
-import { treeKindsBy } from '@mantle/client-types/kinds';
+import { treeKindsBy, type ItemKind } from '@mantle/client-types/kinds';
 import { APP_TINTS, isAppTint, type AppTint } from '@mantle/client-types/app-nav';
 import { projectAppIcon } from '@mantle/content-core/app-nav';
 import type { BuiltinToolDef, ToolHandlerContext, ToolHandlerResult } from './types';
@@ -278,7 +278,13 @@ export const tree_item_move: BuiltinToolDef = {
   slug: 'tree_item_move',
   usageTier: 2,
   policy: {
-    matrix: { none: 'a move between folders: the guide oracle has no such action' },
+    // The guide's move (H to T): the destination folder's home is T. The
+    // kinds a tree files (a folder is moved with tree_folder_update).
+    matrix: {
+      action: 'move',
+      param: 'item_ids',
+      kinds: Object.values(TREE_KIND_SPECS).map((t) => t.nodeType as ItemKind),
+    },
     effect: 'write',
     spends: 'none',
     scope: 'any',

@@ -40,7 +40,8 @@ import { CS } from '../client-sourced-rule';
 export const sandbox_create: BuiltinToolDef = {
   slug: 'sandbox_create',
   policy: {
-    matrix: { none: 'a sandbox is not an item' },
+    // The inbox folder is read in the caller's scope; the sandbox is no item.
+    matrix: { action: 'read', param: 'inbox_folder_id', kinds: ['branch'] },
     effect: 'write',
     spends: 'none',
     scope: { area: 'settings' },
