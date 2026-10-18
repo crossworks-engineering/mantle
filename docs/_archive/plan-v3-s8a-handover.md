@@ -142,14 +142,14 @@ is P1b's own count, set by hand with its reason in `_notes`:
   member cases (the session stays on the role by the owner decision),
   `memberLoginActive` and `findMemberAsset` (both until S8b by the plan).
 - `loginKindBranches` 52 to **51**: areasOf's "migration skipped" branch.
-- `historyCodeComments` 2339 to **2338** (on v0.300.95); `S8a` is added to
+- `historyCodeComments` 2335 to **2334** (on v0.300.96); `S8a` is added to
   HISTORY_HEADING_CODES (`eslint-rules/cleanup-counts.mjs`) for this
   file's heading, and no new code comment names it.
 - `inHandlerAreaChecks` 21 to **23**, raised: requireArea is now made of
   the two asks the plan names (scopeHasArea in its login's own scope,
   loginHasArea unscoped); the counter counts the asks inside it as well as
   each requireArea use. No new ask after a gate.
-- `dbClientLines` 3145 to **3160** (on v0.300.95), raised: `loginAreas`, the one
+- `dbClientLines` 3145 to **3160** (on v0.300.96), raised: `loginAreas`, the one
   system-pool reader of `mantle_login_areas` (getAdminDb lives only in
   client.ts).
 - `sqlRoleReaders` 14, unchanged: 0306 redefines a reader, adds none.
@@ -292,6 +292,13 @@ a1-d1-routes, w7-int-fix3-session, both workspaces.db files,
 w6a-route-sweep): 219 of 220 passed; the one failing cell (it asked for
 the function's message, the refusal is the table's) was fixed, and its
 three files then passed, 28 of 28.
+
+## Rebase on v0.300.96 (405f351da, S12, no migration)
+
+Migration kept: `0306_admin_membership`, `when` 1790197680000. Pins
+re-measured on the new base, the same reasons (historyCodeComments 2335
+to 2334 there). Gates on the rebased head: see the reply that hands it
+over (typecheck, lint, format, docs, arch, web build, unit vitest).
 
 ## Rebase notes
 
