@@ -3,7 +3,8 @@
 The branch `feat/s2a-a1a2` (one branch, one migration, one release, two
 builder parts). The spec's rule is in [../actors.md](../actors.md),
 sections 8, 9 and 15; this file holds the step's detail and its handovers.
-Part a1 is built here; part a2 is the next builder's.
+Parts a1 and a2 are both built here, with the a1 audit's fixes (a1 audited
+8/10, CONTINUE TO a2). The branch merges as one release, one migration.
 
 ## Part a1: what it does
 
@@ -101,7 +102,7 @@ before. In the drift case only (a login whose role and Admin row disagree),
 leaving Admin by oneself is refused now (`self_demote`), as the role change
 always refused it.
 
-## Expected red until a2 (the ONE list)
+## Expected red until a2 (the ONE list; green after a2, see "DB tests (a2)")
 
 Why: an Admin user's write on `/api/workspaces/*` takes
 `noteSystem('admin-write')` before any scope (session.ts `anyLoginScope`),
@@ -153,32 +154,123 @@ raw execute in the scope: `permission denied for table node_embeds`. The
 grant sweep records no successful scoped move, so main had no cell for it.
 Proposed as its own task (not fixed here).
 
-## What a2 must do
+## The a1 audit fixes (8/10, CONTINUE TO a2)
 
-- Resources and the assistant attach (plan v3.2 S2a a2): the definers
-  `mantle_ws_resource_add`, `mantle_ws_resource_set_write`,
-  `mantle_ws_resource_remove`, `mantle_ws_set_assistant`;
-  `mantle_ws_attach_assistants` a definer through `mantle_ws_set_assistant`'s
-  helper; the three allowlist actors `system:boot:migrate-workspaces`,
-  `system:first-owner-attach`, `system:onboarding-attach` (in
-  `mantle_ws_system_work`'s array and `WORKSPACE_SYSTEM_REASONS`, each
-  caller moved to `systemWork`; server/main.ts's `runAsSystem` with
-  `boot:migrate-workspaces` is refused by a1's arch-lints cell once the
-  reason is in the list, so it moves in the same commit).
+- **M2** (client.ts `wrapsStatement`): workspace system work sends EVERY
+  statement with its actor, a read outside a transaction too. Before, only
+  writes were wrapped outside a transaction, so a bare `select
+  mantle_ws_...()` under `systemWork('ws-clear-ticks')` went with no
+  `mantle.actor` and the definers refused it. Cell: "systemWork(ws-clear-ticks)
+  sets mantle.actor ... in every check mode" now also reads the setting and
+  calls a definer with `db.execute` outside a transaction.
+- **M3, the decision**: the first owner (signup, `first-owner.ts`) and
+  onboarding (`onboarding-provision.ts`) run the assistant attach **in the
+  login's own scope** (the plan's path: the assistants area by
+  `mantle_scope_has_area`), never as system work. No exception to
+  `systemWork`'s "never inside a request" rule, and the SQL allowlist holds
+  two actors, not four: `system:ws-clear-ticks` and
+  `system:boot:migrate-workspaces`. `attachDefaultAssistants(loginId)` runs the
+  call in a system-pool transaction with that login's `mantle.ws`,
+  `mantle.mod_ws` and `mantle.scope_login` set (as `systemPoolTx` sets a
+  write scope); signup passes the new owner's id, onboarding
+  `configuredBy ?? ownerId`. Cells: `workspaces-migrate.db.test.ts` (signup's
+  attach logs no failure; onboarding's form attaches the persona on Admin, 1;
+  no actor and no system work refused; the boot's form as `systemWork`), and
+  the SQL cell "the assistant attach (a2)" in `ws-user-definers.db.test.ts`.
+  Under `test:runtime-role` the onboarding cell is the "fresh install ends
+  with the persona on Admin, runtime role on" cell.
+- **L1** (`createHomeFallback`): `mantle.scope_login` is the login bound to
+  the call (`boundLoginId`, viewer.ts: a login actor's, else the open
+  scope's login, as an assistant turn names it); a call for another login,
+  or with none bound, is refused in TS (`RuntimeFaultError`). Cells in
+  `ws-user-definers.db.test.ts`.
+- **L2**: see "Counts".
+- **L3** (`mantle_ws_create`): through `mantle_ws_acting_login`, as the user
+  definers: a disabled acting login and a read-only caller are refused; a
+  login other than the acting one says `mantle_ws:forbidden`.
+- **L4** (`dbClientLines`): 3142 on main, 3175 here, the offset kept with a
+  reason line for the F auditor in the pin's note (every added line is a
+  rule of the definers' callers only the gateway can hold until S5).
+  `boundLoginId`, `withSystemPoolInWriteScope` and `carriedWriteScope` live in
+  viewer.ts to keep client.ts down.
+- **L5**: `ws-clear-member-ticks.ts`'s header, the `createWorkspace`, `wsRoute`,
+  `workspaceCaller` and `workspaceWriteSystem` comments, and docs/actors.md
+  section 9: the 0305 writers (users, resources, assistant, the attach)
+  refuse no acting login but system work; the workspace row, the landing app
+  and the archive write in TS until S2b.
+- **L6**: `viewer.test.ts` "systemWork with a workspace reason refuses inside
+  a request slot" (every reason of `WORKSPACE_SYSTEM_REASONS`; `fn` never
+  runs).
+
+## Part a2: what it does
+
+All SQL in the same migration `0305_ws_user_definers` (re-runnable,
+CREATE OR REPLACE only; no table, row or trigger changes):
+
+- `mantle_ws_put_assistant(fn, owner, ws, current, next, actor, by)`: private
+  (granted to no role). THE one SQL body that puts an assistant on a
+  workspace or takes it off: `setAssistant`'s rules moved (the current one
+  with history stays; a new one is a chat assistant of the brain, not another
+  workspace's, not one with history elsewhere), the resource row, the unbind
+  of a detached one with no history, the event rows.
+- `mantle_ws_resource_seat` (private): the acting login, the workspace locked
+  as `mantle_ws_user_seat` sees it, the area (connectors, or assistants for
+  the assistant kind) by `mantle_scope_has_area`, archived refused.
+  `mantle_ws_assistant_of(ws)` (private): the assistant now.
+- `mantle_ws_resource_add(owner, ws, kind, ref, write)`,
+  `mantle_ws_resource_set_write(owner, ws, kind, ref, write)`,
+  `mantle_ws_resource_remove(owner, ws, kind, ref)`,
+  `mantle_ws_set_assistant(owner, ws, agent)`: SECURITY DEFINER, PUBLIC
+  revoked, the write role's (`WRITE_ROLE_FUNCTIONS`). The refusals in the
+  order the routes answered in; each change writes its event row (the acting
+  login as actor and `added_by`).
+- `mantle_ws_attach_assistants`: SECURITY DEFINER, its inserts through
+  `mantle_ws_put_assistant`. No acting login: `mantle_ws_system_work()` (the
+  boot); one: the assistants area. Its rows are as before (no `added_by`, no
+  event actor, `by: attach`). The runtime role's, as before.
+- `mantle_ws_system_work`'s allowlist: plus `system:boot:migrate-workspaces`
+  (and `WORKSPACE_SYSTEM_REASONS`); server/main.ts's workspaces step is
+  `systemWork(..., 'boot:migrate-workspaces')` in the same commit (the
+  snapshot copies kept a `runAsSystem` of their own, renamed
+  `boot:snapshot-copies`).
+
+TypeScript:
+
+- `addResource`, `patchResource`, `removeResource`: the read in the caller's
+  scope (`seeWorkspace`, `mayManageResource`: the 404 and the 403 before any
+  change, as before), then one definer call in the caller's own transaction
+  (`resourceDefiner`), one mapper (`wsRefusal`'s table, then
+  `assistantError`'s constraints). The in-transaction re-read and lock are
+  gone (the definer locks).
 - Last commit: an Admin user's write on `/api/workspaces/*` enters the
-  login's scope (session.ts `anyLoginScope`). Then `adminRoleChange`'s one
-  transaction must run on the system pool WITH the caller's write scope set
-  (the write role holds no right on `auth.users`, sessions, push devices),
-  so `applyLoginChange`'s `db.transaction` must not route to the write role
-  there, and its system path must set `mantle.ws`, `mantle.mod_ws` and
-  `mantle.scope_login` as `systemPoolTx` does (today `loginWriteClient`'s
-  system path, `adminSql().begin`, sets none). a1 did not add that switch:
-  with no write scope to carry in a1 it could not be proved, and it sits in
-  client.ts's gateway lines (S3, S4a hunks). The list above is then green.
-- The pins of a2 (plan): `requestSystemExits_adminWrite` down,
-  `scopeHoldsAdminCalls` down, `setAssistantCopies` 1 to 2,
-  `workspaceTableRawWrites` down to what S2b holds, `sqlAreaRules` stays 3
-  (its last two are S2b b3's Telegram asks).
+  login's scope on the write role, as a member's does (session.ts
+  `anyLoginScope`, `inLoginScopeForWrites`: the grants panel and the
+  workspaces); `noteSystem('admin-write')` stays for the other any-login rows
+  (keys, chat, pairings). `adminRoleChange` runs inside
+  `withSystemPoolInWriteScope` (viewer.ts; client.ts `db` sends its reads to
+  the system pool and opens each transaction with the request's write scope
+  set: `mantle.ws`, `mantle.mod_ws`, `mantle.scope_login`), because the write
+  role holds no right on `auth.users`, sessions or push devices, and the user
+  definer inside checks the scope's login. Its "no role change" path runs the
+  same way.
+- The box script already counts "Admin workspaces with no assistant and no
+  assistant removal event" (`admin_workspaces_without_assistant`, P1a).
+
+**WsError codes (the new refusals and their answers, each as the route
+answered before):** `resources_admin_only` 42501 (403 admin_only, "Only an
+Admin user can change this workspace's resources."), `no_kind` P0002 (404),
+`assistant_exists` 55000 and `connector_exists` 55000 (409
+resource_exists), `invalid_id` 22023, `no_assistant` 22023, `no_connector`
+22023, `no_write_tick` 22023 (400 invalid), `assistant_in_use` 55000 (409),
+`assistant_has_history` 55000 (409), `connector_not_on` and
+`assistant_not_on` P0002 (404 not_found). `mantle_ws:forbidden` from
+`mantle_ws_create` (a login other than the acting one) and `read_only` /
+`no_acting_login` / `not_brain` stay unmapped: faults, not answers.
+
+**Changed answers: none intended.** Changed rows: an Admin user's create,
+user change and resource change now carry the acting login on the write role
+(the rows and events are as before; the request's outcome is the login's
+scope, not `system: admin-write`).
 
 ## Counts
 
