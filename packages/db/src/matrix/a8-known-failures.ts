@@ -58,9 +58,6 @@ const BELOW_ON_TOOL_CELLS: readonly string[] = [
   // A folder's description (the seeded item's probe reads the node's data).
   'folder_describe edit branch @root',
   'folder_describe edit branch @folder',
-  // A snapshot's delete asks edit of the app: the database refuses it on.
-  'app_snapshot_delete edit app @root',
-  'app_snapshot_delete edit app @folder',
 ].flatMap((c) => {
   const [tool, ...rest] = c.split(' ');
   return [
