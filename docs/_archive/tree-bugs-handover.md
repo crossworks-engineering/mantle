@@ -132,7 +132,7 @@ edit check together):
   grant's member moves nothing; the Moderator of H and T moves a note into
   a folder homed in T (`{ moved: 1, failed: [] }`);
 - a Moderator of H and T moves a page (`page_move`) and a note
-  (`tree_item_move`) from H into a folder homed in T: ok, moved, rehomed;
+  (`tree_item_move`) from H into a folder homed in T: ok, moved, T now holds it (its home stays H);
   the outsider, the read grant's member, the sibling Write member and the
   Write member (no manage) are refused.
 

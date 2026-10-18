@@ -622,7 +622,10 @@ describe.skipIf(!DB_URL)('the tree bugs: a Write rename, a cross-workspace move'
         note1(mode, 'page_move mcp mod H to T', o);
         expect(o.ok, o.text).toBe(true);
         expect((await rowOf(page))!.path).toBe((await rowOf(to))!.path);
-        expect((await rowOf(page))!.home).toBe(ws.T);
+        // It keeps its home and takes the folder's workspace.
+        const held = await raw<{ ws: string }[]>`
+          select workspace_id::text as ws from item_grants where node_id = ${page}`;
+        expect(held.map((r) => r.ws)).toContain(ws.T);
 
         // tree_item_move, a note this time.
         const nfrom = await notesFolder(`${tag} nfrom ${n()}`);
@@ -672,10 +675,8 @@ describe.skipIf(!DB_URL)('the tree bugs: a Write rename, a cross-workspace move'
         const nfrom = await notesFolder(`${tag} mfrom ${n()}`);
         await grantsOn(nfrom, shared());
         const nto = await notesFolder(`${tag} mto ${n()}`);
-        await grantsOn(nto, [
-          { ws: ws.T, home: true },
-          { ws: ws.W, write: true },
-        ]);
+        // W may add to it, R reads it: the refusals are the item's manage.
+        await grantsOn(nto, [{ ws: ws.T, home: true }, { ws: ws.W, write: true }, { ws: ws.R }]);
         const sibling = await noteIn(nfrom);
         await grantsOn(sibling, [
           { ws: ws.H, home: true },
