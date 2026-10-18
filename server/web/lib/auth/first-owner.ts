@@ -66,7 +66,7 @@ export async function createFirstOwner(
   // off workspaces is not served (see the top). A database that cannot be
   // read here throws (the route answers 500, and the boot asks again).
   // The assistant attach runs in the new owner's own scope (the assistants
-  // area; 0305), never as system work inside a request.
+  // area; 0307), never as system work inside a request.
   await migrateWorkspacesQuietly('first owner', id);
   const why = await unmigratedBrainReason();
   if (why !== null) return { ok: false, reason: 'not-switched', id, email, why };

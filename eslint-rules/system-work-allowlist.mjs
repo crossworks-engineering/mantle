@@ -30,11 +30,11 @@ export const SYSTEM_WORK_PINS = {
   'server/web/lib/snapshot-copies.ts': { count: 1, why: ['snapshot-copies'] },
   // ws:clear-member-ticks: the Moderator ticks it clears go through
   // mantle_ws_set_moderator as workspace system work (the SQL allowlist
-  // mantle_ws_system_work names its actor, 0305).
+  // mantle_ws_system_work names its actor, 0307).
   'server/web/lib/workspace-ticks.ts': { count: 1, why: ['ws-clear-ticks'] },
   // The boot step: the assistant attach (mantle_ws_attach_assistants) as
   // workspace system work (its actor in the SQL
-  // allowlist, 0305). Was runAsSystem with the same reason.
+  // allowlist, 0307). Was runAsSystem with the same reason.
   'server/web/server/main.ts': { count: 1, why: ['boot:migrate-workspaces'] },
 };
 

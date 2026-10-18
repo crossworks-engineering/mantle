@@ -781,19 +781,19 @@ export const WRITE_ROLE_FUNCTIONS: Readonly<Record<string, string>> = {
   'public.mantle_ws_create(uuid,uuid,text,text)':
     'a workspace the login makes, its only user a Moderator (0293): the role holds no right on workspaces',
   'public.mantle_ws_add_user(uuid,uuid,uuid,boolean)':
-    'a user added to a workspace by the acting login (0305, S2a a1): the role holds no right on workspace_users',
+    'a user added to a workspace by the acting login (0307, S2a a1): the role holds no right on workspace_users',
   'public.mantle_ws_set_moderator(uuid,uuid,uuid,boolean,text)':
-    'a Moderator tick set or cleared by the acting login (0305, S2a a1)',
+    'a Moderator tick set or cleared by the acting login (0307, S2a a1)',
   'public.mantle_ws_remove_user(uuid,uuid,uuid)':
-    'a user removed from a workspace, or leaving it, by the acting login (0305, S2a a1)',
+    'a user removed from a workspace, or leaving it, by the acting login (0307, S2a a1)',
   'public.mantle_ws_resource_add(uuid,uuid,text,text,boolean)':
-    'a connector or the assistant added by the acting login (0305, S2a a2): the role holds no right on workspace_resources',
+    'a connector or the assistant added by the acting login (0307, S2a a2): the role holds no right on workspace_resources',
   'public.mantle_ws_resource_set_write(uuid,uuid,text,text,boolean)':
-    'a connector’s Write tick set by the acting login (0305, S2a a2)',
+    'a connector’s Write tick set by the acting login (0307, S2a a2)',
   'public.mantle_ws_resource_remove(uuid,uuid,text,text)':
-    'a connector or the assistant taken off by the acting login (0305, S2a a2)',
+    'a connector or the assistant taken off by the acting login (0307, S2a a2)',
   'public.mantle_ws_set_assistant(uuid,uuid,uuid)':
-    'the workspace’s assistant set or cleared by the acting login (0305, S2a a2)',
+    'the workspace’s assistant set or cleared by the acting login (0307, S2a a2)',
 };
 
 /** The GRANT statements for the write role. Pure. It reads exactly what the

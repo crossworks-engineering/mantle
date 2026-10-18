@@ -744,7 +744,7 @@ with no actor`. Name the session first.
 
 The four workspace tables (workspaces, workspace_users, workspace_events,
 workspace_resources) are written by definers that check the acting login
-(plan v3.2 S2a, migration 0305). `system:operator:*` is no acting login and
+(plan v3.2 S2a, migration 0307). `system:operator:*` is no acting login and
 no system work there: those definers refuse it. Repair them with the named
 command (`ws:clear-member-ticks`), or write the table by hand as the
 superuser, the session named as above.
@@ -1290,13 +1290,13 @@ count(*) from tables where draft_path is not null` must be 0), and expect
   follows `storage_path` and reads them). If drafts were lost, restore the
   pre-roll backup (the dump and the table and app database archives) instead.
 
-- **Below the workspace definers (plan v3.2 S2a a1+a2, migration 0305):**
+- **Below the workspace definers (plan v3.2 S2a a1+a2, migration 0307):**
   run its revert first, or the older image refuses every create that lands
   in a private workspace and attaches no assistant at signup or onboarding.
   As the superuser, in one transaction, before pinning the older tag:
   `docker exec -i mantle_pg psql -U postgres -d postgres -v ON_ERROR_STOP=1
--1 < packages/db/rollback/0305_ws_user_definers.revert.sql`. It puts back
-  the four functions the older image calls and takes 0305 off the ledger, so
+-1 < packages/db/rollback/0307_ws_user_definers.revert.sql`. It puts back
+  the four functions the older image calls and takes 0307 off the ledger, so
   the next roll forward applies it again
   (why and the proof: the S2a a1+a2 handover in docs/_archive/).
 

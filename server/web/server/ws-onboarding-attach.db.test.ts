@@ -3,7 +3,7 @@
  * a1+a2, audit L2): POST /api/onboarding {action: 'provision'} on the real
  * app (createApp), with signed session cookies, on a migrated scratch
  * database. provision() runs provisionDefaults, which attaches the default
- * assistants (mantle_ws_attach_assistants, 0305) in the scope of the login
+ * assistants (mantle_ws_attach_assistants, 0307) in the scope of the login
  * running the step (systemPoolTxInScope): the definer asks that login the
  * assistants area.
  *
@@ -135,7 +135,7 @@ describe.skipIf(!URL)('onboarding attaches the assistants in the login`s scope (
         .map((c) => c.map(String).join(' '))
         .filter((l) => l.includes('[workspaces] onboarding'));
       // The one failure line (failure() logs the wrapped query's message,
-      // not the definer's code; the refusal itself is the 0305 cell
+      // not the definer's code; the refusal itself is the 0307 cell
       // "the assistant attach").
       expect(logged).toHaveLength(1);
       expect(logged[0]).toMatch(/failed/);

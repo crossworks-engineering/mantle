@@ -45,7 +45,7 @@ export async function migrateWorkspaces(): Promise<WsMigrateRow[]> {
 }
 
 /** Attach the default assistants where Admin or Team has none yet. Returns
- *  how many it attached. A definer (0305): with no
+ *  how many it attached. A definer (0307): with no
  *  `loginId` it is system work (the boot, systemWork in server/main.ts);
  *  with one it runs in that login's own scope on the system pool (its
  *  workspaces and its login set: systemPoolTxInScope), where

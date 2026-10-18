@@ -8,9 +8,11 @@ Parts a1 and a2 are both built here, with the a1 audit's fixes (a1 audited
 
 ## Part a1: what it does
 
-Migration `0305_ws_user_definers` (journal `when` 1790197620000, above
-0304's 1790197560000; the number is claimed at the merge, plan rule 3, and
-`ws-user-definers.db.test.ts` holds the renumber proof).
+Migration `0307_ws_user_definers` (journal `when` 1790197740000, above
+tree-bugs' 0305 at 1790197620000 and S8a's 0306 at 1790197680000; written
+as 0305 until fix round 1, see "Fix round 1"; the number is claimed at the
+merge, plan rule 3, and `ws-user-definers.db.test.ts` holds the renumber
+proof).
 
 - `mantle_ws_system_work()`: the one "system work" a workspace definer takes
   from a caller with no acting login. True only when no acting login is set
@@ -195,7 +197,7 @@ mantle_ws_...()` under `systemWork('ws-clear-ticks')` went with no
   viewer.ts to keep client.ts down.
 - **L5**: `ws-clear-member-ticks.ts`'s header, the `createWorkspace`, `wsRoute`,
   `workspaceCaller` and `workspaceWriteSystem` comments, and docs/actors.md
-  section 9: the 0305 writers (users, resources, assistant, the attach)
+  section 9: the 0307 writers (users, resources, assistant, the attach)
   refuse no acting login but system work; the workspace row, the landing app
   and the archive write in TS until S2b.
 - **L6**: `viewer.test.ts` "systemWork with a workspace reason refuses inside
@@ -204,7 +206,7 @@ mantle_ws_...()` under `systemWork('ws-clear-ticks')` went with no
 
 ## Part a2: what it does
 
-All SQL in the same migration `0305_ws_user_definers` (re-runnable,
+All SQL in the same migration `0307_ws_user_definers` (re-runnable,
 CREATE OR REPLACE only; no table, row or trigger changes):
 
 - `mantle_ws_put_assistant(fn, owner, ws, current, next, actor, by)`: private
@@ -483,7 +485,7 @@ finding, what changed:
   definer, the attach refused for clear-ticks, the create refused for both.
   Changed answer (narrower): `ws:clear-member-ticks` could also add a user
   and make a workspace before; it never called either.
-- **L4:** docs/actors.md: the 0305 writers take one named actor per definer
+- **L4:** docs/actors.md: the 0307 writers take one named actor per definer
   with no acting login; what still writes in TS on the system pool
   (`workspace-write`) is the workspace row, landing app, archive and the
   PATCH assistant (known limit, S2); the `workspace-write` row says so.
@@ -496,7 +498,19 @@ finding, what changed:
   swap: rows and answers byte-equal. An id that is none: PATCH's body check answers it (400
   invalid, "assistantId: Invalid UUID"); the SQL copy takes a uuid only, so
   its caller cannot pass one (S2b's caller validates as PATCH does).
-- **L5, the renumber:** after tree-bugs merges (the CEO's go), below.
+- **L5, the renumber:** on the CEO's go, rebased onto origin/main
+  53b507b53 (v0.300.95, tree-bugs merged with `0305_folder_rename_write`,
+  `when` 1790197620000) and renumbered to `0307_ws_user_definers`, `when`
+  1790197740000: S8a holds 0306 (`when` 1790197680000) and merges first, so
+  the journal entry is written now at idx 306 and moves to 307 when S8a's
+  rebase lands (only that line). Every reference in this branch's lines
+  moved with it (the file, the revert file and its ledger line, `TAG`, the
+  comments and pin notes; main's own 0305 lines untouched). The renumber
+  proof: `when` above every `when` before it and above S8a's (a cell), a
+  database just before 0307 applies 0307 and only it, and the revert's
+  ledger line names 0307's own `when` (a cell). The rebase conflicts were
+  the journal (main's 0305 kept, this entry after it) and the pins file
+  (re-measured value by value: "Pins (fix round 1)").
 
 **Changed answers the audit named (both narrower or no reader):**
 
@@ -513,24 +527,24 @@ finding, what changed:
 
 ## Rollback
 
-**What breaks on the image one release back (N-1) with 0305 in place, and
+**What breaks on the image one release back (N-1) with 0307 in place, and
 no revert:**
 
 - **Member creates.** N-1's `createHomeFallback` calls
   `mantle_ws_private_workspace(login)` on the system pool with no scope
-  login; 0305 refuses it (`only the acting login's own`, 42501). Every
+  login; 0307 refuses it (`only the acting login's own`, 42501). Every
   create that lands in the private workspace is refused ("You have no
   workspace to create in yet."), an existing private workspace included
   (the check comes first).
 - **The signup and onboarding attach.** N-1 calls
-  `mantle_ws_attach_assistants()` there with no system work actor 0305
+  `mantle_ws_attach_assistants()` there with no system work actor 0307
   takes: refused, only logged; Admin gets no assistant until the boot (the
   boot's actor `system:boot:migrate-workspaces` is the same in N-1, so the
   boot attach works).
 - An unscoped `mantle_ws_create` or `mantle_workspace_event`: refused (none
   in N-1's product code; a hand call).
 - Not broken: N-1's user and resource writes are raw table writes on the
-  system pool (0305 changes no table, row, trigger or grant), and the new
+  system pool (0307 changes no table, row, trigger or grant), and the new
   definers are never called by N-1.
 
 **How to roll back:** before pinning the older image, as the superuser that
@@ -538,19 +552,19 @@ runs the migrations, in one transaction:
 
 ```sh
 docker exec -i mantle_pg psql -U postgres -d postgres -v ON_ERROR_STOP=1 -1 \
-  < packages/db/rollback/0305_ws_user_definers.revert.sql
+  < packages/db/rollback/0307_ws_user_definers.revert.sql
 ```
 
 then pin the older tag (docs/update-prod.md "Rollback"). The file puts the
 four functions back exactly as 0293, 0272, 0279 and 0260 left them (copied
-verbatim), keeps every grant (CREATE OR REPLACE), leaves the functions 0305
-added (narrower, never called by N-1), and deletes 0305's ledger row so the
-next roll forward applies 0305 again (it is re-runnable). Proved in
-`ws-user-definers.db.test.ts`: the older image's calls refused under 0305
+verbatim), keeps every grant (CREATE OR REPLACE), leaves the functions 0307
+added (narrower, never called by N-1), and deletes 0307's ledger row so the
+next roll forward applies 0307 again (it is re-runnable). Proved in
+`ws-user-definers.db.test.ts`: the older image's calls refused under 0307
 and working after the revert (createHomeFallback's call makes the private
 workspace; the unscoped create, event and attach run), the catalog
 (`pg_get_functiondef` and the grants of the four) equal to a database at
-0304 after the revert, the ledger row gone, and the runner applying 0305
+0304 after the revert, the ledger row gone, and the runner applying 0307
 again. A cell also pins that the revert's ledger line names this
 migration's own `when` (so the renumber cannot leave it stale).
 

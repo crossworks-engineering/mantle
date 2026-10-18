@@ -949,7 +949,7 @@ export type AsSystemReason =
 /**
  * The workspace system work: the reasons whose actor
  * (system:<reason>) a workspace definer takes from a caller with no acting
- * login. The SQL allowlist (mantle_ws_system_work, migration 0305) names
+ * login. The SQL allowlist (mantle_ws_system_work, migration 0307) names
  * exactly these actors, one per real caller, each with the one definer it
  * calls (a listed actor on another definer is refused), each added in the
  * release that moves its caller (at most five). Only systemWork takes one (asSystem with

@@ -173,7 +173,7 @@ describe('the architecture ratchets (pinned counts)', () => {
   });
 
   it('workspace system work (plan v3.2 S2a): its reasons only in pinned systemWork calls', () => {
-    // The SQL allowlist (mantle_ws_system_work, 0305) is capped at five
+    // The SQL allowlist (mantle_ws_system_work, 0307) is capped at five
     // actors (plan rule 6); each one's reason is passed to systemWork in
     // the files system-work-allowlist.mjs pins for it, and nowhere else: no
     // runAsSystem, systemActor or systemUnder names one, in any file.

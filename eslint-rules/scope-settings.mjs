@@ -3,7 +3,7 @@
  * the system pool (plan v3.2 S2a a1+a2, audit L1 and L7).
  *
  * The scope settings (mantle.ws, mantle.mod_ws, mantle.scope_login) decide
- * what a workspace definer takes as the acting login (0305). They are set in
+ * what a workspace definer takes as the acting login (0307). They are set in
  * packages/db/src/client.ts only, each place a scope mechanism of its own:
  * writeScopeSettings (the system pool: systemPoolTx and systemPoolTxInScope),
  * the write role's settings, the turn scope's and withScope's. Anywhere else

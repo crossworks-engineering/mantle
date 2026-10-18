@@ -2297,7 +2297,7 @@ async function anyLoginScope(res: Resolved): Promise<NextResponse | null> {
   // panel's and the workspaces': those run in the login's scope, reads and
   // writes, as every login's do (arch A6, A8 matrix F7 a; the grants' reads
   // moved into the scope with F4), so the database's checks
-  // (mantle_grant_change, 0279; the workspace definers, 0305) answer for
+  // (mantle_grant_change, 0279; the workspace definers, 0307) answer for
   // the acting login on the write role.
   if (res.kind === 'admin' && route.effect === 'write' && !inLoginScopeForWrites(route)) {
     return noteSystem('admin-write');

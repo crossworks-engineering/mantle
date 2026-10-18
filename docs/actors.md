@@ -247,8 +247,8 @@ contact sharing, name checks, `mantle_ws_create`); the write role's grant
 change and its audit row (`mantle_grant_change`, `mantle_grant_move_home`,
 `mantle_workspace_event`, 0279), folder subtree (`mantle_subtree_rewrite`,
 `mantle_subtree_refuse_hidden`, 0282), edit check writes
-(`mantle_secret_put`, `mantle_recall_retarget`, 0281), a workspace's users, resources and assistant (0305).
-With no acting login the 0305 writers refuse all but one named actor per definer (`mantle_ws_system_work(fn)`);
+(`mantle_secret_put`, `mantle_recall_retarget`, 0281), a workspace's users, resources and assistant (0307).
+With no acting login the 0307 writers refuse all but one named actor per definer (`mantle_ws_system_work(fn)`);
 the workspace row, landing app, archive and PATCH assistant write in TS until S2b; named: login bridge, bridge connector, the switch, guards.
 
 ## 10. HTTP

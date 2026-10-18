@@ -498,7 +498,7 @@ function actorParams(): [string, string, string] | null {
   if (!actor) return null;
   // Workspace system work sets its actor with the check off
   // too: the workspace definers read mantle.actor to know it
-  // (mantle_ws_system_work, 0305), whatever the check's mode. Its mode goes
+  // (mantle_ws_system_work, 0307), whatever the check's mode. Its mode goes
   // as 'off', the box's own, so no check reads it.
   if (mode === 'off' && !isWorkspaceSystemActor(actor)) return null;
   return [actorSetting(actor), writeModeOf(actor), mode];
@@ -2051,7 +2051,7 @@ function writeScopeSettings(scope: SystemPoolScope) {
 }
 
 /** THE one system-pool transaction in a login's scope set by hand, for a
- *  workspace definer that asks the acting login (0305) where no request
+ *  workspace definer that asks the acting login (0307) where no request
  *  scope carries one. Each caller is pinned (eslint-rules/scope-settings.mjs):
  *  a new one fails the pin until it is reviewed. */
 export function systemPoolTxInScope<T>(
@@ -2877,7 +2877,7 @@ export async function createHomeFallback(
        where p.login_id = ${loginId}::uuid`)) as unknown as { ws: string }[];
     return { privateWs: ownPrivate(loginId, own[0]?.ws ?? null) };
   }
-  // The definer makes only the acting login's own (0305):
+  // The definer makes only the acting login's own (0307):
   // the scope's login (mantle.scope_login, read by the scope's checks only)
   // is the login bound to this call, never the one asked for.
   const bound = boundLoginId();

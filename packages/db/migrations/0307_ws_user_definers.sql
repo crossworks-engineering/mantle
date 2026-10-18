@@ -98,8 +98,9 @@
 -- today's WsError by one table (wsRefusal).
 --
 -- No table, row or trigger changes. Re-runnable: CREATE OR REPLACE only.
--- The number is claimed at the merge (plan v3.2 rule 3): written as 0305,
--- `when` 1790197620000 (above 0304's 1790197560000).
+-- The number is claimed at the merge (plan v3.2 rule 3): written as 0307,
+-- `when` 1790197740000 (above 0305's 1790197620000 and S8a's 0306,
+-- 1790197680000).
 SET LOCAL lock_timeout = '30s';
 --> statement-breakpoint
 CREATE OR REPLACE FUNCTION "public"."mantle_ws_system_work"(fn text)

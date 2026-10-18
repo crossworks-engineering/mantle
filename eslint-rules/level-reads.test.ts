@@ -127,7 +127,7 @@ describe('level-reads sweep', () => {
     expect(isSwept('scripts/counts.sql')).toBe(true);
     expect(isSwept('packages/content/src/x.test.ts')).toBe(false);
     expect(isSwept('packages/db/migrations/0256_x.sql')).toBe(false);
-    expect(isSwept('packages/db/rollback/0305_x.revert.sql')).toBe(false);
+    expect(isSwept('packages/db/rollback/0307_x.revert.sql')).toBe(false);
     expect(isSwept('packages/content/src/archive/old.ts')).toBe(false);
     expect(isSwept('packages/content/README.md')).toBe(false);
   });

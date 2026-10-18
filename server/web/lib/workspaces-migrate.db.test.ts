@@ -53,7 +53,7 @@ describe.skipIf(!URL)('workspaces for a fresh install (W5b1 audit M1)', () => {
     expect((await sql`select mantle_ws_skip_reason() as r`)[0]!.r).toBe('no brain anchor yet');
 
     const { createFirstOwner } = await import('./auth/first-owner');
-    // The signup's attach runs in the new owner's own scope (0305): it must
+    // The signup's attach runs in the new owner's own scope (0307): it must
     // not fail (a failure is only logged).
     const errors = vi.spyOn(console, 'error');
     const res = await createFirstOwner('owner@example.invalid', 'a long enough password 1');
@@ -128,7 +128,7 @@ describe.skipIf(!URL)('workspaces for a fresh install (W5b1 audit M1)', () => {
     // level): 0251 attaches it only at team level, and an admin-level
     // assistant on Team would bring admin-level tools into Team turns.
     // Onboarding's form: in the owner's own scope (the assistants area). With
-    // no acting login and no system work it is refused (0305).
+    // no acting login and no system work it is refused (0307).
     await expect(wm.attachDefaultAssistants()).rejects.toThrow();
     expect(await wm.attachDefaultAssistants(owner)).toBe(1);
     expect(await assistants()).toEqual([{ key: 'admin', slug: 'persona-test' }]);

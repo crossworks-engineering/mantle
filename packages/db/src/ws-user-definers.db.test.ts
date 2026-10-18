@@ -1,6 +1,6 @@
 /**
  * The users of a workspace in SQL (the workspaces arch plan;
- * migration 0305_ws_user_definers), on a database of its own (so
+ * migration 0307_ws_user_definers), on a database of its own (so
  * mantle_brain_id() is this file's anchor) that the workspaces switch made
  * live:
  *
@@ -30,13 +30,14 @@
  *  - the catalog: the private helpers run by no role; every function that
  *    writes the four workspace tables is a rule or a named exemption
  *    (workspaceTableWriterFns), each exemption's cell;
- *  - the renumber proof: 0305's `when` is above 0304's, and a database at
- *    0304 applies 0305 and only it;
+ *  - the renumber proof: 0307's `when` is above every `when` before it (S8a's
+ *    1790197680000 included), and a database just before it applies 0307
+ *    and only it;
  *  - the rollback (plan rule 2): the older image's calls (createHomeFallback
  *    with no scope login; an unscoped create, event and attach) are refused
- *    under 0305 and work again after rollback/<tag>.revert.sql; the revert
- *    puts the four functions back byte for byte as a database at 0304 has
- *    them, takes 0305 off the ledger, and a roll forward applies it again.
+ *    under 0307 and work again after rollback/<tag>.revert.sql; the revert
+ *    puts the four functions back byte for byte as a database just before 0307 has
+ *    them, takes 0307 off the ledger, and a roll forward applies it again.
  *
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/db/src/ws-user-definers.db.test.ts
  */
@@ -61,7 +62,7 @@ import { AS_SYSTEM_OTHER_REASONS, AS_SYSTEM_TURN_REASONS } from './viewer';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 const DIR = join(__dirname, '..', 'migrations');
-const TAG = '0305_ws_user_definers';
+const TAG = '0307_ws_user_definers';
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 /** What an operator runs before pinning the image one release back. */
 const REVERT = join(__dirname, '..', 'rollback', `${TAG}.revert.sql`);
@@ -76,7 +77,7 @@ const revertStatements = (o: { ledger: boolean } = { ledger: true }): string[] =
     .filter((st) => st.replace(/^--.*$/gm, '').trim() !== '')
     .filter((st) => o.ledger || !st.includes('"drizzle"."__drizzle_migrations"'));
 
-/** The four functions 0305 tightened that the older image calls. */
+/** The four functions 0307 tightened that the older image calls. */
 const TIGHTENED = [
   'public.mantle_ws_create(uuid,uuid,text,text)',
   'public.mantle_ws_private_workspace(uuid)',
@@ -91,7 +92,7 @@ const journal = (
 ).entries;
 const at = journal.findIndex((e) => e.tag === TAG);
 
-/** The actors the SQL allowlist takes (mantle_ws_system_work, 0305), each
+/** The actors the SQL allowlist takes (mantle_ws_system_work, 0307), each
  *  on its one definer. */
 const CLEAR_TICKS = 'system:ws-clear-ticks';
 const BOOT = 'system:boot:migrate-workspaces';
@@ -101,17 +102,17 @@ const BOOT = 'system:boot:migrate-workspaces';
  *  "Every writer of the four tables"). A new one fails the catalog cell
  *  until it is added here with a rule or an F-reviewed exemption. */
 const WRITERS: Readonly<Record<string, string>> = {
-  mantle_ws_create: 'rule: the acting login, no system work (0305)',
-  mantle_ws_add_user: 'rule: the acting login, no system work (0305)',
-  mantle_ws_set_moderator: 'rule: the acting login, or system:ws-clear-ticks (0305)',
-  mantle_ws_remove_user: 'rule: the acting login, no system work (0305)',
-  mantle_ws_private_workspace: 'rule: the acting login’s own, no system work (0305)',
-  mantle_workspace_event: 'rule: refused with no acting login (0305)',
+  mantle_ws_create: 'rule: the acting login, no system work (0307)',
+  mantle_ws_add_user: 'rule: the acting login, no system work (0307)',
+  mantle_ws_set_moderator: 'rule: the acting login, or system:ws-clear-ticks (0307)',
+  mantle_ws_remove_user: 'rule: the acting login, no system work (0307)',
+  mantle_ws_private_workspace: 'rule: the acting login’s own, no system work (0307)',
+  mantle_workspace_event: 'rule: refused with no acting login (0307)',
   mantle_ws_put_assistant:
-    'private helper (no role): THE body that puts an assistant on a workspace; called by mantle_ws_set_assistant, mantle_ws_resource_add, mantle_ws_resource_remove and mantle_ws_attach_assistants, each with the rule (0305, S2a a2)',
-  mantle_ws_resource_add: 'rule: the acting login, no system work (0305, S2a a2)',
-  mantle_ws_resource_set_write: 'rule: the acting login, no system work (0305, S2a a2)',
-  mantle_ws_resource_remove: 'rule: the acting login, no system work (0305, S2a a2)',
+    'private helper (no role): THE body that puts an assistant on a workspace; called by mantle_ws_set_assistant, mantle_ws_resource_add, mantle_ws_resource_remove and mantle_ws_attach_assistants, each with the rule (0307, S2a a2)',
+  mantle_ws_resource_add: 'rule: the acting login, no system work (0307, S2a a2)',
+  mantle_ws_resource_set_write: 'rule: the acting login, no system work (0307, S2a a2)',
+  mantle_ws_resource_remove: 'rule: the acting login, no system work (0307, S2a a2)',
   mantle_bridge_login: 'exemption until S8b: the runtime role only, its three callers pinned',
   mantle_bridge_connector: 'exemption: trigger only, its trigger dropped by the switch',
   mantle_ws_team_normal: 'exemption: migrator only (the switch)',
@@ -122,11 +123,12 @@ const WRITERS: Readonly<Record<string, string>> = {
   mantle_ws_last_admin_mod_trg: 'exemption: a guard trigger',
 };
 
-describe('0305 is stamped above every `when` before it (renumber proof)', () => {
-  it('is stamped above its predecessor (0304, 1790197560000)', () => {
+describe('0307 is stamped above every `when` before it (renumber proof)', () => {
+  it('is stamped above its predecessor and S8a`s 1790197680000', () => {
     expect(at).toBeGreaterThan(0);
     expect(journal[at]!.when).toBeGreaterThan(journal[at - 1]!.when);
-    expect(journal[at]!.when).toBeGreaterThan(1790197560000);
+    expect(journal[at]!.when).toBeGreaterThan(1790197680000);
+    expect(Math.max(...journal.slice(0, at).map((e) => e.when))).toBeLessThan(journal[at]!.when);
   });
 
   it('the revert takes this migration off the ledger by its own `when`', () => {
@@ -882,7 +884,7 @@ describe.skipIf(!URL)('the workspace user definers (S2a a1)', () => {
     expect(ok).toMatchObject({ ok: true });
   });
 
-  it('rollback: the older image`s calls are refused under 0305 and work again after the revert (rolled back)', async () => {
+  it('rollback: the older image`s calls are refused under 0307 and work again after the revert (rolled back)', async () => {
     const fresh = randomUUID();
     const mk = async (tx: postgres.TransactionSql) => {
       await tx`insert into auth.users (id, email, password_hash, role, display_name)
@@ -900,7 +902,7 @@ describe.skipIf(!URL)('the workspace user definers (S2a a1)', () => {
         >`select mantle_ws_private_workspace(${fresh}::uuid)::text as ws`
       )[0]!.ws;
     // createHomeFallback as the older image runs it: the system pool, the
-    // request's login actor, no scope login. Under 0305: refused, so every
+    // request's login actor, no scope login. Under 0307: refused, so every
     // create that needs the private workspace is refused.
     const older = asActor(`login:rw:${fresh}`);
     expect(await run(older, async (tx) => (await mk(tx), priv(tx)))).toMatchObject({
@@ -918,7 +920,7 @@ describe.skipIf(!URL)('the workspace user definers (S2a a1)', () => {
       }),
     ).toEqual({ ok: true, v: { made: true, kept: true } });
     // The other three unscoped, by an actor no allowlist pair names (the
-    // older image's onboarding attach): refused under 0305 (the cell "no
+    // older image's onboarding attach): refused under 0307 (the cell "no
     // acting login" above), back to their 0293, 0279 and 0260 answers.
     expect(
       await run(asActor('system:onboarding-attach'), async (tx) => {
@@ -930,7 +932,7 @@ describe.skipIf(!URL)('the workspace user definers (S2a a1)', () => {
         return { created: typeof c?.id === 'string', attached: typeof n?.n === 'number' };
       }),
     ).toEqual({ ok: true, v: { created: true, attached: true } });
-    // Rolled back: 0305's bodies are in place for the cells after this one.
+    // Rolled back: 0307's bodies are in place for the cells after this one.
     expect(await run({}, priv)).toMatchObject({ ok: false, state: '42501' });
   });
 
@@ -1112,7 +1114,7 @@ describe.skipIf(!URL)('the workspace user definers (S2a a1)', () => {
   });
 });
 
-describe.skipIf(!URL)('a database at 0304 runs 0305 and only it', () => {
+describe.skipIf(!URL)('a database just before 0307 runs 0307 and only it', () => {
   let scratch: Awaited<ReturnType<typeof createScratchDatabaseBefore>> | undefined;
   let sql: ReturnType<typeof postgres>;
   const all = readMigrationFiles({ migrationsFolder: DIR });
@@ -1125,7 +1127,7 @@ describe.skipIf(!URL)('a database at 0304 runs 0305 and only it', () => {
         from unnest(${TIGHTENED}::text[]) f(fn) join pg_proc p on p.oid = to_regprocedure(f.fn)
        order by 1`),
   ];
-  let at0304: Def[] = [];
+  let atBefore: Def[] = [];
 
   beforeAll(async () => {
     scratch = await createScratchDatabaseBefore(URL!, TAG);
@@ -1137,8 +1139,8 @@ describe.skipIf(!URL)('a database at 0304 runs 0305 and only it', () => {
       await sql`insert into "drizzle"."__drizzle_migrations" (hash, created_at)
                 values (${mg.hash}, ${mg.folderMillis})`;
     }
-    at0304 = await defs();
-    expect(at0304).toHaveLength(TIGHTENED.length);
+    atBefore = await defs();
+    expect(atBefore).toHaveLength(TIGHTENED.length);
   }, 300_000);
 
   afterAll(async () => {
@@ -1146,7 +1148,7 @@ describe.skipIf(!URL)('a database at 0304 runs 0305 and only it', () => {
     await scratch?.drop();
   });
 
-  it('the runner applies 0305 and only it', async () => {
+  it('the runner applies 0307 and only it', async () => {
     const fn = async () =>
       (
         await sql<
@@ -1164,9 +1166,9 @@ describe.skipIf(!URL)('a database at 0304 runs 0305 and only it', () => {
     expect(await fn()).toBe(1);
   }, 120_000);
 
-  it('rollback: the revert puts the four back byte for byte, takes 0305 off the ledger; a roll forward applies it again', async () => {
-    const at0305 = await defs();
-    expect(at0305).not.toEqual(at0304);
+  it('rollback: the revert puts the four back byte for byte, takes 0307 off the ledger; a roll forward applies it again', async () => {
+    const at0307 = await defs();
+    expect(at0307).not.toEqual(atBefore);
     const ledger = async () =>
       (
         await sql<{ n: number }[]>`
@@ -1177,7 +1179,7 @@ describe.skipIf(!URL)('a database at 0304 runs 0305 and only it', () => {
     await sql.begin(async (tx) => {
       for (const st of revertStatements()) await tx.unsafe(st);
     });
-    expect(await defs()).toEqual(at0304);
+    expect(await defs()).toEqual(atBefore);
     expect(await ledger()).toBe(0);
     const out = { lines: [] as string[], warnings: [] as string[] };
     const applied = await applyJournal(sql, all.slice(0, at + 1), journal.slice(0, at + 1), {
@@ -1186,6 +1188,6 @@ describe.skipIf(!URL)('a database at 0304 runs 0305 and only it', () => {
     });
     expect(applied).toBe(1);
     expect(out.warnings).toEqual([]);
-    expect(await defs()).toEqual(at0305);
+    expect(await defs()).toEqual(at0307);
   }, 120_000);
 });

@@ -1,27 +1,28 @@
--- Rollback of 0305_ws_user_definers: what an operator runs BEFORE pinning
+-- Rollback of 0307_ws_user_definers: what an operator runs BEFORE pinning
 -- the image one release back (plan v3.2 rule 2, a one-image rollback). Not
 -- a migration: nothing runs it on its own.
 --
--- Why: 0305 tightened four functions the image before it calls the old way.
--- With 0305 in place that image:
+-- Why: 0307 tightened four functions the image before it calls the old way.
+-- With 0307 in place that image:
 --   - makes no private workspace (createHomeFallback calls
 --     mantle_ws_private_workspace on the system pool with no scope login):
 --     a member's first create, and every create that needs the private
 --     workspace, is refused ("You have no workspace to create in yet.");
 --   - attaches no default assistant at signup or onboarding (its
---     mantle_ws_attach_assistants call there is no system work for 0305);
+--     mantle_ws_attach_assistants call there is no system work for 0307);
 --   - has any unscoped mantle_ws_create or mantle_workspace_event call
 --     refused (none in that image's product code; a hand call too).
 -- This file puts those four back exactly as 0293, 0272, 0279 and 0260 left
--- them (the bodies are copied verbatim; the 0305 cell "the revert puts the
--- catalog back byte for byte" checks them against a database at 0304), and
--- takes 0305 off the ledger so a later roll forward applies it again. The
--- functions 0305 added stay: the older image never calls them, and they
+-- them (the bodies are copied verbatim; the 0307 cell "the revert puts the
+-- four back byte for byte" checks them against a database just before
+-- 0307), and
+-- takes 0307 off the ledger so a later roll forward applies it again. The
+-- functions 0307 added stay: the older image never calls them, and they
 -- refuse more, never less. CREATE OR REPLACE keeps every grant.
 --
 -- Run it as the superuser that runs the migrations, in one transaction:
 --   docker exec -i mantle_pg psql -U postgres -d postgres -v ON_ERROR_STOP=1 -1 \
---     < packages/db/rollback/0305_ws_user_definers.revert.sql
+--     < packages/db/rollback/0307_ws_user_definers.revert.sql
 -- then pin the older image (docs/update-prod.md "Rollback").
 SET LOCAL lock_timeout = '30s';
 --> statement-breakpoint
@@ -199,5 +200,5 @@ $$;
 --> statement-breakpoint
 REVOKE EXECUTE ON FUNCTION "public"."mantle_ws_attach_assistants"() FROM PUBLIC;
 --> statement-breakpoint
--- Off the ledger: the next roll forward applies 0305 again (re-runnable).
-DELETE FROM "drizzle"."__drizzle_migrations" WHERE "created_at" = 1790197620000;
+-- Off the ledger: the next roll forward applies 0307 again (re-runnable).
+DELETE FROM "drizzle"."__drizzle_migrations" WHERE "created_at" = 1790197740000;

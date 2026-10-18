@@ -144,7 +144,7 @@ export function workspaceCaller(login: AnyLogin): WsCaller {
  *  user search (mantle_ws_login_search). A change of a workspace's users is
  *  a definer call in the caller's own transaction (mantle_ws_add_user,
  *  mantle_ws_set_moderator, mantle_ws_remove_user, mantle_ws_create, and
- *  the resources' mantle_ws_resource_add, _set_write, _remove; 0305, plan
+ *  the resources' mantle_ws_resource_add, _set_write, _remove; 0307, plan
  *  v3.2 S2a), which checks the acting login inside; patchWorkspace and
  *  archiveWorkspace write on the system pool by one door
  *  (workspaceWriteSystem) until S2b. */
@@ -164,7 +164,7 @@ export async function wsRoute(
  *  Each checks its rules inside the transaction, on the system pool, as
  *  before A6 (patchWorkspace only there); archiveWorkspace also checks them
  *  first in the caller's scope. Never around a workspace definer: its actor
- *  (system:workspace-write) is no system work there (0305). */
+ *  (system:workspace-write) is no system work there (0307). */
 function workspaceWriteSystem<T>(body: () => Promise<T>): Promise<T> {
   return asSystem(body, 'workspace-write');
 }
@@ -554,7 +554,7 @@ export async function createWorkspace(
   let id: string;
   try {
     // The row, the maker its only user and a Moderator, and the event, by
-    // its definer (mantle_ws_create, 0305: only the acting login's own, a
+    // its definer (mantle_ws_create, 0307: only the acting login's own, a
     // disabled or read-only one refused). A write: in its own transaction,
     // the login's scope on the write role (an Admin user's too).
     id = await db.transaction(async (tx) => {
@@ -929,7 +929,7 @@ async function loginOf(q: Exec, loginId: string): Promise<LoginRow | null> {
 // ── The definers' refusals ──────────────────────────────
 
 /** A definer's refusal as the WsError the route answered before the rule
- *  moved to SQL (0305): its SQLSTATE and the code its message starts with
+ *  moved to SQL (0307): its SQLSTATE and the code its message starts with
  *  (`mantle_ws:<code>`), one row each. Anything else is thrown as it is (a
  *  call with no acting login and no system work is no answer a route gives:
  *  it is a fault). */
@@ -1040,7 +1040,7 @@ export function wsRefusal(err: unknown): WsError | null {
   return lastAdminError(err);
 }
 
-/** Call a workspace user definer (0305) in the caller's own transaction
+/** Call a workspace user definer (0307) in the caller's own transaction
  *  (`q`): a member's on the write role, an Admin user's in the login's
  *  scope. Never inside workspaceWriteSystem: its actor
  *  (system:workspace-write) is no system work, so the definer refuses it. */
@@ -1080,7 +1080,7 @@ const LAST_MOD = () =>
 /**
  * Who changes who is an Admin user (owner decision, F4 fix round 4): an
  * Admin user with the users area only, as for the Moderator tick. The rule
- * is mantle_ws_add_user's and mantle_ws_remove_user's (0305); this is the
+ * is mantle_ws_add_user's and mantle_ws_remove_user's (0307); this is the
  * Admin add's early answer, in the caller's scope, in the order the route
  * answered before the role change's own checks (applyLoginChange: the
  * anchor, the caller itself) and before the login is looked up.
@@ -1174,7 +1174,7 @@ async function roleChangeOnSystemPool(
  *  always: an add there with the tick off is refused (409 admin_workspace,
  *  owner decision, F4 fix round 1), and any add there is an Admin user's
  *  with the users area (F4 fix round 4). The rule is mantle_ws_add_user's
- *  (0305). */
+ *  (0307). */
 export async function addUser(
   caller: WsCaller,
   id: string,
@@ -1210,7 +1210,7 @@ export async function addUser(
 /** PATCH /api/workspaces/:id/users/:loginId: an Admin user ticks or
  *  clears Moderator. Never the last Moderator, and never an Admin user's
  *  tick on the Admin workspace (409 admin_workspace). The rule is
- *  mantle_ws_set_moderator's (0305). */
+ *  mantle_ws_set_moderator's (0307). */
 export async function setModerator(
   caller: WsCaller,
   id: string,
@@ -1246,7 +1246,7 @@ function lastAdminError(err: unknown): WsError | null {
  *  removes a plain user; only an Admin user removes a Moderator (owner
  *  answer Q2); anyone may leave. Never the last Moderator. On the Admin
  *  workspace it is the role change to member (W5a). The rule is
- *  mantle_ws_remove_user's (0305). */
+ *  mantle_ws_remove_user's (0307). */
 export async function removeUser(
   caller: WsCaller,
   id: string,
@@ -1358,7 +1358,7 @@ function mayManageResource(seen: Seen, kind: WorkspaceResourceKind): void {
 }
 
 /** POST /api/workspaces/:id/resources. A definer call (mantle_ws_resource_add,
- *  0305) in the caller's own transaction: the login's
+ *  0307) in the caller's own transaction: the login's
  *  scope on the write role, never workspaceWriteSystem. */
 export async function addResource(
   caller: WsCaller,
@@ -1378,7 +1378,7 @@ export async function addResource(
 }
 
 /** PATCH /api/workspaces/:id/resources/:kind/:id: the Write tick
- *  (mantle_ws_resource_set_write, 0305). */
+ *  (mantle_ws_resource_set_write, 0307). */
 export async function patchResource(
   caller: WsCaller,
   id: string,
@@ -1399,7 +1399,7 @@ export async function patchResource(
 }
 
 /** DELETE /api/workspaces/:id/resources/:kind/:id
- *  (mantle_ws_resource_remove, 0305). */
+ *  (mantle_ws_resource_remove, 0307). */
 export async function removeResource(
   caller: WsCaller,
   id: string,
@@ -1418,7 +1418,7 @@ export async function removeResource(
   return reread(caller, wid);
 }
 
-/** A resource definer (0305) in its own transaction, its refusal mapped
+/** A resource definer (0307) in its own transaction, its refusal mapped
  *  (wsRefusal's table, then the assistant's constraints). */
 async function resourceDefiner(call: ReturnType<typeof sql>): Promise<void> {
   try {
