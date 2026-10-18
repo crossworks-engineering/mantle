@@ -45,16 +45,19 @@ file, and a second map keyed by site and file says whether that pair's row
 was written in the last hour; if not, the row is handed to the writer, and
 the pair is marked only when the writer took it (a hit before the pool has
 its writer is written by a later one). So a busy branch pays at most one
-stack a minute, a second caller of the same site is found a minute later,
-and every process that still hits writes its pair again each hour. The
+stack a minute, a second caller of the same site is found when it is the
+first hit after the site's minute gate, and every process that still hits writes its pair again each hour. The
 database keeps at most 100 rows an hour per check.
 
 `scripts/arch-scoreboard-box.sh <ssh-alias>` prints, numbers only:
 `fail_open_misses:all` and one count per site (the distinct site and file
 pairs in the last 24 hours, or since the last roll began, the updater's
-`started_at`, when that is later; not since `mantle_web` started, which a
-web-only restart would reset while the api, worker and MCP processes still
-hit), a site's count is 0 only when no process hit it in that window;
+`started_at`, when that is later, but never from later than an hour ago:
+any write of the updater's status moves `started_at`, a client-only or
+refused roll too, and none restarts a server, so an error reads as a false
+non-zero, never a false 0; not since `mantle_web` started, which a web-only
+restart would reset while the api, worker and MCP processes still hit), a
+site's count is 0 only when no process hit it in that window;
 `brains_without_admin_workspace`, and `env_has_runtime_role_line` (n/a with
 no readable `.env`). The repo
 count is the pin `failOpenSites` (`scripts/arch-scoreboard.pins.json`): the

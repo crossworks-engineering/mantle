@@ -22,13 +22,14 @@
 #     workspaceTableWriterFns is the repo's), and whether
 #     MANTLE_DB_RUNTIME_ROLE is on (1 or 0, as the app reads it: from
 #     mantle_web's environment, or from the stack's .env when that
-#     container is not there; n/a with neither);
+#     container is not there; n/a with neither, or an unreadable .env);
 #   - the fail-open counts (plan v3.2 S4a; packages/db/src/fail-open.ts):
 #     the distinct site and file pairs of the miss rows checked
 #     'fail-open:<site>' in the last 24 hours, or since the last roll began
-#     (the updater's started_at) when that is later, in all and per site.
-#     Every process writes its row again each hour it still hits
-#     (fail-open.ts), so a process that has not restarted still shows. "Brains without an Admin workspace" above is
+#     (the updater's started_at) when that is later but never from later
+#     than an hour ago, in all and per site. Every process writes its row
+#     again each hour it still hits (fail-open.ts), so a process that has
+#     not restarted still shows. "Brains without an Admin workspace" above is
 #     also the count of mantle_login_area's yes with no Admin workspace and
 #     of areasOf's "migration skipped" path (server/web/lib/workspaces.ts):
 #     a brain reaches either only with no Admin workspace;
@@ -141,8 +142,13 @@ select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
 SQL
 )")
 # The fail-open miss rows (S4a): the last 24 hours, or since the last roll
-# began when that is later. Not since mantle_web started: a web-only
-# restart would hide the rows the api, worker and MCP processes wrote.
+# began when that is later, but never from later than an hour ago: any
+# status.json write moves started_at (a client-only roll, a refused one, a
+# bad tag, the pull phase), and none of those restarts a server, so a floor
+# at most an hour old keeps every process's hourly row in the window (an
+# error reads as a false non-zero, never a false 0). Not since mantle_web
+# started: a web-only restart would hide the rows the api, worker and MCP
+# processes wrote.
 started=$(docker exec mantle_updater cat /signal/status.json 2>/dev/null |
   sed -n 's/.*"started_at":"\([^"]*\)".*/\1/p' | head -1 || true)
 case "$started" in *[!0-9TZ:.+-]* | '') started="" ;; esac
@@ -156,7 +162,8 @@ select count(*) || ' ' || count(*) filter (where check_name = 'fail-open:scope-h
   from (select distinct check_name, detail from public.actor_check_misses
          where check_name like 'fail-open:%'
            and at >= greatest(now() - interval '24 hours',
-                              coalesce(nullif('$started', '')::timestamptz, '-infinity'))) m;
+                              least(coalesce(nullif('$started', '')::timestamptz, '-infinity'),
+                                    now() - interval '1 hour'))) m;
 SQL
 )
 # Whether the stack's .env has the runtime role's line at all (S4a: the
@@ -190,12 +197,12 @@ else
     stack=$(docker inspect --type container mantle_updater --format '{{range .Config.Env}}{{println .}}{{end}}' 2>/dev/null |
       sed -n 's/^MANTLE_STACK_DIR=//p' | head -1)
   fi
-  if [ -n "$stack" ] && [ -f "$stack/.env" ]; then
+  if [ -n "$stack" ] && [ -r "$stack/.env" ]; then
     have=1
     # As compose reads a .env line: an `export ` before the name is
     # dropped; the last line wins; a quoted value is what the quotes hold;
     # an unquoted one ends at a comment (a # at its start or after a space).
-    raw=$(sed -n 's/^[[:space:]]*\(export[[:space:]][[:space:]]*\)\{0,1\}MANTLE_DB_RUNTIME_ROLE[[:space:]]*=//p' "$stack/.env" | tail -n 1 | tr -d '\r')
+    raw=$(sed -n 's/^[[:space:]]*\(export[[:space:]][[:space:]]*\)\{0,1\}MANTLE_DB_RUNTIME_ROLE[[:space:]]*=//p' "$stack/.env" 2>/dev/null | tail -n 1 | tr -d '\r')
     raw=$(printf '%s' "$raw" | sed -e 's/^[[:space:]]*//')
     case "$raw" in
       \"*) raw=$(printf '%s' "$raw" | sed -n 's/^"\([^"]*\)".*$/\1/p') ;;

@@ -107,3 +107,30 @@ Gates: Mac typecheck 0, lint 0, format:check 0, docs:check 0, arch:check 0,
 web build 0, unit vitest 0, test-deploy-scripts 0 (508 passed).
 Workstation: fail-open.db.test.ts and fail-open.test.ts 0 in warn (21),
 fail-open.db.test.ts 0 with both checks on (4). Cleaned up there.
+
+## Fix round 2 (diff check of 4cd5d509b)
+
+- Rebased onto v0.300.93 (6e49ee5b4, P1b counters). The four first commits
+  are squashed into one, which carries the `dbClientLines` re-pin (3142 to
+  3145), so every commit passes `pnpm arch:check` (checked commit by
+  commit). The handover heading makes S4a a history code: 'S4a' is in
+  HISTORY_HEADING_CODES in the commit that adds the heading, and
+  `historyCodeComments` is re-pinned there, 2332 to 2340 (the S4a code
+  comments that name it).
+- The box's fail-open floor is never later than an hour ago:
+  `greatest(now() - 24 h, least(started_at, now() - 1 h))`. Any write of the
+  updater's status moves `started_at` and none restarts a server, so an
+  error reads as a false non-zero, never a false 0. The box script needs
+  ssh, docker and Postgres, so its query was run on a throwaway database
+  (rows 50 minutes, 10 minutes and 20 hours old: no roll known 3; a roll 5
+  minutes ago, 3 hours ago or a bad future time 2, the hour-old rows kept),
+  and two static cells in test-deploy-scripts.sh hold the floor and the
+  `-r` checks.
+- The runtime role's `.env` fallback in the box script reads `-r` (n/a
+  when unreadable).
+- docs/fail-open.md: a second caller is found when it is the first hit
+  after the site's minute gate.
+
+Gates: Mac typecheck, lint, format:check, docs:check, arch:check, web
+build, unit vitest, test-deploy-scripts, cleanup-counts.test.ts and
+arch-lints.test.ts: see the final report.

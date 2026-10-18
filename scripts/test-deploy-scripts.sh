@@ -319,6 +319,17 @@ check "the roll calls it after the image tag, before compose" sh -c "
   [ -n \"\$a\" ] && [ -n \"\$b\" ] && [ -n \"\$c\" ] && [ \"\$a\" -lt \"\$b\" ] && [ \"\$b\" -lt \"\$c\" ]"
 check "install.sh writes 1 on a fresh box only" sh -c "grep -q 'FRESH_BOX -eq 1 ]] && ! grep -qE' '$ROOT/scripts/install.sh' && grep -q 'upsert MANTLE_DB_RUNTIME_ROLE 1' '$ROOT/scripts/install.sh'"
 check ".env.example shows it set" grep -qx 'MANTLE_DB_RUNTIME_ROLE=1' "$ROOT/.env.example"
+# The box count's window (scripts/arch-scoreboard-box.sh needs ssh, docker
+# and Postgres, so its query is proved on a throwaway database; here: the
+# floor is never later than an hour ago, so a stray started_at reads as a
+# false non-zero, never a false 0).
+check "box: the fail-open window's floor is at most an hour old" sh -c "
+  sed -n '/^fail_open=/,/^SQL\$/p' '$ROOT/scripts/arch-scoreboard-box.sh' | tr -s ' \n' ' ' |
+    grep -q \"greatest(now() - interval '24 hours', least(coalesce(nullif('\\\$started', '')::timestamptz, '-infinity'), now() - interval '1 hour'))\""
+check "box: an unreadable .env reads n/a, not 0" sh -c "
+  grep -q '\[ -r \"\$env_stack/.env\" \]' '$ROOT/scripts/arch-scoreboard-box.sh' &&
+  grep -q '\[ -r \"\$stack/.env\" \]' '$ROOT/scripts/arch-scoreboard-box.sh' &&
+  ! grep -q '\[ -f \"\$stack/.env\" \]' '$ROOT/scripts/arch-scoreboard-box.sh'"
 
 # ═════════════════════════════════════════════════════════════════════════════
 echo "updater.sh: a .env that cannot satisfy the incoming compose refuses the swap"
