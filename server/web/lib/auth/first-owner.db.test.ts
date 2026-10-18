@@ -66,7 +66,12 @@ describe.skipIf(!URL)('the first owner of a brain the switch skips (arch A7)', (
       const { refuseUnswitchedBrain } = await import('./unswitched-brain');
       const exit = vi.fn();
       refuseUnswitchedBrain('clients present: test', exit);
-      expect(error.mock.calls[0]![0]).toMatch(/not on workspaces \(clients present: test\)/);
+      // Not the first call: the checks' floor (check-floor.ts) says its line
+      // when the pool warms, fired and forgotten, so on a loaded runner it
+      // can land in this spy before the refusal.
+      expect(error.mock.calls.map((c) => String(c[0]))).toContainEqual(
+        expect.stringMatching(/not on workspaces \(clients present: test\)/),
+      );
       expect(exit).not.toHaveBeenCalled();
       vi.advanceTimersByTime(1000);
       expect(exit).toHaveBeenCalledWith(1);
