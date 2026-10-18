@@ -334,9 +334,10 @@ describe.skipIf(!URL)('access matrix on the migrated database', () => {
       expect(rule, w.cmd).toBe('mantle_profile_writable(user_id)');
       if (w.cmd === 'UPDATE') expect(w.chk, w.cmd).toBe('mantle_profile_writable(user_id)');
     }
-    expect(fn!.def).toContain('mantle_login_id()');
-    expect(fn!.def).toContain('mantle_brain_id()');
-    expect(fn!.def).toContain("mantle_scope_has_area('settings')");
+    // The body as written (pg_get_functiondef keeps its quoted names).
+    expect(fn!.def).toContain('"public"."mantle_login_id"()');
+    expect(fn!.def).toContain('"public"."mantle_brain_id"()');
+    expect(fn!.def).toContain(`"public"."mantle_scope_has_area"('settings')`);
     expect(fn!.def).not.toContain('mantle_scope_is_admin');
     expect(fn!.def).not.toContain('SECURITY DEFINER');
     // The read rule's subquery names its column with the table (fix round 3).
