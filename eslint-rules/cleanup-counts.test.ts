@@ -131,6 +131,24 @@ describe('rawWriteSqlSites', () => {
     ]);
   });
 
+  it('a template is a literal only when its static text starts a statement', () => {
+    const t = [
+      "await tx.unsafe(`${'insert'} into t values (1)`);",
+      'await tx.unsafe(`${stmt}; select 1`);',
+      'await tx.unsafe(`${a} where id = ${b}`);',
+      'await tx.unsafe(`/* tag */ ${stmt}`);',
+      'await tx.unsafe(`(select 1) union ${rest}`);',
+      'await tx.unsafe(`  ${TAG}  update t set a = 1`);',
+    ].join('\n');
+    expect(rawWriteSqlSites('x.ts', t)).toEqual([
+      { line: 1, why: 'non-literal' },
+      { line: 2, why: 'non-literal' },
+      { line: 3, why: 'non-literal' },
+      { line: 4, why: 'non-literal' },
+      { line: 6, why: 'write' },
+    ]);
+  });
+
   it('a template with no SQL word in its static text is no literal', () => {
     const t = [
       'await tx.unsafe(`${stmt}`);',
@@ -354,6 +372,14 @@ describe('history codes in comments', () => {
         ].join('\n'),
       );
       expect([...(historyHeadingCodes(root) as Map<string, string>).keys()]).toEqual(['Z5']);
+      expect(headingCodeProblems(root)).toHaveLength(1);
+      writeFileSync(
+        join(root, 'docs/_archive/plan-v3-x-handover.md'),
+        '# X\n```\n## Z4 never read\n',
+      );
+      expect(headingCodeProblems(root)).toContain(
+        'docs/_archive/plan-v3-x-handover.md ends inside a fenced code block, so no heading after its last fence is read: close the fence',
+      );
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

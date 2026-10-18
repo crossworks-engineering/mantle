@@ -77,7 +77,7 @@ function afterWith(sql) {
  *  leading placeholders (`${TAG} insert ...`, a tag comment before the
  *  statement) are skipped. */
 export function rawWriteKind(text) {
-  const sql = dropSqlComments(text).replace(/^\s*(?:\$1\s*)+/, '');
+  const sql = afterLeadingPlaceholders(text);
   if (WRITE_START.test(afterWith(sql))) return 'write';
   if (WRITE_CTE.test(sql)) return 'write-cte';
   return null;
@@ -90,19 +90,26 @@ function templateText(tpl) {
   return [tpl.head.text, ...tpl.templateSpans.map((s) => s.literal.text)].join(' $1 ');
 }
 
-/** A SQL word a statement's static text holds: a template with none
- *  (`${stmt}`, `${a};`, `${head} ${tail}`) holds its SQL in the
- *  placeholders, so it is no literal. */
-const SQL_WORD =
-  /\b(?:select|insert|update|delete|merge|truncate|with|values|from|where|returning|create|alter|drop|grant|revoke|set|reset|lock|copy|call|do|explain|show|begin|commit|rollback|savepoint|release|listen|notify|vacuum|analyze|refresh|comment|declare|fetch|discard|prepare|execute|deallocate|table)\b/i;
+/** A statement's first word: a template is SQL text the code holds only
+ *  when its static text, after any leading placeholders (and an opening
+ *  parenthesis), starts with one. Else its SQL is in the placeholders
+ *  (`${stmt}`, `${a}; select 1`, `${'insert'} into t`, a fragment such as
+ *  `array[...]::text[]`), so it is no literal. */
+const STATEMENT_START =
+  /^\(*\s*(?:select|insert|update|delete|merge|truncate|with|values|table|create|alter|drop|grant|revoke|set|reset|show|lock|copy|call|do|explain|begin|start|commit|end|rollback|abort|savepoint|release|listen|unlisten|notify|vacuum|analyze|refresh|reindex|cluster|comment|declare|fetch|move|close|discard|prepare|execute|deallocate)\b/i;
+
+/** The static text of a template after its leading placeholders. */
+function afterLeadingPlaceholders(text) {
+  return dropSqlComments(text).replace(/^\s*(?:\$1\s*)+/, '');
+}
 
 /** Whether `e` is SQL text the code holds as a literal (a string, or a
- *  template whose static text holds a SQL word), or null. */
+ *  template whose static text starts a statement), or null. */
 function literalText(e) {
   if (ts.isStringLiteralLike(e)) return e.text;
   if (ts.isTemplateExpression(e)) {
-    const statics = [e.head.text, ...e.templateSpans.map((s) => s.literal.text)].join(' ');
-    return SQL_WORD.test(dropSqlComments(statics)) ? templateText(e) : null;
+    const t = templateText(e);
+    return STATEMENT_START.test(afterLeadingPlaceholders(t).trimStart()) ? t : null;
   }
   return null;
 }
@@ -261,8 +268,8 @@ function textCallNames(sf, tags) {
  * parameter that holds the tag reads the same text); `.unsafe(text)`,
  * `<tag>.raw(text)` and `.execute(text)` with literal text that is a
  * write; and `.unsafe(x)` or `<tag>.raw(x)` with text that is no literal
- * (`why: 'non-literal'`; a template with no SQL word in its static text,
- * such as `${stmt}`, is none), unless wrapped in `readSql(...)`. The text
+ * (`why: 'non-literal'`; a template whose static text does not start a
+ * statement, such as `${stmt}` or `${a}; select 1`, is none), unless wrapped in `readSql(...)`. The text
  * methods read the same under a literal key (`pg['unsafe'](x)`) and under
  * another name (`const raw = sql.raw`, `const { unsafe } = pg`,
  * textCallNames). A tag is a SQL
@@ -407,10 +414,11 @@ function historyFiles(root) {
 /** The codes named in the history files' headings (docs/_archive/
  *  actors-history.md and docs/_archive/plan-v3-*-handover.md), any letter
  *  (R0, D1, S3, P1a, A2b1, A2b2b), each with the first file that names it;
- *  a `#` line in a fenced code block is no heading.
+ *  a `#` line in a fenced code block is no heading. `openFences`, when
+ *  given, gets each file whose last fence is never closed.
  *  Read only to check the frozen list (headingCodeProblems); the count
  *  reads HISTORY_HEADING_CODES. */
-export function historyHeadingCodes(root) {
+export function historyHeadingCodes(root, { openFences = null } = {}) {
   const codes = new Map();
   for (const file of historyFiles(root)) {
     const text = readRepoFile(root, file) ?? '';
@@ -426,6 +434,7 @@ export function historyHeadingCodes(root) {
       if (fence !== null || !/^#{1,6}\s/.test(line)) continue;
       for (const m of line.matchAll(CODE)) if (!codes.has(m[0])) codes.set(m[0], file);
     }
+    if (fence !== null) openFences?.push(file);
   }
   return codes;
 }
@@ -471,14 +480,21 @@ export const HEADING_CODES_LEFT_OUT = Object.freeze({
 });
 
 /** Each heading code in neither HISTORY_HEADING_CODES nor
- *  HEADING_CODES_LEFT_OUT, with the file whose heading names it. */
+ *  HEADING_CODES_LEFT_OUT, with the file whose heading names it, and each
+ *  history file that ends inside a fenced block. */
 export function headingCodeProblems(root) {
   const out = [];
-  for (const [code, file] of historyHeadingCodes(root)) {
+  const openFences = [];
+  for (const [code, file] of historyHeadingCodes(root, { openFences })) {
     if (HISTORY_HEADING_CODES.includes(code) || Object.hasOwn(HEADING_CODES_LEFT_OUT, code))
       continue;
     out.push(
       `heading code ${code} (${file}) is in neither HISTORY_HEADING_CODES nor HEADING_CODES_LEFT_OUT (eslint-rules/cleanup-counts.mjs); add it to one, with why if left out`,
+    );
+  }
+  for (const file of openFences) {
+    out.push(
+      `${file} ends inside a fenced code block, so no heading after its last fence is read: close the fence`,
     );
   }
   return out;
