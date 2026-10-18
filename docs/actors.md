@@ -125,12 +125,12 @@ The database's needs (`mantle_check_row`, `mantle_check_item`): `read`,
 ([edit-check.md](./edit-check.md)). An item the caller does not read answers
 the 404 of none, as a random id; one it reads but may not change, 403.
 
-Being an Admin user is management, not reading: it reads what is granted
-to the workspaces it is in. One SQL area rule, `mantle_area_rule` (the
-brain's live Admin workspace, an enabled login with a user row there, the
-area not off), answers `loginHasArea` and `mantle_scope_has_area` (a scope's
-own login: the rule plus "Admin in the scope"). `loginHoldsAdmin` asks
-`mantle_login_is_admin`; `mantle_login_area` adds a counted fail-open (S4).
+Admin is management, not reading. An Admin login is role admin AND a user
+of the live Admin workspace (`mantle_login_is_admin`, read with the login
+row; SQL's `mantle_login_is_admin_user` is the same pair). One area rule,
+`mantle_area_rule`, answers `loginHasArea` and `loginAreas` (`areasFor`);
+`requireArea` asks `mantle_scope_has_area` in its login's own scope (the
+rule plus "Admin in the scope"), the rule unscoped, and throws otherwise.
 
 Owner rules (each holds today unless "Known limits" says otherwise):
 

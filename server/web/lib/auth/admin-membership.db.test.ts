@@ -121,6 +121,19 @@ describe.skipIf(!URL)('S8a: an Admin login is role AND membership', () => {
     await scratch?.drop();
   });
 
+  it('the box count: brains without an Admin workspace is 0 (the S8a precondition)', async () => {
+    // The SQL of scripts/arch-scoreboard-box.sh (no_admin), as the fleet reads it.
+    const [r] = await sql<Row[]>`
+      select count(*)::int as n from auth.users o
+       where o.is_owner
+         and not exists (select 1 from public.workspaces w
+                          where w.owner_id = o.id and w.is_admin and w.archived_at is null)`;
+    expect(r!.n).toBe(0);
+    expect(
+      Number((await sql<Row[]>`select count(*) as n from auth.users where is_owner`)[0]!.n),
+    ).toBe(1);
+  });
+
   it('a role=admin login outside Admin loses the asset token (the named narrowing)', async () => {
     expect(status(await assetAnswer(adm))).toBe(404); // an Admin user: past the gate
     expect(await assetAnswer(out)).toBe(await assetAnswer(nobody));
