@@ -142,18 +142,20 @@ describe('holders that would hide their uses', () => {
     const lib = head + "export function f() { return asSystem(g, 'audit-log'); }\n";
     for (const line of [
       'const g2 = f.bind(null); g2(); g2();',
-      'list.forEach(f);',
       'f.call(null);',
       'const pick = on ? f : other; pick();',
+      'const p2 = maybe ?? f; p2();',
+      'const fs = [f]; fs[0]();',
     ]) {
       const here = run('asSystem', lib + line);
       expect(here.problems.join('\n'), line).toMatch(/uses the asSystem holder f/);
       const there = run('asSystem', lib, `import { f } from './f0';\n${line}`);
       expect(there.problems.join('\n'), line).toMatch(/f1\.ts:2 uses the asSystem holder f/);
     }
-    const calls = run('asSystem', lib, "import { f } from './f0';\nf(); await f();");
+    // A call, and a callback handed to a call: uses, counted where they stand.
+    const calls = run('asSystem', lib, "import { f } from './f0';\nf(); await f();\nlist.map(f);");
     expect(calls.problems).toEqual([]);
-    expect(calls.byFile['f1.ts']).toBe(2);
+    expect(calls.byFile['f1.ts']).toBe(3);
     // A file that does not import it has its own f.
     const own = run('asSystem', lib, 'const f = () => 1;\nlist.forEach(f);');
     expect(own.problems).toEqual([]);

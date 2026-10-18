@@ -271,7 +271,7 @@ function stoplisted(code, line, path) {
  *  spec, and each plan v3 step's handover. */
 function historyFiles(root) {
   const archive = 'docs/_archive';
-  let names = [];
+  let names;
   try {
     names = readdirSync(join(root, archive));
   } catch {

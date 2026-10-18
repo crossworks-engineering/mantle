@@ -403,7 +403,7 @@ function inType(node) {
  * class field or property signature), a property key, a destructured
  * binding.
  */
-function nonCallUses(sf, name) {
+function nonCallUses(sf, name, { argumentOk = false } = {}) {
   const out = [];
   const report = (node, how) =>
     out.push({ line: sf.getLineAndCharacterOfPosition(node.getStart(sf)).line + 1, how });
@@ -424,6 +424,9 @@ function nonCallUses(sf, name) {
     }
     const p = top.parent;
     if (p && ts.isCallExpression(p) && p.expression === top) return;
+    // A holder handed to a call (`list.map(holder)`) is one use where it
+    // stands, counted as one; only a new name for it would hide uses.
+    if (argumentOk && p && ts.isCallExpression(p) && p.arguments.includes(top)) return;
     // Held under another name (`const n = call`, `n = call`, `{ n: call }`):
     // aliasesOf names it.
     if (
@@ -610,9 +613,10 @@ export function asSystemExits(files, { call = 'asSystem', follow = 'all' } = {})
         if (nodes.length) perFile.set(f.path, nodes);
       }
     }
-    // A followed holder used as anything but a call (`const g =
-    // f.bind(null)`, a callback, `f.call(...)`, a ternary): the calls made
-    // through it would count 0, as for the call itself. In its own file and
+    // A followed holder used as anything but a call or a call's argument
+    // (`const g = f.bind(null)`, `f.call(...)`, a ternary, `??`, a list):
+    // the calls made through the new name would count 0. A callback
+    // (`list.map(f)`) is a use, counted where it stands. In its own file and
     // in each file that imports it by name (a member holder: its own file;
     // elsewhere `x.name` may be another object's).
     const holderFiles = [h.path];
@@ -625,7 +629,7 @@ export function asSystemExits(files, { call = 'asSystem', follow = 'all' } = {})
     }
     for (const path of holderFiles) {
       const f = files.find((x) => x.path === path);
-      for (const use of nonCallUses(ast(f), h.name)) {
+      for (const use of nonCallUses(ast(f), h.name, { argumentOk: true })) {
         problems.push(
           `${path}:${use.line} uses the ${call} holder ${h.name} ${use.how}: call it by its name`,
         );
