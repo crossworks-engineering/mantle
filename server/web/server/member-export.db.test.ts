@@ -592,28 +592,46 @@ describe.skipIf(!DB_URL)('members export what they see; extraction needs edit', 
         expect((o.out.landedIn as { id?: string } | undefined)?.id).toBe(ws.M);
         // A turn of U, which it only uses: its create home is Admin, which
         // that turn may not write. Refused by the create check; nothing made.
+        // Warn mode notes what on refuses (a miss), as it does for any create.
         await refusedMakesNothing(
           mode,
           'sheet_build turn(U) owner/user',
           () => viaTurn('owner', ws.U, 'sheet_build', sheet([{ item: 'u', amount: 1 }])),
           /outside what your workspaces may change|cannot create items in that workspace/i,
         );
-        expect(m.takeActorMisses()).toEqual([]);
+        const missesU = m.takeActorMisses();
+        recorded.push(`${mode} turn(U) owner misses ${JSON.stringify(missesU).slice(0, 300)}`);
+        if (mode === 'on') expect(missesU).toEqual([]);
       }, 300_000);
 
-      it('an Admin user that may not change the Files root: the top of Files', async () => {
+      it('an Admin user that may not change the Files root: the top of Files, its home Admin', async () => {
         await setMode(mode);
-        const u = await viaMcp('adminUser', 'sheet_build', sheet([{ item: 'u', amount: 1 }]));
+        // It has no private workspace (an Admin user's create home is Admin)
+        // and may not create in Admin: the create check refuses in on mode;
+        // warn mode lets it through to Admin and notes the miss.
+        expect(await privateWs(adminUser)).toBeNull();
+        const call = () => viaMcp('adminUser', 'sheet_build', sheet([{ item: 'u', amount: 1 }]));
+        if (mode === 'on') {
+          await refusedMakesNothing(
+            mode,
+            'sheet_build mcp adminUser (no Moderator)',
+            call,
+            /cannot create items in that workspace/i,
+          );
+          expect(m.takeActorMisses()).toEqual([]);
+          return;
+        }
+        const u = await call();
         note1(mode, 'sheet_build mcp adminUser (no Moderator)', u);
         expect(u.ok, u.text).toBe(true);
         const uFacts = await fileFacts(String(u.out.file_id), 'adminUser');
-        recorded.push(`${mode} sheet_build mcp adminUser: path ${uFacts.path} home ${uFacts.home}`);
         expect(uFacts.path, 'not Auto-filed: it may not change it').toBe('files');
-        recorded.push(
-          `${mode} adminUser private ${await privateWs(adminUser)} landedIn ${JSON.stringify(u.out.landedIn)}`,
-        );
+        expect(uFacts.home).toBe(ws.admin);
         expect(uFacts.seen).toBe(true);
-        expect(m.takeActorMisses()).toEqual([]);
+        expect((u.out.landedIn as { id?: string } | undefined)?.id).toBe(ws.admin);
+        const missesA = m.takeActorMisses();
+        recorded.push(`${mode} adminUser misses ${JSON.stringify(missesA).slice(0, 300)}`);
+        expect(missesA.length).toBeGreaterThan(0);
       }, 300_000);
 
       it('process_extraction: a reader is refused and nothing is signalled; an editor is allowed', async () => {
