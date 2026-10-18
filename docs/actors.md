@@ -213,7 +213,7 @@ each calling file is pinned (`eslint-rules/as-system-allowlist.mjs`).
 | login-telegram     | a login's own Telegram chats (no role holds those tables)   |
 | audit-log          | a connector call's audit row                                |
 | pending-approval   | an approved call re-enters the scope it was asked in        |
-| workspace-write    | a login's change of a workspace (the four workspace tables) |
+| workspace-write    | a login's change of a workspace's row, resources, events    |
 | page-refold        | the pages a grant change reaches                            |
 | brain-bookkeeping  | `systemStep`'s brain-wide counts and reaps                  |
 
@@ -246,8 +246,9 @@ nothing. Families: grants and workspace screens (0291); 0293's scope exits
 contact sharing, name checks, `mantle_ws_create`); the write role's grant
 change and its audit row (`mantle_grant_change`, `mantle_grant_move_home`,
 `mantle_workspace_event`, 0279), folder subtree (`mantle_subtree_rewrite`,
-`mantle_subtree_refuse_hidden`, 0282) and edit check writes
-(`mantle_secret_put`, `mantle_recall_retarget`, 0281).
+`mantle_subtree_refuse_hidden`, 0282), edit check writes
+(`mantle_secret_put`, `mantle_recall_retarget`, 0281) and a workspace's
+users (0305), which with no acting login take only `mantle_ws_system_work`.
 
 ## 10. HTTP
 
@@ -326,13 +327,11 @@ change and its audit row (`mantle_grant_change`, `mantle_grant_move_home`,
 
 Each ends in the step of plan v3.2 (2026-10-17) named.
 
-- The four workspace tables are written on the system pool
-  (`workspace-write` exits, raw writes in `workspaces.ts` and
-  `workspace-ticks.ts`); `mantle_ws_create` skips its check unscoped. S2.
+- A workspace's row, resources and events are written on the system pool
+  (`workspace-write`); an Admin user's user change is refused until S2a a2. S2.
 - `mantle_login_area` is the area rule or, with no Admin workspace, yes. S4.
 - A definer asked with no scope answers as the system pool would;
-  `mantle_grant_change` and `mantle_workspace_event` then take the caller
-  from their `actor` argument. S2, S7.
+  `mantle_grant_change` then takes the caller from its `actor`. S2, S7.
 - Seven Admin acts run on the system pool with no scope
   (`ADMIN_ACT_WRITES`, the link close, the deleted-app trash, the contact
   share's Can write), and two HTTP item checks remain (`ITEM_REF_PREFIXES`:

@@ -742,6 +742,13 @@ other item tables) is an actor miss: psql prints `NOTICE: mantle actor miss:
 UPDATE on nodes`. In `warn` a miss only logs. In `on` (A2b, migration 0277) the write is refused: `ERROR: mantle actor check: UPDATE on nodes
 with no actor`. Name the session first.
 
+The four workspace tables (workspaces, workspace_users, workspace_events,
+workspace_resources) are written by definers that check the acting login
+(plan v3.2 S2a, migration 0305). `system:operator:*` is no acting login and
+no system work there: those definers refuse it. Repair them with the named
+command (`ws:clear-member-ticks`), or write the table by hand as the
+superuser, the session named as above.
+
 The check has three steps, set per box in the database (the box setting
 wins; a session can only make it stricter). Change it only with
 `mantle_set_actor_check`, as the superuser that runs the migrations (a
