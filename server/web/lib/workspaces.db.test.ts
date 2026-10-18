@@ -127,6 +127,34 @@ describe.skipIf(!URL)('workspace management (W5a)', () => {
     return out.join(' | ');
   };
 
+  /**
+   * The gate's scope for a member's call (session.ts anyLoginScope): its
+   * reads and writes in its own request scope, as every member's request
+   * runs since F4. Plan v3.2 S2a a1: the user definers act for the scope's
+   * login, so a member's change called with no scope at all (as this file
+   * did) is refused. An Admin user's call runs as before, with no scope: its
+   * writes have no acting login until S2a a2 puts them in the login's scope,
+   * so its user changes and creates are the expected red cells of a1
+   * (docs/_archive/plan-v3-s2a-a1a2-handover.md lists them).
+   */
+  const gated = <T extends object>(mod: T): T =>
+    new Proxy(mod, {
+      get(t, k) {
+        const v = Reflect.get(t, k) as unknown;
+        if (typeof k !== 'string' || !/^(GET|POST|PATCH|PUT|DELETE)$/.test(k)) return v;
+        if (typeof v !== 'function') return v;
+        return (...args: unknown[]) => {
+          const res = h.res as { kind: string; loginId: string } | null;
+          const fn = () => (v as (...a: unknown[]) => unknown)(...args);
+          if (res?.kind !== 'member') return fn();
+          return m.runInRequestSlot(async () => {
+            const scope = await m.loginScopeFor(res.loginId);
+            m.enterRequestScope(scope, { writes: k !== 'GET', drafts: false });
+            return fn();
+          });
+        };
+      },
+    });
   const routes = async () => ({
     root: await import('@/app/api/workspaces/route'),
     one: await import('@/app/api/workspaces/[id]/route'),
@@ -138,6 +166,10 @@ describe.skipIf(!URL)('workspace management (W5a)', () => {
     archive: await import('@/app/api/workspaces/[id]/archive/route'),
     search: await import('@/app/api/workspaces/user-search/route'),
   });
+  const gatedRoutes = async () =>
+    Object.fromEntries(
+      Object.entries(await routes()).map(([k, mod]) => [k, gated(mod)]),
+    ) as Awaited<ReturnType<typeof routes>>;
   let r: Awaited<ReturnType<typeof routes>>;
 
   const create = async (by: string, name: string) => {
@@ -191,7 +223,7 @@ describe.skipIf(!URL)('workspace management (W5a)', () => {
       select id::text as id, (case when is_admin then 'admin' when name = 'Team' then 'team' end) as key from workspaces where owner_id = ${owner}`);
     team = ws.find((w) => w.key === 'team')!.id;
     admin = ws.find((w) => w.key === 'admin')!.id;
-    r = await routes();
+    r = await gatedRoutes();
   }, 180_000);
 
   afterAll(async () => {
