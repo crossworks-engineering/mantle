@@ -106,13 +106,14 @@ not found).
 Recorded on 64ed94267 (the new cells overlaid, commit e4fb86993 on the
 workstation only), then on the fix:
 
-| Cell (warn and on)                                        | 64ed94267                                                      | fix round 1                                  |
-| --------------------------------------------------------- | -------------------------------------------------------------- | -------------------------------------------- |
-| sheet_build, member2 exports a name member's file holds   | refused: 'name' already exists in this folder                  | ok: `name-2`, its private workspace; no leak |
-| sheet_build and app_export, one member, same name twice   | not reached (the row above stops it); the audit: ConflictError | ok: `name-2` (and on); the first not changed |
-| sheet_build, owner, turn of M (it moderates M)            | ok: M, at the Files root                                       | the same                                     |
-| sheet_build, owner, turn of U (a user of U, no Moderator) | refused: its create home is Admin                              | the same (nothing made)                      |
-| sheet_build, MCP, Admin user that is not its Moderator    | on: refused; warn: Admin, a miss noted                         | the same                                     |
+| Cell (warn and on)                                                           | 64ed94267                                                      | fix round 1                                  |
+| ---------------------------------------------------------------------------- | -------------------------------------------------------------- | -------------------------------------------- |
+| sheet_build, member2 exports a name member's file holds                      | refused: 'name' already exists in this folder                  | ok: `name-2`, its private workspace; no leak |
+| sheet_build and app_export, one member, same name twice                      | not reached (the row above stops it); the audit: ConflictError | ok: `name-2` (and on); the first not changed |
+| owner or Admin Moderator, same name twice in one month, Auto-filed / Exports | refused: 'name' already exists in this folder                  | ok: `name-2`; the first not changed          |
+| sheet_build, owner, turn of M (it moderates M)                               | ok: M, at the Files root                                       | the same                                     |
+| sheet_build, owner, turn of U (a user of U, no Moderator)                    | refused: its create home is Admin                              | the same (nothing made)                      |
+| sheet_build, MCP, Admin user that is not its Moderator                       | on: refused; warn: Admin, a miss noted                         | the same                                     |
 
 The last two are the database's create check, unchanged: an Admin user has
 no private workspace (its create home is Admin), so where it may not create
@@ -179,3 +180,19 @@ a clock race in the new unit test). On ec35f773e: those files with
 passed), `test:actor-on` 0 (349), `test:edit-on` 0 (515).
 `member-export.db.test.ts` on 64ed94267 with the new cells: 2 failed (the
 recording above), 18 passed.
+
+## Fix round 2 (re-audit at b89748224: 9/10)
+
+Rebased onto main ff5f17ec6 (v0.300.89) with no conflict.
+
+- L-a, tool text: Auto-filed / Exports goes to a caller that may change it
+  in its scope (the owner or an Admin Moderator), not to every Admin user;
+  export_node, sheet_build, app_export and the export tool group say so,
+  and sheet_build names the `-2` suffix as the other two do.
+- L-b: a spooled package that loses a name race after it was staged (its
+  bytes are gone, so it cannot take the next name) now says "export: the
+  name was taken while saving; try again" (`exportRaceError`), not "no free
+  name"; unit cell in `export-home.test.ts`.
+- L-c: the owner row in the fix round 1 table, recorded on 64ed94267 (the
+  new cell overlaid, commit 16bea1ffa on the workstation only): refused
+  "already exists", now `-2`.
