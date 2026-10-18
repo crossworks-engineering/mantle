@@ -202,7 +202,13 @@ async function loadCatalog(): Promise<
 const openrouter_rankings: BuiltinToolDef = {
   slug: 'openrouter_rankings',
   usageTier: 2,
-  policy: { effect: 'write', spends: 'none', scope: 'admin', clientSourced: CS.free(CS.READS) },
+  policy: {
+    matrix: { none: 'names no item' },
+    effect: 'write',
+    spends: 'none',
+    scope: 'admin',
+    clientSourced: CS.free(CS.READS),
+  },
   ownerOnly: true,
   name: 'OpenRouter usage rankings',
   description:
@@ -286,7 +292,13 @@ const openrouter_rankings: BuiltinToolDef = {
 const openrouter_benchmarks: BuiltinToolDef = {
   slug: 'openrouter_benchmarks',
   usageTier: 2,
-  policy: { effect: 'write', spends: 'none', scope: 'admin', clientSourced: CS.free(CS.READS) },
+  policy: {
+    matrix: { none: 'names no item' },
+    effect: 'write',
+    spends: 'none',
+    scope: 'admin',
+    clientSourced: CS.free(CS.READS),
+  },
   ownerOnly: true,
   name: 'OpenRouter benchmarks',
   description:
@@ -340,7 +352,13 @@ const openrouter_benchmarks: BuiltinToolDef = {
 const openrouter_task_classes: BuiltinToolDef = {
   slug: 'openrouter_task_classes',
   usageTier: 2,
-  policy: { effect: 'write', spends: 'none', scope: 'admin', clientSourced: CS.free(CS.READS) },
+  policy: {
+    matrix: { none: 'names no item' },
+    effect: 'write',
+    spends: 'none',
+    scope: 'admin',
+    clientSourced: CS.free(CS.READS),
+  },
   ownerOnly: true,
   name: 'OpenRouter task classifications',
   description:
@@ -361,6 +379,7 @@ const model_catalog: BuiltinToolDef = {
   slug: 'model_catalog',
   usageTier: 6,
   policy: {
+    matrix: { none: 'names no item' },
     effect: 'write',
     spends: 'none',
     scope: { area: 'settings', systemWhole: true, adminOnly: true },
@@ -430,6 +449,7 @@ const model_pool_list: BuiltinToolDef = {
   slug: 'model_pool_list',
   usageTier: 3,
   policy: {
+    matrix: { none: 'names no item' },
     effect: 'write',
     spends: 'none',
     scope: { area: 'settings', systemWhole: true },
@@ -504,6 +524,7 @@ const model_pool_set: BuiltinToolDef = {
   slug: 'model_pool_set',
   usageTier: 7,
   policy: {
+    matrix: { none: 'names no item' },
     effect: 'write',
     spends: 'none',
     scope: { area: 'settings', systemWhole: true, adminOnly: true },
@@ -637,6 +658,7 @@ const model_pool_set: BuiltinToolDef = {
 const model_pool_remove: BuiltinToolDef = {
   slug: 'model_pool_remove',
   policy: {
+    matrix: { none: 'names no item' },
     effect: 'write',
     spends: 'none',
     scope: { area: 'settings', systemWhole: true, adminOnly: true },

@@ -130,6 +130,7 @@ const web_map: BuiltinToolDef = {
   // picks goes out to the crawler, as web_crawl's (A5 step 5, owner
   // decision 1a).
   policy: {
+    matrix: { none: 'names no item' },
     effect: 'write',
     spends: 'none',
     scope: 'admin',
@@ -201,6 +202,7 @@ const web_crawl: BuiltinToolDef = {
   // Its reply names the site's own paths: fenced as data; the url goes out
   // to the crawler (A5 step 5).
   policy: {
+    matrix: { none: 'names no item' },
     effect: 'write',
     spends: 'ownerKey',
     scope: 'admin',

@@ -78,6 +78,7 @@ export const sandbox_mcp_tools: BuiltinToolDef = {
 export const sandbox_mcp_call: BuiltinToolDef = {
   slug: 'sandbox_mcp_call',
   policy: {
+    matrix: { none: 'a sandbox is not an item' },
     effect: 'write',
     spends: 'none',
     scope: { area: 'settings', systemWhole: true },

@@ -85,6 +85,7 @@ beforeAll(() => {
   registerBuiltin(
     probe('mcp_probe_create', {
       effect: 'write',
+      matrix: { none: 'a test probe' },
       spends: 'none',
       scope: 'any',
       creates: 'page',
@@ -93,14 +94,14 @@ beforeAll(() => {
   registerBuiltin(
     probe(
       'mcp_probe_throws',
-      { effect: 'write', spends: 'none', scope: 'any' },
+      { effect: 'write', matrix: { none: 'a test probe' }, spends: 'none', scope: 'any' },
       new Error('boom, not a database error'),
     ),
   );
   registerBuiltin(
     probe(
       'mcp_probe_db',
-      { effect: 'write', spends: 'none', scope: 'any' },
+      { effect: 'write', matrix: { none: 'a test probe' }, spends: 'none', scope: 'any' },
       Object.assign(new Error('Failed query: select secret from nodes'), {
         cause: Object.assign(new Error('duplicate key'), { code: '23505', severity: 'ERROR' }),
       }),

@@ -25,6 +25,7 @@ const POLICIES = {
   // ── files and folders ──
   folder_describe: {
     effect: 'write',
+    matrix: { action: 'edit', param: 'folder_id', kinds: ['branch'] },
     spends: 'none',
     scope: 'any',
     itemArgs: [{ param: 'folder_id' }],
@@ -33,16 +34,30 @@ const POLICIES = {
   },
   folder_rename: {
     effect: 'write',
+    matrix: { action: 'edit', param: 'folder_id', kinds: ['branch'] },
     spends: 'none',
     scope: 'any',
     itemArgs: [{ param: 'folder_id' }],
     keyArea: 'files',
     clientSourced: { kind: 'write', nodes: ['folder_id'] },
   },
-  file_read: { effect: 'read', spends: 'none', scope: 'any', keyArea: 'files' },
-  file_get: { effect: 'read', spends: 'none', scope: 'any', keyArea: 'files' },
+  file_read: {
+    effect: 'read',
+    matrix: { action: 'read', param: 'file_id', kinds: ['file'] },
+    spends: 'none',
+    scope: 'any',
+    keyArea: 'files',
+  },
+  file_get: {
+    effect: 'read',
+    matrix: { action: 'read', param: 'file_id', kinds: ['file'] },
+    spends: 'none',
+    scope: 'any',
+    keyArea: 'files',
+  },
   file_rename: {
     effect: 'write',
+    matrix: { action: 'edit', param: 'file_id', kinds: ['file'] },
     spends: 'none',
     scope: 'any',
     itemArgs: [{ param: 'file_id' }],
@@ -51,26 +66,63 @@ const POLICIES = {
   },
   // ── pages ──
   page_list: { effect: 'read', spends: 'none', scope: 'any', keyArea: 'pages', keyEmail: true },
-  page_get: { effect: 'read', spends: 'none', scope: 'any', keyArea: 'pages' },
+  page_get: {
+    effect: 'read',
+    matrix: { action: 'read', param: 'id', kinds: ['page'] },
+    spends: 'none',
+    scope: 'any',
+    keyArea: 'pages',
+  },
   // ── tables (read only) ──
   table_list: { effect: 'read', spends: 'none', scope: 'any', keyArea: 'tables', keyEmail: true },
-  table_get: { effect: 'read', spends: 'none', scope: 'any', keyArea: 'tables' },
-  table_rows_list: { effect: 'read', spends: 'none', scope: 'any', keyArea: 'tables' },
+  table_get: {
+    effect: 'read',
+    matrix: { action: 'read', param: 'id', kinds: ['table'] },
+    spends: 'none',
+    scope: 'any',
+    keyArea: 'tables',
+  },
+  table_rows_list: {
+    effect: 'read',
+    matrix: { action: 'read', param: 'table_id', kinds: ['table'] },
+    spends: 'none',
+    scope: 'any',
+    keyArea: 'tables',
+  },
   // ── responder ──
   // A turn of the responder, on the owner's keys; it writes into the owner's
   // tools' world (its tools execute), so a key or a peer needs it named.
   ask_responder: {
     effect: 'write',
+    matrix: { none: 'names no item' },
     spends: 'ownerKey',
     startsModelWork: true,
     scope: 'any',
     peerRisky: true,
   },
-  ask_as_responder: { effect: 'write', spends: 'ownerKey', scope: 'any', peerRisky: true },
+  ask_as_responder: {
+    effect: 'write',
+    matrix: { none: 'names no item' },
+    spends: 'ownerKey',
+    scope: 'any',
+    peerRisky: true,
+  },
   // It reads the owner's conversation and writes a trace: Admin only.
-  responder_turn_input: { effect: 'write', spends: 'none', scope: 'admin', peerRisky: true },
+  responder_turn_input: {
+    effect: 'write',
+    matrix: { none: 'names no item' },
+    spends: 'none',
+    scope: 'admin',
+    peerRisky: true,
+  },
   // Writes into the owner's conversation as one of their agents: Admin only.
-  responder_turn_record: { effect: 'write', spends: 'none', scope: 'admin', peerRisky: true },
+  responder_turn_record: {
+    effect: 'write',
+    matrix: { none: 'names no item' },
+    spends: 'none',
+    scope: 'admin',
+    peerRisky: true,
+  },
 } satisfies Record<string, ToolPolicy>;
 
 for (const p of Object.values(POLICIES) as ToolPolicy[]) {

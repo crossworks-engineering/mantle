@@ -150,6 +150,7 @@ export const tree_folder_create: BuiltinToolDef = {
   slug: 'tree_folder_create',
   usageTier: 2,
   policy: {
+    matrix: { action: 'create', param: 'parent_id', kinds: ['branch'] },
     // Audit only: the row names it (the queue asks nothing of it).
     itemArgs: [{ param: 'parent_id', least: 'none' }],
     effect: 'write',
@@ -207,6 +208,7 @@ export const tree_folder_create: BuiltinToolDef = {
 export const tree_folder_update: BuiltinToolDef = {
   slug: 'tree_folder_update',
   policy: {
+    matrix: { action: 'edit', param: 'folder_id', kinds: ['branch'] },
     effect: 'write',
     spends: 'none',
     scope: 'any',
@@ -276,6 +278,7 @@ export const tree_item_move: BuiltinToolDef = {
   slug: 'tree_item_move',
   usageTier: 2,
   policy: {
+    matrix: { none: 'a move between folders: the guide oracle has no such action' },
     effect: 'write',
     spends: 'none',
     scope: 'any',
@@ -341,6 +344,7 @@ export const tree_item_move: BuiltinToolDef = {
 export const tree_folder_delete: BuiltinToolDef = {
   slug: 'tree_folder_delete',
   policy: {
+    matrix: { action: 'delete', param: 'folder_id', kinds: ['branch'] },
     effect: 'write',
     spends: 'none',
     scope: 'any',

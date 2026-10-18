@@ -20,6 +20,7 @@ import { CS } from '../client-sourced-rule';
 export const page_split: BuiltinToolDef = {
   slug: 'page_split',
   policy: {
+    matrix: { action: 'edit', param: 'page_id', kinds: ['page'] },
     effect: 'write',
     spends: 'none',
     scope: 'any',
@@ -94,6 +95,7 @@ export const page_split: BuiltinToolDef = {
 export const page_extract_section: BuiltinToolDef = {
   slug: 'page_extract_section',
   policy: {
+    matrix: { action: 'edit', param: 'page_id', kinds: ['page'] },
     effect: 'write',
     spends: 'none',
     scope: 'any',
@@ -156,6 +158,7 @@ export const page_move: BuiltinToolDef = {
   slug: 'page_move',
   usageTier: 3,
   policy: {
+    matrix: { none: 'a move between folders: the guide oracle has no such action' },
     effect: 'write',
     spends: 'none',
     scope: 'any',
@@ -260,6 +263,7 @@ export const page_move: BuiltinToolDef = {
 export const page_mention: BuiltinToolDef = {
   slug: 'page_mention',
   policy: {
+    matrix: { action: 'editDraft', param: 'page_id', kinds: ['page'] },
     effect: 'write',
     spends: 'none',
     scope: 'any',

@@ -161,7 +161,13 @@ const task_list: BuiltinToolDef = {
 const task_get: BuiltinToolDef = {
   slug: 'task_get',
   usageTier: 2,
-  policy: { effect: 'read', spends: 'none', scope: 'any', keyArea: 'tasks' },
+  policy: {
+    matrix: { action: 'read', param: 'id', kinds: ['task'] },
+    effect: 'read',
+    spends: 'none',
+    scope: 'any',
+    keyArea: 'tasks',
+  },
   name: 'Get a task',
   description:
     'Read one task by id — full row including body, status, priority, due_at. ' +
@@ -192,6 +198,9 @@ const task_create: BuiltinToolDef = {
   slug: 'task_create',
   usageTier: 4,
   policy: {
+    matrix: {
+      none: 'a create naming no folder: it lands by the home rule (turn-create-home tests)',
+    },
     effect: 'write',
     spends: 'none',
     scope: 'any',
@@ -265,6 +274,7 @@ const task_create: BuiltinToolDef = {
 const task_update: BuiltinToolDef = {
   slug: 'task_update',
   policy: {
+    matrix: { action: 'edit', param: 'id', kinds: ['task'] },
     effect: 'write',
     spends: 'none',
     scope: 'any',
@@ -365,6 +375,7 @@ const task_update: BuiltinToolDef = {
 const task_delete: BuiltinToolDef = {
   slug: 'task_delete',
   policy: {
+    matrix: { action: 'delete', param: 'id', kinds: ['task'] },
     effect: 'write',
     spends: 'none',
     scope: 'any',

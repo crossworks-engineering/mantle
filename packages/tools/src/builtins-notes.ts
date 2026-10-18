@@ -44,6 +44,9 @@ const note_create: BuiltinToolDef = {
   slug: 'note_create',
   usageTier: 3,
   policy: {
+    matrix: {
+      none: 'a create naming no folder: it lands by the home rule (turn-create-home tests)',
+    },
     effect: 'write',
     spends: 'none',
     scope: 'any',
@@ -147,7 +150,13 @@ const note_list: BuiltinToolDef = {
 const note_get: BuiltinToolDef = {
   slug: 'note_get',
   usageTier: 5,
-  policy: { effect: 'read', spends: 'none', scope: 'any', keyArea: 'notes' },
+  policy: {
+    matrix: { action: 'read', param: 'id', kinds: ['note'] },
+    effect: 'read',
+    spends: 'none',
+    scope: 'any',
+    keyArea: 'notes',
+  },
   name: 'Get one note by id',
   description:
     'Fetch a single note by id — full row including the markdown content. Use after `note_list` or ' +
@@ -187,6 +196,7 @@ const note_update: BuiltinToolDef = {
   slug: 'note_update',
   usageTier: 3,
   policy: {
+    matrix: { action: 'edit', param: 'id', kinds: ['note'] },
     effect: 'write',
     spends: 'none',
     scope: 'any',
@@ -279,6 +289,7 @@ const note_update: BuiltinToolDef = {
 const note_from_file: BuiltinToolDef = {
   slug: 'note_from_file',
   policy: {
+    matrix: { action: 'read', param: 'file_id', kinds: ['file'] },
     // Audit only: the row names it (the queue asks nothing of it).
     itemArgs: [{ param: 'file_id', least: 'none' }],
     effect: 'write',
@@ -390,6 +401,7 @@ const note_from_file: BuiltinToolDef = {
 const note_from_page: BuiltinToolDef = {
   slug: 'note_from_page',
   policy: {
+    matrix: { action: 'read', param: 'page_id', kinds: ['page'] },
     // Audit only: the row names it (the queue asks nothing of it).
     itemArgs: [{ param: 'page_id', least: 'none' }],
     effect: 'write',
@@ -468,6 +480,7 @@ const note_from_page: BuiltinToolDef = {
 export const note_delete: BuiltinToolDef = {
   slug: 'note_delete',
   policy: {
+    matrix: { action: 'delete', param: 'id', kinds: ['note'] },
     effect: 'write',
     spends: 'none',
     scope: 'any',

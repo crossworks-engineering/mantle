@@ -40,6 +40,7 @@ import { CS } from '../client-sourced-rule';
 export const sandbox_create: BuiltinToolDef = {
   slug: 'sandbox_create',
   policy: {
+    matrix: { none: 'a sandbox is not an item' },
     effect: 'write',
     spends: 'none',
     scope: { area: 'settings' },
@@ -208,6 +209,7 @@ export const sandbox_exec: BuiltinToolDef = {
   slug: 'sandbox_exec',
   usageTier: 3,
   policy: {
+    matrix: { none: 'a sandbox is not an item' },
     effect: 'write',
     spends: 'none',
     scope: { area: 'settings', systemWhole: true },
@@ -343,6 +345,7 @@ export const sandbox_list: BuiltinToolDef = {
 export const sandbox_stop: BuiltinToolDef = {
   slug: 'sandbox_stop',
   policy: {
+    matrix: { none: 'a sandbox is not an item' },
     effect: 'write',
     spends: 'none',
     scope: { area: 'settings', systemWhole: true },
@@ -379,6 +382,7 @@ export const sandbox_stop: BuiltinToolDef = {
 export const sandbox_rm: BuiltinToolDef = {
   slug: 'sandbox_rm',
   policy: {
+    matrix: { none: 'a sandbox is not an item' },
     effect: 'write',
     spends: 'none',
     scope: { area: 'settings', systemWhole: true },
@@ -431,6 +435,7 @@ export const sandbox_rm: BuiltinToolDef = {
 export const sandbox_autostart: BuiltinToolDef = {
   slug: 'sandbox_autostart',
   policy: {
+    matrix: { none: 'a sandbox is not an item' },
     effect: 'write',
     spends: 'none',
     scope: { area: 'settings', systemWhole: true },

@@ -638,6 +638,7 @@ export const RUN_TOOLS: BuiltinToolDef[] = [
   {
     slug: 'run_plan',
     policy: {
+      matrix: { none: 'a run is not an item' },
       effect: 'write',
       spends: 'none',
       scope: 'admin',
@@ -763,6 +764,7 @@ export const RUN_TOOLS: BuiltinToolDef[] = [
   {
     slug: 'run_append',
     policy: {
+      matrix: { none: 'a run is not an item' },
       effect: 'write',
       spends: 'none',
       scope: 'admin',
@@ -865,7 +867,13 @@ export const RUN_TOOLS: BuiltinToolDef[] = [
   },
   {
     slug: 'run_state',
-    policy: { effect: 'read', spends: 'none', scope: 'admin', recipe: { runItem: 'banned' } },
+    policy: {
+      matrix: { none: 'a run is not an item' },
+      effect: 'read',
+      spends: 'none',
+      scope: 'admin',
+      recipe: { runItem: 'banned' },
+    },
     name: 'Inspect runs',
     description:
       "With run_id: return the compiled state of one run — per-item status, one-line outcomes, costs — as text plus structured data. Without run_id: list this brain's recent runs (id, title, status). The compiled state is the ground truth to re-read at resume; never rely on remembered progress.",
@@ -927,6 +935,7 @@ export const RUN_TOOLS: BuiltinToolDef[] = [
   {
     slug: 'run_cancel',
     policy: {
+      matrix: { none: 'a run is not an item' },
       effect: 'write',
       spends: 'none',
       scope: 'admin',
@@ -957,6 +966,7 @@ export const RUN_TOOLS: BuiltinToolDef[] = [
   {
     slug: 'run_audit',
     policy: {
+      matrix: { none: 'a run is not an item' },
       effect: 'write',
       spends: 'none',
       scope: 'admin',

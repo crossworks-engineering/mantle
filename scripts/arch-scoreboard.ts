@@ -165,6 +165,9 @@ const MAY_GROW = new Set([
   'callerReadFiles',
 ]);
 
+/** Pins a test measures and checks (not this script): --pin keeps them. */
+const TESTED_PINS = ['a8Uncovered', 'a8Exempt'];
+
 const mode = process.argv[2] ?? '';
 const measured = measure(ROOT) as {
   numbers: Record<string, number>;
@@ -188,8 +191,12 @@ if (mode === '--pin') {
   } catch {
     old = {};
   }
+  // The pins a test measures, not arch-counts (the A8 coverage, S11a:
+  // server/web/server/a8-coverage.test.ts reads them): kept as they are.
+  const tested = Object.fromEntries(TESTED_PINS.map((k) => [k, old[k]]));
   const notes = keptNotes(old._notes, old, numbers) as Record<string, string>;
-  const out = Object.keys(notes).length === 0 ? numbers : { ...numbers, _notes: notes };
+  const all = { ...numbers, ...tested };
+  const out = Object.keys(notes).length === 0 ? all : { ...all, _notes: notes };
   writeFileSync(PINS, `${JSON.stringify(out, null, 2)}\n`);
   console.log(`\npinned in ${PINS}`);
 } else if (mode === '--check') {

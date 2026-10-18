@@ -140,6 +140,7 @@ const journal_get: BuiltinToolDef = {
   // The owner's private corpus: a workspace user's turn only with
   // teamPrivateReads.
   policy: {
+    matrix: { none: 'a Journal entry: an Admin kind, not a workspace kind' },
     effect: 'read',
     spends: 'none',
     scope: 'any',
@@ -176,6 +177,7 @@ const journal_create: BuiltinToolDef = {
   usageTier: 4,
   autoGrant: true,
   policy: {
+    matrix: { none: 'a Journal entry: an Admin kind, not a workspace kind' },
     effect: 'write',
     spends: 'none',
     scope: 'admin-kind',
@@ -259,6 +261,7 @@ const journal_update: BuiltinToolDef = {
   slug: 'journal_update',
   autoGrant: true,
   policy: {
+    matrix: { none: 'a Journal entry: an Admin kind, not a workspace kind' },
     effect: 'write',
     spends: 'none',
     scope: 'any',
@@ -323,6 +326,7 @@ const journal_resolve_gap: BuiltinToolDef = {
   slug: 'journal_resolve_gap',
   autoGrant: true,
   policy: {
+    matrix: { none: 'a Journal entry: an Admin kind, not a workspace kind' },
     effect: 'write',
     spends: 'none',
     scope: 'any',
@@ -387,6 +391,7 @@ const journal_resolve_gap: BuiltinToolDef = {
 const journal_delete: BuiltinToolDef = {
   slug: 'journal_delete',
   policy: {
+    matrix: { none: 'a Journal entry: an Admin kind, not a workspace kind' },
     effect: 'write',
     spends: 'none',
     scope: 'any',

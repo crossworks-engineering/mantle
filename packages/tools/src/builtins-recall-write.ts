@@ -180,6 +180,9 @@ const OPTIONS_PROP = {
 const recall_map_create: BuiltinToolDef = {
   slug: 'recall_map_create',
   policy: {
+    matrix: {
+      none: 'a create naming no folder: it lands by the home rule (turn-create-home tests)',
+    },
     effect: 'write',
     spends: 'none',
     scope: 'any',
@@ -242,6 +245,7 @@ const recall_map_create: BuiltinToolDef = {
 const recall_card_put: BuiltinToolDef = {
   slug: 'recall_card_put',
   policy: {
+    matrix: { action: 'edit', param: 'map', kinds: ['recall'] },
     effect: 'write',
     spends: 'none',
     scope: 'any',
@@ -337,6 +341,7 @@ const recall_card_put: BuiltinToolDef = {
 const recall_card_delete: BuiltinToolDef = {
   slug: 'recall_card_delete',
   policy: {
+    matrix: { action: 'edit', param: 'map', kinds: ['recall'] },
     effect: 'write',
     spends: 'none',
     scope: 'any',
@@ -390,6 +395,7 @@ const recall_card_delete: BuiltinToolDef = {
 const recall_map_update: BuiltinToolDef = {
   slug: 'recall_map_update',
   policy: {
+    matrix: { action: 'edit', param: 'map', kinds: ['recall'] },
     effect: 'write',
     spends: 'none',
     scope: 'any',

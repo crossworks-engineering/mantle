@@ -107,6 +107,7 @@ export async function resolveDefaultWorker(
 const synthesize_speech: BuiltinToolDef = {
   slug: 'synthesize_speech',
   policy: {
+    matrix: { none: 'names no item' },
     effect: 'write',
     spends: 'ownerKey',
     startsModelWork: true,
@@ -300,6 +301,7 @@ const extract_from_image: BuiltinToolDef = {
   slug: 'extract_from_image',
   usageTier: 3,
   policy: {
+    matrix: { action: 'read', param: 'node_id', kinds: ['file'] },
     effect: 'read',
     spends: 'ownerKey',
     startsModelWork: true,
@@ -463,6 +465,7 @@ export function buildSummarizeTextInput(
 const summarize_text: BuiltinToolDef = {
   slug: 'summarize_text',
   policy: {
+    matrix: { action: 'read', param: 'node_id', kinds: ['note', 'page'] },
     effect: 'read',
     spends: 'ownerKey',
     startsModelWork: true,
@@ -620,6 +623,7 @@ const generate_image: BuiltinToolDef = {
   slug: 'generate_image',
   usageTier: 3,
   policy: {
+    matrix: { action: 'read', param: 'input_image_ids', kinds: ['file'] },
     effect: 'write',
     spends: 'ownerKey',
     startsModelWork: true,

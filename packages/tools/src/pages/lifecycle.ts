@@ -44,6 +44,7 @@ export const page_create: BuiltinToolDef = {
   slug: 'page_create',
   usageTier: 5,
   policy: {
+    matrix: { action: 'create', param: 'folder_id', kinds: ['page'] },
     // Audit only: the row names it (the queue asks nothing of it).
     itemArgs: [{ param: 'folder_id', least: 'none' }],
     effect: 'write',
@@ -132,6 +133,7 @@ export const page_create: BuiltinToolDef = {
 export const page_replace_from_file: BuiltinToolDef = {
   slug: 'page_replace_from_file',
   policy: {
+    matrix: { action: 'edit', param: 'page_id', kinds: ['page'] },
     effect: 'write',
     spends: 'none',
     scope: 'any',
@@ -245,6 +247,7 @@ export const page_replace_from_file: BuiltinToolDef = {
 export const page_update: BuiltinToolDef = {
   slug: 'page_update',
   policy: {
+    matrix: { action: 'edit', param: 'id', kinds: ['page'] },
     effect: 'write',
     spends: 'none',
     scope: 'any',
@@ -305,6 +308,7 @@ export const page_update_draft: BuiltinToolDef = {
   slug: 'page_update_draft',
   usageTier: 4,
   policy: {
+    matrix: { action: 'editDraft', param: 'id', kinds: ['page'] },
     effect: 'write',
     spends: 'none',
     scope: 'any',
@@ -411,6 +415,7 @@ export const page_update_draft: BuiltinToolDef = {
 export const page_commit: BuiltinToolDef = {
   slug: 'page_commit',
   policy: {
+    matrix: { action: 'edit', param: 'id', kinds: ['page'] },
     effect: 'write',
     spends: 'none',
     scope: 'any',
@@ -483,6 +488,7 @@ export const page_commit: BuiltinToolDef = {
 export const page_discard_draft: BuiltinToolDef = {
   slug: 'page_discard_draft',
   policy: {
+    matrix: { action: 'editDraft', param: 'id', kinds: ['page'] },
     effect: 'write',
     spends: 'none',
     scope: 'any',
@@ -519,6 +525,7 @@ export const page_delete: BuiltinToolDef = {
   slug: 'page_delete',
   usageTier: 4,
   policy: {
+    matrix: { action: 'delete', param: 'id', kinds: ['page'] },
     effect: 'write',
     spends: 'none',
     scope: 'any',

@@ -51,6 +51,7 @@ function asStringArray(v: unknown): string[] {
 const update_persona: BuiltinToolDef = {
   slug: 'update_persona',
   policy: {
+    matrix: { none: 'names no item' },
     effect: 'write',
     spends: 'ownerKey',
     startsModelWork: true,

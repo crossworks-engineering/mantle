@@ -135,6 +135,7 @@ export const api_tool_create: BuiltinToolDef = {
   usageTier: 3,
   optIn: 'toolsmithWrite',
   policy: {
+    matrix: { none: 'a tool is not an item' },
     effect: 'write',
     spends: 'none',
     scope: { area: 'connectors', systemWhole: true },
@@ -298,6 +299,7 @@ export const api_tool_update: BuiltinToolDef = {
   slug: 'api_tool_update',
   optIn: 'toolsmithWrite',
   policy: {
+    matrix: { none: 'a tool is not an item' },
     effect: 'write',
     spends: 'none',
     scope: { area: 'connectors' },
@@ -588,6 +590,7 @@ export const api_tool_delete: BuiltinToolDef = {
   usageTier: 3,
   optIn: 'toolsmithWrite',
   policy: {
+    matrix: { none: 'a tool is not an item' },
     effect: 'write',
     spends: 'none',
     scope: { area: 'connectors', systemWhole: true },
@@ -624,6 +627,7 @@ export const api_tool_test: BuiltinToolDef = {
   slug: 'api_tool_test',
   usageTier: 2,
   policy: {
+    matrix: { none: 'a tool is not an item' },
     effect: 'write',
     spends: 'none',
     scope: { area: 'connectors' },

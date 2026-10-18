@@ -88,6 +88,7 @@ export const recipe_tool_create: BuiltinToolDef = {
   usageTier: 3,
   optIn: 'toolsmithWrite',
   policy: {
+    matrix: { none: 'a tool is not an item' },
     effect: 'write',
     spends: 'none',
     scope: { area: 'connectors', systemWhole: true },
@@ -248,6 +249,7 @@ export const recipe_tool_test: BuiltinToolDef = {
   slug: 'recipe_tool_test',
   usageTier: 4,
   policy: {
+    matrix: { none: 'a tool is not an item' },
     effect: 'write',
     spends: 'none',
     scope: { area: 'connectors' },

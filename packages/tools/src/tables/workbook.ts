@@ -29,6 +29,9 @@ export const table_create: BuiltinToolDef = {
   slug: 'table_create',
   usageTier: 2,
   policy: {
+    matrix: {
+      none: 'a create naming no folder: it lands by the home rule (turn-create-home tests)',
+    },
     effect: 'write',
     spends: 'none',
     scope: 'any',
@@ -113,6 +116,7 @@ export const table_from_file: BuiltinToolDef = {
   slug: 'table_from_file',
   usageTier: 5,
   policy: {
+    matrix: { action: 'read', param: 'file_id', kinds: ['file'] },
     // Audit only: the row names it (the queue asks nothing of it).
     itemArgs: [{ param: 'file_id', least: 'none' }],
     effect: 'write',
@@ -222,6 +226,9 @@ export const table_from_text: BuiltinToolDef = {
   slug: 'table_from_text',
   usageTier: 2,
   policy: {
+    matrix: {
+      none: 'a create naming no folder: it lands by the home rule (turn-create-home tests)',
+    },
     effect: 'write',
     spends: 'none',
     scope: 'any',
@@ -307,6 +314,7 @@ export const table_from_text: BuiltinToolDef = {
 export const table_update: BuiltinToolDef = {
   slug: 'table_update',
   policy: {
+    matrix: { action: 'edit', param: 'id', kinds: ['table'] },
     effect: 'write',
     spends: 'none',
     scope: 'any',
@@ -356,6 +364,7 @@ export const table_update: BuiltinToolDef = {
 export const table_delete: BuiltinToolDef = {
   slug: 'table_delete',
   policy: {
+    matrix: { action: 'delete', param: 'id', kinds: ['table'] },
     effect: 'write',
     spends: 'none',
     scope: 'any',
@@ -393,6 +402,7 @@ export const table_delete: BuiltinToolDef = {
 export const table_commit: BuiltinToolDef = {
   slug: 'table_commit',
   policy: {
+    matrix: { action: 'edit', param: 'id', kinds: ['table'] },
     effect: 'write',
     spends: 'none',
     scope: 'any',

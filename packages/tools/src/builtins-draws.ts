@@ -139,7 +139,12 @@ async function pictureOf(
 
 const draw_get: BuiltinToolDef = {
   slug: 'draw_get',
-  policy: { effect: 'read', spends: 'none', scope: 'any' },
+  policy: {
+    matrix: { action: 'read', param: 'id', kinds: ['draw'] },
+    effect: 'read',
+    spends: 'none',
+    scope: 'any',
+  },
   preconditions: DRAW_ID_PRE,
   name: 'Get a drawing',
   description:

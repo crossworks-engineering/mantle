@@ -21,6 +21,7 @@ const SECRETS_ROOT_LABEL = 'secrets';
 export const secret_create: BuiltinToolDef = {
   slug: 'secret_create',
   policy: {
+    matrix: { none: 'names no item' },
     effect: 'write',
     spends: 'none',
     scope: { area: 'keys' },

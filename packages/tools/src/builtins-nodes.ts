@@ -51,7 +51,12 @@ export const brain_capacity: BuiltinToolDef = {
 export const node_read: BuiltinToolDef = {
   slug: 'node_read',
   usageTier: 6,
-  policy: { effect: 'read', spends: 'none', scope: 'any' },
+  policy: {
+    matrix: { action: 'read', param: 'node_id' },
+    effect: 'read',
+    spends: 'none',
+    scope: 'any',
+  },
   name: 'Read a node',
   description:
     'Universal reader — read the full content of any node by id. Returns title, type, tags, path, summary, and the full `data` blob (markdown body for notes, body+location+starts_at for events, status+due_at for tasks, etc.). ' +
@@ -148,6 +153,7 @@ async function readingWorkspaces(nodeId: string): Promise<string[]> {
 export const content_supersede: BuiltinToolDef = {
   slug: 'content_supersede',
   policy: {
+    matrix: { action: 'edit', param: 'node_id', kinds: ['note', 'page'] },
     effect: 'write',
     spends: 'none',
     scope: 'admin',
@@ -257,6 +263,7 @@ export const content_supersede: BuiltinToolDef = {
 export const process_extraction: BuiltinToolDef = {
   slug: 'process_extraction',
   policy: {
+    matrix: { action: 'read', param: 'node_id', kinds: ['note', 'page'] },
     effect: 'write',
     spends: 'ownerKey',
     scope: 'any',

@@ -99,6 +99,7 @@ export const tool_group_ensure: BuiltinToolDef = {
   usageTier: 2,
   optIn: 'toolsmithWrite',
   policy: {
+    matrix: { none: 'a tool group is not an item' },
     effect: 'write',
     spends: 'none',
     scope: { area: 'assistants', systemWhole: true },
@@ -496,6 +497,7 @@ export const agent_grant_tool_group: BuiltinToolDef = {
   slug: 'agent_grant_tool_group',
   optIn: 'toolsmithWrite',
   policy: {
+    matrix: { none: 'a assistant is not an item' },
     effect: 'write',
     spends: 'none',
     scope: { area: 'assistants', systemWhole: true },
@@ -651,6 +653,7 @@ export const agent_set_thinking_effort: BuiltinToolDef = {
   slug: 'agent_set_thinking_effort',
   optIn: 'toolsmithWrite',
   policy: {
+    matrix: { none: 'a assistant is not an item' },
     effect: 'write',
     spends: 'none',
     scope: { area: 'assistants', systemWhole: true },

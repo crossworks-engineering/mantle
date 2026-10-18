@@ -54,7 +54,13 @@ export const page_list: BuiltinToolDef = {
 export const page_get: BuiltinToolDef = {
   slug: 'page_get',
   usageTier: 8,
-  policy: { effect: 'read', spends: 'none', scope: 'any', keyArea: 'pages' },
+  policy: {
+    matrix: { action: 'read', param: 'id', kinds: ['page'] },
+    effect: 'read',
+    spends: 'none',
+    scope: 'any',
+    keyArea: 'pages',
+  },
   preconditions: PAGE_NODE_ID_PRE,
   name: 'Get a page',
   description:

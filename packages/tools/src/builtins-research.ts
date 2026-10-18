@@ -197,6 +197,7 @@ const web_search: BuiltinToolDef = {
   slug: 'web_search',
   usageTier: 7,
   policy: {
+    matrix: { none: 'names no item' },
     effect: 'write',
     spends: 'ownerKey',
     startsModelWork: true,
@@ -216,6 +217,7 @@ const web_search_pro: BuiltinToolDef = {
   slug: 'web_search_pro',
   usageTier: 2,
   policy: {
+    matrix: { none: 'names no item' },
     effect: 'write',
     spends: 'ownerKey',
     startsModelWork: true,

@@ -78,7 +78,14 @@ function ownerOnly(ctx: ToolHandlerContext): ToolHandlerResult | null {
 
 export const access_get: BuiltinToolDef = {
   slug: 'access_get',
-  policy: { effect: 'read', spends: 'none', scope: 'admin' },
+  policy: {
+    matrix: {
+      none: 'the Admin access panel: its grant rules are the grants panel cells (a8-surfaces web)',
+    },
+    effect: 'read',
+    spends: 'none',
+    scope: 'admin',
+  },
   ownerOnly: true,
   preconditions: NODE_ID_PRE,
   name: 'Get who can read an item, or an access level',
@@ -141,6 +148,9 @@ export const access_get: BuiltinToolDef = {
 export const access_set: BuiltinToolDef = {
   slug: 'access_set',
   policy: {
+    matrix: {
+      none: 'the Admin access panel: its grant rules are the grants panel cells (a8-surfaces web)',
+    },
     effect: 'write',
     spends: 'none',
     scope: 'admin',

@@ -30,6 +30,11 @@ import { isOwnerSurface, keyOrPeerVia, ownerSurfaceLoginId } from './surface';
 import { errorMessage } from '@mantle/std';
 import { callerHasArea, callerScope } from './admin-gate';
 import { CS } from './client-sourced-rule';
+import { ITEM_KINDS, ITEM_KIND_NAMES } from '@mantle/client-types/kinds';
+
+/** The kinds an item link opens on (the registry's; a Files folder's is its
+ *  own route). */
+const LINK_KINDS = ITEM_KIND_NAMES.filter((k) => ITEM_KINDS[k].publicLink === true);
 
 /** The `serve` input both share tools take. */
 export const SERVE_INPUT = {
@@ -138,6 +143,7 @@ export const LINK_ITEM_ARG: readonly ToolItemArg[] = [
 const node_share: BuiltinToolDef = {
   slug: 'node_share',
   policy: {
+    matrix: { action: 'link', param: 'id', kinds: LINK_KINDS },
     effect: 'write',
     spends: 'none',
     scope: 'any',
@@ -250,6 +256,7 @@ export async function closeLink(
 const node_unshare: BuiltinToolDef = {
   slug: 'node_unshare',
   policy: {
+    matrix: { action: 'link', param: 'id', kinds: LINK_KINDS },
     effect: 'write',
     spends: 'none',
     scope: 'any',

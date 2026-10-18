@@ -225,6 +225,7 @@ const recall_map_get: BuiltinToolDef = {
 const recall_prompt_confirm: BuiltinToolDef = {
   slug: 'recall_prompt_confirm',
   policy: {
+    matrix: { action: 'edit', param: 'map', kinds: ['recall'] },
     effect: 'write',
     spends: 'none',
     scope: 'admin',
@@ -273,6 +274,7 @@ const recall_prompt_confirm: BuiltinToolDef = {
 const recall_map_publish: BuiltinToolDef = {
   slug: 'recall_map_publish',
   policy: {
+    matrix: { action: 'edit', param: 'map', kinds: ['recall'] },
     effect: 'write',
     spends: 'none',
     scope: 'admin',
@@ -317,6 +319,7 @@ const recall_map_publish: BuiltinToolDef = {
 const recall_map_delete: BuiltinToolDef = {
   slug: 'recall_map_delete',
   policy: {
+    matrix: { action: 'delete', param: 'map', kinds: ['recall'] },
     effect: 'write',
     spends: 'none',
     scope: 'admin',
@@ -356,6 +359,7 @@ const recall_map_delete: BuiltinToolDef = {
 const recall_cards_reorder: BuiltinToolDef = {
   slug: 'recall_cards_reorder',
   policy: {
+    matrix: { action: 'edit', param: 'map', kinds: ['recall'] },
     effect: 'write',
     spends: 'none',
     scope: 'admin',
@@ -432,6 +436,7 @@ const recall_revisions: BuiltinToolDef = {
 const recall_revision_restore: BuiltinToolDef = {
   slug: 'recall_revision_restore',
   policy: {
+    matrix: { none: 'names a Recall revision, not an item (its map is asked in recall tests)' },
     effect: 'write',
     spends: 'none',
     scope: 'admin',
@@ -473,6 +478,7 @@ const recall_revision_restore: BuiltinToolDef = {
 const recall_map_set_slug: BuiltinToolDef = {
   slug: 'recall_map_set_slug',
   policy: {
+    matrix: { action: 'edit', param: 'map', kinds: ['recall'] },
     effect: 'write',
     spends: 'none',
     scope: 'admin',
@@ -517,6 +523,7 @@ const recall_map_set_slug: BuiltinToolDef = {
 const recall_card_set_slug: BuiltinToolDef = {
   slug: 'recall_card_set_slug',
   policy: {
+    matrix: { action: 'edit', param: 'map', kinds: ['recall'] },
     effect: 'write',
     spends: 'none',
     scope: 'admin',

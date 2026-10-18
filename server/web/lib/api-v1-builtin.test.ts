@@ -103,7 +103,7 @@ const saved = new Map<string, BuiltinToolDef>();
 function standIn(real: BuiltinToolDef): BuiltinToolDef {
   return {
     ...real,
-    policy: { effect: 'write', spends: 'none', scope: 'any' },
+    policy: { effect: 'write', matrix: { none: 'a test probe' }, spends: 'none', scope: 'any' },
     handler: async () => {
       if (h.refuse) return { ok: false, error: h.refuse };
       if (h.fail) throw h.fail;

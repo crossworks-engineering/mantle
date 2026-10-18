@@ -23,6 +23,7 @@ import { CS } from '../client-sourced-rule';
 export const file_move: BuiltinToolDef = {
   slug: 'file_move',
   policy: {
+    matrix: { none: 'a move between folders: the guide oracle has no such action' },
     effect: 'write',
     spends: 'none',
     scope: 'any',
@@ -68,6 +69,7 @@ export const file_move: BuiltinToolDef = {
 export const file_copy: BuiltinToolDef = {
   slug: 'file_copy',
   policy: {
+    matrix: { action: 'read', param: 'file_id', kinds: ['file'] },
     // Audit only: the row names it (the queue asks nothing of it).
     itemArgs: [{ param: 'file_id', least: 'none' }],
     effect: 'write',
@@ -121,6 +123,7 @@ export const file_copy: BuiltinToolDef = {
 export const folder_move: BuiltinToolDef = {
   slug: 'folder_move',
   policy: {
+    matrix: { none: 'a move between folders: the guide oracle has no such action' },
     effect: 'write',
     spends: 'none',
     scope: 'any',
@@ -173,6 +176,7 @@ export const folder_move: BuiltinToolDef = {
 export const folder_copy: BuiltinToolDef = {
   slug: 'folder_copy',
   policy: {
+    matrix: { action: 'read', param: 'folder_id', kinds: ['branch'] },
     // Audit only: the row names it (the queue asks nothing of it).
     itemArgs: [{ param: 'folder_id', least: 'none' }],
     effect: 'write',

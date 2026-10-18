@@ -39,6 +39,7 @@ export const web_fetch: BuiltinToolDef = {
   slug: 'web_fetch',
   usageTier: 5,
   policy: {
+    matrix: { none: 'names no item' },
     effect: 'write',
     spends: 'none',
     scope: 'any',

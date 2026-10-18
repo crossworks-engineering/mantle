@@ -35,7 +35,13 @@ import { CS } from '../client-sourced-rule';
 export const page_blocks_list: BuiltinToolDef = {
   slug: 'page_blocks_list',
   usageTier: 8,
-  policy: { effect: 'read', spends: 'none', scope: 'any', keyArea: 'pages' },
+  policy: {
+    matrix: { action: 'read', param: 'page_id', kinds: ['page'] },
+    effect: 'read',
+    spends: 'none',
+    scope: 'any',
+    keyArea: 'pages',
+  },
   preconditions: PAGE_ID_PRE,
   name: 'List the blocks in a page',
   description:
@@ -123,7 +129,13 @@ export const page_blocks_list: BuiltinToolDef = {
 export const page_block_get: BuiltinToolDef = {
   slug: 'page_block_get',
   usageTier: 9,
-  policy: { effect: 'read', spends: 'none', scope: 'any', keyArea: 'pages' },
+  policy: {
+    matrix: { action: 'read', param: 'page_id', kinds: ['page'] },
+    effect: 'read',
+    spends: 'none',
+    scope: 'any',
+    keyArea: 'pages',
+  },
   preconditions: PAGE_ID_PRE,
   name: 'Get one block from a page',
   description:
@@ -173,6 +185,7 @@ export const page_block_update: BuiltinToolDef = {
   slug: 'page_block_update',
   usageTier: 8,
   policy: {
+    matrix: { action: 'editDraft', param: 'page_id', kinds: ['page'] },
     effect: 'write',
     spends: 'none',
     scope: 'any',
@@ -268,6 +281,7 @@ export const page_block_insert_after: BuiltinToolDef = {
   slug: 'page_block_insert_after',
   usageTier: 6,
   policy: {
+    matrix: { action: 'editDraft', param: 'page_id', kinds: ['page'] },
     effect: 'write',
     spends: 'none',
     scope: 'any',
@@ -355,6 +369,7 @@ export const page_block_insert_before: BuiltinToolDef = {
   slug: 'page_block_insert_before',
   usageTier: 3,
   policy: {
+    matrix: { action: 'editDraft', param: 'page_id', kinds: ['page'] },
     effect: 'write',
     spends: 'none',
     scope: 'any',
@@ -443,6 +458,7 @@ export const page_block_append: BuiltinToolDef = {
   slug: 'page_block_append',
   usageTier: 4,
   policy: {
+    matrix: { action: 'editDraft', param: 'page_id', kinds: ['page'] },
     effect: 'write',
     spends: 'none',
     scope: 'any',
@@ -528,6 +544,7 @@ export const page_block_append: BuiltinToolDef = {
 export const page_block_delete: BuiltinToolDef = {
   slug: 'page_block_delete',
   policy: {
+    matrix: { action: 'editDraft', param: 'page_id', kinds: ['page'] },
     effect: 'write',
     spends: 'none',
     scope: 'any',

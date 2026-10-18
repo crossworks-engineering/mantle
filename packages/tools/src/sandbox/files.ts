@@ -39,6 +39,7 @@ import { CS } from '../client-sourced-rule';
 export const sandbox_export: BuiltinToolDef = {
   slug: 'sandbox_export',
   policy: {
+    matrix: { none: 'a sandbox is not an item' },
     effect: 'write',
     spends: 'none',
     scope: { area: 'settings' },
@@ -140,6 +141,7 @@ export const sandbox_export: BuiltinToolDef = {
 export const sandbox_import: BuiltinToolDef = {
   slug: 'sandbox_import',
   policy: {
+    matrix: { none: 'a sandbox is not an item' },
     // Audit only: the row names it (the queue asks nothing of it).
     itemArgs: [{ param: 'file_id', least: 'none' }],
     effect: 'write',
@@ -269,6 +271,7 @@ export const sandbox_ls: BuiltinToolDef = {
 export const sandbox_publish: BuiltinToolDef = {
   slug: 'sandbox_publish',
   policy: {
+    matrix: { none: 'a sandbox is not an item' },
     effect: 'write',
     spends: 'none',
     scope: { area: 'settings', systemWhole: true },

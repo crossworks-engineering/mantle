@@ -28,6 +28,9 @@ import { CS } from '../client-sourced-rule';
 export const folder_create: BuiltinToolDef = {
   slug: 'folder_create',
   policy: {
+    matrix: {
+      none: 'a create naming no folder: it lands by the home rule (turn-create-home tests)',
+    },
     effect: 'write',
     spends: 'none',
     scope: 'any',
@@ -99,6 +102,7 @@ export const folder_create: BuiltinToolDef = {
 export const folder_delete: BuiltinToolDef = {
   slug: 'folder_delete',
   policy: {
+    matrix: { action: 'delete', param: 'folder_id', kinds: ['branch'] },
     effect: 'write',
     spends: 'none',
     scope: 'any',
@@ -130,6 +134,9 @@ export const folder_delete: BuiltinToolDef = {
 export const file_upload: BuiltinToolDef = {
   slug: 'file_upload',
   policy: {
+    matrix: {
+      none: 'a create naming no folder: it lands by the home rule (turn-create-home tests)',
+    },
     effect: 'write',
     spends: 'none',
     scope: 'any',
@@ -243,6 +250,7 @@ function undeletableReason(
 export const file_delete: BuiltinToolDef = {
   slug: 'file_delete',
   policy: {
+    matrix: { action: 'delete', param: 'file_id', kinds: ['file'] },
     effect: 'write',
     spends: 'none',
     scope: 'any',

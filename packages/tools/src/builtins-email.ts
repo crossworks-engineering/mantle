@@ -224,6 +224,7 @@ async function resolveSendAccountOnSystem(
 const email_send: BuiltinToolDef = {
   slug: 'email_send',
   policy: {
+    matrix: { none: 'names no item' },
     effect: 'write',
     spends: 'none',
     scope: { area: 'connectors' },
@@ -313,6 +314,7 @@ const email_send: BuiltinToolDef = {
 const email_page: BuiltinToolDef = {
   slug: 'email_page',
   policy: {
+    matrix: { action: 'read', param: 'pageId', kinds: ['page'] },
     // Audit only: the row names it (the queue asks nothing of it).
     itemArgs: [{ param: 'pageId', least: 'none' }],
     effect: 'write',
@@ -593,6 +595,7 @@ const email_get: BuiltinToolDef = {
   // Mail from outside the brain: fenced as data (A5 step 5). The owner's
   // private corpus: a workspace user's turn only with teamPrivateReads.
   policy: {
+    matrix: { none: 'a mail message: an Admin kind, not a workspace kind' },
     effect: 'read',
     spends: 'none',
     scope: { area: 'connectors' },

@@ -37,6 +37,7 @@ import { CS } from '../client-sourced-rule';
 export const page_from_file: BuiltinToolDef = {
   slug: 'page_from_file',
   policy: {
+    matrix: { action: 'read', param: 'file_id', kinds: ['file'] },
     effect: 'write',
     spends: 'none',
     scope: 'any',
@@ -205,6 +206,7 @@ export const page_from_file: BuiltinToolDef = {
 export const page_from_note: BuiltinToolDef = {
   slug: 'page_from_note',
   policy: {
+    matrix: { action: 'read', param: 'note_id', kinds: ['note'] },
     effect: 'write',
     spends: 'none',
     scope: 'any',
@@ -349,6 +351,7 @@ export const page_from_note: BuiltinToolDef = {
 export const page_from_notes: BuiltinToolDef = {
   slug: 'page_from_notes',
   policy: {
+    matrix: { action: 'read', param: 'note_ids', kinds: ['note'] },
     effect: 'write',
     spends: 'none',
     scope: 'any',
@@ -529,6 +532,7 @@ export const page_from_notes: BuiltinToolDef = {
 export const page_from_journal: BuiltinToolDef = {
   slug: 'page_from_journal',
   policy: {
+    matrix: { none: 'a Journal entry: an Admin kind, not a workspace kind' },
     // Audit only: the row names it (the queue asks nothing of it).
     itemArgs: [{ param: 'folder_id', least: 'none' }],
     effect: 'write',

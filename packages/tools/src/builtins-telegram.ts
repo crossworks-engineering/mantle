@@ -111,6 +111,7 @@ async function ownAllowedChat(
 export const telegram_send: BuiltinToolDef = {
   slug: 'telegram_send',
   policy: {
+    matrix: { none: 'names no item' },
     effect: 'write',
     spends: 'none',
     scope: { area: 'connectors', systemWhole: true },
@@ -163,6 +164,7 @@ export const telegram_send: BuiltinToolDef = {
 export const telegram_pending: BuiltinToolDef = {
   slug: 'telegram_pending',
   policy: {
+    matrix: { none: 'a Telegram chat is not an item' },
     effect: 'read',
     spends: 'none',
     scope: { area: 'connectors', systemWhole: true },
@@ -221,6 +223,7 @@ export const telegram_pending: BuiltinToolDef = {
 export const telegram_react: BuiltinToolDef = {
   slug: 'telegram_react',
   policy: {
+    matrix: { none: 'a Telegram message is not an item' },
     effect: 'write',
     spends: 'none',
     scope: { area: 'connectors', systemWhole: true },
@@ -261,6 +264,7 @@ export const telegram_react: BuiltinToolDef = {
 export const telegram_edit: BuiltinToolDef = {
   slug: 'telegram_edit',
   policy: {
+    matrix: { none: 'a Telegram message is not an item' },
     effect: 'write',
     spends: 'none',
     scope: { area: 'connectors', systemWhole: true },
@@ -306,6 +310,7 @@ export const telegram_edit: BuiltinToolDef = {
 export const telegram_mark_processed: BuiltinToolDef = {
   slug: 'telegram_mark_processed',
   policy: {
+    matrix: { none: 'a Telegram message is not an item' },
     effect: 'write',
     spends: 'none',
     scope: { area: 'connectors', systemWhole: true },
@@ -365,6 +370,7 @@ export const telegram_mark_processed: BuiltinToolDef = {
 export const telegram_pair: BuiltinToolDef = {
   slug: 'telegram_pair',
   policy: {
+    matrix: { none: 'names no item' },
     effect: 'write',
     spends: 'none',
     scope: 'any',

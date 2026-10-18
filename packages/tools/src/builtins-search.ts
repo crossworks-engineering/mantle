@@ -336,7 +336,12 @@ function chunkKey(h: { nodeId: string; ordinal: number }): string {
 export const read_section: BuiltinToolDef = {
   slug: 'read_section',
   usageTier: 9,
-  policy: { effect: 'read', spends: 'none', scope: 'any' },
+  policy: {
+    matrix: { action: 'read', param: 'node_id', kinds: ['file', 'page'] },
+    effect: 'read',
+    spends: 'none',
+    scope: 'any',
+  },
   name: 'Read a document section',
   description:
     "Read one SECTION of a long document in full and in order — the rung between `search_chunks` (scattered passages) and `file_read`/`node_read` (the entire document). Reach for this once you know WHERE the answer lives: feed a `search_chunks` hit's `nodeId` plus its `heading` (or an ordinal range) here to read the whole procedure / clause / table contiguously, WITHOUT loading the entire file into context. " +

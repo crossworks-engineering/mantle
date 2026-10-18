@@ -97,7 +97,13 @@ const FILE_HEAD_CHARS = 4000;
 export const file_read: BuiltinToolDef = {
   slug: 'file_read',
   usageTier: 7,
-  policy: { effect: 'read', spends: 'none', scope: 'any', keyArea: 'files' },
+  policy: {
+    matrix: { action: 'read', param: 'file_id', kinds: ['file'] },
+    effect: 'read',
+    spends: 'none',
+    scope: 'any',
+    keyArea: 'files',
+  },
   name: 'Read a file',
   description:
     "Read a file's content by id. For text files (.md / .txt / .json / .yaml) returns the body as a utf-8 string. For binaries the extractor stores the parsed text (PDF / Word / Excel) as `data.text`, returned here so you can read or quote the document's actual contents. Returns `content: null` only when no text could be extracted (e.g. a scanned image with no OCR). " +
@@ -203,7 +209,13 @@ export const file_read: BuiltinToolDef = {
 export const file_get: BuiltinToolDef = {
   slug: 'file_get',
   usageTier: 5,
-  policy: { effect: 'read', spends: 'none', scope: 'any', keyArea: 'files' },
+  policy: {
+    matrix: { action: 'read', param: 'file_id', kinds: ['file'] },
+    effect: 'read',
+    spends: 'none',
+    scope: 'any',
+    keyArea: 'files',
+  },
   name: 'Fetch file metadata',
   description:
     "Fetch a file's metadata (filename, mime type, size, sha) — no bytes. Use to confirm size/type before deciding to read a large/binary file. " +

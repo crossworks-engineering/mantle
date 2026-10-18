@@ -58,7 +58,10 @@ function probe(
     name: slug,
     description: 'probe',
     inputSchema: { type: 'object', properties: {} },
-    policy: { effect, spends: 'none', scope: 'any' },
+    policy:
+      effect === 'write'
+        ? { effect, matrix: { none: 'a test probe' }, spends: 'none', scope: 'any' }
+        : { effect, spends: 'none', scope: 'any' },
     handler,
   };
 }
@@ -104,13 +107,25 @@ beforeAll(() => {
   // A routine write of internal state (heartbeat_update_state's policy).
   registerBuiltin({
     ...probe('audit_probe_state', 'write', async () => ({ ok: true, output: {} })),
-    policy: { effect: 'write', spends: 'none', scope: 'any', auditRow: false },
+    policy: {
+      effect: 'write',
+      matrix: { none: 'a test probe' },
+      spends: 'none',
+      scope: 'any',
+      auditRow: false,
+    },
   });
   // A routine write only on its firing heartbeat (heartbeat_update_state's
   // policy since the lows round, 6d L5): no row unless it names a `slug`.
   registerBuiltin({
     ...probe('audit_probe_fire_state', 'write', async () => ({ ok: true, output: {} })),
-    policy: { effect: 'write', spends: 'none', scope: 'any', auditRow: { unlessArg: 'slug' } },
+    policy: {
+      effect: 'write',
+      matrix: { none: 'a test probe' },
+      spends: 'none',
+      scope: 'any',
+      auditRow: { unlessArg: 'slug' },
+    },
   });
   startCallAudit({ sink: (r) => rows.push(r) });
 });

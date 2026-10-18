@@ -16,6 +16,7 @@ export const table_tab_add: BuiltinToolDef = {
   slug: 'table_tab_add',
   usageTier: 2,
   policy: {
+    matrix: { action: 'editDraft', param: 'table_id', kinds: ['table'] },
     effect: 'write',
     spends: 'none',
     scope: 'any',
@@ -73,6 +74,7 @@ export const table_tab_add: BuiltinToolDef = {
 export const table_tab_rename: BuiltinToolDef = {
   slug: 'table_tab_rename',
   policy: {
+    matrix: { action: 'editDraft', param: 'table_id', kinds: ['table'] },
     effect: 'write',
     spends: 'none',
     scope: 'any',
@@ -127,6 +129,7 @@ export const table_tab_rename: BuiltinToolDef = {
 export const table_tab_delete: BuiltinToolDef = {
   slug: 'table_tab_delete',
   policy: {
+    matrix: { action: 'editDraft', param: 'table_id', kinds: ['table'] },
     effect: 'write',
     spends: 'none',
     scope: 'any',

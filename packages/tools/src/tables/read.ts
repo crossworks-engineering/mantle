@@ -84,7 +84,13 @@ export const table_list: BuiltinToolDef = {
 export const table_get: BuiltinToolDef = {
   slug: 'table_get',
   usageTier: 5,
-  policy: { effect: 'read', spends: 'none', scope: 'any', keyArea: 'tables' },
+  policy: {
+    matrix: { action: 'read', param: 'id', kinds: ['table'] },
+    effect: 'read',
+    spends: 'none',
+    scope: 'any',
+    keyArea: 'tables',
+  },
   preconditions: TABLE_NODE_ID_PRE,
   name: 'Get a table',
   description:
@@ -202,7 +208,13 @@ const SCHEMA_TABLES_MAX = 20;
 export const table_schema: BuiltinToolDef = {
   slug: 'table_schema',
   usageTier: 7,
-  policy: { effect: 'read', spends: 'none', scope: 'any', keyArea: 'tables' },
+  policy: {
+    matrix: { action: 'read', param: 'table_ids', kinds: ['table'] },
+    effect: 'read',
+    spends: 'none',
+    scope: 'any',
+    keyArea: 'tables',
+  },
   name: 'Table schemas (data dictionary)',
   description:
     "Data dictionary across tables in one call: every tab with its columns, types, row counts, and the table_sql surface (view + FTS shadow names). Pass `table_ids` for specific tables, or omit to survey the most recently updated (up to 20). Use this to pick the right table and write a table_sql query without fetching each table's rows via `table_get`. Legacy tables not yet file-backed are listed without a schema.",
@@ -278,7 +290,13 @@ export const table_schema: BuiltinToolDef = {
 export const table_sql: BuiltinToolDef = {
   slug: 'table_sql',
   usageTier: 9,
-  policy: { effect: 'read', spends: 'none', scope: 'any', keyArea: 'tables' },
+  policy: {
+    matrix: { action: 'read', param: 'table_id', kinds: ['table'] },
+    effect: 'read',
+    spends: 'none',
+    scope: 'any',
+    keyArea: 'tables',
+  },
   preconditions: TABLE_ID_PRE,
   name: 'Query a table with SQL',
   description:
@@ -348,7 +366,13 @@ export const table_sql: BuiltinToolDef = {
 export const table_rows_list: BuiltinToolDef = {
   slug: 'table_rows_list',
   usageTier: 5,
-  policy: { effect: 'read', spends: 'none', scope: 'any', keyArea: 'tables' },
+  policy: {
+    matrix: { action: 'read', param: 'table_id', kinds: ['table'] },
+    effect: 'read',
+    spends: 'none',
+    scope: 'any',
+    keyArea: 'tables',
+  },
   preconditions: TABLE_ID_PRE,
   name: 'List rows in a table',
   description:
@@ -446,7 +470,13 @@ export const table_rows_list: BuiltinToolDef = {
 export const table_row_get: BuiltinToolDef = {
   slug: 'table_row_get',
   usageTier: 4,
-  policy: { effect: 'read', spends: 'none', scope: 'any', keyArea: 'tables' },
+  policy: {
+    matrix: { action: 'read', param: 'table_id', kinds: ['table'] },
+    effect: 'read',
+    spends: 'none',
+    scope: 'any',
+    keyArea: 'tables',
+  },
   preconditions: TABLE_ID_PRE,
   name: 'Get one row',
   description:

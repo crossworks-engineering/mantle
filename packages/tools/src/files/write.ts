@@ -27,6 +27,7 @@ export const file_create: BuiltinToolDef = {
   slug: 'file_create',
   usageTier: 4,
   policy: {
+    matrix: { action: 'create', param: 'parent_path', kinds: ['file'] },
     effect: 'write',
     spends: 'none',
     scope: 'any',
@@ -114,6 +115,7 @@ export const file_create: BuiltinToolDef = {
 export const file_rename: BuiltinToolDef = {
   slug: 'file_rename',
   policy: {
+    matrix: { action: 'edit', param: 'file_id', kinds: ['file'] },
     effect: 'write',
     spends: 'none',
     scope: 'any',
@@ -159,6 +161,7 @@ export const file_rename: BuiltinToolDef = {
 export const folder_rename: BuiltinToolDef = {
   slug: 'folder_rename',
   policy: {
+    matrix: { action: 'edit', param: 'folder_id', kinds: ['branch'] },
     effect: 'write',
     spends: 'none',
     scope: 'any',
@@ -209,6 +212,7 @@ export const folder_rename: BuiltinToolDef = {
 export const folder_describe: BuiltinToolDef = {
   slug: 'folder_describe',
   policy: {
+    matrix: { action: 'edit', param: 'folder_id', kinds: ['branch'] },
     effect: 'write',
     spends: 'none',
     scope: 'any',
@@ -266,6 +270,7 @@ const INDEXING_MODE_SCHEMA = {
 export const file_set_indexing: BuiltinToolDef = {
   slug: 'file_set_indexing',
   policy: {
+    matrix: { action: 'edit', param: 'file_id', kinds: ['file'] },
     effect: 'write',
     spends: 'none',
     scope: 'any',
@@ -317,6 +322,7 @@ export const file_set_indexing: BuiltinToolDef = {
 export const folder_set_indexing: BuiltinToolDef = {
   slug: 'folder_set_indexing',
   policy: {
+    matrix: { action: 'edit', param: 'folder_id', kinds: ['branch'] },
     effect: 'write',
     spends: 'none',
     scope: 'any',

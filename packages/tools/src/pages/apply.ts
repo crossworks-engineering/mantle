@@ -40,6 +40,7 @@ export const page_blocks_apply: BuiltinToolDef = {
   slug: 'page_blocks_apply',
   usageTier: 5,
   policy: {
+    matrix: { action: 'editDraft', param: 'page_id', kinds: ['page'] },
     effect: 'write',
     spends: 'none',
     scope: 'any',

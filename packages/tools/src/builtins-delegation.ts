@@ -32,6 +32,7 @@ export const invoke_agent: BuiltinToolDef = {
   slug: 'invoke_agent',
   usageTier: 7,
   policy: {
+    matrix: { action: 'read', param: 'subject_node_ids', kinds: ['note', 'page'] },
     effect: 'write',
     spends: 'ownerKey',
     startsModelWork: true,

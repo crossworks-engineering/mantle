@@ -201,6 +201,7 @@ const peer_tools: BuiltinToolDef = {
 const peer_call: BuiltinToolDef = {
   slug: 'peer_call',
   policy: {
+    matrix: { none: 'names no item' },
     effect: 'write',
     spends: 'none',
     scope: { area: 'connectors', systemWhole: true },
@@ -255,6 +256,7 @@ const peer_call: BuiltinToolDef = {
 const peer_file_copy: BuiltinToolDef = {
   slug: 'peer_file_copy',
   policy: {
+    matrix: { action: 'read', param: 'file_id', kinds: ['file'] },
     // Audit only: the row names it (the queue asks nothing of it).
     itemArgs: [{ param: 'file_id', least: 'none' }],
     effect: 'write',

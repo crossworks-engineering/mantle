@@ -21,7 +21,12 @@ export const HEARTBEAT_LIST_MAX_LIMIT = 100;
 export const HEARTBEAT_COMPLETE_SPEC: HeartbeatToolSpec = {
   slug: 'heartbeat_complete',
   heartbeat: { reaches: 'firing', responderOrder: 1 },
-  policy: { effect: 'write', spends: 'none', scope: 'any' },
+  policy: {
+    effect: 'write',
+    matrix: { none: 'a heartbeat is not an item' },
+    spends: 'none',
+    scope: 'any',
+  },
   name: 'Mark a heartbeat complete',
   description:
     'Permanently stop a heartbeat. Use this when the skill has accomplished what it set out to do (e.g. all interview questions answered) OR when the user explicitly asks you to stop. Pass `slug` to target a specific heartbeat — required when called from a regular responder turn; optional inside a heartbeat fire (the firing one is the default). After this call, the heartbeat never fires again unless an operator re-activates it. Takes an optional `reason` string stored on the row for the operator to see.',
@@ -45,7 +50,12 @@ export const HEARTBEAT_COMPLETE_SPEC: HeartbeatToolSpec = {
 export const HEARTBEAT_SNOOZE_SPEC: HeartbeatToolSpec = {
   slug: 'heartbeat_snooze',
   heartbeat: { reaches: 'firing', responderOrder: 2 },
-  policy: { effect: 'write', spends: 'none', scope: 'any' },
+  policy: {
+    effect: 'write',
+    matrix: { none: 'a heartbeat is not an item' },
+    spends: 'none',
+    scope: 'any',
+  },
   name: 'Snooze a heartbeat',
   description:
     "Push a heartbeat's next fire forward without completing it. Pass `slug` to target a specific heartbeat — required from a regular responder turn; optional inside a heartbeat fire (firing one is the default). Specify the delay via `for_hours` (e.g. 24 = try again tomorrow) or `until` (ISO-8601 instant). Useful when the user is busy or the moment isn't right but the heartbeat should keep trying.",
@@ -69,7 +79,13 @@ export const HEARTBEAT_UPDATE_STATE_SPEC: HeartbeatToolSpec = {
   // inside a fire on the firing heartbeat (no `slug`). A call naming one by
   // slug (a responder turn must, and it may move another login's heartbeat
   // to this login) keeps its row (lows round, 6d L5).
-  policy: { effect: 'write', spends: 'none', scope: 'any', auditRow: { unlessArg: 'slug' } },
+  policy: {
+    effect: 'write',
+    matrix: { none: 'a heartbeat is not an item' },
+    spends: 'none',
+    scope: 'any',
+    auditRow: { unlessArg: 'slug' },
+  },
   name: "Update a heartbeat's state",
   description:
     "JSON-merge a `patch` object into a heartbeat's `state` jsonb. Top-level keys overwrite same-named keys in the existing state; other keys are preserved. Set a key to null to remove it. Pass `slug` to target a specific heartbeat — required from a regular responder turn (look at the 'Open heartbeats' block in your system prompt to find which slug to use); optional inside a heartbeat fire (firing one is the default). Use this to track progress (e.g. {answered: ['family'], expecting_reply: false}) so the next fire knows where the skill left off.",
@@ -96,6 +112,7 @@ export const HEARTBEAT_LIST_SPEC: HeartbeatToolSpec = {
   heartbeat: { reaches: 'every' },
   policy: {
     effect: 'write',
+    matrix: { none: 'a heartbeat is not an item' },
     spends: 'none',
     scope: { area: 'assistants', systemWhole: true, adminOnly: true },
   },
@@ -126,7 +143,12 @@ export const HEARTBEAT_LIST_SPEC: HeartbeatToolSpec = {
 export const HEARTBEAT_FIRE_SPEC: HeartbeatToolSpec = {
   slug: 'heartbeat_fire',
   heartbeat: { reaches: 'every' },
-  policy: { effect: 'write', spends: 'none', scope: { area: 'assistants', adminOnly: true } },
+  policy: {
+    effect: 'write',
+    matrix: { none: 'a heartbeat is not an item' },
+    spends: 'none',
+    scope: { area: 'assistants', adminOnly: true },
+  },
   name: 'Force-fire a heartbeat now',
   description:
     "Fire the heartbeat with the given slug RIGHT NOW, bypassing all gates (idle / quiet hours / cooldown). Used by the operator's 'Fire now' button and by skills that want to chain into another heartbeat. The fire still records to traces + heartbeat_fires with disposition='fired'. Does NOT need to be inside an existing heartbeat fire. Cannot fire the heartbeat that is currently calling this tool (direct self-recursion is refused), and chained fires are capped at MAX_HEARTBEAT_DEPTH to prevent runaway loops. Only the user who set up the heartbeat may fire it.",

@@ -59,7 +59,13 @@ export const entity_search: BuiltinToolDef = {
 
 export const entity_neighbors: BuiltinToolDef = {
   slug: 'entity_neighbors',
-  policy: { effect: 'read', spends: 'none', scope: 'any', keyArea: 'search' },
+  policy: {
+    matrix: { none: 'an entity is not an item (its reads follow the item reads: entity tests)' },
+    effect: 'read',
+    spends: 'none',
+    scope: 'any',
+    keyArea: 'search',
+  },
   name: 'Walk entity neighbors',
   description:
     "Given an entity id, return connected entities one hop away (in both directions by default). Use after entity_search to expand context, e.g. 'who works with Sarah?' or 'what projects mention Lister?'.",
@@ -117,7 +123,13 @@ export const entity_neighbors: BuiltinToolDef = {
 
 export const graph_path: BuiltinToolDef = {
   slug: 'graph_path',
-  policy: { effect: 'read', spends: 'none', scope: 'any', keyArea: 'search' },
+  policy: {
+    matrix: { none: 'an entity is not an item (its reads follow the item reads: entity tests)' },
+    effect: 'read',
+    spends: 'none',
+    scope: 'any',
+    keyArea: 'search',
+  },
   name: 'Walk the entity graph (multi-hop)',
   description:
     "Multi-hop traversal of the knowledge graph — the relationships BETWEEN entities (e.g. 'Sarah works_at Lister', 'Lister supplies Acme'). Use for connection questions one hop can't answer: 'how is Sarah connected to Acme?' (pass from_id + to_id → shortest path) or 'what's within 2 hops of Lister?' (pass from_id only → reachable neighbourhood). Get ids from entity_search first. `relations` filters which verbs to follow; `directed:true` follows subject→object only (default treats edges as undirected for connectivity). For a single hop use entity_neighbors instead.",
@@ -185,7 +197,13 @@ export const graph_path: BuiltinToolDef = {
 export const entity_facts: BuiltinToolDef = {
   slug: 'entity_facts',
   usageTier: 2,
-  policy: { effect: 'read', spends: 'none', scope: 'any', keyArea: 'search' },
+  policy: {
+    matrix: { none: 'an entity is not an item (its reads follow the item reads: entity tests)' },
+    effect: 'read',
+    spends: 'none',
+    scope: 'any',
+    keyArea: 'search',
+  },
   name: 'List entity facts',
   description:
     'All facts the user has accumulated about a specific entity (what they KNOW about that person/place/thing). Returns currently-valid facts by default; set include_retired=true to see superseded history. ' +
@@ -230,7 +248,13 @@ export const entity_facts: BuiltinToolDef = {
 
 export const entity_mentions: BuiltinToolDef = {
   slug: 'entity_mentions',
-  policy: { effect: 'read', spends: 'none', scope: 'any', keyArea: 'search' },
+  policy: {
+    matrix: { none: 'an entity is not an item (its reads follow the item reads: entity tests)' },
+    effect: 'read',
+    spends: 'none',
+    scope: 'any',
+    keyArea: 'search',
+  },
   name: 'List entity mentions',
   description:
     'Content nodes (files, notes, emails, …) that mention a given entity, newest first. Returns title + per-node summary so the model can decide which to dig into. ' +

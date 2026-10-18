@@ -129,7 +129,12 @@ const formula_list: BuiltinToolDef = {
 const formula_get: BuiltinToolDef = {
   slug: 'formula_get',
   autoGrant: true,
-  policy: { effect: 'read', spends: 'none', scope: 'any' },
+  policy: {
+    matrix: { action: 'read', param: 'id', kinds: ['formula'] },
+    effect: 'read',
+    spends: 'none',
+    scope: 'any',
+  },
   name: 'Read a formula',
   description:
     'Return one formula in full: the spec (variables, equations, branches, lookup tables, rating criteria) and `targets` — every evaluable id with what it produces and **the exact inputs `formula_evaluate` needs**, each marked required or defaulted, carrying its unit and, for a rating or lookup key, its legal values. Read the input list from there rather than inferring one from the spec. Also `coverage_gaps` — key combinations a lookup declares as legal but has no row for — and `dimension_issues`, where a declared unit disagrees with the arithmetic that produces it. **A non-empty `coverage_gaps` means the source table is incomplete, not that the spec is wrong**; say so rather than inventing a value for the missing case.',
@@ -167,7 +172,12 @@ const formula_get: BuiltinToolDef = {
 const formula_evaluate: BuiltinToolDef = {
   slug: 'formula_evaluate',
   autoGrant: true,
-  policy: { effect: 'read', spends: 'none', scope: 'any' },
+  policy: {
+    matrix: { action: 'read', param: 'id', kinds: ['formula'] },
+    effect: 'read',
+    spends: 'none',
+    scope: 'any',
+  },
   name: 'Evaluate a formula',
   description:
     'Compute one target of a formula and return the value plus a `trace` — which branch was taken, which lookup row matched, and what every symbol resolved to. Quote the trace when reporting a number so it can be checked. **Symbols are case-sensitive** (`k` and `K` are different quantities) and a missing or misspelled input is an error, never a zero. Get valid `target` ids and required inputs from `formula_get`.',
@@ -242,6 +252,9 @@ const formula_create: BuiltinToolDef = {
   slug: 'formula_create',
   autoGrant: true,
   policy: {
+    matrix: {
+      none: 'a create naming no folder: it lands by the home rule (turn-create-home tests)',
+    },
     effect: 'write',
     spends: 'none',
     scope: 'any',
@@ -290,6 +303,7 @@ const formula_update: BuiltinToolDef = {
   slug: 'formula_update',
   autoGrant: true,
   policy: {
+    matrix: { action: 'edit', param: 'id', kinds: ['formula'] },
     effect: 'write',
     spends: 'none',
     scope: 'any',
@@ -340,6 +354,7 @@ const formula_update: BuiltinToolDef = {
 const formula_delete: BuiltinToolDef = {
   slug: 'formula_delete',
   policy: {
+    matrix: { action: 'delete', param: 'id', kinds: ['formula'] },
     effect: 'write',
     spends: 'none',
     scope: 'any',

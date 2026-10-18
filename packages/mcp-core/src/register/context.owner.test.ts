@@ -40,7 +40,7 @@ describe('MCP builtin calls carry the owner surface', () => {
       name: 'probe',
       description: 'probe',
       inputSchema: { type: 'object', properties: {} },
-      policy: { effect: 'write', spends: 'none', scope: 'any' },
+      policy: { effect: 'write', matrix: { none: 'a test probe' }, spends: 'none', scope: 'any' },
       ownerOnly: true,
       handler,
     } as BuiltinToolDef;
@@ -69,7 +69,7 @@ describe('MCP builtin calls carry the owner surface', () => {
       name: 'probe',
       description: 'probe',
       inputSchema: { type: 'object', properties: {} },
-      policy: { effect: 'write', spends: 'none', scope: 'any' },
+      policy: { effect: 'write', matrix: { none: 'a test probe' }, spends: 'none', scope: 'any' },
       handler,
     } as BuiltinToolDef;
     registerBuiltin(def);

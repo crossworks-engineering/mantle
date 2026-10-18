@@ -27,6 +27,7 @@ import { CS } from '../client-sourced-rule';
 export const page_share: BuiltinToolDef = {
   slug: 'page_share',
   policy: {
+    matrix: { action: 'link', param: 'id', kinds: ['page'] },
     effect: 'write',
     spends: 'none',
     scope: 'any',
@@ -87,6 +88,7 @@ export const page_share: BuiltinToolDef = {
 export const page_unshare: BuiltinToolDef = {
   slug: 'page_unshare',
   policy: {
+    matrix: { action: 'link', param: 'id', kinds: ['page'] },
     effect: 'write',
     spends: 'none',
     scope: 'any',

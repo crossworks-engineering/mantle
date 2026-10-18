@@ -22,6 +22,7 @@ import { CS } from './client-sourced-rule';
 const set_timezone: BuiltinToolDef = {
   slug: 'set_timezone',
   policy: {
+    matrix: { none: 'names no item' },
     effect: 'write',
     spends: 'none',
     scope: 'admin',

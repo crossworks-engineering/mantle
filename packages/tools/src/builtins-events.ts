@@ -97,7 +97,13 @@ const event_list: BuiltinToolDef = {
 
 const event_get: BuiltinToolDef = {
   slug: 'event_get',
-  policy: { effect: 'read', spends: 'none', scope: 'any', keyArea: 'calendar' },
+  policy: {
+    matrix: { action: 'read', param: 'id', kinds: ['event'] },
+    effect: 'read',
+    spends: 'none',
+    scope: 'any',
+    keyArea: 'calendar',
+  },
   name: 'Get a calendar event',
   description:
     'Read one event by id — full row including body, location, starts_at, ends_at. ' +
@@ -127,6 +133,9 @@ const event_get: BuiltinToolDef = {
 const event_create: BuiltinToolDef = {
   slug: 'event_create',
   policy: {
+    matrix: {
+      none: 'a create naming no folder: it lands by the home rule (turn-create-home tests)',
+    },
     effect: 'write',
     spends: 'none',
     scope: 'any',
@@ -234,6 +243,7 @@ const event_create: BuiltinToolDef = {
 const event_update: BuiltinToolDef = {
   slug: 'event_update',
   policy: {
+    matrix: { action: 'edit', param: 'id', kinds: ['event'] },
     effect: 'write',
     spends: 'none',
     scope: 'any',
@@ -322,6 +332,7 @@ const event_update: BuiltinToolDef = {
 const event_delete: BuiltinToolDef = {
   slug: 'event_delete',
   policy: {
+    matrix: { action: 'delete', param: 'id', kinds: ['event'] },
     effect: 'write',
     spends: 'none',
     scope: 'any',

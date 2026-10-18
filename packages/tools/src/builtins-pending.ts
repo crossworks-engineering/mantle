@@ -58,7 +58,12 @@ export const pending_list: BuiltinToolDef = {
 
 export const pending_get: BuiltinToolDef = {
   slug: 'pending_get',
-  policy: { effect: 'read', spends: 'none', scope: 'admin' },
+  policy: {
+    matrix: { none: 'a pending call is not an item' },
+    effect: 'read',
+    spends: 'none',
+    scope: 'admin',
+  },
   mcpOnly: true,
   name: 'Get a pending tool call',
   description: 'Fetch a pending tool call by id — useful to inspect the args before deciding.',
@@ -79,6 +84,7 @@ export const pending_get: BuiltinToolDef = {
 export const pending_approve: BuiltinToolDef = {
   slug: 'pending_approve',
   policy: {
+    matrix: { none: 'a pending call is not an item' },
     effect: 'write',
     spends: 'none',
     scope: 'admin',
@@ -161,6 +167,7 @@ export const pending_approve: BuiltinToolDef = {
 export const pending_reject: BuiltinToolDef = {
   slug: 'pending_reject',
   policy: {
+    matrix: { none: 'a pending call is not an item' },
     effect: 'write',
     spends: 'none',
     scope: 'admin',
@@ -203,6 +210,7 @@ export const worker_group_list: BuiltinToolDef = {
 export const worker_group_ensure: BuiltinToolDef = {
   slug: 'worker_group_ensure',
   policy: {
+    matrix: { none: 'a worker group is not an item' },
     effect: 'write',
     spends: 'none',
     scope: { area: 'assistants', systemWhole: true },

@@ -277,7 +277,13 @@ export const app_data_list: BuiltinToolDef = {
 
 export const app_data_schema: BuiltinToolDef = {
   slug: 'app_data_schema',
-  policy: { effect: 'read', spends: 'none', scope: 'any', keyArea: 'app_data' },
+  policy: {
+    matrix: { action: 'read', param: 'app_id', kinds: ['app'] },
+    effect: 'read',
+    spends: 'none',
+    scope: 'any',
+    keyArea: 'app_data',
+  },
   name: "Read an app's tables and columns",
   description:
     "One app's database: its tables and views, each column (name, type, not null, primary key), the row count of each table, and the schema version. Read it before you query or write. The schema belongs to the app's author: the app_data tools never change it.",
@@ -341,6 +347,7 @@ export const app_data_schema: BuiltinToolDef = {
 export const app_data_query: BuiltinToolDef = {
   slug: 'app_data_query',
   policy: {
+    matrix: { action: 'read', param: 'app_id', kinds: ['app'] },
     effect: 'read',
     spends: 'none',
     scope: 'any',
@@ -414,6 +421,7 @@ export const app_data_query: BuiltinToolDef = {
 export const app_data_write: BuiltinToolDef = {
   slug: 'app_data_write',
   policy: {
+    matrix: { action: 'appData', param: 'app_id', kinds: ['app'] },
     effect: 'write',
     spends: 'none',
     scope: 'any',

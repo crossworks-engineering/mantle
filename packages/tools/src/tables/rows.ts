@@ -27,6 +27,7 @@ export const table_row_add: BuiltinToolDef = {
   slug: 'table_row_add',
   usageTier: 9,
   policy: {
+    matrix: { action: 'edit', param: 'table_id', kinds: ['table'] },
     effect: 'write',
     spends: 'none',
     scope: 'any',
@@ -104,6 +105,7 @@ export const table_rows_add: BuiltinToolDef = {
   slug: 'table_rows_add',
   usageTier: 4,
   policy: {
+    matrix: { action: 'edit', param: 'table_id', kinds: ['table'] },
     effect: 'write',
     spends: 'none',
     scope: 'any',
@@ -189,6 +191,7 @@ export const table_rows_add: BuiltinToolDef = {
 export const table_rows_upsert: BuiltinToolDef = {
   slug: 'table_rows_upsert',
   policy: {
+    matrix: { action: 'edit', param: 'table_id', kinds: ['table'] },
     effect: 'write',
     spends: 'none',
     scope: 'any',
@@ -413,6 +416,7 @@ export const table_row_update: BuiltinToolDef = {
   slug: 'table_row_update',
   usageTier: 4,
   policy: {
+    matrix: { action: 'edit', param: 'table_id', kinds: ['table'] },
     effect: 'write',
     spends: 'none',
     scope: 'any',
@@ -481,6 +485,7 @@ export const table_row_delete: BuiltinToolDef = {
   slug: 'table_row_delete',
   usageTier: 2,
   policy: {
+    matrix: { action: 'edit', param: 'table_id', kinds: ['table'] },
     effect: 'write',
     spends: 'none',
     scope: 'any',
@@ -539,6 +544,7 @@ export const table_cell_set: BuiltinToolDef = {
   slug: 'table_cell_set',
   usageTier: 6,
   policy: {
+    matrix: { action: 'edit', param: 'table_id', kinds: ['table'] },
     effect: 'write',
     spends: 'none',
     scope: 'any',

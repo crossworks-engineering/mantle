@@ -20,7 +20,12 @@ const row = (slug: string) =>
 
 const seen: { nestedCaller: ToolCaller | null; inner: ToolHandlerResult | null }[] = [];
 
-const POLICY = { effect: 'write', spends: 'none', scope: 'any' } as const;
+const POLICY = {
+  effect: 'write',
+  matrix: { none: 'a test probe' },
+  spends: 'none',
+  scope: 'any',
+} as const;
 
 const inner: BuiltinToolDef = {
   slug: 'v1_nested_inner',

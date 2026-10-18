@@ -24,6 +24,9 @@ import { CS } from './client-sourced-rule';
 const sheet_build: BuiltinToolDef = {
   slug: 'sheet_build',
   policy: {
+    matrix: {
+      none: 'a create naming no folder: it lands by the home rule (turn-create-home tests)',
+    },
     effect: 'write',
     spends: 'none',
     scope: 'any',

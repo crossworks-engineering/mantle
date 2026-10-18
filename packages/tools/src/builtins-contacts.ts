@@ -152,7 +152,13 @@ const contact_list: BuiltinToolDef = {
 const contact_get: BuiltinToolDef = {
   slug: 'contact_get',
   autoGrant: true,
-  policy: { effect: 'read', spends: 'none', scope: 'any', keyArea: 'contacts' },
+  policy: {
+    matrix: { none: 'a contact: an Admin kind, not a workspace kind' },
+    effect: 'read',
+    spends: 'none',
+    scope: 'any',
+    keyArea: 'contacts',
+  },
   preconditions: CONTACT_ID_PRE,
   name: 'Read a contact',
   description: 'Fetch one contact by its node id. Returns the full record including counters.',
@@ -190,6 +196,7 @@ const contact_create: BuiltinToolDef = {
   slug: 'contact_create',
   autoGrant: true,
   policy: {
+    matrix: { none: 'a contact: an Admin kind, not a workspace kind' },
     effect: 'write',
     spends: 'none',
     scope: 'admin-kind',
@@ -264,6 +271,7 @@ const contact_update: BuiltinToolDef = {
   slug: 'contact_update',
   autoGrant: true,
   policy: {
+    matrix: { none: 'a contact: an Admin kind, not a workspace kind' },
     effect: 'write',
     spends: 'none',
     scope: 'any',
@@ -349,6 +357,7 @@ const contact_update: BuiltinToolDef = {
 const contact_delete: BuiltinToolDef = {
   slug: 'contact_delete',
   policy: {
+    matrix: { none: 'a contact: an Admin kind, not a workspace kind' },
     effect: 'write',
     spends: 'none',
     scope: 'any',

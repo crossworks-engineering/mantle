@@ -49,6 +49,7 @@ const run_terminal: BuiltinToolDef = {
   usageTier: 6,
   optIn: 'terminal',
   policy: {
+    matrix: { none: 'names no item' },
     effect: 'write',
     spends: 'none',
     scope: { area: 'settings', adminOnly: true },

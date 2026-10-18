@@ -19,6 +19,11 @@ import type { BuiltinToolDef, ToolPrecondition } from './types';
 import { str } from './coerce';
 import { errorMessage } from '@mantle/std';
 import { CS } from './client-sourced-rule';
+import { EXPORT_FORMAT_BY_KIND } from '@mantle/client-types/kind-lists';
+import type { ItemKind } from '@mantle/client-types/kinds';
+
+/** The kinds an export makes a file of (the registry's). */
+const EXPORT_KINDS = Object.keys(EXPORT_FORMAT_BY_KIND) as ItemKind[];
 
 // Referential precondition (checked centrally in dispatch — see
 // preconditions.ts): the id must name an existing node the owner holds.
@@ -32,6 +37,7 @@ const export_node: BuiltinToolDef = {
   slug: 'export_node',
   usageTier: 2,
   policy: {
+    matrix: { action: 'read', param: 'node_id', kinds: EXPORT_KINDS },
     effect: 'write',
     spends: 'none',
     scope: 'admin',

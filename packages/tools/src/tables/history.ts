@@ -44,7 +44,13 @@ function historyError(err: unknown): { ok: false; error: string } {
 
 export const table_history: BuiltinToolDef = {
   slug: 'table_history',
-  policy: { effect: 'read', spends: 'none', scope: 'any', keyArea: 'tables' },
+  policy: {
+    matrix: { action: 'read', param: 'id', kinds: ['table'] },
+    effect: 'read',
+    spends: 'none',
+    scope: 'any',
+    keyArea: 'tables',
+  },
   ownerOnly: true,
   preconditions: TABLE_NODE_ID_PRE,
   name: "List a table's history",
@@ -84,6 +90,7 @@ export const table_history: BuiltinToolDef = {
 export const table_snapshot_create: BuiltinToolDef = {
   slug: 'table_snapshot_create',
   policy: {
+    matrix: { action: 'edit', param: 'id', kinds: ['table'] },
     effect: 'write',
     spends: 'none',
     scope: 'any',
@@ -130,6 +137,7 @@ export const table_snapshot_create: BuiltinToolDef = {
 export const table_snapshot_restore: BuiltinToolDef = {
   slug: 'table_snapshot_restore',
   policy: {
+    matrix: { action: 'edit', param: 'id', kinds: ['table'] },
     effect: 'write',
     spends: 'none',
     scope: 'any',
@@ -208,6 +216,7 @@ export const table_snapshot_restore: BuiltinToolDef = {
 export const table_snapshot_delete: BuiltinToolDef = {
   slug: 'table_snapshot_delete',
   policy: {
+    matrix: { action: 'edit', param: 'id', kinds: ['table'] },
     effect: 'write',
     spends: 'none',
     scope: 'any',

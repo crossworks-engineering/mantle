@@ -25,6 +25,7 @@
  */
 import type { ItemKind } from '@mantle/client-types/kinds';
 import type { GatePolicy, ScopeArea } from '@mantle/db';
+import type { GuideAction } from '@mantle/db/matrix/guide-oracle';
 import type { BuiltinToolDef } from './types';
 import type { ClientSourcedRule } from './client-sourced-rule';
 import { MCP_SURFACE_POLICIES } from './mcp-surface-policies';
@@ -98,12 +99,34 @@ export type ToolOutside = Readonly<{
   appCode?: true;
 }>;
 
+/**
+ * What the A8 matrix asks of a tool (plan v3.2 S11a): the guide action its
+ * call is, the argument that names the item, and the kinds it takes (unset:
+ * every workspace kind); or `none` and why no item cell fits it. It states
+ * intent only. No check reads it at run time (it is not a pre-check): the
+ * A8 tool cells (@mantle/db matrix/test-support/a8-tool-cells.ts) generate
+ * their cells from it, and server/web/server/a8-coverage.test.ts counts it.
+ */
+export type ToolMatrix =
+  | Readonly<{ action: GuideAction; param: string; kinds?: readonly ItemKind[] }>
+  | Readonly<{ none: string }>;
+
+/** A write declares its matrix (a write with none does not build); a read
+ *  that takes an item id declares one too (the coverage test asks). */
+type ToolEffect =
+  | Readonly<{
+      /** read or write. A read mutates nothing the owner owns and sends
+       *  nothing out (the former `readOnly` flag: default deny, so a write
+       *  is `write`; isBuiltinReadOnly reads this). */
+      effect: 'write';
+      matrix: ToolMatrix;
+    }>
+  | Readonly<{ effect: 'read'; matrix?: ToolMatrix }>;
+
 /** A tool's policy. Required on every builtin. */
-export type ToolPolicy = Readonly<{
-  /** read or write. A read mutates nothing the owner owns and sends
-   *  nothing out (the former `readOnly` flag: default deny, so a write is
-   *  `write`; isBuiltinReadOnly reads this). */
-  effect: 'read' | 'write';
+export type ToolPolicy = ToolEffect & ToolPolicyFields;
+
+type ToolPolicyFields = Readonly<{
   /** What it spends, as the gate reads it: `ownerKey` on the brain owner's
    *  provider keys (only a user of the Admin workspace, on MCP), `model`
    *  paid model work that a connection outside Admin skips (search_chunks),

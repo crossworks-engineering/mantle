@@ -119,7 +119,7 @@ describe('MCP tool errors from the database', () => {
         name: 'probe',
         description: 'probe',
         inputSchema: { type: 'object', properties: {} },
-        policy: { effect: 'write', spends: 'none', scope: 'any' },
+        policy: { effect: 'write', matrix: { none: 'a test probe' }, spends: 'none', scope: 'any' },
         handler,
       }) as BuiltinToolDef;
     const ctx = makeRegisterContext({} as never, 'owner-1', 'http');
@@ -194,7 +194,7 @@ describe('the one mapper on every tool exit (arch A3a fix round 3, N4)', () => {
         name: 'folder_delete',
         description: 'probe',
         inputSchema: { type: 'object', properties: {} },
-        policy: { effect: 'write', spends: 'none', scope: 'any' },
+        policy: { effect: 'write', matrix: { none: 'a test probe' }, spends: 'none', scope: 'any' },
         handler,
       }) as BuiltinToolDef;
     const ctx = makeRegisterContext({} as never, 'owner-1', 'http');

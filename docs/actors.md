@@ -283,8 +283,10 @@ change and its audit row (`mantle_grant_change`, `mantle_grant_move_home`,
 - **A route**: a policy row; `route-scope.test.ts` fails an unclassified
   route, the gate refuses one with no row.
 - **A tool**: a `ToolPolicy` (typecheck fails without one); a write
-  declares its `clientSourced` rule (unset, a client-sourced call waits)
-  and the `itemArgs` it touches.
+  declares its `clientSourced` rule (unset, a client-sourced call waits),
+  its `itemArgs` and its A8 `matrix` (action and argument, or `none` and
+  why; an id-taking read too), read by no gate: the A8 tool cells are made
+  from it; `a8-coverage.test.ts` pins `a8Uncovered` 0 and `a8Exempt` 111.
 - **A table**: a row in `packages/db/src/access-matrix.ts` (with none no
   scoped role may touch it); an item table gets the actor trigger
   (`actor-trigger-coverage.db.test.ts`).
@@ -295,10 +297,8 @@ change and its audit row (`mantle_grant_change`, `mantle_grant_move_home`,
 
 ## 13. Proof
 
-- Suites: `pnpm test` (unit and DB), `test:actor-off`, `test:actor-on`,
-  `test:edit-on`, `test:runtime-role`, `test:matrix` (the A8 grid,
-  `packages/db/src/matrix/`, against the guide's oracle). Any actor miss
-  fails a test (`vitest.setup.ts`).
+- Suites: `pnpm test`, `test:actor-off`, `test:actor-on`, `test:edit-on`,
+  `test:runtime-role`, `test:matrix` (A8 cells). An actor miss fails a test.
 - The scoreboard (`pnpm arch:check`, `scripts/arch-scoreboard.pins.json`):
   each count only goes down; a raise needs a reason in review.
 - `pnpm docs:check`: every path a doc names exists, and every
@@ -339,7 +339,7 @@ Each ends in the step of plan v3.2 (2026-10-17) named.
 - A login carries a kind and a role, and code branches on them. S8.
 - Route policy is spread over lists, not declared per route. S9.
 - Scoped code still holds raw write SQL. S10.
-- The A8 matrix does not yet cover every kind, route and tool. S11.
+- The A8 matrix covers every kind and tool, not yet the routes. S11b.
 - The runtime role is off by default for a new install, and a few
   defaults fail open in production (an unlisted exit is logged, not
   refused). S4.

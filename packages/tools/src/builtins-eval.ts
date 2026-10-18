@@ -128,6 +128,7 @@ const recall_eval: BuiltinToolDef = {
   slug: 'recall_eval',
   // The Jev-scored passage path calls the decider (when a pool is set).
   policy: {
+    matrix: { none: 'names no item' },
     effect: 'write',
     spends: 'ownerKey',
     startsModelWork: true,

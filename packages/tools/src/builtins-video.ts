@@ -186,6 +186,7 @@ const video_ingest: BuiltinToolDef = {
   slug: 'video_ingest',
   usageTier: 2,
   policy: {
+    matrix: { action: 'read', param: 'file_node_id', kinds: ['file'] },
     // Audit only: the row names it (the queue asks nothing of it).
     itemArgs: [{ param: 'file_node_id', least: 'none' }],
     effect: 'write',

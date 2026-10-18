@@ -872,7 +872,7 @@ function judge(fx: A8Fixture, c: A8Cell, want: GuideAnswer, got: Got | null): st
 // ── pairwise ────────────────────────────────────────────────────────────────
 
 /** FNV-1a (32 bit) of `s`: a stable order key, the same on every run. */
-function stableKey(s: string): number {
+export function stableKey(s: string): number {
   let h = 0x811c9dc5;
   for (let i = 0; i < s.length; i++) {
     h ^= s.charCodeAt(i);

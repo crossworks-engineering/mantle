@@ -26,6 +26,7 @@ export const table_column_add: BuiltinToolDef = {
   slug: 'table_column_add',
   usageTier: 3,
   policy: {
+    matrix: { action: 'editDraft', param: 'table_id', kinds: ['table'] },
     effect: 'write',
     spends: 'none',
     scope: 'any',
@@ -118,6 +119,7 @@ export const table_column_update: BuiltinToolDef = {
   slug: 'table_column_update',
   usageTier: 2,
   policy: {
+    matrix: { action: 'editDraft', param: 'table_id', kinds: ['table'] },
     effect: 'write',
     spends: 'none',
     scope: 'any',
@@ -223,6 +225,7 @@ export const table_column_update: BuiltinToolDef = {
 export const table_column_delete: BuiltinToolDef = {
   slug: 'table_column_delete',
   policy: {
+    matrix: { action: 'editDraft', param: 'table_id', kinds: ['table'] },
     effect: 'write',
     spends: 'none',
     scope: 'any',
@@ -262,6 +265,7 @@ export const table_column_delete: BuiltinToolDef = {
 export const table_set_aggregate: BuiltinToolDef = {
   slug: 'table_set_aggregate',
   policy: {
+    matrix: { action: 'editDraft', param: 'table_id', kinds: ['table'] },
     effect: 'write',
     spends: 'none',
     scope: 'any',
@@ -318,6 +322,7 @@ export const table_set_aggregate: BuiltinToolDef = {
 export const table_set_view: BuiltinToolDef = {
   slug: 'table_set_view',
   policy: {
+    matrix: { action: 'editDraft', param: 'table_id', kinds: ['table'] },
     effect: 'write',
     spends: 'none',
     scope: 'any',
