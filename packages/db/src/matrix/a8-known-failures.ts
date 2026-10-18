@@ -80,17 +80,6 @@ const HIDDEN_PATH_SHOWS: readonly string[] = ['web-turn turn', 'mcp-oauth login'
 /** The two ways in of a tool cell, by name. */
 const WAYS = ['web-turn turn', 'mcp-oauth login'] as const;
 
-/** S11a-3. A member's export lands in the Admin-only auto-filed folder
- *  (files auto-filed.ts), so the member's scope has no parent folder to make
- *  it in ("parent folder 'files' not found"): app_export by a member who
- *  reads the app is refused. sheet_build files its workbook there too (it
- *  declares no item, so it has no cell). The owner wants a member to export
- *  what they see: fixed by feat/member-export; drop on rebase. */
-const S11A_3 = "S11a-3 app_export files a member's export in the Admin-only auto-filed folder";
-const MEMBER_EXPORT_REFUSED: readonly string[] = WAYS.map(
-  (w) => `tool:app_export ${w}/homeModerator read app @folder`,
-);
-
 /** S11a-5. A member's move into a folder of another workspace answers a
  *  database error: after the move, the tree's share follow-up (content
  *  tree/write.ts followShares) reads node_embeds through
@@ -114,27 +103,13 @@ const FOLDER_EDIT_REFUSED: readonly string[] = WAYS.flatMap((w) => [
   `tool:tree_folder_update ${w}/writeGrant edit branch @folder`,
 ]);
 
-/** S11a-7. app_table_export_set is refused for its app's Moderator: the
- *  export row's write check is `manage` (access-matrix.ts), whose INSERT
- *  branch asks a Moderator of the row's workspace_id (mantle_write_check_trg,
- *  written for grant rows), and app_table_exports has no such column, so no
- *  scoped insert passes (warn reports it, on refuses). A bug since the gap
- *  tables closed (migration 0302), not S11a's to fix (product code). */
-const S11A_7 = 'S11a-7 app_table_export_set: the manage check asks a workspace_id the row lacks';
-const EXPORT_LINK_REFUSED: readonly string[] = WAYS.map(
-  (w) => `tool:app_table_export_set ${w}/homeModerator editDraft app @root`,
-);
-
-/** S11a-8. process_extraction re-runs an item's extraction (model spend)
- *  for a caller who reads it: the owner's rule is an edit of the item, which
- *  its matrix declares; the tool asks read (itemArgs least read), so the
- *  read grant's member's call answers ok. Fixed by feat/member-export (the
- *  policy); drop on rebase. */
-const S11A_8 = 'S11a-8 process_extraction asks read, the owner rule is edit';
-const EXTRACTION_ON_READ: readonly string[] = [
-  'tool:process_extraction web-turn turn/readGrant edit note @root',
-  'tool:process_extraction web-turn turn/readGrant edit page @folder',
-];
+// S11a-3, S11a-7 and S11a-8 left the list on the rebase on v0.300.90, each
+// now a rule its tool's matrix declares and its cells pass as: a member's
+// export lands where the member can see it (files export-home.ts, the
+// member export), so app_export by a member who reads the app is allowed;
+// app_table_export_set is its app's managers' in every check mode
+// (migration 0303); process_extraction asks edit of the item (its itemArgs),
+// so the read grant's member is refused.
 
 /** The actor check modes the surface cells run in (docs/update-prod.md:
  *  off, the fleet's default; warn; on). */
@@ -166,9 +141,6 @@ export const KNOWN_FAILURES: Readonly<Record<string, KnownFailure>> = {
     HIDDEN_PATH_SHOWS.map((name) => [name, known(S11A_1, "not a random uuid's answer")]),
   ),
   ...Object.fromEntries(
-    MEMBER_EXPORT_REFUSED.map((name) => [name, known(S11A_3, 'refused, the oracle allows')]),
-  ),
-  ...Object.fromEntries(
     MEMBER_MOVE_ERRORS.map((name) => [
       name,
       known(S11A_5, 'refused, the oracle allows: Error: the database could not run this request'),
@@ -179,18 +151,6 @@ export const KNOWN_FAILURES: Readonly<Record<string, KnownFailure>> = {
       name,
       known(S11A_6, 'You cannot change this item in your workspaces'),
     ]),
-  ),
-  ...Object.fromEntries(
-    EXPORT_LINK_REFUSED.map((name) => [
-      name,
-      known(S11A_7, [
-        'INSERT on app_table_exports: not a Moderator of the workspace',
-        'You cannot change this item in your workspaces',
-      ]),
-    ]),
-  ),
-  ...Object.fromEntries(
-    EXTRACTION_ON_READ.map((name) => [name, known(S11A_8, 'answered ok, the oracle denies')]),
   ),
   // The grid (SQL): none since F4.
   // The surface cells (all three check modes unless named).

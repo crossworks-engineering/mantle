@@ -151,7 +151,6 @@ const MCP_CONNECTION_ONLY: Readonly<Record<string, string>> = {
  *  names it, a8-known-failures.ts): their allowed cells run and fail as
  *  listed. A tool leaves this list when its finding is fixed. */
 const ALLOWED_KNOWN_ONLY: Readonly<Record<string, string>> = {
-  app_table_export_set: 'S11a-7',
   folder_set_indexing: 'S11a-6',
   page_move: 'S11a-5',
   tree_item_move: 'S11a-5',
