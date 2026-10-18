@@ -184,6 +184,39 @@ const S3_WARN_CHANGES: ReadonlyArray<S3Change> = [
 
 /** Main's warn lines of the section being compared (off only, plan v3 S3). */
 let WARN_RECORDED = new Map<string, string>();
+/** The section being compared (S3_OFF_CELLS names its cells by section). */
+let SECTION = '';
+
+/**
+ * The off cells S3 changes, by section, each now answering as main's warn
+ * cell (fix round 4, L4: an explicit list; the matcher before it passed
+ * any off cell equal to main's warn cell). Listed from a run of the off
+ * sweep; a cell not here that changes fails the sweep.
+ */
+const S3_OFF_CELLS: Readonly<Record<string, readonly string[]>> = {
+  'kind-root': [
+    // F4's warn form (an Admin user's create landing in Admin, its miss).
+    'POST file at root adminAll',
+    'POST file at root adminNoUsers',
+    'upsertFile root write:adminAll',
+    'upsertFile root write:adminNoUsers',
+    'upsertFile root turn:admin:adminAll',
+    // A scoped create at the root on the write role: refused as warn's.
+    'upsertFile root write:modP',
+    'upsertFile root write:userQ',
+    'upsertFile root write:outsider',
+    'upsertFile root turn:P:modP',
+    'upsertFile root turn:Q:userQ',
+    // So the row the off create left is not there, as warn's.
+    'row of kr-lib-9.txt',
+    'row of kr-lib-11.txt',
+    'row of kr-lib-13.txt',
+    'row of kr-lib-17.txt',
+    'row of kr-lib-19.txt',
+  ],
+  // F4's warn form of an Admin user's app create.
+  'rule-in-query': ['POST /api/apps adminAll', 'POST /api/apps adminNoUsers'],
+};
 
 /** S3's changes, and off's: a scoped write runs on the write role in off
  *  as in warn (the mode never picks the pool), so an off cell answers as
@@ -194,9 +227,10 @@ const S3_CHANGES: ReadonlyArray<S3Change> = [
     cells: /./,
     reason:
       "plan v3 S3: off runs a scoped write on the write role, its checks reporting as warn's: " +
-      "the cell answers as main's warn cell (and S3's warn changes).",
+      "the cell answers as main's warn cell (and S3's warn changes). Only the cells of " +
+      'S3_OFF_CELLS.',
     nowTest: (now, k) => {
-      if (MODE !== 'off') return false;
+      if (MODE !== 'off' || !(S3_OFF_CELLS[SECTION] ?? []).includes(k)) return false;
       const line = WARN_RECORDED.get(k);
       if (line === undefined) return false;
       const warn = line.slice(line.indexOf(' => ') + 4);
@@ -734,6 +768,7 @@ describe.skipIf(!URL)('the A6b exit sweep', () => {
     const recorded = readFileSync(path, 'utf8').trimEnd().split('\n');
     const was = new Map(recorded.map((l) => [l.slice(0, l.indexOf(' => ')), l]));
     RECORDED = was;
+    SECTION = name;
     const warnPath = join(HERE, '__snapshots__', `a6b-exit-sweep.${name}.warn.txt`);
     WARN_RECORDED =
       MODE === 'off' && existsSync(warnPath)

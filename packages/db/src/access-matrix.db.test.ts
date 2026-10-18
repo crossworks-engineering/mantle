@@ -316,19 +316,29 @@ describe.skipIf(!URL)('access matrix on the migrated database', () => {
        where schemaname = 'public' and tablename = 'profiles'
          and 'mantle_write_user'::name = any(roles) and cmd <> 'SELECT' order by cmd`;
     expect(writes.map((w) => w.cmd)).toEqual(['DELETE', 'INSERT', 'UPDATE']);
+    // Fix round 4: the write rule is written once, mantle_profile_writable
+    // (profileRowWritable asks the same function).
+    const [fn] = await sql<{ def: string }[]>`
+      select pg_get_functiondef('public.mantle_profile_writable(uuid)'::regprocedure) as def`;
     for (const w of writes) {
       const rule = (w.cmd === 'INSERT' ? w.chk : w.qual) ?? '';
-      expect(rule, w.cmd).toContain('mantle_login_id');
       expect(rule, w.cmd).not.toContain('mantle_scope_is_admin');
       // Fix round 3: a delete is the login's own row only.
       if (w.cmd === 'DELETE') {
+        expect(rule, w.cmd).toContain('mantle_login_id');
         expect(rule, w.cmd).not.toContain('mantle_brain_id');
         expect(rule, w.cmd).not.toContain('mantle_scope_has_area');
+        expect(rule, w.cmd).not.toContain('mantle_profile_writable');
         continue;
       }
-      expect(rule, w.cmd).toContain('mantle_brain_id');
-      expect(rule, w.cmd).toContain("mantle_scope_has_area('settings'");
+      expect(rule, w.cmd).toBe('mantle_profile_writable(user_id)');
+      if (w.cmd === 'UPDATE') expect(w.chk, w.cmd).toBe('mantle_profile_writable(user_id)');
     }
+    expect(fn!.def).toContain('mantle_login_id()');
+    expect(fn!.def).toContain('mantle_brain_id()');
+    expect(fn!.def).toContain("mantle_scope_has_area('settings')");
+    expect(fn!.def).not.toContain('mantle_scope_is_admin');
+    expect(fn!.def).not.toContain('SECURITY DEFINER');
     // The read rule's subquery names its column with the table (fix round 3).
     expect(
       (
@@ -347,7 +357,22 @@ describe.skipIf(!URL)('access matrix on the migrated database', () => {
        where schemaname = 'public' and tablename = 'app_table_exports' and cmd = 'SELECT'`;
     expect(reads).toHaveLength(1);
     expect([...reads[0]!.roles].sort()).toEqual(['mantle_view_user', 'mantle_write_user']);
-    expect(reads[0]!.qual).toContain('mantle_may_manage');
+    // Fix round 4: manage of the app is mantle_may_manage_home (0279), the
+    // one place its test is written (assertManageOrAdmin asks it too).
+    expect(reads[0]!.qual).toContain('mantle_may_manage_home(a.home_ws)');
+    // Both functions are the workspace role's and the write role's to run,
+    // never PUBLIC's.
+    const run = await sql<{ fn: string; pub: boolean; view: boolean; write: boolean }[]>`
+      select f as fn,
+             has_function_privilege('public', f::regprocedure, 'EXECUTE') as pub,
+             has_function_privilege('mantle_view_user', f::regprocedure, 'EXECUTE') as view,
+             has_function_privilege('mantle_write_user', f::regprocedure, 'EXECUTE') as write
+        from unnest(array['public.mantle_may_manage_home(uuid)',
+                          'public.mantle_profile_writable(uuid)']) f order by 1`;
+    expect(run.map((r) => [r.fn, r.pub, r.view, r.write])).toEqual([
+      ['public.mantle_may_manage_home(uuid)', false, true, true],
+      ['public.mantle_profile_writable(uuid)', false, true, true],
+    ]);
   });
 
   // Re-pinned in workspaces arch A1: the TS list is the registry's workspace
