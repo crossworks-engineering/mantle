@@ -77,34 +77,15 @@ const HIDDEN_PATH_SHOWS: readonly string[] = ['web-turn turn', 'mcp-oauth login'
   ['owner', 'admin'].map((r) => `tool:file_create ${w}/${r} create file @folder`),
 );
 
-/** The two ways in of a tool cell, by name. */
-const WAYS = ['web-turn turn', 'mcp-oauth login'] as const;
-
-/** S11a-5. A member's move into a folder of another workspace answers a
- *  database error: after the move, the tree's share follow-up (content
- *  tree/write.ts followShares) reads node_embeds through
- *  mantle_embeds_reached in the caller's scope, and the workspace role may
- *  not read that table (access-matrix.ts: the admin pool only). A bug, not
- *  S11a's to fix (product code). */
-const S11A_5 =
-  "S11a-5 a member's move to another workspace's folder: followShares reads node_embeds";
-const MEMBER_MOVE_ERRORS: readonly string[] = [
-  'tool:page_move mcp-oauth login/homeModerator move page @folder',
-  'tool:tree_item_move mcp-oauth login/homeModerator move recall @folder',
-];
-
-/** S11a-6a. A Write grant's member may not rename a folder
- *  (tree_folder_update): the database refuses the edit ("not allowed to
- *  edit this item"), where the owner's rule is that Write allows a rename.
- *  A product bug, not S11a's to fix. S11a-6b, folder_set_indexing on an
- *  existing folder, left the list: the owner's rule there is manage (a
- *  Moderator of the folder's home), which its matrix declares, and its
- *  Write grant cells are refused as declared. */
-const S11A_6A = 'S11a-6a a Write grant may not rename a folder (tree_folder_update)';
-const FOLDER_RENAME_REFUSED: readonly string[] = WAYS.map(
-  (w) => `tool:tree_folder_update ${w}/writeGrant edit branch @folder`,
-);
-
+// S11a-5 and S11a-6a left the list in the tree bugs fix (migration 0305,
+// docs/_archive/tree-bugs-handover.md), each now a rule its tool's matrix
+// declares and its cells pass as: a member's move into a folder of another
+// workspace runs the share follow-up (content tree/write.ts followShares)
+// as the named system step 'tree-refold', not in the caller's scope, which
+// may not read node_embeds; a Write grant's member renames the folder
+// (tree_folder_update), the owner's rule (2026-10-18), its move, indexing,
+// delete and grants staying manage.
+//
 // S11a-3, S11a-7 and S11a-8 left the list on the rebase on v0.300.90, each
 // now a rule its tool's matrix declares and its cells pass as: a member's
 // export lands where the member can see it (files export-home.ts, the
@@ -142,18 +123,6 @@ export const KNOWN_FAILURES: Readonly<Record<string, KnownFailure>> = {
   ),
   ...Object.fromEntries(
     HIDDEN_PATH_SHOWS.map((name) => [name, known(S11A_1, "not a random uuid's answer")]),
-  ),
-  ...Object.fromEntries(
-    MEMBER_MOVE_ERRORS.map((name) => [
-      name,
-      known(S11A_5, 'refused, the oracle allows: Error: the database could not run this request'),
-    ]),
-  ),
-  ...Object.fromEntries(
-    FOLDER_RENAME_REFUSED.map((name) => [
-      name,
-      known(S11A_6A, 'You cannot change this item in your workspaces'),
-    ]),
   ),
   // The grid (SQL): none since F4.
   // The surface cells (all three check modes unless named).

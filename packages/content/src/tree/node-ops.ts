@@ -267,9 +267,11 @@ export async function renameNodeFolder(
       .where(and(eq(nodes.id, folderId), eq(nodes.ownerId, ownerId)));
     return;
   }
-  // A rename rewrites the subtree: manage first (the cheap rights read,
-  // pre-check removal fix round A), before its locks.
-  await assertItemRight(folder.id, 'manage');
+  // A rename rewrites the subtree: its right first (the cheap rights read,
+  // pre-check removal fix round A), before its locks. Write on the folder
+  // renames it (S11a-6a, migration 0305: the owner's rule); a system
+  // folder's name is the brain's, manage as before.
+  await assertItemRight(folder.id, folder.data.system === true ? 'manage' : 'edit');
   if (await branchAt(ownerId, newPath)) {
     throw new NodeOpRefusal('conflict', `a folder named '${title}' already exists here`);
   }

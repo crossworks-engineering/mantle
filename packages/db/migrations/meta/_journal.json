@@ -2129,6 +2129,13 @@
       "when": 1790197560000,
       "tag": "0304_login_facts",
       "breakpoints": true
+    },
+    {
+      "idx": 305,
+      "version": "7",
+      "when": 1790197620000,
+      "tag": "0305_folder_rename_write",
+      "breakpoints": true
     }
   ]
 }

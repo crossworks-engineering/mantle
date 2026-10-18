@@ -24,6 +24,7 @@ import {
   isScopeWriteRefusal,
   itemWriteVerdicts,
   nodes,
+  systemStep,
 } from '@mantle/db';
 import {
   createFolder as createFilesFolder,
@@ -284,6 +285,14 @@ async function checkVisibility(
  * indexed text: the pages concerned, the items they reach through embeds,
  * and the pages that name any of them are folded for the level they are now
  * read at (pages/level-text.ts). `scope` is a subtree path, or ids.
+ *
+ * The items it starts from are read in the caller's scope (the ones it
+ * moved and reads); the walk and the fold are the brain's, the named system
+ * step 'tree-refold' (S11a-5): the walk reads node_embeds, which no
+ * workspace scope reads, so in the caller's scope a member's move answered
+ * a database error after the move had been made; and the pages reached are
+ * folded whoever reads them, as a grant change folds them (grants.ts
+ * refoldAfter). Nothing it reads goes back to the caller.
  */
 async function followShares(
   ownerId: string,
@@ -298,15 +307,32 @@ async function followShares(
             sql`, `,
           )})`
         : sql`false`;
-  const rows = (await db.execute(sql`
-    select r.id::text as id from mantle_embeds_reached(${ownerId}::uuid, array(
-      select id from nodes where owner_id = ${ownerId} and ${where})) r`)) as unknown as Array<{
-    id: string;
-  }>;
-  const ids = rows.map((r) => r.id);
-  for (let i = 0; i < ids.length; i += REFOLD_BATCH) {
-    await refoldPageTexts(ownerId, ids.slice(i, i + REFOLD_BATCH));
-  }
+  const start = (
+    (await db.execute(sql`
+      select id::text as id from nodes where owner_id = ${ownerId} and ${where}`)) as unknown as Array<{
+      id: string;
+    }>
+  ).map((r) => r.id);
+  if (!start.length) return;
+  await systemStep(
+    'tree-refold',
+    { items: start, need: 'read', only: 'allowed' },
+    async (allowed) => {
+      if (!allowed.length) return;
+      const rows = (await db.execute(sql`
+      select r.id::text as id
+        from mantle_embeds_reached(${ownerId}::uuid, array[${sql.join(
+          allowed.map((id) => sql`${id}::uuid`),
+          sql`, `,
+        )}]) r`)) as unknown as Array<{
+        id: string;
+      }>;
+      const ids = rows.map((r) => r.id);
+      for (let i = 0; i < ids.length; i += REFOLD_BATCH) {
+        await refoldPageTexts(ownerId, ids.slice(i, i + REFOLD_BATCH));
+      }
+    },
+  );
 }
 
 /** Ids per refold: each names a pattern the refold matches page docs by. */
