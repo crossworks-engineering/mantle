@@ -84,3 +84,26 @@ configs 0 each. The container, worktree and branch there are removed.
   disjoint from a0's (loginHoldsAdmin/loginHasArea); the pins JSON and
   arch-counts.mjs are key-disjoint additions; P1b edits the box script's
   runtime-role block next to the new counts.
+
+## Fix round 1 (audit of 298625b43, 8/10)
+
+- A pair's row is written again after an hour (as actor.ts does), and is
+  marked only once a writer took it (`writeActorMissRow` answers false
+  before the pool sets its writer). Unit cells for both.
+- The box counts the last 24 hours, or since the last roll began (the
+  updater's `started_at`) when that is later, not since `mantle_web`
+  started. The query was run on a throwaway database: a roll 30 minutes ago
+  counts 1 of 3 rows, no roll known counts 3.
+- `ensure_runtime_role_line` says "no readable .env" and writes nothing
+  when `.env` is missing or unreadable; the box prints n/a then.
+- Deploy cells: a CRLF line, no trailing newline, a commented line,
+  duplicate lines, no `.env`.
+- docs/fail-open.md and the spec say what the dedupe does and that the list
+  is vitest plus the box counts, with what vitest cannot see.
+- Rebased onto v0.300.92 (384b64d02). Re-pin: `dbClientLines` 3142 to 3145
+  (the same three S4a lines over main's new count); `failOpenSites` 6.
+
+Gates: Mac typecheck 0, lint 0, format:check 0, docs:check 0, arch:check 0,
+web build 0, unit vitest 0, test-deploy-scripts 0 (508 passed).
+Workstation: fail-open.db.test.ts and fail-open.test.ts 0 in warn (21),
+fail-open.db.test.ts 0 with both checks on (4). Cleaned up there.
