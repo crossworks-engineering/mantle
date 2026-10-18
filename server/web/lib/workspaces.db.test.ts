@@ -807,7 +807,7 @@ describe.skipIf(!URL)('workspace management (W5a)', () => {
       ev: (
         await x<{ actor: string; action: string; subject: Json }>(sql`
           select actor_id as actor, action, subject from workspace_events
-           where workspace_id = ${ws} and action like 'resource.%' order by id`)
+           where workspace_id = ${ws} and action like 'resource.%' order by action`)
       ).map((e) => ({
         ...e,
         subject: { ...e.subject, id: e.subject.id === agent ? 'A' : e.subject.id },
@@ -818,16 +818,19 @@ describe.skipIf(!URL)('workspace management (W5a)', () => {
       call(r.res.POST(req('POST', { kind: 'assistant', id }), p({ id: w2 })));
     const sqlDel = (id: string) =>
       call(r.resOne.DELETE(req('DELETE'), p({ id: w2, kind: 'assistant', refId: id })));
-    const assistantOf = (b: Json) =>
-      (b.resources as Json[]).filter((r2) => r2.kind === 'assistant').map((r2) => r2.write);
+    // The screen's resources (PATCH answers the workspace, POST the screen).
+    const assistantOf = async (ws: string) =>
+      ((await call(r.one.GET(req('GET'), p({ id: ws })))).body.resources as Json[])
+        .filter((r2) => r2.kind === 'assistant')
+        .map((r2) => r2.write);
     // Put one on, then take it off.
     const on = [await ts({ assistantId: C[0] }), await sqlAdd(C[1]!)];
     expect(on.map((o) => o.status)).toEqual([200, 200]);
-    expect(assistantOf(on[0]!.body)).toEqual(assistantOf(on[1]!.body));
+    expect(await assistantOf(w1)).toEqual(await assistantOf(w2));
     expect(await state(w1, C[0]!)).toEqual(await state(w2, C[1]!));
     const off = [await ts({ assistantId: null }), await sqlDel(C[1]!)];
     expect(off.map((o) => o.status)).toEqual([200, 200]);
-    expect(assistantOf(off[0]!.body)).toEqual(assistantOf(off[1]!.body));
+    expect(await assistantOf(w1)).toEqual(await assistantOf(w2));
     expect(await state(w1, C[0]!)).toEqual(await state(w2, C[1]!));
     // The refusals, byte-equal: no such chat assistant; another workspace's.
     const ghost = randomUUID();

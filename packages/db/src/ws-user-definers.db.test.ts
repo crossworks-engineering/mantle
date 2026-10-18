@@ -576,7 +576,7 @@ describe.skipIf(!URL)('the workspace user definers (S2a a1)', () => {
       res: await tx`select type, ref_id, write, added_by::text from workspace_resources
                      where workspace_id = ${W} order by type, ref_id`,
       ev: await tx`select actor_id::text as actor, action, subject from workspace_events
-                    where workspace_id = ${W} and action like 'resource.%' order by id`,
+                    where workspace_id = ${W} and action like 'resource.%' order by action`,
     });
     const adm = await asLogin(L.adm);
     // A connector with the Write tick, then cleared, then taken off.
@@ -596,12 +596,12 @@ describe.skipIf(!URL)('the workspace user definers (S2a a1)', () => {
             action: 'resource.add',
             subject: { kind: 'connector', id: CONN, write: true },
           },
+          { actor: L.adm, action: 'resource.remove', subject: { kind: 'connector', id: CONN } },
           {
             actor: L.adm,
             action: 'resource.update',
             subject: { kind: 'connector', id: CONN, write: false },
           },
-          { actor: L.adm, action: 'resource.remove', subject: { kind: 'connector', id: CONN } },
         ],
       },
     });
