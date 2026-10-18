@@ -39,8 +39,8 @@ vi.mock('@/lib/audit', async (importOriginal) => ({
 }));
 
 beforeAll(() => {
-  standInLogin({ id: ANCHOR, role: 'admin', isOwner: true });
-  standInLogin({ id: LIMITED, role: 'admin' });
+  standInLogin({ id: ANCHOR, role: 'admin', adminMember: true, isOwner: true });
+  standInLogin({ id: LIMITED, role: 'admin', adminMember: true });
   standInLogin({ id: MEMBER, role: 'member' });
 });
 

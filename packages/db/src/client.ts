@@ -2394,14 +2394,17 @@ export async function loginHasArea(loginId: string, area: ScopeArea): Promise<bo
   }
 }
 
-/** The Admin areas `loginId` holds now (mantle_login_areas, 0304: the strict
- *  rule over SCOPE_AREAS), on the system pool as loginHasArea. Fails closed. */
+/** The Admin areas `loginId` holds now, in SCOPE_AREAS order (mantle_login_areas,
+ *  0304: the strict rule), on the system pool as loginHasArea. Fails closed. */
 export async function loginAreas(loginId: string): Promise<ScopeArea[]> {
   if (!UUID_RE.test(loginId)) return [];
-  const held = await getAdminDb()
+  return getAdminDb()
     .execute(sqlTag`select "public"."mantle_login_areas"(${loginId}::uuid) as a`)
-    .then((r) => (r as unknown as { a: string[] | null }[])[0]?.a ?? [], loginFactFailed);
-  return SCOPE_AREAS.filter((area) => held && held.includes(area));
+    .then((r) => (r as unknown as { a: ScopeArea[] | null }[])[0]?.a ?? [])
+    .catch((err: unknown) => {
+      loginFactFailed(err);
+      return [];
+    });
 }
 
 /**

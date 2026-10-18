@@ -69,7 +69,7 @@ let revokedBearer: Record<string, string>;
 
 beforeAll(async () => {
   process.env.SESSION_SECRET = SECRET;
-  standInLogin({ id: ANCHOR, role: 'admin', isOwner: true });
+  standInLogin({ id: ANCHOR, role: 'admin', adminMember: true, isOwner: true });
   standInLogin({ id: MEMBER, role: 'member' });
   const { buildMobileToken } = await import('@/lib/auth/tokens');
   revokedBearer = {

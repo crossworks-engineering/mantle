@@ -29,7 +29,7 @@ vi.mock('@mantle/content', async (importOriginal) => ({
   }),
 }));
 
-beforeAll(() => standInLogin({ id: OWNER, role: 'admin', isOwner: true }));
+beforeAll(() => standInLogin({ id: OWNER, role: 'admin', adminMember: true, isOwner: true }));
 
 beforeEach(() => {
   h.saved = [];

@@ -51,8 +51,8 @@ vi.mock('@mantle/content', async (importOriginal) => ({
 }));
 
 beforeAll(() => {
-  standInLogin({ id: OWNER, role: 'admin', isOwner: true });
-  standInLogin({ id: OTHER, role: 'admin' });
+  standInLogin({ id: OWNER, role: 'admin', adminMember: true, isOwner: true });
+  standInLogin({ id: OTHER, role: 'admin', adminMember: true });
 });
 
 beforeEach(() => {

@@ -50,7 +50,7 @@ let ticket: (o: { appId?: string; actorId?: string; loginId?: string }) => strin
 
 beforeAll(async () => {
   process.env.SESSION_SECRET = 'frame-pipeline-test-secret-at-least-32-chars';
-  standInLogin({ id: ANCHOR, role: 'admin', isOwner: true });
+  standInLogin({ id: ANCHOR, role: 'admin', adminMember: true, isOwner: true });
   standInLogin({ id: MEMBER, role: 'member' });
   const { buildAppFrameTicket } = await import('@/lib/auth/tokens');
   ticket = (o) =>

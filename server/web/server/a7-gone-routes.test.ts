@@ -132,7 +132,7 @@ function unservedMethod(methods: readonly string[], not: string): string {
 
 describe.skipIf(!hasManifest)('the retired routes (A7): recorded, then deleted', () => {
   beforeAll(() => {
-    standInLogin({ id: OWNER, role: 'admin', isOwner: true });
+    standInLogin({ id: OWNER, role: 'admin', adminMember: true, isOwner: true });
     standInLogin({ id: MEMBER, role: 'member' });
   });
 

@@ -42,7 +42,7 @@ const OTHER = '99999999-9999-4999-8999-999999999999';
 
 describe('needs_you_changed on the realtime bridge', () => {
   let stop: (() => Promise<void>) | null = null;
-  beforeAll(() => standInLogin({ id: OWNER, role: 'admin', isOwner: true }));
+  beforeAll(() => standInLogin({ id: OWNER, role: 'admin', adminMember: true, isOwner: true }));
   afterAll(async () => {
     await stop?.();
   });

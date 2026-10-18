@@ -51,7 +51,7 @@ vi.mock('@mantle/db', async (importOriginal) => {
 });
 
 beforeAll(() => {
-  standInLogin({ id: ANCHOR, role: 'admin', isOwner: true });
+  standInLogin({ id: ANCHOR, role: 'admin', adminMember: true, isOwner: true });
   standInLogin({ id: MEMBER, role: 'member' });
 });
 
