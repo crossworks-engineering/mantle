@@ -95,6 +95,34 @@ const MAIN_SCOPE_HAS_AREA = `select EXISTS (
        AND $1::text IN ('settings', 'users', 'assistants', 'connectors', 'keys')
        AND coalesce(u."limits" -> 'areas' ->> $1::text, '') <> 'false') as a`;
 
+describe('the public demo`s reader runs exactly three login facts', () => {
+  it('no migration grants demo_reader another login fact', () => {
+    const facts = [
+      'mantle_area_rule',
+      'mantle_scope_has_area',
+      'mantle_login_area',
+      'mantle_login_areas',
+      'mantle_login_is_admin',
+      'mantle_login_is_admin_user',
+      'mantle_role_drift',
+    ];
+    const granted = journal.flatMap((e) =>
+      [
+        ...readFileSync(join(DIR, `${e.tag}.sql`), 'utf8').matchAll(
+          /GRANT\s+EXECUTE\s+ON\s+FUNCTION\s+"public"\."([a-z_]+)"\([^)]*\)\s+TO\s+"?demo_reader"?/gi,
+        ),
+      ]
+        .map((g) => g[1]!)
+        .filter((fn) => facts.includes(fn)),
+    );
+    expect(granted.sort()).toEqual([
+      'mantle_area_rule',
+      'mantle_login_areas',
+      'mantle_login_is_admin',
+    ]);
+  });
+});
+
 describe('0304 is stamped above every `when` before it (renumber proof)', () => {
   it('is stamped above its predecessor and above the S11a-7 hotfix`s 1790197500000', () => {
     expect(at).toBeGreaterThan(0);
@@ -435,6 +463,18 @@ describe.skipIf(!URL)('the login facts answer as the text they replace (S2a a0)'
         from unnest(${facts}::text[]) f(fn) join pg_proc p on p.oid = to_regprocedure(f.fn)`;
     expect(rows.map((r) => r.fn).sort()).toEqual([...facts].sort());
     expect(rows.filter((r) => !r.definer || r.pub || r.may.length)).toEqual([]);
+    // demo_reader, where the cluster has it: exactly the three 0306 grants.
+    const demo = await sql<{ fn: string }[]>`
+      select f.fn from unnest(${facts}::text[]) f(fn)
+       where exists (select 1 from pg_roles where rolname = 'demo_reader')
+         and has_function_privilege('demo_reader', to_regprocedure(f.fn), 'EXECUTE')`;
+    if (demo.length) {
+      expect(demo.map((r) => r.fn).sort()).toEqual([
+        'public.mantle_area_rule(uuid,text)',
+        'public.mantle_login_areas(uuid)',
+        'public.mantle_login_is_admin(uuid)',
+      ]);
+    }
     // The roles the cell is about are there to ask (the access matrix and
     // migrate made them): a viewer role, the write role, the gap writer,
     // and mantle_system where the runtime roles are made.

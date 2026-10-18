@@ -221,6 +221,24 @@ export async function areasFor(caller: WsCaller): Promise<WorkspaceArea[]> {
   return loginAreas(caller.loginId);
 }
 
+/** areasFor, read through `q` when its role may run mantle_login_areas (a
+ *  transaction on the system pool: no second connection of that pool while
+ *  it holds one), else on the system pool (the write role a member's
+ *  transaction runs on may not; that pool is not the write pool). The
+ *  privilege ask never fails, so it never aborts `q`'s transaction. */
+async function areasIn(caller: WsCaller, q: Exec): Promise<WorkspaceArea[]> {
+  const [may] = await rows<{ ok: boolean }>(
+    q,
+    sql`select has_function_privilege('public.mantle_login_areas(uuid)', 'EXECUTE') as ok`,
+  );
+  if (may?.ok !== true) return areasFor(caller);
+  const [r] = await rows<{ a: WorkspaceArea[] | null }>(
+    q,
+    sql`select mantle_login_areas(${caller.loginId}::uuid) as a`,
+  );
+  return r?.a ?? [];
+}
+
 /**
  * requireArea (plan 1.4): whether the caller holds `area`. In a
  * scope for the caller's own login, the scope's rule (mantle_scope_has_area:
@@ -320,10 +338,8 @@ async function seeWorkspace(
   lock = false,
 ): Promise<Seen> {
   const wid = wsId(id);
-  // The areas first, on the system pool (mantle_login_areas: the write role
-  // a member's transaction runs on may not EXECUTE it), so no row lock is
-  // held while that read waits for its connection.
-  const areas = await areasFor(caller);
+  // The areas before the row lock, so no lock is held while they are read.
+  const areas = await areasIn(caller, q);
   if (lock) {
     await q.execute(
       sql`select 1 from workspaces where id = ${wid} and owner_id = ${caller.anchorId} for update`,

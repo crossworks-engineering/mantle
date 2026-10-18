@@ -223,6 +223,8 @@ describe.skipIf(!URL)('S8a: an Admin login is role AND membership', () => {
     const o = await listed(out);
     expect(a.status, JSON.stringify(a)).toBe(200);
     expect(a.ids).toContain(key);
+    // The drift admin's request answers (no 500), with no other login's key.
+    expect(o.status, JSON.stringify(o)).toBe(200);
     expect(o.ids, JSON.stringify(o)).not.toContain(key);
   });
 
@@ -231,7 +233,20 @@ describe.skipIf(!URL)('S8a: an Admin login is role AND membership', () => {
     expect((await rows.loadLoginRow(adm))?.adminMember).toBe(true);
     expect((await rows.loadLoginRow(out))?.adminMember).toBe(false);
     expect((await rows.loadLoginRow(memIn))?.adminMember).toBe(true);
-    await expect(m.withViewer({ login: adm }, () => rows.loadLoginRow(adm))).rejects.toThrow();
+    // In a scope: refused for the fact (42501), not any other error.
+    const err = await m
+      .withViewer({ login: adm }, () => rows.loadLoginRow(adm))
+      .then(
+        () => null,
+        (e: unknown) =>
+          e as { code?: string; message?: string; cause?: { code?: string; message?: string } },
+      );
+    const pg = err?.cause ?? err;
+    expect(
+      pg?.code === '42501' &&
+        /permission denied for function mantle_login_is_admin/.test(String(pg.message)),
+      String(pg?.message),
+    ).toBe(true);
   });
 
   it('requireArea: unscoped the area rule, in its own scope the scope`s rule, another login`s throws', async () => {
