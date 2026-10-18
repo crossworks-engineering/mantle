@@ -72,10 +72,9 @@ const BELOW_ON_TOOL_CELLS: readonly string[] = [
 /** S11a-1. A hidden folder path shows to an Admin user: file_create makes
  *  the missing folders of its path (makesFolders), so a free path is made
  *  and answered ok while the path of a folder the caller does not read
- *  answers "parent folder ... not found". The refusal is right (no row
- *  changes); the answer differs from a random path's, so the folder's
- *  existence shows. Owner's to decide (a lookup that answers a hidden path
- *  as a free one, or the same refusal for both). */
+ *  answers "parent folder ... not found" (no row changes, but the folder's
+ *  existence shows). The owner accepted it as a known limit, to revisit
+ *  with S13 (2026-10-18). */
 const S11A_1 = 'S11a-1 a hidden folder path shows (file_create makes a free path)';
 const HIDDEN_PATH_SHOWS: readonly string[] = ['web-turn turn', 'mcp-oauth login'].flatMap((w) =>
   ['owner', 'admin'].map((r) => `tool:file_create ${w}/${r} create file @folder`),
@@ -88,8 +87,8 @@ const WAYS = ['web-turn turn', 'mcp-oauth login'] as const;
  *  (files auto-filed.ts), so the member's scope has no parent folder to make
  *  it in ("parent folder 'files' not found"): app_export by a member who
  *  reads the app is refused. sheet_build files its workbook there too (it
- *  declares no item, so it has no cell). Owner's to decide (where a
- *  member's export and built sheet land). */
+ *  declares no item, so it has no cell). The owner wants a member to export
+ *  what they see: fixed by feat/member-export; drop on rebase. */
 const S11A_3 = "S11a-3 app_export files a member's export in the Admin-only auto-filed folder";
 const MEMBER_EXPORT_REFUSED: readonly string[] = WAYS.map(
   (w) => `tool:app_export ${w}/homeModerator read app @folder`,
@@ -128,6 +127,17 @@ const S11A_7 = 'S11a-7 app_table_export_set: the manage check asks a workspace_i
 const EXPORT_LINK_REFUSED: readonly string[] = WAYS.map(
   (w) => `tool:app_table_export_set ${w}/homeModerator editDraft app @root`,
 );
+
+/** S11a-8. process_extraction re-runs an item's extraction (model spend)
+ *  for a caller who reads it: the owner's rule is an edit of the item, which
+ *  its matrix declares; the tool asks read (itemArgs least read), so the
+ *  read grant's member's call answers ok. Fixed by feat/member-export (the
+ *  policy); drop on rebase. */
+const S11A_8 = 'S11a-8 process_extraction asks read, the owner rule is edit';
+const EXTRACTION_ON_READ: readonly string[] = [
+  'tool:process_extraction web-turn turn/readGrant edit note @root',
+  'tool:process_extraction web-turn turn/readGrant edit page @folder',
+];
 
 /** The actor check modes the surface cells run in (docs/update-prod.md:
  *  off, the fleet's default; warn; on). */
@@ -181,6 +191,9 @@ export const KNOWN_FAILURES: Readonly<Record<string, KnownFailure>> = {
         'You cannot change this item in your workspaces',
       ]),
     ]),
+  ),
+  ...Object.fromEntries(
+    EXTRACTION_ON_READ.map((name) => [name, known(S11A_8, 'answered ok, the oracle denies')]),
   ),
   // The grid (SQL): none since F4.
   // The surface cells (all three check modes unless named).

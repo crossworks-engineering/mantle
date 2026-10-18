@@ -263,7 +263,10 @@ export const content_supersede: BuiltinToolDef = {
 export const process_extraction: BuiltinToolDef = {
   slug: 'process_extraction',
   policy: {
-    matrix: { action: 'read', param: 'node_id', kinds: ['note', 'page'] },
+    // The owner's rule: re-running an item's extraction (model spend) is an
+    // edit of it. The tool still asks read today (itemArgs): the A8 cells
+    // name it (a8-known-failures.ts, S11a-8).
+    matrix: { action: 'edit', param: 'node_id', kinds: ['note', 'page'] },
     effect: 'write',
     spends: 'ownerKey',
     scope: 'any',

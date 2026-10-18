@@ -658,7 +658,7 @@ const NARROWED: Readonly<Record<string, number>> = {
   'web-turn: an Admin tool: the scope holds no Admin': 70,
   'mcp-oauth: an Admin tool: the scope holds no Admin': 126,
   'web-turn: a new app needs manage of its create home: the turn’s workspace': 6,
-  'mcp-oauth: not on the MCP surface of a login outside Admin': 12,
+  'mcp-oauth: not on the MCP surface of a login outside Admin': 14,
 };
 
 /** The allowed tool cells not run, by what they need: the content an item
