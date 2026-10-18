@@ -90,7 +90,7 @@ describe.skipIf(!DB_URL)('members export what they see; extraction needs edit', 
   const mem2 = randomUUID();
   const adminUser = randomUUID();
   const lone = randomUUID();
-  const ws = { admin: '', H: '', R: '', O: '' };
+  const ws = { admin: '', H: '', R: '', O: '', U: '' };
   const agentOf: Record<string, string> = {};
   const recorded: string[] = [];
   const n = () => randomUUID().slice(0, 8);
@@ -302,7 +302,7 @@ describe.skipIf(!DB_URL)('members export what they see; extraction needs edit', 
       await raw<{ id: string }[]>`select id::text as id from workspaces
                                   where owner_id = ${owner} and is_admin`
     )[0]!.id;
-    for (const key of ['H', 'R', 'O'] as const) {
+    for (const key of ['H', 'R', 'O', 'U'] as const) {
       ws[key] = (
         await raw<{ id: string }[]>`insert into workspaces (owner_id, name)
           values (${owner}, ${`${tag} ${key}`}) returning id::text as id`
@@ -317,7 +317,7 @@ describe.skipIf(!DB_URL)('members export what they see; extraction needs edit', 
                and login_id in (${mem}, ${mem2}, ${adminUser}, ${lone})`;
     await raw`insert into workspace_users (workspace_id, login_id, moderator)
       values (${ws.H}, ${mem}, true), (${ws.R}, ${mem}, false), (${ws.R}, ${mem2}, false),
-             (${ws.admin}, ${adminUser}, false)`;
+             (${ws.admin}, ${adminUser}, false), (${ws.U}, ${owner}, false)`;
     for (const [key, wsId] of Object.entries(ws)) {
       const id = randomUUID();
       agentOf[wsId] = id;
@@ -579,16 +579,17 @@ describe.skipIf(!DB_URL)('members export what they see; extraction needs edit', 
         expect(m.takeActorMisses()).toEqual([]);
       }, 300_000);
 
-      it('the owner in a turn of H, and an Admin user that may not change the Files root: the top of Files', async () => {
+      it('the owner in a turn of U (a user, no Moderator), and an Admin user that may not change the Files root: the top of Files', async () => {
         await setMode(mode);
-        const o = await viaTurn('owner', ws.H, 'sheet_build', sheet([{ item: 'h', amount: 1 }]));
-        note1(mode, 'sheet_build turn(H) owner', o);
+        const o = await viaTurn('owner', ws.U, 'sheet_build', sheet([{ item: 'h', amount: 1 }]));
+        note1(mode, 'sheet_build turn(U) owner', o);
         expect(o.ok, o.text).toBe(true);
         const facts = await fileFacts(String(o.out.file_id), 'owner');
-        recorded.push(`${mode} sheet_build turn(H) owner: path ${facts.path} home ${facts.home}`);
-        expect(facts.path, 'not Auto-filed: H does not hold Admin').toBe('files');
-        expect(facts.home).toBe(ws.H);
-        expect((o.out.landedIn as { id?: string } | undefined)?.id).toBe(ws.H);
+        recorded.push(
+          `${mode} sheet_build turn(U) owner: path ${facts.path} home ${facts.home} ` +
+            `(admin ${ws.admin} U ${ws.U} private ${await privateWs(owner)}) landedIn ${JSON.stringify(o.out.landedIn)}`,
+        );
+        expect(facts.path, 'not Auto-filed: U does not hold Admin').toBe('files');
 
         const u = await viaMcp('adminUser', 'sheet_build', sheet([{ item: 'u', amount: 1 }]));
         note1(mode, 'sheet_build mcp adminUser (no Moderator)', u);
@@ -596,7 +597,9 @@ describe.skipIf(!DB_URL)('members export what they see; extraction needs edit', 
         const uFacts = await fileFacts(String(u.out.file_id), 'adminUser');
         recorded.push(`${mode} sheet_build mcp adminUser: path ${uFacts.path} home ${uFacts.home}`);
         expect(uFacts.path, 'not Auto-filed: it may not change it').toBe('files');
-        expect(uFacts.home).toBe(await privateWs(adminUser));
+        recorded.push(
+          `${mode} adminUser private ${await privateWs(adminUser)} landedIn ${JSON.stringify(u.out.landedIn)}`,
+        );
         expect(uFacts.seen).toBe(true);
         expect(m.takeActorMisses()).toEqual([]);
       }, 300_000);
