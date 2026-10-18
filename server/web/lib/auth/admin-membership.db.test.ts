@@ -195,7 +195,7 @@ describe.skipIf(!URL)('S8a: an Admin login is role AND membership', () => {
     }
   });
 
-  it('the key list: a role=admin login outside Admin sees only its own keys in its scope', async () => {
+  it('the key list: a role=admin login outside Admin gets no other login`s key, as the route runs', async () => {
     const key = randomUUID();
     await sql`insert into access_keys (id, name, login_id, key_prefix, key_hash, access)
               values (${key}, ${tag}, ${mem}, ${key.replace(/-/g, '').slice(0, 8)},
@@ -204,7 +204,7 @@ describe.skipIf(!URL)('S8a: an Admin login is role AND membership', () => {
     const ids = (list: { id: string }[]) => list.map((k) => k.id);
     // In the login's own scope (mantle_access_keys_seen asks
     // mantle_login_is_admin_user of the scope's login): the Admin user sees
-    // every key, the drift admin none but its own (main: every key).
+    // every key, the drift admin none (main: every key).
     expect(ids(await m.withViewer({ login: adm }, () => keys.listAccessKeys(null)))).toContain(key);
     expect(ids(await m.withViewer({ login: out }, () => keys.listAccessKeys(null)))).not.toContain(
       key,

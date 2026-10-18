@@ -62,8 +62,13 @@ plan names. None exists on a box with
    - its `?at=` asset token is refused (401, as a random uuid's);
    - its render cookie is refused (401, as a random uuid's);
    - `adminLoginActive` answers false (the owner frame refuses its ticket);
-   - `mantle_login_is_admin_user` answers false, so it no longer lists
-     every key or revokes another login's key;
+   - `mantle_login_is_admin_user` answers false. Its readers: the key
+     list (GET /api/access-keys asks `mantle_access_keys_seen(NULL)` for an
+     admin-kind caller, in the caller's own scope) answers it no key
+     (main: every key); unscoped the definer asks no login and answers
+     every key, as on main, but no request of a login reaches it unscoped.
+     `mantle_access_key_revoke` lets it revoke only its own keys (main:
+     any key). Cells: function level scoped and unscoped, and the route;
    - it keeps its session (cookie, bearer, API key) and works in its own
      scope, byte-equal to main; it is not Admin: an Admin area route
      refuses it (403 `area`), as on main.
@@ -137,14 +142,14 @@ is P1b's own count, set by hand with its reason in `_notes`:
   member cases (the session stays on the role by the owner decision),
   `memberLoginActive` and `findMemberAsset` (both until S8b by the plan).
 - `loginKindBranches` 52 to **51**: areasOf's "migration skipped" branch.
-- `historyCodeComments` 2332 to **2331**; `S8a` is added to
+- `historyCodeComments` 2340 to **2339** (on v0.300.94); `S8a` is added to
   HISTORY_HEADING_CODES (`eslint-rules/cleanup-counts.mjs`) for this
   file's heading, and no new code comment names it.
 - `inHandlerAreaChecks` 21 to **23**, raised: requireArea is now made of
   the two asks the plan names (scopeHasArea in its login's own scope,
   loginHasArea unscoped); the counter counts the asks inside it as well as
   each requireArea use. No new ask after a gate.
-- `dbClientLines` 3142 to **3157**, raised: `loginAreas`, the one
+- `dbClientLines` 3145 to **3160** (on v0.300.94), raised: `loginAreas`, the one
   system-pool reader of `mantle_login_areas` (getAdminDb lives only in
   client.ts).
 - `sqlRoleReaders` 14, unchanged: 0305 redefines a reader, adds none.
@@ -207,6 +212,45 @@ login outside Admin keeps its session but is not Admin"
 (`admin-membership.db.test.ts`) proves it: past the owner gate as the
 Admin user, an Admin area route (`/api/users`) refused, no asset token, no
 render cookie, `adminLoginActive` false.
+
+## Audit fix round 1 (audit at 3132519a0: 8/10, narrowing only)
+
+Rebased on e6f75059e (v0.300.94, S4a merged); migration kept as 0305 with
+`when` 1790197680000 (merge order: tree-bugs 0305, then S2a a1+a2; this
+branch renumbers at its merge, the proof test stays).
+
+- **M1, the public demo.** 0305 grants `demo_reader` (where the role
+  exists, 0293's pattern) EXECUTE on `mantle_login_is_admin` (the login
+  row), `mantle_login_areas` (`areasFor`) and `mantle_area_rule`
+  (`requireArea` unscoped): the demo runs the app's system pool as that
+  SELECT-only role, so without them every signed-in demo request fails
+  42501 (the login row) or loses its areas (fails closed). Cell: the grant
+  statement on a database that has the role, in a rolled-back transaction.
+  The 0304 catalog cell allows `demo_reader` by name. **The demo branch
+  is not touched: `demo/deploy/readonly-role.sql` needs the same three
+  GRANT lines there.**
+- **L1, loadLoginRow in a scope.** Picked: a comment and a cell, not a
+  fallback. Every caller finds a credential's login before the request
+  enters a scope; in a scope the select is refused (42501) and throws, so
+  it never answers a guess, and a catch would only hide a misuse. Cell:
+  unscoped it answers `adminMember` for the Admin user, the drift admin
+  and the drift member; inside `withViewer` it rejects.
+- **L2, the key list.** Cells at the function level (scoped: the Admin
+  user sees every key, the drift admin none; unscoped: every key, the
+  definer asks no login) and through GET /api/access-keys (the Admin user
+  sees another login's key, the drift admin not: the route runs in the
+  caller's own scope). The migration header and "Changed answers" now say
+  exactly that: no key, not "its own keys".
+- **L3, seeWorkspace.** Not passed through: a member's transaction runs on
+  the write role, which may not EXECUTE `mantle_login_areas` (0304 grants
+  the runtime role only). The areas read now runs before the row lock, so
+  no lock is held while it waits. Left: an Admin user's write transaction
+  runs on the system pool, the pool `loginAreas` reads from, so that read
+  takes a second connection of the same pool while the transaction holds
+  one (a short STABLE read; it never waits on the row lock, MVCC).
+- **Nits.** `docs/actors.md` section 6 has the `mantle_login_area` counted
+  fail-open line again (until S4b), within 350 lines; new product comments
+  carry no step code and no decision date (they stay here).
 
 ## Rebase notes
 

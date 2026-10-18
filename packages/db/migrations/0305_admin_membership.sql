@@ -7,10 +7,12 @@
 -- 'admin', not disabled), AND mantle_login_is_admin(login) (0304: a user
 -- of the brain's live Admin workspace, the login enabled). It only ANDs a
 -- second condition, so it narrows: a role=admin login outside Admin is no
--- Admin user here either. Its readers, mantle_access_keys_seen (a login
--- NULL ask: every key, an Admin user's view) and mantle_access_key_revoke
--- (an Admin user may revoke any key), answer that login as they answer a
--- member. On a box with no role drift (mantle_role_drift() = 0, the S8a
+-- Admin user here either. Its readers follow. mantle_access_keys_seen's
+-- every-key ask (login NULL: the key list route asks it for an admin-kind
+-- caller, in the caller's own scope) answers such a login no key (before:
+-- every key); unscoped it asks no login and answers every key, as before.
+-- mantle_access_key_revoke lets it revoke only its own keys (before: any).
+-- On a box with no role drift (mantle_role_drift() = 0, the S8a
 -- precondition) no answer changes.
 --
 -- Grants: CREATE OR REPLACE keeps them (PUBLIC revoked in 0293; the
