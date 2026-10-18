@@ -32,7 +32,7 @@ const sheet_build: BuiltinToolDef = {
   },
   name: 'Build a spreadsheet',
   description:
-    "Compose a formatted Excel (.xlsx) workbook from data you already hold and save it: in Auto-filed / Exports for an Admin user, else at the top of Files (a name already taken there gets a `-2` suffix); returns the file id, name, path and where it landed (landedIn). For a spreadsheet that IS the deliverable: a quote, a costing, a report pack. Header, column widths, number formats and totals are styled for you.\n\n**Sheet or table?** A table is data the user keeps querying and adding rows to; for that use `table_create`, or `table_from_file` to import one. Use this when they asked to be SENT a spreadsheet. Past a few thousand rows, build a table instead.\n\nRows are objects keyed by each column's `key`; a positional array is rejected, because one omitted value shifts every column after it.",
+    "Compose a formatted Excel (.xlsx) workbook from data you already hold and save it (Auto-filed for an Admin user, else the top of Files); returns the file id, name, path and landedIn. For a spreadsheet that IS the deliverable: a quote, a costing, a report pack. Headers, widths, number formats and totals are styled.\n\n**Sheet or table?** A table is data the user keeps querying and adding rows to; for that use `table_create`, or `table_from_file` to import one. Use this when they asked to be SENT a spreadsheet. Past a few thousand rows, build a table instead.\n\nRows are objects keyed by each column's `key`; a positional array is rejected, because one omitted value shifts every column after it.",
   inputSchema: {
     type: 'object',
     properties: {

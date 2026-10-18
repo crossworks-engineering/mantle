@@ -21,6 +21,7 @@ const h = vi.hoisted(() => ({
   upsertImpl: null as null | ((filename: string) => Promise<unknown>),
   folderThrows: false,
   landedThrows: false,
+  allTaken: false,
 }));
 
 vi.mock('@mantle/db', () => ({
@@ -40,7 +41,7 @@ vi.mock('./ops/files', () => ({
   // A member: the Files root is not its to change.
   callerMayEditFolder: async () => false,
   fileNameTaken: async (_o: string, _p: string, name: string) =>
-    h.taken.has(name) ? { id: 'x', folded: false, exact: true } : null,
+    h.allTaken || h.taken.has(name) ? { id: 'x', folded: false, exact: true } : null,
   upsertFile: async (args: { filename: string; parentPath: string }) => {
     h.upsert.push(args.filename);
     if (h.upsertImpl) return h.upsertImpl(args.filename);
@@ -63,6 +64,7 @@ beforeEach(() => {
   h.upsertImpl = null;
   h.folderThrows = false;
   h.landedThrows = false;
+  h.allTaken = false;
 });
 
 let spools = 0;
@@ -135,7 +137,8 @@ describe('saveExport', () => {
   });
 
   it('every name taken: the neutral refusal, nothing written, the spool removed', async () => {
-    for (const name of exportNames('Q1 Pack.xlsx')) h.taken.add(name);
+    // Every name, the time-stamped one too (made when the call runs).
+    h.allTaken = true;
     const s = await spool();
     const err = await saveExport({ ownerId: 'o', filename: 'Q1 Pack.xlsx', spooled: s }).catch(
       (e: unknown) => e,

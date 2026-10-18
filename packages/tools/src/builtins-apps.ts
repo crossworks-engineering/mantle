@@ -1654,7 +1654,7 @@ const app_export: BuiltinToolDef = {
   preconditions: APP_ID_PRE,
   name: 'Export a mini app as a file',
   description:
-    "Save an app as a `.mantleapp` file: in Auto-filed / Exports for an Admin user, else at the top of Files (a member's export lands in its own create home). It holds the app's code, its draft (an Admin user's export only: a member gets no draft), declared tools and schema, and a copy of its data unless with_data is false. A name already taken in that folder gets a `-2` (and on) suffix. Returns the file id and where it landed (landedIn). Use it to move an app to another brain (`app_import` there) or to keep a copy outside its history. For a copy in this brain use `app_duplicate`. The file holds the app's data: it is readable by whoever can read the file.",
+    "Save an app as a `.mantleapp` file, in Auto-filed / Exports for an Admin user, else at the top of Files: its code (the draft for an Admin user only), declared tools and schema, and a copy of its data unless with_data is false. A taken name gets a `-2` suffix. Returns the file id and landedIn. Use it to move an app to another brain (`app_import` there) or to keep a copy outside its history. For a copy in this brain use `app_duplicate`. The file holds the app's data: it is readable by whoever can read the file.",
   inputSchema: {
     type: 'object',
     properties: {

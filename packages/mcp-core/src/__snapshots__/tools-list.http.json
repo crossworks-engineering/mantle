@@ -5474,7 +5474,7 @@
  },
  {
   "name": "export_node",
-  "description": "Render a page or note to a Word (.docx) document, or a table to an Excel (.xlsx) spreadsheet, and save it under /files/auto-filed/exports/<month>. The format is chosen automatically from the node type — pages/notes → Word, tables → Excel. Pages keep their headings, lists, tables, callouts and images; tables export typed cells (currency/number/percent/checkbox) plus the totals row. Returns the new file's id, name, and path. Use this when the user asks to download, export, or 'get a Word/Excel copy' of a page, note, or table.",
+  "description": "Render a page or note to a Word (.docx) document, or a table to an Excel (.xlsx) spreadsheet, and save it in Auto-filed / Exports / <month> for an Admin user, else at the top of Files. A name already taken there gets a `-2` (and on) suffix. The format is chosen automatically from the node type — pages/notes → Word, tables → Excel. Pages keep their headings, lists, tables, callouts and images; tables export typed cells (currency/number/percent/checkbox) plus the totals row. Returns the new file's id, name, path and where it landed (landedIn). Use this when the user asks to download, export, or 'get a Word/Excel copy' of a page, note, or table.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -5523,7 +5523,7 @@
  },
  {
   "name": "sheet_build",
-  "description": "Compose a formatted Excel (.xlsx) workbook from data you already hold and save it under /files; returns the file id, name and path. For a spreadsheet that IS the deliverable: a quote, a costing, a report pack. Header, column widths, number formats and totals are styled for you.\n\n**Sheet or table?** A table is data the user keeps querying and adding rows to; for that use `table_create`, or `table_from_file` to import one. Use this when they asked to be SENT a spreadsheet. Past a few thousand rows, build a table instead.\n\nRows are objects keyed by each column's `key`; a positional array is rejected, because one omitted value shifts every column after it.",
+  "description": "Compose a formatted Excel (.xlsx) workbook from data you already hold and save it (Auto-filed for an Admin user, else the top of Files); returns the file id, name, path and landedIn. For a spreadsheet that IS the deliverable: a quote, a costing, a report pack. Headers, widths, number formats and totals are styled.\n\n**Sheet or table?** A table is data the user keeps querying and adding rows to; for that use `table_create`, or `table_from_file` to import one. Use this when they asked to be SENT a spreadsheet. Past a few thousand rows, build a table instead.\n\nRows are objects keyed by each column's `key`; a positional array is rejected, because one omitted value shifts every column after it.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -6239,7 +6239,7 @@
  },
  {
   "name": "app_export",
-  "description": "Save an app as a `.mantleapp` file under /files (folder exports): its code, draft, declared tools and schema, and a copy of its data unless with_data is false. Returns the file id. Use it to move an app to another brain (`app_import` there) or to keep a copy outside its history. For a copy in this brain use `app_duplicate`. The file holds the app's data: it is readable by whoever can read the file.",
+  "description": "Save an app as a `.mantleapp` file, in Auto-filed / Exports for an Admin user, else at the top of Files: its code (the draft for an Admin user only), declared tools and schema, and a copy of its data unless with_data is false. A taken name gets a `-2` suffix. Returns the file id and landedIn. Use it to move an app to another brain (`app_import` there) or to keep a copy outside its history. For a copy in this brain use `app_duplicate`. The file holds the app's data: it is readable by whoever can read the file.",
   "inputSchema": {
    "type": "object",
    "properties": {
