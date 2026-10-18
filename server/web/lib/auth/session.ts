@@ -166,6 +166,20 @@ export function loginUsable(row: Pick<LoginRow, 'disabledAt' | 'email'>): boolea
   return !!row.email && !row.disabledAt;
 }
 
+/**
+ * Whether a login row is an Admin login, the legacy kind 'admin' (plan v3.2
+ * S8a): role admin AND a user of the brain's live Admin workspace now
+ * (adminMember, mantle_login_is_admin read with the row). The role alone
+ * never makes one: a role=member login inside Admin stays a member, and a
+ * role=admin login outside Admin is no Admin login (no session, asset token
+ * or render cookie). The one place session.ts reads the role for an Admin
+ * decision; memberLoginActive and findMemberAsset keep their role read
+ * until S8b.
+ */
+function adminLogin(row: Pick<LoginRow, 'role' | 'adminMember'>): boolean {
+  return row.role === 'admin' && row.adminMember === true;
+}
+
 /** Who is calling, resolved from the login row: an admin (today's
  *  SessionUser) or a member. `epoch`: the login's session epoch on the row
  *  the credential was just checked against. A login carries no permission
@@ -227,11 +241,11 @@ async function findOwnerAsset(url: string): Promise<SessionUser | 'refused' | nu
   const claims = at ? verifyAssetToken(at) : null;
   if (!claims) return null;
   // The login the token was minted for (`act`, else the anchor itself)
-  // must still be a usable ADMIN on the same session epoch. Members are
-  // never minted one; this closes a revoked, demoted or signed-out login's
-  // 2-hour window too.
+  // must still be a usable Admin login (adminLogin) on the same session
+  // epoch. Members are never minted one; this closes a revoked, demoted,
+  // removed from Admin or signed-out login's 2-hour window too.
   const row = await loadLoginRow(claims.act ?? claims.uid);
-  if (!row || row.role !== 'admin' || !loginUsable(row) || row.sessionEpoch !== claims.ep) {
+  if (!row || !adminLogin(row) || !loginUsable(row) || row.sessionEpoch !== claims.ep) {
     return 'refused';
   }
   return {
@@ -262,7 +276,7 @@ async function findRender(): Promise<{ user: SessionUser; nodeId: string } | nul
   const claims = value ? verifyRenderToken(value) : null;
   if (!claims) return null;
   const row = await loadLoginRow(claims.act);
-  if (!row || row.role !== 'admin' || !loginUsable(row)) return null;
+  if (!row || !adminLogin(row) || !loginUsable(row)) return null;
   const user = await sessionUserFor(row);
   if (!user || user.id !== claims.uid) return null;
   return { user, nodeId: claims.n };
@@ -515,20 +529,22 @@ async function sessionUserFor(row: ActorRow): Promise<SessionUser | null> {
 }
 
 /**
- * An admin row becomes a SessionUser (id = the anchor), a member row a
- * MemberCaller. Every role is named: a role this code does not know is NO
- * login (null), never an admin (client logins C0: before it, every role that
- * was not member resolved as an admin). A row still marked client (none is
- * left after migration 0272, workspaces W8a) is no login either. Null too
- * when the brain has no anchor (a corrupt state).
+ * An Admin login (adminLogin: role admin and a user of Admin) becomes a
+ * SessionUser (id = the anchor), a member row a MemberCaller. Every role is
+ * named: a role this code does not know is NO login (null), never an admin
+ * (client logins C0: before it, every role that was not member resolved as
+ * an admin). A row still marked client (none is left after migration 0272,
+ * workspaces W8a) is no login either, and so is a role=admin row outside
+ * Admin (S8a: none on a box with no role drift). Null too when the brain
+ * has no anchor (a corrupt state).
  */
 async function resolvedFor(row: LoginRow, source: AuthSource): Promise<Resolved | null> {
+  if (adminLogin(row)) {
+    const user = await sessionUserFor(row);
+    return user ? { kind: 'admin', user, source, epoch: row.sessionEpoch } : null;
+  }
   const role: string = row.role;
   switch (role) {
-    case 'admin': {
-      const user = await sessionUserFor(row);
-      return user ? { kind: 'admin', user, source, epoch: row.sessionEpoch } : null;
-    }
     case 'member': {
       const anchorId = await getAnchorId();
       if (!anchorId) return null;
@@ -2086,10 +2102,11 @@ export async function memberLoginActive(loginId: string): Promise<boolean> {
 
 /** Is this admin login still allowed in? For a frame document that a
  *  seconds-lived ticket opened (an admin's test run of a member's app): the
- *  row is re-read, so a disabled or demoted login stops at once. */
+ *  row is re-read, so a disabled, demoted or removed from Admin login stops
+ *  at once (adminLogin). */
 export async function adminLoginActive(loginId: string): Promise<boolean> {
   const row = await loadLoginRow(loginId);
-  return !!row && row.role === 'admin' && loginUsable(row);
+  return !!row && adminLogin(row) && loginUsable(row);
 }
 
 /** When the calling request's session cookie expires (ms since epoch), or

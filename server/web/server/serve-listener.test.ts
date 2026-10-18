@@ -67,6 +67,7 @@ vi.mock('../lib/auth/login-row', () => ({
           isOwner: true,
           displayName: null,
           role: 'admin',
+          adminMember: true,
           contactId: null,
           disabledAt: null,
           sessionEpoch: 0,

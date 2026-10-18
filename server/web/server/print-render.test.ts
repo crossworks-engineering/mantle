@@ -35,12 +35,28 @@ vi.mock('@mantle/db', async (importOriginal) => ({
 }));
 vi.mock('../lib/auth/login-row', () => {
   const rows: Record<string, Record<string, unknown>> = {
-    '33333333-3333-4333-8333-333333333333': { isOwner: true, role: 'admin', disabledAt: null },
-    '55555555-5555-4555-8555-555555555555': { isOwner: false, role: 'admin', disabledAt: null },
-    '22222222-2222-4222-8222-222222222222': { isOwner: false, role: 'member', disabledAt: null },
+    '33333333-3333-4333-8333-333333333333': {
+      isOwner: true,
+      role: 'admin',
+      adminMember: true,
+      disabledAt: null,
+    },
+    '55555555-5555-4555-8555-555555555555': {
+      isOwner: false,
+      role: 'admin',
+      adminMember: true,
+      disabledAt: null,
+    },
+    '22222222-2222-4222-8222-222222222222': {
+      isOwner: false,
+      role: 'member',
+      adminMember: false,
+      disabledAt: null,
+    },
     '88888888-8888-4888-8888-888888888888': {
       isOwner: false,
       role: 'admin',
+      adminMember: true,
       disabledAt: new Date(0),
     },
   };

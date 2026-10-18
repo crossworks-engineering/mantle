@@ -46,12 +46,16 @@
 import { NextResponse } from '@/server/http-compat';
 import {
   asSystem,
+  currentScope,
   db,
   isCheckViolation,
   isUniqueViolation,
   liveWorkspaceSql,
   lockMoreHeads,
+  loginAreas,
+  loginHasArea,
   pgConstraint,
+  scopeHasArea,
   sql,
   withDeadlockRetry,
   withHeads,
@@ -70,7 +74,6 @@ import type {
   WorkspaceUserSearchHit,
   WorkspaceLandingApp,
 } from '@mantle/client-types';
-import { WORKSPACE_AREAS } from '@mantle/client-types/dto/workspaces';
 import type { LoginRole } from '@mantle/client-types/role-names';
 import { workspaceHeldApp } from '@mantle/content';
 import type { AnyLogin, SessionUser } from '@/lib/auth';
@@ -199,60 +202,40 @@ async function rows<T>(q: Exec, query: ReturnType<typeof sql>): Promise<T[]> {
 
 // ── Areas (plan 1.4) ─────────────────────────────────────────────────────────
 
-type AdminInfo = {
-  /** The brain has an Admin workspace (the workspaces migration ran). */
-  migrated: boolean;
-  adminWsId: string | null;
-  /** The caller is a user of the Admin workspace. */
-  member: boolean;
-  limits: Record<string, unknown>;
-};
-
-async function adminInfo(caller: WsCaller, q: Exec = db): Promise<AdminInfo> {
-  // The Admin workspace by definer (0279): a scope outside Admin does not
-  // read its row. The caller's own row there is its scope's when it is a
-  // user of Admin.
-  const [r] = await rows<{
-    id: string | null;
-    member: boolean;
-    limits: Record<string, unknown> | null;
-  }>(
-    q,
-    sql`select a.id, u.login_id is not null as member, u.limits
-          from (select mantle_ws_admin_id(${caller.anchorId}::uuid) as id) a
-          left join workspace_users u on u.workspace_id = a.id and u.login_id = ${caller.loginId}`,
+/** The brain has an Admin workspace (the workspaces migration ran): its id
+ *  by definer (0279), which a scope outside Admin may ask. */
+async function brainHasAdmin(caller: WsCaller): Promise<boolean> {
+  const [r] = await rows<{ id: string | null }>(
+    db,
+    sql`select mantle_ws_admin_id(${caller.anchorId}::uuid) as id`,
   );
-  if (!r?.id) return { migrated: false, adminWsId: null, member: false, limits: {} };
-  return { migrated: true, adminWsId: r.id, member: r.member, limits: r.limits ?? {} };
+  return !!r?.id;
 }
 
-function areasOf(info: AdminInfo, caller: WsCaller): WorkspaceArea[] {
-  // A brain the migration skipped keeps today's rule: an admin login.
-  if (!info.migrated) return caller.kind === 'admin' ? [...WORKSPACE_AREAS] : [];
-  if (!info.member) return [];
-  return areasFromLimits(info.limits);
-}
-
-/** The areas an Admin workspace user holds by its limits: every area unless
- *  limits.areas switches it off with false or "false", the same rule as SQL
- *  (mantle_scope_has_area reads ->> 'false' for both; W5b1 audit L5). */
-export function areasFromLimits(limits: Record<string, unknown>): WorkspaceArea[] {
-  const off = (limits.areas ?? {}) as Record<string, unknown>;
-  return WORKSPACE_AREAS.filter((a) => off[a] !== false && off[a] !== 'false');
-}
-
-/** The Admin areas the caller holds (plan 1.4): every area for a user of
- *  the Admin workspace unless its limits switch one off, none for anyone
- *  else. The ONE reader of workspace_users.limits in TypeScript; code that
- *  runs in a user scope asks scopeHasArea, whose SQL (mantle_scope_has_area,
- *  0256) is the same rule. */
+/** The Admin areas the caller holds (plan 1.4; v3.2 S8a): the area rule
+ *  over every area, mantle_login_areas (the strict rule: a user of the
+ *  live Admin workspace, enabled, limits leaving the area on; none on a
+ *  brain with no Admin workspace). It feeds the shell, grants.ts and the
+ *  area chips; a decision in a scope asks requireArea. */
 export async function areasFor(caller: WsCaller): Promise<WorkspaceArea[]> {
-  return areasOf(await adminInfo(caller), caller);
+  return loginAreas(caller.loginId);
 }
 
-/** requireArea (plan 1.4): whether the caller holds `area`. */
+/**
+ * requireArea (plan 1.4; v3.2 S8a): whether the caller holds `area`. In a
+ * scope for the caller's own login, the scope's rule (mantle_scope_has_area:
+ * a scope that does not hold Admin answers no); unscoped system work (an
+ * area route on the system pool, until it runs in scope) asks the area rule
+ * about the login (mantle_area_rule). A scope for another login, or for no
+ * login, throws: an ask about another login is loginHasArea's.
+ */
 export async function requireArea(caller: WsCaller, area: WorkspaceArea): Promise<boolean> {
-  return (await areasFor(caller)).includes(area);
+  const scope = currentScope();
+  if (scope.kind === 'system') return loginHasArea(caller.loginId, area);
+  if (!scope.loginId || scope.loginId !== caller.loginId.toLowerCase()) {
+    throw new Error(`requireArea: asked for login ${caller.loginId} in a scope for another login`);
+  }
+  return scopeHasArea(area);
 }
 
 // ── Reading ──────────────────────────────────────────────────────────────────
@@ -344,7 +327,7 @@ async function seeWorkspace(
   }
   const [row] = await rows<WsRow>(q, wsSelect(caller, sql`w.id = ${wid}`));
   if (!row) throw NOT_FOUND();
-  const areas = areasOf(await adminInfo(caller, q), caller);
+  const areas = await areasFor(caller);
   const admin = areas.includes('users');
   if (!admin && (!row.me_member || row.archived_at !== null)) throw NOT_FOUND();
   return { row, areas, admin, mod: row.me_member && row.me_moderator };
@@ -539,8 +522,7 @@ export async function createWorkspace(
   caller: WsCaller,
   body: { name: string; description?: string },
 ): Promise<Workspace> {
-  const info = await adminInfo(caller);
-  if (!info.migrated) {
+  if (!(await brainHasAdmin(caller))) {
     throw new WsError(409, 'not_migrated', 'Workspaces are not set up on this brain yet.');
   }
   refuseReservedName(body.name);

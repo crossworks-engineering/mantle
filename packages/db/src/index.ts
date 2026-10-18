@@ -53,6 +53,7 @@ export {
   scopeHoldsAdmin,
   scopeHasArea,
   loginHasArea,
+  loginAreas,
   loginHoldsAdmin,
   withHeads,
   withSubtreeHeads,

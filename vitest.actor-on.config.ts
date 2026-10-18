@@ -24,6 +24,8 @@ export default defineConfig({
       'packages/db/src/write-role.db.test.ts',
       'packages/db/src/matrix/**/*.test.ts',
       'server/web/server/app-draft-scope.db.test.ts',
+      // S8a: the Admin login is role AND membership, warn (the full run) and on.
+      'server/web/lib/auth/admin-membership.db.test.ts',
     ],
     env: { ...base.test?.env, MANTLE_ACTOR_CHECK: 'on' },
   },

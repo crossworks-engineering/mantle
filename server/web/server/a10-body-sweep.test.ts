@@ -45,6 +45,7 @@ const loginRow = (id: string, role: string, isOwner = false) => ({
   isOwner,
   displayName: `${role} ${id.slice(0, 4)}`,
   role,
+  adminMember: role === 'admin',
   contactId: null,
   disabledAt: null,
   sessionEpoch: 0,

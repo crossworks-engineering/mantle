@@ -4,7 +4,7 @@
  * every path reads the same columns: the role is taken from this row on every
  * request, never from a token.
  */
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import {
   authUsers,
   db,
@@ -26,6 +26,10 @@ export type LoginRow = {
   /** auth.users.session_epoch (0181): every cookie and asset token signed
    *  with an older one is dead. */
   sessionEpoch: number;
+  /** A user of the brain's live Admin workspace now, the login enabled
+   *  (mantle_login_is_admin, 0304), read with the row (plan v3.2 S8a): the
+   *  second half of an Admin login (session.ts adminLogin). */
+  adminMember: boolean;
 };
 
 export async function loadLoginRow(id: string): Promise<LoginRow | null> {
@@ -39,6 +43,9 @@ export async function loadLoginRow(id: string): Promise<LoginRow | null> {
       contactId: authUsers.contactId,
       disabledAt: authUsers.disabledAt,
       sessionEpoch: authUsers.sessionEpoch,
+      // Membership of Admin with the same read (S8a): the bound id, as the
+      // scope columns take it.
+      adminMember: sql<boolean>`"public"."mantle_login_is_admin"(${id}::uuid)`,
       // The login's workspaces with the same read (W6a fix round 1): the
       // request's scope, so the guard looks nothing up twice.
       ...loginScopeColumns(id, authUsers.disabledAt),
@@ -47,9 +54,9 @@ export async function loadLoginRow(id: string): Promise<LoginRow | null> {
     .where(eq(authUsers.id, id))
     .limit(1);
   if (!row) return null;
-  const { scopeWs, scopeModWs, ...login } = row;
+  const { scopeWs, scopeModWs, adminMember, ...login } = row;
   seedLoginScope(login.id, scopeWs ?? [], scopeModWs ?? []);
-  return login;
+  return { ...login, adminMember: adminMember === true };
 }
 
 /** The anchor (is_owner) login's id: the brain every login belongs to. */

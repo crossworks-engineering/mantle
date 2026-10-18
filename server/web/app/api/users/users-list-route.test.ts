@@ -29,6 +29,7 @@ vi.mock('@mantle/db', async (importOriginal) => {
       displayName: null,
       isOwner: true,
       role: 'admin',
+      adminMember: true,
       contactId: null,
       disabledAt: null,
       createdAt: '2026-09-01T00:00:00.000Z',

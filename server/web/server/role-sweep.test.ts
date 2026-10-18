@@ -39,6 +39,7 @@ const row = (id: string, role: string) => ({
   isOwner: false,
   displayName: null,
   role,
+  adminMember: role === 'admin',
   contactId: null,
   disabledAt: null,
   sessionEpoch: 0,

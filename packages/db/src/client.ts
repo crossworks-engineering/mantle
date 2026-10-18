@@ -2395,6 +2395,26 @@ export async function loginHasArea(loginId: string, area: ScopeArea): Promise<bo
 }
 
 /**
+ * The Admin areas login `loginId` holds now, in SCOPE_AREAS order: the area
+ * rule over every area, mantle_login_areas (0304; the strict rule, never
+ * mantle_login_area's "no Admin workspace" branch). The system pool's, as
+ * loginHasArea. Fails closed: none.
+ */
+export async function loginAreas(loginId: string): Promise<ScopeArea[]> {
+  if (!UUID_RE.test(loginId)) return [];
+  try {
+    const rows = (await getAdminDb().execute(
+      sqlTag`select "public"."mantle_login_areas"(${loginId}::uuid) as a`,
+    )) as unknown as { a: string[] | null }[];
+    const held = rows[0]?.a ?? [];
+    return SCOPE_AREAS.filter((area) => held.includes(area));
+  } catch (err) {
+    loginFactFailed(err);
+    return [];
+  }
+}
+
+/**
  * Run `fn` in ONE admin-pool transaction whose FIRST lock is the heads of
  * `ids` (workspaces plan U1 and V2): every writer of nodes, chunks, windows,
  * facts and grants goes through here, so no two writers can deadlock and none

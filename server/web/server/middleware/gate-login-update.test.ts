@@ -43,6 +43,7 @@ vi.mock('../../lib/auth/login-row', () => ({
       isOwner: id === ANCHOR,
       displayName: null,
       role: state.roles.get(id) ?? (id === ANCHOR ? 'admin' : 'member'),
+      adminMember: (state.roles.get(id) ?? (id === ANCHOR ? 'admin' : 'member')) === 'admin',
       contactId: null,
       disabledAt: null,
       sessionEpoch: state.epochs.get(id) ?? 0,

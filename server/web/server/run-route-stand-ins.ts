@@ -23,6 +23,9 @@ export type StandInLogin = {
   displayName?: string | null;
   sessionEpoch?: number;
   disabledAt?: Date | null;
+  /** A user of the Admin workspace (S8a); default: role admin, as a box
+   *  with no role drift has it. */
+  adminMember?: boolean;
   /** The workspaces the login is in, and the ones it moderates. */
   ws?: readonly string[];
   modWs?: readonly string[];
@@ -56,6 +59,7 @@ export const loginRowStandIn = {
       isOwner: l.isOwner ?? false,
       displayName: l.displayName ?? null,
       role: l.role,
+      adminMember: l.adminMember ?? l.role === 'admin',
       contactId: null,
       disabledAt: l.disabledAt ?? null,
       sessionEpoch: l.sessionEpoch ?? 0,
