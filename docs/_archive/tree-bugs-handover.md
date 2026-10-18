@@ -169,11 +169,12 @@ the code comments say "migration 0305" in `node-ops.ts`,
 
 ## Gates
 
-Exit codes. Mac (no database, DATABASE_URL unset): `pnpm -r typecheck`
-0, `pnpm lint` 0, `pnpm format:check` 0, `pnpm docs:check` 0,
+Rebased on main 6e49ee5b4 (v0.300.93, the P1b counters). Exit codes on
+the rebased head, Mac (no database, DATABASE_URL unset): `pnpm -r
+typecheck` 0, `pnpm lint` 0, `pnpm format:check` 0, `pnpm docs:check` 0,
 `pnpm arch:check` 0, `pnpm -C server/web build` 0,
-`pnpm exec vitest run server packages eslint-rules` 0 (846 files passed,
-259 skipped; 10940 tests passed).
+`pnpm exec vitest run server packages eslint-rules` 0 (850 files passed,
+260 skipped; 11022 tests passed).
 
 Workstation (own pgvector pg18 container, `MANTLE_CHECK_FLOOR=keep`):
 
@@ -185,12 +186,20 @@ Workstation (own pgvector pg18 container, `MANTLE_CHECK_FLOOR=keep`):
   list on the branch is main's less the four cells above (two ways in for
   each), nothing new.
 - `server/web/server/tree-bugs.db.test.ts`: exit 0, 15 tests.
+- After CI's first run (the older suites above): `edit-check.db.test.ts`,
+  `schema-drift.test.ts`, `a5-mcp-writes-smoke.db.test.ts`,
+  `precheck-removal-http.db.test.ts`, `precheck-removal.db.test.ts` and
+  `tree-bugs.db.test.ts`: exit 0, 6 files, 594 tests (on a fresh
+  database, before the rebase; the rebase brought only main's P1b
+  counters).
 - `server/web/server/a6-grant-sweep.db.test.ts`,
   `server/web/lib/grants.db.test.ts`, `packages/db/src/write-role.db.test.ts`,
   `server/web/server/a3a-folders.db.test.ts`, `packages/content/src/tree/`:
   exit 0, 15 files, 167 passed, 1 skipped.
 
-Pins: `asSystemExits` 58 to 59 (the `tree-refold` step), with its reason in
-`scripts/arch-scoreboard.pins.json`.
+Pins (`scripts/arch-scoreboard.pins.json`, each with its reason):
+`asSystemExits` 58 to 59, `asSystemFull` 58 to 59 and
+`asSystemFull_brain-bookkeeping` 10 to 11 (the `tree-refold` step);
+`historyCodeComments` 2332 to 2331 (down).
 
 CI: CIURL
