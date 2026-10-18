@@ -20,10 +20,14 @@
 -- functions 0307 added stay: the older image never calls them, and they
 -- refuse more, never less. CREATE OR REPLACE keeps every grant.
 --
--- Run it as the superuser that runs the migrations, in one transaction:
---   docker exec -i mantle_pg psql -U postgres -d postgres -v ON_ERROR_STOP=1 -1 \
---     < packages/db/rollback/0307_ws_user_definers.revert.sql
--- then pin the older image (docs/update-prod.md "Rollback").
+-- Run it while the newer image is still up (this file is in its image,
+-- not in a box's stack directory), as the superuser, in one transaction:
+--   docker exec mantle_web cat /app/packages/db/rollback/0307_ws_user_definers.revert.sql \
+--     | docker exec -i mantle_pg psql -U postgres -d postgres -v ON_ERROR_STOP=1 -1
+-- then pin the older image straight away (docs/update-prod.md "Rollback"),
+-- or stop mantle_web first: a restart in between runs its boot migrate,
+-- which applies 0307 again. 0307 ships in its own release (S8a's 0306 in
+-- the one before it), so a one-image rollback crosses only 0307.
 SET LOCAL lock_timeout = '30s';
 --> statement-breakpoint
 -- 0293's mantle_ws_create.

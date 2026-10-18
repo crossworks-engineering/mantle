@@ -562,15 +562,21 @@ no revert:**
   system pool (0307 changes no table, row, trigger or grant), and the new
   definers are never called by N-1.
 
-**How to roll back:** before pinning the older image, as the superuser that
+**How to roll back:** 0307 ships in its own release (S8a's 0306 in the
+release before it, v0.300.97; this step its own tag), so a one-image
+rollback crosses only 0307. While the newer image is still up (the revert
+file is in its image at /app/packages/db/rollback, not in a box's stack
+directory, which holds only /app/release's files), as the superuser that
 runs the migrations, in one transaction:
 
 ```sh
-docker exec -i mantle_pg psql -U postgres -d postgres -v ON_ERROR_STOP=1 -1 \
-  < packages/db/rollback/0307_ws_user_definers.revert.sql
+docker exec mantle_web cat /app/packages/db/rollback/0307_ws_user_definers.revert.sql \
+  | docker exec -i mantle_pg psql -U postgres -d postgres -v ON_ERROR_STOP=1 -1
 ```
 
-then pin the older tag (docs/update-prod.md "Rollback"). The file puts the
+then pin the older tag straight away (docs/update-prod.md "Rollback"), or
+stop mantle_web first: if mantle_web restarts in between, its boot migrate
+applies 0307 again. The file puts the
 four functions back exactly as 0293, 0272, 0279 and 0260 left them (copied
 verbatim), keeps every grant (CREATE OR REPLACE), leaves the functions 0307
 added (narrower, never called by N-1), and deletes 0307's ledger row so the

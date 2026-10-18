@@ -1293,12 +1293,15 @@ count(*) from tables where draft_path is not null` must be 0), and expect
 - **Below the workspace definers (plan v3.2 S2a a1+a2, migration 0307):**
   run its revert first, or the older image refuses every create that lands
   in a private workspace and attaches no assistant at signup or onboarding.
-  As the superuser, in one transaction, before pinning the older tag:
-  `docker exec -i mantle_pg psql -U postgres -d postgres -v ON_ERROR_STOP=1
--1 < packages/db/rollback/0307_ws_user_definers.revert.sql`. It puts back
-  the four functions the older image calls and takes 0307 off the ledger, so
-  the next roll forward applies it again
-  (why and the proof: the S2a a1+a2 handover in docs/_archive/).
+  0307 ships in its own release (S8a's 0306 in the one before it), so a
+  one-image rollback crosses only 0307. While the newer image is still up
+  (the file is in its image, not in the stack directory), as the superuser,
+  in one transaction: `docker exec mantle_web cat /app/packages/db/rollback/0307_ws_user_definers.revert.sql | docker exec -i mantle_pg psql -U postgres -d postgres -v ON_ERROR_STOP=1 -1`. Then pin the older tag straight away (or stop
+  mantle_web first): a mantle_web restart in between runs its boot migrate
+  and applies 0307 again. The revert puts back the four functions the older
+  image calls and takes 0307 off the ledger, so the next roll forward
+  applies it again (why and the proof: the S2a a1+a2 handover in
+  docs/_archive/).
 
 Below a floor, restore the pre-roll backup taken before the migration instead
 of pinning the tag.
