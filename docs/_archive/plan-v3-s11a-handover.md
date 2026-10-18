@@ -203,13 +203,14 @@ the previous head, df821668d's twin on a77282728, was 0), test:actor-off 0,
 test:actor-on 0, test:edit-on 0, test:matrix 0, test:runtime-role (full
 config) 0. A re-run of the full vitest is in the final report.
 
-**Left.** S11a-2 to S11a-4 for the owner; process_extraction as in round 1.
+**Left.** S11a-2 to S11a-4 for the owner; process_extraction: settled by the owner (S11a-8).
 
 ## S11a handover (the A8 tool cells, round 3, 2026-10-18)
 
-Rebased onto main ab0ce298a (v0.300.86: S3, D1 and P1a merged); both sides'
-pin keys kept (S3's gapTables and dbClientLines beside a8Uncovered and
-a8Exempt). The audit at c54b6ad4a rated the tool cells 7/10.
+Rebased onto main ab0ce298a (v0.300.86: S3, D1 and P1a merged), then onto
+7a7608fb1 (v0.300.88: the snapshot-delete hotfix and the bare fetch test's
+fix); both sides' pin keys kept (S3's gapTables and dbClientLines beside
+a8Uncovered and a8Exempt). The audit at c54b6ad4a rated the tool cells 7/10.
 
 **Done.**
 
@@ -263,28 +264,33 @@ a8Exempt). The audit at c54b6ad4a rated the tool cells 7/10.
 | Pin | Before | After |
 | --- | --- | --- |
 | NOT_RUN | 68 (stubbed 64, peer 4) | 84 (stubbed 68, sandbox 8, peer 8) |
-| NARROWED | 198 (app data 40, Admin MCP 102, Admin turn 46, MCP Admin only 10) | 258 (app data 44, Admin turn 70, Admin MCP 126, new app home 6, MCP Admin only 12) |
+| NARROWED | 198 (app data 40, Admin MCP 102, Admin turn 46, MCP Admin only 10) | 260 (app data 44, Admin turn 70, Admin MCP 126, new app home 6, MCP Admin only 14) |
 | NOT_APPLICABLE | 134 | 138 |
 | a8Uncovered | 0 | 0 |
 | a8Exempt | 111 | 105 (94 tools, 11 kinds, by name) |
 
-The cells: 1015 of 139 tools, 3838 calls over both modes, 70 s.
+The cells: 1016 of 139 tools, 3842 calls over both modes, 70 to 83 s
+(process_extraction's edit gave the MCP Admin-only narrowing 12 to 14).
 
 **Known failures now** (a8-known-failures.ts):
 
-- P1, warn only, 26 cells: the read grant's member's edits through a turn
-  and over MCP (formula, Recall map, card put and delete, task, note, event,
-  page, table at the root; folder_describe at the root and in a folder) and
-  app_snapshot_delete at the root and in a folder. In warn both checks
-  report and refuse nothing, so the edit is made; in on each is refused.
-  P1 did not shrink to 16: the positive cells moved the pair pick (the
-  note_update folder cells left it), and S11a-2's read grant half joined P1
-  (it passes in on).
-- S11a-1, both modes, 4 cells: as before.
+- P1, warn only, 22 cells (24 before): the read grant's member's edits
+  through a turn and over MCP (formula, Recall map, card put and delete,
+  task, note, event, page, table at the root; folder_describe at the root
+  and in a folder). In warn both checks report and refuse nothing, so the
+  edit is made; in on each is refused. P1 did not shrink to 16: in warn
+  the edit check reports and refuses nothing, so these edits are still
+  made; it shrank by the note_update folder cells, which left the pair pick
+  when the positive cells moved it. app_snapshot_delete's read grant cells
+  pass in both modes since the hotfix (the library asks edit).
+- S11a-1, both modes, 4 cells: as before. The owner accepted it as a known
+  limit, to revisit with S13 (2026-10-18).
 - S11a-3, both modes, 2 cells (the Home Moderator's, in a folder; the Write
   grant's root cells are not failing in this pick): as before. sheet_build lands in the same
   Admin-only auto-filed folder; it declares no item (no cell), so it is
-  recorded with S11a-3 as the owner's question.
+  recorded with S11a-3. The owner's answer (2026-10-18): a member exports
+  what they see; feat/member-export changes the product, and S11a-3 is
+  dropped on the rebase after it.
 - S11a-5 (new, a bug), both modes, 2 cells: a member's move into a folder
   of another workspace answers "the database could not run this request":
   after the move, content tree/write.ts followShares calls
@@ -301,15 +307,23 @@ The cells: 1015 of 139 tools, 3838 calls over both modes, 70 s.
   row's workspace_id (mantle_write_check_trg, written for grant rows), and
   app_table_exports has no such column: warn reports "INSERT on
   app_table_exports: not a Moderator of the workspace", on refuses it.
+- S11a-8 (new, the owner's rule, 2026-10-18), both modes, 2 cells:
+  process_extraction declares edit now (re-running an item's extraction is
+  an edit of it); the tool still asks read, so the read grant's member's
+  turn call answers ok. feat/member-export changes the policy; drop on
+  rebase.
 - S11a-2 and S11a-4 left the list (above).
 
-**Gates.** On the Mac (the tree of 57f6ce1c7): typecheck 0, lint 0,
-format 0, docs 0, arch 0, web build 0, unit (no database) 0. On the
-workstation, own clone and own pg18 container (s11c_pg, port 55987,
-max_connections=450, migrated with MANTLE_CHECK_FLOOR=keep), one at a time,
-on 0024b22fe (57f6ce1c7 differs only in a CI comment): full vitest with DB
-0, test:actor-off 0, test:actor-on 0, test:edit-on 0, test:matrix 0 (91 s),
-test:runtime-role (full config) 0.
+**Gates** (on 9ff3206ca, main 7a7608fb1 under it; the handover commit
+after it changes only this file). On the Mac: typecheck 0, lint 0, format
+0, docs 0, arch 0, web build 0, unit (no database) 0. On the workstation,
+own clone and own pg18 container (s11c_pg, port 55987, max_connections=450,
+migrated with MANTLE_CHECK_FLOOR=keep), one at a time: full vitest with DB
+0, test:actor-off 0, test:actor-on 0, test:edit-on 0, test:matrix 0 (98 s),
+test:runtime-role (full config) 0. The same set was 0 on the head before
+the last rebase (ab0ce298a under it). CI on the first push of this round
+(4a0ae7b55) failed one cell, eslint-rules/no-bare-fetch.test.ts, a 15 s
+timeout that main fixed in a4bc6a8c4 (in this base now).
 
 **Open.** invoke_agent asks nothing of `subject_node_ids` itself (the child
 reads them in the caller's scope): its refused cells now reach the invoker,
@@ -317,4 +331,4 @@ which the test does not register, so the item and a random uuid get the same
 answer; nothing is shown about the item. generate_image's refused cells stop
 at the missing image_gen worker before the reference images are read; a
 worker fixture (fetch stays stubbed) would take them to the read.
-process_extraction as in round 1.
+process_extraction: settled by the owner (S11a-8).
