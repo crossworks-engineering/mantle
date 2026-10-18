@@ -53,6 +53,7 @@ import {
   afterCommit,
   afterRollback,
   isWorkspaceSystemActor,
+  boundLoginId,
 } from './viewer';
 import {
   actorCheckMode,
@@ -482,10 +483,8 @@ export function needsActorWrap(query: string): boolean {
   return true;
 }
 
-/** Whether the system pool sends `query` with the actor set: a write
- *  (needsActorWrap), or any statement of workspace system work, a read too
- *  (S2a a1 audit M2): a bare `select mantle_ws_...()` outside a transaction
- *  would else go with no mantle.actor, and the definers refuse it. */
+/** A write (needsActorWrap), or any statement of workspace system work: its
+ *  definers read mantle.actor, a bare call outside a transaction too (M2). */
 function wrapsStatement(query: string): boolean {
   return needsActorWrap(query) || isWorkspaceSystemActor(currentActor());
 }
@@ -2821,14 +2820,6 @@ export async function moderatorSeatsNow(
      where login_id = ${loginId}::uuid and moderator
        and workspace_id = any(${`{${wsIds.join(',')}}`}::uuid[])`)) as unknown as { ws: string }[];
   return rows.map((r) => r.ws);
-}
-
-/** The login bound to this call: a login actor's, else the open scope's
- *  (an assistant turn names its login), else null. */
-function boundLoginId(): string | null {
-  const actor = currentActor();
-  if (actor?.kind === 'login') return actor.loginId;
-  return currentWorkspaceScope()?.loginId?.toLowerCase() ?? null;
 }
 
 /**

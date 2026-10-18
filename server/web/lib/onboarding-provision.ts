@@ -215,8 +215,10 @@ export async function provisionDefaults(
   // The persona now exists: put it on Admin (a fresh install was migrated at
   // signup, before it existed; W5b1 M-new). A fresh install has no Team
   // workspace (0286), so the team responder stays on no workspace until an
-  // Admin user attaches it to one.
-  await attachDefaultAssistantsQuietly('onboarding');
+  // Admin user attaches it to one. In the scope of the login provisioning
+  // (the anchor's when configuredBy is null): the attach asks it the
+  // assistants area (0305, plan v3.2 S2a a2).
+  await attachDefaultAssistantsQuietly('onboarding', opts.configuredBy ?? ownerId);
 
   return { createdWorkers: created, createdAgent, skipped, seededSpecialists };
 }

@@ -65,7 +65,9 @@ export async function createFirstOwner(
   // bridges, with the owner in Admin. Then asked: a brain the switch left
   // off workspaces is not served (see the top). A database that cannot be
   // read here throws (the route answers 500, and the boot asks again).
-  await migrateWorkspacesQuietly('first owner');
+  // The assistant attach runs in the new owner's own scope (the assistants
+  // area; 0305, plan v3.2 S2a a2), never as system work inside a request.
+  await migrateWorkspacesQuietly('first owner', id);
   const why = await unmigratedBrainReason();
   if (why !== null) return { ok: false, reason: 'not-switched', id, email, why };
   return { ok: true, id, email };

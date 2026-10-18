@@ -786,6 +786,14 @@ export const WRITE_ROLE_FUNCTIONS: Readonly<Record<string, string>> = {
     'a Moderator tick set or cleared by the acting login (0305, S2a a1)',
   'public.mantle_ws_remove_user(uuid,uuid,uuid)':
     'a user removed from a workspace, or leaving it, by the acting login (0305, S2a a1)',
+  'public.mantle_ws_resource_add(uuid,uuid,text,text,boolean)':
+    'a connector or the assistant added by the acting login (0305, S2a a2): the role holds no right on workspace_resources',
+  'public.mantle_ws_resource_set_write(uuid,uuid,text,text,boolean)':
+    'a connector’s Write tick set by the acting login (0305, S2a a2)',
+  'public.mantle_ws_resource_remove(uuid,uuid,text,text)':
+    'a connector or the assistant taken off by the acting login (0305, S2a a2)',
+  'public.mantle_ws_set_assistant(uuid,uuid,uuid)':
+    'the workspace’s assistant set or cleared by the acting login (0305, S2a a2)',
 };
 
 /** The GRANT statements for the write role. Pure. It reads exactly what the

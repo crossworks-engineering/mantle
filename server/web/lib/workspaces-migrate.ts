@@ -30,7 +30,8 @@
  * mantle.ws_former_clients = 'reviewed'), then started again.
  */
 import { sql } from 'drizzle-orm';
-import { db, executeAsMigrator } from '@mantle/db';
+import { db, executeAsMigrator, loginScopeFor } from '@mantle/db';
+import { UUID_RE } from '@mantle/std';
 
 export type WsMigrateRow = { section: string; subject: string; metric: string; n: number };
 
@@ -45,12 +46,32 @@ export async function migrateWorkspaces(): Promise<WsMigrateRow[]> {
 }
 
 /** Attach the default assistants where Admin or Team has none yet. Returns
- *  how many it attached. */
-export async function attachDefaultAssistants(): Promise<number> {
-  const [r] = (await db.execute(
-    sql`select "public"."mantle_ws_attach_assistants"() as n`,
-  )) as unknown as { n: number }[];
-  return Number(r?.n ?? 0);
+ *  how many it attached. A definer (0305, plan v3.2 S2a a2): with no
+ *  `loginId` it is system work (the boot, systemWork in server/main.ts);
+ *  with one it runs in that login's own scope on the system pool (its
+ *  workspaces and its login set, as systemPoolTx sets a write scope), where
+ *  the definer asks the assistants area of it: the first owner at signup
+ *  and onboarding, both inside a request (S2a a1 audit M3). */
+export async function attachDefaultAssistants(loginId?: string): Promise<number> {
+  const call = sql`select "public"."mantle_ws_attach_assistants"() as n`;
+  if (loginId === undefined) {
+    const [r] = (await db.execute(call)) as unknown as { n: number }[];
+    return Number(r?.n ?? 0);
+  }
+  const scope = await loginScopeFor(loginId);
+  const ids = (xs: readonly string[]) => {
+    if (!xs.every((x) => UUID_RE.test(x))) throw new Error('attach: a workspace id');
+    return `{${xs.join(',')}}`;
+  };
+  const rows = (await db.transaction(async (tx) => {
+    await tx.execute(
+      sql`select set_config('mantle.ws', ${ids(scope.ws)}, true),
+                 set_config('mantle.mod_ws', ${ids(scope.modWs)}, true),
+                 set_config('mantle.scope_login', ${loginId}::uuid::text, true)`,
+    );
+    return tx.execute(call);
+  })) as unknown as { n: number }[];
+  return Number(rows[0]?.n ?? 0);
 }
 
 function failure(when: string, err: unknown): void {
@@ -75,7 +96,7 @@ function failure(when: string, err: unknown): void {
 
 /** Best effort: log what happened, never throw (signup and boot go on; the
  *  next boot tries again, and the integrity rows show what is left). */
-export async function migrateWorkspacesQuietly(when: string): Promise<void> {
+export async function migrateWorkspacesQuietly(when: string, loginId?: string): Promise<void> {
   try {
     const rows = await migrateWorkspaces();
     const skip = rows.find((r) => r.section === 'skip');
@@ -84,7 +105,7 @@ export async function migrateWorkspacesQuietly(when: string): Promise<void> {
       return;
     }
     if (!skip) console.log(`[workspaces] ${when}: migrated onto workspaces`);
-    const attached = await attachDefaultAssistants();
+    const attached = await attachDefaultAssistants(loginId);
     if (attached) console.log(`[workspaces] ${when}: attached ${attached} default assistant(s)`);
   } catch (err) {
     failure(when, err);
@@ -113,10 +134,11 @@ export function unmigratedBrainRefusal(why: string): string {
   return `[workspaces] this brain is not on workspaces (${why}), and this release has no rule for one: it does not start. Switch it by hand as docs/workspaces.md "Operator notes" says (mantle_ws_migrate_locked), then start it again.`;
 }
 
-/** Onboarding, after the manifest seed made the assistants. Never throws. */
-export async function attachDefaultAssistantsQuietly(when: string): Promise<void> {
+/** Onboarding, after the manifest seed made the assistants, in the scope
+ *  of the login that runs it. Never throws. */
+export async function attachDefaultAssistantsQuietly(when: string, loginId: string): Promise<void> {
   try {
-    const attached = await attachDefaultAssistants();
+    const attached = await attachDefaultAssistants(loginId);
     if (attached) console.log(`[workspaces] ${when}: attached ${attached} default assistant(s)`);
   } catch (err) {
     failure(when, err);

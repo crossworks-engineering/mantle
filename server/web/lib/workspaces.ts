@@ -981,6 +981,49 @@ const WS_REFUSALS: Readonly<Record<string, { state: string; error: () => WsError
     error: () =>
       new WsError(403, 'self_demote', 'You cannot remove yourself from the Admin workspace.'),
   },
+  // The resources and the assistant (S2a a2).
+  resources_admin_only: {
+    state: '42501',
+    error: () =>
+      new WsError(403, 'admin_only', 'Only an Admin user can change this workspace’s resources.'),
+  },
+  no_kind: { state: 'P0002', error: () => new WsError(404, 'not_found', 'No such resource kind.') },
+  assistant_exists: {
+    state: '55000',
+    error: () => new WsError(409, 'resource_exists', 'This workspace already has an assistant.'),
+  },
+  connector_exists: {
+    state: '55000',
+    error: () =>
+      new WsError(409, 'resource_exists', 'This connector is already on this workspace.'),
+  },
+  invalid_id: { state: '22023', error: () => new WsError(400, 'invalid', 'Not a valid id.') },
+  no_assistant: {
+    state: '22023',
+    error: () => new WsError(400, 'invalid', 'assistantId: no such chat assistant.'),
+  },
+  no_connector: {
+    state: '22023',
+    error: () => new WsError(400, 'invalid', 'id: no such connector.'),
+  },
+  no_write_tick: {
+    state: '22023',
+    error: () => new WsError(400, 'invalid', 'An assistant has no Write tick.'),
+  },
+  assistant_in_use: {
+    state: '55000',
+    error: () =>
+      new WsError(409, 'assistant_in_use', 'This assistant already belongs to another workspace.'),
+  },
+  assistant_has_history: { state: '55000', error: () => HISTORY() },
+  connector_not_on: {
+    state: 'P0002',
+    error: () => new WsError(404, 'not_found', 'This connector is not on this workspace.'),
+  },
+  assistant_not_on: {
+    state: 'P0002',
+    error: () => new WsError(404, 'not_found', 'This assistant is not on this workspace.'),
+  },
 };
 
 /** The one mapper: a definer's refusal (wsRefusal's table), the Admin
@@ -1307,59 +1350,28 @@ function mayManageResource(seen: Seen, kind: WorkspaceResourceKind): void {
   if (seen.row.archived_at !== null) throw archivedError();
 }
 
-/** POST /api/workspaces/:id/resources. */
+/** POST /api/workspaces/:id/resources. A definer call (mantle_ws_resource_add,
+ *  0305, plan v3.2 S2a a2) in the caller's own transaction: the login's
+ *  scope on the write role, never workspaceWriteSystem. */
 export async function addResource(
   caller: WsCaller,
   id: string,
   body: { kind: WorkspaceResourceKind; id: string; write?: boolean },
 ): Promise<WorkspaceDetailResponse> {
   const pre = await seeWorkspace(caller, id);
-  // An Admin user only (its area), whose write request runs on the system
-  // pool: refused here, in the caller's scope, before the change (arch A6;
-  // and again inside it).
+  // An Admin user only (its area): refused here, in the caller's scope,
+  // before the change (arch A6), and again by the definer.
   mayManageResource(pre, body.kind);
   const wid = pre.row.id;
-  try {
-    await db.transaction(async (tx) => {
-      const seen = await seeWorkspace(caller, wid, tx, true);
-      mayManageResource(seen, body.kind);
-      if (body.kind === 'assistant') {
-        if (seen.row.agent_id) {
-          throw new WsError(409, 'resource_exists', 'This workspace already has an assistant.');
-        }
-        await setAssistant(caller, tx, seen.row, body.id);
-        return;
-      }
-      const [g] = await rows<{ slug: string }>(
-        tx,
-        sql`select slug from tool_groups
-             where owner_id = ${caller.anchorId} and slug = ${body.id} and integration is not null`,
-      );
-      if (!g) throw new WsError(400, 'invalid', 'id: no such connector.');
-      const write = body.write ?? false;
-      const added = await rows<{ id: string }>(
-        tx,
-        sql`insert into workspace_resources (workspace_id, type, ref_id, write, added_by)
-            values (${wid}, 'connector', ${g.slug}, ${write}, ${caller.loginId})
-            on conflict (workspace_id, type, ref_id) do nothing
-            returning id`,
-      );
-      if (added.length === 0) {
-        throw new WsError(409, 'resource_exists', 'This connector is already on this workspace.');
-      }
-      await event(tx, wid, caller.loginId, 'resource.add', {
-        kind: 'connector',
-        id: g.slug,
-        write,
-      });
-    });
-  } catch (err) {
-    throw assistantError(err) ?? err;
-  }
+  await resourceDefiner(
+    sql`select "public"."mantle_ws_resource_add"(${caller.anchorId}::uuid, ${wid}::uuid,
+                 ${body.kind}, ${body.id}, ${body.write ?? false})`,
+  );
   return reread(caller, wid);
 }
 
-/** PATCH /api/workspaces/:id/resources/:kind/:id: the Write tick. */
+/** PATCH /api/workspaces/:id/resources/:kind/:id: the Write tick
+ *  (mantle_ws_resource_set_write, 0305). */
 export async function patchResource(
   caller: WsCaller,
   id: string,
@@ -1372,27 +1384,15 @@ export async function patchResource(
   // An Admin user only, refused before the change (see addResource).
   mayManageResource(pre, k);
   const wid = pre.row.id;
-  await db.transaction(async (tx) => {
-    const seen = await seeWorkspace(caller, wid, tx, true);
-    mayManageResource(seen, k);
-    if (k === 'assistant') {
-      throw new WsError(400, 'invalid', 'An assistant has no Write tick.');
-    }
-    const done = await rows<{ id: string }>(
-      tx,
-      sql`update workspace_resources set write = ${write}
-           where workspace_id = ${wid} and type = 'connector' and ref_id = ${refId}
-          returning id`,
-    );
-    if (done.length === 0) {
-      throw new WsError(404, 'not_found', 'This connector is not on this workspace.');
-    }
-    await event(tx, wid, caller.loginId, 'resource.update', { kind: k, id: refId, write });
-  });
+  await resourceDefiner(
+    sql`select "public"."mantle_ws_resource_set_write"(${caller.anchorId}::uuid, ${wid}::uuid,
+                 ${k}, ${refId}, ${write})`,
+  );
   return reread(caller, wid);
 }
 
-/** DELETE /api/workspaces/:id/resources/:kind/:id. */
+/** DELETE /api/workspaces/:id/resources/:kind/:id
+ *  (mantle_ws_resource_remove, 0305). */
 export async function removeResource(
   caller: WsCaller,
   id: string,
@@ -1404,28 +1404,21 @@ export async function removeResource(
   // An Admin user only, refused before the change (see addResource).
   mayManageResource(pre, k);
   const wid = pre.row.id;
-  await db.transaction(async (tx) => {
-    const seen = await seeWorkspace(caller, wid, tx, true);
-    mayManageResource(seen, k);
-    if (k === 'assistant') {
-      if (seen.row.agent_id !== refId.toLowerCase()) {
-        throw new WsError(404, 'not_found', 'This assistant is not on this workspace.');
-      }
-      await setAssistant(caller, tx, seen.row, null);
-      return;
-    }
-    const done = await rows<{ id: string }>(
-      tx,
-      sql`delete from workspace_resources
-           where workspace_id = ${wid} and type = 'connector' and ref_id = ${refId}
-          returning id`,
-    );
-    if (done.length === 0) {
-      throw new WsError(404, 'not_found', 'This connector is not on this workspace.');
-    }
-    await event(tx, wid, caller.loginId, 'resource.remove', { kind: k, id: refId });
-  });
+  await resourceDefiner(
+    sql`select "public"."mantle_ws_resource_remove"(${caller.anchorId}::uuid, ${wid}::uuid,
+                 ${k}, ${refId})`,
+  );
   return reread(caller, wid);
+}
+
+/** A resource definer (0305) in its own transaction, its refusal mapped
+ *  (wsRefusal's table, then the assistant's constraints). */
+async function resourceDefiner(call: ReturnType<typeof sql>): Promise<void> {
+  try {
+    await db.transaction((tx) => usersDefiner(tx, call));
+  } catch (err) {
+    throw assistantError(err) ?? err;
+  }
 }
 
 function resourceKind(kind: string): WorkspaceResourceKind {

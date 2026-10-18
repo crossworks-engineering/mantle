@@ -64,8 +64,9 @@ const journal = (
 ).entries;
 const at = journal.findIndex((e) => e.tag === TAG);
 
-/** The one actor the SQL allowlist takes (mantle_ws_system_work, 0305). */
+/** The actors the SQL allowlist takes (mantle_ws_system_work, 0305). */
 const CLEAR_TICKS = 'system:ws-clear-ticks';
+const BOOT = 'system:boot:migrate-workspaces';
 
 /** Every function that writes workspaces, workspace_users, workspace_events
  *  or workspace_resources, with its rule or its named exemption (plan v3.2,
@@ -78,7 +79,11 @@ const WRITERS: Readonly<Record<string, string>> = {
   mantle_ws_remove_user: 'rule: the acting login, or system work (0305)',
   mantle_ws_private_workspace: 'rule: the acting login’s own, or system work (0305)',
   mantle_workspace_event: 'rule: refused with no acting login unless system work (0305)',
-  mantle_ws_attach_assistants: 'S2a a2: a definer with the rule (invoker until then)',
+  mantle_ws_put_assistant:
+    'private helper (no role): THE body that puts an assistant on a workspace; called by mantle_ws_set_assistant, mantle_ws_resource_add, mantle_ws_resource_remove and mantle_ws_attach_assistants, each with the rule (0305, S2a a2)',
+  mantle_ws_resource_add: 'rule: the acting login, or system work (0305, S2a a2)',
+  mantle_ws_resource_set_write: 'rule: the acting login, or system work (0305, S2a a2)',
+  mantle_ws_resource_remove: 'rule: the acting login, or system work (0305, S2a a2)',
   mantle_bridge_login: 'exemption until S8b: the runtime role only, its three callers pinned',
   mantle_bridge_connector: 'exemption: trigger only, its trigger dropped by the switch',
   mantle_ws_team_normal: 'exemption: migrator only (the switch)',
@@ -121,7 +126,11 @@ describe.skipIf(!URL)('the workspace user definers (S2a a1)', () => {
     out: randomUUID(), // member, in no workspace
     target: randomUUID(), // member, in no workspace: the one added
     priv: randomUUID(), // member: its private workspace is made here
+    noConn: randomUUID(), // role admin, in Admin, the connectors area off
+    noAsst: randomUUID(), // role admin, in Admin, the assistants area off
   };
+  const CONN = `${tag}-conn`; // a connector of the brain
+  const AG = { a: randomUUID(), b: randomUUID() }; // chat assistants, no workspace
 
   /** `q` in a transaction rolled back after it, with `settings` set
    *  transaction-local first: its result, or its error's SQLSTATE and text. */
@@ -215,7 +224,8 @@ describe.skipIf(!URL)('the workspace user definers (S2a a1)', () => {
     process.env.DATABASE_URL = scratch.url;
     process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
     const email = (k: string) => `${tag}-${k}@example.invalid`;
-    const role = (k: string) => (k.startsWith('adm') || k === 'noUsers' ? 'admin' : 'member');
+    const role = (k: string) =>
+      k.startsWith('adm') || ['noUsers', 'noConn', 'noAsst'].includes(k) ? 'admin' : 'member';
     for (const [k, id] of Object.entries(L)) {
       await sql`insert into auth.users (id, email, password_hash, role, display_name)
                 values (${id}, ${email(k)}, 'x', ${role(k)}, ${k})`;
@@ -231,6 +241,16 @@ describe.skipIf(!URL)('the workspace user definers (S2a a1)', () => {
     // SQL allowlist).
     await sql`update workspace_users set limits = ${sql.json({ areas: { users: false } })}
                where workspace_id = ${adminWs} and login_id = ${L.noUsers}`;
+    await sql`update workspace_users set limits = ${sql.json({ areas: { connectors: false } })}
+               where workspace_id = ${adminWs} and login_id = ${L.noConn}`;
+    await sql`update workspace_users set limits = ${sql.json({ areas: { assistants: false } })}
+               where workspace_id = ${adminWs} and login_id = ${L.noAsst}`;
+    await sql`insert into tool_groups (owner_id, slug, name, tool_slugs, audience, enabled, integration)
+      values (${brain}, ${CONN}, 'Connector', ARRAY['c_do']::text[], 'admin', true,
+              ${sql.json({ service: CONN, mcp: { url: 'https://mcp.example.invalid/mcp' } })})`;
+    await sql`insert into agents (id, owner_id, slug, name, model, system_prompt, role) values
+      (${AG.a}, ${brain}, ${`${tag}-a`}, 'A', 'm', 'p', 'responder'),
+      (${AG.b}, ${brain}, ${`${tag}-b`}, 'B', 'm', 'p', 'responder')`;
     await sql`insert into workspaces (id, owner_id, name) values
       (${W}, ${brain}, ${`${tag} W`}), (${ARCH}, ${brain}, ${`${tag} Arch`})`;
     await sql`update workspaces set archived_at = now() where id = ${ARCH}`;
@@ -241,7 +261,9 @@ describe.skipIf(!URL)('the workspace user definers (S2a a1)', () => {
     // The fixture is what the cells assume.
     const admins = await sql<{ id: string }[]>`
       select login_id::text as id from workspace_users where workspace_id = ${adminWs} order by 1`;
-    expect(admins.map((r) => r.id)).toEqual([brain, L.adm, L.adm2, L.noUsers].sort());
+    expect(admins.map((r) => r.id)).toEqual(
+      [brain, L.adm, L.adm2, L.noUsers, L.noConn, L.noAsst].sort(),
+    );
   }, 300_000);
 
   afterAll(async () => {
@@ -438,7 +460,9 @@ describe.skipIf(!URL)('the workspace user definers (S2a a1)', () => {
       'system:http:no-login',
       'system:operator:repair',
       'system:script:ws-clear-member-ticks',
-      'system:boot:migrate-workspaces',
+      'system:boot:migrate-workspaces-x',
+      'system:first-owner-attach',
+      'system:onboarding-attach',
       'system:ws-clear-ticks-x',
       'system:unnamed',
       `login:rw:${L.adm}`,
@@ -457,6 +481,26 @@ describe.skipIf(!URL)('the workspace user definers (S2a a1)', () => {
         'event',
         (tx) => tx`select mantle_workspace_event(${W}::uuid, ${L.adm}::uuid, 'grant.add', '{}')`,
       ],
+      // Part a2: the resources, the assistant and the attach.
+      [
+        'resource',
+        (tx) =>
+          tx`select mantle_ws_resource_add(${brain}::uuid, ${W}::uuid, 'connector', 'x', false)`,
+      ],
+      [
+        'write tick',
+        (tx) =>
+          tx`select mantle_ws_resource_set_write(${brain}::uuid, ${W}::uuid, 'connector', 'x', true)`,
+      ],
+      [
+        'unresource',
+        (tx) => tx`select mantle_ws_resource_remove(${brain}::uuid, ${W}::uuid, 'connector', 'x')`,
+      ],
+      [
+        'assistant',
+        (tx) => tx`select mantle_ws_set_assistant(${brain}::uuid, ${W}::uuid, null::uuid)`,
+      ],
+      ['attach', (tx) => tx`select mantle_ws_attach_assistants()`],
     ];
     const allowed: string[] = [];
     // No setting at all (no actor, no write mode), then each actor alone.
@@ -508,11 +552,202 @@ describe.skipIf(!URL)('the workspace user definers (S2a a1)', () => {
     const fact = async (s: Record<string, string>) =>
       run(s, async (tx) => (await tx<{ a: boolean }[]>`select mantle_ws_system_work() as a`)[0]!.a);
     expect(await fact(sys)).toEqual({ ok: true, v: true });
+    expect(await fact(asActor(BOOT))).toEqual({ ok: true, v: true });
+    expect(await fact(asActor(BOOT, 'ro'))).toEqual({ ok: true, v: false });
     expect(await fact(asActor(CLEAR_TICKS, 'ro'))).toEqual({ ok: true, v: false });
     expect(await fact({ ...sys, 'mantle.ws': '{}' })).toEqual({ ok: true, v: false });
     expect(await fact({ ...sys, 'mantle.scope_login': L.adm })).toEqual({ ok: true, v: false });
     expect(await fact(asActor('system:workspace-write'))).toEqual({ ok: true, v: false });
     expect(await fact({})).toEqual({ ok: true, v: false });
+  });
+
+  it('resources (a2): connectors by the connectors area, the assistant by the assistants area; each refusal in the routes` order', async () => {
+    const resAdd =
+      (kind: string, ref: string, w = false, ws = W) =>
+      (tx: postgres.TransactionSql) =>
+        tx`select mantle_ws_resource_add(${brain}::uuid, ${ws}::uuid, ${kind}, ${ref}, ${w})`;
+    const tick =
+      (ref: string, w: boolean, kind = 'connector') =>
+      (tx: postgres.TransactionSql) =>
+        tx`select mantle_ws_resource_set_write(${brain}::uuid, ${W}::uuid, ${kind}, ${ref}, ${w})`;
+    const resDel = (kind: string, ref: string) => (tx: postgres.TransactionSql) =>
+      tx`select mantle_ws_resource_remove(${brain}::uuid, ${W}::uuid, ${kind}, ${ref})`;
+    const rowsOf = async (tx: postgres.TransactionSql) => ({
+      res: await tx`select type, ref_id, write, added_by::text from workspace_resources
+                     where workspace_id = ${W} order by type, ref_id`,
+      ev: await tx`select actor_id::text as actor, action, subject from workspace_events
+                    where workspace_id = ${W} and action like 'resource.%' order by id`,
+    });
+    const adm = await asLogin(L.adm);
+    // A connector with the Write tick, then cleared, then taken off.
+    const conn = await run(adm, async (tx) => {
+      await resAdd('connector', CONN, true)(tx);
+      await tick(CONN, false)(tx);
+      await resDel('connector', CONN)(tx);
+      return rowsOf(tx);
+    });
+    expect(conn).toEqual({
+      ok: true,
+      v: {
+        res: [],
+        ev: [
+          {
+            actor: L.adm,
+            action: 'resource.add',
+            subject: { kind: 'connector', id: CONN, write: true },
+          },
+          {
+            actor: L.adm,
+            action: 'resource.update',
+            subject: { kind: 'connector', id: CONN, write: false },
+          },
+          { actor: L.adm, action: 'resource.remove', subject: { kind: 'connector', id: CONN } },
+        ],
+      },
+    });
+    // The assistant: on, then off; agents.workspace_id follows.
+    const asst = await run(adm, async (tx) => {
+      await resAdd('assistant', AG.a.toUpperCase())(tx);
+      const [on] = await tx`select workspace_id::text as w from agents where id = ${AG.a}`;
+      await resDel('assistant', AG.a)(tx);
+      const [off] = await tx`select workspace_id::text as w from agents where id = ${AG.a}`;
+      return { on: on!.w, off: off!.w, ...(await rowsOf(tx)) };
+    });
+    expect(asst).toEqual({
+      ok: true,
+      v: {
+        on: W,
+        off: null,
+        res: [],
+        ev: [
+          { actor: L.adm, action: 'resource.add', subject: { kind: 'assistant', id: AG.a } },
+          { actor: L.adm, action: 'resource.remove', subject: { kind: 'assistant', id: AG.a } },
+        ],
+      },
+    });
+    // Member-negative: a Moderator of W, an Admin user without connectors
+    // (or without assistants), another login's scope: refused, nothing written.
+    refused(
+      await run(await asLogin(L.mod), resAdd('connector', CONN)),
+      '42501',
+      'resources_admin_only',
+    );
+    refused(
+      await run(await asLogin(L.mem), resAdd('connector', CONN)),
+      '42501',
+      'resources_admin_only',
+    );
+    refused(
+      await run(await asLogin(L.noConn), resAdd('connector', CONN)),
+      '42501',
+      'resources_admin_only',
+    );
+    refused(
+      await run(await asLogin(L.noAsst), resAdd('assistant', AG.a)),
+      '42501',
+      'resources_admin_only',
+    );
+    expect(await run(await asLogin(L.noAsst), resAdd('connector', CONN))).toMatchObject({
+      ok: true,
+    });
+    refused(await run(await asLogin(L.out), resAdd('connector', CONN)), 'P0002', 'not_found');
+    refused(await run(adm, resAdd('connector', CONN, false, ARCH)), '55000', 'archived');
+    refused(await run(adm, resAdd('connector', 'nope')), '22023', 'no_connector');
+    refused(await run(adm, resAdd('assistant', 'not-a-uuid')), '22023', 'invalid_id');
+    refused(await run(adm, resAdd('assistant', randomUUID())), '22023', 'no_assistant');
+    refused(await run(adm, resAdd('widget', CONN)), 'P0002', 'no_kind');
+    refused(await run(adm, tick(CONN, true)), 'P0002', 'connector_not_on');
+    refused(await run(adm, tick(AG.a, true, 'assistant')), '22023', 'no_write_tick');
+    refused(await run(adm, resDel('assistant', AG.a)), 'P0002', 'assistant_not_on');
+    refused(
+      await run(adm, async (tx) => {
+        await resAdd('connector', CONN)(tx);
+        await resAdd('connector', CONN)(tx);
+      }),
+      '55000',
+      'connector_exists',
+    );
+    refused(
+      await run(adm, async (tx) => {
+        await resAdd('assistant', AG.a)(tx);
+        await resAdd('assistant', AG.b)(tx);
+      }),
+      '55000',
+      'assistant_exists',
+    );
+    // One with history stays where it is.
+    refused(
+      await run(adm, async (tx) => {
+        await tx`select mantle_ws_set_assistant(${brain}::uuid, ${W}::uuid, ${AG.a}::uuid)`;
+        await tx`insert into chat_threads (owner_id, agent_id, title, status)
+                 values (${brain}, ${AG.a}, 't', 'open')`;
+        await tx`select mantle_ws_set_assistant(${brain}::uuid, ${W}::uuid, ${AG.b}::uuid)`;
+      }),
+      '55000',
+      'assistant_has_history',
+    );
+    refused(
+      await run(await asLogin(L.adm, { mode: 'ro' }), resAdd('connector', CONN)),
+      '42501',
+      'read_only',
+    );
+  });
+
+  it('the assistant attach (a2): system work at boot, the assistants area in a login`s scope, refused otherwise', async () => {
+    const attach = async (tx: postgres.TransactionSql) =>
+      (await tx<{ n: number }[]>`select mantle_ws_attach_assistants() as n`)[0]!.n;
+    // An Admin with no assistant and no removal event: the persona goes on.
+    const persona = randomUUID();
+    const setup = async (tx: postgres.TransactionSql) => {
+      await tx`delete from workspace_resources where workspace_id = ${adminWs} and type = 'assistant'`;
+      await tx`delete from workspace_events where workspace_id = ${adminWs} and action like 'resource.%'`;
+      await tx`insert into agents (id, owner_id, slug, name, model, system_prompt, role, audience, enabled, priority)
+               values (${persona}, ${brain}, ${`${tag}-p`}, 'P', 'm', 'p', 'responder', 'admin', true, 1000)`;
+    };
+    const after = async (tx: postgres.TransactionSql) => {
+      const n = await attach(tx);
+      const res = await tx`select ref_id, write, added_by from workspace_resources
+                            where workspace_id = ${adminWs} and type = 'assistant'`;
+      const ev = await tx`select actor_id, action, subject from workspace_events
+                           where workspace_id = ${adminWs} and action = 'resource.add'`;
+      return { n, res, ev };
+    };
+    const want = {
+      ok: true,
+      v: {
+        n: 1,
+        res: [{ ref_id: persona, write: true, added_by: null }],
+        ev: [
+          {
+            actor_id: null,
+            action: 'resource.add',
+            subject: { kind: 'assistant', id: persona, by: 'attach' },
+          },
+        ],
+      },
+    };
+    for (const set of [
+      asActor(BOOT),
+      asActor(CLEAR_TICKS),
+      await asLogin(L.adm),
+      await asLogin(L.noUsers),
+    ]) {
+      expect(await run(set, async (tx) => (await setup(tx), after(tx)))).toEqual(want);
+    }
+    refused(
+      await run(await asLogin(L.noAsst), async (tx) => (await setup(tx), attach(tx))),
+      '42501',
+      'resources_admin_only',
+    );
+    refused(
+      await run(await asLogin(L.mod), async (tx) => (await setup(tx), attach(tx))),
+      '42501',
+      'resources_admin_only',
+    );
+    refused(await run(asActor(BOOT, 'ro'), attach), '42501', 'read_only');
+    refused(await run(asActor('system:workspace-write'), attach), '42501', 'no_acting_login');
+    // Nothing to do: 0, nothing written.
+    expect(await run(asActor(BOOT), attach)).toMatchObject({ ok: true });
   });
 
   it('mantle_ws_create: the acting login`s own, on its brain; system work may make one', async () => {
@@ -667,6 +902,9 @@ describe.skipIf(!URL)('the workspace user definers (S2a a1)', () => {
       'public.mantle_ws_system_work()',
       'public.mantle_ws_acting_login(text,uuid)',
       'public.mantle_ws_user_seat(text,uuid,uuid,uuid)',
+      'public.mantle_ws_put_assistant(text,uuid,uuid,uuid,uuid,uuid,text)',
+      'public.mantle_ws_resource_seat(text,uuid,uuid,text)',
+      'public.mantle_ws_assistant_of(uuid)',
     ];
     const rows = await sql<{ fn: string; pub: boolean; may: string[] }[]>`
       select f.fn, has_function_privilege('public', p.oid, 'EXECUTE') as pub,
@@ -681,6 +919,11 @@ describe.skipIf(!URL)('the workspace user definers (S2a a1)', () => {
       'public.mantle_ws_set_moderator(uuid,uuid,uuid,boolean,text)',
       'public.mantle_ws_remove_user(uuid,uuid,uuid)',
       'public.mantle_ws_create(uuid,uuid,text,text)',
+      'public.mantle_ws_resource_add(uuid,uuid,text,text,boolean)',
+      'public.mantle_ws_resource_set_write(uuid,uuid,text,text,boolean)',
+      'public.mantle_ws_resource_remove(uuid,uuid,text,text)',
+      'public.mantle_ws_set_assistant(uuid,uuid,uuid)',
+      'public.mantle_ws_attach_assistants()',
     ];
     const defs = await sql<{ fn: string; definer: boolean; pub: boolean; path: string[] }[]>`
       select f.fn, p.prosecdef as definer, has_function_privilege('public', p.oid, 'EXECUTE') as pub,

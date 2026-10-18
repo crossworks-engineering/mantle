@@ -100,7 +100,7 @@ if (isBootSmoke()) {
 }
 
 // Arch A2a: each boot task runs as system(boot:<task>).
-const { runAsSystem, openLoginWritePool } = await import('@mantle/db');
+const { runAsSystem, openLoginWritePool, systemWork } = await import('@mantle/db');
 // Arch A2b2b: this process sends scoped login writes to the write role
 // (docs/actors.md; the connection ceiling counts its pool for each process
 // that opens it).
@@ -117,19 +117,23 @@ openLoginWritePool();
 // step runs as before, never awaited.
 // Then the authors' copies of their accepted items (W6b, plan S3): only the
 // missing ones, no LLM work, no extractor notify.
+// The boot's assistant attach is workspace system work (0305, plan v3.2 S2a
+// a2: the SQL allowlist's system:boot:migrate-workspaces): systemWork.
 const workspacesStep = () =>
-  runAsSystem('boot:migrate-workspaces', () =>
-    import('../lib/workspaces-migrate').then(async (wm) => {
-      await wm.migrateWorkspacesQuietly('boot');
-      const why = await wm.unmigratedBrainReason();
-      return why === null ? null : wm.unmigratedBrainRefusal(why);
-    }),
+  systemWork(
+    () =>
+      import('../lib/workspaces-migrate').then(async (wm) => {
+        await wm.migrateWorkspacesQuietly('boot');
+        const why = await wm.unmigratedBrainReason();
+        return why === null ? null : wm.unmigratedBrainRefusal(why);
+      }),
+    'boot:migrate-workspaces',
   ).catch((err) => {
     bootLog.error('workspaces migration failed:', err);
     return null;
   });
 const snapshotCopies = () =>
-  runAsSystem('boot:migrate-workspaces', () =>
+  runAsSystem('boot:snapshot-copies', () =>
     import('../lib/snapshot-copies')
       .then(({ makeSnapshotCopies }) => makeSnapshotCopies())
       .then((r) => {

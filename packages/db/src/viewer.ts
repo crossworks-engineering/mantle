@@ -936,10 +936,22 @@ export type AsSystemReason =
  *
  *  - `ws-clear-ticks`: pnpm -C server/web ws:clear-member-ticks
  *    (workspace-ticks.ts clearMemberTicks), S2a a1.
+ *  - `boot:migrate-workspaces`: the boot step (server/main.ts: the
+ *    assistant attach, mantle_ws_attach_assistants), S2a a2. The first
+ *    owner and onboarding attach in the login's own scope instead (the
+ *    assistants area), never as system work: both run inside a request.
  */
-export const WORKSPACE_SYSTEM_REASONS = ['ws-clear-ticks'] as const;
+export const WORKSPACE_SYSTEM_REASONS = ['ws-clear-ticks', 'boot:migrate-workspaces'] as const;
 
 export type WorkspaceSystemReason = (typeof WORKSPACE_SYSTEM_REASONS)[number];
+
+/** The login bound to this call: a login actor's, else the open scope's
+ *  (an assistant turn names its login), else null (createHomeFallback). */
+export function boundLoginId(): string | null {
+  const actor = currentActor();
+  if (actor?.kind === 'login') return actor.loginId;
+  return currentWorkspaceScope()?.loginId?.toLowerCase() ?? null;
+}
 
 /** Whether `actor` is workspace system work (WORKSPACE_SYSTEM_REASONS). */
 export function isWorkspaceSystemActor(actor: Actor | null): boolean {

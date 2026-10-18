@@ -144,7 +144,7 @@ export const RUNTIME_SYSTEM_FUNCTIONS: Readonly<Record<string, string>> = {
   'public.mantle_role_drift()':
     'the box count of role drift (scripts/arch-scoreboard-box.sh; 0304, S2a a0)',
   'public.mantle_ws_attach_assistants()':
-    'workspaces-migrate.ts attachDefaultAssistants: the default assistants at boot',
+    'workspaces-migrate.ts attachDefaultAssistants: the default assistants (a definer since 0305: system work at boot, the assistants area at signup and onboarding)',
   'public.mantle_ws_private_workspace(uuid)':
     "client.ts: the creating login's private workspace (W6b create home)",
   'public.mantle_ws_skip_reason()':

@@ -776,3 +776,18 @@ describe('the request scope (workspaces W6a)', () => {
     ).toBe(false);
   });
 });
+
+describe('workspace system work (plan v3.2 S2a)', () => {
+  it('systemWork with a workspace reason refuses inside a request slot, scope entered or not (audit L6)', async () => {
+    const v = await import('./viewer');
+    for (const reason of v.WORKSPACE_SYSTEM_REASONS) {
+      const ran = vi.fn(async () => 1);
+      await expect(v.runInRequestSlot(() => v.systemWork(ran, reason))).rejects.toThrow(
+        /outside every scope and request/,
+      );
+      expect(ran).not.toHaveBeenCalled();
+    }
+    // Outside any request or scope it runs, as the system work it names.
+    await expect(v.systemWork(async () => 7, 'ws-clear-ticks')).resolves.toBe(7);
+  });
+});
