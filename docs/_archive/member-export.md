@@ -55,15 +55,16 @@ Recorded on main (the new test overlaid on e10c740a9), then on the branch.
 On main each member test stopped at its MCP cell, so the turn cells were
 not reached there; they ran the same folder step (marked "same step").
 
-| Cell (warn and on)                                    | main                                                   | branch                                                        |
-| ----------------------------------------------------- | ------------------------------------------------------ | ------------------------------------------------------------- |
-| app_export, MCP, member reads the app, no data        | refused: createFolder: parent folder 'files' not found | ok: Files root, its private workspace, landedIn               |
-| sheet_build, MCP, member                              | refused: the same                                      | ok: Files root, its private workspace, landedIn               |
-| app_export and sheet_build, turn of R (a user)        | same step: refused                                     | ok: its private workspace (landedIn: its private create home) |
-| app_export and sheet_build, turn of H (Moderator)     | same step: refused                                     | ok: H                                                         |
-| app_export and sheet_build, owner, MCP and Admin turn | ok: Auto-filed / Exports                               | ok: the same, and landedIn names Admin (a field more)         |
-| process_extraction, turn of R, member reads the note  | ok: fired 1                                            | refused: You cannot change this item in your workspaces.      |
-| process_extraction, MCP, Admin user, noEdit place     | ok                                                     | refused: the same words (precheck-removal.db.test.ts)         |
+| Cell (warn and on)                                    | main                                                   | branch                                                                           |
+| ----------------------------------------------------- | ------------------------------------------------------ | -------------------------------------------------------------------------------- |
+| app_export, MCP, member reads the app, no data        | refused: createFolder: parent folder 'files' not found | ok: Files root, its private workspace, landedIn                                  |
+| sheet_build, MCP, member                              | refused: the same                                      | ok: Files root, its private workspace, landedIn                                  |
+| app_export and sheet_build, turn of R (a user)        | same step: refused                                     | ok: its private workspace (landedIn: its private create home)                    |
+| app_export and sheet_build, turn of H (Moderator)     | same step: refused                                     | ok: H                                                                            |
+| app_export and sheet_build, owner, MCP and Admin turn | ok: Auto-filed / Exports                               | ok: the same, and landedIn names Admin (a field more)                            |
+| process_extraction, turn of R, member reads the note  | ok: fired 1                                            | refused: You cannot change this item in your workspaces.                         |
+| process_extraction, MCP, Admin user, noEdit place     | ok                                                     | refused: the same words (precheck-removal.db.test.ts)                            |
+| process_extraction sweep, any workspace scope         | signals every eligible item the scope reads            | signals only the eligible items the scope may edit (the owner's Admin scope too) |
 
 The process_extraction answers are narrower (an edit, not a read). The
 export answers are wider for members by the owner's decision: a member may
@@ -75,6 +76,48 @@ Unchanged: an outsider (an app homed where the member reads nothing) is
 refused as not found, MCP and turn; a reader asking the app's data is
 refused (edit); a login in no workspace lists no tools (sheet_build: Method
 not found).
+
+## Fix round 1 (audit at 64ed94267: 8/10, one MED, five LOWs)
+
+- M1, a taken name: the Files root is one folder for every workspace, and
+  the name check spans them all, so a member's export named like another
+  member's file was refused "already exists in this folder" (and so showed
+  the name was taken in a workspace it cannot read), and the same export
+  twice always failed. Now `saveExport` never goes over a file: it passes
+  over a taken name (`fileNameTaken`, existence only) to the next free one
+  (`q1.xlsx`, `q1-2.xlsx` .. `q1-20.xlsx`, then one with a time stamp,
+  `exportNames`), the same whoever holds it; a create that takes the name in
+  between moves it to the next one while a spooled package is still there;
+  the one refusal when none is free names only the caller's own filename
+  (`export: no free name for ...`). A spooled package is removed on every
+  failure path. The suffix shows that a name is taken, as file_create's
+  refusal already did for any member; it shows nothing of whose or where.
+- L1, tool text: app_export, export_node, sheet_build and the export tool
+  group say Auto-filed / Exports for an Admin user, else the top of Files;
+  app_export says a member gets no draft.
+- L2, the sweep: asserts ok, and a sweep in a turn of H signals an eligible
+  item the member may change there.
+- L3, exportFolder's branches: the owner in a turn of M (Moderator) and of U
+  (a user), and an Admin user that is not its Moderator (cells below).
+- L4: a landedIn read that fails after the file is made returns landedIn
+  null; the export stands.
+- L5: the sweep row above, and the owner rows below.
+
+Recorded on 64ed94267 (the new cells overlaid, commit e4fb86993 on the
+workstation only), then on the fix:
+
+| Cell (warn and on)                                        | 64ed94267                                                      | fix round 1                                  |
+| --------------------------------------------------------- | -------------------------------------------------------------- | -------------------------------------------- |
+| sheet_build, member2 exports a name member's file holds   | refused: 'name' already exists in this folder                  | ok: `name-2`, its private workspace; no leak |
+| sheet_build and app_export, one member, same name twice   | not reached (the row above stops it); the audit: ConflictError | ok: `name-2` (and on); the first not changed |
+| sheet_build, owner, turn of M (it moderates M)            | ok: M, at the Files root                                       | the same                                     |
+| sheet_build, owner, turn of U (a user of U, no Moderator) | refused: its create home is Admin                              | the same (nothing made)                      |
+| sheet_build, MCP, Admin user that is not its Moderator    | on: refused; warn: Admin, a miss noted                         | the same                                     |
+
+The last two are the database's create check, unchanged: an Admin user has
+no private workspace (its create home is Admin), so where it may not create
+in Admin its export is refused, as any create there is. Open for the owner:
+whether such a call should fall back to a workspace the turn may write.
 
 ## Tests
 
