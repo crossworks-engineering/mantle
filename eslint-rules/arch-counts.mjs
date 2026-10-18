@@ -827,16 +827,24 @@ export function keptNotes(notes, oldPins, now) {
 
 /**
  * The write-role gap reruns (plan v3 S3, the `gapTables` pin): each role
- * switch in counted source (`set local role X`, `set_config('role', X, ...)`,
- * comments blanked) to a role other than the pool's own (the write role,
- * the workspace role). Main's one was the
- * checked rerun on a gap table as mantle_gap_writer (client.ts); S3 closed
- * the gap tables and removed it, so 0. It counts the switch itself, not a
- * list of tables: renaming a list or a role const does not hide a rerun,
- * since any target but the write role counts.
+ * switch in counted source (`set local role X`, `set role X`, `set session
+ * role X`, `set role to X`, `set_config('role', X, ...)`, comments blanked)
+ * to a role other than the pool's own (the write role, the workspace role).
+ * Main's one was the checked rerun on a gap table as mantle_gap_writer
+ * (client.ts); S3 closed the gap tables and removed it, so 0. It counts the
+ * switch itself, not a list of tables: renaming a list or a role const does
+ * not hide a rerun, since any target but the pool's own counts.
+ *
+ * Fix round 4: the plain and session forms (`SET ROLE`, `SET SESSION
+ * ROLE`) count too. Their target must read as a role name (ROLE_NAME: an
+ * interpolation, a name with an underscore as every role here has,
+ * postgres, quoted or not), so a column update (`set role = 'admin'`) and
+ * prose in a message (`SET ROLE to the shared viewer roles`) are no switch.
  */
 export function gapRerunCount(files) {
-  const SWITCH = /set\s+local\s+role\s+([^\s`'";)]+)|set_config\(\s*'role'\s*,\s*([^,)]+)/gi;
+  const SWITCH =
+    /\bset\s+(?:local\s+|session\s+)?role\s+(?:to\s+)?("?[^\s`'";)=]+"?)|set_config\(\s*'role'\s*,\s*([^,)]+)/gi;
+  const ROLE_NAME = /^["']?(?:\$\{[^}]+\}|[a-z0-9]*_[a-z0-9_]*|postgres)["']?$/i;
   // The pool's own roles are no rerun: the write role, and the workspace
   // role a read switches to (a test grid's reads, matrix/test-support).
   const WRITE = /^['"]?(?:\$\{(?:WRITE|VIEW)_ROLE\}|mantle_(?:write|view)_user)['"]?$/;
@@ -844,6 +852,7 @@ export function gapRerunCount(files) {
   for (const { text } of files) {
     for (const m of stripComments(text).matchAll(SWITCH)) {
       const target = (m[1] ?? m[2] ?? '').trim();
+      if (m[1] !== undefined && !ROLE_NAME.test(target)) continue;
       if (!WRITE.test(target) && target.toLowerCase() !== 'none') n++;
     }
   }

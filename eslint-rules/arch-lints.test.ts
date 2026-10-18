@@ -1075,4 +1075,22 @@ describe('gapRerunCount (plan v3 S3 fix round 3)', () => {
     expect(of('await tx`set local role mantle_view_user`')).toBe(0);
     expect(of('// set local role mantle_gap_writer')).toBe(0);
   });
+  it('counts SET ROLE and SET SESSION ROLE too (fix round 4)', () => {
+    expect(of('await tx`SET ROLE mantle_gap_writer`')).toBe(1);
+    expect(of('t.unsafe(`set session role ${GAP_WRITER_ROLE}`)')).toBe(1);
+    expect(of('t.unsafe(`SET SESSION ROLE ${RENAMED}`)')).toBe(1);
+    expect(of("t.unsafe('set role to mantle_gap_writer')")).toBe(1);
+    expect(of('await tx`SET ROLE "mantle_gap_writer"`')).toBe(1);
+    expect(of('await tx`SET ROLE postgres`')).toBe(1);
+    // A column update and prose in a message are no switch.
+    expect(of("await sql`update auth.users set role = 'admin' where id = ${z}`")).toBe(0);
+    expect(of('await sql`update auth.users set role = ${role} where id = ${id}`')).toBe(0);
+    expect(of("warn('a login can SET ROLE to the shared viewer roles')")).toBe(0);
+    // The pool's own roles and a reset are not a rerun; RESET ROLE is no switch.
+    expect(of('await tx`SET ROLE mantle_write_user`')).toBe(0);
+    expect(of('await tx`set session role mantle_view_user`')).toBe(0);
+    expect(of('await tx`SET ROLE NONE`')).toBe(0);
+    expect(of('await tx`reset role`')).toBe(0);
+    expect(of('// SET SESSION ROLE mantle_gap_writer')).toBe(0);
+  });
 });
