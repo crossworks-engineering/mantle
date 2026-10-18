@@ -11,13 +11,15 @@
  *    the routes answered in, each change with its event row;
  *  - member-negative: a Moderator of W cannot add to Admin; an Admin user
  *    without the users area cannot tick or add to Admin;
- *  - with no acting login every user definer, mantle_ws_create,
- *    mantle_ws_private_workspace and mantle_workspace_event refuse every
- *    actor but the SQL allowlist's (system:ws-clear-ticks): the asSystem
- *    exits (system:workspace-write, system:admin-area, system:app-data and
- *    every other reason), system:http:*, system:test, system:operator:*, a
- *    login actor with no scope, no actor at all; the allowlisted actor is
- *    refused with write_mode 'ro' and inside a scope;
+ *  - with no acting login every workspace definer refuses every actor but
+ *    the SQL allowlist's pair for it (system:ws-clear-ticks on
+ *    mantle_ws_set_moderator, system:boot:migrate-workspaces on
+ *    mantle_ws_attach_assistants; a listed actor on any other definer is
+ *    refused): the asSystem exits (system:workspace-write,
+ *    system:admin-area, system:app-data and every other reason),
+ *    system:http:*, system:test, system:operator:*, a login actor with no
+ *    scope, no actor at all; a listed actor is refused with write_mode 'ro'
+ *    and inside a scope;
  *  - another brain, a disabled acting login, a read-only one: refused;
  *  - the TypeScript side: systemWork('ws-clear-ticks') sets mantle.actor on
  *    the system pool in every check mode (test:actor-off runs this file
@@ -29,7 +31,12 @@
  *    writes the four workspace tables is a rule or a named exemption
  *    (workspaceTableWriterFns), each exemption's cell;
  *  - the renumber proof: 0305's `when` is above 0304's, and a database at
- *    0304 applies 0305 and only it.
+ *    0304 applies 0305 and only it;
+ *  - the rollback (plan rule 2): the older image's calls (createHomeFallback
+ *    with no scope login; an unscoped create, event and attach) are refused
+ *    under 0305 and work again after rollback/<tag>.revert.sql; the revert
+ *    puts the four functions back byte for byte as a database at 0304 has
+ *    them, takes 0305 off the ledger, and a roll forward applies it again.
  *
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/db/src/ws-user-definers.db.test.ts
  */
@@ -56,6 +63,23 @@ const URL = process.env.MANTLE_TEST_DATABASE_URL;
 const DIR = join(__dirname, '..', 'migrations');
 const TAG = '0305_ws_user_definers';
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
+/** What an operator runs before pinning the image one release back. */
+const REVERT = join(__dirname, '..', 'rollback', `${TAG}.revert.sql`);
+
+/** The revert's statements, split as the runner splits a migration. */
+const revertStatements = (): string[] =>
+  readFileSync(REVERT, 'utf8')
+    .split('--> statement-breakpoint')
+    .map((st) => st.trim())
+    .filter((st) => st.replace(/^--.*$/gm, '').trim() !== '');
+
+/** The four functions 0305 tightened that the older image calls. */
+const TIGHTENED = [
+  'public.mantle_ws_create(uuid,uuid,text,text)',
+  'public.mantle_ws_private_workspace(uuid)',
+  'public.mantle_workspace_event(uuid,uuid,text,jsonb)',
+  'public.mantle_ws_attach_assistants()',
+];
 
 const journal = (
   JSON.parse(readFileSync(join(DIR, 'meta', '_journal.json'), 'utf8')) as {
@@ -64,7 +88,8 @@ const journal = (
 ).entries;
 const at = journal.findIndex((e) => e.tag === TAG);
 
-/** The actors the SQL allowlist takes (mantle_ws_system_work, 0305). */
+/** The actors the SQL allowlist takes (mantle_ws_system_work, 0305), each
+ *  on its one definer. */
 const CLEAR_TICKS = 'system:ws-clear-ticks';
 const BOOT = 'system:boot:migrate-workspaces';
 
@@ -73,17 +98,17 @@ const BOOT = 'system:boot:migrate-workspaces';
  *  "Every writer of the four tables"). A new one fails the catalog cell
  *  until it is added here with a rule or an F-reviewed exemption. */
 const WRITERS: Readonly<Record<string, string>> = {
-  mantle_ws_create: 'rule: the acting login, or system work (0305)',
-  mantle_ws_add_user: 'rule: the acting login, or system work (0305)',
-  mantle_ws_set_moderator: 'rule: the acting login, or system work (0305)',
-  mantle_ws_remove_user: 'rule: the acting login, or system work (0305)',
-  mantle_ws_private_workspace: 'rule: the acting login’s own, or system work (0305)',
-  mantle_workspace_event: 'rule: refused with no acting login unless system work (0305)',
+  mantle_ws_create: 'rule: the acting login, no system work (0305)',
+  mantle_ws_add_user: 'rule: the acting login, no system work (0305)',
+  mantle_ws_set_moderator: 'rule: the acting login, or system:ws-clear-ticks (0305)',
+  mantle_ws_remove_user: 'rule: the acting login, no system work (0305)',
+  mantle_ws_private_workspace: 'rule: the acting login’s own, no system work (0305)',
+  mantle_workspace_event: 'rule: refused with no acting login (0305)',
   mantle_ws_put_assistant:
     'private helper (no role): THE body that puts an assistant on a workspace; called by mantle_ws_set_assistant, mantle_ws_resource_add, mantle_ws_resource_remove and mantle_ws_attach_assistants, each with the rule (0305, S2a a2)',
-  mantle_ws_resource_add: 'rule: the acting login, or system work (0305, S2a a2)',
-  mantle_ws_resource_set_write: 'rule: the acting login, or system work (0305, S2a a2)',
-  mantle_ws_resource_remove: 'rule: the acting login, or system work (0305, S2a a2)',
+  mantle_ws_resource_add: 'rule: the acting login, no system work (0305, S2a a2)',
+  mantle_ws_resource_set_write: 'rule: the acting login, no system work (0305, S2a a2)',
+  mantle_ws_resource_remove: 'rule: the acting login, no system work (0305, S2a a2)',
   mantle_bridge_login: 'exemption until S8b: the runtime role only, its three callers pinned',
   mantle_bridge_connector: 'exemption: trigger only, its trigger dropped by the switch',
   mantle_ws_team_normal: 'exemption: migrator only (the switch)',
@@ -99,6 +124,12 @@ describe('0305 is stamped above every `when` before it (renumber proof)', () => 
     expect(at).toBeGreaterThan(0);
     expect(journal[at]!.when).toBeGreaterThan(journal[at - 1]!.when);
     expect(journal[at]!.when).toBeGreaterThan(1790197560000);
+  });
+
+  it('the revert takes this migration off the ledger by its own `when`', () => {
+    expect(readFileSync(REVERT, 'utf8')).toContain(
+      `DELETE FROM "drizzle"."__drizzle_migrations" WHERE "created_at" = ${journal[at]!.when};`,
+    );
   });
 });
 
@@ -449,9 +480,11 @@ describe.skipIf(!URL)('the workspace user definers (S2a a1)', () => {
     );
   });
 
-  it('no acting login: every user definer and the other three writers refuse every actor but the allowlist`s', async () => {
+  it('no acting login: every workspace definer refuses every actor but its own allowlist pair (a listed actor on another definer too)', async () => {
     const actors = [
       '',
+      CLEAR_TICKS,
+      BOOT,
       'system:workspace-write',
       'system:admin-area',
       'system:app-data',
@@ -502,6 +535,9 @@ describe.skipIf(!URL)('the workspace user definers (S2a a1)', () => {
       ],
       ['attach', (tx) => tx`select mantle_ws_attach_assistants()`],
     ];
+    // The two pairs the allowlist takes (their cells follow); every other
+    // pair is refused, a listed actor on another definer included.
+    const pairs = new Set([`${CLEAR_TICKS} tick`, `${BOOT} attach`]);
     const allowed: string[] = [];
     // No setting at all (no actor, no write mode), then each actor alone.
     const settings: Array<[string, Record<string, string>]> = [
@@ -510,6 +546,7 @@ describe.skipIf(!URL)('the workspace user definers (S2a a1)', () => {
     ];
     for (const [actor, set] of settings) {
       for (const [name, q] of writers) {
+        if (pairs.has(`${actor} ${name}`)) continue;
         const out = await run(set, q);
         if (out.ok || out.state !== '42501' || !/no acting login|only the acting/.test(out.msg)) {
           allowed.push(`${actor} ${name}: ${JSON.stringify(out)}`);
@@ -519,7 +556,7 @@ describe.skipIf(!URL)('the workspace user definers (S2a a1)', () => {
     expect(allowed).toEqual([]);
   });
 
-  it('the allowlisted actor is system work: allowed with no scope; refused read-only or inside a scope', async () => {
+  it('a listed actor is system work on its one definer: allowed with no scope; refused read-only, inside a scope, or on another definer', async () => {
     const sys = asActor(CLEAR_TICKS);
     expect(
       await run(sys, andAfter(W, L.mem, setMod(W, L.mem, true, 'ws:clear-member-ticks'))),
@@ -534,10 +571,10 @@ describe.skipIf(!URL)('the workspace user definers (S2a a1)', () => {
         },
       },
     });
-    expect(await run(sys, andAfter(W, L.target, add(W, L.target, false)))).toMatchObject({
-      ok: true,
-      v: { row: { moderator: false, added_by: null }, ev: { actor: null, action: 'user.add' } },
-    });
+    // On another definer: refused, nothing written.
+    refused(await run(sys, add(W, L.target, false)), '42501', 'no_acting_login');
+    refused(await run(sys, remove(W, L.mem)), '42501', 'no_acting_login');
+    refused(await run(asActor(BOOT), setMod(W, L.mem, true)), '42501', 'no_acting_login');
     // The invariants hold for system work too.
     refused(await run(sys, setMod(adminWs, L.adm, false)), '55000', 'admin_workspace');
     refused(await run(sys, setMod(ARCH, L.mod, false)), '55000', 'archived');
@@ -549,16 +586,42 @@ describe.skipIf(!URL)('the workspace user definers (S2a a1)', () => {
       '42501',
       'no_acting_login',
     );
-    const fact = async (s: Record<string, string>) =>
-      run(s, async (tx) => (await tx<{ a: boolean }[]>`select mantle_ws_system_work() as a`)[0]!.a);
-    expect(await fact(sys)).toEqual({ ok: true, v: true });
-    expect(await fact(asActor(BOOT))).toEqual({ ok: true, v: true });
-    expect(await fact(asActor(BOOT, 'ro'))).toEqual({ ok: true, v: false });
-    expect(await fact(asActor(CLEAR_TICKS, 'ro'))).toEqual({ ok: true, v: false });
-    expect(await fact({ ...sys, 'mantle.ws': '{}' })).toEqual({ ok: true, v: false });
-    expect(await fact({ ...sys, 'mantle.scope_login': L.adm })).toEqual({ ok: true, v: false });
-    expect(await fact(asActor('system:workspace-write'))).toEqual({ ok: true, v: false });
-    expect(await fact({})).toEqual({ ok: true, v: false });
+    const fact = async (s: Record<string, string>, fn: string) =>
+      run(
+        s,
+        async (tx) => (await tx<{ a: boolean }[]>`select mantle_ws_system_work(${fn}) as a`)[0]!.a,
+      );
+    const TICK = 'mantle_ws_set_moderator';
+    const ATTACH = 'mantle_ws_attach_assistants';
+    expect(await fact(sys, TICK)).toEqual({ ok: true, v: true });
+    expect(await fact(asActor(BOOT), ATTACH)).toEqual({ ok: true, v: true });
+    // Each actor on its one definer only.
+    for (const fn of [
+      ATTACH,
+      'mantle_ws_add_user',
+      'mantle_ws_remove_user',
+      'mantle_ws_create',
+      'mantle_ws_private_workspace',
+      'mantle_workspace_event',
+      'mantle_ws_resource_add',
+      'mantle_ws_resource_set_write',
+      'mantle_ws_resource_remove',
+      'mantle_ws_set_assistant',
+    ]) {
+      expect(await fact(sys, fn), fn).toEqual({ ok: true, v: false });
+    }
+    for (const fn of [TICK, 'mantle_ws_add_user', 'mantle_ws_create', 'mantle_ws_set_assistant']) {
+      expect(await fact(asActor(BOOT), fn), fn).toEqual({ ok: true, v: false });
+    }
+    expect(await fact(asActor(BOOT, 'ro'), ATTACH)).toEqual({ ok: true, v: false });
+    expect(await fact(asActor(CLEAR_TICKS, 'ro'), TICK)).toEqual({ ok: true, v: false });
+    expect(await fact({ ...sys, 'mantle.ws': '{}' }, TICK)).toEqual({ ok: true, v: false });
+    expect(await fact({ ...sys, 'mantle.scope_login': L.adm }, TICK)).toEqual({
+      ok: true,
+      v: false,
+    });
+    expect(await fact(asActor('system:workspace-write'), TICK)).toEqual({ ok: true, v: false });
+    expect(await fact({}, TICK)).toEqual({ ok: true, v: false });
   });
 
   it('resources (a2): connectors by the connectors area, the assistant by the assistants area; each refusal in the routes` order', async () => {
@@ -726,12 +789,7 @@ describe.skipIf(!URL)('the workspace user definers (S2a a1)', () => {
         ],
       },
     };
-    for (const set of [
-      asActor(BOOT),
-      asActor(CLEAR_TICKS),
-      await asLogin(L.adm),
-      await asLogin(L.noUsers),
-    ]) {
+    for (const set of [asActor(BOOT), await asLogin(L.adm), await asLogin(L.noUsers)]) {
       expect(await run(set, async (tx) => (await setup(tx), after(tx)))).toEqual(want);
     }
     refused(
@@ -746,11 +804,13 @@ describe.skipIf(!URL)('the workspace user definers (S2a a1)', () => {
     );
     refused(await run(asActor(BOOT, 'ro'), attach), '42501', 'read_only');
     refused(await run(asActor('system:workspace-write'), attach), '42501', 'no_acting_login');
+    // The other listed actor: not on this definer.
+    refused(await run(asActor(CLEAR_TICKS), attach), '42501', 'no_acting_login');
     // Nothing to do: 0, nothing written.
     expect(await run(asActor(BOOT), attach)).toMatchObject({ ok: true });
   });
 
-  it('mantle_ws_create: the acting login`s own, on its brain; system work may make one', async () => {
+  it('mantle_ws_create: the acting login`s own, on its brain; no system work makes one', async () => {
     const mod = await asLogin(L.mod);
     const made = await run(mod, async (tx) => {
       const [r] = await tx<{ id: string }[]>`
@@ -772,12 +832,16 @@ describe.skipIf(!URL)('the workspace user definers (S2a a1)', () => {
       (tx) => tx`select mantle_ws_create(${brain}::uuid, ${L.mem}::uuid, 'X', '')`,
     );
     expect(loginOnly).toMatchObject({ ok: false, state: '42501' });
-    expect(
-      await run(
-        asActor(CLEAR_TICKS),
-        (tx) => tx`select mantle_ws_create(${brain}::uuid, ${L.mod}::uuid, 'Sys', '')`,
-      ),
-    ).toMatchObject({ ok: true });
+    for (const actor of [CLEAR_TICKS, BOOT]) {
+      refused(
+        await run(
+          asActor(actor),
+          (tx) => tx`select mantle_ws_create(${brain}::uuid, ${L.mod}::uuid, 'Sys', '')`,
+        ),
+        '42501',
+        'no_acting_login',
+      );
+    }
   });
 
   it('mantle_ws_private_workspace makes only the acting login`s own; createHomeIntent sets that login', async () => {
@@ -814,6 +878,56 @@ describe.skipIf(!URL)('the workspace user definers (S2a a1)', () => {
       (tx) => tx`select mantle_workspace_event(${W}::uuid, ${L.mod}::uuid, 'grant.add', '{}')`,
     );
     expect(ok).toMatchObject({ ok: true });
+  });
+
+  it('rollback: the older image`s calls are refused under 0305 and work again after the revert (rolled back)', async () => {
+    const fresh = randomUUID();
+    const mk = async (tx: postgres.TransactionSql) => {
+      await tx`insert into auth.users (id, email, password_hash, role, display_name)
+               values (${fresh}, ${`${tag}-fresh@example.invalid`}, 'x', 'member', 'fresh')`;
+    };
+    const revert = async (tx: postgres.TransactionSql) => {
+      for (const st of revertStatements()) await tx.unsafe(st);
+    };
+    const priv = async (tx: postgres.TransactionSql) =>
+      (
+        await tx<
+          { ws: string | null }[]
+        >`select mantle_ws_private_workspace(${fresh}::uuid)::text as ws`
+      )[0]!.ws;
+    // createHomeFallback as the older image runs it: the system pool, the
+    // request's login actor, no scope login. Under 0305: refused, so every
+    // create that needs the private workspace is refused.
+    const older = asActor(`login:rw:${fresh}`);
+    expect(await run(older, async (tx) => (await mk(tx), priv(tx)))).toMatchObject({
+      ok: false,
+      state: '42501',
+    });
+    expect(
+      await run(older, async (tx) => {
+        await mk(tx);
+        await revert(tx);
+        const ws = await priv(tx);
+        const [p] = await tx<{ ws: string }[]>`
+          select workspace_id::text as ws from private_workspaces where login_id = ${fresh}`;
+        return { made: typeof ws === 'string', kept: p?.ws === ws };
+      }),
+    ).toEqual({ ok: true, v: { made: true, kept: true } });
+    // The other three unscoped, by an actor no allowlist pair names (the
+    // older image's onboarding attach): refused under 0305 (the cell "no
+    // acting login" above), back to their 0293, 0279 and 0260 answers.
+    expect(
+      await run(asActor('system:onboarding-attach'), async (tx) => {
+        await revert(tx);
+        const [c] = await tx<{ id: string }[]>`
+          select mantle_ws_create(${brain}::uuid, ${L.mod}::uuid, ${`${tag} rb`}, '')::text as id`;
+        await tx`select mantle_workspace_event(${W}::uuid, ${L.mod}::uuid, 'grant.add', '{}')`;
+        const [n] = await tx<{ n: number }[]>`select mantle_ws_attach_assistants() as n`;
+        return { created: typeof c?.id === 'string', attached: typeof n?.n === 'number' };
+      }),
+    ).toEqual({ ok: true, v: { created: true, attached: true } });
+    // Rolled back: 0305's bodies are in place for the cells after this one.
+    expect(await run({}, priv)).toMatchObject({ ok: false, state: '42501' });
   });
 
   it('TypeScript: systemWork(ws-clear-ticks) sets mantle.actor on the system pool in every check mode', async () => {
@@ -899,7 +1013,7 @@ describe.skipIf(!URL)('the workspace user definers (S2a a1)', () => {
 
   it('catalog: the private helpers run by no role; the user definers are definers PUBLIC may not run', async () => {
     const helpers = [
-      'public.mantle_ws_system_work()',
+      'public.mantle_ws_system_work(text)',
       'public.mantle_ws_acting_login(text,uuid)',
       'public.mantle_ws_user_seat(text,uuid,uuid,uuid)',
       'public.mantle_ws_put_assistant(text,uuid,uuid,uuid,uuid,uuid,text)',
@@ -998,6 +1112,16 @@ describe.skipIf(!URL)('a database at 0304 runs 0305 and only it', () => {
   let scratch: Awaited<ReturnType<typeof createScratchDatabaseBefore>> | undefined;
   let sql: ReturnType<typeof postgres>;
   const all = readMigrationFiles({ migrationsFolder: DIR });
+  /** The four tightened functions as the catalog has them: the whole
+   *  definition and the grants. */
+  type Def = { fn: string; def: string; acl: string | null };
+  const defs = async (): Promise<Def[]> => [
+    ...(await sql<Def[]>`
+      select f.fn, pg_get_functiondef(p.oid) as def, p.proacl::text as acl
+        from unnest(${TIGHTENED}::text[]) f(fn) join pg_proc p on p.oid = to_regprocedure(f.fn)
+       order by 1`),
+  ];
+  let at0304: Def[] = [];
 
   beforeAll(async () => {
     scratch = await createScratchDatabaseBefore(URL!, TAG);
@@ -1009,6 +1133,8 @@ describe.skipIf(!URL)('a database at 0304 runs 0305 and only it', () => {
       await sql`insert into "drizzle"."__drizzle_migrations" (hash, created_at)
                 values (${mg.hash}, ${mg.folderMillis})`;
     }
+    at0304 = await defs();
+    expect(at0304).toHaveLength(TIGHTENED.length);
   }, 300_000);
 
   afterAll(async () => {
@@ -1032,5 +1158,30 @@ describe.skipIf(!URL)('a database at 0304 runs 0305 and only it', () => {
     expect(applied).toBe(1);
     expect(out.warnings).toEqual([]);
     expect(await fn()).toBe(1);
+  }, 120_000);
+
+  it('rollback: the revert puts the four back byte for byte, takes 0305 off the ledger; a roll forward applies it again', async () => {
+    const at0305 = await defs();
+    expect(at0305).not.toEqual(at0304);
+    const ledger = async () =>
+      (
+        await sql<{ n: number }[]>`
+          select count(*)::int as n from "drizzle"."__drizzle_migrations"
+           where created_at = ${journal[at]!.when}`
+      )[0]!.n;
+    expect(await ledger()).toBe(1);
+    await sql.begin(async (tx) => {
+      for (const st of revertStatements()) await tx.unsafe(st);
+    });
+    expect(await defs()).toEqual(at0304);
+    expect(await ledger()).toBe(0);
+    const out = { lines: [] as string[], warnings: [] as string[] };
+    const applied = await applyJournal(sql, all.slice(0, at + 1), journal.slice(0, at + 1), {
+      log: (l) => out.lines.push(l),
+      warn: (l) => out.warnings.push(l),
+    });
+    expect(applied).toBe(1);
+    expect(out.warnings).toEqual([]);
+    expect(await defs()).toEqual(at0305);
   }, 120_000);
 });

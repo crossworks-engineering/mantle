@@ -10,7 +10,8 @@
  * scopeHasArea()).
  *
  * Swept: packages/, server/, scripts/ (.ts, .tsx, .mjs, .js, .sql). Not swept:
- * tests, packages/db/migrations/ and any archive/ folder.
+ * tests, packages/db/migrations/, packages/db/rollback/ (a revert copies a
+ * migration's old bodies verbatim) and any archive/ folder.
  *
  * A permanent guard since W8c, which took the last level read out of the
  * code (the columns stay in the database, frozen, until W10 drops them).
@@ -79,6 +80,7 @@ export function isSwept(path) {
   if (!path || !/\.(ts|tsx|mjs|js|sql)$/.test(path)) return false;
   if (/\.test\.tsx?$/.test(path)) return false;
   if (path.startsWith('packages/db/migrations/')) return false;
+  if (path.startsWith('packages/db/rollback/')) return false;
   if (/(^|\/)archive\//.test(path) || path.includes('/node_modules/')) return false;
   return true;
 }

@@ -54,6 +54,14 @@ import { RAW_ACL_PINS, rule as rawAclRule } from './no-raw-acl-columns.mjs';
 import { AS_SYSTEM_PINS, rule as asSystemRule } from './as-system-allowlist.mjs';
 // @ts-expect-error: plain-JS module, no types shipped.
 import { SYSTEM_WORK_PINS, rule as systemWorkRule } from './system-work-allowlist.mjs';
+import {
+  SCOPE_SETTING_PINS,
+  SYSTEM_POOL_SCOPE_PINS,
+  carrierRule as systemPoolScopeRule,
+  scopeSettingNames,
+  settingsRule as scopeSettingsRule,
+  systemPoolScopeCalls,
+} from './scope-settings.mjs';
 // @ts-expect-error: plain-JS module, no types shipped.
 import { ROUTE_LIST_PINS, TOOL_LIST_PINS } from './no-policy-name-lists.mjs';
 // @ts-expect-error: plain-JS module, no types shipped.
@@ -143,6 +151,25 @@ describe('the architecture ratchets (pinned counts)', () => {
         );
       }
     }
+  });
+
+  it('scope settings: mantle.ws, mantle.mod_ws and mantle.scope_login named in pinned files only', () => {
+    const found: Record<string, number> = {};
+    const carried: Record<string, number> = {};
+    for (const f of countedFiles(ROOT) as string[]) {
+      const text = readRepoFile(ROOT, f);
+      if (text === null) continue;
+      const n = scopeSettingNames(text) as number;
+      if (n) found[f] = n;
+      const k = systemPoolScopeCalls(text) as number;
+      if (k) carried[f] = k;
+    }
+    const counts = (p: Record<string, { count: number }>) =>
+      Object.fromEntries(Object.entries(p).map(([f, v]) => [f, v.count]));
+    expect(diff(counts(SCOPE_SETTING_PINS), found)).toEqual([]);
+    // systemPoolTxInScope and withSystemPoolInWriteScope: each call site
+    // pinned; a new one fails here until it is reviewed.
+    expect(diff(counts(SYSTEM_POOL_SCOPE_PINS), carried)).toEqual([]);
   });
 
   it('workspace system work (plan v3.2 S2a): its reasons only in pinned systemWork calls', () => {
@@ -868,6 +895,54 @@ describe('the editor rules', () => {
         {
           code: 'const a = n.read_ws;',
           filename: '/r/packages/search/src/new.ts',
+          errors: [{ messageId: 'over' }],
+        },
+      ],
+    });
+  });
+
+  it('flag a hand-set scope setting or a system-pool scope call in an unpinned file', () => {
+    tester.run('scope-settings-in-client', scopeSettingsRule, {
+      valid: [
+        {
+          code: 'const q = "select set_config(\'mantle.ws\', $1, true)";',
+          filename: '/r/packages/db/src/client.ts',
+        },
+        { code: '// mantle.scope_login in a comment', filename: '/r/server/web/lib/x.ts' },
+      ],
+      invalid: [
+        {
+          code: "sql`select set_config('mantle.scope_login', ${id}, true)`;",
+          filename: '/r/server/web/lib/new.ts',
+          errors: [{ messageId: 'over' }],
+        },
+      ],
+    });
+    tester.run('system-pool-scope-sites', systemPoolScopeRule, {
+      valid: [
+        {
+          code: 'withSystemPoolInWriteScope(() => f());',
+          filename: '/r/server/web/lib/workspaces.ts',
+        },
+        {
+          code: 'export function systemPoolTxInScope(s, fn) { return fn(s); }',
+          filename: '/r/packages/db/src/other.ts',
+        },
+      ],
+      invalid: [
+        {
+          code: 'withSystemPoolInWriteScope(() => f());',
+          filename: '/r/server/web/lib/new.ts',
+          errors: [{ messageId: 'over' }],
+        },
+        {
+          code: 'systemPoolTxInScope(scope, (tx) => tx.execute(q));',
+          filename: '/r/server/web/lib/new.ts',
+          errors: [{ messageId: 'over' }],
+        },
+        {
+          code: 'withSystemPoolInWriteScope(() => a());\nwithSystemPoolInWriteScope(() => b());',
+          filename: '/r/server/web/lib/workspaces.ts',
           errors: [{ messageId: 'over' }],
         },
       ],

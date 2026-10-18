@@ -2,16 +2,23 @@
 -- may add a user, tick or clear Moderator, and remove a user is decided in
 -- the database, by the acting login, never by the pool a write runs on.
 --
--- 1. mantle_ws_system_work(): the one "system work" a workspace definer
---    takes from a caller with no acting login. True only when no acting
+-- 1. mantle_ws_system_work(fn): the one "system work" a workspace definer
+--    `fn` takes from a caller with no acting login. True only when no acting
 --    login is set (mantle_scope_login_id() is null, no scope is open),
---    mantle.write_mode is not 'ro', and mantle.actor is EXACTLY one string
---    of the allowlist below, one per real caller, each added in the release
---    that moves its caller (at most five, plan rule 6):
---      - 'system:ws-clear-ticks': pnpm -C server/web ws:clear-member-ticks
---        (workspace-ticks.ts clearMemberTicks, systemWork('ws-clear-ticks')).
---      - 'system:boot:migrate-workspaces': the boot step (server/main.ts,
---        systemWork around migrateWorkspacesQuietly: the assistant attach).
+--    mantle.write_mode is not 'ro', and (mantle.actor, fn) is EXACTLY one
+--    pair of the allowlist below: one actor per real caller, each with the
+--    one definer it calls, each added in the release that moves its caller
+--    (at most five, plan rule 6). A listed actor on any other definer is
+--    refused:
+--      - 'system:ws-clear-ticks' on mantle_ws_set_moderator only:
+--        pnpm -C server/web ws:clear-member-ticks (workspace-ticks.ts
+--        clearMemberTicks, systemWork('ws-clear-ticks')).
+--      - 'system:boot:migrate-workspaces' on mantle_ws_attach_assistants
+--        only: the boot step (server/main.ts, systemWork around
+--        migrateWorkspacesQuietly: the assistant attach).
+--    So mantle_ws_add_user, mantle_ws_remove_user, mantle_ws_create,
+--    mantle_ws_private_workspace, mantle_workspace_event and the resource
+--    definers take no system work at all (nothing on the list calls them).
 --    The first owner (signup) and onboarding attach in the login's own
 --    scope instead (the assistants area, item 10), never as system work.
 --    Never "an actor starting with system:": asSystem binds system:<reason>
@@ -24,7 +31,7 @@
 -- 2. mantle_ws_acting_login(fn, owner): the acting login of a workspace
 --    definer (mantle_scope_login_id: the scope's login on the write role, or
 --    a system-pool transaction with a request's write scope set), an enabled
---    login, on its brain. With none: NULL when mantle_ws_system_work(), else
+--    login, on its brain. With none: NULL when mantle_ws_system_work(fn), else
 --    refused (42501). Private, as 1.
 -- 3. mantle_ws_user_seat(fn, owner, ws, acting): locks the workspace row
 --    (FOR UPDATE, as every change on the workspace screen) and says what the
@@ -51,9 +58,10 @@
 --    its login is set. Through mantle_ws_acting_login (audit L3): a
 --    disabled acting login and a read-only caller are refused too.
 -- 6. mantle_ws_private_workspace (0272): only for the acting login
---    (`login` = mantle_scope_login_id()), or system work. createHomeFallback
---    (packages/db client.ts) carried no write scope (a plain system-pool
---    read): it now sets mantle.scope_login in a transaction of its own.
+--    (`login` = mantle_scope_login_id()). createHomeFallback (packages/db
+--    client.ts) carried no write scope (a plain system-pool read): it now
+--    sets mantle.scope_login in a transaction of its own
+--    (systemPoolTxInScope).
 -- 7. mantle_workspace_event (0279): with no acting login refused unless
 --    system work.
 --
@@ -77,7 +85,7 @@
 --    writes its event row. SECURITY DEFINER, PUBLIC revoked, the write
 --    role's (WRITE_ROLE_FUNCTIONS).
 -- 10. mantle_ws_attach_assistants (0260): SECURITY DEFINER, its inserts
---    through 8. With no acting login it needs mantle_ws_system_work() (the
+--    through 8. With no acting login it needs mantle_ws_system_work(fn) (the
 --    boot); with one, the assistants area by mantle_scope_has_area (the
 --    first owner at signup and onboarding run it in the login's own scope,
 --    workspaces-migrate.ts attachDefaultAssistants). The runtime role's,
@@ -94,19 +102,18 @@
 -- `when` 1790197620000 (above 0304's 1790197560000).
 SET LOCAL lock_timeout = '30s';
 --> statement-breakpoint
-CREATE OR REPLACE FUNCTION "public"."mantle_ws_system_work"()
+CREATE OR REPLACE FUNCTION "public"."mantle_ws_system_work"(fn text)
   RETURNS boolean LANGUAGE sql STABLE
   SET search_path = "public", pg_temp AS $$
   SELECT "public"."mantle_scope_login_id"() IS NULL
      AND NOT "public"."mantle_scope_active"()
      AND coalesce(current_setting('mantle.write_mode', true), '') <> 'ro'
-     AND coalesce(current_setting('mantle.actor', true), '') = ANY (ARRAY[
-           'system:ws-clear-ticks',
-           'system:boot:migrate-workspaces'
-         ]::text[])
+     AND (coalesce(current_setting('mantle.actor', true), ''), fn) IN (
+           ('system:ws-clear-ticks', 'mantle_ws_set_moderator'),
+           ('system:boot:migrate-workspaces', 'mantle_ws_attach_assistants'))
 $$;
 --> statement-breakpoint
-REVOKE ALL ON FUNCTION "public"."mantle_ws_system_work"() FROM PUBLIC;
+REVOKE ALL ON FUNCTION "public"."mantle_ws_system_work"(text) FROM PUBLIC;
 --> statement-breakpoint
 CREATE OR REPLACE FUNCTION "public"."mantle_ws_acting_login"(fn text, owner uuid)
   RETURNS uuid LANGUAGE plpgsql STABLE
@@ -122,7 +129,7 @@ BEGIN
     RAISE EXCEPTION 'mantle_ws:read_only %: a read-only caller', fn USING ERRCODE = '42501';
   END IF;
   IF acting IS NULL THEN
-    IF "public"."mantle_ws_system_work"() THEN RETURN NULL; END IF;
+    IF "public"."mantle_ws_system_work"(fn) THEN RETURN NULL; END IF;
     RAISE EXCEPTION 'mantle_ws:no_acting_login %: no acting login, and not system work', fn
       USING ERRCODE = '42501';
   END IF;
@@ -384,7 +391,7 @@ DECLARE
   label text;
 BEGIN
   IF login IS DISTINCT FROM "public"."mantle_scope_login_id"()
-     AND NOT "public"."mantle_ws_system_work"() THEN
+     AND NOT "public"."mantle_ws_system_work"('mantle_ws_private_workspace') THEN
     RAISE EXCEPTION 'mantle_ws_private_workspace: only the acting login''s own'
       USING ERRCODE = '42501';
   END IF;
@@ -429,7 +436,8 @@ CREATE OR REPLACE FUNCTION "public"."mantle_workspace_event"(
 DECLARE
   node uuid;
 BEGIN
-  IF "public"."mantle_scope_login_id"() IS NULL AND NOT "public"."mantle_ws_system_work"() THEN
+  IF "public"."mantle_scope_login_id"() IS NULL
+     AND NOT "public"."mantle_ws_system_work"('mantle_workspace_event') THEN
     RAISE EXCEPTION 'mantle_workspace_event: no acting login, and not system work'
       USING ERRCODE = '42501';
   END IF;

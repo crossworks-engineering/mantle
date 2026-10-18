@@ -950,17 +950,18 @@ export type AsSystemReason =
  * The workspace system work: the reasons whose actor
  * (system:<reason>) a workspace definer takes from a caller with no acting
  * login. The SQL allowlist (mantle_ws_system_work, migration 0305) names
- * exactly these actors, one per real caller, each added in the release that
- * moves its caller (at most five). Only systemWork takes one (asSystem with
+ * exactly these actors, one per real caller, each with the one definer it
+ * calls (a listed actor on another definer is refused), each added in the
+ * release that moves its caller (at most five). Only systemWork takes one (asSystem with
  * one fails typecheck), and systemWork refuses it inside any scope, request
  * or system exit, so these actors are never bound inside a request or turn.
  * eslint-rules/system-work-allowlist.mjs pins the files that pass one;
  * eslint-rules/arch-lints.test.ts refuses the strings anywhere else.
  *
  *  - `ws-clear-ticks`: pnpm -C server/web ws:clear-member-ticks
- *    (workspace-ticks.ts clearMemberTicks).
+ *    (workspace-ticks.ts clearMemberTicks), on mantle_ws_set_moderator.
  *  - `boot:migrate-workspaces`: the boot step (server/main.ts: the
- *    assistant attach, mantle_ws_attach_assistants). The first
+ *    assistant attach), on mantle_ws_attach_assistants. The first
  *    owner and onboarding attach in the login's own scope instead (the
  *    assistants area), never as system work: both run inside a request.
  */

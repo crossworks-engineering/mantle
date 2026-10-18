@@ -2031,12 +2031,37 @@ export async function withSystemTx<T>(
   });
 }
 
-/** A write scope on a system-pool transaction (systemPoolTx, systemPoolProp):
- *  its workspaces and login (mantle.scope_login, never mantle.login_id). */
-function writeScopeSettings(scope: WorkspaceScope) {
-  return sqlTag`select set_config('mantle.ws', ${uuidArrayLiteral(scope.ws, 'write scope ws')}, true),
-                       set_config('mantle.mod_ws', ${uuidArrayLiteral(scope.modWs, 'write scope modWs')}, true),
+/** A login's scope on the system pool (`ws` null: only its login). */
+export type SystemPoolScope = {
+  loginId: string | null;
+  ws: readonly string[] | null;
+  modWs: readonly string[] | null;
+};
+
+/** A write scope on a system-pool transaction (systemPoolTx,
+ *  systemPoolTxInScope): its workspaces and login (mantle.scope_login,
+ *  never mantle.login_id). The one text that sets them on the system pool;
+ *  eslint-rules/scope-settings.mjs pins where the settings are named. */
+function writeScopeSettings(scope: SystemPoolScope) {
+  const ws = scope.ws === null ? '' : uuidArrayLiteral(scope.ws, 'write scope ws');
+  const modWs = scope.modWs === null ? '' : uuidArrayLiteral(scope.modWs, 'write scope modWs');
+  return sqlTag`select set_config('mantle.ws', ${ws}, true),
+                       set_config('mantle.mod_ws', ${modWs}, true),
                        set_config('mantle.scope_login', ${checkedUuidOrEmpty(scope.loginId)}, true)`;
+}
+
+/** THE one system-pool transaction in a login's scope set by hand, for a
+ *  workspace definer that asks the acting login (0305) where no request
+ *  scope carries one. Each caller is pinned (eslint-rules/scope-settings.mjs):
+ *  a new one fails the pin until it is reviewed. */
+export function systemPoolTxInScope<T>(
+  scope: SystemPoolScope,
+  fn: (tx: PostgresJsDatabase<typeof schema>) => Promise<T>,
+): Promise<T> {
+  return getAdminDb().transaction(async (tx) => {
+    await tx.execute(writeScopeSettings(scope));
+    return fn(tx);
+  });
 }
 
 /** A system transaction as before A2b2b, on the system pool. */
@@ -2859,12 +2884,9 @@ export async function createHomeFallback(
   if (bound === null || bound !== loginId.toLowerCase()) {
     throw new RuntimeFaultError('createHomeFallback: the login asked for is not the one bound');
   }
-  const rows = (await admin.transaction(async (tx) => {
-    await tx.execute(sqlTag`select set_config('mantle.scope_login', ${bound}, true)`);
-    return tx.execute(
-      sqlTag`select "public"."mantle_ws_private_workspace"(${loginId}::uuid)::text as ws`,
-    );
-  })) as unknown as { ws: string | null }[];
+  const rows = (await systemPoolTxInScope({ loginId: bound, ws: null, modWs: null }, (tx) =>
+    tx.execute(sqlTag`select "public"."mantle_ws_private_workspace"(${loginId}::uuid)::text as ws`),
+  )) as unknown as { ws: string | null }[];
   const privateWs = ownPrivate(loginId, rows[0]?.ws ?? null);
   if (!privateWs) {
     return { refused: 'no-workspace', message: 'You have no workspace to create in yet.' };
@@ -3042,12 +3064,8 @@ export const db = new Proxy({} as PostgresJsDatabase<typeof schema>, {
 function systemPoolProp(scope: WorkspaceScope, prop: string | symbol): unknown {
   const admin = getAdminDb();
   if (prop !== 'transaction') return Reflect.get(admin as object, prop);
-  type Tx = Parameters<Parameters<typeof admin.transaction>[0]>[0];
-  return <T>(fn: (tx: Tx) => Promise<T>) =>
-    admin.transaction(async (tx) => {
-      await tx.execute(writeScopeSettings(scope));
-      return fn(tx);
-    });
+  return <T>(fn: (tx: PostgresJsDatabase<typeof schema>) => Promise<T>) =>
+    systemPoolTxInScope(scope, fn);
 }
 
 /**

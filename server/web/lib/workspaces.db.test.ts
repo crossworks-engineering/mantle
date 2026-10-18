@@ -791,63 +791,110 @@ describe.skipIf(!URL)('workspace management (W5a)', () => {
     expect(del.body.code).toBe('assistant_has_history');
   });
 
-  it('setAssistantCopies (plan v3.2 S2a a2): the TS setAssistant (PATCH) and the SQL mantle_ws_set_assistant (resources) write the same rows and answer the same', async () => {
-    const [w1, w2] = [await create(mem, 'Copies TS'), await create(mem, 'Copies SQL')];
-    const C = [randomUUID(), randomUUID(), randomUUID()];
+  it('setAssistantCopies (plan v3.2 S2a a2): the TS setAssistant (PATCH) and mantle_ws_set_assistant itself write the same rows and answer the same', async () => {
+    const [w1, w2, w3] = [
+      await create(mem, 'Copies TS'),
+      await create(mem, 'Copies SQL'),
+      await create(mem, 'Copies held'),
+    ];
+    // Each copy its own agents (an assistant belongs to one workspace).
+    const T = { A: randomUUID(), B: randomUUID() };
+    const S = { A: randomUUID(), B: randomUUID() };
+    const C = randomUUID(); // a chat assistant w3 holds
+    const ag = (id: string, slug: string, role = 'responder') =>
+      sql`(${id}::uuid, ${owner}::uuid, ${slug}, ${slug}, 'm', 'p', ${role})`;
     await x(sql`insert into agents (id, owner_id, slug, name, model, system_prompt, role) values
-      (${C[0]}, ${owner}, 'copies-0', 'C0', 'm', 'p', 'responder'),
-      (${C[1]}, ${owner}, 'copies-1', 'C1', 'm', 'p', 'responder'),
-      (${C[2]}, ${owner}, 'copies-2', 'C2', 'm', 'p', 'assistant')`);
+      ${ag(T.A, 'copies-ta')}, ${ag(T.B, 'copies-tb')}, ${ag(S.A, 'copies-sa')},
+      ${ag(S.B, 'copies-sb', 'assistant')}, ${ag(C, 'copies-c', 'assistant')}`);
     await as(owner);
-    // The rows a workspace holds, its own ids written as placeholders.
-    const state = async (ws: string, agent: string) => ({
-      res: await x(sql`select type, ref_id = ${agent} as agent, write, added_by
-                         from workspace_resources where workspace_id = ${ws}`),
-      bound: await x(sql`select workspace_id = ${ws} as here from agents where id = ${agent}`),
-      ev: (
-        await x<{ actor: string; action: string; subject: Json }>(sql`
-          select actor_id as actor, action, subject from workspace_events
-           where workspace_id = ${ws} and action like 'resource.%' order by action`)
-      ).map((e) => ({
-        ...e,
-        subject: { ...e.subject, id: e.subject.id === agent ? 'A' : e.subject.id },
-      })),
-    });
-    const ts = (body: Json) => call(r.one.PATCH(req('PATCH', body), p({ id: w1 })));
-    const sqlAdd = (id: string) =>
-      call(r.res.POST(req('POST', { kind: 'assistant', id }), p({ id: w2 })));
-    const sqlDel = (id: string) =>
-      call(r.resOne.DELETE(req('DELETE'), p({ id: w2, kind: 'assistant', refId: id })));
-    // The screen's resources (PATCH answers the workspace, POST the screen).
-    const assistantOf = async (ws: string) =>
-      ((await call(r.one.GET(req('GET'), p({ id: ws })))).body.resources as Json[])
-        .filter((r2) => r2.kind === 'assistant')
-        .map((r2) => r2.write);
-    // Put one on, then take it off.
-    const on = [await ts({ assistantId: C[0] }), await sqlAdd(C[1]!)];
-    expect(on.map((o) => o.status)).toEqual([200, 200]);
-    expect(await assistantOf(w1)).toEqual(await assistantOf(w2));
-    expect(await state(w1, C[0]!)).toEqual(await state(w2, C[1]!));
-    const off = [await ts({ assistantId: null }), await sqlDel(C[1]!)];
-    expect(off.map((o) => o.status)).toEqual([200, 200]);
-    expect(await assistantOf(w1)).toEqual(await assistantOf(w2));
-    expect(await state(w1, C[0]!)).toEqual(await state(w2, C[1]!));
+    // The rows a workspace holds, its agents' ids written as their names.
+    const state = async (ws: string, ids: Record<string, string>) => {
+      const name = (v: unknown) => Object.entries(ids).find(([, id]) => id === v)?.[0] ?? v;
+      const res = await x<{ type: string; ref_id: string; write: boolean; added_by: string }>(sql`
+        select type, ref_id, write, added_by from workspace_resources where workspace_id = ${ws}`);
+      const bound: Record<string, boolean> = {};
+      for (const [k, id] of Object.entries(ids)) {
+        const [a] = await x<{ here: boolean }>(
+          sql`select workspace_id is not distinct from ${ws}::uuid as here from agents where id = ${id}`,
+        );
+        bound[k] = a!.here;
+      }
+      const ev = await x<{ actor: string; action: string; subject: Json }>(sql`
+        select actor_id as actor, action, subject from workspace_events
+         where workspace_id = ${ws} and action like 'resource.%' order by created_at, action`);
+      return {
+        res: res.map((r2) => ({ ...r2, ref_id: name(r2.ref_id) })),
+        bound,
+        ev: ev.map((e) => ({ ...e, subject: { ...e.subject, id: name(e.subject.id) } })),
+      };
+    };
+    const ts = (ws: string, assistantId: string | null) =>
+      call(r.one.PATCH(req('PATCH', { assistantId }), p({ id: ws })));
+    // mantle_ws_set_assistant itself, in the owner's request scope as the
+    // gate opens it (a write: the login's scope), its refusal mapped by the
+    // one mapper (wsRefusal) and answered by the app as a route's.
+    const wsLib = await import('@/lib/workspaces');
+    const viaSql = (ws: string, agent: string | null) =>
+      call(
+        m.runInRequestSlot(async () => {
+          m.enterRequestScope(await m.loginScopeFor(owner), { writes: true, drafts: true });
+          try {
+            await m.db.transaction((tx) =>
+              tx.execute(
+                sql`select mantle_ws_set_assistant(${owner}::uuid, ${ws}::uuid, ${agent}::uuid)`,
+              ),
+            );
+          } catch (err) {
+            throw wsLib.wsRefusal(err) ?? err;
+          }
+          return Response.json({ ok: true });
+        }),
+      );
+    const same = async () => expect(await state(w1, T)).toEqual(await state(w2, S));
+    // Set A, swap A for B (A's row goes, A is unbound, two events), clear.
+    for (const k of ['A', 'B'] as const) {
+      expect((await ts(w1, T[k])).status).toBe(200);
+      expect((await viaSql(w2, S[k])).status).toBe(200);
+      await same();
+    }
+    expect((await ts(w1, null)).status).toBe(200);
+    expect((await viaSql(w2, null)).status).toBe(200);
+    await same();
+    // Nothing to change: no row, no event.
+    expect((await ts(w1, null)).status).toBe(200);
+    expect((await viaSql(w2, null)).status).toBe(200);
+    await same();
     // The refusals, byte-equal: no such chat assistant; another workspace's.
     const ghost = randomUUID();
-    expect(await ts({ assistantId: ghost })).toEqual(await sqlAdd(ghost));
-    await ts({ assistantId: C[2] });
-    const inUse = [await ts({ assistantId: C[2] }), await sqlAdd(C[2]!)];
-    expect(inUse[1]!.body.code).toBe('assistant_in_use');
-    expect(await call(r.one.PATCH(req('PATCH', { assistantId: C[2] }), p({ id: w2 })))).toEqual(
-      inUse[1],
-    );
-    // History: the current one stays, by either copy.
-    await sqlAdd(C[1]!);
+    const noSuch = await ts(w1, ghost);
+    expect(noSuch.body.error).toBe('assistantId: no such chat assistant.');
+    expect(await viaSql(w2, ghost)).toEqual(noSuch);
+    expect((await ts(w3, C)).status).toBe(200);
+    const inUse = await ts(w1, C);
+    expect(inUse.body.code).toBe('assistant_in_use');
+    expect(await viaSql(w2, C)).toEqual(inUse);
+    // An id that is none: PATCH answers it before any change; the SQL copy
+    // takes a uuid only, so its caller cannot pass one (refused by the cast).
+    const bad = await ts(w1, 'nope');
+    expect(bad).toEqual({
+      status: 400,
+      body: expect.objectContaining({ code: 'invalid', error: 'Not a valid id.' }),
+    });
+    await expect(
+      x(sql`select mantle_ws_set_assistant(${owner}::uuid, ${w2}::uuid, ${'nope'}::uuid)`),
+    ).rejects.toThrow();
+    await same();
+    // History: the current one stays, cleared or swapped, by either copy.
+    expect((await ts(w1, T.A)).status).toBe(200);
+    expect((await viaSql(w2, S.A)).status).toBe(200);
     await x(sql`insert into chat_threads (owner_id, agent_id, title, status) values
-      (${owner}, ${C[1]}, 't', 'open'), (${owner}, ${C[2]}, 't', 'open')`);
-    const frozen = [await ts({ assistantId: null }), await sqlDel(C[1]!)];
-    expect(frozen[0]!.body.code).toBe('assistant_has_history');
-    expect(frozen[0]).toEqual(frozen[1]);
+      (${owner}, ${T.A}, 't', 'open'), (${owner}, ${S.A}, 't', 'open')`);
+    for (const k of [null, 'B'] as const) {
+      const frozen = await ts(w1, k === null ? null : T[k]);
+      expect(frozen.body.code).toBe('assistant_has_history');
+      expect(await viaSql(w2, k === null ? null : S[k])).toEqual(frozen);
+    }
+    await same();
   });
 
   it('resources: connectors by an Admin user; Team takes one like any workspace', async () => {

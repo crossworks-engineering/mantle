@@ -74,6 +74,8 @@ export {
   isWriteSql,
   executeWrite,
   executeAsMigrator,
+  systemPoolTxInScope,
+  type SystemPoolScope,
   systemPoolRole,
   afterOuterRollback,
   afterOuterCommit,

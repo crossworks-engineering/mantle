@@ -30,8 +30,7 @@
  * mantle.ws_former_clients = 'reviewed'), then started again.
  */
 import { sql } from 'drizzle-orm';
-import { db, executeAsMigrator, loginScopeFor } from '@mantle/db';
-import { UUID_RE } from '@mantle/std';
+import { db, executeAsMigrator, loginScopeFor, systemPoolTxInScope } from '@mantle/db';
 
 export type WsMigrateRow = { section: string; subject: string; metric: string; n: number };
 
@@ -49,7 +48,7 @@ export async function migrateWorkspaces(): Promise<WsMigrateRow[]> {
  *  how many it attached. A definer (0305): with no
  *  `loginId` it is system work (the boot, systemWork in server/main.ts);
  *  with one it runs in that login's own scope on the system pool (its
- *  workspaces and its login set, as systemPoolTx sets a write scope), where
+ *  workspaces and its login set: systemPoolTxInScope), where
  *  the definer asks the assistants area of it: the first owner at signup
  *  and onboarding, both inside a request. */
 export async function attachDefaultAssistants(loginId?: string): Promise<number> {
@@ -58,19 +57,9 @@ export async function attachDefaultAssistants(loginId?: string): Promise<number>
     const [r] = (await db.execute(call)) as unknown as { n: number }[];
     return Number(r?.n ?? 0);
   }
-  const scope = await loginScopeFor(loginId);
-  const ids = (xs: readonly string[]) => {
-    if (!xs.every((x) => UUID_RE.test(x))) throw new Error('attach: a workspace id');
-    return `{${xs.join(',')}}`;
-  };
-  const rows = (await db.transaction(async (tx) => {
-    await tx.execute(
-      sql`select set_config('mantle.ws', ${ids(scope.ws)}, true),
-                 set_config('mantle.mod_ws', ${ids(scope.modWs)}, true),
-                 set_config('mantle.scope_login', ${loginId}::uuid::text, true)`,
-    );
-    return tx.execute(call);
-  })) as unknown as { n: number }[];
+  const rows = (await systemPoolTxInScope(await loginScopeFor(loginId), (tx) =>
+    tx.execute(call),
+  )) as unknown as { n: number }[];
   return Number(rows[0]?.n ?? 0);
 }
 

@@ -199,23 +199,23 @@ An exit leaves the caller's scope for the system pool; each is named.
 `AS_SYSTEM_TURN_REASONS` (`packages/db/src/viewer.ts`, each with why);
 each calling file is pinned (`eslint-rules/as-system-allowlist.mjs`).
 
-| Reason             | Why the scope cannot do it                                  |
-| ------------------ | ----------------------------------------------------------- |
-| agent-workspace    | the workspace an assistant runs in, read before its scope   |
-| connector-binding  | a connector's binding and OAuth config                      |
-| connector-call     | the remote call reads and refreshes its own credentials     |
-| heartbeat-own-row  | the firing heartbeat changes its own row                    |
-| app-data           | an app's SQLite work after the scope found the app          |
-| rule-in-query      | any-login routes holding the rule in their own SQL          |
-| admin-area         | an Admin area tool's system tables, after the area check    |
-| keyword-candidates | ranked ids of a text match, re-read in the scope by id      |
-| app-trash          | a deleted app's snapshots, after the manage check           |
-| login-telegram     | a login's own Telegram chats (no role holds those tables)   |
-| audit-log          | a connector call's audit row                                |
-| pending-approval   | an approved call re-enters the scope it was asked in        |
-| workspace-write    | a login's change of a workspace's row, resources and events |
-| page-refold        | the pages a grant change reaches                            |
-| brain-bookkeeping  | `systemStep`'s brain-wide counts and reaps                  |
+| Reason             | Why the scope cannot do it                                |
+| ------------------ | --------------------------------------------------------- |
+| agent-workspace    | the workspace an assistant runs in, read before its scope |
+| connector-binding  | a connector's binding and OAuth config                    |
+| connector-call     | the remote call reads and refreshes its own credentials   |
+| heartbeat-own-row  | the firing heartbeat changes its own row                  |
+| app-data           | an app's SQLite work after the scope found the app        |
+| rule-in-query      | any-login routes holding the rule in their own SQL        |
+| admin-area         | an Admin area tool's system tables, after the area check  |
+| keyword-candidates | ranked ids of a text match, re-read in the scope by id    |
+| app-trash          | a deleted app's snapshots, after the manage check         |
+| login-telegram     | a login's own Telegram chats (no role holds those tables) |
+| audit-log          | a connector call's audit row                              |
+| pending-approval   | an approved call re-enters the scope it was asked in      |
+| workspace-write    | a login's change of a workspace's row, look or archive    |
+| page-refold        | the pages a grant change reaches                          |
+| brain-bookkeeping  | `systemStep`'s brain-wide counts and reaps                |
 
 - **Request exits** (`noteRequestSystem`, `server/web/lib/auth/session.ts`):
   `area` (an Admin area route, after the area check), `login-self` (a
@@ -248,8 +248,8 @@ change and its audit row (`mantle_grant_change`, `mantle_grant_move_home`,
 `mantle_workspace_event`, 0279), folder subtree (`mantle_subtree_rewrite`,
 `mantle_subtree_refuse_hidden`, 0282), edit check writes
 (`mantle_secret_put`, `mantle_recall_retarget`, 0281), a workspace's users, resources and assistant (0305).
-The 0305 writers of the four workspace tables (and the attach) refuse no acting login but system work (`mantle_ws_system_work`);
-the workspace row, landing app and archive write in TS until S2b; named: login bridge, bridge connector, the switch, guards.
+With no acting login the 0305 writers refuse all but one named actor per definer (`mantle_ws_system_work(fn)`);
+the workspace row, landing app, archive and PATCH assistant write in TS until S2b; named: login bridge, bridge connector, the switch, guards.
 
 ## 10. HTTP
 
@@ -328,8 +328,8 @@ the workspace row, landing app and archive write in TS until S2b; named: login b
 
 Each ends in the step of plan v3.2 (2026-10-17) named.
 
-- A workspace's row, resources and events are written on the system pool
-  (`workspace-write`); an Admin user's user change is refused until S2a a2. S2.
+- A workspace's row, landing app, archive and PATCH assistant, with their
+  events, are written in TS on the system pool (`workspace-write`). S2.
 - `mantle_login_area` is the area rule or, with no Admin workspace, yes. S4.
 - A definer asked with no scope answers as the system pool would;
   `mantle_grant_change` then takes the caller from its `actor`. S2, S7.
