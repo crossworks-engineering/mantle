@@ -51,14 +51,16 @@ sweep in a workspace scope signals only items the scope may edit
 
 ## Changed answers
 
-Recorded on main (the new test overlaid on e10c740a9), then on the branch:
+Recorded on main (the new test overlaid on e10c740a9), then on the branch.
+On main each member test stopped at its MCP cell, so the turn cells were
+not reached there; they ran the same folder step (marked "same step").
 
 | Cell (warn and on)                                    | main                                                   | branch                                                        |
 | ----------------------------------------------------- | ------------------------------------------------------ | ------------------------------------------------------------- |
 | app_export, MCP, member reads the app, no data        | refused: createFolder: parent folder 'files' not found | ok: Files root, its private workspace, landedIn               |
 | sheet_build, MCP, member                              | refused: the same                                      | ok: Files root, its private workspace, landedIn               |
-| app_export and sheet_build, turn of R (a user)        | refused: the same                                      | ok: its private workspace (landedIn: its private create home) |
-| app_export and sheet_build, turn of H (Moderator)     | refused: the same                                      | ok: H                                                         |
+| app_export and sheet_build, turn of R (a user)        | same step: refused                                     | ok: its private workspace (landedIn: its private create home) |
+| app_export and sheet_build, turn of H (Moderator)     | same step: refused                                     | ok: H                                                         |
 | app_export and sheet_build, owner, MCP and Admin turn | ok: Auto-filed / Exports                               | ok: the same, and landedIn names Admin (a field more)         |
 | process_extraction, turn of R, member reads the note  | ok: fired 1                                            | refused: You cannot change this item in your workspaces.      |
 | process_extraction, MCP, Admin user, noEdit place     | ok                                                     | refused: the same words (precheck-removal.db.test.ts)         |
@@ -97,4 +99,21 @@ should say edit.
 
 ## Gates
 
-See the final report of the session (exit codes, CI run, head SHA).
+On 785c2c4f1 (the code as pushed; later commits are this file only).
+
+Mac: `pnpm -r typecheck` 0, `pnpm lint` 0 (one warning, not this
+branch's), `pnpm format:check` 0, `pnpm docs:check` 0, `pnpm arch:check` 0
+(no pin moved; the spec stays at 350 lines), `pnpm -C server/web build` 0,
+unit `vitest run server packages eslint-rules` (no DATABASE_URL) 0 (10920
+passed).
+
+Workstation, own clone and pgvector pg18 container (port 56371,
+max_connections=450, migrate with MANTLE_CHECK_FLOOR=keep), one at a time,
+each on a fresh database: full vitest with DB 0 (13510 passed),
+`test:actor-off` 0 (1076), `test:actor-on` 0 (349), `test:edit-on` 0 (515),
+`test:matrix` 0 (7), `test:runtime-role` 1 then 0: the first run passed
+every test (2603) and logged one unhandled `CONNECTION_CLOSED` from
+`w7e-member-scope.db.test.ts`, the flake the S3 handover names; the rerun
+was clean (2603 passed, no error).
+
+No new pins, no migration.
