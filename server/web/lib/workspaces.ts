@@ -25,7 +25,8 @@
  *    the tick, and removing a Moderator, owner answer Q2), on every
  *    workspace (owner decision 2026-10-13). Nobody becomes a Moderator by
  *    themselves, with one exception: any login may make a workspace, and
- *    becomes its only user and a Moderator. Any login may leave one, except as its last Moderator.
+ *    becomes its only user and a Moderator. Any login may leave one,
+ *    except as its last Moderator.
  *  - The only built-in workspace is Admin: it keeps its name, cannot be
  *    archived and keeps a Moderator. Team is a workspace like any other
  *    since 0286 (renamed, archived and moderated by the same rules).
@@ -1166,7 +1167,9 @@ export async function setModerator(
   loginId: string,
   moderator: boolean,
 ): Promise<WorkspaceDetailResponse> {
-  const wid = wsId(id);
+  // The workspace read in the caller's scope first (its 404), as addUser
+  // and removeUser read it; the definer checks again under its lock.
+  const wid = (await seeWorkspace(caller, id)).row.id;
   await db.transaction((tx) =>
     usersDefiner(
       tx,
