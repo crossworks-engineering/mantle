@@ -218,8 +218,10 @@ each calling file is pinned (`eslint-rules/as-system-allowlist.mjs`).
 
 - **Request exits** (`noteRequestSystem`, `server/web/lib/auth/session.ts`):
   `area` (an Admin area route, after the area check), `login-self` (a
-  login's own things), `admin-write` (the Admin acts of `ADMIN_ACT_WRITES`
-  and an Admin user's any-login write but the grants panel).
+  login's own things), `admin-write` (the Admin acts of `ADMIN_ACT_WRITES`;
+  since plan v3.2 S6 c3 an Admin user's any-login write enters the login's
+  scope as a member's does: keys, chat and Telegram pairing writes, their
+  rules in their definers and named exits).
 - **`systemStep(step, { items, need }, fn)`**
   (`packages/db/src/system-step.ts`): bookkeeping after the write's item
   check; it answers the caller numbers, yes or no, or rows its scope reads.
