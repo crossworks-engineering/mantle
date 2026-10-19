@@ -272,6 +272,51 @@ n.title like '%<tag>-<mode>-upload%'` returns none. Either the file's
   upload cell until it is fixed. The workstation container, worktree and
   branches of this round are removed.
 
+## Final round (fourth builder)
+
+The red upload cell is fixed in the test, not the product (a9688051c).
+The query looked for the file's home in `workspace_resources`; a file's
+home is on its own row, `nodes.home_ws`, as `landedIn` reads it
+(`itemHomeSql`). The title was right: the route names the file
+`<epoch>-<safe base>.<ext>` and the title is that name. The cell now
+reads `n.home_ws` for the `file` row whose title holds
+`<tag>-<mode>-upload`, and finds the Admin workspace, warn and on.
+
+### Gates (final round)
+
+Mac (DATABASE_URL unset), on a9688051c:
+
+| Gate                                                | Exit                                     |
+| --------------------------------------------------- | ---------------------------------------- |
+| `pnpm -r typecheck`                                 | 0                                        |
+| `pnpm lint`                                         | 0                                        |
+| `pnpm format:check`                                 | 0                                        |
+| `pnpm docs:check`                                   | 0                                        |
+| `pnpm arch:check`                                   | 0                                        |
+| `pnpm -C server/web build`                          | 0                                        |
+| `pnpm exec vitest run server packages eslint-rules` | 0 (856 files, 11058 tests, 2776 skipped) |
+
+Workstation, on a9688051c: own pgvector pg18 on 56342 (`postgres` role
+and init as CI: `init-scratch`, then `migrate`), `MANTLE_CHECK_FLOOR=keep`,
+`--maxWorkers=3`, systemd-run, one run at a time; container, worktree,
+branch, script and logs removed after, by exact name.
+
+| Run                                       | Exit | Files / tests           |
+| ----------------------------------------- | ---- | ----------------------- |
+| `s6-c3-any-login-writes.db.test.ts` alone | 0    | 1 file, 12 tests        |
+| full vitest with the database             | 0    | 1123 files, 13833 tests |
+| `pnpm test:actor-off`                     | 0    | 127 files, 1159 tests   |
+| `pnpm test:runtime-role` (full)           | 0    | 275 files, 2757 tests   |
+
+No hook timeout in any run.
+
+CI on a9688051c: success, first attempt,
+https://github.com/crossworks-engineering/mantle/actions/runs/39255986816
+(every step success or skipped: typecheck, lint, format, docs, arch, boot
+smoke, migrate from scratch, the full test, actor off, actor on, edit on,
+runtime role, matrix, the web build). The next commit adds only this
+section.
+
 ## Open
 
 - Keys area for another login's key: decided by the CEO, it keeps
