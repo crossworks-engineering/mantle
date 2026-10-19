@@ -135,7 +135,7 @@ export async function clearMemberTicks(
 /** clearMemberTicks' transaction, as workspace system work. */
 function clearTicksTx(target: ReturnType<typeof sql>, apply: boolean): Promise<ClearTicksResult> {
   return db.transaction(async (tx) => {
-    // The workspace row, read without a lock (plan v3.2 S2c): FOR UPDATE
+    // The workspace row, read without a lock: FOR UPDATE
     // needs UPDATE on workspaces, which the runtime role no longer holds.
     // The definer takes the row FOR UPDATE on its first call and holds it
     // to commit, and checks archived, the Admin workspace and the last

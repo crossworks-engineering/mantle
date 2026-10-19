@@ -182,7 +182,7 @@ export function runtimeDeniedTables(): string[] {
 }
 
 /** Tables the runtime role may SELECT and never write (the access matrix's
- *  `runtime: 'read'`, plan v3.2 S2c): definer functions write them. */
+ *  `runtime: 'read'`): definer functions write them. */
 export function runtimeReadOnlyTables(): string[] {
   return ACCESS_MATRIX.filter((t) => t.runtime === 'read').map((t) => t.table);
 }
