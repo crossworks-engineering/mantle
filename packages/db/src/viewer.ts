@@ -834,7 +834,7 @@ export function currentSystemTx(): { tx: unknown; hooks: TxHooks; nest: SystemTx
  *    as it was before the request scope. Since arch A6 the grants and the
  *    workspace screens read in the scope (their definers, 0291) and no
  *    longer leave it by this reason.
- * *  - `brain-bookkeeping`: the named system step (system-step.ts, F4 fix
+ *  - `brain-bookkeeping`: the named system step (system-step.ts, F4 fix
  *    round 2): the brain-wide bookkeeping a write does after its item check
  *    (a table's history prune, an Admin scope's email attachment bytes, a
  *    file's derived items and drawings counted and its confirmed cascade,

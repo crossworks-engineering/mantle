@@ -410,6 +410,20 @@ describe.skipIf(!URL)('the workspace row definers (S2b)', () => {
       const held = await run(await asLogin(L.mod), archive(W));
       refused(held, '55000', 'holds_items');
       expect(!held.ok && held.msg).toMatch(/: 3 item\(s\) have their home/);
+      // A scope that names W but not the Moderator seat (mod_ws empty) still
+      // counts every home: the count is the owner's, never the scope's (audit
+      // MED-1: through mantle_ws_item_counts it counted 0 and archived W).
+      const narrow = {
+        'mantle.ws': `{${W}}`,
+        'mantle.mod_ws': '{}',
+        'mantle.scope_login': L.mod,
+        'mantle.login_id': L.mod,
+        'mantle.actor': `login:rw:${L.mod}`,
+        'mantle.write_mode': 'rw',
+      };
+      const heldNarrow = await run(narrow, archive(W));
+      refused(heldNarrow, '55000', 'holds_items');
+      expect(!heldNarrow.ok && heldNarrow.msg).toMatch(/: 3 item\(s\) have their home/);
       refused(await run(await asLogin(L.mem), archive(W)), '42501', 'archive_forbidden');
       refused(await run(await asLogin(L.modX), archive(W)), 'P0002', 'not_found');
       refused(await run(await asLogin(L.noUsers), archive(W)), 'P0002', 'not_found');

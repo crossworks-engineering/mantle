@@ -257,8 +257,15 @@ BEGIN
   IF s.archived THEN
     RAISE EXCEPTION 'mantle_ws:archived %: the workspace is archived', fn USING ERRCODE = '55000';
   END IF;
-  SELECT k."items", k."grants", k."exclusions" INTO c
-    FROM "public"."mantle_ws_item_counts"(ws) k;
+  -- Every grant of the workspace, counted here as the owner: never through
+  -- a reader held to the scope's settings (a scope may name the acting
+  -- login's workspaces but not its Moderator seats, and would count 0).
+  SELECT count(*) FILTER (WHERE g."is_home")::int AS "items",
+         count(*) FILTER (WHERE NOT g."is_home" AND NOT g."excluded")::int AS "grants",
+         count(*) FILTER (WHERE g."excluded")::int AS "exclusions"
+    INTO c
+    FROM "public"."item_grants" g
+   WHERE g."workspace_id" = ws;
   IF coalesce(c."items", 0) > 0 THEN
     RAISE EXCEPTION 'mantle_ws:holds_items %: % item(s) have their home in the workspace', fn, c."items"
       USING ERRCODE = '55000';

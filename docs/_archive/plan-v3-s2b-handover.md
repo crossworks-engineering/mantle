@@ -220,3 +220,32 @@ not counted. The container, worktree, script and logs are removed.
 `test:actor-off`); the new cells run warn and on inside the full run.
 
 CI: the run on this branch's head (the report to the CEO session names it).
+
+## Fix round 1 (the audit at 4f89fc11f, 8/10)
+
+The audit accepted the archive on the system pool in the login's write
+scope (the runtime role's grant; no added reach). Each finding:
+
+- **MED-1 (wider than main), fixed:** `mantle_ws_archive` took its "holds
+  items" count from `mantle_ws_item_counts(ws)`, which filters by the scope's
+  settings. With `mantle.ws` = {W}, `mantle.mod_ws` empty and the scope's
+  login a live Moderator of W, the count was 0, so a workspace that was
+  still an item's home was archived (main counted with no scope). The
+  definer now counts `item_grants` of the workspace itself, as its owner.
+  Cell: `ws-row-definers.db.test.ts`, the archive cell, those exact
+  settings, refused `holds_items` with the count 3, warn and on.
+- **LOW-1, added:** a route cell for why the archive runs on the system
+  pool (`s2b-ws-row-routes.db.test.ts`): an Admin user with the users area
+  who is no user of V archives V, which holds a share of a note homed in S
+  (the Admin user reads neither), warn and on, with the edit check on: 200,
+  the share dropped, the event names the Admin user, the note's home kept.
+- **LOW-2, fixed:** the stray `*` in viewer.ts's reasons comment.
+- **LOW-3, open for S2c / S7:** the archive path sets no
+  `mantle.write_mode`, so the definer's `read_only` refusal cannot fire
+  there (`withSystemPoolInWriteScope` carries the write scope only). Main
+  was the same: a read-only caller never reaches a write route.
+- **Optional, not done:** a private heads-lock helper would let the archive
+  run on the write role, but the grant delete's triggers (the read_ws
+  refresh and propagation on nodes the scope does not read) could then meet
+  the write role's edit check, and proving them safe is more than a small,
+  safe change.

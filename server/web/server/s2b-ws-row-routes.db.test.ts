@@ -88,8 +88,8 @@ describe.skipIf(!DB_URL)('S2b: the workspace row through the routes', () => {
          where workspace_id = ${id} order by at desc, id desc limit 1`
     )[0];
 
-  const makeItem = async (kind: 'app' | 'contact', home: string): Promise<string> => {
-    const p = kind === 'app' ? 'apps' : 'contacts';
+  const makeItem = async (kind: 'app' | 'contact' | 'note', home: string): Promise<string> => {
+    const p = kind === 'app' ? 'apps' : kind === 'note' ? 'notes' : 'contacts';
     await raw`insert into nodes (owner_id, type, title, path)
       select ${L.owner}, 'branch', ${p}, ${p}::ltree
        where not exists (select 1 from nodes where owner_id = ${L.owner}
@@ -374,6 +374,50 @@ describe.skipIf(!DB_URL)('S2b: the workspace row through the routes', () => {
         json: { code: 'forbidden', error: 'Only a Moderator of this workspace can archive it.' },
       });
       expect(await state(ws.W)).toEqual(before);
+    });
+
+    it(`${mode}: an Admin user outside the workspace archives it, dropping a share of an item it cannot read (the edit check on)`, async () => {
+      await setMode(mode);
+      // Why the archive runs on the system pool in the login's write scope:
+      // on the write role the heads lock leaves out items the scope does not
+      // read, and this Admin user reads neither V nor the note (homed in S).
+      await raw`select mantle_set_edit_check('on', 50, 'test')`;
+      const v = (
+        await raw<{ id: string }[]>`insert into workspaces (owner_id, name)
+          values (${L.owner}, ${`${tag} V ${mode}`}) returning id::text as id`
+      )[0]!.id;
+      await raw`delete from workspace_users where workspace_id = ${v}`;
+      const note = await makeItem('note', ws.S);
+      await raw.begin(async (tx) => {
+        await tx`select set_config('mantle.actor', 'system:test', true)`;
+        await tx`select mantle_lock_heads(array[${note}]::uuid[], 'update')`;
+        await tx`insert into item_grants (node_id, workspace_id, is_home, write)
+                 values (${note}, ${v}, false, false)`;
+      });
+      const done = await call(
+        `${mode} admin archive V`,
+        L.admin,
+        'POST',
+        `/api/workspaces/${v}/archive`,
+      );
+      expect(done.status).toBe(200);
+      expect(done.json).toMatchObject({
+        itemCount: 0,
+        grantCount: 1,
+        workspace: { id: v, archived: true },
+      });
+      expect(await lastEvent(v)).toEqual({
+        actor: L.admin,
+        action: 'workspace.archive',
+        subject: { grantsDropped: 1, exclusionsDropped: 0 },
+      });
+      const [left] = await raw<{ n: number }[]>`
+        select count(*)::int as n from item_grants where workspace_id = ${v}`;
+      expect(left!.n).toBe(0);
+      // The note keeps its home in S.
+      const [home] = await raw<{ ws: string }[]>`
+        select workspace_id::text as ws from item_grants where node_id = ${note} and is_home`;
+      expect(home!.ws).toBe(ws.S);
     });
 
     it(`${mode}: a Moderator archives; Admin is never archived`, async () => {
