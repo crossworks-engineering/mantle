@@ -398,4 +398,3 @@ export function itemWriteTarget(
 ): { id: string; need: ItemWriteNeed; ref: ItemRef } | null {
   return null;
 }
-
