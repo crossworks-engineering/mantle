@@ -18,8 +18,8 @@
  *  - the live catalog (the fnscan of eslint-rules/rights-counts.mjs on
  *    pg_proc, not on migration text): no function the runtime role or any
  *    other app role may EXECUTE, and no trigger function on any table,
- *    writes the four tables unless it is SECURITY DEFINER, directly or
- *    through an invoker function it calls.
+ *    writes or row-locks the four tables unless it is SECURITY DEFINER,
+ *    directly or through an invoker function it calls.
  *
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/db/src/ws-runtime-read.db.test.ts
  */
@@ -52,6 +52,10 @@ const TABLES = [
   'public.workspace_events',
   'public.workspace_resources',
 ];
+
+/** A row lock on one of the four tables in a function body. */
+const ROW_LOCK =
+  /\bfrom\s+(?:"?public"?\s*\.\s*)?"?(?:workspaces|workspace_users|workspace_events|workspace_resources)"?[\s\S]{0,400}?\bfor\s+(?:update|share|no\s+key\s+update|key\s+share)\b/i;
 
 class Rollback extends Error {}
 type Out = { ok: true; v: unknown } | { ok: false; state: string; msg: string };
@@ -375,7 +379,7 @@ describe.skipIf(!URL)(
       }
     });
 
-    it('catalog: no function an app role may run, and no trigger function, writes the four tables unless SECURITY DEFINER', async () => {
+    it('catalog: no function an app role may run, and no trigger function, writes or locks the four tables unless SECURITY DEFINER', async () => {
       // The scoreboard's own test of a body (rights-catalog.db.test.ts proves
       // it agrees with the migrations), on the live catalog.
       const counts = (await import(join(ROOT, 'eslint-rules/rights-counts.mjs'))) as {
@@ -392,11 +396,11 @@ describe.skipIf(!URL)(
          and not exists (select 1 from pg_depend d
                           where d.classid = 'pg_proc'::regclass and d.objid = p.oid
                             and d.deptype = 'e')`;
+      // A write, or a row lock (FOR UPDATE or FOR SHARE needs UPDATE too).
+      const touches = (src: string) => counts.writesWorkspaceTable(src) || ROW_LOCK.test(src);
       // Invoker writers, and every invoker function that calls one (by name):
       // a call runs as its caller, so the caller's rights decide the write.
-      const invoker = new Set(
-        fns.filter((f) => !f.definer && counts.writesWorkspaceTable(f.src)).map((f) => f.oid),
-      );
+      const invoker = new Set(fns.filter((f) => !f.definer && touches(f.src)).map((f) => f.oid));
       for (let grew = true; grew;) {
         grew = false;
         const names = fns.filter((f) => invoker.has(f.oid)).map((f) => f.name);
@@ -409,9 +413,14 @@ describe.skipIf(!URL)(
         }
       }
       const reach = fns.filter((f) => invoker.has(f.oid));
-      // Today: the private helper only (mantle_ws_put_assistant, which only
-      // definers call). A new one passes only if no app role may run it.
-      expect(reach.map((f) => f.name).sort()).toEqual(['mantle_ws_put_assistant']);
+      // Today: two private helpers that only definers call (the body that
+      // puts an assistant on a workspace, and the one that locks the
+      // workspace row and reads the acting login's seat). A new one passes
+      // only if no app role may run it.
+      expect(reach.map((f) => f.name).sort()).toEqual([
+        'mantle_ws_put_assistant',
+        'mantle_ws_user_seat',
+      ]);
       for (const f of reach) {
         const runners = await admin<{ r: string }[]>`
         select r.rolname::text as r from pg_roles r
@@ -419,20 +428,19 @@ describe.skipIf(!URL)(
            and has_function_privilege(r.oid, ${f.oid}::oid, 'EXECUTE')`;
         expect(
           runners.map((x) => x.r),
-          `${f.sig}: an invoker that writes a workspace table`,
+          `${f.sig}: an invoker that writes or locks a workspace table`,
         ).toEqual([]);
         const [trg] = await admin<{ n: number }[]>`
         select count(*)::int as n from pg_trigger where tgfoid = ${f.oid}::oid`;
         expect(trg!.n, `${f.sig}: a trigger runs it`).toBe(0);
       }
-      // No trigger on any table runs an invoker function that writes them.
+      // No trigger on any table runs an invoker function that writes or
+      // locks them.
       const trgs = await admin<{ fn: string; definer: boolean; src: string }[]>`
       select distinct p.oid::regprocedure::text as fn, p.prosecdef as definer,
              coalesce(p.prosrc, '') as src
         from pg_trigger t join pg_proc p on p.oid = t.tgfoid where not t.tgisinternal`;
-      const bad = trgs
-        .filter((t) => !t.definer && counts.writesWorkspaceTable(t.src))
-        .map((t) => t.fn);
+      const bad = trgs.filter((t) => !t.definer && touches(t.src)).map((t) => t.fn);
       expect(bad).toEqual([]);
     });
   },
