@@ -9,10 +9,11 @@
  *    reads what is granted to the workspaces it is in, like anyone. A
  *    write, an Admin user's too, runs in the login's scope: its writes on
  *    the write role (mantle_write_user) while the actor check is not off,
- *    where the database checks each one. Only the Admin acts below
- *    (ADMIN_ACT_WRITES) run on the system pool (an Admin user's link close,
- *    a contact share's "Can write" and the deleted apps' trash run in the
- *    scope since plan v3.2 S6 c2, through their definers).
+ *    where the database checks each one. The Admin acts (a contact's
+ *    sharing, sharing with contacts, Revoke all, an entity merge, a link
+ *    close, a contact share's "Can write", the deleted apps' trash) run in
+ *    the scope too since plan v3.2 S6 c2 and c3, through their definers,
+ *    which check the Admin user inside.
  *  - an area (`settings`, `users`, `assistants`, `connectors`, `keys`):
  *    management (plan 2.4). The login must hold the area (requireArea:
  *    the Admin workspace and its limits); the route then runs on the
@@ -398,34 +399,3 @@ export function itemWriteTarget(
   return null;
 }
 
-/**
- * Admin acts on the system pool (F4 fix round 1): the write routes on which
- * an Admin user's request runs on the system pool with no scope, its reads
- * and its transactions, after the guard's Admin check (the login is an
- * Admin user: enterLoginWrite with admin set; a member never reaches them,
- * none is in MEMBER_OPEN_WRITES, and they refuse it as every other owner
- * route does). Each one's tables are ones no workspace scope reads, or its
- * rule is the brain's and not the caller's workspaces:
- *  - a contact's sharing (its code: contact_share_codes, never granted to
- *    the workspace role), sharing an item with contacts (the code rows,
- *    locked FOR SHARE, and the item read whatever its home: docs/
- *    workspaces.md, "Share it with one contact: to be an Admin user, its
- *    home is not checked") and Revoke all of a contact's shares (every live
- *    share of the contact, items outside the user's workspaces included);
- *  - merging two entities: the entity graph is Admin's (0265), and every
- *    fact of the duplicate moves, a fact of an item outside the user's
- *    workspaces included (facts.entity_id is ON DELETE SET NULL: a fact the
- *    scope did not move would lose its entity when the duplicate goes).
- */
-export const ADMIN_ACT_WRITES: ReadonlySet<string> = new Set([
-  'POST /api/contacts/:id/sharing',
-  'DELETE /api/contacts/:id/shares',
-  'POST /api/shares/contacts',
-  'POST /api/entities/merge',
-]);
-
-/** Whether an Admin user's write through `method pattern` is an Admin act
- *  on the system pool (ADMIN_ACT_WRITES). */
-export function adminActWrite(method: string, pattern: string): boolean {
-  return ADMIN_ACT_WRITES.has(`${method.toUpperCase()} ${pattern}`);
-}

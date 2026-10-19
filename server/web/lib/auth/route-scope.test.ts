@@ -11,9 +11,7 @@ import { describe, expect, it } from 'vitest';
 import { isAnyLoginRoute } from './any-login-routes';
 import { isMemberRoute } from './member-routes';
 import {
-  ADMIN_ACT_WRITES,
   CREATE_ROUTES,
-  adminActWrite,
   MEMBER_OPEN_READS,
   MEMBER_OPEN_WRITES,
   READ_POSTS,
@@ -87,27 +85,27 @@ describe.skipIf(!hasManifest)('route scope table (W6a)', () => {
   );
 
   it.skipIf(!hasManifest)(
-    'every Admin act (F4 fix round 1) is a served content write no member reaches',
+    'every Admin act (F4 fix round 1) is a served content write no member reaches, in the scope since S6 c3',
     async () => {
       const { routeManifest } = await import('../../server/route-manifest.gen');
       const served = new Set(
         routeManifest.flatMap((e) => e.methods.map((m) => `${m} ${e.pattern}`)),
       );
-      for (const key of ADMIN_ACT_WRITES) {
+      // ADMIN_ACT_WRITES (the system-pool list) went in plan v3.2 S6 c3: the
+      // four run in the login's scope, each asking its definer (0308).
+      const acts = [
+        'DELETE /api/contacts/:id/shares',
+        'POST /api/contacts/:id/sharing',
+        'POST /api/entities/merge',
+        'POST /api/shares/contacts',
+      ];
+      for (const key of acts) {
         const [method, pattern] = key.split(' ') as [string, string];
         expect(served.has(key), key).toBe(true);
         expect(routeClass(pattern), key).toEqual({ kind: 'content' });
         expect(isReadRequest(method, pattern), key).toBe(false);
         expect(memberMayWrite(method, pattern), key).toBe(false);
-        expect(adminActWrite(method.toLowerCase(), pattern), key).toBe(true);
       }
-      expect([...ADMIN_ACT_WRITES].sort()).toEqual([
-        'DELETE /api/contacts/:id/shares',
-        'POST /api/contacts/:id/sharing',
-        'POST /api/entities/merge',
-        'POST /api/shares/contacts',
-      ]);
-      expect(adminActWrite('PATCH', '/api/contacts/:id')).toBe(false);
     },
   );
 

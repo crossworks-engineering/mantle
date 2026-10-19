@@ -78,7 +78,7 @@ import {
   type RouteCaller,
   type RouteRow,
 } from './route-policy';
-import { adminActWrite, auditsAsWrite } from './route-scope';
+import { auditsAsWrite } from './route-scope';
 import { takeRouteLimits, type LimitLogin } from '../route-limits';
 import {
   SESSION_COOKIE_NAME,
@@ -1724,36 +1724,24 @@ async function adminRouteGate(loginId: string): Promise<NextResponse | null> {
  * mantle_scope_has_admin, mantle_scope_has_area), so the database answers
  * for them too. Returns the refusal, or null to go on.
  *
- * Kept on the system pool with no scope at all, its reads unscoped and no
- * scope on its transactions: an Admin user's Admin acts of ADMIN_ACT_WRITES
- * (route-scope.ts, F4 fix round 1: a contact's sharing, sharing with
- * contacts, Revoke all of a contact's shares, an entity merge), each a
- * definer that checks the Admin user inside since plan v3.2 S6 c1 (their
- * move into the scope is c3). The share close by the users area, a contact
- * share's "Can write" and the deleted apps' trash run in the login's scope
- * since S6 c2: their handlers ask their definers (migration 0310).
+ * No write is kept on the system pool since plan v3.2 S6 c3: the Admin acts
+ * (a contact's sharing, sharing with contacts, Revoke all of a contact's
+ * shares, an entity merge; the share close by the users area, a contact
+ * share's "Can write", the deleted apps' trash) run in the login's scope,
+ * each asking its definer, which checks the Admin user inside (0308, 0310).
  */
 async function enterLoginWrite(
   loginId: string,
   route: RouteRow,
   opts: { admin: boolean },
 ): Promise<NextResponse | null> {
-  const adminAct = opts.admin && adminActWrite(route.method, route.pattern);
-  if (!adminAct) {
-    const refused = await itemWriteGate(loginId, route);
-    if (refused) return refused;
-  }
+  const refused = await itemWriteGate(loginId, route);
+  if (refused) return refused;
   // A create lands in the request's workspace (?ws=) when the login
   // moderates it (W6b); else by the login's default home rule.
   const home = await createHomeFor(loginId, route, !opts.admin);
   if (home instanceof NextResponse) return home;
   noteRequestCreateHome(home);
-  if (adminAct) {
-    // An Admin act (ADMIN_ACT_WRITES): on the system pool with no scope,
-    // neither on its reads nor on its transactions.
-    noteRequestSystem('admin-write');
-    return null;
-  }
   await enterLoginScope(loginId, requestMode(true));
   return null;
 }

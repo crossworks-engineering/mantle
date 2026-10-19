@@ -218,10 +218,8 @@ each calling file is pinned (`eslint-rules/as-system-allowlist.mjs`).
 
 - **Request exits** (`noteRequestSystem`, `server/web/lib/auth/session.ts`):
   `area` (an Admin area route, after the area check), `login-self` (a
-  login's own things), `admin-write` (the Admin acts of `ADMIN_ACT_WRITES`;
-  since plan v3.2 S6 c3 an Admin user's any-login write enters the login's
-  scope as a member's does: keys, chat and Telegram pairing writes, their
-  rules in their definers and named exits).
+  login's own things); `admin-write` has no site since S6 c3 (an Admin
+  user's writes run in its scope).
 - **`systemStep(step, { items, need }, fn)`**
   (`packages/db/src/system-step.ts`): bookkeeping after the write's item
   check; it answers the caller numbers, yes or no, or rows its scope reads.
@@ -332,10 +330,8 @@ Each ends in the step of plan v3.2 (2026-10-17) named.
 - `mantle_login_area` is the area rule or, with no Admin workspace, yes. S4.
 - A definer asked with no scope answers as the system pool would;
   `mantle_grant_change` then takes the caller from its `actor`. S2, S7.
-- Seven Admin acts run on the system pool with no scope (the four of
-  `ADMIN_ACT_WRITES` call a definer that checks the Admin user since S6 c1,
-  0308), and two HTTP item checks remain (`ITEM_REF_PREFIXES`: share,
-  deleted-app). S6.
+- The seven Admin acts' definers (0308, 0310) run by `adminActTx` on the
+  system pool: the write role holds no EXECUTE on them yet. S7.
 - The system pool is the whole runtime role, not a narrow one. S7.
 - A login carries a kind and a role, and code branches on them. S8.
 - Route policy is spread over lists, not declared per route. S9.

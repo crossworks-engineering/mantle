@@ -1,10 +1,10 @@
 /**
  * The transaction an Admin act's definer runs in (workspaces arch plan
- * v3.2, "Admin acts become definers"; migration 0308). An Admin act
- * (route-scope.ts ADMIN_ACT_WRITES) still runs its request on the system
- * pool with no scope in c1 (session.ts enterLoginWrite,
- * noteRequestSystem('admin-write')), so the definer would find no login to
- * check. This opens one transaction on the same pool in the login's scope
+ * v3.2, "Admin acts become definers"; migrations 0308, 0310). An Admin
+ * act's request runs in the login's scope since S6 c3 (on the system pool
+ * with no scope in c1 and c2), but the definers are the runtime role's to
+ * run (RUNTIME_SYSTEM_FUNCTIONS; the write role holds no EXECUTE on them).
+ * This opens one transaction on the system pool in the login's scope
  * (systemPoolTxInScope, the one place that sets it by hand): its live
  * workspaces (loginScopeFor) and the login in mantle.scope_login, which only
  * the scope's checks read (mantle_scope_login_id, 0291); mantle.login_id

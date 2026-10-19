@@ -43,14 +43,16 @@ export const TOOL_LIST_PINS = {
  *  apps and tree items). Round 4 (the last family), still 5:
  *  ITEM_WRITE_PREFIXES and ITEM_READ_WRITES are gone, and NO_ITEM_WRITES
  *  names the same seven routes as ITEM_READ_WRITES did, for
- *  route-policy's makesItems only (no item check). */
+ *  route-policy's makesItems only (no item check). Plan v3.2 S6 c3: 5 to
+ *  4, ADMIN_ACT_WRITES is gone (the four Admin acts run in the login's
+ *  scope, each asking its definer). */
 export const ROUTE_LIST_PINS = {
   'server/web/lib/api-v1.ts': 1,
   'server/web/lib/auth-constants.ts': 2,
   'server/web/lib/auth/any-login-routes.ts': 3,
   'server/web/lib/auth/member-routes.ts': 1,
   'server/web/lib/auth/route-policy.ts': 1,
-  'server/web/lib/auth/route-scope.ts': 5,
+  'server/web/lib/auth/route-scope.ts': 4,
   'server/web/lib/body-limit.ts': 1,
   'server/web/lib/route-limits.ts': 1,
   'server/web/server/public-session-routes.ts': 1,
