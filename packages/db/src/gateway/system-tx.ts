@@ -30,7 +30,7 @@ import { adminSql, getAdminDb, onCloseDb, rawAdminSql } from './pools';
 import {
   levelEnded,
   NESTED_SAVEPOINT_WARN,
-  openWriteTx,
+  currentWriteTx,
   type LoginWriteRoute,
   type WriteTx,
 } from './role-tx';
@@ -200,7 +200,7 @@ async function nestedSystemTx<T>(
   // through joinWriteTx, which counts it in the same count. Only when this
   // system transaction is that write transaction (round 5, N6): a system
   // pool one inside a live write transaction counts its own.
-  const onRole = openWriteTx.getStore();
+  const onRole = currentWriteTx();
   const countedByJoin = !!onRole && !levelEnded(onRole) && onRole.saves === outer.nest.saves;
   if (!countedByJoin) outer.nest.saves.n += 1;
   if (!countedByJoin && outer.nest.saves.n === NESTED_SAVEPOINT_WARN + 1) {

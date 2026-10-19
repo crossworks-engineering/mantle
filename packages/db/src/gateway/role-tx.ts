@@ -127,7 +127,19 @@ export type WriteTx = {
   parent: WriteTx | null;
 };
 
-export const openWriteTx = new AsyncLocalStorage<WriteTx>();
+const openWriteTx = new AsyncLocalStorage<WriteTx>();
+
+/** The login write transaction level the caller runs in, if any: the one
+ *  read of the store outside this module (the store's writes stay here). */
+export function currentWriteTx(): WriteTx | undefined {
+  return openWriteTx.getStore();
+}
+
+/** Run `fn` in write transaction level `tx`: the one write of the store
+ *  outside this module (role-runner.ts opens a transaction's top level). */
+export function runInWriteTx<T>(tx: WriteTx, fn: () => T): T {
+  return openWriteTx.run(tx, fn);
+}
 
 /**
  * Run `fn` if the transaction the caller's work joined rolls back: an open

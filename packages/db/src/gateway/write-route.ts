@@ -30,7 +30,7 @@ import {
   joinableWriteTx,
   lazyQuery,
   levelEnded,
-  openWriteTx,
+  currentWriteTx,
   sendIn,
   type LoginWriteRoute,
   type QueryMode,
@@ -213,7 +213,7 @@ export async function onLoginWritePool<T>(paths: GatewayPaths<T>): Promise<T> {
   if (open) return paths.join(open);
   // A write of the same route left running inside a transaction that has
   // ended (round 3, A): refused, never sent on a connection of its own.
-  const store = openWriteTx.getStore();
+  const store = currentWriteTx();
   if (store && store.route.setSql === route.setSql && levelEnded(store)) {
     throw new JoinedWriteEndedError();
   }

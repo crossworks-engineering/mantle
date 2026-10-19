@@ -17,7 +17,7 @@ import {
   joinWriteTx,
   newWriteTx,
   noteWriteRoleDenial,
-  openWriteTx,
+  runInWriteTx,
   sendIn,
   watchTx,
   type LoginWriteRoute,
@@ -66,7 +66,7 @@ export async function writeRoleStatement(
 /**
  * Run `work` as the outermost login write transaction `begin` opens: its
  * client watched (watchTx) behind the one SET (settingsFirst), open to
- * writes that join it while `work` runs (openWriteTx). The hooks of a
+ * writes that join it while `work` runs (runInWriteTx). The hooks of a
  * withSystemTx joined to it run once it commits or rolls back.
  */
 async function writeTxOf(
@@ -80,7 +80,7 @@ async function writeTxOf(
     // Open to joins only while its work runs: the connection is taken
     // outside (checkNestedAcquire sees the caller's context, not this).
     out = await begin((t) =>
-      openWriteTx.run(tx, async () => {
+      runInWriteTx(tx, async () => {
         const client = settingsFirst(watchTx(t, tx, tx), () => setSql);
         tx.t = client;
         try {
