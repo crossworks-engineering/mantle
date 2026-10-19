@@ -42,7 +42,6 @@ describe.skipIf(!URL)('the share routes on the served list', () => {
   let scratch: Awaited<ReturnType<Ts['createMigratedScratchDatabase']>> | undefined;
   let m: typeof import('@mantle/db');
   let create: typeof import('./route');
-  let one: typeof import('./[id]/route');
   const owner = randomUUID(); // the anchor
   // A second admin login: a plain user (no Moderator) of Admin, P and Q,
   // in no way a user of R.
@@ -89,31 +88,17 @@ describe.skipIf(!URL)('the share routes on the served list', () => {
       ),
     );
   // A change or a close of a link asks its rule in the login's scope (plan
-  // v3.2 S6 c2: shareItemRefusal, the gate's check before), so these run
-  // in the scope the gate enters for the request.
-  const inScope = <T>(fn: () => Promise<T>) =>
-    m.withViewer({ login: (h.user as { actor: { id: string } }).actor.id }, fn);
-  const patch = (shareId: string, body: unknown) =>
-    call(
-      inScope(() =>
-        one.PATCH(
-          new Request(`http://brain.test/api/shares/${shareId}`, {
-            method: 'PATCH',
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify(body),
-          }),
-          { params: Promise.resolve({ id: shareId }) },
-        ),
-      ),
-    );
-  const del = (shareId: string) =>
-    call(
-      inScope(() =>
-        one.DELETE(new Request(`http://brain.test/api/shares/${shareId}`, { method: 'DELETE' }), {
-          params: Promise.resolve({ id: shareId }),
-        }),
-      ),
-    );
+  // v3.2 S6 c2: shareItemRefusal, the gate's check before), so these go
+  // through the full pipeline (runRoute): the gate enters the scope, as
+  // for a client's request.
+  const viaGate = async (method: string, shareId: string, body?: unknown) => {
+    const { runRoute } = await import('@/server/run-route');
+    const login = (h.user as { actor: { id: string } }).actor.id;
+    const res = await runRoute(login, method, `/api/shares/${shareId}`, body);
+    return { status: res.status, body: (await res.json()) as Json };
+  };
+  const patch = (shareId: string, body: unknown) => viaGate('PATCH', shareId, body);
+  const del = (shareId: string) => viaGate('DELETE', shareId);
   const servedOf = async (nodeId: string) =>
     (
       await x<{ s: unknown }>(sql`select settings->'served' as s from shares
@@ -149,7 +134,6 @@ describe.skipIf(!URL)('the share routes on the served list', () => {
     process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
     m = await import('@mantle/db');
     create = await import('./route');
-    one = await import('./[id]/route');
     await x(sql`insert into auth.users (id, email, password_hash, is_owner, role, display_name) values
       (${owner}, ${email('owner')}, 'x', true, 'admin', 'Olive Owner'),
       (${adm2}, ${email('adm2')}, 'x', false, 'admin', 'Ada Admin')`);
