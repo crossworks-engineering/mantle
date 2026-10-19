@@ -472,7 +472,7 @@ describe.skipIf(!URL)('the runtime role is not the owner (arch A9)', () => {
       expect(await asNarrow(conn, 'delete from public.audit_log where false'), who).toEqual([]);
       for (const stmt of [
         // A content table: read only.
-        'insert into public.nodes select * from public.nodes where false',
+        'insert into public.nodes (id) select id from public.nodes where false',
         'update public.nodes set title = title where false',
         'delete from public.facts where false',
         // A table the runtime role only reads, and one it cannot touch.
