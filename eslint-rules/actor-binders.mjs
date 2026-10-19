@@ -48,7 +48,7 @@ export const ACTOR_BINDER_PINS = {
   // The system pool's start: its first mode read outside the caller's
   // actor (runWithoutActor), and a miss row as system(actor-check).
   'packages/db/src/gateway/pools.ts': 2,
-  // loginActorNow: the login's own row read as system(entry) (A2a).
+  // loginActorNow: the login's own row read as system(entry).
   'packages/db/src/gateway/scope-answers.ts': 1,
   // 9 since arch A6b: systemWork, system work that refuses a workspace scope,
   // binds system(reason) as asSystem does.

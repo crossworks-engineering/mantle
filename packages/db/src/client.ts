@@ -1,5 +1,14 @@
-import * as schema from './schema/index';
-
+/**
+ * A re-export barrel, nothing more: the database gateway lives in
+ * packages/db/src/gateway/ (pools, check-mode, actor-sql, role-tx,
+ * role-runner, write-route, system-tx, scope, scope-answers, heads,
+ * viewer-scope, handles), split out of this file. It re-exports every
+ * name this file exported before, so index.ts, `@mantle/db/client` and the
+ * tests that mock this module are unchanged.
+ *
+ * It stays one release, then goes: add no code here, and import a gateway
+ * module (inside packages/db) or `@mantle/db` (outside) instead.
+ */
 export {
   ACTOR_CHECK_DRIFT_SQL,
   EDIT_CHECK_DRIFT_SQL,
@@ -80,5 +89,4 @@ export {
   viewerScopeFor,
   withViewer,
 } from './gateway/viewer-scope';
-
-export { schema };
+export * as schema from './schema/index';
