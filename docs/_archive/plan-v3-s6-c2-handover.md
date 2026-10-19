@@ -1,7 +1,7 @@
 # Plan v3 S6 part c2 handover
 
-Branch `feat/s6-c2`, rebased on main 5e01dda68 (v0.300.100). Not merged,
-not tagged, not rolled. Plan v3.2 section "S6. Admin acts become
+Branch `feat/s6-c2`, rebased on main 817fbb986 (v0.300.101) in round 3
+(below). Not merged, not tagged, not rolled. Plan v3.2 section "S6. Admin acts become
 definers", part c2. Built in two rounds: the first builder wrote the code,
 the pins and the unit gates and handed over at its tool-call limit; the
 second (round 2, below) re-recorded the two DB-less sweeps, fixed a hang
@@ -266,12 +266,11 @@ Roll the N-1 image back and leave 0310 in place. No revert file.
 
 ## Open
 
-- `purgeDeletedApp` (app-trash.ts) is now test-only (two DB tests call
-  it); left in place.
+- `purgeDeletedApp`: done in round 3 (moved to test support).
 - `server/web/lib/mcp-auth.ts:216` peeks `req.clone()` with
   `readBodyCapped`, as the share route does: the body-limit fix covers
   it if a body there ran past its cap (not tested there; no test of its own).
-- The journal cell: red until S2b's 0309 is on main.
+- The journal cell: green since the round 3 rebase (0309 is on main).
 
 ## Round 3 (left, for the next builder)
 
@@ -310,3 +309,87 @@ origin/main 817fbb986 (v0.300.101, 0309).
    removed after by exact name.
 7. Push (CI should go green once the journal cell is green), and report
    the head SHA and the CI run to the CEO session.
+
+## Round 3 (third builder)
+
+Rebased on origin/main 817fbb986 (v0.300.101, S2b's 0309 merged). 0310
+keeps idx 310 and `when` 1790197920000; the journal now runs 0309 then
+0310 and the "no slot is skipped" cell is green. The pins file conflicted
+in every commit that touched it: main's file was kept through the rebase,
+then c2's pins were put back on top in one commit (42b319a97):
+`itemPrecheckRoutes` 0, `adminActRoutes` 4, `inHandlerAreaChecks` 22,
+`inHandlerAreaCheckFiles` 18, `actorsHistoryRefs` 74 and their notes, and
+`asSystemSites` 16 (see Pins). Main's own pin moves (S2b) stay as main has
+them.
+
+The four lows (6f52713cd, d8bbdb0b4):
+
+1. LOW-1, the restore race. `createApp` (packages/content/src/apps.ts)
+   takes `opts.inTx`, run in the insert's transaction after the app's rows
+   are written. `restoreDeletedAppFrom` (app-trash.ts) passes a check
+   there: the pre_delete `node_snapshots` row at the seq the definer
+   answered is still there (visible by its row rule once the node is
+   back, 0265). If it is gone, the insert rolls back, the function answers
+   null, and the restore route answers `itemNotFound()`, the 404 main
+   answered. Narrower only: the same yes, plus one more no. Cell: "a
+   snapshot gone before the insert: nothing made, the 404" (warn and on),
+   in the login's request scope as the session guard enters it: the
+   definer says restore, the snapshot is deleted, the restore makes
+   nothing, then the route answers the 404.
+2. LOW-2: the Pins section names `asSystemSites` and the dropped
+   `actorsHistoryRefs` note.
+3. LOW-3: cell "a Moderator of the app's home, not the owner, restores
+   it" (warn and on): an Admin user who moderates the Admin workspace (the
+   app's stored home) and is not the brain's owner restores over HTTP,
+   200 with the app's id and title, the node is back, and
+   `m.takeActorMisses()` is empty after it.
+4. LOW-4: `purgeDeletedApp` moved to test support,
+   `packages/content/src/test-support/app-trash.ts` (export
+   `@mantle/content/test-support/app-trash`), the same rule (the newest
+   pre_delete row's keepForOwner; owner-only for a held app). The two DB
+   tests import it from there; product code has none. The purge rule of
+   the definer and the sweep did not change.
+
+No mini app, app row, app database or sandbox was removed anywhere; the
+DB tests ran only on scratch databases in my own container.
+
+### Gates (round 3)
+
+Mac (DATABASE_URL unset), on 6f52713cd (d8bbdb0b4 changes one test
+file; eslint and prettier ran on it, exit 0):
+
+| Gate                                                | Exit | Note                                   |
+| --------------------------------------------------- | ---- | -------------------------------------- |
+| `pnpm -r typecheck`                                 | 0    |                                        |
+| `pnpm lint`                                         | 0    | 1 old warning (contact-sharing-routes) |
+| `pnpm format:check`                                 | 0    |                                        |
+| `pnpm docs:check`                                   | 0    |                                        |
+| `pnpm arch:check`                                   | 0    |                                        |
+| `pnpm exec vitest run server packages eslint-rules` | 0    | 856 files passed, 266 skipped (no DB)  |
+
+Workstation, on d8bbdb0b4 (own detached worktree, own pgvector pg18
+container `s6c2r3_pg` on 56481 as CI has it, superuser postgres,
+max_connections 450, `infra/postgres/init` mounted; init-scratch and
+migrate with `MANTLE_CHECK_FLOOR=keep`; node v26.5.0, systemd-run --user,
+`--maxWorkers=3`; container, worktree and files removed after by exact
+name):
+
+| Run                                    | Exit | Files       | Tests                   |
+| -------------------------------------- | ---- | ----------- | ----------------------- |
+| init-scratch + migrate                 | 0    |             |                         |
+| `pnpm -C server/web build` (6f52713cd) | 0    |             |                         |
+| full vitest with the database          | 0    | 1122 passed | 13821 passed, 1 skipped |
+| `test:actor-off`                       | 0    | 127 passed  | 1159 passed, 1 skipped  |
+| `test:runtime-role` (in full)          | 0    | 274 passed  | 2745 passed, 1 skipped  |
+
+A first full run on a container made with POSTGRES_USER=mantle had 12
+red cells in three packages/db files (runtime-role, db-restore-run,
+dump-restore): they need a `postgres` role, which CI's container has.
+Not c2 code; the run above, on a container as CI makes it, is green. The
+c2 DB test alone: 12 passed (the 8 before and the 4 new cells).
+
+CI on d8bbdb0b4 (the code head; the commit after it changes this file
+only): https://github.com/crossworks-engineering/mantle/actions/runs/39234376542,
+success, every step (typecheck, lint, format, docs paths, architecture
+counts, boot smoke, migrate, Test, actor off, actor on, edit on, runtime
+role, matrix, build).
