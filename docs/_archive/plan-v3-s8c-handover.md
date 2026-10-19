@@ -42,7 +42,8 @@ migration.
   - both AND `loginAdminPair(login)`; areas only when `admin`;
   - a scope for another login (or for none) rejects;
   - memoized per request context (per Login object outside a request),
-    keyed by login and by scoped or not; an error answers no.
+    keyed by login and by scoped or not; an error answers no (fix round 1
+    keys it on the Login object and the scope object instead, below).
 - **`server/web/lib/auth/session.ts`.**
   - `getLoginOr401` answers a `Login`. The legacy two-shape answer is the
     exported `AnyLogin` type (a transition adapter), reached through
@@ -115,7 +116,7 @@ findMemberAsset, all until S8b.
 
 No new lint `no-login-kind-branches`: `loginKindBranches` (arch:check,
 down only) carries the count per file in its detail; the per-package
-split is above. Open for the CEO whether a separate lint rule is wanted.
+split is above. (The CEO ruled on it in fix round 1: no separate lint.)
 
 ### For c2 to c4
 
@@ -167,3 +168,61 @@ time). Every set passed on its first run, no rerun:
 
 The commit after db9a4a40e changes no code the DB runs read (pins, the
 spec line, a heading code, this file).
+
+### Fix round 1
+
+The audit at f6268f405 found no widening against main. Its items, fixed
+on the branch rebased onto main at 16c5e0311 (v0.300.108, the client.ts
+split; no conflict). Each has a cell in
+`server/web/lib/auth/admin-facts.db.test.ts`:
+
+| item                                                                                                                                                                                                                                                                  | fix                                                                                                                                                                                                                                | cell                                                                                                                                                  |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| MED: the memo was keyed by request context and lowercased login id, so a copy (spread, or the id upper-cased) asked after the real Login answered Admin, and after a demotion, `forgetRequestLogins()` and a fresh `getLoginOr401()` the stale Admin answer came back | `login.ts`: the memo is a `WeakMap<Login, { row?, scopes }>` on the very Login object, and `loginAdminPair` is checked before it (a Login with no pair answers no without touching the memo)                                       | "a copy asked after the real Login in the same request answers no, scoped or not"; "demote, forget, find again: the fresh Login answers the demotion" |
+| LOW: `loginOf` / `loginLegacy.set` left the Login writable, so an overwritten `loginId` kept its entry                                                                                                                                                                | `session.ts`: the Login (and a copy of its actor) and its legacy shape are frozen; the entry stores the login id and answers only while the object still names it (`legacyEntry`)                                                  | "an overwritten loginId borrows no pair"                                                                                                              |
+| LOW: the `scope` memo key did not tell two scopes for one login apart                                                                                                                                                                                                 | keyed on the workspace scope object (`currentWorkspaceScope()`), as `scopeHoldsAdmin` keys its own (`packages/db/src/gateway/scope-answers.ts`)                                                                                    | "two scopes for one login each ask: an app run without Admin answers no"                                                                              |
+| LOW: a failed scope ask was silent                                                                                                                                                                                                                                    | `scopeFacts` failures are logged (`console.warn`, the login id and the error) and still answer no; the row path already logs a lost grant through `loginAreas` (`loginFactFailed`)                                                 | (the log line; no cell)                                                                                                                               |
+| LOW: the scoped cells went only through `withViewer`                                                                                                                                                                                                                  | one cell through the real any-login request scope: a request slot on an any-login write row of the route manifest, `getLoginOr401` enters the login's scope (`enterLoginScope`, writes on), byte-equal to main for all five logins | "through the real any-login request scope (enterLoginScope, read-write)"                                                                              |
+
+The memo is now per Login object and scope, not per request: a second
+`getLoginOr401()` in one request is a fresh find and asks again (one
+round trip more on that rare path, the honest answer after a change).
+
+#### Changed answers
+
+None against main: no decision reads adminFacts yet. Against c1 as built,
+narrower only: a copy, or a Login found again after a demotion, answers
+no where the old memo answered the first Login's Admin.
+
+#### CEO rulings (2026-10-20, after the audit)
+
+- No separate `no-login-kind-branches` lint: the `loginKindBranches`
+  counter (arch:check, only down, per file in its detail) suffices.
+- The `adminFacts(login)` signature (the login passed in, not the brief's
+  `adminFacts()`) is accepted.
+- `loginRoleDecisionReads` is pinned at its measure (34) and only goes
+  down; the brief's "1" was wrong.
+
+#### For S8b: what `mantle_scope_is_admin()` trusts
+
+`mantle_scope_is_admin()` trusts only `mantle.ws` (the scope holds the
+live Admin workspace): it checks no brain id, no membership of the
+scope's login and no disabled login. adminFacts is safe today only with
+the row's pair ANDed in (role admin AND a user of Admin, read with the
+login row). Before S8b drops the pair, its SQL function needs the owner
+(brain) and membership checks (the scope's login a user of that Admin
+workspace now, enabled), with cells.
+
+#### For c2: two latent narrowings to cover with cells
+
+When a handler moves from the legacy `kind` to `adminFacts(login)`:
+
+1. **An app-run scope answers no.** A login running an app
+   (`withViewer({ login, app })`) is in a scope without Admin, so
+   adminFacts answers no there even for an Admin user (the cell above
+   shows it). A handler that decided Admin on `kind` inside such a scope
+   narrows: a cell per site, or ask outside the app scope.
+2. **The row's pair, not the role.** A role admin outside Admin (drift)
+   has legacy `kind` 'admin' but adminFacts answers no. A handler that
+   decided on `kind` for such a login narrows: a cell per site, or it
+   stays on the legacy shape until S8b.
