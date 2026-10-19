@@ -26,7 +26,7 @@ and in the item's Grant Access panel. Read
 
 The database roles and the restore checks still matter to an operator.
 
-- **Restore** (`scripts/db-restore.sh`) creates the ten roles
+- **Restore** (`scripts/db-restore.sh`) creates the eleven roles
   (`mantle_view_team`, `mantle_view_client`, `mantle_view_public`,
   `mantle_view_space`, `mantle_view_user`, the workspace role of
   workspaces W1, `mantle_write_user`, the write role of arch A2b2a,

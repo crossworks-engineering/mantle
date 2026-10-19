@@ -39,6 +39,7 @@ describe('ops docs match the code', () => {
       'eight',
       'nine',
       'ten',
+      'eleven',
     ];
     expect(restoreLine![1]).toBe(words[roles.length]);
     for (const r of roles) expect(restoreLine![2], `${r} not named`).toContain(r);
