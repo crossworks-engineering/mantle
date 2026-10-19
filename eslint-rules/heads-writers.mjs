@@ -99,7 +99,11 @@ const DYNAMIC_UNSAFE_REVIEWED = new Map([
   ],
   [
     'packages/db/src/gateway/write-route.ts',
-    "the gateway's runner and client pass the caller's statement through as it is, on the write role or the system pool",
+    "loginWriteClient passes the caller's statement through as it is, on the write role or the system pool",
+  ],
+  [
+    'packages/db/src/gateway/role-runner.ts',
+    "the write role's runner sends the caller's statement as it is, on the write role",
   ],
   [
     'packages/db/src/gateway/system-tx.ts',

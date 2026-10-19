@@ -34,13 +34,8 @@ import {
   type LoginWriteRoute,
   type WriteTx,
 } from './role-tx';
-import {
-  checkedUuidOrEmpty,
-  joinedBegin,
-  onLoginWritePool,
-  uuidArrayLiteral,
-  writeRoleBegin,
-} from './write-route';
+import { joinedBegin, writeRoleBegin } from './role-runner';
+import { checkedUuidOrEmpty, onLoginWritePool, uuidArrayLiteral } from './write-route';
 
 type PgSql = ReturnType<typeof postgres>;
 
