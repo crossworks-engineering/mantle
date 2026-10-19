@@ -101,6 +101,10 @@ const DYNAMIC_UNSAFE_REVIEWED = new Map([
     'packages/db/src/gateway/write-route.ts',
     "the gateway's runner and client pass the caller's statement through as it is, on the write role or the system pool",
   ],
+  [
+    'packages/db/src/gateway/system-tx.ts',
+    "brokerLockTx runs the store broker's one statement as it is, on the raw system pool",
+  ],
   ['server/api/src/bench/run.ts', 'the bench harness on its own database'],
   ['server/web/scripts/dedupe-edges.ts', 'a constant PARTITION BY fragment'],
   ['server/web/scripts/extract-backfill.ts', 'a read query'],

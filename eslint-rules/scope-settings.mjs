@@ -6,8 +6,9 @@
  * what a workspace definer takes as the acting login (0307). They are set in
  * packages/db/src/client.ts and its gateway modules (packages/db/src/gateway/)
  * only, each place a scope mechanism of its own: writeScopeSettings (the
- * system pool: systemPoolTx and systemPoolTxInScope), the write role's
- * settings (gateway/write-route.ts), the turn scope's and withScope's.
+ * system pool: systemPoolTx and systemPoolTxInScope, gateway/system-tx.ts),
+ * the write role's settings (gateway/write-route.ts), the turn scope's and
+ * withScope's.
  * Anywhere else a quoted setting name is a hand-set scope and fails the pin.
  *
  * systemPoolTxInScope (a system-pool transaction in a login's scope set by
@@ -46,8 +47,12 @@ export function systemPoolScopeCalls(text) {
 /** @type {Record<string, { count: number, why: string }>} */
 export const SCOPE_SETTING_PINS = {
   'packages/db/src/client.ts': {
-    count: 7,
-    why: 'writeScopeSettings (3), the turn scope (2), withScope (2)',
+    count: 4,
+    why: 'the turn scope (2), withScope (2)',
+  },
+  'packages/db/src/gateway/system-tx.ts': {
+    count: 3,
+    why: 'writeScopeSettings (the system pool: systemPoolTx and systemPoolTxInScope)',
   },
   'packages/db/src/gateway/write-route.ts': {
     count: 2,
