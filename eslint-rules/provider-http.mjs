@@ -59,7 +59,8 @@ export const BACKOFF_LOOP_ALLOWED = {
   'packages/std/src/http.ts': 'withRetry itself',
   'packages/db/src/access-matrix.ts':
     'a database role sync retried on a serialization failure, not a provider call',
-  'packages/db/src/client.ts': 'a transaction retried on a serialization failure or deadlock',
+  'packages/db/src/gateway/heads.ts':
+    'a transaction retried on a serialization failure or deadlock',
   'packages/db/src/viewer-roles.ts': 'a database role create retried on a concurrent create',
   'packages/db/src/test-support.ts':
     'a test helper retrying CREATE DATABASE while template1 is busy',

@@ -60,8 +60,8 @@ request-slot server/web/server/middleware/gate.ts system(http:gate) for the gate
 timeout-loop packages/content/src/app-broker.ts the caller's actor: a drain sleep inside an app database restore
 timeout-loop packages/content/src/app-table-exports.ts system(app-export) for the export sync, whoever scheduled it (F9: never a contact share's actor)
 timeout-loop packages/db/src/access-matrix.ts the caller's actor (migrate's): the write role sync's retry sleep
-timeout-loop packages/db/src/client.ts the caller's actor: a retry sleep
 timeout-loop packages/db/src/gateway/check-mode.ts none: the first box mode read's retry sleep, outside the actor client (started in runWithoutActor)
+timeout-loop packages/db/src/gateway/heads.ts the caller's actor: a retry sleep
 timeout-loop packages/db/src/gateway/role-tx.ts the caller's actor: the write pool's bounded wait (a timer that fails the wait, no work of its own)
 timeout-loop packages/db/src/resolve-owner.ts the caller's actor: the wait for the first signup
 timeout-loop packages/db/src/test-support.ts none: test helpers' poll and retry sleeps
