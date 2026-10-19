@@ -400,7 +400,7 @@ describe.skipIf(!DB_URL)("S6 c3: an Admin user's any-login writes in the login's
           );
           expect(res.status, res.text).toBe(200);
           expect(res.json.ok).toBe(true);
-          expect(res.json.agentSlug).not.toBe(slug.other);
+          expect(res.json.agentSlug).toBe(slug.admin);
         }
         const cursors = await raw<{ login: string }[]>`
           select login_id::text as login from assistant_read_cursors
@@ -476,7 +476,7 @@ describe.skipIf(!DB_URL)("S6 c3: an Admin user's any-login writes in the login's
       expect(res.status, text).toBe(200);
       const homes = await raw<{ ws: string }[]>`
         select wr.workspace_id::text as ws from nodes n
-          join workspace_resources wr on wr.ref_id = n.id
+          join workspace_resources wr on wr.ref_id = n.id::text
          where n.owner_id = ${L.owner} and n.title like ${`%${tag}-${mode}-upload%`}`;
       expect(homes.length, JSON.stringify(homes)).toBeGreaterThan(0);
       expect(new Set(homes.map((h) => h.ws))).toEqual(new Set([ws.admin]));
