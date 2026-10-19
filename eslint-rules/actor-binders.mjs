@@ -42,13 +42,14 @@ export const ACTOR_BINDER_PINS = {
   // A tool write's audit row (A5 step 6d): written as system(audit:tool-call)
   // whatever actor the call ran as, once per row.
   'packages/db/src/call-audit.ts': 1,
-  'packages/db/src/client.ts': 1,
   // The one ordered gate (arch A3c): step 3 binds the actor the policy
   // implies, once per call.
   'packages/db/src/gate.ts': 1,
   // The system pool's start: its first mode read outside the caller's
   // actor (runWithoutActor), and a miss row as system(actor-check).
   'packages/db/src/gateway/pools.ts': 2,
+  // loginActorNow: the login's own row read as system(entry) (A2a).
+  'packages/db/src/gateway/scope-answers.ts': 1,
   // 9 since arch A6b: systemWork, system work that refuses a workspace scope,
   // binds system(reason) as asSystem does.
   'packages/db/src/viewer.ts': 9,
