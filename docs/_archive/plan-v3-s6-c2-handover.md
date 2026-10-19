@@ -213,6 +213,7 @@ Mac (DATABASE_URL unset):
 | `pnpm format:check`                                 | 0    |                                                |
 | `pnpm docs:check`                                   | 0    |                                                |
 | `pnpm arch:check`                                   | 0    |                                                |
+| `pnpm boot:smoke`                                   | 0    | 14 services link                               |
 | `pnpm exec vitest run server packages eslint-rules` | 1    | on 111d9edc1: only the journal cell (expected) |
 
 Workstation (own worktree, own pgvector pg18 container on 56471,
@@ -227,6 +228,9 @@ removed after by exact name; `--maxWorkers=3`):
 | full vitest with the database          | 1    | 1 failed, 1119 passed | 1 failed, 13792 passed |
 | `test:actor-off`                       | 1    | 1 failed, 125 passed  | 1 failed, 1144 passed  |
 | `test:runtime-role` (in full)          | 0    | 272 passed            | 2717 passed, 1 skipped |
+| `test:actor-on`                        | 0    | 29 passed             | 361 passed, 1 skipped  |
+| `test:edit-on`                         | 0    | 41 passed             | 531 passed             |
+| `test:matrix`                          | 0    | 4 passed              | 8 passed               |
 
 The one red cell in each red run: `packages/db/src/migrations-journal.test.ts`
 "no slot is skipped", only because 0309 (S2b) is not on main yet. Expected:
@@ -236,7 +240,14 @@ rebase. Every other cell is green, the c2 DB test (8), f4-owner-flows
 (16), shares-route (9) and f4-admin-write-role included, in warn, on and
 the runtime role.
 
-CI: see the report to the CEO session (the run of the pushed head).
+CI on 349c1099a (the code head plus this file's first round 2 text):
+https://github.com/crossworks-engineering/mantle/actions/runs/39222663729,
+failure on the Test step only, on the journal cell alone (1 failed, 1119
+passed files). Every step before it passed (typecheck, lint, format, docs
+paths, architecture counts, boot smoke, migrate). The steps after it
+(actor off, actor on, edit on, runtime role, matrix, build) did not run
+in CI because Test failed; each ran on the workstation above, exit 0
+apart from the journal cell.
 
 ## Rollback
 
