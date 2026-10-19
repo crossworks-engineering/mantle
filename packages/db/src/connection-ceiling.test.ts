@@ -169,7 +169,7 @@ interface Site {
   why: string;
 }
 
-const CLIENT_TS = 'packages/db/src/client.ts';
+const CLIENT_TS = 'packages/db/src/gateway/pools.ts';
 const RUNNER_TS = 'server/web/workers/_runner.ts';
 
 const SITES: Site[] = [

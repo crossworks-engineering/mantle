@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 // @ts-expect-error: plain-JS rule module, no types shipped.
@@ -28,9 +28,14 @@ const ROOT = join(__dirname, '..');
 const CLIENT = 'packages/db/src/client.ts';
 const VIEWER = 'packages/db/src/viewer.ts';
 const DB_INDEX = 'packages/db/src/index.ts';
+/** The modules of client.ts's gateway (packages/db/src/gateway/): client.ts's
+ *  own code, split out of it. */
+const GATEWAY = readdirSync(join(ROOT, 'packages/db/src/gateway'))
+  .filter((f) => f.endsWith('.ts') && !f.endsWith('.test.ts'))
+  .map((f) => `packages/db/src/gateway/${f}`);
 
 /** Where the scope functions are defined (and re-exported): exempt. */
-const HOME = new Set([CLIENT, VIEWER, DB_INDEX]);
+const HOME = new Set([CLIENT, VIEWER, DB_INDEX, ...GATEWAY]);
 
 /** Entered only inside client.ts: a workspace scope is opened by
  *  withViewer for whom it acts for (or by a turn, withTurnScope), never
@@ -256,7 +261,7 @@ describe('the withViewer shim sweep (R6)', () => {
   });
 
   it('in client.ts only the workspace pool and the write pool are opened (the level pools went in W8c)', () => {
-    const text = blanked(code(load(CLIENT)!));
+    const text = [CLIENT, ...GATEWAY].map((f) => blanked(code(load(f)!))).join('\n');
     const otherPools = calls(text, 'getViewerDb').filter(
       (c) => !/getViewerDb\('(user|write)'\)/.test(c),
     );
