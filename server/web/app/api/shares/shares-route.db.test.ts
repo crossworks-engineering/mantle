@@ -328,8 +328,8 @@ describe.skipIf(!URL)('the share routes on the served list', () => {
     try {
       as(adm2);
       const refused = await del(link.id);
-      expect(refused.status).toBe(404);
-      expect(refused.body.code).toBe('not_found');
+      // The gate's 404 on main, now the handler's (shareItemRefusal).
+      expect(refused).toEqual({ status: 404, body: { ok: false, error: 'not found' } });
     } finally {
       await adm2Areas({});
     }
