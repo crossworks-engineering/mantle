@@ -219,7 +219,10 @@ export async function readBytesCapped(req: Request, maxBytes: number): Promise<B
     if (done) break;
     total += value.byteLength;
     if (total > maxBytes) {
-      await reader.cancel().catch(() => {});
+      // Not awaited: a clone's branch (req.clone(), a peek) settles its
+      // cancel only once the other branch is cancelled too, so awaiting it
+      // hung the request while the handler went on to read the original.
+      void reader.cancel().catch(() => {});
       throw new BodyTooLargeError(maxBytes);
     }
     chunks.push(value);

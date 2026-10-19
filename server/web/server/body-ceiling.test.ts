@@ -174,6 +174,16 @@ describe('the body ceiling: reading', () => {
     expect(await readBodyCapped(streamReq('http://x/', 128 * 1024), MB)).toHaveLength(128 * 1024);
   });
 
+  it('a peek of a clone stops at its cap and the original still reads in full (S6 c2)', async () => {
+    // A clone's branch settles its cancel only once the other branch is
+    // cancelled too: an awaited cancel hung PATCH /api/shares/:id's peek.
+    const req = streamReq('http://x/', 2 * MB);
+    await expect(readBodyCapped(req.clone(), 64 * 1024)).rejects.toBeInstanceOf(
+      BodyTooLargeError,
+    );
+    expect(await req.text()).toHaveLength(2 * MB);
+  }, 10_000);
+
   it('capRequestBody: every reader stops at the ceiling; under it, the body is as sent (A10 part 2)', async () => {
     for (const read of [
       (r: Request) => r.json(),
