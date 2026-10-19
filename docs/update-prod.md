@@ -157,11 +157,13 @@ when it failed before step 4), 2 usage, 3 counts dropped.
   `update.log`; take your own backup then. These are `.env` settings: a
   request from the app cannot change them.
 - **Old images go after an OK roll.** Nothing pruned images before this, and
-  each release left a server and client pair (about 3.4 GB) behind. After an
-  OK roll the updater removes old images of exactly `<ns>/mantle-server` and
-  `<ns>/mantle-client`, keeping the images each container ran before the roll
-  (the rollback pair), the ones they run now, and the two newest of each
-  repository. It never touches another repository (sandbox, rustfs, caddy,
+  each release left a server and client pair (about 3.4 GB) behind, plus a
+  media image (about 1.2 GB) on a box with the media sidecar on. After an OK
+  roll the updater removes old images of exactly `<ns>/mantle-server`,
+  `<ns>/mantle-client` and `<ns>/mantle-media`, keeping the images each
+  container ran before the roll (the rollback set), the ones they run now,
+  and the two newest of each repository. With media off there is no
+  `mantle_media` container, and media images are left alone. It never touches another repository (sandbox, rustfs, caddy,
   postgres), volumes or containers, never forces, and logs each removal to
   `update.log`; an image docker refuses to remove (still in use) is logged
   and kept. `MANTLE_IMAGE_PRUNE=0` in `.env` switches it off.

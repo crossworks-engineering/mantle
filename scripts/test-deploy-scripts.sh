@@ -41,8 +41,9 @@
 #            opt-out) and a whole roll refused with nothing changed when it fails
 #   floor:   a roll below v0.232.318 is refused with nothing changed while any
 #            client login exists (or they cannot be counted), unless .env says so
-#   prune:   after an OK roll only old mantle-server / mantle-client images go;
-#            the rollback pair, the running pair and other repositories stay
+#   prune:   after an OK roll only old mantle-server / mantle-client /
+#            mantle-media images go; the rollback set, the running set, the
+#            two newest of each and other repositories stay
 #   roll:    scripts/roll.sh backs up first (its own exit status), requests
 #            only the target, and stops loudly on a lost app, sandbox or
 #            app-db file
@@ -882,7 +883,7 @@ docker() {
       case "$*" in
         *"config --services"*) printf "web\nupdater\n"; return 0 ;;
         *" up "*)
-          for c in mantle_web mantle_client_web; do
+          for c in mantle_web mantle_client_web mantle_media; do
             [ -f "$FAKE_STATE/$c.next" ] && cp "$FAKE_STATE/$c.next" "$FAKE_STATE/$c"
           done
           return 0 ;;
@@ -1038,6 +1039,39 @@ check "never tried another repository (sandbox, rustfs, caddy)" sh -c "! grep -q
 check "never forced a removal" sh -c "! grep -qE 'rmi .*(-f|--force)' '$T/calls'"
 check "an image docker refuses (in use) is kept and logged" grep -q 'image prune: kept test/mantle-server:v4' "$T/sig/update.log"
 check "each removal is logged" grep -q 'image prune: removed test/mantle-server:v6' "$T/sig/update.log"
+check "no media container (media off): media images skipped, and says so" grep -q 'image prune: test/mantle-media skipped' "$T/sig/update.log"
+
+roll_case media
+# The media sidecar is on: mantle_media runs m7 and the roll moves it to m8.
+# m10 and m9 are the two newest media images (pre-pulled), m6 and a dangling
+# m5 are old. Media tags sit below the server ones, so "the two newest" must
+# be counted inside mantle-media, not over the whole list.
+echo sha256:M7 > "$T/state/mantle_media"; echo sha256:M8 > "$T/state/mantle_media.next"
+cat >> "$T/state/images" <<'IMGS'
+sha256:M10 test/mantle-media:v10
+sha256:M9 test/mantle-media:v9
+sha256:M8 test/mantle-media:v8
+sha256:M7 test/mantle-media:v7
+sha256:M6 test/mantle-media:v6
+sha256:M5 test/mantle-media:<none>
+IMGS
+FAKE_TS=20260105-000000 roll_loop "$T"
+check "media: roll ok" grep -q '"phase":"done","target":"v8".*"ok":true' "$T/sig/status.json"
+check "media: removed the old media tag and the dangling one" \
+  sh -c "grep -qx test/mantle-media:v6 '$T/state/removed' && grep -qx sha256:M5 '$T/state/removed'"
+check "media: kept the rollback (v7), the running (v8) and the two newest (v10, v9)" \
+  sh -c "! grep -qE 'mantle-media:v(7|8|9|10)\$|^sha256:M(7|8|9|10)\$' '$T/state/removed'"
+check "media: server and client prune unchanged, other repositories untouched" \
+  test "$(sort "$T/state/removed" | tr '\n' ' ')" = "sha256:M5 sha256:S5 test/mantle-client:c1 test/mantle-media:v6 test/mantle-server:v6 "
+check "media: never tried another repository (sandbox, rustfs, caddy)" sh -c "! grep -qE 'rmi .*(sandbox|rustfs|caddy|X[123])' '$T/calls'"
+check "media: each removal is logged" grep -q 'image prune: removed test/mantle-media:v6' "$T/sig/update.log"
+
+roll_case mediaoff
+echo sha256:M7 > "$T/state/mantle_media"; echo sha256:M8 > "$T/state/mantle_media.next"
+printf 'sha256:M6 test/mantle-media:v6\n' >> "$T/state/images"
+printf 'MANTLE_IMAGE_PRUNE=0\n' >> "$T/stack/.env"
+FAKE_TS=20260105-000000 roll_loop "$T"
+check "media: MANTLE_IMAGE_PRUNE=0 removes no media image either" test ! -e "$T/state/removed"
 
 roll_case noprune
 printf 'MANTLE_IMAGE_PRUNE=0\n' >> "$T/stack/.env"

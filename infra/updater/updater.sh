@@ -12,8 +12,8 @@
 #
 # framed by two fixed steps: a strict four-part pre-roll backup BEFORE it (the
 # roll is refused, nothing changed, when that fails; see pre_roll_backup) and,
-# after an OK roll, removal of this product's old server and client images
-# (see prune_images).
+# after an OK roll, removal of this product's old server, client and media
+# images (see prune_images).
 #
 # The updater excludes ITSELF from the `up`: recreating its own container
 # mid-command would SIGKILL this script before the rollout finishes, leaving
@@ -1086,11 +1086,17 @@ check_floor_refusal() {
 # Nothing pruned images before this: each roll left a server + client pair
 # (about 3.4 GB) behind, and boxes filled at eight releases a day (dev hit 100%
 # on 2026-09-01). After an OK roll the updater removes old images of exactly
-# two repositories, <ns>/mantle-server and <ns>/mantle-client, and keeps:
-#   - the image each container ran BEFORE the roll (the rollback pair),
+# three repositories, <ns>/mantle-server, <ns>/mantle-client and
+# <ns>/mantle-media, and keeps:
+#   - the image each container ran BEFORE the roll (the rollback set),
 #   - the image each runs NOW,
 #   - the two newest images of the repository (a pre-pulled next release, or
 #     the previous pair when this roll re-rolled the same tag).
+# mantle-media (the opt-in `media` sidecar, container mantle_media, about
+# 1.2 GB a release) joined late and was left out at first: dev reached 105
+# old media and server tags and 4.2 GB free on 2026-10-19, so roll.sh refused
+# the roll. A box with media off has no mantle_media, so that repository is
+# skipped there, the same as any repository whose running image is unknown.
 # It never touches any other repository (mantle-sandbox, mantle-rustfs, caddy,
 # postgres, app or sandbox images), never volumes or containers, never runs a
 # `system prune`, and never forces: `docker rmi` refuses an image a container
@@ -1108,7 +1114,11 @@ prune_repo() {
     return 0
   fi
   pr_list=$(docker image ls --no-trunc --format '{{.ID}} {{.Repository}}:{{.Tag}}' "$pr_repo" 2>/dev/null) || return 0
-  pr_newest=$(printf '%s\n' "$pr_list" | awk 'NF { print $1 }' | awk '!seen[$0]++' | head -2)
+  # The two newest of THIS repository: filtered here too, so a docker that
+  # lists more than the reference asked for cannot count another repository.
+  pr_newest=$(printf '%s\n' "$pr_list" \
+    | awk -v r="$pr_repo" 'NF { ref = $2; sub(/:[^:]*$/, "", ref); if (ref == r) print $1 }' \
+    | awk '!seen[$0]++' | head -2)
   printf '%s\n' "$pr_list" | while read -r pr_id pr_ref; do
     [ -n "$pr_id" ] && [ -n "$pr_ref" ] || continue
     # Exact repository only: the reference filter is exact already, this
@@ -1129,7 +1139,7 @@ prune_repo() {
   done
 }
 
-# prune_images <prev-server-id> <prev-client-id>: after an OK roll.
+# prune_images <prev-server-id> <prev-client-id> <prev-media-id>: after an OK roll.
 prune_images() {
   if [ "$(env_val MANTLE_IMAGE_PRUNE)" = 0 ]; then
     echo "[updater] image prune: off (MANTLE_IMAGE_PRUNE=0)" | tee -a "$SIG/update.log"
@@ -1138,6 +1148,7 @@ prune_images() {
   pi_ns=$(env_val MANTLE_IMAGE_NAMESPACE)
   prune_repo "${pi_ns:-titanwest}/mantle-server" "$1" "$(container_image mantle_web)" | tee -a "$SIG/update.log"
   prune_repo "${pi_ns:-titanwest}/mantle-client" "$2" "$(container_image mantle_client_web)" | tee -a "$SIG/update.log"
+  prune_repo "${pi_ns:-titanwest}/mantle-media" "$3" "$(container_image mantle_media)" | tee -a "$SIG/update.log"
 }
 
 # topup_scripts: install an operator script the RUNNING release names but the
@@ -1731,9 +1742,10 @@ while true; do
       write_stack_info
       continue
     fi
-    # The images running now are the rollback pair the prune below keeps.
+    # The images running now are the rollback set the prune below keeps.
     PREV_SERVER_IMG=$(container_image mantle_web)
     PREV_CLIENT_IMG=$(container_image mantle_client_web)
+    PREV_MEDIA_IMG=$(container_image mantle_media)
 
     # Persist the tag so a later manual `docker compose up` doesn't roll back.
     # persist_env: temp-file rewrite that keeps .env's owner and mode (a bare
@@ -1832,7 +1844,7 @@ while true; do
         echo "[updater] done → $TARGET" | tee -a "$SIG/update.log"
         # Old images of this product only, after the status is terminal: a
         # prune problem must never turn an OK roll into a failed one.
-        prune_images "$PREV_SERVER_IMG" "$PREV_CLIENT_IMG"
+        prune_images "$PREV_SERVER_IMG" "$PREV_CLIENT_IMG" "$PREV_MEDIA_IMG"
         # Self-refresh LAST, on the success path only: a failed roll should
         # change as little as possible, and the status the UI polls is already
         # terminal. Sets UPDATER_REFRESH for the write_stack_info below.
