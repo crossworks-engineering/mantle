@@ -475,6 +475,7 @@ export const HISTORY_HEADING_CODES = Object.freeze([
   'S4a',
   'S6',
   'S8a',
+  'S8c',
 ]);
 
 /** Heading codes that do not count by name, each with why. Next to a
