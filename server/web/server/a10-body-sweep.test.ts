@@ -361,6 +361,18 @@ function changeKind(cell: string, main: string, now: string): string | null {
   ) {
     return 'code-first (Admin act definer, 0308: the code is made before the contact is asked)';
   }
+  // An Admin user's share close is a definer (migration 0310): the close
+  // with the users area is asked of the database first (adminActTx), which
+  // the stand-in does not answer, where main's gate let the close through
+  // and its revoke read no row through the stand-in. The real answers:
+  // s6-c2-admin-acts.db.test.ts.
+  if (
+    now === OPAQUE &&
+    cell.startsWith('DELETE /api/shares/:id ') &&
+    main === '200 application/json {"ok":false}'
+  ) {
+    return 'close-first (Admin act definer, 0310: the close is asked of the database first)';
+  }
   // Pre-check removal part 2: Recall's owner acts (a prompt confirm, a
   // reorder, a revision restore) read the map or the revision in the
   // caller's scope before their owner check, so a hidden one is the 404 of
