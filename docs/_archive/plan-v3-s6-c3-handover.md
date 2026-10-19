@@ -221,6 +221,57 @@ https://github.com/crossworks-engineering/mantle/actions/runs/39244382909
 the full test, actor off, actor on, edit on, runtime role, matrix). The
 next commit adds only this line.
 
+## Audit round (third builder, at the tool limit)
+
+The CEO's audit of 282c864d0 (8/10, fix first). Done in this round:
+
+- MED-1, accepted by the CEO as a named wider, safe change. An Admin
+  user's chat write with no slug, where the default pick (getAssignedAgent,
+  else resolveAssistantAgent's priority pick) is an assistant of a
+  workspace the user is not in: main answered 404 `no_agent` on read,
+  threads and turn (the system pool found that row first and refused it);
+  now the scope does not read it, so the pick is the Admin assistant (200).
+  Wider, safe: it reaches no data the caller could not read; the GET reads
+  already worked this way; the owner may overrule. Cell: "wider, safe" in
+  `s6-c3-any-login-writes.db.test.ts`, warn and on (green: 200, the Admin
+  assistant's slug, no cursor on the other workspace's assistant).
+- LOW-1: the test-support ban covers `packages/**` (tests and scripts
+  left out; a block before the share-ui and contract blocks, which refuse
+  every other `@mantle` import already) and a dynamic `import()` (a
+  `no-restricted-syntax` selector in the env block, same files).
+- LOW-2: the `loginKindBranches` note names the removed branch
+  (`res.kind === 'admin' && route.effect === 'write' &&
+!inLoginScopeForWrites(route)` in anyLoginScope).
+- LOW-3: the stale comments (getChatLoginOr401, the key revoke route) and
+  `'admin-write'` dropped from `RequestOutcome` (viewer.ts), so typecheck
+  refuses a new site.
+- LOW-4, named here: a stale explicit slug (an assistant gone, disabled,
+  or of another workspace) now answers 404 on a chat write where main fell
+  through to the default (Answers, 2). Client follow-up for jackdaw, not
+  in this branch: drop a stale slug and retry without it.
+- LOW-5: runRoute cells, warn and on: an Admin user with the users area
+  blocks and unpairs a member's chat of another workspace's bot (200,
+  denied or pending), one without it does not (404, unchanged) (green); a
+  turn with an upload by an Admin user (200 with a DBOS stand-in, as
+  w7c-chat).
+
+Left (RED, the next builder):
+
+- The upload cell's home check finds no row: `select wr.workspace_id from
+nodes n join workspace_resources wr on wr.ref_id = n.id::text where
+n.title like '%<tag>-<mode>-upload%'` returns none. Either the file's
+  title is not the original name (the route names it
+  `<epoch>-<safe base>.<ext>`, the base may drop the dashes) or its home
+  is not a `workspace_resources` row. Read how a file's home is kept
+  (`currentCreateHome`, `landedIn` in `@mantle/db`) and fix the query;
+  the answer (200) is pinned already. The other 10 cells are green.
+- Gates for this round on the Mac: `pnpm -r typecheck` 0, `pnpm lint` 0,
+  `pnpm format:check` 0, `pnpm docs:check` 0, `pnpm arch:check` 0. Not
+  run yet: the unit vitest, the web build, and on the workstation the full
+  DB run, `test:actor-off`, `test:runtime-role`. CI will be red on the
+  upload cell until it is fixed. The workstation container, worktree and
+  branches of this round are removed.
+
 ## Open
 
 - Keys area for another login's key: decided by the CEO, it keeps
