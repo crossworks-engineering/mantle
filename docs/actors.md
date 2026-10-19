@@ -91,10 +91,6 @@ own, with the actor it binds: [process-inventory.md](./process-inventory.md)
 - A write to a table the write role holds no right on goes to the system
   pool up front. Nothing runs again: a right the role lacks is a bug (an
   error and a `write-role-gap` miss), a refusal is the caller's answer.
-- Scoped code writes through a typed drizzle write or a definer call, not
-  SQL text it writes by hand (`eslint-rules/no-raw-write-sql.mjs`, pinned
-  per file; the files that stay raw, each with why, in
-  `eslint-rules/raw-write-allowlist.mjs`, capped).
 - The scoped pools never run the setter functions. Only `packages/db`
   sets `mantle.*` settings.
 - Transactions: `withSystemTx` in an open system transaction is its
@@ -339,7 +335,7 @@ Each ends in the step of plan v3.2 (2026-10-17) named.
 - The system pool is the whole runtime role; the narrow role exists, unused. S7.
 - `Login` has no kind or role (`adminFacts`); its legacy shapes do. S8.
 - Route policy is spread over lists, not declared per route. S9.
-- Scoped code still holds raw write SQL. S10.
+- Scoped code still holds raw write SQL, pinned per file (`eslint-rules/no-raw-write-sql.mjs`). S10.
 - The A8 matrix covers every kind and tool, not yet the routes. S11b.
 - Six branches fail open, counted since S4a (section 7, Fail-open counts). S4.
 - Accepted, no step: any role can `set_config('mantle.actor', …)`, so the
