@@ -21,6 +21,7 @@ import {
   createMigratedScratchDatabase,
   ensureAdminUsers,
   ensureTestAnchor,
+  superuserClient,
 } from '@mantle/db/test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
@@ -67,6 +68,16 @@ describe.skipIf(!URL)('inbound API keys: hardening', () => {
     });
   };
   const json = async (res: Response) => (await res.json()) as Json;
+  /** A fixture on a client of the superuser's own: the app pools only read
+   *  the four workspace tables under the runtime role. */
+  const asSu = async <T>(fn: (su: typeof sql) => Promise<T>): Promise<T> => {
+    const su = superuserClient(scratch!.url);
+    try {
+      return await fn(su);
+    } finally {
+      await su.end();
+    }
+  };
   const epochOf = async (id: string) =>
     Number(
       (await sql<Row[]>`select session_epoch from auth.users where id = ${id}`)[0]!.session_epoch,
@@ -116,23 +127,28 @@ describe.skipIf(!URL)('inbound API keys: hardening', () => {
     // The key-made notice lands in the login's own thread with its default
     // assistant (0269, W7c; defaultWorkspaceAssistant since 0286): a
     // workspace of its own with one, the member a user of it.
-    const [team] = await sql<Row[]>`
+    const [team] = await asSu(
+      async (su) => su<Row[]>`
       insert into workspaces (owner_id, name) values (${anchor}, ${`${tag} Team`})
-      returning id::text as id`;
+      returning id::text as id`,
+    );
     teamWs = String(team!.id);
     const [agent] = await sql<Row[]>`
       insert into agents (owner_id, slug, name, model, system_prompt, workspace_id)
       values (${anchor}, ${`${tag}-team`}, 'Team assistant', 'test/model', 'x', ${teamWs})
       returning id::text as id`;
-    madeAgent = String(agent!.id);
-    await sql`insert into workspace_resources (workspace_id, type, ref_id, write)
-      values (${teamWs}, 'assistant', ${madeAgent}, true)`;
-    await sql`insert into workspace_users (workspace_id, login_id, moderator)
-      values (${teamWs}, ${noted}, false)`;
+    const agentId = String(agent!.id);
+    madeAgent = agentId;
+    await asSu(async (su) => {
+      await su`insert into workspace_resources (workspace_id, type, ref_id, write)
+        values (${teamWs}, 'assistant', ${agentId}, true)`;
+      await su`insert into workspace_users (workspace_id, login_id, moderator)
+        values (${teamWs}, ${noted}, false)`;
+    });
     // A long key needs the Admin workspace's keys area (W8a), and an Admin
     // login is role admin AND a user of Admin : the admins are users of
     // the brain's Admin workspace, made if the brain has none.
-    await ensureAdminUsers(sql, [admin, busy]);
+    await asSu((su) => ensureAdminUsers(su, [admin, busy]));
     const { createApp } = await import('../server/app');
     app = await createApp();
   }, 120_000);
@@ -155,20 +171,30 @@ describe.skipIf(!URL)('inbound API keys: hardening', () => {
     await sql`delete from mobile_tokens where user_id in ${sql(all)}`;
     await sql`delete from assistant_messages where login_id in ${sql(all)}`;
     if (madeAgent) {
-      await sql`delete from workspace_resources where ref_id = ${madeAgent}`;
+      const agentId = madeAgent;
+      await asSu(async (su) => {
+        await su`delete from workspace_resources where ref_id = ${agentId}`;
+      });
       await sql`delete from assistant_messages where agent_id = ${madeAgent}`.catch(
         () => undefined,
       );
       await sql`delete from chat_threads where agent_id = ${madeAgent}`.catch(() => undefined);
       await sql`delete from agents where id = ${madeAgent}`;
     }
-    if (teamWs) await sql`delete from workspaces where id = ${teamWs}`.catch(() => undefined);
+    if (teamWs) {
+      const wsId = teamWs;
+      await asSu(async (su) => {
+        await su`delete from workspaces where id = ${wsId}`;
+      }).catch(() => undefined);
+    }
     await sql`delete from audit_log where detail->>'loginId' in ${sql(all)}`;
     await sql`delete from oauth_access_tokens where actor_id in ${sql(all)}`;
     if (oauthClientsMade.length) {
       await sql`delete from oauth_clients where id in ${sql(oauthClientsMade)}`;
     }
-    await sql`delete from workspace_users where login_id in ${sql(all)}`;
+    await asSu(async (su) => {
+      await su`delete from workspace_users where login_id in ${su(all)}`;
+    });
     await sql`delete from spaces where login_id in ${sql(all)}`;
     await sql`delete from auth.users where id in ${sql(all)}`;
   });

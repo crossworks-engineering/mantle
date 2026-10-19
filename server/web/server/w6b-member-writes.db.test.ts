@@ -49,6 +49,10 @@ describe.skipIf(!URL)('W6b: members write through the owner routes', () => {
 
   const x = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
     (await m.systemDb.execute(q)) as unknown as T[];
+  /** A fixture write to the four workspace tables, as the superuser: the
+   *  system pool only reads them under test:runtime-role. */
+  const su = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
+    (await import('@mantle/db/test-support')).superuserExec<T>(scratch!.url, q);
   const email = (who: string) => `${tag}-${who}@example.invalid`;
   const call = async (
     p: string,
@@ -125,7 +129,7 @@ describe.skipIf(!URL)('W6b: members write through the owner routes', () => {
     ro = (await call('/api/workspaces', mem2, 'POST', { name: 'Ro' })).json.id as string;
     expect(side && ro).toBeTruthy();
     // The member reads Ro (no Moderator, no Write).
-    await x(sql`insert into workspace_users (workspace_id, login_id, moderator)
+    await su(sql`insert into workspace_users (workspace_id, login_id, moderator)
                 values (${ro}, ${mem}, false)`);
     // Items and folders made on the system pool (homed in Admin by the
     // trigger), then rehomed.

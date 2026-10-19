@@ -90,6 +90,10 @@ describe.skipIf(!URL)('W7d: a Telegram turn runs as its paired user', () => {
 
   const x = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
     (await m.systemDb.execute(q)) as unknown as T[];
+  /** A fixture write to the four workspace tables, as the superuser: the
+   *  app pools only read them under the runtime role. */
+  const su = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
+    (await import('@mantle/db/test-support')).superuserExec<T>(scratch!.url, q);
   /** One inbound message on a chat, as the poller stores it. */
   const inbound = async (
     chatId: string,
@@ -149,7 +153,7 @@ describe.skipIf(!URL)('W7d: a Telegram turn runs as its paired user', () => {
       await x<{ id: string }>(sql`select id::text from workspaces
         where owner_id = ${owner} and name = 'Team' and not is_admin`)
     )[0]!.id;
-    await x(sql`insert into workspace_users (workspace_id, login_id, moderator) values
+    await su(sql`insert into workspace_users (workspace_id, login_id, moderator) values
       (${teamWs}, ${member}, false), (${teamWs}, ${member2}, false),
       (${adminWs}, ${admin2}, false)
       on conflict (workspace_id, login_id) do nothing`);
@@ -267,7 +271,7 @@ describe.skipIf(!URL)('W7d: a Telegram turn runs as its paired user', () => {
 
   it('a user removed from the workspace is refused on the next message', async () => {
     const before = (await turnsOf(agent.team)).length;
-    await x(
+    await su(
       sql`delete from workspace_users where workspace_id = ${teamWs} and login_id = ${member}`,
     );
     await handleTelegramMessage(await inbound(chat.member, member, 'still there?'));

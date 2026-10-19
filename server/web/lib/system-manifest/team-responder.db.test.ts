@@ -48,6 +48,9 @@ type Row = Record<string, unknown>;
 describe.skipIf(!URL)('team-responder opens in one step on every brain', () => {
   let m: typeof import('@mantle/db');
   let admin: Parameters<typeof m.ensureViewerRoles>[0];
+  /** Fixture writes to the workspace tables, as the superuser: the app pools
+   *  only read them. */
+  let su: Parameters<typeof m.ensureViewerRoles>[0] | undefined;
   let seed: typeof import('./seed');
   let rec: typeof import('./reconcile');
   let content: typeof import('@mantle/content');
@@ -72,11 +75,11 @@ describe.skipIf(!URL)('team-responder opens in one step on every brain', () => {
   /** A workspace on the brain holding its team responder (a normal one,
    *  as Team is since 0286), with the member in it. */
   const teamHolds = async (owner: string, agentId: string) => {
-    const [ws] = await admin<Row[]>`
+    const [ws] = await su!<Row[]>`
       insert into workspaces (owner_id, name) values (${owner}, 'Team') returning id`;
-    await admin`insert into workspace_resources (workspace_id, type, ref_id, write)
+    await su!`insert into workspace_resources (workspace_id, type, ref_id, write)
                 values (${ws!.id as string}, 'assistant', ${agentId}, true)`;
-    await admin`insert into workspace_users (workspace_id, login_id, moderator)
+    await su!`insert into workspace_users (workspace_id, login_id, moderator)
                 values (${ws!.id as string}, ${member}, false)`;
     return ws!.id as string;
   };
@@ -92,6 +95,8 @@ describe.skipIf(!URL)('team-responder opens in one step on every brain', () => {
     process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
     m = await import('@mantle/db');
     admin = (m.systemDb as unknown as { $client: typeof admin }).$client;
+    su = (await import('@mantle/db/test-support')).superuserClient(URL!) as unknown as typeof admin;
+    await su`select set_config('mantle.actor', 'system:test', false)`;
     seed = await import('./seed');
     rec = await import('./reconcile');
     content = await import('@mantle/content');
@@ -130,9 +135,12 @@ describe.skipIf(!URL)('team-responder opens in one step on every brain', () => {
     await admin`delete from api_keys where user_id in ${admin(owners)}`;
     await admin`delete from profiles where id in ${admin(owners)}`.catch(() => undefined);
     await admin`delete from spaces where id in ${admin(owners)}`;
-    await admin`delete from workspaces where owner_id in ${admin(owners)}`.catch(() => undefined);
+    if (su) {
+      await su`delete from workspaces where owner_id in ${su(owners)}`.catch(() => undefined);
+    }
     await admin`delete from auth.users where id in ${admin(owners)}`;
     await admin`delete from auth.users where id = ${member}`;
+    await su?.end();
     await m.closeDb();
   }, 120_000);
 
@@ -169,29 +177,29 @@ describe.skipIf(!URL)('team-responder opens in one step on every brain', () => {
     await admin`update agents set enabled = false where id = ${row.id as string}`;
     expect(await memberChatAgent(owner)).toBeNull();
     await admin`update agents set enabled = true where id = ${row.id as string}`;
-    await admin`update workspaces set archived_at = now() where id = ${wsId}`;
+    await su!`update workspaces set archived_at = now() where id = ${wsId}`;
     expect(await memberChatAgent(owner)).toBeNull();
-    await admin`update workspaces set archived_at = null where id = ${wsId}`;
+    await su!`update workspaces set archived_at = null where id = ${wsId}`;
     expect(await memberChatAgent(owner)).toMatchObject({ slug: 'team-responder' });
     // A newer workspace of the member with its own assistant: the oldest
     // workspace's still answers by default; with that one archived, the next.
-    const [ws2] = await admin<Row[]>`
+    const [ws2] = await su!<Row[]>`
       insert into workspaces (owner_id, name, created_at)
       values (${owner}, 'Projects', now() + interval '1 minute') returning id`;
     const [other] = await admin<Row[]>`
       insert into agents (owner_id, slug, name, model, system_prompt, role, workspace_id)
       values (${owner}, 'projects-assistant', 'Projects', 'm', 'p', 'responder', ${ws2!.id as string})
       returning id`;
-    await admin`insert into workspace_resources (workspace_id, type, ref_id, write)
+    await su!`insert into workspace_resources (workspace_id, type, ref_id, write)
                 values (${ws2!.id as string}, 'assistant', ${other!.id as string}, true)`;
-    await admin`insert into workspace_users (workspace_id, login_id, moderator)
+    await su!`insert into workspace_users (workspace_id, login_id, moderator)
                 values (${ws2!.id as string}, ${member}, false)`;
     expect(await memberChatAgent(owner)).toMatchObject({ slug: 'team-responder' });
-    await admin`update workspaces set archived_at = now() where id = ${wsId}`;
+    await su!`update workspaces set archived_at = now() where id = ${wsId}`;
     expect(await memberChatAgent(owner)).toMatchObject({ slug: 'projects-assistant' });
-    await admin`update workspaces set archived_at = null where id = ${wsId}`;
+    await su!`update workspaces set archived_at = null where id = ${wsId}`;
     // Not a user of any: none.
-    await admin`delete from workspace_users where login_id = ${member}`;
+    await su!`delete from workspace_users where login_id = ${member}`;
     expect(await memberChatAgent(owner)).toBeNull();
   }, 120_000);
 

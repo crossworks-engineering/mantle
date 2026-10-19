@@ -40,6 +40,10 @@ describe.skipIf(!URL)('A3a: folders with items the mover cannot read', () => {
 
   const x = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
     (await m.systemDb.execute(q)) as unknown as T[];
+  /** A fixture write to the workspace tables, as the superuser: the app
+   *  pools only read them. */
+  const su = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
+    (await import('@mantle/db/test-support')).superuserExec<T>(scratch!.url, q);
   const call = async (p: string, as: string, method = 'GET', body?: unknown) => {
     const res = await app.request(p, {
       method,
@@ -138,15 +142,15 @@ describe.skipIf(!URL)('A3a: folders with items the mover cannot read', () => {
       ['H', 'Home'],
       ['O', 'Other'],
     ] as const) {
-      const [row] = await x<{ id: string }>(sql`
+      const [row] = await su<{ id: string }>(sql`
         insert into workspaces (owner_id, name) values (${owner}, ${`${tag} ${name}`})
         returning id::text as id`);
       if (key === 'H') H = row!.id;
       else O = row!.id;
     }
-    await x(sql`insert into workspace_users (workspace_id, login_id, moderator)
+    await su(sql`insert into workspace_users (workspace_id, login_id, moderator)
                 values (${H}, ${mod}, true)`);
-    await x(sql`delete from workspace_users u using workspaces w
+    await su(sql`delete from workspace_users u using workspaces w
                  where w.id = u.workspace_id and w.name = 'Team' and not w.is_admin and u.login_id = ${mod}`);
     const tokens = await import('../lib/auth/tokens');
     cookieOf = (id) => `mantle_session=${tokens.buildSessionCookie(id).value}`;

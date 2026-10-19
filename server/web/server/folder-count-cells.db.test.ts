@@ -75,6 +75,10 @@ describe.skipIf(!DB_URL)('A8 cells: folder counts are the caller’s', () => {
 
   const x = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
     (await m.systemDb.execute(q)) as unknown as T[];
+  /** A fixture write to the workspace tables, as the superuser: the app
+   *  pools only read them. */
+  const su = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
+    (await import('@mantle/db/test-support')).superuserExec<T>(scratch!.url, q);
 
   /** A new row under `parent` (heads first, `share` on the folder). */
   const insert = (parent: string, id: string, type: string, title: string, at: string) =>
@@ -201,15 +205,15 @@ describe.skipIf(!DB_URL)('A8 cells: folder counts are the caller’s', () => {
     await x(sql`insert into spaces (id, kind, login_id) values (${owner}, 'brain', ${owner})
       on conflict (id) do nothing`);
     await (await import('@mantle/db/test-support')).runWorkspacesSwitch();
-    await x(sql`insert into workspaces (id, owner_id, name) values
+    await su(sql`insert into workspaces (id, owner_id, name) values
       (${ws.H}, ${owner}, ${`${tag} H`}), (${ws.S}, ${owner}, ${`${tag} S`}),
       (${ws.T}, ${owner}, ${`${tag} T`})`);
-    await x(sql`insert into workspace_users (workspace_id, login_id, moderator) values
+    await su(sql`insert into workspace_users (workspace_id, login_id, moderator) values
       (${ws.S}, ${login.member}, false), (${ws.S}, ${login.adminUser}, true),
       (${ws.S}, ${login.adminUserInHome}, false), (${ws.H}, ${login.adminUserInHome}, false)`);
     // The member's Team seat would not change a cell (nothing is granted to
     // Team); taken out so its scope is exactly S.
-    await x(sql`delete from workspace_users u using workspaces w
+    await su(sql`delete from workspace_users u using workspaces w
       where w.id = u.workspace_id and w.name = 'Team' and not w.is_admin and u.login_id = ${login.member}`);
     // Both Admin users sit in Admin (the switch seats admin rows).
     const seated = await x<{ n: number }>(sql`select count(*)::int as n

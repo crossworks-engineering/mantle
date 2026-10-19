@@ -67,6 +67,10 @@ describe.skipIf(!URL)('W7a: the Admin assistant and the Admin MCP read in their 
 
   const x = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
     (await m.systemDb.execute(q)) as unknown as T[];
+  /** A fixture write to the four workspace tables, as the superuser: the
+   *  system pool only reads them under test:runtime-role. */
+  const su = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
+    (await import('@mantle/db/test-support')).superuserExec<T>(scratch!.url, q);
   const sys = <T>(fn: () => Promise<T>) => m.asSystem(fn, 'test');
   const makeIn = <T>(home: string, fn: () => Promise<T>) =>
     sys(() => m.withCreateHome({ createWs: home, privateWs: null, quiet: true }, fn));
@@ -189,7 +193,7 @@ describe.skipIf(!URL)('W7a: the Admin assistant and the Admin MCP read in their 
     await (await import('@mantle/db/test-support')).runWorkspacesSwitch();
     // A Team as a brain switched before 0286 has it (a new brain has none): the
     // logins are in more than Admin, so a turn narrows their scope.
-    await x(sql.raw(teamWorkspaceSql(owner)));
+    await su(sql.raw(teamWorkspaceSql(owner)));
     adminWs = (
       await x<{ id: string }>(sql`select id::text from workspaces
         where owner_id = ${owner} and is_admin and archived_at is null`)
@@ -207,7 +211,7 @@ describe.skipIf(!URL)('W7a: the Admin assistant and the Admin MCP read in their 
       )
     ).id;
     // L: a user of Admin, not a Moderator there, its keys area off.
-    await x(sql`insert into workspace_users (workspace_id, login_id, moderator, limits)
+    await su(sql`insert into workspace_users (workspace_id, login_id, moderator, limits)
                 values (${adminWs}, ${second}, false, ${JSON.stringify({ areas: { keys: false } })}::jsonb)
                 on conflict (workspace_id, login_id)
                 do update set moderator = false, limits = excluded.limits`);
@@ -547,7 +551,7 @@ describe.skipIf(!URL)('W7a: the Admin assistant and the Admin MCP read in their 
 
   it('M3: run_terminal needs the settings area', async () => {
     process.env.MANTLE_MCP_TERMINAL = '1';
-    await x(sql`update workspace_users
+    await su(sql`update workspace_users
                    set limits = ${JSON.stringify({ areas: { keys: false, settings: false } })}::jsonb
                  where workspace_id = ${adminWs} and login_id = ${second}`);
     try {
@@ -567,7 +571,7 @@ describe.skipIf(!URL)('W7a: the Admin assistant and the Admin MCP read in their 
       expect(t.policyAdminOnly(t.builtinPolicy('run_terminal')!)).toBe(true);
     } finally {
       delete process.env.MANTLE_MCP_TERMINAL;
-      await x(sql`update workspace_users
+      await su(sql`update workspace_users
                      set limits = ${JSON.stringify({ areas: { keys: false } })}::jsonb
                    where workspace_id = ${adminWs} and login_id = ${second}`);
     }

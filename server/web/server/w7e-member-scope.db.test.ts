@@ -80,6 +80,10 @@ describe.skipIf(!URL)('W7e: member routes in the request scope, the phone contra
 
   const x = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
     (await m.systemDb.execute(q)) as unknown as T[];
+  /** A fixture write to the four workspace tables, as the superuser: the
+   *  system pool only reads them under test:runtime-role. */
+  const su = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
+    (await import('@mantle/db/test-support')).superuserExec<T>(scratch!.url, q);
   const email = (who: string) => `${tag}-${who}@example.invalid`;
 
   const call = async (
@@ -371,15 +375,15 @@ describe.skipIf(!URL)('W7e: member routes in the request scope, the phone contra
     // round 1, L1). Since task d78e7bde it is the Team workspace's landing
     // page (workspaces.landing_app_id). Its own things (its push devices)
     // hold their own rule.
-    await x(sql`update workspaces set landing_app_id = ${teamApp} where id = ${team}`);
+    await su(sql`update workspaces set landing_app_id = ${teamApp} where id = ${team}`);
     const home = await call('/api/member/home', mem);
     expect(home.status, home.text.slice(0, 200)).toBe(200);
     expect(home.outcome).toMatchObject({ kind: 'user', loginId: mem });
     expect(home.json.homeApp).toMatchObject({ appId: teamApp });
     // A home app Team does not hold: the built-in home.
-    await x(sql`update workspaces set landing_app_id = ${sideApp} where id = ${team}`);
+    await su(sql`update workspaces set landing_app_id = ${sideApp} where id = ${team}`);
     expect((await call('/api/member/home', mem)).json).toMatchObject({ homeApp: null, hub: null });
-    await x(sql`update workspaces set landing_app_id = null where id = ${team}`);
+    await su(sql`update workspaces set landing_app_id = null where id = ${team}`);
     expect((await call('/api/member/push/subscriptions', mem)).outcome).toMatchObject({
       kind: 'own-rule',
     });

@@ -80,8 +80,11 @@ describe.skipIf(!URL)('POST /api/pages/:id/move, on Postgres', () => {
       insert into spaces (id, kind, login_id) values (${h.owner}, 'brain', ${h.owner})
       on conflict (id) do nothing`);
     await (await import('@mantle/db/test-support')).runWorkspacesSwitch();
-    await m.systemDb.execute(sqlTag`
-      insert into workspaces (id, owner_id, name) values (${S}, ${h.owner}, 'Sales')`);
+    // As the superuser: the app pools only read the workspace tables.
+    await ts.superuserExec(
+      scratch.url,
+      sqlTag`insert into workspaces (id, owner_id, name) values (${S}, ${h.owner}, 'Sales')`,
+    );
     await tree.ensureKindRoot(h.owner, 'pages');
     plans = (await tree.createTreeFolder(h.owner, 'pages', { parentId: null, name: label })).id;
     const s = await tree.createTreeFolder(h.owner, 'pages', {

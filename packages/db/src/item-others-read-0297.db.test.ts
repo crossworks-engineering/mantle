@@ -46,6 +46,8 @@ describe.skipIf(!URL)('0297: whether others read an item, through a definer', ()
     process.env.DATABASE_URL = scratch.url;
     process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
     m = await import('./index');
+    // Workspace table writes as the superuser: the app's pools only read them.
+    const su = (q: ReturnType<typeof sql>) => ts.superuserExec(scratch!.url, q);
     await x(sql`insert into auth.users (id, email, password_hash, role, is_owner)
       values (${owner}, ${`${tag}@example.invalid`}, 'x', 'admin', true)`);
     await ts.runWorkspacesSwitch(scratch.url);
@@ -59,7 +61,7 @@ describe.skipIf(!URL)('0297: whether others read an item, through a definer', ()
         values (${id}, ${owner}, 'note', ${`${tag} ${label}`}, ${`${tag}.${label}`}::ltree)`);
     }
     // A workspace the owner is not a user of holds `held`.
-    await x(
+    await su(
       sql`insert into workspaces (id, owner_id, name) values (${ws}, ${owner}, ${`${tag} ws`})`,
     );
     await m.withHeads([held], 'update', async (tx) => {
@@ -71,10 +73,10 @@ describe.skipIf(!URL)('0297: whether others read an item, through a definer', ()
     // `memberItem` and nothing else here.
     await x(sql`insert into auth.users (id, email, password_hash, role, is_owner)
       values (${member}, ${`${tag}-m@example.invalid`}, 'x', 'member', false)`);
-    await x(sql`insert into workspaces (id, owner_id, name)
+    await su(sql`insert into workspaces (id, owner_id, name)
       values (${memberWs}, ${owner}, ${`${tag} member ws`})`);
-    await x(sql`delete from workspace_users where login_id = ${member}`);
-    await x(sql`insert into workspace_users (workspace_id, login_id, moderator)
+    await su(sql`delete from workspace_users where login_id = ${member}`);
+    await su(sql`insert into workspace_users (workspace_id, login_id, moderator)
       values (${memberWs}, ${member}, false)`);
     await m.withHeads([memberItem], 'update', async (tx) => {
       await tx.execute(

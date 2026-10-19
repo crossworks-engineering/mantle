@@ -95,6 +95,10 @@ describe.skipIf(!URL)('W7 integration fix 3', () => {
 
   const x = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
     (await m.systemDb.execute(q)) as unknown as T[];
+  /** A fixture write to the four workspace tables, as the superuser: the
+   *  system pool only reads them under test:runtime-role. */
+  const su = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
+    (await import('@mantle/db/test-support')).superuserExec<T>(scratch!.url, q);
   const as = (login: string) => {
     h.session = {
       id: owner,
@@ -108,7 +112,7 @@ describe.skipIf(!URL)('W7 integration fix 3', () => {
   const json = (body: unknown, method = 'POST') =>
     new Request('http://x/', { method, body: JSON.stringify(body) });
   const setAreas = (login: string, areas: Record<string, boolean>) =>
-    x(sql`update workspace_users set limits = ${JSON.stringify({ areas })}::jsonb
+    su(sql`update workspace_users set limits = ${JSON.stringify({ areas })}::jsonb
            where workspace_id = ${adminWs} and login_id = ${login}`);
   const adminTurn = (login: string) => ({
     kind: 'assistant' as const,
@@ -192,7 +196,7 @@ describe.skipIf(!URL)('W7 integration fix 3', () => {
       on conflict (id) do nothing`);
     await (await import('@mantle/db/test-support')).runWorkspacesSwitch();
     // A Team as a brain switched before 0286 has it (a new brain has none).
-    await x(sql.raw(teamWorkspaceSql(owner)));
+    await su(sql.raw(teamWorkspaceSql(owner)));
     adminWs = (
       await x<{ id: string }>(sql`select id::text from workspaces
         where owner_id = ${owner} and is_admin and archived_at is null`)
@@ -202,15 +206,15 @@ describe.skipIf(!URL)('W7 integration fix 3', () => {
         where owner_id = ${owner} and name = 'Team' and not is_admin`)
     )[0]!.id;
     for (const login of [maker, firer]) {
-      await x(sql`insert into workspace_users (workspace_id, login_id, moderator)
+      await su(sql`insert into workspace_users (workspace_id, login_id, moderator)
                   values (${adminWs}, ${login}, false)
                   on conflict (workspace_id, login_id) do update set moderator = false`);
     }
     // O keeps its admin role but is no user of Admin (taken out of it).
-    await x(
+    await su(
       sql`delete from workspace_users where workspace_id = ${adminWs} and login_id = ${outsider}`,
     );
-    await x(sql`insert into workspace_users (workspace_id, login_id, moderator)
+    await su(sql`insert into workspace_users (workspace_id, login_id, moderator)
       values (${teamWs}, ${outsider}, false) on conflict do nothing`);
     await x(sql`insert into api_keys (id, user_id, service, label, key_enc)
       values (${apiKeyId}, ${owner}, 'openrouter', 'default', '\\x00'::bytea)`);

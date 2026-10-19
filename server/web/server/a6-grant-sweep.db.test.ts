@@ -147,6 +147,10 @@ describe.skipIf(!URL)('the A6 grant sweep', () => {
 
   const x = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
     (await m.systemDb.execute(q)) as unknown as T[];
+  /** A fixture write to the workspace tables, as the superuser: the app
+   *  pools only read them. */
+  const su = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
+    (await import('@mantle/db/test-support')).superuserExec<T>(scratch!.url, q);
 
   /** A value with every known id named, and times blanked. */
   const norm = (v: unknown): unknown => {
@@ -301,15 +305,15 @@ describe.skipIf(!URL)('the A6 grant sweep', () => {
       sql`select id::text as id from workspaces where owner_id = ${L.owner} and is_admin`,
     );
     names.set(adm!.id, 'ws:Admin');
-    await x(sql`insert into workspaces (id, owner_id, name) values
+    await su(sql`insert into workspaces (id, owner_id, name) values
       (${W.P}, ${L.owner}, 'Proj'), (${W.Q}, ${L.owner}, 'Quay'), (${W.R}, ${L.owner}, 'Reef')`);
-    await x(sql`insert into workspace_users (workspace_id, login_id, moderator) values
+    await su(sql`insert into workspace_users (workspace_id, login_id, moderator) values
         (${adm!.id}, ${L.adminAll}, false), (${adm!.id}, ${L.adminNoUsers}, false),
         (${W.P}, ${L.owner}, true), (${W.P}, ${L.modP}, true),
         (${W.Q}, ${L.modP}, false), (${W.Q}, ${L.modQR}, true), (${W.Q}, ${L.userQ}, false),
         (${W.R}, ${L.modQR}, true)
       on conflict (workspace_id, login_id) do update set moderator = excluded.moderator`);
-    await x(sql`update workspace_users set limits = '{"areas":{"users":false}}'::jsonb
+    await su(sql`update workspace_users set limits = '{"areas":{"users":false}}'::jsonb
                  where workspace_id = ${adm!.id} and login_id = ${L.adminNoUsers}`);
     const [priv] = await x<{ id: string }>(
       sql`select mantle_ws_private_workspace(set_config('mantle.scope_login', ${L.modP}, true)::uuid)::text as id`,

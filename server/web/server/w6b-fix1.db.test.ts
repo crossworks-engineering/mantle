@@ -57,6 +57,10 @@ describe.skipIf(!URL)('W6b fix round 1', () => {
 
   const x = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
     (await m.systemDb.execute(q)) as unknown as T[];
+  /** A fixture write to the four workspace tables, as the superuser: the
+   *  system pool only reads them under test:runtime-role. */
+  const su = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
+    (await import('@mantle/db/test-support')).superuserExec<T>(scratch!.url, q);
   const email = (who: string) => `${tag}-${who}@example.invalid`;
   const call = async (
     p: string,
@@ -188,7 +192,7 @@ describe.skipIf(!URL)('W6b fix round 1', () => {
     side = (await call('/api/workspaces', mem2, 'POST', { name: 'Side' })).json.id as string;
     ro = (await call('/api/workspaces', mem2, 'POST', { name: 'Ro' })).json.id as string;
     expect(side && ro).toBeTruthy();
-    await x(sql`insert into workspace_users (workspace_id, login_id, moderator)
+    await su(sql`insert into workspace_users (workspace_id, login_id, moderator)
                 values (${ro}, ${mem}, false), (${ro}, ${mem3}, false)`);
     await x(sql`insert into nodes (id, owner_id, type, title, path) values
       (${roNote}, ${owner}, 'note', ${`${tag} ro note`}, 'notes')`);

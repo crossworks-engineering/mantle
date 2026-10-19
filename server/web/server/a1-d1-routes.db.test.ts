@@ -118,6 +118,10 @@ describe.skipIf(!URL)('A1 D1: tasks, events, formulas and Recall maps on HTTP', 
 
   const x = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
     (await m.systemDb.execute(q)) as unknown as T[];
+  /** A fixture write to the workspace tables, as the superuser: the app
+   *  pools only read them. */
+  const su = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
+    (await import('@mantle/db/test-support')).superuserExec<T>(scratch!.url, q);
   const email = (who: string) => `${tag}-${who}@example.invalid`;
   const call = async (
     p: string,
@@ -205,16 +209,16 @@ describe.skipIf(!URL)('A1 D1: tasks, events, formulas and Recall maps on HTTP', 
     // stays in Team without the Moderator tick.
     const side = await call('/api/workspaces', outsider, 'POST', { name: 'Side' });
     expect(side.status, side.text.slice(0, 200)).toBeLessThan(300);
-    await x(
+    await su(
       sql`delete from workspace_users where workspace_id = ${team} and login_id = ${outsider}`,
     );
     // Both admin-role logins moderate Team; only Ada stays in Admin.
     for (const id of [admin2, exAdmin]) {
-      await x(sql`insert into workspace_users (workspace_id, login_id, moderator)
+      await su(sql`insert into workspace_users (workspace_id, login_id, moderator)
                   values (${team}, ${id}, true)
                   on conflict (workspace_id, login_id) do update set moderator = true`);
     }
-    await x(
+    await su(
       sql`delete from workspace_users where workspace_id = ${adminWs} and login_id = ${exAdmin}`,
     );
     expect(
@@ -226,13 +230,15 @@ describe.skipIf(!URL)('A1 D1: tasks, events, formulas and Recall maps on HTTP', 
     ).toBe(1);
     // The writer is in WG only, without the Moderator tick.
     wg = (
-      await x<{ id: string }>(sql`insert into workspaces (owner_id, name)
+      await su<{ id: string }>(sql`insert into workspaces (owner_id, name)
         values (${owner}, ${`${tag} WG`}) returning id::text as id`)
     )[0]!.id;
-    await x(sql`insert into workspace_users (workspace_id, login_id, moderator)
+    await su(sql`insert into workspace_users (workspace_id, login_id, moderator)
                 values (${wg}, ${writer}, false)`);
-    await x(sql`delete from workspace_users where workspace_id = ${team} and login_id = ${writer}`);
-    await x(sql`update workspace_users set moderator = false
+    await su(
+      sql`delete from workspace_users where workspace_id = ${team} and login_id = ${writer}`,
+    );
+    await su(sql`update workspace_users set moderator = false
                 where workspace_id = ${team} and login_id = ${reader}`);
     const inTeam = await x<{ login: string; mod: boolean }>(sql`
       select login_id::text as login, moderator as mod from workspace_users

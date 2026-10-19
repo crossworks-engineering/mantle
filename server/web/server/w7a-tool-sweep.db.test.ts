@@ -205,6 +205,10 @@ describe.skipIf(!URL)('W7a: the Admin assistant and the Admin MCP run in a scope
 
   const x = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
     (await m.systemDb.execute(q)) as unknown as T[];
+  /** A fixture write to the four workspace tables, as the superuser: the
+   *  system pool only reads them under test:runtime-role. */
+  const su = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
+    (await import('@mantle/db/test-support')).superuserExec<T>(scratch!.url, q);
   const email = (who: string) => `${tag}-${who}@example.invalid`;
 
   const idFor = (key: string, slug: string): string => {
@@ -709,7 +713,7 @@ describe.skipIf(!URL)('W7a: the Admin assistant and the Admin MCP run in a scope
 
     // An Admin-role login that is no user of Admin: its MCP scope does not
     // hold Admin, so the same tools are refused on the Admin MCP surface.
-    await x(
+    await su(
       sql`delete from workspace_users where workspace_id = ${adminWs} and login_id = ${admin2}`,
     );
     const ls = await import('@mantle/mcp-core');

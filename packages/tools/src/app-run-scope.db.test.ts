@@ -85,6 +85,8 @@ describe.skipIf(!URL)('an app run reads through the app (R2, H1)', () => {
     builtins = await import('./builtins');
     content = await import('@mantle/content');
     sqlTag = (await import('drizzle-orm')).sql;
+    // Workspace table writes as the superuser: the app's pools only read them.
+    const su = (q: ReturnType<typeof sqlTag>) => ts.superuserExec(scratch!.url, q);
     const email = (id: string) => `h1-${id.slice(0, 8)}@example.invalid`;
     await sys(sqlTag`insert into auth.users (id, email, password_hash, role, is_owner) values
       (${owner}, ${email(owner)}, 'x', 'admin', true),
@@ -113,12 +115,12 @@ describe.skipIf(!URL)('an app run reads through the app (R2, H1)', () => {
     team = ws.find((w) => w.key === 'team')!.id;
     // Another workspace: the member is in it, the owner is not. It holds
     // the other note and (with Team) the second app.
-    await sys(sqlTag`insert into workspaces (id, owner_id, name, is_admin)
+    await su(sqlTag`insert into workspaces (id, owner_id, name, is_admin)
       values (${other}, ${owner}, 'Other', false)`);
-    await sys(sqlTag`insert into workspace_users (workspace_id, login_id, moderator)
+    await su(sqlTag`insert into workspace_users (workspace_id, login_id, moderator)
       values (${other}, ${member}, true)`);
     // The outsider leaves Team: in no holder of the app.
-    await sys(sqlTag`delete from workspace_users where login_id = ${outsider}`);
+    await su(sqlTag`delete from workspace_users where login_id = ${outsider}`);
     for (const key of ['otherNote', 'twoApp']) {
       await m.withHeads([ids[key]!], 'update', async (tx) => {
         await tx.execute(
@@ -128,15 +130,15 @@ describe.skipIf(!URL)('an app run reads through the app (R2, H1)', () => {
     }
     // An app held beyond Admin only by a workspace archived since (its row
     // stands for one an archive left behind).
-    await sys(sqlTag`insert into workspaces (id, owner_id, name, is_admin)
+    await su(sqlTag`insert into workspaces (id, owner_id, name, is_admin)
       values (${gone}, ${owner}, 'Gone', false)`);
-    await sys(sqlTag`insert into workspace_users (workspace_id, login_id, moderator)
+    await su(sqlTag`insert into workspace_users (workspace_id, login_id, moderator)
       values (${gone}, ${member}, false)`);
     await m.withHeads([ids.archivedApp!], 'update', async (tx) => {
       await tx.execute(sqlTag`insert into item_grants (node_id, workspace_id)
         values (${ids.archivedApp!}, ${gone})`);
     });
-    await sys(sqlTag`update workspaces set archived_at = now() where id = ${gone}`);
+    await su(sqlTag`update workspaces set archived_at = now() where id = ${gone}`);
   }, 180_000);
 
   afterAll(async () => {

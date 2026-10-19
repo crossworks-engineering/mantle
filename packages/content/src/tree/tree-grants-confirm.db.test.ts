@@ -26,6 +26,10 @@ describe.skipIf(!URL)('the tree confirm on grants', () => {
 
   const x = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
     (await m.systemDb.execute(q)) as unknown as T[];
+  /** A fixture write to the workspace tables, as the superuser: the app's
+   *  pools only read them. */
+  const su = async (q: ReturnType<typeof sql>) =>
+    (await import('@mantle/db/test-support')).superuserExec(scratch!.url, q);
   const readWs = async (id: string) =>
     (await x<{ r: string[] }>(sql`select read_ws::text[] as r from nodes where id = ${id}`))[0]!.r;
   /** A grant set by hand (or "Removed here" with `excluded`), heads first. */
@@ -67,7 +71,7 @@ describe.skipIf(!URL)('the tree confirm on grants', () => {
         sql`select id::text as id from workspaces where owner_id = ${owner} and is_admin`,
       )
     )[0]!.id;
-    await x(sql`insert into workspaces (id, owner_id, name) values (${S}, ${owner}, 'Sales')`);
+    await su(sql`insert into workspaces (id, owner_id, name) values (${S}, ${owner}, 'Sales')`);
     await tree.ensureKindRoot(owner, 'pages');
   }, 180_000);
 

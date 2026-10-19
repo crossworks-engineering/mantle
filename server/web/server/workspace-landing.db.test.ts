@@ -76,6 +76,10 @@ describe.skipIf(!URL)('workspace landing pages (task d78e7bde)', () => {
 
   const x = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
     (await m.systemDb.execute(q)) as unknown as T[];
+  /** A fixture write to the four workspace tables, as the superuser: the
+   *  system pool only reads them under test:runtime-role. */
+  const su = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
+    (await import('@mantle/db/test-support')).superuserExec<T>(scratch!.url, q);
   const email = (who: string) => `${tag}-${who}@example.invalid`;
 
   const call = async (
@@ -215,8 +219,8 @@ describe.skipIf(!URL)('workspace landing pages (task d78e7bde)', () => {
   it('0276 makes the old member home app the Team workspace home app', async () => {
     // 0276 ran while Team carried its bridge key (0286 cleared it): put it
     // back for the re-runs, and take it away again at the end.
-    await x(sql`update workspaces set bridge_key = 'team' where id = ${team}`);
-    await x(sql`update workspaces set landing_app_id = null where owner_id = ${owner}`);
+    await su(sql`update workspaces set bridge_key = 'team' where id = ${team}`);
+    await su(sql`update workspaces set landing_app_id = null where owner_id = ${owner}`);
     await x(sql`insert into profiles (user_id, preferences)
                 values (${owner}, ${JSON.stringify({ teamHubAppId: teamApp })}::jsonb)
                 on conflict (user_id) do update
@@ -242,13 +246,13 @@ describe.skipIf(!URL)('workspace landing pages (task d78e7bde)', () => {
     expect(rows.filter((r) => r.id !== team).every((r) => r.landing === null)).toBe(true);
     // Re-runnable: a second run changes nothing, and a set landing page is
     // never overwritten by the old preference.
-    await x(sql`update workspaces set landing_app_id = ${teamApp2} where id = ${team}`);
+    await su(sql`update workspaces set landing_app_id = ${teamApp2} where id = ${team}`);
     await run();
     const [after] = await x<{ landing: string }>(sql`
       select landing_app_id::text as landing from workspaces where id = ${team}`);
     expect(after?.landing).toBe(teamApp2);
     // A preference that names no app of the brain is not taken.
-    await x(sql`update workspaces set landing_app_id = null where id = ${team}`);
+    await su(sql`update workspaces set landing_app_id = null where id = ${team}`);
     await x(
       sql`update profiles set preferences = preferences || ${JSON.stringify({
         teamHubAppId: teamPage,
@@ -269,7 +273,7 @@ describe.skipIf(!URL)('workspace landing pages (task d78e7bde)', () => {
     const [unheld] = await x<{ landing: string | null }>(sql`
       select landing_app_id::text as landing from workspaces where id = ${team}`);
     expect(unheld?.landing).toBeNull();
-    await x(sql`update workspaces set bridge_key = null where id = ${team}`);
+    await su(sql`update workspaces set bridge_key = null where id = ${team}`);
   });
 
   it('only a Moderator of the workspace sets its landing page, to an app it holds with a green build', async () => {
@@ -416,7 +420,7 @@ describe.skipIf(!URL)('workspace landing pages (task d78e7bde)', () => {
   it('a pointer left from before names nothing, and a Moderator clears it', async () => {
     // As a brain could hold it before 0276's trigger: Team points at an app
     // it does not hold.
-    await x(sql`update workspaces set landing_app_id = ${sideApp} where id = ${team}`);
+    await su(sql`update workspaces set landing_app_id = ${sideApp} where id = ${team}`);
     try {
       const d = await call(`/api/workspaces/${team}`, mem);
       expect(d.json.landingApp).toEqual({ held: false, appId: null, title: null, ready: false });
@@ -426,7 +430,7 @@ describe.skipIf(!URL)('workspace landing pages (task d78e7bde)', () => {
       expect(cleared.status).toBe(200);
       expect(await landingOf(team)).toBeNull();
     } finally {
-      await x(sql`update workspaces set landing_app_id = ${teamApp} where id = ${team}`);
+      await su(sql`update workspaces set landing_app_id = ${teamApp} where id = ${team}`);
     }
   });
 
@@ -491,7 +495,7 @@ describe.skipIf(!URL)('workspace landing pages (task d78e7bde)', () => {
       expect(await landingOf(team)).toBeNull();
       expect((await home(mem, team)).json.homeApp).toBeNull();
     } finally {
-      await x(sql`update workspaces set landing_app_id = ${teamApp} where id = ${team}`);
+      await su(sql`update workspaces set landing_app_id = ${teamApp} where id = ${team}`);
     }
   });
 
@@ -525,7 +529,7 @@ describe.skipIf(!URL)('workspace landing pages (task d78e7bde)', () => {
     } finally {
       await raw.end();
       await alsoIn(teamApp2, team);
-      await x(sql`update workspaces set landing_app_id = ${teamApp} where id = ${team}`);
+      await su(sql`update workspaces set landing_app_id = ${teamApp} where id = ${team}`);
     }
   });
 

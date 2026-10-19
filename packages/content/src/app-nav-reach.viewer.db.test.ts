@@ -77,6 +77,8 @@ describe.skipIf(!URL)('the app list MCP reach, in an Admin user scope', () => {
     m = await import('@mantle/db');
     nav = await import('./app-nav');
     sqlTag = (await import('drizzle-orm')).sql;
+    // Workspace table writes as the superuser: the app's pools only read them.
+    const su = (q: Parameters<Ts['superuserExec']>[1]) => ts.superuserExec(scratch!.url, q);
     // The viewer roles: the global setup brings them up once (cluster-wide).
     await m.systemDb.execute(sqlTag`
       insert into auth.users (id, email, password_hash, role, is_owner) values
@@ -85,7 +87,7 @@ describe.skipIf(!URL)('the app list MCP reach, in an Admin user scope', () => {
     await m.systemDb.execute(sqlTag`
       insert into spaces (id, kind, login_id) values (${anchor}, 'brain', ${anchor})
       on conflict (id) do nothing`);
-    await m.systemDb.execute(sqlTag`
+    await su(sqlTag`
       insert into workspaces (id, owner_id, name, is_admin, bridge_key) values
         (${ws.admin}, ${anchor}, ${`${tag} Admin`}, true, 'admin'),
         (${ws.team}, ${anchor}, ${`${tag} Team`}, false, null),
@@ -99,7 +101,7 @@ describe.skipIf(!URL)('the app list MCP reach, in an Admin user scope', () => {
       insert into former_user_workspaces (former_key, workspace_id)
       values (${randomUUID()}, ${ws.gone})`);
     // The Admin user is in Admin and Team, not in Field.
-    await m.systemDb.execute(sqlTag`
+    await su(sqlTag`
       insert into workspace_users (workspace_id, login_id, moderator) values
         (${ws.admin}, ${anchor}, true), (${ws.team}, ${anchor}, false)`);
     for (const [key, id] of Object.entries(ids)) {
@@ -118,9 +120,7 @@ describe.skipIf(!URL)('the app list MCP reach, in an Admin user scope', () => {
     await grant(ids.priv, ws.priv);
     await grant(ids.gone, ws.gone);
     await grant(ids.archived, ws.old);
-    await m.systemDb.execute(
-      sqlTag`update workspaces set archived_at = now() where id = ${ws.old}`,
-    );
+    await su(sqlTag`update workspaces set archived_at = now() where id = ${ws.old}`);
     await grant(ids.mcpOff, ws.field);
     await grant(ids.unpublished, ws.field);
   }, 60_000);

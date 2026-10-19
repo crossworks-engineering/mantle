@@ -40,6 +40,11 @@ describe.skipIf(!URL)('sharedViaFolder', () => {
         where node_id = ${node} and workspace_id = ${wsId}`),
     );
 
+  /** A fixture write to the workspace tables, as the superuser: the app's
+   *  pools only read them. */
+  const su = async (q: ReturnType<typeof sqlTag>) =>
+    (await import('@mantle/db/test-support')).superuserExec(URL!, q);
+
   beforeAll(async () => {
     process.env.DATABASE_URL = URL;
     m = await import('@mantle/db');
@@ -55,7 +60,7 @@ describe.skipIf(!URL)('sharedViaFolder', () => {
         insert into spaces (id, kind, login_id) values (${id}, 'brain', ${id})`);
       await tree.ensureKindRoot(id, 'notes');
     }
-    await m.db.execute(sqlTag`
+    await su(sqlTag`
       insert into workspaces (id, owner_id, name, is_admin, bridge_key) values
         (${ws.admin}, ${owner}, ${`${tag} Admin`}, true, 'admin'),
         (${ws.team}, ${owner}, ${`${tag} Team`}, false, null),
@@ -68,7 +73,7 @@ describe.skipIf(!URL)('sharedViaFolder', () => {
       await m.db.execute(sqlTag`
         delete from item_grants where node_id in (select id from nodes where owner_id = ${id})`);
       await m.db.execute(sqlTag`delete from nodes where owner_id = ${id}`);
-      await m.db.execute(sqlTag`delete from workspaces where owner_id = ${id}`);
+      await su(sqlTag`delete from workspaces where owner_id = ${id}`);
       await m.db.execute(sqlTag`delete from spaces where id = ${id} or login_id = ${id}`);
       await m.db.execute(sqlTag`delete from auth.users where id = ${id}`);
     }

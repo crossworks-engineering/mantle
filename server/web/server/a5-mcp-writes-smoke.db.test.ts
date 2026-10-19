@@ -249,7 +249,7 @@ describe.skipIf(!URL)('MCP writes and read-path writes as the login (A5 step 4, 
     adminWs = admin!.id;
     const ws = async (name: string) =>
       (
-        await x<{ id: string }>(sql`
+        await su<{ id: string }>(sql`
           insert into workspaces (owner_id, name) values (${owner}, ${`${tag} ${name}`})
           returning id::text`)
       )[0]!.id;
@@ -257,7 +257,7 @@ describe.skipIf(!URL)('MCP writes and read-path writes as the login (A5 step 4, 
     modWs = await ws('Mod');
     // The member: a plain user of Proj (Write on the items granted it), a
     // Moderator of Mod (the connector's workspace), with a private one.
-    await x(sql`insert into workspace_users (workspace_id, login_id, moderator) values
+    await su(sql`insert into workspace_users (workspace_id, login_id, moderator) values
       (${projWs}, ${member}, false), (${modWs}, ${member}, true)
       on conflict (workspace_id, login_id) do update set moderator = excluded.moderator`);
     await x(
@@ -300,7 +300,7 @@ describe.skipIf(!URL)('MCP writes and read-path writes as the login (A5 step 4, 
         memoryConfig: { chunk_limit: 0, content_hit_limit: 0, corpus_map_limit: 0 },
       })
       .returning();
-    await x(sql`insert into workspace_resources (workspace_id, type, ref_id, write)
+    await su(sql`insert into workspace_resources (workspace_id, type, ref_id, write)
       values (${adminWs}, 'assistant', ${agent!.id}, true) on conflict do nothing`);
 
     // A connector of Mod with one write tool (unmarked: a write).
@@ -322,7 +322,7 @@ describe.skipIf(!URL)('MCP writes and read-path writes as the login (A5 step 4, 
       requiresConfirm: false,
       enabled: true,
     } as never);
-    await x(sql`insert into workspace_resources (workspace_id, type, ref_id, write)
+    await su(sql`insert into workspace_resources (workspace_id, type, ref_id, write)
       values (${modWs}, 'connector', 'mcp-crm', true) on conflict do nothing`);
 
     // The box's checks on, as an operator switches them, and this process's.

@@ -27,6 +27,7 @@ import {
   createMigratedScratchDatabase,
   ensureAdminUsers,
   ensureTestAnchor,
+  superuserClient,
 } from '@mantle/db/test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
@@ -149,6 +150,17 @@ describe.skipIf(!URL)('device tokens for an admin and a member', () => {
                          where user_id = ${login} and revoked_at is null and expires_at > now()`
       )[0]!.n,
     );
+  /** The logins made users of the Admin workspace, on a client of the
+   *  superuser's own: the app pools only read the four workspace tables
+   *  under the runtime role. */
+  const adminUsers = async (logins: string[]) => {
+    const su = superuserClient(scratch!.url);
+    try {
+      await ensureAdminUsers(su, logins);
+    } finally {
+      await su.end();
+    }
+  };
   /** A login made for one test, with a password. */
   const addLogin = async (name: string, role: 'admin' | 'member'): Promise<string> => {
     const id = randomUUID();
@@ -156,7 +168,7 @@ describe.skipIf(!URL)('device tokens for an admin and a member', () => {
               values (${id}, ${emailOf(name)}, ${bcrypt.hashSync(PASSWORD, 4)}, ${role}, ${name})`;
     made.push(id);
     // An Admin login is role admin AND a user of Admin.
-    if (role === 'admin') await ensureAdminUsers(sql, [id]);
+    if (role === 'admin') await adminUsers([id]);
     return id;
   };
   const audited = async (action: string, actorId: string) => {
@@ -186,7 +198,7 @@ describe.skipIf(!URL)('device tokens for an admin and a member', () => {
       (${admin}, ${emailOf('admin')}, ${hash}, 'admin', 'Ada Admin'),
       (${member}, ${emailOf('member')}, ${hash}, 'member', 'Mia Member')`;
     // An Admin login is role admin AND a user of Admin.
-    await ensureAdminUsers(sql, [admin]);
+    await adminUsers([admin]);
     const { createApp } = await import('../../server/app');
     app = await createApp();
   }, 120_000);

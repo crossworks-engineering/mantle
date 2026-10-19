@@ -182,10 +182,10 @@ describe.skipIf(!URL)('A2b2b: the login write gateway', () => {
     ro = (await call('/api/workspaces', mem2, 'POST', { name: 'Ro' })).json.id as string;
     expect(ro).toBeTruthy();
     // mem moderates Team; it reads Ro (no Moderator, no Write).
-    await x(sql`insert into workspace_users (workspace_id, login_id, moderator)
+    await su(sql`insert into workspace_users (workspace_id, login_id, moderator)
                 values (${team}, ${mem}, true)
                 on conflict (workspace_id, login_id) do update set moderator = true`);
-    await x(sql`insert into workspace_users (workspace_id, login_id, moderator)
+    await su(sql`insert into workspace_users (workspace_id, login_id, moderator)
                 values (${ro}, ${mem}, false)`);
     await x(sql`insert into nodes (id, owner_id, type, title, path) values
       (${roNote}, ${owner}, 'note', ${`${tag} ro note`}, 'notes'),
@@ -423,7 +423,7 @@ describe.skipIf(!URL)('A2b2b: the login write gateway', () => {
     await x(sql`insert into auth.users (id, email, password_hash, is_owner, role, display_name) values
       (${adm}, ${email('adm')}, 'x', false, 'admin', 'Ada Admin'),
       (${admNo}, ${email('admno')}, 'x', false, 'admin', 'Abe Admin')`);
-    await x(sql`insert into workspace_users (workspace_id, login_id, moderator, limits) values
+    await su(sql`insert into workspace_users (workspace_id, login_id, moderator, limits) values
       (${adminWs}, ${adm}, true, '{}'::jsonb),
       (${adminWs}, ${admNo}, true, ${JSON.stringify({ areas: { settings: false } })}::jsonb)
       on conflict (workspace_id, login_id) do update set limits = excluded.limits`);
@@ -838,7 +838,7 @@ describe.skipIf(!URL)('A2b2b: the login write gateway', () => {
     await x(sql`insert into auth.users (id, email, password_hash, is_owner, role, display_name) values
       (${withS}, ${email('rcs')}, 'x', false, 'admin', 'Rhea Admin'),
       (${noS}, ${email('rcn')}, 'x', false, 'admin', 'Rex Admin')`);
-    await x(sql`insert into workspace_users (workspace_id, login_id, moderator, limits) values
+    await su(sql`insert into workspace_users (workspace_id, login_id, moderator, limits) values
       (${adminWs}, ${withS}, true, '{}'::jsonb),
       (${adminWs}, ${noS}, true, ${JSON.stringify({ areas: { settings: false } })}::jsonb)
       on conflict (workspace_id, login_id) do update set limits = excluded.limits`);

@@ -41,6 +41,10 @@ describe.skipIf(!URL)('workspace turn gates (W4b fix round 1)', () => {
 
   const x = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
     (await m.systemDb.execute(q)) as unknown as T[];
+  /** A fixture write to the workspace tables, as the superuser: the app
+   *  pools only read them. */
+  const su = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
+    (await import('@mantle/db/test-support')).superuserExec<T>(scratch!.url, q);
   const scope = (modWs: string[] = [team], login: string | null = member) => ({
     kind: 'assistant' as const,
     loginId: login,
@@ -63,10 +67,10 @@ describe.skipIf(!URL)('workspace turn gates (W4b fix round 1)', () => {
     surface: surface as never,
   });
   const setTeamResource = async (row: { write: boolean } | null) => {
-    await x(sql`delete from workspace_resources
+    await su(sql`delete from workspace_resources
       where workspace_id = ${team} and type = 'connector' and ref_id = ${CONN}`);
     if (row) {
-      await x(sql`insert into workspace_resources (workspace_id, type, ref_id, write)
+      await su(sql`insert into workspace_resources (workspace_id, type, ref_id, write)
         values (${team}, 'connector', ${CONN}, ${row.write})`);
     }
   };
@@ -100,7 +104,7 @@ describe.skipIf(!URL)('workspace turn gates (W4b fix round 1)', () => {
     team = wsRows.find((r) => r.key === 'team')!.id;
     admin = wsRows.find((r) => r.key === 'admin')!.id;
     // The stranger is a user of no workspace of this brain.
-    await x(sql`delete from workspace_users where login_id = ${stranger}`);
+    await su(sql`delete from workspace_users where login_id = ${stranger}`);
   }, 180_000);
 
   afterAll(async () => {
@@ -314,7 +318,7 @@ describe.skipIf(!URL)('workspace turn gates (W4b fix round 1)', () => {
 
     it('a write tool refused when the login moderates no workspace holding it', async () => {
       await setTeamResource({ write: true });
-      await x(sql`update workspace_users set moderator = false
+      await su(sql`update workspace_users set moderator = false
         where workspace_id = ${team} and login_id = ${member2}`);
       expect((await call(member2)).text).toMatch(/where you are a Moderator/);
     });
@@ -327,7 +331,7 @@ describe.skipIf(!URL)('workspace turn gates (W4b fix round 1)', () => {
       await setTeamResource({ write: false });
       expect(await tools.loginConnectorRefused(owner, member2, CONN, false)).toBeNull();
       await setTeamResource({ write: true });
-      await x(sql`update workspace_users set moderator = true
+      await su(sql`update workspace_users set moderator = true
         where workspace_id = ${team} and login_id = ${member}`);
       expect(await tools.loginConnectorRefused(owner, member, CONN, true)).toBeNull();
     });

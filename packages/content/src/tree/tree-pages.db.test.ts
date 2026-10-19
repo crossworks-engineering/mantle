@@ -36,6 +36,11 @@ describe.skipIf(!URL)('pages in the item tree', () => {
     )[0] ?? null;
   const made: string[] = [];
 
+  /** A fixture write to the workspace tables, as the superuser: the app's
+   *  pools only read them. */
+  const su = async (q: ReturnType<typeof sqlTag>) =>
+    (await import('@mantle/db/test-support')).superuserExec(URL!, q);
+
   beforeAll(async () => {
     process.env.DATABASE_URL = URL;
     process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
@@ -68,7 +73,7 @@ describe.skipIf(!URL)('pages in the item tree', () => {
                 [...made, randomUUID()].map((id) => sqlTag`${id}::uuid`),
                 sqlTag`, `,
               )}))`);
-    await m.systemDb.execute(sqlTag`delete from workspaces where id = ${readers}`);
+    await su(sqlTag`delete from workspaces where id = ${readers}`);
     if (space) await m.systemDb.execute(sqlTag`delete from spaces where id = ${space}`);
     await m.systemDb.execute(sqlTag`delete from auth.users where id = ${member}`);
   });

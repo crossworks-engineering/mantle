@@ -80,6 +80,10 @@ describe.skipIf(!URL)('W7a fix round 4', () => {
 
   const x = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
     (await m.systemDb.execute(q)) as unknown as T[];
+  /** A fixture write to the four workspace tables, as the superuser: the
+   *  system pool only reads them under test:runtime-role. */
+  const su = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
+    (await import('@mantle/db/test-support')).superuserExec<T>(scratch!.url, q);
   const sys = <T>(fn: () => Promise<T>) => m.asSystem(fn, 'test');
   const dispatchAs = (login: string, slug: string, input: Record<string, unknown>) =>
     rt.withAgentScope(
@@ -114,7 +118,7 @@ describe.skipIf(!URL)('W7a fix round 4', () => {
   const json = (body: unknown, method = 'POST') =>
     new Request('http://x/', { method, body: JSON.stringify(body) });
   const setKeys = (on: boolean) =>
-    x(sql`update workspace_users
+    su(sql`update workspace_users
              set limits = ${JSON.stringify(on ? {} : { areas: { keys: false } })}::jsonb
            where workspace_id = ${adminWs} and login_id = ${second}`);
   const groupRow = async (slug: string) => {
@@ -202,7 +206,7 @@ describe.skipIf(!URL)('W7a fix round 4', () => {
       await x<{ id: string }>(sql`select id::text from workspaces
         where owner_id = ${owner} and is_admin and archived_at is null`)
     )[0]!.id;
-    await x(sql`insert into workspace_users (workspace_id, login_id, moderator)
+    await su(sql`insert into workspace_users (workspace_id, login_id, moderator)
                 values (${adminWs}, ${second}, false)
                 on conflict (workspace_id, login_id) do update set moderator = false`);
     const keys = await import('@mantle/api-keys');

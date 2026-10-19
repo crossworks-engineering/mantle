@@ -25,6 +25,10 @@ describe.skipIf(!URL)('othersCanRead from the grants and live links', () => {
   const levelPage = randomUUID();
   const ws = { admin: randomUUID(), team: randomUUID() };
   const q = (s: ReturnType<typeof sqlTag>) => m.systemDb.execute(s);
+  /** A fixture write to the workspace tables, as the superuser: the app's
+   *  pools only read them. */
+  const su = async (s: ReturnType<typeof sqlTag>) =>
+    (await import('@mantle/db/test-support')).superuserExec(URL!, s);
   const grant = (node: string, wsId: string, home = false) =>
     m.withHeads([node], 'update', (tx) =>
       tx.execute(sqlTag`insert into item_grants (node_id, workspace_id, is_home)
@@ -40,7 +44,7 @@ describe.skipIf(!URL)('othersCanRead from the grants and live links', () => {
     await q(sqlTag`insert into auth.users (id, email, password_hash, role)
       values (${anchor}, ${`${tag}@example.invalid`}, 'x', 'admin')`);
     await q(sqlTag`insert into spaces (id, kind, login_id) values (${anchor}, 'brain', ${anchor})`);
-    await q(sqlTag`
+    await su(sqlTag`
       insert into workspaces (id, owner_id, name, is_admin, bridge_key) values
         (${ws.admin}, ${anchor}, ${`${tag} Admin`}, true, 'admin'),
         (${ws.team}, ${anchor}, ${`${tag} Team`}, false, null)`);
@@ -58,7 +62,7 @@ describe.skipIf(!URL)('othersCanRead from the grants and live links', () => {
     await q(sqlTag`delete from shares where owner_id = ${anchor}`);
     await q(sqlTag`delete from item_grants where node_id in (${page}, ${teamPage}, ${levelPage})`);
     await q(sqlTag`delete from nodes where owner_id = ${anchor}`);
-    await q(sqlTag`delete from workspaces where owner_id = ${anchor}`);
+    await su(sqlTag`delete from workspaces where owner_id = ${anchor}`);
     await q(sqlTag`delete from spaces where login_id = ${anchor}`);
     await q(sqlTag`delete from auth.users where id = ${anchor}`);
     await m.closeDb();

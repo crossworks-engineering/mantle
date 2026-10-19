@@ -71,6 +71,10 @@ describe.skipIf(!URL)('W3: chunks follow their node; small scopes search exactly
         sqlTag`insert into item_grants (node_id, workspace_id) values (${nodeId}, ${wsId})`,
       ),
     );
+  /** A fixture write to the workspace tables, as the superuser: the app's
+   *  pools only read them. */
+  const su = async (q: ReturnType<typeof sqlTag>) =>
+    (await import('@mantle/db/test-support')).superuserExec(URL!, q);
   const ungrant = (nodeId: string, wsId: string) =>
     m.withHeads([nodeId], 'update', (tx) =>
       tx.execute(
@@ -91,9 +95,9 @@ describe.skipIf(!URL)('W3: chunks follow their node; small scopes search exactly
     await admin`insert into auth.users (id, email, password_hash, role) values
       (${login}, ${`${tag}-a@example.invalid`}, 'x', 'member'),
       (${other}, ${`${tag}-b@example.invalid`}, 'x', 'member')`;
-    await admin`insert into workspaces (id, owner_id, name) values
+    await su(sqlTag`insert into workspaces (id, owner_id, name) values
       (${ws.team}, ${anchor}, ${`${tag} team`}), (${ws.small}, ${anchor}, ${`${tag} small`}),
-      (${ws.none}, ${anchor}, ${`${tag} none`})`;
+      (${ws.none}, ${anchor}, ${`${tag} none`})`);
     for (const [k, id] of items.entries()) {
       await admin`insert into nodes (id, owner_id, type, title, path, embedding)
         values (${id}, ${anchor}, 'page', ${`${tag} item ${k}`}, 'pages', ${lit(vec(k))}::vector)`;
@@ -118,7 +122,7 @@ describe.skipIf(!URL)('W3: chunks follow their node; small scopes search exactly
     if (!admin) return;
     await admin`delete from item_grants where node_id = any(${`{${items.join(',')}}`}::uuid[])`;
     await admin`delete from nodes where id = any(${`{${items.join(',')}}`}::uuid[])`;
-    await admin`delete from workspaces where id in (${ws.team}, ${ws.small}, ${ws.none})`;
+    await su(sqlTag`delete from workspaces where id in (${ws.team}, ${ws.small}, ${ws.none})`);
     await admin`delete from spaces where login_id in (${login}, ${other})`;
     await admin`delete from auth.users where id in (${login}, ${other})`;
     await m?.closeDb();

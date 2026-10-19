@@ -289,13 +289,13 @@ describe.skipIf(!URL)('app drafts under the row lock read as the caller’s scop
        where owner_id = ${ids.owner} and archived_at is null`);
     adminWs = ws.find((w) => w.admin)!.id;
     // A brain has no built-in Team: the writer's workspace is a normal one.
-    const [proj, share] = await x<{ id: string }>(sql`
+    const [proj, share] = await su<{ id: string }>(sql`
       insert into workspaces (owner_id, name) values
         (${ids.owner}, ${`${tag} Proj`}), (${ids.owner}, ${`${tag} Share`})
       returning id::text`);
     projWs = proj!.id;
     teamWs = share!.id;
-    await x(sql`insert into workspace_users (workspace_id, login_id, moderator) values
+    await su(sql`insert into workspace_users (workspace_id, login_id, moderator) values
       (${projWs}, ${ids.admin}, true), (${projWs}, ${ids.moderator}, true),
       (${teamWs}, ${ids.writer}, false)
       on conflict (workspace_id, login_id) do update set moderator = excluded.moderator`);

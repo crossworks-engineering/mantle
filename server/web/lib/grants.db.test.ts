@@ -62,6 +62,10 @@ describe.skipIf(!URL)('grants (W5b2 part A)', () => {
 
   const x = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
     (await m.systemDb.execute(q)) as unknown as T[];
+  /** A fixture write to the four workspace tables, as the superuser: the
+   *  app pools only read them under the runtime role. */
+  const su = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
+    (await import('@mantle/db/test-support')).superuserExec<T>(scratch!.url, q);
   const email = (id: string, who: string) => `w5b2-${who}-${id.slice(0, 8)}@example.invalid`;
 
   const as = async (id: string) => {
@@ -200,9 +204,9 @@ describe.skipIf(!URL)('grants (W5b2 part A)', () => {
       select id::text as id, (case when is_admin then 'admin' when name = 'Team' then 'team' end) as key from workspaces where owner_id = ${owner}`);
     team = ws.find((w) => w.key === 'team')!.id;
     admin = ws.find((w) => w.key === 'admin')!.id;
-    await x(sql`insert into workspaces (id, owner_id, name) values
+    await su(sql`insert into workspaces (id, owner_id, name) values
       (${P}, ${owner}, 'Proj'), (${Q}, ${owner}, 'Quay'), (${R}, ${owner}, 'Reef')`);
-    await x(sql`insert into workspace_users (workspace_id, login_id, moderator) values
+    await su(sql`insert into workspace_users (workspace_id, login_id, moderator) values
       (${P}, ${owner}, true), (${P}, ${mem}, true),
       (${Q}, ${owner}, true), (${Q}, ${mem2}, true), (${Q}, ${mem}, false),
       (${R}, ${mem2}, true)`);

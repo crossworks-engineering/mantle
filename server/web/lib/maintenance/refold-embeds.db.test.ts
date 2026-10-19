@@ -43,6 +43,20 @@ describe.skipIf(!URL)('W2: a page without its embed finds none of its words', ()
   >[0];
   const asSu = async <T>(fn: (tx: MigratorTx) => Promise<T>): Promise<T> =>
     (await import('@mantle/db/test-support')).asMigrator(URL!, fn);
+  /** A fixture that writes the four workspace tables, on a client of the
+   *  superuser's own, as system(test), in one transaction: the app pools
+   *  only read those tables under the runtime role. */
+  const wsFixture = async (fn: (tx: MigratorTx) => Promise<unknown>): Promise<void> => {
+    const su = (await import('@mantle/db/test-support')).superuserClient(URL!);
+    try {
+      await su.begin(async (tx) => {
+        await tx`select set_config('mantle.actor', 'system:test', true)`;
+        await fn(tx);
+      });
+    } finally {
+      await su.end();
+    }
+  };
   const tag = `wsw2${randomUUID().replace(/-/g, '').slice(0, 10)}`;
   // The embed's words: in its title and in its text. None may reach a reader
   // of the page who may not read the file.
@@ -183,9 +197,11 @@ describe.skipIf(!URL)('W2: a page without its embed finds none of its words', ()
     const boss = new PgBoss({ connectionString: URL!, schema: 'pgboss' });
     await boss.start();
     await boss.stop({ graceful: false, timeout: 5_000 });
-    await admin`insert into workspaces (id, owner_id, name, is_admin) values
-      (${ws.admin}, ${anchor}, ${`${tag} Admin`}, true),
-      (${ws.team}, ${anchor}, ${`${tag} Team`}, false)`;
+    await wsFixture(
+      (tx) => tx`insert into workspaces (id, owner_id, name, is_admin) values
+        (${ws.admin}, ${anchor}, ${`${tag} Admin`}, true),
+        (${ws.team}, ${anchor}, ${`${tag} Team`}, false)`,
+    );
     // The page is granted to Team and Admin; its embed to neither.
     await admin`insert into item_grants (node_id, workspace_id, is_home) values
       (${granted}, ${ws.admin}, true), (${granted}, ${ws.team}, false)`;
@@ -201,7 +217,7 @@ describe.skipIf(!URL)('W2: a page without its embed finds none of its words', ()
     // taken a home here: their rows go with the workspaces, in one
     // transaction that holds new grants back (an insert between the two
     // deletes broke the second under load).
-    await admin.begin(async (tx) => {
+    await wsFixture(async (tx) => {
       await tx`lock table item_grants in exclusive mode`;
       await tx`delete from item_grants where workspace_id in (${ws.admin}, ${ws.team})`;
       await tx`delete from workspaces where id in (${ws.admin}, ${ws.team})`;

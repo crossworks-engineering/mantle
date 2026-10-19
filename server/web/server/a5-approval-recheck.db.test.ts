@@ -123,6 +123,10 @@ describe.skipIf(!DB_URL)('the approval re-check (A5 step 6c): the recorded matri
 
   const x = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
     (await m.systemDb.execute(q)) as unknown as T[];
+  /** A fixture write to the workspace tables, as the superuser: the app
+   *  pools only read them. */
+  const su = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
+    (await import('@mantle/db/test-support')).superuserExec<T>(scratch!.url, q);
 
   /** The workspaces the matrix does not make itself (a login's private
    *  workspace, the brain's own), by id: read before a cell is named. */
@@ -214,14 +218,16 @@ describe.skipIf(!DB_URL)('the approval re-check (A5 step 6c): the recorded matri
 
   /** Put every right back as the matrix starts it. */
   const reset = async () => {
-    await x(sql`delete from workspace_users where workspace_id in (${teamWs}, ${elseWs})`);
-    await x(sql`insert into workspace_users (workspace_id, login_id, moderator) values
+    await su(sql`delete from workspace_users where workspace_id in (${teamWs}, ${elseWs})`);
+    await su(sql`insert into workspace_users (workspace_id, login_id, moderator) values
       (${teamWs}, ${id.adminUser}, true), (${teamWs}, ${id.member}, true),
       (${teamWs}, ${id.memberPlain}, false)`);
-    await x(sql`update workspace_users set moderator = false
+    await su(sql`update workspace_users set moderator = false
       where workspace_id = ${adminWs} and login_id <> ${id.owner}`);
-    await x(sql`delete from workspace_resources where workspace_id = ${teamWs} and ref_id = 'crm'`);
-    await x(sql`insert into workspace_resources (workspace_id, type, ref_id, write)
+    await su(
+      sql`delete from workspace_resources where workspace_id = ${teamWs} and ref_id = 'crm'`,
+    );
+    await su(sql`insert into workspace_resources (workspace_id, type, ref_id, write)
       values (${teamWs}, 'connector', 'crm', true)`);
     await homeNote(teamWs);
   };
@@ -243,23 +249,23 @@ describe.skipIf(!DB_URL)('the approval re-check (A5 step 6c): the recorded matri
       case 'none':
         return;
       case 'lostWorkspace':
-        await x(
+        await su(
           sql`delete from workspace_users where workspace_id = ${teamWs} and login_id = ${login}`,
         );
         return;
       case 'lostModerator':
-        await x(sql`update workspace_users set moderator = false
+        await su(sql`update workspace_users set moderator = false
           where workspace_id = ${teamWs} and login_id = ${login}`);
         return;
       case 'lostItem':
         if (tool === 'note') await homeNote(elseWs);
-        else await x(sql`delete from workspace_resources where workspace_id = ${teamWs}`);
+        else await su(sql`delete from workspace_resources where workspace_id = ${teamWs}`);
         return;
       case 'gained':
-        await x(sql`insert into workspace_users (workspace_id, login_id, moderator)
+        await su(sql`insert into workspace_users (workspace_id, login_id, moderator)
           values (${elseWs}, ${login}, true) on conflict do nothing`);
         if (asker === 'adminUser') {
-          await x(sql`update workspace_users set moderator = true
+          await su(sql`update workspace_users set moderator = true
             where workspace_id = ${adminWs} and login_id = ${login}`);
         }
         return;
@@ -382,15 +388,15 @@ describe.skipIf(!DB_URL)('the approval re-check (A5 step 6c): the recorded matri
         where owner_id = ${id.owner} and is_admin and archived_at is null`)
     )[0]!.id;
     teamWs = (
-      await x<{ id: string }>(sql`insert into workspaces (owner_id, name)
+      await su<{ id: string }>(sql`insert into workspaces (owner_id, name)
         values (${id.owner}, ${`${tag} Team`}) returning id::text`)
     )[0]!.id;
     elseWs = (
-      await x<{ id: string }>(sql`insert into workspaces (owner_id, name)
+      await su<{ id: string }>(sql`insert into workspaces (owner_id, name)
         values (${id.owner}, ${`${tag} Else`}) returning id::text`)
     )[0]!.id;
     for (const login of [id.adminUser, id.other]) {
-      await x(sql`insert into workspace_users (workspace_id, login_id, moderator)
+      await su(sql`insert into workspace_users (workspace_id, login_id, moderator)
         values (${adminWs}, ${login}, false)
         on conflict (workspace_id, login_id) do update set moderator = false`);
     }
@@ -512,7 +518,7 @@ describe.skipIf(!DB_URL)('the approval re-check (A5 step 6c): the recorded matri
     // scope read no row (0254's rule shows a login only its own), the call
     // went unjudged and ran there.
     await reset();
-    await x(sql`insert into workspace_resources (workspace_id, type, ref_id, write)
+    await su(sql`insert into workspace_resources (workspace_id, type, ref_id, write)
       values (${adminWs}, 'connector', 'crm', true) on conflict do nothing`);
     try {
       const queued = await queue('member', 'connector', 'own-mcp');
@@ -528,7 +534,7 @@ describe.skipIf(!DB_URL)('the approval re-check (A5 step 6c): the recorded matri
       expect(h.remote).toEqual([]);
       await x(sql`update pending_tool_calls set status = 'expired' where id = ${queued.pending!}`);
     } finally {
-      await x(
+      await su(
         sql`delete from workspace_resources where workspace_id = ${adminWs} and ref_id = 'crm'`,
       );
     }

@@ -48,6 +48,11 @@ describe.skipIf(!URL)('the informational switch writes no grant (contract 36)', 
         values (${node}, ${wsId}, ${write}, ${home})`),
     );
 
+  /** A fixture write to the workspace tables, as the superuser: the app's
+   *  pools only read them. */
+  const su = async (q: ReturnType<typeof sqlTag>) =>
+    (await import('@mantle/db/test-support')).superuserExec(URL!, q);
+
   type Row = { ws: string; write: boolean; via: string | null; home: boolean };
   /** Every row of the node, excluded included, in a stable order. */
   const rowsOf = async (node: string): Promise<Row[]> =>
@@ -101,7 +106,7 @@ describe.skipIf(!URL)('the informational switch writes no grant (contract 36)', 
     await m.systemDb.execute(
       sqlTag`insert into spaces (id, kind, login_id) values (${anchor}, 'brain', ${anchor})`,
     );
-    await m.systemDb.execute(sqlTag`
+    await su(sqlTag`
       insert into workspaces (id, owner_id, name, is_admin, bridge_key) values
         (${ws.admin}, ${anchor}, ${`${tag} Admin`}, true, 'admin'),
         (${ws.team}, ${anchor}, ${`${tag} Team`}, false, null),
@@ -127,12 +132,12 @@ describe.skipIf(!URL)('the informational switch writes no grant (contract 36)', 
   }, 60_000);
 
   afterAll(async () => {
-    await m.systemDb.execute(sqlTag`delete from workspace_events where subject->>'node' in
+    await su(sqlTag`delete from workspace_events where subject->>'node' in
       (${ids.plain}, ${ids.pub}, ${ids.field})`);
     await m.systemDb.execute(sqlTag`
       delete from item_grants where node_id in (select id from nodes where owner_id = ${anchor})`);
     await m.systemDb.execute(sqlTag`delete from nodes where owner_id = ${anchor}`);
-    await m.systemDb.execute(sqlTag`delete from workspaces where owner_id = ${anchor}`);
+    await su(sqlTag`delete from workspaces where owner_id = ${anchor}`);
     await m.systemDb.execute(sqlTag`delete from spaces where login_id in (${anchor}, ${member})`);
     await m.systemDb.execute(sqlTag`delete from auth.users where id in (${anchor}, ${member})`);
     await m.closeDb();

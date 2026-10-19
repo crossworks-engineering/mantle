@@ -429,7 +429,7 @@ describe.skipIf(!DB_URL)('A2a: the actor check adds no round trip when off', () 
       on conflict (id) do nothing`);
     await (await import('@mantle/db/test-support')).runWorkspacesSwitch();
     // A Team as a brain switched before 0286 has it (a new brain has none).
-    await x(sql.raw(teamWorkspaceSql(owner)));
+    await su(sql.raw(teamWorkspaceSql(owner)));
     const [ws] = await x<{ id: string }>(sql`select id::text as id from workspaces
       where owner_id = ${owner} and is_admin and archived_at is null`);
     const [agent] = await m.systemDb
@@ -444,7 +444,7 @@ describe.skipIf(!DB_URL)('A2a: the actor check adds no round trip when off', () 
         workspaceId: ws!.id,
       })
       .returning();
-    await x(sql`insert into workspace_resources (workspace_id, type, ref_id, write)
+    await su(sql`insert into workspace_resources (workspace_id, type, ref_id, write)
       values (${ws!.id}, 'assistant', ${agent!.id}, true) on conflict do nothing`);
     const [key] = await x<{ id: string }>(sql`insert into api_keys
       (user_id, service, label, key_enc) values (${owner}, 'openrouter', ${`${tag}-key`},
@@ -461,7 +461,7 @@ describe.skipIf(!DB_URL)('A2a: the actor check adds no round trip when off', () 
       values (${member}, ${`${tag}-m@example.invalid`}, 'x', false, 'member', 'Member')`);
     const [team] = await x<{ id: string }>(sql`select id::text as id from workspaces
       where owner_id = ${owner} and name = 'Team' and not is_admin and archived_at is null`);
-    await x(sql`insert into workspace_users (workspace_id, login_id, moderator)
+    await su(sql`insert into workspace_users (workspace_id, login_id, moderator)
       values (${team!.id}, ${member}, true)
       on conflict (workspace_id, login_id) do update set moderator = true`);
     await x(sql`insert into nodes (id, owner_id, type, title, path)

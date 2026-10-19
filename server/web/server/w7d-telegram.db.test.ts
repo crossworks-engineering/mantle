@@ -96,6 +96,10 @@ describe.skipIf(!URL)('W7d: Telegram per paired user', () => {
 
   const x = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
     (await m.systemDb.execute(q)) as unknown as T[];
+  /** A fixture write to the four workspace tables, as the superuser: the
+   *  system pool only reads them under test:runtime-role. */
+  const su = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
+    (await import('@mantle/db/test-support')).superuserExec<T>(scratch!.url, q);
   const role = (login: string) => (login === owner || login === admin2 ? 'admin' : 'member');
   const as = (login: string) => {
     const user = {
@@ -194,12 +198,12 @@ describe.skipIf(!URL)('W7d: Telegram per paired user', () => {
       await x<{ id: string }>(sql`select id::text from workspaces
         where owner_id = ${owner} and name = 'Team' and not is_admin`)
     )[0]!.id;
-    await x(sql`insert into workspace_users (workspace_id, login_id, moderator)
+    await su(sql`insert into workspace_users (workspace_id, login_id, moderator)
       values (${adminWs}, ${admin2}, false)
       on conflict (workspace_id, login_id) do update set moderator = false`);
-    await x(sql`delete from workspace_users
+    await su(sql`delete from workspace_users
                  where workspace_id = ${teamWs} and login_id in (${member}, ${mod}, ${outsider})`);
-    await x(sql`insert into workspace_users (workspace_id, login_id, moderator) values
+    await su(sql`insert into workspace_users (workspace_id, login_id, moderator) values
       (${teamWs}, ${member}, false), (${teamWs}, ${mod}, true)`);
     for (const [k, ws] of [
       ['admin', adminWs],
@@ -324,14 +328,14 @@ describe.skipIf(!URL)('W7d: Telegram per paired user', () => {
     const rows = await x<{ moderator: boolean; limits: unknown }>(sql`
       select moderator, limits from workspace_users
        where workspace_id = ${teamWs} and login_id = ${login}`);
-    await x(
+    await su(
       sql`delete from workspace_users where workspace_id = ${teamWs} and login_id = ${login}`,
     );
     try {
       await fn();
     } finally {
       for (const r of rows) {
-        await x(sql`insert into workspace_users (workspace_id, login_id, moderator, limits)
+        await su(sql`insert into workspace_users (workspace_id, login_id, moderator, limits)
           values (${teamWs}, ${login}, ${r.moderator}, ${JSON.stringify(r.limits ?? {})}::jsonb)`);
       }
     }
@@ -643,7 +647,7 @@ describe.skipIf(!URL)('W7d: Telegram per paired user', () => {
     expect(anchors.ids.has(chat.member) && anchors.ids.has(chat.admin2)).toBe(true);
     // A2 with the users area off and out of Team (the migration made them a
     // Moderator there): their own chat only.
-    await x(sql`update workspace_users set limits = '{"areas":{"users":false}}'::jsonb
+    await su(sql`update workspace_users set limits = '{"areas":{"users":false}}'::jsonb
                  where workspace_id = ${adminWs} and login_id = ${admin2}`);
     try {
       await outOfTeam(admin2, async () => {
@@ -652,7 +656,7 @@ describe.skipIf(!URL)('W7d: Telegram per paired user', () => {
         expect(own.total).toBe(1);
       });
     } finally {
-      await x(sql`update workspace_users set limits = '{}'::jsonb
+      await su(sql`update workspace_users set limits = '{}'::jsonb
                    where workspace_id = ${adminWs} and login_id = ${admin2}`);
     }
     // With the users area they moderate every bot: every chat.
@@ -867,11 +871,11 @@ describe.skipIf(!URL)('W7d: Telegram per paired user', () => {
         responderAgentId: null,
       });
     expect(await ask()).toBeNull();
-    await x(
+    await su(
       sql`delete from workspace_users where workspace_id = ${teamWs} and login_id = ${member}`,
     );
     expect(await ask()).toBe('not_a_user');
-    await x(sql`insert into workspace_users (workspace_id, login_id, moderator)
+    await su(sql`insert into workspace_users (workspace_id, login_id, moderator)
       values (${teamWs}, ${member}, false)`);
     expect(await ask()).toBeNull();
   });

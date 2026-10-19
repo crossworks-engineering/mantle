@@ -32,6 +32,9 @@ describe.skipIf(!URL)('app data over a login MCP', () => {
   type Db = typeof import('@mantle/db');
   let m: Db;
   let admin: Parameters<Db['ensureViewerRoles']>[0];
+  /** The superuser, for the workspace fixtures: the app pools only read the
+   *  four workspace tables under the runtime role. */
+  let su: typeof admin | undefined;
   let broker: typeof import('@mantle/content/app-broker');
   let tools: typeof import('./builtins-app-data');
   let dir = '';
@@ -134,6 +137,7 @@ describe.skipIf(!URL)('app data over a login MCP', () => {
     m = await import('@mantle/db');
     admin = (m.systemDb as unknown as { $client: typeof admin }).$client;
     await m.ensureViewerRoles(admin, process.env.MANTLE_MASTER_KEY);
+    su = (await import('@mantle/db/test-support')).superuserClient(URL!);
     broker = await import('@mantle/content/app-broker');
     tools = await import('./builtins-app-data');
     await admin`insert into auth.users (id, email, password_hash, role, display_name) values
@@ -142,11 +146,11 @@ describe.skipIf(!URL)('app data over a login MCP', () => {
       (${member}, ${`ad-${tag}-m@example.invalid`}, 'x', 'member', 'Pat Member')`;
     await admin`insert into spaces (id, kind, login_id) values
       (${anchor}, 'brain', ${anchor}), (${other}, 'brain', ${other})`;
-    await admin`insert into workspaces (id, owner_id, name, is_admin, bridge_key) values
+    await su!`insert into workspaces (id, owner_id, name, is_admin, bridge_key) values
       (${ws.admin}, ${anchor}, ${`${tag} Admin`}, true, 'admin'),
       (${ws.team}, ${anchor}, ${`${tag} Team`}, false, null),
       (${ws.otherTeam}, ${other}, ${`${tag} Other team`}, false, null)`;
-    await admin`insert into workspace_users (workspace_id, login_id, moderator)
+    await su!`insert into workspace_users (workspace_id, login_id, moderator)
       values (${ws.team}, ${member}, false)`;
     await app('a team', anchor, { team: 'write' });
     await app('b team mcp off', anchor, { team: 'write', mcp: false });
@@ -165,9 +169,10 @@ describe.skipIf(!URL)('app data over a login MCP', () => {
     await admin`delete from item_grants where node_id in
       (select id from nodes where owner_id in (${anchor}, ${other}))`;
     await admin`delete from nodes where owner_id in (${anchor}, ${other})`;
-    await admin`delete from workspaces where owner_id in (${anchor}, ${other})`;
+    if (su) await su`delete from workspaces where owner_id in (${anchor}, ${other})`;
     await admin`delete from spaces where login_id in (${anchor}, ${other}, ${member}, ${client})`;
     await admin`delete from auth.users where id in (${anchor}, ${other}, ${member}, ${client})`;
+    await su?.end();
     await m.closeDb();
     if (dir) await rm(dir, { recursive: true, force: true });
   }, 60_000);

@@ -105,11 +105,11 @@ describe.skipIf(!URL)('the app data reads on a read-only MCP connection (A5 step
     await x(sql`insert into spaces (id, kind, login_id) values (${owner}, 'brain', ${owner})
       on conflict (id) do nothing`);
     await (await import('@mantle/db/test-support')).runWorkspacesSwitch();
-    const [row] = await x<{ id: string }>(sql`
+    const [row] = await su<{ id: string }>(sql`
       insert into workspaces (owner_id, name) values (${owner}, ${`${tag} Shop`}) returning id::text`);
     ws = row!.id;
     // A plain user of the workspace: no Moderator, no private workspace.
-    await x(sql`insert into workspace_users (workspace_id, login_id, moderator)
+    await su(sql`insert into workspace_users (workspace_id, login_id, moderator)
       values (${ws}, ${member}, false)
       on conflict (workspace_id, login_id) do update set moderator = false`);
     apps.read = await app('read');

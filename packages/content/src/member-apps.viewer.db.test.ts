@@ -65,6 +65,11 @@ describe.skipIf(!URL)('apps for members', () => {
         values (${node}, ${wsId}, ${write}, ${home})`),
     );
 
+  /** A fixture write to the workspace tables, as the superuser: the app's
+   *  pools only read them. */
+  const su = async (q: ReturnType<typeof sqlTag>) =>
+    (await import('@mantle/db/test-support')).superuserExec(URL!, q);
+
   beforeAll(async () => {
     process.env.DATABASE_URL = URL;
     // ONE key for every viewer DB test: roles are cluster-wide (28P01).
@@ -85,7 +90,7 @@ describe.skipIf(!URL)('apps for members', () => {
     await m.systemDb.execute(sqlTag`
       insert into spaces (id, kind, login_id) values
         (${anchor}, 'brain', ${anchor}), (${other}, 'brain', ${other})`);
-    await m.systemDb.execute(sqlTag`
+    await su(sqlTag`
       insert into workspaces (id, owner_id, name, is_admin, bridge_key) values
         (${ws.admin}, ${anchor}, ${`${tag} Admin`}, true, 'admin'),
         (${ws.team}, ${anchor}, ${`${tag} Team`}, false, null),
@@ -148,9 +153,7 @@ describe.skipIf(!URL)('apps for members', () => {
     await m.systemDb.execute(sqlTag`
       delete from item_grants where node_id in (select id from nodes where owner_id in (${anchor}, ${other}))`);
     await m.systemDb.execute(sqlTag`delete from nodes where owner_id in (${anchor}, ${other})`);
-    await m.systemDb.execute(
-      sqlTag`delete from workspaces where owner_id in (${anchor}, ${other})`,
-    );
+    await su(sqlTag`delete from workspaces where owner_id in (${anchor}, ${other})`);
     await m.systemDb.execute(
       sqlTag`delete from spaces where login_id in (${anchor}, ${other}, ${member})`,
     );

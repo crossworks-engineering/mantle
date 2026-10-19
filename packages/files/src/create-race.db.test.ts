@@ -132,6 +132,8 @@ describe.skipIf(!URL)('a same-name create race leaves one file, its bytes on dis
     f = await import('./index');
     sqlTag = (await import('drizzle-orm')).sql;
     const x = (q: ReturnType<typeof sqlTag>) => m.systemDb.execute(q);
+    // Workspace table writes as the superuser: the app's pools only read them.
+    const su = (q: ReturnType<typeof sqlTag>) => ts.superuserExec(scratch!.url, q);
     await x(sqlTag`
       insert into auth.users (id, email, password_hash, is_owner, role) values
         (${owner}, ${`${tag}@example.invalid`}, 'x', true, 'admin'),
@@ -144,9 +146,9 @@ describe.skipIf(!URL)('a same-name create race leaves one file, its bytes on dis
       (await x(sqlTag`select id::text as id from workspaces
                        where owner_id = ${owner} and is_admin`)) as unknown as { id: string }[]
     )[0]!.id;
-    await x(sqlTag`insert into workspaces (id, owner_id, name) values
+    await su(sqlTag`insert into workspaces (id, owner_id, name) values
       (${editWs}, ${owner}, 'Edit'), (${readWs}, ${owner}, 'Read')`);
-    await x(sqlTag`insert into workspace_users (workspace_id, login_id, moderator) values
+    await su(sqlTag`insert into workspace_users (workspace_id, login_id, moderator) values
       (${editWs}, ${mem}, true), (${readWs}, ${mem}, false)`);
     await x(sqlTag`
       insert into nodes (owner_id, type, title, slug, path) values

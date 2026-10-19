@@ -87,6 +87,10 @@ describe.skipIf(!URL)('W7 integration fix 2', () => {
 
   const x = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
     (await m.systemDb.execute(q)) as unknown as T[];
+  /** A fixture write to the four workspace tables, as the superuser: the
+   *  system pool only reads them under test:runtime-role. */
+  const su = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
+    (await import('@mantle/db/test-support')).superuserExec<T>(scratch!.url, q);
   const as = (login: string) => {
     h.session = {
       id: owner,
@@ -100,7 +104,7 @@ describe.skipIf(!URL)('W7 integration fix 2', () => {
   const json = (body: unknown, method = 'POST') =>
     new Request('http://x/', { method, body: JSON.stringify(body) });
   const setAreas = (login: string, areas: Record<string, boolean>) =>
-    x(sql`update workspace_users set limits = ${JSON.stringify({ areas })}::jsonb
+    su(sql`update workspace_users set limits = ${JSON.stringify({ areas })}::jsonb
            where workspace_id = ${adminWs} and login_id = ${login}`);
   const adminTurn = (login: string) => ({
     kind: 'assistant' as const,
@@ -214,11 +218,11 @@ describe.skipIf(!URL)('W7 integration fix 2', () => {
         where owner_id = ${owner} and name = 'Team' and not is_admin`)
     )[0]!.id;
     for (const login of [maker, firer]) {
-      await x(sql`insert into workspace_users (workspace_id, login_id, moderator)
+      await su(sql`insert into workspace_users (workspace_id, login_id, moderator)
                   values (${adminWs}, ${login}, false)
                   on conflict (workspace_id, login_id) do update set moderator = false`);
     }
-    await x(sql`insert into workspace_users (workspace_id, login_id, moderator) values
+    await su(sql`insert into workspace_users (workspace_id, login_id, moderator) values
       (${teamWs}, ${member}, false), (${teamWs}, ${owner}, true)
       on conflict (workspace_id, login_id) do update set moderator = excluded.moderator`);
     await x(sql`insert into api_keys (id, user_id, service, label, key_enc)
@@ -375,7 +379,7 @@ describe.skipIf(!URL)('W7 integration fix 2', () => {
 
   it("M5: the anchor fires the Team assistant's heartbeat from its chat: it fires, by its own rules", async () => {
     const team = await newAgent(`${tag}-team`, { workspaceId: teamWs, role: 'responder' });
-    await x(sql`insert into workspace_resources (workspace_id, type, ref_id, write)
+    await su(sql`insert into workspace_resources (workspace_id, type, ref_id, write)
       values (${teamWs}, 'assistant', ${team.id}, true) on conflict do nothing`);
     const hb = await newHeartbeat(`${tag}-hb-team`, team.slug, null);
     const tool = hbs.HEARTBEAT_TOOLS.find((d) => d.slug === 'heartbeat_fire')!;

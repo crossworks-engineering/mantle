@@ -87,8 +87,9 @@ describe.skipIf(!URL)('writers with the bridge off hold their heads (heads check
     await m.systemDb.execute(sqlTag`insert into spaces (id, kind, login_id)
       values (${brain}, 'brain', ${brain}) on conflict (id) do nothing`);
     await (await import('@mantle/db/test-support')).runWorkspacesSwitch();
-    // A Team as a brain switched before 0286 has it (a new brain has none).
-    await m.systemDb.execute(sqlTag.raw(teamWorkspaceSql(brain)));
+    // A Team as a brain switched before 0286 has it (a new brain has none),
+    // as the superuser: the app's pools only read the workspace tables.
+    await ts.superuserExec(scratch.url, teamWorkspaceSql(brain));
     const ws = await rows<{ name: string; id: string }>(
       sqlTag`select name, id::text as id from workspaces where owner_id = ${brain}`,
     );

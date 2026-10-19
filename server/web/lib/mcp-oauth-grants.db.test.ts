@@ -18,6 +18,7 @@ import {
   createMigratedScratchDatabase,
   ensureAdminUsers,
   ensureTestAnchor,
+  superuserClient,
 } from '@mantle/db/test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
@@ -121,7 +122,14 @@ describe.skipIf(!URL)('the OAuth token endpoint', () => {
     await sql`insert into auth.users (id, email, password_hash, role, display_name)
               values (${admin}, ${`${tag}-admin@example.com`}, 'x', 'admin', 'Ada Admin')`;
     // An Admin login is role admin AND a user of Admin.
-    await ensureAdminUsers(sql, [admin]);
+    // As the superuser: the app pools only read the workspace tables.
+    const su = superuserClient(scratch.url);
+    try {
+      await su`select set_config('mantle.actor', 'system:test', false)`;
+      await ensureAdminUsers(su, [admin]);
+    } finally {
+      await su.end();
+    }
     await sql`insert into oauth_clients (id, client_name, redirect_uris)
               values (${client}, ${`${tag} client`}, ${[REDIRECT]})`;
     const { createApp } = await import('../server/app');

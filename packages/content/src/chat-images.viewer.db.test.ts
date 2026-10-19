@@ -42,6 +42,11 @@ describe.skipIf(!URL)('chat pictures at the reader’s level', () => {
   const ws = { members: randomUUID(), others: randomUUID() };
   const img = (id: string) => `![pic](/api/files/files/${id}?raw=1)`;
 
+  /** A fixture write to the workspace tables, as the superuser: the app's
+   *  pools only read them. */
+  const su = async (q: ReturnType<typeof sqlTag>) =>
+    (await import('@mantle/db/test-support')).superuserExec(URL!, q);
+
   beforeAll(async () => {
     process.env.DATABASE_URL = URL;
     process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
@@ -73,11 +78,11 @@ describe.skipIf(!URL)('chat pictures at the reader’s level', () => {
       insert into auth.users (id, email, password_hash, role) values
         (${member}, ${`${tag}-m@example.invalid`}, 'x', 'member'),
         (${other}, ${`${tag}-o@example.invalid`}, 'x', 'member')`);
-    await m.systemDb.execute(sqlTag`
+    await su(sqlTag`
       insert into workspaces (id, owner_id, name) values
         (${ws.members}, ${anchor}, ${`${tag} members`}),
         (${ws.others}, ${anchor}, ${`${tag} others`})`);
-    await m.systemDb.execute(sqlTag`
+    await su(sqlTag`
       insert into workspace_users (workspace_id, login_id) values
         (${ws.members}, ${member}), (${ws.others}, ${other})`);
     const holds: Array<[string, string]> = [
@@ -103,9 +108,7 @@ describe.skipIf(!URL)('chat pictures at the reader’s level', () => {
     for (const id of Object.values(items)) {
       await m.systemDb.execute(sqlTag`delete from nodes where id = ${id}`);
     }
-    await m.systemDb.execute(
-      sqlTag`delete from workspaces where id in (${ws.members}, ${ws.others})`,
-    );
+    await su(sqlTag`delete from workspaces where id in (${ws.members}, ${ws.others})`);
     await m.systemDb.execute(sqlTag`delete from auth.users where id in (${member}, ${other})`);
     await m.closeDb();
   });

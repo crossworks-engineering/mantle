@@ -20,7 +20,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { teamWorkspaceSql } from '@mantle/db/test-support';
+import { superuserExec, teamWorkspaceSql } from '@mantle/db/test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -97,6 +97,9 @@ describe.skipIf(!URL)('folder-shared items in the Library and at the client leve
           : sqlTag`delete from item_grants where node_id = ${id} and workspace_id = ${ws}`,
       ),
     );
+  /** A fixture write to the workspace tables, as the superuser: the app's
+   *  pools only read them. */
+  const su = (q: Parameters<typeof superuserExec>[1]) => superuserExec(scratch!.url, q);
   const loginOf = { team: member, client: clientsMember } as const;
   const as = <T>(reader: 'team' | 'client', fn: () => Promise<T>) =>
     m.withViewer({ login: loginOf[reader] }, fn);
@@ -128,7 +131,7 @@ describe.skipIf(!URL)('folder-shared items in the Library and at the client leve
       on conflict (id) do nothing`);
     await (await import('@mantle/db/test-support')).runWorkspacesSwitch();
     // A Team as a brain switched before 0286 has it (a new brain has none).
-    await m.systemDb.execute(sqlTag.raw(teamWorkspaceSql(brain)));
+    await su(teamWorkspaceSql(brain));
     team = (
       (await m.systemDb.execute(sqlTag`
         select id::text as id from workspaces
@@ -136,13 +139,13 @@ describe.skipIf(!URL)('folder-shared items in the Library and at the client leve
         id: string;
       }[]
     )[0]!.id;
-    await m.systemDb.execute(sqlTag`
+    await su(sqlTag`
       insert into workspaces (id, owner_id, name) values (${clients}, ${brain}, 'Clients')`);
     await m.systemDb.execute(sqlTag`
       insert into auth.users (id, email, password_hash, role) values
         (${member}, ${`${label}-m@example.invalid`}, 'x', 'member'),
         (${clientsMember}, ${`${label}-c@example.invalid`}, 'x', 'member')`);
-    await m.systemDb.execute(sqlTag`
+    await su(sqlTag`
       insert into workspace_users (workspace_id, login_id) values
         (${team}, ${member}), (${clients}, ${clientsMember})`);
     await tree.ensureKindRoot(brain, 'notes');

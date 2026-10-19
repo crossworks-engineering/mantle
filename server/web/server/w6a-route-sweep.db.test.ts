@@ -171,6 +171,10 @@ describe.skipIf(!URL)('W6a route sweep: scoped reads for every login', () => {
 
   const x = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
     (await m.systemDb.execute(q)) as unknown as T[];
+  /** A fixture write to the workspace tables, as the superuser: the app
+   *  pools only read them. */
+  const su = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
+    (await import('@mantle/db/test-support')).superuserExec<T>(scratch!.url, q);
   const email = (who: string) => `${tag}-${who}@example.invalid`;
 
   const call = async (
@@ -333,7 +337,7 @@ describe.skipIf(!URL)('W6a route sweep: scoped reads for every login', () => {
     team = ws.find((w) => w.key === 'team')!.id;
     const admin = ws.find((w) => w.key === 'admin')!.id;
     adminWs = admin;
-    await x(
+    await su(
       sql`update workspace_users set limits = ${JSON.stringify({
         areas: { settings: false, users: false, assistants: false, connectors: false, keys: false },
       })}::jsonb where workspace_id = ${admin} and login_id = ${noArea}`,

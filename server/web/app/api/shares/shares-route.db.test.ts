@@ -67,6 +67,10 @@ describe.skipIf(!URL)('the share routes on the served list', () => {
 
   const x = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
     (await m.systemDb.execute(q)) as unknown as T[];
+  /** A fixture write to the four workspace tables, as the superuser: the
+   *  app pools only read them under the runtime role. */
+  const su = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
+    (await import('@mantle/db/test-support')).superuserExec<T>(scratch!.url, q);
   const email = (who: string) => `w5b2b-${who}-${owner.slice(0, 8)}@example.invalid`;
   const as = (login: string) => {
     h.user = { id: owner, email: email('x'), actor: { id: login, email: email('x') } };
@@ -146,13 +150,13 @@ describe.skipIf(!URL)('the share routes on the served list', () => {
     await x(sql`insert into shares (owner_id, node_id, node_type, token) values
       (${owner}, ${id.oldClient}, 'note', ${`${owner}-oc`}),
       (${owner}, ${id.oldPublic}, 'note', ${`${owner}-op`})`);
-    await x(sql`insert into workspaces (id, owner_id, name) values
+    await su(sql`insert into workspaces (id, owner_id, name) values
       (${P}, ${owner}, 'Proj'), (${Q}, ${owner}, 'Quay'), (${R}, ${owner}, 'Reef')`);
-    await x(sql`insert into workspace_users (workspace_id, login_id, moderator) values
+    await su(sql`insert into workspace_users (workspace_id, login_id, moderator) values
       (${P}, ${owner}, true), (${P}, ${adm2}, false),
       (${Q}, ${owner}, true), (${Q}, ${adm2}, false), (${R}, ${owner}, true)`);
     // adm2 in Admin, as a plain user (the migration may have made it one).
-    await x(sql`insert into workspace_users (workspace_id, login_id, moderator)
+    await su(sql`insert into workspace_users (workspace_id, login_id, moderator)
                 select id, ${adm2}, false from workspaces where owner_id = ${owner} and is_admin
                 on conflict (workspace_id, login_id) do update set moderator = false`);
 
@@ -297,7 +301,7 @@ describe.skipIf(!URL)('the share routes on the served list', () => {
   });
 
   const adm2Areas = (areas: Record<string, boolean>) =>
-    x(sql`update workspace_users set limits = ${JSON.stringify({ areas })}::jsonb
+    su(sql`update workspace_users set limits = ${JSON.stringify({ areas })}::jsonb
            where login_id = ${adm2}
              and workspace_id = (select id from workspaces where owner_id = ${owner} and is_admin)`);
 

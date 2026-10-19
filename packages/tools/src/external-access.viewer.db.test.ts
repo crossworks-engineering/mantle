@@ -80,6 +80,10 @@ describe.skipIf(!URL)('external access to an outside tool', () => {
   ];
 
   const exec = (q: ReturnType<typeof sqlTag>) => m.systemDb.execute(q);
+  /** A fixture write to the four workspace tables, as the superuser: the
+   *  app pools only read them under the runtime role. */
+  const su = async (q: ReturnType<typeof sqlTag>) =>
+    (await import('@mantle/db/test-support')).superuserExec(URL!, q);
   const verdict = (slug: string, declared = DECLARED) =>
     level.appToolVerdict('team', anchor, declared, slug);
   const switchOn = (slug: string) =>
@@ -158,15 +162,15 @@ describe.skipIf(!URL)('external access to an outside tool', () => {
       insert into auth.users (id, email, password_hash, role) values
         (${member}, ${`${tag}-m@example.invalid`}, 'x', 'member'),
         (${clientsMember}, ${`${tag}-c@example.invalid`}, 'x', 'member')`);
-    await exec(sqlTag`
+    await su(sqlTag`
       insert into workspaces (id, owner_id, name, is_admin, bridge_key) values
         (${ws.admin}, ${anchor}, 'Admin', true, 'admin'),
         (${ws.team}, ${anchor}, 'Team', false, null),
         (${ws.clients}, ${anchor}, ${`${tag} Clients`}, false, null)`);
-    await exec(sqlTag`
+    await su(sqlTag`
       insert into workspace_users (workspace_id, login_id, moderator) values
         (${ws.team}, ${member}, true), (${ws.clients}, ${clientsMember}, false)`);
-    await exec(sqlTag`
+    await su(sqlTag`
       insert into workspace_resources (workspace_id, type, ref_id, write) values
         (${ws.admin}, 'connector', 'mcp-site', true),
         (${ws.team}, 'connector', 'mcp-site', true),
@@ -180,7 +184,7 @@ describe.skipIf(!URL)('external access to an outside tool', () => {
     await exec(sqlTag`delete from tool_groups where owner_id = ${anchor}`);
     await exec(sqlTag`delete from tools where owner_id = ${anchor}`);
     await exec(sqlTag`delete from nodes where owner_id = ${anchor}`);
-    await exec(sqlTag`delete from workspaces where owner_id = ${anchor}`);
+    await su(sqlTag`delete from workspaces where owner_id = ${anchor}`);
     await exec(sqlTag`delete from spaces where login_id = ${anchor}`);
     await exec(sqlTag`delete from auth.users where id in (${anchor}, ${member}, ${clientsMember})`);
     await m.closeDb();
@@ -188,12 +192,12 @@ describe.skipIf(!URL)('external access to an outside tool', () => {
 
   /** Take the connector off a workspace for the length of `fn`. */
   const without = async (wsId: string, fn: () => Promise<void>) => {
-    await exec(sqlTag`delete from workspace_resources
+    await su(sqlTag`delete from workspace_resources
       where workspace_id = ${wsId} and type = 'connector' and ref_id = 'mcp-site'`);
     try {
       await fn();
     } finally {
-      await exec(sqlTag`insert into workspace_resources (workspace_id, type, ref_id, write)
+      await su(sqlTag`insert into workspace_resources (workspace_id, type, ref_id, write)
         values (${wsId}, 'connector', 'mcp-site', ${wsId !== ws.clients})
         on conflict (workspace_id, type, ref_id) do nothing`);
     }

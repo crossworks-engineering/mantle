@@ -19,7 +19,7 @@
 import { randomUUID } from 'node:crypto';
 import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { createMigratedScratchDatabase } from './test-support';
+import { createMigratedScratchDatabase, superuserExec } from './test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -77,7 +77,8 @@ describe.skipIf(!URL)('the withViewer shim (W5b2, R6)', () => {
     team = ws.find((w) => w.key === 'team')!.id;
     await sys(sql`update agents set workspace_id = ${team} where id = ${agentId}`);
     // `gone` leaves Team (a Moderator removed it); `disabled` is disabled.
-    await sys(sql`delete from workspace_users where login_id = ${gone}`);
+    // The leave as the superuser: the app's pools only read the workspace tables.
+    await superuserExec(scratch.url, sql`delete from workspace_users where login_id = ${gone}`);
     await sys(sql`update auth.users set disabled_at = now() where id = ${disabled}`);
   }, 180_000);
 

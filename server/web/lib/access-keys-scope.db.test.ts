@@ -28,6 +28,7 @@ import {
   createMigratedScratchDatabase,
   ensureTestAnchor,
   runWorkspacesSwitch,
+  superuserExec,
 } from '@mantle/db/test-support';
 import { SCOPE_AREAS } from '@mantle/db/viewer';
 
@@ -246,7 +247,11 @@ describe.skipIf(!URL)('inbound API keys: scope', () => {
     // so a page filed in it is readable beyond Admin.
     const wsId = randomUUID();
     workspacesMade.push(wsId);
-    await sql`insert into workspaces (id, owner_id, name) values (${wsId}, ${anchor}, ${`${tag} ws`})`;
+    // As the superuser: the app pools only read the workspace tables.
+    await superuserExec(
+      scratch!.url,
+      m.sql`insert into workspaces (id, owner_id, name) values (${wsId}, ${anchor}, ${`${tag} ws`})`,
+    );
     await m.withSubtreeHeads(folderId, [], async (tx) => {
       await tx.execute(
         m.sql`insert into item_grants (node_id, workspace_id) values (${folderId}, ${wsId})`,

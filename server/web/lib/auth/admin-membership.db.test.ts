@@ -35,6 +35,7 @@ import {
   createMigratedScratchDatabase,
   ensureTestAnchor,
   runWorkspacesSwitch,
+  superuserClient,
 } from '@mantle/db/test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
@@ -111,9 +112,15 @@ describe.skipIf(!URL)('S8a: an Admin login is role AND membership', () => {
     // login taken out of Admin and a role=member login put into it.
     const [a] = await sql<Row[]>`select id::text as id from workspaces
                                   where owner_id = ${anchor} and is_admin`;
-    await sql`delete from workspace_users where workspace_id = ${a!.id as string} and login_id = ${out}`;
-    await sql`insert into workspace_users (workspace_id, login_id, moderator)
-              values (${a!.id as string}, ${memIn}, false) on conflict do nothing`;
+    // As the superuser: the app pools only read the workspace tables.
+    const su = superuserClient(scratch.url);
+    try {
+      await su`delete from workspace_users where workspace_id = ${a!.id as string} and login_id = ${out}`;
+      await su`insert into workspace_users (workspace_id, login_id, moderator)
+                values (${a!.id as string}, ${memIn}, false) on conflict do nothing`;
+    } finally {
+      await su.end();
+    }
     expect(Number((await sql<Row[]>`select mantle_role_drift() as n`)[0]!.n)).toBe(2);
     const { createApp } = await import('../../server/app');
     app = await createApp();

@@ -361,10 +361,10 @@ describe.skipIf(!URL)('every read builtin runs read only through the brokers (A5
     // A workspace of the test's own beside Admin (a new brain makes none),
     // and the owner a user of it: the app it holds runs at team rules.
     teamWs = (
-      await x<{ id: string }>(sql`insert into workspaces (owner_id, name)
+      await su<{ id: string }>(sql`insert into workspaces (owner_id, name)
         values (${owner}, ${`${tag} Shop`}) returning id::text`)
     )[0]!.id;
-    await x(sql`insert into workspace_users (workspace_id, login_id, moderator)
+    await su(sql`insert into workspace_users (workspace_id, login_id, moderator)
       values (${teamWs}, ${owner}, true)
       on conflict (workspace_id, login_id) do update set moderator = true`);
     await m.asSystem(() => t.seedBuiltinTools(owner), 'test');

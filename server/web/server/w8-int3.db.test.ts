@@ -57,6 +57,10 @@ describe.skipIf(!URL)('W8 final round 2: the Admin assistant fires its heartbeat
 
   const x = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
     (await m.systemDb.execute(q)) as unknown as T[];
+  /** A fixture write to the four workspace tables, as the superuser: the
+   *  system pool only reads them under test:runtime-role. */
+  const su = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
+    (await import('@mantle/db/test-support')).superuserExec<T>(scratch!.url, q);
   const newHeartbeat = async (slug: string, by: string | null) => {
     await x(sql`insert into heartbeats (owner_id, slug, name, agent_slug, skill_slug,
                                    schedule_kind, schedule, surface, created_by)
@@ -104,14 +108,14 @@ describe.skipIf(!URL)('W8 final round 2: the Admin assistant fires its heartbeat
       await x<{ id: string }>(sql`select id::text from workspaces
         where owner_id = ${owner} and is_admin and archived_at is null`)
     )[0]!.id;
-    await x(sql`insert into workspace_users (workspace_id, login_id, moderator)
+    await su(sql`insert into workspace_users (workspace_id, login_id, moderator)
                 values (${adminWs}, ${maker}, false)
                 on conflict (workspace_id, login_id) do update set moderator = false`);
     teamWs = (
       await x<{ id: string }>(sql`select id::text from workspaces
         where owner_id = ${owner} and name = 'Team' and not is_admin`)
     )[0]!.id;
-    await x(sql`insert into workspace_users (workspace_id, login_id, moderator)
+    await su(sql`insert into workspace_users (workspace_id, login_id, moderator)
                 values (${teamWs}, ${maker}, false), (${teamWs}, ${teamOnly}, false)
                 on conflict (workspace_id, login_id) do nothing`);
     await x(sql`insert into api_keys (id, user_id, service, label, key_enc)

@@ -48,6 +48,8 @@ describe.skipIf(!URL)('0296: the mail account branches through a definer', () =>
     process.env.DATABASE_URL = scratch.url;
     process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
     m = await import('./index');
+    // Workspace table writes as the superuser: the app's pools only read them.
+    const su = (q: ReturnType<typeof sql>) => ts.superuserExec(scratch!.url, q);
     await x(sql`insert into auth.users (id, email, password_hash, role, is_owner)
       values (${owner}, ${`${tag}@example.invalid`}, 'x', 'admin', true)`);
     await ts.runWorkspacesSwitch(scratch.url);
@@ -62,10 +64,10 @@ describe.skipIf(!URL)('0296: the mail account branches through a definer', () =>
     // note outside any mail branch and nothing else here.
     await x(sql`insert into auth.users (id, email, password_hash, role, is_owner)
       values (${member}, ${`${tag}-m@example.invalid`}, 'x', 'member', false)`);
-    await x(sql`insert into workspaces (id, owner_id, name)
+    await su(sql`insert into workspaces (id, owner_id, name)
       values (${memberWs}, ${owner}, ${`${tag} member ws`})`);
-    await x(sql`delete from workspace_users where login_id = ${member}`);
-    await x(sql`insert into workspace_users (workspace_id, login_id, moderator)
+    await su(sql`delete from workspace_users where login_id = ${member}`);
+    await su(sql`insert into workspace_users (workspace_id, login_id, moderator)
       values (${memberWs}, ${member}, false)`);
     await x(sql`insert into nodes (id, owner_id, type, title, path)
       values (${memberNote}, ${owner}, 'note', 'member note', ${memberPath}::ltree)`);

@@ -29,6 +29,10 @@ describe.skipIf(!URL)('client-sourced holds read the grants', () => {
     linked: randomUUID(),
     served: randomUUID(),
   };
+  /** A fixture write to the four workspace tables, as the superuser: the
+   *  app pools only read them under the runtime role. */
+  const su = async (q: ReturnType<typeof sqlTag>) =>
+    (await import('@mantle/db/test-support')).superuserExec(URL!, q);
   const builtin = (slug: string) => ({ slug, handler: { kind: 'builtin', ref: slug } });
   const gate = (slug: string, input: Record<string, unknown>) =>
     rules.clientSourcedGate({
@@ -57,10 +61,10 @@ describe.skipIf(!URL)('client-sourced holds read the grants', () => {
       (${owner}, ${`${tag}-o@example.invalid`}, 'x', 'admin')`;
     await admin`insert into spaces (id, kind, login_id) values (${owner}, 'brain', ${owner})
                 on conflict (id) do nothing`;
-    await admin`insert into workspaces (id, owner_id, name, is_admin) values
-      (${ws.admin}, ${owner}, 'Admin', true), (${ws.team}, ${owner}, 'Team', false)`;
-    await admin`insert into workspace_users (workspace_id, login_id, moderator) values
-      (${ws.admin}, ${owner}, true)`;
+    await su(sqlTag`insert into workspaces (id, owner_id, name, is_admin) values
+      (${ws.admin}, ${owner}, 'Admin', true), (${ws.team}, ${owner}, 'Team', false)`);
+    await su(sqlTag`insert into workspace_users (workspace_id, login_id, moderator) values
+      (${ws.admin}, ${owner}, true)`);
     const rows: Array<[string, string, string]> = [
       [ids.teamNote, 'note', 'notes'],
       [ids.linked, 'page', 'pages'],
@@ -80,7 +84,7 @@ describe.skipIf(!URL)('client-sourced holds read the grants', () => {
     await admin`delete from shares where owner_id = ${owner}`;
     await admin`delete from nodes where owner_id = ${owner}`;
     await admin`delete from item_grants where workspace_id in (${ws.admin}, ${ws.team})`;
-    await admin`delete from workspaces where owner_id = ${owner}`;
+    await su(sqlTag`delete from workspaces where owner_id = ${owner}`);
     await admin`delete from spaces where login_id = ${owner}`;
     await admin`delete from auth.users where id = ${owner}`;
     await m.closeDb();

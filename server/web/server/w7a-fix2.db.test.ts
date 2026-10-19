@@ -129,6 +129,10 @@ describe.skipIf(!URL)('W7a fix round 2', () => {
 
   const x = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
     (await m.systemDb.execute(q)) as unknown as T[];
+  /** A fixture write to the four workspace tables, as the superuser: the
+   *  system pool only reads them under test:runtime-role. */
+  const su = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
+    (await import('@mantle/db/test-support')).superuserExec<T>(scratch!.url, q);
   const sys = <T>(fn: () => Promise<T>) => m.asSystem(fn, 'test');
   const makeIn = <T>(home: string, fn: () => Promise<T>) =>
     sys(() => m.withCreateHome({ createWs: home, privateWs: null, quiet: true }, fn));
@@ -222,7 +226,7 @@ describe.skipIf(!URL)('W7a fix round 2', () => {
         where owner_id = ${owner} and is_admin and archived_at is null`)
     )[0]!.id;
     memWs = await privateFor(mem);
-    await x(sql`insert into workspace_users (workspace_id, login_id, moderator)
+    await su(sql`insert into workspace_users (workspace_id, login_id, moderator)
                 values (${adminWs}, ${second}, false)
                 on conflict (workspace_id, login_id) do update set moderator = false`);
     adminPage = (await makeIn(adminWs, () => c.createPage(owner, { title: `${tag} admin page` })))

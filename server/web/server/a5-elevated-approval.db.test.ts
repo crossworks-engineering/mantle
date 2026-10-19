@@ -148,6 +148,10 @@ describe.skipIf(!URL)('the approval of an elevated pending call (A5 step 6d fix 
 
   const x = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
     (await m.systemDb.execute(q)) as unknown as T[];
+  /** A fixture write to the workspace tables, as the superuser: the app
+   *  pools only read them. */
+  const su = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
+    (await import('@mantle/db/test-support')).superuserExec<T>(scratch!.url, q);
 
   /** A connector write queued for `by` (default its asker) in `ws`
    *  (default Team), elevated. */
@@ -277,17 +281,17 @@ describe.skipIf(!URL)('the approval of an elevated pending call (A5 step 6d fix 
         where owner_id = ${owner} and is_admin and archived_at is null`)
     )[0]!.id;
     teamWs = (
-      await x<{ id: string }>(sql`insert into workspaces (owner_id, name)
+      await su<{ id: string }>(sql`insert into workspaces (owner_id, name)
         values (${owner}, ${`${tag} Team`}) returning id::text`)
     )[0]!.id;
     // Three more Admin users (the settings area theirs), none a Moderator
     // of Admin; two of them in Team, one a Moderator there.
     for (const login of [asker, mod, other]) {
-      await x(sql`insert into workspace_users (workspace_id, login_id, moderator)
+      await su(sql`insert into workspace_users (workspace_id, login_id, moderator)
         values (${adminWs}, ${login}, false)
         on conflict (workspace_id, login_id) do update set moderator = false`);
     }
-    await x(sql`insert into workspace_users (workspace_id, login_id, moderator) values
+    await su(sql`insert into workspace_users (workspace_id, login_id, moderator) values
       (${teamWs}, ${asker}, false), (${teamWs}, ${mod}, true), (${teamWs}, ${member}, false),
       (${teamWs}, ${memberMod}, true)`);
     // Team's assistant, whose turn queues the member's call.
@@ -313,7 +317,7 @@ describe.skipIf(!URL)('the approval of an elevated pending call (A5 step 6d fix 
               ${JSON.stringify({ type: 'object', properties: { id: { type: 'string' } } })}::jsonb,
               ${JSON.stringify({ kind: 'mcp', group: 'crm', toolName: 'update' })}::jsonb,
               true, true)`);
-    await x(sql`insert into workspace_resources (workspace_id, type, ref_id, write)
+    await su(sql`insert into workspace_resources (workspace_id, type, ref_id, write)
       values (${teamWs}, 'connector', 'crm', true)`);
     await m.asSystem(() => t.seedBuiltinTools(owner), 'test');
     const tokens = await import('../lib/auth/tokens');
@@ -418,7 +422,7 @@ describe.skipIf(!URL)('the approval of an elevated pending call (A5 step 6d fix 
 
   it('a row with no workspace is judged in Admin: a Moderator of Team may not approve it, the owner may', async () => {
     // Admin holds the connector with its Write on, for this cell.
-    await x(sql`insert into workspace_resources (workspace_id, type, ref_id, write)
+    await su(sql`insert into workspace_resources (workspace_id, type, ref_id, write)
       values (${adminWs}, 'connector', 'crm', true)`);
     try {
       const id = await queue(asker, null);
@@ -431,7 +435,7 @@ describe.skipIf(!URL)('the approval of an elevated pending call (A5 step 6d fix 
       expect(await statusOf(id)).toEqual({ s: 'approved', error: null });
       expect(h.remote).toHaveLength(1);
     } finally {
-      await x(sql`delete from workspace_resources
+      await su(sql`delete from workspace_resources
         where workspace_id = ${adminWs} and type = 'connector' and ref_id = 'crm'`);
     }
   });

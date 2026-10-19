@@ -10,7 +10,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { ensureTestAnchor } from '@mantle/db/test-support';
+import { ensureTestAnchor, superuserExec } from '@mantle/db/test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -51,9 +51,13 @@ describe.skipIf(!URL)('table tools never read a draft below admin', () => {
       },
     });
     tableId = t.id;
-    // A workspace of this test's own holds the table: its users may read it.
-    await m.systemDb.execute(sqlTag`
-      insert into workspaces (id, owner_id, name) values (${wsId}, ${anchor}, ${`${tag} ws`})`);
+    // A workspace of this test's own holds the table: its users may read it
+    // (made as the superuser: the app pools only read the workspace tables).
+    await superuserExec(
+      URL!,
+      sqlTag`
+      insert into workspaces (id, owner_id, name) values (${wsId}, ${anchor}, ${`${tag} ws`})`,
+    );
     await m.withHeads([tableId], 'update', (tx) =>
       tx.execute(
         sqlTag`insert into item_grants (node_id, workspace_id) values (${tableId}, ${wsId})`,
@@ -69,7 +73,7 @@ describe.skipIf(!URL)('table tools never read a draft below admin', () => {
   afterAll(async () => {
     await m.systemDb.execute(sqlTag`delete from item_grants where node_id = ${tableId}`);
     await m.systemDb.execute(sqlTag`delete from nodes where id = ${tableId}`);
-    await m.systemDb.execute(sqlTag`delete from workspaces where id = ${wsId}`);
+    await superuserExec(URL!, sqlTag`delete from workspaces where id = ${wsId}`);
     await m.closeDb();
     rmSync(root, { recursive: true, force: true });
   });

@@ -95,6 +95,10 @@ describe.skipIf(!URL)('W7a fix round 3', () => {
 
   const x = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
     (await m.systemDb.execute(q)) as unknown as T[];
+  /** A fixture write to the four workspace tables, as the superuser: the
+   *  system pool only reads them under test:runtime-role. */
+  const su = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
+    (await import('@mantle/db/test-support')).superuserExec<T>(scratch!.url, q);
   const sys = <T>(fn: () => Promise<T>) => m.asSystem(fn, 'test');
   const inAdminTurn = <T>(login: string, fn: () => Promise<T>) =>
     rt.withAgentScope({ id: agent.id, workspaceId: adminWs }, fn, {
@@ -142,7 +146,7 @@ describe.skipIf(!URL)('W7a fix round 3', () => {
     return row ?? null;
   };
   const setKeys = (on: boolean) =>
-    x(sql`update workspace_users
+    su(sql`update workspace_users
              set limits = ${JSON.stringify(on ? {} : { areas: { keys: false } })}::jsonb
            where workspace_id = ${adminWs} and login_id = ${second}`);
   const httpTool = (slug: string, url: string, createdBy: string | null) =>
@@ -197,12 +201,12 @@ describe.skipIf(!URL)('W7a fix round 3', () => {
     await (await import('@mantle/db/test-support')).runWorkspacesSwitch();
     // A Team as a brain switched before 0286 has it (a new brain has none): the
     // logins are in more than Admin, so a turn narrows their scope.
-    await x(sql.raw(teamWorkspaceSql(owner)));
+    await su(sql.raw(teamWorkspaceSql(owner)));
     adminWs = (
       await x<{ id: string }>(sql`select id::text from workspaces
         where owner_id = ${owner} and is_admin and archived_at is null`)
     )[0]!.id;
-    await x(sql`insert into workspace_users (workspace_id, login_id, moderator)
+    await su(sql`insert into workspace_users (workspace_id, login_id, moderator)
                 values (${adminWs}, ${second}, false)
                 on conflict (workspace_id, login_id) do update set moderator = false`);
     await setKeys(false);

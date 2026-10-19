@@ -62,6 +62,10 @@ describe.skipIf(!URL)('W6a fix round 1: drafts, item writes, app-nav, marks, tra
 
   const x = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
     (await m.systemDb.execute(q)) as unknown as T[];
+  /** A fixture write to the workspace tables, as the superuser: the app
+   *  pools only read them. */
+  const su = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
+    (await import('@mantle/db/test-support')).superuserExec<T>(scratch!.url, q);
   const email = (who: string) => `${tag}-${who}@example.invalid`;
 
   const call = async (
@@ -136,7 +140,7 @@ describe.skipIf(!URL)('W6a fix round 1: drafts, item writes, app-nav, marks, tra
       select id::text as id, (case when is_admin then 'admin' when name = 'Team' then 'team' end) as key from workspaces where owner_id = ${owner}`);
     team = ws.find((w) => w.key === 'team')!.id;
     adminWs = ws.find((w) => w.key === 'admin')!.id;
-    await x(sql`update workspace_users set limits = ${JSON.stringify({ areas: { users: false } })}::jsonb
+    await su(sql`update workspace_users set limits = ${JSON.stringify({ areas: { users: false } })}::jsonb
                  where workspace_id = ${adminWs} and login_id = ${noUsers}`);
     const tokens = await import('../lib/auth/tokens');
     cookieOf = (id) => `mantle_session=${tokens.buildSessionCookie(id).value}`;
@@ -148,7 +152,7 @@ describe.skipIf(!URL)('W6a fix round 1: drafts, item writes, app-nav, marks, tra
     expect(side && ro).toBeTruthy();
     // The Admin user reads Ro but moderates nothing there and has no Write
     // grant in it (Read only); the member reads Side.
-    await x(sql`insert into workspace_users (workspace_id, login_id, moderator)
+    await su(sql`insert into workspace_users (workspace_id, login_id, moderator)
                 values (${ro}, ${owner}, false), (${side}, ${mem}, false)`);
   }, 240_000);
 
@@ -598,7 +602,7 @@ describe.skipIf(!URL)('W6a fix round 1: drafts, item writes, app-nav, marks, tra
     const admin2 = randomUUID();
     await x(sql`insert into auth.users (id, email, password_hash, is_owner, role, display_name)
                 values (${admin2}, ${email('admin2')}, 'x', false, 'admin', 'Ada Admin')`);
-    await x(sql`insert into workspace_users (workspace_id, login_id, moderator)
+    await su(sql`insert into workspace_users (workspace_id, login_id, moderator)
                 values (${adminWs}, ${admin2}, true) on conflict do nothing`);
     const apps = await import('@mantle/content');
     const stripHome = (id: string) =>

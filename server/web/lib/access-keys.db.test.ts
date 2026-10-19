@@ -34,6 +34,7 @@ import {
   createMigratedScratchDatabase,
   ensureAdminUsers,
   ensureTestAnchor,
+  superuserClient,
 } from '@mantle/db/test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
@@ -94,6 +95,16 @@ describe.skipIf(!URL)('inbound API keys', () => {
     });
   };
   const json = async (res: Response) => (await res.json()) as Json;
+  /** A fixture on a client of the superuser's own: the app pools only read
+   *  the four workspace tables under the runtime role. */
+  const asSu = async <T>(fn: (su: typeof sql) => Promise<T>): Promise<T> => {
+    const su = superuserClient(scratch!.url);
+    try {
+      return await fn(su);
+    } finally {
+      await su.end();
+    }
+  };
   const cookieOf = (id: string, epoch = 0) =>
     `mantle_session=${tokens.buildSessionCookie(id, { epoch, ttlSeconds: 29 * 24 * 3600 }).value}`;
   const epochOf = async (id: string) =>
@@ -155,7 +166,7 @@ describe.skipIf(!URL)('inbound API keys', () => {
       (${client}, ${emailOf('client')}, ${hash}, 'member', 'Cal Member'),
       (${member2}, ${emailOf('member2')}, ${hash}, 'member', 'Max Member')`;
     // An Admin login is role admin AND a user of Admin.
-    await ensureAdminUsers(sql, [admin, admin2]);
+    await asSu((su) => ensureAdminUsers(su, [admin, admin2]));
     // The two admins hold the Admin workspace's keys area; the members not.
     keysArea.holders.add(admin);
     keysArea.holders.add(admin2);
@@ -501,14 +512,16 @@ describe.skipIf(!URL)('inbound API keys', () => {
     // whatever role it was made under.
     const kept = await makeKey({}, member2);
     await sql`update auth.users set role = 'admin' where id = ${member2}`;
-    await ensureAdminUsers(sql, [member2]);
+    await asSu((su) => ensureAdminUsers(su, [member2]));
     expect(await json(await whoami(kept.secret))).toMatchObject({
       role: 'admin',
       loginId: member2,
     });
     await sql`update auth.users set role = 'member' where id = ${member2}`;
-    await sql`delete from workspace_users u using workspaces w
+    await asSu(async (su) => {
+      await su`delete from workspace_users u using workspaces w
                where u.workspace_id = w.id and w.is_admin and u.login_id = ${member2}`;
+    });
     expect(await json(await whoami(kept.secret))).toMatchObject({
       role: 'member',
       loginId: member2,

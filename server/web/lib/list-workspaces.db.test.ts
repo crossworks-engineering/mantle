@@ -50,6 +50,10 @@ describe.skipIf(!URL)('list chips and ?ws= (W5b2)', () => {
 
   const x = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
     (await m.systemDb.execute(q)) as unknown as T[];
+  /** A fixture write to the four workspace tables, as the superuser: the
+   *  app pools only read them under the runtime role. */
+  const su = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
+    (await import('@mantle/db/test-support')).superuserExec<T>(scratch!.url, q);
   const grant = (id: string, ws: string) =>
     m.withSubtreeHeads(id, [], async (tx) => {
       await tx.execute(sql`insert into item_grants (node_id, workspace_id) values (${id}, ${ws})`);
@@ -97,10 +101,10 @@ describe.skipIf(!URL)('list chips and ?ws= (W5b2)', () => {
         sql`select id::text as id from workspaces where owner_id = ${owner} and is_admin`,
       )
     )[0]!.id;
-    await x(sql`insert into workspaces (id, owner_id, name) values
+    await su(sql`insert into workspaces (id, owner_id, name) values
       (${P}, ${owner}, 'Proj'), (${Q}, ${owner}, 'Quay'), (${A}, ${owner}, 'Attic'),
       (${N}, ${owner}, 'Nobody')`);
-    await x(sql`insert into workspace_users (workspace_id, login_id, moderator) values
+    await su(sql`insert into workspace_users (workspace_id, login_id, moderator) values
       (${P}, ${mem}, false), (${Q}, ${owner}, false), (${A}, ${owner}, false)`);
     h.user = {
       id: owner,
@@ -124,7 +128,7 @@ describe.skipIf(!URL)('list chips and ?ws= (W5b2)', () => {
     await grant(ids.note1, Q);
     // An archived workspace's grant is not a chip.
     await grant(ids.bravo, A);
-    await x(sql`update workspaces set archived_at = now() where id = ${A}`);
+    await su(sql`update workspaces set archived_at = now() where id = ${A}`);
     // Bravo has an open link; Alpha only a revoked one.
     await x(sql`insert into shares (token, owner_id, node_id, node_type) values
       (${`tok-${randomUUID()}`}, ${owner}, ${ids.bravo}, 'page')`);
@@ -265,7 +269,7 @@ describe.skipIf(!URL)('list chips and ?ws= (W5b2)', () => {
   });
 
   it('a chip carries its workspace look, in a login scope too (task 5edc9149)', async () => {
-    await x(sql`update workspaces set color = 'teal', icon = 'lucide:rocket' where id = ${Q}`);
+    await su(sql`update workspaces set color = 'teal', icon = 'lucide:rocket' where id = ${Q}`);
     expect((await lw.workspaceChips(owner, owner, [ids.note1])).get(ids.note1)!.workspaces).toEqual(
       [
         { id: admin, name: 'Admin', color: null, icon: null, kind: 'admin' },
@@ -276,20 +280,20 @@ describe.skipIf(!URL)('list chips and ?ws= (W5b2)', () => {
     // member's own scope (mantle_ws_kind reads private_workspaces for it).
     const PV = randomUUID();
     // A Team as a brain switched before 0286 has it (a new brain has none).
-    const team = (await x<{ id: string }>(sql.raw(teamWorkspaceSql(owner))))[0]!.id;
-    await x(
+    const team = (await su<{ id: string }>(sql.raw(teamWorkspaceSql(owner))))[0]!.id;
+    await su(
       sql`insert into workspaces (id, owner_id, name) values (${PV}, ${owner}, 'Mine (only you)')`,
     );
-    await x(sql`insert into workspace_users (workspace_id, login_id, moderator) values (${PV}, ${mem}, true)
+    await su(sql`insert into workspace_users (workspace_id, login_id, moderator) values (${PV}, ${mem}, true)
                 on conflict do nothing`);
-    await x(sql`insert into workspace_users (workspace_id, login_id, moderator) values (${team}, ${mem}, false)
+    await su(sql`insert into workspace_users (workspace_id, login_id, moderator) values (${team}, ${mem}, false)
                 on conflict do nothing`);
     await x(sql`insert into private_workspaces (login_id, workspace_id) values (${mem}, ${PV})
                 on conflict (login_id) do update set workspace_id = excluded.workspace_id`);
     await grant(ids.note2, PV);
     await grant(ids.note2, team);
     // A stored value no client can draw goes out as the default.
-    await x(sql`update workspaces set color = 'mauve', icon = 'not an icon' where id = ${team}`);
+    await su(sql`update workspaces set color = 'mauve', icon = 'not an icon' where id = ${team}`);
     const scoped = await m.withViewer({ login: mem }, () =>
       lw.workspaceChips(owner, mem, [ids.note2]),
     );

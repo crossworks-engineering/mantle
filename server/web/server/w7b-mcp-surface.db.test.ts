@@ -180,6 +180,10 @@ describe.skipIf(!URL)('W7b: one MCP surface for every login', () => {
 
   const x = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
     (await m.systemDb.execute(q)) as unknown as T[];
+  /** A fixture write to the four workspace tables, as the superuser: the
+   *  system pool only reads them under test:runtime-role. */
+  const su = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
+    (await import('@mantle/db/test-support')).superuserExec<T>(scratch!.url, q);
   const email = (who: string) => `${tag}-${who}@example.invalid`;
 
   /** Every item argument names the other member's private item. */
@@ -340,10 +344,10 @@ describe.skipIf(!URL)('W7b: one MCP surface for every login', () => {
     adminWs = ws.find((w) => w.admin)!.id;
     teamWs = ws.find((w) => w.key === 'team')!.id;
     // The member: a plain user of Team, a Moderator of a project workspace.
-    const [proj] = await x<{ id: string }>(sql`
+    const [proj] = await su<{ id: string }>(sql`
       insert into workspaces (owner_id, name) values (${owner}, ${`${tag} Proj`}) returning id::text`);
     projWs = proj!.id;
-    await x(sql`insert into workspace_users (workspace_id, login_id, moderator) values
+    await su(sql`insert into workspace_users (workspace_id, login_id, moderator) values
       (${teamWs}, ${mem}, false), (${teamWs}, ${mem2}, false), (${projWs}, ${mem}, true)
       on conflict (workspace_id, login_id) do update set moderator = excluded.moderator`);
     const priv = async (login: string) =>
@@ -545,10 +549,10 @@ describe.skipIf(!URL)('W7b: one MCP surface for every login', () => {
   }, 1_800_000);
 
   it('an Admin user who is not the owner: an Admin area only through the area check', async () => {
-    await x(sql`insert into workspace_users (workspace_id, login_id, moderator)
+    await su(sql`insert into workspace_users (workspace_id, login_id, moderator)
       values (${adminWs}, ${admin2}, true)
       on conflict (workspace_id, login_id) do update set moderator = true`);
-    await x(sql`update workspace_users set limits = '{"areas":{"keys":false}}'::jsonb
+    await su(sql`update workspace_users set limits = '{"areas":{"keys":false}}'::jsonb
       where workspace_id = ${adminWs} and login_id = ${admin2}`);
     const c = await connect({
       role: 'admin',
@@ -572,7 +576,7 @@ describe.skipIf(!URL)('W7b: one MCP surface for every login', () => {
       expect(text(refused)).toMatch(/keys area is on/);
     } finally {
       await c.close();
-      await x(sql`update workspace_users set limits = '{}'::jsonb
+      await su(sql`update workspace_users set limits = '{}'::jsonb
         where workspace_id = ${adminWs} and login_id = ${admin2}`);
     }
   }, 300_000);

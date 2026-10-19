@@ -34,6 +34,10 @@ describe.skipIf(!URL)('the Files visibility guards', () => {
 
   const x = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
     (await m.systemDb.execute(q)) as unknown as T[];
+  /** A fixture write to the workspace tables, as the superuser: the app's
+   *  pools only read them. */
+  const su = async (q: ReturnType<typeof sql>) =>
+    (await import('@mantle/db/test-support')).superuserExec(scratch!.url, q);
   const grant = (id: string, ws: string) =>
     m.withSubtreeHeads(id, [], async (tx) => {
       await tx.execute(sql`insert into item_grants (node_id, workspace_id)
@@ -57,7 +61,7 @@ describe.skipIf(!URL)('the Files visibility guards', () => {
     await x(sql`insert into spaces (id, kind, login_id) values (${owner}, 'brain', ${owner})
                 on conflict (id) do nothing`);
     await (await import('@mantle/db/test-support')).runWorkspacesSwitch();
-    await x(sql`insert into workspaces (id, owner_id, name) values
+    await su(sql`insert into workspaces (id, owner_id, name) values
                 (${C}, ${owner}, 'Clients'), (${T}, ${owner}, 'Internal team')`);
     await files.ensureFilesRootBranch(owner);
     const p = await tree.createTreeFolder(owner, 'files', { parentId: null, name: 'Portal' });

@@ -30,7 +30,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { teamWorkspaceSql } from '@mantle/db/test-support';
+import { superuserExec, teamWorkspaceSql } from '@mantle/db/test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -213,6 +213,9 @@ describe.skipIf(!URL)('the Apps launcher folders for members', () => {
       ),
     );
   const holdTeam = (id: string, on: boolean) => hold(team, id, on);
+  /** A fixture write to the workspace tables, as the superuser: the app's
+   *  pools only read them. */
+  const su = (q: Parameters<typeof superuserExec>[1]) => superuserExec(scratch!.url, q);
 
   const ourFolders = new Set<string>(Object.values(f));
   const ourApps = new Set<string>(Object.values(a));
@@ -252,7 +255,7 @@ describe.skipIf(!URL)('the Apps launcher folders for members', () => {
       on conflict (id) do nothing`);
     await (await import('@mantle/db/test-support')).runWorkspacesSwitch();
     // A Team as a brain switched before 0286 has it (a new brain has none).
-    await m.systemDb.execute(sqlTag.raw(teamWorkspaceSql(brain)));
+    await su(teamWorkspaceSql(brain));
     team = (
       (await m.systemDb.execute(sqlTag`
         select id::text as id from workspaces
@@ -318,7 +321,7 @@ describe.skipIf(!URL)('the Apps launcher folders for members', () => {
     for (const id of [a.teamInPlain, a.clientInPlain, a.teamDeep, a.teamTop]) {
       await holdTeam(id, true);
     }
-    await m.systemDb.execute(sqlTag`
+    await su(sqlTag`
       insert into workspaces (id, owner_id, name) values (${second}, ${brain}, ${`${label} Second`})`);
     for (const id of [f.client, a.clientInPlain, a.clientInParent]) await hold(second, id, true);
 
@@ -351,7 +354,7 @@ describe.skipIf(!URL)('the Apps launcher folders for members', () => {
         (${other}, ${`${label}-other@example.invalid`}, 'x', 'admin', null),
         (${member}, ${`${label}-pat@example.invalid`}, 'x', 'member', 'Pat Member'),
         (${secondMember}, ${`${label}-second@example.invalid`}, 'x', 'member', 'Second Member')`);
-    await m.systemDb.execute(sqlTag`
+    await su(sqlTag`
       insert into workspace_users (workspace_id, login_id) values
         (${team}, ${member}), (${second}, ${secondMember})`);
     await m.systemDb.execute(sqlTag`

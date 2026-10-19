@@ -82,6 +82,11 @@ describe.skipIf(!URL)('draw_get reader rules', () => {
   const storedText =
     'Ingest\n\n[Embedded file: team]\nTEAMWORDS\n\n[Embedded file: admin]\nADMINWORDS\n\n[Embedded file: client]\nCLIENTWORDS';
 
+  /** A fixture write to the workspace tables, as the superuser: the app's
+   *  pools only read them. */
+  const su = async (q: ReturnType<typeof sqlTag>) =>
+    (await import('@mantle/db/test-support')).superuserExec(URL!, q);
+
   beforeAll(async () => {
     process.env.DATABASE_URL = URL;
     // ONE key for every viewer DB test: roles are cluster-wide (28P01).
@@ -100,11 +105,11 @@ describe.skipIf(!URL)('draw_get reader rules', () => {
       insert into auth.users (id, email, password_hash, role, display_name) values
         (${member}, ${`${tag}-pat@example.invalid`}, 'x', 'member', 'Pat'),
         (${second}, ${`${tag}-second@example.invalid`}, 'x', 'member', 'Second')`);
-    await m.systemDb.execute(sqlTag`
+    await su(sqlTag`
       insert into workspaces (id, owner_id, name) values
         (${ws.members}, ${anchor}, ${`${tag} members`}),
         (${ws.second}, ${anchor}, ${`${tag} second`})`);
-    await m.systemDb.execute(sqlTag`
+    await su(sqlTag`
       insert into workspace_users (workspace_id, login_id) values
         (${ws.members}, ${member}), (${ws.second}, ${second})`);
     await m.systemDb.execute(sqlTag`
@@ -145,9 +150,7 @@ describe.skipIf(!URL)('draw_get reader rules', () => {
     for (const id of [...Object.values(d), ...Object.values(f)]) {
       await m.systemDb.execute(sqlTag`delete from nodes where id = ${id}`);
     }
-    await m.systemDb.execute(
-      sqlTag`delete from workspaces where id in (${ws.members}, ${ws.second})`,
-    );
+    await su(sqlTag`delete from workspaces where id in (${ws.members}, ${ws.second})`);
     await m.systemDb.execute(sqlTag`delete from spaces where login_id in (${member}, ${second})`);
     await m.systemDb.execute(sqlTag`delete from auth.users where id in (${member}, ${second})`);
     await m.closeDb();

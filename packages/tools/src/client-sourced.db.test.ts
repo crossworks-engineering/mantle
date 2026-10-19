@@ -19,7 +19,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { asMigrator } from '@mantle/db/test-support';
+import { asMigrator, superuserClient } from '@mantle/db/test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -27,6 +27,9 @@ describe.skipIf(!URL)('namesClientSourced', () => {
   type Db = typeof import('@mantle/db');
   let m: Db;
   let admin: Parameters<Db['ensureViewerRoles']>[0];
+  /** The superuser, for the workspace fixtures: the app pools only read the
+   *  four workspace tables under the runtime role. */
+  let su: typeof admin | undefined;
   let cs: typeof import('./client-sourced');
   const owner = randomUUID();
   const other = randomUUID();
@@ -125,8 +128,9 @@ describe.skipIf(!URL)('namesClientSourced', () => {
       (${ids.wsAppTable}, ${owner}, 'table', 'orders export', 'tables', 'admin')`;
     await admin`insert into app_table_exports (owner_id, app_node_id, sqlite_table, table_node_id)
       values (${owner}, ${ids.wsApp}, 'orders', ${ids.wsAppTable})`;
-    await admin`insert into workspaces (id, owner_id, name) values (${clientsWs}, ${owner}, 'Clients')`;
-    await admin`insert into workspace_users (workspace_id, login_id, moderator)
+    su = superuserClient(URL!);
+    await su`insert into workspaces (id, owner_id, name) values (${clientsWs}, ${owner}, 'Clients')`;
+    await su`insert into workspace_users (workspace_id, login_id, moderator)
       values (${clientsWs}, ${ids.formerClient}, false)`;
     await m.withHeads([ids.wsApp], 'update', async (tx) => {
       await tx.execute(
@@ -139,8 +143,11 @@ describe.skipIf(!URL)('namesClientSourced', () => {
     if (!admin) return;
     await admin`delete from conversation_taints where owner_id in ${admin([owner, other])}`;
     await admin`delete from item_grants where workspace_id = ${clientsWs}`;
-    await admin`delete from workspace_users where workspace_id = ${clientsWs}`;
-    await admin`delete from workspaces where id = ${clientsWs}`;
+    if (su) {
+      await su`delete from workspace_users where workspace_id = ${clientsWs}`;
+      await su`delete from workspaces where id = ${clientsWs}`;
+      await su.end();
+    }
     await admin`delete from nodes where owner_id in ${admin([owner, other])}`;
     await admin`delete from archive_client_logins where login_id in ${admin(former)}`;
     const logins = [owner, other, ids.memberLogin, ids.formerClient];

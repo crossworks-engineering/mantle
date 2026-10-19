@@ -45,6 +45,10 @@ describe.skipIf(!URL)('W6b fix round 2', () => {
 
   const x = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
     (await m.systemDb.execute(q)) as unknown as T[];
+  /** A fixture write to the four workspace tables, as the superuser: the
+   *  system pool only reads them under test:runtime-role. */
+  const su = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
+    (await import('@mantle/db/test-support')).superuserExec<T>(scratch!.url, q);
   const email = (who: string) => `${tag}-${who}@example.invalid`;
   const call = async (
     p: string,
@@ -205,7 +209,7 @@ describe.skipIf(!URL)('W6b fix round 2', () => {
     const o = await copies('o');
     const before = await call(`/api/tables/${o.table}`, owner, 'DELETE');
     expect(before.status, before.text.slice(0, 200)).toBe(404);
-    await x(sql`insert into workspace_users (workspace_id, login_id, moderator)
+    await su(sql`insert into workspace_users (workspace_id, login_id, moderator)
                 values (${priv}, ${owner}, true)`);
     for (const [p, id] of [
       [`/api/tables/${o.table}`, o.table],
@@ -216,7 +220,7 @@ describe.skipIf(!URL)('W6b fix round 2', () => {
       expect(r.status, `DELETE ${p} ${r.text.slice(0, 200)}`).toBe(200);
       expect(await rowOf(id)).toBeUndefined();
     }
-    await x(sql`delete from workspace_users where workspace_id = ${priv} and login_id = ${owner}`);
+    await su(sql`delete from workspace_users where workspace_id = ${priv} and login_id = ${owner}`);
     // The owner's tools (MCP, the system pool): the table delete no longer
     // refuses a copy; its grid writes still do.
     const l = await copies('l');

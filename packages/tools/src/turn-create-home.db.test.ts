@@ -39,6 +39,10 @@ describe.skipIf(!URL)('assistant turn creates follow the home rule (A0)', () => 
 
   const x = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
     (await m.systemDb.execute(q)) as unknown as T[];
+  /** A fixture write to the four workspace tables, as the superuser: the
+   *  app pools only read them under the runtime role. */
+  const su = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
+    (await import('@mantle/db/test-support')).superuserExec<T>(scratch!.url, q);
   const noteCreate = {
     slug: 'note_create',
     name: 'note_create',
@@ -119,9 +123,9 @@ describe.skipIf(!URL)('assistant turn creates follow the home rule (A0)', () => 
       select id::text as id, (case when is_admin then 'admin' when name = 'Team' then 'team' end) as key from workspaces where owner_id = ${owner}`);
     team = wsRows.find((r) => r.key === 'team')!.id;
     admin = wsRows.find((r) => r.key === 'admin')!.id;
-    await x(sql`update workspace_users set moderator = (login_id = ${mod})
+    await su(sql`update workspace_users set moderator = (login_id = ${mod})
                  where workspace_id = ${team} and login_id in (${mod}, ${reader})`);
-    await x(sql`update workspace_users set moderator = false
+    await su(sql`update workspace_users set moderator = false
                  where workspace_id = ${admin} and login_id = ${adm2}`);
     // The kind roots a fresh brain makes on the first read of a tree.
     for (const root of ['files', 'notes', 'pages', 'tasks', 'events', 'tables', 'apps', 'recall']) {
@@ -130,7 +134,7 @@ describe.skipIf(!URL)('assistant turn creates follow the home rule (A0)', () => 
                    where not exists (select 1 from nodes where owner_id = ${owner}
                                        and path = ${root}::ltree and type = 'branch')`);
     }
-    await x(sql`insert into workspace_users (workspace_id, login_id, moderator)
+    await su(sql`insert into workspace_users (workspace_id, login_id, moderator)
                 values (${team}, ${adm2}, true)
                 on conflict (workspace_id, login_id) do update set moderator = true`);
   }, 180_000);
@@ -242,7 +246,7 @@ describe.skipIf(!URL)('assistant turn creates follow the home rule (A0)', () => 
     const fresh = randomUUID();
     await x(sql`insert into auth.users (id, email, password_hash, is_owner, role)
                 values (${fresh}, ${`${tag}-f@example.invalid`}, 'x', false, 'member')`);
-    await x(sql`insert into workspace_users (workspace_id, login_id, moderator)
+    await su(sql`insert into workspace_users (workspace_id, login_id, moderator)
                 values (${team}, ${fresh}, false)`);
     const count = async () =>
       (
@@ -264,7 +268,7 @@ describe.skipIf(!URL)('assistant turn creates follow the home rule (A0)', () => 
     const fresh = randomUUID();
     await x(sql`insert into auth.users (id, email, password_hash, is_owner, role)
                 values (${fresh}, ${`${tag}-g@example.invalid`}, 'x', false, 'member')`);
-    await x(sql`insert into workspace_users (workspace_id, login_id, moderator)
+    await su(sql`insert into workspace_users (workspace_id, login_id, moderator)
                 values (${team}, ${fresh}, false)`);
     const count = async () =>
       (

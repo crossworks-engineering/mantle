@@ -34,6 +34,10 @@ describe.skipIf(!URL)('W7 integration fix 3, L1: each login reads in its own sco
 
   const x = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
     (await m.systemDb.execute(q)) as unknown as T[];
+  /** A fixture write to the four workspace tables, as the superuser: the
+   *  system pool only reads them under test:runtime-role. */
+  const su = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
+    (await import('@mantle/db/test-support')).superuserExec<T>(scratch!.url, q);
   const listed = async (as: string): Promise<string> => {
     const res = await app.request('/api/pages', { headers: { cookie: cookieOf(as) } });
     const text = await res.text();
@@ -60,17 +64,17 @@ describe.skipIf(!URL)('W7 integration fix 3, L1: each login reads in its own sco
       on conflict (id) do nothing`);
     await (await import('@mantle/db/test-support')).runWorkspacesSwitch();
     // A Team as a brain switched before 0286 has it (a new brain has none).
-    await x(sql.raw(teamWorkspaceSql(owner)));
+    await su(sql.raw(teamWorkspaceSql(owner)));
     const ws = await x<{ id: string; key: string | null }>(sql`
       select id::text as id, (case when is_admin then 'admin' when name = 'Team' then 'team' end) as key from workspaces where owner_id = ${owner}`);
     teamWs = ws.find((w) => w.key === 'team')!.id;
     adminWs = ws.find((w) => w.key === 'admin')!.id;
-    await x(sql`insert into workspace_users (workspace_id, login_id, moderator)
+    await su(sql`insert into workspace_users (workspace_id, login_id, moderator)
       values (${adminWs}, ${admin}, false) on conflict do nothing`);
-    await x(
+    await su(
       sql`delete from workspace_users where workspace_id = ${adminWs} and login_id = ${outsider}`,
     );
-    await x(sql`insert into workspace_users (workspace_id, login_id, moderator)
+    await su(sql`insert into workspace_users (workspace_id, login_id, moderator)
       values (${teamWs}, ${outsider}, false) on conflict do nothing`);
     for (const [key, id] of Object.entries(pages)) {
       await x(sql`insert into nodes (id, owner_id, type, title, path)

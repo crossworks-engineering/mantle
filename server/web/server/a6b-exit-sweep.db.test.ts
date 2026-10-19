@@ -630,6 +630,10 @@ describe.skipIf(!URL)('the A6b exit sweep', () => {
 
   const x = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
     (await m.systemDb.execute(q)) as unknown as T[];
+  /** A fixture write to the workspace tables, as the superuser: the app
+   *  pools only read them. */
+  const su = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
+    (await import('@mantle/db/test-support')).superuserExec<T>(scratch!.url, q);
   /** A statement in the context it is called in (the caller's scope). */
   const x2 = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
     (await m.db.execute(q)) as unknown as T[];
@@ -853,14 +857,14 @@ describe.skipIf(!URL)('the A6b exit sweep', () => {
     );
     adminWs = adm!.id;
     names.set(adminWs, 'ws:Admin');
-    await x(sql`insert into workspaces (id, owner_id, name) values
+    await su(sql`insert into workspaces (id, owner_id, name) values
       (${W.P}, ${L.owner}, 'Proj'), (${W.Q}, ${L.owner}, 'Quay')`);
-    await x(sql`insert into workspace_users (workspace_id, login_id, moderator) values
+    await su(sql`insert into workspace_users (workspace_id, login_id, moderator) values
         (${adminWs}, ${L.adminAll}, false), (${adminWs}, ${L.adminNoUsers}, false),
         (${W.P}, ${L.owner}, true), (${W.P}, ${L.modP}, true),
         (${W.Q}, ${L.modP}, false), (${W.Q}, ${L.userQ}, false)
       on conflict (workspace_id, login_id) do update set moderator = excluded.moderator`);
-    await x(sql`update workspace_users set limits = '{"areas":{"users":false}}'::jsonb
+    await su(sql`update workspace_users set limits = '{"areas":{"users":false}}'::jsonb
                  where workspace_id = ${adminWs} and login_id = ${L.adminNoUsers}`);
     for (const w of await x<{ id: string; name: string }>(
       sql`select id::text as id, name from workspaces where owner_id = ${L.owner}`,
@@ -879,7 +883,7 @@ describe.skipIf(!URL)('the A6b exit sweep', () => {
     }
 
     // P's and Q's assistants are their workspaces' (a resource each).
-    await x(sql`insert into workspace_resources (workspace_id, type, ref_id) values
+    await su(sql`insert into workspace_resources (workspace_id, type, ref_id) values
       (${W.P}, 'assistant', ${AG.P}), (${W.Q}, 'assistant', ${AG.Q})`);
 
     const tokens = await import('../lib/auth/tokens');
@@ -1274,7 +1278,7 @@ describe.skipIf(!URL)('the A6b exit sweep', () => {
                 values (${L.owner}, 'a6b-conn', 'A6b connector', 'd', true, '{"mcp":{"url":"http://127.0.0.1:9/mcp"}}'::jsonb),
                        (${L.owner}, 'a6b-lone', 'A6b lone', 'd', true, '{"mcp":{"url":"http://127.0.0.1:9/mcp"}}'::jsonb),
                        (${L.owner}, 'a6b-off', 'A6b off', 'd', false, null)`);
-    await x(sql`insert into workspace_resources (workspace_id, type, ref_id, write) values
+    await su(sql`insert into workspace_resources (workspace_id, type, ref_id, write) values
                 (${W.P}, 'connector', 'a6b-conn', true), (${W.Q}, 'connector', 'a6b-conn', false)`);
     // Contacts with sharing on (one locked), one without.
     const C = [id(601), id(602), id(603)];
@@ -1601,8 +1605,10 @@ describe.skipIf(!URL)('the A6b exit sweep', () => {
                 values (${FC}, 'a6b-fc@example.invalid', 'x', 'member', now())`);
     await x(sql`insert into archive_client_logins (login_id, email, created_at, session_epoch)
                 select id, email, created_at, session_epoch from auth.users where id = ${FC}`);
-    await x(sql`insert into workspaces (id, owner_id, name) values (${CW}, ${L.owner}, 'Clients')`);
-    await x(
+    await su(
+      sql`insert into workspaces (id, owner_id, name) values (${CW}, ${L.owner}, 'Clients')`,
+    );
+    await su(
       sql`insert into workspace_users (workspace_id, login_id, moderator) values (${CW}, ${FC}, false)`,
     );
     const N = {

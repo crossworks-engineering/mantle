@@ -102,6 +102,10 @@ describe.skipIf(!URL)('W7c: own threads only, per role', () => {
 
   const x = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
     (await m.systemDb.execute(q)) as unknown as T[];
+  /** A fixture write to the four workspace tables, as the superuser: the
+   *  system pool only reads them under test:runtime-role. */
+  const su = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
+    (await import('@mantle/db/test-support')).superuserExec<T>(scratch!.url, q);
   const req = (p: string, init?: RequestInit) => new Request(`http://brain.test${p}`, init);
   const chatLogin = (kind: 'admin' | 'member', loginId: string) => ({
     kind,
@@ -224,7 +228,7 @@ describe.skipIf(!URL)('W7c: own threads only, per role', () => {
       [teamWs, member2],
       [teamWs, member3],
     ] as const) {
-      await x(sql`insert into workspace_users (workspace_id, login_id, moderator)
+      await su(sql`insert into workspace_users (workspace_id, login_id, moderator)
         values (${ws}, ${login}, false) on conflict do nothing`);
     }
     const agent = async (slug: string, role: string, ws: string | null) => {
@@ -242,7 +246,7 @@ describe.skipIf(!URL)('W7c: own threads only, per role', () => {
         })
         .returning();
       if (ws) {
-        await x(sql`insert into workspace_resources (workspace_id, type, ref_id, write)
+        await su(sql`insert into workspace_resources (workspace_id, type, ref_id, write)
           values (${ws}, 'assistant', ${row!.id}, true) on conflict do nothing`);
       }
       return row!.id;

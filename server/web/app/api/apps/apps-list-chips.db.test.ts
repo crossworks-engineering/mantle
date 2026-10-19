@@ -51,6 +51,10 @@ describe.skipIf(!URL)('GET /api/apps: workspace chips, hasLink and ?ws', () => {
   const ids: Record<string, string> = {};
 
   const exec = (q: ReturnType<typeof sqlTag>) => m.systemDb.execute(q);
+  /** A fixture write to the four workspace tables, as the superuser: the
+   *  app pools only read them under the runtime role. */
+  const su = async (q: ReturnType<typeof sqlTag>) =>
+    (await import('@mantle/db/test-support')).superuserExec(URL!, q);
   const grant = (node: string, wsId: string, home = false) =>
     m.withHeads([node], 'update', (tx) =>
       tx.execute(sqlTag`insert into item_grants (node_id, workspace_id, is_home)
@@ -88,14 +92,14 @@ describe.skipIf(!URL)('GET /api/apps: workspace chips, hasLink and ?ws', () => {
     await exec(sqlTag`
       insert into spaces (id, kind, login_id) values
         (${owner}, 'brain', ${owner}), (${other}, 'brain', ${other})`);
-    await exec(sqlTag`
+    await su(sqlTag`
       insert into workspaces (id, owner_id, name, is_admin, bridge_key) values
         (${ws.admin}, ${owner}, 'Admin', true, 'admin'),
         (${ws.team}, ${owner}, 'Team', false, null),
         (${ws.proj}, ${owner}, 'proj', false, null),
         (${ws.quay}, ${owner}, 'Quay', false, null),
         (${ws.otherBrain}, ${other}, 'Other', false, null)`);
-    await exec(sqlTag`
+    await su(sqlTag`
       insert into workspace_users (workspace_id, login_id, moderator) values
         (${ws.admin}, ${owner}, true), (${ws.quay}, ${owner}, false),
         (${ws.proj}, ${plain}, false)`);
@@ -121,7 +125,7 @@ describe.skipIf(!URL)('GET /api/apps: workspace chips, hasLink and ?ws', () => {
     await exec(sqlTag`
       delete from item_grants where node_id in (select id from nodes where owner_id = ${owner})`);
     await exec(sqlTag`delete from nodes where owner_id = ${owner}`);
-    await exec(sqlTag`delete from workspaces where owner_id in (${owner}, ${other})`);
+    await su(sqlTag`delete from workspaces where owner_id in (${owner}, ${other})`);
     await exec(sqlTag`delete from spaces where login_id in (${owner}, ${plain}, ${other})`);
     await exec(sqlTag`delete from auth.users where id in (${owner}, ${plain}, ${other})`);
     await m.closeDb();

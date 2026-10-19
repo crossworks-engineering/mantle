@@ -40,6 +40,10 @@ describe.skipIf(!URL)("2a: a HEAD answers as its GET on the login lists' rows", 
 
   const x = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
     (await m.systemDb.execute(q)) as unknown as T[];
+  /** A fixture write to the workspace tables, as the superuser: the app
+   *  pools only read them. */
+  const su = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
+    (await import('@mantle/db/test-support')).superuserExec<T>(scratch!.url, q);
 
   /** A concrete path for a row's pattern: its params name real rows. */
   const pathOf = (pattern: string) =>
@@ -98,13 +102,13 @@ describe.skipIf(!URL)("2a: a HEAD answers as its GET on the login lists' rows", 
     await x(sql`insert into spaces (id, kind, login_id) values (${owner}, 'brain', ${owner})
       on conflict (id) do nothing`);
     await (await import('@mantle/db/test-support')).runWorkspacesSwitch();
-    await x(sql.raw(teamWorkspaceSql(owner)));
+    await su(sql.raw(teamWorkspaceSql(owner)));
     const ws = await x<{ id: string; key: string | null }>(sql`
       select id::text as id, (case when is_admin then 'admin' when name = 'Team' then 'team' end) as key
       from workspaces where owner_id = ${owner}`);
     teamWs = ws.find((w) => w.key === 'team')!.id;
     const adminWs = ws.find((w) => w.key === 'admin')!.id;
-    await x(sql`insert into workspace_users (workspace_id, login_id, moderator)
+    await su(sql`insert into workspace_users (workspace_id, login_id, moderator)
       values (${adminWs}, ${admin}, false), (${teamWs}, ${member}, false)
       on conflict do nothing`);
     await x(sql`insert into nodes (id, owner_id, type, title, path)

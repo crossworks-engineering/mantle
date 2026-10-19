@@ -39,6 +39,10 @@ describe.skipIf(!URL)("the member MCP screen's connectors", () => {
   const tag = `member-mcp-${anchor.slice(0, 8)}`;
 
   const exec = (q: ReturnType<typeof sqlTag>) => m.systemDb.execute(q);
+  /** A fixture write to the four workspace tables, as the superuser: the
+   *  app pools only read them under the runtime role. */
+  const su = async (q: ReturnType<typeof sqlTag>) =>
+    (await import('@mantle/db/test-support')).superuserExec(URL!, q);
   const view = async () => {
     const { GET } = await import('./route');
     const res = await GET();
@@ -99,12 +103,10 @@ describe.skipIf(!URL)("the member MCP screen's connectors", () => {
     // member through a workspace (W5b2), one the member moderates holds it
     // with Write on.
     const ws = randomUUID();
-    await exec(
-      sqlTag`insert into workspaces (id, owner_id, name) values (${ws}, ${anchor}, ${tag})`,
-    );
-    await exec(sqlTag`
+    await su(sqlTag`insert into workspaces (id, owner_id, name) values (${ws}, ${anchor}, ${tag})`);
+    await su(sqlTag`
       insert into workspace_users (workspace_id, login_id, moderator) values (${ws}, ${member}, true)`);
-    await exec(sqlTag`
+    await su(sqlTag`
       insert into workspace_resources (workspace_id, type, ref_id, write)
       values (${ws}, 'connector', 'mcp-src', true)`);
   }, 60_000);

@@ -40,6 +40,10 @@ describe.skipIf(!URL)('member app tool broker rules', () => {
   ];
 
   const exec = (q: ReturnType<typeof sqlTag>) => m.systemDb.execute(q);
+  /** A fixture write to the four workspace tables, as the superuser: the
+   *  app pools only read them under the runtime role. */
+  const su = async (q: ReturnType<typeof sqlTag>) =>
+    (await import('@mantle/db/test-support')).superuserExec(URL!, q);
   const verdict = (slug: string, declared = DECLARED) =>
     mt.memberAppToolVerdict(anchor, declared, slug);
 
@@ -87,7 +91,7 @@ describe.skipIf(!URL)('member app tool broker rules', () => {
       insert into nodes (id, owner_id, type, title, path, audience) values
         (${appId}, ${anchor}, 'app', ${`${tag} app`}, 'apps', 'team')`);
     await exec(sqlTag`insert into apps (node_id) values (${appId})`);
-    await exec(sqlTag`
+    await su(sqlTag`
       insert into workspaces (id, owner_id, name, is_admin, bridge_key) values
         (${ws.admin}, ${anchor}, ${`${tag} Admin`}, true, 'admin'),
         (${ws.team}, ${anchor}, ${`${tag} Team`}, false, null)`);
@@ -102,7 +106,7 @@ describe.skipIf(!URL)('member app tool broker rules', () => {
     await exec(sqlTag`delete from tools where owner_id = ${anchor}`);
     await exec(sqlTag`delete from item_grants where node_id = ${appId}`);
     await exec(sqlTag`delete from nodes where owner_id = ${anchor}`);
-    await exec(sqlTag`delete from workspaces where owner_id = ${anchor}`);
+    await su(sqlTag`delete from workspaces where owner_id = ${anchor}`);
     await exec(sqlTag`delete from spaces where login_id = ${anchor}`);
     await exec(sqlTag`delete from auth.users where id = ${anchor}`);
     await m.closeDb();

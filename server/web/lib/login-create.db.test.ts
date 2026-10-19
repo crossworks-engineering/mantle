@@ -22,8 +22,9 @@ describe.skipIf(!URL)('a new login and its workspace rows, in one transaction', 
   const owner = randomUUID();
   let admin = '';
 
-  /** A fixture only the superuser may run (a box mode, a table, a trigger):
-   *  the app's pool may log in as the runtime role (arch A9). */
+  /** A fixture only the superuser may run (a box mode, a table, a trigger,
+   *  a write to the workspace tables): the app's pool may log in as the
+   *  runtime role (arch A9). */
   const su = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
     (await import('@mantle/db/test-support')).superuserExec<T>(scratch!.url, q);
   const sys = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
@@ -98,10 +99,10 @@ describe.skipIf(!URL)('a new login and its workspace rows, in one transaction', 
   it('a role change keeps only the Admin row in step, never another workspace', async () => {
     const id = randomUUID();
     await create(row(id, `rc-${id.slice(0, 8)}@example.invalid`, 'member'));
-    const [other] = await sys<{ id: string }>(
+    const [other] = await su<{ id: string }>(
       sql`insert into workspaces (owner_id, name) values (${owner}, 'Team') returning id::text as id`,
     );
-    await sys(sql`insert into workspace_users (workspace_id, login_id, moderator)
+    await su(sql`insert into workspace_users (workspace_id, login_id, moderator)
       values (${other!.id}, ${id}, false)`);
     const rowsOf = () =>
       sys<{ ws: string; moderator: boolean }>(

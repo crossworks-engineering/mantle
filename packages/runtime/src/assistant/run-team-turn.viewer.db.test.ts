@@ -21,7 +21,7 @@
  */
 import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import { asMigrator } from '@mantle/db/test-support';
+import { asMigrator, superuserExec } from '@mantle/db/test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -120,6 +120,9 @@ describe.skipIf(!URL)('a team turn in its Team turn scope', () => {
     journal: crypto.randomUUID(),
   };
   const adminOnly = (): string[] => [ids.adminPage, ids.journal];
+  /** A fixture write to the workspace tables, as the superuser: the app's
+   *  pools only read them. */
+  const su = (q: ReturnType<typeof sql>) => superuserExec(scratch!.url, q);
 
   beforeAll(async () => {
     const ts: Ts = await import('@mantle/db/test-support');
@@ -183,8 +186,8 @@ describe.skipIf(!URL)('a team turn in its Team turn scope', () => {
     team = t!.id;
     // The Team workspace's assistant (the resource trigger writes
     // agents.workspace_id).
-    await admin`insert into workspace_resources (workspace_id, type, ref_id, write)
-      values (${team}, 'assistant', ${agentId}, true)`;
+    await su(sql`insert into workspace_resources (workspace_id, type, ref_id, write)
+      values (${team}, 'assistant', ${agentId}, true)`);
   }, 180_000);
 
   afterAll(async () => {
@@ -231,8 +234,8 @@ describe.skipIf(!URL)('a team turn in its Team turn scope', () => {
     await admin`insert into auth.users (id, email, password_hash, role)
       values (${loginId}, ${`member-${loginId.slice(0, 8)}@example.invalid`}, 'x', 'member')`;
     // A user of Team (an admin added it): the assistant's workspace.
-    await admin`insert into workspace_users (workspace_id, login_id, moderator)
-      values (${team}, ${loginId}, false)`;
+    await su(sql`insert into workspace_users (workspace_id, login_id, moderator)
+      values (${team}, ${loginId}, false)`);
     try {
       const { runTeamTurn } = await import('./run-team-turn');
       const result = await runTeamTurn(ownerId, 'hello from a member', {
@@ -311,8 +314,8 @@ describe.skipIf(!URL)('a team turn in its Team turn scope', () => {
     const other = crypto.randomUUID();
     await admin`insert into auth.users (id, email, password_hash, role)
       values (${other}, ${`other-${other.slice(0, 8)}@example.invalid`}, 'x', 'member')`;
-    await admin`insert into workspace_users (workspace_id, login_id, moderator)
-      values (${team}, ${other}, false)`;
+    await su(sql`insert into workspace_users (workspace_id, login_id, moderator)
+      values (${team}, ${other}, false)`);
     // Digests on for this test (the shipped Team assistant has them off).
     await admin`update agents set memory_config = memory_config || '{"digest_limit": 3}'::jsonb
       where id = ${agentId}`;

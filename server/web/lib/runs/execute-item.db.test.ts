@@ -28,6 +28,10 @@ describe.skipIf(!URL)('a run item under the planning agent', () => {
   const adminWs = randomUUID();
   const q = (s: ReturnType<typeof sqlTag>) => m.systemDb.execute(s);
   const rows = async <T>(s: ReturnType<typeof sqlTag>) => (await q(s)) as unknown as T[];
+  /** A fixture write to the workspace tables, as the superuser: the app
+   *  pools only read them. */
+  const su = async (s: ReturnType<typeof sqlTag>) =>
+    (await import('@mantle/db/test-support')).superuserExec(scratch!.url, s);
 
   beforeAll(async () => {
     scratch = await (await import('@mantle/db/test-support')).createMigratedScratchDatabase(URL!);
@@ -45,9 +49,9 @@ describe.skipIf(!URL)('a run item under the planning agent', () => {
     // Its Admin workspace, the owner a Moderator user of it: a run with no
     // workspace re-enters Admin (withRunScope), and since arch A7 a brain
     // with no live Admin workspace is refused, never run on the system pool.
-    await q(sqlTag`insert into workspaces (id, owner_id, name, is_admin)
+    await su(sqlTag`insert into workspaces (id, owner_id, name, is_admin)
       values (${adminWs}, ${anchor}, 'Admin', true)`);
-    await q(sqlTag`insert into workspace_users (workspace_id, login_id, moderator)
+    await su(sqlTag`insert into workspace_users (workspace_id, login_id, moderator)
       values (${adminWs}, ${anchor}, true)`);
     for (const slug of ['tool_group_ensure', 'note_list']) {
       await q(sqlTag`
@@ -73,7 +77,7 @@ describe.skipIf(!URL)('a run item under the planning agent', () => {
     // A workspace other than Admin, and its assistant, which holds g-held:
     // a change to g-held reaches that workspace's users (W7b), so an agent's
     // change waits for the owner.
-    await q(
+    await su(
       sqlTag`insert into workspaces (id, owner_id, name) values (${otherWs}, ${anchor}, ${`${tag} other`})`,
     );
     await q(sqlTag`

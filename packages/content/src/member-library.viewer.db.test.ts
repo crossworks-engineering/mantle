@@ -50,6 +50,11 @@ describe.skipIf(!URL)('member Library in a workspace scope', () => {
 
   const tableRoot = mkdtempSync(path.join(tmpdir(), 'mantle-lib-tables-'));
 
+  /** A fixture write to the workspace tables, as the superuser: the app's
+   *  pools only read them. */
+  const su = async (q: ReturnType<typeof sqlTag>) =>
+    (await import('@mantle/db/test-support')).superuserExec(URL!, q);
+
   beforeAll(async () => {
     process.env.DATABASE_URL = URL;
     process.env.TABLE_DB_DIR = tableRoot;
@@ -86,10 +91,10 @@ describe.skipIf(!URL)('member Library in a workspace scope', () => {
     await m.systemDb.execute(sqlTag`
       insert into auth.users (id, email, password_hash, role)
       values (${member}, ${`${tag}-m@example.invalid`}, 'x', 'member')`);
-    await m.systemDb.execute(sqlTag`
+    await su(sqlTag`
       insert into workspaces (id, owner_id, name) values
         (${memberWs}, ${anchor}, ${`${tag} member ws`}), (${otherWs}, ${anchor}, ${`${tag} other ws`})`);
-    await m.systemDb.execute(
+    await su(
       sqlTag`insert into workspace_users (workspace_id, login_id) values (${memberWs}, ${member})`,
     );
     await grant(memberWs, ids.teamPage);
@@ -105,7 +110,7 @@ describe.skipIf(!URL)('member Library in a workspace scope', () => {
         ),
       );
     }
-    await m.systemDb.execute(sqlTag`delete from workspaces where id in (${memberWs}, ${otherWs})`);
+    await su(sqlTag`delete from workspaces where id in (${memberWs}, ${otherWs})`);
     await m.systemDb.execute(sqlTag`delete from spaces where login_id = ${member}`);
     await m.systemDb.execute(sqlTag`delete from auth.users where id = ${member}`);
     await m.systemDb.execute(sqlTag`delete from nodes where title like ${`${tag}%`}`);
@@ -172,12 +177,10 @@ describe.skipIf(!URL)('member Library in a workspace scope', () => {
     await m.systemDb.execute(sqlTag`
       insert into auth.users (id, email, password_hash, role)
       values (${login}, ${`${tag}-ws@example.invalid`}, 'x', 'member')`);
-    await m.systemDb.execute(sqlTag`
+    await su(sqlTag`
       insert into workspaces (id, owner_id, name) values
         (${ws}, ${anchor}, ${`${tag} ws`}), (${other}, ${anchor}, ${`${tag} other`})`);
-    await m.systemDb.execute(
-      sqlTag`insert into workspace_users (workspace_id, login_id) values (${ws}, ${login})`,
-    );
+    await su(sqlTag`insert into workspace_users (workspace_id, login_id) values (${ws}, ${login})`);
     // Its workspace holds the team page and the admin page (the grant
     // decides, not the frozen level); another workspace the client note.
     const holds: Array<[string, string]> = [
@@ -210,7 +213,7 @@ describe.skipIf(!URL)('member Library in a workspace scope', () => {
           ),
         );
       }
-      await m.systemDb.execute(sqlTag`delete from workspaces where id in (${ws}, ${other})`);
+      await su(sqlTag`delete from workspaces where id in (${ws}, ${other})`);
       await m.systemDb.execute(sqlTag`delete from spaces where login_id = ${login}`);
       await m.systemDb.execute(sqlTag`delete from auth.users where id = ${login}`);
     }

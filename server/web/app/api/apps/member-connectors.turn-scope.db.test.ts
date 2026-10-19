@@ -137,6 +137,10 @@ describe.skipIf(!URL)('a login’s connector tools: one rule (W4b fix round 2)',
 
   const x = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
     (await m.systemDb.execute(q)) as unknown as T[];
+  /** A fixture write to the four workspace tables, as the superuser: the
+   *  app pools only read them under the runtime role. */
+  const su = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
+    (await import('@mantle/db/test-support')).superuserExec<T>(scratch!.url, q);
   const call = async (login: string, slug: string) => {
     h.login = login;
     h.as = 'member';
@@ -219,17 +223,17 @@ describe.skipIf(!URL)('a login’s connector tools: one rule (W4b fix round 2)',
                            values (${APP}, ${team}, true)`);
     });
     // B on no workspace; A on Team with Write on.
-    await x(sql`delete from workspace_resources where type = 'connector' and ref_id = ${B}`);
-    await x(sql`insert into workspace_resources (workspace_id, type, ref_id, write)
+    await su(sql`delete from workspace_resources where type = 'connector' and ref_id = ${B}`);
+    await su(sql`insert into workspace_resources (workspace_id, type, ref_id, write)
       values (${team}, 'connector', ${A}, true)
       on conflict do nothing`);
-    await x(sql`update workspace_resources set write = true
+    await su(sql`update workspace_resources set write = true
       where workspace_id = ${team} and type = 'connector' and ref_id = ${A}`);
-    await x(sql`update workspace_users set moderator = true
+    await su(sql`update workspace_users set moderator = true
       where workspace_id = ${team} and login_id = ${moderator}`);
-    await x(sql`update workspace_users set moderator = false
+    await su(sql`update workspace_users set moderator = false
       where workspace_id = ${team} and login_id = ${plain}`);
-    await x(sql`delete from workspace_users where login_id = ${stranger}`);
+    await su(sql`delete from workspace_users where login_id = ${stranger}`);
   }, 180_000);
 
   afterAll(async () => {
@@ -263,11 +267,11 @@ describe.skipIf(!URL)('a login’s connector tools: one rule (W4b fix round 2)',
         values (${removed}, ${`cr-${removed.slice(0, 8)}@example.invalid`}, 'x', false, 'member')`);
       // On Team, then taken off it, as a Moderator would (W5b2: no login
       // bridge puts a new login anywhere).
-      await x(
+      await su(
         sql`insert into workspace_users (workspace_id, login_id) values (${team}, ${removed})`,
       );
       expect(
-        await x(sql`delete from workspace_users where workspace_id = ${team}
+        await su(sql`delete from workspace_users where workspace_id = ${team}
           and login_id = ${removed} returning login_id`),
       ).toHaveLength(1);
       const r = await call(removed, SLUGS.aRead);
@@ -302,13 +306,13 @@ describe.skipIf(!URL)('a login’s connector tools: one rule (W4b fix round 2)',
         select id::text as id from workspaces where owner_id = ${owner} and is_admin`);
       // The admin's own rule would let the write through (A with Write on
       // in the Admin workspace, where the owner is a Moderator)...
-      await x(sql`insert into workspace_resources (workspace_id, type, ref_id, write)
+      await su(sql`insert into workspace_resources (workspace_id, type, ref_id, write)
         values (${adminWs!.id}, 'connector', ${A}, true)
         on conflict (workspace_id, type, ref_id) do update set write = true`);
       expect(
         await tools.appToolVerdict('team', owner, Object.values(SLUGS), SLUGS.aWrite, owner),
       ).toMatchObject({ ok: true });
-      await x(sql`update workspace_resources set write = false
+      await su(sql`update workspace_resources set write = false
         where workspace_id = ${team} and type = 'connector' and ref_id = ${A}`);
       try {
         // ...but a member-built app runs at team rules: a workspace beyond
@@ -320,7 +324,7 @@ describe.skipIf(!URL)('a login’s connector tools: one rule (W4b fix round 2)',
         expect(await ownerCall(SLUGS.aRead)).toMatchObject({ status: 200 });
         expect(h.dispatched).toEqual([SLUGS.aRead]);
       } finally {
-        await x(sql`update workspace_resources set write = true
+        await su(sql`update workspace_resources set write = true
           where workspace_id = ${team} and type = 'connector' and ref_id = ${A}`);
       }
       // Team Write on again: the same write runs.
