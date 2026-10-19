@@ -10,9 +10,9 @@
  *    write, an Admin user's too, runs in the login's scope: its writes on
  *    the write role (mantle_write_user) while the actor check is not off,
  *    where the database checks each one. Only the Admin acts below
- *    (ADMIN_ACT_WRITES) and the item gate's two ADMIN_ACT returns (an Admin
- *    user's link close, an Admin user's act on a deleted app's trash;
- *    session.ts) run on the system pool.
+ *    (ADMIN_ACT_WRITES) run on the system pool (an Admin user's link close,
+ *    a contact share's "Can write" and the deleted apps' trash run in the
+ *    scope since plan v3.2 S6 c2, through their definers).
  *  - an area (`settings`, `users`, `assistants`, `connectors`, `keys`):
  *    management (plan 2.4). The login must hold the area (requireArea:
  *    the Admin workspace and its limits); the route then runs on the
@@ -355,18 +355,15 @@ export function memberMayRead(method: string, pattern: string | null): boolean {
  */
 
 /**
- * Item routes whose `:id` is not the item's own id (W6a fix round 1, M1):
- * the guard finds the item through it. A share names its item
- * (shares.node_id); a recall revision its map (recall_maps.node_id); a
- * deleted app is gone, and its last snapshot names the workspace it was
- * homed in (meta.homeWs, the Admin workspace for a snapshot from before).
+ * What the item gate found an item through: its own id. The routes whose
+ * `:id` named it through another row (W6a fix round 1, M1: a share, a
+ * recall revision, a deleted app's last snapshot) are gone from the gate:
+ * the recall revision in the pre-check removal part 2, the share and the
+ * deleted app in plan v3.2 S6 c2, whose handlers ask in the login's scope
+ * (lib/auth/item-answers.ts shareItemRefusal) and through the trash's
+ * definer (mantle_app_trash_act, 0310).
  */
-export type ItemRef = 'node' | 'share' | 'deleted-app';
-
-const ITEM_REF_PREFIXES: ReadonlyArray<readonly [string, ItemRef]> = [
-  ['/api/shares', 'share'],
-  ['/api/apps/deleted', 'deleted-app'],
-];
+export type ItemRef = 'node';
 
 /** The writes that make no item (route-policy's `makesItems` is false):
  *  the login's own marks, and running or copying an app (its data has its
@@ -389,24 +386,15 @@ export const NO_ITEM_WRITES: ReadonlySet<string> = new Set([
 export type ItemWriteNeed = 'read' | 'edit' | 'manage';
 
 /** The item a write request touches and what it needs, or null when the
- *  route names no item (a create, a list, a move by body). */
+ *  route names no item. Null for every route since plan v3.2 S6 c2: each
+ *  write's handler or definer checks its item (the pre-check removal part
+ *  2, docs/actors.md). Kept as the row's `item` field and the gate's seam
+ *  (session.ts itemWriteGate), which the pre-check removal cells feed. */
 export function itemWriteTarget(
   _method: string,
-  pattern: string,
-  path: string,
+  _pattern: string,
+  _path: string,
 ): { id: string; need: ItemWriteNeed; ref: ItemRef } | null {
-  for (const [prefix, ref] of ITEM_REF_PREFIXES) {
-    const head = `${prefix}/:id`;
-    if (pattern !== head && !pattern.startsWith(`${head}/`)) continue;
-    const id = path.split('/')[prefix.split('/').length];
-    if (!id) return null;
-    // A share is a link: opening, changing and closing it needs edit of its
-    // item (docs/workspaces.md; an app's link needs manage, which the gate
-    // asks once it knows the item's type). A deleted app's purge and
-    // restore manage it.
-    const need: ItemWriteNeed = ref === 'deleted-app' ? 'manage' : 'edit';
-    return { id, need, ref };
-  }
   return null;
 }
 

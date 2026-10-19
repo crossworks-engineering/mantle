@@ -15,10 +15,13 @@
  * (`db.execute`), which also records the id each query was asked about.
  *
  * Since the pre-check removal part 2 every item route's check is the
- * database's and its handler's: the routes that keep the gate's are a
- * link's (a share names its item) and the trash's, for plan v3 S6. This
- * file drives a link's change, as an Admin user (a non-owner login, told
- * nothing of an item it does not read since F4; no member changes a link).
+ * database's and its handler's, and since plan v3.2 S6 c2 a link's too:
+ * the gate names no item, and the share route's handler asks the link's
+ * rule itself (lib/auth/item-answers.ts shareItemRefusal) on the id it is
+ * handed. This file drives a link's change, as an Admin user (a non-owner
+ * login, told nothing of an item it does not read since F4; no member
+ * changes a link), through a stub handler that asks that check as the
+ * route does, so the property holds where the check now is.
  */
 import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -81,8 +84,9 @@ vi.mock('@mantle/db', async (importOriginal) => {
       execute: async (query: SQL) => {
         const { sql, params } = dialect.sqlToQuery(query);
         state.asked.push(...params);
-        if (sql.includes('from shares')) {
-          return [{ id: ITEM, type: state.shareType, contact: false }];
+        // The link check (shareItemRefusal): the share's item in the scope.
+        if (sql.includes('from shares') && sql.includes('mantle_may_edit')) {
+          return state.row ? [{ ...state.row, type: state.shareType }] : [];
         }
         if (sql.includes('mantle_may_edit')) return state.row ? [state.row] : [];
         if (sql.includes('from nodes')) return state.row ? [{ '?column?': 1 }] : [];
@@ -115,16 +119,20 @@ describe.skipIf(!hasManifest)('the item write check reads the decoded item id', 
       const got = await getOwnerOr401WithLogin();
       return got instanceof Response ? got : got.user;
     };
-    // The handler: the session guard, then what it was handed.
+    const { shareItemRefusal } = await import('../../lib/auth/item-answers');
+    // The handler: the session guard, the link's check on the id it was
+    // handed (as PATCH /api/shares/:id asks it), then that id.
     const handler = async (_req: Request, ctx: { params: Promise<Record<string, unknown>> }) => {
       const owner = await getOwnerOr401();
       if (owner instanceof Response) return owner;
-      return Response.json({ handled: true, id: (await ctx.params).id });
+      const id = String((await ctx.params).id);
+      const refused = await shareItemRefusal(id);
+      if (refused) return refused;
+      return Response.json({ handled: true, id });
     };
     const routes: RouteEntry[] = [
       // Real manifest patterns: registerRoutes builds their real rows.
-      // A link's change: every item route's entry went in the pre-check
-      // removal part 2 (docs/actors.md), the share's stays.
+      // A link's change: the gate names no item for it since S6 c2.
       { pattern: '/api/shares/:id', methods: ['PATCH'], load: async () => ({ PATCH: handler }) },
     ].map((r) => ({ catchAll: null, catchAllOptional: false, ...r }));
     app = new Hono();
@@ -153,12 +161,12 @@ describe.skipIf(!hasManifest)('the item write check reads the decoded item id', 
   });
 
   it('an encoded id on an item route is checked as the decoded id', async () => {
-    // The login does not read the item: the 404, before the handler.
+    // The login does not read the item: the link check's 404.
     const res = await send('PATCH', `/api/shares/${ENCODED}`, adminCookie);
     expect(res.status).toBe(404);
     expect(await res.json()).toEqual({ ok: false, error: 'not found' });
     expect(state.asked).toContain(ITEM);
-    // It reads the item but may not edit it: the 403, before the handler.
+    // It reads the item but may not edit it: the link check's 403.
     state.row = { edit: false, manage: false, copy: false };
     const ro = await send('PATCH', `/api/shares/${ENCODED}`, adminCookie);
     expect(ro.status).toBe(403);
@@ -205,7 +213,7 @@ describe.skipIf(!hasManifest)('the item write check reads the decoded item id', 
   // Postgres reads each of these as the same uuid as ITEM, so a handler
   // that passed one to a uuid column would write that item. The check
   // takes only the canonical spelling (ITEM_ID_RE): each is refused with
-  // the not-found answer before the handler, for every login, and no
+  // the not-found answer by the link's check, for every login, and no
   // query is asked about it.
   it('a UUID spelling Postgres accepts but the check does not is refused, never skipped', async () => {
     state.row = { edit: true, manage: true, copy: false };

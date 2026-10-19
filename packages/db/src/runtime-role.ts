@@ -147,6 +147,12 @@ export const RUNTIME_SYSTEM_FUNCTIONS: Readonly<Record<string, string>> = {
   'public.mantle_entity_merge(uuid,uuid)': "admin-acts.ts: an Admin user's entity merge (0308)",
   'public.mantle_entity_merge_rows(uuid,uuid,uuid)':
     'entity-dedup.ts mergeEntities: the entities-dedupe sweep and CLI, system work (0308)',
+  'public.mantle_share_close_admin(uuid)':
+    "admin-acts.ts: a share closed by an Admin user with the users area (0310)",
+  'public.mantle_share_contact_write_set(uuid,boolean)':
+    "admin-acts.ts: an Admin user's Can write on a contact share (0310)",
+  'public.mantle_app_trash_act(uuid,text)':
+    "admin-acts.ts: an Admin user's purge or restore check of a deleted app (0310)",
   'public.mantle_share_with_contacts(uuid,uuid[],text[],boolean,text[])':
     "admin-acts.ts: an Admin user's share of an item with contacts (0308)",
   'public.mantle_share_with_contacts_rows(uuid,uuid,uuid[],text[],boolean,text[])':

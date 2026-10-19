@@ -103,7 +103,11 @@ export {
   adminRevokeAllContactShares,
   adminCreateContactShares,
   adminMergeEntities,
+  adminCloseShare,
+  adminSetContactShareCanWrite,
+  adminAppTrashAct,
 } from './admin-acts';
+export type { AppTrashOutcome, ContactShareWriteOutcome } from './admin-acts';
 export type {
   ContactSharingAction,
   ContactSharingActResult,

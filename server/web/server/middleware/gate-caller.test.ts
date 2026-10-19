@@ -327,38 +327,25 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
 
   it('a content write: the item check, the create home and the audit row as the guard gave', async () => {
     const ID = '11111111-1111-4111-8111-111111111111';
-    const may = (edit: boolean, manage = edit) => [{ edit, manage, copy: false }];
-    // What the item-write check finds, each case: the statements' answers
-    // in order. No row: not in the login's scope (a 404 for every login
-    // since F4; an Admin user's check asked whether it exists before).
-    const items: Record<string, unknown[][]> = {
-      'may-edit': [may(true)],
-      'may-not': [may(false)],
-      'read-only-copy': [[{ edit: true, manage: true, copy: true }]],
-      'not-in-scope': [[], [{ one: 1 }]],
-      'no-such-item': [[], []],
-    };
+    // No route names an item for the gate since plan v3.2 S6 c2 (a link's
+    // change was the last: its handler asks, lib/auth/item-answers.ts), so
+    // the gate asks nothing of the item: the pipeline and the guard alike.
+    const items: Record<string, unknown[][]> = { 'no-item-check': [] };
     const homes: Record<string, Record<string, unknown>> = {
       lands: { createWs: '66666666-6666-4666-8666-666666666666', privateWs: null },
       'refused-workspace': { refused: 'workspace', message: 'You are not in that workspace.' },
       'refused-invalid': { refused: 'invalid', message: 'ws is not a workspace id.' },
     };
-    // A link's change (PATCH /api/shares/:id): every item route lost its
-    // item check in the pre-check removal part 2 (the database and the
-    // handlers check them); a share keeps it (plan v3 S6). Its lookup
-    // answers first (a page's share), then the item's.
+    // A link's change (PATCH /api/shares/:id) and an item route: each lost
+    // its gate item check (the pre-check removal part 2; the share in S6
+    // c2). An odd id reaches the handler, which answers it (the link's
+    // check: item-write-encoded.test.ts).
     const paths = [
       ['PATCH', `/api/shares/${ID}`],
       ['POST', `/api/formulas/${ID}/evaluate`],
-      // The id the handler gets is the decoded segment: an encoded item id
-      // is checked as that id; one that decodes to no item id, or not at
-      // all, is the not-found answer (the security fix), for every login.
       ['PATCH', `/api/shares/${encodeURIComponent(ID).replace(/1/g, '%31')}`],
       ['PATCH', '/api/shares/not-an-item'],
-      ['PATCH', '/api/shares/%E0%A4%A'],
     ] as const;
-    const viaShare = (path: string) => path.startsWith('/api/shares/');
-    const SHARE_LOOKUP = [{ id: ID, type: 'page', contact: false }];
     const seenAnswers = new Set<string>();
     const run = async (label: string, method: string, path: string, setup: () => void) => {
       for (const cred of creds) {
@@ -381,7 +368,7 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
       for (const [item, exec] of Object.entries(items)) {
         for (const [method, path] of paths) {
           await run(item, method, path, () => {
-            counts.exec = [...(viaShare(path) ? [SHARE_LOOKUP] : []), ...exec].map((r) => [...r]);
+            counts.exec = exec.map((r) => [...r]);
           });
         }
       }
@@ -395,10 +382,8 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
       counts.home = { createWs: null, privateWs: null };
     }
     const met = [...seenAnswers].join('\n');
-    // Every answer of the write path was met, the same through both.
-    expect(met).toContain('You cannot change this item in your workspaces.');
-    expect(met).toContain('read-only copy');
-    expect(met).toMatch(/^404 \{"ok":false,"error":"not found"\}$/m);
+    // Every answer of the write path was met, the same through both (the
+    // item answers are the handlers' since S6 c2).
     expect(met).toMatch(/^403 .*"reason":"workspace"/m);
     expect(met).toMatch(/^400 /m);
     expect(met).toMatch(/^200 $/m);
@@ -417,45 +402,14 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
     ];
     const ID = '11111111-1111-4111-8111-111111111111';
     const WS = '66666666-6666-4666-8666-666666666666';
-    const may = (edit: boolean, manage = edit, copy = false) => [{ edit, manage, copy }];
-    // What the item-write check finds for an item the id names itself:
-    // the statements' answers in order.
-    const node: Record<string, unknown[][]> = {
-      'may-edit': [may(true)],
-      'edit-not-manage': [may(true, false)],
-      'may-not': [may(false)],
-      'read-only-copy': [may(true, true, true)],
-      'not-in-scope': [[], [{ one: 1 }]],
-      'no-such-item': [[], []],
-    };
-    // Through a share (an app's link needs manage): the lookup first, then the item's answers; a lookup that names no
-    // item.
-    const through = (first: unknown[]) =>
-      Object.fromEntries(Object.entries(node).map(([k, v]) => [k, [first, ...v]]));
-    const share = {
-      ...through([{ id: ID, type: 'page' }]),
-      ...Object.fromEntries(
-        Object.entries(through([{ id: ID, type: 'app' }])).map(([k, v]) => [`app-${k}`, v]),
-      ),
-      'no-item': [[{ id: null, type: null }]],
-    };
-    // A deleted app's last snapshot: no home stored, a home its Moderator
-    // manages or not, deleted by someone other than the owner (seen by a
-    // Moderator of its home or not: F4 fix round 1, the manage check comes
-    // first), none.
-    const deleted: Record<string, unknown[][]> = {
-      'no-home': [[{ home: null, held: false }]],
-      'home-manage': [[{ home: WS, held: false }], [{ manage: true }]],
-      'home-not-manage': [[{ home: WS, held: false }], [{ manage: false }]],
-      held: [[{ home: WS, held: true }], [{ manage: true }]],
-      'held-not-manage': [[{ home: WS, held: true }], [{ manage: false }]],
-      'no-snapshot': [[]],
-    };
-    const odd = (id: string) => [
-      encodeURIComponent(id).replace(/1/g, '%31'),
-      'not-an-item',
-      '%E0%A4%A',
-    ];
+    // A link's change and close, and the trash: no gate item check since
+    // plan v3.2 S6 c2 (their handlers ask the link's rule and the trash's
+    // definer, migration 0310), so the gate reads nothing of the item.
+    // What each login hears from the gate, the pipeline and the guard
+    // alike: a member refused, an Admin user through to the handler.
+    const share: Record<string, unknown[][]> = { 'no-item-check': [] };
+    const deleted: Record<string, unknown[][]> = { 'no-item-check': [] };
+    const odd = (id: string) => [encodeURIComponent(id).replace(/1/g, '%31'), 'not-an-item'];
     const cells: Array<[string, string, string, Record<string, unknown[][]>]> = [];
     const each = (
       method: string,
@@ -468,8 +422,8 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
       for (const id of odd(ID)) cells.push([method, path(id), 'odd', cases]);
     };
     // An app's delete and its data write lost their item check in the
-    // pre-check removal part 2: a link's change and close, and the trash,
-    // keep it (plan v3 S6).
+    // pre-check removal part 2, a link's change and close and the trash in
+    // S6 c2.
     each('PATCH', (id) => `/api/shares/${id}`, share);
     each('DELETE', (id) => `/api/shares/${id}`, share);
     each('DELETE', (id) => `/api/apps/deleted/${id}`, deleted);
@@ -525,11 +479,8 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
       counts.home = { createWs: null, privateWs: null };
     }
     const met = [...seenAnswers].join('\n');
-    // Every answer of these write paths was met, the same through both.
-    expect(met).toContain('You cannot change this item in your workspaces.');
-    expect(met).toContain('read-only copy');
-    expect(met).toContain('only the owner deletes it for good');
-    expect(met).toMatch(/^404 \{"ok":false,"error":"not found"\}$/m);
+    // Every answer of these write paths was met, the same through both
+    // (the item answers are the handlers' since S6 c2).
     expect(met).toMatch(/^403 .*"reason":"workspace"/m);
     expect(met).toMatch(/^403 .*"member-login"/m);
     expect(met).toMatch(/^401 /m);

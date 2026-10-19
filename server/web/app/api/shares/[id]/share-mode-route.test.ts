@@ -10,7 +10,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const ANCHOR = '33333333-3333-4333-8333-333333333333';
 const SHARE = '44444444-4444-4444-8444-444444444444';
 
-const h = vi.hoisted(() => ({ modes: [] as string[], found: true }));
+const h = vi.hoisted(() => ({
+  modes: [] as string[],
+  found: true,
+  byArea: 'no-area' as 'closed' | 'gone' | 'no-area',
+}));
 
 vi.mock('@/lib/auth', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
@@ -40,11 +44,22 @@ vi.mock('@/lib/shares', async (importOriginal) => ({
 vi.mock('@mantle/content', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@mantle/content')>()),
   assertMayLink: vi.fn(async () => ({ id: ANCHOR, type: 'note', path: null })),
+  // The Admin acts (plan v3.2 S6 c2, migration 0310): no users area, and no
+  // contact share by this id, so the link's rule answers below.
+  adminCloseShare: vi.fn(async () => h.byArea),
+  adminSetContactShareCanWrite: vi.fn(async () => ({ outcome: 'not-contact' })),
+}));
+
+// The link check in the login's scope: the caller may change this link.
+vi.mock('@/lib/auth/item-answers', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  shareItemRefusal: vi.fn(async () => null),
 }));
 
 beforeEach(() => {
   h.modes = [];
   h.found = true;
+  h.byArea = 'no-area';
 });
 
 const patch = async (body: unknown) => {
@@ -95,5 +110,26 @@ describe('DELETE /api/shares/:id', () => {
       params: Promise.resolve({ id: SHARE }),
     });
     expect(await res.json()).toEqual({ ok: true });
+  });
+
+  it('an Admin user with the users area: the definer closes it, ok as it answers', async () => {
+    const { DELETE } = await import('./route');
+    const del = () =>
+      DELETE(new Request(`https://brain.example.invalid/api/shares/${SHARE}`), {
+        params: Promise.resolve({ id: SHARE }),
+      });
+    h.byArea = 'closed';
+    expect(await (await del()).json()).toEqual({ ok: true });
+    h.byArea = 'gone';
+    expect(await (await del()).json()).toEqual({ ok: false });
+  });
+
+  it('an id that is no uuid: the item gate’s one 404', async () => {
+    const { DELETE } = await import('./route');
+    const res = await DELETE(new Request('https://brain.example.invalid/api/shares/x'), {
+      params: Promise.resolve({ id: 'x' }),
+    });
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ ok: false, error: 'not found' });
   });
 });

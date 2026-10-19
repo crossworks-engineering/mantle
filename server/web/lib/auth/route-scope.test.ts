@@ -162,19 +162,13 @@ describe.skipIf(!hasManifest)('route scope table (W6a)', () => {
 describe('itemWriteTarget (W6a, the item an Admin write touches)', () => {
   const id = '6f1c2a3b-0d4e-4f5a-8b6c-7d8e9f0a1b2c';
   it('names the item and what the write needs', () => {
-    // An item named through a share keeps its check (plan v3 S6): a
-    // link's change needs edit of its item (manage for an app's, asked by
-    // the gate once it knows the type), a deleted app's purge manage.
-    expect(itemWriteTarget('PATCH', '/api/shares/:id', `/api/shares/${id}`)).toEqual({
-      id,
-      need: 'edit',
-      ref: 'share',
-    });
-    expect(itemWriteTarget('DELETE', '/api/apps/deleted/:id', `/api/apps/deleted/${id}`)).toEqual({
-      id,
-      need: 'manage',
-      ref: 'deleted-app',
-    });
+    // A share and a deleted app name no item since plan v3.2 S6 c2: their
+    // handlers ask in the login's scope (shareItemRefusal) and through the
+    // trash's definer (mantle_app_trash_act, 0310).
+    expect(itemWriteTarget('PATCH', '/api/shares/:id', `/api/shares/${id}`)).toBeNull();
+    expect(
+      itemWriteTarget('DELETE', '/api/apps/deleted/:id', `/api/apps/deleted/${id}`),
+    ).toBeNull();
     // Apps and the tree's items name no item since the pre-check removal
     // part 2 (the last family): an app's edit and delete, its draft, and
     // the read writes (an open, a pin) read the item in the scope first.
@@ -238,23 +232,17 @@ describe('itemWriteTarget (W6a, the item an Admin write touches)', () => {
         `/api/recall/revisions/${id}/restore`,
       ),
     ).toBeNull();
-    // A link needs edit of its item (A0; an app's link: manage, which the
-    // session gate asks once it knows the item's type).
+    // A link and a deleted app's trash too (plan v3.2 S6 c2): the handler
+    // asks the link's rule in the login's scope, the trash its definer.
     for (const method of ['DELETE', 'PATCH']) {
-      expect(itemWriteTarget(method, '/api/shares/:id', `/api/shares/${id}`)).toEqual({
-        id,
-        need: 'edit',
-        ref: 'share',
-      });
+      expect(itemWriteTarget(method, '/api/shares/:id', `/api/shares/${id}`)).toBeNull();
     }
-    expect(itemWriteTarget('DELETE', '/api/apps/deleted/:id', `/api/apps/deleted/${id}`)).toEqual({
-      id,
-      need: 'manage',
-      ref: 'deleted-app',
-    });
+    expect(
+      itemWriteTarget('DELETE', '/api/apps/deleted/:id', `/api/apps/deleted/${id}`),
+    ).toBeNull();
     expect(
       itemWriteTarget('POST', '/api/apps/deleted/:id/restore', `/api/apps/deleted/${id}/restore`),
-    ).toEqual({ id, need: 'manage', ref: 'deleted-app' });
+    ).toBeNull();
   });
   it('fix round 1 (M2): the Apps sidebar reads in the login scope', () => {
     expect(routeClass('/api/app-nav')).toEqual({ kind: 'content' });

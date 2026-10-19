@@ -182,6 +182,42 @@ export async function restoreDeletedApp(
     if (live) throw new AppTrashRefusedError(`app ${appId} is not deleted`);
     return null;
   }
+  return restoreDeletedAppFrom(
+    ownerId,
+    appId,
+    {
+      seq: row.seq,
+      code: row.code,
+      dbPath: row.db_path,
+      schemaVersion: row.schema_version,
+      memberEra: await memberEra(appId),
+    },
+    opts,
+  );
+}
+
+/** The newest pre_delete snapshot of a deleted app, what a restore needs:
+ *  read here for the owner (restoreDeletedApp), or answered by the trash's
+ *  definer after its check (mantle_app_trash_act, 0310: the route's). */
+export type DeletedAppSnapshot = {
+  seq: number;
+  code: AppSnapshotCode | null;
+  dbPath: string | null;
+  schemaVersion: number | null;
+  /** A member ever wrote its code (memberEra). */
+  memberEra: boolean;
+};
+
+/** restoreDeletedApp from a snapshot already read: POST
+ *  /api/apps/deleted/:id/restore, in the login's scope, after
+ *  mantle_app_trash_act said yes (plan v3.2 S6 c2). The app's rows and
+ *  files come back here, as before. */
+export async function restoreDeletedAppFrom(
+  ownerId: string,
+  appId: string,
+  row: DeletedAppSnapshot,
+  opts: { actor?: AppHistoryActor } = {},
+): Promise<{ id: string; title: string }> {
   const code = row.code;
   if (!code) throw new AppTrashRefusedError(`the last snapshot of app ${appId} holds no code`);
   const meta = code.meta;
@@ -198,17 +234,17 @@ export async function restoreDeletedApp(
     source: code.source,
     // The author ceiling comes back too (team apps Phase 3, M3 audit): a
     // member-era app, or one that ran at team rules, stays at team rules.
-    ...((await memberEra(appId)) || meta?.authorLevel === 'team'
+    ...(row.memberEra || meta?.authorLevel === 'team'
       ? { authorLevel: 'team' as const }
       : {}),
   });
   try {
-    if (row.db_path) {
+    if (row.dbPath) {
       await restoreAppDatabaseFile(
         ownerId,
         app.id,
-        path.resolve(appDbRoot(), row.db_path),
-        row.schema_version ?? 0,
+        path.resolve(appDbRoot(), row.dbPath),
+        row.schemaVersion ?? 0,
         { drainMs: 0 },
       );
     }
