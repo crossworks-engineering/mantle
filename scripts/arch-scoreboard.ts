@@ -67,6 +67,8 @@ const LABELS: Record<string, string> = {
     "SQL that decides an Admin area or user itself: functions reading the 'areas' limits, and SQL text in code",
   workspaceTableRawWrites:
     'raw writes to the four workspace tables in code (done: 0, definers only)',
+  workspaceTableRowLocks:
+    'row locks (FOR UPDATE / SHARE, drizzle .for) on the four workspace tables in code (0: the runtime role only reads them)',
   workspaceTableWriterFns:
     'SQL functions the migrations leave that write the four workspace tables (= the live catalog)',
   setAssistantCopies: 'copies of "set the assistant of a workspace" (code and SQL)',

@@ -46,6 +46,44 @@ export const WORKSPACE_TABLE_WRITE = new RegExp(
   'gi',
 );
 
+/** A row lock clause: FOR UPDATE, FOR NO KEY UPDATE, FOR SHARE, FOR KEY
+ *  SHARE (each needs UPDATE on the table it locks). */
+const ROW_LOCK_CLAUSE = /\bfor\s+(?:no\s+key\s+update|key\s+share|update|share)\b/i;
+
+/** A statement reading one of the four tables: FROM or JOIN it (SQL), or a
+ *  drizzle from/join of its table object (bare or through a namespace). */
+const NAMES_WORKSPACE_TABLE = new RegExp(
+  String.raw`\b(?:from|join)\s+(?:only\s+)?(?:"?public"?\s*\.\s*)?"?(?:${WORKSPACE_TABLES.join('|')})"?(?![\w"])`,
+  'i',
+);
+const TYPED_WORKSPACE_TABLE =
+  /\.(?:from|innerJoin|leftJoin|rightJoin|fullJoin|crossJoin)\(\s*(?:[\w$]+\s*\.\s*)*(?:workspaces|workspaceUsers|workspaceEvents|workspaceResources)\s*[,)]/;
+
+/**
+ * The statements in `text` that row-lock one of the four tables: a lock
+ * clause in a statement that names one anywhere (FROM nodes n JOIN
+ * workspaces w ... FOR UPDATE counts), or a drizzle `.for(` on a select of
+ * one. Read per statement (split at `;` and template-literal ends). A lock
+ * whose OF list names only another table still counts: the count errs to
+ * more. The runtime role may not lock these tables (it holds no UPDATE on
+ * them), so a lock outside a definer fails at run time.
+ */
+export function workspaceTableRowLocks(text) {
+  return stripComments(text)
+    .split(/[;`]/)
+    .filter(
+      (s) =>
+        (ROW_LOCK_CLAUSE.test(s) && NAMES_WORKSPACE_TABLE.test(s)) ||
+        (/\.for\(/.test(s) && TYPED_WORKSPACE_TABLE.test(s)),
+    ).length;
+}
+
+/** Whether a SQL function body row-locks one of the four tables (the
+ *  live-catalog cell's test, ws-runtime-read.db.test.ts). */
+export function locksWorkspaceTable(body) {
+  return workspaceTableRowLocks(body) > 0;
+}
+
 /** Files the rights counts never read: test support writes fixtures. */
 function isTestSupport(path) {
   return /(^|\/)test-support(\/|\.ts$)/.test(path);
@@ -492,6 +530,7 @@ export function rightsCounts(root, texts, asSystem = asSystemExits(texts)) {
   let tsAreaSql = 0;
   let tsMembership = 0;
   let rawWrites = 0;
+  let rowLocks = 0;
   let tsSetAssistant = 0;
   let undated = 0;
   for (const { path, text } of texts) {
@@ -501,7 +540,10 @@ export function rightsCounts(root, texts, asSystem = asSystemExits(texts)) {
       tsAreaSql += k.rules;
       tsMembership += k.membership;
     }
-    if (!isTestSupport(path)) rawWrites += workspaceTableRawWrites(text);
+    if (!isTestSupport(path)) {
+      rawWrites += workspaceTableRawWrites(text);
+      rowLocks += workspaceTableRowLocks(text);
+    }
     tsSetAssistant += tsSetAssistantDefs(text);
     undated += legacyPrecheckUndated(text);
   }
@@ -529,6 +571,7 @@ export function rightsCounts(root, texts, asSystem = asSystemExits(texts)) {
       scopeHoldsAdminCalls: holdsAdmin,
       sqlAreaRules: fns.filter((f) => readsAreaLimits(f.body)).length + tsAreaSql,
       workspaceTableRawWrites: rawWrites,
+      workspaceTableRowLocks: rowLocks,
       workspaceTableWriterFns: writers.length,
       setAssistantCopies: tsSetAssistant + fns.filter((f) => isSetAssistantFn(f.name)).length,
       legacyPrecheckUndated: undated,

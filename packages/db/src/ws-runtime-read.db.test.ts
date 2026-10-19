@@ -53,10 +53,6 @@ const TABLES = [
   'public.workspace_resources',
 ];
 
-/** A row lock on one of the four tables in a function body. */
-const ROW_LOCK =
-  /\bfrom\s+(?:"?public"?\s*\.\s*)?"?(?:workspaces|workspace_users|workspace_events|workspace_resources)"?[\s\S]{0,400}?\bfor\s+(?:update|share|no\s+key\s+update|key\s+share)\b/i;
-
 class Rollback extends Error {}
 type Out = { ok: true; v: unknown } | { ok: false; state: string; msg: string };
 
@@ -384,6 +380,7 @@ describe.skipIf(!URL)(
       // it agrees with the migrations), on the live catalog.
       const counts = (await import(join(ROOT, 'eslint-rules/rights-counts.mjs'))) as {
         writesWorkspaceTable(body: string): boolean;
+        locksWorkspaceTable(body: string): boolean;
       };
       const fns = await admin<
         { oid: number; sig: string; name: string; src: string; definer: boolean }[]
@@ -397,7 +394,8 @@ describe.skipIf(!URL)(
                           where d.classid = 'pg_proc'::regclass and d.objid = p.oid
                             and d.deptype = 'e')`;
       // A write, or a row lock (FOR UPDATE or FOR SHARE needs UPDATE too).
-      const touches = (src: string) => counts.writesWorkspaceTable(src) || ROW_LOCK.test(src);
+      const touches = (src: string) =>
+        counts.writesWorkspaceTable(src) || counts.locksWorkspaceTable(src);
       // Invoker writers, and every invoker function that calls one (by name):
       // a call runs as its caller, so the caller's rights decide the write.
       const invoker = new Set(fns.filter((f) => !f.definer && touches(f.src)).map((f) => f.oid));

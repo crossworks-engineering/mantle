@@ -21,6 +21,8 @@ import {
   tsAdminRuleSql,
   tsSetAssistantDefs,
   workspaceTableRawWrites,
+  workspaceTableRowLocks,
+  locksWorkspaceTable,
   writesWorkspaceTable,
   // @ts-expect-error: plain-JS module, no types shipped.
 } from './rights-counts.mjs';
@@ -277,6 +279,33 @@ describe('workspace table writes', () => {
       sql\`update workspace_users_archive set x = 1\`;
     `;
     expect(workspaceTableRawWrites(text)).toBe(9);
+    // The FOR UPDATE line is a row lock, not a write.
+    expect(workspaceTableRowLocks(text)).toBe(1);
+  });
+
+  it('counts row locks on the four tables, anywhere in a statement, raw or typed', () => {
+    const text = `
+      sql\`select id from workspaces where id = \${w} for update\`;
+      sql\`select n.id from nodes n join public.workspaces w on w.id = n.ws for no key update\`;
+      sql\`SELECT 1 FROM "workspace_users" u FOR SHARE\`;
+      sql\`select 1 from workspace_events e for key share\`;
+      await tx.select().from(schema.workspaceResources).where(w).for('update');
+      await tx.select().from(nodes).innerJoin(workspaces, eq(a, b)).for('share');
+      sql\`select id from nodes where id = \${n} for update\`;
+      sql\`select id from workspaces where id = \${w}\`;
+      await tx.select().from(nodes).for('update');
+      // select id from workspaces for update (a comment)
+      sql\`select id from workspaces_archive for update\`;
+    `;
+    expect(workspaceTableRowLocks(text)).toBe(6);
+    expect(
+      locksWorkspaceTable(
+        'SELECT 1 INTO s FROM nodes n JOIN "public"."workspaces" w ON true FOR UPDATE;',
+      ),
+    ).toBe(true);
+    expect(
+      locksWorkspaceTable('SELECT 1 FROM "public"."workspaces"; SELECT 1 FROM nodes FOR UPDATE;'),
+    ).toBe(false);
   });
 
   it('reads a function body the same way', () => {

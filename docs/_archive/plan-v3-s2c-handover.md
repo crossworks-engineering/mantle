@@ -115,9 +115,20 @@ app's drizzle pools do, so a fixture moved off `systemDb`
 
 ## Counts and pins
 
-No pin moves. `workspaceTableRawWrites` 0 (its typed form widened, still 0),
-`workspaceTableWriterFns` 22, `historyCodeComments` 2341 (S2c joins
-`HISTORY_HEADING_CODES`; no counted comment names it).
+- `workspaceTableRowLocks`: new, 0 (audit round 1, L1). Row locks (FOR
+  UPDATE, FOR NO KEY UPDATE, FOR SHARE, FOR KEY SHARE, a drizzle `.for(`)
+  in a statement that names one of the four tables anywhere (a FROM or a
+  JOIN), in code (`rights-counts.mjs` `workspaceTableRowLocks`). The same
+  test (`locksWorkspaceTable`) is the catalog cell's row-lock check
+  (audit L2: a lock anywhere in a statement that names one, no longer only
+  when the first FROM is one).
+- `actorsMdLines` 349 to 347: the closed known limit left section 15
+  (audit L3). Set by hand, not by `--pin`: `--pin` rewrites the whole file
+  (key order, and it drops the pin notes), which every other lane would
+  then conflict with.
+- Unmoved: `workspaceTableRawWrites` 0 (its typed form widened, still 0),
+  `workspaceTableWriterFns` 22, `historyCodeComments` 2341 (S2c joins
+  `HISTORY_HEADING_CODES`; no counted comment names it).
 
 ## Rollback
 
