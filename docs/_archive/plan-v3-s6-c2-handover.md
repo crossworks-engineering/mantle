@@ -262,3 +262,41 @@ Roll the N-1 image back and leave 0310 in place. No revert file.
   `readBodyCapped`, as the share route does: the body-limit fix covers
   it if a body there ran past its cap (not tested there; no test of its own).
 - The journal cell: red until S2b's 0309 is on main.
+
+## Round 3 (left, for the next builder)
+
+Audit of e1eaf6c09: 8.5/10, MERGE once the four lows below are in. Round 2
+handed over at its tool-call limit before starting them. S2b is merged:
+origin/main 817fbb986 (v0.300.101, 0309).
+
+1. Rebase feat/s6-c2 on origin/main 817fbb986 or later. The journal cell
+   "no slot is skipped" should turn green. 0310 keeps `when` 1790197920000.
+2. LOW-1, the restore race (`server/web/app/api/apps/deleted/[id]/restore/route.ts`,
+   the `adminAppTrashAct` call and the `restoreDeletedAppFrom` call): the
+   definer's yes and the restore are two transactions. Inside the
+   createApp transaction (`restoreDeletedAppFrom`,
+   `packages/content/src/app-trash.ts`), check again that the gone app's
+   newest pre_delete `node_snapshots` row is still there. If it is gone,
+   answer the 404 that main answered (`itemNotFound()`). Add a cell for it.
+3. LOW-2, pins: name the pin `asSystemSites` 17 (new on this branch,
+   `scripts/arch-scoreboard.pins.json`) in the Pins section, and say that
+   the `_notes.actorsHistoryRefs` text was dropped when the pin was lowered
+   75 to 74.
+4. LOW-3: a cell in `server/web/server/s6-c2-admin-acts.db.test.ts` for a
+   successful restore by an Admin user who is a Moderator of the app's
+   home but not the owner, in warn and on, with no actor misses
+   (`m.takeActorMisses()` empty after it).
+5. LOW-4: `purgeDeletedApp` (`packages/content/src/app-trash.ts:284`) is
+   test-only now (two DB tests call it). Move it to test support, or mark
+   it test-only in its comment. Do not change the purge rule.
+6. Gates: the Mac set, `pnpm -C server/web build`, and on the
+   workstation the full DB run, `test:actor-off` and `test:runtime-role`
+   in full. The only red allowed: an afterAll hook timeout under load; if
+   one happens, run that file alone and report both runs. The round 2
+   recipe works: own worktree from a pushed branch name that is not
+   checked out, own pgvector pg18 container on a free port with the
+   `infra/postgres/init` mount and max_connections 450, migrate with
+   `MANTLE_CHECK_FLOOR=keep`, systemd-run --user, `--maxWorkers=3`, all
+   removed after by exact name.
+7. Push (CI should go green once the journal cell is green), and report
+   the head SHA and the CI run to the CEO session.
