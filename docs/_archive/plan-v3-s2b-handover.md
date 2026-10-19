@@ -200,4 +200,23 @@ again. Proved in `ws-row-definers.db.test.ts` ("rollback: the revert drops
 
 ## Gates
 
-See "Gates (S2b)" below.
+On the Mac, `DATABASE_URL` unset, at 7f412521e: `pnpm -r typecheck` 0,
+`pnpm lint` 0, `pnpm format:check` 0, `pnpm -C server/web build` 0,
+`pnpm docs:check` 0, `pnpm arch:check` 0, `pnpm exec vitest run server
+packages eslint-rules` 1 (11054 passed, 1 failed: the arch-lints cell of the
+system-pool scope site rule, which still took workspaces.ts at its old pin
+of 1; fixed at f867d5212), then at f867d5212: 0 (11055 passed).
+
+On the workstation (own worktree and pg18 container `s2b_pg`, port 56231,
+`max_connections=450`, `init-scratch` then `migrate` with
+`MANTLE_CHECK_FLOOR=keep`, systemd-run, `--maxWorkers=3`, one gate at a
+time): full DB vitest at 7f412521e 1 (13765 passed, 1 failed: the same
+arch-lints cell), `test:actor-off` at 7f412521e 0 (1159 passed); full DB
+vitest at f867d5212 0 (13766 passed, 1120 files). The first full run at
+0ce90e5d7 hit a database that was not migrated (no `init-scratch`); it is
+not counted. The container, worktree, script and logs are removed.
+`test:actor-on`, `test:edit-on`, `test:matrix` and the full
+`test:runtime-role` were not run here (the brief names the full DB run and
+`test:actor-off`); the new cells run warn and on inside the full run.
+
+CI: the run on this branch's head (the report to the CEO session names it).
