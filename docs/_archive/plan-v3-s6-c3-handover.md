@@ -215,6 +215,12 @@ container, worktree, branch and logs removed after, by exact name.
 
 No hook timeout in any run.
 
+CI on b7d2f3e90: success,
+https://github.com/crossworks-engineering/mantle/actions/runs/39244382909
+(typecheck, lint, format, docs, arch, boot smoke, migrate from scratch,
+the full test, actor off, actor on, edit on, runtime role, matrix). The
+next commit adds only this line.
+
 ## Open
 
 - Keys area for another login's key: decided by the CEO, it keeps
