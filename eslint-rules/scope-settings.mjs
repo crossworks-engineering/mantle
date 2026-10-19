@@ -4,11 +4,11 @@
  *
  * The scope settings (mantle.ws, mantle.mod_ws, mantle.scope_login) decide
  * what a workspace definer takes as the acting login (0307). They are set in
- * packages/db/src/client.ts and its gateway modules (packages/db/src/gateway/)
- * only, each place a scope mechanism of its own: writeScopeSettings (the
- * system pool: systemPoolTx and systemPoolTxInScope, gateway/system-tx.ts),
- * the write role's settings (gateway/write-route.ts), the turn scope's and
- * withScope's.
+ * the database gateway (packages/db/src/gateway/) only, each place a scope
+ * mechanism of its own: writeScopeSettings (the system pool: systemPoolTx and
+ * systemPoolTxInScope, gateway/system-tx.ts), the write role's settings
+ * (gateway/write-route.ts), the turn scope's and withScope's
+ * (gateway/scope.ts).
  * Anywhere else a quoted setting name is a hand-set scope and fails the pin.
  *
  * systemPoolTxInScope (a system-pool transaction in a login's scope set by
@@ -92,9 +92,9 @@ const pins = (p) => Object.fromEntries(Object.entries(p).map(([f, v]) => [f, v.c
 
 export const settingsRule = pinnedRule({
   description:
-    'The scope settings are set in packages/db/src/client.ts and its gateway modules only (S2a, L1).',
+    'The scope settings are set in the database gateway (packages/db/src/gateway/) only (S2a, L1).',
   message:
-    'mantle.ws, mantle.mod_ws and mantle.scope_login are set by client.ts and its gateway modules only: use systemPoolTxInScope (packages/db), or pin the site with its reason in eslint-rules/scope-settings.mjs (review).',
+    'mantle.ws, mantle.mod_ws and mantle.scope_login are set by the database gateway (packages/db/src/gateway/) only: use systemPoolTxInScope (packages/db), or pin the site with its reason in eslint-rules/scope-settings.mjs (review).',
   pins: pins(SCOPE_SETTING_PINS),
   swept: (path) => isCounted(path),
   count: scopeSettingNames,
