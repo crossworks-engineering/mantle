@@ -1,7 +1,7 @@
 /**
  * What makes a fail-open branch a hit (plan v3.2 S4a; fail-open.ts counts
- * it), and the writer of its row. client.ts calls these at its four sites;
- * viewer.ts calls noteFailOpen itself.
+ * it), and the writer of its row. client.ts and gateway/write-route.ts call
+ * these at their four sites; viewer.ts calls noteFailOpen itself.
  */
 import { getTableName, is } from 'drizzle-orm';
 import { PgTable, getTableConfig } from 'drizzle-orm/pg-core';
@@ -32,9 +32,10 @@ function failOpenCaller(): string | null {
 /**
  * A scoped write sent to the system pool because the write role holds no
  * right on its table (`table`: a drizzle table or `schema.table`): counted,
- * never refused here. Scoped is loginWriteRoute's test (client.ts: an actor
- * the write role takes, its kinds `writeRoleActors`, and a write scope), so
- * system work, which binds a system actor, is never a hit. S4b refuses it
+ * never refused here. Scoped is loginWriteRoute's test
+ * (gateway/write-route.ts: an actor the write role takes, its kinds
+ * `writeRoleActors`, and a write scope), so system work, which binds a
+ * system actor, is never a hit. S4b refuses it
  * unless the table's matrix row names scopedSystemWrite.
  */
 export function noteScopedSystemWrite(

@@ -82,7 +82,7 @@ own, with the actor it binds: [process-inventory.md](./process-inventory.md)
 - `db` reads on the workspace role inside a scope and on the system pool
   outside one. `systemDb` is the system pool always; only
   `SYSTEM_DB_MODULES` may import it (`eslint-rules/system-db-allowlist.mjs`).
-- The login write gateway (`loginWriteRoute`, `packages/db/src/client.ts`)
+- The login write gateway (`loginWriteRoute`, `packages/db/src/gateway/write-route.ts`)
   sends a write to the write role when the actor is a login, an
   assistant, a link or a contact and the write carries a scope, in every
   check mode: the mode decides refuse or report, never the pool. One

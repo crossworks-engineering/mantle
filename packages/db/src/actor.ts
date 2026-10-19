@@ -350,12 +350,12 @@ export function checkActorBound(what: string): Actor | null {
   return null;
 }
 
-/** Write-role gaps seen in tests (client.ts noteWriteRoleDenial, arch
+/** Write-role gaps seen in tests (gateway/role-tx.ts noteWriteRoleDenial, arch
  *  A2b2b): a right the write role does not hold, what was denied.
  *  vitest.setup.ts fails a test on any (plan v3 S3: no gap table is left). */
 const writeRoleGaps: string[] = [];
 
-/** Tests only (client.ts): note a write-role gap. */
+/** Tests only (gateway/role-tx.ts): note a write-role gap. */
 export function noteTestWriteRoleGap(what: string): void {
   writeRoleGaps.push(what);
 }

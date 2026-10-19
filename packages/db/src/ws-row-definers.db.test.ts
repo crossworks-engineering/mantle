@@ -138,7 +138,7 @@ describe.skipIf(!URL)('the workspace row definers (S2b)', () => {
     return out;
   };
 
-  /** The write role's settings for `login` (client.ts writeRoleSettingsSql). */
+  /** The write role's settings for `login` (gateway/write-route.ts writeRoleSettingsSql). */
   const asLogin = async (login: string): Promise<Record<string, string>> => {
     const scope = await m.loginScopeFor(login);
     const arr = (ids: readonly string[]) => `{${ids.join(',')}}`;

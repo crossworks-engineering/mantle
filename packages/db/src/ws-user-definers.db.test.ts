@@ -198,7 +198,7 @@ describe.skipIf(!URL)('the workspace user definers (S2a a1)', () => {
     return out;
   };
 
-  /** The write role's settings for `login` (client.ts writeRoleSettingsSql):
+  /** The write role's settings for `login` (gateway/write-route.ts writeRoleSettingsSql):
    *  its scope, its login, its actor. */
   const asLogin = async (
     login: string,
