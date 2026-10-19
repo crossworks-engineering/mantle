@@ -86,6 +86,10 @@ describe.skipIf(!URL)('workspace management (W5a)', () => {
 
   const x = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
     (await m.systemDb.execute(q)) as unknown as T[];
+  /** A fixture write to the four workspace tables, as the superuser: the
+   *  system pool only reads them under test:runtime-role. */
+  const su = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
+    (await import('@mantle/db/test-support')).superuserExec<T>(scratch!.url, q);
   const email = (id: string, who: string) => `w5a-${who}-${id.slice(0, 8)}@example.invalid`;
 
   /** Sign in as `id` (its role read from the row). */
@@ -744,7 +748,7 @@ describe.skipIf(!URL)('workspace management (W5a)', () => {
     await x(sql`insert into auth.users (id, email, password_hash, role)
       values (${other}, ${email(other, 'other')}, 'x', 'admin')`);
     await x(sql`insert into spaces (id, kind, login_id) values (${other}, 'brain', ${other})`);
-    await x(sql`insert into workspaces (id, owner_id, name, is_admin)
+    await su(sql`insert into workspaces (id, owner_id, name, is_admin)
       values (${otherWs}, ${other}, 'Other brain', true)`);
     const kinds = await x<{ mine: string | null; theirs: string | null }>(
       sql`select mantle_ws_kind(${team}::uuid) as mine, mantle_ws_kind(${otherWs}::uuid) as theirs`,
@@ -1031,14 +1035,20 @@ describe.skipIf(!URL)('workspace management (W5a)', () => {
     const held = new Promise<void>((res) => (release = res));
     let locked!: () => void;
     const isLocked = new Promise<void>((res) => (locked = res));
-    // Connection 1: the archive, holding the workspace row FOR UPDATE.
-    const archive = m.systemDb.transaction(async (tx) => {
-      await tx.execute(sql`select id from workspaces where id = ${ws} for update`);
-      locked();
-      await held;
-      await tx.execute(sql`delete from item_grants where workspace_id = ${ws} and not is_home`);
-      await tx.execute(sql`update workspaces set archived_at = now() where id = ${ws}`);
-    });
+    // Connection 1: the archive, holding the workspace row FOR UPDATE (as
+    // the superuser: the system pool may not lock or write the row under
+    // test:runtime-role; the archive definer takes the same lock).
+    const other = (await import('@mantle/db/test-support')).superuserClient(scratch!.url);
+    const archive = other
+      .begin(async (tx) => {
+        await tx`select set_config('mantle.actor', 'system:test', true)`;
+        await tx`select id from workspaces where id = ${ws} for update`;
+        locked();
+        await held;
+        await tx`delete from item_grants where workspace_id = ${ws} and not is_home`;
+        await tx`update workspaces set archived_at = now() where id = ${ws}`;
+      })
+      .finally(() => other.end());
     await isLocked;
     // Connection 2: a grant to it, while the archive holds the row.
     let settled = false;
@@ -1079,7 +1089,7 @@ describe.skipIf(!URL)('workspace management (W5a)', () => {
     const plain = randomUUID();
     await x(sql`insert into auth.users (id, email, password_hash, role)
       values (${plain}, ${email(plain, 'plain')}, 'x', 'member')`);
-    await x(sql`delete from workspace_users where login_id = ${plain}`);
+    await su(sql`delete from workspace_users where login_id = ${plain}`);
     await as(plain);
     const no = await q('member');
     expect(no.status).toBe(403);

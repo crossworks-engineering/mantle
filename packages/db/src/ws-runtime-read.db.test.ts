@@ -117,7 +117,7 @@ describe.skipIf(!URL)(
       expect(out.ok, JSON.stringify(out)).toBe(true);
       return out.ok ? out.v : undefined;
     };
-    /** The actions of the events `q` wrote in `ws`. */
+    /** The actions of the events `q` wrote in `ws`, sorted. */
     const eventsOf =
       (ws: string, q: (tx: postgres.TransactionSql) => Promise<unknown>) =>
       async (tx: postgres.TransactionSql) => {
@@ -131,7 +131,7 @@ describe.skipIf(!URL)(
           await tx<{ action: string }[]>`
           select action from workspace_events
            where workspace_id = ${ws} and id::text <> all (${before}::text[])
-           order by created_at, action`
+           order by action`
         ).map((r) => r.action);
       };
 
@@ -274,8 +274,8 @@ describe.skipIf(!URL)(
     });
 
     it('every workspace definer writes when the runtime role calls it: an Admin user, a Moderator, system work', async () => {
-      // An Admin user: create, about, contact, landing (cleared), users,
-      // resources (a connector, the assistant), an event, archive.
+      // An Admin user: create, about, contact and landing (cleared: a contact or
+      // an app node is S2b's fixture), users, resources, an event, archive.
       const made = ok(
         await asRt(await asLogin(L.adm), async (tx) => {
           const [c] = await tx<{ id: string }[]>`
@@ -283,7 +283,7 @@ describe.skipIf(!URL)(
           const ws = c!.id;
           const ev = await eventsOf(ws, async (t) => {
             await t`select mantle_ws_update_about(${brain}::uuid, ${ws}::uuid, ${t.json({ name: `${tag} renamed` })})`;
-            await t`select mantle_ws_set_contact(${brain}::uuid, ${ws}::uuid, ${L.adm}::uuid)`;
+            await t`select mantle_ws_set_contact(${brain}::uuid, ${ws}::uuid, null)`;
             await t`select mantle_ws_set_landing(${brain}::uuid, ${ws}::uuid, null)`;
             await t`select mantle_ws_add_user(${brain}::uuid, ${ws}::uuid, ${L.target}::uuid, false)`;
             await t`select mantle_ws_set_moderator(${brain}::uuid, ${ws}::uuid, ${L.target}::uuid, true, null)`;
@@ -294,18 +294,33 @@ describe.skipIf(!URL)(
             await t`select mantle_ws_set_assistant(${brain}::uuid, ${ws}::uuid, null)`;
             await t`select mantle_ws_resource_remove(${brain}::uuid, ${ws}::uuid, 'connector', ${CONN})`;
             await t`select mantle_ws_remove_user(${brain}::uuid, ${ws}::uuid, ${L.target}::uuid)`;
-            await t`select mantle_workspace_event(${ws}::uuid, ${L.adm}::uuid, 'grant.add', '{}'::jsonb)`;
+            await t`select mantle_workspace_event(${adminWs}::uuid, ${L.adm}::uuid, 'grant.add', '{}'::jsonb)`;
             await t`select mantle_ws_archive(${brain}::uuid, ${ws}::uuid)`;
-          });
+          })(tx);
           const [row] = await tx<{ name: string; archived: boolean; users: number }[]>`
           select w.name, w.archived_at is not null as archived,
                  (select count(*)::int from workspace_users u where u.workspace_id = w.id) as users
             from workspaces w where w.id = ${ws}`;
-          return { row, n: ev.length };
+          return { row, ev };
         }),
-      ) as { row: { name: string; archived: boolean; users: number }; n: number };
-      expect(made.row).toEqual({ name: `${tag} renamed`, archived: true, users: 1 });
-      expect(made.n).toBeGreaterThanOrEqual(13);
+      ) as { row: { name: string; archived: boolean; users: number }; ev: string[] };
+      expect({ row: made.row, ev: made.ev }).toEqual({
+        // Sorted. The cleared contact and landing were already clear: no event.
+        ev: [
+          'resource.add',
+          'resource.add',
+          'resource.remove',
+          'resource.remove',
+          'resource.update',
+          'user.add',
+          'user.moderator',
+          'user.moderator',
+          'user.remove',
+          'workspace.archive',
+          'workspace.update',
+        ],
+        row: { name: `${tag} renamed`, archived: true, users: 1 },
+      });
       // A Moderator (a member): a user added and removed.
       expect(
         ok(
