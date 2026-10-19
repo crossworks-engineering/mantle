@@ -194,7 +194,8 @@ describe.skipIf(!DB_URL)('S6 c2: the item gate’s three Admin acts as definers'
       where node_id = ${app}`
     )[0]!.n;
 
-  /** Every file under the app database folder, with its size and time. */
+  /** Every file under the app database and the sandbox folders, with its
+   *  size and time. */
   const appFiles = async (): Promise<string[]> => {
     const out: string[] = [];
     const walk = async (d: string) => {
@@ -208,6 +209,7 @@ describe.skipIf(!DB_URL)('S6 c2: the item gate’s three Admin acts as definers'
       }
     };
     await walk(process.env.APP_DB_DIR!);
+    await walk(process.env.SANDBOXES_DIR!);
     return out.sort();
   };
 
@@ -218,6 +220,7 @@ describe.skipIf(!DB_URL)('S6 c2: the item gate’s three Admin acts as definers'
     process.env.DATABASE_URL = scratch.url;
     process.env.TABLE_DB_DIR = path.join(dir, 'tables');
     process.env.APP_DB_DIR = path.join(dir, 'apps');
+    process.env.SANDBOXES_DIR = path.join(dir, 'sandboxes');
     process.env.FILES_DIR = path.join(dir, 'files');
     process.env.MANTLE_FILES_ROOT = path.join(dir, 'files');
     process.env.MANTLE_SPACES_ROOT = path.join(dir, 'spaces');
@@ -269,9 +272,12 @@ describe.skipIf(!DB_URL)('S6 c2: the item gate’s three Admin acts as definers'
       await raw<{ id: string }[]>`select id::text as id from nodes
         where owner_id = ${L.owner} and type = 'branch' and path = 'notes'::ltree`
     )[0]!.id;
-    // An app database file the trash paths must never touch.
+    // An app database file and a sandbox file the trash paths must never
+    // touch.
     await mkdir(path.join(dir, 'apps', '_snapshots'), { recursive: true });
     await writeFile(path.join(dir, 'apps', '_snapshots', `${tag}.db`), 'app data');
+    await mkdir(path.join(dir, 'sandboxes', tag), { recursive: true });
+    await writeFile(path.join(dir, 'sandboxes', tag, 'main.ts'), 'sandbox file');
     m.takeActorMisses();
   }, 300_000);
 
@@ -420,7 +426,23 @@ describe.skipIf(!DB_URL)('S6 c2: the item gate’s three Admin acts as definers'
         `/api/apps/deleted/${held}`,
       );
       expect(mem.status).toBe(403);
+      const lim = await call(
+        `${mode} limited purge held`,
+        L.limited,
+        'DELETE',
+        `/api/apps/deleted/${held}`,
+      );
+      expect(lim.status, lim.text).toBe(403);
+      expect(lim.json).toEqual(HELD);
+      const memRestore = await call(
+        `${mode} member restore`,
+        L.member,
+        'POST',
+        `/api/apps/deleted/${held}/restore`,
+      );
+      expect(memRestore.status).toBe(403);
       expect(await trashRows(held)).toBe(1);
+      expect(await appFiles()).toEqual(before);
       const own = await call(
         `${mode} owner purge held`,
         L.owner,

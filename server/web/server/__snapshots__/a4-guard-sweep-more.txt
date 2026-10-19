@@ -42,16 +42,8 @@ a40 404 content-type=application/json cache-control=no-store {"error":"not found
 a41 404 content-type=text/plain;charset=UTF-8
 a42 500 content-type=text/plain; charset=UTF-8
 a43 404 content-type=application/json {"ok":false,"error":"not found"}
-a44 500 content-type=application/json cache-control=no-store {"error":"internal error"} [getOwnerOr401 ok {"actor.displayName":"admin 3333","actor.email":"admin-3333@example.invalid","actor.id":"33333333-3333-4333-8333-333333333333","actor.isOwner":true,"email":"admin-3333@example.invalid","id":"33333333-3333-4333-8333-333333333333"} actor=login:rw:33333333-3333-4333-8333-333333333333 out=system:admin-write]
-a45 404 content-type=application/json cache-control=no-store {"ok":false,"error":"not found"} [getOwnerOr401 R404 {"ok":false,"error":"not found"} actor=login:rw:55555555-5555-4555-8555-555555555555 out=-]
-a46 404 content-type=application/json cache-control=no-store {"ok":false,"error":"not found"} [getOwnerOr401 R404 {"ok":false,"error":"not found"} actor=login:rw:44444444-4444-4444-8444-444444444444 out=-]
-a47 404 content-type=application/json cache-control=no-store {"ok":false,"error":"not found"} [touch 00000001] [getOwnerOr401 R404 {"ok":false,"error":"not found"} actor=login:rw:55555555-5555-4555-8555-555555555555 out=-]
-a48 500 content-type=application/json cache-control=no-store {"error":"internal error"} [getOwnerOr401 ok {"actor.displayName":"admin 3333","actor.email":"admin-3333@example.invalid","actor.id":"33333333-3333-4333-8333-333333333333","actor.isOwner":true,"email":"admin-3333@example.invalid","id":"33333333-3333-4333-8333-333333333333"} actor=login:rw:33333333-3333-4333-8333-333333333333 out=user:true]
-a49 500 content-type=application/json cache-control=no-store {"error":"internal error"} [getOwnerOr401 ok {"actor.displayName":"admin 5555","actor.email":"admin-5555@example.invalid","actor.id":"55555555-5555-4555-8555-555555555555","actor.isOwner":false,"email":"admin-5555@example.invalid","id":"33333333-3333-4333-8333-333333333333"} actor=login:rw:55555555-5555-4555-8555-555555555555 out=user:true]
-a50 500 content-type=application/json cache-control=no-store {"error":"internal error"} [getOwnerOr401 ok {"actor.displayName":"admin 4444","actor.email":"admin-4444@example.invalid","actor.id":"44444444-4444-4444-8444-444444444444","actor.isOwner":false,"email":"admin-4444@example.invalid","id":"33333333-3333-4333-8333-333333333333"} actor=login:rw:44444444-4444-4444-8444-444444444444 out=user:true]
-a51 500 content-type=application/json cache-control=no-store {"error":"internal error"} [touch 00000001] [getOwnerOr401 ok {"actor.displayName":"admin 5555","actor.email":"admin-5555@example.invalid","actor.id":"55555555-5555-4555-8555-555555555555","actor.isOwner":false,"email":"admin-5555@example.invalid","id":"33333333-3333-4333-8333-333333333333"} actor=login:rw:55555555-5555-4555-8555-555555555555 out=user:true]
 
-# cells that wanted a database: 13 in the first sweep; 0 still do with the reads stood in
+# cells that wanted a database: 0 in the first sweep; 0 still do with the reads stood in
 
 # more credentials
 GET /.well-known/oauth-authorization-server: disabled-cookie=a1 bumped-cookie=a1 gone-cookie=a1 rotated-bearer=a1 expired-bearer=a1 key-unknown=a1 key-revoked=a1
@@ -881,7 +873,3 @@ GET /s/:token/view: disabled-cookie=a40 bumped-cookie=a40 gone-cookie=a40 rotate
 HEAD /s/:token/view: disabled-cookie=a21 bumped-cookie=a21 gone-cookie=a21 rotated-bearer=a21 expired-bearer=a21 key-unknown=a21 key-revoked=a21
 
 # the first sweep, its cells that wanted a database, with the reads stood in
-DELETE /api/apps/deleted/:id: owner-cookie=a44 admin-cookie=a45 limited-cookie=a46 admin-bearer=a47
-POST /api/apps/deleted/:id/restore: owner-cookie=a44 admin-cookie=a45 limited-cookie=a46 admin-bearer=a47
-PATCH /api/shares/:id: owner-cookie=a48 admin-cookie=a49 limited-cookie=a50 admin-bearer=a51
-DELETE /api/shares/:id: limited-cookie=a50
