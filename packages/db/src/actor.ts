@@ -344,10 +344,20 @@ export function checkActorBound(what: string): Actor | null {
     source: 'ts',
     check: what,
     actor: '',
-    detail: systemDbCallerOf(longStack()) ?? 'unknown caller',
+    detail: systemDbCallerOf(withoutOwnFrames(longStack())) ?? 'unknown caller',
   });
   if (mode === 'on') throw new ActorMissingError(what);
   return null;
+}
+
+/** `stack` without this file's frames (longStack's, checkActorBound's and a
+ *  binder's here), so the caller a miss names is the file outside it, as
+ *  failOpenCaller does (fail-open-sites.ts). */
+function withoutOwnFrames(stack: string): string {
+  return stack
+    .split('\n')
+    .filter((line) => !/packages\/db\/src\/actor\.ts/.test(line.replace(/\\/g, '/')))
+    .join('\n');
 }
 
 /** Write-role gaps seen in tests (gateway/role-tx.ts noteWriteRoleDenial, arch

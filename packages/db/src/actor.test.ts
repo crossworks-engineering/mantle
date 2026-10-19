@@ -224,4 +224,12 @@ describe('the TypeScript check follows the mode (A2b: fail closed in on)', () =>
       });
     });
   });
+
+  it("a miss names the caller's file, not actor.ts", () => {
+    withMode('warn', () => {
+      runWithoutActor(() => checkActorBound('db.insert'));
+      const [miss] = takeActorMisses();
+      expect(miss?.detail).toMatch(/packages\/db\/src\/actor\.test\.ts$/);
+    });
+  });
 });
