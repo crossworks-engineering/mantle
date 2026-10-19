@@ -13,7 +13,8 @@
  *    owns nothing, BYPASSRLS (the system pool reads and writes past the row
  *    rules, as it did as the superuser), and data rights only: SELECT,
  *    INSERT, UPDATE and DELETE on the tables but those the access matrix
- *    marks `runtime: 'none'`, the sequences, and EXECUTE on an allowlist
+ *    marks `runtime: 'none'` (and SELECT only on those it marks
+ *    `runtime: 'read'`), the sequences, and EXECUTE on an allowlist
  *    (runtimeFunctionAllowlist: what PUBLIC or a viewer role may run, plus
  *    RUNTIME_SYSTEM_FUNCTIONS). A non-owner cannot ALTER a table or disable
  *    its triggers or row rules; a non-superuser cannot set
@@ -178,6 +179,12 @@ export const RUNTIME_SYSTEM_FUNCTIONS: Readonly<Record<string, string>> = {
  *  `runtime: 'none'`): what only definer functions touch. */
 export function runtimeDeniedTables(): string[] {
   return ACCESS_MATRIX.filter((t) => t.runtime === 'none').map((t) => t.table);
+}
+
+/** Tables the runtime role may SELECT and never write (the access matrix's
+ *  `runtime: 'read'`, plan v3.2 S2c): definer functions write them. */
+export function runtimeReadOnlyTables(): string[] {
+  return ACCESS_MATRIX.filter((t) => t.runtime === 'read').map((t) => t.table);
 }
 
 /**
@@ -795,7 +802,8 @@ export async function runtimeFunctionAllowlist(sql: Sql): Promise<string[]> {
  * The runtime role's rights in this database, made equal to the wanted set
  * on every run (as applyViewerGrants does the viewer roles'): everything it
  * holds on the app's tables, sequences and functions is revoked, then
- * SELECT, INSERT, UPDATE and DELETE on every table but runtimeDeniedTables,
+ * SELECT, INSERT, UPDATE and DELETE on every table but runtimeDeniedTables
+ * (SELECT only on runtimeReadOnlyTables),
  * USAGE, SELECT and UPDATE on every sequence, EXECUTE on the allowlist
  * (runtimeFunctionAllowlist; RUNTIME_DENIED_FUNCTIONS are also taken from
  * PUBLIC and every viewer role), CONNECT on the database, and default
@@ -838,6 +846,12 @@ export async function applyRuntimeGrants(sql: Sql): Promise<void> {
         select c.oid::regclass::text as t from pg_class c join pg_namespace n on n.oid = c.relnamespace
          where n.nspname || '.' || c.relname = any(${runtimeDeniedTables()}::text[])`;
       for (const { t } of denied) await tx.unsafe(`REVOKE ALL ON ${t} FROM ${rt}`);
+      const readOnly = await tx<{ t: string }[]>`
+        select c.oid::regclass::text as t from pg_class c join pg_namespace n on n.oid = c.relnamespace
+         where n.nspname || '.' || c.relname = any(${runtimeReadOnlyTables()}::text[])`;
+      for (const { t } of readOnly) {
+        await tx.unsafe(`REVOKE INSERT, UPDATE, DELETE ON ${t} FROM ${rt}`);
+      }
       for (const fn of await deniedFunctionsPresent(tx as unknown as Sql)) {
         await tx.unsafe(`REVOKE ALL ON FUNCTION ${fn} FROM PUBLIC, ${rt}, ${viewers}`);
       }

@@ -269,10 +269,14 @@ describe('workspace table writes', () => {
       sql\`UPDATE ONLY workspace_users SET moderator = false\`;
       sql\`delete from only public.workspace_events where id = \${id}\`;
       await tx.insert(workspaceUsers).values(v);
+      await db.update(schema.workspaces).set(v);
+      await tx.delete( s.workspaceResources ).where(w);
+      await tx.insert(workspacesArchive).values(v);
+      await tx.insert(schema.workspaceUsersOld).values(v);
       sql\`select * from workspace_users for update\`;
       sql\`update workspace_users_archive set x = 1\`;
     `;
-    expect(workspaceTableRawWrites(text)).toBe(7);
+    expect(workspaceTableRawWrites(text)).toBe(9);
   });
 
   it('reads a function body the same way', () => {

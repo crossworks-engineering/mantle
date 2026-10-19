@@ -135,13 +135,22 @@ export async function clearMemberTicks(
 /** clearMemberTicks' transaction, as workspace system work. */
 function clearTicksTx(target: ReturnType<typeof sql>, apply: boolean): Promise<ClearTicksResult> {
   return db.transaction(async (tx) => {
-    // The workspace row first, FOR UPDATE, as every change on the
-    // workspace screen takes it: a tick changed there meanwhile waits.
+    // The workspace row, read without a lock (plan v3.2 S2c): FOR UPDATE
+    // needs UPDATE on workspaces, which the runtime role no longer holds.
+    // The definer takes the row FOR UPDATE on its first call and holds it
+    // to commit, and checks archived, the Admin workspace and the last
+    // Moderator itself, so a change made between this read and that call
+    // either fails the run whole (a refusal rolls every clear back) or
+    // leaves a tick a second run clears; it never leaves the workspace
+    // without a Moderator (workspace-ticks.db.test.ts).
     const [ws] = (await tx.execute(sql`
       select w.id::text as id, w.is_admin, w.archived_at is not null as archived
         from workspaces w
-       where w.id = ${target} and w.owner_id = mantle_brain_id()
-       for update`)) as unknown as Array<{ id: string; is_admin: boolean; archived: boolean }>;
+       where w.id = ${target} and w.owner_id = mantle_brain_id()`)) as unknown as Array<{
+      id: string;
+      is_admin: boolean;
+      archived: boolean;
+    }>;
     if (!ws) return { ok: false, reason: 'not_found' } as const;
     if (ws.is_admin) return { ok: false, reason: 'admin_workspace' } as const;
     if (ws.archived) return { ok: false, reason: 'archived' } as const;

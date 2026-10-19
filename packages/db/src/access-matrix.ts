@@ -97,10 +97,13 @@ export type TableAccess = {
   derived?: readonly string[];
   /**
    * 'none': the runtime role (mantle_runtime, arch A9) holds no right on it
-   * either: only definer functions touch it (runtime-role.ts). Absent = the
-   * runtime role reads and writes it, as the system pool always has.
+   * either: only definer functions touch it (runtime-role.ts). 'read' (plan
+   * v3.2 S2c): the runtime role may SELECT it, never write it: every write
+   * is a definer call, so on a box with the runtime role on Postgres
+   * refuses a system-pool write outside one (42501). Absent = the runtime
+   * role reads and writes it, as the system pool always has.
    */
-  runtime?: 'none';
+  runtime?: 'none' | 'read';
 };
 
 /**
@@ -570,12 +573,15 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   // The workspace role reads the rows of the workspaces in its scope (and
   // the grants of the items it reads).
   // Every column since W6a (an Admin user's lists read the workspace chips);
-  // the row rule (0242) keeps it to the login's workspaces.
-  { table: 'public.workspaces', user: 'all', writer: 'admin' },
-  { table: 'public.workspace_users', user: 'all', writer: 'admin' },
+  // the row rule (0242) keeps it to the login's workspaces. The four
+  // workspace tables are written by definer calls only (plan v3.2 S2a, S2b),
+  // so the runtime role reads them and never writes them (S2c).
+  { table: 'public.workspaces', user: 'all', writer: 'admin', runtime: 'read' },
+  { table: 'public.workspace_users', user: 'all', writer: 'admin', runtime: 'read' },
   {
     table: 'public.workspace_resources',
     writer: 'admin',
+    runtime: 'read',
     // Never `settings`: a resource's settings may carry configuration the
     // users of the workspace have no business reading (audit L11).
     user: ['id', 'workspace_id', 'type', 'ref_id', 'write'],
@@ -590,8 +596,9 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
     derived: ['via_folder_id'],
   },
   // Audit of workspace changes, the heads rows and the heads-check log:
-  // admin pool only (the lock functions are security definer).
-  none('public.workspace_events'),
+  // admin pool only (the lock functions are security definer). The runtime
+  // role reads workspace_events (S2c); its rows come from definers.
+  { ...none('public.workspace_events'), runtime: 'read' },
   none('public.node_acl_head', 'content'),
   none('public.heads_check_misses', 'system'),
   // The actor-check log (arch A2a, 0275): written by a definer function.

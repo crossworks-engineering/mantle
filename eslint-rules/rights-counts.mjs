@@ -162,13 +162,15 @@ export function tsAdminRuleSql(text) {
 // ── workspace tables ────────────────────────────────────────────────────────
 
 /** Raw SQL writes to the four workspace tables in `text`, and drizzle
- *  writes of their tables. */
+ *  writes of their tables, bare or reached through a namespace
+ *  (`schema.workspaces`; plan v3.2 S2c, which revokes the runtime role's
+ *  write on them, rests on this count being 0). */
 export function workspaceTableRawWrites(text) {
   const code = stripComments(text);
   const sqlWrites = [...code.matchAll(WORKSPACE_TABLE_WRITE)].length;
   const typed = [
     ...code.matchAll(
-      /\.(?:insert|update|delete)\(\s*(?:workspaces|workspaceUsers|workspaceEvents|workspaceResources)\s*\)/g,
+      /\.(?:insert|update|delete)\(\s*(?:[\w$]+\s*\.\s*)*(?:workspaces|workspaceUsers|workspaceEvents|workspaceResources)\s*\)/g,
     ),
   ].length;
   return sqlWrites + typed;

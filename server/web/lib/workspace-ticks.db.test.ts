@@ -12,7 +12,14 @@
  *  - it refuses the Admin workspace, an archived one and an unknown id;
  *  - "Admin user" is adminUserSql, mayPromote's rule: a disabled Admin
  *    login or one whose users area is off is no Admin user (fix round 2);
- *  - the counts after the clear are 0, and a second run clears nothing.
+ *  - the counts after the clear are 0, and a second run clears nothing;
+ *  - the run reads the workspace without a lock (plan v3.2 S2c: the
+ *    runtime role may not lock a workspace row): a Moderator change made
+ *    between its read and its first clear fails the run whole, never
+ *    leaving the workspace without a Moderator.
+ *
+ * Fixtures write the four workspace tables as the superuser (su): under
+ * test:runtime-role the system pool may not (S2c).
  *
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run server/web/lib/workspace-ticks.db.test.ts
  */
@@ -40,6 +47,8 @@ describe.skipIf(!URL)('the 0286 roll: count, then clear the member ticks', () =>
 
   const x = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
     (await m.systemDb.execute(q)) as unknown as T[];
+  const su = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
+    (await import('@mantle/db/test-support')).superuserExec<T>(scratch!.url, q);
   const email = (id: string) => `ticks-${id.slice(0, 8)}@example.invalid`;
   const tick = async (ws: string, id: string) =>
     (
@@ -127,7 +136,7 @@ describe.skipIf(!URL)('the 0286 roll: count, then clear the member ticks', () =>
       ok: false,
       reason: 'not_found',
     });
-    const [gone] = await x<{ id: string }>(sql`insert into workspaces (owner_id, name, archived_at)
+    const [gone] = await su<{ id: string }>(sql`insert into workspaces (owner_id, name, archived_at)
       values (${owner}, 'Old', now()) returning id::text as id`);
     expect(await t.clearMemberTicks(gone!.id, true)).toEqual({ ok: false, reason: 'archived' });
   });
@@ -168,9 +177,9 @@ describe.skipIf(!URL)('the 0286 roll: count, then clear the member ticks', () =>
   });
 
   it('with no Admin user among its Moderators, the member added first keeps the tick', async () => {
-    const [ws] = await x<{ id: string }>(sql`insert into workspaces (owner_id, name)
+    const [ws] = await su<{ id: string }>(sql`insert into workspaces (owner_id, name)
       values (${owner}, 'Field') returning id::text as id`);
-    await x(sql`insert into workspace_users (workspace_id, login_id, moderator, added_at) values
+    await su(sql`insert into workspace_users (workspace_id, login_id, moderator, added_at) values
       (${ws!.id}, ${mem2}, true, now() - interval '2 days'),
       (${ws!.id}, ${mem}, true, now() - interval '1 day'),
       (${ws!.id}, ${mem3}, false, now())`);
@@ -199,17 +208,17 @@ describe.skipIf(!URL)('the 0286 roll: count, then clear the member ticks', () =>
     await x(sql`insert into auth.users (id, email, password_hash, is_owner, role) values
       (${off}, ${email(off)}, 'x', false, 'admin'),
       (${noUsers}, ${email(noUsers)}, 'x', false, 'admin')`);
-    await x(sql`insert into workspace_users (workspace_id, login_id, moderator) values
+    await su(sql`insert into workspace_users (workspace_id, login_id, moderator) values
       (${admin}, ${off}, true), (${admin}, ${noUsers}, true)
       on conflict (workspace_id, login_id) do nothing`);
     expect(await tick(admin, off)).toBe(true);
     expect(await tick(admin, noUsers)).toBe(true);
     await x(sql`update auth.users set disabled_at = now() where id = ${off}`);
-    await x(sql`update workspace_users set limits = '{"areas":{"users":false}}'::jsonb
+    await su(sql`update workspace_users set limits = '{"areas":{"users":false}}'::jsonb
       where workspace_id = ${admin} and login_id = ${noUsers}`);
-    const [ws] = await x<{ id: string }>(sql`insert into workspaces (owner_id, name)
+    const [ws] = await su<{ id: string }>(sql`insert into workspaces (owner_id, name)
       values (${owner}, 'Crew') returning id::text as id`);
-    await x(sql`insert into workspace_users (workspace_id, login_id, moderator, added_at) values
+    await su(sql`insert into workspace_users (workspace_id, login_id, moderator, added_at) values
       (${ws!.id}, ${mem3}, true, now() - interval '3 days'),
       (${ws!.id}, ${off}, true, now() - interval '2 days'),
       (${ws!.id}, ${noUsers}, true, now() - interval '1 day')`);
@@ -227,5 +236,75 @@ describe.skipIf(!URL)('the 0286 roll: count, then clear the member ticks', () =>
     expect(await tick(ws!.id, mem3)).toBe(true);
     expect(await tick(ws!.id, off)).toBe(false);
     expect(await tick(ws!.id, noUsers)).toBe(false);
+  });
+
+  it('a Moderator change between the unlocked read and the first clear fails the run whole (S2c)', async () => {
+    const ts = await import('@mantle/db/test-support');
+    // adm2 (an Admin user) and two members moderate Race: the run reads
+    // one Admin Moderator, so it means to clear both member ticks.
+    const [ws] = await su<{ id: string }>(sql`insert into workspaces (owner_id, name)
+      values (${owner}, 'Race') returning id::text as id`);
+    const race = ws!.id;
+    await su(sql`insert into workspace_users (workspace_id, login_id, moderator, added_at) values
+      (${race}, ${adm2}, true, now() - interval '3 days'),
+      (${race}, ${mem}, true, now() - interval '2 days'),
+      (${race}, ${mem2}, true, now() - interval '1 day')`);
+    // Another transaction holds the row (as the workspace screen's
+    // definers do) and takes adm2's tick off, not yet committed.
+    const other = ts.superuserClient(scratch!.url, 2);
+    let release!: () => void;
+    const held = new Promise<void>((r) => (release = r));
+    let locked!: () => void;
+    const isLocked = new Promise<void>((r) => (locked = r));
+    const holder = other.begin(async (tx) => {
+      await tx`select set_config('mantle.actor', 'system:test', true)`;
+      await tx`select id from workspaces where id = ${race} for update`;
+      await tx`update workspace_users set moderator = false
+                where workspace_id = ${race} and login_id = ${adm2}`;
+      locked();
+      await held;
+    });
+    try {
+      await isLocked;
+      const run = t.clearMemberTicks(race, true).then(
+        (v) => ({ ok: true as const, v }),
+        (err: unknown) => ({ ok: false as const, err }),
+      );
+      // The run waits on the row at its first definer call.
+      await ts.pollUntil(
+        async () =>
+          (
+            await other<{ n: number }[]>`
+              select count(*)::int as n from pg_stat_activity
+               where datname = current_database() and wait_event_type = 'Lock'
+                 and query like '%mantle_ws_set_moderator%'`
+          )[0]!.n > 0,
+        { timeoutMs: 20_000, what: 'the clear to wait on the workspace row' },
+      );
+      release();
+      await holder;
+      const out = await run;
+      // With adm2's tick gone, clearing both members would leave nobody:
+      // the definer refuses the last one and the run keeps neither clear.
+      expect(out.ok).toBe(false);
+      const err = (out as { err: { message?: string; cause?: { message?: string } } }).err;
+      expect(`${err?.message ?? ''} ${err?.cause?.message ?? ''}`).toMatch(/last_moderator/);
+      expect(await tick(race, mem)).toBe(true);
+      expect(await tick(race, mem2)).toBe(true);
+      expect(await tick(race, adm2)).toBe(false);
+      // A second run reads the new state and keeps the first member's tick.
+      expect(await t.clearMemberTicks(race, true)).toMatchObject({
+        ok: true,
+        adminModerators: 0,
+        cleared: 1,
+        keptForLastModerator: 1,
+      });
+      expect(await tick(race, mem)).toBe(true);
+      expect(await tick(race, mem2)).toBe(false);
+    } finally {
+      release();
+      await holder.catch(() => {});
+      await other.end();
+    }
   });
 });
