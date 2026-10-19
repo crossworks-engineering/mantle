@@ -4,6 +4,7 @@
 # bad-json-400 (malformed): 194 cells
 # chunked-413: 205 cells
 # opaque-500 (fold 2: a plain error, its text was the reply): 28 cells
+# trash-first (Admin act definer, 0310: the trash check is asked of the database first): 6 cells
 # ceiling-in-kb (A10 lows: a ceiling under 1 MB is said in KB): 8 cells
 # input-400 (fold 2: a refusal the caller fixes, said as a 500 on main): 1 cells
 # code-first (Admin act definer, 0308: the code is made before the contact is asked): 1 cells
@@ -13,6 +14,7 @@
 # item-fault (fix round 1: a failed item says a fixed text for a fault): 6 cells
 # bad-json-400 (empty): 2 cells
 # map-read-first (pre-check removal part 2: the owner act reads the map in the scope first): 10 cells
+# close-first (Admin act definer, 0310: the close is asked of the database first): 6 cells
 POST /api/access-keys owner malformed [bad-json-400 (malformed)]
   main 400 application/json {"error":"Invalid input: expected object, received null"}
   now  400 application/json {"error":"invalid JSON"}
@@ -193,6 +195,24 @@ POST /api/apps/:id/tool-broker owner malformed [bad-json-400 (malformed)]
 POST /api/apps/:id/tool-broker owner chunked [chunked-413]
   main 400 application/json {"ok":false,"error":"invalid input"}
   now  413 application/json {"error":"This request is too large (at most 128 MB).","reason":"body-too-large"}
+POST /api/apps/deleted/:id/restore owner valid [trash-first (Admin act definer, 0310: the trash check is asked of the database first)]
+  main 409 application/json {"error":"the last snapshot of app 11111111-1111-4111-8111-111111111111 holds no code"}
+  now  500 application/json {"error":"internal error"}
+POST /api/apps/deleted/:id/restore owner malformed [trash-first (Admin act definer, 0310: the trash check is asked of the database first)]
+  main 409 application/json {"error":"the last snapshot of app 11111111-1111-4111-8111-111111111111 holds no code"}
+  now  500 application/json {"error":"internal error"}
+POST /api/apps/deleted/:id/restore owner empty [trash-first (Admin act definer, 0310: the trash check is asked of the database first)]
+  main 409 application/json {"error":"the last snapshot of app 11111111-1111-4111-8111-111111111111 holds no code"}
+  now  500 application/json {"error":"internal error"}
+POST /api/apps/deleted/:id/restore owner nul [trash-first (Admin act definer, 0310: the trash check is asked of the database first)]
+  main 409 application/json {"error":"the last snapshot of app 11111111-1111-4111-8111-111111111111 holds no code"}
+  now  500 application/json {"error":"internal error"}
+POST /api/apps/deleted/:id/restore owner array [trash-first (Admin act definer, 0310: the trash check is asked of the database first)]
+  main 409 application/json {"error":"the last snapshot of app 11111111-1111-4111-8111-111111111111 holds no code"}
+  now  500 application/json {"error":"internal error"}
+POST /api/apps/deleted/:id/restore owner chunked [trash-first (Admin act definer, 0310: the trash check is asked of the database first)]
+  main 409 application/json {"error":"the last snapshot of app 11111111-1111-4111-8111-111111111111 holds no code"}
+  now  500 application/json {"error":"internal error"}
 POST /api/apps/import owner malformed [bad-json-400 (malformed)]
   main 400 application/json {"error":"invalid input","detail":{"formErrors":["Invalid input: expected object, received null"],"fieldErrors":{}}}
   now  400 application/json {"error":"invalid JSON"}
@@ -1153,6 +1173,24 @@ PATCH /api/shares/:id owner malformed [bad-json-400 (malformed)]
 PATCH /api/shares/:id owner chunked [chunked-413]
   main 400 application/json {"error":"invalid mode"}
   now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+DELETE /api/shares/:id owner valid [close-first (Admin act definer, 0310: the close is asked of the database first)]
+  main 200 application/json {"ok":false}
+  now  500 application/json {"error":"internal error"}
+DELETE /api/shares/:id owner malformed [close-first (Admin act definer, 0310: the close is asked of the database first)]
+  main 200 application/json {"ok":false}
+  now  500 application/json {"error":"internal error"}
+DELETE /api/shares/:id owner empty [close-first (Admin act definer, 0310: the close is asked of the database first)]
+  main 200 application/json {"ok":false}
+  now  500 application/json {"error":"internal error"}
+DELETE /api/shares/:id owner nul [close-first (Admin act definer, 0310: the close is asked of the database first)]
+  main 200 application/json {"ok":false}
+  now  500 application/json {"error":"internal error"}
+DELETE /api/shares/:id owner array [close-first (Admin act definer, 0310: the close is asked of the database first)]
+  main 200 application/json {"ok":false}
+  now  500 application/json {"error":"internal error"}
+DELETE /api/shares/:id owner chunked [close-first (Admin act definer, 0310: the close is asked of the database first)]
+  main 200 application/json {"ok":false}
+  now  500 application/json {"error":"internal error"}
 POST /api/shares/contacts owner malformed [bad-json-400 (malformed)]
   main 400 application/json {"error":"nodeId: Invalid input: expected string, received undefined"}
   now  400 application/json {"error":"invalid JSON"}
