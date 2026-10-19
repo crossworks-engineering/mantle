@@ -43,11 +43,11 @@ export const ACTOR_BINDER_PINS = {
   // whatever actor the call ran as, once per row.
   'packages/db/src/call-audit.ts': 1,
   'packages/db/src/client.ts': 1,
-  // The system pool's start: its first mode read outside the caller's
-  // actor (runWithoutActor), and a miss row as system(actor-check).
   // The one ordered gate (arch A3c): step 3 binds the actor the policy
   // implies, once per call.
   'packages/db/src/gate.ts': 1,
+  // The system pool's start: its first mode read outside the caller's
+  // actor (runWithoutActor), and a miss row as system(actor-check).
   'packages/db/src/gateway/pools.ts': 2,
   // 9 since arch A6b: systemWork, system work that refuses a workspace scope,
   // binds system(reason) as asSystem does.

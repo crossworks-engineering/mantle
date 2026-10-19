@@ -106,6 +106,8 @@
   "dbClientLines": 2438,
   "dbGatewayMaxLines": 600,
   "dbGatewayImportCycles": 0,
+  "dbGlobalKeyWrites": 0,
+  "dbGlobalKeyReads": 1,
   "a8Uncovered": 0,
   "a8Exempt": 102,
   "sqlMembershipAsks": 2,
@@ -191,6 +193,7 @@
     "failOpenSites": "new in plan v3.2 S4a: 6 fail-open branches counted as miss rows (check 'fail-open:<site>'), not refused: scopeHoldsAdmin's unscoped yes and scopeHasArea's system case with no system actor bound, a scoped typed write and a scoped raw write sent to the system pool (typedWrite, loginWriteClient), and the production allows of an unlisted asSystem exit and an off-list systemDb caller in a turn scope (viewer.ts). The SQL one (mantle_login_area's yes with no Admin workspace) is the box count brains_without_admin_workspace. Done: 0 (S4b refuses each).",
     "workspaceTableRowLocks": "New in plan v3.2 S2c (docs/_archive/plan-v3-s2c-handover.md): 0. Row locks (FOR UPDATE, FOR NO KEY UPDATE, FOR SHARE, FOR KEY SHARE, drizzle .for) in a statement that names one of the four workspace tables, in code (eslint-rules/rights-counts.mjs workspaceTableRowLocks). The runtime role holds no UPDATE on them since S2c, so a lock there fails at run time; the definers lock the rows. clearTicksTx's FOR UPDATE went in S2c. The live catalog's twin is the catalog cell in packages/db/src/ws-runtime-read.db.test.ts (locksWorkspaceTable).",
     "workspaceTableRawWrites": "Lowered in plan v3.2 S2b (docs/_archive/plan-v3-s2b-handover.md): 6 to 0 (done). patchWorkspace's update, setLandingApp, archiveWorkspace, setAssistant's insert and delete and the event helper are gone: the workspace row, contact, landing app, assistant and archive are calls of the 0307 and 0309 definers. Was: Lowered in plan v3.2 S2a a1+a2: 16 to 6. addUser, setModerator, removeUser and clearMemberTicks (a1) and addResource, patchResource, removeResource (a2) are calls of the 0307 definers. The 6 left wait for S2b: patchWorkspace's update, setLandingApp, archiveWorkspace, setAssistant's insert and delete (patchWorkspace's path, S2b b2) and the event helper. Was 16.",
-    "dbGatewayMaxLines": "Pinned at the gateway's max-lines limit (GATEWAY_MAX_LINES in eslint-rules/gateway-counts.mjs, 600), not at the longest module: the measure is the limit, or the longest module when one is over it."
+    "dbGatewayMaxLines": "Pinned at the gateway's max-lines limit (GATEWAY_MAX_LINES in eslint-rules/gateway-counts.mjs, 600), not at the longest module: the measure is the limit, or the longest module when one is over it.",
+    "dbGlobalKeyReads": "The one read of a globalThis.__mantle* key outside packages/db/src/gateway/pools.ts: actorClient's closing check in gateway/actor-sql.ts (open = globalThis.__mantleSql === base). actor-sql.ts sits below pools.ts and cannot import it, and actor-client.test.ts sets the key by hand; ruled to stay in the part 1 audit."
   }
 }

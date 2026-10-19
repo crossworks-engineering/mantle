@@ -9,16 +9,18 @@ behaviour change, no answer changed.
 
 ## Part 1: check-mode, actor-sql, pools
 
-Branch feat/s5-p1, from main 20b466838 (v0.300.104).
+Branch feat/s5-p1, from main 20b466838 (v0.300.104), rebased on main
+30eea0665 (v0.300.105, a docs commit) in the fix round. The SHAs below are
+after the rebase.
 
 ### The moves
 
 | Commit | Module | Lines | What moved |
 | --- | --- | --- | --- |
-| d76f69a5d | gateway/check-mode.ts | 172 | the mode read's state (actorModePool, firstModeRead), refreshActorCheckMode, ACTOR_CHECK_DRIFT_SQL, EDIT_CHECK_DRIFT_SQL, warnActorCheckDrift, the floor note, ACTOR_SQL_TAG |
-| 4df59c37f | gateway/actor-sql.ts | 418 | setActorSql, RESET_ACTOR_SQL, statementBody, runsOutsideTransaction, needsActorWrap, wrapsStatement, actorParams, actorInTransaction, settingsFirst, actorClient and its pipelined writes in flight |
-| 3a1c28f76 | gateway/pools.ts | 290 | every globalThis.__mantle* key (declarations and writes), VIEWER_POOL_MAX, getAdminDb, systemPoolRole, reportDbRole, adminActorSql, logActorMiss, getViewerDb, openLoginWritePool and the write pool's size and switch, writePoolSql, adminSql, rawAdminSql, closeDb |
-| 71d93e8b3 | guards | | eslint max-lines and the scoreboard pins below |
+| 840f1d35f | gateway/check-mode.ts | 172 | the mode read's state (actorModePool, firstModeRead), refreshActorCheckMode, ACTOR_CHECK_DRIFT_SQL, EDIT_CHECK_DRIFT_SQL, warnActorCheckDrift, the floor note, ACTOR_SQL_TAG |
+| 2b3977550 | gateway/actor-sql.ts | 418 | setActorSql, RESET_ACTOR_SQL, statementBody, runsOutsideTransaction, needsActorWrap, wrapsStatement, actorParams, actorInTransaction, settingsFirst, actorClient and its pipelined writes in flight |
+| c6773b08e | gateway/pools.ts | 290 | every globalThis.__mantle* key (declarations and writes), VIEWER_POOL_MAX, getAdminDb, systemPoolRole, reportDbRole, adminActorSql, logActorMiss, getViewerDb, openLoginWritePool and the write pool's size and switch, writePoolSql, adminSql, rawAdminSql, closeDb |
+| b5e1a5277 | guards | | eslint max-lines and the scoreboard pins below |
 
 client.ts: 3210 lines on main, 2438 after part 1.
 
@@ -93,7 +95,8 @@ check is the scoreboard's own.
 
 ### Gates
 
-On 71d93e8b3 (the docs commit after it changes no code). Each commit:
+On 71d93e8b3, the guards commit before the rebase (the docs commit after
+it changes no code). Each commit:
 `pnpm -C packages/db typecheck` and the unit vitest of packages/db and
 eslint-rules, exit 0.
 
@@ -122,13 +125,42 @@ init-scratch and migrate with MANTLE_CHECK_FLOOR=keep, systemd-run --user,
 
 Container, clone, scripts and logs removed by exact name after; no unit left.
 
+CI: run 39285062614 on c01fbf0df (the handover commit before the rebase):
+success, https://github.com/crossworks-engineering/mantle/actions/runs/39285062614
+
+rawWriteSqlFiles measures 62 against its pin 59: the raw write SQL sites
+of client.ts moved with the code, so gateway/check-mode.ts, actor-sql.ts and
+pools.ts each hold some and client.ts keeps its own (3 files more, no site
+more: rawWriteSqlScoped and rawSqlNonLiteral are unchanged). The key is in
+MAY_GROW for this split; the pin is left as it is.
+
+### Fix round 1 (audit at c01fbf0df: 9/10, merge)
+
+- The cycle finder (eslint-rules/gateway-counts.mjs) reads a `.js`
+  specifier as its `.ts` file, resolves the package's own name
+  (`@mantle/db`, `@mantle/db/client`, `@mantle/db/viewer`) through
+  packages/db/package.json's exports, and strips comments first (the
+  scoreboard's stripComments), so a comment inside import braces no longer
+  hides the import. One test each in eslint-rules/gateway-counts.test.ts.
+- The globalThis.__mantle* keys are counted: dbGlobalKeyWrites (a write
+  outside gateway/pools.ts in packages/db/src, pinned 0) and
+  dbGlobalKeyReads (a read outside it, pinned 1: actorClient's closing
+  check at gateway/actor-sql.ts:354, ruled to stay in the audit). Each site
+  is listed in the scoreboard's perFile.gateway.
+- eslint-rules/actor-binders.mjs: the pools.ts comment moved above its own
+  entry.
+- Gates (Mac, DATABASE_URL unset), exit codes: pnpm -r typecheck 0,
+  pnpm lint 0, pnpm format:check 0, pnpm docs:check 0, pnpm arch:check 0,
+  vitest run eslint-rules packages/db 0 (75 files passed, 60 skipped). No
+  runtime code changed, so the DB suites were not run again.
+
 ### Open items for parts 2 and 3
 
 - actor-sql.ts reads `globalThis.__mantleSql` once (actorClient's closing
   check, `open = globalThis.__mantleSql === base`): the key is declared and
   written only in pools.ts, but actor-sql.ts sits below pools.ts and cannot
-  import it. A test sets the key by hand (actor-client.test.ts), so the
-  check stays as it is.
+  import it. A test sets the key by hand (actor-client.test.ts). Ruled to
+  stay in the audit, pinned by dbGlobalKeyReads (1).
 - closeDb now lives in pools.ts and resets the higher modules' caches by
   onCloseDb: part 2's write-route.ts and system-tx.ts register their own.
 - viewer.ts systemDbCallerOf skips frames of client.ts only. No gateway

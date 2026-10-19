@@ -1109,6 +1109,12 @@ export function measure(root) {
   const cleanup = cleanupCounts(root, texts);
   // One tree and one stripped text per file served every count above.
   clearCountCaches();
+  // The gateway's guards (gateway-counts.mjs): the package's own name
+  // resolves through its exports.
+  const gateway = gatewayCounts(texts, {
+    strip: stripComments,
+    exports: JSON.parse(readFileSync(join(root, 'packages/db/package.json'), 'utf8')).exports,
+  });
   return {
     numbers: {
       asSystemSites: sum(asSystem, 'count'),
@@ -1191,7 +1197,7 @@ export function measure(root) {
       docQuotesDangling: docQuotes.docQuotesDangling,
       gapTables: gapRerunCount(texts),
       dbClientLines: lineCount(root, 'packages/db/src/client.ts'),
-      ...gatewayCounts(texts).numbers,
+      ...gateway.numbers,
       failOpenSites: failOpenSiteCount(texts),
     },
     perFile: {
@@ -1233,7 +1239,7 @@ export function measure(root) {
       consoleByFile,
       archivedByFile,
       cacheControlFiles,
-      gateway: gatewayCounts(texts).detail,
+      gateway: gateway.detail,
     },
   };
 }
