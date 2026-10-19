@@ -373,6 +373,18 @@ function changeKind(cell: string, main: string, now: string): string | null {
   ) {
     return 'close-first (Admin act definer, 0310: the close is asked of the database first)';
   }
+  // The deleted-app trash is a definer too (0310): a restore asks it for
+  // the check and the snapshot first (adminActTx), where main read the
+  // stand-in's snapshot row, which holds no code (its 409).
+  if (
+    now === OPAQUE &&
+    cell.startsWith('POST /api/apps/deleted/:id/restore ') &&
+    /^409 application\/json \{"error":"the last snapshot of app [0-9a-f-]+ holds no code"\}$/.test(
+      main,
+    )
+  ) {
+    return 'trash-first (Admin act definer, 0310: the trash check is asked of the database first)';
+  }
   // Pre-check removal part 2: Recall's owner acts (a prompt confirm, a
   // reorder, a revision restore) read the map or the revision in the
   // caller's scope before their owner check, so a hidden one is the 404 of
