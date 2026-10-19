@@ -32,7 +32,8 @@ The database roles and the restore checks still matter to an operator.
   workspaces W1, `mantle_write_user`, the write role of arch A2b2a,
   `mantle_gap_writer`, the gap tables' writer of A2b2b, holding nothing
   since plan v3 S3 and dropped in its part 2, and the runtime
-  roles of arch A9, `mantle_owner`, `mantle_system` and `mantle_runtime`,
+  roles of arch A9, `mantle_owner`, `mantle_system`, `mantle_system_narrow`
+  and `mantle_runtime`,
   docs/runtime-role.md) before `pg_restore` (a dump does not carry roles, but
   its policies and grants name them; migrate later gives them their login
   and password). It restores into a pristine database (it drops the empty

@@ -38,7 +38,7 @@ import {
   ensureTestAnchor,
   runWorkspacesSwitch,
 } from './test-support';
-import { OWNER_ROLE, RUNTIME_ROLE } from './runtime-role';
+import { NARROW_ROLE, OWNER_ROLE, RUNTIME_ROLE } from './runtime-role';
 import { viewerRoleName } from './viewer';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
@@ -494,10 +494,11 @@ describe.skipIf(!URL)('the workspace row definers (S2b)', () => {
       const wanted = helper
         ? []
         : r.fn.includes('mantle_ws_archive')
-          ? [RUNTIME_ROLE]
-          : [viewerRoleName('write'), RUNTIME_ROLE];
+          ? [RUNTIME_ROLE, NARROW_ROLE]
+          : [viewerRoleName('write'), RUNTIME_ROLE, NARROW_ROLE];
       // A role the scratch database lacks holds nothing; no other role may run
-      // it (the runtime role runs what the write role runs, by its membership).
+      // it (the runtime role runs what the write role runs, by its membership,
+      // and the narrow system role what the runtime role runs, less a list).
       for (const role of r.may) expect(wanted, `${r.fn} ${role}`).toContain(role);
     }
   });

@@ -43,7 +43,7 @@ import {
   createScratchDatabaseBefore,
   ensureTestAnchor,
 } from './test-support';
-import { OWNER_ROLE, RUNTIME_ROLE, SYSTEM_ROLE } from './runtime-role';
+import { NARROW_ROLE, OWNER_ROLE, RUNTIME_ROLE, SYSTEM_ROLE } from './runtime-role';
 import { GAP_WRITER_ROLE } from './access-matrix';
 import { viewerRoleName } from './viewer';
 import { WORKSPACE_AREAS } from '@mantle/client-types/dto/workspaces';
@@ -440,7 +440,7 @@ describe.skipIf(!URL)('the login facts answer as the text they replace (S2a a0)'
     ).toBe(1);
   });
 
-  it('catalog: no role but a superuser, the runtime role and the owner role may EXECUTE a login fact; the runtime role runs the four it calls', async () => {
+  it('catalog: no role but a superuser, the runtime roles and the owner role may EXECUTE a login fact; the runtime role runs the four it calls, the narrow role three', async () => {
     const facts = [
       'public.mantle_area_rule(uuid,text)',
       'public.mantle_login_areas(uuid)',
@@ -457,7 +457,7 @@ describe.skipIf(!URL)('the login facts answer as the text they replace (S2a a0)'
       select f.fn, p.prosecdef as definer,
              has_function_privilege('public', p.oid, 'EXECUTE') as pub,
              array(select r.rolname::text from pg_roles r
-                    where not r.rolsuper and r.rolname <> all (${[RUNTIME_ROLE, OWNER_ROLE, 'demo_reader']}::text[])
+                    where not r.rolsuper and r.rolname <> all (${[RUNTIME_ROLE, NARROW_ROLE, OWNER_ROLE, 'demo_reader']}::text[])
                       and has_function_privilege(r.oid, p.oid, 'EXECUTE')
                     order by 1) as may
         from unnest(${facts}::text[]) f(fn) join pg_proc p on p.oid = to_regprocedure(f.fn)`;
@@ -499,6 +499,19 @@ describe.skipIf(!URL)('the login facts answer as the text they replace (S2a a0)'
           from unnest(${facts}::text[]) f(fn)`;
       expect(Object.fromEntries(grants.map((g) => [g.fn, g.ok]))).toEqual(
         Object.fromEntries(facts.map((fn) => [fn, fn !== 'public.mantle_login_area(uuid,text)'])),
+      );
+      // The narrow system role: the same less the box count (an operator's,
+      // never narrow work).
+      const narrow = await sql<{ fn: string; ok: boolean }[]>`
+        select f.fn, has_function_privilege(${NARROW_ROLE}, to_regprocedure(f.fn), 'EXECUTE') as ok
+          from unnest(${facts}::text[]) f(fn)`;
+      expect(Object.fromEntries(narrow.map((g) => [g.fn, g.ok]))).toEqual(
+        Object.fromEntries(
+          facts.map((fn) => [
+            fn,
+            fn !== 'public.mantle_login_area(uuid,text)' && fn !== 'public.mantle_role_drift()',
+          ]),
+        ),
       );
     }
   });

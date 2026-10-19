@@ -722,7 +722,8 @@ at a later start" above says.
 ## Switching a box to the runtime role (arch A9)
 
 From the release that carries A9, every migrate makes `mantle_owner`,
-`mantle_system` and `mantle_runtime`, hands the tables to `mantle_owner` and
+`mantle_system` and `mantle_runtime` (and `mantle_system_narrow`, which
+nothing runs on yet), hands the tables to `mantle_owner` and
 grants the runtime role its rights; nothing changes for the app until the box
 sets `MANTLE_DB_RUNTIME_ROLE=1` in its `.env` (only then does migrate give
 `mantle_runtime` a login). Per box, with the owner's go and

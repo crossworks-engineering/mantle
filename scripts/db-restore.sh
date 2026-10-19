@@ -130,8 +130,8 @@ done
 # to restore: a team-level agent sees an empty brain and a member an empty
 # space. The write role (mantle_write_user, arch A2b2a) too: its rules name it.
 # And the gap writer (mantle_gap_writer, A2b2b: a row rule on each gap table
-# names it). And the runtime roles (arch A9): the dump's grants and default
-# privileges name them. The source of these names is TypeScript, which a
+# names it). And the runtime roles (arch A9, the narrow system role among
+# them): the dump's grants and default privileges name them. The source of these names is TypeScript, which a
 # shell script cannot import: packages/db/src/viewer-roles.ts (POOL_ROLES and
 # RETIRED_POOL_ROLES), GAP_WRITER_ROLE (access-matrix.ts) and RUNTIME_ROLES
 # (runtime-role.ts). packages/db/src/viewer.test.ts fails when this list and
@@ -140,7 +140,7 @@ docker exec "$CONTAINER" psql -U postgres -d postgres -v ON_ERROR_STOP=1 -q -c "
 DO \$\$
 DECLARE r text;
 BEGIN
-  FOREACH r IN ARRAY ARRAY['mantle_view_team', 'mantle_view_client', 'mantle_view_public', 'mantle_view_space', 'mantle_view_user', 'mantle_write_user', 'mantle_gap_writer', 'mantle_owner', 'mantle_system', 'mantle_runtime'] LOOP
+  FOREACH r IN ARRAY ARRAY['mantle_view_team', 'mantle_view_client', 'mantle_view_public', 'mantle_view_space', 'mantle_view_user', 'mantle_write_user', 'mantle_gap_writer', 'mantle_owner', 'mantle_system', 'mantle_system_narrow', 'mantle_runtime'] LOOP
     IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = r) THEN
       EXECUTE format('CREATE ROLE %I NOLOGIN NOSUPERUSER NOBYPASSRLS NOINHERIT', r);
     END IF;

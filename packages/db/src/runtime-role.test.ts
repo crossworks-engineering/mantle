@@ -4,7 +4,10 @@
  * runtime-role.db.test.ts proves the lock on a real Postgres.
  */
 import { afterEach, describe, expect, it } from 'vitest';
+import { ACCESS_MATRIX, narrowFor, type TableAccess } from './access-matrix';
 import {
+  NARROW_DENIED_FUNCTIONS,
+  NARROW_ROLE,
   OWNER_ROLE,
   RUNTIME_DENIED_FUNCTIONS,
   RUNTIME_ROLE,
@@ -14,7 +17,10 @@ import {
   dbRoleMode,
   dbRoleNote,
   runtimeDatabaseUrl,
+  narrowReadOnlyTables,
+  narrowWriteTables,
   runtimeDeniedTables,
+  runtimeReadOnlyTables,
   runtimeRolePassword,
   runtimeRoleStatements,
   revokeOrder,
@@ -93,6 +99,32 @@ describe('the runtime role statements', () => {
     expect(stmts.some((s) => /GRANT "mantle_write_user" TO "mantle_runtime"/.test(s))).toBe(false);
     // The owner holds no membership: it owns the marker itself.
     expect(wantedMemberships().some((m) => m.member === OWNER_ROLE)).toBe(false);
+  });
+
+  it('the narrow system role: never logs in, bypasses the row rules, holds no owner power', () => {
+    for (const pw of ['pw_1-x', null]) {
+      const r = runtimeRoleStatements(new Set(), pw).find((x) =>
+        x.includes(`ROLE "${NARROW_ROLE}" WITH`),
+      )!;
+      expect(r).toBe(
+        `CREATE ROLE "${NARROW_ROLE}" WITH NOLOGIN NOSUPERUSER BYPASSRLS NOCREATEDB ` +
+          'NOCREATEROLE NOINHERIT NOREPLICATION PASSWORD NULL',
+      );
+    }
+    expect(
+      runtimeRoleStatements(new Set([NARROW_ROLE]), null).find((x) =>
+        x.includes(`"${NARROW_ROLE}" WITH`),
+      ),
+    ).toMatch(/^ALTER ROLE "mantle_system_narrow" WITH NOLOGIN /);
+    // The runtime role may SET ROLE to it, never inherit it; it is a member
+    // of nothing, and nothing else is a member of it.
+    expect(stmts).toContain(
+      `GRANT "${NARROW_ROLE}" TO "${RUNTIME_ROLE}" WITH INHERIT FALSE, SET TRUE, ADMIN FALSE`,
+    );
+    expect(wantedMemberships().filter((m) => m.member === NARROW_ROLE)).toEqual([]);
+    expect(wantedMemberships().filter((m) => m.role === NARROW_ROLE)).toEqual([
+      { member: RUNTIME_ROLE, role: NARROW_ROLE, inherit: false, set: true },
+    ]);
   });
 
   it('refuses a password that would need quoting', () => {
@@ -216,3 +248,77 @@ describe('the order memberships are taken back in', () => {
     expect(revokeOrder([x, y], [x, y])).toHaveLength(2);
   });
 });
+
+describe('the narrow system role rights', () => {
+  it('derives from the runtime role and the writer: content read only, system and admin all', () => {
+    for (const t of ACCESS_MATRIX) {
+      const want =
+        t.runtime === 'none'
+          ? 'none'
+          : t.runtime === 'read'
+            ? 'read'
+            : t.writer === 'content'
+              ? 'read'
+              : 'all';
+      expect(narrowFor(t), t.table).toBe(want);
+    }
+    // Nothing in the matrix sets it by hand yet.
+    expect(ACCESS_MATRIX.filter((t) => t.narrow !== undefined)).toEqual([]);
+  });
+
+  it('a hand value may only narrow, never widen past the runtime role', () => {
+    const t = (x: Partial<TableAccess>): TableAccess => ({
+      table: 'public.x',
+      writer: 'system',
+      ...x,
+    });
+    expect(narrowFor(t({ narrow: 'read' }))).toBe('read');
+    expect(narrowFor(t({ narrow: 'none' }))).toBe('none');
+    expect(narrowFor(t({ writer: 'content', narrow: 'all' }))).toBe('all');
+    expect(narrowFor(t({ runtime: 'read', narrow: 'none' }))).toBe('none');
+    expect(() => narrowFor(t({ runtime: 'read', narrow: 'all' }))).toThrow(/wider/);
+    expect(() => narrowFor(t({ runtime: 'none', narrow: 'read' }))).toThrow(/wider/);
+  });
+
+  it('pins the sets: no content table written, no runtime-closed table opened', () => {
+    const writes = new Set(narrowWriteTables());
+    const reads = new Set(narrowReadOnlyTables());
+    for (const t of ACCESS_MATRIX) {
+      if (t.writer === 'content') expect(writes.has(t.table), t.table).toBe(false);
+    }
+    for (const t of runtimeDeniedTables()) {
+      expect(writes.has(t) || reads.has(t), t).toBe(false);
+    }
+    for (const t of runtimeReadOnlyTables()) expect(writes.has(t), t).toBe(false);
+    // The counts: a new table lands in one of them by the derivation; a
+    // change here is a reviewed line.
+    expect({
+      all: writes.size,
+      read: reads.size,
+      none: ACCESS_MATRIX.length - writes.size - reads.size,
+    }).toEqual(NARROW_COUNTS);
+  });
+
+  it('its EXECUTE list is the runtime allowlist less a reasoned list', () => {
+    for (const [fn, why] of Object.entries(NARROW_DENIED_FUNCTIONS)) {
+      expect(Object.keys(RUNTIME_SYSTEM_FUNCTIONS), fn).toContain(fn);
+      expect(Object.keys(RUNTIME_DENIED_FUNCTIONS), fn).not.toContain(fn);
+      expect(why.length, fn).toBeGreaterThan(10);
+    }
+    // The four bodies with no Admin check are never the narrow role's.
+    for (const body of [
+      'mantle_contact_sharing_rows',
+      'mantle_contact_shares_revoke_rows',
+      'mantle_share_with_contacts_rows',
+      'mantle_entity_merge_rows',
+    ]) {
+      expect(
+        Object.keys(NARROW_DENIED_FUNCTIONS).some((f) => f.startsWith(`public.${body}(`)),
+        body,
+      ).toBe(true);
+    }
+  });
+});
+
+/** The narrow role's table counts: `all` only goes down. */
+const NARROW_COUNTS = { all: 106, read: 32, none: 3 };

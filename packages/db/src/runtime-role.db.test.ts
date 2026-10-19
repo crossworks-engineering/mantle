@@ -31,6 +31,8 @@ import {
   ACL_MARKER_FUNCTION,
   APP_SCHEMAS,
   DB_ROLE_SQL,
+  NARROW_DENIED_FUNCTIONS,
+  NARROW_ROLE,
   OWNER_ROLE,
   OWNER_ROLE_FUNCTION,
   RUNTIME_DENIED_FUNCTIONS,
@@ -49,7 +51,7 @@ import {
 } from './runtime-role';
 import { viewerDatabaseUrl, viewerRoleName, viewerRolePassword } from './viewer';
 import { POOL_ROLES } from './viewer-roles';
-import { GAP_WRITER_ROLE } from './access-matrix';
+import { ACCESS_MATRIX, GAP_WRITER_ROLE, narrowFor } from './access-matrix';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 const KEY = process.env.MANTLE_MASTER_KEY ?? 'mantle-viewer-test-key';
@@ -324,6 +326,184 @@ describe.skipIf(!URL)('the runtime role is not the owner (arch A9)', () => {
     expect(direct?.n).toBe(0);
   });
 
+  it('the narrow system role: no login, BYPASSRLS, owns nothing, a member of nothing', async () => {
+    const [r] = await admin<
+      {
+        login: boolean;
+        su: boolean;
+        bypass: boolean;
+        inh: boolean;
+        cr: boolean;
+        cd: boolean;
+        repl: boolean;
+        pw: boolean;
+      }[]
+    >`
+      select rolcanlogin as login, rolsuper as su, rolbypassrls as bypass, rolinherit as inh,
+             rolcreaterole as cr, rolcreatedb as cd, rolreplication as repl,
+             rolpassword is not null as pw
+        from pg_authid where rolname = ${NARROW_ROLE}`;
+    expect(r).toEqual({
+      login: false,
+      su: false,
+      bypass: true,
+      inh: false,
+      cr: false,
+      cd: false,
+      repl: false,
+      pw: false,
+    });
+    const [owns] = await admin<{ n: number }[]>`
+      select (select count(*)::int from pg_class where relowner = to_regrole(${NARROW_ROLE}))
+           + (select count(*)::int from pg_proc where proowner = to_regrole(${NARROW_ROLE})) as n`;
+    expect(owns?.n).toBe(0);
+    // Its memberships both ways: only the runtime role in it, SET only.
+    const ms = await admin<{ role: string; member: string; inherit: boolean; set: boolean }[]>`
+      select r.rolname as role, u.rolname as member, m.inherit_option as inherit, m.set_option as set
+        from pg_auth_members m
+        join pg_roles r on r.oid = m.roleid join pg_roles u on u.oid = m.member
+       where r.rolname = ${NARROW_ROLE} or u.rolname = ${NARROW_ROLE}`;
+    expect(ms).toEqual([{ role: NARROW_ROLE, member: RUNTIME_ROLE, inherit: false, set: true }]);
+    // The runtime role holds none of its rights (no INHERIT): a write the
+    // narrow role may make is the runtime role's own right, not through it.
+    const [use] = await admin<{ usage: boolean; set: boolean }[]>`
+      select pg_has_role(${RUNTIME_ROLE}, ${NARROW_ROLE}, 'USAGE') as usage,
+             pg_has_role(${RUNTIME_ROLE}, ${NARROW_ROLE}, 'SET') as set`;
+    expect(use).toEqual({ usage: false, set: true });
+    // No default privileges name it: a table a later migration makes is
+    // closed to it until migrate grants what the matrix says.
+    const [def] = await admin<{ n: number }[]>`
+      select count(*)::int as n from pg_default_acl d, aclexplode(d.defaclacl) a
+       where a.grantee = to_regrole(${NARROW_ROLE})`;
+    expect(def?.n).toBe(0);
+  });
+
+  it('the narrow role holds exactly what the access matrix says, table by table', async () => {
+    const live = await admin<{ t: string; privs: string[] }[]>`
+      select n.nspname || '.' || c.relname as t,
+             array(select distinct a.privilege_type::text from aclexplode(c.relacl) a
+                    where a.grantee = to_regrole(${NARROW_ROLE}) order by 1) as privs
+        from pg_class c join pg_namespace n on n.oid = c.relnamespace
+       where n.nspname = any(${[...APP_SCHEMAS]}::text[]) and c.relkind in ('r', 'p')
+       order by 1`;
+    const byTable = new Map(ACCESS_MATRIX.map((t) => [t.table, t]));
+    const want = (table: string): string[] => {
+      const t = byTable.get(table);
+      const n = t ? narrowFor(t) : 'none';
+      if (n === 'all') return ['DELETE', 'INSERT', 'SELECT', 'UPDATE'];
+      if (n === 'read') return ['SELECT'];
+      return [];
+    };
+    expect(live.length).toBeGreaterThan(100);
+    const wrong = live.filter((r) => r.privs.join() !== want(r.t).join());
+    expect(wrong).toEqual([]);
+    // Every matrix table is in this database.
+    const tables = new Set(live.map((r) => r.t));
+    expect(ACCESS_MATRIX.filter((t) => !tables.has(t.table)).map((t) => t.table)).toEqual([]);
+    // No column grant anywhere.
+    const [cols] = await admin<{ n: number }[]>`
+      select count(*)::int as n from pg_attribute att, aclexplode(att.attacl) a
+       where a.grantee = to_regrole(${NARROW_ROLE})`;
+    expect(cols?.n).toBe(0);
+    // Sequences: only those its write tables draw from, never UPDATE (setval).
+    const seqs = await admin<{ s: string; privs: string[] }[]>`
+      select c.oid::regclass::text as s,
+             array(select distinct a.privilege_type::text from aclexplode(c.relacl) a
+                    where a.grantee = to_regrole(${NARROW_ROLE}) order by 1) as privs
+        from pg_class c join pg_namespace n on n.oid = c.relnamespace
+       where n.nspname = any(${[...APP_SCHEMAS]}::text[]) and c.relkind = 'S'`;
+    for (const q of seqs) {
+      expect(['', 'SELECT,USAGE'], q.s).toContain(q.privs.join());
+    }
+  });
+
+  it('the narrow role runs the runtime allowlist less NARROW_DENIED_FUNCTIONS', async () => {
+    const may = async (role: string) =>
+      (
+        await admin<{ fn: string }[]>`
+          select p.oid::regprocedure::text as fn
+            from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+           where n.nspname = any(${[...APP_SCHEMAS]}::text[])
+             and not has_function_privilege('public', p.oid, 'EXECUTE')
+             and has_function_privilege(${role}, p.oid, 'EXECUTE')
+           order by 1`
+      ).map((r) => r.fn);
+    const denied = (
+      await admin<{ fn: string }[]>`
+        select to_regprocedure(x)::text as fn
+          from unnest(${Object.keys(NARROW_DENIED_FUNCTIONS)}::text[]) x`
+    ).map((r) => r.fn);
+    // Every entry names a function this database has.
+    expect(denied.every((f) => f !== null)).toBe(true);
+    const runtime = await may(RUNTIME_ROLE);
+    expect(await may(NARROW_ROLE)).toEqual(runtime.filter((f) => !denied.includes(f)));
+    for (const f of denied) expect(runtime, f).toContain(f);
+  });
+
+  it('as the narrow role (from the runtime role and from the superuser): reads past the rules, writes only where the matrix says', async () => {
+    /** Statements in one transaction as the narrow role, taken the way the
+     *  narrow route takes it (set_config('role', ..., true)); rolled back. */
+    const asNarrow = (conn: ReturnType<typeof postgres>, stmt: string) =>
+      conn
+        .begin(async (tx) => {
+          await tx`select set_config('mantle.actor', 'system:test', true),
+                          set_config('mantle.write_mode', 'rw', true),
+                          set_config('role', ${NARROW_ROLE}, true)`;
+          let rows: unknown[] = [];
+          for (const part of stmt.split('; ')) rows = [...(await tx.unsafe(part))];
+          throw Object.assign(new Error('rollback'), { rows });
+        })
+        .catch((err: { code?: string; rows?: unknown[] }) => {
+          if (err.rows) return err.rows;
+          throw err;
+        });
+    const [all] = await admin<{ n: number; w: number }[]>`
+      select (select count(*)::int from public.nodes) as n,
+             (select count(*)::int from public.workspaces) as w`;
+    for (const conn of [rt, admin]) {
+      const who = conn === rt ? 'runtime' : 'superuser';
+      const [me] = (await asNarrow(
+        conn,
+        `select current_user as u, (select count(*)::int from public.nodes) as n,
+                (select count(*)::int from public.workspaces) as w`,
+      )) as { u: string; n: number; w: number }[];
+      expect(me, who).toEqual({ u: NARROW_ROLE, n: all!.n, w: all!.w });
+      // A system table: written.
+      expect(await asNarrow(conn, 'delete from public.audit_log where false'), who).toEqual([]);
+      for (const stmt of [
+        // A content table: read only.
+        'insert into public.nodes select * from public.nodes where false',
+        'update public.nodes set title = title where false',
+        'delete from public.facts where false',
+        // A table the runtime role only reads, and one it cannot touch.
+        'delete from public.workspaces where false',
+        'select count(*) from public.mantle_heads_key',
+        // What the runtime role may not do, nor may it.
+        'truncate public.audit_log',
+        'ALTER TABLE public.nodes DISABLE TRIGGER mantle_actor_check',
+        `select mantle_set_actor_check('off', 1, 'probe')`,
+        // A body with no Admin check, and the box count.
+        `select mantle_entity_merge_rows('${randomUUID()}', '${randomUUID()}', '${randomUUID()}')`,
+        'select mantle_role_drift()',
+      ]) {
+        await expect(asNarrow(conn, stmt), `${who}: ${stmt}`).rejects.toMatchObject({
+          code: DENIED,
+        });
+      }
+      // The derivation guards count it as a limited role, not the owner.
+      const [g] = (await asNarrow(conn, 'select mantle_owner_role() as ok')) as { ok: boolean }[];
+      expect(g?.ok, who).toBe(false);
+    }
+    // SET ROLE asks the session's login, not the current role: from the
+    // runtime role's session the owner stays out of reach. The narrow role
+    // contains the app's own statements; a statement that sets the role
+    // back leaves it (the session's own rights), which is why it is taken
+    // per transaction and never as a session SET.
+    await expect(asNarrow(rt, `SET LOCAL ROLE ${OWNER_ROLE}`)).rejects.toMatchObject({
+      code: DENIED,
+    });
+  });
+
   it('the viewer roles cannot run the setter functions', async () => {
     for (const role of ['mantle_view_user', 'mantle_write_user', 'mantle_gap_writer', 'public']) {
       for (const fn of Object.keys(RUNTIME_DENIED_FUNCTIONS)) {
@@ -411,7 +591,10 @@ describe.skipIf(!URL)('the runtime role is not the owner (arch A9)', () => {
   it('the migrator steps are idempotent, and a hand grant is taken back', async () => {
     await admin.unsafe(`GRANT ${OWNER_ROLE} TO ${RUNTIME_ROLE} WITH INHERIT TRUE, SET TRUE`);
     await admin.unsafe(`GRANT ${SYSTEM_ROLE} TO ${RUNTIME_ROLE} WITH INHERIT TRUE`);
+    await admin.unsafe(`GRANT ${NARROW_ROLE} TO ${RUNTIME_ROLE} WITH INHERIT TRUE`);
     await admin.unsafe(`GRANT TRUNCATE ON public.nodes TO ${RUNTIME_ROLE}`);
+    await admin.unsafe(`GRANT INSERT ON public.nodes TO ${NARROW_ROLE}`);
+    await admin.unsafe(`GRANT EXECUTE ON FUNCTION mantle_role_drift() TO ${NARROW_ROLE}`);
     await admin.unsafe(`GRANT EXECUTE ON FUNCTION mantle_ws_migrate() TO ${RUNTIME_ROLE}`);
     await admin.unsafe(`ALTER TABLE public.actor_check_misses OWNER TO postgres`);
     // A function the runtime role owns: the integrity row says so.
@@ -432,11 +615,14 @@ describe.skipIf(!URL)('the runtime role is not the owner (arch A9)', () => {
     expect(ms).toEqual([
       { role: OWNER_ROLE, inherit: false, set: false },
       { role: SYSTEM_ROLE, inherit: false, set: true },
+      { role: NARROW_ROLE, inherit: false, set: true },
     ]);
-    const [t] = await admin<{ ok: boolean; ws: boolean }[]>`
+    const [t] = await admin<{ ok: boolean; ws: boolean; ni: boolean; nd: boolean }[]>`
       select has_table_privilege(${RUNTIME_ROLE}, 'public.nodes', 'TRUNCATE') as ok,
-             has_function_privilege(${RUNTIME_ROLE}, 'mantle_ws_migrate()', 'EXECUTE') as ws`;
-    expect(t).toEqual({ ok: false, ws: false });
+             has_function_privilege(${RUNTIME_ROLE}, 'mantle_ws_migrate()', 'EXECUTE') as ws,
+             has_table_privilege(${NARROW_ROLE}, 'public.nodes', 'INSERT') as ni,
+             has_function_privilege(${NARROW_ROLE}, 'mantle_role_drift()', 'EXECUTE') as nd`;
+    expect(t).toEqual({ ok: false, ws: false, ni: false, nd: false });
     expect(await admin.unsafe(RUNTIME_LOCK_SQL)).toEqual([]);
     expect((await ownTables(admin)).owned).toEqual([]);
   });
@@ -471,7 +657,7 @@ describe.skipIf(!URL)('the runtime role is not the owner (arch A9)', () => {
     expect((await ownTables(admin)).owned).toEqual(['actor_check_misses']);
   });
 
-  it('takes back every membership held in the three roles, and the integrity row names one', async () => {
+  it('takes back every membership held in the runtime roles, and the integrity row names one', async () => {
     // A role of its own (cluster-wide, so never a pool role another file
     // logs in as), a member of mantle_runtime with neither INHERIT nor SET:
     // through it a member of mantle_owner, and mantle_owner_role() (0290,
@@ -489,6 +675,10 @@ describe.skipIf(!URL)('the runtime role is not the owner (arch A9)', () => {
       await admin.begin(async (tx) => {
         await tx.unsafe(`GRANT ${RUNTIME_ROLE} TO "${probe}" WITH INHERIT FALSE, SET FALSE`);
         await tx.unsafe(`GRANT ${SYSTEM_ROLE} TO "${probe}" WITH INHERIT FALSE, SET TRUE`);
+        // The narrow role both ways: another role that may become it, and
+        // it a member of another role.
+        await tx.unsafe(`GRANT ${NARROW_ROLE} TO "${probe}" WITH INHERIT FALSE, SET TRUE`);
+        await tx.unsafe(`GRANT "${held}" TO ${NARROW_ROLE}`);
         // And a hand GRANT to the runtime role without options: NOINHERIT
         // makes it INHERIT FALSE.
         await tx.unsafe(`GRANT "${held}" TO ${RUNTIME_ROLE}`);
@@ -519,11 +709,13 @@ describe.skipIf(!URL)('the runtime role is not the owner (arch A9)', () => {
       });
       // One warning each, naming role, member and grantor.
       const mine = warned.filter((l) => l.includes(probe)).sort();
-      expect(mine).toHaveLength(3);
+      expect(mine).toHaveLength(5);
       for (const [role, member] of [
         [held, RUNTIME_ROLE],
+        [held, NARROW_ROLE],
         [RUNTIME_ROLE, probe],
         [SYSTEM_ROLE, probe],
+        [NARROW_ROLE, probe],
       ]) {
         expect(
           mine.some((l) =>

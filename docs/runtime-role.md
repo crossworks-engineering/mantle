@@ -19,6 +19,7 @@ Code: `packages/db/src/runtime-role.ts` (the roles, the rights, the URL),
 | `mantle_owner`                                               | no                                   | owns every table and sequence of `public` and `auth`, and `mantle_acl_internal()`. migrate hands them over after the migrations. `BYPASSRLS` (below) |
 | `mantle_runtime`                                             | yes, when `MANTLE_DB_RUNTIME_ROLE=1` | the app's system pool and its LISTEN connections. Not a superuser, owns nothing, `BYPASSRLS`, `NOINHERIT`, data rights only                          |
 | `mantle_system`                                              | no                                   | holds no right and owns nothing. May `SET ROLE` to the write role and the gap writer: what the system pool had by being the superuser                |
+| `mantle_system_narrow`                                       | no                                   | the narrow system role (below): `BYPASSRLS`, owns nothing, member of nothing, rights from the access matrix. Nothing runs on it yet                  |
 | `mantle_view_user`, `mantle_write_user`, `mantle_gap_writer` | as before                            | the scoped pools, unchanged. They lose `EXECUTE` on the setter functions (below)                                                                     |
 
 `mantle_runtime` holds:
@@ -152,6 +153,57 @@ remains: while it runs, `pg_stat_activity` shows the text to a superuser or a
 member of `pg_read_all_stats`, and an extension that records statements
 (`pg_stat_statements`, `pgaudit`; the compose Postgres loads none) would
 see it.
+
+## The narrow system role
+
+`mantle_system_narrow` is the role narrow system work will run as: an exit
+that needs past the row rules but writes no item (an Admin-area tool, an
+area request, traces, spills, counters). It is `NOLOGIN`, `NOSUPERUSER`,
+`BYPASSRLS`, `NOINHERIT`, owns nothing and is a member of nothing. The
+runtime role is its member with `SET` only (`wantedMemberships`), so the
+runtime role holds none of its rights and may take it; the superuser may take
+it as any role. Migrate makes it and its membership on every run
+(`ensureRuntimeRoles`), and a hand grant to it or from it is taken back like
+the others'. Nothing runs on it yet: the route that takes it per transaction
+(`set_config('role', ..., true)` in the pipelined transaction, never a
+session `SET`) and the reasons that pick it come next.
+
+Its rights, made equal to the access matrix at every migrate inside
+`applyRuntimeGrants` (`applyNarrowGrants`), from `narrow` in each row of
+`packages/db/src/access-matrix.ts` (`narrowFor`):
+
+- derived when a row sets none: the runtime role's `'none'` stays `'none'`
+  and its `'read'` stays `'read'` (definers write those); a `content` table
+  is `'read'`; a `system` or `admin` table is `'all'` (`SELECT, INSERT,
+UPDATE, DELETE`). A row may set a narrower value, never a wider one (it
+  throws);
+- `USAGE, SELECT` on the sequences its `'all'` tables draw from, never
+  `UPDATE` (`setval`);
+- `EXECUTE` on the runtime role's allowlist less `NARROW_DENIED_FUNCTIONS`
+  (`packages/db/src/runtime-role.ts`): the owner bodies with no Admin check
+  (`mantle_contact_sharing_rows`, `mantle_contact_shares_revoke_rows`,
+  `mantle_share_with_contacts_rows`, `mantle_entity_merge_rows`: only full
+  system work and tests reach them; an Admin user's act is the definer that
+  checks first, which it keeps), `mantle_embed_host` (the refold step) and
+  `mantle_role_drift` (the box count);
+- `USAGE` on `public`, `auth` and `pgboss`, `SELECT` on pg-boss's tables;
+- no default privileges: a table a migration makes is closed to it until the
+  migrate's grants, and a table the matrix does not list never opens. A new
+  `content` row is read only by the derivation.
+
+It is not a member of `mantle_owner`, so `mantle_owner_role()` says no to it
+and the derivation guards treat it as a limited role; it writes no content
+table anyway. Postgres runs a foreign key's cascade as the table's owner, so
+a narrow delete that cascades into a content table is not stopped by these
+grants. And `SET ROLE` asks the session's login: a statement that sets the
+role back leaves it. The role contains the app's own statements, not
+injected SQL; the actor stays `system:<reason>` either way.
+
+`runtime-role.db.test.ts` pins the attributes, the membership, the live
+grants table by table against `narrowFor`, the function list against the
+runtime role's, and the writes it is refused, taken from the runtime role and
+from the superuser. `runtime-role.test.ts` pins the derivation and the counts
+of `'all'`, `'read'` and `'none'` tables.
 
 ## What runs as what
 
@@ -363,8 +415,9 @@ ROLE mantle_system`), the workspaces switch denied, the allowlist pinned
   `RUNTIME_SYSTEM_FUNCTIONS`), no definer function it may run reaching DDL
   through any call its body names, the heads key, the viewer roles and the
   setters, the ownership, a broken marker made again, the integrity row,
-  idempotence, every membership held in the three roles taken back, a
+  idempotence, every membership held in the runtime roles taken back, a
   `mantle_owner_role()` from before 0290 named, and a table left with its
-  old owner still read past the row rules as `mantle_owner`.
+  old owner still read past the row rules as `mantle_owner`. The narrow
+  system role's attributes, membership and grants (above).
 - `pnpm test:runtime-role`: the database suites with the app's pools on the
   runtime role (`vitest.runtime-role.config.ts`).

@@ -34,6 +34,17 @@
  *    write role's own membership tests (0277, 0278) count only a direct
  *    membership, so the system pool is still "not the write role's login"
  *    there, as it was as the superuser.
+ *  - mantle_system_narrow (NOLOGIN): the narrow system
+ *    role. BYPASSRLS, owns nothing, member of nothing, and its rights come
+ *    from the access matrix (narrowFor): read only on the content tables,
+ *    read and write on the system and admin tables, nothing where the
+ *    runtime role has nothing, and EXECUTE on the runtime role's allowlist
+ *    less NARROW_DENIED_FUNCTIONS. The runtime role may SET ROLE to it (no
+ *    INHERIT), and the superuser may as any role: a system transaction
+ *    takes it with set_config('role', ..., true), never a session SET.
+ *    Not a member of mantle_owner, so the derivation guards
+ *    (mantle_owner_role) count it as a limited role: it writes no content
+ *    table anyway.
  *
  * Roles are cluster objects: a restore into a fresh cluster lacks them, so
  * migrate makes them on every run (ensureRuntimeRoles) and
@@ -46,7 +57,7 @@ import { hkdfSync } from 'node:crypto';
 import type postgres from 'postgres';
 import { env, feature } from '@mantle/config';
 import { backoffMs, errorMessage, withRetry } from '@mantle/std';
-import { ACCESS_MATRIX, GAP_WRITER_ROLE } from './access-matrix';
+import { ACCESS_MATRIX, GAP_WRITER_ROLE, narrowFor } from './access-matrix';
 import { viewerRoleName } from './viewer';
 import { LOCK_ATTRS, POOL_ROLES, runRoleStatement, withRoleRetry } from './viewer-roles';
 
@@ -55,6 +66,7 @@ type Sql = ReturnType<typeof postgres>;
 export const OWNER_ROLE = 'mantle_owner';
 export const RUNTIME_ROLE = 'mantle_runtime';
 export const SYSTEM_ROLE = 'mantle_system';
+export const NARROW_ROLE = 'mantle_system_narrow';
 
 /** The schemas the app's tables live in. pgboss (pg-boss's own, it makes
  *  partitions at run time) and drizzle (the ledger) stay the migrator's. */
@@ -65,7 +77,7 @@ export const APP_SCHEMAS_SQL = APP_SCHEMAS.map((s) => `'${s}'`).join(', ');
 
 /** The roles scripts/db-restore.sh makes before pg_restore (a test checks
  *  the script names the same). */
-export const RUNTIME_ROLES = [OWNER_ROLE, SYSTEM_ROLE, RUNTIME_ROLE] as const;
+export const RUNTIME_ROLES = [OWNER_ROLE, SYSTEM_ROLE, NARROW_ROLE, RUNTIME_ROLE] as const;
 
 /** The function whose owner mantle_owner_role() asks about (0241, 0290). */
 export const ACL_MARKER_FUNCTION = 'public.mantle_acl_internal()';
@@ -175,6 +187,31 @@ export const RUNTIME_SYSTEM_FUNCTIONS: Readonly<Record<string, string>> = {
     'snapshot-copies.ts and the integrity row workspaces_not_migrated',
 };
 
+/**
+ * Functions of the runtime role's allowlist the narrow system role may not
+ * EXECUTE: what narrow work never calls, each with why. The rest of the
+ * allowlist is the narrow role's (narrowFunctionAllowlist);
+ * runtime-role.db.test.ts pins both sets. The four `_rows` bodies run for an
+ * owner with no Admin check: only full system work reaches them (the
+ * entities sweep and its CLI) and tests, never a narrow reason. An Admin
+ * user's act is the definer that checks first (mantle_entity_merge,
+ * mantle_contact_sharing_set, mantle_contact_shares_revoke_all,
+ * mantle_share_with_contacts), which the narrow role keeps.
+ */
+export const NARROW_DENIED_FUNCTIONS: Readonly<Record<string, string>> = {
+  'public.mantle_contact_sharing_rows(uuid,uuid,text,text)':
+    "an owner's sharing switch with no Admin check: tests only, never a narrow reason",
+  'public.mantle_contact_shares_revoke_rows(uuid,uuid)':
+    "an owner's Revoke all with no Admin check: tests only, never a narrow reason",
+  'public.mantle_share_with_contacts_rows(uuid,uuid,uuid[],text[],boolean,text[])':
+    "an owner's contact share with no Admin check: tests only, never a narrow reason",
+  'public.mantle_entity_merge_rows(uuid,uuid,uuid)':
+    'the entities-dedupe sweep and CLI with no Admin check: full system work',
+  'public.mantle_embed_host(uuid,public.node_type)':
+    'the refold-embeds maintenance step: full system work',
+  'public.mantle_role_drift()': 'the box count, run by hand as the superuser: no app route',
+};
+
 /** Tables the runtime role holds no right on (the access matrix's
  *  `runtime: 'none'`): what only definer functions touch. */
 export function runtimeDeniedTables(): string[] {
@@ -185,6 +222,16 @@ export function runtimeDeniedTables(): string[] {
  *  `runtime: 'read'`): definer functions write them. */
 export function runtimeReadOnlyTables(): string[] {
   return ACCESS_MATRIX.filter((t) => t.runtime === 'read').map((t) => t.table);
+}
+
+/** Tables the narrow system role may read and write (narrowFor 'all'). */
+export function narrowWriteTables(): string[] {
+  return ACCESS_MATRIX.filter((t) => narrowFor(t) === 'all').map((t) => t.table);
+}
+
+/** Tables the narrow system role may only SELECT (narrowFor 'read'). */
+export function narrowReadOnlyTables(): string[] {
+  return ACCESS_MATRIX.filter((t) => narrowFor(t) === 'read').map((t) => t.table);
 }
 
 /**
@@ -291,10 +338,10 @@ export const RUNTIME_LOCK_SQL = `
                          WHERE p.proowner = r.oid AND n.nspname IN (${APP_SCHEMAS_SQL}))
            THEN 'owns functions' END,
       CASE WHEN has_schema_privilege(r.oid, 'public', 'CREATE') THEN 'may create in public' END,
-      CASE WHEN EXISTS (SELECT 1 FROM unnest(ARRAY['${OWNER_ROLE}', '${SYSTEM_ROLE}']) o(name)
+      CASE WHEN EXISTS (SELECT 1 FROM unnest(ARRAY['${OWNER_ROLE}', '${SYSTEM_ROLE}', '${NARROW_ROLE}']) o(name)
                          WHERE to_regrole(o.name) IS NOT NULL
                            AND pg_has_role(r.oid, to_regrole(o.name), 'USAGE'))
-           THEN 'holds the rights of ${OWNER_ROLE} or ${SYSTEM_ROLE}' END,
+           THEN 'holds the rights of ${OWNER_ROLE}, ${SYSTEM_ROLE} or ${NARROW_ROLE}' END,
       CASE WHEN to_regrole('${OWNER_ROLE}') IS NOT NULL
             AND pg_has_role(r.oid, to_regrole('${OWNER_ROLE}'), 'SET')
            THEN 'may become ${OWNER_ROLE}' END,
@@ -362,7 +409,7 @@ export type Membership = {
 };
 
 /**
- * Every membership the three roles may hold, and every one held in them,
+ * Every membership the runtime roles (RUNTIME_ROLES) may hold, and every one held in them,
  * with its options: any other (a hand grant of mantle_owner with INHERIT,
  * say, or of mantle_runtime to another role), or one of these with other
  * options, is taken back on every run. A member of mantle_runtime is a
@@ -378,11 +425,15 @@ export type Membership = {
  *    0277 and 0278 do not count the system pool as the write role's login.
  *    mantle_system owns nothing and holds no right, so SET ROLE to it gains
  *    nothing.
+ *  - runtime in mantle_system_narrow: SET only. The narrow route takes it
+ *    per transaction (set_config('role', ..., true)); without INHERIT the
+ *    runtime role's own rights never mix with it.
  */
 export function wantedMemberships(): readonly Membership[] {
   return [
     { member: RUNTIME_ROLE, role: OWNER_ROLE, inherit: false, set: false },
     { member: RUNTIME_ROLE, role: SYSTEM_ROLE, inherit: false, set: true },
+    { member: RUNTIME_ROLE, role: NARROW_ROLE, inherit: false, set: true },
     { member: SYSTEM_ROLE, role: viewerRoleName('write'), inherit: false, set: true },
     // TODO(plan v3 S3 part 2, one release later): nothing SETs these two
     // since S3 (the checked rerun is gone); kept one release so a rollback
@@ -409,11 +460,17 @@ function roleAttrs(role: string, password: string | null): string {
   if (role === OWNER_ROLE) {
     return `NOLOGIN NOSUPERUSER BYPASSRLS NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION PASSWORD NULL`;
   }
+  // The narrow system role reads and writes past the row rules, as the
+  // system pool does, but only where the access matrix lets it
+  // (applyNarrowGrants). Nobody logs in as it.
+  if (role === NARROW_ROLE) {
+    return `NOLOGIN NOSUPERUSER BYPASSRLS NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION PASSWORD NULL`;
+  }
   return `NOLOGIN ${LOCK_ATTRS} PASSWORD NULL`;
 }
 
 /**
- * The statements that bring the three roles and their memberships to their
+ * The statements that bring the runtime roles and their memberships to their
  * wanted state. Pure, so a test can pin the attributes. `existing`: the
  * roles that exist; `password`: the runtime role's (null = no login).
  */
@@ -481,7 +538,7 @@ export function revokeOrder<T extends HeldMembership>(
     .map((x) => x.m);
 }
 
-/** pg_auth_members by name: the three roles' memberships both ways, or
+/** pg_auth_members by name: the runtime roles' memberships both ways, or
  *  (`role`) every membership in one role. */
 async function readMemberships(sql: Runner, role?: string): Promise<HeldMembership[]> {
   const where = role
@@ -504,7 +561,7 @@ const membershipKey = (m: { role: string; member: string; grantor: string }) =>
   `${m.role}\u0000${m.member}\u0000${m.grantor}`;
 
 /**
- * Take back every membership the three roles hold, and every one held in
+ * Take back every membership the runtime roles hold, and every one held in
  * them, that wantedMemberships does not name with these options (part of
  * ensureRuntimeRoles). Each revoke names its grantor and CASCADEs: an
  * operator's grant WITH ADMIN OPTION that its holder passed on leaves a
@@ -559,7 +616,7 @@ export async function takeBackMemberships(
 }
 
 /**
- * Make the three roles and their memberships (runtimeRoleStatements), and
+ * Make the runtime roles and their memberships (runtimeRoleStatements), and
  * take back any other membership they hold or another role holds in them,
  * or one with other options. The
  * runtime role logs in only when `login` (migrate: MANTLE_DB_RUNTIME_ROLE
@@ -780,7 +837,10 @@ function viewerRoles(): string[] {
  * line in RUNTIME_SYSTEM_FUNCTIONS says why. Read after the denials are
  * taken from PUBLIC and the viewer roles.
  */
-export async function runtimeFunctionAllowlist(sql: Sql): Promise<string[]> {
+export async function runtimeFunctionAllowlist(
+  sql: Sql,
+  except: readonly string[] = [],
+): Promise<string[]> {
   const rows = await sql<{ fn: string }[]>`
     select p.oid::regprocedure::text as fn
       from pg_proc p join pg_namespace n on n.oid = p.pronamespace
@@ -792,10 +852,16 @@ export async function runtimeFunctionAllowlist(sql: Sql): Promise<string[]> {
             or p.oid in (select to_regprocedure(x)
                            from unnest(${Object.keys(RUNTIME_SYSTEM_FUNCTIONS)}::text[]) x))
        and p.oid not in (select to_regprocedure(x)
-                           from unnest(${Object.keys(RUNTIME_DENIED_FUNCTIONS)}::text[]) x
+                           from unnest(${[...Object.keys(RUNTIME_DENIED_FUNCTIONS), ...except]}::text[]) x
                           where to_regprocedure(x) is not null)
      order by 1`;
   return rows.map((r) => r.fn);
+}
+
+/** The functions the narrow system role is granted EXECUTE on: the runtime
+ *  role's allowlist less NARROW_DENIED_FUNCTIONS. */
+export function narrowFunctionAllowlist(sql: Sql): Promise<string[]> {
+  return runtimeFunctionAllowlist(sql, Object.keys(NARROW_DENIED_FUNCTIONS));
 }
 
 /**
@@ -873,6 +939,7 @@ export async function applyRuntimeGrants(sql: Sql): Promise<void> {
       await tx.unsafe(
         `ALTER DEFAULT PRIVILEGES FOR ROLE "${db!.me}" IN SCHEMA pgboss GRANT SELECT ON TABLES TO ${rt}`,
       );
+      await applyNarrowGrants(tx as unknown as Sql);
       // Objects a later migration makes (as this role, or as mantle_owner)
       // are the runtime role's at once; the next run applies the denials.
       await tx.unsafe(
@@ -891,4 +958,63 @@ export async function applyRuntimeGrants(sql: Sql): Promise<void> {
       }
     }),
   );
+}
+
+/**
+ * The narrow system role's rights, made equal to the access matrix on every
+ * run, inside applyRuntimeGrants' transaction: everything it holds on the
+ * app's tables, sequences and functions is revoked, then SELECT, INSERT,
+ * UPDATE and DELETE on narrowWriteTables, SELECT on narrowReadOnlyTables,
+ * USAGE and SELECT on the sequences those write tables draw from (owned by
+ * a column, or named in a column default), EXECUTE on
+ * narrowFunctionAllowlist, USAGE on the app's schemas, and SELECT on
+ * pg-boss's tables (the queue counts). No default privileges: a table a
+ * later migration makes is closed to it until the next migrate grants what
+ * the matrix says, and a table the matrix does not list never opens.
+ */
+async function applyNarrowGrants(tx: Sql): Promise<void> {
+  const nr = `"${NARROW_ROLE}"`;
+  const schemas = APP_SCHEMAS.join(', ');
+  await tx.unsafe(`GRANT USAGE ON SCHEMA ${schemas} TO ${nr}`);
+  await tx.unsafe(`REVOKE ALL ON ALL TABLES IN SCHEMA ${schemas} FROM ${nr}`);
+  await tx.unsafe(`REVOKE ALL ON ALL SEQUENCES IN SCHEMA ${schemas} FROM ${nr}`);
+  await tx.unsafe(`REVOKE ALL ON ALL ROUTINES IN SCHEMA ${schemas} FROM ${nr}`);
+  const present = async (tables: string[]) =>
+    (
+      await tx<{ t: string }[]>`
+        select c.oid::regclass::text as t from pg_class c join pg_namespace n on n.oid = c.relnamespace
+         where n.nspname || '.' || c.relname = any(${tables}::text[]) order by 1`
+    ).map((r) => r.t);
+  for (const t of await present(narrowWriteTables())) {
+    await tx.unsafe(`GRANT SELECT, INSERT, UPDATE, DELETE ON ${t} TO ${nr}`);
+  }
+  for (const t of await present(narrowReadOnlyTables())) {
+    await tx.unsafe(`GRANT SELECT ON ${t} TO ${nr}`);
+  }
+  const seqs = await tx<{ seq: string }[]>`
+    select distinct s.oid::regclass::text as seq
+      from pg_depend d
+      join pg_class s on s.oid = d.refobjid and s.relkind = 'S'
+      join pg_attrdef ad on d.classid = 'pg_attrdef'::regclass and ad.oid = d.objid
+      join pg_class t on t.oid = ad.adrelid
+      join pg_namespace tn on tn.oid = t.relnamespace
+     where tn.nspname || '.' || t.relname = any(${narrowWriteTables()}::text[])
+    union
+    select distinct s.oid::regclass::text
+      from pg_depend d
+      join pg_class s on s.oid = d.objid and s.relkind = 'S'
+      join pg_class t on t.oid = d.refobjid
+      join pg_namespace tn on tn.oid = t.relnamespace
+     where d.classid = 'pg_class'::regclass and d.deptype in ('a', 'i')
+       and tn.nspname || '.' || t.relname = any(${narrowWriteTables()}::text[])
+     order by 1`;
+  for (const { seq } of seqs) await tx.unsafe(`GRANT USAGE, SELECT ON SEQUENCE ${seq} TO ${nr}`);
+  const allowed = await narrowFunctionAllowlist(tx);
+  if (allowed.length > 0) {
+    await tx.unsafe(`GRANT EXECUTE ON ROUTINE ${allowed.join(', ')} TO ${nr}`);
+  }
+  // pg-boss's schema exists here (applyRuntimeGrants made it first).
+  await tx.unsafe(`GRANT USAGE ON SCHEMA pgboss TO ${nr}`);
+  await tx.unsafe(`REVOKE ALL ON ALL TABLES IN SCHEMA pgboss FROM ${nr}`);
+  await tx.unsafe(`GRANT SELECT ON ALL TABLES IN SCHEMA pgboss TO ${nr}`);
 }

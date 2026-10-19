@@ -332,7 +332,7 @@ Each ends in the step of plan v3.2 (2026-10-17) named.
   `mantle_grant_change` then takes the caller from its `actor`. S2, S7.
 - The seven Admin acts' definers (0308, 0310) run by `adminActTx` on the
   system pool: the write role holds no EXECUTE on them yet. S7.
-- The system pool is the whole runtime role, not a narrow one. S7.
+- The system pool is the whole runtime role; the narrow role exists, unused. S7.
 - A login carries a kind and a role, and code branches on them. S8.
 - Route policy is spread over lists, not declared per route. S9.
 - Scoped code still holds raw write SQL. S10.

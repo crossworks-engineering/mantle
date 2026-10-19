@@ -104,7 +104,41 @@ export type TableAccess = {
    * role reads and writes it, as the system pool always has.
    */
   runtime?: 'none' | 'read';
+  /**
+   * What the narrow system role (mantle_system_narrow, runtime-role.ts) may
+   * do on it: 'none', 'read' (SELECT) or 'all' (SELECT, INSERT, UPDATE,
+   * DELETE). Absent = derived (narrowFor): the runtime role's 'none' or
+   * 'read' carried over, a `content` table 'read', a `system` or `admin`
+   * table 'all'. Set it only to narrow the derived value further: a value
+   * wider than the runtime role's throws.
+   */
+  narrow?: NarrowAccess;
 };
+
+/** What the narrow system role may do on a table (TableAccess.narrow). */
+export type NarrowAccess = 'none' | 'read' | 'all';
+
+const NARROW_RANK: Readonly<Record<NarrowAccess, number>> = { none: 0, read: 1, all: 2 };
+
+/**
+ * What the narrow system role may do on `t`: its `narrow`, or derived from
+ * the runtime role's rights and the writer. The runtime role's 'none' stays
+ * 'none' (only definers touch the table) and its 'read' stays 'read' (its
+ * writes are definer calls, which run as the definer's owner). Otherwise a
+ * `content` table is read only (narrow work writes no item; reads are kept
+ * until the read cells cover every narrow route), and a `system` or `admin`
+ * table is read and written (traces, spills, counters, configuration). A
+ * new content table is therefore closed to narrow writes by default.
+ */
+export function narrowFor(t: TableAccess): NarrowAccess {
+  const cap: NarrowAccess = t.runtime === 'none' ? 'none' : t.runtime === 'read' ? 'read' : 'all';
+  const derived: NarrowAccess = cap === 'all' && t.writer === 'content' ? 'read' : cap;
+  if (t.narrow === undefined) return derived;
+  if (NARROW_RANK[t.narrow] > NARROW_RANK[cap]) {
+    throw new Error(`${t.table}: narrow '${t.narrow}' is wider than the runtime role's rights`);
+  }
+  return t.narrow;
+}
 
 /**
  * What an operation on a row asks of the row's item (mantle_check_row,
