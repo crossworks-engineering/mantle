@@ -891,9 +891,10 @@ export function gapRerunCount(files) {
  * `failOpenSites` pin): each call of noteFailOpen, noteUnscopedYes or
  * noteScopedSystemWrite (packages/db/src/fail-open.ts, fail-open-sites.ts)
  * with a literal site, comments blanked. Six at S4a: scopeHoldsAdmin,
- * scopeHasArea, typedWrite, loginWriteClient (client.ts), the production
- * allows of asSystem and assertSystemDbCaller (viewer.ts). S4b turns each
- * into a refusal, so 0. A seventh fail-open branch is one more call here.
+ * scopeHasArea (client.ts), typedWrite, loginWriteClient
+ * (gateway/write-route.ts), the production allows of asSystem and
+ * assertSystemDbCaller (viewer.ts). S4b turns each into a refusal, so 0. A
+ * seventh fail-open branch is one more call here.
  */
 export function failOpenSiteCount(files) {
   const CALL = /\bnote(?:FailOpen|UnscopedYes|ScopedSystemWrite)\(\s*'[a-z-]+'/g;

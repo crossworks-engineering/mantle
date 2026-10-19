@@ -617,6 +617,14 @@ describe('systemDb inside a turn scope: allowlisted modules only (W4b fix round 
     expect(systemDbCallerOf(viaDrizzle)).toBe(content);
   });
 
+  it('skips the gateway modules as client.ts (a fail-open hit in typedWrite names its caller)', () => {
+    const viaGateway = stackFrom(content).replace(
+      '    at loadThing',
+      '    at Proxy.<anonymous> (/repo/packages/db/src/gateway/write-route.ts:40:5)\n    at loadThing',
+    );
+    expect(systemDbCallerOf(viaGateway)).toBe(content);
+  });
+
   it("skips drizzle's internal reads on the proxy, checks every method (W5a audit W3)", () => {
     // drizzle reads these on systemDb while a query the caller asked for
     // runs: the caller was checked when it touched the method.

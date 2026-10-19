@@ -39,7 +39,7 @@ export const WORKSPACE_TABLES = Object.freeze([
 
 /** A write statement on one of the four workspace tables (SQL text, any
  *  quoting, with or without the public schema, with or without ONLY, as
- *  rawWriteTarget in packages/db/src/client.ts reads one). */
+ *  rawWriteTarget in packages/db/src/gateway/write-route.ts reads one). */
 export const WORKSPACE_TABLE_WRITE = new RegExp(
   String.raw`\b(?:insert\s+into|update|delete\s+from|merge\s+into|truncate(?:\s+table)?)\s+` +
     String.raw`(?:only\s+)?(?:"?public"?\s*\.\s*)?"?(?:${WORKSPACE_TABLES.join('|')})"?(?![\w"])`,

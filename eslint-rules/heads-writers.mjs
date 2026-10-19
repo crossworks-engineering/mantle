@@ -97,6 +97,10 @@ const DYNAMIC_UNSAFE_REVIEWED = new Map([
     'packages/db/src/gateway/role-tx.ts',
     "the write role's watched client passes the caller's statement through as it is, on the write role",
   ],
+  [
+    'packages/db/src/gateway/write-route.ts',
+    "the gateway's runner and client pass the caller's statement through as it is, on the write role or the system pool",
+  ],
   ['server/api/src/bench/run.ts', 'the bench harness on its own database'],
   ['server/web/scripts/dedupe-edges.ts', 'a constant PARTITION BY fragment'],
   ['server/web/scripts/extract-backfill.ts', 'a read query'],

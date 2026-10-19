@@ -1148,9 +1148,10 @@ export const SYSTEM_DB_MODULES: readonly string[] = [
 ];
 
 /** The file that touched `systemDb`, from a stack taken in its proxy: the
- *  first frame outside this module, client.ts, a dependency (drizzle reads
- *  `this.session` on the proxy inside its own methods) and node's own code.
- *  Null when none names a file. */
+ *  first frame outside this module, client.ts and its gateway modules
+ *  (packages/db/src/gateway/, client.ts's own code split out of it), a
+ *  dependency (drizzle reads `this.session` on the proxy inside its own
+ *  methods) and node's own code. Null when none names a file. */
 export function systemDbCallerOf(stack: string): string | null {
   for (const line of stack.split('\n').slice(1)) {
     const m = /\(?((?:file:\/\/)?[^\s()]+?):\d+:\d+\)?\s*$/.exec(line.trim());
@@ -1159,6 +1160,7 @@ export function systemDbCallerOf(stack: string): string | null {
     if (
       file.endsWith('packages/db/src/viewer.ts') ||
       file.endsWith('packages/db/src/client.ts') ||
+      file.includes('packages/db/src/gateway/') ||
       file.endsWith('packages/db/src/fail-open.ts') ||
       file.includes('/node_modules/') ||
       file.startsWith('node:')
