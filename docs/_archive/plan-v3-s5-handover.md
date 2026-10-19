@@ -183,25 +183,35 @@ Branch feat/s5-p2, from main 7ce61f579 (v0.300.106).
 | e7fa41769 | gateway/system-tx.ts   | 378   | brokerLockTx, withSystemTx's write paths (WriteTxOpen, writeTxOpen, writeTxDb and its cache with its onCloseDb registration, writeRoleSystemTx, joinedSystemTx), NestedSystemTxError, systemTxKeys, nestedSystemTx, withSystemTx, SystemPoolScope, writeScopeSettings, systemPoolTxInScope, systemPoolTx, openSystemTx                                                                                                                                                                                                                  |
 | 8e342e18a | guards                 |       | dbClientLines pinned down                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 
+Fix round 1 moved the runner on out of write-route.ts (see "Fix round 1"
+below): 42f38310d, gateway/role-runner.ts, 145 lines; write-route.ts is
+350 lines after it.
+
 client.ts: 2438 lines on main, 1210 after part 2.
 
 The layers, no cycle: role-tx.ts imports check-mode.ts and pools.ts;
-write-route.ts imports check-mode.ts, actor-sql.ts, pools.ts and
-role-tx.ts; system-tx.ts imports pools.ts, role-tx.ts and write-route.ts;
-client.ts imports all six. No gateway module imports client.ts. client.ts
+role-runner.ts imports check-mode.ts, actor-sql.ts and role-tx.ts;
+write-route.ts imports check-mode.ts, actor-sql.ts, pools.ts, role-tx.ts
+and role-runner.ts; system-tx.ts imports pools.ts, role-tx.ts,
+role-runner.ts and write-route.ts; client.ts imports all seven but
+role-runner.ts. No gateway module imports client.ts. client.ts
 re-exports every name it exported before, so index.ts and every importer
 are unchanged.
 
 Where the split differs from plan v3.2 section 3.1's list, and why:
 
-- The gateway's runner (writeRoleStatement, the one pipelined statement
+- The write role's runner (writeRoleStatement, the one pipelined statement
   transaction on the write role: BEGIN, the SET, the statement and COMMIT
   on one reserved connection; writeTxOf, writeRoleBegin, joinedBegin,
-  joinedStatement) went to write-route.ts with onLoginWritePool and
-  loginWriteClient, as client.ts grouped them ("The gateway's runner").
-  With them role-tx.ts measured about 620 lines, over the 600 limit.
-  role-tx.ts keeps the transaction's state, its joins and savepoints, the
-  watched client and the bounded begin and reserve the runner calls.
+  joinedStatement) is gateway/role-runner.ts, between role-tx.ts and
+  write-route.ts: with it role-tx.ts would measure about 620 lines, over
+  the 600 limit. It takes the route's SET only (route.setSql), so a narrow
+  route in role-tx.ts (S7a) can call it without a cycle. role-tx.ts keeps
+  the transaction's state, its joins and savepoints, the watched client and
+  the bounded begin and reserve the runner calls; write-route.ts keeps the
+  login route decision, onLoginWritePool, loginWriteClient and the handle.
+  Plan v3.2 section 2.1 point 3 should read "role-tx.ts + role-runner.ts"
+  where it names role-tx.ts (the CEO updates the plan).
 - NESTED_SAVEPOINT_WARN went to role-tx.ts (joinWriteTx counts against it;
   system-tx.ts imports it).
 - brokerLockTx went to system-tx.ts (a short system-pool transaction
@@ -333,3 +343,40 @@ left. The branch was pushed with --no-verify (the pre-push gate is
   directory, so the proxies in handles.ts need no new entry.
 - actor-sql.ts's one read of globalThis.__mantleSql (dbGlobalKeyReads 1)
   is unchanged.
+- The write transaction's AsyncLocalStorage (openWriteTx) is exported
+  from gateway/role-tx.ts (role-tx.ts:130) for role-runner.ts,
+  write-route.ts, system-tx.ts and client.ts. Narrow helpers instead (the
+  open level, run in a level) would keep the store's writes in
+  role-tx.ts. Not changed in part 2 (audit LOW-3).
+- On main: checkActorBound (packages/db/src/actor.ts:347) hands the
+  unfiltered longStack to systemDbCallerOf, so its miss names actor.ts
+  rather than the caller. Filter actor.ts frames as failOpenCaller does
+  (fail-open-sites.ts). Not changed in part 2 (audit LOW-4).
+
+### Fix round 1 (audit at 3d42a4f67: 9/10, merge)
+
+- MED-1: 42f38310d moves the runner (writeRoleStatement, writeTxOf,
+  writeRoleBegin, joinedBegin, joinedStatement) out of write-route.ts into
+  gateway/role-runner.ts (145 lines), a move only: the body is byte-equal
+  but the `export` keyword on writeRoleStatement and joinedStatement. No
+  glue, no cycle (dbGatewayImportCycles 0). heads-writers
+  DYNAMIC_UNSAFE_REVIEWED names role-runner.ts; write-route.ts's reason is
+  loginWriteClient's now.
+- LOW-1: eb5238366 points the stale client.ts references at the gateway
+  files: docs/actors.md (loginWriteRoute; still 345 lines), docs/fail-open.md
+  (typedWrite, loginWriteClient), actor.ts (noteWriteRoleDenial, the test
+  gap note), fail-open-sites.ts (loginWriteRoute, its header's four
+  sites), and the comments of ws-row-definers.db.test.ts and
+  ws-user-definers.db.test.ts (writeRoleSettingsSql).
+- LOW-2: CI of the audited head 3d42a4f67: run 39307297393, success,
+  https://github.com/crossworks-engineering/mantle/actions/runs/39307297393
+- LOW-3 and LOW-4: open items for part 3 above.
+- Gates on eb5238366 (Mac, DATABASE_URL unset), exit codes: pnpm -r
+  typecheck 0, pnpm lint 0, pnpm format:check 0, pnpm docs:check 0,
+  pnpm arch:check 0, vitest run server packages eslint-rules 0 (857 files
+  passed, 268 skipped; 11068 tests passed), pnpm -C server/web build 0.
+  Workstation (own clone, own container s5p2-pg on 55720, the same setup
+  as above): pnpm test:runtime-role in full, 276 files, 2764 tests passed,
+  1 skipped. Its first run exited 1 with every file passed, and its log
+  was removed before it was read (a cleanup too early); the rerun exited 0.
+  Container, clone and logs removed by exact name after both runs.
