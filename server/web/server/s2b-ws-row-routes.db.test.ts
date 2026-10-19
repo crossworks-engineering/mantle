@@ -90,10 +90,14 @@ describe.skipIf(!DB_URL)('S2b: the workspace row through the routes', () => {
 
   const makeItem = async (kind: 'app' | 'contact' | 'note', home: string): Promise<string> => {
     const p = kind === 'app' ? 'apps' : kind === 'note' ? 'notes' : 'contacts';
-    await raw`insert into nodes (owner_id, type, title, path)
-      select ${L.owner}, 'branch', ${p}, ${p}::ltree
-       where not exists (select 1 from nodes where owner_id = ${L.owner}
-                           and type = 'branch' and path = ${p}::ltree)`;
+    // The root folder, made with an actor (a cell may run with the check on).
+    await raw.begin(async (tx) => {
+      await tx`select set_config('mantle.actor', 'system:test', true)`;
+      await tx`insert into nodes (owner_id, type, title, path)
+        select ${L.owner}, 'branch', ${p}, ${p}::ltree
+         where not exists (select 1 from nodes where owner_id = ${L.owner}
+                             and type = 'branch' and path = ${p}::ltree)`;
+    });
     const [root] = await raw<{ id: string }[]>`select id::text as id from nodes
       where owner_id = ${L.owner} and type = 'branch' and path = ${p}::ltree`;
     const id = randomUUID();
