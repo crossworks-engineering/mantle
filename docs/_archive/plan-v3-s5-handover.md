@@ -518,7 +518,8 @@ reach their callers through it.
   reader lost its place after moderatorSeatsNow's nested template literal
   (proven: main's client.ts with moderatorSeatsNow cut out counts 1). In
   viewer-scope.ts the reader sees it. The pin's reason says so.
-- rawWriteSqlFiles measures 67 (65 after part 2), MAY_GROW for this split;
+- rawWriteSqlFiles measures 67 (66 on main 1967cf106, after part 2),
+  MAY_GROW for this split;
   rawWriteSqlScoped 62 is unchanged.
 
 ### Gates
@@ -561,7 +562,7 @@ Mac, on 05707ae1a, DATABASE_URL unset, exit codes:
 - tsAdminSqlKinds's template reader (eslint-rules/rights-counts.mjs)
   loses its place after a nested template literal, so a file can hide a
   membership ask or an area rule after one. Fix the reader and re-measure
-  sqlMembershipAsks and sqlAreaRules.
+  sqlMembershipAsks and sqlAreaRules. Done in round 2 (below).
 - Test files' comments still name client.ts for moved code (a2a, a2b2b,
   w7a, a8, connection-ceiling, login-facts, ws-user-definers, sql-grid):
   left, because tests change only in imports in this split.

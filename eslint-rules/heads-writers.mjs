@@ -87,7 +87,7 @@ const DYNAMIC_UNSAFE_REVIEWED = new Map([
   ['packages/search/src/entities.ts', 'one read query on the simple protocol'],
   [
     'packages/db/src/gateway/handles.ts',
-    "executeAsMigrator sends the workspaces switch's drizzle statement as its text on the migrator's connection (A9)",
+    "executeAsMigrator sends the workspaces switch's drizzle statement as its text on the migrator's connection",
   ],
   [
     'packages/db/src/gateway/scope.ts',
