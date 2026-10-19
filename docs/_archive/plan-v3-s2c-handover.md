@@ -165,6 +165,22 @@ attach should have put a persona and did not: name it before the roll.
 
 ## Gates
 
+After the rebase onto main 817fbb986 (v0.300.101, S2b merged; the rebase
+was clean and S2b's four commits dropped out), at 2f4dc6643 (code; the
+commit after it only adds these lines):
+
+On the Mac, `DATABASE_URL` unset: `pnpm install --frozen-lockfile` 0,
+`pnpm -r typecheck` 0, `pnpm lint` 0, `pnpm format:check` 0,
+`pnpm docs:check` 0, `pnpm arch:check` 0, `pnpm -C server/web build` 0,
+`pnpm exec vitest run server packages eslint-rules` 0 (11055 passed).
+
+On the workstation (a fresh `s2c_verify_pg` on port 56341, `init-scratch`
+then `migrate` with `MANTLE_CHECK_FLOOR=keep`, so main's changed 0309 is
+the one applied; the same settings as below): full DB vitest 0 (1122 files,
+13813 passed), `test:actor-off` 0 (1165 passed), `test:runtime-role` in
+full 0 (274 files, 2740 passed), `test:matrix` 0 (8 passed). The
+container, worktree, branch, scripts and logs are removed by exact name.
+
 Before the rebase onto main, at 98070ea40 (on `feat/s2b` 4f89fc11f):
 
 On the Mac, `DATABASE_URL` unset: `pnpm -r typecheck` 0, `pnpm lint` 0,
