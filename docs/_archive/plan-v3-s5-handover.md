@@ -15,12 +15,12 @@ after the rebase.
 
 ### The moves
 
-| Commit | Module | Lines | What moved |
-| --- | --- | --- | --- |
-| 840f1d35f | gateway/check-mode.ts | 172 | the mode read's state (actorModePool, firstModeRead), refreshActorCheckMode, ACTOR_CHECK_DRIFT_SQL, EDIT_CHECK_DRIFT_SQL, warnActorCheckDrift, the floor note, ACTOR_SQL_TAG |
-| 2b3977550 | gateway/actor-sql.ts | 418 | setActorSql, RESET_ACTOR_SQL, statementBody, runsOutsideTransaction, needsActorWrap, wrapsStatement, actorParams, actorInTransaction, settingsFirst, actorClient and its pipelined writes in flight |
-| c6773b08e | gateway/pools.ts | 290 | every globalThis.__mantle* key (declarations and writes), VIEWER_POOL_MAX, getAdminDb, systemPoolRole, reportDbRole, adminActorSql, logActorMiss, getViewerDb, openLoginWritePool and the write pool's size and switch, writePoolSql, adminSql, rawAdminSql, closeDb |
-| b5e1a5277 | guards | | eslint max-lines and the scoreboard pins below |
+| Commit    | Module                | Lines | What moved                                                                                                                                                                                                                                                           |
+| --------- | --------------------- | ----- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 840f1d35f | gateway/check-mode.ts | 172   | the mode read's state (actorModePool, firstModeRead), refreshActorCheckMode, ACTOR_CHECK_DRIFT_SQL, EDIT_CHECK_DRIFT_SQL, warnActorCheckDrift, the floor note, ACTOR_SQL_TAG                                                                                         |
+| 2b3977550 | gateway/actor-sql.ts  | 418   | setActorSql, RESET_ACTOR_SQL, statementBody, runsOutsideTransaction, needsActorWrap, wrapsStatement, actorParams, actorInTransaction, settingsFirst, actorClient and its pipelined writes in flight                                                                  |
+| c6773b08e | gateway/pools.ts      | 290   | every globalThis.__mantle* key (declarations and writes), VIEWER_POOL_MAX, getAdminDb, systemPoolRole, reportDbRole, adminActorSql, logActorMiss, getViewerDb, openLoginWritePool and the write pool's size and switch, writePoolSql, adminSql, rawAdminSql, closeDb |
+| b5e1a5277 | guards                |       | eslint max-lines and the scoreboard pins below                                                                                                                                                                                                                       |
 
 client.ts: 3210 lines on main, 2438 after part 1.
 
@@ -44,7 +44,7 @@ cannot import a higher one, so five small functions carry state across:
   globalThis.__mantleTurnDb cache stays in pools.ts; client.ts passes
   `(base) => drizzle(turnScopedClient(base), { schema })`.
 - `onCloseDb(reset)` (pools.ts): closeDb ran `loginWriteDbCache = null;
-  writeTxDbCache = null;` between the actor client's reset and the mode
+writeTxDbCache = null;` between the actor client's reset and the mode
   read's; it now runs the resets registered there, and client.ts registers
   those two lines once at load. The same order.
 
@@ -102,26 +102,26 @@ eslint-rules, exit 0.
 
 Mac, DATABASE_URL unset, exit codes:
 
-| Gate | Exit |
-| --- | --- |
-| pnpm -r typecheck | 0 |
-| pnpm lint | 0 |
-| pnpm format:check | 0 |
-| pnpm docs:check | 0 |
-| pnpm arch:check | 0 |
-| vitest run server packages eslint-rules (857 files passed, 268 skipped) | 0 |
-| pnpm -C server/web build | 0 |
+| Gate                                                                    | Exit |
+| ----------------------------------------------------------------------- | ---- |
+| pnpm -r typecheck                                                       | 0    |
+| pnpm lint                                                               | 0    |
+| pnpm format:check                                                       | 0    |
+| pnpm docs:check                                                         | 0    |
+| pnpm arch:check                                                         | 0    |
+| vitest run server packages eslint-rules (857 files passed, 268 skipped) | 0    |
+| pnpm -C server/web build                                                | 0    |
 
 Workstation, Node 26.5.0: own clone, own pgvector pg18 container on a free
 port (checked free, max_connections=450, the postgres role as CI's),
 init-scratch and migrate with MANTLE_CHECK_FLOOR=keep, systemd-run --user,
 --maxWorkers=3, one at a time:
 
-| Gate | Result | Exit |
-| --- | --- | --- |
-| pnpm test (full, with the DB) | 1125 files, 13845 tests passed, 1 skipped | 0 |
-| pnpm test:actor-off | 128 files, 1165 passed, 1 skipped | 0 |
-| pnpm test:runtime-role (full) | 276 files, 2764 passed, 1 skipped | 0 |
+| Gate                          | Result                                    | Exit |
+| ----------------------------- | ----------------------------------------- | ---- |
+| pnpm test (full, with the DB) | 1125 files, 13845 tests passed, 1 skipped | 0    |
+| pnpm test:actor-off           | 128 files, 1165 passed, 1 skipped         | 0    |
+| pnpm test:runtime-role (full) | 276 files, 2764 passed, 1 skipped         | 0    |
 
 Container, clone, scripts and logs removed by exact name after; no unit left.
 
@@ -300,26 +300,26 @@ eslint-rules, exit 0 (826, 827, 827 tests passed).
 
 Mac, on 8e342e18a, DATABASE_URL unset, exit codes:
 
-| Gate | Exit |
-| --- | --- |
-| pnpm -r typecheck | 0 |
-| pnpm lint | 0 |
-| pnpm format:check | 0 |
-| pnpm docs:check | 0 |
-| pnpm arch:check | 0 |
-| vitest run server packages eslint-rules (857 files passed, 268 skipped; 11068 tests passed) | 0 |
-| pnpm -C server/web build | 0 |
+| Gate                                                                                        | Exit |
+| ------------------------------------------------------------------------------------------- | ---- |
+| pnpm -r typecheck                                                                           | 0    |
+| pnpm lint                                                                                   | 0    |
+| pnpm format:check                                                                           | 0    |
+| pnpm docs:check                                                                             | 0    |
+| pnpm arch:check                                                                             | 0    |
+| vitest run server packages eslint-rules (857 files passed, 268 skipped; 11068 tests passed) | 0    |
+| pnpm -C server/web build                                                                    | 0    |
 
 Workstation, Node 26.5.0, on 8e342e18a: own clone, own pgvector pg18
 container (s5p2-pg) on port 55720 (checked free, max_connections=450, the
 postgres role as CI's), init-scratch and migrate with
 MANTLE_CHECK_FLOOR=keep, systemd-run --user, --maxWorkers=3, one at a time:
 
-| Gate | Result | Exit |
-| --- | --- | --- |
-| pnpm test (full, with the DB) | 1125 files, 13850 tests passed, 1 skipped | 0 |
-| pnpm test:actor-off | 128 files, 1166 passed, 1 skipped | 0 |
-| pnpm test:runtime-role (full) | 276 files, 2764 passed, 1 skipped | 0 |
+| Gate                          | Result                                    | Exit |
+| ----------------------------- | ----------------------------------------- | ---- |
+| pnpm test (full, with the DB) | 1125 files, 13850 tests passed, 1 skipped | 0    |
+| pnpm test:actor-off           | 128 files, 1166 passed, 1 skipped         | 0    |
+| pnpm test:runtime-role (full) | 276 files, 2764 passed, 1 skipped         | 0    |
 
 Container, clone, scripts and logs removed by exact name after; no unit
 left. The branch was pushed with --no-verify (the pre-push gate is
@@ -380,3 +380,188 @@ left. The branch was pushed with --no-verify (the pre-push gate is
   1 skipped. Its first run exited 1 with every file passed, and its log
   was removed before it was read (a cleanup too early); the rerun exited 0.
   Container, clone and logs removed by exact name after both runs.
+
+## Part 3: scope, handles, heads, scope-answers, viewer-scope, the barrel
+
+Branch feat/s5-p3, from main 1967cf106 (v0.300.107). Builder round 1 of 2:
+the moves, the barrel, the guards, LOW-3, LOW-4 and the docs are done, and
+the Mac gates ran; the workstation DB gates and CI's result are round 2's
+(see "State and what is left").
+
+### The moves
+
+| Commit    | Module                   | Lines | What moved                                                                                                                                                                                                                                |
+| --------- | ------------------------ | ----- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 7099988cb | gateway/scope.ts         | 273   | ScopeLostError, SCOPE_SETTINGS_SQL, turnScopeParams, the PgSql alias, turnScopedClient, getTurnScopedDb, getDb, withScope, withTurnScope, turnScopeProblem, scopeProblem, ReadTx, readTransaction                                         |
+| 0b2be9567 | gateway/handles.ts       | 209   | STATEMENT_PROPS (with its section heading), db, systemPoolProp, isWriteSql, sqlTextOf, NotAWriteError, executeWrite, systemDb, executeAsMigrator, the Db type                                                                             |
+| c029a4921 | gateway/heads.ts         | 287   | withHeads, withSubtreeHeads, systemTxOrPool, folderHeadIds, withNodeInsertHeads, withNodeMoveHeads, withNodeDeleteHeads, headsOrSpace, withSpaceRows, onSpaceRows, withWriterHeads, lockMoreHeads, RETRYABLE, sqlState, withDeadlockRetry |
+| cb3807c4d | gateway/scope-answers.ts | 201   | loginActorNow, holdsAdmin and scopeHoldsAdmin, scopeHasArea, loginFactDeniedLogged and loginFactFailed, loginHoldsAdmin, loginHasArea, loginAreas, moderatorSeatsNow                                                                      |
+| 716465b84 | gateway/viewer-scope.ts  | 268   | withViewer, memoScopeFor, loginScopeColumns, seedLoginScope, loginScopeFor, createHomeFallback, appRunHolders, viewerScopeFor                                                                                                             |
+| 62af4b20b | client.ts                | 92    | the barrel: its header and its re-exports only                                                                                                                                                                                            |
+| 1e5c3fe63 | guards                   |       | the pins below                                                                                                                                                                                                                            |
+
+client.ts: 1210 lines on main, 92 after part 3 (a header comment and
+`export ... from` lines only). The longest gateway module is role-tx.ts,
+517 lines.
+
+Where the split differs from plan v3.2 section 3.1's list, and why:
+
+- loginActorNow is in no module's list. It went to scope-answers.ts: it is
+  a thin read of one login's row now (is it disabled), on the system pool,
+  as loginHoldsAdmin, loginHasArea and loginAreas are. Its one runAsSystem
+  is the actor-binders pin that moved with it.
+- moderatorSeatsNow (in the viewer block of client.ts) went to
+  scope-answers.ts with the other thin calls; it reads through `db`, so
+  scope-answers.ts imports handles.ts.
+- STATEMENT_PROPS went to handles.ts with the two proxies that use it.
+- sqlState went to heads.ts with RETRYABLE and withDeadlockRetry;
+  loginFactFailed (scope-answers.ts) imports it.
+- getDb (the handle for the current scope) went to scope.ts with the
+  turn-scope client it picks; handles.ts, heads.ts and scope-answers.ts
+  import it.
+
+The layers, no cycle (dbGatewayImportCycles 0): scope.ts imports pools.ts
+and write-route.ts; handles.ts imports check-mode.ts, actor-sql.ts,
+pools.ts, write-route.ts, system-tx.ts and scope.ts; heads.ts imports
+pools.ts, write-route.ts, system-tx.ts and scope.ts; scope-answers.ts
+imports pools.ts, scope.ts, handles.ts and heads.ts; viewer-scope.ts
+imports pools.ts, write-route.ts and system-tx.ts. No gateway module
+imports client.ts.
+
+### The glue (every line that is not a move)
+
+- `export` added on two moved functions, for the modules above them:
+  getDb (scope.ts) and sqlState (heads.ts). No glue function, no new
+  onCloseDb registration (none of part 3's modules holds a cache that
+  closeDb resets).
+- The barrel (62af4b20b): its header says it is a barrel that stays one
+  release, then goes; `import * as schema` plus `export { schema }`
+  became `export * as schema from './schema/index'` (the same namespace
+  object).
+- The modules' header comments and imports.
+
+The move proof: for each move commit, a line multiset of `git show -U0`,
+the new module's added lines against client.ts's removed lines. Every
+moved line is byte-equal but the two `export` keywords above; what is only
+in the module is its header comment and imports; what is only removed from
+client.ts is the imports it no longer needs.
+
+The public API: the TS checker's export list (each name, its value type and
+its declared type) of client.ts and of index.ts, on main 1967cf106 and on
+62af4b20b, are equal: client.ts 66 names, index.ts 840 names. One line
+prints differently and is the same type: systemWork's reason union is
+printed in another order (viewer.ts, unchanged on the branch). index.ts is
+unchanged and still imports from './client': the tests that vi.mock
+client.ts (packages/tools, mcp-core, runtime, db, server/web, 14 files)
+reach their callers through it.
+
+### LOW-3 and LOW-4
+
+- LOW-3 (d4587055d): openWriteTx is no longer exported from role-tx.ts.
+  currentWriteTx (its getStore; system-tx.ts, write-route.ts) and
+  runInWriteTx (its run; role-runner.ts) forward the call unchanged, so
+  the store is read and entered outside role-tx.ts through two named
+  functions only.
+- LOW-4 (70609f5be): checkActorBound filters actor.ts's own frames from
+  longStack before systemDbCallerOf, as failOpenCaller does, so a miss's
+  detail names the calling file, not actor.ts. A log detail only. The new
+  actor.test.ts case fails without it (checked by reverting the line).
+
+### Pins and file keys that moved with the code
+
+- eslint-rules/scope-settings.mjs: client.ts 4 to 0, gateway/scope.ts 4
+  (the turn scope 2, withScope 2); the carrier pins client.ts 2 to 0,
+  gateway/handles.ts 1 (systemPoolProp), gateway/viewer-scope.ts 1
+  (createHomeFallback). The header, description and message name the
+  database gateway, not client.ts. arch-lints.test.ts: the valid
+  fixture's file name is gateway/scope.ts (a path only).
+- eslint-rules/heads-writers.mjs DYNAMIC_UNSAFE_REVIEWED: gateway/scope.ts
+  (the turn-scope client); gateway/handles.ts (executeAsMigrator's
+  `tx.unsafe(text, params)`, which the old client.ts entry covered without
+  naming it).
+- eslint-rules/actor-binders.mjs: client.ts 1 to 0,
+  gateway/scope-answers.ts 1 (loginActorNow's runAsSystem).
+- eslint-rules/provider-http.mjs BACKOFF_LOOP_ALLOWED and
+  docs/process-inventory.md's timeout-loop: gateway/heads.ts
+  (withDeadlockRetry).
+- packages/db/src/scope-problem.test.ts reads gateway/scope.ts's source
+  (a path only).
+- viewer.ts systemDbCallerOf already skips packages/db/src/gateway/ by
+  directory; 5c8af360a adds a viewer.test.ts case with the systemDb
+  proxy's frame in gateway/handles.ts (it fails without the skip). The
+  client.ts skip stays while the barrel does (it holds no frame now).
+- system-db-allowlist: unchanged (no gateway module imports systemDb).
+- Checked by a grep of eslint-rules/ and scripts/arch-scoreboard.ts for
+  client.ts: no rule is left looking at client.ts for moved code
+  (dbClientLines measures the barrel; gateway-counts and its tests name
+  client.ts as the barrel).
+- 05707ae1a points the comments and docs that named client.ts as the
+  home of moved code (parts 1 to 3) at the gateway files:
+  docs/architecture.md, docs/fail-open.md, actor-setters.mjs,
+  arch-counts.mjs, content apps.ts and pages/read.ts, packages/db
+  access-matrix.ts, actor.ts, check-floor.ts, fail-open-sites.ts,
+  fail-open.ts, grant-reads.ts, item-rights.ts, migrator-connection.ts,
+  pg-error.ts, runtime-role.ts, viewer.ts, and server/api login-actor.ts.
+  The access-matrix.ts and runtime-role.ts lines are description strings
+  whose keys alone are read (no test or doc compares the text). Left: test
+  files, migrations, the archive and historical lines.
+
+### The guards
+
+- dbClientLines 1210 to 92 (the barrel), to 0 when it goes.
+- dbGatewayMaxLines 600 (longest role-tx.ts 517), dbGatewayImportCycles
+  0, dbGlobalKeyWrites 0, dbGlobalKeyReads 1 (part 3's modules read no
+  key; the reason says so).
+- sqlMembershipAsks 2 to 3, no new site: viewerScopeFor's login read
+  (workspace_users, disabled_at and a bound login_id) is a membership ask
+  that sat in client.ts uncounted, because tsAdminSqlKinds's template
+  reader lost its place after moderatorSeatsNow's nested template literal
+  (proven: main's client.ts with moderatorSeatsNow cut out counts 1). In
+  viewer-scope.ts the reader sees it. The pin's reason says so.
+- rawWriteSqlFiles measures 67 (65 after part 2), MAY_GROW for this split;
+  rawWriteSqlScoped 62 is unchanged.
+
+### Gates
+
+Each move commit: `pnpm -C packages/db typecheck` and the unit vitest of
+packages/db and eslint-rules, exit 0 (828 tests passed on the last).
+
+Mac, on 05707ae1a, DATABASE_URL unset, exit codes:
+
+| Gate                                                                                        | Exit |
+| ------------------------------------------------------------------------------------------- | ---- |
+| pnpm -r typecheck                                                                           | 0    |
+| pnpm lint                                                                                   | 0    |
+| pnpm format:check                                                                           | 0    |
+| pnpm docs:check                                                                             | 0    |
+| pnpm arch:check                                                                             | 0    |
+| vitest run server packages eslint-rules (857 files passed, 268 skipped; 11070 tests passed) | 0    |
+| pnpm -C server/web build                                                                    | 0    |
+
+### State and what is left (round 2)
+
+- Pushed with --no-verify (the pre-push gate is `pnpm verify`; the gates
+  above ran by hand).
+- Not run yet: the workstation DB gates, one at a time, in an own clone
+  and an own pgvector pg18 container (name prefix s5p3-, a free port,
+  max_connections=450, a `postgres` role as CI's, MANTLE_CHECK_FLOOR=keep,
+  systemd-run --user, --maxWorkers=3): full `pnpm test`,
+  `pnpm test:actor-off`, `pnpm test:runtime-role` in full. Clean up by
+  exact name.
+- CI of the pushed head: read its result
+  (`gh run list -R crossworks-engineering/mantle --branch feat/s5-p3`).
+
+### Open items
+
+- The barrel goes one release after part 3: index.ts and the 14 test
+  files that vi.mock client.ts must move first (a mock of the barrel is
+  what their callers see through index.ts; mocking each gateway module
+  instead changes those tests), then dbClientLines to 0 and viewer.ts's
+  client.ts skip removed.
+- tsAdminSqlKinds's template reader (eslint-rules/rights-counts.mjs)
+  loses its place after a nested template literal, so a file can hide a
+  membership ask or an area rule after one. Fix the reader and re-measure
+  sqlMembershipAsks and sqlAreaRules.
+- Test files' comments still name client.ts for moved code (a2a, a2b2b,
+  w7a, a8, connection-ceiling, login-facts, ws-user-definers, sql-grid):
+  left, because tests change only in imports in this split.
