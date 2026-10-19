@@ -10,7 +10,7 @@ import { READ_ONLY_COPY_MESSAGE, UUID_RE } from '@mantle/std';
 import { NextResponse } from '../../server/http-compat';
 
 /** What a login hears of an item it does not read, existing or not: one
- *  answer, so the two cannot be told apart (W7e, audit 2026-10-12). */
+ *  answer, so the two cannot be told apart. */
 export function itemNotFound(): NextResponse {
   return NextResponse.json({ ok: false, error: 'not found' }, { status: 404 });
 }

@@ -150,8 +150,7 @@ export async function adminCloseShare(
 /** What "Can write" on a contact share answered
  *  (mantle_share_contact_write_set). */
 export type ContactShareWriteOutcome =
-  | { outcome: 'ok'; contactId: string }
-  | { outcome: 'not-contact' | 'not-found' | 'write-not-app' };
+  { outcome: 'ok'; contactId: string } | { outcome: 'not-contact' | 'not-found' | 'write-not-app' };
 
 /** PATCH /api/shares/:id { canWrite } on a contact share, as `loginId`:
  *  'not-contact' when no share names a contact by this id (nothing
@@ -182,8 +181,7 @@ export type AppTrashRow = {
 
 /** What an Admin user's act on the trash answered (mantle_app_trash_act). */
 export type AppTrashOutcome =
-  | { outcome: 'not-found' | 'held' | 'purged' }
-  | { outcome: 'restore'; row: AppTrashRow };
+  { outcome: 'not-found' | 'held' | 'purged' } | { outcome: 'restore'; row: AppTrashRow };
 
 /** DELETE /api/apps/deleted/:id (purge: the rows removed inside) and
  *  POST /api/apps/deleted/:id/restore (restore: the check, and the

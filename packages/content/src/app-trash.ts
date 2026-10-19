@@ -234,9 +234,7 @@ export async function restoreDeletedAppFrom(
     source: code.source,
     // The author ceiling comes back too (team apps Phase 3, M3 audit): a
     // member-era app, or one that ran at team rules, stays at team rules.
-    ...(row.memberEra || meta?.authorLevel === 'team'
-      ? { authorLevel: 'team' as const }
-      : {}),
+    ...(row.memberEra || meta?.authorLevel === 'team' ? { authorLevel: 'team' as const } : {}),
   });
   try {
     if (row.dbPath) {
