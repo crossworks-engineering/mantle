@@ -870,12 +870,9 @@ describe('the item pre-check counters (A4 step 4, A5 step 6b)', () => {
     expect(Object.keys(by)).toEqual([...(ITEM_PRECHECK_ROUTE_LISTS as string[])]);
     // A list whose last entry went is gone and counts 0 (the pre-check
     // removal part 2): ITEM_MANAGE_WRITES, ITEM_WRITE_PREFIXES and
-    // ITEM_READ_WRITES. ITEM_REF_PREFIXES keeps the share and the
-    // deleted app (plan v3 S6).
-    const gone = ['ITEM_MANAGE_WRITES', 'ITEM_WRITE_PREFIXES', 'ITEM_READ_WRITES'];
-    for (const [name, n] of Object.entries(by)) {
-      expect(n, name).toBe(gone.includes(name) ? 0 : 2);
-    }
+    // ITEM_READ_WRITES; ITEM_REF_PREFIXES in plan v3.2 S6 c2 (the share
+    // and the deleted app: their handlers and definers ask, 0310).
+    for (const [name, n] of Object.entries(by)) expect(n, name).toBe(0);
     expect(Object.values(by).reduce((a, b) => a + b, 0)).toBe(got.numbers.itemPrecheckRoutes);
     // The last tool entries went in Part 3: the pin is 0.
     expect(got.numbers.itemPrecheckTools).toBe(0);
