@@ -176,6 +176,25 @@ attach should have put a persona and did not: name it before the roll.
 
 ## Gates
 
+Audit round 1 (9/10, merge; L1 to L4 folded in, L5 goes to S7), rebased
+onto main 6f6e85704 (v0.300.102, S6 c2 with 0310; the rebase was clean),
+at 446be696e (code; the commit after it only adds these lines):
+
+On the Mac, `DATABASE_URL` unset: `pnpm install --frozen-lockfile` 0,
+`pnpm -r typecheck` 0, `pnpm lint` 0, `pnpm format:check` 0,
+`pnpm docs:check` 0, `pnpm arch:check` 0, `pnpm -C server/web build` 0,
+`pnpm exec vitest run server packages eslint-rules` 0 (11059 passed).
+
+On the workstation (a fresh `s2c_verify_pg`, the same settings as below):
+full DB vitest 0 (1123 files, 13829 passed), `test:actor-off` 0 (1165
+passed), `test:runtime-role` in full 1 (275 files, 2752 passed, 0 failed,
+one unhandled `CONNECTION_CLOSED` from `w7e-member-scope.db.test.ts`, the
+teardown race its `afterAll` names); that file alone under
+`test:runtime-role` 0, three runs.
+
+CI: https://github.com/crossworks-engineering/mantle/actions/runs/39254957548
+(success, 446be696e).
+
 After the rebase onto main 817fbb986 (v0.300.101, S2b merged; the rebase
 was clean and S2b's four commits dropped out), at 2f4dc6643 (code; the
 commit after it only adds these lines):
