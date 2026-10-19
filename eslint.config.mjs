@@ -19,6 +19,7 @@ import mantleLevelReadsPlugin from './eslint-rules/level-reads.mjs';
 import mantleRawAclPlugin from './eslint-rules/no-raw-acl-columns.mjs';
 import mantleAsSystemPlugin from './eslint-rules/as-system-allowlist.mjs';
 import mantleSystemWorkPlugin from './eslint-rules/system-work-allowlist.mjs';
+import mantleRawWritePlugin from './eslint-rules/no-raw-write-sql.mjs';
 import mantleScopeSettingsPlugin from './eslint-rules/scope-settings.mjs';
 import mantleStoreBrokersPlugin from './eslint-rules/store-brokers.mjs';
 import mantleActorSettersPlugin from './eslint-rules/actor-setters.mjs';
@@ -228,6 +229,7 @@ export default tseslint.config(
       'mantle-system-work': mantleSystemWorkPlugin,
       'mantle-scope-settings': mantleScopeSettingsPlugin,
       'mantle-stores': mantleStoreBrokersPlugin,
+      'mantle-raw-write': mantleRawWritePlugin,
     },
     rules: {
       'mantle-acl/no-raw-acl-columns': 'error',
@@ -240,6 +242,9 @@ export default tseslint.config(
       'mantle-scope-settings/system-pool-scope-sites': 'error',
       // Only a store's broker reaches its write API (A3b).
       'mantle-stores/store-brokers': 'error',
+      // Raw write SQL: pinned per file, each leaves as a typed write or a
+      // definer call (plan v3.2 section 3.2).
+      'mantle-raw-write/no-raw-write-sql': 'error',
     },
   },
   {

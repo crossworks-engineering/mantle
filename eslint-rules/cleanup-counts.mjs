@@ -22,7 +22,9 @@ import { parse } from './as-system-exits.mjs';
 
 const lineOf = (sf, pos) => sf.getLineAndCharacterOfPosition(pos).line + 1;
 
-function isTestSupport(path) {
+/** Whether `path` is test support (a test-support folder or file): never
+ *  product code, as a test file is not. */
+export function isTestSupport(path) {
   return /(^|\/)test-support(\/|\.ts$)/.test(path);
 }
 

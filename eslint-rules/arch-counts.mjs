@@ -734,8 +734,9 @@ export function repoPathOf(filename) {
 }
 
 /** An ESLint rule over a per-file count: it flags a file whose count is
- *  over its pin (an unlisted file's pin is 0). The tests pin the counts
- *  exactly; the rule is the editor's early warning. */
+ *  over its pin (an unlisted file's pin is 0). `count` gets the text and
+ *  the repo path. The tests pin the counts exactly; the rule is the
+ *  editor's early warning. */
 export function pinnedRule({ description, message, pins, swept, count, repoPath }) {
   return {
     meta: { type: 'problem', docs: { description }, messages: { over: message }, schema: [] },
@@ -744,7 +745,7 @@ export function pinnedRule({ description, message, pins, swept, count, repoPath 
       if (!path || !swept(path)) return {};
       return {
         Program(node) {
-          const n = count(context.sourceCode.getText());
+          const n = count(context.sourceCode.getText(), path);
           const pin = Object.hasOwn(pins, path) ? pins[path] : 0;
           if (n > pin) context.report({ node, messageId: 'over' });
         },

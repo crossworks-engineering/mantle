@@ -66,6 +66,15 @@ import {
 import { ROUTE_LIST_PINS, TOOL_LIST_PINS } from './no-policy-name-lists.mjs';
 // @ts-expect-error: plain-JS module, no types shipped.
 import {
+  RAW_WRITE_PINS,
+  rawWriteLinted,
+  rawWriteSiteCount,
+  rule as rawWriteRule,
+} from './no-raw-write-sql.mjs';
+// @ts-expect-error: plain-JS module, no types shipped.
+import { RAW_WRITE_ALLOWLIST, RAW_WRITE_ALLOWLIST_CAP } from './raw-write-allowlist.mjs';
+// @ts-expect-error: plain-JS module, no types shipped.
+import {
   DOCS_STORE_FILES,
   STORE_PINS,
   fsWritesIn,
@@ -240,6 +249,40 @@ describe('the architecture ratchets (pinned counts)', () => {
     const show = (v: unknown) => JSON.stringify(v);
     expect(diff(TOOL_LIST_PINS, got.perFile.toolLists, show)).toEqual([]);
     expect(diff(ROUTE_LIST_PINS, got.perFile.routeLists)).toEqual([]);
+  });
+
+  it('no-raw-write-sql: raw write SQL in scoped code and in the allowlist, file by file', () => {
+    const allow = RAW_WRITE_ALLOWLIST as Record<string, { count: number; why: string }>;
+    const scoped: Record<string, number> = {};
+    const allowed: Record<string, number> = {};
+    for (const f of countedFiles(ROOT) as string[]) {
+      if (!rawWriteLinted(f)) continue;
+      const text = readRepoFile(ROOT, f);
+      if (text === null) continue;
+      const n = rawWriteSiteCount(text, f) as number;
+      if (!n) continue;
+      if (Object.hasOwn(allow, f)) allowed[f] = n;
+      else scoped[f] = n;
+    }
+    // Scoped code: each pin exact, so a pin only goes down.
+    expect(diff(RAW_WRITE_PINS as Record<string, number>, scoped)).toEqual([]);
+    // The scoreboard reads the same sites (rawWriteSqlScoped, rawSqlNonLiteral).
+    const board = (got.perFile as unknown as { cleanup: { rawWriteSql: Record<string, string[]> } })
+      .cleanup.rawWriteSql;
+    expect(Object.fromEntries(Object.entries(board).map(([f, v]) => [f, v.length]))).toEqual(
+      scoped,
+    );
+    // The allowlist: each entry exact, with its why; capped at its count
+    // when made (plan rule 6). Raising the cap or adding an entry is a
+    // review decision of the F auditor.
+    const counts = Object.fromEntries(Object.entries(allow).map(([f, v]) => [f, v.count]));
+    expect(diff(counts, allowed)).toEqual([]);
+    expect(RAW_WRITE_ALLOWLIST_CAP).toBeLessThanOrEqual(5);
+    expect(Object.keys(allow).length).toBeLessThanOrEqual(RAW_WRITE_ALLOWLIST_CAP as number);
+    for (const [f, v] of Object.entries(allow)) {
+      expect(v.why.length, f).toBeGreaterThan(20);
+      expect(Object.hasOwn(RAW_WRITE_PINS, f), f).toBe(false);
+    }
   });
 
   it('store-brokers: the files that reach each disk store, store by store', () => {
@@ -940,6 +983,51 @@ describe('the editor rules', () => {
         {
           code: 'withSystemPoolInWriteScope(() => a());\nwithSystemPoolInWriteScope(() => b());\nwithSystemPoolInWriteScope(() => c());',
           filename: '/r/server/web/lib/workspaces.ts',
+          errors: [{ messageId: 'over' }],
+        },
+      ],
+    });
+  });
+
+  it('flag raw write SQL over a file pin, never a read, a definer call or a typed write', () => {
+    const file = '/r/packages/search/src/new.ts';
+    const [allowed, entry] = Object.entries(
+      RAW_WRITE_ALLOWLIST as Record<string, { count: number }>,
+    )[0]!;
+    const writes = (n: number) =>
+      Array.from(
+        { length: n },
+        (_, i) => `await db.execute(sql\`delete from t where id = ${i}\`);`,
+      ).join('\n');
+    tester.run('no-raw-write-sql', rawWriteRule, {
+      valid: [
+        {
+          code: 'await db.execute(sql`select * from t where id = ${x} for update`);',
+          filename: file,
+        },
+        { code: 'await db.execute(sql`select "public"."mantle_x"(${x})`);', filename: file },
+        { code: 'await db.update(t).set({ a: 1 }).where(eq(t.id, x));', filename: file },
+        { code: 'await pg.unsafe(readSql(text));', filename: file },
+        { code: writes(entry.count), filename: `/r/${allowed}` },
+        // Tests and test support are not product code.
+        { code: writes(1), filename: '/r/packages/search/src/test-support/seed.ts' },
+      ],
+      invalid: [
+        { code: writes(1), filename: file, errors: [{ messageId: 'over' }] },
+        {
+          code: 'await db.execute(sql`with x as (update t set a = 1 returning id) select id from x`);',
+          filename: file,
+          errors: [{ messageId: 'over' }],
+        },
+        {
+          code: 'await db.execute(sql`/* c */ with y as (select 1) insert into t select * from y`);',
+          filename: file,
+          errors: [{ messageId: 'over' }],
+        },
+        { code: 'await pg.unsafe(text);', filename: file, errors: [{ messageId: 'over' }] },
+        {
+          code: writes(entry.count + 1),
+          filename: `/r/${allowed}`,
           errors: [{ messageId: 'over' }],
         },
       ],
