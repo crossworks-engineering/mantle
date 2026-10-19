@@ -3,7 +3,7 @@
  * A2a). Every process entry binds its actor once, at its entry
  * (docs/process-inventory.md lists them); everything it awaits carries it. The database learns it as
  * mantle.actor and mantle.write_mode, set by mantle_set_actor (migration
- * 0275) on the app's system pool only, from client.ts.
+ * 0275) on the app's system pool only, from gateway/actor-sql.ts.
  *
  * The kinds (plan 4.1, 20.3 item 15):
  *  - login(rw): a signed-in user, a read-write key, a peer acting as a login
@@ -184,8 +184,9 @@ function startedInside<T>(value: T): Bound<T> {
 /**
  * Run `fn` with no actor, as a process entry starts. Two callers: tests of
  * an entry (the entry must bind its own; a test otherwise runs as
- * system(test), see enterTestActor), and client.ts's box mode timer, which
- * must not keep the actor of the statement that opened the pool. Pinned by
+ * system(test), see enterTestActor), and the box mode timer
+ * (gateway/check-mode.ts, started by gateway/pools.ts), which must not keep
+ * the actor of the statement that opened the pool. Pinned by
  * eslint-rules/actor-binders.mjs.
  */
 export function runWithoutActor<T>(fn: () => T): T {
@@ -226,15 +227,16 @@ function parseMode(v: string | null | undefined): ActorCheckMode {
   return s === 'warn' || s === 'on' ? s : 'off';
 }
 
-/** The box's mode, from mantle_actor_check_mode(); read by client.ts. */
+/** The box's mode, from mantle_actor_check_mode(); read by
+ *  gateway/check-mode.ts. */
 let boxMode: ActorCheckMode = 'off';
 
-/** Set by client.ts after it read the box's mode. */
+/** Set by gateway/check-mode.ts after it read the box's mode. */
 export function noteBoxActorCheckMode(mode: string | null): void {
   boxMode = parseMode(mode);
 }
 
-/** client.ts, when its pool closes: the next pool reads the mode afresh,
+/** gateway/pools.ts, when its pool closes: the next pool reads the mode afresh,
  *  and until then the process uses MANTLE_ACTOR_CHECK alone. */
 export function forgetBoxActorCheckMode(): void {
   boxMode = 'off';
@@ -283,7 +285,7 @@ const recorded: ActorMiss[] = [];
 const loggedKeys = new Map<string, number>();
 let missLogger: ((m: ActorMiss) => void) | null = null;
 
-/** client.ts hands the writer of miss rows here (another connection). */
+/** gateway/pools.ts hands the writer of miss rows here (another connection). */
 export function setActorMissLogger(fn: (m: ActorMiss) => void): void {
   missLogger = fn;
 }
@@ -383,7 +385,7 @@ export function takeActorMisses(): ActorMiss[] {
 /** A NOTICE from an item table's write trigger (migration 0275). */
 export const SQL_MISS_PREFIX = 'mantle actor miss: ';
 
-/** client.ts's onnotice: a trigger's miss becomes a miss; anything else is
+/** gateway/pools.ts's onnotice: a trigger's miss becomes a miss; anything else is
  *  printed as postgres.js prints notices by default. */
 export function onPgNotice(notice: { message?: string; severity?: string }): void {
   const msg = notice.message ?? '';

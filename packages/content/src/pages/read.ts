@@ -161,7 +161,7 @@ export async function getPage(ownerId: string, id: string): Promise<PageDetail |
   // withSystemTx): it ends with its caller, before a fire-and-forget write
   // would run, and on a viewer role the write is refused (W6a fix round 2).
   // The next read outside one repairs the page. In a request scope the
-  // write goes to the system pool (`db`, client.ts).
+  // write goes to the system pool (`db`, packages/db gateway/handles.ts).
   // Nor for a reader who may not edit the page (an Admin user with Read
   // only): a read never writes an item its reader cannot change.
   if (

@@ -8,14 +8,14 @@ release with every count at 0) refuses them. The spec is
 
 ## The six sites
 
-| Site (`fail-open:<site>`) | Where                                           | A hit when                                                                               |
-| ------------------------- | ----------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| `scope-holds-admin`       | `scopeHoldsAdmin` (`packages/db/src/client.ts`) | code outside every scope gets yes (`isUnscoped()`) and no system actor is bound          |
-| `scope-has-area`          | `scopeHasArea`, its system case (client.ts)     | the same: a yes outside every workspace scope with no system actor bound                 |
-| `typed-write`             | `typedWrite` (gateway/write-route.ts)           | a scoped write (`db.insert`, `update`, `delete`) to a table the write role does not hold |
-| `raw-write`               | `loginWriteClient` (gateway/write-route.ts)     | a scoped raw write (`executeWrite`, a write transaction) to such a table                 |
-| `turn-exit`               | `asSystem` (`packages/db/src/viewer.ts`)        | production lets an unlisted `asSystem` reason leave a turn scope                         |
-| `system-db`               | `assertSystemDbCaller` (viewer.ts)              | production lets a file outside `SYSTEM_DB_MODULES` use `systemDb` in a turn scope        |
+| Site (`fail-open:<site>`) | Where                                                          | A hit when                                                                               |
+| ------------------------- | -------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| `scope-holds-admin`       | `scopeHoldsAdmin` (`packages/db/src/gateway/scope-answers.ts`) | code outside every scope gets yes (`isUnscoped()`) and no system actor is bound          |
+| `scope-has-area`          | `scopeHasArea`, its system case (gateway/scope-answers.ts)     | the same: a yes outside every workspace scope with no system actor bound                 |
+| `typed-write`             | `typedWrite` (gateway/write-route.ts)                          | a scoped write (`db.insert`, `update`, `delete`) to a table the write role does not hold |
+| `raw-write`               | `loginWriteClient` (gateway/write-route.ts)                    | a scoped raw write (`executeWrite`, a write transaction) to such a table                 |
+| `turn-exit`               | `asSystem` (`packages/db/src/viewer.ts`)                       | production lets an unlisted `asSystem` reason leave a turn scope                         |
+| `system-db`               | `assertSystemDbCaller` (viewer.ts)                             | production lets a file outside `SYSTEM_DB_MODULES` use `systemDb` in a turn scope        |
 
 System work takes the first two yes on purpose (a worker, an Admin area
 route, a named repair: each binds a system actor), so it is never counted;

@@ -5,7 +5,7 @@
  * mantle.actor_check) or their setter functions (mantle_set_actor,
  * mantle_operator_actor) is refused. Code binds an actor with the
  * TypeScript API instead (runAsActor, runAsSystem from @mantle/db), and
- * client.ts sets the settings.
+ * packages/db/src/gateway/actor-sql.ts sets the settings.
  *
  * Not a secret: any role can set a mantle.* setting. The protection is this
  * lint, the runtime role (A9) and the read predicate on the write role

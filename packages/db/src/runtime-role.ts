@@ -128,13 +128,13 @@ export const RUNTIME_DENIED_FUNCTIONS: Readonly<Record<string, string>> = {
  */
 export const RUNTIME_SYSTEM_FUNCTIONS: Readonly<Record<string, string>> = {
   'public.mantle_actor_miss_log(text,text,text,text)':
-    'client.ts logActorMiss: an actor check miss row, as system(actor-check)',
+    'gateway/pools.ts logActorMiss: an actor check miss row, as system(actor-check)',
   'public.mantle_bridge_login(uuid)':
     'login-create.ts, login-update.ts, member-invites.ts: a login into its workspaces (0286)',
   'public.mantle_check_box_mode(text)':
-    'client.ts EDIT_CHECK_DRIFT_SQL and CHECK_FLOOR_SQL: the boot warnings and the integrity rows',
+    'gateway/check-mode.ts EDIT_CHECK_DRIFT_SQL and check-floor.ts CHECK_FLOOR_SQL: the boot warnings and the integrity rows',
   'public.mantle_check_lowered()':
-    'client.ts CHECK_FLOOR_SQL: the record of a check lowered below on (0301), logged loudly',
+    'check-floor.ts CHECK_FLOOR_SQL: the record of a check lowered below on (0301), logged loudly',
   'public.mantle_contact_sharing_set(uuid,text,text)':
     "admin-acts.ts: an Admin user's switch of a contact's sharing (0308)",
   'public.mantle_contact_sharing_rows(uuid,uuid,text,text)':
@@ -159,10 +159,10 @@ export const RUNTIME_SYSTEM_FUNCTIONS: Readonly<Record<string, string>> = {
   'public.mantle_share_with_contacts_rows(uuid,uuid,uuid[],text[],boolean,text[])':
     'contact-shares.ts: the same rows for an owner, system work (0308)',
   'public.mantle_area_rule(uuid,text)':
-    'client.ts loginHasArea: the area rule about another login (0304, S2a a0)',
+    'gateway/scope-answers.ts loginHasArea: the area rule about another login (0304, S2a a0)',
   'public.mantle_login_areas(uuid)': 'the areas the area rule gives a login (0304, S2a a0)',
   'public.mantle_login_is_admin(uuid)':
-    'client.ts loginHoldsAdmin: a login holds Admin now (0304, S2a a0)',
+    'gateway/scope-answers.ts loginHoldsAdmin: a login holds Admin now (0304, S2a a0)',
   'public.mantle_role_drift()':
     'the box count of role drift (scripts/arch-scoreboard-box.sh; 0304, S2a a0)',
   'public.mantle_ws_archive(uuid,uuid)':
@@ -170,7 +170,7 @@ export const RUNTIME_SYSTEM_FUNCTIONS: Readonly<Record<string, string>> = {
   'public.mantle_ws_attach_assistants()':
     'workspaces-migrate.ts attachDefaultAssistants: the default assistants (a definer since 0307: system work at boot, the assistants area at signup and onboarding)',
   'public.mantle_ws_private_workspace(uuid)':
-    "client.ts: the creating login's private workspace (W6b create home)",
+    "gateway/viewer-scope.ts: the creating login's private workspace (W6b create home)",
   'public.mantle_ws_skip_reason()':
     'snapshot-copies.ts and the integrity row workspaces_not_migrated',
 };

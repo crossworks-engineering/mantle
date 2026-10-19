@@ -6,8 +6,9 @@
  * needs an operator's reason (mantle_set_check refuses one without it) and
  * leaves a record (mantle_check_lowered()); migrate raises a box that is
  * below on with no record (raiseCheckFloor); and every process says so,
- * loudly, while a check is below on (checkFloorWarning, read by client.ts
- * when its pool opens and each minute after, never on a request's path).
+ * loudly, while a check is below on (checkFloorWarning, read by
+ * gateway/check-mode.ts when its pool opens and each minute after, never on
+ * a request's path).
  */
 import type postgres from 'postgres';
 

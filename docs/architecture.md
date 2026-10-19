@@ -439,9 +439,9 @@ A fresh setup needs one extra step the bootstrap can't do: inserting your own
 row into `auth.users`. There's no signup UI; you `psql` it in directly with a
 bcrypt hash. (Single-user system; this was a deliberate trade.)
 
-**Connection** is a single `postgres-js` pool (`packages/db/src/client.ts`),
-exported as `db` (Drizzle). All app code, workers, and the MCP server import
-the same `db`. No raw `pg` clients, no service-role split, single connection
+**Connection** is a single `postgres-js` pool
+(`packages/db/src/gateway/pools.ts`), exported as `db` (Drizzle). All app code,
+workers, and the MCP server import the same `db`. No raw `pg` clients, no service-role split, single connection
 shape across the codebase.
 
 ---

@@ -5,9 +5,9 @@
  * One idea: no permission check per tool. A scoped caller's queries run as
  * the workspace LOGIN role (`mantle_view_user`) with its workspaces set on
  * the transaction, and row level security drops every row those workspaces
- * do not hold. `db` (client.ts) reads the scope from this AsyncLocalStorage
- * on every property access, so everything inside `withViewer(actsFor, fn)`
- * is filtered with no code change.
+ * do not hold. `db` (gateway/handles.ts) reads the scope from this
+ * AsyncLocalStorage on every property access, so everything inside
+ * `withViewer(actsFor, fn)` is filtered with no code change.
  *
  * Rules:
  *  - No scope = the admin pool (system work).
@@ -126,7 +126,7 @@ type Scope = {
    *  match to reuse it (arch A2b, plan 20.2). */
   nest?: SystemTxNest;
   /** A turn scope (workspaces W4b): no transaction of its own; every query
-   *  opens a short one on the workspace role (client.ts). */
+   *  opens a short one on the workspace role (gateway/scope.ts). */
   perQuery?: true;
   /** A REQUEST scope (workspaces W6a): the session guard entered it for the
    *  rest of the request (enterRequestScope). Reads run as a turn scope's
@@ -140,7 +140,7 @@ type Scope = {
  *    the system pool with their rule in the statement (plan 2.3): in any
  *    request scope `db` sends insert, update, delete and a writing
  *    `execute` there, and a mutating request's transactions too
- *    (client.ts); withSystemTx and the heads helpers stay open.
+ *    (gateway/handles.ts); withSystemTx and the heads helpers stay open.
  *  - `drafts`: whether `readsDrafts()` says yes (an Admin user's editor
  *    reads the draft of an item it may write; the rule is in each query).
  */
@@ -206,7 +206,7 @@ export type CreateHome = {
  * second one at the same time is refused). `done`: it ended (a nested call
  * after that is refused). `saves`: the nested calls (savepoints) of the
  * whole outer transaction so far, shared by every level (A2b1 fix round 2,
- * L2). Set and read by client.ts only.
+ * L2). Set and read by gateway/system-tx.ts only.
  */
 export type SystemTxNest = {
   readonly actor: string;
@@ -416,7 +416,7 @@ const systemPoolScope = new AsyncLocalStorage<WorkspaceScope>();
 
 /**
  * Run `fn` on the system pool with the request's write scope set on each of
- * its transactions (client.ts db reads carriedWriteScope):
+ * its transactions (gateway/handles.ts db reads carriedWriteScope):
  * an Admin user's role change from the workspace screen (adminRoleChange),
  * whose request runs in its login's scope but whose writes reach tables the
  * write role holds no right on (auth.users, sessions, push devices). Its
@@ -495,8 +495,8 @@ export function noteRequestOwnRule(loginId: string): void {
 /**
  * Tests and development only (W6a, the route sweep): note a read a member
  * route ('own-rule') sends to the system pool, outside any withViewer or
- * other scope, with the file that sent it. client.ts calls it on every
- * read handle `db` hands out; anywhere else it is a no-op.
+ * other scope, with the file that sent it. gateway/handles.ts calls it on
+ * every read handle `db` hands out; anywhere else it is a no-op.
  */
 export function noteOwnRuleSystemRead(what: string): void {
   const slot = requestSlots.getStore();
@@ -624,13 +624,13 @@ function inScope<T>(scope: Scope, fn: () => T): T {
 }
 
 /**
- * Enter the scope `withViewer` built (client.ts, plan R6): `fn` and what it
- * awaits read on the workspace role, each query in its own short
- * transaction that sets the scope, as a turn scope does. It replaces a
+ * Enter the scope `withViewer` built (gateway/viewer-scope.ts, plan R6):
+ * `fn` and what it awaits read on the workspace role, each query in its own
+ * short transaction that sets the scope, as a turn scope does. It replaces a
  * system scope around it (a system transaction keeps its own `tx`). Inside
  * a workspace scope it runs `fn` as is when the scope is the same and is
- * refused otherwise (a scope is never widened or swapped). Only client.ts
- * calls this, with a validated, frozen scope.
+ * refused otherwise (a scope is never widened or swapped). Only
+ * gateway/viewer-scope.ts calls this, with a validated, frozen scope.
  */
 export function runInViewerScope<T>(ws: WorkspaceScope, fn: () => Promise<T>): Promise<T> {
   const open = active();
@@ -653,8 +653,8 @@ export function runInViewerScope<T>(ws: WorkspaceScope, fn: () => Promise<T>): P
 }
 
 /** Enter a workspace scope that runs in one transaction on the workspace
- *  role. Only client.ts calls this (`withScope`), with the transaction it
- *  opened and whose settings it set. */
+ *  role. Only gateway/scope.ts calls this (`withScope`), with the
+ *  transaction it opened and whose settings it set. */
 export function runInWorkspaceTx<T>(
   scope: { ws: WorkspaceScope; tx: unknown; hooks: TxHooks },
   fn: () => Promise<T>,
@@ -668,10 +668,11 @@ export function runInWorkspaceTx<T>(
 /**
  * Enter a TURN scope (workspaces W4b): `fn` and everything it awaits read on
  * the workspace role, each query in its own short transaction that sets the
- * scope (client.ts). No transaction is held across the turn, so an LLM call
- * inside never holds one. Nested: the same scope runs `fn` as is; any other
- * scope (another workspace scope, a transaction) is refused, so a scope is never widened or swapped. Only
- * client.ts calls this (`withTurnScope`), with a validated, frozen scope.
+ * scope (gateway/scope.ts). No transaction is held across the turn, so an
+ * LLM call inside never holds one. Nested: the same scope runs `fn` as is;
+ * any other scope (another workspace scope, a transaction) is refused, so a
+ * scope is never widened or swapped. Only gateway/scope.ts calls this
+ * (`withTurnScope`), with a validated, frozen scope.
  */
 export function runInTurnScope<T>(
   ws: WorkspaceScope,
@@ -778,7 +779,8 @@ export function currentTurnStamp(): TurnStamp | null {
  * parallel app writes each held one connection for the lock and took more
  * for the work, and could empty the pool). With the transaction's `hooks`:
  * `afterCommit` and `afterRollback` inside wait for it to end (follow-up
- * low 1), never run early. Only client.ts calls this (`withSystemTx`).
+ * low 1), never run early. Only gateway/system-tx.ts calls this
+ * (`withSystemTx`).
  */
 export function runInSystemTx<T>(
   scope: { tx: unknown; hooks: TxHooks; nest: SystemTxNest },
@@ -787,7 +789,7 @@ export function runInSystemTx<T>(
   // A request scope around it is fine: a system transaction is the write
   // path of a mutating request (plan 2.3, the rule in the statement). So is
   // an open system transaction: a nested one is its savepoint (arch A2b,
-  // client.ts nestedSystemTx).
+  // gateway/system-tx.ts nestedSystemTx).
   const open = active();
   if (open && !open.request && !(open.system && open.tx && open.nest)) {
     return Promise.reject(new RuntimeFaultError('runInSystemTx: only outside a viewer scope'));
@@ -1204,8 +1206,8 @@ export function isSystemDbModule(file: string): boolean {
  * eslint rule holds the import; this holds the call, whatever path the
  * handle took). Anything else throws TurnScopeExitError in tests and local
  * development, and is logged once per calling file in production, as asSystem
- * does (M4). Outside a turn scope: nothing. client.ts calls it on every
- * access to `systemDb` in a turn scope; `stack` is for tests.
+ * does (M4). Outside a turn scope: nothing. gateway/handles.ts calls it on
+ * every access to `systemDb` in a turn scope; `stack` is for tests.
  */
 export function assertSystemDbCaller(stack?: string): void {
   if (!active()?.perQuery) return;

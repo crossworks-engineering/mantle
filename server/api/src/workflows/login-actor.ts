@@ -5,7 +5,7 @@
  */
 import { loginActor, systemActor, type Actor } from '@mantle/db';
 
-/** The shared check (packages/db client.ts). */
+/** The shared check (packages/db gateway/scope-answers.ts). */
 export { loginActorNow } from '@mantle/db';
 
 /** The owner cases (a run with no login, the owner's turn with no user

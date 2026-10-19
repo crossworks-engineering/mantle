@@ -12,8 +12,9 @@
  * hour in a process, marked only once a writer took it. Changes no answer:
  * it only writes rows.
  *
- * Imports nothing from this package (viewer.ts and client.ts both call it;
- * fail-open-sites.ts holds what makes a client.ts branch a hit).
+ * Imports nothing from this package (viewer.ts and the gateway modules both
+ * call it; fail-open-sites.ts holds what makes a gateway/scope-answers.ts or
+ * gateway/write-route.ts branch a hit).
  */
 import { env } from '@mantle/config';
 

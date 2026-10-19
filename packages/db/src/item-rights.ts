@@ -7,9 +7,10 @@
  * the item. A read-only snapshot copy (data.snapshot_of) is never edited.
  *
  * A login's typed write in a scope runs on the write role in every check
- * mode (plan v3 S3), where the database checks it (client.ts, the login
- * write gateway), but only as the write runs: the tool asks it here first,
- * in the caller's scope, for a clear answer before any side effect.
+ * mode (plan v3 S3), where the database checks it (gateway/write-route.ts,
+ * the login write gateway), but only as the write runs: the tool asks it
+ * here first, in the caller's scope, for a clear answer before any side
+ * effect.
  *
  * Asked in the scope only: an item the scope does not read answers "not in
  * your workspaces", whether it exists or not, so no item's existence leaves

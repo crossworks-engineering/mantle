@@ -415,9 +415,10 @@ export type AppToolRules = 'admin' | 'team';
 
 /** A workspace other than Admin holds the app: any row of its grants
  *  beyond Admin that is not "Removed here", an archived workspace's
- *  included (admin pool). The same test as an app run's scope (client.ts
- *  appRunHolders): an app this calls held runs team rules and reads only
- *  its live holders; one it does not (Admin alone) reads Team. */
+ *  included (admin pool). The same test as an app run's scope
+ *  (gateway/viewer-scope.ts appRunHolders): an app this calls held runs
+ *  team rules and reads only its live holders; one it does not (Admin
+ *  alone) reads Team. */
 const heldBeyondAdmin = sql<boolean>`exists (
   select 1 from item_grants g join workspaces w on w.id = g.workspace_id and not w.is_admin
    where g.node_id = ${nodes.id} and not g.excluded)`;

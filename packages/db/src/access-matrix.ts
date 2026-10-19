@@ -764,9 +764,10 @@ export const WRITE_ROLE_FUNCTIONS: Readonly<Record<string, string>> = {
     'notify_node_ingested runs with the caller rights on nodes and calls it',
   'public.mantle_lock_heads(uuid[],text)': 'the heads lock the app takes before a write',
   'public.mantle_lock_heads_more(uuid[])': 'more heads inside a transaction that holds some',
-  'public.mantle_lock_heads_nested(uuid[],text)': 'the nested heads lock (client.ts, withHeads)',
+  'public.mantle_lock_heads_nested(uuid[],text)':
+    'the nested heads lock (gateway/heads.ts, withHeads)',
   'public.mantle_lock_subtree_heads(uuid,uuid[])':
-    'a folder’s heads lock (client.ts, withSubtreeHeads): a move, a folder’s grant change',
+    'a folder’s heads lock (gateway/heads.ts, withSubtreeHeads): a move, a folder’s grant change',
   'public.mantle_grant_change(text,uuid,uuid,boolean,uuid)':
     'a grant row by the grants panel’s rules (0279): the role never writes the derived columns',
   'public.mantle_grant_move_home(uuid,uuid,boolean,uuid)':

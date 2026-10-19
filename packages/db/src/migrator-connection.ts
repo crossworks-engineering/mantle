@@ -2,8 +2,9 @@
  * One connection as the migrator (DATABASE_URL, the role that runs the
  * migrations), opened for one piece of work and closed after (arch A9):
  * what the runtime role may not do and the app still must, the workspaces
- * switch (client.ts, executeAsMigrator). At most one connection, at boot or
- * at the first owner: connection-ceiling.test.ts counts it as one-shot.
+ * switch (gateway/handles.ts, executeAsMigrator). At most one connection, at
+ * boot or at the first owner: connection-ceiling.test.ts counts it as
+ * one-shot.
  */
 import postgres from 'postgres';
 import { env } from '@mantle/config';
