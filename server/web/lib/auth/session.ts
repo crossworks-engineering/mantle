@@ -2112,16 +2112,19 @@ export async function getChatLoginOr401(): Promise<ChatLogin | NextResponse> {
 
 /**
  * The request scope of getLoginOr401 (W6a). On an any-login route
- * (ANY_LOGIN_ROUTES: shell, workspaces, grants, access keys, whoami) every
- * login enters its scope, an Admin user's write excepted (system pool: its
- * workspaces, keys, chat threads and pairings) but for a grants write,
- * which runs in the login's scope (F4). The grants and workspace libraries read in the scope
- * (arch A6); the shell, the access keys and whoami hold their rule in their
- * own SQL and leave the scope by name (asSystem 'rule-in-query'). Anywhere else
- * (sign-out, change password, OAuth consent: the login's own row, never
- * brain data) the request stays on the system pool. Outside a request
- * slot nothing changes; a request slot with no row is refused
- * (guardRoute). Returns the refusal, or null.
+ * (ANY_LOGIN_ROUTES: shell, workspaces, grants, access keys, whoami; the
+ * chat and Telegram pairing routes) every login enters its scope, reads and
+ * writes alike: an Admin user's write too since plan v3.2 S6 c3 (its keys,
+ * its chat threads and Telegram pairings ran on the system pool with no
+ * scope before; the grants and workspaces writes since F4 and S2a a2). The
+ * grants and workspace libraries read in the scope (arch A6); the shell,
+ * the access keys, whoami, the chat and the pairings hold their rule in
+ * their own SQL or definers and leave the scope by name where the scope's
+ * roles hold no right (asSystem 'rule-in-query', 'login-telegram'). Anywhere
+ * else (sign-out, change password, OAuth consent: the login's own row,
+ * never brain data) the request stays on the system pool. Outside a request
+ * slot nothing changes; a request slot with no row is refused (guardRoute).
+ * Returns the refusal, or null.
  */
 async function anyLoginScope(res: Resolved): Promise<NextResponse | null> {
   const route = guardRoute();
@@ -2132,33 +2135,7 @@ async function anyLoginScope(res: Resolved): Promise<NextResponse | null> {
     return null;
   }
   const loginId = res.kind === 'admin' ? res.user.actor.id : res.member.loginId;
-  // An Admin user's write here stays on the system pool (its keys, its chat
-  // threads and Telegram pairings: no brain item), but for the grants
-  // panel's and the workspaces': those run in the login's scope, reads and
-  // writes, as every login's do (arch A6, A8 matrix F7 a; the grants' reads
-  // moved into the scope with F4), so the database's checks
-  // (mantle_grant_change, 0279; the workspace definers, 0307) answer for
-  // the acting login on the write role.
-  if (res.kind === 'admin' && route.effect === 'write' && !inLoginScopeForWrites(route)) {
-    return noteSystem('admin-write');
-  }
   await enterLoginScope(loginId, requestMode(res.kind === 'admin'));
-  return null;
-}
-
-/** The any-login routes whose Admin-user writes run in the login's scope:
- *  the grants panel's (/api/grants) and the workspaces' (/api/workspaces). */
-function inLoginScopeForWrites(route: RouteRow): boolean {
-  return (
-    route.pattern.startsWith('/api/grants/') ||
-    route.pattern === '/api/workspaces' ||
-    route.pattern.startsWith('/api/workspaces/')
-  );
-}
-
-/** noteRequestSystem, then go on (null: no refusal). */
-function noteSystem(reason: Parameters<typeof noteRequestSystem>[0]): null {
-  noteRequestSystem(reason);
   return null;
 }
 
