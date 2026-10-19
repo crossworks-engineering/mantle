@@ -903,7 +903,7 @@ describe('the editor rules', () => {
       valid: [
         {
           code: 'const q = "select set_config(\'mantle.ws\', $1, true)";',
-          filename: '/r/packages/db/src/client.ts',
+          filename: '/r/packages/db/src/gateway/scope.ts',
         },
         { code: '// mantle.scope_login in a comment', filename: '/r/server/web/lib/x.ts' },
       ],

@@ -1,5 +1,5 @@
 /**
- * The one scope check (client.ts scopeProblem; arch A3c fix round 2, L-d):
+ * The one scope check (gateway/scope.ts scopeProblem; arch A3c fix round 2, L-d):
  * withScope and withTurnScope (and the gate, through turnScopeProblem) ask
  * the same function, each in its own words. These are the words each said
  * before the check was one, pinned: no caller's error text changes. Every
@@ -46,7 +46,7 @@ describe('withScope: its own words, as before', () => {
     );
     // The source: withScope asks the one check without the workspace rule.
     const { readFileSync } = await import('node:fs');
-    const src = readFileSync(new URL('./client.ts', import.meta.url), 'utf8');
+    const src = readFileSync(new URL('./gateway/scope.ts', import.meta.url), 'utf8');
     expect(src).toContain("scopeProblem(scope, 'withScope', { needsWorkspace: false })");
   });
 

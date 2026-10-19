@@ -46,10 +46,6 @@ export function systemPoolScopeCalls(text) {
 
 /** @type {Record<string, { count: number, why: string }>} */
 export const SCOPE_SETTING_PINS = {
-  'packages/db/src/client.ts': {
-    count: 4,
-    why: 'the turn scope (2), withScope (2)',
-  },
   'packages/db/src/gateway/system-tx.ts': {
     count: 3,
     why: 'writeScopeSettings (the system pool: systemPoolTx and systemPoolTxInScope)',
@@ -57,6 +53,10 @@ export const SCOPE_SETTING_PINS = {
   'packages/db/src/gateway/write-route.ts': {
     count: 2,
     why: 'the write role settings (writeRoleSettingsSql)',
+  },
+  'packages/db/src/gateway/scope.ts': {
+    count: 4,
+    why: 'the turn scope (2), withScope (2)',
   },
   'packages/db/src/matrix/test-support/a8-grid.ts': {
     count: 3,
