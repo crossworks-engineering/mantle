@@ -6,7 +6,8 @@
  * stored (mantle_app_trash_act, plan v3.2 S6 c2: the check, and the
  * snapshot it comes back from); else, or not in the trash, the one 404.
  * The app comes back in the login's scope. 409 when its last snapshot
- * holds no code.
+ * holds no code. The same 404 when the snapshot went between the check and
+ * the restore (a purge; the restore checks again where the app is made).
  */
 import { NextResponse } from '@/server/http-compat';
 import { UUID_RE } from '@mantle/std';
@@ -23,5 +24,6 @@ export async function POST(_req: Request, ctx: { params: Promise<{ id: string }>
   if (act.outcome !== 'restore') return itemNotFound();
   // AppTrashRefusedError answers 409 by the one table (A10 part 2).
   const app = await restoreDeletedAppFrom(user.id, id, act.row, { actor: 'owner' });
+  if (!app) return itemNotFound();
   return NextResponse.json({ app });
 }

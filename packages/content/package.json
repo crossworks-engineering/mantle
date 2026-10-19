@@ -20,6 +20,7 @@
     "./app-db-write": "./src/app-db-write.ts",
     "./app-snapshots": "./src/app-snapshots.ts",
     "./app-trash": "./src/app-trash.ts",
+    "./test-support/app-trash": "./src/test-support/app-trash.ts",
     "./app-package": "./src/app-package.ts",
     "./table-snapshots": "./src/table-snapshots.ts",
     "./app-table-exports": "./src/app-table-exports.ts",

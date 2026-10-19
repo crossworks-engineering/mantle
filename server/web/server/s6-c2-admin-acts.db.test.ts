@@ -14,7 +14,10 @@
  *    write (the guard's 403 body, from inside the definer);
  *  - the trash: the purge rule stays owner-only for a held app, a non-owner
  *    purge is refused with nothing removed, and no app database file is
- *    touched by any refused path.
+ *    touched by any refused path;
+ *  - a restore by a Moderator of the app's home who is not the owner, with
+ *    no actor miss, and a restore whose snapshot went between the check
+ *    and the insert (a purge): nothing made, the route's 404 (audit LOW-1).
  *
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run server/web/server/s6-c2-admin-acts.db.test.ts
  */
@@ -170,8 +173,9 @@ describe.skipIf(!DB_URL)('S6 c2: the item gate’s three Admin acts as definers'
     )[0]!;
 
   /** A deleted app in the trash: its pre_delete snapshot, homed in `home`
-   *  (none: no home stored), held when another login deleted it. */
-  const trashApp = async (home: string | null, held: boolean): Promise<string> => {
+   *  (none: no home stored), held when another login deleted it; `whole`:
+   *  with the code a restore brings back. */
+  const trashApp = async (home: string | null, held: boolean, whole = false): Promise<string> => {
     const id = randomUUID();
     await raw.begin(async (tx) => {
       await tx`select set_config('mantle.actor', 'system:test', true)`;
@@ -180,13 +184,28 @@ describe.skipIf(!DB_URL)('S6 c2: the item gate’s three Admin acts as definers'
                 ${raw.json({
                   meta: {
                     title: `${tag} gone`,
+                    tags: [],
                     ...(home ? { homeWs: home } : {}),
                     ...(held ? { keepForOwner: true } : {}),
                   },
+                  ...(whole
+                    ? {
+                        source: {
+                          entry: 'App.tsx',
+                          files: { 'App.tsx': 'export default function App() { return null; }\n' },
+                        },
+                        draft: null,
+                        manifest: {},
+                        publishedBuild: null,
+                      }
+                    : {}),
                 })})`;
     });
     return id;
   };
+
+  const liveNode = async (id: string) =>
+    (await raw<{ n: number }[]>`select count(*)::int as n from nodes where id = ${id}`)[0]!.n;
 
   const trashRows = async (app: string) =>
     (
@@ -469,6 +488,52 @@ describe.skipIf(!DB_URL)('S6 c2: the item gate’s three Admin acts as definers'
       expect(bad.status).toBe(404);
       expect(bad.json).toEqual(NOT_FOUND);
       expect(await appFiles()).toEqual(before);
+    });
+
+    it(`${mode}: a Moderator of the app's home, not the owner, restores it`, async () => {
+      await setMode(mode);
+      const app = await trashApp(ws.admin, false, true);
+      m.takeActorMisses();
+      const r = await call(
+        `${mode} admin restore`,
+        L.admin,
+        'POST',
+        `/api/apps/deleted/${app}/restore`,
+      );
+      expect(r.status, r.text).toBe(200);
+      expect(r.json).toEqual({ app: { id: app, title: `${tag} gone` } });
+      expect(await liveNode(app)).toBe(1);
+      expect(m.takeActorMisses()).toEqual([]);
+    });
+
+    it(`${mode}: a snapshot gone before the insert: nothing made, the 404`, async () => {
+      await setMode(mode);
+      const content = await import('@mantle/content');
+      const trash = await import('@mantle/content/app-trash');
+      const app = await trashApp(ws.admin, false, true);
+      const scope = await m.loginScopeFor(L.admin);
+      const made = await m.withScope(scope, async () => {
+        const act = await content.adminAppTrashAct(L.admin, app, 'restore');
+        expect(act.outcome).toBe('restore');
+        if (act.outcome !== 'restore') return 'no act';
+        // A purge between the definer's yes and the restore.
+        await raw.begin(async (tx) => {
+          await tx`select set_config('mantle.actor', 'system:test', true)`;
+          await tx`delete from node_snapshots where node_id = ${app}`;
+        });
+        return trash.restoreDeletedAppFrom(L.owner, app, act.row, { actor: 'owner' });
+      });
+      expect(made).toBeNull();
+      expect(await liveNode(app)).toBe(0);
+      // Over HTTP, now that it is gone: the one 404.
+      const r = await call(
+        `${mode} admin restore gone`,
+        L.admin,
+        'POST',
+        `/api/apps/deleted/${app}/restore`,
+      );
+      expect(r.status, r.text).toBe(404);
+      expect(r.json).toEqual(NOT_FOUND);
     });
   }
 });

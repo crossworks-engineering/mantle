@@ -536,7 +536,8 @@ describe.skipIf(!URL)('W6b fix round 1', () => {
     // The purge by someone other than the owner: refused (route and lib).
     const r = await call(`/api/apps/deleted/${a}`, admin2, 'DELETE');
     expect(r.status, r.text.slice(0, 200)).toBe(403);
-    await expect(sys(() => trash.purgeDeletedApp(owner, a))).rejects.toBeInstanceOf(
+    const { purgeDeletedApp } = await import('@mantle/content/test-support/app-trash');
+    await expect(sys(() => purgeDeletedApp(owner, a))).rejects.toBeInstanceOf(
       trash.AppTrashRefusedError,
     );
     // The nightly purge, 31 days on: the owner's delete goes, the held ones stay.

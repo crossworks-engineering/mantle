@@ -102,7 +102,17 @@ workstation in round 2 (Gates). Changes, all narrower or internal:
 - `inHandlerAreaChecks` 23 to 22, `inHandlerAreaCheckFiles` 19 to 18
   (shares/[id]'s requireArea went).
 - `actorsHistoryRefs` 75 to 74 (a removed comment quoted a docs heading).
+  Its `_notes.actorsHistoryRefs` text was dropped when the pin went 75 to
+  74: `arch-scoreboard.ts --pin` drops the note of every pin that went
+  down (`keptNotes`, eslint-rules/arch-counts.mjs); the D1 history of the pin
+  is in git (`git log -S actorsHistoryRefs -- scripts/arch-scoreboard.pins.json`).
 - `historyCodeComments` unchanged (one new code line trimmed).
+- `asSystemSites` new on this branch: round 1's `arch-scoreboard.ts --pin`
+  wrote every number the scoreboard measures, and this one (the asSystem
+  call sites) had no pin on main. `--check` does not read it (it is not in
+  `LABELS`), so it guards nothing; it records the measure. 17 on round 1's
+  base (v0.300.100), 16 after the round 3 rebase on v0.300.101: S2b took
+  workspaceWriteSystem's asSystem call out on main, not this branch.
 
 ## Tests
 

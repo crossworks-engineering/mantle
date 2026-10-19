@@ -512,7 +512,19 @@ export async function assertNewAppCodeRight(ownerId: string): Promise<void> {
   await assertManagesNewItemHome(ownerId, 'app', APPS_ROOT_LABEL);
 }
 
-export async function createApp(ownerId: string, input: CreateAppInput): Promise<AppDetail> {
+/** The node insert's transaction, for a check that must hold where the
+ *  app is made (createApp's `inTx`). */
+export type CreateAppTx = Parameters<Parameters<typeof withNodeInsertHeads>[2]>[0];
+
+export async function createApp(
+  ownerId: string,
+  input: CreateAppInput,
+  opts: {
+    /** Run in the insert's transaction, after the rows are written; a throw
+     *  rolls the app back (a restore's re-check, app-trash.ts). */
+    inTx?: (tx: CreateAppTx) => Promise<void>;
+  } = {},
+): Promise<AppDetail> {
   if (!input.inSpace) await ensureRoot(ownerId);
   const source = input.source ?? emptySource();
   const manifest: AppManifest = input.description ? { description: input.description } : {};
@@ -545,6 +557,7 @@ export async function createApp(ownerId: string, input: CreateAppInput): Promise
         ...(input.authorLevel ? { authorLevel: input.authorLevel } : {}),
         ...(input.authorLoginId ? { authorLoginId: input.authorLoginId } : {}),
       });
+      if (opts.inTx) await opts.inTx(tx);
       return detailOf(node, {
         source,
         draftSource: null,

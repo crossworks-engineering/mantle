@@ -487,7 +487,8 @@ describe.skipIf(!URL)('app history on Postgres', () => {
     const b = await publishedApp('purge-later');
     await apps.deleteApp(owner, a);
     await apps.deleteApp(owner, b);
-    expect(await trash.purgeDeletedApp(owner, a)).toBe(true);
+    const { purgeDeletedApp } = await import('./test-support/app-trash');
+    expect(await purgeDeletedApp(owner, a)).toBe(true);
     expect(await snaps.listAppSnapshots(owner, a)).toEqual([]);
     await sweepHistory();
     expect(existsSync(path.join(dir, '_snapshots', owner, a))).toBe(false);

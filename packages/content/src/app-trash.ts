@@ -14,6 +14,7 @@ import { and, eq, sql } from 'drizzle-orm';
 import { db, nodeSnapshots, nodes, type AppSnapshotCode } from '@mantle/db';
 import {
   createApp,
+  type CreateAppTx,
   restoreAppDraft,
   restoreAppLive,
   setManifest,
@@ -208,34 +209,65 @@ export type DeletedAppSnapshot = {
   memberEra: boolean;
 };
 
+/** The snapshot a restore read is gone by the time the app is made (a
+ *  purge between the check and the restore). */
+class SnapshotGoneError extends Error {}
+
+/** In the restore's own insert: the snapshot it read is still there.
+ *  Visible by its row rule once the node is back (0265). */
+async function assertSnapshotStill(
+  tx: CreateAppTx,
+  ownerId: string,
+  appId: string,
+  seq: number,
+): Promise<void> {
+  const rows = (await tx.execute(sql`
+    select 1 from node_snapshots s
+     where s.owner_id = ${ownerId} and s.node_id = ${appId} and s.node_kind = 'app'
+       and s.trigger = 'pre_delete' and s.seq = ${seq}`)) as unknown as unknown[];
+  if (rows.length === 0) throw new SnapshotGoneError();
+}
+
 /** restoreDeletedApp from a snapshot already read: POST
  *  /api/apps/deleted/:id/restore, in the login's scope, after
  *  mantle_app_trash_act said yes (plan v3.2 S6 c2). The app's rows and
- *  files come back here, as before. */
+ *  files come back here, as before. Null, nothing made, when the snapshot
+ *  went before the app's insert (the check and the restore are two
+ *  transactions); the route answers the 404 it answered before. */
 export async function restoreDeletedAppFrom(
   ownerId: string,
   appId: string,
   row: DeletedAppSnapshot,
   opts: { actor?: AppHistoryActor } = {},
-): Promise<{ id: string; title: string }> {
+): Promise<{ id: string; title: string } | null> {
   const code = row.code;
   if (!code) throw new AppTrashRefusedError(`the last snapshot of app ${appId} holds no code`);
   const meta = code.meta;
   // The node is made first, with the same id; if a later step fails, it goes
   // again and the app is back in the trash as it was (apps audit
   // 2026-10-02, low: an undelete was not all or nothing).
-  const app = await createApp(ownerId, {
-    id: appId,
-    title: meta?.title ?? 'Restored app',
-    ...(meta?.icon ? { icon: meta.icon } : {}),
-    ...(meta?.color ? { color: meta.color as never } : {}),
-    tags: meta?.tags ?? [],
-    ...(code.manifest.description ? { description: code.manifest.description } : {}),
-    source: code.source,
-    // The author ceiling comes back too (team apps Phase 3, M3 audit): a
-    // member-era app, or one that ran at team rules, stays at team rules.
-    ...(row.memberEra || meta?.authorLevel === 'team' ? { authorLevel: 'team' as const } : {}),
-  });
+  let app: Awaited<ReturnType<typeof createApp>>;
+  try {
+    app = await createApp(
+      ownerId,
+      {
+        id: appId,
+        title: meta?.title ?? 'Restored app',
+        ...(meta?.icon ? { icon: meta.icon } : {}),
+        ...(meta?.color ? { color: meta.color as never } : {}),
+        tags: meta?.tags ?? [],
+        ...(code.manifest.description ? { description: code.manifest.description } : {}),
+        source: code.source,
+        // The author ceiling comes back too (team apps Phase 3, M3 audit): a
+        // member-era app, or one that ran at team rules, stays at team rules.
+        ...(row.memberEra || meta?.authorLevel === 'team' ? { authorLevel: 'team' as const } : {}),
+      },
+      { inTx: (tx) => assertSnapshotStill(tx, ownerId, appId, row.seq) },
+    );
+  } catch (err) {
+    if (err instanceof SnapshotGoneError) return null;
+    throw err;
+  }
   try {
     if (row.dbPath) {
       await restoreAppDatabaseFile(
@@ -276,25 +308,6 @@ async function purgeOne(ownerId: string, appId: string): Promise<void> {
   await db
     .delete(nodeSnapshots)
     .where(and(eq(nodeSnapshots.ownerId, ownerId), eq(nodeSnapshots.nodeId, appId)));
-}
-
-/** Delete a deleted app for good, now. False when it is not in the trash.
- *  An app a login other than the brain's owner deleted is the owner's to
- *  purge (`byOwner`; CEO decision 1): refused for anyone else. */
-export async function purgeDeletedApp(
-  ownerId: string,
-  appId: string,
-  opts: { byOwner?: boolean } = {},
-): Promise<boolean> {
-  const [row] = await deletedRows(ownerId, appId);
-  if (!row) return false;
-  if (row.held && !opts.byOwner) {
-    throw new AppTrashRefusedError(
-      `app ${appId} was deleted by someone other than the brain owner: only the owner deletes it for good`,
-    );
-  }
-  await purgeOne(ownerId, appId);
-  return true;
 }
 
 /**
