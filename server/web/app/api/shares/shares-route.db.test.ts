@@ -88,22 +88,31 @@ describe.skipIf(!URL)('the share routes on the served list', () => {
         }),
       ),
     );
+  // A change or a close of a link asks its rule in the login's scope (plan
+  // v3.2 S6 c2: shareItemRefusal, the gate's check before), so these run
+  // in the scope the gate enters for the request.
+  const inScope = <T>(fn: () => Promise<T>) =>
+    m.withViewer({ login: (h.user as { actor: { id: string } }).actor.id }, fn);
   const patch = (shareId: string, body: unknown) =>
     call(
-      one.PATCH(
-        new Request(`http://brain.test/api/shares/${shareId}`, {
-          method: 'PATCH',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify(body),
-        }),
-        { params: Promise.resolve({ id: shareId }) },
+      inScope(() =>
+        one.PATCH(
+          new Request(`http://brain.test/api/shares/${shareId}`, {
+            method: 'PATCH',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify(body),
+          }),
+          { params: Promise.resolve({ id: shareId }) },
+        ),
       ),
     );
   const del = (shareId: string) =>
     call(
-      one.DELETE(new Request(`http://brain.test/api/shares/${shareId}`, { method: 'DELETE' }), {
-        params: Promise.resolve({ id: shareId }),
-      }),
+      inScope(() =>
+        one.DELETE(new Request(`http://brain.test/api/shares/${shareId}`, { method: 'DELETE' }), {
+          params: Promise.resolve({ id: shareId }),
+        }),
+      ),
     );
   const servedOf = async (nodeId: string) =>
     (
