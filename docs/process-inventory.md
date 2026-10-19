@@ -26,7 +26,7 @@ dbos-workflow server/api/src/workflows/runs-worker-turn.ts system(workflow:runs-
 dbos-workflow server/api/src/workflows/team-turn.ts the member's login as it is now
 dbos-workflow server/api/src/workflows/telegram-turn.ts the paired chat's login as it is now (login(owner) for the owner's), else system(workflow:telegram-turn); system(workflow:telegram-turn) with the check off or when the lookup fails
 interval packages/content/src/process-heartbeat.ts none: touches a file, no database
-interval packages/db/src/client.ts none: the box mode read, on the raw pool outside the actor client (started in runWithoutActor)
+interval packages/db/src/gateway/check-mode.ts none: the box mode read, on the raw pool outside the actor client (started in runWithoutActor)
 interval packages/share-ui/src/event-presenter.tsx none: browser code
 interval server/api/src/agent/extract-queue.ts system(tick:extract-reconcile); each job system(queue:extract)
 interval server/api/src/agent/telegram/helpers.ts none: a typing indicator, no database
@@ -61,6 +61,7 @@ timeout-loop packages/content/src/app-broker.ts the caller's actor: a drain slee
 timeout-loop packages/content/src/app-table-exports.ts system(app-export) for the export sync, whoever scheduled it (F9: never a contact share's actor)
 timeout-loop packages/db/src/access-matrix.ts the caller's actor (migrate's): the write role sync's retry sleep
 timeout-loop packages/db/src/client.ts the caller's actor: a retry sleep
+timeout-loop packages/db/src/gateway/check-mode.ts none: the first box mode read's retry sleep, outside the actor client (started in runWithoutActor)
 timeout-loop packages/db/src/resolve-owner.ts the caller's actor: the wait for the first signup
 timeout-loop packages/db/src/test-support.ts none: test helpers' poll and retry sleeps
 timeout-loop packages/db/src/viewer-roles.ts the caller's actor: a retry sleep
