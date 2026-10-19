@@ -71,8 +71,12 @@ export const SYSTEM_POOL_SCOPE_PINS = {
     why: "adminActTx: an Admin act's definer (0308) asks the request's own login, on the system pool in c1",
   },
   'packages/db/src/client.ts': {
-    count: 2,
-    why: 'createHomeFallback (the login only, for mantle_ws_private_workspace); systemPoolProp (withSystemPoolInWriteScope transactions)',
+    count: 1,
+    why: 'createHomeFallback (the login only, for mantle_ws_private_workspace)',
+  },
+  'packages/db/src/gateway/handles.ts': {
+    count: 1,
+    why: 'systemPoolProp (withSystemPoolInWriteScope transactions)',
   },
   'server/web/lib/workspaces-migrate.ts': {
     count: 1,

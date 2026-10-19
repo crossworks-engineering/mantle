@@ -1,10 +1,8 @@
 import { sql as sqlTag } from 'drizzle-orm';
 import { type PostgresJsDatabase } from 'drizzle-orm/postgres-js';
-import { PgDialect, type AnyPgColumn } from 'drizzle-orm/pg-core';
-import type { SQL } from 'drizzle-orm';
+import { type AnyPgColumn } from 'drizzle-orm/pg-core';
 import * as schema from './schema/index';
 import { holderWorkspacesSql } from './grant-reads';
-import { runtimeRoleOn } from './runtime-role';
 import {
   currentScopeTx,
   currentSpaceScope,
@@ -12,43 +10,22 @@ import {
   SCOPE_AREAS,
   type ScopeArea,
   currentWorkspaceScope,
-  inTurnScope,
-  assertSystemDbCaller,
-  systemDbAccessChecked,
   isUnscoped,
   type WorkspaceScope,
   runInViewerScope,
   type ViewerFor,
   type AppRunFor,
   currentRequestMode,
-  noteOwnRuleSystemRead,
-  noteRequestSystemWrite,
   currentSystemTx,
   requestScopeMemo,
   boundLoginId,
-  carriedWriteScope,
 } from './viewer';
-import {
-  actorCheckMode,
-  checkActorBound,
-  runAsSystem,
-  loginActor,
-  systemActor,
-  type Actor,
-} from './actor';
-import { ACTOR_SQL_TAG } from './gateway/check-mode';
-import { actorParams, setActorSql } from './gateway/actor-sql';
+import { actorCheckMode, runAsSystem, loginActor, systemActor, type Actor } from './actor';
 import { getAdminDb } from './gateway/pools';
-import {
-  loginWritesMayRoute,
-  ownPrivate,
-  systemWriteDb,
-  typedWrite,
-  uuidArrayLiteral,
-} from './gateway/write-route';
+import { ownPrivate, uuidArrayLiteral } from './gateway/write-route';
 import { systemPoolTxInScope, withSystemTx } from './gateway/system-tx';
 import { getDb } from './gateway/scope';
-import { withMigratorConnection } from './migrator-connection';
+import { db } from './gateway/handles';
 import { errorMessage, RuntimeFaultError, UUID_RE } from '@mantle/std';
 import { noteUnscopedYes } from './fail-open-sites';
 import { liveWorkspaceSql } from './workspace-live';
@@ -93,27 +70,15 @@ export {
   withScope,
   withTurnScope,
 } from './gateway/scope';
-
-// ── The actor on the system pool (workspaces arch A2a) ──────────────────────
-
-/** The handle properties that send a statement: the TypeScript actor check
- *  (A2a) runs on each access. drizzle's own reads (session, dialect) do
- *  not count. */
-const STATEMENT_PROPS: ReadonlySet<PropertyKey> = new Set([
-  'select',
-  'selectDistinct',
-  'selectDistinctOn',
-  'insert',
-  'update',
-  'delete',
-  'execute',
-  'query',
-  'transaction',
-  'with',
-  '$with',
-  '$count',
-  'refreshMaterializedView',
-]);
+export {
+  db,
+  executeAsMigrator,
+  executeWrite,
+  isWriteSql,
+  NotAWriteError,
+  systemDb,
+  type Db,
+} from './gateway/handles';
 
 /**
  * login(rw | owner) for `loginId`, read as that login is NOW (arch A2a, plan
@@ -808,159 +773,4 @@ export async function viewerScopeFor(actsFor: ViewerFor): Promise<WorkspaceScope
   });
 }
 
-/**
- * Content handle. A Proxy that defers initialisation until the first property
- * access, and picks the pool per access: inside a workspace scope it is the
- * workspace role's pool, so row level security applies.
- */
-export const db = new Proxy({} as PostgresJsDatabase<typeof schema>, {
-  get(_t, prop) {
-    if (STATEMENT_PROPS.has(prop)) checkActorBound(`db.${String(prop)}`);
-    const carried = carriedWriteScope();
-    if (carried) return systemPoolProp(carried, prop);
-    // A request scope (W6a, plan 2.3): a write leaves the scope's read pool
-    // (a login's to the write role while it may route, else the system
-    // pool); reads run in the scope. A transaction is
-    // a write in a mutating request, and stays in the scope in a read
-    // request (a search step that needs one transaction). A raw execute
-    // always runs in the scope (fix round 1, M3): a raw write says so with
-    // executeWrite.
-    const mode = currentRequestMode();
-    const write = prop === 'insert' || prop === 'update' || prop === 'delete';
-    if (mode && !currentScopeTx()) {
-      if (write || (prop === 'transaction' && mode.writes)) {
-        noteRequestSystemWrite(String(prop));
-        // Bound to the system handle (W6a fix round 2): drizzle's builders
-        // read `this.session`, which on this proxy is the scope's session, so
-        // an unbound method ran the write on the workspace role (a page's
-        // block-id backfill failed with permission denied). The login write
-        // gateway's handle when it may route (A2b2b): it sends a scoped
-        // login write to the write role, anything else here as before.
-        if (write) return typedWrite(prop, loginWritesMayRoute());
-        const handle = systemWriteDb();
-        const fn = Reflect.get(handle as object, prop) as (...args: unknown[]) => unknown;
-        return fn.bind(handle);
-      }
-    }
-    if (prop === 'select' || prop === 'selectDistinct' || prop === 'execute' || prop === 'query') {
-      noteOwnRuleSystemRead(String(prop));
-    }
-    return Reflect.get(getDb() as object, prop);
-  },
-});
-
-/** The system pool's `prop`, a transaction with `scope` set first
- *  (withSystemPoolInWriteScope, viewer.ts). */
-function systemPoolProp(scope: WorkspaceScope, prop: string | symbol): unknown {
-  const admin = getAdminDb();
-  if (prop !== 'transaction') return Reflect.get(admin as object, prop);
-  return <T>(fn: (tx: PostgresJsDatabase<typeof schema>) => Promise<T>) =>
-    systemPoolTxInScope(scope, fn);
-}
-
-/**
- * Whether a raw statement writes (W6a): a leading write verb, or a write
- * clause anywhere (a data-modifying CTE, a row lock). No longer routes a
- * request scope's raw statements (fix round 1, M3: a read it took for a
- * write ran unscoped); executeWrite uses it to refuse a statement that does
- * not write.
- */
-export function isWriteSql(text: string): boolean {
-  const body = text.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/--[^\n]*/g, ' ');
-  if (
-    /^\s*\(?\s*(insert|update|delete|merge|truncate|lock|refresh|notify|call|do|create|alter|drop)\b/i.test(
-      body,
-    )
-  ) {
-    return true;
-  }
-  return /\b(insert\s+into|delete\s+from|update\s+[\w".]+\s+(as\s+\w+\s+)?set|for\s+(no\s+key\s+)?update|for\s+(key\s+)?share|pg_notify|pg_advisory_x?act_lock|pg_advisory_lock|nextval|setval)\b/i.test(
-    body,
-  );
-}
-
-/** The SQL text of a drizzle query or a string. */
-function sqlTextOf(query: unknown): string {
-  if (typeof query === 'string') return query;
-  const admin = getAdminDb() as unknown as {
-    dialect: { sqlToQuery: (q: unknown) => { sql: string } };
-  };
-  return admin.dialect.sqlToQuery(
-    typeof (query as { getSQL?: unknown }).getSQL === 'function'
-      ? (query as { getSQL: () => unknown }).getSQL()
-      : query,
-  ).sql;
-}
-
-/** A statement that only reads, sent to executeWrite. */
-export class NotAWriteError extends RuntimeFaultError {
-  constructor() {
-    super('executeWrite: the statement does not write; read through db in the caller’s scope.');
-    this.name = 'NotAWriteError';
-  }
-}
-
-/**
- * A raw WRITE, said so (W6a fix round 1, M3). Inside a request scope
- * `db.execute` always runs in the scope, on the workspace role, where a
- * write fails loudly; a raw statement that writes comes here and runs on
- * the system pool, as the typed writes (db.insert, update, delete) do there.
- * Anywhere else it is exactly `db.execute`. Refuses a statement that does
- * not write (isWriteSql), so it is never a door for a read.
- */
-export function executeWrite(
-  query: Parameters<PostgresJsDatabase<typeof schema>['execute']>[0],
-): ReturnType<PostgresJsDatabase<typeof schema>['execute']> {
-  if (!isWriteSql(sqlTextOf(query))) throw new NotAWriteError();
-  if (currentRequestMode() && !currentScopeTx()) {
-    noteRequestSystemWrite('executeWrite');
-    return systemWriteDb().execute(query);
-  }
-  return getDb().execute(query);
-}
-
-/**
- * Infrastructure handle: always the admin pool, whatever the viewer. For the
- * writes a limited turn still needs (traces, trace steps, tool-result spills,
- * pending tool calls, share counters, access logs). NEVER for content reads:
- * that would read past row level security. Only an allowlisted set of
- * infrastructure modules may import it, and inside a turn scope only they
- * may use it (assertSystemDbCaller, workspaces W4b fix round 2).
- */
-export const systemDb = new Proxy({} as PostgresJsDatabase<typeof schema>, {
-  get(_t, prop) {
-    if (STATEMENT_PROPS.has(prop)) checkActorBound(`systemDb.${String(prop)}`);
-    if (inTurnScope() && systemDbAccessChecked(prop)) assertSystemDbCaller();
-    return Reflect.get(getAdminDb() as object, prop);
-  },
-});
-
-/**
- * Work the runtime role may not do (arch A9): the workspaces switch runs
- * DDL (mantle_ws_migrate_locked, at the first owner and at boot). With
- * MANTLE_DB_RUNTIME_ROLE on it runs on the migrator's URL (DATABASE_URL,
- * the role that runs the migrations) in one transaction of its own, with
- * the actor bound now, on a connection opened for it and closed after.
- * Off, it runs on `db` as before. Only the switch calls it: every other
- * statement of the app runs as the runtime role (runtime-role.ts).
- */
-export async function executeAsMigrator<T extends Record<string, unknown>>(
-  query: SQL,
-): Promise<T[]> {
-  if (!runtimeRoleOn()) {
-    return [...((await db.execute(query)) as unknown as T[])];
-  }
-  checkActorBound('executeAsMigrator');
-  const { sql: text, params } = new PgDialect().sqlToQuery(query);
-  const rows = await withMigratorConnection((conn) =>
-    conn.begin(async (tx) => {
-      const actor = actorParams();
-      if (actor) await tx.unsafe(`${ACTOR_SQL_TAG} ${setActorSql(actor)}`);
-      return [...(await tx.unsafe(text, params as never[]))];
-    }),
-  );
-  return rows as unknown as T[];
-}
-
-export type Db = PostgresJsDatabase<typeof schema>;
 export { schema };
