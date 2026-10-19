@@ -48,6 +48,15 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 const DB_URL = process.env.MANTLE_TEST_DATABASE_URL;
 
+// A turn enqueues its DBOS workflow (the scratch database has no DBOS
+// system database): a stand-in that takes the job, as w7c-chat does.
+vi.mock('@/lib/dbos-client', () => ({
+  getDbosClient: async () => ({
+    enqueue: async () => ({ getResult: async () => null }),
+    getWorkflow: async () => ({ input: [] }),
+  }),
+}));
+
 /** The database's or the runtime's own words: never in a reply. */
 const RAW =
   /Failed query|withSystemTx|runInSystemTx|SQLSTATE|DrizzleQueryError|drizzle-orm|permission denied for|violates|duplicate key|does not exist|\n\s+at \S/i;
