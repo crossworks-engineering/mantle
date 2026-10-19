@@ -89,6 +89,10 @@ const DYNAMIC_UNSAFE_REVIEWED = new Map([
     'packages/db/src/client.ts',
     'the turn-scope client passes drizzle queries through on the workspace role, which holds SELECT grants only (W4b)',
   ],
+  [
+    'packages/db/src/gateway/actor-sql.ts',
+    "the actor client and settingsFirst pass the caller's statement through as it is, on the pool the caller chose",
+  ],
   ['server/api/src/bench/run.ts', 'the bench harness on its own database'],
   ['server/web/scripts/dedupe-edges.ts', 'a constant PARTITION BY fragment'],
   ['server/web/scripts/extract-backfill.ts', 'a read query'],
