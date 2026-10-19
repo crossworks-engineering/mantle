@@ -132,6 +132,38 @@ split is above. Open for the CEO whether a separate lint rule is wanted.
 
 ### Gates
 
-See the part c1 reply for the final head; on this branch:
+Mac (DATABASE_URL unset for unit runs), on the head that carries this
+file:
 
-GATES_PLACEHOLDER
+| gate | exit |
+|---|---|
+| pnpm -r typecheck | 0 |
+| pnpm lint | 0 |
+| pnpm format:check | 0 |
+| pnpm docs:check | 0 |
+| pnpm arch:check | 0 |
+| pnpm -C server/web build | 0 |
+| pnpm exec vitest run server packages eslint-rules | 0 |
+| pre-push `pnpm verify` (db9a4a40e) | 0 |
+
+The first Mac run (before the pins and this file) answered arch 1 (the
+spec went to 350 lines; cut back to 345) and unit 1 (the heading code
+`S8c` was in no list; added to HISTORY_HEADING_CODES); both 0 after.
+
+Workstation (own clone `s8c-c1-clone` at db9a4a40e, the code this head
+carries; own `s8c-pg`, pgvector pg18, max_connections=450, port 56181;
+MANTLE_CHECK_FLOOR=keep; systemd-run --user; --maxWorkers=3; one at a
+time). Every set passed on its first run, no rerun:
+
+| run | exit | result |
+|---|---|---|
+| the touched files first (lib/auth, workspaces, grants, middleware, access keys, shell) | 0 | 28 files, 294 passed |
+| full vitest with DB | 0 | 1126 files, 13855 passed, 1 skipped |
+| test:actor-off | 0 | 128 files, 1166 passed, 1 skipped |
+| test:actor-on | 0 | 30 files, 366 passed, 1 skipped |
+| test:edit-on | 0 | 42 files, 536 passed |
+| test:matrix | 0 | 4 files, 8 passed |
+| test:runtime-role, full config | 0 | 277 files, 2769 passed, 1 skipped |
+
+The commit after db9a4a40e changes no code the DB runs read (pins, the
+spec line, a heading code, this file).
