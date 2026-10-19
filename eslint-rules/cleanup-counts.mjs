@@ -470,6 +470,7 @@ export const HISTORY_HEADING_CODES = Object.freeze([
   'S12',
   'S2a',
   'S2b',
+  'S2c',
   'S3',
   'S4a',
   'S6',
