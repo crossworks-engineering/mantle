@@ -52,7 +52,17 @@ const DB_URL = process.env.MANTLE_TEST_DATABASE_URL;
 // system database): a stand-in that takes the job, as w7c-chat does.
 vi.mock('@/lib/dbos-client', () => ({
   getDbosClient: async () => ({
-    enqueue: async () => ({ getResult: async () => null }),
+    enqueue: async () => ({
+      getResult: async () => {
+        const at = new Date('2030-01-03T00:00:00.000Z');
+        return {
+          inbound: { id: 'in', text: 'read this', createdAt: at },
+          outbound: { id: 'out', text: 'ok', createdAt: at },
+          reply: 'ok',
+          artifacts: [],
+        };
+      },
+    }),
     getWorkflow: async () => ({ input: [] }),
   }),
 }));
@@ -463,7 +473,7 @@ describe.skipIf(!DB_URL)("S6 c3: an Admin user's any-login writes in the login's
       const text = await res.text();
       recorded.push(`${mode} admin turn with upload: ${res.status} ${text.slice(0, 160)}`);
       expect(text).not.toMatch(RAW);
-      expect([404, 415], text).not.toContain(res.status);
+      expect(res.status, text).toBe(200);
       const homes = await raw<{ ws: string }[]>`
         select wr.workspace_id::text as ws from nodes n
           join workspace_resources wr on wr.ref_id = n.id
