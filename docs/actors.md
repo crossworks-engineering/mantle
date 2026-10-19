@@ -213,7 +213,6 @@ each calling file is pinned (`eslint-rules/as-system-allowlist.mjs`).
 | login-telegram     | a login's own Telegram chats (no role holds those tables) |
 | audit-log          | a connector call's audit row                              |
 | pending-approval   | an approved call re-enters the scope it was asked in      |
-| workspace-write    | a login's change of a workspace's row, look or archive    |
 | page-refold        | the pages a grant change reaches                          |
 | brain-bookkeeping  | `systemStep`'s brain-wide counts and reaps                |
 
@@ -247,9 +246,9 @@ contact sharing, name checks, `mantle_ws_create`); the write role's grant
 change and its audit row (`mantle_grant_change`, `mantle_grant_move_home`,
 `mantle_workspace_event`, 0279), folder subtree (`mantle_subtree_rewrite`,
 `mantle_subtree_refuse_hidden`, 0282), edit check writes
-(`mantle_secret_put`, `mantle_recall_retarget`, 0281), a workspace's users, resources and assistant (0307).
-With no acting login the 0307 writers refuse all but one named actor per definer (`mantle_ws_system_work(fn)`);
-the workspace row, landing app, archive and PATCH assistant write in TS until S2b; named: login bridge, bridge connector, the switch, guards.
+(`mantle_secret_put`, `mantle_recall_retarget`, 0281), a workspace's users, resources and assistant (0307), its row, contact, landing app and archive (0309).
+With no acting login the 0307 and 0309 writers refuse all but one named actor per definer (`mantle_ws_system_work(fn)`);
+no TS writes the four workspace tables; named: login bridge, bridge connector, the switch, guards.
 
 ## 10. HTTP
 
@@ -328,8 +327,8 @@ the workspace row, landing app, archive and PATCH assistant write in TS until S2
 
 Each ends in the step of plan v3.2 (2026-10-17) named.
 
-- A workspace's row, landing app, archive and PATCH assistant, with their
-  events, are written in TS on the system pool (`workspace-write`). S2.
+- The runtime role may still write the four workspace tables (only the
+  definers do). S2c.
 - `mantle_login_area` is the area rule or, with no Admin workspace, yes. S4.
 - A definer asked with no scope answers as the system pool would;
   `mantle_grant_change` then takes the caller from its `actor`. S2, S7.

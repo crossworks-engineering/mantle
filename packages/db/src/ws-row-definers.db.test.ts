@@ -481,8 +481,9 @@ describe.skipIf(!URL)('the workspace row definers (S2b)', () => {
         ? []
         : r.fn.includes('mantle_ws_archive')
           ? [RUNTIME_ROLE]
-          : [viewerRoleName('write')];
-      // A role the scratch database lacks holds nothing; no other role may run it.
+          : [viewerRoleName('write'), RUNTIME_ROLE];
+      // A role the scratch database lacks holds nothing; no other role may run
+      // it (the runtime role runs what the write role runs, by its membership).
       for (const role of r.may) expect(wanted, `${r.fn} ${role}`).toContain(role);
     }
   });

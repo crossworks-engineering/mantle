@@ -183,10 +183,10 @@ describe.skipIf(!DB_URL)('S2b: the workspace row through the routes', () => {
     it(`${mode}: a Moderator and an Admin user change the row through PATCH`, async () => {
       await setMode(mode);
       const url = `/api/workspaces/${ws.W}`;
-      const about = { name: `${tag} W ${mode}`, description: `d ${mode}`, icon: 'star' };
+      const about = { name: `${tag} W ${mode}`, description: `d ${mode}`, icon: 'lucide:star' };
       const a = await call(`${mode} mod about`, L.mod, 'PATCH', url, about);
       expect(a.status).toBe(200);
-      expect(a.json.workspace).toMatchObject({
+      expect(a.json).toMatchObject({
         id: ws.W,
         name: about.name,
         description: about.description,
@@ -214,7 +214,7 @@ describe.skipIf(!DB_URL)('S2b: the workspace row through the routes', () => {
         contactNodeId: ids.contact,
       });
       expect(c.status).toBe(200);
-      expect(c.json.workspace).toMatchObject({ contactNodeId: ids.contact });
+      expect(c.json).toMatchObject({ contactNodeId: ids.contact });
       expect(await lastEvent(ws.W)).toEqual({
         actor: L.admin,
         action: 'workspace.update',
@@ -228,7 +228,7 @@ describe.skipIf(!DB_URL)('S2b: the workspace row through the routes', () => {
         assistantId: AGENT,
       });
       expect(asst.status).toBe(200);
-      expect(asst.json.workspace).toMatchObject({ assistant: { id: AGENT, name: 'A' } });
+      expect(asst.json).toMatchObject({ assistant: { id: AGENT, name: 'A' } });
       expect(
         (await call(`${mode} admin assistant off`, L.admin, 'PATCH', url, { assistantId: null }))
           .status,

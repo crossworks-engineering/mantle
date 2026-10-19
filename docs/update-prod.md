@@ -1305,5 +1305,16 @@ count(*) from tables where draft_path is not null` must be 0), and expect
   applies it again (why and the proof: the S2a a1+a2 handover in
   docs/_archive/).
 
+- **Below the workspace row definers (plan v3.2 S2b, migration 0309):** the
+  older image works with 0309 in place (0309 only adds functions), so the
+  revert is optional. To leave the catalog as the older image shipped it,
+  while the newer image is still up, as the superuser, in one transaction:
+  `docker exec mantle_web cat /app/packages/db/rollback/0309_ws_row_definers.revert.sql | docker exec -i mantle_pg psql -U postgres -d postgres -v ON_ERROR_STOP=1 -1`.
+  Then pin the older tag straight away (or stop mantle_web first): until the
+  pin the newer image's workspace rename, landing app and archive are
+  refused, and a restart in between applies 0309 again. The revert drops
+  0309's five functions and takes it off the ledger (the S2b handover in
+  docs/_archive/).
+
 Below a floor, restore the pre-roll backup taken before the migration instead
 of pinning the tag.
