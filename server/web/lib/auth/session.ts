@@ -2051,9 +2051,9 @@ export type ChatLogin = {
  * with the assistants of its workspaces, each in its own thread, and reads
  * only its own threads. The chat routes are any-login routes
  * (CHAT_LOGIN_ROUTES): a read runs in the login's scope, where row security
- * holds the messages and threads to its own login (0269); a member's write
- * runs there too, an Admin user's write on the system pool
- * (anyLoginScope). Every chat helper also names the login (lib/assistant.ts,
+ * holds the messages and threads to its own login (0269); every login's
+ * write runs there too, an Admin user's as a member's (anyLoginScope).
+ * Every chat helper also names the login (lib/assistant.ts,
  * lib/assistant-chat.ts), and the few writes and bookkeeping reads the
  * workspace role has no grant for leave the scope by name (asSystem
  * 'rule-in-query'). Audited as each role's own gate audits.

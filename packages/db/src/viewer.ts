@@ -148,7 +148,8 @@ export type RequestScopeMode = { writes: boolean; drafts: boolean };
 
 /** What the session guard did for this request (the W6a route sweep reads
  *  it): entered the login's scope, let an Admin user through on the system
- *  pool (a management area, or an Admin write), or nothing yet. */
+ *  pool (a management area, or the login's own row), or nothing yet. An
+ *  Admin user's write enters its scope as a member's does. */
 export type RequestOutcome =
   | { kind: 'user'; loginId: string; writes: boolean }
   // A member route (/api/member/*, kept until the UI reads the normal
@@ -157,7 +158,7 @@ export type RequestOutcome =
   | { kind: 'own-rule'; loginId: string }
   | {
       kind: 'system';
-      why: 'area' | 'admin-write' | 'login-self';
+      why: 'area' | 'login-self';
     };
 
 type RequestSlot = {

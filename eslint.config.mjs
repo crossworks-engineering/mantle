@@ -181,6 +181,13 @@ export default tseslint.config(
           message:
             'Read environment through @mantle/config (env, envInt, envFlag, envDynamic), not process.env.X.',
         },
+        {
+          // The owner functions that skip the Admin check are for test
+          // fixtures only, by a dynamic import too (the static one: the
+          // no-restricted-imports blocks below).
+          selector: "ImportExpression[source.value='@mantle/content/test-support']",
+          message: 'test fixtures only: a route calls the Admin act definers',
+        },
       ],
     },
   },
@@ -450,6 +457,26 @@ export default tseslint.config(
     files: ['**/*.test.ts', '**/*.test.tsx', 'scripts/**', '**/scripts/**'],
     rules: {
       '@typescript-eslint/no-explicit-any': 'off',
+    },
+  },
+  {
+    // The packages may not import the test-support entry either (its owner
+    // functions skip the Admin check); the share-ui and contract blocks
+    // below refuse every other @mantle import already.
+    files: ['packages/**/*.{ts,tsx}'],
+    ignores: ['**/*.test.ts', '**/*.test.tsx', '**/scripts/**'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['@mantle/content/test-support'],
+              message: 'test fixtures only: a route calls the Admin act definers',
+            },
+          ],
+        },
+      ],
     },
   },
   {

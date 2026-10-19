@@ -26,8 +26,8 @@ async function handleDELETE(login: AnyLogin, ctx: Ctx) {
   // By its definer (mantle_access_key_revoke, 0293): the login's own live
   // key, any live key for an Admin user; the workspace and write roles hold
   // no right on the keys (A6b: on the system pool before, 'rule-in-query').
-  // A write: its own transaction (a member's on the write role, an Admin
-  // user's on the system pool with its scope set).
+  // A write: its own transaction, on the write role in the login's scope
+  // (an Admin user's as a member's).
   const [row] = await db.transaction(
     async (tx) =>
       (await tx.execute(

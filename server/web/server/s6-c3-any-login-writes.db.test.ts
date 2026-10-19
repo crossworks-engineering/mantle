@@ -22,7 +22,15 @@
  *    in answers "no agent" (404) as on main, where the scope would let it
  *    fall through to the default agent (resolveChatAgentToWrite); an
  *    unknown slug answers 404 too (narrower: main fell through);
- *  - member-negative: a member reaches only its own workspace's assistant.
+ *  - member-negative: a member reaches only its own workspace's assistant;
+ *  - wider, safe (the CEO's call, named in the handover): a chat write with
+ *    no slug, where the default pick is another workspace's assistant the
+ *    Admin user is not in, answered "no agent" on main (the system pool
+ *    found that row first); in the scope the pick is the Admin assistant
+ *    (200). No data the caller could not read; the reads worked so already;
+ *  - an Admin user with the users area blocks and unpairs another login's
+ *    chat of another workspace's bot in its scope; one without it does not;
+ *  - a turn with an upload saves the file in the Admin workspace (home).
  *
  * The Telegram pairing writes are proved per role in w7d-telegram.db.test.ts
  * (their rules are the 'login-telegram' exit's, unchanged); the guard
@@ -68,6 +76,12 @@ describe.skipIf(!DB_URL)("S6 c3: an Admin user's any-login writes in the login's
   const AG = { admin: randomUUID(), other: randomUUID() };
   const slug = { admin: `${tag}-admin`, other: `${tag}-other` };
   const recorded: string[] = [];
+  const TG = {
+    agent: randomUUID(),
+    channel: randomUUID(),
+    account: randomUUID(),
+    chat: randomUUID(),
+  };
 
   const setMode = async (mode: Mode) => {
     await raw`select mantle_set_actor_check(${mode}, 50, 'test')`;
@@ -172,6 +186,19 @@ describe.skipIf(!DB_URL)("S6 c3: an Admin user's any-login writes in the login's
                 and workspace_id in (${ws.admin}, ${ws.other})`;
     await raw`insert into workspace_resources (workspace_id, type, ref_id) values
       (${ws.admin}, 'assistant', ${AG.admin}), (${ws.other}, 'assistant', ${AG.other})`;
+    // Another workspace's bot (a responder, its channel and account) with a
+    // member's allowed chat: the Telegram moderation cells.
+    await raw`insert into agents (id, owner_id, slug, name, model, system_prompt, role, workspace_id)
+      values (${TG.agent}, ${L.owner}, ${`${tag}-bot`}, 'bot', 'test/model', 'p', 'responder',
+              ${ws.other})`;
+    await raw`insert into channels (id, owner_id, agent_id, type, display_name, credentials_enc)
+      values (${TG.channel}, ${L.owner}, ${TG.agent}, 'telegram', ${`@${tag}_bot`}, '\\x00')`;
+    await raw`insert into telegram_accounts (id, user_id, bot_username, branch_path, channel_id)
+      values (${TG.account}, ${L.owner}, ${`${tag}_bot`}, 'inbox.telegram_test', ${TG.channel})`;
+    await raw`insert into telegram_chats
+        (id, account_id, user_id, telegram_chat_id, chat_type, title, allowlist_status, login_id)
+      values (${TG.chat}, ${TG.account}, ${L.owner}, '9001', 'private', 'Chat', 'allowed',
+              ${L.member})`;
     m.takeActorMisses();
   }, 300_000);
 
@@ -332,6 +359,108 @@ describe.skipIf(!DB_URL)("S6 c3: an Admin user's any-login writes in the login's
       );
       expect(admins.status, admins.text).toBe(404);
       expect(admins.json).toEqual({ error: 'no_agent' });
+      expect(m.takeActorMisses(), 'no actor miss').toEqual([]);
+    });
+
+    it(`${mode}: wider, safe: no slug and the default pick is another workspace's assistant`, async () => {
+      await setMode(mode);
+      const at = '2030-01-02T00:00:00.000Z';
+      // The other workspace's assistant is every login's default pick by
+      // priority. On main an Admin user's write found it on the system
+      // pool and answered "no agent" (404); in the scope the Admin user does
+      // not read it, so the pick is the Admin assistant.
+      await raw`update agents set priority = 1000 where id = ${AG.other}`;
+      try {
+        for (const who of ['admin', 'limited'] as const) {
+          const res = await call(
+            `${mode} ${who} read no slug, other default`,
+            L[who],
+            'POST',
+            '/api/assistant/read',
+            { at },
+          );
+          expect(res.status, res.text).toBe(200);
+          expect(res.json.ok).toBe(true);
+          expect(res.json.agentSlug).not.toBe(slug.other);
+        }
+        const cursors = await raw<{ login: string }[]>`
+          select login_id::text as login from assistant_read_cursors
+           where agent_id = ${AG.other} and login_id in (${L.admin}, ${L.limited})`;
+        expect(cursors).toEqual([]);
+      } finally {
+        await raw`update agents set priority = 0 where id = ${AG.other}`;
+      }
+      expect(m.takeActorMisses(), 'no actor miss').toEqual([]);
+    });
+
+    it(`${mode}: an Admin user with the users area blocks and unpairs another login's chat`, async () => {
+      await setMode(mode);
+      const chat = async () =>
+        (
+          await raw<{ s: string; login: string | null }[]>`
+            select allowlist_status::text as s, login_id::text as login
+              from telegram_chats where id = ${TG.chat}`
+        )[0]!;
+      const allow = async () =>
+        raw`update telegram_chats set allowlist_status = 'allowed', login_id = ${L.member},
+              pairing_code = null where id = ${TG.chat}`;
+      for (const action of ['block', 'unpair'] as const) {
+        await allow();
+        // Without the users area (and no seat in the bot's workspace): no.
+        const no = await call(
+          `${mode} limited ${action} member's chat`,
+          L.limited,
+          'POST',
+          `/api/telegram/chats/${TG.chat}/${action}`,
+        );
+        expect(no.status, no.text).toBe(404);
+        expect(await chat()).toEqual({ s: 'allowed', login: L.member });
+        const yes = await call(
+          `${mode} admin ${action} member's chat`,
+          L.admin,
+          'POST',
+          `/api/telegram/chats/${TG.chat}/${action}`,
+        );
+        expect(yes.status, yes.text).toBe(200);
+        expect(await chat()).toEqual({
+          s: action === 'block' ? 'denied' : 'pending',
+          login: null,
+        });
+      }
+      expect(m.takeActorMisses(), 'no actor miss').toEqual([]);
+    });
+
+    it(`${mode}: a turn with an upload saves the file in the Admin workspace`, async () => {
+      await setMode(mode);
+      const name = `${tag}-${mode}-upload.txt`;
+      const boundary = `----${tag}`;
+      const form = [
+        `--${boundary}`,
+        'Content-Disposition: form-data; name="text"',
+        '',
+        'read this',
+        `--${boundary}`,
+        `Content-Disposition: form-data; name="file"; filename="${name}"`,
+        'Content-Type: text/plain',
+        '',
+        'a note for the upload cell',
+        `--${boundary}--`,
+        '',
+      ].join('\r\n');
+      const res = await runRoute(L.admin, 'POST', '/api/assistant/turn', undefined, {
+        headers: { 'content-type': `multipart/form-data; boundary=${boundary}` },
+        rawBody: form,
+      });
+      const text = await res.text();
+      recorded.push(`${mode} admin turn with upload: ${res.status} ${text.slice(0, 160)}`);
+      expect(text).not.toMatch(RAW);
+      expect([404, 415], text).not.toContain(res.status);
+      const homes = await raw<{ ws: string }[]>`
+        select wr.workspace_id::text as ws from nodes n
+          join workspace_resources wr on wr.ref_id = n.id
+         where n.owner_id = ${L.owner} and n.title like ${`%${tag}-${mode}-upload%`}`;
+      expect(homes.length, JSON.stringify(homes)).toBeGreaterThan(0);
+      expect(new Set(homes.map((h) => h.ws))).toEqual(new Set([ws.admin]));
       expect(m.takeActorMisses(), 'no actor miss').toEqual([]);
     });
   }
