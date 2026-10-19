@@ -326,6 +326,15 @@ export async function superuserExec<T = Record<string, unknown>>(
   const { sql: text, params } =
     typeof query === 'string' ? { sql: query, params: [] } : new PgDialect().sqlToQuery(query);
   const sql = postgres(url, { max: 1, prepare: false, onnotice: () => {} });
+  if (typeof query !== 'string') {
+    // As the app's drizzle pools send them (drizzle-orm/postgres-js): a
+    // json or jsonb parameter goes as the text it is, so a fixture moved
+    // off systemDb (`${JSON.stringify(v)}::jsonb`) writes the same object,
+    // not a JSON string of it.
+    const serializers = (sql.options as unknown as { serializers: Record<string, unknown> })
+      .serializers;
+    serializers['114'] = serializers['3802'] = (v: unknown) => v;
+  }
   try {
     const rows = await sql.begin(async (tx) => {
       await tx`select set_config('mantle.actor', 'system:test', true),

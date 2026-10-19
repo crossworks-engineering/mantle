@@ -413,12 +413,14 @@ describe.skipIf(!URL)(
         }
       }
       const reach = fns.filter((f) => invoker.has(f.oid));
-      // Today: two private helpers that only definers call (the body that
-      // puts an assistant on a workspace, and the one that locks the
-      // workspace row and reads the acting login's seat). A new one passes
-      // only if no app role may run it.
+      // Today: three private helpers that only definers call (the body that
+      // puts an assistant on a workspace, the one that locks the workspace
+      // row and reads the acting login's seat, and the resource definers'
+      // seat, which calls it). A new one passes only if no app role may
+      // run it.
       expect(reach.map((f) => f.name).sort()).toEqual([
         'mantle_ws_put_assistant',
+        'mantle_ws_resource_seat',
         'mantle_ws_user_seat',
       ]);
       for (const f of reach) {
