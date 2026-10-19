@@ -511,8 +511,16 @@ describe.skipIf(!DB_URL)('S6 c2: the item gate’s three Admin acts as definers'
       const content = await import('@mantle/content');
       const trash = await import('@mantle/content/app-trash');
       const app = await trashApp(ws.admin, false, true);
+      // The request's scope, as the session guard enters it.
       const scope = await m.loginScopeFor(L.admin);
-      const made = await m.withScope(scope, async () => {
+      const inRequest = <T>(fn: () => Promise<T>) =>
+        m.runAsActor(m.loginActor(L.admin, 'rw'), () =>
+          m.runInRequestSlot(async () => {
+            expect(m.enterRequestScope(scope, { writes: true, drafts: false })).toBe(true);
+            return fn();
+          }),
+        ) as Promise<T>;
+      const made = await inRequest(async () => {
         const act = await content.adminAppTrashAct(L.admin, app, 'restore');
         expect(act.outcome).toBe('restore');
         if (act.outcome !== 'restore') return 'no act';
