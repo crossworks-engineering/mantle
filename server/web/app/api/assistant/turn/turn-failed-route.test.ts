@@ -25,7 +25,8 @@ vi.mock('@/lib/auth', async (importOriginal) => ({
 }));
 vi.mock('@/lib/assistant-chat', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
-  resolveChatAgent: async () => {
+  // The turn's writes resolve through resolveChatAgentToWrite (S6 c3).
+  resolveChatAgentToWrite: async () => {
     throw new Error(PROVIDER_TEXT);
   },
 }));

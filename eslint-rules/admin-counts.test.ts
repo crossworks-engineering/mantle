@@ -472,9 +472,10 @@ describe('the repo', () => {
     expect(numbers.systemWholeOnFull).toBe(numbers.systemWholeTools);
   });
 
-  it('counts the four listed Admin acts; the item gate three went (S6 c2)', () => {
-    // The item gate's ADMIN_ACT answers became definers (migration 0310).
+  it('counts no Admin act: the item gate three went (S6 c2), ADMIN_ACT_WRITES (S6 c3)', () => {
+    // The item gate's ADMIN_ACT answers became definers (migration 0310);
+    // the four listed acts run in the login's scope (S6 c3).
     expect(detail.adminActRoutes.filter((a) => a.startsWith('server/'))).toHaveLength(0);
-    expect(numbers.adminActRoutes).toBe(4);
+    expect(numbers.adminActRoutes).toBe(0);
   });
 });
