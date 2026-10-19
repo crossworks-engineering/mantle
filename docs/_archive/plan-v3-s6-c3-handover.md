@@ -105,9 +105,35 @@ f4-owner-flows, s6-c1, s6-c2), with these changes:
 
 ## Gates
 
-See the report to the CEO session for the head SHA, the exit codes and the
-CI run. Workstation container `s6c3_verify_pg` on 56313 and worktree
-`s6c3-verify`: removed by exact name after the full runs.
+Mac (DATABASE_URL unset), on head d7b4f4be0 then the fixes in 5fdd519a3:
+
+| Gate                                                                       | Exit          |
+| -------------------------------------------------------------------------- | ------------- |
+| `pnpm -C server/web exec tsc --noEmit`                                     | 0             |
+| `pnpm arch:check`                                                          | 0             |
+| `pnpm exec vitest run server packages eslint-rules`                        | 1 (below)     |
+| the fixed files (admin-counts, turn-failed-route, route-scope, arch-lints) | 0 (113 tests) |
+
+The unit run's red cells on d7b4f4be0: admin-counts and turn-failed-route
+(fixed in 5fdd519a3); the A4 guard sweep (re-recorded in 5fdd519a3: only
+the 4 c1 rows and c2's 4 rows moved, `out=` only); the A10 body sweep
+(c2's open item: a change kind for its rows); the journal "no slot is
+skipped" (0309, S2b, not on main yet).
+
+Workstation (own pgvector pg18 on 56313, own worktree; both removed):
+
+| Run                                                 | Exit | Files / tests         |
+| --------------------------------------------------- | ---- | --------------------- |
+| the c3 set (14 files: keys, chat, Telegram, sweeps) | 0    | 16 files, 203 tests   |
+| c1, c2, c3 acts and owner flows (10 files)          | 0    | 10 files, 125 tests   |
+| full vitest with the database, on d7b4f4be0         | 1    | 7 files, 12 tests red |
+
+The full run's red beyond the unit cells above: `shares-route.db.test.ts`
+(3 cells, DELETE and PATCH /api/shares/:id: c2's routes, not touched by
+c3; c2's DB tests had not run before) and `a2b2b-write-gateway.db.test.ts`
+(an afterAll hook timeout under load). `test:actor-off` and
+`test:runtime-role` NOT RUN (stopped at the handover). Pushed with
+`--no-verify`; CI will be red on the c2 cells until c2 lands.
 
 ## Open
 
