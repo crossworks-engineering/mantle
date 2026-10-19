@@ -625,6 +625,15 @@ describe('systemDb inside a turn scope: allowlisted modules only (W4b fix round 
     expect(systemDbCallerOf(viaGateway)).toBe(content);
   });
 
+  it('skips the proxy frame of gateway/handles.ts (the systemDb proxy lives there)', () => {
+    const viaHandles = stackFrom(content).replace(
+      '/repo/packages/db/src/client.ts:740:30',
+      '/repo/packages/db/src/gateway/handles.ts:177:30',
+    );
+    expect(viaHandles).toContain('gateway/handles.ts');
+    expect(systemDbCallerOf(viaHandles)).toBe(content);
+  });
+
   it("skips drizzle's internal reads on the proxy, checks every method (W5a audit W3)", () => {
     // drizzle reads these on systemDb while a query the caller asked for
     // runs: the caller was checked when it touched the method.
