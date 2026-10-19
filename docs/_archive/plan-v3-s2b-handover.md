@@ -249,3 +249,29 @@ scope (the runtime role's grant; no added reach). Each finding:
   refresh and propagation on nodes the scope does not read) could then meet
   the write role's edit check, and proving them safe is more than a small,
   safe change.
+
+## Gates (fix round 1, rebased on 5e01dda68)
+
+Rebased onto origin/main 5e01dda68 (v0.300.100) with no conflict; 0309
+keeps idx 309 and `when` 1790197860000. On the Mac, `DATABASE_URL` unset,
+at 4e4b983f2: `pnpm -r typecheck` 0, `pnpm lint` 0, `pnpm format:check` 0,
+`pnpm -C server/web build` 0, `pnpm exec vitest run server packages
+eslint-rules` 0 (11055 passed), `pnpm docs:check` 0, `pnpm arch:check` 0.
+
+On the workstation (own pg18 `s2b_pg`, port 56231, `init-scratch` then
+`migrate`, `MANTLE_CHECK_FLOOR=keep`, one gate at a time; removed after):
+
+- Full DB vitest at 219998028: 0 (13768 passed). At 4e4b983f2 it was 1: the
+  new LOW-1 cell's fixture made its root folder with no actor, refused in
+  `on`; fixed at 219998028 (the fixture only).
+- `test:actor-off` and the full `test:runtime-role` at 219998028: every
+  test cell passed in every run (actor-off 1157 to 1159 of 1160, runtime
+  role 2730 to 2732 of 2734), but each whole run exited 1, five runs each
+  (3, 2, 1 and 3 workers), on load: an `afterAll` hook timed out at 10 s
+  dropping its scratch database (a different file each run), once the
+  `scratch-drop` timing cell and once a deadlock in
+  `read-only-writes.db.test.ts`. The box carried other lanes' runs (load
+  average 8 to 19, another lane's verify database busy). The files that
+  failed, run alone under the runtime role config: 6 files, 58 tests, exit 0.
+  None of them touches the workspace definers. At 7f412521e, on a quieter
+  box, `test:actor-off` was 0 (1159 passed).
