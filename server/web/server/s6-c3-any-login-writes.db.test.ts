@@ -474,10 +474,13 @@ describe.skipIf(!DB_URL)("S6 c3: an Admin user's any-login writes in the login's
       recorded.push(`${mode} admin turn with upload: ${res.status} ${text.slice(0, 160)}`);
       expect(text).not.toMatch(RAW);
       expect(res.status, text).toBe(200);
+      // A file's home is on its own row (nodes.home_ws, as landedIn reads
+      // it), not a workspace_resources row; the route names the file
+      // `<epoch>-<safe base>.<ext>` and its title is that name.
       const homes = await raw<{ ws: string }[]>`
-        select wr.workspace_id::text as ws from nodes n
-          join workspace_resources wr on wr.ref_id = n.id::text
-         where n.owner_id = ${L.owner} and n.title like ${`%${tag}-${mode}-upload%`}`;
+        select n.home_ws::text as ws from nodes n
+         where n.owner_id = ${L.owner} and n.type = 'file'
+           and n.title like ${`%${tag}-${mode}-upload%`}`;
       expect(homes.length, JSON.stringify(homes)).toBeGreaterThan(0);
       expect(new Set(homes.map((h) => h.ws))).toEqual(new Set([ws.admin]));
       expect(m.takeActorMisses(), 'no actor miss').toEqual([]);
