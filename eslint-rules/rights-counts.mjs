@@ -122,28 +122,75 @@ export function scopeHoldsAdminCalls(text) {
   return n;
 }
 
-/** The template literals of `code` (their raw text, `${}` parts kept). */
+/** The index of the quote that closes the string opening at `code[i]` (or
+ *  the line's end, or the text's). */
+function quotedEnd(code, i) {
+  const q = code[i];
+  let j = i + 1;
+  while (j < code.length) {
+    if (code[j] === '\\') {
+      j += 2;
+      continue;
+    }
+    if (code[j] === q || code[j] === '\n') return j;
+    j += 1;
+  }
+  return code.length;
+}
+
+/** The index of the `}` that closes a `${` part whose expression starts at
+ *  `code[j]`. Its strings, its braces and the template literals nested in
+ *  it are read whole, so a brace or a backtick inside one does not close
+ *  the part. */
+function expressionEnd(code, j) {
+  let depth = 0;
+  while (j < code.length) {
+    const c = code[j];
+    if (c === '`') {
+      j = templateEnd(code, j) + 1;
+      continue;
+    }
+    if (c === "'" || c === '"') {
+      j = quotedEnd(code, j) + 1;
+      continue;
+    }
+    if (c === '{') depth += 1;
+    else if (c === '}') {
+      if (depth === 0) return j;
+      depth -= 1;
+    }
+    j += 1;
+  }
+  return code.length;
+}
+
+/** The index of the backtick that closes the template literal opening at
+ *  `code[i]` (or the text's end); each `${}` part is skipped whole. */
+function templateEnd(code, i) {
+  let j = i + 1;
+  while (j < code.length) {
+    const c = code[j];
+    if (c === '\\') {
+      j += 2;
+      continue;
+    }
+    if (c === '`') return j;
+    if (c === '$' && code[j + 1] === '{') {
+      j = expressionEnd(code, j + 2) + 1;
+      continue;
+    }
+    j += 1;
+  }
+  return code.length;
+}
+
+/** The template literals of `code` (their raw text, `${}` parts kept, a
+ *  literal nested in a `${}` part kept inside its outer one). */
 function templateLiterals(code) {
   const out = [];
   let i = code.indexOf('`');
   while (i >= 0) {
-    let j = i + 1;
-    let depth = 0;
-    while (j < code.length) {
-      const c = code[j];
-      if (c === '\\') {
-        j += 2;
-        continue;
-      }
-      if (depth === 0 && c === '`') break;
-      if (c === '$' && code[j + 1] === '{') {
-        depth += 1;
-        j += 2;
-        continue;
-      }
-      if (depth > 0 && c === '}') depth -= 1;
-      j += 1;
-    }
+    const j = templateEnd(code, i);
     out.push(code.slice(i + 1, j));
     i = code.indexOf('`', j + 1);
   }

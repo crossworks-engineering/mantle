@@ -410,6 +410,23 @@ describe('the SQL readings', () => {
     });
   });
 
+  it('reads on past a template literal nested in a ${} part', () => {
+    // The nested literal's `{` and `}` are its text, not the part's braces;
+    // the ask after it is still one SQL text.
+    const nested =
+      "const a = sql`select 1 from t where id = any(${`{${ids.join(',')}}`}::uuid[]) and ${f({ k: '}' })}`;";
+    const membership =
+      'const b = sql`select 1 from workspace_users u join auth.users l on l.id = u.login_id and l.disabled_at is null where u.login_id = ${id}`;';
+    expect(tsAdminSqlKinds([nested, membership].join('\n'))).toEqual({
+      rules: 0,
+      membership: 1,
+    });
+    // The ask itself holding a nested literal is read whole.
+    const inside =
+      'const c = sql`select 1 from workspace_users u join auth.users l on l.id = u.login_id and l.disabled_at is null where u.workspace_id = any(${`{${ws}}`}::uuid[]) and u.login_id = ${id}`;';
+    expect(tsAdminSqlKinds(inside)).toEqual({ rules: 0, membership: 1 });
+  });
+
   it('reads auth.users.role through an alias, in any quoting', () => {
     expect(readsLoginRole(`select u.role from auth.users u where u.id = login`)).toBe(true);
     expect(readsLoginRole(`select l."role" from "auth"."users" as l`)).toBe(true);
