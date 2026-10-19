@@ -21,13 +21,12 @@
  * user") or 'workspace' (runTeamTurn: an assistant of another workspace, no
  * Journal, no "About the user", the member turn ledger's limits).
  */
-import { and, eq } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { agents, db, workspaces, type Agent } from '@mantle/db';
 import { chatTextsForReader, workspaceAssistants, type WorkspaceAssistant } from '@mantle/content';
 import type { AssistantAgentOption } from '@mantle/client-types';
 import type { ChatLogin } from './auth';
 import { listAssistantAgents, resolveAgentForActor } from './assistant';
-import { inRuleInQuery } from './auth/rule-in-query';
 
 export type ChatAgent = Agent & { turnEngine: 'owner' | 'workspace' };
 
@@ -84,34 +83,22 @@ export async function resolveChatAgent(
  * resolveChatAgent for a chat WRITE (mark read, archive, a turn). Since plan
  * v3.2 S6 c3 an Admin user's write runs in its scope, as its reads did:
  * there an explicit slug of an assistant the scope does not read (another
- * workspace's, the user not in it) finds no row and falls through to the
- * default, as an unknown slug does. On the system pool (main) the row was
- * found and refused (another workspace's assistant, only for its users), so
- * the write answered "no agent". Kept: an explicit slug that named an
- * enabled agent of the brain and fell through answers null. The existence
- * read leaves the scope by name ('rule-in-query'): the slug's row is one
- * the scope does not read, and the answer says only what main's said.
+ * workspace's, the user not in it) finds no row and would fall through to
+ * the default agent, so the write would land on an agent it did not name.
+ * On the system pool (before c3) that slug's row was found and refused
+ * (another workspace's assistant, only for its users): "no agent". So an
+ * explicit slug that does not resolve to itself answers null, as a
+ * member's always did (memberAssistants: no fall-through). An unknown or
+ * disabled slug fell through to the default before; it answers null now
+ * too (narrower: the write names an agent it cannot reach).
  */
 export async function resolveChatAgentToWrite(
   login: ChatLogin,
   slug?: string | null,
 ): Promise<ChatAgent | null> {
   const agent = await resolveChatAgent(login, slug);
-  if (!agent || login.kind !== 'admin' || !slug || agent.slug === slug) return agent;
-  return (await slugNamesAgent(login.ownerId, slug)) ? null : agent;
-}
-
-/** Whether `slug` names an enabled agent of the brain, whatever the scope
- *  reads (the runtime resolver's pick: owner, slug, enabled). */
-async function slugNamesAgent(ownerId: string, slug: string): Promise<boolean> {
-  const rows = await inRuleInQuery(() =>
-    db
-      .select({ id: agents.id })
-      .from(agents)
-      .where(and(eq(agents.ownerId, ownerId), eq(agents.slug, slug), eq(agents.enabled, true)))
-      .limit(1),
-  );
-  return rows.length > 0;
+  if (agent && slug && agent.slug !== slug) return null;
+  return agent;
 }
 
 /** An agent by id, when this login may chat with it (an archived thread's
