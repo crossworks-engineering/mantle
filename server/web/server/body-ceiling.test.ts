@@ -178,9 +178,7 @@ describe('the body ceiling: reading', () => {
     // A clone's branch settles its cancel only once the other branch is
     // cancelled too: an awaited cancel hung PATCH /api/shares/:id's peek.
     const req = streamReq('http://x/', 2 * MB);
-    await expect(readBodyCapped(req.clone(), 64 * 1024)).rejects.toBeInstanceOf(
-      BodyTooLargeError,
-    );
+    await expect(readBodyCapped(req.clone(), 64 * 1024)).rejects.toBeInstanceOf(BodyTooLargeError);
     expect(await req.text()).toHaveLength(2 * MB);
   }, 10_000);
 
