@@ -107,7 +107,6 @@ const NOT_FOUND = () => new WsError(404, 'not_found', 'Workspace not found.');
 /** Who calls: any login. `user` is the admin session (anchor id + actor),
  *  needed for a role change; null for a member. */
 export type WsCaller = {
-  kind: LoginRole;
   loginId: string;
   anchorId: string;
   user: SessionUser | null;
@@ -122,8 +121,8 @@ export type WsCaller = {
  */
 export function workspaceCaller(login: AnyLogin): WsCaller {
   return login.kind === 'admin'
-    ? { kind: 'admin', loginId: login.loginId, anchorId: login.user.id, user: login.user }
-    : { kind: 'member', loginId: login.loginId, anchorId: login.member.anchorId, user: null };
+    ? { loginId: login.loginId, anchorId: login.user.id, user: login.user }
+    : { loginId: login.loginId, anchorId: login.member.anchorId, user: null };
 }
 
 /** Run a workspace route for the login the handler read (loginCaller()):

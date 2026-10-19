@@ -84,7 +84,6 @@ const Body = z
 async function holdsKeysArea(login: AnyLogin): Promise<boolean> {
   return requireArea(
     {
-      kind: login.kind,
       loginId: login.loginId,
       anchorId: login.kind === 'admin' ? login.user.id : login.member.anchorId,
       user: login.kind === 'admin' ? login.user : null,

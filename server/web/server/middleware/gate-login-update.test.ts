@@ -153,7 +153,7 @@ describe.skipIf(!hasManifest)('a guard read inside a login change (A4 step 3a, L
     const { applyLoginChange } = await import('../../lib/login-update');
     const guard = async () => {
       const r = await session.getLoginOr401();
-      return r instanceof Response ? r.status : `${r.kind}:${r.loginId}`;
+      return r instanceof Response ? r.status : `${session.legacyLogin(r).kind}:${r.loginId}`;
     };
     // The member is made an admin (its sessions end); inside the change's
     // transaction, after its sessions ended there, a guard reads the login.

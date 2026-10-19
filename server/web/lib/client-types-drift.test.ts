@@ -48,7 +48,6 @@ import {
 } from '@mantle/content';
 import type { AccessKeyRole as ServerAccessKeyRole } from './access-keys';
 import { ACCESS_KEY_AREAS } from './access-keys';
-import type { WsCaller } from './workspaces';
 
 /**
  * Drift pins for the hand-copied types in @mantle/client-types.
@@ -202,7 +201,6 @@ describe('client-types mirrors have not drifted from their source of truth', () 
     expectTypeOf<
       SameUnion<LoginRole, NonNullable<LoginMcpChannel['role']>>
     >().toEqualTypeOf<true>();
-    expectTypeOf<SameUnion<LoginRole, WsCaller['kind']>>().toEqualTypeOf<true>();
     expectTypeOf<SameUnion<WorkspaceArea, Db.ScopeArea>>().toEqualTypeOf<true>();
     expectTypeOf<SameUnion<HistoryActor, AppHistoryActor>>().toEqualTypeOf<true>();
     expectTypeOf<SameUnion<HistoryActor, Db.NodeSnapshot['actor']>>().toEqualTypeOf<true>();

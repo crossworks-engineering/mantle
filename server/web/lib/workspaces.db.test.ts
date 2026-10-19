@@ -729,7 +729,6 @@ describe.skipIf(!URL)('workspace management (W5a)', () => {
     expect((await patch({ color: null }, p({ id: admin }))).status).toBe(200);
     const { shellWorkspaces } = await import('./workspaces');
     const shell = await shellWorkspaces({
-      kind: 'member',
       loginId: mem,
       anchorId: owner,
       user: null,
@@ -1124,7 +1123,6 @@ describe.skipIf(!URL)('workspace management (W5a)', () => {
   it('/api/shell: the login workspaces and areas', async () => {
     const { shellWorkspaces } = await import('./workspaces');
     const ownerShell = await shellWorkspaces({
-      kind: 'admin',
       loginId: owner,
       anchorId: owner,
       user: null,
@@ -1142,7 +1140,6 @@ describe.skipIf(!URL)('workspace management (W5a)', () => {
       },
     ]);
     const memShell = await shellWorkspaces({
-      kind: 'member',
       loginId: mem,
       anchorId: owner,
       user: null,

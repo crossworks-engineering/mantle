@@ -79,6 +79,7 @@ import {
   type RouteRow,
 } from './route-policy';
 import { auditsAsWrite } from './route-scope';
+import type { Login } from './login';
 import { takeRouteLimits, type LimitLogin } from '../route-limits';
 import {
   SESSION_COOKIE_NAME,
@@ -126,6 +127,8 @@ export type Actor = {
  * `ownerCaller().id` call sites keep querying the one brain no matter who is
  * logged in. `email` is the ACTOR's (display + audit surfaces). Anything
  * login-personal (own password, audit attribution) must use `actor.id`.
+ * A transition adapter: the owner routes' caller until they read the Login
+ * (./login.ts: `brainId` and `actor`) and adminFacts().
  */
 export type SessionUser = { id: string; email: string; actor: Actor };
 
@@ -140,7 +143,9 @@ export type AuthSource = 'web' | 'mobile' | 'api';
  * A MEMBER login (member logins, Phase 1). Deliberately has no `id`: the 280+
  * call sites that scope by `user.id` cannot take a member by mistake, because
  * the type checker refuses it. A member reaches only the member routes, which
- * read at the team level through RLS (`withViewer(…)`).
+ * read at the team level through RLS (`withViewer(…)`). A transition
+ * adapter as SessionUser is: the member routes' caller until they read the
+ * Login.
  */
 export type MemberCaller = {
   role: 'member';
@@ -183,8 +188,24 @@ function adminLogin(row: Pick<LoginRow, 'role' | 'adminMember'>): boolean {
  *  the credential was just checked against. A login carries no permission
  *  of its own (workspaces W8a): what it reads and may do is its workspaces'. */
 type Resolved =
-  | { kind: 'admin'; user: SessionUser; source: AuthSource; epoch: number }
-  | { kind: 'member'; member: MemberCaller; source: AuthSource; epoch: number };
+  | {
+      kind: 'admin';
+      loginId: string;
+      user: SessionUser;
+      source: AuthSource;
+      epoch: number;
+      contactId: string | null;
+      /** adminLogin(row): role admin AND a user of Admin now. */
+      adminPair: boolean;
+    }
+  | {
+      kind: 'member';
+      loginId: string;
+      member: MemberCaller;
+      source: AuthSource;
+      epoch: number;
+      adminPair: false;
+    };
 
 /**
  * Owner gate for the byte-serving asset routes only. Resolves the session
@@ -542,15 +563,26 @@ async function resolvedFor(row: LoginRow, source: AuthSource): Promise<Resolved 
   switch (role) {
     case 'admin': {
       const user = await sessionUserFor(row);
-      return user ? { kind: 'admin', user, source, epoch: row.sessionEpoch } : null;
+      if (!user) return null;
+      return {
+        kind: 'admin',
+        loginId: row.id,
+        user,
+        source,
+        epoch: row.sessionEpoch,
+        contactId: row.contactId,
+        adminPair: adminLogin(row),
+      };
     }
     case 'member': {
       const anchorId = await getAnchorId();
       if (!anchorId) return null;
       return {
         kind: 'member',
+        loginId: row.id,
         source,
         epoch: row.sessionEpoch,
+        adminPair: false,
         member: {
           role: 'member',
           loginId: row.id,
@@ -603,12 +635,7 @@ async function findKeyLogin(): Promise<FoundLogin | undefined> {
  *  resolved, read-write unless a read key. The guard's later notes keep it
  *  (an Admin write) or replace it (an area route: system). */
 function nameRequestLogin(res: Resolved, mode: 'rw' | 'ro'): void {
-  setRequestActor(loginActor(resolvedLoginId(res), mode));
-}
-
-/** The login a resolved caller is. */
-function resolvedLoginId(res: Resolved): string {
-  return res.kind === 'admin' ? res.user.actor.id : res.member.loginId;
+  setRequestActor(loginActor(res.loginId, mode));
 }
 
 /**
@@ -638,7 +665,18 @@ async function findLogin(bearer: () => Promise<FoundBearer>): Promise<FoundLogin
   // remote identity stands in for the cookie→authUsers lookup. Always an
   // admin. No-op in prod.
   const dev = detachedDevUser();
-  if (dev) return { ...NO_LOGIN, resolved: { kind: 'admin', user: dev, source: 'web', epoch: 0 } };
+  if (dev) {
+    const resolved: Resolved = {
+      kind: 'admin',
+      loginId: dev.actor.id,
+      user: dev,
+      source: 'web',
+      epoch: 0,
+      contactId: null,
+      adminPair: true,
+    };
+    return { ...NO_LOGIN, resolved };
+  }
 
   // An API key is judged on itself, never with the cookie: a key presented
   // where keys are not accepted is no login at all.
@@ -938,7 +976,7 @@ export async function resolveHttpLogin(row: RouteRow): Promise<HttpLogin> {
   }
   const res = found.resolved;
   if (!res) return none;
-  const loginId = resolvedLoginId(res);
+  const loginId = res.loginId;
   let admin: AdminView | null = null;
   // The Admin step's answer for an Admin login on a row that manages an
   // area: requireArea's, as adminRouteGate asked it. The view holds the
@@ -1020,7 +1058,7 @@ export async function enterRouteLogin<T>(fn: () => Promise<T>): Promise<T> {
 type PipelineAnswer =
   | Readonly<{ caller: 'owner'; owner: OwnerRouteLogin }>
   | Readonly<{ caller: 'member'; member: MemberCaller }>
-  | Readonly<{ caller: 'login'; login: AnyLogin }>
+  | Readonly<{ caller: 'login'; login: Login }>
   | Readonly<{ caller: 'chat'; chat: ChatLogin }>
   | Readonly<{ caller: 'session'; user: SessionUser | null }>
   | Readonly<{ caller: 'ownerAsset'; user: SessionUser }>
@@ -1136,7 +1174,7 @@ export function answeredLimitLogin(): LimitLogin | null {
     case 'member':
       return { loginId: answer.member.loginId, member: true };
     case 'login':
-      return { loginId: answer.login.loginId, member: answer.login.kind === 'member' };
+      return { loginId: answer.login.loginId, member: legacyLogin(answer.login).kind === 'member' };
     case 'chat':
       return { loginId: answer.chat.loginId, member: answer.chat.kind === 'member' };
     case 'readerAsset': {
@@ -1224,8 +1262,10 @@ async function guardAnswer(row: RouteRow): Promise<PipelineAnswer | NextResponse
       return {
         caller,
         atRead: new AtRead(async (opts) => {
-          const login = await getLoginOr401(opts);
-          if (login instanceof NextResponse || !row.rateLimit.length) return login;
+          const got = await getLoginOr401(opts);
+          if (got instanceof NextResponse) return got;
+          const login = legacyLogin(got);
+          if (!row.rateLimit.length) return login;
           const req = getRequestContext()?.req;
           if (!req) throw new Error(`answerRouteCaller: ${row.key} has no request`);
           const over = takeRouteLimits(row.rateLimit, {
@@ -1310,9 +1350,11 @@ export function memberCaller(): MemberCaller {
  * what getLoginOr401 answers, on an any-login route (the any-login list),
  * read from the pipeline's answer as ownerCaller() reads the owner: no
  * lookup, no effect, and a throw where the pipeline answered no login.
+ * In its legacy shape (a transition adapter, see AnyLogin) while the
+ * handlers still branch on `kind`.
  */
 export function loginCaller(): AnyLogin {
-  return { ...pipelineAnswer('loginCaller', 'login').login };
+  return { ...legacyLogin(pipelineAnswer('loginCaller', 'login').login) };
 }
 
 /**
@@ -1669,7 +1711,7 @@ async function loginHoldsArea(
   const anchorId = await getAnchorId();
   if (!anchorId) return false;
   const { requireArea } = await import('../workspaces');
-  return requireArea({ kind: 'admin', loginId, anchorId, user: null }, area);
+  return requireArea({ loginId, anchorId, user: null }, area);
 }
 
 /**
@@ -1971,20 +2013,15 @@ async function auditLoginMutation(login: AnyLogin): Promise<void> {
   }
 }
 
-/** What getLoginOr401 answers when it lets a login through: the login, any
- *  role (loginCaller() reads it). */
-export type AnyLogin = Exclude<Awaited<ReturnType<typeof getLoginOr401>>, NextResponse>;
-
-/** The calling login's own row, whatever its role: for the few routes about
- *  the login itself (change its password, sign out, who am I). Never for
- *  brain data. Each caller decides per kind.
- *  `sessionEpoch` is the epoch the credential was verified at, for work that
- *  must still be that session's when it lands (OAuth consent).
- *  `audit`: write the generic api.write row of a write once the login is
- *  let through (auditLoginMutation): the any-login rows (the answer step)
- *  and POST /api/auth/pair ask for it; the routes about the login's own
- *  session (sign out, change password, OAuth consent) never wrote one. */
-export async function getLoginOr401(opts: { audit?: boolean } = {}): Promise<
+/**
+ * The legacy shape of an any-login caller: the login told apart by its
+ * session's role (`kind`), with the admin's session user or the member's
+ * record. A transition adapter: getLoginOr401 answers a Login (./login.ts),
+ * and the handlers that still branch on `kind` read this through
+ * loginCaller() or legacyLogin() until each moves to the Login and
+ * adminFacts(). Never a source of a new decision.
+ */
+export type AnyLogin =
   | {
       kind: 'admin';
       loginId: string;
@@ -2000,32 +2037,100 @@ export async function getLoginOr401(opts: { audit?: boolean } = {}): Promise<
       source: AuthSource;
       sessionEpoch: number;
       member: MemberCaller;
-    }
-  | NextResponse
-> {
+    };
+
+/** What getLoginOr401 knew of each Login it answered beyond the Login: its
+ *  legacy shape and the row's Admin pair. Keyed on the very object, so a
+ *  Login built anywhere else has neither (adminFacts then answers no). */
+const loginLegacy = new WeakMap<Login, { any: AnyLogin; adminPair: boolean }>();
+
+/** The legacy shape of a Login getLoginOr401 answered (a transition
+ *  adapter, see AnyLogin). Throws for a Login it did not answer: never a
+ *  guess. */
+export function legacyLogin(login: Login): AnyLogin {
+  const got = loginLegacy.get(login);
+  if (!got) throw new Error('legacyLogin: not a login getLoginOr401 answered');
+  return got.any;
+}
+
+/**
+ * The row's Admin pair for a Login getLoginOr401 answered: role admin AND a
+ * user of the live Admin workspace now (adminLogin, read with the login
+ * row). A transition: while the role column can still differ from Admin
+ * membership, an Admin answer needs both; once membership decides the role,
+ * the scope's own answer is the whole of it. False for a Login it did not
+ * answer.
+ */
+export function loginAdminPair(login: Login): boolean {
+  return loginLegacy.get(login)?.adminPair === true;
+}
+
+/** The Login and the legacy shape of a resolved caller. */
+function loginOf(res: Resolved): { login: Login; any: AnyLogin } {
+  if (res.kind === 'admin') {
+    const login: Login = {
+      loginId: res.loginId,
+      brainId: res.user.id,
+      email: res.user.actor.email,
+      displayName: res.user.actor.displayName,
+      contactId: res.contactId,
+      source: res.source,
+      sessionEpoch: res.epoch,
+      actor: res.user.actor,
+    };
+    return {
+      login,
+      any: {
+        kind: 'admin',
+        loginId: res.loginId,
+        email: res.user.actor.email,
+        source: res.source,
+        sessionEpoch: res.epoch,
+        user: res.user,
+      },
+    };
+  }
+  const m = res.member;
+  const login: Login = {
+    loginId: res.loginId,
+    brainId: m.anchorId,
+    email: m.email,
+    displayName: m.displayName,
+    contactId: m.contactId,
+    source: res.source,
+    sessionEpoch: res.epoch,
+    actor: { id: m.loginId, email: m.email, displayName: m.displayName, isOwner: false },
+  };
+  return {
+    login,
+    any: {
+      kind: 'member',
+      loginId: res.loginId,
+      email: m.email,
+      source: res.source,
+      sessionEpoch: res.epoch,
+      member: m,
+    },
+  };
+}
+
+/** The calling login's own row, whatever its role: for the few routes about
+ *  the login itself (change its password, sign out, who am I). Never for
+ *  brain data. Whether it is an Admin user is adminFacts(login).
+ *  `sessionEpoch` is the epoch the credential was verified at, for work that
+ *  must still be that session's when it lands (OAuth consent).
+ *  `audit`: write the generic api.write row of a write once the login is
+ *  let through (auditLoginMutation): the any-login rows (the answer step)
+ *  and POST /api/auth/pair ask for it; the routes about the login's own
+ *  session (sign out, change password, OAuth consent) never wrote one. */
+export async function getLoginOr401(opts: { audit?: boolean } = {}): Promise<Login | NextResponse> {
   const res = await resolveLogin();
   if (!res) return accessRefusal(new AccessError('unauthorized'));
   const refused = await anyLoginScope(res);
   if (refused) return refused;
-  const login: AnyLogin =
-    res.kind === 'admin'
-      ? {
-          kind: 'admin',
-          loginId: res.user.actor.id,
-          email: res.user.actor.email,
-          source: res.source,
-          sessionEpoch: res.epoch,
-          user: res.user,
-        }
-      : {
-          kind: 'member',
-          loginId: res.member.loginId,
-          email: res.member.email,
-          source: res.source,
-          sessionEpoch: res.epoch,
-          member: res.member,
-        };
-  if (opts.audit) await auditLoginMutation(login);
+  const { login, any } = loginOf(res);
+  loginLegacy.set(login, { any, adminPair: res.adminPair });
+  if (opts.audit) await auditLoginMutation(any);
   return login;
 }
 
@@ -2122,8 +2227,7 @@ async function anyLoginScope(res: Resolved): Promise<NextResponse | null> {
     noteRequestSystem('login-self');
     return null;
   }
-  const loginId = res.kind === 'admin' ? res.user.actor.id : res.member.loginId;
-  await enterLoginScope(loginId, requestMode(res.kind === 'admin'));
+  await enterLoginScope(res.loginId, requestMode(res.kind === 'admin'));
   return null;
 }
 

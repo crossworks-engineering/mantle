@@ -54,7 +54,6 @@ export const RECORDED = {
       'server/web/lib/auth/session.ts passwordRole': ['admin', 'member'],
       'server/web/lib/login-update.ts LoginChange.role': ['admin', 'member'],
       'server/web/lib/login-update.ts role-fixed refusal': ['admin', 'member'],
-      'server/web/lib/workspaces.ts WsCaller.kind': ['admin', 'member'],
       'server/web/lib/workspaces.ts adminRoleChange role': ['admin', 'member'],
       'server/web/server/a4-guard-sweep.keys.ts row role': ['admin', 'member'],
       'server/web/server/a4-guard-sweep.keys.ts grant role': ['admin', 'member'],

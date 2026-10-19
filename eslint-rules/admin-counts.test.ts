@@ -344,13 +344,13 @@ describe('areaAsks', () => {
 });
 
 describe('the login type pin', () => {
-  it('is read from the type test: kind and role today', () => {
-    expect(loginShapePin(ROOT)).toBe(2);
+  it('is read from the type test: neither kind nor role', () => {
+    expect(loginShapePin(ROOT)).toBe(0);
   });
 
   it('is not readable once a line that holds it to the type changes', () => {
     const text = readRepoFile(ROOT, 'server/web/lib/auth/login-shape.test.ts') as string;
-    expect(loginShapePin(ROOT, text)).toBe(2);
+    expect(loginShapePin(ROOT, text)).toBe(0);
     for (const [from, to] of [
       ["{ kind: Has<'kind'>; role: Has<'role'> }", '{ kind: boolean; role: boolean }'],
       ["{ kind: Has<'kind'>; role: Has<'role'> }", "{ kind: Has<'kind'>; role: false }"],

@@ -776,8 +776,14 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
     const kinds = {
       member: [session.memberCaller, session.getMemberOr401],
       // The any-login guard as its rows ask it: with the audit row (A4 hand
-      // batch A, the answer step's).
-      login: [session.loginCaller, () => session.getLoginOr401({ audit: true })],
+      // batch A, the answer step's), in the legacy shape loginCaller() reads.
+      login: [
+        session.loginCaller,
+        async () => {
+          const got = await session.getLoginOr401({ audit: true });
+          return got instanceof Response ? got : session.legacyLogin(got);
+        },
+      ],
       chat: [session.chatLoginCaller, session.getChatLoginOr401],
     } as const;
     // Real manifest patterns of each list, so registerRoutes builds their
@@ -934,7 +940,9 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
         counts.handled += 1;
         if (reads) return Response.json(seen(workspaceCaller(session.loginCaller())));
         const login = await session.getLoginOr401({ audit: true });
-        return login instanceof Response ? login : Response.json(seen(workspaceCaller(login)));
+        return login instanceof Response
+          ? login
+          : Response.json(seen(workspaceCaller(session.legacyLogin(login))));
       };
       registerRoutes(
         app,
@@ -1441,6 +1449,11 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
     const session = await import('../../lib/auth/session');
     const { KEY_TOKENS } = await import('../a4-guard-sweep.keys');
     const ID = '11111111-1111-4111-8111-111111111111';
+    // The guard's Login in the legacy shape publicLoginCaller() reads.
+    const legacyGuard = async (opts?: { audit?: boolean }) => {
+      const got = await session.getLoginOr401(opts);
+      return got instanceof Response ? got : session.legacyLogin(got);
+    };
     type Row = {
       pattern: string;
       method: string;
@@ -1454,14 +1467,14 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
         method: 'GET',
         caller: 'publicLogin',
         read: () => session.publicLoginCaller(),
-        guard: () => session.getLoginOr401(),
+        guard: () => legacyGuard(),
       },
       {
         pattern: '/api/auth/logout',
         method: 'POST',
         caller: 'publicLogin',
         read: () => session.publicLoginCaller(),
-        guard: () => session.getLoginOr401(),
+        guard: () => legacyGuard(),
       },
       {
         // The generic api.write row, as the guard's `audit` wrote it.
@@ -1469,7 +1482,7 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
         method: 'POST',
         caller: 'publicLogin',
         read: () => session.publicLoginCaller({ audit: true }),
-        guard: () => session.getLoginOr401({ audit: true }),
+        guard: () => legacyGuard({ audit: true }),
       },
       {
         pattern: '/api/auth/sso',

@@ -26,6 +26,8 @@ export default defineConfig({
       'server/web/server/app-draft-scope.db.test.ts',
       // The Admin login is role AND membership, warn (the full run) and on.
       'server/web/lib/auth/admin-membership.db.test.ts',
+      // The Login and adminFacts, scoped and unscoped, warn and on.
+      'server/web/lib/auth/admin-facts.db.test.ts',
     ],
     env: { ...base.test?.env, MANTLE_ACTOR_CHECK: 'on' },
   },
