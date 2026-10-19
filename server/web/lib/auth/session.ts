@@ -2040,15 +2040,27 @@ export type AnyLogin =
     };
 
 /** What getLoginOr401 knew of each Login it answered beyond the Login: its
- *  legacy shape and the row's Admin pair. Keyed on the very object, so a
- *  Login built anywhere else has neither (adminFacts then answers no). */
-const loginLegacy = new WeakMap<Login, { any: AnyLogin; adminPair: boolean }>();
+ *  legacy shape and the row's Admin pair, with the login id it was found
+ *  for. Keyed on the very object (frozen, as is its legacy shape), so a
+ *  Login built anywhere else has neither (adminFacts then answers no), and
+ *  the entry answers only while the object still names that login. */
+const loginLegacy = new WeakMap<
+  Login,
+  Readonly<{ loginId: string; any: AnyLogin; adminPair: boolean }>
+>();
+
+/** The entry getLoginOr401 left for `login`, when the object still names
+ *  the login it was found for. */
+function legacyEntry(login: Login) {
+  const got = loginLegacy.get(login);
+  return got && got.loginId === login.loginId ? got : null;
+}
 
 /** The legacy shape of a Login getLoginOr401 answered (a transition
  *  adapter, see AnyLogin). Throws for a Login it did not answer: never a
  *  guess. */
 export function legacyLogin(login: Login): AnyLogin {
-  const got = loginLegacy.get(login);
+  const got = legacyEntry(login);
   if (!got) throw new Error('legacyLogin: not a login getLoginOr401 answered');
   return got.any;
 }
@@ -2062,13 +2074,15 @@ export function legacyLogin(login: Login): AnyLogin {
  * answer.
  */
 export function loginAdminPair(login: Login): boolean {
-  return loginLegacy.get(login)?.adminPair === true;
+  return legacyEntry(login)?.adminPair === true;
 }
 
-/** The Login and the legacy shape of a resolved caller. */
+/** The Login and the legacy shape of a resolved caller, both frozen (the
+ *  Login's actor a frozen copy): what getLoginOr401 found stays what it
+ *  answers. */
 function loginOf(res: Resolved): { login: Login; any: AnyLogin } {
   if (res.kind === 'admin') {
-    const login: Login = {
+    const login: Login = Object.freeze({
       loginId: res.loginId,
       brainId: res.user.id,
       email: res.user.actor.email,
@@ -2076,22 +2090,22 @@ function loginOf(res: Resolved): { login: Login; any: AnyLogin } {
       contactId: res.contactId,
       source: res.source,
       sessionEpoch: res.epoch,
-      actor: res.user.actor,
-    };
+      actor: Object.freeze({ ...res.user.actor }),
+    });
     return {
       login,
-      any: {
+      any: Object.freeze({
         kind: 'admin',
         loginId: res.loginId,
         email: res.user.actor.email,
         source: res.source,
         sessionEpoch: res.epoch,
         user: res.user,
-      },
+      }),
     };
   }
   const m = res.member;
-  const login: Login = {
+  const login: Login = Object.freeze({
     loginId: res.loginId,
     brainId: m.anchorId,
     email: m.email,
@@ -2099,18 +2113,23 @@ function loginOf(res: Resolved): { login: Login; any: AnyLogin } {
     contactId: m.contactId,
     source: res.source,
     sessionEpoch: res.epoch,
-    actor: { id: m.loginId, email: m.email, displayName: m.displayName, isOwner: false },
-  };
+    actor: Object.freeze({
+      id: m.loginId,
+      email: m.email,
+      displayName: m.displayName,
+      isOwner: false,
+    }),
+  });
   return {
     login,
-    any: {
+    any: Object.freeze({
       kind: 'member',
       loginId: res.loginId,
       email: m.email,
       source: res.source,
       sessionEpoch: res.epoch,
       member: m,
-    },
+    }),
   };
 }
 
@@ -2129,7 +2148,7 @@ export async function getLoginOr401(opts: { audit?: boolean } = {}): Promise<Log
   const refused = await anyLoginScope(res);
   if (refused) return refused;
   const { login, any } = loginOf(res);
-  loginLegacy.set(login, { any, adminPair: res.adminPair });
+  loginLegacy.set(login, Object.freeze({ loginId: login.loginId, any, adminPair: res.adminPair }));
   if (opts.audit) await auditLoginMutation(any);
   return login;
 }

@@ -16,6 +16,14 @@
  * as main's getLoginOr401 answered it; the Login carries no kind and no
  * role. A scope for another login throws.
  *
+ * The memo (fix round 1): it is keyed on the very Login object and on the
+ * scope object, after the pair. A copy asked after the real Login in the
+ * same request answers no; a Login found afresh after a demotion answers
+ * the demotion; two scopes for one login (its own, an app run's) each ask;
+ * an overwritten loginId borrows no pair (the Login is frozen, and the
+ * entry names its login). One cell runs through the real any-login request
+ * scope (getLoginOr401's enterLoginScope, read-write), not only withViewer.
+ *
  * The cells run with the box modes warn (the full run) and on.
  *
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run server/web/lib/auth/admin-facts.db.test.ts
@@ -189,6 +197,114 @@ describe.skipIf(!URL)('the Login and adminFacts', () => {
         }),
       );
       expect(JSON.stringify(got), name).toBe(JSON.stringify(await mainAnswer(id)));
+    }
+  });
+
+  it('a copy asked after the real Login in the same request answers no, scoped or not', async () => {
+    await inRequest(adm, async (login) => {
+      expect(shown(await facts.adminFacts(login)).admin).toBe(true);
+      const copy = { ...login };
+      const upper = { ...login, loginId: login.loginId.toUpperCase() };
+      for (const c of [copy, upper]) {
+        expect(shown(await facts.adminFacts(c))).toEqual({ admin: false, areas: [] });
+      }
+      await m.withViewer({ login: adm }, async () => {
+        expect(shown(await facts.adminFacts(login)).admin).toBe(true);
+        for (const c of [copy, upper]) {
+          expect(shown(await facts.adminFacts(c))).toEqual({ admin: false, areas: [] });
+        }
+      });
+    });
+  });
+
+  it('demote, forget, find again: the fresh Login answers the demotion', async () => {
+    try {
+      await inRequest(adm, async (login) => {
+        expect(shown(await facts.adminFacts(login)).admin).toBe(true);
+        const before = await m.withViewer({ login: adm }, () => facts.adminFacts(login));
+        expect(before.admin).toBe(true);
+        await sql`update auth.users set role = 'member' where id = ${adm}`;
+        session.forgetRequestLogins();
+        const again = await session.getLoginOr401();
+        if (again instanceof Response) throw new Error(`no login again: ${again.status}`);
+        expect(again).not.toBe(login);
+        expect(session.legacyLogin(again).kind).toBe('member');
+        expect(shown(await facts.adminFacts(again))).toEqual({ admin: false, areas: [] });
+        const scoped = await m.withViewer({ login: adm }, () => facts.adminFacts(again));
+        expect(shown(scoped)).toEqual({ admin: false, areas: [] });
+        // main's answer after the demotion: no.
+        expect(await mainAnswer(adm)).toEqual({ admin: false, areas: [] });
+      });
+    } finally {
+      await sql`update auth.users set role = 'admin' where id = ${adm}`;
+    }
+    expect(await mainAnswer(adm)).toEqual({
+      admin: true,
+      areas: ['settings', 'users', 'assistants', 'connectors', 'keys'],
+    });
+  });
+
+  it('two scopes for one login each ask: an app run without Admin answers no', async () => {
+    await inRequest(adm, async (login) => {
+      const own = await m.withViewer({ login: adm }, () => facts.adminFacts(login));
+      expect(shown(own)).toEqual(await mainAnswer(adm));
+      const app = await m.withViewer({ login: adm, app: { team: true } }, async () => {
+        expect(m.currentScope().kind).toBe('user');
+        const [r] = (await m.db.execute(
+          m.sql`select "public"."mantle_scope_is_admin"() as a`,
+        )) as unknown as { a: boolean }[];
+        expect(r!.a).toBe(false);
+        return facts.adminFacts(login);
+      });
+      expect(shown(app)).toEqual({ admin: false, areas: [] });
+      // Its own scope again: its own answer, still.
+      const ownAgain = await m.withViewer({ login: adm }, () => facts.adminFacts(login));
+      expect(shown(ownAgain)).toEqual(await mainAnswer(adm));
+    });
+  });
+
+  it('an overwritten loginId borrows no pair', async () => {
+    await inRequest(adm, async (admLogin) => {
+      expect(Object.isFrozen(admLogin)).toBe(true);
+      expect(Object.isFrozen(admLogin.actor)).toBe(true);
+      expect(() => {
+        (admLogin as { loginId: string }).loginId = mem;
+      }).toThrow(TypeError);
+      expect(admLogin.loginId).toBe(adm);
+      expect(Object.isFrozen(session.legacyLogin(admLogin))).toBe(true);
+    });
+    // A member's Login with its loginId set to an Admin user's, as an
+    // unfrozen copy keyed on nothing, and as a defineProperty on the real
+    // object (refused: frozen).
+    await inRequest(mem, async (memLogin) => {
+      const posed = { ...memLogin, loginId: adm };
+      expect(shown(await facts.adminFacts(posed))).toEqual({ admin: false, areas: [] });
+      expect(() => Object.defineProperty(memLogin, 'loginId', { value: adm })).toThrow(TypeError);
+      expect(shown(await facts.adminFacts(memLogin))).toEqual({ admin: false, areas: [] });
+    });
+  });
+
+  it('through the real any-login request scope (enterLoginScope, read-write): byte-equal to main', async () => {
+    const { buildRoutePolicy } = await import('./route-policy');
+    const { routeManifest } = await import('../../server/route-manifest.gen');
+    const row = [...buildRoutePolicy(routeManifest).values()].find(
+      (r) => r.logins === 'any' && r.effect === 'write',
+    );
+    if (!row) throw new Error('no any-login write row');
+    for (const [name, id] of Object.entries(all)) {
+      const ctx = { ...ctxFor(id), path: row.pattern, method: row.method, route: row };
+      const got = await rc.runWithRequestContext(ctx, () =>
+        m.runInRequestSlot(async () => {
+          const login = await session.getLoginOr401();
+          if (login instanceof Response) throw new Error(`no login for ${name}: ${login.status}`);
+          expect(m.currentScope().kind, name).toBe('user');
+          expect(m.currentRequestMode()?.writes, name).toBe(true);
+          const a = facts.adminFacts(login);
+          expect(facts.adminFacts(login)).toBe(a);
+          return shown(await a);
+        }),
+      );
+      expect(JSON.stringify(got), `${name} ${row.key}`).toBe(JSON.stringify(await mainAnswer(id)));
     }
   });
 
