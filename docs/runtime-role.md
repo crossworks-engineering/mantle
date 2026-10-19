@@ -26,7 +26,10 @@ Code: `packages/db/src/runtime-role.ts` (the roles, the rights, the URL),
 - `SELECT, INSERT, UPDATE, DELETE` on every table of `public` and `auth`, but
   the tables the access matrix marks `runtime: 'none'` (`mantle_heads_key`,
   `mantle_moved_nodes`, `mantle_bridge_pending`: only definer functions touch
-  them);
+  them), and only `SELECT` on those it marks `runtime: 'read'` (`workspaces`,
+  `workspace_users`, `workspace_events`, `workspace_resources`: every write
+  is a definer call, so a system-pool write outside one is refused, 42501;
+  `ws-runtime-read.db.test.ts`);
 - `USAGE, SELECT, UPDATE` on every sequence there;
 - `EXECUTE` on an allowlist, not on every function less a denylist
   (`runtimeFunctionAllowlist`): what `PUBLIC` or a viewer role may run, plus

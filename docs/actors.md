@@ -327,8 +327,6 @@ no TS writes the four workspace tables; named: login bridge, bridge connector, t
 
 Each ends in the step of plan v3.2 (2026-10-17) named.
 
-- The runtime role may still write the four workspace tables (only the
-  definers do). S2c.
 - `mantle_login_area` is the area rule or, with no Admin workspace, yes. S4.
 - A definer asked with no scope answers as the system pool would;
   `mantle_grant_change` then takes the caller from its `actor`. S2, S7.
