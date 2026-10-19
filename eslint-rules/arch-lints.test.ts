@@ -921,7 +921,7 @@ describe('the editor rules', () => {
     tester.run('system-pool-scope-sites', systemPoolScopeRule, {
       valid: [
         {
-          code: 'withSystemPoolInWriteScope(() => f());',
+          code: 'withSystemPoolInWriteScope(() => a());\nwithSystemPoolInWriteScope(() => b());',
           filename: '/r/server/web/lib/workspaces.ts',
         },
         {
@@ -941,7 +941,7 @@ describe('the editor rules', () => {
           errors: [{ messageId: 'over' }],
         },
         {
-          code: 'withSystemPoolInWriteScope(() => a());\nwithSystemPoolInWriteScope(() => b());',
+          code: 'withSystemPoolInWriteScope(() => a());\nwithSystemPoolInWriteScope(() => b());\nwithSystemPoolInWriteScope(() => c());',
           filename: '/r/server/web/lib/workspaces.ts',
           errors: [{ messageId: 'over' }],
         },
