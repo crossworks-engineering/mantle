@@ -20,10 +20,13 @@
  * item-cap pause lands with WP4.)
  */
 import { and, eq, inArray, isNull, lt, sql } from 'drizzle-orm';
-import { runItems, runs, type Db } from '@mantle/db';
+import { pendingToolCalls, runItems, runs, type Db } from '@mantle/db';
 
 import { completeItem, type PostCommitAction } from './engine';
 import { RUN_TOOL_QUEUE, RUN_WORKER_QUEUE } from './queues';
+
+/** A uuid's text shape, for an args field read as text. */
+const UUID_TEXT = '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$';
 
 /** How long a `ready` item may sit unclaimed before we assume its dispatch
  *  job was lost. Comfortably above queue latency; far below human patience. */
@@ -174,37 +177,52 @@ export async function sweepRuns(db: Db): Promise<SweepResult> {
   //    so zombie questions never accumulate in the pending UI / telegram
   //    flow. The answer path handles the inverse race (approval landing on
   //    a terminal item) itself; this is the janitor of last resort.
-  const expired = (await db.execute(sql`
-    UPDATE pending_tool_calls p
-    SET status = 'expired', decided_at = now(), updated_at = now(),
-        error = 'the run moved on (cancelled, timed out, or completed) before an answer'
-    WHERE p.status = 'pending'
-      AND p.tool_slug = 'ask_human'
-      AND (p.args->>'item_id') ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
-      AND EXISTS (
-        SELECT 1 FROM run_items ri
-        WHERE ri.id = (p.args->>'item_id')::uuid
-          AND ri.state IN ('done', 'failed', 'cancelled', 'superseded')
-      )
-    RETURNING p.id
-  `)) as unknown as Array<{ id: string }>;
+  const p = pendingToolCalls;
+  const expired = await db
+    .update(p)
+    .set({
+      status: 'expired',
+      decidedAt: sql`now()`,
+      updatedAt: sql`now()`,
+      error: 'the run moved on (cancelled, timed out, or completed) before an answer',
+    })
+    .where(
+      and(
+        eq(p.status, 'pending'),
+        eq(p.toolSlug, 'ask_human'),
+        sql`(${p.args}->>'item_id') ~ ${UUID_TEXT}`,
+        sql`EXISTS (
+          SELECT 1 FROM run_items ri
+          WHERE ri.id = (${p.args}->>'item_id')::uuid
+            AND ri.state IN ('done', 'failed', 'cancelled', 'superseded')
+        )`,
+      ),
+    )
+    .returning({ id: p.id });
 
   // 4b. run_budget rows whose run is no longer paused (cancelled out-of-band,
   //     or finished from in-flight completions while paused) expire the same
   //     way — the "raise or cancel?" question is moot (WP4).
-  const expiredBudget = (await db.execute(sql`
-    UPDATE pending_tool_calls p
-    SET status = 'expired', decided_at = now(), updated_at = now(),
-        error = 'the run is no longer paused — the budget question is moot'
-    WHERE p.status = 'pending'
-      AND p.tool_slug = 'run_budget'
-      AND (p.args->>'run_id') ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
-      AND EXISTS (
-        SELECT 1 FROM runs r
-        WHERE r.id = (p.args->>'run_id')::uuid AND r.status <> 'paused'
-      )
-    RETURNING p.id
-  `)) as unknown as Array<{ id: string }>;
+  const expiredBudget = await db
+    .update(p)
+    .set({
+      status: 'expired',
+      decidedAt: sql`now()`,
+      updatedAt: sql`now()`,
+      error: 'the run is no longer paused — the budget question is moot',
+    })
+    .where(
+      and(
+        eq(p.status, 'pending'),
+        eq(p.toolSlug, 'run_budget'),
+        sql`(${p.args}->>'run_id') ~ ${UUID_TEXT}`,
+        sql`EXISTS (
+          SELECT 1 FROM runs r
+          WHERE r.id = (${p.args}->>'run_id')::uuid AND r.status <> 'paused'
+        )`,
+      ),
+    )
+    .returning({ id: p.id });
 
   // 4c. Decided-but-unsettled recovery (final audit F3). approve/reject
   //     flips the row BEFORE the run-side settle applies; a crash in that
@@ -216,16 +234,23 @@ export async function sweepRuns(db: Db): Promise<SweepResult> {
   //     expires with the moved-on teaching error (or duty 4/4b reaps it
   //     first). executed_at is the settle receipt — settled rows never
   //     match.
-  const reverted = (await db.execute(sql`
-    UPDATE pending_tool_calls p
-    SET status = 'pending', decided_at = NULL, updated_at = now(),
-        error = 'the decision was interrupted before it applied — please decide again'
-    WHERE p.status IN ('approved', 'rejected')
-      AND p.executed_at IS NULL
-      AND p.tool_slug IN ('ask_human', 'run_budget')
-      AND p.decided_at < now() - interval '3 minutes'
-    RETURNING p.id
-  `)) as unknown as Array<{ id: string }>;
+  const reverted = await db
+    .update(p)
+    .set({
+      status: 'pending',
+      decidedAt: null,
+      updatedAt: sql`now()`,
+      error: 'the decision was interrupted before it applied — please decide again',
+    })
+    .where(
+      and(
+        inArray(p.status, ['approved', 'rejected']),
+        isNull(p.executedAt),
+        inArray(p.toolSlug, ['ask_human', 'run_budget']),
+        sql`${p.decidedAt} < now() - interval '3 minutes'`,
+      ),
+    )
+    .returning({ id: p.id });
 
   return {
     timedOut,

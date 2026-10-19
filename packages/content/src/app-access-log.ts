@@ -309,9 +309,10 @@ export async function reapAppAccessLog(
   const BATCH = 10_000;
   let deleted = 0;
   for (;;) {
-    const gone = (await systemDb.execute(sql`
-      delete from app_access_log where id in (${doomed(BATCH)})
-      returning id`)) as unknown as unknown[];
+    const gone = await systemDb
+      .delete(appAccessLog)
+      .where(sql`${appAccessLog.id} in (${doomed(BATCH)})`)
+      .returning({ id: appAccessLog.id });
     deleted += gone.length;
     if (gone.length < BATCH) return { deleted };
   }

@@ -83,16 +83,17 @@ export async function pruneHistoryRows(
   maxBytes: number,
   /** The transaction holding the node's history lock: the delete runs on
    *  it, never on a second connection. */
-  q: Pick<typeof db, 'execute'> = db,
+  q: Pick<typeof db, 'delete'> = db,
 ): Promise<(string | null)[]> {
   if (!triggers.length) return [];
   const list = sql.join(
     triggers.map((t) => sql`${t}`),
     sql`, `,
   );
-  const rows = (await q.execute(sql`
-    delete from node_snapshots
-     where id in (
+  const rows = await q
+    .delete(nodeSnapshots)
+    .where(
+      sql`${nodeSnapshots.id} in (
        select id from (
          select id,
                 row_number() over w as rn,
@@ -102,7 +103,8 @@ export async function pruneHistoryRows(
          window w as (order by seq desc rows between unbounded preceding and current row)
        ) ranked
       where rn > ${keep} or (rn > 1 and cum > ${maxBytes})
-     )
-    returning db_path`)) as unknown as { db_path: string | null }[];
-  return rows.map((r) => r.db_path);
+     )`,
+    )
+    .returning({ dbPath: nodeSnapshots.dbPath });
+  return rows.map((r) => r.dbPath);
 }

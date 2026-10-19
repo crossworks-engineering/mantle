@@ -3,7 +3,7 @@
  * Recent and Most used. Per login, so two admins of one brain keep their own.
  */
 import { sql } from 'drizzle-orm';
-import { db, executeWrite } from '@mantle/db';
+import { db, itemMarks } from '@mantle/db';
 import {
   TREE_KIND_SPECS,
   TREE_PINS_MAX,
@@ -36,11 +36,13 @@ export async function recordItemOpened(
   nodeId: string,
 ): Promise<boolean> {
   if (!(await itemKind(ownerId, nodeId))) return false;
-  await executeWrite(sql`
-    insert into item_marks (actor_id, node_id, open_count, opened_at)
-    values (${actorId}, ${nodeId}, 1, now())
-    on conflict (actor_id, node_id)
-    do update set open_count = item_marks.open_count + 1, opened_at = now()`);
+  await db
+    .insert(itemMarks)
+    .values({ actorId, nodeId, openCount: sql`1`, openedAt: sql`now()` })
+    .onConflictDoUpdate({
+      target: [itemMarks.actorId, itemMarks.nodeId],
+      set: { openCount: sql`item_marks.open_count + 1`, openedAt: sql`now()` },
+    });
   return true;
 }
 
@@ -56,9 +58,10 @@ export async function setItemPinned(
   const kind = await itemKind(ownerId, nodeId);
   if (!kind) return { ok: false, reason: 'not-found' };
   if (!pinned) {
-    await executeWrite(sql`
-      update item_marks set pinned_at = null
-       where actor_id = ${actorId} and node_id = ${nodeId}`);
+    await db
+      .update(itemMarks)
+      .set({ pinnedAt: null })
+      .where(sql`actor_id = ${actorId} and node_id = ${nodeId}`);
     return { ok: true };
   }
   const [count] = (await db.execute(sql`
@@ -69,10 +72,13 @@ export async function setItemPinned(
     n: number;
   }>;
   if ((count?.n ?? 0) >= TREE_PINS_MAX) return { ok: false, reason: 'too-many' };
-  await executeWrite(sql`
-    insert into item_marks (actor_id, node_id, pinned_at)
-    values (${actorId}, ${nodeId}, now())
-    on conflict (actor_id, node_id) do update set pinned_at = coalesce(item_marks.pinned_at, now())`);
+  await db
+    .insert(itemMarks)
+    .values({ actorId, nodeId, pinnedAt: sql`now()` })
+    .onConflictDoUpdate({
+      target: [itemMarks.actorId, itemMarks.nodeId],
+      set: { pinnedAt: sql`coalesce(item_marks.pinned_at, now())` },
+    });
   return { ok: true };
 }
 

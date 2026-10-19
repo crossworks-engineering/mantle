@@ -17,7 +17,7 @@
  */
 import { createHash } from 'node:crypto';
 import { and, desc, eq, sql } from 'drizzle-orm';
-import { holderReadsSql, apps, db, draftColumn, nodes, executeWrite } from '@mantle/db';
+import { holderReadsSql, apps, db, draftColumn, executeWrite, itemMarks, nodes } from '@mantle/db';
 import type {
   AppNavEntry,
   AppNavFolder,
@@ -197,18 +197,24 @@ export async function saveAppPins(
   const wanted = [...new Set(pins.map((id) => id.trim().toLowerCase()))]
     .filter((id) => live.has(id))
     .slice(0, APP_PINS_MAX);
-  await executeWrite(sql`
-    update item_marks m set pinned_at = null
-      from nodes n
-     where n.id = m.node_id and m.actor_id = ${actorId}
-       and n.owner_id = ${ownerId} and n.type = 'app' and m.pinned_at is not null`);
+  await db
+    .update(itemMarks)
+    .set({ pinnedAt: null })
+    .from(nodes)
+    .where(
+      sql`${nodes.id} = ${itemMarks.nodeId} and ${itemMarks.actorId} = ${actorId}
+       and ${nodes.ownerId} = ${ownerId} and ${nodes.type} = 'app' and ${itemMarks.pinnedAt} is not null`,
+    );
   const base = Date.now() - wanted.length * 1000;
   for (const [i, id] of wanted.entries()) {
     const at = new Date(base + i * 1000).toISOString();
-    await executeWrite(sql`
-      insert into item_marks (actor_id, node_id, pinned_at)
-      values (${actorId}, ${id}, ${at}::timestamptz)
-      on conflict (actor_id, node_id) do update set pinned_at = excluded.pinned_at`);
+    await db
+      .insert(itemMarks)
+      .values({ actorId, nodeId: id, pinnedAt: sql`${at}::timestamptz` })
+      .onConflictDoUpdate({
+        target: [itemMarks.actorId, itemMarks.nodeId],
+        set: { pinnedAt: sql`excluded.pinned_at` },
+      });
   }
   void notifyAppNavChanged(ownerId);
   return wanted;

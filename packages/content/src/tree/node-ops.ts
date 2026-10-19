@@ -417,15 +417,15 @@ export async function deleteNodeFolderMerging(ownerId: string, folderId: string)
       await tx.execute(sql`select mantle_subtree_refuse_hidden(${ownerId}, ${p}::ltree)`);
       // 1. Subfolders that merge: a folder is already at their landing path,
       //    outside the deleted one. Their contents land in it below.
-      await tx.execute(sql`
-      delete from nodes n
-       where n.owner_id = ${ownerId} and n.type = 'branch'
-         and n.path <@ ${p}::ltree and n.id <> ${folderId}
+      await tx.delete(nodes).where(
+        sql`${nodes.ownerId} = ${ownerId} and ${nodes.type} = 'branch'
+         and ${nodes.path} <@ ${p}::ltree and ${nodes.id} <> ${folderId}
          and exists (select 1 from nodes b
                       where b.owner_id = ${ownerId} and b.type = 'branch'
-                        and b.path = ${landing} and not (b.path <@ ${p}::ltree))`);
+                        and b.path = ${landing} and not (b.path <@ ${p}::ltree))`,
+      );
       // 2. The folder itself (a shared one refreshes what sat below: 0207).
-      await tx.execute(sql`delete from nodes where id = ${folderId} and owner_id = ${ownerId}`);
+      await tx.delete(nodes).where(and(eq(nodes.id, folderId), eq(nodes.ownerId, ownerId)));
       // 3. The rest moves up one level, shallowest first: a row's landing path
       //    can be the old path of a row one level up (a subfolder named like
       //    the deleted folder), and that row has moved by then. Items keep
@@ -434,9 +434,12 @@ export async function deleteNodeFolderMerging(ownerId: string, folderId: string)
       select coalesce(max(nlevel(path)), 0)::int as n from nodes
        where owner_id = ${ownerId} and path <@ ${p}::ltree`)) as unknown as Array<{ n: number }>;
       for (let level = folderDepth(p) + 1; level <= Number(deepest?.n ?? 0); level++) {
-        await tx.execute(sql`
-        update nodes n set path = ${landing}
-         where n.owner_id = ${ownerId} and n.path <@ ${p}::ltree and nlevel(n.path) = ${level}`);
+        await tx
+          .update(nodes)
+          .set({ path: sql`${landing}` })
+          .where(
+            sql`${nodes.ownerId} = ${ownerId} and ${nodes.path} <@ ${p}::ltree and nlevel(${nodes.path}) = ${level}`,
+          );
       }
       await carrySpaceRows(tx, ownerId, p, q, { lift: true });
     });

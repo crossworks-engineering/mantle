@@ -26,7 +26,6 @@ import {
   withDeadlockRetry,
   withNodeDeleteHeads,
   withNodeInsertHeads,
-  executeWrite,
 } from '@mantle/db';
 import {
   deriveContactTitle,
@@ -348,9 +347,10 @@ export async function recordContactSent(
   // coalesce keeps `data` a valid object even on rows that somehow lack one.
   const countsPath = `{contact_counts,${m}}`;
   const lastAtPath = `{last_contacted_at,${m}}`;
-  const result = await executeWrite(sql`
-    update ${nodes}
-    set data = jsonb_set(
+  const result = await db
+    .update(nodes)
+    .set({
+      data: sql`jsonb_set(
                  jsonb_set(
                    -- ensure both parent objects exist before jsonb_set descends into them
                    jsonb_set(
@@ -371,12 +371,10 @@ export async function recordContactSent(
                  ${lastAtPath}::text[],
                  to_jsonb(${nowIso}::text),
                  true
-               ),
-        updated_at = now()
-    where id = ${contactId}
-      and owner_id = ${ownerId}
-      and type = 'contact'
-  `);
+               )`,
+      updatedAt: sql`now()`,
+    })
+    .where(and(eq(nodes.id, contactId), eq(nodes.ownerId, ownerId), eq(nodes.type, 'contact')));
   // postgres-js `execute` returns the underlying rows; checking count needs the
   // result shape — `result.count` works for INSERTs/UPDATEs in postgres-js.
   return (result as unknown as { count?: number }).count

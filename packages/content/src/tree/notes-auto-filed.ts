@@ -101,10 +101,13 @@ export async function reconcileNotesAutoFiled(ownerId: string): Promise<number |
         async (tx) => {
           // The share lock (shared) before the rows: see takeShareReadLock.
           await takeShareReadLock(tx, ownerId);
-          return (await tx.execute(sql`
-            update nodes set path = ${NOTES_ASSISTANT_PATH}::ltree
-             where owner_id = ${ownerId} and type = 'note' and path <@ ${LEGACY_DIGEST_PATH}::ltree
-             returning id`)) as unknown as unknown[];
+          return tx
+            .update(nodes)
+            .set({ path: sql`${NOTES_ASSISTANT_PATH}::ltree` })
+            .where(
+              sql`owner_id = ${ownerId} and type = 'note' and path <@ ${LEGACY_DIGEST_PATH}::ltree`,
+            )
+            .returning({ id: nodes.id });
         },
       );
     });

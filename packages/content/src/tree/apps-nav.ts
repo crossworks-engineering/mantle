@@ -23,7 +23,8 @@ import {
   db,
   withDeadlockRetry,
   withHeads,
-  executeWrite,
+  itemMarks,
+  nodes,
   runReadPathWrite,
 } from '@mantle/db';
 import type { AppNavEntry, AppNavFolder } from '@mantle/client-types';
@@ -59,23 +60,29 @@ async function rootData(ownerId: string): Promise<RootData> {
  *  call holds a fresh claim. */
 async function claimAppNavMove(ownerId: string): Promise<boolean> {
   const staleBefore = new Date(Date.now() - CLAIM_STALE_MS).toISOString();
-  const claimed = (await executeWrite(sql`
-    update nodes
-       set data = coalesce(data, '{}'::jsonb)
-                  || jsonb_build_object('appNavMigratingAt', ${new Date().toISOString()}::text)
-     where owner_id = ${ownerId} and type = 'branch' and path = ${APPS_ROOT}::ltree
+  const claimed = await db
+    .update(nodes)
+    .set({
+      data: sql`coalesce(data, '{}'::jsonb)
+                  || jsonb_build_object('appNavMigratingAt', ${new Date().toISOString()}::text)`,
+    })
+    .where(
+      sql`owner_id = ${ownerId} and type = 'branch' and path = ${APPS_ROOT}::ltree
        and data->>'appNavMigratedAt' is null
-       and (data->>'appNavMigratingAt' is null or data->>'appNavMigratingAt' < ${staleBefore})
-     returning id`)) as unknown as unknown[];
+       and (data->>'appNavMigratingAt' is null or data->>'appNavMigratingAt' < ${staleBefore})`,
+    )
+    .returning({ id: nodes.id });
   return claimed.length > 0;
 }
 
 async function markAppNavMoved(ownerId: string): Promise<void> {
-  await executeWrite(sql`
-    update nodes
-       set data = (coalesce(data, '{}'::jsonb) - 'appNavMigratingAt')
-                  || jsonb_build_object('appNavMigratedAt', ${new Date().toISOString()}::text)
-     where owner_id = ${ownerId} and type = 'branch' and path = ${APPS_ROOT}::ltree`);
+  await db
+    .update(nodes)
+    .set({
+      data: sql`(coalesce(data, '{}'::jsonb) - 'appNavMigratingAt')
+                  || jsonb_build_object('appNavMigratedAt', ${new Date().toISOString()}::text)`,
+    })
+    .where(sql`owner_id = ${ownerId} and type = 'branch' and path = ${APPS_ROOT}::ltree`);
 }
 
 /** An existing apps folder with this id (a rerun after a crash), its path;
@@ -155,13 +162,16 @@ async function placeApps(ownerId: string, ids: readonly string[], path: string):
       async (tx) => {
         // The share lock (shared) before the rows: see takeShareReadLock.
         await takeShareReadLock(tx, ownerId);
-        await tx.execute(sql`
-          update nodes set path = ${path}::ltree
-           where owner_id = ${ownerId} and type = 'app'
+        await tx
+          .update(nodes)
+          .set({ path: sql`${path}::ltree` })
+          .where(
+            sql`owner_id = ${ownerId} and type = 'app'
              and id in (${sql.join(
                ids.map((id) => sql`${id}::uuid`),
                sql`, `,
-             )})`);
+             )})`,
+          );
       },
     );
   });
@@ -246,26 +256,39 @@ async function copyAppMarks(ownerId: string, actorId: string): Promise<boolean> 
   for (const [i, id] of pins.entries()) {
     if (!live.has(id)) continue;
     const at = new Date(base + i * 1000).toISOString();
-    await executeWrite(sql`
-      insert into item_marks (actor_id, node_id, pinned_at)
-      values (${actorId}, ${id}, ${at}::timestamptz)
-      on conflict (actor_id, node_id)
-      do update set pinned_at = coalesce(item_marks.pinned_at, excluded.pinned_at)`);
+    await db
+      .insert(itemMarks)
+      .values({ actorId, nodeId: id, pinnedAt: sql`${at}::timestamptz` })
+      .onConflictDoUpdate({
+        target: [itemMarks.actorId, itemMarks.nodeId],
+        set: { pinnedAt: sql`coalesce(item_marks.pinned_at, excluded.pinned_at)` },
+      });
   }
   for (const [id, stat] of opens) {
     if (!live.has(id)) continue;
-    await executeWrite(sql`
-      insert into item_marks (actor_id, node_id, open_count, opened_at)
-      values (${actorId}, ${id}, ${stat.n}, ${stat.at}::timestamptz)
-      on conflict (actor_id, node_id)
-      do update set open_count = greatest(item_marks.open_count, excluded.open_count),
-                    opened_at = greatest(item_marks.opened_at, excluded.opened_at)`);
+    await db
+      .insert(itemMarks)
+      .values({
+        actorId,
+        nodeId: id,
+        openCount: sql`${stat.n}`,
+        openedAt: sql`${stat.at}::timestamptz`,
+      })
+      .onConflictDoUpdate({
+        target: [itemMarks.actorId, itemMarks.nodeId],
+        set: {
+          openCount: sql`greatest(item_marks.open_count, excluded.open_count)`,
+          openedAt: sql`greatest(item_marks.opened_at, excluded.opened_at)`,
+        },
+      });
   }
-  await executeWrite(sql`
-    update nodes
-       set data = jsonb_set(
+  await db
+    .update(nodes)
+    .set({
+      data: sql`jsonb_set(
              coalesce(data, '{}'::jsonb), '{appMarksMigrated}',
-             coalesce(data->'appMarksMigrated', '[]'::jsonb) || to_jsonb(${actorId}::text))
-     where owner_id = ${ownerId} and type = 'branch' and path = ${APPS_ROOT}::ltree`);
+             coalesce(data->'appMarksMigrated', '[]'::jsonb) || to_jsonb(${actorId}::text))`,
+    })
+    .where(sql`owner_id = ${ownerId} and type = 'branch' and path = ${APPS_ROOT}::ltree`);
   return true;
 }

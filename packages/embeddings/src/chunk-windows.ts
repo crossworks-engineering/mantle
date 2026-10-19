@@ -210,10 +210,14 @@ export async function runChunkWindows(
       const ids = batch.map((r) => r.id);
       const gone = await withDeadlockRetry(() =>
         withHeads(ids, 'update', (tx) =>
-          tx.execute(
-            sql`delete from ${contentChunkWindows} where ${contentChunkWindows.ownerId} = ${ownerId}
-                 and ${contentChunkWindows.nodeId} = any(${`{${ids.join(',')}}`}::uuid[])`,
-          ),
+          tx
+            .delete(contentChunkWindows)
+            .where(
+              and(
+                eq(contentChunkWindows.ownerId, ownerId),
+                sql`${contentChunkWindows.nodeId} = any(${`{${ids.join(',')}}`}::uuid[])`,
+              ),
+            ),
         ),
       );
       removed += affected(gone);
@@ -278,12 +282,15 @@ export async function runChunkWindows(
         owners.map((r) => r.id),
         'update',
         (tx) =>
-          tx.execute(sql`
-      insert into ${contentChunkWindows} (chunk_id, j, owner_id, node_id, embedding)
-      select c.id, 0, c.owner_id, c.node_id, c.embedding::halfvec(768)
-      from ${contentChunks} c
-      where c.id = any(${chunkIds}::uuid[]) and c.embedding is not null
-      on conflict do nothing`),
+          // The table's five columns, in order: insert-select names them all.
+          tx
+            .insert(contentChunkWindows)
+            .select(
+              sql`select c.id, 0, c.owner_id, c.node_id, c.embedding::halfvec(768)
+                    from ${contentChunks} c
+                   where c.id = any(${chunkIds}::uuid[]) and c.embedding is not null`,
+            )
+            .onConflictDoNothing(),
       ),
     );
     progress(affected(res));
@@ -300,12 +307,14 @@ export async function runChunkWindows(
     const nodeIds = [...new Set(items.map((e) => e.nodeId))];
     const res = await withDeadlockRetry(() =>
       withHeads(nodeIds, 'update', (tx) =>
-        tx.execute(sql`
-      insert into ${contentChunkWindows} (chunk_id, j, owner_id, node_id, embedding)
-      select v.chunk_id, v.j, ${ownerId}::uuid, v.node_id, v.embedding
-      from (values ${sql.join(values, sql`, `)}) as v(chunk_id, j, node_id, embedding)
-      where exists (select 1 from ${contentChunks} c where c.id = v.chunk_id)
-      on conflict do nothing`),
+        tx
+          .insert(contentChunkWindows)
+          .select(
+            sql`select v.chunk_id, v.j, ${ownerId}::uuid, v.node_id, v.embedding
+                  from (values ${sql.join(values, sql`, `)}) as v(chunk_id, j, node_id, embedding)
+                 where exists (select 1 from ${contentChunks} c where c.id = v.chunk_id)`,
+          )
+          .onConflictDoNothing(),
       ),
     );
     progress(affected(res));

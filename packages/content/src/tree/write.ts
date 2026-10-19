@@ -454,9 +454,12 @@ async function placeFolder(
   const ranks = ranksAfter(null, order.length);
   await db.transaction(async (tx) => {
     for (const [i, s] of order.entries()) {
-      await tx.execute(sql`
-        update nodes set data = jsonb_set(coalesce(data, '{}'::jsonb), '{rank}', to_jsonb(${ranks[i]!}::text))
-         where id = ${s.id} and owner_id = ${ownerId}`);
+      await tx
+        .update(nodes)
+        .set({
+          data: sql`jsonb_set(coalesce(data, '{}'::jsonb), '{rank}', to_jsonb(${ranks[i]!}::text))`,
+        })
+        .where(sql`id = ${s.id} and owner_id = ${ownerId}`);
     }
   });
 }

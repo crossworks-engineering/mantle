@@ -109,10 +109,12 @@ export async function reapShareAccessLog(
   const BATCH = 10_000;
   let deleted = 0;
   for (;;) {
-    const gone = (await systemDb.execute(sql`
-      delete from share_access_log
-       where id in (select id from share_access_log where created_at < ${cutoff.toISOString()}::timestamptz limit ${BATCH})
-      returning id`)) as unknown as unknown[];
+    const gone = await systemDb
+      .delete(shareAccessLog)
+      .where(
+        sql`${shareAccessLog.id} in (select id from share_access_log where created_at < ${cutoff.toISOString()}::timestamptz limit ${BATCH})`,
+      )
+      .returning({ id: shareAccessLog.id });
     deleted += gone.length;
     if (gone.length < BATCH) return { deleted };
   }

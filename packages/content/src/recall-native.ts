@@ -492,14 +492,14 @@ async function recordRevision(
     after: after as never,
   });
   // Keep the last N per map. One statement, so a hot map cannot grow the log.
-  await tx.execute(sql`
-    delete from ${recallRevisions}
-     where ${recallRevisions.mapId} = ${mapId}
+  await tx.delete(recallRevisions).where(
+    sql`${recallRevisions.mapId} = ${mapId}
        and ${recallRevisions.id} not in (
          select id from ${recallRevisions}
           where map_id = ${mapId}
           order by created_at desc
-          limit ${RECALL_REVISIONS_PER_MAP})`);
+          limit ${RECALL_REVISIONS_PER_MAP})`,
+  );
 }
 
 /** Re-stamp the map: version, card count, timestamp. The count matters more

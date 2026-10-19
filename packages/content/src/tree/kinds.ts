@@ -84,6 +84,6 @@ export function itemMeta(kind: TreeKind, data: Record<string, unknown>): TreeIte
  * task screen's own Archived view is where they are found.
  */
 export function kindItemFilter(kind: TreeKind, alias: string): SQL {
-  if (kind === 'tasks') return sql`and ${sql.raw(alias)}.data->>'archived_at' is null`;
+  if (kind === 'tasks') return sql`and ${sql.identifier(alias)}.data->>'archived_at' is null`;
   return sql``;
 }

@@ -91,6 +91,10 @@ own, with the actor it binds: [process-inventory.md](./process-inventory.md)
 - A write to a table the write role holds no right on goes to the system
   pool up front. Nothing runs again: a right the role lacks is a bug (an
   error and a `write-role-gap` miss), a refusal is the caller's answer.
+- Scoped code writes through a typed drizzle write or a definer call, not
+  SQL text it writes by hand (`eslint-rules/no-raw-write-sql.mjs`, pinned
+  per file; the files that stay raw, each with why, in
+  `eslint-rules/raw-write-allowlist.mjs`, capped).
 - The scoped pools never run the setter functions. Only `packages/db`
   sets `mantle.*` settings.
 - Transactions: `withSystemTx` in an open system transaction is its

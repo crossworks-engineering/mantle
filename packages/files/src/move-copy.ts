@@ -343,9 +343,11 @@ export async function moveFolderById(args: {
                 sql`select mantle_subtree_rewrite(${args.ownerId}, ${oldPath}::ltree, ${newPath}::ltree)`,
               );
               // Filing is not editing: only the folder itself is stamped.
-              const rows = (await tx.execute(
-                sql`update ${nodes} set updated_at = now() where id = ${node.id} and owner_id = ${args.ownerId} returning id`,
-              )) as unknown as { id: string }[];
+              const rows = await tx
+                .update(nodes)
+                .set({ updatedAt: sql`now()` })
+                .where(and(eq(nodes.id, node.id), eq(nodes.ownerId, args.ownerId)))
+                .returning({ id: nodes.id });
               oneRow('files', rows, 'folder');
               await carrySpaceRows(tx, args.ownerId, oldPath, newPath);
               await place();

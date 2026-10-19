@@ -614,19 +614,26 @@ async function cancelPendingChildren(tx: Tx, groupId: string, doneBefore: number
  *  how many DIRECT children of `rootId` were cancelled. In-flight handlers on
  *  cancelled items no-op at their CAS. */
 async function cancelSubtreeItems(tx: Tx, rootId: string): Promise<number> {
-  const res = await tx.execute(sql`
-    WITH RECURSIVE subtree AS (
-      SELECT id, parent_id FROM run_items WHERE parent_id = ${rootId}
-      UNION ALL
-      SELECT ri.id, ri.parent_id FROM run_items ri JOIN subtree s ON ri.parent_id = s.id
+  // The subtree as a subquery of the typed update: the same rows as a
+  // leading WITH RECURSIVE over the same snapshot.
+  const rows = await tx
+    .update(runItems)
+    .set({ state: 'cancelled', finishedAt: sql`now()`, updatedAt: sql`now()` })
+    .where(
+      and(
+        sql`${runItems.id} IN (
+          WITH RECURSIVE subtree AS (
+            SELECT id, parent_id FROM run_items WHERE parent_id = ${rootId}
+            UNION ALL
+            SELECT ri.id, ri.parent_id FROM run_items ri JOIN subtree s ON ri.parent_id = s.id
+          )
+          SELECT id FROM subtree
+        )`,
+        inArray(runItems.state, ['queued', 'ready', 'running']),
+      ),
     )
-    UPDATE run_items SET state = 'cancelled', finished_at = now(), updated_at = now()
-    WHERE id IN (SELECT id FROM subtree)
-      AND state IN ('queued', 'ready', 'running')
-    RETURNING parent_id
-  `);
-  const rows = res as unknown as Array<{ parent_id: string }>;
-  return rows.filter((r) => r.parent_id === rootId).length;
+    .returning({ parentId: runItems.parentId });
+  return rows.filter((r) => r.parentId === rootId).length;
 }
 
 /**

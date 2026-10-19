@@ -418,10 +418,12 @@ export const codeCheckSteps = {
         ...(lockNow ? { lockedUntil: new Date(now.getTime() + CONTACT_CODE_LOCK_MS) } : {}),
       })
       .where(eq(contactShareCodes.contactId, row?.contactId ?? NO_ID));
-    await tx.execute(sql`
-      insert into share_access_log (owner_id, share_id, contact_id, kind, detail, created_at)
-      select s.owner_id, s.id, s.contact_id, 'code_failed', ${JSON.stringify(lockNow ? { locked: true } : {})}::jsonb, ${now.toISOString()}::timestamptz
-        from shares s where s.id = ${share?.id ?? NO_ID}`);
+    // Insert-select names every column of the table, in order: the id is
+    // its default's own expression.
+    await tx.insert(shareAccessLog).select(
+      sql`select gen_random_uuid(), s.owner_id, s.id, s.contact_id, 'code_failed', ${JSON.stringify(lockNow ? { locked: true } : {})}::jsonb, ${now.toISOString()}::timestamptz
+              from shares s where s.id = ${share?.id ?? NO_ID}`,
+    );
     return lockNow;
   },
   async accept(tx: Tx, row: CodeRow, now: Date): Promise<void> {

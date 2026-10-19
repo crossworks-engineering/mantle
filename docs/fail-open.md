@@ -79,17 +79,19 @@ hold, unless the table's access matrix row names
 are the tables the vitest measurement found; the box counts add what it
 cannot see (below):
 
-| Table                       | Site          | Who writes it                                                                                                                          | `scopedSystemWrite` reason (proposed) |
-| --------------------------- | ------------- | -------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------- |
-| `public.item_marks`         | `raw-write`   | a login's own open counts and pins, keyed by its login (`packages/content/src/tree/marks.ts`, `packages/content/src/tree/apps-nav.ts`) | `'own-marks'`                         |
-| `public.pending_tool_calls` | `typed-write` | an elevated tool call queued for approval, and its status (`packages/tools/src/pending-queue.ts`, `packages/tools/src/pending.ts`)     | `'approval-queue'`                    |
-| `public.assistant_messages` | `typed-write` | the rows of a login's chat turn in the one conversation store (`packages/runtime/src/agent/conversation.ts`)                           | `'conversation-store'`                |
+| Table                       | Site          | Who writes it                                                                                                                                                             | `scopedSystemWrite` reason (proposed) |
+| --------------------------- | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------- |
+| `public.item_marks`         | `typed-write` | a login's own open counts and pins, keyed by its login (`packages/content/src/tree/marks.ts`, `packages/content/src/tree/apps-nav.ts`, `packages/content/src/app-nav.ts`) | `'own-marks'`                         |
+| `public.pending_tool_calls` | `typed-write` | an elevated tool call queued for approval, and its status (`packages/tools/src/pending-queue.ts`, `packages/tools/src/pending.ts`)                                        | `'approval-queue'`                    |
+| `public.assistant_messages` | `typed-write` | the rows of a login's chat turn in the one conversation store (`packages/runtime/src/agent/conversation.ts`)                                                              | `'conversation-store'`                |
 
 Measured 2026-10-18 at the S4a branch: 146 hits, all from a login actor, in
 `precheck-removal-http`, `w6a-route-sweep`, `w6b-fix1` (`item_marks`),
 `w7a-tool-sweep`, `a5-elevated-approval`, `a5-approval-recheck`
 (`pending_tool_calls`), `w7c-chat` and `a5-mcp-writes-smoke`
 (`assistant_messages`), all under `server/web/server/`. No other table.
+The `item_marks` writes were raw then (`raw-write`); since S10 r1 they are
+typed writes, so the same hits count as `typed-write`.
 
 So the list is vitest plus the box counts. The vitest run cannot see the
 two production allows (tests and development throw there), the two

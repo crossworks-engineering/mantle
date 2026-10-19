@@ -48,6 +48,7 @@ import {
   draws,
   emailAttachments,
   flipThenPlace,
+  itemGrants,
   inFlipTransaction,
   type Node,
   nodes,
@@ -606,17 +607,20 @@ async function restampRacedCreate(
   createWs: string | null,
 ): Promise<Node> {
   const s = JSON.stringify(stamp);
-  await tx.execute(sql`
-    update nodes
-       set data = case when (coalesce(data, '{}'::jsonb) || ${s}::jsonb) ? 'extract_skipped'
-                       then jsonb_set(coalesce(data, '{}'::jsonb) || ${s}::jsonb, '{extract_skipped,at}',
-                                      to_jsonb(greatest(clock_timestamp(), updated_at)))
-                       else coalesce(data, '{}'::jsonb) || ${s}::jsonb end
-     where id = ${id}::uuid`);
+  await tx
+    .update(nodes)
+    .set({
+      data: sql`case when (coalesce(${nodes.data}, '{}'::jsonb) || ${s}::jsonb) ? 'extract_skipped'
+                     then jsonb_set(coalesce(${nodes.data}, '{}'::jsonb) || ${s}::jsonb, '{extract_skipped,at}',
+                                    to_jsonb(greatest(clock_timestamp(), ${nodes.updatedAt})))
+                     else coalesce(${nodes.data}, '{}'::jsonb) || ${s}::jsonb end`,
+    })
+    .where(eq(nodes.id, id));
   if (createWs) {
-    await tx.execute(sql`delete from item_grants where node_id = ${id}::uuid`);
-    await tx.execute(sql`insert into item_grants (node_id, workspace_id, is_home, write)
-                         values (${id}::uuid, ${createWs}::uuid, true, false)`);
+    await tx.delete(itemGrants).where(eq(itemGrants.nodeId, id));
+    await tx
+      .insert(itemGrants)
+      .values({ nodeId: id, workspaceId: createWs, isHome: true, write: false });
   }
   const [row] = await tx.select().from(nodes).where(eq(nodes.id, id)).limit(1);
   if (!row) throw new Error('upsertFile: the raced row is gone');

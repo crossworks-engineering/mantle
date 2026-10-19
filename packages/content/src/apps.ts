@@ -23,8 +23,8 @@ import {
   db,
   nodeReadByWorkspace,
   oneRow,
-  executeWrite,
   nodes,
+  nodeSnapshots,
   apps,
   appDatabases,
   shares,
@@ -1321,15 +1321,17 @@ export async function deleteApp(
   };
   const snap = await createAppSnapshot(ownerId, id, { ...keep, codeOnlyWhenLost: true });
   if (snap && opts.deletedBy && !opts.deletedBy.owner) {
-    // A raw write, said so: in a scope (the Admin MCP surface, W7a) it goes
-    // to the system pool as the typed writes do.
-    await executeWrite(sql`
-      update node_snapshots
-         set code = jsonb_set(coalesce(code, '{}'::jsonb), '{meta}',
+    // In a scope (the Admin MCP surface) a typed write leaves the scope's
+    // read pool, as every write does.
+    await db
+      .update(nodeSnapshots)
+      .set({
+        code: sql`jsonb_set(coalesce(code, '{}'::jsonb), '{meta}',
                      coalesce(code->'meta', '{}'::jsonb)
                      || jsonb_build_object('keepForOwner', true,
-                                           'deletedBy', ${opts.deletedBy.loginId ?? null}::text))
-       where id = ${snap.id}`);
+                                           'deletedBy', ${opts.deletedBy.loginId ?? null}::text))`,
+      })
+      .where(eq(nodeSnapshots.id, snap.id));
   }
   // The node goes first, then the live database file (apps audit D6). Its
   // path is read now: the `app_databases` row cascades away with the node.
