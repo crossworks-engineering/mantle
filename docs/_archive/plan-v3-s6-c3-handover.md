@@ -1,8 +1,8 @@
 # Plan v3 S6 part c3 handover
 
 Branch `feat/s6-c3`. Built on `origin/feat/s6-c2` (e50fd5f51, c2 not merged
-yet, by the CEO's word); rebase onto main once c2 is merged. Not merged,
-not tagged, not rolled. Plan v3.2 section "S6. Admin acts become
+yet, by the CEO's word); round 2 (below) rebased it onto main 6f6e85704
+(v0.300.102, c2 merged). Not merged, not tagged, not rolled. Plan v3.2 section "S6. Admin acts become
 definers", part c3. No migration: no new definer was needed (below).
 
 ## Measured first
@@ -85,7 +85,8 @@ f4-owner-flows, s6-c1, s6-c2), with these changes:
 - `routePolicyLists` 16 to 15 (ADMIN_ACT_WRITES); `no-policy-name-lists`
   route-scope.ts 5 to 4.
 - `loginKindBranches` 51 to 50, `historyCodeComments` 2345 to 2343,
-  `actorsMdLines` 350 to 348.
+  `actorsMdLines` 350 to 348 (on c2's branch; on main v0.300.102 after
+  the rebase: 2341 to 2339 and 349 to 347, the same two lines each).
 - `inHandlerAreaChecks` unchanged: the keys area ask of the key make
   (`holdsKeysArea`) decides its 400s before the password; moving it into a
   definer reorders the answers (Open).
@@ -103,7 +104,7 @@ f4-owner-flows, s6-c1, s6-c2), with these changes:
 - `route-scope.test.ts`: the four acts are content writes no member
   reaches (the list is the test's own now).
 
-## Gates
+## Gates (first builder, before the rebase)
 
 Mac (DATABASE_URL unset), on head d7b4f4be0 then the fixes in 5fdd519a3:
 
@@ -135,14 +136,91 @@ c3; c2's DB tests had not run before) and `a2b2b-write-gateway.db.test.ts`
 `test:runtime-role` NOT RUN (stopped at the handover). Pushed with
 `--no-verify`; CI will be red on the c2 cells until c2 lands.
 
+## Round 2 (second builder)
+
+### The rebase
+
+Rebased the c3 commits onto main 6f6e85704 (v0.300.102, c2 round 3
+merged); c2's three branch commits dropped out. No code conflict: only
+the pins file and the A4 sweep snapshots conflicted. Both were taken from
+main, then c3's pin moves put back on main's numbers (with their notes)
+and the sweep re-recorded. The A4 rule-in-query snapshot was reset to
+main's before the re-record too. The rebase left a trailing blank line in
+route-scope.ts (format:check, fixed).
+
+### The two DB-less sweeps, re-recorded (code-first, as c1 and c2)
+
+Each file's answer table resolved per route, method and credential and
+compared with main 6f6e85704 cell by cell:
+
+| File                               | Cells | Equal | Log only | Answer moved |
+| ---------------------------------- | ----- | ----- | -------- | ------------ |
+| `a4-guard-sweep.txt`               | 11725 | 11661 | 64       | 0            |
+| `a4-guard-sweep-moved.txt`         | 9286  | 9222  | 64       | 0            |
+| `a4-guard-sweep-rule-in-query.txt` | 188   | 180   | 8        | 0            |
+
+Every moved cell is the same change: the guard log's
+`out=system:admin-write` is now `out=user:true` (checked: the main log
+with only that token replaced equals the new log). Status, headers and
+body are byte-equal on every cell. The 16 routes (4 Admin credentials
+each): POST /api/access-keys, DELETE /api/access-keys/:id; POST
+/api/assistant/read, threads, threads/:id/continue,
+threads/:id/summarize, transcribe, turn; POST /api/telegram/pair,
+chats/:id/block, chats/:id/unpair, DELETE /api/telegram/my-chats/:id;
+POST /api/contacts/:id/sharing, DELETE /api/contacts/:id/shares, POST
+/api/shares/contacts, POST /api/entities/merge. The rule-in-query file's
+8 are the two access-keys rows; its "answers on main" block is unchanged.
+No other snapshot file moved (more, moved-writes, guard-writes,
+head-logins, owner-decision).
+
+The A10 body sweep is green against main's snapshot with no re-record:
+no c3 cell moved there, so no new `changeKind` is needed.
+
+The real answers (no stand-in) are the DB tests below: byte-equal, or the
+two narrower cases in Answers (2 and 3).
+
+### The shares-route cells
+
+`shares-route.db.test.ts` is green on the rebased branch (9 of 9, alone
+and in the full run). The 3 red cells were c2 round 1's, not c3's: c2
+round 2 moved its PATCH and DELETE cells to runRoute (b028ca308,
+9b6b533a0, fe45e3f53), and none of those three is in e50fd5f51, the base
+the first builder used. Nothing to fix in c3.
+
+### Gates (round 2)
+
+Mac (DATABASE_URL unset), on 8f0d71e54 (format again on fe2a556f4):
+
+| Gate                                                | Exit                                     |
+| --------------------------------------------------- | ---------------------------------------- |
+| `pnpm -r typecheck`                                 | 0                                        |
+| `pnpm lint`                                         | 0                                        |
+| `pnpm format:check`                                 | 1, then 0 (fe2a556f4)                    |
+| `pnpm docs:check`                                   | 0                                        |
+| `pnpm arch:check`                                   | 0                                        |
+| `pnpm exec vitest run server packages eslint-rules` | 0 (856 files, 11058 tests, 2770 skipped) |
+| `pnpm -C server/web build`                          | 0                                        |
+
+Workstation, on 8f0d71e54 (fe2a556f4 is whitespace only): own pgvector
+pg18 on 56331 (`postgres` role and init as CI: `init-scratch`, then
+`migrate`), `MANTLE_CHECK_FLOOR=keep`, `--maxWorkers=3`, systemd-run;
+container, worktree, branch and logs removed after, by exact name.
+
+| Run                             | Exit | Files / tests           |
+| ------------------------------- | ---- | ----------------------- |
+| `shares-route.db.test.ts` alone | 0    | 1 file, 9 tests         |
+| full vitest with the database   | 0    | 1123 files, 13827 tests |
+| `pnpm test:actor-off`           | 0    | 127 files, 1159 tests   |
+| `pnpm test:runtime-role` (full) | 0    | 275 files, 2751 tests   |
+
+No hook timeout in any run.
+
 ## Open
 
-- The c2 round-2 builder re-records the A4 guard sweep and the A10 body
-  sweep for c2's four rows; this branch re-recorded only its own rows, so
-  the rebase onto main after c2 merges may need the sweeps re-run (`-u`)
-  and the diff checked again with the per-route compare.
-- Keys area for another login's key (owner): today "an Admin user".
+- Keys area for another login's key: decided by the CEO, it keeps
+  today's rule, "an Admin user".
 - The Telegram moderated-chat branch as a definer (`mantle_area_rule` thin
-  call, or a definer with `mantle_scope_has_area('users')`) and the key
-  make's area ask in SQL: both need EXECUTE for the write role
-  (access-matrix.ts, S2c's) and a migration; S7 or a c4.
+  call, or a definer with `mantle_scope_has_area('users')`): deferred by
+  the CEO until after S2c. The key make's area ask in SQL also needs
+  EXECUTE for the write role (access-matrix.ts, S2c's) and a migration;
+  S7 or a c4.
