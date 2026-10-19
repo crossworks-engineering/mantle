@@ -566,3 +566,68 @@ Mac, on 05707ae1a, DATABASE_URL unset, exit codes:
 - Test files' comments still name client.ts for moved code (a2a, a2b2b,
   w7a, a8, connection-ceiling, login-facts, ws-user-definers, sql-grid):
   left, because tests change only in imports in this split.
+
+### Round 2
+
+Builder round 2 of 2, on e57a634df and fb0ae2ae9 (from 05f221f49).
+
+The counter (e57a634df). tsAdminSqlKinds's template reader
+(eslint-rules/rights-counts.mjs templateLiterals) read a `${}` part by
+counting `${` and `}`, so the text of a template literal nested in a part
+(moderatorSeatsNow's `` `{${wsIds.join(',')}}` ``) closed the part early:
+the outer literal ended at the nested one's backtick, and every later SQL
+text in the file was read off by one. The reader now reads a part as an
+expression: its strings, its braces and its nested literals whole
+(templateEnd, expressionEnd, quotedEnd). admin-counts.test.ts has the
+case: an ask after a nested literal, and an ask holding one; both count 0
+with the old reader and 1 with the new.
+
+Measured with the new reader over every counted file:
+
+| Tree               | sqlMembershipAsks                                  | TS area rules |
+| ------------------ | -------------------------------------------------- | ------------- |
+| main 1967cf106     | 3 (client.ts 1, packages/telegram chat-login.ts 2) | 0             |
+| head of feat/s5-p3 | 3 (gateway/viewer-scope.ts 1, chat-login.ts 2)     | 0             |
+
+So the pin stays 3, not 2: the old reader missed viewerScopeFor's read
+behind a nested template; no new site. viewerScopeFor's login read is not
+reclassified. The `_notes` reason says so. sqlAreaRules is unchanged (1).
+No other count reads these template literals. stripComments
+(eslint-rules/arch-counts.mjs) has the same blind spot in kind (a
+template's `${}` part is not code to it), but it keeps its place across a
+nested literal and no count moved by it: a comment inside a `${}` part is
+kept as text in 4 files (content tree/read.ts, share-ui app-frame-html.ts
+and app-sandbox.tsx, tools builtins-recall.ts); left as an open item.
+
+The audit's small items (fb0ae2ae9): the handles.ts reason in
+heads-writers.mjs names no step code; historyCodeComments pinned to its
+measure 2338 (main 2339; one counted comment line fewer in the moved and
+re-pointed comments); the sqlMembershipAsks reason as above; rawWriteSqlFiles
+on main after part 2 is 66 (corrected above).
+
+Workstation, Node 26, on e57a634df (fb0ae2ae9 changes a rule's reason
+string, the pins file and this doc, nothing the DB suites run): own clone,
+own pgvector pg18 container s5p3-pg on port 56471 (checked free,
+max_connections=450, the postgres role as CI's), init-scratch and migrate
+with MANTLE_CHECK_FLOOR=keep, systemd-run --user, --maxWorkers=3, one at a
+time. Each passed on its first run (no rerun):
+
+| Gate                          | Result                                    | Exit |
+| ----------------------------- | ----------------------------------------- | ---- |
+| pnpm test (full, with the DB) | 1125 files, 13853 tests passed, 1 skipped | 0    |
+| pnpm test:actor-off           | 128 files, 1168 passed, 1 skipped         | 0    |
+| pnpm test:runtime-role (full) | 276 files, 2764 passed, 1 skipped         | 0    |
+
+Container (with its volume), clone, scripts and logs removed by exact
+name after the logs were read; no unit left.
+
+Mac, DATABASE_URL unset, on the round 2 head, exit codes: pnpm -r
+typecheck 0, pnpm lint 0, pnpm format:check 0, pnpm docs:check 0, pnpm
+arch:check 0, vitest run eslint-rules packages/db 0 (75 files passed,
+60 skipped; 830 tests passed).
+
+CI: run 39335483988 (05f221f49) was cancelled by the round 2 push; the
+round 2 head's run is in the report to the CEO.
+
+Open items after round 2: the barrel's removal (above); stripComments's
+`${}` blind spot (above); the test files' comments (above).
