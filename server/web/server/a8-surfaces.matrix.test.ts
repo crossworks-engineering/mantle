@@ -288,12 +288,12 @@ describe.skipIf(!DB_URL)('A8 surface cells: every way in gives the oracle’s an
     }
     // One contact with sharing on, and its visitor cookie (the value the
     // code prompt sets: lib/contact-share-gate.ts).
-    const content = await import('@mantle/content');
+    const support = await import('@mantle/content/test-support');
     const auth = await import('../lib/auth/tokens');
     contactId = randomUUID();
     await raw`insert into nodes (id, owner_id, type, title, path)
       values (${contactId}, ${fx.owner}, 'contact', ${`${fx.tag} contact`}, 'contacts')`;
-    await m.asSystem(() => content.enableContactSharing(fx.owner, contactId), 'test');
+    await m.asSystem(() => support.enableContactSharing(fx.owner, contactId), 'test');
     const [code] = await raw<{ epoch: number }[]>`
       select code_epoch as epoch from contact_share_codes where contact_id = ${contactId}`;
     const visitor = auth.buildContactVisitorValue({
@@ -597,9 +597,9 @@ describe.skipIf(!DB_URL)('A8 surface cells: every way in gives the oracle’s an
   const MEMBERS: GuideRole[] = ['homeModerator', 'writeGrant', 'readGrant', 'outsider'];
   /** A contact share of the item (Can write: `write`), made for the cell. */
   const contactShare = async (id: string, write: boolean): Promise<string> => {
-    const content = await import('@mantle/content');
+    const support = await import('@mantle/content/test-support');
     const [made] = await m.asSystem(
-      () => content.createContactShares(fx.owner, id, [contactId], write),
+      () => support.createContactShares(fx.owner, id, [contactId], write),
       'test',
     );
     return made!.path.slice('/s/'.length);

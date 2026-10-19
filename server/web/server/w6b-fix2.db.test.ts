@@ -35,6 +35,7 @@ describe.skipIf(!URL)('W6b fix round 2', () => {
   let m: typeof import('@mantle/db');
   let f: typeof import('@mantle/files');
   let c: typeof import('@mantle/content');
+  let support: typeof import('@mantle/content/test-support');
   let app: import('hono').Hono;
   let cookieOf: (id: string) => string;
   let dir = '';
@@ -148,6 +149,7 @@ describe.skipIf(!URL)('W6b fix round 2', () => {
     m = await import('@mantle/db');
     f = await import('@mantle/files');
     c = await import('@mantle/content');
+    support = await import('@mantle/content/test-support');
     await x(sql`insert into auth.users (id, email, password_hash, is_owner, role, display_name) values
       (${owner}, ${email('owner')}, 'x', true, 'admin', 'Olive Owner'),
       (${admin2}, ${email('admin2')}, 'x', false, 'admin', 'Ada Admin'),
@@ -348,7 +350,7 @@ describe.skipIf(!URL)('W6b fix round 2', () => {
       c.ShareInputError,
     );
     await expect(
-      sys(() => c.createContactShares(owner, copy.id, [randomUUID()])),
+      sys(() => support.createContactShares(owner, copy.id, [randomUUID()])),
     ).rejects.toBeInstanceOf(c.ContactShareRefusedError);
     // The database floor: no share row on a copy, made or moved onto it.
     const refused = async (q: ReturnType<typeof sql>) => {

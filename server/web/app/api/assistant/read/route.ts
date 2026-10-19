@@ -1,7 +1,7 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { chatLoginCaller } from '@/lib/auth';
-import { resolveChatAgent } from '@/lib/assistant-chat';
+import { resolveChatAgentToWrite } from '@/lib/assistant-chat';
 import { markAssistantRead } from '@/lib/assistant-inbox';
 import { readJson } from '@/lib/read-body';
 
@@ -26,7 +26,7 @@ export async function POST(req: Request) {
   }
   const body = parsed.data;
 
-  const agent = await resolveChatAgent(login, body.agentSlug);
+  const agent = await resolveChatAgentToWrite(login, body.agentSlug);
   if (!agent) {
     return NextResponse.json({ error: 'no_agent' }, { status: 404 });
   }

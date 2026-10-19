@@ -1,6 +1,6 @@
 import { NextResponse } from '@/server/http-compat';
 import { chatLoginCaller } from '@/lib/auth';
-import { resolveChatAgent } from '@/lib/assistant-chat';
+import { resolveChatAgent, resolveChatAgentToWrite } from '@/lib/assistant-chat';
 import { chatThreadRows } from '@/lib/chat-threads';
 import { archiveResponse } from '@/lib/chat-archive-http';
 import { claimMemberChatWork } from '@/lib/workspace-turn';
@@ -28,7 +28,7 @@ export async function POST(req: Request) {
   const login = chatLoginCaller();
   const body = (await readJson(req, { empty: null })) as { agent?: unknown } | null;
   const slug = typeof body?.agent === 'string' && body.agent ? body.agent : undefined;
-  const agent = await resolveChatAgent(login, slug);
+  const agent = await resolveChatAgentToWrite(login, slug);
   if (!agent) return NextResponse.json({ error: 'no chat agent' }, { status: 404 });
   // Archiving summarises the chat (one model call): metered for a login
   // that is not an Admin user (W7c fix round 1, L2).

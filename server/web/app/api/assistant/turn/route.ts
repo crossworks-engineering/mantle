@@ -30,7 +30,7 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { chatLoginCaller, type ChatLogin } from '@/lib/auth';
-import { resolveChatAgent, type ChatAgent } from '@/lib/assistant-chat';
+import { resolveChatAgentToWrite, type ChatAgent } from '@/lib/assistant-chat';
 import { queueWorkspaceTurn } from '@/lib/workspace-turn';
 import { getDbosClient } from '@/lib/dbos-client';
 import { ASSISTANT_TURN_MAX_CHARS } from '@mantle/client-types/assistant-limits';
@@ -302,7 +302,7 @@ async function runTurn(
       }
       agentSlug = ((form.get('agentSlug') as string | null) ?? '').trim() || undefined;
       location = locationFromForm(form.get('location'));
-      chatAgent = await resolveChatAgent(login, agentSlug);
+      chatAgent = await resolveChatAgentToWrite(login, agentSlug);
       if (!chatAgent) return noAgent;
       // Images arrive under 'image', documents under 'file'; accept either.
       const file = form.get('image') ?? form.get('file');
@@ -367,7 +367,7 @@ async function runTurn(
       userText = parsed.data.text;
       agentSlug = parsed.data.agentSlug?.trim() || undefined;
       location = sanitizeLocationPing(parsed.data.location) ?? undefined;
-      chatAgent = await resolveChatAgent(login, agentSlug);
+      chatAgent = await resolveChatAgentToWrite(login, agentSlug);
       if (!chatAgent) return noAgent;
     }
 

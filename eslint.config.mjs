@@ -532,6 +532,30 @@ export default tseslint.config(
               group: ['**/client/web/**', '@mantle/client-web*'],
               message: 'server tier must not import the client app',
             },
+            {
+              // Plan v3.2 S6 c3 (c1 audit LOW-6): the owner functions that
+              // skip the Admin check are for test fixtures only; a route
+              // calls the definers (@mantle/content admin-acts).
+              group: ['@mantle/content/test-support'],
+              message: 'test fixtures only: a route calls the Admin act definers',
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    // The server's tests may use the test-support entry (above).
+    files: ['server/**/*.test.{ts,tsx}'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['**/client/web/**', '@mantle/client-web*'],
+              message: 'server tier must not import the client app',
+            },
           ],
         },
       ],

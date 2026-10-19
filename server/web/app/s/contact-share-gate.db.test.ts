@@ -89,6 +89,7 @@ describe.skipIf(!URL)('contact shares through /s on Postgres', () => {
   let m: Db;
   let sqlTag: typeof import('drizzle-orm').sql;
   let content: typeof import('@mantle/content');
+  let support: typeof import('@mantle/content/test-support');
   let tokens: typeof import('@/lib/auth/tokens');
   const r: Record<string, Handler> = {};
   let shareApp: Hono;
@@ -157,6 +158,7 @@ describe.skipIf(!URL)('contact shares through /s on Postgres', () => {
     m = await import('@mantle/db');
     sqlTag = (await import('drizzle-orm')).sql;
     content = await import('@mantle/content');
+    support = await import('@mantle/content/test-support');
     tokens = await import('@/lib/auth/tokens');
     r.code = (await import('./[token]/code/route')).POST as unknown as Handler;
     r.view = (await import('./[token]/view/route')).GET as unknown as Handler;
@@ -204,11 +206,11 @@ describe.skipIf(!URL)('contact shares through /s on Postgres', () => {
       insert into apps (node_id, manifest, published_build) values (${app}, '{}'::jsonb, ${green}::jsonb)`);
     await m.db.execute(sqlTag`
       insert into app_databases (owner_id, app_node_id, storage_path) values (${owner}, ${app}, ${`apps/${app}.sqlite`})`);
-    codeA = ((await content.enableContactSharing(owner, contactA)) as { code: string }).code;
-    codeB = ((await content.enableContactSharing(owner, contactB)) as { code: string }).code;
-    const [aPage] = await content.createContactShares(owner, page, [contactA]);
-    const [aApp] = await content.createContactShares(owner, app, [contactA]);
-    const [bPage] = await content.createContactShares(owner, page, [contactB]);
+    codeA = ((await support.enableContactSharing(owner, contactA)) as { code: string }).code;
+    codeB = ((await support.enableContactSharing(owner, contactB)) as { code: string }).code;
+    const [aPage] = await support.createContactShares(owner, page, [contactA]);
+    const [aApp] = await support.createContactShares(owner, app, [contactA]);
+    const [bPage] = await support.createContactShares(owner, page, [contactB]);
     tok.aPage = tokenOf(aPage!.path);
     tok.aApp = tokenOf(aApp!.path);
     tok.bPage = tokenOf(bPage!.path);
@@ -348,7 +350,7 @@ describe.skipIf(!URL)('contact shares through /s on Postgres', () => {
         p({ token: tok.aApp! }),
       );
       const { ticket } = (await res.json()) as { ticket: string };
-      codeA = (await content.regenerateContactCode(owner, contactA))!.code;
+      codeA = (await support.regenerateContactCode(owner, contactA))!.code;
       expect((await page$(tok.aPage!, a.cookie)).status).toBe(401);
       // A frame ticket minted before the regenerate dies too.
       const frame = await r.frame!(
@@ -365,7 +367,7 @@ describe.skipIf(!URL)('contact shares through /s on Postgres', () => {
       const temp = randomUUID();
       await m.db.execute(sqlTag`
         insert into nodes (id, owner_id, type, title, path) values (${temp}, ${owner}, 'note', ${`${tag} temp`}, 'notes')`);
-      const [s] = await content.createContactShares(owner, temp, [contactA]);
+      const [s] = await support.createContactShares(owner, temp, [contactA]);
       const t = tokenOf(s!.path);
       const a = await signIn(t, codeA);
       expect((await page$(t, a.cookie)).status).toBe(200);
@@ -540,7 +542,7 @@ describe.skipIf(!URL)('contact shares through /s on Postgres', () => {
       await content.revokeShare(owner, row!.shareId);
       expect((await get(image)).status).toBe(404);
       // Put it back for the menu tests.
-      const [again] = await content.createContactShares(owner, page, [contactA]);
+      const [again] = await support.createContactShares(owner, page, [contactA]);
       tok.aPage = tokenOf(again!.path);
     });
   });

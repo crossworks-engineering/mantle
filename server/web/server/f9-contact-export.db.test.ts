@@ -27,6 +27,7 @@ describe.skipIf(!URL)('F9: a contact share writes its app’s data, and its expo
   let scratch: Awaited<ReturnType<Ts['createMigratedScratchDatabase']>> | undefined;
   let m: typeof import('@mantle/db');
   let content: typeof import('@mantle/content');
+  let support: typeof import('@mantle/content/test-support');
   let appdb: typeof import('@mantle/content/app-broker');
   let exportsMod: typeof import('@mantle/content/app-table-exports');
   let runRoute: typeof import('./run-route').runRoute;
@@ -86,6 +87,7 @@ describe.skipIf(!URL)('F9: a contact share writes its app’s data, and its expo
     delete process.env.MANTLE_DETACHED_DEV;
     m = await import('@mantle/db');
     content = await import('@mantle/content');
+    support = await import('@mantle/content/test-support');
     appdb = await import('@mantle/content/app-broker');
     exportsMod = await import('@mantle/content/app-table-exports');
     runRoute = (await import('./run-route')).runRoute;
@@ -115,8 +117,8 @@ describe.skipIf(!URL)('F9: a contact share writes its app’s data, and its expo
     // visitor cookie the code prompt sets (lib/contact-share-gate.ts).
     await x(sql`insert into nodes (id, owner_id, type, title, path)
       values (${contactId}, ${owner}, 'contact', ${`${tag} contact`}, 'contacts')`);
-    await sys(() => content.enableContactSharing(owner, contactId));
-    const [share] = await sys(() => content.createContactShares(owner, appId, [contactId], true));
+    await sys(() => support.enableContactSharing(owner, contactId));
+    const [share] = await sys(() => support.createContactShares(owner, appId, [contactId], true));
     token = share!.path.slice('/s/'.length);
     const [code] = await x<{ epoch: number }>(sql`
       select code_epoch as epoch from contact_share_codes where contact_id = ${contactId}`);
