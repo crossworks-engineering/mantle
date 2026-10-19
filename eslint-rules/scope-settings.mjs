@@ -69,8 +69,8 @@ export const SYSTEM_POOL_SCOPE_PINS = {
     why: 'attachDefaultAssistants: the first owner and onboarding attach in the login scope',
   },
   'server/web/lib/workspaces.ts': {
-    count: 1,
-    why: 'adminRoleChange: auth.users, sessions and push devices, with the user definer inside',
+    count: 2,
+    why: "adminRoleChange: auth.users, sessions and push devices, with the user definer inside; archiveWorkspace (plan v3.2 S2b): mantle_ws_archive takes the heads of every item the workspace holds, and the write role's heads lock leaves out those its scope does not read (mantle_heads_scope_filter), so the definer runs on the system pool in the login's write scope and checks the acting login inside",
   },
 };
 

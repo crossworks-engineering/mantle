@@ -834,15 +834,7 @@ export function currentSystemTx(): { tx: unknown; hooks: TxHooks; nest: SystemTx
  *    as it was before the request scope. Since arch A6 the grants and the
  *    workspace screens read in the scope (their definers, 0291) and no
  *    longer leave it by this reason.
- *  - `workspace-write`: a login's own change of a workspace (rename it,
- *    archive it, add or remove a user, leave; a new one is made by its
- *    definer, mantle_ws_create, since A6b): the workspace
- *    tables and their events are the system pool's to write (the write role
- *    holds no right on them). The rules are checked inside the change's
- *    transaction, on the system pool, as before arch A6; only archiving
- *    and adding a user also check them first in the scope, and removing a
- *    user reads the workspace there first (lib/workspaces.ts, arch A6).
- *  - `brain-bookkeeping`: the named system step (system-step.ts, F4 fix
+ * *  - `brain-bookkeeping`: the named system step (system-step.ts, F4 fix
  *    round 2): the brain-wide bookkeeping a write does after its item check
  *    (a table's history prune, an Admin scope's email attachment bytes, a
  *    file's derived items and drawings counted and its confirmed cascade,
@@ -892,6 +884,10 @@ export function currentSystemTx(): { tx: unknown; hooks: TxHooks; nest: SystemTx
  * A request scope (W6a) is held to the same list: inside it, `asSystem`
  * names a reason and `systemDb` is for SYSTEM_DB_MODULES only.
  *
+ * Retired in plan v3.2 S2b: 'workspace-write' (a change of a workspace's
+ * row, look, landing app or archive is a definer call that checks the
+ * acting login inside, 0309; lib/workspaces.ts).
+ *
  * Retired in arch A6b (docs/actors.md): what each named is read in the
  * scope or by a narrow definer (0293), or is system work that never runs in
  * a scope (systemWork): 'kind-root', 'name-taken', 'export-link',
@@ -912,7 +908,6 @@ export const AS_SYSTEM_TURN_REASONS = [
   'login-telegram',
   'audit-log',
   'pending-approval',
-  'workspace-write',
   'page-refold',
   'brain-bookkeeping',
 ] as const;

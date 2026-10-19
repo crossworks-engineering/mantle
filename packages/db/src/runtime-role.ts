@@ -158,6 +158,8 @@ export const RUNTIME_SYSTEM_FUNCTIONS: Readonly<Record<string, string>> = {
     'client.ts loginHoldsAdmin: a login holds Admin now (0304, S2a a0)',
   'public.mantle_role_drift()':
     'the box count of role drift (scripts/arch-scoreboard-box.sh; 0304, S2a a0)',
+  'public.mantle_ws_archive(uuid,uuid)':
+    "workspaces.ts archiveWorkspace: a workspace archived by the acting login, on the system pool in its write scope so every held item's head is locked (0309, S2b)",
   'public.mantle_ws_attach_assistants()':
     'workspaces-migrate.ts attachDefaultAssistants: the default assistants (a definer since 0307: system work at boot, the assistants area at signup and onboarding)',
   'public.mantle_ws_private_workspace(uuid)':

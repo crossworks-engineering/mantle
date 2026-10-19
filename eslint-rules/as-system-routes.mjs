@@ -29,7 +29,6 @@ export const AS_SYSTEM_ROUTE_SEED = Object.freeze({
   'login-telegram': 'full',
   'audit-log': 'full',
   'pending-approval': 'full',
-  'workspace-write': 'full',
   'page-refold': 'full',
   'brain-bookkeeping': 'full',
   'login-notice': 'full',

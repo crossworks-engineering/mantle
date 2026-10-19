@@ -234,39 +234,6 @@ export async function resolveMemberHomeApp(
   return app ? { appId: app.id, title: app.title, icon: app.icon, color: app.color } : null;
 }
 
-/**
- * An app as a workspace's home app, read for the workspace screen and for
- * the landing setting (task d78e7bde): `appId` is an app of this brain that
- * workspace `ws` holds, with `ready` true when its published build is green.
- * Null when it is not one: no app, another brain's, or `ws` does not hold
- * it. Only the workspace's own grant counts, never the reader's other
- * workspaces: the workspace's users must all be able to open it. Runs where
- * the caller runs (the workspace routes read on the system pool, with the
- * rule in the query), on `q` when given: the setter's transaction, which
- * holds the workspace row.
- */
-export async function workspaceHeldApp(
-  anchorId: string,
-  ws: string,
-  appId: string,
-  q: Pick<typeof db, 'select'> = db,
-): Promise<{ appId: string; title: string; ready: boolean } | null> {
-  const [row] = await q
-    .select({ id: nodes.id, title: nodes.title, ready: publishedGreen })
-    .from(nodes)
-    .innerJoin(apps, eq(apps.nodeId, nodes.id))
-    .where(
-      and(
-        eq(nodes.id, appId),
-        eq(nodes.ownerId, anchorId),
-        eq(nodes.type, 'app'),
-        nodeReadByWorkspace(ws),
-      ),
-    )
-    .limit(1);
-  return row ? { appId: row.id, title: row.title, ready: row.ready === true } : null;
-}
-
 /** The home app id workspace `ws` names (workspaces.landing_app_id, task
  *  d78e7bde), read where the caller runs: in a login's scope the row rule
  *  answers null for a workspace it is not in. Null: the Built-in home. */

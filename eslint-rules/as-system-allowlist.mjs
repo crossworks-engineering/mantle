@@ -73,11 +73,6 @@ export const AS_SYSTEM_PINS = {
   // A6 round 2: the grants panel reads in the caller's scope; the page
   // refold after a change is its one exit (pageRefoldSystem).
   'server/web/lib/grants.ts': { count: 1, why: ['page-refold'] },
-  // A6 round 2: the workspace screens read in the caller's scope; a login's
-  // own workspace change writes through one door (workspaceWriteSystem). A6b:
-  // a new workspace by its definer (mantle_ws_create, 0293); the change, the
-  // archive and the user writes still go through the door.
-  'server/web/lib/workspaces.ts': { count: 1, why: ['workspace-write'] },
 };
 
 export const rule = pinnedRule({

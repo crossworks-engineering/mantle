@@ -24,7 +24,7 @@
  *  - the TypeScript side: systemWork('ws-clear-ticks') sets mantle.actor on
  *    the system pool in every check mode (test:actor-off runs this file
  *    with the check off), refuses inside a scope or an asSystem exit, and a
- *    definer inside asSystem('workspace-write') is refused;
+ *    definer inside an asSystem exit is refused;
  *  - createHomeFallback (createHomeIntent) makes the login's own private
  *    workspace with mantle.scope_login set;
  *  - the catalog: the private helpers run by no role; every function that
@@ -113,6 +113,10 @@ const WRITERS: Readonly<Record<string, string>> = {
   mantle_ws_resource_add: 'rule: the acting login, no system work (0307, S2a a2)',
   mantle_ws_resource_set_write: 'rule: the acting login, no system work (0307, S2a a2)',
   mantle_ws_resource_remove: 'rule: the acting login, no system work (0307, S2a a2)',
+  mantle_ws_update_about: 'rule: the acting login, no system work (0309, S2b)',
+  mantle_ws_set_contact: 'rule: the acting login, no system work (0309, S2b)',
+  mantle_ws_set_landing: 'rule: the acting login, no system work (0309, S2b)',
+  mantle_ws_archive: 'rule: the acting login, no system work (0309, S2b)',
   mantle_bridge_login: 'exemption until S8b: the runtime role only, its three callers pinned',
   mantle_bridge_connector: 'exemption: trigger only, its trigger dropped by the switch',
   mantle_ws_team_normal: 'exemption: migrator only (the switch)',
@@ -992,7 +996,7 @@ describe.skipIf(!URL)('the workspace user definers (S2a a1)', () => {
       );
   });
 
-  it('TypeScript: a definer inside asSystem(workspace-write) is refused; systemWork(ws-clear-ticks) refuses any scope', async () => {
+  it('TypeScript: a definer inside an asSystem exit (admin-area) is refused; systemWork(ws-clear-ticks) refuses any scope', async () => {
     const inExit = m.asSystem(
       () =>
         m.db.transaction(async (tx) => {
@@ -1000,13 +1004,13 @@ describe.skipIf(!URL)('the workspace user definers (S2a a1)', () => {
             sqlTag`select mantle_ws_set_moderator(mantle_brain_id(), ${W}::uuid, ${L.mem}::uuid, true, null)`,
           );
         }),
-      'workspace-write',
+      'admin-area',
     );
     await expect(inExit).rejects.toSatisfy((err: unknown) =>
       /no acting login/.test(String((err as { cause?: Error }).cause?.message ?? err)),
     );
     await expect(
-      m.asSystem(() => m.systemWork(async () => 1, 'ws-clear-ticks'), 'workspace-write'),
+      m.asSystem(() => m.systemWork(async () => 1, 'ws-clear-ticks'), 'admin-area'),
     ).rejects.toThrow(/outside every scope and request/);
     await expect(
       m.withViewer({ login: L.mod }, () => m.systemWork(async () => 1, 'ws-clear-ticks')),
@@ -1015,6 +1019,10 @@ describe.skipIf(!URL)('the workspace user definers (S2a a1)', () => {
     // @ts-expect-error: 'ws-clear-ticks' is no AsSystemReason.
     const typed: Parameters<typeof m.asSystem>[1] = 'ws-clear-ticks';
     expect(typed).toBe('ws-clear-ticks');
+    // Nor the retired 'workspace-write' (plan v3.2 S2b, 0309).
+    // @ts-expect-error: 'workspace-write' is no AsSystemReason.
+    const retired: Parameters<typeof m.asSystem>[1] = 'workspace-write';
+    expect(retired).toBe('workspace-write');
   });
 
   it('catalog: the private helpers run by no role; the user definers are definers PUBLIC may not run', async () => {

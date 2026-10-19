@@ -121,7 +121,6 @@ export {
   memberWritesSql,
   resolveMemberHomeApp,
   firstSharedWorkspaceId,
-  workspaceHeldApp,
   workspaceLandingAppId,
   type MemberAppCard,
   type MemberRunnableApp,

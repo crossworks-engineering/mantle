@@ -2825,10 +2825,9 @@ export async function loginScopeFor(loginId: string): Promise<WorkspaceScope> {
 }
 
 /**
- * Which of `wsIds` `loginId` holds a Moderator seat in now, read on the
- * admin pool (the A8 fix round 1, L5): a turn's write asks again the seats
- * its scope carries (@mantle/tools moderator-seat.ts). One indexed read of
- * workspace_users; it names seats, it grants nothing.
+ * Which of `wsIds` `loginId` holds a Moderator seat in now (A8 fix round 1,
+ * L5), for a turn's write (@mantle/tools moderator-seat.ts): one indexed
+ * read of workspace_users, in the turn's scope (its seats are in its ws).
  */
 export async function moderatorSeatsNow(
   loginId: string,
@@ -2836,7 +2835,7 @@ export async function moderatorSeatsNow(
 ): Promise<string[]> {
   if (!UUID_RE.test(loginId) || wsIds.length === 0) return [];
   if (!wsIds.every((w) => UUID_RE.test(w))) return [];
-  const rows = (await getAdminDb().execute(sqlTag`
+  const rows = (await db.execute(sqlTag`
     select workspace_id::text as ws from workspace_users
      where login_id = ${loginId}::uuid and moderator
        and workspace_id = any(${`{${wsIds.join(',')}}`}::uuid[])`)) as unknown as { ws: string }[];

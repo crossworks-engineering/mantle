@@ -251,6 +251,12 @@ const DEFINERS_THE_WRITE_ROLE_RUNS: Readonly<Record<string, string>> = {
     WRITE_ROLE_FUNCTIONS['public.mantle_ws_resource_remove(uuid,uuid,text,text)']!,
   'mantle_ws_set_assistant(uuid,uuid,uuid)':
     WRITE_ROLE_FUNCTIONS['public.mantle_ws_set_assistant(uuid,uuid,uuid)']!,
+  'mantle_ws_update_about(uuid,uuid,jsonb)':
+    WRITE_ROLE_FUNCTIONS['public.mantle_ws_update_about(uuid,uuid,jsonb)']!,
+  'mantle_ws_set_contact(uuid,uuid,uuid)':
+    WRITE_ROLE_FUNCTIONS['public.mantle_ws_set_contact(uuid,uuid,uuid)']!,
+  'mantle_ws_set_landing(uuid,uuid,uuid)':
+    WRITE_ROLE_FUNCTIONS['public.mantle_ws_set_landing(uuid,uuid,uuid)']!,
 };
 
 /** Rolls a cell's transaction back after its checks. */

@@ -794,6 +794,12 @@ export const WRITE_ROLE_FUNCTIONS: Readonly<Record<string, string>> = {
     'a connector or the assistant taken off by the acting login (0307, S2a a2)',
   'public.mantle_ws_set_assistant(uuid,uuid,uuid)':
     'the workspace’s assistant set or cleared by the acting login (0307, S2a a2)',
+  'public.mantle_ws_update_about(uuid,uuid,jsonb)':
+    'a workspace’s name, description and look changed by the acting login (0309, S2b): the role holds no right on workspaces',
+  'public.mantle_ws_set_contact(uuid,uuid,uuid)':
+    'a workspace’s contact set or cleared by the acting login (0309, S2b)',
+  'public.mantle_ws_set_landing(uuid,uuid,uuid)':
+    'a workspace’s landing app set or cleared by the acting login (0309, S2b)',
 };
 
 /** The GRANT statements for the write role. Pure. It reads exactly what the

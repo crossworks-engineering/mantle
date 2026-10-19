@@ -2157,6 +2157,13 @@
       "when": 1790197800000,
       "tag": "0308_admin_act_definers",
       "breakpoints": true
+    },
+    {
+      "idx": 309,
+      "version": "7",
+      "when": 1790197860000,
+      "tag": "0309_ws_row_definers",
+      "breakpoints": true
     }
   ]
 }

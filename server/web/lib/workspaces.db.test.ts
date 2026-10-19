@@ -791,7 +791,7 @@ describe.skipIf(!URL)('workspace management (W5a)', () => {
     expect(del.body.code).toBe('assistant_has_history');
   });
 
-  it('setAssistantCopies (plan v3.2 S2a a2): the TS setAssistant (PATCH) and mantle_ws_set_assistant itself write the same rows and answer the same', async () => {
+  it('setAssistantCopies is 1 (plan v3.2 S2b b2): PATCH {assistantId} and mantle_ws_set_assistant itself write the same rows and answer the same (PATCH calls it)', async () => {
     const [w1, w2, w3] = [
       await create(mem, 'Copies TS'),
       await create(mem, 'Copies SQL'),

@@ -544,9 +544,11 @@ describe('asSystem inside a turn scope needs a named reason (W4b fix round 1, M4
     // (0293), so twelve reasons name no exit any more (docs/actors.md, A6b).
     // 15 since F4 fix round 2: the named system step ('brain-bookkeeping',
     // system-step.ts), the one door for the brain-wide bookkeeping a write
-    // does after its item check.
-    expect(AS_SYSTEM_TURN_REASONS.length).toBeLessThanOrEqual(15);
-    expect(AS_SYSTEM_TURN_REASONS).toHaveLength(15);
+    // does after its item check. 14 since plan v3.2 S2b: a workspace's row
+    // is written by its definers (0309), not by 'workspace-write'.
+    expect(AS_SYSTEM_TURN_REASONS.length).toBeLessThanOrEqual(14);
+    expect(AS_SYSTEM_TURN_REASONS).toHaveLength(14);
+    expect(AS_SYSTEM_TURN_REASONS).not.toContain('workspace-write');
     expect(AS_SYSTEM_TURN_REASONS).not.toContain('provider-key');
     expect(AS_SYSTEM_TURN_REASONS).not.toContain('member-request');
     expect(AS_SYSTEM_TURN_REASONS).not.toContain('owner-telegram');
