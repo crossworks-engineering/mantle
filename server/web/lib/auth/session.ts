@@ -2135,14 +2135,6 @@ async function anyLoginScope(res: Resolved): Promise<NextResponse | null> {
     return null;
   }
   const loginId = res.kind === 'admin' ? res.user.actor.id : res.member.loginId;
-  if (res.kind === 'admin' && route.effect === 'write') {
-    // An Admin user's write lands what it makes (a chat turn's upload) by
-    // the Admin user's create rule, as its owner writes do (enterLoginWrite:
-    // the folder's home, else Admin), the rule its system-pool write had.
-    const home = await createHomeFor(loginId, route, false);
-    if (home instanceof NextResponse) return home;
-    noteRequestCreateHome(home);
-  }
   await enterLoginScope(loginId, requestMode(res.kind === 'admin'));
   return null;
 }
