@@ -35,6 +35,7 @@ import mantleStdHelpersPlugin from './eslint-rules/std-helpers.mjs';
 import mantleSpendPlugin from './eslint-rules/spend-recording.mjs';
 import mantleRolesPlugin from './eslint-rules/no-hand-role-lists.mjs';
 import mantleReindexPlugin from './eslint-rules/no-hand-reindex.mjs';
+import { GATEWAY_MAX_LINES } from './eslint-rules/gateway-counts.mjs';
 
 export default tseslint.config(
   {
@@ -585,6 +586,18 @@ export default tseslint.config(
             },
           ],
         },
+      ],
+    },
+  },
+  {
+    // The gateway split out of packages/db/src/client.ts: small modules
+    // (eslint-rules/gateway-counts.mjs; the scoreboard pins the limit and
+    // the gateway's import cycles).
+    files: ['packages/db/src/gateway/**/*.ts'],
+    rules: {
+      'max-lines': [
+        'error',
+        { max: GATEWAY_MAX_LINES, skipBlankLines: false, skipComments: false },
       ],
     },
   },

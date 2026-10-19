@@ -55,6 +55,8 @@
  *    capped exemption lists; the asSystem exits by route and the Admin
  *    counts (as-system-routes.mjs, admin-counts.mjs);
  *  - raw write SQL and history codes in comments (cleanup-counts.mjs).
+ *  - the gateway split out of packages/db/src/client.ts: its modules'
+ *    line limit and its import cycles (gateway-counts.mjs).
  *
  * Comment lines never count. Product files only: packages/, server/,
  * scripts/; no tests, migrations, archive or build folders (a route segment
@@ -94,6 +96,7 @@ import { nameListSites } from './name-lists.mjs';
 import { checkDocQuotes } from './docs-quotes.mjs';
 import { rightsCounts } from './rights-counts.mjs';
 import { cleanupCounts } from './cleanup-counts.mjs';
+import { gatewayCounts } from './gateway-counts.mjs';
 
 /** Whether the counts read `path` (repo-relative). */
 export function isCounted(path) {
@@ -1188,6 +1191,7 @@ export function measure(root) {
       docQuotesDangling: docQuotes.docQuotesDangling,
       gapTables: gapRerunCount(texts),
       dbClientLines: lineCount(root, 'packages/db/src/client.ts'),
+      ...gatewayCounts(texts).numbers,
       failOpenSites: failOpenSiteCount(texts),
     },
     perFile: {
@@ -1229,6 +1233,7 @@ export function measure(root) {
       consoleByFile,
       archivedByFile,
       cacheControlFiles,
+      gateway: gatewayCounts(texts).detail,
     },
   };
 }

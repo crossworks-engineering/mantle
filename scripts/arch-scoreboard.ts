@@ -175,6 +175,9 @@ const LABELS: Record<string, string> = {
   gapTables:
     'write-role gap reruns (a role switch to any role but the write role; 0 since plan v3 S3)',
   dbClientLines: 'lines of packages/db/src/client.ts (down only; plan v3 S5 splits it)',
+  dbGatewayMaxLines:
+    'most lines of a packages/db/src/gateway module: the max-lines limit, or the longest module over it (down only)',
+  dbGatewayImportCycles: 'packages/db/src/gateway modules on an import cycle (0)',
   failOpenSites:
     'fail-open branches counted as miss rows, not refused (plan v3.2 S4a: 6; S4b takes them to 0)',
 };
@@ -212,6 +215,7 @@ const measured = measure(ROOT) as {
       adminCountProblems?: string[];
     };
     cleanup?: { problems?: string[] };
+    gateway?: { overLimit?: string[]; cycles?: string[] };
   };
 };
 const numbers = measured.numbers;
@@ -244,6 +248,8 @@ const problems = [
   ...(measured.perFile.rights?.asSystemRouteProblems ?? []),
   ...(measured.perFile.rights?.adminCountProblems ?? []),
   ...(measured.perFile.cleanup?.problems ?? []),
+  ...(measured.perFile.gateway?.overLimit ?? []).map((p) => `${p} lines, over the gateway's limit`),
+  ...(measured.perFile.gateway?.cycles ?? []).map((p) => `${p}: on an import cycle`),
   ...(numbers.loginTypeKindOrRole === -1
     ? ['server/web/lib/auth/login-shape.test.ts: LOGIN_SHAPE_PIN is not readable']
     : []),
