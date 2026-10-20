@@ -721,3 +721,192 @@ switch-off proof, the nine sweep rows pass on the full route).
    pin as an allowlist.
 6. LOWs: done (LOW-3 by hand on the dev box after the merge).
 7. Round trips: written above; the decision is S7b's.
+
+## Part a3: the narrow write count, and the a2 re-audit's items
+
+Branch feat/s7a-a3, from main at 975bee317 (v0.300.114: a1 and a2 merged).
+Migration 0311_narrow_write_observe, `when` 1790198040000 (main's last is
+1790197920000; S13 claims 0311 with 1790197980000, so this `when` sits above
+both: if S13 merges first, this file and its journal entry renumber to 0312
+and keep the `when`; `merge-branch.sh` refuses a clash; the renumber proof
+is narrow-observe.test.ts).
+
+### MED-A: what the text check could not see (first commit)
+
+`narrowSendable` (packages/db/src/gateway/narrow-route.ts) now also
+refuses a DO block at a statement's start, any statement naming
+`pg_settings` (its UPDATE rule is `set_config(name, value, false)`), and
+every `set_config` but one whose first argument is a plain literal naming a
+`mantle.*` setting (or `lock_timeout`, `enable_sort`:
+`NARROW_LOCAL_SETTINGS`, each with its caller) and whose third is the
+literal `true`. A role name built by concatenation, sent as a bound
+parameter, cast, written as an E'' string or quoted (`set local "role"`,
+`pg_catalog."set_config"`) is refused. A role change is read at a
+statement's start (SET and RESET are statements; `update auth.users set
+"role" = $1` is a column, which the full suite caught on the first run: a
+500 on the users area's role change). `sqlCode` keeps offsets (same length
+as the text) and may keep quoted identifiers. `roleResets`
+(arch-counts.mjs) counts the same forms in source and the migrations'
+SQL: `set_config('role' | 'session_authorization', ...)` with any value, a
+non-literal or concatenated name (a plpgsql variable declared from a
+`'mantle.'` literal excepted: the seen keys), an UPDATE of pg_settings;
+still 0.
+
+| Probe                                             | Before a3 | Now     | Cell                                           |
+| ------------------------------------------------- | --------- | ------- | ---------------------------------------------- |
+| `set_config('ro' \|\| 'le', 'none', true)`        | sent      | refused | narrow-route.db.test.ts "the escapes", concat  |
+| `set_config($1, $2, true)` (bound parameters)     | sent      | refused | same, bound, bound name, bound local           |
+| DO block: leave, write as the pool login, return  | sent      | refused | same, "do leave and return"; the row is absent |
+| DO block: leave only                              | sent      | refused | same, "do leave" (the hold check also caught)  |
+| `update pg_settings set setting = 'none' ...role` | sent      | refused | same, pg_settings                              |
+| `set local "role" none`, quoted call, E'', cast   | sent      | refused | same, and narrow-sendable.test.ts (no DB)      |
+| `set_config('search_path', ..., true)`            | sent      | refused | same, "other setting"                          |
+| `set_config('mantle.ws', $1, true)`, lock_timeout | sent      | sent    | same, the sent list                            |
+
+For S7b, the design that closes the class rather than the forms: a narrow
+pool that logs in as the narrow role itself (a LOGIN role, its own pool), so
+there is no other role in the session to switch back to; a function that
+leaves the role (the hold check's case) then has nowhere to go. It also
+removes the per-statement BEGIN, SET and COMMIT (the round-trip cost
+above).
+
+### MED-B: the narrow role's EXECUTE is a measured allowlist
+
+`NARROW_SYSTEM_FUNCTIONS` (runtime-role.ts) is the whole list of functions
+taken from PUBLIC that the narrow role may run, each with its caller;
+`narrowFunctionAllowlist` is that list intersected with the runtime role's
+allowlist, never one of `NARROW_DENIED_FUNCTIONS`. Measured with the switch
+on, three passes: the a2 measurement counted only unquoted names (its
+`fn:<name>` read blanked quoted identifiers, and the app names its definers
+`"public"."mantle_x"`): fixed, and the full suite run with the list trimmed
+named each missing one as a denial. The list (12):
+
+| Function                                             | Narrow work that calls it                                |
+| ---------------------------------------------------- | -------------------------------------------------------- |
+| mantle_brain_id()                                    | the anchor (resolve-owner.ts, the tree, workspace ticks) |
+| mantle_area_rule(uuid,text)                          | login-self routes, the Telegram login                    |
+| mantle_login_areas(uuid)                             | login-self routes (whoami, devices)                      |
+| mantle_ws_kind(uuid)                                 | login-self routes (whoami)                               |
+| mantle_ws_private_for(uuid,uuid)                     | login-self routes (whoami)                               |
+| mantle_connector_state(uuid,text)                    | the Admin area's approval re-check                       |
+| mantle_connector_rows(uuid,text,uuid[])              | the Admin area's approval of an elevated call            |
+| mantle_pending_card_route(uuid,uuid)                 | the Admin area's run of an item                          |
+| mantle_mail_backfill_accounts(uuid)                  | the email discover route                                 |
+| mantle_ws_set_moderator(uuid,uuid,uuid,boolean,text) | the workspaces area's Moderator tick                     |
+| mantle_ws_attach_assistants()                        | the onboarding attach on the assistants area's exit      |
+| mantle_bridge_login(uuid)                            | the users area's role change (login-update.ts)           |
+
+Of the re-audit's 17 content and workspace writers, 15 are denied by name
+(`NARROW_DENIED_FUNCTIONS`; runtime-role.test.ts names them) and two were
+measured needed and kept, each its own definer with its own rule:
+`mantle_ws_attach_assistants` and `mantle_bridge_login` (a no-op from S8b).
+The column defaults and checks of the tables the role writes call no
+function taken from PUBLIC; runtime-role.db.test.ts reads them from the
+catalog (pg_depend from pg_attrdef and pg_constraint) and fails on one not
+listed; the trigger functions on those tables call none either (checked on
+the catalog by hand: a trigger function needs no EXECUTE, what it calls as
+an invoker would). Changed cells: runtime-role.db.test.ts (the allowlist
+pin replaces "runtime allowlist less the denied"), login-facts.db.test.ts
+(the narrow role runs two login facts, measured, not three: never
+mantle_login_is_admin), the narrow probes refused a content writer.
+
+### LOW items
+
+- LOW-1: `onFullSystemRoute` calls in packages/db/src are counted and must
+  be listed (the definition and the export list are not calls); the helper
+  `profileWrite` is a listed wrapper (`FULL_ROUTE_SPOT_WRAPPERS`): its calls
+  are counted, a new pin `fullRouteSpotWrapperCalls` 7 (5 in
+  profile-preferences.ts, 2 in backup.ts), and a call from any other file,
+  or an aliased import, fails arch:check (as-system-exits.test.ts).
+- LOW-2: part a2's changed answers name the two more (above, fix round 1).
+- LOW-3: the pin notes say the current reason only (no "Was: undefined");
+  the part a2 heading no longer says work in progress.
+- LOW-5, for S7b: the console-tool and pending-call spots cover a whole
+  tool run; a systemWhole tool inside one runs narrow again (its own
+  areaSystem exit), fine while those tools write only system tables (the
+  sweep's proof below). S7b moves the content writes and drops the spots.
+
+### a3: the narrow write count (migration 0311), report only
+
+- `mantle_narrow_actor(text)`: the actors of the reasons routed narrow,
+  pinned equal to viewer.ts AS_SYSTEM_ROUTE and REQUEST_SYSTEM_ROUTE by
+  narrow-observe.test.ts (a reason moved between routes needs a migration
+  that replaces it). Open to every role (it reads nothing).
+- `mantle_actor_check_stmt` (0277's) counts `narrow-content-write`: the
+  actor is a narrow reason's AND `current_user = session_user` AND
+  `mantle.route` is not 'full'. A NOTICE (`mantle narrow write: ...`), the
+  pool writes the miss row on another connection (actor.ts `onPgNotice`),
+  at most one per check, actor and table an hour. In tests it is recorded
+  apart (`takeNarrowWrites`), never a failure; `MANTLE_NARROW_DUMP` lists
+  it.
+- `mantle_narrow_cascade_stmt` (AFTER DELETE, statement, transition table)
+  on auth.users, spaces and agents counts `narrow-cascade-delete` once per
+  top-level statement that deleted a row, by a narrow reason off a spot, on
+  either route (on the narrow role the cascade into content runs as the
+  owner).
+- Not counted, named: a write by a rebound actor (a login, an assistant, a
+  full reason, system work), a definer's write, a cascade from any other
+  table; nothing with the actor check off (its triggers are disabled and the
+  full route sends no actor).
+- current_user = session_user in the cells: narrow-observe.db.test.ts logs
+  in as mantle_runtime (the pool login of every fleet box, owns nothing), so
+  on the full route current_user is that login, in a definer the superuser
+  that owns it, in a cascade mantle_owner. The tests' own pool logs in as
+  the superuser, which owns the definers too: there a definer's write
+  counts (a cell names that limit). Exact with the runtime role on.
+- Box count: scripts/arch-scoreboard-box.sh prints
+  `narrow_misses:content-write`, `narrow_misses:cascade-delete`,
+  `narrow_misses:denied` (distinct check, actor and table rows in the
+  fail-open window; numbers only). The DB cell runs the script's own query.
+- The narrow-role proof: w7a-area-system-sweep.db.test.ts's last cell runs
+  every systemWhole tool with the trap off and the box in warn: switch on,
+  its work runs as mantle_system_narrow (uses by system:admin-area, no
+  denial); switch off, no content write counted.
+- Measured (the full DB suite, switch on): no `narrow-content-write` and no
+  `narrow-cascade-delete` anywhere in the suite (the dump's write lines).
+
+### Changed answers
+
+Switch off: none expected. The text checks and the EXECUTE list are the
+narrow route's and the narrow role's only. The count raises a NOTICE and
+writes a miss row on another connection; no statement changes, no answer
+changes, nothing is refused (the full DB suite with MANTLE_NARROW_SYSTEM=0
+below). New rows in actor_check_misses (checks `narrow-content-write`,
+`narrow-cascade-delete`) on a box whose actor check is warn or on.
+
+Switch on: none against main in the suites. Statements the route sent
+before and refuses now: only the probe forms above (no app statement: the
+full suite with the switch on has no refusal); the first run's false
+refusal of a quoted `role` column was fixed before any gate.
+
+### Pins
+
+New `fullRouteSpotWrapperCalls` 7 (down only). `fullRouteSpotCalls` 15
+unchanged (packages/db counted too: 0 there). `roleResets` 0 with the
+wider count. Unchanged: systemWholeOnFull 0, asSystemNarrow 21,
+asSystemFull 34, requestSystemExits_narrow 3, fullRouteSpots 13, gapTables 0. Notes trimmed to the current reason (routeErrorTextAllowed,
+std_errorIdiom_allowed, roleResets, fullRouteSpotCalls).
+
+### Rollback (part a3)
+
+- The release is report only: rolling it back changes no answer.
+- Revert before pinning N-1:
+  `packages/db/rollback/0311_narrow_write_observe.revert.sql` (as the
+  superuser, one transaction; its header has the command): the cascade
+  triggers and their function dropped, `mantle_actor_check_stmt` back to
+  0277's body byte for byte, `mantle_narrow_actor` dropped, 0311 off the
+  ledger. Without the revert N-1 runs fine with 0311 in place: its pool
+  prints the new notices as plain notices and writes no row for them.
+- The miss rows stay (N-1 ignores their check names; the 14-day reap
+  deletes them).
+- The narrow role's narrower EXECUTE is granted at migrate from the image's
+  own list: an N-1 image's migrate grants N-1's (wider) list again, which
+  is what N-1 shipped (rule 2).
+- Drill on the workstation, its own throwaway Postgres (pgvector pg18):
+  init and migrate with main (the box before) 0; migrate with the branch
+  (N) 0, 0311 in (3 cascade triggers, mantle_narrow_actor, the ledger row,
+  the counting body); migrate with main again (the N-1 image's boot on the
+  N database) 0, nothing changed; the revert 0, all four gone; migrate with
+  main 0; migrate with the branch (forward) 0, 0311 applied again.
+  narrow-observe.db.test.ts has the same as a cell (before 0311, the
+  revert leaves the catalog equal to before, forward equal to after).
