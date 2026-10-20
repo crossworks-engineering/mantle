@@ -452,6 +452,9 @@ test:edit-on 0 (541), test:runtime-role in full 0 (2781), test:matrix 0
 (8). No flake, no rerun. Cleaned up: the container (with its volume), the
 folder and the unit, by name.
 
+CI: run 39370506188 on d5e8a7c4d: success. The docs heads after it have
+their own run (in the report).
+
 ### Open items for r2b
 
 - Literal write sites left (9): packages/db call-audit.ts 1,
