@@ -724,12 +724,13 @@ switch-off proof, the nine sweep rows pass on the full route).
 
 ## Part a3: the narrow write count, and the a2 re-audit's items
 
-Branch feat/s7a-a3, from main at 975bee317 (v0.300.114: a1 and a2 merged).
-Migration 0311_narrow_write_observe, `when` 1790198040000 (main's last is
-1790197920000; S13 claims 0311 with 1790197980000, so this `when` sits above
-both: if S13 merges first, this file and its journal entry renumber to 0312
-and keep the `when`; `merge-branch.sh` refuses a clash; the renumber proof
-is narrow-observe.test.ts).
+Branch feat/s7a-a3, from main at 975bee317 (v0.300.114: a1 and a2 merged),
+rebased in fix round 1 on main 520659a30 (v0.300.118: S13 merged
+0311_folder_trail_definer, `when` 1790197980000). Migration
+0312_narrow_write_observe, `when` 1790198040000 (kept: above 0311's; the
+file, its revert and the journal tag renamed from 0311 in one commit; the
+renumber proof is narrow-observe.test.ts: the entry follows 0311 by idx and
+`when`, and the revert takes the same `when` off the ledger).
 
 ### MED-A: what the text check could not see (first commit)
 
@@ -826,7 +827,7 @@ mantle_login_is_admin), the narrow probes refused a content writer.
   areaSystem exit), fine while those tools write only system tables (the
   sweep's proof below). S7b moves the content writes and drops the spots.
 
-### a3: the narrow write count (migration 0311), report only
+### a3: the narrow write count (migration 0312), report only
 
 - `mantle_narrow_actor(text)`: the actors of the reasons routed narrow,
   pinned equal to viewer.ts AS_SYSTEM_ROUTE and REQUEST_SYSTEM_ROUTE by
@@ -898,11 +899,11 @@ std_errorIdiom_allowed, roleResets, fullRouteSpotCalls).
 
 - The release is report only: rolling it back changes no answer.
 - Revert before pinning N-1:
-  `packages/db/rollback/0311_narrow_write_observe.revert.sql` (as the
+  `packages/db/rollback/0312_narrow_write_observe.revert.sql` (as the
   superuser, one transaction; its header has the command): the cascade
   triggers and their function dropped, `mantle_actor_check_stmt` back to
-  0277's body byte for byte, `mantle_narrow_actor` dropped, 0311 off the
-  ledger. Without the revert N-1 runs fine with 0311 in place: its pool
+  0277's body byte for byte, `mantle_narrow_actor` dropped, 0312 off the
+  ledger. Without the revert N-1 runs fine with 0312 in place: its pool
   prints the new notices as plain notices and writes no row for them.
 - The miss rows stay (N-1 ignores their check names; the 14-day reap
   deletes them).
@@ -911,11 +912,11 @@ std_errorIdiom_allowed, roleResets, fullRouteSpotCalls).
   is what N-1 shipped (rule 2).
 - Drill on the workstation, its own throwaway Postgres (pgvector pg18):
   init and migrate with main (the box before) 0; migrate with the branch
-  (N) 0, 0311 in (3 cascade triggers, mantle_narrow_actor, the ledger row,
+  (N) 0, 0312 in (3 cascade triggers, mantle_narrow_actor, the ledger row,
   the counting body); migrate with main again (the N-1 image's boot on the
   N database) 0, nothing changed; the revert 0, all four gone; migrate with
-  main 0; migrate with the branch (forward) 0, 0311 applied again.
-  narrow-observe.db.test.ts has the same as a cell (before 0311, the
+  main 0; migrate with the branch (forward) 0, 0312 applied again.
+  narrow-observe.db.test.ts has the same as a cell (before 0312, the
   revert leaves the catalog equal to before, forward equal to after).
 
 ### Gates (part a3)
@@ -970,7 +971,97 @@ systemd-run --user, --maxWorkers=3, one at a time, switch on unless said:
    that is off shows 0 whatever it does (the box script prints the check
    mode beside the counts). Exact with the runtime role on (as the
    superuser a definer's write counts too).
-5. Renumber: if S13 merges 0311 first, rename this migration and its
-   revert to 0312 and the journal tag; the `when` stays 1790198040000.
+5. Renumber: done in fix round 1 (S13 merged 0311 first): 0312, the
+   `when` stays 1790198040000.
 6. The turn-create-home close flake (CI attempt 1): if it comes back, the
    pools' close against a connection still being made is the place to look.
+
+### Fix round 1 (the a3 audit at 2a577a699)
+
+Rebased on main 520659a30 (v0.300.118). One conflict, the migration
+journal (both sides appended idx 311): main's entry kept, this one appended
+as idx 312, then renamed to 0312 (above). `scripts/arch-scoreboard.pins.json`
+merged without a conflict; `pnpm arch:check` after the rebase exits 0, no
+pin moved.
+
+The text check moved to its own module, `gateway/narrow-sendable.ts`
+(narrow-route.ts was over the gateway's 600-line limit with it), the route
+itself unchanged.
+
+Plainly: the text check guards against mistakes, not deliberate code. A
+statement written to leave the role can get past any text check (each round
+so far found a form). The fix that closes the class is S7b's: a narrow pool
+that logs in as the narrow role itself, so the session holds no other role
+to go back to.
+
+#### MED-1: the forms that passed the text check
+
+| Form                                                                                 | Fix                                                                                                                                                                                                                                                                                       | Cell                                                                                                                                                                                                         |
+| ------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| (a) `set local"role" to none`, `set"role"`, `reset"role"`: no space before the quote | ROLE_CHANGE and SESSION_SET take `\s*` before a quoted name; and the first-word allowlist takes SET only as SET LOCAL of an allowed name                                                                                                                                                  | narrow-sendable.test.ts "no space"; narrow-route.db.test.ts "the a3 audit's forms": unguarded on pg18 it leaves the role, routed it is refused                                                               |
+| (b) `U&"r\006Fle"`, `U&'\0072ole'`                                                   | `U&` anywhere in the code text is refused                                                                                                                                                                                                                                                 | narrow-sendable.test.ts "U&"; the DB cell (unguarded: leaves the role)                                                                                                                                       |
+| (c) a function made in pg_temp, then called                                          | `create` is no allowed first word; TEMPORARY on the database taken from PUBLIC at every migrate (`applyRuntimeGrants`), granted to none                                                                                                                                                   | the DB cell: TEMP false for the narrow role, mantle_runtime and PUBLIC; unguarded `create function pg_temp...` as the narrow role: "permission denied to create temporary tables"                            |
+| (d) `date'\'`: a quote after the letter e read as an E'' string                      | E'' only when the E is a token of its own (`escapeString`); a dollar quote never opens right after an identifier's character (`x$a$` is one name in Postgres)                                                                                                                             | narrow-sendable.test.ts "plain string"; the DB cell `select text'\'; reset role; select '1'` (simple protocol: leaves the role unguarded)                                                                    |
+| (e) a tagged template's identifier helper where a function or a setting is named     | `narrowSendable(text, true)` for tagged templates: a placeholder before `(` (not `insert into $1 (`) or as a SET LOCAL name is refused; a fragment may start with a word no statement starts with, never with a placeholder                                                               | narrow-sendable.test.ts "a tagged template"; the DB cell: `t('pg_catalog.set_config')` and `set local ${t('role')}` via `adminSql().begin`                                                                   |
+| any other verb                                                                       | the first word of every statement: `select insert update delete merge with values table show`, SET LOCAL of a `mantle.*` setting or `NARROW_LOCAL_SETTINGS` (lock_timeout, statement_timeout, enable_sort, hnsw.ef_search, hnsw.iterative_scan, each with its caller), or SET TRANSACTION | narrow-sendable.test.ts "every statement but": create, call, copy, lock, explain, prepare, execute, discard, listen, notify, load, alter, grant, security label, truncate, other SET LOCALs, SET CONSTRAINTS |
+
+Why TEMPORARY at migrate and not in 0312: the database's name is the box's
+own (a migration would need dynamic SQL), and a restore into a fresh
+database (no `--create`) starts again with PUBLIC's default, which the next
+migrate takes back; it sits next to the existing `REVOKE CREATE ON SCHEMA
+public FROM PUBLIC`. Measured who needs it: no app code makes a temporary
+object (no `create temp` outside migration 0155, which the migrator runs as
+the superuser or the database's owner, both keep it); the full DB suites
+with the change in show no "permission denied to create temporary tables".
+
+#### LOW items
+
+- LOW-1: `noteActorMiss` keys the narrow checks (`narrow-denied`,
+  `narrow-content-write`, `narrow-cascade-delete`) by actor too: a second
+  reason meeting the same table within the hour is a row of its own. Cell:
+  narrow-observe.test.ts "a narrow check is one row per actor and table an
+  hour" (production mode, a captured logger; another check keeps its key).
+- LOW-2: done, small. The gateway's own settings (`mantle.actor`,
+  `actor_check`, `write_mode`, `route`, `login_id`, `ws`, `mod_ws`,
+  `scope_*`) may be named by a narrow statement only inside
+  `gatewaySettings` (an AsyncLocalStorage around the one place that sets a
+  login's scope on the system pool, system-tx.ts `sendWriteScope`), by
+  set_config or SET LOCAL alike. Measured: no other source file sets them
+  (`git grep`), and the full suite with the switch on has no refusal. Cells:
+  narrow-sendable.test.ts "the gateway's own settings"; the DB cell (five
+  forms refused, `systemPoolTxInScope` under an Admin area exit still runs
+  as the narrow role with its scope).
+- LOW-3: runtime-role.db.test.ts: every SECURITY DEFINER function, any
+  schema, the narrow role may run through PUBLIC or any grant is on
+  `NARROW_SYSTEM_FUNCTIONS` or the new `NARROW_PUBLIC_DEFINERS` (one:
+  `mantle_actor_check_mode()`, reads the check mode, writes nothing). A
+  function that runs as its caller runs with the role's own rights, so it
+  needs no entry (measured on pg18: the role may run 353 functions in public
+  and auth, 13 of them definers: the 12 listed and that one).
+- LOW-4: arch-scoreboard-box.sh and docs/runtime-role.md: the cascade count
+  counts on either route, and turning the role on would not refuse a
+  cascade (it runs as the table's owner); a sign of content going away
+  under narrow work, not a refusal to come.
+- LOW-5: as-system-routes.mjs: every mention of a wrapper is its
+  definition (in its own file), its bare import or a call (a generic call
+  too); an alias (`const v = profileWrite`), a reference passed on
+  (`.map(profileWrite)`) or a re-export is a problem. Cells:
+  as-system-exits.test.ts "a wrapper of a spot".
+- LOW-6: rolling back to N-1 without the revert, the old image prints each
+  narrow write NOTICE as a plain notice (one log line per counted write)
+  until the revert runs; no row, no refusal. Run the revert with the roll
+  back to stop the lines.
+
+#### Changed answers
+
+Switch off: none. The text check, the TEMPORARY revoke's only reader (a
+temporary object) and the settings rule are the narrow route's and the
+database's; no app code makes a temporary object; the full DB suite with
+MANTLE_NARROW_SYSTEM=0 (below). Switch on: statements refused that were
+sent before: only the probe forms above (the full suite with the switch on
+has no refusal of an app statement). No change to what a member, client,
+key, peer or public link may do.
+
+#### Pins
+
+None moved (arch:check 0 after the rebase and after each commit).
