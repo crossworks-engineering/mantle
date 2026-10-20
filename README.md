@@ -260,7 +260,7 @@ provably stale, never a number someone typed once.
 ![migrations](https://img.shields.io/badge/migrations-310-336791?logo=postgresql&logoColor=white)
 ![built-in tools](https://img.shields.io/badge/built--in%20tools-295-6b4fbb)
 ![docs](https://img.shields.io/badge/docs-114%20guides-4c8eda)
-![releases](https://img.shields.io/badge/releases-621-blue)
+![releases](https://img.shields.io/badge/releases-622-blue)
 
 **Code & tests** — the suite runs on every push, DB-less, in CI. Test counts below are cases *declared*; parameterised tables (`it.each`) expand to more at run time, so the executed total is higher than the number shown.
 
@@ -269,9 +269,9 @@ provably stale, never a number someone typed once.
 | 📐 &nbsp;TypeScript (excl. tests) | **320,161** lines in 1,817 files |
 | 🧪 &nbsp;Test suite | **10,509+** cases declared in 1,137 files |
 | ⚖️ &nbsp;Test weight | 267,500 lines — 1 for every 1.2 of source |
-| 🗂️ &nbsp;Tracked files | 4,215 |
+| 🗂️ &nbsp;Tracked files | 4,214 |
 | 🐘 &nbsp;SQL migrations | 310, replayed in order on every boot |
-| 📚 &nbsp;Docs | 114 engineering docs, 117 user-guide pages, 224 changelog entries (85,939 lines) |
+| 📚 &nbsp;Docs | 114 engineering docs, 117 user-guide pages, 224 changelog entries (85,916 lines) |
 | 🐳 &nbsp;Compose services | 26 (core + opt-in profiles) |
 
 **What a fresh brain ships with** — declared once in the [system manifest](./server/web/lib/system-manifest/), checked by CI and by a live integrity audit.
@@ -285,10 +285,10 @@ provably stale, never a number someone typed once.
 | 💾 &nbsp;Datastores | **1** (Postgres — vectors, graph, FTS, queues, realtime, auth) |
 | 🧊 &nbsp;Idle footprint | ~2.5 GB RAM, whole stack |
 
-**Velocity** — v0.300.115, 6,531 commits and 621 releases since 2026-05-14 (160 days, ~40.8 commits/day).
+**Velocity** — v0.300.116, 6,535 commits and 622 releases since 2026-05-14 (160 days, ~40.8 commits/day).
 
 ```
-commits/week, last 23 weeks   ▁▃▃▂▁▁▃▂▂▂▃▂▂▂▂▁▂▁▁▅▄▆█   peak 1285
+commits/week, last 23 weeks   ▁▃▃▂▁▁▃▂▂▂▃▂▂▂▂▁▂▁▁▅▄▆█   peak 1289
 ```
 
 ```mermaid
