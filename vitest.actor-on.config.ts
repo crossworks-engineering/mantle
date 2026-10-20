@@ -28,7 +28,7 @@ export default defineConfig({
       'server/web/lib/auth/admin-membership.db.test.ts',
       // The Login and adminFacts, scoped and unscoped, warn and on.
       'server/web/lib/auth/admin-facts.db.test.ts',
-      // The handlers moved to the Login and adminFacts (S8c part c2).
+      // The handlers that ask adminFacts of the Login, beside the legacy kind.
       'server/web/lib/auth/admin-facts-handlers.db.test.ts',
     ],
     env: { ...base.test?.env, MANTLE_ACTOR_CHECK: 'on' },

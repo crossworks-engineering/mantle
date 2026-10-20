@@ -73,7 +73,7 @@ vi.mock('../lib/auth/login-row', () => ({
 // MCP as a login: a member's MCP access is off here (the default), so the
 // consent page refuses it as it always did.
 vi.mock('../lib/mcp-auth', () => ({
-  mcpLoginEnabled: async () => false,
+  mcpLoginUsable: async () => false,
   mcpTargetLogin: async () => null,
 }));
 

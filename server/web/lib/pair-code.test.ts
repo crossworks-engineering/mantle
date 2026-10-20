@@ -205,7 +205,7 @@ describe('claimPairCode', () => {
     ['deleted', []],
     ['disabled', [{ ...ADMIN_ROW, disabledAt: new Date('2026-09-20T00:00:00Z') }]],
     ['demoted to member', [{ ...ADMIN_ROW, role: 'member' }]],
-    // The Admin pair (S8c c2): role admin but no longer a user of Admin.
+    // The Admin pair: role admin but no longer a user of Admin.
     ['taken out of Admin', [{ ...ADMIN_ROW, adminMember: false }]],
   ])('a code whose login was %s is null and mints nothing', async (_what, row) => {
     dbState.updateResults = [[{ id: 'row-1', userId: 'user-1' }], []];

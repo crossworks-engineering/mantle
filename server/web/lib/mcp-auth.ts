@@ -270,11 +270,13 @@ async function callerFromPeerToken(token: string): Promise<McpCaller | null> {
 
 // ── The OAuth consent and the token check ───────────────────────────────────
 
-/** Whether this login may connect an MCP client now (W7b: any usable
- *  member): usable, not disabled and with an email. The consent route asks
- *  it for a member login only (the gate's answer), and mcpTargetLogin reads
- *  the member row next, so no role is read twice here. */
-export async function mcpLoginEnabled(loginId: string): Promise<boolean> {
+/** Whether this login is usable for an MCP connection now: not disabled
+ *  and with an email. It reads no role, so it answers true for an Admin
+ *  user too: it is not "may connect". The consent route asks it on its
+ *  member path only, and mcpTargetLogin reads the row again right after
+ *  (role member); a login changed between the two reads answers by the
+ *  second, which refuses anything but a member. */
+export async function mcpLoginUsable(loginId: string): Promise<boolean> {
   const row = await loadLogin(loginId);
   return !!row && !row.disabledAt && !!row.email;
 }

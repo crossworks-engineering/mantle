@@ -1,6 +1,6 @@
 /**
  * The handlers that moved to the Login and adminFacts (plan v3.2 section
- * 2.2 point 3, part c2), on a real migrated Postgres and the real login row
+ * 2.2 point 3), on a real migrated Postgres and the real login row
  * (getLoginOr401 through a session cookie, in the real request scope of
  * each route's row).
  *
@@ -10,8 +10,8 @@
  * outside Admin (drift), a role=member login inside Admin (drift) and a
  * member. Byte-equal for the Admin users and the member; the only changes
  * are the two drift logins', each narrower (no answer gets wider), named
- * in the changed-answers table of docs/_archive/plan-v3-s8c-handover.md
- * (part c2) and pinned here as that table states them:
+ * in the changed-answers tables of docs/_archive/plan-v3-s8c-handover.md
+ * and pinned here as that table states them:
  *  - GET /api/access-keys and GET /api/shell (any-login rows, the login's
  *    scope): Admin is the scope's answer with the row's pair, so the
  *    role=admin login outside Admin is no Admin user (its own keys only;
@@ -21,7 +21,7 @@
  *  - a pairing code's claim and a peer's risky tools: the Admin pair, so
  *    the role=admin login outside Admin claims nothing and its peer names
  *    no risky tool.
- * Round 2, the same narrowing of the role=admin login outside Admin:
+ * And the same narrowing of the role=admin login outside Admin:
  *  - the owner rows that branched on the owner answer's kind (an app's
  *    brokers, its frame ticket, a new app's author ceiling, the Admin
  *    switches of PATCH /api/apps/:id), in the owner guard's scope;
@@ -51,7 +51,7 @@ const URL = process.env.MANTLE_TEST_DATABASE_URL;
 type Row = Record<string, unknown>;
 type Name = 'adm' | 'lim' | 'out' | 'memIn' | 'mem';
 
-describe.skipIf(!URL)('the c2 handlers on the Login and adminFacts', () => {
+describe.skipIf(!URL)('the handlers that ask adminFacts of the Login', () => {
   let scratch: Awaited<ReturnType<typeof createMigratedScratchDatabase>> | undefined;
   let m: typeof import('@mantle/db');
   let sql: Parameters<typeof m.ensureViewerRoles>[0];

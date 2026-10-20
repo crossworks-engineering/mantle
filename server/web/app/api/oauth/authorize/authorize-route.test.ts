@@ -52,7 +52,7 @@ vi.mock('@/lib/auth/login', async (importOriginal) => ({
 }));
 
 vi.mock('@/lib/mcp-auth', () => ({
-  mcpLoginEnabled: async () => h.mcpOn,
+  mcpLoginUsable: async () => h.mcpOn,
   mcpTargetLogin: async (id: string) => ({ id, role: 'member', sessionEpoch: 7 }),
 }));
 

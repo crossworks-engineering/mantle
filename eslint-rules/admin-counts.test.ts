@@ -454,16 +454,16 @@ describe('the repo', () => {
     };
   };
 
-  it('the three role reads the plan names moved in S8c c2 (the Admin pair, or no role read)', () => {
+  it('the three role reads the plan names ask the Admin pair, or read no role', () => {
     const reads = detail.loginRoleDecisionReads;
     const text = (path: string) => texts.find((t) => t.path === path)!.text;
     const lineOf = (path: string, needle: string) =>
       text(path)
         .split('\n')
         .findIndex((l) => l.includes(needle)) + 1;
-    // mcp-auth.ts: a peer's risky tools ask adminLogin; mcpLoginEnabled reads no role.
+    // mcp-auth.ts: a peer's risky tools ask adminLogin; mcpLoginUsable reads no role.
     const risky = lineOf('server/web/lib/mcp-auth.ts', 'riskyAllowed: adminLogin(row)');
-    const enabled = lineOf('server/web/lib/mcp-auth.ts', 'export async function mcpLoginEnabled');
+    const enabled = lineOf('server/web/lib/mcp-auth.ts', 'export async function mcpLoginUsable');
     expect(risky).toBeGreaterThan(0);
     expect(enabled).toBeGreaterThan(0);
     expect(reads['server/web/lib/mcp-auth.ts']).not.toContain(risky);

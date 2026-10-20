@@ -40,6 +40,18 @@ describe('session-guards', () => {
       entries.add(entry);
     }
     expect(entries.size).toBe(CALLER_READERS.length);
+    // A reader that logs as another (`logs`: the same answer in its legacy
+    // shape) names an existing reader of the same caller kind and guard,
+    // answered the same way (at the read or not), that logs as itself.
+    for (const [reader, spec] of Object.entries(READER_ANSWERS)) {
+      if (spec.logs === undefined) continue;
+      const other = READER_ANSWERS[spec.logs];
+      expect(other, `${reader} logs ${spec.logs}`).toBeDefined();
+      expect(other!.caller, reader).toBe(spec.caller);
+      expect(other!.guard, reader).toBe(spec.guard);
+      expect(other!.atRead ?? false, reader).toBe(spec.atRead ?? false);
+      expect(other!.logs, reader).toBeUndefined();
+    }
     // A retired guard is gone from session.ts.
     for (const g of RETIRED_GUARDS) expect(exported, g).not.toContain(g);
     // The readers of A4 step 3b part 5, one per guard they replaced.

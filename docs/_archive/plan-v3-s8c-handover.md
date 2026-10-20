@@ -532,6 +532,29 @@ tests stand in `chatCaller`; the OAuth route test `publicLoginItself`;
 take the Login; `owner-caller-imports.test.ts` lists the new at-read
 reader. Every expected answer is unchanged.
 
+### The round 1 audit's LOWs (folded in round 2)
+
+1. `mcpLoginEnabled` is `mcpLoginUsable`, its comment says it reads no
+   role and answers true for an Admin user, and that the consent route asks
+   it on the member path only, with mcpTargetLogin's second read (role
+   member) deciding a login changed in between. Answers unchanged.
+2. `server/web/lib/mcp-auth-peer.test.ts` (unit, no database): the peer
+   bearer through `resolveMcpCaller` with `verifyInboundToken` and
+   `loadLoginRow` stood in: `peerByOwner` and `riskyAllowed` for the owner,
+   an Admin user, the two drift logins and a member (the role=admin login
+   outside Admin gets neither).
+3. `eslint-rules/session-guards.test.ts`: a reader's `logs` names an
+   existing reader of the same caller, guard and at-read answer, which
+   logs as itself.
+4. Step codes left the test names and comments the audit named
+   (`admin-counts.test.ts`, `vitest.actor-on.config.ts`,
+   `pair-code.test.ts`, `access-keys.db.test.ts`,
+   `admin-facts-handlers.db.test.ts`).
+5. The `inHandlerAreaChecks` note says the keys ask moved into
+   `adminFacts(login).areas`, not gone.
+6. whoami and the shell now agree for a drifted role admin (both ask
+   adminFacts).
+
 ### Left for round 3
 
 - Item 5, the role reads in server/web outside lib/auth (30 with lib/auth's

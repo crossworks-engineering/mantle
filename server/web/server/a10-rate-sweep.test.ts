@@ -81,7 +81,7 @@ vi.mock('../lib/audit', async (importOriginal) => ({
 
 vi.mock('../lib/mcp-auth', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
-  mcpLoginEnabled: async () => false,
+  mcpLoginUsable: async () => false,
   mcpTargetLogin: async () => null,
   resolveMcpCaller: async () => null,
 }));

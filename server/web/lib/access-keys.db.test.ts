@@ -284,7 +284,7 @@ describe.skipIf(!URL)('inbound API keys', () => {
     ).toBe(201);
     // The area decides, not the role: an admin without it is held as a
     // member is. A member never holds it: adminFacts' areas count only for
-    // an Admin user (S8c c2; before, a member the area rule named held it).
+    // an Admin user (a member the area rule names holds no keys area here).
     keysArea.holders.delete(admin2);
     keysArea.holders.add(member);
     try {

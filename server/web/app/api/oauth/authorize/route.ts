@@ -32,7 +32,7 @@ import { adminFacts, type Login } from '@/lib/auth/login';
 import { rateLimitLogin, rateLimitLoginRefund } from '@/lib/rate-limit';
 import { requestOrigin } from '@/lib/auth-constants';
 import { getClient, isRemoteMcpEnabled, mintAuthCode, DEFAULT_SCOPE } from '@/lib/mcp-oauth';
-import { mcpLoginEnabled, mcpTargetLogin } from '@/lib/mcp-auth';
+import { mcpLoginUsable, mcpTargetLogin } from '@/lib/mcp-auth';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
 import { env } from '@mantle/config';
 import type { LoginRole } from '@mantle/client-types/role-names';
@@ -120,7 +120,7 @@ async function signedIn(login: Login | null): Promise<Consenter | 'member' | nul
       consentEpoch: login.sessionEpoch,
     };
   }
-  if (!(await mcpLoginEnabled(login.loginId))) return 'member';
+  if (!(await mcpLoginUsable(login.loginId))) return 'member';
   const target = await mcpTargetLogin(login.loginId);
   if (!target) return 'member';
   return {
