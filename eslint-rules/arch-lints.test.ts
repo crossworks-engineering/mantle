@@ -7,6 +7,7 @@ import {
   asSystemSites,
   failOpenSiteCount,
   gapRerunCount,
+  roleResetCount,
   builtinSlugs,
   countedFiles,
   guardCalls,
@@ -1394,6 +1395,46 @@ describe('gapRerunCount (plan v3 S3 fix round 3)', () => {
     expect(of('await tx`SET ROLE NONE`')).toBe(0);
     expect(of('await tx`reset role`')).toBe(0);
     expect(of('// SET SESSION ROLE mantle_gap_writer')).toBe(0);
+  });
+});
+
+describe('roleResetCount (plan v3.2 S7a)', () => {
+  const of = (text: string, path = 'x.ts') => roleResetCount([{ path, text }]);
+  it('counts a role reset, and a set_config whose name is not a plain literal', () => {
+    expect(of('await tx`reset role`')).toBe(1);
+    expect(of('await tx`set local role none`')).toBe(1);
+    expect(of('await tx`set local "role" none`')).toBe(1);
+    expect(of("select set_config('role', 'none', true)")).toBe(1);
+    expect(of("select set_config('role', 'postgres', true)")).toBe(1);
+    expect(of("select set_config('session_authorization', 'x', true)")).toBe(1);
+    // The name built by concatenation, a bound parameter, an expression.
+    expect(of("select set_config('ro' || 'le', 'none', true)")).toBe(1);
+    expect(of('await tx`select set_config(${name}, ${v}, true)`')).toBe(1);
+    expect(of("t.unsafe('select set_config($1, $2, true)', [n, v])")).toBe(1);
+    expect(of("update pg_settings set setting = 'none' where name = 'role'")).toBe(1);
+    expect(of("update pg_catalog.pg_settings set setting = 'x' where name = 'role'")).toBe(1);
+    // A DO block that leaves the role and takes it back.
+    expect(
+      of(
+        "DO $$ BEGIN PERFORM set_config('role', 'none', true); PERFORM 1; PERFORM set_config('role', 'mantle_system_narrow', true); END $$;",
+        'm.sql',
+      ),
+    ).toBe(2);
+    // A plpgsql name built from a literal mantle. prefix where it is declared.
+    expect(of('x text := 1; PERFORM set_config(x, TG_OP, true);', 'm.sql')).toBe(1);
+  });
+  it('leaves a literal setting, the seen keys, the gateway and tests alone', () => {
+    expect(of("select set_config('mantle.ws', $1, true)")).toBe(0);
+    expect(of("select set_config('lock_timeout', ${WAIT}, true)")).toBe(0);
+    expect(
+      of(
+        "seen_key text := 'mantle.actor_missed_' || TG_TABLE_NAME; PERFORM set_config(seen_key, TG_OP, true);",
+        'm.sql',
+      ),
+    ).toBe(0);
+    expect(of('// reset role')).toBe(0);
+    expect(of('await tx`reset role`', 'packages/db/src/gateway/narrow-route.ts')).toBe(0);
+    expect(of('await tx`reset role`', 'packages/db/src/x.test.ts')).toBe(0);
   });
 });
 

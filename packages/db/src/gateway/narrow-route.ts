@@ -76,44 +76,120 @@ const TX_CONTROL =
   /(?:^|;)\s*(?:begin|commit|rollback|abort|end|start\s+transaction|prepare\s+transaction|savepoint|release)\b/i;
 
 /** A role change in any form, anywhere in the text: SET [SESSION | LOCAL]
- *  ROLE, RESET ROLE, SET SESSION AUTHORIZATION, RESET ALL. */
+ *  ROLE or SESSION AUTHORIZATION (the name bare or quoted), RESET ROLE,
+ *  RESET SESSION AUTHORIZATION, RESET ALL. Read on the text with its
+ *  strings blanked and its quoted identifiers kept (sqlCode). */
 const ROLE_CHANGE =
-  /\b(?:set\s+(?:session\s+|local\s+)?role|reset\s+(?:role|all|session\s+authorization)|set\s+(?:session\s+)?session\s+authorization)\b/i;
+  /\b(?:set\s+(?:session\s+|local\s+)?(?:"?(?:role|session_authorization)"?(?![\w$])|session\s+authorization\b)|reset\s+(?:"?(?:role|session_authorization)"?(?![\w$])|all\b|session\s+authorization\b))/i;
 
 /** A session-level SET or RESET at the start of any statement (outlives
  *  the transaction): SET without LOCAL (SET TRANSACTION and SET
  *  CONSTRAINTS are the transaction's own), and any RESET. */
 const SESSION_SET = /(?:^|;)\s*(?:set\s+(?!local\b|transaction\b|constraints\b)|reset\b)/i;
 
-/** set_config with is_local false (a session setting), read on the text
- *  with literals blanked: its third argument is the literal `false`. */
-const SESSION_SET_CONFIG = /\bset_config\s*\((?:[^();]|\([^();]*\))*,\s*false\s*\)/i;
+/** A DO block at the start of any statement: its body is code the text
+ *  check cannot read (it may leave the role and take it back before the
+ *  hold check). */
+const DO_BLOCK = /(?:^|;)\s*do\b/i;
 
-/** set_config of the role or the session's authorization, read on the text
- *  with comments blanked and literals kept. */
-const ROLE_SET_CONFIG = /\bset_config\s*\(\s*'(?:role|session_authorization)'/i;
+/** pg_settings: an UPDATE of it is set_config(name, value, false) by its
+ *  rule, so any statement naming it is refused (a read included). */
+const PG_SETTINGS = /\bpg_settings\b/i;
+
+/** A call of set_config, the name bare, quoted or schema-qualified. */
+const SET_CONFIG_CALL = /(?<![\w$])"?set_config"?\s*\(/gi;
+
+/** The one shape of a set_config argument a narrow statement may name: a
+ *  plain literal of a mantle.* setting (no concatenation, no parameter, no
+ *  cast, no E'' string). */
+const MANTLE_SETTING_LITERAL = /^'mantle\.[a-z0-9_]+(?:\.[a-z0-9_]+)*'$/i;
+
+/**
+ * The settings other than mantle.* a narrow statement may set
+ * transaction-local by set_config (a SET LOCAL of them is sent as it is),
+ * each with its caller: none can change the role.
+ */
+export const NARROW_LOCAL_SETTINGS: Readonly<Record<string, string>> = Object.freeze({
+  lock_timeout: "share-lock.ts and app-broker.ts: a bounded wait for a lock, the transaction's own",
+  enable_sort: "search hnsw.ts: the planner's sort off for one vector read, put back after",
+});
+
+/**
+ * The top-level arguments of the set_config call whose `(` is at `open` in
+ * `code` (the text with strings and comments blanked, same length as
+ * `text`), cut from `text` (comments blanked, strings kept). Null when the
+ * call does not close.
+ */
+function callArguments(code: string, text: string, open: number): string[] | null {
+  const args: string[] = [];
+  let depth = 0;
+  let from = open + 1;
+  for (let i = open + 1; i < code.length; i++) {
+    const c = code[i];
+    if (c === '(' || c === '[') depth++;
+    else if ((c === ')' || c === ']') && depth > 0) depth--;
+    else if (c === ')') {
+      args.push(text.slice(from, i).trim());
+      return args;
+    } else if (c === ',' && depth === 0) {
+      args.push(text.slice(from, i).trim());
+      from = i + 1;
+    }
+  }
+  return null;
+}
+
+/**
+ * Whether every set_config call of the text is one a narrow statement may
+ * send: three arguments, the first a plain literal naming a mantle.*
+ * setting or one of NARROW_LOCAL_SETTINGS, the third the literal true. A
+ * role name built by concatenation ('ro' || 'le'), a bound parameter or any
+ * other expression as the name, and a session setting (false, or a
+ * parameter) are not.
+ */
+function setConfigCallsSendable(query: string): boolean {
+  const text = sqlCode(query, false);
+  const code = sqlCode(query, true, false);
+  for (const m of code.matchAll(SET_CONFIG_CALL)) {
+    const args = callArguments(code, text, m.index + m[0].length - 1);
+    if (!args || args.length !== 3) return false;
+    const name = args[0]!;
+    const local = name.length > 2 ? name.slice(1, -1).toLowerCase() : '';
+    const named =
+      MANTLE_SETTING_LITERAL.test(name) ||
+      (/^'[a-z_]+'$/i.test(name) && Object.hasOwn(NARROW_LOCAL_SETTINGS, local));
+    if (!named || args[2]!.toLowerCase() !== 'true') return false;
+  }
+  return true;
+}
 
 /**
  * The text with its comments blanked (`--`, `/* *\/`) and, with
- * `literals`, its string literals, quoted identifiers and dollar-quoted
- * bodies blanked too, so a verb inside a value is never read as one.
+ * `literals`, its string literals and dollar-quoted bodies blanked too (and
+ * its quoted identifiers, unless `identifiers` is false), so a verb inside
+ * a value is never read as one. The same length as the text: an offset in
+ * one is the same place in the other.
  */
-export function sqlCode(query: string, literals = true): string {
+export function sqlCode(query: string, literals = true, identifiers = literals): string {
   let out = '';
   let i = 0;
   const n = query.length;
+  const blank = (from: number, to: number, keep: string) =>
+    to - from >= 2 ? keep + ' '.repeat(to - from - 2) + keep : ' '.repeat(to - from);
   while (i < n) {
     const c = query[i]!;
     const next = query[i + 1];
     if (c === '-' && next === '-') {
       const end = query.indexOf('\n', i);
-      i = end < 0 ? n : end;
-      out += ' ';
+      const to = end < 0 ? n : end;
+      out += ' '.repeat(to - i);
+      i = to;
     } else if (c === '/' && next === '*') {
       const end = query.indexOf('*/', i + 2);
-      i = end < 0 ? n : end + 2;
-      out += ' ';
-    } else if (literals && (c === "'" || c === '"')) {
+      const to = end < 0 ? n : end + 2;
+      out += ' '.repeat(to - i);
+      i = to;
+    } else if ((literals && c === "'") || (identifiers && c === '"')) {
       let j = i + 1;
       for (; j < n; j++) {
         if (query[j] === c) {
@@ -123,18 +199,32 @@ export function sqlCode(query: string, literals = true): string {
         // An E'' string: a backslash escapes the next character.
         else if (c === "'" && query[j] === '\\' && /[eE]/.test(query[i - 1] ?? '')) j++;
       }
-      i = j + 1;
-      out += c === "'" ? "''" : '""';
+      const to = Math.min(j + 1, n);
+      out += blank(i, to, c);
+      i = to;
     } else if (literals && c === '$') {
       const tag = /^\$([A-Za-z_][\w]*)?\$/.exec(query.slice(i));
       if (tag) {
         const end = query.indexOf(tag[0], i + tag[0].length);
-        i = end < 0 ? n : end + tag[0].length;
-        out += "''";
+        const to = end < 0 ? n : end + tag[0].length;
+        out += blank(i, to, "'");
+        i = to;
       } else {
         out += c;
         i++;
       }
+    } else if (c === "'" || c === '"') {
+      // Kept: copied whole, so a quote inside never opens a comment.
+      let j = i + 1;
+      for (; j < n; j++) {
+        if (query[j] === c) {
+          if (query[j + 1] === c) j++;
+          else break;
+        } else if (c === "'" && query[j] === '\\' && /[eE]/.test(query[i - 1] ?? '')) j++;
+      }
+      const to = Math.min(j + 1, n);
+      out += query.slice(i, to);
+      i = to;
     } else {
       out += c;
       i++;
@@ -148,22 +238,33 @@ export function sqlCode(query: string, literals = true): string {
  * single statement and on every statement of a narrow transaction: one
  * Postgres runs only outside a transaction block; a transaction-control
  * statement (it would end the transaction its role is local to, and later
- * statements would run as the pool's own login); a role change; a
- * session-level SET, RESET or set_config (it outlives the transaction).
+ * statements would run as the pool's own login); a role change, by SET,
+ * RESET, set_config or pg_settings, whatever builds the name; a DO block
+ * (code the text cannot read); a session-level SET, RESET or set_config (it
+ * outlives the transaction); and any set_config but a transaction-local one
+ * of a literal mantle.* setting (or NARROW_LOCAL_SETTINGS).
  */
 export function narrowSendable(query: string): void {
   if (runsOutsideTransaction(query)) {
     throw new NarrowRouteRefusedError('a statement outside a transaction');
   }
-  const code = sqlCode(statementBody(query, false));
+  const body = statementBody(query, false);
+  const code = sqlCode(body);
+  const named = sqlCode(body, true, false);
   if (TX_CONTROL.test(code)) {
     throw new NarrowRouteRefusedError('a transaction-control statement');
   }
-  if (ROLE_CHANGE.test(code) || ROLE_SET_CONFIG.test(sqlCode(query, false))) {
+  if (ROLE_CHANGE.test(named) || PG_SETTINGS.test(named)) {
     throw new NarrowRouteRefusedError('a role change');
   }
-  if (SESSION_SET.test(code) || SESSION_SET_CONFIG.test(code)) {
+  if (DO_BLOCK.test(code)) {
+    throw new NarrowRouteRefusedError('a DO block');
+  }
+  if (SESSION_SET.test(code)) {
     throw new NarrowRouteRefusedError('a session-level setting');
+  }
+  if (!setConfigCallsSendable(query)) {
+    throw new NarrowRouteRefusedError('a set_config other than a local mantle.* setting');
   }
 }
 

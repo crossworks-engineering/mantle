@@ -892,20 +892,37 @@ export function gapRerunCount(files) {
 
 /**
  * The role resets outside the gateway (plan v3.2 S7a, the a1 audit): each
- * `set_config('role', 'none', ...)`, `RESET ROLE` and `SET [LOCAL|SESSION]
- * ROLE NONE` in counted source outside packages/db/src/gateway/ and outside
- * test files, comments blanked. A reset inside narrow work leaves the
- * narrow role (the route's hold check rolls such a transaction back); none
- * is wanted outside the gateway, so 0, and a new one is a reviewed pin.
+ * `set_config('role', ...)` or `set_config('session_authorization', ...)`
+ * whatever the value, `RESET ROLE`, `SET [LOCAL|SESSION] ROLE NONE` (the
+ * name bare or quoted), an UPDATE of pg_settings (set_config by its rule),
+ * and a set_config whose setting name is not a plain literal (built by
+ * concatenation, a bound parameter, an expression), in counted source
+ * outside packages/db/src/gateway/ and outside test files, comments
+ * blanked. A plpgsql variable assigned a literal 'mantle.' prefix where it
+ * is declared is a mantle.* setting, not counted (the actor and heads
+ * checks' seen keys). A reset inside narrow work leaves the narrow role
+ * (the route refuses these by text, and its hold check rolls back what a
+ * function does); none is wanted outside the gateway, so 0, and a new one
+ * is a reviewed pin.
  */
 export function roleResetCount(files) {
   const RESET =
-    /\breset\s+role\b|\bset\s+(?:local\s+|session\s+)?role\s+(?:to\s+)?['"]?none\b|set_config\(\s*'role'\s*,\s*'none'/gi;
+    /\breset\s+"?role"?(?![\w$])|\bset\s+(?:local\s+|session\s+)?"?role"?\s+(?:to\s+|=\s*)?['"]?none\b|set_config\s*\(\s*'(?:role|session_authorization)'|\bupdate\s+(?:"?pg_catalog"?\s*\.\s*)?"?pg_settings\b/gi;
+  const CALL = /(?<![\w$])"?set_config"?\s*\(\s*/gi;
   let n = 0;
   for (const { path, text } of files) {
     const p = path.replace(/\\/g, '/');
     if (p.includes('packages/db/src/gateway/') || /\.test\.[cm]?[jt]sx?$/.test(p)) continue;
-    n += (stripComments(text).match(RESET) ?? []).length;
+    const code = stripComments(text);
+    n += (code.match(RESET) ?? []).length;
+    for (const m of code.matchAll(CALL)) {
+      const rest = code.slice(m.index + m[0].length);
+      // A plain literal name, alone as the first argument.
+      if (/^'[^']*'\s*,/.test(rest)) continue;
+      const v = /^([a-z_][a-z0-9_]*)\s*,/i.exec(rest);
+      if (v && new RegExp(`\\b${v[1]}\\s+text\\s*:=\\s*'mantle\\.`, 'i').test(code)) continue;
+      n++;
+    }
   }
   return n;
 }

@@ -303,6 +303,63 @@ describe.skipIf(!URL)('the narrow system route (plan v3.2 S7a)', () => {
     expect(actor.takeNarrowDenials()).toEqual([]);
   });
 
+  it('refuses the escapes no literal shows: a built role name, bound parameters, a DO block, pg_settings', async () => {
+    const marker = `narrow-do-${randomUUID()}`;
+    const refused: [string, ReturnType<typeof sql>][] = [
+      // The role name built by concatenation.
+      ['concat', sql.raw("select set_config('ro' || 'le', 'none', true)")],
+      // set_config with bound parameters: the name never shows in the text.
+      ['bound', sql`select set_config(${'role'}, ${'none'}, true)`],
+      ['bound name', sql`select set_config(${'role'}, 'none', true)`],
+      ['bound local', sql`select set_config('mantle.ws', 'x', ${true})`],
+      // A DO block that leaves the role, writes as the pool login and takes
+      // the role back before the hold check (which alone would pass it).
+      [
+        'do leave and return',
+        sql.raw(`do $$ begin
+          perform set_config('role', 'none', true);
+          insert into public.narrow_probe (x) values ('${marker}');
+          perform set_config('role', '${NARROW}', true);
+        end $$`),
+      ],
+      // A DO block that only leaves.
+      ['do leave', sql.raw("do $$ begin perform set_config('role', 'none', true); end $$")],
+      ['do after', sql.raw('select 1; do $$ begin perform 1; end $$')],
+      // pg_settings' rule is set_config(name, value, false).
+      ['pg_settings', sql.raw("update pg_settings set setting = 'none' where name = 'role'")],
+      ['quoted role', sql.raw('set local "role" none')],
+      ['quoted call', sql.raw(`select pg_catalog."set_config"('role', 'none', true)`)],
+      ['E string', sql.raw("select set_config(E'role', 'none', true)")],
+      ['cast name', sql.raw("select set_config('role'::text, 'none', true)")],
+      ['other setting', sql.raw("select set_config('search_path', 'pg_temp', true)")],
+    ];
+    for (const [name, stmt] of refused) {
+      expect(
+        await failure(v.asSystem(() => m.db.execute(stmt), 'admin-area')),
+        name,
+      ).toBeInstanceOf(nr.NarrowRouteRefusedError);
+      expect(
+        await failure(v.asSystem(() => m.db.transaction((tx) => tx.execute(stmt)), 'admin-area')),
+        `${name} (in a transaction)`,
+      ).toBeInstanceOf(nr.NarrowRouteRefusedError);
+    }
+    const left = await su<{ n: number }[]>`
+      select count(*)::int as n from public.narrow_probe where x = ${marker}`;
+    expect(left[0]!.n).toBe(0);
+    // Sent: a literal mantle.* name with a bound value, a named local
+    // setting, set_config inside an expression.
+    for (const stmt of [
+      sql`select set_config('mantle.ws', ${'x'}, true)`,
+      sql`select set_config('lock_timeout', ${'5s'}, true)`,
+      sql.raw("select (set_config('mantle.scope_login', 'x', true))::text as v"),
+      sql.raw("select 'set_config(''role'', ''none'', true)' as x"),
+      sql.raw('select 1 as "do"'),
+    ]) {
+      await v.asSystem(() => m.db.transaction((tx) => tx.execute(stmt)), 'admin-area');
+    }
+    expect(actor.takeNarrowDenials()).toEqual([]);
+  });
+
   it('notes a denial a savepoint caught, and gives the real error when the work caught it', async () => {
     // Caught in a savepoint: the transaction goes on, the denial is noted.
     await v.asSystem(
