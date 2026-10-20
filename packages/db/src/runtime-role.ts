@@ -79,8 +79,11 @@ export const NARROW_ROLE = 'mantle_system_narrow';
  * migrate). Per-schema default privileges cannot take a global default
  * (PUBLIC's EXECUTE) away, so there is none for this (measured on pg18).
  */
-export const PGBOSS_ROUTINES_REVOKE_SQL =
-  'REVOKE EXECUTE ON ALL ROUTINES IN SCHEMA pgboss FROM PUBLIC';
+export async function revokePgBossRoutines(sql: {
+  unsafe: (text: string) => PromiseLike<unknown>;
+}): Promise<void> {
+  await sql.unsafe('REVOKE EXECUTE ON ALL ROUTINES IN SCHEMA pgboss FROM PUBLIC');
+}
 
 /** A database (or any) name as a quoted identifier: its `"` doubled. */
 export function quotedIdent(name: string): string {
@@ -456,7 +459,7 @@ export const DB_ROLE_SQL = `
  * superuser, a member of every role) a member of mantle_owner, directly or
  * through another role: mantle_owner_role() says yes to every such member.
  * And no pg-boss routine the runtime or the narrow role may run
- * (PGBOSS_ROUTINES_REVOKE_SQL). afterMigrations logs every row as a warning.
+ * (revokePgBossRoutines). afterMigrations logs every row as a warning.
  */
 export const RUNTIME_LOCK_SQL = `
   SELECT '${RUNTIME_ROLE}' AS id, 'lock broken' AS kind, x.detail AS detail
@@ -1029,7 +1032,7 @@ export async function narrowFunctionAllowlist(sql: Sql): Promise<string[]> {
  * granted to none: no role the app runs as makes a temporary object; a
  * narrow role that still holds it afterwards (a migrator that does not own
  * the database only gets a warning from the REVOKE) fails the run. EXECUTE
- * on pg-boss's routines is taken from PUBLIC (PGBOSS_ROUTINES_REVOKE_SQL).
+ * on pg-boss's routines is taken from PUBLIC (revokePgBossRoutines).
  *
  * And mantle_owner's: USAGE on the schemas, every right on the tables and
  * EXECUTE on every function. Nobody logs in as it, but Postgres runs a
@@ -1106,7 +1109,7 @@ export async function applyRuntimeGrants(sql: Sql): Promise<void> {
       // EXISTS, then its version table), so the default privileges cover the
       // tables pgboss:init makes after this migrate on a fresh box.
       await tx.unsafe(`CREATE SCHEMA IF NOT EXISTS pgboss`);
-      await tx.unsafe(PGBOSS_ROUTINES_REVOKE_SQL);
+      await revokePgBossRoutines(tx);
       await tx.unsafe(`GRANT USAGE ON SCHEMA pgboss TO ${rt}`);
       await tx.unsafe(`GRANT SELECT ON ALL TABLES IN SCHEMA pgboss TO ${rt}`);
       await tx.unsafe(

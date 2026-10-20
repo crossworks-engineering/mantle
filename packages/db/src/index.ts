@@ -241,7 +241,7 @@ export {
   RUNTIME_DENIED_FUNCTIONS,
   RUNTIME_SYSTEM_FUNCTIONS,
   RUNTIME_LOCK_SQL,
-  PGBOSS_ROUTINES_REVOKE_SQL,
+  revokePgBossRoutines,
   DB_ROLE_SQL,
   dbRoleMode,
   dbRoleNote,

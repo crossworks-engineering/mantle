@@ -59,7 +59,14 @@ Code: `packages/db/src/runtime-role.ts` (the roles, the rights, the URL),
 - `USAGE` on schema `pgboss` and `SELECT` on its tables, read only: the
   extract backlog, the OCR rescan and the integrity page count its jobs.
   migrate makes the schema when it is missing (pg-boss installs into it), so
-  the default privileges cover the tables pgboss:init makes right after;
+  the default privileges cover the tables pgboss:init makes right after.
+  No pg-boss routine: pg-boss makes them with PUBLIC's default `EXECUTE`
+  (`job_table_run` runs its text as SQL, as its caller), so every migrate
+  and pgboss:init, right after pg-boss installs or upgrades, take it from
+  PUBLIC (`revokePgBossRoutines`; a per-schema default privilege cannot take
+  a global default away). pg-boss itself runs as the migrator, their owner.
+  The `runtime_role_lock` integrity row names a routine the runtime or the
+  narrow role may still run;
 - membership in `mantle_owner` without `INHERIT` and without `SET` (a
   member that holds none of its rights and cannot become it), membership in
   `mantle_system` with `SET` only, and nothing else: a hand grant, or one of
@@ -242,17 +249,31 @@ for an exit routed `'narrow'` runs as `mantle_system_narrow`
   `merge`, `with`, `values`, `table`, `show`), or is `SET LOCAL` of an
   allowed setting (a `mantle.*` one, `NARROW_LOCAL_SETTINGS`) or `SET
 TRANSACTION`; no role change in any spelling, no DO block, no `U&` name,
-  no tagged-template placeholder where a function or a setting is named.
-  The gateway's own settings (the actor, its write mode, the check mode, the
-  route, the scope) are set only by the gateway's SET. It guards against
-  mistakes, not deliberate code: a statement written to leave the role can
-  get past any text check. The fix for that is a narrow pool that logs in as
-  the narrow role itself (S7b), so the session holds no other role to go
-  back to;
+  no tagged-template placeholder where a function or a setting is named,
+  no call of a function that runs its text as SQL (`SQL_TEXT_RUNNERS`,
+  shared with readSql: `query_to_xml`, `ts_stat`, pg-boss's
+  `job_table_run`, `dblink` and the rest), no text that never closes or that
+  Postgres may read otherwise. The text is read by the repo's one SQL text
+  reader (`packages/db/src/sql-text.ts`, as Postgres's lexer: nested block
+  comments, a `--` comment a `\r` ends, dollar-quote tags and names with
+  characters that are not ASCII). The gateway's own settings (the actor, its
+  write mode, the check mode, the route, the scope, where a create lands)
+  are set only by the gateway's SET. It guards against mistakes, not
+  deliberate code: a statement written to leave the role can get past any
+  text check, and a fragment a tagged template takes from another
+  postgres.js client (another pool's `sql`) is text this client never sees
+  at all. The fix for that is a narrow pool that logs in as the narrow role
+  itself (S7b), so the session holds no other role to go back to;
+- a narrow transaction's statements go out in the order they are awaited
+  (as postgres.js sends its own; every route's transaction client does the
+  same), so a `SET TRANSACTION` awaited first is the transaction's first
+  statement;
 - no role the app runs as may make a temporary object: `TEMPORARY` on the
-  database is taken from PUBLIC at every migrate (`applyRuntimeGrants`) and
-  granted to none (a function made in `pg_temp` is code the text check
-  never reads).
+  database is taken from PUBLIC and the narrow role at every migrate
+  (`applyRuntimeGrants`) and granted to none (a function made in `pg_temp`
+  is code the text check never reads); a migrate after which the narrow
+  role still holds it (a migrator that neither owns the database nor is a
+  superuser, whose REVOKE only warns) fails.
 
 Who picks it (`packages/db/src/viewer.ts`): `AS_SYSTEM_ROUTE`, a
 `Record<AsSystemReason, 'narrow' | 'full'>`, so a new reason must pick, and

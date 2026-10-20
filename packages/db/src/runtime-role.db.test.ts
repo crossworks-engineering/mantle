@@ -38,7 +38,6 @@ import {
   OWNER_ROLE,
   OWNER_ROLE_FUNCTION,
   RUNTIME_DENIED_FUNCTIONS,
-  PGBOSS_ROUTINES_REVOKE_SQL,
   RUNTIME_LOCK_SQL,
   RUNTIME_ROLE,
   RUNTIME_SYSTEM_FUNCTIONS,
@@ -48,6 +47,7 @@ import {
   ownTables,
   applyRuntimeGrants,
   quotedIdent,
+  revokePgBossRoutines,
   runtimeDatabaseUrl,
   runtimeDeniedTables,
   runtimeRolePassword,
@@ -772,7 +772,7 @@ describe.skipIf(!URL)('the runtime role is not the owner (arch A9)', () => {
       expect(await admin.unsafe(RUNTIME_LOCK_SQL)).toEqual([]);
       // pgboss:init's own statement, after a later install: the same.
       await admin.unsafe(`GRANT EXECUTE ON FUNCTION pgboss.s7a3g_probe_run(text) TO PUBLIC`);
-      await admin.unsafe(PGBOSS_ROUTINES_REVOKE_SQL);
+      await revokePgBossRoutines(admin);
       expect(await can('pgboss.s7a3g_probe_run(text)')).toEqual({ r: false, n: false, p: false });
       // Why pgboss:init revokes after the install: a per-schema default
       // privilege cannot take PUBLIC's global default EXECUTE away.
