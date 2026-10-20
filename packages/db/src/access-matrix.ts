@@ -110,7 +110,7 @@ export type TableAccess = {
    * DELETE). Absent = derived (narrowFor): the runtime role's 'none' or
    * 'read' carried over, a `content` table 'read', a `system` or `admin`
    * table 'all'. Set it only to narrow the derived value further: a value
-   * wider than the runtime role's throws.
+   * wider than the derived one throws.
    */
   narrow?: NarrowAccess;
 };
@@ -134,8 +134,10 @@ export function narrowFor(t: TableAccess): NarrowAccess {
   const cap: NarrowAccess = t.runtime === 'none' ? 'none' : t.runtime === 'read' ? 'read' : 'all';
   const derived: NarrowAccess = cap === 'all' && t.writer === 'content' ? 'read' : cap;
   if (t.narrow === undefined) return derived;
-  if (NARROW_RANK[t.narrow] > NARROW_RANK[cap]) {
-    throw new Error(`${t.table}: narrow '${t.narrow}' is wider than the runtime role's rights`);
+  // Compared with the derived value, not the runtime role's rights: a hand
+  // value on a content table may not reopen its writes.
+  if (NARROW_RANK[t.narrow] > NARROW_RANK[derived]) {
+    throw new Error(`${t.table}: narrow '${t.narrow}' is wider than the derived '${derived}'`);
   }
   return t.narrow;
 }

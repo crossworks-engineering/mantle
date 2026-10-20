@@ -175,7 +175,7 @@ Its rights, made equal to the access matrix at every migrate inside
 - derived when a row sets none: the runtime role's `'none'` stays `'none'`
   and its `'read'` stays `'read'` (definers write those); a `content` table
   is `'read'`; a `system` or `admin` table is `'all'` (`SELECT, INSERT,
-UPDATE, DELETE`). A row may set a narrower value, never a wider one (it
+UPDATE, DELETE`). A row may set a narrower value than the derived one, never a wider one (it
   throws);
 - `USAGE, SELECT` on the sequences its `'all'` tables draw from, never
   `UPDATE` (`setval`);

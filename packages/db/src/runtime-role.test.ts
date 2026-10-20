@@ -266,7 +266,7 @@ describe('the narrow system role rights', () => {
     expect(ACCESS_MATRIX.filter((t) => t.narrow !== undefined)).toEqual([]);
   });
 
-  it('a hand value may only narrow, never widen past the runtime role', () => {
+  it('a hand value may only narrow, never widen past the derived value', () => {
     const t = (x: Partial<TableAccess>): TableAccess => ({
       table: 'public.x',
       writer: 'system',
@@ -274,7 +274,9 @@ describe('the narrow system role rights', () => {
     });
     expect(narrowFor(t({ narrow: 'read' }))).toBe('read');
     expect(narrowFor(t({ narrow: 'none' }))).toBe('none');
-    expect(narrowFor(t({ writer: 'content', narrow: 'all' }))).toBe('all');
+    expect(() => narrowFor(t({ writer: 'content', narrow: 'all' }))).toThrow(/wider/);
+    expect(narrowFor(t({ writer: 'content', narrow: 'read' }))).toBe('read');
+    expect(narrowFor(t({ writer: 'content', narrow: 'none' }))).toBe('none');
     expect(narrowFor(t({ runtime: 'read', narrow: 'none' }))).toBe('none');
     expect(() => narrowFor(t({ runtime: 'read', narrow: 'all' }))).toThrow(/wider/);
     expect(() => narrowFor(t({ runtime: 'none', narrow: 'read' }))).toThrow(/wider/);

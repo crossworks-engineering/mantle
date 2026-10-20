@@ -188,8 +188,10 @@ drop it by hand as the superuser, in the brain's database:
 `DROP OWNED BY mantle_system_narrow; DROP ROLE mantle_system_narrow;`
 (`DROP OWNED` revokes its grants; it owns nothing). A dump taken on this
 release names the role in its grants: restore it with this release's
-db-restore.sh, or make the role first, or `pg_restore` prints one error per
-grant to it (harmless: the role is unused).
+db-restore.sh, or create the role first (`CREATE ROLE mantle_system_narrow
+NOLOGIN`). Without it `pg_restore` prints one error per grant to the role:
+the rows are restored in full, but the N-1 db-restore.sh then exits 3 (the
+a1 audit's LOW-1), so create the role first.
 
 ### Open items
 
