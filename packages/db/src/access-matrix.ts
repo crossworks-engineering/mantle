@@ -143,6 +143,143 @@ export function narrowFor(t: TableAccess): NarrowAccess {
 }
 
 /**
+ * The credential and rights tables and what the narrow system role may do
+ * on each (plan v3.2 S7a part a2), measured: 'all' only where a narrow exit
+ * writes it, with the writer named; every other one narrowed in its matrix
+ * row. A matrix table whose name reads as a credential (CREDENTIAL_NAME)
+ * must be listed here (access-matrix.test.ts), so a new one never defaults
+ * to 'all' unreviewed.
+ */
+export const NARROW_CREDENTIAL_TABLES: Readonly<
+  Record<string, { narrow: NarrowAccess; why: string }>
+> = Object.freeze({
+  'auth.users': {
+    narrow: 'all',
+    why: 'the users area adds, changes and removes a login (POST, PATCH, DELETE /api/users), and a login changes its own password (login-self)',
+  },
+  'public.secrets': { narrow: 'all', why: 'the keys area writes secrets (/api/secrets)' },
+  'public.api_keys': {
+    narrow: 'all',
+    why: 'the keys and connectors areas (/api/keys, MCP connectors), connector-call refreshes an OAuth token, sandbox_publish (admin-area), and systemDb notes last use in a turn',
+  },
+  'public.access_keys': {
+    narrow: 'all',
+    why: "the users area ends a login's sessions (endLoginSessions)",
+  },
+  'public.pdf_passwords': { narrow: 'all', why: 'the keys area writes them' },
+  'public.email_accounts': { narrow: 'all', why: 'the connectors area writes the mail accounts' },
+  'public.telegram_accounts': {
+    narrow: 'all',
+    why: "the assistants area pairs an assistant's bot (/api/agents/:id/telegram)",
+  },
+  'public.channels': {
+    narrow: 'all',
+    why: 'the assistants area attaches a channel to an assistant',
+  },
+  'public.calendar_accounts': {
+    narrow: 'all',
+    why: 'the connectors area writes the calendar accounts',
+  },
+  'public.ms_accounts': {
+    narrow: 'all',
+    why: 'the connectors area (the Microsoft OAuth callback and its token refresh)',
+  },
+  'public.microsoft_config': {
+    narrow: 'all',
+    why: 'the connectors area writes the Microsoft app config',
+  },
+  'public.tailscale_config': { narrow: 'all', why: 'the settings area writes it (/api/network)' },
+  'public.oauth_clients': { narrow: 'all', why: 'the settings area removes an MCP client' },
+  'public.oauth_auth_codes': {
+    narrow: 'all',
+    why: 'a login authorizes an MCP client (login-self, /api/oauth/authorize); the users area ends sessions',
+  },
+  'public.oauth_access_tokens': {
+    narrow: 'all',
+    why: "the users area ends a login's sessions (revokes its tokens)",
+  },
+  'public.mobile_tokens': {
+    narrow: 'all',
+    why: 'the users area revokes a device (/api/users/:id/devices) and ends sessions',
+  },
+  'public.pairing_codes': {
+    narrow: 'all',
+    why: 'a login pairs a phone (login-self, /api/auth/pair)',
+  },
+  'public.member_invites': {
+    narrow: 'all',
+    why: 'the users area invites (/api/team-admin/invites)',
+  },
+  'public.mantle_peers': {
+    narrow: 'all',
+    why: 'the connectors area links brains (/api/peers); peer_call (admin-area) marks a peer contacted',
+  },
+  'public.peer_shares': { narrow: 'all', why: 'the connectors area shares with a peer' },
+  'public.push_subscriptions': {
+    narrow: 'all',
+    why: 'a login subscribes its own devices (login-self, /api/push)',
+  },
+  'public.spaces': {
+    narrow: 'all',
+    why: 'a login added by the users area gets its space (the users_spaces_trg trigger runs as the caller)',
+  },
+  'public.agents': {
+    narrow: 'all',
+    why: 'the assistants, users, settings and connectors areas write assistants; update_persona, agent_grant_tool_group and agent_set_thinking_effort (admin-area)',
+  },
+  'public.contact_share_codes': {
+    narrow: 'read',
+    why: 'written by the public /s/:token/code route and mantle_contact_sharing_set (a definer), never by narrow work',
+  },
+  'public.private_workspaces': {
+    narrow: 'read',
+    why: 'written by mantle_ws_private_workspace (a definer) only',
+  },
+  'public.former_user_workspaces': { narrow: 'read', why: 'written by migrations only' },
+  'public.space_item_homes': {
+    narrow: 'read',
+    why: 'written by the boot step (snapshot-copies.ts, systemWork) only',
+  },
+  'public.archive_client_signin_codes': {
+    narrow: 'none',
+    why: 'an archive (0272): nothing reads or writes it at run time',
+  },
+  'public.archive_client_signin_code_skips': {
+    narrow: 'none',
+    why: 'an archive (0272): nothing reads or writes it at run time',
+  },
+  'public.archive_client_signin_sender_folders': {
+    narrow: 'none',
+    why: 'an archive (0272): nothing reads or writes it at run time',
+  },
+  'public.archive_peer_roles': {
+    narrow: 'none',
+    why: 'an archive (0272): nothing reads or writes it at run time',
+  },
+  'public.embedding_config': {
+    narrow: 'all',
+    why: 'the settings area writes the embedding config',
+  },
+  'public.peer_share_scopes': {
+    narrow: 'all',
+    why: 'the connectors area sets what a peer share reaches',
+  },
+  'public.mantle_heads_key': {
+    narrow: 'none',
+    why: 'the heads key: the runtime role holds no right on it, only definers read it',
+  },
+  'public.archive_mcp_login_tokens': {
+    narrow: 'none',
+    why: 'an archive (0272): nothing reads or writes it at run time',
+  },
+});
+
+/** A table name that reads as a credential or a right: it must be in
+ *  NARROW_CREDENTIAL_TABLES (access-matrix.test.ts). */
+export const CREDENTIAL_NAME =
+  /(secret|password|token|_keys?$|api_key|signin|_codes?$|invite|oauth|_accounts$|_config$|peer|subscription|^auth\.users$)/;
+
+/**
  * What an operation on a row asks of the row's item (mantle_check_row,
  * migration 0280): edit (a Moderator of its home, or a grant with Write
  * on), manage (a Moderator of its home), admin (the scope holds the Admin
@@ -488,7 +625,9 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   },
   // Contact shares (0214): the /s layer reads and writes these on the admin
   // pool, for the brain. No viewer role ever does.
-  none('public.contact_share_codes', 'system'),
+  // Narrow work only reads it: the code is written by the public route
+  // and by mantle_contact_sharing_set (NARROW_CREDENTIAL_TABLES).
+  { ...none('public.contact_share_codes', 'system'), narrow: 'read' },
   none('public.share_access_log', 'system'),
 
   // ── Admin only: the private corpus, credentials, the owner's own memory ───
@@ -652,9 +791,11 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   none('public.archive_space_items', 'system'),
   none('public.archive_space_submissions', 'system'),
   none('public.archive_space_item_bundles', 'system'),
-  none('public.private_workspaces', 'system'),
-  none('public.former_user_workspaces', 'system'),
-  none('public.space_item_homes', 'system'),
+  // Rights-bearing: narrow work only reads them (a definer writes the
+  // private workspace, a boot step the homes; NARROW_CREDENTIAL_TABLES).
+  { ...none('public.private_workspaces', 'system'), narrow: 'read' },
+  { ...none('public.former_user_workspaces', 'system'), narrow: 'read' },
+  { ...none('public.space_item_homes', 'system'), narrow: 'read' },
   // The personal spaces and their items as they folded into the brain
   // (0267, W6b).
   none('public.archive_spaces', 'system'),
@@ -676,12 +817,12 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   none('public.archive_client_logins', 'system'),
   none('public.archive_client_workspace_users', 'system'),
   none('public.archive_client_private_workspaces', 'system'),
-  none('public.archive_client_signin_codes', 'system'),
-  none('public.archive_client_signin_code_skips', 'system'),
-  none('public.archive_client_signin_sender_folders', 'system'),
-  none('public.archive_mcp_login_tokens', 'system'),
+  { ...none('public.archive_client_signin_codes', 'system'), narrow: 'none' },
+  { ...none('public.archive_client_signin_code_skips', 'system'), narrow: 'none' },
+  { ...none('public.archive_client_signin_sender_folders', 'system'), narrow: 'none' },
+  { ...none('public.archive_mcp_login_tokens', 'system'), narrow: 'none' },
   none('public.archive_key_roles', 'system'),
-  none('public.archive_peer_roles', 'system'),
+  { ...none('public.archive_peer_roles', 'system'), narrow: 'none' },
   // The frozen chat and client tables as they were when they were dropped
   // (0274, W8d): the portal read cursors, the member notifications, a
   // login's own chat read cursor, the client report acknowledgements and

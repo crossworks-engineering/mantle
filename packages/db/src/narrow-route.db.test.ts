@@ -127,12 +127,14 @@ describe.skipIf(!URL)('the narrow system route (plan v3.2 S7a)', () => {
   });
 
   it('refuses a content write (noted), writes a system table', async () => {
-    await expect(
-      v.asSystem(
-        () => m.db.execute(sql`update public.nodes set title = title where false`),
-        'admin-area',
+    expect(
+      await failure(
+        v.asSystem(
+          () => m.db.execute(sql`update public.nodes set title = title where false`),
+          'admin-area',
+        ),
       ),
-    ).rejects.toMatchObject({ code: '42501' });
+    ).toMatchObject({ code: '42501' });
     const denied = actor.takeNarrowDenials();
     expect(denied).toHaveLength(1);
     expect(denied[0]!.actor).toBe('system:admin-area');

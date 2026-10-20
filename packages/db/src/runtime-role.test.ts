@@ -4,7 +4,13 @@
  * runtime-role.db.test.ts proves the lock on a real Postgres.
  */
 import { afterEach, describe, expect, it } from 'vitest';
-import { ACCESS_MATRIX, narrowFor, type TableAccess } from './access-matrix';
+import {
+  ACCESS_MATRIX,
+  CREDENTIAL_NAME,
+  NARROW_CREDENTIAL_TABLES,
+  narrowFor,
+  type TableAccess,
+} from './access-matrix';
 import {
   NARROW_DENIED_FUNCTIONS,
   NARROW_ROLE,
@@ -260,10 +266,66 @@ describe('the narrow system role rights', () => {
             : t.writer === 'content'
               ? 'read'
               : 'all';
+      // A hand value (the measured credential and rights tables) only
+      // narrows the derived one.
+      if (t.narrow !== undefined) {
+        expect(t.table in NARROW_CREDENTIAL_TABLES, t.table).toBe(true);
+        continue;
+      }
       expect(narrowFor(t), t.table).toBe(want);
     }
-    // Nothing in the matrix sets it by hand yet.
-    expect(ACCESS_MATRIX.filter((t) => t.narrow !== undefined)).toEqual([]);
+  });
+
+  it('lists every credential and rights table with its narrow value and why; a new one cannot default to all', () => {
+    const byName = new Map(ACCESS_MATRIX.map((t) => [t.table, t]));
+    for (const [table, want] of Object.entries(NARROW_CREDENTIAL_TABLES)) {
+      const t = byName.get(table);
+      expect(t, table).toBeDefined();
+      expect(narrowFor(t!), table).toBe(want.narrow);
+      expect(want.why.length, table).toBeGreaterThan(20);
+    }
+    // A matrix table whose name reads as a credential is listed: a new
+    // credential table fails here until its narrow value is reviewed.
+    const unlisted = ACCESS_MATRIX.map((t) => t.table).filter(
+      (n) => CREDENTIAL_NAME.test(n.replace(/^public\./, '')) && !(n in NARROW_CREDENTIAL_TABLES),
+    );
+    expect(unlisted).toEqual([]);
+    // The a1 audit's list, every one of them.
+    for (const n of [
+      'auth.users',
+      'secrets',
+      'api_keys',
+      'access_keys',
+      'pdf_passwords',
+      'email_accounts',
+      'telegram_accounts',
+      'calendar_accounts',
+      'ms_accounts',
+      'microsoft_config',
+      'tailscale_config',
+      'oauth_clients',
+      'oauth_auth_codes',
+      'oauth_access_tokens',
+      'mobile_tokens',
+      'pairing_codes',
+      'member_invites',
+      'mantle_peers',
+      'peer_shares',
+      'push_subscriptions',
+      'contact_share_codes',
+      'archive_mcp_login_tokens',
+      'archive_client_signin_codes',
+      'spaces',
+      'space_item_homes',
+      'private_workspaces',
+      'former_user_workspaces',
+      'channels',
+      'agents',
+    ]) {
+      expect(n.includes('.') ? n : `public.${n}`, n).toSatisfy(
+        (x: string) => x in NARROW_CREDENTIAL_TABLES,
+      );
+    }
   });
 
   it('a hand value may only narrow, never widen past the derived value', () => {
@@ -323,4 +385,4 @@ describe('the narrow system role rights', () => {
 });
 
 /** The narrow role's table counts: `all` only goes down. */
-const NARROW_COUNTS = { all: 106, read: 32, none: 3 };
+const NARROW_COUNTS = { all: 97, read: 36, none: 8 };
