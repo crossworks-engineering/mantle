@@ -141,6 +141,9 @@ with it in place). docs/update-prod.md, the rollback list, has the line.
 
 ## Pins
 
+- Fix round 1: `historyCodeComments` stays at main's 2335 (main measured the
+  lines this note named itself on the rebase onto v0.300.113; arch:check 0
+  with the pin unchanged). The note below is the first round's.
 - `historyCodeComments` 2338 to 2337 (one counted comment line fewer in the
   files touched). S13 joined `HISTORY_HEADING_CODES`
   (eslint-rules/cleanup-counts.mjs) with this file's heading; the one code
@@ -218,7 +221,7 @@ not read itself.
 - Tree rows: a folder from the trail carries `mayEdit: false`,
   `mayManage: false` (chips): gate `new-inside.ts`, the `tree-rows.tsx`
   droppable and its menu, and `folder-picker.tsx` on `itemAccess(folder)
-  .edit`, so no create, drop, rename, look, move, delete or Grant Access is
+.edit`, so no create, drop, rename, look, move, delete or Grant Access is
   offered there (the brain answers 404 to each anyway).
 - Files rail (`folder-tree-rail.tsx`): its menu (look, rename, delete) and
   upload drop on `FolderRow.mayEdit` / `mayManage`, which
@@ -247,3 +250,119 @@ not read itself.
   client answers "parent folder ... not found" for the path of a folder the
   caller does not read, where a free path is made) stays: the trail is for
   a login's own session, and the tools are unchanged.
+
+## Fix round 1
+
+Rebased on main 6e0597610 (v0.300.113); 0311 is still free on main, so the
+number and `when` (1790197980000) stay and the body changed in place. Head
+b23465a5a before this note.
+
+What changed, against the audit at 30b39aed8:
+
+- MED-1: upsertFile's overwrite in a folder the caller does not read asks
+  `trailForCaller(ownerId)` first (packages/files/src/ops/files.ts), so an
+  API key, a turn and an OAuth MCP client are refused as on main. Cell
+  (s13-folder-trail-sweep): the member's key (POST /api/v1/files,
+  replace=true) 400, its OAuth MCP `file_create` overwrite an error
+  (parent folder not found), its turn with an assistant of W the same, the
+  file unchanged after each; its own cookie session's upload 200.
+- Owner: `trailForCaller(ownerId)` is false for the brain's anchor login
+  (the owner's session runs as login(rw) in a workspace scope, so "no
+  scope" alone did not catch it) and for a session with no workspace scope
+  or no login in it; the owner's tree and Files statements are main's.
+  Unit cells in folder-trail.test.ts.
+- One definer call per page (0311 `under`): the folders one and two levels
+  below `under` that the scope does not read itself (a per-login folder only
+  for its own login). When there is none (the owner, an Admin user, a scope
+  that reads the folders it holds) no row is read; otherwise the rows the
+  scope reads below `under` are read first (the prefix test is no path
+  index term, so the read_ws index finds them), cut to those two levels,
+  and only the folders on the way are answered. selectFolders folds it in
+  (no lateral per folder): `tr` holds the parent and both levels, the page
+  lists its first level, `folderCount` counts the second level with the
+  subfolders the reader reads.
+- Exact paths and ids keep the EXISTS probe (crumbs, a folder by id, the
+  rail), now down the path index only (`(read_ws && ws) IS TRUE`): with the
+  read_ws index a wide scope paid that index once per rail folder.
+- Rail and Files list: every trail folder's counts in one grouped query
+  (`folderCountsFor`), the exact paths as one text[] parameter
+  (`textArraySql`, LOW-6; unit cell: 70,000 paths bind as one parameter).
+- LOW-1: a named folder must be the scope's login's or nobody's (all three
+  ways); cell in folder-trail-0311.db.test.ts (folder q).
+- LOW-3: GET /api/files/folders asks the trail only for a parent that is an
+  ltree path; `*` and `files.*` list as main did (200). Sweep cell.
+- LOW-4: upsertFile refuses a new row with no parent before staging (a
+  check-then-delete race never inserts at a hidden path). No cell (the race
+  is not reachable from a test without a hook).
+- LOW-5: the definer names its arguments by the function's name.
+- LOW-2 (timing by hidden subtree size): gone for pages (reads first); the
+  by-id and crumb probes still walk the named folder's subtree until a row
+  the scope reads, as the brief kept.
+
+Definer test (`under` now answers both levels, unread only): the member
+under the root `a`, `b`; under `v` nothing (it reads v and v.d); the other
+login `a`, `b`, `p`, `q`.
+
+### Perf, end to end (createApp, cookie sessions)
+
+A throwaway brain in s13-pg: 202,840 nodes (2,220 folders under notes, 20
+top, 10 mid, 10 leaf each; 200,000 notes in the leaves; 620 folders under
+files, a file in each of the 600 deepest). All of it read by Admin. Small
+scope: 50 notes, all in t1, and the 600 files. Wide scope: t1..t10 whole
+(folders and 100,000 notes), about 50 notes spread over every top, the 600
+files. The GIN index on read_ws made as the runner makes it. Median of 25
+(3 for a page over 1 s), the same harness on main and on the branch:
+
+| page            | main                    | branch b23465a5a |
+| --------------- | ----------------------- | ---------------- |
+| owner root      | 220 ms                  | 203 ms           |
+| owner t1        | 268 ms                  | 246 ms           |
+| owner rail      | 15.8 s (main's own N+1) | 15.9 s           |
+| small root      | 3.6 ms, 0 folders       | 21.8 ms, 1       |
+| small t1        | 404                     | 35.7 ms          |
+| small rail      | 3.2 ms, 0 folders       | 32.0 ms, 620     |
+| small Files top | 3.4 ms, 0               | 10.6 ms, 20      |
+| wide root       | 88.8 ms, 10 folders     | 204.9 ms, 20     |
+| wide t1         | 143.8 ms                | 144.1 ms         |
+| wide t11        | 404                     | 268.4 ms         |
+| wide rail       | 9.4 ms, 0 folders       | 102.9 ms, 620    |
+
+The audit's figures (end to end too): owner 42 to 90 ms, Files rail with 600
+trail folders about 1 s. Owner now equals main; the rail has no N+1; a small
+scope is within about +20 ms. A wide scope that reads most of a large brain
+and also holds rows below folders it does not read pays the read of every
+row it reads below the page (wide root +116 ms; wide t11, a hidden top with
+a few granted notes, 268 ms). Left: see below.
+
+### Gates (fix round 1)
+
+Mac (DATABASE_URL unset), at 1326c0842 (the round's code but the last two
+definer commits, which change SQL and one test only): `pnpm -r typecheck` 0,
+`pnpm lint` 0, `pnpm format:check` 0, `pnpm docs:check` 0, `pnpm
+arch:check` 0, `pnpm -C server/web build` 0, `pnpm exec vitest run server
+packages eslint-rules --maxWorkers=3` 0; at 2989b01ee: packages db, files,
+content `tsc --noEmit` 0, folder-trail.test.ts 0.
+
+Workstation (own clone ~/s13-work/mantle, own container s13-pg on 56413,
+pgvector pg18, max_connections=450, made as CI makes it, MANTLE_CHECK_FLOOR
+=keep), at b23465a5a: folder-trail-0311.db.test.ts + folder-trail.test.ts 0
+(17 tests), s13-folder-trail-sweep.db.test.ts 0 (11 tests).
+
+NOT run this round: full DB vitest, test:actor-off, test:actor-on,
+test:edit-on, test:matrix, test:runtime-role, the A8 oracles against main,
+CI. The clone and s13-pg are left up for them (stop and remove by exact
+name when done: `docker rm -fv s13-pg`, `rm -rf ~/s13-work`).
+
+### Left after fix round 1
+
+1. The DB gate set and the A8 oracle hashes against main (above), then CI.
+2. Perf, wide scope: a page under which the scope reads very many rows and
+   does not read some folder pays one read of those rows (+116 ms at the
+   root of the wide brain), and a hidden top's page by id still probes its
+   subtree (268 ms). Options for the next round: count first and switch to
+   per-candidate path probes when the scope's rows below `under` are many
+   (a capped read), or let the page's `under` read only below the
+   candidates (`path ? lquery[]` with the read_ws index, if the planner
+   ANDs the two bitmaps). Measure with the harness above (kept outside the
+   repo, ~/s13-work/s13-perf.db.test.ts).
+3. Jackdaw pair step, unchanged (see above).
