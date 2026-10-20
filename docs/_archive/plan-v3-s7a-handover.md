@@ -690,5 +690,30 @@ systemd-run --user, --maxWorkers=3, one at a time, switch on unless said:
 narrow-route.db.test.ts + narrow-area-routes.db.test.ts 1 (3 cells: the
 denial noted twice through drizzle's wrapper, two sweep rows' setup) then 0
 (19 passed); the sweep on the round 2 sources 1 (9 of 9 rows failed: the
-proof); full DB vitest with MANTLE_NARROW_DUMP 0 (1130 files, 13907
-passed, 1 skipped, no narrow denial).
+proof); then on efe332bde: full DB vitest with MANTLE_NARROW_DUMP 0 (1130
+files, 13907 passed, 1 skipped, no narrow denial), test:actor-off 0 (1191
+passed), test:actor-on 0 (371), test:edit-on 0 (541), test:matrix 0 (8),
+test:runtime-role in full 1 (2796 passed, 1 failed, 2 files: scope.db.test
+`ensureConcurrentIndexes` "tuple concurrently updated", and
+client-sourced-gate.db.test's setup, an item_grants workspace FK
+violation; neither a permission error), the two files rerun once under the
+same config 0 (14 passed): known flakes, both runs reported; full DB vitest
+with MANTLE_NARROW_SYSTEM=0 0 (1130 files, 13907 passed, 1 skipped: the
+switch-off proof, the nine sweep rows pass on the full route).
+
+#### Open items, in item order
+
+1. HIGH-1: done. Other area routes no suite drives may still write content
+   on the narrow route (plan 2.1 risk 6); a3's telemetry and a new sweep row
+   per such route are the limit.
+2. MED-1: done (a tagged template's denial caught without a savepoint is
+   seen only as the transaction's error).
+3. MED-2: done; P3 (a function that leaves the role and takes it back) is
+   the named known limit for S7b.
+4. MED-3: the a2 part done; the trigger predicate is a3's.
+5. MED-4: five content writers denied (11 entries); left: the trim to the
+   measured set (mantle_brain_id, mantle_ws_set_moderator, plus the
+   functions of the narrow-writable tables' defaults and checks) and the
+   pin as an allowlist.
+6. LOWs: done (LOW-3 by hand on the dev box after the merge).
+7. Round trips: written above; the decision is S7b's.
