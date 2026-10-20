@@ -3,7 +3,12 @@
 // MED, member logins Phase 1). The web token route still admits members.
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const state = vi.hoisted(() => ({ role: 'admin' as string, inserts: 0 }));
+const state = vi.hoisted(() => ({
+  role: 'admin' as string,
+  // A user of the Admin workspace (the Admin pair's other half).
+  adminMember: true,
+  inserts: 0,
+}));
 
 vi.mock('@mantle/db', () => {
   const chain: Record<string, unknown> = {};
@@ -12,7 +17,8 @@ vi.mock('@mantle/db', () => {
     state.inserts += 1;
     return chain;
   };
-  chain['then'] = (resolve: (v: unknown[]) => void) => resolve([{ role: state.role }]);
+  chain['then'] = (resolve: (v: unknown[]) => void) =>
+    resolve([{ role: state.role, adminMember: state.adminMember }]);
   return {
     db: { select: () => chain, insert: () => chain, update: () => chain },
     authUsers: { id: 'id', role: 'role', lastLoginAt: 'last_login_at' },
@@ -22,6 +28,9 @@ vi.mock('@mantle/db', () => {
   };
 });
 vi.mock('@/lib/auth', () => ({
+  // The Admin pair as session.ts answers it.
+  adminLogin: (r: { role: string; adminMember: boolean }) =>
+    r.role === 'admin' && r.adminMember === true,
   loginWithPassword: vi.fn(async () => 'login-1'),
   buildMobileToken: () => ({ value: 'tok', expiresInSec: 60, expiresAt: new Date() }),
 }));
@@ -48,6 +57,7 @@ const login = (adminsOnly?: boolean) =>
 
 beforeEach(() => {
   state.role = 'admin';
+  state.adminMember = true;
   state.inserts = 0;
 });
 
@@ -75,6 +85,14 @@ describe('token login: adminsOnly', () => {
     const res = await login(true);
     expect(res.status).toBe(200);
     expect(state.inserts).toBe(1);
+  });
+
+  it('refuses a role=admin login taken out of Admin 401 (the Admin pair, not the role)', async () => {
+    state.adminMember = false;
+    const res = await login(true);
+    expect(res.status).toBe(401);
+    expect(((await res.json()) as { error: string }).error).toBe('Invalid email or password.');
+    expect(state.inserts).toBe(0);
   });
 
   it('admits a member where the route does not ask (the web token route)', async () => {

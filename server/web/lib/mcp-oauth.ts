@@ -12,9 +12,10 @@
  * rest, constant-time comparisons. HTTPS enforcement lives in the route layer.
  */
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
-import { and, eq, gt, isNull, lt } from 'drizzle-orm';
+import { and, eq, gt, isNull, lt, sql } from 'drizzle-orm';
 import { lockOauthActor, type OauthExec as Exec } from './oauth-lock';
 import { bearerFrom } from './auth/request';
+import { adminLogin } from './auth/session';
 import {
   authUsers,
   db,
@@ -255,14 +256,17 @@ async function connectingLogin(
       disabledAt: authUsers.disabledAt,
       email: authUsers.email,
       sessionEpoch: authUsers.sessionEpoch,
+      adminMember: sql<boolean>`"public"."mantle_login_is_admin"(${actorId}::uuid)`,
     })
     .from(authUsers)
     .where(eq(authUsers.id, actorId))
     .limit(1);
   if (!row || row.disabledAt || !row.email) return null;
+  // An Admin grant (no epoch) needs an Admin login: the Admin pair
+  // (adminLogin: role admin AND a user of Admin now, read with the row).
   const may =
     sessionEpoch === null
-      ? row.role === 'admin'
+      ? adminLogin({ role: row.role, adminMember: row.adminMember === true })
       : row.role === 'member' && row.sessionEpoch === sessionEpoch;
   return may ? { id: actorId, email: row.email } : null;
 }

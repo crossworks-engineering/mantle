@@ -162,8 +162,10 @@ async function callerFromAccessKey(req: Request, token: string): Promise<McpCall
   const keyWrite = key.access === 'read_write';
   let caller: McpCaller | null;
   // The key acts as its login as the login is now (W8a: no role is kept on
-  // the key; verifyAccessKey read the row).
-  if (key.login.role === 'admin') {
+  // the key; verifyAccessKey read the row). An Admin login is the Admin
+  // pair (adminLogin: role admin AND a user of Admin now, read with the
+  // row); any other login takes the member path, which serves a member only.
+  if (adminLogin(key.login)) {
     caller = {
       role: 'admin',
       anchorId,

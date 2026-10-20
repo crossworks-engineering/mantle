@@ -349,4 +349,71 @@ describe.skipIf(!URL)('the handlers that ask adminFacts of the Login', () => {
       mem: [false, false],
     });
   });
+
+  it("an MCP key's and an Admin OAuth grant's caller, the companion's sign-in: the Admin pair, not the role", async () => {
+    const { loadLoginRow } = await import('./login-row');
+    const { mintAccessKey } = await import('../access-keys');
+    const { resolveMcpCaller } = await import('../mcp-auth');
+    const { actorMayConnect } = await import('../mcp-oauth');
+    const { handleTokenLogin } = await import('../token-login');
+    const roleOf = async (id: string) => (await loadLoginRow(id))!.role;
+    // An MCP key acts as its login: an Admin caller, a member's, or none.
+    const keyCaller = await table(async (id) => {
+      const made = await mintAccessKey({
+        name: `${tag} cell`,
+        loginId: id,
+        access: 'read',
+        areas: null,
+        riskyTools: [],
+        expiresAt: null,
+        createdBy: id,
+        maxLive: 10,
+      });
+      if (!made) throw new Error(`no key for ${id}`);
+      const req = new Request('http://x/api/mcp', {
+        method: 'POST',
+        headers: { authorization: `Bearer ${made.key}` },
+      });
+      const role = await roleOf(id);
+      const before = role === 'admin' ? 'admin' : role === 'member' ? 'member' : null;
+      return [before, (await resolveMcpCaller(req))?.role ?? null];
+    });
+    expect(keyCaller).toEqual({
+      adm: ['admin', 'admin'],
+      lim: ['admin', 'admin'],
+      out: ['admin', null], // narrower: not an Admin caller, and no member
+      memIn: ['member', 'member'],
+      mem: ['member', 'member'],
+    });
+    // An Admin OAuth grant (no session epoch) connects only an Admin login.
+    const connect = await table(async (id) => [
+      (await roleOf(id)) === 'admin',
+      await actorMayConnect(id, null),
+    ]);
+    expect(connect).toEqual(NARROWS_OUT);
+    // The old companion's sign-in (POST /api/auth/mobile-login): Admin only,
+    // a member hears "Update the app".
+    const signIn = await table(async (id) => {
+      const req = new Request('http://x/api/auth/mobile-login', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ email: emailOf(id), password: 'first password 1' }),
+      });
+      const res = await handleTokenLogin(req, {
+        path: '/api/auth/mobile-login',
+        channel: 'mobile',
+        defaultLabel: 'cell',
+        adminsOnly: true,
+      });
+      const role = await roleOf(id);
+      return [role === 'admin' ? 200 : 426, res.status];
+    });
+    expect(signIn).toEqual({
+      adm: [200, 200],
+      lim: [200, 200],
+      out: [200, 401], // narrower: no Admin bearer for a login outside Admin
+      memIn: [426, 426],
+      mem: [426, 426],
+    });
+  });
 });

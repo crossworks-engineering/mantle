@@ -136,8 +136,9 @@ import {
 const CLIENT = '11111111-1111-4111-8111-111111111111';
 const OWNER = '22222222-2222-4222-8222-222222222222';
 const ACTOR = '33333333-3333-4333-8333-333333333333';
-/** The login row actorMayConnect reads: a usable admin. */
-const ADMIN = { role: 'admin', disabledAt: null, email: 'a@example.com' };
+/** The login row actorMayConnect reads: a usable Admin login (the Admin
+ *  pair: role admin and a user of Admin). */
+const ADMIN = { role: 'admin', disabledAt: null, email: 'a@example.com', adminMember: true };
 
 function tokenRow(overrides: Partial<Record<string, unknown>> = {}) {
   return {
@@ -290,6 +291,7 @@ describe('refreshAccessToken — concurrency-safe rotation', () => {
 describe('a grant lives only as long as its login is a usable admin', () => {
   const locked: [string, unknown[]][] = [
     ['demoted to member', [{ ...ADMIN, role: 'member' }]],
+    ['taken out of Admin', [{ ...ADMIN, adminMember: false }]],
     ['disabled', [{ ...ADMIN, disabledAt: new Date() }]],
     ['deleted', []],
   ];

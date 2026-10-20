@@ -475,6 +475,24 @@ describe('the repo', () => {
     expect(reads['server/web/lib/pair-code.ts']).not.toContain(claim);
   });
 
+  it("an MCP key's Admin caller, an Admin OAuth grant and the companion's sign-in ask the Admin pair", () => {
+    const reads = detail.loginRoleDecisionReads;
+    const text = (path: string) => texts.find((t) => t.path === path)!.text;
+    const lineOf = (path: string, needle: string) =>
+      text(path)
+        .split('\n')
+        .findIndex((l) => l.includes(needle)) + 1;
+    for (const [path, needle] of [
+      ['server/web/lib/mcp-auth.ts', 'if (adminLogin(key.login)) {'],
+      ['server/web/lib/mcp-oauth.ts', '? adminLogin({ role: row.role, adminMember'],
+      ['server/web/lib/token-login.ts', '!(login && adminLogin({ role: login.role'],
+    ] as const) {
+      const at = lineOf(path, needle);
+      expect(at, path).toBeGreaterThan(0);
+      expect(reads[path] ?? [], path).not.toContain(at);
+    }
+  });
+
   it('finds no TypeScript area rule: SQL decides (plan v3.2: areasOf, areasFromLimits and requireArea`s list rule went)', () => {
     expect(detail.tsAreaRules).toEqual({});
   });

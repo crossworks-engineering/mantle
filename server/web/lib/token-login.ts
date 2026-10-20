@@ -2,7 +2,7 @@ import { NextResponse } from '../server/http-compat';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { db, authUsers, mobileTokens, eq, sql } from '@mantle/db';
-import { buildMobileToken, loginWithPassword } from '@/lib/auth';
+import { adminLogin, buildMobileToken, loginWithPassword } from '@/lib/auth';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
 import { AUTH_BODY_CEILING_BYTES } from '@/lib/body-limit';
 import { brainIdField } from '@/lib/brain-identity';
@@ -87,7 +87,10 @@ export async function handleTokenLogin(
   const [login] =
     opts.adminsOnly || opts.withRole
       ? await db
-          .select({ role: authUsers.role })
+          .select({
+            role: authUsers.role,
+            adminMember: sql<boolean>`"public"."mantle_login_is_admin"(${userId}::uuid)`,
+          })
           .from(authUsers)
           .where(eq(authUsers.id, userId))
           .limit(1)
@@ -96,8 +99,13 @@ export async function handleTokenLogin(
   // exists. No token is minted. A member on the old companion's route: the
   // app is older than the workspaces contract (W7e, plan 7.3), 426 "Update
   // the app". A login that is gone by now is refused like a wrong
-  // password (only admins and members sign in with one since W8a).
-  if (opts.adminsOnly && login?.role !== 'admin') {
+  // password (only admins and members sign in with one since W8a). An
+  // Admin login is the Admin pair (adminLogin: role admin AND a user of
+  // Admin now, read with the row).
+  if (
+    opts.adminsOnly &&
+    !(login && adminLogin({ role: login.role, adminMember: login.adminMember === true }))
+  ) {
     if (login?.role === 'member') return updateTheAppResponse();
     return NextResponse.json({ error: AUTH_FAILED_MESSAGE }, { status: 401 });
   }
