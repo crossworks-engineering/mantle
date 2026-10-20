@@ -984,7 +984,8 @@ export async function narrowFunctionAllowlist(sql: Sql): Promise<string[]> {
  * PUBLIC and every viewer role), CONNECT on the database, and default
  * privileges so a table a later migration makes is the runtime role's at
  * once. CREATE on public is taken from PUBLIC: the runtime role may make
- * nothing there.
+ * nothing there. TEMPORARY on the database is taken from PUBLIC too and
+ * granted to none: no role the app runs as makes a temporary object.
  *
  * And mantle_owner's: USAGE on the schemas, every right on the tables and
  * EXECUTE on every function. Nobody logs in as it, but Postgres runs a
@@ -1004,6 +1005,15 @@ export async function applyRuntimeGrants(sql: Sql): Promise<void> {
       const [db] = await tx<{ name: string; me: string }[]>`
         select current_database() as name, current_user as me`;
       await tx.unsafe(`REVOKE CREATE ON SCHEMA public FROM PUBLIC`);
+      // Temporary objects: PUBLIC has TEMPORARY on a database by default, so
+      // every role (the narrow role too) could make a function in pg_temp
+      // and call it, code no text check reads. No role the app runs as
+      // makes a temporary object (the measured suites: none), so it is
+      // granted to none; the migrator keeps it as the database's owner or a
+      // superuser. Here and not in a migration: the database's name is the
+      // box's own, and a restore into a fresh database (no --create) starts
+      // with PUBLIC's default again, which the next migrate takes back.
+      await tx.unsafe(`REVOKE TEMPORARY ON DATABASE "${db!.name}" FROM PUBLIC`);
       await tx.unsafe(`GRANT CONNECT ON DATABASE "${db!.name}" TO ${rt}`);
       const ow = `"${OWNER_ROLE}"`;
       await tx.unsafe(`GRANT USAGE ON SCHEMA ${schemas} TO ${ow}`);

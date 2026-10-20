@@ -36,6 +36,7 @@ import {
 } from './role-tx';
 import { joinedBegin, writeRoleBegin } from './role-runner';
 import { checkedUuidOrEmpty, onLoginWritePool, uuidArrayLiteral } from './write-route';
+import { gatewaySettings } from './narrow-route';
 
 type PgSql = ReturnType<typeof postgres>;
 
@@ -297,6 +298,18 @@ function writeScopeSettings(scope: SystemPoolScope) {
                        set_config('mantle.write_mode', ${writeMode}, true)`;
 }
 
+/** Send a write scope's SET (writeScopeSettings) on a system-pool
+ *  transaction: the gateway's own, so on the narrow route it may name the
+ *  scope's settings (narrow-route.ts gatewaySettings). */
+async function sendWriteScope(
+  tx: PostgresJsDatabase<typeof schema>,
+  scope: SystemPoolScope,
+): Promise<void> {
+  await gatewaySettings(async () => {
+    await tx.execute(writeScopeSettings(scope));
+  });
+}
+
 /** THE one system-pool transaction in a login's scope set by hand, for a
  *  workspace definer that asks the acting login (0307) where no request
  *  scope carries one. Each caller is pinned (eslint-rules/scope-settings.mjs):
@@ -306,7 +319,7 @@ export function systemPoolTxInScope<T>(
   fn: (tx: PostgresJsDatabase<typeof schema>) => Promise<T>,
 ): Promise<T> {
   return getAdminDb().transaction(async (tx) => {
-    await tx.execute(writeScopeSettings(scope));
+    await sendWriteScope(tx, scope);
     return fn(tx);
   });
 }
@@ -338,7 +351,7 @@ function systemPoolTx<T>(fn: (tx: PostgresJsDatabase<typeof schema>) => Promise<
   return openSystemTx(
     (run) =>
       getAdminDb().transaction(async (tx) => {
-        if (writeScope) await tx.execute(writeScopeSettings(writeScope));
+        if (writeScope) await sendWriteScope(tx, writeScope);
         if (homeSettings) {
           await tx.execute(
             sqlTag`select set_config('mantle.create_ws', ${homeSettings[0]}, true),
