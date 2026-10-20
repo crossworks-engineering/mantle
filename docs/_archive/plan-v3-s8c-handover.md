@@ -571,3 +571,44 @@ reader. Every expected answer is unchanged.
 - `ownerCallerWithLogin`, `chatLoginCaller` (the Telegram chat routes) and
   `publicLoginCaller` (logout, change password, pairing) stay as legacy
   readers; nothing in them decides Admin.
+
+### Gates (round 2) and the state at hand-over
+
+Mac (DATABASE_URL unset): on 09ae5c563 typecheck 0, lint 0, format 0,
+docs 0, arch 0, server/web build 0, unit 1 (the A10 body and error sweeps
+stood in the scope's database with a row that had no `admin`, so
+adminFacts answered no for the Admin user: fixed in 3f02a0a0c, test files
+only); on 3f02a0a0c typecheck 0, lint 0, format 0, unit 0 (858 files
+passed, 270 skipped). The pre-push `pnpm verify` passed (exit 0).
+
+Workstation (own clone `s8c-c2r2-clone` at 09ae5c563, own `s8c-c2r2-pg`,
+pgvector pg18, max_connections=450, port 56211 checked free; both removed
+at hand-over; logs kept in `~/s8c-c2r2-logs`): the admin-facts cells
+(both files) 0 (warn) and 0 (actor-on config). Full DB vitest 1: 8 files
+of 1128, stopped there (no later suite ran):
+
+- `workspaces.db.test.ts` (21), `grants.db.test.ts` (14),
+  `threads.db.test.ts` (3), `w7c-chat.db.test.ts` (4): 500s and
+  "chatCaller ... answered no chat login" / "no chatCaller export on the
+  @/lib/auth mock": these tests stand in `loginCaller` or `chatLoginCaller`
+  and call the handlers; the routes now read `anyLoginCaller()` and
+  `chatCaller()`. Their stand-ins need the new readers (as the unit tests
+  got in this round). Not run on the Mac (database only).
+- `a10-body-sweep`, `a10-error-sweep`: the head predates 3f02a0a0c.
+- `a4-guard-sweep` (the "cells that wanted a database" test) and
+  `packages/runtime/src/heartbeats/tools.test.ts`: the run script exported
+  `DATABASE_URL` for the whole run (it should be set for init and migrate
+  only, as round 1 ran); both expect no database there. Rerun without it.
+
+Left for round 3, in order: fix the four DB test files' stand-ins; rerun
+the full DB vitest (DATABASE_URL unset for vitest), test:actor-off,
+test:actor-on, test:edit-on, test:matrix and test:runtime-role
+(`pnpm test:x --maxWorkers=3`, no `--`), the guard and role sweeps
+byte-compared; CI green; then item 5 below.
+
+One named changed answer to rule on: POST /api/assistant/turn and
+POST /api/assistant/transcribe ask adminFacts at the top of the handler;
+if that one statement fails (a database fault), it answers no, so an
+Admin user hears the fixed error sentence in place of the provider's
+detail (display only, fail closed). On main the detail came from the
+session's role with no database read.
