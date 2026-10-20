@@ -16,15 +16,24 @@
 -- dates). Of those, only the ones the caller names:
 --  - `under`: the folders one and two levels below the folder at that path
 --    (a page's folders and what each of them unfolds to) that the scope does
---    not read itself (the ones it reads, it lists). When there is such a
---    folder, the rows the scope reads below `under` are read first (the
---    read_ws index), cut to those two levels, and only those folders on the
---    way are answered, so the work is the rows the scope reads there, never
---    the size of a hidden subtree; when there is none, no row is read.
+--    not read itself (the ones it reads, it lists). With no such folder, no
+--    other row is read. Otherwise the rows the scope reads below `under` are
+--    read first (the read_ws index), at most 5000 of them: when that is all
+--    of them, every such folder on the way to one is answered, at both
+--    levels. When the scope reads more there (a wide scope), each such
+--    folder one level down is probed down the path index instead, the
+--    deepest way first, and answered with the folder below it the probe
+--    went through when the scope does not read that one; a folder two levels
+--    down under a folder the scope reads is probed on its own. So the work
+--    is bounded by the rows the scope reads there or by the size of the
+--    folders it does not read, never both. (With a wide scope a folder on
+--    the way may have more folders on the way below it than are answered
+--    with it; they are answered when it is opened.)
 --  - `paths`: the folders at those exact paths (a chain of crumbs).
 --  - `folder`: the folder with that id.
 -- For an exact path or an id, one probe below each named folder (the path
--- index). So the caller can ask for one page, a chain of crumbs, or one
+-- index). The plans are made for each call (plan_cache_mode): a plan made
+-- once for every scope reads a wide scope's rows for a small one. So the caller can ask for one page, a chain of crumbs, or one
 -- folder, never a whole subtree, and a folder above nothing the scope reads
 -- is never answered, whatever is named. A path the scope reads holds every
 -- label of the folders above it, so what this adds is their ids and names.
@@ -44,76 +53,137 @@ SET LOCAL lock_timeout = '30s';
 --> statement-breakpoint
 CREATE OR REPLACE FUNCTION "public"."mantle_folder_trail"(owner uuid, under text, paths text[], folder uuid)
   RETURNS TABLE ("id" uuid, "path" text, "title" text)
-  LANGUAGE sql STABLE SECURITY DEFINER
-  SET search_path = "public", pg_temp AS $$
-  -- The gate: a scope with a login, on this brain. No row here, and nothing
-  -- below reads a row.
-  WITH s AS MATERIALIZED (
-    SELECT "public"."mantle_scope_ws"() AS ws, "public"."mantle_scope_login_id"() AS login
-     WHERE "public"."mantle_scope_active"() AND "public"."mantle_scope_login_id"() IS NOT NULL
-       AND "mantle_folder_trail"."owner" = "public"."mantle_brain_id"()
-  ),
-  u AS MATERIALIZED (
-    SELECT "mantle_folder_trail"."under"::ltree AS p, nlevel("mantle_folder_trail"."under"::ltree) AS l
-      FROM s WHERE "mantle_folder_trail"."under" IS NOT NULL
-  ),
-  -- Below `under`: the folders one and two levels down that the scope does
-  -- not read itself (a per-login folder only for its own login). With none,
-  -- nothing more is read (the owner's and an Admin user's pages, and a
-  -- scope that reads the folders it holds).
-  cand AS MATERIALIZED (
-    SELECT f."id", f."path", f."title" FROM s, u, "public"."nodes" f
+  LANGUAGE plpgsql STABLE SECURITY DEFINER
+  SET search_path = "public", pg_temp
+  SET plan_cache_mode = force_custom_plan AS $$
+#variable_conflict use_column
+DECLARE
+  ws uuid[];
+  who uuid;
+  u ltree;
+  l int;
+  cand ltree[];
+  n int;
+  ways ltree[];
+  -- Up to this many rows the scope reads below `under` are read in one go;
+  -- above it each candidate is probed instead (see the header).
+  cap constant int := 5000;
+BEGIN
+  -- The gate: a scope with a login, on this brain. Otherwise no row is read.
+  IF NOT "public"."mantle_scope_active"() THEN RETURN; END IF;
+  who := "public"."mantle_scope_login_id"();
+  IF who IS NULL OR "mantle_folder_trail"."owner" IS DISTINCT FROM "public"."mantle_brain_id"() THEN
+    RETURN;
+  END IF;
+  ws := "public"."mantle_scope_ws"();
+
+  IF "mantle_folder_trail"."under" IS NOT NULL THEN
+    u := "mantle_folder_trail"."under"::ltree;
+    l := nlevel(u);
+    -- The candidates: the folders one and two levels below `under` that the
+    -- scope does not read itself (a per-login folder only for its own
+    -- login). With none, nothing more is read (the owner's and an Admin
+    -- user's pages, and a scope that reads the folders it holds).
+    SELECT array_agg(f."path") INTO cand FROM "public"."nodes" f
      WHERE f."owner_id" = "mantle_folder_trail"."owner" AND f."type" = 'branch'
-       AND f."path" ~ (u.p::text || '.*{1,2}')::lquery
-       AND (f."login_id" IS NULL OR f."login_id" = s.login)
-       AND NOT (f."read_ws" && s.ws)
-  ),
-  -- The rows the scope reads below `under`, first: the prefix test is no
-  -- path index term, so they are found by the read_ws index, never by a walk
-  -- of every row below `under`; each cut to the two levels below it.
-  reads AS MATERIALIZED (
-    SELECT DISTINCT subpath(r."path", 0, least(nlevel(r."path"), u.l + 2)) AS p
-      FROM s, u, "public"."nodes" r
-     WHERE EXISTS (SELECT 1 FROM cand)
-       AND r."owner_id" = "mantle_folder_trail"."owner"
-       AND r."read_ws" && s.ws AND (r."login_id" IS NULL OR r."login_id" = s.login)
-       AND nlevel(r."path") > u.l AND subpath(r."path", 0, u.l) = u.p
-  ),
-  ways AS (
-    SELECT x.p FROM reads x
-    UNION
-    SELECT subpath(x.p, 0, u.l + 1) FROM reads x, u WHERE nlevel(x.p) > u.l + 1
-  ),
-  below AS (
-    SELECT c."id", c."path", c."title" FROM cand c WHERE c."path" IN (SELECT w.p FROM ways w)
-  ),
-  named AS (
-    SELECT f."id", f."path", f."title", f."read_ws", f."login_id" FROM s, "public"."nodes" f
-     WHERE f."owner_id" = "mantle_folder_trail"."owner" AND f."type" = 'branch'
-       AND f."path" = ANY ("mantle_folder_trail"."paths"::ltree[])
-    UNION
-    SELECT f."id", f."path", f."title", f."read_ws", f."login_id" FROM s, "public"."nodes" f
-     WHERE f."id" = "mantle_folder_trail"."folder"
-       AND f."owner_id" = "mantle_folder_trail"."owner" AND f."type" = 'branch'
-  ),
-  probed AS (
-    SELECT n."id", n."path", n."title"
-      FROM s, named n
-     WHERE (n."login_id" IS NULL OR n."login_id" = s.login)
-       AND ((n."read_ws" && s.ws)
-            -- Down the path index from the named folder (the read test is
-            -- kept off the read_ws index: for a wide scope that index holds
-            -- most of the brain, and a probe per named folder would read it
-            -- each time).
-            OR EXISTS (
-              SELECT 1 FROM "public"."nodes" r
-               WHERE r."owner_id" = "mantle_folder_trail"."owner" AND r."path" <@ n."path"
-                 AND (r."read_ws" && s.ws) IS TRUE
-                 AND (r."login_id" IS NULL OR r."login_id" = s.login)))
-  )
-  SELECT b."id", b."path"::text, b."title" FROM below b WHERE nlevel(b."path") > 1
-  UNION
-  SELECT p."id", p."path"::text, p."title" FROM probed p WHERE nlevel(p."path") > 1
+       AND f."path" <@ u AND nlevel(f."path") BETWEEN l + 1 AND l + 2
+       AND (f."login_id" IS NULL OR f."login_id" = who)
+       AND NOT (f."read_ws" && ws);
+    IF cand IS NOT NULL THEN
+      -- The rows the scope reads below `under`, at most cap + 1 of them,
+      -- each cut to the two levels below it.
+      SELECT count(*), array_agg(DISTINCT subpath(x."path", 0, least(nlevel(x."path"), l + 2)))
+        INTO n, ways
+        FROM (SELECT r."path" FROM "public"."nodes" r
+               WHERE r."owner_id" = "mantle_folder_trail"."owner"
+                 AND r."read_ws" && ws AND (r."login_id" IS NULL OR r."login_id" = who)
+                 AND r."path" <@ u AND nlevel(r."path") > l
+               LIMIT cap + 1) x;
+      IF n <= cap THEN
+        -- Few: every candidate on the way to one of them, at both levels.
+        RETURN QUERY
+          SELECT f."id", f."path"::text, f."title" FROM "public"."nodes" f
+           WHERE f."owner_id" = "mantle_folder_trail"."owner" AND f."type" = 'branch'
+             AND f."path" = ANY (cand) AND nlevel(f."path") > 1
+             AND (f."path" = ANY (ways)
+                  OR f."path" = ANY (ARRAY(SELECT subpath(w, 0, l + 1) FROM unnest(ways) w
+                                            WHERE nlevel(w) > l + 1)));
+      ELSE
+        -- Many (a wide scope): each candidate one level below is probed down
+        -- the path index, the deepest way first, so the work is the size of
+        -- the folders the scope does not read, never the rows it reads. Such
+        -- a folder on the way is answered with the folder below it that the
+        -- probe went through, when the scope does not read that one (so it
+        -- unfolds; the other folders on the way below it are answered when
+        -- it is opened). A candidate two levels down under a folder the
+        -- scope reads is probed on its own.
+        RETURN QUERY
+          WITH c AS MATERIALIZED (
+            SELECT f."id", f."path", f."title" FROM "public"."nodes" f
+             WHERE f."owner_id" = "mantle_folder_trail"."owner" AND f."type" = 'branch'
+               AND f."path" = ANY (cand)
+          ),
+          one AS MATERIALIZED (
+            SELECT c."id", c."path", c."title",
+                   (SELECT r."path" FROM "public"."nodes" r
+                     WHERE r."owner_id" = "mantle_folder_trail"."owner" AND r."path" <@ c."path"
+                       AND nlevel(r."path") > l + 1
+                       AND (r."read_ws" && ws) IS TRUE
+                       AND (r."login_id" IS NULL OR r."login_id" = who)
+                     LIMIT 1) AS deep
+              FROM c WHERE nlevel(c."path") = l + 1
+          ),
+          way AS MATERIALIZED (
+            SELECT o."id", o."path", o."title", o."deep" FROM one o
+             WHERE o."deep" IS NOT NULL
+                OR EXISTS (SELECT 1 FROM "public"."nodes" r
+                            WHERE r."owner_id" = "mantle_folder_trail"."owner" AND r."path" = o."path"
+                              AND (r."read_ws" && ws) IS TRUE
+                              AND (r."login_id" IS NULL OR r."login_id" = who))
+          )
+          SELECT w."id", w."path"::text, w."title" FROM way w WHERE nlevel(w."path") > 1
+          UNION
+          SELECT c."id", c."path"::text, c."title" FROM c, way w
+           WHERE nlevel(c."path") = l + 2 AND c."path" = subpath(w."deep", 0, l + 2)
+          UNION
+          SELECT c."id", c."path"::text, c."title" FROM c
+           WHERE nlevel(c."path") = l + 2
+             AND NOT (subpath(c."path", 0, l + 1) = ANY (cand))
+             AND EXISTS (SELECT 1 FROM "public"."nodes" r
+                          WHERE r."owner_id" = "mantle_folder_trail"."owner" AND r."path" <@ c."path"
+                            AND (r."read_ws" && ws) IS TRUE
+                            AND (r."login_id" IS NULL OR r."login_id" = who));
+      END IF;
+    END IF;
+  END IF;
+
+  IF coalesce(cardinality("mantle_folder_trail"."paths"), 0) > 0 OR "mantle_folder_trail"."folder" IS NOT NULL THEN
+    -- Exact paths and an id: a folder the scope reads itself counts (it is a
+    -- row at that folder); otherwise one probe below it, down the path index
+    -- (the read test is kept off the read_ws index: for a wide scope that
+    -- index holds most of the brain, and a probe per named folder would read
+    -- it each time).
+    RETURN QUERY
+      WITH named AS (
+        SELECT f."id", f."path", f."title", f."read_ws", f."login_id" FROM "public"."nodes" f
+         WHERE f."owner_id" = "mantle_folder_trail"."owner" AND f."type" = 'branch'
+           AND f."path" = ANY ("mantle_folder_trail"."paths"::ltree[])
+        UNION
+        SELECT f."id", f."path", f."title", f."read_ws", f."login_id" FROM "public"."nodes" f
+         WHERE f."id" = "mantle_folder_trail"."folder"
+           AND f."owner_id" = "mantle_folder_trail"."owner" AND f."type" = 'branch'
+      )
+      SELECT n."id", n."path"::text, n."title" FROM named n
+       WHERE nlevel(n."path") > 1
+         AND (n."login_id" IS NULL OR n."login_id" = who)
+         AND ((n."read_ws" && ws)
+              OR EXISTS (
+                SELECT 1 FROM "public"."nodes" r
+                 WHERE r."owner_id" = "mantle_folder_trail"."owner" AND r."path" <@ n."path"
+                   AND (r."read_ws" && ws) IS TRUE
+                   AND (r."login_id" IS NULL OR r."login_id" = who)));
+  END IF;
+END
 $$;
 --> statement-breakpoint
 REVOKE ALL ON FUNCTION "public"."mantle_folder_trail"(uuid, text, text[], uuid) FROM PUBLIC;

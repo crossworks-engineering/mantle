@@ -157,6 +157,7 @@ export {
   folderTrailSql,
   textArraySql,
   trailForCaller,
+  trailRowsSql,
   type TrailAsk,
   type TrailFolder,
 } from './folder-trail';

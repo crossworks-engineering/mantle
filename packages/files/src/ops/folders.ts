@@ -429,7 +429,7 @@ async function folderCountsFor(
     select x.p::text as path, sum(x.d)::int as folders, sum(x.f)::int as files from (
       select subpath(c.path, 0, nlevel(c.path) - 1) as p, 1 as d, 0 as f from nodes c
        where c.owner_id = ${ownerId} and c.type = 'branch' and nlevel(c.path) > 1
-         and c.path ? array(select (t.p::text || '.*{1}')::lquery from t)
+         and subpath(c.path, 0, nlevel(c.path) - 1) = any(array(select p from t))
       union all
       select c.path, 0, 1 from nodes c
        where c.owner_id = ${ownerId} and c.type = 'file' and c.path = any(array(select p from t))
@@ -449,6 +449,7 @@ async function withTrailRows(
   ownerId: string,
   rows: FolderRow[],
   trail: readonly TrailFolder[],
+  known?: Map<string, { childFolderCount: number; fileCount: number }>,
 ): Promise<FolderRow[]> {
   const seen = new Set(rows.map((r) => r.id));
   const add = trail.filter((t) => {
@@ -456,10 +457,12 @@ async function withTrailRows(
     seen.add(t.id);
     return true;
   });
-  const counts = await folderCountsFor(
-    ownerId,
-    add.map((t) => t.path),
-  );
+  const counts =
+    known ??
+    (await folderCountsFor(
+      ownerId,
+      add.map((t) => t.path),
+    ));
   return [
     ...rows,
     ...add.map((t): FolderRow => {
@@ -516,16 +519,18 @@ export async function listFoldersWithTrail(args: {
 export async function listAllFoldersWithTrail(ownerId: string): Promise<FolderRow[]> {
   const rows = await listAllFolders(ownerId);
   if (!trailForCaller(ownerId)) return rows;
-  // The paths of the rows the login reads under the root (the row rules):
-  // every folder above them is a candidate; the definer answers only those
-  // at or above a row the scope reads.
-  const read = (await db.execute(sql`
-    select distinct n.path::text as path from nodes n
-     where n.owner_id = ${ownerId} and n.path <@ ${FILES_ROOT_LABEL}::ltree
-       and nlevel(n.path) > 1`)) as unknown as { path: string }[];
+  // The files the login reads under the root, by folder (the row rules; the
+  // file index, not the read_ws one, finds them), and the folders it reads:
+  // every folder above them it does not read is a candidate; the definer
+  // answers only those at or above a row the scope reads.
+  const files = (await db.execute(sql`
+    select n.path::text as path, count(*)::int as n from nodes n
+     where n.owner_id = ${ownerId} and n.type = 'file'
+       and n.path <@ ${FILES_ROOT_LABEL}::ltree and nlevel(n.path) > 1
+     group by 1`)) as unknown as { path: string; n: number }[];
   const known = new Set(rows.map((r) => r.path));
   const wanted = new Set<string>();
-  for (const { path } of read) {
+  for (const path of [...files.map((f) => f.path), ...known]) {
     const labels = path.split('.');
     for (let i = 2; i <= labels.length; i++) {
       const p = labels.slice(0, i).join('.');
@@ -534,7 +539,20 @@ export async function listAllFoldersWithTrail(ownerId: string): Promise<FolderRo
   }
   if (!wanted.size) return rows;
   const trail = await folderTrail(ownerId, { paths: [...wanted] });
-  const out = await withTrailRows(ownerId, rows, trail);
+  // What the login reads in each trail folder, from the two reads above (no
+  // further query): the folders it reads directly below it, its files.
+  const counts = new Map<string, { childFolderCount: number; fileCount: number }>();
+  const at = (p: string) => {
+    let c = counts.get(p);
+    if (!c) counts.set(p, (c = { childFolderCount: 0, fileCount: 0 }));
+    return c;
+  };
+  for (const f of files) at(f.path).fileCount += Number(f.n);
+  for (const p of known) {
+    const i = p.lastIndexOf('.');
+    if (i > 0) at(p.slice(0, i)).childFolderCount += 1;
+  }
+  const out = await withTrailRows(ownerId, rows, trail, counts);
   out.sort((a, b) => a.path.localeCompare(b.path));
   return out;
 }

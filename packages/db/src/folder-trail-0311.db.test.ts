@@ -253,7 +253,7 @@ describe.skipIf(!URL)('0311: the folders above what a login reads (mantle_folder
       select p.prosecdef as secdef, p.proconfig as config, p.proacl::text as acl
         from pg_proc p where p.oid = to_regprocedure(${FN})`);
     expect(fn!.secdef).toBe(true);
-    expect(fn!.config).toEqual(['search_path=public, pg_temp']);
+    expect(fn!.config).toEqual(['search_path=public, pg_temp', 'plan_cache_mode=force_custom_plan']);
     expect(fn!.acl).not.toMatch(/(^|[{,])=X/);
     const [can] = await x<{ v: boolean; w: boolean }>(sql`
       select has_function_privilege('mantle_view_user', ${FN}, 'execute') as v,
